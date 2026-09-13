@@ -1,0 +1,213 @@
+import { NextResponse } from "next/server";
+import OpenAI, { toFile } from "openai";
+import { POINTS_PER_IMAGE } from "@/lib/mock-data";
+import { safeError } from "@/lib/api-error";
+import {
+  dbEnabled,
+  reserveCredits,
+  refundCredits,
+  addArtworks,
+  addLedgerEntry,
+  getUser,
+  isBanned,
+} from "@/lib/db";
+import { clientIp } from "@/lib/ip";
+import { rateLimit } from "@/lib/rate-limit";
+import { resolveUserEmail } from "@/lib/admin-auth";
+import { storageEnabled, uploadImage } from "@/lib/storage";
+import { getOpenAISettings } from "@/lib/settings";
+import { getOpenAIBaseUrl } from "@/lib/openai-base";
+
+// ---------------------------------------------------------------------------
+// 爆款图复刻:商品原图(1-3) + 爆款参考图(1) + 复刻程度 → 图生图单张出图。
+// 复刻程度:
+//   high  = 高度复刻:照参考图的构图/布光/配色/场景结构,替换成用户的产品与文案。
+//   style = 参考风格:只取参考图的风格气质(色调/氛围/质感),构图自由发挥。
+// 同步返回(单张 ~1 分钟),积分预扣,失败全退。
+// ---------------------------------------------------------------------------
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+const PLATFORM_LABELS: Record<string, string> = {
+  amazon: "亚马逊(简约英文风,符合平台规范)",
+  taobao: "淘宝/天猫(中文精品电商风格)",
+  pdd: "拼多多(直白促销风)",
+  independent: "独立站(现代品牌感,英文)",
+};
+
+async function parseInput(request: Request) {
+  const ct = request.headers.get("content-type") ?? "";
+  if (!ct.includes("multipart/form-data")) return null;
+  const f = await request.formData();
+  const products: { buf: Buffer; type: string }[] = [];
+  for (const file of f.getAll("image")) {
+    if (file instanceof File && file.size > 0) {
+      products.push({
+        buf: Buffer.from(await file.arrayBuffer()),
+        type: file.type || "image/png",
+      });
+    }
+    if (products.length >= 3) break;
+  }
+  const ref = f.get("ref");
+  const refImg =
+    ref instanceof File && ref.size > 0
+      ? { buf: Buffer.from(await ref.arrayBuffer()), type: ref.type || "image/png" }
+      : null;
+  return {
+    products,
+    ref: refImg,
+    degree: (f.get("degree") ?? "high").toString().trim() === "style" ? "style" : "high",
+    extra: (f.get("text") ?? "").toString().trim().slice(0, 400),
+    platform: (f.get("platform") ?? "amazon").toString().trim().slice(0, 20),
+    lang: (f.get("lang") ?? "auto").toString().trim().slice(0, 10),
+    email: (f.get("email") ?? "").toString().trim(),
+  };
+}
+
+export async function POST(request: Request) {
+  const input = await parseInput(request).catch(() => null);
+  if (!input || input.products.length === 0 || !input.ref) {
+    return NextResponse.json(
+      { error: "请上传商品原图和一张爆款参考图" },
+      { status: 400 }
+    );
+  }
+  if ([...input.products, input.ref].some((im) => im.buf.length > 12 * 1024 * 1024)) {
+    return NextResponse.json(
+      { error: "单张上传图片过大（请 < 12MB）" },
+      { status: 400 }
+    );
+  }
+
+  const { apiKey, model } = await getOpenAISettings();
+  const ip = clientIp(request);
+  if (!rateLimit(`replicate:${ip}`, 10, 600_000)) {
+    return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
+  }
+
+  if (dbEnabled) {
+    const tokenEmail = await resolveUserEmail(request);
+    if (!tokenEmail) {
+      return NextResponse.json({ error: "请先登录后再生成" }, { status: 401 });
+    }
+    input.email = tokenEmail;
+  }
+  const useDb = dbEnabled && input.email.length > 0;
+  const cost = POINTS_PER_IMAGE;
+
+  if (dbEnabled && (await isBanned(input.email, ip))) {
+    return NextResponse.json(
+      { error: "账号或 IP 已被封禁，请联系管理员" },
+      { status: 403 }
+    );
+  }
+  if (useDb) {
+    const ok = await reserveCredits(input.email, cost);
+    if (!ok) {
+      return NextResponse.json({ error: "积分不足，请充值后重试" }, { status: 402 });
+    }
+  }
+
+  try {
+    const langNote =
+      input.lang === "en"
+        ? "画面文案用简约英文"
+        : input.lang === "zh"
+          ? "画面文案用精炼中文"
+          : "画面文案语言跟随平台习惯";
+    const degreeNote =
+      input.degree === "high"
+        ? "【高度复刻】前面的参考图定义整张图的构图、布光、配色、场景结构与排版;把商品原图中的产品放进同款构图与场景中(产品位置/姿态对应参考图中的主体),场景细节可有轻微差异。"
+        : "【参考风格】只借鉴参考图的风格气质(色调、氛围、质感、字体感觉),为商品原图的产品重新设计一张同风格电商图,构图可自由发挥。";
+    const extraNote = input.extra ? `补充要求:${input.extra}。` : "";
+    const prompt =
+      `你要做「爆款图复刻」。图片说明:最后一张是爆款参考图,其余是商品原图(产品必须取自商品原图)。` +
+      `${degreeNote}在完整保留商品原图产品(包装、品牌、文字、外观)完全不变的前提下生成一张电商图。` +
+      `文案:${langNote},内容贴合该产品,清晰无错别字,排版精美。平台风格:${PLATFORM_LABELS[input.platform] ?? "通用电商"}。${extraNote}` +
+      `输出一张可直接上架的成品图。`;
+
+    const client = new OpenAI({
+      apiKey,
+      baseURL: (await getOpenAIBaseUrl()) || undefined,
+      timeout: 240_000,
+      maxRetries: 1,
+    });
+
+    const files = await Promise.all(
+      [...input.products, input.ref].map((im, i) =>
+        toFile(im.buf, `img-${i}.png`, { type: im.type || "image/png" })
+      )
+    );
+    const r = await client.images.edit({
+      model,
+      image: files,
+      prompt,
+      n: 1,
+      size: "1024x1024",
+      quality: (process.env.OPENAI_IMAGE_QUALITY || "medium") as
+        | "low"
+        | "medium"
+        | "high"
+        | "auto",
+    });
+    const d = r.data?.[0];
+    if (!d) throw new Error("空返回");
+    const buf = d.b64_json
+      ? Buffer.from(d.b64_json, "base64")
+      : Buffer.from(await (await fetch(d.url!)).arrayBuffer());
+
+    let url: string;
+    if (storageEnabled) {
+      try {
+        url = await uploadImage(
+          new Uint8Array(buf),
+          "image/png",
+          `replicate/rep-${Date.now()}.png`
+        );
+      } catch {
+        url = `data:image/png;base64,${buf.toString("base64")}`;
+      }
+    } else {
+      url = `data:image/png;base64,${buf.toString("base64")}`;
+    }
+
+    if (useDb) {
+      try {
+        await addArtworks(
+          input.email,
+          [
+            {
+              id: `rep-${Date.now()}`,
+              title: input.degree === "high" ? "爆款复刻·高度" : "爆款复刻·风格",
+              category: "main",
+              prompt: "",
+              status: "completed",
+              image: url,
+              gradient: "from-sky-100 to-teal-100",
+              style: null,
+              ratio: "1:1",
+              resolution: "1K",
+              source: "main",
+            },
+          ],
+          `replicate-${Date.now()}`
+        );
+        await addLedgerEntry(input.email, -cost, "爆款复刻 1 张").catch(() => {});
+      } catch {
+        /* non-fatal */
+      }
+      const user = await getUser(input.email).catch(() => null);
+      return NextResponse.json({ ok: true, url, cost, user });
+    }
+    return NextResponse.json({ ok: true, url, cost });
+  } catch (e) {
+    if (useDb) await refundCredits(input.email, cost).catch(() => {});
+    console.error("[replicate] failed:", e instanceof Error ? e.message : e);
+    return NextResponse.json(
+      { error: safeError(e, "复刻生成失败,请稍后重试") },
+      { status: 502 }
+    );
+  }
+}

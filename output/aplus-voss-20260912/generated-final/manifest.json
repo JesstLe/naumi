@@ -1,0 +1,102 @@
+{
+  "generatedAt": "2026-09-12T14:32:25.968Z",
+  "projectEndpoint": "http://localhost:3100/api/aplus",
+  "jobId": "aplus-1789223294162-556126",
+  "sourceFiles": [
+    "white-source-01-白底母图-1.png",
+    "white-source-02-白底母图-2.png",
+    "white-source-03-白底母图-3.png"
+  ],
+  "aplusFiles": [
+    "aplus-01-hero.png",
+    "aplus-02-selling.png",
+    "aplus-03-scene.png",
+    "aplus-04-angles.png",
+    "aplus-05-story.png",
+    "aplus-06-specs.png"
+  ],
+  "raw": {
+    "status": "done",
+    "stage": "generating",
+    "sources": [
+      {
+        "id": "aplus-source-1789223365238-0",
+        "label": "白底母图 1",
+        "status": "done",
+        "url": "/media/aplus/sources/aplus-source-1789223365238-0.png"
+      },
+      {
+        "id": "aplus-source-1789223365239-1",
+        "label": "白底母图 2",
+        "status": "done",
+        "url": "/media/aplus/sources/aplus-source-1789223365239-1.png"
+      },
+      {
+        "id": "aplus-source-1789223365239-2",
+        "label": "白底母图 3",
+        "status": "done",
+        "url": "/media/aplus/sources/aplus-source-1789223365239-2.png"
+      }
+    ],
+    "done": 6,
+    "total": 6,
+    "shots": [
+      {
+        "id": "aplus-1789223365560-0",
+        "role": "hero",
+        "label": "首屏主视觉",
+        "ratio": "1:1",
+        "status": "done",
+        "url": "/media/aplus/aplus-1789223365560-0.png",
+        "gradient": "from-rose-100 to-slate-100"
+      },
+      {
+        "id": "aplus-1789223365560-1",
+        "role": "selling",
+        "label": "核心卖点图",
+        "ratio": "1:1",
+        "status": "done",
+        "url": "/media/aplus/aplus-1789223365560-1.png",
+        "gradient": "from-lime-100 to-emerald-100"
+      },
+      {
+        "id": "aplus-1789223365560-2",
+        "role": "scene",
+        "label": "使用场景图",
+        "ratio": "1:1",
+        "status": "done",
+        "url": "/media/aplus/aplus-1789223365560-2.png",
+        "gradient": "from-amber-100 to-orange-100"
+      },
+      {
+        "id": "aplus-1789223365560-3",
+        "role": "angles",
+        "label": "多角度图",
+        "ratio": "1:1",
+        "status": "done",
+        "url": "/media/aplus/aplus-1789223365560-3.png",
+        "gradient": "from-sky-100 to-teal-100"
+      },
+      {
+        "id": "aplus-1789223365560-4",
+        "role": "story",
+        "label": "品牌故事图",
+        "ratio": "1:1",
+        "status": "done",
+        "url": "/media/aplus/aplus-1789223365560-4.png",
+        "gradient": "from-emerald-100 to-teal-100"
+      },
+      {
+        "id": "aplus-1789223365560-5",
+        "role": "specs",
+        "label": "规格/参数表",
+        "ratio": "1:1",
+        "status": "done",
+        "url": "/media/aplus/aplus-1789223365560-5.png",
+        "gradient": "from-stone-100 to-amber-100"
+      }
+    ],
+    "user": null,
+    "creditsUsed": 36
+  }
+}

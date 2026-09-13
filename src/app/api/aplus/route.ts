@@ -1,0 +1,663 @@
+import { NextResponse } from "next/server";
+import { toVisionDataUrl } from "@/lib/vision-image";
+import OpenAI from "openai";
+import { POINTS_PER_IMAGE } from "@/lib/mock-data";
+import { safeError } from "@/lib/api-error";
+import {
+  dbEnabled,
+  reserveCredits,
+  refundCredits,
+  addArtworks,
+  getUser,
+  isBanned,
+  addLedgerEntry,
+  addReservation,
+  settleReservation,
+  sweepStaleReservations,
+} from "@/lib/db";
+import { clientIp } from "@/lib/ip";
+import { rateLimit } from "@/lib/rate-limit";
+import { resolveUserEmail } from "@/lib/admin-auth";
+import { storageEnabled, uploadImage } from "@/lib/storage";
+import { getOpenAISettings } from "@/lib/settings";
+import { getOpenAIBaseUrl } from "@/lib/openai-base";
+
+// ---------------------------------------------------------------------------
+// A+ 详情页生成:上传商品图(1-3 张) → 勾选内容模块 → AI 规划 + 图生图逐张出图。
+// 三层 pipeline:
+//   第 0 层:逐张清理实拍环境，生成白底商品母图。
+//   第 1 层:视觉 LLM 按勾选模块规划每张图的定制提示词(平台/语言感知)。
+//   第 2-N 层:gpt-image 图生图,每张 = 白底母图(参考,保一致) + 模块提示词。
+// 异步 job + 逐张进度轮询,积分按张预留、失败按比例退。
+// ---------------------------------------------------------------------------
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+type ShotRole = string; // module key: hero/selling/scene/angles/story/compare
+type ShotSpec = {
+  role: ShotRole;
+  label: string;
+  ratio: string;
+  prompt: string;
+};
+type ShotResult = ShotSpec & {
+  id: string;
+  status: "pending" | "done" | "error";
+  url?: string;
+  gradient: string;
+};
+type SourceResult = {
+  id: string;
+  label: string;
+  status: "done";
+  url: string;
+};
+
+// 当前兼容网关会拦截同一任务的并发 images.edit 请求。A+ 一次最多 9 次图像编辑，
+// 这里宁可串行稳定完成，也不让白底母图或详情模块因 403 整批失败。
+const CONCURRENCY = 1;
+const PER_SHOT_TIMEOUT = 240_000;
+const SHOT_RETRIES = 3;
+const SOURCE_RETRIES = 2;
+
+const GRADIENTS = [
+  "from-rose-100 to-slate-100",
+  "from-lime-100 to-emerald-100",
+  "from-amber-100 to-orange-100",
+  "from-sky-100 to-teal-100",
+  "from-emerald-100 to-teal-100",
+  "from-stone-100 to-amber-100",
+];
+
+// 可勾选的内容模块(key 与前端一致)。
+const APLUS_MODULES: Record<string, { label: string; hint: string }> = {
+  hero: { label: "首屏主视觉", hint: "一屏抓住眼球的商品主视觉,传递核心价值" },
+  selling: { label: "核心卖点图", hint: "突出 1-2 个差异化卖点,配标注文案" },
+  scene: { label: "使用场景图", hint: "把商品放进真实使用场景" },
+  angles: { label: "多角度图", hint: "多角度呈现商品外观与细节" },
+  story: { label: "品牌故事图", hint: "传递品牌理念与质感氛围" },
+  compare: { label: "效果对比图", hint: "使用前后 / 有无本品的对比" },
+  craft: { label: "工艺制作图", hint: "展示工艺制作过程" },
+  size: { label: "尺寸尺码图", hint: "展示规格信息" },
+  specs: { label: "规格/参数表", hint: "展示详细商品数据" },
+  accessories: { label: "配件/赠品图", hint: "明确收货所有物品" },
+  series: { label: "系列展示图", hint: "多色或多 SKU 展示" },
+  ingredients: { label: "商品成分图", hint: "展示配方/材质/成分" },
+  assurance: { label: "售后保障图", hint: "说明质保退换政策" },
+  usage: { label: "使用建议图", hint: "说明使用方法与建议" },
+};
+
+const PLATFORM_LABELS: Record<string, string> = {
+  amazon: "亚马逊(欧美跨境,简约英文风,符合亚马逊 A+ 规范)",
+  taobao: "淘宝/天猫(中文精品详情页风格)",
+  pdd: "拼多多(直白促销风)",
+  independent: "独立站(现代品牌感,英文)",
+};
+
+// 图片比例档(7 档,对齐竞品):三种 A+ 版式 + 显式比例。
+// gpt-image 仅支持 1024x1024 / 1536x1024 / 1024x1536,按最接近档位映射。
+function sizeFor(format: string): "1024x1024" | "1536x1024" | "1024x1536" {
+  if (format === "1:1") return "1024x1024";
+  if (format === "9:16" || format === "aplus-mobile") return "1024x1536";
+  return "1536x1024";
+}
+
+const RATIO_DESC: Record<string, string> = {
+  "aplus-web": "高级 A+ 横版模块(约 3:2),构图舒展,适合 Web 端详情页",
+  "aplus-mobile": "高级 A+ 移动端竖版模块(约 2:3),信息纵向排布",
+  "aplus-basic": "标准(普通)A+ 横版模块(约 3:2),按平台基础 A+ 规范,简洁合规",
+  "1:1": "正方形(1:1)",
+  "4:3": "横版 4:3",
+  "16:9": "宽幅 16:9",
+  "9:16": "竖版 9:16",
+};
+
+function fallbackShots(modules: string[], lang: string): ShotSpec[] {
+  const langNote =
+    lang === "en"
+      ? "画面文案用简约英文短语"
+      : "画面文案用精炼中文营销语";
+  return modules.map((m) => {
+    const meta = APLUS_MODULES[m] ?? { label: m, hint: "" };
+    return {
+      role: m,
+      label: meta.label,
+      ratio: "1:1",
+      prompt:
+        `在完整保留上传商品(包装、品牌、文字、外观)不变的前提下,生成一张 A+ 详情页模块图:${meta.hint}。` +
+        `整图(含文字)由你直接渲染,${langNote},文字排版精美、清晰无错别字,高级商业视觉,层次分明、留白得当。`,
+    };
+  });
+}
+
+// 第 0 层:视觉 LLM 按勾选模块规划提示词。失败回退蓝图。
+async function planShots(
+  client: OpenAI,
+  firstImage: { buf: Buffer; type: string },
+  extra: string,
+  platform: string,
+  lang: string,
+  format: string,
+  modules: string[]
+): Promise<ShotSpec[]> {
+  try {
+    const dataUrl = await toVisionDataUrl(firstImage.buf, firstImage.type);
+    const moduleDesc = modules
+      .map((m) => `- ${m}:${APLUS_MODULES[m]?.label ?? m}(${APLUS_MODULES[m]?.hint ?? ""})`)
+      .join("\n");
+    const sys =
+      "你是资深电商 A+ 详情页设计师。看懂上传商品(品类、卖点、人群、场景)后," +
+      `为下列每个模块各写一条「给图生图模型直接出整图(含文字)」的完整提示词。平台风格:${PLATFORM_LABELS[platform] ?? "通用电商"}。` +
+      "每条提示词必须:①以『在完整保留上传商品(包装/品牌/文字/外观)不变的前提下』开头;" +
+      "②写清画面内容、构图与版式;③写出要渲染的具体文案(与商品相关,不套空话),文字清晰无错别字;" +
+      "④语言要求:" + (lang === "en" ? "画面文案全英文,简洁专业。" : lang === "zh" ? "画面文案全中文。" : "文案语言跟随平台习惯。") +
+      "⑤版式比例:" + (RATIO_DESC[format] ?? RATIO_DESC["aplus-web"]) + ";" +
+      '只输出 JSON:{"shots":[{"module","label","prompt"}...]},shots 数量与模块一一对应、顺序一致。';
+    const user =
+      `模块列表:\n${moduleDesc}\n` +
+      (extra ? `商品补充信息:${extra}\n` : "") +
+      "请规划这套 A+ 详情页。";
+    const resp = await client.chat.completions.create({
+      model: "gpt-5.6-luna",
+      messages: [
+        { role: "system", content: sys },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: user },
+            { type: "image_url", image_url: { url: dataUrl } },
+          ],
+        },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 3000,
+    });
+    const raw = resp.choices[0]?.message?.content ?? "{}";
+    const parsed = JSON.parse(raw) as {
+      shots?: { module?: string; label?: string; prompt?: string }[];
+    };
+    const byKey = new Map<string, { label: string; prompt: string }>();
+    for (const s of parsed.shots ?? []) {
+      if (s.module && s.prompt) {
+        byKey.set(s.module, { label: s.label || APLUS_MODULES[s.module]?.label || s.module, prompt: s.prompt });
+      }
+    }
+    // 严格按勾选模块顺序输出,缺的用蓝图补
+    return modules.map((m) => {
+      const hit = byKey.get(m);
+      if (hit) return { role: m, label: hit.label, ratio: "1:1", prompt: hit.prompt };
+      return fallbackShots([m], lang)[0];
+    });
+  } catch {
+    return fallbackShots(modules, lang);
+  }
+}
+
+// 部分 OpenAI 兼容网关会拦截 openai-js SDK 构造的 images.edit multipart，
+// 但接受标准原生 FormData。这里直接按官方字段提交，并兼容单图 image / 多图 image[]。
+async function editImagesMultipart(
+  apiKey: string,
+  baseUrl: string,
+  model: string,
+  prompt: string,
+  images: { buf: Buffer; type: string }[],
+  size: "1024x1024" | "1536x1024" | "1024x1536"
+): Promise<Buffer> {
+  const form = new FormData();
+  const field = images.length === 1 ? "image" : "image[]";
+  images.forEach((image, index) => {
+    form.append(
+      field,
+      new Blob([new Uint8Array(image.buf)], {
+        type: image.type || "image/png",
+      }),
+      `product-${index + 1}.${image.type.includes("jpeg") ? "jpg" : "png"}`
+    );
+  });
+  form.append("model", model);
+  form.append("prompt", prompt);
+  form.append("n", "1");
+  form.append("size", size);
+  form.append("quality", process.env.OPENAI_IMAGE_QUALITY || "medium");
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/images/edits`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+    signal: AbortSignal.timeout(PER_SHOT_TIMEOUT),
+  });
+  const raw = await response.text();
+  if (!response.ok) {
+    let detail = raw.slice(0, 500);
+    try {
+      const parsed = JSON.parse(raw) as { error?: { message?: string } | string };
+      detail =
+        typeof parsed.error === "string"
+          ? parsed.error
+          : parsed.error?.message || detail;
+    } catch {
+      /* keep compact raw detail */
+    }
+    throw new Error(`${response.status} ${detail}`);
+  }
+  const parsed = JSON.parse(raw) as {
+    data?: { b64_json?: string; url?: string }[];
+  };
+  const output = parsed.data?.[0];
+  if (output?.b64_json) return Buffer.from(output.b64_json, "base64");
+  if (output?.url) {
+    const download = await fetch(output.url);
+    if (!download.ok) throw new Error(`图片下载失败 ${download.status}`);
+    return Buffer.from(await download.arrayBuffer());
+  }
+  throw new Error("图片接口为空返回");
+}
+
+// 生成一张,返回 PNG buffer(与套图同管线)。
+async function genOneShot(
+  apiKey: string,
+  baseUrl: string,
+  model: string,
+  spec: ShotSpec,
+  productImages: { buf: Buffer; type: string }[],
+  size: "1024x1024" | "1536x1024" | "1024x1536"
+): Promise<Buffer> {
+  let images = productImages;
+  let prompt = spec.prompt;
+  // 兼容网关可能忽略 size、转而沿用第一张参考图纵横比。横版 A+ 先放一张无内容
+  // 的横版画布锚点，商品白底图随后提交；提示词明确锚点不是商品，避免模型画出空卡片。
+  if (size === "1536x1024") {
+    const mod = (await import("sharp")) as unknown as {
+      default?: typeof import("sharp");
+    } & typeof import("sharp");
+    const sharp = mod.default ?? mod;
+    const anchor = await sharp({
+      create: {
+        width: 1536,
+        height: 1024,
+        channels: 3,
+        background: { r: 248, g: 250, b: 252 },
+      },
+    })
+      .png()
+      .toBuffer();
+    images = [{ buf: anchor, type: "image/png" }, ...productImages];
+    prompt =
+      "第一张输入图仅用于锁定 3:2 横版画布比例，不是商品，也不要把空白画布画成卡片；" +
+      "后续输入图才是必须保持一致的白底商品参考。最终输出必须为横版 A+ 模块。" +
+      spec.prompt;
+  }
+  return editImagesMultipart(
+    apiKey,
+    baseUrl,
+    model,
+    prompt,
+    images,
+    size
+  );
+}
+
+// A+ 生成前先把每张实拍图清理成独立白底母图。这样后续多图参考里不会把办公桌、
+// 风扇、手部等环境杂物误学进详情图，也能让正面/侧面/背面三个视角保持一致。
+async function prepareWhiteSource(
+  apiKey: string,
+  baseUrl: string,
+  model: string,
+  image: { buf: Buffer; type: string }
+): Promise<Buffer> {
+  const prompt =
+    "精确提取上传照片中的单个商品主体，移除背景、桌面、人物、手、风扇、电脑、零食及所有杂物，" +
+    "放置在纯白色无缝电商摄影背景上。完整保留商品真实瓶型、比例、透明材质、瓶盖、现有品牌字样、" +
+    "标签布局、条码或背标视角，不翻译、不改写、不新增包装文字。商品竖直居中、全貌完整、四周留白，" +
+    "仅添加自然柔和的浅灰接触阴影。不得增加道具、底座、边框、文案、水印或第二个商品。";
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= SOURCE_RETRIES; attempt++) {
+    try {
+      return await editImagesMultipart(
+        apiKey,
+        baseUrl,
+        model,
+        prompt,
+        [image],
+        "1024x1536"
+      );
+    } catch (e) {
+      lastError = e;
+      if (attempt < SOURCE_RETRIES) {
+        await new Promise((r) => setTimeout(r, 2200 * 2 ** attempt));
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("白底母图生成失败");
+}
+
+async function persistOne(buf: Buffer, id: string): Promise<string> {
+  if (!storageEnabled) {
+    return `data:image/png;base64,${buf.toString("base64")}`;
+  }
+  try {
+    return await uploadImage(new Uint8Array(buf), "image/png", `aplus/${id}.png`);
+  } catch {
+    return `data:image/png;base64,${buf.toString("base64")}`;
+  }
+}
+
+// --- Async job store(与套图同款,内存,单进程) ---
+type Job = {
+  status: "pending" | "done" | "error";
+  stage: "preparing" | "generating";
+  sources: SourceResult[];
+  shots: ShotResult[];
+  done: number;
+  total: number;
+  user?: Awaited<ReturnType<typeof getUser>>;
+  creditsUsed?: number;
+  error?: string;
+  createdAt: number;
+};
+const JOBS = new Map<string, Job>();
+function gcJobs() {
+  const now = Date.now();
+  JOBS.forEach((v, k) => {
+    if (now - v.createdAt > 30 * 60 * 1000) JOBS.delete(k);
+  });
+}
+
+async function runAplus(
+  jobId: string,
+  productImages: { buf: Buffer; type: string }[],
+  extra: string,
+  platform: string,
+  lang: string,
+  format: string,
+  modules: string[],
+  email: string,
+  apiKey: string,
+  model: string,
+  useDb: boolean,
+  cost: number
+) {
+  const set = (patch: Partial<Job>) => {
+    const cur = JOBS.get(jobId);
+    if (cur) JOBS.set(jobId, { ...cur, ...patch });
+  };
+  try {
+    const client = new OpenAI({
+      apiKey,
+      baseURL: (await getOpenAIBaseUrl()) || undefined,
+      timeout: PER_SHOT_TIMEOUT,
+      maxRetries: 0,
+    });
+    const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
+
+    const normalizedImages: Buffer[] = [];
+    for (let index = 0; index < productImages.length; index++) {
+      normalizedImages.push(
+        await prepareWhiteSource(apiKey, baseUrl, model, productImages[index])
+      );
+    }
+    const sources: SourceResult[] = await Promise.all(
+      normalizedImages.map(async (buf, index) => {
+        const id = `aplus-source-${Date.now()}-${index}`;
+        return {
+          id,
+          label: `白底母图 ${index + 1}`,
+          status: "done" as const,
+          url: await persistOne(buf, `sources/${id}`),
+        };
+      })
+    );
+    set({ stage: "generating", sources });
+
+    const size = sizeFor(format);
+    const cleanImages = normalizedImages.map((buf) => ({
+      buf,
+      type: "image/png",
+    }));
+    const specs = await planShots(client, cleanImages[0], extra, platform, lang, format, modules);
+    const shots: ShotResult[] = specs.map((s, i) => ({
+      ...s,
+      id: `aplus-${Date.now()}-${i}`,
+      status: "pending",
+      gradient: GRADIENTS[i % GRADIENTS.length],
+    }));
+    set({ shots: [...shots], total: shots.length });
+
+    let cursor = 0;
+    let doneCount = 0;
+    const worker = async (): Promise<void> => {
+      while (cursor < shots.length) {
+        const idx = cursor++;
+        const shot = shots[idx];
+        let ok = false;
+        for (let attempt = 0; attempt <= SHOT_RETRIES && !ok; attempt++) {
+          try {
+            const buf = await genOneShot(
+              apiKey,
+              baseUrl,
+              model,
+              shot,
+              cleanImages,
+              size
+            );
+            const url = await persistOne(buf, shot.id);
+            shots[idx] = { ...shot, status: "done", url };
+            ok = true;
+          } catch {
+            if (attempt < SHOT_RETRIES) {
+              const wait =
+                Math.min(18000, 2500 * 2 ** attempt) +
+                Math.floor(Math.random() * 1500);
+              await new Promise((r) => setTimeout(r, wait));
+            }
+          }
+        }
+        if (!ok) shots[idx] = { ...shot, status: "error" };
+        doneCount++;
+        set({ shots: [...shots], done: doneCount });
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, shots.length) }, worker)
+    );
+
+    const okShots = shots.filter((s) => s.status === "done" && s.url);
+
+    let user: Awaited<ReturnType<typeof getUser>> = null;
+    if (useDb && okShots.length > 0) {
+      const batchId = `aplus-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
+      try {
+        await addArtworks(
+          email,
+          okShots.map((s) => ({
+            id: s.id,
+            title: `A+·${s.label}`,
+            category: "detail",
+            prompt: "",
+            status: "completed",
+            image: s.url!,
+            gradient: s.gradient,
+            style: null,
+            ratio: format === "1:1" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2",
+            resolution: "1K",
+            source: "detail",
+          })),
+          batchId
+        );
+      } catch {
+        /* non-fatal */
+      }
+      const failed = shots.length - okShots.length;
+      if (failed > 0) {
+        const refund = Math.round((cost / shots.length) * failed);
+        await refundCredits(email, refund).catch(() => {});
+      }
+      await addLedgerEntry(
+        email,
+        -(cost - Math.round((cost / shots.length) * (shots.length - okShots.length))),
+        `A+ 详情页 ${okShots.length} 张`
+      ).catch(() => {});
+      user = await getUser(email).catch(() => null);
+    }
+
+    if (useDb) await settleReservation(jobId).catch(() => {});
+    set({
+      status: "done",
+      shots: [...shots],
+      done: shots.length,
+      user,
+      creditsUsed: cost,
+    });
+  } catch (e) {
+    if (useDb) {
+      await refundCredits(email, cost).catch(() => {});
+      await settleReservation(jobId).catch(() => {});
+    }
+    console.error("[aplus] job failed:", e instanceof Error ? e.message : e);
+    set({ status: "error", error: safeError(e, "A+ 详情页生成失败,请稍后重试") });
+  }
+}
+
+async function parseInput(request: Request) {
+  const ct = request.headers.get("content-type") ?? "";
+  if (!ct.includes("multipart/form-data")) return null;
+  const f = await request.formData();
+  const images: { buf: Buffer; type: string }[] = [];
+  for (const file of f.getAll("image")) {
+    if (file instanceof File && file.size > 0) {
+      images.push({
+        buf: Buffer.from(await file.arrayBuffer()),
+        type: file.type || "image/png",
+      });
+    }
+    if (images.length >= 3) break; // A+ 最多 3 张
+  }
+  const rawModules = (f.getAll("module") as string[]).map((m) => m.trim());
+  const modules = Array.from(new Set(rawModules)).filter((m) => APLUS_MODULES[m]);
+  return {
+    images,
+    extra: (f.get("text") ?? "").toString().trim().slice(0, 600),
+    platform: (f.get("platform") ?? "amazon").toString().trim().slice(0, 20),
+    lang: (f.get("lang") ?? "auto").toString().trim().slice(0, 10),
+    format: (() => {
+      const v = (f.get("format") ?? "aplus-web").toString().trim();
+      return ["aplus-web", "aplus-mobile", "aplus-basic", "1:1", "4:3", "16:9", "9:16"].includes(v)
+        ? v
+        : "aplus-web";
+    })(),
+    modules: modules.length > 0 ? modules : ["hero", "selling", "scene", "angles"],
+    email: (f.get("email") ?? "").toString().trim(),
+  };
+}
+
+export async function POST(request: Request) {
+  const input = await parseInput(request).catch(() => null);
+  if (!input || input.images.length === 0) {
+    return NextResponse.json({ error: "请上传至少一张商品图" }, { status: 400 });
+  }
+  if (input.images.some((im) => im.buf.length > 12 * 1024 * 1024)) {
+    return NextResponse.json(
+      { error: "单张上传图片过大（请 < 12MB）" },
+      { status: 400 }
+    );
+  }
+
+  const { apiKey, model } = await getOpenAISettings();
+  const ip = clientIp(request);
+  if (!rateLimit(`aplus:${ip}`, 8, 600_000)) {
+    return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
+  }
+
+  if (dbEnabled) {
+    const tokenEmail = await resolveUserEmail(request);
+    if (!tokenEmail) {
+      return NextResponse.json({ error: "请先登录后再生成" }, { status: 401 });
+    }
+    input.email = tokenEmail;
+  }
+  const useDb = dbEnabled && input.email.length > 0;
+  const cost = input.modules.length * POINTS_PER_IMAGE;
+
+  if (dbEnabled && (await isBanned(input.email, ip))) {
+    return NextResponse.json(
+      { error: "账号或 IP 已被封禁，请联系管理员" },
+      { status: 403 }
+    );
+  }
+  if (useDb) {
+    const ok = await reserveCredits(input.email, cost);
+    if (!ok) {
+      return NextResponse.json({ error: "积分不足，请充值后重试" }, { status: 402 });
+    }
+  }
+
+  gcJobs();
+  const jobId = `aplus-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  JOBS.set(jobId, {
+    status: "pending",
+    stage: "preparing",
+    sources: [],
+    shots: [],
+    done: 0,
+    total: input.modules.length,
+    createdAt: Date.now(),
+  });
+  if (useDb) await addReservation(jobId, input.email, cost);
+  void sweepStaleReservations().catch(() => {});
+  void runAplus(
+    jobId,
+    input.images,
+    input.extra,
+    input.platform,
+    input.lang,
+    input.format,
+    input.modules,
+    input.email,
+    apiKey,
+    model,
+    useDb,
+    cost
+  );
+
+  return NextResponse.json({ jobId, total: input.modules.length, cost });
+}
+
+export async function GET(request: Request) {
+  const jobId = new URL(request.url).searchParams.get("job");
+  if (!jobId) {
+    const { apiKey } = await getOpenAISettings();
+    return NextResponse.json({
+      status: "ok",
+      ready: !!apiKey,
+      db: dbEnabled,
+      storage: storageEnabled,
+    });
+  }
+  const job = JOBS.get(jobId);
+  if (!job) {
+    return NextResponse.json({
+      status: "error",
+      error: "任务不存在或已过期，请重试",
+    });
+  }
+  const shots = job.shots.map((s) => ({
+    id: s.id,
+    role: s.role,
+    label: s.label,
+    ratio: s.ratio,
+    status: s.status,
+    url: s.url ?? null,
+    gradient: s.gradient,
+  }));
+  return NextResponse.json({
+    status: job.status,
+    stage: job.stage,
+    sources: job.sources,
+    done: job.done,
+    total: job.total,
+    shots,
+    user: job.status === "done" ? job.user : undefined,
+    creditsUsed: job.status === "done" ? job.creditsUsed : undefined,
+    error: job.error,
+  });
+}

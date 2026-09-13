@@ -1,0 +1,20 @@
+/node_modules
+/.next/
+/out/
+/build
+/test-results/
+*.tsbuildinfo
+next-env.d.ts
+.env*.local
+.env
+.DS_Store
+npm-debug.log*
+.vercel
+/data
+
+# A+ 首次比例异常的中间对照稿；最终可复用素材在 generated-final/。
+/output/aplus-voss-20260912/generated/
+
+# 本地测试素材/构建产物
+test-views/
+output/

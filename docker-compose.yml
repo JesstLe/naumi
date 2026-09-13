@@ -1,0 +1,68 @@
+# Naumi — one-command self-host: app + bundled Postgres + persistent volumes.
+#   git clone https://github.com/JesstLe/naumi && cd naumi && docker compose up -d
+# Then open http://<server-ip> — the first-run wizard walks you through setup
+# (OpenAI API Key, optional Pro License Key, site name). No code edits needed.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: novaryns
+      # ⚠️ Change this password for any internet-facing deployment.
+      POSTGRES_PASSWORD: novaryns
+      POSTGRES_DB: novaryns
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U novaryns -d novaryns"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_BRAND_NAME: Naumi
+        NEXT_PUBLIC_BRAND_EMAIL: admin@admin.com
+    image: ghcr.io/JesstLe/naumi:latest
+    restart: unless-stopped
+    ports:
+      # Naumi 实例固定走 3012 端口(http://localhost:3012)。
+      # 若 80 已被占用(如装了宝塔/nginx),设 HTTP_PORT=8080 后重跑即可。
+      - "${HTTP_PORT:-3012}:3000"
+    environment:
+      DATABASE_URL: postgres://novaryns:novaryns@db:5432/novaryns?sslmode=disable
+      # 大陆服务器连不上 api.openai.com 时,设为任意 OpenAI 兼容中转地址即可。
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Pi Agent 文本/视觉模型可使用独立的 OpenAI 兼容通道，不影响图片生成配置。
+      AGENT_BASE_URL: ${AGENT_BASE_URL:-}
+      AGENT_API_KEY: ${AGENT_API_KEY:-}
+      AGENT_MODEL: ${AGENT_MODEL:-qwen3.8-flash}
+      AGENT_VISION_MODEL: ${AGENT_VISION_MODEL:-qwen3.8-flash}
+      # AES key for encrypting stored API keys at rest.
+      # ⚠️ Set a long random value BEFORE first run and never change it afterwards.
+      SETTINGS_SECRET: ${SETTINGS_SECRET:-change-me-to-a-long-random-string}
+      # Local disk media storage (no R2 needed). Mounted as a volume below.
+      MEDIA_DIR: /data/media
+      # 自托管 Pro 版(edition.ts 的 license 校验已改为离线通过,不连作者服务器)
+      NAUMI_EDITION: pro
+      PRO_LICENSE_KEY: LOCAL-OFFLINE
+      # 开放本地邮箱+密码注册(原生多用户模式)
+      NAUMI_MULTI_USER: "1"
+      # Agent 工具内部回环调用地址(容器内 app 自身,端口是容器端口非宿主映射)
+      INTERNAL_APP_ORIGIN: http://127.0.0.1:3000
+      # Optional: Pro license (or enter it in the first-run wizard instead)
+      # NAUMI_EDITION: pro
+      # PRO_LICENSE_KEY: NOVA-XXXX-XXXX-XXXX-XXXX
+    volumes:
+      - appdata:/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  appdata:
