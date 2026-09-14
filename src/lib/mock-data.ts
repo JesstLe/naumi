@@ -344,6 +344,7 @@ export type Artwork = {
   canvasY?: number | null;
   groupId?: string | null; // 稳定项目分组:同项目所有节点共享,删节点也不变
   origin?: string | null; // "canvas"=在画布里产出(永远留画布);空=普通产出
+  marked?: boolean; // 画布节点标记:用户手动钉住的重要版本
 };
 
 export const ARTWORKS: Artwork[] = [

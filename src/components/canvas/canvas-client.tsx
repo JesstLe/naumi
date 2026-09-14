@@ -60,6 +60,7 @@ import {
   ShoppingBag,
   Crown,
   Zap,
+  MapPin,
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
@@ -471,6 +472,7 @@ function ArtNode({ data, selected }: NodeProps) {
     date?: string;
     pending?: boolean;
     inChain?: boolean;
+    marked?: boolean;
   };
   const title = d.pending
     ? d.label
@@ -481,6 +483,9 @@ function ArtNode({ data, selected }: NodeProps) {
       <div className="mb-1.5 flex items-center gap-1.5 truncate pl-0.5 text-[12px] text-[#9aa1ae]">
         <span>{d.pending ? "⏳" : "🖼"}</span>
         <span className="truncate">{d.label}</span>
+        {d.marked && (
+          <MapPin className="h-3 w-3 flex-none fill-amber-400 text-amber-400" />
+        )}
         {d.version && (
           <span className="ml-auto flex-none rounded bg-white/10 px-1 text-[10px] font-semibold text-slate-200">
             v{d.version}
@@ -656,6 +661,7 @@ function layoutGraph(
         version: idx + 1, // 项目内按生成时间的版本序号
         prompt: a.prompt,
         date: a.createdAt,
+        marked: !!a.marked,
       },
     };
   });
@@ -1136,6 +1142,7 @@ export function CanvasClient() {
           p.members.length > 1 ||
           p.members.some((m) => m.source && CANVAS_SOURCES.has(m.source)) ||
           p.members.some((m) => m.origin === "canvas") ||
+          p.members.some((m) => m.marked) ||
           names[p.key] != null ||
           // ?node= 深链进来的那张(如抠图「送画布」):即使单张也放行,否则落到空列表
           (pinnedNode != null && p.members.some((m) => m.id === pinnedNode))
@@ -1466,7 +1473,9 @@ export function CanvasClient() {
           Math.round((n.data as { progress?: number }).progress ?? -1)
         }:${(n.data as { uploading?: boolean }).uploading ? 1 : 0}:${
           (n.data as { selected?: boolean }).selected ? 1 : 0
-        }:${(n.data as { generating?: boolean }).generating ? 1 : 0}`
+        }:${(n.data as { generating?: boolean }).generating ? 1 : 0}:${
+          (n.data as { marked?: boolean }).marked ? 1 : 0
+        }`
     )
     .join("|");
   const edgesSig = displayEdges
@@ -1553,6 +1562,32 @@ export function CanvasClient() {
         prev ? prev.map((w) => (w.id === id ? { ...w, title: cur.title } : w)) : prev
       );
       flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
+    }
+  }
+
+  async function toggleNodeMark() {
+    if (!selected || !user || readOnly) return;
+    const id = selected.id;
+    const previous = !!selected.marked;
+    const marked = !previous;
+    setWorks((items) =>
+      items?.map((item) => (item.id === id ? { ...item, marked } : item)) ?? items
+    );
+    try {
+      const response = await privateFetch("/api/artworks/mark", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, marked }),
+      });
+      await expectJsonOk(response, t("canvas.genFail"));
+      flashTip(t(marked ? "canvas.dockMarkedTip" : "canvas.dockUnmarkedTip"));
+    } catch (error) {
+      setWorks((items) =>
+        items?.map((item) =>
+          item.id === id ? { ...item, marked: previous } : item
+        ) ?? items
+      );
+      flashTip(error instanceof Error ? error.message : t("canvas.genFail"));
     }
   }
 
@@ -4431,10 +4466,22 @@ export function CanvasClient() {
                       />
                       <button
                         type="button"
-                        onClick={() => flashTip(t("canvas.dockMarkTip"))}
-                        className="flex items-center gap-1.5 rounded-[10px] border border-[#2a2d36] px-2.5 py-2 text-[12.5px] text-[#e7e9ee] transition-colors hover:bg-[#1f2229]"
+                        onClick={() => void toggleNodeMark()}
+                        aria-pressed={!!selected.marked}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors",
+                          selected.marked
+                            ? "border-amber-400/60 bg-amber-400/10 text-amber-200"
+                            : "border-[#2a2d36] text-[#e7e9ee] hover:bg-[#1f2229]"
+                        )}
                       >
-                        📍 {t("canvas.dockMark")}
+                        <MapPin
+                          className={cn(
+                            "h-3.5 w-3.5",
+                            selected.marked && "fill-current"
+                          )}
+                        />
+                        {t(selected.marked ? "canvas.dockUnmark" : "canvas.dockMark")}
                       </button>
                       <button
                         type="button"

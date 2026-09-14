@@ -1,5 +1,9 @@
 import "server-only";
 import crypto from "crypto";
+import {
+  decryptWechatResource,
+  verifyWechatNotifySignature,
+} from "./wechatpay-crypto";
 
 // ---------------------------------------------------------------------------
 // 原生微信支付 Native v3(扫码支付)对接。全站统一走原生收款。
@@ -10,8 +14,8 @@ import crypto from "crypto";
 //      serial_no="<商户证书序列号>",signature="<sign>"
 //    签名串 = `METHOD\nURL\ntimestamp\nnonce\nbody\n`,用商户 API 私钥
 //    (apiclient_key.pem)RSA-SHA256 签 base64。
-//  - 回调:resource 用 APIv3 key 做 AES-256-GCM 解密;平台证书验签为「尽力而为」
-//    (拉不到平台证书时降级为「解密成功 + 金额匹配」,见 verifyAndDecryptWxNotify)。
+//  - 回调:先按 Wechatpay-Serial 获取/刷新平台证书并做 RSA-SHA256 验签，
+//    验签通过后再用 APIv3 key 对 resource 做 AES-256-GCM 解密。
 // ---------------------------------------------------------------------------
 
 const WXPAY_API_BASE = "https://api.mch.weixin.qq.com";
@@ -109,30 +113,6 @@ export async function wechatNativePrecreate(
   return { ok: false, error: data?.message || "微信下单失败" };
 }
 
-/** AES-256-GCM 解密微信回调 resource。失败抛错。 */
-function decryptResource(
-  apiV3Key: string,
-  resource: { ciphertext: string; nonce: string; associated_data?: string }
-): string {
-  const key = Buffer.from(apiV3Key, "utf8"); // APIv3 key 必须是 32 字节
-  const cipherBuf = Buffer.from(resource.ciphertext, "base64");
-  // GCM 认证标签是密文最后 16 字节。
-  const authTag = cipherBuf.subarray(cipherBuf.length - 16);
-  const data = cipherBuf.subarray(0, cipherBuf.length - 16);
-  const decipher = crypto.createDecipheriv(
-    "aes-256-gcm",
-    key,
-    Buffer.from(resource.nonce, "utf8")
-  );
-  decipher.setAuthTag(authTag);
-  if (resource.associated_data) {
-    decipher.setAAD(Buffer.from(resource.associated_data, "utf8"));
-  }
-  return Buffer.concat([decipher.update(data), decipher.final()]).toString(
-    "utf8"
-  );
-}
-
 export type WxNotifyDecrypted = {
   ok: boolean;
   outTradeNo?: string;
@@ -142,22 +122,156 @@ export type WxNotifyDecrypted = {
   error?: string;
 };
 
+type PlatformCertificate = {
+  serial: string;
+  pem: string;
+  effectiveAt: number;
+  expiresAt: number;
+  cachedAt: number;
+};
+
+const PLATFORM_CERTIFICATES = new Map<string, PlatformCertificate>();
+const CERT_CACHE_TTL = 12 * 60 * 60 * 1000;
+
+async function refreshPlatformCertificates(cfg: WxpayConfig): Promise<void> {
+  const urlPath = "/v3/certificates";
+  const response = await fetch(`${WXPAY_API_BASE}${urlPath}`, {
+    method: "GET",
+    headers: {
+      Authorization: buildAuthorization(cfg, "GET", urlPath, ""),
+      Accept: "application/json",
+      "User-Agent": "naumi-native-pay",
+    },
+    cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
+  });
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(`平台证书获取失败 ${response.status}: ${raw.slice(0, 300)}`);
+  }
+  const parsed = JSON.parse(raw) as {
+    data?: {
+      serial_no?: string;
+      effective_time?: string;
+      expire_time?: string;
+      encrypt_certificate?: {
+        ciphertext?: string;
+        nonce?: string;
+        associated_data?: string;
+      };
+    }[];
+  };
+  const now = Date.now();
+  let added = 0;
+  for (const item of parsed.data ?? []) {
+    const encrypted = item.encrypt_certificate;
+    if (!item.serial_no || !encrypted?.ciphertext || !encrypted.nonce) continue;
+    const pem = decryptWechatResource(cfg.apiV3Key, {
+      ciphertext: encrypted.ciphertext,
+      nonce: encrypted.nonce,
+      associated_data: encrypted.associated_data,
+    });
+    const effectiveAt = Date.parse(item.effective_time ?? "");
+    const expiresAt = Date.parse(item.expire_time ?? "");
+    PLATFORM_CERTIFICATES.set(`${cfg.mchid}:${item.serial_no.toUpperCase()}`, {
+      serial: item.serial_no.toUpperCase(),
+      pem,
+      effectiveAt: Number.isFinite(effectiveAt) ? effectiveAt : 0,
+      expiresAt: Number.isFinite(expiresAt) ? expiresAt : now + CERT_CACHE_TTL,
+      cachedAt: now,
+    });
+    added++;
+  }
+  if (added === 0) throw new Error("平台证书接口未返回可用证书");
+}
+
+async function getPlatformCertificate(
+  cfg: WxpayConfig,
+  serial: string,
+  forceRefresh = false
+): Promise<PlatformCertificate | null> {
+  const key = `${cfg.mchid}:${serial.toUpperCase()}`;
+  const now = Date.now();
+  const cached = PLATFORM_CERTIFICATES.get(key);
+  if (
+    !forceRefresh &&
+    cached &&
+    now >= cached.effectiveAt &&
+    now < cached.expiresAt &&
+    now - cached.cachedAt < CERT_CACHE_TTL
+  ) {
+    return cached;
+  }
+  await refreshPlatformCertificates(cfg);
+  const refreshed = PLATFORM_CERTIFICATES.get(key) ?? null;
+  if (
+    refreshed &&
+    now >= refreshed.effectiveAt &&
+    now < refreshed.expiresAt
+  ) {
+    return refreshed;
+  }
+  return null;
+}
+
 /**
  * 验签 + 解密微信回调。
- *  ① 用 APIv3 key 对 resource 做 AES-256-GCM 解密,得明文 JSON。
- *  ② 平台证书验签为「尽力而为」:需调 /v3/certificates 拉平台证书并用 APIv3 key
- *     解密缓存,再用对应公钥验 Wechatpay-Signature。本实现暂未拉平台证书,故
- *     降级为「解密成功 + (上层)订单金额匹配」即视为可信。
- *
- *  TODO(生产环境必做):接入 /v3/certificates 拉取并缓存平台证书,在此对
- *  Wechatpay-Timestamp / Wechatpay-Nonce / body 组成的验签串用平台证书公钥
- *  做 RSA-SHA256 验签,开启完整验签后再放行履约。
+ *  ① 校验回调必需头、时间戳与平台证书序列号。
+ *  ② 拉取并缓存微信支付平台证书，按证书序列号做 RSA-SHA256 验签。
+ *  ③ 验签通过后才用 APIv3 key 对 resource 做 AES-256-GCM 解密。
  */
-export function verifyAndDecryptWxNotify(
-  apiV3Key: string,
-  _headers: Headers,
+export async function verifyAndDecryptWxNotify(
+  cfg: WxpayConfig,
+  headers: Headers,
   rawBody: string
-): WxNotifyDecrypted {
+): Promise<WxNotifyDecrypted> {
+  if (Buffer.byteLength(cfg.apiV3Key, "utf8") !== 32) {
+    return { ok: false, error: "APIv3 密钥必须为 32 字节" };
+  }
+  const timestamp = headers.get("Wechatpay-Timestamp") ?? "";
+  const nonce = headers.get("Wechatpay-Nonce") ?? "";
+  const signature = headers.get("Wechatpay-Signature") ?? "";
+  const serial = headers.get("Wechatpay-Serial") ?? "";
+  if (!timestamp || !nonce || !signature || !serial) {
+    return { ok: false, error: "回调缺少微信支付验签头" };
+  }
+  const timestampSeconds = Number(timestamp);
+  if (
+    !Number.isFinite(timestampSeconds) ||
+    Math.abs(Date.now() - timestampSeconds * 1000) > 10 * 60 * 1000
+  ) {
+    return { ok: false, error: "回调时间戳无效或已过期" };
+  }
+  try {
+    let certificate = await getPlatformCertificate(cfg, serial);
+    let verified =
+      !!certificate &&
+      verifyWechatNotifySignature(
+        certificate.pem,
+        timestamp,
+        nonce,
+        rawBody,
+        signature
+      );
+    if (!verified) {
+      certificate = await getPlatformCertificate(cfg, serial, true);
+      verified =
+        !!certificate &&
+        verifyWechatNotifySignature(
+          certificate.pem,
+          timestamp,
+          nonce,
+          rawBody,
+          signature
+        );
+    }
+    if (!verified) return { ok: false, error: "微信支付回调签名无效" };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "平台证书校验失败",
+    };
+  }
   let parsed: {
     resource?: {
       ciphertext?: string;
@@ -174,10 +288,9 @@ export function verifyAndDecryptWxNotify(
   if (!res?.ciphertext || !res.nonce) {
     return { ok: false, error: "回调缺少 resource" };
   }
-  // TODO: 在此用平台证书对 _headers 里的 Wechatpay-Signature 做完整验签。
   let plain: string;
   try {
-    plain = decryptResource(apiV3Key, {
+    plain = decryptWechatResource(cfg.apiV3Key, {
       ciphertext: res.ciphertext,
       nonce: res.nonce,
       associated_data: res.associated_data,

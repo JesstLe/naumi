@@ -35,7 +35,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 3. retouch_product:商品精修。参数 image_url、options(数组)、text。计费 6 积分。
 4. recolor_product:产品换色。参数 image_url、color(如 #27AE60)、strength(20-100)。计费 6 积分。
 5. replicate_hot:爆款复刻。参数 product_image_url、reference_image_url、degree(high/style)、text。计费 6 积分。
-6. generate_suite:一键电商套图(13 张,约 3-6 分钟,计费 78)。参数 image_url(多张逗号分隔)、platform、text。
+6. generate_suite:一键电商套图。默认智能生成 13 张；用户指定数量/版式时传 structure=custom 与 shots。每张 6 积分。
  7. generate_aplus:A+ 第一步，只提取白底商品母图并返回待审核图片与 job_id。参数 image_url、platform、lang、format、modules(数组)、text。
  8. review_aplus_source:审核一张母图。approve=通过；redo=带用户要求只重做这一张。
  9. continue_aplus_generation:全部母图通过后继续生成 A+，此时计费=模块数×6。
@@ -575,21 +575,51 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       name: "generate_suite",
       label: "一键电商套图",
       description:
-        "一键电商套图:1 主图 + 4 副图 + 8 详情页,约 3-6 分钟,计费 78 积分。耗时工具,先提醒用户等待。",
+        "一键电商套图:默认 1 主图 + 4 副图 + 8 详情页；也可按用户要求自定义每张的类型、标题、比例与内容。每张 6 积分。",
       parameters: Type.Object({
         image_url: Type.String({
           description: "商品图 URL(可上传正面/侧面/背面多张,用逗号分隔)",
         }),
-        platform: Type.Union(
+        platform: Type.Optional(Type.Union(
           [
             Type.Literal("taobao"),
+            Type.Literal("douyin"),
             Type.Literal("amazon"),
             Type.Literal("pdd"),
-            Type.Literal("independent"),
+            Type.Literal("xhs"),
+            Type.Literal("global"),
           ],
           { description: "上架平台,默认 taobao" }
+        )),
+        text: Type.Optional(Type.String({ description: "主标题与卖点文案" })),
+        structure: Type.Optional(
+          Type.Union([Type.Literal("auto"), Type.Literal("custom")], {
+            description: "auto=智能 13 张；custom=严格按 shots 生成",
+          })
         ),
-        text: Type.String({ description: "主标题与卖点文案,选填" }),
+        shots: Type.Optional(
+          Type.Array(
+            Type.Object({
+              role: Type.Union([
+                Type.Literal("main"),
+                Type.Literal("sub"),
+                Type.Literal("detail"),
+              ]),
+              label: Type.String({ description: "图片标题" }),
+              ratio: Type.Union([
+                Type.Literal("1:1"),
+                Type.Literal("3:4"),
+                Type.Literal("4:3"),
+                Type.Literal("16:9"),
+                Type.Literal("9:16"),
+              ]),
+              instruction: Type.Optional(
+                Type.String({ description: "该张内容或版式要求" })
+              ),
+            }),
+            { description: "自定义图片清单，1-20 张" }
+          )
+        ),
       }),
       executionMode: "sequential",
       execute: async (_id, params, signal) => {
@@ -597,12 +627,22 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           image_url: string;
           platform?: string;
           text?: string;
+          structure?: "auto" | "custom";
+          shots?: {
+            role: "main" | "sub" | "detail";
+            label: string;
+            ratio: string;
+            instruction?: string;
+          }[];
         };
         const fd = new FormData();
         const urls = p.image_url.split(",").map((u) => u.trim()).filter(Boolean);
         for (const u of urls) fd.append("image", await urlToFile(u, signal));
         fd.append("platform", p.platform || "taobao");
         if (p.text) fd.append("text", p.text);
+        const custom = p.structure === "custom" && (p.shots?.length ?? 0) > 0;
+        fd.append("structure", custom ? "custom" : "auto");
+        if (custom) fd.append("shots", JSON.stringify(p.shots!.slice(0, 20)));
         const d = await withToolTimeout(
           "generate_suite",
           async () => {

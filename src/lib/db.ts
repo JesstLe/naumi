@@ -84,6 +84,7 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_x double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_y double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS origin text;
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS marked boolean NOT NULL DEFAULT false;
         -- 稳定项目分组:同一画布项目的所有节点共享 group_id,删中间节点也不改它,
         -- 避免"删一个连接节点 → 下游节点跑去别的项目"。
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS group_id text;
@@ -1789,6 +1790,7 @@ export type ArtworkRecord = {
   canvasY?: number | null;
   groupId?: string | null; // 稳定项目分组:同项目所有节点共享,删节点也不变
   origin?: string | null; // 来源场景:"canvas"=在画布里产出(永远留画布);空=生图页/工具等普通产出
+  marked?: boolean;
 };
 
 export async function addArtworks(
@@ -1856,7 +1858,7 @@ export async function listArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, group_id, origin, created_at
+            parent_ids, canvas_x, canvas_y, group_id, origin, marked, created_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NULL
       ORDER BY created_at DESC LIMIT 1000`,
@@ -1882,6 +1884,7 @@ export async function listArtworks(
     canvasY: r.canvas_y ?? null,
     groupId: r.group_id ?? null,
     origin: r.origin ?? null,
+    marked: !!r.marked,
     createdAt: new Date(r.created_at).toISOString(),
   }));
 }
@@ -1898,7 +1901,7 @@ export async function listArtworksByIds(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, group_id, origin, created_at
+            parent_ids, canvas_x, canvas_y, group_id, origin, marked, created_at
        FROM app_artworks
       WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), clean]
@@ -1923,6 +1926,7 @@ export async function listArtworksByIds(
     canvasY: r.canvas_y ?? null,
     groupId: r.group_id ?? null,
     origin: r.origin ?? null,
+    marked: !!r.marked,
     createdAt: new Date(r.created_at).toISOString(),
   }));
 }
@@ -2105,6 +2109,21 @@ export async function setArtworkPosition(
     `UPDATE app_artworks SET canvas_x = $3, canvas_y = $4 WHERE email = $1 AND id = $2`,
     [emailRaw.toLowerCase(), id, x, y]
   );
+}
+
+// 画布用:标记/取消标记某个重要节点(email 限定)。
+export async function setArtworkMarked(
+  emailRaw: string,
+  id: string,
+  marked: boolean
+): Promise<boolean> {
+  await ensureSchema();
+  if (!id) return false;
+  const result = await getPool().query(
+    `UPDATE app_artworks SET marked = $3 WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
+    [emailRaw.toLowerCase(), id, marked]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 // 给某节点追加一个父节点(多输入):合并进 parent_ids(去重,排除自身)。
@@ -2290,7 +2309,7 @@ export async function listDeletedArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, group_id, origin, created_at, deleted_at
+            parent_ids, canvas_x, canvas_y, group_id, origin, marked, created_at, deleted_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NOT NULL
       ORDER BY deleted_at DESC LIMIT 200`,
@@ -2316,6 +2335,7 @@ export async function listDeletedArtworks(
     canvasY: r.canvas_y ?? null,
     groupId: r.group_id ?? null,
     origin: r.origin ?? null,
+    marked: !!r.marked,
     createdAt: new Date(r.created_at).toISOString(),
   }));
 }

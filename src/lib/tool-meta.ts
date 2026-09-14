@@ -77,8 +77,8 @@ export const TOOLS: ToolMeta[] = [
   },
   {
     key: "一键套图", en: "Image suite", slug: "suite", href: "/suite", category: "生成创作",
-    Icon: Layers, desc: "上传产品图,自动出主图+详情页全套电商图",
-    action: "生成套图", cost: 20, ctrls: [], workspace: true, live: true, inMenu: true,
+    Icon: Layers, desc: "上传产品图,智能匹配或自定义主图、副图和详情页",
+    action: "生成套图", cost: 78, ctrls: [], workspace: true, live: true, inMenu: true,
   },
   {
     key: "Agent 任务", en: "Agent tasks", slug: "agent", href: "/agent", category: "生成创作",

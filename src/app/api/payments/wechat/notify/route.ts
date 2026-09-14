@@ -22,14 +22,30 @@ export async function POST(req: Request) {
     return fail("数据库未配置", 400);
   }
 
-  const { wxpayApiv3 } = await getPaymentSettings();
-  if (!wxpayApiv3) {
+  const payment = await getPaymentSettings();
+  if (
+    !payment.wxpayMchid ||
+    !payment.wxpayApiv3 ||
+    !payment.wxpayCert ||
+    !payment.wxpayCertSerial ||
+    !payment.wxpayAppid
+  ) {
     return fail("微信支付未配置", 500);
   }
 
   const rawBody = await req.text();
-  // ① 解密(平台证书验签为尽力而为,见库内 TODO)
-  const decrypted = verifyAndDecryptWxNotify(wxpayApiv3, req.headers, rawBody);
+  // ① 平台证书验签通过后再解密，任何证书/签名失败均拒绝履约。
+  const decrypted = await verifyAndDecryptWxNotify(
+    {
+      mchid: payment.wxpayMchid,
+      apiV3Key: payment.wxpayApiv3,
+      privateKey: payment.wxpayCert,
+      certSerial: payment.wxpayCertSerial,
+      appid: payment.wxpayAppid,
+    },
+    req.headers,
+    rawBody
+  );
   if (!decrypted.ok || !decrypted.outTradeNo) {
     return fail(decrypted.error || "回调验签/解密失败", 400);
   }

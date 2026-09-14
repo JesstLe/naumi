@@ -1,6 +1,6 @@
 # Naumi Agent 实现状态
 
-> 更新:2026-09-14 · 状态:Pi 编排、浅色 UI、安全恢复链路与 A+ 母图审核已完成
+> 更新:2026-09-14 · 状态:Pi 编排、浅色 UI、安全恢复链路、A+ 母图审核与自定义套图已完成
 
 ## 目标
 
@@ -22,14 +22,14 @@ api/agent/route.ts ──► lib/agent/runtime.ts(常驻会话管理)
    │                        │  beforeToolCall 积分预检
    │                        │  事件环形缓冲(公开摘要)
    │                        ▼
-   │                   lib/agent/naumi-tools.ts(12 个 AgentTool)
+   │                   lib/agent/naumi-tools.ts(13 个 AgentTool)
    │                        │  内部 HTTP 调站内 API(透传 cookie+authorization)
    ▼                        ▼
 各工具 API(generate-image/retouch/recolor/replicate/suite/aplus/templates/account)
    → 鉴权(resolveUserEmail)、限流、积分预扣/退还、作品库归档全部复用原有逻辑
 ```
 
-## 工具清单(12 个)
+## 工具清单(13 个)
 
 | 工具 | 类型 | 计费 |
 |---|---|---|
@@ -41,10 +41,11 @@ api/agent/route.ts ──► lib/agent/runtime.ts(常驻会话管理)
 | retouch_product | 写 | 6 |
 | recolor_product | 写 | 6 |
 | replicate_hot | 写 | 6 |
-| generate_suite | 写 | 78 |
+| generate_suite | 写 | 智能模式 78；自定义模式图片数 × 6 |
 | generate_aplus | A+ 母图准备 | 0 |
 | review_aplus_source | A+ 单张审核/重做 | 0 |
 | continue_aplus_generation | A+ 模块生成 | 模块数 × 6 |
+| generate_packaging_3d | 写 | 1K/2K=9；4K=18 |
 
 ## 已实现
 
@@ -72,6 +73,8 @@ api/agent/route.ts ──► lib/agent/runtime.ts(常驻会话管理)
   文字和版式;未通过时给出可执行重做建议
 - A+ 审核闭环:`generate_aplus` 只准备母图并暂停；`review_aplus_source` 支持逐张
   通过或携带用户要求重做；全部明确通过后，`continue_aplus_generation` 才会计费出图
+- 自定义套图:`generate_suite` 支持按用户要求传 1-20 张图片清单，逐张指定主图/副图/
+  详情、标题、比例和单图要求；Agent 预检与后端实际费用均按图片数动态计算
 - 恢复闭环:错误按认证/积分/网络/超时/参数/模型分类,给出对应恢复动作;
   同参数连续调用 3 次会被硬阻断,收费写请求不会自动重放
 

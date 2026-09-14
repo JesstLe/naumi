@@ -85,6 +85,13 @@ test("canvas browser workflow", async ({ context, page }) => {
   await nodeRename.press("Enter");
   await expect(page.getByText(nodeName, { exact: true })).toBeVisible();
 
+  await page.getByRole("button", { name: "标记", exact: true }).click();
+  await expect(page.getByRole("button", { name: "取消标记", exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const marked = (await account()).artworks.find((work: { id: string }) => work.id === rootId);
+    return marked?.marked;
+  }).toBe(true);
+
   const beforeDrag = (await account()).artworks.find((work: { id: string }) => work.id === rootId);
   const box = await page.locator(`.react-flow__node[data-id="${rootId}"]`).boundingBox();
   expect(box).toBeTruthy();
@@ -168,5 +175,7 @@ test("canvas browser workflow", async ({ context, page }) => {
   await page.reload();
   await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
   await expect(page.getByText(nodeName, { exact: true })).toBeVisible();
+  await page.locator(`.react-flow__node[data-id="${rootId}"]`).click();
+  await expect(page.getByRole("button", { name: "取消标记", exact: true })).toBeVisible();
   await clean();
 });

@@ -17,6 +17,10 @@ import {
   Clock,
   Check,
   Wand2,
+  Plus,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
 import { authHeader } from "@/lib/supabase";
@@ -31,7 +35,7 @@ import { Media } from "@/components/media";
 import { RecordPager, RECORDS_PER_PAGE } from "@/components/tools/record-pager";
 import { GenLoader } from "@/components/gen-loader";
 import { downloadImage } from "@/lib/download";
-import { SUITE_PLATFORMS } from "@/lib/mock-data";
+import { POINTS_PER_IMAGE, SUITE_PLATFORMS } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
 function fmt(s: string, vars: Record<string, string | number>): string {
@@ -45,6 +49,9 @@ const MAX_UPLOAD = 12 * 1024 * 1024;
 const RATIO_ASPECT: Record<string, string> = {
   "1:1": "aspect-square",
   "3:4": "aspect-[3/4]",
+  "4:3": "aspect-[4/3]",
+  "16:9": "aspect-video",
+  "9:16": "aspect-[9/16]",
 };
 
 type Shot = {
@@ -56,6 +63,40 @@ type Shot = {
   url: string | null;
   gradient: string;
 };
+
+type CustomShot = {
+  id: string;
+  role: Shot["role"];
+  label: string;
+  ratio: string;
+  instruction: string;
+};
+
+const CUSTOM_DEFAULTS: Omit<CustomShot, "id">[] = [
+  { role: "main", label: "营销主图", ratio: "1:1", instruction: "产品主体完整，核心卖点醒目" },
+  { role: "sub", label: "核心卖点", ratio: "1:1", instruction: "突出最重要的功能或优势" },
+  { role: "sub", label: "细节特写", ratio: "1:1", instruction: "展示材质、做工或关键细节" },
+  { role: "detail", label: "使用场景", ratio: "3:4", instruction: "展示真实使用方式与适用场景" },
+  { role: "detail", label: "规格参数", ratio: "3:4", instruction: "信息清晰，避免臆造参数" },
+];
+
+function makeCustomShot(
+  role: CustomShot["role"] = "sub",
+  index = 0
+): CustomShot {
+  return {
+    id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    label:
+      role === "main"
+        ? "营销主图"
+        : role === "detail"
+          ? `详情图 ${index + 1}`
+          : `副图 ${index + 1}`,
+    ratio: role === "detail" ? "3:4" : "1:1",
+    instruction: "",
+  };
+}
 
 /* ── 套图示例展示:真实商品「原图 → 带标签结果宫格」,双商品可切换 ──
    对标竞品(product-set)的示例形态:黑底标签标注每张结果的商业用途,
@@ -238,9 +279,55 @@ export function SuiteClient() {
     prompt?: string;
   } | null>(null);
 
-  const cost = 78; // 13 × 6 积分(1K 档)
-  // 套图结构:smart=智能匹配(默认,当前唯一可用);custom=自定义(即将上线)。
+  // 套图结构:智能匹配固定 13 张；自定义按用户实际配置逐张计费。
   const [structure, setStructure] = useState<"auto" | "custom">("auto");
+  const [customShots, setCustomShots] = useState<CustomShot[]>(() =>
+    CUSTOM_DEFAULTS.map((item, index) => ({
+      ...item,
+      id: `custom-initial-${index}`,
+    }))
+  );
+  const shotCount = structure === "custom" ? customShots.length : 13;
+  const cost = shotCount * POINTS_PER_IMAGE;
+  const customCounts = customShots.reduce(
+    (counts, shot) => ({ ...counts, [shot.role]: counts[shot.role] + 1 }),
+    { main: 0, sub: 0, detail: 0 }
+  );
+
+  function updateCustomShot(id: string, patch: Partial<CustomShot>) {
+    setCustomShots((items) =>
+      items.map((item) => {
+        if (item.id !== id) return item;
+        const next = { ...item, ...patch };
+        if (patch.role && !patch.ratio) {
+          next.ratio = patch.role === "detail" ? "3:4" : "1:1";
+        }
+        return next;
+      })
+    );
+  }
+
+  function addCustomShot(role: CustomShot["role"]) {
+    setCustomShots((items) =>
+      items.length >= 20 ? items : [...items, makeCustomShot(role, items.length)]
+    );
+  }
+
+  function removeCustomShot(id: string) {
+    setCustomShots((items) =>
+      items.length <= 1 ? items : items.filter((item) => item.id !== id)
+    );
+  }
+
+  function moveCustomShot(index: number, direction: -1 | 1) {
+    setCustomShots((items) => {
+      const target = index + direction;
+      if (target < 0 || target >= items.length) return items;
+      const next = [...items];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
 
   useEffect(() => {
     return () => {
@@ -294,6 +381,20 @@ export function SuiteClient() {
         .join("；");
       if (copy) fd.append("text", copy);
       fd.append("platform", platform);
+      fd.append("structure", structure);
+      if (structure === "custom") {
+        fd.append(
+          "shots",
+          JSON.stringify(
+            customShots.map(({ role, label, ratio, instruction }) => ({
+              role,
+              label: label.trim(),
+              ratio,
+              instruction: instruction.trim(),
+            }))
+          )
+        );
+      }
       fd.append("email", user.email);
       const res = await fetch("/api/suite", {
         method: "POST",
@@ -309,9 +410,10 @@ export function SuiteClient() {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(async () => {
         try {
-          const r = await fetch(`/api/suite?job=${jobId}`, {
-            cache: "no-store",
-          });
+        const r = await fetch(`/api/suite?job=${jobId}`, {
+          cache: "no-store",
+          headers: await authHeader(),
+        });
           const s = await r.json();
           if (Array.isArray(s.shots)) setShots(s.shots);
           if (typeof s.done === "number") setDone(s.done);
@@ -627,7 +729,7 @@ export function SuiteClient() {
           <p className="text-xs text-muted-foreground">{t("suite.textHint")}</p>
         </div>
 
-        {/* 套图结构配置:智能匹配(默认)/ 自定义(即将上线)——对标竞品的结构可控感 */}
+        {/* 套图结构配置:智能匹配 / 自定义逐张编排。 */}
         <div className="space-y-2">
           <label className="text-sm font-medium">
             {L("套图结构配置", "Suite structure")}
@@ -669,13 +771,26 @@ export function SuiteClient() {
             </button>
             <button
               type="button"
-              disabled
-              className="relative flex w-full cursor-not-allowed items-start gap-3 rounded-xl border border-border p-3 text-left opacity-60"
+              onClick={() => setStructure("custom")}
+              className={cn(
+                "flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors",
+                structure === "custom"
+                  ? "border-primary/60 bg-primary/5"
+                  : "border-border hover:bg-secondary/40"
+              )}
             >
-              <span className="absolute right-2.5 top-2.5 rounded-[5px] bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {L("即将上线", "Coming soon")}
+              <span
+                className={cn(
+                  "mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded-full border",
+                  structure === "custom"
+                    ? "border-primary"
+                    : "border-muted-foreground/40"
+                )}
+              >
+                {structure === "custom" && (
+                  <span className="h-2 w-2 rounded-full bg-primary" />
+                )}
               </span>
-              <span className="mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded-full border border-muted-foreground/40" />
               <span className="min-w-0">
                 <span className="block text-[13.5px] font-semibold text-c-text">
                   {L("自定义配置", "Custom")}
@@ -689,12 +804,143 @@ export function SuiteClient() {
               </span>
             </button>
           </div>
+
+          {structure === "custom" && (
+            <div className="space-y-2 border-l-2 border-primary/25 pl-3 pt-1">
+              <div className="flex items-center justify-between text-[11.5px] text-muted-foreground">
+                <span>
+                  {customShots.length} {L("张", "shots")} · {L("拖动顺序按上下按钮调整", "Use arrows to reorder")}
+                </span>
+                <span>{L("最多 20 张", "Up to 20")}</span>
+              </div>
+              {customShots.map((shot, index) => (
+                <div
+                  key={shot.id}
+                  data-testid={`custom-shot-${index + 1}`}
+                  className="border border-c-border bg-c-subtle2 p-2.5"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 text-center text-[11px] font-semibold text-c-text3">
+                      {index + 1}
+                    </span>
+                    <select
+                      value={shot.role}
+                      onChange={(event) =>
+                        updateCustomShot(shot.id, {
+                          role: event.target.value as CustomShot["role"],
+                        })
+                      }
+                      aria-label={L(`第 ${index + 1} 张类型`, `Shot ${index + 1} role`)}
+                      className="h-8 border border-c-border bg-white px-2 text-[12px] outline-none focus:border-primary"
+                    >
+                      <option value="main">{L("主图", "Hero")}</option>
+                      <option value="sub">{L("副图", "Sub")}</option>
+                      <option value="detail">{L("详情", "Detail")}</option>
+                    </select>
+                    <select
+                      value={shot.ratio}
+                      onChange={(event) =>
+                        updateCustomShot(shot.id, { ratio: event.target.value })
+                      }
+                      aria-label={L(`第 ${index + 1} 张画幅`, `Shot ${index + 1} ratio`)}
+                      className="h-8 border border-c-border bg-white px-2 text-[12px] outline-none focus:border-primary"
+                    >
+                      {["1:1", "3:4", "4:3", "16:9", "9:16"].map((ratio) => (
+                        <option key={ratio} value={ratio}>{ratio}</option>
+                      ))}
+                    </select>
+                    <div className="ml-auto flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => moveCustomShot(index, -1)}
+                        disabled={index === 0}
+                        aria-label={L("上移", "Move up")}
+                        className="grid h-7 w-7 place-items-center text-c-text3 hover:bg-white hover:text-c-text disabled:opacity-25"
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveCustomShot(index, 1)}
+                        disabled={index === customShots.length - 1}
+                        aria-label={L("下移", "Move down")}
+                        className="grid h-7 w-7 place-items-center text-c-text3 hover:bg-white hover:text-c-text disabled:opacity-25"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeCustomShot(shot.id)}
+                        disabled={customShots.length === 1}
+                        aria-label={L("删除", "Delete")}
+                        className="grid h-7 w-7 place-items-center text-c-text3 hover:bg-red-50 hover:text-red-600 disabled:opacity-25"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    value={shot.label}
+                    maxLength={40}
+                    onChange={(event) =>
+                      updateCustomShot(shot.id, { label: event.target.value })
+                    }
+                    aria-label={L(`第 ${index + 1} 张标题`, `Shot ${index + 1} title`)}
+                    placeholder={L("图片标题", "Shot title")}
+                    className="mt-2 h-8 w-full border border-c-border bg-white px-2.5 text-[12px] outline-none focus:border-primary"
+                  />
+                  <input
+                    value={shot.instruction}
+                    maxLength={240}
+                    onChange={(event) =>
+                      updateCustomShot(shot.id, { instruction: event.target.value })
+                    }
+                    aria-label={L(`第 ${index + 1} 张要求`, `Shot ${index + 1} instruction`)}
+                    placeholder={L("这张图的内容或版式要求（选填）", "Content or layout requirement (optional)")}
+                    className="mt-2 h-8 w-full border border-c-border bg-white px-2.5 text-[12px] outline-none focus:border-primary"
+                  />
+                </div>
+              ))}
+              <div className="grid grid-cols-3 gap-1.5">
+                {(["main", "sub", "detail"] as const).map((role) => (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => addCustomShot(role)}
+                    disabled={customShots.length >= 20}
+                    aria-label={
+                      role === "main"
+                        ? L("新增主图", "Add hero")
+                        : role === "sub"
+                          ? L("新增副图", "Add sub")
+                          : L("新增详情图", "Add detail")
+                    }
+                    className="inline-flex h-8 items-center justify-center gap-1 border border-dashed border-c-border bg-white text-[11.5px] text-c-text3 hover:border-primary/50 hover:text-c-text disabled:opacity-40"
+                  >
+                    <Plus className="h-3 w-3" />
+                    {role === "main"
+                      ? L("主图", "Hero")
+                      : role === "sub"
+                        ? L("副图", "Sub")
+                        : L("详情", "Detail")}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl bg-secondary/50 px-4 py-3 text-sm">
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">{t("suite.output")}</span>
-            <span className="font-medium">{t("suite.outputDetail")}</span>
+            <span className="font-medium">
+              {structure === "auto"
+                ? t("suite.outputDetail")
+                : L(
+                    `${customCounts.main} 主图 + ${customCounts.sub} 副图 + ${customCounts.detail} 详情`,
+                    `${customCounts.main} hero + ${customCounts.sub} sub + ${customCounts.detail} detail`
+                  )}
+            </span>
           </div>
           <div className="mt-2 flex items-center justify-between">
             <span className="text-muted-foreground">{t("suite.costLabel")}</span>
@@ -728,7 +974,7 @@ export function SuiteClient() {
           )}
           {loading
             ? fmt(t("suite.generating"), { done, total })
-            : `${L("生成商品套图", "Generate product suite")}（${L("预计", "~")}${cost} ${t("suite.creditsUnit")}）`}
+            : `${L("生成商品套图", "Generate product suite")}（${L("预计", "~")}${fmt(t("suite.creditsUnit"), { n: cost })}）`}
         </Button>
 
         <p className="text-xs leading-relaxed text-muted-foreground">
@@ -815,40 +1061,56 @@ export function SuiteClient() {
               )}
             </div>
 
-            {(["main", "sub", "detail"] as const).map((role) => {
-              const list = group(role);
-              if (list.length === 0 && !loading) return null;
-              return (
-                <div key={role} className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {role === "main"
-                      ? t("suite.groupMain")
-                      : role === "sub"
-                        ? t("suite.groupSub")
-                        : t("suite.groupDetail")}
-                  </p>
-                  <div
-                    className={cn(
-                      "grid gap-3",
-                      role === "main"
-                        ? "grid-cols-2 sm:grid-cols-3"
-                        : role === "sub"
-                          ? "grid-cols-2 sm:grid-cols-4"
-                          : "grid-cols-2 sm:grid-cols-4"
-                    )}
-                  >
-                    {list.map((s) => (
-                      <ShotCard
-                        key={s.id}
-                        shot={s}
-                        t={t}
-                        onView={() => setViewing(s)}
-                      />
-                    ))}
-                  </div>
+            {structure === "custom" ? (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {L("自定义顺序", "Custom order")}
+                </p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {shots.map((s) => (
+                    <ShotCard
+                      key={s.id}
+                      shot={s}
+                      t={t}
+                      onView={() => setViewing(s)}
+                    />
+                  ))}
                 </div>
-              );
-            })}
+              </div>
+            ) : (
+              (["main", "sub", "detail"] as const).map((role) => {
+                const list = group(role);
+                if (list.length === 0 && !loading) return null;
+                return (
+                  <div key={role} className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {role === "main"
+                        ? t("suite.groupMain")
+                        : role === "sub"
+                          ? t("suite.groupSub")
+                          : t("suite.groupDetail")}
+                    </p>
+                    <div
+                      className={cn(
+                        "grid gap-3",
+                        role === "main"
+                          ? "grid-cols-2 sm:grid-cols-3"
+                          : "grid-cols-2 sm:grid-cols-4"
+                      )}
+                    >
+                      {list.map((s) => (
+                        <ShotCard
+                          key={s.id}
+                          shot={s}
+                          t={t}
+                          onView={() => setViewing(s)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
           </>

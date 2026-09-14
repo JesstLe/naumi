@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { toVisionDataUrl } from "@/lib/vision-image";
-import OpenAI, { toFile } from "openai";
+import OpenAI from "openai";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 import {
@@ -44,6 +44,12 @@ type ShotSpec = {
   ratio: string; // "1:1" | "3:4"
   prompt: string; // 含中文营销文案的完整出图提示词(模型直出整图)
   text?: string; // 该张主标题(展示/归档用)
+};
+type RequestedShot = {
+  role: ShotRole;
+  label: string;
+  ratio: string;
+  instruction?: string;
 };
 type ShotResult = ShotSpec & {
   id: string;
@@ -106,20 +112,50 @@ function fallbackBlueprint(extra: string): ShotSpec[] {
   ];
 }
 
+function fallbackCustomBlueprint(
+  extra: string,
+  requested: RequestedShot[]
+): ShotSpec[] {
+  const base = extra ? `产品/品牌补充信息：${extra}。` : "";
+  const lead =
+    "在完整保留上传产品(包装、品牌、文字、外观)不变的前提下，把它合成进一张专业、可直接上架的电商营销视觉，整图含文字由模型直接渲染：";
+  const roleGuide: Record<ShotRole, string> = {
+    main: "以产品为绝对主体，完成适合作为 Listing 首图或营销主视觉的清晰构图",
+    sub: "围绕一个明确卖点、细节或使用场景完成辅助展示图",
+    detail: "完成信息层级清楚的详情页模块，兼顾产品展示与说明排版",
+  };
+  return requested.map((item) => ({
+    role: item.role,
+    label: item.label,
+    ratio: item.ratio,
+    text: item.label,
+    prompt: `${lead}${roleGuide[item.role]}。本图主题为『${item.label}』。${
+      item.instruction ? `用户对本图的要求：${item.instruction}。` : ""
+    }${base}根据产品真实品类选择相关道具、场景与卖点，不臆造产品属性；文字清晰准确，构图完整，产品不得裁切。`,
+  }));
+}
+
 // 第0层:视觉 LLM 读产品图 → 输出 13 张定制提示词。失败回退蓝图。
 async function planShots(
   client: OpenAI,
   firstImage: { buf: Buffer; type: string },
   extra: string,
-  platform: string
+  platform: string,
+  requested: RequestedShot[] | null
 ): Promise<ShotSpec[]> {
   try {
     const dataUrl = await toVisionDataUrl(firstImage.buf, firstImage.type);
     const base = await getSuiteSystem(); // 后台可编辑的套图规划 system 指令
     const platHint = await getSuitePlatformHint(platform); // 平台风格覆盖段(后台可编辑)
-    const sys = platHint ? `${base}
+    const platformSystem = platHint ? `${base}
 
 ${platHint}` : base;
+    const customSystem = requested
+      ? `
+
+【最高优先级：用户选择了自定义套图结构。忽略上文固定 13 张、1 主图 + 4 副图 + 8 详情图的数量要求；必须严格输出下面 ${requested.length} 张，顺序、role、label、ratio 均不可改变。你只负责结合产品内容为每张补全高质量 prompt 与 text。用户结构 JSON：${JSON.stringify(requested)}】`
+      : "";
+    const sys = `${platformSystem}${customSystem}`;
     const user =
       (extra ? `补充信息：${extra}\n` : "") + "请规划这套产品的电商套图。";
     const resp = await client.chat.completions.create({
@@ -142,47 +178,204 @@ ${platHint}` : base;
     const shots = (parsed.shots ?? []).filter(
       (s) => s && s.prompt && s.role && s.ratio
     );
-    // 校验数量与角色构成;不达标就回退,保证总是 13 张可控
+    if (requested) {
+      if (shots.length !== requested.length) {
+        return fallbackCustomBlueprint(extra, requested);
+      }
+      return requested.map((item, index) => ({
+        role: item.role,
+        label: item.label,
+        ratio: item.ratio,
+        prompt:
+          shots[index]?.prompt ||
+          fallbackCustomBlueprint(extra, [item])[0].prompt,
+        text: shots[index]?.text || item.label,
+      }));
+    }
+    // 智能匹配校验数量与角色构成;不达标就回退,保证总是 13 张可控
     const mains = shots.filter((s) => s.role === "main").length;
     if (shots.length >= 13 && mains >= 1) return shots.slice(0, 13);
     return fallbackBlueprint(extra);
   } catch {
-    return fallbackBlueprint(extra);
+    return requested
+      ? fallbackCustomBlueprint(extra, requested)
+      : fallbackBlueprint(extra);
   }
 }
 
-function sizeFor(ratio: string): "1024x1024" | "1024x1536" {
-  return ratio === "3:4" || ratio === "9:16" ? "1024x1536" : "1024x1024";
+function sizeFor(
+  ratio: string
+): "1024x1024" | "1024x1536" | "1536x1024" {
+  if (ratio === "3:4" || ratio === "9:16") return "1024x1536";
+  if (ratio === "4:3" || ratio === "16:9") return "1536x1024";
+  return "1024x1024";
 }
 
 // 生成一张,返回 PNG buffer。模型直接出整图(含中文文案)。
 async function genOneShot(
-  client: OpenAI,
+  apiKey: string,
+  baseUrl: string,
   model: string,
   spec: ShotSpec,
-  productFiles: Awaited<ReturnType<typeof toFile>>[]
+  productReference: Buffer,
+  productImageCount: number
 ): Promise<Buffer> {
-  const r = await client.images.edit({
-    model,
-    image: productFiles,
-    prompt: spec.prompt,
-    n: 1,
-    size: sizeFor(spec.ratio),
-    // 出图质量档(默认 medium):套图 13 张,质量档对总耗时影响很大。env OPENAI_IMAGE_QUALITY 可调。
-    quality: (process.env.OPENAI_IMAGE_QUALITY || "medium") as
-      | "low"
-      | "medium"
-      | "high"
-      | "auto",
+  const form = new FormData();
+  form.append(
+    "image",
+    new Blob([new Uint8Array(productReference)], { type: "image/png" }),
+    "product-reference.png"
+  );
+  form.append("model", model);
+  form.append(
+    "prompt",
+      (productImageCount > 1
+        ? "输入参考图是一张同一产品的多视角拼图，只用于理解产品；成品只展示一个完整产品，不得照搬拼图布局或复制多个产品。"
+        : "") + spec.prompt
+  );
+  form.append("n", "1");
+  form.append("size", sizeFor(spec.ratio));
+  form.append("quality", process.env.OPENAI_IMAGE_QUALITY || "medium");
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/images/edits`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+    signal: AbortSignal.timeout(PER_SHOT_TIMEOUT),
   });
-  const d = r.data?.[0];
+  const raw = await response.text();
+  if (!response.ok) {
+    const error = new Error(`图片接口 ${response.status}: ${raw.slice(0, 500)}`) as Error & {
+      status?: number;
+    };
+    error.status = response.status;
+    throw error;
+  }
+  const parsed = JSON.parse(raw) as {
+    data?: { b64_json?: string; url?: string }[];
+  };
+  const d = parsed.data?.[0];
   if (!d) throw new Error("空返回");
   if (d.b64_json) return Buffer.from(d.b64_json, "base64");
   if (d.url) {
     const res = await fetch(d.url);
+    if (!res.ok) throw new Error(`图片下载失败 ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
   }
   throw new Error("空返回");
+}
+
+// 把多张产品参考图拼成一张白底联系表，统一以单文件发送给图像接口。
+// OpenAI 官方接口支持 image[]，但部分兼容中转只接受 image；单图联系表兼容性更好。
+async function makeProductReference(
+  images: { buf: Buffer; type: string }[]
+): Promise<Buffer> {
+  const mod = (await import("sharp")) as unknown as {
+    default?: typeof import("sharp");
+  } & typeof import("sharp");
+  const sharp = mod.default ?? mod;
+  const tileSize = 960;
+  const gap = 32;
+  const tiles = await Promise.all(
+    images.map((image) =>
+      sharp(image.buf)
+        .rotate()
+        .resize(tileSize, tileSize, {
+          fit: "contain",
+          background: { r: 255, g: 255, b: 255, alpha: 1 },
+        })
+        .png()
+        .toBuffer()
+    )
+  );
+  if (tiles.length === 1) return tiles[0];
+  const columns = Math.min(2, tiles.length);
+  const rows = Math.ceil(tiles.length / columns);
+  const width = columns * tileSize + (columns + 1) * gap;
+  const height = rows * tileSize + (rows + 1) * gap;
+  return sharp({
+    create: {
+      width,
+      height,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    },
+  })
+    .composite(
+      tiles.map((input, index) => ({
+        input,
+        left: gap + (index % columns) * (tileSize + gap),
+        top: gap + Math.floor(index / columns) * (tileSize + gap),
+      }))
+    )
+    .png()
+    .toBuffer();
+}
+
+const RATIO_DIMENSIONS: Record<string, { width: number; height: number }> = {
+  "3:4": { width: 1152, height: 1536 },
+  "4:3": { width: 1536, height: 1152 },
+  "16:9": { width: 1536, height: 864 },
+  "9:16": { width: 864, height: 1536 },
+};
+
+async function normalizeShotRatio(
+  bytes: Buffer,
+  ratio: string,
+  whiteBackground: boolean
+): Promise<Buffer> {
+  const target = RATIO_DIMENSIONS[ratio];
+  if (!target) return bytes;
+  const mod = (await import("sharp")) as unknown as {
+    default?: typeof import("sharp");
+  } & typeof import("sharp");
+  const sharp = mod.default ?? mod;
+  const metadata = await sharp(bytes).metadata();
+  const sourceRatio = (metadata.width ?? 1) / (metadata.height ?? 1);
+  const targetRatio = target.width / target.height;
+  if (Math.abs(sourceRatio - targetRatio) / targetRatio < 0.025) return bytes;
+  const foreground = await sharp(bytes)
+    .resize(target.width, target.height, {
+      fit: "contain",
+      withoutEnlargement: false,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
+  if (whiteBackground) {
+    return sharp({
+      create: {
+        width: target.width,
+        height: target.height,
+        channels: 4,
+        background: { r: 255, g: 255, b: 255, alpha: 1 },
+      },
+    })
+      .composite([{ input: foreground, gravity: "centre" }])
+      .png()
+      .toBuffer();
+  }
+  const background = await sharp(bytes)
+    .resize(target.width, target.height, { fit: "cover" })
+    .blur(24)
+    .modulate({ brightness: 0.88, saturation: 0.82 })
+    .png()
+    .toBuffer();
+  return sharp(background)
+    .composite([{ input: foreground, gravity: "centre" }])
+    .png()
+    .toBuffer();
+}
+
+function shouldRetryShot(error: unknown): boolean {
+  const status = (error as { status?: unknown })?.status;
+  if (typeof status === "number") return status === 429 || status >= 500;
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  return (
+    message.includes("timeout") ||
+    message.includes("timed out") ||
+    message.includes("econnreset") ||
+    message.includes("socket")
+  );
 }
 
 async function persistOne(buf: Buffer, id: string): Promise<string> {
@@ -208,6 +401,7 @@ type Job = {
   mock?: boolean;
   error?: string;
   createdAt: number;
+  owner: string;
 };
 const JOBS = new Map<string, Job>();
 function gcJobs() {
@@ -226,22 +420,30 @@ async function runSuite(
   apiKey: string,
   model: string,
   useDb: boolean,
-  cost: number
+  cost: number,
+  requested: RequestedShot[] | null
 ) {
   const set = (patch: Partial<Job>) => {
     const cur = JOBS.get(jobId);
     if (cur) JOBS.set(jobId, { ...cur, ...patch });
   };
   try {
+    const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
     const client = new OpenAI({
       apiKey,
-      baseURL: (await getOpenAIBaseUrl()) || undefined,
+      baseURL: baseUrl,
       timeout: PER_SHOT_TIMEOUT,
       maxRetries: 0,
     });
 
     // 第0层:规划 13 张
-    const specs = await planShots(client, productImages[0], extra, platform);
+    const specs = await planShots(
+      client,
+      productImages[0],
+      extra,
+      platform,
+      requested
+    );
     const shots: ShotResult[] = specs.map((s, i) => ({
       ...s,
       id: `suite-${Date.now()}-${i}`,
@@ -250,11 +452,7 @@ async function runSuite(
     }));
     set({ shots, total: shots.length });
 
-    const productFiles = await Promise.all(
-      productImages.map((im, i) =>
-        toFile(im.buf, `product-${i}.png`, { type: im.type || "image/png" })
-      )
-    );
+    const productReference = await makeProductReference(productImages);
 
     // 第1-13层:并发限流逐张生成,完成一张更新一张
     let cursor = 0;
@@ -266,18 +464,34 @@ async function runSuite(
         let ok = false;
         for (let attempt = 0; attempt <= SHOT_RETRIES && !ok; attempt++) {
           try {
-            const buf = await genOneShot(client, model, shot, productFiles);
+            const generated = await genOneShot(
+              apiKey,
+              baseUrl,
+              model,
+              shot,
+              productReference,
+              productImages.length
+            );
+            const buf = await normalizeShotRatio(
+              generated,
+              shot.ratio,
+              platform === "amazon" && shot.role === "main"
+            );
             const url = await persistOne(buf, shot.id);
             shots[idx] = { ...shot, status: "done", url };
             ok = true;
-          } catch {
+          } catch (error) {
+            console.error(
+              `[suite] shot failed (${shot.label}, ${shot.ratio}, attempt ${attempt + 1}/${SHOT_RETRIES + 1}):`,
+              error instanceof Error ? error.message : error
+            );
             // 频率限制/超时等:指数退避 + 抖动后重试,熬过限频窗口(2.5s→5s→10s,封顶18s)
-            if (attempt < SHOT_RETRIES) {
+            if (attempt < SHOT_RETRIES && shouldRetryShot(error)) {
               const wait =
                 Math.min(18000, 2500 * 2 ** attempt) +
                 Math.floor(Math.random() * 1500);
               await new Promise((r) => setTimeout(r, wait));
-            }
+            } else break;
           }
         }
         if (!ok) shots[idx] = { ...shot, status: "error" };
@@ -290,10 +504,14 @@ async function runSuite(
     );
 
     const okShots = shots.filter((s) => s.status === "done" && s.url);
+    if (okShots.length === 0) {
+      throw new Error("全部套图生成失败，请调整要求后重试");
+    }
 
     // 归档作品库(一个套图 = 一个 batch)
     let user: Awaited<ReturnType<typeof getUser>> = null;
-    if (useDb && okShots.length > 0) {
+    let charged = 0;
+    if (useDb) {
       const batchId = `suite-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
       try {
         await addArtworks(
@@ -318,17 +536,21 @@ async function runSuite(
       } catch {
         /* non-fatal */
       }
-      // 失败的张数按比例退积分
-      const failed = shots.length - okShots.length;
-      if (failed > 0) {
-        const refund = Math.round((cost / shots.length) * failed);
-        await refundCredits(email, refund).catch(() => {});
+      charged = okShots.length * POINTS_PER_IMAGE;
+      const refund = Math.max(0, cost - charged);
+      if (refund > 0) await refundCredits(email, refund).catch(() => {});
+      if (charged > 0) {
+        try {
+          await addLedgerEntry(
+            email,
+            -charged,
+            `一键套图 ${okShots.length} 张`
+          );
+        } catch {
+          await refundCredits(email, charged).catch(() => {});
+          charged = 0;
+        }
       }
-      await addLedgerEntry(
-        email,
-        -(cost - Math.round((cost / shots.length) * (shots.length - okShots.length))),
-        `一键套图 ${okShots.length} 张`
-      ).catch(() => {});
       user = await getUser(email).catch(() => null);
     }
 
@@ -338,7 +560,7 @@ async function runSuite(
       shots: [...shots],
       done: shots.length,
       user,
-      creditsUsed: cost,
+      creditsUsed: charged,
       mock: !apiKey,
     });
   } catch (e) {
@@ -363,13 +585,48 @@ async function parseInput(request: Request) {
         type: file.type || "image/png",
       });
     }
-    if (images.length >= 5) break; // 硬上限 5;按档位再收(见下)
+    if (images.length >= 4) break;
+  }
+  const structure = (f.get("structure") ?? "auto").toString() === "custom"
+    ? "custom"
+    : "auto";
+  const roleSet = new Set<ShotRole>(["main", "sub", "detail"]);
+  const ratioSet = new Set(["1:1", "3:4", "4:3", "16:9", "9:16"]);
+  let customShots: RequestedShot[] = [];
+  if (structure === "custom") {
+    try {
+      const raw = JSON.parse((f.get("shots") ?? "[]").toString()) as unknown[];
+      customShots = raw.slice(0, 20).flatMap((value, index) => {
+        if (!value || typeof value !== "object") return [];
+        const item = value as Record<string, unknown>;
+        const role = roleSet.has(item.role as ShotRole)
+          ? (item.role as ShotRole)
+          : "sub";
+        const ratio = ratioSet.has(String(item.ratio))
+          ? String(item.ratio)
+          : role === "detail"
+            ? "3:4"
+            : "1:1";
+        const label = String(item.label ?? "").trim().slice(0, 40);
+        const instruction = String(item.instruction ?? "").trim().slice(0, 240);
+        return [{
+          role,
+          ratio,
+          label: label || `自定义图片 ${index + 1}`,
+          ...(instruction ? { instruction } : {}),
+        }];
+      });
+    } catch {
+      customShots = [];
+    }
   }
   return {
     images,
     extra: (f.get("text") ?? "").toString().trim().slice(0, 600),
     platform: (f.get("platform") ?? "taobao").toString().trim().slice(0, 20),
     email: (f.get("email") ?? "").toString().trim(),
+    structure,
+    customShots,
   };
 }
 
@@ -381,6 +638,22 @@ export async function POST(request: Request) {
   if (input.images.some((im) => im.buf.length > 12 * 1024 * 1024)) {
     return NextResponse.json(
       { error: "单张上传图片过大（请 < 12MB）" },
+      { status: 400 }
+    );
+  }
+  if (
+    input.images.some(
+      (im) => !/^image\/(png|jpeg|webp)$/i.test(im.type)
+    )
+  ) {
+    return NextResponse.json(
+      { error: "当前仅支持 PNG、JPG、WebP 产品图" },
+      { status: 400 }
+    );
+  }
+  if (input.structure === "custom" && input.customShots.length === 0) {
+    return NextResponse.json(
+      { error: "自定义配置至少保留一张图片" },
       { status: 400 }
     );
   }
@@ -408,9 +681,9 @@ export async function POST(request: Request) {
     input.email = tokenEmail;
   }
   const useDb = dbEnabled && input.email.length > 0;
-  // 产品图上限统一 5 张(月度会员已下线)。超出部分静默截断(防绕过前端多传图)。
-  if (input.images.length > 5) input.images = input.images.slice(0, 5);
-  const SHOT_COUNT = 13;
+  // 与前端统一最多 4 张；超出部分在解析阶段截断，防绕过前端多传图。
+  const requested = input.structure === "custom" ? input.customShots : null;
+  const SHOT_COUNT = requested?.length ?? 13;
   const cost = SHOT_COUNT * POINTS_PER_IMAGE; // 1K 档:13×6 = 78 积分
 
   if (dbEnabled && (await isBanned(input.email, ip))) {
@@ -437,8 +710,20 @@ export async function POST(request: Request) {
     done: 0,
     total: SHOT_COUNT,
     createdAt: Date.now(),
+    owner: input.email,
   });
-  if (useDb) await addReservation(jobId, input.email, cost);
+  if (useDb) {
+    try {
+      await addReservation(jobId, input.email, cost);
+    } catch (error) {
+      await refundCredits(input.email, cost).catch(() => {});
+      JOBS.delete(jobId);
+      return NextResponse.json(
+        { error: safeError(error, "积分预扣失败，请稍后重试") },
+        { status: 500 }
+      );
+    }
+  }
   void sweepStaleReservations().catch(() => {});
   void runSuite(
     jobId,
@@ -449,7 +734,8 @@ export async function POST(request: Request) {
     apiKey,
     model,
     useDb,
-    cost
+    cost,
+    requested
   );
 
   return NextResponse.json({ jobId, total: SHOT_COUNT, cost });
@@ -473,6 +759,12 @@ export async function GET(request: Request) {
       status: "error",
       error: "任务不存在或已过期，请重试",
     });
+  }
+  if (dbEnabled) {
+    const email = await resolveUserEmail(request);
+    if (!email || email.toLowerCase() !== job.owner.toLowerCase()) {
+      return NextResponse.json({ error: "无权查看此任务" }, { status: 403 });
+    }
   }
   // 公开字段:不回 prompt 全文(太长),只给前端要的展示数据
   const shots = job.shots.map((s) => ({

@@ -24,7 +24,7 @@ import { WorkLightbox, type LightboxWork } from "@/components/works/work-lightbo
 // ---------------------------------------------------------------------------
 // 作品库(设计 screen==='works',星泽商图.dc.html 1247–1328)。
 // 数据源与首页一致:GET /api/account?email=... → artworks[]。
-// 收藏 / 选中 / 删除 / 下载 / 搜索 当前均为本地态或占位,待接后端。
+// 搜索在当前已加载作品中即时筛选；收藏持久化到 /api/favorites；删除走软删除接口。
 // ---------------------------------------------------------------------------
 
 type Artwork = {
@@ -102,9 +102,9 @@ export function WorksClient() {
 
   const [works, setWorks] = useState<Artwork[] | null>(null);
   const [filter, setFilter] = useState<string>("all");
-  const [query, setQuery] = useState(""); // TODO: 搜索暂不接逻辑,仅占位
+  const [query, setQuery] = useState("");
   const [selecting, setSelecting] = useState(false);
-  // MOCK: 收藏 / 选中均为本地 useState,待接后端持久化。
+  // 选中是页面瞬时状态；收藏会同步后端，刷新与跨设备均可恢复。
   const [favs, setFavs] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [active, setActive] = useState<LightboxWork | null>(null);
@@ -325,12 +325,12 @@ export function WorksClient() {
           </p>
         </div>
         <div className="flex items-center gap-2.5">
-          {/* 搜索框(占位,暂不接逻辑) */}
+          {/* 搜索当前已加载作品的标题与提示词。 */}
           <div className="flex h-9 items-center gap-1.5 rounded-field border border-c-border2 bg-c-card px-3">
             <Search size={14} className="text-c-text4" strokeWidth={1.8} />
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)} // TODO: 搜索暂不接逻辑
+              onChange={(e) => setQuery(e.target.value)}
               placeholder="搜索作品"
               className="w-[120px] bg-transparent text-[12.5px] text-c-text placeholder:text-c-text4 focus:outline-none"
             />

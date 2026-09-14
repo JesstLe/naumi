@@ -219,7 +219,22 @@ export async function getOrCreateSession(
               ),
               label: baseMeta?.label ?? "模切线转 3D",
             }
-          : baseMeta;
+          : toolCall.name === "generate_suite"
+            ? {
+                cost:
+                  (args as { structure?: unknown })?.structure === "custom" &&
+                  Array.isArray((args as { shots?: unknown }).shots)
+                    ? Math.max(
+                        1,
+                        Math.min(
+                          20,
+                          (args as { shots: unknown[] }).shots.length
+                        )
+                      ) * POINTS_PER_IMAGE
+                    : 13 * POINTS_PER_IMAGE,
+                label: baseMeta?.label ?? "一键套图",
+              }
+            : baseMeta;
       if (!meta || !dbEnabled) return undefined;
       const u = await getUser(email).catch(() => null);
       const balance = u ? u.creditsTotal - u.creditsUsed : Number.MAX_SAFE_INTEGER;

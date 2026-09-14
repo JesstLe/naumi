@@ -21,10 +21,10 @@ import { Pager } from "@/components/admin/pager";
  * 「兑换码」tab 输入码 → 后端校验后把该码从 unused → used,并给用户加积分;
  * 这里的「使用情况」列(usedBy / usedAt)就来自那一步回写。
  *
- * 后端接入点(本组件全部为前端可演示 MOCK):
- *   · 列表:    GET  /api/cardkeys           → CardKey[]
- *   · 生成:    POST /api/cardkeys/generate   { credits, count, expiry, batch } → CardKey[]
- *   · 停用/恢复: POST /api/cardkeys/:code/toggle { status }
+ * 后端接入点(均为真实接口):
+ *   · 列表:    GET   /api/cardkeys → CardKey[]
+ *   · 生成:    POST  /api/cardkeys { credits, count, expiryDays, batch, note }
+ *   · 停用/恢复: PATCH /api/cardkeys { code, status }
  *   · 导出:    前端把当前列表拼成 CSV Blob 下载(无需后端)。
  * ────────────────────────────────────────────────────────────────────────── */
 
