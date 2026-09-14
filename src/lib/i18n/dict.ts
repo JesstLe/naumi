@@ -1754,6 +1754,7 @@ const en: Dict = {
     printfile: "Print File",
     tryon: "Try-On",
     dress3d: "3D Garment",
+    packaging3d: "Packaging 3D",
     dewrinkle: "De-wrinkle",
   },
 };

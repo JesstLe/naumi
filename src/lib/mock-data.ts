@@ -19,6 +19,7 @@ export type Category =
   | "printfile" // 印刷图(高清印刷文件)产物,作品页单独筛选
   | "tryon" // 服装上身(虚拟试穿)产物,作品页单独筛选
   | "dress3d" // 3D 服装图(立体产品图)产物,作品页单独筛选
+  | "packaging3d" // 模切线图折叠生成的包装 3D 产品可视化
   | "dewrinkle" // 服装去皱产物,作品页单独筛选
   | "dewatermark"; // 去水印产物,作品页单独筛选
 
@@ -40,6 +41,7 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   printfile: "印刷图",
   tryon: "服装上身",
   dress3d: "3D 服装图",
+  packaging3d: "包装 3D 可视化",
   dewrinkle: "服装去皱",
   dewatermark: "去水印",
 };
@@ -460,5 +462,10 @@ export const GARMENT3D_COST: Record<string, number> = {
   "4K": 18,
 };
 export function garment3dCost(id: string): number {
+  return GARMENT3D_COST[id] ?? GARMENT3D_COST["1K"];
+}
+
+// 包装结构推断 + 3D 渲染与 3D 服装图使用同一高成本图生图档位。
+export function packaging3dCost(id: string): number {
   return GARMENT3D_COST[id] ?? GARMENT3D_COST["1K"];
 }

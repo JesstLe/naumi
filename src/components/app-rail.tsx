@@ -371,7 +371,7 @@ export function AppRail() {
               {/* 页脚 */}
               <div className="mt-2 flex items-center justify-between border-t border-c-line px-2 pt-2.5">
                 <span className="text-[11.5px] text-c-text3">
-                  {L(`${TOOL_COUNT_LABEL} · 覆盖出图全流程`, "18 tools · full pipeline")}
+                  {L(`${TOOL_COUNT_LABEL} · 覆盖出图全流程`, "24 tools · full pipeline")}
                 </span>
                 <Link
                   href="/tools"

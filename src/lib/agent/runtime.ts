@@ -13,7 +13,7 @@ import {
   saveAgentSession,
 } from "@/lib/db";
 import { AGENT_SYSTEM_PROMPT, createNaumiTools } from "@/lib/agent/naumi-tools";
-import { POINTS_PER_IMAGE } from "@/lib/mock-data";
+import { packaging3dCost, POINTS_PER_IMAGE } from "@/lib/mock-data";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 运行时:常驻 Agent 会话管理器。
@@ -37,6 +37,7 @@ const TOOL_COST: Record<string, { cost: number; label: string }> = {
   replicate_hot: { cost: POINTS_PER_IMAGE, label: "爆款复刻" },
   generate_suite: { cost: 13 * POINTS_PER_IMAGE, label: "一键套图" },
   continue_aplus_generation: { cost: 4 * POINTS_PER_IMAGE, label: "A+ 详情页" },
+  generate_packaging_3d: { cost: 9, label: "模切线转 3D" },
 };
 
 export type Session = {
@@ -207,7 +208,18 @@ export async function getOrCreateSession(
           terminate: true,
         };
       }
-      const meta = TOOL_COST[toolCall.name];
+      const baseMeta = TOOL_COST[toolCall.name];
+      const meta =
+        toolCall.name === "generate_packaging_3d"
+          ? {
+              cost: packaging3dCost(
+                typeof (args as { resolution?: unknown })?.resolution === "string"
+                  ? (args as { resolution: string }).resolution
+                  : "1K"
+              ),
+              label: baseMeta?.label ?? "模切线转 3D",
+            }
+          : baseMeta;
       if (!meta || !dbEnabled) return undefined;
       const u = await getUser(email).catch(() => null);
       const balance = u ? u.creditsTotal - u.creditsUsed : Number.MAX_SAFE_INTEGER;

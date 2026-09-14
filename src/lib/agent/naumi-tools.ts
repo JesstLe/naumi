@@ -23,6 +23,7 @@ const TOOL_TIMEOUT_MS = {
   generate_aplus: 360_000,
   review_aplus_source: 360_000,
   continue_aplus_generation: 600_000,
+  generate_packaging_3d: 360_000,
   read_only: 15_000,
 } as const;
 
@@ -38,6 +39,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
  7. generate_aplus:A+ 第一步，只提取白底商品母图并返回待审核图片与 job_id。参数 image_url、platform、lang、format、modules(数组)、text。
  8. review_aplus_source:审核一张母图。approve=通过；redo=带用户要求只重做这一张。
  9. continue_aplus_generation:全部母图通过后继续生成 A+，此时计费=模块数×6。
+ 10. generate_packaging_3d:把模切线/刀版图折叠为包装 3D 产品效果图。参数 image_url、package_type、view、material、background、resolution、text。
 
 ## 工作规则
 1. 用户消息里的商品图以 URL 形式出现(格式:[商品图] <url> 或工具返回的图片 URL);工具的图片参数必须传入,用户没给就先要,不要编造 URL。
@@ -823,6 +825,106 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         return {
           content: [{ type: "text", text: `A+ 详情页完成 ${urls2.length} 个模块:\n${urls2.join("\n")}` }],
           details: { urls: urls2, publicSummary: `A+ 完成 ${urls2.length} 个模块` },
+        };
+      },
+    },
+    {
+      name: "generate_packaging_3d",
+      label: "模切线转 3D",
+      description:
+        "将一张包装模切线/刀版图识别并折叠为完整 3D 产品效果图，保留印刷文字、Logo、条码、颜色和面板关系。",
+      parameters: Type.Object({
+        image_url: Type.String({ description: "模切线图 URL" }),
+        package_type: Type.Optional(
+          Type.Union([
+            Type.Literal("auto"),
+            Type.Literal("carton"),
+            Type.Literal("mailer"),
+            Type.Literal("pouch"),
+            Type.Literal("sleeve"),
+            Type.Literal("label"),
+          ])
+        ),
+        view: Type.Optional(
+          Type.Union([
+            Type.Literal("angle"),
+            Type.Literal("front"),
+            Type.Literal("side"),
+            Type.Literal("back"),
+          ])
+        ),
+        material: Type.Optional(
+          Type.Union([
+            Type.Literal("matte"),
+            Type.Literal("glossy"),
+            Type.Literal("kraft"),
+            Type.Literal("metallic"),
+          ])
+        ),
+        background: Type.Optional(
+          Type.Union([
+            Type.Literal("white"),
+            Type.Literal("gray"),
+            Type.Literal("scene"),
+          ])
+        ),
+        resolution: Type.Optional(
+          Type.Union([
+            Type.Literal("1K"),
+            Type.Literal("2K"),
+            Type.Literal("4K"),
+          ])
+        ),
+        text: Type.Optional(
+          Type.String({ description: "成品结构或视觉补充要求" })
+        ),
+      }),
+      executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p = params as {
+          image_url: string;
+          package_type?: string;
+          view?: string;
+          material?: string;
+          background?: string;
+          resolution?: string;
+          text?: string;
+        };
+        const form = new FormData();
+        form.append("image", await urlToFile(p.image_url, signal));
+        form.append("packageType", p.package_type || "auto");
+        form.append("view", p.view || "angle");
+        form.append("material", p.material || "matte");
+        form.append("background", p.background || "gray");
+        form.append("resolution", p.resolution || "1K");
+        if (p.text) form.append("prompt", p.text);
+        const d = await withToolTimeout(
+          "generate_packaging_3d",
+          async () => {
+            const created = await internal("/api/packaging3d", signal, {
+              method: "POST",
+              body: form,
+            });
+            return pollJob(
+              "/api/packaging3d",
+              created.jobId,
+              TOOL_TIMEOUT_MS.generate_packaging_3d,
+              signal
+            );
+          },
+          signal
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: `包装 3D 产品图已生成：\n![包装 3D 产品图](${d.url})\n${d.url}`,
+            },
+          ],
+          details: {
+            url: d.url,
+            publicSummary: "模切线已生成 3D 产品效果图",
+          },
         };
       },
     },

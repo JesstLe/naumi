@@ -15,6 +15,7 @@ import {
   Blend,
   Shirt,
   Box,
+  Cuboid,
   Wind,
   Type,
   Stamp,
@@ -88,6 +89,11 @@ export const TOOLS: ToolMeta[] = [
     key: "A+ 详情页", en: "A+ detail page", slug: "aplus", href: "/aplus", category: "生成创作",
     Icon: FileText, desc: "按模块生成高转化的电商 A+ 详情页",
     action: "生成详情页", cost: 24, ctrls: [], workspace: true, live: true, inMenu: true,
+  },
+  {
+    key: "模切线转 3D", en: "Dieline to 3D", slug: "packaging3d", href: "/packaging3d", category: "生成创作",
+    Icon: Cuboid, desc: "将包装模切线和印刷稿生成完整 3D 产品效果图",
+    action: "生成 3D 产品图", cost: 9, ctrls: [], workspace: true, live: true, inMenu: true,
   },
   {
     key: "爆款复刻", en: "Hot-seller replicate", slug: "replicate", href: "/replicate", category: "生成创作",
@@ -250,4 +256,4 @@ export function menuCategories() {
 }
 
 /** 工具总数文案(设计落地页/创作中心标「17 款工具」)。 */
-export const TOOL_COUNT_LABEL = "23 款工具";
+export const TOOL_COUNT_LABEL = "24 款工具";

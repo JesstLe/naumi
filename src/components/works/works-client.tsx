@@ -47,6 +47,7 @@ const GROUP_LABEL: Record<string, string> = {
   tryon: "服装上身",
   garment: "服装电商",
   dress3d: "3D 服装",
+  packaging3d: "包装 3D",
   upscale: "AI 变清晰",
   cutout: "AI 抠图",
   fusion: "AI 融图",
@@ -62,7 +63,7 @@ const GROUP_LABEL: Record<string, string> = {
 };
 // tab 顺序(只渲染作品里实际出现的分组)。
 const GROUP_ORDER = [
-  "image", "tryon", "garment", "dress3d", "upscale", "cutout",
+  "image", "tryon", "garment", "dress3d", "packaging3d", "upscale", "cutout",
   "fusion", "variation", "inpaint", "printfile", "dewrinkle", "dewatermark",
   "style", "avatar", "print", "titles",
 ];

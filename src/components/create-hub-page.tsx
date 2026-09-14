@@ -98,7 +98,7 @@ export function CreateHubPage() {
         <div>
           <h1 className="text-[26px] font-bold text-c-text">{L("创作", "Create")}</h1>
           <p className="mt-1 text-[13.5px] text-c-text3">
-            {L(`${TOOL_COUNT_LABEL}，覆盖电商出图全流程`, "17 AI tools for the full e-commerce workflow")}
+            {L(`${TOOL_COUNT_LABEL}，覆盖电商出图全流程`, "24 AI tools for the full e-commerce workflow")}
           </p>
         </div>
         <div className="relative w-full sm:w-[300px]">

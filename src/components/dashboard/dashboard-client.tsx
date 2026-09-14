@@ -27,6 +27,7 @@ import {
   Printer,
   PersonStanding,
   Box,
+  Cuboid,
   Wind,
 } from "lucide-react";
 import {
@@ -94,6 +95,7 @@ const isPrintfile = (a: Artwork) => a.category === "printfile";
 const isTryon = (a: Artwork) => a.category === "tryon";
 // 3D 服装图产物,同样单独成板块。
 const isDress3d = (a: Artwork) => a.category === "dress3d";
+const isPackaging3d = (a: Artwork) => a.category === "packaging3d";
 // 服装去皱产物,同样单独成板块。
 const isDewrinkle = (a: Artwork) => a.category === "dewrinkle";
 
@@ -125,6 +127,7 @@ function workHref(a: Artwork): string {
   if (isPrintfile(a)) return `/printfile`;
   if (isTryon(a)) return `/tryon`;
   if (isDress3d(a)) return `/garment3d`;
+  if (isPackaging3d(a)) return `/packaging3d`;
   if (isDewrinkle(a)) return `/dewrinkle`;
   return regenHref(a);
 }
@@ -209,6 +212,7 @@ export function DashboardClient() {
     | "printfile"
     | "tryon"
     | "dress3d"
+    | "packaging3d"
     | "dewrinkle"
   >("all");
   const [remoteWorks, setRemoteWorks] = useState<Artwork[] | null>(null);
@@ -235,6 +239,7 @@ export function DashboardClient() {
       cat === "printfile" ||
       cat === "tryon" ||
       cat === "dress3d" ||
+      cat === "packaging3d" ||
       cat === "dewrinkle"
     )
       setFilter(cat);
@@ -292,6 +297,7 @@ export function DashboardClient() {
     if (filter === "printfile") return source.filter(isPrintfile);
     if (filter === "tryon") return source.filter(isTryon);
     if (filter === "dress3d") return source.filter(isDress3d);
+    if (filter === "packaging3d") return source.filter(isPackaging3d);
     if (filter === "dewrinkle") return source.filter(isDewrinkle);
     // 全部 = 所有类型(生图/套图/抠图/融图)都显示;状态标签按状态筛。
     // 抠图/融图各有独立标签做窄筛,但在「全部」里也能看到(靠卡片角标区分类型)。
@@ -559,6 +565,17 @@ export function DashboardClient() {
           {te("genCat.dress3d", CATEGORY_LABELS.dress3d)}
         </button>
         <button
+          onClick={() => setFilter("packaging3d")}
+          className={cn(
+            "rounded-lg border px-3 py-1.5 text-sm transition-colors",
+            filter === "packaging3d"
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border text-muted-foreground hover:bg-secondary"
+          )}
+        >
+          {te("genCat.packaging3d", CATEGORY_LABELS.packaging3d)}
+        </button>
+        <button
           onClick={() => setFilter("dewrinkle")}
           className={cn(
             "rounded-lg border px-3 py-1.5 text-sm transition-colors",
@@ -684,6 +701,10 @@ function SingleCard({ a }: { a: Artwork }) {
                           ? locale === "en"
                             ? "Open 3D"
                             : "去生成"
+                          : isPackaging3d(a)
+                            ? locale === "en"
+                              ? "Open packaging 3D"
+                              : "去生成"
                           : isDewrinkle(a)
                             ? locale === "en"
                               ? "Open de-wrinkle"
@@ -714,6 +735,8 @@ function SingleCard({ a }: { a: Artwork }) {
                         ? { label: locale === "en" ? "Try-on" : "服装上身", Icon: PersonStanding }
                         : isDress3d(a)
                           ? { label: locale === "en" ? "3D" : "3D服装", Icon: Box }
+                          : isPackaging3d(a)
+                            ? { label: locale === "en" ? "Pack 3D" : "包装3D", Icon: Cuboid }
                           : isDewrinkle(a)
                             ? { label: locale === "en" ? "De-wrinkle" : "去皱", Icon: Wind }
                             : { label: locale === "en" ? "Generate" : "生图", Icon: Sparkles };
