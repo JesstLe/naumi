@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { dbEnabled, listTemplatesPaged, syncTemplatesFromCode } from "@/lib/db";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { TEMPLATES as SEED } from "@/lib/templates-data";
+import { templateImageDeliveryUrl } from "@/lib/template-image-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,7 +47,9 @@ export async function GET(req: Request) {
     );
     const start = (page - 1) * pageSize;
     return NextResponse.json({
-      templates: filtered.slice(start, start + pageSize),
+      templates: filtered
+        .slice(start, start + pageSize)
+        .map((t) => ({ ...t, image: templateImageDeliveryUrl(t.id, t.image) })),
       total: filtered.length,
       page,
       pageSize,
@@ -68,9 +71,13 @@ export async function GET(req: Request) {
         page,
         pageSize,
       });
+    const deliveredItems = items.map((t) => ({
+      ...t,
+      image: templateImageDeliveryUrl(t.id, t.image),
+    }));
     const safeItems = authed
-      ? items
-      : items.map((t) => ({ ...t, prompt: "" }));
+      ? deliveredItems
+      : deliveredItems.map((t) => ({ ...t, prompt: "" }));
     // 无需按 id 拉全文时,模板内容基本不变,让 CDN / 浏览器缓存响应(命中即不再打 DB)。
     // 5 分钟新鲜 + 1 天 stale-while-revalidate;模板上新后最多 5 分钟内可见,可接受。
     return NextResponse.json(
@@ -88,7 +95,10 @@ export async function GET(req: Request) {
     // 内部 DB 报错只在 server 端 log,前端只回通用文案(不漏表名/连接串等内部细节)
     console.error("[templates] db read failed:", e);
     return NextResponse.json({
-      templates: SEED.slice(0, pageSize),
+      templates: SEED.slice(0, pageSize).map((t) => ({
+        ...t,
+        image: templateImageDeliveryUrl(t.id, t.image),
+      })),
       total: SEED.length,
       page,
       pageSize,

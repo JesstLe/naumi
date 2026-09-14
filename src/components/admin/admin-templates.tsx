@@ -11,6 +11,7 @@ import {
   X,
   RefreshCw,
   Download,
+  Database,
 } from "lucide-react";
 import type { PromptTemplate } from "@/lib/mock-data";
 import { usePaymentConfig } from "@/lib/payment-context";
@@ -36,6 +37,46 @@ export function AdminTemplates({ token }: Props) {
   // 同步官方模板库(Pro 权益):按页循环调 /api/admin/templates/sync 直至 done。
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [caching, setCaching] = useState(false);
+  const [cacheMsg, setCacheMsg] = useState<string | null>(null);
+
+  async function cacheImages(tok: string, retryFailures = true) {
+    setCaching(true);
+    setCacheMsg("正在准备模板图片缓存…");
+    try {
+      for (let batch = 0; batch < 5000; batch++) {
+        const res = await fetch("/api/admin/templates/cache", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${tok}`,
+          },
+          body: JSON.stringify({
+            limit: 12,
+            retryFailures: retryFailures && batch === 0,
+          }),
+        });
+        const d = await res.json().catch(() => null);
+        if (!res.ok || !d?.ok) {
+          setCacheMsg(d?.error || "模板图片缓存失败，已完成部分会保留");
+          return;
+        }
+        setCacheMsg(
+          `正在缓存模板图片：已完成 ${d.cached}，待处理 ${d.remaining}，失败 ${d.failed}`
+        );
+        if (d.done) {
+          setCacheMsg(`✓ 模板图片缓存完成：成功 ${d.cached}，失败 ${d.failed}`);
+          await load(tok);
+          return;
+        }
+      }
+      setCacheMsg("缓存批次达到安全上限，请再次点击继续");
+    } catch {
+      setCacheMsg("网络错误，已完成部分会保留，可再次重试");
+    } finally {
+      setCaching(false);
+    }
+  }
 
   async function syncOfficial(tok: string) {
     setSyncing(true);
@@ -64,8 +105,9 @@ export function AdminTemplates({ token }: Props) {
         );
         if (d.done) break;
       }
-      setSyncMsg(`✓ 同步完成,新增 ${importedAll} 条模板`);
+      setSyncMsg(`✓ 同步完成,新增 ${importedAll} 条模板，开始缓存图片`);
       await load(tok);
+      await cacheImages(tok, true);
     } catch {
       setSyncMsg("网络错误,请重试(已导入部分会保留)");
     } finally {
@@ -135,7 +177,7 @@ export function AdminTemplates({ token }: Props) {
               variant="outline"
               size="sm"
               onClick={() => void syncOfficial(token)}
-              disabled={syncing || loading}
+              disabled={syncing || caching || loading}
             >
               {syncing ? (
                 <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -149,8 +191,23 @@ export function AdminTemplates({ token }: Props) {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => void cacheImages(token, true)}
+              disabled={syncing || caching || loading}
+            >
+              {caching ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Database className="h-3.5 w-3.5" />
+              )}
+              缓存模板图片
+            </Button>
+          )}
+          {token && (
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => void load(token)}
-              disabled={loading}
+              disabled={loading || caching || syncing}
             >
               <RefreshCw className="h-3.5 w-3.5" />
               刷新
@@ -162,6 +219,12 @@ export function AdminTemplates({ token }: Props) {
       {syncMsg && (
         <p className="mb-3 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm text-muted-foreground">
           {syncMsg}
+        </p>
+      )}
+
+      {cacheMsg && (
+        <p className="mb-3 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm text-muted-foreground">
+          {cacheMsg}
         </p>
       )}
 
@@ -430,7 +493,7 @@ function EditTemplateModal({
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  PNG / JPG / WebP，≤ 8MB。新图上传到 R2，原图不会删除。
+                  PNG / JPG / WebP，≤ 8MB。图片保存到当前实例的持久化存储，原图不会删除。
                 </p>
               </div>
             </div>

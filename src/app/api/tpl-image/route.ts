@@ -1,86 +1,84 @@
 import { NextResponse } from "next/server";
-import { mkdir, readFile, writeFile, rename } from "fs/promises";
-import path from "path";
-import crypto from "crypto";
-import { MEDIA_DIR } from "@/lib/storage";
+import {
+  dbEnabled,
+  getTemplateImageCacheState,
+  setTemplateImageCacheFailure,
+  setTemplateImageCacheSuccess,
+} from "@/lib/db";
+import {
+  persistTemplateImage,
+  remoteTemplateImageSource,
+} from "@/lib/template-image-cache";
+import { TEMPLATES as SEED } from "@/lib/templates-data";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
-// 模板图片同源代理 + 本地磁盘缓存(自托管实例用)。
-// 同步官方模板库后,图片地址为 /api/tpl-image?u=<R2地址>:
-//   · 浏览器只访问本站(避开大陆浏览器对 *.r2.dev 的 SNI 阻断);
-//   · 服务器第一次跨境取回后**落盘缓存**(MEDIA_DIR/tpl-cache,Docker 数据卷持久),
-//     之后所有访客直接本地读,速度与本站静态图无异——热门图自动"镜像到本地"。
-// 仅放行 *.r2.dev,防开放代理;浏览器侧再强缓存 30 天。
-const CACHE_DIR = path.join(MEDIA_DIR, "tpl-cache");
-
-const TYPE_BY_EXT: Record<string, string> = {
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".png": "image/png",
-  ".webp": "image/webp",
-  ".gif": "image/gif",
+const CACHE_HEADERS = {
+  "Cache-Control": "public, max-age=31536000, immutable",
 };
 
-function cachePathFor(u: string): { file: string; type: string } {
-  const ext = (path.extname(new URL(u).pathname) || ".jpg").toLowerCase();
-  const safeExt = TYPE_BY_EXT[ext] ? ext : ".jpg";
-  const name = crypto.createHash("sha1").update(u).digest("hex") + safeExt;
-  return { file: path.join(CACHE_DIR, name), type: TYPE_BY_EXT[safeExt] };
-}
-
+/**
+ * 模板图片同源入口。首次请求安全抓取远程图片并写入 MEDIA_DIR/R2，随后跳转到
+ * 内容哈希稳定地址；带模板 id 时同步把 app_templates.image 回写成稳定地址。
+ */
 export async function GET(request: Request) {
-  const u = new URL(request.url).searchParams.get("u") || "";
-  let target: URL;
-  try {
-    target = new URL(u);
-  } catch {
-    return NextResponse.json({ error: "URL 非法" }, { status: 400 });
+  const params = new URL(request.url).searchParams;
+  const source = remoteTemplateImageSource(params.get("u") || "");
+  const id = (params.get("id") || "").trim();
+  if (!source) {
+    return NextResponse.json({ error: "模板图片 URL 非法" }, { status: 400 });
   }
-  if (target.protocol !== "https:" || !target.host.endsWith(".r2.dev")) {
-    return NextResponse.json({ error: "不允许的来源" }, { status: 403 });
-  }
-
-  const { file, type } = cachePathFor(target.toString());
-  const headers = {
-    "Content-Type": type,
-    // 模板图内容不变:浏览器强缓存 30 天
-    "Cache-Control": "public, max-age=2592000, immutable",
-  };
-
-  // 1) 本地缓存命中 → 直接回(绝大多数请求走这里,本地磁盘速度)
-  try {
-    const buf = await readFile(file);
-    return new NextResponse(new Uint8Array(buf), { headers });
-  } catch {
-    /* 未缓存 → 回源 */
+  if (!id) {
+    return NextResponse.json({ error: "缺少模板 id" }, { status: 400 });
   }
 
-  // 2) 回源 R2(仅每张图全站第一次),落盘后返回
+  let expectedImage = source;
+  if (dbEnabled) {
+    const template = await getTemplateImageCacheState(id).catch(() => null);
+    const currentSource = template ? remoteTemplateImageSource(template.image) : null;
+    if (!template || (currentSource !== source && template.imageSource !== source)) {
+      return NextResponse.json({ error: "模板图片已变更" }, { status: 409 });
+    }
+    if (!currentSource && template.imageSource === source) {
+      return NextResponse.redirect(new URL(template.image, request.url), {
+        status: 307,
+        headers: CACHE_HEADERS,
+      });
+    }
+    expectedImage = template.image;
+  } else {
+    const template = SEED.find((item) => item.id === id);
+    if (!template || remoteTemplateImageSource(template.image) !== source) {
+      return NextResponse.json({ error: "模板图片不存在" }, { status: 404 });
+    }
+  }
+
   try {
-    const upstream = await fetch(target.toString(), {
-      signal: AbortSignal.timeout(25_000),
-      cache: "no-store",
+    const cached = await persistTemplateImage(source);
+    if (dbEnabled) {
+      await setTemplateImageCacheSuccess(
+        id,
+        expectedImage,
+        source,
+        cached.cachedUrl
+      ).catch(() => false);
+    }
+    return NextResponse.redirect(new URL(cached.cachedUrl, request.url), {
+      status: 307,
+      headers: CACHE_HEADERS,
     });
-    if (!upstream.ok) {
-      return NextResponse.json(
-        { error: `源站返回 ${upstream.status}` },
-        { status: 502 }
-      );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "模板图片缓存失败";
+    if (dbEnabled) {
+      await setTemplateImageCacheFailure(
+        id,
+        expectedImage,
+        source,
+        message
+      ).catch(() => false);
     }
-    const buf = Buffer.from(await upstream.arrayBuffer());
-    // 落盘:先写临时名再原子重命名,防并发读到半截文件;失败不影响本次返回
-    try {
-      await mkdir(CACHE_DIR, { recursive: true });
-      const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-      await writeFile(tmp, buf);
-      await rename(tmp, file);
-    } catch {
-      /* 缓存写失败仅影响下次速度 */
-    }
-    return new NextResponse(new Uint8Array(buf), { headers });
-  } catch {
-    return NextResponse.json({ error: "取图超时" }, { status: 502 });
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

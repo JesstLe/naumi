@@ -40,6 +40,13 @@ const MEDIA_URL_PREFIX = "/media";
 // 本地盘始终可用;R2 需配齐才算可用(否则调用方退回 data URL,不持久化)。
 export const storageEnabled = storageDriver === "local" ? true : hasR2;
 
+/** 判断 URL 是否已经由当前实例的持久化存储托管。 */
+export function isManagedImageUrl(url: string): boolean {
+  const value = (url || "").trim();
+  if (value.startsWith(`${MEDIA_URL_PREFIX}/`)) return true;
+  return Boolean(publicBase && value.startsWith(`${publicBase}/`));
+}
+
 let client: AwsClient | null = null;
 
 function getClient(): AwsClient {

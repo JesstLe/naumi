@@ -3,10 +3,16 @@ import {
   dbEnabled,
   getTemplate,
   listTemplates,
+  setTemplateImageCacheSuccess,
   updateTemplate,
 } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
+import {
+  persistTemplateImage,
+  remoteTemplateImageSource,
+  templateImageDeliveryUrl,
+} from "@/lib/template-image-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +37,10 @@ export async function GET(req: Request) {
   const blocked = await guard(req);
   if (blocked) return blocked;
   try {
-    const templates = await listTemplates();
+    const templates = (await listTemplates()).map((template) => ({
+      ...template,
+      image: templateImageDeliveryUrl(template.id, template.image),
+    }));
     return NextResponse.json({ templates });
   } catch (e) {
     return NextResponse.json(
@@ -69,6 +78,7 @@ export async function PATCH(req: Request) {
   const ct = req.headers.get("content-type") ?? "";
   let id = "";
   const patch: Patch = {};
+  let imageSource = "";
 
   try {
     if (ct.includes("multipart/form-data")) {
@@ -158,7 +168,35 @@ export async function PATCH(req: Request) {
         { status: 404 }
       );
     }
+    if (patch.image !== undefined) {
+      const source = remoteTemplateImageSource(String(patch.image));
+      if (source) {
+        try {
+          const persisted = await persistTemplateImage(source);
+          patch.image = persisted.cachedUrl;
+          imageSource = source;
+        } catch (error) {
+          return NextResponse.json(
+            {
+              error:
+                error instanceof Error
+                  ? `远程封面缓存失败：${error.message}`
+                  : "远程封面缓存失败",
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
     const updated = await updateTemplate(id, patch);
+    if (updated && patch.image !== undefined) {
+      await setTemplateImageCacheSuccess(
+        id,
+        updated.image,
+        imageSource,
+        updated.image
+      );
+    }
     return NextResponse.json({ template: updated });
   } catch (e) {
     return NextResponse.json(

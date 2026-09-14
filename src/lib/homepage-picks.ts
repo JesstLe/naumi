@@ -14,6 +14,7 @@ import {
 import { TEMPLATES as SEED } from "@/lib/templates-data";
 import templateDimsJson from "@/lib/template-dims.json";
 import type { PromptTemplate } from "@/lib/mock-data";
+import { templateImageDeliveryUrl } from "@/lib/template-image-cache";
 
 const CAT_WHITELIST = [
   "电商主图",
@@ -188,5 +189,12 @@ export async function pickHomepageImages(): Promise<HomepagePicks> {
     }
   }
 
-  return { heroSlots, showcase };
+  const deliver = (t: PickedTemplate): PickedTemplate => ({
+    ...t,
+    image: templateImageDeliveryUrl(t.id, t.image),
+  });
+  return {
+    heroSlots: heroSlots.map((slot) => slot.map(deliver)),
+    showcase: showcase.map(deliver),
+  };
 }

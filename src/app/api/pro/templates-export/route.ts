@@ -36,5 +36,12 @@ export async function POST(req: Request) {
   const page = Math.max(1, Number(body.page) || 1);
   const pageSize = Math.min(500, Math.max(1, Number(body.pageSize) || 200));
   const { items, total } = await listTemplatesPaged({ page, pageSize });
-  return NextResponse.json({ templates: items, total, page, pageSize });
+  const origin = new URL(req.url).origin;
+  const templates = items.map((template) => ({
+    ...template,
+    image: template.image.startsWith("/")
+      ? new URL(template.image, origin).toString()
+      : template.image,
+  }));
+  return NextResponse.json({ templates, total, page, pageSize });
 }
