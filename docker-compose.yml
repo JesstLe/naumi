@@ -26,7 +26,7 @@ services:
       args:
         NEXT_PUBLIC_BRAND_NAME: Naumi
         NEXT_PUBLIC_BRAND_EMAIL: admin@admin.com
-    image: ghcr.io/JesstLe/naumi:latest
+    image: ghcr.io/jesstle/naumi:latest
     restart: unless-stopped
     ports:
       # Naumi 实例固定走 3012 端口(http://localhost:3012)。

@@ -19,6 +19,13 @@ const CACHE_HEADERS = {
   "Cache-Control": "public, max-age=31536000, immutable",
 };
 
+function redirectToCached(cachedUrl: string): Response {
+  return new Response(null, {
+    status: 307,
+    headers: { ...CACHE_HEADERS, Location: cachedUrl },
+  });
+}
+
 /**
  * 模板图片同源入口。首次请求安全抓取远程图片并写入 MEDIA_DIR/R2，随后跳转到
  * 内容哈希稳定地址；带模板 id 时同步把 app_templates.image 回写成稳定地址。
@@ -42,10 +49,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "模板图片已变更" }, { status: 409 });
     }
     if (!currentSource && template.imageSource === source) {
-      return NextResponse.redirect(new URL(template.image, request.url), {
-        status: 307,
-        headers: CACHE_HEADERS,
-      });
+      return redirectToCached(template.image);
     }
     expectedImage = template.image;
   } else {
@@ -65,10 +69,7 @@ export async function GET(request: Request) {
         cached.cachedUrl
       ).catch(() => false);
     }
-    return NextResponse.redirect(new URL(cached.cachedUrl, request.url), {
-      status: 307,
-      headers: CACHE_HEADERS,
-    });
+    return redirectToCached(cached.cachedUrl);
   } catch (error) {
     const message = error instanceof Error ? error.message : "模板图片缓存失败";
     if (dbEnabled) {
