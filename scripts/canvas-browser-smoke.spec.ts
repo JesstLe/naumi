@@ -133,6 +133,71 @@ test("canvas browser workflow", async ({ context, page }) => {
   const duplicate = withDuplicate.artworks.find((work: { title: string }) => work.title === `${nodeName} 副本`);
   expect(duplicate?.id).toBeTruthy();
 
+  // 显式框选 → 批量工具条 → 将两张图建立为一个多输入生成节点。
+  await page.getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByTitle("框选节点").click();
+  const rootBox = await page.locator(`.react-flow__node[data-id="${rootId}"]`).boundingBox();
+  const duplicateBox = await page.locator(`.react-flow__node[data-id="${duplicate.id}"]`).boundingBox();
+  expect(rootBox).toBeTruthy();
+  expect(duplicateBox).toBeTruthy();
+  const left = Math.min(rootBox!.x, duplicateBox!.x) - 18;
+  const top = Math.min(rootBox!.y, duplicateBox!.y) - 18;
+  const right = Math.max(rootBox!.x + rootBox!.width, duplicateBox!.x + duplicateBox!.width) + 18;
+  const bottom = Math.max(rootBox!.y + rootBox!.height, duplicateBox!.y + duplicateBox!.height) + 18;
+  await page.mouse.move(left, top);
+  await page.mouse.down();
+  await page.mouse.move(right, bottom, { steps: 12 });
+  await page.mouse.up();
+  const batchActions = page.getByLabel("批量操作");
+  await expect(batchActions).toBeVisible();
+  await expect(batchActions.getByText("已选 2 个", { exact: true })).toBeVisible();
+
+  // 拖动任意一个已选节点时，两张图应整组移动并分别持久化坐标。
+  const beforeBatchMove = await account();
+  const rootBeforeBatchMove = beforeBatchMove.artworks.find(
+    (work: { id: string }) => work.id === rootId
+  );
+  const duplicateBeforeBatchMove = beforeBatchMove.artworks.find(
+    (work: { id: string }) => work.id === duplicate.id
+  );
+  const selectedRootBox = await page.locator(`.react-flow__node[data-id="${rootId}"]`).boundingBox();
+  expect(selectedRootBox).toBeTruthy();
+  await page.mouse.move(selectedRootBox!.x + selectedRootBox!.width / 2, selectedRootBox!.y + 18);
+  await page.mouse.down();
+  await page.mouse.move(
+    selectedRootBox!.x + selectedRootBox!.width / 2 + 80,
+    selectedRootBox!.y + 68,
+    { steps: 10 }
+  );
+  await page.mouse.up();
+  await expect.poll(async () => {
+    const moved = await account();
+    const movedRoot = moved.artworks.find((work: { id: string }) => work.id === rootId);
+    const movedDuplicate = moved.artworks.find(
+      (work: { id: string }) => work.id === duplicate.id
+    );
+    return (
+      (movedRoot?.canvasX !== rootBeforeBatchMove?.canvasX ||
+        movedRoot?.canvasY !== rootBeforeBatchMove?.canvasY) &&
+      (movedDuplicate?.canvasX !== duplicateBeforeBatchMove?.canvasX ||
+        movedDuplicate?.canvasY !== duplicateBeforeBatchMove?.canvasY)
+    );
+  }).toBeTruthy();
+  await expect(batchActions).toBeVisible();
+
+  await batchActions.getByRole("button", { name: "批量标记", exact: true }).click();
+  await expect(batchActions.getByRole("button", { name: "取消标记", exact: true })).toBeVisible();
+  await batchActions.getByRole("button", { name: "合并生成节点", exact: true }).click();
+  await expect(page.getByText("2 张输入 · 合并生成到此节点", { exact: true })).toBeVisible();
+  const mergePend = page.locator('.react-flow__node[data-id^="pend-"]').first();
+  await expect(mergePend).toBeVisible();
+  const mergePendId = await mergePend.getAttribute("data-id");
+  expect(mergePendId).toBeTruthy();
+  await expect(page.locator(`.react-flow__edge[data-id$="-${mergePendId}"]`)).toHaveCount(2);
+  await mergePend.hover();
+  await mergePend.getByTitle("删除空白节点").click({ force: true });
+  await expect(page.locator('.react-flow__node[data-id^="pend-"]')).toHaveCount(0);
+
   // 两个独立节点同时生图时，必须出现两个任务节点；期间仍可新建普通节点。
   let fakeJobSeq = 0;
   const fakePolls = new Map<string, number>();

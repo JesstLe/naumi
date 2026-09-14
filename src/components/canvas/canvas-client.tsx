@@ -22,6 +22,7 @@ import {
   useNodesState,
   useEdgesState,
   getBezierPath,
+  SelectionMode,
   type NodeProps,
   type EdgeProps,
   type Node,
@@ -61,6 +62,8 @@ import {
   Crown,
   Zap,
   MapPin,
+  BoxSelect,
+  Combine,
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
@@ -1050,13 +1053,25 @@ export function CanvasClient() {
   // 撤销/重做(实用版:移动/删除/添加)
   type UndoAct =
     | { kind: "move"; id: string; from: { x: number; y: number }; to: { x: number; y: number } }
+    | {
+        kind: "move-many";
+        moves: Array<{
+          id: string;
+          from: { x: number; y: number };
+          to: { x: number; y: number };
+        }>;
+      }
     | { kind: "delete"; records: Artwork[] }
     | { kind: "add"; records: Artwork[] };
   const [undoStack, setUndoStack] = useState<UndoAct[]>([]);
   const [redoStack, setRedoStack] = useState<UndoAct[]>([]);
   const dragStartRef = useRef<{ id: string; x: number; y: number } | null>(null);
+  const selectionDragStartRef = useRef<
+    Record<string, { x: number; y: number }>
+  >({});
   // 框选多选(React Flow 选中集合)
   const [multiSel, setMultiSel] = useState<string[]>([]);
+  const [boxSelectMode, setBoxSelectMode] = useState(false);
   // 居中确认弹框(替代浏览器原生 confirm,贴合站点配色)
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
@@ -1377,6 +1392,19 @@ export function CanvasClient() {
     () => active?.members.find((a) => a.id === selectedId) ?? null,
     [active, selectedId]
   );
+  const selectedBatchArts = useMemo(() => {
+    if (!active || multiSel.length < 2) return [];
+    const byId = new Map(active.members.map((art) => [art.id, art]));
+    return multiSel
+      .map((id) => byId.get(id))
+      .filter((art): art is Artwork => !!art && hasRenderableImage(art.image));
+  }, [active, multiSel]);
+  const selectedBatchIds = useMemo(
+    () => selectedBatchArts.map((art) => art.id),
+    [selectedBatchArts]
+  );
+  const selectedBatchAllMarked =
+    selectedBatchArts.length > 0 && selectedBatchArts.every((art) => art.marked);
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
@@ -1491,7 +1519,7 @@ export function CanvasClient() {
         id: p.id,
         type: "pend",
         position: { x: p.x, y: p.y },
-        // 不设 RF 受控 selected(避免与 onSelectionChange 互相触发循环),只用 data.selected 做高亮
+        // RF 的多选状态由 useNodesState 维护；data.selected 只表示当前编辑中的空白节点。
         data: {
           __id: p.id,
           label: p.label,
@@ -1571,10 +1599,28 @@ export function CanvasClient() {
     )
     .join("|");
   useEffect(() => {
-    setRfNodes(displayNodes);
+    // 数据刷新（如批量标记）时继承 React Flow 当前选择，不从 multiSel 反向灌入，
+    // 避免 selected 与 onSelectionChange 互相触发造成 React #185 无限更新。
+    setRfNodes((current) => {
+      const selectedById = new Map(
+        current.map((node) => [node.id, Boolean(node.selected)])
+      );
+      return displayNodes.map((node) => ({
+        ...node,
+        selected: selectedById.get(node.id) ?? false,
+      }));
+    });
     setRfEdges(displayEdges);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodesSig, edgesSig]);
+
+  function clearCanvasSelection(exitBoxMode = false) {
+    setMultiSel([]);
+    setRfNodes((current) =>
+      current.map((node) => (node.selected ? { ...node, selected: false } : node))
+    );
+    if (exitBoxMode) setBoxSelectMode(false);
+  }
 
   // 选中节点在画布坐标系里的屏幕位置(用模块级 NODE_W/NODE_H = 184/158)
   const nodeScreen = useMemo<
@@ -2376,6 +2422,8 @@ export function CanvasClient() {
       }
       if (records.length) pushUndo({ kind: "delete", records });
       removeWorksLocal(ids); // 服务端成功后再本地移除
+      const deleted = new Set(ids);
+      setMultiSel((current) => current.filter((id) => !deleted.has(id)));
     } catch (e) {
       flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
     }
@@ -2421,6 +2469,10 @@ export function CanvasClient() {
     setUndoStack((s) => s.slice(0, -1));
     setRedoStack((s) => [...s, act]);
     if (act.kind === "move") setPosSilent(act.id, act.from.x, act.from.y);
+    else if (act.kind === "move-many")
+      act.moves.forEach((move) =>
+        setPosSilent(move.id, move.from.x, move.from.y)
+      );
     else if (act.kind === "delete") await restoreRecordsSilent(act.records);
     else if (act.kind === "add") await deleteIdsSilent(act.records.map((r) => r.id));
   }
@@ -2430,6 +2482,8 @@ export function CanvasClient() {
     setRedoStack((s) => s.slice(0, -1));
     setUndoStack((s) => [...s, act]);
     if (act.kind === "move") setPosSilent(act.id, act.to.x, act.to.y);
+    else if (act.kind === "move-many")
+      act.moves.forEach((move) => setPosSilent(move.id, move.to.x, move.to.y));
     else if (act.kind === "delete") await deleteIdsSilent(act.records.map((r) => r.id));
     else if (act.kind === "add") await restoreRecordsSilent(act.records);
   }
@@ -2504,15 +2558,15 @@ export function CanvasClient() {
     }
   }
 
-  // 把当前项目所有图打包下载 ZIP(复用套图下载接口)
-  async function downloadProject() {
-    if (!active || zipping) return;
+  async function downloadZip(members: Artwork[], filename: string) {
+    if (zipping) return;
     setZipping(true);
     try {
-      const items = active.members
+      const items = members
         .filter((m) => hasRenderableImage(m.image))
         .slice(0, 30)
         .map((m, i) => ({ url: m.image, name: m.title || `img-${i + 1}` }));
+      if (!items.length) return;
       const res = await fetch("/api/suite/download", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2523,7 +2577,7 @@ export function CanvasClient() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${active.name || "project"}.zip`;
+      a.download = `${filename || "project"}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -2532,6 +2586,50 @@ export function CanvasClient() {
       /* ignore */
     } finally {
       setZipping(false);
+    }
+  }
+
+  // 把当前项目所有图打包下载 ZIP(复用套图下载接口)
+  async function downloadProject() {
+    if (!active) return;
+    await downloadZip(active.members, active.name || "project");
+  }
+
+  async function downloadBatchSelection() {
+    if (!active || selectedBatchArts.length < 2) return;
+    await downloadZip(
+      selectedBatchArts,
+      `${active.name || "project"}-已选-${selectedBatchArts.length}张`
+    );
+  }
+
+  async function markBatchSelection() {
+    if (!user || readOnly || selectedBatchArts.length < 2) return;
+    const marked = !selectedBatchAllMarked;
+    try {
+      const responses = await Promise.all(
+        selectedBatchIds.map((id) =>
+          privateFetch("/api/artworks/mark", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id, marked }),
+          })
+        )
+      );
+      if (responses.some((response) => !response.ok)) throw new Error();
+      const ids = new Set(selectedBatchIds);
+      setWorks((items) =>
+        items?.map((item) => (ids.has(item.id) ? { ...item, marked } : item)) ??
+        items
+      );
+      flashTip(
+        fmt(t(marked ? "canvas.batchMarked" : "canvas.batchUnmarked"), {
+          n: selectedBatchIds.length,
+        })
+      );
+    } catch {
+      await refetchWorks();
+      flashTip(t("canvas.genFail"));
     }
   }
 
@@ -2922,6 +3020,44 @@ export function CanvasClient() {
     setSelectedPendId(id);
     return pend;
   }
+  // 将框选图片作为同一个新节点的多输入。新节点沿用现有生成 Dock，用户可继续
+  // 写提示词、选比例/数量后生成；Images API 单次最多接收 6 张参考图。
+  function createMergeNodeFromSelection() {
+    if (readOnly || selectedBatchArts.length < 2) return;
+    const inputs = selectedBatchIds.slice(0, MAX_TOTAL_IMAGES);
+    const selectedNodes = (rfRef.current?.getNodes() ?? []).filter((node) =>
+      inputs.includes(node.id)
+    );
+    const seq = pendSeqRef.current++;
+    const id = `pend-${Date.now()}-${seq}`;
+    const maxX = selectedNodes.length
+      ? Math.max(...selectedNodes.map((node) => node.position.x))
+      : 0;
+    const avgY = selectedNodes.length
+      ? selectedNodes.reduce((sum, node) => sum + node.position.y, 0) /
+        selectedNodes.length
+      : 0;
+    const pend: Pend = {
+      id,
+      x: maxX + NODE_W + X_GAP,
+      y: avgY,
+      parentId: inputs[0] ?? null,
+      linked: true,
+      label: `${t("canvas.imageNode")} ${seq}`,
+      uploading: false,
+      progress: 0,
+      inputs,
+    };
+    setPendNodes((current) => [...current, pend]);
+    clearCanvasSelection(true);
+    setSelectedId(null);
+    setSelectedPendId(id);
+    setEditPrompt("");
+    wantFocusPendPrompt.current = true;
+    if (selectedBatchIds.length > MAX_TOTAL_IMAGES) {
+      flashTip(fmt(t("canvas.batchGenerateLimit"), { n: MAX_TOTAL_IMAGES }));
+    }
+  }
   function flashTip(m: string) {
     setTipMsg(m);
     setTimeout(() => setTipMsg(null), 1900);
@@ -3271,12 +3407,25 @@ export function CanvasClient() {
           e.preventDefault();
           void deleteSelected();
         }
+        return;
+      }
+      if (e.key === "Escape" && boxSelectMode) {
+        e.preventDefault();
+        clearCanvasSelection(true);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readOnly, selectedId, selectedGenerating, multiSel, undoStack, redoStack]);
+  }, [
+    readOnly,
+    selectedId,
+    selectedGenerating,
+    multiSel,
+    undoStack,
+    redoStack,
+    boxSelectMode,
+  ]);
 
   // Ctrl/⌘ + 滚轮:阻止浏览器整页缩放(画布内由 React Flow 自己缩放)
   useEffect(() => {
@@ -3742,6 +3891,7 @@ export function CanvasClient() {
               key={active?.key ?? "__new__"}
               colorMode="dark"
               style={{ background: "transparent" }}
+              className={boxSelectMode ? "canvas-box-select" : undefined}
               nodes={rfNodes}
               edges={rfEdges}
               onNodesChange={onNodesChange}
@@ -3799,6 +3949,7 @@ export function CanvasClient() {
               onPaneClick={() => {
                 setSelectedId(null);
                 setSelectedPendId(null);
+                clearCanvasSelection();
                 setCtxMenu(null);
                 setEdgeCut(null);
               }}
@@ -3809,14 +3960,20 @@ export function CanvasClient() {
               onNodeContextMenu={onNodeContextMenu}
               onPaneContextMenu={onPaneContextMenu}
               onSelectionChange={({ nodes: sel }) => {
-                const ids = sel.map((n) => n.id);
+                const ids = sel.map((n) => n.id).sort();
                 // 只在选中集合"真的变化"时才更新,否则会和受控选中态形成无限 setState 循环(React #185)
-                setMultiSel((prev) =>
-                  prev.length === ids.length &&
-                  prev.every((v, i) => v === ids[i])
+                setMultiSel((prev) => {
+                  const sortedPrev = [...prev].sort();
+                  return sortedPrev.length === ids.length &&
+                    sortedPrev.every((v, i) => v === ids[i])
                     ? prev
-                    : ids
-                );
+                    : ids;
+                });
+              }}
+              onSelectionStart={() => {
+                setSelectedId(null);
+                setSelectedPendId(null);
+                setCtxMenu(null);
               }}
               onNodeDragStart={(_, node) => {
                 dragStartRef.current = {
@@ -3851,6 +4008,8 @@ export function CanvasClient() {
                   );
                   return;
                 }
+                // 多选拖动由 onSelectionDragStop 一次性持久化全部节点。
+                if (selectedBatchArts.length > 1 && multiSel.includes(node.id)) return;
                 const st = dragStartRef.current;
                 if (
                   st &&
@@ -3867,6 +4026,65 @@ export function CanvasClient() {
                 }
                 saveNodePosition(node.id, node.position.x, node.position.y);
               }}
+              onSelectionDragStart={(_, selectedNodes) => {
+                selectionDragStartRef.current = Object.fromEntries(
+                  selectedNodes.map((node) => [
+                    node.id,
+                    { x: node.position.x, y: node.position.y },
+                  ])
+                );
+              }}
+              onSelectionDragStop={(_, selectedNodes) => {
+                if (readOnly || !user) return;
+                const starts = selectionDragStartRef.current;
+                const moves = selectedNodes
+                  .filter(
+                    (node) =>
+                      !node.id.startsWith("pend-") &&
+                      !node.id.startsWith("task-") &&
+                      starts[node.id]
+                  )
+                  .map((node) => ({
+                    id: node.id,
+                    from: starts[node.id],
+                    to: { x: node.position.x, y: node.position.y },
+                  }))
+                  .filter(
+                    (move) =>
+                      Math.round(move.from.x) !== Math.round(move.to.x) ||
+                      Math.round(move.from.y) !== Math.round(move.to.y)
+                  );
+                selectionDragStartRef.current = {};
+                if (!moves.length) return;
+                const positions = new Map(moves.map((move) => [move.id, move.to]));
+                setWorks((current) =>
+                  current?.map((work) => {
+                    const position = positions.get(work.id);
+                    return position
+                      ? {
+                          ...work,
+                          canvasX: position.x,
+                          canvasY: position.y,
+                        }
+                      : work;
+                  }) ?? current
+                );
+                void Promise.all(
+                  moves.map((move) =>
+                    privateFetch("/api/artworks/position", {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({
+                        email: user.email,
+                        id: move.id,
+                        x: move.to.x,
+                        y: move.to.y,
+                      }),
+                    }).catch(() => {})
+                  )
+                );
+                pushUndo({ kind: "move-many", moves });
+              }}
               onConnectStart={onConnectStart}
               onConnect={onConnect}
               onConnectEnd={onConnectEnd}
@@ -3876,8 +4094,11 @@ export function CanvasClient() {
               proOptions={{ hideAttribution: true }}
               nodesConnectable={!readOnly}
               deleteKeyCode={null}
-              panOnDrag={[0, 1]}
-              selectionKeyCode="Shift"
+              panOnDrag={boxSelectMode ? [1] : [0, 1]}
+              selectionOnDrag={boxSelectMode}
+              selectionMode={SelectionMode.Partial}
+              selectionKeyCode={boxSelectMode ? null : "Shift"}
+              multiSelectionKeyCode={["Control", "Meta", "Shift"]}
               panOnScroll
               zoomOnScroll={false}
               zoomOnPinch
@@ -4055,7 +4276,7 @@ export function CanvasClient() {
                 <div
                   className={cn(
                     "absolute bottom-5 left-1/2 z-30 flex items-center gap-1 rounded-2xl border border-white/10 bg-card/90 p-1.5 shadow-2xl backdrop-blur transition-all duration-200",
-                    selected || selectedPend
+                    selected || selectedPend || selectedBatchArts.length > 1
                       ? "pointer-events-none translate-x-[-50%] translate-y-4 opacity-0"
                       : "translate-x-[-50%] translate-y-0 opacity-100"
                   )}
@@ -4130,6 +4351,26 @@ export function CanvasClient() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => {
+                      const next = !boxSelectMode;
+                      setBoxSelectMode(next);
+                      setSelectedId(null);
+                      setSelectedPendId(null);
+                      clearCanvasSelection();
+                    }}
+                    title={t("canvas.boxSelect")}
+                    aria-pressed={boxSelectMode}
+                    className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-xl transition-colors",
+                      boxSelectMode
+                        ? "bg-[#e8efff] text-[#315fc8]"
+                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    )}
+                  >
+                    <BoxSelect className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={toolGenerate}
                     title={t("canvas.spawnGenerate")}
                     className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
@@ -4160,6 +4401,69 @@ export function CanvasClient() {
                     className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                   >
                     <HelpCircle className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+
+              {selectedBatchArts.length > 1 && !readOnly && (
+                <div
+                  aria-label={t("canvas.batchActions")}
+                  className="cz-anim-bottom absolute bottom-5 left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl"
+                >
+                  <span className="whitespace-nowrap px-2 text-xs font-semibold text-[#5f6877]">
+                    {fmt(t("canvas.batchSelected"), {
+                      n: selectedBatchArts.length,
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={createMergeNodeFromSelection}
+                    className="flex h-9 items-center gap-1.5 rounded-xl bg-[#315fc8] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#274fa9]"
+                  >
+                    <Combine className="h-4 w-4" />
+                    {t("canvas.batchGenerate")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void markBatchSelection()}
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8]"
+                  >
+                    <MapPin className="h-4 w-4" />
+                    {t(
+                      selectedBatchAllMarked
+                        ? "canvas.batchUnmark"
+                        : "canvas.batchMark"
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={zipping}
+                    onClick={() => void downloadBatchSelection()}
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8] disabled:opacity-45"
+                  >
+                    {zipping ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                    {t("canvas.batchDownload")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => batchDelete(selectedBatchIds)}
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#d24b45] transition-colors hover:bg-[#fff0ef]"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {t("canvas.delete")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => clearCanvasSelection(true)}
+                    aria-label={t("canvas.batchClear")}
+                    title={t("canvas.batchClear")}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-[#7a8494] transition-colors hover:bg-[#f0f3f8] hover:text-[#20242c]"
+                  >
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
               )}
@@ -5267,6 +5571,7 @@ export function CanvasClient() {
                 t("canvas.help4"),
                 t("canvas.help5"),
                 t("canvas.help6"),
+                t("canvas.help7"),
               ].map((line, i) => (
                 <li key={i} className="flex gap-2">
                   <span className="text-primary">·</span>

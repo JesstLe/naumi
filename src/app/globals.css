@@ -394,6 +394,12 @@
   stroke-width: 2.8;
   filter: drop-shadow(0 0 6px rgba(134, 193, 255, .6));
 }
+/* 显式框选模式:左键拖出选择框，部分覆盖节点也会选中；中键仍可平移。 */
+.canvas-box-select .react-flow__pane { cursor: crosshair; }
+.canvas-box-select .react-flow__selection {
+  border: 1px solid rgba(99, 102, 241, .9);
+  background: rgba(99, 102, 241, .12);
+}
 @media (prefers-reduced-motion: reduce) {
   .react-flow__edge.cw-flow .react-flow__edge-path { animation: none; stroke-dasharray: none; }
   .react-flow__edge path.cw-comet { animation: none; display: none; }
