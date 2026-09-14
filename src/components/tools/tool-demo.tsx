@@ -54,7 +54,36 @@ export const TOOL_DEMOS: Record<
     before: "/demos/dewrinkle-before.webp",
     after: "/demos/dewrinkle-after.webp",
   },
-  avatar: { title: "普通照片,秒变精致 AI 头像" },
+  agent: {
+    title: "一句话下达任务,自动编排多个工具完成",
+    before: "/demos/agent-before.webp",
+    after: "/demos/agent-after.webp",
+  },
+  avatar: {
+    title: "普通照片,秒变干净头像素材",
+    before: "/demos/avatar-before.webp",
+    after: "/demos/avatar-after.webp",
+  },
+  packaging3d: {
+    title: "平面模切线,生成完整包装 3D 效果",
+    before: "/demos/packaging3d-before.webp",
+    after: "/demos/packaging3d-after.webp",
+  },
+  replicate: {
+    title: "商品原图 + 风格参考,复刻同款商业视觉",
+    before: "/demos/replicate-before.webp",
+    after: "/demos/replicate-after.webp",
+  },
+  retouch: {
+    title: "普通商品图,一键精修成商业级成片",
+    before: "/demos/retouch-before.webp",
+    after: "/demos/retouch-after.webp",
+  },
+  recolor: {
+    title: "保留商品结构和纹理,一键更换配色",
+    before: "/demos/recolor-before.webp",
+    after: "/demos/recolor-after.webp",
+  },
   print: {
     title: "成品图上的印花,一键提取成素材",
     before: "/demos/print-before.webp",
@@ -135,19 +164,35 @@ export function ToolDemo({
   before,
   after,
   gallery,
+  compact = false,
+  notice = false,
 }: {
   title: string;
   combo?: string;
   before?: string;
   after?: string;
   gallery?: string[];
+  compact?: boolean;
+  notice?: boolean;
 }) {
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
   const hasPair = !!before && !!after;
   return (
-    <div className="flex flex-1 flex-col items-center justify-start gap-6 px-4 pb-8 pt-10 text-center">
-      <h3 className="max-w-[90%] text-[18px] font-bold leading-snug text-acc sm:text-[21px]">
+    <div
+      className={
+        compact
+          ? "flex w-full flex-col items-center gap-3 text-center"
+          : "flex flex-1 flex-col items-center justify-start gap-6 px-4 pb-8 pt-10 text-center"
+      }
+    >
+      <h3
+        className={
+          compact
+            ? "max-w-[90%] text-[16px] font-bold leading-snug text-acc"
+            : "max-w-[90%] text-[18px] font-bold leading-snug text-acc sm:text-[21px]"
+        }
+      >
         {title}
       </h3>
       {gallery?.length ? (
@@ -172,18 +217,22 @@ export function ToolDemo({
           />
         </div>
       ) : hasPair ? (
-        <div className="flex w-full items-center justify-center gap-3 sm:gap-5">
+        <div className={compact ? "flex w-full items-center justify-center gap-2.5" : "flex w-full items-center justify-center gap-3 sm:gap-5"}>
           <figure className="flex shrink-0 flex-col items-center gap-1.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={cdnUrl(before!)}
               alt={L("原图", "Original")}
-              className="aspect-square w-[clamp(110px,34vw,220px)] rounded-2xl border border-c-border bg-c-subtle2 object-contain shadow-card"
+              className={
+                compact
+                  ? "aspect-square w-[88px] rounded-xl border border-c-border bg-c-subtle2 object-contain shadow-card sm:w-[clamp(104px,24vw,140px)]"
+                  : "aspect-square w-[96px] rounded-2xl border border-c-border bg-c-subtle2 object-contain shadow-card sm:w-[clamp(110px,34vw,220px)]"
+              }
             />
             <figcaption className="text-[11.5px] text-c-text3">{L("原图", "Original")}</figcaption>
           </figure>
           <svg
-            className="h-8 w-8 flex-none text-acc sm:h-10 sm:w-10"
+            className={compact ? "h-7 w-7 flex-none text-acc" : "h-8 w-8 flex-none text-acc sm:h-10 sm:w-10"}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -198,7 +247,11 @@ export function ToolDemo({
             <img
               src={cdnUrl(after!)}
               alt={L("效果", "Result")}
-              className="aspect-square w-[clamp(110px,34vw,220px)] rounded-2xl border-2 border-acc bg-c-subtle2 object-contain shadow-card"
+              className={
+                compact
+                  ? "aspect-square w-[88px] rounded-xl border-2 border-acc bg-c-subtle2 object-contain shadow-card sm:w-[clamp(104px,24vw,140px)]"
+                  : "aspect-square w-[96px] rounded-2xl border-2 border-acc bg-c-subtle2 object-contain shadow-card sm:w-[clamp(110px,34vw,220px)]"
+              }
             />
             <figcaption className="text-[11.5px] font-medium text-acc">
               {L("效果", "Result")}
@@ -211,6 +264,11 @@ export function ToolDemo({
           <p className="text-[13px]">{L("上传左侧图片,马上体验", "Upload an image on the left to try it")}</p>
         </div>
       )}
+      {notice && (combo || hasPair || gallery?.length) ? (
+        <p className="text-[11px] text-c-text4">
+          {L("示例为演示素材,实际结果以你的图片为准", "Demo only; results depend on your image")}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -213,6 +213,23 @@ async function ensureSchema(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS app_genchat_email_idx
           ON app_genchat_sessions (email, updated_at DESC);
+        -- 业务项目注册表:统一聚合入口(导航下拉/首页卡片/Agent 工具来源)
+        CREATE TABLE IF NOT EXISTS app_projects (
+          id          serial PRIMARY KEY,
+          slug        text NOT NULL UNIQUE,
+          name        text NOT NULL,
+          description text NOT NULL DEFAULT '',
+          url         text NOT NULL DEFAULT '',
+          icon        text NOT NULL DEFAULT 'Box',
+          color       text NOT NULL DEFAULT '#4F46E5',
+          category    text NOT NULL DEFAULT '业务系统',
+          agent_tool  boolean NOT NULL DEFAULT false,
+          run_type    text NOT NULL DEFAULT 'web',
+          visible     boolean NOT NULL DEFAULT true,
+          sort_index  integer NOT NULL DEFAULT 0,
+          created_at  timestamptz NOT NULL DEFAULT now()
+        );
+        ALTER TABLE app_projects ADD COLUMN IF NOT EXISTS run_type text NOT NULL DEFAULT 'web';
         -- Agent 任务会话:消息历史 + 工具轨迹(公开摘要),支持刷新恢复。
         -- 主键 (email,id):防跨用户猜 id 覆盖;新库直接建复合主键。
         CREATE TABLE IF NOT EXISTS app_agent_sessions (
@@ -3075,6 +3092,93 @@ export type AgentSessionRow = {
   created_at: string;
   updated_at: string;
 };
+
+// ── 业务项目注册表 ──────────────────────────────────────────────────────────
+export type ProjectRow = {
+  id: number;
+  slug: string;
+  name: string;
+  description: string;
+  url: string;
+  icon: string;
+  color: string;
+  category: string;
+  agent_tool: boolean;
+  run_type: "web" | "script" | "external";
+  visible: boolean;
+  sort_index: number;
+};
+
+// 默认业务项目种子(仅表空时播种一次;后台可增删改)
+let projectsSeeded = false;
+export async function seedProjects(): Promise<void> {
+  if (projectsSeeded) return;
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT 1 FROM app_projects LIMIT 1`
+  );
+  if ((rows.length ?? 0) > 0) {
+    projectsSeeded = true;
+    return;
+  }
+  const defaults = [
+    { slug: "naumi", name: "Naumi 工具台", description: "AI 生图/套图/A+/精修/换色 美工工作站", url: "/", icon: "Sparkles", color: "#4F46E5", category: "美工", agent_tool: true, sort_index: 1 },
+    { slug: "sycm", name: "生意参谋助手", description: "品牌星图选词 → 生意参谋核对 → 淘宝前十比对", url: "", icon: "TrendingUp", color: "#2E7CF6", category: "运营", agent_tool: true, sort_index: 2 },
+    { slug: "review-monitor", name: "差评巡检", description: "淘宝商品评价采集与差词统计", url: "", icon: "ShieldAlert", color: "#C2882E", category: "运营", agent_tool: true, sort_index: 3 },
+    { slug: "scm", name: "SCM 上架", description: "阿里健康 SCM 新品/组套自动上架", url: "", icon: "PackagePlus", color: "#7C3AED", category: "运营", agent_tool: true, sort_index: 4 },
+    { slug: "yutang", name: "鱼塘任务", description: "营销单/刷任务派发", url: "", icon: "Fish", color: "#0E9F8A", category: "营销", agent_tool: true, sort_index: 5 },
+    { slug: "rag", name: "经营知识库", description: "高管/经理助理 RAG 问答(规划中)", url: "", icon: "BookOpen", color: "#6D5BF6", category: "管理", agent_tool: false, sort_index: 6 },
+  ];
+  for (const d of defaults) {
+    await getPool().query(
+      `INSERT INTO app_projects (slug, name, description, url, icon, color, category, agent_tool, visible, sort_index)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,$9) ON CONFLICT (slug) DO NOTHING`,
+      [d.slug, d.name, d.description, d.url, d.icon, d.color, d.category, d.agent_tool, d.sort_index]
+    );
+  }
+  projectsSeeded = true;
+}
+
+export async function listProjects(onlyVisible = true): Promise<ProjectRow[]> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT * FROM app_projects ${onlyVisible ? "WHERE visible = true" : ""}
+      ORDER BY sort_index ASC, id ASC`,
+  );
+  return rows as ProjectRow[];
+}
+
+export async function upsertProject(p: {
+  slug: string; name: string; description?: string; url?: string;
+  icon?: string; color?: string; category?: string;
+  agent_tool?: boolean; run_type?: string; visible?: boolean; sort_index?: number;
+}): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `INSERT INTO app_projects
+       (slug, name, description, url, icon, color, category, agent_tool, run_type, visible, sort_index)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT (slug) DO UPDATE SET
+       name = EXCLUDED.name,
+       description = EXCLUDED.description,
+       url = EXCLUDED.url,
+       icon = EXCLUDED.icon,
+       color = EXCLUDED.color,
+       category = EXCLUDED.category,
+       agent_tool = EXCLUDED.agent_tool,
+       run_type = EXCLUDED.run_type,
+       visible = EXCLUDED.visible,
+       sort_index = EXCLUDED.sort_index`,
+    [p.slug, p.name, p.description ?? "", p.url ?? "", p.icon ?? "Box",
+     p.color ?? "#4F46E5", p.category ?? "业务系统",
+     p.agent_tool ?? false, p.run_type ?? "web", p.visible ?? true, p.sort_index ?? 0],
+  );
+}
+
+export async function deleteProject(slug: string): Promise<void> {
+  await ensureSchema();
+  await getPool().query(`DELETE FROM app_projects WHERE slug = $1`, [slug]);
+}
 
 export async function saveAgentSession(
   email: string,

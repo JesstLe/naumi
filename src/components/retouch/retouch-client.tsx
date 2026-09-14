@@ -22,6 +22,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
+import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 
 // ---------------------------------------------------------------------------
 // AI 商品精修工作台(对标竞品 产品精修):
@@ -280,22 +281,7 @@ export function RetouchClient() {
             </div>
           )}
           {!loading && !result && (
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16 text-center">
-              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-secondary text-c-text3">
-                <Sparkles className="h-6 w-6" />
-              </span>
-              <div>
-                <h2 className="text-[17px] font-bold text-c-text">AI 商品精修</h2>
-                <p className="mt-1.5 max-w-md text-[13.5px] leading-relaxed text-muted-foreground">
-                  AI 自动分析并优化画质、去除瑕疵、增强细节,一键提升商品图质感。
-                </p>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-[11.5px] text-muted-foreground">
-                <span className="rounded-full border border-border px-2.5 py-1">商品不变</span>
-                <span className="rounded-full border border-border px-2.5 py-1">质感升级</span>
-                <span className="rounded-full border border-border px-2.5 py-1">可直接上架</span>
-              </div>
-            </div>
+            <ToolDemo {...getDemo("retouch")!} notice />
           )}
           {!loading && result && (
             <div className="space-y-4">

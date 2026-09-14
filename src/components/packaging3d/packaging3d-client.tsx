@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Cuboid, Download, FileImage, Upload, X } from "lucide-react";
+import { Cuboid, Download, Upload, X } from "lucide-react";
 import { ToolShell, ShellChips } from "@/components/tools/tool-shell";
+import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
@@ -304,12 +305,7 @@ export function Packaging3dClient() {
               </p>
             </div>
           ) : (
-            <div className="text-center text-c-text4">
-              <FileImage className="mx-auto h-10 w-10 stroke-[1.4]" />
-              <p className="mt-3 text-[13px] font-medium text-c-text3">
-                {L("上传模切线图开始", "Upload a dieline to begin")}
-              </p>
-            </div>
+            <ToolDemo {...getDemo("packaging3d")!} notice />
           )}
         </div>
       )}

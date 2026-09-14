@@ -21,6 +21,7 @@ import { usePaymentConfig } from "@/lib/payment-context";
 import { authHeader } from "@/lib/supabase";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
+import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 
 // ---------------------------------------------------------------------------
 // 爆款图复刻工作台(对标竞品 爆款复刻):
@@ -432,23 +433,7 @@ export function ReplicateClient() {
             </div>
           )}
           {!loading && !result && (
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16 text-center">
-              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-secondary text-c-text3">
-                <Flame className="h-6 w-6" />
-              </span>
-              <div>
-                <h2 className="text-[17px] font-bold text-c-text">爆款图复刻</h2>
-                <p className="mt-1.5 max-w-md text-[13.5px] leading-relaxed text-muted-foreground">
-                  上传一张卖得爆的参考图和你的商品原图,AI
-                  将把你的商品复刻为同款风格、同款构图的电商图。
-                </p>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-[11.5px] text-muted-foreground">
-                <span className="rounded-full border border-border px-2.5 py-1">构图复刻</span>
-                <span className="rounded-full border border-border px-2.5 py-1">风格迁移</span>
-                <span className="rounded-full border border-border px-2.5 py-1">文案本地化</span>
-              </div>
-            </div>
+            <ToolDemo {...getDemo("replicate")!} notice />
           )}
           {!loading && result && (
             <div className="space-y-4">

@@ -41,6 +41,9 @@ services:
       AGENT_BASE_URL: ${AGENT_BASE_URL:-}
       AGENT_API_KEY: ${AGENT_API_KEY:-}
       AGENT_MODEL: ${AGENT_MODEL:-qwen3.8-flash}
+      YUTANG_API_BASE: ${YUTANG_API_BASE:-http://host.docker.internal:8766}
+      YUTANG_USER: ${YUTANG_USER:-h13365319844}
+      YUTANG_PASS: ${YUTANG_PASS:-renda2026}
       AGENT_VISION_MODEL: ${AGENT_VISION_MODEL:-qwen3.8-flash}
       # AES key for encrypting stored API keys at rest.
       # ⚠️ Set a long random value BEFORE first run and never change it afterwards.
@@ -59,6 +62,9 @@ services:
       # Optional: Pro license (or enter it in the first-run wizard instead)
       # NAUMI_EDITION: pro
       # PRO_LICENSE_KEY: NOVA-XXXX-XXXX-XXXX-XXXX
+    extra_hosts:
+      # 宿主机服务(鱼塘 8766)从容器内访问走 host.docker.internal
+      - "host.docker.internal:host-gateway"
     volumes:
       - appdata:/data
     depends_on:

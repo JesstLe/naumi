@@ -16,6 +16,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
+import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 
 // ---------------------------------------------------------------------------
 // AI 产品换色工作台(对标竞品 产品换色):
@@ -283,23 +284,7 @@ export function RecolorClient() {
             </div>
           )}
           {!loading && !result && (
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16 text-center">
-              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-secondary text-c-text3">
-                <Droplet className="h-6 w-6" />
-              </span>
-              <div>
-                <h2 className="text-[17px] font-bold text-c-text">AI 产品换色</h2>
-                <p className="mt-1.5 max-w-md text-[13.5px] leading-relaxed text-muted-foreground">
-                  上传商品原图,选择目标颜色,AI
-                  即刻为商品换上新配色——形态、纹理、光影与背景保持不变。
-                </p>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-[11.5px] text-muted-foreground">
-                <span className="rounded-full border border-border px-2.5 py-1">只换颜色</span>
-                <span className="rounded-full border border-border px-2.5 py-1">纹理光影保留</span>
-                <span className="rounded-full border border-border px-2.5 py-1">多色出 SKU 图</span>
-              </div>
-            </div>
+            <ToolDemo {...getDemo("recolor")!} notice />
           )}
           {!loading && result && (
             <div className="space-y-4">

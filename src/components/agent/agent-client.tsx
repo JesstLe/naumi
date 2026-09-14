@@ -21,6 +21,7 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
+import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 
 // ---------------------------------------------------------------------------
 // Agent 任务模式:自然语言下达图片任务,pi-agent 编排站内工具完成。
@@ -744,20 +745,13 @@ export function AgentClient() {
           {/* 消息区 */}
           <div ref={scrollRef} className="nv-panel-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">
           {messages.length === 0 && (
-            <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-              <span
-                className="grid h-14 w-14 place-items-center rounded-2xl"
-                style={{ background: "rgba(79,70,229,.12)", color: "#4F46E5" }}
-              >
-                <Bot className="h-7 w-7" />
-              </span>
-              <div>
-                <h2 className="text-[17px] font-bold text-c-text">下达一个完整任务</h2>
-                <p className="mx-auto mt-1.5 max-w-md text-[13.5px] leading-relaxed text-muted-foreground">
-                  例:「把这张商品图精修一遍,然后出 4 个换色版本」「用这张图生成一套亚马逊
-                  A+ 详情页」——先上传商品图,再描述任务即可。
-                </p>
+            <div className="flex min-h-full flex-col items-center justify-center gap-3 py-3 text-center">
+              <div className="w-full max-w-[500px]">
+                <ToolDemo {...getDemo("agent")!} compact />
               </div>
+              <p className="mx-auto max-w-md text-[13px] leading-relaxed text-muted-foreground">
+                先上传商品图,再描述完整任务；Agent 会按顺序调用所需工具。
+              </p>
               <div className="flex flex-wrap items-center justify-center gap-2 text-[11.5px] text-muted-foreground">
                 {["AI 生图", "商品精修", "产品换色", "爆款复刻", "一键套图", "A+ 详情页"].map(
                   (x) => (

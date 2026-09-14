@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, X, ArrowRight, ArrowUpRight } from "lucide-react";
+import { ChevronDown, ExternalLink, Menu, X, ArrowRight, ArrowUpRight } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
@@ -26,6 +26,127 @@ const NAV = [
   { href: "/canvas", key: "nav.canvas", auth: true },
   { href: "/account?tab=credits", key: "nav.credits" },
 ];
+
+// ── 业务项目聚合:导航「业务系统」下拉 ─────────────────────────────────────
+type HubProject = {
+  slug: string;
+  name: string;
+  description: string;
+  url: string;
+  icon: string;
+  color: string;
+  category: string;
+  run_type?: "web" | "script" | "external";
+};
+
+function HubProjectsMenu({ mobile }: { mobile?: boolean }) {
+  const [projects, setProjects] = useState<HubProject[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (loaded) return;
+    setLoaded(true);
+    fetch("/api/hub/projects")
+      .then((r) => r.json())
+      .then((d) => setProjects(d.projects ?? []))
+      .catch(() => {});
+  }, [loaded]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  if (projects.length === 0) return null; // 未注册任何项目时不渲染
+
+  if (mobile) {
+    return (
+      <div className="border-t border-border/70 pt-3">
+        <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          业务系统
+        </p>
+        {projects.map((p) => (
+          <a
+            key={p.slug}
+            href={p.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <span
+              className="h-2.5 w-2.5 flex-none rounded-full"
+              style={{ background: p.color }}
+            />
+            {p.name}
+            <ExternalLink className="ml-auto h-3.5 w-3.5 opacity-50" />
+          </a>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+          open && "bg-secondary text-foreground"
+        )}
+      >
+        业务系统
+        <ChevronDown
+          className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")}
+        />
+      </button>
+      {open && (
+        <div className="absolute left-1/2 top-[calc(100%+8px)] z-50 w-[340px] -translate-x-1/2 rounded-2xl border border-border bg-card p-2 shadow-xl">
+          {projects.map((p) => (
+            <a
+              key={p.slug}
+              href={p.url || "/hub"}
+              target={p.url ? "_blank" : undefined}
+              rel="noopener noreferrer"
+              className="flex items-start gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-secondary"
+            >
+              <span
+                className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-lg text-[13px] font-bold text-white"
+                style={{ background: p.color }}
+              >
+                {p.name.slice(0, 1)}
+              </span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1 text-[13.5px] font-semibold text-foreground">
+                  {p.name}
+                  {p.run_type === "script" ? (
+                    <span className="rounded bg-secondary px-1 py-px text-[9px] font-medium text-muted-foreground">
+                      脚本
+                    </span>
+                  ) : (
+                    <ExternalLink className="h-3 w-3 opacity-40" />
+                  )}
+                </span>
+                {p.description && (
+                  <span className="mt-0.5 block truncate text-[12px] text-muted-foreground">
+                    {p.description}
+                  </span>
+                )}
+              </span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // 红橙渐变「HOT」胶囊 + 向外扩散的脉冲光圈(方案 A 徽标)
 function HotBadge() {
@@ -221,6 +342,7 @@ export function SiteHeader() {
               </Link>
             )
           )}
+          <HubProjectsMenu />
         </nav>
 
         <div className="flex items-center gap-2">
@@ -316,6 +438,7 @@ export function SiteHeader() {
                 )}
               </Link>
             ))}
+            <HubProjectsMenu mobile />
             {BRAND_PARENT_URL && (
               <a
                 href={BRAND_PARENT_URL}
@@ -349,6 +472,7 @@ export function SiteHeader() {
                   }}
                 >
                   {t("header.signup")}
+                  <ArrowRight className="h-4 w-4" />
                 </Button>
               </div>
             )}

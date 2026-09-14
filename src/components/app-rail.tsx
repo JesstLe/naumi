@@ -19,6 +19,7 @@ import {
   ChevronDown,
   ShieldCheck,
   User as UserIcon,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/locale-context";
@@ -54,6 +55,74 @@ const MENU_COLS = [
   [MENU_CATS[0], MENU_CATS[1]],
   [MENU_CATS[2], MENU_CATS[3]],
 ].map((col) => col.filter(Boolean));
+
+
+// ── 业务系统下拉:从 app_projects 注册表拉取,hover 展开,新标签打开 ──
+type HubProject = {
+  slug: string;
+  name: string;
+  description: string;
+  url: string;
+  color: string;
+};
+
+function HubMenu() {
+  const { locale } = useI18n();
+  const L = (zh: string, en: string) => (locale === "en" ? en : zh);
+  const [projects, setProjects] = useState<HubProject[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (loaded) return;
+    setLoaded(true);
+    fetch("/api/hub/projects")
+      .then((r) => r.json())
+      .then((d) => setProjects(d.projects ?? []))
+      .catch(() => {});
+  }, [loaded]);
+
+  if (projects.length === 0) return null;
+
+  return (
+    <div className="group/hub relative">
+      <span className="flex h-[60px] cursor-default items-center px-1.5">
+        <span className="flex items-center gap-1 rounded-[10px] px-3 py-1.5 text-[14px] font-medium text-c-text2 transition-colors group-hover/hub:bg-c-subtle group-hover/hub:text-c-text">
+          {L("业务系统", "Business")}
+          <ChevronDown className="h-3.5 w-3.5 opacity-60 transition-transform group-hover/hub:rotate-180" />
+        </span>
+      </span>
+      <div className="nv-menu-down invisible absolute left-0 top-[calc(100%+6px)] z-50 w-[300px] rounded-[16px] border border-c-border bg-c-card p-2 opacity-0 shadow-pop transition-all duration-150 group-hover/hub:visible group-hover/hub:opacity-100">
+        {projects.map((p) => (
+          <a
+            key={p.slug}
+            href={p.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-start gap-3 rounded-[12px] px-2.5 py-2 transition-colors hover:bg-c-subtle"
+          >
+            <span
+              className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-[10px] text-[13px] font-bold text-white"
+              style={{ background: p.color }}
+            >
+              {p.name.slice(0, 1)}
+            </span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-1 text-[13.5px] font-semibold text-c-text">
+                {p.name}
+                <ExternalLink className="h-3 w-3 opacity-40" />
+              </span>
+              {p.description && (
+                <span className="mt-0.5 block truncate text-[12px] text-c-text3">
+                  {p.description}
+                </span>
+              )}
+            </span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function AppRail() {
   const { t, locale } = useI18n();
@@ -386,6 +455,7 @@ export function AppRail() {
           {NAV_AFTER.map((it) => (
             <TopLink key={it.href} {...it} />
           ))}
+          <HubMenu />
         </nav>
 
         <div className="flex-1" />

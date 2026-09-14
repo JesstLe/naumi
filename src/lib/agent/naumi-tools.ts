@@ -41,7 +41,15 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
  9. continue_aplus_generation:全部母图通过后继续生成 A+，此时计费=模块数×6。
  10. generate_packaging_3d:把模切线/刀版图折叠为包装 3D 产品效果图。参数 image_url、package_type、view、material、background、resolution、text。
 
+## 可用工具(鱼塘任务 · 澜序协作 — 营销单/刷任务派发系统)
+- yutang_summary:只读。汇总鱼塘任务全景:今日任务数、待回传订单、评价进度、各店铺分布。
+- yutang_list_tasks:只读。按筛选条件列出任务(状态/负责人/店铺/关键词)。
+- yutang_get_task:只读。查单个任务详情(含订单与评价状态)。
+- yutang_create_task:写。创建放单任务(店铺/商品图/宝贝ID/关键词/单数/价格/时段/要求)。计费 0 但产生真实业务动作,创建前必须与用户确认内容。
+- yutang_update_task:写。修改任务(状态/负责人/备注等)。修改前与用户确认改动点。
+
 ## 工作规则
+0. 鱼塘工具的修改类操作(create/update)会直接改动真实业务数据——执行前必须向用户复述将要做出的改动并获得确认;用户已明确指令时可直接执行并汇报结果。
 1. 用户消息里的商品图以 URL 形式出现(格式:[商品图] <url> 或工具返回的图片 URL);工具的图片参数必须传入,用户没给就先要,不要编造 URL。
 2. 每次工具调用都有积分成本;同一任务参数相同不要重复调用。
 3. 工具返回的图片 URL 用 Markdown 图片语法展示:![描述](url)。
@@ -269,6 +277,216 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
   function fmtImages(urls: string[]): string {
     return urls.map((u, i) => `![结果${i + 1}](${u})\n${u}`).join("\n");
   }
+
+  // ── 鱼塘任务(澜序协作)API 封装:独立登录会话,凭据来自 env ──
+  const YT = (process.env.YUTANG_API_BASE || "http://host.docker.internal:8766").replace(/\/+$/, "");
+  const YT_USER = process.env.YUTANG_USER || "h13365319844";
+  const YT_PASS = process.env.YUTANG_PASS || "renda2026";
+  let ytCookie = "";
+  let ytLoginAt = 0;
+
+  async function ytLogin(signal?: AbortSignal): Promise<string> {
+    if (ytCookie && Date.now() - ytLoginAt < 3_600_000) return ytCookie;
+    const res = await fetch(YT + "/api/login", {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: YT_USER, password: YT_PASS }),
+    });
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error("鱼塘登录失败: " + (data.error || res.status));
+    const m = (res.headers.get("set-cookie") || "").match(/fishpond_session=([^;]+)/);
+    if (!m) throw new Error("鱼塘登录未返回会话");
+    ytCookie = "fishpond_session=" + m[1];
+    ytLoginAt = Date.now();
+    return ytCookie;
+  }
+
+  async function ytApi(path: string, signal: AbortSignal | undefined, init?: RequestInit): Promise<any> {
+    const cookie = await ytLogin(signal);
+    const res = await fetch(YT + path, {
+      ...init,
+      signal,
+      headers: { ...(init?.headers || {}), cookie },
+    });
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "鱼塘接口 " + path + " 返回 " + res.status);
+    // GET /api/state 返回 {ok, state:{tasks,orders,...}, version}:剥壳取 state
+    if (path === "/api/state" && data && typeof data === "object" && "state" in data) {
+      return data.state ?? {};
+    }
+    return data;
+  }
+
+  function ytBrief(t: any): string {
+    const total = Number(t.qty) || 0;
+    const done = Number(t.completed) || 0;
+    return (t.store || "未知店铺") + " · " + (t.productName || t.note || "无备注")
+      + " · 负责人:" + (t.owner || "—") + " · " + done + "/" + total + " 单 · " + (t.status || "");
+  }
+
+  const yutangTools: AgentTool[] = [
+    {
+      name: "yutang_summary",
+      label: "鱼塘·任务全景",
+      description:
+        "只读。鱼塘任务系统全景:总任务数、状态分布、B端回传订单数、评价进度、店铺分布。用户问『鱼塘怎么样/今天几单/任务进度』时调用。",
+      parameters: Type.Object({}),
+      executionMode: "sequential",
+      execute: async (_id, _params, signal) => {
+        const st: any = await withToolTimeout("read_only", () => ytApi("/api/state", signal), signal);
+        const tasks: any[] = st.tasks || [];
+        const orders: any[] = st.orders || [];
+        const reviews: any[] = st.reviews || [];
+        const byStatus: Record<string, number> = {};
+        const byStore: Record<string, number> = {};
+        for (const t of tasks) {
+          byStatus[t.status || "未知"] = (byStatus[t.status || "未知"] || 0) + 1;
+          byStore[t.store || "未知"] = (byStore[t.store || "未知"] || 0) + 1;
+        }
+        const lines = [
+          "任务总数:" + tasks.length,
+          ...Object.entries(byStatus).map(([k, v]) => "  " + k + ":" + v),
+          "B端已回传订单:" + orders.length,
+          "评价记录:" + reviews.length,
+          "店铺分布:" + Object.entries(byStore).map(([k, v]) => k + "(" + v + ")").join(", "),
+        ];
+        return {
+          content: [{ type: "text", text: lines.join("\n") }],
+          details: { publicSummary: "汇总 " + tasks.length + " 个任务 / " + orders.length + " 单 / " + reviews.length + " 条评价" },
+        };
+      },
+    },
+    {
+      name: "yutang_list_tasks",
+      label: "鱼塘·任务列表",
+      description:
+        "只读。按条件筛选任务:状态(待执行/进行中/已完成)、负责人、店铺、宝贝ID或关键词。最多返回 20 条。",
+      parameters: Type.Object({
+        status: Type.String({ description: "状态过滤,选填" }),
+        owner: Type.String({ description: "负责人过滤,选填" }),
+        store: Type.String({ description: "店铺过滤,选填" }),
+        keyword: Type.String({ description: "宝贝ID/关键词,选填" }),
+      }),
+      executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p: any = params;
+        const st: any = await withToolTimeout("read_only", () => ytApi("/api/state", signal), signal);
+        let tasks: any[] = st.tasks || [];
+        if (p.status) tasks = tasks.filter((t: any) => (t.status || "").includes(p.status));
+        if (p.owner) tasks = tasks.filter((t: any) => (t.owner || "").includes(p.owner));
+        if (p.store) tasks = tasks.filter((t: any) => (t.store || "").includes(p.store));
+        if (p.keyword) tasks = tasks.filter((t: any) => JSON.stringify(t).includes(p.keyword));
+        const shown = tasks.slice(0, 20).map((t: any, i: number) => (i + 1) + ". " + ytBrief(t) + " [id=" + t.id + "]");
+        return {
+          content: [{ type: "text", text: "匹配 " + tasks.length + " 个任务:\n" + (shown.join("\n") || "(无)") }],
+          details: { publicSummary: "命中 " + tasks.length + " 个任务" },
+        };
+      },
+    },
+    {
+      name: "yutang_get_task",
+      label: "鱼塘·任务详情",
+      description: "只读。单个任务详情:基本信息、关联订单回传、评价状态。",
+      parameters: Type.Object({
+        task_id: Type.String({ description: "任务 id(从列表获得)" }),
+      }),
+      executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p: any = params;
+        const st: any = await withToolTimeout("read_only", () => ytApi("/api/state", signal), signal);
+        const task = (st.tasks || []).find((t: any) => String(t.id) === String(p.task_id));
+        if (!task) throw new Error("任务 " + p.task_id + " 不存在");
+        const orders: any[] = (st.orders || []).filter((o: any) => String(o.taskId) === String(p.task_id));
+        const reviews: any[] = (st.reviews || []).filter((r: any) =>
+          orders.some((o: any) => String(o.id) === String(r.orderId)));
+        const lines = [
+          "任务:" + (task.store || "") + " " + (task.productName || task.note || ""),
+          "负责人:" + (task.owner || "—") + " · 状态:" + (task.status || "—"),
+          "数量:" + (task.completed || 0) + "/" + (task.qty || 0) + " 单",
+          "关联订单:" + orders.length + " 条",
+          ...orders.slice(0, 10).map((o: any, i: number) =>
+            "  " + (i + 1) + ". 订单号:" + (o.orderNumber || "(未回传)") + " 金额:" + (o.amount || "—")),
+          "评价:" + reviews.length + " 条",
+        ];
+        return {
+          content: [{ type: "text", text: lines.join("\n") }],
+          details: { publicSummary: "任务详情(" + orders.length + " 单)" },
+        };
+      },
+    },
+    {
+      name: "yutang_create_task",
+      label: "鱼塘·创建任务",
+      description:
+        "写操作。创建放单任务:店铺、商品图、宝贝ID、关键词、单数、价格、执行时段。会生成真实派单——创建前必须向用户复述任务内容并获得确认。",
+      parameters: Type.Object({
+        store: Type.String({ description: "店铺名称" }),
+        product_image_url: Type.String({ description: "商品图 URL" }),
+        product_id: Type.String({ description: "宝贝ID" }),
+        keyword: Type.String({ description: "搜索关键词" }),
+        qty: Type.Number({ description: "单数" }),
+        price: Type.String({ description: "单价,如 51.90" }),
+        hours: Type.String({ description: "执行时段,如 09-14" }),
+        note: Type.String({ description: "补充要求,选填" }),
+        owner: Type.String({ description: "负责人,选填" }),
+      }),
+      executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p: any = params;
+        const fd = new FormData();
+        fd.append("image", await urlToFile(String(p.product_image_url), signal));
+        const task: Record<string, unknown> = {
+          store: p.store,
+          productId: p.product_id,
+          keyword: p.keyword,
+          qty: p.qty,
+          price: p.price,
+          note: p.note || "",
+          owner: p.owner || "主账号",
+          hours: p.hours || "00-23",
+          status: "待执行",
+          createdAt: Date.now(),
+        };
+        fd.append("task", JSON.stringify(task));
+        await withToolTimeout("read_only",
+          () => ytApi("/api/state", signal, { method: "POST", body: fd }),
+          signal);
+        return {
+          content: [{ type: "text", text: "任务已创建:" + p.store + " " + p.keyword + " x" + p.qty + " 单" }],
+          details: { publicSummary: "创建任务:" + p.keyword + " x" + p.qty },
+        };
+      },
+    },
+    {
+      name: "yutang_update_task",
+      label: "鱼塘·修改任务",
+      description:
+        "写操作。修改已有任务字段(状态/负责人/备注等)。只提交被修改的单个任务。修改前必须向用户复述改动内容。",
+      parameters: Type.Object({
+        task_id: Type.String({ description: "任务 id" }),
+        fields: Type.String({ description: '要改的字段 JSON,如 {"status":"已完成"}' }),
+      }),
+      executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p: any = params;
+        const st: any = await withToolTimeout("read_only", () => ytApi("/api/state", signal), signal);
+        const task = (st.tasks || []).find((t: any) => String(t.id) === String(p.task_id));
+        if (!task) throw new Error("任务 " + p.task_id + " 不存在");
+        const fields = JSON.parse(p.fields) as Record<string, unknown>;
+        Object.assign(task, fields);
+        const fd = new FormData();
+        fd.append("task", JSON.stringify(task));
+        await withToolTimeout("read_only",
+          () => ytApi("/api/state", signal, { method: "POST", body: fd }),
+          signal);
+        return {
+          content: [{ type: "text", text: "任务 " + p.task_id + " 已更新:" + Object.keys(fields).join(", ") }],
+          details: { publicSummary: "更新任务字段:" + Object.keys(fields).join("/") },
+        };
+      },
+    },
+  ];
 
   const tools: AgentTool[] = [
     // ── 只读(0 积分) ──
@@ -1016,5 +1234,25 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     },
   ];
 
-  return tools;
+  return [...tools, ...yutangTools];
+}
+
+/** 底座无关视图:供未来非 pi 底座桥接器复用(当前 PiBridge 直接消费 AgentTool)。 */
+export type NaumiToolView = {
+  name: string;
+  description: string;
+  /** TypeBox schema 的 JSON 兼容形态 */
+  parameters: Record<string, unknown>;
+  write: boolean;
+  timeoutMs: number;
+};
+
+export function describeNaumiTools(tools: { name: string; description: string }[]): NaumiToolView[] {
+  return tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    parameters: {},
+    write: false,
+    timeoutMs: 0,
+  }));
 }
