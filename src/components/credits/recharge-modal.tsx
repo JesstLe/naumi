@@ -24,7 +24,7 @@ export function RechargeModal() {
   const { openAuth } = useAuthModal();
   const { toast } = useToast();
   const { locale } = useI18n();
-  const { rechargeEnabled, pro } = usePaymentConfig();
+  const { commerceVisible, rechargeEnabled, pro } = usePaymentConfig();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
 
   const [packIdx, setPackIdx] = React.useState(1);
@@ -46,6 +46,8 @@ export function RechargeModal() {
   >(null);
 
   const pack = CREDIT_PACKS[packIdx] ?? CREDIT_PACKS[0];
+  const paymentAvailable = commerceVisible && rechargeEnabled;
+  const effectiveTab = paymentAvailable ? tab : "code";
 
   async function buy() {
     if (!user) {
@@ -146,16 +148,18 @@ export function RechargeModal() {
   return (
     <>
       <Modal open={open} onClose={closeRecharge} width={520}>
-      <h2 className="text-[18px] font-bold text-c-text">{L("充值积分", "Top Up Credits")}</h2>
+      <h2 className="text-[18px] font-bold text-c-text">
+        {commerceVisible ? L("充值积分", "Top Up Credits") : L("积分兑换", "Redeem Credits")}
+      </h2>
       <p className="mt-1 text-[12.5px] text-c-text3">
         {L(
-          `当前余额 ${fmtCredits(remaining)} 积分 · 按量消耗`,
-          `Current balance ${fmtCredits(remaining)} credits · pay as you go`
+          `当前余额 ${fmtCredits(remaining)} 积分 · 生成时按量消耗`,
+          `Current balance ${fmtCredits(remaining)} credits · used per generation`
         )}
       </p>
 
       {/* 未开在线充值的站点(海外站)只留兑换码,不显示 tab 切换 */}
-      {rechargeEnabled && (
+      {paymentAvailable && (
         <Segmented<"pay" | "code">
           className="mt-4"
           value={tab}
@@ -171,7 +175,7 @@ export function RechargeModal() {
         <div className="mt-4 rounded-[10px] bg-c-subtle px-3 py-6 text-center text-[12.5px] text-c-text3">
           {L("该功能为 Pro 版功能。", "This is a Pro-only feature.")}
         </div>
-      ) : rechargeEnabled && tab === "pay" ? (
+      ) : paymentAvailable && effectiveTab === "pay" ? (
         <div className="mt-4">
           <div className="grid grid-cols-2 gap-2.5">
             {CREDIT_PACKS.map((p, i) => {
@@ -292,9 +296,18 @@ export function RechargeModal() {
               <Gift className="h-4 w-4 text-acc" /> {L("如何获取兑换码?", "How to get a redemption code?")}
             </p>
             <ul className="space-y-1.5 text-[12px] text-c-text3">
-              <li>{L("· 参加官方活动、社群福利获得", "· Earn it through official campaigns and community perks")}</li>
-              <li>{L("· 企业 / 团队批量采购发放", "· Issued via enterprise / team bulk purchases")}</li>
-              <li>{L("· 客服补偿或推广合作赠送", "· Gifted as support compensation or promotional partnerships")}</li>
+              {commerceVisible ? (
+                <>
+                  <li>{L("· 参加官方活动、社群福利获得", "· Earn it through official campaigns and community perks")}</li>
+                  <li>{L("· 企业 / 团队批量采购发放", "· Issued via enterprise / team bulk purchases")}</li>
+                  <li>{L("· 客服补偿或推广合作赠送", "· Gifted as support compensation or promotional partnerships")}</li>
+                </>
+              ) : (
+                <>
+                  <li>{L("· 由内测管理员发放", "· Issued by the beta administrator")}</li>
+                  <li>{L("· 参与内测活动或测试任务获得", "· Earned through beta activities or testing tasks")}</li>
+                </>
+              )}
             </ul>
           </div>
           <p className="mt-2 text-center text-[11px] text-c-text4">
@@ -305,7 +318,7 @@ export function RechargeModal() {
       </Modal>
 
       {/* 共用扫码支付弹窗(原生支付宝/微信二维码 + 轮询到账) */}
-      {pay && (
+      {commerceVisible && pay && (
         <PayQrModal
           open={!!pay}
           orderId={pay.orderId}

@@ -22,6 +22,7 @@ import { AuthModal } from "@/components/auth-modal";
 import { ToastProvider } from "@/components/ui/toast";
 import { RechargeModalProvider } from "@/lib/recharge-modal-context";
 import { RechargeModal } from "@/components/credits/recharge-modal";
+import { publicCommerceEnabled } from "@/lib/commerce";
 
 // 站点字体:Geist(拉丁/数字,Vercel)+ 系统中文栈(见 tailwind sans),数字 tabular-nums。
 // 中文不走网页字体(CJK 字体包数 MB,拖慢加载),用系统 PingFang/YaHei。
@@ -64,7 +65,8 @@ export default async function RootLayout({
   // 所以在线充值额外要求 pro(开源版即便配了收款也不显示对外收费)。
   const pro = await proEnabled();
   // 后台 DB(开关 + 已配收款)→ env 兜底,SSR 注入前端门控,两站一套代码。
-  const rechargeEnabled = pro && (await getPaymentStatus()).enabled;
+  const rechargeEnabled =
+    publicCommerceEnabled && pro && (await getPaymentStatus()).enabled;
   // 运行时品牌(白标):DB site_name/brand_logo 覆盖 → env 默认兜底;DB 无覆盖时与现状一致。
   const brand = await getRuntimeBrand();
   return (
@@ -75,6 +77,7 @@ export default async function RootLayout({
       <body className="min-h-screen font-sans antialiased">
         <LocaleProvider initialLocale={locale}>
           <PaymentProvider
+            commerceVisible={publicCommerceEnabled}
             rechargeEnabled={rechargeEnabled}
             pro={pro}
             official={editionName === "cloud"}

@@ -879,7 +879,7 @@ export function AuthPanel({
             </h1>
             <p className="mt-1.5 text-[13px] text-c-text3">
               {locale === "en"
-                ? "Sign in to start creating — new users auto-register with free credits"
+                ? "Sign in to start creating — new users receive beta test credits"
                 : "登录后开始创作 · 新用户自动注册并赠送体验积分"}
             </p>
           </div>

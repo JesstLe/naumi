@@ -13,6 +13,7 @@ import { useI18n } from "@/lib/i18n/locale-context";
 import { cn } from "@/lib/utils";
 import { BRAND_PARENT_URL, BRAND_PARENT_LABEL } from "@/lib/brand";
 import { useAuthModal } from "@/lib/auth-modal-context";
+import { usePaymentConfig } from "@/lib/payment-context";
 
 const NAV = [
   { href: "/", key: "nav.home" },
@@ -174,7 +175,11 @@ export function SiteHeader() {
   const { user, ready } = useAuth();
   const { t } = useI18n();
   const { openAuth } = useAuthModal();
+  const { commerceVisible } = usePaymentConfig();
   const [open, setOpen] = useState(false);
+  const navItems = commerceVisible
+    ? NAV
+    : NAV.filter((item) => item.href !== "/account?tab=credits");
 
   useEffect(() => {
     setOpen(false);
@@ -188,7 +193,7 @@ export function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
-          {NAV.map((item) =>
+          {navItems.map((item) =>
             item.hot ? (
               <SuiteNavItem
                 key={item.href}
@@ -287,7 +292,7 @@ export function SiteHeader() {
       {open && (
         <div className="border-t border-border/70 bg-white md:hidden">
           <nav className="container flex flex-col py-3">
-            {NAV.map((item) => (
+            {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}

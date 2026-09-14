@@ -7,8 +7,8 @@ import { CreditPacks } from "@/components/credits/credit-packs";
 // 月度会员已下线 → 营销首页的价格区改成积分充值包。海外站(无充值)整段隐藏。
 export function Pricing() {
   const { t } = useI18n();
-  const { rechargeEnabled } = usePaymentConfig();
-  if (!rechargeEnabled) return null;
+  const { commerceVisible, rechargeEnabled } = usePaymentConfig();
+  if (!commerceVisible || !rechargeEnabled) return null;
 
   return (
     <section id="pricing" className="scroll-mt-20 py-24">

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
 import {
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
   if (useDb) {
     const ok = await reserveCredits(email, COST);
     if (!ok)
-      return NextResponse.json({ error: "积分不足,请充值后重试" }, { status: 402 });
+      return NextResponse.json({ error: insufficientCreditsMessage }, { status: 402 });
   }
 
   try {

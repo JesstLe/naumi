@@ -52,6 +52,8 @@ services:
       PRO_LICENSE_KEY: LOCAL-OFFLINE
       # 开放本地邮箱+密码注册(原生多用户模式)
       NAUMI_MULTI_USER: "1"
+      # 内测默认隐藏价格、充值、购买与公开销售页；正式开放时设为 1。
+      NAUMI_PUBLIC_COMMERCE: ${NAUMI_PUBLIC_COMMERCE:-0}
       # Agent 工具内部回环调用地址(容器内 app 自身,端口是容器端口非宿主映射)
       INTERNAL_APP_ORIGIN: http://127.0.0.1:3000
       # Optional: Pro license (or enter it in the first-run wizard instead)

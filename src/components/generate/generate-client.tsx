@@ -44,6 +44,7 @@ import { RecordPager, RECORDS_PER_PAGE } from "@/components/tools/record-pager";
 import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 import { downloadImage } from "@/lib/download";
 import { useI18n } from "@/lib/i18n/locale-context";
+import { usePaymentConfig } from "@/lib/payment-context";
 import { cn } from "@/lib/utils";
 
 function fmt(s: string, vars: Record<string, string | number>): string {
@@ -77,6 +78,7 @@ export function GenerateClient({
     useAuth();
   const { openAuth } = useAuthModal();
   const { t, te, locale } = useI18n();
+  const { commerceVisible } = usePaymentConfig();
   const fileRef = useRef<HTMLInputElement>(null);
   const [prompt, setPrompt] = useState("");
   // 来自 AI 抠图「换背景」(?bg=1):提示词框换成换背景引导占位文案。
@@ -791,7 +793,7 @@ export function GenerateClient({
                 </p>
               )}
 
-              {insufficient ? (
+              {insufficient && commerceVisible ? (
                 <Button
                   asChild
                   variant="gradient"
@@ -799,6 +801,17 @@ export function GenerateClient({
                   className="w-full shadow-btn"
                 >
                   <Link href="/account?tab=credits">{t("gen.insufficient")}</Link>
+                </Button>
+              ) : insufficient ? (
+                <Button
+                  disabled
+                  variant="secondary"
+                  size="lg"
+                  className="w-full"
+                >
+                  {locale === "en"
+                    ? "Not enough credits · Contact the beta administrator"
+                    : "积分不足 · 请联系内测管理员补充额度"}
                 </Button>
               ) : (
                 <Button

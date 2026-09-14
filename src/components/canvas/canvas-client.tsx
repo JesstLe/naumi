@@ -79,6 +79,7 @@ import { AccountClient } from "@/components/account/account-client";
 import { SecurityClient } from "@/components/account/security-client";
 import { GenerateClient } from "@/components/generate/generate-client";
 import { CheckoutClient } from "@/components/checkout/checkout-client";
+import { usePaymentConfig } from "@/lib/payment-context";
 import { cn, formatDate } from "@/lib/utils";
 import {
   type Artwork,
@@ -700,6 +701,7 @@ export function CanvasClient() {
   const { openAuth } = useAuthModal();
   const { t } = useI18n();
   const router = useRouter();
+  const { commerceVisible } = usePaymentConfig();
   const [works, setWorks] = useState<Artwork[] | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
   // 管理员看指定用户:?email=<用户> → 只读查看该用户画布;?node=<作品id> → 预选中那张
@@ -878,6 +880,9 @@ export function CanvasClient() {
     const route = path.replace(/\/+$/, "") || "/";
     const page = MODAL_ROUTES[route];
     if (!page) return false; // 未知/外部 → 不拦截,照常跳转
+    if (!commerceVisible && (page === "plans" || page === "checkout")) {
+      return false;
+    }
     const params = qs ? Object.fromEntries(new URLSearchParams(qs)) : undefined;
     setModalStack((s) => [...s, { page, params }]);
     return true;
@@ -1079,7 +1084,7 @@ export function CanvasClient() {
     if (!ready || !user) return;
     try {
       const sp = new URLSearchParams(window.location.search);
-      if (sp.get("pay")) {
+      if (commerceVisible && sp.get("pay")) {
         openModal("plans");
         sp.delete("pay");
         const qs = sp.toString();
@@ -3166,18 +3171,25 @@ export function CanvasClient() {
             >
               <ShoppingBag className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              onClick={() => openModal("plans")}
-              className="flex items-center gap-1.5 rounded-xl border border-amber-400/30 bg-amber-400/10 px-2.5 py-2 text-xs font-semibold text-amber-500 shadow-sm transition-colors hover:bg-amber-400/20"
-            >
-              <Crown className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">{t("canvas.memberDeal")}</span>
-              <span className="flex items-center gap-0.5">
-                <Zap className="h-3 w-3" />
+            {commerceVisible ? (
+              <button
+                type="button"
+                onClick={() => openModal("plans")}
+                className="flex items-center gap-1.5 rounded-xl border border-amber-400/30 bg-amber-400/10 px-2.5 py-2 text-xs font-semibold text-amber-500 shadow-sm transition-colors hover:bg-amber-400/20"
+              >
+                <Crown className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">{t("canvas.memberDeal")}</span>
+                <span className="flex items-center gap-0.5">
+                  <Zap className="h-3 w-3" />
+                  {credits != null ? credits : "—"}
+                </span>
+              </button>
+            ) : (
+              <span className="flex items-center gap-1 rounded-xl border border-border bg-card px-2.5 py-2 text-xs font-semibold text-muted-foreground shadow-sm">
+                <Zap className="h-3.5 w-3.5" />
                 {credits != null ? credits : "—"}
               </span>
-            </button>
+            )}
             <button
               type="button"
               onClick={() => openModal("account")}
@@ -3733,18 +3745,25 @@ export function CanvasClient() {
                 >
                   <ShoppingBag className="h-4 w-4" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => openModal("plans")}
-                  className="flex items-center gap-1.5 rounded-xl border border-amber-400/30 bg-amber-400/10 px-2.5 py-2 text-xs font-semibold text-amber-300 shadow-lg backdrop-blur transition-colors hover:bg-amber-400/20"
-                >
-                  <Crown className="h-3.5 w-3.5" />
-                  <span className="hidden md:inline">{t("canvas.memberDeal")}</span>
-                  <span className="flex items-center gap-0.5">
-                    <Zap className="h-3 w-3" />
+                {commerceVisible ? (
+                  <button
+                    type="button"
+                    onClick={() => openModal("plans")}
+                    className="flex items-center gap-1.5 rounded-xl border border-amber-400/30 bg-amber-400/10 px-2.5 py-2 text-xs font-semibold text-amber-300 shadow-lg backdrop-blur transition-colors hover:bg-amber-400/20"
+                  >
+                    <Crown className="h-3.5 w-3.5" />
+                    <span className="hidden md:inline">{t("canvas.memberDeal")}</span>
+                    <span className="flex items-center gap-0.5">
+                      <Zap className="h-3 w-3" />
+                      {credits != null ? credits : "—"}
+                    </span>
+                  </button>
+                ) : (
+                  <span className="flex items-center gap-1 rounded-xl border border-white/10 bg-card/85 px-2.5 py-2 text-xs font-semibold text-muted-foreground shadow-lg backdrop-blur">
+                    <Zap className="h-3.5 w-3.5" />
                     {credits != null ? credits : "—"}
                   </span>
-                </button>
+                )}
                 <button
                   type="button"
                   onClick={() => openModal("account")}
@@ -5081,7 +5100,7 @@ export function CanvasClient() {
                 {modalTop.page === "templates" && (
                   <TemplatesClient gridClass="columns-2 md:columns-3 xl:columns-4" />
                 )}
-                {modalTop.page === "plans" && (
+                {commerceVisible && modalTop.page === "plans" && (
                   <div className="p-4">
                     <CreditPacks
                       onCheckout={(orderId, info) => {
@@ -5105,7 +5124,7 @@ export function CanvasClient() {
                 {modalTop.page === "generate" && (
                   <GenerateClient seedTemplateId={modalTop.params?.template} />
                 )}
-                {modalTop.page === "checkout" && (
+                {commerceVisible && modalTop.page === "checkout" && (
                   <CheckoutClient pack={modalTop.params?.pack} />
                 )}
               </div>
@@ -5114,7 +5133,7 @@ export function CanvasClient() {
           document.body
         )}
       {/* 画布内扫码支付:统一走共用 PayQrModal */}
-      {payModal && (
+      {commerceVisible && payModal && (
         <PayQrModal
           open={!!payModal}
           orderId={payModal.orderId}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { dbEnabled, getOrder, ensureProLicenseForOrder } from "@/lib/db";
+import { publicCommerceEnabled } from "@/lib/commerce";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,6 +8,9 @@ export const dynamic = "force-dynamic";
 // Order status lookup. Order ids are unguessable; used by the frontend to poll
 // and by the cashier to render. Returns only display-safe fields.
 export async function GET(req: Request) {
+  if (!publicCommerceEnabled) {
+    return NextResponse.json({ error: "内测期间暂未开放购买" }, { status: 404 });
+  }
   if (!dbEnabled) {
     return NextResponse.json({ error: "数据库未配置" }, { status: 503 });
   }

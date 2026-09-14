@@ -7,6 +7,7 @@ import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
 import { cn, formatDate } from "@/lib/utils";
 import { RecordPager } from "@/components/tools/record-pager";
+import { usePaymentConfig } from "@/lib/payment-context";
 
 type Item = {
   id: string;
@@ -24,6 +25,7 @@ type Tab = (typeof TABS)[number];
 export function CreditLedger() {
   const { user } = useAuth();
   const { t } = useI18n();
+  const { commerceVisible } = usePaymentConfig();
   const [tab, setTab] = useState<Tab>("all");
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(false);
@@ -40,7 +42,8 @@ export function CreditLedger() {
           { headers: await authHeader() }
         );
         const j = await res.json();
-        setItems(res.ok && Array.isArray(j.items) ? j.items : []);
+        const next = res.ok && Array.isArray(j.items) ? (j.items as Item[]) : [];
+        setItems(commerceVisible ? next : next.filter((item) => item.kind !== "purchase"));
         setPage(0);
       } catch {
         setItems([]);
@@ -48,7 +51,7 @@ export function CreditLedger() {
         setLoading(false);
       }
     },
-    [user]
+    [commerceVisible, user]
   );
 
   useEffect(() => {
@@ -59,7 +62,7 @@ export function CreditLedger() {
     <div>
       {/* 类别标签 */}
       <div className="flex flex-wrap gap-1 rounded-xl bg-secondary p-1">
-        {TABS.map((k) => (
+        {TABS.filter((k) => commerceVisible || k !== "purchase").map((k) => (
           <button
             key={k}
             type="button"

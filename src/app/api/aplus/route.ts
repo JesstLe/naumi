@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
@@ -747,7 +748,7 @@ export async function POST(request: Request) {
         const ok = await reserveCredits(job.email, job.cost);
         if (!ok) {
           patchJob(jobId, { generationStarted: false });
-          return NextResponse.json({ error: "积分不足，请充值后重试" }, { status: 402 });
+          return NextResponse.json({ error: insufficientCreditsMessage }, { status: 402 });
         }
         try {
           await addReservation(jobId, job.email, job.cost);
@@ -814,7 +815,7 @@ export async function POST(request: Request) {
       ? account.creditsTotal - account.creditsUsed
       : 0;
     if (account && balance < cost) {
-      return NextResponse.json({ error: "积分不足，请充值后重试" }, { status: 402 });
+      return NextResponse.json({ error: insufficientCreditsMessage }, { status: 402 });
     }
   }
   gcJobs();

@@ -7,14 +7,16 @@ import { LangSwitcher } from "@/components/lang-switcher";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { useBrand } from "@/lib/brand-context";
 import { BRAND_PARENT_URL, BRAND_PARENT_LABEL } from "@/lib/brand";
+import { usePaymentConfig } from "@/lib/payment-context";
 
 export function SiteFooter() {
   const { locale } = useI18n();
   const { name: brandName } = useBrand();
+  const { commerceVisible } = usePaymentConfig();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
 
   // 三栏(产品 / 资源 / 关于)—— 链接全部指向真实存在的路由,不造死链。
-  // 定价 / 关于我们 / 联系我们:自部署实例也显示(内容由站长在后台「站点页面」自定义)。
+  // 定价仅在公开商业化开关开启时显示;关于我们 / 联系我们始终保留。
   // 「开源仓库」指向我们的 GitHub,仅官方站显示。空栏自动不渲染。
   const columns: {
     title: string;
@@ -35,7 +37,9 @@ export function SiteFooter() {
         { href: "/tools", label: L("创作工具", "Tools") },
         { href: "/dashboard", label: L("工作台", "Workspace") },
         { href: "/works", label: L("作品库", "Works") },
-        { href: "/plans", label: L("定价", "Pricing") },
+        ...(commerceVisible
+          ? [{ href: "/plans", label: L("定价", "Pricing") }]
+          : []),
       ],
     },
     {

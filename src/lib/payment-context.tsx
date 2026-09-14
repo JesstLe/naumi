@@ -3,6 +3,8 @@
 import { createContext, useContext, useMemo } from "react";
 
 type Ctx = {
+  // 是否向普通前端访客公开价格、充值和销售入口。内测期默认 false。
+  commerceVisible: boolean;
   // 前端是否显示「在线充值」(= Pro 解锁 且 后台开关开 且 已配置收款信息;SSR 注入)。
   // 假 → 隐藏在线充值,改显示「兑换码」入口。
   rechargeEnabled: boolean;
@@ -16,19 +18,21 @@ type Ctx = {
 const PaymentContext = createContext<Ctx | null>(null);
 
 export function PaymentProvider({
+  commerceVisible,
   rechargeEnabled,
   pro,
   official,
   children,
 }: {
+  commerceVisible: boolean;
   rechargeEnabled: boolean;
   pro: boolean;
   official: boolean;
   children: React.ReactNode;
 }) {
   const value = useMemo<Ctx>(
-    () => ({ rechargeEnabled, pro, official }),
-    [rechargeEnabled, pro, official]
+    () => ({ commerceVisible, rechargeEnabled, pro, official }),
+    [commerceVisible, rechargeEnabled, pro, official]
   );
   return (
     <PaymentContext.Provider value={value}>{children}</PaymentContext.Provider>
@@ -38,6 +42,13 @@ export function PaymentProvider({
 /** Safe-to-call:在 Provider 外用返回默认(开源精简版:无充值、非 Pro、非官方站)。 */
 export function usePaymentConfig(): Ctx {
   const c = useContext(PaymentContext);
-  if (!c) return { rechargeEnabled: false, pro: false, official: false };
+  if (!c) {
+    return {
+      commerceVisible: false,
+      rechargeEnabled: false,
+      pro: false,
+      official: false,
+    };
+  }
   return c;
 }

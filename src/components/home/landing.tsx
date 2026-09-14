@@ -320,7 +320,7 @@ export function Landing({ hot }: { hot: PickedTemplate[] }) {
       <section className="mx-auto w-full max-w-6xl px-4 pb-20 sm:px-6">
         <div className="bg-dark-module relative overflow-hidden rounded-3xl px-6 py-14 text-center sm:py-16">
           <h2 className="text-2xl font-black tracking-tight text-white sm:text-4xl">
-            {L("现在就开始,免费出第一张图", "Start now — your first image is free")}
+            {L("加入内测,开始创作", "Join the beta and start creating")}
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-sm text-white/70 sm:text-base">
             {L(
@@ -333,7 +333,7 @@ export function Landing({ hot }: { hot: PickedTemplate[] }) {
             onClick={start}
             className="mt-7 inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3 text-[15px] font-bold text-[#16181D] transition-transform hover:scale-[1.03]"
           >
-            {L("免费开始创作", "Start creating free")}
+            {L("开始创作", "Start creating")}
             <ArrowRight className="h-4 w-4" />
           </button>
         </div>

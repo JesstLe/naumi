@@ -145,7 +145,7 @@ export default async function AboutPage() {
     <AboutLayout
       kicker="About us"
       title="Turn every product photo into a visual asset that sells"
-      intro={`${BRAND} is a B2B productivity tool for e-commerce marketing, built for online sellers, brands and agencies. With advanced image generation we cut the "hard, slow, expensive" problem of producing visuals down to seconds and a few cents — turning visual output into a stable, reusable workflow.`}
+      intro={`${BRAND} is a B2B productivity tool for e-commerce marketing, built for online sellers, brands and agencies. With advanced image generation we turn the "hard, slow, expensive" process of producing visuals into a faster, stable and reusable workflow.`}
       problemsLabel="The problems we solve"
       problems={[
         {
@@ -175,8 +175,8 @@ export default async function AboutPage() {
         },
         {
           icon: Coins,
-          title: "Credit-based metered billing",
-          desc: "4 tiers (Free / Starter / Creator / Studio) plus one-time credit packs — pay as you go, flexible and controllable.",
+          title: "Controlled beta credits",
+          desc: "Invited users receive a test credit allowance, with usage tracked clearly for each generation.",
         },
         {
           icon: History,
@@ -185,7 +185,7 @@ export default async function AboutPage() {
         },
       ]}
       nowLabel="Where we are now"
-      now={`${BRAND} is live: text-to-image / image-to-image, the template library, accounts and credits, Alipay payment, and a bilingual (Chinese / English) interface are all available. We keep refining the product — try it and send us feedback; every issue you raise is taken seriously.`}
+      now={`${BRAND} is currently in controlled beta. Text-to-image / image-to-image, the template library, accounts and test credits, and a bilingual (Chinese / English) interface are available to invited users. We are continuing to refine the experience based on beta feedback.`}
       ctaPrimary="Try generating now"
       ctaSecondary="Contact us"
     />
@@ -193,7 +193,7 @@ export default async function AboutPage() {
     <AboutLayout
       kicker="关于我们"
       title="让每一张商品图，都成为能卖货的视觉资产"
-      intro={`${BRAND} 是一款面向电商营销的 B2B 生产力工具，服务对象是电商卖家、品牌方与代运营团队。我们用先进的图像生成技术，把「出图难、出图慢、出图贵」这件事降到几秒钟、几块钱，让营销视觉产出变成稳定可复用的工作流。`}
+      intro={`${BRAND} 是一款面向电商营销的 B2B 生产力工具，服务对象是电商卖家、品牌方与代运营团队。我们用先进的图像生成技术，把「出图难、出图慢、出图贵」的流程变得更快、更稳定，让营销视觉产出成为可复用的工作流。`}
       problemsLabel="我们解决什么问题"
       problems={[
         {
@@ -223,8 +223,8 @@ export default async function AboutPage() {
         },
         {
           icon: Coins,
-          title: "积分制按量计费",
-          desc: "4 档会员（免费 / 入门 / 创作者 / 工作室）+ 一次性积分包，先用后付，灵活可控。",
+          title: "内测积分额度",
+          desc: "受邀用户由管理员发放测试额度，每次生成的积分消耗清晰可查。",
         },
         {
           icon: History,
@@ -233,7 +233,7 @@ export default async function AboutPage() {
         },
       ]}
       nowLabel="现在的我们"
-      now={`${BRAND} 已正式上线：文生图 / 图生图、模板库、账户与积分体系、支付宝支付、中英文双语界面均已可用。我们仍在持续打磨产品——欢迎试用并给我们反馈，你提的每一条问题，都会被认真对待。`}
+      now={`${BRAND} 当前处于邀请内测阶段：文生图 / 图生图、模板库、账户与测试积分、中英文双语界面已向受邀用户开放。我们会根据内测反馈持续完善使用体验。`}
       ctaPrimary="立即体验生成"
       ctaSecondary="联系我们"
     />

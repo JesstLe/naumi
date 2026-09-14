@@ -42,6 +42,7 @@ import { Badge } from "@/components/ui/badge";
 import { Media } from "@/components/media";
 import { downloadImage } from "@/lib/download";
 import { useI18n } from "@/lib/i18n/locale-context";
+import { usePaymentConfig } from "@/lib/payment-context";
 import { formatDate, cn } from "@/lib/utils";
 
 function fmt(s: string, vars: Record<string, string | number>): string {
@@ -194,7 +195,8 @@ type WorkGroup =
 
 export function DashboardClient() {
   const { user, ready, remaining, persistMode } = useAuth();
-  const { t, te } = useI18n();
+  const { t, te, locale } = useI18n();
+  const { commerceVisible } = usePaymentConfig();
   const router = useRouter();
   const { openAuth } = useAuthModal();
   const [filter, setFilter] = useState<
@@ -409,8 +411,21 @@ export function DashboardClient() {
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/12 to-accent/12 text-primary">
             <Sparkles className="h-4 w-4" />
           </span>
-          <p className="mt-3 text-sm font-semibold">{t("credits.title")}</p>
-          <p className="text-xs text-muted-foreground">{t("acct.tabDetail")} →</p>
+          <p className="mt-3 text-sm font-semibold">
+            {commerceVisible
+              ? t("credits.title")
+              : locale === "en"
+                ? "Credit balance"
+                : "积分余额"}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {commerceVisible
+              ? t("acct.tabDetail")
+              : locale === "en"
+                ? "View usage history"
+                : "查看使用记录"}{" "}
+            →
+          </p>
         </Link>
       </div>
 

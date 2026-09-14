@@ -5,6 +5,7 @@ import { getPaymentSettings, getPaymentStatus } from "@/lib/settings";
 import { alipayPrecreate } from "@/lib/pay/alipay";
 import { wechatNativePrecreate } from "@/lib/pay/wechatpay";
 import { proEnabled } from "@/lib/edition";
+import { publicCommerceEnabled } from "@/lib/commerce";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,9 @@ function originOf(req: Request): string {
 // from the item id (never trusted from the client).
 // 原生模式:据 method 调支付宝/微信 precreate,返回扫码二维码内容(qrContent)。
 export async function POST(req: Request) {
+  if (!publicCommerceEnabled) {
+    return NextResponse.json({ error: "内测期间暂未开放购买" }, { status: 404 });
+  }
   if (!dbEnabled) {
     return NextResponse.json({ error: "数据库未配置" }, { status: 503 });
   }

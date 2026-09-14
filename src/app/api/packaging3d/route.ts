@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { insufficientCreditsMessage } from "@/lib/commerce";
 import {
   dbEnabled,
   reserveCredits,
@@ -317,7 +318,7 @@ export async function POST(request: Request) {
   }
   if (useDb) {
     const ok = await reserveCredits(input.email, cost);
-    if (!ok) return NextResponse.json({ error: "积分不足，请充值后重试" }, { status: 402 });
+    if (!ok) return NextResponse.json({ error: insufficientCreditsMessage }, { status: 402 });
   }
   gcJobs();
   const jobId = `pack3dj-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;

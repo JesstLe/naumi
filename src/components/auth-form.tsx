@@ -640,14 +640,14 @@ export function AuthForm({
                 onClick={() => onSwitchMode(isSignUp ? "sign-in" : "sign-up")}
                 className="font-medium text-primary hover:underline"
               >
-                {isSignUp ? "去登录" : "免费注册"}
+                {isSignUp ? "去登录" : "注册账号"}
               </button>
             ) : (
               <Link
                 href={`${isSignUp ? "/sign-in" : "/sign-up"}${switchQuery}`}
                 className="font-medium text-primary hover:underline"
               >
-                {isSignUp ? "去登录" : "免费注册"}
+                {isSignUp ? "去登录" : "注册账号"}
               </Link>
             )}
           </p>

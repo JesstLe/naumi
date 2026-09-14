@@ -22,6 +22,7 @@ import { authHeader } from "@/lib/supabase";
 import { copyText } from "@/lib/clipboard";
 import { ProDownloadModal } from "@/components/operator/pro-download-modal";
 import { CloudModal } from "@/components/operator/cloud-modal";
+import { usePaymentConfig } from "@/lib/payment-context";
 
 type InstallTab = "docker" | "script" | "platform";
 
@@ -44,6 +45,7 @@ const SCRIPT_CMD =
 
 export function DeployCenter({ embedded = false }: { embedded?: boolean }) {
   const { toast } = useToast();
+  const { commerceVisible } = usePaymentConfig();
   const [showPro, setShowPro] = React.useState(false);
   const [showCloud, setShowCloud] = React.useState(false);
   // 是否管理员:调 admin-gated 接口(/api/cardkeys 非管理员 403)校验,
@@ -207,7 +209,7 @@ export function DeployCenter({ embedded = false }: { embedded?: boolean }) {
         {/* ── 三档版本卡(营销/升级漏斗)──
             开源实例保留(引导升级 Pro);**已付费买家实例整块收起**(别再对
             付费用户推销);官方站保留(对外销售页)。 */}
-        {!buyerPro && (
+        {commerceVisible && !buyerPro && (
         <div className="mt-7 grid grid-cols-3 gap-5">
           {/* 开源版 */}
           <PlanCard
@@ -422,8 +424,12 @@ export function DeployCenter({ embedded = false }: { embedded?: boolean }) {
           </section>
         )}
 
-        <ProDownloadModal open={showPro} onClose={() => setShowPro(false)} />
-        <CloudModal open={showCloud} onClose={() => setShowCloud(false)} />
+        {commerceVisible && (
+          <>
+            <ProDownloadModal open={showPro} onClose={() => setShowPro(false)} />
+            <CloudModal open={showCloud} onClose={() => setShowCloud(false)} />
+          </>
+        )}
       </>
     </Shell>
   );
@@ -561,4 +567,3 @@ function PlanCard({
     </div>
   );
 }
-
