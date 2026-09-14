@@ -2,6 +2,7 @@ import { FileText } from "lucide-react";
 import { getServerLocale } from "@/lib/i18n/server-locale";
 import { BRAND, BRAND_EMAIL } from "@/lib/brand";
 import { editionName } from "@/lib/edition";
+import { publicCommerceEnabled } from "@/lib/commerce";
 
 // 法律主体按版本区分:官方云=广东星泽科技(国内合规);开源/Pro 自托管=部署者自己。
 // 本实例(Naumi,自托管 Pro)渲染「本站运营方」分支。
@@ -39,7 +40,7 @@ function TermsZh() {
             面向电商营销的 B2B 生产力工具，
             服务对象为电商卖家、品牌方与代运营团队，帮助其高效产出商业视觉，
             功能包括 AI 生图、一键套图、抠图与局部改图、创作画布、虚拟试穿、
-            营销工具，以及提示词模板库、作品管理与积分计费。
+            营销工具，以及提示词模板库、作品管理与积分记录。
             使用本服务，即视为你（「用户」）已阅读、理解并同意本条款。
           </p>
         </section>
@@ -71,33 +72,53 @@ function TermsZh() {
         </section>
 
         <section>
-          <h2 className="text-base font-semibold text-foreground">4. 积分与付款</h2>
-          <p className="mt-2">
-            本服务采用积分制计费：每次生成消耗对应数量的积分。积分可通过注册
-            赠送、兑换码、站长发放或购买套餐/积分包获得；具体获取途径以本站
-            实际开放的功能与下单页面展示为准。
-          </p>
-          <p className="mt-2">
-            如本站开通付费功能，支付将通过第三方支付服务商处理；支付服务商
-            可能记录与处理你的支付信息，详见其各自的
-            隐私政策。
-          </p>
+          <h2 className="text-base font-semibold text-foreground">
+            {publicCommerceEnabled ? "4. 积分与付款" : "4. 内测积分额度"}
+          </h2>
+          {publicCommerceEnabled ? (
+            <>
+              <p className="mt-2">
+                本服务采用积分制计费：每次生成消耗对应数量的积分。积分可通过注册
+                赠送、兑换码、站长发放或购买套餐/积分包获得；具体获取途径以本站
+                实际开放的功能与下单页面展示为准。
+              </p>
+              <p className="mt-2">
+                支付将通过第三方支付服务商处理；支付服务商可能记录与处理你的
+                支付信息，详见其各自的隐私政策。
+              </p>
+            </>
+          ) : (
+            <p className="mt-2">
+              内测期间，每次生成会消耗对应数量的测试积分。测试积分由注册赠送、
+              兑换码或管理员发放，仅用于控制测试资源使用，不代表现金价值，
+              不支持转让或提现。
+            </p>
+          )}
         </section>
 
         <section>
           <h2 className="text-base font-semibold text-foreground">
-            5. 退款政策（不退款）
+            {publicCommerceEnabled ? "5. 退款政策（不退款）" : "5. 内测额度说明"}
           </h2>
-          <p className="mt-2">
-            由于生成会即时产生算力成本，<strong>所有积分购买与会员套餐一经支付，
-            概不退款</strong>。Due to the computational costs of AI generation,
-            all purchases and credits are non-refundable.
-          </p>
-          <p className="mt-2">
-            会员为单次付款、不自动续费，因此无需「取消订阅」；当期权益可使用至
-            到期，已付费用不退。仅在发生<strong>重复扣款或系统性扣费错误</strong>时，
-            请于 7 日内联系 {BRAND_EMAIL}，我们将核实后按实际情况处理。
-          </p>
+          {publicCommerceEnabled ? (
+            <>
+              <p className="mt-2">
+                由于生成会即时产生算力成本，<strong>所有积分购买与会员套餐一经支付，
+                概不退款</strong>。Due to the computational costs of AI generation,
+                all purchases and credits are non-refundable.
+              </p>
+              <p className="mt-2">
+                会员为单次付款、不自动续费，因此无需「取消订阅」；当期权益可使用至
+                到期，已付费用不退。仅在发生<strong>重复扣款或系统性扣费错误</strong>时，
+                请于 7 日内联系 {BRAND_EMAIL}，我们将核实后按实际情况处理。
+              </p>
+            </>
+          ) : (
+            <p className="mt-2">
+              测试积分的发放数量、有效期和消耗规则可能随内测安排调整。
+              如额度异常，请联系 {BRAND_EMAIL} 核查。
+            </p>
+          )}
         </section>
 
         <section>
@@ -127,7 +148,8 @@ function TermsZh() {
           <h2 className="text-base font-semibold text-foreground">8. 第三方服务</h2>
           <p className="mt-2">
             本服务在运行过程中会用到若干第三方服务商（包括云基础设施、AI
-            模型与支付等）。你使用本服务，即同时受这些第三方相应条款的约束。
+            模型{publicCommerceEnabled ? "与支付" : ""}等）。你使用本服务，
+            即同时受这些第三方相应条款的约束。
           </p>
         </section>
 
@@ -145,7 +167,8 @@ function TermsZh() {
             10. 服务变更与终止
           </h2>
           <p className="mt-2">
-            我们可不时调整服务内容、积分价格、套餐结构与可用区域。重大变更
+            我们可不时调整服务内容、积分规则
+            {publicCommerceEnabled ? "、价格、套餐结构" : "与内测额度"}及可用区域。重大变更
             会在合理时间内通过站内或邮件通知。你可随时停止使用并申请删除账号；
             我们也可在你严重违反本条款时单方终止服务。
           </p>
@@ -217,7 +240,7 @@ function TermsEn() {
             suites, cutout and
             inpaint editing, a node-based creation canvas, virtual try-on,
             marketing tools, a prompt template library, work management and
-            credit-based billing. By using the
+            credit usage records. By using the
             service you (&ldquo;the user&rdquo;) have read, understood and agreed
             to these terms.
           </p>
@@ -259,42 +282,61 @@ function TermsEn() {
 
         <section>
           <h2 className="text-base font-semibold text-foreground">
-            4. Credits & payment
+            {publicCommerceEnabled ? "4. Credits & payment" : "4. Beta credits"}
           </h2>
-          <p className="mt-2">
-            The service is billed by credits: each generation consumes a number
-            of credits. Credits can be obtained via sign-up grants, redemption
-            codes, operator grants, or by purchasing plans / credit packs —
-            depending on the features actually enabled on this site and as shown
-            on the checkout page at order time.
-          </p>
-          <p className="mt-2">
-            If paid features are enabled on this site, payment is processed by
-            third-party providers; the provider may record and process your
-            payment information — see their respective privacy policies.
-          </p>
+          {publicCommerceEnabled ? (
+            <>
+              <p className="mt-2">
+                The service is billed by credits: each generation consumes a number
+                of credits. Credits can be obtained via sign-up grants, redemption
+                codes, operator grants, or by purchasing plans / credit packs as
+                shown on the checkout page at order time.
+              </p>
+              <p className="mt-2">
+                Payment is processed by third-party providers; the provider may
+                record and process your payment information — see their respective
+                privacy policies.
+              </p>
+            </>
+          ) : (
+            <p className="mt-2">
+              During the beta, each generation consumes test credits. Test credits
+              are issued through sign-up grants, redemption codes or the beta
+              administrator. They have no cash value and cannot be transferred or
+              withdrawn.
+            </p>
+          )}
         </section>
 
         <section>
           <h2 className="text-base font-semibold text-foreground">
-            5. Refund policy (no refunds)
+            {publicCommerceEnabled ? "5. Refund policy (no refunds)" : "5. Beta credit policy"}
           </h2>
-          <p className="mt-2">
-            Because generation incurs real-time compute cost,{" "}
-            <strong>
-              all credit purchases and memberships are non-refundable once paid
-            </strong>
-            .
-          </p>
-          <p className="mt-2">
-            Memberships are a single payment and do not auto-renew, so there is
-            nothing to &ldquo;cancel&rdquo; — your benefits last until the end of
-            the current period and fees already paid are not refunded. Only in
-            case of{" "}
-            <strong>duplicate charges or a systemic billing error</strong>,
-            contact {BRAND_EMAIL} within 7 days and we will verify and
-            handle it accordingly.
-          </p>
+          {publicCommerceEnabled ? (
+            <>
+              <p className="mt-2">
+                Because generation incurs real-time compute cost,{" "}
+                <strong>
+                  all credit purchases and memberships are non-refundable once paid
+                </strong>
+                .
+              </p>
+              <p className="mt-2">
+                Memberships are a single payment and do not auto-renew, so there is
+                nothing to &ldquo;cancel&rdquo; — your benefits last until the end of
+                the current period and fees already paid are not refunded. Only in
+                case of{" "}
+                <strong>duplicate charges or a systemic billing error</strong>,
+                contact {BRAND_EMAIL} within 7 days and we will verify and
+                handle it accordingly.
+              </p>
+            </>
+          ) : (
+            <p className="mt-2">
+              The amount, validity and consumption rules for test credits may change
+              during the beta. Contact {BRAND_EMAIL} if your allowance appears incorrect.
+            </p>
+          )}
         </section>
 
         <section>
@@ -344,7 +386,7 @@ function TermsEn() {
           </h2>
           <p className="mt-2">
             The service relies on a number of third-party providers (including
-            cloud infrastructure, AI models and payments) to operate. By using
+            cloud infrastructure, AI models{publicCommerceEnabled ? " and payments" : ""}) to operate. By using
             the service you are also bound by the respective terms of these
             third parties.
           </p>
@@ -368,7 +410,8 @@ function TermsEn() {
             10. Changes & termination
           </h2>
           <p className="mt-2">
-            We may adjust service content, credit prices, plan structure and
+            We may adjust service content, credit rules
+            {publicCommerceEnabled ? ", prices and plan structure" : " and beta allowances"} and
             available regions from time to time. Material changes will be
             notified within a reasonable time via in-app or email. You may stop
             using the service and request account deletion anytime; we may also

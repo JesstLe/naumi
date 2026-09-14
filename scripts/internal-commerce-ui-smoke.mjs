@@ -31,6 +31,16 @@ for (const hiddenText of ["定价", "购买积分", "充值积分", "支付宝�
   }
 }
 
+for (const path of ["/terms", "/privacy"]) {
+  await publicPage.goto(`${baseUrl}${path}`, { waitUntil: "networkidle" });
+  const legalText = await publicPage.locator("body").innerText();
+  for (const hiddenText of ["购买套餐", "积分包", "支付服务商", "退款政策", "会员套餐", "积分价格"]) {
+    if (legalText.includes(hiddenText)) {
+      throw new Error(`${path} still exposes commerce copy: ${hiddenText}`);
+    }
+  }
+}
+
 for (const path of ["/plans", "/checkout", "/deploy"]) {
   await publicPage.goto(`${baseUrl}${path}`, { waitUntil: "domcontentloaded" });
   if (new URL(publicPage.url()).pathname !== "/") {

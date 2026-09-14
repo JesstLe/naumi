@@ -2,6 +2,7 @@ import { ShieldCheck } from "lucide-react";
 import { getServerLocale } from "@/lib/i18n/server-locale";
 import { BRAND, BRAND_EMAIL } from "@/lib/brand";
 import { editionName } from "@/lib/edition";
+import { publicCommerceEnabled } from "@/lib/commerce";
 
 // 法律主体按版本区分:官方云=广东星泽科技(国内合规);开源/Pro 自托管=部署者自己,
 // 本实例(Naumi,自托管 Pro)渲染「本站运营方」分支。
@@ -50,11 +51,13 @@ function PrivacyZh() {
               登录的 IP 地址（用于安全审计与封禁滥用）、浏览器与设备类型、
               访问日志。
             </li>
-            <li>
-              <strong className="text-foreground">支付信息</strong>：经由第三方
-              支付服务商处理，我们不存储你的完整卡号或银行账户信息，仅记录
-              订单号、金额、状态。
-            </li>
+            {publicCommerceEnabled && (
+              <li>
+                <strong className="text-foreground">支付信息</strong>：经由第三方
+                支付服务商处理，我们不存储你的完整卡号或银行账户信息，仅记录
+                订单号、金额、状态。
+              </li>
+            )}
           </ul>
         </section>
 
@@ -63,7 +66,7 @@ function PrivacyZh() {
           <ul className="mt-2 list-disc space-y-1 pl-5">
             <li>提供并维持图像生成、模板库、作品库等核心功能；</li>
             <li>记录与展示你的生成历史，方便复用与下载；</li>
-            <li>计费、对账与发票；</li>
+            {publicCommerceEnabled && <li>计费、对账与发票；</li>}
             <li>防止滥用、刷量、攻击与违法使用；</li>
             <li>响应你的支持请求；</li>
             <li>在你同意的前提下，发送产品更新或营销邮件（可随时退订）。</li>
@@ -90,10 +93,12 @@ function PrivacyZh() {
               </strong>
               ：用于账号、数据与图像的存储、加速与分发。
             </li>
-            <li>
-              <strong className="text-foreground">支付服务商</strong>：
-              如本站开通付费功能，处理订单付款（套餐与积分包）。
-            </li>
+            {publicCommerceEnabled && (
+              <li>
+                <strong className="text-foreground">支付服务商</strong>：
+                处理订单付款与相关状态通知。
+              </li>
+            )}
           </ul>
           <p className="mt-2">
             上述部分服务商的服务器或处理活动可能位于中国大陆以外的国家或地区；
@@ -211,11 +216,13 @@ function PrivacyEn() {
               most recent login IP (for security auditing and abuse blocking),
               browser and device type, and access logs.
             </li>
-            <li>
-              <strong className="text-foreground">Payment info</strong>: handled
-              by third-party payment providers. We do not store your full card
-              or bank account number — only order id, amount and status.
-            </li>
+            {publicCommerceEnabled && (
+              <li>
+                <strong className="text-foreground">Payment info</strong>: handled
+                by third-party payment providers. We do not store your full card
+                or bank account number — only order id, amount and status.
+              </li>
+            )}
           </ul>
         </section>
 
@@ -229,7 +236,7 @@ function PrivacyEn() {
               template library and your gallery;
             </li>
             <li>Record and show your generation history for reuse and download;</li>
-            <li>Billing, reconciliation and invoicing;</li>
+            {publicCommerceEnabled && <li>Billing, reconciliation and invoicing;</li>}
             <li>Prevent abuse, fraud, attacks and illegal use;</li>
             <li>Respond to your support requests;</li>
             <li>
@@ -259,11 +266,12 @@ function PrivacyEn() {
               </strong>
               : store, accelerate and deliver your account, data and images.
             </li>
-            <li>
-              <strong className="text-foreground">Payment providers</strong>:
-              if paid features are enabled, process order payments (plans and
-              one-time credit packs).
-            </li>
+            {publicCommerceEnabled && (
+              <li>
+                <strong className="text-foreground">Payment providers</strong>:
+                process order payments and related status notifications.
+              </li>
+            )}
           </ul>
           <p className="mt-2">
             Some of these providers&rsquo; servers or processing may be located
