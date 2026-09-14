@@ -50,6 +50,7 @@
 - 框选回归同时验证未再触发 React Flow 受控选择循环（React #185），并继续跑通原有并发生图、删除、撤销和回收站流程。
 - 详情图组的浏览器回归覆盖：合并节点选择“详情图组”、数量填 4 后，提交到 A+ 的模块严格按 `hero → selling → scene → angles` 排序，并携带已准备参考图标识；实际生成仍由 A+ 串行管线负责。
 - 详情长图接口回归覆盖：两张本地媒体图纵向拼接为有效 PNG，输出高度大于宽度，父节点、额外父节点、坐标及 `ratio=long` 均正确落库。
+- 真实模型详情图组已通过：两张同项目参考图串行生成 4/4 张，角色顺序为 `hero → selling → scene → angles`，精确扣除 24 积分；四张作品均带主父、额外父和 `origin=canvas`，验证后测试作品已清理。
 
 ## 验收脚本
 
@@ -59,6 +60,7 @@
 - `node scripts/canvas-generation-smoke.mjs`：真实模型生成、落库、父子关系和积分；会实际消耗测试账号积分。
 - `CANVAS_SMOKE_COUNT=4 CANVAS_SMOKE_EXPECTED_COUNT=2 node scripts/canvas-generation-smoke.mjs` 可配合 `scripts/image-api-partial-mock.mjs` 回归部分成功与差额退款。
 - `npx playwright test scripts/canvas-generation-view.spec.ts --workers=1`：真实画布 Dock 生成及作品库回流；会实际消耗测试账号积分。
+- `node scripts/canvas-detail-generation-smoke.mjs`：真实生成四张有序详情图，核对模块顺序、积分、多输入血缘及画布回流；要求设置全新的 `CANVAS_SMOKE_EMAIL` 与 `CANVAS_SMOKE_PASSWORD`。
 
 ## 已知边界
 
