@@ -224,18 +224,71 @@ async function openaiImages(
 
   let data: { b64_json?: string; url?: string }[] = [];
 
+  // 兼容服务经常接受 n>1 却只返回 1 张。统一拆成 count 次 n=1，既能保证
+  // 用户选择的数量真实执行，也能在个别请求失败时保留其余成功结果。
+  async function fanOut(
+    worker: (index: number) => Promise<{ b64_json?: string; url?: string }>
+  ): Promise<{ b64_json?: string; url?: string }[]> {
+    const settled: PromiseSettledResult<{
+      b64_json?: string;
+      url?: string;
+    }>[] = new Array(p.count);
+    let cursor = 0;
+    // 每个 job 最多只向全局闸门提交 4 个活动 worker，避免一个 8 图任务
+    // 预先占满等待队列，让稍后提交的其他节点长期排在它后面。
+    const workerCount = Math.min(p.count, GEN_MAX_CONCURRENT);
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (cursor < p.count) {
+          const index = cursor++;
+          try {
+            settled[index] = {
+              status: "fulfilled",
+              value: await withGenSlot(() => worker(index)),
+            };
+          } catch (reason) {
+            settled[index] = { status: "rejected", reason };
+          }
+        }
+      })
+    );
+    const succeeded: { b64_json?: string; url?: string }[] = [];
+    const failed: unknown[] = [];
+    for (const result of settled) {
+      if (result.status === "fulfilled") succeeded.push(result.value);
+      else failed.push(result.reason);
+    }
+    if (failed.length > 0) {
+      console.error(
+        `[generate-image] partial upstream failure: requested=${p.count} succeeded=${succeeded.length} failed=${failed.length}`,
+        failed.map((reason) =>
+          reason instanceof Error ? reason.message : String(reason)
+        )
+      );
+    }
+    if (succeeded.length === 0) {
+      const first = failed[0];
+      throw first instanceof Error ? first : new Error("OpenAI 未返回图片");
+    }
+    return succeeded;
+  }
+
   // 改比例(ChatGPT 式重生成):拿节点自身提示词 + 原图当参考,按目标比例重画一张,
   // 出图后裁切到精确比例。同主体/风格/配色,自然重构图 —— 无接缝、无羽化、不限于 3 种形状。
   // 不需要用户额外提示词(ratioPrompt 已带固定重构图指令),只生成 1 张。
   if (p.ratiogen && p.images[0] && model.startsWith("gpt-image")) {
     const ref = await normalizeForEdit(Buffer.from(p.images[0].buf));
-    const r = await client.images.edit({
-      model,
-      image: await toFile(ref, "ref.png", { type: "image/png" }),
-      prompt,
-      n: 1,
-      size: size as "1024x1024" | "1536x1024" | "1024x1536",
-    });
+    const r = await withGenSlot(async () =>
+      client.images.edit({
+        model,
+        image: await toFile(Buffer.from(ref), "ref.png", {
+          type: "image/png",
+        }),
+        prompt,
+        n: 1,
+        size: size as "1024x1024" | "1536x1024" | "1024x1536",
+      })
+    );
     const b64 = r.data?.[0]?.b64_json;
     if (!b64) throw new Error("OpenAI 未返回图片");
     const cropped = await cropToRatio(Buffer.from(b64, "base64"), p.ratio);
@@ -254,58 +307,72 @@ async function openaiImages(
   if (canEdit) {
     // Image-to-image: keep the user's product(s), recompose per prompt/style.
     // gpt-image accepts multiple reference images (up to MAX_IMAGES).
-    const files = await Promise.all(
-      p.images.map(async (im, i) => {
-        const png = await normalizeForEdit(Buffer.from(im.buf));
-        return toFile(png, `product-${i}.png`, { type: "image/png" });
-      })
+    const normalized = await Promise.all(
+      p.images.map((im) => normalizeForEdit(Buffer.from(im.buf)))
     );
-    const editParams = {
-      model,
-      image: files,
-      prompt,
-      n: p.count,
-      size: size as "1024x1024" | "1536x1024" | "1024x1536",
-      quality: q,
+    const editOnce = async (transparent: boolean) => {
+      // 每次请求重新创建 File。兼容服务读取 multipart 流后，File 不可安全地
+      // 在并发请求或透明底降级重试之间复用。
+      const files = await Promise.all(
+        normalized.map((png, i) =>
+          toFile(Buffer.from(png), `product-${i}.png`, { type: "image/png" })
+        )
+      );
+      return client.images.edit({
+        model,
+        image: files,
+        prompt,
+        n: 1,
+        size: size as "1024x1024" | "1536x1024" | "1024x1536",
+        quality: q,
+        ...(transparent ? { background: "transparent" as const } : {}),
+      });
     };
-    let r;
-    try {
-      r = await client.images.edit({
-        ...editParams,
-        ...(p.transparent ? { background: "transparent" as const } : {}),
-      });
-    } catch (e) {
-      if (p.transparent && transparentUnsupported(e)) {
-        r = await client.images.edit(editParams); // 退回不透明底重试
-      } else throw e;
-    }
-    data = r.data ?? [];
-  } else if (model === "dall-e-3") {
-    // dall-e-3: n=1 only, no edit -> fan out parallel text-to-image.
-    const batches = await Promise.all(
-      Array.from({ length: p.count }).map(() =>
-        client.images.generate({ model, prompt, n: 1, size })
-      )
-    );
-    data = batches.flatMap((b) => b.data ?? []);
+    data = await fanOut(async () => {
+      let r;
+      try {
+        r = await editOnce(p.transparent);
+      } catch (e) {
+        if (p.transparent && transparentUnsupported(e)) {
+          r = await editOnce(false); // 退回不透明底重试
+        } else throw e;
+      }
+      const image = r.data?.[0];
+      if (!image) throw new Error("OpenAI 未返回图片");
+      return image;
+    });
   } else {
-    const genParams = { model, prompt, n: p.count, size, quality: q };
-    let r;
-    try {
-      r = await client.images.generate({
-        ...genParams,
-        ...(p.transparent ? { background: "transparent" as const } : {}),
+    const generateOnce = async (transparent: boolean) => {
+      if (model === "dall-e-3") {
+        return client.images.generate({ model, prompt, n: 1, size });
+      }
+      return client.images.generate({
+        model,
+        prompt,
+        n: 1,
+        size,
+        quality: q,
+        ...(transparent ? { background: "transparent" as const } : {}),
       });
-    } catch (e) {
-      if (p.transparent && transparentUnsupported(e)) {
-        r = await client.images.generate(genParams); // 退回不透明底重试
-      } else throw e;
-    }
-    data = r.data ?? [];
+    };
+    data = await fanOut(async () => {
+      let r;
+      try {
+        r = await generateOnce(p.transparent);
+      } catch (e) {
+        if (p.transparent && transparentUnsupported(e)) {
+          r = await generateOnce(false); // 退回不透明底重试
+        } else throw e;
+      }
+      const image = r.data?.[0];
+      if (!image) throw new Error("OpenAI 未返回图片");
+      return image;
+    });
   }
 
+  const imageRunId = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
   const images = data.map((d, i) => ({
-    id: `gen-${Date.now()}-${i}`,
+    id: `gen-${imageRunId}-${i}`,
     url: d.b64_json
       ? `data:image/png;base64,${d.b64_json}`
       : (d.url ?? ""),
@@ -518,9 +585,9 @@ function gcJobs() {
   });
 }
 
-// 生成并发闸:同时最多 GEN_MAX_CONCURRENT 个请求真正打 OpenAI,超出的排队等待。
-// 防止瞬时高并发一次性打爆 OpenAI 速率限额(429)。单 fork 实例,模块级状态即可。
-// gpt-image ~30-40s/张,默认 4 并发 ≈ 7 张/分钟,留足余量;可用 env 调大。
+// 生成并发闸:同时最多 GEN_MAX_CONCURRENT 个真实图片请求打上游,超出的排队。
+// 闸门按“单张请求”而不是按 job 计数，因此多个节点并发或单 job 生成 8 张时，
+// 全站总并发仍不会超过该值。单 fork 实例,模块级状态即可。
 const GEN_MAX_CONCURRENT = Math.max(1, Number(process.env.GEN_MAX_CONCURRENT) || 4);
 let genActive = 0;
 const genWaiters: Array<() => void> = [];
@@ -536,6 +603,14 @@ function releaseGenSlot(): void {
   if (next) next(); // 槽位直接转交给下一个排队者(genActive 不变)
   else genActive = Math.max(0, genActive - 1);
 }
+async function withGenSlot<T>(work: () => Promise<T>): Promise<T> {
+  await acquireGenSlot();
+  try {
+    return await work();
+  } finally {
+    releaseGenSlot();
+  }
+}
 
 async function runJob(
   jobId: string,
@@ -546,8 +621,7 @@ async function runJob(
   useDb: boolean,
   cost: number
 ) {
-  // 排队等一个并发槽(排队期间 job 仍是 pending,前端轮询正常显示"生成中")
-  await acquireGenSlot();
+  let billingSettled = false;
   try {
     // —— 临时埋点:量出每段耗时,定位生图慢在哪(OpenAI出图 / 放大 / 传R2 / 图大小)——
     const _t0 = Date.now();
@@ -630,26 +704,37 @@ async function runJob(
       } catch {
         /* non-fatal */
       }
-      await addLedgerEntry(p.email, -cost, `生成 ${p.count} 张图`).catch(
-        () => {}
+      const actualCost = images.length * resolutionCost(p.resolution);
+      const refund = Math.max(0, cost - actualCost);
+      if (refund > 0) await refundCredits(p.email, refund);
+      await addLedgerEntry(
+        p.email,
+        -actualCost,
+        images.length === p.count
+          ? `生成 ${images.length} 张图`
+          : `生成 ${images.length} 张图（请求 ${p.count} 张）`
       );
+      billingSettled = true;
       user = await getUser(p.email).catch(() => null);
     }
 
     if (useDb) await settleReservation(jobId).catch(() => {});
+    const actualCost = images.length * resolutionCost(p.resolution);
     JOBS.set(jobId, {
       status: "done",
       images,
       user,
-      creditsUsed: cost,
+      creditsUsed: actualCost,
       mock: !apiKey,
       mode: p.images.length > 0 ? "edit" : "generate",
       persisted: useDb,
       createdAt: Date.now(),
     });
   } catch (e) {
-    if (useDb) {
+    if (useDb && !billingSettled) {
       await refundCredits(p.email, cost).catch(() => {});
+    }
+    if (useDb) {
       await settleReservation(jobId).catch(() => {});
     }
     // 原始上游 message 可能含 openai/gpt/quota 等字样,经 safeError 净化后再落库,
@@ -663,8 +748,6 @@ async function runJob(
       error: safeError(e, "图片生成失败,请稍后重试"),
       createdAt: Date.now(),
     });
-  } finally {
-    releaseGenSlot();
   }
 }
 

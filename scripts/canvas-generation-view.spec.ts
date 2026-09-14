@@ -26,10 +26,16 @@ test("generated child is visible on canvas and in works", async ({ context, page
     (work: { origin?: string; parentId?: string | null }) => work.origin === "canvas" && work.parentId
   );
   expect(child?.id).toBeTruthy();
+  const siblings = (account.artworks || []).filter(
+    (work: { batchId?: string | null }) => child.batchId && work.batchId === child.batchId
+  );
+  expect(siblings.length).toBeGreaterThanOrEqual(1);
   const creditsBefore = (account.user.creditsTotal || 0) - (account.user.creditsUsed || 0);
 
   await page.goto(`/canvas?node=${encodeURIComponent(child.id)}`);
-  await expect(page.locator(`.react-flow__node[data-id="${child.id}"]`)).toBeVisible({ timeout: 20_000 });
+  for (const sibling of siblings) {
+    await expect(page.locator(`.react-flow__node[data-id="${sibling.id}"]`)).toBeVisible({ timeout: 20_000 });
+  }
   expect(await page.locator(".react-flow__edge").count()).toBeGreaterThanOrEqual(1);
   await expect.poll(async () =>
     page.locator(`.react-flow__node[data-id="${child.id}"] img`).evaluate(

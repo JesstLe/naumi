@@ -4,6 +4,12 @@ import { readFile } from "node:fs/promises";
 const base = (process.env.CANVAS_BASE_URL || "http://localhost").replace(/\/$/, "");
 const email = process.env.CANVAS_SMOKE_EMAIL || "canvas-e2e@local.test";
 const password = process.env.CANVAS_SMOKE_PASSWORD;
+const count = Math.min(Math.max(Number(process.env.CANVAS_SMOKE_COUNT || 1), 1), 8);
+const expectedCount = Math.min(
+  Math.max(Number(process.env.CANVAS_SMOKE_EXPECTED_COUNT || count), 1),
+  count
+);
+const register = process.env.CANVAS_SMOKE_REGISTER === "1";
 if (!password) throw new Error("请设置 CANVAS_SMOKE_PASSWORD");
 let cookie = "";
 
@@ -32,10 +38,10 @@ async function json(path, init = {}) {
 }
 
 async function main() {
-  await json("/api/auth/login", {
+  await json(register ? "/api/auth/register" : "/api/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, name: "画布生图验收" }),
   });
 
   const current = await json(`/api/account?email=${encodeURIComponent(email)}`);
@@ -63,7 +69,7 @@ async function main() {
   form.append("category", "main");
   form.append("ratio", "1:1");
   form.append("resolution", "1K");
-  form.append("count", "1");
+  form.append("count", String(count));
   form.append("parentId", root.id);
   form.append("parentIds", "[]");
   form.append("origin", "canvas");
@@ -80,22 +86,30 @@ async function main() {
   }
   assert.ok(result, "generation polling returned no result");
   assert.equal(result.status, "done", result.error || "generation timed out");
-  assert.equal(result.images?.length, 1);
-  assert.match(result.images[0].url, /^(data:image\/|https?:\/\/|\/media\/)/);
+  assert.equal(result.images?.length, expectedCount);
+  for (const image of result.images) {
+    assert.match(image.url, /^(data:image\/|https?:\/\/|\/media\/)/);
+  }
 
   const after = await json(`/api/account?email=${encodeURIComponent(email)}`);
-  const generated = (after.artworks || []).find((work) => work.id === result.images[0].id);
-  assert.ok(generated, "generated artwork was not persisted");
-  assert.equal(generated.origin, "canvas");
-  assert.equal(generated.parentId, root.id);
+  const generated = result.images.map((image) =>
+    (after.artworks || []).find((work) => work.id === image.id)
+  );
+  assert.ok(generated.every(Boolean), "generated artworks were not all persisted");
+  assert.ok(generated.every((work) => work.origin === "canvas"));
+  assert.ok(generated.every((work) => work.parentId === root.id));
+  assert.equal(new Set(generated.map((work) => work.batchId)).size, 1);
   const creditsBefore = (before.user.creditsTotal || 0) - (before.user.creditsUsed || 0);
   const creditsAfter = (after.user.creditsTotal || 0) - (after.user.creditsUsed || 0);
-  assert.ok(creditsAfter < creditsBefore, "generation did not deduct credits");
+  assert.equal(result.creditsUsed, expectedCount * 6);
+  assert.equal(creditsBefore - creditsAfter, result.creditsUsed);
   console.log(JSON.stringify({
     status: "PASS",
     jobId: start.jobId,
-    artworkId: generated.id,
-    image: generated.image,
+    requestedCount: count,
+    returnedCount: result.images.length,
+    artworkIds: generated.map((work) => work.id),
+    batchId: generated[0].batchId,
     parentId: root.id,
     creditsBefore,
     creditsAfter,
