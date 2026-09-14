@@ -162,6 +162,56 @@ async function main() {
   const zipBytes = new Uint8Array(await zip.arrayBuffer());
   assert.equal(String.fromCharCode(...zipBytes.slice(0, 2)), "PK");
 
+  // 选中详情模块按给定顺序纵向拼接，并作为带完整多输入血缘的新节点落库。
+  const stitched = await json(
+    "/api/canvas/stitch",
+    jsonInit("POST", {
+      ids: [root.id, reference.id],
+      title: "详情长图 · 2 张",
+      x: 720,
+      y: 160,
+    })
+  );
+  assert.match(stitched.image, /^\/media\//);
+  assert.ok(stitched.height > stitched.width);
+  const stitchedImage = await request(stitched.image);
+  assert.equal(stitchedImage.status, 200);
+  const stitchedBytes = new Uint8Array(await stitchedImage.arrayBuffer());
+  assert.deepEqual(Array.from(stitchedBytes.slice(0, 8)), [137, 80, 78, 71, 13, 10, 26, 10]);
+  const stitchedRecord = await json(
+    `/api/artworks/get?email=${encodeURIComponent(email)}&ids=${encodeURIComponent(stitched.id)}`
+  );
+  assert.equal(stitchedRecord.artworks[0]?.parentId, root.id);
+  assert.deepEqual(stitchedRecord.artworks[0]?.parentIds, [reference.id]);
+  assert.equal(stitchedRecord.artworks[0]?.ratio, "long");
+  assert.equal(stitchedRecord.artworks[0]?.canvasX, 720);
+  assert.equal(stitchedRecord.artworks[0]?.canvasY, 160);
+
+  // 画布详情图组复用 A+ prepared 入口；用超出新人余额的 8 张请求验证解析、
+  // 同项目多输入血缘与预扣前余额闸门，不实际触发模型生成。
+  const detailBytes = await readFile(new URL("../public/demos/suite-before.webp", import.meta.url));
+  const detailForm = new FormData();
+  detailForm.append("prepared", "1");
+  detailForm.append("image", new Blob([detailBytes], { type: "image/webp" }), "front.webp");
+  detailForm.append("image", new Blob([detailBytes], { type: "image/webp" }), "side.webp");
+  detailForm.append("parentId", root.id);
+  detailForm.append("parentIds", JSON.stringify([reference.id]));
+  detailForm.append("origin", "canvas");
+  for (const moduleKey of [
+    "hero",
+    "selling",
+    "scene",
+    "angles",
+    "ingredients",
+    "usage",
+    "specs",
+    "assurance",
+  ]) {
+    detailForm.append("module", moduleKey);
+  }
+  const detailBlocked = await request("/api/aplus", { method: "POST", body: detailForm });
+  assert.equal(detailBlocked.status, 402, await detailBlocked.text());
+
   const childRecord = fetched.artworks.find((a) => a.id === child.id);
   await json("/api/artworks/delete", jsonInit("POST", { email, ids: [child.id] }));
   let trash = await json(`/api/artworks/trash?email=${encodeURIComponent(email)}`);
@@ -175,7 +225,7 @@ async function main() {
   );
   assert.equal(restored.artworks[0]?.id, child.id);
 
-  const ids = [root.id, child.id, reference.id, otherRoot.id];
+  const ids = [root.id, child.id, reference.id, otherRoot.id, stitched.id];
   await json("/api/artworks/delete", jsonInit("POST", { email, ids }));
   trash = await json(`/api/artworks/trash?email=${encodeURIComponent(email)}`);
   const cleanupIds = trash.artworks.map((a) => a.id);

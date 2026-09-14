@@ -16,6 +16,7 @@ import {
   settleReservation,
   touchReservation,
   sweepStaleReservations,
+  listArtworksByIds,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
@@ -380,6 +381,9 @@ type Job = {
   cost: number;
   generationStarted: boolean;
   reserved: boolean;
+  parentId: string;
+  parentIds: string[];
+  origin: string;
   user?: Awaited<ReturnType<typeof getUser>>;
   creditsUsed?: number;
   error?: string;
@@ -599,6 +603,9 @@ async function runAplusGeneration(jobId: string) {
             ratio: job.format === "1:1" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2",
             resolution: "1K",
             source: "detail",
+            parentId: job.parentId || null,
+            parentIds: job.parentIds,
+            origin: job.origin || null,
           })),
           batchId
         );
@@ -641,6 +648,7 @@ async function parseInput(request: Request) {
   const ct = request.headers.get("content-type") ?? "";
   if (!ct.includes("multipart/form-data")) return null;
   const f = await request.formData();
+  const prepared = (f.get("prepared") ?? "").toString() === "1";
   const images: { buf: Buffer; type: string }[] = [];
   for (const file of f.getAll("image")) {
     if (file instanceof File && file.size > 0) {
@@ -649,7 +657,7 @@ async function parseInput(request: Request) {
         type: file.type || "image/png",
       });
     }
-    if (images.length >= 3) break; // A+ 最多 3 张
+    if (images.length >= (prepared ? 6 : 3)) break;
   }
   const rawModules = (f.getAll("module") as string[]).map((m) => m.trim());
   const modules = Array.from(new Set(rawModules)).filter((m) => APLUS_MODULES[m]);
@@ -666,6 +674,19 @@ async function parseInput(request: Request) {
     })(),
     modules: modules.length > 0 ? modules : ["hero", "selling", "scene", "angles"],
     email: (f.get("email") ?? "").toString().trim(),
+    prepared,
+    parentId: (f.get("parentId") ?? "").toString().trim(),
+    parentIds: (() => {
+      try {
+        const value = JSON.parse((f.get("parentIds") ?? "[]").toString());
+        return Array.isArray(value)
+          ? value.map(String).map((id) => id.trim()).filter(Boolean).slice(0, 5)
+          : [];
+      } catch {
+        return [];
+      }
+    })(),
+    origin: (f.get("origin") ?? "").toString().trim() === "canvas" ? "canvas" : "",
   };
 }
 
@@ -803,6 +824,26 @@ export async function POST(request: Request) {
   const useDb = dbEnabled && input.email.length > 0;
   const cost = input.modules.length * POINTS_PER_IMAGE;
 
+  if (input.prepared && useDb) {
+    const lineageIds = Array.from(
+      new Set([input.parentId, ...input.parentIds].filter(Boolean))
+    );
+    const owned = await listArtworksByIds(input.email, lineageIds).catch(() => []);
+    if (!input.parentId || owned.length !== lineageIds.length) {
+      return NextResponse.json(
+        { error: "参考节点不存在或无权访问" },
+        { status: 400 }
+      );
+    }
+    const groups = new Set(owned.map((artwork) => artwork.groupId || artwork.id));
+    if (groups.size !== 1) {
+      return NextResponse.json(
+        { error: "详情图参考只能来自同一画布项目" },
+        { status: 400 }
+      );
+    }
+  }
+
   if (dbEnabled && (await isBanned(input.email, ip))) {
     return NextResponse.json(
       { error: "账号或 IP 已被封禁，请联系管理员" },
@@ -823,15 +864,15 @@ export async function POST(request: Request) {
   const now = Date.now();
   JOBS.set(jobId, {
     status: "pending",
-    stage: "preparing",
+    stage: input.prepared ? "generating" : "preparing",
     sources: input.images.map((_, index) => ({
       id: `aplus-source-${now}-${index}`,
-      label: `白底母图 ${index + 1}`,
-      status: "preparing",
-      version: 0,
+      label: input.prepared ? `参考图 ${index + 1}` : `白底母图 ${index + 1}`,
+      status: input.prepared ? "approved" : "preparing",
+      version: input.prepared ? 1 : 0,
     })),
     sourceInputs: input.images,
-    sourceBuffers: input.images.map(() => null),
+    sourceBuffers: input.prepared ? input.images.map((image) => image.buf) : input.images.map(() => null),
     sourceHistory: input.images.map(() => []),
     shots: [],
     done: 0,
@@ -845,18 +886,46 @@ export async function POST(request: Request) {
     model,
     useDb,
     cost,
-    generationStarted: false,
+    generationStarted: input.prepared,
     reserved: false,
+    parentId: input.parentId,
+    parentIds: input.parentIds.filter((id) => id !== input.parentId),
+    origin: input.origin,
     createdAt: now,
   });
-  void sweepStaleReservations().catch(() => {});
-  void runSourcePreparation(jobId);
+  if (input.prepared) {
+    const job = JOBS.get(jobId)!;
+    await sweepStaleReservations().catch(() => {});
+    if (useDb) {
+      const ok = await reserveCredits(input.email, cost);
+      if (!ok) {
+        JOBS.delete(jobId);
+        return NextResponse.json({ error: insufficientCreditsMessage }, { status: 402 });
+      }
+      try {
+        await addReservation(jobId, input.email, cost);
+        job.reserved = true;
+      } catch (e) {
+        await refundCredits(input.email, cost).catch(() => {});
+        JOBS.delete(jobId);
+        return NextResponse.json(
+          { error: safeError(e, "积分预扣失败，请稍后重试") },
+          { status: 500 }
+        );
+      }
+    }
+    patchJob(jobId, { reserved: job.reserved });
+    void runAplusGeneration(jobId);
+  } else {
+    void sweepStaleReservations().catch(() => {});
+    void runSourcePreparation(jobId);
+  }
 
   return NextResponse.json({
     jobId,
     total: input.modules.length,
     cost,
-    next: "review_sources",
+    next: input.prepared ? "generating" : "review_sources",
   });
 }
 

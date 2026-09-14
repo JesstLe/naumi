@@ -64,6 +64,7 @@ import {
   MapPin,
   BoxSelect,
   Combine,
+  GalleryVerticalEnd,
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
@@ -109,7 +110,18 @@ const MAX_TOTAL_IMAGES = 6; // 节点图 + 追加参考图 合计上限
 const MAX_UPLOAD = 12 * 1024 * 1024;
 const MAX_GENERATION_COUNT = 8;
 
-type GenerationMode = "standard" | "triptych" | "split";
+type GenerationMode = "standard" | "detail" | "triptych" | "split";
+
+const DETAIL_MODULE_ORDER = [
+  "hero",
+  "selling",
+  "scene",
+  "angles",
+  "ingredients",
+  "usage",
+  "specs",
+  "assurance",
+] as const;
 
 type CanvasGenerationTask = {
   id: string;
@@ -550,6 +562,7 @@ function ArtNode({ data, selected }: NodeProps) {
     pending?: boolean;
     inChain?: boolean;
     marked?: boolean;
+    ratio?: string | null;
   };
   const title = d.pending
     ? d.label
@@ -594,7 +607,10 @@ function ArtNode({ data, selected }: NodeProps) {
               src={cdnUrl(d.image as string)}
               alt={d.label}
               draggable={false}
-              className="block h-[110px] w-full object-cover"
+              className={cn(
+                "block h-[110px] w-full",
+                d.ratio === "long" ? "bg-white object-contain" : "object-cover"
+              )}
             />
             {d.rootLabel && (
               <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
@@ -739,6 +755,7 @@ function layoutGraph(
         prompt: a.prompt,
         date: a.createdAt,
         marked: !!a.marked,
+        ratio: a.ratio,
       },
     };
   });
@@ -826,6 +843,7 @@ export function CanvasClient() {
   const [snapGrid, setSnapGrid] = useState(true);
   const [genError, setGenError] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
+  const [stitching, setStitching] = useState(false);
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
     null
   );
@@ -1395,9 +1413,17 @@ export function CanvasClient() {
   const selectedBatchArts = useMemo(() => {
     if (!active || multiSel.length < 2) return [];
     const byId = new Map(active.members.map((art) => [art.id, art]));
+    const positions = new Map(
+      (rfRef.current?.getNodes() ?? []).map((node) => [node.id, node.position])
+    );
     return multiSel
       .map((id) => byId.get(id))
-      .filter((art): art is Artwork => !!art && hasRenderableImage(art.image));
+      .filter((art): art is Artwork => !!art && hasRenderableImage(art.image))
+      .sort((a, b) => {
+        const ap = positions.get(a.id) ?? { x: a.canvasX ?? 0, y: a.canvasY ?? 0 };
+        const bp = positions.get(b.id) ?? { x: b.canvasX ?? 0, y: b.canvasY ?? 0 };
+        return Math.abs(ap.y - bp.y) > 24 ? ap.y - bp.y : ap.x - bp.x;
+      });
   }, [active, multiSel]);
   const selectedBatchIds = useMemo(
     () => selectedBatchArts.map((art) => art.id),
@@ -2155,6 +2181,11 @@ export function CanvasClient() {
   // 面板「生成」:用编辑框提示词 + 参数 + 追加参考图(留空=按这张图再生成一张)
   async function generateChild() {
     if (!selected) return;
+    if (generationMode === "detail") {
+      const references = visibleDockRefs.length ? visibleDockRefs : [selected];
+      await generateDetailSequence(selected, references, editPrompt.trim(), extraFiles);
+      return;
+    }
     if (generationMode === "triptych") {
       const feedback = editPrompt.trim();
       const result = await runGen(
@@ -2251,6 +2282,163 @@ export function CanvasClient() {
     if (side[0]) await renameGeneratedArtwork(side[0].id, "侧面视图");
     if (back[0]) await renameGeneratedArtwork(back[0].id, "背面视图");
     setSelectedId(anchor.id);
+  }
+
+  // 复用 A+ 的视觉规划与逐张串行生成管线：所选 N 张图直接作为已准备好的
+  // 多视角参考，不再重复白底提取；按详情模块顺序生成，随后纵向排列为兄弟节点。
+  async function generateDetailSequence(
+    source: Artwork,
+    referenceArts: Artwork[],
+    feedback: string,
+    uploadedRefs: File[] = [],
+    pend?: Pend
+  ) {
+    if (!user || readOnly) return;
+    const operationKey = `details:${pend?.id ?? source.id}`;
+    if (generationOperationRef.current.has(operationKey)) return;
+    generationOperationRef.current.add(operationKey);
+    const count = Math.max(1, Math.min(MAX_GENERATION_COUNT, genCount || 1));
+    const sourceNode = rfRef.current?.getNode(source.id);
+    const basePosition = pend
+      ? { x: pend.x, y: pend.y }
+      : sourceNode
+        ? { x: sourceNode.position.x + NODE_W + X_GAP, y: sourceNode.position.y }
+        : { x: 0, y: 0 };
+    const taskId = `task-detail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    generationTaskPosRef.current[taskId] = basePosition;
+    setGenerationTasks((current) => [
+      ...current,
+      {
+        id: taskId,
+        operationKey,
+        sourceId: source.id,
+        label: fmt(t("canvas.detailProgress"), { done: 0, total: count }),
+        position: basePosition,
+      },
+    ]);
+    if (pend) {
+      setPendNodes((current) =>
+        current.map((node) => (node.id === pend.id ? { ...node, generating: true } : node))
+      );
+    }
+    setGenError(null);
+    try {
+      const form = new FormData();
+      const maxArtworkRefs = Math.max(0, MAX_TOTAL_IMAGES - uploadedRefs.length);
+      const arts = referenceArts.slice(0, maxArtworkRefs);
+      for (let index = 0; index < arts.length; index++) {
+        const artwork = arts[index];
+        const response = await fetch(
+          `/api/download?u=${encodeURIComponent(artwork.image)}&n=detail-ref-${index + 1}.png`
+        );
+        if (!response.ok) throw new Error(t("canvas.genFail"));
+        const blob = await response.blob();
+        form.append(
+          "image",
+          new File([blob], `detail-ref-${index + 1}.png`, {
+            type: blob.type || "image/png",
+          })
+        );
+      }
+      uploadedRefs.slice(0, MAX_TOTAL_IMAGES - arts.length).forEach((file) =>
+        form.append("image", file)
+      );
+      if (form.getAll("image").length === 0) {
+        throw new Error(t("canvas.detailNeedRefs"));
+      }
+      form.append("prepared", "1");
+      form.append("text", feedback);
+      form.append("platform", "taobao");
+      form.append("lang", "zh");
+      form.append(
+        "format",
+        ["1:1", "4:3", "16:9", "9:16"].includes(genRatio)
+          ? genRatio
+          : "aplus-web"
+      );
+      DETAIL_MODULE_ORDER.slice(0, count).forEach((module) => form.append("module", module));
+      form.append("email", user.email);
+      form.append("origin", "canvas");
+      const lineage = arts.length ? arts : [source];
+      form.append("parentId", lineage[0].id);
+      form.append("parentIds", JSON.stringify(lineage.slice(1).map((artwork) => artwork.id)));
+
+      const startedResponse = await fetch("/api/aplus", {
+        method: "POST",
+        headers: await authHeader(),
+        body: form,
+      });
+      const started = await readJsonSafe(startedResponse);
+      if (!startedResponse.ok || !started.jobId) {
+        throw new Error(started.error || t("canvas.genFail"));
+      }
+      const deadline = Date.now() + 20 * 60 * 1000;
+      let shots: Array<{ id: string; status: string; url?: string | null }> = [];
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        if (Date.now() > deadline) throw new Error(t("canvas.genFail"));
+        const pollResponse = await privateFetch(
+          `/api/aplus?job=${encodeURIComponent(started.jobId)}`,
+          { cache: "no-store" }
+        );
+        const poll = await readJsonSafe(pollResponse);
+        if (!pollResponse.ok) throw new Error(poll.error || t("canvas.genFail"));
+        const done = Number(poll.done || 0);
+        setGenerationTasks((current) =>
+          current.map((task) =>
+            task.id === taskId
+              ? {
+                  ...task,
+                  label: fmt(t("canvas.detailProgress"), { done, total: count }),
+                }
+              : task
+          )
+        );
+        if (poll.status === "error") throw new Error(poll.error || t("canvas.genFail"));
+        if (poll.status === "done") {
+          shots = (poll.shots ?? []) as typeof shots;
+          if (poll.user) applyServerUser(poll.user);
+          break;
+        }
+      }
+      const ids = shots
+        .filter((shot) => shot.status === "done" && shot.id && shot.url)
+        .map((shot) => shot.id);
+      if (!ids.length) throw new Error(t("canvas.genFail"));
+      await Promise.all(
+        ids.map((id, index) =>
+          privateFetch("/api/artworks/position", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              email: user.email,
+              id,
+              x: Math.round(basePosition.x),
+              y: Math.round(basePosition.y + index * (NODE_H + 24)),
+            }),
+          }).catch(() => {})
+        )
+      );
+      if (pend) {
+        setPendNodes((current) => current.filter((node) => node.id !== pend.id));
+        setSelectedPendId((current) => (current === pend.id ? null : current));
+      }
+      const fresh = await mergeWorks(ids);
+      pushAddUndoMany(ids, fresh);
+      setSelectedId(ids[0]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("canvas.genFail");
+      setGenError(message);
+      if (pend) {
+        setPendNodes((current) =>
+          current.map((node) => (node.id === pend.id ? { ...node, generating: false } : node))
+        );
+      }
+    } finally {
+      generationOperationRef.current.delete(operationKey);
+      delete generationTaskPosRef.current[taskId];
+      setGenerationTasks((current) => current.filter((task) => task.id !== taskId));
+    }
   }
 
   async function retrySelected() {
@@ -2493,6 +2681,11 @@ export function CanvasClient() {
     const rec = fresh.find((a) => a.id === newId);
     if (rec) pushUndo({ kind: "add", records: [rec] });
   }
+  function pushAddUndoMany(newIds: string[], fresh: Artwork[]) {
+    const wanted = new Set(newIds);
+    const records = fresh.filter((artwork) => wanted.has(artwork.id));
+    if (records.length) pushUndo({ kind: "add", records });
+  }
   // 批量删除选中的多个节点(框选 + Del)
   function batchDelete(ids: string[]) {
     if (readOnly || !user || !active) return;
@@ -2630,6 +2823,44 @@ export function CanvasClient() {
     } catch {
       await refetchWorks();
       flashTip(t("canvas.genFail"));
+    }
+  }
+
+  async function stitchBatchSelection() {
+    if (!user || readOnly || stitching || selectedBatchArts.length < 2) return;
+    const selectedNodes = (rfRef.current?.getNodes() ?? []).filter((node) =>
+      selectedBatchIds.includes(node.id)
+    );
+    const x = selectedNodes.length
+      ? Math.max(...selectedNodes.map((node) => node.position.x)) + NODE_W + X_GAP
+      : 0;
+    const y = selectedNodes.length
+      ? Math.min(...selectedNodes.map((node) => node.position.y))
+      : 0;
+    setStitching(true);
+    try {
+      const response = await privateFetch("/api/canvas/stitch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ids: selectedBatchIds,
+          title: fmt(t("canvas.longImageTitle"), { n: selectedBatchIds.length }),
+          x,
+          y,
+        }),
+      });
+      const result = await expectJsonOk(response, t("canvas.stitchFail"));
+      const id = String(result?.id || "");
+      if (!id) throw new Error(t("canvas.stitchFail"));
+      clearCanvasSelection(true);
+      const fresh = await mergeWorks([id]);
+      pushAddUndo(id, fresh);
+      setSelectedId(id);
+      flashTip(t("canvas.stitchDone"));
+    } catch (error) {
+      flashTip(error instanceof Error ? error.message : t("canvas.stitchFail"));
+    } finally {
+      setStitching(false);
     }
   }
 
@@ -3053,6 +3284,7 @@ export function CanvasClient() {
     setSelectedId(null);
     setSelectedPendId(id);
     setEditPrompt("");
+    setGenerationMode("standard");
     wantFocusPendPrompt.current = true;
     if (selectedBatchIds.length > MAX_TOTAL_IMAGES) {
       flashTip(fmt(t("canvas.batchGenerateLimit"), { n: MAX_TOTAL_IMAGES }));
@@ -3115,17 +3347,25 @@ export function CanvasClient() {
     // 可传入指定的空白节点(拉线「生成衍生图」用,避免依赖尚未刷新的 state)
     const pend = opts?.pend ?? pendNodes.find((p) => p.id === selectedPendId);
     if (!pend || pend.generating) return;
-    const operationKey = `pend:${pend.id}`;
-    if (generationOperationRef.current.has(operationKey)) return;
-    generationOperationRef.current.add(operationKey);
     const text = (opts?.prompt ?? editPrompt).trim();
+    const inputArts = pend.inputs
+      .map((id) => active?.members.find((m) => m.id === id))
+      .filter(Boolean) as Artwork[];
+    if (generationMode === "detail") {
+      if (!inputArts.length) {
+        flashTip(t("canvas.detailNeedRefs"));
+        return;
+      }
+      await generateDetailSequence(inputArts[0], inputArts, text, [], pend);
+      return;
+    }
     if (!text && !pend.inputs.length) {
       flashTip(t("canvas.pendNeedPrompt"));
       return;
     }
-    const inputArts = pend.inputs
-      .map((id) => active?.members.find((m) => m.id === id))
-      .filter(Boolean) as Artwork[];
+    const operationKey = `pend:${pend.id}`;
+    if (generationOperationRef.current.has(operationKey)) return;
+    generationOperationRef.current.add(operationKey);
     // 没写提示词时:不再注入"生成一张电商商业图"这种会重绘/改风格的通用词
     // (那会让输出莫名其妙变样,还被存成节点提示词)。改为沿用主输入图自身的
     // 提示词(延续它的配方);没有则用"保持主体/构图/风格"的中性词。
@@ -4437,6 +4677,20 @@ export function CanvasClient() {
                   </button>
                   <button
                     type="button"
+                    disabled={stitching}
+                    onClick={() => void stitchBatchSelection()}
+                    title={t("canvas.stitchOrderHint")}
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8] disabled:opacity-45"
+                  >
+                    {stitching ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <GalleryVerticalEnd className="h-4 w-4" />
+                    )}
+                    {t("canvas.batchStitch")}
+                  </button>
+                  <button
+                    type="button"
                     disabled={zipping}
                     onClick={() => void downloadBatchSelection()}
                     className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8] disabled:opacity-45"
@@ -5219,6 +5473,7 @@ export function CanvasClient() {
                     disabled={selectedGenerating}
                     options={[
                       { value: "standard", label: t("canvas.modeStandard") },
+                      { value: "detail", label: t("canvas.modeDetail") },
                       { value: "triptych", label: t("canvas.modeTriptych") },
                       { value: "split", label: t("canvas.modeSplit") },
                     ]}
@@ -5226,9 +5481,15 @@ export function CanvasClient() {
                     triggerClass="flex cursor-pointer items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee] disabled:opacity-45"
                     trigger={
                       <>
-                        <Rotate3d className="h-3.5 w-3.5" />
+                        {generationMode === "detail" ? (
+                          <GalleryVerticalEnd className="h-3.5 w-3.5" />
+                        ) : (
+                          <Rotate3d className="h-3.5 w-3.5" />
+                        )}
                         {generationMode === "standard"
                           ? t("canvas.modeStandardShort")
+                          : generationMode === "detail"
+                            ? t("canvas.modeDetailShort")
                           : generationMode === "triptych"
                             ? t("canvas.modeTriptychShort")
                             : t("canvas.modeSplitShort")}
@@ -5236,7 +5497,7 @@ export function CanvasClient() {
                     }
                   />
                   {ratioControl}
-                  {generationMode === "standard" ? (
+                  {generationMode === "standard" || generationMode === "detail" ? (
                     <ImageCountControl
                       value={genCount}
                       onChange={setGenCount}
@@ -5313,9 +5574,14 @@ export function CanvasClient() {
                     </span>
                   )}
                   <span className="ml-1 min-w-0 flex-1 truncate text-[12px] text-[#9aa1ae]">
-                    {pendInputArts.length > 0
-                      ? fmt(t("canvas.pendMerge"), { n: pendInputArts.length })
-                      : t("canvas.pendNewImage")}
+                    {generationMode === "detail" && pendInputArts.length > 0
+                      ? fmt(t("canvas.pendDetail"), {
+                          refs: pendInputArts.length,
+                          count: genCount,
+                        })
+                      : pendInputArts.length > 0
+                        ? fmt(t("canvas.pendMerge"), { n: pendInputArts.length })
+                        : t("canvas.pendNewImage")}
                   </span>
                   <button
                     type="button"
@@ -5343,6 +5609,29 @@ export function CanvasClient() {
                 <span className="flex items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee]">
                   {t("canvas.dockModel")}
                 </span>
+                <DarkSelect
+                  dir="up"
+                  value={generationMode === "detail" ? "detail" : "standard"}
+                  disabled={selectedPendGenerating}
+                  options={[
+                    { value: "standard", label: t("canvas.modeStandard") },
+                    { value: "detail", label: t("canvas.modeDetail") },
+                  ]}
+                  onPick={(value) => setGenerationMode(value as GenerationMode)}
+                  triggerClass="flex cursor-pointer items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee] disabled:opacity-45"
+                  trigger={
+                    <>
+                      {generationMode === "detail" ? (
+                        <GalleryVerticalEnd className="h-3.5 w-3.5" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}
+                      {generationMode === "detail"
+                        ? t("canvas.modeDetailShort")
+                        : t("canvas.modeStandardShort")}
+                    </>
+                  }
+                />
                 {ratioControl}
                 <ImageCountControl
                   value={genCount}

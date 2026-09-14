@@ -198,6 +198,99 @@ test("canvas browser workflow", async ({ context, page }) => {
   await mergePend.getByTitle("删除空白节点").click({ force: true });
   await expect(page.locator('.react-flow__node[data-id^="pend-"]')).toHaveCount(0);
 
+  // 合并节点可切换为详情图组：4 表示 4 个有顺序的 A+ 分镜，不是同提示词随机四版。
+  await page.getByTitle("框选节点").click();
+  const detailRootBox = await page.locator(`.react-flow__node[data-id="${rootId}"]`).boundingBox();
+  const detailDuplicateBox = await page
+    .locator(`.react-flow__node[data-id="${duplicate.id}"]`)
+    .boundingBox();
+  expect(detailRootBox).toBeTruthy();
+  expect(detailDuplicateBox).toBeTruthy();
+  await page.mouse.move(
+    Math.min(detailRootBox!.x, detailDuplicateBox!.x) - 18,
+    Math.min(detailRootBox!.y, detailDuplicateBox!.y) - 18
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    Math.max(detailRootBox!.x + detailRootBox!.width, detailDuplicateBox!.x + detailDuplicateBox!.width) + 18,
+    Math.max(detailRootBox!.y + detailRootBox!.height, detailDuplicateBox!.y + detailDuplicateBox!.height) + 18,
+    { steps: 12 }
+  );
+  await page.mouse.up();
+  await page.getByLabel("批量操作").getByRole("button", { name: "合并生成节点" }).click();
+  await page.getByRole("button", { name: "普通", exact: true }).click();
+  await page.getByRole("button", { name: "详情图组（按顺序生成）", exact: true }).click();
+  await page.getByLabel("生成图片数量").fill("4");
+  await expect(page.getByText("2 张参考 · 按顺序生成 4 张详情图", { exact: true })).toBeVisible();
+  let detailRequestBody = "";
+  await page.route("**/api/aplus**", async (route) => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      detailRequestBody = request.postData() || "";
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobId: "detail-sequence-fake", total: 4, next: "generating" }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ status: "error", error: "detail mock done" }),
+    });
+  });
+  await page.getByTitle("生成").last().click();
+  await expect.poll(() => detailRequestBody, { timeout: 10_000 }).not.toBe("");
+  expect(detailRequestBody).toContain('name="prepared"');
+  expect(detailRequestBody).toContain('name="module"');
+  for (const moduleKey of ["hero", "selling", "scene", "angles"]) {
+    expect(detailRequestBody).toContain(moduleKey);
+  }
+  expect(detailRequestBody.indexOf("hero")).toBeLessThan(detailRequestBody.indexOf("selling"));
+  expect(detailRequestBody.indexOf("selling")).toBeLessThan(detailRequestBody.indexOf("scene"));
+  expect(detailRequestBody.indexOf("scene")).toBeLessThan(detailRequestBody.indexOf("angles"));
+  await expect(page.getByText("detail mock done", { exact: true })).toBeVisible({ timeout: 10_000 });
+  await page.unroute("**/api/aplus**");
+  const detailPend = page.locator('.react-flow__node[data-id^="pend-"]').first();
+  await detailPend.hover();
+  await detailPend.getByTitle("删除空白节点").click({ force: true });
+
+  // 同一批选择还可以按画布空间顺序直接拼成一张可下载、可继续衍生的详情长图。
+  await page.getByTitle("框选节点").click();
+  const stitchRootBox = await page.locator(`.react-flow__node[data-id="${rootId}"]`).boundingBox();
+  const stitchDuplicateBox = await page
+    .locator(`.react-flow__node[data-id="${duplicate.id}"]`)
+    .boundingBox();
+  expect(stitchRootBox).toBeTruthy();
+  expect(stitchDuplicateBox).toBeTruthy();
+  await page.mouse.move(
+    Math.min(stitchRootBox!.x, stitchDuplicateBox!.x) - 18,
+    Math.min(stitchRootBox!.y, stitchDuplicateBox!.y) - 18
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    Math.max(stitchRootBox!.x + stitchRootBox!.width, stitchDuplicateBox!.x + stitchDuplicateBox!.width) + 18,
+    Math.max(stitchRootBox!.y + stitchRootBox!.height, stitchDuplicateBox!.y + stitchDuplicateBox!.height) + 18,
+    { steps: 12 }
+  );
+  await page.mouse.up();
+  await page.getByLabel("批量操作").getByRole("button", { name: "拼接长图" }).click();
+  await expect(page.getByText("详情长图 · 2 张", { exact: true })).toBeVisible({ timeout: 20_000 });
+  const afterStitch = await account();
+  const longImage = afterStitch.artworks.find(
+    (work: { title: string }) => work.title === "详情长图 · 2 张"
+  );
+  expect(longImage?.id).toBeTruthy();
+  expect(longImage?.ratio).toBe("long");
+  expect(longImage?.parentId).toBe(rootId);
+  expect(longImage?.parentIds).toEqual([duplicate.id]);
+  await api.post("/api/artworks/delete", { data: { email, ids: [longImage.id] } });
+  await api.post("/api/artworks/trash", {
+    data: { email, action: "purge", ids: [longImage.id] },
+  });
+  await page.reload();
+
   // 两个独立节点同时生图时，必须出现两个任务节点；期间仍可新建普通节点。
   let fakeJobSeq = 0;
   const fakePolls = new Map<string, number>();
@@ -228,6 +321,7 @@ test("canvas browser workflow", async ({ context, page }) => {
     });
   });
   await page.locator(`.react-flow__node[data-id="${rootId}"]`).click();
+  await page.getByLabel("生成图片数量").fill("3");
   await page.getByTitle("生成新版本", { exact: true }).click();
   await page.getByLabel("关闭").last().click();
   await page.locator(`.react-flow__node[data-id="${duplicate.id}"]`).click();
