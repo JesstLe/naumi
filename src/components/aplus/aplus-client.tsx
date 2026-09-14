@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
+  Check,
   ChevronRight,
   Clock,
   Download,
   FileText,
   Loader2,
+  RotateCcw,
   Sparkles,
   Upload,
   Wand2,
@@ -22,6 +24,7 @@ import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
+import { ImageLightbox } from "@/components/image-lightbox";
 
 // ---------------------------------------------------------------------------
 // A+ 详情页工作台(对标竞品 a-plus 详情页):
@@ -91,8 +94,12 @@ type Shot = {
 type SourceImage = {
   id: string;
   label: string;
-  status: "done";
-  url: string;
+  status: "preparing" | "review" | "approved" | "redoing" | "error";
+  url?: string;
+  version: number;
+  feedback?: string;
+  error?: string;
+  history?: { version: number; feedback: string; url: string; createdAt: number }[];
 };
 
 
@@ -116,11 +123,13 @@ export function AplusClient() {
   const [loading, setLoading] = useState(false);
   const [shots, setShots] = useState<Shot[]>([]);
   const [sources, setSources] = useState<SourceImage[]>([]);
-  const [stage, setStage] = useState<"preparing" | "generating">("preparing");
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [stage, setStage] = useState<"preparing" | "reviewing" | "generating">("preparing");
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(4);
   const [finished, setFinished] = useState(false);
-  const [viewing, setViewing] = useState<Shot | null>(null);
+  const [viewing, setViewing] = useState<{ url: string; label: string } | null>(null);
+  const [sourceFeedback, setSourceFeedback] = useState<Record<string, string>>({});
   const [zipping, setZipping] = useState(false);
   const [demoLayout, setDemoLayout] = useState<"two-column" | "single-column">(
     "two-column"
@@ -133,6 +142,9 @@ export function AplusClient() {
 
   const cost = Math.max(modules.length, 1) * POINTS_PER_IMAGE;
   const hasResult = shots.some((s) => s.status === "done");
+  const allSourcesApproved =
+    sources.length > 0 && sources.every((source) => source.status === "approved");
+  const formLocked = !!jobId && !finished;
 
   useEffect(() => {
     return () => {
@@ -174,6 +186,53 @@ export function AplusClient() {
     setAssistRun({ mode, nonce: Date.now() });
   }
 
+  function applyJobState(s: any) {
+    if (["preparing", "reviewing", "generating"].includes(s.stage)) {
+      setStage(s.stage);
+    }
+    if (Array.isArray(s.sources)) setSources(s.sources);
+    if (Array.isArray(s.shots)) setShots(s.shots);
+    if (typeof s.done === "number") setDone(s.done);
+    if (typeof s.total === "number") setTotal(s.total);
+    if (s.status === "awaiting_review") {
+      setLoading(false);
+      const sourceWorkPending = Array.isArray(s.sources) && s.sources.some(
+        (source: SourceImage) => source.status === "preparing" || source.status === "redoing"
+      );
+      if (!sourceWorkPending && pollRef.current) clearInterval(pollRef.current);
+    }
+    if (s.status === "done") {
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (s.user) applyServerUser(s.user);
+      setFinished(true);
+      setLoading(false);
+    } else if (s.status === "error") {
+      if (pollRef.current) clearInterval(pollRef.current);
+      setError(s.error || L("生成失败,请重试", "Generation failed"));
+      setLoading(false);
+    }
+  }
+
+  async function refreshJob(id: string) {
+    const r = await fetch(`/api/aplus?job=${encodeURIComponent(id)}`, {
+      cache: "no-store",
+      headers: await authHeader(),
+    });
+    const s = await r.json();
+    if (!r.ok) throw new Error(s.error || "任务状态获取失败");
+    applyJobState(s);
+    return s;
+  }
+
+  function startPolling(id: string) {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(() => {
+      void refreshJob(id).catch(() => {
+        /* 单次轮询失败忽略 */
+      });
+    }, 2500);
+  }
+
   async function generate() {
     setError(null);
     if (!user) {
@@ -192,6 +251,8 @@ export function AplusClient() {
     setFinished(false);
     setShots([]);
     setSources([]);
+    setJobId(null);
+    setSourceFeedback({});
     setStage("preparing");
     setDone(0);
     setTotal(modules.length);
@@ -212,36 +273,88 @@ export function AplusClient() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || L("生成失败,请重试", "Generation failed"));
       const jobId: string = data.jobId;
+      setJobId(jobId);
       if (data.total) setTotal(data.total);
-
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(async () => {
-        try {
-          const r = await fetch(`/api/aplus?job=${jobId}`, { cache: "no-store" });
-          const s = await r.json();
-          if (s.stage === "preparing" || s.stage === "generating") setStage(s.stage);
-          if (Array.isArray(s.sources)) setSources(s.sources);
-          if (Array.isArray(s.shots)) setShots(s.shots);
-          if (typeof s.done === "number") setDone(s.done);
-          if (typeof s.total === "number") setTotal(s.total);
-          if (s.status === "done") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            if (s.user) applyServerUser(s.user);
-            setFinished(true);
-            setLoading(false);
-          } else if (s.status === "error") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            setError(s.error || L("生成失败,请重试", "Generation failed"));
-            setLoading(false);
-          }
-        } catch {
-          /* 单次轮询失败忽略 */
-        }
-      }, 2500);
+      startPolling(jobId);
     } catch (e) {
       setError(e instanceof Error ? e.message : L("生成失败,请重试", "Generation failed"));
       setLoading(false);
     }
+  }
+
+  async function updateSource(
+    index: number,
+    action: "approve_source" | "redo_source"
+  ) {
+    if (!jobId) return;
+    const source = sources[index];
+    const feedback = (sourceFeedback[source.id] ?? "").trim();
+    if (action === "redo_source" && !feedback) {
+      setError("请先填写这张母图需要修改的地方");
+      return;
+    }
+    setError(null);
+    if (action === "redo_source") {
+      setSources((current) =>
+        current.map((item, i) =>
+          i === index ? { ...item, status: "redoing", feedback } : item
+        )
+      );
+    }
+    try {
+      const res = await fetch("/api/aplus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeader()) },
+        body: JSON.stringify({ jobId, action, sourceIndex: index, feedback }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "操作失败");
+      if (data.source) {
+        setSources((current) =>
+          current.map((item, i) =>
+            i === index ? { ...item, ...data.source } : item
+          )
+        );
+      }
+      if (action === "redo_source") startPolling(jobId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "操作失败");
+      await refreshJob(jobId).catch(() => {});
+    }
+  }
+
+  async function continueGeneration() {
+    if (!jobId || !allSourcesApproved) return;
+    setError(null);
+    setLoading(true);
+    setStage("generating");
+    try {
+      const res = await fetch("/api/aplus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeader()) },
+        body: JSON.stringify({ jobId, action: "generate" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "生成启动失败");
+      startPolling(jobId);
+    } catch (e) {
+      setStage("reviewing");
+      setLoading(false);
+      setError(e instanceof Error ? e.message : "生成启动失败");
+    }
+  }
+
+  function restartReview() {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setJobId(null);
+    setSources([]);
+    setShots([]);
+    setSourceFeedback({});
+    setStage("preparing");
+    setLoading(false);
+    setFinished(false);
+    setDone(0);
+    setError(null);
   }
 
   async function downloadAll() {
@@ -314,6 +427,7 @@ export function AplusClient() {
               accept="image/png,image/jpeg,image/webp"
               multiple
               hidden
+              disabled={formLocked}
               onChange={(e) => pickFiles(e.target.files)}
             />
             <div className="flex flex-wrap gap-2">
@@ -330,6 +444,7 @@ export function AplusClient() {
                   />
                   <button
                     onClick={() => removeFile(i)}
+                    disabled={formLocked}
                     className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-card/90 text-foreground shadow hover:bg-card"
                     aria-label="移除图片"
                   >
@@ -340,6 +455,7 @@ export function AplusClient() {
               {files.length < MAX_IMAGES && (
                 <button
                   onClick={() => fileRef.current?.click()}
+                  disabled={formLocked}
                   className="flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-border bg-secondary/40 text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
                 >
                   <Upload className="h-4 w-4" />
@@ -356,6 +472,7 @@ export function AplusClient() {
               <select
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value)}
+                disabled={formLocked}
                 className="w-full rounded-[10px] border border-border bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
               >
                 {PLATFORMS.map((p) => (
@@ -370,6 +487,7 @@ export function AplusClient() {
               <select
                 value={lang}
                 onChange={(e) => setLang(e.target.value)}
+                disabled={formLocked}
                 className="w-full rounded-[10px] border border-border bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
               >
                 {LANGS.map((l) => (
@@ -387,6 +505,7 @@ export function AplusClient() {
             <select
               value={format}
               onChange={(e) => setFormat(e.target.value)}
+              disabled={formLocked}
               className="w-full rounded-[10px] border border-border bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
             >
               {FORMATS.map((f) => (
@@ -425,6 +544,7 @@ export function AplusClient() {
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
+              disabled={formLocked}
               placeholder="建议提供:产品名称、核心优势、目标人群、使用场景、详细参数"
               className="min-h-[88px] w-full rounded-[10px] border border-border bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
             />
@@ -444,6 +564,7 @@ export function AplusClient() {
                     key={m.id}
                     type="button"
                     onClick={() => toggleModule(m.id)}
+                    disabled={formLocked}
                     className={cn(
                       "rounded-xl border p-2.5 text-left transition-colors",
                       on
@@ -503,8 +624,8 @@ export function AplusClient() {
           {/* CTA:积分前置 */}
           <button
             type="button"
-            onClick={generate}
-            disabled={loading}
+            onClick={stage === "reviewing" && jobId ? continueGeneration : generate}
+            disabled={loading || (stage === "reviewing" && !!jobId && !allSourcesApproved)}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-[15px] font-semibold text-white shadow-btn [background:var(--grad-acc)] transition-all hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? (
@@ -516,7 +637,11 @@ export function AplusClient() {
               ? stage === "preparing"
                 ? "正在提取商品并生成白底母图"
                 : `生成中 ${done}/${total}`
-              : L(`生成详情页（预计 ${cost} 积分）`, `Generate A+ page (~${cost} credits)`)}
+              : stage === "reviewing" && jobId
+                ? allSourcesApproved
+                  ? L(`确认并生成详情页（${cost} 积分）`, `Confirm and generate (${cost} credits)`)
+                  : L("请先审核全部白底母图", "Review all source images first")
+                : L("提取主体并进入审核", "Extract products for review")}
           </button>
 
           <p className="text-xs leading-relaxed text-muted-foreground">
@@ -526,15 +651,154 @@ export function AplusClient() {
 
         {/* 右:结果区 */}
         <div className="flex min-h-[520px] flex-col rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
-          {loading && (
+          {(loading || stage === "reviewing") && jobId && (
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-c-text">生成进度</h3>
+              <h3 className="text-sm font-semibold text-c-text">
+                {stage === "reviewing" ? "审核白底母图" : "生成进度"}
+              </h3>
               <span className="text-xs text-muted-foreground">
-                {stage === "preparing" ? "白底母图处理中" : `${done}/${total}`}
+                {stage === "preparing"
+                  ? "白底母图处理中"
+                  : stage === "reviewing"
+                    ? `已通过 ${sources.filter((source) => source.status === "approved").length}/${sources.length}`
+                    : `${done}/${total}`}
               </span>
             </div>
           )}
-          {!hasResult && !loading && (
+          {stage === "reviewing" && sources.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-4 border-y border-c-border py-3 text-[12px] leading-5 text-c-text3">
+                <p>逐张放大核对主体、包装文字和边缘。合格的直接通过；不合格的填写要求，只重做当前这一张。</p>
+                <button
+                  type="button"
+                  onClick={restartReview}
+                  className="flex-none font-medium text-c-text hover:underline"
+                >
+                  重新上传
+                </button>
+              </div>
+              <div className="grid gap-4 xl:grid-cols-2">
+                {sources.map((source, index) => (
+                  <section
+                    key={source.id}
+                    className="grid gap-3 border-b border-c-border pb-4 sm:grid-cols-[150px_1fr]"
+                  >
+                    <button
+                      type="button"
+                      disabled={!source.url}
+                      onClick={() =>
+                        source.url && setViewing({ url: source.url, label: source.label })
+                      }
+                      className="relative aspect-[2/3] overflow-hidden border border-c-border bg-white text-left disabled:cursor-default"
+                    >
+                      {source.url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={source.url}
+                          alt={source.label}
+                          className="h-full w-full object-contain"
+                        />
+                      ) : (
+                        <span className="flex h-full items-center justify-center bg-c-subtle2 text-c-text4">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        </span>
+                      )}
+                      {source.url && (
+                        <span className="absolute bottom-2 left-2 bg-slate-900/75 px-2 py-1 text-[10px] font-medium text-white">
+                          点击放大 · v{source.version}
+                        </span>
+                      )}
+                    </button>
+                    <div className="flex min-w-0 flex-col">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[13px] font-semibold text-c-text">{source.label}</p>
+                        <span
+                          className={cn(
+                            "text-[11px] font-medium",
+                            source.status === "approved"
+                              ? "text-emerald-600"
+                              : source.status === "error"
+                                ? "text-red-600"
+                                : "text-c-text3"
+                          )}
+                        >
+                          {source.status === "approved"
+                            ? "已通过"
+                            : source.status === "redoing"
+                              ? "重做中"
+                              : source.status === "error"
+                                ? "生成失败"
+                                : "待审核"}
+                        </span>
+                      </div>
+                      {source.error && (
+                        <p className="mt-2 text-[11px] leading-4 text-red-600">{source.error}</p>
+                      )}
+                      <textarea
+                        value={sourceFeedback[source.id] ?? source.feedback ?? ""}
+                        onChange={(e) =>
+                          setSourceFeedback((current) => ({
+                            ...current,
+                            [source.id]: e.target.value,
+                          }))
+                        }
+                        disabled={source.status === "redoing"}
+                        placeholder="例如：保留瓶盖文字，主体完整露出，四周增加留白"
+                        className="mt-3 min-h-[78px] w-full border border-c-border bg-c-subtle2 px-3 py-2 text-[12px] leading-5 outline-none focus:border-primary disabled:opacity-60"
+                      />
+                      {(source.history?.length ?? 0) > 1 && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-c-text3">
+                          <span>返工记录</span>
+                          {source.history!.map((revision) => (
+                            <button
+                              key={revision.version}
+                              type="button"
+                              title={revision.feedback}
+                              onClick={() =>
+                                setViewing({
+                                  url: revision.url,
+                                  label: `${source.label} v${revision.version}`,
+                                })
+                              }
+                              className="border-b border-c-text4 font-medium text-c-text hover:border-c-text"
+                            >
+                              v{revision.version}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => updateSource(index, "approve_source")}
+                          disabled={!source.url || source.status === "redoing" || source.status === "approved"}
+                          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 border border-emerald-600 px-3 text-[12px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          {source.status === "approved" ? "已通过" : "通过"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateSource(index, "redo_source")}
+                          disabled={source.status === "redoing"}
+                          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 border border-c-border px-3 text-[12px] font-semibold text-c-text transition-colors hover:bg-c-subtle2 disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          {source.status === "redoing" ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          )}
+                          打回重做
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!hasResult && !loading && stage !== "reviewing" && (
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-[15px] font-semibold text-c-text">
@@ -661,7 +925,7 @@ export function AplusClient() {
                             "w-full cursor-zoom-in object-cover",
                             aspectFor(format)
                           )}
-                          onClick={() => setViewing(s)}
+                          onClick={() => setViewing({ url: s.url!, label: s.label })}
                         />
                         <span className="absolute left-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
                           {s.label}
@@ -693,26 +957,13 @@ export function AplusClient() {
             </div>
           )}
 
-          {/* 大图查看 */}
-          {viewing && viewing.url && (
-            <div
-              className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/70 p-8 backdrop-blur-sm"
-              onClick={() => setViewing(null)}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={viewing.url}
-                alt={viewing.label}
-                className="max-h-full max-w-full rounded-xl object-contain shadow-2xl"
-              />
-              <button
-                type="button"
-                aria-label="关闭"
-                className="absolute right-6 top-6 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+          {viewing && (
+            <ImageLightbox
+              src={viewing.url}
+              alt={viewing.label}
+              downloadName={viewing.label}
+              onClose={() => setViewing(null)}
+            />
           )}
         </div>
       </div>

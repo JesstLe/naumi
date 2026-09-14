@@ -13,6 +13,7 @@ import {
   addLedgerEntry,
   addReservation,
   settleReservation,
+  touchReservation,
   sweepStaleReservations,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
@@ -50,8 +51,11 @@ type ShotResult = ShotSpec & {
 type SourceResult = {
   id: string;
   label: string;
-  status: "done";
-  url: string;
+  status: "preparing" | "review" | "approved" | "redoing" | "error";
+  url?: string;
+  version: number;
+  feedback?: string;
+  error?: string;
 };
 
 // 当前兼容网关会拦截同一任务的并发 images.edit 请求。A+ 一次最多 9 次图像编辑，
@@ -303,13 +307,17 @@ async function prepareWhiteSource(
   apiKey: string,
   baseUrl: string,
   model: string,
-  image: { buf: Buffer; type: string }
+  image: { buf: Buffer; type: string },
+  feedback = ""
 ): Promise<Buffer> {
-  const prompt =
+  const basePrompt =
     "精确提取上传照片中的单个商品主体，移除背景、桌面、人物、手、风扇、电脑、零食及所有杂物，" +
     "放置在纯白色无缝电商摄影背景上。完整保留商品真实瓶型、比例、透明材质、瓶盖、现有品牌字样、" +
     "标签布局、条码或背标视角，不翻译、不改写、不新增包装文字。商品竖直居中、全貌完整、四周留白，" +
     "仅添加自然柔和的浅灰接触阴影。不得增加道具、底座、边框、文案、水印或第二个商品。";
+  const prompt = feedback
+    ? `${basePrompt}\n本次返工必须重点满足用户要求：${feedback.slice(0, 500)}`
+    : basePrompt;
   let lastError: unknown = null;
   for (let attempt = 0; attempt <= SOURCE_RETRIES; attempt++) {
     try {
@@ -342,14 +350,35 @@ async function persistOne(buf: Buffer, id: string): Promise<string> {
   }
 }
 
-// --- Async job store(与套图同款,内存,单进程) ---
+type SourceRevision = {
+  version: number;
+  feedback: string;
+  url: string;
+  createdAt: number;
+};
+
+// --- Async job store(内存,单进程) ---
 type Job = {
-  status: "pending" | "done" | "error";
-  stage: "preparing" | "generating";
+  status: "pending" | "awaiting_review" | "done" | "error";
+  stage: "preparing" | "reviewing" | "generating";
   sources: SourceResult[];
+  sourceInputs: { buf: Buffer; type: string }[];
+  sourceBuffers: (Buffer | null)[];
+  sourceHistory: SourceRevision[][];
   shots: ShotResult[];
   done: number;
   total: number;
+  extra: string;
+  platform: string;
+  lang: string;
+  format: string;
+  modules: string[];
+  email: string;
+  model: string;
+  useDb: boolean;
+  cost: number;
+  generationStarted: boolean;
+  reserved: boolean;
   user?: Awaited<ReturnType<typeof getUser>>;
   creditsUsed?: number;
   error?: string;
@@ -359,29 +388,118 @@ const JOBS = new Map<string, Job>();
 function gcJobs() {
   const now = Date.now();
   JOBS.forEach((v, k) => {
-    if (now - v.createdAt > 30 * 60 * 1000) JOBS.delete(k);
+    if (now - v.createdAt > 2 * 60 * 60 * 1000) JOBS.delete(k);
   });
 }
 
-async function runAplus(
-  jobId: string,
-  productImages: { buf: Buffer; type: string }[],
-  extra: string,
-  platform: string,
-  lang: string,
-  format: string,
-  modules: string[],
-  email: string,
-  apiKey: string,
-  model: string,
-  useDb: boolean,
-  cost: number
-) {
+function patchJob(jobId: string, patch: Partial<Job>) {
+  const cur = JOBS.get(jobId);
+  if (cur) JOBS.set(jobId, { ...cur, ...patch });
+}
+
+async function runSourcePreparation(jobId: string) {
+  const job = JOBS.get(jobId);
+  if (!job) return;
+  try {
+    const { apiKey } = await getOpenAISettings();
+    const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
+    for (let index = 0; index < job.sourceInputs.length; index++) {
+      try {
+        const buf = await prepareWhiteSource(
+          apiKey,
+          baseUrl,
+          job.model,
+          job.sourceInputs[index]
+        );
+        const id = job.sources[index].id;
+        job.sourceBuffers[index] = buf;
+        const url = await persistOne(buf, `sources/${id}-v1`);
+        job.sources[index] = {
+          ...job.sources[index],
+          status: "review",
+          url,
+          version: 1,
+          error: undefined,
+        };
+        job.sourceHistory[index].push({
+          version: 1,
+          feedback: "首次提取",
+          url,
+          createdAt: Date.now(),
+        });
+        patchJob(jobId, {
+          sources: [...job.sources],
+          sourceBuffers: [...job.sourceBuffers],
+          sourceHistory: [...job.sourceHistory],
+        });
+      } catch (e) {
+        job.sources[index] = {
+          ...job.sources[index],
+          status: "error",
+          error: safeError(e, "白底母图生成失败，可单独重做"),
+        };
+        patchJob(jobId, { sources: [...job.sources] });
+      }
+    }
+    patchJob(jobId, { status: "awaiting_review", stage: "reviewing" });
+  } catch (e) {
+    patchJob(jobId, {
+      status: "error",
+      error: safeError(e, "白底母图准备失败，请重新上传"),
+    });
+  }
+}
+
+async function runSourceRedo(jobId: string, index: number, feedback: string) {
+  const job = JOBS.get(jobId);
+  if (!job) return;
+  try {
+    const { apiKey } = await getOpenAISettings();
+    const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
+    const buf = await prepareWhiteSource(
+      apiKey,
+      baseUrl,
+      job.model,
+      job.sourceInputs[index],
+      feedback
+    );
+    const version = job.sources[index].version + 1;
+    const id = job.sources[index].id;
+    job.sourceBuffers[index] = buf;
+    const url = await persistOne(buf, `sources/${id}-v${version}`);
+    job.sources[index] = {
+      ...job.sources[index],
+      status: "review",
+      url,
+      version,
+      feedback,
+      error: undefined,
+    };
+    job.sourceHistory[index].push({ version, feedback, url, createdAt: Date.now() });
+    patchJob(jobId, {
+      sources: [...job.sources],
+      sourceBuffers: [...job.sourceBuffers],
+      sourceHistory: [...job.sourceHistory],
+    });
+  } catch (e) {
+    job.sources[index] = {
+      ...job.sources[index],
+      status: "error",
+      feedback,
+      error: safeError(e, "本张母图重做失败，请再次尝试"),
+    };
+    patchJob(jobId, { sources: [...job.sources] });
+  }
+}
+
+async function runAplusGeneration(jobId: string) {
+  const job = JOBS.get(jobId);
+  if (!job) return;
   const set = (patch: Partial<Job>) => {
-    const cur = JOBS.get(jobId);
-    if (cur) JOBS.set(jobId, { ...cur, ...patch });
+    patchJob(jobId, patch);
   };
   try {
+    const { apiKey } = await getOpenAISettings();
     const client = new OpenAI({
       apiKey,
       baseURL: (await getOpenAIBaseUrl()) || undefined,
@@ -389,32 +507,20 @@ async function runAplus(
       maxRetries: 0,
     });
     const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
-
-    const normalizedImages: Buffer[] = [];
-    for (let index = 0; index < productImages.length; index++) {
-      normalizedImages.push(
-        await prepareWhiteSource(apiKey, baseUrl, model, productImages[index])
-      );
-    }
-    const sources: SourceResult[] = await Promise.all(
-      normalizedImages.map(async (buf, index) => {
-        const id = `aplus-source-${Date.now()}-${index}`;
-        return {
-          id,
-          label: `白底母图 ${index + 1}`,
-          status: "done" as const,
-          url: await persistOne(buf, `sources/${id}`),
-        };
-      })
-    );
-    set({ stage: "generating", sources });
-
-    const size = sizeFor(format);
-    const cleanImages = normalizedImages.map((buf) => ({
-      buf,
+    const cleanImages = job.sourceBuffers.map((buf) => ({
+      buf: buf!,
       type: "image/png",
     }));
-    const specs = await planShots(client, cleanImages[0], extra, platform, lang, format, modules);
+    const size = sizeFor(job.format);
+    const specs = await planShots(
+      client,
+      cleanImages[0],
+      job.extra,
+      job.platform,
+      job.lang,
+      job.format,
+      job.modules
+    );
     const shots: ShotResult[] = specs.map((s, i) => ({
       ...s,
       id: `aplus-${Date.now()}-${i}`,
@@ -427,6 +533,9 @@ async function runAplus(
     let doneCount = 0;
     const worker = async (): Promise<void> => {
       while (cursor < shots.length) {
+        if (job.useDb && job.reserved) {
+          await touchReservation(jobId).catch(() => {});
+        }
         const idx = cursor++;
         const shot = shots[idx];
         let ok = false;
@@ -435,7 +544,7 @@ async function runAplus(
             const buf = await genOneShot(
               apiKey,
               baseUrl,
-              model,
+              job.model,
               shot,
               cleanImages,
               size
@@ -464,11 +573,19 @@ async function runAplus(
     const okShots = shots.filter((s) => s.status === "done" && s.url);
 
     let user: Awaited<ReturnType<typeof getUser>> = null;
-    if (useDb && okShots.length > 0) {
+    if (job.useDb) {
+      const failed = shots.length - okShots.length;
+      const refund = failed > 0
+        ? Math.round((job.cost / shots.length) * failed)
+        : 0;
+      if (refund > 0) {
+        await refundCredits(job.email, refund).catch(() => {});
+      }
+      if (okShots.length > 0) {
       const batchId = `aplus-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
       try {
         await addArtworks(
-          email,
+          job.email,
           okShots.map((s) => ({
             id: s.id,
             title: `A+·${s.label}`,
@@ -478,7 +595,7 @@ async function runAplus(
             image: s.url!,
             gradient: s.gradient,
             style: null,
-            ratio: format === "1:1" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2",
+            ratio: job.format === "1:1" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2",
             resolution: "1K",
             source: "detail",
           })),
@@ -487,34 +604,35 @@ async function runAplus(
       } catch {
         /* non-fatal */
       }
-      const failed = shots.length - okShots.length;
-      if (failed > 0) {
-        const refund = Math.round((cost / shots.length) * failed);
-        await refundCredits(email, refund).catch(() => {});
-      }
       await addLedgerEntry(
-        email,
-        -(cost - Math.round((cost / shots.length) * (shots.length - okShots.length))),
+        job.email,
+        -(job.cost - refund),
         `A+ 详情页 ${okShots.length} 张`
       ).catch(() => {});
-      user = await getUser(email).catch(() => null);
+      }
+      user = await getUser(job.email).catch(() => null);
     }
 
-    if (useDb) await settleReservation(jobId).catch(() => {});
+    if (job.useDb) await settleReservation(jobId).catch(() => {});
     set({
       status: "done",
       shots: [...shots],
       done: shots.length,
       user,
-      creditsUsed: cost,
+      creditsUsed: Math.round((job.cost / shots.length) * okShots.length),
+      reserved: false,
     });
   } catch (e) {
-    if (useDb) {
-      await refundCredits(email, cost).catch(() => {});
+    if (job.useDb && job.reserved) {
+      await refundCredits(job.email, job.cost).catch(() => {});
       await settleReservation(jobId).catch(() => {});
     }
     console.error("[aplus] job failed:", e instanceof Error ? e.message : e);
-    set({ status: "error", error: safeError(e, "A+ 详情页生成失败,请稍后重试") });
+    set({
+      status: "error",
+      reserved: false,
+      error: safeError(e, "A+ 详情页生成失败,请稍后重试"),
+    });
   }
 }
 
@@ -551,6 +669,112 @@ async function parseInput(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    const body = (await request.json().catch(() => null)) as
+      | { jobId?: string; action?: string; sourceIndex?: number; feedback?: string }
+      | null;
+    const jobId = body?.jobId?.trim() ?? "";
+    const job = JOBS.get(jobId);
+    if (!job) {
+      return NextResponse.json(
+        { error: "任务不存在或已过期，请重新上传" },
+        { status: 404 }
+      );
+    }
+    if (job.useDb) {
+      const tokenEmail = await resolveUserEmail(request);
+      if (!tokenEmail || tokenEmail.toLowerCase() !== job.email.toLowerCase()) {
+        return NextResponse.json({ error: "无权操作此任务" }, { status: 403 });
+      }
+    }
+
+    if (body?.action === "approve_source") {
+      const index = Number(body.sourceIndex);
+      const source = job.sources[index];
+      if (job.stage !== "reviewing" || !source?.url || !job.sourceBuffers[index]) {
+        return NextResponse.json({ error: "这张母图当前无法通过" }, { status: 409 });
+      }
+      if (source.status === "redoing") {
+        return NextResponse.json({ error: "这张母图正在重做" }, { status: 409 });
+      }
+      job.sources[index] = { ...source, status: "approved", error: undefined };
+      patchJob(jobId, { sources: [...job.sources] });
+      return NextResponse.json({ ok: true, source: job.sources[index] });
+    }
+
+    if (body?.action === "redo_source") {
+      const index = Number(body.sourceIndex);
+      const source = job.sources[index];
+      const feedback = (body.feedback ?? "").trim().slice(0, 500);
+      if (job.stage !== "reviewing" || !source || source.status === "redoing") {
+        return NextResponse.json({ error: "这张母图当前无法重做" }, { status: 409 });
+      }
+      if (!feedback) {
+        return NextResponse.json({ error: "请填写本张图片的重做要求" }, { status: 400 });
+      }
+      const ip = clientIp(request);
+      if (!rateLimit(`aplus-redo:${jobId}:${ip}`, 12, 600_000)) {
+        return NextResponse.json({ error: "重做过于频繁，请稍后再试" }, { status: 429 });
+      }
+      job.sources[index] = {
+        ...source,
+        status: "redoing",
+        feedback,
+        error: undefined,
+      };
+      patchJob(jobId, { sources: [...job.sources] });
+      void runSourceRedo(jobId, index, feedback);
+      return NextResponse.json({ ok: true, source: job.sources[index] });
+    }
+
+    if (body?.action === "generate") {
+      if (job.stage !== "reviewing" || job.generationStarted) {
+        return NextResponse.json({ error: "任务已进入生成阶段" }, { status: 409 });
+      }
+      if (
+        job.sources.some((source) => source.status !== "approved") ||
+        job.sourceBuffers.some((buf) => !buf)
+      ) {
+        return NextResponse.json(
+          { error: "请先通过全部白底母图" },
+          { status: 409 }
+        );
+      }
+      job.generationStarted = true;
+      patchJob(jobId, { generationStarted: true });
+      if (job.useDb) {
+        const ok = await reserveCredits(job.email, job.cost);
+        if (!ok) {
+          patchJob(jobId, { generationStarted: false });
+          return NextResponse.json({ error: "积分不足，请充值后重试" }, { status: 402 });
+        }
+        try {
+          await addReservation(jobId, job.email, job.cost);
+          job.reserved = true;
+        } catch (e) {
+          await refundCredits(job.email, job.cost).catch(() => {});
+          patchJob(jobId, { generationStarted: false, reserved: false });
+          return NextResponse.json(
+            { error: safeError(e, "积分预扣失败，请稍后重试") },
+            { status: 500 }
+          );
+        }
+      }
+      patchJob(jobId, {
+        status: "pending",
+        stage: "generating",
+        done: 0,
+        total: job.modules.length,
+        reserved: job.reserved,
+      });
+      void runAplusGeneration(jobId);
+      return NextResponse.json({ ok: true, jobId, total: job.modules.length, cost: job.cost });
+    }
+
+    return NextResponse.json({ error: "不支持的任务操作" }, { status: 400 });
+  }
+
   const input = await parseInput(request).catch(() => null);
   if (!input || input.images.length === 0) {
     return NextResponse.json({ error: "请上传至少一张商品图" }, { status: 400 });
@@ -562,7 +786,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { apiKey, model } = await getOpenAISettings();
+  const { model } = await getOpenAISettings();
   const ip = clientIp(request);
   if (!rateLimit(`aplus:${ip}`, 8, 600_000)) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
@@ -585,41 +809,54 @@ export async function POST(request: Request) {
     );
   }
   if (useDb) {
-    const ok = await reserveCredits(input.email, cost);
-    if (!ok) {
+    const account = await getUser(input.email).catch(() => null);
+    const balance = account
+      ? account.creditsTotal - account.creditsUsed
+      : 0;
+    if (account && balance < cost) {
       return NextResponse.json({ error: "积分不足，请充值后重试" }, { status: 402 });
     }
   }
-
   gcJobs();
   const jobId = `aplus-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const now = Date.now();
   JOBS.set(jobId, {
     status: "pending",
     stage: "preparing",
-    sources: [],
+    sources: input.images.map((_, index) => ({
+      id: `aplus-source-${now}-${index}`,
+      label: `白底母图 ${index + 1}`,
+      status: "preparing",
+      version: 0,
+    })),
+    sourceInputs: input.images,
+    sourceBuffers: input.images.map(() => null),
+    sourceHistory: input.images.map(() => []),
     shots: [],
     done: 0,
     total: input.modules.length,
-    createdAt: Date.now(),
-  });
-  if (useDb) await addReservation(jobId, input.email, cost);
-  void sweepStaleReservations().catch(() => {});
-  void runAplus(
-    jobId,
-    input.images,
-    input.extra,
-    input.platform,
-    input.lang,
-    input.format,
-    input.modules,
-    input.email,
-    apiKey,
+    extra: input.extra,
+    platform: input.platform,
+    lang: input.lang,
+    format: input.format,
+    modules: input.modules,
+    email: input.email,
     model,
     useDb,
-    cost
-  );
+    cost,
+    generationStarted: false,
+    reserved: false,
+    createdAt: now,
+  });
+  void sweepStaleReservations().catch(() => {});
+  void runSourcePreparation(jobId);
 
-  return NextResponse.json({ jobId, total: input.modules.length, cost });
+  return NextResponse.json({
+    jobId,
+    total: input.modules.length,
+    cost,
+    next: "review_sources",
+  });
 }
 
 export async function GET(request: Request) {
@@ -640,6 +877,12 @@ export async function GET(request: Request) {
       error: "任务不存在或已过期，请重试",
     });
   }
+  if (job.useDb) {
+    const tokenEmail = await resolveUserEmail(request);
+    if (!tokenEmail || tokenEmail.toLowerCase() !== job.email.toLowerCase()) {
+      return NextResponse.json({ error: "无权查看此任务" }, { status: 403 });
+    }
+  }
   const shots = job.shots.map((s) => ({
     id: s.id,
     role: s.role,
@@ -650,9 +893,13 @@ export async function GET(request: Request) {
     gradient: s.gradient,
   }));
   return NextResponse.json({
+    jobId,
     status: job.status,
     stage: job.stage,
-    sources: job.sources,
+    sources: job.sources.map((source, index) => ({
+      ...source,
+      history: job.sourceHistory[index],
+    })),
     done: job.done,
     total: job.total,
     shots,

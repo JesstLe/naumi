@@ -1720,6 +1720,15 @@ export async function settleReservation(jobId: string): Promise<void> {
   );
 }
 
+/** Keep a legitimately long-running generation from being reclaimed as stale. */
+export async function touchReservation(jobId: string): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `UPDATE app_gen_reservations SET created_at = now() WHERE job_id = $1`,
+    [jobId]
+  );
+}
+
 /** Refund + clear reservations older than the cutoff (orphaned by a crash /
  *  restart). Atomic claim via DELETE … RETURNING so concurrent sweeps never
  *  double-refund. Returns how many were refunded. */

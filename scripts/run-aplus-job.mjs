@@ -44,6 +44,7 @@ if (!startResponse.ok || !start.jobId) {
 process.stdout.write(`job ${start.jobId} started\n`);
 
 let result;
+let reviewCompleted = false;
 for (let attempt = 0; attempt < 160; attempt++) {
   await new Promise((resolve) => setTimeout(resolve, 2500));
   const response = await fetch(`${baseUrl}/api/aplus?job=${encodeURIComponent(start.jobId)}`, {
@@ -53,6 +54,36 @@ for (let attempt = 0; attempt < 160; attempt++) {
   process.stdout.write(
     `stage=${result.stage || "unknown"} status=${result.status} progress=${result.done || 0}/${result.total || 0}\n`
   );
+  if (result.status === "awaiting_review" && !reviewCompleted) {
+    for (const [sourceIndex, source] of (result.sources || []).entries()) {
+      if (source.status !== "review" && source.status !== "approved") {
+        throw new Error(source.error || `white source ${sourceIndex + 1} is not reviewable`);
+      }
+      if (source.status === "approved") continue;
+      const approveResponse = await fetch(`${baseUrl}/api/aplus`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId: start.jobId,
+          action: "approve_source",
+          sourceIndex,
+        }),
+      });
+      if (!approveResponse.ok) {
+        throw new Error(`approve source ${sourceIndex + 1} failed: ${await approveResponse.text()}`);
+      }
+    }
+    const continueResponse = await fetch(`${baseUrl}/api/aplus`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: start.jobId, action: "generate" }),
+    });
+    if (!continueResponse.ok) {
+      throw new Error(`continue A+ failed: ${await continueResponse.text()}`);
+    }
+    reviewCompleted = true;
+    process.stdout.write("white sources approved; A+ generation started\n");
+  }
   if (result.status === "done" || result.status === "error") break;
 }
 if (!result || result.status !== "done") {

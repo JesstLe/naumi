@@ -20,7 +20,9 @@ const TOOL_TIMEOUT_MS = {
   recolor_product: 240_000,
   replicate_hot: 240_000,
   generate_suite: 480_000,
-  generate_aplus: 600_000,
+  generate_aplus: 360_000,
+  review_aplus_source: 360_000,
+  continue_aplus_generation: 600_000,
   read_only: 15_000,
 } as const;
 
@@ -33,16 +35,19 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 4. recolor_product:产品换色。参数 image_url、color(如 #27AE60)、strength(20-100)。计费 6 积分。
 5. replicate_hot:爆款复刻。参数 product_image_url、reference_image_url、degree(high/style)、text。计费 6 积分。
 6. generate_suite:一键电商套图(13 张,约 3-6 分钟,计费 78)。参数 image_url(多张逗号分隔)、platform、text。
-7. generate_aplus:A+ 详情页。参数 image_url、platform、lang、format、modules(数组)、text。计费=模块数×6。
+ 7. generate_aplus:A+ 第一步，只提取白底商品母图并返回待审核图片与 job_id。参数 image_url、platform、lang、format、modules(数组)、text。
+ 8. review_aplus_source:审核一张母图。approve=通过；redo=带用户要求只重做这一张。
+ 9. continue_aplus_generation:全部母图通过后继续生成 A+，此时计费=模块数×6。
 
 ## 工作规则
 1. 用户消息里的商品图以 URL 形式出现(格式:[商品图] <url> 或工具返回的图片 URL);工具的图片参数必须传入,用户没给就先要,不要编造 URL。
 2. 每次工具调用都有积分成本;同一任务参数相同不要重复调用。
 3. 工具返回的图片 URL 用 Markdown 图片语法展示:![描述](url)。
 4. 长耗时工具(套图/A+)先告知用户等待时间。
-5. 每个生成/精修/换色/复刻/套图/A+ 任务产出后，必须调用 verify_image_output 检查至少一张代表图；套图/A+ 优先检查首图和最后一图。未通过时明确列出问题，最多只允许在结果明确失败且不会重复扣费不明时重做一次。
-6. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
-7. 与图片生成无关的问题直接回答,不要调用工具。`;
+ 5. A+ 必须分两步：先调用 generate_aplus 展示每张白底母图，等待用户逐张确认；用户说某张不合格时调用 review_aplus_source(action=redo)并原样带上修改要求；只有全部通过后才调用 continue_aplus_generation。不得替用户默认通过母图。
+ 6. 每个生成/精修/换色/复刻/套图/A+ 任务产出后，必须调用 verify_image_output 检查至少一张代表图；套图/A+ 优先检查首图和最后一图。未通过时明确列出问题，最多只允许在结果明确失败且不会重复扣费不明时重做一次。
+ 7. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
+ 8. 与图片生成无关的问题直接回答,不要调用工具。`;
 
 export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string }): AgentTool[] {
   // 双凭证:可变 getter —— 每次工具执行时读取最新 cookie/authorization,
@@ -187,6 +192,39 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       if (d.status === "error") throw new Error(d.error || "任务失败");
     }
     throw new Error("任务超时");
+  }
+
+  async function pollAplusReview(
+    jobId: string,
+    maxMs: number,
+    signal?: AbortSignal,
+    sourceIndex?: number,
+    previousVersion?: number
+  ): Promise<any> {
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+      if (signal?.aborted) throw new Error("aborted");
+      await sleep(3500, signal);
+      const d = await internal(
+        `/api/aplus?job=${encodeURIComponent(jobId)}`,
+        signal
+      );
+      if (d.status === "error") throw new Error(d.error || "A+ 任务失败");
+      if (typeof sourceIndex === "number") {
+        const source = d.sources?.[sourceIndex];
+        if (
+          source &&
+          source.status !== "redoing" &&
+          source.status !== "preparing" &&
+          (typeof previousVersion !== "number" || source.version > previousVersion || source.status === "error")
+        ) {
+          return d;
+        }
+      } else if (d.status === "awaiting_review" || d.status === "done") {
+        return d;
+      }
+    }
+    throw new Error("A+ 母图处理超时");
   }
 
   /** dsh timeout-policy:每工具独立超时预算,超时抛模型可读的结构化错误。 */
@@ -600,9 +638,9 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     },
     {
       name: "generate_aplus",
-      label: "A+ 详情页",
+      label: "准备 A+ 母图",
       description:
-        "A+ 详情页:按勾选模块逐张生成,计费=模块数×6 积分。耗时约每模块 1-2 分钟。",
+        "A+ 第一步:逐张提取白底商品母图，返回待用户审核的图片。此步不扣用户积分；不得自动继续生成。",
       parameters: Type.Object({
         image_url: Type.String({
           description: "商品图 URL,多张用逗号分隔(正面/侧面/背面)",
@@ -658,8 +696,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
               method: "POST",
               body: fd,
             });
-            return pollJob(
-              "/api/aplus",
+            return pollAplusReview(
               created.jobId,
               TOOL_TIMEOUT_MS.generate_aplus,
               signal
@@ -667,20 +704,124 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           },
           signal
         );
-        const urls2: string[] = (d.shots ?? [])
-          .filter(
-            (s: { status: string; url?: string }) => s.status === "done" && s.url
-          )
-          .map(
-            (s: { url?: string; label?: string }) => `${s.label}: ${s.url}`
-          );
+        const sourceLines: string[] = (d.sources ?? []).map(
+          (source: { label?: string; url?: string; version?: number; status?: string }, index: number) =>
+            `${index + 1}. ${source.label || `白底母图 ${index + 1}`}（v${source.version || 1}）\n` +
+            (source.url ? `![${source.label || `母图${index + 1}`}](${source.url})\n${source.url}` : `状态：${source.status || "失败"}`)
+        );
         return {
           content: [
             {
               type: "text",
-              text: `A+ 详情页完成 ${urls2.length} 个模块:\n${urls2.join("\n")}`,
+              text:
+                `白底商品母图已准备，请逐张放大审核。任务 job_id=${d.jobId || "见 details"}。\n` +
+                `${sourceLines.join("\n\n")}\n\n` +
+                "请明确告诉我每张是否通过；不合格时说明第几张和修改要求。我不会在你确认前生成 A+。",
             },
           ],
+          details: {
+            jobId: d.jobId,
+            sources: d.sources,
+            publicSummary: `已准备 ${sourceLines.length} 张白底母图，等待审核`,
+          },
+        };
+      },
+    },
+    {
+      name: "review_aplus_source",
+      label: "审核 A+ 母图",
+      description:
+        "审核指定白底母图。approve 表示用户明确通过；redo 表示只重做这一张，必须原样带上用户的修改要求。",
+      parameters: Type.Object({
+        job_id: Type.String({ description: "generate_aplus 返回的 job_id" }),
+        source_number: Type.Number({ description: "母图序号，从 1 开始" }),
+        action: Type.Union([Type.Literal("approve"), Type.Literal("redo")]),
+        feedback: Type.String({ description: "redo 时必填的用户修改要求；approve 时传空串" }),
+      }),
+      executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p = params as {
+          job_id: string;
+          source_number: number;
+          action: "approve" | "redo";
+          feedback?: string;
+        };
+        const index = Math.max(0, Math.floor(p.source_number) - 1);
+        const before = await internal(
+          `/api/aplus?job=${encodeURIComponent(p.job_id)}`,
+          signal
+        );
+        const previousVersion = Number(before.sources?.[index]?.version) || 0;
+        const updated = await internal("/api/aplus", signal, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobId: p.job_id,
+            action: p.action === "approve" ? "approve_source" : "redo_source",
+            sourceIndex: index,
+            feedback: p.feedback || "",
+          }),
+        });
+        if (p.action === "approve") {
+          return {
+            content: [{ type: "text", text: `第 ${index + 1} 张母图已标记通过。` }],
+            details: { jobId: p.job_id, source: updated.source, publicSummary: `第 ${index + 1} 张母图已通过` },
+          };
+        }
+        const d = await withToolTimeout(
+          "review_aplus_source",
+          () => pollAplusReview(
+            p.job_id,
+            TOOL_TIMEOUT_MS.review_aplus_source,
+            signal,
+            index,
+            previousVersion
+          ),
+          signal
+        );
+        const source = d.sources?.[index];
+        const resultText = source?.url
+          ? `第 ${index + 1} 张已按要求重做（v${source.version}）：\n![重做后的白底母图](${source.url})\n${source.url}\n请再次确认是否通过。`
+          : `第 ${index + 1} 张重做失败：${source?.error || "未知错误"}`;
+        return {
+          content: [{ type: "text", text: resultText }],
+          details: { jobId: p.job_id, source, publicSummary: `第 ${index + 1} 张母图已重做` },
+        };
+      },
+    },
+    {
+      name: "continue_aplus_generation",
+      label: "生成 A+ 详情页",
+      description:
+        "仅当用户明确通过全部白底母图后调用。使用审核后的母图生成全部 A+ 模块并按模块计费。",
+      parameters: Type.Object({
+        job_id: Type.String({ description: "已完成母图审核的 A+ job_id" }),
+      }),
+      executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p = params as { job_id: string };
+        const d = await withToolTimeout(
+          "continue_aplus_generation",
+          async () => {
+            await internal("/api/aplus", signal, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ jobId: p.job_id, action: "generate" }),
+            });
+            return pollJob(
+              "/api/aplus",
+              p.job_id,
+              TOOL_TIMEOUT_MS.continue_aplus_generation,
+              signal
+            );
+          },
+          signal
+        );
+        const urls2: string[] = (d.shots ?? [])
+          .filter((s: { status: string; url?: string }) => s.status === "done" && s.url)
+          .map((s: { url?: string; label?: string }) => `${s.label}: ${s.url}`);
+        return {
+          content: [{ type: "text", text: `A+ 详情页完成 ${urls2.length} 个模块:\n${urls2.join("\n")}` }],
           details: { urls: urls2, publicSummary: `A+ 完成 ${urls2.length} 个模块` },
         };
       },

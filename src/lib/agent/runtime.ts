@@ -36,7 +36,7 @@ const TOOL_COST: Record<string, { cost: number; label: string }> = {
   recolor_product: { cost: POINTS_PER_IMAGE, label: "产品换色" },
   replicate_hot: { cost: POINTS_PER_IMAGE, label: "爆款复刻" },
   generate_suite: { cost: 13 * POINTS_PER_IMAGE, label: "一键套图" },
-  generate_aplus: { cost: 4 * POINTS_PER_IMAGE, label: "A+ 详情页" },
+  continue_aplus_generation: { cost: 4 * POINTS_PER_IMAGE, label: "A+ 详情页" },
 };
 
 export type Session = {
