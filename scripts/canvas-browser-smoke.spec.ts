@@ -64,7 +64,8 @@ test("canvas browser workflow", async ({ context, page }) => {
   await expect(page.getByText("全部项目", { exact: true }).last()).toBeVisible();
 
   await page.getByRole("button", { name: /开始创作/ }).click();
-  await page.getByTitle("添加节点").click();
+  await expect(page.getByTitle("添加节点")).toBeEnabled();
+  await page.getByTitle("添加节点").click({ force: true });
   await page.getByRole("button", { name: "上传图片", exact: true }).last().click();
   await page.locator('input[type="file"]').last().setInputFiles(sample);
 
@@ -78,6 +79,20 @@ test("canvas browser workflow", async ({ context, page }) => {
   await expect(rootNode.locator("img")).toHaveAttribute("src", /^\/media\//);
 
   await rootNode.click();
+  const countInput = page.getByLabel("生成图片数量");
+  await expect(countInput).toBeVisible();
+  await countInput.fill("3");
+  await expect(countInput).toHaveValue("3");
+  await page.getByRole("button", { name: /普通/ }).click();
+  await page.getByRole("button", { name: "三视图合成图" }).click();
+  await expect(page.getByText("1 张合成图", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: /三视图合成/ }).click();
+  await page.getByRole("button", { name: "正 / 侧 / 背子节点" }).click();
+  await expect(page.getByText("3 个节点", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "重做", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /三视图节点/ }).click();
+  await page.getByRole("button", { name: "普通生成" }).click();
+  await expect(countInput).toHaveValue("3");
   await page.getByRole("button", { name: "✏️", exact: true }).click();
   const nodeName = "浏览器画布节点";
   const nodeRename = page.getByPlaceholder("项目名称").last();
@@ -117,6 +132,97 @@ test("canvas browser workflow", async ({ context, page }) => {
   const withDuplicate = await account();
   const duplicate = withDuplicate.artworks.find((work: { title: string }) => work.title === `${nodeName} 副本`);
   expect(duplicate?.id).toBeTruthy();
+
+  // 两个独立节点同时生图时，必须出现两个任务节点；期间仍可新建普通节点。
+  let fakeJobSeq = 0;
+  const fakePolls = new Map<string, number>();
+  const submittedCounts: string[] = [];
+  await page.route("**/api/generate-image**", async (route) => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      const body = request.postData() || "";
+      const countMatch = body.match(/name="count"\r?\n\r?\n([^\r\n]+)/);
+      submittedCounts.push(countMatch?.[1] || "");
+      fakeJobSeq += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobId: `canvas-fake-${fakeJobSeq}` }),
+      });
+      return;
+    }
+    const jobId = new URL(request.url()).searchParams.get("job") || "unknown";
+    const polls = (fakePolls.get(jobId) || 0) + 1;
+    fakePolls.set(jobId, polls);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        polls < 3 ? { status: "pending" } : { status: "error", error: "mock done" }
+      ),
+    });
+  });
+  await page.locator(`.react-flow__node[data-id="${rootId}"]`).click();
+  await page.getByTitle("生成新版本", { exact: true }).click();
+  await page.getByLabel("关闭").last().click();
+  await page.locator(`.react-flow__node[data-id="${duplicate.id}"]`).click();
+  await expect(page.getByText(new RegExp(`引用.*${nodeName} 副本`))).toBeVisible();
+  await page.getByTitle("生成新版本", { exact: true }).click();
+  await expect(page.locator('.react-flow__node[data-id^="task-"]')).toHaveCount(2);
+  await expect.poll(() => submittedCounts).toEqual(["3", "3"]);
+  await expect(page.getByTitle("添加节点").last()).toBeEnabled();
+  await page.locator(".react-flow__pane").click({
+    button: "right",
+    position: { x: 80, y: 80 },
+    force: true,
+  });
+  await page.getByText("添加节点", { exact: true }).last().click();
+  await expect(page.locator('.react-flow__node[data-id^="pend-"]')).toHaveCount(1);
+  await expect(page.locator('.react-flow__node[data-id^="task-"]')).toHaveCount(0, {
+    timeout: 12_000,
+  });
+  await page.unroute("**/api/generate-image**");
+
+  // 三节点模式必须先产出正面锚点，再并发提交引用锚点的侧面/背面任务。
+  await page.reload();
+  await page.locator(`.react-flow__node[data-id="${rootId}"]`).click();
+  const splitBodies: string[] = [];
+  let splitSeq = 0;
+  await page.route("**/api/generate-image**", async (route) => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      splitSeq += 1;
+      splitBodies.push(request.postData() || "");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobId: `split-fake-${splitSeq}` }),
+      });
+      return;
+    }
+    const jobId = new URL(request.url()).searchParams.get("job") || "split-fake-0";
+    const index = Number(jobId.split("-").at(-1)) || 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        status: "done",
+        images: [{ id: `split-art-${index}`, url: beforeDrag.image }],
+      }),
+    });
+  });
+  await page.getByRole("button", { name: /普通/ }).click();
+  await page.getByRole("button", { name: "正 / 侧 / 背子节点" }).click();
+  await page.getByTitle("生成新版本", { exact: true }).click();
+  await expect.poll(() => splitBodies.length, { timeout: 20_000 }).toBe(3);
+  expect(splitBodies[0]).toContain("正面标准视图");
+  expect(splitBodies.some((body) => body.includes("侧面标准视图"))).toBe(true);
+  expect(splitBodies.some((body) => body.includes("背面标准视图"))).toBe(true);
+  expect(
+    splitBodies.filter((body) => body.includes("正面锚点")).length
+  ).toBe(2);
+  await page.unroute("**/api/generate-image**");
+  await page.reload();
 
   const linkedResponse = await api.post("/api/artworks/add", {
     data: {

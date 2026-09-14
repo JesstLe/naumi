@@ -428,6 +428,13 @@ function parseIds(raw: string): string[] {
   }
 }
 
+function parseCount(value: unknown, fallback = 4): number {
+  if (value == null || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.round(parsed), 1), 8);
+}
+
 async function parseParams(request: Request): Promise<GenParams | null> {
   const ct = request.headers.get("content-type") ?? "";
   if (ct.includes("multipart/form-data")) {
@@ -451,7 +458,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
       resolution: s("resolution") || "1K",
       style: s("style"),
       quality: s("quality").trim(),
-      count: Math.min(Math.max(Number(s("count")) || 4, 1), 8),
+      count: parseCount(s("count")),
       transparent: s("transparent") === "1",
       ratiogen: s("ratiogen") === "1",
       email: s("email").trim(),
@@ -473,7 +480,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
     resolution: j.resolution || "1K",
     style: j.style ?? "",
     quality: j.quality ?? "",
-    count: Math.min(Math.max(Number(j.count) || 4, 1), 8),
+    count: parseCount(j.count),
     transparent: !!j.transparent,
     ratiogen: !!j.ratiogen,
     email: (j.email ?? "").trim(),

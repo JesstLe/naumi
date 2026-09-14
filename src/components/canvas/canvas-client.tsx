@@ -104,6 +104,19 @@ const X_GAP = 90; // 层间横向间距
 const Y_GAP = 48; // 同层兄弟纵向间距
 const MAX_TOTAL_IMAGES = 6; // 节点图 + 追加参考图 合计上限
 const MAX_UPLOAD = 12 * 1024 * 1024;
+const MAX_GENERATION_COUNT = 8;
+
+type GenerationMode = "standard" | "triptych" | "split";
+
+type CanvasGenerationTask = {
+  id: string;
+  operationKey: string;
+  sourceId: string;
+  label: string;
+  position: { x: number; y: number };
+};
+
+type GeneratedResult = { id: string; url: string };
 
 function fmt(s: string, vars: Record<string, string | number>): string {
   return Object.entries(vars).reduce(
@@ -178,6 +191,20 @@ const CANVAS_RES = ["1K", "2K", "4K"];
 // 会顺手重画背景(实测:背景被改成黄色)。仍是重生成(非像素锁定),只是约束更强。
 const FAITHFUL_REGEN_PROMPT =
   "在保持主体、背景、配色、材质、光影与构图不变的前提下,仅提升清晰度与画质,输出一张干净的高质量版本;不要替换背景、不要改变背景颜色或整体色调。";
+const VIEW_CONSISTENCY_RULES =
+  "必须严格保持同一件产品：外形比例、结构、包装文字、Logo、颜色、材质、零件数量和所有识别性细节一致。使用统一白色影棚背景、相同镜头高度、焦距、光线、阴影强度与产品尺度，不得重新设计产品。";
+
+function viewPrompt(
+  role: "正面" | "侧面" | "背面",
+  feedback: string,
+  anchor = false
+) {
+  return `${VIEW_CONSISTENCY_RULES} 输出产品${role}标准视图，产品完整露出并居中，画面只出现一个产品。${
+    anchor
+      ? "第一张参考图是主体原图，第二张参考图是已经确认的正面锚点；以正面锚点锁定产品身份和视觉规格。"
+      : "以参考主体图为唯一产品依据。"
+  }${feedback ? ` 用户补充要求：${feedback}` : ""}`;
+}
 
 // 比例小图标:按 w/h 等比缩放的圆角小方块(auto=正方)。
 function RatioIcon({ w, h }: { w: number; h: number }) {
@@ -298,6 +325,52 @@ function DarkSelect({
   );
 }
 
+function ImageCountControl({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+}) {
+  const clamp = (value: number) =>
+    Math.min(MAX_GENERATION_COUNT, Math.max(1, Math.round(value) || 1));
+  return (
+    <div className="flex h-8 items-center overflow-hidden rounded-[9px] bg-[#1f2229] text-[12.5px] font-semibold text-[#e7e9ee]">
+      <button
+        type="button"
+        disabled={disabled || value <= 1}
+        onClick={() => onChange(clamp(value - 1))}
+        className="h-full px-2 text-[#9aa1ae] hover:bg-[#2a2e38] hover:text-white disabled:opacity-35"
+        aria-label="减少生成数量"
+      >
+        −
+      </button>
+      <input
+        type="number"
+        min={1}
+        max={MAX_GENERATION_COUNT}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(clamp(Number(event.target.value)))}
+        className="h-full w-8 border-0 bg-transparent p-0 text-center text-white outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        aria-label="生成图片数量"
+      />
+      <span className="pr-1 text-[#9aa1ae]">张</span>
+      <button
+        type="button"
+        disabled={disabled || value >= MAX_GENERATION_COUNT}
+        onClick={() => onChange(clamp(value + 1))}
+        className="h-full px-2 text-[#9aa1ae] hover:bg-[#2a2e38] hover:text-white disabled:opacity-35"
+        aria-label="增加生成数量"
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
 // 项目键:只有"一键套图"(batchId 以 suite- 开头)整批算一个项目;
 // 普通生成的批次号是 b-...(每次生成都有),不能当项目分组依据,否则每次迭代都成独立项目、
 // 血缘连不起来 —— 普通图一律按血缘树(根 id)分组。
@@ -398,7 +471,7 @@ function PendNode({ data, selected }: NodeProps) {
       >
         <span className="pointer-events-none leading-none">+</span>
       </Handle>
-      {!d.uploading && (
+      {!d.uploading && !d.generating && (
         <button
           type="button"
           onClick={(e) => {
@@ -711,8 +784,11 @@ export function CanvasClient() {
   // 通过 ?node= 深链进入的节点 id(如 AI 抠图「送画布」):即使它是单张一次性作品
   // (按常规规则不算项目),也让它所在项目在列表里显示出来,否则深链会落到空项目列表。
   const [pinnedNode, setPinnedNode] = useState<string | null>(null);
-  // 生成中占位节点(__pending__)被手动拖动后的位置(记了就用记的,避免重渲染打回默认位)
-  const pendingPosRef = useRef<{ x: number; y: number } | null>(null);
+  // 每个任务各自保存占位节点位置；允许多个互不依赖的节点同时生成和拖动。
+  const generationTaskPosRef = useRef<
+    Record<string, { x: number; y: number }>
+  >({});
+  const generationOperationRef = useRef(new Set<string>());
   // 仅"后台深链 ?node="进入时才自动平移聚焦;日常新建/上传/生成节点都不动画布
   const deepFocusRef = useRef(false);
   // 是否已做过"刷新恢复上次项目"的初始化(避免初始挂载误清本地保存)
@@ -721,6 +797,7 @@ export function CanvasClient() {
   const carryPromptRef = useRef<string | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -736,9 +813,11 @@ export function CanvasClient() {
   } | null>(null);
   const [genStyle, setGenStyle] = useState(GENERATION_STYLES[0]);
   const [genCount, setGenCount] = useState(1);
-  const [generating, setGenerating] = useState(false);
-  // 生成中占位节点挂靠的源节点(独立于"选中",这样点空白取消选中也不会让占位消失)
-  const [genSourceId, setGenSourceId] = useState<string | null>(null);
+  const [generationMode, setGenerationMode] =
+    useState<GenerationMode>("standard");
+  const [generationTasks, setGenerationTasks] = useState<
+    CanvasGenerationTask[]
+  >([]);
   // 左下控件:小地图开关、网格吸附(原型默认吸附 on)
   const [showMinimap, setShowMinimap] = useState(false);
   const [snapGrid, setSnapGrid] = useState(true);
@@ -1298,22 +1377,22 @@ export function CanvasClient() {
     () => active?.members.find((a) => a.id === selectedId) ?? null,
     [active, selectedId]
   );
-  // dock 的"引用图"= 该节点的上一级父节点(它由此生成);根节点无父则用自身。
-  // 用于:① dock 缩略图显示父图 ② 生成时以父图为底图(改提示词→生成同级新版本)
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  const selectedGenerating = !!selectedId &&
+    generationTasks.some(
+      (task) =>
+        task.sourceId === selectedId ||
+        task.operationKey === `node:${selectedId}` ||
+        task.operationKey === `retry:${selectedId}`
+    );
+  // dock 的默认引用图就是当前节点本身：节点链表达真实执行顺序，下一节点应基于当前结果继续。
+  // 若要否定当前结果并从原输入重做，使用显式“重做此图”动作生成同级新版本。
   const dockRefs = useMemo<Artwork[]>(() => {
-    if (!selected || !active) return [];
-    // canvas-add(空白处新增/独立上传):parentId 只是"分组挂靠"、无血缘线,
-    // 这类节点本身就是原图 → 引用图=自身,不把分组父图(项目第一张)带出来。
-    if (selected.source === "canvas-add") return [selected];
-    const ids = [
-      selected.parentId,
-      ...(selected.parentIds ?? []),
-    ].filter((x): x is string => !!x);
-    const arts = ids
-      .map((id) => active.members.find((m) => m.id === id))
-      .filter(Boolean) as Artwork[];
-    return arts.length ? arts : [selected];
-  }, [selected, active]);
+    return selected ? [selected] : [];
+  }, [selected]);
   // 用户可在 dock 里"×"掉自动引用图(改用自己上传的);hiddenRefIds 随选中切换清空
   const [hiddenRefIds, setHiddenRefIds] = useState<string[]>([]);
   const visibleDockRefs = useMemo(
@@ -1324,6 +1403,9 @@ export function CanvasClient() {
     () => pendNodes.find((p) => p.id === selectedPendId) ?? null,
     [pendNodes, selectedPendId]
   );
+  const selectedPendGenerating = !!selectedPend?.generating;
+  const selectedGenerationCount =
+    generationMode === "split" ? 3 : generationMode === "triptych" ? 1 : genCount;
   // 选中空白节点时的输入图(参考图)
   const pendInputArts = useMemo(
     () =>
@@ -1341,30 +1423,28 @@ export function CanvasClient() {
   }>(() => {
     let baseNodes = nodes;
     let baseEdges = edges;
-    // 占位"生成中"节点挂在 genSourceId 节点右侧(横向链路;与"选中"无关,点空白也不消失)
-    if (generating && genSourceId) {
-      const parentNode = nodes.find((n) => n.id === genSourceId);
-      const pos = pendingPosRef.current ?? (parentNode
-        ? { x: parentNode.position.x + NODE_W + X_GAP, y: parentNode.position.y }
-        : { x: 0, y: 0 });
+    // 每个生成任务都有自己的占位节点。后端超过并发上限时自行排队，画布不再全局锁死。
+    for (const task of generationTasks) {
+      if (!nodes.some((node) => node.id === task.sourceId)) continue;
+      const pos = generationTaskPosRef.current[task.id] ?? task.position;
       baseNodes = [
-        ...nodes,
+        ...baseNodes,
         {
-          id: "__pending__",
+          id: task.id,
           type: "art",
           position: pos,
-          data: { pending: true, label: t("canvas.pending") },
+          data: { pending: true, label: task.label },
           selectable: false,
-          draggable: true, // 生成中也允许鼠标拖动这个占位节点
+          draggable: true,
         },
       ];
       baseEdges = [
-        ...edges,
+        ...baseEdges,
         {
-          id: "e-__pending__",
-          source: genSourceId,
+          id: `e-${task.id}`,
+          source: task.sourceId,
           sourceHandle: "out",
-          target: "__pending__",
+          target: task.id,
           targetHandle: "in",
           type: "default",
           animated: true,
@@ -1382,12 +1462,12 @@ export function CanvasClient() {
         inChain: hasSel && chain.has(n.id),
       },
       className:
-        hasSel && !chain.has(n.id) && n.id !== "__pending__"
+        hasSel && !chain.has(n.id) && !n.id.startsWith("task-")
           ? "cw-dim"
           : undefined,
     }));
     const displayEdges: Edge[] = baseEdges.map((e) => {
-      if (e.id === "e-__pending__") return e;
+      if (e.target.startsWith("task-")) return e;
       if (!hasSel)
         return {
           ...e,
@@ -1457,8 +1537,7 @@ export function CanvasClient() {
   }, [
     nodes,
     edges,
-    generating,
-    genSourceId,
+    generationTasks,
     selectedId,
     selectedPendId,
     active,
@@ -1513,7 +1592,7 @@ export function CanvasClient() {
   }, [selectedId, selectedPendId, rfNodes, viewport]);
 
   // 顶部工具条与底部 dock 共用同一个"中心 x"(按 dock 宽度夹取),保证两者左右对齐。
-  const DOCK_W = 680; // 与实际渲染 w-[680px] 一致
+  const DOCK_W = 820; // 容纳生成模式、自定义数量和重做操作
   // 节点中心 x(夹取到画布内,使最宽的 dock 不出界);工具条也用这个中心 → 上下对齐。
   const anchorCenterX = useMemo<number | undefined>(() => {
     if (!nodeScreen) return undefined;
@@ -1568,6 +1647,20 @@ export function CanvasClient() {
       );
       flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
     }
+  }
+
+  async function renameGeneratedArtwork(id: string, title: string) {
+    if (!user || !title.trim()) return;
+    setWorks((current) =>
+      current?.map((work) =>
+        work.id === id ? { ...work, title: title.trim() } : work
+      ) ?? current
+    );
+    await privateFetch("/api/artworks/rename", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: user.email, id, title: title.trim() }),
+    }).catch(() => {});
   }
 
   async function toggleNodeMark() {
@@ -1629,7 +1722,7 @@ export function CanvasClient() {
     setEditPrompt(carried ?? selected?.prompt ?? "");
     setGenRatio(selected?.ratio || "auto"); // 默认自适应
     setGenStyle(selected?.style || GENERATION_STYLES[0]);
-    setGenCount(1);
+    setGenerationMode("standard");
     setRatioMenuOpen(false);
     setGenError(null);
     setExtraFiles([]);
@@ -1679,13 +1772,16 @@ export function CanvasClient() {
       const d = await expectJsonOk(r, t("canvas.genFail"));
       const fetched = (d?.artworks ?? []) as Artwork[];
       if (fetched.length === 0) return works ?? [];
-      const map = new Map((works ?? []).map((w) => [w.id, w]));
-      for (const a of fetched) map.set(a.id, a);
-      const next = Array.from(map.values()).sort((a, b) =>
-        (b.createdAt || "").localeCompare(a.createdAt || "")
-      );
-      setWorks(next);
-      return next;
+      let merged = fetched;
+      setWorks((current) => {
+        const map = new Map((current ?? []).map((w) => [w.id, w]));
+        for (const a of fetched) map.set(a.id, a);
+        merged = Array.from(map.values()).sort((a, b) =>
+          (b.createdAt || "").localeCompare(a.createdAt || "")
+        );
+        return merged;
+      });
+      return merged;
     } catch {
       // 单行补取失败 → 兜底整表重拉,确保不漏数据
       return refetchWorks();
@@ -1772,15 +1868,43 @@ export function CanvasClient() {
       // 血缘父覆盖:默认挂在 source 下;多图引用时把它设成"选中节点",新图落在选中节点下方。
       parentId?: string;
       parentIds?: string[];
+      operationKey?: string;
+      taskLabel?: string;
+      taskOffset?: number;
+      selectOnComplete?: boolean;
+      userPrompt?: string;
     }
-  ) {
-    if (readOnly || !user || generating) return;
+  ): Promise<GeneratedResult[]> {
+    if (readOnly || !user) return [];
     const text = prompt.trim();
-    if (!text && !opts?.ratiogen) return; // 改比例可无提示词(服务端用固定重构图指令)
-    setSelectedId(source.id); // 占位节点挂在它下面,工具条/面板也对齐它
-    setGenSourceId(source.id); // 占位节点的挂靠源(独立于选中)
-    pendingPosRef.current = null; // 新一轮生成,占位从默认位开始
-    setGenerating(true);
+    if (!text && !opts?.ratiogen) return []; // 改比例可无提示词(服务端用固定重构图指令)
+    const operationKey = opts?.operationKey ?? `node:${source.id}`;
+    if (generationOperationRef.current.has(operationKey)) return [];
+    generationOperationRef.current.add(operationKey);
+    const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const sourceNode = rfNodes.find((node) => node.id === source.id);
+    const siblingTaskCount = generationTasks.filter(
+      (task) => task.sourceId === source.id
+    ).length;
+    const taskPosition = sourceNode
+      ? {
+          x: sourceNode.position.x + NODE_W + X_GAP,
+          y:
+            sourceNode.position.y +
+            (opts?.taskOffset ?? siblingTaskCount) * (NODE_H + 24),
+        }
+      : { x: 0, y: 0 };
+    generationTaskPosRef.current[taskId] = taskPosition;
+    setGenerationTasks((current) => [
+      ...current,
+      {
+        id: taskId,
+        operationKey,
+        sourceId: source.id,
+        label: opts?.taskLabel || t("canvas.pending"),
+        position: taskPosition,
+      },
+    ]);
     setGenError(null);
     try {
       // 下载一张图为 File(底图/参考图统一走 /api/download 代理)
@@ -1808,6 +1932,7 @@ export function CanvasClient() {
       }
       const fd = new FormData();
       fd.append("prompt", text);
+      if (opts?.userPrompt?.trim()) fd.append("userPrompt", opts.userPrompt.trim());
       fd.append("category", source.category || "main");
       fd.append("ratio", opts?.ratio || source.ratio || "1:1");
       fd.append("resolution", opts?.resolution || source.resolution || "1K");
@@ -1833,8 +1958,8 @@ export function CanvasClient() {
       const jobId: string | undefined = start.jobId;
       if (!jobId) throw new Error(t("canvas.genFail"));
       const deadline = Date.now() + 6 * 60 * 1000;
-      let newId: string | null = null;
       let newIds: string[] = [];
+      let generated: GeneratedResult[] = [];
       for (;;) {
         await new Promise((r) => setTimeout(r, 2500));
         if (Date.now() > deadline) throw new Error(t("canvas.genFail"));
@@ -1844,10 +1969,13 @@ export function CanvasClient() {
         );
         const pj = await readJsonSafe(pr);
         if (pj.status === "done") {
-          newIds = ((pj.images ?? []) as { id?: string }[])
-            .map((im) => im.id)
-            .filter((x): x is string => !!x);
-          newId = newIds[0] ?? null;
+          generated = ((pj.images ?? []) as { id?: string; url?: string }[])
+            .filter(
+              (image): image is { id: string; url: string } =>
+                !!image.id && !!image.url
+            )
+            .map((image) => ({ id: image.id, url: image.url }));
+          newIds = generated.map((image) => image.id);
           if (pj.user) applyServerUser(pj.user); // 即时回写余额积分
           break;
         }
@@ -1855,16 +1983,13 @@ export function CanvasClient() {
           throw new Error(pj.error || t("canvas.genFail"));
         }
       }
-      setExtraFiles([]);
-      setExtraPreviews([]);
+      if (selectedIdRef.current === source.id) {
+        setExtraFiles([]);
+        setExtraPreviews([]);
+      }
       // 把新节点落到"生成中占位"所在的位置(源节点右侧,或用户拖动后的位置),
       // 这样生成完成后不会跳到自动布局的位置 —— 与图1的占位位置一致。
-      const srcNode = rfNodes.find((n) => n.id === source.id);
-      const basePos =
-        pendingPosRef.current ??
-        (srcNode
-          ? { x: srcNode.position.x + NODE_W + X_GAP, y: srcNode.position.y }
-          : null);
+      const basePos = generationTaskPosRef.current[taskId] ?? taskPosition;
       if (basePos && newIds.length) {
         await Promise.all(
           newIds.map((id, i) =>
@@ -1874,35 +1999,61 @@ export function CanvasClient() {
               body: JSON.stringify({
                 email: user.email,
                 id,
-                x: Math.round(basePos.x + i * (NODE_W + 20)),
-                y: Math.round(basePos.y),
+                x: Math.round(basePos.x),
+                y: Math.round(basePos.y + i * (NODE_H + 24)),
               }),
             }).catch(() => {})
           )
         );
       }
       await mergeWorks(newIds); // 补这次新生成的几张(已带上面保存的坐标),不整表重拉
-      if (newId) {
-        setSelectedId(newId); // 选中新生成的子节点,便于继续迭代(但不移动/缩放画布)
+      const newId = newIds[0] ?? null;
+      if (
+        newId &&
+        opts?.selectOnComplete !== false &&
+        selectedIdRef.current === source.id
+      ) {
+        setSelectedId(newId); // 用户仍停在源节点时才选中新图，不打断其在别处继续工作
       }
+      return generated;
     } catch (e) {
-      setGenError(
-        e instanceof Error && e.message ? e.message : t("canvas.genFail")
-      );
+      const message =
+        e instanceof Error && e.message ? e.message : t("canvas.genFail");
+      if (selectedIdRef.current === source.id) setGenError(message);
+      else flashTip(`${source.title}：${message}`);
+      return [];
     } finally {
-      setGenSourceId(null);
-      setGenerating(false);
+      generationOperationRef.current.delete(operationKey);
+      delete generationTaskPosRef.current[taskId];
+      setGenerationTasks((current) =>
+        current.filter((task) => task.id !== taskId)
+      );
     }
   }
 
   // 抠图:不走生成(不重绘主体),调自托管 rembg 服务把主体原样抠出、背景置透明。
   // 同步返回,新节点落在生成占位处,挂在源节点下。
   async function runCutout(source: Artwork, quality: "fast" | "fine" = "fine") {
-    if (readOnly || !user || generating) return;
-    setSelectedId(source.id);
-    setGenSourceId(source.id);
-    pendingPosRef.current = null;
-    setGenerating(true);
+    if (readOnly || !user) return;
+    const operationKey = `node:${source.id}`;
+    if (generationOperationRef.current.has(operationKey)) return;
+    generationOperationRef.current.add(operationKey);
+    const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const sourceNode = rfNodes.find((node) => node.id === source.id);
+    const taskPosition = sourceNode
+      ? { x: sourceNode.position.x + NODE_W + X_GAP, y: sourceNode.position.y }
+      : { x: 0, y: 0 };
+    generationTaskPosRef.current[taskId] = taskPosition;
+    setGenerationTasks((current) => [
+      ...current,
+      {
+        id: taskId,
+        operationKey,
+        sourceId: source.id,
+        label: "主体提取中…",
+        position: taskPosition,
+      },
+    ]);
     setGenError(null);
     try {
       const fd = new FormData();
@@ -1926,12 +2077,7 @@ export function CanvasClient() {
       if (!newId) throw new Error(t("canvas.genFail"));
       if (j.user) applyServerUser(j.user); // 即时回写余额积分(扣 1 分)
       // 落到生成占位处(源节点右侧或用户拖动后的位置),与生成流一致
-      const srcNode = rfNodes.find((n) => n.id === source.id);
-      const basePos =
-        pendingPosRef.current ??
-        (srcNode
-          ? { x: srcNode.position.x + NODE_W + X_GAP, y: srcNode.position.y }
-          : null);
+      const basePos = generationTaskPosRef.current[taskId] ?? taskPosition;
       if (basePos) {
         await privateFetch("/api/artworks/position", {
           method: "POST",
@@ -1945,20 +2091,49 @@ export function CanvasClient() {
         }).catch(() => {});
       }
       await mergeWorks([newId]);
-      setSelectedId(newId);
+      if (selectedIdRef.current === source.id) setSelectedId(newId);
     } catch (e) {
-      setGenError(
-        e instanceof Error && e.message ? e.message : t("canvas.genFail")
-      );
+      const message =
+        e instanceof Error && e.message ? e.message : t("canvas.genFail");
+      if (selectedIdRef.current === source.id) setGenError(message);
+      else flashTip(`${source.title}：${message}`);
     } finally {
-      setGenSourceId(null);
-      setGenerating(false);
+      generationOperationRef.current.delete(operationKey);
+      delete generationTaskPosRef.current[taskId];
+      setGenerationTasks((current) =>
+        current.filter((task) => task.id !== taskId)
+      );
     }
   }
 
   // 面板「生成」:用编辑框提示词 + 参数 + 追加参考图(留空=按这张图再生成一张)
   async function generateChild() {
     if (!selected) return;
+    if (generationMode === "triptych") {
+      const feedback = editPrompt.trim();
+      const result = await runGen(
+        selected,
+        `${VIEW_CONSISTENCY_RULES} 在同一张横向画布中制作正面、侧面、背面三个等宽分区，按从左到右顺序排列并完整露出；三个分区中的产品必须是同一件产品，背景与尺度统一。${
+          feedback ? ` 用户补充要求：${feedback}` : ""
+        }`,
+        {
+          ratio: "16:9",
+          style: genStyle,
+          count: 1,
+          resolution: genResolution,
+          parentId: selected.id,
+          refUrls: [selected.image],
+          taskLabel: "三视图合成中…",
+          userPrompt: feedback || "生成正侧背三视图",
+        }
+      );
+      if (result[0]) await renameGeneratedArtwork(result[0].id, "正侧背三视图");
+      return;
+    }
+    if (generationMode === "split") {
+      await generateSplitViews(selected, editPrompt.trim());
+      return;
+    }
     const text =
       editPrompt.trim() || selected.prompt || FAITHFUL_REGEN_PROMPT;
     // 新图 = 选中节点的子节点(落在它下方,血缘父=选中节点)。
@@ -1974,7 +2149,93 @@ export function CanvasClient() {
       baseFile: useUploadAsBase ? extraFiles[0] : undefined,
       extra: useUploadAsBase ? extraFiles.slice(1) : extraFiles,
       refUrls: useUploadAsBase ? [] : visibleDockRefs.map((r) => r.image),
+      userPrompt: editPrompt.trim(),
     });
+  }
+
+  async function generateSplitViews(source: Artwork, feedback: string) {
+    const viewSet = `views:${source.id}:${Date.now()}`;
+    const front = await runGen(source, viewPrompt("正面", feedback), {
+      ratio: genRatio,
+      style: genStyle,
+      count: 1,
+      resolution: genResolution,
+      parentId: source.id,
+      refUrls: [source.image],
+      operationKey: `${viewSet}:front`,
+      taskLabel: "生成正面锚点…",
+      userPrompt: feedback ? `正面视图：${feedback}` : "生成正面视图",
+      taskOffset: 0,
+      selectOnComplete: false,
+    });
+    const anchor = front[0];
+    if (!anchor) return;
+    await renameGeneratedArtwork(anchor.id, "正面视图");
+    const shared = [source.image, anchor.url];
+    const [side, back] = await Promise.all([
+      runGen(source, viewPrompt("侧面", feedback, true), {
+        ratio: genRatio,
+        style: genStyle,
+        count: 1,
+        resolution: genResolution,
+        parentId: source.id,
+        parentIds: [anchor.id],
+        refUrls: shared,
+        operationKey: `${viewSet}:side`,
+        taskLabel: "生成侧面视图…",
+        userPrompt: feedback ? `侧面视图：${feedback}` : "生成侧面视图",
+        taskOffset: 1,
+        selectOnComplete: false,
+      }),
+      runGen(source, viewPrompt("背面", feedback, true), {
+        ratio: genRatio,
+        style: genStyle,
+        count: 1,
+        resolution: genResolution,
+        parentId: source.id,
+        parentIds: [anchor.id],
+        refUrls: shared,
+        operationKey: `${viewSet}:back`,
+        taskLabel: "生成背面视图…",
+        userPrompt: feedback ? `背面视图：${feedback}` : "生成背面视图",
+        taskOffset: 2,
+        selectOnComplete: false,
+      }),
+    ]);
+    if (side[0]) await renameGeneratedArtwork(side[0].id, "侧面视图");
+    if (back[0]) await renameGeneratedArtwork(back[0].id, "背面视图");
+    setSelectedId(anchor.id);
+  }
+
+  async function retrySelected() {
+    if (!selected) return;
+    const feedback = editPrompt.trim();
+    const originalPrompt = selected.prompt || FAITHFUL_REGEN_PROMPT;
+    const prompt = `${originalPrompt}${
+      feedback && feedback !== originalPrompt
+        ? `\n本次重做要求：${feedback}`
+        : "\n重新生成一个新版本，严格保持产品身份和关键细节。"
+    }`;
+    const parent = selected.parentId
+      ? active?.members.find((item) => item.id === selected.parentId) ?? selected
+      : selected;
+    const retried = await runGen(parent, prompt, {
+      ratio: selected.ratio || genRatio,
+      style: selected.style || genStyle,
+      count: 1,
+      resolution: selected.resolution || genResolution,
+      parentId: selected.parentId || selected.id,
+      parentIds: selected.parentIds ?? [],
+      refUrls: [selected.image, ...(parent.id === selected.id ? [] : [parent.image])],
+      operationKey: `retry:${selected.id}`,
+      taskLabel: "按要求重做中…",
+      userPrompt: feedback || selected.prompt || "重做当前图片",
+      selectOnComplete: false,
+    });
+    if (retried[0]) {
+      await renameGeneratedArtwork(retried[0].id, `${selected.title} · 重做`);
+      setSelectedId(retried[0].id);
+    }
   }
 
   // 顶部图像工具条:6 个一键动作(预设提示词,各自衍生一个子节点)
@@ -2034,7 +2295,7 @@ export function CanvasClient() {
     []
   );
   function onQuickAction(action: string) {
-    if (readOnly || !selected || generating) return;
+    if (readOnly || !selected || selectedGenerating) return;
     const a = QUICK_ACTIONS.find((x) => x.key === action);
     if (!a) return;
     // 抠图走专用自托管服务(不重绘主体);其余动作仍走 gpt-image 生成。
@@ -2050,12 +2311,12 @@ export function CanvasClient() {
   }
   // 抠图:统一发丝级(Replicate),扣 1 积分/张
   function onCutout(quality: string) {
-    if (readOnly || !selected || generating) return;
+    if (readOnly || !selected || selectedGenerating) return;
     void runCutout(selected, quality === "fast" ? "fast" : "fine");
   }
   // 高清:按所选分辨率(1K/2K/4K)放大当前节点
   function onHd(resolution: string) {
-    if (readOnly || !selected || generating) return;
+    if (readOnly || !selected || selectedGenerating) return;
     void runGen(
       selected,
       "在不改变画面内容、主体与构图的前提下,提升清晰度、细节与质感,输出高清成片",
@@ -2066,7 +2327,7 @@ export function CanvasClient() {
   // 仿 ChatGPT「用不同宽高比生成此图片」——同主体/风格/配色,自然重构图,无需用户额外输入提示词。
   // 新图作为当前节点的子节点;只引用当前节点自己的图。
   function onRatioGen(ratio: string) {
-    if (readOnly || !selected || generating) return;
+    if (readOnly || !selected || selectedGenerating) return;
     void runGen(selected, selected.prompt || "", {
       ratio,
       count: 1,
@@ -2182,7 +2443,7 @@ export function CanvasClient() {
   function batchDelete(ids: string[]) {
     if (readOnly || !user || !active) return;
     const real = ids.filter(
-      (id) => !id.startsWith("pend-") && id !== "__pending__"
+      (id) => !id.startsWith("pend-") && !id.startsWith("task-")
     );
     if (!real.length) return;
     const set = new Set(real);
@@ -2292,7 +2553,7 @@ export function CanvasClient() {
     const source = conn.source;
     const target = conn.target;
     if (!source || !target || source === target) return;
-    if (source === "__pending__" || target === "__pending__") return;
+    if (source.startsWith("task-") || target.startsWith("task-")) return;
     // 连到空白占位节点 → 加为它的输入(客户端)
     if (target.startsWith("pend-")) {
       setPendNodes((prev) =>
@@ -2383,7 +2644,7 @@ export function CanvasClient() {
   ) {
     const src = spawnSourceRef.current;
     spawnSourceRef.current = null;
-    if (!src || src === "__pending__" || readOnly) return;
+    if (!src || src.startsWith("task-") || readOnly) return;
     // 落到了已有节点(有效连接)= 多输入,留 5d,不弹新建菜单
     if (connectionState?.isValid || connectedRef.current) return;
     const pt =
@@ -2425,7 +2686,7 @@ export function CanvasClient() {
     node: { id: string }
   ) {
     e.preventDefault();
-    if (node.id === "__pending__") return;
+    if (node.id.startsWith("task-")) return;
     setSpawnMenu(null);
     const p = relPoint(e);
     setCtxMenu({ x: p.x, y: p.y, cx: e.clientX, cy: e.clientY, nodeId: node.id });
@@ -2714,10 +2975,13 @@ export function CanvasClient() {
     prompt?: string;
     ratio?: string;
   }) {
-    if (readOnly || !user || generating) return;
+    if (readOnly || !user) return;
     // 可传入指定的空白节点(拉线「生成衍生图」用,避免依赖尚未刷新的 state)
     const pend = opts?.pend ?? pendNodes.find((p) => p.id === selectedPendId);
-    if (!pend) return;
+    if (!pend || pend.generating) return;
+    const operationKey = `pend:${pend.id}`;
+    if (generationOperationRef.current.has(operationKey)) return;
+    generationOperationRef.current.add(operationKey);
     const text = (opts?.prompt ?? editPrompt).trim();
     if (!text && !pend.inputs.length) {
       flashTip(t("canvas.pendNeedPrompt"));
@@ -2731,7 +2995,6 @@ export function CanvasClient() {
     // 提示词(延续它的配方);没有则用"保持主体/构图/风格"的中性词。
     const promptToUse =
       text || inputArts[0]?.prompt?.trim() || FAITHFUL_REGEN_PROMPT;
-    setGenerating(true);
     setGenError(null);
     setPendNodes((prev) =>
       prev.map((p) => (p.id === pend.id ? { ...p, generating: true } : p))
@@ -2777,7 +3040,7 @@ export function CanvasClient() {
       const jobId: string | undefined = start.jobId;
       if (!jobId) throw new Error(t("canvas.genFail"));
       const deadline = Date.now() + 6 * 60 * 1000;
-      let newId: string | null = null;
+      let newIds: string[] = [];
       for (;;) {
         await new Promise((r) => setTimeout(r, 2500));
         if (Date.now() > deadline) throw new Error(t("canvas.genFail"));
@@ -2787,7 +3050,9 @@ export function CanvasClient() {
         );
         const pj = await readJsonSafe(pr);
         if (pj.status === "done") {
-          newId = pj.images?.[0]?.id ?? null;
+          newIds = ((pj.images ?? []) as { id?: string }[])
+            .map((image) => image.id)
+            .filter((id): id is string => !!id);
           if (pj.user) applyServerUser(pj.user); // 即时回写余额积分
           break;
         }
@@ -2795,23 +3060,27 @@ export function CanvasClient() {
           throw new Error(pj.error || t("canvas.genFail"));
       }
       // 把生成结果落到空白节点的位置
-      if (newId) {
-        await privateFetch("/api/artworks/position", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            email: user.email,
-            id: newId,
-            x: Math.round(pend.x),
-            y: Math.round(pend.y),
-          }),
-        }).catch(() => {});
-        pendingNodeRef.current = newId;
+      if (newIds.length) {
+        await Promise.all(
+          newIds.map((id, index) =>
+            privateFetch("/api/artworks/position", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                email: user.email,
+                id,
+                x: Math.round(pend.x),
+                y: Math.round(pend.y + index * (NODE_H + 24)),
+              }),
+            }).catch(() => {})
+          )
+        );
+        pendingNodeRef.current = newIds[0];
       }
       setPendNodes((prev) => prev.filter((p) => p.id !== pend.id));
-      setSelectedPendId(null);
-      const fresh = await mergeWorks(newId ? [newId] : []);
-      pushAddUndo(newId, fresh);
+      setSelectedPendId((current) => (current === pend.id ? null : current));
+      const fresh = await mergeWorks(newIds);
+      pushAddUndo(newIds[0] ?? null, fresh);
     } catch (e) {
       setGenError(
         e instanceof Error && e.message ? e.message : t("canvas.genFail")
@@ -2820,7 +3089,7 @@ export function CanvasClient() {
         prev.map((p) => (p.id === pend.id ? { ...p, generating: false } : p))
       );
     } finally {
-      setGenerating(false);
+      generationOperationRef.current.delete(operationKey);
     }
   }
   // 占位节点里选了图片 → 带进度上传 → 完成后移除占位、刷新出真节点
@@ -2942,7 +3211,7 @@ export function CanvasClient() {
 
   // 拖拽后记住节点坐标(本地即时生效 + 异步持久化)
   function saveNodePosition(id: string, x: number, y: number) {
-    if (readOnly || id === "__pending__" || !user) return;
+    if (readOnly || id.startsWith("task-") || !user) return;
     setWorks((prev) =>
       prev
         ? prev.map((w) =>
@@ -2991,9 +3260,9 @@ export function CanvasClient() {
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
-        if (readOnly || generating) return;
+        if (readOnly || selectedGenerating) return;
         const realSel = multiSel.filter(
-          (id) => !id.startsWith("pend-") && id !== "__pending__"
+          (id) => !id.startsWith("pend-") && !id.startsWith("task-")
         );
         if (realSel.length > 1) {
           e.preventDefault();
@@ -3007,7 +3276,7 @@ export function CanvasClient() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readOnly, selectedId, generating, multiSel, undoStack, redoStack]);
+  }, [readOnly, selectedId, selectedGenerating, multiSel, undoStack, redoStack]);
 
   // Ctrl/⌘ + 滚轮:阻止浏览器整页缩放(画布内由 React Flow 自己缩放)
   useEffect(() => {
@@ -3485,7 +3754,7 @@ export function CanvasClient() {
               }}
               onMove={(_, vp) => setViewport(vp)}
               onNodeClick={(_, node) => {
-                if (node.id === "__pending__") return;
+                if (node.id.startsWith("task-")) return;
                 if (node.id.startsWith("pend-")) {
                   // 选中空白节点 → 出文生图/合并 dock
                   setSelectedId(null);
@@ -3557,12 +3826,19 @@ export function CanvasClient() {
                 };
               }}
               onNodeDragStop={(_, node) => {
-                if (node.id === "__pending__") {
-                  // 生成中占位:记住拖到的位置(重渲染不再打回默认位)
-                  pendingPosRef.current = {
+                if (node.id.startsWith("task-")) {
+                  // 生成中占位:每个任务独立记住拖到的位置。
+                  generationTaskPosRef.current[node.id] = {
                     x: node.position.x,
                     y: node.position.y,
                   };
+                  setGenerationTasks((current) =>
+                    current.map((task) =>
+                      task.id === node.id
+                        ? { ...task, position: { ...node.position } }
+                        : task
+                    )
+                  );
                   return;
                 }
                 if (node.id.startsWith("pend-")) {
@@ -4291,7 +4567,7 @@ export function CanvasClient() {
                 <button
                   key={a.key}
                   type="button"
-                  disabled={generating || !selected}
+                  disabled={selectedGenerating || !selected}
                   title={!selected ? t("canvas.toolNeedImage") : undefined}
                   onClick={() => onQuickAction(a.key)}
                   className="flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold text-[#e7e9ee] transition-colors hover:bg-[#1f2229] disabled:opacity-40"
@@ -4303,7 +4579,7 @@ export function CanvasClient() {
               {/* 抠图:发丝级,扣 1 积分/张(已去掉免费极速档) */}
               <button
                 type="button"
-                disabled={generating || !selected}
+                disabled={selectedGenerating || !selected}
                 title={!selected ? t("canvas.toolNeedImage") : undefined}
                 onClick={() => onCutout("fine")}
                 className="flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold text-[#e7e9ee] transition-colors hover:bg-[#1f2229] disabled:opacity-40"
@@ -4314,7 +4590,7 @@ export function CanvasClient() {
               {/* 高清:下拉选分辨率(深色弹出,向下) */}
               <DarkSelect
                 dir="down"
-                disabled={generating || !selected}
+                disabled={selectedGenerating || !selected}
                 value=""
                 options={[
                   { value: "1K", label: "1K" },
@@ -4324,7 +4600,7 @@ export function CanvasClient() {
                 onPick={(v) => onHd(v)}
                 triggerClass={cn(
                   "flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold text-[#e7e9ee] transition-colors hover:bg-[#1f2229]",
-                  selected && !generating
+                  selected && !selectedGenerating
                     ? "cursor-pointer"
                     : "cursor-default opacity-40"
                 )}
@@ -4338,7 +4614,7 @@ export function CanvasClient() {
               {/* 改比例(ChatGPT 式重生成):选目标比例,按原图重画再裁切,无需提示词 */}
               <DarkSelect
                 dir="down"
-                disabled={generating || !selected}
+                disabled={selectedGenerating || !selected}
                 value=""
                 options={[
                   { value: "1:1", label: t("canvas.ratioSquare") },
@@ -4350,7 +4626,7 @@ export function CanvasClient() {
                 onPick={(v) => onRatioGen(v)}
                 triggerClass={cn(
                   "flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold text-[#e7e9ee] transition-colors hover:bg-[#1f2229]",
-                  selected && !generating
+                  selected && !selectedGenerating
                     ? "cursor-pointer"
                     : "cursor-default opacity-40"
                 )}
@@ -4458,7 +4734,7 @@ export function CanvasClient() {
               key={`dock-${selected.id}`}
               ref={panelRef}
               style={dockStyle ?? { left: 12, bottom: 12, maxHeight: "60%" }}
-              className="cz-anim-bottom absolute z-10 flex w-[680px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border border-[#2a2d36] bg-[#191b21] shadow-2xl"
+              className="cz-anim-bottom absolute z-10 flex w-[820px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border border-[#2a2d36] bg-[#191b21] shadow-2xl"
             >
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
               <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
@@ -4633,30 +4909,64 @@ export function CanvasClient() {
                   >
                     {t("canvas.dockModel")}
                   </span>
-                  {ratioControl}
                   <DarkSelect
                     dir="up"
-                    value={String(genCount)}
-                    options={[1, 2, 4].map((n) => ({
-                      value: String(n),
-                      label: `${n} 张`,
-                    }))}
-                    onPick={(v) => setGenCount(Number(v))}
-                    triggerClass="flex cursor-pointer items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee]"
-                    trigger={<>🖼 {genCount} 张</>}
+                    value={generationMode}
+                    disabled={selectedGenerating}
+                    options={[
+                      { value: "standard", label: t("canvas.modeStandard") },
+                      { value: "triptych", label: t("canvas.modeTriptych") },
+                      { value: "split", label: t("canvas.modeSplit") },
+                    ]}
+                    onPick={(value) => setGenerationMode(value as GenerationMode)}
+                    triggerClass="flex cursor-pointer items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee] disabled:opacity-45"
+                    trigger={
+                      <>
+                        <Rotate3d className="h-3.5 w-3.5" />
+                        {generationMode === "standard"
+                          ? t("canvas.modeStandardShort")
+                          : generationMode === "triptych"
+                            ? t("canvas.modeTriptychShort")
+                            : t("canvas.modeSplitShort")}
+                      </>
+                    }
                   />
+                  {ratioControl}
+                  {generationMode === "standard" ? (
+                    <ImageCountControl
+                      value={genCount}
+                      onChange={setGenCount}
+                      disabled={selectedGenerating}
+                    />
+                  ) : (
+                    <span className="rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee]">
+                      🖼 {generationMode === "split"
+                        ? t("canvas.viewNodesCount")
+                        : t("canvas.viewSheetCount")}
+                    </span>
+                  )}
                   <span className="flex-1" />
                   <span className="text-[13px] font-semibold text-[#f0c64a]">
-                    ⚡ {genCount * resolutionCost(genResolution)}
+                    ⚡ {selectedGenerationCount * resolutionCost(genResolution)}
                   </span>
                   <button
                     type="button"
+                    onClick={() => void retrySelected()}
+                    disabled={selectedGenerating}
+                    title={t("canvas.retryImageHint")}
+                    className="flex h-10 items-center gap-1.5 rounded-[11px] border border-[#343842] px-3 text-[12.5px] font-semibold text-[#d5d8df] hover:bg-[#24272f] disabled:opacity-45"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    {t("canvas.retryImage")}
+                  </button>
+                  <button
+                    type="button"
                     onClick={generateChild}
-                    disabled={generating}
+                    disabled={selectedGenerating}
                     title={t("canvas.generate")}
                     className="flex h-10 w-10 flex-none items-center justify-center rounded-[11px] bg-white text-[18px] font-bold text-[#111] transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
-                    {generating ? (
+                    {selectedGenerating ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       "↑"
@@ -4672,7 +4982,7 @@ export function CanvasClient() {
             <div
               key={`pdock-${selectedPend.id}`}
               style={dockStyle ?? { left: 12, bottom: 12 }}
-              className="cz-anim-bottom absolute z-10 flex w-[680px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border border-[#2a2d36] bg-[#191b21] shadow-2xl"
+              className="cz-anim-bottom absolute z-10 flex w-[820px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border border-[#2a2d36] bg-[#191b21] shadow-2xl"
             >
               <div className="px-4 pb-1.5 pt-3.5">
                 <div className="mb-3 flex items-center gap-2">
@@ -4730,16 +5040,10 @@ export function CanvasClient() {
                   {t("canvas.dockModel")}
                 </span>
                 {ratioControl}
-                <DarkSelect
-                  dir="up"
-                  value={String(genCount)}
-                  options={[1, 2, 4].map((n) => ({
-                    value: String(n),
-                    label: `${n} 张`,
-                  }))}
-                  onPick={(v) => setGenCount(Number(v))}
-                  triggerClass="flex cursor-pointer items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee]"
-                  trigger={<>🖼 {genCount} 张</>}
+                <ImageCountControl
+                  value={genCount}
+                  onChange={setGenCount}
+                  disabled={selectedPendGenerating}
                 />
                 <span className="flex-1" />
                 <span className="text-[13px] font-semibold text-[#f0c64a]">
@@ -4748,11 +5052,11 @@ export function CanvasClient() {
                 <button
                   type="button"
                   onClick={() => void generatePend()}
-                  disabled={generating}
+                  disabled={selectedPendGenerating}
                   title={t("canvas.generate")}
                   className="flex h-10 w-10 flex-none items-center justify-center rounded-[11px] bg-white text-[18px] font-bold text-[#111] transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
-                  {generating ? (
+                  {selectedPendGenerating ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     "↑"
