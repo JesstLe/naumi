@@ -1,5 +1,6 @@
 import type { AgentBridge } from "./bridge-types";
 import { PiBridge } from "./bridges/pi-bridge";
+import { CodexBridge } from "./bridges/codex-bridge";
 
 // ---------------------------------------------------------------------------
 // 桥接注册器:按 AGENT_BACKEND env 选择底座,默认 pi。
@@ -17,9 +18,11 @@ export function getAgentBridge(): AgentBridge {
     default:
       cached = new PiBridge();
       return cached;
+    case "codex":
+      cached = new CodexBridge();
+      return cached;
     // 未来底座在此注册:
     // case "omp": cached = new OmpBridge(); return cached;
-    // case "codex": cached = new CodexBridge(); return cached;
   }
 }
 
