@@ -100,7 +100,7 @@ export class PiBridge implements AgentBridge {
     ) => Promise<string | undefined>;
     email: string;
     getCred: () => { cookie: string; authorization: string };
-  }) /* RET-TYPE */ {
+  }): Promise<AgentSession> {
     const models = await this.ensureModels();
     const model = models.getModel("naumi-relay", MODEL_ID) as Model<typeof MODEL_API>;
 
@@ -190,7 +190,7 @@ export class PiBridge implements AgentBridge {
       }
     });
 
-    const session = {
+    const session: AgentSession & { isRunning(): boolean } = {
       sessionId: opts.sessionId,
       isRunning: () => running,
       async run(message: string, onEvent: (e: HubAgentEvent) => void) {

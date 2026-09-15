@@ -78,7 +78,7 @@ export type AgentBridge = {
     email: string;
     /** 凭证 getter(工具内部调用业务 API 时透传) */
     getCred: () => { cookie: string; authorization: string };
-  }): AgentSession;
+  }): Promise<AgentSession>;
 };
 
 /** 底座不支持某能力时抛此错误,上层降级处理。 */
