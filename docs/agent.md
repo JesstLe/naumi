@@ -157,3 +157,32 @@ api/agent/route.ts ──► lib/agent/runtime.ts(常驻会话管理)
 - 收费/写请求零自动重试(防重复扣费);只读 GET 指数退避 ≤3 次
 - `ensureModels` 用闭包 auth 把 `AGENT_API_KEY/AGENT_BASE_URL` 注入 pi-ai,
   未配置独立通道时才回退站内模型配置;敏感值仅在 `.env`/部署环境中保存
+
+
+## 底座探针报告(2026-09-15,基于 bridge-types 契约实测)
+
+### codex-cli 0.153.4 ✅ 可桥接
+- **非交互模式**:`codex exec [PROMPT]` 跑完即退;`--json` 输出 JSONL 事件流
+  (thread.started/turn.started/item.completed/turn.completed),事件粒度足够桥接
+- **会话续接**:`codex exec resume <session_id>`(桥接 AgentSession 上下文恢复)
+- **自定义工具**:`codex mcp add <name> -- <command>` 注册 MCP server(stdio),
+  工具经 MCP 协议暴露;**实测**:注入 yutang_ping 工具 → exec 自动调用 → 返回业务数据
+- **审批**:`--approve-for-me`(自动审批,配 workspace-write 沙箱;read-only 与其互斥)
+- **steering** ❌:exec 模式无插话队列。桥接层 steer() 需降级为"abort+新会话带上下文"
+- **桥接成本**:写 CodexBridge ~200 行(spawn 进程 + JSONL 解析 + MCP server 包装业务工具)
+  ⚠️ 每会话 spawn 新进程,无内存常驻;计费预检只能在 MCP server 内做
+
+### omp 18.1.19 ✅ 可桥接(且更顺)
+- **非交互模式**:`omp -p --no-session`(跑完即退);`--mode json` 输出事件流
+  (session/agent_start/turn_start/message_*/text_delta/agent_end),粒度与 pi 相当
+- **模型已通**:实测走 tdh 中转站 gpt-5.6-luna(与 Naumi 同一通道)
+- **会话**:`--resume <id>` / `-c` 续接;ACP 模式(`omp acp`)可做常驻 stdio 服务
+- **工具面**:skills 目录(~/.agents/skills 已有 scm/差评巡检 skill 可直接复用);
+  `--no-tools` 可关内置编程工具只留业务
+- **steering** ❌:-p 模式无插话;ACP 模式待验证
+- **桥接成本**:与 codex 同级;优势是与现有 skills 生态同源
+
+### 结论
+两底座都可桥接,都不支持原生 steering(pi 独有)。当前建议:
+保持 **pi-agent 为主**(steering/常驻/预检完整),codex/omp 作为"重任务执行器"
+经 MCP 挂进来——桥接层已就绪,随时可加 CodexBridge/OmpBridge 双实现并存。
