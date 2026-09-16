@@ -42,3 +42,18 @@ jobs:
             ghcr.io/jesstle/naumi:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # 私有 GHCR 包不向生产机持久下发 GitHub Token。构建后同时生成一个
+      # 短期离线镜像包，供首次部署/灾备通过 GitHub Actions artifact 下载。
+      - name: Export offline deployment image
+        run: |
+          docker pull "ghcr.io/jesstle/naumi:${GITHUB_SHA}"
+          docker save "ghcr.io/jesstle/naumi:${GITHUB_SHA}" | gzip -1 > /tmp/naumi-image.tar.gz
+
+      - name: Upload offline deployment image
+        uses: actions/upload-artifact@v4
+        with:
+          name: naumi-image-${{ github.sha }}
+          path: /tmp/naumi-image.tar.gz
+          retention-days: 3
+          compression-level: 0
