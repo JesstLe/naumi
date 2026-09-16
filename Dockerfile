@@ -3,13 +3,13 @@
 # Run:    see docker-compose.yml (recommended: bundles Postgres + data volume)
 
 # ── deps ────────────────────────────────────────────────────────────────────
-FROM node:20-bookworm-slim AS deps
+FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 
 # ── build ───────────────────────────────────────────────────────────────────
-FROM node:20-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -28,7 +28,7 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
 RUN npm run build
 
 # ── runtime ─────────────────────────────────────────────────────────────────
-FROM node:20-bookworm-slim AS runner
+FROM node:24-bookworm-slim AS runner
 WORKDIR /app
 # 构建版本号(CI 传入 date +%s):后台"检查更新"用它跟官方站比对。
 ARG BUILD_VERSION=0

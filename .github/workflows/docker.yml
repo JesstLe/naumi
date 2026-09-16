@@ -38,7 +38,7 @@ jobs:
           build-args: |
             BUILD_VERSION=${{ env.BUILD_VERSION }}
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/jesstle/naumi:latest
+            ghcr.io/jesstle/naumi:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
