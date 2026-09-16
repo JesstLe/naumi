@@ -45,6 +45,9 @@ services:
       YUTANG_USER: ${YUTANG_USER:-h13365319844}
       YUTANG_PASS: ${YUTANG_PASS:-renda2026}
       AGENT_VISION_MODEL: ${AGENT_VISION_MODEL:-qwen3.8-flash}
+      # 只影响竞品/爆款参考图反推；image 复用生图通道，不改全局 Agent。
+      REFERENCE_VISION_SOURCE: ${REFERENCE_VISION_SOURCE:-agent}
+      REFERENCE_VISION_MODEL: ${REFERENCE_VISION_MODEL:-}
       # Agent 底座选择: pi(默认,支持插话) / codex(经 MCP 挂业务工具)
       AGENT_BACKEND: ${AGENT_BACKEND:-pi}
       # AES key for encrypting stored API keys at rest.

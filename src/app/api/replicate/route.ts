@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
-import OpenAI, { toFile } from "openai";
+import { editImage, isImageTimeout } from "@/lib/image-edit";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 import {
@@ -16,8 +16,6 @@ import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
-import { getOpenAISettings } from "@/lib/settings";
-import { getOpenAIBaseUrl } from "@/lib/openai-base";
 
 // ---------------------------------------------------------------------------
 // 爆款图复刻:商品原图(1-3) + 爆款参考图(1) + 复刻程度 → 图生图单张出图。
@@ -61,6 +59,7 @@ async function parseInput(request: Request) {
     ref: refImg,
     degree: (f.get("degree") ?? "high").toString().trim() === "style" ? "style" : "high",
     extra: (f.get("text") ?? "").toString().trim().slice(0, 400),
+    reversePrompt: (f.get("reversePrompt") ?? "").toString().trim().slice(0, 8000),
     platform: (f.get("platform") ?? "amazon").toString().trim().slice(0, 20),
     lang: (f.get("lang") ?? "auto").toString().trim().slice(0, 10),
     email: (f.get("email") ?? "").toString().trim(),
@@ -82,7 +81,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const { apiKey, model } = await getOpenAISettings();
   const ip = clientIp(request);
   if (!rateLimit(`replicate:${ip}`, 10, 600_000)) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
@@ -120,32 +118,21 @@ export async function POST(request: Request) {
           : "画面文案语言跟随平台习惯";
     const degreeNote =
       input.degree === "high"
-        ? "【高度复刻】前面的参考图定义整张图的构图、布光、配色、场景结构与排版;把商品原图中的产品放进同款构图与场景中(产品位置/姿态对应参考图中的主体),场景细节可有轻微差异。"
+        ? "【高度复刻】最后一张参考图定义整张图的构图、布光、配色、场景结构与排版;把商品原图中的产品放进同款构图与场景中(产品位置/姿态对应参考图中的主体),场景细节可有轻微差异。"
         : "【参考风格】只借鉴参考图的风格气质(色调、氛围、质感、字体感觉),为商品原图的产品重新设计一张同风格电商图,构图可自由发挥。";
     const extraNote = input.extra ? `补充要求:${input.extra}。` : "";
     const prompt =
       `你要做「爆款图复刻」。图片说明:最后一张是爆款参考图,其余是商品原图(产品必须取自商品原图)。` +
       `${degreeNote}在完整保留商品原图产品(包装、品牌、文字、外观)完全不变的前提下生成一张电商图。` +
       `文案:${langNote},内容贴合该产品,清晰无错别字,排版精美。平台风格:${PLATFORM_LABELS[input.platform] ?? "通用电商"}。${extraNote}` +
+      (input.reversePrompt ? `\n参考图逆向提示词（经用户确认或编辑）：${input.reversePrompt}\n上述提示词中的产品、品牌、文案以商品原图和用户补充要求为准，不照搬参考图的竞品标识。\n` : "") +
       `输出一张可直接上架的成品图。`;
 
-    const client = new OpenAI({
-      apiKey,
-      baseURL: (await getOpenAIBaseUrl()) || undefined,
-      timeout: 240_000,
-      maxRetries: 1,
-    });
-
-    const files = await Promise.all(
-      [...input.products, input.ref].map((im, i) =>
-        toFile(im.buf, `img-${i}.png`, { type: im.type || "image/png" })
-      )
-    );
-    const r = await client.images.edit({
-      model,
-      image: files,
+    const images = [...input.products, input.ref];
+    const buf = await editImage({
+      images: images.map(im => im.buf),
+      types: images.map(im => im.type),
       prompt,
-      n: 1,
       size: "1024x1024",
       quality: (process.env.OPENAI_IMAGE_QUALITY || "medium") as
         | "low"
@@ -153,11 +140,6 @@ export async function POST(request: Request) {
         | "high"
         | "auto",
     });
-    const d = r.data?.[0];
-    if (!d) throw new Error("空返回");
-    const buf = d.b64_json
-      ? Buffer.from(d.b64_json, "base64")
-      : Buffer.from(await (await fetch(d.url!)).arrayBuffer());
 
     let url: string;
     if (storageEnabled) {
@@ -183,7 +165,7 @@ export async function POST(request: Request) {
               id: `rep-${Date.now()}`,
               title: input.degree === "high" ? "爆款复刻·高度" : "爆款复刻·风格",
               category: "main",
-              prompt: "",
+              prompt,
               status: "completed",
               image: url,
               gradient: "from-sky-100 to-teal-100",
@@ -207,8 +189,8 @@ export async function POST(request: Request) {
     if (useDb) await refundCredits(input.email, cost).catch(() => {});
     console.error("[replicate] failed:", e instanceof Error ? e.message : e);
     return NextResponse.json(
-      { error: safeError(e, "复刻生成失败,请稍后重试") },
-      { status: 502 }
+      { error: isImageTimeout(e) ? "生成服务响应超时，本次未生成成功，请稍后重试" : safeError(e, "复刻生成失败,请稍后重试") },
+      { status: isImageTimeout(e) ? 504 : 502 }
     );
   }
 }

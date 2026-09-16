@@ -22,6 +22,7 @@ import { authHeader } from "@/lib/supabase";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
 import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
+import { readToolResponse } from "@/lib/tool-response";
 
 // ---------------------------------------------------------------------------
 // 爆款图复刻工作台(对标竞品 爆款复刻):
@@ -62,6 +63,9 @@ export function ReplicateClient() {
   const [lang, setLang] = useState("auto");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [reversePrompt, setReversePrompt] = useState("");
+  const operationRef = useRef(false);
   const [result, setResult] = useState<string | null>(null);
   const [viewing, setViewing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -72,14 +76,12 @@ export function ReplicateClient() {
 
   const cost = POINTS_PER_IMAGE;
 
-  useEffect(() => {
-    return () => {
-      previews.forEach((p) => URL.revokeObjectURL(p));
-    };
-  }, [previews]);
+  const previewUrlsRef = useRef<string[]>([]);
+  previewUrlsRef.current = [...previews, refPreview].filter(Boolean);
+  useEffect(() => () => previewUrlsRef.current.forEach(url => URL.revokeObjectURL(url)), []);
 
   function pickFiles(list: FileList | null) {
-    if (!list) return;
+    if (!list || operationRef.current) return;
     const next: File[] = [...files];
     const nextPrev: string[] = [...previews];
     for (const f of Array.from(list)) {
@@ -90,6 +92,7 @@ export function ReplicateClient() {
     }
     setFiles(next);
     setPreviews(nextPrev);
+    if (fileRef.current) fileRef.current.value = "";
   }
   function removeFile(i: number) {
     URL.revokeObjectURL(previews[i]);
@@ -97,10 +100,34 @@ export function ReplicateClient() {
     setPreviews(previews.filter((_, j) => j !== i));
   }
   function pickRef(f: File | null) {
-    if (!f || f.size > MAX_UPLOAD) return;
+    if (!f || operationRef.current) return;
+    if (refFileRef.current) refFileRef.current.value = "";
+    if (f.size > MAX_UPLOAD) { setError(L("参考图请控制在 12MB 以内", "Reference image must be under 12MB")); return; }
     if (refPreview) URL.revokeObjectURL(refPreview);
     setRef(f);
     setRefPreview(URL.createObjectURL(f));
+    setReversePrompt("");
+    setError(null);
+  }
+  async function requestAnalysis(reference: File) {
+    setAnalyzing(true);
+    try {
+      const fd = new FormData(); fd.append("ref", reference);
+      const response = await fetch("/api/replicate/analyze", { method: "POST", headers: await authHeader(), body: fd });
+      const data = await readToolResponse<{ prompt: string }>(response);
+      if (typeof data.prompt !== "string" || !data.prompt.trim()) throw new Error(L("未获得有效提示词，请重试", "No valid prompt returned. Please retry"));
+      setReversePrompt(data.prompt);
+      return data.prompt;
+    } finally { setAnalyzing(false); }
+  }
+  async function analyzeReference() {
+    if (operationRef.current || !ref) return;
+    if (!user) { if (ready) openAuth("sign-in"); return; }
+    operationRef.current = true;
+    setError(null);
+    try { await requestAnalysis(ref); }
+    catch (e) { setError(e instanceof Error ? e.message : L("参考图分析失败，请重试", "Reference analysis failed")); }
+    finally { operationRef.current = false; }
   }
   function openAssist(mode: "write" | "optimize") {
     if (!files[0]) {
@@ -113,6 +140,7 @@ export function ReplicateClient() {
   }
 
   async function generate() {
+    if (operationRef.current) return;
     setError(null);
     if (!user) {
       if (ready) openAuth("sign-in");
@@ -126,13 +154,17 @@ export function ReplicateClient() {
       setError(L("请上传一张爆款参考图", "Upload a reference image"));
       return;
     }
+    operationRef.current = true;
     setLoading(true);
     setResult(null);
     try {
+      // Separate analysis and generation requests keep their time budgets independent.
+      const prompt = reversePrompt.trim() || await requestAnalysis(ref);
       const fd = new FormData();
       files.forEach((f) => fd.append("image", f));
       fd.append("ref", ref);
       fd.append("degree", degree);
+      fd.append("reversePrompt", prompt);
       if (text.trim()) fd.append("text", text.trim());
       fd.append("platform", platform);
       fd.append("lang", lang);
@@ -142,8 +174,8 @@ export function ReplicateClient() {
         headers: await authHeader(),
         body: fd,
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
+      const data = await readToolResponse<{ ok: boolean; url: string; error?: string; user?: Parameters<typeof applyServerUser>[0] }>(res);
+      if (!data.ok || !data.url) {
         throw new Error(data.error || L("复刻失败,请重试", "Replication failed"));
       }
       if (data.user) applyServerUser(data.user);
@@ -152,6 +184,7 @@ export function ReplicateClient() {
       setError(e instanceof Error ? e.message : L("复刻失败,请重试", "Replication failed"));
     } finally {
       setLoading(false);
+      operationRef.current = false;
     }
   }
 
@@ -183,7 +216,7 @@ export function ReplicateClient() {
 
       <div className="grid gap-5 lg:h-[890px] lg:grid-cols-[320px_1fr]">
         {/* 左:参数面板 */}
-        <div className="h-fit space-y-5 rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
+        <fieldset disabled={loading || analyzing} className="min-w-0 h-fit space-y-5 rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
           {/* 工具头 */}
           <div className="flex items-center gap-3">
             <span className="grid h-11 w-11 flex-none place-items-center rounded-[10px]" style={{ background: "rgba(79,70,229,.12)", color: "#4F46E5" }}>
@@ -269,6 +302,7 @@ export function ReplicateClient() {
                     URL.revokeObjectURL(refPreview);
                     setRefPreview("");
                     setRef(null);
+                    setReversePrompt("");
                   }}
                   className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-card/90 text-foreground shadow hover:bg-card"
                   aria-label="移除参考图"
@@ -285,6 +319,17 @@ export function ReplicateClient() {
                 <span className="text-[10px]">上传参考图</span>
               </button>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="replicate-reverse-prompt" className="text-sm font-medium">{L("逆向提示词", "Reverse prompt")}</label>
+              <button type="button" disabled={!ready || !ref || analyzing || loading} onClick={() => void analyzeReference()} className="inline-flex items-center gap-1 text-xs font-medium text-c-text disabled:opacity-40">
+                {analyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                {analyzing ? L("分析中…", "Analyzing…") : reversePrompt ? L("重新反推", "Analyze again") : L("反推参考图", "Analyze reference")}
+              </button>
+            </div>
+            <textarea id="replicate-reverse-prompt" value={reversePrompt} onChange={e => setReversePrompt(e.target.value)} maxLength={8000} placeholder={L("先反推参考图，再编辑构图、配色、光线和排版。留空生成时会自动反推。", "Analyze the reference, then edit composition, colors, lighting and layout. A blank prompt is analyzed automatically on generation.")} className="min-h-[120px] w-full rounded-lg border border-c-border bg-white px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary" />
           </div>
 
           {/* 复刻程度 */}
@@ -401,7 +446,7 @@ export function ReplicateClient() {
           <button
             type="button"
             onClick={generate}
-            disabled={loading}
+            disabled={!ready || loading || analyzing}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-[15px] font-semibold text-white shadow-btn [background:var(--grad-acc)] transition-all hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? (
@@ -410,14 +455,14 @@ export function ReplicateClient() {
               <Sparkles className="h-4 w-4" />
             )}
             {loading
-              ? L("复刻生成中,约 1 分钟", "Generating, ~1 min")
+              ? analyzing ? L("正在反推参考图…", "Analyzing reference…") : L("复刻生成中…", "Generating…")
               : L(`一键复刻生成（预计 ${cost} 积分）`, `Replicate now (~${cost} credits)`)}
           </button>
 
           <p className="text-xs leading-relaxed text-muted-foreground">
             单张约 1 分钟,生成结果自动存入「作品库」,保留 180 天。
           </p>
-        </div>
+        </fieldset>
 
         {/* 右:结果区 */}
         <div className="flex min-h-[520px] flex-col rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">

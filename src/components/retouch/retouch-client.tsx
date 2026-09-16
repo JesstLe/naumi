@@ -1,4 +1,5 @@
 "use client";
+import { readToolResponse } from "@/lib/tool-response";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -100,8 +101,8 @@ export function RetouchClient() {
         headers: await authHeader(),
         body: fd,
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
+      const data = await readToolResponse<{ ok: boolean; url: string; error?: string; user?: Parameters<typeof applyServerUser>[0] }>(res);
+      if (!data.ok || !data.url) {
         throw new Error(data.error || L("精修失败,请重试", "Retouch failed"));
       }
       if (data.user) applyServerUser(data.user);

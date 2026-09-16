@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
-import OpenAI, { toFile } from "openai";
+import { editImage, isImageTimeout } from "@/lib/image-edit";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 import {
@@ -16,8 +16,6 @@ import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
-import { getOpenAISettings } from "@/lib/settings";
-import { getOpenAIBaseUrl } from "@/lib/openai-base";
 
 // ---------------------------------------------------------------------------
 // AI 商品精修:单张商品原图 + 快捷优化项(多选) + 补充要求 → 图生图精修。
@@ -66,7 +64,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const { apiKey, model } = await getOpenAISettings();
   const ip = clientIp(request);
   if (!rateLimit(`retouch:${ip}`, 12, 600_000)) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
@@ -106,20 +103,10 @@ export async function POST(request: Request) {
       extraNote +
       "\n输出一张可直接上架的精修成片,观感自然不过度处理。";
 
-    const client = new OpenAI({
-      apiKey,
-      baseURL: (await getOpenAIBaseUrl()) || undefined,
-      timeout: 240_000,
-      maxRetries: 1,
-    });
-    const file = await toFile(input.image.buf, "product.png", {
-      type: input.image.type,
-    });
-    const r = await client.images.edit({
-      model,
-      image: file,
+    const buf = await editImage({
+      images: [input.image.buf],
+      types: [input.image.type],
       prompt,
-      n: 1,
       size: "1024x1024",
       quality: (process.env.OPENAI_IMAGE_QUALITY || "medium") as
         | "low"
@@ -127,11 +114,6 @@ export async function POST(request: Request) {
         | "high"
         | "auto",
     });
-    const d = r.data?.[0];
-    if (!d) throw new Error("空返回");
-    const buf = d.b64_json
-      ? Buffer.from(d.b64_json, "base64")
-      : Buffer.from(await (await fetch(d.url!)).arrayBuffer());
 
     let url: string;
     if (storageEnabled) {
@@ -181,8 +163,8 @@ export async function POST(request: Request) {
     if (useDb) await refundCredits(input.email, cost).catch(() => {});
     console.error("[retouch] failed:", e instanceof Error ? e.message : e);
     return NextResponse.json(
-      { error: safeError(e, "精修失败,请稍后重试") },
-      { status: 502 }
+      { error: isImageTimeout(e) ? "生成服务响应超时，本次未生成成功，请稍后重试" : safeError(e, "精修失败,请稍后重试") },
+      { status: isImageTimeout(e) ? 504 : 502 }
     );
   }
 }
