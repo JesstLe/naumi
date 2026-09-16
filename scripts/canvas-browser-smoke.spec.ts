@@ -69,7 +69,7 @@ test("canvas browser workflow", async ({ context, page }) => {
   await page.getByRole("button", { name: "上传图片", exact: true }).last().click();
   await page.locator('input[type="file"]').last().setInputFiles(sample);
 
-  const rootNode = page.locator(".react-flow__node").filter({ hasText: "上传图片" }).first();
+  const rootNode = page.locator(".react-flow__node").filter({ hasText: path.basename(sample) }).first();
   await expect(rootNode).toBeVisible({ timeout: 20_000 });
   const rootId = await rootNode.getAttribute("data-id");
   expect(rootId).toBeTruthy();

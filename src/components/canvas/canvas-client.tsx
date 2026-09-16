@@ -883,6 +883,26 @@ export function CanvasClient() {
   const uploadCtxRef = useRef<{ parentId: string | null; x: number; y: number } | null>(
     null
   );
+  // A captured scope survives queued drops, but is replaced when the user changes projects.
+  const importScopeRef = useRef<{
+    rootId: string | null;
+    queue: Promise<void>;
+    positions: { x: number; y: number }[];
+  }>({ rootId: null, queue: Promise.resolve(), positions: [] });
+  const importSeqRef = useRef(0);
+  const dragDepthRef = useRef(0);
+  const [fileDragOver, setFileDragOver] = useState(false);
+  const [imageImports, setImageImports] = useState<{
+    id: number; total: number; done: number; success: number; finished: boolean;
+    errors: { name: string; message: string }[];
+  }[]>([]);
+
+  function resetImportScope() {
+    importScopeRef.current = { rootId: null, queue: Promise.resolve(), positions: [] };
+    uploadCtxRef.current = null;
+    dragDepthRef.current = 0;
+    setFileDragOver(false);
+  }
   // 从生成历史选择:打开作品选择器(记下落点)
   const [historyPicker, setHistoryPicker] = useState<{ x: number; y: number } | null>(
     null
@@ -993,6 +1013,7 @@ export function CanvasClient() {
   // 模板「做同款」→ 关弹窗 + 用模板图在画布里新建一个项目(独立根节点),选中后即可在画布内生成衍生
   async function applyTemplateToCanvas(templateId: string) {
     if (!user || readOnly) return;
+    resetImportScope();
     setModalStack([]);
     setBrowsing(false);
     setCreatingNew(true); // 先进空白画布态,避免闪到旧项目;拿到新节点后自动切过去
@@ -1321,6 +1342,7 @@ export function CanvasClient() {
 
   // 进入空白画布 = 新建项目;选中/拿到真实项目后自动退出该模式
   function startNewProject() {
+    resetImportScope();
     setCreatingNew(true);
     setBrowsing(false);
     setActiveKey(null);
@@ -1333,6 +1355,7 @@ export function CanvasClient() {
   }, [active]);
   // 打开某个画布项目(从网格落地页点卡片)
   function openProject(key: string) {
+    resetImportScope();
     setActiveKey(key);
     setSelectedId(null);
     setPendNodes([]);
@@ -1347,6 +1370,7 @@ export function CanvasClient() {
   }
   // 返回项目网格落地页(实际状态切换)
   function doBackToBrowser() {
+    resetImportScope();
     setBrowsing(true);
     setSelectedId(null);
     setCreatingNew(false);
@@ -3132,30 +3156,104 @@ export function CanvasClient() {
       /* ignore */
     }
   }
-  // 上传图片作新节点:落在当前项目、鼠标位置(uploadCtxRef);无上下文时退回新根
-  async function uploadRoot(files: FileList | null) {
-    if (readOnly || !user || !files?.length) return;
-    const ctx = uploadCtxRef.current;
-    uploadCtxRef.current = null;
-    const fd = new FormData();
-    fd.append("email", user.email);
-    fd.append("image", files[0]);
-    if (ctx?.parentId) fd.append("parentId", ctx.parentId);
-    if (ctx) {
-      fd.append("x", String(Math.round(ctx.x)));
-      fd.append("y", String(Math.round(ctx.y)));
-    }
-    try {
-      const r = await privateFetch("/api/artworks/add", { method: "POST", body: fd });
-      const d = await readJsonSafe(r);
-      if (!r.ok || !d?.id) throw new Error(d?.error || t("canvas.genFail"));
-      if (d?.id) pendingNodeRef.current = d.id; // 切到新节点并选中(在当前项目内则不切项目)
-      const fresh = await mergeWorks(d?.id ? [d.id] : []);
-      pushAddUndo(d?.id ?? null, fresh);
-    } catch (e) {
-      setGenError(e instanceof Error ? e.message : t("canvas.genFail"));
-    }
+  // Multi-select and native file drops share one import path. Copy the live FileList first.
+  function uploadRoot(files: FileList | null) {
+    const picked = Array.from(files ?? []);
     if (rootUploadRef.current) rootUploadRef.current.value = "";
+    if (readOnly || !user || browsing || !picked.length) return;
+    const box = canvasAreaRef.current?.getBoundingClientRect();
+    const center = rfRef.current?.screenToFlowPosition({
+      x: (box?.left ?? 0) + (box?.width ?? 0) / 2,
+      y: (box?.top ?? 0) + (box?.height ?? 0) / 2,
+    }, { snapToGrid: false }) ?? { x: 0, y: 0 };
+    const ctx = uploadCtxRef.current ?? {
+      parentId: activeRootId(), x: center.x - NODE_W / 2, y: center.y - NODE_H / 2,
+    };
+    uploadCtxRef.current = null;
+    const scope = importScopeRef.current;
+    if (ctx.parentId) scope.rootId = ctx.parentId;
+    const id = ++importSeqRef.current;
+    const email = user.email;
+    const failures: { name: string; message: string }[] = [];
+    const valid = picked.filter(file => {
+      const supported = /^(image\/png|image\/jpeg|image\/webp)$/.test(file.type) ||
+        (!file.type && /\.(png|jpe?g|webp)$/i.test(file.name));
+      const message = !supported ? t("canvas.importUnsupported") :
+        file.size > MAX_UPLOAD ? t("canvas.importTooLarge") :
+        file.size === 0 ? t("canvas.importEmpty") : "";
+      if (message) failures.push({ name: file.name, message });
+      return !message;
+    });
+    const occupied = [...rfNodes.map(node => node.position), ...scope.positions];
+    const columns = Math.min(4, Math.ceil(Math.sqrt(valid.length)));
+    const entries = valid.map((file, i) => {
+      const pos = {
+        x: Math.round(ctx.x + (i % columns) * (NODE_W + X_GAP)),
+        y: Math.round(ctx.y + Math.floor(i / columns) * (NODE_H + Y_GAP)),
+      };
+      while (occupied.some(p => Math.abs(p.x - pos.x) < NODE_W + 24 && Math.abs(p.y - pos.y) < NODE_H + 24)) {
+        pos.y += NODE_H + Y_GAP;
+      }
+      occupied.push(pos);
+      scope.positions.push(pos); // Reserve immediately, including batches still in the queue.
+      return { file, pos };
+    });
+    setImageImports(current => [...current.filter(batch => !batch.finished || batch.errors.length > 0), {
+      id, total: picked.length, done: failures.length, success: 0, errors: failures, finished: false,
+    }]);
+    const run = async () => {
+      const ids: (string | undefined)[] = [];
+      const upload = async (index: number) => {
+        const { file, pos } = entries[index];
+        let error = "";
+        try {
+          const fd = new FormData();
+          fd.append("email", email);
+          fd.append("image", file);
+          fd.append("title", file.name);
+          if (scope.rootId) fd.append("parentId", scope.rootId);
+          fd.append("x", String(pos.x));
+          fd.append("y", String(pos.y));
+          const r = await privateFetch("/api/artworks/add", {
+            method: "POST", body: fd, signal: AbortSignal.timeout(120_000),
+          });
+          const d = await readJsonSafe(r);
+          if (!r.ok || !d?.id) throw new Error(d?.error || t("canvas.importFailed"));
+          ids[index] = d.id;
+          if (!scope.rootId) scope.rootId = d.id;
+        } catch (e) {
+          error = e instanceof Error ? e.message : t("canvas.importFailed");
+        }
+        setImageImports(current => current.map(batch => batch.id === id ? {
+          ...batch, done: batch.done + 1, success: batch.success + (error ? 0 : 1),
+          errors: error ? [...batch.errors, { name: file.name, message: error }] : batch.errors,
+        } : batch));
+      };
+      let next = 0;
+      // The first successful image is the project root; a failed first image must not split the batch.
+      while (!scope.rootId && next < entries.length) await upload(next++);
+      await Promise.all(Array.from({ length: Math.min(3, entries.length - next) }, async () => {
+        while (next < entries.length) await upload(next++);
+      }));
+      const added = ids.filter((value): value is string => !!value);
+      if (added.length) {
+        // Background uploads must not drag the user back after they switch projects.
+        if (importScopeRef.current === scope) pendingNodeRef.current = added[0];
+        const fresh = await mergeWorks(added);
+        if (importScopeRef.current === scope) pushAddUndoMany(added, fresh);
+      }
+      setImageImports(current => current.map(batch => batch.id === id ? { ...batch, finished: true } : batch));
+    };
+    // Serial batches, up to three uploads per batch. Editing/generation remain available.
+    scope.queue = scope.queue.then(run, run).catch(() => {
+      setImageImports(current => current.map(batch => batch.id === id ? {
+        ...batch, finished: true,
+        errors: [...batch.errors, { name: t("canvas.importSync"), message: t("canvas.importSyncFailed") }],
+      } : batch));
+    }).finally(() => {
+      const reserved = new Set(entries.map(entry => entry.pos));
+      scope.positions = scope.positions.filter(pos => !reserved.has(pos));
+    });
   }
   // 在画布某屏幕点(相对画布区)上传图片:落在当前项目、该点的画布坐标
   function triggerUpload(screenX: number, screenY: number) {
@@ -3955,7 +4053,40 @@ export function CanvasClient() {
         {/* 右:画布 */}
         <div
           ref={canvasAreaRef}
+          data-testid="canvas-drop-zone"
           className="relative min-w-0 flex-1"
+          onDragEnter={(event) => {
+            if (!event.dataTransfer.types.includes("Files")) return;
+            event.preventDefault();
+            dragDepthRef.current += 1;
+            if (!readOnly && !browsing && !loading) setFileDragOver(true);
+          }}
+          onDragOver={(event) => {
+            if (!event.dataTransfer.types.includes("Files")) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = readOnly || browsing || loading ? "none" : "copy";
+          }}
+          onDragLeave={(event) => {
+            if (!event.dataTransfer.types.includes("Files")) return;
+            dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+            if (dragDepthRef.current === 0) setFileDragOver(false);
+          }}
+          onDrop={(event) => {
+            if (!event.dataTransfer.types.includes("Files")) return;
+            event.preventDefault();
+            event.stopPropagation();
+            dragDepthRef.current = 0;
+            setFileDragOver(false);
+            if (readOnly || browsing || loading) return;
+            const point = rfRef.current?.screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false });
+            if (!point) return;
+            uploadCtxRef.current = {
+              parentId: activeRootId(), x: point.x - NODE_W / 2, y: point.y - NODE_H / 2,
+            };
+            setCtxMenu(null);
+            setSpawnMenu(null);
+            uploadRoot(event.dataTransfer.files);
+          }}
           style={{
             // 画布底色 + 点阵,像素级对齐原型 .cvz/.board
             backgroundColor: "#0e0f13",
@@ -4724,6 +4855,32 @@ export function CanvasClient() {
             </>
           )}
 
+          {fileDragOver && (
+            <div className="pointer-events-none absolute inset-3 z-50 flex items-center justify-center border-2 border-dashed border-sky-400 bg-sky-50/90" data-testid="canvas-drop-hint">
+              <div className="flex items-center gap-3 text-sm font-medium text-slate-700">
+                <Upload className="h-5 w-5" />{t("canvas.importDropHint")}
+              </div>
+            </div>
+          )}
+          {imageImports.length > 0 && (
+            <div className="absolute right-3 top-3 z-40 max-h-[40%] w-80 max-w-[calc(100%-24px)] overflow-y-auto rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm" data-testid="canvas-import-status" aria-live="polite">
+              {imageImports.map(batch => (
+                <div key={batch.id} className="border-b border-slate-100 p-3 last:border-0">
+                  <div className="flex items-center gap-2 text-xs font-medium">
+                    {!batch.finished && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    <span className="flex-1">{batch.finished ? t("canvas.importDone") : t("canvas.importBusy")} {batch.done} / {batch.total} · {t("canvas.importSuccess")} {batch.success}{batch.errors.length ? ` · ${t("canvas.importErrors")} ${batch.errors.length}` : ""}</span>
+                    {batch.finished && <button type="button" aria-label={t("canvas.importDismiss")} className="p-1 hover:bg-slate-100" onClick={() => setImageImports(current => current.filter(item => item.id !== batch.id))}><X className="h-3.5 w-3.5" /></button>}
+                  </div>
+                  {batch.errors.length > 0 && (
+                    <ul className="mt-2 space-y-1 text-xs text-red-600">
+                      {batch.errors.map((error, index) => <li key={index} className="break-words">{error.name}：{error.message}</li>)}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 新建项目空白画布:引导文案(右键即可加节点) */}
           {creatingNew && !active && pendNodes.length === 0 && (
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
@@ -4932,7 +5089,9 @@ export function CanvasClient() {
           {/* 上传图片作根节点(隐藏 input,右键「上传图片/添加节点」触发) */}
           <input
             ref={rootUploadRef}
+            data-testid="canvas-image-input"
             type="file"
+            multiple
             accept="image/png,image/jpeg,image/webp"
             className="hidden"
             onChange={(e) => void uploadRoot(e.target.files)}
