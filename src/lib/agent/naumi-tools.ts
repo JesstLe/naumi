@@ -52,6 +52,11 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 - review_history:只读。按商品ID查历史评价台账(差评/数量变化)。数据源为本地台账,不开浏览器。
 - review_demo:只读。生成演示巡检报告(展示报告形态)。在线采集需人工授权浏览器,Agent 不自动触发。
 
+## 可用工具(SCM 上架 — 阿里健康新品发布·资料体检)
+- scm_preflight:只读。校验商品资料 JSON 是否齐备可上架(供应商/品牌/条码/图片槽位/类目),输出大白话缺件清单。用户要上架时先跑这个。
+- scm_doctor:只读。SCM 环境体检(专用浏览器/登录状态)。
+⚠️ 自动填表与提交发布不开放给 Agent——按 skill 两道闸门,需人工在浏览器核对后执行。
+
 ## 工作规则
 0. 鱼塘工具的修改类操作(create/update)会直接改动真实业务数据——执行前必须向用户复述将要做出的改动并获得确认;用户已明确指令时可直接执行并汇报结果。
 1. 用户消息里的商品图以 URL 形式出现(格式:[商品图] <url> 或工具返回的图片 URL);工具的图片参数必须传入,用户没给就先要,不要编造 URL。
@@ -506,6 +511,66 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     if (!res.ok) throw new Error(data?.error || "巡检接口 " + path + " 返回 " + res.status);
     return data;
   }
+
+  // ── SCM 上架(本地适配器 3967,复用 scm-product-listing skill 的安全部分) ──
+  const SCM = (process.env.SCM_LISTING_BASE || "http://host.docker.internal:3967").replace(/\/+$/, "");
+
+  async function scmApi(path: string, signal: AbortSignal | undefined, body?: unknown): Promise<any> {
+    const res = await fetch(SCM + path, {
+      method: body ? "POST" : "GET",
+      signal,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "SCM 接口 " + path + " 返回 " + res.status);
+    return data;
+  }
+
+  const scmTools: AgentTool[] = [
+    {
+      name: "scm_preflight",
+      label: "SCM·资料体检",
+      description:
+        "只读。校验商品资料是否齐备可上架:必填项(供应商主体/品牌/品名/类目路径/13位条码/图片槽位 main,unfold,back,license)、条码 EAN-13 合法性与占用、可选项默认行为提示。输出大白话缺件清单。用户表达上架意图时先调用此工具。",
+      parameters: Type.Object({
+        product: Type.Record(Type.String(), Type.Unknown(), {
+          description: "商品资料对象:supplier(供应商主体)、brand、itemName(品名)、category(类目数组,如 [医疗器械,保健理疗])、barCode(13位条码)、images({main,unfold,back,license} 图片路径)",
+        }),
+      }),
+      executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p: any = params;
+        const d: any = await withToolTimeout(
+          "read_only",
+          () => scmApi("/preflight", signal, { product: p.product }),
+          signal
+        );
+        return {
+          content: [{ type: "text", text: d.report || "体检完成" }],
+          details: { publicSummary: d.ok ? "资料齐备可开跑" : "体检完成,有待补项" },
+        };
+      },
+    },
+    {
+      name: "scm_doctor",
+      label: "SCM·环境体检",
+      description: "只读。检查 SCM 专用浏览器与登录状态,输出大白话报告(如'未登录,请在浏览器手动登录一次')。",
+      parameters: Type.Object({}),
+      executionMode: "sequential",
+      execute: async (_id, _params, signal) => {
+        const d: any = await withToolTimeout(
+          "read_only",
+          () => scmApi("/doctor", signal),
+          signal
+        );
+        return {
+          content: [{ type: "text", text: d.report || "体检完成" }],
+          details: { publicSummary: "SCM 环境体检完成" },
+        };
+      },
+    },
+  ];
 
   const reviewTools: AgentTool[] = [
     {
@@ -1303,7 +1368,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     },
   ];
 
-  return [...tools, ...yutangTools, ...reviewTools];
+  return [...tools, ...yutangTools, ...reviewTools, ...scmTools];
 }
 
 /** 底座无关视图:供未来非 pi 底座桥接器复用(当前 PiBridge 直接消费 AgentTool)。 */
