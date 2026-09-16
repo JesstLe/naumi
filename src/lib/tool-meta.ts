@@ -69,6 +69,11 @@ export const TOOL_CATEGORIES: {
 ];
 
 export const TOOLS: ToolMeta[] = [
+  {
+    key: "竞品工作台", en: "Reference studio", slug: "competitors", href: "/competitors", category: "生成创作",
+    Icon: Layers, desc: "导入竞品图文件夹，反推提示词、参考生成与选区定向编辑",
+    action: "打开竞品工作台", cost: 0, ctrls: [], workspace: true, live: true, inMenu: true,
+  },
   // ── 生成创作(独立全工作台) ──
   {
     key: "AI 生图", en: "AI image", slug: "generate", href: "/generate", category: "生成创作",
@@ -256,4 +261,4 @@ export function menuCategories() {
 }
 
 /** 工具总数文案(设计落地页/创作中心标「17 款工具」)。 */
-export const TOOL_COUNT_LABEL = "24 款工具";
+export const TOOL_COUNT_LABEL = `${TOOLS.length} 款工具`;

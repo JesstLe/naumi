@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import OpenAI, { toFile } from "openai";
+import { editImage } from "@/lib/image-edit";
 import {
   dbEnabled,
   reserveCredits,
@@ -13,8 +13,6 @@ import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
-import { getOpenAISettings } from "@/lib/settings";
-import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { resolutionCost, resolutionLongSide } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
@@ -161,14 +159,6 @@ export async function POST(request: Request) {
 
     let out: Buffer;
     try {
-      const { apiKey, model: genModel } = await getOpenAISettings();
-      if (!apiKey) throw new Error("未配置 OpenAI key");
-      const client = new OpenAI({
-        apiKey,
-        baseURL: (await getOpenAIBaseUrl()) || undefined,
-        timeout: 280_000,
-        maxRetries: 0,
-      });
       const imgPng = await toPng(input.image);
       // OpenAI edit 要求 mask 与原图尺寸完全一致,否则报错;并按原图宽高比选输出尺寸
       // (gpt-image edit 不稳定接受 "auto",改用具体支持值,与图生图一致)。
@@ -190,17 +180,13 @@ export async function POST(request: Request) {
         maskPng = await toPng(input.mask);
       }
       // 带 mask 的局部重绘(透明区 = 编辑区),用后台配置的主力模型(gpt-image-2)。
-      const r = await client.images.edit({
-        model: genModel || "gpt-image-2",
-        image: await toFile(imgPng, "image.png", { type: "image/png" }),
-        mask: await toFile(maskPng, "mask.png", { type: "image/png" }),
+      const generated = await editImage({
+        images: [imgPng],
+        mask: maskPng,
         prompt: input.prompt,
-        n: 1,
         size: editSize,
       });
-      const b64 = r.data?.[0]?.b64_json;
-      if (!b64) throw new Error("未返回图片");
-      out = await upscaleTo(Buffer.from(b64, "base64"), input.resolution);
+      out = await upscaleTo(generated, input.resolution);
     } catch (e) {
       if (useDb && cost > 0)
         await refundCredits(input.email, cost).catch(() => {});
