@@ -48,6 +48,10 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 - yutang_create_task:写。创建放单任务(店铺/商品图/宝贝ID/关键词/单数/价格/时段/要求)。计费 0 但产生真实业务动作,创建前必须与用户确认内容。
 - yutang_update_task:写。修改任务(状态/负责人/备注等)。修改前与用户确认改动点。
 
+## 可用工具(差评巡检 — 淘宝/天猫评价监控)
+- review_history:只读。按商品ID查历史评价台账(差评/数量变化)。数据源为本地台账,不开浏览器。
+- review_demo:只读。生成演示巡检报告(展示报告形态)。在线采集需人工授权浏览器,Agent 不自动触发。
+
 ## 工作规则
 0. 鱼塘工具的修改类操作(create/update)会直接改动真实业务数据——执行前必须向用户复述将要做出的改动并获得确认;用户已明确指令时可直接执行并汇报结果。
 1. 用户消息里的商品图以 URL 形式出现(格式:[商品图] <url> 或工具返回的图片 URL);工具的图片参数必须传入,用户没给就先要,不要编造 URL。
@@ -488,8 +492,73 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     },
   ];
 
+    // ── 差评巡检(本地适配器 3966,复用 tmall-review-monitor skill) ──
+  const RM = (process.env.REVIEW_MONITOR_BASE || "http://host.docker.internal:3966").replace(/\/+$/, "");
+
+  async function rmApi(path: string, signal: AbortSignal | undefined, body?: unknown): Promise<any> {
+    const res = await fetch(RM + path, {
+      method: body ? "POST" : "GET",
+      signal,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "巡检接口 " + path + " 返回 " + res.status);
+    return data;
+  }
+
+  const reviewTools: AgentTool[] = [
+    {
+      name: "review_history",
+      label: "差评巡检·历史查询",
+      description:
+        "只读。按商品ID(6-15位数字)查历史评价台账:各商品评论数变化、新增差评内容、严重度。数据来自本地台账;无历史时返回 not_found。用户问『差评/评价变化/巡检结果』时调用。",
+      parameters: Type.Object({
+        items: Type.Array(Type.String(), { description: "商品ID数组" }),
+      }),
+      executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p: any = params;
+        const d: any = await withToolTimeout(
+          "read_only",
+          () => rmApi("/history", signal, { items: p.items }),
+          signal
+        );
+        const lines = (d.items || []).map((it: any) => {
+          if (it.status === "not_found") return `${it.item_id}: 尚无历史数据`;
+          const rows: any[] = it.rows || [];
+          const neg = rows.filter((r) => r.negative);
+          return `${it.item_id}: ${rows.length} 条记录,${neg.length} 条差评` +
+            (neg.slice(0, 3).map((r) => "\n  · " + (r.content || "").slice(0, 60)).join(""));
+        });
+        return {
+          content: [{ type: "text", text: "查询结果:\n" + lines.join("\n") }],
+          details: { publicSummary: "查询 " + ((d.items || []).length) + " 个商品台账" },
+        };
+      },
+    },
+    {
+      name: "review_demo",
+      label: "差评巡检·演示报告",
+      description: "只读。生成演示巡检报告,展示巡检报告的形态(商品/变化/新增差评/建议)。在线采集需人工授权,Agent 不触发。",
+      parameters: Type.Object({}),
+      executionMode: "sequential",
+      execute: async (_id, _params, signal) => {
+        const d: any = await withToolTimeout(
+          "read_only",
+          () => rmApi("/demo", signal, {}),
+          signal
+        );
+        return {
+          content: [{ type: "text", text: d.ok ? "演示报告已生成(见 skill reports/api-demo.md)" : "演示生成失败" }],
+          details: { publicSummary: "生成演示巡检报告" },
+        };
+      },
+    },
+  ];
+
+  // ── 只读(0 积分) ──
   const tools: AgentTool[] = [
-    // ── 只读(0 积分) ──
     {
       name: "search_templates",
       label: "搜索模板",
@@ -1234,7 +1303,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     },
   ];
 
-  return [...tools, ...yutangTools];
+  return [...tools, ...yutangTools, ...reviewTools];
 }
 
 /** 底座无关视图:供未来非 pi 底座桥接器复用(当前 PiBridge 直接消费 AgentTool)。 */
