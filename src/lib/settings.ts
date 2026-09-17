@@ -152,13 +152,6 @@ export type OpenAISettings = {
   source: "db" | "env" | "none";
 };
 
-const DEFAULT_IMAGE_MODELS = [
-  "gpt-image-2",
-  "gpt-image-1.5",
-  "gpt-image-1",
-  "gpt-image-1-mini",
-];
-
 function normalizeImageModels(value: unknown): string[] {
   let source: unknown[] = [];
   if (Array.isArray(value)) source = value;
@@ -190,7 +183,7 @@ function imageModelCatalog(primary: string, configured: unknown) {
     ? explicit
     : fallback.length
       ? fallback
-      : DEFAULT_IMAGE_MODELS;
+      : [];
   return Array.from(new Set([primary, ...candidates].filter(Boolean))).slice(0, 12);
 }
 
