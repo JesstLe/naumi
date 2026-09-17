@@ -104,3 +104,21 @@
 - 上传改用带进度事件的 XHR，状态面板显示优化阶段、实际上传百分比和“原大小 → 上传大小”；单图失败仍不取消同批其他文件。
 - `node scripts/upload-performance-smoke.mjs` 使用临时 PostgreSQL、独立媒体目录和真实 Chrome 验证：画布后续上传达到 4 路并发，4,123,797 字节 JPEG 的实际 multipart 请求降至 2,853,926 字节，390px 页面无横向溢出且无浏览器异常。
 - `node scripts/canvas-batch-upload-smoke.mjs` 原有 13 项回归继续通过；`npm run lint` 和 `npm run build` 退出 0，只有仓库既有 Hook 警告。
+
+## 2026-09-17：原像素画布与自定义生成尺寸
+
+### 已实现
+
+- 上传图片时由服务端使用 Sharp 读取真实宽高并写入作品记录；画布采用 `1 图片像素 = 1 画布坐标像素`，例如 `900×900` 图片节点的图片区域就是 `900×900`，不再压成固定 `170×110` 缩略图。
+- 节点端口、选中工具条、生成 Dock、任务占位、复制节点、多图生成落点、详情图组落点、拼接长图落点和自动树布局统一使用节点真实宽高。
+- 批量拖入会在浏览器解码后按每张图片的真实尺寸排布；连续排队批次共享已占用矩形，避免后一批大图覆盖前一批。
+- 历史作品缺少宽高时，浏览器从已加载原图读取 `naturalWidth/naturalHeight`，即时更新节点并通过 `/api/artworks/dimensions` 按登录账号回填数据库。
+- 比例面板保留现有预设，并新增 `64–4096 px` 自定义宽、高。应用后将精确宽高提交为 `targetWidth/targetHeight`，服务端在生成完成后用 Sharp 输出指定尺寸并将真实宽高落库。
+- 普通预设比例也会在服务端执行最终精确裁切，避免只依赖上游方图、横图、竖图三档导致画幅偏差；自定义尺寸则跳过后续分辨率档位放大，保证最终像素不被二次改变。
+
+### 本轮验证
+
+- `node scripts/canvas-native-size-smoke.mjs`：真实 Chrome、临时 PostgreSQL 和独立媒体目录验证 `900×900`、`600×1200` 上传按原像素显示且互不覆盖；历史尺寸首次加载自动回填；自定义 `900×1200` 生成精确落库与显示；尺寸回填无法跨账号修改。4 项通过且无浏览器异常。
+- `node scripts/canvas-batch-upload-smoke.mjs`：13 项批量拖入回归全部通过，包括空画布首图失败后的连续排队批次仍按真实尺寸互不重叠。
+- `node scripts/upload-performance-smoke.mjs`：4 路画布上传、3 路竞品上传、传输前压缩和 390px 响应式状态面板继续通过。
+- `npm run lint` 与 `npm run build` 退出 0；只保留仓库既有 React Hook 警告，生产构建已包含 `/api/artworks/dimensions`。

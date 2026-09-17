@@ -139,7 +139,9 @@ try {
     });
     assert.equal(matrix.zoom, .5);
     const point = { x: 40, y: 100 };
-    const expected = { x: Math.round((point.x - matrix.x) / matrix.zoom - 85), y: Math.round((point.y - matrix.y) / matrix.zoom - 66) };
+    // Uploaded images are centered at the drop point using their native 320x240 pixels
+    // plus the 28px node label, rather than the legacy 170x132 thumbnail box.
+    const expected = { x: Math.round((point.x - matrix.x) / matrix.zoom - 160), y: Math.round((point.y - matrix.y) / matrix.zoom - 134) };
     list = await works();
     while (list.some(a => Math.abs(a.canvasX - expected.x) < 194 && Math.abs(a.canvasY - expected.y) < 156)) expected.y += 180;
     await drop(files(["zoomed.png"]), point);

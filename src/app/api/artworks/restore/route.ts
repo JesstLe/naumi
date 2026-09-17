@@ -49,6 +49,8 @@ export async function POST(request: Request) {
         parentIds: r.parentIds ?? [],
         templateId: r.templateId ?? null,
         groupId: r.groupId ?? null, // 保留原项目分组
+        width: r.width ?? null,
+        height: r.height ?? null,
       }))
     );
     // 恢复画布坐标

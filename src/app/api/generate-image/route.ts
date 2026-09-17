@@ -53,6 +53,8 @@ export type GeneratedImage = {
   prompt: string;
   ratio: string;
   createdAt: string;
+  width?: number;
+  height?: number;
 };
 
 type GenImage = { buf: Buffer; type: string };
@@ -78,6 +80,8 @@ type GenParams = {
   templateImage: string;
   templatePrompt: string;
   origin: string; // "canvas"=在画布里产出(永远留画布);空=生图页/工具等普通产出
+  targetWidth: number;
+  targetHeight: number;
 };
 
 const MAX_IMAGES = 6;
@@ -402,6 +406,51 @@ async function normalizeForEdit(buf: Buffer): Promise<Buffer> {
   }
 }
 
+// 所有比例都落到精确画幅；自定义宽高则进一步输出精确像素尺寸。
+// 上游只支持方/横/竖三档，最终画幅由本地 Sharp 统一保证。
+async function enforceOutputShape(
+  images: GeneratedImage[],
+  p: GenParams
+): Promise<GeneratedImage[]> {
+  return Promise.all(images.map(async (image) => {
+    const decoded = dataUrlToBytes(image.url);
+    if (!decoded) return image;
+    try {
+      let output: Buffer;
+      if (p.targetWidth > 0 && p.targetHeight > 0) {
+        const mod = (await import("sharp")) as unknown as { default?: typeof import("sharp") } & typeof import("sharp");
+        const sharp = mod.default ?? mod;
+        output = await sharp(Buffer.from(decoded.bytes))
+          .rotate()
+          .resize(p.targetWidth, p.targetHeight, { fit: "cover", position: "centre", kernel: "lanczos3" })
+          .png()
+          .toBuffer();
+      } else if (p.ratio && p.ratio !== "auto") {
+        output = await cropToRatio(Buffer.from(decoded.bytes), p.ratio);
+      } else return image;
+      return { ...image, url: `data:image/png;base64,${output.toString("base64")}` };
+    } catch {
+      return image;
+    }
+  }));
+}
+
+async function attachImageDimensions(images: GeneratedImage[]): Promise<GeneratedImage[]> {
+  let sharp: typeof import("sharp");
+  try {
+    const mod = (await import("sharp")) as unknown as { default?: typeof import("sharp") } & typeof import("sharp");
+    sharp = mod.default ?? mod;
+  } catch { return images; }
+  return Promise.all(images.map(async (image) => {
+    const decoded = dataUrlToBytes(image.url);
+    if (!decoded) return image;
+    try {
+      const meta = await sharp(Buffer.from(decoded.bytes)).metadata();
+      return { ...image, width: meta.width, height: meta.height };
+    } catch { return image; }
+  }));
+}
+
 // Upscale generated images to the chosen resolution tier's long side.
 // gpt-image only outputs ~1024-1536px natively, so 2K/4K are produced by
 // resizing server-side with sharp (high-quality Lanczos). If sharp is missing
@@ -502,6 +551,12 @@ function parseCount(value: unknown, fallback = 4): number {
   return Math.min(Math.max(Math.round(parsed), 1), 8);
 }
 
+function parseDimension(value: unknown): number {
+  if (value == null || value === "") return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : -1;
+}
+
 async function parseParams(request: Request): Promise<GenParams | null> {
   const ct = request.headers.get("content-type") ?? "";
   if (ct.includes("multipart/form-data")) {
@@ -536,6 +591,8 @@ async function parseParams(request: Request): Promise<GenParams | null> {
       templateImage: s("templateImage").trim(),
       templatePrompt: s("templatePrompt").trim(),
       origin: s("origin").trim(),
+      targetWidth: parseDimension(s("targetWidth")),
+      targetHeight: parseDimension(s("targetHeight")),
     };
   }
   const j = (await request.json()) as Partial<GenParams>;
@@ -558,6 +615,8 @@ async function parseParams(request: Request): Promise<GenParams | null> {
     templateImage: (j.templateImage ?? "").trim(),
     templatePrompt: (j.templatePrompt ?? "").trim(),
     origin: (j.origin ?? "").trim(),
+    targetWidth: parseDimension((j as Partial<GenParams>).targetWidth),
+    targetHeight: parseDimension((j as Partial<GenParams>).targetHeight),
   };
 }
 
@@ -630,7 +689,11 @@ async function runJob(
       : mockImages(p);
     const _tOpenai = Date.now() - _t0;
     const _t1 = Date.now();
-    images = await upscaleImages(images, p.resolution);
+    images = await enforceOutputShape(images, p);
+    if (!(p.targetWidth > 0 && p.targetHeight > 0)) {
+      images = await upscaleImages(images, p.resolution);
+    }
+    images = await attachImageDimensions(images);
     const _tUpscale = Date.now() - _t1;
     const _u0 = images[0]?.url || "";
     const _approxBytes = _u0.startsWith("data:")
@@ -698,6 +761,8 @@ async function runJob(
             parentId: parent,
             parentIds: p.parentIds.filter((x) => x && x !== parent),
             origin: p.origin || null,
+            width: im.width ?? null,
+            height: im.height ?? null,
           })),
           batchId
         );
@@ -764,6 +829,19 @@ export async function POST(request: Request) {
   // 改比例(ratiogen)用固定重构图指令,可以没有用户提示词;其余路径仍要求 prompt。
   if (!p.prompt && !p.ratiogen) {
     return NextResponse.json({ error: "prompt 不能为空" }, { status: 400 });
+  }
+  const hasCustomWidth = p.targetWidth !== 0;
+  const hasCustomHeight = p.targetHeight !== 0;
+  if (
+    hasCustomWidth !== hasCustomHeight ||
+    p.targetWidth < 0 || p.targetHeight < 0 ||
+    p.targetWidth > 4096 || p.targetHeight > 4096 ||
+    (hasCustomWidth && (p.targetWidth < 64 || p.targetHeight < 64))
+  ) {
+    return NextResponse.json(
+      { error: "自定义尺寸需同时填写 64–4096 的宽和高" },
+      { status: 400 }
+    );
   }
   if (p.images.some((im) => im.buf.length > 12 * 1024 * 1024)) {
     return NextResponse.json(

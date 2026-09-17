@@ -3,6 +3,7 @@ import { copyText } from "@/lib/clipboard";
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -104,6 +105,7 @@ async function privateFetch(input: RequestInfo | URL, init: RequestInit = {}) {
 // 尺寸对齐定稿原型 fullsite-preview.html#canvas:NWID=170、PY=78、图片高 110
 const NODE_W = 170; // 节点宽(原型 .cnode width:170)
 const NODE_H = 132; // 节点总高:标签行(~22)+ 图片卡(110)(用于 dock/工具条定位)
+const NODE_LABEL_H = 28;
 const PORT_Y = 78; // 端口/连线锚点相对节点顶部(原型 .port top:78)
 const X_GAP = 90; // 层间横向间距
 const Y_GAP = 48; // 同层兄弟纵向间距
@@ -132,7 +134,7 @@ type CanvasGenerationTask = {
   position: { x: number; y: number };
 };
 
-type GeneratedResult = { id: string; url: string };
+type GeneratedResult = { id: string; url: string; width?: number; height?: number };
 
 function fmt(s: string, vars: Record<string, string | number>): string {
   return Object.entries(vars).reduce(
@@ -202,6 +204,35 @@ const CANVAS_RATIOS: { id: string; w: number; h: number }[] = [
   { id: "21:9", w: 21, h: 9 },
 ];
 const CANVAS_RES = ["1K", "2K", "4K"];
+const STANDARD_RATIO_IDS = new Set(CANVAS_RATIOS.map((ratio) => ratio.id));
+
+function artworkImageSize(art: Pick<Artwork, "width" | "height">) {
+  return {
+    width: art.width && art.width > 0 ? Math.round(art.width) : NODE_W,
+    height: art.height && art.height > 0 ? Math.round(art.height) : 110,
+  };
+}
+
+function artworkNodeSize(art: Pick<Artwork, "width" | "height">) {
+  const image = artworkImageSize(art);
+  return { width: image.width, height: image.height + NODE_LABEL_H, imageHeight: image.height };
+}
+
+function customDimensionsForRatio(ratio: string) {
+  if (STANDARD_RATIO_IDS.has(ratio)) return null;
+  const [width, height] = ratio.split(":").map(Number);
+  return width >= 64 && height >= 64 && width <= 4096 && height <= 4096
+    ? { width: Math.round(width), height: Math.round(height) }
+    : null;
+}
+
+function flowNodeSize(node: Node | undefined) {
+  if (!node) return { width: NODE_W, height: NODE_H };
+  const data = node.data as { width?: number; height?: number } | undefined;
+  const width = data?.width && data.width > 0 ? data.width : node.measured?.width || NODE_W;
+  const imageHeight = data?.height && data.height > 0 ? data.height : Math.max(110, (node.measured?.height || NODE_H) - NODE_LABEL_H);
+  return { width, height: imageHeight + NODE_LABEL_H };
+}
 // 重生成(拉线新建节点 / 侧栏「生成新版本」)在用户没写提示词、且原图也没有提示词
 // 可继承时的兜底词。明确要求别替换背景、别改配色/色调 —— 否则 gpt-image 在宽松指令下
 // 会顺手重画背景(实测:背景被改成黄色)。仍是重生成(非像素锁定),只是约束更强。
@@ -554,6 +585,7 @@ function CometEdge({
 
 function ArtNode({ data, selected }: NodeProps) {
   const d = data as {
+    id: string;
     image?: string;
     label: string;
     rootLabel?: string | null;
@@ -564,12 +596,18 @@ function ArtNode({ data, selected }: NodeProps) {
     inChain?: boolean;
     marked?: boolean;
     ratio?: string | null;
+    width?: number | null;
+    height?: number | null;
+    onDimensions?: (id: string, width: number, height: number) => void;
   };
+  const imageWidth = d.width && d.width > 0 ? Math.round(d.width) : undefined;
+  const imageHeight = d.height && d.height > 0 ? Math.round(d.height) : undefined;
+  const portY = NODE_LABEL_H + (imageHeight ?? 110) / 2;
   const title = d.pending
     ? d.label
     : `${d.version ? `v${d.version}` : ""}${d.date ? ` · ${formatDate(d.date)}` : ""}${d.prompt ? `\n${d.prompt}` : ""}`;
   return (
-    <div className="group relative w-[170px]">
+    <div className="group relative" style={{ width: imageWidth ?? NODE_W }} data-image-width={imageWidth} data-image-height={imageHeight}>
       {/* 标签(图片上方,对齐原型 .lb2) */}
       <div className="mb-1.5 flex items-center gap-1.5 truncate pl-0.5 text-[12px] text-[#9aa1ae]">
         <span>{d.pending ? "⏳" : "🖼"}</span>
@@ -608,10 +646,17 @@ function ArtNode({ data, selected }: NodeProps) {
               src={cdnUrl(d.image as string)}
               alt={d.label}
               draggable={false}
-              className={cn(
-                "block h-[110px] w-full",
-                d.ratio === "long" ? "bg-white object-contain" : "object-cover"
-              )}
+              width={imageWidth}
+              height={imageHeight}
+              onLoad={(event) => {
+                const image = event.currentTarget;
+                if (image.naturalWidth > 0 && image.naturalHeight > 0 &&
+                    (image.naturalWidth !== imageWidth || image.naturalHeight !== imageHeight)) {
+                  d.onDimensions?.(d.id, image.naturalWidth, image.naturalHeight);
+                }
+              }}
+              className="block max-w-none bg-white object-contain"
+              style={{ width: imageWidth ?? "auto", height: imageHeight ?? "auto" }}
             />
             {d.rootLabel && (
               <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
@@ -627,7 +672,7 @@ function ArtNode({ data, selected }: NodeProps) {
         id="in"
         type="target"
         position={Position.Left}
-        style={{ top: PORT_Y }}
+        style={{ top: portY }}
         className="!flex !h-[22px] !w-[22px] !-left-[11px] !-translate-y-1/2 !items-center !justify-center !rounded-full !border-[1.5px] !border-[#444b57] !bg-[#191b21] !text-[15px] !leading-none !text-[#9aa1ae] transition-colors hover:!border-[#6366f1] hover:!bg-[#1e1b3a] hover:!text-[#6366f1]"
       >
         <span className="pointer-events-none leading-none">+</span>
@@ -637,7 +682,7 @@ function ArtNode({ data, selected }: NodeProps) {
           id="out"
           type="source"
           position={Position.Right}
-          style={{ top: PORT_Y }}
+          style={{ top: portY }}
           className="!flex !h-[22px] !w-[22px] !-right-[11px] !-translate-y-1/2 !items-center !justify-center !rounded-full !border-[1.5px] !border-[#444b57] !bg-[#191b21] !text-[15px] !leading-none !text-[#9aa1ae] transition-colors hover:!border-[#6366f1] hover:!bg-[#1e1b3a] hover:!text-[#6366f1]"
         >
           <span className="pointer-events-none leading-none">+</span>
@@ -699,7 +744,8 @@ function lineageChain(
 // 把一组作品(可能是森林:多个根)排成整齐的血缘树布局
 function layoutGraph(
   arts: Artwork[],
-  rootLabel: string
+  rootLabel: string,
+  onDimensions: (id: string, width: number, height: number) => void
 ): { nodes: Node[]; edges: Edge[] } {
   const byId = new Map(arts.map((a) => [a.id, a]));
   const sorted = [...arts].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
@@ -719,20 +765,41 @@ function layoutGraph(
       roots.push(a.id);
     }
   }
-  // 横向布局:深度 depth → x(向右展开),同层兄弟 → y(竖排)。对齐原型左→右链路。
+  // 按图片真实像素尺寸布局，确保 900×900 图片在画布坐标中就是 900×900，
+  // 同时为每一层预留该层最宽节点，避免大图与下游节点重叠。
   const pos: Record<string, { x: number; y: number }> = {};
-  let leaf = 0;
+  const depthById = new Map<string, number>();
+  const assignDepth = (id: string, depth: number) => {
+    if ((depthById.get(id) ?? -1) >= depth) return;
+    depthById.set(id, depth);
+    for (const child of children.get(id) ?? []) assignDepth(child, depth + 1);
+  };
+  roots.forEach((root) => assignDepth(root, 0));
+  const widthByDepth = new Map<number, number>();
+  for (const art of sorted) {
+    const depth = depthById.get(art.id) ?? 0;
+    widthByDepth.set(depth, Math.max(widthByDepth.get(depth) ?? 0, artworkNodeSize(art).width));
+  }
+  const xByDepth = new Map<number, number>();
+  let xCursor = 0;
+  const maxDepth = Math.max(0, ...Array.from(depthById.values()));
+  for (let depth = 0; depth <= maxDepth; depth++) {
+    xByDepth.set(depth, xCursor);
+    xCursor += (widthByDepth.get(depth) ?? NODE_W) + X_GAP;
+  }
+  let leafY = 0;
   const place = (id: string, depth: number) => {
     const kids = children.get(id) ?? [];
+    const size = artworkNodeSize(byId.get(id) as Artwork);
     if (kids.length === 0) {
-      pos[id] = { x: depth * (NODE_W + X_GAP), y: leaf * (NODE_H + Y_GAP) };
-      leaf++;
+      pos[id] = { x: xByDepth.get(depth) ?? 0, y: leafY };
+      leafY += size.height + Y_GAP;
     } else {
       kids.forEach((k) => place(k, depth + 1));
-      const ys = kids.map((k) => pos[k].y);
+      const centers = kids.map((k) => pos[k].y + artworkNodeSize(byId.get(k) as Artwork).height / 2);
       pos[id] = {
-        x: depth * (NODE_W + X_GAP),
-        y: (Math.min(...ys) + Math.max(...ys)) / 2,
+        x: xByDepth.get(depth) ?? 0,
+        y: (Math.min(...centers) + Math.max(...centers)) / 2 - size.height / 2,
       };
     }
   };
@@ -749,6 +816,7 @@ function layoutGraph(
       type: "art",
       position,
       data: {
+        id: a.id,
         image: a.image,
         label: a.title,
         rootLabel: isRoot ? rootLabel : null,
@@ -757,7 +825,11 @@ function layoutGraph(
         date: a.createdAt,
         marked: !!a.marked,
         ratio: a.ratio,
+        width: a.width,
+        height: a.height,
+        onDimensions,
       },
+      style: { width: artworkNodeSize(a).width },
     };
   });
   const edges: Edge[] = [];
@@ -797,6 +869,7 @@ export function CanvasClient() {
   const router = useRouter();
   const { commerceVisible } = usePaymentConfig();
   const [works, setWorks] = useState<Artwork[] | null>(null);
+  const dimensionSyncRef = useRef(new Set<string>());
   const [names, setNames] = useState<Record<string, string>>({});
   // 管理员看指定用户:?email=<用户> → 只读查看该用户画布;?node=<作品id> → 预选中那张
   const [targetEmail, setTargetEmail] = useState<string | null>(null);
@@ -825,6 +898,8 @@ export function CanvasClient() {
   const cancelEditRef = useRef(false); // Esc 取消时跳过失焦保存
   const [editPrompt, setEditPrompt] = useState("");
   const [genRatio, setGenRatio] = useState("auto"); // 默认自适应
+  const [customWidth, setCustomWidth] = useState(900);
+  const [customHeight, setCustomHeight] = useState(900);
   const [genResolution, setGenResolution] = useState("1K"); // 默认 1K
   const [ratioMenuOpen, setRatioMenuOpen] = useState(false); // 比例/分辨率弹出面板
   const ratioBtnRef = useRef<HTMLButtonElement>(null);
@@ -889,7 +964,8 @@ export function CanvasClient() {
     rootId: string | null;
     queue: Promise<void>;
     positions: { x: number; y: number }[];
-  }>({ rootId: null, queue: Promise.resolve(), positions: [] });
+    rects: { x: number; y: number; width: number; height: number; owner: number; index: number }[];
+  }>({ rootId: null, queue: Promise.resolve(), positions: [], rects: [] });
   const importSeqRef = useRef(0);
   const dragDepthRef = useRef(0);
   const [fileDragOver, setFileDragOver] = useState(false);
@@ -901,7 +977,7 @@ export function CanvasClient() {
   }[]>([]);
 
   function resetImportScope() {
-    importScopeRef.current = { rootId: null, queue: Promise.resolve(), positions: [] };
+    importScopeRef.current = { rootId: null, queue: Promise.resolve(), positions: [], rects: [] };
     uploadCtxRef.current = null;
     dragDepthRef.current = 0;
     setFileDragOver(false);
@@ -1047,6 +1123,8 @@ export function CanvasClient() {
             ratio: tpl.ratio,
             resolution: tpl.resolution,
             templateId: tpl.id,
+            width: tpl.width,
+            height: tpl.height,
           },
         }),
       });
@@ -1426,10 +1504,28 @@ export function CanvasClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const onNodeDimensions = useCallback((id: string, width: number, height: number) => {
+    const w = Math.round(width);
+    const h = Math.round(height);
+    if (!id || w < 1 || h < 1 || w > 8192 || h > 8192) return;
+    setWorks((current) => current?.map((art) =>
+      art.id === id && (art.width !== w || art.height !== h)
+        ? { ...art, width: w, height: h }
+        : art
+    ) ?? current);
+    if (!user || readOnly || dimensionSyncRef.current.has(id)) return;
+    dimensionSyncRef.current.add(id);
+    void privateFetch("/api/artworks/dimensions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, width: w, height: h }),
+    }).catch(() => dimensionSyncRef.current.delete(id));
+  }, [user, readOnly]);
+
   const { nodes, edges } = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
     if (!active) return { nodes: [], edges: [] };
-    return layoutGraph(active.members, t("canvas.rootBadge"));
-  }, [active, t]);
+    return layoutGraph(active.members, t("canvas.rootBadge"), onNodeDimensions);
+  }, [active, t, onNodeDimensions]);
 
   const nodeTypes = useMemo(() => ({ art: ArtNode, pend: PendNode }), []);
   const edgeTypes = useMemo(() => ({ comet: CometEdge }), []);
@@ -1514,7 +1610,7 @@ export function CanvasClient() {
           id: task.id,
           type: "art",
           position: pos,
-          data: { pending: true, label: task.label },
+          data: { id: task.id, pending: true, label: task.label },
           selectable: false,
           draggable: true,
         },
@@ -1640,6 +1736,8 @@ export function CanvasClient() {
           (n.data as { selected?: boolean }).selected ? 1 : 0
         }:${(n.data as { generating?: boolean }).generating ? 1 : 0}:${
           (n.data as { marked?: boolean }).marked ? 1 : 0
+        }:${Math.round((n.data as { width?: number }).width ?? 0)}:${
+          Math.round((n.data as { height?: number }).height ?? 0)
         }`
     )
     .join("|");
@@ -1675,7 +1773,7 @@ export function CanvasClient() {
     if (exitBoxMode) setBoxSelectMode(false);
   }
 
-  // 选中节点在画布坐标系里的屏幕位置(用模块级 NODE_W/NODE_H = 184/158)
+  // 选中节点在画布坐标系里的屏幕位置；真实图片按原像素尺寸参与停靠计算。
   const nodeScreen = useMemo<
     { left: number; top: number; bottom: number; cx: number } | undefined
   >(() => {
@@ -1687,7 +1785,8 @@ export function CanvasClient() {
     const z = viewport.zoom || 1;
     const left = selNode.position.x * z + viewport.x;
     const top = selNode.position.y * z + viewport.y;
-    return { left, top, bottom: top + NODE_H * z, cx: left + (NODE_W * z) / 2 };
+    const size = flowNodeSize(selNode);
+    return { left, top, bottom: top + size.height * z, cx: left + (size.width * z) / 2 };
   }, [selectedId, selectedPendId, rfNodes, viewport]);
 
   // 顶部工具条与底部 dock 共用同一个"中心 x"(按 dock 宽度夹取),保证两者左右对齐。
@@ -1819,7 +1918,13 @@ export function CanvasClient() {
     carryPromptRef.current = null;
     // 预填该节点自己的提示词(可编辑),便于"看着配方改一改再生成";有 carry 的优先用 carry
     setEditPrompt(carried ?? selected?.prompt ?? "");
-    setGenRatio(selected?.ratio || "auto"); // 默认自适应
+    const nextRatio = selected?.ratio || "auto";
+    setGenRatio(nextRatio); // 默认自适应
+    const custom = customDimensionsForRatio(nextRatio);
+    if (custom) {
+      setCustomWidth(selected?.width || custom.width);
+      setCustomHeight(selected?.height || custom.height);
+    }
     setGenStyle(selected?.style || GENERATION_STYLES[0]);
     setGenerationMode("standard");
     setRatioMenuOpen(false);
@@ -1985,9 +2090,10 @@ export function CanvasClient() {
     const siblingTaskCount = generationTasks.filter(
       (task) => task.sourceId === source.id
     ).length;
+    const sourceSize = flowNodeSize(sourceNode);
     const taskPosition = sourceNode
       ? {
-          x: sourceNode.position.x + NODE_W + X_GAP,
+          x: sourceNode.position.x + sourceSize.width + X_GAP,
           y:
             sourceNode.position.y +
             (opts?.taskOffset ?? siblingTaskCount) * (NODE_H + 24),
@@ -2033,7 +2139,13 @@ export function CanvasClient() {
       fd.append("prompt", text);
       if (opts?.userPrompt?.trim()) fd.append("userPrompt", opts.userPrompt.trim());
       fd.append("category", source.category || "main");
-      fd.append("ratio", opts?.ratio || source.ratio || "1:1");
+      const requestedRatio = opts?.ratio || source.ratio || "1:1";
+      fd.append("ratio", requestedRatio);
+      const customSize = customDimensionsForRatio(requestedRatio);
+      if (customSize) {
+        fd.append("targetWidth", String(customSize.width));
+        fd.append("targetHeight", String(customSize.height));
+      }
       fd.append("resolution", opts?.resolution || source.resolution || "1K");
       fd.append("style", opts?.style ?? "");
       fd.append("count", String(opts?.count ?? 1));
@@ -2068,12 +2180,12 @@ export function CanvasClient() {
         );
         const pj = await readJsonSafe(pr);
         if (pj.status === "done") {
-          generated = ((pj.images ?? []) as { id?: string; url?: string }[])
+          generated = ((pj.images ?? []) as { id?: string; url?: string; width?: number; height?: number }[])
             .filter(
-              (image): image is { id: string; url: string } =>
+              (image): image is { id: string; url: string; width?: number; height?: number } =>
                 !!image.id && !!image.url
             )
-            .map((image) => ({ id: image.id, url: image.url }));
+            .map((image) => ({ id: image.id, url: image.url, width: image.width, height: image.height }));
           newIds = generated.map((image) => image.id);
           if (pj.user) applyServerUser(pj.user); // 即时回写余额积分
           break;
@@ -2090,19 +2202,22 @@ export function CanvasClient() {
       // 这样生成完成后不会跳到自动布局的位置 —— 与图1的占位位置一致。
       const basePos = generationTaskPosRef.current[taskId] ?? taskPosition;
       if (basePos && newIds.length) {
+        let resultY = basePos.y;
         await Promise.all(
-          newIds.map((id, i) =>
-            privateFetch("/api/artworks/position", {
+          newIds.map((id, i) => {
+            const y = resultY;
+            resultY += (generated[i]?.height || 110) + NODE_LABEL_H + 24;
+            return privateFetch("/api/artworks/position", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 email: user.email,
                 id,
                 x: Math.round(basePos.x),
-                y: Math.round(basePos.y + i * (NODE_H + 24)),
+                y: Math.round(y),
               }),
-            }).catch(() => {})
-          )
+            }).catch(() => {});
+          })
         );
       }
       await mergeWorks(newIds); // 补这次新生成的几张(已带上面保存的坐标),不整表重拉
@@ -2139,8 +2254,9 @@ export function CanvasClient() {
     generationOperationRef.current.add(operationKey);
     const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const sourceNode = rfNodes.find((node) => node.id === source.id);
+    const sourceSize = flowNodeSize(sourceNode);
     const taskPosition = sourceNode
-      ? { x: sourceNode.position.x + NODE_W + X_GAP, y: sourceNode.position.y }
+      ? { x: sourceNode.position.x + sourceSize.width + X_GAP, y: sourceNode.position.y }
       : { x: 0, y: 0 };
     generationTaskPosRef.current[taskId] = taskPosition;
     setGenerationTasks((current) => [
@@ -2326,10 +2442,11 @@ export function CanvasClient() {
     generationOperationRef.current.add(operationKey);
     const count = Math.max(1, Math.min(MAX_GENERATION_COUNT, genCount || 1));
     const sourceNode = rfRef.current?.getNode(source.id);
+    const sourceSize = flowNodeSize(sourceNode);
     const basePosition = pend
       ? { x: pend.x, y: pend.y }
       : sourceNode
-        ? { x: sourceNode.position.x + NODE_W + X_GAP, y: sourceNode.position.y }
+        ? { x: sourceNode.position.x + sourceSize.width + X_GAP, y: sourceNode.position.y }
         : { x: 0, y: 0 };
     const taskId = `task-detail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     generationTaskPosRef.current[taskId] = basePosition;
@@ -2432,25 +2549,29 @@ export function CanvasClient() {
         .filter((shot) => shot.status === "done" && shot.id && shot.url)
         .map((shot) => shot.id);
       if (!ids.length) throw new Error(t("canvas.genFail"));
+      const fresh = await mergeWorks(ids);
+      const freshById = new Map(fresh.map((art) => [art.id, art]));
+      let detailY = basePosition.y;
       await Promise.all(
-        ids.map((id, index) =>
-          privateFetch("/api/artworks/position", {
+        ids.map((id) => {
+          const y = detailY;
+          detailY += artworkNodeSize(freshById.get(id) ?? { width: NODE_W, height: 110 }).height + 24;
+          return privateFetch("/api/artworks/position", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               email: user.email,
               id,
               x: Math.round(basePosition.x),
-              y: Math.round(basePosition.y + index * (NODE_H + 24)),
+              y: Math.round(y),
             }),
-          }).catch(() => {})
-        )
+          }).catch(() => {});
+        })
       );
       if (pend) {
         setPendNodes((current) => current.filter((node) => node.id !== pend.id));
         setSelectedPendId((current) => (current === pend.id ? null : current));
       }
-      const fresh = await mergeWorks(ids);
       pushAddUndoMany(ids, fresh);
       setSelectedId(ids[0]);
     } catch (error) {
@@ -2859,7 +2980,7 @@ export function CanvasClient() {
       selectedBatchIds.includes(node.id)
     );
     const x = selectedNodes.length
-      ? Math.max(...selectedNodes.map((node) => node.position.x)) + NODE_W + X_GAP
+      ? Math.max(...selectedNodes.map((node) => node.position.x + flowNodeSize(node).width)) + X_GAP
       : 0;
     const y = selectedNodes.length
       ? Math.min(...selectedNodes.map((node) => node.position.y))
@@ -3062,7 +3183,7 @@ export function CanvasClient() {
       canvasX: null,
       canvasY: null,
     }));
-    const { nodes: laid } = layoutGraph(stripped, "");
+    const { nodes: laid } = layoutGraph(stripped, "", onNodeDimensions);
     const coord = new Map(
       laid.map((n) => [
         n.id,
@@ -3138,7 +3259,7 @@ export function CanvasClient() {
           email: user.email,
           parentId: activeRootId(), // 归当前项目(但 source=canvas-add 不画线)
           x: Math.round(sx + 40),
-          y: Math.round(sy + NODE_H + 30),
+          y: Math.round(sy + artworkNodeSize(a).height + 30),
           src: {
             image: a.image,
             title: `${a.title} 副本`,
@@ -3147,6 +3268,8 @@ export function CanvasClient() {
             style: a.style,
             ratio: a.ratio,
             resolution: a.resolution,
+            width: a.width,
+            height: a.height,
           },
         }),
       });
@@ -3208,6 +3331,54 @@ export function CanvasClient() {
     }]);
     const run = async () => {
       const prepared = await prepareImageUploads(entries.map(entry => entry.file), 3);
+      // 解码完成后按图片真实像素重新排布本批次；不再把 900×900 图片塞进 170×110 缩略框。
+      const rowCount = Math.max(1, columns);
+      let batchWidth = 0;
+      let batchHeight = 0;
+      const relative: { x: number; y: number }[] = [];
+      for (let start = 0; start < prepared.length; start += rowCount) {
+        const row = prepared.slice(start, start + rowCount);
+        let rowX = 0;
+        const rowHeight = Math.max(...row.map((item) => (item.height || 110) + NODE_LABEL_H), NODE_H);
+        row.forEach((item, offset) => {
+          relative[start + offset] = { x: rowX, y: batchHeight };
+          rowX += (item.width || NODE_W) + X_GAP;
+        });
+        batchWidth = Math.max(batchWidth, Math.max(0, rowX - X_GAP));
+        batchHeight += rowHeight + Y_GAP;
+      }
+      batchHeight = Math.max(0, batchHeight - Y_GAP);
+      const baseX = ctx.x + NODE_W / 2 - (prepared[0]?.width || NODE_W) / 2;
+      let baseY = ctx.y + NODE_H / 2 - ((prepared[0]?.height || 110) + NODE_LABEL_H) / 2;
+      const existingRects = [
+        ...rfNodes.map((node) => {
+          const size = flowNodeSize(node);
+          return { x: node.position.x, y: node.position.y, width: size.width, height: size.height };
+        }),
+        ...scope.rects,
+      ];
+      while (existingRects.some((rect) =>
+        baseX < rect.x + rect.width + 24 && baseX + batchWidth + 24 > rect.x &&
+        baseY < rect.y + rect.height + 24 && baseY + batchHeight + 24 > rect.y
+      )) {
+        baseY = Math.max(...existingRects.map((rect) => rect.y + rect.height + Y_GAP));
+      }
+      entries.forEach((entry, index) => {
+        entry.pos.x = Math.round(baseX + relative[index].x);
+        entry.pos.y = Math.round(baseY + relative[index].y);
+      });
+      const batchRects = entries.map((entry, index) => ({
+        x: entry.pos.x,
+        y: entry.pos.y,
+        width: prepared[index]?.width || NODE_W,
+        height: (prepared[index]?.height || 110) + NODE_LABEL_H,
+        owner: id,
+        index,
+      }));
+      // Queued drops close over an earlier React render, so rfNodes alone cannot see the
+      // preceding batch. Keep native-size rectangles in the shared import scope as soon
+      // as the batch is laid out, then retain only successfully imported rectangles.
+      scope.rects.push(...batchRects);
       const uploadBytes = prepared.reduce((sum, item) => sum + item.uploadBytes, 0);
       const loaded = new Array(prepared.length).fill(0) as number[];
       setImageImports(current => current.map(batch => batch.id === id ? {
@@ -3255,6 +3426,7 @@ export function CanvasClient() {
         while (next < entries.length) await upload(next++);
       }));
       const added = ids.filter((value): value is string => !!value);
+      scope.rects = scope.rects.filter((rect) => rect.owner !== id || !!ids[rect.index]);
       if (added.length) {
         // Background uploads must not drag the user back after they switch projects.
         if (importScopeRef.current === scope) pendingNodeRef.current = added[0];
@@ -3329,6 +3501,8 @@ export function CanvasClient() {
             style: a.style,
             ratio: a.ratio,
             resolution: a.resolution,
+            width: a.width,
+            height: a.height,
           },
         }),
       });
@@ -3381,7 +3555,7 @@ export function CanvasClient() {
     const seq = pendSeqRef.current++;
     const id = `pend-${Date.now()}-${seq}`;
     const maxX = selectedNodes.length
-      ? Math.max(...selectedNodes.map((node) => node.position.x))
+      ? Math.max(...selectedNodes.map((node) => node.position.x + flowNodeSize(node).width))
       : 0;
     const avgY = selectedNodes.length
       ? selectedNodes.reduce((sum, node) => sum + node.position.y, 0) /
@@ -3389,7 +3563,7 @@ export function CanvasClient() {
       : 0;
     const pend: Pend = {
       id,
-      x: maxX + NODE_W + X_GAP,
+      x: maxX + X_GAP,
       y: avgY,
       parentId: inputs[0] ?? null,
       linked: true,
@@ -3498,7 +3672,13 @@ export function CanvasClient() {
       const fd = new FormData();
       fd.append("prompt", promptToUse);
       fd.append("category", "main");
-      fd.append("ratio", opts?.ratio || genRatio || "auto");
+      const requestedRatio = opts?.ratio || genRatio || "auto";
+      fd.append("ratio", requestedRatio);
+      const customSize = customDimensionsForRatio(requestedRatio);
+      if (customSize) {
+        fd.append("targetWidth", String(customSize.width));
+        fd.append("targetHeight", String(customSize.height));
+      }
       fd.append("resolution", genResolution);
       fd.append("style", genStyle ?? "");
       fd.append("count", String(genCount || 1));
@@ -3536,6 +3716,7 @@ export function CanvasClient() {
       if (!jobId) throw new Error(t("canvas.genFail"));
       const deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
+      let generatedSizes: { id: string; width?: number; height?: number }[] = [];
       for (;;) {
         await new Promise((r) => setTimeout(r, 2500));
         if (Date.now() > deadline) throw new Error(t("canvas.genFail"));
@@ -3545,9 +3726,10 @@ export function CanvasClient() {
         );
         const pj = await readJsonSafe(pr);
         if (pj.status === "done") {
-          newIds = ((pj.images ?? []) as { id?: string }[])
-            .map((image) => image.id)
-            .filter((id): id is string => !!id);
+          generatedSizes = ((pj.images ?? []) as { id?: string; width?: number; height?: number }[])
+            .filter((image): image is { id: string; width?: number; height?: number } => !!image.id)
+            .map((image) => ({ id: image.id, width: image.width, height: image.height }));
+          newIds = generatedSizes.map((image) => image.id);
           if (pj.user) applyServerUser(pj.user); // 即时回写余额积分
           break;
         }
@@ -3556,19 +3738,22 @@ export function CanvasClient() {
       }
       // 把生成结果落到空白节点的位置
       if (newIds.length) {
+        let generatedY = pend.y;
         await Promise.all(
-          newIds.map((id, index) =>
-            privateFetch("/api/artworks/position", {
+          newIds.map((id, index) => {
+            const y = generatedY;
+            generatedY += (generatedSizes[index]?.height || 110) + NODE_LABEL_H + 24;
+            return privateFetch("/api/artworks/position", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 email: user.email,
                 id,
                 x: Math.round(pend.x),
-                y: Math.round(pend.y + index * (NODE_H + 24)),
+                y: Math.round(y),
               }),
-            }).catch(() => {})
-          )
+            }).catch(() => {});
+          })
         );
         pendingNodeRef.current = newIds[0];
       }
@@ -3815,6 +4000,7 @@ export function CanvasClient() {
     if (r) setRatioMenuRect({ left: r.left, top: r.top });
     setRatioMenuOpen((v) => !v);
   };
+  const activeCustomSize = customDimensionsForRatio(genRatio);
   const ratioControl = (
     <button
       ref={ratioBtnRef}
@@ -3824,7 +4010,7 @@ export function CanvasClient() {
     >
       📐
       <span>
-        {genRatio === "auto" ? t("canvas.ratioAuto") : genRatio} ·{" "}
+        {genRatio === "auto" ? t("canvas.ratioAuto") : activeCustomSize ? `${activeCustomSize.width}×${activeCustomSize.height}` : genRatio} ·{" "}
         {genResolution}
       </span>
       <ChevronDown
@@ -3858,7 +4044,7 @@ export function CanvasClient() {
                   ratioMenuRect.top +
                   8,
               }}
-              className="menu-pop-up fixed w-[336px] rounded-2xl border border-[#2a2d36] bg-[#191b21] p-4 text-[#e7e9ee] shadow-2xl"
+              className="menu-pop-up fixed max-h-[min(76vh,620px)] w-[336px] overflow-y-auto rounded-2xl border border-[#2a2d36] bg-[#191b21] p-4 text-[#e7e9ee] shadow-2xl"
             >
               <p className="mb-2 text-[12px] font-semibold text-[#9aa1ae]">
                 {t("canvas.resolution")}
@@ -3902,6 +4088,48 @@ export function CanvasClient() {
                     </span>
                   </button>
                 ))}
+              </div>
+              <div className="mt-4 border-t border-[#2a2d36] pt-3">
+                <p className="mb-2 text-[12px] font-semibold text-[#9aa1ae]">{t("canvas.customSize")}</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    aria-label={t("canvas.customWidth")}
+                    type="number"
+                    min={64}
+                    max={4096}
+                    value={customWidth}
+                    onChange={(event) => setCustomWidth(Number(event.target.value))}
+                    className="min-w-0 flex-1 rounded-lg border border-[#343844] bg-[#111318] px-2 py-2 text-center text-sm text-white outline-none focus:border-[#6366f1]"
+                  />
+                  <span className="text-[#697180]">×</span>
+                  <input
+                    aria-label={t("canvas.customHeight")}
+                    type="number"
+                    min={64}
+                    max={4096}
+                    value={customHeight}
+                    onChange={(event) => setCustomHeight(Number(event.target.value))}
+                    className="min-w-0 flex-1 rounded-lg border border-[#343844] bg-[#111318] px-2 py-2 text-center text-sm text-white outline-none focus:border-[#6366f1]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const width = Math.min(4096, Math.max(64, Math.round(customWidth || 64)));
+                      const height = Math.min(4096, Math.max(64, Math.round(customHeight || 64)));
+                      setCustomWidth(width);
+                      setCustomHeight(height);
+                      setGenRatio(`${width}:${height}`);
+                      setGenResolution(Math.max(width, height) > 2048 ? "4K" : Math.max(width, height) > 1536 ? "2K" : "1K");
+                    }}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-xs font-semibold",
+                      activeCustomSize ? "border-[#6366f1] bg-[#252849] text-white" : "border-[#343844] bg-[#23262e] text-[#d9dce3]"
+                    )}
+                  >
+                    {t("canvas.applySize")}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[10px] text-[#697180]">64–4096 px</p>
               </div>
             </div>
           </div>,

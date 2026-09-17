@@ -7,6 +7,8 @@ export type PreparedUpload = {
   originalBytes: number;
   uploadBytes: number;
   optimized: boolean;
+  width: number;
+  height: number;
 };
 
 const MIN_OPTIMIZE_BYTES = 1.5 * 1024 * 1024;
@@ -24,12 +26,17 @@ export async function prepareImageUpload(
   original: File,
   options: { maxEdge?: number; quality?: number } = {}
 ): Promise<PreparedUpload> {
-  if (original.size < MIN_OPTIMIZE_BYTES || typeof createImageBitmap !== "function") {
-    return { file: original, originalBytes: original.size, uploadBytes: original.size, optimized: false };
+  if (typeof createImageBitmap !== "function") {
+    return { file: original, originalBytes: original.size, uploadBytes: original.size, optimized: false, width: 0, height: 0 };
   }
   let bitmap: ImageBitmap | null = null;
   try {
     bitmap = await createImageBitmap(original);
+    const sourceWidth = bitmap.width;
+    const sourceHeight = bitmap.height;
+    if (original.size < MIN_OPTIMIZE_BYTES) {
+      return { file: original, originalBytes: original.size, uploadBytes: original.size, optimized: false, width: sourceWidth, height: sourceHeight };
+    }
     const maxEdge = options.maxEdge ?? DEFAULT_MAX_EDGE;
     const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
@@ -47,15 +54,15 @@ export async function prepareImageUpload(
     );
     // Keep the source if the browser cannot encode WebP or savings are negligible.
     if (!blob || blob.size >= original.size * 0.92) {
-      return { file: original, originalBytes: original.size, uploadBytes: original.size, optimized: false };
+      return { file: original, originalBytes: original.size, uploadBytes: original.size, optimized: false, width: sourceWidth, height: sourceHeight };
     }
     const file = new File([blob], webpName(original.name), {
       type: "image/webp",
       lastModified: original.lastModified,
     });
-    return { file, originalBytes: original.size, uploadBytes: file.size, optimized: true };
+    return { file, originalBytes: original.size, uploadBytes: file.size, optimized: true, width, height };
   } catch {
-    return { file: original, originalBytes: original.size, uploadBytes: original.size, optimized: false };
+    return { file: original, originalBytes: original.size, uploadBytes: original.size, optimized: false, width: 0, height: 0 };
   } finally {
     bitmap?.close();
   }

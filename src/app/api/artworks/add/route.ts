@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { dbEnabled, addArtworks, setArtworkPosition } from "@/lib/db";
 import { uploadImage } from "@/lib/storage";
 import { authenticatedEmail } from "@/lib/request-auth";
+import sharp from "sharp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,6 +56,15 @@ export async function POST(request: Request) {
     }
     const id = newId();
     const buf = new Uint8Array(await file.arrayBuffer());
+    let width: number | null = null;
+    let height: number | null = null;
+    try {
+      const meta = await sharp(Buffer.from(buf)).rotate().metadata();
+      width = meta.width ?? null;
+      height = meta.height ?? null;
+    } catch {
+      return NextResponse.json({ error: "图片格式无效" }, { status: 400 });
+    }
     const type = file.type || "image/png";
     const ext = type.includes("png")
       ? "png"
@@ -79,6 +89,8 @@ export async function POST(request: Request) {
           gradient: GRADIENTS[0],
           parentId,
           source: linked ? "upload" : "canvas-add",
+          width,
+          height,
         },
       ]);
     } catch (e) {
@@ -90,7 +102,7 @@ export async function POST(request: Request) {
     if (Number.isFinite(px) && Number.isFinite(py)) {
       await setArtworkPosition(email, id, px, py).catch(() => {});
     }
-    return NextResponse.json({ ok: true, id, image: url });
+    return NextResponse.json({ ok: true, id, image: url, width, height });
   }
 
   // ── 创建副本 / 粘贴节点 ──
@@ -110,6 +122,8 @@ export async function POST(request: Request) {
       resolution?: string;
       parentId?: string | null;
       templateId?: string | null;
+      width?: number | null;
+      height?: number | null;
     };
   };
   try {
@@ -141,6 +155,8 @@ export async function POST(request: Request) {
         resolution: src.resolution,
         parentId,
         templateId: src.templateId ?? null,
+        width: src.width ?? null,
+        height: src.height ?? null,
         // linked → 非 canvas-add(画布会画连线);否则独立节点
         source: body.linked ? "derived" : "canvas-add",
       },
@@ -156,5 +172,5 @@ export async function POST(request: Request) {
   if (Number.isFinite(bx) && Number.isFinite(by)) {
     await setArtworkPosition(email, id, bx, by).catch(() => {});
   }
-  return NextResponse.json({ ok: true, id, image: src.image });
+  return NextResponse.json({ ok: true, id, image: src.image, width: src.width ?? null, height: src.height ?? null });
 }

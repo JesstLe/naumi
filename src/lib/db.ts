@@ -85,6 +85,8 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS template_id text;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_x double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_y double precision;
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS image_width integer;
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS image_height integer;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS origin text;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS marked boolean NOT NULL DEFAULT false;
         -- 稳定项目分组:同一画布项目的所有节点共享 group_id,删中间节点也不改它,
@@ -1812,6 +1814,8 @@ export type ArtworkRecord = {
   templateId?: string | null; // 若这是"模板原图"根节点,记录它代表的模板 id
   canvasX?: number | null; // 画布手动拖拽后记住的坐标(空=用自动布局)
   canvasY?: number | null;
+  width?: number | null; // 原图实际像素宽度；画布按 1 CSS px = 1 image px 展示
+  height?: number | null;
   groupId?: string | null; // 稳定项目分组:同项目所有节点共享,删节点也不变
   origin?: string | null; // 来源场景:"canvas"=在画布里产出(永远留画布);空=生图页/工具等普通产出
   marked?: boolean;
@@ -1841,8 +1845,9 @@ export async function addArtworks(
       await client.query(
         `INSERT INTO app_artworks
            (id, email, title, category, prompt, status, image_url, gradient,
-            style, ratio, resolution, source_url, batch_id, parent_id, template_id, parent_ids, group_id, origin)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18)
+            style, ratio, resolution, source_url, batch_id, parent_id, template_id, parent_ids, group_id, origin,
+            image_width, image_height)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20)
          ON CONFLICT (id) DO UPDATE SET deleted_at = NULL`,
         [
           a.id,
@@ -1863,6 +1868,8 @@ export async function addArtworks(
           JSON.stringify(a.parentIds ?? []),
           groupId,
           a.origin ?? null,
+          a.width ?? null,
+          a.height ?? null,
         ]
       );
     }
@@ -1882,7 +1889,7 @@ export async function listArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, group_id, origin, marked, created_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, group_id, origin, marked, created_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NULL
       ORDER BY created_at DESC LIMIT 1000`,
@@ -1906,6 +1913,8 @@ export async function listArtworks(
     templateId: r.template_id ?? null,
     canvasX: r.canvas_x ?? null,
     canvasY: r.canvas_y ?? null,
+    width: r.image_width ?? null,
+    height: r.image_height ?? null,
     groupId: r.group_id ?? null,
     origin: r.origin ?? null,
     marked: !!r.marked,
@@ -1925,7 +1934,7 @@ export async function listArtworksByIds(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, group_id, origin, marked, created_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, group_id, origin, marked, created_at
        FROM app_artworks
       WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), clean]
@@ -1948,6 +1957,8 @@ export async function listArtworksByIds(
     templateId: r.template_id ?? null,
     canvasX: r.canvas_x ?? null,
     canvasY: r.canvas_y ?? null,
+    width: r.image_width ?? null,
+    height: r.image_height ?? null,
     groupId: r.group_id ?? null,
     origin: r.origin ?? null,
     marked: !!r.marked,
@@ -2061,6 +2072,8 @@ function rowToAdminArtwork(r: {
   resolution: string | null;
   source_url: string | null;
   batch_id: string | null;
+  image_width: number | null;
+  image_height: number | null;
   created_at: Date;
 }): AdminArtwork {
   return {
@@ -2077,12 +2090,14 @@ function rowToAdminArtwork(r: {
     resolution: r.resolution ?? null,
     source: r.source_url ?? null,
     batchId: r.batch_id ?? null,
+    width: r.image_width ?? null,
+    height: r.image_height ?? null,
     createdAt: new Date(r.created_at).toISOString(),
   };
 }
 
 const ADMIN_ARTWORK_COLS = `id, email, title, category, prompt, status,
-  image_url, gradient, style, ratio, resolution, source_url, batch_id,
+  image_url, gradient, style, ratio, resolution, source_url, batch_id, image_width, image_height,
   created_at`;
 
 /** Admin: every user's artworks, newest first, with owner email + total. */
@@ -2133,6 +2148,26 @@ export async function setArtworkPosition(
     `UPDATE app_artworks SET canvas_x = $3, canvas_y = $4 WHERE email = $1 AND id = $2`,
     [emailRaw.toLowerCase(), id, x, y]
   );
+}
+
+// 画布用:记录图片真实像素尺寸。旧数据在浏览器首次加载原图后自动回填。
+export async function setArtworkDimensions(
+  emailRaw: string,
+  id: string,
+  width: number,
+  height: number
+): Promise<boolean> {
+  await ensureSchema();
+  const w = Math.round(width);
+  const h = Math.round(height);
+  if (!id || !Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1 || w > 8192 || h > 8192) return false;
+  const result = await getPool().query(
+    `UPDATE app_artworks
+        SET image_width = $3, image_height = $4
+      WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
+    [emailRaw.toLowerCase(), id, w, h]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 // 画布用:标记/取消标记某个重要节点(email 限定)。
@@ -2333,7 +2368,7 @@ export async function listDeletedArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, group_id, origin, marked, created_at, deleted_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, group_id, origin, marked, created_at, deleted_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NOT NULL
       ORDER BY deleted_at DESC LIMIT 200`,
@@ -2357,6 +2392,8 @@ export async function listDeletedArtworks(
     templateId: r.template_id ?? null,
     canvasX: r.canvas_x ?? null,
     canvasY: r.canvas_y ?? null,
+    width: r.image_width ?? null,
+    height: r.image_height ?? null,
     groupId: r.group_id ?? null,
     origin: r.origin ?? null,
     marked: !!r.marked,

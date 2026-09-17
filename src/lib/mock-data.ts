@@ -342,6 +342,8 @@ export type Artwork = {
   templateId?: string | null; // 模板原图根节点代表的模板 id
   canvasX?: number | null; // 画布手动拖拽记住的坐标
   canvasY?: number | null;
+  width?: number | null; // 图片真实像素宽度，画布按原尺寸显示
+  height?: number | null;
   groupId?: string | null; // 稳定项目分组:同项目所有节点共享,删节点也不变
   origin?: string | null; // "canvas"=在画布里产出(永远留画布);空=普通产出
   marked?: boolean; // 画布节点标记:用户手动钉住的重要版本
