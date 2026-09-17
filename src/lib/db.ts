@@ -125,6 +125,21 @@ async function ensureSchema(): Promise<void> {
           updated_at timestamptz NOT NULL DEFAULT now(),
           PRIMARY KEY (email, key)
         );
+        CREATE TABLE IF NOT EXISTS app_canvas_text_nodes (
+          id          text PRIMARY KEY,
+          email       text NOT NULL,
+          project_key text NOT NULL,
+          title       text NOT NULL DEFAULT '文字生成',
+          prompt      text NOT NULL DEFAULT '',
+          content     text NOT NULL DEFAULT '',
+          status      text NOT NULL DEFAULT 'completed',
+          canvas_x    double precision NOT NULL DEFAULT 0,
+          canvas_y    double precision NOT NULL DEFAULT 0,
+          created_at  timestamptz NOT NULL DEFAULT now(),
+          updated_at  timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS app_canvas_text_nodes_email_idx
+          ON app_canvas_text_nodes (email, project_key, updated_at DESC);
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user';
         CREATE TABLE IF NOT EXISTS app_ledger (
           id         text PRIMARY KEY,
@@ -1820,6 +1835,109 @@ export type ArtworkRecord = {
   origin?: string | null; // 来源场景:"canvas"=在画布里产出(永远留画布);空=生图页/工具等普通产出
   marked?: boolean;
 };
+
+export type CanvasTextNodeRecord = {
+  id: string;
+  projectKey: string;
+  title: string;
+  prompt: string;
+  content: string;
+  status: "idle" | "generating" | "completed" | "failed";
+  canvasX: number;
+  canvasY: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function mapCanvasTextNode(row: Record<string, unknown>): CanvasTextNodeRecord {
+  const status = String(row.status || "completed");
+  return {
+    id: String(row.id || ""),
+    projectKey: String(row.project_key || ""),
+    title: String(row.title || "文字生成"),
+    prompt: String(row.prompt || ""),
+    content: String(row.content || ""),
+    status:
+      status === "idle" || status === "generating" || status === "failed"
+        ? status
+        : "completed",
+    canvasX: Number(row.canvas_x || 0),
+    canvasY: Number(row.canvas_y || 0),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+export async function listCanvasTextNodes(
+  emailRaw: string
+): Promise<CanvasTextNodeRecord[]> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT id, project_key, title, prompt, content, status, canvas_x, canvas_y,
+            created_at, updated_at
+       FROM app_canvas_text_nodes
+      WHERE email = $1
+      ORDER BY updated_at DESC
+      LIMIT 1000`,
+    [emailRaw.toLowerCase()]
+  );
+  return rows.map((row) => mapCanvasTextNode(row));
+}
+
+export async function upsertCanvasTextNode(
+  emailRaw: string,
+  node: CanvasTextNodeRecord
+): Promise<CanvasTextNodeRecord> {
+  await ensureSchema();
+  const status = ["idle", "generating", "completed", "failed"].includes(node.status)
+    ? node.status
+    : "completed";
+  const { rows } = await getPool().query(
+    `INSERT INTO app_canvas_text_nodes
+       (id, email, project_key, title, prompt, content, status, canvas_x, canvas_y, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10::timestamptz, now()),now())
+     ON CONFLICT (id) DO UPDATE SET
+       project_key = EXCLUDED.project_key,
+       title = EXCLUDED.title,
+       prompt = EXCLUDED.prompt,
+       content = EXCLUDED.content,
+       status = EXCLUDED.status,
+       canvas_x = EXCLUDED.canvas_x,
+       canvas_y = EXCLUDED.canvas_y,
+       updated_at = now()
+     WHERE app_canvas_text_nodes.email = EXCLUDED.email
+     RETURNING id, project_key, title, prompt, content, status, canvas_x, canvas_y,
+               created_at, updated_at`,
+    [
+      node.id,
+      emailRaw.toLowerCase(),
+      node.projectKey,
+      node.title.slice(0, 80),
+      node.prompt.slice(0, 4000),
+      node.content.slice(0, 20000),
+      status,
+      node.canvasX,
+      node.canvasY,
+      node.createdAt || null,
+    ]
+  );
+  if (!rows[0]) throw new Error("文字节点不存在或无权修改");
+  return mapCanvasTextNode(rows[0]);
+}
+
+export async function deleteCanvasTextNodes(
+  emailRaw: string,
+  ids: string[]
+): Promise<number> {
+  await ensureSchema();
+  const clean = ids.filter(Boolean).slice(0, 200);
+  if (!clean.length) return 0;
+  const result = await getPool().query(
+    `DELETE FROM app_canvas_text_nodes WHERE email = $1 AND id = ANY($2::text[])`,
+    [emailRaw.toLowerCase(), clean]
+  );
+  return result.rowCount ?? 0;
+}
 
 export async function addArtworks(
   emailRaw: string,

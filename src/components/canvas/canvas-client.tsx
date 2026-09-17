@@ -112,6 +112,25 @@ const Y_GAP = 48; // 同层兄弟纵向间距
 const MAX_TOTAL_IMAGES = 6; // 节点图 + 追加参考图 合计上限
 const MAX_UPLOAD = 12 * 1024 * 1024;
 const MAX_GENERATION_COUNT = 8;
+// React Flow 默认只允许 50%–200%。这里使用 JavaScript 可安全表达的完整正数范围，
+// 让滚轮、触控板、按钮和百分比输入不再受产品层的人为缩放档位限制。
+const CANVAS_MIN_ZOOM = Number.EPSILON;
+const CANVAS_MAX_ZOOM = Number.MAX_SAFE_INTEGER;
+
+function zoomPercentInput(zoom: number): string {
+  return String(zoom * 100);
+}
+
+function zoomPercentLabel(zoom: number): string {
+  const percent = zoom * 100;
+  if (percent < 0.01 || percent >= 1_000_000) {
+    return `${percent.toExponential(2)}%`;
+  }
+  if (percent >= 1000) {
+    return `${Math.round(percent).toLocaleString("en-US")}%`;
+  }
+  return `${Number(percent.toFixed(2))}%`;
+}
 
 type GenerationMode = "standard" | "detail" | "triptych" | "split";
 
@@ -150,11 +169,25 @@ function hasRenderableImage(image: string): boolean {
 type Project = {
   key: string;
   members: Artwork[];
+  textNodes: CanvasTextNode[];
   isSuite: boolean;
   cover: string;
   count: number;
   name: string;
   latestAt: string;
+};
+
+type CanvasTextNode = {
+  id: string;
+  projectKey: string;
+  title: string;
+  prompt: string;
+  content: string;
+  status: "idle" | "generating" | "completed" | "failed";
+  canvasX: number;
+  canvasY: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 // 沿血缘上溯到根作品(带环保护)
@@ -439,6 +472,81 @@ type PendCtx = {
   onRemove: (id: string) => void;
 };
 const PendContext = createContext<PendCtx | null>(null);
+
+type TextNodeCtx = {
+  onRemove: (id: string) => void;
+  onCopy: (text: string) => void;
+};
+const TextNodeContext = createContext<TextNodeCtx | null>(null);
+
+function TextCanvasNode({ data, selected }: NodeProps) {
+  const ctx = useContext(TextNodeContext);
+  const d = data as {
+    __id: string;
+    title: string;
+    prompt: string;
+    content: string;
+    status: CanvasTextNode["status"];
+    selected?: boolean;
+  };
+  const active = selected || d.selected;
+  const body = d.content || d.prompt;
+  return (
+    <div
+      className={cn(
+        "group relative w-[300px] overflow-hidden border bg-white text-[#252933] shadow-[0_12px_34px_rgba(7,12,24,0.18)] transition-shadow",
+        active ? "border-[#6bd7ec] ring-2 ring-[#6bd7ec]/25" : "border-[#dce2ea]"
+      )}
+    >
+      <div className="flex h-9 items-center gap-2 border-b border-[#edf0f4] px-3 text-[12px] font-semibold text-[#5d6573]">
+        <span className="flex h-5 w-5 items-center justify-center border border-[#d9dee6] bg-[#f7f8fa] text-[#2c313a]">
+          <Type className="h-3 w-3" />
+        </span>
+        <span className="min-w-0 flex-1 truncate">{d.title || "文字生成"}</span>
+        {d.status === "generating" && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#27bdd8]" />}
+      </div>
+      <div className="min-h-[130px] max-h-[230px] overflow-auto px-3 py-2.5 text-[12px] leading-[1.65] text-[#4d5563]">
+        {d.status === "generating" ? (
+          <div className="flex h-[108px] items-center justify-center gap-2 text-[#87909d]">
+            <Loader2 className="h-4 w-4 animate-spin" /> 正在生成文字…
+          </div>
+        ) : body ? (
+          <p className="whitespace-pre-wrap break-words">{body}</p>
+        ) : (
+          <p className="text-[#a1a8b3]">输入需求后生成文字内容</p>
+        )}
+      </div>
+      <div className="absolute right-1.5 top-1.5 hidden items-center gap-1 bg-white pl-1 group-hover:flex">
+        {!!d.content && (
+          <button
+            type="button"
+            className="nodrag flex h-6 w-6 items-center justify-center text-[#7d8694] hover:bg-[#f1f3f6] hover:text-[#20242c]"
+            title="复制文字"
+            onClick={(event) => {
+              event.stopPropagation();
+              ctx?.onCopy(d.content);
+            }}
+          >
+            <span className="text-[11px]">⧉</span>
+          </button>
+        )}
+        <button
+          type="button"
+          className="nodrag flex h-6 w-6 items-center justify-center text-[#7d8694] hover:bg-[#fff0ef] hover:text-[#d24b45]"
+          title="删除文字节点"
+          onClick={(event) => {
+            event.stopPropagation();
+            ctx?.onRemove(d.__id);
+          }}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <span className="absolute -left-[6px] top-1/2 flex h-3 w-3 -translate-y-1/2 items-center justify-center rounded-full bg-[#20c7e5] text-[9px] font-bold text-white shadow">+</span>
+      <span className="absolute -right-[6px] top-1/2 flex h-3 w-3 -translate-y-1/2 items-center justify-center rounded-full bg-[#20c7e5] text-[9px] font-bold text-white shadow">+</span>
+    </div>
+  );
+}
 
 // 占位/上传中节点(对齐参考站:空白节点→里面上传→进度条→填充)
 function PendNode({ data, selected }: NodeProps) {
@@ -1053,6 +1161,12 @@ export function CanvasClient() {
   };
   const [pendNodes, setPendNodes] = useState<Pend[]>([]);
   const pendSeqRef = useRef(1);
+  const [textNodes, setTextNodes] = useState<CanvasTextNode[]>([]);
+  const [textNodesReady, setTextNodesReady] = useState(false);
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  const [textPrompt, setTextPrompt] = useState("");
+  const [textError, setTextError] = useState<string | null>(null);
+  const [textModel, setTextModel] = useState("gpt-5.6-luna");
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
   const pendPromptRef = useRef<HTMLTextAreaElement>(null);
   const wantFocusPendPrompt = useRef(false);
@@ -1200,12 +1314,15 @@ export function CanvasClient() {
   }, [modalTop?.page]);
   // 缩放输入框跟随实际缩放(用户改值后回车应用)
   useEffect(() => {
-    setZoomInput(String(Math.round((viewport.zoom || 1) * 100)));
+    setZoomInput(zoomPercentInput(viewport.zoom || 1));
   }, [viewport.zoom]);
   function applyZoomInput() {
-    const v = parseInt(zoomInput, 10);
-    if (Number.isFinite(v) && v >= 15 && v <= 800)
-      rfRef.current?.zoomTo(v / 100, { duration: 200 });
+    const percent = Number(zoomInput.replace(",", "."));
+    if (Number.isFinite(percent) && percent > 0) {
+      rfRef.current?.zoomTo(percent / 100, { duration: 200 });
+      return;
+    }
+    setZoomInput(zoomPercentInput(viewport.zoom || 1));
   }
   // 撤销/重做(实用版:移动/删除/添加)
   type UndoAct =
@@ -1310,11 +1427,25 @@ export function CanvasClient() {
       privateFetch(`/api/projects?email=${encodeURIComponent(target)}`)
         .then((r) => r.json())
         .catch(() => ({ names: {} })),
+      privateFetch(`/api/canvas/text-nodes?email=${encodeURIComponent(target)}`)
+        .then((r) => r.json())
+        .catch(() => ({ persisted: false, nodes: [] })),
     ])
-      .then(([acc, proj]) => {
+      .then(([acc, proj, textData]) => {
         if (cancelled) return;
         setWorks((acc?.artworks ?? []) as Artwork[]);
         setNames((proj?.names ?? {}) as Record<string, string>);
+        if (textData?.persisted) {
+          setTextNodes((textData?.nodes ?? []) as CanvasTextNode[]);
+        } else {
+          try {
+            const local = localStorage.getItem(`naumi:canvas-text-nodes:${target.toLowerCase()}`);
+            setTextNodes(local ? (JSON.parse(local) as CanvasTextNode[]) : []);
+          } catch {
+            setTextNodes([]);
+          }
+        }
+        setTextNodesReady(true);
         const u = acc?.user as
           | { creditsTotal?: number; creditsUsed?: number }
           | undefined;
@@ -1323,12 +1454,32 @@ export function CanvasClient() {
         }
       })
       .catch(() => {
-        if (!cancelled) setWorks([]);
+        if (!cancelled) {
+          setWorks([]);
+          setTextNodesReady(true);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [ready, user]);
+
+  useEffect(() => {
+    const email = (targetEmail || user?.email || "").toLowerCase();
+    if (!email || !textNodesReady) return;
+    try {
+      localStorage.setItem(
+        `naumi:canvas-text-nodes:${email}`,
+        JSON.stringify(
+          textNodes.map((node) =>
+            node.status === "generating" ? { ...node, status: "idle" } : node
+          )
+        )
+      );
+    } catch {
+      /* local fallback is best effort */
+    }
+  }, [textNodes, textNodesReady, targetEmail, user?.email]);
 
   // 从收银台返回(支付完成/取消)→ 自动重开会员弹窗,并清掉 URL 上的标记
   useEffect(() => {
@@ -1371,7 +1522,7 @@ export function CanvasClient() {
     // 那些从没在画布动过的、孤张一次性生图(生图页/套图页直接产出的单图)不在画布出现,
     // 它们仍在作品库/生图页可见。轻度用户因此基本不会看到画布。
     const CANVAS_SOURCES = new Set(["canvas-add", "derived", "upload"]);
-    const projects: Project[] = Array.from(groups.entries())
+    const imageProjects: Project[] = Array.from(groups.entries())
       .map(([key, members]) => {
         members.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
         const latest = members[members.length - 1];
@@ -1383,6 +1534,7 @@ export function CanvasClient() {
         return {
           key,
           members,
+          textNodes: [],
           isSuite,
           cover: latest.image,
           count: members.length,
@@ -1403,9 +1555,30 @@ export function CanvasClient() {
           // ?node= 深链进来的那张(如抠图「送画布」):即使单张也放行,否则落到空列表
           (pinnedNode != null && p.members.some((m) => m.id === pinnedNode))
       );
+    const projectMap = new Map(imageProjects.map((project) => [project.key, project]));
+    for (const textNode of textNodes) {
+      const existing = projectMap.get(textNode.projectKey);
+      if (existing) {
+        existing.textNodes.push(textNode);
+        existing.count = existing.members.length + existing.textNodes.length;
+        if (textNode.updatedAt > existing.latestAt) existing.latestAt = textNode.updatedAt;
+        continue;
+      }
+      projectMap.set(textNode.projectKey, {
+        key: textNode.projectKey,
+        members: [],
+        textNodes: [textNode],
+        isSuite: false,
+        cover: "",
+        count: 1,
+        name: names[textNode.projectKey] ?? textNode.title ?? t("canvas.textProject"),
+        latestAt: textNode.updatedAt || textNode.createdAt,
+      });
+    }
+    const projects = Array.from(projectMap.values());
     projects.sort((a, b) => (a.latestAt < b.latestAt ? 1 : -1));
     return { projects };
-  }, [works, names, t, readOnly, pinnedNode]);
+  }, [works, names, t, readOnly, pinnedNode, textNodes]);
 
   // 打开中的项目消失了(被删 / 根节点变化导致 key 变)→ 回到项目网格,而非自动弹别的项目
   useEffect(() => {
@@ -1465,6 +1638,7 @@ export function CanvasClient() {
     setBrowsing(false);
     setActiveKey(null);
     setSelectedId(null);
+    setSelectedTextId(null);
     setPendNodes([]);
     setSidebarOpen(false);
   }
@@ -1476,6 +1650,7 @@ export function CanvasClient() {
     resetImportScope();
     setActiveKey(key);
     setSelectedId(null);
+    setSelectedTextId(null);
     setPendNodes([]);
     setCreatingNew(false);
     setBrowsing(false);
@@ -1491,6 +1666,7 @@ export function CanvasClient() {
     resetImportScope();
     setBrowsing(true);
     setSelectedId(null);
+    setSelectedTextId(null);
     setCreatingNew(false);
     setPendNodes([]);
     setSidebarOpen(false);
@@ -1564,7 +1740,10 @@ export function CanvasClient() {
     return layoutGraph(active.members, t("canvas.rootBadge"), onNodeDimensions);
   }, [active, t, onNodeDimensions]);
 
-  const nodeTypes = useMemo(() => ({ art: ArtNode, pend: PendNode }), []);
+  const nodeTypes = useMemo(
+    () => ({ art: ArtNode, pend: PendNode, text: TextCanvasNode }),
+    []
+  );
   const edgeTypes = useMemo(() => ({ comet: CometEdge }), []);
   const selected = useMemo(
     () => active?.members.find((a) => a.id === selectedId) ?? null,
@@ -1616,6 +1795,10 @@ export function CanvasClient() {
   const selectedPend = useMemo(
     () => pendNodes.find((p) => p.id === selectedPendId) ?? null,
     [pendNodes, selectedPendId]
+  );
+  const selectedText = useMemo(
+    () => textNodes.find((node) => node.id === selectedTextId) ?? null,
+    [textNodes, selectedTextId]
   );
   const selectedPendGenerating = !!selectedPend?.generating;
   const selectedGenerationCount =
@@ -1729,6 +1912,24 @@ export function CanvasClient() {
         } as Edge);
       }
     }
+    for (const textNode of textNodes.filter((node) => node.projectKey === activeKey)) {
+      displayNodes.push({
+        id: textNode.id,
+        type: "text",
+        position: { x: textNode.canvasX, y: textNode.canvasY },
+        data: {
+          __id: textNode.id,
+          title: textNode.title,
+          prompt: textNode.prompt,
+          content: textNode.content,
+          status: textNode.status,
+          selected: textNode.id === selectedTextId,
+          width: 300,
+          height: 176,
+        },
+        style: { width: 300 },
+      } as Node);
+    }
     // 防御:节点/边按 id 去重,并丢弃指向不存在节点的悬空边
     // (React Flow 遇到重复 key 或悬空边会抛出 client-side exception → 白屏)
     const nSeen = new Set<string>();
@@ -1754,9 +1955,11 @@ export function CanvasClient() {
     generationTasks,
     selectedId,
     selectedPendId,
+    selectedTextId,
     active,
-    t,
+    activeKey,
     pendNodes,
+    textNodes,
   ]);
 
   // 受控节点状态(支持拖拽);仅当底层数据/位置真正变化时重新灌入,拖拽过程中不重置。
@@ -1775,7 +1978,9 @@ export function CanvasClient() {
           (n.data as { marked?: boolean }).marked ? 1 : 0
         }:${Math.round((n.data as { width?: number }).width ?? 0)}:${
           Math.round((n.data as { height?: number }).height ?? 0)
-        }`
+        }:${(n.data as { status?: string }).status ?? ""}:${String(
+          (n.data as { content?: string }).content ?? ""
+        ).length}`
     )
     .join("|");
   const edgesSig = displayEdges
@@ -1815,7 +2020,7 @@ export function CanvasClient() {
     { left: number; top: number; bottom: number; cx: number } | undefined
   >(() => {
     // 当前用于停靠上下面板的节点:真实选中节点优先,否则选中的空白节点
-    const anchorId = selectedId ?? selectedPendId;
+    const anchorId = selectedId ?? selectedPendId ?? selectedTextId;
     if (!anchorId) return undefined;
     const selNode = rfNodes.find((n) => n.id === anchorId);
     if (!selNode) return undefined;
@@ -1824,7 +2029,7 @@ export function CanvasClient() {
     const top = selNode.position.y * z + viewport.y;
     const size = flowNodeSize(selNode);
     return { left, top, bottom: top + size.height * z, cx: left + (size.width * z) / 2 };
-  }, [selectedId, selectedPendId, rfNodes, viewport]);
+  }, [selectedId, selectedPendId, selectedTextId, rfNodes, viewport]);
 
   // 顶部工具条与底部 dock 共用同一个"中心 x"(按 dock 宽度夹取),保证两者左右对齐。
   const DOCK_W = 820; // 容纳生成模式、自定义数量和重做操作
@@ -1979,6 +2184,12 @@ export function CanvasClient() {
     const raf = requestAnimationFrame(() => pendPromptRef.current?.focus());
     return () => cancelAnimationFrame(raf);
   }, [selectedPendId]);
+
+  useEffect(() => {
+    if (!selectedText) return;
+    setTextPrompt(selectedText.prompt || "");
+    setTextError(null);
+  }, [selectedText]);
 
   // 整表重拉(仅初次加载 / 兜底用)。日常增删改用下面的局部更新,省 egress。
   async function refetchWorks(): Promise<Artwork[]> {
@@ -2900,7 +3111,7 @@ export function CanvasClient() {
     const ids = p.members.map((m) => m.id);
     setConfirmModal({
       title: t("canvas.deleteProjectTitle"),
-      message: fmt(t("canvas.deleteProject"), { n: ids.length }),
+      message: fmt(t("canvas.deleteProject"), { n: ids.length + p.textNodes.length }),
       confirmLabel: t("canvas.confirmDelete"),
       onConfirm: () => void runProjectDelete(p, ids),
     });
@@ -2909,12 +3120,22 @@ export function CanvasClient() {
     if (!user) return;
     setSidebarOpen(false);
     try {
-      const res = await privateFetch("/api/artworks/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: user.email, ids }),
-      });
-      await expectJsonOk(res, t("canvas.genFail"));
+      if (ids.length) {
+        const res = await privateFetch("/api/artworks/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: user.email, ids }),
+        });
+        await expectJsonOk(res, t("canvas.genFail"));
+      }
+      if (p.textNodes.length) {
+        const textRes = await privateFetch("/api/canvas/text-nodes", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ids: p.textNodes.map((node) => node.id) }),
+        });
+        if (!textRes.ok) await expectJsonOk(textRes, t("canvas.genFail"));
+      }
       const nameRes = await privateFetch("/api/projects", {
         method: "DELETE",
         headers: { "content-type": "application/json" },
@@ -2924,6 +3145,7 @@ export function CanvasClient() {
       if (p.key === activeKey) {
         setActiveKey(null);
         setSelectedId(null);
+        setSelectedTextId(null);
         setCreatingNew(false);
         setBrowsing(true);
       }
@@ -2933,6 +3155,9 @@ export function CanvasClient() {
         return next;
       });
       removeWorksLocal(ids); // 服务端成功后再本地移除整组
+      setTextNodes((current) =>
+        current.filter((node) => node.projectKey !== p.key)
+      );
     } catch (e) {
       flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
     }
@@ -3203,6 +3428,13 @@ export function CanvasClient() {
   ) {
     e.preventDefault();
     if (node.id.startsWith("task-")) return;
+    if (node.id.startsWith("text-")) {
+      setSelectedId(null);
+      setSelectedPendId(null);
+      setSelectedTextId(node.id);
+      setCtxMenu(null);
+      return;
+    }
     setSpawnMenu(null);
     const p = relPoint(e);
     setCtxMenu({ x: p.x, y: p.y, cx: e.clientX, cy: e.clientY, nodeId: node.id });
@@ -3640,6 +3872,130 @@ export function CanvasClient() {
     const c = centerScreen();
     addPendAtScreen(c.x, c.y, null, false);
   }
+  async function persistTextNode(node: CanvasTextNode) {
+    if (!user || readOnly) return node;
+    try {
+      const response = await privateFetch("/api/canvas/text-nodes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(node),
+      });
+      const data = await readJsonSafe(response);
+      if (response.ok && data?.node) {
+        const saved = data.node as CanvasTextNode;
+        setTextNodes((current) =>
+          current.map((item) => (item.id === saved.id ? saved : item))
+        );
+        return saved;
+      }
+    } catch {
+      /* localStorage mirror keeps the node when the database is unavailable */
+    }
+    return node;
+  }
+  function addTextNodeAtScreen(screenX: number, screenY: number) {
+    if (readOnly || !user) return;
+    const z = viewport.zoom || 1;
+    const id = `text-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const projectKey = active?.key || activeKey || `text:${id}`;
+    const now = new Date().toISOString();
+    const node: CanvasTextNode = {
+      id,
+      projectKey,
+      title: t("canvas.textGenerate"),
+      prompt: "",
+      content: "",
+      status: "idle",
+      canvasX: (screenX - viewport.x) / z - 150,
+      canvasY: (screenY - viewport.y) / z - 88,
+      createdAt: now,
+      updatedAt: now,
+    };
+    setTextNodes((current) => [...current, node]);
+    setActiveKey(projectKey);
+    setCreatingNew(false);
+    setBrowsing(false);
+    setSelectedId(null);
+    setSelectedPendId(null);
+    setSelectedTextId(id);
+    setTextPrompt("");
+    setTextError(null);
+    void persistTextNode(node);
+  }
+  async function removeTextNode(id: string) {
+    if (!user || readOnly) return;
+    const removing = textNodes.find((node) => node.id === id);
+    if (!removing) return;
+    setTextNodes((current) => current.filter((node) => node.id !== id));
+    setSelectedTextId((current) => (current === id ? null : current));
+    try {
+      await privateFetch("/api/canvas/text-nodes", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids: [id] }),
+      });
+    } catch {
+      /* local fallback already updated */
+    }
+    if (removing.projectKey === activeKey) {
+      const remainingText = textNodes.filter(
+        (node) => node.id !== id && node.projectKey === activeKey
+      );
+      if (!active?.members.length && remainingText.length === 0) {
+        setActiveKey(null);
+        setBrowsing(true);
+      }
+    }
+  }
+  async function generateTextNode() {
+    if (!selectedText || !textPrompt.trim() || selectedText.status === "generating") return;
+    const prompt = textPrompt.trim();
+    const pending: CanvasTextNode = {
+      ...selectedText,
+      prompt,
+      title: prompt.replace(/\s+/g, " ").slice(0, 22) || t("canvas.textGenerate"),
+      status: "generating",
+      updatedAt: new Date().toISOString(),
+    };
+    setTextError(null);
+    setTextNodes((current) =>
+      current.map((node) => (node.id === pending.id ? pending : node))
+    );
+    try {
+      const response = await privateFetch("/api/canvas/text-generate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await readJsonSafe(response);
+      if (!response.ok || !data?.text) {
+        throw new Error(data?.error || t("canvas.textGenerateFail"));
+      }
+      const completed: CanvasTextNode = {
+        ...pending,
+        content: String(data.text),
+        status: "completed",
+        updatedAt: new Date().toISOString(),
+      };
+      setTextModel(String(data.model || textModel));
+      setTextNodes((current) =>
+        current.map((node) => (node.id === completed.id ? completed : node))
+      );
+      await persistTextNode(completed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("canvas.textGenerateFail");
+      const failed: CanvasTextNode = {
+        ...pending,
+        status: "failed",
+        updatedAt: new Date().toISOString(),
+      };
+      setTextNodes((current) =>
+        current.map((node) => (node.id === failed.id ? failed : node))
+      );
+      setTextError(message);
+      await persistTextNode(failed);
+    }
+  }
   // 底部工具条:✦ 生成衍生(选中则聚焦生成器,否则选根/提示)
   function toolGenerate() {
     if (readOnly) return;
@@ -3966,6 +4322,12 @@ export function CanvasClient() {
       const tag = el?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || el?.isContentEditable) return;
       const mod = e.metaKey || e.ctrlKey;
+      if (e.shiftKey && (e.key === "T" || e.key === "t") && !readOnly && !browsing) {
+        e.preventDefault();
+        const c = centerScreen();
+        addTextNodeAtScreen(c.x, c.y);
+        return;
+      }
       if (mod && (e.key === "z" || e.key === "Z")) {
         if (readOnly) return;
         e.preventDefault();
@@ -3990,6 +4352,9 @@ export function CanvasClient() {
         } else if (selectedId) {
           e.preventDefault();
           void deleteSelected();
+        } else if (selectedTextId) {
+          e.preventDefault();
+          void removeTextNode(selectedTextId);
         }
         return;
       }
@@ -4004,11 +4369,13 @@ export function CanvasClient() {
   }, [
     readOnly,
     selectedId,
+    selectedTextId,
     selectedGenerating,
     multiSel,
     undoStack,
     redoStack,
     boxSelectMode,
+    browsing,
   ]);
 
   // Ctrl/⌘ + 滚轮:阻止浏览器整页缩放(画布内由 React Flow 自己缩放)
@@ -4207,6 +4574,12 @@ export function CanvasClient() {
 
   return (
     <PendContext.Provider value={{ onUpload: onPendUpload, onRemove: onPendRemove }}>
+    <TextNodeContext.Provider
+      value={{
+        onRemove: (id) => void removeTextNode(id),
+        onCopy: (value) => void copyText(value).then((ok) => ok && showCopyTip()),
+      }}
+    >
     <div className="dark flex h-dvh flex-col bg-background text-foreground">
       {ratioMenu}
       {/* 占位节点上传用的隐藏 input */}
@@ -4467,12 +4840,25 @@ export function CanvasClient() {
                         title={p.name}
                         className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl bg-secondary ring-1 ring-white/10 transition-all group-hover:ring-2 group-hover:ring-primary/50"
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={cdnUrl(p.cover)}
-                          alt={p.name}
-                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
-                        />
+                        {p.cover ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={cdnUrl(p.cover)}
+                            alt={p.name}
+                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-[#f2f4f7] p-5 text-left text-[#525b69]">
+                            <div className="w-full border border-[#dce1e8] bg-white p-3 shadow-sm">
+                              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-[#7b8491]">
+                                <Type className="h-3.5 w-3.5" /> {t("canvas.textGenerate")}
+                              </div>
+                              <p className="line-clamp-4 whitespace-pre-wrap text-[10px] leading-relaxed">
+                                {p.textNodes[0]?.content || p.textNodes[0]?.prompt || t("canvas.textEmpty")}
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </button>
                       {/* 标题 + 日期 + 「...」菜单 */}
                       <div className="flex min-w-0 items-start justify-between gap-2 px-0.5">
@@ -4596,10 +4982,18 @@ export function CanvasClient() {
                 if (node.id.startsWith("pend-")) {
                   // 选中空白节点 → 出文生图/合并 dock
                   setSelectedId(null);
+                  setSelectedTextId(null);
                   setSelectedPendId(node.id);
                   return;
                 }
+                if (node.id.startsWith("text-")) {
+                  setSelectedId(null);
+                  setSelectedPendId(null);
+                  setSelectedTextId(node.id);
+                  return;
+                }
                 setSelectedPendId(null);
+                setSelectedTextId(null);
                 setSelectedId(node.id);
               }}
               onNodeDoubleClick={(_, node) => {
@@ -4637,6 +5031,7 @@ export function CanvasClient() {
               onPaneClick={() => {
                 setSelectedId(null);
                 setSelectedPendId(null);
+                setSelectedTextId(null);
                 clearCanvasSelection();
                 setCtxMenu(null);
                 setEdgeCut(null);
@@ -4661,6 +5056,7 @@ export function CanvasClient() {
               onSelectionStart={() => {
                 setSelectedId(null);
                 setSelectedPendId(null);
+                setSelectedTextId(null);
                 setCtxMenu(null);
               }}
               onNodeDragStart={(_, node) => {
@@ -4694,6 +5090,21 @@ export function CanvasClient() {
                         : p
                     )
                   );
+                  return;
+                }
+                if (node.id.startsWith("text-")) {
+                  const current = textNodes.find((item) => item.id === node.id);
+                  if (!current) return;
+                  const moved: CanvasTextNode = {
+                    ...current,
+                    canvasX: node.position.x,
+                    canvasY: node.position.y,
+                    updatedAt: new Date().toISOString(),
+                  };
+                  setTextNodes((items) =>
+                    items.map((item) => (item.id === moved.id ? moved : item))
+                  );
+                  void persistTextNode(moved);
                   return;
                 }
                 // 多选拖动由 onSelectionDragStop 一次性持久化全部节点。
@@ -4778,7 +5189,8 @@ export function CanvasClient() {
               onConnectEnd={onConnectEnd}
               fitView
               fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
-              minZoom={0.15}
+              minZoom={CANVAS_MIN_ZOOM}
+              maxZoom={CANVAS_MAX_ZOOM}
               proOptions={{ hideAttribution: true }}
               nodesConnectable={!readOnly}
               deleteKeyCode={null}
@@ -4964,7 +5376,7 @@ export function CanvasClient() {
                 <div
                   className={cn(
                     "absolute bottom-5 left-1/2 z-30 flex items-center gap-1 rounded-2xl border border-white/10 bg-card/90 p-1.5 shadow-2xl backdrop-blur transition-all duration-200",
-                    selected || selectedPend || selectedBatchArts.length > 1
+                    selected || selectedPend || selectedText || selectedBatchArts.length > 1
                       ? "pointer-events-none translate-x-[-50%] translate-y-4 opacity-0"
                       : "translate-x-[-50%] translate-y-0 opacity-100"
                   )}
@@ -4976,16 +5388,37 @@ export function CanvasClient() {
                         className="fixed inset-0 z-0"
                         onClick={() => setAddMenuOpen(false)}
                       />
-                      <div className="menu-pop-up absolute bottom-[calc(100%+10px)] left-0 z-10 w-48 overflow-hidden rounded-xl border border-border bg-card py-1 shadow-2xl">
+                      <div className="menu-pop-up absolute bottom-[calc(100%+10px)] left-0 z-10 w-60 overflow-hidden border border-[#e6e9ee] bg-white p-1.5 text-[#252933] shadow-2xl">
+                        <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-medium text-[#9aa1ab]">
+                          {t("canvas.newNode")}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddMenuOpen(false);
+                            const c = centerScreen();
+                            addTextNodeAtScreen(c.x, c.y);
+                          }}
+                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]"
+                        >
+                          <span className="flex h-8 w-8 items-center justify-center border border-[#e3e6eb] bg-[#f7f8fa] text-[#20242c]">
+                            <Type className="h-4 w-4" />
+                          </span>
+                          <span className="flex-1 font-medium">{t("canvas.textGenerate")}</span>
+                          <span className="text-[11px] text-[#adb3bd]">⇧T</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
                             setAddMenuOpen(false);
                             toolAddNode();
                           }}
-                          className="flex w-full items-center px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
+                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]"
                         >
-                          {t("canvas.addNode")}
+                          <span className="flex h-8 w-8 items-center justify-center border border-[#e3e6eb] bg-[#f7f8fa] text-[#20242c]">
+                            <ImageIcon className="h-4 w-4" />
+                          </span>
+                          <span className="font-medium">{t("canvas.imageNode")}</span>
                         </button>
                         <button
                           type="button"
@@ -4994,8 +5427,9 @@ export function CanvasClient() {
                             const c = centerScreen();
                             triggerUpload(c.x, c.y);
                           }}
-                          className="flex w-full items-center px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
+                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]"
                         >
+                          <Upload className="ml-2 h-4 w-4 text-[#747d8b]" />
                           {t("canvas.uploadImage")}
                         </button>
                         <button
@@ -5004,8 +5438,9 @@ export function CanvasClient() {
                             setAddMenuOpen(false);
                             toolHistory();
                           }}
-                          className="flex w-full items-center px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
+                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]"
                         >
+                          <Clock className="ml-2 h-4 w-4 text-[#747d8b]" />
                           {t("canvas.fromHistory")}
                         </button>
                       </div>
@@ -5274,7 +5709,7 @@ export function CanvasClient() {
                   onClick={() => setZoomMenuOpen((v) => !v)}
                   className="rounded-lg px-1.5 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 >
-                  {Math.round(viewport.zoom * 100)}%
+                  {zoomPercentLabel(viewport.zoom)}
                 </button>
                 {zoomMenuOpen && (
                   <>
@@ -5288,9 +5723,12 @@ export function CanvasClient() {
                       <div className="mx-1.5 mb-1 flex items-center justify-between rounded-lg bg-[#2a2e38] px-3 py-2">
                         <input
                           value={zoomInput}
-                          onChange={(e) =>
-                            setZoomInput(e.target.value.replace(/[^\d]/g, ""))
-                          }
+                          onChange={(e) => {
+                            const next = e.target.value.replace(",", ".");
+                            if (/^\d*(?:\.\d*)?(?:e[+-]?\d*)?$/i.test(next)) {
+                              setZoomInput(next);
+                            }
+                          }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
                               applyZoomInput();
@@ -5298,7 +5736,7 @@ export function CanvasClient() {
                             }
                           }}
                           className="w-16 bg-transparent text-sm font-medium outline-none"
-                          inputMode="numeric"
+                          inputMode="decimal"
                         />
                         <span className="text-sm text-[#9aa1ae]">%</span>
                       </div>
@@ -5552,6 +5990,12 @@ export function CanvasClient() {
                     ) : (
                       /* 空白右键菜单(对齐原型 czcanvas) */
                       <>
+                        <Item
+                          label={t("canvas.textGenerate")}
+                          hk="⇧T"
+                          disabled={readOnly}
+                          onClick={() => addTextNodeAtScreen(ctxMenu.x, ctxMenu.y)}
+                        />
                         <Item
                           label={t("canvas.addNode")}
                           disabled={readOnly}
@@ -6138,6 +6582,73 @@ export function CanvasClient() {
               </div>
             </div>
           )}
+
+          {/* 文字生成节点：浅色卡片与输入 dock 对齐参考图，结果保留在当前画布项目。 */}
+          {selectedText && !readOnly && (
+            <div
+              key={`tdock-${selectedText.id}`}
+              style={
+                dockStyle
+                  ? { ...dockStyle, left: dockStyle.left + 60 }
+                  : { left: 12, bottom: 12 }
+              }
+              className="cz-anim-bottom absolute z-20 flex w-[700px] max-w-[calc(100%-1rem)] flex-col overflow-hidden border border-[#e2e6ec] bg-white text-[#252933] shadow-[0_18px_45px_rgba(7,12,24,0.22)]"
+            >
+              <div className="flex items-start gap-2 px-3.5 pb-2 pt-3">
+                <button
+                  type="button"
+                  title={t("canvas.textAddReference")}
+                  className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[#f3f5f7] text-[#596271] transition-colors hover:bg-[#e9edf2]"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+                <Textarea
+                  autoFocus
+                  value={textPrompt}
+                  placeholder={t("canvas.textPromptPlaceholder")}
+                  onChange={(event) => setTextPrompt(event.target.value)}
+                  onKeyDown={(event) => {
+                    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                      event.preventDefault();
+                      void generateTextNode();
+                    }
+                  }}
+                  className="min-h-[54px] max-h-44 flex-1 resize-none border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed text-[#303641] shadow-none placeholder:text-[#a6adb7] focus-visible:ring-0"
+                />
+                <button
+                  type="button"
+                  onClick={() => setSelectedTextId(null)}
+                  aria-label={t("canvas.close")}
+                  className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-[#9aa1ab] hover:bg-[#f3f5f7] hover:text-[#303641]"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              {textError && (
+                <p className="px-12 pb-2 text-xs font-medium text-[#d24b45]">{textError}</p>
+              )}
+              <div className="flex h-11 items-center gap-2 border-t border-[#edf0f3] px-3.5">
+                <span className="max-w-[220px] truncate text-[12px] font-medium text-[#626b78]">
+                  {textModel}
+                </span>
+                <span className="flex-1" />
+                <span className="text-[11px] font-medium text-[#20bdd9]">◆ 0/5</span>
+                <button
+                  type="button"
+                  onClick={() => void generateTextNode()}
+                  disabled={!textPrompt.trim() || selectedText.status === "generating"}
+                  title={t("canvas.textGenerate")}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f1f3f5] text-[#8e96a2] transition-colors hover:bg-[#e7ebef] hover:text-[#20242c] disabled:opacity-45"
+                >
+                  {selectedText.status === "generating" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span className="text-base font-semibold">↑</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       {/* 回收站:已删除作品(保留 180 天,可恢复 / 彻底删除) */}
@@ -6558,6 +7069,7 @@ export function CanvasClient() {
         />
       )}
     </div>
+    </TextNodeContext.Provider>
     </PendContext.Provider>
   );
 }
