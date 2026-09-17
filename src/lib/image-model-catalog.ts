@@ -134,4 +134,3 @@ export async function getImageModelCatalog(): Promise<ImageModelDescriptor[]> {
 export async function resolveImageModel(model: string) {
   return (await getImageModelCatalog()).find((item) => item.id === model) || null;
 }
-
