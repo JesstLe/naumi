@@ -205,6 +205,7 @@ const CANVAS_RATIOS: { id: string; w: number; h: number }[] = [
 ];
 const CANVAS_RES = ["1K", "2K", "4K"];
 const STANDARD_RATIO_IDS = new Set(CANVAS_RATIOS.map((ratio) => ratio.id));
+type ImageModelOption = { id: string; label: string; supportsEdit: boolean };
 
 function artworkImageSize(art: Pick<Artwork, "width" | "height">) {
   return {
@@ -897,6 +898,8 @@ export function CanvasClient() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const cancelEditRef = useRef(false); // Esc 取消时跳过失焦保存
   const [editPrompt, setEditPrompt] = useState("");
+  const [genModel, setGenModel] = useState("");
+  const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
   const [genRatio, setGenRatio] = useState("auto"); // 默认自适应
   const [customWidth, setCustomWidth] = useState(900);
   const [customHeight, setCustomHeight] = useState(900);
@@ -981,6 +984,40 @@ export function CanvasClient() {
     uploadCtxRef.current = null;
     dragDepthRef.current = 0;
     setFileDragOver(false);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/config", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((config: { defaultImageModel?: string; imageModels?: ImageModelOption[] }) => {
+        if (cancelled) return;
+        const options = Array.isArray(config.imageModels)
+          ? config.imageModels.filter((item) => item?.id && item?.label)
+          : [];
+        const fallback = config.defaultImageModel || options[0]?.id || "";
+        const normalized = options.length
+          ? options
+          : fallback
+            ? [{ id: fallback, label: fallback, supportsEdit: fallback.startsWith("gpt-image") }]
+            : [];
+        setImageModels(normalized);
+        setGenModel((current) => {
+          if (normalized.some((item) => item.id === current)) return current;
+          const saved = window.localStorage.getItem("naumi:canvas-image-model") || "";
+          if (normalized.some((item) => item.id === saved)) return saved;
+          return normalized.find((item) => item.id === fallback)?.id || normalized[0]?.id || "";
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function pickGenerationModel(model: string) {
+    setGenModel(model);
+    window.localStorage.setItem("naumi:canvas-image-model", model);
   }
   // 从生成历史选择:打开作品选择器(记下落点)
   const [historyPicker, setHistoryPicker] = useState<{ x: number; y: number } | null>(
@@ -2149,6 +2186,7 @@ export function CanvasClient() {
       fd.append("resolution", opts?.resolution || source.resolution || "1K");
       fd.append("style", opts?.style ?? "");
       fd.append("count", String(opts?.count ?? 1));
+      if (genModel) fd.append("model", genModel);
       if (opts?.transparent) fd.append("transparent", "1");
       if (opts?.ratiogen) fd.append("ratiogen", "1");
       fd.append("email", user.email);
@@ -2491,6 +2529,7 @@ export function CanvasClient() {
         throw new Error(t("canvas.detailNeedRefs"));
       }
       form.append("prepared", "1");
+      if (genModel) form.append("model", genModel);
       form.append("text", feedback);
       form.append("platform", "taobao");
       form.append("lang", "zh");
@@ -3682,6 +3721,7 @@ export function CanvasClient() {
       fd.append("resolution", genResolution);
       fd.append("style", genStyle ?? "");
       fd.append("count", String(genCount || 1));
+      if (genModel) fd.append("model", genModel);
       fd.append("email", user.email);
       fd.append("origin", "canvas"); // 画布里产出 → 永远留画布
       // 主父 = 第一个输入;其余进 parentIds
@@ -4001,6 +4041,34 @@ export function CanvasClient() {
     setRatioMenuOpen((v) => !v);
   };
   const activeCustomSize = customDimensionsForRatio(genRatio);
+  const modelControl = (disabled = false) => (
+    <DarkSelect
+      dir="up"
+      value={genModel}
+      disabled={disabled || imageModels.length < 2}
+      options={imageModels.map((item) => ({
+        value: item.id,
+        label: (
+          <span className="flex items-center justify-between gap-3">
+            <span>{item.label}</span>
+            {!item.supportsEdit && (
+              <span className="text-[10px] text-[#697180]">{t("canvas.modelTextOnly")}</span>
+            )}
+          </span>
+        ),
+      }))}
+      onPick={pickGenerationModel}
+      triggerClass="flex max-w-[190px] cursor-pointer items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee] disabled:cursor-default disabled:opacity-70"
+      trigger={
+        <>
+          <Sparkles className="h-3.5 w-3.5 flex-none" />
+          <span className="truncate" title={t("canvas.dockModelHint")}>
+            {genModel || t("canvas.dockModel")}
+          </span>
+        </>
+      }
+    />
+  );
   const ratioControl = (
     <button
       ref={ratioBtnRef}
@@ -5880,12 +5948,7 @@ export function CanvasClient() {
               {/* dbar:模型 / 比例·清晰度 / 数量 + 积分 + 发送(对齐原型 .dbar) */}
               {!readOnly && (
                 <div className="flex flex-none items-center gap-2 border-t border-[#2a2d36] px-3.5 py-2.5">
-                  <span
-                    className="flex items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee]"
-                    title={t("canvas.dockModelHint")}
-                  >
-                    {t("canvas.dockModel")}
-                  </span>
+                  {modelControl(selectedGenerating)}
                   <DarkSelect
                     dir="up"
                     value={generationMode}
@@ -6025,9 +6088,7 @@ export function CanvasClient() {
                 )}
               </div>
               <div className="flex flex-none items-center gap-2 border-t border-[#2a2d36] px-3.5 py-2.5">
-                <span className="flex items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee]">
-                  {t("canvas.dockModel")}
-                </span>
+                {modelControl(selectedPendGenerating)}
                 <DarkSelect
                   dir="up"
                   value={generationMode === "detail" ? "detail" : "standard"}

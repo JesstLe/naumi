@@ -80,6 +80,7 @@ type GenParams = {
   templateImage: string;
   templatePrompt: string;
   origin: string; // "canvas"=在画布里产出(永远留画布);空=生图页/工具等普通产出
+  model: string;
   targetWidth: number;
   targetHeight: number;
 };
@@ -591,6 +592,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
       templateImage: s("templateImage").trim(),
       templatePrompt: s("templatePrompt").trim(),
       origin: s("origin").trim(),
+      model: s("model").trim(),
       targetWidth: parseDimension(s("targetWidth")),
       targetHeight: parseDimension(s("targetHeight")),
     };
@@ -615,6 +617,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
     templateImage: (j.templateImage ?? "").trim(),
     templatePrompt: (j.templatePrompt ?? "").trim(),
     origin: (j.origin ?? "").trim(),
+    model: typeof (j as Partial<GenParams>).model === "string" ? (j as Partial<GenParams>).model!.trim() : "",
     targetWidth: parseDimension((j as Partial<GenParams>).targetWidth),
     targetHeight: parseDimension((j as Partial<GenParams>).targetHeight),
   };
@@ -851,7 +854,20 @@ export async function POST(request: Request) {
   }
 
   try {
-  const { apiKey, model, cutoutModel } = await getOpenAISettings();
+  const { apiKey, model: defaultModel, models, cutoutModel } = await getOpenAISettings();
+  const model = p.model || defaultModel;
+  if (!models.includes(model)) {
+    return NextResponse.json(
+      { error: "所选生图模型不可用，请刷新模型列表后重试" },
+      { status: 400 }
+    );
+  }
+  if (p.images.length > 0 && !model.startsWith("gpt-image")) {
+    return NextResponse.json(
+      { error: "所选模型不支持参考图生成，请切换图生图模型" },
+      { status: 400 }
+    );
+  }
   const ip = clientIp(request);
 
   // 按 IP 限流:防脚本化刷接口烧 token。生图较重,30 次/10 分钟足够真实用户。

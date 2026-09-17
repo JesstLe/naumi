@@ -66,6 +66,7 @@ const RATIO_ASPECT: Record<string, string> = {
 
 const MAX_UPLOAD = 12 * 1024 * 1024;
 const MAX_IMAGES = 6;
+type ImageModelOption = { id: string; label: string; supportsEdit: boolean };
 
 export function GenerateClient({
   seedTemplateId,
@@ -91,6 +92,8 @@ export function GenerateClient({
     nonce: number;
   } | null>(null);
   const [category, setCategory] = useState<Category>("main");
+  const [model, setModel] = useState("");
+  const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
   const [ratio, setRatio] = useState("auto");
   const [resolution, setResolution] = useState("1K");
   // 出图统一用标准档 medium(省钱稳赚、画质够用);不再暴露低/高阶选择器。
@@ -132,6 +135,35 @@ export function GenerateClient({
   // 已加载/在载的底图 URL(去重):防止 useSearchParams 水合后偶发返回新实例 →
   // effect 重跑把在途的大图下载误取消,导致产品图(底图)时灵时不灵。
   const baseLoadRef = useRef<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/config", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((config: { defaultImageModel?: string; imageModels?: ImageModelOption[] }) => {
+        if (cancelled) return;
+        const options = Array.isArray(config.imageModels)
+          ? config.imageModels.filter((item) => item?.id && item?.label)
+          : [];
+        const fallback = config.defaultImageModel || options[0]?.id || "";
+        setImageModels(options);
+        setModel((current) => {
+          if (options.some((item) => item.id === current)) return current;
+          const saved = window.localStorage.getItem("naumi:generate-image-model") || "";
+          if (options.some((item) => item.id === saved)) return saved;
+          return options.find((item) => item.id === fallback)?.id || options[0]?.id || fallback;
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function pickModel(value: string) {
+    setModel(value);
+    window.localStorage.setItem("naumi:generate-image-model", value);
+  }
 
   // 把一张远程图(模板原图 / 作品库源图或上一版)下载进左侧「产品图(底图)」。
   // 按 URL 去重:同 URL 只下载一次(重跑直接跳过,不会取消在途的大图);
@@ -474,6 +506,7 @@ export function GenerateClient({
       fd.append("quality", quality);
       fd.append("style", style);
       fd.append("count", String(count));
+      if (model) fd.append("model", model);
       fd.append("email", user.email);
       if (parentId) fd.append("parentId", parentId);
       // 无显式父节点 + 来自模板「做同款」→ 传模板信息,服务端建/接"模板原图"根
@@ -721,6 +754,20 @@ export function GenerateClient({
 
             {/* 控制参数 */}
             <div className="space-y-4 border-t border-c-line pt-4">
+              {/* 生图模型 */}
+              <div className="grid grid-cols-[1fr_154px] items-center gap-2.5">
+                <span className="text-[13px] text-c-text2">{t("gen.modelLabel")}</span>
+                <SelectMenu
+                  className="w-full"
+                  value={model}
+                  onChange={pickModel}
+                  options={imageModels.map((item) => ({
+                    value: item.id,
+                    label: item.supportsEdit ? item.label : `${item.label} · ${t("canvas.modelTextOnly")}`,
+                  }))}
+                />
+              </div>
+
               {/* 风格 */}
               <div className="grid grid-cols-[1fr_154px] items-center gap-2.5">
                 <span className="text-[13px] text-c-text2">{t("gen.styleLabel")}</span>

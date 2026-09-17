@@ -5,6 +5,7 @@ import {
   getAdminView,
   saveOpenAIKey,
   saveOpenAIModel,
+  saveOpenAIModels,
   saveOpenAIBaseUrl,
   saveCutoutModel,
   saveCutoutBackend,
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
 
   let body: {
     model?: string;
+    models?: string[];
     cutoutModel?: string;
     cutoutBackend?: string;
     replicateModel?: string;
@@ -146,6 +148,9 @@ export async function POST(req: Request) {
   try {
     if (typeof body.model === "string" && body.model.trim()) {
       await saveOpenAIModel(body.model);
+    }
+    if (Array.isArray(body.models)) {
+      await saveOpenAIModels(body.models);
     }
     // AI 模型接口地址:RSA 加密传输、加密落库(保护海外域名/凭证,不走明文)。
     // baseUrlClear=清除→回退直连;否则解密后保存(saveOpenAIBaseUrl 内部再 AES 落库)。

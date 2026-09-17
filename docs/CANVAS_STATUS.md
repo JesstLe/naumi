@@ -122,3 +122,20 @@
 - `node scripts/canvas-batch-upload-smoke.mjs`：13 项批量拖入回归全部通过，包括空画布首图失败后的连续排队批次仍按真实尺寸互不重叠。
 - `node scripts/upload-performance-smoke.mjs`：4 路画布上传、3 路竞品上传、传输前压缩和 390px 响应式状态面板继续通过。
 - `npm run lint` 与 `npm run build` 退出 0；只保留仓库既有 React Hook 警告，生产构建已包含 `/api/artworks/dimensions`。
+
+## 2026-09-17：生图模型切换
+
+### 已实现
+
+- 画布生成 Dock 中原来的静态“生图模型”标识改为可切换下拉菜单；普通生成、空白节点生成、三视图与详情图组都会把本次选择传到对应生成接口。
+- 独立生图页同步提供相同模型列表与选择控件；画布和独立生图页分别记住最近一次选择，刷新后继续使用。
+- `/api/config` 返回默认模型和允许切换的模型目录；服务端只接受目录内模型，伪造未授权模型会在调用上游前返回 400。
+- 图生图与 A+ 详情图会校验模型是否支持参考图，避免把参考图静默丢弃后退化成纯文生图。
+- 管理后台“图像模型”区域新增前台可切换模型列表配置，支持逗号或换行分隔；环境变量可使用 `OPENAI_IMAGE_MODELS` 配置同一目录。
+- 模型目录以后台设置优先，其次读取环境变量，未配置时使用内置 `gpt-image` 模型目录；当前默认模型始终自动加入目录。
+
+### 本轮验证
+
+- `node scripts/canvas-model-switch-smoke.mjs` 使用临时 PostgreSQL、确定性图片上游和真实 Chrome 验证：默认/可选模型目录、画布切换、选择持久化、所选模型真实进入上游 multipart、未授权模型拦截、独立生图页共享目录及浏览器无异常，共 6 项通过。
+- `node scripts/canvas-native-size-smoke.mjs` 4 项继续通过；`node scripts/canvas-batch-upload-smoke.mjs` 13 项继续通过。
+- `npm run lint` 与 `npm run build` 退出 0，只保留仓库既有 React Hook 警告。

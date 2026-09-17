@@ -37,6 +37,8 @@ services:
       # 大陆服务器连不上 api.openai.com 时,设为任意 OpenAI 兼容中转地址即可。
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-gpt-image-2}
+      OPENAI_IMAGE_MODELS: ${OPENAI_IMAGE_MODELS:-}
       # Pi Agent 文本/视觉模型可使用独立的 OpenAI 兼容通道，不影响图片生成配置。
       AGENT_BASE_URL: ${AGENT_BASE_URL:-}
       AGENT_API_KEY: ${AGENT_API_KEY:-}

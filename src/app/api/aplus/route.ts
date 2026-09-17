@@ -687,6 +687,7 @@ async function parseInput(request: Request) {
       }
     })(),
     origin: (f.get("origin") ?? "").toString().trim() === "canvas" ? "canvas" : "",
+    model: (f.get("model") ?? "").toString().trim(),
   };
 }
 
@@ -808,7 +809,20 @@ export async function POST(request: Request) {
     );
   }
 
-  const { model } = await getOpenAISettings();
+  const { model: defaultModel, models } = await getOpenAISettings();
+  const model = input.model || defaultModel;
+  if (!models.includes(model)) {
+    return NextResponse.json(
+      { error: "所选生图模型不可用，请刷新模型列表后重试" },
+      { status: 400 }
+    );
+  }
+  if (!model.startsWith("gpt-image")) {
+    return NextResponse.json(
+      { error: "详情图生成需要支持参考图的生图模型" },
+      { status: 400 }
+    );
+  }
   const ip = clientIp(request);
   if (!rateLimit(`aplus:${ip}`, 8, 600_000)) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });

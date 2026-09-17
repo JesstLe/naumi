@@ -140,6 +140,7 @@ type MemberDetail = {
 
 type View = {
   model: string;
+  models?: string[];
   cutoutModel: string;
   keyMasked: string;
   hasKey: boolean;
@@ -331,6 +332,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
   const [isAdmin, setIsAdmin] = useState(false);
   const [view, setView] = useState<View | null>(null);
   const [model, setModel] = useState("");
+  const [imageModels, setImageModels] = useState("");
   const [cutoutModel, setCutoutModel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [baseUrlMasked, setBaseUrlMasked] = useState("");
@@ -559,6 +561,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
     setToken(tok ?? "local");
     setView(v);
     setModel(v.model);
+    setImageModels((v.models ?? [v.model]).join(", "));
     setCutoutModel(v.cutoutModel);
     setBaseUrl(""); // 不回显明文
     setBaseUrlMasked(v.openaiBaseUrlMasked ?? "");
@@ -701,12 +704,19 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
     try {
       const payload: {
         model?: string;
+        models?: string[];
         cutoutModel?: string;
         cutoutBackend?: string;
         replicateModel?: string;
         encryptedKey?: string;
         keyPlain?: string; // HTTP 无 crypto.subtle 时的明文兜底(服务端仍加密落库)
-      } = { model, cutoutModel, cutoutBackend, replicateModel };
+      } = {
+        model,
+        models: imageModels.split(/[\n,]/).map((item) => item.trim()).filter(Boolean),
+        cutoutModel,
+        cutoutBackend,
+        replicateModel,
+      };
       if (opts.withKey) {
         if (!keyInput.trim()) throw new Error("请输入新的 API Key");
         if (hasSubtle())
@@ -725,6 +735,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
       if (!res.ok) throw new Error(data.error || "保存失败");
       setView(data as View);
       setModel((data as View).model);
+      setImageModels(((data as View).models ?? [(data as View).model]).join(", "));
       setCutoutModel((data as View).cutoutModel);
       setCutoutBackend((data as View).cutoutBackend ?? "replicate");
       setReplicateModel(
@@ -1547,6 +1558,16 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
                   {m}
                 </button>
               ))}
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                前台可切换模型（逗号或换行分隔）
+              </label>
+              <Input
+                value={imageModels}
+                onChange={(e) => setImageModels(e.target.value)}
+                placeholder="gpt-image-2, gpt-image-1.5, gpt-image-1"
+              />
             </div>
             <Button
               variant="outline"

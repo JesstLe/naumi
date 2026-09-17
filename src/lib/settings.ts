@@ -20,6 +20,7 @@ const RSA_PUB = "rsa_public_pem";
 const RSA_PRIV = "rsa_private_pem";
 const OAI_KEY_ENC = "openai_api_key_enc";
 const OAI_MODEL = "openai_image_model";
+const OAI_MODELS = "openai_image_models";
 // 抠图/透明底专用模型:透明底(background:transparent)只有部分模型支持,默认 gpt-image-1。
 // 注:这是「OpenAI 兜底抠图」用的模型;主路径是下面的 Replicate BiRefNet。
 const OAI_CUTOUT_MODEL = "openai_cutout_model";
@@ -146,9 +147,52 @@ export function maskKey(k: string): string {
 export type OpenAISettings = {
   apiKey: string;
   model: string;
+  models: string[];
   cutoutModel: string;
   source: "db" | "env" | "none";
 };
+
+const DEFAULT_IMAGE_MODELS = [
+  "gpt-image-2",
+  "gpt-image-1.5",
+  "gpt-image-1",
+  "gpt-image-1-mini",
+];
+
+function normalizeImageModels(value: unknown): string[] {
+  let source: unknown[] = [];
+  if (Array.isArray(value)) source = value;
+  else if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        source = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        source = trimmed.split(/[\n,]/);
+      }
+    } else source = trimmed.split(/[\n,]/);
+  }
+  return Array.from(
+    new Set(
+      source
+        .map((item) => String(item).trim())
+        .filter((item) => item.length > 0 && item.length <= 80)
+        .filter((item) => /^[a-zA-Z0-9._:/-]+$/.test(item))
+    )
+  ).slice(0, 12);
+}
+
+function imageModelCatalog(primary: string, configured: unknown) {
+  const explicit = normalizeImageModels(configured);
+  const fallback = normalizeImageModels(process.env.OPENAI_IMAGE_MODELS || "");
+  const candidates = explicit.length
+    ? explicit
+    : fallback.length
+      ? fallback
+      : DEFAULT_IMAGE_MODELS;
+  return Array.from(new Set([primary, ...candidates].filter(Boolean))).slice(0, 12);
+}
 
 export async function getOpenAISettings(): Promise<OpenAISettings> {
   const envKey = process.env.OPENAI_API_KEY || "";
@@ -158,13 +202,17 @@ export async function getOpenAISettings(): Promise<OpenAISettings> {
   if (dbEnabled) {
     const enc = await getSetting(OAI_KEY_ENC);
     const m = await getSetting(OAI_MODEL);
+    const ms = await getSetting(OAI_MODELS);
     const cm = await getSetting(OAI_CUTOUT_MODEL);
     const dbKey = enc ? decryptAtRest(enc) : null;
-    if (dbKey || m || cm) {
+    if (dbKey || m || ms || cm) {
+      const model = m || envModel;
+      const cutoutModel = cm || envCutout;
       return {
         apiKey: dbKey || envKey,
-        model: m || envModel,
-        cutoutModel: cm || envCutout,
+        model,
+        models: imageModelCatalog(model, ms),
+        cutoutModel,
         source: dbKey ? "db" : envKey ? "env" : "none",
       };
     }
@@ -172,6 +220,7 @@ export async function getOpenAISettings(): Promise<OpenAISettings> {
   return {
     apiKey: envKey,
     model: envModel,
+    models: imageModelCatalog(envModel, ""),
     cutoutModel: envCutout,
     source: envKey ? "env" : "none",
   };
@@ -183,6 +232,11 @@ export async function saveOpenAIKey(plain: string): Promise<void> {
 
 export async function saveOpenAIModel(model: string): Promise<void> {
   await setSetting(OAI_MODEL, model.trim());
+}
+
+export async function saveOpenAIModels(models: string[]): Promise<void> {
+  const clean = normalizeImageModels(models);
+  await setSetting(OAI_MODELS, clean.length ? JSON.stringify(clean) : "");
 }
 
 // AI 模型接口地址(OpenAI 兼容 baseURL)。**加密落库**(保护海外域名/服务器,
@@ -612,6 +666,7 @@ export async function getAdminView() {
   const baseUrlPlain = await readOpenAIBaseUrlPlain();
   return {
     model: s.model,
+    models: s.models,
     cutoutModel: s.cutoutModel,
     keyMasked: maskKey(s.apiKey),
     hasKey: !!s.apiKey,
