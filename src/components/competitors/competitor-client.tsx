@@ -8,9 +8,14 @@ import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
 import { currentImage, competitorClientId, REGION_LABELS, type CompetitorItem, type CompetitorRegion } from "@/lib/competitor-types";
 import { RegionEditor } from "./region-editor";
+import { bytesLabel, prepareImageUpload, uploadFormData } from "@/lib/client-image-upload";
 import "./competitors.css";
 
-type UploadTask = { id: string; batch: string; file: File; path: string; status: "waiting"|"uploading"|"done"|"error"; error?: string };
+type UploadTask = {
+  id: string; batch: string; file: File; path: string;
+  status: "waiting"|"optimizing"|"uploading"|"done"|"error";
+  error?: string; progress?: number; originalBytes: number; uploadBytes?: number;
+};
 async function api(url: string, method = "GET", body?: unknown) {
   const form = body instanceof FormData;
   const r = await fetch(url, { method, headers: { ...await authHeader(), ...(!form && body ? { "Content-Type": "application/json" } : {}) }, body: body ? form ? body : JSON.stringify(body) : undefined });
@@ -130,17 +135,31 @@ export function CompetitorClient() {
   async function upload(tasks: UploadTask[], asProduct = false) {
     if (uploadGuard.current) return;
     uploadGuard.current = true; setUploading(true); setError("");
-    let first = "";
+    const ids = new Array<string>(tasks.length).fill("");
+    let next = 0;
     try {
-      for (const task of tasks) {
-        setQueue(all => all.map(t => t.id === task.id ? { ...t, status: "uploading", error: "" } : t));
-        try {
-          const fd = new FormData(); fd.append("image", task.file); fd.append("path", task.path); fd.append("batchId", task.batch);
-          const data = await api("/api/competitors", "POST", fd); accept(data.item); first ||= data.item.id;
-          if (asProduct) setProductId(data.item.id);
-          setQueue(all => all.map(t => t.id === task.id ? { ...t, status: "done" } : t));
-        } catch(e) { setQueue(all => all.map(t => t.id === task.id ? { ...t, status: "error", error: (e as Error).message } : t)); }
-      }
+      const worker = async () => {
+        while (next < tasks.length) {
+          const index = next++;
+          const task = tasks[index];
+          setQueue(all => all.map(t => t.id === task.id ? { ...t, status: "optimizing", progress: 0, error: "" } : t));
+          try {
+            const prepared = await prepareImageUpload(task.file);
+            setQueue(all => all.map(t => t.id === task.id ? { ...t, status: "uploading", uploadBytes: prepared.uploadBytes } : t));
+            const fd = new FormData(); fd.append("image", prepared.file); fd.append("path", task.path); fd.append("batchId", task.batch);
+            const data = await uploadFormData<{ item: CompetitorItem }>("/api/competitors", fd, (loaded, total) => {
+              const progress = total ? Math.min(100, Math.round(loaded / total * 100)) : 0;
+              setQueue(all => all.map(t => t.id === task.id ? { ...t, progress } : t));
+            });
+            accept(data.item); ids[index] = data.item.id;
+            if (asProduct) setProductId(data.item.id);
+            setQueue(all => all.map(t => t.id === task.id ? { ...t, status: "done", progress: 100, uploadBytes: prepared.uploadBytes } : t));
+          } catch(e) { setQueue(all => all.map(t => t.id === task.id ? { ...t, status: "error", error: (e as Error).message } : t)); }
+        }
+      };
+      // Folder import uses three workers; product reference remains a single request.
+      await Promise.all(Array.from({ length: Math.min(asProduct ? 1 : 3, tasks.length) }, worker));
+      const first = ids.find(Boolean) || "";
       if (first && !asProduct) { setActiveId(first); setFolder("all"); }
     } finally { uploadGuard.current = false; setUploading(false); }
   }
@@ -152,7 +171,7 @@ export function CompetitorClient() {
     if (supported.length > 100) { setError("单次最多导入 100 张图片，请分批选择。"); return; }
     if (!supported.length) { setError("文件夹中没有 JPG、PNG 或 WebP 图片。"); return; }
     const batch = competitorClientId();
-    const tasks: UploadTask[] = supported.map(file => ({ id: competitorClientId(), file, batch, path: file.webkitRelativePath || file.name, status: "waiting" }));
+    const tasks: UploadTask[] = supported.map(file => ({ id: competitorClientId(), file, batch, path: file.webkitRelativePath || file.name, status: "waiting", originalBytes: file.size }));
     setQueue(tasks); if (list.length !== supported.length) setNotice(`已跳过 ${list.length - supported.length} 个非图片文件。`);
     void upload(tasks, asProduct);
   }
@@ -193,8 +212,17 @@ export function CompetitorClient() {
     {error && <div className="cmp-error" role="alert">{error}<button onClick={() => setError("")}>关闭</button></div>}
     {notice && <div className="cmp-notice" role="status">{notice}</div>}
     {(batchBusy || batchResults.length > 0) && <details className="cmp-uploads" open={batchResults.some(r => !r.ok)}><summary>批处理：{batchResults.filter(r => r.ok).length} 成功 / {batchResults.filter(r => !r.ok).length} 失败{batchBusy ? " · 处理中" : " · 已结束"}</summary>{batchResults.map((r,i)=><div key={i}><span>{r.path}</span><span>{r.ok?"完成":"失败，可选中该图重试"}</span></div>)}{batchBusy && <button onClick={()=>{batchStop.current=true;}}>完成当前图片后停止</button>}</details>}
-    {queue.length > 0 && <details className="cmp-uploads" open={queue.some(t => t.status === "error")}><summary>导入进度 {queue.filter(t => t.status === "done").length} / {queue.length}{uploading ? " · 上传中" : ""}</summary>
-      {queue.map(t => <div key={t.id}><span>{t.path}</span><span>{({waiting:"等待",uploading:"上传中",done:"完成",error:"失败"})[t.status]} {t.error}</span>{t.status === "error" && <button disabled={uploading} onClick={() => void upload([t])}>重试</button>}</div>)}
+    {queue.length > 0 && <details className="cmp-uploads" open={uploading || queue.some(t => t.status === "error")}><summary>导入进度 {queue.filter(t => t.status === "done").length} / {queue.length}{uploading ? " · 处理中" : ""}</summary>
+      {queue.map(t => <div className="cmp-upload-row" key={t.id}>
+        <span className="cmp-upload-name" title={t.path}>{t.path}</span>
+        <span className="cmp-upload-state">
+          <span>{({waiting:"等待",optimizing:"优化中",uploading:`上传中 ${t.progress || 0}%`,done:"完成",error:"失败"})[t.status]}</span>
+          {t.uploadBytes ? <small>{t.uploadBytes < t.originalBytes ? `${bytesLabel(t.originalBytes)} → ${bytesLabel(t.uploadBytes)}` : bytesLabel(t.uploadBytes)}</small> : <small>{bytesLabel(t.originalBytes)}</small>}
+          {t.status === "uploading" && <span className="cmp-upload-progress" aria-label={`上传进度 ${t.progress || 0}%`}><i style={{ width: `${t.progress || 0}%` }}/></span>}
+          {t.error && <small className="cmp-upload-error">{t.error}</small>}
+        </span>
+        {t.status === "error" && <button disabled={uploading} onClick={() => void upload([t])}>重试</button>}
+      </div>)}
     </details>}
     <div className="cmp-layout">
       <aside className="cmp-library"><div className="cmp-panel-heading">参考素材</div>

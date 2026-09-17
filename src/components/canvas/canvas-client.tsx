@@ -85,6 +85,7 @@ import { GenerateClient } from "@/components/generate/generate-client";
 import { CheckoutClient } from "@/components/checkout/checkout-client";
 import { usePaymentConfig } from "@/lib/payment-context";
 import { cn, formatDate } from "@/lib/utils";
+import { bytesLabel, prepareImageUploads, uploadFormData } from "@/lib/client-image-upload";
 import {
   type Artwork,
   GENERATION_STYLES,
@@ -895,6 +896,8 @@ export function CanvasClient() {
   const [imageImports, setImageImports] = useState<{
     id: number; total: number; done: number; success: number; finished: boolean;
     errors: { name: string; message: string }[];
+    phase: "optimizing" | "uploading" | "done";
+    originalBytes: number; uploadBytes: number; uploadedBytes: number;
   }[]>([]);
 
   function resetImportScope() {
@@ -3200,39 +3203,55 @@ export function CanvasClient() {
     });
     setImageImports(current => [...current.filter(batch => !batch.finished || batch.errors.length > 0), {
       id, total: picked.length, done: failures.length, success: 0, errors: failures, finished: false,
+      phase: "optimizing", originalBytes: valid.reduce((sum, file) => sum + file.size, 0),
+      uploadBytes: valid.reduce((sum, file) => sum + file.size, 0), uploadedBytes: 0,
     }]);
     const run = async () => {
+      const prepared = await prepareImageUploads(entries.map(entry => entry.file), 3);
+      const uploadBytes = prepared.reduce((sum, item) => sum + item.uploadBytes, 0);
+      const loaded = new Array(prepared.length).fill(0) as number[];
+      setImageImports(current => current.map(batch => batch.id === id ? {
+        ...batch, phase: "uploading", uploadBytes,
+      } : batch));
       const ids: (string | undefined)[] = [];
       const upload = async (index: number) => {
         const { file, pos } = entries[index];
+        const selected = prepared[index];
         let error = "";
         try {
           const fd = new FormData();
           fd.append("email", email);
-          fd.append("image", file);
+          fd.append("image", selected.file);
           fd.append("title", file.name);
           if (scope.rootId) fd.append("parentId", scope.rootId);
           fd.append("x", String(pos.x));
           fd.append("y", String(pos.y));
-          const r = await privateFetch("/api/artworks/add", {
-            method: "POST", body: fd, signal: AbortSignal.timeout(120_000),
-          });
-          const d = await readJsonSafe(r);
-          if (!r.ok || !d?.id) throw new Error(d?.error || t("canvas.importFailed"));
+          const d = await uploadFormData<{ id?: string; error?: string }>(
+            "/api/artworks/add", fd,
+            (sent, total) => {
+              loaded[index] = total ? Math.min(selected.uploadBytes, sent / total * selected.uploadBytes) : 0;
+              setImageImports(current => current.map(batch => batch.id === id ? {
+                ...batch, uploadedBytes: Math.round(loaded.reduce((sum, value) => sum + value, 0)),
+              } : batch));
+            }
+          );
+          if (!d?.id) throw new Error(d?.error || t("canvas.importFailed"));
           ids[index] = d.id;
           if (!scope.rootId) scope.rootId = d.id;
         } catch (e) {
           error = e instanceof Error ? e.message : t("canvas.importFailed");
         }
+        loaded[index] = selected.uploadBytes;
         setImageImports(current => current.map(batch => batch.id === id ? {
           ...batch, done: batch.done + 1, success: batch.success + (error ? 0 : 1),
           errors: error ? [...batch.errors, { name: file.name, message: error }] : batch.errors,
+          uploadedBytes: Math.round(loaded.reduce((sum, value) => sum + value, 0)),
         } : batch));
       };
       let next = 0;
       // The first successful image is the project root; a failed first image must not split the batch.
       while (!scope.rootId && next < entries.length) await upload(next++);
-      await Promise.all(Array.from({ length: Math.min(3, entries.length - next) }, async () => {
+      await Promise.all(Array.from({ length: Math.min(4, entries.length - next) }, async () => {
         while (next < entries.length) await upload(next++);
       }));
       const added = ids.filter((value): value is string => !!value);
@@ -3242,9 +3261,11 @@ export function CanvasClient() {
         const fresh = await mergeWorks(added);
         if (importScopeRef.current === scope) pushAddUndoMany(added, fresh);
       }
-      setImageImports(current => current.map(batch => batch.id === id ? { ...batch, finished: true } : batch));
+      setImageImports(current => current.map(batch => batch.id === id ? {
+        ...batch, finished: true, phase: "done", uploadedBytes: batch.uploadBytes,
+      } : batch));
     };
-    // Serial batches, up to three uploads per batch. Editing/generation remain available.
+    // Batches stay ordered; after root creation, each batch uses up to four uploads.
     scope.queue = scope.queue.then(run, run).catch(() => {
       setImageImports(current => current.map(batch => batch.id === id ? {
         ...batch, finished: true,
@@ -4871,6 +4892,17 @@ export function CanvasClient() {
                     <span className="flex-1">{batch.finished ? t("canvas.importDone") : t("canvas.importBusy")} {batch.done} / {batch.total} · {t("canvas.importSuccess")} {batch.success}{batch.errors.length ? ` · ${t("canvas.importErrors")} ${batch.errors.length}` : ""}</span>
                     {batch.finished && <button type="button" aria-label={t("canvas.importDismiss")} className="p-1 hover:bg-slate-100" onClick={() => setImageImports(current => current.filter(item => item.id !== batch.id))}><X className="h-3.5 w-3.5" /></button>}
                   </div>
+                  {!batch.finished && (
+                    <div className="mt-2">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full bg-sky-500 transition-[width] duration-200" style={{ width: `${batch.phase === "optimizing" ? 8 : Math.min(100, batch.uploadBytes ? batch.uploadedBytes / batch.uploadBytes * 100 : 0)}%` }} />
+                      </div>
+                      <div className="mt-1 flex justify-between text-[11px] text-slate-500">
+                        <span>{batch.phase === "optimizing" ? t("canvas.importOptimizing") : `${Math.round(batch.uploadBytes ? batch.uploadedBytes / batch.uploadBytes * 100 : 0)}%`}</span>
+                        <span>{batch.uploadBytes < batch.originalBytes ? `${bytesLabel(batch.originalBytes)} → ${bytesLabel(batch.uploadBytes)}` : bytesLabel(batch.uploadBytes)}</span>
+                      </div>
+                    </div>
+                  )}
                   {batch.errors.length > 0 && (
                     <ul className="mt-2 space-y-1 text-xs text-red-600">
                       {batch.errors.map((error, index) => <li key={index} className="break-words">{error.name}：{error.message}</li>)}
