@@ -5,6 +5,7 @@ import { authMode } from "@/lib/auth-mode";
 import { multiUserEnabled } from "@/lib/native-auth";
 import { smtpConfigured } from "@/lib/mailer";
 import { getOpenAISettings } from "@/lib/settings";
+import { getImageModelCatalog } from "@/lib/image-model-catalog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const multiUser = await multiUserEnabled();
   const imageSettings = await getOpenAISettings();
+  const imageModels = await getImageModelCatalog();
   return NextResponse.json({
     db: dbEnabled,
     storage: storageEnabled,
@@ -24,10 +26,6 @@ export async function GET() {
     emailCode: multiUser && (await smtpConfigured()),
     openai: (process.env.OPENAI_API_KEY ?? "").length > 0,
     defaultImageModel: imageSettings.model,
-    imageModels: imageSettings.models.map((id) => ({
-      id,
-      label: id,
-      supportsEdit: id.startsWith("gpt-image"),
-    })),
+    imageModels,
   });
 }

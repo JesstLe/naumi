@@ -24,6 +24,8 @@ import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
+import { getImageModelCatalog, resolveImageModel } from "@/lib/image-model-catalog";
+import { generateNewApiImage } from "@/lib/new-api-image";
 
 // ---------------------------------------------------------------------------
 // A+ 详情页生成:上传商品图(1-3 张) → 勾选内容模块 → AI 规划 + 图生图逐张出图。
@@ -259,6 +261,29 @@ async function editImagesMultipart(
   throw new Error("图片接口为空返回");
 }
 
+async function editWithSelectedProvider(
+  apiKey: string,
+  baseUrl: string,
+  model: string,
+  prompt: string,
+  images: { buf: Buffer; type: string }[],
+  size: "1024x1024" | "1536x1024" | "1024x1536"
+) {
+  const descriptor = await resolveImageModel(model);
+  if (descriptor?.provider === "new-api-flow") {
+    const result = await generateNewApiImage({
+      model,
+      prompt,
+      images: images.map((image) => ({
+        buffer: image.buf,
+        mimeType: image.type || "image/png",
+      })),
+    });
+    return result.buffer;
+  }
+  return editImagesMultipart(apiKey, baseUrl, model, prompt, images, size);
+}
+
 // 生成一张,返回 PNG buffer(与套图同管线)。
 async function genOneShot(
   apiKey: string,
@@ -270,9 +295,10 @@ async function genOneShot(
 ): Promise<Buffer> {
   let images = productImages;
   let prompt = spec.prompt;
+  const descriptor = await resolveImageModel(model);
   // 兼容网关可能忽略 size、转而沿用第一张参考图纵横比。横版 A+ 先放一张无内容
   // 的横版画布锚点，商品白底图随后提交；提示词明确锚点不是商品，避免模型画出空卡片。
-  if (size === "1536x1024") {
+  if (size === "1536x1024" && descriptor?.provider !== "new-api-flow") {
     const mod = (await import("sharp")) as unknown as {
       default?: typeof import("sharp");
     } & typeof import("sharp");
@@ -293,7 +319,7 @@ async function genOneShot(
       "后续输入图才是必须保持一致的白底商品参考。最终输出必须为横版 A+ 模块。" +
       spec.prompt;
   }
-  return editImagesMultipart(
+  return editWithSelectedProvider(
     apiKey,
     baseUrl,
     model,
@@ -323,7 +349,7 @@ async function prepareWhiteSource(
   let lastError: unknown = null;
   for (let attempt = 0; attempt <= SOURCE_RETRIES; attempt++) {
     try {
-      return await editImagesMultipart(
+      return await editWithSelectedProvider(
         apiKey,
         baseUrl,
         model,
@@ -809,15 +835,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const { model: defaultModel, models } = await getOpenAISettings();
+  const { model: defaultModel } = await getOpenAISettings();
   const model = input.model || defaultModel;
-  if (!models.includes(model)) {
+  const imageModel = (await getImageModelCatalog()).find((item) => item.id === model);
+  if (!imageModel) {
     return NextResponse.json(
       { error: "所选生图模型不可用，请刷新模型列表后重试" },
       { status: 400 }
     );
   }
-  if (!model.startsWith("gpt-image")) {
+  if (!imageModel.supportsEdit) {
     return NextResponse.json(
       { error: "详情图生成需要支持参考图的生图模型" },
       { status: 400 }

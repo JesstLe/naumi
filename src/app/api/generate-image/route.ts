@@ -30,6 +30,11 @@ import {
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { getStyleGuide } from "@/lib/prompt-config";
+import {
+  getImageModelCatalog,
+  type ImageModelDescriptor,
+} from "@/lib/image-model-catalog";
+import { generateNewApiImage } from "@/lib/new-api-image";
 
 // ---------------------------------------------------------------------------
 // Image generation / editing endpoint.
@@ -390,6 +395,55 @@ async function openaiImages(
   return images;
 }
 
+async function newApiFlowImages(
+  p: GenParams,
+  model: string
+): Promise<GeneratedImage[]> {
+  const prompt = p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide());
+  const references = p.images.map((image) => ({
+    buffer: Buffer.from(image.buf),
+    mimeType: image.type || "image/png",
+  }));
+  const settled = await Promise.allSettled(
+    Array.from({ length: p.count }, (_, index) =>
+      withGenSlot(async () => {
+        const result = await generateNewApiImage({
+          model,
+          prompt,
+          images: references,
+        });
+        return {
+          id: `gen-${Date.now()}-${Math.floor(Math.random() * 1e6)}-${index}`,
+          url: `data:${result.contentType};base64,${result.buffer.toString("base64")}`,
+          gradient: GRADIENTS[index % GRADIENTS.length],
+          prompt: p.prompt,
+          ratio: p.ratio,
+          createdAt: new Date().toISOString(),
+        } satisfies GeneratedImage;
+      })
+    )
+  );
+  const images: GeneratedImage[] = [];
+  const failures: unknown[] = [];
+  for (const result of settled) {
+    if (result.status === "fulfilled") images.push(result.value);
+    else failures.push(result.reason);
+  }
+  if (failures.length) {
+    console.error(
+      `[generate-image] New API partial failure: requested=${p.count} succeeded=${images.length} failed=${failures.length}`,
+      failures.map((reason) =>
+        reason instanceof Error ? reason.message : String(reason)
+      )
+    );
+  }
+  if (!images.length) {
+    const first = failures[0];
+    throw first instanceof Error ? first : new Error("New API 生图分组未返回图片");
+  }
+  return images;
+}
+
 // 把图生图的输入图统一重编码成干净的 PNG(sRGB/8bit),修复:
 //  · 真实格式是 JPEG/WEBP 却按 .png 上传 → OpenAI "Invalid image file"
 //  · CMYK / 16bit / 带怪异色彩配置 → "or mode" 报错
@@ -678,7 +732,7 @@ async function runJob(
   jobId: string,
   p: GenParams,
   apiKey: string,
-  model: string,
+  imageModel: ImageModelDescriptor,
   cutoutModel: string,
   useDb: boolean,
   cost: number
@@ -687,9 +741,12 @@ async function runJob(
   try {
     // —— 临时埋点:量出每段耗时,定位生图慢在哪(OpenAI出图 / 放大 / 传R2 / 图大小)——
     const _t0 = Date.now();
-    let images = apiKey
-      ? await openaiImages(p, apiKey, model, cutoutModel)
-      : mockImages(p);
+    let images =
+      imageModel.provider === "new-api-flow" && !p.transparent
+        ? await newApiFlowImages(p, imageModel.id)
+        : apiKey
+          ? await openaiImages(p, apiKey, imageModel.id, cutoutModel)
+          : mockImages(p);
     const _tOpenai = Date.now() - _t0;
     const _t1 = Date.now();
     images = await enforceOutputShape(images, p);
@@ -854,15 +911,16 @@ export async function POST(request: Request) {
   }
 
   try {
-  const { apiKey, model: defaultModel, models, cutoutModel } = await getOpenAISettings();
+  const { apiKey, model: defaultModel, cutoutModel } = await getOpenAISettings();
   const model = p.model || defaultModel;
-  if (!models.includes(model)) {
+  const imageModel = (await getImageModelCatalog()).find((item) => item.id === model);
+  if (!imageModel) {
     return NextResponse.json(
       { error: "所选生图模型不可用，请刷新模型列表后重试" },
       { status: 400 }
     );
   }
-  if (p.images.length > 0 && !model.startsWith("gpt-image")) {
+  if (p.images.length > 0 && !imageModel.supportsEdit) {
     return NextResponse.json(
       { error: "所选模型不支持参考图生成，请切换图生图模型" },
       { status: 400 }
@@ -923,7 +981,7 @@ export async function POST(request: Request) {
   // dies mid-job. Older orphans were swept before the balance check above.
   if (useDb) await addReservation(jobId, p.email, cost);
   // Fire-and-forget: continues in the persistent Node server after we respond.
-  void runJob(jobId, p, apiKey, model, cutoutModel, useDb, cost);
+  void runJob(jobId, p, apiKey, imageModel, cutoutModel, useDb, cost);
 
   return NextResponse.json({ jobId });
   } catch (e) {

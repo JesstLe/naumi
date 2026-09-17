@@ -139,3 +139,20 @@
 - `node scripts/canvas-model-switch-smoke.mjs` 使用临时 PostgreSQL、确定性图片上游和真实 Chrome 验证：默认/可选模型目录、画布切换、选择持久化、所选模型真实进入上游 multipart、未授权模型拦截、独立生图页共享目录及浏览器无异常，共 6 项通过。
 - `node scripts/canvas-native-size-smoke.mjs` 4 项继续通过；`node scripts/canvas-batch-upload-smoke.mjs` 13 项继续通过。
 - `npm run lint` 与 `npm run build` 退出 0，只保留仓库既有 React Hook 警告。
+
+## 2026-09-17：接入 New API 生图分组
+
+### 已实现
+
+- 新增独立的 New API 生图分组配置：`NEW_API_IMAGE_BASE_URL`、`NEW_API_IMAGE_API_KEY`；主 `gpt-image` 通道与 New API `image` 分组使用不同令牌，互不覆盖。
+- 服务端从 New API `/v1/models` 自动发现当前 image 分组实际可用的 Gemini / Imagen 模型，并使用 5 分钟缓存；目录暂时不可用时可由 `NEW_API_IMAGE_MODELS` 提供兜底。
+- `/api/config` 将主通道模型与 New API 生图模型合并，返回供应商类型、友好名称和图生图能力。前端现有模型下拉无需写死模型列表即可显示新分组。
+- Gemini / Imagen 使用 New API 的 OpenAI 兼容 `chat/completions + stream:true` 协议；支持文生图与最多 6 张参考图，服务端解析流式 Markdown 图片地址后立即下载并存入 Naumi 自有存储，避免依赖有时效的上游签名链接。
+- 普通生图、画布多节点生成、三视图和 A+ 详情图共用同一模型目录与白名单；A+ 的白底母图、单张重做和详情模块生成均可使用 New API 生图分组模型。
+- 未配置分组令牌时只保留原有主通道，不影响现有 `gpt-image-2` 生成。
+
+### 本轮验证
+
+- `node scripts/new-api-image-group-smoke.mjs` 使用临时 PostgreSQL、确定性 New API SSE 上游和真实 Chrome 验证：动态模型目录、友好名称、前端切换、图生图参考图传递、结果持久化、A+ 详情图复用所选模型及越权模型拦截，共 5 项通过。
+- 使用 `api.opensynapse.top` 的真实 image 分组令牌验证 `/v1/models` 返回 12 个模型；`gemini-3.1-flash-image-square` 经 New API 真实出图成功。
+- 使用当前 Naumi 应用代码、临时数据库和真实 New API 分组完成端到端生成，结果图片可下载并持久化；未接触已有 Naumi 账号和作品数据。
