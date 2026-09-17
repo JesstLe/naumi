@@ -20,6 +20,17 @@ mkdir -m 700 "$RELEASE/backups"
 cp -p "$PREVIOUS/.env" "$RELEASE/.env"
 # Preserve every live runtime override, account secret and volume binding.
 cp "$PREVIOUS/docker-compose.yml" "$RELEASE/docker-compose.yml"
+if ! grep -q 'NEW_API_IMAGE_BASE_URL:' "$RELEASE/docker-compose.yml"; then
+  awk '{
+    print
+    if ($0 ~ /^[[:space:]]*OPENAI_IMAGE_MODELS:/) {
+      print "      NEW_API_IMAGE_BASE_URL: ${NEW_API_IMAGE_BASE_URL:-}"
+      print "      NEW_API_IMAGE_API_KEY: ${NEW_API_IMAGE_API_KEY:-}"
+      print "      NEW_API_IMAGE_MODELS: ${NEW_API_IMAGE_MODELS:-}"
+    }
+  }' "$RELEASE/docker-compose.yml" > "$RELEASE/docker-compose.yml.tmp"
+  mv "$RELEASE/docker-compose.yml.tmp" "$RELEASE/docker-compose.yml"
+fi
 sed -i -E "s#image: ghcr.io/jesstle/naumi:[^ ]+#image: ghcr.io/jesstle/naumi:$COMMIT#" "$RELEASE/docker-compose.yml"
 sed -i '/^[[:space:]]*REFERENCE_VISION_\(SOURCE\|MODEL\):/d' "$RELEASE/docker-compose.yml"
 sed -i '/^[[:space:]]*AGENT_VISION_MODEL:/a\      REFERENCE_VISION_SOURCE: image\n      REFERENCE_VISION_MODEL: gpt-5.6-luna' "$RELEASE/docker-compose.yml"
