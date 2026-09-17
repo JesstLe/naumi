@@ -98,6 +98,13 @@ try {
   pass("legacy artwork dimensions backfill from the original image on first canvas load");
 
   await page.locator(`.react-flow__node[data-id="${square.id}"]`).click();
+  await page.getByRole("button", { name: "解组", exact: true }).click();
+  await expect.poll(async () => {
+    const grouped = await pool.query("select canvas_group_id from app_artworks where id = any($1::text[])", [[square.id, tall.id]]);
+    return grouped.rows.every((row) => !row.canvas_group_id);
+  }).toBe(true);
+  await page.locator(".react-flow__pane").click({ position: { x: 1200, y: 700 }, force: true });
+  await page.locator(`.react-flow__node[data-id="${square.id}"]`).click();
   await page.getByRole("button", { name: /自适应.*1K/ }).click();
   await page.getByLabel("自定义宽度").fill("900");
   await page.getByLabel("自定义高度").fill("1200");

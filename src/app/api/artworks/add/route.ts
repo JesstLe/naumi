@@ -45,6 +45,7 @@ export async function POST(request: Request) {
     const title = String(fd.get("title") ?? "").trim() || "上传图片";
     // linked=1(拉线建的)→ 画连线(source≠canvas-add);否则独立无线
     const linked = String(fd.get("linked") ?? "") === "1";
+    const canvasGroupId = String(fd.get("canvasGroupId") ?? "").trim().slice(0, 120) || null;
     const px = Number(fd.get("x"));
     const py = Number(fd.get("y"));
     const file = fd.get("image");
@@ -89,6 +90,7 @@ export async function POST(request: Request) {
           gradient: GRADIENTS[0],
           parentId,
           source: linked ? "upload" : "canvas-add",
+          canvasGroupId,
           width,
           height,
         },
@@ -102,7 +104,7 @@ export async function POST(request: Request) {
     if (Number.isFinite(px) && Number.isFinite(py)) {
       await setArtworkPosition(email, id, px, py).catch(() => {});
     }
-    return NextResponse.json({ ok: true, id, image: url, width, height });
+    return NextResponse.json({ ok: true, id, image: url, width, height, canvasGroupId });
   }
 
   // ── 创建副本 / 粘贴节点 ──

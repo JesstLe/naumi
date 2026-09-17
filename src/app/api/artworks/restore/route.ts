@@ -49,6 +49,7 @@ export async function POST(request: Request) {
         parentIds: r.parentIds ?? [],
         templateId: r.templateId ?? null,
         groupId: r.groupId ?? null, // 保留原项目分组
+        canvasGroupId: r.canvasGroupId ?? null, // 保留画布编辑分组
         width: r.width ?? null,
         height: r.height ?? null,
       }))

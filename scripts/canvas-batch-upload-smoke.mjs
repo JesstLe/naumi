@@ -45,6 +45,19 @@ try {
   const context = await browser.newContext({ storageState: await api.storageState(), viewport: { width: 1440, height: 1000 } });
   page = await context.newPage(); page.on("pageerror", e => errors.push(e.message));
   await page.goto(`${base}/canvas`);
+  const browserLanding = page.getByTestId("canvas-project-browser");
+  await expect(browserLanding).toBeVisible();
+  await expect(page.getByRole("button", { name: "通用工作流", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^商品主图/ })).toBeVisible();
+  const landingBg = await browserLanding.evaluate(element => getComputedStyle(element).backgroundColor);
+  assert.equal(landingBg, "rgb(246, 247, 249)");
+  pass("project browser uses the light workbench layout and exposes common workflows");
+  await page.screenshot({ path: path.join(out, "landing-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  await page.screenshot({ path: path.join(out, "landing-mobile.png"), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  pass("project browser remains readable at 390px without horizontal overflow");
   await page.getByRole("button", { name: /开始创作/ }).click();
   await page.locator(".react-flow").waitFor();
   const surface = page.locator(".react-flow");
@@ -74,11 +87,67 @@ try {
     await expect(page.getByTestId("canvas-import-status")).toContainText("完成 3 / 3");
     let list = await works();
     assert.equal(new Set(list.map(a => a.groupId)).size, 1);
+    assert.equal(new Set(list.map(a => a.canvasGroupId)).size, 1);
+    assert(list[0].canvasGroupId);
     assert.equal(new Set(list.map(a => `${a.canvasX},${a.canvasY}`)).size, 3);
     assert.deepEqual(list.map(a => a.title).sort(), ["back.png", "front.png", "side.png"]);
     assert.equal(await page.locator(".react-flow__edge").count(), 0);
     await expect.poll(() => nodes.locator("img").evaluateAll(imgs => imgs.every(i => i.complete && i.naturalWidth > 0))).toBe(true);
     pass("drop three images: three loaded nodes, filename titles, one project, separate positions, no false edges");
+
+    // One batch is an editable group: clicking one member selects the whole group.
+    await nodes.first().click();
+    await expect(page.getByLabel("批量操作")).toContainText("已选 3 个");
+    await expect(page.getByRole("button", { name: "解组", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "解组", exact: true }).click();
+    await expect.poll(async () => (await works()).filter(a => ["front.png", "side.png", "back.png"].includes(a.title)).every(a => !a.canvasGroupId)).toBe(true);
+    pass("batch import auto-groups nodes and the group can be explicitly ungrouped");
+
+    await page.locator(".react-flow__pane").click({ position: { x: 900, y: 650 }, force: true });
+    await page.keyboard.down("Control");
+    await nodes.nth(0).click();
+    await nodes.nth(1).click();
+    await page.keyboard.up("Control");
+    await expect(page.getByRole("button", { name: "成组", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "成组", exact: true }).click();
+    await expect.poll(async () => {
+      const imported = (await works()).filter(a => ["front.png", "side.png", "back.png"].includes(a.title));
+      const grouped = imported.filter(a => a.canvasGroupId);
+      return grouped.length === 2 && new Set(grouped.map(a => a.canvasGroupId)).size === 1;
+    }).toBe(true);
+    pass("arbitrary multi-selection can be grouped without changing project lineage");
+
+    await page.locator(".react-flow__pane").click({ position: { x: 900, y: 650 }, force: true });
+    const groupedBefore = (await works()).filter(a => a.canvasGroupId);
+    const groupedIds = groupedBefore.map(a => a.id);
+    const groupedNode = page.locator(`.react-flow__node[data-id="${groupedIds[0]}"]`);
+    await groupedNode.click();
+    await expect(page.getByLabel("批量操作")).toContainText("已选 2 个");
+    const box = await groupedNode.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 40, { steps: 6 });
+    await page.mouse.up();
+    await expect.poll(async () => {
+      const after = (await works()).filter(a => groupedIds.includes(a.id));
+      return after.length === 2 && after.every(a => {
+        const before = groupedBefore.find(item => item.id === a.id);
+        return Math.abs(a.canvasX - before.canvasX) > 10 && Math.abs(a.canvasY - before.canvasY) > 10;
+      });
+    }).toBe(true);
+    pass("clicking a grouped member selects and moves the full group with persisted positions");
+    await page.getByRole("button", { name: "解组", exact: true }).click();
+    await expect.poll(async () => {
+      const ungrouped = (await works()).filter(a => groupedIds.includes(a.id));
+      return ungrouped.length === 2 && ungrouped.every(a => !a.canvasGroupId);
+    }).toBe(true);
+    await page.keyboard.press("Control+z");
+    await expect.poll(async () => {
+      const restored = (await works()).filter(a => groupedIds.includes(a.id));
+      return restored.length === 2 && restored.every(a => a.canvasGroupId === restored[0].canvasGroupId && !!a.canvasGroupId);
+    }).toBe(true);
+    pass("ungroup participates in undo and restores the persisted group");
+    await page.getByRole("button", { name: "清除选择", exact: true }).click();
 
     // A second drop is queued while the first is in-flight, never rejected/locked.
     await drop(files(["four.png", "five.png"]));
@@ -126,6 +195,21 @@ try {
     await page.reload(); await expect(nodes).toHaveCount(13, { timeout: 60000 });
     assert.equal(new Set((await works()).map(a => a.groupId)).size, 1);
     pass("refresh restores all imported nodes in the same project");
+
+    const addNodeButton = page.getByRole("button", { name: "添加节点", exact: true });
+    const addNodeBox = await addNodeButton.boundingBox();
+    assert(addNodeBox.width >= 48 && addNodeBox.height >= 48);
+    await page.getByRole("button", { name: /^\d+(?:\.\d+)?%$/ }).click();
+    const zoomInput = page.locator('.menu-pop-up input[inputmode="decimal"]');
+    await zoomInput.fill("5");
+    await zoomInput.press("Enter");
+    await addNodeButton.click();
+    await page.getByRole("button", { name: "图片节点", exact: true }).click();
+    await expect.poll(() => page.locator(".react-flow__viewport").evaluate(el => new DOMMatrixReadOnly(getComputedStyle(el).transform).a)).toBeGreaterThanOrEqual(.75);
+    const pendingHandleBox = await page.locator('.react-flow__node[data-id^="pend-"] .react-flow__handle-left').boundingBox();
+    assert(pendingHandleBox.width >= 34 && pendingHandleBox.height >= 34);
+    pass("larger add controls remain clickable and new nodes auto-focus from a tiny canvas zoom");
+    await page.locator(".react-flow__pane").click({ position: { x: 900, y: 650 }, force: true });
 
     await page.getByRole("button", { name: /^\d+%$/ }).click();
     await page.getByRole("button", { name: "缩放至50%", exact: true }).click();

@@ -177,6 +177,19 @@ type Project = {
   latestAt: string;
 };
 
+type CanvasWorkflowKey = "hero" | "detail" | "views" | "copy";
+const CANVAS_WORKFLOWS: Array<{
+  key: CanvasWorkflowKey;
+  icon: LucideIcon;
+  titleKey: string;
+  descriptionKey: string;
+}> = [
+  { key: "hero", icon: ImageIcon, titleKey: "canvas.workflowHero", descriptionKey: "canvas.workflowHeroDesc" },
+  { key: "detail", icon: GalleryVerticalEnd, titleKey: "canvas.workflowDetail", descriptionKey: "canvas.workflowDetailDesc" },
+  { key: "views", icon: Rotate3d, titleKey: "canvas.workflowViews", descriptionKey: "canvas.workflowViewsDesc" },
+  { key: "copy", icon: Type, titleKey: "canvas.workflowCopy", descriptionKey: "canvas.workflowCopyDesc" },
+];
+
 type CanvasTextNode = {
   id: string;
   projectKey: string;
@@ -188,6 +201,7 @@ type CanvasTextNode = {
   canvasY: number;
   createdAt: string;
   updatedAt: string;
+  targetIds: string[];
 };
 
 // 沿血缘上溯到根作品(带环保护)
@@ -494,7 +508,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        "group relative w-[300px] overflow-hidden border bg-white text-[#252933] shadow-[0_12px_34px_rgba(7,12,24,0.18)] transition-shadow",
+        "group relative w-[300px] border bg-white text-[#252933] shadow-[0_12px_34px_rgba(7,12,24,0.18)] transition-shadow",
         active ? "border-[#6bd7ec] ring-2 ring-[#6bd7ec]/25" : "border-[#dce2ea]"
       )}
     >
@@ -542,8 +556,22 @@ function TextCanvasNode({ data, selected }: NodeProps) {
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
-      <span className="absolute -left-[6px] top-1/2 flex h-3 w-3 -translate-y-1/2 items-center justify-center rounded-full bg-[#20c7e5] text-[9px] font-bold text-white shadow">+</span>
-      <span className="absolute -right-[6px] top-1/2 flex h-3 w-3 -translate-y-1/2 items-center justify-center rounded-full bg-[#20c7e5] text-[9px] font-bold text-white shadow">+</span>
+      <Handle
+        id="in"
+        type="target"
+        position={Position.Left}
+        className="!flex !h-[30px] !w-[30px] !-left-[15px] !items-center !justify-center !rounded-full !border-2 !border-[#64cfe2] !bg-white !text-[17px] !font-semibold !text-[#189ab1] shadow-md"
+      >
+        <span className="pointer-events-none leading-none">+</span>
+      </Handle>
+      <Handle
+        id="out"
+        type="source"
+        position={Position.Right}
+        className="!flex !h-[30px] !w-[30px] !-right-[15px] !items-center !justify-center !rounded-full !border-2 !border-[#64cfe2] !bg-white !text-[17px] !font-semibold !text-[#189ab1] shadow-md"
+      >
+        <span className="pointer-events-none leading-none">+</span>
+      </Handle>
     </div>
   );
 }
@@ -623,7 +651,7 @@ function PendNode({ data, selected }: NodeProps) {
         type="target"
         position={Position.Left}
         style={{ top: PORT_Y }}
-        className="!flex !h-[22px] !w-[22px] !-left-[11px] !-translate-y-1/2 !items-center !justify-center !rounded-full !border-[1.5px] !border-[#444b57] !bg-[#191b21] !text-[15px] !leading-none !text-[#9aa1ae] transition-colors hover:!border-[#6366f1] hover:!bg-[#1e1b3a] hover:!text-[#6366f1]"
+        className="!flex !h-[34px] !w-[34px] !-left-[17px] !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[20px] !font-medium !leading-none !text-white shadow-lg transition-colors hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]"
       >
         <span className="pointer-events-none leading-none">+</span>
       </Handle>
@@ -704,6 +732,7 @@ function ArtNode({ data, selected }: NodeProps) {
     pending?: boolean;
     inChain?: boolean;
     marked?: boolean;
+    canvasGroupId?: string | null;
     ratio?: string | null;
     width?: number | null;
     height?: number | null;
@@ -716,13 +745,22 @@ function ArtNode({ data, selected }: NodeProps) {
     ? d.label
     : `${d.version ? `v${d.version}` : ""}${d.date ? ` · ${formatDate(d.date)}` : ""}${d.prompt ? `\n${d.prompt}` : ""}`;
   return (
-    <div className="group relative" style={{ width: imageWidth ?? NODE_W }} data-image-width={imageWidth} data-image-height={imageHeight}>
+    <div
+      className="group relative"
+      style={{ width: imageWidth ?? NODE_W }}
+      data-image-width={imageWidth}
+      data-image-height={imageHeight}
+      data-canvas-group-id={d.canvasGroupId || undefined}
+    >
       {/* 标签(图片上方,对齐原型 .lb2) */}
       <div className="mb-1.5 flex items-center gap-1.5 truncate pl-0.5 text-[12px] text-[#9aa1ae]">
         <span>{d.pending ? "⏳" : "🖼"}</span>
         <span className="truncate">{d.label}</span>
         {d.marked && (
           <MapPin className="h-3 w-3 flex-none fill-amber-400 text-amber-400" />
+        )}
+        {d.canvasGroupId && (
+          <Combine className="h-3 w-3 flex-none text-[#6bd7ec]" aria-label="已成组" />
         )}
         {d.version && (
           <span className="ml-auto flex-none rounded bg-white/10 px-1 text-[10px] font-semibold text-slate-200">
@@ -782,7 +820,7 @@ function ArtNode({ data, selected }: NodeProps) {
         type="target"
         position={Position.Left}
         style={{ top: portY }}
-        className="!flex !h-[22px] !w-[22px] !-left-[11px] !-translate-y-1/2 !items-center !justify-center !rounded-full !border-[1.5px] !border-[#444b57] !bg-[#191b21] !text-[15px] !leading-none !text-[#9aa1ae] transition-colors hover:!border-[#6366f1] hover:!bg-[#1e1b3a] hover:!text-[#6366f1]"
+        className="!flex !h-[34px] !w-[34px] !-left-[17px] !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[20px] !font-medium !leading-none !text-white shadow-lg transition-colors hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]"
       >
         <span className="pointer-events-none leading-none">+</span>
       </Handle>
@@ -792,7 +830,7 @@ function ArtNode({ data, selected }: NodeProps) {
           type="source"
           position={Position.Right}
           style={{ top: portY }}
-          className="!flex !h-[22px] !w-[22px] !-right-[11px] !-translate-y-1/2 !items-center !justify-center !rounded-full !border-[1.5px] !border-[#444b57] !bg-[#191b21] !text-[15px] !leading-none !text-[#9aa1ae] transition-colors hover:!border-[#6366f1] hover:!bg-[#1e1b3a] hover:!text-[#6366f1]"
+          className="!flex !h-[34px] !w-[34px] !-right-[17px] !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[20px] !font-medium !leading-none !text-white shadow-lg transition-colors hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]"
         >
           <span className="pointer-events-none leading-none">+</span>
         </Handle>
@@ -933,6 +971,7 @@ function layoutGraph(
         prompt: a.prompt,
         date: a.createdAt,
         marked: !!a.marked,
+        canvasGroupId: a.canvasGroupId ?? null,
         ratio: a.ratio,
         width: a.width,
         height: a.height,
@@ -1004,6 +1043,7 @@ export function CanvasClient() {
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [browserTab, setBrowserTab] = useState<"all" | "workflows">("all");
   const cancelEditRef = useRef(false); // Esc 取消时跳过失焦保存
   const [editPrompt, setEditPrompt] = useState("");
   const [genModel, setGenModel] = useState("");
@@ -1335,6 +1375,14 @@ export function CanvasClient() {
           to: { x: number; y: number };
         }>;
       }
+    | {
+        kind: "canvas-group";
+        changes: Array<{
+          id: string;
+          from: string | null;
+          to: string | null;
+        }>;
+      }
     | { kind: "delete"; records: Artwork[] }
     | { kind: "add"; records: Artwork[] };
   const [undoStack, setUndoStack] = useState<UndoAct[]>([]);
@@ -1343,6 +1391,11 @@ export function CanvasClient() {
   const selectionDragStartRef = useRef<
     Record<string, { x: number; y: number }>
   >({});
+  const groupedDragStartRef = useRef<{
+    anchorId: string;
+    starts: Record<string, { x: number; y: number }>;
+  } | null>(null);
+  const skipSelectionDragStopRef = useRef(false);
   // 框选多选(React Flow 选中集合)
   const [multiSel, setMultiSel] = useState<string[]>([]);
   const [boxSelectMode, setBoxSelectMode] = useState(false);
@@ -1436,11 +1489,23 @@ export function CanvasClient() {
         setWorks((acc?.artworks ?? []) as Artwork[]);
         setNames((proj?.names ?? {}) as Record<string, string>);
         if (textData?.persisted) {
-          setTextNodes((textData?.nodes ?? []) as CanvasTextNode[]);
+          setTextNodes(
+            ((textData?.nodes ?? []) as CanvasTextNode[]).map((node) => ({
+              ...node,
+              targetIds: Array.isArray(node.targetIds) ? node.targetIds : [],
+            }))
+          );
         } else {
           try {
             const local = localStorage.getItem(`naumi:canvas-text-nodes:${target.toLowerCase()}`);
-            setTextNodes(local ? (JSON.parse(local) as CanvasTextNode[]) : []);
+            setTextNodes(
+              local
+                ? (JSON.parse(local) as CanvasTextNode[]).map((node) => ({
+                    ...node,
+                    targetIds: Array.isArray(node.targetIds) ? node.targetIds : [],
+                  }))
+                : []
+            );
           } catch {
             setTextNodes([]);
           }
@@ -1580,6 +1645,33 @@ export function CanvasClient() {
     return { projects };
   }, [works, names, t, readOnly, pinnedNode, textNodes]);
 
+  const projectMonths = useMemo(() => {
+    const language =
+      typeof navigator !== "undefined" && navigator.language
+        ? navigator.language
+        : "zh-CN";
+    const formatter = new Intl.DateTimeFormat(language, {
+      year: "numeric",
+      month: "long",
+    });
+    const sections = new Map<string, { label: string; projects: Project[] }>();
+    for (const project of projects) {
+      const date = new Date(project.latestAt);
+      const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+      const key = `${safeDate.getFullYear()}-${String(safeDate.getMonth() + 1).padStart(2, "0")}`;
+      const section = sections.get(key) ?? {
+        label: formatter.format(safeDate),
+        projects: [],
+      };
+      section.projects.push(project);
+      sections.set(key, section);
+    }
+    return Array.from(sections.entries()).map(([key, section]) => ({
+      key,
+      ...section,
+    }));
+  }, [projects]);
+
   // 打开中的项目消失了(被删 / 根节点变化导致 key 变)→ 回到项目网格,而非自动弹别的项目
   useEffect(() => {
     if (creatingNew || browsing) return;
@@ -1641,6 +1733,36 @@ export function CanvasClient() {
     setSelectedTextId(null);
     setPendNodes([]);
     setSidebarOpen(false);
+  }
+  function startWorkflow(key: CanvasWorkflowKey) {
+    startNewProject();
+    window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        const center = centerScreen();
+        if (key === "copy") {
+          addTextNodeAtScreen(center.x, center.y, {
+            forceNewProject: true,
+            title: t("canvas.workflowCopy"),
+            prompt: t("canvas.workflowCopyPrompt"),
+          });
+          return;
+        }
+        addPendAtScreen(center.x, center.y, null, false);
+        setGenerationMode(
+          key === "detail" ? "detail" : key === "views" ? "triptych" : "standard"
+        );
+        setEditPrompt(
+          t(
+            key === "detail"
+              ? "canvas.workflowDetailPrompt"
+              : key === "views"
+                ? "canvas.workflowViewsPrompt"
+                : "canvas.workflowHeroPrompt"
+          )
+        );
+        wantFocusPendPrompt.current = true;
+      }, 0);
+    });
   }
   useEffect(() => {
     if (active) setCreatingNew(false);
@@ -1770,6 +1892,13 @@ export function CanvasClient() {
   );
   const selectedBatchAllMarked =
     selectedBatchArts.length > 0 && selectedBatchArts.every((art) => art.marked);
+  const selectedBatchCanvasGroupId = useMemo(() => {
+    if (selectedBatchArts.length < 2) return null;
+    const ids = new Set(selectedBatchArts.map((art) => art.canvasGroupId).filter(Boolean));
+    return ids.size === 1 && selectedBatchArts.every((art) => art.canvasGroupId)
+      ? (Array.from(ids)[0] as string)
+      : null;
+  }, [selectedBatchArts]);
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
@@ -1929,6 +2058,18 @@ export function CanvasClient() {
         },
         style: { width: 300 },
       } as Node);
+      for (const targetId of textNode.targetIds ?? []) {
+        if (!active?.members.some((member) => member.id === targetId)) continue;
+        displayEdges.push({
+          id: `e-text-${textNode.id}-${targetId}`,
+          source: textNode.id,
+          sourceHandle: "out",
+          target: targetId,
+          targetHandle: "in",
+          type: "comet",
+          data: { lit: false, dim: false },
+        } as Edge);
+      }
     }
     // 防御:节点/边按 id 去重,并丢弃指向不存在节点的悬空边
     // (React Flow 遇到重复 key 或悬空边会抛出 client-side exception → 白屏)
@@ -1978,7 +2119,9 @@ export function CanvasClient() {
           (n.data as { marked?: boolean }).marked ? 1 : 0
         }:${Math.round((n.data as { width?: number }).width ?? 0)}:${
           Math.round((n.data as { height?: number }).height ?? 0)
-        }:${(n.data as { status?: string }).status ?? ""}:${String(
+        }:${(n.data as { canvasGroupId?: string }).canvasGroupId ?? ""}:${
+          (n.data as { status?: string }).status ?? ""
+        }:${String(
           (n.data as { content?: string }).content ?? ""
         ).length}`
     )
@@ -3059,6 +3202,10 @@ export function CanvasClient() {
       act.moves.forEach((move) =>
         setPosSilent(move.id, move.from.x, move.from.y)
       );
+    else if (act.kind === "canvas-group")
+      await applyCanvasGroupAssignments(
+        act.changes.map((change) => ({ id: change.id, canvasGroupId: change.from }))
+      );
     else if (act.kind === "delete") await restoreRecordsSilent(act.records);
     else if (act.kind === "add") await deleteIdsSilent(act.records.map((r) => r.id));
   }
@@ -3070,6 +3217,10 @@ export function CanvasClient() {
     if (act.kind === "move") setPosSilent(act.id, act.to.x, act.to.y);
     else if (act.kind === "move-many")
       act.moves.forEach((move) => setPosSilent(move.id, move.to.x, move.to.y));
+    else if (act.kind === "canvas-group")
+      await applyCanvasGroupAssignments(
+        act.changes.map((change) => ({ id: change.id, canvasGroupId: change.to }))
+      );
     else if (act.kind === "delete") await deleteIdsSilent(act.records.map((r) => r.id));
     else if (act.kind === "add") await restoreRecordsSilent(act.records);
   }
@@ -3238,6 +3389,95 @@ export function CanvasClient() {
     }
   }
 
+  async function applyCanvasGroupAssignments(
+    assignments: Array<{ id: string; canvasGroupId: string | null }>
+  ) {
+    if (!assignments.length) return assignments;
+    const response = await privateFetch("/api/canvas/groups", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ assignments }),
+    });
+    const data = await expectJsonOk(response, t("canvas.groupFail"));
+    const applied = Array.isArray(data?.assignments)
+      ? (data.assignments as Array<{ id: string; canvasGroupId: string | null }>)
+      : assignments;
+    const groupById = new Map(applied.map((item) => [item.id, item.canvasGroupId]));
+    setWorks((current) =>
+      current?.map((artwork) =>
+        groupById.has(artwork.id)
+          ? { ...artwork, canvasGroupId: groupById.get(artwork.id) ?? null }
+          : artwork
+      ) ?? current
+    );
+    return applied;
+  }
+
+  async function groupBatchSelection() {
+    if (!user || readOnly || selectedBatchArts.length < 2) return;
+    const before = new Map(
+      selectedBatchArts.map((artwork) => [artwork.id, artwork.canvasGroupId ?? null])
+    );
+    try {
+      const response = await privateFetch("/api/canvas/groups", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "group", ids: selectedBatchIds }),
+      });
+      const data = await expectJsonOk(response, t("canvas.groupFail"));
+      const applied = (data.assignments ?? []) as Array<{
+        id: string;
+        canvasGroupId: string | null;
+      }>;
+      if (applied.length !== selectedBatchIds.length) throw new Error(t("canvas.groupFail"));
+      const groupById = new Map(applied.map((item) => [item.id, item.canvasGroupId]));
+      setWorks((current) =>
+        current?.map((artwork) =>
+          groupById.has(artwork.id)
+            ? { ...artwork, canvasGroupId: groupById.get(artwork.id) ?? null }
+            : artwork
+        ) ?? current
+      );
+      pushUndo({
+        kind: "canvas-group",
+        changes: applied.map((item) => ({
+          id: item.id,
+          from: before.get(item.id) ?? null,
+          to: item.canvasGroupId,
+        })),
+      });
+      flashTip(fmt(t("canvas.groupDone"), { n: applied.length }));
+    } catch (error) {
+      flashTip(error instanceof Error ? error.message : t("canvas.groupFail"));
+    }
+  }
+
+  async function ungroupBatchSelection() {
+    if (!user || readOnly || !active || !selectedBatchCanvasGroupId) return;
+    const members = active.members.filter(
+      (artwork) => artwork.canvasGroupId === selectedBatchCanvasGroupId
+    );
+    if (!members.length) return;
+    const assignments = members.map((artwork) => ({
+      id: artwork.id,
+      canvasGroupId: null,
+    }));
+    try {
+      await applyCanvasGroupAssignments(assignments);
+      pushUndo({
+        kind: "canvas-group",
+        changes: members.map((artwork) => ({
+          id: artwork.id,
+          from: selectedBatchCanvasGroupId,
+          to: null,
+        })),
+      });
+      flashTip(fmt(t("canvas.ungroupDone"), { n: members.length }));
+    } catch (error) {
+      flashTip(error instanceof Error ? error.message : t("canvas.groupFail"));
+    }
+  }
+
   async function stitchBatchSelection() {
     if (!user || readOnly || stitching || selectedBatchArts.length < 2) return;
     const selectedNodes = (rfRef.current?.getNodes() ?? []).filter((node) =>
@@ -3310,6 +3550,21 @@ export function CanvasClient() {
       return;
     }
     if (source.startsWith("pend-") || target.startsWith("pend-")) return;
+    if (source.startsWith("text-")) {
+      const textNode = textNodes.find((node) => node.id === source);
+      if (!textNode || target.startsWith("text-")) return;
+      const updated: CanvasTextNode = {
+        ...textNode,
+        targetIds: Array.from(new Set([...(textNode.targetIds ?? []), target])),
+        updatedAt: new Date().toISOString(),
+      };
+      setTextNodes((current) =>
+        current.map((node) => (node.id === updated.id ? updated : node))
+      );
+      void persistTextNode(updated);
+      return;
+    }
+    if (target.startsWith("text-")) return;
     // 连到已有真实节点 → 多输入,写库(带防环)
     void addParentToNode(target, source);
   }
@@ -3362,6 +3617,20 @@ export function CanvasClient() {
     setEdgeCut(null);
     // 乐观:本地先去掉这条线,点击即刻有反馈
     setRfEdges((eds) => eds.filter((e) => e.id !== edge.id));
+    if (edge.source.startsWith("text-")) {
+      const textNode = textNodes.find((node) => node.id === edge.source);
+      if (!textNode) return;
+      const updated: CanvasTextNode = {
+        ...textNode,
+        targetIds: (textNode.targetIds ?? []).filter((id) => id !== edge.target),
+        updatedAt: new Date().toISOString(),
+      };
+      setTextNodes((current) =>
+        current.map((node) => (node.id === updated.id ? updated : node))
+      );
+      await persistTextNode(updated);
+      return;
+    }
     try {
       const res = await privateFetch("/api/artworks/parents", {
         method: "DELETE",
@@ -3410,7 +3679,8 @@ export function CanvasClient() {
       onPendUpload(pend.id);
     } else {
       // 「图片」:落点建好节点后,把光标落进提示词框,写"改什么"→点生成出衍生(img2img)
-      setEditPrompt("");
+      const textSource = textNodes.find((node) => node.id === sourceId);
+      setEditPrompt(textSource?.content || textSource?.prompt || "");
       wantFocusPendPrompt.current = true;
     }
   }
@@ -3581,6 +3851,9 @@ export function CanvasClient() {
       if (message) failures.push({ name: file.name, message });
       return !message;
     });
+    const canvasGroupId = valid.length > 1
+      ? `canvas-import-${Date.now()}-${id}`
+      : null;
     const occupied = [...rfNodes.map(node => node.position), ...scope.positions];
     const columns = Math.min(4, Math.ceil(Math.sqrt(valid.length)));
     const entries = valid.map((file, i) => {
@@ -3665,6 +3938,7 @@ export function CanvasClient() {
           fd.append("email", email);
           fd.append("image", selected.file);
           fd.append("title", file.name);
+          if (canvasGroupId) fd.append("canvasGroupId", canvasGroupId);
           if (scope.rootId) fd.append("parentId", scope.rootId);
           fd.append("x", String(pos.x));
           fd.append("y", String(pos.y));
@@ -3813,6 +4087,7 @@ export function CanvasClient() {
     // 选中新空白节点 → 自动出生成 dock(图3:加节点即可直接写提示词生成)
     setSelectedId(null);
     setSelectedPendId(id);
+    focusEditableCanvasArea({ x: wx, y: wy, width: NODE_W, height: NODE_H });
     return pend;
   }
   // 将框选图片作为同一个新节点的多输入。新节点沿用现有生成 Dock，用户可继续
@@ -3850,6 +4125,7 @@ export function CanvasClient() {
     setEditPrompt("");
     setGenerationMode("standard");
     wantFocusPendPrompt.current = true;
+    focusEditableCanvasArea({ x: pend.x, y: pend.y, width: NODE_W, height: NODE_H });
     if (selectedBatchIds.length > MAX_TOTAL_IMAGES) {
       flashTip(fmt(t("canvas.batchGenerateLimit"), { n: MAX_TOTAL_IMAGES }));
     }
@@ -3865,6 +4141,38 @@ export function CanvasClient() {
       x: (box?.clientWidth ?? 600) / 2,
       y: (box?.clientHeight ?? 400) / 2,
     };
+  }
+  function focusEditableCanvasArea(area: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) {
+    window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        const instance = rfRef.current;
+        const canvas = canvasAreaRef.current;
+        if (!instance || !canvas) return;
+        const current = instance.getViewport();
+        const targetZoom = Math.max(
+          current.zoom,
+          Math.min(1, Math.max(0.75, 240 / area.width, 160 / area.height))
+        );
+        const screenLeft = area.x * current.zoom + current.x;
+        const screenTop = area.y * current.zoom + current.y;
+        const outside =
+          screenLeft + area.width * current.zoom < 40 ||
+          screenTop + area.height * current.zoom < 40 ||
+          screenLeft > canvas.clientWidth - 40 ||
+          screenTop > canvas.clientHeight - 80;
+        if (!outside && current.zoom >= targetZoom * 0.95) return;
+        void instance.setCenter(
+          area.x + area.width / 2,
+          area.y + area.height / 2,
+          { zoom: targetZoom, duration: 320 }
+        );
+      }, 0);
+    });
   }
   // 底部工具条:＋ 添加空白节点(画布中心)
   function toolAddNode() {
@@ -3893,23 +4201,30 @@ export function CanvasClient() {
     }
     return node;
   }
-  function addTextNodeAtScreen(screenX: number, screenY: number) {
+  function addTextNodeAtScreen(
+    screenX: number,
+    screenY: number,
+    options?: { forceNewProject?: boolean; title?: string; prompt?: string }
+  ) {
     if (readOnly || !user) return;
     const z = viewport.zoom || 1;
     const id = `text-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const projectKey = active?.key || activeKey || `text:${id}`;
+    const projectKey = options?.forceNewProject
+      ? `tree:${id}`
+      : active?.key || activeKey || `tree:${id}`;
     const now = new Date().toISOString();
     const node: CanvasTextNode = {
       id,
       projectKey,
-      title: t("canvas.textGenerate"),
-      prompt: "",
+      title: options?.title || t("canvas.textGenerate"),
+      prompt: options?.prompt || "",
       content: "",
       status: "idle",
       canvasX: (screenX - viewport.x) / z - 150,
       canvasY: (screenY - viewport.y) / z - 88,
       createdAt: now,
       updatedAt: now,
+      targetIds: [],
     };
     setTextNodes((current) => [...current, node]);
     setActiveKey(projectKey);
@@ -3918,8 +4233,14 @@ export function CanvasClient() {
     setSelectedId(null);
     setSelectedPendId(null);
     setSelectedTextId(id);
-    setTextPrompt("");
+    setTextPrompt(options?.prompt || "");
     setTextError(null);
+    focusEditableCanvasArea({
+      x: node.canvasX,
+      y: node.canvasY,
+      width: 300,
+      height: 176,
+    });
     void persistTextNode(node);
   }
   async function removeTextNode(id: string) {
@@ -4039,6 +4360,9 @@ export function CanvasClient() {
     const inputArts = pend.inputs
       .map((id) => active?.members.find((m) => m.id === id))
       .filter(Boolean) as Artwork[];
+    const inputTextNodes = pend.inputs
+      .map((id) => textNodes.find((node) => node.id === id))
+      .filter(Boolean) as CanvasTextNode[];
     if (generationMode === "detail") {
       if (!inputArts.length) {
         flashTip(t("canvas.detailNeedRefs"));
@@ -4058,7 +4382,13 @@ export function CanvasClient() {
     // (那会让输出莫名其妙变样,还被存成节点提示词)。改为沿用主输入图自身的
     // 提示词(延续它的配方);没有则用"保持主体/构图/风格"的中性词。
     const promptToUse =
-      text || inputArts[0]?.prompt?.trim() || FAITHFUL_REGEN_PROMPT;
+      text ||
+      inputTextNodes
+        .map((node) => node.content.trim() || node.prompt.trim())
+        .filter(Boolean)
+        .join("\n\n") ||
+      inputArts[0]?.prompt?.trim() ||
+      FAITHFUL_REGEN_PROMPT;
     setGenError(null);
     setPendNodes((prev) =>
       prev.map((p) => (p.id === pend.id ? { ...p, generating: true } : p))
@@ -4080,6 +4410,9 @@ export function CanvasClient() {
       if (genModel) fd.append("model", genModel);
       fd.append("email", user.email);
       fd.append("origin", "canvas"); // 画布里产出 → 永远留画布
+      if (activeKey?.startsWith("tree:")) {
+        fd.append("projectGroupId", activeKey.slice("tree:".length));
+      }
       // 主父 = 第一个输入;其余进 parentIds
       if (inputArts.length) {
         fd.append("parentId", inputArts[0].id);
@@ -4157,6 +4490,18 @@ export function CanvasClient() {
       setSelectedPendId((current) => (current === pend.id ? null : current));
       const fresh = await mergeWorks(newIds);
       pushAddUndo(newIds[0] ?? null, fresh);
+      if (newIds.length && inputTextNodes.length) {
+        const updatedTextNodes = inputTextNodes.map((node) => ({
+          ...node,
+          targetIds: Array.from(new Set([...(node.targetIds ?? []), ...newIds])),
+          updatedAt: new Date().toISOString(),
+        }));
+        const updatedById = new Map(updatedTextNodes.map((node) => [node.id, node]));
+        setTextNodes((current) =>
+          current.map((node) => updatedById.get(node.id) ?? node)
+        );
+        await Promise.all(updatedTextNodes.map((node) => persistTextNode(node)));
+      }
     } catch (e) {
       setGenError(
         e instanceof Error && e.message ? e.message : t("canvas.genFail")
@@ -4300,6 +4645,40 @@ export function CanvasClient() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: user.email, id, x, y }),
     }).catch(() => {});
+  }
+
+  function saveManyNodePositions(
+    moves: Array<{
+      id: string;
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+    }>
+  ) {
+    if (readOnly || !user || !moves.length) return;
+    const positions = new Map(moves.map((move) => [move.id, move.to]));
+    setWorks((current) =>
+      current?.map((work) => {
+        const position = positions.get(work.id);
+        return position
+          ? { ...work, canvasX: position.x, canvasY: position.y }
+          : work;
+      }) ?? current
+    );
+    void Promise.all(
+      moves.map((move) =>
+        privateFetch("/api/artworks/position", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            email: user.email,
+            id: move.id,
+            x: move.to.x,
+            y: move.to.y,
+          }),
+        }).catch(() => {})
+      )
+    );
+    pushUndo({ kind: "move-many", moves });
   }
 
   // 生成完成后自动平移聚焦到新节点
@@ -4790,17 +5169,50 @@ export function CanvasClient() {
               {t("canvas.loading")}
             </div>
           ) : browsing ? (
-            /* 项目网格落地页(对齐 Fuser:轻量缩略图 + 标题下置,留白更精致) */
-            <div className="h-full overflow-y-auto px-5 py-6 sm:px-8 sm:py-8">
-              <div className="w-full">
-                {/* 标题栏:全部项目(对齐参考图,去掉 hero 横幅) */}
-                <div className="mb-6 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-foreground">
-                    {t("canvas.allProjects")}
-                  </h2>
+            <div
+              data-testid="canvas-project-browser"
+              className="h-full overflow-y-auto bg-[#f6f7f9] px-4 py-6 text-[#20242c] sm:px-8 sm:py-8"
+            >
+              <div className="mx-auto w-full max-w-[1680px]">
+                <div className="mb-7 flex items-end justify-between border-b border-[#dfe3e8]">
+                  <div className="flex items-center gap-7">
+                    <button
+                      type="button"
+                      onClick={() => setBrowserTab("all")}
+                      className={cn(
+                        "border-b-2 pb-3 text-[15px] font-semibold transition-colors",
+                        browserTab === "all"
+                          ? "border-[#20242c] text-[#20242c]"
+                          : "border-transparent text-[#7a8492] hover:text-[#20242c]"
+                      )}
+                    >
+                      {t("canvas.allProjects")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBrowserTab("workflows")}
+                      className={cn(
+                        "border-b-2 pb-3 text-[15px] font-semibold transition-colors",
+                        browserTab === "workflows"
+                          ? "border-[#20242c] text-[#20242c]"
+                          : "border-transparent text-[#7a8492] hover:text-[#20242c]"
+                      )}
+                    >
+                      {t("canvas.commonWorkflows")}
+                    </button>
+                  </div>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={startNewProject}
+                      className="mb-2.5 flex h-9 items-center gap-2 bg-[#20242c] px-3.5 text-sm font-semibold text-white transition-colors hover:bg-[#343a43]"
+                    >
+                      <Plus className="h-4 w-4" />
+                      {t("canvas.newProject")}
+                    </button>
+                  )}
                 </div>
 
-                {/* 点开「...」菜单时的点击外部关闭层 */}
                 {projMenuKey && (
                   <div
                     className="fixed inset-0 z-20"
@@ -4808,155 +5220,199 @@ export function CanvasClient() {
                   />
                 )}
 
-                {/* 大屏不留白:卡片维持参考图尺寸,宽了就多排(5→6→7→8 列) */}
-                <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 min-[1920px]:grid-cols-6 min-[2320px]:grid-cols-7 min-[2720px]:grid-cols-8">
-                  {/* 首卡:实色渐变「开始创作」 */}
-                  {!readOnly && (
-                    <button
-                      type="button"
-                      onClick={startNewProject}
-                      className="group flex flex-col gap-2.5 text-left"
-                    >
-                      <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-white/10 bg-gradient-to-br from-[#1c2433] to-[#11141b] text-muted-foreground transition-all group-hover:border-primary/50 group-hover:text-foreground">
-                        <Plus className="h-7 w-7" strokeWidth={1.5} />
-                        <span className="text-sm font-medium">
-                          {t("canvas.startCreate")}
-                        </span>
-                      </div>
-                      <div className="px-0.5">
-                        <div className="text-sm font-medium text-foreground">
-                          {t("canvas.blankProjectSub")}
-                        </div>
-                      </div>
-                    </button>
-                  )}
+                <section className="mb-10">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h2 className="text-base font-semibold text-[#20242c]">
+                      {t("canvas.commonWorkflows")}
+                    </h2>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {CANVAS_WORKFLOWS.map((workflow) => {
+                      const WorkflowIcon = workflow.icon;
+                      return (
+                        <button
+                          key={workflow.key}
+                          type="button"
+                          onClick={() => startWorkflow(workflow.key)}
+                          disabled={readOnly}
+                          className="group flex min-h-[108px] items-start gap-4 border border-[#dfe3e8] bg-white p-4 text-left shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all hover:-translate-y-0.5 hover:border-[#aeb7c4] hover:shadow-[0_8px_22px_rgba(16,24,40,0.08)] disabled:cursor-default disabled:opacity-60"
+                        >
+                          <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[10px] border border-[#dfe3e8] bg-[#f4f6f8] text-[#46505e] group-hover:border-[#b9c4d2] group-hover:bg-[#edf2f6]">
+                            <WorkflowIcon className="h-5 w-5" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-sm font-semibold text-[#20242c]">
+                              {t(workflow.titleKey)}
+                            </span>
+                            <span className="mt-1 block text-xs leading-5 text-[#707b89]">
+                              {t(workflow.descriptionKey)}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
 
-                  {projects.map((p) => (
-                    <div key={p.key} className="group flex flex-col gap-2.5">
-                      {/* 封面 */}
-                      <button
-                        type="button"
-                        onClick={() => openProject(p.key)}
-                        title={p.name}
-                        className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl bg-secondary ring-1 ring-white/10 transition-all group-hover:ring-2 group-hover:ring-primary/50"
-                      >
-                        {p.cover ? (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img
-                            src={cdnUrl(p.cover)}
-                            alt={p.name}
-                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-[#f2f4f7] p-5 text-left text-[#525b69]">
-                            <div className="w-full border border-[#dce1e8] bg-white p-3 shadow-sm">
-                              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-[#7b8491]">
-                                <Type className="h-3.5 w-3.5" /> {t("canvas.textGenerate")}
-                              </div>
-                              <p className="line-clamp-4 whitespace-pre-wrap text-[10px] leading-relaxed">
-                                {p.textNodes[0]?.content || p.textNodes[0]?.prompt || t("canvas.textEmpty")}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </button>
-                      {/* 标题 + 日期 + 「...」菜单 */}
-                      <div className="flex min-w-0 items-start justify-between gap-2 px-0.5">
-                        <div className="min-w-0 flex-1">
-                          {renamingKey === p.key && !readOnly ? (
-                            <input
-                              autoFocus
-                              value={renameValue}
-                              onChange={(e) => setRenameValue(e.target.value)}
-                              onFocus={(e) => e.currentTarget.select()}
-                              onClick={(e) => e.stopPropagation()}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") e.currentTarget.blur();
-                                if (e.key === "Escape") {
-                                  cancelEditRef.current = true;
-                                  setRenamingKey(null);
-                                }
-                              }}
-                              onBlur={() => {
-                                if (cancelEditRef.current) {
-                                  cancelEditRef.current = false;
-                                  return;
-                                }
-                                saveRename(p.key);
-                              }}
-                              maxLength={60}
-                              className="w-full rounded-md border border-primary/60 bg-background px-1.5 py-0.5 text-sm font-medium text-foreground outline-none"
-                            />
-                          ) : (
-                            <div className="truncate text-sm font-medium text-foreground">
-                              {p.name}
-                            </div>
-                          )}
-                          <div className="truncate text-[11px] text-muted-foreground">
-                            {formatDate(p.latestAt)}
-                          </div>
-                        </div>
+                {browserTab === "all" && (
+                  <section>
+                    <h2 className="mb-4 text-base font-semibold text-[#20242c]">
+                      {t("canvas.personalProjects")}
+                    </h2>
+
+                    {projectMonths.length === 0 && (
+                      <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
                         {!readOnly && (
-                          <div className="relative flex-none">
+                          <button
+                            type="button"
+                            onClick={startNewProject}
+                            className="group flex flex-col gap-2 text-left"
+                          >
+                            <span className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 border border-dashed border-[#bfc7d2] bg-white text-[#697482] transition-colors group-hover:border-[#7f8b9a] group-hover:text-[#20242c]">
+                              <Plus className="h-7 w-7" strokeWidth={1.5} />
+                              <span className="text-sm font-medium">{t("canvas.startCreate")}</span>
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {projectMonths.map((section, sectionIndex) => (
+                      <div key={section.key} className="mb-9">
+                        <div className="mb-3 flex items-center gap-3">
+                          <h3 className="text-sm font-semibold text-[#596473]">
+                            {section.label}
+                          </h3>
+                          <span className="h-px flex-1 bg-[#e3e6ea]" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 min-[1920px]:grid-cols-6">
+                          {sectionIndex === 0 && !readOnly && (
                             <button
                               type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setProjMenuKey((k) =>
-                                  k === p.key ? null : p.key
-                                );
-                              }}
-                              title={t("canvas.more")}
-                              className="-mr-1 flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+                              onClick={startNewProject}
+                              className="group flex flex-col gap-2 text-left"
                             >
-                              <MoreHorizontal className="h-4 w-4" />
+                              <span className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 border border-dashed border-[#bfc7d2] bg-white text-[#697482] transition-colors group-hover:border-[#7f8b9a] group-hover:text-[#20242c]">
+                                <Plus className="h-7 w-7" strokeWidth={1.5} />
+                                <span className="text-sm font-medium">{t("canvas.startCreate")}</span>
+                              </span>
                             </button>
-                            {projMenuKey === p.key && (
-                              <div className="menu-pop-down absolute right-0 top-9 z-30 w-32 overflow-hidden rounded-xl border border-border bg-card p-1 shadow-2xl">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setProjMenuKey(null);
-                                    setRenamingKey(p.key);
-                                    setRenameValue(p.name);
-                                  }}
-                                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
-                                >
-                                  <Pencil className="h-4 w-4 text-muted-foreground" />
-                                  {t("canvas.rename")}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setProjMenuKey(null);
-                                    deleteProject(p);
-                                  }}
-                                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-red-400 transition-colors hover:bg-red-500/10"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                  {t("canvas.deleteProjectShort")}
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                          )}
 
-                {projects.length > 0 ? (
-                  <div className="py-10 text-center text-xs text-muted-foreground">
-                    {t("canvas.noMore")}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-                    <p className="max-w-sm text-sm text-muted-foreground">
-                      {t("canvas.empty")}
-                    </p>
-                  </div>
+                          {section.projects.map((p) => (
+                            <div key={p.key} className="group flex flex-col gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openProject(p.key)}
+                                title={p.name}
+                                className="relative aspect-[16/10] w-full overflow-hidden rounded-[12px] border border-[#d8dde4] bg-white transition-all group-hover:border-[#9da8b6] group-hover:shadow-[0_8px_24px_rgba(16,24,40,0.10)]"
+                              >
+                                {p.cover ? (
+                                  /* eslint-disable-next-line @next/next/no-img-element */
+                                  <img
+                                    src={cdnUrl(p.cover)}
+                                    alt={p.name}
+                                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]"
+                                  />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center bg-[#f2f4f7] p-5 text-left text-[#525b69]">
+                                    <div className="w-full border border-[#dce1e8] bg-white p-3 shadow-sm">
+                                      <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-[#7b8491]">
+                                        <Type className="h-3.5 w-3.5" /> {t("canvas.textGenerate")}
+                                      </div>
+                                      <p className="line-clamp-4 whitespace-pre-wrap text-[10px] leading-relaxed">
+                                        {p.textNodes[0]?.content || p.textNodes[0]?.prompt || t("canvas.textEmpty")}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+                              </button>
+                              <div className="flex min-w-0 items-start justify-between gap-2 px-0.5">
+                                <div className="min-w-0 flex-1">
+                                  {renamingKey === p.key && !readOnly ? (
+                                    <input
+                                      autoFocus
+                                      value={renameValue}
+                                      onChange={(e) => setRenameValue(e.target.value)}
+                                      onFocus={(e) => e.currentTarget.select()}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") e.currentTarget.blur();
+                                        if (e.key === "Escape") {
+                                          cancelEditRef.current = true;
+                                          setRenamingKey(null);
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        if (cancelEditRef.current) {
+                                          cancelEditRef.current = false;
+                                          return;
+                                        }
+                                        saveRename(p.key);
+                                      }}
+                                      maxLength={60}
+                                      className="w-full border border-[#8090a3] bg-white px-1.5 py-0.5 text-sm font-medium text-[#20242c] outline-none"
+                                    />
+                                  ) : (
+                                    <div className="truncate text-sm font-medium text-[#20242c]">
+                                      {p.name}
+                                    </div>
+                                  )}
+                                  <div className="truncate text-[11px] text-[#7a8492]">
+                                    {formatDate(p.latestAt)}
+                                  </div>
+                                </div>
+                                {!readOnly && (
+                                  <div className="relative flex-none">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setProjMenuKey((key) => key === p.key ? null : p.key);
+                                      }}
+                                      title={t("canvas.more")}
+                                      className="-mr-1 flex h-7 w-7 items-center justify-center text-[#7a8492] transition-colors hover:bg-[#e9edf2] hover:text-[#20242c]"
+                                    >
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </button>
+                                    {projMenuKey === p.key && (
+                                      <div className="menu-pop-down absolute right-0 top-9 z-30 w-32 overflow-hidden border border-[#d8dde4] bg-white p-1 text-[#20242c] shadow-xl">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setProjMenuKey(null);
+                                            setRenamingKey(p.key);
+                                            setRenameValue(p.name);
+                                          }}
+                                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f1f3f6]"
+                                        >
+                                          <Pencil className="h-4 w-4 text-[#7a8492]" />
+                                          {t("canvas.rename")}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setProjMenuKey(null);
+                                            deleteProject(p);
+                                          }}
+                                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm text-[#d24b45] transition-colors hover:bg-[#fff0ef]"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                          {t("canvas.deleteProjectShort")}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </section>
                 )}
               </div>
             </div>
@@ -4977,7 +5433,7 @@ export function CanvasClient() {
                 setViewport(inst.getViewport());
               }}
               onMove={(_, vp) => setViewport(vp)}
-              onNodeClick={(_, node) => {
+              onNodeClick={(event, node) => {
                 if (node.id.startsWith("task-")) return;
                 if (node.id.startsWith("pend-")) {
                   // 选中空白节点 → 出文生图/合并 dock
@@ -4990,6 +5446,32 @@ export function CanvasClient() {
                   setSelectedId(null);
                   setSelectedPendId(null);
                   setSelectedTextId(node.id);
+                  return;
+                }
+                if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                  setSelectedId(null);
+                  setSelectedPendId(null);
+                  setSelectedTextId(null);
+                  return;
+                }
+                const grouped = active?.members.find((item) => item.id === node.id);
+                const groupMembers = grouped?.canvasGroupId
+                  ? active?.members.filter(
+                      (item) => item.canvasGroupId === grouped.canvasGroupId
+                    ) ?? []
+                  : [];
+                if (groupMembers.length > 1) {
+                  const memberIds = new Set(groupMembers.map((item) => item.id));
+                  setSelectedId(null);
+                  setSelectedPendId(null);
+                  setSelectedTextId(null);
+                  setMultiSel(Array.from(memberIds));
+                  setRfNodes((current) =>
+                    current.map((item) => ({
+                      ...item,
+                      selected: memberIds.has(item.id),
+                    }))
+                  );
                   return;
                 }
                 setSelectedPendId(null);
@@ -5065,6 +5547,57 @@ export function CanvasClient() {
                   x: node.position.x,
                   y: node.position.y,
                 };
+                groupedDragStartRef.current = null;
+                skipSelectionDragStopRef.current = false;
+                const artwork = active?.members.find((item) => item.id === node.id);
+                const groupMembers = artwork?.canvasGroupId
+                  ? active?.members.filter(
+                      (item) => item.canvasGroupId === artwork.canvasGroupId
+                    ) ?? []
+                  : [];
+                if (
+                  groupMembers.length > 1 &&
+                  multiSel.length === groupMembers.length &&
+                  groupMembers.every((item) => multiSel.includes(item.id))
+                ) {
+                  const positions = new Map(
+                    rfNodes.map((item) => [item.id, item.position])
+                  );
+                  groupedDragStartRef.current = {
+                    anchorId: node.id,
+                    starts: Object.fromEntries(
+                      groupMembers.map((item) => [
+                        item.id,
+                        positions.get(item.id) ?? {
+                          x: item.canvasX ?? 0,
+                          y: item.canvasY ?? 0,
+                        },
+                      ])
+                    ),
+                  };
+                  skipSelectionDragStopRef.current = true;
+                }
+              }}
+              onNodeDrag={(_, node) => {
+                const grouped = groupedDragStartRef.current;
+                if (!grouped || grouped.anchorId !== node.id) return;
+                const anchorStart = grouped.starts[node.id];
+                if (!anchorStart) return;
+                const dx = node.position.x - anchorStart.x;
+                const dy = node.position.y - anchorStart.y;
+                setRfNodes((current) =>
+                  current.map((item) => {
+                    const start = grouped.starts[item.id];
+                    if (!start) return item;
+                    return {
+                      ...item,
+                      position:
+                        item.id === node.id
+                          ? { ...node.position }
+                          : { x: start.x + dx, y: start.y + dy },
+                    };
+                  })
+                );
               }}
               onNodeDragStop={(_, node) => {
                 if (node.id.startsWith("task-")) {
@@ -5107,6 +5640,34 @@ export function CanvasClient() {
                   void persistTextNode(moved);
                   return;
                 }
+                const grouped = groupedDragStartRef.current;
+                if (grouped && grouped.anchorId === node.id) {
+                  const anchorStart = grouped.starts[node.id];
+                  groupedDragStartRef.current = null;
+                  if (!anchorStart) return;
+                  const dx = node.position.x - anchorStart.x;
+                  const dy = node.position.y - anchorStart.y;
+                  const moves = Object.entries(grouped.starts)
+                    .map(([id, from]) => ({
+                      id,
+                      from,
+                      to: { x: from.x + dx, y: from.y + dy },
+                    }))
+                    .filter(
+                      (move) =>
+                        Math.round(move.from.x) !== Math.round(move.to.x) ||
+                        Math.round(move.from.y) !== Math.round(move.to.y)
+                    );
+                  const positions = new Map(moves.map((move) => [move.id, move.to]));
+                  setRfNodes((current) =>
+                    current.map((item) => {
+                      const position = positions.get(item.id);
+                      return position ? { ...item, position } : item;
+                    })
+                  );
+                  saveManyNodePositions(moves);
+                  return;
+                }
                 // 多选拖动由 onSelectionDragStop 一次性持久化全部节点。
                 if (selectedBatchArts.length > 1 && multiSel.includes(node.id)) return;
                 const st = dragStartRef.current;
@@ -5135,6 +5696,11 @@ export function CanvasClient() {
               }}
               onSelectionDragStop={(_, selectedNodes) => {
                 if (readOnly || !user) return;
+                if (skipSelectionDragStopRef.current) {
+                  skipSelectionDragStopRef.current = false;
+                  selectionDragStartRef.current = {};
+                  return;
+                }
                 const starts = selectionDragStartRef.current;
                 const moves = selectedNodes
                   .filter(
@@ -5155,34 +5721,7 @@ export function CanvasClient() {
                   );
                 selectionDragStartRef.current = {};
                 if (!moves.length) return;
-                const positions = new Map(moves.map((move) => [move.id, move.to]));
-                setWorks((current) =>
-                  current?.map((work) => {
-                    const position = positions.get(work.id);
-                    return position
-                      ? {
-                          ...work,
-                          canvasX: position.x,
-                          canvasY: position.y,
-                        }
-                      : work;
-                  }) ?? current
-                );
-                void Promise.all(
-                  moves.map((move) =>
-                    privateFetch("/api/artworks/position", {
-                      method: "POST",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify({
-                        email: user.email,
-                        id: move.id,
-                        x: move.to.x,
-                        y: move.to.y,
-                      }),
-                    }).catch(() => {})
-                  )
-                );
-                pushUndo({ kind: "move-many", moves });
+                saveManyNodePositions(moves);
               }}
               onConnectStart={onConnectStart}
               onConnect={onConnect}
@@ -5451,7 +5990,7 @@ export function CanvasClient() {
                     onClick={() => setAddMenuOpen((v) => !v)}
                     title={t("canvas.addNode")}
                     className={cn(
-                      "flex h-9 w-9 items-center justify-center rounded-xl shadow-sm transition-colors",
+                      "flex h-12 w-12 items-center justify-center rounded-[14px] shadow-md transition-colors",
                       addMenuOpen
                         ? "bg-primary/90 text-primary-foreground"
                         : "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -5459,7 +5998,7 @@ export function CanvasClient() {
                   >
                     <Plus
                       className={cn(
-                        "h-4 w-4 transition-transform",
+                        "h-5 w-5 transition-transform",
                         addMenuOpen && "rotate-45"
                       )}
                     />
@@ -5538,6 +6077,22 @@ export function CanvasClient() {
                       n: selectedBatchArts.length,
                     })}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void (selectedBatchCanvasGroupId
+                        ? ungroupBatchSelection()
+                        : groupBatchSelection())
+                    }
+                    className="flex h-9 items-center gap-1.5 border border-[#cfd7e5] bg-[#f8fafc] px-3 text-xs font-semibold text-[#394557] transition-colors hover:border-[#9fb0c8] hover:bg-[#eef3f8]"
+                  >
+                    <Combine className="h-4 w-4" />
+                    {t(
+                      selectedBatchCanvasGroupId
+                        ? "canvas.batchUngroup"
+                        : "canvas.batchGroup"
+                    )}
+                  </button>
                   <button
                     type="button"
                     onClick={createMergeNodeFromSelection}
@@ -5810,9 +6365,9 @@ export function CanvasClient() {
           {/* 拉线落空白:新建节点菜单(基于源图衍生) */}
           {spawnMenu &&
             (() => {
-              const src = active?.members.find(
-                (m) => m.id === spawnMenu.sourceId
-              );
+              const src =
+                active?.members.find((m) => m.id === spawnMenu.sourceId) ??
+                textNodes.find((node) => node.id === spawnMenu.sourceId);
               if (!src) return null;
               return (
                 <>

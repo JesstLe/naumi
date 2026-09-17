@@ -92,6 +92,8 @@ async function ensureSchema(): Promise<void> {
         -- 稳定项目分组:同一画布项目的所有节点共享 group_id,删中间节点也不改它,
         -- 避免"删一个连接节点 → 下游节点跑去别的项目"。
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS group_id text;
+        -- 画布编辑分组:与项目 group_id、生成血缘分离。仅用于成组/解组和整体编辑。
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_group_id text;
         -- 软删除/回收站:deleted_at 非空=已删(进回收站),空=正常。保留 N 天后才真删。
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
         CREATE INDEX IF NOT EXISTS app_artworks_deleted_idx
@@ -140,6 +142,7 @@ async function ensureSchema(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS app_canvas_text_nodes_email_idx
           ON app_canvas_text_nodes (email, project_key, updated_at DESC);
+        ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS target_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user';
         CREATE TABLE IF NOT EXISTS app_ledger (
           id         text PRIMARY KEY,
@@ -1832,6 +1835,7 @@ export type ArtworkRecord = {
   width?: number | null; // 原图实际像素宽度；画布按 1 CSS px = 1 image px 展示
   height?: number | null;
   groupId?: string | null; // 稳定项目分组:同项目所有节点共享,删节点也不变
+  canvasGroupId?: string | null; // 画布编辑分组,不参与项目归属与生成血缘
   origin?: string | null; // 来源场景:"canvas"=在画布里产出(永远留画布);空=生图页/工具等普通产出
   marked?: boolean;
 };
@@ -1847,6 +1851,7 @@ export type CanvasTextNodeRecord = {
   canvasY: number;
   createdAt: string;
   updatedAt: string;
+  targetIds: string[];
 };
 
 function mapCanvasTextNode(row: Record<string, unknown>): CanvasTextNodeRecord {
@@ -1865,6 +1870,7 @@ function mapCanvasTextNode(row: Record<string, unknown>): CanvasTextNodeRecord {
     canvasY: Number(row.canvas_y || 0),
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
+    targetIds: Array.isArray(row.target_ids) ? (row.target_ids as string[]) : [],
   };
 }
 
@@ -1874,7 +1880,7 @@ export async function listCanvasTextNodes(
   await ensureSchema();
   const { rows } = await getPool().query(
     `SELECT id, project_key, title, prompt, content, status, canvas_x, canvas_y,
-            created_at, updated_at
+            created_at, updated_at, target_ids
        FROM app_canvas_text_nodes
       WHERE email = $1
       ORDER BY updated_at DESC
@@ -1894,8 +1900,8 @@ export async function upsertCanvasTextNode(
     : "completed";
   const { rows } = await getPool().query(
     `INSERT INTO app_canvas_text_nodes
-       (id, email, project_key, title, prompt, content, status, canvas_x, canvas_y, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10::timestamptz, now()),now())
+       (id, email, project_key, title, prompt, content, status, canvas_x, canvas_y, created_at, updated_at, target_ids)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10::timestamptz, now()),now(),$11::jsonb)
      ON CONFLICT (id) DO UPDATE SET
        project_key = EXCLUDED.project_key,
        title = EXCLUDED.title,
@@ -1904,10 +1910,11 @@ export async function upsertCanvasTextNode(
        status = EXCLUDED.status,
        canvas_x = EXCLUDED.canvas_x,
        canvas_y = EXCLUDED.canvas_y,
+       target_ids = EXCLUDED.target_ids,
        updated_at = now()
      WHERE app_canvas_text_nodes.email = EXCLUDED.email
      RETURNING id, project_key, title, prompt, content, status, canvas_x, canvas_y,
-               created_at, updated_at`,
+               created_at, updated_at, target_ids`,
     [
       node.id,
       emailRaw.toLowerCase(),
@@ -1919,6 +1926,7 @@ export async function upsertCanvasTextNode(
       node.canvasX,
       node.canvasY,
       node.createdAt || null,
+      JSON.stringify(node.targetIds ?? []),
     ]
   );
   if (!rows[0]) throw new Error("文字节点不存在或无权修改");
@@ -1963,9 +1971,9 @@ export async function addArtworks(
       await client.query(
         `INSERT INTO app_artworks
            (id, email, title, category, prompt, status, image_url, gradient,
-            style, ratio, resolution, source_url, batch_id, parent_id, template_id, parent_ids, group_id, origin,
+            style, ratio, resolution, source_url, batch_id, parent_id, template_id, parent_ids, group_id, canvas_group_id, origin,
             image_width, image_height)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21)
          ON CONFLICT (id) DO UPDATE SET deleted_at = NULL`,
         [
           a.id,
@@ -1985,6 +1993,7 @@ export async function addArtworks(
           a.templateId ?? null,
           JSON.stringify(a.parentIds ?? []),
           groupId,
+          a.canvasGroupId ?? null,
           a.origin ?? null,
           a.width ?? null,
           a.height ?? null,
@@ -2007,7 +2016,7 @@ export async function listArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, group_id, origin, marked, created_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, group_id, canvas_group_id, origin, marked, created_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NULL
       ORDER BY created_at DESC LIMIT 1000`,
@@ -2034,6 +2043,7 @@ export async function listArtworks(
     width: r.image_width ?? null,
     height: r.image_height ?? null,
     groupId: r.group_id ?? null,
+    canvasGroupId: r.canvas_group_id ?? null,
     origin: r.origin ?? null,
     marked: !!r.marked,
     createdAt: new Date(r.created_at).toISOString(),
@@ -2052,7 +2062,7 @@ export async function listArtworksByIds(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, group_id, origin, marked, created_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, group_id, canvas_group_id, origin, marked, created_at
        FROM app_artworks
       WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), clean]
@@ -2078,6 +2088,7 @@ export async function listArtworksByIds(
     width: r.image_width ?? null,
     height: r.image_height ?? null,
     groupId: r.group_id ?? null,
+    canvasGroupId: r.canvas_group_id ?? null,
     origin: r.origin ?? null,
     marked: !!r.marked,
     createdAt: new Date(r.created_at).toISOString(),
@@ -2303,6 +2314,90 @@ export async function setArtworkMarked(
   return (result.rowCount ?? 0) > 0;
 }
 
+export type CanvasGroupAssignment = {
+  id: string;
+  canvasGroupId: string | null;
+};
+
+// 画布成组/解组。canvas_group_id 只表达编辑关系，不改变项目 group_id、父子血缘或连线。
+export async function setArtworkCanvasGroups(
+  emailRaw: string,
+  assignmentsRaw: CanvasGroupAssignment[]
+): Promise<CanvasGroupAssignment[]> {
+  await ensureSchema();
+  const email = emailRaw.toLowerCase();
+  const assignments = Array.from(
+    new Map(
+      assignmentsRaw
+        .filter((item) => item?.id)
+        .slice(0, 200)
+        .map((item) => [
+          item.id,
+          {
+            id: item.id,
+            canvasGroupId: item.canvasGroupId?.trim().slice(0, 120) || null,
+          },
+        ])
+    ).values()
+  );
+  if (!assignments.length) return [];
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const ids = assignments.map((item) => item.id);
+    const { rows } = await client.query(
+      `SELECT id, group_id, canvas_group_id
+         FROM app_artworks
+        WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL
+        FOR UPDATE`,
+      [email, ids]
+    );
+    if (rows.length !== assignments.length) {
+      throw new Error("节点不存在或无权访问");
+    }
+    const projectById = new Map(rows.map((row) => [String(row.id), String(row.group_id || row.id)]));
+    const projectByCanvasGroup = new Map<string, string>();
+    for (const assignment of assignments) {
+      if (!assignment.canvasGroupId) continue;
+      const projectId = projectById.get(assignment.id) as string;
+      const seenProject = projectByCanvasGroup.get(assignment.canvasGroupId);
+      if (seenProject && seenProject !== projectId) {
+        throw new Error("只能对同一画布项目中的节点成组");
+      }
+      projectByCanvasGroup.set(assignment.canvasGroupId, projectId);
+    }
+    if (projectByCanvasGroup.size) {
+      const existing = await client.query(
+        `SELECT id, canvas_group_id, group_id
+           FROM app_artworks
+          WHERE email = $1 AND canvas_group_id = ANY($2::text[]) AND deleted_at IS NULL`,
+        [email, Array.from(projectByCanvasGroup.keys())]
+      );
+      for (const row of existing.rows) {
+        const expected = projectByCanvasGroup.get(String(row.canvas_group_id));
+        if (expected && expected !== String(row.group_id || row.id)) {
+          throw new Error("画布分组不能跨项目复用");
+        }
+      }
+    }
+    for (const assignment of assignments) {
+      await client.query(
+        `UPDATE app_artworks SET canvas_group_id = $3
+          WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
+        [email, assignment.id, assignment.canvasGroupId]
+      );
+    }
+    await client.query("COMMIT");
+    return assignments;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // 给某节点追加一个父节点(多输入):合并进 parent_ids(去重,排除自身)。
 export async function addArtworkParent(
   emailRaw: string,
@@ -2486,7 +2581,7 @@ export async function listDeletedArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, group_id, origin, marked, created_at, deleted_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, group_id, canvas_group_id, origin, marked, created_at, deleted_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NOT NULL
       ORDER BY deleted_at DESC LIMIT 200`,
@@ -2513,6 +2608,7 @@ export async function listDeletedArtworks(
     width: r.image_width ?? null,
     height: r.image_height ?? null,
     groupId: r.group_id ?? null,
+    canvasGroupId: r.canvas_group_id ?? null,
     origin: r.origin ?? null,
     marked: !!r.marked,
     createdAt: new Date(r.created_at).toISOString(),

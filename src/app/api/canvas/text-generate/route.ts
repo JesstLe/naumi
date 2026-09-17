@@ -32,19 +32,17 @@ export async function POST(request: Request) {
   }
 
   const model = process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna";
-  const { apiKey } = await getOpenAISettings();
+  const settings = await getOpenAISettings();
+  const apiKey = process.env.AGENT_API_KEY || settings.apiKey;
   if (!apiKey) {
-    return NextResponse.json({
-      text: `已收到你的文字生成要求：${prompt}\n\n请在管理后台配置文本模型后重新生成完整内容。`,
-      model,
-      fallback: true,
-    });
+    return NextResponse.json({ error: "文字模型接口未配置" }, { status: 503 });
   }
 
   try {
     const client = new OpenAI({
       apiKey,
-      baseURL: (await getOpenAIBaseUrl()) || undefined,
+      baseURL:
+        process.env.AGENT_BASE_URL || (await getOpenAIBaseUrl()) || undefined,
     });
     const response = await client.chat.completions.create({
       model,

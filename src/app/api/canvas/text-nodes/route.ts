@@ -55,6 +55,13 @@ export async function POST(request: Request) {
     canvasY,
     createdAt: String(body.createdAt || now),
     updatedAt: now,
+    targetIds: Array.from(
+      new Set(
+        (Array.isArray(body.targetIds) ? body.targetIds : [])
+          .map((target) => String(target).trim())
+          .filter(Boolean)
+      )
+    ).slice(0, 200),
   });
   return NextResponse.json({ persisted: true, node });
 }

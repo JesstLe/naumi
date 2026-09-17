@@ -85,6 +85,7 @@ type GenParams = {
   templateImage: string;
   templatePrompt: string;
   origin: string; // "canvas"=在画布里产出(永远留画布);空=生图页/工具等普通产出
+  projectGroupId: string; // 纯文字画布生成首张图片时沿用当前画布项目
   model: string;
   targetWidth: number;
   targetHeight: number;
@@ -646,6 +647,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
       templateImage: s("templateImage").trim(),
       templatePrompt: s("templatePrompt").trim(),
       origin: s("origin").trim(),
+      projectGroupId: s("projectGroupId").trim(),
       model: s("model").trim(),
       targetWidth: parseDimension(s("targetWidth")),
       targetHeight: parseDimension(s("targetHeight")),
@@ -671,6 +673,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
     templateImage: (j.templateImage ?? "").trim(),
     templatePrompt: (j.templatePrompt ?? "").trim(),
     origin: (j.origin ?? "").trim(),
+    projectGroupId: (j.projectGroupId ?? "").trim(),
     model: typeof (j as Partial<GenParams>).model === "string" ? (j as Partial<GenParams>).model!.trim() : "",
     targetWidth: parseDimension((j as Partial<GenParams>).targetWidth),
     targetHeight: parseDimension((j as Partial<GenParams>).targetHeight),
@@ -820,6 +823,7 @@ async function runJob(
             source: sourceUrl,
             parentId: parent,
             parentIds: p.parentIds.filter((x) => x && x !== parent),
+            groupId: p.projectGroupId || undefined,
             origin: p.origin || null,
             width: im.width ?? null,
             height: im.height ?? null,
