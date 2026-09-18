@@ -39,6 +39,27 @@ fi
 grep -q 'NEW_API_IMAGE_BASE_URL:' "$RELEASE/docker-compose.yml"
 grep -q 'NEW_API_IMAGE_API_KEY:' "$RELEASE/docker-compose.yml"
 grep -q 'NEW_API_IMAGE_MODELS:' "$RELEASE/docker-compose.yml"
+if ! grep -q 'PADDLE_OCR_BASE_URL:' "$RELEASE/docker-compose.yml"; then
+  awk '{
+    print
+    if (!inserted && $0 ~ /^[[:space:]]*(NEW_API_IMAGE_MODELS|OPENAI_API_KEY):/) {
+      print "      PADDLE_OCR_BASE_URL: ${PADDLE_OCR_BASE_URL:-}"
+      print "      PADDLE_OCR_API_KEY: ${PADDLE_OCR_API_KEY:-}"
+      print "      PADDLE_OCR_REQUIRED: ${PADDLE_OCR_REQUIRED:-false}"
+      print "      PADDLE_OCR_FALLBACK_MODEL: ${PADDLE_OCR_FALLBACK_MODEL:-gpt-5.6-luna}"
+      inserted = 1
+    }
+    next
+  }
+  END {
+    if (!inserted) exit 43
+  }' "$RELEASE/docker-compose.yml" > "$RELEASE/docker-compose.yml.tmp"
+  mv "$RELEASE/docker-compose.yml.tmp" "$RELEASE/docker-compose.yml"
+fi
+grep -q 'PADDLE_OCR_BASE_URL:' "$RELEASE/docker-compose.yml"
+grep -q 'PADDLE_OCR_API_KEY:' "$RELEASE/docker-compose.yml"
+grep -q 'PADDLE_OCR_REQUIRED:' "$RELEASE/docker-compose.yml"
+grep -q 'PADDLE_OCR_FALLBACK_MODEL:' "$RELEASE/docker-compose.yml"
 sed -i -E "s#image: ghcr.io/jesstle/naumi:[^ ]+#image: ghcr.io/jesstle/naumi:$COMMIT#" "$RELEASE/docker-compose.yml"
 sed -i '/^[[:space:]]*REFERENCE_VISION_\(SOURCE\|MODEL\):/d' "$RELEASE/docker-compose.yml"
 sed -i '/^[[:space:]]*AGENT_VISION_MODEL:/a\      REFERENCE_VISION_SOURCE: image\n      REFERENCE_VISION_MODEL: gpt-5.6-luna' "$RELEASE/docker-compose.yml"

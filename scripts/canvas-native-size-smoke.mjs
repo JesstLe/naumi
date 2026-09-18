@@ -15,6 +15,7 @@ const container = `naumi-canvas-size-${Date.now()}`;
 const password = randomUUID();
 const email = "canvas-native-size@local.test";
 const appLog = [], report = [];
+const imageEditRequests = [];
 const pass = message => { report.push(`PASS ${message}`); console.log(report.at(-1)); };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let app, fixture, pool, api, browser, page;
@@ -39,19 +40,34 @@ try {
   for (let i = 0; i < 60; i++) { try { await pool.query("select 1"); break; } catch { await sleep(300); } }
 
   fixture = createServer(async (req, res) => {
-    for await (const _ of req) { /* consume multipart */ }
+    const chunks = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    const body = Buffer.concat(chunks);
     res.setHeader("content-type", "application/json");
+    if (req.url === "/ocr") {
+      return res.end(JSON.stringify({
+        results: [
+          { text: "春日上新", confidence: 0.98, box: [100, 120, 300, 80] },
+          { text: "限时优惠", confidence: 0.96, box: [520, 720, 240, 72] },
+        ],
+      }));
+    }
     if (req.url === "/v1/images/edits" || req.url === "/v1/images/generations") {
+      if (req.url === "/v1/images/edits") {
+        imageEditRequests.push(body.toString("utf8"));
+        await sleep(1200);
+      }
       return res.end(JSON.stringify({ data: [{ b64_json: generated.toString("base64") }] }));
     }
     res.statusCode = 404; res.end("{}");
   });
   await new Promise(resolve => fixture.listen(0, "127.0.0.1", resolve));
-  const provider = `http://127.0.0.1:${fixture.address().port}/v1`;
+  const fixtureOrigin = `http://127.0.0.1:${fixture.address().port}`;
+  const provider = `${fixtureOrigin}/v1`;
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
   app = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "-p", String(port)], {
-    env: { ...process.env, DATABASE_URL: database, SETTINGS_SECRET: randomUUID(), ADMIN_EMAIL: email, NAUMI_EDITION: "cloud", NAUMI_MULTI_USER: "1", NAUMI_PUBLIC_COMMERCE: "0", MEDIA_DIR: path.join(output, "media"), STORAGE_DRIVER: "local", NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_ANON_KEY: "", SMTP_HOST: "", OPENAI_API_KEY: "fixture", OPENAI_BASE_URL: provider, OPENAI_IMAGE_MODEL: "gpt-image-2", NEXT_TELEMETRY_DISABLED: "1" },
+    env: { ...process.env, DATABASE_URL: database, SETTINGS_SECRET: randomUUID(), ADMIN_EMAIL: email, NAUMI_EDITION: "cloud", NAUMI_MULTI_USER: "1", NAUMI_PUBLIC_COMMERCE: "0", MEDIA_DIR: path.join(output, "media"), STORAGE_DRIVER: "local", NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_ANON_KEY: "", SMTP_HOST: "", OPENAI_API_KEY: "fixture", OPENAI_BASE_URL: provider, OPENAI_IMAGE_MODEL: "gpt-image-2", PADDLE_OCR_BASE_URL: `${fixtureOrigin}/ocr`, NEXT_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   app.stdout.on("data", chunk => appLog.push(chunk.toString()));
@@ -101,6 +117,25 @@ try {
   assert(addButtonBox && addButtonBox.width >= 64 && addButtonBox.height >= 64);
   pass("imports keep intrinsic pixels while adaptive image-only nodes, filenames, and the larger add button stay clearly visible");
 
+  await page.setViewportSize({ width: 2560, height: 1440 });
+  const highResolutionTitleSize = Number.parseFloat(
+    await squareNode.getByText("square-900.png", { exact: true })
+      .evaluate(element => getComputedStyle(element).fontSize)
+  );
+  assert(highResolutionTitleSize >= 14, `title is too small: ${highResolutionTitleSize}px`);
+  await squareNode.getByText("square-900.png", { exact: true }).dblclick();
+  const inlineRename = page.locator('input[placeholder="项目名称"]:visible');
+  await expect(inlineRename).toBeVisible();
+  await inlineRename.fill("square-900-已改名.png");
+  await inlineRename.press("Enter");
+  await expect(squareNode.getByText("square-900-已改名.png", { exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const refreshed = await (await api.get(`/api/account?email=${email}`)).json();
+    return refreshed.artworks.find(item => item.id === square.id)?.title;
+  }).toBe("square-900-已改名.png");
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  pass("responsive image titles remain readable and double-click opens inline rename");
+
   // Simulate legacy rows without dimensions; the image load must backfill the database.
   await pool.query("update app_artworks set image_width=null,image_height=null where id=$1", [square.id]);
   await page.reload();
@@ -141,6 +176,34 @@ try {
   pass("click reveals controls and proportional image resizing persists separately from intrinsic pixels");
 
   await page.locator(`.react-flow__node[data-id="${square.id}"]`).click();
+  await page.getByTitle("在线改字").click();
+  const ocrPanel = page.getByLabel("在线改字面板");
+  await expect(ocrPanel).toBeVisible();
+  await expect(ocrPanel.getByLabel("修改文字 1")).toHaveValue("春日上新");
+  await expect(ocrPanel.getByLabel("修改文字 2")).toHaveValue("限时优惠");
+  await ocrPanel.getByLabel("修改文字 1").fill("夏日焕新");
+  await ocrPanel.getByLabel("应用文字 1").click();
+  await expect(page.locator('.react-flow__node[data-id^="pend-text-edit-"]')).toHaveCount(1);
+  let textEdited;
+  await expect.poll(async () => {
+    account = await (await api.get(`/api/account?email=${email}`)).json();
+    textEdited = account.artworks.find(item => item.parentId === square.id && item.category === "canvas-text-edit");
+    return Boolean(textEdited);
+  }, { timeout: 120000 }).toBe(true);
+  await expect(page.locator(`.react-flow__node[data-id="${textEdited.id}"] img`)).toBeVisible({ timeout: 30000 });
+  assert(textEdited.canvasX > restoredSquare.canvasX + restoredSquare.canvasWidth);
+  assert.equal(textEdited.canvasY, restoredSquare.canvasY);
+  assert(imageEditRequests.some(body =>
+    body.includes("图片其余所有画面100%保持原样") &&
+    body.includes("旧文字：春日上新") &&
+    body.includes("新文字：夏日焕新") &&
+    body.includes("x=64")
+  ));
+  await expect(ocrPanel).toContainText("已生成改字结果");
+  await ocrPanel.getByLabel("关闭在线改字").click();
+  pass("PaddleOCR text list edits one boxed region and places a progress-backed result to the source image right");
+
+  await page.locator(`.react-flow__node[data-id="${square.id}"]`).click();
   await page.getByRole("button", { name: /自适应.*1K/ }).click();
   await page.getByLabel("自定义宽度").fill("5120");
   await page.getByLabel("自定义高度").fill("2880");
@@ -151,9 +214,9 @@ try {
   await page.getByRole("button", { name: "↑", exact: true }).click();
   await expect.poll(async () => {
     account = await (await api.get(`/api/account?email=${email}`)).json();
-    return account.artworks.find(item => item.parentId === square.id && item.origin === "canvas") || null;
+    return account.artworks.find(item => item.parentId === square.id && item.origin === "canvas" && item.resolution === "5K") || null;
   }, { timeout: 120000 }).not.toBeNull();
-  const child = account.artworks.find(item => item.parentId === square.id && item.origin === "canvas");
+  const child = account.artworks.find(item => item.parentId === square.id && item.origin === "canvas" && item.resolution === "5K");
   assert.equal(child.width, 5120); assert.equal(child.height, 2880); assert.equal(child.ratio, "5120:2880"); assert.equal(child.resolution, "5K");
   assert.equal(child.canvasWidth, null); assert.equal(child.canvasHeight, null);
   await expect(page.locator(`.react-flow__node[data-id="${child.id}"] img`)).toBeVisible({ timeout: 30000 });
@@ -183,7 +246,7 @@ try {
   } finally { await other.dispose(); }
   assert.deepEqual(pageErrors, []);
   pass("dimension updates remain owner-scoped and browser runtime has no exceptions");
-  console.log("MODIFIED_RESULT=PASS ADAPTIVE=420 RESIZABLE=true CUSTOM=5120x2880 RESOLUTION=5K checks=5");
+  console.log("MODIFIED_RESULT=PASS ADAPTIVE=420 RESIZABLE=true OCR_EDIT=true INLINE_RENAME=true CUSTOM=5120x2880 RESOLUTION=5K checks=7");
 } catch (error) {
   report.push(`FAIL ${error.stack || error}`);
   if (page) await page.screenshot({ path: path.join(output, "FAILURE.png"), fullPage: true }).catch(() => {});

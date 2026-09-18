@@ -109,8 +109,8 @@ async function privateFetch(input: RequestInfo | URL, init: RequestInit = {}) {
 // 横向链路布局(对齐原型 node-canvas-preview):深度→x 向右展开,同层兄弟→y 竖排。
 // 图片节点使用更清晰的工作尺寸，并按图片比例自适应；高分屏上保持可辨识。
 const NODE_W = 320; // 新建图片节点的默认宽度，避免高分辨率屏幕上过小
-const NODE_H = 228; // 标签行 28 + 默认图片区 200
-const NODE_LABEL_H = 28;
+const NODE_H = 236; // 标签行 36 + 默认图片区 200
+const NODE_LABEL_H = 36;
 const IMAGE_NODE_MIN_W = 120;
 const IMAGE_NODE_MIN_H = 108;
 const IMAGE_NODE_MAX_W = 2400;
@@ -233,6 +233,15 @@ type CanvasTextNode = {
   height: number;
   sourceIds: string[];
   targetIds: string[];
+};
+
+type OcrBox = { x: number; y: number; width: number; height: number };
+type OcrSegment = {
+  id: string;
+  text: string;
+  editedText: string;
+  confidence: number;
+  box: OcrBox;
 };
 
 // 沿血缘上溯到根作品(带环保护)
@@ -674,7 +683,7 @@ function PendNode({ data, selected }: NodeProps) {
   return (
     <div className="group relative w-[320px]">
       {/* 标签(图片上方,对齐原型 .lb2) */}
-      <div className="mb-1.5 flex items-center gap-1.5 truncate pl-0.5 text-[12px] text-[#9aa1ae]">
+      <div className="mb-1.5 flex h-[30px] items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold text-[#d7dce5]">
         <span>🖼</span>
         <span className="truncate">{d.label}</span>
       </div>
@@ -691,8 +700,18 @@ function PendNode({ data, selected }: NodeProps) {
           <div className="flex w-full flex-col items-center gap-2.5">
             <Loader2 className="h-5 w-5 animate-spin text-[#6366f1]" />
             <div className="text-[12px] font-medium text-slate-200">
-              生成中…
+              {typeof d.progress === "number" && d.progress > 0
+                ? `处理中（${Math.round(d.progress)}%）`
+                : "生成中…"}
             </div>
+            {typeof d.progress === "number" && d.progress > 0 && (
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/50">
+                <div
+                  className="h-full rounded-full bg-[#28b7d1] transition-all"
+                  style={{ width: `${Math.min(100, Math.round(d.progress))}%` }}
+                />
+              </div>
+            )}
           </div>
         ) : d.uploading ? (
           <div className="flex w-full flex-col items-center gap-2.5">
@@ -825,6 +844,7 @@ function ArtNode({ data, selected }: NodeProps) {
       id: string,
       bounds: { x: number; y: number; width: number; height: number }
     ) => void;
+    onRenameRequest?: (id: string, label: string) => void;
   };
   const imageWidth = d.width && d.width > 0 ? Math.round(d.width) : undefined;
   const imageHeight = d.height && d.height > 0 ? Math.round(d.height) : undefined;
@@ -862,8 +882,17 @@ function ArtNode({ data, selected }: NodeProps) {
       />
 
       {/* 未选中时仅显示文件名；点击后再显示标记、分组、版本等功能状态。 */}
-      <div className="mb-1.5 flex h-[22px] flex-none items-center gap-1.5 truncate pl-0.5 text-[12px] font-medium text-[#c7ccd5]">
-        <span className="min-w-0 flex-1 truncate" title={d.label}>{d.label}</span>
+      <div className="mb-1.5 flex h-[30px] flex-none items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none text-[#e2e6ed]">
+        <span
+          className="nodrag min-w-0 flex-1 cursor-text truncate"
+          title={`${d.label} · 双击编辑`}
+          onDoubleClick={(event) => {
+            event.stopPropagation();
+            d.onRenameRequest?.(d.id, d.label);
+          }}
+        >
+          {d.label}
+        </span>
         {selected && d.marked && (
           <MapPin className="h-3 w-3 flex-none fill-amber-400 text-amber-400" />
         )}
@@ -1009,7 +1038,8 @@ function layoutGraph(
   onCanvasResize: (
     id: string,
     bounds: { x: number; y: number; width: number; height: number }
-  ) => void
+  ) => void,
+  onRenameRequest: (id: string, label: string) => void
 ): { nodes: Node[]; edges: Edge[] } {
   const byId = new Map(arts.map((a) => [a.id, a]));
   const sorted = [...arts].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
@@ -1097,6 +1127,7 @@ function layoutGraph(
         intrinsicHeight: a.height,
         onDimensions,
         onCanvasResize,
+        onRenameRequest,
       },
       style: {
         width: canvasSize.width,
@@ -1336,6 +1367,13 @@ export function CanvasClient() {
   const [textError, setTextError] = useState<string | null>(null);
   const [textModel, setTextModel] = useState("gpt-5.6-luna");
   const [textReferenceMenuOpen, setTextReferenceMenuOpen] = useState(false);
+  const [ocrArtworkId, setOcrArtworkId] = useState<string | null>(null);
+  const [ocrSegments, setOcrSegments] = useState<OcrSegment[]>([]);
+  const [ocrStatus, setOcrStatus] = useState<"idle" | "scanning" | "ready" | "applying" | "done" | "error">("idle");
+  const [ocrEngine, setOcrEngine] = useState("");
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrApplyingId, setOcrApplyingId] = useState<string | null>(null);
+  const [ocrProgress, setOcrProgress] = useState(0);
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
   const pendPromptRef = useRef<HTMLTextAreaElement>(null);
   const wantFocusPendPrompt = useRef(false);
@@ -2027,15 +2065,25 @@ export function CanvasClient() {
     });
   }, [user, readOnly]);
 
+  const requestNodeRename = useCallback((id: string, label: string) => {
+    if (readOnly) return;
+    setSelectedId(id);
+    setSelectedPendId(null);
+    setSelectedTextId(null);
+    setNodeRenameValue(label);
+    setRenamingNodeId(id);
+  }, [readOnly]);
+
   const { nodes, edges } = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
     if (!active) return { nodes: [], edges: [] };
     return layoutGraph(
       active.members,
       t("canvas.rootBadge"),
       onNodeDimensions,
-      onArtworkCanvasResize
+      onArtworkCanvasResize,
+      requestNodeRename
     );
-  }, [active, t, onNodeDimensions, onArtworkCanvasResize]);
+  }, [active, t, onNodeDimensions, onArtworkCanvasResize, requestNodeRename]);
 
   const nodeTypes = useMemo(
     () => ({ art: ArtNode, pend: PendNode, text: TextCanvasNode }),
@@ -2323,7 +2371,7 @@ export function CanvasClient() {
           Math.round((n.data as { height?: number }).height ?? 0)
         }:${(n.data as { canvasGroupId?: string }).canvasGroupId ?? ""}:${
           (n.data as { status?: string }).status ?? ""
-        }:${String(
+        }:${String((n.data as { label?: string }).label ?? "")}:${String(
           (n.data as { content?: string }).content ?? ""
         ).length}:${((n.data as { sourceRefs?: Array<{ id: string }> }).sourceRefs ?? [])
           .map((reference) => reference.id)
@@ -2996,6 +3044,123 @@ export function CanvasClient() {
       refUrls: useUploadAsBase ? [] : visibleDockRefs.map((r) => r.image),
       userPrompt: editPrompt.trim(),
     });
+  }
+
+  async function openImageTextEditor(artwork: Artwork) {
+    if (readOnly || !user) return;
+    setOcrArtworkId(artwork.id);
+    setOcrSegments([]);
+    setOcrEngine("");
+    setOcrError(null);
+    setOcrStatus("scanning");
+    setOcrProgress(12);
+    try {
+      const response = await privateFetch("/api/canvas/ocr", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ artworkId: artwork.id }),
+      });
+      const data = await readJsonSafe(response);
+      if (!response.ok) throw new Error(data?.error || "图片文字识别失败");
+      const segments = ((data?.segments ?? []) as Array<{
+        id?: string;
+        text?: string;
+        confidence?: number;
+        box?: OcrBox;
+      }>).map((segment, index) => ({
+        id: segment.id || `ocr-${index + 1}`,
+        text: String(segment.text || ""),
+        editedText: String(segment.text || ""),
+        confidence: Number(segment.confidence || 0),
+        box: segment.box as OcrBox,
+      })).filter((segment) => segment.text && segment.box);
+      setOcrSegments(segments);
+      setOcrEngine(String(data?.engine || "ocr"));
+      setOcrProgress(100);
+      setOcrStatus("ready");
+    } catch (error) {
+      setOcrError(error instanceof Error ? error.message : "图片文字识别失败");
+      setOcrStatus("error");
+      setOcrProgress(0);
+    }
+  }
+
+  async function applyOcrSegment(segment: OcrSegment) {
+    if (readOnly || !user || !ocrArtworkId || ocrApplyingId) return;
+    const source = active?.members.find((artwork) => artwork.id === ocrArtworkId);
+    if (!source) return;
+    const nextText = segment.editedText.trim();
+    if (!nextText || nextText === segment.text) {
+      setOcrError(nextText ? "请先修改文字内容" : "新文字不能为空");
+      return;
+    }
+    const sourceNode = rfRef.current?.getNode(source.id);
+    const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
+    const x = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
+    const y = sourceNode?.position.y ?? source.canvasY ?? 0;
+    const pendingId = `pend-text-edit-${Date.now()}`;
+    const pending: Pend = {
+      id: pendingId,
+      x,
+      y,
+      parentId: source.id,
+      linked: true,
+      label: `改字结果 · ${nextText}`,
+      uploading: false,
+      progress: 8,
+      inputs: [source.id],
+      generating: true,
+    };
+    setPendNodes((current) => [...current, pending]);
+    setOcrApplyingId(segment.id);
+    setOcrStatus("applying");
+    setOcrError(null);
+    setOcrProgress(8);
+    const timer = window.setInterval(() => {
+      setOcrProgress((current) => {
+        const next = Math.min(92, current + Math.max(1, Math.round((96 - current) / 9)));
+        setPendNodes((items) => items.map((item) => item.id === pendingId ? { ...item, progress: next } : item));
+        return next;
+      });
+    }, 900);
+    try {
+      const response = await privateFetch("/api/canvas/text-edit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          artworkId: source.id,
+          oldText: segment.text,
+          newText: nextText,
+          box: segment.box,
+        }),
+      });
+      const data = await readJsonSafe(response);
+      if (!response.ok || !data?.id) throw new Error(data?.error || "在线改字失败");
+      await privateFetch("/api/artworks/position", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: data.id, x: Math.round(x), y: Math.round(y) }),
+      });
+      const fresh = await mergeWorks([String(data.id)]);
+      pushAddUndo(String(data.id), fresh);
+      if (data.user) applyServerUser(data.user);
+      setOcrSegments((items) => items.map((item) =>
+        item.id === segment.id
+          ? { ...item, text: nextText, editedText: nextText }
+          : item
+      ));
+      setOcrProgress(100);
+      setOcrStatus("done");
+      flashTip("文字修改完成，结果已生成在原图右侧");
+    } catch (error) {
+      setOcrError(error instanceof Error ? error.message : "在线改字失败");
+      setOcrStatus("error");
+      setOcrProgress(0);
+    } finally {
+      window.clearInterval(timer);
+      setPendNodes((items) => items.filter((item) => item.id !== pendingId));
+      setOcrApplyingId(null);
+    }
   }
 
   async function generateSplitViews(source: Artwork, feedback: string) {
@@ -3975,7 +4140,8 @@ export function CanvasClient() {
       stripped,
       "",
       onNodeDimensions,
-      onArtworkCanvasResize
+      onArtworkCanvasResize,
+      requestNodeRename
     );
     const coord = new Map(
       laid.map((n) => [
@@ -7070,6 +7236,15 @@ export function CanvasClient() {
               {/* 尾部图标:✏️编辑 / 📤上传 / ⬇️下载 / ⛶放大(对齐原型 .ic) */}
               <button
                 type="button"
+                title="在线改字"
+                disabled={!selected || selectedGenerating || readOnly}
+                onClick={() => selected && void openImageTextEditor(selected)}
+                className="flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold text-[#dce3eb] transition-colors hover:bg-[#1f2229] disabled:opacity-40"
+              >
+                <Type className="h-4 w-4" /> 改字
+              </button>
+              <button
+                type="button"
                 title={t("canvas.editName")}
                 disabled={!selected}
                 onClick={() => {
@@ -7117,6 +7292,116 @@ export function CanvasClient() {
                 ⛶
               </button>
             </div>
+          )}
+
+          {ocrArtworkId && (
+            <aside
+              aria-label="在线改字面板"
+              className="absolute bottom-4 right-4 top-4 z-30 flex w-[min(390px,calc(100%-2rem))] flex-col overflow-hidden border border-[#d9e0e8] bg-white text-[#252a33] shadow-[0_22px_70px_rgba(8,15,30,0.32)]"
+            >
+              <div className="flex items-start justify-between border-b border-[#e8ecf1] px-4 py-3.5">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-[15px] font-bold">
+                    <Type className="h-4 w-4 text-[#248da1]" /> 在线改字
+                  </div>
+                  <p className="mt-1 truncate text-[12px] text-[#78818e]">
+                    {active?.members.find((artwork) => artwork.id === ocrArtworkId)?.title || "图片节点"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="关闭在线改字"
+                  onClick={() => {
+                    setOcrArtworkId(null);
+                    setOcrSegments([]);
+                    setOcrError(null);
+                    setOcrStatus("idle");
+                  }}
+                  className="flex h-8 w-8 items-center justify-center text-[#7a8390] hover:bg-[#f1f3f6] hover:text-[#252a33]"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {(ocrStatus === "scanning" || ocrStatus === "applying") && (
+                <div className="border-b border-[#e8ecf1] bg-[#f7fafb] px-4 py-3">
+                  <div className="flex items-center justify-between text-[12px] font-semibold text-[#4b5663]">
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[#248da1]" />
+                      {ocrStatus === "scanning" ? "正在扫描整张图片并提取文字" : "正在匹配原图字体并生成结果"}
+                    </span>
+                    <span>{Math.round(ocrProgress)}%</span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden bg-[#dfe6ec]">
+                    <div
+                      className="h-full bg-[#248da1] transition-all"
+                      style={{ width: `${Math.max(4, Math.min(100, ocrProgress))}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+                {ocrError && (
+                  <div className="mb-3 border border-[#f0c8c3] bg-[#fff5f3] px-3 py-2 text-[12px] font-medium text-[#b44f43]">
+                    {ocrError}
+                  </div>
+                )}
+                {ocrStatus === "done" && !ocrError && (
+                  <div className="mb-3 border border-[#bfe1d3] bg-[#f2fbf7] px-3 py-2 text-[12px] font-medium text-[#28785e]">
+                    已生成改字结果，并放在原图右侧。
+                  </div>
+                )}
+                {ocrStatus === "ready" && ocrSegments.length === 0 && (
+                  <div className="py-12 text-center text-[13px] text-[#7c8591]">
+                    没有识别到可编辑文字。
+                  </div>
+                )}
+                <div className="space-y-3">
+                  {ocrSegments.map((segment, index) => (
+                    <section key={segment.id} className="border border-[#e0e5eb] bg-[#fbfcfd] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wide text-[#73808d]">
+                          文字 {index + 1}
+                        </span>
+                        <span className="text-[10px] text-[#98a1ac]">
+                          {Math.round(segment.confidence * 100)}% · {segment.box.x},{segment.box.y} · {segment.box.width}×{segment.box.height}
+                        </span>
+                      </div>
+                      <p className="mt-2 break-words text-[12px] text-[#737d89]">
+                        原文：{segment.text}
+                      </p>
+                      <textarea
+                        aria-label={`修改文字 ${index + 1}`}
+                        value={segment.editedText}
+                        disabled={ocrStatus === "applying"}
+                        onChange={(event) => setOcrSegments((items) => items.map((item) =>
+                          item.id === segment.id ? { ...item, editedText: event.target.value } : item
+                        ))}
+                        rows={2}
+                        maxLength={300}
+                        className="mt-2 w-full resize-y border border-[#cfd7e0] bg-white px-2.5 py-2 text-[14px] font-medium leading-5 outline-none transition-colors focus:border-[#248da1]"
+                      />
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          type="button"
+                          aria-label={`应用文字 ${index + 1}`}
+                          disabled={ocrStatus === "applying" || !segment.editedText.trim() || segment.editedText.trim() === segment.text}
+                          onClick={() => void applyOcrSegment(segment)}
+                          className="flex h-8 items-center gap-1.5 bg-[#25313b] px-3 text-[12px] font-semibold text-white hover:bg-[#182129] disabled:cursor-not-allowed disabled:opacity-35"
+                        >
+                          {ocrApplyingId === segment.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                          应用
+                        </button>
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </div>
+              <div className="border-t border-[#e8ecf1] bg-[#f8fafb] px-4 py-2 text-[10px] text-[#87919d]">
+                {ocrEngine ? `识别引擎：${ocrEngine === "paddleocr" ? "PaddleOCR" : "视觉模型兜底"}` : "优先使用 PaddleOCR 扫描整图"}
+              </div>
+            </aside>
           )}
 
           {/* 重命名节点:在节点标签处弹出内联输入(✏️ 触发),失焦/回车确定、Esc 取消 */}

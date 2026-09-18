@@ -160,6 +160,7 @@ try {
   await page.mouse.down();
   await page.mouse.move(handleBox.x + 150, handleBox.y - 120, { steps: 12 });
   await page.mouse.up();
+  await expect(page.locator(".menu-pop").getByRole("button", { name: "图形生成" })).toBeVisible();
   await page.locator(".menu-pop").getByRole("button").first().click();
   const pendingNode = page.locator('.react-flow__node[data-id^="pend-"]');
   await expect(pendingNode).toHaveCount(1);
@@ -302,6 +303,7 @@ try {
   await page.mouse.down();
   await page.mouse.move(330, 780, { steps: 20 });
   await page.mouse.up();
+  await expect(page.locator(".menu-pop").getByRole("button", { name: "图形生成" })).toBeVisible();
   await expect(page.locator(".menu-pop").getByRole("button", { name: "文字生成" })).toBeVisible();
   await page.locator(".menu-pop").getByRole("button", { name: "文字生成" }).click();
   await expect(page.locator('.react-flow__node[data-id^="text-"]')).toHaveCount(2);
