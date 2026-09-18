@@ -400,6 +400,11 @@
   border: 1px solid rgba(99, 102, 241, .9);
   background: rgba(99, 102, 241, .12);
 }
+/* 拉线中:所有图片节点端口显形(目标未选中时前 + 不再隐形,落点有明确目标) */
+.canvas-linking .art-port {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
 @media (prefers-reduced-motion: reduce) {
   .react-flow__edge.cw-flow .react-flow__edge-path { animation: none; stroke-dasharray: none; }
   .react-flow__edge path.cw-comet { animation: none; display: none; }

@@ -67,6 +67,8 @@ import {
   BoxSelect,
   Combine,
   GalleryVerticalEnd,
+  ScanSearch,
+  PenLine,
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
@@ -233,6 +235,7 @@ type CanvasTextNode = {
   height: number;
   sourceIds: string[];
   targetIds: string[];
+  productIds?: string[];
 };
 
 type OcrBox = { x: number; y: number; width: number; height: number };
@@ -253,6 +256,22 @@ function rootOf(a: Artwork, byId: Map<string, Artwork>): Artwork {
   }
   return cur;
 }
+
+// ===== 竞品反推 → 智能帮写 → 成套生成 链路的纯文本工具 =====
+// 去掉内容开头由产品绑定自动加的 "@产品图" 行(生成图片时提示词不应包含)
+function stripMentionLines(content: string): string {
+  const lines = content.split("\n");
+  let i = 0;
+  while (i < lines.length && lines[i].trim().startsWith("@")) i++;
+  return lines.slice(i).join("\n").trim();
+}
+// 绑定/换绑产品图时,把 @产品图 行刷新到内容开头(旧 @ 行先剥掉)
+function withProductMention(content: string, title: string): string {
+  return `@${title}\n\n${stripMentionLines(content)}`.trim();
+}
+// 复刻模式生成时追加的防抄袭约束:产品取自产品原图,竞品图只当构图参考
+const REPLICATE_GUARD =
+  "\n产品必须完全取自第一张参考图（产品白底图），包装、品牌、文字保持不变；其余参考图仅作构图与风格参考，严禁照搬其中的竞品标识、品牌名与文案。";
 
 // 安全解析接口返回:非 JSON(多为部署瞬间的纯文本 500「Internal Server Error」)
 // 时给出可读错误,而不是让前端抛 "Unexpected token 'I'"。
@@ -957,8 +976,10 @@ function ArtNode({ data, selected }: NodeProps) {
         position={Position.Left}
         style={{ top: portY }}
         className={cn(
-          "!flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-all hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]",
-          selected ? "!opacity-100" : "!pointer-events-none !opacity-0"
+          "art-port !flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-all hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]",
+          selected
+            ? "!opacity-100"
+            : "!pointer-events-none !opacity-0 group-hover:!pointer-events-auto group-hover:!opacity-100"
         )}
       >
         <span className="pointer-events-none leading-none">+</span>
@@ -970,8 +991,10 @@ function ArtNode({ data, selected }: NodeProps) {
           position={Position.Right}
           style={{ top: portY }}
           className={cn(
-            "!flex !h-12 !w-12 !-right-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-all hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]",
-            selected ? "!opacity-100" : "!pointer-events-none !opacity-0"
+            "art-port !flex !h-12 !w-12 !-right-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-all hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]",
+            selected
+              ? "!opacity-100"
+              : "!pointer-events-none !opacity-0 group-hover:!pointer-events-auto group-hover:!opacity-100"
           )}
         >
           <span className="pointer-events-none leading-none">+</span>
@@ -1571,6 +1594,13 @@ export function CanvasClient() {
   // 框选多选(React Flow 选中集合)
   const [multiSel, setMultiSel] = useState<string[]>([]);
   const [boxSelectMode, setBoxSelectMode] = useState(false);
+  // 拉线中:图片节点端口全部显形(canvas-linking),目标的前 + 不再隐形盲抓
+  const [linking, setLinking] = useState(false);
+  // 竞品链路:反推中/帮写中标记、产品图选择器、生成图片模式菜单
+  const [promptMining, setPromptMining] = useState(false);
+  const [assistBusy, setAssistBusy] = useState(false);
+  const [productPicker, setProductPicker] = useState<{ textNodeIds: string[] } | null>(null);
+  const [genImageMenu, setGenImageMenu] = useState<{ textNodeIds: string[] } | null>(null);
   // 居中确认弹框(替代浏览器原生 confirm,贴合站点配色)
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
@@ -1668,6 +1698,7 @@ export function CanvasClient() {
               height: Number.isFinite(node.height) && node.height > 0 ? node.height : TEXT_NODE_DEFAULT_H,
               sourceIds: Array.isArray(node.sourceIds) ? node.sourceIds : [],
               targetIds: Array.isArray(node.targetIds) ? node.targetIds : [],
+              productIds: Array.isArray(node.productIds) ? node.productIds : [],
             }))
           );
         } else {
@@ -1675,13 +1706,14 @@ export function CanvasClient() {
             const local = localStorage.getItem(`naumi:canvas-text-nodes:${target.toLowerCase()}`);
             setTextNodes(
               local
-                ? (JSON.parse(local) as CanvasTextNode[]).map((node) => ({
-                    ...node,
-                    width: Number.isFinite(node.width) && node.width > 0 ? node.width : TEXT_NODE_DEFAULT_W,
-                    height: Number.isFinite(node.height) && node.height > 0 ? node.height : TEXT_NODE_DEFAULT_H,
-                    sourceIds: Array.isArray(node.sourceIds) ? node.sourceIds : [],
-                    targetIds: Array.isArray(node.targetIds) ? node.targetIds : [],
-                  }))
+                    ? (JSON.parse(local) as CanvasTextNode[]).map((node) => ({
+                      ...node,
+                      width: Number.isFinite(node.width) && node.width > 0 ? node.width : TEXT_NODE_DEFAULT_W,
+                      height: Number.isFinite(node.height) && node.height > 0 ? node.height : TEXT_NODE_DEFAULT_H,
+                      sourceIds: Array.isArray(node.sourceIds) ? node.sourceIds : [],
+                      targetIds: Array.isArray(node.targetIds) ? node.targetIds : [],
+                      productIds: Array.isArray(node.productIds) ? node.productIds : [],
+                    }))
                 : []
             );
           } catch {
@@ -2122,6 +2154,17 @@ export function CanvasClient() {
       ? (Array.from(ids)[0] as string)
       : null;
   }, [selectedBatchArts]);
+  // 框选里的文字节点(竞品链路的批量入口):反推结果的批量帮写、批量生成图片
+  const selectedTextBatchNodes = useMemo(() => {
+    const byId = new Map(textNodes.map((node) => [node.id, node]));
+    return multiSel
+      .filter((id) => id.startsWith("text-"))
+      .map((id) => byId.get(id))
+      .filter(
+        (node): node is CanvasTextNode =>
+          !!node && (!activeKey || node.projectKey === activeKey)
+      );
+  }, [multiSel, textNodes, activeKey]);
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
@@ -2275,6 +2318,11 @@ export function CanvasClient() {
       const sourceRefs = (textNode.sourceIds ?? [])
         .map((id) => active?.members.find((member) => member.id === id))
         .filter(Boolean) as Artwork[];
+      // 产品绑定(帮写节点)也显示为 @引用芯片 + 连线,与 sourceIds 视觉一致
+      const productRefs = (textNode.productIds ?? [])
+        .filter((id) => !(textNode.sourceIds ?? []).includes(id))
+        .map((id) => active?.members.find((member) => member.id === id))
+        .filter(Boolean) as Artwork[];
       displayNodes.push({
         id: textNode.id,
         type: "text",
@@ -2286,7 +2334,7 @@ export function CanvasClient() {
           prompt: textNode.prompt,
           content: textNode.content,
           status: textNode.status,
-          sourceRefs: sourceRefs.map((reference) => ({
+          sourceRefs: [...sourceRefs, ...productRefs].map((reference) => ({
             id: reference.id,
             title: reference.title,
           })),
@@ -2296,7 +2344,7 @@ export function CanvasClient() {
         },
         style: { width: textNode.width, height: textNode.height },
       } as Node);
-      for (const sourceId of textNode.sourceIds ?? []) {
+      for (const sourceId of Array.from(new Set([...(textNode.sourceIds ?? []), ...(textNode.productIds ?? [])]))) {
         if (!active?.members.some((member) => member.id === sourceId)) continue;
         displayEdges.push({
           id: `e-image-text-${sourceId}-${textNode.id}`,
@@ -3922,8 +3970,9 @@ export function CanvasClient() {
   ) {
     connectedRef.current = false;
     spawnSourceRef.current = params.nodeId ?? null;
+    setLinking(true);
   }
-  function onConnect(conn: {
+  async function onConnect(conn: {
     source?: string | null;
     target?: string | null;
   }) {
@@ -3950,6 +3999,27 @@ export function CanvasClient() {
     if (source.startsWith("pend-") || target.startsWith("pend-")) return;
     if (target.startsWith("text-")) {
       if (source.startsWith("text-")) return;
+      const art = active?.members.find((member) => member.id === source);
+      const textNode = textNodes.find((node) => node.id === target);
+      if (!art || !textNode) return;
+      // 多选了 ≥2 个文字节点时:这次连线=批量绑定产品图(全部连接 + @产品图前缀)
+      const batchTextIds = multiSel.filter((id) => id.startsWith("text-"));
+      if (batchTextIds.length >= 2 && batchTextIds.includes(target)) {
+        const targets = batchTextIds
+          .map((id) => textNodes.find((node) => node.id === id))
+          .filter(
+            (node): node is CanvasTextNode =>
+              !!node && (!activeKey || node.projectKey === activeKey)
+          );
+        await Promise.all(targets.map((node) => bindProductToTextNode(node, art)));
+        flashTip(fmt(t("canvas.productBound"), { n: targets.length }));
+        return;
+      }
+      // 已绑产品的节点再连一张图 = 换绑产品图
+      if ((textNode.productIds ?? []).length) {
+        await bindProductToTextNode(textNode, art);
+        return;
+      }
       void updateTextReference(target, source, true);
       return;
     }
@@ -4058,6 +4128,7 @@ export function CanvasClient() {
     event: MouseEvent | TouchEvent,
     connectionState?: { isValid?: boolean | null }
   ) {
+    setLinking(false);
     const src = spawnSourceRef.current;
     spawnSourceRef.current = null;
     if (!src || src.startsWith("task-") || readOnly) return;
@@ -4806,6 +4877,288 @@ export function CanvasClient() {
       await persistTextNode(failed);
     }
   }
+
+  // ===== 竞品反推 → 智能帮写 → 成套生成 链路 =====
+
+  // 绑定/换绑文字节点的产品图:productIds 记录绑定,@产品图 行刷新到内容开头
+  async function bindProductToTextNode(node: CanvasTextNode, art: Artwork) {
+    const updated: CanvasTextNode = {
+      ...node,
+      productIds: [art.id],
+      content: withProductMention(
+        node.content || "",
+        art.title || t("canvas.productNode")
+      ),
+      updatedAt: new Date().toISOString(),
+    };
+    setTextNodes((items) =>
+      items.map((item) => (item.id === updated.id ? updated : item))
+    );
+    await persistTextNode(updated);
+  }
+
+  // 批量反推:每张竞品图右侧生成一个"逆向提示词"文字节点(2 路并发,失败节点保留可重试)
+  async function reversePromptsForSelection(arts: Artwork[]) {
+    if (readOnly || !user || !activeKey || promptMining || !arts.length) return;
+    setPromptMining(true);
+    setCtxMenu(null);
+    try {
+      const positions = new Map(
+        (rfRef.current?.getNodes() ?? []).map((node) => [
+          node.id,
+          {
+            x: node.position.x,
+            y: node.position.y,
+            w: flowNodeSize(node).width,
+          },
+        ])
+      );
+      const queue = [...arts];
+      let done = 0;
+      const worker = async () => {
+        while (queue.length) {
+          const art = queue.shift();
+          if (!art) break;
+          const pos = positions.get(art.id) ?? {
+            x: art.canvasX ?? 0,
+            y: art.canvasY ?? 0,
+            w: NODE_W,
+          };
+          const id = `text-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+          const now = new Date().toISOString();
+          const node: CanvasTextNode = {
+            id,
+            projectKey: activeKey,
+            title: t("canvas.reverseTitle"),
+            prompt: "",
+            content: "",
+            status: "generating",
+            canvasX: Math.round(pos.x + pos.w + X_GAP),
+            canvasY: Math.round(pos.y),
+            createdAt: now,
+            updatedAt: now,
+            width: TEXT_NODE_DEFAULT_W,
+            height: TEXT_NODE_DEFAULT_H,
+            sourceIds: [art.id],
+            targetIds: [],
+            productIds: [],
+          };
+          setTextNodes((current) => [...current, node]);
+          try {
+            const response = await privateFetch("/api/canvas/text-generate", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                mode: "reverse",
+                prompt: "",
+                sourceIds: [art.id],
+              }),
+            });
+            const data = await readJsonSafe(response);
+            if (!response.ok || !data?.text) {
+              throw new Error(data?.error || t("canvas.reverseFail"));
+            }
+            const completed: CanvasTextNode = {
+              ...node,
+              content: String(data.text),
+              status: "completed",
+              updatedAt: new Date().toISOString(),
+            };
+            setTextNodes((current) =>
+              current.map((item) => (item.id === id ? completed : item))
+            );
+            void persistTextNode(completed);
+          } catch (error) {
+            const failed: CanvasTextNode = {
+              ...node,
+              status: "failed",
+              updatedAt: new Date().toISOString(),
+            };
+            setTextNodes((current) =>
+              current.map((item) => (item.id === id ? failed : item))
+            );
+            void persistTextNode(failed);
+            flashTip(
+              `${art.title || t("canvas.imageNode")}：${
+                error instanceof Error ? error.message : t("canvas.reverseFail")
+              }`
+            );
+          }
+          done++;
+        }
+      };
+      await Promise.all([worker(), worker()]);
+      flashTip(fmt(t("canvas.reverseDone"), { n: done }));
+    } finally {
+      setPromptMining(false);
+    }
+  }
+
+  // 智能帮写:每个反推节点右侧生成成对的帮写节点(@产品图 前缀 + 已绑产品)
+  async function assistWriteForNodes(textNodeIds: string[], product: Artwork) {
+    if (readOnly || !user || !activeKey || assistBusy) return;
+    const byId = new Map(textNodes.map((node) => [node.id, node]));
+    const sources = textNodeIds
+      .map((id) => byId.get(id))
+      .filter(
+        (node): node is CanvasTextNode =>
+          !!node && node.projectKey === activeKey && !!stripMentionLines(node.content || "")
+      );
+    if (!sources.length) {
+      flashTip(t("canvas.assistNeedContent"));
+      setProductPicker(null);
+      return;
+    }
+    setAssistBusy(true);
+    setProductPicker(null);
+    try {
+      const rfNow = rfRef.current?.getNodes() ?? [];
+      const queue = [...sources];
+      const worker = async () => {
+        while (queue.length) {
+          const src = queue.shift();
+          if (!src) break;
+          const rf = rfNow.find((n) => n.id === src.id);
+          const x =
+            (rf ? rf.position.x : src.canvasX) +
+            (src.width || TEXT_NODE_DEFAULT_W) +
+            X_GAP;
+          const y = rf ? rf.position.y : src.canvasY;
+          const id = `text-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+          const now = new Date().toISOString();
+          const node: CanvasTextNode = {
+            id,
+            projectKey: activeKey,
+            title: t("canvas.assistTitle"),
+            prompt: "",
+            content: "",
+            status: "generating",
+            canvasX: Math.round(x),
+            canvasY: Math.round(y),
+            createdAt: now,
+            updatedAt: now,
+            width: TEXT_NODE_DEFAULT_W,
+            height: TEXT_NODE_DEFAULT_H,
+            sourceIds: src.sourceIds ?? [],
+            targetIds: [],
+            productIds: [product.id],
+          };
+          setTextNodes((current) => [...current, node]);
+          try {
+            const response = await privateFetch("/api/canvas/text-generate", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                mode: "assist",
+                prompt: stripMentionLines(src.content || ""),
+                sourceIds: src.sourceIds ?? [],
+                productIds: [product.id],
+              }),
+            });
+            const data = await readJsonSafe(response);
+            if (!response.ok || !data?.text) {
+              throw new Error(data?.error || t("canvas.assistFail"));
+            }
+            const completed: CanvasTextNode = {
+              ...node,
+              content: withProductMention(
+                String(data.text),
+                product.title || t("canvas.productNode")
+              ),
+              status: "completed",
+              updatedAt: new Date().toISOString(),
+            };
+            setTextNodes((current) =>
+              current.map((item) => (item.id === id ? completed : item))
+            );
+            void persistTextNode(completed);
+          } catch (error) {
+            const failed: CanvasTextNode = {
+              ...node,
+              status: "failed",
+              updatedAt: new Date().toISOString(),
+            };
+            setTextNodes((current) =>
+              current.map((item) => (item.id === id ? failed : item))
+            );
+            void persistTextNode(failed);
+            flashTip(
+              `${src.title}：${
+                error instanceof Error ? error.message : t("canvas.assistFail")
+              }`
+            );
+          }
+        }
+      };
+      await Promise.all([worker(), worker()]);
+      flashTip(t("canvas.assistDone"));
+    } finally {
+      setAssistBusy(false);
+    }
+  }
+
+  // 由帮写节点生成自己产品的图:纯产品(仅产品图作参考) / 复刻(附带竞品图+防抄袭约束)
+  async function generateImagesFromTextNodes(
+    textNodeIds: string[],
+    mode: "pure" | "replicate"
+  ) {
+    setGenImageMenu(null);
+    if (readOnly || !user || !active) return;
+    const byId = new Map(textNodes.map((node) => [node.id, node]));
+    const targets = textNodeIds
+      .map((id) => byId.get(id))
+      .filter((node): node is CanvasTextNode => !!node && node.projectKey === activeKey);
+    if (!targets.length) return;
+    const rfNow = rfRef.current?.getNodes() ?? [];
+    await Promise.all(
+      targets.map(async (node) => {
+        const productId = (node.productIds ?? [])[0];
+        const product = active.members.find((member) => member.id === productId);
+        const body = stripMentionLines(node.content || "");
+        if (!product) {
+          flashTip(`${node.title}：${t("canvas.textNoProduct")}`);
+          return;
+        }
+        if (!body) {
+          flashTip(`${node.title}：${t("canvas.textNoContent")}`);
+          return;
+        }
+        const competitors =
+          mode === "replicate"
+            ? (node.sourceIds ?? [])
+                .filter(
+                  (id) =>
+                    id !== productId &&
+                    active.members.some((member) => member.id === id)
+                )
+                .slice(0, MAX_TOTAL_IMAGES - 2)
+            : [];
+        // 输入顺序:产品图第一(=edit 主底图/血缘主父) → 复刻模式的竞品图 → 本文字节点
+        const inputs = [productId, ...competitors, node.id];
+        const seq = pendSeqRef.current++;
+        const rf = rfNow.find((n) => n.id === node.id);
+        const x =
+          (rf ? rf.position.x : node.canvasX) +
+          (node.width || TEXT_NODE_DEFAULT_W) +
+          X_GAP;
+        const y = rf ? rf.position.y : node.canvasY;
+        const pend: Pend = {
+          id: `pend-${Date.now()}-${seq}`,
+          x: Math.round(x),
+          y: Math.round(y),
+          parentId: productId,
+          linked: true,
+          label: `${t("canvas.imageNode")} ${seq}`,
+          uploading: false,
+          progress: 0,
+          inputs,
+        };
+        setPendNodes((current) => [...current, pend]);
+        const prompt = mode === "replicate" ? `${body}${REPLICATE_GUARD}` : body;
+        await generatePend({ pend, prompt, forceStandard: true });
+      })
+    );
+  }
   // 底部工具条:✦ 生成衍生(选中则聚焦生成器,否则选根/提示)
   function toolGenerate() {
     if (readOnly) return;
@@ -4840,6 +5193,7 @@ export function CanvasClient() {
     pend?: Pend;
     prompt?: string;
     ratio?: string;
+    forceStandard?: boolean;
   }) {
     if (readOnly || !user) return;
     // 可传入指定的空白节点(拉线「生成衍生图」用,避免依赖尚未刷新的 state)
@@ -4852,7 +5206,7 @@ export function CanvasClient() {
     const inputTextNodes = pend.inputs
       .map((id) => textNodes.find((node) => node.id === id))
       .filter(Boolean) as CanvasTextNode[];
-    if (generationMode === "detail") {
+    if (generationMode === "detail" && !opts?.forceStandard) {
       if (!inputArts.length) {
         flashTip(t("canvas.detailNeedRefs"));
         return;
@@ -5968,7 +6322,11 @@ export function CanvasClient() {
               key={active?.key ?? "__new__"}
               colorMode="dark"
               style={{ background: "transparent" }}
-              className={boxSelectMode ? "canvas-box-select" : undefined}
+              className={cn(
+                boxSelectMode && "canvas-box-select",
+                linking && "canvas-linking"
+              )}
+              connectionRadius={32}
               nodes={rfNodes}
               edges={rfEdges}
               onNodesChange={onNodesChange}
@@ -6652,6 +7010,20 @@ export function CanvasClient() {
                   </button>
                   <button
                     type="button"
+                    disabled={promptMining}
+                    onClick={() => void reversePromptsForSelection(selectedBatchArts)}
+                    title={t("canvas.reverseHint")}
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8] disabled:opacity-45"
+                  >
+                    {promptMining ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ScanSearch className="h-4 w-4" />
+                    )}
+                    {t("canvas.reversePrompt")}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => void markBatchSelection()}
                     className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8]"
                   >
@@ -6696,6 +7068,57 @@ export function CanvasClient() {
                   >
                     <Trash2 className="h-4 w-4" />
                     {t("canvas.delete")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => clearCanvasSelection(true)}
+                    aria-label={t("canvas.batchClear")}
+                    title={t("canvas.batchClear")}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-[#7a8494] transition-colors hover:bg-[#f0f3f8] hover:text-[#20242c]"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+              {selectedTextBatchNodes.length > 0 && !readOnly && selectedBatchArts.length === 0 && (
+                <div
+                  aria-label={t("canvas.textBatchActions")}
+                  data-testid="text-batch-bar"
+                  className="cz-anim-bottom absolute bottom-5 left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl"
+                >
+                  <span className="whitespace-nowrap px-2 text-xs font-semibold text-[#5f6877]">
+                    {fmt(t("canvas.textBatchSelected"), {
+                      n: selectedTextBatchNodes.length,
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={assistBusy}
+                    onClick={() =>
+                      setProductPicker({
+                        textNodeIds: selectedTextBatchNodes.map((node) => node.id),
+                      })
+                    }
+                    className="flex h-9 items-center gap-1.5 rounded-xl bg-[#315fc8] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#274fa9] disabled:opacity-45"
+                  >
+                    {assistBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <PenLine className="h-4 w-4" />
+                    )}
+                    {t("canvas.assistWrite")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setGenImageMenu({
+                        textNodeIds: selectedTextBatchNodes.map((node) => node.id),
+                      })
+                    }
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8]"
+                  >
+                    <ImageIcon className="h-4 w-4" />
+                    {t("canvas.genImages")}
                   </button>
                   <button
                     type="button"
@@ -7053,6 +7476,13 @@ export function CanvasClient() {
                               setSelectedId(node.id);
                               setFocusId(node.id);
                             }}
+                          />
+                        )}
+                        {!readOnly && (
+                          <Item
+                            label={t("canvas.reversePrompt")}
+                            disabled={promptMining}
+                            onClick={() => void reversePromptsForSelection([node])}
                           />
                         )}
                         {!readOnly && (
@@ -7916,6 +8346,29 @@ export function CanvasClient() {
                   {textModel}
                 </span>
                 <span className="flex-1" />
+                <button
+                  type="button"
+                  disabled={assistBusy}
+                  onClick={() => setProductPicker({ textNodeIds: [selectedText.id] })}
+                  title={t("canvas.assistWriteHint")}
+                  className="flex h-8 items-center gap-1.5 rounded-full bg-[#f1f3f5] px-3 text-[11px] font-semibold text-[#4d5665] transition-colors hover:bg-[#e7ebef] hover:text-[#20242c] disabled:opacity-45"
+                >
+                  {assistBusy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <PenLine className="h-3.5 w-3.5" />
+                  )}
+                  {t("canvas.assistWrite")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGenImageMenu({ textNodeIds: [selectedText.id] })}
+                  title={t("canvas.genImagesHint")}
+                  className="flex h-8 items-center gap-1.5 rounded-full bg-[#f1f3f5] px-3 text-[11px] font-semibold text-[#4d5665] transition-colors hover:bg-[#e7ebef] hover:text-[#20242c]"
+                >
+                  <ImageIcon className="h-3.5 w-3.5" />
+                  {t("canvas.genImages")}
+                </button>
                 <span className="text-[11px] font-medium text-[#20bdd9]">
                   ◆ {selectedTextRefs.length}/5
                 </span>
@@ -7937,6 +8390,114 @@ export function CanvasClient() {
           )}
         </div>
       </div>
+      {/* 智能帮写:选择产品白底图(帮写与生成图片都以它为产品参照) */}
+      {productPicker && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setProductPicker(null)}
+        >
+          <div
+            data-testid="product-picker"
+            className="flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-none items-center justify-between gap-3 border-b border-border px-4 py-3">
+              <div className="flex items-center gap-2">
+                <PenLine className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">{t("canvas.productPick")}</h3>
+              </div>
+              <button
+                type="button"
+                aria-label={t("canvas.close")}
+                onClick={() => setProductPicker(null)}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="px-4 pt-3 text-xs text-muted-foreground">
+              {t("canvas.productPickHint")}
+            </p>
+            <div className="grid grid-cols-3 gap-2 overflow-y-auto p-4 sm:grid-cols-4">
+              {(active?.members ?? [])
+                .filter((member) => hasRenderableImage(member.image))
+                .map((member) => (
+                  <button
+                    key={member.id}
+                    type="button"
+                    onClick={() => void assistWriteForNodes(productPicker.textNodeIds, member)}
+                    className="group flex flex-col items-stretch gap-1.5 rounded-lg border border-border bg-background p-1.5 text-left transition-colors hover:border-primary/60"
+                  >
+                    <span
+                      className="block h-20 w-full rounded bg-cover bg-center"
+                      style={{
+                        backgroundImage: `url(${JSON.stringify(cdnUrl(member.image))})`,
+                      }}
+                    />
+                    <span className="truncate text-[11px] font-medium text-foreground">
+                      {member.title || t("canvas.imageNode")}
+                    </span>
+                  </button>
+                ))}
+            </div>
+            {!(active?.members ?? []).some((member) => hasRenderableImage(member.image)) && (
+              <p className="px-4 pb-4 text-xs text-muted-foreground">
+                {t("canvas.productPickEmpty")}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+      {/* 生成图片:纯产品 / 复刻竞品构图 两种模式 */}
+      {genImageMenu && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setGenImageMenu(null)}
+        >
+          <div
+            data-testid="gen-image-menu"
+            className="flex w-full max-w-md flex-col gap-2 rounded-2xl border border-border bg-card p-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-1 text-sm font-semibold">{t("canvas.genModeTitle")}</h3>
+            <button
+              type="button"
+              onClick={() => void generateImagesFromTextNodes(genImageMenu.textNodeIds, "pure")}
+              className="flex items-start gap-3 rounded-xl border border-border bg-background p-3 text-left transition-colors hover:border-primary/60"
+            >
+              <ImageIcon className="mt-0.5 h-4 w-4 text-primary" />
+              <span>
+                <span className="block text-sm font-semibold">{t("canvas.genModePure")}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {t("canvas.genModePureDesc")}
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                void generateImagesFromTextNodes(genImageMenu.textNodeIds, "replicate")
+              }
+              className="flex items-start gap-3 rounded-xl border border-border bg-background p-3 text-left transition-colors hover:border-primary/60"
+            >
+              <ScanSearch className="mt-0.5 h-4 w-4 text-primary" />
+              <span>
+                <span className="block text-sm font-semibold">{t("canvas.genModeReplicate")}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {t("canvas.genModeReplicateDesc")}
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setGenImageMenu(null)}
+              className="mt-1 self-end rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+            >
+              {t("canvas.close")}
+            </button>
+          </div>
+        </div>
+      )}
       {/* 回收站:已删除作品(保留 180 天,可恢复 / 彻底删除) */}
       {trashOpen && (
         <div

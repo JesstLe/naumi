@@ -63,6 +63,23 @@ export async function POST(request: Request) {
       );
     }
   }
+  // 产品图绑定(帮写节点生成图片时作为 edit 首参考):首张为主产品图
+  const productIds = Array.from(
+    new Set(
+      (Array.isArray(body.productIds) ? body.productIds : [])
+        .map((id) => String(id).trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 2);
+  if (productIds.length) {
+    const products = await listArtworksByIds(email, productIds);
+    if (products.length !== productIds.length) {
+      return NextResponse.json(
+        { error: "绑定的产品图不存在或无权访问" },
+        { status: 400 }
+      );
+    }
+  }
   const now = new Date().toISOString();
   const node = await upsertCanvasTextNode(email, {
     id,
@@ -81,6 +98,7 @@ export async function POST(request: Request) {
     createdAt: String(body.createdAt || now),
     updatedAt: now,
     sourceIds,
+    productIds,
     targetIds: Array.from(
       new Set(
         (Array.isArray(body.targetIds) ? body.targetIds : [])

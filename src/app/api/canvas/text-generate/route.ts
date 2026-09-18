@@ -99,8 +99,15 @@ export async function POST(request: Request) {
   }
   let prompt = "";
   let sourceIds: string[] = [];
+  let productIds: string[] = [];
+  let mode: "general" | "reverse" | "assist" = "general";
   try {
-    const body = (await request.json()) as { prompt?: string; sourceIds?: unknown };
+    const body = (await request.json()) as {
+      prompt?: string;
+      sourceIds?: unknown;
+      productIds?: unknown;
+      mode?: unknown;
+    };
     prompt = String(body.prompt || "").trim().slice(0, 4000);
     sourceIds = Array.from(
       new Set(
@@ -109,11 +116,27 @@ export async function POST(request: Request) {
           .filter(Boolean)
       )
     ).slice(0, MAX_REFERENCE_IMAGES);
+    productIds = Array.from(
+      new Set(
+        (Array.isArray(body.productIds) ? body.productIds : [])
+          .map((id) => String(id).trim())
+          .filter(Boolean)
+      )
+    ).slice(0, 2);
+    mode =
+      body.mode === "reverse" || body.mode === "assist" ? body.mode : "general";
   } catch {
     return NextResponse.json({ error: "请求格式不正确" }, { status: 400 });
   }
-  if (!prompt) {
+  // reverse(竞品图反推提示词)可以不带用户指令;其余模式要求 prompt。
+  if (!prompt && mode !== "reverse") {
     return NextResponse.json({ error: "请输入要生成的文字内容" }, { status: 400 });
+  }
+  if (mode === "reverse" && !sourceIds.length) {
+    return NextResponse.json({ error: "反推提示词需要至少一张参考图" }, { status: 400 });
+  }
+  if (mode === "assist" && !productIds.length) {
+    return NextResponse.json({ error: "智能帮写需要先选择产品图" }, { status: 400 });
   }
 
   const model = process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna";
@@ -142,23 +165,57 @@ export async function POST(request: Request) {
         references.map((artwork) => readReferenceImage(artwork.image, request.url))
       );
     }
+    // 产品图(assist 模式):单独一组引用,提示词里明确标注是"用户自己的产品"
+    let products: ArtworkRecord[] = [];
+    let productImages: string[] = [];
+    if (productIds.length) {
+      if (!dbEnabled || !email) {
+        return NextResponse.json({ error: "当前环境未启用图片引用存储" }, { status: 400 });
+      }
+      const found = await listArtworksByIds(email, productIds);
+      const byId = new Map(found.map((artwork) => [artwork.id, artwork]));
+      products = productIds
+        .map((id) => byId.get(id))
+        .filter((artwork): artwork is ArtworkRecord => Boolean(artwork));
+      if (products.length !== productIds.length) {
+        return NextResponse.json({ error: "绑定的产品图不存在或无权访问" }, { status: 400 });
+      }
+      productImages = await Promise.all(
+        products.map((artwork) => readReferenceImage(artwork.image, request.url))
+      );
+    }
 
     const client = new OpenAI({
       apiKey,
       baseURL:
         process.env.AGENT_BASE_URL || (await getOpenAIBaseUrl()) || undefined,
     });
+    // 按模式拼系统提示词与用户内容:
+    //  general=画布通用文字生成;reverse=竞品图→逆向生图提示词;assist=逆向词按用户产品改写。
+    const systemPrompt =
+      mode === "reverse"
+        ? "你是电商图片逆向工程助手。根据给出的参考图反推出一段可直接用于文生图模型的完整中文提示词,涵盖:画面主体与商品形态、构图与版式(主体位置/占比/角度)、背景与场景、布光、色调与风格、画面文案的布局类型(不杜撰具体文字)、画质与质感词。只输出提示词本身,不要解释、不要标题、不要分点编号。参考图是竞品图,描述画面本身,不要写入任何品牌名或店铺名。"
+        : mode === "assist"
+          ? "你是电商提示词改写助手。用户会给出一段从竞品图逆向出来的提示词,以及用户自己产品的白底图。把提示词中所有与竞品产品相关的描述(产品形态、卖点、品牌、文案内容)替换为用户产品图中的真实产品与卖点,保持原有构图、布光、场景、色调与风格不变,并剔除一切竞品品牌名与标识。只输出改写后的完整中文提示词,不要解释。画面文案要求必须与用户产品匹配、可直接使用。"
+          : "你是电商创作画布里的文字生成助手。直接完成用户要求，可写标题、卖点、脚本、详情文案、提示词或结构化方案。内容要清晰、可直接复制使用；除非用户要求，不要解释过程，不要添加空泛口号。";
+    let userText = prompt;
+    if (mode === "reverse") {
+      userText = `${prompt || "请反推这张竞品图的生图提示词。"}\n\n以下是待反推的竞品参考图。\n${referenceMetadata(references)}`;
+    } else if (mode === "assist") {
+      const competitorNote = references.length
+        ? `\n\n竞品参考图(只取其构图/布光/风格信息):\n${referenceMetadata(references)}`
+        : "";
+      userText = `待改写的逆向提示词:\n${prompt}\n\n以下是用户自己产品的白底图(改写后的提示词必须描述这个产品):\n${referenceMetadata(products)}${competitorNote}`;
+    } else if (references.length) {
+      userText = `${prompt}\n\n以下图片已由用户通过画布连线加入当前节点上下文。请结合图片内容和元数据完成任务。\n\n${referenceMetadata(references)}`;
+    }
+    const allImages = [...referenceImages, ...productImages];
     const userContent: Array<
       | { type: "text"; text: string }
       | { type: "image_url"; image_url: { url: string; detail: "low" } }
     > = [
-      {
-        type: "text",
-        text: references.length
-          ? `${prompt}\n\n以下图片已由用户通过画布连线加入当前节点上下文。请结合图片内容和元数据完成任务。\n\n${referenceMetadata(references)}`
-          : prompt,
-      },
-      ...referenceImages.map((url) => ({
+      { type: "text", text: userText },
+      ...allImages.map((url) => ({
         type: "image_url" as const,
         image_url: { url, detail: "low" as const },
       })),
@@ -168,10 +225,9 @@ export async function POST(request: Request) {
       messages: [
         {
           role: "system",
-          content:
-            "你是电商创作画布里的文字生成助手。直接完成用户要求，可写标题、卖点、脚本、详情文案、提示词或结构化方案。内容要清晰、可直接复制使用；除非用户要求，不要解释过程，不要添加空泛口号。",
+          content: systemPrompt,
         },
-        { role: "user", content: references.length ? userContent : prompt },
+        { role: "user", content: allImages.length ? userContent : userText },
       ],
       temperature: 0.75,
       max_tokens: 1800,
