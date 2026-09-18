@@ -901,7 +901,7 @@ function ArtNode({ data, selected }: NodeProps) {
       />
 
       {/* 未选中时仅显示文件名；点击后再显示标记、分组、版本等功能状态。 */}
-      <div className="mb-1.5 flex h-[30px] flex-none items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none text-[#e2e6ed]">
+      <div className="art-title mb-1.5 flex h-[30px] flex-none items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none text-[#e2e6ed]">
         <span
           className="nodrag min-w-0 flex-1 cursor-text truncate"
           title={`${d.label} · 双击编辑`}
@@ -919,7 +919,7 @@ function ArtNode({ data, selected }: NodeProps) {
           <Combine className="h-3 w-3 flex-none text-[#6bd7ec]" aria-label="已成组" />
         )}
         {selected && d.version && (
-          <span className="ml-auto flex-none rounded bg-white/10 px-1 text-[10px] font-semibold text-slate-200">
+          <span className="art-version ml-auto flex-none rounded bg-white/10 px-1 text-[10px] font-semibold text-slate-200">
             v{d.version}
           </span>
         )}
@@ -1594,6 +1594,17 @@ export function CanvasClient() {
   // 框选多选(React Flow 选中集合)
   const [multiSel, setMultiSel] = useState<string[]>([]);
   const [boxSelectMode, setBoxSelectMode] = useState(false);
+  // 画布底色:深色(默认) / 浅色白底,本地记忆
+  const [lightCanvas, setLightCanvas] = useState(() => {
+    try {
+      return (
+        typeof window !== "undefined" &&
+        localStorage.getItem("nv:canvas:bg") === "light"
+      );
+    } catch {
+      return false;
+    }
+  });
   // 拉线中:图片节点端口全部显形(canvas-linking),目标的前 + 不再隐形盲抓
   const [linking, setLinking] = useState(false);
   // 竞品链路:反推中/帮写中标记、产品图选择器、生成图片模式菜单
@@ -6024,7 +6035,7 @@ export function CanvasClient() {
         <div
           ref={canvasAreaRef}
           data-testid="canvas-drop-zone"
-          className="relative min-w-0 flex-1 overflow-hidden"
+          className={cn("relative min-w-0 flex-1 overflow-hidden", lightCanvas && "canvas-light")}
           onDragEnter={(event) => {
             if (!event.dataTransfer.types.includes("Files")) return;
             event.preventDefault();
@@ -6058,10 +6069,11 @@ export function CanvasClient() {
             uploadRoot(event.dataTransfer.files);
           }}
           style={{
-            // 画布底色 + 点阵,像素级对齐原型 .cvz/.board
-            backgroundColor: "#0e0f13",
-            backgroundImage:
-              "radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px)",
+            // 画布底色 + 点阵,像素级对齐原型 .cvz/.board;浅色模式换白底深点
+            backgroundColor: lightCanvas ? "#f5f6f8" : "#0e0f13",
+            backgroundImage: lightCanvas
+              ? "radial-gradient(circle, rgba(15,23,42,0.10) 1px, transparent 1px)"
+              : "radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px)",
             backgroundSize: "26px 26px",
           }}
         >
@@ -6937,6 +6949,30 @@ export function CanvasClient() {
                     )}
                   >
                     <BoxSelect className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLightCanvas((v) => {
+                        const next = !v;
+                        try {
+                          localStorage.setItem("nv:canvas:bg", next ? "light" : "dark");
+                        } catch {
+                          /* 本地记忆失败不影响切换 */
+                        }
+                        return next;
+                      })
+                    }
+                    title={t("canvas.toggleBg")}
+                    aria-pressed={lightCanvas}
+                    className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-xl transition-colors",
+                      lightCanvas
+                        ? "bg-[#e8efff] text-[#315fc8]"
+                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    )}
+                  >
+                    <Sun className="h-4 w-4" />
                   </button>
                   <button
                     type="button"

@@ -405,6 +405,19 @@
   opacity: 1 !important;
   pointer-events: auto !important;
 }
+/* 浅色画布底:连线与节点标题改深色,避免白底上隐身 */
+.canvas-light .react-flow__edge path.cw-base { stroke: rgba(30, 41, 59, .38); }
+.canvas-light .react-flow__edge path.cw-dim2 { stroke: rgba(30, 41, 59, .16); }
+.canvas-light .react-flow__edge path.cw-on {
+  stroke: rgba(37, 99, 235, .62);
+  filter: drop-shadow(0 0 4px rgba(59, 130, 246, .45));
+}
+.canvas-light .react-flow__edge:hover path.cw-base {
+  stroke: rgba(30, 41, 59, .7);
+  filter: none;
+}
+.canvas-light .art-title { color: #333a46; }
+.canvas-light .art-version { background: rgba(15, 23, 42, .08); color: #475069; }
 @media (prefers-reduced-motion: reduce) {
   .react-flow__edge.cw-flow .react-flow__edge-path { animation: none; stroke-dasharray: none; }
   .react-flow__edge path.cw-comet { animation: none; display: none; }
