@@ -181,8 +181,9 @@ function ratioPrompt(p: GenParams): string {
   return base ? `${base}. ${RATIO_HINT}` : RATIO_HINT;
 }
 
-// 把图按精确目标比例居中裁切(gpt-image 只出方/横/竖三种原生尺寸,
+// 把图按精确目标比例裁切(gpt-image 只出方/横/竖三种原生尺寸,
 // 9:16、4:3 这类精确比例靠出最近原生尺寸后再裁切得到 —— 即 ChatGPT 同款做法)。
+// attention 选窗:对齐画面"最有趣"的区域(主体/人脸),替代固定正中心,贴边内容不被硬裁。
 async function cropToRatio(buf: Buffer, ratio: string): Promise<Buffer> {
   const [rw, rh] = ratio.split(":").map(Number);
   if (!(rw > 0 && rh > 0)) return buf;
@@ -204,14 +205,83 @@ async function cropToRatio(buf: Buffer, ratio: string): Promise<Buffer> {
     else return buf; // 已是目标比例
     cw = Math.min(cw, W);
     ch = Math.min(ch, H);
-    const left = Math.max(0, Math.floor((W - cw) / 2));
-    const top = Math.max(0, Math.floor((H - ch) / 2));
+    // cw×ch 只有一维小于原图,fit:cover 缩放系数为 1,等价于纯裁切;
+    // attention 让 sharp 找主体定窗口(找不到显著区域时自动回退中心)。
     return await sharp(buf)
-      .extract({ left, top, width: cw, height: ch })
+      .resize(cw, ch, { fit: "cover", position: sharp.strategy.attention })
       .png()
       .toBuffer();
   } catch {
     return buf; // sharp 不可用 → 退回未裁切(仍是最近原生比例)
+  }
+}
+
+// 留白补比例:不裁任何内容,用指定背景把短边补到目标比例。
+// 透明底(抠图)补透明、纯色底(白底图)补同色 —— 视觉无缝且主体完整。
+async function padToRatio(
+  sharp: typeof import("sharp"),
+  buf: Buffer,
+  ratio: string,
+  background: { r: number; g: number; b: number; alpha?: number }
+): Promise<Buffer> {
+  const [rw, rh] = ratio.split(":").map(Number);
+  if (!(rw > 0 && rh > 0)) return buf;
+  const meta = await sharp(buf).metadata();
+  const W = meta.width || 0;
+  const H = meta.height || 0;
+  if (!W || !H) return buf;
+  const target = rw / rh;
+  const cur = W / H;
+  let cw = W;
+  let ch = H;
+  if (cur > target + 0.01) ch = Math.round(W / target); // 太宽 → 上下补白
+  else if (cur < target - 0.01) cw = Math.round(H * target); // 太高 → 左右补白
+  else return buf; // 已是目标比例
+  return await sharp(buf)
+    .resize(cw, ch, { fit: "contain", background, kernel: "lanczos3" })
+    .png()
+    .toBuffer();
+}
+
+// 检测纯色边框(白底图/影棚纯色底):缩到 32×32 采样四边,与均值偏差均小于阈值
+// 视为纯色边,返回该颜色用于无缝留白;不纯返回 null(回退裁切)。
+// 误判代价极低 —— 补的就是边框本色,视觉上仍然无缝。
+async function detectUniformBorder(
+  sharp: typeof import("sharp"),
+  buf: Buffer
+): Promise<{ r: number; g: number; b: number } | null> {
+  try {
+    const { data, info } = await sharp(buf)
+      .resize(32, 32, { fit: "fill" })
+      .removeAlpha()
+      .toColourspace("srgb")
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    if (info.channels < 3) return null;
+    const at = (x: number, y: number) => {
+      const i = (y * 32 + x) * info.channels;
+      return { r: data[i], g: data[i + 1], b: data[i + 2] };
+    };
+    const samples: { r: number; g: number; b: number }[] = [];
+    for (let i = 0; i < 32; i++) {
+      samples.push(at(i, 0), at(i, 31), at(0, i), at(31, i));
+    }
+    const n = samples.length;
+    const mean = samples.reduce(
+      (acc, c) => ({ r: acc.r + c.r / n, g: acc.g + c.g / n, b: acc.b + c.b / n }),
+      { r: 0, g: 0, b: 0 }
+    );
+    const uniform = samples.every(
+      (c) =>
+        Math.abs(c.r - mean.r) < 14 &&
+        Math.abs(c.g - mean.g) < 14 &&
+        Math.abs(c.b - mean.b) < 14
+    );
+    return uniform
+      ? { r: Math.round(mean.r), g: Math.round(mean.g), b: Math.round(mean.b) }
+      : null;
+  } catch {
+    return null;
   }
 }
 
@@ -478,6 +548,8 @@ async function normalizeForEdit(buf: Buffer): Promise<Buffer> {
 
 // 所有比例都落到精确画幅；自定义宽高则进一步输出精确像素尺寸。
 // 上游只支持方/横/竖三档，最终画幅由本地 Sharp 统一保证。
+// 策略:真透明底(抠图)与纯色底(白底图)优先"留白补比例"保主体完整;
+// 其余场景图用 attention 裁切(对齐主体选窗,不硬裁贴边内容)。
 async function enforceOutputShape(
   images: GeneratedImage[],
   p: GenParams
@@ -486,17 +558,32 @@ async function enforceOutputShape(
     const decoded = dataUrlToBytes(image.url);
     if (!decoded) return image;
     try {
+      const mod = (await import("sharp")) as unknown as { default?: typeof import("sharp") } & typeof import("sharp");
+      const sharp = mod.default ?? mod;
+      const input = Buffer.from(decoded.bytes);
+      const meta = await sharp(input).metadata();
+      // 留白底色:抠图(真带 alpha)补透明;纯色边框补同色;其余走裁切。
+      // transparent 请求但上游没给 alpha(降级重试的不透明图)时不算透明底。
+      const padBackground: { r: number; g: number; b: number; alpha?: number } | null =
+        p.transparent && meta.hasAlpha
+          ? { r: 0, g: 0, b: 0, alpha: 0 }
+          : await detectUniformBorder(sharp, input);
       let output: Buffer;
       if (p.targetWidth > 0 && p.targetHeight > 0) {
-        const mod = (await import("sharp")) as unknown as { default?: typeof import("sharp") } & typeof import("sharp");
-        const sharp = mod.default ?? mod;
-        output = await sharp(Buffer.from(decoded.bytes))
+        output = await sharp(input)
           .rotate()
-          .resize(p.targetWidth, p.targetHeight, { fit: "cover", position: "centre", kernel: "lanczos3" })
+          .resize(p.targetWidth, p.targetHeight, {
+            fit: padBackground ? "contain" : "cover",
+            background: padBackground ?? undefined,
+            position: "centre",
+            kernel: "lanczos3",
+          })
           .png()
           .toBuffer();
       } else if (p.ratio && p.ratio !== "auto") {
-        output = await cropToRatio(Buffer.from(decoded.bytes), p.ratio);
+        output = padBackground
+          ? await padToRatio(sharp, input, p.ratio, padBackground)
+          : await cropToRatio(input, p.ratio);
       } else return image;
       return { ...image, url: `data:image/png;base64,${output.toString("base64")}` };
     } catch {
