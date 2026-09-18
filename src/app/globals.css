@@ -375,11 +375,16 @@
   filter: drop-shadow(0 0 6px rgba(90, 166, 255, .95));
 }
 /* ── 自定义彗星连线(CometEdge):对齐原型 cw-tail/body/head/spark ── */
-.react-flow__edge path.cw-base { stroke: rgba(255,255,255,.28); stroke-width: 2; fill: none; }
-.react-flow__edge path.cw-dim2 { stroke: rgba(255,255,255,.1); }
+.react-flow__edge path.cw-base { stroke: rgba(255,255,255,.45); stroke-width: 3.2; fill: none; }
+.react-flow__edge path.cw-dim2 { stroke: rgba(255,255,255,.18); }
 .react-flow__edge path.cw-on {
-  stroke: rgba(220,236,255,.72); stroke-width: 2.4;
+  stroke: rgba(220,236,255,.85); stroke-width: 3.4;
   filter: drop-shadow(0 0 4px rgba(104,160,255,.6));
+}
+/* 连线选中(RF 点击选中):teal 高亮加粗,提示 Delete 可剪断 */
+.react-flow__edge.selected path.cw-base {
+  stroke: #6bd7ec; stroke-width: 4.2;
+  filter: drop-shadow(0 0 7px rgba(107,215,236,.75));
 }
 .react-flow__edge path.cw-comet { fill: none; stroke-linecap: round; animation: cflow 1.35s linear infinite; }
 .react-flow__edge path.cw-tail { stroke: #4e99ff; stroke-width: 1.5; stroke-dasharray: 24 76; opacity: .58; filter: drop-shadow(0 0 7px rgba(78,153,255,.75)); animation-delay: .18s; }
@@ -406,11 +411,15 @@
   pointer-events: auto !important;
 }
 /* 浅色画布底:连线与节点标题改深色,避免白底上隐身 */
-.canvas-light .react-flow__edge path.cw-base { stroke: rgba(30, 41, 59, .38); }
-.canvas-light .react-flow__edge path.cw-dim2 { stroke: rgba(30, 41, 59, .16); }
+.canvas-light .react-flow__edge path.cw-base { stroke: rgba(30, 41, 59, .5); }
+.canvas-light .react-flow__edge path.cw-dim2 { stroke: rgba(30, 41, 59, .2); }
 .canvas-light .react-flow__edge path.cw-on {
-  stroke: rgba(37, 99, 235, .62);
+  stroke: rgba(37, 99, 235, .7);
   filter: drop-shadow(0 0 4px rgba(59, 130, 246, .45));
+}
+.canvas-light .react-flow__edge.selected path.cw-base {
+  stroke: #0e9ab8;
+  filter: drop-shadow(0 0 6px rgba(14,154,184,.5));
 }
 .canvas-light .react-flow__edge:hover path.cw-base {
   stroke: rgba(30, 41, 59, .7);

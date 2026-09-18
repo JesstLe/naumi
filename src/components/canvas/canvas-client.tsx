@@ -125,10 +125,33 @@ const MAX_UPLOAD = 12 * 1024 * 1024;
 const MAX_GENERATION_COUNT = 8;
 const TEXT_NODE_MIN_W = 220;
 const TEXT_NODE_MIN_H = 140;
-const TEXT_NODE_DEFAULT_W = 300;
-const TEXT_NODE_DEFAULT_H = 176;
+const TEXT_NODE_DEFAULT_W = 380;
+const TEXT_NODE_DEFAULT_H = 240;
 const TEXT_NODE_MAX_W = 1200;
 const TEXT_NODE_MAX_H = 1200;
+
+// 文字节点内容自适应高度估算:标题栏36 + 内边距 + 引用芯片行 + 正文行数(12px/1.65行高)。
+// 只做粗估(阈值 28px 起才调整),手动拖大节点后不被覆盖(签名不变则不动)。
+function estimateTextNodeHeight(node: {
+  width: number;
+  content: string;
+  prompt: string;
+  sourceIds?: string[];
+}): number {
+  const width = node.width || TEXT_NODE_DEFAULT_W;
+  const charsPerLine = Math.max(8, Math.floor((width - 24) / 11));
+  const text = `${node.content || ""}\n${node.prompt || ""}`.trim();
+  const lines = text
+    ? text
+        .split("\n")
+        .reduce((n, seg) => n + Math.max(1, Math.ceil(seg.length / charsPerLine)), 0)
+    : 2;
+  const refsRows = node.sourceIds?.length ? 1 : 0;
+  const h = 36 + 20 + refsRows * 26 + lines * 20 + 14;
+  return Math.round(
+    Math.min(TEXT_NODE_MAX_H, Math.max(TEXT_NODE_DEFAULT_H, h))
+  );
+}
 // React Flow 默认只允许 50%–200%。这里使用 JavaScript 可安全表达的完整正数范围，
 // 让滚轮、触控板、按钮和百分比输入不再受产品层的人为缩放档位限制。
 const CANVAS_MIN_ZOOM = Number.EPSILON;
@@ -1367,6 +1390,12 @@ export function CanvasClient() {
     x: number;
     y: number;
   } | null>(null);
+  // 连线选中(RF 原生点击选中):Delete/Backspace 才剪断,不再点一下就删
+  const [selectedEdge, setSelectedEdge] = useState<{
+    id: string;
+    source: string;
+    target: string;
+  } | null>(null);
   // 占位/空白节点(添加节点/拉线建节点 → 先出空白节点,里面上传带进度,完成后变真节点)
   type Pend = {
     id: string;
@@ -1390,6 +1419,11 @@ export function CanvasClient() {
   const [textError, setTextError] = useState<string | null>(null);
   const [textModel, setTextModel] = useState("gpt-5.6-luna");
   const [textReferenceMenuOpen, setTextReferenceMenuOpen] = useState(false);
+  // @提及选图:输入 @ 弹出图片选择框,点击=插入 @图片名 并绑引用(等同连线)
+  const [mentionState, setMentionState] = useState<{
+    query: string;
+    start: number;
+  } | null>(null);
   const [ocrArtworkId, setOcrArtworkId] = useState<string | null>(null);
   const [ocrSegments, setOcrSegments] = useState<OcrSegment[]>([]);
   const [ocrStatus, setOcrStatus] = useState<"idle" | "scanning" | "ready" | "applying" | "done" | "error">("idle");
@@ -1766,6 +1800,31 @@ export function CanvasClient() {
       /* local fallback is best effort */
     }
   }, [textNodes, textNodesReady, targetEmail, user?.email]);
+
+  // 文字节点内容自适应高度:内容/引用/宽度变化时按估算调高(阈值 28px 防抖)。
+  // 签名机制保证手动拖拽的尺寸不被覆盖 —— 只有内容真的变了才重新自适应。
+  const fittedTextNodesRef = useRef(new Map<string, string>());
+  useEffect(() => {
+    if (!textNodesReady || readOnly) return;
+    const updates: CanvasTextNode[] = [];
+    for (const node of textNodes) {
+      const sig = `${node.content.length}|${node.prompt.length}|${node.sourceIds?.length ?? 0}|${node.productIds?.length ?? 0}|${node.width}`;
+      if (fittedTextNodesRef.current.get(node.id) === sig) continue;
+      fittedTextNodesRef.current.set(node.id, sig);
+      const fit = estimateTextNodeHeight(node);
+      if (Math.abs(fit - node.height) < 28) continue;
+      updates.push({
+        ...node,
+        height: fit,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    if (!updates.length) return;
+    const byId = new Map(updates.map((n) => [n.id, n]));
+    setTextNodes((cur) => cur.map((n) => byId.get(n.id) ?? n));
+    updates.forEach((n) => void persistTextNode(n));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textNodes, textNodesReady, readOnly]);
 
   // 从收银台返回(支付完成/取消)→ 自动重开会员弹窗,并清掉 URL 上的标记
   useEffect(() => {
@@ -5615,6 +5674,11 @@ export function CanvasClient() {
         } else if (selectedTextId) {
           e.preventDefault();
           void removeTextNode(selectedTextId);
+        } else if (selectedEdge) {
+          // 选中连线 → Delete 剪断(替代原先"点线即删",防误触)
+          e.preventDefault();
+          void cutEdge(selectedEdge);
+          setSelectedEdge(null);
         }
         return;
       }
@@ -5632,6 +5696,7 @@ export function CanvasClient() {
     selectedTextId,
     selectedGenerating,
     multiSel,
+    selectedEdge,
     undoStack,
     redoStack,
     boxSelectMode,
@@ -6399,7 +6464,8 @@ export function CanvasClient() {
                 const m = active?.members.find((x) => x.id === node.id);
                 if (m) setLightbox({ src: m.image, alt: m.title });
               }}
-              // 连线交互:悬停出剪刀(跟随光标)、点击线即剪断
+              // 连线交互:悬停出剪刀提示可剪断;点击=选中(RF 原生连线选择),
+              // 选中后按 Delete/Backspace 才真正剪断,防止点一下误删。
               onEdgeMouseMove={
                 readOnly
                   ? undefined
@@ -6417,16 +6483,6 @@ export function CanvasClient() {
                     }
               }
               onEdgeMouseLeave={readOnly ? undefined : () => setEdgeCut(null)}
-              onEdgeClick={
-                readOnly
-                  ? undefined
-                  : (_, edge) =>
-                      void cutEdge({
-                        id: edge.id,
-                        source: edge.source,
-                        target: edge.target,
-                      })
-              }
               onPaneClick={() => {
                 setSelectedId(null);
                 setSelectedPendId(null);
@@ -6441,7 +6497,7 @@ export function CanvasClient() {
               }}
               onNodeContextMenu={onNodeContextMenu}
               onPaneContextMenu={onPaneContextMenu}
-              onSelectionChange={({ nodes: sel }) => {
+              onSelectionChange={({ nodes: sel, edges: selEdges }) => {
                 const ids = sel.map((n) => n.id).sort();
                 // 只在选中集合"真的变化"时才更新,否则会和受控选中态形成无限 setState 循环(React #185)
                 setMultiSel((prev) => {
@@ -6450,6 +6506,14 @@ export function CanvasClient() {
                     sortedPrev.every((v, i) => v === ids[i])
                     ? prev
                     : ids;
+                });
+                // 连线选中态:同防抖处理,只有真的变化才更新
+                const edge = selEdges[0];
+                setSelectedEdge((prev) => {
+                  const next = edge
+                    ? { id: edge.id, source: edge.source, target: edge.target }
+                    : null;
+                  return prev?.id === next?.id ? prev : next;
                 });
               }}
               onSelectionStart={() => {
@@ -8299,8 +8363,23 @@ export function CanvasClient() {
                   autoFocus
                   value={textPrompt}
                   placeholder={t("canvas.textPromptPlaceholder")}
-                  onChange={(event) => setTextPrompt(event.target.value)}
+                  onChange={(event) => {
+                    setTextPrompt(event.target.value);
+                    // 检测光标前未完成的 "@关键词" → 弹出图片选择框
+                    const el = event.target;
+                    const caret = el.selectionStart ?? event.target.value.length;
+                    const before = event.target.value.slice(0, caret);
+                    const m = before.match(/@([^@\n\s]{0,24})$/);
+                    setMentionState(
+                      m ? { query: m[1], start: caret - m[1].length - 1 } : null
+                    );
+                  }}
                   onKeyDown={(event) => {
+                    if (event.key === "Escape" && mentionState) {
+                      event.preventDefault();
+                      setMentionState(null);
+                      return;
+                    }
                     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                       event.preventDefault();
                       void generateTextNode();
@@ -8317,6 +8396,59 @@ export function CanvasClient() {
                   <X className="h-4 w-4" />
                   </button>
               </div>
+              {/* @提及选图:输入 @ 触发,点击=插入 @图片名 并绑引用(等同连线) */}
+              {mentionState && selectedText && (() => {
+                const q = mentionState.query.toLowerCase();
+                const options = (active?.members ?? [])
+                  .filter(
+                    (member) =>
+                      hasRenderableImage(member.image) &&
+                      (!q || (member.title || "").toLowerCase().includes(q))
+                  )
+                  .slice(0, 8);
+                return (
+                  <div
+                    data-testid="mention-picker"
+                    className="border-t border-[#edf0f3] bg-[#fafbfd] px-3.5 py-2.5"
+                  >
+                    <p className="mb-2 text-[11px] font-medium text-[#7a8390]">
+                      {t("canvas.mentionPickHint")}
+                    </p>
+                    {options.length ? (
+                      <div className="flex max-h-28 flex-wrap gap-1.5 overflow-auto">
+                        {options.map((member) => (
+                          <button
+                            key={member.id}
+                            type="button"
+                            onClick={() => {
+                              const insert = `@${member.title || t("canvas.imageNode")} `;
+                              const end = mentionState.start + 1 + mentionState.query.length;
+                              setTextPrompt(
+                                textPrompt.slice(0, mentionState.start) +
+                                  insert +
+                                  textPrompt.slice(end)
+                              );
+                              setMentionState(null);
+                              void updateTextReference(selectedText.id, member.id, true);
+                            }}
+                            className="flex max-w-[210px] items-center gap-1.5 border border-[#dfe4ea] bg-white px-2 py-1 text-[11px] font-medium text-[#5f6875] transition-colors hover:border-[#6bd7ec] hover:text-[#168ba0]"
+                          >
+                            <span
+                              className="h-5 w-5 flex-none bg-cover bg-center"
+                              style={{
+                                backgroundImage: `url(${JSON.stringify(cdnUrl(member.image))})`,
+                              }}
+                            />
+                            <span className="truncate">@{member.title || t("canvas.imageNode")}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-[#a1a8b3]">{t("canvas.mentionEmpty")}</p>
+                    )}
+                  </div>
+                );
+              })()}
               {textReferenceMenuOpen && (
                 <div className="border-t border-[#edf0f3] bg-[#fafbfd] px-3.5 py-2.5">
                   <p className="mb-2 text-[11px] font-medium text-[#7a8390]">
