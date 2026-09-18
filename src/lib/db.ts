@@ -3522,7 +3522,36 @@ export type ProjectRow = {
   sort_index: number;
 };
 
-// 默认业务项目种子(仅表空时播种一次;后台可增删改)
+// 默认业务项目种子(仅表空时播种一次;后台可增删改)。
+// 已有数据只对明确含 Unicode 替换字符(U+FFFD)的默认项目做定向修复，
+// 避免历史终端编码错误长期把乱码返回给导航，同时不覆盖正常的后台自定义内容。
+const DEFAULT_PROJECTS = [
+  { slug: "naumi", name: "Naumi 工具台", description: "AI 生图/套图/A+/精修/换色 美工工作站", url: "/", icon: "Sparkles", color: "#4F46E5", category: "美工", agent_tool: true, sort_index: 1 },
+  { slug: "sycm", name: "生意参谋助手", description: "品牌星图选词 → 生意参谋核对 → 淘宝前十比对", url: "", icon: "TrendingUp", color: "#2E7CF6", category: "运营", agent_tool: true, sort_index: 2 },
+  { slug: "review-monitor", name: "差评巡检", description: "淘宝商品评价采集与差词统计", url: "", icon: "ShieldAlert", color: "#C2882E", category: "运营", agent_tool: true, sort_index: 3 },
+  { slug: "scm", name: "SCM 上架", description: "阿里健康 SCM 新品/组套自动上架", url: "", icon: "PackagePlus", color: "#7C3AED", category: "运营", agent_tool: true, sort_index: 4 },
+  { slug: "yutang", name: "鱼塘任务 · 澜序协作", description: "营销单派发：A 端放单 → B 端手机回传订单 → 评价管理", url: "", icon: "Fish", color: "#0E9F8A", category: "营销", agent_tool: true, sort_index: 5 },
+  { slug: "rag", name: "经营知识库", description: "高管/经理助理 RAG 问答(规划中)", url: "", icon: "BookOpen", color: "#6D5BF6", category: "管理", agent_tool: false, sort_index: 6 },
+] as const;
+
+async function repairCorruptedDefaultProjects(): Promise<void> {
+  for (const d of DEFAULT_PROJECTS) {
+    await getPool().query(
+      `UPDATE app_projects
+          SET name = $2,
+              description = $3,
+              icon = $4,
+              color = $5,
+              category = $6
+        WHERE slug = $1
+          AND (position(chr(65533) in name) > 0
+            OR position(chr(65533) in description) > 0
+            OR position(chr(65533) in category) > 0)`,
+      [d.slug, d.name, d.description, d.icon, d.color, d.category],
+    );
+  }
+}
+
 let projectsSeeded = false;
 export async function seedProjects(): Promise<void> {
   if (projectsSeeded) return;
@@ -3531,18 +3560,11 @@ export async function seedProjects(): Promise<void> {
     `SELECT 1 FROM app_projects LIMIT 1`
   );
   if ((rows.length ?? 0) > 0) {
+    await repairCorruptedDefaultProjects();
     projectsSeeded = true;
     return;
   }
-  const defaults = [
-    { slug: "naumi", name: "Naumi 工具台", description: "AI 生图/套图/A+/精修/换色 美工工作站", url: "/", icon: "Sparkles", color: "#4F46E5", category: "美工", agent_tool: true, sort_index: 1 },
-    { slug: "sycm", name: "生意参谋助手", description: "品牌星图选词 → 生意参谋核对 → 淘宝前十比对", url: "", icon: "TrendingUp", color: "#2E7CF6", category: "运营", agent_tool: true, sort_index: 2 },
-    { slug: "review-monitor", name: "差评巡检", description: "淘宝商品评价采集与差词统计", url: "", icon: "ShieldAlert", color: "#C2882E", category: "运营", agent_tool: true, sort_index: 3 },
-    { slug: "scm", name: "SCM 上架", description: "阿里健康 SCM 新品/组套自动上架", url: "", icon: "PackagePlus", color: "#7C3AED", category: "运营", agent_tool: true, sort_index: 4 },
-    { slug: "yutang", name: "鱼塘任务", description: "营销单/刷任务派发", url: "", icon: "Fish", color: "#0E9F8A", category: "营销", agent_tool: true, sort_index: 5 },
-    { slug: "rag", name: "经营知识库", description: "高管/经理助理 RAG 问答(规划中)", url: "", icon: "BookOpen", color: "#6D5BF6", category: "管理", agent_tool: false, sort_index: 6 },
-  ];
-  for (const d of defaults) {
+  for (const d of DEFAULT_PROJECTS) {
     await getPool().query(
       `INSERT INTO app_projects (slug, name, description, url, icon, color, category, agent_tool, visible, sort_index)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,$9) ON CONFLICT (slug) DO NOTHING`,
