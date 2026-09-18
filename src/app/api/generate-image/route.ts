@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import OpenAI, { toFile } from "openai";
 import { CATEGORY_IMAGES, img } from "@/lib/images";
 import {
+  MAX_GENERATION_DIMENSION,
   resolutionCost,
   resolutionLongSide,
 } from "@/lib/mock-data";
@@ -32,9 +33,16 @@ import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { getStyleGuide } from "@/lib/prompt-config";
 import {
   getImageModelCatalog,
+  getUserDefaultImageModel,
   type ImageModelDescriptor,
 } from "@/lib/image-model-catalog";
 import { generateNewApiImage } from "@/lib/new-api-image";
+import {
+  assertUserImageBaseUrlAllowed,
+  getUserImageProvider,
+  upstreamUserImageModel,
+  USER_IMAGE_MODEL_PREFIX,
+} from "@/lib/user-image-provider";
 
 // ---------------------------------------------------------------------------
 // Image generation / editing endpoint.
@@ -211,14 +219,15 @@ async function openaiImages(
   p: GenParams,
   apiKey: string,
   modelIn: string,
-  cutoutModel: string
+  cutoutModel: string,
+  baseUrl?: string
 ): Promise<GeneratedImage[]> {
   // 透明底只 gpt-image-1 支持(gpt-image-2 实测不支持 background:transparent),走抠图模型;
   // 其余生图走默认模型(gpt-image-2)。普通生图的兜底已统一 v2,不再落 v1。
   const model = p.transparent ? cutoutModel || "gpt-image-1" : modelIn;
   const client = new OpenAI({
     apiKey,
-    baseURL: (await getOpenAIBaseUrl()) || undefined,
+    baseURL: baseUrl || (await getOpenAIBaseUrl()) || undefined,
     // Generation runs as a background job (no CDN constraint), so allow a
     // long single attempt. No retry — a retry after timeout would double the
     // wait and blow past the client's poll deadline.
@@ -398,9 +407,13 @@ async function openaiImages(
 
 async function newApiFlowImages(
   p: GenParams,
-  model: string
+  model: string,
+  settings?: { baseUrl: string; apiKey: string }
 ): Promise<GeneratedImage[]> {
-  const prompt = p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide());
+  const basePrompt = p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide());
+  const prompt = p.transparent
+    ? `${basePrompt}. Use a transparent background and return a PNG with alpha.`
+    : basePrompt;
   const references = p.images.map((image) => ({
     buffer: Buffer.from(image.buf),
     mimeType: image.type || "image/png",
@@ -412,6 +425,7 @@ async function newApiFlowImages(
           model,
           prompt,
           images: references,
+          settings,
         });
         return {
           id: `gen-${Date.now()}-${Math.floor(Math.random() * 1e6)}-${index}`,
@@ -508,7 +522,7 @@ async function attachImageDimensions(images: GeneratedImage[]): Promise<Generate
 }
 
 // Upscale generated images to the chosen resolution tier's long side.
-// gpt-image only outputs ~1024-1536px natively, so 2K/4K are produced by
+// gpt-image only outputs ~1024-1536px natively, so 2K/4K/5K are produced by
 // resizing server-side with sharp (high-quality Lanczos). If sharp is missing
 // or anything fails, we keep the original image so generation never breaks.
 async function upscaleImages(
@@ -737,6 +751,7 @@ async function runJob(
   apiKey: string,
   imageModel: ImageModelDescriptor,
   cutoutModel: string,
+  userProvider: { baseUrl: string; apiKey: string; model: string } | null,
   useDb: boolean,
   cost: number
 ) {
@@ -744,12 +759,27 @@ async function runJob(
   try {
     // —— 临时埋点:量出每段耗时,定位生图慢在哪(OpenAI出图 / 放大 / 传R2 / 图大小)——
     const _t0 = Date.now();
-    let images =
-      imageModel.provider === "new-api-flow" && !p.transparent
-        ? await newApiFlowImages(p, imageModel.id)
-        : apiKey
-          ? await openaiImages(p, apiKey, imageModel.id, cutoutModel)
-          : mockImages(p);
+    let images: GeneratedImage[];
+    if (imageModel.provider === "user-chat-completions" && userProvider) {
+      images = await newApiFlowImages(p, userProvider.model, {
+        baseUrl: userProvider.baseUrl,
+        apiKey: userProvider.apiKey,
+      });
+    } else if (imageModel.provider === "user-openai-images" && userProvider) {
+      images = await openaiImages(
+        p,
+        userProvider.apiKey,
+        userProvider.model,
+        userProvider.model,
+        userProvider.baseUrl
+      );
+    } else if (imageModel.provider === "new-api-flow" && !p.transparent) {
+      images = await newApiFlowImages(p, imageModel.id);
+    } else {
+      images = apiKey
+        ? await openaiImages(p, apiKey, imageModel.id, cutoutModel)
+        : mockImages(p);
+    }
     const _tOpenai = Date.now() - _t0;
     const _t1 = Date.now();
     images = await enforceOutputShape(images, p);
@@ -854,7 +884,10 @@ async function runJob(
       images,
       user,
       creditsUsed: actualCost,
-      mock: !apiKey,
+      mock:
+        !apiKey &&
+        !userProvider &&
+        imageModel.provider !== "new-api-flow",
       mode: p.images.length > 0 ? "edit" : "generate",
       persisted: useDb,
       createdAt: Date.now(),
@@ -899,11 +932,11 @@ export async function POST(request: Request) {
   if (
     hasCustomWidth !== hasCustomHeight ||
     p.targetWidth < 0 || p.targetHeight < 0 ||
-    p.targetWidth > 4096 || p.targetHeight > 4096 ||
+    p.targetWidth > MAX_GENERATION_DIMENSION || p.targetHeight > MAX_GENERATION_DIMENSION ||
     (hasCustomWidth && (p.targetWidth < 64 || p.targetHeight < 64))
   ) {
     return NextResponse.json(
-      { error: "自定义尺寸需同时填写 64–4096 的宽和高" },
+      { error: `自定义尺寸需同时填写 64–${MAX_GENERATION_DIMENSION} 的宽和高` },
       { status: 400 }
     );
   }
@@ -916,20 +949,6 @@ export async function POST(request: Request) {
 
   try {
   const { apiKey, model: defaultModel, cutoutModel } = await getOpenAISettings();
-  const model = p.model || defaultModel;
-  const imageModel = (await getImageModelCatalog()).find((item) => item.id === model);
-  if (!imageModel) {
-    return NextResponse.json(
-      { error: "所选生图模型不可用，请刷新模型列表后重试" },
-      { status: 400 }
-    );
-  }
-  if (p.images.length > 0 && !imageModel.supportsEdit) {
-    return NextResponse.json(
-      { error: "所选模型不支持参考图生成，请切换图生图模型" },
-      { status: 400 }
-    );
-  }
   const ip = clientIp(request);
 
   // 按 IP 限流:防脚本化刷接口烧 token。生图较重,30 次/10 分钟足够真实用户。
@@ -940,22 +959,69 @@ export async function POST(request: Request) {
     );
   }
 
-  // 生产环境(接了库)必须凭有效登录态:用 token 里的 email 作准,不信任请求体
-  // 传来的 email——既堵住「空 email 免费烧 key」,也防「冒用他人邮箱花其积分」。
+  // 先解析真实登录账号，再生成该账号专属模型目录；不能让客户端用 email 指向他人配置。
+  let actorEmail: string | null = null;
   if (dbEnabled) {
-    const tokenEmail = await resolveUserEmail(request);
-    if (!tokenEmail) {
+    actorEmail = await resolveUserEmail(request);
+    if (!actorEmail) {
       return NextResponse.json(
         { error: "请先登录后再生成" },
         { status: 401 }
       );
     }
-    p.email = tokenEmail;
+    p.email = actorEmail;
+  }
+
+  const userDefaultModel = actorEmail
+    ? await getUserDefaultImageModel(actorEmail)
+    : null;
+  const model = p.model || userDefaultModel || defaultModel;
+  const imageModel = (await getImageModelCatalog(actorEmail)).find((item) => item.id === model);
+  if (!imageModel) {
+    return NextResponse.json(
+      {
+        error: model.startsWith(USER_IMAGE_MODEL_PREFIX)
+          ? "自定义图片接口已停用或模型已移除，请到账号中心重新配置"
+          : "所选生图模型不可用，请刷新模型列表后重试",
+      },
+      { status: 400 }
+    );
+  }
+  if (p.images.length > 0 && !imageModel.supportsEdit) {
+    return NextResponse.json(
+      { error: "所选模型不支持参考图生成，请切换图生图模型" },
+      { status: 400 }
+    );
+  }
+  let userProvider: { baseUrl: string; apiKey: string; model: string } | null = null;
+  if (
+    imageModel.provider === "user-openai-images" ||
+    imageModel.provider === "user-chat-completions"
+  ) {
+    const configured = actorEmail ? await getUserImageProvider(actorEmail) : null;
+    const upstreamModel = upstreamUserImageModel(imageModel.id);
+    if (
+      !configured?.enabled ||
+      !configured.baseUrl ||
+      !configured.apiKey ||
+      !configured.models.includes(upstreamModel)
+    ) {
+      return NextResponse.json(
+        { error: "当前账号的自定义图片接口配置不完整，请重新保存后再试" },
+        { status: 400 }
+      );
+    }
+    await assertUserImageBaseUrlAllowed(configured.baseUrl);
+    userProvider = {
+      baseUrl: configured.baseUrl,
+      apiKey: configured.apiKey,
+      model: upstreamModel,
+    };
   }
   const useDb = dbEnabled && p.email.length > 0;
   // 改比例只出 1 张,固定按 1 张计费(防止 count 被改大而超扣)。
   if (p.ratiogen) p.count = 1;
-  // 全站固定标准档 medium(前端已无质量选择器),计费纯按分辨率(1K/2K=9、4K=18)。
+  // 全站固定标准档 medium(前端已无质量选择器),计费纯按所选分辨率档位。
   const cost = p.count * resolutionCost(p.resolution);
 
   if (dbEnabled && (await isBanned(p.email, ip))) {
@@ -985,7 +1051,7 @@ export async function POST(request: Request) {
   // dies mid-job. Older orphans were swept before the balance check above.
   if (useDb) await addReservation(jobId, p.email, cost);
   // Fire-and-forget: continues in the persistent Node server after we respond.
-  void runJob(jobId, p, apiKey, imageModel, cutoutModel, useDb, cost);
+  void runJob(jobId, p, apiKey, imageModel, cutoutModel, userProvider, useDb, cost);
 
   return NextResponse.json({ jobId });
   } catch (e) {

@@ -19,6 +19,7 @@ import {
   ReactFlow,
   MiniMap,
   Handle,
+  NodeResizer,
   Position,
   useNodesState,
   useEdgesState,
@@ -88,9 +89,13 @@ import { usePaymentConfig } from "@/lib/payment-context";
 import { cn, formatDate } from "@/lib/utils";
 import { bytesLabel, prepareImageUploads, uploadFormData } from "@/lib/client-image-upload";
 import {
+  adaptiveCanvasImageSize,
   type Artwork,
+  GENERATION_RESOLUTIONS,
   GENERATION_STYLES,
+  MAX_GENERATION_DIMENSION,
   resolutionCost,
+  resolutionForLongSide,
 } from "@/lib/mock-data";
 
 /** Supabase 模式补 Authorization；原生账号模式依靠同源 HttpOnly cookie。 */
@@ -102,20 +107,43 @@ async function privateFetch(input: RequestInfo | URL, init: RequestInit = {}) {
 }
 
 // 横向链路布局(对齐原型 node-canvas-preview):深度→x 向右展开,同层兄弟→y 竖排。
-// 尺寸对齐定稿原型 fullsite-preview.html#canvas:NWID=170、PY=78、图片高 110
-const NODE_W = 170; // 节点宽(原型 .cnode width:170)
-const NODE_H = 132; // 节点总高:标签行(~22)+ 图片卡(110)(用于 dock/工具条定位)
+// 图片节点使用更清晰的工作尺寸，并按图片比例自适应；高分屏上保持可辨识。
+const NODE_W = 320; // 新建图片节点的默认宽度，避免高分辨率屏幕上过小
+const NODE_H = 228; // 标签行 28 + 默认图片区 200
 const NODE_LABEL_H = 28;
-const PORT_Y = 78; // 端口/连线锚点相对节点顶部(原型 .port top:78)
+const IMAGE_NODE_MIN_W = 120;
+const IMAGE_NODE_MIN_H = 108;
+const IMAGE_NODE_MAX_W = 2400;
+const IMAGE_NODE_MAX_H = 2400;
+const PORT_Y = NODE_LABEL_H + 100; // 默认空白节点连接点垂直居中
 const X_GAP = 90; // 层间横向间距
 const Y_GAP = 48; // 同层兄弟纵向间距
 const MAX_TOTAL_IMAGES = 6; // 节点图 + 追加参考图 合计上限
 const MAX_UPLOAD = 12 * 1024 * 1024;
 const MAX_GENERATION_COUNT = 8;
+const TEXT_NODE_MIN_W = 220;
+const TEXT_NODE_MIN_H = 140;
+const TEXT_NODE_DEFAULT_W = 300;
+const TEXT_NODE_DEFAULT_H = 176;
+const TEXT_NODE_MAX_W = 1200;
+const TEXT_NODE_MAX_H = 1200;
 // React Flow 默认只允许 50%–200%。这里使用 JavaScript 可安全表达的完整正数范围，
 // 让滚轮、触控板、按钮和百分比输入不再受产品层的人为缩放档位限制。
 const CANVAS_MIN_ZOOM = Number.EPSILON;
 const CANVAS_MAX_ZOOM = Number.MAX_SAFE_INTEGER;
+
+type DesktopPlatform = "mac" | "windows" | "other";
+
+function detectDesktopPlatform(): DesktopPlatform {
+  if (typeof navigator === "undefined") return "other";
+  const nav = navigator as Navigator & {
+    userAgentData?: { platform?: string };
+  };
+  const platform = `${nav.userAgentData?.platform ?? ""} ${navigator.platform ?? ""} ${navigator.userAgent ?? ""}`;
+  if (/Mac|iPhone|iPad|iPod/i.test(platform)) return "mac";
+  if (/Win/i.test(platform)) return "windows";
+  return "other";
+}
 
 function zoomPercentInput(zoom: number): string {
   return String(zoom * 100);
@@ -201,6 +229,9 @@ type CanvasTextNode = {
   canvasY: number;
   createdAt: string;
   updatedAt: string;
+  width: number;
+  height: number;
+  sourceIds: string[];
   targetIds: string[];
 };
 
@@ -250,15 +281,27 @@ const CANVAS_RATIOS: { id: string; w: number; h: number }[] = [
   { id: "5:4", w: 5, h: 4 },
   { id: "21:9", w: 21, h: 9 },
 ];
-const CANVAS_RES = ["1K", "2K", "4K"];
+const CANVAS_RES = GENERATION_RESOLUTIONS.map((resolution) => resolution.id);
 const STANDARD_RATIO_IDS = new Set(CANVAS_RATIOS.map((ratio) => ratio.id));
 type ImageModelOption = { id: string; label: string; supportsEdit: boolean };
 
 function artworkImageSize(art: Pick<Artwork, "width" | "height">) {
-  return {
-    width: art.width && art.width > 0 ? Math.round(art.width) : NODE_W,
-    height: art.height && art.height > 0 ? Math.round(art.height) : 110,
-  };
+  const withCanvas = art as Pick<
+    Artwork,
+    "width" | "height" | "canvasWidth" | "canvasHeight"
+  >;
+  if (
+    withCanvas.canvasWidth &&
+    withCanvas.canvasWidth > 0 &&
+    withCanvas.canvasHeight &&
+    withCanvas.canvasHeight > 0
+  ) {
+    return {
+      width: Math.round(withCanvas.canvasWidth),
+      height: Math.round(withCanvas.canvasHeight),
+    };
+  }
+  return adaptiveCanvasImageSize(art.width, art.height);
 }
 
 function artworkNodeSize(art: Pick<Artwork, "width" | "height">) {
@@ -269,15 +312,21 @@ function artworkNodeSize(art: Pick<Artwork, "width" | "height">) {
 function customDimensionsForRatio(ratio: string) {
   if (STANDARD_RATIO_IDS.has(ratio)) return null;
   const [width, height] = ratio.split(":").map(Number);
-  return width >= 64 && height >= 64 && width <= 4096 && height <= 4096
+  return width >= 64 && height >= 64 && width <= MAX_GENERATION_DIMENSION && height <= MAX_GENERATION_DIMENSION
     ? { width: Math.round(width), height: Math.round(height) }
     : null;
 }
 
 function flowNodeSize(node: Node | undefined) {
   if (!node) return { width: NODE_W, height: NODE_H };
-  const data = node.data as { width?: number; height?: number } | undefined;
+  const data = node.data as { width?: number; height?: number; nodeKind?: string } | undefined;
   const width = data?.width && data.width > 0 ? data.width : node.measured?.width || NODE_W;
+  if (data?.nodeKind === "text") {
+    const height = data.height && data.height > 0
+      ? data.height
+      : node.measured?.height || TEXT_NODE_DEFAULT_H;
+    return { width, height };
+  }
   const imageHeight = data?.height && data.height > 0 ? data.height : Math.max(110, (node.measured?.height || NODE_H) - NODE_LABEL_H);
   return { width, height: imageHeight + NODE_LABEL_H };
 }
@@ -490,6 +539,7 @@ const PendContext = createContext<PendCtx | null>(null);
 type TextNodeCtx = {
   onRemove: (id: string) => void;
   onCopy: (text: string) => void;
+  onResize: (id: string, bounds: { x: number; y: number; width: number; height: number }) => void;
 };
 const TextNodeContext = createContext<TextNodeCtx | null>(null);
 
@@ -501,6 +551,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
     prompt: string;
     content: string;
     status: CanvasTextNode["status"];
+    sourceRefs?: Array<{ id: string; title: string }>;
     selected?: boolean;
   };
   const active = selected || d.selected;
@@ -508,10 +559,28 @@ function TextCanvasNode({ data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        "group relative w-[300px] border bg-white text-[#252933] shadow-[0_12px_34px_rgba(7,12,24,0.18)] transition-shadow",
+        "group relative flex h-full w-full flex-col border bg-white text-[#252933] shadow-[0_12px_34px_rgba(7,12,24,0.18)] transition-shadow",
         active ? "border-[#6bd7ec] ring-2 ring-[#6bd7ec]/25" : "border-[#dce2ea]"
       )}
     >
+      <NodeResizer
+        isVisible={active}
+        minWidth={TEXT_NODE_MIN_W}
+        minHeight={TEXT_NODE_MIN_H}
+        maxWidth={TEXT_NODE_MAX_W}
+        maxHeight={TEXT_NODE_MAX_H}
+        color="#28b7d1"
+        handleClassName="!h-2.5 !w-2.5 !border-2 !border-white !bg-[#28b7d1]"
+        lineClassName="!border-[#28b7d1]"
+        onResizeEnd={(_, bounds) =>
+          ctx?.onResize(d.__id, {
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
+          })
+        }
+      />
       <div className="flex h-9 items-center gap-2 border-b border-[#edf0f4] px-3 text-[12px] font-semibold text-[#5d6573]">
         <span className="flex h-5 w-5 items-center justify-center border border-[#d9dee6] bg-[#f7f8fa] text-[#2c313a]">
           <Type className="h-3 w-3" />
@@ -519,7 +588,20 @@ function TextCanvasNode({ data, selected }: NodeProps) {
         <span className="min-w-0 flex-1 truncate">{d.title || "文字生成"}</span>
         {d.status === "generating" && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#27bdd8]" />}
       </div>
-      <div className="min-h-[130px] max-h-[230px] overflow-auto px-3 py-2.5 text-[12px] leading-[1.65] text-[#4d5563]">
+      <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5 text-[12px] leading-[1.65] text-[#4d5563]">
+        {!!d.sourceRefs?.length && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {d.sourceRefs.map((reference) => (
+              <span
+                key={reference.id}
+                className="max-w-full truncate border border-[#ccecf2] bg-[#eefbfe] px-1.5 py-0.5 text-[10px] font-semibold leading-4 text-[#168ba0]"
+                title={`@${reference.title}`}
+              >
+                @{reference.title}
+              </span>
+            ))}
+          </div>
+        )}
         {d.status === "generating" ? (
           <div className="flex h-[108px] items-center justify-center gap-2 text-[#87909d]">
             <Loader2 className="h-4 w-4 animate-spin" /> 正在生成文字…
@@ -590,7 +672,7 @@ function PendNode({ data, selected }: NodeProps) {
   };
   const sel = selected || d.selected;
   return (
-    <div className="group relative w-[170px]">
+    <div className="group relative w-[320px]">
       {/* 标签(图片上方,对齐原型 .lb2) */}
       <div className="mb-1.5 flex items-center gap-1.5 truncate pl-0.5 text-[12px] text-[#9aa1ae]">
         <span>🖼</span>
@@ -599,7 +681,7 @@ function PendNode({ data, selected }: NodeProps) {
       {/* 占位卡(原型 .nb2 + .ph2:单层卡片,选中=teal) */}
       <div
         className={cn(
-          "relative flex h-[110px] flex-col items-center justify-center rounded-[12px] border bg-[#191b21] px-3 text-center transition-all",
+          "relative flex h-[200px] flex-col items-center justify-center rounded-[12px] border bg-[#191b21] px-5 text-center transition-all",
           sel
             ? "border-[#6366f1] shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
             : "border-dashed border-[#2a2d36]"
@@ -651,7 +733,7 @@ function PendNode({ data, selected }: NodeProps) {
         type="target"
         position={Position.Left}
         style={{ top: PORT_Y }}
-        className="!flex !h-[34px] !w-[34px] !-left-[17px] !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[20px] !font-medium !leading-none !text-white shadow-lg transition-colors hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]"
+        className="!flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-colors hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]"
       >
         <span className="pointer-events-none leading-none">+</span>
       </Handle>
@@ -736,7 +818,13 @@ function ArtNode({ data, selected }: NodeProps) {
     ratio?: string | null;
     width?: number | null;
     height?: number | null;
+    intrinsicWidth?: number | null;
+    intrinsicHeight?: number | null;
     onDimensions?: (id: string, width: number, height: number) => void;
+    onCanvasResize?: (
+      id: string,
+      bounds: { x: number; y: number; width: number; height: number }
+    ) => void;
   };
   const imageWidth = d.width && d.width > 0 ? Math.round(d.width) : undefined;
   const imageHeight = d.height && d.height > 0 ? Math.round(d.height) : undefined;
@@ -746,23 +834,43 @@ function ArtNode({ data, selected }: NodeProps) {
     : `${d.version ? `v${d.version}` : ""}${d.date ? ` · ${formatDate(d.date)}` : ""}${d.prompt ? `\n${d.prompt}` : ""}`;
   return (
     <div
-      className="group relative"
-      style={{ width: imageWidth ?? NODE_W }}
+      className="group relative flex h-full w-full flex-col"
       data-image-width={imageWidth}
       data-image-height={imageHeight}
+      data-intrinsic-width={d.intrinsicWidth || undefined}
+      data-intrinsic-height={d.intrinsicHeight || undefined}
       data-canvas-group-id={d.canvasGroupId || undefined}
     >
-      {/* 标签(图片上方,对齐原型 .lb2) */}
-      <div className="mb-1.5 flex items-center gap-1.5 truncate pl-0.5 text-[12px] text-[#9aa1ae]">
-        <span>{d.pending ? "⏳" : "🖼"}</span>
-        <span className="truncate">{d.label}</span>
-        {d.marked && (
+      <NodeResizer
+        isVisible={selected && !d.pending}
+        keepAspectRatio
+        minWidth={IMAGE_NODE_MIN_W}
+        minHeight={IMAGE_NODE_MIN_H + NODE_LABEL_H}
+        maxWidth={IMAGE_NODE_MAX_W}
+        maxHeight={IMAGE_NODE_MAX_H + NODE_LABEL_H}
+        color="#28b7d1"
+        handleClassName="!h-3 !w-3 !border-2 !border-white !bg-[#28b7d1]"
+        lineClassName="!border-[#28b7d1]"
+        onResizeEnd={(_, bounds) =>
+          d.onCanvasResize?.(d.id, {
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: Math.max(IMAGE_NODE_MIN_H, bounds.height - NODE_LABEL_H),
+          })
+        }
+      />
+
+      {/* 未选中时仅显示文件名；点击后再显示标记、分组、版本等功能状态。 */}
+      <div className="mb-1.5 flex h-[22px] flex-none items-center gap-1.5 truncate pl-0.5 text-[12px] font-medium text-[#c7ccd5]">
+        <span className="min-w-0 flex-1 truncate" title={d.label}>{d.label}</span>
+        {selected && d.marked && (
           <MapPin className="h-3 w-3 flex-none fill-amber-400 text-amber-400" />
         )}
-        {d.canvasGroupId && (
+        {selected && d.canvasGroupId && (
           <Combine className="h-3 w-3 flex-none text-[#6bd7ec]" aria-label="已成组" />
         )}
-        {d.version && (
+        {selected && d.version && (
           <span className="ml-auto flex-none rounded bg-white/10 px-1 text-[10px] font-semibold text-slate-200">
             v{d.version}
           </span>
@@ -773,12 +881,12 @@ function ArtNode({ data, selected }: NodeProps) {
       <div
         title={title}
         className={cn(
-          "relative overflow-hidden rounded-[12px] border bg-[#191b21] transition-all",
+          "relative min-h-0 flex-1 overflow-hidden rounded-[10px] border bg-[#191b21] transition-all",
           selected
             ? "border-[#6366f1] shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
             : d.inChain
               ? "border-[#6366f1]/50"
-              : "border-[#2a2d36]"
+              : "border-transparent"
         )}
       >
         {d.pending ? (
@@ -798,14 +906,13 @@ function ArtNode({ data, selected }: NodeProps) {
               onLoad={(event) => {
                 const image = event.currentTarget;
                 if (image.naturalWidth > 0 && image.naturalHeight > 0 &&
-                    (image.naturalWidth !== imageWidth || image.naturalHeight !== imageHeight)) {
+                    (!d.intrinsicWidth || !d.intrinsicHeight)) {
                   d.onDimensions?.(d.id, image.naturalWidth, image.naturalHeight);
                 }
               }}
-              className="block max-w-none bg-white object-contain"
-              style={{ width: imageWidth ?? "auto", height: imageHeight ?? "auto" }}
+              className="block h-full w-full bg-white object-contain"
             />
-            {d.rootLabel && (
+            {selected && d.rootLabel && (
               <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
                 {d.rootLabel}
               </span>
@@ -820,7 +927,10 @@ function ArtNode({ data, selected }: NodeProps) {
         type="target"
         position={Position.Left}
         style={{ top: portY }}
-        className="!flex !h-[34px] !w-[34px] !-left-[17px] !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[20px] !font-medium !leading-none !text-white shadow-lg transition-colors hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]"
+        className={cn(
+          "!flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-all hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]",
+          selected ? "!opacity-100" : "!pointer-events-none !opacity-0"
+        )}
       >
         <span className="pointer-events-none leading-none">+</span>
       </Handle>
@@ -830,7 +940,10 @@ function ArtNode({ data, selected }: NodeProps) {
           type="source"
           position={Position.Right}
           style={{ top: portY }}
-          className="!flex !h-[34px] !w-[34px] !-right-[17px] !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[20px] !font-medium !leading-none !text-white shadow-lg transition-colors hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]"
+          className={cn(
+            "!flex !h-12 !w-12 !-right-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-all hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]",
+            selected ? "!opacity-100" : "!pointer-events-none !opacity-0"
+          )}
         >
           <span className="pointer-events-none leading-none">+</span>
         </Handle>
@@ -892,7 +1005,11 @@ function lineageChain(
 function layoutGraph(
   arts: Artwork[],
   rootLabel: string,
-  onDimensions: (id: string, width: number, height: number) => void
+  onDimensions: (id: string, width: number, height: number) => void,
+  onCanvasResize: (
+    id: string,
+    bounds: { x: number; y: number; width: number; height: number }
+  ) => void
 ): { nodes: Node[]; edges: Edge[] } {
   const byId = new Map(arts.map((a) => [a.id, a]));
   const sorted = [...arts].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
@@ -953,6 +1070,7 @@ function layoutGraph(
   roots.forEach((r) => place(r, 0));
   const nodes: Node[] = sorted.map((a, idx) => {
     const isRoot = !(a.parentId && byId.has(a.parentId));
+    const canvasSize = artworkImageSize(a);
     // 手动拖过的节点用记住的坐标,否则用自动布局
     const position =
       a.canvasX != null && a.canvasY != null
@@ -973,11 +1091,17 @@ function layoutGraph(
         marked: !!a.marked,
         canvasGroupId: a.canvasGroupId ?? null,
         ratio: a.ratio,
-        width: a.width,
-        height: a.height,
+        width: canvasSize.width,
+        height: canvasSize.height,
+        intrinsicWidth: a.width,
+        intrinsicHeight: a.height,
         onDimensions,
+        onCanvasResize,
       },
-      style: { width: artworkNodeSize(a).width },
+      style: {
+        width: canvasSize.width,
+        height: canvasSize.height + NODE_LABEL_H,
+      },
     };
   });
   const edges: Edge[] = [];
@@ -1023,6 +1147,8 @@ export function CanvasClient() {
   const [targetEmail, setTargetEmail] = useState<string | null>(null);
   const [readOnly, setReadOnly] = useState(false);
   const pendingNodeRef = useRef<string | null>(null);
+  // 文件拖入完成后只打开对应项目，不自动弹出节点功能；用户点击图片后再显示。
+  const openPendingNodeWithoutSelectionRef = useRef(false);
   // 通过 ?node= 深链进入的节点 id(如 AI 抠图「送画布」):即使它是单张一次性作品
   // (按常规规则不算项目),也让它所在项目在列表里显示出来,否则深链会落到空项目列表。
   const [pinnedNode, setPinnedNode] = useState<string | null>(null);
@@ -1079,6 +1205,7 @@ export function CanvasClient() {
   const canvasAreaRef = useRef<HTMLDivElement | null>(null);
   // 视口变换(平移/缩放),用于把生成器面板停靠到选中节点正下方并跟随
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   // 拉线建节点(5b):从 +端口拉出 → 记源节点;落空白弹「新建节点」菜单
   const spawnSourceRef = useRef<string | null>(null);
   const connectedRef = useRef(false);
@@ -1136,7 +1263,8 @@ export function CanvasClient() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/config", { cache: "no-store" })
+    void authHeader()
+      .then((headers) => fetch("/api/config", { cache: "no-store", headers }))
       .then((response) => response.json())
       .then((config: { defaultImageModel?: string; imageModels?: ImageModelOption[] }) => {
         if (cancelled) return;
@@ -1207,6 +1335,7 @@ export function CanvasClient() {
   const [textPrompt, setTextPrompt] = useState("");
   const [textError, setTextError] = useState<string | null>(null);
   const [textModel, setTextModel] = useState("gpt-5.6-luna");
+  const [textReferenceMenuOpen, setTextReferenceMenuOpen] = useState(false);
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
   const pendPromptRef = useRef<HTMLTextAreaElement>(null);
   const wantFocusPendPrompt = useRef(false);
@@ -1230,6 +1359,11 @@ export function CanvasClient() {
   // 帮助/快捷键弹框 + 底部工具条临时提示
   const [helpOpen, setHelpOpen] = useState(false);
   const [tipMsg, setTipMsg] = useState<string | null>(null);
+  const [desktopPlatform, setDesktopPlatform] = useState<DesktopPlatform>("other");
+  useEffect(() => setDesktopPlatform(detectDesktopPlatform()), []);
+  const isMac = desktopPlatform === "mac";
+  const modifierKey = isMac ? "⌘" : "Ctrl";
+  const shortcut = (key: string) => `${modifierKey}${key}`;
   // 底部 + 号的「添加节点/上传/历史」菜单
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   // 左下角缩放下拉菜单 + 可输入的缩放值
@@ -1492,6 +1626,9 @@ export function CanvasClient() {
           setTextNodes(
             ((textData?.nodes ?? []) as CanvasTextNode[]).map((node) => ({
               ...node,
+              width: Number.isFinite(node.width) && node.width > 0 ? node.width : TEXT_NODE_DEFAULT_W,
+              height: Number.isFinite(node.height) && node.height > 0 ? node.height : TEXT_NODE_DEFAULT_H,
+              sourceIds: Array.isArray(node.sourceIds) ? node.sourceIds : [],
               targetIds: Array.isArray(node.targetIds) ? node.targetIds : [],
             }))
           );
@@ -1502,6 +1639,9 @@ export function CanvasClient() {
               local
                 ? (JSON.parse(local) as CanvasTextNode[]).map((node) => ({
                     ...node,
+                    width: Number.isFinite(node.width) && node.width > 0 ? node.width : TEXT_NODE_DEFAULT_W,
+                    height: Number.isFinite(node.height) && node.height > 0 ? node.height : TEXT_NODE_DEFAULT_H,
+                    sourceIds: Array.isArray(node.sourceIds) ? node.sourceIds : [],
                     targetIds: Array.isArray(node.targetIds) ? node.targetIds : [],
                   }))
                 : []
@@ -1693,10 +1833,12 @@ export function CanvasClient() {
     const node = pendingNodeRef.current;
     if (!node || projects.length === 0) return;
     pendingNodeRef.current = null;
+    const openWithoutSelection = openPendingNodeWithoutSelectionRef.current;
+    openPendingNodeWithoutSelectionRef.current = false;
     const proj = projects.find((p) => p.members.some((m) => m.id === node));
     if (proj) {
       setActiveKey(proj.key);
-      setSelectedId(node);
+      setSelectedId(openWithoutSelection ? null : node);
       // 只有后台深链进入才自动聚焦;日常新建/上传/生成不动画布
       if (deepFocusRef.current) {
         setFocusId(node);
@@ -1857,10 +1999,43 @@ export function CanvasClient() {
     }).catch(() => dimensionSyncRef.current.delete(id));
   }, [user, readOnly]);
 
+  const onArtworkCanvasResize = useCallback((
+    id: string,
+    bounds: { x: number; y: number; width: number; height: number }
+  ) => {
+    const x = Math.round(bounds.x);
+    const y = Math.round(bounds.y);
+    const width = Math.round(bounds.width);
+    const height = Math.round(bounds.height);
+    if (
+      !id ||
+      width < IMAGE_NODE_MIN_W ||
+      height < IMAGE_NODE_MIN_H ||
+      width > IMAGE_NODE_MAX_W ||
+      height > IMAGE_NODE_MAX_H
+    ) return;
+    setWorks((current) => current?.map((art) =>
+      art.id === id
+        ? { ...art, canvasX: x, canvasY: y, canvasWidth: width, canvasHeight: height }
+        : art
+    ) ?? current);
+    if (!user || readOnly) return;
+    void privateFetch("/api/artworks/canvas-size", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, x, y, width, height }),
+    });
+  }, [user, readOnly]);
+
   const { nodes, edges } = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
     if (!active) return { nodes: [], edges: [] };
-    return layoutGraph(active.members, t("canvas.rootBadge"), onNodeDimensions);
-  }, [active, t, onNodeDimensions]);
+    return layoutGraph(
+      active.members,
+      t("canvas.rootBadge"),
+      onNodeDimensions,
+      onArtworkCanvasResize
+    );
+  }, [active, t, onNodeDimensions, onArtworkCanvasResize]);
 
   const nodeTypes = useMemo(
     () => ({ art: ArtNode, pend: PendNode, text: TextCanvasNode }),
@@ -1928,6 +2103,13 @@ export function CanvasClient() {
   const selectedText = useMemo(
     () => textNodes.find((node) => node.id === selectedTextId) ?? null,
     [textNodes, selectedTextId]
+  );
+  const selectedTextRefs = useMemo(
+    () =>
+      (selectedText?.sourceIds ?? [])
+        .map((id) => active?.members.find((member) => member.id === id))
+        .filter(Boolean) as Artwork[],
+    [selectedText, active]
   );
   const selectedPendGenerating = !!selectedPend?.generating;
   const selectedGenerationCount =
@@ -2042,22 +2224,42 @@ export function CanvasClient() {
       }
     }
     for (const textNode of textNodes.filter((node) => node.projectKey === activeKey)) {
+      const sourceRefs = (textNode.sourceIds ?? [])
+        .map((id) => active?.members.find((member) => member.id === id))
+        .filter(Boolean) as Artwork[];
       displayNodes.push({
         id: textNode.id,
         type: "text",
         position: { x: textNode.canvasX, y: textNode.canvasY },
         data: {
           __id: textNode.id,
+          nodeKind: "text",
           title: textNode.title,
           prompt: textNode.prompt,
           content: textNode.content,
           status: textNode.status,
+          sourceRefs: sourceRefs.map((reference) => ({
+            id: reference.id,
+            title: reference.title,
+          })),
           selected: textNode.id === selectedTextId,
-          width: 300,
-          height: 176,
+          width: textNode.width,
+          height: textNode.height,
         },
-        style: { width: 300 },
+        style: { width: textNode.width, height: textNode.height },
       } as Node);
+      for (const sourceId of textNode.sourceIds ?? []) {
+        if (!active?.members.some((member) => member.id === sourceId)) continue;
+        displayEdges.push({
+          id: `e-image-text-${sourceId}-${textNode.id}`,
+          source: sourceId,
+          sourceHandle: "out",
+          target: textNode.id,
+          targetHandle: "in",
+          type: "comet",
+          data: { lit: false, dim: false },
+        } as Edge);
+      }
       for (const targetId of textNode.targetIds ?? []) {
         if (!active?.members.some((member) => member.id === targetId)) continue;
         displayEdges.push({
@@ -2123,7 +2325,9 @@ export function CanvasClient() {
           (n.data as { status?: string }).status ?? ""
         }:${String(
           (n.data as { content?: string }).content ?? ""
-        ).length}`
+        ).length}:${((n.data as { sourceRefs?: Array<{ id: string }> }).sourceRefs ?? [])
+          .map((reference) => reference.id)
+          .join(",")}`
     )
     .join("|");
   const edgesSig = displayEdges
@@ -2174,29 +2378,50 @@ export function CanvasClient() {
     return { left, top, bottom: top + size.height * z, cx: left + (size.width * z) / 2 };
   }, [selectedId, selectedPendId, selectedTextId, rfNodes, viewport]);
 
-  // 顶部工具条与底部 dock 共用同一个"中心 x"(按 dock 宽度夹取),保证两者左右对齐。
-  const DOCK_W = 820; // 容纳生成模式、自定义数量和重做操作
+  // dock 宽度随可用画布收缩；高分屏、Windows 缩放和窄窗口都以真实 CSS 像素重新布局。
+  const preferredDockWidth = selectedTextId ? 700 : 820;
+  const dockWidth = canvasSize.width
+    ? Math.max(1, Math.min(preferredDockWidth, canvasSize.width - 16))
+    : preferredDockWidth;
   // 节点中心 x(夹取到画布内,使最宽的 dock 不出界);工具条也用这个中心 → 上下对齐。
   const anchorCenterX = useMemo<number | undefined>(() => {
     if (!nodeScreen) return undefined;
-    const cw = canvasAreaRef.current?.clientWidth ?? 0;
-    const HALF = DOCK_W / 2;
+    const cw = canvasSize.width;
+    const HALF = dockWidth / 2;
     let cx = nodeScreen.cx;
     if (cw) cx = Math.max(HALF + 8, Math.min(cx, cw - HALF - 8));
     return cx;
-  }, [nodeScreen]);
+  }, [nodeScreen, canvasSize.width, dockWidth]);
 
   // 底部生成器:节点正下方,中心对齐 anchorCenterX
   const dockStyle = useMemo<
-    { left: number; top: number; maxHeight?: number } | undefined
+    { left: number; top: number; width: number; maxHeight?: number } | undefined
   >(() => {
     if (!nodeScreen || anchorCenterX == null) return undefined;
-    const ch = canvasAreaRef.current?.clientHeight ?? 0;
-    const left = anchorCenterX - DOCK_W / 2;
-    const top = nodeScreen.bottom + 14;
-    const maxHeight = ch ? Math.max(150, ch - top - 12) : undefined;
-    return { left, top, maxHeight };
-  }, [nodeScreen, anchorCenterX]);
+    const ch = canvasSize.height;
+    const left = anchorCenterX - dockWidth / 2;
+    if (!ch) return { left, top: nodeScreen.bottom + 14, width: dockWidth };
+    const belowTop = nodeScreen.bottom + 14;
+    const belowSpace = Math.max(0, ch - belowTop - 8);
+    const aboveSpace = Math.max(0, nodeScreen.top - 22);
+    const useBelow = belowSpace >= 180 || belowSpace >= aboveSpace;
+    if (useBelow) {
+      return {
+        left,
+        top: Math.max(8, belowTop),
+        width: dockWidth,
+        maxHeight: Math.max(120, belowSpace),
+      };
+    }
+    const preferredHeight = selectedTextId ? 320 : 270;
+    const maxHeight = Math.max(120, aboveSpace);
+    return {
+      left,
+      top: Math.max(8, nodeScreen.top - Math.min(preferredHeight, maxHeight) - 14),
+      width: dockWidth,
+      maxHeight,
+    };
+  }, [nodeScreen, anchorCenterX, canvasSize.height, dockWidth, selectedTextId]);
 
   // 顶部图像工具条:节点正上方,中心 = anchorCenterX(渲染时用 -translate-x-1/2 自居中)
   const topbarStyle = useMemo<{ left: number; top: number } | undefined>(() => {
@@ -2329,10 +2554,18 @@ export function CanvasClient() {
   }, [selectedPendId]);
 
   useEffect(() => {
-    if (!selectedText) return;
-    setTextPrompt(selectedText.prompt || "");
+    if (!selectedTextId) return;
+    const node = textNodes.find((item) => item.id === selectedTextId);
+    if (!node) return;
+    setTextPrompt(node.prompt || "");
     setTextError(null);
-  }, [selectedText]);
+    // Only reset the editor when switching nodes. Persisting references or status
+    // must not overwrite text the user is currently typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTextId]);
+  useEffect(() => {
+    setTextReferenceMenuOpen(false);
+  }, [selectedText?.id]);
 
   // 整表重拉(仅初次加载 / 兜底用)。日常增删改用下面的局部更新,省 egress。
   async function refetchWorks(): Promise<Artwork[]> {
@@ -3089,7 +3322,7 @@ export function CanvasClient() {
     if (readOnly || !selected || selectedGenerating) return;
     void runCutout(selected, quality === "fast" ? "fast" : "fine");
   }
-  // 高清:按所选分辨率(1K/2K/4K)放大当前节点
+  // 高清:按所选分辨率(1K/2K/4K/5K)放大当前节点
   function onHd(resolution: string) {
     if (readOnly || !selected || selectedGenerating) return;
     void runGen(
@@ -3516,8 +3749,8 @@ export function CanvasClient() {
     }
   }
 
-  // 拉线建节点(5b):+端口拖出 → onConnectStart 记源;落到别节点 onConnect(多输入=5d,暂忽略);
-  // 落空白 onConnectEnd → 在释放点弹「新建节点」菜单(自动以源图为底图)。
+  // 拉线建节点(5b):+端口拖出 → onConnectStart 记源；落到图片节点建立生成输入，
+  // 落到文字节点建立图片上下文；落空白 onConnectEnd → 在释放点弹「新建节点」菜单。
   function onConnectStart(
     _e: unknown,
     params: { nodeId?: string | null; handleId?: string | null }
@@ -3550,6 +3783,11 @@ export function CanvasClient() {
       return;
     }
     if (source.startsWith("pend-") || target.startsWith("pend-")) return;
+    if (target.startsWith("text-")) {
+      if (source.startsWith("text-")) return;
+      void updateTextReference(target, source, true);
+      return;
+    }
     if (source.startsWith("text-")) {
       const textNode = textNodes.find((node) => node.id === source);
       if (!textNode || target.startsWith("text-")) return;
@@ -3564,7 +3802,6 @@ export function CanvasClient() {
       void persistTextNode(updated);
       return;
     }
-    if (target.startsWith("text-")) return;
     // 连到已有真实节点 → 多输入,写库(带防环)
     void addParentToNode(target, source);
   }
@@ -3631,6 +3868,10 @@ export function CanvasClient() {
       await persistTextNode(updated);
       return;
     }
+    if (edge.target.startsWith("text-")) {
+      await updateTextReference(edge.target, edge.source, false);
+      return;
+    }
     try {
       const res = await privateFetch("/api/artworks/parents", {
         method: "DELETE",
@@ -3668,11 +3909,17 @@ export function CanvasClient() {
     // 拉线落空白 → 在落点弹「新建节点」菜单(选类型后再建节点)
     setSpawnMenu({ x, y, sourceId: src });
   }
-  // 拉线落空白后的「新建节点」菜单动作:图片 / 上传图片(都在落点建连着源图的节点)
+  // 拉线落空白后的「新建节点」菜单动作:图片 / 上传图片 / 文字生成。
+  // 图片 → 文字会把源图记录为结构化上下文，并在文字输入区显示 @图片名。
   function spawnNode(type: string) {
     if (!spawnMenu) return;
     const { sourceId, x, y } = spawnMenu;
     setSpawnMenu(null);
+    if (type === "text") {
+      if (sourceId.startsWith("text-")) return;
+      addTextNodeAtScreen(x, y, { sourceIds: [sourceId] });
+      return;
+    }
     const pend = addPendAtScreen(x, y, sourceId, true);
     if (type === "upload") {
       // 节点 + 立刻弹出上传窗口
@@ -3724,7 +3971,12 @@ export function CanvasClient() {
       canvasX: null,
       canvasY: null,
     }));
-    const { nodes: laid } = layoutGraph(stripped, "", onNodeDimensions);
+    const { nodes: laid } = layoutGraph(
+      stripped,
+      "",
+      onNodeDimensions,
+      onArtworkCanvasResize
+    );
     const coord = new Map(
       laid.map((n) => [
         n.id,
@@ -3811,6 +4063,8 @@ export function CanvasClient() {
             resolution: a.resolution,
             width: a.width,
             height: a.height,
+            canvasWidth: a.canvasWidth,
+            canvasHeight: a.canvasHeight,
           },
         }),
       });
@@ -3875,25 +4129,32 @@ export function CanvasClient() {
     }]);
     const run = async () => {
       const prepared = await prepareImageUploads(entries.map(entry => entry.file), 3);
-      // 解码完成后按图片真实像素重新排布本批次；不再把 900×900 图片塞进 170×110 缩略框。
+      // 解码完成后按图片比例生成舒适的画布初始尺寸；原图像素仍单独保存。
+      const preparedCanvasSizes = prepared.map((item) =>
+        adaptiveCanvasImageSize(item.width, item.height)
+      );
       const rowCount = Math.max(1, columns);
       let batchWidth = 0;
       let batchHeight = 0;
       const relative: { x: number; y: number }[] = [];
       for (let start = 0; start < prepared.length; start += rowCount) {
-        const row = prepared.slice(start, start + rowCount);
+        const row = preparedCanvasSizes.slice(start, start + rowCount);
         let rowX = 0;
-        const rowHeight = Math.max(...row.map((item) => (item.height || 110) + NODE_LABEL_H), NODE_H);
+        const rowHeight = Math.max(
+          ...row.map((item) => item.height + NODE_LABEL_H),
+          NODE_H
+        );
         row.forEach((item, offset) => {
           relative[start + offset] = { x: rowX, y: batchHeight };
-          rowX += (item.width || NODE_W) + X_GAP;
+          rowX += item.width + X_GAP;
         });
         batchWidth = Math.max(batchWidth, Math.max(0, rowX - X_GAP));
         batchHeight += rowHeight + Y_GAP;
       }
       batchHeight = Math.max(0, batchHeight - Y_GAP);
-      const baseX = ctx.x + NODE_W / 2 - (prepared[0]?.width || NODE_W) / 2;
-      let baseY = ctx.y + NODE_H / 2 - ((prepared[0]?.height || 110) + NODE_LABEL_H) / 2;
+      const firstCanvasSize = preparedCanvasSizes[0] ?? { width: NODE_W, height: NODE_H - NODE_LABEL_H };
+      const baseX = ctx.x + NODE_W / 2 - firstCanvasSize.width / 2;
+      let baseY = ctx.y + NODE_H / 2 - (firstCanvasSize.height + NODE_LABEL_H) / 2;
       const existingRects = [
         ...rfNodes.map((node) => {
           const size = flowNodeSize(node);
@@ -3914,8 +4175,8 @@ export function CanvasClient() {
       const batchRects = entries.map((entry, index) => ({
         x: entry.pos.x,
         y: entry.pos.y,
-        width: prepared[index]?.width || NODE_W,
-        height: (prepared[index]?.height || 110) + NODE_LABEL_H,
+        width: preparedCanvasSizes[index]?.width || NODE_W,
+        height: (preparedCanvasSizes[index]?.height || NODE_H - NODE_LABEL_H) + NODE_LABEL_H,
         owner: id,
         index,
       }));
@@ -3974,7 +4235,10 @@ export function CanvasClient() {
       scope.rects = scope.rects.filter((rect) => rect.owner !== id || !!ids[rect.index]);
       if (added.length) {
         // Background uploads must not drag the user back after they switch projects.
-        if (importScopeRef.current === scope) pendingNodeRef.current = added[0];
+        if (importScopeRef.current === scope) {
+          openPendingNodeWithoutSelectionRef.current = true;
+          pendingNodeRef.current = added[0];
+        }
         const fresh = await mergeWorks(added);
         if (importScopeRef.current === scope) pushAddUndoMany(added, fresh);
       }
@@ -4048,6 +4312,8 @@ export function CanvasClient() {
             resolution: a.resolution,
             width: a.width,
             height: a.height,
+            canvasWidth: a.canvasWidth,
+            canvasHeight: a.canvasHeight,
           },
         }),
       });
@@ -4201,10 +4467,64 @@ export function CanvasClient() {
     }
     return node;
   }
+  async function updateTextReference(
+    textNodeId: string,
+    sourceId: string,
+    add: boolean
+  ) {
+    const textNode = textNodes.find((node) => node.id === textNodeId);
+    if (!textNode || !active?.members.some((member) => member.id === sourceId)) return;
+    const current = textNode.sourceIds ?? [];
+    if (add && !current.includes(sourceId) && current.length >= 5) {
+      flashTip(t("canvas.textReferenceLimit"));
+      return;
+    }
+    const sourceIds = add
+      ? Array.from(new Set([...current, sourceId])).slice(0, 5)
+      : current.filter((id) => id !== sourceId);
+    const updated: CanvasTextNode = {
+      ...textNode,
+      sourceIds,
+      updatedAt: new Date().toISOString(),
+    };
+    setTextNodes((items) =>
+      items.map((item) => (item.id === updated.id ? updated : item))
+    );
+    await persistTextNode(updated);
+  }
+  function resizeTextNode(
+    id: string,
+    bounds: { x: number; y: number; width: number; height: number }
+  ) {
+    if (readOnly) return;
+    const current = textNodes.find((node) => node.id === id);
+    if (!current) return;
+    const updated: CanvasTextNode = {
+      ...current,
+      canvasX: Number.isFinite(bounds.x) ? bounds.x : current.canvasX,
+      canvasY: Number.isFinite(bounds.y) ? bounds.y : current.canvasY,
+      width: Math.round(
+        Math.min(TEXT_NODE_MAX_W, Math.max(TEXT_NODE_MIN_W, bounds.width))
+      ),
+      height: Math.round(
+        Math.min(TEXT_NODE_MAX_H, Math.max(TEXT_NODE_MIN_H, bounds.height))
+      ),
+      updatedAt: new Date().toISOString(),
+    };
+    setTextNodes((nodes) =>
+      nodes.map((node) => (node.id === updated.id ? updated : node))
+    );
+    void persistTextNode(updated);
+  }
   function addTextNodeAtScreen(
     screenX: number,
     screenY: number,
-    options?: { forceNewProject?: boolean; title?: string; prompt?: string }
+    options?: {
+      forceNewProject?: boolean;
+      title?: string;
+      prompt?: string;
+      sourceIds?: string[];
+    }
   ) {
     if (readOnly || !user) return;
     const z = viewport.zoom || 1;
@@ -4224,6 +4544,9 @@ export function CanvasClient() {
       canvasY: (screenY - viewport.y) / z - 88,
       createdAt: now,
       updatedAt: now,
+      width: TEXT_NODE_DEFAULT_W,
+      height: TEXT_NODE_DEFAULT_H,
+      sourceIds: Array.from(new Set(options?.sourceIds ?? [])).slice(0, 5),
       targetIds: [],
     };
     setTextNodes((current) => [...current, node]);
@@ -4286,7 +4609,7 @@ export function CanvasClient() {
       const response = await privateFetch("/api/canvas/text-generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, sourceIds: pending.sourceIds ?? [] }),
       });
       const data = await readJsonSafe(response);
       if (!response.ok || !data?.text) {
@@ -4694,30 +5017,57 @@ export function CanvasClient() {
     setFocusId(null);
   }, [focusId, nodes]);
 
-  // 键盘:Delete 删除(支持框选批量)· ⌘/Ctrl+Z 撤销 · ⌘/Ctrl+⇧+Z 重做;输入框内不触发
+  // macOS / Windows 共用键盘层：⌘ 或 Ctrl 作为主修饰键；输入框内不接管系统快捷键。
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const el = document.activeElement as HTMLElement | null;
       const tag = el?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || el?.isContentEditable) return;
       const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
       if (e.shiftKey && (e.key === "T" || e.key === "t") && !readOnly && !browsing) {
         e.preventDefault();
         const c = centerScreen();
         addTextNodeAtScreen(c.x, c.y);
         return;
       }
-      if (mod && (e.key === "z" || e.key === "Z")) {
+      if (mod && key === "c" && selected) {
+        e.preventDefault();
+        copyNodeToClip(selected);
+        flashTip(t("canvas.copied"));
+        return;
+      }
+      if (mod && key === "v" && hasClip && !readOnly) {
+        e.preventDefault();
+        void pasteNode();
+        return;
+      }
+      if (mod && key === "z") {
         if (readOnly) return;
         e.preventDefault();
         if (e.shiftKey) void doRedo();
         else void doUndo();
         return;
       }
-      if (mod && (e.key === "y" || e.key === "Y")) {
+      if (mod && key === "y") {
         if (readOnly) return;
         e.preventDefault();
         void doRedo();
+        return;
+      }
+      if (mod && ["+", "=", "add"].includes(key)) {
+        e.preventDefault();
+        void rfRef.current?.zoomIn({ duration: 160 });
+        return;
+      }
+      if (mod && ["-", "_", "subtract"].includes(key)) {
+        e.preventDefault();
+        void rfRef.current?.zoomOut({ duration: 160 });
+        return;
+      }
+      if (mod && key === "0") {
+        e.preventDefault();
+        void rfRef.current?.fitView({ duration: 240, padding: 0.2, maxZoom: 1 });
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
@@ -4769,6 +5119,34 @@ export function CanvasClient() {
     return () => el.removeEventListener("wheel", onWheel);
   }, [ready, user, browsing]);
 
+  useEffect(() => {
+    if (!ready || !user) return;
+    const el = canvasAreaRef.current;
+    if (!el) return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      // 宿主布局在极窄窗口可能让画布的布局宽度暂时大于可见视口；
+      // Dock 必须按真正可见的 CSS 像素收缩，而不是按溢出宽度计算。
+      const visibleWidth = Math.max(
+        1,
+        Math.min(rect.width, window.innerWidth - Math.max(0, rect.left))
+      );
+      const visibleHeight = Math.max(
+        1,
+        Math.min(rect.height, window.innerHeight - Math.max(0, rect.top))
+      );
+      setCanvasSize({ width: visibleWidth, height: visibleHeight });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [ready, user, browsing]);
+
   if (!ready || !user) {
     return (
       <div className="container py-20 text-sm text-muted-foreground">
@@ -4787,6 +5165,8 @@ export function CanvasClient() {
     setRatioMenuOpen((v) => !v);
   };
   const activeCustomSize = customDimensionsForRatio(genRatio);
+  const activeImageModelLabel =
+    imageModels.find((item) => item.id === genModel)?.label || genModel;
   const modelControl = (disabled = false) => (
     <DarkSelect
       dir="up"
@@ -4809,7 +5189,7 @@ export function CanvasClient() {
         <>
           <Sparkles className="h-3.5 w-3.5 flex-none" />
           <span className="truncate" title={t("canvas.dockModelHint")}>
-            {genModel || t("canvas.dockModel")}
+            {activeImageModelLabel || t("canvas.dockModel")}
           </span>
         </>
       }
@@ -4863,7 +5243,7 @@ export function CanvasClient() {
               <p className="mb-2 text-[12px] font-semibold text-[#9aa1ae]">
                 {t("canvas.resolution")}
               </p>
-              <div className="mb-4 grid grid-cols-3 gap-2">
+              <div className="mb-4 grid grid-cols-4 gap-2">
                 {CANVAS_RES.map((r) => (
                   <button
                     key={r}
@@ -4910,7 +5290,7 @@ export function CanvasClient() {
                     aria-label={t("canvas.customWidth")}
                     type="number"
                     min={64}
-                    max={4096}
+                    max={MAX_GENERATION_DIMENSION}
                     value={customWidth}
                     onChange={(event) => setCustomWidth(Number(event.target.value))}
                     className="min-w-0 flex-1 rounded-lg border border-[#343844] bg-[#111318] px-2 py-2 text-center text-sm text-white outline-none focus:border-[#6366f1]"
@@ -4920,7 +5300,7 @@ export function CanvasClient() {
                     aria-label={t("canvas.customHeight")}
                     type="number"
                     min={64}
-                    max={4096}
+                    max={MAX_GENERATION_DIMENSION}
                     value={customHeight}
                     onChange={(event) => setCustomHeight(Number(event.target.value))}
                     className="min-w-0 flex-1 rounded-lg border border-[#343844] bg-[#111318] px-2 py-2 text-center text-sm text-white outline-none focus:border-[#6366f1]"
@@ -4928,12 +5308,12 @@ export function CanvasClient() {
                   <button
                     type="button"
                     onClick={() => {
-                      const width = Math.min(4096, Math.max(64, Math.round(customWidth || 64)));
-                      const height = Math.min(4096, Math.max(64, Math.round(customHeight || 64)));
+                      const width = Math.min(MAX_GENERATION_DIMENSION, Math.max(64, Math.round(customWidth || 64)));
+                      const height = Math.min(MAX_GENERATION_DIMENSION, Math.max(64, Math.round(customHeight || 64)));
                       setCustomWidth(width);
                       setCustomHeight(height);
                       setGenRatio(`${width}:${height}`);
-                      setGenResolution(Math.max(width, height) > 2048 ? "4K" : Math.max(width, height) > 1536 ? "2K" : "1K");
+                      setGenResolution(resolutionForLongSide(Math.max(width, height)));
                     }}
                     className={cn(
                       "rounded-lg border px-3 py-2 text-xs font-semibold",
@@ -4943,7 +5323,7 @@ export function CanvasClient() {
                     {t("canvas.applySize")}
                   </button>
                 </div>
-                <p className="mt-1.5 text-[10px] text-[#697180]">64–4096 px</p>
+                <p className="mt-1.5 text-[10px] text-[#697180]">64–{MAX_GENERATION_DIMENSION} px</p>
               </div>
             </div>
           </div>,
@@ -4957,9 +5337,10 @@ export function CanvasClient() {
       value={{
         onRemove: (id) => void removeTextNode(id),
         onCopy: (value) => void copyText(value).then((ok) => ok && showCopyTip()),
+        onResize: resizeTextNode,
       }}
     >
-    <div className="dark flex h-dvh flex-col bg-background text-foreground">
+    <div className="dark flex h-dvh min-h-[100svh] flex-col overflow-hidden bg-background text-foreground">
       {ratioMenu}
       {/* 占位节点上传用的隐藏 input */}
       <input
@@ -5037,7 +5418,7 @@ export function CanvasClient() {
         )}
         <aside
           className={cn(
-            "absolute left-3 top-[60px] z-40 flex max-h-[min(72vh,540px)] w-[200px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl transition-all duration-150",
+            "absolute left-3 top-[108px] z-40 flex max-h-[min(72vh,540px)] w-[min(200px,calc(100%-24px))] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl transition-all duration-150 md:top-[60px]",
             sidebarOpen
               ? "pointer-events-auto translate-y-0 opacity-100"
               : "pointer-events-none -translate-y-1 opacity-0"
@@ -5123,7 +5504,7 @@ export function CanvasClient() {
         <div
           ref={canvasAreaRef}
           data-testid="canvas-drop-zone"
-          className="relative min-w-0 flex-1"
+          className="relative min-w-0 flex-1 overflow-hidden"
           onDragEnter={(event) => {
             if (!event.dataTransfer.types.includes("Files")) return;
             event.preventDefault();
@@ -5738,10 +6119,11 @@ export function CanvasClient() {
               selectionMode={SelectionMode.Partial}
               selectionKeyCode={boxSelectMode ? null : "Shift"}
               multiSelectionKeyCode={["Control", "Meta", "Shift"]}
+              panActivationKeyCode="Space"
               panOnScroll
               zoomOnScroll={false}
               zoomOnPinch
-              zoomActivationKeyCode="Control"
+              zoomActivationKeyCode={["Control", "Meta"]}
               snapToGrid={snapGrid}
               snapGrid={[16, 16]}
               onlyRenderVisibleElements={rfNodes.length > 60}
@@ -5775,10 +6157,10 @@ export function CanvasClient() {
           {!browsing && (
             <>
               {/* 左上:logo(点开项目菜单) + 项目名(点进入内联编辑,失焦/回车确定) */}
-              <div className="absolute left-3 top-3 z-30">
+              <div className="absolute left-3 top-3 z-30 max-w-[calc(100%-1.5rem)]">
                 <div
                   className={cn(
-                    "flex items-center gap-0.5 rounded-xl border px-1.5 py-1.5 shadow-lg backdrop-blur transition-colors",
+                    "flex max-w-full items-center gap-0.5 overflow-hidden rounded-xl border px-1.5 py-1.5 shadow-lg backdrop-blur transition-colors",
                     sidebarOpen
                       ? "border-[#3a414c] bg-[#2a2e38]"
                       : "border-white/10 bg-card/85"
@@ -5795,7 +6177,7 @@ export function CanvasClient() {
                     <img
                       src={BRAND_CANVAS_LOGO}
                       alt={BRAND}
-                      className="h-7 w-auto max-w-[140px] flex-none rounded-lg object-contain"
+                      className="h-7 w-auto max-w-[108px] flex-none rounded-lg object-contain sm:max-w-[140px]"
                     />
                     <ChevronDown
                       className={cn(
@@ -5827,7 +6209,7 @@ export function CanvasClient() {
                       }}
                       maxLength={60}
                       placeholder={t("canvas.renamePlaceholder")}
-                      className="ml-0.5 w-[180px] rounded-lg border border-primary/60 bg-background px-2 py-1 text-sm font-bold text-foreground outline-none"
+                      className="ml-0.5 w-[35vw] max-w-[180px] rounded-lg border border-primary/60 bg-background px-2 py-1 text-sm font-bold text-foreground outline-none"
                     />
                   ) : (
                     <button
@@ -5843,7 +6225,7 @@ export function CanvasClient() {
                       title={
                         readOnly ? undefined : t("canvas.rename")
                       }
-                      className="ml-0.5 max-w-[200px] truncate rounded-lg px-2 py-1 text-left text-sm font-bold text-foreground transition-colors hover:bg-white/5"
+                      className="ml-0.5 max-w-[35vw] truncate rounded-lg px-2 py-1 text-left text-sm font-bold text-foreground transition-colors hover:bg-white/5 sm:max-w-[200px]"
                     >
                       {active ? active.name : t("canvas.newProject")}
                     </button>
@@ -5857,7 +6239,7 @@ export function CanvasClient() {
               </div>
 
               {/* 右上:分享(下载)/ 模板库 / 会员特惠+积分 / 头像 */}
-              <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
+              <div className="absolute right-3 top-[60px] z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 overflow-x-auto md:top-3">
                 {active && (
                   <button
                     type="button"
@@ -5914,7 +6296,7 @@ export function CanvasClient() {
               {!readOnly && (
                 <div
                   className={cn(
-                    "absolute bottom-5 left-1/2 z-30 flex items-center gap-1 rounded-2xl border border-white/10 bg-card/90 p-1.5 shadow-2xl backdrop-blur transition-all duration-200",
+                    "absolute bottom-5 left-1/2 z-30 flex max-w-[calc(100%-1rem)] flex-wrap items-center justify-center gap-1 overflow-visible rounded-2xl border border-white/10 bg-card/90 p-1.5 shadow-2xl backdrop-blur transition-all duration-200",
                     selected || selectedPend || selectedText || selectedBatchArts.length > 1
                       ? "pointer-events-none translate-x-[-50%] translate-y-4 opacity-0"
                       : "translate-x-[-50%] translate-y-0 opacity-100"
@@ -5989,8 +6371,9 @@ export function CanvasClient() {
                     type="button"
                     onClick={() => setAddMenuOpen((v) => !v)}
                     title={t("canvas.addNode")}
+                    data-testid="canvas-add-node-button"
                     className={cn(
-                      "flex h-12 w-12 items-center justify-center rounded-[14px] shadow-md transition-colors",
+                      "flex h-16 w-16 flex-none items-center justify-center rounded-[18px] shadow-lg transition-colors min-[1920px]:h-[72px] min-[1920px]:w-[72px]",
                       addMenuOpen
                         ? "bg-primary/90 text-primary-foreground"
                         : "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -5998,7 +6381,7 @@ export function CanvasClient() {
                   >
                     <Plus
                       className={cn(
-                        "h-5 w-5 transition-transform",
+                        "h-7 w-7 transition-transform min-[1920px]:h-8 min-[1920px]:w-8",
                         addMenuOpen && "rotate-45"
                       )}
                     />
@@ -6170,7 +6553,7 @@ export function CanvasClient() {
             </div>
           )}
           {imageImports.length > 0 && (
-            <div className="absolute right-3 top-3 z-40 max-h-[40%] w-80 max-w-[calc(100%-24px)] overflow-y-auto rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm" data-testid="canvas-import-status" aria-live="polite">
+            <div className="absolute right-3 top-[108px] z-40 max-h-[40%] w-80 max-w-[calc(100%-24px)] overflow-y-auto rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm md:top-16" data-testid="canvas-import-status" aria-live="polite">
               {imageImports.map(batch => (
                 <div key={batch.id} className="border-b border-slate-100 p-3 last:border-0">
                   <div className="flex items-center gap-2 text-xs font-medium">
@@ -6298,17 +6681,17 @@ export function CanvasClient() {
                       {[
                         {
                           label: "放大",
-                          hk: "⌘ +",
+                          hk: `${modifierKey} +`,
                           fn: () => rfRef.current?.zoomIn({ duration: 200 }),
                         },
                         {
                           label: "缩小",
-                          hk: "⌘ -",
+                          hk: `${modifierKey} -`,
                           fn: () => rfRef.current?.zoomOut({ duration: 200 }),
                         },
                         {
                           label: "适合屏幕",
-                          hk: "⌘ 0",
+                          hk: `${modifierKey} 0`,
                           fn: () =>
                             rfRef.current?.fitView({
                               duration: 300,
@@ -6389,6 +6772,9 @@ export function CanvasClient() {
                     {[
                       { key: "image", icon: "🖼️", label: t("canvas.spawnImage") },
                       { key: "upload", icon: "⬆️", label: t("canvas.spawnUpload") },
+                      ...(!spawnMenu.sourceId.startsWith("text-")
+                        ? [{ key: "text", icon: "T", label: t("canvas.textGenerate") }]
+                        : []),
                     ].map((it) => (
                       <button
                         key={it.key}
@@ -6510,7 +6896,7 @@ export function CanvasClient() {
                         {!readOnly && (
                           <Item
                             label={t("canvas.copyNode")}
-                            hk="⌘C"
+                            hk={shortcut("C")}
                             onClick={() => copyNodeToClip(node)}
                           />
                         )}
@@ -6527,7 +6913,7 @@ export function CanvasClient() {
                         {!readOnly && (
                           <Item
                             label={t("canvas.paste")}
-                            hk="⌘V"
+                            hk={shortcut("V")}
                             disabled={!hasClip}
                             onClick={() => void pasteNode()}
                           />
@@ -6536,7 +6922,7 @@ export function CanvasClient() {
                         {!readOnly && (
                           <Item
                             label={t("canvas.delete")}
-                            hk="⌘⌫"
+                            hk={isMac ? "⌘⌫" : "Del"}
                             danger
                             onClick={() => void deleteTree(node.id)}
                           />
@@ -6571,20 +6957,20 @@ export function CanvasClient() {
                         <Sep />
                         <Item
                           label={t("canvas.undo")}
-                          hk="⌘Z"
+                          hk={shortcut("Z")}
                           disabled={readOnly || undoStack.length === 0}
                           onClick={() => void doUndo()}
                         />
                         <Item
                           label={t("canvas.redo")}
-                          hk="⇧⌘Z"
+                          hk={isMac ? "⇧⌘Z" : "CtrlY"}
                           disabled={readOnly || redoStack.length === 0}
                           onClick={() => void doRedo()}
                         />
                         <Sep />
                         <Item
                           label={t("canvas.paste")}
-                          hk="⌘V"
+                          hk={shortcut("V")}
                           disabled={readOnly || !hasClip}
                           onClick={() => void pasteNode()}
                         />
@@ -6636,11 +7022,10 @@ export function CanvasClient() {
                 dir="down"
                 disabled={selectedGenerating || !selected}
                 value=""
-                options={[
-                  { value: "1K", label: "1K" },
-                  { value: "2K", label: "2K" },
-                  { value: "4K", label: "4K" },
-                ]}
+                options={CANVAS_RES.map((resolution) => ({
+                  value: resolution,
+                  label: resolution,
+                }))}
                 onPick={(v) => onHd(v)}
                 triggerClass={cn(
                   "flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold text-[#e7e9ee] transition-colors hover:bg-[#1f2229]",
@@ -6778,11 +7163,11 @@ export function CanvasClient() {
               key={`dock-${selected.id}`}
               ref={panelRef}
               style={dockStyle ?? { left: 12, bottom: 12, maxHeight: "60%" }}
-              className="cz-anim-bottom absolute z-10 flex w-[820px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border border-[#2a2d36] bg-[#191b21] shadow-2xl"
+              className="cz-anim-bottom absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border border-[#2a2d36] bg-[#191b21] shadow-2xl"
             >
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
               <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
                   {!readOnly && (
                     <>
                       <DarkSelect
@@ -6926,7 +7311,7 @@ export function CanvasClient() {
                     className="flex h-6 w-6 flex-none items-center justify-center rounded-full text-[#9aa1ae] transition-colors hover:bg-[#1f2229] hover:text-[#e7e9ee]"
                   >
                     <X className="h-4 w-4" />
-                  </button>
+                </button>
                 </div>
 
                 {/* 提示词(留空=按这张图再生成一张) */}
@@ -6946,7 +7331,7 @@ export function CanvasClient() {
 
               {/* dbar:模型 / 比例·清晰度 / 数量 + 积分 + 发送(对齐原型 .dbar) */}
               {!readOnly && (
-                <div className="flex flex-none items-center gap-2 border-t border-[#2a2d36] px-3.5 py-2.5">
+                <div className="flex flex-none flex-wrap items-center gap-2 border-t border-[#2a2d36] px-3.5 py-2.5">
                   {modelControl(selectedGenerating)}
                   <DarkSelect
                     dir="up"
@@ -7028,10 +7413,10 @@ export function CanvasClient() {
             <div
               key={`pdock-${selectedPend.id}`}
               style={dockStyle ?? { left: 12, bottom: 12 }}
-              className="cz-anim-bottom absolute z-10 flex w-[820px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border border-[#2a2d36] bg-[#191b21] shadow-2xl"
+              className="cz-anim-bottom absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border border-[#2a2d36] bg-[#191b21] shadow-2xl"
             >
               <div className="px-4 pb-1.5 pt-3.5">
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
                   {pendInputArts.length > 0 ? (
                     pendInputArts.map((a) => (
                       <button
@@ -7086,7 +7471,7 @@ export function CanvasClient() {
                   </p>
                 )}
               </div>
-              <div className="flex flex-none items-center gap-2 border-t border-[#2a2d36] px-3.5 py-2.5">
+              <div className="flex flex-none flex-wrap items-center gap-2 border-t border-[#2a2d36] px-3.5 py-2.5">
                 {modelControl(selectedPendGenerating)}
                 <DarkSelect
                   dir="up"
@@ -7142,17 +7527,19 @@ export function CanvasClient() {
           {selectedText && !readOnly && (
             <div
               key={`tdock-${selectedText.id}`}
-              style={
-                dockStyle
-                  ? { ...dockStyle, left: dockStyle.left + 60 }
-                  : { left: 12, bottom: 12 }
-              }
-              className="cz-anim-bottom absolute z-20 flex w-[700px] max-w-[calc(100%-1rem)] flex-col overflow-hidden border border-[#e2e6ec] bg-white text-[#252933] shadow-[0_18px_45px_rgba(7,12,24,0.22)]"
+              data-testid="text-node-dock"
+              style={dockStyle ?? {
+                left: 12,
+                bottom: 12,
+                width: canvasSize.width ? Math.max(1, Math.min(700, canvasSize.width - 24)) : 700,
+              }}
+              className="cz-anim-bottom absolute z-20 flex max-w-[calc(100%-1rem)] resize flex-col overflow-auto border border-[#e2e6ec] bg-white text-[#252933] shadow-[0_18px_45px_rgba(7,12,24,0.22)]"
             >
               <div className="flex items-start gap-2 px-3.5 pb-2 pt-3">
                 <button
                   type="button"
                   title={t("canvas.textAddReference")}
+                  onClick={() => setTextReferenceMenuOpen((open) => !open)}
                   className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[#f3f5f7] text-[#596271] transition-colors hover:bg-[#e9edf2]"
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -7168,7 +7555,7 @@ export function CanvasClient() {
                       void generateTextNode();
                     }
                   }}
-                  className="min-h-[54px] max-h-44 flex-1 resize-none border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed text-[#303641] shadow-none placeholder:text-[#a6adb7] focus-visible:ring-0"
+                  className="min-h-[54px] min-w-[160px] max-h-[50vh] flex-1 resize border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed text-[#303641] shadow-none placeholder:text-[#a6adb7] focus-visible:ring-0"
                 />
                 <button
                   type="button"
@@ -7177,17 +7564,76 @@ export function CanvasClient() {
                   className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-[#9aa1ab] hover:bg-[#f3f5f7] hover:text-[#303641]"
                 >
                   <X className="h-4 w-4" />
-                </button>
+                  </button>
               </div>
+              {textReferenceMenuOpen && (
+                <div className="border-t border-[#edf0f3] bg-[#fafbfd] px-3.5 py-2.5">
+                  <p className="mb-2 text-[11px] font-medium text-[#7a8390]">
+                    {t("canvas.textReferenceHint")}
+                  </p>
+                  <div className="flex max-h-24 flex-wrap gap-1.5 overflow-auto">
+                    {(active?.members ?? []).map((reference) => {
+                      const checked = (selectedText.sourceIds ?? []).includes(reference.id);
+                      return (
+                        <button
+                          key={reference.id}
+                          type="button"
+                          onClick={() =>
+                            void updateTextReference(selectedText.id, reference.id, !checked)
+                          }
+                          className={cn(
+                            "flex max-w-[210px] items-center gap-1.5 border px-2 py-1 text-[11px] font-medium transition-colors",
+                            checked
+                              ? "border-[#6bd7ec] bg-[#eefbfe] text-[#168ba0]"
+                              : "border-[#dfe4ea] bg-white text-[#5f6875] hover:border-[#b8c2cd]"
+                          )}
+                        >
+                          <span
+                            className="h-5 w-5 flex-none bg-cover bg-center"
+                            style={{
+                              backgroundImage: `url(${JSON.stringify(cdnUrl(reference.image))})`,
+                            }}
+                          />
+                          <span className="truncate">@{reference.title}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {!!selectedTextRefs.length && (
+                <div className="flex flex-wrap gap-1.5 border-t border-[#edf0f3] px-3.5 py-2">
+                  {selectedTextRefs.map((reference) => (
+                    <span
+                      key={reference.id}
+                      className="flex max-w-[220px] items-center gap-1 border border-[#ccecf2] bg-[#eefbfe] py-0.5 pl-2 pr-1 text-[11px] font-semibold text-[#168ba0]"
+                    >
+                      <span className="truncate">@{reference.title}</span>
+                      <button
+                        type="button"
+                        aria-label={`${t("canvas.textRemoveReference")} ${reference.title}`}
+                        onClick={() =>
+                          void updateTextReference(selectedText.id, reference.id, false)
+                        }
+                        className="flex h-4 w-4 flex-none items-center justify-center text-[#65aab6] hover:bg-white hover:text-[#1b7282]"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
               {textError && (
                 <p className="px-12 pb-2 text-xs font-medium text-[#d24b45]">{textError}</p>
               )}
-              <div className="flex h-11 items-center gap-2 border-t border-[#edf0f3] px-3.5">
+              <div className="flex min-h-11 flex-wrap items-center gap-2 border-t border-[#edf0f3] px-3.5 py-1.5">
                 <span className="max-w-[220px] truncate text-[12px] font-medium text-[#626b78]">
                   {textModel}
                 </span>
                 <span className="flex-1" />
-                <span className="text-[11px] font-medium text-[#20bdd9]">◆ 0/5</span>
+                <span className="text-[11px] font-medium text-[#20bdd9]">
+                  ◆ {selectedTextRefs.length}/5
+                </span>
                 <button
                   type="button"
                   onClick={() => void generateTextNode()}
@@ -7400,12 +7846,12 @@ export function CanvasClient() {
             </div>
             <ul className="space-y-2 text-sm text-muted-foreground">
               {[
-                t("canvas.help1"),
+                fmt(t("canvas.help1"), { mod: modifierKey }),
                 t("canvas.help2"),
                 t("canvas.help3"),
                 t("canvas.help4"),
                 t("canvas.help5"),
-                t("canvas.help6"),
+                fmt(t("canvas.help6"), { mod: modifierKey }),
                 t("canvas.help7"),
               ].map((line, i) => (
                 <li key={i} className="flex gap-2">

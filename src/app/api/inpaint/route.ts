@@ -13,7 +13,7 @@ import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
-import { resolutionCost, resolutionLongSide } from "@/lib/mock-data";
+import { isGenerationResolution, resolutionCost, resolutionLongSide } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ import { safeError } from "@/lib/api-error";
 // gpt-image images.edit 带 mask:mask 的透明区域 = 要重绘的区域,其余原样保留。
 // 前端用画笔涂抹生成 mask(涂抹区透明),连同原图 + 描述发来,只改涂抹处。
 // 同步返回(走后台 OpenAI 任务,relay 代理),完成后落库 category="inpaint"。
-// 计费跟生图同档(resolutionCost:1K=6、2K=8)。
+// 计费与生图使用同一组分辨率档位。
 // ---------------------------------------------------------------------------
 
 export const runtime = "nodejs";
@@ -57,7 +57,7 @@ async function parseInput(request: Request): Promise<InpaintInput | null> {
     mask: Buffer.from(await maskFile.arrayBuffer()),
     prompt: s("prompt").trim(),
     email: s("email").trim(),
-    resolution: s("resolution") === "2K" ? "2K" : "1K",
+    resolution: isGenerationResolution(s("resolution")) ? s("resolution") : "1K",
     ratio: s("ratio") || "auto",
     title: s("title").trim() || "局部改图",
     parentId: s("parentId").trim(),

@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   User as UserIcon,
   ExternalLink,
+  ImagePlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/locale-context";
@@ -332,6 +333,14 @@ export function AppRail() {
         >
           <Settings className="h-4 w-4" />
           {t("menu.security")}
+        </Link>
+        <Link
+          href="/account/image-provider"
+          onClick={() => setAcct(false)}
+          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"
+        >
+          <ImagePlus className="h-4 w-4" />
+          {t("menu.imageProvider")}
         </Link>
         {isAdmin && (
           <Link

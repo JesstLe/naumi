@@ -7,7 +7,7 @@ import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
-import { packaging3dCost } from "@/lib/mock-data";
+import { GENERATION_RESOLUTIONS, packaging3dCost } from "@/lib/mock-data";
 import { downloadImage } from "@/lib/download";
 import { cn } from "@/lib/utils";
 
@@ -207,11 +207,7 @@ export function Packaging3dClient() {
       />
       <ShellChips
         label={L("分辨率", "Resolution")}
-        options={[
-          { key: "1K", label: "1K" },
-          { key: "2K", label: "2K" },
-          { key: "4K", label: "4K" },
-        ]}
+        options={GENERATION_RESOLUTIONS.map(({ id }) => ({ key: id, label: id }))}
         value={resolution}
         onChange={setResolution}
         accent={ACCENT}

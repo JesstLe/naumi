@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   dbEnabled,
   deleteCanvasTextNodes,
+  listArtworksByIds,
   listCanvasTextNodes,
   upsertCanvasTextNode,
   type CanvasTextNodeRecord,
@@ -40,6 +41,28 @@ export async function POST(request: Request) {
   if (!id || !projectKey || !Number.isFinite(canvasX) || !Number.isFinite(canvasY)) {
     return NextResponse.json({ error: "缺少文字节点参数" }, { status: 400 });
   }
+  const width = Math.round(
+    Math.min(1200, Math.max(220, Number(body.width) || 300))
+  );
+  const height = Math.round(
+    Math.min(1200, Math.max(140, Number(body.height) || 176))
+  );
+  const sourceIds = Array.from(
+    new Set(
+      (Array.isArray(body.sourceIds) ? body.sourceIds : [])
+        .map((source) => String(source).trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 5);
+  if (sourceIds.length) {
+    const references = await listArtworksByIds(email, sourceIds);
+    if (references.length !== sourceIds.length) {
+      return NextResponse.json(
+        { error: "部分引用图片不存在或无权访问" },
+        { status: 400 }
+      );
+    }
+  }
   const now = new Date().toISOString();
   const node = await upsertCanvasTextNode(email, {
     id,
@@ -53,8 +76,11 @@ export async function POST(request: Request) {
         : "completed",
     canvasX,
     canvasY,
+    width,
+    height,
     createdAt: String(body.createdAt || now),
     updatedAt: now,
+    sourceIds,
     targetIds: Array.from(
       new Set(
         (Array.isArray(body.targetIds) ? body.targetIds : [])

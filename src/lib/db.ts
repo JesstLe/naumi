@@ -54,6 +54,16 @@ async function ensureSchema(): Promise<void> {
           joined_at     timestamptz NOT NULL DEFAULT now(),
           renews_at     timestamptz NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS app_user_image_providers (
+          email          text PRIMARY KEY REFERENCES app_users(email) ON DELETE CASCADE,
+          enabled        boolean NOT NULL DEFAULT false,
+          protocol       text NOT NULL DEFAULT 'openai-images',
+          base_url_enc   text NOT NULL DEFAULT '',
+          api_key_enc    text NOT NULL DEFAULT '',
+          models         jsonb NOT NULL DEFAULT '[]'::jsonb,
+          default_model  text NOT NULL DEFAULT '',
+          updated_at     timestamptz NOT NULL DEFAULT now()
+        );
         CREATE TABLE IF NOT EXISTS app_invoices (
           id         text PRIMARY KEY,
           email      text NOT NULL REFERENCES app_users(email) ON DELETE CASCADE,
@@ -87,6 +97,8 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_y double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS image_width integer;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS image_height integer;
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_width double precision;
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_height double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS origin text;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS marked boolean NOT NULL DEFAULT false;
         -- 稳定项目分组:同一画布项目的所有节点共享 group_id,删中间节点也不改它,
@@ -142,7 +154,10 @@ async function ensureSchema(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS app_canvas_text_nodes_email_idx
           ON app_canvas_text_nodes (email, project_key, updated_at DESC);
+        ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS source_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
         ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS target_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
+        ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS canvas_width double precision NOT NULL DEFAULT 300;
+        ALTER TABLE app_canvas_text_nodes ADD COLUMN IF NOT EXISTS canvas_height double precision NOT NULL DEFAULT 176;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user';
         CREATE TABLE IF NOT EXISTS app_ledger (
           id         text PRIMARY KEY,
@@ -1832,13 +1847,103 @@ export type ArtworkRecord = {
   templateId?: string | null; // 若这是"模板原图"根节点,记录它代表的模板 id
   canvasX?: number | null; // 画布手动拖拽后记住的坐标(空=用自动布局)
   canvasY?: number | null;
-  width?: number | null; // 原图实际像素宽度；画布按 1 CSS px = 1 image px 展示
+  width?: number | null; // 原图实际像素宽度
   height?: number | null;
+  canvasWidth?: number | null; // 无限画布节点显示尺寸；与原图像素分离
+  canvasHeight?: number | null;
   groupId?: string | null; // 稳定项目分组:同项目所有节点共享,删节点也不变
   canvasGroupId?: string | null; // 画布编辑分组,不参与项目归属与生成血缘
   origin?: string | null; // 来源场景:"canvas"=在画布里产出(永远留画布);空=生图页/工具等普通产出
   marked?: boolean;
 };
+
+export type UserImageProviderRecord = {
+  email: string;
+  enabled: boolean;
+  protocol: "openai-images" | "chat-completions";
+  baseUrlEnc: string;
+  apiKeyEnc: string;
+  models: string[];
+  defaultModel: string;
+  updatedAt: string;
+};
+
+export async function getUserImageProviderRecord(
+  emailRaw: string
+): Promise<UserImageProviderRecord | null> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT email, enabled, protocol, base_url_enc, api_key_enc, models,
+            default_model, updated_at
+       FROM app_user_image_providers
+      WHERE email = $1`,
+    [emailRaw.toLowerCase()]
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    email: String(row.email),
+    enabled: !!row.enabled,
+    protocol:
+      row.protocol === "chat-completions" ? "chat-completions" : "openai-images",
+    baseUrlEnc: String(row.base_url_enc || ""),
+    apiKeyEnc: String(row.api_key_enc || ""),
+    models: Array.isArray(row.models) ? row.models.map(String) : [],
+    defaultModel: String(row.default_model || ""),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+export async function upsertUserImageProviderRecord(
+  record: Omit<UserImageProviderRecord, "email" | "updatedAt"> & { email: string }
+): Promise<UserImageProviderRecord> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `INSERT INTO app_user_image_providers
+       (email, enabled, protocol, base_url_enc, api_key_enc, models, default_model, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,now())
+     ON CONFLICT (email) DO UPDATE SET
+       enabled = EXCLUDED.enabled,
+       protocol = EXCLUDED.protocol,
+       base_url_enc = EXCLUDED.base_url_enc,
+       api_key_enc = EXCLUDED.api_key_enc,
+       models = EXCLUDED.models,
+       default_model = EXCLUDED.default_model,
+       updated_at = now()
+     RETURNING email, enabled, protocol, base_url_enc, api_key_enc, models,
+               default_model, updated_at`,
+    [
+      record.email.toLowerCase(),
+      record.enabled,
+      record.protocol,
+      record.baseUrlEnc,
+      record.apiKeyEnc,
+      JSON.stringify(record.models),
+      record.defaultModel,
+    ]
+  );
+  const row = rows[0];
+  return {
+    email: String(row.email),
+    enabled: !!row.enabled,
+    protocol:
+      row.protocol === "chat-completions" ? "chat-completions" : "openai-images",
+    baseUrlEnc: String(row.base_url_enc || ""),
+    apiKeyEnc: String(row.api_key_enc || ""),
+    models: Array.isArray(row.models) ? row.models.map(String) : [],
+    defaultModel: String(row.default_model || ""),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+export async function deleteUserImageProviderRecord(emailRaw: string): Promise<boolean> {
+  await ensureSchema();
+  const result = await getPool().query(
+    `DELETE FROM app_user_image_providers WHERE email = $1`,
+    [emailRaw.toLowerCase()]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
 
 export type CanvasTextNodeRecord = {
   id: string;
@@ -1849,8 +1954,11 @@ export type CanvasTextNodeRecord = {
   status: "idle" | "generating" | "completed" | "failed";
   canvasX: number;
   canvasY: number;
+  width: number;
+  height: number;
   createdAt: string;
   updatedAt: string;
+  sourceIds: string[];
   targetIds: string[];
 };
 
@@ -1868,8 +1976,11 @@ function mapCanvasTextNode(row: Record<string, unknown>): CanvasTextNodeRecord {
         : "completed",
     canvasX: Number(row.canvas_x || 0),
     canvasY: Number(row.canvas_y || 0),
+    width: Number(row.canvas_width || 300),
+    height: Number(row.canvas_height || 176),
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
+    sourceIds: Array.isArray(row.source_ids) ? (row.source_ids as string[]) : [],
     targetIds: Array.isArray(row.target_ids) ? (row.target_ids as string[]) : [],
   };
 }
@@ -1880,7 +1991,8 @@ export async function listCanvasTextNodes(
   await ensureSchema();
   const { rows } = await getPool().query(
     `SELECT id, project_key, title, prompt, content, status, canvas_x, canvas_y,
-            created_at, updated_at, target_ids
+            canvas_width, canvas_height,
+            created_at, updated_at, source_ids, target_ids
        FROM app_canvas_text_nodes
       WHERE email = $1
       ORDER BY updated_at DESC
@@ -1900,8 +2012,8 @@ export async function upsertCanvasTextNode(
     : "completed";
   const { rows } = await getPool().query(
     `INSERT INTO app_canvas_text_nodes
-       (id, email, project_key, title, prompt, content, status, canvas_x, canvas_y, created_at, updated_at, target_ids)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10::timestamptz, now()),now(),$11::jsonb)
+       (id, email, project_key, title, prompt, content, status, canvas_x, canvas_y, canvas_width, canvas_height, created_at, updated_at, source_ids, target_ids)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12::timestamptz, now()),now(),$13::jsonb,$14::jsonb)
      ON CONFLICT (id) DO UPDATE SET
        project_key = EXCLUDED.project_key,
        title = EXCLUDED.title,
@@ -1910,11 +2022,15 @@ export async function upsertCanvasTextNode(
        status = EXCLUDED.status,
        canvas_x = EXCLUDED.canvas_x,
        canvas_y = EXCLUDED.canvas_y,
+       canvas_width = EXCLUDED.canvas_width,
+       canvas_height = EXCLUDED.canvas_height,
+       source_ids = EXCLUDED.source_ids,
        target_ids = EXCLUDED.target_ids,
        updated_at = now()
      WHERE app_canvas_text_nodes.email = EXCLUDED.email
      RETURNING id, project_key, title, prompt, content, status, canvas_x, canvas_y,
-               created_at, updated_at, target_ids`,
+               canvas_width, canvas_height,
+               created_at, updated_at, source_ids, target_ids`,
     [
       node.id,
       emailRaw.toLowerCase(),
@@ -1925,7 +2041,10 @@ export async function upsertCanvasTextNode(
       status,
       node.canvasX,
       node.canvasY,
+      node.width,
+      node.height,
       node.createdAt || null,
+      JSON.stringify(node.sourceIds ?? []),
       JSON.stringify(node.targetIds ?? []),
     ]
   );
@@ -1972,8 +2091,8 @@ export async function addArtworks(
         `INSERT INTO app_artworks
            (id, email, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id, parent_ids, group_id, canvas_group_id, origin,
-            image_width, image_height)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21)
+            image_width, image_height, canvas_width, canvas_height)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21,$22,$23)
          ON CONFLICT (id) DO UPDATE SET deleted_at = NULL`,
         [
           a.id,
@@ -1997,6 +2116,8 @@ export async function addArtworks(
           a.origin ?? null,
           a.width ?? null,
           a.height ?? null,
+          a.canvasWidth ?? null,
+          a.canvasHeight ?? null,
         ]
       );
     }
@@ -2016,7 +2137,7 @@ export async function listArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, group_id, canvas_group_id, origin, marked, created_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, created_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NULL
       ORDER BY created_at DESC LIMIT 1000`,
@@ -2042,6 +2163,8 @@ export async function listArtworks(
     canvasY: r.canvas_y ?? null,
     width: r.image_width ?? null,
     height: r.image_height ?? null,
+    canvasWidth: r.canvas_width ?? null,
+    canvasHeight: r.canvas_height ?? null,
     groupId: r.group_id ?? null,
     canvasGroupId: r.canvas_group_id ?? null,
     origin: r.origin ?? null,
@@ -2062,7 +2185,7 @@ export async function listArtworksByIds(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, group_id, canvas_group_id, origin, marked, created_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, created_at
        FROM app_artworks
       WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), clean]
@@ -2087,6 +2210,8 @@ export async function listArtworksByIds(
     canvasY: r.canvas_y ?? null,
     width: r.image_width ?? null,
     height: r.image_height ?? null,
+    canvasWidth: r.canvas_width ?? null,
+    canvasHeight: r.canvas_height ?? null,
     groupId: r.group_id ?? null,
     canvasGroupId: r.canvas_group_id ?? null,
     origin: r.origin ?? null,
@@ -2295,6 +2420,40 @@ export async function setArtworkDimensions(
         SET image_width = $3, image_height = $4
       WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), id, w, h]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+// 画布用：保存图片节点的显示尺寸与位置，不修改原图真实像素。
+export async function setArtworkCanvasLayout(
+  emailRaw: string,
+  id: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): Promise<boolean> {
+  await ensureSchema();
+  const px = Number(x);
+  const py = Number(y);
+  const w = Math.round(width);
+  const h = Math.round(height);
+  if (
+    !id ||
+    !Number.isFinite(px) ||
+    !Number.isFinite(py) ||
+    !Number.isFinite(w) ||
+    !Number.isFinite(h) ||
+    w < 80 ||
+    h < 80 ||
+    w > 4096 ||
+    h > 4096
+  ) return false;
+  const result = await getPool().query(
+    `UPDATE app_artworks
+        SET canvas_x = $3, canvas_y = $4, canvas_width = $5, canvas_height = $6
+      WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
+    [emailRaw.toLowerCase(), id, px, py, w, h]
   );
   return (result.rowCount ?? 0) > 0;
 }
@@ -2581,7 +2740,7 @@ export async function listDeletedArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, group_id, canvas_group_id, origin, marked, created_at, deleted_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, created_at, deleted_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NOT NULL
       ORDER BY deleted_at DESC LIMIT 200`,
@@ -2607,6 +2766,8 @@ export async function listDeletedArtworks(
     canvasY: r.canvas_y ?? null,
     width: r.image_width ?? null,
     height: r.image_height ?? null,
+    canvasWidth: r.canvas_width ?? null,
+    canvasHeight: r.canvas_height ?? null,
     groupId: r.group_id ?? null,
     canvasGroupId: r.canvas_group_id ?? null,
     origin: r.origin ?? null,

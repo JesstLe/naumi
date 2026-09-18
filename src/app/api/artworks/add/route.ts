@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { dbEnabled, addArtworks, setArtworkPosition } from "@/lib/db";
 import { uploadImage } from "@/lib/storage";
 import { authenticatedEmail } from "@/lib/request-auth";
+import { adaptiveCanvasImageSize } from "@/lib/mock-data";
 import sharp from "sharp";
 
 export const runtime = "nodejs";
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "上传失败" }, { status: 500 });
     }
     try {
+      const canvasSize = adaptiveCanvasImageSize(width, height);
       await addArtworks(email, [
         {
           id,
@@ -93,6 +95,8 @@ export async function POST(request: Request) {
           canvasGroupId,
           width,
           height,
+          canvasWidth: canvasSize.width,
+          canvasHeight: canvasSize.height,
         },
       ]);
     } catch (e) {
@@ -104,7 +108,17 @@ export async function POST(request: Request) {
     if (Number.isFinite(px) && Number.isFinite(py)) {
       await setArtworkPosition(email, id, px, py).catch(() => {});
     }
-    return NextResponse.json({ ok: true, id, image: url, width, height, canvasGroupId });
+    const canvasSize = adaptiveCanvasImageSize(width, height);
+    return NextResponse.json({
+      ok: true,
+      id,
+      image: url,
+      width,
+      height,
+      canvasWidth: canvasSize.width,
+      canvasHeight: canvasSize.height,
+      canvasGroupId,
+    });
   }
 
   // ── 创建副本 / 粘贴节点 ──
@@ -126,6 +140,8 @@ export async function POST(request: Request) {
       templateId?: string | null;
       width?: number | null;
       height?: number | null;
+      canvasWidth?: number | null;
+      canvasHeight?: number | null;
     };
   };
   try {
@@ -142,6 +158,10 @@ export async function POST(request: Request) {
   // 顶层 parentId(从历史加到当前项目)优先于 src.parentId(纯副本)
   const parentId =
     body.parentId !== undefined ? body.parentId : (src.parentId ?? null);
+  const canvasSize =
+    src.canvasWidth && src.canvasHeight
+      ? { width: src.canvasWidth, height: src.canvasHeight }
+      : adaptiveCanvasImageSize(src.width, src.height);
   try {
     await addArtworks(email, [
       {
@@ -159,6 +179,8 @@ export async function POST(request: Request) {
         templateId: src.templateId ?? null,
         width: src.width ?? null,
         height: src.height ?? null,
+        canvasWidth: canvasSize.width,
+        canvasHeight: canvasSize.height,
         // linked → 非 canvas-add(画布会画连线);否则独立节点
         source: body.linked ? "derived" : "canvas-add",
       },
@@ -174,5 +196,13 @@ export async function POST(request: Request) {
   if (Number.isFinite(bx) && Number.isFinite(by)) {
     await setArtworkPosition(email, id, bx, by).catch(() => {});
   }
-  return NextResponse.json({ ok: true, id, image: src.image, width: src.width ?? null, height: src.height ?? null });
+  return NextResponse.json({
+    ok: true,
+    id,
+    image: src.image,
+    width: src.width ?? null,
+    height: src.height ?? null,
+    canvasWidth: canvasSize.width,
+    canvasHeight: canvasSize.height,
+  });
 }

@@ -194,12 +194,136 @@ try {
   assert.equal(normalizeLines(generatedArtwork.prompt), generatedText);
   pass("text-to-image generation keeps project ownership, prompt, and persistent target linkage");
 
+  // 等生成完成后的单节点聚焦动画落稳，再适应全部节点，避免两个视口动画互相覆盖。
+  await page.waitForTimeout(1000);
+  await page.getByTitle("适应视图").click();
+  await expect(textNode).toBeVisible();
+  await textNode.click();
+  const resizeHandle = textNode.locator(
+    ".react-flow__resize-control.handle.bottom.right"
+  );
+  await expect(resizeHandle).toBeVisible();
+  const resizeHandleBox = await resizeHandle.boundingBox();
+  assert(resizeHandleBox, "text node resize handle is missing");
+  await page.mouse.move(
+    resizeHandleBox.x + resizeHandleBox.width / 2,
+    resizeHandleBox.y + resizeHandleBox.height / 2
+  );
+  await page.mouse.down();
+  await page.mouse.move(resizeHandleBox.x + 140, resizeHandleBox.y + 90, {
+    steps: 16,
+  });
+  await page.mouse.up();
+  let resizedTextNode;
+  await expect.poll(async () => {
+    textState = await (await api.get(`/api/canvas/text-nodes?email=${email}`)).json();
+    resizedTextNode = textState.nodes?.find((node) => node.id === persistedTextNode.id);
+    return Boolean(resizedTextNode?.width > 300 && resizedTextNode?.height > 176);
+  }, { timeout: 30_000 }).toBe(true);
+  assert(resizedTextNode.width <= 1200);
+  assert(resizedTextNode.height <= 1200);
+  pass("text node can be freely resized and persists its width and height");
+
+  for (const viewport of [
+    { width: 2560, height: 1440 },
+    { width: 1366, height: 768 },
+    { width: 1024, height: 640 },
+    { width: 768, height: 600 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const dock = page.getByTestId("text-node-dock");
+    await expect(dock).toBeVisible();
+    const dockBox = await dock.boundingBox();
+    assert(dockBox, `text dock missing at ${viewport.width}x${viewport.height}`);
+    assert(dockBox.x >= -1, JSON.stringify({ viewport, dockBox }));
+    assert(dockBox.x + dockBox.width <= viewport.width + 1, JSON.stringify({ viewport, dockBox }));
+    assert(dockBox.y >= -1, JSON.stringify({ viewport, dockBox }));
+    assert(dockBox.y + dockBox.height <= viewport.height + 1, JSON.stringify({ viewport, dockBox }));
+    assert.equal(
+      await page.getByPlaceholder(/描述你的问题、文案或内容需求/).evaluate(
+        (element) => getComputedStyle(element).resize
+      ),
+      "both"
+    );
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      true
+    );
+  }
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  pass("text dock stays inside 2560px, 1366px, 1024px, 768px, and 390px viewports with a freely resizable input");
+
+  await page.getByRole("button", { name: "100%" }).click();
+  await page.getByRole("button", { name: "缩放至50%" }).click();
+  await page.waitForTimeout(300);
+  await textNode.click();
+  await page.getByTitle("添加图片引用").click();
+  await page.locator("button").filter({ hasText: "@标题：轻盈随行保温杯" }).last().click();
+  await expect(page.getByText(`@${generatedArtwork.title}`, { exact: true }).first()).toBeVisible();
+  const imageContextPrompt = "根据引用图片写一段商品外观描述";
+  await page.getByPlaceholder(/描述你的问题、文案或内容需求/).fill(imageContextPrompt);
+  await page.getByTitle("文字生成").click();
+  await expect.poll(() => textRequests.length, { timeout: 30_000 }).toBe(2);
+  const multimodalRequest = textRequests[1];
+  const multimodalContent = multimodalRequest.messages.at(-1).content;
+  assert(Array.isArray(multimodalContent), JSON.stringify(multimodalContent));
+  assert(multimodalContent.some((part) => part.type === "image_url"));
+  assert(
+    multimodalContent.some(
+      (part) => part.type === "text" && part.text.includes(imageContextPrompt) && part.text.includes(generatedArtwork.title)
+    ),
+    JSON.stringify(multimodalContent)
+  );
+  const imagePart = multimodalContent.find((part) => part.type === "image_url");
+  assert.match(imagePart.image_url.url, /^data:image\//);
+
+  await expect.poll(async () => {
+    textState = await (await api.get(`/api/canvas/text-nodes?email=${email}`)).json();
+    return textState.nodes?.some(
+      (node) => node.sourceIds?.includes(generatedArtwork.id) && node.status === "completed"
+    ) ?? false;
+  }, { timeout: 30_000 }).toBe(true);
+  pass("adding an image context auto-mentions it and sends a real multimodal request");
+
+  await page.waitForTimeout(300);
+  const generatedImageNode = page.locator(
+    `.react-flow__node[data-id="${generatedArtwork.id}"]`
+  );
+  await generatedImageNode.click();
+  const imageSourceHandle = generatedImageNode.locator(".react-flow__handle.source");
+  await expect.poll(() => imageSourceHandle.evaluate(element => getComputedStyle(element).opacity)).toBe("1");
+  const imageHandleBox = await imageSourceHandle.boundingBox();
+  assert(imageHandleBox, "image output handle is missing");
+  await page.mouse.move(
+    imageHandleBox.x + imageHandleBox.width / 2,
+    imageHandleBox.y + imageHandleBox.height / 2
+  );
+  await page.mouse.down();
+  await page.mouse.move(330, 780, { steps: 20 });
+  await page.mouse.up();
+  await expect(page.locator(".menu-pop").getByRole("button", { name: "文字生成" })).toBeVisible();
+  await page.locator(".menu-pop").getByRole("button", { name: "文字生成" }).click();
+  await expect(page.locator('.react-flow__node[data-id^="text-"]')).toHaveCount(2);
+  await expect.poll(async () => {
+    textState = await (await api.get(`/api/canvas/text-nodes?email=${email}`)).json();
+    return textState.nodes?.filter((node) => node.sourceIds?.includes(generatedArtwork.id)).length ?? 0;
+  }, { timeout: 30_000 }).toBe(2);
+  pass("dragging an image output to blank canvas creates a new text node with the image in context");
+
   await page.reload();
-  await expect(page.locator('.react-flow__node[data-id^="text-"]')).toHaveCount(1, { timeout: 30_000 });
+  await expect(page.locator('.react-flow__node[data-id^="text-"]')).toHaveCount(2, { timeout: 30_000 });
   await expect(page.locator(`.react-flow__node[data-id="${generatedArtwork.id}"]`)).toHaveCount(1);
   await expect(page.locator('.react-flow__edge[data-id^="e-text-"]')).toHaveCount(1);
+  await expect(page.locator('.react-flow__edge[data-id^="e-image-text-"]')).toHaveCount(2);
+  await expect(page.getByText(`@${generatedArtwork.title}`, { exact: true }).first()).toBeVisible();
+  const restoredTextNode = page.locator(
+    `.react-flow__node[data-id="${persistedTextNode.id}"]`
+  );
+  await expect(restoredTextNode).toHaveCSS("width", `${resizedTextNode.width}px`);
+  await expect(restoredTextNode).toHaveCSS("height", `${resizedTextNode.height}px`);
   assert.deepEqual(pageErrors, []);
-  pass("refresh restores text, image, and their connection without browser runtime errors");
+  pass("refresh restores text size, both connection directions, and the image @mention without browser runtime errors");
 
   console.log(`MODIFIED_RESULT=PASS TEXT_MODEL=fixture-text-model IMAGE_ID=${generatedArtwork.id} checks=${report.length}`);
 } catch (error) {

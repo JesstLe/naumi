@@ -1,4 +1,4 @@
-// Isolated real Next + PostgreSQL + Chrome acceptance for native canvas sizes and custom output dimensions.
+// Isolated real Next + PostgreSQL + Chrome acceptance for adaptive/resizable image nodes and 5K output.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn, execFileSync } from "node:child_process";
@@ -82,58 +82,108 @@ try {
   const tall = account.artworks.find(item => item.title === "portrait-600x1200.png");
   assert.equal(square.width, 900); assert.equal(square.height, 900);
   assert.equal(tall.width, 600); assert.equal(tall.height, 1200);
+  assert.equal(square.canvasWidth, 420); assert.equal(square.canvasHeight, 420);
+  assert.equal(tall.canvasWidth, 210); assert.equal(tall.canvasHeight, 420);
   const scale = await page.locator(".react-flow__viewport").evaluate(element => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
-  const squareBox = await page.locator(`.react-flow__node[data-id="${square.id}"] img`).boundingBox();
-  const tallBox = await page.locator(`.react-flow__node[data-id="${tall.id}"] img`).boundingBox();
-  assert(Math.abs(squareBox.width / scale - 900) < 2 && Math.abs(squareBox.height / scale - 900) < 2);
-  assert(Math.abs(tallBox.width / scale - 600) < 2 && Math.abs(tallBox.height / scale - 1200) < 2);
-  assert(square.canvasX + square.width <= tall.canvasX || tall.canvasX + tall.width <= square.canvasX || square.canvasY + square.height <= tall.canvasY || tall.canvasY + tall.height <= square.canvasY);
-  pass("uploaded 900x900 and 600x1200 images render at native canvas dimensions without overlap");
+  const squareNode = page.locator(`.react-flow__node[data-id="${square.id}"]`);
+  const tallNode = page.locator(`.react-flow__node[data-id="${tall.id}"]`);
+  const squareBox = await squareNode.locator("img").boundingBox();
+  const tallBox = await tallNode.locator("img").boundingBox();
+  assert(Math.abs(squareBox.width / scale - square.canvasWidth) <= 3 && Math.abs(squareBox.height / scale - square.canvasHeight) <= 3);
+  assert(Math.abs(tallBox.width / scale - tall.canvasWidth) <= 3 && Math.abs(tallBox.height / scale - tall.canvasHeight) <= 3);
+  assert(square.canvasX + square.canvasWidth <= tall.canvasX || tall.canvasX + tall.canvasWidth <= square.canvasX || square.canvasY + square.canvasHeight <= tall.canvasY || tall.canvasY + tall.canvasHeight <= square.canvasY);
+  await expect(squareNode.getByText("square-900.png", { exact: true })).toBeVisible();
+  assert.equal(
+    await squareNode.locator(".react-flow__handle").first().evaluate(element => getComputedStyle(element).opacity),
+    "0"
+  );
+  const addButtonBox = await page.getByTestId("canvas-add-node-button").boundingBox();
+  assert(addButtonBox && addButtonBox.width >= 64 && addButtonBox.height >= 64);
+  pass("imports keep intrinsic pixels while adaptive image-only nodes, filenames, and the larger add button stay clearly visible");
 
   // Simulate legacy rows without dimensions; the image load must backfill the database.
   await pool.query("update app_artworks set image_width=null,image_height=null where id=$1", [square.id]);
   await page.reload();
   await expect(page.locator(`.react-flow__node[data-id="${square.id}"] img`)).toBeVisible({ timeout: 30000 });
   await expect.poll(async () => (await pool.query("select image_width,image_height from app_artworks where id=$1", [square.id])).rows[0]).toEqual({ image_width: 900, image_height: 900 });
-  pass("legacy artwork dimensions backfill from the original image on first canvas load");
+  pass("legacy intrinsic dimensions backfill without overwriting adaptive canvas dimensions");
 
-  await page.locator(`.react-flow__node[data-id="${square.id}"]`).click();
+  await squareNode.click();
+  await expect.poll(() => squareNode.locator(".react-flow__handle").first().evaluate(element => getComputedStyle(element).opacity)).toBe("1");
   await page.getByRole("button", { name: "解组", exact: true }).click();
   await expect.poll(async () => {
     const grouped = await pool.query("select canvas_group_id from app_artworks where id = any($1::text[])", [[square.id, tall.id]]);
     return grouped.rows.every((row) => !row.canvas_group_id);
   }).toBe(true);
   await page.locator(".react-flow__pane").click({ position: { x: 1200, y: 700 }, force: true });
+  await squareNode.click();
+  const resizeHandle = squareNode.locator(".react-flow__resize-control.handle.bottom.right");
+  await expect(resizeHandle).toBeVisible();
+  const resizeBox = await resizeHandle.boundingBox();
+  assert(resizeBox, "image resize handle is missing");
+  await page.mouse.move(resizeBox.x + resizeBox.width / 2, resizeBox.y + resizeBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(resizeBox.x + 140, resizeBox.y + 140, { steps: 16 });
+  await page.mouse.up();
+  await expect.poll(async () => {
+    account = await (await api.get(`/api/account?email=${email}`)).json();
+    const resized = account.artworks.find(item => item.id === square.id);
+    return resized?.canvasWidth > 420 && resized?.canvasHeight > 420;
+  }, { timeout: 30000 }).toBe(true);
+  const resizedSquare = account.artworks.find(item => item.id === square.id);
+  assert.equal(resizedSquare.width, 900); assert.equal(resizedSquare.height, 900);
+  await page.reload();
+  await expect(page.locator(`.react-flow__node[data-id="${square.id}"] img`)).toBeVisible({ timeout: 30000 });
+  account = await (await api.get(`/api/account?email=${email}`)).json();
+  const restoredSquare = account.artworks.find(item => item.id === square.id);
+  assert.equal(restoredSquare.canvasWidth, resizedSquare.canvasWidth);
+  assert.equal(restoredSquare.canvasHeight, resizedSquare.canvasHeight);
+  pass("click reveals controls and proportional image resizing persists separately from intrinsic pixels");
+
   await page.locator(`.react-flow__node[data-id="${square.id}"]`).click();
   await page.getByRole("button", { name: /自适应.*1K/ }).click();
-  await page.getByLabel("自定义宽度").fill("900");
-  await page.getByLabel("自定义高度").fill("1200");
+  await page.getByLabel("自定义宽度").fill("5120");
+  await page.getByLabel("自定义高度").fill("2880");
   await page.getByRole("button", { name: "应用", exact: true }).click();
   await page.locator("body").click({ position: { x: 5, y: 5 } });
-  await expect(page.getByRole("button", { name: /900×1200.*1K/ })).toBeVisible();
-  await page.getByPlaceholder(/描述你想怎么改/).fill("保持商品结构，生成竖版棚拍图");
+  await expect(page.getByRole("button", { name: /5120×2880.*5K/ })).toBeVisible();
+  await page.getByPlaceholder(/描述你想怎么改/).fill("保持商品结构，生成 5K 横版棚拍图");
   await page.getByRole("button", { name: "↑", exact: true }).click();
   await expect.poll(async () => {
     account = await (await api.get(`/api/account?email=${email}`)).json();
     return account.artworks.find(item => item.parentId === square.id && item.origin === "canvas") || null;
   }, { timeout: 120000 }).not.toBeNull();
   const child = account.artworks.find(item => item.parentId === square.id && item.origin === "canvas");
-  assert.equal(child.width, 900); assert.equal(child.height, 1200); assert.equal(child.ratio, "900:1200");
+  assert.equal(child.width, 5120); assert.equal(child.height, 2880); assert.equal(child.ratio, "5120:2880"); assert.equal(child.resolution, "5K");
+  assert.equal(child.canvasWidth, null); assert.equal(child.canvasHeight, null);
   await expect(page.locator(`.react-flow__node[data-id="${child.id}"] img`)).toBeVisible({ timeout: 30000 });
   const childScale = await page.locator(".react-flow__viewport").evaluate(element => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
   const childBox = await page.locator(`.react-flow__node[data-id="${child.id}"] img`).boundingBox();
-  assert(Math.abs(childBox.width / childScale - 900) < 2 && Math.abs(childBox.height / childScale - 1200) < 2);
-  pass("custom 900x1200 generation persists and renders at the exact requested dimensions");
+  assert(Math.abs(childBox.width / childScale - 420) <= 3 && Math.abs(childBox.height / childScale - 236) <= 3);
+  const generatedImageUrl = child.image || child.url;
+  assert(generatedImageUrl, "generated image URL missing");
+  const generatedResponse = generatedImageUrl.startsWith("data:")
+    ? await fetch(generatedImageUrl)
+    : await api.get(generatedImageUrl);
+  const generatedOk = typeof generatedResponse.ok === "function" ? generatedResponse.ok() : generatedResponse.ok;
+  const generatedStatus = typeof generatedResponse.status === "function" ? generatedResponse.status() : generatedResponse.status;
+  assert(generatedOk, `generated image fetch failed: ${generatedStatus}`);
+  const generatedBytes = "body" in generatedResponse
+    ? await generatedResponse.body()
+    : Buffer.from(await generatedResponse.arrayBuffer());
+  const generatedMeta = await sharp(Buffer.from(generatedBytes)).metadata();
+  assert.equal(generatedMeta.width, 5120); assert.equal(generatedMeta.height, 2880);
+  pass("custom 5120x2880 generation keeps exact output metadata while the canvas node opens at an adaptive size");
 
   const other = await request.newContext({ baseURL: base });
   try {
     assert.equal((await other.post("/api/auth/register", { data: { email: "canvas-size-other@local.test", password, name: "其他账号" } })).status(), 200);
-    const denied = await other.post("/api/artworks/dimensions", { data: { id: square.id, width: 1, height: 1 } });
+    const denied = await other.post("/api/artworks/canvas-size", { data: { id: square.id, x: 0, y: 0, width: 500, height: 500 } });
     assert.equal(denied.status(), 400);
   } finally { await other.dispose(); }
   assert.deepEqual(pageErrors, []);
   pass("dimension updates remain owner-scoped and browser runtime has no exceptions");
-  console.log("MODIFIED_RESULT=PASS NATIVE=900x900 CUSTOM=900x1200 checks=4");
+  console.log("MODIFIED_RESULT=PASS ADAPTIVE=420 RESIZABLE=true CUSTOM=5120x2880 RESOLUTION=5K checks=5");
 } catch (error) {
   report.push(`FAIL ${error.stack || error}`);
   if (page) await page.screenshot({ path: path.join(output, "FAILURE.png"), fullPage: true }).catch(() => {});

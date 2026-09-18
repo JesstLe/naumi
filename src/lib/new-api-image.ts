@@ -79,8 +79,9 @@ export async function generateNewApiImage(input: {
   model: string;
   prompt: string;
   images?: NewApiReferenceImage[];
+  settings?: { baseUrl: string; apiKey: string };
 }): Promise<{ buffer: Buffer; contentType: string }> {
-  const settings = getNewApiImageSettings();
+  const settings = input.settings || getNewApiImageSettings();
   if (!settings.baseUrl || !settings.apiKey) {
     throw new Error("New API 生图分组尚未配置");
   }

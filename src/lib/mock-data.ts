@@ -342,13 +342,44 @@ export type Artwork = {
   templateId?: string | null; // 模板原图根节点代表的模板 id
   canvasX?: number | null; // 画布手动拖拽记住的坐标
   canvasY?: number | null;
-  width?: number | null; // 图片真实像素宽度，画布按原尺寸显示
+  width?: number | null; // 图片真实像素宽度
   height?: number | null;
+  canvasWidth?: number | null; // 图片节点在无限画布中的显示宽度，与原图像素分离
+  canvasHeight?: number | null;
   groupId?: string | null; // 稳定项目分组:同项目所有节点共享,删节点也不变
   canvasGroupId?: string | null; // 画布编辑分组:用于成组/解组和整体移动,不代表生成血缘
   origin?: string | null; // "canvas"=在画布里产出(永远留画布);空=普通产出
   marked?: boolean; // 画布节点标记:用户手动钉住的重要版本
 };
+
+export const IMAGE_NODE_DEFAULT_LONG_SIDE = 420;
+export const IMAGE_NODE_MAX_LONG_SIDE = 720;
+export const IMAGE_NODE_MIN_SHORT_SIDE = 120;
+
+/**
+ * 将任意原图尺寸映射为画布上的舒适初始尺寸。原图像素保持不变，
+ * 这里只决定无限画布节点的可视大小，避免高分辨率图片过大或缩得看不清。
+ */
+export function adaptiveCanvasImageSize(width?: number | null, height?: number | null) {
+  const sourceWidth = Number(width);
+  const sourceHeight = Number(height);
+  if (!(sourceWidth > 0) || !(sourceHeight > 0)) {
+    return { width: 320, height: 200 };
+  }
+  const longSide = Math.max(sourceWidth, sourceHeight);
+  const shortSide = Math.min(sourceWidth, sourceHeight);
+  const scale = Math.min(
+    IMAGE_NODE_MAX_LONG_SIDE / longSide,
+    Math.max(
+      IMAGE_NODE_DEFAULT_LONG_SIDE / longSide,
+      IMAGE_NODE_MIN_SHORT_SIDE / shortSide
+    )
+  );
+  return {
+    width: Math.max(1, Math.round(sourceWidth * scale)),
+    height: Math.max(1, Math.round(sourceHeight * scale)),
+  };
+}
 
 export const ARTWORKS: Artwork[] = [
   {
@@ -433,7 +464,9 @@ export const GENERATION_STYLES = [
 ];
 
 // 分辨率档位：每张消耗的积分按分辨率递增。1K = 基础积分（POINTS_PER_IMAGE）。
-// 2K / 4K 在生成后由服务端放大到对应长边像素（见 generate-image route）。
+// 2K / 4K / 5K 在生成后由服务端放大到对应长边像素（见 generate-image route）。
+export const MAX_GENERATION_DIMENSION = 5120;
+
 export type ResolutionTier = {
   id: string;
   label: string;
@@ -446,7 +479,19 @@ export const GENERATION_RESOLUTIONS: ResolutionTier[] = [
   { id: "1K", label: "1K 标准", cost: POINTS_PER_IMAGE, longSide: 0 },
   { id: "2K", label: "2K 高清", cost: 8, longSide: 2048 },
   { id: "4K", label: "4K 超清", cost: 12, longSide: 4096 },
+  { id: "5K", label: "5K 专业", cost: 16, longSide: MAX_GENERATION_DIMENSION },
 ];
+
+export function isGenerationResolution(id: string): boolean {
+  return GENERATION_RESOLUTIONS.some((resolution) => resolution.id === id);
+}
+
+export function resolutionForLongSide(longSide: number): string {
+  if (longSide > 4096) return "5K";
+  if (longSide > 2048) return "4K";
+  if (longSide > 1536) return "2K";
+  return "1K";
+}
 
 export function resolutionCost(id: string): number {
   return (
@@ -458,12 +503,13 @@ export function resolutionLongSide(id: string): number {
   return GENERATION_RESOLUTIONS.find((r) => r.id === id)?.longSide ?? 0;
 }
 
-// 3D 服装图专属分辨率计价(成本高于平面图):1K/2K=9、4K=18。
-// 放大长边复用 resolutionLongSide(2K=2048 / 4K=4096;1K 不放大)。
+// 3D 服装图专属分辨率计价(成本高于平面图):1K/2K=9、4K=18、5K=24。
+// 放大长边复用 resolutionLongSide(2K=2048 / 4K=4096 / 5K=5120;1K 不放大)。
 export const GARMENT3D_COST: Record<string, number> = {
   "1K": 9,
   "2K": 9,
   "4K": 18,
+  "5K": 24,
 };
 export function garment3dCost(id: string): number {
   return GARMENT3D_COST[id] ?? GARMENT3D_COST["1K"];

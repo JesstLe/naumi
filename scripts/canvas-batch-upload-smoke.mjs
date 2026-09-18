@@ -223,11 +223,10 @@ try {
     });
     assert.equal(matrix.zoom, .5);
     const point = { x: 40, y: 100 };
-    // Uploaded images are centered at the drop point using their native 320x240 pixels
-    // plus the 28px node label, rather than the legacy 170x132 thumbnail box.
-    const expected = { x: Math.round((point.x - matrix.x) / matrix.zoom - 160), y: Math.round((point.y - matrix.y) / matrix.zoom - 134) };
+    // 320x240 source images open as adaptive 420x315 canvas nodes plus the 28px label.
+    const expected = { x: Math.round((point.x - matrix.x) / matrix.zoom - 210), y: Math.round((point.y - matrix.y) / matrix.zoom - 172) };
     list = await works();
-    while (list.some(a => Math.abs(a.canvasX - expected.x) < 194 && Math.abs(a.canvasY - expected.y) < 156)) expected.y += 180;
+    while (list.some(a => Math.abs(a.canvasX - expected.x) < 444 && Math.abs(a.canvasY - expected.y) < 367)) expected.y += 391;
     await drop(files(["zoomed.png"]), point);
     await expect(nodes).toHaveCount(14, { timeout: 60000 });
     const zoomed = (await works()).find(a => a.title === "zoomed.png");

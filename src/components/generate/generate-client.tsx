@@ -138,7 +138,8 @@ export function GenerateClient({
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/config", { cache: "no-store" })
+    void authHeader()
+      .then((headers) => fetch("/api/config", { cache: "no-store", headers }))
       .then((response) => response.json())
       .then((config: { defaultImageModel?: string; imageModels?: ImageModelOption[] }) => {
         if (cancelled) return;

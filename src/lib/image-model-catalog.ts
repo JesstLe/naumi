@@ -1,6 +1,14 @@
 import { getOpenAISettings } from "@/lib/settings";
+import {
+  getUserImageProvider,
+  userImageModelId,
+} from "@/lib/user-image-provider";
 
-export type ImageModelProvider = "openai-images" | "new-api-flow";
+export type ImageModelProvider =
+  | "openai-images"
+  | "new-api-flow"
+  | "user-openai-images"
+  | "user-chat-completions";
 
 export type ImageModelDescriptor = {
   id: string;
@@ -110,7 +118,9 @@ async function discoverNewApiModels(): Promise<string[]> {
   }
 }
 
-export async function getImageModelCatalog(): Promise<ImageModelDescriptor[]> {
+export async function getImageModelCatalog(
+  email?: string | null
+): Promise<ImageModelDescriptor[]> {
   const primary = await getOpenAISettings();
   const openaiModels = primary.models.map((id) => ({
     id,
@@ -124,13 +134,45 @@ export async function getImageModelCatalog(): Promise<ImageModelDescriptor[]> {
     supportsEdit: true,
     provider: "new-api-flow" as const,
   }));
+  const userProvider = email ? await getUserImageProvider(email) : null;
+  const userModels =
+    userProvider?.enabled &&
+    userProvider.baseUrl &&
+    userProvider.apiKey &&
+    userProvider.models.length
+      ? userProvider.models.map((model) => ({
+          id: userImageModelId(model),
+          label: `自定义 · ${model}`,
+          supportsEdit:
+            userProvider.protocol === "chat-completions" || model.startsWith("gpt-image"),
+          provider:
+            userProvider.protocol === "chat-completions"
+              ? ("user-chat-completions" as const)
+              : ("user-openai-images" as const),
+        }))
+      : [];
   const merged = new Map<string, ImageModelDescriptor>();
-  for (const model of [...openaiModels, ...flowModels]) {
+  for (const model of [...userModels, ...openaiModels, ...flowModels]) {
     if (!merged.has(model.id)) merged.set(model.id, model);
   }
   return Array.from(merged.values());
 }
 
-export async function resolveImageModel(model: string) {
-  return (await getImageModelCatalog()).find((item) => item.id === model) || null;
+export async function getUserDefaultImageModel(email?: string | null) {
+  if (!email) return null;
+  const provider = await getUserImageProvider(email);
+  if (
+    !provider?.enabled ||
+    !provider.baseUrl ||
+    !provider.apiKey ||
+    !provider.defaultModel ||
+    !provider.models.includes(provider.defaultModel)
+  ) {
+    return null;
+  }
+  return userImageModelId(provider.defaultModel);
+}
+
+export async function resolveImageModel(model: string, email?: string | null) {
+  return (await getImageModelCatalog(email)).find((item) => item.id === model) || null;
 }

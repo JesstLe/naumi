@@ -8,7 +8,7 @@ import { SelectMenu } from "@/components/ui/select-menu";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
-import { resolutionCost } from "@/lib/mock-data";
+import { GENERATION_RESOLUTIONS, resolutionCost } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
 const ACCENT = "#C2882E"; // 印花提取(琥珀)
@@ -153,14 +153,10 @@ export function ExtractClient() {
         accent={ACCENT}
       />
 
-      {/* 分辨率(计费:1K=6 / 2K=8 / 4K=12) */}
+      {/* 分辨率按统一档位计费，最高支持 5K。 */}
       <ToolChips
         label={L("分辨率", "Resolution")}
-        options={[
-          { value: "1K", label: "1K" },
-          { value: "2K", label: "2K" },
-          { value: "4K", label: "4K" },
-        ]}
+        options={GENERATION_RESOLUTIONS.map(({ id }) => ({ value: id, label: id }))}
         value={resolution}
         onChange={setResolution}
         accent={ACCENT}
