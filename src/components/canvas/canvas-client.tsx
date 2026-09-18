@@ -147,7 +147,7 @@ function estimateTextNodeHeight(node: {
         .reduce((n, seg) => n + Math.max(1, Math.ceil(seg.length / charsPerLine)), 0)
     : 2;
   const refsRows = node.sourceIds?.length ? 1 : 0;
-  const h = 36 + 20 + refsRows * 26 + lines * 20 + 14;
+  const h = 32 + 20 + refsRows * 26 + lines * 20 + 14;
   return Math.round(
     Math.min(TEXT_NODE_MAX_H, Math.max(TEXT_NODE_DEFAULT_H, h))
   );
@@ -608,12 +608,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
   const active = selected || d.selected;
   const body = d.content || d.prompt;
   return (
-    <div
-      className={cn(
-        "group relative flex h-full w-full flex-col border bg-white text-[#252933] shadow-[0_12px_34px_rgba(7,12,24,0.18)] transition-shadow",
-        active ? "border-[#6bd7ec] ring-2 ring-[#6bd7ec]/25" : "border-[#dce2ea]"
-      )}
-    >
+    <div className="group relative flex h-full w-full flex-col">
       <NodeResizer
         isVisible={active}
         minWidth={TEXT_NODE_MIN_W}
@@ -632,20 +627,30 @@ function TextCanvasNode({ data, selected }: NodeProps) {
           })
         }
       />
-      <div className="flex h-9 items-center gap-2 border-b border-[#edf0f4] px-3 text-[12px] font-semibold text-[#5d6573]">
-        <span className="flex h-5 w-5 items-center justify-center border border-[#d9dee6] bg-[#f7f8fa] text-[#2c313a]">
-          <Type className="h-3 w-3" />
+      {/* 标题行:与图片节点完全一致(30px 高、clamp 字号、浅色文字) */}
+      <div className="mb-1.5 flex h-[30px] flex-none items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none text-[#e2e6ed]">
+        <span className="min-w-0 flex-1 truncate" title={d.title || "文字生成"}>
+          {d.title || "文字生成"}
         </span>
-        <span className="min-w-0 flex-1 truncate">{d.title || "文字生成"}</span>
-        {d.status === "generating" && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#27bdd8]" />}
+        {d.status === "generating" && (
+          <Loader2 className="h-3.5 w-3.5 flex-none animate-spin text-[#6bd7ec]" />
+        )}
       </div>
-      <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5 text-[12px] leading-[1.65] text-[#4d5563]">
+      {/* 内容卡:与图片节点的图片卡同一层样式(#191b21 圆角10、选中 indigo 描边+辉光) */}
+      <div
+        className={cn(
+          "relative min-h-0 flex-1 overflow-auto rounded-[10px] border bg-[#191b21] px-3 py-2.5 text-[12px] leading-[1.65] text-[#c6ccd6] transition-all",
+          active
+            ? "border-[#6366f1] shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
+            : "border-[#2a2d36]"
+        )}
+      >
         {!!d.sourceRefs?.length && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {d.sourceRefs.map((reference) => (
               <span
                 key={reference.id}
-                className="max-w-full truncate border border-[#ccecf2] bg-[#eefbfe] px-1.5 py-0.5 text-[10px] font-semibold leading-4 text-[#168ba0]"
+                className="max-w-full truncate border border-[#24505f] bg-[#163842] px-1.5 py-0.5 text-[10px] font-semibold leading-4 text-[#8fe7f5]"
                 title={`@${reference.title}`}
               >
                 @{reference.title}
@@ -654,20 +659,20 @@ function TextCanvasNode({ data, selected }: NodeProps) {
           </div>
         )}
         {d.status === "generating" ? (
-          <div className="flex h-[108px] items-center justify-center gap-2 text-[#87909d]">
-            <Loader2 className="h-4 w-4 animate-spin" /> 正在生成文字…
+          <div className="flex h-[108px] items-center justify-center gap-2 text-[#9aa1ae]">
+            <Loader2 className="h-4 w-4 animate-spin text-[#6366f1]" /> 正在生成文字…
           </div>
         ) : body ? (
           <p className="whitespace-pre-wrap break-words">{body}</p>
         ) : (
-          <p className="text-[#a1a8b3]">输入需求后生成文字内容</p>
+          <p className="text-[#9aa1ae]">输入需求后生成文字内容</p>
         )}
       </div>
-      <div className="absolute right-1.5 top-1.5 hidden items-center gap-1 bg-white pl-1 group-hover:flex">
+      <div className="absolute right-1.5 top-1.5 hidden items-center gap-1 rounded-md bg-[#191b21] pl-1 group-hover:flex">
         {!!d.content && (
           <button
             type="button"
-            className="nodrag flex h-6 w-6 items-center justify-center text-[#7d8694] hover:bg-[#f1f3f6] hover:text-[#20242c]"
+            className="nodrag flex h-6 w-6 items-center justify-center text-[#7d8694] hover:bg-[#2a2e38] hover:text-[#e7e9ee]"
             title="复制文字"
             onClick={(event) => {
               event.stopPropagation();
@@ -679,7 +684,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
         )}
         <button
           type="button"
-          className="nodrag flex h-6 w-6 items-center justify-center text-[#7d8694] hover:bg-[#fff0ef] hover:text-[#d24b45]"
+          className="nodrag flex h-6 w-6 items-center justify-center text-[#7d8694] hover:bg-[#ff6b63]/15 hover:text-[#ff6b63]"
           title="删除文字节点"
           onClick={(event) => {
             event.stopPropagation();
@@ -693,7 +698,12 @@ function TextCanvasNode({ data, selected }: NodeProps) {
         id="in"
         type="target"
         position={Position.Left}
-        className="!flex !h-[30px] !w-[30px] !-left-[15px] !items-center !justify-center !rounded-full !border-2 !border-[#64cfe2] !bg-white !text-[17px] !font-semibold !text-[#189ab1] shadow-md"
+        className={cn(
+          "art-port !flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-all hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]",
+          active
+            ? "!opacity-100"
+            : "!pointer-events-none !opacity-0 group-hover:!pointer-events-auto group-hover:!opacity-100"
+        )}
       >
         <span className="pointer-events-none leading-none">+</span>
       </Handle>
@@ -701,7 +711,12 @@ function TextCanvasNode({ data, selected }: NodeProps) {
         id="out"
         type="source"
         position={Position.Right}
-        className="!flex !h-[30px] !w-[30px] !-right-[15px] !items-center !justify-center !rounded-full !border-2 !border-[#64cfe2] !bg-white !text-[17px] !font-semibold !text-[#189ab1] shadow-md"
+        className={cn(
+          "art-port !flex !h-12 !w-12 !-right-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-all hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]",
+          active
+            ? "!opacity-100"
+            : "!pointer-events-none !opacity-0 group-hover:!pointer-events-auto group-hover:!opacity-100"
+        )}
       >
         <span className="pointer-events-none leading-none">+</span>
       </Handle>
