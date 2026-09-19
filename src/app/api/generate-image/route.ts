@@ -34,6 +34,7 @@ import { getStyleGuide } from "@/lib/prompt-config";
 import {
   getImageModelCatalog,
   getUserDefaultImageModel,
+  isOpenAIImagesEditModel,
   type ImageModelDescriptor,
 } from "@/lib/image-model-catalog";
 import { generateNewApiImage } from "@/lib/new-api-image";
@@ -306,7 +307,7 @@ async function openaiImages(
   });
   const prompt = p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide());
   const size = sizeFor(p.ratio, model);
-  const canEdit = p.images.length > 0 && model.startsWith("gpt-image");
+  const canEdit = p.images.length > 0 && isOpenAIImagesEditModel(model);
   // 出图模式:优先用本次请求选的(基础/标准/高阶 = low/medium/high),否则回退 env 默认。
   const q = (["low", "medium", "high", "auto"].includes(p.quality)
     ? p.quality
@@ -366,7 +367,7 @@ async function openaiImages(
   // 改比例(ChatGPT 式重生成):拿节点自身提示词 + 原图当参考,按目标比例重画一张,
   // 出图后裁切到精确比例。同主体/风格/配色,自然重构图 —— 无接缝、无羽化、不限于 3 种形状。
   // 不需要用户额外提示词(ratioPrompt 已带固定重构图指令),只生成 1 张。
-  if (p.ratiogen && p.images[0] && model.startsWith("gpt-image")) {
+  if (p.ratiogen && p.images[0] && isOpenAIImagesEditModel(model)) {
     const ref = await normalizeForEdit(Buffer.from(p.images[0].buf));
     const r = await withGenSlot(async () =>
       client.images.edit({
