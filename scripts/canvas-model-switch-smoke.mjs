@@ -17,6 +17,7 @@ const email = "canvas-model-switch@local.test";
 const generated = await sharp({ create: { width: 1024, height: 1024, channels: 4, background: "#5678b4" } }).png().toBuffer();
 const source = await sharp({ create: { width: 480, height: 480, channels: 4, background: "#d6a268" } }).png().toBuffer();
 const providerModels = [];
+const providerRequests = [];
 const report = [];
 const appLog = [];
 const pass = (message) => { report.push(`PASS ${message}`); console.log(report.at(-1)); };
@@ -44,6 +45,7 @@ try {
     const body = Buffer.concat(chunks).toString("utf8");
     const model = body.match(/name="model"\r\n\r\n([^\r\n]+)/)?.[1];
     if (model) providerModels.push(model);
+    providerRequests.push({ path: req.url, model, hasImage: /name="image(?:\[\])?"; filename=/.test(body) });
     res.setHeader("content-type", "application/json");
     if (req.url === "/v1/images/edits" || req.url === "/v1/images/generations") {
       res.end(JSON.stringify({ data: [{ b64_json: generated.toString("base64") }] }));
@@ -73,7 +75,7 @@ try {
       OPENAI_API_KEY: "fixture",
       OPENAI_BASE_URL: provider,
       OPENAI_IMAGE_MODEL: "gpt-image-2",
-      OPENAI_IMAGE_MODELS: "gpt-image-2,gpt-image-1.5",
+      OPENAI_IMAGE_MODELS: "gpt-image-2,gpt-image-1.5,naumi-image-standard",
       NEW_API_IMAGE_BASE_URL: "",
       NEW_API_IMAGE_API_KEY: "",
       NEW_API_IMAGE_MODELS: "",
@@ -122,6 +124,18 @@ try {
   }, { timeout: 120_000 }).toBe(1);
   assert(providerModels.includes("gpt-image-1.5"), `provider models: ${providerModels.join(",")}`);
   pass("selected model reaches the upstream image edit request and produces an artwork");
+
+  for (const ratiogen of ['0', '1']) {
+    const offset = providerRequests.length;
+    const response = await api.post('/api/generate-image', {
+      multipart: { prompt: 'Keep the source product', category: 'main', ratio: '1:1', resolution: '1K', count: '1', model: 'naumi-image-standard', ratiogen, image: { name: 'reference.png', mimeType: 'image/png', buffer: source } },
+    });
+    assert.equal(response.status(), 200);
+    const { jobId } = await response.json();
+    await expect.poll(async () => (await (await api.get(`/api/generate-image?job=${jobId}`)).json()).status, { timeout: 120_000 }).toBe('done');
+    assert.deepEqual(providerRequests.slice(offset), [{path:'/v1/images/edits',model:'naumi-image-standard',hasImage:true}]);
+  }
+  pass('Naumi aliases send multipart reference images for normal edits and ratio regeneration');
 
   const rejected = await api.post("/api/generate-image", {
     multipart: { prompt: "test", category: "main", ratio: "1:1", resolution: "1K", count: "1", model: "rogue-image-model" },
