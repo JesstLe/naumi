@@ -10,6 +10,7 @@ const expectedCount = Math.min(
   count
 );
 const register = process.env.CANVAS_SMOKE_REGISTER === "1";
+const model = (process.env.CANVAS_SMOKE_MODEL || "").trim();
 if (!password) throw new Error("请设置 CANVAS_SMOKE_PASSWORD");
 let cookie = "";
 
@@ -73,6 +74,7 @@ async function main() {
   form.append("parentId", root.id);
   form.append("parentIds", "[]");
   form.append("origin", "canvas");
+  if (model) form.append("model", model);
   form.append("image", new Blob([bytes], { type: "image/webp" }), "generation-parent.webp");
   const start = await json("/api/generate-image", { method: "POST", body: form });
   assert.ok(start.jobId, "generation did not return jobId");
@@ -111,6 +113,7 @@ async function main() {
     artworkIds: generated.map((work) => work.id),
     batchId: generated[0].batchId,
     parentId: root.id,
+    model: model || "default",
     creditsBefore,
     creditsAfter,
   }));

@@ -53,6 +53,13 @@ export function isNewApiFlowImageModel(model: string) {
   );
 }
 
+export function isOpenAIImagesEditModel(model: string) {
+  return (
+    model.startsWith("gpt-image") ||
+    /^naumi-image-(?:auto|economy|standard|premium)$/i.test(model)
+  );
+}
+
 function aspectLabel(model: string) {
   if (model.endsWith("four-three")) return "横版 4:3";
   if (model.endsWith("three-four")) return "竖版 3:4";
@@ -125,7 +132,7 @@ export async function getImageModelCatalog(
   const openaiModels = primary.models.map((id) => ({
     id,
     label: id,
-    supportsEdit: id.startsWith("gpt-image"),
+    supportsEdit: isOpenAIImagesEditModel(id),
     provider: "openai-images" as const,
   }));
   const flowModels = (await discoverNewApiModels()).map((id) => ({
