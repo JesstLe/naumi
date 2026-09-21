@@ -235,6 +235,7 @@ try {
   await expect(textToolbar.getByRole("button", { name: "添加图片引用" })).toBeVisible();
   await expect(textDock).toHaveCSS("background-color", "rgb(25, 27, 33)");
   await expect(textPrompt).toHaveCSS("color", "rgb(231, 233, 238)");
+  await expect(textPrompt).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(textDockFooter).toHaveCSS("border-top-color", "rgb(42, 45, 54)");
   await expect(textGenerateButton).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(textToolbar).toHaveCSS("background-color", "rgb(25, 27, 33)");
@@ -244,6 +245,7 @@ try {
   await expect(textNodeTitle).toHaveCSS("color", "rgb(48, 54, 65)");
   await expect(textDock).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(textPrompt).toHaveCSS("color", "rgb(48, 54, 65)");
+  await expect(textPrompt).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(textDockFooter).toHaveCSS("border-top-color", "rgb(237, 240, 243)");
   await expect(textGenerateButton).toHaveCSS("background-color", "rgb(32, 36, 44)");
   await expect(textToolbar).toHaveCSS("border-color", "rgb(42, 45, 54)");
@@ -358,6 +360,9 @@ try {
   }, { timeout: 30_000 }).toBe(2);
   pass("dragging an image output to blank canvas creates a new text node with the image in context");
 
+  textState = await (await api.get(`/api/canvas/text-nodes?email=${email}`)).json();
+  const textNodeBeforeReload = textState.nodes?.find((node) => node.id === persistedTextNode.id);
+  assert(textNodeBeforeReload, "persisted text node missing before refresh");
   await page.reload();
   await expect(page.locator('.react-flow__node[data-id^="text-"]')).toHaveCount(2, { timeout: 30_000 });
   await expect(page.locator(`.react-flow__node[data-id="${generatedArtwork.id}"]`)).toHaveCount(1);
@@ -367,8 +372,8 @@ try {
   const restoredTextNode = page.locator(
     `.react-flow__node[data-id="${persistedTextNode.id}"]`
   );
-  await expect(restoredTextNode).toHaveCSS("width", `${resizedTextNode.width}px`);
-  await expect(restoredTextNode).toHaveCSS("height", `${resizedTextNode.height}px`);
+  await expect(restoredTextNode).toHaveCSS("width", `${textNodeBeforeReload.width}px`);
+  await expect(restoredTextNode).toHaveCSS("height", `${textNodeBeforeReload.height}px`);
   assert.deepEqual(pageErrors, []);
   pass("refresh restores text size, both connection directions, and the image @mention without browser runtime errors");
 
