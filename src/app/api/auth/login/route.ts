@@ -9,6 +9,7 @@ import { getUser, getUserPasswordHash } from "@/lib/db";
 import { verifyPassword } from "@/lib/pw";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
+import { loginIdentifierToEmail } from "@/lib/account-identity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,11 +29,11 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "请求无效" }, { status: 400 });
   }
-  const email = String(body.email ?? "").trim().toLowerCase();
+  const email = loginIdentifierToEmail(String(body.email ?? ""));
   const password = String(body.password ?? "");
   const hash = await getUserPasswordHash(email);
   if (!hash || !verifyPassword(password, hash)) {
-    return NextResponse.json({ error: "邮箱或密码错误" }, { status: 401 });
+    return NextResponse.json({ error: "用户名、邮箱或密码错误" }, { status: 401 });
   }
   const user = await getUser(email);
   const res = NextResponse.json({ ok: true, user });
