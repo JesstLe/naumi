@@ -8526,7 +8526,7 @@ export function CanvasClient() {
                     }
                   }}
                   className={cn(
-                    "min-h-[54px] min-w-[160px] max-h-[50vh] flex-1 resize border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none focus-visible:ring-0",
+                    "min-h-[54px] min-w-[160px] max-h-[50vh] flex-1 resize border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none focus-visible:border-0 focus-visible:bg-transparent focus-visible:ring-0",
                     lightCanvas
                       ? "text-[#303641] placeholder:text-[#929aa6]"
                       : "text-[#e7e9ee] placeholder:text-[#818895]"
