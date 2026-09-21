@@ -227,21 +227,30 @@ try {
 
   const textToolbar = page.getByTestId("text-node-toolbar");
   const textDock = page.getByTestId("text-node-dock");
+  const textDockFooter = page.getByTestId("text-node-dock-footer");
+  const textGenerateButton = textDock.getByTitle("文字生成");
   await expect(textToolbar).toBeVisible();
   await expect(textToolbar.getByRole("button", { name: "智能帮写" })).toBeVisible();
   await expect(textToolbar.getByRole("button", { name: "生成图片" })).toBeVisible();
   await expect(textToolbar.getByRole("button", { name: "添加图片引用" })).toBeVisible();
   await expect(textDock).toHaveCSS("background-color", "rgb(25, 27, 33)");
+  await expect(textPrompt).toHaveCSS("color", "rgb(231, 233, 238)");
+  await expect(textDockFooter).toHaveCSS("border-top-color", "rgb(42, 45, 54)");
+  await expect(textGenerateButton).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(textToolbar).toHaveCSS("background-color", "rgb(25, 27, 33)");
   const textNodeTitle = textNode.getByTestId("text-node-title");
   await expect(textNodeTitle).toHaveCSS("color", "rgb(226, 230, 237)");
   await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
   await expect(textNodeTitle).toHaveCSS("color", "rgb(48, 54, 65)");
+  await expect(textDock).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(textPrompt).toHaveCSS("color", "rgb(48, 54, 65)");
+  await expect(textDockFooter).toHaveCSS("border-top-color", "rgb(237, 240, 243)");
+  await expect(textGenerateButton).toHaveCSS("background-color", "rgb(32, 36, 44)");
   await expect(textToolbar).toHaveCSS("border-color", "rgb(42, 45, 54)");
   await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
   await expect(textNodeTitle).toHaveCSS("color", "rgb(226, 230, 237)");
   await expect(textToolbar).toHaveCSS("border-color", "rgb(64, 68, 79)");
-  pass("text selection uses the image-style dark toolbar and dock while node labels adapt to light and dark canvas themes");
+  pass("text selection keeps the image-style toolbar while the input dock and node labels adapt to light and dark canvas themes");
 
   for (const viewport of [
     { width: 2560, height: 1440 },
