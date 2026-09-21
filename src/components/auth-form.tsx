@@ -498,12 +498,12 @@ export function AuthForm({
         {/* 开源版单用户:只要密码;多用户:邮箱 + 密码 */}
         {!pwMode && (
           <IconField
-            icon={Mail}
-            type="email"
+            icon={multiMode && !isSignUp ? User : Mail}
+            type={multiMode && !isSignUp ? "text" : "email"}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            autoComplete="email"
+            placeholder={multiMode && !isSignUp ? "用户名或邮箱" : "you@example.com"}
+            autoComplete={multiMode && !isSignUp ? "username" : "email"}
             required
           />
         )}

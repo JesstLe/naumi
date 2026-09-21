@@ -6,10 +6,25 @@
 
 const PHONE_DOMAIN =
   process.env.NEXT_PUBLIC_PHONE_EMAIL_DOMAIN || "phone.starzeco.com";
+export const USERNAME_DOMAIN =
+  process.env.NEXT_PUBLIC_USERNAME_EMAIL_DOMAIN || "username.naumi.local";
 
 /** True when the account's email is the internal synthetic phone email. */
 export function isPhoneAccount(email: string | undefined | null): boolean {
   return !!email && email.endsWith(`@${PHONE_DOMAIN}`);
+}
+
+/** True when the account key was generated from a short login username. */
+export function isUsernameAccount(email: string | undefined | null): boolean {
+  return !!email && email.endsWith(`@${USERNAME_DOMAIN}`);
+}
+
+/** Resolve a login field as either a real email or a synthetic username email. */
+export function loginIdentifierToEmail(identifier: string): string {
+  const normalized = identifier.trim().toLowerCase();
+  return normalized.includes("@")
+    ? normalized
+    : `${normalized}@${USERNAME_DOMAIN}`;
 }
 
 /** Mask an 11-digit mainland phone: 138****8888. */
@@ -22,5 +37,5 @@ export function maskPhone(p: string): string {
  * accounts, whose email is synthetic/internal).
  */
 export function displayEmail(email: string | undefined | null): string {
-  return !email || isPhoneAccount(email) ? "" : email;
+  return !email || isPhoneAccount(email) || isUsernameAccount(email) ? "" : email;
 }
