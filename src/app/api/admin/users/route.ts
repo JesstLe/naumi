@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   dbEnabled,
+  getOrCreateUser,
+  setUserPassword,
   listAllUsers,
   adminStats,
   listLedger,
@@ -18,6 +20,7 @@ import {
 } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
 import { proEnabled } from "@/lib/edition";
+import { hashPassword } from "@/lib/pw";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,6 +82,8 @@ export async function POST(req: Request) {
     ip?: string;
     reason?: string;
     note?: string;
+    name?: string;
+    password?: string;
   };
   try {
     body = await req.json();
@@ -108,7 +113,30 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "缺少 email" }, { status: 400 });
     }
 
-    if (action === "role") {
+    if (action === "create") {
+      // 管理员创建用户:邮箱+姓名+初始密码(可选发放积分由后续 adjust 完成)
+      const name = (body.name ?? "").trim().slice(0, 40);
+      const password = (body.password ?? "").trim();
+      if (password.length < 6) {
+        return NextResponse.json({ error: "密码至少 6 位" }, { status: 400 });
+      }
+      const existing = await getUser(email);
+      if (existing) {
+        return NextResponse.json({ error: "该邮箱已存在" }, { status: 409 });
+      }
+      await getOrCreateUser(email, name);
+      await setUserPassword(email, hashPassword(password));
+    } else if (action === "reset-password") {
+      const password = (body.password ?? "").trim();
+      if (password.length < 6) {
+        return NextResponse.json({ error: "密码至少 6 位" }, { status: 400 });
+      }
+      const existing = await getUser(email);
+      if (!existing) {
+        return NextResponse.json({ error: "用户不存在" }, { status: 404 });
+      }
+      await setUserPassword(email, hashPassword(password));
+    } else if (action === "role") {
       await setUserRole(email, body.role === "admin" ? "admin" : "user");
     } else if (action === "adjust") {
       const d = Math.trunc(Number(body.delta) || 0);

@@ -7,6 +7,7 @@ import {
   Loader2,
   ShieldCheck,
   KeyRound,
+  UserPlus,
   Cpu,
   Users,
   ImageIcon,
@@ -198,11 +199,15 @@ type UserActionPayload = {
     | "note"
     | "delete"
     | "ban-ip"
-    | "unban-ip";
+    | "unban-ip"
+    | "create"
+    | "reset-password";
   email?: string;
   role?: string;
   delta?: number;
   months?: number; // 赠送积分有效期(月);0=永久。仅 adjust 加分时用
+  name?: string;
+  password?: string;
   banned?: boolean;
   ip?: string;
   reason?: string;
@@ -386,6 +391,10 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [usersData, setUsersData] = useState<UsersData | null>(null);
+  // 创建用户表单
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserName, setNewUserName] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
   const [ipInput, setIpInput] = useState("");
   const [ipReason, setIpReason] = useState("");
   const [detail, setDetail] = useState<MemberDetail | null>(null);
@@ -627,6 +636,36 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
     )
       return;
     void userAction({ action: "ban", email: u.email, banned: !u.banned });
+  }
+
+  function createUser() {
+    const email = newUserEmail.trim().toLowerCase();
+    const name = newUserName.trim();
+    const password = newUserPassword;
+    if (!email || password.length < 6) {
+      setMsg({ ok: false, text: "邮箱必填,密码至少 6 位" });
+      return;
+    }
+    void userAction({
+      action: "create",
+      email,
+      name,
+      password,
+    }).then(() => {
+      setNewUserEmail("");
+      setNewUserName("");
+      setNewUserPassword("");
+    });
+  }
+
+  function resetPassword(u: AdminUser) {
+    const password = window.prompt(`为 ${u.email} 设置新密码(至少 6 位):`);
+    if (!password) return;
+    if (password.trim().length < 6) {
+      setMsg({ ok: false, text: "密码至少 6 位" });
+      return;
+    }
+    void userAction({ action: "reset-password", email: u.email, password: password.trim() });
   }
 
   function removeUser(u: AdminUser) {
@@ -1322,6 +1361,14 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
                           </button>
                           <button
                             disabled={busy}
+                            onClick={() => resetPassword(u)}
+                            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-c-text2 hover:bg-secondary disabled:opacity-50"
+                          >
+                            <KeyRound className="h-3 w-3" />
+                            重置密码
+                          </button>
+                          <button
+                            disabled={busy}
                             onClick={() => removeUser(u)}
                             className="inline-flex items-center gap-1 rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                           >
@@ -1344,6 +1391,46 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
               onChange={setUserPage}
               totalLabel={`共 ${usersData.users.length} 位用户`}
             />
+
+            {/* 新建用户 */}
+            <div className="rounded-2xl border border-border bg-card p-6 card-shadow">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                <UserPlus className="h-4 w-4 text-primary" />
+                新建用户
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  value={newUserEmail}
+                  onChange={(e) => setNewUserEmail(e.target.value)}
+                  placeholder="邮箱，如 xiaomei@naumi.local"
+                  className="sm:max-w-[240px]"
+                />
+                <Input
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  placeholder="姓名(选填)"
+                  className="sm:max-w-[160px]"
+                />
+                <Input
+                  type="password"
+                  value={newUserPassword}
+                  onChange={(e) => setNewUserPassword(e.target.value)}
+                  placeholder="初始密码(至少 6 位)"
+                  className="sm:max-w-[200px]"
+                />
+                <Button
+                  disabled={busy}
+                  onClick={createUser}
+                  className="shrink-0"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  创建
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                创建后可在列表里给该用户调积分/设角色;注册赠送积分照常发放。
+              </p>
+            </div>
 
             {/* 已封禁 IP 管理 */}
             <div className="rounded-2xl border border-border bg-card p-6 card-shadow">
