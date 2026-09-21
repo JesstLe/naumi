@@ -8468,7 +8468,7 @@ export function CanvasClient() {
             </div>
           )}
 
-          {/* 文字生成节点：与图片节点共用深色工作台视觉，并在深色画布上加强边界。 */}
+          {/* 文字生成节点：布局与图片节点一致，配色跟随画布黑/白主题。 */}
           {selectedText && !readOnly && (
             <div
               key={`tdock-${selectedText.id}`}
@@ -8479,8 +8479,10 @@ export function CanvasClient() {
                 width: canvasSize.width ? Math.max(1, Math.min(820, canvasSize.width - 24)) : 820,
               }}
               className={cn(
-                "cz-anim-bottom absolute z-20 flex max-w-[calc(100%-1rem)] resize flex-col overflow-auto rounded-[18px] border bg-[#191b21] text-[#e7e9ee] shadow-2xl",
-                lightCanvas ? "border-[#2a2d36]" : "border-[#40444f]"
+                "cz-anim-bottom absolute z-20 flex max-w-[calc(100%-1rem)] resize flex-col overflow-auto rounded-[18px] border shadow-2xl",
+                lightCanvas
+                  ? "border-[#dfe4ea] bg-white text-[#252933] shadow-[0_18px_45px_rgba(7,12,24,0.18)]"
+                  : "border-[#40444f] bg-[#191b21] text-[#e7e9ee]"
               )}
             >
               <div className="flex items-start gap-2 px-3.5 pb-2 pt-3">
@@ -8488,7 +8490,12 @@ export function CanvasClient() {
                   type="button"
                   title={t("canvas.textAddReference")}
                   onClick={() => setTextReferenceMenuOpen((open) => !open)}
-                  className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-[9px] border border-[#2a2d36] bg-[#1f2229] text-[#b9c0cb] transition-colors hover:border-[#4a505c] hover:text-white"
+                  className={cn(
+                    "mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-[9px] border transition-colors",
+                    lightCanvas
+                      ? "border-[#dfe4ea] bg-[#f3f5f7] text-[#596271] hover:border-[#aeb8c5] hover:bg-[#e9edf2] hover:text-[#20242c]"
+                      : "border-[#2a2d36] bg-[#1f2229] text-[#b9c0cb] hover:border-[#4a505c] hover:text-white"
+                  )}
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
@@ -8518,16 +8525,26 @@ export function CanvasClient() {
                       void generateTextNode();
                     }
                   }}
-                  className="min-h-[54px] min-w-[160px] max-h-[50vh] flex-1 resize border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed text-[#e7e9ee] shadow-none placeholder:text-[#818895] focus-visible:ring-0"
+                  className={cn(
+                    "min-h-[54px] min-w-[160px] max-h-[50vh] flex-1 resize border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none focus-visible:ring-0",
+                    lightCanvas
+                      ? "text-[#303641] placeholder:text-[#929aa6]"
+                      : "text-[#e7e9ee] placeholder:text-[#818895]"
+                  )}
                 />
                 <button
                   type="button"
                   onClick={() => setSelectedTextId(null)}
                   aria-label={t("canvas.close")}
-                  className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-[#9aa1ae] hover:bg-[#1f2229] hover:text-white"
+                  className={cn(
+                    "flex h-7 w-7 flex-none items-center justify-center rounded-full transition-colors",
+                    lightCanvas
+                      ? "text-[#8a93a0] hover:bg-[#f1f3f5] hover:text-[#303641]"
+                      : "text-[#9aa1ae] hover:bg-[#1f2229] hover:text-white"
+                  )}
                 >
                   <X className="h-4 w-4" />
-                  </button>
+                </button>
               </div>
               {/* @提及选图:输入 @ 触发,点击=插入 @图片名 并绑引用(等同连线) */}
               {mentionState && selectedText && (() => {
@@ -8542,9 +8559,19 @@ export function CanvasClient() {
                 return (
                   <div
                     data-testid="mention-picker"
-                    className="border-t border-[#2a2d36] bg-[#17191f] px-3.5 py-2.5"
+                    className={cn(
+                      "border-t px-3.5 py-2.5",
+                      lightCanvas
+                        ? "border-[#edf0f3] bg-[#fafbfd]"
+                        : "border-[#2a2d36] bg-[#17191f]"
+                    )}
                   >
-                    <p className="mb-2 text-[11px] font-medium text-[#9aa1ae]">
+                    <p
+                      className={cn(
+                        "mb-2 text-[11px] font-medium",
+                        lightCanvas ? "text-[#697383]" : "text-[#9aa1ae]"
+                      )}
+                    >
                       {t("canvas.mentionPickHint")}
                     </p>
                     {options.length ? (
@@ -8564,7 +8591,12 @@ export function CanvasClient() {
                               setMentionState(null);
                               void updateTextReference(selectedText.id, member.id, true);
                             }}
-                            className="flex max-w-[210px] items-center gap-1.5 rounded-[8px] border border-[#343842] bg-[#20232a] px-2 py-1 text-[11px] font-medium text-[#cdd2da] transition-colors hover:border-[#6bd7ec] hover:text-[#8fe7f5]"
+                            className={cn(
+                              "flex max-w-[210px] items-center gap-1.5 rounded-[8px] border px-2 py-1 text-[11px] font-medium transition-colors",
+                              lightCanvas
+                                ? "border-[#dfe4ea] bg-white text-[#46505e] hover:border-[#8794a4] hover:bg-[#f2f5f8] hover:text-[#20242c]"
+                                : "border-[#343842] bg-[#20232a] text-[#cdd2da] hover:border-[#6bd7ec] hover:text-[#8fe7f5]"
+                            )}
                           >
                             <span
                               className="h-5 w-5 flex-none bg-cover bg-center"
@@ -8577,14 +8609,33 @@ export function CanvasClient() {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-[11px] text-[#7f8793]">{t("canvas.mentionEmpty")}</p>
+                      <p
+                        className={cn(
+                          "text-[11px]",
+                          lightCanvas ? "text-[#7b8492]" : "text-[#7f8793]"
+                        )}
+                      >
+                        {t("canvas.mentionEmpty")}
+                      </p>
                     )}
                   </div>
                 );
               })()}
               {textReferenceMenuOpen && (
-                <div className="border-t border-[#2a2d36] bg-[#17191f] px-3.5 py-2.5">
-                  <p className="mb-2 text-[11px] font-medium text-[#9aa1ae]">
+                <div
+                  className={cn(
+                    "border-t px-3.5 py-2.5",
+                    lightCanvas
+                      ? "border-[#edf0f3] bg-[#fafbfd]"
+                      : "border-[#2a2d36] bg-[#17191f]"
+                  )}
+                >
+                  <p
+                    className={cn(
+                      "mb-2 text-[11px] font-medium",
+                      lightCanvas ? "text-[#697383]" : "text-[#9aa1ae]"
+                    )}
+                  >
                     {t("canvas.textReferenceHint")}
                   </p>
                   <div className="flex max-h-24 flex-wrap gap-1.5 overflow-auto">
@@ -8600,8 +8651,12 @@ export function CanvasClient() {
                           className={cn(
                             "flex max-w-[210px] items-center gap-1.5 border px-2 py-1 text-[11px] font-medium transition-colors",
                             checked
-                              ? "border-[#6bd7ec] bg-[#163842] text-[#8fe7f5]"
-                              : "border-[#343842] bg-[#20232a] text-[#cdd2da] hover:border-[#596170]"
+                              ? lightCanvas
+                                ? "border-[#8aa6b2] bg-[#e8f2f5] text-[#315a68]"
+                                : "border-[#6bd7ec] bg-[#163842] text-[#8fe7f5]"
+                              : lightCanvas
+                                ? "border-[#dfe4ea] bg-white text-[#46505e] hover:border-[#9aa6b5] hover:bg-[#f2f5f8]"
+                                : "border-[#343842] bg-[#20232a] text-[#cdd2da] hover:border-[#596170]"
                           )}
                         >
                           <span
@@ -8618,11 +8673,21 @@ export function CanvasClient() {
                 </div>
               )}
               {!!selectedTextRefs.length && (
-                <div className="flex flex-wrap gap-1.5 border-t border-[#2a2d36] px-3.5 py-2">
+                <div
+                  className={cn(
+                    "flex flex-wrap gap-1.5 border-t px-3.5 py-2",
+                    lightCanvas ? "border-[#edf0f3]" : "border-[#2a2d36]"
+                  )}
+                >
                   {selectedTextRefs.map((reference) => (
                     <span
                       key={reference.id}
-                      className="flex max-w-[220px] items-center gap-1 rounded-[8px] border border-[#24505f] bg-[#163842] py-0.5 pl-2 pr-1 text-[11px] font-semibold text-[#8fe7f5]"
+                      className={cn(
+                        "flex max-w-[220px] items-center gap-1 rounded-[8px] border py-0.5 pl-2 pr-1 text-[11px] font-semibold",
+                        lightCanvas
+                          ? "border-[#b9d0d8] bg-[#e8f2f5] text-[#315a68]"
+                          : "border-[#24505f] bg-[#163842] text-[#8fe7f5]"
+                      )}
                     >
                       <span className="truncate">@{reference.title}</span>
                       <button
@@ -8631,7 +8696,12 @@ export function CanvasClient() {
                         onClick={() =>
                           void updateTextReference(selectedText.id, reference.id, false)
                         }
-                        className="flex h-4 w-4 flex-none items-center justify-center rounded text-[#79bcc7] hover:bg-[#24505f] hover:text-white"
+                        className={cn(
+                          "flex h-4 w-4 flex-none items-center justify-center rounded transition-colors",
+                          lightCanvas
+                            ? "text-[#668a96] hover:bg-[#cfe2e8] hover:text-[#284d59]"
+                            : "text-[#79bcc7] hover:bg-[#24505f] hover:text-white"
+                        )}
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -8642,8 +8712,21 @@ export function CanvasClient() {
               {textError && (
                 <p className="px-12 pb-2 text-xs font-medium text-red-400">{textError}</p>
               )}
-              <div className="flex min-h-12 flex-wrap items-center gap-2 border-t border-[#2a2d36] px-3.5 py-2.5">
-                <span className="max-w-[220px] truncate rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12px] font-semibold text-[#e7e9ee]">
+              <div
+                data-testid="text-node-dock-footer"
+                className={cn(
+                  "flex min-h-12 flex-wrap items-center gap-2 border-t px-3.5 py-2.5",
+                  lightCanvas ? "border-[#edf0f3]" : "border-[#2a2d36]"
+                )}
+              >
+                <span
+                  className={cn(
+                    "max-w-[220px] truncate rounded-[9px] px-2.5 py-1.5 text-[12px] font-semibold",
+                    lightCanvas
+                      ? "bg-[#f1f3f5] text-[#39414d]"
+                      : "bg-[#1f2229] text-[#e7e9ee]"
+                  )}
+                >
                   {textModel}
                 </span>
                 <span className="flex-1" />
@@ -8652,7 +8735,12 @@ export function CanvasClient() {
                   disabled={assistBusy}
                   onClick={() => setProductPicker({ textNodeIds: [selectedText.id] })}
                   title={t("canvas.assistWriteHint")}
-                  className="flex h-9 items-center gap-1.5 rounded-[9px] border border-[#343842] px-3 text-[11px] font-semibold text-[#d5d8df] transition-colors hover:bg-[#24272f] hover:text-white disabled:opacity-45"
+                  className={cn(
+                    "flex h-9 items-center gap-1.5 rounded-[9px] border px-3 text-[11px] font-semibold transition-colors disabled:opacity-45",
+                    lightCanvas
+                      ? "border-[#d8dde4] bg-white text-[#46505e] hover:border-[#aeb7c3] hover:bg-[#f2f4f6] hover:text-[#20242c]"
+                      : "border-[#343842] text-[#d5d8df] hover:bg-[#24272f] hover:text-white"
+                  )}
                 >
                   {assistBusy ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -8665,12 +8753,22 @@ export function CanvasClient() {
                   type="button"
                   onClick={() => setGenImageMenu({ textNodeIds: [selectedText.id] })}
                   title={t("canvas.genImagesHint")}
-                  className="flex h-9 items-center gap-1.5 rounded-[9px] border border-[#343842] px-3 text-[11px] font-semibold text-[#d5d8df] transition-colors hover:bg-[#24272f] hover:text-white"
+                  className={cn(
+                    "flex h-9 items-center gap-1.5 rounded-[9px] border px-3 text-[11px] font-semibold transition-colors",
+                    lightCanvas
+                      ? "border-[#d8dde4] bg-white text-[#46505e] hover:border-[#aeb7c3] hover:bg-[#f2f4f6] hover:text-[#20242c]"
+                      : "border-[#343842] text-[#d5d8df] hover:bg-[#24272f] hover:text-white"
+                  )}
                 >
                   <ImageIcon className="h-3.5 w-3.5" />
                   {t("canvas.genImages")}
                 </button>
-                <span className="text-[11px] font-semibold text-[#6bd7ec]">
+                <span
+                  className={cn(
+                    "text-[11px] font-semibold",
+                    lightCanvas ? "text-[#547886]" : "text-[#6bd7ec]"
+                  )}
+                >
                   ◆ {selectedTextRefs.length}/5
                 </span>
                 <button
@@ -8678,7 +8776,10 @@ export function CanvasClient() {
                   onClick={() => void generateTextNode()}
                   disabled={!textPrompt.trim() || selectedText.status === "generating"}
                   title={t("canvas.textGenerate")}
-                  className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-white text-[#111] transition-opacity hover:opacity-90 disabled:opacity-45"
+                  className={cn(
+                    "flex h-10 w-10 items-center justify-center rounded-[11px] transition-opacity hover:opacity-90 disabled:opacity-45",
+                    lightCanvas ? "bg-[#20242c] text-white" : "bg-white text-[#111]"
+                  )}
                 >
                   {selectedText.status === "generating" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
