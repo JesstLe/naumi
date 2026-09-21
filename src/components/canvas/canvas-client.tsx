@@ -604,6 +604,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
     status: CanvasTextNode["status"];
     sourceRefs?: Array<{ id: string; title: string }>;
     selected?: boolean;
+    lightCanvas?: boolean;
   };
   const active = selected || d.selected;
   const body = d.content || d.prompt;
@@ -627,8 +628,14 @@ function TextCanvasNode({ data, selected }: NodeProps) {
           })
         }
       />
-      {/* 标题行:与图片节点完全一致(30px 高、clamp 字号、浅色文字) */}
-      <div className="mb-1.5 flex h-[30px] flex-none items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none text-[#e2e6ed]">
+      {/* 标题行跟随画布明暗切换，避免浅色画布上的浅色标题失去对比度。 */}
+      <div
+        data-testid="text-node-title"
+        className={cn(
+          "mb-1.5 flex h-[30px] flex-none items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none",
+          d.lightCanvas ? "text-[#303641]" : "text-[#e2e6ed]"
+        )}
+      >
         <span className="min-w-0 flex-1 truncate" title={d.title || "文字生成"}>
           {d.title || "文字生成"}
         </span>
@@ -2424,6 +2431,7 @@ export function CanvasClient() {
             title: reference.title,
           })),
           selected: textNode.id === selectedTextId,
+          lightCanvas,
           width: textNode.width,
           height: textNode.height,
         },
@@ -2484,6 +2492,7 @@ export function CanvasClient() {
     activeKey,
     pendNodes,
     textNodes,
+    lightCanvas,
   ]);
 
   // 受控节点状态(支持拖拽);仅当底层数据/位置真正变化时重新灌入,拖拽过程中不重置。
@@ -2506,7 +2515,7 @@ export function CanvasClient() {
           (n.data as { status?: string }).status ?? ""
         }:${String((n.data as { label?: string }).label ?? "")}:${String(
           (n.data as { content?: string }).content ?? ""
-        ).length}:${((n.data as { sourceRefs?: Array<{ id: string }> }).sourceRefs ?? [])
+        ).length}:${(n.data as { lightCanvas?: boolean }).lightCanvas ? 1 : 0}:${((n.data as { sourceRefs?: Array<{ id: string }> }).sourceRefs ?? [])
           .map((reference) => reference.id)
           .join(",")}`
     )
@@ -2560,7 +2569,7 @@ export function CanvasClient() {
   }, [selectedId, selectedPendId, selectedTextId, rfNodes, viewport]);
 
   // dock 宽度随可用画布收缩；高分屏、Windows 缩放和窄窗口都以真实 CSS 像素重新布局。
-  const preferredDockWidth = selectedTextId ? 700 : 820;
+  const preferredDockWidth = 820;
   const dockWidth = canvasSize.width
     ? Math.max(1, Math.min(preferredDockWidth, canvasSize.width - 16))
     : preferredDockWidth;
@@ -2618,6 +2627,27 @@ export function CanvasClient() {
     const name = nodeRenameValue.trim();
     setRenamingNodeId(null);
     if (!id || !user || readOnly || !name) return;
+    const textNode = textNodes.find((node) => node.id === id);
+    if (textNode) {
+      if (textNode.title === name) return;
+      const updated = {
+        ...textNode,
+        title: name,
+        updatedAt: new Date().toISOString(),
+      };
+      setTextNodes((current) =>
+        current.map((node) => (node.id === id ? updated : node))
+      );
+      try {
+        await persistTextNode(updated);
+      } catch (error) {
+        setTextNodes((current) =>
+          current.map((node) => (node.id === id ? textNode : node))
+        );
+        flashTip(error instanceof Error ? error.message : t("canvas.genFail"));
+      }
+      return;
+    }
     const cur = (works ?? []).find((w) => w.id === id);
     if (!cur || cur.title === name) return;
     setWorks((prev) =>
@@ -5612,7 +5642,7 @@ export function CanvasClient() {
   // 生成完成后自动平移聚焦到新节点
   useEffect(() => {
     if (!focusId || !rfRef.current) return;
-    if (!nodes.some((n) => n.id === focusId)) return;
+    if (!rfNodes.some((node) => node.id === focusId)) return;
     rfRef.current.fitView({
       nodes: [{ id: focusId }],
       duration: 600,
@@ -5620,7 +5650,7 @@ export function CanvasClient() {
       padding: 0.6,
     });
     setFocusId(null);
-  }, [focusId, nodes]);
+  }, [focusId, rfNodes]);
 
   // macOS / Windows 共用键盘层：⌘ 或 Ctrl 作为主修饰键；输入框内不接管系统快捷键。
   useEffect(() => {
@@ -7839,6 +7869,91 @@ export function CanvasClient() {
             </div>
           )}
 
+          {/* 文字节点工具条：沿用图片节点的层级、尺寸和交互密度，动作替换为文字可用能力。 */}
+          {selectedText && !readOnly && topbarStyle && (
+            <div
+              key={`text-toolbar-${selectedText.id}`}
+              data-testid="text-node-toolbar"
+              style={{ left: topbarStyle.left, top: topbarStyle.top }}
+              className={cn(
+                "cz-anim-top absolute z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 overflow-x-auto rounded-[14px] border bg-[#191b21] p-1.5 text-[#e7e9ee] shadow-2xl",
+                lightCanvas ? "border-[#2a2d36]" : "border-[#40444f]"
+              )}
+            >
+              <button
+                type="button"
+                disabled={assistBusy}
+                onClick={() => setProductPicker({ textNodeIds: [selectedText.id] })}
+                title={t("canvas.assistWriteHint")}
+                className="flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors hover:bg-[#1f2229] disabled:opacity-40"
+              >
+                {assistBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <PenLine className="h-4 w-4" />
+                )}
+                {t("canvas.assistWrite")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setGenImageMenu({ textNodeIds: [selectedText.id] })}
+                title={t("canvas.genImagesHint")}
+                className="flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors hover:bg-[#1f2229]"
+              >
+                <ImageIcon className="h-4 w-4" />
+                {t("canvas.genImages")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTextReferenceMenuOpen((open) => !open)}
+                title={t("canvas.textAddReference")}
+                className="flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors hover:bg-[#1f2229]"
+              >
+                <Plus className="h-4 w-4" />
+                {t("canvas.textAddReference")}
+              </button>
+              <span className="mx-1.5 h-5 w-px flex-none bg-[#2a2d36]" />
+              <button
+                type="button"
+                disabled={!selectedText.content}
+                onClick={() =>
+                  void copyText(selectedText.content).then((ok) => ok && showCopyTip())
+                }
+                title={t("canvas.copyToClipboard")}
+                className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[16px] transition-colors hover:bg-[#1f2229] disabled:opacity-40"
+              >
+                ⧉
+              </button>
+              <button
+                type="button"
+                onClick={() => setFocusId(selectedText.id)}
+                title={t("canvas.dockFocus")}
+                className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[15px] text-[#cdd2da] transition-colors hover:bg-[#1f2229] hover:text-white"
+              >
+                ⊡
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNodeRenameValue(selectedText.title);
+                  setRenamingNodeId(selectedText.id);
+                }}
+                title={t("canvas.editName")}
+                className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[16px] transition-colors hover:bg-[#1f2229]"
+              >
+                ✏️
+              </button>
+              <button
+                type="button"
+                onClick={() => void removeTextNode(selectedText.id)}
+                title={t("canvas.deleteNodeTitle")}
+                className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[#9aa1ae] transition-colors hover:bg-[#ff6b63]/15 hover:text-[#ff6b63]"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
           {ocrArtworkId && (
             <aside
               aria-label="在线改字面板"
@@ -7951,8 +8066,8 @@ export function CanvasClient() {
 
           {/* 重命名节点:在节点标签处弹出内联输入(✏️ 触发),失焦/回车确定、Esc 取消 */}
           {renamingNodeId &&
-            selected &&
-            renamingNodeId === selected.id &&
+            (selected || selectedText) &&
+            renamingNodeId === (selected?.id ?? selectedText?.id) &&
             nodeScreen && (
               <div
                 className="absolute z-30 -translate-x-1/2"
@@ -8353,7 +8468,7 @@ export function CanvasClient() {
             </div>
           )}
 
-          {/* 文字生成节点：浅色卡片与输入 dock 对齐参考图，结果保留在当前画布项目。 */}
+          {/* 文字生成节点：与图片节点共用深色工作台视觉，并在深色画布上加强边界。 */}
           {selectedText && !readOnly && (
             <div
               key={`tdock-${selectedText.id}`}
@@ -8361,16 +8476,19 @@ export function CanvasClient() {
               style={dockStyle ?? {
                 left: 12,
                 bottom: 12,
-                width: canvasSize.width ? Math.max(1, Math.min(700, canvasSize.width - 24)) : 700,
+                width: canvasSize.width ? Math.max(1, Math.min(820, canvasSize.width - 24)) : 820,
               }}
-              className="cz-anim-bottom absolute z-20 flex max-w-[calc(100%-1rem)] resize flex-col overflow-auto border border-[#e2e6ec] bg-white text-[#252933] shadow-[0_18px_45px_rgba(7,12,24,0.22)]"
+              className={cn(
+                "cz-anim-bottom absolute z-20 flex max-w-[calc(100%-1rem)] resize flex-col overflow-auto rounded-[18px] border bg-[#191b21] text-[#e7e9ee] shadow-2xl",
+                lightCanvas ? "border-[#2a2d36]" : "border-[#40444f]"
+              )}
             >
               <div className="flex items-start gap-2 px-3.5 pb-2 pt-3">
                 <button
                   type="button"
                   title={t("canvas.textAddReference")}
                   onClick={() => setTextReferenceMenuOpen((open) => !open)}
-                  className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[#f3f5f7] text-[#596271] transition-colors hover:bg-[#e9edf2]"
+                  className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-[9px] border border-[#2a2d36] bg-[#1f2229] text-[#b9c0cb] transition-colors hover:border-[#4a505c] hover:text-white"
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
@@ -8400,13 +8518,13 @@ export function CanvasClient() {
                       void generateTextNode();
                     }
                   }}
-                  className="min-h-[54px] min-w-[160px] max-h-[50vh] flex-1 resize border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed text-[#303641] shadow-none placeholder:text-[#a6adb7] focus-visible:ring-0"
+                  className="min-h-[54px] min-w-[160px] max-h-[50vh] flex-1 resize border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed text-[#e7e9ee] shadow-none placeholder:text-[#818895] focus-visible:ring-0"
                 />
                 <button
                   type="button"
                   onClick={() => setSelectedTextId(null)}
                   aria-label={t("canvas.close")}
-                  className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-[#9aa1ab] hover:bg-[#f3f5f7] hover:text-[#303641]"
+                  className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-[#9aa1ae] hover:bg-[#1f2229] hover:text-white"
                 >
                   <X className="h-4 w-4" />
                   </button>
@@ -8424,9 +8542,9 @@ export function CanvasClient() {
                 return (
                   <div
                     data-testid="mention-picker"
-                    className="border-t border-[#edf0f3] bg-[#fafbfd] px-3.5 py-2.5"
+                    className="border-t border-[#2a2d36] bg-[#17191f] px-3.5 py-2.5"
                   >
-                    <p className="mb-2 text-[11px] font-medium text-[#7a8390]">
+                    <p className="mb-2 text-[11px] font-medium text-[#9aa1ae]">
                       {t("canvas.mentionPickHint")}
                     </p>
                     {options.length ? (
@@ -8446,7 +8564,7 @@ export function CanvasClient() {
                               setMentionState(null);
                               void updateTextReference(selectedText.id, member.id, true);
                             }}
-                            className="flex max-w-[210px] items-center gap-1.5 border border-[#dfe4ea] bg-white px-2 py-1 text-[11px] font-medium text-[#5f6875] transition-colors hover:border-[#6bd7ec] hover:text-[#168ba0]"
+                            className="flex max-w-[210px] items-center gap-1.5 rounded-[8px] border border-[#343842] bg-[#20232a] px-2 py-1 text-[11px] font-medium text-[#cdd2da] transition-colors hover:border-[#6bd7ec] hover:text-[#8fe7f5]"
                           >
                             <span
                               className="h-5 w-5 flex-none bg-cover bg-center"
@@ -8459,14 +8577,14 @@ export function CanvasClient() {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-[11px] text-[#a1a8b3]">{t("canvas.mentionEmpty")}</p>
+                      <p className="text-[11px] text-[#7f8793]">{t("canvas.mentionEmpty")}</p>
                     )}
                   </div>
                 );
               })()}
               {textReferenceMenuOpen && (
-                <div className="border-t border-[#edf0f3] bg-[#fafbfd] px-3.5 py-2.5">
-                  <p className="mb-2 text-[11px] font-medium text-[#7a8390]">
+                <div className="border-t border-[#2a2d36] bg-[#17191f] px-3.5 py-2.5">
+                  <p className="mb-2 text-[11px] font-medium text-[#9aa1ae]">
                     {t("canvas.textReferenceHint")}
                   </p>
                   <div className="flex max-h-24 flex-wrap gap-1.5 overflow-auto">
@@ -8482,8 +8600,8 @@ export function CanvasClient() {
                           className={cn(
                             "flex max-w-[210px] items-center gap-1.5 border px-2 py-1 text-[11px] font-medium transition-colors",
                             checked
-                              ? "border-[#6bd7ec] bg-[#eefbfe] text-[#168ba0]"
-                              : "border-[#dfe4ea] bg-white text-[#5f6875] hover:border-[#b8c2cd]"
+                              ? "border-[#6bd7ec] bg-[#163842] text-[#8fe7f5]"
+                              : "border-[#343842] bg-[#20232a] text-[#cdd2da] hover:border-[#596170]"
                           )}
                         >
                           <span
@@ -8500,11 +8618,11 @@ export function CanvasClient() {
                 </div>
               )}
               {!!selectedTextRefs.length && (
-                <div className="flex flex-wrap gap-1.5 border-t border-[#edf0f3] px-3.5 py-2">
+                <div className="flex flex-wrap gap-1.5 border-t border-[#2a2d36] px-3.5 py-2">
                   {selectedTextRefs.map((reference) => (
                     <span
                       key={reference.id}
-                      className="flex max-w-[220px] items-center gap-1 border border-[#ccecf2] bg-[#eefbfe] py-0.5 pl-2 pr-1 text-[11px] font-semibold text-[#168ba0]"
+                      className="flex max-w-[220px] items-center gap-1 rounded-[8px] border border-[#24505f] bg-[#163842] py-0.5 pl-2 pr-1 text-[11px] font-semibold text-[#8fe7f5]"
                     >
                       <span className="truncate">@{reference.title}</span>
                       <button
@@ -8513,7 +8631,7 @@ export function CanvasClient() {
                         onClick={() =>
                           void updateTextReference(selectedText.id, reference.id, false)
                         }
-                        className="flex h-4 w-4 flex-none items-center justify-center text-[#65aab6] hover:bg-white hover:text-[#1b7282]"
+                        className="flex h-4 w-4 flex-none items-center justify-center rounded text-[#79bcc7] hover:bg-[#24505f] hover:text-white"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -8522,10 +8640,10 @@ export function CanvasClient() {
                 </div>
               )}
               {textError && (
-                <p className="px-12 pb-2 text-xs font-medium text-[#d24b45]">{textError}</p>
+                <p className="px-12 pb-2 text-xs font-medium text-red-400">{textError}</p>
               )}
-              <div className="flex min-h-11 flex-wrap items-center gap-2 border-t border-[#edf0f3] px-3.5 py-1.5">
-                <span className="max-w-[220px] truncate text-[12px] font-medium text-[#626b78]">
+              <div className="flex min-h-12 flex-wrap items-center gap-2 border-t border-[#2a2d36] px-3.5 py-2.5">
+                <span className="max-w-[220px] truncate rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12px] font-semibold text-[#e7e9ee]">
                   {textModel}
                 </span>
                 <span className="flex-1" />
@@ -8534,7 +8652,7 @@ export function CanvasClient() {
                   disabled={assistBusy}
                   onClick={() => setProductPicker({ textNodeIds: [selectedText.id] })}
                   title={t("canvas.assistWriteHint")}
-                  className="flex h-8 items-center gap-1.5 rounded-full bg-[#f1f3f5] px-3 text-[11px] font-semibold text-[#4d5665] transition-colors hover:bg-[#e7ebef] hover:text-[#20242c] disabled:opacity-45"
+                  className="flex h-9 items-center gap-1.5 rounded-[9px] border border-[#343842] px-3 text-[11px] font-semibold text-[#d5d8df] transition-colors hover:bg-[#24272f] hover:text-white disabled:opacity-45"
                 >
                   {assistBusy ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -8547,12 +8665,12 @@ export function CanvasClient() {
                   type="button"
                   onClick={() => setGenImageMenu({ textNodeIds: [selectedText.id] })}
                   title={t("canvas.genImagesHint")}
-                  className="flex h-8 items-center gap-1.5 rounded-full bg-[#f1f3f5] px-3 text-[11px] font-semibold text-[#4d5665] transition-colors hover:bg-[#e7ebef] hover:text-[#20242c]"
+                  className="flex h-9 items-center gap-1.5 rounded-[9px] border border-[#343842] px-3 text-[11px] font-semibold text-[#d5d8df] transition-colors hover:bg-[#24272f] hover:text-white"
                 >
                   <ImageIcon className="h-3.5 w-3.5" />
                   {t("canvas.genImages")}
                 </button>
-                <span className="text-[11px] font-medium text-[#20bdd9]">
+                <span className="text-[11px] font-semibold text-[#6bd7ec]">
                   ◆ {selectedTextRefs.length}/5
                 </span>
                 <button
@@ -8560,7 +8678,7 @@ export function CanvasClient() {
                   onClick={() => void generateTextNode()}
                   disabled={!textPrompt.trim() || selectedText.status === "generating"}
                   title={t("canvas.textGenerate")}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f1f3f5] text-[#8e96a2] transition-colors hover:bg-[#e7ebef] hover:text-[#20242c] disabled:opacity-45"
+                  className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-white text-[#111] transition-opacity hover:opacity-90 disabled:opacity-45"
                 >
                   {selectedText.status === "generating" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

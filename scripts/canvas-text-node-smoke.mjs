@@ -225,6 +225,24 @@ try {
   assert(resizedTextNode.height <= 1200);
   pass("text node can be freely resized and persists its width and height");
 
+  const textToolbar = page.getByTestId("text-node-toolbar");
+  const textDock = page.getByTestId("text-node-dock");
+  await expect(textToolbar).toBeVisible();
+  await expect(textToolbar.getByRole("button", { name: "智能帮写" })).toBeVisible();
+  await expect(textToolbar.getByRole("button", { name: "生成图片" })).toBeVisible();
+  await expect(textToolbar.getByRole("button", { name: "添加图片引用" })).toBeVisible();
+  await expect(textDock).toHaveCSS("background-color", "rgb(25, 27, 33)");
+  await expect(textToolbar).toHaveCSS("background-color", "rgb(25, 27, 33)");
+  const textNodeTitle = textNode.getByTestId("text-node-title");
+  await expect(textNodeTitle).toHaveCSS("color", "rgb(226, 230, 237)");
+  await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
+  await expect(textNodeTitle).toHaveCSS("color", "rgb(48, 54, 65)");
+  await expect(textToolbar).toHaveCSS("border-color", "rgb(42, 45, 54)");
+  await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
+  await expect(textNodeTitle).toHaveCSS("color", "rgb(226, 230, 237)");
+  await expect(textToolbar).toHaveCSS("border-color", "rgb(64, 68, 79)");
+  pass("text selection uses the image-style dark toolbar and dock while node labels adapt to light and dark canvas themes");
+
   for (const viewport of [
     { width: 2560, height: 1440 },
     { width: 1366, height: 768 },
@@ -235,12 +253,30 @@ try {
     await page.setViewportSize(viewport);
     const dock = page.getByTestId("text-node-dock");
     await expect(dock).toBeVisible();
+    await expect.poll(async () => {
+      const box = await dock.boundingBox();
+      return Boolean(
+        box &&
+        box.x >= -1 &&
+        box.x + box.width <= viewport.width + 1 &&
+        box.y >= -1 &&
+        box.y + box.height <= viewport.height + 1
+      );
+    }).toBe(true);
     const dockBox = await dock.boundingBox();
     assert(dockBox, `text dock missing at ${viewport.width}x${viewport.height}`);
     assert(dockBox.x >= -1, JSON.stringify({ viewport, dockBox }));
     assert(dockBox.x + dockBox.width <= viewport.width + 1, JSON.stringify({ viewport, dockBox }));
     assert(dockBox.y >= -1, JSON.stringify({ viewport, dockBox }));
     assert(dockBox.y + dockBox.height <= viewport.height + 1, JSON.stringify({ viewport, dockBox }));
+    await expect.poll(async () => {
+      const box = await page.getByTestId("text-node-toolbar").boundingBox();
+      return Boolean(box && box.x >= -1 && box.x + box.width <= viewport.width + 1);
+    }).toBe(true);
+    const toolbarBox = await page.getByTestId("text-node-toolbar").boundingBox();
+    assert(toolbarBox, `text toolbar missing at ${viewport.width}x${viewport.height}`);
+    assert(toolbarBox.x >= -1, JSON.stringify({ viewport, toolbarBox }));
+    assert(toolbarBox.x + toolbarBox.width <= viewport.width + 1, JSON.stringify({ viewport, toolbarBox }));
     assert.equal(
       await page.getByPlaceholder(/描述你的问题、文案或内容需求/).evaluate(
         (element) => getComputedStyle(element).resize
@@ -259,7 +295,7 @@ try {
   await page.getByRole("button", { name: "缩放至50%" }).click();
   await page.waitForTimeout(300);
   await textNode.click();
-  await page.getByTitle("添加图片引用").click();
+  await page.getByTestId("text-node-dock").getByTitle("添加图片引用").click();
   await page.locator("button").filter({ hasText: "@标题：轻盈随行保温杯" }).last().click();
   await expect(page.getByText(`@${generatedArtwork.title}`, { exact: true }).first()).toBeVisible();
   const imageContextPrompt = "根据引用图片写一段商品外观描述";
