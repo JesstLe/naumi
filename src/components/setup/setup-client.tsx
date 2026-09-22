@@ -19,7 +19,7 @@ type Txt = {
   finishHint: string;
   apiKeyLabel: string;
   apiKeyPlaceholder: string;
-  apiKeyHelp: string; // 含微信号,由 JSX 渲染加粗
+  apiKeyHelp: string;
   licenseLabel: string;
   licenseOptional: string;
   licensePlaceholder: string;
@@ -56,7 +56,7 @@ const ZH: Txt = {
   finishHint: "以下配置会安全地保存到你的实例,无需改代码或环境变量。",
   apiKeyLabel: "OpenAI API Key",
   apiKeyPlaceholder: "粘贴你的 sk-... ",
-  apiKeyHelp: "不知道 API Key 怎么获取?可联系作者微信 xingze063,或付费由作者代为提供 / 配置。",
+  apiKeyHelp: "不知道 API Key 怎么获取?请查看对应服务商的开发者文档并创建 API Key。",
   licenseLabel: "License Key",
   licenseOptional: "选填 · Pro 授权",
   licensePlaceholder: "NOVA-XXXX-XXXX-XXXX-XXXX",
@@ -95,7 +95,7 @@ const EN: Txt = {
   apiKeyLabel: "OpenAI API Key",
   apiKeyPlaceholder: "Paste your sk-...",
   apiKeyHelp:
-    "Not sure how to get an API Key? Contact the author on WeChat xingze063, or pay the author to provide/configure one.",
+    "Not sure how to get an API Key? Check your provider's developer documentation to create one.",
   licenseLabel: "License Key",
   licenseOptional: "Optional · Pro license",
   licensePlaceholder: "NOVA-XXXX-XXXX-XXXX-XXXX",
@@ -129,8 +129,6 @@ const EN: Txt = {
   savedEnter: "I've saved it — enter admin",
   genericError: "Save failed, please try again.",
 };
-
-const WECHAT_ID = "xingze063";
 
 export function SetupClient({ brand }: { brand: string }) {
   const { locale } = useI18n();
@@ -205,9 +203,6 @@ export function SetupClient({ brand }: { brand: string }) {
       setBusy(false);
     }
   }
-
-  // 帮助文案里把微信号加粗渲染(zh/en 通用:按微信号切分前后两段)。
-  const [helpBefore, helpAfter] = t.apiKeyHelp.split(WECHAT_ID);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-c-bg px-4 py-10">
@@ -295,9 +290,7 @@ export function SetupClient({ brand }: { brand: string }) {
                   disabled={busy}
                 />
                 <p className="text-[12px] leading-relaxed text-c-text3">
-                  {helpBefore}
-                  <span className="font-semibold text-c-text2">{WECHAT_ID}</span>
-                  {helpAfter}
+                  {t.apiKeyHelp}
                 </p>
               </div>
 

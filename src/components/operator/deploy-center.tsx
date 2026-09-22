@@ -415,9 +415,6 @@ export function DeployCenter({ embedded = false }: { embedded?: boolean }) {
                   <Link href="/admin" className="font-medium text-acc hover:underline">后台「积分计费」</Link>
                   :配置注册赠送与扣费规则;
                 </li>
-                <li>
-                  遇到问题可联系作者微信 <b className="text-c-text2">xingze063</b>(优先支持)。
-                </li>
               </ul>
             </div>
             {updateInfo?.reachable && <UpdateCard info={updateInfo} toast={toast} />}

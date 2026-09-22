@@ -2,7 +2,7 @@
 import { copyText } from "@/lib/clipboard";
 
 import * as React from "react";
-import { Check, Copy, ExternalLink, KeyRound, MessageCircle } from "lucide-react";
+import { Check, Copy, ExternalLink, KeyRound } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -13,12 +13,11 @@ import { RMB_PRO_LICENSE_FEN } from "@/lib/mock-data";
 
 /**
  * Pro 授权弹窗 —— 官网直售自动发货(2026-07-03 起,替代爱发电主通道)。
- * 主流程:填接收邮箱(游客可购,无需注册)→ 支付宝/微信扫码付 ¥1,999 → 回调自动生成 License Key
+ * 主流程:填接收邮箱(游客可购,无需注册)→ 扫码支付 ¥1,999 → 回调自动生成 License Key
  * (绑定买家邮箱)→ 轮询订单拿 Key → 验证换取一键部署命令。
  * 次流程:已有 Key 直接验证(POST /api/pro/redeem)。
- * 非购买站(海外官方站/自托管实例)引导到国内官方站;兜底 = 联系微信。
+ * 非购买站(海外官方站/自托管实例)引导到国内官方站。
  */
-const WECHAT_ID = "xingze063";
 const BUY_HOST = "ai.starzeco.com";
 const BUY_URL = `https://${BUY_HOST}/deploy`;
 
@@ -131,7 +130,7 @@ export function ProDownloadModal({
           qrContent: String(data.qrContent),
         });
       } else {
-        toast(data.error || "下单失败,请稍后再试或联系微信", "error");
+        toast(data.error || "下单失败,请稍后再试或检查订单状态", "error");
       }
     } catch {
       toast("网络异常,请稍后再试", "error");
@@ -163,7 +162,7 @@ export function ProDownloadModal({
       await new Promise((res) => setTimeout(res, 1500));
     }
     setPay(null);
-    toast(`已到账,但拉取授权超时 —— 请联系微信 ${WECHAT_ID} 补发`, "error");
+    toast("已到账,但拉取授权超时 —— 请稍后刷新订单状态", "error");
   }
 
   async function doCopy(text: string, key: "docker" | "license") {
@@ -242,11 +241,6 @@ export function ProDownloadModal({
                 </a>
               </Button>
             )}
-            <p className="mt-2 flex items-center gap-1 text-[11.5px] text-c-text4">
-              <MessageCircle className="h-3.5 w-3.5" />
-              支付遇到问题?加微信 <b className="text-c-text3">{WECHAT_ID}</b>
-              ,支持开具凭证。
-            </p>
           </div>
 
           {/* 已有 Key:直接验证 */}
@@ -334,7 +328,7 @@ export function ProDownloadModal({
             </div>
             <p className="mt-2 text-[11.5px] leading-relaxed text-c-text4">
               Key 已绑定你的账号邮箱并同步发放,部署后在「License Key
-              激活」处填入即可解锁 Pro 全部能力;丢失可联系微信 {WECHAT_ID} 找回。
+              激活」处填入即可解锁 Pro 全部能力,请妥善保存。
             </p>
           </div>
         </div>

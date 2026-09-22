@@ -1114,6 +1114,81 @@ export async function adminStats(): Promise<{
   };
 }
 
+export type AdminUsageUserRow = {
+  email: string;
+  name: string;
+  role: string;
+  credits: number;
+  operations: number;
+  balance: number;
+  lastUsedAt: string | null;
+};
+
+export type AdminUsageSummary = {
+  rangeDays: number;
+  totals: { credits: number; operations: number; activeUsers: number };
+  users: AdminUsageUserRow[];
+  daily: { date: string; credits: number; operations: number }[];
+};
+
+/** Admin usage overview backed by settled credit ledger entries. */
+export async function adminUsageSummary(daysRaw = 30): Promise<AdminUsageSummary> {
+  await ensureSchema();
+  const rangeDays = Math.min(365, Math.max(1, Math.trunc(Number(daysRaw) || 30)));
+  const pool = getPool();
+  const usageWhere = `l.kind = 'consume' AND l.delta < 0
+    AND l.reason <> '管理员调整积分'
+    AND l.created_at >= now() - ($1::text || ' days')::interval`;
+  const [users, daily] = await Promise.all([
+    pool.query(
+      `SELECT u.email, u.name, u.role,
+              COALESCE(SUM(-l.delta), 0)::int AS credits,
+              COUNT(l.id)::int AS operations,
+              MAX(l.created_at) AS last_used_at,
+              (u.credits_total - u.credits_used)::int AS balance
+         FROM app_users u
+         LEFT JOIN app_ledger l ON l.email = u.email AND ${usageWhere}
+        GROUP BY u.email, u.name, u.role, u.credits_total, u.credits_used
+        ORDER BY credits DESC, last_used_at DESC NULLS LAST, u.joined_at ASC`,
+      [rangeDays]
+    ),
+    pool.query(
+      `SELECT to_char(l.created_at::date, 'YYYY-MM-DD') AS date,
+              COALESCE(SUM(-l.delta), 0)::int AS credits,
+              COUNT(*)::int AS operations
+         FROM app_ledger l
+        WHERE ${usageWhere}
+        GROUP BY l.created_at::date
+        ORDER BY l.created_at::date ASC`,
+      [rangeDays]
+    ),
+  ]);
+  const mappedUsers = users.rows.map((r) => ({
+    email: r.email,
+    name: r.name,
+    role: r.role,
+    credits: Number(r.credits),
+    operations: Number(r.operations),
+    balance: Number(r.balance),
+    lastUsedAt: r.last_used_at ? new Date(r.last_used_at).toISOString() : null,
+  }));
+  const mappedDaily = daily.rows.map((r) => ({
+    date: r.date,
+    credits: Number(r.credits),
+    operations: Number(r.operations),
+  }));
+  return {
+    rangeDays,
+    totals: {
+      credits: mappedUsers.reduce((sum, row) => sum + row.credits, 0),
+      operations: mappedUsers.reduce((sum, row) => sum + row.operations, 0),
+      activeUsers: mappedUsers.filter((row) => row.operations > 0).length,
+    },
+    users: mappedUsers,
+    daily: mappedDaily,
+  };
+}
+
 export async function setUserRole(
   emailRaw: string,
   role: string
