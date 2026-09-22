@@ -99,6 +99,7 @@ import {
   resolutionCost,
   resolutionForLongSide,
 } from "@/lib/mock-data";
+import { routeImageModel } from "@/lib/image-model-routing";
 
 /** Supabase 模式补 Authorization；原生账号模式依靠同源 HttpOnly cookie。 */
 async function privateFetch(input: RequestInfo | URL, init: RequestInit = {}) {
@@ -2984,7 +2985,11 @@ export function CanvasClient() {
       fd.append("resolution", opts?.resolution || source.resolution || "1K");
       fd.append("style", opts?.style ?? "");
       fd.append("count", String(opts?.count ?? 1));
-      if (genModel) fd.append("model", genModel);
+      if (genModel) {
+        // The node owns the ratio/resolution choice. The server repeats this
+        // routing as the authoritative guard before calling the upstream model.
+        fd.append("model", routeImageModel(genModel, requestedRatio, imageModels));
+      }
       if (opts?.transparent) fd.append("transparent", "1");
       if (opts?.ratiogen) fd.append("ratiogen", "1");
       fd.append("email", user.email);

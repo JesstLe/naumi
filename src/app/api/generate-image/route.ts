@@ -37,6 +37,7 @@ import {
   isOpenAIImagesEditModel,
   type ImageModelDescriptor,
 } from "@/lib/image-model-catalog";
+import { routeImageModel } from "@/lib/image-model-routing";
 import { generateNewApiImage } from "@/lib/new-api-image";
 import {
   assertUserImageBaseUrlAllowed,
@@ -1063,8 +1064,10 @@ export async function POST(request: Request) {
   const userDefaultModel = actorEmail
     ? await getUserDefaultImageModel(actorEmail)
     : null;
-  const model = p.model || userDefaultModel || defaultModel;
-  const imageModel = (await getImageModelCatalog(actorEmail)).find((item) => item.id === model);
+  const catalog = await getImageModelCatalog(actorEmail);
+  const requestedModel = p.model || userDefaultModel || defaultModel;
+  const model = routeImageModel(requestedModel, p.ratio, catalog);
+  const imageModel = catalog.find((item) => item.id === model);
   if (!imageModel) {
     return NextResponse.json(
       {
@@ -1073,6 +1076,11 @@ export async function POST(request: Request) {
           : "所选生图模型不可用，请刷新模型列表后重试",
       },
       { status: 400 }
+    );
+  }
+  if (model !== requestedModel) {
+    console.info(
+      `[gen-model-route] requested=${requestedModel} routed=${model} ratio=${p.ratio} resolution=${p.resolution}`
     );
   }
   if (p.images.length > 0 && !imageModel.supportsEdit) {
