@@ -47,6 +47,7 @@ import { useI18n } from "@/lib/i18n/locale-context";
 import { usePaymentConfig } from "@/lib/payment-context";
 import { cn } from "@/lib/utils";
 import { compactImageModelOptions } from "@/lib/image-model-routing";
+import { ModelIcon } from "@/components/ui/model-icon";
 
 function fmt(s: string, vars: Record<string, string | number>): string {
   return Object.entries(vars).reduce(
@@ -766,7 +767,14 @@ export function GenerateClient({
                   onChange={pickModel}
                   options={imageModels.map((item) => ({
                     value: item.id,
-                    label: item.supportsEdit ? item.label : `${item.label} · ${t("canvas.modelTextOnly")}`,
+                    label: (
+                      <span className="flex min-w-0 items-center gap-2">
+                        <ModelIcon modelId={item.id} size={16} />
+                        <span className="truncate">
+                          {item.supportsEdit ? item.label : `${item.label} · ${t("canvas.modelTextOnly")}`}
+                        </span>
+                      </span>
+                    ),
                   }))}
                 />
               </div>

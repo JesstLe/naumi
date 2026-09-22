@@ -103,6 +103,7 @@ import {
   compactImageModelOptions,
   routeImageModel,
 } from "@/lib/image-model-routing";
+import { ModelIcon } from "@/components/ui/model-icon";
 
 /** Supabase 模式补 Authorization；原生账号模式依靠同源 HttpOnly cookie。 */
 async function privateFetch(input: RequestInfo | URL, init: RequestInit = {}) {
@@ -5824,8 +5825,11 @@ export function CanvasClient() {
       options={imageModels.map((item) => ({
         value: item.id,
         label: (
-          <span className="flex items-center justify-between gap-3">
-            <span>{item.label}</span>
+          <span className="flex min-w-0 items-center justify-between gap-3">
+            <span className="flex min-w-0 items-center gap-2">
+              <ModelIcon modelId={item.id} size={16} />
+              <span className="truncate">{item.label}</span>
+            </span>
             {!item.supportsEdit && (
               <span className="text-[10px] text-[#697180]">{t("canvas.modelTextOnly")}</span>
             )}
@@ -5836,7 +5840,7 @@ export function CanvasClient() {
       triggerClass="flex max-w-[190px] cursor-pointer items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee] disabled:cursor-default disabled:opacity-70"
       trigger={
         <>
-          <Sparkles className="h-3.5 w-3.5 flex-none" />
+          <ModelIcon modelId={genModel} size={15} />
           <span className="truncate" title={t("canvas.dockModelHint")}>
             {activeImageModelLabel || t("canvas.dockModel")}
           </span>
