@@ -99,7 +99,10 @@ import {
   resolutionCost,
   resolutionForLongSide,
 } from "@/lib/mock-data";
-import { routeImageModel } from "@/lib/image-model-routing";
+import {
+  compactImageModelOptions,
+  routeImageModel,
+} from "@/lib/image-model-routing";
 
 /** Supabase 模式补 Authorization；原生账号模式依靠同源 HttpOnly cookie。 */
 async function privateFetch(input: RequestInfo | URL, init: RequestInit = {}) {
@@ -1372,15 +1375,15 @@ export function CanvasClient() {
           ? config.imageModels.filter((item) => item?.id && item?.label)
           : [];
         const fallback = config.defaultImageModel || options[0]?.id || "";
+        const saved = window.localStorage.getItem("naumi:canvas-image-model") || "";
         const normalized = options.length
-          ? options
+          ? compactImageModelOptions(options, [fallback, saved])
           : fallback
             ? [{ id: fallback, label: fallback, supportsEdit: fallback.startsWith("gpt-image") }]
             : [];
         setImageModels(normalized);
         setGenModel((current) => {
           if (normalized.some((item) => item.id === current)) return current;
-          const saved = window.localStorage.getItem("naumi:canvas-image-model") || "";
           if (normalized.some((item) => item.id === saved)) return saved;
           return normalized.find((item) => item.id === fallback)?.id || normalized[0]?.id || "";
         });
