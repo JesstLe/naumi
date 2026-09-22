@@ -3,6 +3,7 @@ import {
   getUserImageProvider,
   userImageModelId,
 } from "@/lib/user-image-provider";
+import { imageModelFamily } from "@/lib/image-model-routing";
 
 export type ImageModelProvider =
   | "openai-images"
@@ -71,15 +72,10 @@ function aspectLabel(model: string) {
 
 function flowModelLabel(model: string) {
   const aspect = aspectLabel(model);
-  if (model.startsWith("gemini-3.1-flash-image-")) {
-    return `Gemini 3.1 Flash · ${aspect}`;
-  }
-  if (model.startsWith("gemini-3.0-pro-image-")) {
-    return `Gemini 3.0 Pro · ${aspect}`;
-  }
-  if (model.startsWith("imagen-4.0-generate-preview-")) {
-    return `Imagen 4 Preview · ${aspect}`;
-  }
+  const family = imageModelFamily(model);
+  if (family === "nano-banana-2") return `Nano Banana 2 · ${aspect}`;
+  if (family === "nano-banana-pro") return `Nano Banana Pro · ${aspect}`;
+  if (family === "imagen-4") return `Imagen 4 · ${aspect}`;
   return model;
 }
 
