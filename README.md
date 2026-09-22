@@ -149,7 +149,7 @@ curl -fsSL https://raw.githubusercontent.com/JesstLe/naumi/main/install.sh | bas
 
 打开 **http://<你的服务器公网IP>**(本机测试用 `http://localhost`) — 首启配置向导会引导你填入 OpenAI API Key(必填)、管理员密码(用于登录后台)、Pro License Key(选填)与站点名称,填完即用,**无需改任何代码或配置文件**。默认监听 **80 端口**,记得在云厂商安全组放行 80。
 
-> 不知道 API Key 怎么获取?可联系作者微信 **xingze063**,或付费由作者代为提供 / 配置。
+> 不知道 API Key 怎么获取?请查看对应服务商的开发者文档并创建 API Key。
 
 Compose 自带 Postgres 与持久化数据卷;生成的图片默认存本地磁盘(`/data/media`),配置 Cloudflare R2 后自动切对象存储。**改了源码想用自己的构建**:在项目目录跑 `docker compose up -d --build`。
 
@@ -196,7 +196,7 @@ docker run -d --name openai-relay --restart always -p 80:80 -p 443:443 -v caddy_
 
 证书自动签发。然后大陆实例填 `OPENAI_BASE_URL=https://relay.yourdomain.com/v1`,全部生成功能即通。
 
-没有海外服务器、不想折腾?两条现成路:**云端托管**(免部署,我们代管,大陆开箱即用)或联系作者微信 **xingze063** 付费代配。海外服务器部署无需此配置。
+没有海外服务器、不想折腾?可以使用**云端托管**(免部署,大陆开箱即用),或配置任意 OpenAI 兼容中转服务。海外服务器部署无需此配置。
 
 ### 🌐 服务器推荐
 
