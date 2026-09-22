@@ -65,12 +65,12 @@ try{
  let response=await api.post('/api/auth/register',{data:{email,password,name:'New API 生图分组验收'}});assert.equal(response.status(),200,await response.text());
  const config=await(await api.get('/api/config')).json();
  assert.deepEqual(config.imageModels.map(item=>item.id),['gpt-image-2','gemini-3.1-flash-image-square','gemini-3.1-flash-image-landscape','imagen-4.0-generate-preview-landscape']);
- assert.equal(config.imageModels[1].label,'Nano Banana 2 · 方图');assert.equal(config.imageModels[1].supportsEdit,true);assert.equal(config.imageModels[1].provider,'new-api-flow');
+ assert.equal(config.imageModels[1].label,'Nano Banana 2');assert.equal(config.imageModels[1].supportsEdit,true);assert.equal(config.imageModels[1].provider,'new-api-flow');
  pass('runtime config discovers and labels the New API image-group catalog');
 
  browser=await chromium.launch({channel:'chrome',headless:true,args:['--disable-gpu']});
  const context=await browser.newContext({storageState:await api.storageState(),viewport:{width:1440,height:1000}});page=await context.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));
- await page.goto(`${base}/generate`);const row=page.getByText('生图模型',{exact:true}).locator('..');await row.getByRole('button',{name:/gpt-image-2/}).click();await page.getByRole('button',{name:'Nano Banana 2 · 方图',exact:true}).click();assert.equal(await page.evaluate(()=>localStorage.getItem('naumi:generate-image-model')),'gemini-3.1-flash-image-square');pass('generation UI switches to a discovered image-group model with the Nano Banana name');
+ await page.goto(`${base}/generate`);const row=page.getByText('生图模型',{exact:true}).locator('..');await row.getByRole('button',{name:/gpt-image-2/}).click();await page.getByRole('button',{name:'Nano Banana 2',exact:true}).click();assert.equal(await page.evaluate(()=>localStorage.getItem('naumi:generate-image-model')),'gemini-3.1-flash-image-square');pass('generation UI shows only the Nano Banana model name while ratio stays in its own control');
 
  response=await api.post('/api/generate-image',{multipart:{prompt:'保持产品结构，生成白底商品图',userPrompt:'白底商品图',category:'main',ratio:'1:1',resolution:'1K',quality:'medium',count:'1',model:'gemini-3.1-flash-image-square',image:{name:'source.png',mimeType:'image/png',buffer:source},email}});assert.equal(response.status(),200,await response.text());const accepted=await response.json();
  let job;for(let i=0;i<60;i++){job=await(await api.get(`/api/generate-image?job=${accepted.jobId}`)).json();if(job.status==='done'||job.status==='error')break;await sleep(500)}assert.equal(job?.status,'done',JSON.stringify(job));assert.equal(job.images.length,1);assert.equal(flowRequests.length,1);assert.equal(flowRequests[0].model,'gemini-3.1-flash-image-square');const content=flowRequests[0].messages[0].content;assert(Array.isArray(content)&&content.some(item=>item.type==='image_url'&&item.image_url.url.startsWith('data:image/png;base64,')));

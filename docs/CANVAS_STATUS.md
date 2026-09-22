@@ -8,7 +8,7 @@
 
 ## 本轮已处理
 
-- 生图模型目录将 `gemini-3.0-pro-image-*` 显示为 **Nano Banana Pro**，将 `gemini-3.1-flash-image-*` 显示为 **Nano Banana 2**，保留真实上游模型 ID 供服务端校验和审计。
+- 生图模型目录将 `gemini-3.0-pro-image-*` 显示为 **Nano Banana Pro**，将 `gemini-3.1-flash-image-*` 显示为 **Nano Banana 2**；模型下拉只保留模型名称，比例/尺寸由后续独立控件选择，真实上游模型 ID 仍保留供服务端校验和审计。
 - 画布节点按用户选择的比例自动路由方向模型：方图→`square`、3:4→`three-four`、4:3→`four-three`，其他横竖比例→`landscape`/`portrait`；服务端再次执行同一规则，防止绕过前端。
 - 1K/2K/4K/5K 仍是节点独立的分辨率选择，由现有生成管线按所选长边执行放大与积分结算，不与 Nano Banana 方向模型 ID 混用。
 

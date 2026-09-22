@@ -1,6 +1,8 @@
 export type ImageModelRoutingOption = {
   id: string;
   provider?: string;
+  label?: string;
+  supportsEdit?: boolean;
 };
 
 const FLOW_VARIANT_SUFFIXES = [
@@ -45,4 +47,24 @@ export function imageModelFamily(model: string) {
   if (/^gemini-3\.1-flash-image-/.test(model)) return "nano-banana-2";
   if (/^imagen-4\.0-generate-preview-/.test(model)) return "imagen-4";
   return null;
+}
+
+/** Keep the model selector focused on model families; ratio is selected next. */
+export function compactImageModelOptions<T extends ImageModelRoutingOption>(
+  options: T[],
+  preferredIds: string[] = []
+): T[] {
+  const byId = new Map(options.map((item) => [item.id, item]));
+  const ordered = [
+    ...preferredIds.map((id) => byId.get(id)).filter(Boolean),
+    ...options,
+  ] as T[];
+  const seen = new Set<string>();
+  return ordered.filter((item) => {
+    const family = imageModelFamily(item.id);
+    const key = family || item.label || item.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

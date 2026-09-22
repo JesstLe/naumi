@@ -46,6 +46,7 @@ import { downloadImage } from "@/lib/download";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { usePaymentConfig } from "@/lib/payment-context";
 import { cn } from "@/lib/utils";
+import { compactImageModelOptions } from "@/lib/image-model-routing";
 
 function fmt(s: string, vars: Record<string, string | number>): string {
   return Object.entries(vars).reduce(
@@ -147,12 +148,13 @@ export function GenerateClient({
           ? config.imageModels.filter((item) => item?.id && item?.label)
           : [];
         const fallback = config.defaultImageModel || options[0]?.id || "";
-        setImageModels(options);
+        const saved = window.localStorage.getItem("naumi:generate-image-model") || "";
+        const normalized = compactImageModelOptions(options, [fallback, saved]);
+        setImageModels(normalized);
         setModel((current) => {
-          if (options.some((item) => item.id === current)) return current;
-          const saved = window.localStorage.getItem("naumi:generate-image-model") || "";
-          if (options.some((item) => item.id === saved)) return saved;
-          return options.find((item) => item.id === fallback)?.id || options[0]?.id || fallback;
+          if (normalized.some((item) => item.id === current)) return current;
+          if (normalized.some((item) => item.id === saved)) return saved;
+          return normalized.find((item) => item.id === fallback)?.id || normalized[0]?.id || fallback;
         });
       })
       .catch(() => {});

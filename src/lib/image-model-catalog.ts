@@ -71,11 +71,10 @@ function aspectLabel(model: string) {
 }
 
 function flowModelLabel(model: string) {
-  const aspect = aspectLabel(model);
   const family = imageModelFamily(model);
-  if (family === "nano-banana-2") return `Nano Banana 2 · ${aspect}`;
-  if (family === "nano-banana-pro") return `Nano Banana Pro · ${aspect}`;
-  if (family === "imagen-4") return `Imagen 4 · ${aspect}`;
+  if (family === "nano-banana-2") return "Nano Banana 2";
+  if (family === "nano-banana-pro") return "Nano Banana Pro";
+  if (family === "imagen-4") return "Imagen 4";
   return model;
 }
 
