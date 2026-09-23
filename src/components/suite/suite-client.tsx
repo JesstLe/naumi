@@ -37,6 +37,7 @@ import { GenLoader } from "@/components/gen-loader";
 import { downloadImage } from "@/lib/download";
 import { POINTS_PER_IMAGE, SUITE_PLATFORMS } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+import { TextModelSelect } from "@/components/ui/text-model-select";
 
 function fmt(s: string, vars: Record<string, string | number>): string {
   return Object.entries(vars).reduce(
@@ -598,6 +599,10 @@ export function SuiteClient() {
               上传产品图,自动出 1 主图 + 4 副图 + 8 详情页图
             </p>
           </div>
+        </div>
+        <div>
+          <p className="mb-2 text-[12.5px] font-medium text-c-text2">文字规划模型</p>
+          <TextModelSelect />
         </div>
         <div className="space-y-2">
           <label className="text-sm font-medium">

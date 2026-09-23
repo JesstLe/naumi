@@ -7,6 +7,7 @@ import { authHeader } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { cn } from "@/lib/utils";
+import { TextModelSelect } from "@/components/ui/text-model-select";
 
 type Result = {
   id: string;
@@ -250,6 +251,7 @@ export function PromptAssistPopup({
               <X className="h-4 w-4" />
             </button>
           </div>
+          <TextModelSelect className="mb-3" />
           {optBusy ? (
             <div className="flex items-center justify-center gap-2 py-14 text-[13px] text-c-text3">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -345,6 +347,9 @@ export function PromptAssistPopup({
           >
             <X className="h-4 w-4" />
           </button>
+        </div>
+        <div className="px-4 pb-2">
+          <TextModelSelect compact />
         </div>
 
         {/* 历史 */}

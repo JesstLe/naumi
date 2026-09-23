@@ -23,6 +23,7 @@ import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { getSuiteSystem, getSuitePlatformHint } from "@/lib/prompt-config";
+import { requestedTextModel } from "@/lib/text-models";
 
 // ---------------------------------------------------------------------------
 // 一键电商套图：上传产品图(+可选文字) → 自动出 1 主图 + 4 副图 + 8 详情页图。
@@ -142,7 +143,8 @@ async function planShots(
   firstImage: { buf: Buffer; type: string },
   extra: string,
   platform: string,
-  requested: RequestedShot[] | null
+  requested: RequestedShot[] | null,
+  textModel: string
 ): Promise<ShotSpec[]> {
   try {
     const dataUrl = await toVisionDataUrl(firstImage.buf, firstImage.type);
@@ -160,7 +162,7 @@ ${platHint}` : base;
     const user =
       (extra ? `补充信息：${extra}\n` : "") + "请规划这套产品的电商套图。";
     const resp = await client.chat.completions.create({
-      model: "gpt-5.6-luna",
+      model: textModel,
       messages: [
         { role: "system", content: sys },
         {
@@ -422,7 +424,8 @@ async function runSuite(
   model: string,
   useDb: boolean,
   cost: number,
-  requested: RequestedShot[] | null
+  requested: RequestedShot[] | null,
+  textModel: string
 ) {
   const set = (patch: Partial<Job>) => {
     const cur = JOBS.get(jobId);
@@ -443,7 +446,8 @@ async function runSuite(
       productImages[0],
       extra,
       platform,
-      requested
+      requested,
+      textModel
     );
     const shots: ShotResult[] = specs.map((s, i) => ({
       ...s,
@@ -736,7 +740,8 @@ export async function POST(request: Request) {
     model,
     useDb,
     cost,
-    requested
+    requested,
+    requestedTextModel(request, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna")
   );
 
   return NextResponse.json({ jobId, total: SHOT_COUNT, cost });

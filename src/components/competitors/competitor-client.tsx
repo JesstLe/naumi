@@ -10,6 +10,7 @@ import { currentImage, competitorClientId, REGION_LABELS, type CompetitorItem, t
 import { RegionEditor } from "./region-editor";
 import { bytesLabel, prepareImageUpload, uploadFormData } from "@/lib/client-image-upload";
 import "./competitors.css";
+import { TextModelSelect } from "@/components/ui/text-model-select";
 
 type UploadTask = {
   id: string; batch: string; file: File; path: string;
@@ -250,7 +251,8 @@ export function CompetitorClient() {
       </section>
       <aside className="cmp-properties">
         {item ? <>
-          <div className="cmp-panel-heading"><span>提示词</span><button disabled={busy} onClick={()=>void action("analyze")}><ScanLine size={15}/>反推提示词</button></div>
+<div className="cmp-panel-heading"><span>提示词</span><button disabled={busy} onClick={()=>void action("analyze")}><ScanLine size={15}/>反推提示词</button></div>
+<TextModelSelect compact />
           <textarea aria-label="反推提示词" rows={7} maxLength={8000} value={item.prompt} disabled={busy} placeholder="反推参考图，或直接填写生成要求" onChange={e=>change({prompt:e.target.value})}/>
           <div className="cmp-field"><label htmlFor="cmp-degree">参考方式</label><select id="cmp-degree" value={degree} onChange={e=>setDegree(e.target.value)}><option value="layout">构图与排版</option><option value="style">仅参考风格</option></select></div>
           <div className="cmp-field"><label htmlFor="cmp-product">替换为我的产品</label><select id="cmp-product" value={productId} onChange={e=>setProductId(e.target.value)}><option value="">不替换产品</option>{items.map(i=><option value={i.id} key={i.id}>{i.path}</option>)}</select><button disabled={uploading} onClick={()=>productInput.current?.click()}>上传产品图</button></div>

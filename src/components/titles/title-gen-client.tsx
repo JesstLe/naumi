@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { ToolShell } from "@/components/tools/tool-shell";
 import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 import { GenLoader } from "@/components/gen-loader";
+import { TextModelSelect } from "@/components/ui/text-model-select";
 
 const MAX_UPLOAD = 8 * 1024 * 1024;
 const ACCENT = "#F5A524";
@@ -272,6 +273,10 @@ export function TitleGenClient() {
         footerNote={L("标题生成免费,不扣积分", "Free — no credits used")}
         left={
           <>
+            <div>
+              <p className="mb-2 text-[12.5px] font-medium text-c-text2">{L("文字模型", "Text model")}</p>
+              <TextModelSelect />
+            </div>
             {/* 产品图(可选) */}
             <div>
               <p className="mb-2 text-[12.5px] font-medium text-c-text2">

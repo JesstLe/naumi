@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { requestedTextModel } from "@/lib/text-models";
 import sharp from "sharp";
 
 import { authenticatedEmail } from "@/lib/request-auth";
@@ -119,14 +120,13 @@ async function paddleOcr(buffer: Buffer, mimeType: string) {
   return collectPaddleRows(JSON.parse(raw));
 }
 
-async function visionOcr(buffer: Buffer, mimeType: string, width: number, height: number) {
+async function visionOcr(buffer: Buffer, mimeType: string, width: number, height: number, model: string) {
   const settings = await getOpenAISettings();
   // OCR belongs to the image workflow: prefer the configured OpenAI-compatible
   // image gateway. The agent gateway can be independently unavailable (for
   // example, a mainland host timing out against it), so it is only a fallback.
   const apiKey = settings.apiKey || process.env.AGENT_API_KEY;
   if (!apiKey) throw new Error("OCR 服务和视觉模型均未配置");
-  const model = process.env.PADDLE_OCR_FALLBACK_MODEL || process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna";
   const client = new OpenAI({
     apiKey,
     baseURL: (await getOpenAIBaseUrl()) || process.env.AGENT_BASE_URL || undefined,
@@ -192,7 +192,16 @@ export async function POST(request: Request) {
     } catch (error) {
       if (process.env.PADDLE_OCR_REQUIRED === "true") throw error;
       engine = "vision-fallback";
-      raw = await visionOcr(image.buffer, image.mimeType, width, height);
+      raw = await visionOcr(
+        image.buffer,
+        image.mimeType,
+        width,
+        height,
+        requestedTextModel(
+          request,
+          process.env.PADDLE_OCR_FALLBACK_MODEL || process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna"
+        )
+      );
     }
     const segments = normalizeSegments(raw, width, height);
     return NextResponse.json({

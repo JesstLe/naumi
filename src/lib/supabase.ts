@@ -28,12 +28,18 @@ export function browserSupabase(): SupabaseClient {
  * bodies — it only adds Authorization, never Content-Type.
  */
 export async function authHeader(): Promise<Record<string, string>> {
-  if (!url || !anon) return {};
+  const headers: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    const textModel = window.localStorage.getItem("naumi:text-model")?.trim();
+    if (textModel) headers["x-naumi-text-model"] = textModel;
+  }
+  if (!url || !anon) return headers;
   try {
     const { data } = await browserSupabase().auth.getSession();
     const tok = data.session?.access_token;
-    return tok ? { Authorization: `Bearer ${tok}` } : {};
+    if (tok) headers.Authorization = `Bearer ${tok}`;
+    return headers;
   } catch {
-    return {};
+    return headers;
   }
 }

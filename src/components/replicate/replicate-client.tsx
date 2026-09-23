@@ -23,6 +23,7 @@ import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
 import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 import { readToolResponse } from "@/lib/tool-response";
+import { TextModelSelect } from "@/components/ui/text-model-select";
 
 // ---------------------------------------------------------------------------
 // 爆款图复刻工作台(对标竞品 爆款复刻):
@@ -329,6 +330,7 @@ export function ReplicateClient() {
                 {analyzing ? L("分析中…", "Analyzing…") : reversePrompt ? L("重新反推", "Analyze again") : L("反推参考图", "Analyze reference")}
               </button>
             </div>
+            <TextModelSelect compact />
             <textarea id="replicate-reverse-prompt" value={reversePrompt} onChange={e => setReversePrompt(e.target.value)} maxLength={8000} placeholder={L("先反推参考图，再编辑构图、配色、光线和排版。留空生成时会自动反推。", "Analyze the reference, then edit composition, colors, lighting and layout. A blank prompt is analyzed automatically on generation.")} className="min-h-[120px] w-full rounded-lg border border-c-border bg-white px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary" />
           </div>
 

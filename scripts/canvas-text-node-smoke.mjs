@@ -146,10 +146,26 @@ try {
   await expect(textNode).toHaveCount(1, { timeout: 30_000 });
   const textPrompt = page.getByPlaceholder(/描述你的问题、文案或内容需求/);
   await expect(textPrompt).toHaveValue(/生成可直接使用的标题/);
+  const initialPromptBox = await textPrompt.boundingBox();
+  assert(initialPromptBox && initialPromptBox.height >= 50 && initialPromptBox.height <= 70);
+  await textPrompt.fill("长文本 ".repeat(180));
+  await expect.poll(async () => (await textPrompt.boundingBox())?.height || 0).toBeGreaterThan(70);
+  const cappedPromptBox = await textPrompt.boundingBox();
+  assert(cappedPromptBox && cappedPromptBox.height <= 146);
+  await textPrompt.fill("根据商品信息生成可直接使用的标题、卖点与详情文案");
+  await page.getByTitle("展开编辑窗口").click();
+  await expect(page.getByTitle("收起编辑窗口")).toBeVisible();
+  await page.getByTitle("收起编辑窗口").click();
+  pass("text composer starts at about two lines, grows to a capped height, and supports windowed expansion");
+
+  await page.getByTitle(/文字模型/).click();
+  await page.getByRole("button", { name: "自定义模型 ID" }).click();
+  await page.getByPlaceholder("例如 gpt-5.6-luna").fill("fixture-custom-text");
+  await page.getByRole("button", { name: "使用此模型" }).click();
   await page.getByTitle("文字生成").click();
   await expect(textNode).toContainText(generatedText, { timeout: 30_000 });
   assert.equal(textRequests.length, 1);
-  assert.equal(textRequests[0].model, "fixture-text-model");
+  assert.equal(textRequests[0].model, "fixture-custom-text");
   assert.match(textRequests[0].messages.at(-1).content, /商品信息/);
   pass("marketing-copy workflow creates a persisted text node and calls the configured text model");
 
@@ -198,6 +214,7 @@ try {
   // 等生成完成后的单节点聚焦动画落稳，再适应全部节点，避免两个视口动画互相覆盖。
   await page.waitForTimeout(1000);
   await page.getByTitle("适应视图").click();
+  await page.waitForTimeout(1200);
   await expect(textNode).toBeVisible();
   await textNode.click();
   const resizeHandle = textNode.locator(
@@ -224,6 +241,15 @@ try {
   assert(resizedTextNode.width <= 1200);
   assert(resizedTextNode.height <= 1200);
   pass("text node can be freely resized and persists its width and height");
+
+  const editableOutput = textNode.getByLabel("编辑生成文本");
+  await editableOutput.fill("已人工编辑的逆向提示词内容");
+  await editableOutput.blur();
+  await expect.poll(async () => {
+    const state = await (await api.get(`/api/canvas/text-nodes?email=${email}`)).json();
+    return state.nodes?.find((node) => node.id === persistedTextNode.id)?.content;
+  }, { timeout: 30_000 }).toBe("已人工编辑的逆向提示词内容");
+  pass("generated and reverse-prompt node text is directly editable and persists on blur");
 
   const textToolbar = page.getByTestId("text-node-toolbar");
   const textDock = page.getByTestId("text-node-dock");
@@ -292,7 +318,7 @@ try {
       await page.getByPlaceholder(/描述你的问题、文案或内容需求/).evaluate(
         (element) => getComputedStyle(element).resize
       ),
-      "both"
+      "none"
     );
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),

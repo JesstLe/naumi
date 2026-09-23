@@ -10,6 +10,7 @@ import { storageEnabled, uploadImage } from "@/lib/storage";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
+import { requestedTextModel } from "@/lib/text-models";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,7 +106,7 @@ export async function POST(req: Request) {
     ctx.push(hasImage ? "已提供产品图(看图后据此写)" : "无产品图(据描述写)");
     const text = `${ctx.join(";")}\n产品描述/卖点:${idea || "(空,看图自行判断)"}`;
     const resp = await client.chat.completions.create({
-      model: "gpt-5.6-luna",
+      model: requestedTextModel(req, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna"),
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: sys },
