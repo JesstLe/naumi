@@ -182,6 +182,10 @@ try {
   await expect(pendingNode).toHaveCount(1);
   const imagePrompt = page.getByPlaceholder(/描述想生成的画面/);
   await expect(imagePrompt).toHaveValue(generatedText);
+  await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
+  await expect(pendingNode.locator(".canvas-ui-node-card")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(page.getByTestId("pending-node-dock")).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
+  await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
   pass("dragging the text output to blank canvas creates an image node with generated copy as its prompt");
 
   await page.getByRole("button", { name: "↑", exact: true }).click();
@@ -215,6 +219,10 @@ try {
   await page.waitForTimeout(1000);
   await page.getByTitle("适应视图").click();
   await page.waitForTimeout(1200);
+  for (let attempt = 0; attempt < 2 && !(await textNode.isVisible()); attempt++) {
+    await page.getByTitle("适应视图").click();
+    await page.waitForTimeout(1200);
+  }
   await expect(textNode).toBeVisible();
   await textNode.click();
   const resizeHandle = textNode.locator(
@@ -244,7 +252,9 @@ try {
 
   const editableOutput = textNode.getByLabel("编辑生成文本");
   await editableOutput.fill("已人工编辑的逆向提示词内容");
-  await editableOutput.blur();
+  await expect(editableOutput).toHaveValue("已人工编辑的逆向提示词内容");
+  await page.waitForTimeout(150);
+  await editableOutput.press("Tab");
   await expect.poll(async () => {
     const state = await (await api.get(`/api/canvas/text-nodes?email=${email}`)).json();
     return state.nodes?.find((node) => node.id === persistedTextNode.id)?.content;
@@ -254,6 +264,11 @@ try {
   const textToolbar = page.getByTestId("text-node-toolbar");
   const textDock = page.getByTestId("text-node-dock");
   const textDockFooter = page.getByTestId("text-node-dock-footer");
+  const textNodeCard = textNode.getByTestId("text-node-card");
+  const projectChrome = page.getByTestId("canvas-project-chrome");
+  const topActions = page.getByTestId("canvas-top-actions");
+  const mainToolbar = page.getByTestId("canvas-main-toolbar");
+  const viewToolbar = page.getByTestId("canvas-view-toolbar");
   const textGenerateButton = textDock.getByTitle("文字生成");
   await expect(textToolbar).toBeVisible();
   await expect(textToolbar.getByRole("button", { name: "智能帮写" })).toBeVisible();
@@ -264,7 +279,8 @@ try {
   await expect(textPrompt).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(textDockFooter).toHaveCSS("border-top-color", "rgb(42, 45, 54)");
   await expect(textGenerateButton).toHaveCSS("background-color", "rgb(255, 255, 255)");
-  await expect(textToolbar).toHaveCSS("background-color", "rgb(25, 27, 33)");
+  await expect(textToolbar).toHaveCSS("background-color", "rgba(25, 27, 33, 0.96)");
+  await expect(textNodeCard).toHaveCSS("background-color", "rgb(25, 27, 33)");
   const textNodeTitle = textNode.getByTestId("text-node-title");
   await expect(textNodeTitle).toHaveCSS("color", "rgb(226, 230, 237)");
   await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
@@ -274,11 +290,22 @@ try {
   await expect(textPrompt).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(textDockFooter).toHaveCSS("border-top-color", "rgb(237, 240, 243)");
   await expect(textGenerateButton).toHaveCSS("background-color", "rgb(32, 36, 44)");
-  await expect(textToolbar).toHaveCSS("border-color", "rgb(42, 45, 54)");
+  await expect(textToolbar).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
+  await expect(textToolbar).toHaveCSS("border-color", "rgb(217, 223, 231)");
+  await expect(textNodeCard).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(editableOutput).toHaveCSS("color", "rgb(37, 42, 51)");
+  await expect(projectChrome).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
+  await expect(mainToolbar).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
+  await expect(viewToolbar).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
+  await expect(topActions.locator("button").first()).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
+  await page.getByRole("button", { name: /%$/ }).click();
+  await expect(page.locator(".menu-pop-up").last()).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
+  await page.locator("div.fixed.inset-0.z-40").last().click({ position: { x: 4, y: 4 } });
+  await page.screenshot({ path: path.join(output, "light-theme.png"), fullPage: true });
   await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
   await expect(textNodeTitle).toHaveCSS("color", "rgb(226, 230, 237)");
-  await expect(textToolbar).toHaveCSS("border-color", "rgb(64, 68, 79)");
-  pass("text selection keeps the image-style toolbar while the input dock and node labels adapt to light and dark canvas themes");
+  await expect(textToolbar).toHaveCSS("border-color", "rgb(42, 45, 54)");
+  pass("light canvas adapts project chrome, top actions, both toolbars, text cards, text dock, and popup menus while preserving dark mode");
 
   for (const viewport of [
     { width: 2560, height: 1440 },
@@ -328,7 +355,7 @@ try {
   await page.setViewportSize({ width: 1600, height: 1000 });
   pass("text dock stays inside 2560px, 1366px, 1024px, 768px, and 390px viewports with a freely resizable input");
 
-  await page.getByRole("button", { name: "100%" }).click();
+  await page.getByRole("button", { name: "100%", exact: true }).click();
   await page.getByRole("button", { name: "缩放至50%" }).click();
   await page.waitForTimeout(300);
   await textNode.click();
@@ -365,6 +392,10 @@ try {
     `.react-flow__node[data-id="${generatedArtwork.id}"]`
   );
   await generatedImageNode.click();
+  await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
+  await expect(page.getByTestId("image-node-dock")).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
+  await expect(page.getByTestId("image-node-dock").locator(".canvas-ui-control").first()).toHaveCSS("background-color", "rgb(244, 246, 248)");
+  await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
   const imageSourceHandle = generatedImageNode.locator(".react-flow__handle.source");
   await expect.poll(() => imageSourceHandle.evaluate(element => getComputedStyle(element).opacity)).toBe("1");
   const imageHandleBox = await imageSourceHandle.boundingBox();
