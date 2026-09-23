@@ -11,6 +11,7 @@ import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
 import { dataUrlToBytes, MEDIA_DIR } from "@/lib/storage";
 import { toVisionDataUrl } from "@/lib/vision-image";
+import { requestedTextModel } from "@/lib/text-models";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -139,7 +140,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "智能帮写需要先选择产品图" }, { status: 400 });
   }
 
-  const model = process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna";
+  const model = requestedTextModel(
+    request,
+    process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna"
+  );
   const settings = await getOpenAISettings();
   const apiKey = process.env.AGENT_API_KEY || settings.apiKey;
   if (!apiKey) {

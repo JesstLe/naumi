@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
+import { requestedTextModel } from "@/lib/text-models";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 import {
@@ -147,7 +148,8 @@ async function planShots(
   platform: string,
   lang: string,
   format: string,
-  modules: string[]
+  modules: string[],
+  textModel: string
 ): Promise<ShotSpec[]> {
   try {
     const dataUrl = await toVisionDataUrl(firstImage.buf, firstImage.type);
@@ -167,7 +169,7 @@ async function planShots(
       (extra ? `商品补充信息:${extra}\n` : "") +
       "请规划这套 A+ 详情页。";
     const resp = await client.chat.completions.create({
-      model: "gpt-5.6-luna",
+      model: textModel,
       messages: [
         { role: "system", content: sys },
         {
@@ -403,6 +405,7 @@ type Job = {
   modules: string[];
   email: string;
   model: string;
+  textModel: string;
   useDb: boolean;
   cost: number;
   generationStarted: boolean;
@@ -550,7 +553,8 @@ async function runAplusGeneration(jobId: string) {
       job.platform,
       job.lang,
       job.format,
-      job.modules
+      job.modules,
+      job.textModel
     );
     const shots: ShotResult[] = specs.map((s, i) => ({
       ...s,
@@ -925,6 +929,7 @@ export async function POST(request: Request) {
     modules: input.modules,
     email: input.email,
     model,
+    textModel: requestedTextModel(request, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna"),
     useDb,
     cost,
     generationStarted: input.prepared,

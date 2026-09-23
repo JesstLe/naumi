@@ -13,6 +13,7 @@ import { dbEnabled } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
+import { requestedTextModel } from "@/lib/text-models";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,7 +119,7 @@ export async function POST(req: Request) {
       : "(空,按产品/分类给通用电商主图提示词)";
     const text = `${ctx.join(";")}\n${label}:${idea || emptyHint}`;
     const resp = await client.chat.completions.create({
-      model: "gpt-5.6-luna",
+      model: requestedTextModel(req, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna"),
       messages: [
         { role: "system", content: sys },
         {

@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { ToolShell } from "@/components/tools/tool-shell";
 import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 import { GenLoader } from "@/components/gen-loader";
+import { TextModelSelect } from "@/components/ui/text-model-select";
 
 const MAX_UPLOAD = 12 * 1024 * 1024;
 const COST = 1;
@@ -146,6 +147,10 @@ export function IpcheckClient() {
       refreshKey={result ? 1 : 0}
       left={
         <>
+          <div>
+            <p className="mb-2 text-[12.5px] font-medium text-c-text2">{L("分析模型", "Analysis model")}</p>
+            <TextModelSelect />
+          </div>
           <input
             ref={fileRef}
             type="file"

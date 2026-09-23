@@ -10,6 +10,7 @@ import { regionMask, preserveOutsideMask } from "@/lib/competitor-image";
 import { editImage } from "@/lib/image-edit";
 import { uploadImage } from "@/lib/storage";
 import { rateLimit } from "@/lib/rate-limit";
+import { requestedTextModel } from "@/lib/text-models";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -36,7 +37,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     Object.assign(item, { prompt: body.prompt, regions: body.regions, activeVersion: body.activeVersion });
     const source = await readCompetitorImage(currentImage(item));
     if (body.action === "analyze") {
-      const analysis = await analyzeCompetitor(source);
+      const analysis = await analyzeCompetitor(source, requestedTextModel(req));
       const saved = await saveCompetitorItem(email, { ...item, ...analysis }, lease);
       if (!saved) throw new WorkspaceError("任务状态已变化，请重新加载", 409);
       return NextResponse.json({ item: saved });

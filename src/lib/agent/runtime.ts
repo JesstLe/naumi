@@ -42,6 +42,7 @@ const TOOL_COST: Record<string, { cost: number; label: string }> = {
 
 export type Session = {
   agent: Agent;
+  modelId: string;
   id: string;
   email: string;
   title: string;
@@ -61,8 +62,7 @@ export type Session = {
 };
 
 const SESSIONS = new Map<string, Session>();
-let providerModels: ReturnType<typeof createModels> | null = null;
-let providerBaseUrl = "";
+const providerModels = new Map<string, ReturnType<typeof createModels>>();
 
 function gcSessions() {
   const now = Date.now();
@@ -71,7 +71,7 @@ function gcSessions() {
   });
 }
 
-async function ensureModels() {
+async function ensureModels(modelId = MODEL_ID) {
   // 真实凭证来源:DB 配置(getOpenAISettings/getOpenAIBaseUrl,AES 落库)优先,
   // env 兜底。用闭包 auth 把实际 key/baseUrl 注入 pi-ai,而不是只读 env。
   const settings = await import("@/lib/settings").then((m) =>
@@ -81,7 +81,9 @@ async function ensureModels() {
     process.env.AGENT_BASE_URL ||
     (await import("@/lib/openai-base").then((m) => m.getOpenAIBaseUrl())) ||
     "https://api.openai.com/v1";
-  if (providerModels && providerBaseUrl === baseUrl) return providerModels;
+  const cacheKey = `${baseUrl}\n${modelId}`;
+  const cached = providerModels.get(cacheKey);
+  if (cached) return cached;
   const dbKey = settings.apiKey;
   const provider = createProvider({
     id: "naumi-relay",
@@ -107,8 +109,8 @@ async function ensureModels() {
     },
     models: [
       {
-        id: MODEL_ID,
-        name: MODEL_ID,
+        id: modelId,
+        name: modelId,
         api: "openai-completions" as const,
         provider: "naumi-relay",
         baseUrl,
@@ -121,11 +123,11 @@ async function ensureModels() {
     ],
     api: openAICompletionsApi(),
   });
-  providerModels = createModels();
-  providerModels.setProvider(provider);
-  providerBaseUrl = baseUrl;
+  const models = createModels();
+  models.setProvider(provider);
+  providerModels.set(cacheKey, models);
   void dbKey;
-  return providerModels;
+  return models;
 }
 
 /** 把用户历史转成 pi-agent 的 UserMessage 序列。 */
@@ -148,19 +150,21 @@ export async function getOrCreateSession(
   email: string,
   sessionId: string,
   history: { role: string; content: string }[],
-  cred: { cookie: string; authorization: string } = { cookie: "", authorization: "" }
+  cred: { cookie: string; authorization: string } = { cookie: "", authorization: "" },
+  modelId = MODEL_ID
 ): Promise<Session> {
   gcSessions();
   const existing = SESSIONS.get(key(email, sessionId));
-  if (existing) {
+  if (existing && (existing.running || existing.modelId === modelId)) {
     existing.lastUsedAt = Date.now();
     // 凭证刷新:token/会话可能已轮换,常驻实例必须用最新凭证
     existing.cred = cred;
     return existing;
   }
 
-  const models = await ensureModels();
-  const model = models.getModel("naumi-relay", MODEL_ID);
+  if (existing) SESSIONS.delete(key(email, sessionId));
+  const models = await ensureModels(modelId);
+  const model = models.getModel("naumi-relay", modelId);
   if (!model) throw new Error("模型不可用");
 
   const persisted = dbEnabled
@@ -168,6 +172,7 @@ export async function getOrCreateSession(
     : null;
   const session: Session = {
     id: sessionId,
+    modelId,
     email,
     title: persisted?.title || history[0]?.content.slice(0, 120) || "Agent 任务",
     cred,

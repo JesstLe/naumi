@@ -6,6 +6,7 @@ import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { rateLimit } from "@/lib/rate-limit";
 import { getOpenAISettings } from "@/lib/settings";
 import { toVisionDataUrl } from "@/lib/vision-image";
+import { requestedTextModel } from "@/lib/text-models";
 
 export const runtime = "nodejs";
 export const maxDuration = 90;
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
   });
   try {
     const response = await client.chat.completions.create({
-      model: process.env.AGENT_VISION_MODEL || "qwen3.8-flash",
+      model: requestedTextModel(request, process.env.AGENT_VISION_MODEL || "qwen3.8-flash"),
       messages: [
         {
           role: "system",

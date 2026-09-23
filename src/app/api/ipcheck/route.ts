@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
+import { requestedTextModel } from "@/lib/text-models";
 import {
   dbEnabled,
   reserveCredits,
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
       baseURL: (await getOpenAIBaseUrl()) || undefined,
     });
     const resp = await client.chat.completions.create({
-      model: "gpt-5.6-luna",
+      model: requestedTextModel(req, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna"),
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: SYS },

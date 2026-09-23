@@ -25,6 +25,7 @@ import { authHeader } from "@/lib/supabase";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
 import { ImageLightbox } from "@/components/image-lightbox";
+import { TextModelSelect } from "@/components/ui/text-model-select";
 
 // ---------------------------------------------------------------------------
 // A+ 详情页工作台(对标竞品 a-plus 详情页):
@@ -413,6 +414,11 @@ export function AplusClient() {
                 上传商品图,AI 按模块出高转化详情页
               </p>
             </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-[12.5px] font-medium text-c-text2">文字规划模型</p>
+            <TextModelSelect />
           </div>
 
           {/* 商品原图 */}

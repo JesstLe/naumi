@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { competitorActor, competitorError, normalizeUpload, analyzeCompetitor, WorkspaceError } from "@/lib/competitor-server";
 import { rateLimit } from "@/lib/rate-limit";
+import { requestedTextModel } from "@/lib/text-models";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
     const file = form?.get("ref");
     if (!(file instanceof File)) throw new WorkspaceError("请上传一张爆款参考图");
     const normalized = await normalizeUpload(file);
-    const analysis = await analyzeCompetitor(normalized.data);
+    const analysis = await analyzeCompetitor(normalized.data, requestedTextModel(request));
     return NextResponse.json({ ok: true, ...analysis });
   } catch (error) {
     return competitorError(error);

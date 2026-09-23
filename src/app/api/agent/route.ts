@@ -11,6 +11,7 @@ import {
   refreshSessionCredentials,
 } from "@/lib/agent/runtime";
 import { buildTaskPlan, classifyAgentFailure } from "@/lib/agent/recovery";
+import { requestedTextModel } from "@/lib/text-models";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent API(常驻会话版):
@@ -66,10 +67,16 @@ export async function PUT(request: Request) {
         )
         .slice(-10)
     : [];
-  const session = await getOrCreateSession(email, sessionId, history, {
-    cookie: request.headers.get("cookie") ?? "",
-    authorization: request.headers.get("authorization") ?? "",
-  });
+  const session = await getOrCreateSession(
+    email,
+    sessionId,
+    history,
+    {
+      cookie: request.headers.get("cookie") ?? "",
+      authorization: request.headers.get("authorization") ?? "",
+    },
+    requestedTextModel(request, process.env.AGENT_MODEL || "qwen3.8-flash")
+  );
   if (session.running) {
     return NextResponse.json(
       { error: "当前会话有任务正在执行,请等待完成或插话修正" },

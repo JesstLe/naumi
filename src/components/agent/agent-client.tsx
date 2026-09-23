@@ -22,6 +22,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
 import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
+import { TextModelSelect } from "@/components/ui/text-model-select";
 
 // ---------------------------------------------------------------------------
 // Agent 任务模式:自然语言下达图片任务,pi-agent 编排站内工具完成。
@@ -875,6 +876,9 @@ export function AgentClient() {
               ))}
             </div>
           )}
+          <div className="mb-2">
+            <TextModelSelect compact />
+          </div>
           <div className="flex items-end gap-2">
             <input
               ref={fileRef}
