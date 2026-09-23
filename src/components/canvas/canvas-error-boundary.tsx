@@ -18,10 +18,28 @@ function CanvasErrorFallback({
 }) {
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
+  let lightCanvas = true;
+  try {
+    lightCanvas = localStorage.getItem("nv:canvas:bg") !== "dark";
+  } catch {
+    /* use the readable light fallback when storage is unavailable */
+  }
   return (
-    <div className="dark flex h-dvh flex-col items-center justify-center gap-4 bg-[#0e0f13] px-6 text-center text-[#e7e9ee]">
+    <div
+      className={
+        lightCanvas
+          ? "flex h-dvh flex-col items-center justify-center gap-4 bg-[#f5f6f8] px-6 text-center text-[#252a33]"
+          : "dark flex h-dvh flex-col items-center justify-center gap-4 bg-[#0e0f13] px-6 text-center text-[#e7e9ee]"
+      }
+    >
       <div className="text-lg font-bold">{L("画布出错了", "Canvas crashed")}</div>
-      <pre className="max-w-2xl overflow-auto rounded-lg border border-[#2a2d36] bg-[#191b21] p-4 text-left text-xs text-[#9aa1ae]">
+      <pre
+        className={
+          lightCanvas
+            ? "max-w-2xl overflow-auto rounded-lg border border-[#d9dfe7] bg-white p-4 text-left text-xs text-[#697383] shadow-sm"
+            : "max-w-2xl overflow-auto rounded-lg border border-[#2a2d36] bg-[#191b21] p-4 text-left text-xs text-[#9aa1ae]"
+        }
+      >
         {error.message}
         {error.stack ? `\n\n${error.stack.split("\n").slice(0, 6).join("\n")}` : ""}
       </pre>
@@ -36,7 +54,11 @@ function CanvasErrorFallback({
         <button
           type="button"
           onClick={onBack}
-          className="rounded-lg border border-[#2a2d36] bg-[#191b21] px-4 py-2 text-sm font-semibold"
+          className={
+            lightCanvas
+              ? "rounded-lg border border-[#d9dfe7] bg-white px-4 py-2 text-sm font-semibold hover:bg-[#f0f3f6]"
+              : "rounded-lg border border-[#2a2d36] bg-[#191b21] px-4 py-2 text-sm font-semibold"
+          }
         >
           {L("返回项目网格", "Back to project grid")}
         </button>

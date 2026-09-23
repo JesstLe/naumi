@@ -437,6 +437,7 @@ function DarkSelect({
   onPick,
   dir = "up",
   disabled,
+  light = false,
 }: {
   trigger: ReactNode;
   triggerClass?: string;
@@ -445,6 +446,7 @@ function DarkSelect({
   onPick: (v: string) => void;
   dir?: "up" | "down";
   disabled?: boolean;
+  light?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<{
@@ -480,7 +482,7 @@ function DarkSelect({
         rect &&
         createPortal(
           <div
-            className="dark fixed inset-0 z-[200]"
+            className={cn("fixed inset-0 z-[200]", light ? "canvas-ui-light" : "canvas-ui-dark")}
             onClick={() => setOpen(false)}
           >
             <div
@@ -499,7 +501,7 @@ function DarkSelect({
                     }
               }
               className={cn(
-                "fixed min-w-[128px] rounded-xl border border-[#2a2d36] bg-[#191b21] p-1 shadow-2xl",
+                "canvas-ui-surface fixed min-w-[128px] rounded-xl border p-1",
                 dir === "down" ? "menu-pop-down" : "menu-pop-up"
               )}
             >
@@ -514,8 +516,8 @@ function DarkSelect({
                   className={cn(
                     "block w-full rounded-lg px-3 py-2 text-left text-[13px] transition-colors",
                     o.value === value
-                      ? "bg-[#2a2e38] font-semibold text-white"
-                      : "text-[#9aa1ae] hover:bg-[#1f2229] hover:text-white"
+                      ? "canvas-ui-control font-semibold"
+                      : "canvas-ui-action"
                   )}
                 >
                   {o.label}
@@ -533,20 +535,22 @@ function ImageCountControl({
   value,
   onChange,
   disabled = false,
+  light = false,
 }: {
   value: number;
   onChange: (value: number) => void;
   disabled?: boolean;
+  light?: boolean;
 }) {
   const clamp = (value: number) =>
     Math.min(MAX_GENERATION_COUNT, Math.max(1, Math.round(value) || 1));
   return (
-    <div className="flex h-8 items-center overflow-hidden rounded-[9px] bg-[#1f2229] text-[12.5px] font-semibold text-[#e7e9ee]">
+    <div className={cn(light ? "canvas-ui-light" : "canvas-ui-dark", "canvas-ui-control flex h-8 items-center overflow-hidden rounded-[9px] text-[12.5px] font-semibold")}>
       <button
         type="button"
         disabled={disabled || value <= 1}
         onClick={() => onChange(clamp(value - 1))}
-        className="h-full px-2 text-[#9aa1ae] hover:bg-[#2a2e38] hover:text-white disabled:opacity-35"
+        className="canvas-ui-action h-full px-2 disabled:opacity-35"
         aria-label="减少生成数量"
       >
         −
@@ -558,15 +562,15 @@ function ImageCountControl({
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(clamp(Number(event.target.value)))}
-        className="h-full w-8 border-0 bg-transparent p-0 text-center text-white outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        className="canvas-ui-text h-full w-8 border-0 bg-transparent p-0 text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         aria-label="生成图片数量"
       />
-      <span className="pr-1 text-[#9aa1ae]">张</span>
+      <span className="canvas-ui-muted pr-1">张</span>
       <button
         type="button"
         disabled={disabled || value >= MAX_GENERATION_COUNT}
         onClick={() => onChange(clamp(value + 1))}
-        className="h-full px-2 text-[#9aa1ae] hover:bg-[#2a2e38] hover:text-white disabled:opacity-35"
+        className="canvas-ui-action h-full px-2 disabled:opacity-35"
         aria-label="增加生成数量"
       >
         +
@@ -657,11 +661,13 @@ function TextCanvasNode({ data, selected }: NodeProps) {
       </div>
       {/* 内容卡:与图片节点的图片卡同一层样式(#191b21 圆角10、选中 indigo 描边+辉光) */}
       <div
+        data-testid="text-node-card"
         className={cn(
-          "relative min-h-0 flex-1 overflow-auto rounded-[10px] border bg-[#191b21] px-3 py-2.5 text-[12px] leading-[1.65] text-[#c6ccd6] transition-all",
+          "canvas-ui-node-card relative min-h-0 flex-1 overflow-auto rounded-[10px] border px-3 py-2.5 text-[12px] leading-[1.65] transition-all",
+          d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark",
           active
-            ? "border-[#6366f1] shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
-            : "border-[#2a2d36]"
+            ? "canvas-ui-selected shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
+            : ""
         )}
       >
         {!!d.sourceRefs?.length && (
@@ -669,7 +675,12 @@ function TextCanvasNode({ data, selected }: NodeProps) {
             {d.sourceRefs.map((reference) => (
               <span
                 key={reference.id}
-                className="max-w-full truncate border border-[#24505f] bg-[#163842] px-1.5 py-0.5 text-[10px] font-semibold leading-4 text-[#8fe7f5]"
+                className={cn(
+                  "max-w-full truncate border px-1.5 py-0.5 text-[10px] font-semibold leading-4",
+                  d.lightCanvas
+                    ? "border-[#b9d0d8] bg-[#e8f2f5] text-[#315a68]"
+                    : "border-[#24505f] bg-[#163842] text-[#8fe7f5]"
+                )}
                 title={`@${reference.title}`}
               >
                 @{reference.title}
@@ -678,7 +689,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
           </div>
         )}
         {d.status === "generating" ? (
-          <div className="flex h-[108px] items-center justify-center gap-2 text-[#9aa1ae]">
+          <div className="canvas-ui-muted flex h-[108px] items-center justify-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin text-[#6366f1]" /> 正在生成文字…
           </div>
         ) : editableBody ? (
@@ -688,19 +699,19 @@ function TextCanvasNode({ data, selected }: NodeProps) {
             onChange={(event) => ctx?.onContentChange(d.__id, event.target.value)}
             onBlur={(event) => ctx?.onContentCommit(d.__id, event.currentTarget.value)}
             onPointerDown={(event) => event.stopPropagation()}
-            className="nodrag nowheel h-full min-h-[96px] w-full resize-none overflow-auto border-0 bg-transparent p-0 text-[12px] leading-[1.65] text-[#c6ccd6] outline-none"
+            className="canvas-ui-text nodrag nowheel h-full min-h-[96px] w-full resize-none overflow-auto border-0 bg-transparent p-0 text-[12px] leading-[1.65] outline-none"
           />
         ) : body ? (
           <p className="whitespace-pre-wrap break-words">{body}</p>
         ) : (
-          <p className="text-[#9aa1ae]">输入需求后生成文字内容</p>
+          <p className="canvas-ui-muted">输入需求后生成文字内容</p>
         )}
       </div>
-      <div className="absolute right-1.5 top-1.5 hidden items-center gap-1 rounded-md bg-[#191b21] pl-1 group-hover:flex">
+      <div className={cn("canvas-ui-surface-solid absolute right-1.5 top-1.5 hidden items-center gap-1 rounded-md pl-1 group-hover:flex", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}>
         {!!d.content && (
           <button
             type="button"
-            className="nodrag flex h-6 w-6 items-center justify-center text-[#7d8694] hover:bg-[#2a2e38] hover:text-[#e7e9ee]"
+            className="canvas-ui-action nodrag flex h-6 w-6 items-center justify-center"
             title="复制文字"
             onClick={(event) => {
               event.stopPropagation();
@@ -727,7 +738,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
         type="target"
         position={Position.Left}
         className={cn(
-          "art-port !flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-all hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]",
+          "canvas-ui-port art-port !flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-all",
           active
             ? "!opacity-100"
             : "!pointer-events-none !opacity-0 group-hover:!pointer-events-auto group-hover:!opacity-100"
@@ -740,7 +751,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
         type="source"
         position={Position.Right}
         className={cn(
-          "art-port !flex !h-12 !w-12 !-right-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-all hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]",
+          "canvas-ui-port art-port !flex !h-12 !w-12 !-right-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-all",
           active
             ? "!opacity-100"
             : "!pointer-events-none !opacity-0 group-hover:!pointer-events-auto group-hover:!opacity-100"
@@ -763,34 +774,35 @@ function PendNode({ data, selected }: NodeProps) {
     fileInfo?: string;
     generating?: boolean;
     selected?: boolean;
+    lightCanvas?: boolean;
   };
   const sel = selected || d.selected;
   return (
-    <div className="group relative w-[320px]">
+    <div className={cn("group relative w-[320px]", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}>
       {/* 标签(图片上方,对齐原型 .lb2) */}
-      <div className="mb-1.5 flex h-[30px] items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold text-[#d7dce5]">
+      <div className="canvas-ui-text mb-1.5 flex h-[30px] items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold">
         <span>🖼</span>
         <span className="truncate">{d.label}</span>
       </div>
       {/* 占位卡(原型 .nb2 + .ph2:单层卡片,选中=teal) */}
       <div
         className={cn(
-          "relative flex h-[200px] flex-col items-center justify-center rounded-[12px] border bg-[#191b21] px-5 text-center transition-all",
+          "canvas-ui-node-card relative flex h-[200px] flex-col items-center justify-center rounded-[12px] border px-5 text-center transition-all",
           sel
-            ? "border-[#6366f1] shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
-            : "border-dashed border-[#2a2d36]"
+            ? "canvas-ui-selected shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
+            : "border-dashed"
         )}
       >
         {d.generating ? (
           <div className="flex w-full flex-col items-center gap-2.5">
             <Loader2 className="h-5 w-5 animate-spin text-[#6366f1]" />
-            <div className="text-[12px] font-medium text-slate-200">
+            <div className="canvas-ui-text text-[12px] font-medium">
               {typeof d.progress === "number" && d.progress > 0
                 ? `处理中（${Math.round(d.progress)}%）`
                 : "生成中…"}
             </div>
             {typeof d.progress === "number" && d.progress > 0 && (
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/50">
+              <div className="canvas-ui-control h-1.5 w-full overflow-hidden rounded-full border-0">
                 <div
                   className="h-full rounded-full bg-[#28b7d1] transition-all"
                   style={{ width: `${Math.min(100, Math.round(d.progress))}%` }}
@@ -801,31 +813,31 @@ function PendNode({ data, selected }: NodeProps) {
         ) : d.uploading ? (
           <div className="flex w-full flex-col items-center gap-2.5">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <div className="text-[12px] font-medium text-slate-200">
+            <div className="canvas-ui-text text-[12px] font-medium">
               上传中（{Math.round(d.progress ?? 0)}%）
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/50">
+            <div className="canvas-ui-control h-1.5 w-full overflow-hidden rounded-full border-0">
               <div
                 className="h-full rounded-full bg-primary transition-all"
                 style={{ width: `${Math.round(d.progress ?? 0)}%` }}
               />
             </div>
             {d.fileInfo && (
-              <div className="w-full truncate text-[10px] text-slate-500">
+              <div className="canvas-ui-muted w-full truncate text-[10px]">
                 {d.fileInfo}
               </div>
             )}
           </div>
         ) : (
           <>
-            <ImageIcon className="mb-2 h-6 w-6 text-slate-600" />
+            <ImageIcon className="canvas-ui-muted mb-2 h-6 w-6" />
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 ctx?.onUpload(String((data as { __id?: string }).__id ?? ""));
               }}
-              className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-[12px] font-medium text-slate-100 transition-colors hover:border-primary/60 hover:bg-primary/15 hover:text-white"
+              className="canvas-ui-control flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors hover:border-primary/60"
             >
               <Upload className="h-3.5 w-3.5" /> 上传图片
             </button>
@@ -837,7 +849,7 @@ function PendNode({ data, selected }: NodeProps) {
         type="target"
         position={Position.Left}
         style={{ top: PORT_Y }}
-        className="!flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-colors hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]"
+        className="canvas-ui-port !flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-colors"
       >
         <span className="pointer-events-none leading-none">+</span>
       </Handle>
@@ -848,7 +860,7 @@ function PendNode({ data, selected }: NodeProps) {
             e.stopPropagation();
             ctx?.onRemove(String((data as { __id?: string }).__id ?? ""));
           }}
-          className="nodrag absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full border border-[#0e0f13] bg-[#2a2e38] text-[11px] text-slate-300 opacity-0 transition-opacity hover:text-white group-hover:opacity-100"
+          className="canvas-ui-control nodrag absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full border text-[11px] opacity-0 transition-opacity group-hover:opacity-100"
           title="删除空白节点"
         >
           ✕
@@ -924,6 +936,7 @@ function ArtNode({ data, selected }: NodeProps) {
     height?: number | null;
     intrinsicWidth?: number | null;
     intrinsicHeight?: number | null;
+    lightCanvas?: boolean;
     onDimensions?: (id: string, width: number, height: number) => void;
     onCanvasResize?: (
       id: string,
@@ -939,7 +952,7 @@ function ArtNode({ data, selected }: NodeProps) {
     : `${d.version ? `v${d.version}` : ""}${d.date ? ` · ${formatDate(d.date)}` : ""}${d.prompt ? `\n${d.prompt}` : ""}`;
   return (
     <div
-      className="group relative flex h-full w-full flex-col"
+      className={cn("group relative flex h-full w-full flex-col", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}
       data-image-width={imageWidth}
       data-image-height={imageHeight}
       data-intrinsic-width={d.intrinsicWidth || undefined}
@@ -995,18 +1008,18 @@ function ArtNode({ data, selected }: NodeProps) {
       <div
         title={title}
         className={cn(
-          "relative min-h-0 flex-1 overflow-hidden rounded-[10px] border bg-[#191b21] transition-all",
+          "canvas-ui-node-card relative min-h-0 flex-1 overflow-hidden rounded-[10px] border transition-all",
           selected
-            ? "border-[#6366f1] shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
+            ? "canvas-ui-selected shadow-[0_0_0_3px_rgba(99,102,241,0.22)]"
             : d.inChain
               ? "border-[#6366f1]/50"
               : "border-transparent"
         )}
       >
         {d.pending ? (
-          <div className="flex h-[110px] flex-col items-center justify-center gap-2 bg-[#191b21]">
+          <div className="canvas-ui-node-card flex h-[110px] flex-col items-center justify-center gap-2">
             <Loader2 className="h-5 w-5 animate-spin text-[#6366f1]" />
-            <span className="text-[12px] text-[#9aa1ae]">生成中…</span>
+            <span className="canvas-ui-muted text-[12px]">生成中…</span>
           </div>
         ) : (
           <>
@@ -1042,7 +1055,7 @@ function ArtNode({ data, selected }: NodeProps) {
         position={Position.Left}
         style={{ top: portY }}
         className={cn(
-          "art-port !flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-all hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]",
+          "canvas-ui-port art-port !flex !h-12 !w-12 !-left-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-all",
           selected
             ? "!opacity-100"
             : "!pointer-events-none !opacity-0 group-hover:!pointer-events-auto group-hover:!opacity-100"
@@ -1057,7 +1070,7 @@ function ArtNode({ data, selected }: NodeProps) {
           position={Position.Right}
           style={{ top: portY }}
           className={cn(
-            "art-port !flex !h-12 !w-12 !-right-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !border-[#555e6c] !bg-[#20242c] !text-[26px] !font-medium !leading-none !text-white shadow-lg transition-all hover:!border-[#6bd7ec] hover:!bg-[#163842] hover:!text-[#8fe7f5]",
+            "canvas-ui-port art-port !flex !h-12 !w-12 !-right-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-all",
             selected
               ? "!opacity-100"
               : "!pointer-events-none !opacity-0 group-hover:!pointer-events-auto group-hover:!opacity-100"
@@ -2356,7 +2369,7 @@ export function CanvasClient() {
           id: task.id,
           type: "art",
           position: pos,
-          data: { id: task.id, pending: true, label: task.label },
+          data: { id: task.id, pending: true, label: task.label, lightCanvas },
           selectable: false,
           draggable: true,
         },
@@ -2380,9 +2393,10 @@ export function CanvasClient() {
     const hasSel = !!selectedId && chain.size > 0;
     const displayNodes: Node[] = baseNodes.map((n) => ({
       ...n,
-      data: {
-        ...(n.data as Record<string, unknown>),
-        inChain: hasSel && chain.has(n.id),
+        data: {
+          ...(n.data as Record<string, unknown>),
+          inChain: hasSel && chain.has(n.id),
+          lightCanvas,
       },
       className:
         hasSel && !chain.has(n.id) && !n.id.startsWith("task-")
@@ -2423,6 +2437,7 @@ export function CanvasClient() {
           fileInfo: p.fileInfo,
           generating: p.generating,
           selected: p.id === selectedPendId,
+          lightCanvas,
         },
       } as Node);
       for (const src of p.inputs ?? []) {
@@ -5870,6 +5885,7 @@ export function CanvasClient() {
   const modelControl = (disabled = false) => (
     <DarkSelect
       dir="up"
+      light={lightCanvas}
       value={genModel}
       disabled={disabled || imageModels.length < 2}
       options={imageModels.map((item) => ({
@@ -5887,7 +5903,7 @@ export function CanvasClient() {
         ),
       }))}
       onPick={pickGenerationModel}
-      triggerClass="flex max-w-[190px] cursor-pointer items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee] disabled:cursor-default disabled:opacity-70"
+      triggerClass="canvas-ui-control flex max-w-[190px] cursor-pointer items-center gap-1.5 rounded-[9px] border px-2.5 py-1.5 text-[12.5px] font-semibold disabled:cursor-default disabled:opacity-70"
       trigger={
         <>
           <ModelIcon modelId={genModel} size={15} />
@@ -5903,7 +5919,7 @@ export function CanvasClient() {
       ref={ratioBtnRef}
       type="button"
       onClick={openRatioMenu}
-      className="flex items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee] transition-colors hover:bg-[#262a33]"
+      className="canvas-ui-control flex items-center gap-1.5 rounded-[9px] border px-2.5 py-1.5 text-[12.5px] font-semibold transition-colors"
     >
       📐
       <span>
@@ -5922,7 +5938,7 @@ export function CanvasClient() {
     ratioMenuOpen && ratioMenuRect
       ? createPortal(
           <div
-            className="dark fixed inset-0 z-[200]"
+            className={cn("fixed inset-0 z-[200]", lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}
             onClick={() => setRatioMenuOpen(false)}
           >
             <div
@@ -5941,9 +5957,9 @@ export function CanvasClient() {
                   ratioMenuRect.top +
                   8,
               }}
-              className="menu-pop-up fixed max-h-[min(76vh,620px)] w-[336px] overflow-y-auto rounded-2xl border border-[#2a2d36] bg-[#191b21] p-4 text-[#e7e9ee] shadow-2xl"
+              className="canvas-ui-surface menu-pop-up fixed max-h-[min(76vh,620px)] w-[336px] overflow-y-auto rounded-2xl border p-4"
             >
-              <p className="mb-2 text-[12px] font-semibold text-[#9aa1ae]">
+              <p className="canvas-ui-muted mb-2 text-[12px] font-semibold">
                 {t("canvas.resolution")}
               </p>
               <div className="mb-4 grid grid-cols-4 gap-2">
@@ -5955,15 +5971,15 @@ export function CanvasClient() {
                     className={cn(
                       "rounded-xl border py-2.5 text-sm font-semibold transition-colors",
                       genResolution === r
-                        ? "border-white/70 bg-[#2a2e38] text-white"
-                        : "border-[#2a2d36] bg-[#1f2229] text-[#9aa1ae] hover:text-white"
+                        ? "canvas-ui-control !border-[#6366f1] font-semibold"
+                        : "canvas-ui-control"
                     )}
                   >
                     {r}
                   </button>
                 ))}
               </div>
-              <p className="mb-2 text-[12px] font-semibold text-[#9aa1ae]">
+              <p className="canvas-ui-muted mb-2 text-[12px] font-semibold">
                 {t("canvas.ratio")}
               </p>
               <div className="grid grid-cols-5 gap-2">
@@ -5975,8 +5991,8 @@ export function CanvasClient() {
                     className={cn(
                       "flex flex-col items-center justify-center gap-1.5 rounded-xl border py-2.5 transition-colors",
                       genRatio === r.id
-                        ? "border-white/70 bg-[#2a2e38] text-white"
-                        : "border-[#2a2d36] bg-[#1f2229] text-[#9aa1ae] hover:text-white"
+                        ? "canvas-ui-control !border-[#6366f1] font-semibold"
+                        : "canvas-ui-control"
                     )}
                   >
                     <RatioIcon w={r.w} h={r.h} />
@@ -5986,8 +6002,8 @@ export function CanvasClient() {
                   </button>
                 ))}
               </div>
-              <div className="mt-4 border-t border-[#2a2d36] pt-3">
-                <p className="mb-2 text-[12px] font-semibold text-[#9aa1ae]">{t("canvas.customSize")}</p>
+              <div className="canvas-ui-divider mt-4 border-t bg-transparent pt-3">
+                <p className="canvas-ui-muted mb-2 text-[12px] font-semibold">{t("canvas.customSize")}</p>
                 <div className="flex items-center gap-2">
                   <input
                     aria-label={t("canvas.customWidth")}
@@ -5996,9 +6012,9 @@ export function CanvasClient() {
                     max={MAX_GENERATION_DIMENSION}
                     value={customWidth}
                     onChange={(event) => setCustomWidth(Number(event.target.value))}
-                    className="min-w-0 flex-1 rounded-lg border border-[#343844] bg-[#111318] px-2 py-2 text-center text-sm text-white outline-none focus:border-[#6366f1]"
+                    className="canvas-ui-input min-w-0 flex-1 rounded-lg border px-2 py-2 text-center text-sm outline-none focus:!border-[#6366f1]"
                   />
-                  <span className="text-[#697180]">×</span>
+                  <span className="canvas-ui-muted">×</span>
                   <input
                     aria-label={t("canvas.customHeight")}
                     type="number"
@@ -6006,7 +6022,7 @@ export function CanvasClient() {
                     max={MAX_GENERATION_DIMENSION}
                     value={customHeight}
                     onChange={(event) => setCustomHeight(Number(event.target.value))}
-                    className="min-w-0 flex-1 rounded-lg border border-[#343844] bg-[#111318] px-2 py-2 text-center text-sm text-white outline-none focus:border-[#6366f1]"
+                    className="canvas-ui-input min-w-0 flex-1 rounded-lg border px-2 py-2 text-center text-sm outline-none focus:!border-[#6366f1]"
                   />
                   <button
                     type="button"
@@ -6020,13 +6036,13 @@ export function CanvasClient() {
                     }}
                     className={cn(
                       "rounded-lg border px-3 py-2 text-xs font-semibold",
-                      activeCustomSize ? "border-[#6366f1] bg-[#252849] text-white" : "border-[#343844] bg-[#23262e] text-[#d9dce3]"
+                      activeCustomSize ? "canvas-ui-control !border-[#6366f1]" : "canvas-ui-control"
                     )}
                   >
                     {t("canvas.applySize")}
                   </button>
                 </div>
-                <p className="mt-1.5 text-[10px] text-[#697180]">64–{MAX_GENERATION_DIMENSION} px</p>
+                <p className="canvas-ui-muted mt-1.5 text-[10px]">64–{MAX_GENERATION_DIMENSION} px</p>
               </div>
             </div>
           </div>,
@@ -6045,7 +6061,10 @@ export function CanvasClient() {
         onResize: resizeTextNode,
       }}
     >
-    <div className="dark flex h-dvh min-h-[100svh] flex-col overflow-hidden bg-background text-foreground">
+    <div className={cn(
+      "flex h-dvh min-h-[100svh] flex-col overflow-hidden bg-background text-foreground",
+      lightCanvas ? "canvas-ui-light" : "dark canvas-ui-dark"
+    )}>
       {ratioMenu}
       {/* 占位节点上传用的隐藏 input */}
       <input
@@ -6123,7 +6142,8 @@ export function CanvasClient() {
         )}
         <aside
           className={cn(
-            "absolute left-3 top-[108px] z-40 flex max-h-[min(72vh,540px)] w-[min(200px,calc(100%-24px))] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl transition-all duration-150 md:top-[60px]",
+            "canvas-ui-surface absolute left-3 top-[108px] z-40 flex max-h-[min(72vh,540px)] w-[min(200px,calc(100%-24px))] flex-col overflow-hidden rounded-2xl border transition-all duration-150 md:top-[60px]",
+            lightCanvas ? "canvas-ui-light" : "canvas-ui-dark",
             sidebarOpen
               ? "pointer-events-auto translate-y-0 opacity-100"
               : "pointer-events-none -translate-y-1 opacity-0"
@@ -6209,7 +6229,7 @@ export function CanvasClient() {
         <div
           ref={canvasAreaRef}
           data-testid="canvas-drop-zone"
-          className={cn("relative min-w-0 flex-1 overflow-hidden", lightCanvas && "canvas-light")}
+          className={cn("canvas-stage relative min-w-0 flex-1 overflow-hidden", lightCanvas && "canvas-light")}
           onDragEnter={(event) => {
             if (!event.dataTransfer.types.includes("Files")) return;
             event.preventDefault();
@@ -6844,7 +6864,7 @@ export function CanvasClient() {
                   position="bottom-left"
                   // 显示在左下角工具条上方(而不是右侧)
                   style={{ left: 16, bottom: 72, margin: 0 }}
-                  maskColor="rgba(0,0,0,0.55)"
+                  maskColor={lightCanvas ? "rgba(91,103,120,0.16)" : "rgba(0,0,0,0.55)"}
                 />
               )}
             </ReactFlow>
@@ -6856,7 +6876,7 @@ export function CanvasClient() {
               className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
               style={{ left: edgeCut.x, top: edgeCut.y }}
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-[#1a1d24]/90 text-slate-100 shadow-lg backdrop-blur">
+              <span className="canvas-ui-surface flex h-8 w-8 items-center justify-center rounded-full border shadow-lg backdrop-blur">
                 <Scissors className="h-4 w-4" />
               </span>
             </div>
@@ -6868,11 +6888,10 @@ export function CanvasClient() {
               {/* 左上:logo(点开项目菜单) + 项目名(点进入内联编辑,失焦/回车确定) */}
               <div className="absolute left-3 top-3 z-30 max-w-[calc(100%-1.5rem)]">
                 <div
+                  data-testid="canvas-project-chrome"
                   className={cn(
-                    "flex max-w-full items-center gap-0.5 overflow-hidden rounded-xl border px-1.5 py-1.5 shadow-lg backdrop-blur transition-colors",
-                    sidebarOpen
-                      ? "border-[#3a414c] bg-[#2a2e38]"
-                      : "border-white/10 bg-card/85"
+                    "canvas-ui-surface flex max-w-full items-center gap-0.5 overflow-hidden rounded-xl border px-1.5 py-1.5 backdrop-blur transition-colors",
+                    sidebarOpen && "!border-[var(--canvas-ui-border-strong)]"
                   )}
                 >
                   {/* logo:点击展开「项目/重命名/删除…」菜单 */}
@@ -6948,14 +6967,14 @@ export function CanvasClient() {
               </div>
 
               {/* 右上:分享(下载)/ 模板库 / 会员特惠+积分 / 头像 */}
-              <div className="absolute right-3 top-[60px] z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 overflow-x-auto md:top-3">
+              <div data-testid="canvas-top-actions" className="absolute right-3 top-[60px] z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 overflow-x-auto md:top-3">
                 {active && (
                   <button
                     type="button"
                     onClick={downloadProject}
                     disabled={zipping}
                     title={t("canvas.downloadProject")}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-card/85 text-muted-foreground shadow-lg backdrop-blur transition-colors hover:bg-card hover:text-foreground disabled:opacity-50"
+                    className="canvas-ui-surface canvas-ui-action flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur transition-colors disabled:opacity-50"
                   >
                     {zipping ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -6968,7 +6987,7 @@ export function CanvasClient() {
                   type="button"
                   onClick={() => openModal("templates")}
                   title={t("nav.templates")}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-card/85 text-muted-foreground shadow-lg backdrop-blur transition-colors hover:bg-card hover:text-foreground"
+                  className="canvas-ui-surface canvas-ui-action flex h-9 w-9 items-center justify-center rounded-xl border backdrop-blur transition-colors"
                 >
                   <ShoppingBag className="h-4 w-4" />
                 </button>
@@ -6986,7 +7005,7 @@ export function CanvasClient() {
                     </span>
                   </button>
                 ) : (
-                  <span className="flex items-center gap-1 rounded-xl border border-white/10 bg-card/85 px-2.5 py-2 text-xs font-semibold text-muted-foreground shadow-lg backdrop-blur">
+                  <span className="canvas-ui-surface canvas-ui-muted flex items-center gap-1 rounded-xl border px-2.5 py-2 text-xs font-semibold backdrop-blur">
                     <Zap className="h-3.5 w-3.5" />
                     {credits != null ? credits : "—"}
                   </span>
@@ -7004,8 +7023,9 @@ export function CanvasClient() {
               {/* 底部中间:工具条(选中节点时淡出滑下让位给生成器,对齐原型 czbc) */}
               {!readOnly && (
                 <div
+                  data-testid="canvas-main-toolbar"
                   className={cn(
-                    "absolute bottom-5 left-1/2 z-30 flex max-w-[calc(100%-1rem)] flex-wrap items-center justify-center gap-1 overflow-visible rounded-2xl border border-white/10 bg-card/90 p-1.5 shadow-2xl backdrop-blur transition-all duration-200",
+                    "canvas-ui-surface absolute bottom-5 left-1/2 z-30 flex max-w-[calc(100%-1rem)] flex-wrap items-center justify-center gap-1 overflow-visible rounded-2xl border p-1.5 backdrop-blur transition-all duration-200",
                     selected || selectedPend || selectedText || selectedBatchArts.length > 1
                       ? "pointer-events-none translate-x-[-50%] translate-y-4 opacity-0"
                       : "translate-x-[-50%] translate-y-0 opacity-100"
@@ -7383,10 +7403,10 @@ export function CanvasClient() {
           {/* 新建项目空白画布:引导文案(右键即可加节点) */}
           {creatingNew && !active && pendNodes.length === 0 && (
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-dashed border-white/20 text-2xl text-slate-500">
+                <div className="canvas-ui-control flex h-14 w-14 items-center justify-center rounded-2xl border border-dashed text-2xl">
                 ＋
               </div>
-              <p className="max-w-xs text-sm text-slate-400">
+              <p className="canvas-ui-muted max-w-xs text-sm">
                 {t("canvas.newCanvasHint")}
               </p>
             </div>
@@ -7394,7 +7414,7 @@ export function CanvasClient() {
 
           {/* 左下角工具(原型 cz-bl):整理画布 / 小地图 / 网格吸附 / 适应视图 / 缩放% */}
           {!browsing && (active || creatingNew) && (
-            <div className="absolute bottom-4 left-4 z-20 flex items-center gap-0.5 rounded-xl border border-border bg-card p-1.5 shadow-lg">
+            <div data-testid="canvas-view-toolbar" className="canvas-ui-surface absolute bottom-4 left-4 z-20 flex items-center gap-0.5 rounded-xl border p-1.5">
               {!readOnly && (
                 <button
                   type="button"
@@ -7454,9 +7474,9 @@ export function CanvasClient() {
                       onClick={() => setZoomMenuOpen(false)}
                     />
                     <div className="absolute bottom-[calc(100%+10px)] left-1/2 z-50 -translate-x-1/2">
-                    <div className="menu-pop-up w-52 overflow-hidden rounded-xl border border-[#2a2d36] bg-[#1f2229] py-1.5 text-[#e7e9ee] shadow-2xl">
+                    <div className="canvas-ui-surface menu-pop-up w-52 overflow-hidden rounded-xl border py-1.5">
                       {/* 可输入的缩放值 */}
-                      <div className="mx-1.5 mb-1 flex items-center justify-between rounded-lg bg-[#2a2e38] px-3 py-2">
+                      <div className="canvas-ui-control mx-1.5 mb-1 flex items-center justify-between rounded-lg px-3 py-2">
                         <input
                           value={zoomInput}
                           onChange={(e) => {
@@ -7562,7 +7582,7 @@ export function CanvasClient() {
                       left: Math.max(8, Math.min(spawnMenu.x, (canvasAreaRef.current?.clientWidth ?? 9999) - 212)),
                       top: Math.max(8, Math.min(spawnMenu.y, (canvasAreaRef.current?.clientHeight ?? 9999) - 230)),
                     }}
-                    className="menu-pop absolute z-50 w-[204px] overflow-hidden rounded-2xl border border-border bg-card p-1.5 shadow-2xl"
+                    className="canvas-ui-surface menu-pop absolute z-50 w-[204px] overflow-hidden rounded-2xl border p-1.5"
                   >
                     <p className="px-2 pb-1 pt-1.5 text-[11px] font-semibold text-muted-foreground">
                       {t("canvas.spawnTitle")}
@@ -7633,25 +7653,25 @@ export function CanvasClient() {
                   className={cn(
                     "flex w-full items-center justify-between gap-4 px-3 py-2 text-left text-sm transition-colors",
                     disabled
-                      ? "cursor-default text-[#9aa1ae]/40"
+                      ? "canvas-ui-muted cursor-default opacity-40"
                       : danger
                         ? "text-[#ff6b63] hover:bg-[#ff6b63]/12"
-                        : "text-[#e7e9ee] hover:bg-[#2a2e38]"
+                        : "canvas-ui-action"
                   )}
                 >
                   <span className="truncate">{label}</span>
                   {hk && (
-                    <span className="text-xs text-[#9aa1ae]/70">{hk}</span>
+                    <span className="canvas-ui-muted text-xs opacity-70">{hk}</span>
                   )}
                 </button>
               );
-              const Sep = () => <div className="my-1 h-px bg-[#2a2d36]" />;
+              const Sep = () => <div className="canvas-ui-divider my-1 h-px" />;
               const vw =
                 typeof window !== "undefined" ? window.innerWidth : 9999;
               const vh =
                 typeof window !== "undefined" ? window.innerHeight : 9999;
               const menu = (
-                <>
+                <div className={lightCanvas ? "canvas-ui-light" : "canvas-ui-dark"}>
                   <div
                     className="fixed inset-0 z-[998]"
                     onPointerDown={() => setCtxMenu(null)}
@@ -7667,7 +7687,7 @@ export function CanvasClient() {
                       left: Math.min(ctxMenu.cx, vw - 228),
                       top: Math.min(ctxMenu.cy, vh - 360),
                     }}
-                    className="menu-pop z-[999] w-[216px] overflow-hidden rounded-xl border border-[#2a2d36] bg-[#1f2229] py-1 shadow-2xl"
+                    className="canvas-ui-surface menu-pop z-[999] w-[216px] overflow-hidden rounded-xl border py-1"
                   >
                     {node ? (
                       /* 节点右键菜单(对齐原型 cznode) */
@@ -7782,7 +7802,7 @@ export function CanvasClient() {
                       </>
                     )}
                   </div>
-                </>
+                </div>
               );
               return typeof document !== "undefined"
                 ? createPortal(menu, document.body)
@@ -7794,7 +7814,7 @@ export function CanvasClient() {
             <div
               key={selectedId ?? selectedPendId ?? "tb"}
               style={{ left: topbarStyle.left, top: topbarStyle.top }}
-              className="cz-anim-top absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-[14px] border border-[#2a2d36] bg-[#191b21] p-1.5 shadow-2xl"
+              className="canvas-ui-surface cz-anim-top absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-[14px] border p-1.5"
             >
               {QUICK_ACTIONS.filter(
                 (a) => a.key !== "hd" && a.key !== "cutout"
@@ -7805,7 +7825,7 @@ export function CanvasClient() {
                   disabled={selectedGenerating || !selected}
                   title={!selected ? t("canvas.toolNeedImage") : undefined}
                   onClick={() => onQuickAction(a.key)}
-                  className="flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold text-[#e7e9ee] transition-colors hover:bg-[#1f2229] disabled:opacity-40"
+                  className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
                 >
                   <span className="text-[15px] leading-none">{a.emoji}</span>
                   {t(`canvas.qa.${a.key}`)}
@@ -7817,7 +7837,7 @@ export function CanvasClient() {
                 disabled={selectedGenerating || !selected}
                 title={!selected ? t("canvas.toolNeedImage") : undefined}
                 onClick={() => onCutout("fine")}
-                className="flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold text-[#e7e9ee] transition-colors hover:bg-[#1f2229] disabled:opacity-40"
+                className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
               >
                 <span className="text-[15px] leading-none">✂️</span>
                 {t("canvas.qa.cutout")}
@@ -7825,6 +7845,7 @@ export function CanvasClient() {
               {/* 高清:下拉选分辨率(深色弹出,向下) */}
               <DarkSelect
                 dir="down"
+                light={lightCanvas}
                 disabled={selectedGenerating || !selected}
                 value=""
                 options={CANVAS_RES.map((resolution) => ({
@@ -7833,7 +7854,7 @@ export function CanvasClient() {
                 }))}
                 onPick={(v) => onHd(v)}
                 triggerClass={cn(
-                  "flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold text-[#e7e9ee] transition-colors hover:bg-[#1f2229]",
+                  "canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors",
                   selected && !selectedGenerating
                     ? "cursor-pointer"
                     : "cursor-default opacity-40"
@@ -7848,6 +7869,7 @@ export function CanvasClient() {
               {/* 改比例(ChatGPT 式重生成):选目标比例,按原图重画再裁切,无需提示词 */}
               <DarkSelect
                 dir="down"
+                light={lightCanvas}
                 disabled={selectedGenerating || !selected}
                 value=""
                 options={[
@@ -7859,7 +7881,7 @@ export function CanvasClient() {
                 ]}
                 onPick={(v) => onRatioGen(v)}
                 triggerClass={cn(
-                  "flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold text-[#e7e9ee] transition-colors hover:bg-[#1f2229]",
+                  "canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors",
                   selected && !selectedGenerating
                     ? "cursor-pointer"
                     : "cursor-default opacity-40"
@@ -7871,14 +7893,14 @@ export function CanvasClient() {
                   </>
                 }
               />
-              <span className="mx-1.5 h-5 w-px flex-none bg-[#2a2d36]" />
+              <span className="canvas-ui-divider mx-1.5 h-5 w-px flex-none" />
               {/* 尾部图标:✏️编辑 / 📤上传 / ⬇️下载 / ⛶放大(对齐原型 .ic) */}
               <button
                 type="button"
                 title="在线改字"
                 disabled={!selected || selectedGenerating || readOnly}
                 onClick={() => selected && void openImageTextEditor(selected)}
-                className="flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold text-[#dce3eb] transition-colors hover:bg-[#1f2229] disabled:opacity-40"
+                className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
               >
                 <Type className="h-4 w-4" /> 改字
               </button>
@@ -7891,7 +7913,7 @@ export function CanvasClient() {
                   setNodeRenameValue(selected.title);
                   setRenamingNodeId(selected.id);
                 }}
-                className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors hover:bg-[#1f2229] disabled:opacity-40"
+                className="canvas-ui-action flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors disabled:opacity-40"
               >
                 ✏️
               </button>
@@ -7903,7 +7925,7 @@ export function CanvasClient() {
                     ? extraInputRef.current?.click()
                     : selectedPend && onPendUpload(selectedPend.id)
                 }
-                className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors hover:bg-[#1f2229]"
+                className="canvas-ui-action flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors"
               >
                 📤
               </button>
@@ -7914,7 +7936,7 @@ export function CanvasClient() {
                 onClick={() =>
                   selected && void downloadOne(selected.image, selected.title)
                 }
-                className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors hover:bg-[#1f2229] disabled:opacity-40"
+                className="canvas-ui-action flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors disabled:opacity-40"
               >
                 ⬇️
               </button>
@@ -7926,7 +7948,7 @@ export function CanvasClient() {
                   selected &&
                   setLightbox({ src: selected.image, alt: selected.title })
                 }
-                className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[15px] leading-none text-[#9aa1ae] transition-colors hover:bg-[#1f2229] hover:text-[#e7e9ee] disabled:opacity-40"
+                className="canvas-ui-action flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[15px] leading-none transition-colors disabled:opacity-40"
               >
                 ⛶
               </button>
@@ -7940,8 +7962,8 @@ export function CanvasClient() {
               data-testid="text-node-toolbar"
               style={{ left: topbarStyle.left, top: topbarStyle.top }}
               className={cn(
-                "cz-anim-top absolute z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 overflow-x-auto rounded-[14px] border bg-[#191b21] p-1.5 text-[#e7e9ee] shadow-2xl",
-                lightCanvas ? "border-[#2a2d36]" : "border-[#40444f]"
+                "canvas-ui-surface cz-anim-top absolute z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 overflow-x-auto rounded-[14px] border p-1.5",
+                !lightCanvas && "!border-[#40444f]"
               )}
             >
               <button
@@ -7949,7 +7971,7 @@ export function CanvasClient() {
                 disabled={assistBusy}
                 onClick={() => setProductPicker({ textNodeIds: [selectedText.id] })}
                 title={t("canvas.assistWriteHint")}
-                className="flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors hover:bg-[#1f2229] disabled:opacity-40"
+                className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
               >
                 {assistBusy ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -7962,7 +7984,7 @@ export function CanvasClient() {
                 type="button"
                 onClick={() => setGenImageMenu({ textNodeIds: [selectedText.id] })}
                 title={t("canvas.genImagesHint")}
-                className="flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors hover:bg-[#1f2229]"
+                className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors"
               >
                 <ImageIcon className="h-4 w-4" />
                 {t("canvas.genImages")}
@@ -7971,12 +7993,12 @@ export function CanvasClient() {
                 type="button"
                 onClick={() => setTextReferenceMenuOpen((open) => !open)}
                 title={t("canvas.textAddReference")}
-                className="flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors hover:bg-[#1f2229]"
+                className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors"
               >
                 <Plus className="h-4 w-4" />
                 {t("canvas.textAddReference")}
               </button>
-              <span className="mx-1.5 h-5 w-px flex-none bg-[#2a2d36]" />
+              <span className="canvas-ui-divider mx-1.5 h-5 w-px flex-none" />
               <button
                 type="button"
                 disabled={!selectedText.content}
@@ -7984,7 +8006,7 @@ export function CanvasClient() {
                   void copyText(selectedText.content).then((ok) => ok && showCopyTip())
                 }
                 title={t("canvas.copyToClipboard")}
-                className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[16px] transition-colors hover:bg-[#1f2229] disabled:opacity-40"
+                className="canvas-ui-action flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[16px] transition-colors disabled:opacity-40"
               >
                 ⧉
               </button>
@@ -7992,7 +8014,7 @@ export function CanvasClient() {
                 type="button"
                 onClick={() => setFocusId(selectedText.id)}
                 title={t("canvas.dockFocus")}
-                className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[15px] text-[#cdd2da] transition-colors hover:bg-[#1f2229] hover:text-white"
+                className="canvas-ui-action flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[15px] transition-colors"
               >
                 ⊡
               </button>
@@ -8003,7 +8025,7 @@ export function CanvasClient() {
                   setRenamingNodeId(selectedText.id);
                 }}
                 title={t("canvas.editName")}
-                className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[16px] transition-colors hover:bg-[#1f2229]"
+                className="canvas-ui-action flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[16px] transition-colors"
               >
                 ✏️
               </button>
@@ -8161,7 +8183,7 @@ export function CanvasClient() {
                   }}
                   maxLength={60}
                   placeholder={t("canvas.renamePlaceholder")}
-                  className="w-[210px] rounded-lg border border-primary/70 bg-[#191b21] px-2.5 py-1.5 text-center text-sm font-semibold text-[#e7e9ee] shadow-2xl outline-none"
+                  className="canvas-ui-input w-[210px] rounded-lg border !border-primary/70 px-2.5 py-1.5 text-center text-sm font-semibold shadow-2xl outline-none"
                 />
               </div>
             )}
@@ -8169,10 +8191,11 @@ export function CanvasClient() {
           {/* 底部生成器(配方):选中节点正下方居中,横向 dock(原型 dock) */}
           {selected && (
             <div
+              data-testid="image-node-dock"
               key={`dock-${selected.id}`}
               ref={panelRef}
               style={dockStyle ?? { left: 12, bottom: 12, maxHeight: "60%" }}
-              className="cz-anim-bottom absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border border-[#2a2d36] bg-[#191b21] shadow-2xl"
+              className="canvas-ui-surface cz-anim-bottom absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
             >
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
               <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
@@ -8181,13 +8204,14 @@ export function CanvasClient() {
                     <>
                       <DarkSelect
                         dir="up"
+                        light={lightCanvas}
                         value={genStyle}
                         options={GENERATION_STYLES.map((s) => ({
                           value: s,
                           label: s,
                         }))}
                         onPick={(v) => setGenStyle(v)}
-                        triggerClass="flex cursor-pointer items-center gap-1.5 rounded-[10px] border border-[#2a2d36] px-2.5 py-2 text-[12.5px] text-[#e7e9ee] transition-colors hover:bg-[#1f2229]"
+                        triggerClass="canvas-ui-control flex cursor-pointer items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
                         trigger={
                           <>
                             🧊
@@ -8205,7 +8229,7 @@ export function CanvasClient() {
                           "flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors",
                           selected.marked
                             ? "border-amber-400/60 bg-amber-400/10 text-amber-200"
-                            : "border-[#2a2d36] text-[#e7e9ee] hover:bg-[#1f2229]"
+                            : "canvas-ui-control"
                         )}
                       >
                         <MapPin
@@ -8219,7 +8243,7 @@ export function CanvasClient() {
                       <button
                         type="button"
                         onClick={() => setFocusId(selected.id)}
-                        className="flex items-center gap-1.5 rounded-[10px] border border-[#2a2d36] px-2.5 py-2 text-[12.5px] text-[#e7e9ee] transition-colors hover:bg-[#1f2229]"
+                        className="canvas-ui-control flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
                       >
                         ⊡ {t("canvas.dockFocus")}
                       </button>
@@ -8230,7 +8254,7 @@ export function CanvasClient() {
                   {visibleDockRefs.map((ref) => (
                     <div
                       key={ref.id}
-                      className="group relative h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[#2a2d36]"
+                      className="group relative h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[var(--canvas-ui-border)]"
                     >
                       <button
                         type="button"
@@ -8267,7 +8291,7 @@ export function CanvasClient() {
                     extraPreviews.map((src, i) => (
                       <div
                         key={i}
-                        className="relative h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[#2a2d36]"
+                        className="relative h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[var(--canvas-ui-border)]"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -8300,14 +8324,14 @@ export function CanvasClient() {
                           type="button"
                           onClick={() => extraInputRef.current?.click()}
                           title={t("canvas.addImage")}
-                          className="flex h-[46px] w-[46px] flex-none items-center justify-center rounded-[9px] border border-dashed border-[#2a2d36] text-[#9aa1ae] transition-colors hover:border-[#6366f1]/60 hover:text-[#e7e9ee]"
+                          className="canvas-ui-action flex h-[46px] w-[46px] flex-none items-center justify-center rounded-[9px] border border-dashed border-[var(--canvas-ui-border)] transition-colors hover:!border-[#6366f1]/60"
                         >
                           <Upload className="h-4 w-4" />
                         </button>
                       )}
                     </>
                   )}
-                  <span className="ml-1 min-w-0 flex-1 truncate text-[12px] text-[#9aa1ae]">
+                  <span className="canvas-ui-muted ml-1 min-w-0 flex-1 truncate text-[12px]">
                     {fmt(t("canvas.dockRef"), {
                       n: visibleDockRefs.length + extraFiles.length,
                       name: selected.title,
@@ -8317,7 +8341,7 @@ export function CanvasClient() {
                     type="button"
                     onClick={() => setSelectedId(null)}
                     aria-label={t("canvas.close")}
-                    className="flex h-6 w-6 flex-none items-center justify-center rounded-full text-[#9aa1ae] transition-colors hover:bg-[#1f2229] hover:text-[#e7e9ee]"
+                    className="canvas-ui-action flex h-6 w-6 flex-none items-center justify-center rounded-full transition-colors"
                   >
                     <X className="h-4 w-4" />
                 </button>
@@ -8329,7 +8353,7 @@ export function CanvasClient() {
                   readOnly={readOnly}
                   placeholder={readOnly ? "" : t("canvas.promptPlaceholder")}
                   onChange={(e) => setEditPrompt(e.target.value)}
-                  className="min-h-[40px] max-h-40 resize-none border-0 bg-transparent px-0 py-0.5 text-sm text-[#e7e9ee] shadow-none placeholder:text-[#9aa1ae] focus-visible:ring-0"
+                  className="canvas-ui-text min-h-[40px] max-h-40 resize-none border-0 bg-transparent px-0 py-0.5 text-sm shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0"
                 />
                 {genError && (
                   <p className="pb-1 text-xs font-medium text-red-400">
@@ -8340,10 +8364,11 @@ export function CanvasClient() {
 
               {/* dbar:模型 / 比例·清晰度 / 数量 + 积分 + 发送(对齐原型 .dbar) */}
               {!readOnly && (
-                <div className="flex flex-none flex-wrap items-center gap-2 border-t border-[#2a2d36] px-3.5 py-2.5">
+                <div className="canvas-ui-divider flex flex-none flex-wrap items-center gap-2 border-t bg-transparent px-3.5 py-2.5">
                   {modelControl(selectedGenerating)}
                   <DarkSelect
                     dir="up"
+                    light={lightCanvas}
                     value={generationMode}
                     disabled={selectedGenerating}
                     options={[
@@ -8353,7 +8378,7 @@ export function CanvasClient() {
                       { value: "split", label: t("canvas.modeSplit") },
                     ]}
                     onPick={(value) => setGenerationMode(value as GenerationMode)}
-                    triggerClass="flex cursor-pointer items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee] disabled:opacity-45"
+                    triggerClass="canvas-ui-control flex cursor-pointer items-center gap-1.5 rounded-[9px] border px-2.5 py-1.5 text-[12.5px] font-semibold disabled:opacity-45"
                     trigger={
                       <>
                         {generationMode === "detail" ? (
@@ -8377,9 +8402,10 @@ export function CanvasClient() {
                       value={genCount}
                       onChange={setGenCount}
                       disabled={selectedGenerating}
+                      light={lightCanvas}
                     />
                   ) : (
-                    <span className="rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee]">
+                    <span className="canvas-ui-control rounded-[9px] border px-2.5 py-1.5 text-[12.5px] font-semibold">
                       🖼 {generationMode === "split"
                         ? t("canvas.viewNodesCount")
                         : t("canvas.viewSheetCount")}
@@ -8394,7 +8420,7 @@ export function CanvasClient() {
                     onClick={() => void retrySelected()}
                     disabled={selectedGenerating}
                     title={t("canvas.retryImageHint")}
-                    className="flex h-10 items-center gap-1.5 rounded-[11px] border border-[#343842] px-3 text-[12.5px] font-semibold text-[#d5d8df] hover:bg-[#24272f] disabled:opacity-45"
+                    className="canvas-ui-control flex h-10 items-center gap-1.5 rounded-[11px] border px-3 text-[12.5px] font-semibold disabled:opacity-45"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                     {t("canvas.retryImage")}
@@ -8404,7 +8430,7 @@ export function CanvasClient() {
                     onClick={generateChild}
                     disabled={selectedGenerating}
                     title={t("canvas.generate")}
-                    className="flex h-10 w-10 flex-none items-center justify-center rounded-[11px] bg-white text-[18px] font-bold text-[#111] transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="canvas-ui-primary flex h-10 w-10 flex-none items-center justify-center rounded-[11px] text-[18px] font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
                     {selectedGenerating ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -8420,9 +8446,10 @@ export function CanvasClient() {
           {/* 空白节点生成 dock(文生图 / 合并多输入):选中空白节点时出现(图3 旁支节点) */}
           {selectedPend && !readOnly && (
             <div
+              data-testid="pending-node-dock"
               key={`pdock-${selectedPend.id}`}
               style={dockStyle ?? { left: 12, bottom: 12 }}
-              className="cz-anim-bottom absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border border-[#2a2d36] bg-[#191b21] shadow-2xl"
+              className="canvas-ui-surface cz-anim-bottom absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
             >
               <div className="px-4 pb-1.5 pt-3.5">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -8433,7 +8460,7 @@ export function CanvasClient() {
                         type="button"
                         title={a.title}
                         onClick={() => setLightbox({ src: a.image, alt: a.title })}
-                        className="h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[#2a2d36]"
+                        className="h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[var(--canvas-ui-border)]"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -8444,11 +8471,11 @@ export function CanvasClient() {
                       </button>
                     ))
                   ) : (
-                    <span className="flex h-[46px] items-center rounded-[9px] border border-dashed border-[#2a2d36] px-3 text-[12px] text-[#9aa1ae]">
+                    <span className="canvas-ui-muted flex h-[46px] items-center rounded-[9px] border border-dashed border-[var(--canvas-ui-border)] px-3 text-[12px]">
                       🅰️ {t("canvas.pendText2img")}
                     </span>
                   )}
-                  <span className="ml-1 min-w-0 flex-1 truncate text-[12px] text-[#9aa1ae]">
+                  <span className="canvas-ui-muted ml-1 min-w-0 flex-1 truncate text-[12px]">
                     {generationMode === "detail" && pendInputArts.length > 0
                       ? fmt(t("canvas.pendDetail"), {
                           refs: pendInputArts.length,
@@ -8462,7 +8489,7 @@ export function CanvasClient() {
                     type="button"
                     onClick={() => setSelectedPendId(null)}
                     aria-label={t("canvas.close")}
-                    className="flex h-6 w-6 flex-none items-center justify-center rounded-full text-[#9aa1ae] transition-colors hover:bg-[#1f2229] hover:text-[#e7e9ee]"
+                    className="canvas-ui-action flex h-6 w-6 flex-none items-center justify-center rounded-full transition-colors"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -8472,7 +8499,7 @@ export function CanvasClient() {
                   value={editPrompt}
                   placeholder={t("canvas.pendPromptPlaceholder")}
                   onChange={(e) => setEditPrompt(e.target.value)}
-                  className="min-h-[40px] max-h-40 resize-none border-0 bg-transparent px-0 py-0.5 text-sm text-[#e7e9ee] shadow-none placeholder:text-[#9aa1ae] focus-visible:ring-0"
+                  className="canvas-ui-text min-h-[40px] max-h-40 resize-none border-0 bg-transparent px-0 py-0.5 text-sm shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0"
                 />
                 {genError && (
                   <p className="pb-1 text-xs font-medium text-red-400">
@@ -8480,10 +8507,11 @@ export function CanvasClient() {
                   </p>
                 )}
               </div>
-              <div className="flex flex-none flex-wrap items-center gap-2 border-t border-[#2a2d36] px-3.5 py-2.5">
+              <div className="canvas-ui-divider flex flex-none flex-wrap items-center gap-2 border-t bg-transparent px-3.5 py-2.5">
                 {modelControl(selectedPendGenerating)}
                 <DarkSelect
                   dir="up"
+                  light={lightCanvas}
                   value={generationMode === "detail" ? "detail" : "standard"}
                   disabled={selectedPendGenerating}
                   options={[
@@ -8491,7 +8519,7 @@ export function CanvasClient() {
                     { value: "detail", label: t("canvas.modeDetail") },
                   ]}
                   onPick={(value) => setGenerationMode(value as GenerationMode)}
-                  triggerClass="flex cursor-pointer items-center gap-1.5 rounded-[9px] bg-[#1f2229] px-2.5 py-1.5 text-[12.5px] font-semibold text-[#e7e9ee] disabled:opacity-45"
+                  triggerClass="canvas-ui-control flex cursor-pointer items-center gap-1.5 rounded-[9px] border px-2.5 py-1.5 text-[12.5px] font-semibold disabled:opacity-45"
                   trigger={
                     <>
                       {generationMode === "detail" ? (
@@ -8510,6 +8538,7 @@ export function CanvasClient() {
                   value={genCount}
                   onChange={setGenCount}
                   disabled={selectedPendGenerating}
+                  light={lightCanvas}
                 />
                 <span className="flex-1" />
                 <span className="text-[13px] font-semibold text-[#f0c64a]">
@@ -8520,7 +8549,7 @@ export function CanvasClient() {
                   onClick={() => void generatePend()}
                   disabled={selectedPendGenerating}
                   title={t("canvas.generate")}
-                  className="flex h-10 w-10 flex-none items-center justify-center rounded-[11px] bg-white text-[18px] font-bold text-[#111] transition-opacity hover:opacity-90 disabled:opacity-50"
+                  className="canvas-ui-primary flex h-10 w-10 flex-none items-center justify-center rounded-[11px] text-[18px] font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   {selectedPendGenerating ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -9238,7 +9267,10 @@ export function CanvasClient() {
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="dark fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm text-foreground"
+            className={cn(
+              "fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm text-foreground",
+              lightCanvas ? "canvas-ui-light" : "dark canvas-ui-dark"
+            )}
             onClick={() => setModalStack([])}
           >
             <div
