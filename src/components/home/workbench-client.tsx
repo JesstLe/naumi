@@ -14,7 +14,6 @@ import {
   MessageSquarePlus,
   Network,
   Plus,
-  Send,
   Upload,
   Wrench,
   X,
@@ -828,68 +827,69 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
     }
   }
 
-  // ── 对话态(与原 /brain 一致) ──
+  // ── 对话态(沉浸式:顶条 + 居中消息流 + 底部输入容器) ──
   if (messages.length > 0 || busy || composerSubmitting) {
+    const userInitial = (user?.name || user?.email || "U").trim().charAt(0).toUpperCase();
     return (
-      <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-        <div className="relative mx-auto flex h-[calc(100vh-160px)] max-w-4xl flex-col rounded-card border border-c-border bg-c-card shadow-card">
-          {/* 头 */}
-          <div className="flex items-center gap-3 border-b border-border px-6 py-4">
-            <span
-              className="grid h-11 w-11 flex-none place-items-center rounded-[10px]"
-              style={{ background: "rgba(79,70,229,.12)", color: "#4F46E5" }}
-            >
-              <Bot className="h-[21px] w-[21px]" strokeWidth={1.9} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h1 className="text-[16px] font-bold text-c-text">
-                Naumi 智能工作台
-              </h1>
-              <p className="truncate text-[12px] text-c-text3">
-                {activeTitle || "一句话调度全部业务系统 · 生图 / 套图 / A+ / 鱼塘任务 / 模板 / 余额"}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSessionsOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[12.5px] font-medium text-c-text2 transition-colors hover:bg-secondary"
-            >
-              <History className="h-3.5 w-3.5" />
-              历史
-            </button>
-            <button
-              type="button"
-              onClick={newConversation}
-              disabled={running}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[12.5px] font-medium text-c-text2 transition-colors hover:bg-secondary disabled:opacity-50"
-            >
-              <MessageSquarePlus className="h-3.5 w-3.5" />
-              新对话
-            </button>
-            <Link
-              href="/hub"
-              className="hidden rounded-lg border border-border px-3 py-1.5 text-[12.5px] font-medium text-c-text2 transition-colors hover:bg-secondary sm:block"
-            >
-              业务系统 →
-            </Link>
-          </div>
-
-          {/* 消息区 */}
-          <div
-            ref={scrollRef}
-            className="nv-panel-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5"
+      <div className="relative flex h-[calc(100vh-58px)] flex-col md:h-[calc(100vh-60px)]">
+        {/* 顶条 */}
+        <header className="flex h-14 flex-none items-center gap-3 border-b border-c-border bg-c-card px-4 sm:px-6">
+          <span
+            className="grid h-9 w-9 flex-none place-items-center rounded-[10px]"
+            style={{ background: "rgba(79,70,229,.12)", color: "#4F46E5" }}
           >
+            <Bot className="h-[18px] w-[18px]" strokeWidth={1.9} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-[15px] font-bold leading-tight text-c-text">
+              智能工作台
+            </h1>
+            <p className="truncate text-[11.5px] leading-tight text-c-text3">
+              {activeTitle || "生图 / 套图 / A+ / 鱼塘任务 / 余额，一句话调度"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSessionsOpen(true)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-medium text-c-text2 transition-colors hover:bg-secondary hover:text-c-text"
+          >
+            <History className="h-4 w-4" />
+            <span className="hidden sm:inline">历史</span>
+          </button>
+          <button
+            type="button"
+            onClick={newConversation}
+            disabled={running}
+            className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-medium text-c-text2 transition-colors hover:bg-secondary hover:text-c-text disabled:opacity-50"
+          >
+            <MessageSquarePlus className="h-4 w-4" />
+            <span className="hidden sm:inline">新对话</span>
+          </button>
+          <Link
+            href="/hub"
+            className="hidden h-9 items-center rounded-full border border-c-border px-3.5 text-[12.5px] font-medium text-c-text2 transition-colors hover:border-c-border2 hover:text-c-text sm:inline-flex"
+          >
+            业务系统
+          </Link>
+        </header>
+
+        {/* 消息流 */}
+        <div
+          ref={scrollRef}
+          className="nv-panel-scroll min-h-0 flex-1 overflow-y-auto"
+        >
+          <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6">
             {messages.map((m, i) => (
               <div
                 key={i}
                 className={cn(
-                  "flex gap-2.5",
+                  "flex items-end gap-2.5",
                   m.role === "user" ? "justify-end" : "justify-start"
                 )}
               >
                 {m.role === "assistant" && (
                   <span
-                    className="mt-1 grid h-8 w-8 flex-none place-items-center rounded-lg"
+                    className="mb-1 grid h-8 w-8 flex-none place-items-center rounded-full"
                     style={{ background: "rgba(79,70,229,.12)", color: "#4F46E5" }}
                   >
                     <Bot className="h-4 w-4" />
@@ -897,51 +897,53 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
                 )}
                 <div
                   className={cn(
-                    "max-w-[80%] rounded-2xl px-4 py-3 text-[14px] leading-relaxed",
+                    "max-w-[82%] px-4 py-3 text-[14px] leading-relaxed",
                     m.role === "user"
-                      ? "bg-primary/10 text-c-text"
-                      : "border border-border bg-secondary/40 text-c-text"
+                      ? "rounded-2xl rounded-br-md text-white shadow-btn [background:var(--grad-acc)]"
+                      : "rounded-2xl rounded-tl-md border border-c-border bg-c-card text-c-text shadow-card"
                   )}
                 >
                   {m.pending ? (
-                    <div className="space-y-2">
-                      <span className="flex items-center gap-2 text-muted-foreground">
+                    <div>
+                      <span className="flex items-center gap-2 text-c-text3">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        正在执行,可插话修正或停止
+                        正在执行…
                       </span>
                       {running && (
-                        <div className="flex items-center gap-2">
-                          <input
-                            value={interject}
-                            onChange={(e) => setInterject(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") void sendInterject();
-                            }}
-                            placeholder="插话修正,如:换蓝色的"
-                            className="h-8 flex-1 rounded-lg border border-border bg-secondary px-2.5 text-[12px] outline-none focus:ring-1 focus:ring-primary"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => void sendInterject()}
-                            disabled={!interject.trim()}
-                            className="h-8 rounded-lg border border-border px-2.5 text-[12px] font-medium text-c-text transition-colors hover:bg-secondary disabled:opacity-50"
-                          >
-                            插话
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void stopRun()}
-                            className="h-8 rounded-lg border border-red-500/40 px-2.5 text-[12px] font-medium text-red-600 transition-colors hover:bg-red-500/10"
-                          >
-                            停止
-                          </button>
+                        <div className="mt-3 border-t border-c-border pt-3">
+                          <div className="flex items-center gap-2">
+                            <input
+                              value={interject}
+                              onChange={(e) => setInterject(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") void sendInterject();
+                              }}
+                              placeholder="插话修正，如：换蓝色的"
+                              className="h-9 min-w-0 flex-1 rounded-xl border border-c-border bg-c-subtle px-3 text-[12.5px] text-c-text outline-none focus:ring-1 focus:ring-primary"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void sendInterject()}
+                              disabled={!interject.trim()}
+                              className="h-9 flex-none rounded-xl px-3 text-[12.5px] font-semibold text-acc transition-colors hover:bg-acc-tint disabled:opacity-40"
+                            >
+                              插话
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void stopRun()}
+                              className="h-9 flex-none rounded-xl px-2.5 text-[12.5px] font-medium text-red-500 transition-colors hover:bg-red-500/10"
+                            >
+                              停止
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
                   ) : (
                     <>
                       {m.steps && m.steps.length > 0 && (
-                        <details className="mb-2 rounded-lg bg-secondary/60 px-3 py-2 text-[12px] text-muted-foreground">
+                        <details className="mb-2 rounded-xl bg-c-subtle px-3 py-2 text-[12px] text-c-text3">
                           <summary className="flex cursor-pointer items-center gap-1.5 font-medium">
                             <Wrench className="h-3.5 w-3.5" />
                             执行轨迹({m.steps.length} 步)
@@ -964,12 +966,19 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
                     </>
                   )}
                 </div>
+                {m.role === "user" && (
+                  <span className="mb-1 grid h-8 w-8 flex-none place-items-center rounded-full bg-acc-tint text-[12px] font-bold text-acc">
+                    {userInitial}
+                  </span>
+                )}
               </div>
             ))}
           </div>
+        </div>
 
-          {/* 输入区 */}
-          <div className="border-t border-border px-6 py-4">
+        {/* 输入区 */}
+        <div className="flex-none border-t border-c-border bg-c-card px-4 py-4 sm:px-6">
+          <div className="mx-auto w-full max-w-3xl">
             {error && (
               <p className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-600">
                 {error}
@@ -995,43 +1004,7 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
                 ))}
               </div>
             )}
-            <div className="mb-2">
-              <TextModelSelect compact />
-            </div>
-            <div className="flex items-end gap-2">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                multiple
-                hidden
-                onChange={async (e) => {
-                  const files = Array.from(e.target.files ?? []);
-                  e.target.value = "";
-                  if (!files.length) return;
-                  setUploading(true);
-                  const urls: string[] = [];
-                  for (const f of files) {
-                    const u = await uploadOne(f);
-                    if (u) urls.push(u);
-                  }
-                  setUploading(false);
-                  if (urls.length) setAttachments((prev) => [...prev, ...urls]);
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                title="上传商品图"
-                className="flex h-11 w-11 flex-none items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
-              >
-                {uploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4" />
-                )}
-              </button>
+            <div className="rounded-[20px] border border-c-border bg-c-card p-2.5 shadow-pop transition-colors focus-within:border-c-border2">
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -1041,39 +1014,81 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
                     void send();
                   }
                 }}
-                placeholder="直接说,例如:鱼塘现在几单在跑?帮我出一张保健品礼盒主图"
-                rows={1}
-                className="max-h-32 min-h-[44px] flex-1 resize-y rounded-xl border border-border bg-secondary px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                placeholder="直接说，例如：鱼塘现在几单在跑？帮我出一张保健品礼盒主图"
+                rows={2}
+                className="max-h-40 w-full resize-none bg-transparent px-2 py-1.5 text-[14px] leading-relaxed text-c-text outline-none placeholder:text-c-text3"
               />
-              <button
-                type="button"
-                onClick={() => void send()}
-                disabled={busy || !input.trim()}
-                className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-white shadow-btn [background:var(--grad-acc)] transition-all hover:brightness-95 disabled:opacity-50"
-              >
-                {busy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </button>
+              <div className="mt-1 flex items-end justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    multiple
+                    hidden
+                    onChange={async (e) => {
+                      const files = Array.from(e.target.files ?? []);
+                      e.target.value = "";
+                      if (!files.length) return;
+                      setUploading(true);
+                      const urls: string[] = [];
+                      for (const f of files) {
+                        const u = await uploadOne(f);
+                        if (u) urls.push(u);
+                      }
+                      setUploading(false);
+                      if (urls.length) setAttachments((prev) => [...prev, ...urls]);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading}
+                    title="上传商品图"
+                    className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-c-text3 transition-colors hover:bg-secondary hover:text-c-text disabled:opacity-50"
+                  >
+                    {uploading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
+                  </button>
+                  <TextModelSelect compact />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void send()}
+                  disabled={busy || !input.trim()}
+                  aria-label="发送"
+                  className="flex h-10 w-10 flex-none items-center justify-center rounded-full text-white shadow-btn [background:var(--grad-acc)] transition-all hover:opacity-90 disabled:opacity-30"
+                >
+                  {busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowUp className="h-[18px] w-[18px]" />
+                  )}
+                </button>
+              </div>
             </div>
+            <p className="mt-2 text-center text-[11px] text-c-text4">
+              Agent 会调用站内工具完成任务，按工具计费；Enter 发送 · Shift+Enter 换行
+            </p>
           </div>
-
-          {/* 历史会话抽屉(卡片内右侧浮层) */}
-          <WorkbenchSessions
-            open={sessionsOpen}
-            onClose={() => setSessionsOpen(false)}
-            sessions={sessions}
-            loading={sessionsLoading}
-            activeSessionId={sessionIdRef.current}
-            busy={busy}
-            loadingId={sessionLoadingId}
-            onLoad={(id) => void loadSession(id)}
-            onRename={renameSession}
-            onDelete={(id) => removeSession(id)}
-          />
         </div>
+
+        {/* 历史会话抽屉(面板内右侧浮层) */}
+        <WorkbenchSessions
+          open={sessionsOpen}
+          onClose={() => setSessionsOpen(false)}
+          sessions={sessions}
+          loading={sessionsLoading}
+          activeSessionId={sessionIdRef.current}
+          busy={busy}
+          loadingId={sessionLoadingId}
+          onLoad={(id) => void loadSession(id)}
+          onRename={renameSession}
+          onDelete={(id) => removeSession(id)}
+        />
       </div>
     );
   }
