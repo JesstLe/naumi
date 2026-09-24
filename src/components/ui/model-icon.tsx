@@ -42,6 +42,7 @@ function OpenAIMono({ size }: { size: number }) {
 
 export function ModelIcon({ modelId, size = 16 }: { modelId: string; size?: number }) {
   const family = imageModelFamily(modelId);
+  const id = modelId.toLowerCase();
 
   if (family === "nano-banana-2" || family === "nano-banana-pro") {
     return <NanoBananaColor size={size} />;
@@ -55,5 +56,68 @@ export function ModelIcon({ modelId, size = 16 }: { modelId: string; size?: numb
     return <OpenAIMono size={size} />;
   }
 
+  // 文字模型品牌识别:有内联官方 SVG 的直接用,其余用品牌主色首字母徽标。
+  if (/^(gpt-|o[134]($|-)|chatgpt|openai)/.test(id)) {
+    return <OpenAIMono size={size} />;
+  }
+  if (/^(gemini|gemma|imagen)/.test(id)) {
+    return <GoogleColor size={size} />;
+  }
+  const letterBrand = textModelLetterBrand(id);
+  if (letterBrand) {
+    return (
+      <LetterBadge
+        letter={letterBrand.letter}
+        bg={letterBrand.bg}
+        size={size}
+      />
+    );
+  }
+
   return <Sparkles aria-hidden size={size} strokeWidth={1.8} className="flex-none" />;
+}
+
+/** 品牌主色首字母徽标(官方 SVG 未内联的品牌兜底,视觉仍强于通用齿轮)。 */
+function textModelLetterBrand(id: string): { letter: string; bg: string } | null {
+  if (/^claude/.test(id)) return { letter: "C", bg: "#D97757" };
+  if (/^deepseek/.test(id)) return { letter: "D", bg: "#4D6BFE" };
+  if (/^(qwen|qwq|qvq)/.test(id)) return { letter: "Q", bg: "#615CED" };
+  if (/^(grok|xai)/.test(id)) return { letter: "G", bg: "#1D1D1F" };
+  if (/^(kimi|moonshot)/.test(id)) return { letter: "K", bg: "#0D1F3C" };
+  if (/^(glm|zhipu|chatglm)/.test(id)) return { letter: "Z", bg: "#3859FF" };
+  if (/^llama/.test(id)) return { letter: "L", bg: "#0866FF" };
+  if (/^minimax/.test(id)) return { letter: "M", bg: "#F2545B" };
+  if (/^mistral/.test(id)) return { letter: "M", bg: "#FF7000" };
+  if (/^doubao/.test(id)) return { letter: "D", bg: "#3B7BFF" };
+  if (/^(ernie|wenxin)/.test(id)) return { letter: "E", bg: "#2932E1" };
+  if (/^hunyuan/.test(id)) return { letter: "H", bg: "#0052D9" };
+  return null;
+}
+
+function LetterBadge({
+  letter,
+  bg,
+  size,
+}: {
+  letter: string;
+  bg: string;
+  size: number;
+}) {
+  return (
+    <span
+      aria-hidden
+      className="flex-none select-none font-bold leading-none text-white"
+      style={{
+        width: size,
+        height: size,
+        background: bg,
+        borderRadius: Math.max(3, size * 0.24),
+        display: "grid",
+        placeItems: "center",
+        fontSize: Math.round(size * 0.6),
+      }}
+    >
+      {letter}
+    </span>
+  );
 }
