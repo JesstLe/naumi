@@ -31,7 +31,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 
 ## 可用工具
 1. search_templates / list_my_artworks / get_balance / verify_image_output:只读,不消耗积分。
-2. generate_image:文生图/图生图。参数 prompt(必填)、ratio(1:1/3:4/4:3/16:9/9:16)、resolution(1K/2K)、count(1-4)。计费按张数×分辨率(1K=6/张)。
+2. generate_image:文生图/图生图。参数 prompt(必填)、ratio(1:1/3:4/4:3/16:9/9:16)、resolution(1K/2K)、count(1-4)、model(仅当用户明确点名生图模型时填写)。计费按张数×分辨率(1K=6/张)。
 3. retouch_product:商品精修。参数 image_url、options(数组)、text。计费 6 积分。
 4. recolor_product:产品换色。参数 image_url、color(如 #27AE60)、strength(20-100)。计费 6 积分。
 5. replicate_hot:爆款复刻。参数 product_image_url、reference_image_url、degree(high/style)、text。计费 6 积分。
@@ -59,6 +59,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 
 ## 工作规则
 0. 鱼塘工具的修改类操作(create/update)会直接改动真实业务数据——执行前必须向用户复述将要做出的改动并获得确认;用户已明确指令时可直接执行并汇报结果。
+0.5 大额计费确认闸:当一次工具调用预计花费 ≥20 积分(套图、A+、多张/2K 生图等)时,系统会拦截第一次调用并提示报价。此时必须先向用户报出预计积分数,等用户明确同意后,再携带 confirm=true 重新调用同一工具;用户拒绝或犹豫就不要执行,改为给出更小规模的替代方案。
 1. 用户消息里的商品图以 URL 形式出现(格式:[商品图] <url> 或工具返回的图片 URL);工具的图片参数必须传入,用户没给就先要,不要编造 URL。
 2. 每次工具调用都有积分成本;同一任务参数相同不要重复调用。
 3. 工具返回的图片 URL 用 Markdown 图片语法展示:![描述](url)。
@@ -757,6 +758,18 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           description: "分辨率,默认 1K",
         }),
         count: Type.Number({ description: "生成张数 1-4,默认 1" }),
+        model: Type.Optional(
+          Type.String({
+            description:
+              "生图模型 id。仅当用户明确点名某个生图模型时填写;不确定就省略,走站内默认。",
+          })
+        ),
+        confirm: Type.Optional(
+          Type.Boolean({
+            description:
+              "预算确认标记。本次调用预计花费 ≥20 积分时,必须先向用户报价并获得明确同意,再携带 confirm=true 调用;小额或已确认过则可省略。",
+          })
+        ),
       }),
       executionMode: "sequential",
       execute: async (_id, params, signal) => {
@@ -765,12 +778,14 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           ratio?: string;
           resolution?: string;
           count?: number;
+          model?: string;
         };
         const fd = new FormData();
         fd.append("prompt", p.prompt);
         fd.append("ratio", p.ratio || "1:1");
         fd.append("resolution", p.resolution || "1K");
         fd.append("count", String(Math.min(Math.max(p.count || 1, 1), 4)));
+        if (p.model) fd.append("model", p.model);
         const d = await withToolTimeout(
           "generate_image",
           async () => {
@@ -971,6 +986,12 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
             }),
             { description: "自定义图片清单，1-20 张" }
           )
+        ),
+        confirm: Type.Optional(
+          Type.Boolean({
+            description:
+              "预算确认标记。套图通常花费较高(每张 6 积分),必须先向用户报出总预计积分并获得明确同意,再携带 confirm=true 调用。",
+          })
         ),
       }),
       executionMode: "sequential",
@@ -1190,6 +1211,12 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         "仅当用户明确通过全部白底母图后调用。使用审核后的母图生成全部 A+ 模块并按模块计费。",
       parameters: Type.Object({
         job_id: Type.String({ description: "已完成母图审核的 A+ job_id" }),
+        confirm: Type.Optional(
+          Type.Boolean({
+            description:
+              "预算确认标记。A+ 按模块计费通常 ≥20 积分,必须先向用户报出总预计积分并获得明确同意,再携带 confirm=true 调用。",
+          })
+        ),
       }),
       executionMode: "sequential",
       execute: async (_id, params, signal) => {

@@ -2,6 +2,7 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import {
   createModels,
   createProvider,
+  type ImageContent,
   type Model,
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
@@ -13,7 +14,11 @@ import {
   saveAgentSession,
 } from "@/lib/db";
 import { AGENT_SYSTEM_PROMPT, createNaumiTools } from "@/lib/agent/naumi-tools";
-import { packaging3dCost, POINTS_PER_IMAGE } from "@/lib/mock-data";
+import {
+  packaging3dCost,
+  POINTS_PER_IMAGE,
+  resolutionCost,
+} from "@/lib/mock-data";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 运行时:常驻 Agent 会话管理器。
@@ -28,6 +33,39 @@ import { packaging3dCost, POINTS_PER_IMAGE } from "@/lib/mock-data";
 const MODEL_ID = process.env.AGENT_MODEL || "qwen3.8-flash";
 const MAX_TURNS = 24;
 const SESSION_TTL = 60 * 60 * 1000; // 空闲会话 1 小时后回收
+// 大额计费确认闸:单次工具调用预计 ≥ 此积分时,第一次调用被拦截,
+// 模型须先向用户报价,用户同意后带 confirm=true 重调(见 beforeToolCall)。
+const CONFIRM_THRESHOLD = 20;
+
+/** 视觉输入能力判定(默认自动):
+ *  - AGENT_VISION=1 或 0 强制开或关(兜底,处理特殊中转站);
+ *  - 否则按模型 id 家族正则识别(gpt-4o、gpt-5 系列、claude、gemini、qwen-vl 等天然多模态);
+ *  - 运行时发图被 API 拒绝的模型记入证伪表,后续自动降级纯文本。
+ *  误报是安全的:API 收了图但模型没真用时,消息里的「[商品图] url」文本行仍可走工具兜底。 */
+const VISION_MODEL_RE =
+  /(gpt-(4o|4\.1|4\.5|4-turbo|5)|chatgpt-4o|\bo[134]($|-)|claude|gemini|qwen.{0,8}vl|qvq|glm-\d(\.\d+)?v|doubao.{0,10}vision|grok-[45]|pixtral|deepseek-vl|llava|-vision|moonshot.{0,6}vision|kimi.{0,6}vision)/i;
+const VISION_REJECT_RE =
+  /image|vision|multimodal|多模态|图片|image_url|content[_ ]?type|modalit/i;
+const visionRejectedModels = new Set<string>();
+
+export function agentVisionEnabled(modelId: string): boolean {
+  const forced = (process.env.AGENT_VISION || "").trim();
+  if (forced === "1") return true;
+  if (forced === "0") return false;
+  if (visionRejectedModels.has(modelId)) return false;
+  return VISION_MODEL_RE.test(modelId);
+}
+
+/** 发图后报错时调用:错误特征像"不接受图片输入"则记入证伪表并返回 true。 */
+export function markVisionUnsupported(
+  modelId: string,
+  err: unknown
+): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  if (!VISION_REJECT_RE.test(msg)) return false;
+  visionRejectedModels.add(modelId);
+  return true;
+}
 
 // 各工具的预估单价(积分),与站内 API 实际扣费保持一致(粗粒度预检用)。
 const TOOL_COST: Record<string, { cost: number; label: string }> = {
@@ -81,7 +119,7 @@ async function ensureModels(modelId = MODEL_ID) {
     process.env.AGENT_BASE_URL ||
     (await import("@/lib/openai-base").then((m) => m.getOpenAIBaseUrl())) ||
     "https://api.openai.com/v1";
-  const cacheKey = `${baseUrl}\n${modelId}`;
+  const cacheKey = `${baseUrl}\n${modelId}\n${agentVisionEnabled(modelId) ? "v" : "t"}`;
   const cached = providerModels.get(cacheKey);
   if (cached) return cached;
   const dbKey = settings.apiKey;
@@ -115,7 +153,9 @@ async function ensureModels(modelId = MODEL_ID) {
         provider: "naumi-relay",
         baseUrl,
         reasoning: false,
-        input: ["text"] as ("text" | "image")[],
+        input: (agentVisionEnabled(modelId)
+          ? ["text", "image"]
+          : ["text"]) as ("text" | "image")[],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 128000,
         maxTokens: 16384,
@@ -224,22 +264,42 @@ export async function getOrCreateSession(
               ),
               label: baseMeta?.label ?? "模切线转 3D",
             }
-          : toolCall.name === "generate_suite"
+          : toolCall.name === "generate_image"
             ? {
+                // 生图按 张数×分辨率档 实算,比 TOOL_COST 的单张估价准
                 cost:
-                  (args as { structure?: unknown })?.structure === "custom" &&
-                  Array.isArray((args as { shots?: unknown }).shots)
-                    ? Math.max(
-                        1,
-                        Math.min(
-                          20,
-                          (args as { shots: unknown[] }).shots.length
-                        )
-                      ) * POINTS_PER_IMAGE
-                    : 13 * POINTS_PER_IMAGE,
-                label: baseMeta?.label ?? "一键套图",
+                  resolutionCost(
+                    (args as { resolution?: string })?.resolution === "2K"
+                      ? "2K"
+                      : "1K"
+                  ) *
+                  Math.min(
+                    Math.max(
+                      typeof (args as { count?: unknown }).count === "number"
+                        ? (args as { count: number }).count
+                        : 1,
+                      1
+                    ),
+                    4
+                  ),
+                label: baseMeta?.label ?? "AI 生图",
               }
-            : baseMeta;
+            : toolCall.name === "generate_suite"
+              ? {
+                  cost:
+                    (args as { structure?: unknown })?.structure === "custom" &&
+                    Array.isArray((args as { shots?: unknown }).shots)
+                      ? Math.max(
+                          1,
+                          Math.min(
+                            20,
+                            (args as { shots: unknown[] }).shots.length
+                          )
+                        ) * POINTS_PER_IMAGE
+                      : 13 * POINTS_PER_IMAGE,
+                  label: baseMeta?.label ?? "一键套图",
+                }
+              : baseMeta;
       if (!meta || !dbEnabled) return undefined;
       const u = await getUser(email).catch(() => null);
       const balance = u ? u.creditsTotal - u.creditsUsed : Number.MAX_SAFE_INTEGER;
@@ -248,6 +308,17 @@ export async function getOrCreateSession(
           block: true,
           reason: `余额不足:「${meta.label}」需要约 ${meta.cost} 积分,当前余额 ${balance}。请先充值或减少任务规模。`,
           terminate: true,
+        };
+      }
+      // 大额确认闸:报价 → 用户同意 → confirm=true 放行。
+      // 拦截发生在余额检查之后,报价文案可以带上真实余额。
+      if (
+        meta.cost >= CONFIRM_THRESHOLD &&
+        (args as { confirm?: unknown }).confirm !== true
+      ) {
+        return {
+          block: true,
+          reason: `本次「${meta.label}」预计消耗约 ${meta.cost} 积分(当前余额 ${balance})。请先用一句话向用户报出这笔花费并等待明确同意;用户同意后,携带参数 confirm=true 重新调用本工具;用户拒绝或未回复就不要执行,可给出更小规模的替代方案。不要在未获得用户同意的情况下自行携带 confirm=true。`,
         };
       }
       return undefined;
@@ -387,6 +458,60 @@ export async function persistAgentSession(session: Session): Promise<void> {
   ).catch(() => undefined);
 }
 
+// ── 视觉输入:用户随消息附带的图片 URL → 多模态 ImageContent ────────────────
+// 白名单与 naumi-tools 的图片拉取一致(同源放行 + 公网图床白名单,禁内网/禁重定向)。
+// 单张失败静默跳过:消息里仍有「[商品图] <url>」文本行,无视觉能力的模型走工具兜底。
+const VISION_MAX_BYTES = 8 * 1024 * 1024;
+const VISION_MAX_IMAGES = 6;
+const VISION_ALLOWED_HOST_RE =
+  /(^|\.)(imgdd\.cc|youmind\.com|cms-assets\.youmind\.com)$/i;
+
+export async function resolveVisionImages(
+  urls: string[],
+  cookie = ""
+): Promise<ImageContent[]> {
+  const out: ImageContent[] = [];
+  for (const raw of urls.slice(0, VISION_MAX_IMAGES)) {
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    try {
+      const internal = new URL(
+        process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"
+      );
+      const u = new URL(raw.trim());
+      if (u.protocol !== "http:" && u.protocol !== "https:") continue;
+      const host = u.hostname;
+      const sameOrigin = u.origin === internal.origin;
+      const isPrivate =
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "0.0.0.0" ||
+        host === "::1" ||
+        /^10\./.test(host) ||
+        /^192\.168\./.test(host) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+        host.endsWith(".local") ||
+        host.endsWith(".internal");
+      if (!sameOrigin && (isPrivate || !VISION_ALLOWED_HOST_RE.test(host))) {
+        continue;
+      }
+      const res = await fetch(u.toString(), {
+        redirect: "error",
+        headers: sameOrigin && cookie ? { cookie } : {},
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) continue;
+      const mime = (res.headers.get("content-type") || "").split(";")[0];
+      if (!/^image\/(png|jpe?g|webp)$/i.test(mime)) continue;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (!buf.length || buf.length > VISION_MAX_BYTES) continue;
+      out.push({ type: "image", data: buf.toString("base64"), mimeType: mime });
+    } catch {
+      /* 单张失败跳过 */
+    }
+  }
+  return out;
+}
+
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value && typeof value === "object") {
@@ -399,4 +524,4 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
-export { MAX_TURNS };
+export { MAX_TURNS, MODEL_ID };

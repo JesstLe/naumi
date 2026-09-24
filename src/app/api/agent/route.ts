@@ -5,10 +5,14 @@ import { rateLimit } from "@/lib/rate-limit";
 import { getOpenAISettings } from "@/lib/settings";
 import {
   appendSessionEvent,
+  agentVisionEnabled,
   getOrCreateSession,
   getSession,
+  markVisionUnsupported,
+  MODEL_ID,
   persistAgentSession,
   refreshSessionCredentials,
+  resolveVisionImages,
 } from "@/lib/agent/runtime";
 import { buildTaskPlan, classifyAgentFailure } from "@/lib/agent/recovery";
 import { requestedTextModel } from "@/lib/text-models";
@@ -43,6 +47,7 @@ export async function PUT(request: Request) {
     message?: string;
     sessionId?: string;
     history?: ChatMsg[];
+    images?: string[];
   } | null;
   const message = (body?.message ?? "").trim().slice(0, 4000);
   const sessionId =
@@ -58,6 +63,20 @@ export async function PUT(request: Request) {
   if (!process.env.AGENT_API_KEY && !settings.apiKey) {
     return NextResponse.json({ error: "模型接口未配置" }, { status: 503 });
   }
+  // 视觉输入(按模型自动判定,AGENT_VISION 可强制):随消息图片转多模态 parts 直喂模型
+  const modelId = requestedTextModel(request, MODEL_ID);
+  const imageUrls = Array.isArray(body?.images)
+    ? body!.images
+        .filter((x): x is string => typeof x === "string" && x.length > 0 && x.length < 2048)
+        .slice(0, 6)
+    : [];
+  const visionImages =
+    agentVisionEnabled(modelId) && imageUrls.length
+      ? await resolveVisionImages(
+          imageUrls,
+          request.headers.get("cookie") ?? ""
+        )
+      : [];
   const history = Array.isArray(body?.history)
     ? body!.history
         .filter(
@@ -75,7 +94,7 @@ export async function PUT(request: Request) {
       cookie: request.headers.get("cookie") ?? "",
       authorization: request.headers.get("authorization") ?? "",
     },
-    requestedTextModel(request, process.env.AGENT_MODEL || "qwen3.8-flash")
+    modelId
   );
   if (session.running) {
     return NextResponse.json(
@@ -170,8 +189,18 @@ export async function PUT(request: Request) {
         }
       };
       session.agent
-        .prompt(message)
-        .catch((e) => send("error", classifyAgentFailure(e)))
+        .prompt(message, visionImages.length ? visionImages : undefined)
+        .catch((e) => {
+          // 发图被拒:证伪该模型的视觉能力并提示重发(不做同会话自动重试,避免状态污染)
+          if (visionImages.length && markVisionUnsupported(modelId, e)) {
+            send("error", {
+              message:
+                "当前模型不接受图片输入,已自动关闭视觉并降级为纯文本。请把这条消息再发一次即可。",
+            });
+            return;
+          }
+          send("error", classifyAgentFailure(e));
+        })
         .finally(() => {
           clearTimeout(timeout);
           session.running = false;
@@ -270,6 +299,7 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as {
     message?: string;
     history?: ChatMsg[];
+    images?: string[];
   } | null;
   const message = (body?.message ?? "").trim().slice(0, 4000);
   if (!message) {
@@ -279,20 +309,44 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
   }
   const tempId = `tmp-${Date.now()}`;
+  const postModelId = requestedTextModel(request, MODEL_ID);
+  const imageUrls = Array.isArray(body?.images)
+    ? body!.images
+        .filter((x): x is string => typeof x === "string" && x.length > 0 && x.length < 2048)
+        .slice(0, 6)
+    : [];
+  const visionImages =
+    agentVisionEnabled(postModelId) && imageUrls.length
+      ? await resolveVisionImages(
+          imageUrls,
+          request.headers.get("cookie") ?? ""
+        )
+      : [];
   const history = Array.isArray(body?.history)
     ? body!.history.filter((m) => typeof m.content === "string").slice(-10)
     : [];
   const session = await getOrCreateSession(email, tempId, history, {
     cookie: request.headers.get("cookie") ?? "",
     authorization: request.headers.get("authorization") ?? "",
-  });
+  }, postModelId);
   if (session.running) {
     return NextResponse.json({ error: "任务正在执行中" }, { status: 409 });
   }
   const timeout = setTimeout(() => session.agent.abort(), 780_000);
   try {
-    await session.agent.prompt(message);
+    await session.agent.prompt(
+      message,
+      visionImages.length ? visionImages : undefined
+    );
   } catch (e) {
+    // 发图被拒:证伪该模型的视觉能力,提示重发(纯文本即可正常执行)
+    if (visionImages.length && markVisionUnsupported(postModelId, e)) {
+      return NextResponse.json({
+        reply:
+          "当前模型不接受图片输入,已自动关闭视觉并降级为纯文本。请把这条消息再发一次即可。",
+        error: "vision_unsupported",
+      });
+    }
     const msg = e instanceof Error ? e.message : "Agent 执行失败";
     return NextResponse.json({
       reply: `任务中断:${msg}`,
