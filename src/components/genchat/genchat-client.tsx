@@ -130,6 +130,8 @@ export function GenChatClient() {
   );
   const streamRef = useRef<HTMLDivElement>(null);
   const startedRef = useRef(false);
+  // 工作台首页输入框带进来的模型 id(?model=),每轮生成透传给 generate-image
+  const urlModelRef = useRef("");
   // 多会话(DB 持久化)
   const [sessionId, setSessionId] = useState<string>("");
   const [sessions, setSessions] = useState<
@@ -193,6 +195,8 @@ export function GenChatClient() {
     const qp = params.get("prompt");
     const qr = params.get("ratio");
     const qs = params.get("style");
+    const qm = params.get("model");
+    urlModelRef.current = qm || "";
     if (qr) {
       const i = GENERATION_RATIOS.findIndex((r) => r.id === qr);
       if (i >= 0) setRatioIdx(i);
@@ -218,6 +222,7 @@ export function GenChatClient() {
           ratio: qr || GENERATION_RATIOS[0]?.id || "auto",
           style: qs || GENERATION_STYLES[0] || "",
           resolution: params.get("resolution") || "1K",
+          model: qm || undefined,
           refs,
         });
       } else if (list.length) {
@@ -283,6 +288,7 @@ export function GenChatClient() {
       ratio?: string;
       style?: string;
       resolution?: string;
+      model?: string;
       refs?: File[];
     }
   ) {
@@ -301,6 +307,8 @@ export function GenChatClient() {
       fd.append("ratio", override?.ratio ?? GENERATION_RATIOS[ratioIdx]?.id ?? "auto");
       fd.append("resolution", override?.resolution ?? "1K");
       fd.append("style", override?.style ?? GENERATION_STYLES[styleIdx] ?? "");
+      const chosenModel = override?.model || urlModelRef.current;
+      if (chosenModel) fd.append("model", chosenModel);
       fd.append("count", String(count));
       fd.append("email", user.email);
       if (curBase) {
