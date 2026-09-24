@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
-  Bot,
   Home,
   Sparkles,
   LayoutGrid,
@@ -39,9 +38,9 @@ type Item = { href: string; label: { zh: string; en: string }; Icon: typeof Home
 
 // 顶栏导航(桌面,设计稿顺序):首页 / 工作台 / 创作▾ / 模板 / 作品 / 画布。
 // 创作下拉插在「工作台」与「模板」之间。底部 Tab(移动):首页 / 画布 / 创作FAB / 作品 / 我的。
+// 智能体已收敛进工作台(/brain 302 → /dashboard),不再单列入口。
 const NAV_BEFORE: Item[] = [
   { href: "/", label: { zh: "首页", en: "Home" }, Icon: Home },
-  { href: "/brain", label: { zh: "智能体", en: "Agent" }, Icon: Bot },
   { href: "/dashboard", label: { zh: "工作台", en: "Workspace" }, Icon: ImageIcon },
 ];
 const NAV_AFTER: Item[] = [
