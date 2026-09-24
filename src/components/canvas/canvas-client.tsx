@@ -1293,6 +1293,11 @@ export function CanvasClient() {
   const router = useRouter();
   const { commerceVisible } = usePaymentConfig();
   const [works, setWorks] = useState<Artwork[] | null>(null);
+  // works 的同步镜像:供 useCallback(如缩放撤销记录)读取最新值而不重挂回调
+  const worksRef = useRef<Artwork[] | null>(null);
+  useEffect(() => {
+    worksRef.current = works;
+  }, [works]);
   const dimensionSyncRef = useRef(new Set<string>());
   const [names, setNames] = useState<Record<string, string>>({});
   // 管理员看指定用户:?email=<用户> → 只读查看该用户画布;?node=<作品id> → 预选中那张
@@ -1674,7 +1679,21 @@ export function CanvasClient() {
     }
     setZoomInput(zoomPercentInput(viewport.zoom || 1));
   }
-  // 撤销/重做(实用版:移动/删除/添加)
+  // 撤销/重做(实用版:移动/删除/添加/连线/文字编辑/重命名/缩放/标记)
+  // 文字节点字段快照:撤销文案编辑、引用增删、产品绑定、尺寸、标题的最小数据
+  type TextPatchFields = Pick<
+    CanvasTextNode,
+    "title" | "content" | "sourceIds" | "targetIds" | "productIds" | "width" | "height"
+  >;
+  const textPatchOf = (node: CanvasTextNode): TextPatchFields => ({
+    title: node.title,
+    content: node.content,
+    sourceIds: [...(node.sourceIds ?? [])],
+    targetIds: [...(node.targetIds ?? [])],
+    productIds: [...(node.productIds ?? [])],
+    width: node.width,
+    height: node.height,
+  });
   type UndoAct =
     | { kind: "move"; id: string; from: { x: number; y: number }; to: { x: number; y: number } }
     | {
@@ -1697,7 +1716,22 @@ export function CanvasClient() {
     | { kind: "add"; records: Artwork[] }
     | { kind: "text-delete"; records: CanvasTextNode[] }
     | { kind: "text-add"; records: CanvasTextNode[] }
-    | { kind: "text-move"; id: string; from: { x: number; y: number }; to: { x: number; y: number } };
+    | { kind: "text-move"; id: string; from: { x: number; y: number }; to: { x: number; y: number } }
+    // 血缘连线增删(undo/redo 应用反向)
+    | { kind: "parent"; targetId: string; parentId: string; added: boolean }
+    // 文字节点字段级快照(内容/引用/产品绑定/尺寸):undo 应用 from,redo 应用 to
+    | { kind: "text-patch"; id: string; from: TextPatchFields; to: TextPatchFields }
+    // 节点重命名
+    | { kind: "rename"; id: string; from: string; to: string }
+    // 图片节点画布尺寸/位置(NodeResizer 手动拖拽)
+    | {
+        kind: "art-size";
+        id: string;
+        from: { x: number; y: number; width: number; height: number };
+        to: { x: number; y: number; width: number; height: number };
+      }
+    // 标记/取消标记(逐 id 记录原值,批量操作共用)
+    | { kind: "mark"; changes: Array<{ id: string; from: boolean; to: boolean }> };
   const [undoStack, setUndoStack] = useState<UndoAct[]>([]);
   const [redoStack, setRedoStack] = useState<UndoAct[]>([]);
   const dragStartRef = useRef<{ id: string; x: number; y: number } | null>(null);
@@ -2251,6 +2285,27 @@ export function CanvasClient() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id, x, y, width, height }),
     });
+    // 手动缩放可撤销:从 worksRef 取拖拽前的位置与尺寸记一条 art-size
+    const prev = worksRef.current?.find((art) => art.id === id);
+    if (
+      prev &&
+      (prev.canvasX !== x ||
+        prev.canvasY !== y ||
+        prev.canvasWidth !== width ||
+        prev.canvasHeight !== height)
+    ) {
+      pushUndo({
+        kind: "art-size",
+        id,
+        from: {
+          x: prev.canvasX ?? x,
+          y: prev.canvasY ?? y,
+          width: prev.canvasWidth ?? width,
+          height: prev.canvasHeight ?? height,
+        },
+        to: { x, y, width, height },
+      });
+    }
   }, [user, readOnly]);
 
   const requestNodeRename = useCallback((id: string, label: string) => {
@@ -2756,6 +2811,12 @@ export function CanvasClient() {
         title: name,
         updatedAt: new Date().toISOString(),
       };
+      pushUndo({
+        kind: "text-patch",
+        id,
+        from: textPatchOf(textNode),
+        to: textPatchOf(updated),
+      });
       setTextNodes((current) =>
         current.map((node) => (node.id === id ? updated : node))
       );
@@ -2781,6 +2842,7 @@ export function CanvasClient() {
         body: JSON.stringify({ email: user.email, id, title: name }),
       });
       await expectJsonOk(res, t("canvas.genFail"));
+      pushUndo({ kind: "rename", id, from: cur.title, to: name });
     } catch (e) {
       setWorks((prev) =>
         prev ? prev.map((w) => (w.id === id ? { ...w, title: cur.title } : w)) : prev
@@ -2818,6 +2880,10 @@ export function CanvasClient() {
         body: JSON.stringify({ id, marked }),
       });
       await expectJsonOk(response, t("canvas.genFail"));
+      pushUndo({
+        kind: "mark",
+        changes: [{ id, from: previous, to: marked }],
+      });
       flashTip(t(marked ? "canvas.dockMarkedTip" : "canvas.dockUnmarkedTip"));
     } catch (error) {
       setWorks((items) =>
@@ -3182,7 +3248,8 @@ export function CanvasClient() {
           })
         );
       }
-      await mergeWorks(newIds); // 补这次新生成的几张(已带上面保存的坐标),不整表重拉
+      const fresh = await mergeWorks(newIds); // 补这次新生成的几张(已带上面保存的坐标),不整表重拉
+      pushAddUndoMany(newIds, fresh); // 面板生成/三视图/改比例/重做/快捷动作可撤销
       if (newIds.length > 0 && newIds.length < requestedCount) {
         flashTip(`请求 ${requestedCount} 张，成功 ${newIds.length} 张；未成功部分已退回积分`);
       }
@@ -3270,7 +3337,8 @@ export function CanvasClient() {
           }),
         }).catch(() => {});
       }
-      await mergeWorks([newId]);
+      const freshCut = await mergeWorks([newId]);
+      pushAddUndo(newId, freshCut); // 抠图结果可撤销
       if (selectedIdRef.current === source.id) setSelectedId(newId);
     } catch (e) {
       const message =
@@ -3862,7 +3930,7 @@ export function CanvasClient() {
 
   // ── 撤销/重做(实用版)──
   function pushUndo(a: UndoAct) {
-    setUndoStack((s) => [...s.slice(-30), a]);
+    setUndoStack((s) => [...s.slice(-50), a]);
     setRedoStack([]);
   }
   async function restoreRecordsSilent(records: Artwork[]) {
@@ -3907,6 +3975,73 @@ export function CanvasClient() {
     const node = textNodes.find((item) => item.id === id);
     if (node) void persistTextNode({ ...node, canvasX: x, canvasY: y, updatedAt: new Date().toISOString() });
   }
+  // 血缘连线静默应用(撤销/剪线共用):add=给 target 加回 parentId,否则移除
+  async function setParentLinkSilent(targetId: string, parentId: string, add: boolean) {
+    if (!user) return;
+    await privateFetch("/api/artworks/parents", {
+      method: add ? "POST" : "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: user.email, id: targetId, parentId }),
+    }).catch(() => {});
+    await mergeWorks([targetId]);
+  }
+  // 文字节点字段快照静默应用(文案/引用/产品/尺寸的撤销与重做)
+  function applyTextPatchSilent(id: string, fields: TextPatchFields) {
+    const node = textNodes.find((item) => item.id === id);
+    if (!node) return;
+    const updated: CanvasTextNode = {
+      ...node,
+      ...fields,
+      updatedAt: new Date().toISOString(),
+    };
+    setTextNodes((current) =>
+      current.map((item) => (item.id === id ? updated : item))
+    );
+    void persistTextNode(updated);
+  }
+  // 重命名静默应用
+  function renameArtSilent(id: string, title: string) {
+    setWorks((prev) => prev?.map((w) => (w.id === id ? { ...w, title } : w)) ?? prev);
+    if (!user) return;
+    void privateFetch("/api/artworks/rename", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: user.email, id, title }),
+    }).catch(() => {});
+  }
+  // 图片节点画布尺寸静默应用
+  function setArtSizeSilent(
+    id: string,
+    s: { x: number; y: number; width: number; height: number }
+  ) {
+    setWorks((prev) =>
+      prev?.map((w) =>
+        w.id === id
+          ? { ...w, canvasX: s.x, canvasY: s.y, canvasWidth: s.width, canvasHeight: s.height }
+          : w
+      ) ?? prev
+    );
+    void privateFetch("/api/artworks/canvas-size", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, x: s.x, y: s.y, width: s.width, height: s.height }),
+    }).catch(() => {});
+  }
+  // 标记静默应用(逐 id)
+  function setMarkSilent(changes: Array<{ id: string; marked: boolean }>) {
+    const byId = new Map(changes.map((c) => [c.id, c.marked]));
+    setWorks((prev) =>
+      prev?.map((w) => (byId.has(w.id) ? { ...w, marked: byId.get(w.id)! } : w)) ?? prev
+    );
+    if (!user) return;
+    changes.forEach((c) =>
+      void privateFetch("/api/artworks/mark", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: c.id, marked: c.marked }),
+      }).catch(() => {})
+    );
+  }
   function setPosSilent(id: string, x: number, y: number) {
     if (!user) return;
     setWorks((prev) =>
@@ -3937,6 +4072,12 @@ export function CanvasClient() {
     else if (act.kind === "text-delete") await restoreTextNodesSilent(act.records);
     else if (act.kind === "text-add") await deleteTextNodesSilent(act.records.map((r) => r.id));
     else if (act.kind === "text-move") setTextPosSilent(act.id, act.from.x, act.from.y);
+    else if (act.kind === "parent") await setParentLinkSilent(act.targetId, act.parentId, !act.added);
+    else if (act.kind === "text-patch") applyTextPatchSilent(act.id, act.from);
+    else if (act.kind === "rename") renameArtSilent(act.id, act.from);
+    else if (act.kind === "art-size") setArtSizeSilent(act.id, act.from);
+    else if (act.kind === "mark")
+      setMarkSilent(act.changes.map((c) => ({ id: c.id, marked: c.from })));
   }
   async function doRedo() {
     if (!redoStack.length) return;
@@ -3955,6 +4096,12 @@ export function CanvasClient() {
     else if (act.kind === "text-delete") await deleteTextNodesSilent(act.records.map((r) => r.id));
     else if (act.kind === "text-add") await restoreTextNodesSilent(act.records);
     else if (act.kind === "text-move") setTextPosSilent(act.id, act.to.x, act.to.y);
+    else if (act.kind === "parent") await setParentLinkSilent(act.targetId, act.parentId, act.added);
+    else if (act.kind === "text-patch") applyTextPatchSilent(act.id, act.to);
+    else if (act.kind === "rename") renameArtSilent(act.id, act.to);
+    else if (act.kind === "art-size") setArtSizeSilent(act.id, act.to);
+    else if (act.kind === "mark")
+      setMarkSilent(act.changes.map((c) => ({ id: c.id, marked: c.to })));
   }
   // 添加节点后记一笔可撤销(从刚刷新的列表取完整记录)
   function pushAddUndo(newId: string | null, fresh: Artwork[]) {
@@ -4106,6 +4253,15 @@ export function CanvasClient() {
       );
       if (responses.some((response) => !response.ok)) throw new Error();
       const ids = new Set(selectedBatchIds);
+      // 批量标记可撤销:逐 id 记录原值(部分已标记的节点原值不同)
+      pushUndo({
+        kind: "mark",
+        changes: selectedBatchArts.map((art) => ({
+          id: art.id,
+          from: !!art.marked,
+          to: marked,
+        })),
+      });
       setWorks((items) =>
         items?.map((item) => (ids.has(item.id) ? { ...item, marked } : item)) ??
         items
@@ -4364,6 +4520,12 @@ export function CanvasClient() {
         }),
       });
       await expectJsonOk(res, t("canvas.genFail"));
+      pushUndo({
+        kind: "parent",
+        targetId,
+        parentId: sourceId,
+        added: true,
+      }); // 连线可撤销(undo=剪断)
       await mergeWorks([targetId]); // 只补受影响的目标节点这一行
     } catch (e) {
       flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
@@ -4383,6 +4545,12 @@ export function CanvasClient() {
         targetIds: (textNode.targetIds ?? []).filter((id) => id !== edge.target),
         updatedAt: new Date().toISOString(),
       };
+      pushUndo({
+        kind: "text-patch",
+        id: textNode.id,
+        from: textPatchOf(textNode),
+        to: textPatchOf(updated),
+      });
       setTextNodes((current) =>
         current.map((node) => (node.id === updated.id ? updated : node))
       );
@@ -4404,6 +4572,12 @@ export function CanvasClient() {
         }),
       });
       await expectJsonOk(res, t("canvas.genFail"));
+      pushUndo({
+        kind: "parent",
+        targetId: edge.target,
+        parentId: edge.source,
+        added: false,
+      }); // 剪线可撤销(undo=重新连回)
       await mergeWorks([edge.target]); // 只补受影响的目标节点这一行
     } catch (e) {
       await mergeWorks([edge.target]);
@@ -4506,6 +4680,27 @@ export function CanvasClient() {
         { x: Math.round(n.position.x), y: Math.round(n.position.y) },
       ])
     );
+    // 整理画布是全图重排:记一条 move-many 撤销(From=用户当前看到的坐标,取 RF 实时位置)
+    const rfPositions = new Map(
+      (rfRef.current?.getNodes() ?? []).map((n) => [n.id, n.position])
+    );
+    const moves = active.members
+      .map((m) => {
+        const to = coord.get(m.id);
+        const from = rfPositions.get(m.id) ?? {
+          x: m.canvasX ?? 0,
+          y: m.canvasY ?? 0,
+        };
+        return to
+          ? {
+              id: m.id,
+              from: { x: Math.round(from.x), y: Math.round(from.y) },
+              to,
+            }
+          : null;
+      })
+      .filter((move): move is NonNullable<typeof move> => !!move);
+    if (moves.length) pushUndo({ kind: "move-many", moves });
     setWorks((prev) =>
       prev
         ? prev.map((w) => {
@@ -5011,6 +5206,14 @@ export function CanvasClient() {
       sourceIds,
       updatedAt: new Date().toISOString(),
     };
+    if (sourceIds.join("\u0000") !== current.join("\u0000")) {
+      pushUndo({
+        kind: "text-patch",
+        id: textNode.id,
+        from: textPatchOf(textNode),
+        to: textPatchOf(updated),
+      });
+    }
     setTextNodes((items) =>
       items.map((item) => (item.id === updated.id ? updated : item))
     );
@@ -5035,6 +5238,14 @@ export function CanvasClient() {
       ),
       updatedAt: new Date().toISOString(),
     };
+    if (updated.width !== current.width || updated.height !== current.height) {
+      pushUndo({
+        kind: "text-patch",
+        id,
+        from: textPatchOf(current),
+        to: textPatchOf(updated),
+      });
+    }
     setTextNodes((nodes) =>
       nodes.map((node) => (node.id === updated.id ? updated : node))
     );
@@ -5146,6 +5357,15 @@ export function CanvasClient() {
         content: content.slice(0, 12000),
         updatedAt: new Date().toISOString(),
       };
+      // 内容真的变了才记撤销(失焦不改动则不入栈)
+      if (node.content !== updated.content) {
+        pushUndo({
+          kind: "text-patch",
+          id,
+          from: textPatchOf(node),
+          to: textPatchOf(updated),
+        });
+      }
       setTextNodes((current) => current.map((item) => (item.id === id ? updated : item)));
       void persistTextNode(updated);
     }
@@ -5213,6 +5433,12 @@ export function CanvasClient() {
       ),
       updatedAt: new Date().toISOString(),
     };
+    pushUndo({
+      kind: "text-patch",
+      id: node.id,
+      from: textPatchOf(node),
+      to: textPatchOf(updated),
+    });
     setTextNodes((items) =>
       items.map((item) => (item.id === updated.id ? updated : item))
     );
@@ -5290,6 +5516,7 @@ export function CanvasClient() {
               current.map((item) => (item.id === id ? completed : item))
             );
             void persistTextNode(completed);
+            pushUndo({ kind: "text-add", records: [completed] }); // 反推节点可撤销
           } catch (error) {
             const failed: CanvasTextNode = {
               ...node,
@@ -5429,6 +5656,7 @@ export function CanvasClient() {
               current.map((item) => (item.id === id ? completed : item))
             );
             void persistTextNode(completed);
+            pushUndo({ kind: "text-add", records: [completed] }); // 帮写节点可撤销
           } catch (error) {
             const failed: CanvasTextNode = {
               ...node,
