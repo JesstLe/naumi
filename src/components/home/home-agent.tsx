@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Bot,
   Loader2,
+  MessageSquarePlus,
   Send,
   Sparkles,
   Upload,
@@ -14,6 +16,7 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
+import { takePendingRefs } from "@/lib/pending-refs";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -38,7 +41,7 @@ const QUICK_PROMPTS = [
   { icon: "🔍", text: "模板库里有哪些主图模板?" },
 ];
 
-/** 渲染回复:markdown 图片 + 文本行 */
+/** 渲染回复:markdown 图片 + [商品图] 行(缩略图) + 文本行 */
 function renderContent(content: string) {
   return content.split("\n").map((line, i) => {
     const m = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
@@ -50,6 +53,18 @@ function renderContent(content: string) {
           src={m[2]}
           alt={m[1]}
           className="my-1 max-h-72 rounded-xl border border-border"
+        />
+      );
+    }
+    const ref = line.match(/^\[商品图\]\s*(\S+)$/);
+    if (ref) {
+      return (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={i}
+          src={ref[1]}
+          alt="商品图"
+          className="my-1 h-20 w-20 rounded-lg border border-border object-cover"
         />
       );
     }
@@ -75,14 +90,53 @@ export function HomeAgent() {
   const sessionIdRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const params = useSearchParams();
+  // 工作台首页输入框带来的首条消息:只引导一次,引导过就不再做会话恢复
+  const bootstrapRef = useRef(false);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
-  // 刷新恢复:拉最近 agent 会话
+  // 带 ?prompt= 进入(工作台首页输入框):跳过历史恢复,新开一段对话。
+  // 随行参考图经 pending-refs 模块变量带过来,先上传换 URL 再自动首发。
   useEffect(() => {
-    if (!user) return;
+    if (bootstrapRef.current || !user) return;
+    const prompt = (params.get("prompt") || "").trim();
+    if (!prompt) return;
+    bootstrapRef.current = true;
+    window.history.replaceState(null, "", window.location.pathname);
+    (async () => {
+      const urls: string[] = [];
+      const files = takePendingRefs();
+      if (files.length) setUploading(true);
+      for (const f of files) {
+        if (f.size > MAX_UPLOAD) continue;
+        try {
+          const fd = new FormData();
+          fd.append("image", f);
+          fd.append("title", "Agent 上传");
+          const res = await fetch("/api/artworks/add", {
+            method: "POST",
+            headers: await authHeader(),
+            body: fd,
+          });
+          const d = await res.json();
+          const url = d?.artwork?.image || d?.image || d?.url;
+          if (url) urls.push(url);
+        } catch {
+          /* 单张失败不阻塞主消息 */
+        }
+      }
+      setUploading(false);
+      void send(prompt, urls);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, user]);
+
+  // 刷新恢复:拉最近 agent 会话(带 ?prompt= 引导时跳过,避免旧会话混入新对话)
+  useEffect(() => {
+    if (!user || bootstrapRef.current) return;
     (async () => {
       try {
         const res = await fetch("/api/agent/session", {
@@ -142,11 +196,12 @@ export function HomeAgent() {
     }
   }
 
-  async function send(text?: string) {
+  async function send(text?: string, attachmentUrls?: string[]) {
     const content = (text ?? input).trim();
     if (!content || busy) return;
     setError(null);
-    const parts = [content, ...attachments.map((u) => `[商品图] ${u}`)];
+    const urls = attachmentUrls ?? attachments;
+    const parts = [content, ...urls.map((u) => `[商品图] ${u}`)];
     const userMsg: Msg = { role: "user", content: parts.join("\n") };
     const history = messages
       .filter((m) => !m.pending && m.content)
@@ -172,6 +227,8 @@ export function HomeAgent() {
           message: userMsg.content,
           sessionId: sessionIdRef.current || undefined,
           history,
+          // 视觉输入:服务端 AGENT_VISION=1 时随消息直喂模型;否则只有文本 URL 行
+          images: urls,
         }),
       });
       if (!res.ok || !res.body) {
@@ -299,6 +356,16 @@ export function HomeAgent() {
     setInterject("");
   }
 
+  function newConversation() {
+    if (running) return;
+    sessionIdRef.current = "";
+    bootstrapRef.current = false;
+    setMessages([]);
+    setAttachments([]);
+    setError(null);
+    setInput("");
+  }
+
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex h-[calc(100vh-160px)] max-w-4xl flex-col rounded-card border border-c-border bg-c-card shadow-card">
@@ -318,6 +385,15 @@ export function HomeAgent() {
               一句话调度全部业务系统 · 生图 / 套图 / A+ / 鱼塘任务 / 模板 / 余额
             </p>
           </div>
+          <button
+            type="button"
+            onClick={newConversation}
+            disabled={running || messages.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[12.5px] font-medium text-c-text2 transition-colors hover:bg-secondary disabled:opacity-50"
+          >
+            <MessageSquarePlus className="h-3.5 w-3.5" />
+            新对话
+          </button>
           <Link
             href="/hub"
             className="hidden rounded-lg border border-border px-3 py-1.5 text-[12.5px] font-medium text-c-text2 transition-colors hover:bg-secondary sm:block"
@@ -331,6 +407,14 @@ export function HomeAgent() {
           ref={scrollRef}
           className="nv-panel-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5"
         >
+          {uploading && messages.length === 0 && (
+            <div className="flex justify-center">
+              <span className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/60 px-3.5 py-1.5 text-[12.5px] text-c-text2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                正在上传参考图…
+              </span>
+            </div>
+          )}
           {messages.length === 0 && (
             <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
               <span

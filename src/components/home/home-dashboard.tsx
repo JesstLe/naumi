@@ -3,8 +3,6 @@
 import { cdnUrl } from "@/lib/cdn";
 import { setPendingRefs } from "@/lib/pending-refs";
 import { toolBySlug, type ToolMeta } from "@/lib/tool-meta";
-import { compactImageModelOptions } from "@/lib/image-model-routing";
-import { ModelIcon } from "@/components/ui/model-icon";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,8 +10,6 @@ import {
   ArrowRight,
   ArrowUp,
   ArrowUpRight,
-  Check,
-  ChevronDown,
   LayoutGrid,
   Network,
   Plus,
@@ -39,16 +35,8 @@ type RecentWork = {
 const MAX_REF_FILES = 6;
 const MAX_REF_BYTES = 12 * 1024 * 1024;
 
-// 生图模型选项(与生图工作台同源 /api/config);选中写 localStorage,
-// 使工作台下次直接用同一默认模型。
-type ImageModelOption = { id: string; label: string };
-const IMAGE_MODEL_STORAGE_KEY = "naumi:generate-image-model";
-
-// Hero 输入框的两种去向:图片生成(/generate)/对话生图(/genchat),都支持 ?prompt= 预填。
-// 附带的参考图经 setPendingRefs 随路由带过去(genchat 原生消费;generate 进页时取走进产品图槽)。
-function composerTarget(tab: "gen" | "chat") {
-  return tab === "chat" ? "/genchat" : "/generate";
-}
+// Hero 输入框 = 智能体入口:提交后跳 /brain 自动首发(?prompt=)。
+// 附带参考图经 setPendingRefs 模块变量随路由带过去,由智能体页上传后随消息发出。
 
 // 图标行:画布与全部工具不在 tool-meta 里,自定义;其余取 tool-meta 双语标题。
 const ROW_TOOLS = ["generate", "suite", "cutout", "inpaint", "competitors"];
@@ -82,17 +70,12 @@ export function HomeDashboard({ hot }: { hot: PickedTemplate[] }) {
   });
 
   // Hero 输入框状态
-  const [composerTab, setComposerTab] = useState<"gen" | "chat">("gen");
   const [composerText, setComposerText] = useState("");
   const [composerFiles, setComposerFiles] = useState<File[]>([]);
   const [composerPreviews, setComposerPreviews] = useState<string[]>([]);
   const [composerError, setComposerError] = useState<string | null>(null);
   const composerFileRef = useRef<HTMLInputElement>(null);
   const composerTextRef = useRef<HTMLTextAreaElement>(null);
-  // 输入框内的生图模型选择(竞品「Agent ▾」位置)
-  const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
-  const [composerModel, setComposerModel] = useState("");
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
 
   // 问候语随本地时段
   const [greet, setGreet] = useState("home.dash.greetEvening");
@@ -147,46 +130,6 @@ export function HomeDashboard({ hot }: { hot: PickedTemplate[] }) {
       cancelled = true;
     };
   }, [user?.email]);
-
-  // 拉模型清单(与生图工作台同一 /api/config);拉不到则隐藏模型 chip
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch("/api/config", {
-          cache: "no-store",
-          headers: await authHeader(),
-        });
-        const d = (await r.json()) as {
-          defaultImageModel?: string;
-          imageModels?: { id?: string; label?: string }[];
-        };
-        if (cancelled) return;
-        const options = compactImageModelOptions(
-          (Array.isArray(d.imageModels) ? d.imageModels : [])
-            .map((m) => (m?.id && m?.label ? { id: m.id, label: m.label } : null))
-            .filter((m): m is ImageModelOption => Boolean(m)),
-          [d.defaultImageModel || ""]
-        );
-        if (!options.length) return;
-        setImageModels(options);
-        const saved = window.localStorage.getItem(IMAGE_MODEL_STORAGE_KEY) || "";
-        const pick = (id: string | undefined) =>
-          id && options.some((o) => o.id === id) ? id : "";
-        setComposerModel((current) =>
-          pick(current) ||
-          pick(saved) ||
-          pick(d.defaultImageModel) ||
-          options[0].id
-        );
-      } catch {
-        /* ignore — keep chip hidden */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // 参考图预览的对象 URL:卸载时回收
   useEffect(() => {
@@ -245,19 +188,13 @@ export function HomeDashboard({ hot }: { hot: PickedTemplate[] }) {
     setComposerFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function pickComposerModel(id: string) {
-    setComposerModel(id);
-    window.localStorage.setItem(IMAGE_MODEL_STORAGE_KEY, id);
-    setModelMenuOpen(false);
-  }
-
   function submitComposer() {
     const text = composerText.trim();
     if (!text) return;
+    // 参考图交给智能体页:pending-refs 模块变量在客户端路由跳转后仍存活
     if (composerFiles.length) setPendingRefs(composerFiles);
     const query = new URLSearchParams({ prompt: text });
-    if (composerModel) query.set("model", composerModel);
-    router.push(`${composerTarget(composerTab)}?${query.toString()}`);
+    router.push(`/brain?${query.toString()}`);
   }
 
   return (
@@ -315,32 +252,8 @@ export function HomeDashboard({ hot }: { hot: PickedTemplate[] }) {
           </div>
         </div>
 
-        {/* 模式 tab */}
-        <div className="mt-7 flex justify-center">
-          <div className="inline-flex rounded-full border border-c-border bg-c-subtle p-1">
-            {([
-              { key: "gen", label: t("home.dash.composeTabGen") },
-              { key: "chat", label: t("home.dash.composeTabChat") },
-            ] as const).map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setComposerTab(tab.key)}
-                className={cn(
-                  "rounded-full px-5 py-1.5 text-[13px] font-semibold transition-all",
-                  composerTab === tab.key
-                    ? "bg-c-card text-c-text shadow-card"
-                    : "text-c-text3 hover:text-c-text"
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* 大输入框 */}
-        <div className="mt-4 rounded-[20px] border border-c-border bg-c-card p-4 shadow-pop transition-colors focus-within:border-c-border2">
+        <div className="mt-7 rounded-[20px] border border-c-border bg-c-card p-4 shadow-pop transition-colors focus-within:border-c-border2">
           <div className="flex items-start gap-3">
             <button
               type="button"
@@ -374,50 +287,9 @@ export function HomeDashboard({ hot }: { hot: PickedTemplate[] }) {
             />
           </div>
 
-          {/* 参考图缩略 / 模型选择 / 错误提示 + 发送按钮 */}
+          {/* 参考图缩略 / 错误提示 + 发送按钮 */}
           <div className="mt-2 flex items-end justify-between gap-3">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-              {imageModels.length > 0 && (
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setModelMenuOpen((open) => !open)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-c-border bg-c-subtle px-3 py-1.5 text-xs font-semibold text-c-text2 transition-colors hover:border-c-border2 hover:text-c-text"
-                  >
-                    <ModelIcon modelId={composerModel} size={14} />
-                    <span className="max-w-[140px] truncate">
-                      {imageModels.find((m) => m.id === composerModel)?.label || composerModel}
-                    </span>
-                    <ChevronDown
-                      className={cn("h-3.5 w-3.5 transition-transform", modelMenuOpen && "rotate-180")}
-                    />
-                  </button>
-                  {modelMenuOpen && (
-                    <>
-                      <div className="fixed inset-0 z-10" onClick={() => setModelMenuOpen(false)} />
-                      <div className="absolute bottom-full left-0 z-20 mb-2 max-h-[260px] w-[250px] overflow-y-auto rounded-xl border border-c-border bg-c-card p-1.5 shadow-pop">
-                        {imageModels.map((m) => (
-                          <button
-                            key={m.id}
-                            type="button"
-                            onClick={() => pickComposerModel(m.id)}
-                            className={cn(
-                              "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors",
-                              m.id === composerModel
-                                ? "bg-acc-tint font-semibold text-acc"
-                                : "text-c-text2 hover:bg-c-subtle hover:text-c-text"
-                            )}
-                          >
-                            <ModelIcon modelId={m.id} size={14} />
-                            <span className="min-w-0 flex-1 truncate">{m.label}</span>
-                            {m.id === composerModel && <Check className="h-3.5 w-3.5 flex-none" />}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
               {composerPreviews.map((url, index) => (
                 <span key={url} className="group relative">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
