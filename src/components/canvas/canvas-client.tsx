@@ -72,6 +72,7 @@ import {
   ScanSearch,
   PenLine,
   Play,
+  MessageSquareText,
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
@@ -1158,6 +1159,42 @@ function lineageChain(
   return chain;
 }
 
+// 画布助手的一轮对话(user/assistant 纯文本;assistant 内容可含 [[GEN]]…[[/GEN]] 生图块)
+type AssistantTurn = { id: string; role: "user" | "assistant"; content: string };
+
+// 画布助手上下文:锚定节点 + 上游祖先(BFS 近者优先),最多 5 张(与后端 MAX_CONTEXT_IMAGES 对齐)
+function assistantContext(members: Artwork[], anchorId: string): Artwork[] {
+  const byId = new Map(members.map((m) => [m.id, m]));
+  const anchor = byId.get(anchorId);
+  if (!anchor) return [];
+  const parentsOf = (m: Artwork): string[] => {
+    if (m.source === "canvas-add") return [];
+    const ps: string[] = [];
+    if (m.parentId && byId.has(m.parentId)) ps.push(m.parentId);
+    for (const pid of m.parentIds ?? [])
+      if (pid && byId.has(pid) && pid !== m.parentId) ps.push(pid);
+    return ps;
+  };
+  const out: Artwork[] = [anchor];
+  const seen = new Set([anchorId]);
+  const queue: string[] = [anchorId];
+  let guard = 0;
+  while (queue.length && out.length < 5 && guard++ < 2000) {
+    const id = queue.shift() as string;
+    const m = byId.get(id);
+    if (!m) continue;
+    for (const p of parentsOf(m)) {
+      if (seen.has(p)) continue;
+      seen.add(p);
+      const art = byId.get(p);
+      if (art) out.push(art);
+      queue.push(p);
+      if (out.length >= 5) break;
+    }
+  }
+  return out.slice(0, 5);
+}
+
 // 把一组作品(可能是森林:多个根)排成整齐的血缘树布局
 function layoutGraph(
   arts: Artwork[],
@@ -1531,6 +1568,12 @@ export function CanvasClient() {
   const [expandRatio, setExpandRatio] = useState<string | null>(null);
   const [expandAnchor, setExpandAnchor] = useState("center");
   const [annotateArtwork, setAnnotateArtwork] = useState<Artwork | null>(null);
+  // 画布助手:围绕选中节点+上游链的多轮对话,[[GEN]] 提示词可一键生图回画布
+  const [assistantArtworkId, setAssistantArtworkId] = useState<string | null>(null);
+  const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
+  const [assistantInput, setAssistantInput] = useState("");
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
   const pendPromptRef = useRef<HTMLTextAreaElement>(null);
   const wantFocusPendPrompt = useRef(false);
@@ -3422,6 +3465,7 @@ export function CanvasClient() {
 
   async function openImageTextEditor(artwork: Artwork) {
     if (readOnly || !user) return;
+    setAssistantArtworkId(null); // 与画布助手面板互斥
     setOcrArtworkId(artwork.id);
     setOcrSegments([]);
     setOcrEngine("");
@@ -3641,6 +3685,114 @@ export function CanvasClient() {
       "标注编辑"
     );
     setAnnotateArtwork(null);
+  }
+
+  function openAssistant(artwork: Artwork) {
+    if (readOnly || !user) return;
+    setOcrArtworkId(null); // 与在线改字面板互斥
+    setAssistantArtworkId(artwork.id);
+    setAssistantTurns([]);
+    setAssistantInput("");
+    setAssistantError(null);
+  }
+
+  // 选中节点变化时,助手面板跟着换锚定并重开新对话(上下文变了,旧对话不再适用)
+  useEffect(() => {
+    if (assistantArtworkId && selectedId && selectedId !== assistantArtworkId) {
+      setAssistantArtworkId(selectedId);
+      setAssistantTurns([]);
+      setAssistantInput("");
+      setAssistantError(null);
+    }
+  }, [selectedId, assistantArtworkId]);
+
+  async function sendAssistantMessage() {
+    const text = assistantInput.trim();
+    if (assistantBusy || !text || !assistantArtworkId) return;
+    const members = active?.members ?? [];
+    const source = members.find((artwork) => artwork.id === assistantArtworkId);
+    if (!source) return;
+    const history = [
+      ...assistantTurns,
+      { id: `as-u-${Date.now()}`, role: "user" as const, content: text },
+    ];
+    setAssistantTurns(history);
+    setAssistantInput("");
+    setAssistantError(null);
+    setAssistantBusy(true);
+    try {
+      const response = await privateFetch("/api/canvas/assistant", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          anchorId: source.id,
+          contextIds: assistantContext(members, source.id).map((artwork) => artwork.id),
+          messages: history.map(({ role, content }) => ({ role, content })),
+        }),
+      });
+      const data = await readJsonSafe(response);
+      if (!response.ok || !data?.text) throw new Error(data?.error || "画布助手暂时不可用");
+      setAssistantTurns((current) => [
+        ...current,
+        { id: `as-a-${Date.now()}`, role: "assistant", content: String(data.text) },
+      ]);
+    } catch (error) {
+      setAssistantError(error instanceof Error ? error.message : "画布助手暂时不可用");
+    } finally {
+      setAssistantBusy(false);
+    }
+  }
+
+  // 助手回复里的 [[GEN]] 提示词 → 复用 runGen 管线(占位节点/撤销/计费)生成子节点
+  function genFromAssistant(prompt: string) {
+    const source = assistantArtworkId
+      ? active?.members.find((artwork) => artwork.id === assistantArtworkId)
+      : null;
+    const text = prompt.trim();
+    if (!source || !text) return;
+    void runGen(source, text, {
+      count: 1,
+      parentId: source.id,
+      refUrls: [source.image],
+      taskLabel: "助手生成中…",
+      userPrompt: "画布助手生成",
+    });
+  }
+
+  // 助手消息渲染:普通文本 + [[GEN]]…[[/GEN]] 生图块(按钮显示提示词摘要,点击生图)
+  function renderAssistantContent(content: string) {
+    const regex = /\[\[GEN\]\]([\s\S]*?)\[\[\/GEN\]\]/g;
+    const parts: ReactNode[] = [];
+    let cursor = 0;
+    let key = 0;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(content))) {
+      if (match.index > cursor) {
+        parts.push(
+          <p key={key++} className="whitespace-pre-wrap">{content.slice(cursor, match.index)}</p>
+        );
+      }
+      const genPrompt = match[1].trim();
+      if (genPrompt) {
+        parts.push(
+          <button
+            key={key++}
+            type="button"
+            onClick={() => genFromAssistant(genPrompt)}
+            className="mt-1.5 flex w-full items-center gap-1.5 rounded-lg border border-[#9fd8e3] bg-[#eaf7f9] px-3 py-2 text-left text-[12px] font-semibold text-[#18747f] transition-colors hover:bg-[#dcf0f4]"
+          >
+            <Zap className="h-3.5 w-3.5 flex-none" />
+            <span className="min-w-0 flex-1 truncate" title={genPrompt}>{genPrompt}</span>
+            <span className="flex-none text-[11px] opacity-70">生成 6 分</span>
+          </button>
+        );
+      }
+      cursor = match.index + match[0].length;
+    }
+    if (cursor < content.length) {
+      parts.push(<p key={key++} className="whitespace-pre-wrap">{content.slice(cursor)}</p>);
+    }
+    return parts;
   }
 
   async function generateSplitViews(source: Artwork, feedback: string) {
@@ -8527,6 +8679,16 @@ export function CanvasClient() {
               >
                 <PenLine className="h-4 w-4" /> 标注
               </button>
+              {/* 画布助手:围绕选中节点+上游链对话,可一键生图回画布 */}
+              <button
+                type="button"
+                title="画布助手"
+                disabled={!selected || readOnly}
+                onClick={() => selected && openAssistant(selected)}
+                className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
+              >
+                <MessageSquareText className="h-4 w-4" /> 助手
+              </button>
               <button
                 type="button"
                 title={t("canvas.editName")}
@@ -8662,6 +8824,136 @@ export function CanvasClient() {
               </button>
             </div>
           )}
+
+          {/* 画布助手面板:与 OCR 面板同款右贴布局,互斥打开 */}
+          {assistantArtworkId &&
+            (() => {
+              const anchor = active?.members.find((artwork) => artwork.id === assistantArtworkId);
+              if (!anchor) return null;
+              const contextArts = assistantContext(active?.members ?? [], anchor.id);
+              return (
+                <aside
+                  aria-label="画布助手面板"
+                  className="absolute bottom-4 right-4 top-4 z-30 flex w-[min(390px,calc(100%-2rem))] flex-col overflow-hidden border border-[#d9e0e8] bg-white text-[#252a33] shadow-[0_22px_70px_rgba(8,15,30,0.32)]"
+                >
+                  <div className="flex items-start justify-between border-b border-[#e8ecf1] px-4 py-3.5">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-[15px] font-bold">
+                        <MessageSquareText className="h-4 w-4 text-[#248da1]" /> 画布助手
+                      </div>
+                      <p className="mt-1 truncate text-[12px] text-[#78818e]">
+                        {anchor.title || "图片节点"}
+                      </p>
+                    </div>
+                    <div className="flex flex-none items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={!assistantTurns.length}
+                        onClick={() => {
+                          setAssistantTurns([]);
+                          setAssistantInput("");
+                          setAssistantError(null);
+                        }}
+                        className="rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-[#4b5663] transition-colors hover:bg-[#f1f3f6] hover:text-[#252a33] disabled:opacity-40"
+                      >
+                        新对话
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="关闭画布助手"
+                        onClick={() => setAssistantArtworkId(null)}
+                        className="flex h-8 w-8 items-center justify-center text-[#7a8390] hover:bg-[#f1f3f6] hover:text-[#252a33]"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 上下文条:当前图 + 上游缩略图(第一张为当前图,青框标出) */}
+                  <div className="flex items-center gap-2 border-b border-[#e8ecf1] bg-[#f7fafb] px-4 py-2">
+                    <span className="flex-none text-[11px] font-semibold text-[#4b5663]">上下文</span>
+                    <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+                      {contextArts.map((artwork, index) => (
+                        <img
+                          key={artwork.id}
+                          src={cdnUrl(artwork.image)}
+                          alt={artwork.title}
+                          title={index === 0 ? `当前图：${artwork.title || ""}` : `上游 ${index}：${artwork.title || ""}`}
+                          className={cn(
+                            "h-10 w-10 flex-none rounded-md border object-cover",
+                            index === 0 ? "border-2 border-[#248da1]" : "border border-[#e2e8ee]"
+                          )}
+                        />
+                      ))}
+                    </div>
+                    <span className="flex-none text-[11px] text-[#78818e]">{contextArts.length} 张</span>
+                  </div>
+
+                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+                    {!assistantTurns.length && !assistantBusy && (
+                      <div className="rounded-xl border border-dashed border-[#dbe3ea] px-3 py-5 text-center text-[12px] leading-relaxed text-[#78818e]">
+                        已带上当前图与上游生成链。
+                        <br />
+                        试试：「点评这张图的商业表现力」或「把背景换成咖啡店场景，给我提示词」。
+                      </div>
+                    )}
+                    {assistantTurns.map((turn) =>
+                      turn.role === "user" ? (
+                        <div key={turn.id} className="flex justify-end">
+                          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[#248da1] px-3.5 py-2 text-[13px] leading-relaxed text-white">
+                            {turn.content}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={turn.id} className="flex justify-start">
+                          <div className="max-w-[92%] space-y-1 rounded-2xl rounded-bl-sm bg-[#f1f5f8] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#252a33]">
+                            {renderAssistantContent(turn.content)}
+                          </div>
+                        </div>
+                      )
+                    )}
+                    {assistantBusy && (
+                      <div className="flex items-center gap-2 text-[12px] text-[#78818e]">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-[#248da1]" /> 正在思考…
+                      </div>
+                    )}
+                    {assistantError && (
+                      <div className="border border-[#f0c8c3] bg-[#fff5f3] px-3 py-2 text-[12px] font-medium text-[#b44f43]">
+                        {assistantError}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-t border-[#e8ecf1] p-3">
+                    <textarea
+                      rows={2}
+                      value={assistantInput}
+                      disabled={assistantBusy}
+                      placeholder="问点什么，或让助手写提示词…（Enter 发送，Shift+Enter 换行）"
+                      onChange={(event) => setAssistantInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                          event.preventDefault();
+                          void sendAssistantMessage();
+                        }
+                      }}
+                      className="w-full resize-none rounded-xl border border-[#dfe6ec] px-3 py-2 text-[13px] leading-relaxed text-[#252a33] outline-none transition-colors placeholder:text-[#a6aeb8] focus:border-[#248da1] disabled:opacity-60"
+                    />
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-[11px] text-[#78818e]">对话免费 · 生图按张计费</span>
+                      <button
+                        type="button"
+                        disabled={assistantBusy || !assistantInput.trim()}
+                        onClick={() => void sendAssistantMessage()}
+                        className="flex items-center gap-1.5 rounded-lg bg-[#248da1] px-3.5 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#1d7a8c] disabled:opacity-40"
+                      >
+                        <Zap className="h-3.5 w-3.5" /> 发送
+                      </button>
+                    </div>
+                  </div>
+                </aside>
+              );
+            })()}
 
           {/* 标注编辑弹窗:提交后由 submitAnnotations 关闭并走 landEditResult 落地 */}
           {annotateArtwork && (
