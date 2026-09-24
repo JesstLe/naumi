@@ -176,10 +176,10 @@ export function WorkbenchSessions({
                     <div
                       key={session.id}
                       className={cn(
-                        "group mb-0.5 rounded-lg border-l-2 px-2.5 py-2.5 transition-colors",
+                        "group mb-0.5 rounded-lg px-3 py-2.5 transition-colors",
                         active
-                          ? "border-primary bg-primary/[0.07]"
-                          : "border-transparent hover:bg-secondary/70"
+                          ? "bg-primary/[0.07]"
+                          : "hover:bg-secondary/70"
                       )}
                     >
                       {editing ? (
