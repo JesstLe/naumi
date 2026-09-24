@@ -2355,14 +2355,20 @@ export function CanvasClient() {
       return;
     }
     if (textComposerManuallySized) return;
-    const maxHeight = textComposerExpanded ? 360 : 144;
+    // 收起态视野:下限 96px(≈4行,避免"只有两行"的局促感),上限 220px(≈10行,再长内部滚动)
+    const maxHeight = textComposerExpanded ? 360 : 220;
     textarea.style.height = "0px";
-    textarea.style.height = `${Math.min(maxHeight, Math.max(54, textarea.scrollHeight))}px`;
+    textarea.style.height = `${Math.min(maxHeight, Math.max(96, textarea.scrollHeight))}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [textPrompt, textComposerExpanded, textComposerManuallySized, selectedTextId]);
   useEffect(() => {
     setTextComposerExpanded(false);
     setTextComposerManuallySized(false);
+    // 切换节点时清掉上一节点手动拖出的固定高度:否则新节点继承"两行小窗",
+    // 且 ResizeObserver 会立刻把 manuallySized 重新置真,自适应从此失效。
+    if (textComposerDockRef.current?.style.height) {
+      textComposerDockRef.current.style.height = "";
+    }
   }, [selectedTextId]);
   useEffect(() => {
     const dock = textComposerDockRef.current;
