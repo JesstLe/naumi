@@ -485,7 +485,8 @@ export function GenerateClient({
     setAssistOpen(true);
   }
 
-  const costPerImage = resolutionCost(resolution);
+  // BYOK(模型 id 带 byok: 前缀=用户自带接口)豁免站内计费,费用发生在用户自己的上游。
+  const costPerImage = model.startsWith("byok:") ? 0 : resolutionCost(resolution);
   const cost = count * costPerImage;
   const insufficient = !!user && remaining < cost;
 
