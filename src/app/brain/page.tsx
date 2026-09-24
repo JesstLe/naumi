@@ -1,19 +1,17 @@
-import { Suspense } from "react";
-import { HomeAgent } from "@/components/home/home-agent";
-import { BRAND } from "@/lib/brand";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: `智能工作台 — ${BRAND}` };
-
-export default function BrainPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="container py-20 text-sm text-muted-foreground">
-          加载工作台…
-        </div>
-      }
-    >
-      <HomeAgent />
-    </Suspense>
-  );
+// /brain 已收敛进统一工作台 /dashboard(空态门户 ↔ 发送后对话同页渐变)。
+// 旧链接与 ?prompt= 原样透传,保证存量入口(收藏/外链)不断链。
+export default function BrainPage({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
+  const sp = new URLSearchParams();
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (typeof value === "string") sp.set(key, value);
+    else if (Array.isArray(value) && value.length > 0) sp.set(key, value[0]);
+  }
+  const qs = sp.toString();
+  redirect(qs ? `/dashboard?${qs}` : "/dashboard");
 }
