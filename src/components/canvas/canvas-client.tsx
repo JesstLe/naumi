@@ -629,7 +629,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
   return (
     <div className="group relative flex h-full w-full flex-col">
       <NodeResizer
-        isVisible={active}
+        isVisible={active && !d.expanded}
         minWidth={TEXT_NODE_MIN_W}
         minHeight={TEXT_NODE_MIN_H}
         maxWidth={TEXT_NODE_MAX_W}
@@ -1491,9 +1491,8 @@ export function CanvasClient() {
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState("");
   const [textError, setTextError] = useState<string | null>(null);
-  // 文字节点一键放大/还原:放大前的尺寸存 ref,还原时恢复
+  // 文字节点一键放大/还原只改变当前画布视图，不写回节点尺寸；刷新后仍使用用户保存的原尺寸。
   const [expandedTextIds, setExpandedTextIds] = useState<Set<string>>(new Set());
-  const textExpandSizesRef = useRef(new Map<string, { width: number; height: number }>());
   const [textComposerExpanded, setTextComposerExpanded] = useState(false);
   const [textComposerManuallySized, setTextComposerManuallySized] = useState(false);
   const textComposerDockRef = useRef<HTMLDivElement>(null);
@@ -1890,7 +1889,6 @@ export function CanvasClient() {
     if (!textNodesReady || readOnly) return;
     const updates: CanvasTextNode[] = [];
     for (const node of textNodes) {
-      if (expandedTextIds.has(node.id)) continue;
       const sig = `${node.content.length}|${node.prompt.length}|${node.sourceIds?.length ?? 0}|${node.productIds?.length ?? 0}|${node.width}`;
       if (fittedTextNodesRef.current.get(node.id) === sig) continue;
       fittedTextNodesRef.current.set(node.id, sig);
@@ -1907,7 +1905,7 @@ export function CanvasClient() {
     setTextNodes((cur) => cur.map((n) => byId.get(n.id) ?? n));
     updates.forEach((n) => void persistTextNode(n));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textNodes, textNodesReady, readOnly, expandedTextIds]);
+  }, [textNodes, textNodesReady, readOnly]);
 
   // 从收银台返回(支付完成/取消)→ 自动重开会员弹窗,并清掉 URL 上的标记
   useEffect(() => {
@@ -2509,6 +2507,14 @@ export function CanvasClient() {
       }
     }
     for (const textNode of textNodes.filter((node) => node.projectKey === activeKey)) {
+      const expanded = expandedTextIds.has(textNode.id);
+      const displayWidth = expanded ? Math.min(760, TEXT_NODE_MAX_W) : textNode.width;
+      const displayHeight = expanded
+        ? Math.min(
+            TEXT_NODE_MAX_H,
+            Math.max(420, estimateTextNodeHeight({ ...textNode, width: displayWidth }))
+          )
+        : textNode.height;
       const sourceRefs = (textNode.sourceIds ?? [])
         .map((id) => active?.members.find((member) => member.id === id))
         .filter(Boolean) as Artwork[];
@@ -2534,11 +2540,11 @@ export function CanvasClient() {
           })),
           selected: textNode.id === selectedTextId,
           lightCanvas,
-          expanded: expandedTextIds.has(textNode.id),
-          width: textNode.width,
-          height: textNode.height,
+          expanded,
+          width: displayWidth,
+          height: displayHeight,
         },
-        style: { width: textNode.width, height: textNode.height },
+        style: { width: displayWidth, height: displayHeight },
       } as Node);
       for (const sourceId of Array.from(new Set([...(textNode.sourceIds ?? []), ...(textNode.productIds ?? [])]))) {
         if (!active?.members.some((member) => member.id === sourceId)) continue;
@@ -4976,39 +4982,14 @@ export function CanvasClient() {
     );
     void persistTextNode(updated);
   }
-  // 一键放大/还原文字节点:放大 = 记住当前尺寸并撑到大视野(宽 760、高按内容估算且 ≥420);
-  // 再点一次还原到放大前的尺寸。拖拽手柄仍然可用,两者互不冲突。
+  // 一键放大/还原文字节点：仅切换展示尺寸，不污染持久化尺寸。
   function toggleTextNodeExpand(id: string) {
     if (readOnly) return;
-    const node = textNodes.find((item) => item.id === id);
-    if (!node) return;
-    if (textExpandSizesRef.current.has(id)) {
-      const saved = textExpandSizesRef.current.get(id);
-      textExpandSizesRef.current.delete(id);
-      setExpandedTextIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-      if (saved) {
-        resizeTextNode(id, {
-          x: node.canvasX,
-          y: node.canvasY,
-          width: saved.width,
-          height: saved.height,
-        });
-      }
-      return;
-    }
-    textExpandSizesRef.current.set(id, { width: node.width, height: node.height });
-    setExpandedTextIds((prev) => new Set(prev).add(id));
-    const expandWidth = Math.min(760, TEXT_NODE_MAX_W);
-    const fitHeight = estimateTextNodeHeight({ ...node, width: expandWidth });
-    resizeTextNode(id, {
-      x: node.canvasX,
-      y: node.canvasY,
-      width: expandWidth,
-      height: Math.min(TEXT_NODE_MAX_H, Math.max(420, fitHeight)),
+    setExpandedTextIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
   }
   function addTextNodeAtScreen(
