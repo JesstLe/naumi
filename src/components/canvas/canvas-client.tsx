@@ -9341,7 +9341,7 @@ export function CanvasClient() {
                   )}
                   <span className="flex-1" />
                   <span className="text-[13px] font-semibold text-[#f0c64a]">
-                    ⚡ {selectedGenerationCount * resolutionCost(genResolution)}
+                    ⚡ {genModel.startsWith("byok:") ? 0 : selectedGenerationCount * resolutionCost(genResolution)}
                   </span>
                   <button
                     type="button"
@@ -9470,7 +9470,7 @@ export function CanvasClient() {
                 />
                 <span className="flex-1" />
                 <span className="text-[13px] font-semibold text-[#f0c64a]">
-                  ⚡ {genCount * resolutionCost(genResolution)}
+                  ⚡ {genModel.startsWith("byok:") ? 0 : genCount * resolutionCost(genResolution)}
                 </span>
                 <button
                   type="button"

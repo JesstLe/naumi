@@ -967,22 +967,24 @@ async function runJob(
       } catch {
         /* non-fatal */
       }
-      const actualCost = images.length * resolutionCost(p.resolution);
+      const actualCost = userProvider ? 0 : images.length * resolutionCost(p.resolution);
       const refund = Math.max(0, cost - actualCost);
       if (refund > 0) await refundCredits(p.email, refund);
-      await addLedgerEntry(
-        p.email,
-        -actualCost,
-        images.length === p.count
-          ? `生成 ${images.length} 张图`
-          : `生成 ${images.length} 张图（请求 ${p.count} 张）`
-      );
+      if (actualCost > 0) {
+        await addLedgerEntry(
+          p.email,
+          -actualCost,
+          images.length === p.count
+            ? `生成 ${images.length} 张图`
+            : `生成 ${images.length} 张图（请求 ${p.count} 张）`
+        );
+      }
       billingSettled = true;
       user = await getUser(p.email).catch(() => null);
     }
 
     if (useDb) await settleReservation(jobId).catch(() => {});
-    const actualCost = images.length * resolutionCost(p.resolution);
+    const actualCost = userProvider ? 0 : images.length * resolutionCost(p.resolution);
     JOBS.set(jobId, {
       status: "done",
       images,
@@ -1132,8 +1134,9 @@ export async function POST(request: Request) {
   const useDb = dbEnabled && p.email.length > 0;
   // 改比例只出 1 张,固定按 1 张计费(防止 count 被改大而超扣)。
   if (p.ratiogen) p.count = 1;
-  // 全站固定标准档 medium(前端已无质量选择器),计费纯按所选分辨率档位。
-  const cost = p.count * resolutionCost(p.resolution);
+  // BYOK(用户自带接口)豁免计费:算力与费用都发生在用户自己的上游,
+  // 站内不预扣、不结算、不记流水。
+  const cost = userProvider ? 0 : p.count * resolutionCost(p.resolution);
 
   if (dbEnabled && (await isBanned(p.email, ip))) {
     return NextResponse.json(
@@ -1146,12 +1149,14 @@ export async function POST(request: Request) {
     // 先释放进程重启遗留的过期预扣，再判断本次余额。否则当孤儿预扣恰好
     // 占满余额时，请求会直接 402，永远走不到下方的清理逻辑，账号无法自愈。
     await sweepStaleReservations().catch(() => {});
-    const ok = await reserveCredits(p.email, cost);
-    if (!ok) {
-      return NextResponse.json(
-        { error: "积分不足，请升级方案后重试" },
-        { status: 402 }
-      );
+    if (cost > 0) {
+      const ok = await reserveCredits(p.email, cost);
+      if (!ok) {
+        return NextResponse.json(
+          { error: "积分不足，请升级方案后重试" },
+          { status: 402 }
+        );
+      }
     }
   }
 
@@ -1160,7 +1165,7 @@ export async function POST(request: Request) {
   JOBS.set(jobId, { status: "pending", createdAt: Date.now() });
   // Record the credit reservation so it can be auto-refunded if the process
   // dies mid-job. Older orphans were swept before the balance check above.
-  if (useDb) await addReservation(jobId, p.email, cost);
+  if (useDb && cost > 0) await addReservation(jobId, p.email, cost);
   // Fire-and-forget: continues in the persistent Node server after we respond.
   void runJob(jobId, p, apiKey, imageModel, cutoutModel, userProvider, useDb, cost);
 
