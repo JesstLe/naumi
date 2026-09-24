@@ -1,8 +1,6 @@
-import { AgentClient } from "@/components/agent/agent-client";
-import { BRAND } from "@/lib/brand";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: `Agent 任务模式 — ${BRAND}` };
-
+// /agent 任务模式已收编进统一工作台 /dashboard:对话 + 历史会话抽屉全覆盖。
 export default function AgentPage() {
-  return <AgentClient />;
+  redirect("/dashboard");
 }
