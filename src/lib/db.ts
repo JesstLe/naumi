@@ -55,7 +55,10 @@ async function ensureSchema(): Promise<void> {
           renews_at     timestamptz NOT NULL
         );
         CREATE TABLE IF NOT EXISTS app_user_image_providers (
-          email          text PRIMARY KEY REFERENCES app_users(email) ON DELETE CASCADE,
+          id             text PRIMARY KEY,
+          email          text NOT NULL REFERENCES app_users(email) ON DELETE CASCADE,
+          name           text NOT NULL DEFAULT '默认供应商',
+          is_active      boolean NOT NULL DEFAULT false,
           enabled        boolean NOT NULL DEFAULT false,
           protocol       text NOT NULL DEFAULT 'openai-images',
           base_url_enc   text NOT NULL DEFAULT '',
@@ -64,6 +67,8 @@ async function ensureSchema(): Promise<void> {
           default_model  text NOT NULL DEFAULT '',
           updated_at     timestamptz NOT NULL DEFAULT now()
         );
+        CREATE INDEX IF NOT EXISTS idx_user_image_providers_email
+          ON app_user_image_providers (email);
         CREATE TABLE IF NOT EXISTS app_invoices (
           id         text PRIMARY KEY,
           email      text NOT NULL REFERENCES app_users(email) ON DELETE CASCADE,
@@ -344,6 +349,44 @@ async function ensureSchema(): Promise<void> {
         CREATE INDEX IF NOT EXISTS app_license_act_key_idx
           ON app_license_activations (license_key);
       `);
+      // app_user_image_providers 旧结构迁移:主键曾是 email(一人一供应商的单一槽位)。
+      // 检测到旧主键时把数据搬进多供应商新结构(先搬后删,不丢数据),旧配置成为
+      // 「默认供应商」并保持原 enabled 作为激活态。
+      const providerPk = await getPool().query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.table_constraints tc
+           JOIN information_schema.key_column_usage kcu
+             ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+          WHERE tc.constraint_type = 'PRIMARY KEY'
+            AND tc.table_name = 'app_user_image_providers' AND tc.table_schema = current_schema()`
+      );
+      const pkColumn = providerPk.rows[0]?.column_name;
+      if (pkColumn === "email") {
+        await getPool().query(`
+          CREATE TABLE app_user_image_providers_new (
+            id             text PRIMARY KEY,
+            email          text NOT NULL REFERENCES app_users(email) ON DELETE CASCADE,
+            name           text NOT NULL DEFAULT '默认供应商',
+            is_active      boolean NOT NULL DEFAULT false,
+            enabled        boolean NOT NULL DEFAULT false,
+            protocol       text NOT NULL DEFAULT 'openai-images',
+            base_url_enc   text NOT NULL DEFAULT '',
+            api_key_enc    text NOT NULL DEFAULT '',
+            models         jsonb NOT NULL DEFAULT '[]'::jsonb,
+            default_model  text NOT NULL DEFAULT '',
+            updated_at     timestamptz NOT NULL DEFAULT now()
+          );
+          INSERT INTO app_user_image_providers_new
+            (id, email, name, is_active, enabled, protocol, base_url_enc, api_key_enc,
+             models, default_model, updated_at)
+          SELECT 'prov-' || md5(random()::text) , email, '默认供应商', enabled, enabled,
+                 protocol, base_url_enc, api_key_enc, models, default_model, updated_at
+            FROM app_user_image_providers;
+          DROP TABLE app_user_image_providers;
+          ALTER TABLE app_user_image_providers_new RENAME TO app_user_image_providers;
+          CREATE INDEX idx_user_image_providers_email
+            ON app_user_image_providers (email);
+        `);
+      }
     })();
   }
   return schemaReady;
@@ -1934,7 +1977,10 @@ export type ArtworkRecord = {
 };
 
 export type UserImageProviderRecord = {
+  id: string;
   email: string;
+  name: string;
+  isActive: boolean;
   enabled: boolean;
   protocol: "openai-images" | "chat-completions";
   baseUrlEnc: string;
@@ -1944,21 +1990,12 @@ export type UserImageProviderRecord = {
   updatedAt: string;
 };
 
-export async function getUserImageProviderRecord(
-  emailRaw: string
-): Promise<UserImageProviderRecord | null> {
-  await ensureSchema();
-  const { rows } = await getPool().query(
-    `SELECT email, enabled, protocol, base_url_enc, api_key_enc, models,
-            default_model, updated_at
-       FROM app_user_image_providers
-      WHERE email = $1`,
-    [emailRaw.toLowerCase()]
-  );
-  const row = rows[0];
-  if (!row) return null;
+function providerRowToRecord(row: Record<string, unknown>): UserImageProviderRecord {
   return {
+    id: String(row.id),
     email: String(row.email),
+    name: String(row.name || "未命名供应商"),
+    isActive: !!row.is_active,
     enabled: !!row.enabled,
     protocol:
       row.protocol === "chat-completions" ? "chat-completions" : "openai-images",
@@ -1970,15 +2007,76 @@ export async function getUserImageProviderRecord(
   };
 }
 
+const PROVIDER_COLUMNS = `id, email, name, is_active, enabled, protocol, base_url_enc,
+                          api_key_enc, models, default_model, updated_at`;
+
+export async function listUserImageProviderRecords(
+  emailRaw: string
+): Promise<UserImageProviderRecord[]> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT ${PROVIDER_COLUMNS}
+       FROM app_user_image_providers
+      WHERE email = $1
+      ORDER BY is_active DESC, updated_at DESC`,
+    [emailRaw.toLowerCase()]
+  );
+  return rows.map((row) => providerRowToRecord(row as Record<string, unknown>));
+}
+
+export async function getUserImageProviderRecord(
+  emailRaw: string
+): Promise<UserImageProviderRecord | null> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT ${PROVIDER_COLUMNS}
+       FROM app_user_image_providers
+      WHERE email = $1 AND is_active
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+    [emailRaw.toLowerCase()]
+  );
+  const row = rows[0];
+  return row ? providerRowToRecord(row as Record<string, unknown>) : null;
+}
+
+export async function getUserImageProviderRecordById(
+  emailRaw: string,
+  id: string
+): Promise<UserImageProviderRecord | null> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT ${PROVIDER_COLUMNS}
+       FROM app_user_image_providers
+      WHERE email = $1 AND id = $2`,
+    [emailRaw.toLowerCase(), id]
+  );
+  const row = rows[0];
+  return row ? providerRowToRecord(row as Record<string, unknown>) : null;
+}
+
+export async function countUserImageProviderRecords(emailRaw: string): Promise<number> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT count(*)::int AS n FROM app_user_image_providers WHERE email = $1`,
+    [emailRaw.toLowerCase()]
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 export async function upsertUserImageProviderRecord(
   record: Omit<UserImageProviderRecord, "email" | "updatedAt"> & { email: string }
 ): Promise<UserImageProviderRecord> {
   await ensureSchema();
+  const id = record.id || `prov-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const { rows } = await getPool().query(
     `INSERT INTO app_user_image_providers
-       (email, enabled, protocol, base_url_enc, api_key_enc, models, default_model, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,now())
-     ON CONFLICT (email) DO UPDATE SET
+       (id, email, name, is_active, enabled, protocol, base_url_enc, api_key_enc,
+        models, default_model, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,now())
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name,
+       is_active = EXCLUDED.is_active,
        enabled = EXCLUDED.enabled,
        protocol = EXCLUDED.protocol,
        base_url_enc = EXCLUDED.base_url_enc,
@@ -1986,10 +2084,12 @@ export async function upsertUserImageProviderRecord(
        models = EXCLUDED.models,
        default_model = EXCLUDED.default_model,
        updated_at = now()
-     RETURNING email, enabled, protocol, base_url_enc, api_key_enc, models,
-               default_model, updated_at`,
+     RETURNING ${PROVIDER_COLUMNS}`,
     [
+      id,
       record.email.toLowerCase(),
+      record.name,
+      record.isActive,
       record.enabled,
       record.protocol,
       record.baseUrlEnc,
@@ -1998,25 +2098,58 @@ export async function upsertUserImageProviderRecord(
       record.defaultModel,
     ]
   );
-  const row = rows[0];
-  return {
-    email: String(row.email),
-    enabled: !!row.enabled,
-    protocol:
-      row.protocol === "chat-completions" ? "chat-completions" : "openai-images",
-    baseUrlEnc: String(row.base_url_enc || ""),
-    apiKeyEnc: String(row.api_key_enc || ""),
-    models: Array.isArray(row.models) ? row.models.map(String) : [],
-    defaultModel: String(row.default_model || ""),
-    updatedAt: new Date(String(row.updated_at)).toISOString(),
-  };
+  return providerRowToRecord(rows[0] as Record<string, unknown>);
 }
 
-export async function deleteUserImageProviderRecord(emailRaw: string): Promise<boolean> {
+/** 激活一个供应商(事务内取消同用户其他激活;同用户仅一个生效,目录只合并激活方)。 */
+export async function activateUserImageProviderRecord(
+  emailRaw: string,
+  id: string
+): Promise<boolean> {
   await ensureSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `UPDATE app_user_image_providers SET is_active = true, enabled = true, updated_at = now()
+        WHERE email = $1 AND id = $2 RETURNING id`,
+      [emailRaw.toLowerCase(), id]
+    );
+    if (!rows.length) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    await client.query(
+      `UPDATE app_user_image_providers SET is_active = false, enabled = false, updated_at = now()
+        WHERE email = $1 AND id <> $2`,
+      [emailRaw.toLowerCase(), id]
+    );
+    await client.query("COMMIT");
+    return true;
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteUserImageProviderRecord(
+  emailRaw: string,
+  id?: string
+): Promise<boolean> {
+  await ensureSchema();
+  const email = emailRaw.toLowerCase();
+  if (id) {
+    const result = await getPool().query(
+      `DELETE FROM app_user_image_providers WHERE email = $1 AND id = $2`,
+      [email, id]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
   const result = await getPool().query(
     `DELETE FROM app_user_image_providers WHERE email = $1`,
-    [emailRaw.toLowerCase()]
+    [email]
   );
   return (result.rowCount ?? 0) > 0;
 }

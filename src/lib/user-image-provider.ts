@@ -4,8 +4,12 @@ import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
 
 import {
+  activateUserImageProviderRecord,
+  countUserImageProviderRecords,
   deleteUserImageProviderRecord,
   getUserImageProviderRecord,
+  getUserImageProviderRecordById,
+  listUserImageProviderRecords,
   upsertUserImageProviderRecord,
 } from "@/lib/db";
 import { decryptAtRest, encryptAtRest, maskKey } from "@/lib/settings";
@@ -13,13 +17,18 @@ import { decryptAtRest, encryptAtRest, maskKey } from "@/lib/settings";
 export type UserImageProviderProtocol = "openai-images" | "chat-completions";
 
 export type UserImageProvider = {
-  enabled: boolean;
+  id: string;
+  name: string;
+  isActive: boolean;
   protocol: UserImageProviderProtocol;
   baseUrl: string;
   apiKey: string;
   models: string[];
   defaultModel: string;
 };
+
+/** 每人最多保存的供应商数(防滥用)。 */
+export const MAX_USER_IMAGE_PROVIDERS = 8;
 
 export const USER_IMAGE_MODEL_PREFIX = "byok:";
 
@@ -108,87 +117,160 @@ export async function assertUserImageBaseUrlAllowed(baseUrl: string) {
   }
 }
 
+export async function listUserImageProviders(
+  email: string
+): Promise<UserImageProvider[]> {
+  const rows = await listUserImageProviderRecords(email);
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    isActive: row.isActive,
+    protocol: row.protocol,
+    baseUrl: decryptAtRest(row.baseUrlEnc) || "",
+    apiKey: decryptAtRest(row.apiKeyEnc) || "",
+    models: normalizeUserImageModels(row.models),
+    defaultModel: row.models.includes(row.defaultModel) ? row.defaultModel : "",
+  }));
+}
+
+/** 消费侧入口:取当前激活的供应商(任何时刻至多一个;目录与生图都只认它)。 */
 export async function getUserImageProvider(
   email: string
 ): Promise<UserImageProvider | null> {
   const row = await getUserImageProviderRecord(email);
   if (!row) return null;
-  const baseUrl = decryptAtRest(row.baseUrlEnc) || "";
-  const apiKey = decryptAtRest(row.apiKeyEnc) || "";
-  const models = normalizeUserImageModels(row.models);
-  const defaultModel = models.includes(row.defaultModel)
-    ? row.defaultModel
-    : models[0] || "";
   return {
-    enabled: row.enabled,
+    id: row.id,
+    name: row.name,
+    isActive: true,
     protocol: row.protocol,
-    baseUrl,
-    apiKey,
-    models,
-    defaultModel,
+    baseUrl: decryptAtRest(row.baseUrlEnc) || "",
+    apiKey: decryptAtRest(row.apiKeyEnc) || "",
+    models: normalizeUserImageModels(row.models),
+    defaultModel: row.models.includes(row.defaultModel) ? row.defaultModel : row.models[0] || "",
   };
 }
 
-export async function getUserImageProviderView(email: string) {
-  const provider = await getUserImageProvider(email);
-  return {
-    configured: !!provider?.baseUrl && !!provider?.apiKey && !!provider?.models.length,
-    enabled: provider?.enabled ?? false,
-    protocol: provider?.protocol ?? ("openai-images" as const),
-    baseUrl: provider?.baseUrl ?? "",
-    hasKey: !!provider?.apiKey,
-    keyMasked: maskKey(provider?.apiKey || ""),
-    models: provider?.models ?? [],
-    defaultModel: provider?.defaultModel ?? "",
-  };
+export type UserImageProviderView = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  protocol: UserImageProviderProtocol;
+  baseUrl: string;
+  hasKey: boolean;
+  keyMasked: string;
+  models: string[];
+  defaultModel: string;
+};
+
+export async function getUserImageProviderViews(email: string): Promise<UserImageProviderView[]> {
+  const providers = await listUserImageProviders(email);
+  return providers.map((provider) => ({
+    id: provider.id,
+    name: provider.name,
+    isActive: provider.isActive,
+    protocol: provider.protocol,
+    baseUrl: provider.baseUrl,
+    hasKey: !!provider.apiKey,
+    keyMasked: maskKey(provider.apiKey || ""),
+    models: provider.models,
+    defaultModel: provider.defaultModel || provider.models[0] || "",
+  }));
 }
 
 export async function saveUserImageProvider(input: {
   email: string;
-  enabled: boolean;
+  id?: string;
+  name: string;
+  activate: boolean;
   protocol: UserImageProviderProtocol;
   baseUrl: string;
   apiKey?: string;
   models: unknown;
   defaultModel: string;
-}) {
-  const existing = await getUserImageProvider(input.email);
+}): Promise<{ savedId: string; views: UserImageProviderView[] }> {
+  const existing = input.id
+    ? await getUserImageProviderRecordById(input.email, input.id)
+    : null;
+  if (input.id && !existing) throw new Error("供应商不存在或已删除");
+
+  let activate = input.activate;
+  if (!existing) {
+    const count = await countUserImageProviderRecords(input.email);
+    if (count >= MAX_USER_IMAGE_PROVIDERS) {
+      throw new Error(`最多保存 ${MAX_USER_IMAGE_PROVIDERS} 个供应商，请先删除不需要的`);
+    }
+    // 第一个供应商保存后自动成为当前使用,避免配好了却没生效
+    if (count === 0) activate = true;
+  }
+
   const baseUrl = normalizeUserImageBaseUrl(input.baseUrl);
   if (baseUrl) await assertUserImageBaseUrlAllowed(baseUrl);
-  const apiKey = input.apiKey?.trim() || existing?.apiKey || "";
+  const apiKey = input.apiKey?.trim() || (existing
+    ? decryptAtRest(existing.apiKeyEnc) || ""
+    : "");
   const models = normalizeUserImageModels(input.models);
   const defaultModel = models.includes(input.defaultModel.trim())
     ? input.defaultModel.trim()
     : models[0] || "";
-  if (input.enabled && (!baseUrl || !apiKey || !models.length || !defaultModel)) {
-    throw new Error("启用前请填写接口地址、API Key 和至少一个模型");
+  if (activate && (!baseUrl || !apiKey || !models.length || !defaultModel)) {
+    throw new Error("设为当前使用前请填写接口地址、API Key 和至少一个模型");
   }
-  await upsertUserImageProviderRecord({
+  const name = (input.name || "").trim().slice(0, 40) || "未命名供应商";
+
+  const saved = await upsertUserImageProviderRecord({
+    id: existing?.id || "",
     email: input.email,
-    enabled: input.enabled,
+    name,
+    isActive: activate,
+    enabled: activate,
     protocol:
       input.protocol === "chat-completions" ? "chat-completions" : "openai-images",
-    baseUrlEnc: baseUrl ? encryptAtRest(baseUrl) : "",
+    baseUrlEnc: baseUrl ? encryptAtRest(baseUrl) : existing?.baseUrlEnc || "",
     apiKeyEnc: apiKey ? encryptAtRest(apiKey) : "",
     models,
     defaultModel,
   });
-  return getUserImageProviderView(input.email);
+  if (activate) {
+    await activateUserImageProviderRecord(input.email, saved.id).catch(() => {});
+  }
+  return { savedId: saved.id, views: await getUserImageProviderViews(input.email) };
 }
 
-export async function clearUserImageProvider(email: string) {
-  await deleteUserImageProviderRecord(email);
+export async function setActiveUserImageProvider(email: string, id: string) {
+  const record = await getUserImageProviderRecordById(email, id);
+  if (!record) throw new Error("供应商不存在或已删除");
+  const baseUrl = decryptAtRest(record.baseUrlEnc) || "";
+  const apiKey = decryptAtRest(record.apiKeyEnc) || "";
+  const models = normalizeUserImageModels(record.models);
+  if (!baseUrl || !apiKey || !models.length) {
+    throw new Error("该供应商配置不完整，请先补全接口地址、API Key 和模型后再启用");
+  }
+  await assertUserImageBaseUrlAllowed(baseUrl);
+  const ok = await activateUserImageProviderRecord(email, id);
+  if (!ok) throw new Error("供应商不存在或已删除");
+  return getUserImageProviderViews(email);
+}
+export async function clearUserImageProvider(email: string, id?: string) {
+  await deleteUserImageProviderRecord(email, id);
+  return getUserImageProviderViews(email);
 }
 
 export async function discoverUserImageModels(
   email: string,
-  overrides?: { baseUrl?: string; apiKey?: string }
+  overrides?: { baseUrl?: string; apiKey?: string; providerId?: string }
 ): Promise<string[]> {
-  const provider = await getUserImageProvider(email);
-  const baseUrl = overrides?.baseUrl
+  let baseUrl = overrides?.baseUrl
     ? normalizeUserImageBaseUrl(overrides.baseUrl)
-    : provider?.baseUrl || "";
-  const apiKey = overrides?.apiKey?.trim() || provider?.apiKey || "";
+    : "";
+  let apiKey = overrides?.apiKey?.trim() || "";
+  if ((!baseUrl || !apiKey) && overrides?.providerId) {
+    const record = await getUserImageProviderRecordById(email, overrides.providerId);
+    if (record) {
+      baseUrl = baseUrl || decryptAtRest(record.baseUrlEnc) || "";
+      apiKey = apiKey || decryptAtRest(record.apiKeyEnc) || "";
+    }
+  }
   if (!baseUrl || !apiKey) {
     throw new Error("请先保存接口地址和 API Key");
   }
