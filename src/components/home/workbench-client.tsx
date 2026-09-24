@@ -79,15 +79,17 @@ function imageKey(url: string): string {
 
 type ImageLinkResolver = (url: string) => Promise<string | null>;
 
-/** assistant 消息里的图:悬浮操作条 —— 送画布(?node=)/再生成(?from= 血缘)/下载。 */
+/** assistant 消息里的图:点击放大预览;悬浮(移动端常显)操作条 —— 送画布/再生成/下载。 */
 function AssistantImage({
   url,
   alt,
   resolveId,
+  onPreview,
 }: {
   url: string;
   alt: string;
   resolveId: ImageLinkResolver;
+  onPreview: (url: string) => void;
 }) {
   const router = useRouter();
   const [waiting, setWaiting] = useState(false);
@@ -115,38 +117,27 @@ function AssistantImage({
     }
   }
 
+  const actionBtn =
+    "rounded-lg border border-c-border bg-c-card/95 px-2.5 py-1.5 text-[11.5px] font-medium text-c-text shadow-card transition-colors hover:border-acc hover:text-acc disabled:opacity-60";
+
   return (
-    <span className="group/img relative my-1 block w-fit">
+    <span className="group/img my-1 block w-fit">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={url}
         alt={alt}
-        className="max-h-72 rounded-xl border border-border"
+        onClick={() => onPreview(url)}
+        className="max-h-72 cursor-zoom-in rounded-xl border border-border"
       />
-      <span className="absolute inset-x-2 bottom-2 hidden items-center justify-center gap-1.5 group-hover/img:flex">
-        <button
-          type="button"
-          onClick={() => void go("canvas")}
-          disabled={waiting}
-          className="rounded-lg border border-border bg-c-card/95 px-2.5 py-1.5 text-[11.5px] font-medium text-c-text shadow-card transition-colors hover:border-acc hover:text-acc disabled:opacity-60"
-        >
+      {/* 移动端:静态显示在图下;桌面端:悬浮图片底部 */}
+      <span className="mt-1.5 flex flex-wrap items-center gap-1.5 sm:absolute sm:inset-x-2 sm:bottom-2 sm:mt-0 sm:hidden sm:group-hover/img:flex">
+        <button type="button" onClick={() => void go("canvas")} disabled={waiting} className={actionBtn}>
           送画布
         </button>
-        <button
-          type="button"
-          onClick={() => void go("iterate")}
-          disabled={waiting}
-          className="rounded-lg border border-border bg-c-card/95 px-2.5 py-1.5 text-[11.5px] font-medium text-c-text shadow-card transition-colors hover:border-acc hover:text-acc disabled:opacity-60"
-        >
+        <button type="button" onClick={() => void go("iterate")} disabled={waiting} className={actionBtn}>
           再生成
         </button>
-        <a
-          href={url}
-          download
-          target="_blank"
-          rel="noreferrer"
-          className="rounded-lg border border-border bg-c-card/95 px-2.5 py-1.5 text-[11.5px] font-medium text-c-text shadow-card transition-colors hover:border-acc hover:text-acc"
-        >
+        <a href={url} download target="_blank" rel="noreferrer" className={actionBtn}>
           下载
         </a>
       </span>
@@ -157,12 +148,76 @@ function AssistantImage({
   );
 }
 
+/** 全屏图片预览:点击遮罩/ESC 关闭,底部快捷下载。 */
+function ImageLightbox({ url, onClose }: { url: string; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm nv-fade-in" onClick={onClose}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt=""
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[82vh] max-w-full rounded-xl border border-white/20 object-contain shadow-2xl"
+      />
+      <div
+        className="absolute bottom-6 flex items-center gap-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <a
+          href={url}
+          download
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-full border border-white/25 bg-white/10 px-4 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-white/20"
+        >
+          下载原图
+        </a>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full border border-white/25 bg-white/10 px-4 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-white/20"
+        >
+          关闭 (Esc)
+        </button>
+      </div>
+      <button
+        type="button"
+        aria-label="关闭预览"
+        onClick={onClose}
+        className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+      >
+        <X className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
+
 /** 渲染回复:markdown 图片(带操作条) + [商品图] 行(缩略图) + 文本行 */
-function renderContent(content: string, resolveId: ImageLinkResolver) {
+function renderContent(
+  content: string,
+  resolveId: ImageLinkResolver,
+  onPreview: (url: string) => void
+) {
   return content.split("\n").map((line, i) => {
     const m = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
     if (m) {
-      return <AssistantImage key={i} url={m[2]} alt={m[1]} resolveId={resolveId} />;
+      return (
+        <AssistantImage
+          key={i}
+          url={m[2]}
+          alt={m[1]}
+          resolveId={resolveId}
+          onPreview={onPreview}
+        />
+      );
     }
     const ref = line.match(/^\[商品图\]\s*(\S+)$/);
     if (ref) {
@@ -172,7 +227,8 @@ function renderContent(content: string, resolveId: ImageLinkResolver) {
           key={i}
           src={ref[1]}
           alt="商品图"
-          className="my-1 h-20 w-20 rounded-lg border border-border object-cover"
+          onClick={() => onPreview(ref[1])}
+          className="my-1 h-20 w-20 cursor-zoom-in rounded-lg border border-border object-cover"
         />
       );
     }
@@ -222,6 +278,7 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [sessionLoadingId, setSessionLoadingId] = useState("");
   const [activeTitle, setActiveTitle] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
   const sessionIdRef = useRef("");
   const sessionLoadRef = useRef(0);
   const streamAbortRef = useRef<AbortController | null>(null);
@@ -845,7 +902,7 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
               智能工作台
             </h1>
             <p className="truncate text-[11.5px] leading-tight text-c-text3">
-              {activeTitle || "生图 / 套图 / A+ / 鱼塘任务 / 余额，一句话调度"}
+              {activeTitle || "出图 / 套图 / A+ / 精修复刻，一句话调度"}
             </p>
           </div>
           <button
@@ -865,12 +922,6 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
             <MessageSquarePlus className="h-4 w-4" />
             <span className="hidden sm:inline">新对话</span>
           </button>
-          <Link
-            href="/hub"
-            className="hidden h-9 items-center rounded-full border border-c-border px-3.5 text-[12.5px] font-medium text-c-text2 transition-colors hover:border-c-border2 hover:text-c-text sm:inline-flex"
-          >
-            业务系统
-          </Link>
         </header>
 
         {/* 消息流 */}
@@ -883,7 +934,7 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
               <div
                 key={i}
                 className={cn(
-                  "flex items-end gap-2.5",
+                  "nv-msg-in flex items-end gap-2.5",
                   m.role === "user" ? "justify-end" : "justify-start"
                 )}
               >
@@ -962,7 +1013,7 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
                           </ul>
                         </details>
                       )}
-                      {renderContent(m.content, resolveArtworkId)}
+                      {renderContent(m.content, resolveArtworkId, setPreviewUrl)}
                     </>
                   )}
                 </div>
@@ -1014,7 +1065,7 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
                     void send();
                   }
                 }}
-                placeholder="直接说，例如：鱼塘现在几单在跑？帮我出一张保健品礼盒主图"
+                placeholder="描述你想要的画面，例如：保健品礼盒主图，高级质感，3:4"
                 rows={2}
                 className="max-h-40 w-full resize-none bg-transparent px-2 py-1.5 text-[14px] leading-relaxed text-c-text outline-none placeholder:text-c-text3"
               />
@@ -1089,6 +1140,11 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
           onRename={renameSession}
           onDelete={(id) => removeSession(id)}
         />
+
+        {/* 图片全屏预览 */}
+        {previewUrl && (
+          <ImageLightbox url={previewUrl} onClose={() => setPreviewUrl("")} />
+        )}
       </div>
     );
   }
@@ -1234,8 +1290,8 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
           {/* Agent 能力提示:与工具直达入口区分,这里强调「说句话就行」 */}
           <p className="mt-2 text-center text-[12px] text-c-text3">
             {L(
-              "生图 · 套图 · A+ 详情页 · 鱼塘任务 · 查余额 —— 直接说，我来调度",
-              "Images · suites · A+ pages · tasks · balance — just ask"
+              "出图 · 套图 · A+ 详情页 · 精修复刻 —— 直接说，我来调度",
+              "Images · suites · A+ pages · retouching — just ask"
             )}
           </p>
           <p className="mt-1.5 text-center">
@@ -1425,6 +1481,11 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
         onRename={renameSession}
         onDelete={(id) => removeSession(id)}
       />
+
+      {/* 图片全屏预览 */}
+      {previewUrl && (
+        <ImageLightbox url={previewUrl} onClose={() => setPreviewUrl("")} />
+      )}
     </div>
   );
 }

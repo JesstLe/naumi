@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ChevronDown, Cpu, Plus, X } from "lucide-react";
+import { Check, ChevronDown, Plus, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useTextModel } from "@/lib/text-model-context";
+import { ModelIcon } from "@/components/ui/model-icon";
 
 export function TextModelSelect({
   compact = false,
@@ -45,7 +46,7 @@ export function TextModelSelect({
               dark ? "hover:bg-[#2b2f38]" : "hover:bg-c-subtle"
             )}
           >
-            <Cpu className="h-3.5 w-3.5 flex-none" />
+            <ModelIcon modelId={item} size={14} />
             <span className="min-w-0 flex-1 truncate">{item}</span>
             {item === model && <Check className="h-3.5 w-3.5 flex-none text-acc" />}
           </button>
@@ -82,7 +83,7 @@ export function TextModelSelect({
         )}
         title={`文字模型：${model}`}
       >
-        <Cpu className="h-3.5 w-3.5 flex-none" />
+        <ModelIcon modelId={model} size={14} />
         <span className="min-w-0 truncate">{model}</span>
         <ChevronDown className="h-3.5 w-3.5 flex-none opacity-60" />
       </button>
