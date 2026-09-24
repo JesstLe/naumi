@@ -2952,7 +2952,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
           </div>
           <p className="text-xs text-muted-foreground">
             填邮箱和数值(正=加,负=减),永久有效不过期。给自己充就填自己的账号邮箱
-            (单用户默认 <code className="rounded bg-black/5 px-1 dark:bg-white/10">operator@novaryns.local</code>)。
+            (单用户模式默认已预填站长账号邮箱)。
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <Input
