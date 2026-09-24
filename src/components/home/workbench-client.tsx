@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   ArrowUp,
@@ -68,20 +68,102 @@ const MAX_UPLOAD = 12 * 1024 * 1024;
 const MAX_REF_FILES = 6;
 const MAX_REF_BYTES = 12 * 1024 * 1024;
 
-/** 渲染回复:markdown 图片 + [商品图] 行(缩略图) + 文本行 */
-function renderContent(content: string) {
+/** URL 归一化:取路径末段做作品库匹配(CDN 域名/协议差异不影响)。 */
+function imageKey(url: string): string {
+  try {
+    const path = decodeURIComponent(new URL(url, "http://x").pathname);
+    return path.split("/").pop() || path;
+  } catch {
+    return url.split("?")[0].split("/").pop() || url;
+  }
+}
+
+type ImageLinkResolver = (url: string) => Promise<string | null>;
+
+/** assistant 消息里的图:悬浮操作条 —— 送画布(?node=)/再生成(?from= 血缘)/下载。 */
+function AssistantImage({
+  url,
+  alt,
+  resolveId,
+}: {
+  url: string;
+  alt: string;
+  resolveId: ImageLinkResolver;
+}) {
+  const router = useRouter();
+  const [waiting, setWaiting] = useState(false);
+  const [hint, setHint] = useState("");
+
+  async function go(kind: "canvas" | "iterate") {
+    setWaiting(true);
+    setHint("");
+    try {
+      const id = await resolveId(url);
+      if (id) {
+        router.push(kind === "canvas" ? `/canvas?node=${encodeURIComponent(id)}` : `/generate?from=${encodeURIComponent(id)}`);
+        return;
+      }
+      setHint(
+        kind === "canvas"
+          ? "该图不在作品库,无法定位画布节点"
+          : "未找到作品记录,已打开生图台"
+      );
+      if (kind === "iterate") router.push("/generate");
+    } catch {
+      setHint("操作失败,请重试");
+    } finally {
+      setWaiting(false);
+    }
+  }
+
+  return (
+    <span className="group/img relative my-1 block w-fit">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt={alt}
+        className="max-h-72 rounded-xl border border-border"
+      />
+      <span className="absolute inset-x-2 bottom-2 hidden items-center justify-center gap-1.5 group-hover/img:flex">
+        <button
+          type="button"
+          onClick={() => void go("canvas")}
+          disabled={waiting}
+          className="rounded-lg border border-border bg-c-card/95 px-2.5 py-1.5 text-[11.5px] font-medium text-c-text shadow-card transition-colors hover:border-acc hover:text-acc disabled:opacity-60"
+        >
+          送画布
+        </button>
+        <button
+          type="button"
+          onClick={() => void go("iterate")}
+          disabled={waiting}
+          className="rounded-lg border border-border bg-c-card/95 px-2.5 py-1.5 text-[11.5px] font-medium text-c-text shadow-card transition-colors hover:border-acc hover:text-acc disabled:opacity-60"
+        >
+          再生成
+        </button>
+        <a
+          href={url}
+          download
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-lg border border-border bg-c-card/95 px-2.5 py-1.5 text-[11.5px] font-medium text-c-text shadow-card transition-colors hover:border-acc hover:text-acc"
+        >
+          下载
+        </a>
+      </span>
+      {hint && (
+        <span className="mt-1 block text-[11px] text-c-text3">{hint}</span>
+      )}
+    </span>
+  );
+}
+
+/** 渲染回复:markdown 图片(带操作条) + [商品图] 行(缩略图) + 文本行 */
+function renderContent(content: string, resolveId: ImageLinkResolver) {
   return content.split("\n").map((line, i) => {
     const m = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
     if (m) {
-      return (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          key={i}
-          src={m[2]}
-          alt={m[1]}
-          className="my-1 max-h-72 rounded-xl border border-border"
-        />
-      );
+      return <AssistantImage key={i} url={m[2]} alt={m[1]} resolveId={resolveId} />;
     }
     const ref = line.match(/^\[商品图\]\s*(\S+)$/);
     if (ref) {
@@ -146,6 +228,30 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
   const streamAbortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // 图片 URL → 作品 id 缓存(送画布/再生成的深链依据);上传响应直接登记,其余懒反查
+  const artworkIdRef = useRef<Record<string, string>>({});
+
+  /** 反查图片的作品 id:先查缓存,未命中拉一次作品库全量匹配并回填。 */
+  async function resolveArtworkId(url: string): Promise<string | null> {
+    const key = imageKey(url);
+    if (!key) return null;
+    if (artworkIdRef.current[key]) return artworkIdRef.current[key];
+    if (!user?.email) return null;
+    try {
+      const r = await fetch(
+        `/api/account?email=${encodeURIComponent(user.email)}`,
+        { headers: await authHeader() }
+      );
+      if (!r.ok) return null;
+      const d = await r.json();
+      for (const a of (d.artworks ?? []) as { id: string; image: string }[]) {
+        if (a.id && a.image) artworkIdRef.current[imageKey(a.image)] = a.id;
+      }
+    } catch {
+      return null;
+    }
+    return artworkIdRef.current[key] ?? null;
+  }
 
   // 问候语随本地时段
   const [greet, setGreet] = useState("home.dash.greetEvening");
@@ -422,7 +528,10 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
         body: fd,
       });
       const d = await res.json();
-      return d?.artwork?.image || d?.image || d?.url || null;
+      const url = d?.artwork?.image || d?.image || d?.url;
+      const id = d?.artwork?.id || null;
+      if (url && id) artworkIdRef.current[imageKey(url)] = id;
+      return url || null;
     } catch {
       return null;
     }
@@ -851,7 +960,7 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
                           </ul>
                         </details>
                       )}
-                      {renderContent(m.content)}
+                      {renderContent(m.content, resolveArtworkId)}
                     </>
                   )}
                 </div>
