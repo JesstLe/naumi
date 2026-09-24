@@ -1952,15 +1952,15 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
               抠图模型
             </div>
             <p className="text-xs text-muted-foreground">
-              「AI 抠图」与画布抠图主用 Replicate BiRefNet(发丝级、像素保真,按次付费
-              ~¥0.03/张);gpt-image 会重绘主体、慢且烧 token,仅作兜底。选「Replicate」=
-              主用 BiRefNet、失败自动退 gpt-image;选「gpt-image」=强制走兜底。
+              「AI 抠图」与画布抠图的识别引擎。Replicate BiRefNet：发丝级边缘、像素级
+              保真，适合商品主体；OpenAI gpt-image：备选引擎，风格化更强。默认推荐
+              Replicate。
             </p>
             {/* 后端切换 */}
             <div className="flex flex-wrap gap-2">
               {[
-                { id: "replicate" as const, label: "Replicate BiRefNet(主)" },
-                { id: "openai" as const, label: "OpenAI gpt-image(兜底)" },
+                { id: "replicate" as const, label: "Replicate BiRefNet（推荐）" },
+                { id: "openai" as const, label: "OpenAI gpt-image（备选）" },
               ].map((b) => (
                 <button
                   key={b.id}
@@ -1979,7 +1979,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
             {/* Replicate BiRefNet(第三方,后台可改 Token + 模型) */}
             <div className="space-y-2 rounded-xl border border-border bg-secondary/40 p-3">
               <div className="flex items-center justify-between text-xs font-medium">
-                <span>Replicate BiRefNet(第三方)</span>
+                <span>Replicate BiRefNet</span>
                 <span
                   className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${
                     view?.cutoutReplicateReady
@@ -2031,9 +2031,9 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
               </div>
             </div>
 
-            {/* gpt-image 兜底模型 */}
+            {/* gpt-image 备用模型 */}
             <p className="text-xs font-medium text-muted-foreground">
-              gpt-image 兜底模型
+              gpt-image 备用模型
             </p>
             <Input
               value={cutoutModel}
