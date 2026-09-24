@@ -12,7 +12,7 @@ import {
   listUserImageProviderRecords,
   upsertUserImageProviderRecord,
 } from "@/lib/db";
-import { decryptAtRest, encryptAtRest, maskKey } from "@/lib/settings";
+import { decryptAtRest, maskKey } from "@/lib/settings";
 
 export type UserImageProviderProtocol = "openai-images" | "chat-completions";
 
@@ -26,6 +26,16 @@ export type UserImageProvider = {
   models: string[];
   defaultModel: string;
 };
+
+/**
+ * 读出供应商密文字段。落库策略(2026-09-24 起):服务器存明文,传输全程密文——
+ * 列名保留 *_enc 只是历史兼容;库里可能仍有旧版 AES 密文,读时先尝试解密,
+ * 解不开按明文原样返回(旧密文 → 下次保存自动转成明文)。
+ */
+function readSecret(value: string): string {
+  if (!value) return "";
+  return decryptAtRest(value) ?? value;
+}
 
 /** 每人最多保存的供应商数(防滥用)。 */
 export const MAX_USER_IMAGE_PROVIDERS = 8;
@@ -126,8 +136,8 @@ export async function listUserImageProviders(
     name: row.name,
     isActive: row.isActive,
     protocol: row.protocol,
-    baseUrl: decryptAtRest(row.baseUrlEnc) || "",
-    apiKey: decryptAtRest(row.apiKeyEnc) || "",
+    baseUrl: readSecret(row.baseUrlEnc),
+    apiKey: readSecret(row.apiKeyEnc),
     models: normalizeUserImageModels(row.models),
     defaultModel: row.models.includes(row.defaultModel) ? row.defaultModel : "",
   }));
@@ -144,8 +154,8 @@ export async function getUserImageProvider(
     name: row.name,
     isActive: true,
     protocol: row.protocol,
-    baseUrl: decryptAtRest(row.baseUrlEnc) || "",
-    apiKey: decryptAtRest(row.apiKeyEnc) || "",
+    baseUrl: readSecret(row.baseUrlEnc),
+    apiKey: readSecret(row.apiKeyEnc),
     models: normalizeUserImageModels(row.models),
     defaultModel: row.models.includes(row.defaultModel) ? row.defaultModel : row.models[0] || "",
   };
@@ -207,7 +217,7 @@ export async function saveUserImageProvider(input: {
   const baseUrl = normalizeUserImageBaseUrl(input.baseUrl);
   if (baseUrl) await assertUserImageBaseUrlAllowed(baseUrl);
   const apiKey = input.apiKey?.trim() || (existing
-    ? decryptAtRest(existing.apiKeyEnc) || ""
+    ? readSecret(existing.apiKeyEnc)
     : "");
   const models = normalizeUserImageModels(input.models);
   const defaultModel = models.includes(input.defaultModel.trim())
@@ -226,8 +236,8 @@ export async function saveUserImageProvider(input: {
     enabled: activate,
     protocol:
       input.protocol === "chat-completions" ? "chat-completions" : "openai-images",
-    baseUrlEnc: baseUrl ? encryptAtRest(baseUrl) : existing?.baseUrlEnc || "",
-    apiKeyEnc: apiKey ? encryptAtRest(apiKey) : "",
+    baseUrlEnc: baseUrl || existing?.baseUrlEnc || "",
+    apiKeyEnc: apiKey,
     models,
     defaultModel,
   });
@@ -240,8 +250,8 @@ export async function saveUserImageProvider(input: {
 export async function setActiveUserImageProvider(email: string, id: string) {
   const record = await getUserImageProviderRecordById(email, id);
   if (!record) throw new Error("供应商不存在或已删除");
-  const baseUrl = decryptAtRest(record.baseUrlEnc) || "";
-  const apiKey = decryptAtRest(record.apiKeyEnc) || "";
+  const baseUrl = readSecret(record.baseUrlEnc);
+  const apiKey = readSecret(record.apiKeyEnc);
   const models = normalizeUserImageModels(record.models);
   if (!baseUrl || !apiKey || !models.length) {
     throw new Error("该供应商配置不完整，请先补全接口地址、API Key 和模型后再启用");
@@ -267,8 +277,8 @@ export async function discoverUserImageModels(
   if ((!baseUrl || !apiKey) && overrides?.providerId) {
     const record = await getUserImageProviderRecordById(email, overrides.providerId);
     if (record) {
-      baseUrl = baseUrl || decryptAtRest(record.baseUrlEnc) || "";
-      apiKey = apiKey || decryptAtRest(record.apiKeyEnc) || "";
+      baseUrl = baseUrl || readSecret(record.baseUrlEnc);
+      apiKey = apiKey || readSecret(record.apiKeyEnc);
     }
   }
   if (!baseUrl || !apiKey) {

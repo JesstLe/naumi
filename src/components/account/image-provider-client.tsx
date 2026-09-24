@@ -200,14 +200,18 @@ export function ImageProviderClient() {
     setFormApiKey("");
   }
 
-  /** key 加密:浏览器有 WebCrypto 时走 RSA-OAEP,否则明文降级(服务端再加密落库)。 */
-  async function encryptApiKey(): Promise<Record<string, string>> {
+  /**
+   * key 传输加密:仅 RSA-OAEP 密文,不再提供明文降级。
+   * WebCrypto 仅 secure context(HTTPS / localhost)可用——不满足时返回 null,
+   * 由调用方提示更换访问方式,而不是把明文放进请求体。
+   */
+  async function encryptApiKey(): Promise<Record<string, string> | null> {
     const secret = formApiKey.trim();
     if (!secret) return {};
     if (window.crypto?.subtle && publicKeyPem) {
       return { encryptedApiKey: await encryptSecret(secret, publicKeyPem) };
     }
-    return { apiKeyPlain: secret };
+    return null;
   }
 
   async function save() {
@@ -215,6 +219,14 @@ export function ImageProviderClient() {
     setBusy(true);
     setMessage(null);
     try {
+      const keyPayload = await encryptApiKey();
+      if (keyPayload === null) {
+        setMessage({
+          ok: false,
+          text: "当前访问方式不支持加密传输（需 HTTPS 或 localhost）。请换用加密访问后保存 API Key。",
+        });
+        return;
+      }
       const payload = {
         ...(selectedId ? { id: selectedId } : {}),
         name: formName,
@@ -223,7 +235,7 @@ export function ImageProviderClient() {
         baseUrl: formBaseUrl.trim(),
         models,
         defaultModel: formDefaultModel,
-        ...(await encryptApiKey()),
+        ...keyPayload,
       };
       const response = await fetch("/api/account/image-provider", {
         method: "POST",
@@ -274,11 +286,19 @@ export function ImageProviderClient() {
     setTesting(true);
     setMessage(null);
     try {
+      const keyPayload = await encryptApiKey();
+      if (keyPayload === null) {
+        setMessage({
+          ok: false,
+          text: "当前访问方式不支持加密传输（需 HTTPS 或 localhost）。请换用加密访问后测试。",
+        });
+        return;
+      }
       const payload = {
         action: "test",
         ...(selectedId ? { id: selectedId } : {}),
         baseUrl: formBaseUrl.trim(),
-        ...(await encryptApiKey()),
+        ...keyPayload,
       };
       const response = await fetch("/api/account/image-provider", {
         method: "POST",
