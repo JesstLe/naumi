@@ -61,7 +61,11 @@ export async function POST(request: Request) {
     if (body.encryptedApiKey?.trim()) {
       apiKey = (await decryptFromClient(body.encryptedApiKey)).trim();
     } else if (body.apiKeyPlain?.trim()) {
-      apiKey = body.apiKeyPlain.trim();
+      // 传输只收密文:明文字段一律拒绝(服务器落库为明文,但链路其余部分全程密文)
+      return NextResponse.json(
+        { error: "API Key 需加密传输：请通过 HTTPS 或 localhost 访问站点后配置" },
+        { status: 400 }
+      );
     }
     if (body.action === "test") {
       const models = await discoverUserImageModels(email, {
