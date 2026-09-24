@@ -1205,14 +1205,39 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
           </div>
         </div>
 
-        {/* 大输入框 = Agent 入口:提交后同页进入对话 */}
-        <div className="mt-7 rounded-[20px] border border-c-border bg-c-card p-4 shadow-pop transition-colors focus-within:border-c-border2">
-          <div className="flex items-start gap-3">
+        {/* 大输入框 = Agent 入口:提交后同页进入对话。单行紧凑布局:加号/输入/发送同行,参考图有内容才出附加行 */}
+        <div className="mt-7 rounded-[20px] border border-c-border bg-c-card p-3.5 shadow-pop transition-colors focus-within:border-c-border2">
+          {(composerPreviews.length > 0 || composerError) && (
+            <div className="mb-2.5 flex flex-wrap items-center gap-2">
+              {composerPreviews.map((url, index) => (
+                <span key={url} className="group relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt=""
+                    className="h-10 w-10 rounded-[10px] border border-c-border object-cover"
+                  />
+                  <button
+                    type="button"
+                    aria-label={L("移除参考图", "Remove reference")}
+                    onClick={() => removeComposerFile(index)}
+                    className="absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-c-text text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </span>
+              ))}
+              {composerError && (
+                <span className="text-xs font-medium text-red-500">{composerError}</span>
+              )}
+            </div>
+          )}
+          <div className="flex items-center gap-2.5">
             <button
               type="button"
               title={t("home.dash.composeAttach")}
               onClick={() => composerFileRef.current?.click()}
-              className="relative flex h-11 w-11 flex-none items-center justify-center rounded-[13px] border border-dashed border-c-border text-c-text3 transition-colors hover:border-acc hover:text-acc"
+              className="relative flex h-10 w-10 flex-none items-center justify-center rounded-full border border-dashed border-c-border text-c-text3 transition-colors hover:border-acc hover:text-acc"
             >
               <Plus className="h-5 w-5" />
               {composerFiles.length > 0 && (
@@ -1236,41 +1261,14 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
                   void submitComposer();
                 }
               }}
-              className="max-h-[150px] min-h-[44px] w-full flex-1 resize-none bg-transparent py-2.5 text-[14.5px] leading-relaxed text-c-text outline-none placeholder:text-c-text3"
+              className="max-h-[150px] w-full flex-1 resize-none bg-transparent py-2 text-[14.5px] leading-relaxed text-c-text outline-none placeholder:text-c-text3"
             />
-          </div>
-
-          {/* 参考图缩略 / 错误提示 + 发送按钮 */}
-          <div className="mt-2 flex items-end justify-between gap-3">
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-              {composerPreviews.map((url, index) => (
-                <span key={url} className="group relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={url}
-                    alt=""
-                    className="h-10 w-10 rounded-[10px] border border-c-border object-cover"
-                  />
-                  <button
-                    type="button"
-                    aria-label={L("移除参考图", "Remove reference")}
-                    onClick={() => removeComposerFile(index)}
-                    className="absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-c-text text-white opacity-0 transition-opacity group-hover:opacity-100"
-                  >
-                    <X className="h-2.5 w-2.5" />
-                  </button>
-                </span>
-              ))}
-              {composerError && (
-                <span className="text-xs font-medium text-red-500">{composerError}</span>
-              )}
-            </div>
             <button
               type="button"
               aria-label={t("home.dash.composeSend")}
               disabled={!composerText.trim() || composerSubmitting}
               onClick={() => void submitComposer()}
-              className="flex h-10 w-10 flex-none items-center justify-center rounded-full [background:var(--grad-acc)] text-white shadow-btn transition-all hover:opacity-90 disabled:opacity-30"
+              className="flex h-9 w-9 flex-none items-center justify-center rounded-full [background:var(--grad-acc)] text-white shadow-btn transition-all hover:opacity-90 disabled:opacity-30"
             >
               {composerSubmitting ? (
                 <Loader2 className="h-[18px] w-[18px] animate-spin" />
