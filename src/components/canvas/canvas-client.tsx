@@ -71,6 +71,7 @@ import {
   GalleryVerticalEnd,
   ScanSearch,
   PenLine,
+  Play,
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
@@ -1693,7 +1694,10 @@ export function CanvasClient() {
         }>;
       }
     | { kind: "delete"; records: Artwork[] }
-    | { kind: "add"; records: Artwork[] };
+    | { kind: "add"; records: Artwork[] }
+    | { kind: "text-delete"; records: CanvasTextNode[] }
+    | { kind: "text-add"; records: CanvasTextNode[] }
+    | { kind: "text-move"; id: string; from: { x: number; y: number }; to: { x: number; y: number } };
   const [undoStack, setUndoStack] = useState<UndoAct[]>([]);
   const [redoStack, setRedoStack] = useState<UndoAct[]>([]);
   const dragStartRef = useRef<{ id: string; x: number; y: number } | null>(null);
@@ -1723,6 +1727,7 @@ export function CanvasClient() {
   const [linking, setLinking] = useState(false);
   // 竞品链路:反推中/帮写中标记、产品图选择器、生成图片模式菜单
   const [promptMining, setPromptMining] = useState(false);
+  const [batchRunBusy, setBatchRunBusy] = useState(false);
   const [assistBusy, setAssistBusy] = useState(false);
   const [productPicker, setProductPicker] = useState<{ textNodeIds: string[] } | null>(null);
   const [genImageMenu, setGenImageMenu] = useState<{ textNodeIds: string[] } | null>(null);
@@ -3033,6 +3038,7 @@ export function CanvasClient() {
     if (readOnly || !user) return [];
     const text = prompt.trim();
     if (!text && !opts?.ratiogen) return []; // 改比例可无提示词(服务端用固定重构图指令)
+    const requestedCount = opts?.ratiogen ? 1 : Math.max(1, opts?.count ?? 1);
     const operationKey = opts?.operationKey ?? `node:${source.id}`;
     if (generationOperationRef.current.has(operationKey)) return [];
     generationOperationRef.current.add(operationKey);
@@ -3177,6 +3183,9 @@ export function CanvasClient() {
         );
       }
       await mergeWorks(newIds); // 补这次新生成的几张(已带上面保存的坐标),不整表重拉
+      if (newIds.length > 0 && newIds.length < requestedCount) {
+        flashTip(`请求 ${requestedCount} 张，成功 ${newIds.length} 张；未成功部分已退回积分`);
+      }
       const newId = newIds[0] ?? null;
       if (
         newId &&
@@ -3337,6 +3346,13 @@ export function CanvasClient() {
     setOcrError(null);
     setOcrStatus("scanning");
     setOcrProgress(12);
+    const progressTimer = window.setInterval(() => {
+      setOcrProgress((current) =>
+        current >= 88
+          ? current
+          : Math.min(88, current + Math.max(2, Math.round((92 - current) / 8)))
+      );
+    }, 650);
     try {
       const response = await privateFetch("/api/canvas/ocr", {
         method: "POST",
@@ -3357,6 +3373,9 @@ export function CanvasClient() {
         confidence: Number(segment.confidence || 0),
         box: segment.box as OcrBox,
       })).filter((segment) => segment.text && segment.box);
+      if (!segments.length) {
+        throw new Error("未识别到可编辑文字，请换一张更清晰的图片重试");
+      }
       setOcrSegments(segments);
       setOcrEngine(String(data?.engine || "ocr"));
       setOcrProgress(100);
@@ -3365,6 +3384,8 @@ export function CanvasClient() {
       setOcrError(error instanceof Error ? error.message : "图片文字识别失败");
       setOcrStatus("error");
       setOcrProgress(0);
+    } finally {
+      window.clearInterval(progressTimer);
     }
   }
 
@@ -3862,6 +3883,30 @@ export function CanvasClient() {
     }).catch(() => {});
     removeWorksLocal(ids); // 本地移除,不整表重拉
   }
+  async function restoreTextNodesSilent(records: CanvasTextNode[]) {
+    if (!records.length) return;
+    await Promise.all(records.map((record) => persistTextNode(record)));
+    setTextNodes((current) => {
+      const map = new Map(current.map((node) => [node.id, node]));
+      records.forEach((record) => map.set(record.id, record));
+      return Array.from(map.values());
+    });
+  }
+  async function deleteTextNodesSilent(ids: string[]) {
+    if (!ids.length) return;
+    await privateFetch("/api/canvas/text-nodes", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }).catch(() => {});
+    setTextNodes((current) => current.filter((node) => !ids.includes(node.id)));
+    setSelectedTextId((current) => current && ids.includes(current) ? null : current);
+  }
+  function setTextPosSilent(id: string, x: number, y: number) {
+    setTextNodes((current) => current.map((node) => node.id === id ? { ...node, canvasX: x, canvasY: y } : node));
+    const node = textNodes.find((item) => item.id === id);
+    if (node) void persistTextNode({ ...node, canvasX: x, canvasY: y, updatedAt: new Date().toISOString() });
+  }
   function setPosSilent(id: string, x: number, y: number) {
     if (!user) return;
     setWorks((prev) =>
@@ -3889,6 +3934,9 @@ export function CanvasClient() {
       );
     else if (act.kind === "delete") await restoreRecordsSilent(act.records);
     else if (act.kind === "add") await deleteIdsSilent(act.records.map((r) => r.id));
+    else if (act.kind === "text-delete") await restoreTextNodesSilent(act.records);
+    else if (act.kind === "text-add") await deleteTextNodesSilent(act.records.map((r) => r.id));
+    else if (act.kind === "text-move") setTextPosSilent(act.id, act.from.x, act.from.y);
   }
   async function doRedo() {
     if (!redoStack.length) return;
@@ -3904,6 +3952,9 @@ export function CanvasClient() {
       );
     else if (act.kind === "delete") await deleteIdsSilent(act.records.map((r) => r.id));
     else if (act.kind === "add") await restoreRecordsSilent(act.records);
+    else if (act.kind === "text-delete") await deleteTextNodesSilent(act.records.map((r) => r.id));
+    else if (act.kind === "text-add") await restoreTextNodesSilent(act.records);
+    else if (act.kind === "text-move") setTextPosSilent(act.id, act.to.x, act.to.y);
   }
   // 添加节点后记一笔可撤销(从刚刷新的列表取完整记录)
   function pushAddUndo(newId: string | null, fresh: Artwork[]) {
@@ -4862,6 +4913,7 @@ export function CanvasClient() {
     setSelectedPendId(id);
     setEditPrompt("");
     setGenerationMode("standard");
+    setGenCount(1);
     wantFocusPendPrompt.current = true;
     focusEditableCanvasArea({ x: pend.x, y: pend.y, width: NODE_W, height: NODE_H });
     if (selectedBatchIds.length > MAX_TOTAL_IMAGES) {
@@ -5046,12 +5098,14 @@ export function CanvasClient() {
       width: 300,
       height: 176,
     });
+    pushUndo({ kind: "text-add", records: [node] });
     void persistTextNode(node);
   }
   async function removeTextNode(id: string) {
     if (!user || readOnly) return;
     const removing = textNodes.find((node) => node.id === id);
     if (!removing) return;
+    pushUndo({ kind: "text-delete", records: [removing] });
     setTextNodes((current) => current.filter((node) => node.id !== id));
     setSelectedTextId((current) => (current === id ? null : current));
     try {
@@ -5259,6 +5313,41 @@ export function CanvasClient() {
       flashTip(fmt(t("canvas.reverseDone"), { n: done }));
     } finally {
       setPromptMining(false);
+    }
+  }
+
+  async function batchRunImages(arts: Artwork[]) {
+    if (readOnly || !arts.length || batchRunBusy) return;
+    setBatchRunBusy(true);
+    setCtxMenu(null);
+    const queue = [...arts];
+    let done = 0;
+    const sharedPrompt = editPrompt.trim();
+    const worker = async () => {
+      while (queue.length) {
+        const art = queue.shift();
+        if (!art) break;
+        const prompt = sharedPrompt || art.prompt || FAITHFUL_REGEN_PROMPT;
+        const result = await runGen(art, prompt, {
+          ratio: genRatio === "auto" ? art.ratio || "1:1" : genRatio,
+          style: genStyle,
+          count: genCount,
+          resolution: genResolution,
+          parentId: art.id,
+          refUrls: [art.image],
+          operationKey: `batch-run:${art.id}:${Date.now()}`,
+          taskLabel: "批量运行中…",
+          selectOnComplete: false,
+          userPrompt: sharedPrompt,
+        });
+        if (result.length) done++;
+      }
+    };
+    try {
+      await Promise.all([worker(), worker()]);
+      flashTip(`批量运行完成 ${done}/${arts.length}`);
+    } finally {
+      setBatchRunBusy(false);
     }
   }
 
@@ -5863,12 +5952,14 @@ export function CanvasClient() {
         const realSel = multiSel.filter(
           (id) => !id.startsWith("pend-") && !id.startsWith("task-")
         );
-        if (realSel.length > 1) {
+        if (realSel.length >= 1) {
           e.preventDefault();
-          batchDelete(realSel);
+          const selectedSet = new Set(realSel);
+          const willEmpty = !!active?.members.length && active.members.every((member) => selectedSet.has(member.id));
+          void runDelete(realSel, willEmpty);
         } else if (selectedId) {
           e.preventDefault();
-          void deleteSelected();
+          void runDelete([selectedId], active?.members.length === 1);
         } else if (selectedTextId) {
           e.preventDefault();
           void removeTextNode(selectedTextId);
@@ -6818,6 +6909,7 @@ export function CanvasClient() {
                 if (node.id.startsWith("text-")) {
                   const current = textNodes.find((item) => item.id === node.id);
                   if (!current) return;
+                  const from = { x: current.canvasX, y: current.canvasY };
                   const moved: CanvasTextNode = {
                     ...current,
                     canvasX: node.position.x,
@@ -6827,6 +6919,9 @@ export function CanvasClient() {
                   setTextNodes((items) =>
                     items.map((item) => (item.id === moved.id ? moved : item))
                   );
+                  if (Math.round(from.x) !== Math.round(moved.canvasX) || Math.round(from.y) !== Math.round(moved.canvasY)) {
+                    pushUndo({ kind: "text-move", id: moved.id, from, to: { x: moved.canvasX, y: moved.canvasY } });
+                  }
                   void persistTextNode(moved);
                   return;
                 }
@@ -7316,6 +7411,26 @@ export function CanvasClient() {
                   >
                     <Combine className="h-4 w-4" />
                     {t("canvas.batchGenerate")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={batchRunBusy}
+                    onClick={() => void batchRunImages(selectedBatchArts)}
+                    title={t("canvas.batchRunImages")}
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#315fc8] transition-colors hover:bg-[#e8efff] disabled:opacity-45"
+                  >
+                    {batchRunBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                    {t("canvas.batchRunImages")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={promptMining}
+                    onClick={() => void reversePromptsForSelection(selectedBatchArts)}
+                    title={t("canvas.batchRunText")}
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8] disabled:opacity-45"
+                  >
+                    {promptMining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Type className="h-4 w-4" />}
+                    {t("canvas.batchRunText")}
                   </button>
                   <button
                     type="button"

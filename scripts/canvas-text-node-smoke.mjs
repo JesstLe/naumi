@@ -147,11 +147,11 @@ try {
   const textPrompt = page.getByPlaceholder(/描述你的问题、文案或内容需求/);
   await expect(textPrompt).toHaveValue(/生成可直接使用的标题/);
   const initialPromptBox = await textPrompt.boundingBox();
-  assert(initialPromptBox && initialPromptBox.height >= 50 && initialPromptBox.height <= 70);
+  assert(initialPromptBox && initialPromptBox.height >= 90 && initialPromptBox.height <= 115);
   await textPrompt.fill("长文本 ".repeat(180));
-  await expect.poll(async () => (await textPrompt.boundingBox())?.height || 0).toBeGreaterThan(70);
+  await expect.poll(async () => (await textPrompt.boundingBox())?.height || 0).toBeGreaterThan(115);
   const cappedPromptBox = await textPrompt.boundingBox();
-  assert(cappedPromptBox && cappedPromptBox.height <= 146);
+  assert(cappedPromptBox && cappedPromptBox.height <= 226);
   const composerDock = page.getByTestId("text-node-dock");
   const dockBeforeResize = await composerDock.boundingBox();
   assert(dockBeforeResize, "text composer dock is missing");

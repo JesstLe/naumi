@@ -336,7 +336,18 @@ async function openaiImages(
           try {
             settled[index] = {
               status: "fulfilled",
-              value: await withGenSlot(() => worker(index)),
+              value: await (async () => {
+                let last: unknown;
+                for (let attempt = 0; attempt < 2; attempt++) {
+                  try {
+                    return await withGenSlot(() => worker(index));
+                  } catch (error) {
+                    last = error;
+                    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 450));
+                  }
+                }
+                throw last instanceof Error ? last : new Error("OpenAI 未返回图片");
+              })(),
             };
           } catch (reason) {
             settled[index] = { status: "rejected", reason };
@@ -491,24 +502,28 @@ async function newApiFlowImages(
     mimeType: image.type || "image/png",
   }));
   const settled = await Promise.allSettled(
-    Array.from({ length: p.count }, (_, index) =>
-      withGenSlot(async () => {
-        const result = await generateNewApiImage({
-          model,
-          prompt,
-          images: references,
-          settings,
-        });
-        return {
-          id: `gen-${Date.now()}-${Math.floor(Math.random() * 1e6)}-${index}`,
-          url: `data:${result.contentType};base64,${result.buffer.toString("base64")}`,
-          gradient: GRADIENTS[index % GRADIENTS.length],
-          prompt: p.prompt,
-          ratio: p.ratio,
-          createdAt: new Date().toISOString(),
-        } satisfies GeneratedImage;
-      })
-    )
+    Array.from({ length: p.count }, (_, index) => (async () => {
+      let last: unknown;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          return await withGenSlot(async () => {
+            const result = await generateNewApiImage({ model, prompt, images: references, settings });
+            return {
+              id: `gen-${Date.now()}-${Math.floor(Math.random() * 1e6)}-${index}`,
+              url: `data:${result.contentType};base64,${result.buffer.toString("base64")}`,
+              gradient: GRADIENTS[index % GRADIENTS.length],
+              prompt: p.prompt,
+              ratio: p.ratio,
+              createdAt: new Date().toISOString(),
+            } satisfies GeneratedImage;
+          });
+        } catch (error) {
+          last = error;
+          if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 450));
+        }
+      }
+      throw last instanceof Error ? last : new Error("New API 生图分组未返回图片");
+    })())
   );
   const images: GeneratedImage[] = [];
   const failures: unknown[] = [];

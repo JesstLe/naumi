@@ -94,11 +94,17 @@ function collectPaddleRows(body: unknown): unknown[] {
       return first.rec_texts.map((text, index) => ({
         text,
         confidence: Array.isArray(first.rec_scores) ? first.rec_scores[index] : 1,
-        box: (first.rec_boxes as unknown[])[index],
+        box: (() => {
+          const raw = (first.rec_boxes as unknown[])[index];
+          if (!Array.isArray(raw) || raw.length < 4) return raw;
+          const [x1, y1, x2, y2] = raw.map(finite);
+          return { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) };
+        })(),
       }));
     }
     return direct;
   }
+  if (direct && typeof direct === "object") return collectPaddleRows(direct);
   return [];
 }
 
@@ -113,14 +119,23 @@ async function paddleOcr(buffer: Buffer, mimeType: string) {
       ? { Authorization: `Bearer ${process.env.PADDLE_OCR_API_KEY}` }
       : undefined,
     body: form,
-    signal: AbortSignal.timeout(90_000),
+    signal: AbortSignal.timeout(45_000),
   });
   const raw = await response.text();
   if (!response.ok) throw new Error(`PaddleOCR 返回 ${response.status}：${raw.slice(0, 240)}`);
   return collectPaddleRows(JSON.parse(raw));
 }
 
-async function visionOcr(buffer: Buffer, mimeType: string, width: number, height: number, model: string) {
+async function visionOcr(buffer: Buffer, width: number, height: number, model: string) {
+  const prepared = await sharp(buffer)
+    .rotate()
+    .resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true })
+    .flatten({ background: "#ffffff" })
+    .sharpen({ sigma: 0.8 })
+    .jpeg({ quality: 88, mozjpeg: true })
+    .toBuffer({ resolveWithObject: true });
+  const scanWidth = prepared.info.width || width;
+  const scanHeight = prepared.info.height || height;
   const settings = await getOpenAISettings();
   // OCR belongs to the image workflow: prefer the configured OpenAI-compatible
   // image gateway. The agent gateway can be independently unavailable (for
@@ -130,15 +145,15 @@ async function visionOcr(buffer: Buffer, mimeType: string, width: number, height
   const client = new OpenAI({
     apiKey,
     baseURL: (await getOpenAIBaseUrl()) || process.env.AGENT_BASE_URL || undefined,
-    timeout: 90_000,
+    timeout: 45_000,
     maxRetries: 0,
   });
   const userContent: Array<
     | { type: "text"; text: string }
     | { type: "image_url"; image_url: { url: string; detail: "high" } }
   > = [
-    { type: "text", text: `原图尺寸 ${width}×${height} 像素。扫描整张图片，一次性提取全部文字和像素坐标框。` },
-    { type: "image_url", image_url: { url: await toVisionDataUrl(buffer, mimeType), detail: "high" } },
+    { type: "text", text: `所见图片尺寸 ${scanWidth}×${scanHeight} 像素。扫描整张图片，一次性提取全部文字和像素坐标框。` },
+    { type: "image_url", image_url: { url: await toVisionDataUrl(prepared.data, "image/jpeg"), detail: "high" } },
   ];
   const response = await client.chat.completions.create({
     model,
@@ -158,7 +173,14 @@ async function visionOcr(buffer: Buffer, mimeType: string, width: number, height
   });
   const content = response.choices[0]?.message?.content || "";
   const json = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-  return JSON.parse(json) as unknown;
+  const start = json.indexOf("{");
+  const end = json.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("视觉 OCR 返回格式不正确");
+  return {
+    raw: JSON.parse(json.slice(start, end + 1)) as unknown,
+    scanWidth,
+    scanHeight,
+  };
 }
 
 export async function POST(request: Request) {
@@ -186,15 +208,15 @@ export async function POST(request: Request) {
 
     let engine = "paddleocr";
     let raw: unknown;
+    let scanSize: { width: number; height: number } | null = null;
     try {
       raw = await paddleOcr(image.buffer, image.mimeType);
       if (!raw) throw new Error("PaddleOCR 未配置");
     } catch (error) {
       if (process.env.PADDLE_OCR_REQUIRED === "true") throw error;
       engine = "vision-fallback";
-      raw = await visionOcr(
+      const vision = await visionOcr(
         image.buffer,
-        image.mimeType,
         width,
         height,
         requestedTextModel(
@@ -202,8 +224,24 @@ export async function POST(request: Request) {
           process.env.PADDLE_OCR_FALLBACK_MODEL || process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna"
         )
       );
+      raw = vision.raw;
+      scanSize = { width: vision.scanWidth, height: vision.scanHeight };
     }
-    const segments = normalizeSegments(raw, width, height);
+    let segments = normalizeSegments(raw, scanSize?.width ?? width, scanSize?.height ?? height);
+    if (scanSize) {
+      const scaleX = width / scanSize.width;
+      const scaleY = height / scanSize.height;
+      segments = segments.map((segment) => ({
+        ...segment,
+        box: {
+          x: Math.round(segment.box.x * scaleX),
+          y: Math.round(segment.box.y * scaleY),
+          width: Math.max(1, Math.round(segment.box.width * scaleX)),
+          height: Math.max(1, Math.round(segment.box.height * scaleY)),
+        },
+      }));
+    }
+    if (!segments.length) throw new Error("未识别到可编辑文字，请换一张更清晰的图片重试");
     return NextResponse.json({
       ok: true,
       engine,
