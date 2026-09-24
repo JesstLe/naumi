@@ -138,7 +138,7 @@ export async function getImageModelCatalog(
   }));
   const userProvider = email ? await getUserImageProvider(email) : null;
   const userModels =
-    userProvider?.enabled &&
+    userProvider &&
     userProvider.baseUrl &&
     userProvider.apiKey &&
     userProvider.models.length
@@ -164,7 +164,7 @@ export async function getUserDefaultImageModel(email?: string | null) {
   if (!email) return null;
   const provider = await getUserImageProvider(email);
   if (
-    !provider?.enabled ||
+    !provider ||
     !provider.baseUrl ||
     !provider.apiKey ||
     !provider.defaultModel ||

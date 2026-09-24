@@ -1114,7 +1114,7 @@ export async function POST(request: Request) {
     const configured = actorEmail ? await getUserImageProvider(actorEmail) : null;
     const upstreamModel = upstreamUserImageModel(imageModel.id);
     if (
-      !configured?.enabled ||
+      !configured ||
       !configured.baseUrl ||
       !configured.apiKey ||
       !configured.models.includes(upstreamModel)
