@@ -82,6 +82,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cdnUrl } from "@/lib/cdn";
 import { ImageLightbox } from "@/components/image-lightbox";
+import { AnnotateEditorModal } from "@/components/canvas/annotate-editor";
 import { BRAND, BRAND_CANVAS_LOGO } from "@/lib/brand";
 import { TemplatesClient } from "@/components/templates/templates-client";
 import { CreditPacks } from "@/components/credits/credit-packs";
@@ -133,6 +134,13 @@ const Y_GAP = 48; // 同层兄弟纵向间距
 const MAX_TOTAL_IMAGES = 6; // 节点图 + 追加参考图 合计上限
 const MAX_UPLOAD = 12 * 1024 * 1024;
 const MAX_GENERATION_COUNT = 8;
+// 扩图可选目标比例(ratioTilesC 同款,去掉 auto 与极端档 2:1/1:2)
+const EXPAND_RATIOS = ["1:1", "4:3", "3:2", "16:9", "4:5", "3:4", "2:3", "9:16"] as const;
+// 扩图锚点九宫格(原图贴哪一侧,新内容补其余方向) + 提示文案
+const ANCHOR_GRID = ["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"] as const;
+const ANCHOR_TITLE: Record<string, string> = {
+  nw: "左上", n: "上", ne: "右上", w: "左", center: "中", e: "右", sw: "左下", s: "下", se: "右下",
+};
 const TEXT_NODE_MIN_W = 220;
 const TEXT_NODE_MIN_H = 140;
 const TEXT_NODE_DEFAULT_W = 380;
@@ -1517,6 +1525,12 @@ export function CanvasClient() {
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [ocrApplyingId, setOcrApplyingId] = useState<string | null>(null);
   const [ocrProgress, setOcrProgress] = useState(0);
+  // 扩图/标注编辑:共用占位落地管线 landEditResult;单飞守卫防连点重复扣积分
+  const editTaskBusyRef = useRef(false);
+  const [expandOpen, setExpandOpen] = useState(false);
+  const [expandRatio, setExpandRatio] = useState<string | null>(null);
+  const [expandAnchor, setExpandAnchor] = useState("center");
+  const [annotateArtwork, setAnnotateArtwork] = useState<Artwork | null>(null);
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
   const pendPromptRef = useRef<HTMLTextAreaElement>(null);
   const wantFocusPendPrompt = useRef(false);
@@ -3533,6 +3547,100 @@ export function CanvasClient() {
       setPendNodes((items) => items.filter((item) => item.id !== pendingId));
       setOcrApplyingId(null);
     }
+  }
+
+  /**
+   * 扩图/标注编辑共用的结果落地管线:占位节点 + 假进度 → 请求 →
+   * 落到源图右侧 → mergeWorks → 撤销记录 → 积分回写(与 applyOcrSegment 同款)。
+   */
+  async function landEditResult(
+    source: Artwork,
+    run: () => Promise<Response>,
+    label: string
+  ): Promise<void> {
+    if (readOnly || !user) return;
+    if (editTaskBusyRef.current) {
+      flashTip("上一个编辑任务还在进行，请稍候");
+      return;
+    }
+    const sourceNode = rfRef.current?.getNode(source.id);
+    const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
+    const x = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
+    const y = sourceNode?.position.y ?? source.canvasY ?? 0;
+    const pendingId = `pend-edit-${Date.now()}`;
+    setPendNodes((current) => [
+      ...current,
+      {
+        id: pendingId,
+        x,
+        y,
+        parentId: source.id,
+        linked: true,
+        label: `${label}结果`,
+        uploading: false,
+        progress: 8,
+        inputs: [source.id],
+        generating: true,
+      },
+    ]);
+    editTaskBusyRef.current = true;
+    const timer = window.setInterval(() => {
+      setPendNodes((items) =>
+        items.map((item) =>
+          item.id === pendingId
+            ? { ...item, progress: Math.min(92, item.progress + Math.max(1, Math.round((96 - item.progress) / 9))) }
+            : item
+        )
+      );
+    }, 900);
+    try {
+      const response = await run();
+      const data = await readJsonSafe(response);
+      if (!response.ok || !data?.id) throw new Error(data?.error || `${label}失败`);
+      await privateFetch("/api/artworks/position", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: data.id, x: Math.round(x), y: Math.round(y) }),
+      });
+      const fresh = await mergeWorks([String(data.id)]);
+      pushAddUndo(String(data.id), fresh);
+      if (data.user) applyServerUser(data.user);
+      setSelectedId(String(data.id));
+      flashTip(`${label}完成，结果已生成在原图右侧`);
+    } catch (error) {
+      flashTip(error instanceof Error ? error.message : `${label}失败`);
+    } finally {
+      window.clearInterval(timer);
+      setPendNodes((items) => items.filter((item) => item.id !== pendingId));
+      editTaskBusyRef.current = false;
+    }
+  }
+
+  async function onExpand(ratio: string) {
+    const source = selected;
+    setExpandOpen(false);
+    if (!source) return;
+    await landEditResult(
+      source,
+      () =>
+        privateFetch("/api/canvas/expand", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ artworkId: source.id, ratio, anchor: expandAnchor }),
+        }),
+      "扩图"
+    );
+  }
+
+  async function submitAnnotations(formData: FormData) {
+    const source = annotateArtwork;
+    if (!source) return;
+    await landEditResult(
+      source,
+      () => privateFetch("/api/canvas/annotate", { method: "POST", body: formData }),
+      "标注编辑"
+    );
+    setAnnotateArtwork(null);
   }
 
   async function generateSplitViews(source: Artwork, feedback: string) {
@@ -8327,6 +8435,98 @@ export function CanvasClient() {
               >
                 <Type className="h-4 w-4" /> 改字
               </button>
+              {/* 扩图:选目标比例 + 原图锚点,outpaint 保原图内容补全四周 */}
+              <div className="relative flex items-center">
+                <button
+                  type="button"
+                  title="扩图"
+                  disabled={!selected || selectedGenerating || readOnly}
+                  onClick={() => {
+                    setExpandOpen((open) => !open);
+                    setExpandRatio(null);
+                  }}
+                  className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
+                >
+                  <Maximize2 className="h-4 w-4" /> 扩图
+                </button>
+                {expandOpen && selected && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setExpandOpen(false)} />
+                    <div className="canvas-ui-surface absolute left-1/2 top-full z-20 mt-2 w-[256px] -translate-x-1/2 rounded-[14px] border p-3 shadow-[0_18px_50px_rgba(8,15,30,0.35)]">
+                      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider opacity-70">
+                        目标比例
+                      </p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {EXPAND_RATIOS.map((ratio) => {
+                          const [rw, rh] = ratio.split(":").map(Number);
+                          const sameRatio =
+                            !!selected.width &&
+                            !!selected.height &&
+                            Math.abs(selected.width / selected.height - rw / rh) / (rw / rh) < 0.02;
+                          return (
+                            <button
+                              key={ratio}
+                              type="button"
+                              disabled={sameRatio}
+                              title={sameRatio ? "当前已是该比例" : undefined}
+                              onClick={() => setExpandRatio(ratio)}
+                              className={cn(
+                                "rounded-lg px-1 py-1.5 text-[12px] font-semibold transition-colors",
+                                expandRatio === ratio
+                                  ? "bg-teal-500 text-white"
+                                  : "canvas-ui-action",
+                                sameRatio && "cursor-not-allowed opacity-30"
+                              )}
+                            >
+                              {ratio}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wider opacity-70">
+                        原图位置
+                      </p>
+                      <div className="grid w-[76px] grid-cols-3 gap-1">
+                        {ANCHOR_GRID.map((cell) => (
+                          <button
+                            key={cell}
+                            type="button"
+                            title={`原图贴${ANCHOR_TITLE[cell]}侧`}
+                            onClick={() => setExpandAnchor(cell)}
+                            className={cn(
+                              "h-6 w-6 rounded-[6px] border transition-colors",
+                              expandAnchor === cell
+                                ? "border-teal-400 bg-teal-500/70"
+                                : "canvas-ui-action border-current opacity-40 hover:opacity-90"
+                            )}
+                          />
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!expandRatio || selectedGenerating}
+                        onClick={() => expandRatio && void onExpand(expandRatio)}
+                        className="mt-3 w-full rounded-[10px] bg-teal-500 px-3 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        开始扩图 · 6 积分
+                      </button>
+                      <p className="mt-2 text-[11px] leading-relaxed opacity-60">
+                        保持原图内容不变，向四周自然延展画面到目标比例。
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+              {/* 标注编辑:箭头/涂抹/编号标注 + 逐条指令改图 */}
+              <button
+                type="button"
+                title="标注编辑"
+                disabled={!selected || selectedGenerating || readOnly}
+                onClick={() => selected && setAnnotateArtwork(selected)}
+                className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
+              >
+                <PenLine className="h-4 w-4" /> 标注
+              </button>
               <button
                 type="button"
                 title={t("canvas.editName")}
@@ -8461,6 +8661,19 @@ export function CanvasClient() {
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
+          )}
+
+          {/* 标注编辑弹窗:提交后由 submitAnnotations 关闭并走 landEditResult 落地 */}
+          {annotateArtwork && (
+            <AnnotateEditorModal
+              artwork={{
+                id: annotateArtwork.id,
+                image: annotateArtwork.image,
+                title: annotateArtwork.title,
+              }}
+              onClose={() => setAnnotateArtwork(null)}
+              onSubmitted={submitAnnotations}
+            />
           )}
 
           {ocrArtworkId && (
