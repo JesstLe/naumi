@@ -8,6 +8,7 @@ import {
   ArrowUp,
   ArrowUpRight,
   Bot,
+  History,
   LayoutGrid,
   Loader2,
   MessageSquarePlus,
@@ -22,8 +23,14 @@ import {
 import { cdnUrl } from "@/lib/cdn";
 import { toolBySlug, type ToolMeta } from "@/lib/tool-meta";
 import { Media } from "@/components/media";
+import { TextModelSelect } from "@/components/ui/text-model-select";
+import {
+  WorkbenchSessions,
+  type SessionSummary,
+} from "@/components/home/workbench-sessions";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { useAuth } from "@/lib/auth-context";
+import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import type { PickedTemplate } from "@/lib/homepage-picks";
@@ -31,8 +38,7 @@ import type { PickedTemplate } from "@/lib/homepage-picks";
 // ---------------------------------------------------------------------------
 // 统一工作台(一期收敛):空态 = 门户(问候/统计/大输入框/快捷入口/最近作品),
 // 发送第一条消息后同页渐变为 Agent 对话,不再跳转 /brain(该路由已 302 到此)。
-// 对话逻辑与原 home-agent 一致:PUT /api/agent SSE + steering + 会话持久化。
-// 一期不做历史会话抽屉:刷新回到门户 = 新对话;历史仍在 DB(二期收编 /agent 侧栏)。
+// 对话逻辑:PUT /api/agent SSE + steering + 会话持久化 + 历史会话抽屉(二期收编)。
 // ---------------------------------------------------------------------------
 
 type Msg = {
@@ -40,6 +46,13 @@ type Msg = {
   content: string;
   steps?: { tool: string; summary: string }[];
   pending?: boolean;
+};
+
+type SavedStep = {
+  type?: string;
+  tool?: string;
+  summary?: string;
+  items?: string[];
 };
 
 type RecentWork = {
@@ -93,6 +106,7 @@ function renderContent(content: string) {
 export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
   const { t, locale } = useI18n();
   const { user, ready, remaining } = useAuth();
+  const { openAuth } = useAuthModal();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
   const params = useSearchParams();
   // ?prompt= 引导只执行一次(旧 /brain?prompt= 链接 302 过来的场景)
@@ -121,7 +135,15 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 历史会话(自 /agent 收编)
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [sessionLoadingId, setSessionLoadingId] = useState("");
+  const [activeTitle, setActiveTitle] = useState("");
   const sessionIdRef = useRef("");
+  const sessionLoadRef = useRef(0);
+  const streamAbortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -204,6 +226,189 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
 
   // ── 对话核心 ──
 
+  /** 载入的历史消息:把保存的 steps 轨迹挂回最后一条 assistant。 */
+  function restoreMessages(rawMessages: Msg[], savedSteps: SavedStep[]) {
+    const restored = rawMessages.map((message) => ({
+      role: message.role === "assistant" ? "assistant" : "user",
+      content: message.content,
+    })) as Msg[];
+    const visibleSteps = savedSteps.map((step) => ({
+      tool: step.type === "plan" ? "任务计划" : step.tool || "工具",
+      summary:
+        step.type === "plan"
+          ? (step.items ?? []).join(" → ")
+          : step.summary || "执行完成",
+    }));
+    if (visibleSteps.length && restored.at(-1)?.role === "assistant") {
+      restored[restored.length - 1] = {
+        ...restored[restored.length - 1],
+        steps: visibleSteps,
+      };
+    }
+    return restored;
+  }
+
+  async function refreshSessions() {
+    if (!user) return;
+    setSessionsLoading(true);
+    try {
+      const response = await fetch("/api/agent/session", {
+        headers: await authHeader(),
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setSessions((data.sessions ?? []) as SessionSummary[]);
+    } finally {
+      setSessionsLoading(false);
+    }
+  }
+
+  // 打开抽屉时刷新列表;登录后也预拉一次
+  useEffect(() => {
+    if (sessionsOpen) void refreshSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsOpen, user]);
+
+  /** 载入历史会话:恢复消息与轨迹;运行中的任务接上事件轮询。 */
+  async function loadSession(id: string) {
+    if (!id || id === sessionIdRef.current) {
+      setSessionsOpen(false);
+      return;
+    }
+    if (busy) {
+      setError("当前会话正在执行，请先停止任务再切换");
+      return;
+    }
+    const loadToken = ++sessionLoadRef.current;
+    setSessionLoadingId(id);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/agent/session?id=${encodeURIComponent(id)}`,
+        { headers: await authHeader() }
+      );
+      if (!response.ok) throw new Error("历史会话读取失败");
+      const data = await response.json();
+      if (loadToken !== sessionLoadRef.current) return;
+      const nextMessages = restoreMessages(
+        (data.session?.messages ?? []) as Msg[],
+        (data.session?.steps ?? []) as SavedStep[]
+      );
+      sessionIdRef.current = id;
+      setActiveTitle(
+        ((data.session?.title as string) || "").slice(0, 60) || "历史会话"
+      );
+      setMessages(nextMessages);
+      setAttachments([]);
+      setInput("");
+
+      const live = await fetch(
+        `/api/agent?sessionId=${encodeURIComponent(id)}&since=0`,
+        { headers: await authHeader() }
+      ).catch(() => null);
+      if (loadToken !== sessionLoadRef.current || !live?.ok) return;
+      const state = await live.json();
+      setSessionsOpen(false);
+      if (state.running) {
+        setBusy(true);
+        setRunning(true);
+        setMessages((previous) => [
+          ...previous,
+          { role: "assistant", content: "正在恢复运行中的任务…", pending: true },
+        ]);
+        void pollRecoveredRun(id, Number(state.total) || 0);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "历史会话读取失败");
+    } finally {
+      if (loadToken === sessionLoadRef.current) setSessionLoadingId("");
+    }
+  }
+
+  /** 运行中任务的恢复轮询:跟随 assistant 事件直到结束,再拉一次持久化结果。 */
+  async function pollRecoveredRun(id: string, since: number) {
+    let cursor = since;
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      const res = await fetch(
+        `/api/agent?sessionId=${encodeURIComponent(id)}&since=${cursor}`,
+        { headers: await authHeader() }
+      ).catch(() => null);
+      if (!res?.ok) break;
+      const data = await res.json();
+      cursor = Number(data.total) || cursor;
+      const events = Array.isArray(data.events) ? data.events : [];
+      const lastAssistant = [...events]
+        .reverse()
+        .find((event) => event.type === "assistant");
+      if (lastAssistant?.data?.text) {
+        setMessages((prev) => {
+          const copy = [...prev];
+          copy[copy.length - 1] = {
+            role: "assistant",
+            content: String(lastAssistant.data.text),
+          };
+          return copy;
+        });
+      }
+      if (!data.running) break;
+    }
+    setBusy(false);
+    setRunning(false);
+    if (sessionIdRef.current === id) {
+      const response = await fetch(
+        `/api/agent/session?id=${encodeURIComponent(id)}`,
+        { headers: await authHeader() }
+      ).catch(() => null);
+      if (response?.ok) {
+        const data = await response.json();
+        setMessages(
+          restoreMessages(
+            (data.session?.messages ?? []) as Msg[],
+            (data.session?.steps ?? []) as SavedStep[]
+          )
+        );
+      }
+    }
+    void refreshSessions();
+  }
+
+  async function renameSession(id: string, title: string): Promise<boolean> {
+    const clean = title.trim().replace(/\s+/g, " ");
+    if (!clean) return false;
+    const response = await fetch("/api/agent/session", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(await authHeader()) },
+      body: JSON.stringify({ id, title: clean }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setError(data.error || "会话重命名失败");
+      return false;
+    }
+    setSessions((previous) =>
+      previous.map((session) =>
+        session.id === id ? { ...session, title: clean } : session
+      )
+    );
+    if (id === sessionIdRef.current) setActiveTitle(clean);
+    return true;
+  }
+
+  async function removeSession(id: string) {
+    const response = await fetch(
+      `/api/agent/session?id=${encodeURIComponent(id)}`,
+      { method: "DELETE", headers: await authHeader() }
+    );
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setError(data.error || "会话删除失败");
+      return;
+    }
+    setSessions((previous) => previous.filter((session) => session.id !== id));
+    if (id === sessionIdRef.current) newConversation();
+  }
+
   /** 上传单张参考图 → 站内 URL;失败返回 null 不阻塞主消息。 */
   async function uploadOne(f: File): Promise<string | null> {
     if (f.size > MAX_UPLOAD) return null;
@@ -226,6 +431,17 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
   async function send(text?: string, attachmentUrls?: string[]) {
     const content = (text ?? input).trim();
     if (!content || busy) return;
+    // 未登录:先确认登录态再弹登录框,避免发出去吃 401
+    if (!user) {
+      if (!ready) return;
+      const session = await fetch("/api/auth/session")
+        .then((response) => response.json())
+        .catch(() => null);
+      if (!session?.user) {
+        openAuth("sign-in");
+        return;
+      }
+    }
     setError(null);
     const urls = attachmentUrls ?? attachments;
     const parts = [content, ...urls.map((u) => `[商品图] ${u}`)];
@@ -233,6 +449,7 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
     const history = messages
       .filter((m) => !m.pending && m.content)
       .map((m) => ({ role: m.role, content: m.content }));
+    const runSteps: { tool: string; summary: string }[] = [];
     setMessages((prev) => [
       ...prev,
       userMsg,
@@ -244,6 +461,8 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
     setRunning(true);
 
     try {
+      const controller = new AbortController();
+      streamAbortRef.current = controller;
       const res = await fetch("/api/agent", {
         method: "PUT",
         headers: {
@@ -257,6 +476,7 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
           // 视觉输入:服务端按模型自动判定,支持时随消息直喂模型
           images: urls,
         }),
+        signal: controller.signal,
       });
       if (!res.ok || !res.body) {
         const d = await res.json().catch(() => ({}));
@@ -280,6 +500,17 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
           const data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
           if (type === "open" && typeof data.sessionId === "string") {
             sessionIdRef.current = data.sessionId;
+          } else if (type === "plan") {
+            const items = Array.isArray(data.items) ? data.items.map(String) : [];
+            runSteps.push({ tool: "任务计划", summary: items.join(" → ") });
+            setMessages((prev) => {
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last?.pending) {
+                copy[copy.length - 1] = { ...last, steps: [...runSteps] };
+              }
+              return copy;
+            });
           } else if (type === "tool_start") {
             setMessages((prev) => {
               const copy = [...prev];
@@ -293,6 +524,10 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
               return copy;
             });
           } else if (type === "tool_end") {
+            runSteps.push({
+              tool: (data.tool as string) || "工具",
+              summary: (data.summary as string) || "执行完成",
+            });
             setMessages((prev) => {
               const copy = [...prev];
               const last = copy[copy.length - 1];
@@ -324,7 +559,7 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
         copy[copy.length - 1] = {
           role: "assistant",
           content: reply || "(无回复)",
-          steps: last?.steps ?? [],
+          steps: last?.steps ?? runSteps,
         };
         return copy;
       });
@@ -346,24 +581,32 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
         }),
       }).catch(() => {});
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Agent 执行失败");
+      if ((e as { name?: string })?.name !== "AbortError") {
+        setError(e instanceof Error ? e.message : "Agent 执行失败");
+      }
       setMessages((prev) => {
         const copy = [...prev];
         copy[copy.length - 1] = { role: "assistant", content: "(执行失败)" };
         return copy;
       });
     } finally {
+      streamAbortRef.current = null;
       setBusy(false);
       setRunning(false);
+      void refreshSessions();
     }
   }
 
   async function stopRun() {
     if (!sessionIdRef.current) return;
-    await fetch(
+    const res = await fetch(
       `/api/agent?sessionId=${encodeURIComponent(sessionIdRef.current)}`,
       { method: "DELETE", headers: await authHeader() }
-    ).catch(() => {});
+    ).catch(() => null);
+    streamAbortRef.current?.abort();
+    setRunning(false);
+    setBusy(false);
+    if (res && !res.ok) setError("停止任务失败，请重试");
   }
 
   async function sendInterject() {
@@ -385,12 +628,15 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
 
   function newConversation() {
     if (running) return;
+    sessionLoadRef.current += 1;
     sessionIdRef.current = "";
+    setActiveTitle("");
     bootstrapRef.current = false;
     setMessages([]);
     setAttachments([]);
     setError(null);
     setInput("");
+    setSessionsOpen(false);
   }
 
   // ?prompt= 进入(旧 /brain 链接):清参数后自动首发,跳过门户空态
@@ -477,7 +723,7 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
   if (messages.length > 0 || busy || composerSubmitting) {
     return (
       <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mx-auto flex h-[calc(100vh-160px)] max-w-4xl flex-col rounded-card border border-c-border bg-c-card shadow-card">
+        <div className="relative mx-auto flex h-[calc(100vh-160px)] max-w-4xl flex-col rounded-card border border-c-border bg-c-card shadow-card">
           {/* 头 */}
           <div className="flex items-center gap-3 border-b border-border px-6 py-4">
             <span
@@ -490,10 +736,18 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
               <h1 className="text-[16px] font-bold text-c-text">
                 Naumi 智能工作台
               </h1>
-              <p className="text-[12px] text-c-text3">
-                一句话调度全部业务系统 · 生图 / 套图 / A+ / 鱼塘任务 / 模板 / 余额
+              <p className="truncate text-[12px] text-c-text3">
+                {activeTitle || "一句话调度全部业务系统 · 生图 / 套图 / A+ / 鱼塘任务 / 模板 / 余额"}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => setSessionsOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[12.5px] font-medium text-c-text2 transition-colors hover:bg-secondary"
+            >
+              <History className="h-3.5 w-3.5" />
+              历史
+            </button>
             <button
               type="button"
               onClick={newConversation}
@@ -632,6 +886,9 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
                 ))}
               </div>
             )}
+            <div className="mb-2">
+              <TextModelSelect compact />
+            </div>
             <div className="flex items-end gap-2">
               <input
                 ref={fileRef}
@@ -693,6 +950,20 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
               </button>
             </div>
           </div>
+
+          {/* 历史会话抽屉(卡片内右侧浮层) */}
+          <WorkbenchSessions
+            open={sessionsOpen}
+            onClose={() => setSessionsOpen(false)}
+            sessions={sessions}
+            loading={sessionsLoading}
+            activeSessionId={sessionIdRef.current}
+            busy={busy}
+            loadingId={sessionLoadingId}
+            onLoad={(id) => void loadSession(id)}
+            onRename={renameSession}
+            onDelete={(id) => removeSession(id)}
+          />
         </div>
       </div>
     );
@@ -842,6 +1113,16 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
               "生图 · 套图 · A+ 详情页 · 鱼塘任务 · 查余额 —— 直接说，我来调度",
               "Images · suites · A+ pages · tasks · balance — just ask"
             )}
+          </p>
+          <p className="mt-1.5 text-center">
+            <button
+              type="button"
+              onClick={() => setSessionsOpen(true)}
+              className="inline-flex items-center gap-1 text-[12px] text-c-text3 transition-colors hover:text-acc"
+            >
+              <History className="h-3 w-3" />
+              {L("历史对话", "History")}
+            </button>
           </p>
         </div>
 
@@ -1006,6 +1287,20 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
           </div>
         </section>
       )}
+
+      {/* 历史会话抽屉(门户右侧浮层;载入后自动切入对话态) */}
+      <WorkbenchSessions
+        open={sessionsOpen}
+        onClose={() => setSessionsOpen(false)}
+        sessions={sessions}
+        loading={sessionsLoading}
+        activeSessionId={sessionIdRef.current}
+        busy={busy}
+        loadingId={sessionLoadingId}
+        onLoad={(id) => void loadSession(id)}
+        onRename={renameSession}
+        onDelete={(id) => removeSession(id)}
+      />
     </div>
   );
 }
