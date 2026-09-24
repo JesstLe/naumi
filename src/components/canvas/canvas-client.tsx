@@ -2595,6 +2595,7 @@ export function CanvasClient() {
     activeKey,
     pendNodes,
     textNodes,
+    expandedTextIds,
     lightCanvas,
   ]);
 
