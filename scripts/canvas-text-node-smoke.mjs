@@ -152,11 +152,22 @@ try {
   await expect.poll(async () => (await textPrompt.boundingBox())?.height || 0).toBeGreaterThan(70);
   const cappedPromptBox = await textPrompt.boundingBox();
   assert(cappedPromptBox && cappedPromptBox.height <= 146);
+  const composerDock = page.getByTestId("text-node-dock");
+  const dockBeforeResize = await composerDock.boundingBox();
+  assert(dockBeforeResize, "text composer dock is missing");
+  await composerDock.evaluate((element) => {
+    (element).style.height = "360px";
+  });
+  await page.waitForTimeout(100);
+  const dockAfterResize = await composerDock.boundingBox();
+  const promptAfterResize = await textPrompt.boundingBox();
+  assert(dockAfterResize && dockAfterResize.height >= 330);
+  assert(promptAfterResize && promptAfterResize.height >= cappedPromptBox.height + 90);
   await textPrompt.fill("根据商品信息生成可直接使用的标题、卖点与详情文案");
   await page.getByTitle("展开编辑窗口").click();
   await expect(page.getByTitle("收起编辑窗口")).toBeVisible();
   await page.getByTitle("收起编辑窗口").click();
-  pass("text composer starts at about two lines, grows to a capped height, and supports windowed expansion");
+  pass("text composer grows with content, manual vertical resize expands the text viewport, and windowed expansion works");
 
   await page.getByTitle(/文字模型/).click();
   await page.getByRole("button", { name: "自定义模型 ID" }).click();

@@ -1475,6 +1475,9 @@ export function CanvasClient() {
   const [textPrompt, setTextPrompt] = useState("");
   const [textError, setTextError] = useState<string | null>(null);
   const [textComposerExpanded, setTextComposerExpanded] = useState(false);
+  const [textComposerManuallySized, setTextComposerManuallySized] = useState(false);
+  const textComposerDockRef = useRef<HTMLDivElement>(null);
+  const textComposerBodyRef = useRef<HTMLDivElement>(null);
   const textPromptRef = useRef<HTMLTextAreaElement>(null);
   const [textReferenceMenuOpen, setTextReferenceMenuOpen] = useState(false);
   // @提及选图:输入 @ 弹出图片选择框,点击=插入 @图片名 并绑引用(等同连线)
@@ -2326,12 +2329,42 @@ export function CanvasClient() {
   useEffect(() => {
     const textarea = textPromptRef.current;
     if (!textarea) return;
+    if (textComposerExpanded) {
+      textarea.style.height = "100%";
+      textarea.style.overflowY = "auto";
+      return;
+    }
+    if (textComposerManuallySized) return;
     const maxHeight = textComposerExpanded ? 360 : 144;
     textarea.style.height = "0px";
     textarea.style.height = `${Math.min(maxHeight, Math.max(54, textarea.scrollHeight))}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, [textPrompt, textComposerExpanded, selectedTextId]);
-  useEffect(() => setTextComposerExpanded(false), [selectedTextId]);
+  }, [textPrompt, textComposerExpanded, textComposerManuallySized, selectedTextId]);
+  useEffect(() => {
+    setTextComposerExpanded(false);
+    setTextComposerManuallySized(false);
+  }, [selectedTextId]);
+  useEffect(() => {
+    const dock = textComposerDockRef.current;
+    const body = textComposerBodyRef.current;
+    const textarea = textPromptRef.current;
+    if (!dock || !body || !textarea) return;
+    const syncHeight = () => {
+      const manuallySized = !textComposerExpanded && Boolean(dock.style.height);
+      if (manuallySized !== textComposerManuallySized) {
+        setTextComposerManuallySized(manuallySized);
+      }
+      if (textComposerExpanded || manuallySized) {
+        textarea.style.height = `${Math.max(54, body.clientHeight)}px`;
+        textarea.style.overflowY = "auto";
+      }
+    };
+    syncHeight();
+    const observer = new ResizeObserver(syncHeight);
+    observer.observe(dock);
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, [selectedTextId, textComposerExpanded, textComposerManuallySized]);
   const selectedTextRefs = useMemo(
     () =>
       (selectedText?.sourceIds ?? [])
@@ -8564,6 +8597,7 @@ export function CanvasClient() {
           {/* 文字生成节点：布局与图片节点一致，配色跟随画布黑/白主题。 */}
           {selectedText && !readOnly && (
             <div
+              ref={textComposerDockRef}
               key={`tdock-${selectedText.id}`}
               data-testid="text-node-dock"
               style={
@@ -8576,14 +8610,17 @@ export function CanvasClient() {
                     }
               }
               className={cn(
-                "cz-anim-bottom absolute z-20 flex max-w-[calc(100%-1rem)] flex-col overflow-auto rounded-[18px] border shadow-2xl",
-                textComposerExpanded ? "resize-none" : "resize",
+                "cz-anim-bottom absolute z-20 flex min-h-[142px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border shadow-2xl",
+                textComposerExpanded ? "resize-none" : "resize-y",
                 lightCanvas
                   ? "border-[#dfe4ea] bg-white text-[#252933] shadow-[0_18px_45px_rgba(7,12,24,0.18)]"
                   : "border-[#40444f] bg-[#191b21] text-[#e7e9ee]"
               )}
             >
-              <div className="flex items-start gap-2 px-3.5 pb-2 pt-3">
+              <div
+                ref={textComposerBodyRef}
+                className="flex min-h-0 flex-1 items-stretch gap-2 overflow-hidden px-3.5 pb-2 pt-3"
+              >
                 <button
                   type="button"
                   title={t("canvas.textAddReference")}
@@ -8625,8 +8662,10 @@ export function CanvasClient() {
                     }
                   }}
                   className={cn(
-                    "min-h-[54px] min-w-[160px] flex-1 resize-none overflow-y-hidden border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none focus-visible:border-0 focus-visible:bg-transparent focus-visible:ring-0",
-                    textComposerExpanded ? "max-h-[360px] text-[15px]" : "max-h-36",
+                    "h-full min-h-0 min-w-[160px] flex-1 resize-none border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none focus-visible:border-0 focus-visible:bg-transparent focus-visible:ring-0",
+                    textComposerExpanded || textComposerManuallySized
+                      ? "h-full max-h-none overflow-y-auto"
+                      : "max-h-36 overflow-y-hidden",
                     lightCanvas
                       ? "text-[#303641] placeholder:text-[#929aa6]"
                       : "text-[#e7e9ee] placeholder:text-[#818895]"
@@ -8634,7 +8673,13 @@ export function CanvasClient() {
                 />
                 <button
                   type="button"
-                  onClick={() => setTextComposerExpanded((expanded) => !expanded)}
+                  onClick={() => {
+                    if (textComposerDockRef.current) {
+                      textComposerDockRef.current.style.height = "";
+                    }
+                    setTextComposerManuallySized(false);
+                    setTextComposerExpanded((expanded) => !expanded);
+                  }}
                   aria-label={textComposerExpanded ? "收起文字编辑窗口" : "展开文字编辑窗口"}
                   title={textComposerExpanded ? "收起编辑窗口" : "展开编辑窗口"}
                   className={cn(
