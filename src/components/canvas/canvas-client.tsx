@@ -606,6 +606,7 @@ type TextNodeCtx = {
   onContentChange: (id: string, content: string) => void;
   onContentCommit: (id: string, content: string) => void;
   onResize: (id: string, bounds: { x: number; y: number; width: number; height: number }) => void;
+  onToggleExpand: (id: string) => void;
 };
 const TextNodeContext = createContext<TextNodeCtx | null>(null);
 
@@ -620,6 +621,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
     sourceRefs?: Array<{ id: string; title: string }>;
     selected?: boolean;
     lightCanvas?: boolean;
+    expanded?: boolean;
   };
   const active = selected || d.selected;
   const body = d.content || d.prompt;
@@ -708,6 +710,21 @@ function TextCanvasNode({ data, selected }: NodeProps) {
         )}
       </div>
       <div className={cn("canvas-ui-surface-solid absolute right-1.5 top-1.5 hidden items-center gap-1 rounded-md pl-1 group-hover:flex", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}>
+        <button
+          type="button"
+          className="canvas-ui-action nodrag flex h-6 w-6 items-center justify-center"
+          title={d.expanded ? "还原大小" : "放大查看"}
+          onClick={(event) => {
+            event.stopPropagation();
+            ctx?.onToggleExpand(d.__id);
+          }}
+        >
+          {d.expanded ? (
+            <Minimize2 className="h-3.5 w-3.5" />
+          ) : (
+            <Maximize2 className="h-3.5 w-3.5" />
+          )}
+        </button>
         {!!d.content && (
           <button
             type="button"
@@ -1474,6 +1491,9 @@ export function CanvasClient() {
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState("");
   const [textError, setTextError] = useState<string | null>(null);
+  // 文字节点一键放大/还原:放大前的尺寸存 ref,还原时恢复
+  const [expandedTextIds, setExpandedTextIds] = useState<Set<string>>(new Set());
+  const textExpandSizesRef = useRef(new Map<string, { width: number; height: number }>());
   const [textComposerExpanded, setTextComposerExpanded] = useState(false);
   const [textComposerManuallySized, setTextComposerManuallySized] = useState(false);
   const textComposerDockRef = useRef<HTMLDivElement>(null);
@@ -1863,12 +1883,14 @@ export function CanvasClient() {
   }, [textNodes, textNodesReady, targetEmail, user?.email]);
 
   // 文字节点内容自适应高度:内容/引用/宽度变化时按估算调高(阈值 28px 防抖)。
-  // 签名机制保证手动拖拽的尺寸不被覆盖 —— 只有内容真的变了才重新自适应。
+  // 签名机制保证手动拖拽的尺寸不被覆盖 —— 只有内容真的变了才重新自适应;
+  // 一键放大中的节点跳过自适应,避免把撑大的视野又缩回去。
   const fittedTextNodesRef = useRef(new Map<string, string>());
   useEffect(() => {
     if (!textNodesReady || readOnly) return;
     const updates: CanvasTextNode[] = [];
     for (const node of textNodes) {
+      if (expandedTextIds.has(node.id)) continue;
       const sig = `${node.content.length}|${node.prompt.length}|${node.sourceIds?.length ?? 0}|${node.productIds?.length ?? 0}|${node.width}`;
       if (fittedTextNodesRef.current.get(node.id) === sig) continue;
       fittedTextNodesRef.current.set(node.id, sig);
@@ -1885,7 +1907,7 @@ export function CanvasClient() {
     setTextNodes((cur) => cur.map((n) => byId.get(n.id) ?? n));
     updates.forEach((n) => void persistTextNode(n));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textNodes, textNodesReady, readOnly]);
+  }, [textNodes, textNodesReady, readOnly, expandedTextIds]);
 
   // 从收银台返回(支付完成/取消)→ 自动重开会员弹窗,并清掉 URL 上的标记
   useEffect(() => {
@@ -2512,6 +2534,7 @@ export function CanvasClient() {
           })),
           selected: textNode.id === selectedTextId,
           lightCanvas,
+          expanded: expandedTextIds.has(textNode.id),
           width: textNode.width,
           height: textNode.height,
         },
@@ -4952,6 +4975,41 @@ export function CanvasClient() {
     );
     void persistTextNode(updated);
   }
+  // 一键放大/还原文字节点:放大 = 记住当前尺寸并撑到大视野(宽 760、高按内容估算且 ≥420);
+  // 再点一次还原到放大前的尺寸。拖拽手柄仍然可用,两者互不冲突。
+  function toggleTextNodeExpand(id: string) {
+    if (readOnly) return;
+    const node = textNodes.find((item) => item.id === id);
+    if (!node) return;
+    if (textExpandSizesRef.current.has(id)) {
+      const saved = textExpandSizesRef.current.get(id);
+      textExpandSizesRef.current.delete(id);
+      setExpandedTextIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      if (saved) {
+        resizeTextNode(id, {
+          x: node.canvasX,
+          y: node.canvasY,
+          width: saved.width,
+          height: saved.height,
+        });
+      }
+      return;
+    }
+    textExpandSizesRef.current.set(id, { width: node.width, height: node.height });
+    setExpandedTextIds((prev) => new Set(prev).add(id));
+    const expandWidth = Math.min(760, TEXT_NODE_MAX_W);
+    const fitHeight = estimateTextNodeHeight({ ...node, width: expandWidth });
+    resizeTextNode(id, {
+      x: node.canvasX,
+      y: node.canvasY,
+      width: expandWidth,
+      height: Math.min(TEXT_NODE_MAX_H, Math.max(420, fitHeight)),
+    });
+  }
   function addTextNodeAtScreen(
     screenX: number,
     screenY: number,
@@ -6092,6 +6150,7 @@ export function CanvasClient() {
         onContentChange: changeTextNodeContent,
         onContentCommit: commitTextNodeContent,
         onResize: resizeTextNode,
+        onToggleExpand: toggleTextNodeExpand,
       }}
     >
     <div className={cn(
