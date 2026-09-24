@@ -1,6 +1,7 @@
 "use client";
 
 import { cdnUrl } from "@/lib/cdn";
+import { takePendingRefs } from "@/lib/pending-refs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -193,6 +194,16 @@ export function GenerateClient({
     }
   }, []);
 
+  // 工作台首页对话框带来的参考图:进页即取走进产品图槽(与 loadBaseImage 同款落地,
+  // 首页侧已完成类型/大小/张数校验,这里直接接受)。
+  useEffect(() => {
+    const refs = takePendingRefs();
+    if (!refs.length) return;
+    const accepted = refs.slice(0, MAX_IMAGES);
+    setFiles(accepted);
+    setFilePreviews(accepted.map((f) => URL.createObjectURL(f)));
+  }, []);
+
   // When ?template= is present, fetch the template (DB-backed) and seed its
   // prompt/category/image as the reference for comparison.
   useEffect(() => {
@@ -257,6 +268,9 @@ export function GenerateClient({
     const qres = params.get("resolution");
     if (qres && GENERATION_RESOLUTIONS.some((r) => r.id === qres))
       setResolution(qres);
+    // 工作台首页输入框指定的生图模型;后续 /api/config 归一化会在模型清单里校验保留。
+    const qmodel = params.get("model");
+    if (qmodel) setModel(qmodel);
 
     // 血缘:从作品页带来的 from=<作品id> 作为本次迭代的父节点。
     setParentId(params.get("from") ?? "");

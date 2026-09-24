@@ -1,11 +1,26 @@
 "use client";
 
 import { cdnUrl } from "@/lib/cdn";
-import { useEffect, useMemo, useState } from "react";
+import { setPendingRefs } from "@/lib/pending-refs";
+import { toolBySlug, type ToolMeta } from "@/lib/tool-meta";
+import { compactImageModelOptions } from "@/lib/image-model-routing";
+import { ModelIcon } from "@/components/ui/model-icon";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Sparkles, Layers, Network } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowRight,
+  ArrowUp,
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  LayoutGrid,
+  Network,
+  Plus,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { Media } from "@/components/media";
-import { StatCard } from "@/components/ui/stat-card";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { useAuth } from "@/lib/auth-context";
 import { authHeader } from "@/lib/supabase";
@@ -21,15 +36,63 @@ type RecentWork = {
   createdAt?: string;
 };
 
+const MAX_REF_FILES = 6;
+const MAX_REF_BYTES = 12 * 1024 * 1024;
+
+// 生图模型选项(与生图工作台同源 /api/config);选中写 localStorage,
+// 使工作台下次直接用同一默认模型。
+type ImageModelOption = { id: string; label: string };
+const IMAGE_MODEL_STORAGE_KEY = "naumi:generate-image-model";
+
+// Hero 输入框的两种去向:图片生成(/generate)/对话生图(/genchat),都支持 ?prompt= 预填。
+// 附带的参考图经 setPendingRefs 随路由带过去(genchat 原生消费;generate 进页时取走进产品图槽)。
+function composerTarget(tab: "gen" | "chat") {
+  return tab === "chat" ? "/genchat" : "/generate";
+}
+
+// 图标行:画布与全部工具不在 tool-meta 里,自定义;其余取 tool-meta 双语标题。
+const ROW_TOOLS = ["generate", "suite", "cutout", "inpaint", "competitors"];
+const ROW_CUSTOM: { href: string; title: string; titleEn: string; Icon: LucideIcon }[] = [
+  { href: "/canvas", title: "创作画布", titleEn: "Canvas", Icon: Network },
+  { href: "/tools", title: "全部工具", titleEn: "All tools", Icon: LayoutGrid },
+];
+
+// 快捷 chips:高频工作流(tool-meta 提供 icon/双语标题/链接)
+const CHIP_SLUGS = ["suite", "aplus", "replicate", "tryon"];
+
+// HOT 工具卡:轮换马卡龙底色(低透明度渐变,明暗主题通用)
+const HOT_SLUGS = ["retouch", "replicate", "cutout", "dewatermark", "tryon"];
+const HOT_TINTS = [
+  "rgba(245,158,11,0.14)",
+  "rgba(244,63,94,0.12)",
+  "rgba(14,165,233,0.13)",
+  "rgba(16,185,129,0.13)",
+  "rgba(139,92,246,0.13)",
+];
+
 export function HomeDashboard({ hot }: { hot: PickedTemplate[] }) {
   const { t, locale } = useI18n();
   const { user, ready, remaining } = useAuth();
+  const router = useRouter();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
   const [recent, setRecent] = useState<RecentWork[] | null>(null);
   const [stats, setStats] = useState<{ today: number; total: number }>({
     today: 0,
     total: 0,
   });
+
+  // Hero 输入框状态
+  const [composerTab, setComposerTab] = useState<"gen" | "chat">("gen");
+  const [composerText, setComposerText] = useState("");
+  const [composerFiles, setComposerFiles] = useState<File[]>([]);
+  const [composerPreviews, setComposerPreviews] = useState<string[]>([]);
+  const [composerError, setComposerError] = useState<string | null>(null);
+  const composerFileRef = useRef<HTMLInputElement>(null);
+  const composerTextRef = useRef<HTMLTextAreaElement>(null);
+  // 输入框内的生图模型选择(竞品「Agent ▾」位置)
+  const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
+  const [composerModel, setComposerModel] = useState("");
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
 
   // 问候语随本地时段
   const [greet, setGreet] = useState("home.dash.greetEvening");
@@ -85,134 +148,382 @@ export function HomeDashboard({ hot }: { hot: PickedTemplate[] }) {
     };
   }, [user?.email]);
 
+  // 拉模型清单(与生图工作台同一 /api/config);拉不到则隐藏模型 chip
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/config", {
+          cache: "no-store",
+          headers: await authHeader(),
+        });
+        const d = (await r.json()) as {
+          defaultImageModel?: string;
+          imageModels?: { id?: string; label?: string }[];
+        };
+        if (cancelled) return;
+        const options = compactImageModelOptions(
+          (Array.isArray(d.imageModels) ? d.imageModels : [])
+            .map((m) => (m?.id && m?.label ? { id: m.id, label: m.label } : null))
+            .filter((m): m is ImageModelOption => Boolean(m)),
+          [d.defaultImageModel || ""]
+        );
+        if (!options.length) return;
+        setImageModels(options);
+        const saved = window.localStorage.getItem(IMAGE_MODEL_STORAGE_KEY) || "";
+        const pick = (id: string | undefined) =>
+          id && options.some((o) => o.id === id) ? id : "";
+        setComposerModel((current) =>
+          pick(current) ||
+          pick(saved) ||
+          pick(d.defaultImageModel) ||
+          options[0].id
+        );
+      } catch {
+        /* ignore — keep chip hidden */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 参考图预览的对象 URL:卸载时回收
+  useEffect(() => {
+    return () => {
+      composerPreviews.forEach((u) => URL.revokeObjectURL(u));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const greeting = useMemo(() => {
     if (user?.name) return `${t(greet)}，${user.name}`;
     return t("home.dash.greetGuest");
   }, [user?.name, greet, t]);
 
-  const statCards = [
-    {
-      label: L("今日生成", "Today"),
-      value: stats.today.toLocaleString("en-US"),
-      unit: L("张", ""),
-      accent: false,
-    },
-    {
-      label: L("积分余额", "Credits"),
-      value: remaining.toLocaleString("en-US"),
-      unit: "",
-      accent: true,
-    },
-    {
-      label: L("累计作品", "Total works"),
-      value: stats.total.toLocaleString("en-US"),
-      unit: "",
-      accent: false,
-    },
+  const statPills = [
+    { label: L("今日生成", "Today"), value: `${stats.today.toLocaleString("en-US")}${L(" 张", "")}` },
+    { label: L("积分余额", "Credits"), value: remaining.toLocaleString("en-US"), href: user ? "/plans" : undefined, accent: true },
+    { label: L("累计作品", "Works"), value: stats.total.toLocaleString("en-US") },
   ];
 
-  const entries = [
-    {
-      href: "/generate",
-      Icon: Sparkles,
-      title: L("AI 生图", "AI generation"),
-      desc: L("文字 / 参考图生成电商主图", "Text or reference → product shots"),
-      primary: true,
-    },
-    {
-      href: "/suite",
-      Icon: Layers,
-      title: L("一键套图", "One-click suite"),
-      desc: L("一张主图批量生成全套素材", "One product → a full asset set"),
-      primary: false,
-    },
-    {
-      href: "/canvas",
-      Icon: Network,
-      title: L("创作画布", "Canvas"),
-      desc: L("节点式自由编排生成流程", "Node-based generation workflow"),
-      primary: false,
-    },
-  ];
+  function autoGrowTextarea() {
+    const el = composerTextRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(150, el.scrollHeight)}px`;
+  }
+
+  function pickComposerFiles(list: FileList | null) {
+    if (!list || !list.length) return;
+    setComposerError(null);
+    const accepted: File[] = [];
+    for (const f of Array.from(list)) {
+      if (!/^image\/(png|jpe?g|webp)$/.test(f.type)) {
+        setComposerError(L("仅支持 PNG / JPG / WebP 图片", "PNG / JPG / WebP only"));
+        continue;
+      }
+      if (f.size > MAX_REF_BYTES) {
+        setComposerError(L("单张图片过大，请小于 12MB", "Each image must be under 12MB"));
+        continue;
+      }
+      accepted.push(f);
+      if (accepted.length >= MAX_REF_FILES - composerFiles.length) break;
+    }
+    if (!accepted.length) return;
+    setComposerFiles((prev) => [...prev, ...accepted]);
+    setComposerPreviews((prev) => [...prev, ...accepted.map((f) => URL.createObjectURL(f))]);
+    if (composerFileRef.current) composerFileRef.current.value = "";
+  }
+
+  function removeComposerFile(index: number) {
+    setComposerPreviews((prev) => {
+      const u = prev[index];
+      if (u) URL.revokeObjectURL(u);
+      return prev.filter((_, i) => i !== index);
+    });
+    setComposerFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function pickComposerModel(id: string) {
+    setComposerModel(id);
+    window.localStorage.setItem(IMAGE_MODEL_STORAGE_KEY, id);
+    setModelMenuOpen(false);
+  }
+
+  function submitComposer() {
+    const text = composerText.trim();
+    if (!text) return;
+    if (composerFiles.length) setPendingRefs(composerFiles);
+    const query = new URLSearchParams({ prompt: text });
+    if (composerModel) query.set("model", composerModel);
+    router.push(`${composerTarget(composerTab)}?${query.toString()}`);
+  }
 
   return (
-    <div className="w-full px-5 py-8 sm:px-6 lg:px-8">
-      {/* 问候 */}
-      <div>
-        <h1 className="text-[28px] font-bold tracking-tight text-c-text">
-          {greeting}
-        </h1>
-        <p className="mt-1.5 text-[13.5px] text-c-text3">
-          {dateLabel}
-          {dateLabel && " · "}
-          {t("home.dash.welcome")}
-        </p>
-      </div>
+    <div className="relative w-full px-5 py-8 sm:px-6 lg:px-8">
+      {/* Hero 淡渐变背景(竞品同款顶部光晕,低透明度明暗通用) */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[460px]"
+        style={{
+          background:
+            "radial-gradient(640px 300px at 50% 0%, rgba(99,102,241,0.10), rgba(99,102,241,0) 70%)",
+        }}
+      />
 
-      {/* 统计三卡 */}
-      <div className="mt-5 grid grid-cols-3 gap-4">
-        {statCards.map((s) => (
-          <StatCard
-            key={s.label}
-            label={s.label}
-            value={s.value}
-            suffix={s.unit || undefined}
-            accent={s.accent}
-          />
-        ))}
-      </div>
-
-      {/* 三入口 */}
-      <div className="mt-5 grid gap-5 md:grid-cols-3">
-        {entries.map((e) => (
-          <Link
-            key={e.href}
-            href={e.href}
-            className={cn(
-              "group relative flex min-h-[150px] flex-col justify-between overflow-hidden rounded-card p-6 transition-all hover:-translate-y-0.5",
-              e.primary
-                ? "text-white shadow-btn [background:var(--grad-acc)]"
-                : "border border-c-border bg-c-card shadow-card hover:border-c-border2"
-            )}
-          >
-            {e.primary && (
-              <span className="pointer-events-none absolute -bottom-8 -right-8 h-36 w-36 rounded-full bg-white/15 blur-xl" />
-            )}
-            <span
-              className={cn(
-                "flex h-11 w-11 items-center justify-center rounded-icon",
-                e.primary ? "bg-white/15 text-white" : "bg-acc-tint text-acc"
-              )}
-            >
-              <e.Icon className="h-[22px] w-[22px]" />
-            </span>
-            <div className="relative">
-              <p
-                className={cn(
-                  "flex items-center gap-1.5 text-lg font-bold",
-                  e.primary ? "text-white" : "text-foreground"
-                )}
-              >
-                {e.title}
-                <ArrowRight
+      {/* Hero:居中问候 + 统计药丸 + 输入框 + chips + 图标行 */}
+      <div className="relative mx-auto w-full max-w-[860px]">
+        <div className="text-center">
+          <h1 className="text-[28px] font-bold tracking-tight text-c-text sm:text-[32px]">
+            {greeting}
+          </h1>
+          <p className="mt-1.5 text-[13.5px] text-c-text3">
+            {dateLabel}
+            {dateLabel && " · "}
+            {t("home.dash.welcome")}
+          </p>
+          {/* 统计药丸(次要信息,从原三卡缩小;积分可点去充值) */}
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            {statPills.map((pill) => {
+              const body = (
+                <span
                   className={cn(
-                    "h-4 w-4 transition-transform group-hover:translate-x-0.5",
-                    e.primary ? "text-white/90" : "text-primary"
+                    "inline-flex items-center gap-1.5 rounded-full border border-c-border bg-c-card px-3.5 py-1.5 text-xs shadow-card transition-colors",
+                    pill.href && "hover:border-c-border2"
                   )}
-                />
-              </p>
-              <p
+                >
+                  <span className="text-c-text3">{pill.label}</span>
+                  <span
+                    className={cn(
+                      "font-bold tabular-nums",
+                      pill.accent ? "text-acc" : "text-c-text"
+                    )}
+                  >
+                    {pill.value}
+                  </span>
+                </span>
+              );
+              return pill.href ? (
+                <Link key={pill.label} href={pill.href}>
+                  {body}
+                </Link>
+              ) : (
+                <span key={pill.label}>{body}</span>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 模式 tab */}
+        <div className="mt-7 flex justify-center">
+          <div className="inline-flex rounded-full border border-c-border bg-c-subtle p-1">
+            {([
+              { key: "gen", label: t("home.dash.composeTabGen") },
+              { key: "chat", label: t("home.dash.composeTabChat") },
+            ] as const).map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setComposerTab(tab.key)}
                 className={cn(
-                  "mt-1 text-[13px] leading-relaxed",
-                  e.primary ? "text-white/80" : "text-muted-foreground"
+                  "rounded-full px-5 py-1.5 text-[13px] font-semibold transition-all",
+                  composerTab === tab.key
+                    ? "bg-c-card text-c-text shadow-card"
+                    : "text-c-text3 hover:text-c-text"
                 )}
               >
-                {e.desc}
-              </p>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 大输入框 */}
+        <div className="mt-4 rounded-[20px] border border-c-border bg-c-card p-4 shadow-pop transition-colors focus-within:border-c-border2">
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              title={t("home.dash.composeAttach")}
+              onClick={() => composerFileRef.current?.click()}
+              className="relative flex h-11 w-11 flex-none items-center justify-center rounded-[13px] border border-dashed border-c-border text-c-text3 transition-colors hover:border-acc hover:text-acc"
+            >
+              <Plus className="h-5 w-5" />
+              {composerFiles.length > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-acc px-1 text-[10px] font-bold text-white">
+                  {composerFiles.length}
+                </span>
+              )}
+            </button>
+            <textarea
+              ref={composerTextRef}
+              rows={1}
+              value={composerText}
+              placeholder={t("home.dash.composePlaceholder")}
+              onChange={(e) => {
+                setComposerText(e.target.value);
+                autoGrowTextarea();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  submitComposer();
+                }
+              }}
+              className="max-h-[150px] min-h-[44px] w-full flex-1 resize-none bg-transparent py-2.5 text-[14.5px] leading-relaxed text-c-text outline-none placeholder:text-c-text3"
+            />
+          </div>
+
+          {/* 参考图缩略 / 模型选择 / 错误提示 + 发送按钮 */}
+          <div className="mt-2 flex items-end justify-between gap-3">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              {imageModels.length > 0 && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setModelMenuOpen((open) => !open)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-c-border bg-c-subtle px-3 py-1.5 text-xs font-semibold text-c-text2 transition-colors hover:border-c-border2 hover:text-c-text"
+                  >
+                    <ModelIcon modelId={composerModel} size={14} />
+                    <span className="max-w-[140px] truncate">
+                      {imageModels.find((m) => m.id === composerModel)?.label || composerModel}
+                    </span>
+                    <ChevronDown
+                      className={cn("h-3.5 w-3.5 transition-transform", modelMenuOpen && "rotate-180")}
+                    />
+                  </button>
+                  {modelMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setModelMenuOpen(false)} />
+                      <div className="absolute bottom-full left-0 z-20 mb-2 max-h-[260px] w-[250px] overflow-y-auto rounded-xl border border-c-border bg-c-card p-1.5 shadow-pop">
+                        {imageModels.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => pickComposerModel(m.id)}
+                            className={cn(
+                              "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors",
+                              m.id === composerModel
+                                ? "bg-acc-tint font-semibold text-acc"
+                                : "text-c-text2 hover:bg-c-subtle hover:text-c-text"
+                            )}
+                          >
+                            <ModelIcon modelId={m.id} size={14} />
+                            <span className="min-w-0 flex-1 truncate">{m.label}</span>
+                            {m.id === composerModel && <Check className="h-3.5 w-3.5 flex-none" />}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              {composerPreviews.map((url, index) => (
+                <span key={url} className="group relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt=""
+                    className="h-10 w-10 rounded-[10px] border border-c-border object-cover"
+                  />
+                  <button
+                    type="button"
+                    aria-label={L("移除参考图", "Remove reference")}
+                    onClick={() => removeComposerFile(index)}
+                    className="absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-c-text text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </span>
+              ))}
+              {composerError && (
+                <span className="text-xs font-medium text-red-500">{composerError}</span>
+              )}
             </div>
-          </Link>
-        ))}
+            <button
+              type="button"
+              aria-label={t("home.dash.composeSend")}
+              disabled={!composerText.trim()}
+              onClick={submitComposer}
+              className="flex h-10 w-10 flex-none items-center justify-center rounded-full [background:var(--grad-acc)] text-white shadow-btn transition-all hover:opacity-90 disabled:opacity-30"
+            >
+              <ArrowUp className="h-[18px] w-[18px]" />
+            </button>
+          </div>
+          <input
+            ref={composerFileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            multiple
+            hidden
+            onChange={(e) => pickComposerFiles(e.target.files)}
+          />
+        </div>
+
+        {/* 快捷工作流 chips */}
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
+          {CHIP_SLUGS.map((slug) => {
+            const tool = toolBySlug(slug);
+            if (!tool) return null;
+            return (
+              <Link
+                key={slug}
+                href={tool.href}
+                className="inline-flex items-center gap-2.5 rounded-full border border-c-border bg-c-card py-1.5 pl-2 pr-3.5 shadow-card transition-all hover:-translate-y-0.5 hover:border-c-border2"
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-acc-tint text-acc">
+                  <tool.Icon className="h-3.5 w-3.5" />
+                </span>
+                <span className="text-[13px] font-semibold text-c-text">
+                  {L(tool.key, tool.en)}
+                </span>
+                <ArrowUpRight className="h-3.5 w-3.5 text-c-text3" />
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* 图标入口行(原三功能卡并入:生图/套图/画布在此) */}
+        <div className="mt-7 flex flex-wrap items-start justify-center gap-x-6 gap-y-4 sm:gap-x-9">
+          {ROW_CUSTOM.slice(0, 1).map((item) => (
+            <IconRowLink key={item.href} href={item.href} label={L(item.title, item.titleEn)} Icon={item.Icon} />
+          ))}
+          {ROW_TOOLS.map((slug) => {
+            const tool = toolBySlug(slug);
+            if (!tool) return null;
+            return <IconRowLink key={slug} href={tool.href} label={L(tool.key, tool.en)} Icon={tool.Icon} />;
+          })}
+          {ROW_CUSTOM.slice(1).map((item) => (
+            <IconRowLink key={item.href} href={item.href} label={L(item.title, item.titleEn)} Icon={item.Icon} />
+          ))}
+        </div>
       </div>
+
+      {/* HOT 工具卡(马卡龙底色横卡,数据源 tool-meta) */}
+      <section className="relative mt-12">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="text-base font-extrabold uppercase italic tracking-tight text-c-text">
+            HOT
+          </span>
+          <h2 className="text-base font-semibold text-c-text">
+            {t("home.dash.hotToolsTitle")}
+          </h2>
+          <Link
+            href="/tools"
+            className="ml-auto inline-flex items-center gap-1 text-sm font-medium text-acc hover:underline"
+          >
+            {t("home.dash.viewAll")}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          {HOT_SLUGS.map((slug, index) => {
+            const tool = toolBySlug(slug);
+            if (!tool) return null;
+            return <HotToolCard key={slug} tool={tool} tint={HOT_TINTS[index % HOT_TINTS.length]} />;
+          })}
+        </div>
+      </section>
 
       {/* 最近作品(横向滚动条) */}
       <section className="mt-10">
@@ -311,5 +622,44 @@ export function HomeDashboard({ hot }: { hot: PickedTemplate[] }) {
         </section>
       )}
     </div>
+  );
+}
+
+function IconRowLink({ href, label, Icon }: { href: string; label: string; Icon: LucideIcon }) {
+  return (
+    <Link href={href} className="group flex w-[72px] flex-col items-center gap-2">
+      <span className="flex h-[52px] w-[52px] items-center justify-center rounded-full border border-c-border bg-c-card text-c-text2 shadow-card transition-all group-hover:-translate-y-0.5 group-hover:border-acc group-hover:text-acc">
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="text-center text-xs font-medium text-c-text2 transition-colors group-hover:text-c-text">
+        {label}
+      </span>
+    </Link>
+  );
+}
+
+function HotToolCard({ tool, tint }: { tool: ToolMeta; tint: string }) {
+  const { locale } = useI18n();
+  const label = locale === "en" ? tool.en : tool.key;
+  return (
+    <Link
+      href={tool.href}
+      className="group relative flex min-h-[118px] flex-col justify-between overflow-hidden rounded-2xl border border-c-border p-4 shadow-card transition-all hover:-translate-y-1"
+      style={{ background: `linear-gradient(135deg, ${tint}, rgba(255,255,255,0.02))` }}
+    >
+      <tool.Icon className="absolute -bottom-3 -right-3 h-20 w-20 rotate-12 text-c-text opacity-[0.06]" />
+      <span className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-c-card text-acc shadow-card">
+        <tool.Icon className="h-[18px] w-[18px]" />
+      </span>
+      <span className="relative">
+        <span className="flex items-center gap-1 text-[14px] font-bold text-c-text">
+          {label}
+          <ArrowUpRight className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
+        </span>
+        <span className="mt-0.5 line-clamp-1 block text-[11.5px] text-c-text3">
+          {tool.desc}
+        </span>
+      </span>
+    </Link>
   );
 }
