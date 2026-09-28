@@ -10,6 +10,10 @@ import { AppShell } from "@/components/app-shell";
 import { LocaleProvider } from "@/lib/i18n/locale-context";
 import { getServerLocale } from "@/lib/i18n/server-locale";
 import { PaymentProvider } from "@/lib/payment-context";
+import { startVideoWorker } from "@/lib/video/worker";
+
+// 视频后台恢复 worker:首个页面请求的模块加载即幂等启动(unref,不阻塞进程退出)
+startVideoWorker();
 import { BrandProvider } from "@/lib/brand-context";
 import { getRuntimeBrand } from "@/lib/brand-runtime";
 import { getPaymentStatus } from "@/lib/settings";

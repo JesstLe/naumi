@@ -257,6 +257,24 @@ async function ensureSchema(): Promise<void> {
           ON app_video_tasks (email, created_at DESC);
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS poll_lock_until timestamptz;
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS credits_refunded boolean NOT NULL DEFAULT false;
+        -- 视频子系统重写(Phase 1):规范化参数、来源、能力快照与后台恢复调度。
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS provider_id text NOT NULL DEFAULT 'openai-videos';
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'canvas';
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS source_id text NOT NULL DEFAULT '';
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS parameters jsonb NOT NULL DEFAULT '{}'::jsonb;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS video_references jsonb NOT NULL DEFAULT '[]'::jsonb;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS capability_snapshot jsonb NOT NULL DEFAULT '{}'::jsonb;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS upstream_video_id text NOT NULL DEFAULT '';
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS error_code text NOT NULL DEFAULT '';
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS started_at timestamptz;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS completed_at timestamptz;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS next_poll_at timestamptz;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS poll_attempts integer NOT NULL DEFAULT 0;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS idempotency_key text NOT NULL DEFAULT '';
+        CREATE INDEX IF NOT EXISTS app_video_tasks_poll_idx
+          ON app_video_tasks (next_poll_at) WHERE status = 'processing';
+        CREATE UNIQUE INDEX IF NOT EXISTS app_video_tasks_idem_key
+          ON app_video_tasks (email, idempotency_key) WHERE idempotency_key <> '';
         CREATE TABLE IF NOT EXISTS app_orders (
           id           text PRIMARY KEY,
           email        text NOT NULL,
@@ -4400,6 +4418,14 @@ export type VideoTaskRow = {
   artworkId: string;
   videoUrl: string;
   error: string;
+  providerId: string;
+  source: string;
+  sourceId: string;
+  parameters: Record<string, unknown>;
+  videoReferences: unknown[];
+  capabilitySnapshot: Record<string, unknown>;
+  seconds: string;
+  createdAt: string;
 };
 
 export async function createVideoTask(input: {
@@ -4412,12 +4438,21 @@ export async function createVideoTask(input: {
   seconds: string;
   cost: number;
   requestBody: string;
+  providerId?: string;
+  source?: string;
+  sourceId?: string;
+  parameters?: unknown;
+  videoReferences?: unknown;
+  capabilitySnapshot?: unknown;
+  idempotencyKey?: string;
 }): Promise<VideoTaskRow> {
   await ensureSchema();
   await getPool().query(
     `INSERT INTO app_video_tasks
-       (id, email, upstream_id, model, prompt, size, seconds, status, cost, request_body)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'processing',$8,$9)`,
+       (id, email, upstream_id, model, prompt, size, seconds, status, cost, request_body,
+        provider_id, source, source_id, parameters, video_references, capability_snapshot, idempotency_key,
+        started_at, next_poll_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'processing',$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15::jsonb,$16,now(),now())`,
     [
       input.id,
       input.email.toLowerCase(),
@@ -4428,6 +4463,13 @@ export async function createVideoTask(input: {
       input.seconds,
       input.cost,
       input.requestBody.slice(0, 4000),
+      input.providerId ?? "openai-videos",
+      input.source ?? "canvas",
+      input.sourceId ?? "",
+      JSON.stringify(input.parameters ?? {}),
+      JSON.stringify(input.videoReferences ?? []),
+      JSON.stringify(input.capabilitySnapshot ?? {}),
+      (input.idempotencyKey ?? "").slice(0, 100),
     ]
   );
   return {
@@ -4441,6 +4483,14 @@ export async function createVideoTask(input: {
     artworkId: "",
     videoUrl: "",
     error: "",
+    providerId: input.providerId ?? "openai-videos",
+    source: input.source ?? "canvas",
+    sourceId: input.sourceId ?? "",
+    parameters: {},
+    videoReferences: [],
+    capabilitySnapshot: {},
+    seconds: input.seconds,
+    createdAt: new Date().toISOString(),
   };
 }
 
@@ -4450,7 +4500,9 @@ export async function getVideoTask(
 ): Promise<VideoTaskRow | null> {
   await ensureSchema();
   const { rows } = await getPool().query(
-    `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error
+    `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
+            provider_id, source, source_id, parameters, video_references, capability_snapshot,
+            next_poll_at, poll_attempts, seconds, created_at
        FROM app_video_tasks
       WHERE email = $1 AND id = $2`,
     [email.toLowerCase(), id]
@@ -4468,6 +4520,14 @@ export async function getVideoTask(
     artworkId: String(r.artwork_id ?? ""),
     videoUrl: String(r.video_url ?? ""),
     error: String(r.error ?? ""),
+    providerId: String(r.provider_id ?? "openai-videos"),
+    source: String(r.source ?? "canvas"),
+    sourceId: String(r.source_id ?? ""),
+    parameters: (r.parameters ?? {}) as Record<string, unknown>,
+    videoReferences: (r.video_references ?? []) as unknown[],
+    capabilitySnapshot: (r.capability_snapshot ?? {}) as Record<string, unknown>,
+    seconds: String(r.seconds ?? ""),
+    createdAt: r.created_at ? new Date(r.created_at as string).toISOString() : "",
   };
 }
 
@@ -4636,5 +4696,91 @@ export async function updateVideoTask(
       patch.artworkId ?? null,
       patch.videoUrl ?? null,
     ]
+  );
+}
+
+/** 任务列表(工作台/恢复用):按创建时间倒序。 */
+export async function listVideoTasks(
+  email: string,
+  opts: { status?: string; limit?: number } = {}
+): Promise<VideoTaskRow[]> {
+  await ensureSchema();
+  const limit = Math.min(Math.max(opts.limit ?? 30, 1), 100);
+  const params: unknown[] = [email.toLowerCase()];
+  let where = `email = $1`;
+  if (opts.status) {
+    params.push(opts.status);
+    where += ` AND status = $${params.length}`;
+  }
+  const { rows } = await getPool().query(
+    `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
+            provider_id, source, source_id, parameters, video_references, capability_snapshot,
+            next_poll_at, poll_attempts, seconds, created_at
+       FROM app_video_tasks
+      WHERE ${where}
+      ORDER BY created_at DESC
+      LIMIT ${limit}`,
+    params
+  );
+  return rows.map((r: Record<string, unknown>) => ({
+    id: String(r.id),
+    upstreamId: String(r.upstream_id ?? ""),
+    model: String(r.model ?? ""),
+    prompt: String(r.prompt ?? ""),
+    status: (r.status as VideoTaskRow["status"]) ?? "processing",
+    progress: Number(r.progress ?? 0),
+    cost: Number(r.cost ?? 0),
+    artworkId: String(r.artwork_id ?? ""),
+    videoUrl: String(r.video_url ?? ""),
+    error: String(r.error ?? ""),
+    providerId: String(r.provider_id ?? "openai-videos"),
+    source: String(r.source ?? "canvas"),
+    sourceId: String(r.source_id ?? ""),
+    parameters: (r.parameters ?? {}) as Record<string, unknown>,
+    videoReferences: (r.video_references ?? []) as unknown[],
+    capabilitySnapshot: (r.capability_snapshot ?? {}) as Record<string, unknown>,
+    seconds: String(r.seconds ?? ""),
+    createdAt: r.created_at ? new Date(r.created_at as string).toISOString() : "",
+  }));
+}
+
+/** worker/恢复扫描:领取到期且无锁的 processing 任务(id+email)。 */
+export async function listDueVideoTaskRefs(limit = 5): Promise<
+  { id: string; email: string }[]
+> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT id, email
+       FROM app_video_tasks
+      WHERE status = 'processing'
+        AND (next_poll_at IS NULL OR next_poll_at <= now())
+        AND (poll_lock_until IS NULL OR poll_lock_until < now())
+      ORDER BY created_at
+      LIMIT $1`,
+    [Math.min(Math.max(limit, 1), 20)]
+  );
+  return rows.map((r: Record<string, unknown>) => ({
+    id: String(r.id),
+    email: String(r.email),
+  }));
+}
+
+/** 轮询调度回写:推延下次扫描时间并累计尝试次数(瞬时错误重试用)。 */
+export async function scheduleVideoTaskRetry(
+  email: string,
+  id: string,
+  delaySeconds: number,
+  errorMessage: string
+): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `UPDATE app_video_tasks
+        SET next_poll_at = now() + ($3 || ' seconds')::interval,
+            poll_attempts = poll_attempts + 1,
+            error = $4,
+            poll_lock_until = NULL,
+            updated_at = now()
+      WHERE email = $1 AND id = $2`,
+    [email.toLowerCase(), id, Math.max(3, Math.trunc(delaySeconds)), errorMessage.slice(0, 500)]
   );
 }
