@@ -18,3 +18,4 @@ npm-debug.log*
 # 本地测试素材/构建产物
 test-views/
 output/
+audit-artifacts/**/rollback-fixture-*/
