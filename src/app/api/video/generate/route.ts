@@ -40,12 +40,14 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => null)) as
-    | { prompt?: string; artworkId?: string; seconds?: string; size?: string }
+    | { prompt?: string; artworkId?: string; imageUrl?: string; seconds?: string; size?: string }
     | null;
   const prompt = String(body?.prompt || "").trim().slice(0, 1000);
   const seconds = ALLOWED_SECONDS.has(String(body?.seconds)) ? String(body?.seconds) : "4";
   const size = ALLOWED_SIZES.has(String(body?.size)) ? String(body?.size) : "1280x720";
   const artworkId = String(body?.artworkId || "").trim();
+  // agent 场景:无画布节点,直接传[商品图] URL
+  const imageUrl = String(body?.imageUrl || "").trim().slice(0, 600);
   if (!email || !prompt) {
     return NextResponse.json({ error: "请填写视频描述" }, { status: 400 });
   }
@@ -62,13 +64,16 @@ export async function POST(request: Request) {
   let reserved = false;
   const taskId = `vid-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
   try {
-    // 图生视频:带上选中画布图作为参考帧(工作流与文生视频可不带)
+    // 图生视频:带上选中画布图或 agent 传入的图片 URL 作为参考帧(文生视频可不带)
     let image: { bytes: Buffer; mime: string; filename: string } | undefined;
     if (artworkId) {
       const source = (await listArtworksByIds(email, [artworkId]))[0];
       if (!source) return NextResponse.json({ error: "图片不存在或无权访问" }, { status: 404 });
       const img = await readCanvasImage(source.image, request.url);
       image = { bytes: img.buffer, mime: img.mimeType, filename: `naumi-${source.id}.png` };
+    } else if (imageUrl) {
+      const img = await readCanvasImage(imageUrl, request.url);
+      image = { bytes: img.buffer, mime: img.mimeType, filename: `naumi-agent-${Date.now()}.png` };
     }
 
     if (dbEnabled) {
