@@ -18,6 +18,8 @@
 
 当前仍需单独验收的边界：真实供应商逐家凭证测试、画布将抽取结果自动编排成新节点的 UI、浏览器自动化交互回归，以及视频节点的时间轴增强。fixture/build 通过不等于真实供应商质量验收。
 
+本机已用现有 `VIDEO_API_*` 配置完成一次真实 OpenAI Videos 兼容端点验收：4.04 秒、1280×720、H.264/AAC，912,300 bytes；脚本为 `scripts/verify-video-provider-real.ts`，产物默认写入 `output/video-real-provider-acceptance.mp4`。其他供应商仍需各自配置凭证后逐家运行同级验收。
+
 ### 1.1 总目标
 
 将 `E:\Workspace\infinite-canvas-main` 的生视频能力按能力域完整吸收进 Naumi，形成与现有图片、画布、Agent、账户、积分和媒体存储统一的原生子功能。
