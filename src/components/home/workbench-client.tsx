@@ -1261,7 +1261,7 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
                   void submitComposer();
                 }
               }}
-              className="max-h-[150px] w-full flex-1 resize-none bg-transparent py-2 text-[14.5px] leading-relaxed text-c-text outline-none placeholder:text-c-text3"
+              className="max-h-[150px] min-h-[64px] w-full flex-1 resize-none bg-transparent py-2 text-[14.5px] leading-relaxed text-c-text outline-none placeholder:text-c-text3"
             />
             <button
               type="button"
@@ -1285,23 +1285,16 @@ export function WorkbenchClient({ hot }: { hot: PickedTemplate[] }) {
             hidden
             onChange={(e) => pickComposerFiles(e.target.files)}
           />
-          {/* Agent 能力提示:与工具直达入口区分,这里强调「说句话就行」 */}
-          <p className="mt-2 text-center text-[12px] text-c-text3">
-            {L(
-              "出图 · 套图 · A+ 详情页 · 精修复刻 —— 直接说，我来调度",
-              "Images · suites · A+ pages · retouching — just ask"
-            )}
-          </p>
-          <p className="mt-1.5 text-center">
+          <div className="mt-1.5 flex items-center justify-end">
             <button
               type="button"
               onClick={() => setSessionsOpen(true)}
-              className="inline-flex items-center gap-1 text-[12px] text-c-text3 transition-colors hover:text-acc"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] text-c-text3 transition-colors hover:bg-secondary hover:text-acc"
             >
               <History className="h-3 w-3" />
               {L("历史对话", "History")}
             </button>
-          </p>
+          </div>
         </div>
 
         {/* 快捷工作流 chips */}
