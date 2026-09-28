@@ -1,0 +1,10 @@
+diff --git a/docs/VIDEO_SUBSYSTEM_REWRITE_PLAN.md b/audit-artifacts/video-rewrite-20260928/MODIFIED_FILE.md
+index d494e39..1b1f74f 100644
+--- a/docs/VIDEO_SUBSYSTEM_REWRITE_PLAN.md
++++ b/audit-artifacts/video-rewrite-20260928/MODIFIED_FILE.md
+@@ -511,3 +511,5 @@ export type VideoModelCapability = {
+ 5. 完成成功、失败、并发、重启、结算和回滚测试。
+ 
+ 该交付完成后再开发 `/video` 工作台，避免先做大页面、后补任务底座造成二次重写。
++## 审计副本修改
++- branch: main / commit: 49d5af7
