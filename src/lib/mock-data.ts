@@ -350,6 +350,7 @@ export type Artwork = {
   canvasGroupId?: string | null; // 画布编辑分组:用于成组/解组和整体移动,不代表生成血缘
   origin?: string | null; // "canvas"=在画布里产出(永远留画布);空=普通产出
   marked?: boolean; // 画布节点标记:用户手动钉住的重要版本
+  videoUrl?: string | null; // 视频产物地址(有值=画布上按视频节点渲染)
 };
 
 export const IMAGE_NODE_DEFAULT_LONG_SIDE = 420;

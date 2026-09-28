@@ -155,6 +155,7 @@ export async function POST(request: Request) {
 
     const images: { id: string; url: string; width: number; height: number }[] = [];
     const videos: { url: string; mime: string }[] = [];
+    let videoArtworkId = "";
     for (const output of outputs) {
       const file = await fetchOutput(endpoint, output);
       if (file.mime.startsWith("image/")) {
@@ -189,6 +190,32 @@ export async function POST(request: Request) {
         if (!storageEnabled) continue; // 视频不能走 data URL(体积),无持久化存储时跳过
         const key = `comfy/vid-${Date.now()}-${Math.floor(Math.random() * 10000)}.${output.filename.split(".").pop() || "mp4"}`;
         const url = await uploadImage(new Uint8Array(file.buffer), file.mime, key);
+        // 视频也落成画布节点(源图有节点时按血缘挂树;面板同时返回直链预览)
+        const vidArtId = `comfy-vid-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+        try {
+          await addArtworks(email, [{
+            id: vidArtId,
+            title: `${source?.title || "工作流"} · ${workflow.name} 视频`,
+            category: "video",
+            prompt: typeof body?.prompt === "string" && body.prompt
+              ? body.prompt.slice(0, 500)
+              : workflow.name,
+            status: "completed",
+            image: url,
+            gradient: source?.gradient || "from-slate-100 to-zinc-100",
+            style: null,
+            ratio: null,
+            resolution: "1K",
+            source: sourceImage || null,
+            parentId: source?.id || null,
+            parentIds: [],
+            origin: source ? "canvas" : "comfy-agent",
+            width: 0,
+            height: 0,
+            videoUrl: url,
+          }], `comfy-vid-${Date.now()}`);
+          videoArtworkId = vidArtId;
+        } catch { /* 落库失败不影响面板预览 */ }
         videos.push({ url, mime: file.mime });
       }
     }
@@ -196,7 +223,7 @@ export async function POST(request: Request) {
     if (!images.length && !videos.length) {
       return NextResponse.json({ error: "产物类型不受支持(仅图片/视频)" }, { status: 502 });
     }
-    return NextResponse.json({ ok: true, images, videos, promptId });
+    return NextResponse.json({ ok: true, images, videos, videoArtworkId, promptId });
   } catch (error) {
     return NextResponse.json(
       { error: safeError(error, "工作流执行失败") },

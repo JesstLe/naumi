@@ -70,6 +70,8 @@ import {
   Combine,
   GalleryVerticalEnd,
   ScanSearch,
+  Video,
+  Pause,
   PenLine,
   Play,
   MessageSquareText,
@@ -951,10 +953,96 @@ function CometEdge({
   );
 }
 
+/**
+ * 画布视频节点表面(参照 infinite-canvas):原生 video 元素 + 播放/放大角标 +
+ * 时长显示。未选中自动暂停;空格键播放(选中时);双击不再触发节点重命名。
+ */
+function VideoNodeSurface({ url, selected }: { url: string; selected: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [durationMs, setDurationMs] = useState(0);
+
+  useEffect(() => {
+    if (!selected) videoRef.current?.pause();
+  }, [selected]);
+
+  const togglePlayback = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) void video.play();
+    else video.pause();
+  };
+  const controlStyle = { background: "rgba(15,23,42,0.72)", color: "#e2e6ed" };
+
+  return (
+    <div className="relative h-full w-full overflow-hidden rounded-[10px] bg-black">
+      <video
+        ref={videoRef}
+        src={url}
+        tabIndex={-1}
+        playsInline
+        loop
+        className="block h-full w-full object-contain outline-none"
+        onLoadedMetadata={(event) =>
+          setDurationMs(
+            Number.isFinite(event.currentTarget.duration)
+              ? event.currentTarget.duration * 1000
+              : 0
+          )
+        }
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onKeyDown={(event) => {
+          if (selected && event.code === "Space") {
+            event.preventDefault();
+            event.stopPropagation();
+            togglePlayback();
+          }
+        }}
+      />
+      {durationMs > 0 && (
+        <span
+          className="pointer-events-none absolute left-2 top-2 z-10 flex h-6 items-center rounded-md px-1.5 text-[10px] font-medium opacity-80 backdrop-blur"
+          style={controlStyle}
+        >
+          {new Date(durationMs).toISOString().slice(14, 19)}
+        </span>
+      )}
+      <button
+        type="button"
+        title={isPlaying ? "暂停" : "播放"}
+        aria-label={isPlaying ? "暂停" : "播放"}
+        className="absolute bottom-1.5 left-1.5 z-10 grid h-6 w-6 place-items-center rounded-md opacity-75 backdrop-blur transition-opacity hover:opacity-100"
+        style={controlStyle}
+        onClick={(event) => {
+          event.stopPropagation();
+          togglePlayback();
+        }}
+      >
+        {isPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+      </button>
+      <button
+        type="button"
+        title="放大预览"
+        aria-label="放大预览"
+        className="absolute bottom-1.5 right-1.5 z-10 grid h-6 w-6 place-items-center rounded-md opacity-75 backdrop-blur transition-opacity hover:opacity-100"
+        style={controlStyle}
+        onClick={(event) => {
+          event.stopPropagation();
+          window.open(url, "_blank");
+        }}
+      >
+        <Maximize2 className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
 function ArtNode({ data, selected }: NodeProps) {
   const d = data as {
     id: string;
     image?: string;
+    videoUrl?: string;
     label: string;
     rootLabel?: string | null;
     version?: number;
@@ -1054,6 +1142,8 @@ function ArtNode({ data, selected }: NodeProps) {
             <Loader2 className="h-5 w-5 animate-spin text-[#6366f1]" />
             <span className="canvas-ui-muted text-[12px]">生成中…</span>
           </div>
+        ) : d.videoUrl ? (
+          <VideoNodeSurface url={d.videoUrl} selected={selected} />
         ) : (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1284,6 +1374,7 @@ function layoutGraph(
       data: {
         id: a.id,
         image: a.image,
+        videoUrl: a.videoUrl ?? undefined,
         label: a.title,
         rootLabel: isRoot ? rootLabel : null,
         version: idx + 1, // 项目内按生成时间的版本序号
@@ -1575,6 +1666,13 @@ export function CanvasClient() {
   const [comfyOpen, setComfyOpen] = useState(false);
   const [expandRatio, setExpandRatio] = useState<string | null>(null);
   const [expandAnchor, setExpandAnchor] = useState("center");
+  // 视频生成(OpenAI videos 协议,站内计费):面板状态 + 轮询句柄
+  const [videoOpen, setVideoOpen] = useState(false);
+  const [videoPrompt, setVideoPrompt] = useState("");
+  const [videoSeconds, setVideoSeconds] = useState("4");
+  const [videoLandscape, setVideoLandscape] = useState(true);
+  const [videoBusy, setVideoBusy] = useState(false);
+  const videoTimerRef = useRef<number | null>(null);
   const [annotateArtwork, setAnnotateArtwork] = useState<Artwork | null>(null);
   // 画布助手:围绕选中节点+上游链的多轮对话,[[GEN]] 提示词可一键生图回画布
   const [assistantArtworkId, setAssistantArtworkId] = useState<string | null>(null);
@@ -3665,6 +3763,102 @@ export function CanvasClient() {
       window.clearInterval(timer);
       setPendNodes((items) => items.filter((item) => item.id !== pendingId));
       editTaskBusyRef.current = false;
+    }
+  }
+
+  /**
+   * 视频生成(OpenAI videos 协议):创建任务 → 轮询 /api/video/tasks →
+   * 服务端完成后转存并落画布视频节点(category="video",videoUrl 指向 mp4),
+   * 前端 mergeWorks 挂树。失败自动退积分(服务端处理)。
+   */
+  async function onGenerateVideo() {
+    const source = selected;
+    if (!source || videoBusy) return;
+    const prompt = videoPrompt.trim();
+    if (!prompt) {
+      flashTip("请先填写视频描述");
+      return;
+    }
+    setVideoOpen(false);
+    setVideoBusy(true);
+    const sourceNode = rfRef.current?.getNode(source.id);
+    const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
+    const x = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
+    const y = (sourceNode?.position.y ?? source.canvasY ?? 0) + sourceSize.height + Y_GAP;
+    const pendingId = `pend-video-${Date.now()}`;
+    setPendNodes((current) => [
+      ...current,
+      {
+        id: pendingId,
+        x,
+        y,
+        parentId: source.id,
+        linked: true,
+        label: "视频生成中",
+        uploading: false,
+        progress: 5,
+        inputs: [source.id],
+        generating: true,
+      },
+    ]);
+    const progressTimer = window.setInterval(() => {
+      setPendNodes((items) =>
+        items.map((item) =>
+          item.id === pendingId
+            ? { ...item, progress: Math.min(90, item.progress + 2) }
+            : item
+        )
+      );
+    }, 3000);
+    let taskId = "";
+    try {
+      const res = await privateFetch("/api/video/generate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          artworkId: source.id,
+          prompt,
+          seconds: videoSeconds,
+          size: videoLandscape ? "1280x720" : "720x1280",
+        }),
+      });
+      const data = await readJsonSafe(res);
+      if (!res.ok) throw new Error(data?.error || "视频任务创建失败");
+      taskId = String(data.taskId || "");
+      // 惰性轮询:服务端每次 GET 查一次上游
+      const startedAt = Date.now();
+      for (;;) {
+        if (Date.now() - startedAt > 10 * 60 * 1000) {
+          throw new Error("视频生成超时(10 分钟),请稍后刷新查看");
+        }
+        await new Promise((r) => setTimeout(r, 5000));
+        const poll = await privateFetch(`/api/video/tasks?id=${encodeURIComponent(taskId)}`);
+        const pollData = await readJsonSafe(poll);
+        if (!poll.ok) throw new Error(pollData?.error || "视频任务查询失败");
+        const task = pollData?.task as
+          | { status: string; error?: string; artworkId?: string }
+          | undefined;
+        if (task?.status === "failed") throw new Error(task.error || "视频生成失败");
+        if (task?.status === "completed" && task.artworkId) {
+          await privateFetch("/api/artworks/position", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id: task.artworkId, x: Math.round(x), y: Math.round(y) }),
+          });
+          const fresh = await mergeWorks([task.artworkId]);
+          pushAddUndo(task.artworkId, fresh);
+          setSelectedId(task.artworkId);
+          flashTip("视频已生成,点击节点上的播放按钮预览");
+          break;
+        }
+      }
+    } catch (e) {
+      flashTip(e instanceof Error ? e.message : "视频生成失败");
+    } finally {
+      if (progressTimer) window.clearInterval(progressTimer);
+      setPendNodes((items) => items.filter((item) => item.id !== pendingId));
+      setVideoBusy(false);
+      setVideoPrompt("");
     }
   }
 
@@ -8822,6 +9016,79 @@ export function CanvasClient() {
               >
                 <Workflow className="h-4 w-4" /> 工作流
               </button>
+              {/* 视频:OpenAI videos 协议,图生视频/文生视频,产物为画布视频节点 */}
+              <div className="relative flex items-center">
+                <button
+                  type="button"
+                  title="生成视频"
+                  disabled={readOnly || videoBusy}
+                  onClick={() => {
+                    setVideoOpen((open) => !open);
+                    if (selected) setVideoPrompt((cur) => cur || selected.prompt || "");
+                  }}
+                  className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
+                >
+                  <Video className="h-4 w-4" /> 视频
+                </button>
+                {videoOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setVideoOpen(false)} />
+                    <div className="canvas-ui-surface absolute left-1/2 top-full z-20 mt-2 w-[280px] -translate-x-1/2 rounded-[14px] border p-3 shadow-[0_18px_50px_rgba(8,15,30,0.35)]">
+                      <textarea
+                        value={videoPrompt}
+                        onChange={(event) => setVideoPrompt(event.target.value)}
+                        rows={3}
+                        placeholder="描述视频内容与运镜,如:商品缓慢旋转展示,柔和灯光"
+                        className="w-full resize-none rounded-lg border border-current/20 bg-transparent px-2.5 py-2 text-[12px] leading-relaxed outline-none"
+                      />
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="text-[11px] font-semibold opacity-70">时长</span>
+                        {["4", "8", "12"].map((sec) => (
+                          <button
+                            key={sec}
+                            type="button"
+                            onClick={() => setVideoSeconds(sec)}
+                            className={cn(
+                              "rounded-lg px-2 py-1 text-[11.5px] font-semibold transition-colors",
+                              videoSeconds === sec ? "bg-teal-500 text-white" : "canvas-ui-action"
+                            )}
+                          >
+                            {sec}s
+                          </button>
+                        ))}
+                        <span className="ml-auto text-[11px] font-semibold opacity-70">画幅</span>
+                        <button
+                          type="button"
+                          title="横屏 1280x720"
+                          onClick={() => setVideoLandscape(true)}
+                          className={cn("rounded-lg px-2 py-1 text-[11.5px] font-semibold transition-colors", videoLandscape ? "bg-teal-500 text-white" : "canvas-ui-action")}
+                        >
+                          横
+                        </button>
+                        <button
+                          type="button"
+                          title="竖屏 720x1280"
+                          onClick={() => setVideoLandscape(false)}
+                          className={cn("rounded-lg px-2 py-1 text-[11.5px] font-semibold transition-colors", !videoLandscape ? "bg-teal-500 text-white" : "canvas-ui-action")}
+                        >
+                          竖
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!videoPrompt.trim() || videoBusy}
+                        onClick={() => void onGenerateVideo()}
+                        className="mt-3 w-full rounded-[10px] bg-teal-500 px-3 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {selected ? "以选中图片生成视频" : "文生视频"} · 按次计费
+                      </button>
+                      <p className="mt-2 text-[11px] leading-relaxed opacity-60">
+                        {selected ? "以选中图为首帧参考(图生视频)。" : "未选中图片,将纯文字生成。"}生成约需 1-3 分钟,完成后出现在画布。
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
               {/* 画布助手:围绕选中节点+上游链对话,可一键生图回画布 */}
               <button
                 type="button"
