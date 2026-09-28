@@ -38,7 +38,23 @@ type Capability = {
   defaultDuration?: number;
   note?: string;
   isDefault: boolean;
+  supportsLastFrame?: boolean;
+  supportsNegativePrompt?: boolean;
+  supportsGenerateAudio?: boolean;
+  supportsWatermark?: boolean;
+  maxReferenceVideos?: number;
+  maxReferenceAudios?: number;
 };
+
+type ProviderView = {
+  id: string;
+  label: string;
+  protocol: string;
+  defaultModel: string;
+  models: Capability[];
+};
+
+type UploadedReference = { id: string; kind: "image" | "video" | "audio"; role: string; url: string; mimeType?: string; storageKey?: string };
 
 type TaskView = {
   id: string;
@@ -60,13 +76,21 @@ export function VideoStudioClient() {
   const { user, ready } = useAuth();
   const { openAuth } = useAuthModal();
   const [catalog, setCatalog] = useState<Capability[] | null>(null);
+  const [providers, setProviders] = useState<ProviderView[]>([]);
   const [configured, setConfigured] = useState(true);
   const [costPerTask, setCostPerTask] = useState(20);
   const [modelId, setModelId] = useState("");
+  const [providerId, setProviderId] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [negativePrompt, setNegativePrompt] = useState("");
   const [seconds, setSeconds] = useState(4);
-  const [landscape, setLandscape] = useState(true);
+  const [aspectRatio, setAspectRatio] = useState("16:9");
+  const [resolution, setResolution] = useState("1280x720");
+  const [generateAudio, setGenerateAudio] = useState(false);
+  const [watermark, setWatermark] = useState(false);
   const [refFile, setRefFile] = useState<File | null>(null);
+  const [lastFrameFile, setLastFrameFile] = useState<File | null>(null);
+  const [extraRefFiles, setExtraRefFiles] = useState<File[]>([]);
   const [refPreview, setRefPreview] = useState("");
   const [refUrl, setRefUrl] = useState("");
   const [uploadingRef, setUploadingRef] = useState(false);
@@ -82,7 +106,8 @@ export function VideoStudioClient() {
   const activeIdRef = useRef("");
 
   activeIdRef.current = activeId;
-  const cap = catalog?.find((c) => c.modelId === modelId) ?? null;
+  const cap = catalog?.find((c) => c.providerId === providerId && c.modelId === modelId) ?? null;
+  const providerModels = catalog?.filter((c) => c.providerId === providerId) ?? [];
 
   const loadHistory = useCallback(async () => {
     if (!user) {
@@ -111,10 +136,16 @@ export function VideoStudioClient() {
       setCostPerTask(Number(data.costPerTask ?? 20));
       const models = (data.models ?? []) as Capability[];
       setCatalog(models);
-      const def = models.find((m) => m.isDefault) ?? models[0];
+      const providerList = (data.providers ?? []) as ProviderView[];
+      setProviders(providerList);
+      const defaultProvider = String(data.defaultProvider || providerList[0]?.id || models[0]?.providerId || "");
+      setProviderId(defaultProvider);
+      const def = models.find((m) => m.providerId === defaultProvider && m.isDefault) ?? models.find((m) => m.providerId === defaultProvider) ?? models[0];
       if (def) {
         setModelId(def.modelId);
         setSeconds(def.defaultDuration ?? def.durations[0] ?? 4);
+        setAspectRatio(def.aspectRatios[0] || "16:9");
+        setResolution(def.resolutions[0] || "1280x720");
       }
     } catch { /* keep */ }
   }, []);
@@ -132,7 +163,18 @@ export function VideoStudioClient() {
   useEffect(() => {
     if (!cap) return;
     setSeconds(cap.defaultDuration ?? cap.durations[0] ?? 4);
+    setAspectRatio(cap.aspectRatios[0] || "16:9");
+    setResolution(cap.resolutions[0] || "1280x720");
+    if (!cap.supportsGenerateAudio) setGenerateAudio(false);
+    if (!cap.supportsWatermark) setWatermark(false);
   }, [modelId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function selectProvider(id: string) {
+    setProviderId(id);
+    const next = catalog?.find((item) => item.providerId === id && item.isDefault)
+      ?? catalog?.find((item) => item.providerId === id);
+    if (next) setModelId(next.modelId);
+  }
 
   // 中央任务轮询(5s);后台 worker 兜底,这里只为即时反馈
   useEffect(() => {
@@ -211,31 +253,45 @@ export function VideoStudioClient() {
     setTip("");
     setSubmitting(true);
     try {
-      // 参考图先传作品库换 URL(图生视频)
-      let imageUrl = "";
-      if (refFile) {
+      const uploadReference = async (file: File): Promise<UploadedReference> => {
         setUploadingRef(true);
         const fd = new FormData();
-        fd.append("image", refFile);
-        fd.append("title", "视频参考图");
-        const up = await fetch("/api/artworks/add", {
+        fd.append("file", file);
+        const up = await fetch("/api/video/references", {
           method: "POST",
           headers: await authHeader(),
           body: fd,
         });
         const upd = await up.json();
-        imageUrl = upd?.artwork?.image || upd?.image || upd?.url || "";
-        setUploadingRef(false);
-        if (!imageUrl) throw new Error("参考图上传失败");
+        if (!up.ok || !upd?.reference?.url) throw new Error(upd?.error || "素材上传失败");
+        return upd.reference as UploadedReference;
+      };
+      const references: UploadedReference[] = [];
+      if (refFile) references.push({ ...(await uploadReference(refFile)), role: "first_frame" });
+      if (lastFrameFile) references.push({ ...(await uploadReference(lastFrameFile)), role: "last_frame" });
+      for (const file of extraRefFiles) {
+        const uploaded = await uploadReference(file);
+        references.push({
+          ...uploaded,
+          role: uploaded.kind === "video" ? "source_video" : uploaded.kind === "audio" ? "source_audio" : "reference",
+        });
       }
       const res = await fetch("/api/video/generate", {
         method: "POST",
         headers: { "content-type": "application/json", ...(await authHeader()) },
         body: JSON.stringify({
           prompt: text,
-          imageUrl: imageUrl || undefined,
+          providerId,
+          modelId,
+          negativePrompt: negativePrompt.trim() || undefined,
+          durationSeconds: seconds,
           seconds: String(seconds),
-          size: landscape ? "1280x720" : "720x1280",
+          aspectRatio,
+          resolution,
+          size: resolution,
+          generateAudio,
+          watermark,
+          references,
         }),
       });
       const data = await res.json();
@@ -326,14 +382,22 @@ export function VideoStudioClient() {
         <div className="grid gap-5 lg:grid-cols-[340px_1fr_320px]">
           {/* 左:参数区 */}
           <section className="rounded-2xl border border-c-border bg-c-card p-4 shadow-card">
+            {providers.length > 1 && (
+              <>
+                <p className="mb-1.5 text-[12.5px] font-semibold text-c-text2">供应商</p>
+                <select value={providerId} onChange={(e) => selectProvider(e.target.value)} className="mb-3 w-full rounded-lg border border-c-border bg-c-subtle px-3 py-2 text-[13px] text-c-text outline-none focus:ring-1 focus:ring-primary">
+                  {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
+                </select>
+              </>
+            )}
             <p className="mb-2 text-[12.5px] font-semibold text-c-text2">模型</p>
             {!catalog ? (
               <p className="py-2 text-xs text-c-text3">读取中…</p>
             ) : (
               <div className="space-y-1.5">
-                {catalog.map((m) => (
+                {providerModels.map((m) => (
                   <button
-                    key={m.modelId}
+                    key={`${m.providerId}:${m.modelId}`}
                     type="button"
                     onClick={() => setModelId(m.modelId)}
                     className={cn(
@@ -396,6 +460,21 @@ export function VideoStudioClient() {
               </>
             )}
 
+            {cap?.supportsLastFrame && (
+              <label className="mt-3 block text-[12.5px] font-semibold text-c-text2">
+                尾帧 <span className="font-normal text-c-text4">（可选）</span>
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setLastFrameFile(e.target.files?.[0] || null)} className="mt-1.5 block w-full text-[11.5px] text-c-text3 file:mr-2 file:rounded-md file:border file:border-c-border file:bg-white file:px-2 file:py-1 file:text-c-text2" />
+              </label>
+            )}
+
+            {(cap?.modes.includes("reference") || cap?.modes.includes("video_edit")) && (
+              <label className="mt-3 block text-[12.5px] font-semibold text-c-text2">
+                多模态参考 <span className="font-normal text-c-text4">（图片 / 视频 / 音频）</span>
+                <input type="file" multiple accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/mp4,audio/webm" onChange={(e) => setExtraRefFiles(Array.from(e.target.files || []))} className="mt-1.5 block w-full text-[11.5px] text-c-text3 file:mr-2 file:rounded-md file:border file:border-c-border file:bg-white file:px-2 file:py-1 file:text-c-text2" />
+                {extraRefFiles.length > 0 && <span className="mt-1 block font-normal text-c-text4">已选 {extraRefFiles.length} 个素材</span>}
+              </label>
+            )}
+
             <p className="mb-1.5 mt-3 text-[12.5px] font-semibold text-c-text2">时长</p>
             <div className="flex gap-1.5">
               {durations.map((d) => (
@@ -415,29 +494,23 @@ export function VideoStudioClient() {
               ))}
             </div>
 
-            <p className="mb-1.5 mt-3 text-[12.5px] font-semibold text-c-text2">画幅</p>
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                onClick={() => setLandscape(true)}
-                className={cn(
-                  "flex-1 rounded-lg border px-2 py-1.5 text-[12.5px] font-semibold transition-colors",
-                  landscape ? "border-primary/50 bg-primary/10 text-primary" : "border-c-border text-c-text2 hover:bg-secondary"
-                )}
-              >
-                横屏 16:9
-              </button>
-              <button
-                type="button"
-                onClick={() => setLandscape(false)}
-                className={cn(
-                  "flex-1 rounded-lg border px-2 py-1.5 text-[12.5px] font-semibold transition-colors",
-                  !landscape ? "border-primary/50 bg-primary/10 text-primary" : "border-c-border text-c-text2 hover:bg-secondary"
-                )}
-              >
-                竖屏 9:16
-              </button>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <label className="text-[12px] text-c-text3">画幅
+                <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="mt-1 w-full rounded-lg border border-c-border bg-c-subtle px-2 py-1.5 text-[12.5px] text-c-text">
+                  {(cap?.aspectRatios ?? ["16:9", "9:16", "1:1"]).map((ratio) => <option key={ratio}>{ratio}</option>)}
+                </select>
+              </label>
+              <label className="text-[12px] text-c-text3">分辨率
+                <select value={resolution} onChange={(e) => setResolution(e.target.value)} className="mt-1 w-full rounded-lg border border-c-border bg-c-subtle px-2 py-1.5 text-[12.5px] text-c-text">
+                  {(cap?.resolutions ?? ["1280x720", "720x1280"]).map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
             </div>
+            {cap?.supportsNegativePrompt && <input value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} placeholder="负面提示词（可选）" className="mt-3 w-full rounded-lg border border-c-border bg-c-subtle px-3 py-2 text-[12.5px] outline-none focus:ring-1 focus:ring-primary" />}
+            {(cap?.supportsGenerateAudio || cap?.supportsWatermark) && <div className="mt-3 flex flex-wrap gap-3 text-[12px] text-c-text2">
+              {cap.supportsGenerateAudio && <label className="flex items-center gap-1.5"><input type="checkbox" checked={generateAudio} onChange={(e) => setGenerateAudio(e.target.checked)} />生成音频</label>}
+              {cap.supportsWatermark && <label className="flex items-center gap-1.5"><input type="checkbox" checked={watermark} onChange={(e) => setWatermark(e.target.checked)} />添加水印</label>}
+            </div>}
 
             <button
               type="button"

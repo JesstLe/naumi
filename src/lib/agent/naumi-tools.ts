@@ -26,6 +26,12 @@ const TOOL_TIMEOUT_MS = {
   generate_packaging_3d: 360_000,
   comfy_run: 280_000,
   generate_video: 300_000,
+  get_video_task: 15_000,
+  list_video_models: 15_000,
+  plan_video_shot: 15_000,
+  plan_video_storyboard: 15_000,
+  extend_video: 300_000,
+  edit_video: 300_000,
   read_only: 15_000,
 } as const;
 
@@ -48,8 +54,12 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 - run_comfy_workflow:在用户自己的 ComfyUI 端点上执行工作流。参数 workflow_id(必填)、prompt(正向提示词,可选)、image_url(用户给的[商品图] URL,工作流有图槽时传)、seed/width/height/length(可选)。
   注意:算力在用户端点,不消耗积分;执行可能数分钟(视频更久);产物图片用 Markdown 展示,视频给下载链接。用户没配端点或没导入工作流时,引导去画布选中图片点「工作流」配置,不要反复重试。
 
-## 可用工具(视频生成 · 站内 OpenAI videos 协议,按次计费)
+## 可用工具(视频生成 · 站内多供应商视频协议,按次计费)
+- list_video_models:列出当前已配置视频供应商和模型能力。
+- plan_video_shot / plan_video_storyboard:只读策划工具，分别规划单镜头和多镜头，不创建任务。
 - generate_video:文生视频/图生视频。参数 prompt(必填,描述画面与运镜)、image_url(可选,用户消息里的[商品图]作首帧参考)、seconds(4/8/12,默认 4)、size(横屏 1280x720/竖屏 720x1280)。
+- extend_video / edit_video:基于已有视频 URL 创建续写或编辑任务；任务超时也不会重复创建。
+- get_video_task:按任务 ID 查询服务端状态。
   注意:需要站内已配置视频服务(未配置时报错就引导联系站长);一次生成约 1-3 分钟;完成后产物是画布视频节点,同时给用户视频下载链接;计费按次(失败自动退)。
 
 ## 可用工具(鱼塘任务 · 澜序协作 — 营销单/刷任务派发系统)
@@ -1468,7 +1478,84 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         };
       },
     },
-    // ── 视频生成(OpenAI videos 协议,站内计费,失败自动退) ──
+    // ── 视频生产域：能力目录、策划、查询、生成、续写、编辑 ──
+    {
+      name: "list_video_models",
+      label: "视频模型目录",
+      description: "只读：列出当前服务器已配置的视频供应商、模型和能力。",
+      parameters: Type.Object({}),
+      replay: "safe",
+      executionMode: "sequential",
+      execute: async (_id, _params, signal) => {
+        const data = await withToolTimeout("list_video_models", () => internal("/api/video/catalog", signal), signal);
+        const providers = Array.isArray(data.providers) ? data.providers as Array<{ label?: string; models?: Array<{ modelId?: string; modes?: string[]; durations?: number[] }> }> : [];
+        const text = providers.map((provider) => `${provider.label || "视频供应商"}: ${(provider.models || []).map((model) => `${model.modelId} [${(model.modes || []).join("/")}; ${(model.durations || []).join("/")}s]`).join("、")}`).join("\n");
+        return { content: [{ type: "text", text: text || "当前未配置视频模型" }], details: { providers, publicSummary: "已读取视频模型目录" } };
+      },
+    },
+    {
+      name: "plan_video_shot",
+      label: "单镜头策划",
+      description: "只读：把目标整理为可直接用于生成的单镜头镜头单。",
+      parameters: Type.Object({ goal: Type.String(), duration: Type.Optional(Type.Number()), aspect_ratio: Type.Optional(Type.String()) }),
+      replay: "safe",
+      executionMode: "sequential",
+      execute: async (_id, params) => {
+        const p = params as { goal: string; duration?: number; aspect_ratio?: string };
+        const shot = { type: "single-shot", durationSeconds: p.duration || 4, aspectRatio: p.aspect_ratio || "16:9", prompt: `${p.goal}。单一连续镜头，明确主体动作、机位、运镜、光线、景深和结束状态。` };
+        return { content: [{ type: "text", text: `单镜头方案：${shot.prompt}\n时长：${shot.durationSeconds}s；画幅：${shot.aspectRatio}` }], details: { shot, publicSummary: "已完成单镜头策划" } };
+      },
+    },
+    {
+      name: "plan_video_storyboard",
+      label: "多镜头策划",
+      description: "只读：按镜头数量生成连续分镜结构，供多镜头模型或逐镜头生成使用。",
+      parameters: Type.Object({ goal: Type.String(), shots: Type.Optional(Type.Number({ minimum: 2, maximum: 8 })), total_duration: Type.Optional(Type.Number()) }),
+      replay: "safe",
+      executionMode: "sequential",
+      execute: async (_id, params) => {
+        const p = params as { goal: string; shots?: number; total_duration?: number };
+        const count = Math.max(2, Math.min(8, Math.trunc(p.shots || 3)));
+        const total = Math.max(count, Math.trunc(p.total_duration || count * 4));
+        const stages = ["建立主体与环境", "推进动作与卖点", "完成动作并定格结果"];
+        const storyboard = Array.from({ length: count }, (_, index) => ({ index: index + 1, durationSeconds: Math.max(1, Math.round(total / count)), intent: stages[Math.min(stages.length - 1, Math.floor(index * stages.length / count))], prompt: `${p.goal}。镜头 ${index + 1}/${count}，保持主体、材质、光线和空间方向连续。` }));
+        return { content: [{ type: "text", text: storyboard.map((shot) => `${shot.index}. ${shot.intent}（${shot.durationSeconds}s）：${shot.prompt}`).join("\n") }], details: { storyboard, publicSummary: "已完成多镜头分镜" } };
+      },
+    },
+    {
+      name: "get_video_task",
+      label: "查询视频任务",
+      description: "只读：按任务 ID 查询状态，不创建新任务。",
+      parameters: Type.Object({ task_id: Type.String() }),
+      replay: "safe",
+      executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p = params as { task_id: string };
+        const data = await withToolTimeout("get_video_task", () => internal(`/api/video/tasks/${encodeURIComponent(p.task_id)}`, signal), signal);
+        return { content: [{ type: "text", text: `任务 ${p.task_id}：${data.task?.status || "unknown"}${data.task?.progress !== undefined ? `，进度 ${data.task.progress}%` : ""}${data.task?.videoUrl ? `\n${data.task.videoUrl}` : ""}` }], details: { task: data.task, publicSummary: "已查询视频任务" } };
+      },
+    },
+    ...(["extend_video", "edit_video"] as const).map((toolName) => ({
+      name: toolName,
+      label: toolName === "extend_video" ? "视频续写" : "视频编辑",
+      description: toolName === "extend_video" ? "基于已有视频继续生成后续镜头。" : "基于已有视频按提示词编辑。",
+      parameters: Type.Object({ video_url: Type.String(), prompt: Type.String(), provider_id: Type.Optional(Type.String()), model_id: Type.Optional(Type.String()), seconds: Type.Optional(Type.Number()) }),
+      executionMode: "sequential" as const,
+      execute: async (_id: string, params: unknown, signal?: AbortSignal) => {
+        const p = params as { video_url: string; prompt: string; provider_id?: string; model_id?: string; seconds?: number };
+        const created = await withToolTimeout(toolName, () => internal("/api/video/generate", signal, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+            source: "agent", prompt: p.prompt, providerId: p.provider_id, modelId: p.model_id,
+            durationSeconds: p.seconds || 4, seconds: String(p.seconds || 4), resolution: "1280x720",
+            references: [{ id: `agent-${toolName}`, kind: "video", role: "source_video", url: p.video_url }],
+            providerOptions: { mode: toolName === "extend_video" ? "extend" : "edit" },
+          }),
+        }), signal);
+        const taskId = String(created.taskId || "");
+        return { content: [{ type: "text" as const, text: `已创建${toolName === "extend_video" ? "续写" : "编辑"}任务 ${taskId}。任务由后台 worker 继续执行；后续用 get_video_task 查询，避免重复创建。` }], details: { taskId, cost: created.cost, publicSummary: "已创建视频任务" } };
+      },
+    })) as AgentTool[],
+    // ── 视频生成(站内计费,失败自动退) ──
     {
       name: "generate_video",
       label: "视频生成",

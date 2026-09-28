@@ -16,9 +16,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const ALLOWED_SECONDS = new Set(["4", "8", "12", "15"]);
-const ALLOWED_SIZES = new Set(["1280x720", "720x1280", "1024x1024", "720x1080", "1080x720"]);
-
 export async function POST(request: Request) {
   const email = await authenticatedEmail(request);
   if (dbEnabled && !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -27,11 +24,17 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => null)) as
-    | { prompt?: string; artworkId?: string; imageUrl?: string; seconds?: string; size?: string }
+    | {
+        prompt?: string; artworkId?: string; imageUrl?: string; seconds?: string; size?: string;
+        providerId?: string; modelId?: string; negativePrompt?: string; durationSeconds?: number;
+        aspectRatio?: string; resolution?: string; width?: number; height?: number;
+        generateAudio?: boolean; watermark?: boolean; references?: unknown[];
+        providerOptions?: Record<string, unknown>; source?: string; sourceId?: string;
+      }
     | null;
   const prompt = String(body?.prompt || "").trim().slice(0, 1000);
-  const seconds = ALLOWED_SECONDS.has(String(body?.seconds)) ? String(body?.seconds) : "4";
-  const size = ALLOWED_SIZES.has(String(body?.size)) ? String(body?.size) : "1280x720";
+  const seconds = String(body?.durationSeconds ?? body?.seconds ?? "4").slice(0, 8);
+  const size = String(body?.resolution || body?.size || "1280x720").slice(0, 32);
   const artworkId = String(body?.artworkId || "").trim();
   // agent 场景:无画布节点,直接传[商品图] URL
   const imageUrl = String(body?.imageUrl || "").trim().slice(0, 600);
@@ -41,13 +44,27 @@ export async function POST(request: Request) {
 
   try {
     const { taskId, cost } = await createVideoGeneration(email, {
-      source: imageUrl ? "agent" : artworkId ? "canvas" : "workbench",
-      sourceId: artworkId || undefined,
+      source: (["canvas", "workbench", "agent", "workflow"].includes(String(body?.source))
+        ? body?.source
+        : imageUrl ? "agent" : artworkId ? "canvas" : "workbench") as "canvas" | "workbench" | "agent" | "workflow",
+      sourceId: String(body?.sourceId || artworkId || "").slice(0, 200) || undefined,
       prompt,
       seconds,
       size,
       artworkId: artworkId || undefined,
       imageUrl: imageUrl || undefined,
+      providerId: String(body?.providerId || "").slice(0, 80) || undefined,
+      modelId: String(body?.modelId || "").slice(0, 160) || undefined,
+      negativePrompt: String(body?.negativePrompt || "").slice(0, 1000) || undefined,
+      durationSeconds: Number(body?.durationSeconds ?? seconds),
+      aspectRatio: String(body?.aspectRatio || "").slice(0, 24) || undefined,
+      resolution: String(body?.resolution || size).slice(0, 32),
+      width: Number.isFinite(Number(body?.width)) ? Math.max(1, Math.min(8192, Number(body?.width))) : undefined,
+      height: Number.isFinite(Number(body?.height)) ? Math.max(1, Math.min(8192, Number(body?.height))) : undefined,
+      generateAudio: body?.generateAudio === true,
+      watermark: body?.watermark === true,
+      references: Array.isArray(body?.references) ? body.references.slice(0, 20) as never[] : undefined,
+      providerOptions: body?.providerOptions && typeof body.providerOptions === "object" ? body.providerOptions : undefined,
     });
     const user = dbEnabled ? await getUser(email).catch(() => null) : null;
     return NextResponse.json({ ok: true, taskId, cost, user });

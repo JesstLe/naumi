@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { authenticatedEmail } from "@/lib/request-auth";
-import { videoCatalog } from "@/lib/video/capabilities";
-import { resolveOpenAiVideosConfig } from "@/lib/video/providers/openai-videos";
+import { configuredVideoCatalog } from "@/lib/video/capabilities";
+import { configuredVideoProviders, publicProviderSnapshot } from "@/lib/video/providers/config";
 import { videoCostPublic } from "@/lib/video/service";
 
 // ---------------------------------------------------------------------------
@@ -14,14 +13,23 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const cfg = resolveOpenAiVideosConfig();
-  const defaultModel = cfg?.model || "";
+  const configs = configuredVideoProviders();
+  const models = configuredVideoCatalog();
+  const providers = configs.map((cfg) => ({
+    ...publicProviderSnapshot(cfg),
+    configured: true,
+    defaultModel: cfg.defaultModel,
+    models: models.filter((model) => model.providerId === cfg.id),
+  }));
+  const first = providers[0];
   return NextResponse.json({
     ok: true,
-    configured: Boolean(cfg),
-    provider: { id: "openai-videos", label: "OpenAI Videos 兼容" },
-    defaultModel,
+    configured: providers.length > 0,
+    provider: first ? { id: first.id, label: first.label } : null,
+    providers,
+    defaultProvider: first?.id || "",
+    defaultModel: first?.defaultModel || "",
     costPerTask: videoCostPublic(),
-    models: videoCatalog(defaultModel),
+    models,
   });
 }

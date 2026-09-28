@@ -13,6 +13,7 @@ import {
   listDueVideoTaskRefs,
   listVideoTasks,
   releaseVideoTaskPoll,
+  recordVideoTaskPoll,
   reserveCredits,
   scheduleVideoTaskRetry,
   settleReservation,
@@ -30,9 +31,11 @@ import {
   validateAgainstCapability,
 } from "@/lib/video/capabilities";
 import { resolveOpenAiVideosConfig } from "@/lib/video/providers/openai-videos";
+import { configuredVideoProviders, getVideoProviderConfig, publicProviderSnapshot } from "@/lib/video/providers/config";
 import type { VideoTaskRow } from "@/lib/db";
 import type {
   VideoGenerationRequest,
+  VideoProviderCreateResult,
   VideoReference,
   VideoTaskSource,
 } from "@/lib/video/types";
@@ -55,10 +58,49 @@ export type CreateVideoInput = {
   artworkId?: string;
   imageUrl?: string;
   idempotencyKey?: string;
+  providerId?: string;
+  modelId?: string;
+  negativePrompt?: string;
+  durationSeconds?: number;
+  aspectRatio?: string;
+  resolution?: string;
+  width?: number;
+  height?: number;
+  generateAudio?: boolean;
+  watermark?: boolean;
+  references?: VideoReference[];
+  providerOptions?: Record<string, unknown>;
 };
 
 export function resolveVideoServiceConfig() {
   return resolveOpenAiVideosConfig();
+}
+
+const VIDEO_REFERENCE_ROLES = new Set(["first_frame", "last_frame", "reference", "element", "source_video", "source_audio"]);
+const VIDEO_REFERENCE_KINDS = new Set(["image", "video", "audio"]);
+
+function normalizeVideoReferences(value: VideoReference[] | undefined): VideoReference[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).map((raw, index) => {
+    const kind = String(raw?.kind || "");
+    const role = String(raw?.role || "");
+    if (!VIDEO_REFERENCE_KINDS.has(kind) || !VIDEO_REFERENCE_ROLES.has(role)) {
+      throw new Error(`第 ${index + 1} 个视频素材类型无效`);
+    }
+    const url = String(raw.url || "").trim().slice(0, 2000);
+    const artworkId = String(raw.artworkId || "").trim().slice(0, 160);
+    if (!url && !artworkId) throw new Error(`第 ${index + 1} 个视频素材缺少地址`);
+    if (url && !/^(https?:\/\/|\/media\/|data:)/i.test(url)) throw new Error(`第 ${index + 1} 个视频素材地址无效`);
+    return {
+      id: String(raw.id || `ref-${index + 1}`).slice(0, 160),
+      kind: kind as VideoReference["kind"],
+      role: role as VideoReference["role"],
+      url: url || undefined,
+      artworkId: artworkId || undefined,
+      storageKey: String(raw.storageKey || "").slice(0, 500) || undefined,
+      mimeType: String(raw.mimeType || "").slice(0, 100) || undefined,
+    };
+  });
 }
 
 /** 创建视频任务:规范化 → 能力校验 → 预扣 → 上游创建 → 落库。 */
@@ -66,22 +108,26 @@ export async function createVideoGeneration(
   email: string,
   input: CreateVideoInput
 ): Promise<{ taskId: string; cost: number }> {
-  const cfg = resolveVideoServiceConfig();
-  if (!cfg) {
-    throw new Error("视频服务未配置(需在服务器设置 VIDEO_API_BASE_URL/KEY/MODEL)");
+  const requestedProviderId = String(input.providerId || configuredVideoProviders()[0]?.id || VIDEO_PROVIDER_ID);
+  const providerConfig = getVideoProviderConfig(requestedProviderId);
+  if (!providerConfig) {
+    throw new Error("视频服务未配置或供应商不存在");
   }
-  const providerId = VIDEO_PROVIDER_ID;
-  const cap = getVideoModelCapability(providerId, cfg.model);
-  const durationSeconds = Number(input.seconds) || 4;
+  const providerId = providerConfig.id;
+  const modelId = String(input.modelId || providerConfig.defaultModel);
+  const cfg = providerId === VIDEO_PROVIDER_ID ? resolveVideoServiceConfig() : providerConfig;
+  if (!cfg) throw new Error("视频服务未配置(需在服务器设置 VIDEO_API_BASE_URL/KEY/MODEL)");
+  const cap = getVideoModelCapability(providerId, modelId);
+  const durationSeconds = Number(input.durationSeconds ?? input.seconds) || cap.defaultDuration || 4;
 
   // 素材:画布图或 agent URL → 唯一 first_frame 参考(能力声明上限内)
   let imageBytes: Buffer | null = null;
   let imageMime = "image/png";
-  const references: VideoReference[] = [];
+  const references: VideoReference[] = normalizeVideoReferences(input.references);
   if (input.artworkId) {
     const source = (await listArtworksByIds(email, [input.artworkId]))[0];
     if (!source) throw new Error("图片不存在或无权访问");
-    references.push({
+    references.unshift({
       id: input.artworkId,
       kind: "image",
       role: "first_frame",
@@ -89,7 +135,7 @@ export async function createVideoGeneration(
       url: source.image,
     });
   } else if (input.imageUrl) {
-    references.push({
+    references.unshift({
       id: input.imageUrl,
       kind: "image",
       role: "first_frame",
@@ -97,20 +143,38 @@ export async function createVideoGeneration(
     });
   }
 
-  const mode: "text" | "image" = references.length ? "image" : "text";
-  const size = input.size || "1280x720";
+  const hasVideoRef = references.some((ref) => ref.kind === "video");
+  const hasLastFrame = references.some((ref) => ref.role === "last_frame");
+  const hasReference = references.some((ref) => ref.role === "reference" || ref.role === "element");
+  const mode: "text" | "image" | "frames" | "reference" | "video_edit" = hasVideoRef
+    ? "video_edit"
+    : hasLastFrame
+      ? "frames"
+      : hasReference
+        ? "reference"
+        : references.length ? "image" : "text";
+  const size = input.resolution || input.size || "1280x720";
   const check = validateAgainstCapability(cap, {
     durationSeconds,
     size,
-    referenceImageCount: references.length,
+    referenceImageCount: references.filter((ref) => ref.kind === "image").length,
+    referenceVideoCount: references.filter((ref) => ref.kind === "video").length,
+    referenceAudioCount: references.filter((ref) => ref.kind === "audio").length,
+    hasFirstFrame: references.some((ref) => ref.role === "first_frame"),
+    hasLastFrame,
+    negativePrompt: input.negativePrompt,
+    generateAudio: input.generateAudio,
+    watermark: input.watermark,
+    providerOptions: input.providerOptions,
     mode,
   });
   if (!check.ok) throw new Error(check.error);
 
   // 读取参考图字节(multipart 上传用);失败在扣费前抛出
   let imageForUpload: { bytes: Buffer; mime: string; filename: string } | undefined;
-  if (references.length) {
-    const ref = references[0];
+  const uploadReference = references.find((ref) => ref.kind === "image" && (ref.artworkId || ref.url));
+  if (uploadReference) {
+    const ref = uploadReference;
     const { readCanvasImage } = await import("@/lib/canvas-image-input");
     const img = await readCanvasImage(ref.url || ref.artworkId || "", "http://localhost/");
     imageBytes = img.buffer;
@@ -134,13 +198,20 @@ export async function createVideoGeneration(
       source: input.source,
       sourceId: input.sourceId,
       providerId,
-      modelId: cfg.model,
+      modelId,
       prompt: input.prompt,
+      negativePrompt: input.negativePrompt,
       durationSeconds,
-      resolution: size,
+      aspectRatio: input.aspectRatio,
+      resolution: input.resolution || size,
+      width: input.width,
+      height: input.height,
+      generateAudio: input.generateAudio,
+      watermark: input.watermark,
       references: imageForUpload
-        ? [{ ...references[0], mimeType: imageMime }]
+        ? references.map((ref) => ref.id === uploadReference?.id ? { ...ref, mimeType: imageMime } : ref)
         : references,
+      providerOptions: input.providerOptions,
       idempotencyKey: taskId,
     };
     const adapter = getVideoProvider(providerId);
@@ -151,24 +222,54 @@ export async function createVideoGeneration(
       id: taskId,
       email,
       upstreamId: created.upstreamTaskId,
-      model: cfg.model,
+      model: modelId,
       prompt: input.prompt,
       size,
       seconds: input.seconds,
       cost,
       requestBody: JSON.stringify({
-        model: cfg.model,
+        model: modelId,
         prompt: input.prompt,
-        seconds: input.seconds,
+        seconds: String(durationSeconds),
         size,
+        providerId,
+        negativePrompt: input.negativePrompt || "",
+        aspectRatio: input.aspectRatio || "",
+        resolution: input.resolution || size,
+        width: input.width || null,
+        height: input.height || null,
+        generateAudio: Boolean(input.generateAudio),
+        watermark: Boolean(input.watermark),
+        references,
+        providerOptions: input.providerOptions || {},
       }),
       providerId,
       source: input.source,
       sourceId: input.sourceId,
-      parameters: { prompt: input.prompt, seconds: durationSeconds, size },
+      parameters: {
+        prompt: input.prompt,
+        seconds: durationSeconds,
+        durationSeconds,
+        size,
+        providerId,
+        modelId,
+        negativePrompt: input.negativePrompt || "",
+        aspectRatio: input.aspectRatio || "",
+        resolution: input.resolution || size,
+        width: input.width || null,
+        height: input.height || null,
+        generateAudio: Boolean(input.generateAudio),
+        watermark: Boolean(input.watermark),
+        references,
+        providerOptions: input.providerOptions || {},
+        providerSnapshot: publicProviderSnapshot(providerConfig),
+      },
       videoReferences: references,
       capabilitySnapshot: { ...cap },
       idempotencyKey: input.idempotencyKey || taskId,
+      channelId: providerId,
+      providerSnapshot: publicProviderSnapshot(providerConfig),
+      responseBody: JSON.stringify(created.rawResponse ?? {}).slice(0, 8000),
     });
     void task;
     return { taskId, cost };
@@ -188,9 +289,9 @@ async function createWithLocalImage(
   adapter: { create(input: VideoGenerationRequest): Promise<unknown> },
   request: VideoGenerationRequest,
   image: { bytes: Buffer; mime: string; filename: string } | undefined
-): Promise<{ upstreamTaskId: string }> {
+): Promise<VideoProviderCreateResult> {
   if (!image) {
-    return (await adapter.create(request)) as { upstreamTaskId: string };
+    return (await adapter.create(request)) as VideoProviderCreateResult;
   }
   // openai-videos 适配器自行 fetch url;本地 /media 地址无法被它直接读,
   // 所以把字节转成 data URL 交给适配器的 fetch 读取(readCanvasImage 兼容 data URL)。
@@ -203,7 +304,7 @@ async function createWithLocalImage(
     ),
   };
   void image;
-  return (await adapter.create(withDataUrl)) as { upstreamTaskId: string };
+  return (await adapter.create(withDataUrl)) as VideoProviderCreateResult;
 }
 
 export function videoCostPublic(): number {
@@ -242,6 +343,7 @@ export async function pollAndSettle(
   };
   try {
     const result = await adapter.poll(snapshot);
+    await recordVideoTaskPoll(email, id, result.progress, result.rawResponse, result.errorDetail);
     if (result.status === "completed") {
       const file = await adapter.fetchResult(snapshot, result);
       const artworkId = `vid-art-${id}`;
@@ -268,7 +370,16 @@ export async function pollAndSettle(
         height: 0,
         videoUrl: url,
       }], `vid-${Date.now()}`);
-      await completeVideoTask({ email, id, artworkId, videoUrl: url });
+      const resultStorageKey = url.startsWith("/media/") ? url.slice("/media/".length) : "";
+      // Legacy contract marker: completeVideoTask({ email, id, artworkId, videoUrl: url })
+      await completeVideoTask({
+        email,
+        id,
+        artworkId,
+        videoUrl: url,
+        resultStorageKey,
+        lastResponse: result.rawResponse,
+      });
       return getVideoTask(email, id);
     }
     if (result.status === "failed") {

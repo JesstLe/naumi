@@ -2,6 +2,22 @@
 
 ## 1. 目标与边界
 
+## 0. 2026-09-28 实现进度
+
+本轮已完成一条可运行的多供应商视频生产链路：
+
+- 已完成供应商运行时注册表：OpenAI Videos、Ark/Seedance、Kie/Kling、API Mart、Gemini/Veo、MiniMax、AutoDL、RunningHub；配置来自旧版 `VIDEO_API_*`、命名环境变量或 `VIDEO_PROVIDERS_JSON`，客户端目录不返回密钥。
+- 已完成统一直连适配器：创建、状态轮询、结果取回、瞬时错误重试、200MB 上限和多种响应任务 ID/下载地址解析；`scripts/verify-video-providers.ts` 用本地 HTTP fixture 验证 8 种协议。
+- 已完成请求扩展：供应商/模型、负面提示词、比例、分辨率、精确宽高、音频、水印、首尾帧、多图/视频/音频引用、受能力声明约束的 `providerOptions`；旧 `{seconds,size,imageUrl}` 仍兼容。
+- 已完成数据库结果历史：运行任务追加渠道/供应商快照、响应摘要、轮询响应、详细错误、结果存储 key；新增 `app_video_results`、结果列表/删除 API，完成结算与历史结果同事务写入。
+- 已完成独立 worker：`/api/video/worker/tick` + `scripts/video-worker.mjs`，Docker Compose 增加 `video-worker` 服务；`NAUMI_VIDEO_WORKER=0` 时关闭应用内定时器，数据库租约继续保证多实例幂等。
+- 已完成素材上传 API `/api/video/references`，支持图片/视频/音频、大小/MIME 校验和本地/R2 存储。
+- 已完成 `/video` 工作台供应商/模型切换、首尾帧、多模态素材、比例/分辨率、负面提示词、音频、水印以及完整请求快照重试。
+- 已完成 Agent 视频域工具：`list_video_models`、`plan_video_shot`、`plan_video_storyboard`、`get_video_task`、`extend_video`、`edit_video`，并将 `generate_video` 迁移到统一请求入口。
+- 已完成服务器端视频工具 `/api/video/extract`：检测到 FFmpeg 时可从视频抽取指定时间帧 PNG 或音轨 MP3，并通过 Naumi 存储返回可继续连接到画布的素材 URL。
+
+当前仍需单独验收的边界：真实供应商逐家凭证测试、画布将抽取结果自动编排成新节点的 UI、浏览器自动化交互回归，以及视频节点的时间轴增强。fixture/build 通过不等于真实供应商质量验收。
+
 ### 1.1 总目标
 
 将 `E:\Workspace\infinite-canvas-main` 的生视频能力按能力域完整吸收进 Naumi，形成与现有图片、画布、Agent、账户、积分和媒体存储统一的原生子功能。

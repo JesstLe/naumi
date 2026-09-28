@@ -1,4 +1,5 @@
 import type { VideoTaskSource } from "@/lib/video/types";
+import { configuredVideoProviders } from "@/lib/video/providers/config";
 
 // ---------------------------------------------------------------------------
 // 模型能力声明(§4.3):UI 表单、服务端校验、Agent 参数建议共用同一份声明。
@@ -19,6 +20,12 @@ export type VideoModelCapability = {
   supportsFirstFrame: boolean;
   supportsLastFrame: boolean;
   supportsNegativePrompt: boolean;
+  supportsGenerateAudio?: boolean;
+  supportsWatermark?: boolean;
+  supportsMultiShot?: boolean;
+  maxReferenceVideos?: number;
+  maxReferenceAudios?: number;
+  providerOptionKeys?: string[];
   defaultDuration?: number;
   note?: string;
 };
@@ -104,18 +111,25 @@ const CATALOG: VideoModelCapability[] = [
 
 /** 兜底声明:目录未收录的模型按通用能力对待(4-12 秒、单图参考)。 */
 export function fallbackCapability(providerId: string, modelId: string): VideoModelCapability {
+  const rich = providerId !== "openai-videos";
   return {
     providerId,
     modelId,
     label: modelId,
-    modes: ["text", "image"],
+    modes: rich ? ["text", "image", "frames", "reference", "video_edit"] : ["text", "image"],
     durations: [4, 8, 12],
     aspectRatios: ["16:9", "9:16", "1:1"],
     resolutions: LANDSCAPE_PORTRAIT,
-    maxReferenceImages: 1,
+    maxReferenceImages: rich ? 9 : 1,
+    maxReferenceVideos: rich ? 3 : 0,
+    maxReferenceAudios: rich ? 3 : 0,
     supportsFirstFrame: true,
-    supportsLastFrame: false,
-    supportsNegativePrompt: false,
+    supportsLastFrame: rich,
+    supportsNegativePrompt: rich,
+    supportsGenerateAudio: rich,
+    supportsWatermark: rich,
+    supportsMultiShot: rich,
+    providerOptionKeys: ["cameraFixed", "seed", "style", "mode", "multiShot", "workflowId", "nodeOverrides"],
   };
 }
 
@@ -136,7 +150,15 @@ export function validateAgainstCapability(
     durationSeconds: number;
     size?: string;
     referenceImageCount: number;
-    mode: "text" | "image";
+    referenceVideoCount?: number;
+    referenceAudioCount?: number;
+    hasFirstFrame?: boolean;
+    hasLastFrame?: boolean;
+    negativePrompt?: string;
+    generateAudio?: boolean;
+    watermark?: boolean;
+    providerOptions?: Record<string, unknown>;
+    mode: "text" | "image" | "frames" | "reference" | "video_edit";
   }
 ): { ok: true } | { ok: false; error: string } {
   if (!cap.durations.includes(input.durationSeconds)) {
@@ -156,6 +178,33 @@ export function validateAgainstCapability(
       };
     }
   }
+  if (!cap.modes.includes(input.mode)) {
+    return { ok: false, error: `模型 ${cap.modelId} 不支持 ${input.mode} 模式` };
+  }
+  if (input.hasLastFrame && !cap.supportsLastFrame) {
+    return { ok: false, error: `模型 ${cap.modelId} 不支持尾帧` };
+  }
+  if (input.hasFirstFrame && !cap.supportsFirstFrame) {
+    return { ok: false, error: `模型 ${cap.modelId} 不支持首帧` };
+  }
+  if ((input.referenceVideoCount || 0) > (cap.maxReferenceVideos || 0)) {
+    return { ok: false, error: `模型 ${cap.modelId} 最多 ${cap.maxReferenceVideos || 0} 个视频参考` };
+  }
+  if ((input.referenceAudioCount || 0) > (cap.maxReferenceAudios || 0)) {
+    return { ok: false, error: `模型 ${cap.modelId} 最多 ${cap.maxReferenceAudios || 0} 个音频参考` };
+  }
+  if (input.negativePrompt && !cap.supportsNegativePrompt) {
+    return { ok: false, error: `模型 ${cap.modelId} 不支持负面提示词` };
+  }
+  if (input.generateAudio && !cap.supportsGenerateAudio) {
+    return { ok: false, error: `模型 ${cap.modelId} 不支持同步生成音频` };
+  }
+  if (input.watermark && !cap.supportsWatermark) {
+    return { ok: false, error: `模型 ${cap.modelId} 不支持水印参数` };
+  }
+  const allowedOptions = new Set(cap.providerOptionKeys || []);
+  const unknownOption = Object.keys(input.providerOptions || {}).find((key) => !allowedOptions.has(key));
+  if (unknownOption) return { ok: false, error: `模型 ${cap.modelId} 不支持参数 ${unknownOption}` };
   if (input.size && cap.resolutions.length && !cap.resolutions.includes(input.size)) {
     return {
       ok: false,
@@ -178,6 +227,24 @@ export function videoCatalog(defaultModelId: string): VideoCatalogEntry[] {
     seen.set(defaultModelId, { ...fb, isDefault: true });
   }
   return Array.from(seen.values());
+}
+
+/** 根据运行时供应商配置补齐目录；密钥只在服务端读取，返回值不含敏感字段。 */
+export function configuredVideoCatalog(): VideoCatalogEntry[] {
+  const entries: VideoCatalogEntry[] = [];
+  for (const provider of configuredVideoProviders()) {
+    const models = videoCatalog(provider.defaultModel)
+      .filter((item) => item.providerId === provider.id);
+    if (models.length) {
+      entries.push(...models.map((item) => ({ ...item, isDefault: item.modelId === provider.defaultModel })));
+      continue;
+    }
+    for (const modelId of provider.models) {
+      const fallback = fallbackCapability(provider.id, modelId);
+      entries.push({ ...fallback, label: `${provider.label} · ${modelId}`, isDefault: modelId === provider.defaultModel });
+    }
+  }
+  return entries;
 }
 
 export type { VideoTaskSource };

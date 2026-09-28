@@ -15,27 +15,29 @@ const BATCH = 3;
 let started = false;
 let running = false;
 
-async function scanOnce(): Promise<void> {
-  if (!dbEnabled || running) return;
+export async function scanVideoWorkerOnce(): Promise<number> {
+  if (!dbEnabled || running) return 0;
   running = true;
   try {
-    await recoverDueVideoTasks(BATCH);
+    return await recoverDueVideoTasks(BATCH);
   } catch {
     /* 无库/网络抖动:下一轮重试 */
+    return 0;
   } finally {
     running = false;
   }
 }
 
 export function startVideoWorker(): void {
+  if (process.env.NAUMI_VIDEO_WORKER === "0") return;
   if (started) return;
   started = true;
   // 首次延迟 15s,避开冷启动高峰;之后每 20s 扫一批
   const timer = setInterval(() => {
-    void scanOnce();
+    void scanVideoWorkerOnce();
   }, SCAN_INTERVAL_MS);
   timer.unref?.();
   setTimeout(() => {
-    void scanOnce();
+    void scanVideoWorkerOnce();
   }, 15_000).unref?.();
 }

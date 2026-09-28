@@ -73,6 +73,14 @@ services:
       NAUMI_PUBLIC_COMMERCE: ${NAUMI_PUBLIC_COMMERCE:-0}
       # Agent 工具内部回环调用地址(容器内 app 自身,端口是容器端口非宿主映射)
       INTERNAL_APP_ORIGIN: http://127.0.0.1:3000
+      # 外置视频 worker 通过内部鉴权端点驱动恢复，app 内不再启动定时器。
+      NAUMI_VIDEO_WORKER: "0"
+      VIDEO_WORKER_SECRET: ${VIDEO_WORKER_SECRET:-change-video-worker-secret}
+      VIDEO_API_BASE_URL: ${VIDEO_API_BASE_URL:-}
+      VIDEO_API_KEY: ${VIDEO_API_KEY:-}
+      VIDEO_API_MODEL: ${VIDEO_API_MODEL:-}
+      VIDEO_API_MODELS: ${VIDEO_API_MODELS:-}
+      VIDEO_PROVIDERS_JSON: ${VIDEO_PROVIDERS_JSON:-}
       # Optional: Pro license (or enter it in the first-run wizard instead)
       # NAUMI_EDITION: pro
       # PRO_LICENSE_KEY: NOVA-XXXX-XXXX-XXXX-XXXX
@@ -84,6 +92,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  video-worker:
+    image: ghcr.io/jesstle/naumi:latest
+    restart: unless-stopped
+    command: ["node", "scripts/video-worker.mjs"]
+    environment:
+      NAUMI_APP_ORIGIN: http://app:3000
+      VIDEO_WORKER_SECRET: ${VIDEO_WORKER_SECRET:-change-video-worker-secret}
+      VIDEO_WORKER_INTERVAL_MS: ${VIDEO_WORKER_INTERVAL_MS:-15000}
+    depends_on:
+      app:
+        condition: service_started
 
 volumes:
   pgdata:

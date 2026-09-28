@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "verify:video-providers": "tsx --conditions react-server scripts/verify-video-providers.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",
@@ -29,6 +30,7 @@
     "qrcode": "^1.5.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "server-only": "^0.0.1",
     "sharp": "^0.34.5",
     "tailwind-merge": "2.4.0",
     "zod": "^4.6.5"
@@ -44,6 +46,7 @@
     "eslint-config-next": "~14.2",
     "postcss": "8.4.40",
     "tailwindcss": "3.4.7",
+    "tsx": "^4.23.15",
     "typescript": "5.5.4"
   }
 }

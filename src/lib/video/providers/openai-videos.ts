@@ -62,7 +62,7 @@ export const openAiVideosAdapter: VideoProviderAdapter = {
       if (!imgRes.ok) throw new Error("读取参考图失败");
       const bytes = new Uint8Array(await imgRes.arrayBuffer());
       const form = new FormData();
-      form.append("model", cfg.model);
+      form.append("model", input.modelId || cfg.model);
       form.append("prompt", input.prompt);
       form.append("seconds", seconds);
       form.append("size", size);
@@ -77,7 +77,16 @@ export const openAiVideosAdapter: VideoProviderAdapter = {
       res = await fetch(`${cfg.baseUrl}/v1/videos`, {
         method: "POST",
         headers: { ...authHeaders(cfg.apiKey), "content-type": "application/json" },
-        body: JSON.stringify({ model: cfg.model, prompt: input.prompt, seconds, size }),
+        body: JSON.stringify({
+          model: input.modelId || cfg.model,
+          prompt: input.prompt,
+          seconds,
+          size,
+          ...(input.negativePrompt ? { negative_prompt: input.negativePrompt } : {}),
+          ...(input.generateAudio !== undefined ? { generate_audio: input.generateAudio } : {}),
+          ...(input.watermark !== undefined ? { watermark: input.watermark } : {}),
+          ...(input.providerOptions || {}),
+        }),
         signal: AbortSignal.timeout(60_000),
       });
     }
