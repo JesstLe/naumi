@@ -286,6 +286,32 @@ async function ensureSchema(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS app_agent_email_idx
           ON app_agent_sessions (email, updated_at DESC);
+        -- ComfyUI 工作流(BYOC:算力在用户自备端点,站内不扣积分)。
+        -- 端点 = base URL + 可选 Bearer 密钥(本机/NAS/租的 GPU);
+        -- 工作流 = API 格式 JSON + 导入时解析出的输入清单(inputs)+依赖节点类(required)。
+        CREATE TABLE IF NOT EXISTS app_comfyui_endpoints (
+          id         text PRIMARY KEY,
+          email      text NOT NULL REFERENCES app_users(email) ON DELETE CASCADE,
+          name       text NOT NULL DEFAULT 'ComfyUI',
+          base_url   text NOT NULL DEFAULT '',
+          api_key    text NOT NULL DEFAULT '',
+          is_active  boolean NOT NULL DEFAULT false,
+          updated_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS idx_comfyui_endpoints_email
+          ON app_comfyui_endpoints (email);
+        CREATE TABLE IF NOT EXISTS app_comfyui_workflows (
+          id         text PRIMARY KEY,
+          email      text NOT NULL REFERENCES app_users(email) ON DELETE CASCADE,
+          name       text NOT NULL DEFAULT '未命名工作流',
+          api_json   jsonb NOT NULL,
+          inputs     jsonb NOT NULL DEFAULT '[]'::jsonb,
+          required   jsonb NOT NULL DEFAULT '[]'::jsonb,
+          note       text NOT NULL DEFAULT '',
+          updated_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS idx_comfyui_workflows_email
+          ON app_comfyui_workflows (email, updated_at DESC);
         -- 积分批次:每次充值/赠送/迁移 = 一个批次,带自己的到期日(2 年 / 新人 30 天)。
         -- 余额 = 所有「未到期且 remaining>0」批次的 remaining 之和;消耗按「先到期先扣」FIFO。
         -- remaining 到期后不清零(留作记录),靠 expires_at>now() 过滤;expired 仅用于「只记一次过期流水」。
@@ -4046,4 +4072,194 @@ export async function finishCompetitorGeneration(email: string, item: Competitor
     return competitorRow(rows[0]);
   } catch(e) { await client.query("ROLLBACK"); throw e; }
   finally { client.release(); }
+}
+
+// ── ComfyUI 端点与工作流(BYOC:用户自备算力端点) ─────────────────────────────
+
+export type ComfyEndpointRow = {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  isActive: boolean;
+};
+
+export async function listComfyEndpoints(email: string): Promise<ComfyEndpointRow[]> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT id, name, base_url, api_key, is_active
+       FROM app_comfyui_endpoints
+      WHERE email = $1
+      ORDER BY is_active DESC, updated_at DESC`,
+    [email.toLowerCase()]
+  );
+  return rows.map((r: Record<string, unknown>) => ({
+    id: String(r.id),
+    name: String(r.name),
+    baseUrl: String(r.base_url),
+    apiKey: String(r.api_key),
+    isActive: Boolean(r.is_active),
+  }));
+}
+
+export async function getActiveComfyEndpoint(email: string): Promise<ComfyEndpointRow | null> {
+  const list = await listComfyEndpoints(email);
+  return list.find((e) => e.isActive) ?? null;
+}
+
+/** 保存端点;activate=true 时取消其他端点的激活态(一人同时仅一个活动端点)。 */
+export async function saveComfyEndpoint(
+  email: string,
+  input: { id?: string; name?: string; baseUrl: string; apiKey?: string; activate?: boolean }
+): Promise<ComfyEndpointRow[]> {
+  await ensureSchema();
+  const lower = email.toLowerCase();
+  const id = input.id?.trim() || crypto.randomUUID();
+  const existing = input.id
+    ? (await listComfyEndpoints(email)).find((e) => e.id === input.id)
+    : null;
+  if (input.id && !existing) throw new Error("端点不存在");
+  const { rows: countRows } = await getPool().query(
+    `SELECT count(*)::int AS n FROM app_comfyui_endpoints WHERE email = $1`,
+    [lower]
+  );
+  if (!existing && Number(countRows[0]?.n ?? 0) >= 4) {
+    throw new Error("最多保存 4 个端点，请先删除不用的");
+  }
+  const apiKey = input.apiKey?.trim() ?? existing?.apiKey ?? "";
+  await getPool().query(
+    `INSERT INTO app_comfyui_endpoints (id, email, name, base_url, api_key, is_active, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,now())
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name,
+       base_url = EXCLUDED.base_url,
+       api_key = EXCLUDED.api_key,
+       is_active = EXCLUDED.is_active,
+       updated_at = now()`,
+    [
+      id,
+      lower,
+      (input.name?.trim() || existing?.name || "ComfyUI").slice(0, 40),
+      input.baseUrl.trim().slice(0, 300),
+      apiKey.slice(0, 300),
+      Boolean(input.activate ?? existing?.isActive ?? false),
+    ]
+  );
+  if (input.activate) {
+    await getPool().query(
+      `UPDATE app_comfyui_endpoints SET is_active = false
+        WHERE email = $1 AND id <> $2`,
+      [lower, id]
+    );
+  }
+  return listComfyEndpoints(email);
+}
+
+export async function deleteComfyEndpoint(email: string, id: string): Promise<ComfyEndpointRow[]> {
+  await ensureSchema();
+  await getPool().query(
+    `DELETE FROM app_comfyui_endpoints WHERE email = $1 AND id = $2`,
+    [email.toLowerCase(), id]
+  );
+  return listComfyEndpoints(email);
+}
+
+export type ComfyWorkflowRow = {
+  id: string;
+  name: string;
+  inputs: unknown;
+  required: unknown;
+  note: string;
+  updatedAt: string;
+};
+
+export async function listComfyWorkflows(email: string): Promise<ComfyWorkflowRow[]> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT id, name, inputs, required, note, updated_at
+       FROM app_comfyui_workflows
+      WHERE email = $1
+      ORDER BY updated_at DESC`,
+    [email.toLowerCase()]
+  );
+  return rows.map((r: Record<string, unknown>) => ({
+    id: String(r.id),
+    name: String(r.name),
+    inputs: r.inputs,
+    required: r.required,
+    note: String(r.note ?? ""),
+    updatedAt: new Date(r.updated_at as string).toISOString(),
+  }));
+}
+
+export async function getComfyWorkflow(
+  email: string,
+  id: string
+): Promise<(ComfyWorkflowRow & { apiJson: Record<string, unknown> }) | null> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT id, name, api_json, inputs, required, note, updated_at
+       FROM app_comfyui_workflows
+      WHERE email = $1 AND id = $2`,
+    [email.toLowerCase(), id]
+  );
+  const r = rows[0] as Record<string, unknown> | undefined;
+  if (!r) return null;
+  return {
+    id: String(r.id),
+    name: String(r.name),
+    apiJson: (r.api_json ?? {}) as Record<string, unknown>,
+    inputs: r.inputs,
+    required: r.required,
+    note: String(r.note ?? ""),
+    updatedAt: new Date(r.updated_at as string).toISOString(),
+  };
+}
+
+export async function saveComfyWorkflow(
+  email: string,
+  input: { id?: string; name: string; apiJson: unknown; inputs: unknown; required: unknown; note?: string }
+): Promise<ComfyWorkflowRow[]> {
+  await ensureSchema();
+  const lower = email.toLowerCase();
+  const id = input.id?.trim() || crypto.randomUUID();
+  const existing = input.id ? await getComfyWorkflow(email, input.id) : null;
+  if (input.id && !existing) throw new Error("工作流不存在");
+  const { rows: countRows } = await getPool().query(
+    `SELECT count(*)::int AS n FROM app_comfyui_workflows WHERE email = $1`,
+    [lower]
+  );
+  if (!existing && Number(countRows[0]?.n ?? 0) >= 30) {
+    throw new Error("最多保存 30 个工作流，请先删除不用的");
+  }
+  await getPool().query(
+    `INSERT INTO app_comfyui_workflows (id, email, name, api_json, inputs, required, note, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,now())
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name,
+       api_json = EXCLUDED.api_json,
+       inputs = EXCLUDED.inputs,
+       required = EXCLUDED.required,
+       note = EXCLUDED.note,
+       updated_at = now()`,
+    [
+      id,
+      lower,
+      input.name.trim().slice(0, 60) || "未命名工作流",
+      JSON.stringify(input.apiJson ?? {}),
+      JSON.stringify(input.inputs ?? []),
+      JSON.stringify(input.required ?? []),
+      (input.note ?? "").slice(0, 500),
+    ]
+  );
+  return listComfyWorkflows(email);
+}
+
+export async function deleteComfyWorkflow(email: string, id: string): Promise<ComfyWorkflowRow[]> {
+  await ensureSchema();
+  await getPool().query(
+    `DELETE FROM app_comfyui_workflows WHERE email = $1 AND id = $2`,
+    [email.toLowerCase(), id]
+  );
+  return listComfyWorkflows(email);
 }

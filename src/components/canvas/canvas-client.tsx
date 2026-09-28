@@ -73,6 +73,7 @@ import {
   PenLine,
   Play,
   MessageSquareText,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
@@ -84,6 +85,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { cdnUrl } from "@/lib/cdn";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { AnnotateEditorModal } from "@/components/canvas/annotate-editor";
+import {
+  CanvasComfyDialog,
+  type ComfyRunPayload,
+  type ComfyRunResult,
+} from "@/components/canvas/canvas-comfy-dialog";
 import { BRAND, BRAND_CANVAS_LOGO } from "@/lib/brand";
 import { TemplatesClient } from "@/components/templates/templates-client";
 import { CreditPacks } from "@/components/credits/credit-packs";
@@ -1565,6 +1571,8 @@ export function CanvasClient() {
   // 扩图/标注编辑:共用占位落地管线 landEditResult;单飞守卫防连点重复扣积分
   const editTaskBusyRef = useRef(false);
   const [expandOpen, setExpandOpen] = useState(false);
+  // ComfyUI 工作流面板(BYOC:算力在用户端点,不扣积分)
+  const [comfyOpen, setComfyOpen] = useState(false);
   const [expandRatio, setExpandRatio] = useState<string | null>(null);
   const [expandAnchor, setExpandAnchor] = useState("center");
   const [annotateArtwork, setAnnotateArtwork] = useState<Artwork | null>(null);
@@ -3674,6 +3682,83 @@ export function CanvasClient() {
         }),
       "扩图"
     );
+  }
+
+  /**
+   * ComfyUI 工作流执行(BYOC,不扣积分):占位节点 + 假进度 → /api/comfyui/run →
+   * 图片产物逐张落到源图右侧(血缘 parentId)→ mergeWorks → 撤销。
+   * 与 landEditResult 分开:产物是复数(图/视频),视频由面板直出预览不挂树。
+   */
+  async function runComfyWorkflow(
+    source: Artwork,
+    payload: ComfyRunPayload
+  ): Promise<ComfyRunResult> {
+    if (readOnly || !user) throw new Error("只读画布不能执行工作流");
+    if (editTaskBusyRef.current) throw new Error("上一个编辑任务还在进行，请稍候");
+    const sourceNode = rfRef.current?.getNode(source.id);
+    const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
+    const baseX = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
+    const baseY = sourceNode?.position.y ?? source.canvasY ?? 0;
+    const pendingId = `pend-comfy-${Date.now()}`;
+    setPendNodes((current) => [
+      ...current,
+      {
+        id: pendingId,
+        x: baseX,
+        y: baseY,
+        parentId: source.id,
+        linked: true,
+        label: "工作流结果",
+        uploading: false,
+        progress: 8,
+        inputs: [source.id],
+        generating: true,
+      },
+    ]);
+    editTaskBusyRef.current = true;
+    const timer = window.setInterval(() => {
+      setPendNodes((items) =>
+        items.map((item) =>
+          item.id === pendingId
+            ? { ...item, progress: Math.min(92, item.progress + Math.max(1, Math.round((96 - item.progress) / 9))) }
+            : item
+        )
+      );
+    }, 1200);
+    try {
+      const response = await privateFetch("/api/comfyui/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ artworkId: source.id, ...payload }),
+      });
+      const data = await readJsonSafe(response);
+      if (!response.ok) throw new Error(data?.error || "工作流执行失败");
+      const images = (data.images ?? []) as { id: string }[];
+      for (let i = 0; i < images.length; i++) {
+        const x = Math.round(baseX + i * 40);
+        const y = Math.round(baseY + i * 40);
+        await privateFetch("/api/artworks/position", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: images[i].id, x, y }),
+        });
+        const fresh = await mergeWorks([images[i].id]);
+        pushAddUndo(images[i].id, fresh);
+        if (i === 0) setSelectedId(images[i].id);
+      }
+      flashTip(
+        images.length
+          ? `工作流完成，${images.length} 张结果已生成在原图右侧`
+          : "工作流完成，视频在面板中预览"
+      );
+      return { images: data.images, videos: data.videos };
+    } catch (error) {
+      throw error instanceof Error ? error : new Error("工作流执行失败");
+    } finally {
+      window.clearInterval(timer);
+      setPendNodes((items) => items.filter((item) => item.id !== pendingId));
+      editTaskBusyRef.current = false;
+    }
   }
 
   async function submitAnnotations(formData: FormData) {
@@ -8727,6 +8812,16 @@ export function CanvasClient() {
               >
                 <PenLine className="h-4 w-4" /> 标注
               </button>
+              {/* ComfyUI 工作流(BYOC):跑用户自备端点上的工作流,产物挂回画布 */}
+              <button
+                type="button"
+                title="ComfyUI 工作流"
+                disabled={!selected || readOnly}
+                onClick={() => setComfyOpen(true)}
+                className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
+              >
+                <Workflow className="h-4 w-4" /> 工作流
+              </button>
               {/* 画布助手:围绕选中节点+上游链对话,可一键生图回画布 */}
               <button
                 type="button"
@@ -9015,6 +9110,17 @@ export function CanvasClient() {
               onSubmitted={submitAnnotations}
             />
           )}
+
+          {/* ComfyUI 工作流面板(BYOC):端点/导入/运行,图片产物按血缘挂树 */}
+          <CanvasComfyDialog
+            open={comfyOpen}
+            onClose={() => setComfyOpen(false)}
+            source={selected}
+            onRun={(payload) => {
+              if (!selected) return Promise.reject(new Error("请先选择一张图"));
+              return runComfyWorkflow(selected, payload);
+            }}
+          />
 
           {ocrArtworkId && (
             <aside
