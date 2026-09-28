@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 
 import {
   createVideoTask,
+  addReservation,
   dbEnabled,
   getUser,
   listArtworksByIds,
   reserveCredits,
+  settleReservation,
 } from "@/lib/db";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { readCanvasImage } from "@/lib/canvas-image-input";
@@ -58,6 +60,7 @@ export async function POST(request: Request) {
 
   const cost = videoCost();
   let reserved = false;
+  const taskId = `vid-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
   try {
     // 图生视频:带上选中画布图作为参考帧(工作流与文生视频可不带)
     let image: { bytes: Buffer; mime: string; filename: string } | undefined;
@@ -71,10 +74,10 @@ export async function POST(request: Request) {
     if (dbEnabled) {
       reserved = await reserveCredits(email, cost);
       if (!reserved) return NextResponse.json({ error: `积分不足，本条视频需要 ${cost} 积分` }, { status: 402 });
+      await addReservation(taskId, email, cost);
     }
 
     const created = await createUpstreamTask(cfg, { prompt, seconds, size, image });
-    const taskId = `vid-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const task = await createVideoTask({
       id: taskId,
       email,
@@ -92,6 +95,7 @@ export async function POST(request: Request) {
     if (reserved && dbEnabled) {
       const { refundCredits } = await import("@/lib/db");
       await refundCredits(email, cost).catch(() => {});
+      await settleReservation(taskId).catch(() => {});
     }
     return NextResponse.json(
       { error: safeError(error, "视频任务创建失败") },

@@ -231,6 +231,32 @@ async function ensureSchema(): Promise<void> {
           cost       integer NOT NULL,
           created_at timestamptz NOT NULL DEFAULT now()
         );
+        -- 视频生成任务:上游任务、本地落盘和积分结算状态。
+        CREATE TABLE IF NOT EXISTS app_video_tasks (
+          id               text PRIMARY KEY,
+          email            text NOT NULL,
+          upstream_id      text NOT NULL,
+          model            text NOT NULL DEFAULT '',
+          prompt           text NOT NULL DEFAULT '',
+          size             text NOT NULL DEFAULT '',
+          seconds          text NOT NULL DEFAULT '',
+          status           text NOT NULL DEFAULT 'processing',
+          cost             integer NOT NULL DEFAULT 0,
+          request_body     text NOT NULL DEFAULT '',
+          progress         integer NOT NULL DEFAULT 0,
+          artwork_id       text NOT NULL DEFAULT '',
+          video_url        text NOT NULL DEFAULT '',
+          error            text NOT NULL DEFAULT '',
+          poll_lock_until  timestamptz,
+          credits_refunded boolean NOT NULL DEFAULT false,
+          last_polled_at   timestamptz,
+          created_at       timestamptz NOT NULL DEFAULT now(),
+          updated_at       timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS app_video_tasks_email_idx
+          ON app_video_tasks (email, created_at DESC);
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS poll_lock_until timestamptz;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS credits_refunded boolean NOT NULL DEFAULT false;
         CREATE TABLE IF NOT EXISTS app_orders (
           id           text PRIMARY KEY,
           email        text NOT NULL,
@@ -4370,6 +4396,7 @@ export type VideoTaskRow = {
   prompt: string;
   status: "processing" | "completed" | "failed";
   progress: number;
+  cost: number;
   artworkId: string;
   videoUrl: string;
   error: string;
@@ -4410,6 +4437,7 @@ export async function createVideoTask(input: {
     prompt: input.prompt,
     status: "processing",
     progress: 0,
+    cost: input.cost,
     artworkId: "",
     videoUrl: "",
     error: "",
@@ -4422,7 +4450,7 @@ export async function getVideoTask(
 ): Promise<VideoTaskRow | null> {
   await ensureSchema();
   const { rows } = await getPool().query(
-    `SELECT id, upstream_id, model, prompt, status, progress, artwork_id, video_url, error
+    `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error
        FROM app_video_tasks
       WHERE email = $1 AND id = $2`,
     [email.toLowerCase(), id]
@@ -4436,10 +4464,150 @@ export async function getVideoTask(
     prompt: String(r.prompt ?? ""),
     status: (r.status as VideoTaskRow["status"]) ?? "processing",
     progress: Number(r.progress ?? 0),
+    cost: Number(r.cost ?? 0),
     artworkId: String(r.artwork_id ?? ""),
     videoUrl: String(r.video_url ?? ""),
     error: String(r.error ?? ""),
   };
+}
+
+/**
+ * 领取一次视频上游轮询/落盘执行权。短锁避免浏览器并发轮询重复下载视频、
+ * 重复落作品节点或重复结算积分；执行进程异常后锁会自动过期。
+ */
+export async function claimVideoTaskPoll(
+  email: string,
+  id: string,
+  leaseSeconds = 210
+): Promise<boolean> {
+  await ensureSchema();
+  const { rowCount } = await getPool().query(
+    `UPDATE app_video_tasks
+        SET poll_lock_until = now() + ($3 || ' seconds')::interval,
+            last_polled_at = now(),
+            updated_at = now()
+      WHERE email = $1 AND id = $2 AND status = 'processing'
+        AND (poll_lock_until IS NULL OR poll_lock_until < now())`,
+    [email.toLowerCase(), id, Math.max(15, Math.trunc(leaseSeconds))]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+export async function releaseVideoTaskPoll(email: string, id: string): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `UPDATE app_video_tasks SET poll_lock_until = NULL, updated_at = now()
+      WHERE email = $1 AND id = $2`,
+    [email.toLowerCase(), id]
+  );
+}
+
+async function creditMeteringEnabled(): Promise<boolean> {
+  const { supabaseEnabled } = await import("@/lib/auth-mode");
+  const { multiUserEnabled, creditsMeteringOn } = await import("@/lib/native-auth");
+  return supabaseEnabled || (await multiUserEnabled()) || (await creditsMeteringOn());
+}
+
+/** 成功完成视频任务并在同一事务里只结算一次积分。 */
+export async function completeVideoTask(input: {
+  email: string;
+  id: string;
+  artworkId: string;
+  videoUrl: string;
+}): Promise<void> {
+  await ensureSchema();
+  const email = input.email.toLowerCase();
+  const meterOn = await creditMeteringEnabled();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const locked = await client.query<{ status: string; cost: number }>(
+      `SELECT status, cost FROM app_video_tasks
+        WHERE email = $1 AND id = $2 FOR UPDATE`,
+      [email, input.id]
+    );
+    const task = locked.rows[0];
+    if (!task) throw new Error("视频任务不存在");
+    if (task.status !== "completed" && meterOn && Number(task.cost) > 0) {
+      const ledgerId = `led-video-${input.id}`;
+      const seen = await client.query(`SELECT 1 FROM app_ledger WHERE id = $1`, [ledgerId]);
+      if (!(seen.rowCount ?? 0)) {
+        await deductPrincipalFIFO(client, email, Number(task.cost));
+        await client.query(
+          `UPDATE app_users
+              SET credits_used = GREATEST(credits_used - $2, 0)
+            WHERE email = $1`,
+          [email, Number(task.cost)]
+        );
+        await client.query(
+          `INSERT INTO app_ledger (id, email, delta, reason, kind)
+           VALUES ($1,$2,$3,'视频生成','consume')`,
+          [ledgerId, email, -Number(task.cost)]
+        );
+      }
+    }
+    await client.query(
+      `UPDATE app_video_tasks SET
+         status = 'completed', progress = 100, artwork_id = $3, video_url = $4,
+         error = '', poll_lock_until = NULL, updated_at = now()
+       WHERE email = $1 AND id = $2`,
+      [email, input.id, input.artworkId, input.videoUrl]
+    );
+    await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+  if (meterOn) await refreshBalance(email).catch(() => {});
+}
+
+/** 失败任务只退一次预扣积分，并原子落失败状态。 */
+export async function failVideoTask(input: {
+  email: string;
+  id: string;
+  error: string;
+}): Promise<void> {
+  await ensureSchema();
+  const email = input.email.toLowerCase();
+  const meterOn = await creditMeteringEnabled();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const locked = await client.query<{ status: string; cost: number; credits_refunded: boolean }>(
+      `SELECT status, cost, credits_refunded FROM app_video_tasks
+        WHERE email = $1 AND id = $2 FOR UPDATE`,
+      [email, input.id]
+    );
+    const task = locked.rows[0];
+    if (!task) throw new Error("视频任务不存在");
+    if (task.status !== "completed" && !task.credits_refunded && meterOn && Number(task.cost) > 0) {
+      await client.query(
+        `UPDATE app_users SET credits_used = GREATEST(credits_used - $2, 0)
+          WHERE email = $1`,
+        [email, Number(task.cost)]
+      );
+    }
+    if (task.status !== "completed") {
+      await client.query(
+        `UPDATE app_video_tasks SET
+           status = 'failed', error = $3, credits_refunded = true,
+           poll_lock_until = NULL, updated_at = now()
+         WHERE email = $1 AND id = $2`,
+        [email, input.id, input.error.slice(0, 1000)]
+      );
+    }
+    await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+  if (meterOn) await refreshBalance(email).catch(() => {});
 }
 
 /** 轮询后回写状态;completed 时同时记录产物节点与地址。 */
