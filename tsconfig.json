@@ -18,5 +18,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "novaryns", "data", "output"]
+  "exclude": ["node_modules", "novaryns", "data", "output", "audit-artifacts"]
 }

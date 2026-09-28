@@ -25,6 +25,7 @@ const TOOL_TIMEOUT_MS = {
   continue_aplus_generation: 600_000,
   generate_packaging_3d: 360_000,
   comfy_run: 280_000,
+  generate_video: 300_000,
   read_only: 15_000,
 } as const;
 
@@ -46,6 +47,10 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 - list_comfy_workflows:只读。列出用户已导入的 ComfyUI 工作流(id/名称/输入概况)。要跑工作流前先调它拿 workflow_id。
 - run_comfy_workflow:在用户自己的 ComfyUI 端点上执行工作流。参数 workflow_id(必填)、prompt(正向提示词,可选)、image_url(用户给的[商品图] URL,工作流有图槽时传)、seed/width/height/length(可选)。
   注意:算力在用户端点,不消耗积分;执行可能数分钟(视频更久);产物图片用 Markdown 展示,视频给下载链接。用户没配端点或没导入工作流时,引导去画布选中图片点「工作流」配置,不要反复重试。
+
+## 可用工具(视频生成 · 站内 OpenAI videos 协议,按次计费)
+- generate_video:文生视频/图生视频。参数 prompt(必填,描述画面与运镜)、image_url(可选,用户消息里的[商品图]作首帧参考)、seconds(4/8/12,默认 4)、size(横屏 1280x720/竖屏 720x1280)。
+  注意:需要站内已配置视频服务(未配置时报错就引导联系站长);一次生成约 1-3 分钟;完成后产物是画布视频节点,同时给用户视频下载链接;计费按次(失败自动退)。
 
 ## 可用工具(鱼塘任务 · 澜序协作 — 营销单/刷任务派发系统)
 - yutang_summary:只读。汇总鱼塘任务全景:今日任务数、待回传订单、评价进度、各店铺分布。
@@ -1461,6 +1466,94 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
             publicSummary: `工作流出图 ${images.length} 张/视频 ${videos.length} 个`,
           },
         };
+      },
+    },
+    // ── 视频生成(OpenAI videos 协议,站内计费,失败自动退) ──
+    {
+      name: "generate_video",
+      label: "视频生成",
+      description:
+        "文生视频/图生视频(4-12 秒)。站内视频服务,按次计费、失败自动退;生成约 1-3 分钟。有 [商品图] 时传 image_url 做首帧参考。",
+      parameters: Type.Object({
+        prompt: Type.String({ description: "画面与运镜描述,越具体越好" }),
+        image_url: Type.Optional(
+          Type.String({ description: "首帧参考图 URL(用户消息里的[商品图])" })
+        ),
+        seconds: Type.Optional(
+          Type.Union([Type.Literal("4"), Type.Literal("8"), Type.Literal("12")], {
+            description: "时长秒数,默认 4",
+          })
+        ),
+        orientation: Type.Optional(
+          Type.Union([Type.Literal("landscape"), Type.Literal("portrait")], {
+            description: "画幅,默认横屏",
+          })
+        ),
+      }),
+      executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p = params as {
+          prompt: string;
+          image_url?: string;
+          seconds?: "4" | "8" | "12";
+          orientation?: "landscape" | "portrait";
+        };
+        const created = await withToolTimeout(
+          "generate_video",
+          () =>
+            internal("/api/video/generate", signal, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                prompt: p.prompt,
+                imageUrl: p.image_url,
+                seconds: p.seconds || "4",
+                size: p.orientation === "portrait" ? "720x1280" : "1280x720",
+              }),
+            }),
+          signal
+        );
+        const taskId = String(created.taskId || "");
+        // 轮询:服务端惰性查上游;completed 时已转存并落画布视频节点
+        const deadline = Date.now() + 270_000;
+        for (;;) {
+          if (signal?.aborted) throw new Error("aborted");
+          await new Promise((r) => setTimeout(r, 5_000));
+          if (Date.now() > deadline) {
+            throw new Error(
+              `视频仍在生成中(超 4.5 分钟)。任务 ${taskId} 已保留,请让用户稍后刷新画布查看,不要重复创建。`
+            );
+          }
+          const poll = await internal(
+            `/api/video/tasks?id=${encodeURIComponent(taskId)}`,
+            signal
+          );
+          const task = poll.task as
+            | { status: string; error?: string; videoUrl?: string; artworkId?: string }
+            | undefined;
+          if (!task) throw new Error("视频任务丢失");
+          if (task.status === "failed") {
+            throw new Error(task.error || "视频生成失败(积分已自动退回)");
+          }
+          if (task.status === "completed") {
+            const url = task.videoUrl || "";
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `视频已生成并保存为画布视频节点。
+视频链接: ${url}
+请把该链接原样给用户(可下载)。`,
+                },
+              ],
+              details: {
+                url,
+                artworkId: task.artworkId,
+                publicSummary: "视频已生成",
+              },
+            };
+          }
+        }
       },
     },
     {
