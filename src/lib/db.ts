@@ -312,6 +312,12 @@ async function ensureSchema(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS idx_comfyui_workflows_email
           ON app_comfyui_workflows (email, updated_at DESC);
+        -- 市场:is_public=true 的工作流进入公开市场(所有人可见、可复制导入);
+        -- author 为发布时的展示名(邮箱本地部分,不回传完整邮箱)。
+        ALTER TABLE app_comfyui_workflows ADD COLUMN IF NOT EXISTS is_public boolean NOT NULL DEFAULT false;
+        ALTER TABLE app_comfyui_workflows ADD COLUMN IF NOT EXISTS author text NOT NULL DEFAULT '';
+        CREATE INDEX IF NOT EXISTS idx_comfyui_workflows_public
+          ON app_comfyui_workflows (is_public, updated_at DESC) WHERE is_public;
         -- 积分批次:每次充值/赠送/迁移 = 一个批次,带自己的到期日(2 年 / 新人 30 天)。
         -- 余额 = 所有「未到期且 remaining>0」批次的 remaining 之和;消耗按「先到期先扣」FIFO。
         -- remaining 到期后不清零(留作记录),靠 expires_at>now() 过滤;expired 仅用于「只记一次过期流水」。
@@ -4170,13 +4176,15 @@ export type ComfyWorkflowRow = {
   inputs: unknown;
   required: unknown;
   note: string;
+  isPublic: boolean;
+  author: string;
   updatedAt: string;
 };
 
 export async function listComfyWorkflows(email: string): Promise<ComfyWorkflowRow[]> {
   await ensureSchema();
   const { rows } = await getPool().query(
-    `SELECT id, name, inputs, required, note, updated_at
+    `SELECT id, name, inputs, required, note, is_public, author, updated_at
        FROM app_comfyui_workflows
       WHERE email = $1
       ORDER BY updated_at DESC`,
@@ -4188,6 +4196,8 @@ export async function listComfyWorkflows(email: string): Promise<ComfyWorkflowRo
     inputs: r.inputs,
     required: r.required,
     note: String(r.note ?? ""),
+    isPublic: Boolean(r.is_public),
+    author: String(r.author ?? ""),
     updatedAt: new Date(r.updated_at as string).toISOString(),
   }));
 }
@@ -4198,7 +4208,7 @@ export async function getComfyWorkflow(
 ): Promise<(ComfyWorkflowRow & { apiJson: Record<string, unknown> }) | null> {
   await ensureSchema();
   const { rows } = await getPool().query(
-    `SELECT id, name, api_json, inputs, required, note, updated_at
+    `SELECT id, name, api_json, inputs, required, note, is_public, author, updated_at
        FROM app_comfyui_workflows
       WHERE email = $1 AND id = $2`,
     [email.toLowerCase(), id]
@@ -4212,6 +4222,8 @@ export async function getComfyWorkflow(
     inputs: r.inputs,
     required: r.required,
     note: String(r.note ?? ""),
+    isPublic: Boolean(r.is_public),
+    author: String(r.author ?? ""),
     updatedAt: new Date(r.updated_at as string).toISOString(),
   };
 }
@@ -4262,4 +4274,82 @@ export async function deleteComfyWorkflow(email: string, id: string): Promise<Co
     [email.toLowerCase(), id]
   );
   return listComfyWorkflows(email);
+}
+
+/** 发布/取消发布到公开市场;发布时记录展示名(邮箱本地部分)。 */
+export async function publishComfyWorkflow(
+  email: string,
+  id: string,
+  isPublic: boolean
+): Promise<void> {
+  await ensureSchema();
+  const lower = email.toLowerCase();
+  await getPool().query(
+    `UPDATE app_comfyui_workflows
+        SET is_public = $3,
+            author = CASE WHEN $3 THEN $4 ELSE '' END,
+            updated_at = now()
+      WHERE email = $1 AND id = $2`,
+    [lower, id, isPublic, lower.split("@")[0].slice(0, 24)]
+  );
+}
+
+export type MarketWorkflowRow = {
+  id: string;
+  name: string;
+  author: string;
+  inputs: unknown;
+  required: unknown;
+  note: string;
+  updatedAt: string;
+};
+
+/** 公开市场列表(不含自己的)。 */
+export async function listPublicComfyWorkflows(email: string): Promise<MarketWorkflowRow[]> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT id, name, author, inputs, required, note, updated_at
+       FROM app_comfyui_workflows
+      WHERE is_public AND email <> $1
+      ORDER BY updated_at DESC
+      LIMIT 50`,
+    [email.toLowerCase()]
+  );
+  return rows.map((r: Record<string, unknown>) => ({
+    id: String(r.id),
+    name: String(r.name),
+    author: String(r.author ?? ""),
+    inputs: r.inputs,
+    required: r.required,
+    note: String(r.note ?? ""),
+    updatedAt: new Date(r.updated_at as string).toISOString(),
+  }));
+}
+
+/** 从市场复制公开工作流到自己的库(深拷贝 api_json/inputs/required)。 */
+export async function copyComfyWorkflow(email: string, id: string): Promise<string> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT name, author, api_json, inputs, required
+       FROM app_comfyui_workflows
+      WHERE id = $1 AND is_public`,
+    [id]
+  );
+  const r = rows[0] as Record<string, unknown> | undefined;
+  if (!r) throw new Error("工作流不存在或未公开");
+  const newId = crypto.randomUUID();
+  await getPool().query(
+    `INSERT INTO app_comfyui_workflows (id, email, name, api_json, inputs, required, note, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,now())`,
+    [
+      newId,
+      email.toLowerCase(),
+      `${String(r.name).slice(0, 50)}（市场导入）`,
+      JSON.stringify(r.api_json ?? {}),
+      JSON.stringify(r.inputs ?? []),
+      JSON.stringify(r.required ?? []),
+      `来自市场 · @${String(r.author ?? "")}`.slice(0, 500),
+    ]
+  );
+  return newId;
 }
