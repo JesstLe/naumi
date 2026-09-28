@@ -1690,6 +1690,13 @@ export function CanvasClient() {
   const [assistantError, setAssistantError] = useState<string | null>(null);
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
   const pendPromptRef = useRef<HTMLTextAreaElement>(null);
+  // 占位 dock 提示词框同样自适应(默认 4 行,上限 ~8 行)
+  useEffect(() => {
+    const el = pendPromptRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 176)}px`;
+  }, [editPrompt]);
   const wantFocusPendPrompt = useRef(false);
   // 重命名节点(改作品标题):正在改的节点 id + 输入值
   const [renamingNodeId, setRenamingNodeId] = useState<string | null>(null);
@@ -9051,7 +9058,7 @@ export function CanvasClient() {
                   disabled={readOnly || videoBusy}
                   onClick={() => {
                     setVideoOpen((open) => !open);
-                    if (selected) setVideoPrompt((cur) => cur || selected.prompt || "");
+                    if (selected) setVideoPrompt(selected.prompt || "");
                   }}
                   className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
                 >
@@ -9876,7 +9883,7 @@ export function CanvasClient() {
                   value={editPrompt}
                   placeholder={t("canvas.pendPromptPlaceholder")}
                   onChange={(e) => setEditPrompt(e.target.value)}
-                  className="canvas-ui-text min-h-[40px] max-h-40 resize-none border-0 bg-transparent px-0 py-0.5 text-sm shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0"
+                  className="canvas-ui-text min-h-[92px] max-h-44 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0"
                 />
                 {genError && (
                   <p className="pb-1 text-xs font-medium text-red-400">
