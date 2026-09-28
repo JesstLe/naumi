@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { cdnUrl, cdnThumb, onImgError, probeCdnHealth } from "@/lib/cdn";
+
+/** 视频 URL 识别:按扩展名或上传目录判断,视频走 <video> 缩略而非 <img>。 */
+function isVideoUrl(url: string): boolean {
+  if (/\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)) return true;
+  return url.includes("/media/videos/") || url.includes("/videos/");
+}
 
 // Real image with a tasteful gradient fallback + loading skeleton, so the UI
 // always looks finished even if a CDN image fails or the user is offline.
@@ -36,9 +43,12 @@ export function Media({
   );
   // CDN 改写源不可达(开代理用户请求被挂起,不触发 onError)→ 探测后改用原始源。
   const [useOrig, setUseOrig] = useState(false);
-  const rewritten = thumbWidth ? cdnThumb(src, thumbWidth) : cdnUrl(src);
+  const video = isVideoUrl(src);
+  // 视频不做 CDN 缩放(缩放管线只认图片),直接原地址。
+  const rewritten = !video && thumbWidth ? cdnThumb(src, thumbWidth) : cdnUrl(src);
   useEffect(() => {
     if (rewritten === src) return; // 未配 CDN(海外/自托管),无需探测
+    if (video) return; // 视频直连,不探测图片 CDN
     let on = true;
     void probeCdnHealth(rewritten).then((ok) => {
       if (on && !ok) setUseOrig(true);
@@ -46,7 +56,7 @@ export function Media({
     return () => {
       on = false;
     };
-  }, [rewritten, src]);
+  }, [rewritten, src, video]);
 
   return (
     <div
@@ -66,7 +76,26 @@ export function Media({
       {state === "loading" && (
         <div className="absolute inset-0 animate-pulse bg-secondary" />
       )}
-      {state !== "error" && (
+      {state !== "error" && video ? (
+        <>
+          <video
+            src={rewritten}
+            muted
+            playsInline
+            preload="metadata"
+            onLoadedMetadata={() => setState("ready")}
+            onError={() => setState("error")}
+            className={cn(
+              "absolute inset-0 h-full w-full object-cover transition-opacity duration-500",
+              state === "ready" ? "opacity-100" : "opacity-0",
+              imgClassName
+            )}
+          />
+          <span className="pointer-events-none absolute bottom-1.5 right-1.5 z-10 grid h-6 w-6 place-items-center rounded-full bg-black/55 text-white">
+            <Play className="h-3 w-3" />
+          </span>
+        </>
+      ) : state !== "error" ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={useOrig ? src : rewritten}
@@ -82,7 +111,7 @@ export function Media({
             imgClassName
           )}
         />
-      )}
+      ) : null}
       {overlay && (
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-900/15 via-transparent to-transparent" />
       )}

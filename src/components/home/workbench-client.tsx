@@ -200,7 +200,7 @@ function ImageLightbox({ url, onClose }: { url: string; onClose: () => void }) {
   );
 }
 
-/** 渲染回复:markdown 图片(带操作条) + [商品图] 行(缩略图) + 文本行 */
+/** 渲染回复:markdown 图片(带操作条) + 视频链接(内嵌播放) + [商品图] 行(缩略图) + 文本行 */
 function renderContent(
   content: string,
   resolveId: ImageLinkResolver,
@@ -209,6 +209,18 @@ function renderContent(
   return content.split("\n").map((line, i) => {
     const m = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
     if (m) {
+      // 视频扩展名的 markdown "图"按视频渲染
+      if (/\.(mp4|webm|mov|m4v)(\?|$)/i.test(m[2])) {
+        return (
+          <span key={i} className="my-1 block w-fit space-y-1">
+            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+            <video src={m[2]} controls playsInline className="max-h-72 rounded-xl border border-border" />
+            <a href={m[2]} download target="_blank" rel="noreferrer" className="block text-[11.5px] font-medium text-primary hover:underline">
+              下载视频
+            </a>
+          </span>
+        );
+      }
       return (
         <AssistantImage
           key={i}
@@ -217,6 +229,24 @@ function renderContent(
           resolveId={resolveId}
           onPreview={onPreview}
         />
+      );
+    }
+    const vlink = line.match(/^视频链接\s*[:：]\s*(\S+)$/);
+    if (vlink && /\.(mp4|webm|mov|m4v)(\?|$)/i.test(vlink[1])) {
+      return (
+        <span key={i} className="my-1 block w-fit space-y-1">
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+          <video src={vlink[1]} controls playsInline className="max-h-72 rounded-xl border border-border" />
+          <a
+            href={vlink[1]}
+            download
+            target="_blank"
+            rel="noreferrer"
+            className="block text-[11.5px] font-medium text-primary hover:underline"
+          >
+            下载视频
+          </a>
+        </span>
       );
     }
     const ref = line.match(/^\[商品图\]\s*(\S+)$/);

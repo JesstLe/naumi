@@ -1542,8 +1542,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
                 {
                   type: "text",
                   text: `视频已生成并保存为画布视频节点。
-视频链接: ${url}
-请把该链接原样给用户(可下载)。`,
+![生成视频](${url})`,
                 },
               ],
               details: {
