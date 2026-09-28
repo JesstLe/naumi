@@ -3940,10 +3940,27 @@ export function CanvasClient() {
         pushAddUndo(images[i].id, fresh);
         if (i === 0) setSelectedId(images[i].id);
       }
+      // 视频产物已落成画布节点,同样 merge 挂树(与图片并列)
+      const videoArtworkId = String(data.videoArtworkId || "");
+      if (videoArtworkId) {
+        await privateFetch("/api/artworks/position", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            id: videoArtworkId,
+            x: Math.round(baseX + images.length * 40),
+            y: Math.round(baseY + images.length * 40),
+          }),
+        });
+        const freshVideo = await mergeWorks([videoArtworkId]);
+        pushAddUndo(videoArtworkId, freshVideo);
+      }
       flashTip(
         images.length
           ? `工作流完成，${images.length} 张结果已生成在原图右侧`
-          : "工作流完成，视频在面板中预览"
+          : videoArtworkId
+            ? "工作流完成，视频已生成在原图右侧"
+            : "工作流完成，视频在面板中预览"
       );
       return { images: data.images, videos: data.videos };
     } catch (error) {
