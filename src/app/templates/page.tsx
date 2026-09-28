@@ -1,29 +1,6 @@
-import { TemplatesClient } from "@/components/templates/templates-client";
-import { BRAND } from "@/lib/brand";
-import { dbEnabled, listTemplateCategories, listTemplatesPaged } from "@/lib/db";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: `Prompt 模板库 — ${BRAND}` };
-
-export default async function TemplatesPage() {
-  // 服务端取真实库存数,首屏即显示真值,避免客户端兜底数字闪烁
-  let initialTotal = 0;
-  let initialCategoryCount = 0;
-  if (dbEnabled) {
-    try {
-      initialTotal = (await listTemplatesPaged({ page: 1, pageSize: 1 })).total;
-    } catch {
-      /* ignore */
-    }
-    try {
-      initialCategoryCount = (await listTemplateCategories()).length;
-    } catch {
-      /* ignore */
-    }
-  }
-  return (
-    <TemplatesClient
-      initialTotal={initialTotal}
-      initialCategoryCount={initialCategoryCount}
-    />
-  );
+// 模板库已收编进工作台(最近作品下方),旧路由重定向保留兼容(导航「模板」/落地页 CTA)。
+export default function TemplatesPage() {
+  redirect("/dashboard#templates");
 }
