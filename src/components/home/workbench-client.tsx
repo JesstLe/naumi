@@ -660,6 +660,7 @@ export function WorkbenchClient() {
       const decoder = new TextDecoder();
       let buf = "";
       let reply = "";
+      let streamed = "";
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -674,6 +675,17 @@ export function WorkbenchClient() {
           const data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
           if (type === "open" && typeof data.sessionId === "string") {
             sessionIdRef.current = data.sessionId;
+          } else if (type === "delta") {
+            // 流式正文:逐段追加,工具状态文案不再覆盖已流出的内容
+            streamed += (data.text as string) || "";
+            setMessages((prev) => {
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last?.pending) {
+                copy[copy.length - 1] = { ...last, content: streamed };
+              }
+              return copy;
+            });
           } else if (type === "plan") {
             const items = Array.isArray(data.items) ? data.items.map(String) : [];
             runSteps.push({ tool: "任务计划", summary: items.join(" → ") });
@@ -689,7 +701,7 @@ export function WorkbenchClient() {
             setMessages((prev) => {
               const copy = [...prev];
               const last = copy[copy.length - 1];
-              if (last?.pending) {
+              if (last?.pending && !streamed) {
                 copy[copy.length - 1] = {
                   ...last,
                   content: `🔧 正在调用 ${data.tool || "工具"}…`,
@@ -698,30 +710,27 @@ export function WorkbenchClient() {
               return copy;
             });
           } else if (type === "tool_end") {
-            runSteps.push({
-              tool: (data.tool as string) || "工具",
+            const step = {
+              tool: (data.tool as string) || "",
               summary: (data.summary as string) || "执行完成",
-            });
+            };
+            runSteps.push(step);
             setMessages((prev) => {
               const copy = [...prev];
               const last = copy[copy.length - 1];
               if (last?.pending) {
                 copy[copy.length - 1] = {
                   ...last,
-                  content: `✓ ${data.tool || ""} ${data.summary || ""}`,
-                  steps: [
-                    ...(last.steps ?? []),
-                    {
-                      tool: (data.tool as string) || "",
-                      summary: (data.summary as string) || "",
-                    },
-                  ],
+                  ...(streamed
+                    ? {}
+                    : { content: `✓ ${step.tool} ${step.summary}` }),
+                  steps: [...(last.steps ?? []), step],
                 };
               }
               return copy;
             });
           } else if (type === "final") {
-            reply = (data.reply as string) || "";
+            reply = (data.reply as string) || streamed;
           } else if (type === "error") {
             throw new Error((data.message as string) || "执行失败");
           }

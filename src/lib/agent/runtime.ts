@@ -97,6 +97,11 @@ export type Session = {
   running: boolean;
   repeatSignature: string;
   repeatCount: number;
+  /**
+   * 流式输出回调:assistant 文本增量(text_delta)不进 events 数组
+   * (deltas 会冲垮 400 条事件上限并打乱轮询游标),由路由注册本回调直写 SSE。
+   */
+  onDelta?: (text: string) => void;
 };
 
 const SESSIONS = new Map<string, Session>();
@@ -353,6 +358,15 @@ export async function getOrCreateSession(
         isError: !!e.result?.isError,
       });
       void persistAgentSession(session);
+    } else if (event.type === "message_update") {
+      // 流式:text_delta 实时推给订阅了 onDelta 的路由(无订阅者时忽略)
+      const e = event as unknown as {
+        assistantMessageEvent?: { type?: string; delta?: string };
+      };
+      const delta = e.assistantMessageEvent;
+      if (delta?.type === "text_delta" && delta.delta && session.onDelta) {
+        session.onDelta(delta.delta);
+      }
     } else if (event.type === "message_end") {
       const e = event as unknown as { message: { role: string; content: unknown[] } };
       if (e.message?.role === "assistant") {

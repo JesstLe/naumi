@@ -133,6 +133,8 @@ export async function PUT(request: Request) {
       };
       let cursor = eventCursor;
       send("open", { sessionId });
+      // 注册流式回调:assistant 文本增量绕过 events 轮询,直写 SSE(毫秒级到达)
+      session.onDelta = (text) => send("delta", { text });
 
       const pushEvents = setInterval(() => {
         for (; cursor < session.events.length; cursor++) {
@@ -145,6 +147,7 @@ export async function PUT(request: Request) {
         clearInterval(pushEvents);
         clearInterval(doneCheck);
         clearTimeout(timeout);
+        session.onDelta = undefined;
         request.signal.removeEventListener("abort", onRequestAbort);
       };
 
