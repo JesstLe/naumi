@@ -114,8 +114,16 @@ try {
     "0"
   );
   const addButtonBox = await page.getByTestId("canvas-add-node-button").boundingBox();
-  assert(addButtonBox && addButtonBox.width >= 64 && addButtonBox.height >= 64);
-  pass("imports keep intrinsic pixels while adaptive image-only nodes, filenames, and the larger add button stay clearly visible");
+  const mainToolbarButtons = page.getByTestId("canvas-main-toolbar").locator("button");
+  const regularToolbarButtonBox = await mainToolbarButtons.nth(1).boundingBox();
+  assert(addButtonBox && regularToolbarButtonBox, "canvas toolbar buttons are missing");
+  assert(
+    addButtonBox.width <= regularToolbarButtonBox.width + 12 &&
+      addButtonBox.height <= regularToolbarButtonBox.height + 12,
+    `add button is disproportionately large: ${JSON.stringify({ addButtonBox, regularToolbarButtonBox })}`
+  );
+  assert(addButtonBox.width >= 40 && addButtonBox.height >= 40);
+  pass("imports keep intrinsic pixels while adaptive image-only nodes, filenames, and consistently sized dock icons stay clearly visible");
 
   await page.setViewportSize({ width: 2560, height: 1440 });
   const highResolutionTitleSize = Number.parseFloat(
