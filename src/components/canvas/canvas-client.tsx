@@ -962,6 +962,7 @@ function VideoNodeSurface({ url, selected, kind, onExtract }: { url: string; sel
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [durationMs, setDurationMs] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
 
   useEffect(() => {
     if (!selected) {
@@ -988,6 +989,7 @@ function VideoNodeSurface({ url, selected, kind, onExtract }: { url: string; sel
         onLoadedMetadata={(event) => setDurationMs(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration * 1000 : 0)}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
+        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
       /> : <video
         ref={videoRef}
         src={url}
@@ -1025,6 +1027,11 @@ function VideoNodeSurface({ url, selected, kind, onExtract }: { url: string; sel
         <button type="button" title="抽取当前帧" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("frame", videoRef.current?.currentTime || 0); }}>当前帧</button>
         <button type="button" title="抽取尾帧" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("frame", Math.max(0, (videoRef.current?.duration || 0) - 0.01)); }}>尾帧</button>
         <button type="button" title="拆分音轨" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("audio", 0); }}>音轨</button>
+      </div>}
+      {kind === "video" && selected && durationMs > 0 && <div className="absolute bottom-1.5 left-1/2 z-10 flex w-[calc(100%-76px)] -translate-x-1/2 items-center gap-1.5 rounded-md bg-black/70 px-2 py-1">
+        <span className="text-[9px] tabular-nums text-white/80">{new Date(currentTime * 1000).toISOString().slice(14, 19)}</span>
+        <input aria-label="视频时间轴" type="range" min={0} max={Math.max(0.01, durationMs / 1000)} step={0.01} value={Math.min(currentTime, durationMs / 1000)} onChange={(event) => { const time = Number(event.target.value); setCurrentTime(time); if (videoRef.current) videoRef.current.currentTime = time; }} className="h-1.5 min-w-0 flex-1 accent-teal-400" />
+        <span className="text-[9px] tabular-nums text-white/80">{new Date(durationMs).toISOString().slice(14, 19)}</span>
       </div>}
       <button
         type="button"
