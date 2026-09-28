@@ -143,6 +143,19 @@ export async function createVideoGeneration(
     });
   }
 
+  // 远程供应商必须能访问引用素材。本地 /media 地址仅本站可见；部署时可通过
+  // VIDEO_REFERENCE_PUBLIC_BASE_URL 指向对外可访问的 Naumi 站点，或直接使用 R2。
+  if (providerId !== VIDEO_PROVIDER_ID) {
+    const publicBase = String(process.env.VIDEO_REFERENCE_PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
+    for (const reference of references) {
+      if (!reference.url?.startsWith("/media/")) continue;
+      if (!publicBase) {
+        throw new Error("远程视频供应商无法读取本地素材，请配置 R2 或 VIDEO_REFERENCE_PUBLIC_BASE_URL");
+      }
+      reference.url = `${publicBase}${reference.url}`;
+    }
+  }
+
   const hasVideoRef = references.some((ref) => ref.kind === "video");
   const hasLastFrame = references.some((ref) => ref.role === "last_frame");
   const hasReference = references.some((ref) => ref.role === "reference" || ref.role === "element");
@@ -172,7 +185,9 @@ export async function createVideoGeneration(
 
   // 读取参考图字节(multipart 上传用);失败在扣费前抛出
   let imageForUpload: { bytes: Buffer; mime: string; filename: string } | undefined;
-  const uploadReference = references.find((ref) => ref.kind === "image" && (ref.artworkId || ref.url));
+  const uploadReference = providerId === VIDEO_PROVIDER_ID
+    ? references.find((ref) => ref.kind === "image" && (ref.artworkId || ref.url))
+    : undefined;
   if (uploadReference) {
     const ref = uploadReference;
     const { readCanvasImage } = await import("@/lib/canvas-image-input");
@@ -286,11 +301,11 @@ export async function createVideoGeneration(
 
 /** 临时桥:adapter.create 需要 url,而本地文件场景直接喂字节;保持一期等价行为。 */
 async function createWithLocalImage(
-  adapter: { create(input: VideoGenerationRequest): Promise<unknown> },
+  adapter: { id?: string; create(input: VideoGenerationRequest): Promise<unknown> },
   request: VideoGenerationRequest,
   image: { bytes: Buffer; mime: string; filename: string } | undefined
 ): Promise<VideoProviderCreateResult> {
-  if (!image) {
+  if (!image || adapter.id !== VIDEO_PROVIDER_ID) {
     return (await adapter.create(request)) as VideoProviderCreateResult;
   }
   // openai-videos 适配器自行 fetch url;本地 /media 地址无法被它直接读,
@@ -298,7 +313,7 @@ async function createWithLocalImage(
   const withDataUrl: VideoGenerationRequest = {
     ...request,
     references: request.references.map((r) =>
-      r.kind === "image" && !r.url
+      r.kind === "image" && r.id === request.references.find((item) => item.kind === "image")?.id
         ? { ...r, url: `data:${image.mime};base64,${image.bytes.toString("base64")}` }
         : r
     ),
@@ -351,6 +366,18 @@ export async function pollAndSettle(
       if (storageEnabled && file.bytes) {
         url = await uploadImage(file.bytes, file.mimeType, `videos/${artworkId}.mp4`);
       }
+      const referenceArtworkIds = (task.videoReferences ?? [])
+        .map((reference) => String((reference as { artworkId?: string }).artworkId || ""))
+        .filter(Boolean);
+      const candidateParentIds = Array.from(new Set([
+        ...(task.source === "canvas" && task.sourceId ? [task.sourceId] : []),
+        ...referenceArtworkIds,
+      ])).filter((parentId) => parentId !== artworkId);
+      const ownedParents = candidateParentIds.length
+        ? await listArtworksByIds(email, candidateParentIds)
+        : [];
+      const ownedParentIds = new Set(ownedParents.map((artwork) => artwork.id));
+      const parentIds = candidateParentIds.filter((parentId) => ownedParentIds.has(parentId));
       await addArtworks(email, [{
         id: artworkId,
         title: `视频 · ${task.prompt.slice(0, 24)}`,
@@ -363,9 +390,9 @@ export async function pollAndSettle(
         ratio: null,
         resolution: "1K",
         source: null,
-        parentId: null,
-        parentIds: [],
-        origin: "canvas",
+        parentId: parentIds[0] || null,
+        parentIds: parentIds.slice(1),
+        origin: task.source === "canvas" ? "canvas" : null,
         width: 0,
         height: 0,
         videoUrl: url,
@@ -382,9 +409,10 @@ export async function pollAndSettle(
       });
       return getVideoTask(email, id);
     }
-    if (result.status === "failed") {
-      await failVideoTask({ email, id, error: result.errorMessage || "上游生成失败" });
-      return { ...task, status: "failed", error: result.errorMessage || "上游生成失败" };
+    if (result.status === "failed" || result.status === "cancelled") {
+      const message = result.errorMessage || (result.status === "cancelled" ? "上游任务已取消" : "上游生成失败");
+      await failVideoTask({ email, id, error: message });
+      return { ...task, status: "failed", error: message };
     }
     // 仍在排队/生成:安排下次调度并释放租约
     await scheduleVideoTaskRetry(email, id, 10, "");
@@ -415,7 +443,7 @@ export async function pollAndSettle(
 /** 任务列表(工作台/恢复)。 */
 export async function listVideoTaskViews(
   email: string,
-  opts: { status?: string; limit?: number } = {}
+  opts: { status?: string; source?: string; limit?: number } = {}
 ): Promise<VideoTaskRow[]> {
   return listVideoTasks(email, opts);
 }

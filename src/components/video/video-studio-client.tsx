@@ -42,8 +42,10 @@ type Capability = {
   supportsNegativePrompt?: boolean;
   supportsGenerateAudio?: boolean;
   supportsWatermark?: boolean;
+  supportsMultiShot?: boolean;
   maxReferenceVideos?: number;
   maxReferenceAudios?: number;
+  providerOptionKeys?: string[];
 };
 
 type ProviderView = {
@@ -88,6 +90,9 @@ export function VideoStudioClient() {
   const [resolution, setResolution] = useState("1280x720");
   const [generateAudio, setGenerateAudio] = useState(false);
   const [watermark, setWatermark] = useState(false);
+  const [taskCount, setTaskCount] = useState(1);
+  const [multiShot, setMultiShot] = useState(false);
+  const [cameraFixed, setCameraFixed] = useState(false);
   const [refFile, setRefFile] = useState<File | null>(null);
   const [lastFrameFile, setLastFrameFile] = useState<File | null>(null);
   const [extraRefFiles, setExtraRefFiles] = useState<File[]>([]);
@@ -167,6 +172,8 @@ export function VideoStudioClient() {
     setResolution(cap.resolutions[0] || "1280x720");
     if (!cap.supportsGenerateAudio) setGenerateAudio(false);
     if (!cap.supportsWatermark) setWatermark(false);
+    if (!cap.supportsMultiShot) setMultiShot(false);
+    if (!cap.providerOptionKeys?.includes("cameraFixed")) setCameraFixed(false);
   }, [modelId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function selectProvider(id: string) {
@@ -276,28 +283,43 @@ export function VideoStudioClient() {
           role: uploaded.kind === "video" ? "source_video" : uploaded.kind === "audio" ? "source_audio" : "reference",
         });
       }
-      const res = await fetch("/api/video/generate", {
-        method: "POST",
-        headers: { "content-type": "application/json", ...(await authHeader()) },
-        body: JSON.stringify({
-          prompt: text,
-          providerId,
-          modelId,
-          negativePrompt: negativePrompt.trim() || undefined,
-          durationSeconds: seconds,
-          seconds: String(seconds),
-          aspectRatio,
-          resolution,
-          size: resolution,
-          generateAudio,
-          watermark,
-          references,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "创建失败");
-      setTip(`已创建任务,扣 ${data.cost} 积分;生成约 1-3 分钟`);
-      setActiveId(data.taskId);
+      const providerOptions = {
+        ...(cap?.supportsMultiShot && cap.providerOptionKeys?.includes("multiShot") ? { multiShot } : {}),
+        ...(cap?.providerOptionKeys?.includes("cameraFixed") ? { cameraFixed } : {}),
+      };
+      const results = await Promise.allSettled(Array.from({ length: taskCount }, async () => {
+        const res = await fetch("/api/video/generate", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...(await authHeader()) },
+          body: JSON.stringify({
+            source: "workbench",
+            prompt: text,
+            providerId,
+            modelId,
+            negativePrompt: negativePrompt.trim() || undefined,
+            durationSeconds: seconds,
+            seconds: String(seconds),
+            aspectRatio,
+            resolution,
+            size: resolution,
+            generateAudio,
+            watermark,
+            references,
+            providerOptions,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "创建失败");
+        return data as { taskId: string; cost: number };
+      }));
+      const created = results
+        .filter((result): result is PromiseFulfilledResult<{ taskId: string; cost: number }> => result.status === "fulfilled")
+        .map((result) => result.value);
+      const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (!created.length) throw failed?.reason instanceof Error ? failed.reason : new Error("创建失败");
+      const totalCost = created.reduce((sum, item) => sum + Number(item.cost || 0), 0);
+      setTip(`已创建 ${created.length} 个任务,共扣 ${totalCost} 积分;生成约 1-3 分钟${failed ? "，部分任务创建失败" : ""}`);
+      setActiveId(created[0].taskId);
       setActiveTask(null);
       void loadHistory();
     } catch (e) {
@@ -344,6 +366,30 @@ export function VideoStudioClient() {
       setTip(data.reused ? "该视频已在画布上" : "已发送到画布");
     } catch (e) {
       setError(e instanceof Error ? e.message : "发送失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function removeTask(task: TaskView) {
+    if (busyAction || task.status === "processing" || task.status === "queued") return;
+    setBusyAction(task.id);
+    setError("");
+    try {
+      const res = await fetch(`/api/video/tasks/${encodeURIComponent(task.id)}`, {
+        method: "DELETE",
+        headers: await authHeader(),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "删除失败");
+      if (activeId === task.id) {
+        setActiveId("");
+        setActiveTask(null);
+      }
+      setHistory((items) => items?.filter((item) => item.id !== task.id) ?? items);
+      setTip("已删除任务记录；画布作品与视频文件保持不变");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除失败");
     } finally {
       setBusyAction("");
     }
@@ -512,6 +558,18 @@ export function VideoStudioClient() {
               {cap.supportsWatermark && <label className="flex items-center gap-1.5"><input type="checkbox" checked={watermark} onChange={(e) => setWatermark(e.target.checked)} />添加水印</label>}
             </div>}
 
+            {(cap?.supportsMultiShot || cap?.providerOptionKeys?.includes("cameraFixed")) && <div className="mt-3 flex flex-wrap gap-3 text-[12px] text-c-text2">
+              {cap.supportsMultiShot && cap.providerOptionKeys?.includes("multiShot") && <label className="flex items-center gap-1.5"><input type="checkbox" checked={multiShot} onChange={(e) => setMultiShot(e.target.checked)} />多镜头</label>}
+              {cap.providerOptionKeys?.includes("cameraFixed") && <label className="flex items-center gap-1.5"><input type="checkbox" checked={cameraFixed} onChange={(e) => setCameraFixed(e.target.checked)} />固定机位</label>}
+            </div>}
+
+            <div className="mt-3 flex items-center justify-between border-t border-c-border pt-3">
+              <span className="text-[12.5px] font-semibold text-c-text2">生成数量</span>
+              <div className="flex items-center gap-1 rounded-lg border border-c-border bg-c-subtle p-1">
+                {[1, 2, 3, 4, 5, 6].map((count) => <button key={count} type="button" onClick={() => setTaskCount(count)} className={cn("h-6 min-w-6 rounded-md px-1 text-[11.5px] font-semibold", taskCount === count ? "bg-white text-primary shadow-sm" : "text-c-text3 hover:text-c-text")}>{count}</button>)}
+              </div>
+            </div>
+
             <button
               type="button"
               onClick={() => void submit()}
@@ -519,7 +577,7 @@ export function VideoStudioClient() {
               className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary text-[13.5px] font-bold text-white shadow-btn transition-all hover:opacity-90 disabled:opacity-50"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {submitting ? "创建中…" : `生成视频 · ${costPerTask} 积分`}
+              {submitting ? "创建中…" : `生成 ${taskCount} 条视频 · ${costPerTask * taskCount} 积分`}
             </button>
             {error && <p className="mt-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-600">{error}</p>}
             {tip && <p className="mt-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700">{tip}</p>}
@@ -634,19 +692,15 @@ export function VideoStudioClient() {
                 </p>
               ) : (
                 history.map((t) => (
-                  <button
+                  <div
                     key={t.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveId(t.id);
-                      setActiveTask(t);
-                    }}
                     className={cn(
-                      "w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
+                      "group relative w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
                       t.id === activeId ? "border-primary/50 bg-primary/[0.06]" : "border-c-border hover:bg-secondary/60"
                     )}
                   >
-                    <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => { setActiveId(t.id); setActiveTask(t); }} className="w-full text-left">
+                    <div className="flex items-center gap-2 pr-6">
                       {t.status === "processing" || t.status === "queued" ? (
                         <Loader2 className="h-3.5 w-3.5 flex-none animate-spin text-primary" />
                       ) : t.status === "completed" ? (
@@ -666,7 +720,9 @@ export function VideoStudioClient() {
                           ? `失败:${(t.error || "").slice(0, 30)}`
                           : `${Math.min(95, t.progress)}% · 后台执行中`}
                     </p>
-                  </button>
+                    </button>
+                    {t.status !== "processing" && t.status !== "queued" && <button type="button" aria-label="删除任务记录" onClick={() => void removeTask(t)} disabled={busyAction === t.id} className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-md text-c-text4 opacity-0 transition hover:bg-red-500/10 hover:text-red-600 group-hover:opacity-100 focus:opacity-100 disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" /></button>}
+                  </div>
                 ))
               )}
             </div>

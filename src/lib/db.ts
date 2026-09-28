@@ -4435,7 +4435,7 @@ export type VideoTaskRow = {
   upstreamId: string;
   model: string;
   prompt: string;
-  status: "processing" | "completed" | "failed";
+  status: "queued" | "processing" | "completed" | "failed" | "cancelled";
   progress: number;
   cost: number;
   artworkId: string;
@@ -4772,7 +4772,7 @@ export async function updateVideoTask(
 /** 任务列表(工作台/恢复用):按创建时间倒序。 */
 export async function listVideoTasks(
   email: string,
-  opts: { status?: string; limit?: number } = {}
+  opts: { status?: string; source?: string; limit?: number } = {}
 ): Promise<VideoTaskRow[]> {
   await ensureSchema();
   const limit = Math.min(Math.max(opts.limit ?? 30, 1), 100);
@@ -4781,6 +4781,10 @@ export async function listVideoTasks(
   if (opts.status) {
     params.push(opts.status);
     where += ` AND status = $${params.length}`;
+  }
+  if (opts.source) {
+    params.push(opts.source);
+    where += ` AND source = $${params.length}`;
   }
   const { rows } = await getPool().query(
     `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
@@ -4819,6 +4823,46 @@ export async function listVideoTasks(
     errorDetail: (r.error_detail ?? {}) as Record<string, unknown>,
     resultStorageKey: String(r.result_storage_key ?? ""),
   }));
+}
+
+/** 删除已结束的视频任务历史。作品与媒体可能仍被画布引用，因此只删任务/结果记录。 */
+export async function deleteFinishedVideoTask(email: string, id: string): Promise<boolean> {
+  await ensureSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const task = await client.query<{ status: string }>(
+      `SELECT status FROM app_video_tasks WHERE email = $1 AND id = $2 FOR UPDATE`,
+      [email.toLowerCase(), id]
+    );
+    const status = String(task.rows[0]?.status || "");
+    if (!status) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    if (status === "processing" || status === "queued") {
+      throw new Error("进行中的任务不能删除");
+    }
+    await client.query(`DELETE FROM app_video_results WHERE email = $1 AND task_id = $2`, [email.toLowerCase(), id]);
+    const deleted = await client.query(`DELETE FROM app_video_tasks WHERE email = $1 AND id = $2`, [email.toLowerCase(), id]);
+    await client.query("COMMIT");
+    return (deleted.rowCount ?? 0) > 0;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** 将既有作品显式加入画布；不改变作品内容与血缘。 */
+export async function setArtworkOrigin(email: string, id: string, origin: string | null): Promise<boolean> {
+  await ensureSchema();
+  const result = await getPool().query(
+    `UPDATE app_artworks SET origin = $3 WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
+    [email.toLowerCase(), id, origin]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function listVideoResults(email: string, limit = 50): Promise<VideoResultRow[]> {

@@ -167,15 +167,15 @@ export function validateAgainstCapability(
       error: `模型 ${cap.modelId} 支持的时长:${cap.durations.join("/")} 秒,收到 ${input.durationSeconds} 秒`,
     };
   }
+  if (input.referenceImageCount > cap.maxReferenceImages) {
+    return {
+      ok: false,
+      error: `模型 ${cap.modelId} 最多 ${cap.maxReferenceImages} 张参考图`,
+    };
+  }
   if (input.mode === "image") {
     if (!cap.modes.includes("image")) {
       return { ok: false, error: `模型 ${cap.modelId} 不支持图生视频` };
-    }
-    if (input.referenceImageCount > cap.maxReferenceImages) {
-      return {
-        ok: false,
-        error: `模型 ${cap.modelId} 最多 ${cap.maxReferenceImages} 张参考图`,
-      };
     }
   }
   if (!cap.modes.includes(input.mode)) {

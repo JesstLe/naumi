@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { addArtworks, dbEnabled, getVideoTask, listArtworksByIds } from "@/lib/db";
+import { addArtworks, dbEnabled, getVideoTask, listArtworksByIds, setArtworkOrigin } from "@/lib/db";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { safeError } from "@/lib/api-error";
 
@@ -31,6 +31,7 @@ export async function POST(
     if (task.artworkId) {
       const existing = await listArtworksByIds(email, [task.artworkId]);
       if (existing.length) {
+        await setArtworkOrigin(email, task.artworkId, "canvas");
         return NextResponse.json({ ok: true, artworkId: task.artworkId, reused: true });
       }
     }
