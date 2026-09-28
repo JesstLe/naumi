@@ -2599,12 +2599,14 @@ export function CanvasClient() {
   useEffect(() => {
     setTextComposerExpanded(false);
     setTextComposerManuallySized(false);
+    // 自动带上节点现有内容:方便"看着原文改一改再生成";切换节点时整体替换。
+    setTextPrompt(selectedText?.content || "");
     // 切换节点时清掉上一节点手动拖出的固定高度:否则新节点继承"两行小窗",
     // 且 ResizeObserver 会立刻把 manuallySized 重新置真,自适应从此失效。
     if (textComposerDockRef.current?.style.height) {
       textComposerDockRef.current.style.height = "";
     }
-  }, [selectedTextId]);
+  }, [selectedTextId, selectedText?.content]);
   useEffect(() => {
     const dock = textComposerDockRef.current;
     const body = textComposerBodyRef.current;
