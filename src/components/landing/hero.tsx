@@ -38,7 +38,7 @@ export function Hero({ heroSlots }: { heroSlots: PickedTemplate[][] }) {
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <Link href="/templates">{t("home.heroCtaSecondary")}</Link>
+              <Link href="/dashboard#templates">{t("home.heroCtaSecondary")}</Link>
             </Button>
           </div>
 
