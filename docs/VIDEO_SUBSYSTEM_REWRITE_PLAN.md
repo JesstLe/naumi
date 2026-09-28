@@ -15,8 +15,9 @@
 - 已完成 `/video` 工作台供应商/模型切换、首尾帧、多模态素材、比例/分辨率、负面提示词、音频、水印以及完整请求快照重试。
 - 已完成 Agent 视频域工具：`list_video_models`、`plan_video_shot`、`plan_video_storyboard`、`get_video_task`、`extend_video`、`edit_video`，并将 `generate_video` 迁移到统一请求入口。
 - 已完成服务器端视频工具 `/api/video/extract`：检测到 FFmpeg 时可从视频抽取指定时间帧 PNG 或音轨 MP3，并通过 Naumi 存储返回可继续连接到画布的素材 URL。
+- 已完成画布视频节点工具：选中视频节点可抽取首帧、当前帧、尾帧或拆分音轨；抽取结果通过父节点血缘自动加入当前画布，音轨以可播放音频节点呈现。
 
-当前仍需单独验收的边界：真实供应商逐家凭证测试、画布将抽取结果自动编排成新节点的 UI、浏览器自动化交互回归，以及视频节点的时间轴增强。fixture/build 通过不等于真实供应商质量验收。
+当前仍需单独验收的边界：真实供应商逐家凭证测试、浏览器自动化交互回归，以及视频节点的完整时间轴编辑。fixture/build 通过不等于真实供应商质量验收。
 
 本机已用现有 `VIDEO_API_*` 配置完成一次真实 OpenAI Videos 兼容端点验收：4.04 秒、1280×720、H.264/AAC，912,300 bytes；脚本为 `scripts/verify-video-provider-real.ts`，产物默认写入 `output/video-real-provider-acceptance.mp4`。其他供应商仍需各自配置凭证后逐家运行同级验收。
 

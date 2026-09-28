@@ -957,17 +957,21 @@ function CometEdge({
  * 画布视频节点表面(参照 infinite-canvas):原生 video 元素 + 播放/放大角标 +
  * 时长显示。未选中自动暂停;空格键播放(选中时);双击不再触发节点重命名。
  */
-function VideoNodeSurface({ url, selected }: { url: string; selected: boolean }) {
+function VideoNodeSurface({ url, selected, kind, onExtract }: { url: string; selected: boolean; kind: "video" | "audio"; onExtract?: (kind: "frame" | "audio", timestamp: number) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [durationMs, setDurationMs] = useState(0);
 
   useEffect(() => {
-    if (!selected) videoRef.current?.pause();
+    if (!selected) {
+      videoRef.current?.pause();
+      audioRef.current?.pause();
+    }
   }, [selected]);
 
   const togglePlayback = () => {
-    const video = videoRef.current;
+    const video = kind === "audio" ? audioRef.current : videoRef.current;
     if (!video) return;
     if (video.paused) void video.play();
     else video.pause();
@@ -975,8 +979,16 @@ function VideoNodeSurface({ url, selected }: { url: string; selected: boolean })
   const controlStyle = { background: "rgba(15,23,42,0.72)", color: "#e2e6ed" };
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-[10px] bg-black">
-      <video
+    <div className={cn("relative h-full w-full overflow-hidden rounded-[10px]", kind === "audio" ? "bg-slate-100 p-3" : "bg-black")}>
+      {kind === "audio" ? <audio
+        ref={audioRef}
+        src={url}
+        controls
+        className="mt-8 w-full"
+        onLoadedMetadata={(event) => setDurationMs(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration * 1000 : 0)}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+      /> : <video
         ref={videoRef}
         src={url}
         tabIndex={-1}
@@ -999,7 +1011,7 @@ function VideoNodeSurface({ url, selected }: { url: string; selected: boolean })
             togglePlayback();
           }
         }}
-      />
+      />}
       {durationMs > 0 && (
         <span
           className="pointer-events-none absolute left-2 top-2 z-10 flex h-6 items-center rounded-md px-1.5 text-[10px] font-medium opacity-80 backdrop-blur"
@@ -1008,6 +1020,12 @@ function VideoNodeSurface({ url, selected }: { url: string; selected: boolean })
           {new Date(durationMs).toISOString().slice(14, 19)}
         </span>
       )}
+      {kind === "video" && selected && onExtract && <div className="absolute right-1.5 top-1.5 z-10 flex gap-1">
+        <button type="button" title="抽取首帧" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("frame", 0); }}>首帧</button>
+        <button type="button" title="抽取当前帧" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("frame", videoRef.current?.currentTime || 0); }}>当前帧</button>
+        <button type="button" title="抽取尾帧" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("frame", Math.max(0, (videoRef.current?.duration || 0) - 0.01)); }}>尾帧</button>
+        <button type="button" title="拆分音轨" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("audio", 0); }}>音轨</button>
+      </div>}
       <button
         type="button"
         title={isPlaying ? "暂停" : "播放"}
@@ -1043,6 +1061,7 @@ function ArtNode({ data, selected }: NodeProps) {
     id: string;
     image?: string;
     videoUrl?: string;
+    category?: string;
     label: string;
     rootLabel?: string | null;
     version?: number;
@@ -1064,6 +1083,7 @@ function ArtNode({ data, selected }: NodeProps) {
       bounds: { x: number; y: number; width: number; height: number }
     ) => void;
     onRenameRequest?: (id: string, label: string) => void;
+    onVideoExtract?: (id: string, kind: "frame" | "audio", timestamp: number) => void;
   };
   const imageWidth = d.width && d.width > 0 ? Math.round(d.width) : undefined;
   const imageHeight = d.height && d.height > 0 ? Math.round(d.height) : undefined;
@@ -1143,7 +1163,7 @@ function ArtNode({ data, selected }: NodeProps) {
             <span className="canvas-ui-muted text-[12px]">生成中…</span>
           </div>
         ) : d.videoUrl ? (
-          <VideoNodeSurface url={d.videoUrl} selected={selected} />
+          <VideoNodeSurface url={d.videoUrl} selected={selected} kind={d.category === "audio" ? "audio" : "video"} onExtract={(kind, timestamp) => d.onVideoExtract?.(d.id, kind, timestamp)} />
         ) : (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1300,7 +1320,8 @@ function layoutGraph(
     id: string,
     bounds: { x: number; y: number; width: number; height: number }
   ) => void,
-  onRenameRequest: (id: string, label: string) => void
+  onRenameRequest: (id: string, label: string) => void,
+  onVideoExtract: (id: string, kind: "frame" | "audio", timestamp: number) => void
 ): { nodes: Node[]; edges: Edge[] } {
   const byId = new Map(arts.map((a) => [a.id, a]));
   const sorted = [...arts].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
@@ -1373,6 +1394,7 @@ function layoutGraph(
       position,
       data: {
         id: a.id,
+        category: a.category,
         image: a.image,
         videoUrl: a.videoUrl ?? undefined,
         label: a.title,
@@ -1390,6 +1412,7 @@ function layoutGraph(
         onDimensions,
         onCanvasResize,
         onRenameRequest,
+        onVideoExtract,
       },
       style: {
         width: canvasSize.width,
@@ -2499,6 +2522,29 @@ export function CanvasClient() {
     setRenamingNodeId(id);
   }, [readOnly]);
 
+  const extractVideoToCanvas = useCallback(async (id: string, kind: "frame" | "audio", timestamp: number) => {
+    if (readOnly || !user) return;
+    const source = worksRef.current?.find((item) => item.id === id);
+    if (!source?.videoUrl) return;
+    try {
+      const response = await privateFetch("/api/video/extract", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ videoUrl: source.videoUrl, kind, timestamp, parentArtworkId: id }),
+      });
+      const data = await readJsonSafe(response);
+      if (!response.ok) throw new Error(data?.error || "视频素材抽取失败");
+      if (data.artworkId) {
+        const fresh = await mergeWorks([data.artworkId]);
+        pushAddUndo(data.artworkId, fresh);
+        setSelectedId(data.artworkId);
+        flashTip(kind === "frame" ? "视频帧已加入画布" : "音轨已加入画布");
+      }
+    } catch (error) {
+      flashTip(error instanceof Error ? error.message : "视频素材抽取失败");
+    }
+  }, [readOnly, user]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const { nodes, edges } = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
     if (!active) return { nodes: [], edges: [] };
     return layoutGraph(
@@ -2506,9 +2552,10 @@ export function CanvasClient() {
       t("canvas.rootBadge"),
       onNodeDimensions,
       onArtworkCanvasResize,
-      requestNodeRename
+      requestNodeRename,
+      extractVideoToCanvas
     );
-  }, [active, t, onNodeDimensions, onArtworkCanvasResize, requestNodeRename]);
+  }, [active, t, onNodeDimensions, onArtworkCanvasResize, requestNodeRename, extractVideoToCanvas]);
 
   const nodeTypes = useMemo(
     () => ({ art: ArtNode, pend: PendNode, text: TextCanvasNode }),
@@ -3829,10 +3876,19 @@ export function CanvasClient() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          artworkId: source.id,
+          artworkId: source.videoUrl ? undefined : source.id,
+          source: "canvas",
+          sourceId: source.id,
           prompt,
           seconds: videoSeconds,
           size: videoLandscape ? "1280x720" : "720x1280",
+          references: source.videoUrl ? [{
+            id: source.id,
+            kind: source.category === "audio" ? "audio" : "video",
+            role: source.category === "audio" ? "source_audio" : "source_video",
+            artworkId: source.id,
+            url: source.videoUrl,
+          }] : [],
         }),
       });
       const data = await readJsonSafe(res);
@@ -5276,7 +5332,8 @@ export function CanvasClient() {
       "",
       onNodeDimensions,
       onArtworkCanvasResize,
-      requestNodeRename
+      requestNodeRename,
+      extractVideoToCanvas
     );
     const coord = new Map(
       laid.map((n) => [
@@ -9106,10 +9163,10 @@ export function CanvasClient() {
                         onClick={() => void onGenerateVideo()}
                         className="mt-3 w-full rounded-[10px] bg-teal-500 px-3 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        {selected ? "以选中图片生成视频" : "文生视频"} · 按次计费
+                        {selected ? `以选中${selected.category === "audio" ? "音轨" : selected.videoUrl ? "视频" : "图片"}生成视频` : "文生视频"} · 按次计费
                       </button>
                       <p className="mt-2 text-[11px] leading-relaxed opacity-60">
-                        {selected ? "以选中图为首帧参考(图生视频)。" : "未选中图片,将纯文字生成。"}生成约需 1-3 分钟,完成后出现在画布。
+                        {selected ? `以选中${selected.category === "audio" ? "音轨" : selected.videoUrl ? "视频" : "图片"}作为生成参考。` : "未选择参考节点,将纯文字生成。"}生成约需 1-3 分钟,完成后出现在画布。
                       </p>
                     </div>
                   </>

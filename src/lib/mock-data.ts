@@ -21,7 +21,8 @@ export type Category =
   | "dress3d" // 3D 服装图(立体产品图)产物,作品页单独筛选
   | "packaging3d" // 模切线图折叠生成的包装 3D 产品可视化
   | "dewrinkle" // 服装去皱产物,作品页单独筛选
-  | "dewatermark"; // 去水印产物,作品页单独筛选
+  | "dewatermark" // 去水印产物,作品页单独筛选
+  | "audio"; // 视频拆分出的音轨节点
 
 export const CATEGORY_LABELS: Record<Category, string> = {
   main: "电商主图",
@@ -44,6 +45,7 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   packaging3d: "包装 3D 可视化",
   dewrinkle: "服装去皱",
   dewatermark: "去水印",
+  audio: "视频音轨",
 };
 
 export type PromptTemplate = {

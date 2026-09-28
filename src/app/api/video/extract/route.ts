@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 
 import { authenticatedEmail } from "@/lib/request-auth";
 import { MEDIA_DIR, uploadImage } from "@/lib/storage";
+import { addArtworks, dbEnabled, listArtworksByIds } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +34,7 @@ function runFfmpeg(input: string, kind: "frame" | "audio", timestamp: number): P
 export async function POST(request: Request) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  const body = await request.json().catch(() => null) as { videoUrl?: string; kind?: string; timestamp?: number } | null;
+  const body = await request.json().catch(() => null) as { videoUrl?: string; kind?: string; timestamp?: number; parentArtworkId?: string } | null;
   const videoUrl = String(body?.videoUrl || "").trim();
   const kind = body?.kind === "audio" ? "audio" : "frame";
   const timestamp = Math.max(0, Math.min(3600, Number(body?.timestamp || 0)));
@@ -61,7 +62,33 @@ export async function POST(request: Request) {
     const mimeType = kind === "frame" ? "image/png" : "audio/mpeg";
     const storageKey = `videos/extracted/${id}.${kind === "frame" ? "png" : "mp3"}`;
     const url = await uploadImage(bytes, mimeType, storageKey);
-    return NextResponse.json({ ok: true, kind, url, mimeType, storageKey, timestamp: kind === "frame" ? timestamp : 0 });
+    let artworkId = "";
+    const parentArtworkId = String(body?.parentArtworkId || "").trim().slice(0, 160);
+    if (dbEnabled && parentArtworkId) {
+      const parent = (await listArtworksByIds(email, [parentArtworkId]))[0];
+      if (!parent) return NextResponse.json({ error: "父视频节点不存在或无权访问" }, { status: 404 });
+      artworkId = `vid-extract-${id}`;
+      await addArtworks(email, [{
+        id: artworkId,
+        title: kind === "frame" ? `视频帧 · ${Math.round(timestamp)}s` : "视频音轨",
+        category: kind === "frame" ? "main" : "audio",
+        prompt: "",
+        status: "completed",
+        image: kind === "frame" ? url : "",
+        gradient: "from-slate-100 to-zinc-100",
+        style: null,
+        ratio: null,
+        resolution: null,
+        source: "canvas",
+        parentId: parentArtworkId,
+        parentIds: [parentArtworkId],
+        origin: "canvas",
+        width: kind === "frame" ? 0 : 0,
+        height: kind === "frame" ? 0 : 0,
+        videoUrl: kind === "audio" ? url : null,
+      }], `vid-extract-${id}`);
+    }
+    return NextResponse.json({ ok: true, kind, url, mimeType, storageKey, artworkId, timestamp: kind === "frame" ? timestamp : 0 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "视频抽取失败" }, { status: 502 });
   } finally {
