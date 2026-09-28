@@ -288,6 +288,23 @@ type CanvasTextNode = {
   productIds?: string[];
 };
 
+type CanvasVideoCapability = {
+  providerId: string;
+  modelId: string;
+  label: string;
+  modes: string[];
+  durations: number[];
+  aspectRatios: string[];
+  resolutions: string[];
+  maxReferenceImages: number;
+  maxReferenceVideos?: number;
+  maxReferenceAudios?: number;
+  supportsFirstFrame?: boolean;
+  supportsLastFrame?: boolean;
+  isDefault?: boolean;
+  note?: string;
+};
+
 type OcrBox = { x: number; y: number; width: number; height: number };
 type OcrSegment = {
   id: string;
@@ -1669,6 +1686,7 @@ export function CanvasClient() {
     fileInfo?: string;
     inputs: string[]; // 多输入:连进这个空白节点的源节点 id(生成时作参考图)
     generating?: boolean; // 该空白节点正在文生图/合并生成中
+    taskId?: string; // 视频等后台任务 ID，刷新后可从任务表恢复占位节点
   };
   const [pendNodes, setPendNodes] = useState<Pend[]>([]);
   const pendSeqRef = useRef(1);
@@ -1709,8 +1727,30 @@ export function CanvasClient() {
   const [videoPrompt, setVideoPrompt] = useState("");
   const [videoSeconds, setVideoSeconds] = useState("4");
   const [videoLandscape, setVideoLandscape] = useState(true);
+  const [videoCatalog, setVideoCatalog] = useState<CanvasVideoCapability[]>([]);
+  const [videoProviderId, setVideoProviderId] = useState("");
+  const [videoModelId, setVideoModelId] = useState("");
+  const videoCapability = videoCatalog.find((item) => item.providerId === videoProviderId && item.modelId === videoModelId);
   const [videoBusy, setVideoBusy] = useState(false);
   const videoTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void privateFetch("/api/video/catalog")
+      .then((response) => response.json())
+      .then((data) => {
+        if (cancelled) return;
+        const models = (Array.isArray(data.models) ? data.models : []) as CanvasVideoCapability[];
+        setVideoCatalog(models);
+        const providerId = String(data.defaultProvider || models[0]?.providerId || "");
+        const model = models.find((item) => item.providerId === providerId && item.isDefault) || models.find((item) => item.providerId === providerId) || models[0];
+        setVideoProviderId(providerId);
+        setVideoModelId(model?.modelId || "");
+        if (model?.durations?.length) setVideoSeconds(String(model.durations[0]));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [annotateArtwork, setAnnotateArtwork] = useState<Artwork | null>(null);
   // 画布助手:围绕选中节点+上游链的多轮对话,[[GEN]] 提示词可一键生图回画布
   const [assistantArtworkId, setAssistantArtworkId] = useState<string | null>(null);
@@ -2181,7 +2221,7 @@ export function CanvasClient() {
 
   const { projects } = useMemo(() => {
     const arts = (works ?? []).filter(
-      (a) => a.status === "completed" && hasRenderableImage(a.image)
+      (a) => a.status === "completed" && (hasRenderableImage(a.image) || Boolean(a.videoUrl))
     );
     const byId = new Map(arts.map((a) => [a.id, a]));
     const groups = new Map<string, Artwork[]>();
@@ -2573,6 +2613,81 @@ export function CanvasClient() {
     () => active?.members.find((a) => a.id === selectedId) ?? null,
     [active, selectedId]
   );
+
+  // 页面刷新/关闭后恢复画布视频任务：运行中恢复占位节点，后台完成后自动并回作品树。
+  useEffect(() => {
+    if (!user || !active) return;
+    let stopped = false;
+    let timer: number | null = null;
+    const sync = async () => {
+      try {
+        const response = await privateFetch("/api/video/tasks?source=canvas&limit=100");
+        if (!response.ok) return;
+        const data = await readJsonSafe(response);
+        const tasks = (Array.isArray(data?.tasks) ? data.tasks : []) as Array<{
+          id: string; source?: string; sourceId?: string; status: string; progress?: number; artworkId?: string; prompt?: string;
+        }>;
+        const memberIds = new Set(active.members.map((item) => item.id));
+        const relevant = tasks.filter((task) => task.source === "canvas" && task.sourceId && memberIds.has(task.sourceId));
+        if (stopped) return;
+        const runningIds = new Set(relevant.filter((task) => task.status === "processing" || task.status === "queued").map((task) => task.id));
+        setPendNodes((items) => {
+          const progressByTask = new Map(relevant.map((task) => [task.id, Math.max(5, Math.min(95, Number(task.progress || 0)))]));
+          const kept = items
+            .filter((item) => !item.taskId || runningIds.has(item.taskId))
+            .map((item) => item.taskId && progressByTask.has(item.taskId)
+              ? { ...item, progress: progressByTask.get(item.taskId) as number }
+              : item);
+          const known = new Set(kept.map((item) => item.taskId).filter(Boolean));
+          for (const task of relevant) {
+            if (!runningIds.has(task.id) || known.has(task.id)) continue;
+            const source = active.members.find((item) => item.id === task.sourceId);
+            const sourceNode = source ? rfRef.current?.getNode(source.id) : null;
+            const size = sourceNode && source ? flowNodeSize(sourceNode) : source ? artworkNodeSize(source) : { width: NODE_W, height: NODE_H };
+            kept.push({
+              id: `pend-video-task-${task.id}`,
+              taskId: task.id,
+              x: (sourceNode?.position.x ?? source?.canvasX ?? 0) + size.width + X_GAP,
+              y: sourceNode?.position.y ?? source?.canvasY ?? 0,
+              parentId: task.sourceId || null,
+              linked: true,
+              label: task.prompt ? `视频生成中 · ${task.prompt.slice(0, 18)}` : "视频生成中",
+              uploading: false,
+              progress: Math.max(5, Math.min(95, Number(task.progress || 0))),
+              inputs: task.sourceId ? [task.sourceId] : [],
+              generating: true,
+            });
+          }
+          return kept;
+        });
+        const completed = relevant.filter((task) => task.status === "completed" && task.artworkId && !memberIds.has(task.artworkId));
+        for (const task of completed) {
+          const source = active.members.find((item) => item.id === task.sourceId);
+          const sourceNode = source ? rfRef.current?.getNode(source.id) : null;
+          const size = sourceNode && source ? flowNodeSize(sourceNode) : source ? artworkNodeSize(source) : { width: NODE_W, height: NODE_H };
+          await privateFetch("/api/artworks/position", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              id: task.artworkId,
+              x: Math.round((sourceNode?.position.x ?? source?.canvasX ?? 0) + size.width + X_GAP),
+              y: Math.round(sourceNode?.position.y ?? source?.canvasY ?? 0),
+            }),
+          }).catch(() => {});
+        }
+        const completedIds = completed.map((task) => task.artworkId as string);
+        if (completedIds.length) await mergeWorks(completedIds);
+        if (runningIds.size) timer = window.setTimeout(sync, 8000);
+      } catch {
+        timer = window.setTimeout(sync, 12000);
+      }
+    };
+    void sync();
+    return () => {
+      stopped = true;
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, [user, active?.key]); // eslint-disable-line react-hooks/exhaustive-deps
   const selectedBatchArts = useMemo(() => {
     if (!active || multiSel.length < 2) return [];
     const byId = new Map(active.members.map((art) => [art.id, art]));
@@ -3846,6 +3961,54 @@ export function CanvasClient() {
       flashTip("请先填写视频描述");
       return;
     }
+    const selectedInputs = selectedBatchArts.length > 1 && selectedBatchArts.some((item) => item.id === source.id)
+      ? [source, ...selectedBatchArts.filter((item) => item.id !== source.id)]
+      : [source];
+    const imageInputs = selectedInputs.filter((item) => !item.videoUrl && item.category !== "audio");
+    const videoInputs = selectedInputs.filter((item) => Boolean(item.videoUrl) && item.category !== "audio");
+    const audioInputs = selectedInputs.filter((item) => item.category === "audio");
+    const maxImages = Math.max(0, videoCapability?.maxReferenceImages ?? 1);
+    const maxVideos = Math.max(0, videoCapability?.maxReferenceVideos ?? 0);
+    const maxAudios = Math.max(0, videoCapability?.maxReferenceAudios ?? 0);
+    if (videoInputs.length && maxVideos === 0) {
+      flashTip("当前模型不支持视频参考，请切换支持视频编辑的模型");
+      return;
+    }
+    if (audioInputs.length && maxAudios === 0) {
+      flashTip("当前模型不支持音频参考，请切换支持音频参考的模型");
+      return;
+    }
+    const references = [
+      ...imageInputs.slice(0, maxImages).map((item, index) => ({
+        id: item.id,
+        kind: "image" as const,
+        role: (index === 0 && videoCapability?.supportsFirstFrame !== false ? "first_frame" : "reference") as "first_frame" | "reference",
+        artworkId: item.id,
+        url: item.image,
+      })),
+      ...videoInputs.slice(0, maxVideos).map((item) => ({
+        id: item.id,
+        kind: "video" as const,
+        role: "source_video" as const,
+        artworkId: item.id,
+        url: item.videoUrl || item.image,
+      })),
+      ...audioInputs.slice(0, maxAudios).map((item) => ({
+        id: item.id,
+        kind: "audio" as const,
+        role: "source_audio" as const,
+        artworkId: item.id,
+        url: item.videoUrl || item.image,
+      })),
+    ];
+    const requestedAspectRatio = videoLandscape ? "16:9" : "9:16";
+    const aspectRatio = videoCapability?.aspectRatios?.includes(requestedAspectRatio)
+      ? requestedAspectRatio
+      : videoCapability?.aspectRatios?.[0] || requestedAspectRatio;
+    const requestedResolution = videoLandscape ? "1280x720" : "720x1280";
+    const resolution = videoCapability?.resolutions.includes(requestedResolution)
+      ? requestedResolution
+      : videoCapability?.resolutions[0] || requestedResolution;
     setVideoOpen(false);
     setVideoBusy(true);
     const sourceNode = rfRef.current?.getNode(source.id);
@@ -3883,24 +4046,23 @@ export function CanvasClient() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          artworkId: source.videoUrl ? undefined : source.id,
           source: "canvas",
           sourceId: source.id,
           prompt,
+          providerId: videoProviderId || undefined,
+          modelId: videoModelId || undefined,
           seconds: videoSeconds,
-          size: videoLandscape ? "1280x720" : "720x1280",
-          references: source.videoUrl ? [{
-            id: source.id,
-            kind: source.category === "audio" ? "audio" : "video",
-            role: source.category === "audio" ? "source_audio" : "source_video",
-            artworkId: source.id,
-            url: source.videoUrl,
-          }] : [],
+          durationSeconds: Number(videoSeconds),
+          aspectRatio,
+          resolution,
+          size: resolution,
+          references,
         }),
       });
       const data = await readJsonSafe(res);
       if (!res.ok) throw new Error(data?.error || "视频任务创建失败");
       taskId = String(data.taskId || "");
+      setPendNodes((items) => items.map((item) => item.id === pendingId ? { ...item, taskId } : item));
       // 惰性轮询:服务端每次 GET 查一次上游
       const startedAt = Date.now();
       for (;;) {
@@ -9133,7 +9295,7 @@ export function CanvasClient() {
                       />
                       <div className="mt-2 flex items-center gap-2">
                         <span className="text-[11px] font-semibold opacity-70">时长</span>
-                        {["4", "8", "12"].map((sec) => (
+                        {(videoCapability?.durations?.length ? videoCapability.durations.map(String) : ["4", "8", "12"]).map((sec) => (
                           <button
                             key={sec}
                             type="button"
@@ -9164,6 +9326,16 @@ export function CanvasClient() {
                           竖
                         </button>
                       </div>
+                      {videoCatalog.length > 0 && <div className="mt-2 grid grid-cols-2 gap-2">
+                        <select value={videoProviderId} onChange={(event) => { const provider = event.target.value; setVideoProviderId(provider); const next = videoCatalog.find((item) => item.providerId === provider && item.isDefault) || videoCatalog.find((item) => item.providerId === provider); if (next) { setVideoModelId(next.modelId); setVideoSeconds(String(next.durations[0] || 4)); } }} className="canvas-ui-action min-w-0 rounded-lg px-2 py-1.5 text-[11px]">
+                          {Array.from(new Map(videoCatalog.map((item) => [item.providerId, item.providerId])).values()).map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+                        </select>
+                        <select value={videoModelId} onChange={(event) => setVideoModelId(event.target.value)} className="canvas-ui-action min-w-0 rounded-lg px-2 py-1.5 text-[11px]">
+                          {videoCatalog.filter((item) => item.providerId === videoProviderId).map((item) => <option key={item.modelId} value={item.modelId}>{item.label}</option>)}
+                        </select>
+                      </div>}
+                      {videoCapability?.note && <p className="mt-1.5 text-[10.5px] opacity-60">{videoCapability.note}</p>}
+                      {selectedBatchArts.length > 1 && <p className="mt-1.5 text-[10.5px] opacity-60">将按当前模型上限使用框选的图片 / 视频 / 音频素材</p>}
                       <button
                         type="button"
                         disabled={!videoPrompt.trim() || videoBusy}

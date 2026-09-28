@@ -81,7 +81,7 @@ export async function POST(request: Request) {
         resolution: null,
         source: "canvas",
         parentId: parentArtworkId,
-        parentIds: [parentArtworkId],
+        parentIds: [],
         origin: "canvas",
         width: kind === "frame" ? 0 : 0,
         height: kind === "frame" ? 0 : 0,

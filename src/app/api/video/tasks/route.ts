@@ -24,9 +24,11 @@ export async function GET(request: Request) {
 
   if (!id) {
     const status = url.searchParams.get("status") || "";
+    const source = url.searchParams.get("source") || "";
     const limit = Number(url.searchParams.get("limit") || "30");
     const tasks = await listVideoTaskViews(email, {
       status: VALID_STATUS.has(status) ? status : undefined,
+      source: ["canvas", "workbench", "agent", "workflow"].includes(source) ? source : undefined,
       limit: Number.isFinite(limit) ? limit : 30,
     });
     return NextResponse.json({ ok: true, tasks });

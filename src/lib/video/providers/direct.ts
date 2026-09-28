@@ -69,7 +69,9 @@ function inputReferences(input: VideoGenerationRequest) {
 
 function requestBody(cfg: VideoProviderRuntimeConfig, input: VideoGenerationRequest): Record<string, unknown> {
   const refs = inputReferences(input);
-  const images = refs.filter((item) => item.kind === "image").map((item) => item.url);
+  const images = refs
+    .filter((item) => item.kind === "image" && item.role !== "first_frame" && item.role !== "last_frame")
+    .map((item) => item.url);
   const videos = refs.filter((item) => item.kind === "video").map((item) => item.url);
   const audios = refs.filter((item) => item.kind === "audio").map((item) => item.url);
   const first = refs.find((item) => item.role === "first_frame")?.url;
@@ -135,14 +137,17 @@ function requestBody(cfg: VideoProviderRuntimeConfig, input: VideoGenerationRequ
   return { model: input.modelId, prompt: input.prompt, seconds: String(input.durationSeconds), size, resolution: input.resolution, input_reference: images[0], first_frame_url: first, last_frame_url: last, video_reference: videos, audio_reference: audios, ...(input.providerOptions || {}) };
 }
 
-function createPath(cfg: VideoProviderRuntimeConfig) {
+function createPath(cfg: VideoProviderRuntimeConfig, modelId: string) {
   if (cfg.createPath) return cfg.createPath;
   if (cfg.protocol === "ark") return "/contents/generations/tasks";
   if (cfg.protocol === "kie") return "/api/v1/jobs/createTask";
   if (cfg.protocol === "apimart") return "/videos/generations";
-  if (cfg.protocol === "gemini") return `/v1beta/models/${encodeURIComponent(cfg.defaultModel)}:predictLongRunning`;
+  // Gemini and AutoDL encode the selected model/workflow in the URL. Using the
+  // provider default here silently routes non-default catalog selections to the
+  // wrong upstream model.
+  if (cfg.protocol === "gemini") return `/v1beta/models/${encodeURIComponent(modelId || cfg.defaultModel)}:predictLongRunning`;
   if (cfg.protocol === "minimax") return "/v2/video_generation";
-  if (cfg.protocol === "autodl") return `/api/v1/comfyui/comfyui_workflow/${encodeURIComponent(cfg.workflowId || cfg.defaultModel)}`;
+  if (cfg.protocol === "autodl") return `/api/v1/comfyui/comfyui_workflow/${encodeURIComponent(cfg.workflowId || modelId || cfg.defaultModel)}`;
   if (cfg.protocol === "runninghub") return "/task/openapi/create";
   return "/videos";
 }
@@ -180,7 +185,7 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
   return {
     id: providerId,
     async create(input) {
-      const response = await fetch(base(cfg, createPath(cfg)), { method: "POST", headers: headers(cfg, true), body: JSON.stringify(requestBody(cfg, input)), signal: AbortSignal.timeout(120_000) });
+      const response = await fetch(base(cfg, createPath(cfg, input.modelId)), { method: "POST", headers: headers(cfg, true), body: JSON.stringify(requestBody(cfg, input)), signal: AbortSignal.timeout(120_000) });
       const payload = await jsonResponse(response, "视频任务创建失败");
       const upstreamTaskId = idFrom(payload);
       if (!upstreamTaskId) throw new Error("视频服务未返回任务 ID");
@@ -205,7 +210,9 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
     },
     async fetchResult(task, result) {
       const url = result.resultUrl || "";
-      const response = await fetch(url || base(cfg, contentPath(cfg, task.upstreamTaskId)), { headers: headers(cfg), signal: AbortSignal.timeout(180_000) });
+      const target = url || base(cfg, contentPath(cfg, task.upstreamTaskId));
+      // 上游返回的签名下载地址可能位于对象存储/CDN，禁止把供应商密钥转发到第三方主机。
+      const response = await fetch(target, { headers: url ? {} : headers(cfg), signal: AbortSignal.timeout(180_000) });
       if (!response.ok) throw new Error(`取回视频失败(${response.status})`);
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (!bytes.byteLength) throw new Error("视频内容为空");

@@ -74,6 +74,7 @@ assert.match(generate, /taskId/, "generate 必须返回 taskId");
 assert.match(generate, /imageUrl/, "generate 必须支持 agent 的 imageUrl(P0-3)");
 const taskById = read("src/app/api/video/tasks/[id]/route.ts");
 assert.match(taskById, /getVideoTask/, "[id] 路由必须只读查询");
+assert.match(taskById, /deleteFinishedVideoTask/, "[id] 路由必须支持删除已结束任务历史");
 
 // ── Phase 2 锚点:工作台页面、列表/重试/发送到画布、模拟组件下线 ──
 const phase2Files = [
@@ -95,6 +96,26 @@ assert.match(sendRoute, /addArtworks/, "发送到画布必须能补建作品");
 const studio = read("src/components/video/video-studio-client.tsx");
 assert.match(studio, /sendToCanvas/, "工作台必须有发送到画布动作");
 assert.match(studio, /loadHistory/, "工作台必须恢复历史任务");
+assert.match(studio, /taskCount/, "工作台必须支持 1-6 条批量生成");
+assert.match(studio, /providerOptions/, "工作台必须按能力传递模型特有参数");
+assert.match(studio, /removeTask/, "工作台必须支持删除已结束任务记录");
+
+// 画布视频能力:能力目录、刷新恢复、多模态引用、时间轴与抽取工具必须同时存在。
+const canvas = read("src/components/canvas/canvas-client.tsx");
+assert.match(canvas, /\/api\/video\/catalog/, "画布必须读取视频能力目录");
+assert.match(canvas, /\/api\/video\/tasks\?source=canvas&limit=100/, "画布必须按来源恢复后台任务");
+assert.match(canvas, /taskId\?: string/, "画布占位节点必须持久关联视频任务 ID");
+assert.match(canvas, /source_video/, "画布生成必须支持视频参考");
+assert.match(canvas, /source_audio/, "画布生成必须支持音频参考");
+assert.match(canvas, /hasRenderableImage\(a\.image\) \|\| Boolean\(a\.videoUrl\)/, "音频与视频节点不能因缺少图片地址被画布过滤");
+assert.match(canvas, /title="抽取首帧"/, "画布必须支持首帧抽取");
+assert.match(canvas, /videoRef\.current\?\.currentTime/, "画布必须维护视频当前时间");
+assert.match(canvas, /title="拆分音轨"/, "画布必须支持音轨抽取");
+
+const extractRoute = read("src/app/api/video/extract/route.ts");
+assert.match(extractRoute, /parentId: parentArtworkId/, "抽帧与音轨节点必须保留来源血缘");
+assert.match(extractRoute, /parentIds: \[\]/, "抽帧与音轨节点不得重复记录主父节点");
+assert.match(extractRoute, /category: kind === "frame" \? "main" : "audio"/, "音轨必须创建音频类别节点");
 assert.ok(
   !existsSync(new URL("src/components/generate/video-studio.tsx", root)),
   "旧模拟组件应已删除"

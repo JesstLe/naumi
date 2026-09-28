@@ -81,9 +81,9 @@ for (const id of ["ark-seedance", "kie", "apimart", "gemini-veo", "minimax-h3", 
 assert.ok(calls.some((call) => call.includes("contents/generations/tasks")));
 assert.ok(calls.some((call) => call.includes("jobs/createTask")));
 assert.ok(calls.some((call) => call.includes("videos/generations")));
-assert.ok(calls.some((call) => call.includes("predictLongRunning")));
+assert.ok(calls.some((call) => call.includes("/models/fixture-model:predictLongRunning")), "Gemini must route the selected model, not the provider default");
 assert.ok(calls.some((call) => call.includes("video_generation")));
-assert.ok(calls.some((call) => call.includes("comfyui_workflow/workflow")));
+assert.ok(calls.some((call) => call.includes("comfyui_workflow/fixture-model")), "AutoDL must route the selected workflow, not the provider default");
 assert.ok(calls.some((call) => call.includes("task/openapi/create")));
 console.log(`PASS video provider fixtures: ${calls.length} HTTP calls across 8 protocols`);
 globalThis.fetch = originalFetch;
