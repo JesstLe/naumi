@@ -1897,6 +1897,10 @@ export function CanvasClient() {
     | { kind: "mark"; changes: Array<{ id: string; from: boolean; to: boolean }> };
   const [undoStack, setUndoStack] = useState<UndoAct[]>([]);
   const [redoStack, setRedoStack] = useState<UndoAct[]>([]);
+  const pushUndo = useCallback((action: UndoAct) => {
+    setUndoStack((stack) => [...stack.slice(-50), action]);
+    setRedoStack([]);
+  }, []);
   const dragStartRef = useRef<{ id: string; x: number; y: number } | null>(null);
   const selectionDragStartRef = useRef<
     Record<string, { x: number; y: number }>
@@ -2469,7 +2473,7 @@ export function CanvasClient() {
         to: { x, y, width, height },
       });
     }
-  }, [user, readOnly]);
+  }, [user, readOnly, pushUndo]);
 
   const requestNodeRename = useCallback((id: string, label: string) => {
     if (readOnly) return;
@@ -4524,10 +4528,6 @@ export function CanvasClient() {
   }
 
   // ── 撤销/重做(实用版)──
-  function pushUndo(a: UndoAct) {
-    setUndoStack((s) => [...s.slice(-50), a]);
-    setRedoStack([]);
-  }
   async function restoreRecordsSilent(records: Artwork[]) {
     if (!user || !records.length) return;
     await privateFetch("/api/artworks/restore", {

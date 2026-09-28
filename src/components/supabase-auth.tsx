@@ -200,8 +200,8 @@ export function AuthPanel({
       q.get("error_description") ||
       hash.get("error") ||
       q.get("error");
-    if (desc) setError(t("auth.errGooglePrefix") + decodeURIComponent(desc));
-  }, []);
+    if (desc) setError(t("auth.errGooglePrefix") + desc);
+  }, [t]);
 
   useEffect(() => {
     return () => {

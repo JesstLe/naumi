@@ -3,7 +3,6 @@
 import { cdnUrl } from "@/lib/cdn";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import {
   Download,
@@ -197,7 +196,6 @@ export function DashboardClient() {
   const { user, ready, remaining, persistMode } = useAuth();
   const { t, te, locale } = useI18n();
   const { commerceVisible } = usePaymentConfig();
-  const router = useRouter();
   const { openAuth } = useAuthModal();
   const [filter, setFilter] = useState<
     | "all"
@@ -222,7 +220,7 @@ export function DashboardClient() {
 
   useEffect(() => {
     if (ready && !user) openAuth("sign-in");
-  }, [ready, user, router]);
+  }, [ready, user, openAuth]);
 
   // 各工具页「我的作品」按钮带 ?cat=cutout / ?cat=fusion 跳来时,直接打开对应筛选标签。
   useEffect(() => {
@@ -283,8 +281,10 @@ export function DashboardClient() {
   // until the real list arrives (no mock flash); only fall back to ARTWORKS
   // in pure mock/local mode.
   const loadingWorks = persistMode === "server" && remoteWorks === null;
-  const source =
-    persistMode === "server" ? (remoteWorks ?? []) : ARTWORKS;
+  const source = useMemo(
+    () => (persistMode === "server" ? (remoteWorks ?? []) : ARTWORKS),
+    [persistMode, remoteWorks]
+  );
 
   const works = useMemo(() => {
     if (filter === "cutout") return source.filter(isCutout);

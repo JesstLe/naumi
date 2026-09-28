@@ -2,9 +2,13 @@ import { NextResponse } from "next/server";
 
 import {
   addArtworks,
+  claimVideoTaskPoll,
+  completeVideoTask,
   dbEnabled,
+  failVideoTask,
   getVideoTask,
-  refundCredits,
+  releaseVideoTaskPoll,
+  touchReservation,
   updateVideoTask,
 } from "@/lib/db";
 import { authenticatedEmail } from "@/lib/request-auth";
@@ -36,18 +40,18 @@ export async function GET(request: Request) {
   if (task.status !== "processing") {
     return NextResponse.json({ ok: true, task });
   }
-
   const cfg = resolveVideoConfig();
   if (!cfg) return NextResponse.json({ ok: true, task });
+  if (!(await claimVideoTaskPoll(email, id))) {
+    const current = await getVideoTask(email, id);
+    return NextResponse.json({ ok: true, task: current ?? task, skipped: true });
+  }
+  await touchReservation(id).catch(() => {});
 
   try {
     const status = await getVideoStatus(cfg, task.upstreamId);
     if (status.status === "failed") {
-      await updateVideoTask(email, id, {
-        status: "failed",
-        error: status.error || "上游生成失败",
-      });
-      await refundCredits(email, Number(process.env.VIDEO_TASK_COST || 20) || 20).catch(() => {});
+      await failVideoTask({ email, id, error: status.error || "上游生成失败" });
       return NextResponse.json({
         ok: true,
         task: { ...task, status: "failed", error: status.error || "上游生成失败" },
@@ -55,6 +59,7 @@ export async function GET(request: Request) {
     }
     if (status.status !== "completed") {
       await updateVideoTask(email, id, { progress: Math.min(95, status.progress) });
+      await releaseVideoTaskPoll(email, id);
       return NextResponse.json({
         ok: true,
         task: { ...task, status: "processing", progress: Math.min(95, status.progress) },
@@ -63,7 +68,8 @@ export async function GET(request: Request) {
 
     // 完成:拉回视频转存,落画布视频节点
     const file = await fetchVideoContent(cfg, task.upstreamId);
-    const artworkId = `vid-art-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    // 任务 id 派生固定产物 id,即使客户端并发重试也由 addArtworks 幂等更新。
+    const artworkId = `vid-art-${id}`;
     let url = `data:${file.mime};base64,${file.buffer.toString("base64")}`;
     if (storageEnabled) {
       url = await uploadImage(new Uint8Array(file.buffer), file.mime, `videos/${artworkId}.mp4`);
@@ -87,21 +93,16 @@ export async function GET(request: Request) {
       height: 0,
       videoUrl: url,
     }], `vid-${Date.now()}`);
-    await updateVideoTask(email, id, {
-      status: "completed",
-      progress: 100,
-      artworkId,
-      videoUrl: url,
-    });
+    await completeVideoTask({ email, id, artworkId, videoUrl: url });
     return NextResponse.json({ ok: true, task: { ...task, status: "completed", artworkId, videoUrl: url } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "视频任务查询失败";
     // 查询类瞬时失败不改任务状态(下次轮询重试);明确的失败才终止
     if (/上游生成失败|视频超过/.test(message)) {
-      await updateVideoTask(email, id, { status: "failed", error: message });
-      await refundCredits(email, Number(process.env.VIDEO_TASK_COST || 20) || 20).catch(() => {});
+      await failVideoTask({ email, id, error: message });
       return NextResponse.json({ ok: true, task: { ...task, status: "failed", error: message } });
     }
+    await releaseVideoTaskPoll(email, id);
     return NextResponse.json({ ok: true, task, warning: message });
   }
 }
