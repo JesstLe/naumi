@@ -31,18 +31,30 @@ export async function POST(
   const task = await getVideoTask(email, id);
   if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
 
-  const ref = (task.videoReferences ?? []).find(
-    (r) => (r as { artworkId?: string }).artworkId
-  ) as { artworkId?: string } | undefined;
+  const params = task.parameters as Record<string, unknown>;
+  const references = (task.videoReferences ?? []) as never[];
 
   try {
     const created = await createVideoGeneration(email, {
       source: "workbench",
       sourceId: task.sourceId || undefined,
       prompt: task.prompt,
-      seconds: task.seconds || String((task.parameters as { seconds?: number })?.seconds ?? 4),
-      size: (task.parameters as { size?: string })?.size || "1280x720",
-      artworkId: ref?.artworkId || undefined,
+      seconds: task.seconds || String(params.seconds ?? params.durationSeconds ?? 4),
+      size: String(params.size || params.resolution || "1280x720"),
+      providerId: task.providerId,
+      modelId: task.model,
+      negativePrompt: String(params.negativePrompt || "") || undefined,
+      durationSeconds: Number(params.durationSeconds ?? params.seconds ?? task.seconds ?? 4),
+      aspectRatio: String(params.aspectRatio || "") || undefined,
+      resolution: String(params.resolution || params.size || "1280x720"),
+      width: Number(params.width) || undefined,
+      height: Number(params.height) || undefined,
+      generateAudio: Boolean(params.generateAudio),
+      watermark: Boolean(params.watermark),
+      references,
+      providerOptions: params.providerOptions && typeof params.providerOptions === "object"
+        ? params.providerOptions as Record<string, unknown>
+        : undefined,
     });
     return NextResponse.json({ ok: true, taskId: created.taskId, cost: created.cost });
   } catch (error) {

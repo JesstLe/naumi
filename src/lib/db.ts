@@ -271,10 +271,33 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS next_poll_at timestamptz;
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS poll_attempts integer NOT NULL DEFAULT 0;
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS idempotency_key text NOT NULL DEFAULT '';
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS channel_id text NOT NULL DEFAULT '';
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS provider_snapshot jsonb NOT NULL DEFAULT '{}'::jsonb;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS response_body text NOT NULL DEFAULT '';
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS last_response jsonb NOT NULL DEFAULT '{}'::jsonb;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS error_detail jsonb NOT NULL DEFAULT '{}'::jsonb;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS result_storage_key text NOT NULL DEFAULT '';
         CREATE INDEX IF NOT EXISTS app_video_tasks_poll_idx
           ON app_video_tasks (next_poll_at) WHERE status = 'processing';
         CREATE UNIQUE INDEX IF NOT EXISTS app_video_tasks_idem_key
           ON app_video_tasks (email, idempotency_key) WHERE idempotency_key <> '';
+        CREATE TABLE IF NOT EXISTS app_video_results (
+          id                 text PRIMARY KEY,
+          task_id            text NOT NULL UNIQUE,
+          email              text NOT NULL,
+          artwork_id         text NOT NULL DEFAULT '',
+          provider_id        text NOT NULL DEFAULT '',
+          model              text NOT NULL DEFAULT '',
+          prompt             text NOT NULL DEFAULT '',
+          video_url          text NOT NULL DEFAULT '',
+          result_storage_key text NOT NULL DEFAULT '',
+          parameters         jsonb NOT NULL DEFAULT '{}'::jsonb,
+          reference_items    jsonb NOT NULL DEFAULT '[]'::jsonb,
+          created_at         timestamptz NOT NULL DEFAULT now(),
+          deleted_at         timestamptz
+        );
+        CREATE INDEX IF NOT EXISTS app_video_results_email_idx
+          ON app_video_results (email, created_at DESC) WHERE deleted_at IS NULL;
         CREATE TABLE IF NOT EXISTS app_orders (
           id           text PRIMARY KEY,
           email        text NOT NULL,
@@ -4426,6 +4449,26 @@ export type VideoTaskRow = {
   capabilitySnapshot: Record<string, unknown>;
   seconds: string;
   createdAt: string;
+  completedAt?: string;
+  providerSnapshot?: Record<string, unknown>;
+  responseBody?: string;
+  lastResponse?: Record<string, unknown>;
+  errorDetail?: Record<string, unknown>;
+  resultStorageKey?: string;
+};
+
+export type VideoResultRow = {
+  id: string;
+  taskId: string;
+  artworkId: string;
+  providerId: string;
+  model: string;
+  prompt: string;
+  videoUrl: string;
+  resultStorageKey: string;
+  parameters: Record<string, unknown>;
+  references: unknown[];
+  createdAt: string;
 };
 
 export async function createVideoTask(input: {
@@ -4445,14 +4488,17 @@ export async function createVideoTask(input: {
   videoReferences?: unknown;
   capabilitySnapshot?: unknown;
   idempotencyKey?: string;
+  channelId?: string;
+  providerSnapshot?: unknown;
+  responseBody?: string;
 }): Promise<VideoTaskRow> {
   await ensureSchema();
   await getPool().query(
     `INSERT INTO app_video_tasks
        (id, email, upstream_id, model, prompt, size, seconds, status, cost, request_body,
         provider_id, source, source_id, parameters, video_references, capability_snapshot, idempotency_key,
-        started_at, next_poll_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'processing',$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15::jsonb,$16,now(),now())`,
+        started_at, next_poll_at, channel_id, provider_snapshot, response_body)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'processing',$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15::jsonb,$16,now(),now(),$17,$18::jsonb,$19)`,
     [
       input.id,
       input.email.toLowerCase(),
@@ -4470,6 +4516,9 @@ export async function createVideoTask(input: {
       JSON.stringify(input.videoReferences ?? []),
       JSON.stringify(input.capabilitySnapshot ?? {}),
       (input.idempotencyKey ?? "").slice(0, 100),
+      (input.channelId ?? input.providerId ?? "").slice(0, 100),
+      JSON.stringify(input.providerSnapshot ?? {}),
+      (input.responseBody ?? "").slice(0, 8000),
     ]
   );
   return {
@@ -4502,7 +4551,8 @@ export async function getVideoTask(
   const { rows } = await getPool().query(
     `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
             provider_id, source, source_id, parameters, video_references, capability_snapshot,
-            next_poll_at, poll_attempts, seconds, created_at
+            next_poll_at, poll_attempts, seconds, created_at, completed_at,
+            provider_snapshot, response_body, last_response, error_detail, result_storage_key
        FROM app_video_tasks
       WHERE email = $1 AND id = $2`,
     [email.toLowerCase(), id]
@@ -4528,6 +4578,12 @@ export async function getVideoTask(
     capabilitySnapshot: (r.capability_snapshot ?? {}) as Record<string, unknown>,
     seconds: String(r.seconds ?? ""),
     createdAt: r.created_at ? new Date(r.created_at as string).toISOString() : "",
+    completedAt: r.completed_at ? new Date(r.completed_at as string).toISOString() : undefined,
+    providerSnapshot: (r.provider_snapshot ?? {}) as Record<string, unknown>,
+    responseBody: String(r.response_body ?? ""),
+    lastResponse: (r.last_response ?? {}) as Record<string, unknown>,
+    errorDetail: (r.error_detail ?? {}) as Record<string, unknown>,
+    resultStorageKey: String(r.result_storage_key ?? ""),
   };
 }
 
@@ -4574,6 +4630,8 @@ export async function completeVideoTask(input: {
   id: string;
   artworkId: string;
   videoUrl: string;
+  resultStorageKey?: string;
+  lastResponse?: unknown;
 }): Promise<void> {
   await ensureSchema();
   const email = input.email.toLowerCase();
@@ -4609,9 +4667,21 @@ export async function completeVideoTask(input: {
     await client.query(
       `UPDATE app_video_tasks SET
          status = 'completed', progress = 100, artwork_id = $3, video_url = $4,
-         error = '', poll_lock_until = NULL, updated_at = now()
+         error = '', poll_lock_until = NULL, completed_at = now(), updated_at = now(),
+         result_storage_key = $5, last_response = $6::jsonb
        WHERE email = $1 AND id = $2`,
-      [email, input.id, input.artworkId, input.videoUrl]
+      [email, input.id, input.artworkId, input.videoUrl, input.resultStorageKey || "", JSON.stringify(input.lastResponse ?? {})]
+    );
+    await client.query(
+      `INSERT INTO app_video_results
+         (id, task_id, email, artwork_id, provider_id, model, prompt, video_url,
+          result_storage_key, parameters, reference_items)
+       SELECT $3, id, email, $4, provider_id, model, prompt, $5, $6, parameters, video_references
+         FROM app_video_tasks WHERE email = $1 AND id = $2
+       ON CONFLICT (task_id) DO UPDATE SET
+         artwork_id = EXCLUDED.artwork_id, video_url = EXCLUDED.video_url,
+         result_storage_key = EXCLUDED.result_storage_key, deleted_at = NULL`,
+      [email, input.id, `vid-result-${input.id}`, input.artworkId, input.videoUrl, input.resultStorageKey || ""]
     );
     await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
     await client.query("COMMIT");
@@ -4715,7 +4785,8 @@ export async function listVideoTasks(
   const { rows } = await getPool().query(
     `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
             provider_id, source, source_id, parameters, video_references, capability_snapshot,
-            next_poll_at, poll_attempts, seconds, created_at
+            next_poll_at, poll_attempts, seconds, created_at, completed_at,
+            provider_snapshot, response_body, last_response, error_detail, result_storage_key
        FROM app_video_tasks
       WHERE ${where}
       ORDER BY created_at DESC
@@ -4741,7 +4812,60 @@ export async function listVideoTasks(
     capabilitySnapshot: (r.capability_snapshot ?? {}) as Record<string, unknown>,
     seconds: String(r.seconds ?? ""),
     createdAt: r.created_at ? new Date(r.created_at as string).toISOString() : "",
+    completedAt: r.completed_at ? new Date(r.completed_at as string).toISOString() : undefined,
+    providerSnapshot: (r.provider_snapshot ?? {}) as Record<string, unknown>,
+    responseBody: String(r.response_body ?? ""),
+    lastResponse: (r.last_response ?? {}) as Record<string, unknown>,
+    errorDetail: (r.error_detail ?? {}) as Record<string, unknown>,
+    resultStorageKey: String(r.result_storage_key ?? ""),
   }));
+}
+
+export async function listVideoResults(email: string, limit = 50): Promise<VideoResultRow[]> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT id, task_id, artwork_id, provider_id, model, prompt, video_url,
+            result_storage_key, parameters, reference_items, created_at
+       FROM app_video_results
+      WHERE email = $1 AND deleted_at IS NULL
+      ORDER BY created_at DESC LIMIT $2`,
+    [email.toLowerCase(), Math.min(Math.max(limit, 1), 100)]
+  );
+  return rows.map((r: Record<string, unknown>) => ({
+    id: String(r.id), taskId: String(r.task_id), artworkId: String(r.artwork_id || ""),
+    providerId: String(r.provider_id || ""), model: String(r.model || ""),
+    prompt: String(r.prompt || ""), videoUrl: String(r.video_url || ""),
+    resultStorageKey: String(r.result_storage_key || ""),
+    parameters: (r.parameters || {}) as Record<string, unknown>,
+    references: (r.reference_items || []) as unknown[],
+    createdAt: r.created_at ? new Date(r.created_at as string).toISOString() : "",
+  }));
+}
+
+export async function deleteVideoResult(email: string, id: string): Promise<boolean> {
+  await ensureSchema();
+  const result = await getPool().query(
+    `UPDATE app_video_results SET deleted_at = now()
+      WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
+    [email.toLowerCase(), id]
+  );
+  return (result.rowCount || 0) > 0;
+}
+
+export async function recordVideoTaskPoll(
+  email: string,
+  id: string,
+  progress: number,
+  lastResponse: unknown,
+  errorDetail?: unknown
+): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `UPDATE app_video_tasks SET progress = $3, last_response = $4::jsonb,
+            error_detail = $5::jsonb, last_polled_at = now(), updated_at = now()
+      WHERE email = $1 AND id = $2`,
+    [email.toLowerCase(), id, Math.max(0, Math.min(100, Math.trunc(progress))), JSON.stringify(lastResponse ?? {}), JSON.stringify(errorDetail ?? {})]
+  );
 }
 
 /** worker/恢复扫描:领取到期且无锁的 processing 任务(id+email)。 */
