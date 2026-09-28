@@ -1,5 +1,6 @@
 import {
   Sparkles,
+  Clapperboard,
   Layers,
   Copy,
   Flame,
@@ -79,6 +80,11 @@ export const TOOLS: ToolMeta[] = [
     key: "AI 生图", en: "AI image", slug: "generate", href: "/generate", category: "生成创作",
     Icon: Sparkles, desc: "一句话直接出商品图,支持多比例多张并发",
     action: "立即生成", cost: 4, ctrls: [], workspace: true, live: true, inMenu: true,
+  },
+  {
+    key: "视频工作台", en: "Video studio", slug: "video", href: "/video", category: "生成创作",
+    Icon: Clapperboard, desc: "文生/图生视频,任务后台执行,历史可恢复、重试、发送画布",
+    action: "生成视频", cost: 20, ctrls: [], workspace: true, live: true, inMenu: true,
   },
   {
     key: "一键套图", en: "Image suite", slug: "suite", href: "/suite", category: "生成创作",

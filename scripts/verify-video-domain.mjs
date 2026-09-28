@@ -75,4 +75,29 @@ assert.match(generate, /imageUrl/, "generate 必须支持 agent 的 imageUrl(P0-
 const taskById = read("src/app/api/video/tasks/[id]/route.ts");
 assert.match(taskById, /getVideoTask/, "[id] 路由必须只读查询");
 
-console.log("PASS video domain contracts: files, capability catalog, service semantics, worker wiring, legacy compatibility");
+// ── Phase 2 锚点:工作台页面、列表/重试/发送到画布、模拟组件下线 ──
+const phase2Files = [
+  "src/app/video/page.tsx",
+  "src/components/video/video-studio-client.tsx",
+  "src/app/api/video/tasks/[id]/retry/route.ts",
+  "src/app/api/video/tasks/[id]/send-to-canvas/route.ts",
+];
+for (const rel of phase2Files) {
+  assert.ok(existsSync(new URL(rel, root)), `missing file: ${rel}`);
+}
+const tasksRoute = read("src/app/api/video/tasks/route.ts");
+assert.match(tasksRoute, /listVideoTaskViews/, "tasks 路由必须提供列表模式");
+assert.match(tasksRoute, /pollAndSettle/, "tasks 路由必须保持 id 轮询兼容");
+const retryRoute = read("src/app/api/video/tasks/[id]/retry/route.ts");
+assert.match(retryRoute, /createVideoGeneration/, "重试必须走应用层创建");
+const sendRoute = read("src/app/api/video/tasks/[id]/send-to-canvas/route.ts");
+assert.match(sendRoute, /addArtworks/, "发送到画布必须能补建作品");
+const studio = read("src/components/video/video-studio-client.tsx");
+assert.match(studio, /sendToCanvas/, "工作台必须有发送到画布动作");
+assert.match(studio, /loadHistory/, "工作台必须恢复历史任务");
+assert.ok(
+  !existsSync(new URL("src/components/generate/video-studio.tsx", root)),
+  "旧模拟组件应已删除"
+);
+
+console.log("PASS video domain contracts: files, capability catalog, service semantics, worker wiring, workbench, legacy compatibility");
