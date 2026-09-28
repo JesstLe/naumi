@@ -111,6 +111,8 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS group_id text;
         -- 画布编辑分组:与项目 group_id、生成血缘分离。仅用于成组/解组和整体编辑。
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_group_id text;
+        -- 视频节点:产物为视频时 image_url 存海报帧(可空),video_url 存视频文件地址。
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS video_url text;
         -- 软删除/回收站:deleted_at 非空=已删(进回收站),空=正常。保留 N 天后才真删。
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
         CREATE INDEX IF NOT EXISTS app_artworks_deleted_idx
@@ -2006,6 +2008,7 @@ export type ArtworkRecord = {
   canvasGroupId?: string | null; // 画布编辑分组,不参与项目归属与生成血缘
   origin?: string | null; // 来源场景:"canvas"=在画布里产出(永远留画布);空=生图页/工具等普通产出
   marked?: boolean;
+  videoUrl?: string | null; // 视频产物地址(有值=该作品是视频节点;image 存海报帧可空)
 };
 
 export type UserImageProviderRecord = {
@@ -2336,8 +2339,8 @@ export async function addArtworks(
         `INSERT INTO app_artworks
            (id, email, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id, parent_ids, group_id, canvas_group_id, origin,
-            image_width, image_height, canvas_width, canvas_height)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21,$22,$23)
+            image_width, image_height, canvas_width, canvas_height, video_url)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21,$22,$23,$24)
          ON CONFLICT (id) DO UPDATE SET deleted_at = NULL`,
         [
           a.id,
@@ -2363,6 +2366,7 @@ export async function addArtworks(
           a.height ?? null,
           a.canvasWidth ?? null,
           a.canvasHeight ?? null,
+          a.videoUrl ?? null,
         ]
       );
     }
@@ -2382,7 +2386,7 @@ export async function listArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, created_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, created_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NULL
       ORDER BY created_at DESC LIMIT 1000`,
@@ -2414,6 +2418,7 @@ export async function listArtworks(
     canvasGroupId: r.canvas_group_id ?? null,
     origin: r.origin ?? null,
     marked: !!r.marked,
+    videoUrl: r.video_url ?? null,
     createdAt: new Date(r.created_at).toISOString(),
   }));
 }
@@ -2430,7 +2435,7 @@ export async function listArtworksByIds(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, created_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, created_at
        FROM app_artworks
       WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), clean]
@@ -2461,6 +2466,7 @@ export async function listArtworksByIds(
     canvasGroupId: r.canvas_group_id ?? null,
     origin: r.origin ?? null,
     marked: !!r.marked,
+    videoUrl: r.video_url ?? null,
     createdAt: new Date(r.created_at).toISOString(),
   }));
 }
@@ -2985,7 +2991,7 @@ export async function listDeletedArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, created_at, deleted_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, created_at, deleted_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NOT NULL
       ORDER BY deleted_at DESC LIMIT 200`,
@@ -3017,6 +3023,7 @@ export async function listDeletedArtworks(
     canvasGroupId: r.canvas_group_id ?? null,
     origin: r.origin ?? null,
     marked: !!r.marked,
+    videoUrl: r.video_url ?? null,
     createdAt: new Date(r.created_at).toISOString(),
   }));
 }
@@ -4352,4 +4359,114 @@ export async function copyComfyWorkflow(email: string, id: string): Promise<stri
     ]
   );
   return newId;
+}
+
+// ── 视频生成任务(OpenAI videos 协议,聚合商/官方端点通用) ──────────────────────
+
+export type VideoTaskRow = {
+  id: string;
+  upstreamId: string;
+  model: string;
+  prompt: string;
+  status: "processing" | "completed" | "failed";
+  progress: number;
+  artworkId: string;
+  videoUrl: string;
+  error: string;
+};
+
+export async function createVideoTask(input: {
+  id: string;
+  email: string;
+  upstreamId: string;
+  model: string;
+  prompt: string;
+  size: string;
+  seconds: string;
+  cost: number;
+  requestBody: string;
+}): Promise<VideoTaskRow> {
+  await ensureSchema();
+  await getPool().query(
+    `INSERT INTO app_video_tasks
+       (id, email, upstream_id, model, prompt, size, seconds, status, cost, request_body)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'processing',$8,$9)`,
+    [
+      input.id,
+      input.email.toLowerCase(),
+      input.upstreamId,
+      input.model,
+      input.prompt.slice(0, 1000),
+      input.size,
+      input.seconds,
+      input.cost,
+      input.requestBody.slice(0, 4000),
+    ]
+  );
+  return {
+    id: input.id,
+    upstreamId: input.upstreamId,
+    model: input.model,
+    prompt: input.prompt,
+    status: "processing",
+    progress: 0,
+    artworkId: "",
+    videoUrl: "",
+    error: "",
+  };
+}
+
+export async function getVideoTask(
+  email: string,
+  id: string
+): Promise<VideoTaskRow | null> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT id, upstream_id, model, prompt, status, progress, artwork_id, video_url, error
+       FROM app_video_tasks
+      WHERE email = $1 AND id = $2`,
+    [email.toLowerCase(), id]
+  );
+  const r = rows[0] as Record<string, unknown> | undefined;
+  if (!r) return null;
+  return {
+    id: String(r.id),
+    upstreamId: String(r.upstream_id ?? ""),
+    model: String(r.model ?? ""),
+    prompt: String(r.prompt ?? ""),
+    status: (r.status as VideoTaskRow["status"]) ?? "processing",
+    progress: Number(r.progress ?? 0),
+    artworkId: String(r.artwork_id ?? ""),
+    videoUrl: String(r.video_url ?? ""),
+    error: String(r.error ?? ""),
+  };
+}
+
+/** 轮询后回写状态;completed 时同时记录产物节点与地址。 */
+export async function updateVideoTask(
+  email: string,
+  id: string,
+  patch: Partial<Pick<VideoTaskRow, "status" | "progress" | "error" | "artworkId" | "videoUrl">>
+): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `UPDATE app_video_tasks SET
+       status = COALESCE($3, status),
+       progress = COALESCE($4, progress),
+       error = COALESCE($5, error),
+       artwork_id = COALESCE($6, artwork_id),
+       video_url = COALESCE($7, video_url),
+       last_polled_at = now(),
+       updated_at = now()
+      WHERE email = $1 AND id = $2`,
+    [
+      email.toLowerCase(),
+      id,
+      patch.status ?? null,
+      patch.progress ?? null,
+      patch.error ?? null,
+      patch.artworkId ?? null,
+      patch.videoUrl ?? null,
+    ]
+  );
 }
