@@ -442,8 +442,10 @@ try {
   );
   await expect(restoredTextNode).toHaveCSS("width", `${textNodeBeforeReload.width}px`);
   await expect(restoredTextNode).toHaveCSS("height", `${textNodeBeforeReload.height}px`);
+  await restoredTextNode.click();
+  await expect(page.getByPlaceholder(/描述你的问题、文案或内容需求/)).toHaveValue(generatedText);
   assert.deepEqual(pageErrors, []);
-  pass("refresh restores text size, both connection directions, and the image @mention without browser runtime errors");
+  pass("refresh restores text size, both connection directions, image @mention, and dock content without browser runtime errors");
 
   console.log(`MODIFIED_RESULT=PASS TEXT_MODEL=fixture-text-model IMAGE_ID=${generatedArtwork.id} checks=${report.length}`);
 } catch (error) {

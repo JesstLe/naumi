@@ -51,6 +51,14 @@
 - `node scripts/verify-video-task-safety.mjs`
 - 运行库基线：`select to_regclass('public.app_video_tasks')` 返回 `missing`，与故障根因一致。
 
+## 文字节点 Dock 同步修复
+
+- **现象**：文字节点卡片已有 `content`，点击节点打开底部 Dock 后输入框为空。
+- **根因**：`canvas-client.tsx` 有两段切换文字节点的 effect。第一段先写入 `selectedText.content`，后面的旧 effect 又用 `node.prompt` 覆盖；已生成节点通常没有 `prompt`，因此最终显示为空。
+- **修复**：合并为一个同步入口，优先使用 `content`，无内容时回退 `prompt`，删除会覆盖输入的旧 effect；同时增加回归断言，刷新后重新选中文字节点时 Dock 必须包含节点正文。
+- **验证**：`scripts/canvas-text-node-smoke.mjs` 11 项通过，最后一项实际断言刷新后 Dock 值等于已生成文本；`npx tsc --noEmit` 和 `npm run lint` 通过。
+- **仍存在的独立构建问题**：`npm run build` 在收集页面数据阶段报告 `/api/admin/brand-logo`、`/api/agent/verify-image`、`/api/aplus` 的 `.next` 页面模块缺失；这些路由源码存在，属于当前构建缓存/路由产物问题，不是本次 Dock 修复引入。
+
 ## 后续建议
 
 1. 部署后验证 `app_video_tasks` 自动创建，并用真实视频供应商跑一次成功、一次明确失败。

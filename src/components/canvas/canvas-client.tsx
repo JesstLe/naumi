@@ -2607,13 +2607,15 @@ export function CanvasClient() {
     setTextComposerExpanded(false);
     setTextComposerManuallySized(false);
     // 自动带上节点现有内容:方便"看着原文改一改再生成";切换节点时整体替换。
-    setTextPrompt(selectedText?.content || "");
+    // 旧逻辑在下方又用 node.prompt 写了一次,会把已有 content 覆盖为空。
+    setTextPrompt(selectedText?.content || selectedText?.prompt || "");
+    setTextError(null);
     // 切换节点时清掉上一节点手动拖出的固定高度:否则新节点继承"两行小窗",
     // 且 ResizeObserver 会立刻把 manuallySized 重新置真,自适应从此失效。
     if (textComposerDockRef.current?.style.height) {
       textComposerDockRef.current.style.height = "";
     }
-  }, [selectedTextId, selectedText?.content]);
+  }, [selectedTextId, selectedText?.content, selectedText?.prompt]);
   useEffect(() => {
     const dock = textComposerDockRef.current;
     const body = textComposerBodyRef.current;
@@ -3135,16 +3137,6 @@ export function CanvasClient() {
     return () => cancelAnimationFrame(raf);
   }, [selectedPendId]);
 
-  useEffect(() => {
-    if (!selectedTextId) return;
-    const node = textNodes.find((item) => item.id === selectedTextId);
-    if (!node) return;
-    setTextPrompt(node.prompt || "");
-    setTextError(null);
-    // Only reset the editor when switching nodes. Persisting references or status
-    // must not overwrite text the user is currently typing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTextId]);
   useEffect(() => {
     setTextReferenceMenuOpen(false);
   }, [selectedText?.id]);
