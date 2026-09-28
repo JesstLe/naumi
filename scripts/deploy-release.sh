@@ -67,11 +67,25 @@ grep -q 'REFERENCE_VISION_SOURCE: image' "$RELEASE/docker-compose.yml"
 cp -p "$NGINX" "$RELEASE/backups/nginx.before.conf"
 printf '%s\n' "$PREVIOUS" > "$RELEASE/PREVIOUS_RELEASE"
 printf '%s\n' "$COMMIT" > "$RELEASE/DEPLOYED_COMMIT"
-gunzip -c "$IMAGE" | docker load
+# 幂等跳过:镜像已在本地(重试部署)时跳过 load,避免重复 ingest 打满磁盘
+if docker image inspect "ghcr.io/jesstle/naumi:$COMMIT" --format '{{.Id}}' >/dev/null 2>&1; then
+  echo 'SKIP_LOAD: image already present locally'
+else
+  gunzip -c "$IMAGE" | docker load
+fi
 docker image inspect "ghcr.io/jesstle/naumi:$COMMIT" --format '{{.Id}}' > "$RELEASE/IMAGE_ID"
 docker compose -p naumi -f "$RELEASE/docker-compose.yml" config --quiet
 docker exec naumi-db-1 pg_dump -U novaryns -d novaryns --format=custom > "$RELEASE/backups/database.dump"
-docker run --rm -v naumi_appdata:/data:ro alpine:latest tar -C /data -czf - . > "$RELEASE/backups/appdata.tar.gz"
+# 空间守卫:可用空间低于媒体卷两倍时跳过 appdata 全量备份(保 pg_dump),
+# 否则备份本身会打满磁盘导致部署中断
+FREE_KB=$(df --output=avail -k / | tail -1 | tr -d ' ')
+DATA_KB=$(du -sk /var/lib/docker/volumes/naumi_appdata/_data 2>/dev/null | awk '{print $1}')
+if [ "${DATA_KB:-0}" -gt 0 ] && [ "$FREE_KB" -lt $((DATA_KB * 2)) ]; then
+  echo "APPDATA_SKIP: free ${FREE_KB}kB < 2x data ${DATA_KB}kB, skip appdata backup"
+  touch "$RELEASE/backups/appdata.tar.gz.skipped"
+else
+  docker run --rm -v naumi_appdata:/data:ro alpine:latest tar -C /data -czf - . > "$RELEASE/backups/appdata.tar.gz"
+fi
 docker exec naumi-db-1 psql -U novaryns -d novaryns -Atc 'select count(*) from app_users; select count(*) from app_artworks;' > "$RELEASE/backups/counts.before"
 sha256sum "$RELEASE/backups/database.dump" "$RELEASE/backups/appdata.tar.gz" "$RELEASE/backups/nginx.before.conf" > "$RELEASE/backups/SHA256SUMS"
 
