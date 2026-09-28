@@ -24,6 +24,7 @@ const TOOL_TIMEOUT_MS = {
   review_aplus_source: 360_000,
   continue_aplus_generation: 600_000,
   generate_packaging_3d: 360_000,
+  comfy_run: 280_000,
   read_only: 15_000,
 } as const;
 
@@ -40,6 +41,11 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
  8. review_aplus_source:审核一张母图。approve=通过；redo=带用户要求只重做这一张。
  9. continue_aplus_generation:全部母图通过后继续生成 A+，此时计费=模块数×6。
  10. generate_packaging_3d:把模切线/刀版图折叠为包装 3D 产品效果图。参数 image_url、package_type、view、material、background、resolution、text。
+
+## 可用工具(ComfyUI 工作流 · 用户自备算力端点,不扣站内积分)
+- list_comfy_workflows:只读。列出用户已导入的 ComfyUI 工作流(id/名称/输入概况)。要跑工作流前先调它拿 workflow_id。
+- run_comfy_workflow:在用户自己的 ComfyUI 端点上执行工作流。参数 workflow_id(必填)、prompt(正向提示词,可选)、image_url(用户给的[商品图] URL,工作流有图槽时传)、seed/width/height/length(可选)。
+  注意:算力在用户端点,不消耗积分;执行可能数分钟(视频更久);产物图片用 Markdown 展示,视频给下载链接。用户没配端点或没导入工作流时,引导去画布选中图片点「工作流」配置,不要反复重试。
 
 ## 可用工具(鱼塘任务 · 澜序协作 — 营销单/刷任务派发系统)
 - yutang_summary:只读。汇总鱼塘任务全景:今日任务数、待回传订单、评价进度、各店铺分布。
@@ -1343,6 +1349,116 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           details: {
             url: d.url,
             publicSummary: "模切线已生成 3D 产品效果图",
+          },
+        };
+      },
+    },
+    // ── ComfyUI 工作流(BYOC:用户自备端点,不扣站内积分) ──
+    {
+      name: "list_comfy_workflows",
+      label: "工作流列表",
+      description:
+        "只读。列出用户已导入的 ComfyUI 工作流:id、名称、图片槽/文本/种子数量。跑工作流前先调它。",
+      parameters: Type.Object({}),
+      execute: async (_id, _params, signal) => {
+        const d = await withToolTimeout(
+          "read_only",
+          () => internal("/api/comfyui/workflows", signal),
+          signal
+        );
+        const list = (d.workflows ?? []) as {
+          id: string;
+          name: string;
+          inputs?: {
+            images?: unknown[];
+            texts?: unknown[];
+            seeds?: unknown[];
+          };
+        }[];
+        if (!list.length) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "用户还没有导入任何 ComfyUI 工作流。请引导:画布选中一张图 → 工具栏「工作流」→「导入」页粘贴 ComfyUI API 格式 JSON。",
+              },
+            ],
+            details: { count: 0, publicSummary: "无工作流" },
+          };
+        }
+        const lines = list.map(
+          (w) =>
+            `- ${w.id} | ${w.name} | ${w.inputs?.images?.length ?? 0} 图槽 ${w.inputs?.texts?.length ?? 0} 文本 ${w.inputs?.seeds?.length ?? 0} 种子`
+        );
+        return {
+          content: [{ type: "text", text: `共 ${list.length} 个工作流:\n${lines.join("\n")}` }],
+          details: { count: list.length, publicSummary: `列出 ${list.length} 个工作流` },
+        };
+      },
+    },
+    {
+      name: "run_comfy_workflow",
+      label: "运行工作流",
+      description:
+        "在用户自己的 ComfyUI 端点上执行已导入的工作流。不扣站内积分;可能数分钟(视频更久)。先 list_comfy_workflows 拿 workflow_id。",
+      parameters: Type.Object({
+        workflow_id: Type.String({ description: "list_comfy_workflows 返回的工作流 id" }),
+        prompt: Type.Optional(
+          Type.String({ description: "正向提示词,填入工作流的正向文本槽" })
+        ),
+        image_url: Type.Optional(
+          Type.String({ description: "输入图 URL(用户消息里的[商品图]);工作流有图槽时传" })
+        ),
+        seed: Type.Optional(Type.Number({ description: "随机种子,省略则随机" })),
+        width: Type.Optional(Type.Number({ description: "输出宽(工作流有该输入时生效)" })),
+        height: Type.Optional(Type.Number({ description: "输出高(工作流有该输入时生效)" })),
+        length: Type.Optional(Type.Number({ description: "视频帧数(工作流有该输入时生效)" })),
+      }),
+      executionMode: "sequential",
+      execute: async (_id, params, signal) => {
+        const p = params as {
+          workflow_id: string;
+          prompt?: string;
+          image_url?: string;
+          seed?: number;
+          width?: number;
+          height?: number;
+          length?: number;
+        };
+        const d = await withToolTimeout(
+          "comfy_run",
+          () =>
+            internal("/api/comfyui/run", signal, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                workflowId: p.workflow_id,
+                imageUrl: p.image_url,
+                prompt: p.prompt,
+                seed: p.seed,
+                numericDefaults: {
+                  ...(p.width ? { width: p.width } : {}),
+                  ...(p.height ? { height: p.height } : {}),
+                  ...(p.length ? { length: p.length } : {}),
+                },
+              }),
+            }),
+          signal
+        );
+        const images = (d.images ?? []) as { url: string }[];
+        const videos = (d.videos ?? []) as { url: string }[];
+        const parts: string[] = [];
+        if (images.length) {
+          parts.push(`生成 ${images.length} 张:\n${images.map((im) => `![工作流结果](${im.url})`).join("\n")}`);
+        }
+        if (videos.length) {
+          parts.push(`视频 ${videos.length} 个(下载链接):\n${videos.map((v) => v.url).join("\n")}`);
+        }
+        return {
+          content: [{ type: "text", text: parts.join("\n\n") || "执行完成(无产物)" }],
+          details: {
+            images: images.map((im) => im.url),
+            publicSummary: `工作流出图 ${images.length} 张/视频 ${videos.length} 个`,
           },
         };
       },

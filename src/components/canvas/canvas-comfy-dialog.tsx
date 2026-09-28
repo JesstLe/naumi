@@ -7,7 +7,9 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  Share2,
   Sparkles,
+  Store,
   Trash2,
   Workflow as WorkflowIcon,
   X,
@@ -41,6 +43,16 @@ type WorkflowView = {
   } | null;
   required: string[] | null;
   note: string;
+  isPublic: boolean;
+  updatedAt: string;
+};
+
+type MarketItem = {
+  id: string;
+  name: string;
+  author: string;
+  note: string;
+  inputs: WorkflowView["inputs"];
   updatedAt: string;
 };
 
@@ -68,9 +80,11 @@ export function CanvasComfyDialog({
   /** 由画布实现:占位节点 → 执行 → 图片产物挂树;返回结果供面板展示视频 */
   onRun: (payload: ComfyRunPayload) => Promise<ComfyRunResult>;
 }) {
-  const [tab, setTab] = useState<"run" | "endpoint" | "import">("run");
+  const [tab, setTab] = useState<"run" | "endpoint" | "import" | "market">("run");
   const [endpoints, setEndpoints] = useState<EndpointView[] | null>(null);
   const [workflows, setWorkflows] = useState<WorkflowView[] | null>(null);
+  const [market, setMarket] = useState<MarketItem[] | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [workflowId, setWorkflowId] = useState("");
   const [texts, setTexts] = useState<Record<string, string>>({});
   const [seeds, setSeeds] = useState<Record<string, number>>({});
@@ -111,13 +125,22 @@ export function CanvasComfyDialog({
     } catch { /* keep */ }
   }, []);
 
+  const loadMarket = useCallback(async () => {
+    try {
+      const res = await fetch("/api/comfyui/market", { headers: await authHeader() });
+      const data = await res.json();
+      if (Array.isArray(data.market)) setMarket(data.market);
+    } catch { /* keep */ }
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     void loadEndpoints();
     void loadWorkflows();
+    void loadMarket();
     setResult(null);
     setError("");
-  }, [open, loadEndpoints, loadWorkflows]);
+  }, [open, loadEndpoints, loadWorkflows, loadMarket]);
 
   // 选中工作流 → 预填表单
   useEffect(() => {
@@ -234,6 +257,48 @@ export function CanvasComfyDialog({
     await loadWorkflows();
   }
 
+  async function publishWorkflow(id: string, isPublic: boolean) {
+    setWfBusy(true);
+    try {
+      const res = await fetch("/api/comfyui/market", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(await authHeader()) },
+        body: JSON.stringify({ action: "publish", id, isPublic }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "操作失败");
+      setWfReport(isPublic ? "已发布到市场，其他人可一键导入" : "已从市场下架");
+      await loadWorkflows();
+      await loadMarket();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "操作失败");
+    } finally {
+      setWfBusy(false);
+    }
+  }
+
+  async function copyFromMarket(id: string) {
+    setWfBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/comfyui/market", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(await authHeader()) },
+        body: JSON.stringify({ action: "copy", id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "导入失败");
+      await loadWorkflows();
+      setWorkflowId(data.savedId || "");
+      setWfReport("已导入到我的工作流");
+      setTab("run");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "导入失败");
+    } finally {
+      setWfBusy(false);
+    }
+  }
+
   async function run() {
     if (!workflowId || running) return;
     setRunning(true);
@@ -253,6 +318,7 @@ export function CanvasComfyDialog({
     { key: "run" as const, label: "运行" },
     { key: "endpoint" as const, label: "端点" },
     { key: "import" as const, label: "导入" },
+    { key: "market" as const, label: "市场" },
   ];
 
   return (
@@ -355,6 +421,21 @@ export function CanvasComfyDialog({
                 <p className="text-[11px] leading-relaxed text-c-text4">
                   算力跑在你自己的 ComfyUI 上(本机 / NAS / AutoDL 租卡),不消耗站内积分。内网地址需自托管部署且开启 USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK。
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setGuideOpen((v) => !v)}
+                  className="text-[11.5px] font-semibold text-primary hover:underline"
+                >
+                  {guideOpen ? "收起「怎么获得端点」" : "没有 ComfyUI？看「怎么获得端点」"}
+                </button>
+                {guideOpen && (
+                  <ol className="list-decimal space-y-1.5 rounded-lg bg-c-subtle px-3.5 py-3 pl-8 text-[11.5px] leading-relaxed text-c-text2">
+                    <li>本机已装 ComfyUI：填 <code className="rounded bg-c-card px-1">http://127.0.0.1:8188</code> 即可（自托管部署才放行内网地址）。</li>
+                    <li><b>AutoDL 租卡（推荐，无 GPU 也能跑）</b>：autodl.cn 租一张卡 → 镜像市场选「ComfyUI」官方镜像 → 开机后在「自定义服务」开启端口映射 → 把映射出来的 <code className="rounded bg-c-card px-1">https://xxx.autodl.com</code> 地址填到上面。用完关机即停止计费。</li>
+                    <li>群晖 NAS / 家用服务器：Docker 部署 ComfyUI，映射 8188 端口后填局域网地址（需自托管开启内网放行）。</li>
+                    <li>ComfyUI 官方云（Comfy Cloud）：API Key 填入密钥框，地址按官方控制台给出的接入点填写。</li>
+                  </ol>
+                )}
               </div>
             </div>
           )}
@@ -371,6 +452,43 @@ export function CanvasComfyDialog({
                 {wfBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WorkflowIcon className="h-3.5 w-3.5" />}
                 导入工作流
               </button>
+            </div>
+          )}
+
+          {tab === "market" && (
+            <div className="space-y-3">
+              <p className="text-[11.5px] leading-relaxed text-c-text3">
+                社区公开分享的工作流，一键导入到自己的库（深拷贝，互不影响）。在「运行」页点工作流右侧的分享图标可发布你的。
+              </p>
+              {!market ? (
+                <p className="py-3 text-xs text-c-text3">读取中…</p>
+              ) : market.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-c-border px-3 py-6 text-center text-xs leading-relaxed text-c-text3">
+                  市场还空着。导入好用的 ComfyUI 工作流后分享出来，就是第一批。
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {market.map((item) => (
+                    <div key={item.id} className="flex items-center gap-2 rounded-xl border border-c-border px-3 py-2.5">
+                      <Store className="h-4 w-4 flex-none text-c-text3" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[13px] font-semibold text-c-text">{item.name}</p>
+                        <p className="truncate text-[11px] text-c-text3">
+                          @{item.author || "匿名"} · {(item.inputs?.images?.length ?? 0)} 图槽 · {(item.inputs?.texts?.length ?? 0)} 文本
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void copyFromMarket(item.id)}
+                        disabled={wfBusy}
+                        className="flex-none rounded-lg bg-primary px-2.5 py-1.5 text-[11.5px] font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                      >
+                        {wfBusy ? "…" : "一键导入"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -405,6 +523,20 @@ export function CanvasComfyDialog({
                         <span aria-label="删除" onClick={(e) => { e.stopPropagation(); void deleteWorkflow(wf.id); }}
                           className="grid h-7 w-7 place-items-center text-c-text3 hover:text-red-600">
                           <Trash2 className="h-3.5 w-3.5" />
+                        </span>
+                        <span
+                          aria-label={wf.isPublic ? "从市场下架" : "分享到市场"}
+                          title={wf.isPublic ? "从市场下架" : "分享到市场"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!wfBusy) void publishWorkflow(wf.id, !wf.isPublic);
+                          }}
+                          className={cn(
+                            "grid h-7 w-7 place-items-center transition-colors",
+                            wf.isPublic ? "text-emerald-600 hover:text-emerald-700" : "text-c-text3 hover:text-c-text"
+                          )}
+                        >
+                          <Share2 className="h-3.5 w-3.5" />
                         </span>
                       </button>
                     ))}
