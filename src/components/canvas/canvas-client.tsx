@@ -7804,7 +7804,7 @@ export function CanvasClient() {
                     title={t("canvas.addNode")}
                     data-testid="canvas-add-node-button"
                     className={cn(
-                      "flex h-16 w-16 flex-none items-center justify-center rounded-[18px] shadow-lg transition-colors min-[1920px]:h-[72px] min-[1920px]:w-[72px]",
+                      "flex h-11 w-11 flex-none items-center justify-center rounded-[13px] shadow-sm transition-colors",
                       addMenuOpen
                         ? "bg-primary/90 text-primary-foreground"
                         : "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -7812,7 +7812,7 @@ export function CanvasClient() {
                   >
                     <Plus
                       className={cn(
-                        "h-7 w-7 transition-transform min-[1920px]:h-8 min-[1920px]:w-8",
+                        "h-5 w-5 transition-transform",
                         addMenuOpen && "rotate-45"
                       )}
                     />
@@ -8434,6 +8434,15 @@ export function CanvasClient() {
                             label={t("canvas.reversePrompt")}
                             disabled={promptMining}
                             onClick={() => void reversePromptsForSelection([node])}
+                          />
+                        )}
+                        {!readOnly && (
+                          <Item
+                            label="画布助手"
+                            onClick={() => {
+                              setCtxMenu(null);
+                              openAssistant(node);
+                            }}
                           />
                         )}
                         {!readOnly && (
