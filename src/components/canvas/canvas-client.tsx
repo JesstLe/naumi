@@ -1523,6 +1523,14 @@ export function CanvasClient() {
   } | null>(null);
   // 生成器面板停靠在选中节点正下方(不再可拖);panelRef 仍用于测量
   const panelRef = useRef<HTMLDivElement | null>(null);
+  // 底部 dock 提示词框:随内容自适应长高(默认 4 行视野,上限 ~8 行)
+  const promptAreaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = promptAreaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 176)}px`;
+  }, [editPrompt]);
   // 追加参考图(与节点图一起参与图生图)
   const [extraFiles, setExtraFiles] = useState<File[]>([]);
   const [extraPreviews, setExtraPreviews] = useState<string[]>([]);
@@ -9713,13 +9721,14 @@ export function CanvasClient() {
                 </button>
                 </div>
 
-                {/* 提示词(留空=按这张图再生成一张) */}
+                {/* 提示词(留空=按这张图再生成一张):默认 4 行视野,文字多时自适应长高(上限 ~8 行) */}
                 <Textarea
+                  ref={promptAreaRef}
                   value={editPrompt}
                   readOnly={readOnly}
                   placeholder={readOnly ? "" : t("canvas.promptPlaceholder")}
                   onChange={(e) => setEditPrompt(e.target.value)}
-                  className="canvas-ui-text min-h-[40px] max-h-40 resize-none border-0 bg-transparent px-0 py-0.5 text-sm shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0"
+                  className="canvas-ui-text min-h-[92px] max-h-44 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0"
                 />
                 {genError && (
                   <p className="pb-1 text-xs font-medium text-red-400">
