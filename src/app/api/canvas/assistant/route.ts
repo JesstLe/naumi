@@ -192,29 +192,70 @@ export async function POST(request: Request) {
     > = [
       {
         type: "text",
-        text: `以下是画布上下文（第一张是当前图，其余是它的上游生成链，按从早到晚排列）：\n\n${contextMetadata(ordered[0], ordered.slice(1))}`,
+        text: `以下是画布上下文（第一张是当前图，其余是它的上游生成链，按从近到远排列）：\n\n${contextMetadata(ordered[0], ordered.slice(1))}`,
       },
       ...contextImages.map((url) => ({
         type: "image_url" as const,
         image_url: { url, detail: "low" as const },
       })),
     ];
-    const response = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: contextContent },
-        { role: "assistant", content: "收到，我已了解画布上下文（当前图与上游生成链），可以开始对话。" },
-        ...history,
-      ],
-      temperature: 0.7,
-      max_tokens: 1800,
-    });
-    const text = (response.choices[0]?.message?.content || "").trim();
-    if (!text) {
-      return NextResponse.json({ error: "助手没有返回内容，请重试" }, { status: 502 });
+    // SSE 流式输出:建立流失败仍可回 JSON 错误;建立后增量以 delta 事件转发
+    let stream: Awaited<
+      ReturnType<typeof client.chat.completions.create>
+    >;
+    try {
+      stream = await client.chat.completions.create({
+        model,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: contextContent },
+          { role: "assistant", content: "收到，我已了解画布上下文（当前图与上游生成链），可以开始对话。" },
+          ...history,
+        ],
+        temperature: 0.7,
+        max_tokens: 1800,
+        stream: true,
+      });
+    } catch (error) {
+      return NextResponse.json(
+        { error: safeError(error, "画布助手暂时不可用，请稍后重试") },
+        { status: 502 }
+      );
     }
-    return NextResponse.json({ text, model, referenceCount: ordered.length });
+    const encoder = new TextEncoder();
+    const sse = new ReadableStream({
+      async start(controller) {
+        const send = (event: string, data: Record<string, unknown>) => {
+          try {
+            controller.enqueue(
+              encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+            );
+          } catch {
+            /* 连接已断开,迭代结束由 close 兜底 */
+          }
+        };
+        try {
+          for await (const chunk of stream) {
+            const delta = chunk.choices?.[0]?.delta?.content;
+            if (delta) send("delta", { text: delta });
+          }
+          send("done", { ok: true });
+        } catch (e) {
+          send("error", { error: safeError(e, "画布助手暂时不可用，请稍后重试") });
+        }
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
+      },
+    });
+    return new Response(sse, {
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache",
+      },
+    });
   } catch (error) {
     return NextResponse.json(
       { error: safeError(error, "画布助手暂时不可用，请稍后重试") },

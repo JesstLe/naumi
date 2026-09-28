@@ -3730,12 +3730,51 @@ export function CanvasClient() {
           messages: history.map(({ role, content }) => ({ role, content })),
         }),
       });
-      const data = await readJsonSafe(response);
-      if (!response.ok || !data?.text) throw new Error(data?.error || "画布助手暂时不可用");
+      if (!response.ok || !response.body) {
+        const data = await readJsonSafe(response);
+        throw new Error(data?.error || "画布助手暂时不可用");
+      }
+      // SSE 流式:追加一条空助手消息,随 delta 逐段填充
       setAssistantTurns((current) => [
         ...current,
-        { id: `as-a-${Date.now()}`, role: "assistant", content: String(data.text) },
+        { id: `as-a-${Date.now()}`, role: "assistant", content: "" },
       ]);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let text = "";
+      let streamError: string | null = null;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? "";
+        for (const part of parts) {
+          const evLine = part.split("\n").find((l) => l.startsWith("event: "));
+          const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
+          if (!evLine || !dataLine) continue;
+          const type = evLine.slice(7).trim();
+          const data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
+          if (type === "delta") {
+            text += (data.text as string) || "";
+            setAssistantTurns((current) => {
+              const copy = [...current];
+              copy[copy.length - 1] = { ...copy[copy.length - 1], content: text };
+              return copy;
+            });
+          } else if (type === "error") {
+            streamError = (data.error as string) || "画布助手暂时不可用";
+          }
+        }
+      }
+      if (streamError) throw new Error(streamError);
+      if (!text.trim()) throw new Error("助手没有返回内容，请重试");
+      setAssistantTurns((current) => {
+        const copy = [...current];
+        copy[copy.length - 1] = { ...copy[copy.length - 1], content: text.trim() };
+        return copy;
+      });
     } catch (error) {
       setAssistantError(error instanceof Error ? error.message : "画布助手暂时不可用");
     } finally {
