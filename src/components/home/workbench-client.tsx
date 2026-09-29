@@ -32,6 +32,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { useClipboardImagePaste } from "@/lib/clipboard-images";
 import { TemplatesClient } from "@/components/templates/templates-client";
 
 // ---------------------------------------------------------------------------
@@ -632,6 +633,24 @@ export function WorkbenchClient() {
     }
   }
 
+  // 对话输入框 Ctrl+V 截图 → 上传为附件(带 [商品图] 上下文)
+  const onChatPaste = useClipboardImagePaste(async (imgs) => {
+    if (!user) {
+      openAuth("sign-in");
+      return;
+    }
+    setUploading(true);
+    const urls: string[] = [];
+    for (const f of imgs) {
+      const u = await uploadOne(f);
+      if (u) urls.push(u);
+    }
+    setUploading(false);
+    if (urls.length) {
+      setAttachments((prev) => [...prev, ...urls]);
+    }
+  });
+
   async function send(text?: string, attachmentUrls?: string[]) {
     const content = (text ?? input).trim();
     if (!content || busy) return;
@@ -1106,6 +1125,7 @@ export function WorkbenchClient() {
             <div className="rounded-[20px] border border-c-border bg-c-card p-2.5 shadow-pop transition-colors focus-within:border-c-border2">
               <textarea
                 value={input}
+                onPaste={onChatPaste}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {

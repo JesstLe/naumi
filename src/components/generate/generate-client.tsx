@@ -30,6 +30,7 @@ import {
   type Category,
   type PromptTemplate,
 } from "@/lib/mock-data";
+import { useClipboardImagePaste } from "@/lib/clipboard-images";
 import type { GeneratedImage } from "@/app/api/generate-image/route";
 import { authHeader } from "@/lib/supabase";
 import { useAuth, type SessionUser } from "@/lib/auth-context";
@@ -383,6 +384,13 @@ export function GenerateClient({
     ]);
     if (fileRef.current) fileRef.current.value = "";
   }
+
+  // 提示词框里 Ctrl+V 截图 → 直接进参考图槽(工具台高频操作)
+  const onPromptPaste = useClipboardImagePaste((imgs) => {
+    const dt = new DataTransfer();
+    for (const f of imgs) dt.items.add(f);
+    pickFiles(dt.files);
+  });
 
   function removeFile(index: number) {
     setFilePreviews((prev) => {
@@ -742,6 +750,7 @@ export function GenerateClient({
               </div>
               <Textarea
                 value={prompt}
+                onPaste={onPromptPaste}
                 onChange={(e) => setPrompt(e.target.value)}
                 onMouseDown={(e) => {
                   const el = e.currentTarget;
