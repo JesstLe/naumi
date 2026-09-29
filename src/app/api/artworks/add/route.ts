@@ -130,6 +130,7 @@ export async function POST(request: Request) {
     y?: number;
     src?: {
       image?: string;
+      videoUrl?: string | null;
       title?: string;
       category?: string;
       prompt?: string;
@@ -151,7 +152,9 @@ export async function POST(request: Request) {
   }
   const email = authenticated;
   const src = body.src;
-  if (!src || !src.image) {
+  const image = String(src?.image || "").trim();
+  const videoUrl = String(src?.videoUrl || "").trim() || null;
+  if (!src || (!image && !videoUrl)) {
     return NextResponse.json({ error: "缺少参数" }, { status: 400 });
   }
   const id = newId();
@@ -170,7 +173,8 @@ export async function POST(request: Request) {
         category: src.category || "main",
         prompt: src.prompt || "",
         status: "completed",
-        image: src.image,
+        image,
+        videoUrl,
         gradient: GRADIENTS[1],
         style: src.style,
         ratio: src.ratio,
@@ -199,7 +203,8 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     id,
-    image: src.image,
+    image,
+    videoUrl,
     width: src.width ?? null,
     height: src.height ?? null,
     canvasWidth: canvasSize.width,
