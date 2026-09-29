@@ -1,0 +1,123 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { spawn, execFileSync } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import pg from "pg";
+import { chromium, request, expect } from "@playwright/test";
+
+const output = path.resolve("output/canvas-tool-palette-smoke");
+await mkdir(output, { recursive: true });
+const container = `naumi-canvas-tools-${Date.now()}`;
+const password = randomUUID();
+const email = "canvas-tool-palette@local.test";
+const appLog = [];
+const report = [];
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const pass = message => { report.push(`PASS ${message}`); console.log(report.at(-1)); };
+let app, pool, api, browser, page;
+
+async function freePort() {
+  const server = createServer();
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+  await new Promise(resolve => server.close(resolve));
+  return port;
+}
+
+try {
+  execFileSync("docker", ["run", "-d", "--name", container, "-e", "POSTGRES_USER=fixture", "-e", `POSTGRES_PASSWORD=${password}`, "-e", "POSTGRES_DB=fixture", "-p", "127.0.0.1::5432", "--tmpfs", "/var/lib/postgresql/data", "postgres:16-alpine"], { stdio: "pipe" });
+  const mapping = execFileSync("docker", ["port", container, "5432"], { encoding: "utf8" }).trim();
+  const database = `postgres://fixture:${password}@127.0.0.1:${mapping.split(":").pop()}/fixture?sslmode=disable`;
+  pool = new pg.Pool({ connectionString: database });
+  for (let i = 0; i < 60; i++) { try { await pool.query("select 1"); break; } catch { await sleep(300); } }
+
+  const port = await freePort();
+  const base = `http://127.0.0.1:${port}`;
+  app = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "-p", String(port)], {
+    env: { ...process.env, DATABASE_URL: database, SETTINGS_SECRET: randomUUID(), ADMIN_EMAIL: email, NAUMI_EDITION: "cloud", NAUMI_MULTI_USER: "1", NAUMI_PUBLIC_COMMERCE: "0", MEDIA_DIR: path.join(output, "media"), STORAGE_DRIVER: "local", NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_ANON_KEY: "", SMTP_HOST: "", OPENAI_API_KEY: "fixture", NEXT_TELEMETRY_DISABLED: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  app.stdout.on("data", chunk => appLog.push(chunk.toString()));
+  app.stderr.on("data", chunk => appLog.push(chunk.toString()));
+  let ready = false;
+  for (let i = 0; i < 100; i++) { try { if ((await fetch(`${base}/api/health`)).ok) { ready = true; break; } } catch {} await sleep(500); }
+  assert(ready, "Next server did not become ready");
+
+  api = await request.newContext({ baseURL: base, timeout: 120000 });
+  const registration = await api.post("/api/auth/register", { data: { email, password, name: "工具栏验收" } });
+  assert.equal(registration.status(), 200, await registration.text());
+  browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--disable-gpu"] });
+  const context = await browser.newContext({ storageState: await api.storageState(), viewport: { width: 1440, height: 900 } });
+  await context.addCookies([{ name: "naumi_locale", value: "zh", url: base }]);
+  page = await context.newPage();
+  const pageErrors = [];
+  page.on("pageerror", error => pageErrors.push(error.message));
+  await page.goto(`${base}/canvas`);
+  await page.getByRole("button", { name: /开始创作/ }).click();
+  await page.locator(".react-flow").waitFor();
+
+  const palette = page.getByTestId("canvas-main-toolbar");
+  await expect(palette).toBeVisible();
+  const paletteBox = await palette.boundingBox();
+  assert(paletteBox && paletteBox.x < 24 && paletteBox.width <= 56 && paletteBox.height > 320, JSON.stringify(paletteBox));
+  assert.equal(await palette.locator("button[data-tool]").count(), 10);
+  pass("desktop canvas exposes a compact left-side Photoshop-style palette");
+
+  await palette.locator('[data-tool="hand"]').click();
+  await expect(palette.locator('[data-tool="hand"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".react-flow")).toHaveClass(/canvas-hand-tool/);
+  await page.keyboard.press("m");
+  await expect(palette.locator('[data-tool="marquee"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".react-flow")).toHaveClass(/canvas-box-select/);
+  await page.keyboard.press("v");
+  await expect(palette.locator('[data-tool="move"]')).toHaveAttribute("aria-pressed", "true");
+  pass("V M H switch move, marquee, and hand interaction modes");
+
+  await palette.getByTestId("canvas-add-node-button").click();
+  await expect(page.getByText("新增节点", { exact: true })).toBeVisible();
+  await expect(page.getByText("上传图片", { exact: true })).toBeVisible();
+  await page.screenshot({ path: path.join(output, "desktop-create-flyout.png"), fullPage: true });
+  await palette.getByTestId("canvas-add-node-button").click();
+  await palette.locator('[data-tool="text"]').click();
+  await expect(page.getByTestId("text-node-dock")).toBeVisible();
+  await expect(palette).toBeVisible();
+  pass("direct text creation keeps the side palette available beside the node dock");
+
+  await page.keyboard.press("Escape");
+  await page.locator(".react-flow__pane").click({ position: { x: 1050, y: 650 }, force: true });
+  await palette.locator('[data-tool="more"]').click();
+  const moreMenu = page.getByTestId("canvas-more-tools-menu");
+  await expect(moreMenu.getByText("更多工具", { exact: true })).toBeVisible();
+  for (const label of ["整理画布", "小地图", "网格吸附", "适应视图", "切换底色（黑/白）", "快捷键与帮助"]) {
+    await expect(moreMenu.getByText(label, { exact: label !== "小地图" && label !== "网格吸附" && label !== "切换底色（黑/白）" })).toBeVisible();
+  }
+  await page.screenshot({ path: path.join(output, "desktop-more-tools.png"), fullPage: true });
+  pass("more-tools flyout exposes layout, navigation, appearance, and help utilities");
+
+  await palette.locator('[data-tool="more"]').click({ force: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileBox = await palette.boundingBox();
+  assert(mobileBox && mobileBox.x >= 8 && mobileBox.y >= 108 && mobileBox.x + mobileBox.width <= 68 && mobileBox.y + mobileBox.height <= 772, JSON.stringify(mobileBox));
+  await page.screenshot({ path: path.join(output, "mobile-palette.png"), fullPage: true });
+  assert.deepEqual(pageErrors, []);
+  pass("390px layout keeps the tool palette inside project and view safe areas without runtime errors");
+  console.log("CANVAS_TOOL_PALETTE_BROWSER_RESULT=PASS checks=4 screenshots=3");
+} catch (error) {
+  report.push(`FAIL ${error.stack || error}`);
+  if (page) await page.screenshot({ path: path.join(output, "FAILURE.png"), fullPage: true }).catch(() => {});
+  throw error;
+} finally {
+  await writeFile(path.join(output, "test.log"), report.join("\n") + "\n");
+  await writeFile(path.join(output, "next.log"), appLog.join(""));
+  await browser?.close();
+  await api?.dispose();
+  await pool?.end();
+  if (app?.pid) {
+    if (process.platform === "win32") { try { execFileSync("taskkill", ["/PID", String(app.pid), "/T", "/F"], { stdio: "pipe" }); } catch {} }
+    else app.kill("SIGTERM");
+  }
+  try { execFileSync("docker", ["rm", "-f", container], { stdio: "pipe" }); } catch {}
+}
