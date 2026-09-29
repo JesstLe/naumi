@@ -8,6 +8,7 @@ import {
 import type { SessionUser, Invoice } from "@/lib/auth-context";
 import { remoteTemplateImageSource } from "@/lib/template-image-cache";
 import type { CompetitorItem } from "@/lib/competitor-types";
+import { OPERATOR_EMAIL } from "@/lib/operator";
 
 // ---------------------------------------------------------------------------
 // Postgres persistence. Active only when DATABASE_URL is set; otherwise the
@@ -1359,14 +1360,27 @@ export async function getOwnerEmail(): Promise<string | null> {
   await ensureSchema();
   const { rows } = await getPool().query(
     `SELECT email FROM app_users
-      WHERE role = 'admin' AND email <> 'operator@novaryns.local'
+      WHERE role = 'admin' AND email NOT LIKE 'operator@%.local'
       ORDER BY joined_at ASC LIMIT 1`
   );
   return (rows[0]?.email as string | undefined) ?? null;
 }
 
+/** 兼容旧安装的内部操作者邮箱；新安装统一使用 OPERATOR_EMAIL。 */
+export async function getLocalOperatorEmail(): Promise<string> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT email FROM app_users
+      WHERE email = $1 OR email LIKE 'operator@%.local'
+      ORDER BY CASE WHEN email = $1 THEN 0 ELSE 1 END, joined_at ASC
+      LIMIT 1`,
+    [OPERATOR_EMAIL]
+  );
+  return (rows[0]?.email as string | undefined) ?? OPERATOR_EMAIL;
+}
+
 /**
- * 设置「站长邮箱账号」:把 oldEmail(通常是 operator@novaryns.local)名下的
+ * 设置「站长邮箱账号」:把内部 operator 账号名下的
  * **全部数据整体迁移**到 newEmail(积分/作品/流水/订单等,凡带 email 列的 app_ 表
  * 动态发现、事务内一并改名),并设 role=admin + 登录密码。
  * 之后站长即可在普通登录框用邮箱+密码登录,与官方站体验一致。

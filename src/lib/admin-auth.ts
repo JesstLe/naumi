@@ -3,7 +3,6 @@ import { timingSafeEqual, createHmac } from "crypto";
 import { getSetting, setSetting } from "@/lib/db";
 import { isAdminToken, emailFromToken, bearer } from "@/lib/supabase-admin";
 import { supabaseEnabled } from "@/lib/auth-mode";
-import { OPERATOR_EMAIL } from "@/lib/operator";
 import { hashPassword, verifyPassword } from "@/lib/pw";
 
 // 兼容旧引用:密码哈希/校验已抽到 @/lib/pw,这里再导出一份。
@@ -124,7 +123,7 @@ export async function requireAdmin(request: Request): Promise<boolean> {
  * 解析当前请求的用户邮箱(功能路由鉴权用):
  *   1) Supabase token 校验通过 → 该用户邮箱(官方云 / 多用户)。
  *   2) 否则,开源版单用户(无 Supabase)且本地操作者已登录(admin cookie 有效)
- *      → 返回 OPERATOR_EMAIL,让生图 / 工具等对"登录后的站长"放行。
+ *      → 返回当前内部操作者邮箱,让生图 / 工具等对"登录后的站长"放行。
  *   3) 都不满足 → null(未登录,路由返回 401)。
  * 这样开源版单用户 = 站长用密码登录后即可正常使用所有功能;随便访问的人(无 cookie)仍被挡。
  */
@@ -139,7 +138,10 @@ export async function resolveUserEmail(
     const nu = nativeUserEmail(request);
     if (nu) return nu;
     // 单用户:登录后的站长(admin cookie)。
-    if (localAdminOk(request)) return OPERATOR_EMAIL;
+    if (localAdminOk(request)) {
+      const { getLocalOperatorEmail } = await import("@/lib/db");
+      return getLocalOperatorEmail();
+    }
   }
   return null;
 }

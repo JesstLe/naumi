@@ -14,6 +14,9 @@ PREVIOUS=$(readlink -f "$BASE/current")
 RELEASE="$BASE/releases/${COMMIT:0:12}-$(date +%Y%m%d-%H%M%S)"
 NGINX=$(readlink -f /etc/nginx/sites-enabled/naumi-ip)
 [[ "$NGINX" == /etc/nginx/sites-available/naumi-ip || "$NGINX" == /etc/nginx/sites-enabled/naumi-ip ]]
+DB_USER=$(docker exec naumi-db-1 printenv POSTGRES_USER)
+DB_NAME=$(docker exec naumi-db-1 printenv POSTGRES_DB)
+test -n "$DB_USER" && test -n "$DB_NAME"
 mkdir -m 700 "$RELEASE"
 tar -xzf "$SOURCE" -C "$RELEASE"
 mkdir -m 700 "$RELEASE/backups"
@@ -92,7 +95,7 @@ else
 fi
 docker image inspect "ghcr.io/jesstle/naumi:$COMMIT" --format '{{.Id}}' > "$RELEASE/IMAGE_ID"
 docker compose -p naumi -f "$RELEASE/docker-compose.yml" config --quiet
-docker exec naumi-db-1 pg_dump -U novaryns -d novaryns --format=custom > "$RELEASE/backups/database.dump"
+docker exec naumi-db-1 pg_dump -U "$DB_USER" -d "$DB_NAME" --format=custom > "$RELEASE/backups/database.dump"
 # appdata 媒体卷备份已停用(2026-09-28):40G 盘装不下"每次部署 ~4G 全量备份"
 # (媒体不可压缩,输出≈卷大小,曾三次写满磁盘中断部署)。回滚语义上也不需要:
 # 本脚本从不恢复/重建媒体卷,ROLLBACK 只回代码+配置+数据库(pg_dump 已备)。
@@ -100,7 +103,7 @@ docker exec naumi-db-1 pg_dump -U novaryns -d novaryns --format=custom > "$RELEA
 echo "APPDATA_BACKUP_DISABLED: media volume not backed up per-deploy (by design)"
 touch "$RELEASE/backups/appdata.tar.gz.skipped"
 echo "(disabled by design)" > "$RELEASE/backups/appdata.tar.gz" 
-docker exec naumi-db-1 psql -U novaryns -d novaryns -Atc 'select count(*) from app_users; select count(*) from app_artworks;' > "$RELEASE/backups/counts.before"
+docker exec naumi-db-1 psql -U "$DB_USER" -d "$DB_NAME" -Atc 'select count(*) from app_users; select count(*) from app_artworks;' > "$RELEASE/backups/counts.before"
 sha256sum "$RELEASE/backups/database.dump" "$RELEASE/backups/appdata.tar.gz" "$RELEASE/backups/nginx.before.conf" > "$RELEASE/backups/SHA256SUMS"
 
 cat > "$RELEASE/ROLLBACK.sh" <<EOF
@@ -146,7 +149,7 @@ nginx -t
 systemctl reload nginx
 ln -sfn "$RELEASE" "$BASE/current"
 ln -sfn "$RELEASE/ROLLBACK.sh" "$BASE/ROLLBACK_RELEASE.sh"
-docker exec naumi-db-1 psql -U novaryns -d novaryns -Atc 'select count(*) from app_users; select count(*) from app_artworks;' > "$RELEASE/backups/counts.after"
+docker exec naumi-db-1 psql -U "$DB_USER" -d "$DB_NAME" -Atc 'select count(*) from app_users; select count(*) from app_artworks;' > "$RELEASE/backups/counts.after"
 for route in / /replicate /retouch /competitors /canvas; do
   STATUS=$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1$route")
   test "$STATUS" = 200

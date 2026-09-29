@@ -21,6 +21,7 @@ import { browserSupabase } from "@/lib/supabase";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { usePaymentConfig } from "@/lib/payment-context";
 import { cn } from "@/lib/utils";
+import { isOperatorEmail } from "@/lib/operator";
 
 function fmt(s: string, vars: Record<string, string | number>): string {
   return Object.entries(vars).reduce(
@@ -190,11 +191,11 @@ export function SecurityClient() {
   }
 
   const isPhoneUser = user.email.endsWith(`@${PHONE_DOMAIN}`);
-  // 单用户站长的内部合成邮箱(operator@novaryns.local)是实现细节,不给用户看,
+  // 单用户站长的内部合成邮箱是实现细节,不给用户看,
   // 显示成「站长账号」更专业。
   const account = isPhoneUser
     ? maskPhone(user.name)
-    : user.email === "operator@novaryns.local"
+    : isOperatorEmail(user.email)
       ? "站长账号(单用户)"
       : user.email;
 
@@ -258,7 +259,7 @@ export function SecurityClient() {
       {/* 无 Supabase 时的说明:站长(operator)看运营向提示;普通注册用户看改密指引 */}
       {!supabaseEnabled && (
         <p className="mb-10 rounded-2xl border border-border bg-secondary/40 px-6 py-4 text-sm text-muted-foreground">
-          {user.email === "operator@novaryns.local"
+          {isOperatorEmail(user.email)
             ? pro
               ? commerceVisible
                 ? "商业版·站长账号:当前以站长身份登录,登录密码即安装向导中设置的「管理员密码」。到后台「登录与支付」开启多用户注册后,客户即可用邮箱自行注册登录、购买积分。"

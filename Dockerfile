@@ -1,5 +1,5 @@
-# Novaryns — production image (Next.js standalone).
-# Build:  docker build -t novaryns .
+# Naumi — production image (Next.js standalone).
+# Build:  docker build -t naumi .
 # Run:    see docker-compose.yml (recommended: bundles Postgres + data volume)
 
 # ── deps ────────────────────────────────────────────────────────────────────
