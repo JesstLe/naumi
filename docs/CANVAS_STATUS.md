@@ -435,3 +435,18 @@
 
 - `npm exec tsc -- --noEmit` 退出 0；`npm run build` 编译通过。
 - 已知小限制：撤销文字节点缩放时宽度精确还原，高度会被内容自适应重算一次（自适应与手动尺寸的既有交互，不破坏数据）。
+# 2026-09-29：图片卡真实贴合与混合删除原子化
+
+## 已实现
+
+- 图片节点边界高度不再重复叠加绝对定位标题高度，图片、选中框和卡片边框使用同一显示尺寸。
+- 图片加载后以 `naturalWidth/naturalHeight` 校验历史元数据；比例偏差达到 5% 时静默修复显示高度。
+- 自动比例修复只更新 `canvas_width/canvas_height`，不固化自动布局坐标，也不占用用户撤销栈。
+- 图片节点和文字节点统一通过 `/api/canvas/nodes/delete` 删除；数据库模式下在同一事务中执行，部分失败会整体回滚。
+- 详细实现与验证记录见 `docs/CANVAS_IMAGE_FIT_ATOMIC_DELETE_2026-09-29.md`。
+
+## 本轮验证
+
+- `npm exec tsc -- --noEmit` 退出 0。
+- `git diff --check` 退出 0。
+- `node scripts/canvas-text-multiselect-smoke.mjs` 覆盖真实 Chrome、临时 PostgreSQL、强制事务失败回滚、删除/撤销/重做与媒体节点复制。

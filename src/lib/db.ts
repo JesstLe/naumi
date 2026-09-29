@@ -2381,6 +2381,46 @@ export async function deleteCanvasTextNodes(
   return result.rowCount ?? 0;
 }
 
+export async function deleteCanvasNodesAtomically(
+  emailRaw: string,
+  artworkIds: string[],
+  textIds: string[]
+): Promise<{ artworks: number; textNodes: number }> {
+  await ensureSchema();
+  const email = emailRaw.toLowerCase();
+  const cleanArtworkIds = Array.from(new Set(artworkIds.filter(Boolean))).slice(0, 200);
+  const cleanTextIds = Array.from(new Set(textIds.filter(Boolean))).slice(0, 200);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    let artworks = 0;
+    let textNodes = 0;
+    if (cleanArtworkIds.length) {
+      const result = await client.query(
+        `UPDATE app_artworks SET deleted_at = now()
+           WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL`,
+        [email, cleanArtworkIds]
+      );
+      artworks = result.rowCount ?? 0;
+    }
+    if (cleanTextIds.length) {
+      const result = await client.query(
+        `DELETE FROM app_canvas_text_nodes
+          WHERE email = $1 AND id = ANY($2::text[])`,
+        [email, cleanTextIds]
+      );
+      textNodes = result.rowCount ?? 0;
+    }
+    await client.query("COMMIT");
+    return { artworks, textNodes };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function addArtworks(
   emailRaw: string,
   items: Omit<ArtworkRecord, "createdAt">[],
@@ -2772,6 +2812,34 @@ export async function setArtworkCanvasLayout(
         SET canvas_x = $3, canvas_y = $4, canvas_width = $5, canvas_height = $6
       WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), id, px, py, w, h]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+// 自动比例修复只更新显示尺寸，保留 NULL 坐标，让未手动拖动的节点继续参与自动布局。
+export async function setArtworkCanvasSize(
+  emailRaw: string,
+  id: string,
+  width: number,
+  height: number
+): Promise<boolean> {
+  await ensureSchema();
+  const w = Math.round(width);
+  const h = Math.round(height);
+  if (
+    !id ||
+    !Number.isFinite(w) ||
+    !Number.isFinite(h) ||
+    w < 80 ||
+    h < 80 ||
+    w > 4096 ||
+    h > 4096
+  ) return false;
+  const result = await getPool().query(
+    `UPDATE app_artworks
+        SET canvas_width = $3, canvas_height = $4
+      WHERE email = $1 AND id = $2 AND deleted_at IS NULL`,
+    [emailRaw.toLowerCase(), id, w, h]
   );
   return (result.rowCount ?? 0) > 0;
 }

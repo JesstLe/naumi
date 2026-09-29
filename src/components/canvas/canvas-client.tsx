@@ -20,7 +20,6 @@ import {
   MiniMap,
   Handle,
   NodeResizer,
-  useInternalNode,
   Position,
   useNodesState,
   useEdgesState,
@@ -1164,6 +1163,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
       id: string,
       bounds: { x: number; y: number; width: number; height: number }
     ) => void;
+    onCanvasRatioRepair?: (id: string, width: number, height: number) => void;
     onRenameRequest?: (id: string, label: string) => void;
     onVideoExtract?: (id: string, kind: "frame" | "audio", timestamp: number) => void;
   };
@@ -1171,17 +1171,17 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
   const imageHeight = d.height && d.height > 0 ? Math.round(d.height) : undefined;
   // 节点边界=图片区域(标题绝对定位悬在图上方,不占边界),端口对齐图片竖直中点
   const portY = (imageHeight ?? 110) / 2;
-  const internal = useInternalNode(nodeId);
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const title = d.pending
     ? d.label
     : `${d.version ? `v${d.version}` : ""}${d.date ? ` · ${formatDate(d.date)}` : ""}${d.prompt ? `\n${d.prompt}` : ""}`;
-  // 白边自愈:节点存档宽高比与图片真实比例偏差 ≥5% 时,按图片比例校正节点高度
-  // (保留宽度与位置),避免 object-contain 在卡片里留出白色容器边。每节点每次挂载只修一次。
+  // 白边自愈必须以浏览器实际解码出的 naturalWidth/naturalHeight 为准，不能信任
+  // 可能过期的数据库尺寸。这里只静默修复显示高度，不写坐标、不污染用户撤销栈。
   const aspectFixedRef = useRef(false);
   useEffect(() => {
-    if (aspectFixedRef.current || d.pending) return;
-    const iw = d.intrinsicWidth;
-    const ih = d.intrinsicHeight;
+    if (aspectFixedRef.current || d.pending || d.videoUrl || !naturalSize) return;
+    const iw = naturalSize.width;
+    const ih = naturalSize.height;
     const cw = d.width;
     const ch = d.height;
     if (!iw || !ih || !cw || !ch) return;
@@ -1189,15 +1189,13 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
     const nodeRatio = cw / ch;
     if (Math.abs(nodeRatio - imgRatio) / imgRatio < 0.05) return;
     aspectFixedRef.current = true;
-    const pos = internal?.internals.positionAbsolute ?? { x: 0, y: 0 };
-    d.onCanvasResize?.(nodeId, {
-      x: Math.round(pos.x),
-      y: Math.round(pos.y),
-      width: Math.round(cw),
-      height: Math.max(IMAGE_NODE_MIN_H, Math.round(cw / imgRatio)),
-    });
+    d.onCanvasRatioRepair?.(
+      nodeId,
+      Math.round(cw),
+      Math.max(IMAGE_NODE_MIN_H, Math.min(IMAGE_NODE_MAX_H, Math.round(cw / imgRatio)))
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeId, internal, d.intrinsicWidth, d.intrinsicHeight, d.width, d.height, d.pending]);
+  }, [nodeId, naturalSize, d.width, d.height, d.pending, d.videoUrl]);
   return (
     <div
       className={cn("group relative flex h-full w-full flex-col", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}
@@ -1282,10 +1280,16 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
               height={imageHeight}
               onLoad={(event) => {
                 const image = event.currentTarget;
-                if (image.naturalWidth > 0 && image.naturalHeight > 0 &&
-                    (!d.intrinsicWidth || !d.intrinsicHeight)) {
-                  d.onDimensions?.(d.id, image.naturalWidth, image.naturalHeight);
-                }
+                if (!(image.naturalWidth > 0) || !(image.naturalHeight > 0)) return;
+                setNaturalSize((current) =>
+                  current?.width === image.naturalWidth && current.height === image.naturalHeight
+                    ? current
+                    : { width: image.naturalWidth, height: image.naturalHeight }
+                );
+                if (
+                  d.intrinsicWidth !== image.naturalWidth ||
+                  d.intrinsicHeight !== image.naturalHeight
+                ) d.onDimensions?.(d.id, image.naturalWidth, image.naturalHeight);
               }}
               className="block h-full w-full object-contain"
             />
@@ -1427,6 +1431,7 @@ function layoutGraph(
     id: string,
     bounds: { x: number; y: number; width: number; height: number }
   ) => void,
+  onCanvasRatioRepair: (id: string, width: number, height: number) => void,
   onRenameRequest: (id: string, label: string) => void,
   onVideoExtract: (id: string, kind: "frame" | "audio", timestamp: number) => void
 ): { nodes: Node[]; edges: Edge[] } {
@@ -1518,12 +1523,14 @@ function layoutGraph(
         intrinsicHeight: a.height,
         onDimensions,
         onCanvasResize,
+        onCanvasRatioRepair,
         onRenameRequest,
         onVideoExtract,
       },
       style: {
         width: canvasSize.width,
-        height: canvasSize.height + NODE_LABEL_H,
+        // 标题是负 top 的绝对定位元素，不占节点边界；节点高度必须等于图片卡高度。
+        height: canvasSize.height,
       },
     };
   });
@@ -2674,6 +2681,29 @@ export function CanvasClient() {
     }
   }, [user, readOnly, pushUndo]);
 
+  const onArtworkCanvasRatioRepair = useCallback((id: string, width: number, height: number) => {
+    const nextWidth = Math.round(width);
+    const nextHeight = Math.round(height);
+    if (
+      !id ||
+      nextWidth < IMAGE_NODE_MIN_W ||
+      nextHeight < IMAGE_NODE_MIN_H ||
+      nextWidth > IMAGE_NODE_MAX_W ||
+      nextHeight > IMAGE_NODE_MAX_H
+    ) return;
+    setWorks((current) => current?.map((art) =>
+      art.id === id
+        ? { ...art, canvasWidth: nextWidth, canvasHeight: nextHeight }
+        : art
+    ) ?? current);
+    if (!user || readOnly) return;
+    void privateFetch("/api/artworks/canvas-size", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, width: nextWidth, height: nextHeight, sizeOnly: true }),
+    }).catch(() => {});
+  }, [user, readOnly]);
+
   const requestNodeRename = useCallback((id: string, label: string) => {
     if (readOnly) return;
     setSelectedId(id);
@@ -2713,10 +2743,11 @@ export function CanvasClient() {
       t("canvas.rootBadge"),
       onNodeDimensions,
       onArtworkCanvasResize,
+      onArtworkCanvasRatioRepair,
       requestNodeRename,
       extractVideoToCanvas
     );
-  }, [active, t, onNodeDimensions, onArtworkCanvasResize, requestNodeRename, extractVideoToCanvas]);
+  }, [active, t, onNodeDimensions, onArtworkCanvasResize, onArtworkCanvasRatioRepair, requestNodeRename, extractVideoToCanvas]);
 
   const nodeTypes = useMemo(
     () => ({ art: ArtNode, pend: PendNode, text: TextCanvasNode }),
@@ -5021,22 +5052,12 @@ export function CanvasClient() {
     setSelectedTextId(null);
     setSelectedPendId(null);
     try {
-      if (artworkIds.length) {
-        const response = await privateFetch("/api/artworks/delete", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ email: user.email, ids: artworkIds }),
-        });
-        await expectJsonOk(response, t("canvas.genFail"));
-      }
-      if (textIds.length) {
-        const response = await privateFetch("/api/canvas/text-nodes", {
-          method: "DELETE",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ids: textIds }),
-        });
-        await expectJsonOk(response, t("canvas.genFail"));
-      }
+      const response = await privateFetch("/api/canvas/nodes/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ artworkIds, textIds }),
+      });
+      await expectJsonOk(response, t("canvas.genFail"));
 
       if (artworkRecords.length && textRecords.length) {
         pushUndo({
@@ -5835,6 +5856,7 @@ export function CanvasClient() {
       "",
       onNodeDimensions,
       onArtworkCanvasResize,
+      onArtworkCanvasRatioRepair,
       requestNodeRename,
       extractVideoToCanvas
     );
@@ -7481,6 +7503,8 @@ export function CanvasClient() {
           ? e.target
           : (document.activeElement as HTMLElement | null);
       const tag = el?.tagName;
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
       if (
         e.defaultPrevented ||
         e.isComposing ||
@@ -7495,8 +7519,6 @@ export function CanvasClient() {
       ) {
         return;
       }
-      const mod = e.metaKey || e.ctrlKey;
-      const key = e.key.toLowerCase();
       if (
         e.shiftKey &&
         !mod &&
@@ -7520,8 +7542,27 @@ export function CanvasClient() {
             canvasCopyIntentRef.current = null;
           }
         }, 1000);
-        copyNodeToClip(selected);
+        // Chrome/Playwright and some macOS WebKit paths do not emit a native
+        // `copy` event when focus sits on a non-editable video/audio surface.
+        // Write the portable node marker explicitly so the following Cmd/Ctrl+V
+        // can still verify and paste the selected media node.
+        copyNodeToClip(selected, true);
         flashTip(t("canvas.copied"));
+        return;
+      }
+      if (
+        mod &&
+        key === "v" &&
+        (tag === "VIDEO" || tag === "AUDIO") &&
+        canvasCopyIntentRef.current &&
+        nodeClipRef.current?.id === canvasCopyIntentRef.current
+      ) {
+        // Native media focus can suppress both copy/paste clipboard events.
+        // Consume only the short-lived intent created by the immediately
+        // preceding canvas copy, so ordinary system clipboard paste is intact.
+        e.preventDefault();
+        canvasCopyIntentRef.current = null;
+        void pasteNode();
         return;
       }
       if (mod && key === "z") {
@@ -7579,8 +7620,9 @@ export function CanvasClient() {
         clearCanvasSelection(true);
       }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Capture before React Flow/native media surfaces stop bubbling key events.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     readOnly,
