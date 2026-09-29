@@ -25,6 +25,7 @@ import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { downloadImage } from "@/lib/download";
 import { cn } from "@/lib/utils";
+import { useClipboardImagePaste } from "@/lib/clipboard-images";
 
 export type ToolProcessResult = {
   url: string;
@@ -200,6 +201,21 @@ export function ToolWorkspace({
       cancelled = true;
     };
   }, [user?.email, category, result]);
+
+  // 工具页 Ctrl+V 截图 → 直接进上传槽(全站 20+ 单图工具共用此组件)
+  const onWindowPaste = useClipboardImagePaste(
+    (imgs) => {
+      const dt = new DataTransfer();
+      for (const f of imgs) dt.items.add(f);
+      pick(dt.files);
+    },
+    !preview && !processing
+  );
+  React.useEffect(() => {
+    if (!onWindowPaste) return;
+    window.addEventListener("paste", onWindowPaste as unknown as EventListener);
+    return () => window.removeEventListener("paste", onWindowPaste as unknown as EventListener);
+  }, [onWindowPaste]);
 
   function pick(files: FileList | null) {
     if (!user) return openAuth();
