@@ -51,6 +51,7 @@ import { DeployCenter } from "@/components/operator/deploy-center";
 import { LicensesClient } from "@/components/operator/licenses-client";
 import { RelayTokensClient } from "@/components/operator/relay-tokens-client";
 import { CardkeysAdmin } from "@/components/operator/cardkeys-admin";
+import { OPERATOR_EMAIL } from "@/lib/operator";
 
 type AdminUser = {
   email: string;
@@ -376,7 +377,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
   const [payEnabled, setPayEnabled] = useState(false);
   const [multiUserOn, setMultiUserOn] = useState(false);
   const [meteringOn, setMeteringOn] = useState(false);
-  const [grantEmail, setGrantEmail] = useState("operator@novaryns.local");
+  const [grantEmail, setGrantEmail] = useState(OPERATOR_EMAIL);
   const [grantAmount, setGrantAmount] = useState("100");
   const [grantMsg, setGrantMsg] = useState<string | null>(null);
   const [smtpHost, setSmtpHost] = useState("");

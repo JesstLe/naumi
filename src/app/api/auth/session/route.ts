@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { nativeUserEmail } from "@/lib/native-auth";
-import { getOrCreateUser, getUser } from "@/lib/db";
+import { getLocalOperatorEmail, getOrCreateUser, getUser } from "@/lib/db";
 import { localAdminOk } from "@/lib/admin-auth";
 import { supabaseEnabled } from "@/lib/auth-mode";
-import { OPERATOR_EMAIL } from "@/lib/operator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +18,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ user: await getUser(email) });
   }
   if (!supabaseEnabled && localAdminOk(req)) {
-    const user = await getOrCreateUser(OPERATOR_EMAIL, "站长");
+    const operatorEmail = await getLocalOperatorEmail();
+    const user = await getOrCreateUser(operatorEmail, "站长");
     return NextResponse.json({ user });
   }
   return NextResponse.json({ user: null });
