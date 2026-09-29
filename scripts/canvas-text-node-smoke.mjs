@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn, execFileSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
@@ -10,6 +10,9 @@ import pg from "pg";
 import { chromium, request, expect } from "@playwright/test";
 
 const output = path.resolve("output/canvas-text-node-smoke");
+const distDir = `output/canvas-text-node-smoke/.next-${process.pid}`;
+const tsconfigPath = path.resolve("tsconfig.json");
+const originalTsconfig = await readFile(tsconfigPath);
 await mkdir(output, { recursive: true });
 const container = `naumi-text-node-${Date.now()}`;
 const password = randomUUID();
@@ -113,6 +116,7 @@ try {
       NEW_API_IMAGE_API_KEY: "",
       NEW_API_IMAGE_MODELS: "",
       NEXT_TELEMETRY_DISABLED: "1",
+      NEXT_DIST_DIR: distDir,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -135,6 +139,7 @@ try {
   const context = await browser.newContext({
     storageState: await api.storageState(),
     viewport: { width: 1600, height: 1000 },
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
   });
   await context.addCookies([{ name: "naumi_locale", value: "zh", url: base }]);
   page = await context.newPage();
@@ -147,12 +152,24 @@ try {
   const textPrompt = page.getByPlaceholder(/描述你的问题、文案或内容需求/);
   await expect(textPrompt).toHaveValue(/生成可直接使用的标题/);
   const initialPromptBox = await textPrompt.boundingBox();
-  assert(initialPromptBox && initialPromptBox.height >= 90 && initialPromptBox.height <= 115);
+  assert(initialPromptBox && initialPromptBox.height >= 108 && initialPromptBox.height <= 130);
+  const composerDock = page.getByTestId("text-node-dock");
+  await composerDock.evaluate((element) => {
+    element.style.height = "150px";
+  });
+  await page.waitForTimeout(100);
+  const protectedDockBox = await composerDock.boundingBox();
+  const protectedPromptBox = await textPrompt.boundingBox();
+  assert(protectedDockBox && protectedDockBox.height >= 210);
+  assert(protectedPromptBox && protectedPromptBox.height >= 108);
+  await composerDock.evaluate((element) => {
+    element.style.height = "";
+  });
+  await page.waitForTimeout(100);
   await textPrompt.fill("长文本 ".repeat(180));
   await expect.poll(async () => (await textPrompt.boundingBox())?.height || 0).toBeGreaterThan(115);
   const cappedPromptBox = await textPrompt.boundingBox();
-  assert(cappedPromptBox && cappedPromptBox.height <= 226);
-  const composerDock = page.getByTestId("text-node-dock");
+  assert(cappedPromptBox && cappedPromptBox.height <= 246);
   const dockBeforeResize = await composerDock.boundingBox();
   assert(dockBeforeResize, "text composer dock is missing");
   await composerDock.evaluate((element) => {
@@ -162,12 +179,17 @@ try {
   const dockAfterResize = await composerDock.boundingBox();
   const promptAfterResize = await textPrompt.boundingBox();
   assert(dockAfterResize && dockAfterResize.height >= 330);
-  assert(promptAfterResize && promptAfterResize.height >= cappedPromptBox.height + 90);
+  assert(
+    promptAfterResize &&
+      promptAfterResize.height >= 280 &&
+      promptAfterResize.height >= cappedPromptBox.height + 40,
+    `manual resize did not sufficiently expand prompt: capped=${cappedPromptBox.height}, resized=${promptAfterResize?.height}, dock=${dockAfterResize?.height}`,
+  );
   await textPrompt.fill("根据商品信息生成可直接使用的标题、卖点与详情文案");
   await page.getByTitle("展开编辑窗口").click();
   await expect(page.getByTitle("收起编辑窗口")).toBeVisible();
   await page.getByTitle("收起编辑窗口").click();
-  pass("text composer grows with content, manual vertical resize expands the text viewport, and windowed expansion works");
+  pass("macOS browser profile keeps at least five prompt lines, grows with content, protects the resize floor, and supports windowed expansion");
 
   await page.getByTitle(/文字模型/).click();
   await page.getByRole("button", { name: "自定义模型 ID" }).click();
@@ -465,4 +487,6 @@ try {
   }
   if (fixture) await new Promise((resolve) => fixture.close(resolve));
   try { execFileSync("docker", ["rm", "-f", container], { stdio: "pipe" }); } catch {}
+  await rm(path.resolve(distDir), { recursive: true, force: true });
+  await writeFile(tsconfigPath, originalTsconfig);
 }

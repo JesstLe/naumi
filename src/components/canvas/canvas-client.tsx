@@ -1570,13 +1570,17 @@ export function CanvasClient() {
   } | null>(null);
   // 生成器面板停靠在选中节点正下方(不再可拖);panelRef 仍用于测量
   const panelRef = useRef<HTMLDivElement | null>(null);
-  // 底部 dock 提示词框:随内容自适应长高(默认 4 行视野,上限 ~8 行)
+  // 底部 dock 提示词框:随内容自适应长高。显式写入最小高度，避免 macOS
+  // Chromium/Safari 在 flex + max-height 组合下把 textarea 压缩成约两行。
   const promptAreaRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     const el = promptAreaRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 176)}px`;
+    const minHeight = 112;
+    const maxHeight = 220;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(maxHeight, Math.max(minHeight, el.scrollHeight))}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [editPrompt]);
   // 追加参考图(与节点图一起参与图生图)
   const [extraFiles, setExtraFiles] = useState<File[]>([]);
@@ -1760,12 +1764,15 @@ export function CanvasClient() {
   const [assistantError, setAssistantError] = useState<string | null>(null);
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
   const pendPromptRef = useRef<HTMLTextAreaElement>(null);
-  // 占位 dock 提示词框同样自适应(默认 4 行,上限 ~8 行)
+  // 占位 dock 与已生成节点保持同一自适应视野。
   useEffect(() => {
     const el = pendPromptRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 176)}px`;
+    const minHeight = 112;
+    const maxHeight = 220;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(maxHeight, Math.max(minHeight, el.scrollHeight))}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [editPrompt]);
   const wantFocusPendPrompt = useRef(false);
   // 重命名节点(改作品标题):正在改的节点 id + 输入值
@@ -2766,10 +2773,11 @@ export function CanvasClient() {
       return;
     }
     if (textComposerManuallySized) return;
-    // 收起态视野:下限 96px(≈4行,避免"只有两行"的局促感),上限 220px(≈10行,再长内部滚动)
-    const maxHeight = textComposerExpanded ? 360 : 220;
+    // 收起态至少展示约 5 行；短文本不再塌成两行，长文本自适应到 240px 后滚动。
+    const minHeight = 112;
+    const maxHeight = 240;
     textarea.style.height = "0px";
-    textarea.style.height = `${Math.min(maxHeight, Math.max(96, textarea.scrollHeight))}px`;
+    textarea.style.height = `${Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight))}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [textPrompt, textComposerExpanded, textComposerManuallySized, selectedTextId]);
   useEffect(() => {
@@ -2796,7 +2804,8 @@ export function CanvasClient() {
         setTextComposerManuallySized(manuallySized);
       }
       if (textComposerExpanded || manuallySized) {
-        textarea.style.height = `${Math.max(54, body.clientHeight)}px`;
+        // 即使用户拖动 Dock 或浏览器恢复了原生 resize 高度，也不允许输入区退回两行。
+        textarea.style.height = `${Math.max(112, body.clientHeight)}px`;
         textarea.style.overflowY = "auto";
       }
     };
@@ -3125,7 +3134,13 @@ export function CanvasClient() {
     const belowTop = nodeScreen.bottom + 14;
     const belowSpace = Math.max(0, ch - belowTop - 8);
     const aboveSpace = Math.max(0, nodeScreen.top - 22);
-    const useBelow = belowSpace >= 180 || belowSpace >= aboveSpace;
+    const preferredHeight = selectedTextId ? 360 : 310;
+    const minimumComfort = selectedTextId ? 250 : 220;
+    // 优先选择能容纳完整自适应输入区的一侧；两侧都不足时选择空间更大的一侧。
+    const useBelow =
+      belowSpace >= preferredHeight ||
+      (belowSpace >= minimumComfort && belowSpace >= aboveSpace) ||
+      (aboveSpace < minimumComfort && belowSpace >= aboveSpace);
     if (useBelow) {
       return {
         left,
@@ -3134,7 +3149,6 @@ export function CanvasClient() {
         maxHeight: Math.max(120, belowSpace),
       };
     }
-    const preferredHeight = selectedTextId ? 320 : 270;
     const maxHeight = Math.max(120, aboveSpace);
     return {
       left,
@@ -9986,14 +10000,14 @@ export function CanvasClient() {
                 </button>
                 </div>
 
-                {/* 提示词(留空=按这张图再生成一张):默认 4 行视野,文字多时自适应长高(上限 ~8 行) */}
+                {/* 提示词:短内容至少约 5 行，长内容自适应增长，超过上限后内部滚动。 */}
                 <Textarea
                   ref={promptAreaRef}
                   value={editPrompt}
                   readOnly={readOnly}
                   placeholder={readOnly ? "" : t("canvas.promptPlaceholder")}
                   onChange={(e) => setEditPrompt(e.target.value)}
-                  className="canvas-ui-text min-h-[92px] max-h-44 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0"
+                  className="canvas-ui-text min-h-[112px] max-h-[220px] resize-none overflow-y-hidden border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0"
                 />
                 {genError && (
                   <p className="pb-1 text-xs font-medium text-red-400">
@@ -10139,7 +10153,7 @@ export function CanvasClient() {
                   value={editPrompt}
                   placeholder={t("canvas.pendPromptPlaceholder")}
                   onChange={(e) => setEditPrompt(e.target.value)}
-                  className="canvas-ui-text min-h-[92px] max-h-44 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0"
+                  className="canvas-ui-text min-h-[112px] max-h-[220px] resize-none overflow-y-hidden border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none placeholder:text-[var(--canvas-ui-muted)] focus-visible:ring-0"
                 />
                 {genError && (
                   <p className="pb-1 text-xs font-medium text-red-400">
@@ -10217,7 +10231,7 @@ export function CanvasClient() {
                     }
               }
               className={cn(
-                "cz-anim-bottom absolute z-20 flex min-h-[142px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border shadow-2xl",
+                "cz-anim-bottom absolute z-20 flex min-h-[218px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border shadow-2xl",
                 textComposerExpanded ? "resize-none" : "resize-y",
                 lightCanvas
                   ? "border-[#dfe4ea] bg-white text-[#252933] shadow-[0_18px_45px_rgba(7,12,24,0.18)]"
@@ -10269,10 +10283,10 @@ export function CanvasClient() {
                     }
                   }}
                   className={cn(
-                    "h-full min-h-0 min-w-[160px] flex-1 resize-none border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none focus-visible:border-0 focus-visible:bg-transparent focus-visible:ring-0",
+                    "h-full min-h-[112px] min-w-[160px] flex-1 resize-none border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none focus-visible:border-0 focus-visible:bg-transparent focus-visible:ring-0",
                     textComposerExpanded || textComposerManuallySized
                       ? "h-full max-h-none overflow-y-auto"
-                      : "max-h-36 overflow-y-hidden",
+                      : "max-h-[240px] overflow-y-hidden",
                     lightCanvas
                       ? "text-[#303641] placeholder:text-[#929aa6]"
                       : "text-[#e7e9ee] placeholder:text-[#818895]"
