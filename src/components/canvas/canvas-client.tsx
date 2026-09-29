@@ -3294,13 +3294,13 @@ export function CanvasClient() {
   // 这里统一定义安全区，避免 Dock 在低高度窗口退化成 top:8 后盖住导航/账户操作。
   const overlaySafeArea = useMemo(
     () => ({
-      // 左侧常驻工具栏宽 52px；悬浮 Dock/工具条从 68px 后开始布局。
-      left: readOnly ? 8 : 68,
+      left: 8,
       right: 8,
       top: canvasSize.width > 0 && canvasSize.width < 768 ? 108 : 64,
-      bottom: 72,
+      // 窄屏主工具栏位于视图控制条上方，需要同时避开两层底部控件。
+      bottom: canvasSize.width > 0 && canvasSize.width < 800 ? 128 : 84,
     }),
-    [canvasSize.width, readOnly]
+    [canvasSize.width]
   );
 
   // dock 宽度随可用画布收缩；高分屏、Windows 缩放和窄窗口都以真实 CSS 像素重新布局。
@@ -3351,7 +3351,8 @@ export function CanvasClient() {
     const safeTop = overlaySafeArea.top;
     // 左下视图工具条只占约 216px 宽；Dock 与它横向不相交时保留普通 8px
     // 即可，避免在宽屏无谓压缩用户手动扩展的提示词编辑区。
-    const bottomInset = left <= 224 ? overlaySafeArea.bottom : 8;
+    // 主工具栏常驻底部；所有生成 Dock 都要预留其高度，不能再依赖“选中时隐藏工具栏”。
+    const bottomInset = overlaySafeArea.bottom;
     const safeBottom = Math.max(safeTop + 120, ch - bottomInset);
     const belowTop = nodeScreen.bottom + 14;
     const belowSpace = Math.max(0, safeBottom - belowTop);
@@ -8752,7 +8753,7 @@ export function CanvasClient() {
                   zoomable
                   position="bottom-left"
                   // 显示在左下角工具条上方(而不是右侧)
-                  style={{ left: readOnly ? 16 : 72, bottom: 72, margin: 0 }}
+                  style={{ left: 16, bottom: canvasSize.width > 0 && canvasSize.width < 800 ? 128 : 84, margin: 0 }}
                   maskColor={lightCanvas ? "rgba(91,103,120,0.16)" : "rgba(0,0,0,0.55)"}
                 />
               )}
@@ -8928,12 +8929,12 @@ export function CanvasClient() {
                 </div>
               </div>
 
-              {/* Photoshop 式左侧工具栏：常驻主工具，创建/视图工具使用右侧飞出面板。 */}
+              {/* Photoshop 式工具组织保留在底部：常驻主工具，创建/视图工具向上飞出。 */}
               {!readOnly && (
                 <div
                   data-testid="canvas-main-toolbar"
                   aria-label={t("canvas.toolPalette")}
-                  className="absolute bottom-[76px] left-3 top-[112px] z-30 flex w-[52px] flex-col items-center gap-0.5 overflow-visible border border-[#d9dee7] bg-white/95 px-1.5 py-2 text-[#20242c] shadow-[0_12px_34px_rgba(15,23,42,0.18)] backdrop-blur md:top-[64px]"
+                  className="absolute bottom-[76px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 overflow-visible border border-[#d9dee7] bg-white/95 px-1.5 py-1.5 text-[#20242c] shadow-[0_12px_34px_rgba(15,23,42,0.18)] backdrop-blur min-[800px]:bottom-5"
                 >
                   <button
                     type="button"
@@ -8942,7 +8943,7 @@ export function CanvasClient() {
                     title={`${t("canvas.moveTool")} (V)`}
                     aria-pressed={canvasTool === "move"}
                     className={cn(
-                      "flex h-9 w-9 flex-none items-center justify-center rounded-md transition-colors",
+                      "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
                       canvasTool === "move"
                         ? "bg-[#20242c] text-white shadow-sm"
                         : "text-[#697386] hover:bg-[#eef1f5] hover:text-[#20242c]"
@@ -8963,7 +8964,7 @@ export function CanvasClient() {
                     title={`${t("canvas.boxSelect")} (M)`}
                     aria-pressed={canvasTool === "marquee"}
                     className={cn(
-                      "flex h-9 w-9 flex-none items-center justify-center rounded-md transition-colors",
+                      "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
                       canvasTool === "marquee"
                         ? "bg-[#20242c] text-white shadow-sm"
                         : "text-[#697386] hover:bg-[#eef1f5] hover:text-[#20242c]"
@@ -8978,7 +8979,7 @@ export function CanvasClient() {
                     title={`${t("canvas.handTool")} (H)`}
                     aria-pressed={canvasTool === "hand"}
                     className={cn(
-                      "flex h-9 w-9 flex-none items-center justify-center rounded-md transition-colors",
+                      "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
                       canvasTool === "hand"
                         ? "bg-[#20242c] text-white shadow-sm"
                         : "text-[#697386] hover:bg-[#eef1f5] hover:text-[#20242c]"
@@ -8987,7 +8988,7 @@ export function CanvasClient() {
                     <Hand className="h-[18px] w-[18px]" />
                   </button>
 
-                  <span className="my-1 h-px w-7 flex-none bg-[#dfe3e8]" />
+                  <span className="mx-0.5 h-5 w-px flex-none bg-[#dfe3e8] sm:mx-1 sm:h-6" />
 
                   {/* ＋ 弹出「添加节点/上传图片/从生成历史选择」菜单 */}
                   {addMenuOpen && (
@@ -8996,7 +8997,7 @@ export function CanvasClient() {
                         className="fixed inset-0 z-0"
                         onClick={() => setAddMenuOpen(false)}
                       />
-                      <div className="menu-pop-up absolute left-[calc(100%+10px)] top-0 z-10 w-60 overflow-hidden border border-[#dfe3e8] bg-white p-1.5 text-[#252933] shadow-2xl">
+                      <div className="menu-pop-up absolute bottom-[calc(100%+10px)] left-0 z-10 w-60 overflow-hidden border border-[#dfe3e8] bg-white p-1.5 text-[#252933] shadow-2xl">
                         <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-medium text-[#9aa1ab]">
                           {t("canvas.newNode")}
                         </p>
@@ -9063,7 +9064,7 @@ export function CanvasClient() {
                     title={t("canvas.addNode")}
                     data-testid="canvas-add-node-button"
                     className={cn(
-                      "flex h-10 w-10 flex-none items-center justify-center rounded-md shadow-sm transition-colors",
+                      "flex h-8 w-8 flex-none items-center justify-center rounded-md shadow-sm transition-colors sm:h-10 sm:w-10",
                       addMenuOpen
                         ? "bg-primary/90 text-primary-foreground"
                         : "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -9084,7 +9085,7 @@ export function CanvasClient() {
                       addTextNodeAtScreen(c.x, c.y);
                     }}
                     title={`${t("canvas.textGenerate")} (⇧T)`}
-                    className="flex h-9 w-9 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c]"
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c] sm:h-9 sm:w-9"
                   >
                     <Type className="h-[18px] w-[18px]" />
                   </button>
@@ -9093,7 +9094,7 @@ export function CanvasClient() {
                     data-tool="image-node"
                     onClick={toolAddNode}
                     title={t("canvas.imageNode")}
-                    className="flex h-9 w-9 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c]"
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c] sm:h-9 sm:w-9"
                   >
                     <ImagePlus className="h-[18px] w-[18px]" />
                   </button>
@@ -9105,19 +9106,19 @@ export function CanvasClient() {
                       triggerUpload(c.x, c.y);
                     }}
                     title={t("canvas.uploadImage")}
-                    className="flex h-9 w-9 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c]"
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c] sm:h-9 sm:w-9"
                   >
                     <Upload className="h-[18px] w-[18px]" />
                   </button>
 
-                  <span className="my-1 h-px w-7 flex-none bg-[#dfe3e8]" />
+                  <span className="mx-0.5 h-5 w-px flex-none bg-[#dfe3e8] sm:mx-1 sm:h-6" />
 
                   <button
                     type="button"
                     data-tool="generate"
                     onClick={toolGenerate}
                     title={t("canvas.spawnGenerate")}
-                    className="flex h-9 w-9 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c]"
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c] sm:h-9 sm:w-9"
                   >
                     <Sparkles className="h-[18px] w-[18px]" />
                   </button>
@@ -9126,7 +9127,7 @@ export function CanvasClient() {
                     data-tool="history"
                     onClick={toolHistory}
                     title={t("canvas.fromHistory")}
-                    className="flex h-9 w-9 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c]"
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c] sm:h-9 sm:w-9"
                   >
                     <Clock className="h-[18px] w-[18px]" />
                   </button>
@@ -9135,12 +9136,12 @@ export function CanvasClient() {
                     data-tool="link"
                     onClick={() => flashTip(t("canvas.linkTip"))}
                     title={t("canvas.linkTip")}
-                    className="flex h-9 w-9 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c]"
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c] sm:h-9 sm:w-9"
                   >
                     <Link2 className="h-[18px] w-[18px]" />
                   </button>
 
-                  <span className="mb-1 mt-auto h-px w-7 flex-none bg-[#dfe3e8]" />
+                  <span className="mx-0.5 h-5 w-px flex-none bg-[#dfe3e8] sm:mx-1 sm:h-6" />
 
                   {moreToolsOpen && (
                     <>
@@ -9148,7 +9149,7 @@ export function CanvasClient() {
                         className="fixed inset-0 z-0"
                         onClick={() => setMoreToolsOpen(false)}
                       />
-                      <div data-testid="canvas-more-tools-menu" className="menu-pop-up absolute bottom-0 left-[calc(100%+10px)] z-10 w-64 overflow-hidden border border-[#dfe3e8] bg-white p-1.5 text-[#252933] shadow-2xl">
+                      <div data-testid="canvas-more-tools-menu" className="menu-pop-up absolute bottom-[calc(100%+10px)] right-0 z-10 w-64 overflow-hidden border border-[#dfe3e8] bg-white p-1.5 text-[#252933] shadow-2xl">
                         <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-medium text-[#9aa1ab]">
                           {t("canvas.moreTools")}
                         </p>
@@ -9200,7 +9201,7 @@ export function CanvasClient() {
                     title={t("canvas.moreTools")}
                     aria-expanded={moreToolsOpen}
                     className={cn(
-                      "flex h-9 w-9 flex-none items-center justify-center rounded-md transition-colors",
+                      "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
                       moreToolsOpen
                         ? "bg-[#eef1f5] text-[#20242c]"
                         : "text-[#697386] hover:bg-[#eef1f5] hover:text-[#20242c]"
@@ -9214,7 +9215,7 @@ export function CanvasClient() {
               {selectedBatchArts.length > 1 && !readOnly && (
                 <div
                   aria-label={t("canvas.batchActions")}
-                  className="cz-anim-bottom-center absolute bottom-[72px] left-[calc(50%+30px)] z-30 flex max-w-[calc(100%-5rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl"
+                  className="cz-anim-bottom-center absolute bottom-[128px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl min-[800px]:bottom-[84px]"
                 >
                   <span className="whitespace-nowrap px-2 text-xs font-semibold text-[#5f6877]">
                     {fmt(t("canvas.batchSelected"), {
@@ -9341,7 +9342,7 @@ export function CanvasClient() {
                 <div
                   aria-label={t("canvas.textBatchActions")}
                   data-testid="text-batch-bar"
-                  className="cz-anim-bottom-center absolute bottom-[72px] left-[calc(50%+30px)] z-30 flex max-w-[calc(100%-5rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl"
+                  className="cz-anim-bottom-center absolute bottom-[128px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl min-[800px]:bottom-[84px]"
                 >
                   <span className="whitespace-nowrap px-2 text-xs font-semibold text-[#5f6877]">
                     {fmt(t("canvas.textBatchSelected"), {
