@@ -60,6 +60,24 @@ grep -q 'PADDLE_OCR_BASE_URL:' "$RELEASE/docker-compose.yml"
 grep -q 'PADDLE_OCR_API_KEY:' "$RELEASE/docker-compose.yml"
 grep -q 'PADDLE_OCR_REQUIRED:' "$RELEASE/docker-compose.yml"
 grep -q 'PADDLE_OCR_FALLBACK_MODEL:' "$RELEASE/docker-compose.yml"
+# 文字模型目录白名单与对外假名映射(与仓库 compose 的透传保持同构,老 release 升级时补齐)
+if ! grep -q 'TEXT_MODEL_WHITELIST:' "$RELEASE/docker-compose.yml"; then
+  awk '{
+    print
+    if (!inserted && $0 ~ /^[[:space:]]*AGENT_MODEL:/) {
+      print "      TEXT_MODEL_WHITELIST: ${TEXT_MODEL_WHITELIST:-}"
+      print "      TEXT_MODEL_ALIASES: ${TEXT_MODEL_ALIASES:-}"
+      inserted = 1
+    }
+    next
+  }
+  END {
+    if (!inserted) exit 44
+  }' "$RELEASE/docker-compose.yml" > "$RELEASE/docker-compose.yml.tmp"
+  mv "$RELEASE/docker-compose.yml.tmp" "$RELEASE/docker-compose.yml"
+fi
+grep -q 'TEXT_MODEL_WHITELIST:' "$RELEASE/docker-compose.yml"
+grep -q 'TEXT_MODEL_ALIASES:' "$RELEASE/docker-compose.yml"
 sed -i -E "s#image: ghcr.io/jesstle/naumi:[^ ]+#image: ghcr.io/jesstle/naumi:$COMMIT#" "$RELEASE/docker-compose.yml"
 sed -i '/^[[:space:]]*REFERENCE_VISION_\(SOURCE\|MODEL\):/d' "$RELEASE/docker-compose.yml"
 sed -i '/^[[:space:]]*AGENT_VISION_MODEL:/a\      REFERENCE_VISION_SOURCE: image\n      REFERENCE_VISION_MODEL: gpt-5.6-luna' "$RELEASE/docker-compose.yml"
