@@ -135,6 +135,31 @@
     --c-seg-inactive: #82868f;
   }
 
+  /* 账户 Dock 显式使用站点主题 token，避免无限画布自己的深浅色作用域改变菜单外观。 */
+  .account-dock-theme-light {
+    --foreground: 223 14% 10%;
+    --card: 0 0% 100%;
+    --primary: 243 75% 59%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 16% 96%;
+    --muted-foreground: 220 8% 58%;
+    --border: 228 15% 94%;
+    --grad-acc: linear-gradient(180deg, #6366f1, #4f46e5);
+    --shadow-pop: 0 18px 44px -16px rgba(16, 18, 23, 0.42);
+  }
+
+  .account-dock-theme-dark {
+    --foreground: 228 15% 94%;
+    --card: 228 11% 9%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 230 9% 13%;
+    --muted-foreground: 222 5% 54%;
+    --border: 232 10% 16%;
+    --grad-acc: linear-gradient(180deg, #818cf8, #6366f1);
+    --shadow-pop: 0 18px 44px -16px rgba(0, 0, 0, 0.6);
+  }
+
   /* 强调色可切换(靛蓝默认 / 电光蓝 / 紫):运行时改 --acc 系列 */
   [data-accent="blue"] {
     --acc: #2e7cf6;
