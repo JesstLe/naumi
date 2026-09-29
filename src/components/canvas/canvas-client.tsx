@@ -5625,6 +5625,33 @@ export function CanvasClient() {
       /* ignore */
     }
   }
+  /**
+   * 剪贴板粘贴(Ctrl+V):截图或复制的图片文件直接入画布。
+   * 复用 uploadRoot 导入管线(校验/优化/进度/批量网格);落点=当前视口中心。
+   * 纯文本剪贴板不拦截(不影响正常的文本粘贴场景)。
+   */
+  function pasteImagesFromClipboard(event: React.ClipboardEvent) {
+    if (readOnly || browsing || loading) return;
+    const items = Array.from(event.clipboardData?.items ?? []);
+    const files = items
+      .filter((item) => item.kind === "file" && /^image\//.test(item.type))
+      .map((item) => item.getAsFile())
+      .filter((f): f is File => Boolean(f));
+    if (!files.length) return;
+    event.preventDefault();
+    const box = canvasAreaRef.current?.getBoundingClientRect();
+    const center = rfRef.current?.screenToFlowPosition({
+      x: (box?.left ?? 0) + (box?.width ?? 0) / 2,
+      y: (box?.top ?? 0) + (box?.height ?? 0) / 2,
+    }, { snapToGrid: false }) ?? { x: 0, y: 0 };
+    uploadCtxRef.current = {
+      parentId: activeRootId(), x: center.x - NODE_W / 2, y: center.y - NODE_H / 2,
+    };
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+    uploadRoot(dt.files);
+  }
+
   // Multi-select and native file drops share one import path. Copy the live FileList first.
   function uploadRoot(files: FileList | null) {
     const picked = Array.from(files ?? []);
@@ -7458,6 +7485,7 @@ export function CanvasClient() {
         <div
           ref={canvasAreaRef}
           data-testid="canvas-drop-zone"
+          onPaste={pasteImagesFromClipboard}
           className={cn("canvas-stage relative min-w-0 flex-1 overflow-hidden", lightCanvas && "canvas-light")}
           onDragEnter={(event) => {
             if (!event.dataTransfer.types.includes("Files")) return;
