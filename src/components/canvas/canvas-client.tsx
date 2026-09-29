@@ -61,7 +61,6 @@ import {
   Link2,
   Clock,
   Keyboard,
-  HelpCircle,
   ShoppingBag,
   Crown,
   Zap,
@@ -76,6 +75,9 @@ import {
   Play,
   MessageSquareText,
   Workflow,
+  MousePointer2,
+  Hand,
+  ImagePlus,
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
@@ -150,6 +152,7 @@ const Y_GAP = 48; // 同层兄弟纵向间距
 const MAX_TOTAL_IMAGES = 6; // 节点图 + 追加参考图 合计上限
 const MAX_UPLOAD = 12 * 1024 * 1024;
 const MAX_GENERATION_COUNT = 8;
+type CanvasPrimaryTool = "move" | "marquee" | "hand";
 // 扩图可选目标比例(ratioTilesC 同款,去掉 auto 与极端档 2:1/1:2)
 const EXPAND_RATIOS = ["1:1", "4:3", "3:2", "16:9", "4:5", "3:4", "2:3", "9:16"] as const;
 // 扩图锚点九宫格(原图贴哪一侧,新内容补其余方向) + 提示文案
@@ -1940,7 +1943,7 @@ export function CanvasClient() {
   useEffect(() => {
     if (browsing) setAccountDockOpen(false);
   }, [browsing]);
-  // 帮助/快捷键弹框 + 底部工具条临时提示
+  // 帮助/快捷键弹框 + 画布工具栏临时提示
   const [helpOpen, setHelpOpen] = useState(false);
   const [tipMsg, setTipMsg] = useState<string | null>(null);
   const [desktopPlatform, setDesktopPlatform] = useState<DesktopPlatform>("other");
@@ -1948,8 +1951,9 @@ export function CanvasClient() {
   const isMac = desktopPlatform === "mac";
   const modifierKey = isMac ? "⌘" : "Ctrl";
   const shortcut = (key: string) => `${modifierKey}${key}`;
-  // 底部 + 号的「添加节点/上传/历史」菜单
+  // PS 式左侧工具栏：创建菜单与更多工具菜单互斥。
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [moreToolsOpen, setMoreToolsOpen] = useState(false);
   // 左下角缩放下拉菜单 + 可输入的缩放值
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
   const [zoomInput, setZoomInput] = useState("100");
@@ -2157,7 +2161,8 @@ export function CanvasClient() {
   const skipSelectionDragStopRef = useRef(false);
   // 框选多选(React Flow 选中集合)
   const [multiSel, setMultiSel] = useState<string[]>([]);
-  const [boxSelectMode, setBoxSelectMode] = useState(false);
+  const [canvasTool, setCanvasTool] = useState<CanvasPrimaryTool>("move");
+  const boxSelectMode = canvasTool === "marquee";
   // 画布底色:深色(默认) / 浅色白底,本地记忆
   const [lightCanvas, setLightCanvas] = useState(() => {
     try {
@@ -3266,7 +3271,7 @@ export function CanvasClient() {
     setRfNodes((current) =>
       current.map((node) => (node.selected ? { ...node, selected: false } : node))
     );
-    if (exitBoxMode) setBoxSelectMode(false);
+    if (exitBoxMode) setCanvasTool("move");
   }
 
   // 选中节点在画布坐标系里的屏幕位置；真实图片按原像素尺寸参与停靠计算。
@@ -3289,12 +3294,13 @@ export function CanvasClient() {
   // 这里统一定义安全区，避免 Dock 在低高度窗口退化成 top:8 后盖住导航/账户操作。
   const overlaySafeArea = useMemo(
     () => ({
-      left: 8,
+      // 左侧常驻工具栏宽 52px；悬浮 Dock/工具条从 68px 后开始布局。
+      left: readOnly ? 8 : 68,
       right: 8,
       top: canvasSize.width > 0 && canvasSize.width < 768 ? 108 : 64,
       bottom: 72,
     }),
-    [canvasSize.width]
+    [canvasSize.width, readOnly]
   );
 
   // dock 宽度随可用画布收缩；高分屏、Windows 缩放和窄窗口都以真实 CSS 像素重新布局。
@@ -7527,6 +7533,7 @@ export function CanvasClient() {
       spawnMenu ||
       ctxMenu ||
       addMenuOpen ||
+      moreToolsOpen ||
       zoomMenuOpen ||
       sidebarOpen ||
       projMenuKey ||
@@ -7558,6 +7565,27 @@ export function CanvasClient() {
         el?.isContentEditable
       ) {
         return;
+      }
+      if (!mod && !e.altKey && !e.shiftKey && !readOnly && !browsing) {
+        if (key === "v") {
+          e.preventDefault();
+          setCanvasTool("move");
+          return;
+        }
+        if (key === "m") {
+          e.preventDefault();
+          setCanvasTool("marquee");
+          setSelectedId(null);
+          setSelectedPendId(null);
+          setSelectedTextId(null);
+          clearCanvasSelection();
+          return;
+        }
+        if (key === "h") {
+          e.preventDefault();
+          setCanvasTool("hand");
+          return;
+        }
       }
       if (
         e.shiftKey &&
@@ -7655,7 +7683,7 @@ export function CanvasClient() {
         }
         return;
       }
-      if (e.key === "Escape" && boxSelectMode) {
+      if (e.key === "Escape" && canvasTool !== "move") {
         e.preventDefault();
         clearCanvasSelection(true);
       }
@@ -7673,7 +7701,7 @@ export function CanvasClient() {
     selectedEdge,
     undoStack,
     redoStack,
-    boxSelectMode,
+    canvasTool,
     browsing,
     canvasShortcutLayerOpen,
   ]);
@@ -8406,6 +8434,7 @@ export function CanvasClient() {
               style={{ background: "transparent" }}
               className={cn(
                 boxSelectMode && "canvas-box-select",
+                canvasTool === "hand" && "canvas-hand-tool",
                 linking && "canvas-linking"
               )}
               connectionRadius={32}
@@ -8421,6 +8450,7 @@ export function CanvasClient() {
               }}
               onMove={(_, vp) => setViewport(vp)}
               onNodeClick={(event, node) => {
+                if (canvasTool === "hand") return;
                 if (node.id.startsWith("task-")) return;
                 if (node.id.startsWith("pend-")) {
                   // 选中空白节点 → 出文生图/合并 dock
@@ -8699,7 +8729,8 @@ export function CanvasClient() {
               minZoom={CANVAS_MIN_ZOOM}
               maxZoom={CANVAS_MAX_ZOOM}
               proOptions={{ hideAttribution: true }}
-              nodesConnectable={!readOnly}
+              nodesDraggable={!readOnly && canvasTool !== "hand"}
+              nodesConnectable={!readOnly && canvasTool !== "hand"}
               deleteKeyCode={null}
               panOnDrag={boxSelectMode ? [1] : [0, 1]}
               selectionOnDrag={boxSelectMode}
@@ -8721,7 +8752,7 @@ export function CanvasClient() {
                   zoomable
                   position="bottom-left"
                   // 显示在左下角工具条上方(而不是右侧)
-                  style={{ left: 16, bottom: 72, margin: 0 }}
+                  style={{ left: readOnly ? 16 : 72, bottom: 72, margin: 0 }}
                   maskColor={lightCanvas ? "rgba(91,103,120,0.16)" : "rgba(0,0,0,0.55)"}
                 />
               )}
@@ -8897,17 +8928,67 @@ export function CanvasClient() {
                 </div>
               </div>
 
-              {/* 底部中间:工具条(选中节点时淡出滑下让位给生成器,对齐原型 czbc) */}
+              {/* Photoshop 式左侧工具栏：常驻主工具，创建/视图工具使用右侧飞出面板。 */}
               {!readOnly && (
                 <div
                   data-testid="canvas-main-toolbar"
-                  className={cn(
-                    "canvas-ui-surface absolute bottom-5 left-1/2 z-30 flex max-w-[calc(100%-1rem)] flex-wrap items-center justify-center gap-1 overflow-visible rounded-2xl border p-1.5 backdrop-blur transition-all duration-200",
-                    selected || selectedPend || selectedText || selectedBatchArts.length > 1
-                      ? "pointer-events-none translate-x-[-50%] translate-y-4 opacity-0"
-                      : "translate-x-[-50%] translate-y-0 opacity-100"
-                  )}
+                  aria-label={t("canvas.toolPalette")}
+                  className="absolute bottom-[76px] left-3 top-[112px] z-30 flex w-[52px] flex-col items-center gap-0.5 overflow-visible border border-[#d9dee7] bg-white/95 px-1.5 py-2 text-[#20242c] shadow-[0_12px_34px_rgba(15,23,42,0.18)] backdrop-blur md:top-[64px]"
                 >
+                  <button
+                    type="button"
+                    data-tool="move"
+                    onClick={() => setCanvasTool("move")}
+                    title={`${t("canvas.moveTool")} (V)`}
+                    aria-pressed={canvasTool === "move"}
+                    className={cn(
+                      "flex h-9 w-9 flex-none items-center justify-center rounded-md transition-colors",
+                      canvasTool === "move"
+                        ? "bg-[#20242c] text-white shadow-sm"
+                        : "text-[#697386] hover:bg-[#eef1f5] hover:text-[#20242c]"
+                    )}
+                  >
+                    <MousePointer2 className="h-[18px] w-[18px]" />
+                  </button>
+                  <button
+                    type="button"
+                    data-tool="marquee"
+                    onClick={() => {
+                      setCanvasTool("marquee");
+                      setSelectedId(null);
+                      setSelectedPendId(null);
+                      setSelectedTextId(null);
+                      clearCanvasSelection();
+                    }}
+                    title={`${t("canvas.boxSelect")} (M)`}
+                    aria-pressed={canvasTool === "marquee"}
+                    className={cn(
+                      "flex h-9 w-9 flex-none items-center justify-center rounded-md transition-colors",
+                      canvasTool === "marquee"
+                        ? "bg-[#20242c] text-white shadow-sm"
+                        : "text-[#697386] hover:bg-[#eef1f5] hover:text-[#20242c]"
+                    )}
+                  >
+                    <BoxSelect className="h-[18px] w-[18px]" />
+                  </button>
+                  <button
+                    type="button"
+                    data-tool="hand"
+                    onClick={() => setCanvasTool("hand")}
+                    title={`${t("canvas.handTool")} (H)`}
+                    aria-pressed={canvasTool === "hand"}
+                    className={cn(
+                      "flex h-9 w-9 flex-none items-center justify-center rounded-md transition-colors",
+                      canvasTool === "hand"
+                        ? "bg-[#20242c] text-white shadow-sm"
+                        : "text-[#697386] hover:bg-[#eef1f5] hover:text-[#20242c]"
+                    )}
+                  >
+                    <Hand className="h-[18px] w-[18px]" />
+                  </button>
+
+                  <span className="my-1 h-px w-7 flex-none bg-[#dfe3e8]" />
+
                   {/* ＋ 弹出「添加节点/上传图片/从生成历史选择」菜单 */}
                   {addMenuOpen && (
                     <>
@@ -8915,7 +8996,7 @@ export function CanvasClient() {
                         className="fixed inset-0 z-0"
                         onClick={() => setAddMenuOpen(false)}
                       />
-                      <div className="menu-pop-up absolute bottom-[calc(100%+10px)] left-0 z-10 w-60 overflow-hidden border border-[#e6e9ee] bg-white p-1.5 text-[#252933] shadow-2xl">
+                      <div className="menu-pop-up absolute left-[calc(100%+10px)] top-0 z-10 w-60 overflow-hidden border border-[#dfe3e8] bg-white p-1.5 text-[#252933] shadow-2xl">
                         <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-medium text-[#9aa1ab]">
                           {t("canvas.newNode")}
                         </p>
@@ -8975,11 +9056,14 @@ export function CanvasClient() {
                   )}
                   <button
                     type="button"
-                    onClick={() => setAddMenuOpen((v) => !v)}
+                    onClick={() => {
+                      setMoreToolsOpen(false);
+                      setAddMenuOpen((v) => !v);
+                    }}
                     title={t("canvas.addNode")}
                     data-testid="canvas-add-node-button"
                     className={cn(
-                      "flex h-11 w-11 flex-none items-center justify-center rounded-[13px] shadow-sm transition-colors",
+                      "flex h-10 w-10 flex-none items-center justify-center rounded-md shadow-sm transition-colors",
                       addMenuOpen
                         ? "bg-primary/90 text-primary-foreground"
                         : "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -8994,88 +9078,135 @@ export function CanvasClient() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => flashTip(t("canvas.linkTip"))}
-                    title={t("canvas.linkTip")}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                  >
-                    <Link2 className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
+                    data-tool="text"
                     onClick={() => {
-                      const next = !boxSelectMode;
-                      setBoxSelectMode(next);
-                      setSelectedId(null);
-                      setSelectedPendId(null);
-                      clearCanvasSelection();
+                      const c = centerScreen();
+                      addTextNodeAtScreen(c.x, c.y);
                     }}
-                    title={t("canvas.boxSelect")}
-                    aria-pressed={boxSelectMode}
-                    className={cn(
-                      "flex h-9 w-9 items-center justify-center rounded-xl transition-colors",
-                      boxSelectMode
-                        ? "bg-[#e8efff] text-[#315fc8]"
-                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                    )}
+                    title={`${t("canvas.textGenerate")} (⇧T)`}
+                    className="flex h-9 w-9 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c]"
                   >
-                    <BoxSelect className="h-4 w-4" />
+                    <Type className="h-[18px] w-[18px]" />
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      setLightCanvas((v) => {
-                        const next = !v;
-                        try {
-                          localStorage.setItem("nv:canvas:bg", next ? "light" : "dark");
-                        } catch {
-                          /* 本地记忆失败不影响切换 */
-                        }
-                        return next;
-                      })
-                    }
-                    title={t("canvas.toggleBg")}
-                    aria-pressed={lightCanvas}
-                    className={cn(
-                      "flex h-9 w-9 items-center justify-center rounded-xl transition-colors",
-                      lightCanvas
-                        ? "bg-[#e8efff] text-[#315fc8]"
-                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                    )}
+                    data-tool="image-node"
+                    onClick={toolAddNode}
+                    title={t("canvas.imageNode")}
+                    className="flex h-9 w-9 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c]"
                   >
-                    <Sun className="h-4 w-4" />
+                    <ImagePlus className="h-[18px] w-[18px]" />
                   </button>
                   <button
                     type="button"
+                    data-tool="upload"
+                    onClick={() => {
+                      const c = centerScreen();
+                      triggerUpload(c.x, c.y);
+                    }}
+                    title={t("canvas.uploadImage")}
+                    className="flex h-9 w-9 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c]"
+                  >
+                    <Upload className="h-[18px] w-[18px]" />
+                  </button>
+
+                  <span className="my-1 h-px w-7 flex-none bg-[#dfe3e8]" />
+
+                  <button
+                    type="button"
+                    data-tool="generate"
                     onClick={toolGenerate}
                     title={t("canvas.spawnGenerate")}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    className="flex h-9 w-9 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c]"
                   >
-                    <Sparkles className="h-4 w-4" />
+                    <Sparkles className="h-[18px] w-[18px]" />
                   </button>
                   <button
                     type="button"
+                    data-tool="history"
                     onClick={toolHistory}
                     title={t("canvas.fromHistory")}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    className="flex h-9 w-9 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c]"
                   >
-                    <Clock className="h-4 w-4" />
-                  </button>
-                  <span className="mx-0.5 h-5 w-px bg-border" />
-                  <button
-                    type="button"
-                    onClick={() => setHelpOpen(true)}
-                    title={t("canvas.shortcuts")}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                  >
-                    <Keyboard className="h-4 w-4" />
+                    <Clock className="h-[18px] w-[18px]" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => setHelpOpen(true)}
-                    title={t("canvas.help")}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    data-tool="link"
+                    onClick={() => flashTip(t("canvas.linkTip"))}
+                    title={t("canvas.linkTip")}
+                    className="flex h-9 w-9 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c]"
                   >
-                    <HelpCircle className="h-4 w-4" />
+                    <Link2 className="h-[18px] w-[18px]" />
+                  </button>
+
+                  <span className="mb-1 mt-auto h-px w-7 flex-none bg-[#dfe3e8]" />
+
+                  {moreToolsOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-0"
+                        onClick={() => setMoreToolsOpen(false)}
+                      />
+                      <div data-testid="canvas-more-tools-menu" className="menu-pop-up absolute bottom-0 left-[calc(100%+10px)] z-10 w-64 overflow-hidden border border-[#dfe3e8] bg-white p-1.5 text-[#252933] shadow-2xl">
+                        <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-medium text-[#9aa1ab]">
+                          {t("canvas.moreTools")}
+                        </p>
+                        <button type="button" onClick={() => { setMoreToolsOpen(false); tidyLayout(); }} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]">
+                          <LayoutGrid className="h-4 w-4 text-[#747d8b]" />{t("canvas.ctxTidy")}
+                        </button>
+                        <button type="button" onClick={() => setShowMinimap((v) => !v)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]">
+                          <MapIcon className="h-4 w-4 text-[#747d8b]" />{t("canvas.minimap")}
+                          <span className="ml-auto text-xs text-[#9aa1ab]">{showMinimap ? "ON" : "OFF"}</span>
+                        </button>
+                        <button type="button" onClick={() => setSnapGrid((v) => !v)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]">
+                          <Magnet className="h-4 w-4 text-[#747d8b]" />{t("canvas.snap")}
+                          <span className="ml-auto text-xs text-[#9aa1ab]">{snapGrid ? "ON" : "OFF"}</span>
+                        </button>
+                        <button type="button" onClick={() => { setMoreToolsOpen(false); rfRef.current?.fitView({ duration: 400, padding: 0.2, maxZoom: 1 }); }} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]">
+                          <Maximize className="h-4 w-4 text-[#747d8b]" />{t("canvas.ctxFit")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLightCanvas((v) => {
+                              const next = !v;
+                              try {
+                                localStorage.setItem("nv:canvas:bg", next ? "light" : "dark");
+                              } catch {
+                                /* 本地记忆失败不影响切换 */
+                              }
+                              return next;
+                            })
+                          }
+                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]"
+                        >
+                          <Sun className="h-4 w-4 text-[#747d8b]" />{t("canvas.toggleBg")}
+                          <span className="ml-auto text-xs text-[#9aa1ab]">{lightCanvas ? "LIGHT" : "DARK"}</span>
+                        </button>
+                        <button type="button" onClick={() => { setMoreToolsOpen(false); setHelpOpen(true); }} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]">
+                          <Keyboard className="h-4 w-4 text-[#747d8b]" />{t("canvas.shortcuts")}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    data-tool="more"
+                    onClick={() => {
+                      setAddMenuOpen(false);
+                      setMoreToolsOpen((v) => !v);
+                    }}
+                    title={t("canvas.moreTools")}
+                    aria-expanded={moreToolsOpen}
+                    className={cn(
+                      "flex h-9 w-9 flex-none items-center justify-center rounded-md transition-colors",
+                      moreToolsOpen
+                        ? "bg-[#eef1f5] text-[#20242c]"
+                        : "text-[#697386] hover:bg-[#eef1f5] hover:text-[#20242c]"
+                    )}
+                  >
+                    <MoreHorizontal className="h-[18px] w-[18px]" />
                   </button>
                 </div>
               )}
@@ -9083,7 +9214,7 @@ export function CanvasClient() {
               {selectedBatchArts.length > 1 && !readOnly && (
                 <div
                   aria-label={t("canvas.batchActions")}
-                  className="cz-anim-bottom-center absolute bottom-[72px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl"
+                  className="cz-anim-bottom-center absolute bottom-[72px] left-[calc(50%+30px)] z-30 flex max-w-[calc(100%-5rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl"
                 >
                   <span className="whitespace-nowrap px-2 text-xs font-semibold text-[#5f6877]">
                     {fmt(t("canvas.batchSelected"), {
@@ -9210,7 +9341,7 @@ export function CanvasClient() {
                 <div
                   aria-label={t("canvas.textBatchActions")}
                   data-testid="text-batch-bar"
-                  className="cz-anim-bottom-center absolute bottom-[72px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl"
+                  className="cz-anim-bottom-center absolute bottom-[72px] left-[calc(50%+30px)] z-30 flex max-w-[calc(100%-5rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl"
                 >
                   <span className="whitespace-nowrap px-2 text-xs font-semibold text-[#5f6877]">
                     {fmt(t("canvas.textBatchSelected"), {
