@@ -62,9 +62,10 @@ try {
   const palette = page.getByTestId("canvas-main-toolbar");
   await expect(palette).toBeVisible();
   const paletteBox = await palette.boundingBox();
-  assert(paletteBox && paletteBox.x < 24 && paletteBox.width <= 56 && paletteBox.height > 320, JSON.stringify(paletteBox));
+  assert(paletteBox && paletteBox.width > 380 && paletteBox.width > paletteBox.height * 6, JSON.stringify(paletteBox));
+  assert(Math.abs((paletteBox.x + paletteBox.width / 2) - 720) < 2 && paletteBox.y + paletteBox.height <= 881, JSON.stringify(paletteBox));
   assert.equal(await palette.locator("button[data-tool]").count(), 10);
-  pass("desktop canvas exposes a compact left-side Photoshop-style palette");
+  pass("desktop canvas exposes a centered bottom Photoshop-style palette");
 
   await palette.locator('[data-tool="hand"]').click();
   await expect(palette.locator('[data-tool="hand"]')).toHaveAttribute("aria-pressed", "true");
@@ -79,12 +80,22 @@ try {
   await palette.getByTestId("canvas-add-node-button").click();
   await expect(page.getByText("新增节点", { exact: true })).toBeVisible();
   await expect(page.getByText("上传图片", { exact: true })).toBeVisible();
+  await page.waitForTimeout(180);
   await page.screenshot({ path: path.join(output, "desktop-create-flyout.png"), fullPage: true });
   await palette.getByTestId("canvas-add-node-button").click();
   await palette.locator('[data-tool="text"]').click();
-  await expect(page.getByTestId("text-node-dock")).toBeVisible();
+  const textDock = page.getByTestId("text-node-dock");
+  await expect(textDock).toBeVisible();
   await expect(palette).toBeVisible();
-  pass("direct text creation keeps the side palette available beside the node dock");
+  await page.waitForTimeout(350);
+  const dockBox = await textDock.boundingBox();
+  const paletteWithDockBox = await palette.boundingBox();
+  const dockGeometry = await textDock.evaluate(element => ({
+    style: element.getAttribute("style"),
+    parent: element.parentElement?.getBoundingClientRect().toJSON(),
+  }));
+  assert(dockBox && paletteWithDockBox && dockBox.y + dockBox.height <= paletteWithDockBox.y, JSON.stringify({ dockBox, paletteWithDockBox, dockGeometry }));
+  pass("direct text creation keeps its dock above the persistent bottom palette");
 
   await page.keyboard.press("Escape");
   await page.locator(".react-flow__pane").click({ position: { x: 1050, y: 650 }, force: true });
@@ -94,16 +105,22 @@ try {
   for (const label of ["整理画布", "小地图", "网格吸附", "适应视图", "切换底色（黑/白）", "快捷键与帮助"]) {
     await expect(moreMenu.getByText(label, { exact: label !== "小地图" && label !== "网格吸附" && label !== "切换底色（黑/白）" })).toBeVisible();
   }
+  await page.waitForTimeout(180);
   await page.screenshot({ path: path.join(output, "desktop-more-tools.png"), fullPage: true });
   pass("more-tools flyout exposes layout, navigation, appearance, and help utilities");
 
   await palette.locator('[data-tool="more"]').click({ force: true });
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(350);
   const mobileBox = await palette.boundingBox();
-  assert(mobileBox && mobileBox.x >= 8 && mobileBox.y >= 108 && mobileBox.x + mobileBox.width <= 68 && mobileBox.y + mobileBox.height <= 772, JSON.stringify(mobileBox));
+  assert(mobileBox && mobileBox.x >= 8 && mobileBox.x + mobileBox.width <= 382, JSON.stringify(mobileBox));
+  assert(mobileBox.width > mobileBox.height * 6 && mobileBox.y >= 700 && mobileBox.y + mobileBox.height <= 768, JSON.stringify(mobileBox));
+  const mobileDockBox = await textDock.boundingBox();
+  assert(mobileDockBox && mobileDockBox.x >= 8 && mobileDockBox.x + mobileDockBox.width <= 382, JSON.stringify(mobileDockBox));
+  assert(mobileDockBox.y + mobileDockBox.height <= mobileBox.y, JSON.stringify({ mobileDockBox, mobileBox }));
   await page.screenshot({ path: path.join(output, "mobile-palette.png"), fullPage: true });
   assert.deepEqual(pageErrors, []);
-  pass("390px layout keeps the tool palette inside project and view safe areas without runtime errors");
+  pass("390px layout keeps the bottom palette and text dock separated inside the viewport without runtime errors");
   console.log("CANVAS_TOOL_PALETTE_BROWSER_RESULT=PASS checks=4 screenshots=3");
 } catch (error) {
   report.push(`FAIL ${error.stack || error}`);
