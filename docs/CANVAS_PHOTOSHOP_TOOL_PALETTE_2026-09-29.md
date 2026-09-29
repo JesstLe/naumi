@@ -56,4 +56,3 @@ git diff --check
 ```
 
 浏览器验收输出位于 `output/canvas-tool-palette-smoke/`，包含桌面创建菜单、更多工具菜单和 390px 工具栏截图。
-
