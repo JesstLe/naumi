@@ -46,6 +46,9 @@ services:
       AGENT_BASE_URL: ${AGENT_BASE_URL:-}
       AGENT_API_KEY: ${AGENT_API_KEY:-}
       AGENT_MODEL: ${AGENT_MODEL:-qwen3.8-flash}
+      # 文字模型目录白名单与对外假名映射(设白名单后目录只显示清单,别名翻译回真实 id)
+      TEXT_MODEL_WHITELIST: ${TEXT_MODEL_WHITELIST:-}
+      TEXT_MODEL_ALIASES: ${TEXT_MODEL_ALIASES:-}
       PADDLE_OCR_BASE_URL: ${PADDLE_OCR_BASE_URL:-}
       PADDLE_OCR_API_KEY: ${PADDLE_OCR_API_KEY:-}
       PADDLE_OCR_REQUIRED: ${PADDLE_OCR_REQUIRED:-false}
