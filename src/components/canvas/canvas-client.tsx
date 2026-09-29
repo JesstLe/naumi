@@ -186,6 +186,52 @@ const CANVAS_MAX_ZOOM = Number.MAX_SAFE_INTEGER;
 
 type DesktopPlatform = "mac" | "windows" | "other";
 
+const CANVAS_NODE_CLIPBOARD_TYPE = "application/x-naumi-canvas-node";
+
+function isEditableClipboardTarget(target: EventTarget | null): boolean {
+  const element = target instanceof Element ? target : null;
+  if (!element) return false;
+  return Boolean(
+    element.closest(
+      'input, textarea, [contenteditable="true"], [contenteditable=""], [role="textbox"]'
+    )
+  );
+}
+
+function canvasNodeIdFromClipboard(data: DataTransfer): string | null {
+  const direct = data.getData(CANVAS_NODE_CLIPBOARD_TYPE).trim();
+  if (direct) return direct;
+  const html = data.getData("text/html");
+  const matched = html.match(/data-naumi-canvas-node="([^"]+)"/i);
+  if (!matched?.[1]) return null;
+  try {
+    return decodeURIComponent(matched[1]);
+  } catch {
+    return null;
+  }
+}
+
+function escapeClipboardHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function setCanvasNodeClipboardData(data: DataTransfer, nodeId: string, title: string) {
+  try {
+    data.setData(CANVAS_NODE_CLIPBOARD_TYPE, nodeId);
+  } catch {
+    // Safari may reject non-standard clipboard MIME types; text/html remains portable.
+  }
+  data.setData("text/plain", title);
+  data.setData(
+    "text/html",
+    `<span data-naumi-canvas-node="${encodeURIComponent(nodeId)}">${escapeClipboardHtml(title)}</span>`
+  );
+}
+
 function detectDesktopPlatform(): DesktopPlatform {
   if (typeof navigator === "undefined") return "other";
   const nav = navigator as Navigator & {
@@ -517,6 +563,7 @@ function DarkSelect({
         rect &&
         createPortal(
           <div
+            data-canvas-hotkeys-blocked="true"
             className={cn("fixed inset-0 z-[200]", light ? "canvas-ui-light" : "canvas-ui-dark")}
             onClick={() => setOpen(false)}
           >
@@ -1111,7 +1158,8 @@ function ArtNode({ data, selected }: NodeProps) {
   };
   const imageWidth = d.width && d.width > 0 ? Math.round(d.width) : undefined;
   const imageHeight = d.height && d.height > 0 ? Math.round(d.height) : undefined;
-  const portY = NODE_LABEL_H + (imageHeight ?? 110) / 2;
+  // 节点边界=图片区域(标题绝对定位悬在图上方,不占边界),端口对齐图片竖直中点
+  const portY = (imageHeight ?? 110) / 2;
   const title = d.pending
     ? d.label
     : `${d.version ? `v${d.version}` : ""}${d.date ? ` · ${formatDate(d.date)}` : ""}${d.prompt ? `\n${d.prompt}` : ""}`;
@@ -1128,9 +1176,9 @@ function ArtNode({ data, selected }: NodeProps) {
         isVisible={selected && !d.pending}
         keepAspectRatio
         minWidth={IMAGE_NODE_MIN_W}
-        minHeight={IMAGE_NODE_MIN_H + NODE_LABEL_H}
+        minHeight={IMAGE_NODE_MIN_H}
         maxWidth={IMAGE_NODE_MAX_W}
-        maxHeight={IMAGE_NODE_MAX_H + NODE_LABEL_H}
+        maxHeight={IMAGE_NODE_MAX_H}
         color="#28b7d1"
         handleClassName="!h-3 !w-3 !border-2 !border-white !bg-[#28b7d1]"
         lineClassName="!border-[#28b7d1]"
@@ -1139,13 +1187,13 @@ function ArtNode({ data, selected }: NodeProps) {
             x: bounds.x,
             y: bounds.y,
             width: bounds.width,
-            height: Math.max(IMAGE_NODE_MIN_H, bounds.height - NODE_LABEL_H),
+            height: Math.max(IMAGE_NODE_MIN_H, bounds.height),
           })
         }
       />
 
-      {/* 未选中时仅显示文件名；点击后再显示标记、分组、版本等功能状态。 */}
-      <div className="art-title mb-1.5 flex h-[30px] flex-none items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none text-[#e2e6ed]">
+      {/* 标题悬在图片上方(节点边界外):选中框/缩放框只框图片,不框标题。未选中时仅显示文件名,点击后显示标记/分组/版本。 */}
+      <div className="art-title absolute -top-[38px] left-0 right-0 z-10 flex h-[30px] items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none text-[#e2e6ed]">
         <span
           className="nodrag min-w-0 flex-1 cursor-text truncate"
           title={`${d.label} · 双击编辑`}
@@ -1552,6 +1600,8 @@ export function CanvasClient() {
   // 视口变换(平移/缩放),用于把生成器面板停靠到选中节点正下方并跟随
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const previousCanvasSizeRef = useRef({ width: 0, height: 0 });
+  const previousViewportAnchorRef = useRef<string | null>(null);
   // 拉线建节点(5b):从 +端口拉出 → 记源节点;落空白弹「新建节点」菜单
   const spawnSourceRef = useRef<string | null>(null);
   const connectedRef = useRef(false);
@@ -1588,6 +1638,11 @@ export function CanvasClient() {
   const extraInputRef = useRef<HTMLInputElement>(null);
   // 节点剪贴板(复制/粘贴节点)+ 上传作根节点的文件 input
   const nodeClipRef = useRef<Artwork | null>(null);
+  // window copy 只消费紧邻本次画布 Cmd/Ctrl+C 的一次事件，不能让陈旧节点
+  // 覆盖后续普通网页文本复制。
+  const canvasCopyIntentRef = useRef<string | null>(null);
+  const canvasCopyHandlerRef = useRef<(event: ClipboardEvent) => void>(() => {});
+  const canvasPasteHandlerRef = useRef<(event: ClipboardEvent) => void>(() => {});
   const [hasClip, setHasClip] = useState(false);
   const [copyTip, setCopyTip] = useState(false);
   const rootUploadRef = useRef<HTMLInputElement>(null);
@@ -1605,6 +1660,18 @@ export function CanvasClient() {
   const importSeqRef = useRef(0);
   const dragDepthRef = useRef(0);
   const [fileDragOver, setFileDragOver] = useState(false);
+  // paste 必须挂在 window：点击 React Flow 空白处后 activeElement 可能仍是 body，
+  // 只给 canvas div 绑定 onPaste 会漏掉系统截图和内部节点粘贴。
+  useEffect(() => {
+    const onCopy = (event: ClipboardEvent) => canvasCopyHandlerRef.current(event);
+    const onPaste = (event: ClipboardEvent) => canvasPasteHandlerRef.current(event);
+    window.addEventListener("copy", onCopy);
+    window.addEventListener("paste", onPaste);
+    return () => {
+      window.removeEventListener("copy", onCopy);
+      window.removeEventListener("paste", onPaste);
+    };
+  }, []);
   const [imageImports, setImageImports] = useState<{
     id: number; total: number; done: number; success: number; finished: boolean;
     errors: { name: string; message: string }[];
@@ -3108,10 +3175,28 @@ export function CanvasClient() {
     return { left, top, bottom: top + size.height * z, cx: left + (size.width * z) / 2 };
   }, [selectedId, selectedPendId, selectedTextId, rfNodes, viewport]);
 
+  // 画布悬浮层需要避开左上项目 chrome、窄屏第二行右上操作区和左下视图工具条。
+  // 这里统一定义安全区，避免 Dock 在低高度窗口退化成 top:8 后盖住导航/账户操作。
+  const overlaySafeArea = useMemo(
+    () => ({
+      left: 8,
+      right: 8,
+      top: canvasSize.width > 0 && canvasSize.width < 768 ? 108 : 64,
+      bottom: 72,
+    }),
+    [canvasSize.width]
+  );
+
   // dock 宽度随可用画布收缩；高分屏、Windows 缩放和窄窗口都以真实 CSS 像素重新布局。
   const preferredDockWidth = 820;
   const dockWidth = canvasSize.width
-    ? Math.max(1, Math.min(preferredDockWidth, canvasSize.width - 16))
+    ? Math.max(
+        1,
+        Math.min(
+          preferredDockWidth,
+          canvasSize.width - overlaySafeArea.left - overlaySafeArea.right
+        )
+      )
     : preferredDockWidth;
   // 节点中心 x(夹取到画布内,使最宽的 dock 不出界);工具条也用这个中心 → 上下对齐。
   const anchorCenterX = useMemo<number | undefined>(() => {
@@ -3119,9 +3204,25 @@ export function CanvasClient() {
     const cw = canvasSize.width;
     const HALF = dockWidth / 2;
     let cx = nodeScreen.cx;
-    if (cw) cx = Math.max(HALF + 8, Math.min(cx, cw - HALF - 8));
+    if (cw) {
+      cx = Math.max(
+        HALF + overlaySafeArea.left,
+        Math.min(cx, cw - HALF - overlaySafeArea.right)
+      );
+      // 低高度宽窗口中，尽量把 Dock 推到左下视图工具条右侧。这样可以安全使用
+      // 更低的 bottom inset，为 Dock + 节点工具条 + 节点主体腾出完整纵向空间。
+      const viewToolbarClearance = 232;
+      const maxDockLeft = cw - dockWidth - overlaySafeArea.right;
+      if (
+        canvasSize.height > 0 &&
+        canvasSize.height < 680 &&
+        maxDockLeft >= viewToolbarClearance
+      ) {
+        cx = Math.max(cx, viewToolbarClearance + HALF);
+      }
+    }
     return cx;
-  }, [nodeScreen, canvasSize.width, dockWidth]);
+  }, [nodeScreen, canvasSize.width, canvasSize.height, dockWidth, overlaySafeArea]);
 
   // 底部生成器:节点正下方,中心对齐 anchorCenterX
   const dockStyle = useMemo<
@@ -3131,40 +3232,153 @@ export function CanvasClient() {
     const ch = canvasSize.height;
     const left = anchorCenterX - dockWidth / 2;
     if (!ch) return { left, top: nodeScreen.bottom + 14, width: dockWidth };
+    const safeTop = overlaySafeArea.top;
+    // 左下视图工具条只占约 216px 宽；Dock 与它横向不相交时保留普通 8px
+    // 即可，避免在宽屏无谓压缩用户手动扩展的提示词编辑区。
+    const bottomInset = left <= 224 ? overlaySafeArea.bottom : 8;
+    const safeBottom = Math.max(safeTop + 120, ch - bottomInset);
     const belowTop = nodeScreen.bottom + 14;
-    const belowSpace = Math.max(0, ch - belowTop - 8);
-    const aboveSpace = Math.max(0, nodeScreen.top - 22);
+    const belowSpace = Math.max(0, safeBottom - belowTop);
+    const nodeToolbarReserve = 70;
+    const aboveBottom = nodeScreen.top - nodeToolbarReserve;
+    const aboveSpace = Math.max(0, aboveBottom - safeTop);
     const preferredHeight = selectedTextId ? 360 : 310;
-    const minimumComfort = selectedTextId ? 250 : 220;
+    const minimumComfort = selectedTextId
+      ? canvasSize.width < 480
+        ? 240
+        : 218
+      : 220;
     // 优先选择能容纳完整自适应输入区的一侧；两侧都不足时选择空间更大的一侧。
     const useBelow =
       belowSpace >= preferredHeight ||
-      (belowSpace >= minimumComfort && belowSpace >= aboveSpace) ||
-      (aboveSpace < minimumComfort && belowSpace >= aboveSpace);
+      (belowSpace >= minimumComfort && belowSpace >= aboveSpace);
     if (useBelow) {
       return {
         left,
-        top: Math.max(8, belowTop),
+        top: Math.max(safeTop, belowTop),
         width: dockWidth,
         maxHeight: Math.max(120, belowSpace),
       };
     }
-    const maxHeight = Math.max(120, aboveSpace);
+    if (aboveSpace >= minimumComfort) {
+      const maxHeight = Math.max(120, aboveSpace);
+      return {
+        left,
+        top: Math.max(safeTop, aboveBottom - Math.min(preferredHeight, maxHeight)),
+        width: dockWidth,
+        maxHeight,
+      };
+    }
+
+    // 两侧都放不下时退化为画布内底部 sheet。它始终位于安全区内，
+    // 不再覆盖顶部项目 chrome，也不会压住左下视图工具条。
+    const availableHeight = Math.max(120, safeBottom - safeTop);
+    const sheetHeight = Math.min(preferredHeight, availableHeight);
     return {
       left,
-      top: Math.max(8, nodeScreen.top - Math.min(preferredHeight, maxHeight) - 14),
+      top: Math.max(safeTop, safeBottom - sheetHeight),
       width: dockWidth,
-      maxHeight,
+      maxHeight: sheetHeight,
     };
-  }, [nodeScreen, anchorCenterX, canvasSize.height, dockWidth, selectedTextId]);
+  }, [
+    nodeScreen,
+    anchorCenterX,
+    canvasSize.width,
+    canvasSize.height,
+    dockWidth,
+    selectedTextId,
+    overlaySafeArea,
+  ]);
+
+  // 窗口缩放、分屏、旋转或切换选中节点时，React Flow 会保留旧 viewport，可能让
+  // 新锚点留在安全区外。尺寸或锚点变化时做最小平移；拖动同一节点不会触发，
+  // 因而不改变缩放、不修改持久化坐标，也不和正常拖动竞争。
+  useEffect(() => {
+    const anchorId = selectedId ?? selectedPendId ?? selectedTextId;
+    const previous = previousCanvasSizeRef.current;
+    const previousAnchor = previousViewportAnchorRef.current;
+    previousCanvasSizeRef.current = canvasSize;
+    previousViewportAnchorRef.current = anchorId;
+    const canvasChanged =
+      Math.abs(previous.width - canvasSize.width) >= 1 ||
+      Math.abs(previous.height - canvasSize.height) >= 1;
+    const anchorChanged = previousAnchor !== anchorId;
+    if (
+      !canvasSize.width ||
+      !canvasSize.height ||
+      (!canvasChanged && !anchorChanged)
+    ) {
+      return;
+    }
+    const instance = rfRef.current;
+    const selectedNode = anchorId ? rfNodes.find((node) => node.id === anchorId) : null;
+    if (!instance || !selectedNode) return;
+
+    const current = instance.getViewport();
+    const size = flowNodeSize(selectedNode);
+    const left = selectedNode.position.x * current.zoom + current.x;
+    const top = selectedNode.position.y * current.zoom + current.y;
+    const right = left + size.width * current.zoom;
+    const bottom = top + size.height * current.zoom;
+    const safeLeft = overlaySafeArea.left;
+    const safeRight = canvasSize.width - overlaySafeArea.right;
+    const defaultSafeTop = overlaySafeArea.top + 58;
+    // 左下工具条只占画布左侧约 224px。节点本身不与它横向相交时，无需无条件
+    // 扣掉 72px；否则低高度窗口会把节点过度上推，令上置 Dock 覆盖工具条和节点。
+    const nodeIntersectsViewToolbar = left <= 224 && right >= overlaySafeArea.left;
+    const safeBottom =
+      canvasSize.height -
+      (nodeIntersectsViewToolbar ? overlaySafeArea.bottom : overlaySafeArea.right);
+    const estimatedDockHeight = selectedTextId
+      ? canvasSize.width < 480
+        ? 240
+        : 218
+      : 220;
+    const stackedSafeTop = overlaySafeArea.top + estimatedDockHeight + 70;
+
+    let dx = 0;
+    let dy = 0;
+    const visibleWidth = safeRight - safeLeft;
+    const nodeWidth = right - left;
+    const nodeHeight = bottom - top;
+    const safeTop =
+      safeBottom - stackedSafeTop >= nodeHeight ? stackedSafeTop : defaultSafeTop;
+    const visibleHeight = safeBottom - safeTop;
+    if (nodeWidth > visibleWidth) {
+      dx = safeLeft + (visibleWidth - nodeWidth) / 2 - left;
+    } else if (left < safeLeft) {
+      dx = safeLeft - left;
+    } else if (right > safeRight) {
+      dx = safeRight - right;
+    }
+    if (nodeHeight > visibleHeight) {
+      dy = safeTop + (visibleHeight - nodeHeight) / 2 - top;
+    } else if (top < safeTop) {
+      dy = safeTop - top;
+    } else if (bottom > safeBottom) {
+      dy = safeBottom - bottom;
+    }
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+    void instance.setViewport(
+      { x: current.x + dx, y: current.y + dy, zoom: current.zoom },
+      { duration: 180 }
+    );
+  }, [
+    canvasSize,
+    overlaySafeArea,
+    rfNodes,
+    selectedId,
+    selectedPendId,
+    selectedTextId,
+  ]);
 
   // 顶部图像工具条:节点正上方,中心 = anchorCenterX(渲染时用 -translate-x-1/2 自居中)
   const topbarStyle = useMemo<{ left: number; top: number } | undefined>(() => {
     if (!nodeScreen || anchorCenterX == null) return undefined;
     const TBAR_H = 46;
-    const top = Math.max(8, nodeScreen.top - TBAR_H - 12);
+    const top = Math.max(overlaySafeArea.top, nodeScreen.top - TBAR_H - 12);
     return { left: anchorCenterX, top };
-  }, [nodeScreen, anchorCenterX]);
+  }, [nodeScreen, anchorCenterX, overlaySafeArea.top]);
 
   // 重命名节点:本地改标题 + 落库(节点标签 = 作品 title)
   async function saveNodeRename() {
@@ -5639,32 +5853,61 @@ export function CanvasClient() {
       /* ignore */
     }
   }
-  /**
-   * 剪贴板粘贴(Ctrl+V):截图或复制的图片文件直接入画布。
-   * 复用 uploadRoot 导入管线(校验/优化/进度/批量网格);落点=当前视口中心。
-   * 纯文本剪贴板不拦截(不影响正常的文本粘贴场景)。
-   */
-  function pasteImagesFromClipboard(event: React.ClipboardEvent) {
-    if (readOnly || browsing || loading) return;
-    const items = Array.from(event.clipboardData?.items ?? []);
-    const files = items
+  function clipboardImageFiles(data: DataTransfer): File[] {
+    const items = Array.from(data.items ?? []);
+    const fromItems = items
       .filter((item) => item.kind === "file" && /^image\//.test(item.type))
       .map((item) => item.getAsFile())
       .filter((f): f is File => Boolean(f));
-    if (!files.length) return;
-    event.preventDefault();
-    const box = canvasAreaRef.current?.getBoundingClientRect();
-    const center = rfRef.current?.screenToFlowPosition({
-      x: (box?.left ?? 0) + (box?.width ?? 0) / 2,
-      y: (box?.top ?? 0) + (box?.height ?? 0) / 2,
-    }, { snapToGrid: false }) ?? { x: 0, y: 0 };
-    uploadCtxRef.current = {
-      parentId: activeRootId(), x: center.x - NODE_W / 2, y: center.y - NODE_H / 2,
-    };
-    const dt = new DataTransfer();
-    for (const f of files) dt.items.add(f);
-    uploadRoot(dt.files);
+    if (fromItems.length) return fromItems;
+    return Array.from(data.files ?? []).filter((file) => /^image\//.test(file.type));
   }
+
+  /**
+   * 统一处理画布 paste：系统 image/* 永远优先导入；输入框纯文本交给浏览器；
+   * 其余场景只有确认是本画布节点格式时才执行内部节点粘贴。
+   */
+  function handleCanvasPaste(event: ClipboardEvent) {
+    if (
+      !ready ||
+      !user ||
+      readOnly ||
+      browsing ||
+      loading ||
+      canvasShortcutLayerOpen ||
+      document.querySelector('[data-canvas-hotkeys-blocked="true"], .fixed.inset-0')
+    ) {
+      return;
+    }
+    const data = event.clipboardData;
+    if (!data) return;
+    const files = clipboardImageFiles(data);
+    if (files.length) {
+      event.preventDefault();
+      const box = canvasAreaRef.current?.getBoundingClientRect();
+      const center = rfRef.current?.screenToFlowPosition({
+        x: (box?.left ?? 0) + (box?.width ?? 0) / 2,
+        y: (box?.top ?? 0) + (box?.height ?? 0) / 2,
+      }, { snapToGrid: false }) ?? { x: 0, y: 0 };
+      uploadCtxRef.current = {
+        parentId: activeRootId(), x: center.x - NODE_W / 2, y: center.y - NODE_H / 2,
+      };
+      const transfer = new DataTransfer();
+      for (const file of files) transfer.items.add(file);
+      uploadRoot(transfer.files);
+      return;
+    }
+    if (isEditableClipboardTarget(event.target)) return;
+    const copied = nodeClipRef.current;
+    if (!copied) return;
+    const nodeId = canvasNodeIdFromClipboard(data);
+    if (nodeId !== copied.id) return;
+    const box = canvasAreaRef.current?.getBoundingClientRect();
+    if (!box) return;
+    event.preventDefault();
+    void pasteNode();
+  }
+  canvasPasteHandlerRef.current = handleCanvasPaste;
 
   // Multi-select and native file drops share one import path. Copy the live FileList first.
   function uploadRoot(files: FileList | null) {
@@ -6921,9 +7164,59 @@ export function CanvasClient() {
       if (await copyText(cdnUrl(image))) showCopyTip();
     }
   }
-  function copyNodeToClip(a: Artwork) {
+  function handleCanvasCopy(event: ClipboardEvent) {
+    const copied = nodeClipRef.current;
+    const intendedNodeId = canvasCopyIntentRef.current;
+    canvasCopyIntentRef.current = null;
+    if (
+      !copied ||
+      intendedNodeId !== copied.id ||
+      selected?.id !== copied.id ||
+      isEditableClipboardTarget(event.target)
+    ) {
+      return;
+    }
+    const data = event.clipboardData;
+    if (!data) return;
+    const title = copied.title || t("canvas.imageNode");
+    event.preventDefault();
+    setCanvasNodeClipboardData(data, copied.id, title);
+  }
+  canvasCopyHandlerRef.current = handleCanvasCopy;
+
+  async function writeCanvasNodeClipboard(a: Artwork) {
+    const title = a.title || t("canvas.imageNode");
+    const html = `<span data-naumi-canvas-node="${encodeURIComponent(a.id)}">${escapeClipboardHtml(title)}</span>`;
+    try {
+      if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/plain": new Blob([title], { type: "text/plain" }),
+            "text/html": new Blob([html], { type: "text/html" }),
+          }),
+        ]);
+        return;
+      }
+    } catch {
+      // Safari/HTTP/权限失败时通过同步 copy 事件写入同样的 HTML 标记。
+    }
+    let wroteMarker = false;
+    const onCopy = (event: ClipboardEvent) => {
+      if (!event.clipboardData) return;
+      wroteMarker = true;
+      event.preventDefault();
+      setCanvasNodeClipboardData(event.clipboardData, a.id, title);
+    };
+    document.addEventListener("copy", onCopy, { capture: true, once: true });
+    const copied = document.execCommand("copy");
+    if (!wroteMarker) document.removeEventListener("copy", onCopy, true);
+    if (!copied && !wroteMarker) await copyText(title);
+  }
+
+  function copyNodeToClip(a: Artwork, writeSystemClipboard = false) {
     nodeClipRef.current = a;
     setHasClip(true);
+    if (writeSystemClipboard) void writeCanvasNodeClipboard(a);
   }
   async function pasteNode() {
     if (nodeClipRef.current) await duplicateArt(nodeClipRef.current);
@@ -6993,29 +7286,85 @@ export function CanvasClient() {
     setFocusId(null);
   }, [focusId, rfNodes]);
 
-  // macOS / Windows 共用键盘层：⌘ 或 Ctrl 作为主修饰键；输入框内不接管系统快捷键。
+  // 画布全局快捷键只在画布本体接管。弹窗、遮罩、确认框、侧边编辑器或菜单
+  // 打开时必须完全让出键盘，避免用户在账户/帮助等上层界面操作时误删底层节点。
+  const canvasShortcutLayerOpen = Boolean(
+    modalTop ||
+      payModal ||
+      helpOpen ||
+      confirmModal ||
+      lightbox ||
+      productPicker ||
+      genImageMenu ||
+      trashOpen ||
+      historyPicker ||
+      annotateArtwork ||
+      comfyOpen ||
+      ocrArtworkId ||
+      assistantArtworkId ||
+      ratioMenuOpen ||
+      expandOpen ||
+      videoOpen ||
+      spawnMenu ||
+      ctxMenu ||
+      addMenuOpen ||
+      zoomMenuOpen ||
+      sidebarOpen ||
+      projMenuKey ||
+      textComposerExpanded ||
+      textReferenceMenuOpen ||
+      mentionState
+  );
+
+  // macOS / Windows 共用键盘层：⌘ 或 Ctrl 作为主修饰键；输入框和上层界面不接管系统快捷键。
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const el = document.activeElement as HTMLElement | null;
+      const el =
+        e.target instanceof HTMLElement
+          ? e.target
+          : (document.activeElement as HTMLElement | null);
       const tag = el?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || el?.isContentEditable) return;
+      if (
+        e.defaultPrevented ||
+        e.isComposing ||
+        canvasShortcutLayerOpen ||
+        document.querySelector(
+          '[data-canvas-hotkeys-blocked="true"], .fixed.inset-0'
+        ) ||
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el?.isContentEditable
+      ) {
+        return;
+      }
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
-      if (e.shiftKey && (e.key === "T" || e.key === "t") && !readOnly && !browsing) {
+      if (
+        e.shiftKey &&
+        !mod &&
+        !e.altKey &&
+        e.code === "KeyT" &&
+        !readOnly &&
+        !browsing
+      ) {
         e.preventDefault();
         const c = centerScreen();
         addTextNodeAtScreen(c.x, c.y);
         return;
       }
-      if (mod && key === "c" && selected) {
-        e.preventDefault();
+      if (mod && key === "c") {
+        canvasCopyIntentRef.current = null;
+        const nativeSelection = window.getSelection();
+        if (!selected || (nativeSelection && !nativeSelection.isCollapsed)) return;
+        canvasCopyIntentRef.current = selected.id;
+        window.setTimeout(() => {
+          if (canvasCopyIntentRef.current === selected.id) {
+            canvasCopyIntentRef.current = null;
+          }
+        }, 1000);
         copyNodeToClip(selected);
         flashTip(t("canvas.copied"));
-        return;
-      }
-      if (mod && key === "v" && hasClip && !readOnly) {
-        e.preventDefault();
-        void pasteNode();
         return;
       }
       if (mod && key === "z") {
@@ -7089,6 +7438,7 @@ export function CanvasClient() {
     redoStack,
     boxSelectMode,
     browsing,
+    canvasShortcutLayerOpen,
   ]);
 
   // Ctrl/⌘ + 滚轮:阻止浏览器整页缩放(画布内由 React Flow 自己缩放)
@@ -7499,7 +7849,6 @@ export function CanvasClient() {
         <div
           ref={canvasAreaRef}
           data-testid="canvas-drop-zone"
-          onPaste={pasteImagesFromClipboard}
           className={cn("canvas-stage relative min-w-0 flex-1 overflow-hidden", lightCanvas && "canvas-light")}
           onDragEnter={(event) => {
             if (!event.dataTransfer.types.includes("Files")) return;
@@ -8481,7 +8830,7 @@ export function CanvasClient() {
               {selectedBatchArts.length > 1 && !readOnly && (
                 <div
                   aria-label={t("canvas.batchActions")}
-                  className="cz-anim-bottom absolute bottom-5 left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl"
+                  className="cz-anim-bottom-center absolute bottom-[72px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl"
                 >
                   <span className="whitespace-nowrap px-2 text-xs font-semibold text-[#5f6877]">
                     {fmt(t("canvas.batchSelected"), {
@@ -8604,11 +8953,11 @@ export function CanvasClient() {
                   </button>
                 </div>
               )}
-              {selectedTextBatchNodes.length > 0 && !readOnly && selectedBatchArts.length === 0 && (
+              {selectedTextBatchNodes.length > 1 && !readOnly && selectedBatchArts.length === 0 && (
                 <div
                   aria-label={t("canvas.textBatchActions")}
                   data-testid="text-batch-bar"
-                  className="cz-anim-bottom absolute bottom-5 left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl"
+                  className="cz-anim-bottom-center absolute bottom-[72px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl"
                 >
                   <span className="whitespace-nowrap px-2 text-xs font-semibold text-[#5f6877]">
                     {fmt(t("canvas.textBatchSelected"), {
@@ -8709,7 +9058,13 @@ export function CanvasClient() {
 
           {/* 左下角工具(原型 cz-bl):整理画布 / 小地图 / 网格吸附 / 适应视图 / 缩放% */}
           {!browsing && (active || creatingNew) && (
-            <div data-testid="canvas-view-toolbar" className="canvas-ui-surface absolute bottom-4 left-4 z-20 flex items-center gap-0.5 rounded-xl border p-1.5">
+            <div
+              data-testid="canvas-view-toolbar"
+              className={cn(
+                "canvas-ui-surface absolute bottom-4 left-4 flex items-center gap-0.5 rounded-xl border p-1.5",
+                zoomMenuOpen ? "z-40" : "z-20"
+              )}
+            >
               {!readOnly && (
                 <button
                   type="button"
@@ -9026,7 +9381,7 @@ export function CanvasClient() {
                           <Item
                             label={t("canvas.copyNode")}
                             hk={shortcut("C")}
-                            onClick={() => copyNodeToClip(node)}
+                            onClick={() => copyNodeToClip(node, true)}
                           />
                         )}
                         <Item
@@ -9114,11 +9469,18 @@ export function CanvasClient() {
             })()}
 
           {/* 顶部图像工具条:选中节点(含空白节点)正上方居中(原型 .cz-toolbar,emoji+配色+inT 入场) */}
-          {(selected || selectedPend) && !readOnly && topbarStyle && (
+          {(selected || selectedPend) &&
+            selectedBatchArts.length <= 1 &&
+            !readOnly &&
+            topbarStyle && (
             <div
               key={selectedId ?? selectedPendId ?? "tb"}
+              data-testid="image-node-toolbar"
               style={{ left: topbarStyle.left, top: topbarStyle.top }}
-              className="canvas-ui-surface cz-anim-top absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-[14px] border p-1.5"
+              className={cn(
+                "canvas-ui-surface cz-anim-top absolute z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 rounded-[14px] border p-1.5",
+                expandOpen || videoOpen ? "overflow-visible" : "overflow-x-auto"
+              )}
             >
               {QUICK_ACTIONS.filter(
                 (a) => a.key !== "hd" && a.key !== "cutout"
@@ -9455,7 +9817,10 @@ export function CanvasClient() {
           )}
 
           {/* 文字节点工具条：沿用图片节点的层级、尺寸和交互密度，动作替换为文字可用能力。 */}
-          {selectedText && !readOnly && topbarStyle && (
+          {selectedText &&
+            selectedTextBatchNodes.length <= 1 &&
+            !readOnly &&
+            topbarStyle && (
             <div
               key={`text-toolbar-${selectedText.id}`}
               data-testid="text-node-toolbar"
@@ -9842,7 +10207,7 @@ export function CanvasClient() {
             )}
 
           {/* 底部生成器(配方):选中节点正下方居中,横向 dock(原型 dock) */}
-          {selected && (
+          {selected && selectedBatchArts.length <= 1 && (
             <div
               data-testid="image-node-dock"
               key={`dock-${selected.id}`}
@@ -10216,14 +10581,20 @@ export function CanvasClient() {
           )}
 
           {/* 文字生成节点：布局与图片节点一致，配色跟随画布黑/白主题。 */}
-          {selectedText && !readOnly && (
+          {selectedText && selectedTextBatchNodes.length <= 1 && !readOnly && (
             <div
               ref={textComposerDockRef}
               key={`tdock-${selectedText.id}`}
               data-testid="text-node-dock"
               style={
                 textComposerExpanded
-                  ? { left: 16, right: 16, top: 24, bottom: 24, width: "auto" }
+                  ? {
+                      left: overlaySafeArea.left,
+                      right: overlaySafeArea.right,
+                      top: overlaySafeArea.top,
+                      bottom: overlaySafeArea.bottom,
+                      width: "auto",
+                    }
                   : dockStyle ?? {
                       left: 12,
                       bottom: 12,
@@ -10425,6 +10796,7 @@ export function CanvasClient() {
                         <button
                           key={reference.id}
                           type="button"
+                          data-artwork-id={reference.id}
                           onClick={() =>
                             void updateTextReference(selectedText.id, reference.id, !checked)
                           }
