@@ -20,6 +20,7 @@ import {
   MiniMap,
   Handle,
   NodeResizer,
+  useInternalNode,
   Position,
   useNodesState,
   useEdgesState,
@@ -1019,7 +1020,8 @@ function CometEdge({
 
 /**
  * 画布视频节点表面(参照 infinite-canvas):原生 video 元素 + 播放/放大角标 +
- * 时长显示。未选中自动暂停;空格键播放(选中时);双击不再触发节点重命名。
+ * 时长显示。未选中自动暂停；选中后可聚焦视频表面并用空格播放。
+ * 所有媒体控件都隔离 React Flow 的拖动、滚轮和平移快捷键。
  */
 function VideoNodeSurface({ url, selected, kind, onExtract }: { url: string; selected: boolean; kind: "video" | "audio"; onExtract?: (kind: "frame" | "audio", timestamp: number) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -1044,12 +1046,18 @@ function VideoNodeSurface({ url, selected, kind, onExtract }: { url: string; sel
   const controlStyle = { background: "rgba(15,23,42,0.72)", color: "#e2e6ed" };
 
   return (
-    <div className={cn("relative h-full w-full overflow-hidden rounded-[10px]", kind === "audio" ? "bg-slate-100 p-3" : "bg-black")}>
+    <div
+      className={cn(
+        "relative h-full w-full overflow-hidden rounded-[10px]",
+        kind === "audio" ? "bg-slate-100 p-3" : "bg-black"
+      )}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
       {kind === "audio" ? <audio
         ref={audioRef}
         src={url}
         controls
-        className="mt-8 w-full"
+        className="nodrag nowheel nokey mt-8 w-full"
         onLoadedMetadata={(event) => setDurationMs(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration * 1000 : 0)}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
@@ -1057,10 +1065,11 @@ function VideoNodeSurface({ url, selected, kind, onExtract }: { url: string; sel
       /> : <video
         ref={videoRef}
         src={url}
-        tabIndex={-1}
+        tabIndex={selected ? 0 : -1}
+        aria-label="视频播放器，空格播放或暂停"
         playsInline
         loop
-        className="block h-full w-full object-contain outline-none"
+        className="nodrag nowheel nokey block h-full w-full object-contain outline-none"
         onLoadedMetadata={(event) =>
           setDurationMs(
             Number.isFinite(event.currentTarget.duration)
@@ -1086,22 +1095,23 @@ function VideoNodeSurface({ url, selected, kind, onExtract }: { url: string; sel
           {new Date(durationMs).toISOString().slice(14, 19)}
         </span>
       )}
-      {kind === "video" && selected && onExtract && <div className="absolute right-1.5 top-1.5 z-10 flex gap-1">
+      {kind === "video" && selected && onExtract && <div data-testid="canvas-video-extract-controls" className="nodrag nowheel nokey absolute right-1.5 top-1.5 z-10 flex gap-1">
         <button type="button" title="抽取首帧" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("frame", 0); }}>首帧</button>
         <button type="button" title="抽取当前帧" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("frame", videoRef.current?.currentTime || 0); }}>当前帧</button>
         <button type="button" title="抽取尾帧" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("frame", Math.max(0, (videoRef.current?.duration || 0) - 0.01)); }}>尾帧</button>
         <button type="button" title="拆分音轨" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("audio", 0); }}>音轨</button>
       </div>}
-      {kind === "video" && selected && durationMs > 0 && <div className="absolute bottom-1.5 left-1/2 z-10 flex w-[calc(100%-76px)] -translate-x-1/2 items-center gap-1.5 rounded-md bg-black/70 px-2 py-1">
+      {kind === "video" && selected && durationMs > 0 && <div data-testid="canvas-video-timeline" className="nodrag nowheel nokey absolute bottom-1.5 left-1/2 z-10 flex w-[calc(100%-76px)] -translate-x-1/2 items-center gap-1.5 rounded-md bg-black/70 px-2 py-1">
         <span className="text-[9px] tabular-nums text-white/80">{new Date(currentTime * 1000).toISOString().slice(14, 19)}</span>
         <input aria-label="视频时间轴" type="range" min={0} max={Math.max(0.01, durationMs / 1000)} step={0.01} value={Math.min(currentTime, durationMs / 1000)} onChange={(event) => { const time = Number(event.target.value); setCurrentTime(time); if (videoRef.current) videoRef.current.currentTime = time; }} className="h-1.5 min-w-0 flex-1 accent-teal-400" />
         <span className="text-[9px] tabular-nums text-white/80">{new Date(durationMs).toISOString().slice(14, 19)}</span>
       </div>}
       <button
+        data-testid="canvas-media-playback"
         type="button"
         title={isPlaying ? "暂停" : "播放"}
         aria-label={isPlaying ? "暂停" : "播放"}
-        className="absolute bottom-1.5 left-1.5 z-10 grid h-6 w-6 place-items-center rounded-md opacity-75 backdrop-blur transition-opacity hover:opacity-100"
+        className="nodrag nowheel nokey absolute bottom-1.5 left-1.5 z-10 grid h-6 w-6 place-items-center rounded-md opacity-75 backdrop-blur transition-opacity hover:opacity-100"
         style={controlStyle}
         onClick={(event) => {
           event.stopPropagation();
@@ -1111,10 +1121,11 @@ function VideoNodeSurface({ url, selected, kind, onExtract }: { url: string; sel
         {isPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
       </button>
       <button
+        data-testid="canvas-media-preview"
         type="button"
         title="放大预览"
         aria-label="放大预览"
-        className="absolute bottom-1.5 right-1.5 z-10 grid h-6 w-6 place-items-center rounded-md opacity-75 backdrop-blur transition-opacity hover:opacity-100"
+        className="nodrag nowheel nokey absolute bottom-1.5 right-1.5 z-10 grid h-6 w-6 place-items-center rounded-md opacity-75 backdrop-blur transition-opacity hover:opacity-100"
         style={controlStyle}
         onClick={(event) => {
           event.stopPropagation();
@@ -1127,7 +1138,7 @@ function VideoNodeSurface({ url, selected, kind, onExtract }: { url: string; sel
   );
 }
 
-function ArtNode({ data, selected }: NodeProps) {
+function ArtNode({ data, selected, id: nodeId }: NodeProps) {
   const d = data as {
     id: string;
     image?: string;
@@ -1160,9 +1171,33 @@ function ArtNode({ data, selected }: NodeProps) {
   const imageHeight = d.height && d.height > 0 ? Math.round(d.height) : undefined;
   // 节点边界=图片区域(标题绝对定位悬在图上方,不占边界),端口对齐图片竖直中点
   const portY = (imageHeight ?? 110) / 2;
+  const internal = useInternalNode(nodeId);
   const title = d.pending
     ? d.label
     : `${d.version ? `v${d.version}` : ""}${d.date ? ` · ${formatDate(d.date)}` : ""}${d.prompt ? `\n${d.prompt}` : ""}`;
+  // 白边自愈:节点存档宽高比与图片真实比例偏差 ≥5% 时,按图片比例校正节点高度
+  // (保留宽度与位置),避免 object-contain 在卡片里留出白色容器边。每节点每次挂载只修一次。
+  const aspectFixedRef = useRef(false);
+  useEffect(() => {
+    if (aspectFixedRef.current || d.pending) return;
+    const iw = d.intrinsicWidth;
+    const ih = d.intrinsicHeight;
+    const cw = d.width;
+    const ch = d.height;
+    if (!iw || !ih || !cw || !ch) return;
+    const imgRatio = iw / ih;
+    const nodeRatio = cw / ch;
+    if (Math.abs(nodeRatio - imgRatio) / imgRatio < 0.05) return;
+    aspectFixedRef.current = true;
+    const pos = internal?.internals.positionAbsolute ?? { x: 0, y: 0 };
+    d.onCanvasResize?.(nodeId, {
+      x: Math.round(pos.x),
+      y: Math.round(pos.y),
+      width: Math.round(cw),
+      height: Math.max(IMAGE_NODE_MIN_H, Math.round(cw / imgRatio)),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeId, internal, d.intrinsicWidth, d.intrinsicHeight, d.width, d.height, d.pending]);
   return (
     <div
       className={cn("group relative flex h-full w-full flex-col", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}
@@ -1252,7 +1287,7 @@ function ArtNode({ data, selected }: NodeProps) {
                   d.onDimensions?.(d.id, image.naturalWidth, image.naturalHeight);
                 }
               }}
-              className="block h-full w-full bg-white object-contain"
+              className="block h-full w-full object-contain"
             />
             {selected && d.rootLabel && (
               <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
@@ -2035,6 +2070,11 @@ export function CanvasClient() {
         }>;
       }
     | { kind: "delete"; records: Artwork[] }
+    | {
+        kind: "mixed-delete";
+        artworks: Artwork[];
+        textNodes: CanvasTextNode[];
+      }
     | { kind: "add"; records: Artwork[] }
     | { kind: "text-delete"; records: CanvasTextNode[] }
     | { kind: "text-add"; records: CanvasTextNode[] }
@@ -4952,38 +4992,87 @@ export function CanvasClient() {
     if (readOnly || !user || !active) return;
     if (!active.members.some((m) => m.id === rootId)) return;
     const ids = [rootId];
-    // 仅当这是项目里最后一个节点时,删完才算清空(回项目网格)
-    const willEmpty = active.members.length === 1;
     setConfirmModal({
       title: t("canvas.deleteNodeTitle"),
       message: t("canvas.deleteOne"),
       confirmLabel: t("canvas.confirmDelete"),
-      onConfirm: () => void runDelete(ids, willEmpty),
+      onConfirm: () => void runDelete(ids),
     });
   }
-  // 真正执行删除(确认后)
-  async function runDelete(ids: string[], willEmpty: boolean) {
-    if (!user) return;
-    // 捕获被删记录(供撤销恢复)
-    const records = (works ?? []).filter((w) => ids.includes(w.id));
+  // 真正执行删除(确认后)。文字节点与作品必须分流到各自 API，
+  // 混合选择仍只记一条 undo，避免用户需要撤销两次才能恢复。
+  async function runDelete(ids: string[]) {
+    if (!user || readOnly) return;
+    const uniqueIds = Array.from(
+      new Set(
+        ids.filter(
+          (id) => id && !id.startsWith("pend-") && !id.startsWith("task-")
+        )
+      )
+    );
+    if (!uniqueIds.length) return;
+    const deleting = new Set(uniqueIds);
+    const artworkRecords = (works ?? []).filter((work) => deleting.has(work.id));
+    const textRecords = textNodes.filter((node) => deleting.has(node.id));
+    const artworkIds = artworkRecords.map((record) => record.id);
+    const textIds = textRecords.map((record) => record.id);
+    if (!artworkIds.length && !textIds.length) return;
     setSelectedId(null);
+    setSelectedTextId(null);
+    setSelectedPendId(null);
     try {
-      const res = await privateFetch("/api/artworks/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: user.email, ids }),
-      });
-      await expectJsonOk(res, t("canvas.genFail"));
-      // 删空当前画布 → 回到项目网格,不自动弹出作品库里的旧图
-      if (willEmpty) {
+      if (artworkIds.length) {
+        const response = await privateFetch("/api/artworks/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: user.email, ids: artworkIds }),
+        });
+        await expectJsonOk(response, t("canvas.genFail"));
+      }
+      if (textIds.length) {
+        const response = await privateFetch("/api/canvas/text-nodes", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ids: textIds }),
+        });
+        await expectJsonOk(response, t("canvas.genFail"));
+      }
+
+      if (artworkRecords.length && textRecords.length) {
+        pushUndo({
+          kind: "mixed-delete",
+          artworks: artworkRecords,
+          textNodes: textRecords,
+        });
+      } else if (artworkRecords.length) {
+        pushUndo({ kind: "delete", records: artworkRecords });
+      } else if (textRecords.length) {
+        pushUndo({ kind: "text-delete", records: textRecords });
+      }
+
+      removeWorksLocal(artworkIds);
+      if (textIds.length) {
+        setTextNodes((current) =>
+          current.filter((node) => !deleting.has(node.id))
+        );
+      }
+      setMultiSel((current) => current.filter((id) => !deleting.has(id)));
+
+      // 只有当前项目的媒体与文字节点都被删空时才退回项目网格。
+      const activeProjectKey = active?.key ?? activeKey;
+      const remainingArtwork =
+        active?.members.some((member) => !deleting.has(member.id)) ?? false;
+      const remainingText = activeProjectKey
+        ? textNodes.some(
+            (node) =>
+              node.projectKey === activeProjectKey && !deleting.has(node.id)
+          )
+        : false;
+      if (activeProjectKey && !remainingArtwork && !remainingText) {
         setActiveKey(null);
         setCreatingNew(false);
         setBrowsing(true);
       }
-      if (records.length) pushUndo({ kind: "delete", records });
-      removeWorksLocal(ids); // 服务端成功后再本地移除
-      const deleted = new Set(ids);
-      setMultiSel((current) => current.filter((id) => !deleted.has(id)));
     } catch (e) {
       flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
     }
@@ -5031,6 +5120,13 @@ export function CanvasClient() {
     setTextNodes((current) => current.map((node) => node.id === id ? { ...node, canvasX: x, canvasY: y } : node));
     const node = textNodes.find((item) => item.id === id);
     if (node) void persistTextNode({ ...node, canvasX: x, canvasY: y, updatedAt: new Date().toISOString() });
+  }
+  function setCanvasNodePosSilent(id: string, x: number, y: number) {
+    if (id.startsWith("text-")) {
+      setTextPosSilent(id, x, y);
+      return;
+    }
+    setPosSilent(id, x, y);
   }
   // 血缘连线静默应用(撤销/剪线共用):add=给 target 加回 parentId,否则移除
   async function setParentLinkSilent(targetId: string, parentId: string, add: boolean) {
@@ -5118,12 +5214,17 @@ export function CanvasClient() {
     if (act.kind === "move") setPosSilent(act.id, act.from.x, act.from.y);
     else if (act.kind === "move-many")
       act.moves.forEach((move) =>
-        setPosSilent(move.id, move.from.x, move.from.y)
+        setCanvasNodePosSilent(move.id, move.from.x, move.from.y)
       );
     else if (act.kind === "canvas-group")
       await applyCanvasGroupAssignments(
         act.changes.map((change) => ({ id: change.id, canvasGroupId: change.from }))
       );
+    else if (act.kind === "mixed-delete")
+      await Promise.all([
+        restoreRecordsSilent(act.artworks),
+        restoreTextNodesSilent(act.textNodes),
+      ]);
     else if (act.kind === "delete") await restoreRecordsSilent(act.records);
     else if (act.kind === "add") await deleteIdsSilent(act.records.map((r) => r.id));
     else if (act.kind === "text-delete") await restoreTextNodesSilent(act.records);
@@ -5143,11 +5244,18 @@ export function CanvasClient() {
     setUndoStack((s) => [...s, act]);
     if (act.kind === "move") setPosSilent(act.id, act.to.x, act.to.y);
     else if (act.kind === "move-many")
-      act.moves.forEach((move) => setPosSilent(move.id, move.to.x, move.to.y));
+      act.moves.forEach((move) =>
+        setCanvasNodePosSilent(move.id, move.to.x, move.to.y)
+      );
     else if (act.kind === "canvas-group")
       await applyCanvasGroupAssignments(
         act.changes.map((change) => ({ id: change.id, canvasGroupId: change.to }))
       );
+    else if (act.kind === "mixed-delete")
+      await Promise.all([
+        deleteIdsSilent(act.artworks.map((record) => record.id)),
+        deleteTextNodesSilent(act.textNodes.map((record) => record.id)),
+      ]);
     else if (act.kind === "delete") await deleteIdsSilent(act.records.map((r) => r.id));
     else if (act.kind === "add") await restoreRecordsSilent(act.records);
     else if (act.kind === "text-delete") await deleteTextNodesSilent(act.records.map((r) => r.id));
@@ -5178,13 +5286,11 @@ export function CanvasClient() {
       (id) => !id.startsWith("pend-") && !id.startsWith("task-")
     );
     if (!real.length) return;
-    const set = new Set(real);
-    const willEmpty = active.members.every((m) => set.has(m.id));
     setConfirmModal({
       title: t("canvas.deleteNodeTitle"),
       message: fmt(t("canvas.deleteMany"), { n: real.length }),
       confirmLabel: t("canvas.confirmDelete"),
-      onConfirm: () => void runDelete(real, willEmpty),
+      onConfirm: () => void runDelete(real),
     });
   }
   // 删除当前选中节点(供面板按钮 / Delete 键)
@@ -5831,6 +5937,7 @@ export function CanvasClient() {
           y: Math.round(sy + artworkNodeSize(a).height + 30),
           src: {
             image: a.image,
+            videoUrl: a.videoUrl ?? null,
             title: `${a.title} 副本`,
             category: a.category,
             prompt: a.prompt,
@@ -6427,30 +6534,7 @@ export function CanvasClient() {
     void persistTextNode(node);
   }
   async function removeTextNode(id: string) {
-    if (!user || readOnly) return;
-    const removing = textNodes.find((node) => node.id === id);
-    if (!removing) return;
-    pushUndo({ kind: "text-delete", records: [removing] });
-    setTextNodes((current) => current.filter((node) => node.id !== id));
-    setSelectedTextId((current) => (current === id ? null : current));
-    try {
-      await privateFetch("/api/canvas/text-nodes", {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ids: [id] }),
-      });
-    } catch {
-      /* local fallback already updated */
-    }
-    if (removing.projectKey === activeKey) {
-      const remainingText = textNodes.filter(
-        (node) => node.id !== id && node.projectKey === activeKey
-      );
-      if (!active?.members.length && remainingText.length === 0) {
-        setActiveKey(null);
-        setBrowsing(true);
-      }
-    }
+    await runDelete([id]);
   }
 
   function changeTextNodeContent(id: string, content: string) {
@@ -7247,30 +7331,103 @@ export function CanvasClient() {
     }>
   ) {
     if (readOnly || !user || !moves.length) return;
-    const positions = new Map(moves.map((move) => [move.id, move.to]));
+    const artworkMoves = moves.filter((move) => !move.id.startsWith("text-"));
+    const textMoves = moves.filter((move) => move.id.startsWith("text-"));
+    const artworkPositions = new Map(
+      artworkMoves.map((move) => [move.id, move.to])
+    );
+    const textPositions = new Map(textMoves.map((move) => [move.id, move.to]));
+    const updatedAt = new Date().toISOString();
+    const movedTextNodes = textNodes
+      .filter((node) => textPositions.has(node.id))
+      .map((node) => {
+        const position = textPositions.get(node.id)!;
+        return {
+          ...node,
+          canvasX: position.x,
+          canvasY: position.y,
+          updatedAt,
+        };
+      });
     setWorks((current) =>
       current?.map((work) => {
-        const position = positions.get(work.id);
+        const position = artworkPositions.get(work.id);
         return position
           ? { ...work, canvasX: position.x, canvasY: position.y }
           : work;
       }) ?? current
     );
+    if (textMoves.length) {
+      setTextNodes((current) =>
+        current.map((node) => {
+          const position = textPositions.get(node.id);
+          return position
+            ? {
+                ...node,
+                canvasX: position.x,
+                canvasY: position.y,
+                updatedAt,
+              }
+            : node;
+        })
+      );
+    }
     void Promise.all(
-      moves.map((move) =>
-        privateFetch("/api/artworks/position", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            email: user.email,
-            id: move.id,
-            x: move.to.x,
-            y: move.to.y,
-          }),
-        }).catch(() => {})
-      )
+      [
+        ...artworkMoves.map((move) =>
+          privateFetch("/api/artworks/position", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              email: user.email,
+              id: move.id,
+              x: move.to.x,
+              y: move.to.y,
+            }),
+          }).catch(() => {})
+        ),
+        ...movedTextNodes.map((node) => persistTextNode(node)),
+      ]
     );
     pushUndo({ kind: "move-many", moves });
+  }
+
+  function rememberManyNodeDrag(nodes: Node[]) {
+    selectionDragStartRef.current =
+      nodes.length > 1
+        ? Object.fromEntries(
+            nodes.map((node) => [
+              node.id,
+              { x: node.position.x, y: node.position.y },
+            ])
+          )
+        : {};
+  }
+
+  function finishManyNodeDrag(nodes: Node[]) {
+    if (nodes.length <= 1) return false;
+    const starts = selectionDragStartRef.current;
+    selectionDragStartRef.current = {};
+    if (readOnly || !user) return true;
+    const moves = nodes
+      .filter(
+        (node) =>
+          !node.id.startsWith("pend-") &&
+          !node.id.startsWith("task-") &&
+          starts[node.id]
+      )
+      .map((node) => ({
+        id: node.id,
+        from: starts[node.id],
+        to: { x: node.position.x, y: node.position.y },
+      }))
+      .filter(
+        (move) =>
+          Math.round(move.from.x) !== Math.round(move.to.x) ||
+          Math.round(move.from.y) !== Math.round(move.to.y)
+      );
+    if (moves.length) saveManyNodePositions(moves);
+    return true;
   }
 
   // 生成完成后自动平移聚焦到新节点
@@ -7402,12 +7559,10 @@ export function CanvasClient() {
         );
         if (realSel.length >= 1) {
           e.preventDefault();
-          const selectedSet = new Set(realSel);
-          const willEmpty = !!active?.members.length && active.members.every((member) => selectedSet.has(member.id));
-          void runDelete(realSel, willEmpty);
+          void runDelete(realSel);
         } else if (selectedId) {
           e.preventDefault();
-          void runDelete([selectedId], active?.members.length === 1);
+          void runDelete([selectedId]);
         } else if (selectedTextId) {
           e.preventDefault();
           void removeTextNode(selectedTextId);
@@ -8271,12 +8426,13 @@ export function CanvasClient() {
                 setSelectedTextId(null);
                 setCtxMenu(null);
               }}
-              onNodeDragStart={(_, node) => {
+              onNodeDragStart={(_, node, draggedNodes) => {
                 dragStartRef.current = {
                   id: node.id,
                   x: node.position.x,
                   y: node.position.y,
                 };
+                rememberManyNodeDrag(draggedNodes);
                 groupedDragStartRef.current = null;
                 skipSelectionDragStopRef.current = false;
                 const artwork = active?.members.find((item) => item.id === node.id);
@@ -8329,7 +8485,7 @@ export function CanvasClient() {
                   })
                 );
               }}
-              onNodeDragStop={(_, node) => {
+              onNodeDragStop={(_, node, draggedNodes) => {
                 if (node.id.startsWith("task-")) {
                   // 生成中占位:每个任务独立记住拖到的位置。
                   generationTaskPosRef.current[node.id] = {
@@ -8355,29 +8511,12 @@ export function CanvasClient() {
                   );
                   return;
                 }
-                if (node.id.startsWith("text-")) {
-                  const current = textNodes.find((item) => item.id === node.id);
-                  if (!current) return;
-                  const from = { x: current.canvasX, y: current.canvasY };
-                  const moved: CanvasTextNode = {
-                    ...current,
-                    canvasX: node.position.x,
-                    canvasY: node.position.y,
-                    updatedAt: new Date().toISOString(),
-                  };
-                  setTextNodes((items) =>
-                    items.map((item) => (item.id === moved.id ? moved : item))
-                  );
-                  if (Math.round(from.x) !== Math.round(moved.canvasX) || Math.round(from.y) !== Math.round(moved.canvasY)) {
-                    pushUndo({ kind: "text-move", id: moved.id, from, to: { x: moved.canvasX, y: moved.canvasY } });
-                  }
-                  void persistTextNode(moved);
-                  return;
-                }
                 const grouped = groupedDragStartRef.current;
                 if (grouped && grouped.anchorId === node.id) {
                   const anchorStart = grouped.starts[node.id];
                   groupedDragStartRef.current = null;
+                  skipSelectionDragStopRef.current = false;
+                  selectionDragStartRef.current = {};
                   if (!anchorStart) return;
                   const dx = node.position.x - anchorStart.x;
                   const dy = node.position.y - anchorStart.y;
@@ -8402,8 +8541,28 @@ export function CanvasClient() {
                   saveManyNodePositions(moves);
                   return;
                 }
-                // 多选拖动由 onSelectionDragStop 一次性持久化全部节点。
-                if (selectedBatchArts.length > 1 && multiSel.includes(node.id)) return;
+                // React Flow 从某个已选节点发起多选拖动时，只触发 onNodeDragStop，
+                // 第三个参数才是整组节点；onSelectionDragStop 不会触发。
+                if (finishManyNodeDrag(draggedNodes)) return;
+                if (node.id.startsWith("text-")) {
+                  const current = textNodes.find((item) => item.id === node.id);
+                  if (!current) return;
+                  const from = { x: current.canvasX, y: current.canvasY };
+                  const moved: CanvasTextNode = {
+                    ...current,
+                    canvasX: node.position.x,
+                    canvasY: node.position.y,
+                    updatedAt: new Date().toISOString(),
+                  };
+                  setTextNodes((items) =>
+                    items.map((item) => (item.id === moved.id ? moved : item))
+                  );
+                  if (Math.round(from.x) !== Math.round(moved.canvasX) || Math.round(from.y) !== Math.round(moved.canvasY)) {
+                    pushUndo({ kind: "text-move", id: moved.id, from, to: { x: moved.canvasX, y: moved.canvasY } });
+                  }
+                  void persistTextNode(moved);
+                  return;
+                }
                 const st = dragStartRef.current;
                 if (
                   st &&
@@ -8421,41 +8580,15 @@ export function CanvasClient() {
                 saveNodePosition(node.id, node.position.x, node.position.y);
               }}
               onSelectionDragStart={(_, selectedNodes) => {
-                selectionDragStartRef.current = Object.fromEntries(
-                  selectedNodes.map((node) => [
-                    node.id,
-                    { x: node.position.x, y: node.position.y },
-                  ])
-                );
+                rememberManyNodeDrag(selectedNodes);
               }}
               onSelectionDragStop={(_, selectedNodes) => {
-                if (readOnly || !user) return;
                 if (skipSelectionDragStopRef.current) {
                   skipSelectionDragStopRef.current = false;
                   selectionDragStartRef.current = {};
                   return;
                 }
-                const starts = selectionDragStartRef.current;
-                const moves = selectedNodes
-                  .filter(
-                    (node) =>
-                      !node.id.startsWith("pend-") &&
-                      !node.id.startsWith("task-") &&
-                      starts[node.id]
-                  )
-                  .map((node) => ({
-                    id: node.id,
-                    from: starts[node.id],
-                    to: { x: node.position.x, y: node.position.y },
-                  }))
-                  .filter(
-                    (move) =>
-                      Math.round(move.from.x) !== Math.round(move.to.x) ||
-                      Math.round(move.from.y) !== Math.round(move.to.y)
-                  );
-                selectionDragStartRef.current = {};
-                if (!moves.length) return;
-                saveManyNodePositions(moves);
+                finishManyNodeDrag(selectedNodes);
               }}
               onConnectStart={onConnectStart}
               onConnect={onConnect}
