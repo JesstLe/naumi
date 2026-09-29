@@ -101,6 +101,14 @@ import { SecurityClient } from "@/components/account/security-client";
 import { GenerateClient } from "@/components/generate/generate-client";
 import { CheckoutClient } from "@/components/checkout/checkout-client";
 import { usePaymentConfig } from "@/lib/payment-context";
+import { useRecharge } from "@/lib/recharge-modal-context";
+import {
+  ACCOUNT_THEME_EVENT,
+  AccountDockMenu,
+  currentThemeIsDark,
+  toggleAccountTheme,
+  useAccountAdminStatus,
+} from "@/components/account/account-dock-menu";
 import { cn, formatDate } from "@/lib/utils";
 import { bytesLabel, prepareImageUploads, uploadFormData } from "@/lib/client-image-upload";
 import {
@@ -127,7 +135,6 @@ async function privateFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   for (const [key, value] of Object.entries(auth)) headers.set(key, value);
   return fetch(input, { ...init, headers });
 }
-
 // 横向链路布局(对齐原型 node-canvas-preview):深度→x 向右展开,同层兄弟→y 竖排。
 // 图片节点使用更清晰的工作尺寸，并按图片比例自适应；高分屏上保持可辨识。
 const NODE_W = 320; // 新建图片节点的默认宽度，避免高分辨率屏幕上过小
@@ -1566,11 +1573,13 @@ function layoutGraph(
 
 export function CanvasClient() {
   const { model: textModel, setModel: setTextModel } = useTextModel();
-  const { user, ready, persistMode, applyServerUser } = useAuth();
+  const { user, ready, remaining, persistMode, applyServerUser, signOut } = useAuth();
   const { openAuth } = useAuthModal();
+  const { openRecharge } = useRecharge();
   const { t } = useI18n();
   const router = useRouter();
-  const { commerceVisible } = usePaymentConfig();
+  const { commerceVisible, pro } = usePaymentConfig();
+  const accountIsAdmin = useAccountAdminStatus(user);
   const [works, setWorks] = useState<Artwork[] | null>(null);
   // works 的同步镜像:供 useCallback(如缩放撤销记录)读取最新值而不重挂回调
   const worksRef = useRef<Artwork[] | null>(null);
@@ -1901,6 +1910,36 @@ export function CanvasClient() {
   const browsingRef = useRef(true);
   // 剩余积分(右上会员挂件展示)
   const [credits, setCredits] = useState<number | null>(null);
+  // 右上账户入口与站内其他页面共用同一 AccountDockMenu，不再打开整页账户弹窗。
+  const [accountDockOpen, setAccountDockOpen] = useState(false);
+  const [accountDockDark, setAccountDockDark] = useState(false);
+  const accountDockRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const syncTheme = () => setAccountDockDark(currentThemeIsDark());
+    syncTheme();
+    window.addEventListener(ACCOUNT_THEME_EVENT, syncTheme);
+    return () => window.removeEventListener(ACCOUNT_THEME_EVENT, syncTheme);
+  }, []);
+  useEffect(() => {
+    if (!accountDockOpen) return;
+    const closeOutside = (event: MouseEvent) => {
+      if (!(event.target instanceof Element) || !accountDockRef.current?.contains(event.target)) {
+        setAccountDockOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAccountDockOpen(false);
+    };
+    document.addEventListener("mousedown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [accountDockOpen]);
+  useEffect(() => {
+    if (browsing) setAccountDockOpen(false);
+  }, [browsing]);
   // 帮助/快捷键弹框 + 底部工具条临时提示
   const [helpOpen, setHelpOpen] = useState(false);
   const [tipMsg, setTipMsg] = useState<string | null>(null);
@@ -7468,7 +7507,8 @@ export function CanvasClient() {
   // 画布全局快捷键只在画布本体接管。弹窗、遮罩、确认框、侧边编辑器或菜单
   // 打开时必须完全让出键盘，避免用户在账户/帮助等上层界面操作时误删底层节点。
   const canvasShortcutLayerOpen = Boolean(
-    modalTop ||
+    accountDockOpen ||
+      modalTop ||
       payModal ||
       helpOpen ||
       confirmModal ||
@@ -7937,14 +7977,33 @@ export function CanvasClient() {
                 {credits != null ? credits : "—"}
               </span>
             )}
-            <button
-              type="button"
-              onClick={() => openModal("account")}
-              title={user.email}
-              className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-primary text-sm font-bold uppercase text-primary-foreground shadow-sm"
-            >
-              {user.email?.[0] ?? "U"}
-            </button>
+            <div ref={accountDockRef} className="relative flex-none">
+              <button
+                data-testid="canvas-account-dock-trigger"
+                type="button"
+                onClick={() => setAccountDockOpen((open) => !open)}
+                title={user.email}
+                aria-expanded={accountDockOpen}
+                aria-haspopup="menu"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-bold uppercase text-primary-foreground shadow-sm transition-transform hover:scale-[1.03]"
+              >
+                {user.name?.trim().charAt(0) || user.email?.[0] || "U"}
+              </button>
+              {accountDockOpen && (
+                <AccountDockMenu
+                  user={user}
+                  remaining={credits ?? remaining}
+                  dark={accountDockDark}
+                  pro={pro}
+                  isAdmin={accountIsAdmin}
+                  className="right-0 top-11"
+                  onClose={() => setAccountDockOpen(false)}
+                  onToggleTheme={() => setAccountDockDark(toggleAccountTheme())}
+                  onRedeem={() => openRecharge("code")}
+                  onSignOut={signOut}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -8766,7 +8825,7 @@ export function CanvasClient() {
               </div>
 
               {/* 右上:分享(下载)/ 模板库 / 会员特惠+积分 / 头像 */}
-              <div data-testid="canvas-top-actions" className="absolute right-3 top-[60px] z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 overflow-x-auto md:top-3">
+              <div data-testid="canvas-top-actions" className="absolute right-3 top-[60px] z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 overflow-visible md:top-3">
                 {active && (
                   <button
                     type="button"
@@ -8809,14 +8868,33 @@ export function CanvasClient() {
                     {credits != null ? credits : "—"}
                   </span>
                 )}
-                <button
-                  type="button"
-                  onClick={() => openModal("account")}
-                  title={user.email}
-                  className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-primary text-sm font-bold uppercase text-primary-foreground shadow-lg"
-                >
-                  {user.email?.[0] ?? "U"}
-                </button>
+                <div ref={accountDockRef} className="relative flex-none">
+                  <button
+                    data-testid="canvas-account-dock-trigger"
+                    type="button"
+                    onClick={() => setAccountDockOpen((open) => !open)}
+                    title={user.email}
+                    aria-expanded={accountDockOpen}
+                    aria-haspopup="menu"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-bold uppercase text-primary-foreground shadow-lg transition-transform hover:scale-[1.03]"
+                  >
+                    {user.name?.trim().charAt(0) || user.email?.[0] || "U"}
+                  </button>
+                  {accountDockOpen && (
+                    <AccountDockMenu
+                      user={user}
+                      remaining={credits ?? remaining}
+                      dark={accountDockDark}
+                      pro={pro}
+                      isAdmin={accountIsAdmin}
+                      className="right-0 top-11"
+                      onClose={() => setAccountDockOpen(false)}
+                      onToggleTheme={() => setAccountDockDark(toggleAccountTheme())}
+                      onRedeem={() => openRecharge("code")}
+                      onSignOut={signOut}
+                    />
+                  )}
+                </div>
               </div>
 
               {/* 底部中间:工具条(选中节点时淡出滑下让位给生成器,对齐原型 czbc) */}

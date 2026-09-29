@@ -10,16 +10,11 @@ import {
   Image as ImageIcon,
   Workflow,
   Gem,
-  Gift,
   Sun,
   Moon,
-  Settings,
-  LogOut,
   ChevronRight,
   ChevronDown,
-  ShieldCheck,
   User as UserIcon,
-  ImagePlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/locale-context";
@@ -27,11 +22,14 @@ import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useRecharge } from "@/lib/recharge-modal-context";
 import { usePaymentConfig } from "@/lib/payment-context";
-import { browserSupabase } from "@/lib/supabase";
-import { supabaseEnabled } from "@/lib/auth-mode";
 import { BRAND, BRAND_SQUARE_LOGO } from "@/lib/brand";
-import { displayEmail } from "@/lib/account-identity";
 import { menuCategories, TOOL_COUNT_LABEL } from "@/lib/tool-meta";
+import {
+  ACCOUNT_THEME_EVENT,
+  AccountDockMenu,
+  toggleAccountTheme,
+  useAccountAdminStatus,
+} from "@/components/account/account-dock-menu";
 
 type Item = { href: string; label: { zh: string; en: string }; Icon: typeof Home };
 
@@ -70,7 +68,7 @@ export function AppRail() {
   // 头像菜单:桌面悬停打开,离开延迟关闭(留时间让鼠标移到菜单上)。
   const acctTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [dark, setDark] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const isAdmin = useAccountAdminStatus(user);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -80,76 +78,29 @@ export function AppRail() {
     const h = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setAcct(false);
     };
+    const closeOnEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAcct(false);
+    };
     document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", h);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
   }, []);
   // 路由变化关掉账户菜单。
   useEffect(() => {
     setAcct(false);
   }, [path]);
 
-  // 管理员检测(共用 sessionStorage 缓存,5min TTL)。
-  useEffect(() => {
-    if (!user) {
-      setIsAdmin(false);
-      return;
-    }
-    try {
-      const raw = sessionStorage.getItem("naumi:adminVerifiedV1");
-      if (raw) {
-        const c = JSON.parse(raw) as { email: string; ts: number };
-        if (c.email === user.email && Date.now() - c.ts <= 5 * 60 * 1000) {
-          setIsAdmin(true);
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        let tok: string | undefined;
-        if (supabaseEnabled) {
-          try {
-            const { data } = await browserSupabase().auth.getSession();
-            tok = data.session?.access_token;
-          } catch {
-            /* ignore */
-          }
-        }
-        const res = await fetch("/api/admin/settings", {
-          headers: tok ? { Authorization: `Bearer ${tok}` } : {},
-        });
-        if (cancelled) return;
-        setIsAdmin(res.ok);
-        try {
-          if (res.ok) {
-            sessionStorage.setItem(
-              "naumi:adminVerifiedV1",
-              JSON.stringify({ email: user.email, ts: Date.now() })
-            );
-          } else {
-            sessionStorage.removeItem("naumi:adminVerifiedV1");
-          }
-        } catch {
-          /* ignore */
-        }
-      } catch {
-        /* 非管理员/无会话 → 隐藏 */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
-
   const toggleTheme = () => {
-    const d = document.documentElement.classList.toggle("dark");
-    setDark(d);
-    try {
-      localStorage.setItem("theme", d ? "dark" : "light");
-    } catch {}
+    setDark(toggleAccountTheme());
   };
+  useEffect(() => {
+    const syncTheme = () => setDark(document.documentElement.classList.contains("dark"));
+    window.addEventListener(ACCOUNT_THEME_EVENT, syncTheme);
+    return () => window.removeEventListener(ACCOUNT_THEME_EVENT, syncTheme);
+  }, []);
   const isActive = (href: string) =>
     href === "/" ? path === "/" : path.startsWith(href);
   const onCanvas = (path || "").startsWith("/canvas");
@@ -201,101 +152,18 @@ export function AppRail() {
   // 账户弹出菜单(顶栏右上 / 移动「我的」共用,浅色 token 自适应)。
   const AccountMenu = ({ className }: { className?: string }) =>
     user && acct ? (
-      <div
-        className={cn(
-          "absolute z-50 w-[230px] rounded-2xl border border-border bg-card p-1.5 shadow-[var(--shadow-pop)]",
-          className
-        )}
-      >
-        <div className="mb-1 flex items-center gap-2.5 border-b border-border px-2.5 pb-2.5 pt-1.5">
-          <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-sm font-bold text-white [background:var(--grad-acc)]">
-            {initial}
-          </span>
-          <div className="min-w-0">
-            <div className="truncate text-[13px] font-semibold text-foreground">
-              {displayEmail(user.email) || user.name}
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              💎 {remaining} {t("nav.credits")}
-            </div>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"
-        >
-          <span className="flex items-center gap-2">
-            {dark ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-            {t("nav.theme")}
-          </span>
-          <span className="text-[12px] text-muted-foreground">
-            {dark ? t("nav.themeDark") : t("nav.themeLight")}
-          </span>
-        </button>
-        <Link
-          href="/account?tab=credits"
-          onClick={() => setAcct(false)}
-          className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"
-        >
-          <span className="flex items-center gap-2">
-            <Gem className="h-4 w-4" />
-            {t("nav.credits")}
-          </span>
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-        </Link>
-        {pro && (
-          <button
-            type="button"
-            onClick={() => {
-              setAcct(false);
-              openRecharge("code");
-            }}
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"
-          >
-            <Gift className="h-4 w-4" />
-            {L("兑换码", "Redeem code")}
-          </button>
-        )}
-        <Link
-          href="/account/security"
-          onClick={() => setAcct(false)}
-          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"
-        >
-          <Settings className="h-4 w-4" />
-          {t("menu.security")}
-        </Link>
-        <Link
-          href="/account/image-provider"
-          onClick={() => setAcct(false)}
-          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"
-        >
-          <ImagePlus className="h-4 w-4" />
-          {t("menu.imageProvider")}
-        </Link>
-        {isAdmin && (
-          <Link
-            href="/admin"
-            onClick={() => setAcct(false)}
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            {t("menu.admin")}
-          </Link>
-        )}
-        <div className="my-1 h-px bg-border" />
-        <button
-          type="button"
-          onClick={() => {
-            setAcct(false);
-            signOut();
-          }}
-          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-[#E5484D] hover:bg-secondary"
-        >
-          <LogOut className="h-4 w-4" />
-          {t("nav.signOut")}
-        </button>
-      </div>
+      <AccountDockMenu
+        user={user}
+        remaining={remaining}
+        dark={dark}
+        pro={pro}
+        isAdmin={isAdmin}
+        className={className}
+        onClose={() => setAcct(false)}
+        onToggleTheme={toggleTheme}
+        onRedeem={() => openRecharge("code")}
+        onSignOut={signOut}
+      />
     ) : null;
 
   return (
@@ -455,8 +323,11 @@ export function AppRail() {
           }}
         >
           <button
+            data-testid="app-account-dock-trigger"
             type="button"
             onClick={() => (user ? setAcct((v) => !v) : openAuth())}
+            aria-expanded={acct}
+            aria-haspopup="menu"
             className="flex h-9 items-center gap-1.5 rounded-full pl-1 pr-2 transition-colors hover:bg-secondary"
           >
             <span className="flex h-8 w-8 items-center justify-center rounded-full text-[13px] font-bold text-white [background:var(--grad-acc)]">
@@ -489,8 +360,11 @@ export function AppRail() {
         </Link>
         <TabLink href="/works" label={{ zh: "作品", en: "Works" }} Icon={ImageIcon} />
         <button
+          data-testid="app-account-dock-trigger"
           type="button"
           onClick={() => (user ? setAcct((v) => !v) : openAuth())}
+          aria-expanded={acct}
+          aria-haspopup="menu"
           className={cn(
             "flex flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[10px] font-medium transition-colors",
             acct ? "text-primary" : "text-muted-foreground"
