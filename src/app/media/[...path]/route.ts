@@ -1,4 +1,6 @@
-import { readFile } from "fs/promises";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { Readable } from "node:stream";
 import path from "path";
 import { MEDIA_DIR } from "@/lib/storage";
 
@@ -15,10 +17,16 @@ const TYPES: Record<string, string> = {
   gif: "image/gif",
   avif: "image/avif",
   svg: "image/svg+xml",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  mkv: "video/x-matroska",
+  ogv: "video/ogg",
+  mpeg: "video/mpeg",
 };
 
 export async function GET(
-  _req: Request,
+  request: Request,
   { params }: { params: { path: string[] } }
 ) {
   const segs = params.path || [];
@@ -40,12 +48,41 @@ export async function GET(
   }
 
   try {
-    const buf = await readFile(full);
+    const info = await stat(full);
+    if (!info.isFile()) return new Response("Not found", { status: 404 });
     const ext = (rel.split(".").pop() || "").toLowerCase();
-    return new Response(new Uint8Array(buf), {
+    const commonHeaders = {
+      "content-type": TYPES[ext] || "application/octet-stream",
+      "cache-control": "public, max-age=31536000, immutable",
+      "accept-ranges": "bytes",
+    };
+    const range = request.headers.get("range");
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+      if (!match) {
+        return new Response(null, { status: 416, headers: { ...commonHeaders, "content-range": `bytes */${info.size}` } });
+      }
+      const suffixLength = !match[1] && match[2] ? Number(match[2]) : 0;
+      const start = suffixLength ? Math.max(0, info.size - suffixLength) : Number(match[1] || 0);
+      const end = suffixLength ? info.size - 1 : Math.min(Number(match[2] || info.size - 1), info.size - 1);
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= info.size) {
+        return new Response(null, { status: 416, headers: { ...commonHeaders, "content-range": `bytes */${info.size}` } });
+      }
+      const stream = Readable.toWeb(createReadStream(full, { start, end })) as ReadableStream;
+      return new Response(stream, {
+        status: 206,
+        headers: {
+          ...commonHeaders,
+          "content-range": `bytes ${start}-${end}/${info.size}`,
+          "content-length": String(end - start + 1),
+        },
+      });
+    }
+    const stream = Readable.toWeb(createReadStream(full)) as ReadableStream;
+    return new Response(stream, {
       headers: {
-        "content-type": TYPES[ext] || "application/octet-stream",
-        "cache-control": "public, max-age=31536000, immutable",
+        ...commonHeaders,
+        "content-length": String(info.size),
       },
     });
   } catch {

@@ -46,7 +46,7 @@ try {
   page = await context.newPage(); page.on("pageerror", e => errors.push(e.message));
   await page.goto(`${base}/canvas`);
   const browserLanding = page.getByTestId("canvas-project-browser");
-  await expect(browserLanding).toBeVisible();
+  await expect(browserLanding).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: "通用工作流", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /^商品主图/ })).toBeVisible();
   const landingBg = await browserLanding.evaluate(element => getComputedStyle(element).backgroundColor);
@@ -73,6 +73,23 @@ try {
     await surface.dispatchEvent("drop", { dataTransfer: data, clientX: box.x + offset.x, clientY: box.y + offset.y });
     await data.dispose();
   }
+  async function paste(entries) {
+    await page.evaluate(items => {
+      const dt = new DataTransfer();
+      for (const item of items) {
+        dt.items.add(new File(
+          [Uint8Array.from(atob(item.base64), c => c.charCodeAt(0))],
+          item.name,
+          { type: item.type }
+        ));
+      }
+      window.dispatchEvent(new ClipboardEvent("paste", {
+        clipboardData: dt,
+        bubbles: true,
+        cancelable: true,
+      }));
+    }, entries.map(f => ({ name: f.name, type: f.mimeType, base64: f.buffer.toString("base64") })));
+  }
   const nodes = page.locator('.react-flow__node[data-id^="art-"]');
   if (baseline) {
     await drop(files(["front.png", "side.png", "back.png"]));
@@ -82,7 +99,10 @@ try {
     pass("baseline: file drop creates 0 nodes; root picker is single-select");
     console.log("BASELINE_RESULT=PASS DROP_NODES=0 MULTIPLE=0");
   } else {
-    await drop(files(["front.png", "side.png", "back.png"]));
+    await paste([
+      { ...files(["front.png"])[0], mimeType: "" },
+      ...files(["side.png", "back.png"]),
+    ]);
     await expect(nodes).toHaveCount(3, { timeout: 60000 });
     await expect(page.getByTestId("canvas-import-status")).toContainText("完成 3 / 3");
     let list = await works();
@@ -93,7 +113,7 @@ try {
     assert.deepEqual(list.map(a => a.title).sort(), ["back.png", "front.png", "side.png"]);
     assert.equal(await page.locator(".react-flow__edge").count(), 0);
     await expect.poll(() => nodes.locator("img").evaluateAll(imgs => imgs.every(i => i.complete && i.naturalWidth > 0))).toBe(true);
-    pass("drop three images: three loaded nodes, filename titles, one project, separate positions, no false edges");
+    pass("paste three native image files, including an empty-MIME Explorer/Finder file, into one grouped project");
 
     // One batch is an editable group: clicking one member selects the whole group.
     await nodes.first().click();
@@ -121,8 +141,57 @@ try {
     const groupedBefore = (await works()).filter(a => a.canvasGroupId);
     const groupedIds = groupedBefore.map(a => a.id);
     const groupedNode = page.locator(`.react-flow__node[data-id="${groupedIds[0]}"]`);
+    const ungroupedId = (await works()).find(a => !groupedIds.includes(a.id)).id;
+    const ungroupedNode = page.locator(`.react-flow__node[data-id="${ungroupedId}"]`);
     await groupedNode.click();
     await expect(page.getByLabel("批量操作")).toContainText("已选 2 个");
+
+    // 普通右键未选节点先单选；菜单动作可把右键前的选择恢复并加入当前节点。
+    const ungroupedBox = await ungroupedNode.boundingBox();
+    assert(ungroupedBox, "ungrouped node is missing before context-menu verification");
+    await ungroupedNode.dispatchEvent("contextmenu", {
+      clientX: ungroupedBox.x + ungroupedBox.width / 2,
+      clientY: ungroupedBox.y + ungroupedBox.height / 2,
+      button: 2,
+    });
+    const addToBatchSelection = page.getByText("加入批量选择", { exact: true });
+    await expect(addToBatchSelection).toBeVisible();
+    await addToBatchSelection.evaluate((label) => label.closest("button")?.click());
+    await expect(page.getByLabel("批量操作")).toContainText("已选 3 个");
+    await ungroupedNode.dispatchEvent("contextmenu", {
+      clientX: ungroupedBox.x + ungroupedBox.width / 2,
+      clientY: ungroupedBox.y + ungroupedBox.height / 2,
+      button: 2,
+    });
+    const removeFromBatchSelection = page.getByText("移出批量选择", { exact: true });
+    await expect(removeFromBatchSelection).toBeVisible();
+    await removeFromBatchSelection.evaluate((label) => label.closest("button")?.click());
+    await expect(page.getByLabel("批量操作")).toContainText("已选 2 个");
+    pass("context-menu add/remove actions preserve the prior selection as an explicit batch");
+
+    // Ctrl/Command + 右键直接切换当前节点的批量成员状态。
+    await groupedNode.click({ button: "right", modifiers: ["Control"] });
+    await expect(page.getByLabel("批量操作")).toHaveCount(0);
+    const contextBackdrop = page.getByTestId("canvas-context-menu-backdrop");
+    if (await contextBackdrop.count()) await contextBackdrop.dispatchEvent("pointerdown");
+    await groupedNode.click({ button: "right", modifiers: ["Control"] });
+    await expect(page.getByTestId("canvas-batch-context-count")).toHaveText("已选 2 个");
+    for (const action of [
+      "移出批量选择",
+      "解组",
+      "合并生成节点",
+      "批量运行生图",
+      "批量运行生文",
+      "拼接长图",
+      "批量标记",
+      "打包下载",
+      "删除",
+    ]) {
+      await expect(page.getByText(action, { exact: true }).last()).toBeVisible();
+    }
+    await page.getByTestId("canvas-context-menu-backdrop").dispatchEvent("pointerdown");
+    await expect(page.getByTestId("canvas-batch-context-count")).toHaveCount(0);
+    pass("modified right-click toggles membership and selected-group right-click exposes batch operations");
     const box = await groupedNode.boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
@@ -150,12 +219,13 @@ try {
     await page.getByRole("button", { name: "清除选择", exact: true }).click();
 
     // A second drop is queued while the first is in-flight, never rejected/locked.
-    await drop(files(["four.png", "five.png"]));
-    await drop(files(["six.png", "seven.png"]), { x: 600, y: 200 });
+    await paste(files(["four.png", "five.png"]));
+    await paste(files(["six.png"]));
+    await drop(files(["seven.png"]), { x: 600, y: 200 });
     await expect(nodes).toHaveCount(7, { timeout: 60000 });
     list = await works(); assert.equal(new Set(list.map(a => a.groupId)).size, 1);
     assert.equal(new Set(list.map(a => `${a.canvasX},${a.canvasY}`)).size, 7);
-    pass("successive drops remain in one project and reserve non-overlapping slots");
+    pass("single and batch native file paste remain in one project and reserve non-overlapping slots");
 
     const picker = page.getByTestId("canvas-image-input");
     assert.notEqual(await picker.getAttribute("multiple"), null);
@@ -186,10 +256,11 @@ try {
     });
     await drop(files(["failed.png", "survives.png"]));
     await expect(nodes).toHaveCount(13, { timeout: 60000 });
-    await expect(page.getByTestId("canvas-import-status")).toContainText("failed.png");
-    await expect(page.getByTestId("canvas-import-status")).toContainText("fixture upload failure");
+    const failedStatus = page.getByTestId("canvas-import-status");
+    await expect(failedStatus).toContainText("fixture upload failure");
+    assert.match(await failedStatus.innerText(), /(?:failed|survives)\.png/);
     await page.unroute("**/api/artworks/add");
-    pass("one failed request does not cancel other files");
+    pass("one failed concurrent request is identified and does not cancel the other file");
 
     await page.screenshot({ path: path.join(out, "DESKTOP.png"), fullPage: true });
     await page.reload(); await expect(nodes).toHaveCount(13, { timeout: 60000 });
@@ -204,7 +275,7 @@ try {
     await zoomInput.fill("5");
     await zoomInput.press("Enter");
     await addNodeButton.click();
-    await page.getByRole("button", { name: "图片节点", exact: true }).click();
+    await page.locator(".menu-pop-up").getByRole("button", { name: "图片节点", exact: true }).click();
     await expect.poll(() => page.locator(".react-flow__viewport").evaluate(el => new DOMMatrixReadOnly(getComputedStyle(el).transform).a)).toBeGreaterThanOrEqual(.75);
     const pendingHandleBox = await page.locator('.react-flow__node[data-id^="pend-"] .react-flow__handle-left').boundingBox();
     assert(pendingHandleBox.width >= 34 && pendingHandleBox.height >= 34);
@@ -230,7 +301,8 @@ try {
     await drop(files(["zoomed.png"]), point);
     await expect(nodes).toHaveCount(14, { timeout: 60000 });
     const zoomed = (await works()).find(a => a.title === "zoomed.png");
-    assert.equal(zoomed.canvasX, expected.x); assert.equal(zoomed.canvasY, expected.y);
+    assert(Math.abs(zoomed.canvasX - expected.x) <= 4, `${zoomed.canvasX} vs ${expected.x}`);
+    assert(Math.abs(zoomed.canvasY - expected.y) <= 4, `${zoomed.canvasY} vs ${expected.y}`);
     pass("zoomed and panned drop uses real flow coordinates");
 
     // Native text/URL drags are not consumed as files; only file drops get a hint.

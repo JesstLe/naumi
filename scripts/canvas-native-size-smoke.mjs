@@ -13,12 +13,42 @@ const output = path.resolve("output/canvas-native-size-smoke");
 await mkdir(output, { recursive: true });
 const container = `naumi-canvas-size-${Date.now()}`;
 const password = randomUUID();
+const workerSecret = randomUUID();
 const email = "canvas-native-size@local.test";
 const appLog = [], report = [];
 const imageEditRequests = [];
 const pass = message => { report.push(`PASS ${message}`); console.log(report.at(-1)); };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let app, fixture, pool, api, browser, page;
+
+async function readAccountSnapshot() {
+  const { rows } = await pool.query(
+    `select id,title,category,parent_id,origin,ratio,resolution,image_url,image_width,image_height,
+            canvas_x,canvas_y,canvas_width,canvas_height
+       from app_artworks
+      where email=$1 and deleted_at is null
+      order by created_at asc`,
+    [email]
+  );
+  return {
+    artworks: rows.map(row => ({
+      id: row.id,
+      title: row.title,
+      category: row.category,
+      parentId: row.parent_id,
+      origin: row.origin,
+      ratio: row.ratio,
+      resolution: row.resolution,
+      image: row.image_url,
+      width: row.image_width,
+      height: row.image_height,
+      canvasX: row.canvas_x,
+      canvasY: row.canvas_y,
+      canvasWidth: row.canvas_width,
+      canvasHeight: row.canvas_height,
+    })),
+  };
+}
 
 async function freePort() {
   const server = createServer();
@@ -67,7 +97,7 @@ try {
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
   app = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "-p", String(port)], {
-    env: { ...process.env, DATABASE_URL: database, SETTINGS_SECRET: randomUUID(), ADMIN_EMAIL: email, NAUMI_EDITION: "cloud", NAUMI_MULTI_USER: "1", NAUMI_PUBLIC_COMMERCE: "0", MEDIA_DIR: path.join(output, "media"), STORAGE_DRIVER: "local", NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_ANON_KEY: "", SMTP_HOST: "", OPENAI_API_KEY: "fixture", OPENAI_BASE_URL: provider, OPENAI_IMAGE_MODEL: "gpt-image-2", PADDLE_OCR_BASE_URL: `${fixtureOrigin}/ocr`, NEXT_TELEMETRY_DISABLED: "1" },
+    env: { ...process.env, DATABASE_URL: database, SETTINGS_SECRET: randomUUID(), VIDEO_WORKER_SECRET: workerSecret, ADMIN_EMAIL: email, NAUMI_EDITION: "cloud", NAUMI_MULTI_USER: "1", NAUMI_PUBLIC_COMMERCE: "0", MEDIA_DIR: path.join(output, "media"), STORAGE_DRIVER: "local", NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_ANON_KEY: "", SMTP_HOST: "", OPENAI_API_KEY: "fixture", OPENAI_BASE_URL: provider, OPENAI_IMAGE_MODEL: "gpt-image-2", PADDLE_OCR_BASE_URL: `${fixtureOrigin}/ocr`, NEXT_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   app.stdout.on("data", chunk => appLog.push(chunk.toString()));
@@ -93,7 +123,7 @@ try {
   ]);
   const nodes = page.locator('.react-flow__node[data-id^="art-"]');
   await expect(nodes).toHaveCount(2, { timeout: 60000 });
-  let account = await (await api.get(`/api/account?email=${email}`)).json();
+  let account = await readAccountSnapshot();
   const square = account.artworks.find(item => item.title === "square-900.png");
   const tall = account.artworks.find(item => item.title === "portrait-600x1200.png");
   assert.equal(square.width, 900); assert.equal(square.height, 900);
@@ -138,7 +168,7 @@ try {
   await inlineRename.press("Enter");
   await expect(squareNode.getByText("square-900-已改名.png", { exact: true })).toBeVisible();
   await expect.poll(async () => {
-    const refreshed = await (await api.get(`/api/account?email=${email}`)).json();
+    const refreshed = await readAccountSnapshot();
     return refreshed.artworks.find(item => item.id === square.id)?.title;
   }).toBe("square-900-已改名.png");
   await page.setViewportSize({ width: 1600, height: 1000 });
@@ -162,14 +192,18 @@ try {
   await squareNode.click();
   const resizeHandle = squareNode.locator(".react-flow__resize-control.handle.bottom.right");
   await expect(resizeHandle).toBeVisible();
+  await page.waitForTimeout(700);
   const resizeBox = await resizeHandle.boundingBox();
   assert(resizeBox, "image resize handle is missing");
   await page.mouse.move(resizeBox.x + resizeBox.width / 2, resizeBox.y + resizeBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(resizeBox.x + 140, resizeBox.y + 140, { steps: 16 });
+  // Keep the drag endpoint above the persistent bottom toolbar. A 140px diagonal
+  // drag can terminate on the toolbar at 1000px viewport height, which prevents
+  // React Flow from delivering the resize-end event.
+  await page.mouse.move(resizeBox.x + 80, resizeBox.y + 80, { steps: 16 });
   await page.mouse.up();
   await expect.poll(async () => {
-    account = await (await api.get(`/api/account?email=${email}`)).json();
+    account = await readAccountSnapshot();
     const resized = account.artworks.find(item => item.id === square.id);
     return resized?.canvasWidth > 420 && resized?.canvasHeight > 420;
   }, { timeout: 30000 }).toBe(true);
@@ -177,7 +211,7 @@ try {
   assert.equal(resizedSquare.width, 900); assert.equal(resizedSquare.height, 900);
   await page.reload();
   await expect(page.locator(`.react-flow__node[data-id="${square.id}"] img`)).toBeVisible({ timeout: 30000 });
-  account = await (await api.get(`/api/account?email=${email}`)).json();
+  account = await readAccountSnapshot();
   const restoredSquare = account.artworks.find(item => item.id === square.id);
   assert.equal(restoredSquare.canvasWidth, resizedSquare.canvasWidth);
   assert.equal(restoredSquare.canvasHeight, resizedSquare.canvasHeight);
@@ -194,9 +228,15 @@ try {
   await expect(page.locator('.react-flow__node[data-id^="pend-text-edit-"]')).toHaveCount(1);
   let textEdited;
   await expect.poll(async () => {
-    account = await (await api.get(`/api/account?email=${email}`)).json();
+    const tick = await api.post("/api/video/worker/tick", { headers: { "x-video-worker-secret": workerSecret } });
+    assert.equal(tick.status(), 200, await tick.text());
+    account = await readAccountSnapshot();
     textEdited = account.artworks.find(item => item.parentId === square.id && item.category === "canvas-text-edit");
-    return Boolean(textEdited);
+    return Boolean(
+      textEdited &&
+      textEdited.canvasX > restoredSquare.canvasX + restoredSquare.canvasWidth &&
+      textEdited.canvasY === restoredSquare.canvasY
+    );
   }, { timeout: 120000 }).toBe(true);
   await expect(page.locator(`.react-flow__node[data-id="${textEdited.id}"] img`)).toBeVisible({ timeout: 30000 });
   assert(textEdited.canvasX > restoredSquare.canvasX + restoredSquare.canvasWidth);
@@ -221,7 +261,7 @@ try {
   await page.getByPlaceholder(/描述你想怎么改/).fill("保持商品结构，生成 5K 横版棚拍图");
   await page.getByRole("button", { name: "↑", exact: true }).click();
   await expect.poll(async () => {
-    account = await (await api.get(`/api/account?email=${email}`)).json();
+    account = await readAccountSnapshot();
     return account.artworks.find(item => item.parentId === square.id && item.origin === "canvas" && item.resolution === "5K") || null;
   }, { timeout: 120000 }).not.toBeNull();
   const child = account.artworks.find(item => item.parentId === square.id && item.origin === "canvas" && item.resolution === "5K");

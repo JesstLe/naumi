@@ -89,6 +89,9 @@ for (const rel of phase2Files) {
 const tasksRoute = read("src/app/api/video/tasks/route.ts");
 assert.match(tasksRoute, /listVideoTaskViews/, "tasks 路由必须提供列表模式");
 assert.match(tasksRoute, /pollAndSettle/, "tasks 路由必须保持 id 轮询兼容");
+assert.match(tasksRoute, /url\.searchParams\.get\("sourceIds"\)/, "tasks 路由必须接收来源作品 ID");
+assert.match(tasksRoute, /\.slice\(0,\s*500\)/, "tasks 路由必须限制来源作品 ID 数量");
+assert.match(tasksRoute, /sourceIds,\s*\n\s*limit:/, "tasks 路由必须把来源作品 ID 传入列表查询");
 const retryRoute = read("src/app/api/video/tasks/[id]/retry/route.ts");
 assert.match(retryRoute, /createVideoGeneration/, "重试必须走应用层创建");
 const sendRoute = read("src/app/api/video/tasks/[id]/send-to-canvas/route.ts");
@@ -103,7 +106,28 @@ assert.match(studio, /removeTask/, "工作台必须支持删除已结束任务�
 // 画布视频能力:能力目录、刷新恢复、多模态引用、时间轴与抽取工具必须同时存在。
 const canvas = read("src/components/canvas/canvas-client.tsx");
 assert.match(canvas, /\/api\/video\/catalog/, "画布必须读取视频能力目录");
-assert.match(canvas, /\/api\/video\/tasks\?source=canvas&limit=100/, "画布必须按来源恢复后台任务");
+const videoRecoveryStart = canvas.indexOf("// 页面刷新/关闭后恢复画布视频任务");
+const videoRecoveryEnd = canvas.indexOf("// 改字任务由", videoRecoveryStart);
+assert.ok(videoRecoveryStart >= 0 && videoRecoveryEnd > videoRecoveryStart, "画布必须保留视频任务恢复区块");
+const videoRecovery = canvas.slice(videoRecoveryStart, videoRecoveryEnd);
+assert.match(videoRecovery, /const sourceIds = project\.members\.map\(\(item\) => item\.id\)/, "视频恢复必须按当前项目成员查询");
+assert.match(videoRecovery, /Math\.ceil\(sourceIds\.length \/ 80\)/, "视频恢复必须对来源作品 ID 分块");
+assert.match(videoRecovery, /sourceIds\.slice\(index \* 80, index \* 80 \+ 80\)/, "视频恢复分块大小必须保持 80");
+assert.ok(
+  videoRecovery.includes('privateFetch(`/api/video/tasks?source=canvas&limit=500&sourceIds=${encodeURIComponent(chunk.join(","))}`)'),
+  "画布必须用 sourceIds 分块和 limit=500 恢复后台视频任务"
+);
+assert.match(
+  videoRecovery,
+  /responses\.some\(\(response\) => !response\.ok\)\) throw new Error\("视频任务查询失败"\)/,
+  "视频恢复遇到非 2xx 查询必须进入重试"
+);
+assert.doesNotMatch(videoRecovery, /if \(!response\.ok\) return;/, "视频恢复不得在非 2xx 查询后静默停止");
+assert.match(
+  videoRecovery,
+  /catch\s*\{\s*if \(!stopped\) timer = window\.setTimeout\(sync, 12000\);\s*\}/,
+  "视频恢复查询失败后必须安排下一次重试"
+);
 assert.match(canvas, /taskId\?: string/, "画布占位节点必须持久关联视频任务 ID");
 assert.match(canvas, /source_video/, "画布生成必须支持视频参考");
 assert.match(canvas, /source_audio/, "画布生成必须支持音频参考");

@@ -19,6 +19,9 @@ const checks = [
   [client.includes('key === "v"') && client.includes('key === "m"') && client.includes('key === "h"'), "V M H tool shortcuts are wired"],
   [client.includes('setShowMinimap') && client.includes('setSnapGrid') && client.includes('tidyLayout();'), "more-tools flyout exposes working canvas utilities"],
   [client.includes('canvasSize.width < 800 ? 128 : 84') && client.includes('min-[800px]:bottom-[84px]'), "docks, minimap, and batch bars reserve the bottom toolbar safe area"],
+  [client.includes('h-10 w-10 flex-none') && client.includes('sm:h-12 sm:w-12') && client.includes('h-[22px] w-[22px]'), "the add-node action is visibly larger than regular palette tools"],
+  [client.includes('ring-2 ring-[#315fc8] ring-offset-2') && client.includes('color="#315fc8"'), "image and text selection use the crisp blue workbench treatment"],
+  [globals.includes('stroke-width: 4;') && globals.includes('stroke-width: 5;'), "canvas connections remain clearly visible in normal and selected states"],
   [globals.includes('.canvas-hand-tool .react-flow__pane') && globals.includes('cursor: grab'), "hand cursor styling is present"],
   [dict.includes('toolPalette: "画布工具栏"') && dict.includes('toolPalette: "Canvas tools"'), "Chinese and English labels are present"],
 ];

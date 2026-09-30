@@ -29,6 +29,7 @@ export async function POST(request: Request) {
         providerId?: string; modelId?: string; negativePrompt?: string; durationSeconds?: number;
         aspectRatio?: string; resolution?: string; width?: number; height?: number;
         generateAudio?: boolean; watermark?: boolean; references?: unknown[];
+        idempotencyKey?: string;
         providerOptions?: Record<string, unknown>; source?: string; sourceId?: string;
       }
     | null;
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
         ? body?.source
         : imageUrl ? "agent" : artworkId ? "canvas" : "workbench") as "canvas" | "workbench" | "agent" | "workflow",
       sourceId: String(body?.sourceId || artworkId || "").slice(0, 200) || undefined,
+      idempotencyKey: String(body?.idempotencyKey || "").trim().slice(0, 100) || undefined,
       prompt,
       seconds,
       size,

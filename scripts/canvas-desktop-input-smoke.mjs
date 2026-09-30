@@ -8,6 +8,10 @@ const client = await readFile(
   path.join(root, "src/components/canvas/canvas-client.tsx"),
   "utf8"
 );
+const clipboardFiles = await readFile(
+  path.join(root, "src/lib/canvas/clipboard-files.ts"),
+  "utf8"
+);
 const dict = await readFile(path.join(root, "src/lib/i18n/dict.ts"), "utf8");
 
 const checks = [];
@@ -32,9 +36,17 @@ assert.match(client, /panOnDrag=\{boxSelectMode \? \[1\] : \[0, 1\]\}/);
 assert.match(client, /panOnScroll/);
 pass("space drag, mouse drag, middle-button drag, and two-finger pan are enabled");
 
+assert.match(client, /const canvasShortcutLayerOpen = Boolean\(/);
+assert.match(client, /'\[data-canvas-hotkeys-blocked="true"\], \.fixed\.inset-0'/);
+assert.match(client, /e\.defaultPrevented \|\|\s*e\.isComposing \|\|\s*canvasShortcutLayerOpen/);
+pass("canvas shortcuts yield to modal, overlay, menu, and editing layers");
+
+assert.match(client, /e\.shiftKey &&\s*!mod &&\s*!e\.altKey &&\s*e\.code === "KeyT"/);
+pass("Shift+T does not swallow Ctrl, Command, or Alt browser shortcuts");
+
 for (const contract of [
-  /key === "c" && selected/,
-  /key === "v" && hasClip/,
+  /if \(mod && key === "c"\)/,
+  /function handleCanvasPaste\(event: ClipboardEvent\)/,
   /key === "z"/,
   /key === "y"/,
   /\["\+", "=", "add"\]\.includes\(key\)/,
@@ -45,6 +57,21 @@ for (const contract of [
   assert.match(client, contract);
 }
 pass("copy, paste, undo, redo, zoom, fit, and delete shortcuts cover both systems");
+
+assert.doesNotMatch(client, /key === "v" && hasClip/);
+assert.match(client, /window\.addEventListener\("paste", onPaste\)/);
+assert.match(client, /function handleCanvasPaste\(event: ClipboardEvent\) \{\s*if \(\s*!ready \|\|\s*!user \|\|/);
+assert.match(client, /const canvasCopyIntentRef = useRef<string \| null>\(null\)/);
+assert.match(client, /const intendedNodeId = canvasCopyIntentRef\.current;\s*canvasCopyIntentRef\.current = null;/);
+assert.match(client, /const nativeSelection = window\.getSelection\(\);\s*if \(!selected \|\| \(nativeSelection && !nativeSelection\.isCollapsed\)\) return;/);
+assert.match(client, /import \{ clipboardImageFiles \} from "@\/lib\/canvas\/clipboard-files"/);
+assert.match(client, /const files = clipboardImageFiles\(data\);\s*if \(files\.length\)/);
+assert.match(clipboardFiles, /item\.kind === "file"/);
+assert.match(clipboardFiles, /CANVAS_IMAGE_FILE_PATTERN\.test\(file\.name\)/);
+assert.match(client, /canvasShortcutLayerOpen \|\|\s*document\.querySelector\('\[data-canvas-hotkeys-blocked="true"\], \.fixed\.inset-0'\)/);
+assert.match(client, /if \(isEditableClipboardTarget\(event\.target\)\) return;/);
+assert.match(client, /const nodeId = canvasNodeIdFromClipboard\(data\);\s*if \(nodeId !== copied\.id\) return;/);
+pass("copy intent stays one-shot while paste routing yields to editors and portal layers");
 
 assert.match(dict, /\{mod\}C 复制节点/);
 assert.match(dict, /\{mod\}C copy/);

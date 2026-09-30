@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { authenticatedEmail } from "@/lib/request-auth";
 import { safeError } from "@/lib/api-error";
-import { listVideoTaskViews, pollAndSettle } from "@/lib/video/service";
+import { listVideoTaskViews, pollAndSettle, publicVideoTaskView } from "@/lib/video/service";
 
 // ---------------------------------------------------------------------------
 // 视频任务查询(兼容契约 {ok, task}):惰性触发一次服务端轮询与结算(service)。
@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 240;
 
-const VALID_STATUS = new Set(["processing", "queued", "completed", "failed"]);
+const VALID_STATUS = new Set(["processing", "queued", "needs_attention", "completed", "failed", "cancelled"]);
 
 export async function GET(request: Request) {
   const email = await authenticatedEmail(request);
@@ -25,19 +25,25 @@ export async function GET(request: Request) {
   if (!id) {
     const status = url.searchParams.get("status") || "";
     const source = url.searchParams.get("source") || "";
+    const sourceIds = (url.searchParams.get("sourceIds") || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .slice(0, 500);
     const limit = Number(url.searchParams.get("limit") || "30");
     const tasks = await listVideoTaskViews(email, {
       status: VALID_STATUS.has(status) ? status : undefined,
       source: ["canvas", "workbench", "agent", "workflow"].includes(source) ? source : undefined,
+      sourceIds,
       limit: Number.isFinite(limit) ? limit : 30,
     });
-    return NextResponse.json({ ok: true, tasks });
+    return NextResponse.json({ ok: true, tasks: tasks.map(publicVideoTaskView) });
   }
 
   try {
     const task = await pollAndSettle(email, id);
     if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
-    return NextResponse.json({ ok: true, task });
+    return NextResponse.json({ ok: true, task: publicVideoTaskView(task) });
   } catch (error) {
     return NextResponse.json(
       { error: safeError(error, "视频任务查询失败") },

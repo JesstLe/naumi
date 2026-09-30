@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 
 export type VideoProviderProtocol =
   | "openai-videos"
@@ -23,6 +24,8 @@ export type VideoProviderRuntimeConfig = {
   contentPath?: string;
   rawAuthorization?: boolean;
   workflowId?: string;
+  idempotencyStrategy: "header" | "body" | "none";
+  idempotencyBodyField?: string;
 };
 
 const BUILT_INS: Array<{ id: string; label: string; protocol: VideoProviderProtocol; prefix: string }> = [
@@ -51,7 +54,12 @@ function normalized(value: Partial<VideoProviderRuntimeConfig>): VideoProviderRu
   const apiKey = String(value.apiKey || "").trim();
   const models = (value.models ?? []).map(String).map((v) => v.trim()).filter(Boolean);
   const defaultModel = String(value.defaultModel || models[0] || "").trim();
+  const idempotencyStrategy = ["header", "body"].includes(String(value.idempotencyStrategy))
+    ? value.idempotencyStrategy as "header" | "body"
+    : "none";
+  const idempotencyBodyField = String(value.idempotencyBodyField || "").trim() || undefined;
   if (!id || !baseUrl || !apiKey || !defaultModel) return null;
+  if (idempotencyStrategy === "body" && !idempotencyBodyField) return null;
   return {
     id,
     label: String(value.label || id),
@@ -65,6 +73,8 @@ function normalized(value: Partial<VideoProviderRuntimeConfig>): VideoProviderRu
     contentPath: value.contentPath,
     rawAuthorization: Boolean(value.rawAuthorization),
     workflowId: value.workflowId,
+    idempotencyStrategy,
+    idempotencyBodyField,
   };
 }
 
@@ -89,6 +99,7 @@ export function configuredVideoProviders(): VideoProviderRuntimeConfig[] {
     apiKey: process.env.VIDEO_API_KEY,
     models: modelList(process.env.VIDEO_API_MODELS || process.env.VIDEO_API_MODEL),
     defaultModel: process.env.VIDEO_API_MODEL,
+    idempotencyStrategy: "header",
   });
   if (legacy) providers.set(legacy.id, legacy);
 
@@ -107,6 +118,8 @@ export function configuredVideoProviders(): VideoProviderRuntimeConfig[] {
       contentPath: process.env[`${p}_CONTENT_PATH`],
       rawAuthorization: process.env[`${p}_RAW_AUTH`] === "1",
       workflowId: process.env[`${p}_WORKFLOW_ID`],
+      idempotencyStrategy: process.env[`${p}_IDEMPOTENCY_STRATEGY`] as "header" | "body" | "none" | undefined,
+      idempotencyBodyField: process.env[`${p}_IDEMPOTENCY_BODY_FIELD`],
     });
     if (cfg) providers.set(cfg.id, cfg);
   }
@@ -121,5 +134,17 @@ export function getVideoProviderConfig(providerId: string): VideoProviderRuntime
 export function publicProviderSnapshot(cfg: VideoProviderRuntimeConfig) {
   let endpoint = cfg.baseUrl;
   try { endpoint = new URL(cfg.baseUrl).host; } catch { /* retain */ }
-  return { id: cfg.id, label: cfg.label, protocol: cfg.protocol, endpoint, workflowId: cfg.workflowId || "" };
+  return {
+    id: cfg.id,
+    label: cfg.label,
+    protocol: cfg.protocol,
+    baseUrl: cfg.baseUrl,
+    endpoint,
+    createPath: cfg.createPath || "",
+    workflowId: cfg.workflowId || "",
+    defaultModel: cfg.defaultModel,
+    credentialFingerprint: createHash("sha256").update(cfg.apiKey).digest("hex").slice(0, 16),
+    idempotencyStrategy: cfg.idempotencyStrategy,
+    idempotencyBodyField: cfg.idempotencyBodyField || "",
+  };
 }

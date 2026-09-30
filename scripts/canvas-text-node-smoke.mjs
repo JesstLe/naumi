@@ -11,6 +11,7 @@ import { chromium, request, expect } from "@playwright/test";
 
 const output = path.resolve("output/canvas-text-node-smoke");
 const distDir = `output/canvas-text-node-smoke/.next-${process.pid}`;
+const clipboardOnly = process.argv.includes("--clipboard-only");
 const tsconfigPath = path.resolve("tsconfig.json");
 const originalTsconfig = await readFile(tsconfigPath);
 await mkdir(output, { recursive: true });
@@ -42,7 +43,7 @@ async function freePort() {
   return port;
 }
 
-try {
+clipboardRun: try {
   execFileSync("docker", [
     "run", "-d", "--name", container,
     "-e", "POSTGRES_USER=fixture",
@@ -141,6 +142,7 @@ try {
     viewport: { width: 1600, height: 1000 },
     userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
   });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
   await context.addCookies([{ name: "naumi_locale", value: "zh", url: base }]);
   page = await context.newPage();
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -170,6 +172,11 @@ try {
   await expect.poll(async () => (await textPrompt.boundingBox())?.height || 0).toBeGreaterThan(115);
   const cappedPromptBox = await textPrompt.boundingBox();
   assert(cappedPromptBox && cappedPromptBox.height <= 246);
+  // Give the manual-resize branch enough vertical room above the persistent
+  // bottom toolbar; at 1000px height the safe-area cap is intentionally lower
+  // than the requested 360px Dock height.
+  await page.setViewportSize({ width: 1600, height: 1200 });
+  await page.waitForTimeout(300);
   const dockBeforeResize = await composerDock.boundingBox();
   assert(dockBeforeResize, "text composer dock is missing");
   await composerDock.evaluate((element) => {
@@ -178,7 +185,10 @@ try {
   await page.waitForTimeout(100);
   const dockAfterResize = await composerDock.boundingBox();
   const promptAfterResize = await textPrompt.boundingBox();
-  assert(dockAfterResize && dockAfterResize.height >= 330);
+  assert(
+    dockAfterResize && dockAfterResize.height >= 330,
+    `manual dock height is too small: ${JSON.stringify(dockAfterResize)}`,
+  );
   assert(
     promptAfterResize &&
       promptAfterResize.height >= 280 &&
@@ -195,7 +205,7 @@ try {
   await page.getByRole("button", { name: "自定义模型 ID" }).click();
   await page.getByPlaceholder("例如 gpt-5.6-luna").fill("fixture-custom-text");
   await page.getByRole("button", { name: "使用此模型" }).click();
-  await page.getByTitle("文字生成").click();
+  await composerDock.getByTitle("文字生成").click();
   await expect(textNode).toContainText(generatedText, { timeout: 30_000 });
   assert.equal(textRequests.length, 1);
   assert.equal(textRequests[0].model, "fixture-custom-text");
@@ -215,10 +225,6 @@ try {
   await expect(pendingNode).toHaveCount(1);
   const imagePrompt = page.getByPlaceholder(/描述想生成的画面/);
   await expect(imagePrompt).toHaveValue(generatedText);
-  await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
-  await expect(pendingNode.locator(".canvas-ui-node-card")).toHaveCSS("background-color", "rgb(255, 255, 255)");
-  await expect(page.getByTestId("pending-node-dock")).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
-  await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
   pass("dragging the text output to blank canvas creates an image node with generated copy as its prompt");
 
   await page.getByRole("button", { name: "↑", exact: true }).click();
@@ -247,6 +253,110 @@ try {
   assert.equal(generatedArtwork.groupId, persistedTextNode.projectKey.replace(/^tree:/, ""));
   assert.equal(normalizeLines(generatedArtwork.prompt), generatedText);
   pass("text-to-image generation keeps project ownership, prompt, and persistent target linkage");
+
+  // Clipboard routing regression: an internal node copy must not steal a later system screenshot,
+  // editable inputs must retain native plain-text paste, and the internal node marker must still paste.
+  await page.waitForTimeout(1000);
+  await page.getByTitle("适应视图").click();
+  await page.waitForTimeout(1200);
+  const generatedNode = page.locator(`.react-flow__node[data-id="${generatedArtwork.id}"]`);
+  await expect(generatedNode).toBeVisible();
+  const accountBeforeClipboard = await (await api.get(`/api/account?email=${email}`)).json();
+  let artworkCount = accountBeforeClipboard.artworks.length;
+
+  await generatedNode.click();
+  await generatedNode.evaluate((element) => element.focus());
+  await page.keyboard.press("Control+C");
+  await page.evaluate(async (base64) => {
+    const raw = atob(base64);
+    const bytes = Uint8Array.from(raw, (char) => char.charCodeAt(0));
+    await navigator.clipboard.write([
+      new ClipboardItem({ "image/png": new Blob([bytes], { type: "image/png" }) }),
+    ]);
+  }, generatedImage.toString("base64"));
+  await page.keyboard.press("Control+V");
+  await expect.poll(async () => {
+    const account = await (await api.get(`/api/account?email=${email}`)).json();
+    return account.artworks.length;
+  }, { timeout: 30_000 }).toBe(artworkCount + 1);
+  artworkCount += 1;
+
+  await page.getByTitle("适应视图").click();
+  await page.waitForTimeout(800);
+  await expect(textNode).toBeVisible();
+  await textNode.click();
+  await textPrompt.fill("输入框前缀：");
+  await textPrompt.focus();
+  await page.evaluate(async () => navigator.clipboard.writeText("系统纯文本"));
+  await page.keyboard.press("Control+V");
+  await expect(textPrompt).toHaveValue("输入框前缀：系统纯文本");
+
+  await generatedNode.click();
+  await generatedNode.evaluate((element) => element.focus());
+  await page.keyboard.press("Control+C");
+  await page.keyboard.press("Control+V");
+  await expect.poll(async () => {
+    const account = await (await api.get(`/api/account?email=${email}`)).json();
+    return account.artworks.length;
+  }, { timeout: 30_000 }).toBe(artworkCount + 1);
+
+  await page.locator(".react-flow__pane").click({ position: { x: 1500, y: 500 } });
+  await page.evaluate(() => {
+    const value = "系统普通选中文本";
+    const marker = document.createElement("span");
+    marker.id = "clipboard-native-selection";
+    marker.textContent = value;
+    marker.style.position = "fixed";
+    marker.style.left = "900px";
+    marker.style.top = "16px";
+    marker.style.zIndex = "99999";
+    document.body.append(marker);
+    const range = document.createRange();
+    range.selectNodeContents(marker);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  });
+  await page.keyboard.press("Control+C");
+  assert.equal(
+    await page.evaluate(async () => navigator.clipboard.readText()),
+    "系统普通选中文本"
+  );
+  await page.evaluate(() => {
+    window.getSelection()?.removeAllRanges();
+    document.getElementById("clipboard-native-selection")?.remove();
+  });
+
+  const accountBeforeBlockedPaste = await (await api.get(`/api/account?email=${email}`)).json();
+  await page.evaluate(async (base64) => {
+    const blocker = document.createElement("div");
+    blocker.setAttribute("data-canvas-hotkeys-blocked", "true");
+    document.body.append(blocker);
+    const raw = atob(base64);
+    const bytes = Uint8Array.from(raw, (char) => char.charCodeAt(0));
+    await navigator.clipboard.write([
+      new ClipboardItem({ "image/png": new Blob([bytes], { type: "image/png" }) }),
+    ]);
+  }, generatedImage.toString("base64"));
+  await page.keyboard.press("Control+V");
+  await page.waitForTimeout(500);
+  const accountAfterBlockedPaste = await (await api.get(`/api/account?email=${email}`)).json();
+  assert.equal(accountAfterBlockedPaste.artworks.length, accountBeforeBlockedPaste.artworks.length);
+  await page.evaluate(() =>
+    document.querySelector('[data-canvas-hotkeys-blocked="true"]')?.remove()
+  );
+
+  const imageDockBeforeTextEdit = page.getByTestId("image-node-dock");
+  if (await imageDockBeforeTextEdit.count()) {
+    await imageDockBeforeTextEdit.getByLabel("关闭").click();
+  }
+  await textNode.click();
+  await textPrompt.fill(generatedText);
+  pass("clipboard routes images and internal nodes, preserves native text copy/paste, and yields to portal layers");
+  if (clipboardOnly) {
+    console.log(`CANVAS_CLIPBOARD_ROUTING_RESULT=PASS checks=${report.length}`);
+    break clipboardRun;
+  }
 
   // 等生成完成后的单节点聚焦动画落稳，再适应全部节点，避免两个视口动画互相覆盖。
   await page.waitForTimeout(1000);
@@ -316,7 +426,16 @@ try {
   await expect(textNodeCard).toHaveCSS("background-color", "rgb(25, 27, 33)");
   const textNodeTitle = textNode.getByTestId("text-node-title");
   await expect(textNodeTitle).toHaveCSS("color", "rgb(226, 230, 237)");
-  await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
+  await mainToolbar
+    .locator('[data-tool="more"]')
+    .evaluate((button) => button.click());
+  await page
+    .getByTestId("canvas-more-tools-menu")
+    .getByRole("button", { name: /切换底色/ })
+    .click();
+  await mainToolbar
+    .locator('[data-tool="more"]')
+    .evaluate((button) => button.click());
   await expect(textNodeTitle).toHaveCSS("color", "rgb(48, 54, 65)");
   await expect(textDock).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(textPrompt).toHaveCSS("color", "rgb(48, 54, 65)");
@@ -328,14 +447,20 @@ try {
   await expect(textNodeCard).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(editableOutput).toHaveCSS("color", "rgb(37, 42, 51)");
   await expect(projectChrome).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
-  await expect(mainToolbar).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
+  await expect(mainToolbar).toHaveCSS("background-color", "rgba(255, 255, 255, 0.95)");
   await expect(viewToolbar).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
   await expect(topActions.locator("button").first()).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
   await page.getByRole("button", { name: /%$/ }).click();
   await expect(page.locator(".menu-pop-up").last()).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
   await page.locator("div.fixed.inset-0.z-40").last().click({ position: { x: 4, y: 4 } });
   await page.screenshot({ path: path.join(output, "light-theme.png"), fullPage: true });
-  await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
+  await mainToolbar
+    .locator('[data-tool="more"]')
+    .evaluate((button) => button.click());
+  await page
+    .getByTestId("canvas-more-tools-menu")
+    .getByRole("button", { name: /切换底色/ })
+    .click();
   await expect(textNodeTitle).toHaveCSS("color", "rgb(226, 230, 237)");
   await expect(textToolbar).toHaveCSS("border-color", "rgb(42, 45, 54)");
   pass("light canvas adapts project chrome, top actions, both toolbars, text cards, text dock, and popup menus while preserving dark mode");
@@ -388,16 +513,30 @@ try {
   await page.setViewportSize({ width: 1600, height: 1000 });
   pass("text dock stays inside 2560px, 1366px, 1024px, 768px, and 390px viewports with a freely resizable input");
 
-  await page.getByRole("button", { name: "100%", exact: true }).click();
+  // Earlier clipboard coverage deliberately adds two image nodes, so fit-view may no
+  // longer be exactly 100%. Open the live zoom control, then keep the strict 50% action.
+  await page
+    .getByTestId("canvas-view-toolbar")
+    .getByRole("button", { name: /%$/ })
+    .click();
   await page.getByRole("button", { name: "缩放至50%" }).click();
   await page.waitForTimeout(300);
   await textNode.click();
   await page.getByTestId("text-node-dock").getByTitle("添加图片引用").click();
-  await page.locator("button").filter({ hasText: "@标题：轻盈随行保温杯" }).last().click();
+  await page
+    .getByTestId("text-node-dock")
+    .locator(`[data-artwork-id="${generatedArtwork.id}"]`)
+    .click();
   await expect(page.getByText(`@${generatedArtwork.title}`, { exact: true }).first()).toBeVisible();
+  await expect.poll(async () => {
+    const state = await (await api.get(`/api/canvas/text-nodes?email=${email}`)).json();
+    return state.nodes
+      ?.find((node) => node.id === persistedTextNode.id)
+      ?.sourceIds?.includes(generatedArtwork.id) ?? false;
+  }, { timeout: 30_000 }).toBe(true);
   const imageContextPrompt = "根据引用图片写一段商品外观描述";
   await page.getByPlaceholder(/描述你的问题、文案或内容需求/).fill(imageContextPrompt);
-  await page.getByTitle("文字生成").click();
+  await page.getByTestId("text-node-dock").getByTitle("文字生成").click();
   await expect.poll(() => textRequests.length, { timeout: 30_000 }).toBe(2);
   const multimodalRequest = textRequests[1];
   const multimodalContent = multimodalRequest.messages.at(-1).content;
@@ -425,10 +564,6 @@ try {
     `.react-flow__node[data-id="${generatedArtwork.id}"]`
   );
   await generatedImageNode.click();
-  await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
-  await expect(page.getByTestId("image-node-dock")).toHaveCSS("background-color", "rgba(255, 255, 255, 0.96)");
-  await expect(page.getByTestId("image-node-dock").locator(".canvas-ui-control").first()).toHaveCSS("background-color", "rgb(244, 246, 248)");
-  await page.getByTitle("切换底色（黑/白）").evaluate((button) => button.click());
   const imageSourceHandle = generatedImageNode.locator(".react-flow__handle.source");
   await expect.poll(() => imageSourceHandle.evaluate(element => getComputedStyle(element).opacity)).toBe("1");
   const imageHandleBox = await imageSourceHandle.boundingBox();

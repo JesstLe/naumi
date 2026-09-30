@@ -7,11 +7,24 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 const originalFetch = globalThis.fetch;
 const calls: string[] = [];
+const createIdempotencyKeys: string[] = [];
+let forcedPollResponse: "html" | "empty" | "unknown" | "" = "";
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
   calls.push(`${init?.method || "GET"} ${url}`);
+  if (init?.method === "POST" && !url.endsWith("/task/openapi/outputs")) {
+    const requestHeaders = new Headers(init.headers);
+    createIdempotencyKeys.push(
+      requestHeaders.get("Idempotency-Key") || requestHeaders.get("X-Idempotency-Key") || ""
+    );
+  }
   if (url.endsWith("/content") || url.endsWith("/result.mp4")) {
     return new Response(new Uint8Array([0, 1, 2, 3]), { status: 200, headers: { "content-type": "video/mp4" } });
+  }
+  if (forcedPollResponse && url.includes("/jobs/recordInfo")) {
+    if (forcedPollResponse === "html") return new Response("<html>upstream proxy</html>", { status: 200, headers: { "content-type": "text/html" } });
+    if (forcedPollResponse === "empty") return json({});
+    return json({ status: "mystery-provider-state" });
   }
   if (url.endsWith("/task/openapi/outputs")) return json({ code: 0, data: [{ fileUrl: "https://fixture.test/result.mp4" }] });
   if (init?.method === "POST") {
@@ -36,6 +49,7 @@ for (const [prefix, base, model] of [
   process.env[`VIDEO_${prefix}_BASE_URL`] = base;
   process.env[`VIDEO_${prefix}_API_KEY`] = "fixture-key";
   process.env[`VIDEO_${prefix}_MODEL`] = model;
+  process.env[`VIDEO_${prefix}_IDEMPOTENCY_STRATEGY`] = prefix === "KIE" ? "none" : "header";
 }
 
 async function main() {
@@ -85,7 +99,23 @@ assert.ok(calls.some((call) => call.includes("/models/fixture-model:predictLongR
 assert.ok(calls.some((call) => call.includes("video_generation")));
 assert.ok(calls.some((call) => call.includes("comfyui_workflow/fixture-model")), "AutoDL must route the selected workflow, not the provider default");
 assert.ok(calls.some((call) => call.includes("task/openapi/create")));
-console.log(`PASS video provider fixtures: ${calls.length} HTTP calls across 8 protocols`);
+assert.equal(createIdempotencyKeys.length, 8, "all provider create calls captured");
+assert.equal(createIdempotencyKeys[2], "", "KIE none strategy performs the first create without claiming idempotency");
+assert.ok(createIdempotencyKeys.every((key, index) => index === 2 || key === request.idempotencyKey), "declared header providers forward stable idempotency key");
+assert.equal(calls.filter((call) => call.includes("/jobs/createTask")).length, 1, "none strategy still permits exactly one initial create");
+const kie = getVideoProvider("kie");
+assert.ok(kie, "KIE fixture adapter exists");
+const malformedSnapshot = { ...request, providerId: "kie", id: "malformed", email: "fixture@example.com", upstreamTaskId: "kie-malformed", parameters: {}, references: [] };
+for (const mode of ["html", "empty", "unknown"] as const) {
+  forcedPollResponse = mode;
+  await assert.rejects(
+    () => kie.poll(malformedSnapshot),
+    (error: unknown) => error instanceof Error && error.name === "TransientPollError",
+    `2xx ${mode} poll response must consume transient/unknown-status budget`
+  );
+}
+forcedPollResponse = "";
+console.log(`PASS video provider fixtures: ${calls.length} HTTP calls across 8 protocols idempotency=declared first_none_create=1`);
 globalThis.fetch = originalFetch;
 }
 
