@@ -61,7 +61,7 @@ type UploadedReference = { id: string; kind: "image" | "video" | "audio"; role: 
 type TaskView = {
   id: string;
   prompt: string;
-  status: "queued" | "processing" | "completed" | "failed" | "cancelled";
+  status: "queued" | "processing" | "needs_attention" | "completed" | "failed" | "cancelled";
   progress: number;
   cost: number;
   model: string;
@@ -288,11 +288,13 @@ export function VideoStudioClient() {
         ...(cap?.providerOptionKeys?.includes("cameraFixed") ? { cameraFixed } : {}),
       };
       const results = await Promise.allSettled(Array.from({ length: taskCount }, async () => {
+        const idempotencyKey = crypto.randomUUID();
         const res = await fetch("/api/video/generate", {
           method: "POST",
           headers: { "content-type": "application/json", ...(await authHeader()) },
           body: JSON.stringify({
             source: "workbench",
+            idempotencyKey,
             prompt: text,
             providerId,
             modelId,
@@ -347,6 +349,29 @@ export function VideoStudioClient() {
       void loadHistory();
     } catch (e) {
       setError(e instanceof Error ? e.message : "重试失败");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function resolveUnknown(task: TaskView, action: "bind" | "cancel_confirmed_not_created") {
+    if (busyAction) return;
+    const upstreamId = action === "bind" ? window.prompt("填写在供应商后台核对到的上游任务 ID")?.trim() : "";
+    if (action === "bind" && !upstreamId) return;
+    if (action === "cancel_confirmed_not_created" && !window.confirm("仅在已确认供应商未创建任务时取消并退回预扣，是否继续？")) return;
+    setBusyAction(task.id);
+    try {
+      const res = await fetch(`/api/video/tasks/${encodeURIComponent(task.id)}/resolve`, {
+        method: "POST",
+        headers: { ...(await authHeader()), "content-type": "application/json" },
+        body: JSON.stringify({ action, upstreamId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "核对处理失败");
+      setTip(action === "bind" ? "已绑定上游任务，后台将继续处理" : "已确认未创建，预扣已退回");
+      await loadHistory();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "核对处理失败");
     } finally {
       setBusyAction("");
     }
@@ -635,6 +660,16 @@ export function VideoStudioClient() {
                   </span>
                 </div>
               </div>
+            ) : activeTask.status === "needs_attention" ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+                <p className="max-w-md rounded-lg bg-amber-500/10 px-4 py-2 text-[13px] text-amber-700">
+                  上游创建结果不确定，请先到供应商后台核对；系统未重复提交，也未释放预扣。
+                </p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => void resolveUnknown(activeTask, "bind")} className="h-9 rounded-lg bg-primary px-4 text-[12.5px] font-semibold text-white">绑定上游任务</button>
+                  <button type="button" onClick={() => void resolveUnknown(activeTask, "cancel_confirmed_not_created")} className="h-9 rounded-lg border border-c-border px-4 text-[12.5px] font-semibold text-c-text2">确认未创建并退款</button>
+                </div>
+              </div>
             ) : activeTask.status === "failed" ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
                 <p className="rounded-lg bg-red-500/10 px-4 py-2 text-[13px] text-red-600">
@@ -716,12 +751,14 @@ export function VideoStudioClient() {
                     <p className="mt-1 truncate pl-5 text-[10.5px] text-c-text4">
                       {t.status === "completed"
                         ? `${t.model} · 已完成`
+                        : t.status === "needs_attention"
+                          ? "需核对上游创建结果"
                         : t.status === "failed"
                           ? `失败:${(t.error || "").slice(0, 30)}`
                           : `${Math.min(95, t.progress)}% · 后台执行中`}
                     </p>
                     </button>
-                    {t.status !== "processing" && t.status !== "queued" && <button type="button" aria-label="删除任务记录" onClick={() => void removeTask(t)} disabled={busyAction === t.id} className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-md text-c-text4 opacity-0 transition hover:bg-red-500/10 hover:text-red-600 group-hover:opacity-100 focus:opacity-100 disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" /></button>}
+                    {t.status !== "processing" && t.status !== "queued" && t.status !== "needs_attention" && <button type="button" aria-label="删除任务记录" onClick={() => void removeTask(t)} disabled={busyAction === t.id} className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-md text-c-text4 opacity-0 transition hover:bg-red-500/10 hover:text-red-600 group-hover:opacity-100 focus:opacity-100 disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" /></button>}
                   </div>
                 ))
               )}

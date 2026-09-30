@@ -1,7 +1,8 @@
 import "server-only";
 
 import { getVideoProviderConfig, type VideoProviderRuntimeConfig } from "@/lib/video/providers/config";
-import { TransientPollError, type VideoGenerationRequest, type VideoProviderAdapter, type VideoProviderCreateResult, type VideoProviderFetchResult, type VideoProviderPollResult, type VideoTaskSnapshot, type VideoTaskStatus } from "@/lib/video/types";
+import { PermanentVideoCreateError, TransientPollError, type VideoGenerationRequest, type VideoProviderAdapter, type VideoProviderCreateResult, type VideoProviderFetchResult, type VideoProviderPollResult, type VideoTaskSnapshot, type VideoTaskStatus } from "@/lib/video/types";
+import { readLimitedVideoResponse } from "@/lib/video/result-download";
 
 function status(value: unknown): VideoTaskStatus {
   const raw = String(value || "").toLowerCase();
@@ -9,6 +10,16 @@ function status(value: unknown): VideoTaskStatus {
   if (["failed", "fail", "error", "cancelled", "canceled", "expired"].includes(raw)) return "failed";
   if (raw === "queued") return "queued";
   return "processing";
+}
+
+function isRecognizedStatus(value: unknown): boolean {
+  const raw = String(value || "").toLowerCase();
+  return [
+    "completed", "complete", "success", "succeeded", "done",
+    "failed", "fail", "error", "cancelled", "canceled", "expired",
+    "queued", "pending", "submitted", "starting", "processing",
+    "in_progress", "running", "generating",
+  ].includes(raw);
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -176,6 +187,9 @@ async function jsonResponse(response: Response, label: string) {
     if (response.status >= 500 || response.status === 429) throw new TransientPollError(message);
     throw new Error(message);
   }
+  if (!payload || typeof payload !== "object") {
+    throw new TransientPollError(`${label}：2xx 响应不是有效 JSON`);
+  }
   return payload;
 }
 
@@ -185,11 +199,34 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
   return {
     id: providerId,
     async create(input) {
-      const response = await fetch(base(cfg, createPath(cfg, input.modelId)), { method: "POST", headers: headers(cfg, true), body: JSON.stringify(requestBody(cfg, input)), signal: AbortSignal.timeout(120_000) });
-      const payload = await jsonResponse(response, "视频任务创建失败");
-      const upstreamTaskId = idFrom(payload);
+      const requestPayload = requestBody(cfg, input);
+      if (cfg.idempotencyStrategy === "body") {
+        const field = cfg.idempotencyBodyField;
+        if (!field) throw new Error("视频供应商 body 幂等策略缺少字段映射");
+        (requestPayload as Record<string, unknown>)[field] = input.idempotencyKey;
+      }
+      const response = await fetch(base(cfg, createPath(cfg, input.modelId)), {
+        method: "POST",
+        headers: {
+          ...headers(cfg, true),
+          ...(cfg.idempotencyStrategy === "header"
+            ? { "Idempotency-Key": input.idempotencyKey, "X-Idempotency-Key": input.idempotencyKey }
+            : {}),
+        },
+        body: JSON.stringify(requestPayload),
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        const rejected = await response.json().catch(() => null);
+        throw new PermanentVideoCreateError(
+          firstString(path(rejected, "error.message"), path(rejected, "message"), path(rejected, "msg"), `视频任务创建失败(${response.status})`),
+          response.status
+        );
+      }
+      const responsePayload = await jsonResponse(response, "视频任务创建失败");
+      const upstreamTaskId = idFrom(responsePayload);
       if (!upstreamTaskId) throw new Error("视频服务未返回任务 ID");
-      return { upstreamTaskId, status: status(path(payload, "status") || path(payload, "data.status")), rawResponse: payload } satisfies VideoProviderCreateResult;
+      return { upstreamTaskId, status: status(path(responsePayload, "status") || path(responsePayload, "data.status")), rawResponse: responsePayload } satisfies VideoProviderCreateResult;
     },
     async poll(task) {
       let response: Response;
@@ -203,9 +240,13 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
       const url = firstUrl(payload);
       const error = firstString(path(payload, "error.message"), path(payload, "data.error.message"), path(payload, "data.failMsg"), path(payload, "msg"));
       const runningHubCode = cfg.protocol === "runninghub" ? Number(path(payload, "code") ?? path(payload, "data.code")) : NaN;
+      const explicitStatus = path(payload, "status") || path(payload, "state") || path(payload, "data.status");
       const rawStatus = Number.isFinite(runningHubCode)
         ? runningHubCode === 0 && url ? "completed" : [805, 806].includes(runningHubCode) ? "failed" : "processing"
-        : path(payload, "status") || path(payload, "state") || path(payload, "data.status") || (url ? "completed" : error ? "failed" : "processing");
+        : explicitStatus || (url ? "completed" : error ? "failed" : "");
+      if (!rawStatus || (!Number.isFinite(runningHubCode) && explicitStatus && !isRecognizedStatus(explicitStatus))) {
+        throw new TransientPollError("查询视频任务失败：上游 2xx 响应缺少可识别的 status/url/error");
+      }
       return { status: status(rawStatus), progress: Number(path(payload, "progress") || path(payload, "data.progress") || (url ? 100 : 0)), resultUrl: url || undefined, errorMessage: error || undefined, rawResponse: payload } satisfies VideoProviderPollResult;
     },
     async fetchResult(task, result) {
@@ -213,11 +254,8 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
       const target = url || base(cfg, contentPath(cfg, task.upstreamTaskId));
       // 上游返回的签名下载地址可能位于对象存储/CDN，禁止把供应商密钥转发到第三方主机。
       const response = await fetch(target, { headers: url ? {} : headers(cfg), signal: AbortSignal.timeout(180_000) });
-      if (!response.ok) throw new Error(`取回视频失败(${response.status})`);
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (!bytes.byteLength) throw new Error("视频内容为空");
-      if (bytes.byteLength > 200 * 1024 * 1024) throw new Error("视频超过 200MB 上限");
-      return { bytes, mimeType: response.headers.get("content-type")?.split(";")[0] || "video/mp4" } satisfies VideoProviderFetchResult;
+      const downloaded = await readLimitedVideoResponse(response);
+      return { bytes: downloaded.bytes, mimeType: downloaded.mimeType } satisfies VideoProviderFetchResult;
     },
   };
 }

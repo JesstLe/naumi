@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  PermanentVideoCreateError,
   TransientPollError,
   type VideoGenerationRequest,
   type VideoProviderAdapter,
@@ -10,6 +11,7 @@ import {
   type VideoTaskSnapshot,
   type VideoTaskStatus,
 } from "@/lib/video/types";
+import { readLimitedVideoResponse } from "@/lib/video/result-download";
 
 // ---------------------------------------------------------------------------
 // OpenAI Videos 协议适配器(§4.3 Phase 3 第 1 个):吸收原 client.ts。
@@ -17,8 +19,6 @@ import {
 // 图生视频走 multipart(input_reference);纯文生走 JSON。
 // 配置:VIDEO_API_BASE_URL / VIDEO_API_KEY / VIDEO_API_MODEL(env,站级)。
 // ---------------------------------------------------------------------------
-
-const MAX_OUTPUT_BYTES = 200 * 1024 * 1024;
 
 export function resolveOpenAiVideosConfig() {
   const baseUrl = (process.env.VIDEO_API_BASE_URL || "").trim().replace(/\/+$/, "");
@@ -55,6 +55,9 @@ export const openAiVideosAdapter: VideoProviderAdapter = {
     const imageRef = input.references.find(
       (r) => r.kind === "image" && (r.role === "first_frame" || r.role === "reference")
     );
+    // OpenAI-compatible endpoints commonly implement request deduplication via
+    // this header. It is stable across worker recovery/restarts.
+    const idempotencyHeaders = { "Idempotency-Key": input.idempotencyKey };
 
     let res: Response;
     if (imageRef?.url) {
@@ -69,14 +72,14 @@ export const openAiVideosAdapter: VideoProviderAdapter = {
       form.append("input_reference", new Blob([bytes], { type: imageRef.mimeType || "image/png" }), "reference.png");
       res = await fetch(`${cfg.baseUrl}/v1/videos`, {
         method: "POST",
-        headers: authHeaders(cfg.apiKey),
+        headers: { ...authHeaders(cfg.apiKey), ...idempotencyHeaders },
         body: form,
         signal: AbortSignal.timeout(60_000),
       });
     } else {
       res = await fetch(`${cfg.baseUrl}/v1/videos`, {
         method: "POST",
-        headers: { ...authHeaders(cfg.apiKey), "content-type": "application/json" },
+        headers: { ...authHeaders(cfg.apiKey), ...idempotencyHeaders, "content-type": "application/json" },
         body: JSON.stringify({
           model: input.modelId || cfg.model,
           prompt: input.prompt,
@@ -92,7 +95,11 @@ export const openAiVideosAdapter: VideoProviderAdapter = {
     }
     if (!res.ok) {
       const detail = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-      throw new Error(detail?.error?.message || `视频服务创建任务失败(${res.status})`);
+      const message = detail?.error?.message || `视频服务创建任务失败(${res.status})`;
+      if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+        throw new PermanentVideoCreateError(message, res.status);
+      }
+      throw new Error(message);
     }
     const data = (await res.json()) as { id?: string; status?: string; progress?: number };
     if (!data?.id) throw new Error("视频服务未返回任务 ID");
@@ -147,11 +154,7 @@ export const openAiVideosAdapter: VideoProviderAdapter = {
       `${cfg.baseUrl}/v1/videos/${encodeURIComponent(task.upstreamTaskId)}/content`,
       { headers: authHeaders(cfg.apiKey), signal: AbortSignal.timeout(180_000) }
     );
-    if (!res.ok) throw new Error(`取回视频失败(${res.status})`);
-    const buffer = new Uint8Array(await res.arrayBuffer());
-    if (!buffer.byteLength) throw new Error("视频内容为空");
-    if (buffer.byteLength > MAX_OUTPUT_BYTES) throw new Error("视频超过 200MB 上限");
-    const mime = res.headers.get("content-type")?.split(";")[0] || "video/mp4";
-    return { bytes: buffer, mimeType: mime };
+    const downloaded = await readLimitedVideoResponse(res);
+    return { bytes: downloaded.bytes, mimeType: downloaded.mimeType };
   },
 };

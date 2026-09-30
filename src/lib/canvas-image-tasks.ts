@@ -1,0 +1,192 @@
+import "server-only";
+
+import { createHash } from "node:crypto";
+import sharp from "sharp";
+
+import {
+  addArtworks,
+  claimNextCanvasImageTask,
+  completeCanvasImageTask,
+  createCanvasImageTaskWithReservation,
+  dbEnabled,
+  failCanvasImageTask,
+  getCanvasImageTask,
+  listArtworksByIds,
+  listCanvasImageTasks,
+  retryCanvasImageTask,
+  updateCanvasImageTaskProgress,
+  type CanvasImageTaskRow,
+} from "@/lib/db";
+import { supabaseEnabled } from "@/lib/auth-mode";
+import { creditsMeteringOn, multiUserEnabled } from "@/lib/native-auth";
+import { readCanvasImage } from "@/lib/canvas-image-input";
+import { editImage } from "@/lib/image-edit";
+import { resolutionCost } from "@/lib/mock-data";
+import { storageEnabled, uploadImage } from "@/lib/storage";
+import { safeError } from "@/lib/api-error";
+
+type Box = { x: number; y: number; width: number; height: number };
+export type TextEditTaskInput = {
+  artworkId: string;
+  oldText: string;
+  newText: string;
+  box: Box;
+  /** Suggested result-node position captured at enqueue time for refresh restore. */
+  canvasX?: number;
+  canvasY?: number;
+  /** Client-generated idempotency token. It is not forwarded to the image model. */
+  operationId?: string;
+};
+
+function normalizedInput(value: Partial<TextEditTaskInput>): TextEditTaskInput {
+  const canvasX = value.canvasX == null ? Number.NaN : Number(value.canvasX);
+  const canvasY = value.canvasY == null ? Number.NaN : Number(value.canvasY);
+  return {
+    artworkId: String(value.artworkId || "").trim(),
+    oldText: String(value.oldText || "").trim().slice(0, 300),
+    newText: String(value.newText || "").trim().slice(0, 300),
+    box: {
+      x: Number(value.box?.x),
+      y: Number(value.box?.y),
+      width: Number(value.box?.width),
+      height: Number(value.box?.height),
+    },
+    ...(Number.isFinite(canvasX) ? { canvasX } : {}),
+    ...(Number.isFinite(canvasY) ? { canvasY } : {}),
+    ...(String(value.operationId || "").trim()
+      ? { operationId: String(value.operationId).trim().slice(0, 160) }
+      : {}),
+  };
+}
+
+function validateInput(input: TextEditTaskInput): void {
+  if (!input.artworkId || !input.oldText || !input.newText || input.oldText === input.newText) {
+    throw new Error("请选择文字并输入不同的新内容");
+  }
+  if (![input.box.x, input.box.y, input.box.width, input.box.height].every(Number.isFinite) || input.box.width <= 0 || input.box.height <= 0) {
+    throw new Error("OCR 文字坐标无效");
+  }
+}
+
+function clampBox(box: Box, imageWidth: number, imageHeight: number) {
+  const padding = Math.max(4, Math.round(Math.max(box.width, box.height) * 0.12));
+  const x = Math.max(0, Math.min(imageWidth - 1, Math.round(box.x) - padding));
+  const y = Math.max(0, Math.min(imageHeight - 1, Math.round(box.y) - padding));
+  const right = Math.max(x + 1, Math.min(imageWidth, Math.round(box.x + box.width) + padding));
+  const bottom = Math.max(y + 1, Math.min(imageHeight, Math.round(box.y + box.height) + padding));
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+function editSize(width: number, height: number) {
+  const ratio = width / height;
+  return ratio > 1.2 ? "1536x1024" as const : ratio < 0.83 ? "1024x1536" as const : "1024x1024" as const;
+}
+
+export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTaskInput>) {
+  if (!dbEnabled) throw new Error("后台图片任务需要数据库支持");
+  const input = normalizedInput(raw);
+  validateInput(input);
+  const artwork = (await listArtworksByIds(email, [input.artworkId]))[0];
+  if (!artwork) throw new Error("图片不存在或无权访问");
+  const cost = resolutionCost("1K");
+  const operationId = String(input.operationId || "").trim();
+  const id = operationId
+    ? `imgtask-${createHash("sha256").update(`${email.toLowerCase()}:${operationId}`).digest("hex").slice(0, 32)}`
+    : `imgtask-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  const metered = supabaseEnabled || (await multiUserEnabled()) || (await creditsMeteringOn());
+  const { task } = await createCanvasImageTaskWithReservation({
+    id,
+    email,
+    sourceArtworkId: artwork.id,
+    parameters: input,
+    cost,
+    metered,
+  });
+  return task;
+}
+
+async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
+  const input = normalizedInput(task.parameters as Partial<TextEditTaskInput>);
+  validateInput(input);
+  const artwork = (await listArtworksByIds(task.email, [task.sourceArtworkId]))[0];
+  if (!artwork) throw new Error("源图片已不存在");
+  const requestOrigin = String(process.env.INTERNAL_APP_ORIGIN || process.env.NAUMI_APP_ORIGIN || "http://127.0.0.1:3000");
+  const image = await readCanvasImage(artwork.image, requestOrigin);
+  const original = await sharp(image.buffer).rotate().png().toBuffer();
+  const metadata = await sharp(original).metadata();
+  const width = metadata.width || artwork.width || 0;
+  const height = metadata.height || artwork.height || 0;
+  if (!width || !height) throw new Error("无法读取图片尺寸");
+  const box = clampBox(input.box, width, height);
+  const clear = await sharp({
+    create: { width: box.width, height: box.height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } },
+  }).png().toBuffer();
+  const mask = await sharp({
+    create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } },
+  }).composite([{ input: clear, left: box.x, top: box.y, blend: "dest-out" }]).png().toBuffer();
+  await updateCanvasImageTaskProgress(task.id, 20);
+  const location = `原图 ${width}×${height} 像素中的矩形区域：x=${box.x}, y=${box.y}, width=${box.width}, height=${box.height}`;
+  const prompt = [
+    "任务：编辑图片，只修改指定区域的文字，图片其余所有画面100%保持原样，不要改动产品、光影、材质、背景。",
+    "要求：字体风格、颜色、光影、质感、透视和原图完全匹配。",
+    `需要修改的区域：${location}`,
+    `旧文字：${input.oldText}`,
+    `新文字：${input.newText}`,
+    "禁止改动其他任何元素，不要增加物体，不要改变背景、产品包装、3D数字。",
+  ].join("\n");
+  const editedRaw = await editImage({ images: [original], mask, prompt, size: editSize(width, height), quality: "high" });
+  await updateCanvasImageTaskProgress(task.id, 82);
+  const edited = await sharp(editedRaw).resize(width, height, { fit: "fill" }).png().toBuffer();
+  const artworkId = `txtedit-${task.id}`;
+  let url = `data:image/png;base64,${edited.toString("base64")}`;
+  if (storageEnabled) url = await uploadImage(new Uint8Array(edited), "image/png", `canvas-text-edits/${artworkId}.png`);
+  await addArtworks(task.email, [{
+    id: artworkId,
+    title: `${artwork.title || "图片"} · 改字`,
+    category: "canvas-text-edit",
+    prompt,
+    status: "completed",
+    image: url,
+    gradient: artwork.gradient || "from-slate-100 to-sky-100",
+    style: artwork.style ?? null,
+    ratio: artwork.ratio ?? null,
+    resolution: artwork.resolution ?? "1K",
+    source: artwork.image,
+    parentId: artwork.id,
+    parentIds: [],
+    groupId: artwork.groupId || undefined,
+    origin: "canvas",
+    width,
+    height,
+  }], `txtedit-${task.id}`);
+  await completeCanvasImageTask({ id: task.id, email: task.email, resultArtworkId: artworkId });
+  return artworkId;
+}
+
+export async function processCanvasImageTask(task: CanvasImageTaskRow): Promise<void> {
+  try {
+    await renderTextEdit(task);
+    console.info(`[canvas-image-task] completed id=${task.id} attempt=${task.attempts}`);
+  } catch (error) {
+    const message = safeError(error, "在线改字失败，请稍后重试");
+    console.error(`[canvas-image-task] failed id=${task.id} attempt=${task.attempts}: ${error instanceof Error ? error.message : String(error)}`);
+    if (task.attempts < 3) {
+      await retryCanvasImageTask({ id: task.id, email: task.email, error: message, delaySeconds: task.attempts * 8 });
+    } else {
+      await failCanvasImageTask({ id: task.id, email: task.email, error: message });
+    }
+  }
+}
+
+export async function recoverCanvasImageTasks(limit = 2): Promise<number> {
+  let processed = 0;
+  for (let index = 0; index < Math.min(Math.max(limit, 1), 5); index += 1) {
+    const task = await claimNextCanvasImageTask();
+    if (!task) break;
+    await processCanvasImageTask(task);
+    processed += 1;
+  }
+  return processed;
+}
+
+export { getCanvasImageTask, listCanvasImageTasks };

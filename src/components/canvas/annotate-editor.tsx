@@ -323,7 +323,13 @@ export function AnnotateEditorModal({
         "annotations",
         JSON.stringify(items.map((item) => ({ type: item.type, note: item.note.trim() })))
       );
-      await onSubmitted(formData);
+      // 标注数据准备完成后立即关闭编辑器，把耗时生成交给画布占位节点继续。
+      // 用户可以马上选择其他节点或发起下一项工作，不再被模态框锁住。
+      onClose();
+      void onSubmitted(formData).catch((submitError) => {
+        console.error("[canvas-annotate] background submission failed", submitError);
+      });
+      return;
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "提交失败，请重试");
     } finally {

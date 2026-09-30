@@ -278,8 +278,10 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS last_response jsonb NOT NULL DEFAULT '{}'::jsonb;
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS error_detail jsonb NOT NULL DEFAULT '{}'::jsonb;
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS result_storage_key text NOT NULL DEFAULT '';
-        CREATE INDEX IF NOT EXISTS app_video_tasks_poll_idx
-          ON app_video_tasks (next_poll_at) WHERE status = 'processing';
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS result_observed_at timestamptz;
+        DROP INDEX IF EXISTS app_video_tasks_poll_idx;
+        CREATE INDEX IF NOT EXISTS app_video_tasks_due_idx
+          ON app_video_tasks (next_poll_at) WHERE status IN ('queued','processing');
         CREATE UNIQUE INDEX IF NOT EXISTS app_video_tasks_idem_key
           ON app_video_tasks (email, idempotency_key) WHERE idempotency_key <> '';
         CREATE TABLE IF NOT EXISTS app_video_results (
@@ -299,6 +301,30 @@ async function ensureSchema(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS app_video_results_email_idx
           ON app_video_results (email, created_at DESC) WHERE deleted_at IS NULL;
+        -- 画布图片编辑后台任务:关闭 Dock/页面后由常驻 worker 继续处理。
+        CREATE TABLE IF NOT EXISTS app_canvas_image_tasks (
+          id                text PRIMARY KEY,
+          email             text NOT NULL,
+          kind              text NOT NULL DEFAULT 'text-edit',
+          source_artwork_id text NOT NULL,
+          parameters        jsonb NOT NULL DEFAULT '{}'::jsonb,
+          status            text NOT NULL DEFAULT 'queued',
+          progress          integer NOT NULL DEFAULT 0,
+          cost              integer NOT NULL DEFAULT 0,
+          result_artwork_id text NOT NULL DEFAULT '',
+          error             text NOT NULL DEFAULT '',
+          attempts          integer NOT NULL DEFAULT 0,
+          lease_until       timestamptz,
+          credits_refunded  boolean NOT NULL DEFAULT false,
+          created_at        timestamptz NOT NULL DEFAULT now(),
+          updated_at        timestamptz NOT NULL DEFAULT now(),
+          completed_at      timestamptz
+        );
+        CREATE INDEX IF NOT EXISTS app_canvas_image_tasks_email_idx
+          ON app_canvas_image_tasks (email, created_at DESC);
+        CREATE INDEX IF NOT EXISTS app_canvas_image_tasks_due_idx
+          ON app_canvas_image_tasks (created_at)
+          WHERE status IN ('queued', 'processing');
         CREATE TABLE IF NOT EXISTS app_orders (
           id           text PRIMARY KEY,
           email        text NOT NULL,
@@ -2030,16 +2056,48 @@ export async function sweepStaleReservations(
   olderThanMin = 12
 ): Promise<number> {
   await ensureSchema();
-  const { rows } = await getPool().query(
-    `DELETE FROM app_gen_reservations
+  const meterOn = await creditMeteringEnabled();
+  const client = await getPool().connect();
+  let rows: Array<{ email: string; cost: number }> = [];
+  try {
+    await client.query("BEGIN");
+    const deleted = await client.query<{ email: string; cost: number }>(
+      `DELETE FROM app_gen_reservations
        WHERE created_at < now() - ($1 || ' minutes')::interval
+         AND NOT EXISTS (
+           SELECT 1 FROM app_video_tasks v
+            WHERE v.id = app_gen_reservations.job_id
+              AND v.status IN ('queued','processing','needs_attention')
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM app_canvas_image_tasks c
+            WHERE c.id = app_gen_reservations.job_id
+              AND c.status IN ('queued','processing')
+         )
      RETURNING email, cost`,
-    [String(olderThanMin)]
-  );
-  for (const r of rows) {
-    // 占位被孤儿化(进程被杀、没结算):只释放在途占位即可。本金从未扣减
-    // (扣减只在结算时发生),所以无需退本金、也不记流水。
-    await refundCredits(r.email, r.cost).catch(() => {});
+      [String(olderThanMin)]
+    );
+    rows = deleted.rows;
+    if (meterOn) {
+      for (const row of rows) {
+        await client.query(
+          `UPDATE app_users SET credits_used = GREATEST(credits_used - $2, 0)
+            WHERE email = $1`,
+          [row.email, row.cost]
+        );
+      }
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+  if (meterOn) {
+    for (const email of Array.from(new Set(rows.map((row) => row.email)))) {
+      await refreshBalance(email).catch(() => {});
+    }
   }
   return rows.length;
 }
@@ -2767,13 +2825,14 @@ export async function setArtworkPosition(
   id: string,
   x: number,
   y: number
-): Promise<void> {
+): Promise<boolean> {
   await ensureSchema();
-  if (!id || !Number.isFinite(x) || !Number.isFinite(y)) return;
-  await getPool().query(
+  if (!id || !Number.isFinite(x) || !Number.isFinite(y)) return false;
+  const result = await getPool().query(
     `UPDATE app_artworks SET canvas_x = $3, canvas_y = $4 WHERE email = $1 AND id = $2`,
     [emailRaw.toLowerCase(), id, x, y]
   );
+  return (result.rowCount ?? 0) > 0;
 }
 
 // 画布用:记录图片真实像素尺寸。旧数据在浏览器首次加载原图后自动回填。
@@ -4517,7 +4576,7 @@ export type VideoTaskRow = {
   upstreamId: string;
   model: string;
   prompt: string;
-  status: "queued" | "processing" | "completed" | "failed" | "cancelled";
+  status: "queued" | "processing" | "needs_attention" | "completed" | "failed" | "cancelled";
   progress: number;
   cost: number;
   artworkId: string;
@@ -4530,6 +4589,8 @@ export type VideoTaskRow = {
   videoReferences: unknown[];
   capabilitySnapshot: Record<string, unknown>;
   seconds: string;
+  pollAttempts: number;
+  nextPollAt?: string;
   createdAt: string;
   completedAt?: string;
   providerSnapshot?: Record<string, unknown>;
@@ -4537,6 +4598,7 @@ export type VideoTaskRow = {
   lastResponse?: Record<string, unknown>;
   errorDetail?: Record<string, unknown>;
   resultStorageKey?: string;
+  idempotencyKey?: string;
 };
 
 export type VideoResultRow = {
@@ -4552,6 +4614,38 @@ export type VideoResultRow = {
   references: unknown[];
   createdAt: string;
 };
+
+function mapVideoTask(r: Record<string, unknown>): VideoTaskRow {
+  return {
+    id: String(r.id),
+    upstreamId: String(r.upstream_id ?? ""),
+    model: String(r.model ?? ""),
+    prompt: String(r.prompt ?? ""),
+    status: (r.status as VideoTaskRow["status"]) ?? "processing",
+    progress: Number(r.progress ?? 0),
+    cost: Number(r.cost ?? 0),
+    artworkId: String(r.artwork_id ?? ""),
+    videoUrl: String(r.video_url ?? ""),
+    error: String(r.error ?? ""),
+    providerId: String(r.provider_id ?? "openai-videos"),
+    source: String(r.source ?? "canvas"),
+    sourceId: String(r.source_id ?? ""),
+    parameters: (r.parameters ?? {}) as Record<string, unknown>,
+    videoReferences: (r.video_references ?? []) as unknown[],
+    capabilitySnapshot: (r.capability_snapshot ?? {}) as Record<string, unknown>,
+    seconds: String(r.seconds ?? ""),
+    pollAttempts: Number(r.poll_attempts ?? 0),
+    nextPollAt: r.next_poll_at ? new Date(r.next_poll_at as string).toISOString() : undefined,
+    createdAt: r.created_at ? new Date(r.created_at as string).toISOString() : "",
+    completedAt: r.completed_at ? new Date(r.completed_at as string).toISOString() : undefined,
+    providerSnapshot: (r.provider_snapshot ?? {}) as Record<string, unknown>,
+    responseBody: String(r.response_body ?? ""),
+    lastResponse: (r.last_response ?? {}) as Record<string, unknown>,
+    errorDetail: (r.error_detail ?? {}) as Record<string, unknown>,
+    resultStorageKey: String(r.result_storage_key ?? ""),
+    idempotencyKey: String(r.idempotency_key ?? ""),
+  };
+}
 
 export async function createVideoTask(input: {
   id: string;
@@ -4621,8 +4715,167 @@ export async function createVideoTask(input: {
     videoReferences: [],
     capabilitySnapshot: {},
     seconds: input.seconds,
+    pollAttempts: 0,
     createdAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Atomically claims an idempotent video creation and reserves its credits.
+ *
+ * Only the short transaction owns a pool connection. The upstream request is
+ * deliberately made after this function returns, so a slow provider cannot
+ * starve the (small) application pool. A queued row with an empty upstream id
+ * is a durable creation intent: after a process crash the worker can safely
+ * repeat adapter.create with the same idempotency key.
+ */
+export async function createVideoTaskWithReservation(input: {
+  id: string;
+  email: string;
+  model: string;
+  prompt: string;
+  size: string;
+  seconds: string;
+  cost: number;
+  requestBody: string;
+  providerId?: string;
+  source?: string;
+  sourceId?: string;
+  parameters?: unknown;
+  videoReferences?: unknown;
+  capabilitySnapshot?: unknown;
+  idempotencyKey: string;
+  channelId?: string;
+  providerSnapshot?: unknown;
+  leaseSeconds?: number;
+}): Promise<{ task: VideoTaskRow; created: boolean }> {
+  await ensureSchema();
+  const email = input.email.toLowerCase();
+  const idempotencyKey = input.idempotencyKey.slice(0, 100);
+  const meterOn = await creditMeteringEnabled();
+  if (meterOn && input.cost > 0) await expireDueBatches(email);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+      `video-create:${email}:${idempotencyKey}`,
+    ]);
+    const existing = await client.query(
+      `SELECT * FROM app_video_tasks WHERE email = $1 AND idempotency_key = $2 LIMIT 1`,
+      [email, idempotencyKey]
+    );
+    if (existing.rows[0]) {
+      await client.query("COMMIT");
+      return { task: mapVideoTask(existing.rows[0] as Record<string, unknown>), created: false };
+    }
+    if (meterOn && input.cost > 0) {
+      const reserved = await client.query(
+        `UPDATE app_users u
+            SET credits_used = credits_used + $2
+          WHERE u.email = $1
+            AND (SELECT COALESCE(SUM(remaining),0) FROM app_credit_batches b
+                  WHERE b.email = u.email AND b.expires_at > now() AND b.remaining > 0)
+                - u.credits_used >= $2`,
+        [email, input.cost]
+      );
+      if ((reserved.rowCount ?? 0) === 0) {
+        throw new Error(`积分不足，本条视频需要 ${input.cost} 积分`);
+      }
+    }
+    await client.query(
+      `INSERT INTO app_gen_reservations (job_id, email, cost) VALUES ($1,$2,$3)`,
+      [input.id, email, input.cost]
+    );
+    const created = await client.query(
+      `INSERT INTO app_video_tasks
+         (id, email, upstream_id, model, prompt, size, seconds, status, cost, request_body,
+          provider_id, source, source_id, parameters, video_references, capability_snapshot,
+          idempotency_key, next_poll_at, poll_lock_until, channel_id, provider_snapshot)
+       VALUES ($1,$2,'',$3,$4,$5,$6,'queued',$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,
+               $15,now(),now() + ($18 || ' seconds')::interval,$16,$17::jsonb)
+       RETURNING *`,
+      [
+        input.id,
+        email,
+        input.model,
+        input.prompt.slice(0, 1000),
+        input.size,
+        input.seconds,
+        input.cost,
+        input.requestBody.slice(0, 4000),
+        input.providerId ?? "openai-videos",
+        input.source ?? "canvas",
+        input.sourceId ?? "",
+        JSON.stringify(input.parameters ?? {}),
+        JSON.stringify(input.videoReferences ?? []),
+        JSON.stringify(input.capabilitySnapshot ?? {}),
+        idempotencyKey,
+        (input.channelId ?? input.providerId ?? "").slice(0, 100),
+        JSON.stringify(input.providerSnapshot ?? {}),
+        Math.max(30, Math.trunc(input.leaseSeconds ?? 210)),
+      ]
+    );
+    await client.query("COMMIT");
+    return { task: mapVideoTask(created.rows[0] as Record<string, unknown>), created: true };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** Marks a durable creation intent as submitted to the upstream provider. */
+export async function markVideoTaskCreated(input: {
+  email: string;
+  id: string;
+  upstreamId: string;
+  responseBody?: string;
+}): Promise<void> {
+  await ensureSchema();
+  if (!input.upstreamId.trim()) throw new Error("视频服务未返回任务 ID");
+  await getPool().query(
+    `UPDATE app_video_tasks
+        SET upstream_id = $3, status = 'processing', started_at = COALESCE(started_at, now()),
+            next_poll_at = now(), poll_attempts = 0, error = '', poll_lock_until = NULL,
+            response_body = $4, updated_at = now()
+      WHERE email = $1 AND id = $2 AND status IN ('queued','processing')`,
+    [input.email.toLowerCase(), input.id, input.upstreamId, (input.responseBody ?? "").slice(0, 8000)]
+  );
+}
+
+/** Provider cannot safely deduplicate a repeated create after an ambiguous failure. */
+export async function markVideoTaskCreationUnknown(input: {
+  email: string;
+  id: string;
+  error: string;
+}): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `UPDATE app_video_tasks
+        SET status = 'needs_attention', error_code = 'creation_unknown', error = $3, next_poll_at = NULL,
+            poll_lock_until = NULL, updated_at = now()
+      WHERE email = $1 AND id = $2 AND status = 'queued'`,
+    [input.email.toLowerCase(), input.id, input.error.slice(0, 500)]
+  );
+}
+
+export async function bindUnknownVideoTaskUpstream(input: {
+  email: string;
+  id: string;
+  upstreamId: string;
+}): Promise<boolean> {
+  await ensureSchema();
+  if (!input.upstreamId.trim()) return false;
+  const result = await getPool().query(
+    `UPDATE app_video_tasks
+        SET status = 'processing', upstream_id = $3, error_code = '', error = '',
+            started_at = COALESCE(started_at, now()), next_poll_at = now(), updated_at = now()
+      WHERE email = $1 AND id = $2 AND status = 'needs_attention'
+        AND error_code = 'creation_unknown'`,
+    [input.email.toLowerCase(), input.id, input.upstreamId.trim().slice(0, 500)]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function getVideoTask(
@@ -4634,39 +4887,27 @@ export async function getVideoTask(
     `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
             provider_id, source, source_id, parameters, video_references, capability_snapshot,
             next_poll_at, poll_attempts, seconds, created_at, completed_at,
-            provider_snapshot, response_body, last_response, error_detail, result_storage_key
+            provider_snapshot, response_body, last_response, error_detail, result_storage_key,
+            idempotency_key
        FROM app_video_tasks
       WHERE email = $1 AND id = $2`,
     [email.toLowerCase(), id]
   );
   const r = rows[0] as Record<string, unknown> | undefined;
   if (!r) return null;
-  return {
-    id: String(r.id),
-    upstreamId: String(r.upstream_id ?? ""),
-    model: String(r.model ?? ""),
-    prompt: String(r.prompt ?? ""),
-    status: (r.status as VideoTaskRow["status"]) ?? "processing",
-    progress: Number(r.progress ?? 0),
-    cost: Number(r.cost ?? 0),
-    artworkId: String(r.artwork_id ?? ""),
-    videoUrl: String(r.video_url ?? ""),
-    error: String(r.error ?? ""),
-    providerId: String(r.provider_id ?? "openai-videos"),
-    source: String(r.source ?? "canvas"),
-    sourceId: String(r.source_id ?? ""),
-    parameters: (r.parameters ?? {}) as Record<string, unknown>,
-    videoReferences: (r.video_references ?? []) as unknown[],
-    capabilitySnapshot: (r.capability_snapshot ?? {}) as Record<string, unknown>,
-    seconds: String(r.seconds ?? ""),
-    createdAt: r.created_at ? new Date(r.created_at as string).toISOString() : "",
-    completedAt: r.completed_at ? new Date(r.completed_at as string).toISOString() : undefined,
-    providerSnapshot: (r.provider_snapshot ?? {}) as Record<string, unknown>,
-    responseBody: String(r.response_body ?? ""),
-    lastResponse: (r.last_response ?? {}) as Record<string, unknown>,
-    errorDetail: (r.error_detail ?? {}) as Record<string, unknown>,
-    resultStorageKey: String(r.result_storage_key ?? ""),
-  };
+  return mapVideoTask(r);
+}
+
+export async function getVideoTaskByIdempotencyKey(
+  email: string,
+  idempotencyKey: string
+): Promise<VideoTaskRow | null> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT id FROM app_video_tasks WHERE email = $1 AND idempotency_key = $2 LIMIT 1`,
+    [email.toLowerCase(), idempotencyKey.slice(0, 100)]
+  );
+  return rows[0]?.id ? getVideoTask(email, String(rows[0].id)) : null;
 }
 
 /**
@@ -4684,7 +4925,7 @@ export async function claimVideoTaskPoll(
         SET poll_lock_until = now() + ($3 || ' seconds')::interval,
             last_polled_at = now(),
             updated_at = now()
-      WHERE email = $1 AND id = $2 AND status = 'processing'
+      WHERE email = $1 AND id = $2 AND status IN ('queued','processing')
         AND (poll_lock_until IS NULL OR poll_lock_until < now())`,
     [email.toLowerCase(), id, Math.max(15, Math.trunc(leaseSeconds))]
   );
@@ -4721,14 +4962,32 @@ export async function completeVideoTask(input: {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const locked = await client.query<{ status: string; cost: number }>(
-      `SELECT status, cost FROM app_video_tasks
+    const locked = await client.query<{
+      status: string;
+      cost: number;
+      artwork_id: string;
+      video_url: string;
+      result_storage_key: string;
+    }>(
+      `SELECT status, cost, artwork_id, video_url, result_storage_key FROM app_video_tasks
         WHERE email = $1 AND id = $2 FOR UPDATE`,
       [email, input.id]
     );
     const task = locked.rows[0];
     if (!task) throw new Error("视频任务不存在");
-    if (task.status !== "completed" && meterOn && Number(task.cost) > 0) {
+    if (task.status === "completed") {
+      if (
+        task.artwork_id !== input.artworkId
+        || task.video_url !== input.videoUrl
+        || task.result_storage_key !== (input.resultStorageKey || "")
+      ) {
+        throw new Error("已完成视频任务的产物不可覆盖");
+      }
+      await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+      await client.query("COMMIT");
+      return;
+    }
+    if (meterOn && Number(task.cost) > 0) {
       const ledgerId = `led-video-${input.id}`;
       const seen = await client.query(`SELECT 1 FROM app_ledger WHERE id = $1`, [ledgerId]);
       if (!(seen.rowCount ?? 0)) {
@@ -4854,10 +5113,10 @@ export async function updateVideoTask(
 /** 任务列表(工作台/恢复用):按创建时间倒序。 */
 export async function listVideoTasks(
   email: string,
-  opts: { status?: string; source?: string; limit?: number } = {}
+  opts: { status?: string; source?: string; sourceIds?: string[]; limit?: number } = {}
 ): Promise<VideoTaskRow[]> {
   await ensureSchema();
-  const limit = Math.min(Math.max(opts.limit ?? 30, 1), 100);
+  const limit = Math.min(Math.max(opts.limit ?? 30, 1), 500);
   const params: unknown[] = [email.toLowerCase()];
   let where = `email = $1`;
   if (opts.status) {
@@ -4867,6 +5126,10 @@ export async function listVideoTasks(
   if (opts.source) {
     params.push(opts.source);
     where += ` AND source = $${params.length}`;
+  }
+  if (opts.sourceIds?.length) {
+    params.push(Array.from(new Set(opts.sourceIds.filter(Boolean))).slice(0, 500));
+    where += ` AND source_id = ANY($${params.length}::text[])`;
   }
   const { rows } = await getPool().query(
     `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
@@ -4897,6 +5160,8 @@ export async function listVideoTasks(
     videoReferences: (r.video_references ?? []) as unknown[],
     capabilitySnapshot: (r.capability_snapshot ?? {}) as Record<string, unknown>,
     seconds: String(r.seconds ?? ""),
+    pollAttempts: Number(r.poll_attempts ?? 0),
+    nextPollAt: r.next_poll_at ? new Date(r.next_poll_at as string).toISOString() : undefined,
     createdAt: r.created_at ? new Date(r.created_at as string).toISOString() : "",
     completedAt: r.completed_at ? new Date(r.completed_at as string).toISOString() : undefined,
     providerSnapshot: (r.provider_snapshot ?? {}) as Record<string, unknown>,
@@ -4922,7 +5187,7 @@ export async function deleteFinishedVideoTask(email: string, id: string): Promis
       await client.query("ROLLBACK");
       return false;
     }
-    if (status === "processing" || status === "queued") {
+    if (status === "processing" || status === "queued" || status === "needs_attention") {
       throw new Error("进行中的任务不能删除");
     }
     await client.query(`DELETE FROM app_video_results WHERE email = $1 AND task_id = $2`, [email.toLowerCase(), id]);
@@ -4994,7 +5259,38 @@ export async function recordVideoTaskPoll(
   );
 }
 
-/** worker/恢复扫描:领取到期且无锁的 processing 任务(id+email)。 */
+/** First completed observation starts a fresh consecutive-failure budget. */
+export async function noteVideoTaskResultObserved(email: string, id: string): Promise<number> {
+  await ensureSchema();
+  const { rows } = await getPool().query<{ poll_attempts: number }>(
+    `UPDATE app_video_tasks
+        SET poll_attempts = CASE WHEN result_observed_at IS NULL THEN 0 ELSE poll_attempts END,
+            result_observed_at = COALESCE(result_observed_at, now()),
+            updated_at = now()
+      WHERE email = $1 AND id = $2
+      RETURNING poll_attempts`,
+    [email.toLowerCase(), id]
+  );
+  return Number(rows[0]?.poll_attempts ?? 0);
+}
+
+/** Persist a downloaded/uploaded result before artwork + billing settlement. */
+export async function stageVideoTaskResult(input: {
+  email: string;
+  id: string;
+  videoUrl: string;
+  resultStorageKey?: string;
+}): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `UPDATE app_video_tasks
+        SET video_url = $3, result_storage_key = $4, updated_at = now()
+      WHERE email = $1 AND id = $2 AND status = 'processing'`,
+    [input.email.toLowerCase(), input.id, input.videoUrl, input.resultStorageKey || ""]
+  );
+}
+
+/** worker/恢复扫描:领取到期且无锁的 queued/processing 任务(id+email)。 */
 export async function listDueVideoTaskRefs(limit = 5): Promise<
   { id: string; email: string }[]
 > {
@@ -5002,7 +5298,8 @@ export async function listDueVideoTaskRefs(limit = 5): Promise<
   const { rows } = await getPool().query(
     `SELECT id, email
        FROM app_video_tasks
-      WHERE status = 'processing'
+      WHERE status IN ('queued','processing')
+        AND error_code <> 'creation_unknown'
         AND (next_poll_at IS NULL OR next_poll_at <= now())
         AND (poll_lock_until IS NULL OR poll_lock_until < now())
       ORDER BY created_at
@@ -5015,22 +5312,324 @@ export async function listDueVideoTaskRefs(limit = 5): Promise<
   }));
 }
 
-/** 轮询调度回写:推延下次扫描时间并累计尝试次数(瞬时错误重试用)。 */
+/**
+ * 轮询调度回写。poll_attempts 只表示连续瞬时失败次数：正常的
+ * queued/processing 状态不会消耗失败预算，并会把之前的瞬时失败清零。
+ */
 export async function scheduleVideoTaskRetry(
   email: string,
   id: string,
   delaySeconds: number,
-  errorMessage: string
-): Promise<void> {
+  errorMessage: string,
+  incrementTransientFailure = true,
+  completionPhase = false,
+  successfulPollPhase = false
+): Promise<number> {
   await ensureSchema();
-  await getPool().query(
+  const { rows } = await getPool().query<{ poll_attempts: number }>(
     `UPDATE app_video_tasks
         SET next_poll_at = now() + ($3 || ' seconds')::interval,
-            poll_attempts = poll_attempts + 1,
+            poll_attempts = CASE
+              WHEN $6 AND result_observed_at IS NULL THEN 1
+              WHEN $7 THEN 1
+              WHEN $5 THEN poll_attempts + 1
+              ELSE 0
+            END,
+            result_observed_at = CASE
+              WHEN $6 THEN COALESCE(result_observed_at, now())
+              ELSE result_observed_at
+            END,
             error = $4,
+            error_code = CASE WHEN $6 THEN 'result_settlement_retry' ELSE error_code END,
             poll_lock_until = NULL,
             updated_at = now()
-      WHERE email = $1 AND id = $2`,
-    [email.toLowerCase(), id, Math.max(3, Math.trunc(delaySeconds)), errorMessage.slice(0, 500)]
+      WHERE email = $1 AND id = $2
+      RETURNING poll_attempts`,
+    [
+      email.toLowerCase(),
+      id,
+      Math.max(3, Math.trunc(delaySeconds)),
+      errorMessage.slice(0, 500),
+      incrementTransientFailure,
+      completionPhase,
+      successfulPollPhase,
+    ]
   );
+  return Number(rows[0]?.poll_attempts ?? 0);
+}
+
+// ── 画布图片编辑后台任务 ──────────────────────────────────────────────────
+
+export type CanvasImageTaskRow = {
+  id: string;
+  email: string;
+  kind: "text-edit";
+  sourceArtworkId: string;
+  parameters: Record<string, unknown>;
+  status: "queued" | "processing" | "completed" | "failed";
+  progress: number;
+  cost: number;
+  resultArtworkId: string;
+  error: string;
+  attempts: number;
+  createdAt: string;
+  completedAt?: string;
+};
+
+function mapCanvasImageTask(r: Record<string, unknown>): CanvasImageTaskRow {
+  return {
+    id: String(r.id),
+    email: String(r.email),
+    kind: "text-edit",
+    sourceArtworkId: String(r.source_artwork_id),
+    parameters: (r.parameters ?? {}) as Record<string, unknown>,
+    status: (r.status as CanvasImageTaskRow["status"]) || "queued",
+    progress: Number(r.progress || 0),
+    cost: Number(r.cost || 0),
+    resultArtworkId: String(r.result_artwork_id || ""),
+    error: String(r.error || ""),
+    attempts: Number(r.attempts || 0),
+    createdAt: r.created_at ? new Date(r.created_at as string).toISOString() : "",
+    completedAt: r.completed_at ? new Date(r.completed_at as string).toISOString() : undefined,
+  };
+}
+
+export async function createCanvasImageTask(input: {
+  id: string;
+  email: string;
+  sourceArtworkId: string;
+  parameters: unknown;
+  cost: number;
+}): Promise<CanvasImageTaskRow> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `INSERT INTO app_canvas_image_tasks
+       (id, email, kind, source_artwork_id, parameters, cost)
+     VALUES ($1,$2,'text-edit',$3,$4::jsonb,$5)
+     RETURNING *`,
+    [input.id, input.email.toLowerCase(), input.sourceArtworkId, JSON.stringify(input.parameters ?? {}), input.cost]
+  );
+  return mapCanvasImageTask(rows[0] as Record<string, unknown>);
+}
+
+/**
+ * Idempotently creates an image task and its credit reservation in one DB
+ * transaction. The advisory lock serializes concurrent requests carrying the
+ * same operation id, so only the creator can reserve credits or own cleanup.
+ */
+export async function createCanvasImageTaskWithReservation(input: {
+  id: string;
+  email: string;
+  sourceArtworkId: string;
+  parameters: unknown;
+  cost: number;
+  metered: boolean;
+}): Promise<{ task: CanvasImageTaskRow; created: boolean }> {
+  await ensureSchema();
+  const email = input.email.toLowerCase();
+  if (input.metered && input.cost > 0) await expireDueBatches(email);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`canvas-image-task:${input.id}`]);
+    const existing = await client.query(
+      `SELECT * FROM app_canvas_image_tasks WHERE email = $1 AND id = $2`,
+      [email, input.id]
+    );
+    if (existing.rows[0]) {
+      await client.query("COMMIT");
+      return { task: mapCanvasImageTask(existing.rows[0] as Record<string, unknown>), created: false };
+    }
+    if (input.metered && input.cost > 0) {
+      const reserved = await client.query(
+        `UPDATE app_users u
+            SET credits_used = credits_used + $2
+          WHERE u.email = $1
+            AND (SELECT COALESCE(SUM(remaining),0) FROM app_credit_batches b
+                  WHERE b.email = u.email AND b.expires_at > now() AND b.remaining > 0)
+                - u.credits_used >= $2`,
+        [email, input.cost]
+      );
+      if ((reserved.rowCount ?? 0) === 0) throw new Error("积分不足，请升级方案后重试");
+    }
+    await client.query(
+      `INSERT INTO app_gen_reservations (job_id, email, cost) VALUES ($1, $2, $3)`,
+      [input.id, email, input.cost]
+    );
+    const created = await client.query(
+      `INSERT INTO app_canvas_image_tasks
+         (id, email, kind, source_artwork_id, parameters, cost)
+       VALUES ($1,$2,'text-edit',$3,$4::jsonb,$5)
+       RETURNING *`,
+      [input.id, email, input.sourceArtworkId, JSON.stringify(input.parameters ?? {}), input.cost]
+    );
+    await client.query("COMMIT");
+    return { task: mapCanvasImageTask(created.rows[0] as Record<string, unknown>), created: true };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getCanvasImageTask(email: string, id: string): Promise<CanvasImageTaskRow | null> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT * FROM app_canvas_image_tasks WHERE email = $1 AND id = $2`,
+    [email.toLowerCase(), id]
+  );
+  return rows[0] ? mapCanvasImageTask(rows[0] as Record<string, unknown>) : null;
+}
+
+export async function listCanvasImageTasks(email: string, limit = 50, sourceArtworkIds: string[] = []): Promise<CanvasImageTaskRow[]> {
+  await ensureSchema();
+  const sourceIds = Array.from(new Set(sourceArtworkIds.filter(Boolean))).slice(0, 500);
+  const { rows } = await getPool().query(
+    `SELECT * FROM app_canvas_image_tasks
+      WHERE email = $1
+        AND ($3::text[] = '{}'::text[] OR source_artwork_id = ANY($3::text[]))
+      ORDER BY created_at DESC LIMIT $2`,
+    [email.toLowerCase(), Math.min(Math.max(limit, 1), 500), sourceIds]
+  );
+  return rows.map((row) => mapCanvasImageTask(row as Record<string, unknown>));
+}
+
+/** Atomically leases one queued/recoverable edit. A crashed worker can be reclaimed. */
+export async function claimNextCanvasImageTask(leaseSeconds = 330): Promise<CanvasImageTaskRow | null> {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `WITH candidate AS (
+       SELECT id FROM app_canvas_image_tasks
+        WHERE status IN ('queued','processing')
+          AND (lease_until IS NULL OR lease_until < now())
+          AND attempts < 3
+        ORDER BY created_at
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1
+     )
+     UPDATE app_canvas_image_tasks task
+        SET status = 'processing', progress = GREATEST(progress, 5),
+            attempts = attempts + 1,
+            lease_until = now() + ($1 || ' seconds')::interval,
+            error = '', updated_at = now()
+       FROM candidate
+      WHERE task.id = candidate.id
+     RETURNING task.*`,
+    [Math.max(30, Math.trunc(leaseSeconds))]
+  );
+  return rows[0] ? mapCanvasImageTask(rows[0] as Record<string, unknown>) : null;
+}
+
+export async function updateCanvasImageTaskProgress(id: string, progress: number): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `UPDATE app_canvas_image_tasks
+        SET progress = $2, lease_until = now() + interval '330 seconds', updated_at = now()
+      WHERE id = $1 AND status = 'processing'`,
+    [id, Math.max(0, Math.min(95, Math.trunc(progress)))]
+  );
+  await touchReservation(id).catch(() => {});
+}
+
+export async function retryCanvasImageTask(input: { id: string; email: string; error: string; delaySeconds?: number }): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `UPDATE app_canvas_image_tasks
+        SET status = 'queued', progress = LEAST(progress, 20), error = $3,
+            lease_until = now() + ($4 || ' seconds')::interval, updated_at = now()
+      WHERE email = $1 AND id = $2 AND status = 'processing'`,
+    [input.email.toLowerCase(), input.id, input.error.slice(0, 1000), Math.max(2, input.delaySeconds ?? 8)]
+  );
+  await touchReservation(input.id).catch(() => {});
+}
+
+/** Complete + exact charge + deterministic ledger in one transaction. */
+export async function completeCanvasImageTask(input: {
+  id: string;
+  email: string;
+  resultArtworkId: string;
+}): Promise<void> {
+  await ensureSchema();
+  const email = input.email.toLowerCase();
+  const meterOn = await creditMeteringEnabled();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const locked = await client.query<{ status: string; cost: number }>(
+      `SELECT status, cost FROM app_canvas_image_tasks WHERE email = $1 AND id = $2 FOR UPDATE`,
+      [email, input.id]
+    );
+    const task = locked.rows[0];
+    if (!task) throw new Error("图片编辑任务不存在");
+    if (task.status !== "completed" && meterOn && Number(task.cost) > 0) {
+      const ledgerId = `led-canvas-image-${input.id}`;
+      const seen = await client.query(`SELECT 1 FROM app_ledger WHERE id = $1`, [ledgerId]);
+      if (!(seen.rowCount ?? 0)) {
+        await deductPrincipalFIFO(client, email, Number(task.cost));
+        await client.query(
+          `UPDATE app_users SET credits_used = GREATEST(credits_used - $2, 0) WHERE email = $1`,
+          [email, Number(task.cost)]
+        );
+        await client.query(
+          `INSERT INTO app_ledger (id, email, delta, reason, kind)
+           VALUES ($1,$2,$3,'画布在线改字','consume')`,
+          [ledgerId, email, -Number(task.cost)]
+        );
+      }
+    }
+    await client.query(
+      `UPDATE app_canvas_image_tasks SET status = 'completed', progress = 100,
+          result_artwork_id = $3, error = '', lease_until = NULL,
+          completed_at = now(), updated_at = now()
+        WHERE email = $1 AND id = $2`,
+      [email, input.id, input.resultArtworkId]
+    );
+    await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+  if (meterOn) await refreshBalance(email).catch(() => {});
+}
+
+export async function failCanvasImageTask(input: { id: string; email: string; error: string }): Promise<void> {
+  await ensureSchema();
+  const email = input.email.toLowerCase();
+  const meterOn = await creditMeteringEnabled();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const locked = await client.query<{ status: string; cost: number; credits_refunded: boolean }>(
+      `SELECT status, cost, credits_refunded FROM app_canvas_image_tasks
+        WHERE email = $1 AND id = $2 FOR UPDATE`,
+      [email, input.id]
+    );
+    const task = locked.rows[0];
+    if (!task) throw new Error("图片编辑任务不存在");
+    if (task.status !== "completed" && !task.credits_refunded && meterOn && Number(task.cost) > 0) {
+      await client.query(
+        `UPDATE app_users SET credits_used = GREATEST(credits_used - $2, 0) WHERE email = $1`,
+        [email, Number(task.cost)]
+      );
+    }
+    if (task.status !== "completed") {
+      await client.query(
+        `UPDATE app_canvas_image_tasks SET status = 'failed', error = $3,
+            credits_refunded = true, lease_until = NULL, updated_at = now()
+          WHERE email = $1 AND id = $2`,
+        [email, input.id, input.error.slice(0, 1000)]
+      );
+    }
+    await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

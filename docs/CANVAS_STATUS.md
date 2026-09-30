@@ -1,6 +1,32 @@
 # 画布功能状态
 
-更新日期：2026-09-29
+更新日期：2026-09-30
+
+## 2026-09-30：金山文档未完成项与视频可靠性闭环
+
+- OCR、整图改字、Explorer/Finder 批量粘贴、右键批量选择、批量生图/生文、多图合并、48px 新增按钮、4/5px 连接线和自适应 Dock 已完成。
+- 图片改字任务持久化到 PostgreSQL，由独立 Worker 租约执行；关闭面板、刷新和重新进入项目后继续恢复，扣费、结算和退款幂等。
+- 视频任务改为短事务原子预建与 reservation，供应商幂等域完整快照；模糊创建且不可安全重提时进入 `needs_attention`，画布和工作台停止虚假进度并提供核对入口。
+- 视频结果采用 200MiB 流式限制，启用媒体存储时不构造 Base64 副本；本地媒体支持 Range/206，普通用户任务 API 使用白名单 DTO 脱敏。
+- 完整验收矩阵与命令见 `docs/KDOCS_CANVAS_REQUIREMENTS_2026-09-30.md` 和 `output/kdocs-canvas-completion-transaction/VERIFICATION.txt`。
+
+## 2026-09-30：系统文件批量粘贴与右键批量闭环
+
+### 已实现
+
+- 系统截图、Windows Explorer 和 macOS Finder 复制的单张/多张图片统一进入既有批量导入管线；原生文件对象缺失 MIME 时按 `.png/.jpg/.jpeg/.webp` 扩展名识别，仍由后续上传校验控制格式、大小和空文件边界。
+- 剪贴板同时暴露 `DataTransfer.items` 与 `DataTransfer.files` 时优先使用完整的文件 item 集合，避免同一批文件被重复导入。
+- 普通右键未选图片节点会先单选；`Ctrl/Command + 右键` 可直接加入或移出批量选择。
+- 单节点右键菜单新增“加入批量选择”，会恢复右键前的选择并加入当前节点；批量右键菜单新增“移出批量选择”。
+- 已选图片组内右键直接显示成组/解组、合并生成节点、批量运行生图/生文、拼接、标记、下载和删除，保持原有框选与批量操作栏不变。
+- “合并生成节点”继续复用现有空白生成节点、`@` 引用、连线、`sourceIds`、`parentId/parentIds` 和 `/api/generate-image`，没有新增平行画布或重复生成 API。
+
+### 验证
+
+- `node scripts/canvas-batch-workflow-contract.mjs`：20 项契约通过，覆盖空 MIME 文件、多文件去重回退、双端修饰键、菜单动作、批量运行和多输入血缘。
+- `node scripts/canvas-batch-upload-smoke.mjs`：临时 PostgreSQL + 真实 Chrome 共 22 项通过；覆盖空 MIME 三图批量粘贴、单图/多图连续粘贴、右键加入/移出、修饰键右键切换和完整批量菜单。
+- `node scripts/canvas-desktop-input-smoke.mjs`：9 项桌面输入契约通过。
+- `npx tsc --noEmit`：退出码 0。
 
 ## 2026-09-29：底部 Dock 升级为 Photoshop 式工具栏
 
@@ -10,6 +36,69 @@
 - 更多工具集中整理画布、小地图、网格吸附、适应视图、底色和快捷键帮助。
 - 节点 Dock、小地图和批量操作栏增加底部安全区；390px 窄屏采用紧凑按钮并与工具栏保持分离。
 - 实现与验证记录：`docs/CANVAS_PHOTOSHOP_TOOL_PALETTE_2026-09-29.md`。
+
+## 2026-09-29：混合多选拖动与媒体控件隔离
+
+### 已实现
+
+- React Flow 从某个已选节点开始拖动时，改为读取 `onNodeDragStart/onNodeDragStop` 的整组节点参数，不再依赖该路径不会触发的 `onSelectionDragStop`。
+- 混合选择中的图片节点继续写入 `/api/artworks/position`，文字节点改为写入 `/api/canvas/text-nodes`；一次拖动只生成一条 `move-many`，撤销、重做和刷新恢复都按节点类型还原。
+- 视频播放器、音频原生控件、时间轴、抽帧/音轨、播放和预览按钮统一隔离 React Flow 的节点拖动、画布滚轮与全局快捷键。
+- 选中的视频表面可聚焦，空格只切换当前视频播放，不再同时触发 React Flow 的 Space 平移；Windows/macOS Chrome UA 均覆盖鼠标拖动、滚轮、时间轴和键盘回归。
+
+### 验证
+
+- `node scripts/canvas-text-multiselect-smoke.mjs`：混合多选等量移动、接口分流、撤销、重做和刷新恢复通过。
+- `node scripts/canvas-media-controls-smoke.mjs`：媒体控件静态契约通过。
+- `node scripts/canvas-media-controls-browser-smoke.mjs`：真实 Chrome 中节点位置与 React Flow viewport 在媒体交互前后保持不变。
+
+## 2026-09-29：生产发布补齐独立视频 Worker
+
+### 已实现
+
+- `deploy-release.sh` 在继承旧生产 Compose 的端口、卷和机密覆盖时，会幂等补齐 `NAUMI_VIDEO_WORKER=0`、Worker 内部鉴权、视频模型列表和多供应商配置透传。
+- 老发布没有 `video-worker` 服务时，发布脚本自动增加独立 Worker；前向发布同时启动并核验 `app + video-worker` 的运行状态和镜像版本。
+- 回滚到不含 Worker 的旧发布时，会先停止并移除新 Worker，再恢复旧 app；回滚到已含 Worker 的发布时，两项服务一起恢复。
+- Worker 密钥只写入发布目录的 `.env`，缺失或仍为默认值时生成随机值，验证日志不输出密钥正文。
+
+### 验证
+
+- `node scripts/deploy-release-compose-smoke.mjs`：真实临时 legacy Compose 覆盖端口/卷/机密保留、字段补齐、Worker 增加、二次执行幂等和回滚分支。
+- `bash -n scripts/deploy-release.sh`、`docker compose config --quiet`、`git diff --check` 通过。
+
+## 2026-09-29：画布剪贴板路由冲突修复
+
+### 已实现
+
+- `Cmd/Ctrl+V` 不再在 `keydown` 阶段直接复制内存节点；所有粘贴统一进入 `paste` 事件，并先检查真实剪贴板 MIME。
+- 系统剪贴板包含 `image/*` 时优先走既有批量导入管线，即使此前复制过画布节点，也不会错误复制旧节点。
+- `input`、`textarea`、`contenteditable` 与 `role=textbox` 保留浏览器原生纯文本粘贴；画布节点复制写入专用 MIME 与 HTML 标记，只有匹配标记时才复制内部节点。
+- 画布节点 `copy` 改为一次性意图：取消节点选择或选中普通网页文本后，后续系统复制不会再被旧节点标记劫持。
+- 登录加载态以及弹窗、遮罩、portal 编辑层打开时，窗口级粘贴监听直接放行上层界面，不触发底层图片导入。
+- paste 监听提升到 `window`，覆盖点击 React Flow 空白区域后焦点仍停留在 `body` 的桌面浏览器行为。
+- 选中文字节点时打开左下角缩放菜单会临时提升其层级，菜单项不再被提示词 Dock 或批量操作栏遮挡。
+
+### 验证
+
+- `node scripts/canvas-desktop-input-smoke.mjs`：静态契约覆盖图片优先、输入框/portal 放行、一次性复制意图和内部节点标记路由。
+- `node scripts/canvas-text-node-smoke.mjs`：真实 Chrome 流程增加“内部复制后粘系统截图”“输入框纯文本粘贴”“内部节点复制粘贴”“取消选择后复制普通网页文本”“portal 打开时禁止底层图片导入”组合回归。
+- macOS Chrome UA 回归不等同实体 Mac；部署后仍需在 Mac Safari/Chrome 与 Windows Chrome/Edge 分别复验系统截图 MIME 和真实 `Cmd/Ctrl` 快捷键。
+
+## 2026-09-29：Windows / macOS 响应式 Dock 与批量栏
+
+### 已实现
+
+- 选中节点 Dock、节点工具条和展开文字编辑器统一遵守顶部、左右、底部 safe area；窗口缩放时只平移 React Flow viewport，不修改节点坐标和用户缩放。
+- 1093×614 等低高度宽窗口会在横向空间允许时把 Dock 推到左下视图工具条右侧，避免 Dock、节点工具条和节点主体互相覆盖。
+- 单选文字节点只保留单节点工具条与 Dock，不再重复显示批量栏；多选两个以上文字节点时隐藏单节点浮层，批量栏固定在视图工具条上方并保持视口内。
+- 居中批量栏使用独立入场动画，修复原 `transform: none` 覆盖 `translateX(-50%)` 后从屏幕中线向右越界的问题。
+- 缩放菜单打开时提升左下视图工具条层级，`缩放至50%` 等菜单项不会再被文字 Dock 拦截。
+
+### 验证
+
+- `node scripts/canvas-responsive-dock-smoke.mjs`：macOS / Windows Chrome UA × 6 档视口全部通过，并覆盖 390×844 双文字节点多选栏。
+- `node scripts/canvas-text-node-smoke.mjs`：12 项完整文字节点、剪贴板、缩放菜单、引用生成与持久化流程通过。
+- 当前自动化为浏览器 UA 与真实 Chrome 布局验收；实体 Mac Safari/Chrome 的真实 Command 键、触控板惯性和系统 ClipboardItem MIME 仍需真机复验。
 
 ## 2026-09-24：文字编辑器拉伸改为扩大文字视野
 

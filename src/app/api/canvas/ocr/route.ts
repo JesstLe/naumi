@@ -12,118 +12,48 @@ import { toVisionDataUrl } from "@/lib/vision-image";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { safeError } from "@/lib/api-error";
+import { collectPaddleRows, normalizeOcrSegments, scaleOcrSegments } from "@/lib/canvas-ocr";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-type Box = { x: number; y: number; width: number; height: number };
-type OcrSegment = { text: string; confidence: number; box: Box };
-
-function finite(value: unknown) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
-}
-
-function boxFromUnknown(value: unknown): Box | null {
-  if (Array.isArray(value) && value.length >= 4 && value.every((item) => !Array.isArray(item))) {
-    const [x, y, width, height] = value.map(finite);
-    return { x, y, width, height };
-  }
-  if (Array.isArray(value) && value.length >= 2 && value.every(Array.isArray)) {
-    const points = value as unknown[][];
-    const xs = points.map((point) => finite(point[0]));
-    const ys = points.map((point) => finite(point[1]));
-    return {
-      x: Math.min(...xs),
-      y: Math.min(...ys),
-      width: Math.max(...xs) - Math.min(...xs),
-      height: Math.max(...ys) - Math.min(...ys),
-    };
-  }
-  if (value && typeof value === "object") {
-    const box = value as Record<string, unknown>;
-    const x = finite(box.x ?? box.left);
-    const y = finite(box.y ?? box.top);
-    const width = finite(box.width ?? (finite(box.right) - x));
-    const height = finite(box.height ?? (finite(box.bottom) - y));
-    return { x, y, width, height };
-  }
-  return null;
-}
-
-function normalizeSegments(input: unknown, imageWidth: number, imageHeight: number): OcrSegment[] {
-  const source = Array.isArray(input)
-    ? input
-    : input && typeof input === "object"
-      ? ((input as Record<string, unknown>).segments ||
-          (input as Record<string, unknown>).results ||
-          (input as Record<string, unknown>).result ||
-          [])
-      : [];
-  if (!Array.isArray(source)) return [];
-  return source
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const row = item as Record<string, unknown>;
-      const text = String(row.text ?? row.transcription ?? row.label ?? "").trim();
-      const rawBox = boxFromUnknown(row.box ?? row.bbox ?? row.points ?? row.position);
-      if (!text || !rawBox) return null;
-      const x = Math.max(0, Math.min(imageWidth - 1, Math.round(rawBox.x)));
-      const y = Math.max(0, Math.min(imageHeight - 1, Math.round(rawBox.y)));
-      const width = Math.max(1, Math.min(imageWidth - x, Math.round(rawBox.width)));
-      const height = Math.max(1, Math.min(imageHeight - y, Math.round(rawBox.height)));
-      return {
-        text: text.slice(0, 300),
-        confidence: Math.max(0, Math.min(1, finite(row.confidence ?? row.score ?? 1))),
-        box: { x, y, width, height },
-      };
-    })
-    .filter((segment): segment is OcrSegment => Boolean(segment))
-    .slice(0, 80);
-}
-
-function collectPaddleRows(body: unknown): unknown[] {
-  if (Array.isArray(body)) return body;
-  if (!body || typeof body !== "object") return [];
-  const value = body as Record<string, unknown>;
-  const direct = value.segments || value.results || value.result || value.data;
-  if (Array.isArray(direct)) {
-    const first = direct[0] as Record<string, unknown> | undefined;
-    if (first && Array.isArray(first.rec_texts) && Array.isArray(first.rec_boxes)) {
-      return first.rec_texts.map((text, index) => ({
-        text,
-        confidence: Array.isArray(first.rec_scores) ? first.rec_scores[index] : 1,
-        box: (() => {
-          const raw = (first.rec_boxes as unknown[])[index];
-          if (!Array.isArray(raw) || raw.length < 4) return raw;
-          const [x1, y1, x2, y2] = raw.map(finite);
-          return { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) };
-        })(),
-      }));
-    }
-    return direct;
-  }
-  if (direct && typeof direct === "object") return collectPaddleRows(direct);
-  return [];
-}
-
 async function paddleOcr(buffer: Buffer, mimeType: string) {
   const endpoint = (process.env.PADDLE_OCR_BASE_URL || "").trim();
   if (!endpoint) return null;
-  const form = new FormData();
-  form.append("file", new File([new Uint8Array(buffer)], "canvas-image.png", { type: mimeType }));
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: process.env.PADDLE_OCR_API_KEY
-      ? { Authorization: `Bearer ${process.env.PADDLE_OCR_API_KEY}` }
-      : undefined,
-    body: form,
-    signal: AbortSignal.timeout(45_000),
-  });
-  const raw = await response.text();
-  if (!response.ok) throw new Error(`PaddleOCR 返回 ${response.status}：${raw.slice(0, 240)}`);
-  return collectPaddleRows(JSON.parse(raw));
+  const timeoutMs = Math.max(5_000, Math.min(120_000, Number(process.env.PADDLE_OCR_TIMEOUT_MS) || 35_000));
+  const maxAttempts = Math.max(1, Math.min(4, Number(process.env.PADDLE_OCR_MAX_ATTEMPTS) || 2));
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const form = new FormData();
+      form.append("file", new File([new Uint8Array(buffer)], "canvas-image.png", { type: mimeType }));
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: process.env.PADDLE_OCR_API_KEY
+          ? { Authorization: `Bearer ${process.env.PADDLE_OCR_API_KEY}` }
+          : undefined,
+        body: form,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const raw = await response.text();
+      if (!response.ok) {
+        const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+        const error = new Error(`PaddleOCR 返回 ${response.status}：${raw.slice(0, 240)}`);
+        if (!retryable) throw error;
+        lastError = error;
+      } else {
+        let parsed: unknown;
+        try { parsed = JSON.parse(raw); } catch { throw new Error("PaddleOCR 返回了无效 JSON"); }
+        return { rows: collectPaddleRows(parsed), attempts: attempt };
+      }
+    } catch (error) {
+      lastError = error;
+      if (error instanceof Error && /返回 4\d\d/.test(error.message) && !/返回 (408|429)/.test(error.message)) throw error;
+    }
+    if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 350 * attempt));
+  }
+  throw lastError instanceof Error ? lastError : new Error("PaddleOCR 请求失败");
 }
 
 async function visionOcr(buffer: Buffer, width: number, height: number, model: string) {
@@ -184,6 +114,7 @@ async function visionOcr(buffer: Buffer, width: number, height: number, model: s
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   const email = await authenticatedEmail(request);
   if (dbEnabled && !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if (!rateLimit(`canvas-ocr:${clientIp(request) || "0.0.0.0"}`, 30, 10 * 60 * 1000)) {
@@ -209,12 +140,19 @@ export async function POST(request: Request) {
     let engine = "paddleocr";
     let raw: unknown;
     let scanSize: { width: number; height: number } | null = null;
+    let paddleAttempts = 0;
+    let fallbackReason = "";
     try {
-      raw = await paddleOcr(image.buffer, image.mimeType);
-      if (!raw) throw new Error("PaddleOCR 未配置");
+      const paddle = await paddleOcr(image.buffer, image.mimeType);
+      if (!paddle) throw new Error("PaddleOCR 未配置");
+      raw = paddle.rows;
+      paddleAttempts = paddle.attempts;
+      if (!paddle.rows.length) throw new Error("PaddleOCR 返回空结果");
     } catch (error) {
       if (process.env.PADDLE_OCR_REQUIRED === "true") throw error;
       engine = "vision-fallback";
+      fallbackReason = safeError(error, "PaddleOCR 暂不可用").slice(0, 160);
+      console.warn(`[canvas-ocr] paddle fallback artwork=${artworkId} reason=${fallbackReason}`);
       const vision = await visionOcr(
         image.buffer,
         width,
@@ -227,26 +165,23 @@ export async function POST(request: Request) {
       raw = vision.raw;
       scanSize = { width: vision.scanWidth, height: vision.scanHeight };
     }
-    let segments = normalizeSegments(raw, scanSize?.width ?? width, scanSize?.height ?? height);
+    const minConfidence = Math.max(0, Math.min(1, Number(process.env.PADDLE_OCR_MIN_CONFIDENCE) || 0.12));
+    let segments = normalizeOcrSegments(raw, scanSize?.width ?? width, scanSize?.height ?? height, {
+      minConfidence: engine === "paddleocr" ? minConfidence : 0,
+      maxSegments: 500,
+    });
     if (scanSize) {
-      const scaleX = width / scanSize.width;
-      const scaleY = height / scanSize.height;
-      segments = segments.map((segment) => ({
-        ...segment,
-        box: {
-          x: Math.round(segment.box.x * scaleX),
-          y: Math.round(segment.box.y * scaleY),
-          width: Math.max(1, Math.round(segment.box.width * scaleX)),
-          height: Math.max(1, Math.round(segment.box.height * scaleY)),
-        },
-      }));
+      segments = scaleOcrSegments(segments, scanSize, { width, height });
     }
     if (!segments.length) throw new Error("未识别到可编辑文字，请换一张更清晰的图片重试");
+    const elapsedMs = Date.now() - startedAt;
+    console.info(`[canvas-ocr] artwork=${artworkId} engine=${engine} segments=${segments.length} attempts=${paddleAttempts} elapsed=${elapsedMs}ms`);
     return NextResponse.json({
       ok: true,
       engine,
       image: { width, height },
       segments: segments.map((segment, index) => ({ id: `ocr-${index + 1}`, ...segment })),
+      diagnostics: { elapsedMs, paddleAttempts, fallback: engine !== "paddleocr", fallbackReason },
     });
   } catch (error) {
     return NextResponse.json(

@@ -105,3 +105,10 @@ export class TransientPollError extends Error {
     this.name = "TransientPollError";
   }
 }
+
+export class PermanentVideoCreateError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "PermanentVideoCreateError";
+  }
+}

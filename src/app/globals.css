@@ -400,15 +400,15 @@
   filter: drop-shadow(0 0 6px rgba(90, 166, 255, .95));
 }
 /* ── 自定义彗星连线(CometEdge):对齐原型 cw-tail/body/head/spark ── */
-.react-flow__edge path.cw-base { stroke: rgba(255,255,255,.45); stroke-width: 3.2; fill: none; }
+.react-flow__edge path.cw-base { stroke: rgba(255,255,255,.5); stroke-width: 4; fill: none; }
 .react-flow__edge path.cw-dim2 { stroke: rgba(255,255,255,.18); }
 .react-flow__edge path.cw-on {
-  stroke: rgba(220,236,255,.85); stroke-width: 3.4;
+  stroke: rgba(220,236,255,.9); stroke-width: 4.4;
   filter: drop-shadow(0 0 4px rgba(104,160,255,.6));
 }
 /* 连线选中(RF 点击选中):teal 高亮加粗,提示 Delete 可剪断 */
 .react-flow__edge.selected path.cw-base {
-  stroke: #6bd7ec; stroke-width: 4.2;
+  stroke: #315fc8; stroke-width: 5;
   filter: drop-shadow(0 0 7px rgba(107,215,236,.75));
 }
 .react-flow__edge path.cw-comet { fill: none; stroke-linecap: round; animation: cflow 1.35s linear infinite; }
@@ -421,7 +421,7 @@
 .react-flow__edge { cursor: pointer; }
 .react-flow__edge:hover path.cw-base {
   stroke: rgba(235, 244, 255, .82);
-  stroke-width: 2.8;
+  stroke-width: 4.2;
   filter: drop-shadow(0 0 6px rgba(134, 193, 255, .6));
 }
 /* 显式框选模式:左键拖出选择框，部分覆盖节点也会选中；中键仍可平移。 */
@@ -536,7 +536,7 @@
   color: var(--canvas-ui-text) !important;
 }
 .canvas-ui-node-card:not(.canvas-ui-selected) { border-color: var(--canvas-ui-border) !important; }
-.canvas-ui-node-card.canvas-ui-selected { border-color: #6366f1 !important; }
+.canvas-ui-node-card.canvas-ui-selected { border-color: #315fc8 !important; }
 .canvas-ui-port {
   border-color: var(--canvas-ui-border-strong) !important;
   background: var(--canvas-ui-panel-solid) !important;
@@ -581,8 +581,10 @@
 /* 顶部工具条入场:保留 translateX(-50%) 自居中(配合元素上的 -translate-x-1/2),只动 Y */
 @keyframes cz-inT { from { opacity: 0; transform: translate(-50%, -22px); } to { opacity: 1; transform: translateX(-50%); } }
 @keyframes cz-inB { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+@keyframes cz-inBC { from { opacity: 0; transform: translateX(-50%); } to { opacity: 1; transform: translateX(-50%); } }
 .cz-anim-top { animation: cz-inT 0.24s both; }
 .cz-anim-bottom { animation: cz-inB 0.26s both; }
+.cz-anim-bottom-center { animation: cz-inBC 0.26s both; }
 /* 弹出菜单入场(大厂式:淡入 + 轻微缩放,从锚点方向长出)。复用:
    .menu-pop(右键/光标处,origin 左上)·.menu-pop-up(向上弹,origin 底部)·.menu-pop-down(向下弹,origin 顶部) */
 @keyframes menu-pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
@@ -593,7 +595,8 @@
   .menu-pop, .menu-pop-up, .menu-pop-down { animation: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cz-anim-top, .cz-anim-bottom { animation: none; }
+  .cz-anim-top, .cz-anim-bottom, .cz-anim-bottom-center { animation: none; }
+  .cz-anim-bottom-center { transform: translateX(-50%); }
 }
 
 /* ── 设计系统动效 (spec A.6) ──────────────────────────────────────────────
