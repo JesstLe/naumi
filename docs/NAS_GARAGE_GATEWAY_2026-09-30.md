@@ -6,7 +6,7 @@
 - Garage 只监听 NAS 本机 `127.0.0.1:3900`，未开放路由器公网端口。
 - NAS 使用受限 SSH 反向隧道，把 Garage 暴露为 Naumi 主机 Docker 网关 `172.17.0.1:3900`。
 - 公网主机的授权密钥仅允许端口转发，并限制监听地址及端口，不能登录 shell。
-- 隧道由 NAS 监督脚本保持，DSM 任务计划每 15 分钟检查一次。
+- 隧道由 NAS 监督脚本保持，DSM 任务计划当前每小时整点检查一次；监督脚本为 SSH 设置 10 秒连接超时，避免卡死进程长期误占 PID。
 - Naumi 使用通用 S3-compatible 配置，不写死 Garage，后续可以切换 MinIO、OSS、COS 或 R2。
 
 ## Naumi 配置
@@ -45,3 +45,36 @@ S3_PUBLIC_BASE_URL=
 - `/media/<key>` 在 S3 模式下直接流式代理 Garage 响应，不再把整张图片读入 Node Buffer 后再返回。
 - 画布引用、竞品分析、套图下载、视频抽帧与模板缓存均通过统一存储接口读取，切换 Garage 后不依赖本机 `MEDIA_DIR`。
 - `scripts/verify-storage-driver.ts` 对本地盘及真实 S3 网关执行上传、读取、Range、删除闭环测试。
+
+## 不影响现网的迁移方式
+
+生产应用在迁移期间继续使用 `STORAGE_DRIVER=local`，旧媒体卷保持原样，不边迁移边切换读取来源。后台复制改用固定版本的 rclone，并施加四层约束：
+
+- 单传输、单检查器，带宽默认限制为 `96K`；
+- 容器限制为 `0.15 CPU / 128MB RAM / 192MB RAM+Swap`；
+- 每 15 秒检查一次 Naumi 本机健康、可用内存和系统盘；连续两次健康失败或资源不足会自动停止；
+- 迁移容器无重启策略，服务器重启后不会自行继续。
+
+服务器执行：
+
+```bash
+bash scripts/run-storage-migration-safe.sh prepare
+bash scripts/run-storage-migration-safe.sh start
+bash scripts/run-storage-migration-safe.sh status
+```
+
+复制可重复执行，Garage 中尺寸相同的对象会跳过。后台全量复制完成后执行：
+
+```bash
+bash scripts/run-storage-migration-safe.sh verify
+```
+
+验证通过后再做一次低峰增量同步；只有增量与尺寸核对均通过，才短暂重启应用并切换 `STORAGE_DRIVER=s3`。切换前不删除服务器原媒体卷，回滚时恢复本地驱动即可。
+
+低峰增量命令：
+
+```bash
+bash scripts/run-storage-migration-safe.sh incremental
+bash scripts/run-storage-migration-safe.sh verify
+bash scripts/run-storage-migration-safe.sh rollback-check
+```
