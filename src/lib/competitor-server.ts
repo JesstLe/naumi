@@ -1,11 +1,9 @@
 import "server-only";
-import { readFile } from "fs/promises";
-import path from "path";
 import sharp from "sharp";
 import OpenAI from "openai";
 import { authenticatedEmail } from "./request-auth";
 import { dbEnabled, getCompetitorItem, isBanned } from "./db";
-import { MEDIA_DIR, isManagedImageUrl } from "./storage";
+import { isManagedImageUrl, readManagedObject } from "./storage";
 import { getOpenAISettings } from "./settings";
 import { getOpenAIBaseUrl } from "./openai-base";
 import { toVisionDataUrl } from "./vision-image";
@@ -41,17 +39,7 @@ export function checkVersion(item: CompetitorItem, version: string) {
 /** Only URLs from owner-checked persisted records, never arbitrary user URLs. */
 export async function readCompetitorImage(source: string) {
   if (!isManagedImageUrl(source)) throw new WorkspaceError("图片来源无效");
-  let bytes: Buffer;
-  if (source.startsWith("/media/")) {
-    const file = path.resolve(MEDIA_DIR, source.slice(7));
-    const relative = path.relative(MEDIA_DIR, file);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) throw new WorkspaceError("图片路径无效");
-    bytes = await readFile(file);
-  } else {
-    const r = await fetch(source, { redirect: "error", signal: AbortSignal.timeout(30000) });
-    if (!r.ok) throw new WorkspaceError("读取图片失败");
-    bytes = Buffer.from(await r.arrayBuffer());
-  }
+  const { bytes } = await readManagedObject(source, 12 * 1024 * 1024);
   return sharp(bytes, { limitInputPixels: 24_000_000 }).rotate().png().toBuffer();
 }
 export async function normalizeUpload(file: File) {

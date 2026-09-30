@@ -1,12 +1,12 @@
 import crypto from "crypto";
-import { mkdir, readFile, rm, writeFile } from "fs/promises";
+import { mkdir, rm, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import { spawn } from "child_process";
 import { NextResponse } from "next/server";
 
 import { authenticatedEmail } from "@/lib/request-auth";
-import { MEDIA_DIR, uploadImage } from "@/lib/storage";
+import { isManagedImageUrl, readManagedObject, uploadImage } from "@/lib/storage";
 import { addArtworks, dbEnabled, listArtworksByIds } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   const videoUrl = String(body?.videoUrl || "").trim();
   const kind = body?.kind === "audio" ? "audio" : "frame";
   const timestamp = Math.max(0, Math.min(3600, Number(body?.timestamp || 0)));
-  if (!videoUrl || (!videoUrl.startsWith("/media/") && !/^https?:\/\//i.test(videoUrl))) {
+  if (!videoUrl || (!isManagedImageUrl(videoUrl) && !/^https?:\/\//i.test(videoUrl))) {
     return NextResponse.json({ error: "视频地址无效" }, { status: 400 });
   }
   const id = crypto.randomUUID();
@@ -46,11 +46,9 @@ export async function POST(request: Request) {
   const inputPath = path.join(workDir, "input.mp4");
   try {
     await mkdir(workDir, { recursive: true });
-    if (videoUrl.startsWith("/media/")) {
-      const relative = videoUrl.slice("/media/".length).replaceAll("/", path.sep);
-      const resolved = path.resolve(MEDIA_DIR, relative);
-      if (!resolved.startsWith(path.resolve(MEDIA_DIR) + path.sep)) throw new Error("视频地址无效");
-      await writeFile(inputPath, await readFile(resolved));
+    if (isManagedImageUrl(videoUrl)) {
+      const object = await readManagedObject(videoUrl, 200 * 1024 * 1024);
+      await writeFile(inputPath, object.bytes);
     } else {
       const response = await fetch(videoUrl, { signal: AbortSignal.timeout(60_000) });
       if (!response.ok) throw new Error(`读取视频失败(${response.status})`);

@@ -95,12 +95,25 @@ upgrade_release_compose() {
   ensure_app_env "$compose" VIDEO_WORKER_SECRET '${VIDEO_WORKER_SECRET:-change-video-worker-secret}'
   ensure_app_env "$compose" VIDEO_API_MODELS '${VIDEO_API_MODELS:-}'
   ensure_app_env "$compose" VIDEO_PROVIDERS_JSON '${VIDEO_PROVIDERS_JSON:-}'
+  ensure_app_env "$compose" STORAGE_DRIVER '${STORAGE_DRIVER:-local}'
+  ensure_app_env "$compose" S3_ENDPOINT '${S3_ENDPOINT:-}'
+  ensure_app_env "$compose" S3_REGION '${S3_REGION:-us-east-1}'
+  ensure_app_env "$compose" S3_ACCESS_KEY_ID '${S3_ACCESS_KEY_ID:-}'
+  ensure_app_env "$compose" S3_SECRET_ACCESS_KEY '${S3_SECRET_ACCESS_KEY:-}'
+  ensure_app_env "$compose" S3_BUCKET '${S3_BUCKET:-}'
+  ensure_app_env "$compose" S3_FORCE_PATH_STYLE '${S3_FORCE_PATH_STYLE:-true}'
+  ensure_app_env "$compose" S3_PUBLIC_BASE_URL '${S3_PUBLIC_BASE_URL:-}'
   ensure_video_worker_service "$compose" "$commit"
   sed -i -E "s#image: ghcr.io/jesstle/naumi:[^ ]+#image: ghcr.io/jesstle/naumi:$commit#" "$compose"
   compose_app_has_env "$compose" NAUMI_VIDEO_WORKER
   compose_app_has_env "$compose" VIDEO_WORKER_SECRET
   compose_app_has_env "$compose" VIDEO_API_MODELS
   compose_app_has_env "$compose" VIDEO_PROVIDERS_JSON
+  compose_app_has_env "$compose" STORAGE_DRIVER
+  compose_app_has_env "$compose" S3_ENDPOINT
+  compose_app_has_env "$compose" S3_ACCESS_KEY_ID
+  compose_app_has_env "$compose" S3_SECRET_ACCESS_KEY
+  compose_app_has_env "$compose" S3_BUCKET
   grep -qE '^[[:space:]]{2}video-worker:[[:space:]]*$' "$compose"
   test "$(grep -Ec "^[[:space:]]*image: ghcr.io/jesstle/naumi:$commit$" "$compose")" -ge 2
   echo "COMPOSE_UPGRADE_RESULT=PASS VIDEO_WORKER=present COMMIT=$commit"

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { readFile, stat } from "fs/promises";
 import path from "path";
 import { dbEnabled, listArtworksByIds, type ArtworkRecord } from "@/lib/db";
 import { authenticatedEmail } from "@/lib/request-auth";
@@ -9,7 +8,11 @@ import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
-import { dataUrlToBytes, MEDIA_DIR } from "@/lib/storage";
+import {
+  dataUrlToBytes,
+  isManagedImageUrl,
+  readManagedObject,
+} from "@/lib/storage";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
 
@@ -53,14 +56,14 @@ async function readReferenceImage(source: string, requestUrl: string): Promise<s
     return toVisionDataUrl(Buffer.from(inline.bytes), inline.contentType);
   }
 
-  if (source.startsWith("/media/") && !source.startsWith("//")) {
-    const pathname = decodeURIComponent(source.split("?", 1)[0]);
-    const full = path.resolve(MEDIA_DIR, pathname.slice("/media/".length));
-    const root = path.resolve(MEDIA_DIR);
-    if (full === root || !full.startsWith(root + path.sep)) throw new Error("参考图片地址无效");
-    const info = await stat(full);
-    if (info.size > MAX_REFERENCE_BYTES) throw new Error("参考图片超过 12MB");
-    return toVisionDataUrl(await readFile(full), mediaTypeFromPath(full));
+  if (isManagedImageUrl(source)) {
+    const object = await readManagedObject(source, MAX_REFERENCE_BYTES);
+    return toVisionDataUrl(
+      object.bytes,
+      object.contentType === "application/octet-stream"
+        ? mediaTypeFromPath(source)
+        : object.contentType
+    );
   }
 
   const sameOrigin = source.startsWith("/") && !source.startsWith("//");

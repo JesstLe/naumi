@@ -1,7 +1,6 @@
 import JSZip from "jszip";
-import { readFile } from "fs/promises";
 import path from "path";
-import { MEDIA_DIR } from "@/lib/storage";
+import { isManagedImageUrl, readManagedObject } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -26,15 +25,10 @@ function allowedRemote(u: URL): boolean {
 }
 
 async function readItem(raw: string): Promise<{ buf: Buffer; ext: string } | null> {
-  if (raw.startsWith("/media/") && !raw.startsWith("//")) {
-    const pathname = decodeURIComponent(raw.split("?", 1)[0]);
-    const relative = pathname.slice("/media/".length);
-    const full = path.resolve(MEDIA_DIR, relative);
-    const root = path.resolve(MEDIA_DIR);
-    if (full !== root && !full.startsWith(root + path.sep)) return null;
-    const buf = await readFile(full);
-    const ext = (path.extname(full).slice(1) || "png").toLowerCase();
-    return { buf, ext };
+  if (isManagedImageUrl(raw)) {
+    const object = await readManagedObject(raw, 50 * 1024 * 1024);
+    const ext = (path.extname(raw.split("?", 1)[0]).slice(1) || "png").toLowerCase();
+    return { buf: object.bytes, ext };
   }
   const u = new URL(raw);
   if (!allowedRemote(u)) return null;

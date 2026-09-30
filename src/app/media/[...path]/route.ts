@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import path from "path";
-import { MEDIA_DIR } from "@/lib/storage";
+import { fetchStoredObject, MEDIA_DIR, storageDriver } from "@/lib/storage";
 
 // 本地磁盘存储的图片对外伺服(STORAGE_DRIVER=local 时用)。
 // R2/OSS 部署下图片走绝对 CDN URL,不会打到这里 —— 此路由留着无害。
@@ -41,6 +41,35 @@ export async function GET(
   }
 
   const rel = segs.join("/");
+  if (storageDriver !== "local") {
+    try {
+      const upstream = await fetchStoredObject(rel, request.headers.get("range") || "");
+      const headers = new Headers();
+      for (const name of [
+        "accept-ranges",
+        "cache-control",
+        "content-length",
+        "content-range",
+        "content-type",
+        "etag",
+        "last-modified",
+      ]) {
+        const value = upstream.headers.get(name);
+        if (value) headers.set(name, value);
+      }
+      if (!headers.has("cache-control")) {
+        headers.set("cache-control", "public, max-age=31536000, immutable");
+      }
+      return new Response(upstream.body, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers,
+      });
+    } catch {
+      return new Response("Storage unavailable", { status: 503 });
+    }
+  }
+
   const base = path.resolve(MEDIA_DIR);
   const full = path.resolve(base, rel);
   if (full !== base && !full.startsWith(base + path.sep)) {

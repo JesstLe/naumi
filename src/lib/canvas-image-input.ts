@@ -1,9 +1,12 @@
 import "server-only";
 
-import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { dataUrlToBytes, MEDIA_DIR } from "@/lib/storage";
+import {
+  dataUrlToBytes,
+  isManagedImageUrl,
+  readManagedObject,
+} from "@/lib/storage";
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 
@@ -41,16 +44,15 @@ export async function readCanvasImage(source: string, requestUrl: string) {
     };
   }
 
-  if (source.startsWith("/media/") && !source.startsWith("//")) {
-    const pathname = decodeURIComponent(source.split("?", 1)[0]);
-    const full = path.resolve(MEDIA_DIR, pathname.slice("/media/".length));
-    const root = path.resolve(MEDIA_DIR);
-    if (full === root || !full.startsWith(root + path.sep)) {
-      throw new Error("图片地址无效");
-    }
-    const info = await stat(full);
-    if (info.size > MAX_IMAGE_BYTES) throw new Error("图片超过 12MB");
-    return { buffer: await readFile(full), mimeType: mimeFromPath(full) };
+  if (isManagedImageUrl(source)) {
+    const object = await readManagedObject(source, MAX_IMAGE_BYTES);
+    return {
+      buffer: object.bytes,
+      mimeType:
+        object.contentType === "application/octet-stream"
+          ? mimeFromPath(source)
+          : object.contentType,
+    };
   }
 
   const sameOrigin = source.startsWith("/") && !source.startsWith("//");
