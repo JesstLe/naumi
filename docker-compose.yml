@@ -68,8 +68,16 @@ services:
       # AES key for encrypting stored API keys at rest.
       # ⚠️ Set a long random value BEFORE first run and never change it afterwards.
       SETTINGS_SECRET: ${SETTINGS_SECRET:-change-me-to-a-long-random-string}
-      # Local disk media storage (no R2 needed). Mounted as a volume below.
+      # Filesystem / R2 / S3-compatible (Garage、MinIO、OSS、COS) storage.
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       MEDIA_DIR: /data/media
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
       # 自托管 Pro 版(edition.ts 的 license 校验已改为离线通过,不连作者服务器)
       NAUMI_EDITION: pro
       PRO_LICENSE_KEY: LOCAL-OFFLINE

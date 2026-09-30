@@ -2,13 +2,14 @@ import "server-only";
 
 import crypto from "crypto";
 import { lookup } from "dns/promises";
-import { mkdir, readFile, rename, stat, unlink, writeFile } from "fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "fs/promises";
 import http, { type IncomingMessage } from "http";
 import https from "https";
 import { isIP } from "net";
 import path from "path";
 import {
   isManagedImageUrl,
+  managedObjectExists,
   MEDIA_DIR,
   uploadImage,
 } from "@/lib/storage";
@@ -277,16 +278,7 @@ function indexFileFor(source: string): string {
 }
 
 async function localCachedFileExists(cachedUrl: string): Promise<boolean> {
-  if (!cachedUrl.startsWith("/media/")) return true;
-  const relative = cachedUrl.slice("/media/".length);
-  const root = path.resolve(MEDIA_DIR);
-  const full = path.resolve(root, relative);
-  if (full === root || !full.startsWith(root + path.sep)) return false;
-  try {
-    return (await stat(full)).isFile();
-  } catch {
-    return false;
-  }
+  return managedObjectExists(cachedUrl);
 }
 
 async function readIndex(source: string): Promise<PersistedTemplateImage | null> {
