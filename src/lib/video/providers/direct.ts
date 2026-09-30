@@ -17,7 +17,7 @@ function isRecognizedStatus(value: unknown): boolean {
   return [
     "completed", "complete", "success", "succeeded", "done",
     "failed", "fail", "error", "cancelled", "canceled", "expired",
-    "queued", "pending", "submitted", "starting", "processing",
+    "queued", "queuing", "waiting", "pending", "submitted", "starting", "processing",
     "in_progress", "running", "generating",
   ].includes(raw);
 }
@@ -169,7 +169,7 @@ function pollPath(cfg: VideoProviderRuntimeConfig, id: string) {
   if (cfg.protocol === "kie") return `/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(id)}`;
   if (cfg.protocol === "apimart") return `/tasks/${encodeURIComponent(id)}?language=zh`;
   if (cfg.protocol === "gemini") return `/v1beta/${id.replace(/^\/+/, "")}`;
-  if (cfg.protocol === "minimax") return `/v2/query/video_generation?task_id=${encodeURIComponent(id)}`;
+  if (cfg.protocol === "minimax") return `/v2/query/video_generation/${encodeURIComponent(id)}`;
   if (cfg.protocol === "autodl") return `/api/v1/comfyui/comfyui_workflow/result/${encodeURIComponent(id)}`;
   if (cfg.protocol === "runninghub") return "/task/openapi/outputs";
   return `/videos/${encodeURIComponent(id)}`;
@@ -178,6 +178,31 @@ function pollPath(cfg: VideoProviderRuntimeConfig, id: string) {
 function contentPath(cfg: VideoProviderRuntimeConfig, id: string) {
   if (cfg.contentPath) return cfg.contentPath.replace("{id}", encodeURIComponent(id));
   return `/videos/${encodeURIComponent(id)}/content`;
+}
+
+function sameOrigin(left: string, right: string): boolean {
+  try { return new URL(left).origin === new URL(right).origin; }
+  catch { return false; }
+}
+
+async function fetchGeminiVideo(cfg: VideoProviderRuntimeConfig, initialUrl: string): Promise<Response> {
+  let target = initialUrl;
+  let sendApiKey = sameOrigin(target, cfg.baseUrl);
+  for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
+    const response = await fetch(target, {
+      headers: sendApiKey ? { "x-goog-api-key": cfg.apiKey } : {},
+      redirect: "manual",
+      signal: AbortSignal.timeout(180_000),
+    });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    const location = response.headers.get("location");
+    if (!location) return response;
+    if (redirectCount === 5) throw new TransientPollError("下载 Gemini 视频失败：重定向次数过多");
+    const next = new URL(location, target).toString();
+    sendApiKey = sendApiKey && sameOrigin(next, cfg.baseUrl);
+    target = next;
+  }
+  throw new TransientPollError("下载 Gemini 视频失败：重定向次数过多");
 }
 
 async function jsonResponse(response: Response, label: string) {
@@ -237,6 +262,58 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
       }
       catch (error) { throw new TransientPollError("查询视频任务失败", error); }
       const payload = await jsonResponse(response, "查询视频任务失败");
+      if (cfg.protocol === "gemini") {
+        const done = path(payload, "done");
+        if (done === false) {
+          return { status: "processing", progress: 0, rawResponse: payload } satisfies VideoProviderPollResult;
+        }
+        const operationError = record(path(payload, "error"));
+        if (done === true && Object.keys(operationError).length > 0) {
+          return {
+            status: "failed",
+            progress: 0,
+            errorCode: operationError.code == null ? undefined : String(operationError.code),
+            errorMessage: firstString(operationError.message, "Gemini 视频任务失败"),
+            errorDetail: operationError,
+            rawResponse: payload,
+          } satisfies VideoProviderPollResult;
+        }
+        if (done === true) {
+          const resultUrl = firstString(path(payload, "response.generateVideoResponse.generatedSamples.0.video.uri"));
+          if (!/^https?:\/\//i.test(resultUrl)) {
+            throw new TransientPollError("查询视频任务失败：Gemini done 响应缺少 generatedSamples 视频 URI");
+          }
+          return { status: "completed", progress: 100, resultUrl, rawResponse: payload } satisfies VideoProviderPollResult;
+        }
+        throw new TransientPollError("查询视频任务失败：Gemini operation 响应缺少 done 状态");
+      }
+      if (cfg.protocol === "minimax") {
+        const taskPayload = record(path(payload, "task"));
+        const rawStatus = firstString(taskPayload.status);
+        if (!isRecognizedStatus(rawStatus)) {
+          throw new TransientPollError("查询视频任务失败：MiniMax 响应缺少可识别的 task.status");
+        }
+        const normalizedStatus = rawStatus.toLowerCase();
+        const mappedStatus: VideoTaskStatus = ["queued", "running"].includes(normalizedStatus)
+          ? "processing"
+          : status(normalizedStatus);
+        const resultUrl = firstString(path(taskPayload, "content.url"));
+        const taskError = record(taskPayload.error);
+        const errorCode = taskError.code == null ? "" : String(taskError.code);
+        const errorMessage = firstString(taskError.message);
+        if (mappedStatus === "completed" && !/^https?:\/\//i.test(resultUrl)) {
+          throw new TransientPollError("查询视频任务失败：MiniMax succeeded 响应缺少 task.content.url");
+        }
+        return {
+          status: mappedStatus,
+          progress: mappedStatus === "completed" ? 100 : 0,
+          resultUrl: resultUrl || undefined,
+          errorCode: errorCode || undefined,
+          errorMessage: errorMessage || undefined,
+          errorDetail: Object.keys(taskError).length ? taskError : undefined,
+          rawResponse: payload,
+        } satisfies VideoProviderPollResult;
+      }
       let resultPayload: unknown = payload;
       if (cfg.protocol === "kie") {
         const resultJson = path(payload, "data.resultJson");
@@ -265,13 +342,18 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
       if (!rawStatus || (!Number.isFinite(runningHubCode) && explicitStatus && !isRecognizedStatus(explicitStatus))) {
         throw new TransientPollError("查询视频任务失败：上游 2xx 响应缺少可识别的 status/url/error");
       }
+      if (cfg.protocol === "kie" && status(rawStatus) === "completed" && !url) {
+        throw new TransientPollError("查询视频任务失败：Kie success 响应缺少 resultUrls");
+      }
       return { status: status(rawStatus), progress: Number(path(payload, "progress") || path(payload, "data.progress") || (url ? 100 : 0)), resultUrl: url || undefined, errorMessage: error || undefined, rawResponse: payload } satisfies VideoProviderPollResult;
     },
     async fetchResult(task, result) {
       const url = result.resultUrl || "";
       const target = url || base(cfg, contentPath(cfg, task.upstreamTaskId));
       // 上游返回的签名下载地址可能位于对象存储/CDN，禁止把供应商密钥转发到第三方主机。
-      const response = await fetch(target, { headers: url ? {} : headers(cfg), signal: AbortSignal.timeout(180_000) });
+      const response = cfg.protocol === "gemini" && url
+        ? await fetchGeminiVideo(cfg, target)
+        : await fetch(target, { headers: url ? {} : headers(cfg), signal: AbortSignal.timeout(180_000) });
       const downloaded = await readLimitedVideoResponse(response);
       return { bytes: downloaded.bytes, mimeType: downloaded.mimeType } satisfies VideoProviderFetchResult;
     },
