@@ -148,7 +148,9 @@ try {
     );
   }, { email });
   await page.goto(`${base}/canvas`);
-  await expect(page.locator(".react-flow__pane")).toBeVisible();
+  // 首次开发构建会同时编译画布和模型目录接口；在较慢的 Windows CI/工作站上
+  // 5 秒不足以覆盖 hydration，避免把正常的首次编译误报为交互回归。
+  await expect(page.locator(".react-flow__pane")).toBeVisible({ timeout: 15_000 });
 
   const nodes = page.locator(".react-flow__node");
   await expect(nodes).toHaveCount(1);

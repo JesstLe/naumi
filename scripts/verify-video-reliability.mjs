@@ -106,6 +106,10 @@ assert.match(direct, /isRecognizedStatus/);
 assert.match(direct, /data\.resultJson/);
 assert.match(direct, /data\.state/);
 assert.match(direct, /Kie 顶层 msg/);
+for (const state of ["waiting", "queuing", "generating"]) {
+  assert.ok(direct.includes(`"${state}"`), `Kie processing state missing: ${state}`);
+}
+assert.match(direct, /Kie success 响应缺少 resultUrls/);
 assert.match(download, /response\.body\.getReader\(\)/);
 assert.doesNotMatch(download, /arrayBuffer\(/);
 assert.match(download, /mimeType\.startsWith\("video\/"\)/);
