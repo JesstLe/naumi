@@ -237,10 +237,28 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
       }
       catch (error) { throw new TransientPollError("查询视频任务失败", error); }
       const payload = await jsonResponse(response, "查询视频任务失败");
-      const url = firstUrl(payload);
-      const error = firstString(path(payload, "error.message"), path(payload, "data.error.message"), path(payload, "data.failMsg"), path(payload, "msg"));
+      let resultPayload: unknown = payload;
+      if (cfg.protocol === "kie") {
+        const resultJson = path(payload, "data.resultJson");
+        if (typeof resultJson === "string" && resultJson.trim()) {
+          try {
+            resultPayload = JSON.parse(resultJson);
+          } catch {
+            throw new TransientPollError("查询视频任务失败：Kie resultJson 不是有效 JSON");
+          }
+        } else if (resultJson && typeof resultJson === "object") {
+          resultPayload = resultJson;
+        }
+      }
+      const url = firstUrl(resultPayload) || firstUrl(payload);
+      // Kie 顶层 msg 通常只是 "success"，不得当成失败原因。
+      const error = cfg.protocol === "kie"
+        ? firstString(path(payload, "error.message"), path(payload, "data.error.message"), path(payload, "data.failMsg"))
+        : firstString(path(payload, "error.message"), path(payload, "data.error.message"), path(payload, "data.failMsg"), path(payload, "msg"));
       const runningHubCode = cfg.protocol === "runninghub" ? Number(path(payload, "code") ?? path(payload, "data.code")) : NaN;
-      const explicitStatus = path(payload, "status") || path(payload, "state") || path(payload, "data.status");
+      const explicitStatus = cfg.protocol === "kie"
+        ? path(payload, "data.state") || path(payload, "data.status") || path(payload, "status")
+        : path(payload, "status") || path(payload, "state") || path(payload, "data.status");
       const rawStatus = Number.isFinite(runningHubCode)
         ? runningHubCode === 0 && url ? "completed" : [805, 806].includes(runningHubCode) ? "failed" : "processing"
         : explicitStatus || (url ? "completed" : error ? "failed" : "");

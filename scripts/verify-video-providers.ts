@@ -9,6 +9,7 @@ const originalFetch = globalThis.fetch;
 const calls: string[] = [];
 const createIdempotencyKeys: string[] = [];
 let forcedPollResponse: "html" | "empty" | "unknown" | "" = "";
+let kieOfficialSuccess = false;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
   calls.push(`${init?.method || "GET"} ${url}`);
@@ -25,6 +26,16 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     if (forcedPollResponse === "html") return new Response("<html>upstream proxy</html>", { status: 200, headers: { "content-type": "text/html" } });
     if (forcedPollResponse === "empty") return json({});
     return json({ status: "mystery-provider-state" });
+  }
+  if (kieOfficialSuccess && url.includes("/jobs/recordInfo")) {
+    return json({
+      code: 200,
+      msg: "success",
+      data: {
+        state: "success",
+        resultJson: JSON.stringify({ resultUrls: ["https://fixture.test/result.mp4"] }),
+      },
+    });
   }
   if (url.endsWith("/task/openapi/outputs")) return json({ code: 0, data: [{ fileUrl: "https://fixture.test/result.mp4" }] });
   if (init?.method === "POST") {
@@ -115,6 +126,12 @@ for (const mode of ["html", "empty", "unknown"] as const) {
   );
 }
 forcedPollResponse = "";
+kieOfficialSuccess = true;
+const officialKie = await kie.poll(malformedSnapshot);
+kieOfficialSuccess = false;
+assert.equal(officialKie.status, "completed", "Kie official data.state success maps to completed");
+assert.equal(officialKie.resultUrl, "https://fixture.test/result.mp4", "Kie resultJson resultUrls is unpacked");
+assert.equal(officialKie.errorMessage, undefined, "Kie top-level msg=success is not treated as an error");
 console.log(`PASS video provider fixtures: ${calls.length} HTTP calls across 8 protocols idempotency=declared first_none_create=1`);
 globalThis.fetch = originalFetch;
 }
