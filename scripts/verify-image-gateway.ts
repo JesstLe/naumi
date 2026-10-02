@@ -122,7 +122,7 @@ async function main() {
     const {processCanvasImageTask,publicCanvasImageTask}=await import("../src/lib/canvas-image-tasks");
     const artId=`canvas-source-${stamp}`,canvasId=`canvas-task-${stamp}`;
     await canvasDb.addArtworks(email,[{id:artId,title:"fixture",category:"fixture",prompt:"",status:"completed",image:`data:image/png;base64,${image.toString("base64")}`,gradient:""}]);
-    await canvasDb.createCanvasImageTaskWithReservation({id:canvasId,email,sourceArtworkId:artId,parameters:{artworkId:artId,oldText:"old",newText:"new",box:{x:10,y:10,width:100,height:100}},cost:0,metered:false});
+    await canvasDb.createCanvasImageTaskWithReservation({id:canvasId,email,sourceArtworkId:artId,parameters:{paidOperationVersion:1,artworkId:artId,oldText:"old",newText:"new",box:{x:10,y:10,width:100,height:100}},cost:0,metered:false});
     await sql.query("UPDATE app_canvas_image_tasks SET status='processing' WHERE id=$1",[canvasId]);
     assert.equal(await canvasDb.beginCanvasImageTaskSubmission(canvasId),true);
     assert.equal(await canvasDb.beginCanvasImageTaskSubmission(canvasId),false);
@@ -134,6 +134,14 @@ async function main() {
     assert.equal("upstreamStarted" in publicTask.parameters,false);
     assert.equal("upstreamResult" in publicTask.parameters,false);
     console.log("PASS paid-operation guard: unknown legacy submission survives configuration change, saved result replays without POST, canvas crash pauses for reconciliation");
+    const legacyId=`legacy-${stamp}`;
+    await guardJobs.create(legacyId,email,{status:"pending"},{},0,false);
+    await sql.query("UPDATE app_image_jobs SET snapshot=snapshot-'paidOperationVersion' WHERE id=$1",[legacyId]);
+    let legacyRan=false;
+    await guardJobs.kick(legacyId,async()=>{legacyRan=true;});
+    await waitJob(legacyId,"generate",row=>!!row.snapshot.error && row.lease_token===null);
+    assert.equal(legacyRan,false);
+    console.log("PASS upgrade: pre-ledger pending jobs cannot be automatically resubmitted");
     console.log("IMAGE_GATEWAY_RESULT=PASS");
   } finally { await sql.end(); await new Promise<void>(resolve=>server.close(()=>resolve())); }
 }

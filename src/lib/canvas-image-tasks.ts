@@ -102,7 +102,7 @@ export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTa
     id,
     email,
     sourceArtworkId: artwork.id,
-    parameters: input,
+    parameters: { ...input, paidOperationVersion: 1 },
     cost,
     metered,
   });
@@ -110,6 +110,9 @@ export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTa
 }
 
 async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
+  if (task.parameters.paidOperationVersion !== 1) {
+    throw new ImageOperationPending(task.id, new Error("旧版本图片提交需要核查"));
+  }
   const input = normalizedInput(task.parameters as Partial<TextEditTaskInput>);
   validateInput(input);
   const artwork = (await listArtworksByIds(task.email, [task.sourceArtworkId]))[0];
