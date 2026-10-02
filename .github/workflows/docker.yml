@@ -38,8 +38,8 @@ jobs:
           build-args: |
             BUILD_VERSION=${{ env.BUILD_VERSION }}
           tags: |
-            ghcr.io/jesstle/naumi:latest
             ghcr.io/jesstle/naumi:${{ github.sha }}
+            ${{ github.ref == 'refs/heads/main' && 'ghcr.io/jesstle/naumi:latest' || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
