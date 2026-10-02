@@ -11,6 +11,8 @@ on:
       - 'src/lib/db.ts'
       - 'src/app/api/canvas/image-tasks/**'
       - 'src/app/api/recolor/**'
+      - 'scripts/deploy-release.sh'
+      - 'scripts/verify-coordinated-release.sh'
       - 'scripts/verify-image-gateway.ts'
       - '.github/workflows/image-gateway.yml'
   workflow_dispatch:
@@ -38,6 +40,11 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Verify coordinated release and failure rollback
+        run: |
+          for failure in 0 1; do
+            docker run --rm --network none -e NAUMI_VERIFY_RELEASE_FIXTURE=1 -e FAIL_HEALTH=$failure -v "$PWD/scripts/deploy-release.sh:/deploy.sh:ro" -v "$PWD/scripts/verify-coordinated-release.sh:/verify.sh:ro" --entrypoint bash node:24-bookworm-slim /verify.sh
+          done
       - run: npm run build
       - run: npm run verify:image-gateway
         env:
