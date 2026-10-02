@@ -1,4 +1,5 @@
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
+import { appendImageGatewayFields, imageOperationQuality, ImageOperationPending, isImageGatewayModel } from "@/lib/image-gateway";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
@@ -234,7 +235,8 @@ async function genOneShot(
   );
   form.append("n", "1");
   form.append("size", sizeFor(spec.ratio));
-  form.append("quality", process.env.OPENAI_IMAGE_QUALITY || "medium");
+  form.append("quality", imageOperationQuality(process.env.OPENAI_IMAGE_QUALITY || "medium"));
+  appendImageGatewayFields(form, model);
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/images/edits`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -391,6 +393,7 @@ async function persistOne(buf: Buffer, id: string): Promise<string> {
 
 // --- Durable job snapshots and resumable execution -------------------------
 type Job = {
+  imageQuality?: string;
   status: "pending" | "done" | "error";
   shots: ShotResult[];
   done: number;
@@ -430,6 +433,7 @@ async function runSuite(
 
     // 第0层:规划 13 张
     const prior = await JOBS.get(jobId);
+    const imageQuality = prior?.imageQuality || process.env.OPENAI_IMAGE_QUALITY || "medium";
     const specs = prior?.shots?.length ? prior.shots : await planShots(
       client,
       productImages[0],
@@ -445,29 +449,30 @@ async function runSuite(
       url: prior?.shots[i]?.url,
       gradient: GRADIENTS[i % GRADIENTS.length],
     }));
-    await set({ shots, total: shots.length });
+    await set({ shots, total: shots.length, imageQuality });
 
     const productReference = await makeProductReference(productImages);
 
     // 第1-13层:并发限流逐张生成,完成一张更新一张
     let cursor = 0;
     let doneCount = 0;
+    let gatewayPending: ImageOperationPending | undefined;
     const worker = async (): Promise<void> => {
       while (cursor < shots.length) {
         const idx = cursor++;
         const shot = shots[idx];
         if ((shot.status === "done" && shot.url) || prior?.renderingFinished) { doneCount++; continue; }
         let ok = false;
-        for (let attempt = 0; attempt <= SHOT_RETRIES && !ok; attempt++) {
+        for (let attempt = 0; attempt <= (isImageGatewayModel(model) ? SHOT_RETRIES : 0) && !ok; attempt++) {
           try {
-            const generated = await genOneShot(
+            const generated = await JOBS.paidOperation(jobId, model, { id: shot.id, quality: imageQuality, task: "layout", preserveIdentity: true, textAccuracy: "required" }, () => genOneShot(
               apiKey,
               baseUrl,
               model,
               shot,
               productReference,
               productImages.length
-            );
+            ));
             const buf = await normalizeShotRatio(
               generated,
               shot.ratio,
@@ -477,6 +482,7 @@ async function runSuite(
             shots[idx] = { ...shot, status: "done", url };
             ok = true;
           } catch (error) {
+            if (error instanceof ImageOperationPending) { gatewayPending = error; break; }
             console.error(
               `[suite] shot failed (${shot.label}, ${shot.ratio}, attempt ${attempt + 1}/${SHOT_RETRIES + 1}):`,
               error instanceof Error ? error.message : error
@@ -490,7 +496,7 @@ async function runSuite(
             } else break;
           }
         }
-        if (!ok) shots[idx] = { ...shot, status: "error" };
+        if (!ok) shots[idx] = { ...shot, status: gatewayPending ? "pending" : "error" };
         doneCount++;
         await set({ shots: [...shots], done: doneCount });
       }
@@ -498,6 +504,8 @@ async function runSuite(
     await Promise.all(
       Array.from({ length: Math.min(CONCURRENCY, shots.length) }, worker)
     );
+
+    if (gatewayPending) throw gatewayPending;
 
     await set({ renderingFinished: true });
     const okShots = shots.filter((s) => s.status === "done" && s.url);
@@ -544,6 +552,7 @@ async function runSuite(
       mock: !apiKey,
     });
   } catch (e) {
+    if (e instanceof ImageOperationPending) { await set({ status: "pending", error: e.message }); return; }
     if ((await JOBS.get(jobId, false))?.shots.some((shot) => shot.status === "done")) throw e;
     if (useDb) await JOBS.settle(jobId, 0, "套图生成失败");
     console.error("[suite] job failed:", e instanceof Error ? e.message : e);

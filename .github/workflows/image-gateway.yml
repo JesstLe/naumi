@@ -1,0 +1,52 @@
+name: Image gateway regression
+on:
+  pull_request:
+    paths:
+      - 'src/app/api/generate-image/**'
+      - 'src/app/api/suite/**'
+      - 'src/app/api/aplus/**'
+      - 'src/lib/image-*.ts'
+      - 'src/lib/durable-image-jobs.ts'
+      - 'src/lib/canvas-image-tasks.ts'
+      - 'src/lib/db.ts'
+      - 'src/app/api/canvas/image-tasks/**'
+      - 'src/app/api/recolor/**'
+      - 'scripts/deploy-release.sh'
+      - 'scripts/verify-coordinated-release.sh'
+      - 'scripts/verify-image-gateway.ts'
+      - '.github/workflows/image-gateway.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fixture
+          POSTGRES_PASSWORD: isolated-fixture
+          POSTGRES_DB: gateway_fixture
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fixture -d gateway_fixture"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify coordinated release and failure rollback
+        run: |
+          for failure in 0 1; do
+            docker run --rm --network none -e NAUMI_VERIFY_RELEASE_FIXTURE=1 -e FAIL_HEALTH=$failure -v "$PWD/scripts/deploy-release.sh:/deploy.sh:ro" -v "$PWD/scripts/verify-coordinated-release.sh:/verify.sh:ro" --entrypoint bash node:24-bookworm-slim /verify.sh
+          done
+      - run: npm run build
+      - run: npm run verify:image-gateway
+        env:
+          DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
+          NAUMI_VERIFY_ISOLATED_DB: '1'

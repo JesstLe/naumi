@@ -35,6 +35,7 @@ import {
 } from "@/lib/image-model-catalog";
 import { routeImageModel } from "@/lib/image-model-routing";
 import { generateNewApiImage } from "@/lib/new-api-image";
+import { imageGatewayFields, ImageOperationPending, withImageIndex } from "@/lib/image-gateway";
 import {
   assertUserImageBaseUrlAllowed,
   getUserImageProvider,
@@ -70,6 +71,7 @@ export type GeneratedImage = {
 
 type GenImage = { buf: Buffer; type: string };
 type GenParams = {
+	compiledPrompt?: string;
   prompt: string;
   // 落库用的「用户原始提示词」:仅用户自己输入的内容(图裂变/融图客户端拼了系统词进 prompt,
   // 这里单独传原始词),用于 addArtworks 落库,避免系统提示词被同行抄袭。模型调用仍用完整 prompt。
@@ -302,7 +304,7 @@ async function openaiImages(
     timeout: 280_000,
     maxRetries: 0,
   });
-  const prompt = p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide());
+  const prompt = p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()));
   const size = sizeFor(p.ratio, model);
   const canEdit = p.images.length > 0 && isOpenAIImagesEditModel(model);
   // 出图模式:优先用本次请求选的(基础/标准/高阶 = low/medium/high),否则回退 env 默认。
@@ -333,16 +335,7 @@ async function openaiImages(
             settled[index] = {
               status: "fulfilled",
               value: await (async () => {
-                let last: unknown;
-                for (let attempt = 0; attempt < 2; attempt++) {
-                  try {
-                    return await withGenSlot(() => worker(index));
-                  } catch (error) {
-                    last = error;
-                    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 450));
-                  }
-                }
-                throw last instanceof Error ? last : new Error("OpenAI 未返回图片");
+                return withImageIndex(model, index, () => withGenSlot(() => worker(index)));
               })(),
             };
           } catch (reason) {
@@ -357,6 +350,10 @@ async function openaiImages(
       if (result.status === "fulfilled") succeeded.push(result.value);
       else failed.push(result.reason);
     }
+    // Wait for all workers to settle, then preserve the complete job. Router
+    // replays successful indices when the worker later recovers this batch.
+    const pending = failed.find((error) => error instanceof ImageOperationPending);
+    if (pending) throw pending;
     if (failed.length > 0) {
       console.error(
         `[generate-image] partial upstream failure: requested=${p.count} succeeded=${succeeded.length} failed=${failed.length}`,
@@ -379,6 +376,7 @@ async function openaiImages(
     const ref = await normalizeForEdit(Buffer.from(p.images[0].buf));
     const r = await withGenSlot(async () =>
       client.images.edit({
+        ...imageGatewayFields(model, true),
         model,
         image: await toFile(Buffer.from(ref), "ref.png", {
           type: "image/png",
@@ -418,6 +416,7 @@ async function openaiImages(
         )
       );
       return client.images.edit({
+        ...imageGatewayFields(model, true),
         model,
         image: files,
         prompt,
@@ -446,6 +445,7 @@ async function openaiImages(
         return client.images.generate({ model, prompt, n: 1, size });
       }
       return client.images.generate({
+        ...imageGatewayFields(model),
         model,
         prompt,
         n: 1,
@@ -498,28 +498,15 @@ async function newApiFlowImages(
     mimeType: image.type || "image/png",
   }));
   const settled = await Promise.allSettled(
-    Array.from({ length: p.count }, (_, index) => (async () => {
-      let last: unknown;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          return await withGenSlot(async () => {
-            const result = await generateNewApiImage({ model, prompt, images: references, settings });
-            return {
-              id: `gen-${Date.now()}-${Math.floor(Math.random() * 1e6)}-${index}`,
-              url: `data:${result.contentType};base64,${result.buffer.toString("base64")}`,
-              gradient: GRADIENTS[index % GRADIENTS.length],
-              prompt: p.prompt,
-              ratio: p.ratio,
-              createdAt: new Date().toISOString(),
-            } satisfies GeneratedImage;
-          });
-        } catch (error) {
-          last = error;
-          if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 450));
-        }
-      }
-      throw last instanceof Error ? last : new Error("New API 生图分组未返回图片");
-    })())
+    Array.from({ length: p.count }, (_, index) => withImageIndex(model, index, () => withGenSlot(async () => {
+      const result = await generateNewApiImage({ model, prompt, images: references, settings });
+      return {
+        id: `gen-${Date.now()}-${Math.floor(Math.random() * 1e6)}-${index}`,
+        url: `data:${result.contentType};base64,${result.buffer.toString("base64")}`,
+        gradient: GRADIENTS[index % GRADIENTS.length], prompt: p.prompt, ratio: p.ratio,
+        createdAt: new Date().toISOString(),
+      } satisfies GeneratedImage;
+    })))
   );
   const images: GeneratedImage[] = [];
   const failures: unknown[] = [];
@@ -527,6 +514,8 @@ async function newApiFlowImages(
     if (result.status === "fulfilled") images.push(result.value);
     else failures.push(result.reason);
   }
+  const pending = failures.find((error) => error instanceof ImageOperationPending);
+  if (pending) throw pending;
   if (failures.length) {
     console.error(
       `[generate-image] New API partial failure: requested=${p.count} succeeded=${images.length} failed=${failures.length}`,
@@ -854,23 +843,27 @@ async function runJob(
     if (saved?.images?.length) images = saved.images;
     else {
     if (imageModel.provider === "user-chat-completions" && userProvider) {
-      images = await newApiFlowImages(p, userProvider.model, {
+      images = await JOBS.paidOperation(jobId, "flow:" + userProvider.model, { id: jobId }, () => newApiFlowImages(p, userProvider.model, {
         baseUrl: userProvider.baseUrl,
         apiKey: userProvider.apiKey,
-      });
+      }));
     } else if (imageModel.provider === "user-openai-images" && userProvider) {
-      images = await openaiImages(
+      images = await JOBS.paidOperation(jobId, userProvider.model, { id: jobId, managedGateway: false, resolution: p.resolution as "1K" | "2K" | "4K", preserveIdentity: p.images.length > 0 }, () => openaiImages(
         p,
         userProvider.apiKey,
         userProvider.model,
         userProvider.model,
         userProvider.baseUrl
-      );
+      ));
     } else if (imageModel.provider === "new-api-flow" && !p.transparent) {
-      images = await newApiFlowImages(p, imageModel.id);
+      images = await JOBS.paidOperation(jobId, "flow:" + imageModel.id, { id: jobId }, () => newApiFlowImages(p, imageModel.id));
     } else {
       images = apiKey
-        ? await openaiImages(p, apiKey, imageModel.id, cutoutModel)
+        ? await JOBS.paidOperation(jobId, p.transparent ? cutoutModel || "gpt-image-1" : imageModel.id, {
+            id: jobId, resolution: p.resolution as "1K" | "2K" | "4K",
+            task: p.category === "detail" ? "detail" : p.images.length ? "product" : "draft",
+            preserveIdentity: p.images.length > 0,
+          }, () => openaiImages(p, apiKey, imageModel.id, cutoutModel))
         : mockImages(p);
     }
     images = await enforceOutputShape(images, p);
@@ -961,6 +954,10 @@ async function runJob(
       createdAt: Date.now(),
     });
   } catch (e) {
+    if (e instanceof ImageOperationPending) {
+      await JOBS.patch(jobId, { status: "pending", error: e.message });
+      return;
+    }
     if ((await JOBS.get(jobId, false))?.images?.length) throw e;
     if (useDb && !billingSettled) await JOBS.settle(jobId, 0, "图片生成失败");
     // 原始上游 message 可能含 openai/gpt/quota 等字样,经 safeError 净化后再落库,
@@ -1126,6 +1123,8 @@ export async function POST(request: Request) {
 
   if (useDb) await sweepStaleReservations().catch(() => {});
   const jobId = `job-${crypto.randomUUID()}`;
+  p.quality = ["low", "medium", "high", "auto"].includes(p.quality) ? p.quality : IMG_QUALITY;
+  p.compiledPrompt = p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide());
   p.model = imageModel.id;
   try {
   await JOBS.create(jobId, p.email, { status: "pending", createdAt: Date.now() }, { p, cost, byok: !!userProvider }, cost, true);
@@ -1177,7 +1176,7 @@ export async function GET(request: Request) {
     if (job.status === "error") {
       return NextResponse.json({ status: "error", error: job.error });
     }
-    return NextResponse.json({ status: "pending" });
+    return NextResponse.json({ status: "pending", error: job.error || "" });
   }
 
   // 健康检查:绝不暴露模型名/上游供应商/密钥来源(铁律:绝不泄露所用模型)。

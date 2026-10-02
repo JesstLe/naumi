@@ -2,6 +2,8 @@
 # Run on the Naumi host: deploy-release.sh COMMIT SOURCE_TAR_GZ IMAGE_TAR_GZ
 # Never builds on the host and never restores or recreates account/media volumes.
 set -Eeuo pipefail
+COORDINATED=${NAUMI_COORDINATED_RELEASE:-0}
+[[ "$COORDINATED" = 0 || "$COORDINATED" = 1 ]]
 
 compose_app_has_env() {
   local compose=$1 key=$2
@@ -137,6 +139,10 @@ PREVIOUS=$(readlink -f "$BASE/current")
 RELEASE="$BASE/releases/${COMMIT:0:12}-$(date +%Y%m%d-%H%M%S)"
 NGINX=$(readlink -f /etc/nginx/sites-enabled/naumi-ip)
 [[ "$NGINX" == /etc/nginx/sites-available/naumi-ip || "$NGINX" == /etc/nginx/sites-enabled/naumi-ip ]]
+if [ "$COORDINATED" = 1 ]; then
+  grep -Eq '^[[:space:]]*return 503;' "$NGINX"
+  test -z "$(docker ps -q --filter label=com.docker.compose.project=naumi --filter label=com.docker.compose.service=video-worker)"
+fi
 DB_USER=$(docker exec naumi-db-1 printenv POSTGRES_USER)
 DB_NAME=$(docker exec naumi-db-1 printenv POSTGRES_DB)
 test -n "$DB_USER" && test -n "$DB_NAME"
@@ -269,6 +275,7 @@ set -Eeuo pipefail
 PREVIOUS='$PREVIOUS'
 RELEASE='$RELEASE'
 NGINX='$NGINX'
+COORDINATED='$COORDINATED'
 if [ "\${1:-}" = --check ]; then
   test -r "\$PREVIOUS/.env"
   test -r "\$RELEASE/backups/nginx.before.conf"
@@ -279,6 +286,13 @@ if [ "\${1:-}" = --check ]; then
   else
     echo ROLLBACK_READY=1 PREVIOUS_VIDEO_WORKER=0
   fi
+  exit 0
+fi
+if [ "\$COORDINATED" = 1 ]; then
+  docker compose -p naumi -f "\$RELEASE/docker-compose.yml" stop -t 30 video-worker
+  docker compose -p naumi -f "\$PREVIOUS/docker-compose.yml" up -d --no-deps --no-build app
+  ln -sfn "\$PREVIOUS" /opt/naumi/current
+  echo ROLLBACK_RESULT=APP_RESTORED_WORKERS_PAUSED_MAINTENANCE_RETAINED
   exit 0
 fi
 if docker compose -p naumi -f "\$PREVIOUS/docker-compose.yml" config --services | grep -qx video-worker; then
@@ -313,13 +327,17 @@ chmod 700 "$RELEASE/ROLLBACK.sh"
 SWITCHED=0
 trap 'status=$?; if [ "$SWITCHED" = 1 ]; then "$RELEASE/ROLLBACK.sh"; fi; exit "$status"' ERR
 SWITCHED=1
-docker compose -p naumi -f "$RELEASE/docker-compose.yml" up -d --no-deps --no-build app video-worker
+if [ "$COORDINATED" = 1 ]; then
+  docker compose -p naumi -f "$RELEASE/docker-compose.yml" up -d --no-deps --no-build app
+else
+  docker compose -p naumi -f "$RELEASE/docker-compose.yml" up -d --no-deps --no-build app video-worker
+fi
 READY=0
 for i in $(seq 1 60); do
   if curl -fsS http://127.0.0.1:3012/api/health > "$RELEASE/health.json"; then
     APP_RUNNING=$(docker compose -p naumi -f "$RELEASE/docker-compose.yml" ps --status running --services | grep -cx app || true)
     WORKER_RUNNING=$(docker compose -p naumi -f "$RELEASE/docker-compose.yml" ps --status running --services | grep -cx video-worker || true)
-    if [ "$APP_RUNNING" = 1 ] && [ "$WORKER_RUNNING" = 1 ]; then READY=1; break; fi
+    if [ "$APP_RUNNING" = 1 ] && { { [ "$COORDINATED" = 0 ] && [ "$WORKER_RUNNING" = 1 ]; } || { [ "$COORDINATED" = 1 ] && [ "$WORKER_RUNNING" = 0 ]; }; }; then READY=1; break; fi
   fi
   sleep 2
 done
@@ -328,21 +346,29 @@ node_check='const fs=require("fs");const h=JSON.parse(fs.readFileSync(0,"utf8"))
 docker exec -i naumi-app-1 node -e "$node_check" < "$RELEASE/health.json"
 APP_CONTAINER=$(docker compose -p naumi -f "$RELEASE/docker-compose.yml" ps -q app)
 WORKER_CONTAINER=$(docker compose -p naumi -f "$RELEASE/docker-compose.yml" ps -q video-worker)
-test -n "$APP_CONTAINER" && test -n "$WORKER_CONTAINER"
+test -n "$APP_CONTAINER"
 test "$(docker inspect "$APP_CONTAINER" --format '{{.Config.Image}}')" = "ghcr.io/jesstle/naumi:$COMMIT"
-test "$(docker inspect "$WORKER_CONTAINER" --format '{{.Config.Image}}')" = "ghcr.io/jesstle/naumi:$COMMIT"
-echo "VIDEO_WORKER=PASS STATE=running IMAGE=ghcr.io/jesstle/naumi:$COMMIT"
-cp "$RELEASE/deploy/nginx-naumi.conf" "$NGINX"
-nginx -t
-systemctl reload nginx
+if [ "$COORDINATED" = 0 ]; then
+  test -n "$WORKER_CONTAINER"
+  test "$(docker inspect "$WORKER_CONTAINER" --format '{{.Config.Image}}')" = "ghcr.io/jesstle/naumi:$COMMIT"
+  echo "VIDEO_WORKER=PASS STATE=running IMAGE=ghcr.io/jesstle/naumi:$COMMIT"
+  cp "$RELEASE/deploy/nginx-naumi.conf" "$NGINX"
+  nginx -t
+  systemctl reload nginx
+else
+  grep -Eq '^[[:space:]]*return 503;' "$NGINX"
+  echo 'COORDINATED_RELEASE_READY=1 WORKER=paused INGRESS=maintenance'
+fi
 ln -sfn "$RELEASE" "$BASE/current"
 ln -sfn "$RELEASE/ROLLBACK.sh" "$BASE/ROLLBACK_RELEASE.sh"
 docker exec naumi-db-1 psql -U "$DB_USER" -d "$DB_NAME" -Atc 'select count(*) from app_users; select count(*) from app_artworks;' > "$RELEASE/backups/counts.after"
+if [ "$COORDINATED" = 0 ]; then
 for route in / /replicate /retouch /competitors /canvas /video; do
   STATUS=$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1$route")
   test "$STATUS" = 200
   echo "PUBLIC_ROUTE=$route STATUS=$STATUS"
 done
+fi
 trap - ERR
 echo "RELEASE=$RELEASE"
 echo "PREVIOUS=$PREVIOUS"

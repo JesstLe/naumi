@@ -372,7 +372,9 @@ export function SuiteClient() {
           if (Array.isArray(s.shots)) setShots(s.shots);
           if (typeof s.done === "number") setDone(s.done);
           if (typeof s.total === "number") setTotal(s.total);
+          if (s.status === "pending") setError(s.error || "");
           if (s.status === "done") {
+            setError("");
             rememberJob(null);
             if (pollRef.current) clearInterval(pollRef.current);
             if (s.user) applyServerUser(s.user);

@@ -3050,7 +3050,7 @@ export function CanvasClient() {
           kind: "text-edit";
           sourceArtworkId: string;
           parameters?: { canvasX?: number; canvasY?: number; newText?: string };
-          status: "queued" | "processing" | "completed" | "failed";
+          status: "queued" | "processing" | "needs_attention" | "completed" | "failed";
           progress?: number;
           resultArtworkId?: string;
           error?: string;
@@ -3060,7 +3060,7 @@ export function CanvasClient() {
         if (stopped) return;
         const running = relevant.filter((task) => task.status === "queued" || task.status === "processing");
         const runningIds = new Set(running.map((task) => task.id));
-        const terminalIds = new Set(relevant.filter((task) => task.status === "completed" || task.status === "failed").map((task) => task.id));
+        const terminalIds = new Set(relevant.filter((task) => task.status === "completed" || task.status === "failed" || task.status === "needs_attention").map((task) => task.id));
         setPendNodes((items) => {
           const progressByTask = new Map(running.map((task) => [task.id, Math.max(5, Math.min(95, Number(task.progress || 0)))]));
           const kept = items
@@ -3136,7 +3136,7 @@ export function CanvasClient() {
             ocrTaskSegmentRef.current.delete(task.id);
             flashTip("文字修改完成，结果已生成在原图右侧");
           }
-          if (task.status === "failed" && !failedCanvasImageTaskRef.current.has(task.id)) {
+          if ((task.status === "failed" || task.status === "needs_attention") && !failedCanvasImageTaskRef.current.has(task.id)) {
             failedCanvasImageTaskRef.current.add(task.id);
             if (ocrArtworkId === task.sourceArtworkId) {
               setOcrProgress(0);
