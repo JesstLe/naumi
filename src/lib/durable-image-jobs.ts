@@ -55,6 +55,7 @@ export class DurableImageJobs<T extends { status: string }> {
   private memory = new Map<string, { snapshot: T; payload: unknown; email: string }>();
   constructor(readonly kind: repository.ImageJobKind) {}
   async create(id: string, email: string, snapshot: T, payload: unknown, cost: number, reserve: boolean) {
+    snapshot = { ...snapshot, paidOperationVersion: 1 };
     if (!dbEnabled) { this.memory.set(id, { snapshot, payload, email }); return; }
     await repository.createImageJob(id, email, this.kind, await encode(snapshot, id), await encode(payload, id), cost, reserve);
   }
@@ -151,7 +152,14 @@ export class DurableImageJobs<T extends { status: string }> {
         void repository.heartbeatImageJob(id, token).catch(() => { clearInterval(heartbeat); });
       }, 25_000);
       heartbeat.unref?.();
-      try { await run(await decode(row.payload) as Record<string, unknown>, await decode(row.snapshot) as T); }
+      try {
+        // Pre-upgrade jobs have no evidence that a paid request was never sent.
+        if (row.snapshot.paidOperationVersion !== 1) {
+          await this.patch(id, { error: "旧版本图片任务需要核查，已暂停自动提交，请联系管理员" } as unknown as Partial<T>);
+          return;
+        }
+        await run(await decode(row.payload) as Record<string, unknown>, await decode(row.snapshot) as T);
+      }
       catch (error) { console.error(`[image-job] ${id}:`, error instanceof Error ? error.message : error); }
       finally {
         clearInterval(heartbeat);

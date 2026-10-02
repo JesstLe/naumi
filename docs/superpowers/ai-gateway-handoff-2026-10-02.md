@@ -28,3 +28,5 @@ Router 运行和配置说明见独立仓库 `docs/IMAGE_GATEWAY_OPERATIONS.md`�
 Recovery pins the managed gateway endpoint/account fingerprint. Set `NAUMI_ROUTER_STATE_DOMAIN` to identify the persistent Router state domain; changing it pauses pending recovery. A New API channel must not be redirected to an independent Router ledger while operations are pending. Migrate the ledger and results together when moving the service.
 
 生图、套图、A+ 和共享编辑传输已适配 Router。其余直接 SDK 工具（如改色、穿搭、风格）尚未全部支持 Router 参数/规格，发布时不得把全局默认模型直接改成 Router 别名；先在已适配路径选用 Router。保留生产全局默认模型、已有供应商及价格配置。
+
+升级应先暂停图片入口和 worker、等待现有付费调用结束并核查旧版本未完成任务，再备份并协调发布 Naumi 与 Router，最后恢复入口。旧版 app_image_jobs 没有提交证据，升级后自动转核查，不自动重发；管理员不能直接补版本标记或重新生成操作 ID。新 Router 首次上线前，不得让新契约任务先经过旧版无账本 Router。
