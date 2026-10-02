@@ -13,7 +13,7 @@
 
 本地 `go test ./...`、`go vet ./...`、TypeScript 检查和 Naumi 生产构建通过。独立 PostgreSQL 回归调用实际生图、套图、A+ 路由，核验 JSON/multipart 字段、未知受理后的恢复、质量冻结及业务积分仅结算一次；另核验普通通道/BYOK 模型变更后仍禁止重发、结果缓存及画布任务崩溃后转核查。
 
-未调用真实付费供应商；本次依据本地 New API 转发代码核验协议，没有重新运行 New API 二进制全链路。构建现有两条 `<img>` 提示与此次行为改动无关。Linux CI 增加 Router race 检查和固定提交二进制，Naumi CI 增加独立数据库回归。
+未调用真实付费供应商；已在服务器隔离环境使用实际 New API 二进制、Router 和模拟供应商验证 JSON 生图及 multipart 编辑全链路。构建现有两条 `<img>` 提示与此次行为改动无关。Linux CI 增加 Router race 检查和固定提交二进制，Naumi CI 增加独立数据库回归。
 
 ## 上线限制与运营
 
@@ -21,7 +21,11 @@
 
 Router 使用单实例持久账本，多副本需要共享事务存储。未知付费结果必须核对供应商任务/账单，不能直接删账本、换操作 ID 或退还未结算预留。结果存储应监控容量；暂未实现自动核查/自动清理。
 
-服务器连接命令被自动审批拒绝，返回 `blocked by policy`，未提供更具体原因。没有切换生产版本、修改生产数据库或验证线上健康，不能声称已发布。固定提交产物和审查链接完成后可继续使用现有 `scripts/deploy-release.sh` 及 Router installer 发布；生产配置、数据库、媒体和执行账本必须先备份并准备回滚。
+已按用户批准完成协调发布和线上验收：应用固定镜像 `4260aec8092ffeabf525f77b941934498ebbc8a3`，Router `849b016f08a683a301f5608b65aece7db4fc117e`。公网版本 `1790954737`，数据库和存储健康，主要页面 200，生图/画布/套图/A+ 的有效匿名请求 401，App、数据库及视频 worker 运行。New API 与 Router 模型别名目录一致。停机前后用户 74、作品 1926；环境、路由价格、原默认模型和持久媒体卷保持。
+
+完整数据库、New API SQLite、5.9G 媒体备份及停机增量位于服务器 `/opt/naumi/backups/gateway-20261002T151424Z`，回滚检查通过。权限回归修复了私有 umask 下配置重写后的读取问题；协调发布和回滚保持入口维护及 worker 暂停，全部验收后才恢复。详见 [生产验收记录](ai-gateway-production-2026-10-02.md)。
+
+原独立只读媒体迁移容器 `naumi-media-migration` 退出码 2，Docker 未捕获日志。此次未修改或重启它；本地媒体及完整备份保留，迁移状态需要另行排查。
 
 Router 运行和配置说明见独立仓库 `docs/IMAGE_GATEWAY_OPERATIONS.md`。
 
@@ -30,3 +34,5 @@ Recovery pins the managed gateway endpoint/account fingerprint. Set `NAUMI_ROUTE
 生图、套图、A+ 和共享编辑传输已适配 Router。其余直接 SDK 工具（如改色、穿搭、风格）尚未全部支持 Router 参数/规格，发布时不得把全局默认模型直接改成 Router 别名；先在已适配路径选用 Router。保留生产全局默认模型、已有供应商及价格配置。
 
 升级应先暂停图片入口和 worker、等待现有付费调用结束并核查旧版本未完成任务，再备份并协调发布 Naumi 与 Router，最后恢复入口。旧版 app_image_jobs 没有提交证据，升级后自动转核查，不自动重发；管理员不能直接补版本标记或重新生成操作 ID。新 Router 首次上线前，不得让新契约任务先经过旧版无账本 Router。
+
+当前生产仅启用一条 APIMart 路由。没有把所有现有生图请求切到 Router；多供应商混合选择和实际节省比例，需要核实更多供应商、价格与质量后衡量。
