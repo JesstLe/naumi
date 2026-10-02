@@ -33,6 +33,7 @@ import {
 import { useClipboardImagePaste } from "@/lib/clipboard-images";
 import type { GeneratedImage } from "@/app/api/generate-image/route";
 import { authHeader } from "@/lib/supabase";
+import { useImageJobResume } from "@/components/use-image-job-resume";
 import { useAuth, type SessionUser } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { Button } from "@/components/ui/button";
@@ -557,35 +558,37 @@ export function GenerateClient({
       const jobId: string | undefined = start.jobId;
       if (!jobId) throw new Error(t("gen.errNoJob"));
 
-      const deadline = Date.now() + 6 * 60 * 1000;
-      let data: {
-        images: GeneratedImage[];
-        user?: SessionUser | null;
-      } | null = null;
-      while (!data) {
-        await new Promise((r) => setTimeout(r, 2500));
-        if (Date.now() > deadline) throw new Error(t("gen.errTimeout"));
-        const sres = await fetch(
-          `/api/generate-image?job=${encodeURIComponent(jobId)}`,
-          { cache: "no-store" }
-        );
-        const s = await sres.json();
-        if (s.status === "done") data = s;
-        else if (s.status === "error")
-          throw new Error(s.error ?? t("gen.errFail"));
-        // status === "pending" -> keep polling
-      }
-
-      if (data.user) applyServerUser(data.user);
-      else consumeCredits(cost);
-      // Append after existing results (incl. the seeded previous version)
-      // so the user can compare iterations side by side.
-      setImages((prev) => [...prev, ...data!.images]);
-      setShownRec(null); // 新结果出来 → 回到当前结果视图
+      rememberJob(jobId);
+      await receiveGeneration(jobId,cost);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("gen.errFailRetry"));
     } finally {
       setLoading(false);
+    }
+  }
+
+  const generationPollingRef=useRef<string|null>(null);
+  const rememberJob=useImageJobResume("generate-image",user?.email,id=> {
+    if (generationPollingRef.current) return;
+    setLoading(true);
+    void receiveGeneration(id,0).catch(error=>setError(error instanceof Error ? error.message : t("gen.errFailRetry"))).finally(()=>setLoading(false));
+  });
+  useEffect(()=>()=> { generationPollingRef.current=null; },[]);
+  async function receiveGeneration(jobId: string, fallbackCost: number) {
+    generationPollingRef.current=jobId;
+    const deadline=Date.now()+30*60*1000;
+    while (generationPollingRef.current===jobId) {
+      const response=await fetch(`/api/generate-image?job=${encodeURIComponent(jobId)}`,{cache:"no-store",headers:await authHeader()});
+      const data=await response.json();
+      if (!response.ok) { if(response.status===404 || response.status===403) rememberJob(null); throw new Error(data.error || t("gen.errFail")); }
+      if(data.status==="error") { rememberJob(null); throw new Error(data.error || t("gen.errFail")); }
+      if(data.status==="done") {
+        if(data.user) applyServerUser(data.user); else if(fallbackCost) consumeCredits(fallbackCost);
+        setImages(current=>[...current,...data.images.filter((image:GeneratedImage)=>!current.some(existing=>existing.id===image.id))]);
+        setShownRec(null); rememberJob(null); generationPollingRef.current=null; return;
+      }
+      if(Date.now()>deadline) throw new Error(t("gen.errTimeout"));
+      await new Promise(resolve=>setTimeout(resolve,2500));
     }
   }
 

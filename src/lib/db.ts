@@ -22,6 +22,9 @@ export const dbEnabled = (process.env.DATABASE_URL ?? "").trim().length > 0;
 let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
 
+// Shared transactional infrastructure for durable generation jobs.
+export { getPool, ensureSchema, deductPrincipalFIFO, refreshBalance, creditMeteringEnabled, expireDueBatches };
+
 function getPool(): Pool {
   if (!pool) {
     const connectionString = process.env.DATABASE_URL;
@@ -140,12 +143,32 @@ async function ensureSchema(): Promise<void> {
           v          text NOT NULL,
           updated_at timestamptz NOT NULL DEFAULT now()
         );
+        CREATE TABLE IF NOT EXISTS app_image_jobs (
+          id text PRIMARY KEY, email text NOT NULL, kind text NOT NULL,
+          snapshot jsonb NOT NULL, payload jsonb NOT NULL,
+          cost integer NOT NULL DEFAULT 0, reserved_cost integer NOT NULL DEFAULT 0,
+          metered boolean NOT NULL, billing_settled boolean NOT NULL DEFAULT false,
+          lease_token text, lease_until timestamptz,
+          created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS app_image_jobs_owner ON app_image_jobs(email, kind, created_at DESC);
+        CREATE INDEX IF NOT EXISTS app_image_jobs_active ON app_image_jobs(email, kind, created_at DESC)
+          WHERE snapshot->>'status' NOT IN ('done','error');
+        CREATE INDEX IF NOT EXISTS app_image_jobs_due ON app_image_jobs(updated_at)
+          WHERE snapshot->>'status'='pending' OR snapshot->'sources' @> '[{"status":"redoing"}]'::jsonb;
         CREATE TABLE IF NOT EXISTS app_project_names (
           email      text NOT NULL,
           key        text NOT NULL,
           name       text NOT NULL,
           updated_at timestamptz NOT NULL DEFAULT now(),
           PRIMARY KEY (email, key)
+        );
+        CREATE TABLE IF NOT EXISTS app_canvas_history_ops (
+          id uuid NOT NULL,
+          email text NOT NULL,
+          fingerprint text NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now(),
+          PRIMARY KEY(email,id)
         );
         CREATE TABLE IF NOT EXISTS app_canvas_text_nodes (
           id          text PRIMARY KEY,
@@ -515,7 +538,7 @@ async function ensureSchema(): Promise<void> {
             ON app_user_image_providers (email);
         `);
       }
-    })();
+    })().catch(error => { schemaReady = null; throw error; });
   }
   return schemaReady;
 }
@@ -2074,6 +2097,10 @@ export async function sweepStaleReservations(
             WHERE c.id = app_gen_reservations.job_id
               AND c.status IN ('queued','processing')
          )
+         AND NOT EXISTS (
+           SELECT 1 FROM app_image_jobs j
+            WHERE j.id = app_gen_reservations.job_id AND NOT j.billing_settled
+         )
      RETURNING email, cost`,
       [String(olderThanMin)]
     );
@@ -2520,7 +2547,7 @@ export async function addArtworks(
             style, ratio, resolution, source_url, batch_id, parent_id, template_id, parent_ids, group_id, canvas_group_id, origin,
             image_width, image_height, canvas_width, canvas_height, video_url)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21,$22,$23,$24)
-         ON CONFLICT (id) DO UPDATE SET deleted_at = NULL`,
+         ON CONFLICT (id) DO UPDATE SET deleted_at = NULL WHERE app_artworks.email = EXCLUDED.email`,
         [
           a.id,
           email,

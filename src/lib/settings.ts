@@ -1,6 +1,7 @@
 import "server-only";
 import crypto from "crypto";
 import { dbEnabled, getSetting, setSetting, getSignupBonus } from "@/lib/db";
+import { settingsSecret } from "@/lib/settings-secret";
 
 // ---------------------------------------------------------------------------
 // Runtime-mutable OpenAI settings, editable from the admin page.
@@ -70,7 +71,7 @@ const WXPAY_APPID = "wxpay_appid"; // Native 下单要绑定的公众号/小程�
 const PAY_ENABLED = "pay_enabled";
 
 function aesKey(): Buffer {
-  const secret = process.env.SETTINGS_SECRET || "naumi-insecure-default";
+  const secret = settingsSecret();
   return crypto.createHash("sha256").update(secret).digest();
 }
 

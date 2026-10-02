@@ -9,39 +9,31 @@ import {
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
 import type { PlanKey } from "@/lib/mock-data";
-import { resolveUserEmail } from "@/lib/admin-auth";
+import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 
 export const runtime = "nodejs";
 
 // 校验请求者(登录 token)是否有权看「该 email 的私有数据」:本人 或 管理员。
-async function canSeePrivate(request: Request, email: string): Promise<boolean> {
-  const tokenEmail = await resolveUserEmail(request);
-  if (!tokenEmail) return false;
-  const adminEmail = (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
-  return tokenEmail === email.toLowerCase() || tokenEmail === adminEmail;
-}
-
 // Account / membership persistence. When the DB is disabled every response
 // carries `persisted: false` so the client transparently uses its
 // localStorage mock instead.
 
 export async function GET(request: Request) {
   if (!dbEnabled) return NextResponse.json({ persisted: false });
-  const email = new URL(request.url).searchParams.get("email");
+  const email = await authorizedTargetEmail(request, new URL(request.url).searchParams.get("email"), true);
   if (!email) {
-    return NextResponse.json({ error: "缺少 email 参数" }, { status: 400 });
+    return NextResponse.json({ error: "未登录或无权访问" }, { status: 401 });
   }
   try {
     // 是否有权看该 email 的私有数据(本人 或 管理员)——独立判断,不依赖用户行是否存在。
-    const allowed = await canSeePrivate(request, email);
     let user = await getUser(email);
     // 开源版单用户常见:操作员有有效登录态(nv_admin cookie)但用户行还没建起来。
     // 授权本人/管理员首次访问时把行补上,否则下面按「user 为空」把作品全挡掉 → 展示为空。
-    if (allowed && !user) {
+    if (!user && email === await authenticatedEmail(request)) {
       user = await getOrCreateUser(email, "").catch(() => null);
     }
     // 防越权读:作品列表(图 URL + 提示词,较敏感)只返回给本人或管理员。
-    const artworks = allowed ? await listArtworks(email) : [];
+    const artworks = await listArtworks(email);
     return NextResponse.json({ persisted: true, user, artworks });
   } catch (e) {
     return NextResponse.json(
@@ -61,18 +53,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请求体无效" }, { status: 400 });
   }
 
-  const email = (body.email ?? "").trim();
+  const email = await authenticatedEmail(request);
   if (!email) {
-    return NextResponse.json({ error: "缺少 email" }, { status: 400 });
+    return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  }
+  if (!body || (body.email !== undefined && typeof body.email !== "string")) {
+    return NextResponse.json({ error: "请求体无效" }, { status: 400 });
+  }
+  if (body.email && body.email.trim().toLowerCase() !== email) {
+    return NextResponse.json({ error: "无权修改其他账号" }, { status: 403 });
   }
 
   try {
     if (body.action === "plan") {
-      // 安全护栏:本端点是「信任模式」(只凭请求体里的 email,无登录态校验)。
-      // 因此这里【只允许降级到免费版 starter】(= 取消会员,前端 account 页用)。
-      // 任何付费套餐的开通/升级【必须】经过支付流程:
-      //   createOrder → 国内收银台验真支付宝回调(HMAC) → fulfillOrder。
-      // 否则任何人一条无鉴权 POST(带任意 email)就能免费升顶级套餐、白拿整月积分,直接资损。
+      // 本人只能取消会员；付费套餐仍须经过验真的支付回调开通。
       const target = (body.plan as PlanKey) ?? "starter";
       if (target !== "starter") {
         return NextResponse.json(
@@ -81,19 +75,12 @@ export async function POST(request: Request) {
         );
       }
       // 防越权改:取消会员(降级 starter)必须是本人登录态(否则有人能把别人降级、清空积分)。
-      const tokenEmail = await resolveUserEmail(request);
-      if (!tokenEmail || tokenEmail !== email.toLowerCase()) {
-        return NextResponse.json(
-          { error: "请重新登录后再操作" },
-          { status: 401 }
-        );
-      }
       const { user, invoice } = await changeUserPlan(email, "starter");
       return NextResponse.json({ persisted: true, user, invoice });
     }
     // default: sync (upsert + return). This fires on every login/session
     // bootstrap, so it's where we capture the user's latest login IP.
-    const user = await getOrCreateUser(email, body.name ?? "");
+    const user = await getOrCreateUser(email, String(body.name ?? "").trim().slice(0, 80));
     await recordLoginIp(email, clientIp(request));
     return NextResponse.json({ persisted: true, user });
   } catch (e) {

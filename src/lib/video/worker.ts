@@ -2,6 +2,7 @@ import "server-only";
 
 import { dbEnabled } from "@/lib/db";
 import { recoverDueVideoTasks } from "@/lib/video/service";
+import { recoverDurableImageJobs } from "@/lib/durable-image-jobs";
 
 // ---------------------------------------------------------------------------
 // 视频后台 worker(§7):周期恢复扫描,处理"页面关闭后遗留的进行中任务"。
@@ -35,9 +36,11 @@ export function startVideoWorker(): void {
   // 首次延迟 15s,避开冷启动高峰;之后每 20s 扫一批
   const timer = setInterval(() => {
     void scanVideoWorkerOnce();
+    void recoverDurableImageJobs().catch(() => {});
   }, SCAN_INTERVAL_MS);
   timer.unref?.();
   setTimeout(() => {
     void scanVideoWorkerOnce();
+    void recoverDurableImageJobs().catch(() => {});
   }, 15_000).unref?.();
 }

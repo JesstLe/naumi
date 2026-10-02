@@ -217,7 +217,7 @@ export function FuseClient() {
           throw new Error(L("生成超时,请重试", "Timed out, please retry"));
         const sres = await fetch(
           `/api/generate-image?job=${encodeURIComponent(jobId)}`,
-          { cache: "no-store" }
+          { cache: "no-store", headers: await authHeader() }
         );
         const s = await sres.json();
         if (s.status === "done") data = s;

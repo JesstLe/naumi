@@ -22,6 +22,7 @@ import { useAuth } from "@/lib/auth-context";
 import { usePaymentConfig } from "@/lib/payment-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
+import { useImageJobResume } from "@/components/use-image-job-resume";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
 import { ImageLightbox } from "@/components/image-lightbox";
@@ -187,7 +188,16 @@ export function AplusClient() {
     setAssistRun({ mode, nonce: Date.now() });
   }
 
+  const rememberJob=useImageJobResume("aplus",user?.email,id=> { setJobId(id); setLoading(true); startPolling(id); void refreshJob(id).catch(error=>{setLoading(false);setError(error.message);}); });
+
   function applyJobState(s: any) {
+    if (s.parameters) {
+      setPlatform(s.parameters.platform);
+      setLang(s.parameters.lang);
+      setFormat(s.parameters.format);
+      setText(s.parameters.text);
+      setModules(s.parameters.modules);
+    }
     if (["preparing", "reviewing", "generating"].includes(s.stage)) {
       setStage(s.stage);
     }
@@ -203,11 +213,13 @@ export function AplusClient() {
       if (!sourceWorkPending && pollRef.current) clearInterval(pollRef.current);
     }
     if (s.status === "done") {
+      rememberJob(null);
       if (pollRef.current) clearInterval(pollRef.current);
       if (s.user) applyServerUser(s.user);
       setFinished(true);
       setLoading(false);
     } else if (s.status === "error") {
+      rememberJob(null);
       if (pollRef.current) clearInterval(pollRef.current);
       setError(s.error || L("生成失败,请重试", "Generation failed"));
       setLoading(false);
@@ -220,7 +232,7 @@ export function AplusClient() {
       headers: await authHeader(),
     });
     const s = await r.json();
-    if (!r.ok) throw new Error(s.error || "任务状态获取失败");
+    if (!r.ok) { if (r.status===404 || r.status===403) {rememberJob(null);if(pollRef.current) clearInterval(pollRef.current);} throw new Error(s.error || "任务状态获取失败"); }
     applyJobState(s);
     return s;
   }
@@ -253,6 +265,7 @@ export function AplusClient() {
     setShots([]);
     setSources([]);
     setJobId(null);
+    rememberJob(null);
     setSourceFeedback({});
     setStage("preparing");
     setDone(0);
@@ -275,6 +288,7 @@ export function AplusClient() {
       if (!res.ok) throw new Error(data.error || L("生成失败,请重试", "Generation failed"));
       const jobId: string = data.jobId;
       setJobId(jobId);
+      rememberJob(jobId);
       if (data.total) setTotal(data.total);
       startPolling(jobId);
     } catch (e) {
@@ -348,6 +362,7 @@ export function AplusClient() {
   function restartReview() {
     if (pollRef.current) clearInterval(pollRef.current);
     setJobId(null);
+    rememberJob(null);
     setSources([]);
     setShots([]);
     setSourceFeedback({});

@@ -1,3 +1,4 @@
+import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
@@ -6,14 +7,9 @@ import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 import {
   dbEnabled,
-  reserveCredits,
-  refundCredits,
   addArtworks,
   getUser,
   isBanned,
-  addLedgerEntry,
-  addReservation,
-  settleReservation,
   sweepStaleReservations,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
@@ -393,7 +389,7 @@ async function persistOne(buf: Buffer, id: string): Promise<string> {
   }
 }
 
-// --- Async job store (与生图同款,内存,单 pm2 fork) -------------------------
+// --- Durable job snapshots and resumable execution -------------------------
 type Job = {
   status: "pending" | "done" | "error";
   shots: ShotResult[];
@@ -405,14 +401,9 @@ type Job = {
   error?: string;
   createdAt: number;
   owner: string;
+  renderingFinished?: boolean;
 };
-const JOBS = new Map<string, Job>();
-function gcJobs() {
-  const now = Date.now();
-  JOBS.forEach((v, k) => {
-    if (now - v.createdAt > 30 * 60 * 1000) JOBS.delete(k);
-  });
-}
+const JOBS = new DurableImageJobs<Job>("suite");
 
 async function runSuite(
   jobId: string,
@@ -427,10 +418,7 @@ async function runSuite(
   requested: RequestedShot[] | null,
   textModel: string
 ) {
-  const set = (patch: Partial<Job>) => {
-    const cur = JOBS.get(jobId);
-    if (cur) JOBS.set(jobId, { ...cur, ...patch });
-  };
+  const set = (patch: Partial<Job>) => JOBS.patch(jobId, patch);
   try {
     const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
     const client = new OpenAI({
@@ -441,7 +429,8 @@ async function runSuite(
     });
 
     // 第0层:规划 13 张
-    const specs = await planShots(
+    const prior = await JOBS.get(jobId);
+    const specs = prior?.shots?.length ? prior.shots : await planShots(
       client,
       productImages[0],
       extra,
@@ -451,11 +440,12 @@ async function runSuite(
     );
     const shots: ShotResult[] = specs.map((s, i) => ({
       ...s,
-      id: `suite-${Date.now()}-${i}`,
-      status: "pending",
+      id: prior?.shots[i]?.id || `suite-${jobId}-${i}`,
+      status: prior?.shots[i]?.status || "pending",
+      url: prior?.shots[i]?.url,
       gradient: GRADIENTS[i % GRADIENTS.length],
     }));
-    set({ shots, total: shots.length });
+    await set({ shots, total: shots.length });
 
     const productReference = await makeProductReference(productImages);
 
@@ -466,6 +456,7 @@ async function runSuite(
       while (cursor < shots.length) {
         const idx = cursor++;
         const shot = shots[idx];
+        if ((shot.status === "done" && shot.url) || prior?.renderingFinished) { doneCount++; continue; }
         let ok = false;
         for (let attempt = 0; attempt <= SHOT_RETRIES && !ok; attempt++) {
           try {
@@ -501,13 +492,14 @@ async function runSuite(
         }
         if (!ok) shots[idx] = { ...shot, status: "error" };
         doneCount++;
-        set({ shots: [...shots], done: doneCount });
+        await set({ shots: [...shots], done: doneCount });
       }
     };
     await Promise.all(
       Array.from({ length: Math.min(CONCURRENCY, shots.length) }, worker)
     );
 
+    await set({ renderingFinished: true });
     const okShots = shots.filter((s) => s.status === "done" && s.url);
     if (okShots.length === 0) {
       throw new Error("全部套图生成失败，请调整要求后重试");
@@ -517,8 +509,7 @@ async function runSuite(
     let user: Awaited<ReturnType<typeof getUser>> = null;
     let charged = 0;
     if (useDb) {
-      const batchId = `suite-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
-      try {
+      const batchId = jobId;
         await addArtworks(
           email,
           okShots.map((s) => ({
@@ -538,29 +529,13 @@ async function runSuite(
           })),
           batchId
         );
-      } catch {
-        /* non-fatal */
-      }
       charged = okShots.length * POINTS_PER_IMAGE;
-      const refund = Math.max(0, cost - charged);
-      if (refund > 0) await refundCredits(email, refund).catch(() => {});
-      if (charged > 0) {
-        try {
-          await addLedgerEntry(
-            email,
-            -charged,
-            `一键套图 ${okShots.length} 张`
-          );
-        } catch {
-          await refundCredits(email, charged).catch(() => {});
-          charged = 0;
-        }
-      }
+      await JOBS.settle(jobId, charged, `一键套图 ${okShots.length} 张`);
       user = await getUser(email).catch(() => null);
     }
 
-    if (useDb) await settleReservation(jobId).catch(() => {});
-    set({
+
+    await set({
       status: "done",
       shots: [...shots],
       done: shots.length,
@@ -569,12 +544,10 @@ async function runSuite(
       mock: !apiKey,
     });
   } catch (e) {
-    if (useDb) {
-      await refundCredits(email, cost).catch(() => {});
-      await settleReservation(jobId).catch(() => {});
-    }
+    if ((await JOBS.get(jobId, false))?.shots.some((shot) => shot.status === "done")) throw e;
+    if (useDb) await JOBS.settle(jobId, 0, "套图生成失败");
     console.error("[suite] job failed:", e instanceof Error ? e.message : e);
-    set({ status: "error", error: safeError(e, "套图生成失败,请稍后重试") });
+    await set({ status: "error", error: safeError(e, "套图生成失败,请稍后重试") });
   }
 }
 
@@ -635,7 +608,22 @@ async function parseInput(request: Request) {
   };
 }
 
+async function kickSuite(id: string) {
+  await JOBS.kick(id, async (payload) => {
+    const input = payload as unknown as { images: {buf:Buffer;type:string}[]; extra:string; platform:string; email:string; model:string; cost:number; requested:RequestedShot[]|null; textModel:string };
+    const { apiKey } = await getOpenAISettings();
+    await runSuite(id, input.images, input.extra, input.platform, input.email, apiKey, input.model,
+      dbEnabled && !!input.email, input.cost, input.requested, input.textModel);
+  });
+}
+
 export async function POST(request: Request) {
+  if (imageWorkerAuthorized(request)) {
+    const body = await request.json();
+    if (typeof body.workerJobId !== "string") return NextResponse.json({ error: "无效任务" }, { status: 400 });
+    await kickSuite(body.workerJobId);
+    return NextResponse.json({ ok: true });
+  }
   const input = await parseInput(request).catch(() => null);
   if (!input || input.images.length === 0) {
     return NextResponse.json({ error: "请上传至少一张产品图" }, { status: 400 });
@@ -697,57 +685,26 @@ export async function POST(request: Request) {
       { status: 403 }
     );
   }
-  if (useDb) {
-    const ok = await reserveCredits(input.email, cost);
-    if (!ok) {
-      return NextResponse.json(
-        { error: insufficientCreditsMessage },
-        { status: 402 }
-      );
-    }
+  const jobId = `suite-${crypto.randomUUID()}`;
+  try {
+  await JOBS.create(jobId, input.email, {
+    status: "pending", shots: [], done: 0, total: SHOT_COUNT, createdAt: Date.now(), owner: input.email,
+  }, { ...input, requested, model, cost, textModel: requestedTextModel(request, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna") }, cost, true);
+  } catch(error) {
+    const message=error instanceof Error ? error.message : "";
+    return NextResponse.json({error:safeError(error,"任务保存失败，请稍后重试")},{status:message.includes("积分不足") ? 402 : 503});
   }
-
-  gcJobs();
-  const jobId = `suite-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-  JOBS.set(jobId, {
-    status: "pending",
-    shots: [],
-    done: 0,
-    total: SHOT_COUNT,
-    createdAt: Date.now(),
-    owner: input.email,
-  });
-  if (useDb) {
-    try {
-      await addReservation(jobId, input.email, cost);
-    } catch (error) {
-      await refundCredits(input.email, cost).catch(() => {});
-      JOBS.delete(jobId);
-      return NextResponse.json(
-        { error: safeError(error, "积分预扣失败，请稍后重试") },
-        { status: 500 }
-      );
-    }
-  }
-  void sweepStaleReservations().catch(() => {});
-  void runSuite(
-    jobId,
-    input.images,
-    input.extra,
-    input.platform,
-    input.email,
-    apiKey,
-    model,
-    useDb,
-    cost,
-    requested,
-    requestedTextModel(request, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna")
-  );
+  await kickSuite(jobId).catch(error=>console.error("[image-job] deferred kickoff:",error instanceof Error ? error.message : "unknown"));
 
   return NextResponse.json({ jobId, total: SHOT_COUNT, cost });
 }
 
 export async function GET(request: Request) {
+  if (new URL(request.url).searchParams.has("active")) {
+    const email = await resolveUserEmail(request);
+    if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+    return NextResponse.json({ jobs: await JOBS.active(email) });
+  }
   const jobId = new URL(request.url).searchParams.get("job");
   if (!jobId) {
     // 健康检查:绝不暴露模型名/上游供应商(铁律:绝不泄露所用模型)。
@@ -759,7 +716,7 @@ export async function GET(request: Request) {
       storage: storageEnabled,
     });
   }
-  const job = JOBS.get(jobId);
+  const job = await JOBS.get(jobId, false);
   if (!job) {
     return NextResponse.json({
       status: "error",

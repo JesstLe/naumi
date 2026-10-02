@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
 import { authHeader } from "@/lib/supabase";
+import { useImageJobResume } from "@/components/use-image-job-resume";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
@@ -356,6 +357,39 @@ export function SuiteClient() {
     setPreviews(previews.filter((_, j) => j !== i));
   }
 
+  const rememberJob=useImageJobResume("suite",user?.email,id=> { setLoading(true); startPolling(id); });
+  function startPolling(jobId: string) {
+      // 轮询进度
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(async () => {
+        try {
+        const r = await fetch(`/api/suite?job=${jobId}`, {
+          cache: "no-store",
+          headers: await authHeader(),
+        });
+          const s = await r.json();
+          if (!r.ok) { if (r.status===404 || r.status===403) { if(pollRef.current) clearInterval(pollRef.current); rememberJob(null); setLoading(false); setError(s.error || t("suite.errFail")); } return; }
+          if (Array.isArray(s.shots)) setShots(s.shots);
+          if (typeof s.done === "number") setDone(s.done);
+          if (typeof s.total === "number") setTotal(s.total);
+          if (s.status === "done") {
+            rememberJob(null);
+            if (pollRef.current) clearInterval(pollRef.current);
+            if (s.user) applyServerUser(s.user);
+            setFinished(true);
+            setLoading(false);
+          } else if (s.status === "error") {
+            rememberJob(null);
+            if (pollRef.current) clearInterval(pollRef.current);
+            setError(s.error || t("suite.errFail"));
+            setLoading(false);
+          }
+        } catch {
+          /* 单次轮询失败忽略,下次再试 */
+        }
+      }, 2500);
+  }
+
   async function generate() {
     setError(null);
     // 未登录:直接弹登录/注册窗(优先于上传校验),登录后再点生成。
@@ -407,32 +441,8 @@ export function SuiteClient() {
       const jobId: string = data.jobId;
       if (data.total) setTotal(data.total);
 
-      // 轮询进度
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(async () => {
-        try {
-        const r = await fetch(`/api/suite?job=${jobId}`, {
-          cache: "no-store",
-          headers: await authHeader(),
-        });
-          const s = await r.json();
-          if (Array.isArray(s.shots)) setShots(s.shots);
-          if (typeof s.done === "number") setDone(s.done);
-          if (typeof s.total === "number") setTotal(s.total);
-          if (s.status === "done") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            if (s.user) applyServerUser(s.user);
-            setFinished(true);
-            setLoading(false);
-          } else if (s.status === "error") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            setError(s.error || t("suite.errFail"));
-            setLoading(false);
-          }
-        } catch {
-          /* 单次轮询失败忽略,下次再试 */
-        }
-      }, 2500);
+      rememberJob(jobId);
+      startPolling(jobId);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("suite.errFail"));
       setLoading(false);

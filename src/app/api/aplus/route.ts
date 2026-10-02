@@ -1,3 +1,4 @@
+import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
@@ -7,14 +8,9 @@ import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 import {
   dbEnabled,
-  reserveCredits,
-  refundCredits,
   addArtworks,
   getUser,
   isBanned,
-  addLedgerEntry,
-  addReservation,
-  settleReservation,
   touchReservation,
   sweepStaleReservations,
   listArtworksByIds,
@@ -387,7 +383,7 @@ type SourceRevision = {
   createdAt: number;
 };
 
-// --- Async job store(内存,单进程) ---
+// --- Durable job store, including review inputs and checkpoints ---
 type Job = {
   status: "pending" | "awaiting_review" | "done" | "error";
   stage: "preparing" | "reviewing" | "generating";
@@ -410,6 +406,7 @@ type Job = {
   cost: number;
   generationStarted: boolean;
   reserved: boolean;
+  renderingFinished?: boolean;
   parentId: string;
   parentIds: string[];
   origin: string;
@@ -418,26 +415,17 @@ type Job = {
   error?: string;
   createdAt: number;
 };
-const JOBS = new Map<string, Job>();
-function gcJobs() {
-  const now = Date.now();
-  JOBS.forEach((v, k) => {
-    if (now - v.createdAt > 2 * 60 * 60 * 1000) JOBS.delete(k);
-  });
-}
-
-function patchJob(jobId: string, patch: Partial<Job>) {
-  const cur = JOBS.get(jobId);
-  if (cur) JOBS.set(jobId, { ...cur, ...patch });
-}
+const JOBS = new DurableImageJobs<Job>("aplus");
+async function patchJob(jobId: string, patch: Partial<Job>) { await JOBS.patch(jobId, patch); }
 
 async function runSourcePreparation(jobId: string) {
-  const job = JOBS.get(jobId);
+  const job = await JOBS.get(jobId);
   if (!job) return;
   try {
     const { apiKey } = await getOpenAISettings();
     const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
     for (let index = 0; index < job.sourceInputs.length; index++) {
+      if (job.sourceBuffers[index]) continue;
       try {
         const buf = await prepareWhiteSource(
           apiKey,
@@ -461,7 +449,7 @@ async function runSourcePreparation(jobId: string) {
           url,
           createdAt: Date.now(),
         });
-        patchJob(jobId, {
+        await patchJob(jobId, {
           sources: [...job.sources],
           sourceBuffers: [...job.sourceBuffers],
           sourceHistory: [...job.sourceHistory],
@@ -472,12 +460,12 @@ async function runSourcePreparation(jobId: string) {
           status: "error",
           error: safeError(e, "白底母图生成失败，可单独重做"),
         };
-        patchJob(jobId, { sources: [...job.sources] });
+        await patchJob(jobId, { sources: [...job.sources] });
       }
     }
-    patchJob(jobId, { status: "awaiting_review", stage: "reviewing" });
+    await patchJob(jobId, { status: "awaiting_review", stage: "reviewing" });
   } catch (e) {
-    patchJob(jobId, {
+    await patchJob(jobId, {
       status: "error",
       error: safeError(e, "白底母图准备失败，请重新上传"),
     });
@@ -485,7 +473,7 @@ async function runSourcePreparation(jobId: string) {
 }
 
 async function runSourceRedo(jobId: string, index: number, feedback: string) {
-  const job = JOBS.get(jobId);
+  const job = await JOBS.get(jobId);
   if (!job) return;
   try {
     const { apiKey } = await getOpenAISettings();
@@ -510,7 +498,7 @@ async function runSourceRedo(jobId: string, index: number, feedback: string) {
       error: undefined,
     };
     job.sourceHistory[index].push({ version, feedback, url, createdAt: Date.now() });
-    patchJob(jobId, {
+    await patchJob(jobId, {
       sources: [...job.sources],
       sourceBuffers: [...job.sourceBuffers],
       sourceHistory: [...job.sourceHistory],
@@ -522,16 +510,14 @@ async function runSourceRedo(jobId: string, index: number, feedback: string) {
       feedback,
       error: safeError(e, "本张母图重做失败，请再次尝试"),
     };
-    patchJob(jobId, { sources: [...job.sources] });
+    await patchJob(jobId, { sources: [...job.sources] });
   }
 }
 
 async function runAplusGeneration(jobId: string) {
-  const job = JOBS.get(jobId);
+  const job = await JOBS.get(jobId);
   if (!job) return;
-  const set = (patch: Partial<Job>) => {
-    patchJob(jobId, patch);
-  };
+  const set = (patch: Partial<Job>) => patchJob(jobId, patch);
   try {
     const { apiKey } = await getOpenAISettings();
     const client = new OpenAI({
@@ -546,7 +532,7 @@ async function runAplusGeneration(jobId: string) {
       type: "image/png",
     }));
     const size = sizeFor(job.format);
-    const specs = await planShots(
+    const specs = job.shots.length ? job.shots : await planShots(
       client,
       cleanImages[0],
       job.extra,
@@ -558,11 +544,12 @@ async function runAplusGeneration(jobId: string) {
     );
     const shots: ShotResult[] = specs.map((s, i) => ({
       ...s,
-      id: `aplus-${Date.now()}-${i}`,
-      status: "pending",
+      id: job.shots[i]?.id || `aplus-${jobId}-${i}`,
+      status: job.shots[i]?.status || "pending",
+      url: job.shots[i]?.url,
       gradient: GRADIENTS[i % GRADIENTS.length],
     }));
-    set({ shots: [...shots], total: shots.length });
+    await set({ shots: [...shots], total: shots.length });
 
     let cursor = 0;
     let doneCount = 0;
@@ -573,6 +560,7 @@ async function runAplusGeneration(jobId: string) {
         }
         const idx = cursor++;
         const shot = shots[idx];
+        if ((shot.status === "done" && shot.url) || job.renderingFinished) { doneCount++; continue; }
         let ok = false;
         for (let attempt = 0; attempt <= SHOT_RETRIES && !ok; attempt++) {
           try {
@@ -598,13 +586,14 @@ async function runAplusGeneration(jobId: string) {
         }
         if (!ok) shots[idx] = { ...shot, status: "error" };
         doneCount++;
-        set({ shots: [...shots], done: doneCount });
+        await set({ shots: [...shots], done: doneCount });
       }
     };
     await Promise.all(
       Array.from({ length: Math.min(CONCURRENCY, shots.length) }, worker)
     );
 
+    await set({ renderingFinished: true });
     const okShots = shots.filter((s) => s.status === "done" && s.url);
 
     let user: Awaited<ReturnType<typeof getUser>> = null;
@@ -613,12 +602,8 @@ async function runAplusGeneration(jobId: string) {
       const refund = failed > 0
         ? Math.round((job.cost / shots.length) * failed)
         : 0;
-      if (refund > 0) {
-        await refundCredits(job.email, refund).catch(() => {});
-      }
       if (okShots.length > 0) {
-      const batchId = `aplus-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
-      try {
+      const batchId = jobId;
         await addArtworks(
           job.email,
           okShots.map((s) => ({
@@ -639,20 +624,13 @@ async function runAplusGeneration(jobId: string) {
           })),
           batchId
         );
-      } catch {
-        /* non-fatal */
       }
-      await addLedgerEntry(
-        job.email,
-        -(job.cost - refund),
-        `A+ 详情页 ${okShots.length} 张`
-      ).catch(() => {});
-      }
+      await JOBS.settle(jobId, job.cost - refund, `A+ 详情页 ${okShots.length} 张`);
       user = await getUser(job.email).catch(() => null);
     }
 
-    if (job.useDb) await settleReservation(jobId).catch(() => {});
-    set({
+
+    await set({
       status: "done",
       shots: [...shots],
       done: shots.length,
@@ -661,12 +639,10 @@ async function runAplusGeneration(jobId: string) {
       reserved: false,
     });
   } catch (e) {
-    if (job.useDb && job.reserved) {
-      await refundCredits(job.email, job.cost).catch(() => {});
-      await settleReservation(jobId).catch(() => {});
-    }
+    if ((await JOBS.get(jobId, false))?.shots.some((shot) => shot.status === "done")) throw e;
+    if (job.useDb) await JOBS.settle(jobId, 0, "详情页生成失败");
     console.error("[aplus] job failed:", e instanceof Error ? e.message : e);
-    set({
+    await set({
       status: "error",
       reserved: false,
       error: safeError(e, "A+ 详情页生成失败,请稍后重试"),
@@ -721,26 +697,36 @@ async function parseInput(request: Request) {
   };
 }
 
+async function kickAplus(id: string) {
+  await JOBS.kick(id, async (_payload, job) => {
+    if (job.stage === "preparing") await runSourcePreparation(id);
+    else if (job.stage === "generating") await runAplusGeneration(id);
+    else for (let index=0; index<job.sources.length; index++) {
+      if (job.sources[index].status === "redoing") await runSourceRedo(id, index, job.sources[index].feedback || "");
+    }
+  });
+}
+
 export async function POST(request: Request) {
+  if (imageWorkerAuthorized(request)) {
+    const body = await request.json();
+    if (typeof body.workerJobId !== "string") return NextResponse.json({ error: "无效任务" }, { status: 400 });
+    await kickAplus(body.workerJobId);
+    return NextResponse.json({ ok: true });
+  }
   const contentType = request.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
     const body = (await request.json().catch(() => null)) as
       | { jobId?: string; action?: string; sourceIndex?: number; feedback?: string }
       | null;
-    const jobId = body?.jobId?.trim() ?? "";
-    const job = JOBS.get(jobId);
-    if (!job) {
-      return NextResponse.json(
-        { error: "任务不存在或已过期，请重新上传" },
-        { status: 404 }
-      );
+    const jobId = typeof body?.jobId === "string" ? body.jobId.trim() : "";
+    if (dbEnabled) {
+      const tokenEmail=await resolveUserEmail(request);
+      const owner=await JOBS.owner(jobId);
+      if (!tokenEmail || owner!==tokenEmail.toLowerCase()) return NextResponse.json({error:"无权操作此任务"},{status:403});
     }
-    if (job.useDb) {
-      const tokenEmail = await resolveUserEmail(request);
-      if (!tokenEmail || tokenEmail.toLowerCase() !== job.email.toLowerCase()) {
-        return NextResponse.json({ error: "无权操作此任务" }, { status: 403 });
-      }
-    }
+    const job = await JOBS.get(jobId,false);
+    if (!job) return NextResponse.json({error:"任务不存在，请重新上传"},{status:404});
 
     if (body?.action === "approve_source") {
       const index = Number(body.sourceIndex);
@@ -751,15 +737,22 @@ export async function POST(request: Request) {
       if (source.status === "redoing") {
         return NextResponse.json({ error: "这张母图正在重做" }, { status: 409 });
       }
-      job.sources[index] = { ...source, status: "approved", error: undefined };
-      patchJob(jobId, { sources: [...job.sources] });
-      return NextResponse.json({ ok: true, source: job.sources[index] });
+      try {
+        if(job.useDb) {
+          const updated=await JOBS.reviewSource(jobId,index,false);
+          return NextResponse.json({ok:true,source:updated});
+        }
+        job.sources[index]={...source,status:"approved",error:undefined};
+        await patchJob(jobId,{sources:[...job.sources]});
+        return NextResponse.json({ok:true,source:job.sources[index]});
+      } catch(error) {return NextResponse.json({error:safeError(error,"审核保存失败，请重试")},{status:409});}
+
     }
 
     if (body?.action === "redo_source") {
       const index = Number(body.sourceIndex);
       const source = job.sources[index];
-      const feedback = (body.feedback ?? "").trim().slice(0, 500);
+      const feedback = typeof body.feedback === "string" ? body.feedback.trim().slice(0,500) : "";
       if (job.stage !== "reviewing" || !source || source.status === "redoing") {
         return NextResponse.json({ error: "这张母图当前无法重做" }, { status: 409 });
       }
@@ -770,15 +763,16 @@ export async function POST(request: Request) {
       if (!rateLimit(`aplus-redo:${jobId}:${ip}`, 12, 600_000)) {
         return NextResponse.json({ error: "重做过于频繁，请稍后再试" }, { status: 429 });
       }
-      job.sources[index] = {
-        ...source,
-        status: "redoing",
-        feedback,
-        error: undefined,
-      };
-      patchJob(jobId, { sources: [...job.sources] });
-      void runSourceRedo(jobId, index, feedback);
-      return NextResponse.json({ ok: true, source: job.sources[index] });
+      try {
+        if(job.useDb) await JOBS.reviewSource(jobId,index,true,feedback);
+        else {
+          job.sources[index]={...source,status:"redoing",feedback,error:undefined};
+          await patchJob(jobId,{sources:[...job.sources]});
+        }
+        await kickAplus(jobId).catch(error=>console.error("[image-job] deferred kickoff:",error instanceof Error ? error.message : "unknown"));
+        return NextResponse.json({ok:true});
+      } catch(error) {return NextResponse.json({error:safeError(error,"重做保存失败，请重试")},{status:409});}
+
     }
 
     if (body?.action === "generate") {
@@ -794,34 +788,13 @@ export async function POST(request: Request) {
           { status: 409 }
         );
       }
-      job.generationStarted = true;
-      patchJob(jobId, { generationStarted: true });
-      if (job.useDb) {
-        const ok = await reserveCredits(job.email, job.cost);
-        if (!ok) {
-          patchJob(jobId, { generationStarted: false });
-          return NextResponse.json({ error: insufficientCreditsMessage }, { status: 402 });
-        }
-        try {
-          await addReservation(jobId, job.email, job.cost);
-          job.reserved = true;
-        } catch (e) {
-          await refundCredits(job.email, job.cost).catch(() => {});
-          patchJob(jobId, { generationStarted: false, reserved: false });
-          return NextResponse.json(
-            { error: safeError(e, "积分预扣失败，请稍后重试") },
-            { status: 500 }
-          );
-        }
+      try {
+        if (job.useDb) await JOBS.reserveReviewed(jobId);
+        else await patchJob(jobId, { generationStarted:true, reserved:true, status:"pending", stage:"generating" });
+        await kickAplus(jobId).catch(error=>console.error("[image-job] deferred kickoff:",error instanceof Error ? error.message : "unknown"));
+      } catch (error) {
+        return NextResponse.json({ error: safeError(error, "任务启动失败，请稍后重试") }, { status: 409 });
       }
-      patchJob(jobId, {
-        status: "pending",
-        stage: "generating",
-        done: 0,
-        total: job.modules.length,
-        reserved: job.reserved,
-      });
-      void runAplusGeneration(jobId);
       return NextResponse.json({ ok: true, jobId, total: job.modules.length, cost: job.cost });
     }
 
@@ -904,10 +877,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: insufficientCreditsMessage }, { status: 402 });
     }
   }
-  gcJobs();
-  const jobId = `aplus-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+
+  const jobId = `aplus-${crypto.randomUUID()}`;
   const now = Date.now();
-  JOBS.set(jobId, {
+  try {
+  await JOBS.create(jobId, input.email, {
     status: "pending",
     stage: input.prepared ? "generating" : "preparing",
     sources: input.images.map((_, index) => ({
@@ -933,39 +907,17 @@ export async function POST(request: Request) {
     useDb,
     cost,
     generationStarted: input.prepared,
-    reserved: false,
+    reserved: input.prepared,
     parentId: input.parentId,
     parentIds: input.parentIds.filter((id) => id !== input.parentId),
     origin: input.origin,
     createdAt: now,
-  });
-  if (input.prepared) {
-    const job = JOBS.get(jobId)!;
-    await sweepStaleReservations().catch(() => {});
-    if (useDb) {
-      const ok = await reserveCredits(input.email, cost);
-      if (!ok) {
-        JOBS.delete(jobId);
-        return NextResponse.json({ error: insufficientCreditsMessage }, { status: 402 });
-      }
-      try {
-        await addReservation(jobId, input.email, cost);
-        job.reserved = true;
-      } catch (e) {
-        await refundCredits(input.email, cost).catch(() => {});
-        JOBS.delete(jobId);
-        return NextResponse.json(
-          { error: safeError(e, "积分预扣失败，请稍后重试") },
-          { status: 500 }
-        );
-      }
-    }
-    patchJob(jobId, { reserved: job.reserved });
-    void runAplusGeneration(jobId);
-  } else {
-    void sweepStaleReservations().catch(() => {});
-    void runSourcePreparation(jobId);
+  }, {}, cost, input.prepared);
+  } catch(error) {
+    const message=error instanceof Error ? error.message : "";
+    return NextResponse.json({error:safeError(error,"任务保存失败，请稍后重试")},{status:message.includes("积分不足") ? 402 : 503});
   }
+  await kickAplus(jobId).catch(error=>console.error("[image-job] deferred kickoff:",error instanceof Error ? error.message : "unknown"));
 
   return NextResponse.json({
     jobId,
@@ -976,6 +928,11 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
+  if (new URL(request.url).searchParams.has("active")) {
+    const email = await resolveUserEmail(request);
+    if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+    return NextResponse.json({ jobs: await JOBS.active(email) });
+  }
   const jobId = new URL(request.url).searchParams.get("job");
   if (!jobId) {
     const { apiKey } = await getOpenAISettings();
@@ -986,7 +943,7 @@ export async function GET(request: Request) {
       storage: storageEnabled,
     });
   }
-  const job = JOBS.get(jobId);
+  const job = await JOBS.get(jobId, false);
   if (!job) {
     return NextResponse.json({
       status: "error",
@@ -1012,6 +969,7 @@ export async function GET(request: Request) {
     jobId,
     status: job.status,
     stage: job.stage,
+    parameters: { platform:job.platform, lang:job.lang, format:job.format, text:job.extra, modules:job.modules },
     sources: job.sources.map((source, index) => ({
       ...source,
       history: job.sourceHistory[index],

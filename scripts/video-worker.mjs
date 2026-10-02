@@ -2,8 +2,8 @@ const origin = String(process.env.NAUMI_APP_ORIGIN || "http://app:3000").replace
 const secret = String(process.env.VIDEO_WORKER_SECRET || "");
 const intervalMs = Math.max(5_000, Number(process.env.VIDEO_WORKER_INTERVAL_MS || 15_000));
 
-if (!secret) {
-  console.error("VIDEO_WORKER_SECRET is required");
+if (secret.trim().length<32) {
+  console.error("VIDEO_WORKER_SECRET must contain at least 32 characters");
   process.exit(1);
 }
 

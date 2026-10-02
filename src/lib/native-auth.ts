@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "crypto";
 import { getSetting } from "@/lib/db";
 import { supabaseEnabled } from "@/lib/auth-mode";
+import { settingsSecret } from "@/lib/settings-secret";
 
 // ---------------------------------------------------------------------------
 // 原生多用户账号系统(Pro 多用户模式)。
@@ -28,7 +29,7 @@ export async function creditsMeteringOn(): Promise<boolean> {
 }
 
 function secret(): string {
-  return process.env.SETTINGS_SECRET || "naumi-insecure-default";
+  return settingsSecret();
 }
 
 // 会话令牌:"<emailB64url>.<exp>.<hmacHex>"。无状态:签名 + 过期时间自证。

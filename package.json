@@ -12,7 +12,9 @@
     "audit:video-intents": "tsx scripts/audit-video-creation-intents.ts",
     "verify:video-providers": "tsx --conditions react-server scripts/verify-video-providers.ts",
     "verify:video-provider-real": "tsx --conditions react-server scripts/verify-video-provider-real.ts",
-    "verify:video-postgres": "tsx --conditions react-server scripts/verify-video-postgres.ts"
+    "verify:video-postgres": "tsx --conditions react-server scripts/verify-video-postgres.ts",
+    "verify:product-fixes": "tsx --conditions react-server scripts/verify-product-fixes.ts",
+    "verify:image-job-routes": "tsx --conditions react-server scripts/verify-image-job-routes.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",
