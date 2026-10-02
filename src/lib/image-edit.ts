@@ -2,9 +2,12 @@ import "server-only";
 import OpenAI, { toFile } from "openai";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
+import { imageGatewayFields, withImageOperation } from "@/lib/image-gateway";
+import { randomUUID } from "node:crypto";
 
 /** Shared Images edit transport; callers own masks, credit settlement and storage. */
 export async function editImage(input: {
+	operationId?: string;
   images: Buffer[]; mask?: Buffer; prompt: string;
   size: "1024x1024" | "1536x1024" | "1024x1536";
   types?: string[];
@@ -23,12 +26,13 @@ export async function editImage(input: {
     const ext = type === "image/jpeg" ? "jpg" : type === "image/webp" ? "webp" : "png";
     return toFile(b, `image-${i}.${ext}`, { type });
   }));
-  const response = await client.images.edit({
+  const response = await withImageOperation(model, { id: input.operationId || `edit-${randomUUID()}`, preserveIdentity: true }, async () => client.images.edit({
+    ...imageGatewayFields(model, true),
     model, image: files.length === 1 ? files[0] : files,
     ...(input.mask ? { mask: await toFile(input.mask, "mask.png", { type: "image/png" }) } : {}),
     prompt: input.prompt, size: input.size, n: 1,
     ...(input.quality ? { quality: input.quality } : {}),
-  }, { signal });
+  }, { signal }));
   const result = response.data?.[0];
   const b64 = result?.b64_json;
   if (!b64 && result?.url) {

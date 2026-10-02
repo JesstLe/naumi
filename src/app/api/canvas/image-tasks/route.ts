@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { authenticatedEmail } from "@/lib/request-auth";
-import { enqueueTextEditTask, listCanvasImageTasks } from "@/lib/canvas-image-tasks";
+import { enqueueTextEditTask, listCanvasImageTasks, publicCanvasImageTask } from "@/lib/canvas-image-tasks";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { safeError } from "@/lib/api-error";
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "暂不支持该图片编辑任务" }, { status: 400 });
     }
     const task = await enqueueTextEditTask(email, body);
-    return NextResponse.json({ ok: true, taskId: task.id, task }, { status: 202 });
+    return NextResponse.json({ ok: true, taskId: task.id, task: publicCanvasImageTask(task) }, { status: 202 });
   } catch (error) {
     const message = safeError(error, "图片编辑任务创建失败");
     const status = message.includes("积分不足") ? 402 : message.includes("不存在") ? 404 : 400;
@@ -40,5 +40,5 @@ export async function GET(request: Request) {
     .filter(Boolean)
     .slice(0, 500);
   const tasks = await listCanvasImageTasks(email, Number.isFinite(limit) ? limit : 50, sourceArtworkIds);
-  return NextResponse.json({ ok: true, tasks });
+  return NextResponse.json({ ok: true, tasks: tasks.map(publicCanvasImageTask) });
 }

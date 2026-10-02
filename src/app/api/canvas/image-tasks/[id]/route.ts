@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { authenticatedEmail } from "@/lib/request-auth";
-import { getCanvasImageTask } from "@/lib/canvas-image-tasks";
+import { getCanvasImageTask, publicCanvasImageTask } from "@/lib/canvas-image-tasks";
 import { getUser } from "@/lib/db";
 import { safeError } from "@/lib/api-error";
 
@@ -15,7 +15,7 @@ export async function GET(request: Request, context: { params: { id: string } })
     const task = await getCanvasImageTask(email, String(context.params.id || ""));
     if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
     const user = task.status === "completed" ? await getUser(email).catch(() => null) : undefined;
-    return NextResponse.json({ ok: true, task, user });
+    return NextResponse.json({ ok: true, task: publicCanvasImageTask(task), user });
   } catch (error) {
     return NextResponse.json({ error: safeError(error, "图片编辑任务查询失败") }, { status: 502 });
   }

@@ -144,7 +144,7 @@ export async function POST(request: Request) {
       apiKey,
       baseURL: (await getOpenAIBaseUrl()) || undefined,
       timeout: 240_000,
-      maxRetries: 1,
+      maxRetries: 0,
     });
     const file = await toFile(input.image.buf, "product.png", {
       type: input.image.type,

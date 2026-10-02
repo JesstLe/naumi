@@ -5,6 +5,9 @@ import sharp from "sharp";
 
 import {
   addArtworks,
+  beginCanvasImageTaskSubmission,
+  saveCanvasImageTaskProviderResult,
+  holdCanvasImageTask,
   claimNextCanvasImageTask,
   completeCanvasImageTask,
   createCanvasImageTaskWithReservation,
@@ -24,6 +27,7 @@ import { editImage } from "@/lib/image-edit";
 import { resolutionCost } from "@/lib/mock-data";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { safeError } from "@/lib/api-error";
+import { ImageOperationPending } from "@/lib/image-gateway";
 
 type Box = { x: number; y: number; width: number; height: number };
 export type TextEditTaskInput = {
@@ -98,7 +102,7 @@ export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTa
     id,
     email,
     sourceArtworkId: artwork.id,
-    parameters: input,
+    parameters: { ...input, paidOperationVersion: 1 },
     cost,
     metered,
   });
@@ -106,6 +110,9 @@ export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTa
 }
 
 async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
+  if (task.parameters.paidOperationVersion !== 1) {
+    throw new ImageOperationPending(task.id, new Error("旧版本图片提交需要核查"));
+  }
   const input = normalizedInput(task.parameters as Partial<TextEditTaskInput>);
   validateInput(input);
   const artwork = (await listArtworksByIds(task.email, [task.sourceArtworkId]))[0];
@@ -134,7 +141,17 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
     `新文字：${input.newText}`,
     "禁止改动其他任何元素，不要增加物体，不要改变背景、产品包装、3D数字。",
   ].join("\n");
-  const editedRaw = await editImage({ images: [original], mask, prompt, size: editSize(width, height), quality: "high" });
+  let editedRaw: Buffer;
+  if (typeof task.parameters.upstreamResult === "string") {
+    editedRaw = (await readCanvasImage(task.parameters.upstreamResult, requestOrigin)).buffer;
+  } else {
+    if (!await beginCanvasImageTaskSubmission(task.id)) throw new ImageOperationPending(task.id, new Error("上游提交需要核查"));
+    editedRaw = await editImage({ operationId: task.id, images: [original], mask, prompt, size: editSize(width, height), quality: "high" });
+    const checkpoint = storageEnabled
+      ? await uploadImage(new Uint8Array(editedRaw), "image/png", `canvas-text-edits/${task.id}-provider.png`)
+      : `data:image/png;base64,${editedRaw.toString("base64")}`;
+    await saveCanvasImageTaskProviderResult(task.id, checkpoint);
+  }
   await updateCanvasImageTaskProgress(task.id, 82);
   const edited = await sharp(editedRaw).resize(width, height, { fit: "fill" }).png().toBuffer();
   const artworkId = `txtedit-${task.id}`;
@@ -168,6 +185,17 @@ export async function processCanvasImageTask(task: CanvasImageTaskRow): Promise<
     await renderTextEdit(task);
     console.info(`[canvas-image-task] completed id=${task.id} attempt=${task.attempts}`);
   } catch (error) {
+    const current = await getCanvasImageTask(task.email, task.id);
+    const status = (error as { status?: number } | null)?.status;
+    const rejected = [400,401,403,404,422,429].includes(status || 0);
+    if (error instanceof ImageOperationPending || (current?.parameters.upstreamStarted && !current.parameters.upstreamResult && !rejected)) {
+      await holdCanvasImageTask(task.id, "图片提交结果需要核查，已暂停自动重试，请联系管理员查询任务");
+      return;
+    }
+    if (rejected && current?.parameters.upstreamStarted && !current.parameters.upstreamResult) {
+      await failCanvasImageTask({ id: task.id, email: task.email, error: "上游拒绝了图片编辑请求，请检查配置" });
+      return;
+    }
     const message = safeError(error, "在线改字失败，请稍后重试");
     console.error(`[canvas-image-task] failed id=${task.id} attempt=${task.attempts}: ${error instanceof Error ? error.message : String(error)}`);
     if (task.attempts < 3) {
@@ -190,3 +218,10 @@ export async function recoverCanvasImageTasks(limit = 2): Promise<number> {
 }
 
 export { getCanvasImageTask, listCanvasImageTasks };
+
+/** Public task view excludes provider submission checkpoints and raw results. */
+export function publicCanvasImageTask(task: CanvasImageTaskRow) {
+  const { id, kind, sourceArtworkId, status, progress, cost, resultArtworkId, error, attempts, createdAt, completedAt } = task;
+  return { id, kind, sourceArtworkId, status, progress, cost, resultArtworkId, error, attempts, createdAt, completedAt,
+    parameters: normalizedInput(task.parameters as Partial<TextEditTaskInput>) };
+}

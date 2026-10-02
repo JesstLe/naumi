@@ -1,4 +1,5 @@
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
+import { appendImageGatewayFields, imageOperationQuality, ImageOperationPending, isImageGatewayModel } from "@/lib/image-gateway";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
@@ -50,6 +51,7 @@ type ShotResult = ShotSpec & {
   gradient: string;
 };
 type SourceResult = {
+	redoOperationId?: string;
   id: string;
   label: string;
   status: "preparing" | "review" | "approved" | "redoing" | "error";
@@ -225,7 +227,8 @@ async function editImagesMultipart(
   form.append("prompt", prompt);
   form.append("n", "1");
   form.append("size", size);
-  form.append("quality", process.env.OPENAI_IMAGE_QUALITY || "medium");
+  form.append("quality", imageOperationQuality(process.env.OPENAI_IMAGE_QUALITY || "medium"));
+  appendImageGatewayFields(form, model);
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/images/edits`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -244,7 +247,7 @@ async function editImagesMultipart(
     } catch {
       /* keep compact raw detail */
     }
-    throw new Error(`${response.status} ${detail}`);
+    throw Object.assign(new Error(`${response.status} ${detail}`), { status: response.status });
   }
   const parsed = JSON.parse(raw) as {
     data?: { b64_json?: string; url?: string }[];
@@ -345,7 +348,7 @@ async function prepareWhiteSource(
     ? `${basePrompt}\n本次返工必须重点满足用户要求：${feedback.slice(0, 500)}`
     : basePrompt;
   let lastError: unknown = null;
-  for (let attempt = 0; attempt <= SOURCE_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= 0; attempt++) {
     try {
       return await editWithSelectedProvider(
         apiKey,
@@ -385,6 +388,7 @@ type SourceRevision = {
 
 // --- Durable job store, including review inputs and checkpoints ---
 type Job = {
+  imageQuality?: string;
   status: "pending" | "awaiting_review" | "done" | "error";
   stage: "preparing" | "reviewing" | "generating";
   sources: SourceResult[];
@@ -427,12 +431,12 @@ async function runSourcePreparation(jobId: string) {
     for (let index = 0; index < job.sourceInputs.length; index++) {
       if (job.sourceBuffers[index]) continue;
       try {
-        const buf = await prepareWhiteSource(
+        const buf = await JOBS.paidOperation(jobId, job.model, { id: `${jobId}:source:${index}:initial`, quality: job.imageQuality, task: "product", preserveIdentity: true }, () => prepareWhiteSource(
           apiKey,
           baseUrl,
           job.model,
           job.sourceInputs[index]
-        );
+        ));
         const id = job.sources[index].id;
         job.sourceBuffers[index] = buf;
         const url = await persistOne(buf, `sources/${id}-v1`);
@@ -455,6 +459,7 @@ async function runSourcePreparation(jobId: string) {
           sourceHistory: [...job.sourceHistory],
         });
       } catch (e) {
+        if (e instanceof ImageOperationPending) throw e;
         job.sources[index] = {
           ...job.sources[index],
           status: "error",
@@ -465,6 +470,7 @@ async function runSourcePreparation(jobId: string) {
     }
     await patchJob(jobId, { status: "awaiting_review", stage: "reviewing" });
   } catch (e) {
+    if (e instanceof ImageOperationPending) { await patchJob(jobId, { status: "pending", error: e.message }); return; }
     await patchJob(jobId, {
       status: "error",
       error: safeError(e, "白底母图准备失败，请重新上传"),
@@ -478,13 +484,13 @@ async function runSourceRedo(jobId: string, index: number, feedback: string) {
   try {
     const { apiKey } = await getOpenAISettings();
     const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
-    const buf = await prepareWhiteSource(
+    const buf = await JOBS.paidOperation(jobId, job.model, { id: job.sources[index].redoOperationId || `${jobId}:source:${index}:redo:${job.sources[index].version + 1}`, quality: job.imageQuality, task: "product", preserveIdentity: true }, () => prepareWhiteSource(
       apiKey,
       baseUrl,
       job.model,
       job.sourceInputs[index],
       feedback
-    );
+    ));
     const version = job.sources[index].version + 1;
     const id = job.sources[index].id;
     job.sourceBuffers[index] = buf;
@@ -504,6 +510,7 @@ async function runSourceRedo(jobId: string, index: number, feedback: string) {
       sourceHistory: [...job.sourceHistory],
     });
   } catch (e) {
+    if (e instanceof ImageOperationPending) { await patchJob(jobId, { error: e.message }); return; }
     job.sources[index] = {
       ...job.sources[index],
       status: "error",
@@ -553,6 +560,7 @@ async function runAplusGeneration(jobId: string) {
 
     let cursor = 0;
     let doneCount = 0;
+    let gatewayPending: ImageOperationPending | undefined;
     const worker = async (): Promise<void> => {
       while (cursor < shots.length) {
         if (job.useDb && job.reserved) {
@@ -562,20 +570,21 @@ async function runAplusGeneration(jobId: string) {
         const shot = shots[idx];
         if ((shot.status === "done" && shot.url) || job.renderingFinished) { doneCount++; continue; }
         let ok = false;
-        for (let attempt = 0; attempt <= SHOT_RETRIES && !ok; attempt++) {
+        for (let attempt = 0; attempt <= (isImageGatewayModel(job.model) ? SHOT_RETRIES : 0) && !ok; attempt++) {
           try {
-            const buf = await genOneShot(
+            const buf = await JOBS.paidOperation(jobId, job.model, { id: shot.id, quality: job.imageQuality, task: "layout", preserveIdentity: true, textAccuracy: "required" }, () => genOneShot(
               apiKey,
               baseUrl,
               job.model,
               shot,
               cleanImages,
               size
-            );
+            ));
             const url = await persistOne(buf, shot.id);
             shots[idx] = { ...shot, status: "done", url };
             ok = true;
-          } catch {
+          } catch (error) {
+            if (error instanceof ImageOperationPending) { gatewayPending = error; break; }
             if (attempt < SHOT_RETRIES) {
               const wait =
                 Math.min(18000, 2500 * 2 ** attempt) +
@@ -584,7 +593,7 @@ async function runAplusGeneration(jobId: string) {
             }
           }
         }
-        if (!ok) shots[idx] = { ...shot, status: "error" };
+        if (!ok) shots[idx] = { ...shot, status: gatewayPending ? "pending" : "error" };
         doneCount++;
         await set({ shots: [...shots], done: doneCount });
       }
@@ -593,6 +602,7 @@ async function runAplusGeneration(jobId: string) {
       Array.from({ length: Math.min(CONCURRENCY, shots.length) }, worker)
     );
 
+    if (gatewayPending) throw gatewayPending;
     await set({ renderingFinished: true });
     const okShots = shots.filter((s) => s.status === "done" && s.url);
 
@@ -639,6 +649,7 @@ async function runAplusGeneration(jobId: string) {
       reserved: false,
     });
   } catch (e) {
+    if (e instanceof ImageOperationPending) { await set({ status: "pending", error: e.message }); return; }
     if ((await JOBS.get(jobId, false))?.shots.some((shot) => shot.status === "done")) throw e;
     if (job.useDb) await JOBS.settle(jobId, 0, "详情页生成失败");
     console.error("[aplus] job failed:", e instanceof Error ? e.message : e);
@@ -699,6 +710,7 @@ async function parseInput(request: Request) {
 
 async function kickAplus(id: string) {
   await JOBS.kick(id, async (_payload, job) => {
+    if (!job.imageQuality) { await patchJob(id, { imageQuality: process.env.OPENAI_IMAGE_QUALITY || "medium" }); }
     if (job.stage === "preparing") await runSourcePreparation(id);
     else if (job.stage === "generating") await runAplusGeneration(id);
     else for (let index=0; index<job.sources.length; index++) {
@@ -766,7 +778,7 @@ export async function POST(request: Request) {
       try {
         if(job.useDb) await JOBS.reviewSource(jobId,index,true,feedback);
         else {
-          job.sources[index]={...source,status:"redoing",feedback,error:undefined};
+          job.sources[index]={...source,status:"redoing",feedback,redoOperationId:`${jobId}:redo:${crypto.randomUUID()}`,error:undefined};
           await patchJob(jobId,{sources:[...job.sources]});
         }
         await kickAplus(jobId).catch(error=>console.error("[image-job] deferred kickoff:",error instanceof Error ? error.message : "unknown"));
@@ -884,6 +896,7 @@ export async function POST(request: Request) {
   await JOBS.create(jobId, input.email, {
     status: "pending",
     stage: input.prepared ? "generating" : "preparing",
+    imageQuality: process.env.OPENAI_IMAGE_QUALITY || "medium",
     sources: input.images.map((_, index) => ({
       id: `aplus-source-${now}-${index}`,
       label: input.prepared ? `参考图 ${index + 1}` : `白底母图 ${index + 1}`,

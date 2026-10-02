@@ -5,6 +5,9 @@ import { dbEnabled } from "@/lib/db";
 import { uploadImage, readManagedObject } from "@/lib/storage";
 import { workerSecret } from "@/lib/settings-secret";
 import * as repository from "@/lib/image-job-repository";
+import { ImageOperationPending, isImageGatewayModel, withImageOperation } from "@/lib/image-gateway";
+import { getOpenAISettings } from "@/lib/settings";
+import { getOpenAIBaseUrl } from "@/lib/openai-base";
 
 type Execution = { id: string; token: string; queue: Promise<unknown> };
 const execution = new AsyncLocalStorage<Execution>();
@@ -52,6 +55,7 @@ export class DurableImageJobs<T extends { status: string }> {
   private memory = new Map<string, { snapshot: T; payload: unknown; email: string }>();
   constructor(readonly kind: repository.ImageJobKind) {}
   async create(id: string, email: string, snapshot: T, payload: unknown, cost: number, reserve: boolean) {
+    snapshot = { ...snapshot, paidOperationVersion: 1 };
     if (!dbEnabled) { this.memory.set(id, { snapshot, payload, email }); return; }
     await repository.createImageJob(id, email, this.kind, await encode(snapshot, id), await encode(payload, id), cost, reserve);
   }
@@ -82,6 +86,54 @@ export class DurableImageJobs<T extends { status: string }> {
   async settle(id: string, cost: number, reason: string) {
     if (dbEnabled) await repository.settleImageJob(id, cost, reason, execution.getStore()?.token || null);
   }
+  /** Persist intent before paid work. Only a durable Router operation may replay. */
+  async paidOperation<R>(id: string, model: string, operation: Parameters<typeof withImageOperation>[1], run: () => Promise<R>): Promise<R> {
+    type Attempt = { model: string; replayable: boolean; gatewayIdentity?: string; state: "started" | "done" | "rejected"; result?: R };
+    type Snapshot = T & { paidOperations?: Record<string, Attempt> };
+    const update = async (change: (current: Snapshot) => Snapshot) => {
+      const work = async () => {
+        const current = await this.get(id, false) as Snapshot | undefined;
+        if (!current) throw new Error("图片任务不存在");
+        await this.set(id, change(current));
+      };
+      const context = execution.getStore();
+      if (!context) return work();
+      const next = context.queue.then(work);
+      context.queue = next.catch(() => {});
+      await next;
+    };
+    const saved = await this.get(id) as Snapshot | undefined;
+    const previous = saved?.paidOperations?.[operation.id];
+    if (previous?.state === "done") return previous.result as R;
+    const replayable = operation.managedGateway !== false && isImageGatewayModel(model);
+    const gatewayIdentity = replayable ? createHash("sha256").update(JSON.stringify([
+      (await getOpenAIBaseUrl()) || "https://api.openai.com/v1", (await getOpenAISettings()).apiKey,
+      process.env.NAUMI_ROUTER_STATE_DOMAIN || "",
+    ])).digest("hex") : undefined;
+    if (previous?.state === "started" && (!previous.replayable || previous.model !== model || previous.gatewayIdentity !== gatewayIdentity)) {
+      throw new ImageOperationPending(operation.id, new Error("上游提交需要人工核查"));
+    }
+    const attempt: Attempt = { model, replayable, gatewayIdentity, state: "started" };
+    await update((current) => {
+      const active = current.paidOperations?.[operation.id];
+      if (active?.state === "done" || (active?.state === "started" && (!active.replayable || active.model !== model || active.gatewayIdentity !== gatewayIdentity))) {
+        throw new ImageOperationPending(operation.id, new Error("上游提交需要核查或读取已存结果"));
+      }
+      return { ...current, paidOperations: { ...current.paidOperations, [operation.id]: attempt } };
+    });
+    try {
+      const result = await withImageOperation(model, { ...operation, durable: true }, run);
+      await update((current) => ({ ...current, paidOperations: { ...current.paidOperations, [operation.id]: { ...attempt, state: "done", result } } }));
+      return result;
+    } catch (error) {
+      const status = (error as { status?: number } | null)?.status;
+      if ([400, 401, 403, 404, 422, 429].includes(status || 0)) {
+        await update((current) => ({ ...current, paidOperations: { ...current.paidOperations, [operation.id]: { ...attempt, state: "rejected" } } }));
+        throw error;
+      }
+      throw error instanceof ImageOperationPending ? error : new ImageOperationPending(operation.id, error);
+    }
+  }
   async reserveReviewed(id: string) { if (dbEnabled) await repository.reserveReviewedImageJob(id); }
   async reviewSource(id: string, index: number, redo: boolean, feedback="") { return repository.reviewImageSource(id,index,redo,feedback); }
   async active(email: string) { return dbEnabled ? repository.listActiveImageJobs(email, this.kind) : []; }
@@ -100,7 +152,14 @@ export class DurableImageJobs<T extends { status: string }> {
         void repository.heartbeatImageJob(id, token).catch(() => { clearInterval(heartbeat); });
       }, 25_000);
       heartbeat.unref?.();
-      try { await run(await decode(row.payload) as Record<string, unknown>, await decode(row.snapshot) as T); }
+      try {
+        // Pre-upgrade jobs have no evidence that a paid request was never sent.
+        if (row.snapshot.paidOperationVersion !== 1) {
+          await this.patch(id, { error: "旧版本图片任务需要核查，已暂停自动提交，请联系管理员" } as unknown as Partial<T>);
+          return;
+        }
+        await run(await decode(row.payload) as Record<string, unknown>, await decode(row.snapshot) as T);
+      }
       catch (error) { console.error(`[image-job] ${id}:`, error instanceof Error ? error.message : error); }
       finally {
         clearInterval(heartbeat);
