@@ -205,6 +205,7 @@ export function AplusClient() {
     if (Array.isArray(s.shots)) setShots(s.shots);
     if (typeof s.done === "number") setDone(s.done);
     if (typeof s.total === "number") setTotal(s.total);
+    if (s.status === "pending" || s.status === "awaiting_review") setError(s.error || "");
     if (s.status === "awaiting_review") {
       setLoading(false);
       const sourceWorkPending = Array.isArray(s.sources) && s.sources.some(
@@ -213,6 +214,7 @@ export function AplusClient() {
       if (!sourceWorkPending && pollRef.current) clearInterval(pollRef.current);
     }
     if (s.status === "done") {
+      setError("");
       rememberJob(null);
       if (pollRef.current) clearInterval(pollRef.current);
       if (s.user) applyServerUser(s.user);

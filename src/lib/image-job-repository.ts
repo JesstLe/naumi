@@ -117,7 +117,7 @@ export async function reviewImageSource(id: string, index: number, redo: boolean
     if (!Number.isInteger(index) || index<0 || !row || row.snapshot.stage!=="reviewing" || row.snapshot.generationStarted ||
       (row.lease_until && new Date(row.lease_until).getTime()>Date.now()) || !source || source.status==="redoing" ||
       (!redo && (!source.url || !row.snapshot.sourceBuffers[index]))) throw new Error("这张母图正在处理或无法审核，请稍后重试");
-    const updated={...source,status:redo ? "redoing" : "approved",error:undefined,...(redo ? {feedback} : {})};
+    const updated={...source,status:redo ? "redoing" : "approved",error:undefined,...(redo ? {feedback,redoOperationId:`${id}:redo:${randomUUID()}`} : {})};
     await client.query("UPDATE app_image_jobs SET snapshot=jsonb_set(snapshot,ARRAY['sources',$2],$3::jsonb),updated_at=now() WHERE id=$1",[id,String(index),JSON.stringify(updated)]);
     await client.query("COMMIT");
     return updated;

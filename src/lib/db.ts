@@ -2095,7 +2095,7 @@ export async function sweepStaleReservations(
          AND NOT EXISTS (
            SELECT 1 FROM app_canvas_image_tasks c
             WHERE c.id = app_gen_reservations.job_id
-              AND c.status IN ('queued','processing')
+              AND c.status IN ('queued','processing','needs_attention')
          )
          AND NOT EXISTS (
            SELECT 1 FROM app_image_jobs j
@@ -5393,7 +5393,7 @@ export type CanvasImageTaskRow = {
   kind: "text-edit";
   sourceArtworkId: string;
   parameters: Record<string, unknown>;
-  status: "queued" | "processing" | "completed" | "failed";
+  status: "queued" | "processing" | "needs_attention" | "completed" | "failed";
   progress: number;
   cost: number;
   resultArtworkId: string;
@@ -5557,6 +5557,29 @@ export async function updateCanvasImageTaskProgress(id: string, progress: number
     [id, Math.max(0, Math.min(95, Math.trunc(progress)))]
   );
   await touchReservation(id).catch(() => {});
+}
+
+/** Atomic submission guard survives worker crashes and model configuration changes. */
+export async function beginCanvasImageTaskSubmission(id: string): Promise<boolean> {
+  if (!dbEnabled) return false;
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `UPDATE app_canvas_image_tasks SET parameters = parameters || '{"upstreamStarted":true}'::jsonb,
+      updated_at=now() WHERE id=$1 AND status='processing'
+      AND NOT parameters @> '{"upstreamStarted":true}'::jsonb RETURNING id`, [id]);
+  return rows.length === 1;
+}
+
+export async function saveCanvasImageTaskProviderResult(id: string, url: string): Promise<void> {
+  await ensureSchema();
+  await getPool().query(`UPDATE app_canvas_image_tasks SET parameters=parameters || jsonb_build_object('upstreamResult',$2::text),
+    updated_at=now() WHERE id=$1 AND status='processing'`, [id,url]);
+}
+
+export async function holdCanvasImageTask(id: string, error: string): Promise<void> {
+  await ensureSchema();
+  await getPool().query(`UPDATE app_canvas_image_tasks SET status='needs_attention',error=$2,lease_until=NULL,
+    updated_at=now() WHERE id=$1 AND status IN ('queued','processing')`, [id,error]);
 }
 
 export async function retryCanvasImageTask(input: { id: string; email: string; error: string; delaySeconds?: number }): Promise<void> {

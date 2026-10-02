@@ -31,9 +31,9 @@ Files: Router `internal/execution/store.go`, `internal/execution/store_test.go`,
 
 Interfaces: `Store.Load/Save`, in-process operation claim, `ImageRequest.Execution` with attempt key, task ID and checkpoint callback. State is committed before an upstream POST. Completed responses replay. `FallbackSafe=false` yields HTTP 504, never generic 502.
 
-- [ ] Add durable operations, content hash binding and attempts with recoverable provider task identity.
-- [ ] Verify duplicate requests, conflicts, restart recovery and unsafe fallback using local HTTP fixtures.
-- [ ] Run `go test ./...` and `go vet ./...`.
+- [x] Add durable operations, content hash binding and attempts with recoverable provider task identity.
+- [x] Verify duplicate requests, conflicts, restart recovery and unsafe fallback using local HTTP fixtures.
+- [x] Run `go test ./...` and `go vet ./...`.
 
 ## Task 2 — Policy, pricing and runtime health
 
@@ -41,9 +41,9 @@ Files: Router `internal/routing/engine.go`, `internal/routing/engine_test.go`, `
 
 Price entries match resolution, quality and edit mode. Policy first filters capabilities, then sorts total request estimates. Runtime provider concurrency and circuit cooldown govern eligibility without paid probes.
 
-- [ ] Implement task requirements, price matrices, health and bounded concurrency.
-- [ ] Add generic OpenAI Images transport with fail-closed paid-submission behavior.
-- [ ] Verify exact route choices, missing price tiers, circuit recovery and concurrency bounds.
+- [x] Implement task requirements, price matrices, health and bounded concurrency.
+- [x] Add generic OpenAI Images transport with fail-closed paid-submission behavior.
+- [x] Verify exact route choices, missing price tiers, circuit recovery and concurrency bounds.
 
 ## Task 3 — Naumi operation contract
 
@@ -51,15 +51,15 @@ Files: `src/lib/image-gateway.ts`, image generation, suite and A+ transports, `s
 
 Each durable image operation has a stable ID, sent as `extra_fields.naumi.operation_id` in both JSON and multipart. Router aliases receive explicit requested resolution. Non-idempotent image transports have no blind automatic retry.
 
-- [ ] Pass stable IDs and capabilities through all recoverable image paths.
-- [ ] Verify the actual outbound JSON/multipart bodies against a fake provider.
-- [ ] Run TypeScript, lint, production build and affected image regression checks.
+- [x] Pass stable IDs and capabilities through all recoverable image paths.
+- [x] Verify the actual outbound JSON/multipart bodies against a fake provider.
+- [x] Run TypeScript, lint, production build and affected image regression checks.
 
 ## Task 4 — Release and review
 
 Files: Router service/compose/release scripts, implementation handoff and production verification records.
 
-- [ ] Add durable state directory to deployment, preserve config, and prepare backup/rollback.
-- [ ] Review the complete diff independently and repair findings.
-- [ ] Publish fixed versions after checks; validate actual versions, health, state retention and affected requests.
-- [ ] If live access is unavailable, report the exact blocker and leave deployable artifacts and review links.
+- [x] Add durable state directory to deployment, preserve config, and prepare backup/rollback.
+- [x] Review the complete diff independently and repair findings.
+- [ ] Publish fixed versions after checks; validate actual versions, health, state retention and affected requests. (SSH action rejected by automatic approval review: `blocked by policy`; no live deployment.)
+- [x] If live access is unavailable, report the exact blocker and leave deployable artifacts and review links.
