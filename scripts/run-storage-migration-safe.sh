@@ -15,7 +15,7 @@ BW_LIMIT=${BW_LIMIT:-96K}
 MEMORY_LIMIT=${MEMORY_LIMIT:-128m}
 MEMORY_SWAP_LIMIT=${MEMORY_SWAP_LIMIT:-192m}
 CPU_LIMIT=${CPU_LIMIT:-0.15}
-MIN_AVAILABLE_KB=${MIN_AVAILABLE_KB:-262144}
+MIN_AVAILABLE_KB=${MIN_AVAILABLE_KB:-225280}
 
 require_root() {
   test "$(id -u)" = 0
@@ -26,7 +26,9 @@ require_root() {
 load_storage_env() {
   set -a
   # shellcheck disable=SC1090
-  . "$ENV_FILE"
+  # Production env files may be CRLF because they are provisioned from Windows.
+  # Normalize only in memory; keep the secret file unchanged on the host.
+  . <(sed 's/\r$//' "$ENV_FILE")
   set +a
   : "${S3_ENDPOINT:?missing S3_ENDPOINT}"
   : "${S3_REGION:?missing S3_REGION}"
@@ -121,6 +123,7 @@ start() {
     --retries 3 --low-level-retries 3 --stats 1m --stats-one-line \
     --log-level NOTICE >/dev/null
   systemctl stop naumi-media-migration-watchdog.service >/dev/null 2>&1 || true
+  systemctl reset-failed naumi-media-migration-watchdog.service >/dev/null 2>&1 || true
   systemd-run --quiet --unit naumi-media-migration-watchdog \
     "$WORK_ROOT/watchdog.sh"
   echo "MIGRATION_START=PASS CONTAINER=$MIGRATION_CONTAINER BW_LIMIT=$BW_LIMIT DRIVER=local"
@@ -164,6 +167,7 @@ verify() {
 stop() {
   docker stop -t 10 "$MIGRATION_CONTAINER" >/dev/null 2>&1 || true
   systemctl stop naumi-media-migration-watchdog.service >/dev/null 2>&1 || true
+  systemctl reset-failed naumi-media-migration-watchdog.service >/dev/null 2>&1 || true
   echo "MIGRATION_STOP=PASS"
 }
 
