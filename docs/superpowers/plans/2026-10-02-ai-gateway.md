@@ -61,5 +61,5 @@ Files: Router service/compose/release scripts, implementation handoff and produc
 
 - [x] Add durable state directory to deployment, preserve config, and prepare backup/rollback.
 - [x] Review the complete diff independently and repair findings.
-- [ ] Publish fixed versions after checks; validate actual versions, health, state retention and affected requests. (SSH action rejected by automatic approval review: `blocked by policy`; no live deployment.)
-- [x] If live access is unavailable, report the exact blocker and leave deployable artifacts and review links.
+- [x] Publish fixed versions after checks; validate actual versions, health, state retention and affected requests. App4260aec / Router849b016 deployed; public version1790954737, configuration/data retention and anonymous request guards verified.
+- [x] Publish release evidence, rollback paths and limitations; earlier SSH blocker resolved after user approval.
