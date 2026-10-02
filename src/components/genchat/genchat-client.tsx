@@ -342,7 +342,7 @@ export function GenChatClient() {
         if (Date.now() > deadline) throw new Error(t("genchat.fail"));
         const pr = await fetch(
           `/api/generate-image?job=${encodeURIComponent(jobId)}`,
-          { cache: "no-store" }
+          { cache: "no-store", headers: await authHeader() }
         );
         const pj = await pr.json();
         if (pj.status === "done") {

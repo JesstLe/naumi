@@ -63,7 +63,7 @@ ensure_video_worker_service() {
       print "    command: [\"node\", \"scripts/video-worker.mjs\"]"
       print "    environment:"
       print "      NAUMI_APP_ORIGIN: http://app:3000"
-      print "      VIDEO_WORKER_SECRET: ${VIDEO_WORKER_SECRET:-change-video-worker-secret}"
+      print "      VIDEO_WORKER_SECRET: ${VIDEO_WORKER_SECRET:?VIDEO_WORKER_SECRET required}"
       print "      VIDEO_WORKER_INTERVAL_MS: ${VIDEO_WORKER_INTERVAL_MS:-15000}"
       print "    depends_on:"
       print "      app:"
@@ -92,7 +92,7 @@ upgrade_release_compose() {
   [[ "$commit" =~ ^[a-f0-9]{40}$ ]]
   test -r "$compose"
   ensure_app_env "$compose" NAUMI_VIDEO_WORKER '"0"'
-  ensure_app_env "$compose" VIDEO_WORKER_SECRET '${VIDEO_WORKER_SECRET:-change-video-worker-secret}'
+  ensure_app_env "$compose" VIDEO_WORKER_SECRET '${VIDEO_WORKER_SECRET:?VIDEO_WORKER_SECRET required}'
   ensure_app_env "$compose" VIDEO_API_MODELS '${VIDEO_API_MODELS:-}'
   ensure_app_env "$compose" VIDEO_PROVIDERS_JSON '${VIDEO_PROVIDERS_JSON:-}'
   ensure_app_env "$compose" STORAGE_DRIVER '${STORAGE_DRIVER:-local}'

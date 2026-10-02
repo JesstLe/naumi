@@ -131,6 +131,23 @@ fi
 # 持久化端口到 .env(compose 自动读取),以后更新沿用同一端口,不再变来变去。
 PORT_TO_SAVE="${HTTP_PORT:-80}"
 touch .env
+chmod 600 .env
+command -v openssl >/dev/null 2>&1 || { echo "需要 openssl 生成安全密钥"; exit 1; }
+if ! grep -q '^VIDEO_WORKER_SECRET=' .env || grep -qE '^VIDEO_WORKER_SECRET=(|change-video-worker-secret)$' .env; then
+  sed -i '/^VIDEO_WORKER_SECRET=/d' .env
+  WORKER_SECRET="$(openssl rand -hex 32)"
+  printf '\nVIDEO_WORKER_SECRET=%s\n' "$WORKER_SECRET" >> .env
+fi
+
+# Only generate on first installation. Changing an existing encryption key
+# without migrating encrypted settings would make those settings unreadable.
+if ! grep -qE '^SETTINGS_SECRET=' .env; then
+  command -v openssl >/dev/null 2>&1 || { echo '需要 openssl 生成安全密钥'; exit 1; }
+  printf '\nSETTINGS_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
+elif grep -qE '^SETTINGS_SECRET=(|naumi-insecure-default|change-me-to-a-long-random-string)$' .env; then
+  echo 'SETTINGS_SECRET 使用了不安全的旧默认值，请先迁移加密设置并配置独立随机密钥。'
+  exit 1
+fi
 if grep -qE '^HTTP_PORT=' .env 2>/dev/null; then
   sed -i "s/^HTTP_PORT=.*/HTTP_PORT=$PORT_TO_SAVE/" .env
 else

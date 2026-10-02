@@ -1,3 +1,4 @@
+import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { NextResponse } from "next/server";
 import OpenAI, { toFile } from "openai";
 import { CATEGORY_IMAGES, img } from "@/lib/images";
@@ -8,15 +9,10 @@ import {
 } from "@/lib/mock-data";
 import {
   dbEnabled,
-  reserveCredits,
-  refundCredits,
   addArtworks,
   ensureTemplateRoot,
   getUser,
   isBanned,
-  addLedgerEntry,
-  addReservation,
-  settleReservation,
   sweepStaleReservations,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
@@ -799,10 +795,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
 }
 
 // --- Async job store ------------------------------------------------------
-// In-memory (single pm2 fork instance). POST returns a jobId immediately and
-// generation continues in the background, so a slow gpt-image job never holds
-// the HTTP connection open past Cloudflare's ~100s proxy timeout. The client
-// polls GET ?job=<id>. Jobs are GC'd after 20 minutes.
+// Persisted snapshots and leased execution survive process restarts.
 type Job = {
   status: "pending" | "done" | "error";
   images?: GeneratedImage[];
@@ -813,14 +806,9 @@ type Job = {
   persisted?: boolean;
   error?: string;
   createdAt: number;
+  sourceUrl?: string | null;
 };
-const JOBS = new Map<string, Job>();
-function gcJobs() {
-  const now = Date.now();
-  JOBS.forEach((v, k) => {
-    if (now - v.createdAt > 20 * 60 * 1000) JOBS.delete(k);
-  });
-}
+const JOBS = new DurableImageJobs<Job>("generate");
 
 // 生成并发闸:同时最多 GEN_MAX_CONCURRENT 个真实图片请求打上游,超出的排队。
 // 闸门按“单张请求”而不是按 job 计数，因此多个节点并发或单 job 生成 8 张时，
@@ -861,9 +849,10 @@ async function runJob(
 ) {
   let billingSettled = false;
   try {
-    // —— 临时埋点:量出每段耗时,定位生图慢在哪(OpenAI出图 / 放大 / 传R2 / 图大小)——
-    const _t0 = Date.now();
+    const saved = await JOBS.get(jobId);
     let images: GeneratedImage[];
+    if (saved?.images?.length) images = saved.images;
+    else {
     if (imageModel.provider === "user-chat-completions" && userProvider) {
       images = await newApiFlowImages(p, userProvider.model, {
         baseUrl: userProvider.baseUrl,
@@ -884,50 +873,37 @@ async function runJob(
         ? await openaiImages(p, apiKey, imageModel.id, cutoutModel)
         : mockImages(p);
     }
-    const _tOpenai = Date.now() - _t0;
-    const _t1 = Date.now();
     images = await enforceOutputShape(images, p);
     if (!(p.targetWidth > 0 && p.targetHeight > 0)) {
       images = await upscaleImages(images, p.resolution);
     }
     images = await attachImageDimensions(images);
-    const _tUpscale = Date.now() - _t1;
-    const _u0 = images[0]?.url || "";
-    const _approxBytes = _u0.startsWith("data:")
-      ? Math.round((_u0.length - _u0.indexOf(",") - 1) * 0.75)
-      : 0;
-    const _t2 = Date.now();
+    images = images.map((image, index) => ({ ...image, id: `art-${jobId}-${index}` }));
     images = await persistToStorage(images);
-    const _tPersist = Date.now() - _t2;
-    console.log(
-      `[gen-timing] job=${jobId} n=${p.count} res=${p.resolution} edit=${
-        p.images.length > 0
-      } openai=${_tOpenai}ms upscale=${_tUpscale}ms persistR2=${_tPersist}ms firstImg=${Math.round(
-        _approxBytes / 1024
-      )}KB total=${Date.now() - _t0}ms`
-    );
-
+    await JOBS.patch(jobId, { images });
+    }
     // Persist the first uploaded source image so "再次生成" can restore it.
-    let sourceUrl: string | null = null;
-    if (p.images[0] && storageEnabled) {
+    let sourceUrl: string | null = saved?.sourceUrl || null;
+    if (!sourceUrl && p.images[0] && storageEnabled) {
       try {
         const first = p.images[0];
         const ext = (first.type || "image/png").split("/")[1] || "png";
         sourceUrl = await uploadImage(
           first.buf,
           first.type || "image/png",
-          `sources/src-${Date.now()}.${ext}`
+          `sources/${jobId}.${ext}`
         );
       } catch {
         /* non-fatal */
       }
     }
 
+    await JOBS.patch(jobId, { sourceUrl });
     let user: Awaited<ReturnType<typeof getUser>> = null;
     if (useDb) {
       const title =
         p.prompt.length > 16 ? `${p.prompt.slice(0, 16)}…` : p.prompt;
-      const batchId = `b-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
+      const batchId = `b-${jobId}`;
       // 血缘父节点:优先用显式 parentId;否则若来自模板「做同款」,在用户名下
       // 找/建该模板的"模板原图"根节点,本次生成挂它下面。
       let parent: string | null = p.parentId || null;
@@ -939,7 +915,6 @@ async function runJob(
           title: p.templatePrompt || p.prompt,
         }).catch(() => null);
       }
-      try {
         await addArtworks(
           p.email,
           images.map((im) => ({
@@ -964,28 +939,15 @@ async function runJob(
           })),
           batchId
         );
-      } catch {
-        /* non-fatal */
-      }
       const actualCost = userProvider ? 0 : images.length * resolutionCost(p.resolution);
-      const refund = Math.max(0, cost - actualCost);
-      if (refund > 0) await refundCredits(p.email, refund);
-      if (actualCost > 0) {
-        await addLedgerEntry(
-          p.email,
-          -actualCost,
-          images.length === p.count
-            ? `生成 ${images.length} 张图`
-            : `生成 ${images.length} 张图（请求 ${p.count} 张）`
-        );
-      }
+      await JOBS.settle(jobId, actualCost, `生成 ${images.length} 张图`);
       billingSettled = true;
       user = await getUser(p.email).catch(() => null);
     }
 
-    if (useDb) await settleReservation(jobId).catch(() => {});
+
     const actualCost = userProvider ? 0 : images.length * resolutionCost(p.resolution);
-    JOBS.set(jobId, {
+    await JOBS.set(jobId, {
       status: "done",
       images,
       user,
@@ -999,19 +961,15 @@ async function runJob(
       createdAt: Date.now(),
     });
   } catch (e) {
-    if (useDb && !billingSettled) {
-      await refundCredits(p.email, cost).catch(() => {});
-    }
-    if (useDb) {
-      await settleReservation(jobId).catch(() => {});
-    }
+    if ((await JOBS.get(jobId, false))?.images?.length) throw e;
+    if (useDb && !billingSettled) await JOBS.settle(jobId, 0, "图片生成失败");
     // 原始上游 message 可能含 openai/gpt/quota 等字样,经 safeError 净化后再落库,
     // 避免随 GET 轮询回传给用户暴露所用模型。详细原因只打服务端日志。
     console.error(
       "[generate-image] job failed:",
       e instanceof Error ? e.message : e
     );
-    JOBS.set(jobId, {
+    await JOBS.set(jobId, {
       status: "error",
       error: safeError(e, "图片生成失败,请稍后重试"),
       createdAt: Date.now(),
@@ -1019,7 +977,28 @@ async function runJob(
   }
 }
 
+async function kickGeneration(id: string) {
+  await JOBS.kick(id, async (payload) => {
+    const p = payload.p as GenParams;
+    const settings = await getOpenAISettings();
+    const imageModel = (await getImageModelCatalog(p.email)).find((model) => model.id === p.model);
+    if (!imageModel) throw new Error("任务模型暂时不可用");
+    const provider = payload.byok ? await getUserImageProvider(p.email) : null;
+    if (payload.byok && !provider) throw new Error("自定义图片接口暂时不可用");
+    if (provider) await assertUserImageBaseUrlAllowed(provider.baseUrl);
+    await runJob(id, p, settings.apiKey, imageModel, settings.cutoutModel,
+      provider ? { ...provider, model: upstreamUserImageModel(p.model) } : null,
+      dbEnabled && !!p.email, Number(payload.cost));
+  });
+}
+
 export async function POST(request: Request) {
+  if (imageWorkerAuthorized(request)) {
+    const body = await request.json();
+    if (typeof body.workerJobId !== "string") return NextResponse.json({ error: "无效任务" }, { status: 400 });
+    await kickGeneration(body.workerJobId);
+    return NextResponse.json({ ok: true });
+  }
   let p: GenParams | null;
   try {
     p = await parseParams(request);
@@ -1145,29 +1124,16 @@ export async function POST(request: Request) {
     );
   }
 
-  if (useDb) {
-    // 先释放进程重启遗留的过期预扣，再判断本次余额。否则当孤儿预扣恰好
-    // 占满余额时，请求会直接 402，永远走不到下方的清理逻辑，账号无法自愈。
-    await sweepStaleReservations().catch(() => {});
-    if (cost > 0) {
-      const ok = await reserveCredits(p.email, cost);
-      if (!ok) {
-        return NextResponse.json(
-          { error: "积分不足，请升级方案后重试" },
-          { status: 402 }
-        );
-      }
-    }
+  if (useDb) await sweepStaleReservations().catch(() => {});
+  const jobId = `job-${crypto.randomUUID()}`;
+  p.model = imageModel.id;
+  try {
+  await JOBS.create(jobId, p.email, { status: "pending", createdAt: Date.now() }, { p, cost, byok: !!userProvider }, cost, true);
+  } catch(error) {
+    const message=error instanceof Error ? error.message : "";
+    return NextResponse.json({error:safeError(error,"任务保存失败，请稍后重试")},{status:message.includes("积分不足") ? 402 : 503});
   }
-
-  gcJobs();
-  const jobId = `job-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-  JOBS.set(jobId, { status: "pending", createdAt: Date.now() });
-  // Record the credit reservation so it can be auto-refunded if the process
-  // dies mid-job. Older orphans were swept before the balance check above.
-  if (useDb && cost > 0) await addReservation(jobId, p.email, cost);
-  // Fire-and-forget: continues in the persistent Node server after we respond.
-  void runJob(jobId, p, apiKey, imageModel, cutoutModel, userProvider, useDb, cost);
+  await kickGeneration(jobId).catch(error=>console.error("[image-job] deferred kickoff:",error instanceof Error ? error.message : "unknown"));
 
   return NextResponse.json({ jobId });
   } catch (e) {
@@ -1180,9 +1146,17 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
+  if (new URL(request.url).searchParams.has("active")) {
+    const email = await resolveUserEmail(request);
+    if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+    return NextResponse.json({ jobs: await JOBS.active(email) });
+  }
   const jobId = new URL(request.url).searchParams.get("job");
   if (jobId) {
-    const job = JOBS.get(jobId);
+    if (dbEnabled && (await resolveUserEmail(request))?.toLowerCase() !== await JOBS.owner(jobId)) {
+      return NextResponse.json({ error: "无权查看此任务" }, { status: 403 });
+    }
+    const job = await JOBS.get(jobId, false);
     if (!job) {
       return NextResponse.json({
         status: "error",

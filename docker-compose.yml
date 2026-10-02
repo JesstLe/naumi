@@ -67,7 +67,7 @@ services:
       AGENT_BACKEND: ${AGENT_BACKEND:-pi}
       # AES key for encrypting stored API keys at rest.
       # ⚠️ Set a long random value BEFORE first run and never change it afterwards.
-      SETTINGS_SECRET: ${SETTINGS_SECRET:-change-me-to-a-long-random-string}
+      SETTINGS_SECRET: ${SETTINGS_SECRET:?请先运行安装器或配置独立随机 SETTINGS_SECRET}
       # Filesystem / R2 / S3-compatible (Garage、MinIO、OSS、COS) storage.
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       MEDIA_DIR: /data/media
@@ -89,7 +89,7 @@ services:
       INTERNAL_APP_ORIGIN: http://127.0.0.1:3000
       # 外置视频 worker 通过内部鉴权端点驱动恢复，app 内不再启动定时器。
       NAUMI_VIDEO_WORKER: "0"
-      VIDEO_WORKER_SECRET: ${VIDEO_WORKER_SECRET:-change-video-worker-secret}
+      VIDEO_WORKER_SECRET: ${VIDEO_WORKER_SECRET:?请配置独立随机 VIDEO_WORKER_SECRET}
       VIDEO_API_BASE_URL: ${VIDEO_API_BASE_URL:-}
       VIDEO_API_KEY: ${VIDEO_API_KEY:-}
       VIDEO_API_MODEL: ${VIDEO_API_MODEL:-}
@@ -113,7 +113,7 @@ services:
     command: ["node", "scripts/video-worker.mjs"]
     environment:
       NAUMI_APP_ORIGIN: http://app:3000
-      VIDEO_WORKER_SECRET: ${VIDEO_WORKER_SECRET:-change-video-worker-secret}
+      VIDEO_WORKER_SECRET: ${VIDEO_WORKER_SECRET:?请配置独立随机 VIDEO_WORKER_SECRET}
       VIDEO_WORKER_INTERVAL_MS: ${VIDEO_WORKER_INTERVAL_MS:-15000}
     depends_on:
       app:

@@ -4227,7 +4227,7 @@ export function CanvasClient() {
         if (Date.now() > deadline) throw new Error(t("canvas.genFail"));
         const pr = await fetch(
           `/api/generate-image?job=${encodeURIComponent(jobId)}`,
-          { cache: "no-store" }
+          { cache: "no-store", headers: await authHeader() }
         );
         const pj = await readJsonSafe(pr);
         if (pj.status === "done") {
@@ -5553,195 +5553,94 @@ export function CanvasClient() {
     }
   }
 
-  // ── 撤销/重做(实用版)──
-  async function restoreRecordsSilent(records: Artwork[]) {
-    if (!user || !records.length) return;
-    await privateFetch("/api/artworks/restore", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: user.email, records }),
-    }).catch(() => {});
-    restoreWorksLocal(records); // 已持有完整记录,本地恢复即可
-  }
-  async function deleteIdsSilent(ids: string[]) {
-    if (!user || !ids.length) return;
-    await privateFetch("/api/artworks/delete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: user.email, ids }),
-    }).catch(() => {});
-    removeWorksLocal(ids); // 本地移除,不整表重拉
-  }
-  async function restoreTextNodesSilent(records: CanvasTextNode[]) {
-    if (!records.length) return;
-    await Promise.all(records.map((record) => persistTextNode(record)));
-    setTextNodes((current) => {
-      const map = new Map(current.map((node) => [node.id, node]));
-      records.forEach((record) => map.set(record.id, record));
-      return Array.from(map.values());
-    });
-  }
-  async function deleteTextNodesSilent(ids: string[]) {
-    if (!ids.length) return;
-    await privateFetch("/api/canvas/text-nodes", {
-      method: "DELETE",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ids }),
-    }).catch(() => {});
-    setTextNodes((current) => current.filter((node) => !ids.includes(node.id)));
-    setSelectedTextId((current) => current && ids.includes(current) ? null : current);
-  }
-  function setTextPosSilent(id: string, x: number, y: number) {
-    setTextNodes((current) => current.map((node) => node.id === id ? { ...node, canvasX: x, canvasY: y } : node));
-    const node = textNodes.find((item) => item.id === id);
-    if (node) void persistTextNode({ ...node, canvasX: x, canvasY: y, updatedAt: new Date().toISOString() });
-  }
-  function setCanvasNodePosSilent(id: string, x: number, y: number) {
-    if (id.startsWith("text-")) {
-      setTextPosSilent(id, x, y);
-      return;
+  // A history step is persisted atomically before any local state or stack changes.
+  const historyBusyRef = useRef(false);
+  const [historySaving,setHistorySaving] = useState(false);
+  const historyAttemptsRef = useRef(new WeakMap<UndoAct, string>());
+  async function applyHistory(act: UndoAct, undo: boolean) {
+    await Promise.all(Array.from(textSaveQueuesRef.current.values()));
+    const side = undo ? "from" : "to";
+    const operations: Array<Record<string, unknown>> = [];
+    const position = (id: string, point: { x: number; y: number }, text = id.startsWith("text-")) =>
+      operations.push({ type: "position", id, text, ...point });
+    const visibility = (records: Artwork[], visible: boolean) => records.forEach(record => operations.push({type:"visibility",id:record.id,visible}));
+    const texts = (records: CanvasTextNode[], visible: boolean) => records.forEach(node => operations.push(visible ? {type:"text-restore",node} : {type:"text-delete",id:node.id}));
+    if (act.kind === "move" || act.kind === "text-move") position(act.id,act[side],act.kind === "text-move");
+    else if (act.kind === "move-many") act.moves.forEach(move => position(move.id,move[side]));
+    else if (act.kind === "canvas-group") act.changes.forEach(change => operations.push({type:"group",id:change.id,value:change[side]}));
+    else if (act.kind === "mixed-delete") { visibility(act.artworks,undo); texts(act.textNodes,undo); }
+    else if (act.kind === "delete" || act.kind === "add") visibility(act.records,act.kind === "delete" ? undo : !undo);
+    else if (act.kind === "text-delete" || act.kind === "text-add") texts(act.records,act.kind === "text-delete" ? undo : !undo);
+    else if (act.kind === "parent") operations.push({type:"parent",id:act.targetId,parentId:act.parentId,add:undo ? !act.added : act.added});
+    else if (act.kind === "text-patch") operations.push({type:"text-patch",id:act.id,fields:act[side]});
+    else if (act.kind === "rename") operations.push({type:"rename",id:act.id,title:act[side]});
+    else if (act.kind === "art-size") operations.push({type:"size",id:act.id,...act[side]});
+    else if (act.kind === "mark") act.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side]}));
+    let operationId = historyAttemptsRef.current.get(act);
+    if (!operationId) { operationId=crypto.randomUUID(); historyAttemptsRef.current.set(act,operationId); }
+    const response=await privateFetch("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
+    await expectJsonOk(response,t("canvas.genFail"));
+    // All operations below are local applications of an already committed transaction.
+    for (const op of operations) {
+      const id=op.id as string;
+      if (op.type === "visibility") {
+        if (op.visible) {
+          const records = act.kind === "mixed-delete" ? act.artworks : (act as {records:Artwork[]}).records;
+          restoreWorksLocal(records.filter(record=>record.id===id));
+        } else removeWorksLocal([id]);
+      } else if (op.type === "text-restore") {
+        const node=op.node as CanvasTextNode;
+        setTextNodes(current=>[...current.filter(item=>item.id!==node.id),node]);
+      } else if (op.type === "text-delete") {
+        setTextNodes(current=>current.filter(node=>node.id!==id));
+        setSelectedTextId(current=>current===id ? null : current);
+      } else if (op.type === "position" && op.text) setTextNodes(current=>current.map(node=>node.id===id ? {...node,canvasX:op.x as number,canvasY:op.y as number} : node));
+      else if (op.type === "text-patch") setTextNodes(current=>current.map(node=>node.id===id ? {...node,...op.fields as TextPatchFields} : node));
+      else setWorks(current=>current?.map(node=> {
+        if (node.id!==id) return node;
+        if (op.type === "position") return {...node,canvasX:op.x as number,canvasY:op.y as number};
+        if (op.type === "group") return {...node,canvasGroupId:op.value as string|null};
+        if (op.type === "rename") return {...node,title:op.title as string};
+        if (op.type === "size") return {...node,canvasX:op.x as number,canvasY:op.y as number,canvasWidth:op.width as number,canvasHeight:op.height as number};
+        if (op.type === "mark") return {...node,marked:op.marked as boolean};
+        if (op.type === "parent") {
+          const parentId=op.parentId as string;
+          const parents=new Set(node.parentIds || []);
+          let primary=node.parentId;
+          if (op.add) { if (!primary) primary=parentId; else if(primary!==parentId) parents.add(parentId); }
+          else { if(primary===parentId) primary=null; parents.delete(parentId); }
+          return {...node,parentId:primary,parentIds:Array.from(parents)};
+        }
+        return node;
+      }) ?? current);
     }
-    setPosSilent(id, x, y);
-  }
-  // 血缘连线静默应用(撤销/剪线共用):add=给 target 加回 parentId,否则移除
-  async function setParentLinkSilent(targetId: string, parentId: string, add: boolean) {
-    if (!user) return;
-    await privateFetch("/api/artworks/parents", {
-      method: add ? "POST" : "DELETE",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: user.email, id: targetId, parentId }),
-    }).catch(() => {});
-    await mergeWorks([targetId]);
-  }
-  // 文字节点字段快照静默应用(文案/引用/产品/尺寸的撤销与重做)
-  function applyTextPatchSilent(id: string, fields: TextPatchFields) {
-    const node = textNodes.find((item) => item.id === id);
-    if (!node) return;
-    const updated: CanvasTextNode = {
-      ...node,
-      ...fields,
-      updatedAt: new Date().toISOString(),
-    };
-    setTextNodes((current) =>
-      current.map((item) => (item.id === id ? updated : item))
-    );
-    void persistTextNode(updated);
-  }
-  // 重命名静默应用
-  function renameArtSilent(id: string, title: string) {
-    setWorks((prev) => prev?.map((w) => (w.id === id ? { ...w, title } : w)) ?? prev);
-    if (!user) return;
-    void privateFetch("/api/artworks/rename", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: user.email, id, title }),
-    }).catch(() => {});
-  }
-  // 图片节点画布尺寸静默应用
-  function setArtSizeSilent(
-    id: string,
-    s: { x: number; y: number; width: number; height: number }
-  ) {
-    setWorks((prev) =>
-      prev?.map((w) =>
-        w.id === id
-          ? { ...w, canvasX: s.x, canvasY: s.y, canvasWidth: s.width, canvasHeight: s.height }
-          : w
-      ) ?? prev
-    );
-    void privateFetch("/api/artworks/canvas-size", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, x: s.x, y: s.y, width: s.width, height: s.height }),
-    }).catch(() => {});
-  }
-  // 标记静默应用(逐 id)
-  function setMarkSilent(changes: Array<{ id: string; marked: boolean }>) {
-    const byId = new Map(changes.map((c) => [c.id, c.marked]));
-    setWorks((prev) =>
-      prev?.map((w) => (byId.has(w.id) ? { ...w, marked: byId.get(w.id)! } : w)) ?? prev
-    );
-    if (!user) return;
-    changes.forEach((c) =>
-      void privateFetch("/api/artworks/mark", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: c.id, marked: c.marked }),
-      }).catch(() => {})
-    );
-  }
-  function setPosSilent(id: string, x: number, y: number) {
-    if (!user) return;
-    setWorks((prev) =>
-      prev ? prev.map((w) => (w.id === id ? { ...w, canvasX: x, canvasY: y } : w)) : prev
-    );
-    privateFetch("/api/artworks/position", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: user.email, id, x, y }),
-    }).catch(() => {});
+    for(const op of operations) {const id=(op.id || (op.node as CanvasTextNode|undefined)?.id) as string; unsavedTextRef.current.delete(id);}
+    setUnsavedTextCount(unsavedTextRef.current.size);
+    historyAttemptsRef.current.delete(act);
   }
   async function doUndo() {
-    if (!undoStack.length) return;
-    const act = undoStack[undoStack.length - 1];
-    setUndoStack((s) => s.slice(0, -1));
-    setRedoStack((s) => [...s, act]);
-    if (act.kind === "move") setPosSilent(act.id, act.from.x, act.from.y);
-    else if (act.kind === "move-many")
-      act.moves.forEach((move) =>
-        setCanvasNodePosSilent(move.id, move.from.x, move.from.y)
-      );
-    else if (act.kind === "canvas-group")
-      await applyCanvasGroupAssignments(
-        act.changes.map((change) => ({ id: change.id, canvasGroupId: change.from }))
-      );
-    else if (act.kind === "mixed-delete")
-      await Promise.all([
-        restoreRecordsSilent(act.artworks),
-        restoreTextNodesSilent(act.textNodes),
-      ]);
-    else if (act.kind === "delete") await restoreRecordsSilent(act.records);
-    else if (act.kind === "add") await deleteIdsSilent(act.records.map((r) => r.id));
-    else if (act.kind === "text-delete") await restoreTextNodesSilent(act.records);
-    else if (act.kind === "text-add") await deleteTextNodesSilent(act.records.map((r) => r.id));
-    else if (act.kind === "text-move") setTextPosSilent(act.id, act.from.x, act.from.y);
-    else if (act.kind === "parent") await setParentLinkSilent(act.targetId, act.parentId, !act.added);
-    else if (act.kind === "text-patch") applyTextPatchSilent(act.id, act.from);
-    else if (act.kind === "rename") renameArtSilent(act.id, act.from);
-    else if (act.kind === "art-size") setArtSizeSilent(act.id, act.from);
-    else if (act.kind === "mark")
-      setMarkSilent(act.changes.map((c) => ({ id: c.id, marked: c.from })));
+    if (!undoStack.length || historyBusyRef.current || readOnly) return;
+    historyBusyRef.current=true;
+    setHistorySaving(true);
+    const act=undoStack[undoStack.length-1];
+    try {
+      await applyHistory(act,true);
+      setUndoStack(stack=>stack.filter(item=>item!==act));
+      setRedoStack(stack=>[...stack,act]);
+    } catch (error) { flashTip(error instanceof Error ? error.message : t("canvas.genFail")); }
+    finally { historyBusyRef.current=false; setHistorySaving(false); }
   }
   async function doRedo() {
-    if (!redoStack.length) return;
-    const act = redoStack[redoStack.length - 1];
-    setRedoStack((s) => s.slice(0, -1));
-    setUndoStack((s) => [...s, act]);
-    if (act.kind === "move") setPosSilent(act.id, act.to.x, act.to.y);
-    else if (act.kind === "move-many")
-      act.moves.forEach((move) =>
-        setCanvasNodePosSilent(move.id, move.to.x, move.to.y)
-      );
-    else if (act.kind === "canvas-group")
-      await applyCanvasGroupAssignments(
-        act.changes.map((change) => ({ id: change.id, canvasGroupId: change.to }))
-      );
-    else if (act.kind === "mixed-delete")
-      await Promise.all([
-        deleteIdsSilent(act.artworks.map((record) => record.id)),
-        deleteTextNodesSilent(act.textNodes.map((record) => record.id)),
-      ]);
-    else if (act.kind === "delete") await deleteIdsSilent(act.records.map((r) => r.id));
-    else if (act.kind === "add") await restoreRecordsSilent(act.records);
-    else if (act.kind === "text-delete") await deleteTextNodesSilent(act.records.map((r) => r.id));
-    else if (act.kind === "text-add") await restoreTextNodesSilent(act.records);
-    else if (act.kind === "text-move") setTextPosSilent(act.id, act.to.x, act.to.y);
-    else if (act.kind === "parent") await setParentLinkSilent(act.targetId, act.parentId, act.added);
-    else if (act.kind === "text-patch") applyTextPatchSilent(act.id, act.to);
-    else if (act.kind === "rename") renameArtSilent(act.id, act.to);
-    else if (act.kind === "art-size") setArtSizeSilent(act.id, act.to);
-    else if (act.kind === "mark")
-      setMarkSilent(act.changes.map((c) => ({ id: c.id, marked: c.to })));
+    if (!redoStack.length || historyBusyRef.current || readOnly) return;
+    historyBusyRef.current=true;
+    setHistorySaving(true);
+    const act=redoStack[redoStack.length-1];
+    try {
+      await applyHistory(act,false);
+      setRedoStack(stack=>stack.filter(item=>item!==act));
+      setUndoStack(stack=>[...stack,act]);
+    } catch (error) { flashTip(error instanceof Error ? error.message : t("canvas.genFail")); }
+    finally { historyBusyRef.current=false; setHistorySaving(false); }
   }
   // 添加节点后记一笔可撤销(从刚刷新的列表取完整记录)
   function pushAddUndo(newId: string | null, fresh: Artwork[]) {
@@ -6861,26 +6760,31 @@ export function CanvasClient() {
     const c = centerScreen();
     addPendAtScreen(c.x, c.y, null, false);
   }
+  const unsavedTextRef=useRef(new Map<string,CanvasTextNode>());
+  const textSaveQueuesRef=useRef(new Map<string,Promise<unknown>>());
+  const [unsavedTextCount,setUnsavedTextCount]=useState(0);
   async function persistTextNode(node: CanvasTextNode) {
     if (!user || readOnly) return node;
-    try {
-      const response = await privateFetch("/api/canvas/text-nodes", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(node),
-      });
-      const data = await readJsonSafe(response);
-      if (response.ok && data?.node) {
-        const saved = data.node as CanvasTextNode;
-        setTextNodes((current) =>
-          current.map((item) => (item.id === saved.id ? saved : item))
-        );
-        return saved;
+    unsavedTextRef.current.set(node.id,node);
+    const save=async()=> {
+      try {
+        const response=await privateFetch("/api/canvas/text-nodes",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(node),signal:AbortSignal.timeout(20_000)});
+        const data=await expectJsonOk(response,t("canvas.genFail"));
+        if(unsavedTextRef.current.get(node.id)===node) {
+          unsavedTextRef.current.delete(node.id);
+          if(data?.node) setTextNodes(current=>current.map(item=>item.id===node.id && item.updatedAt===node.updatedAt ? data.node as CanvasTextNode : item));
+        }
+        setUnsavedTextCount(unsavedTextRef.current.size);
+        return data?.node || node;
+      } catch(error) {
+        setUnsavedTextCount(unsavedTextRef.current.size);
+        flashTip(t("canvas.saveFailed") + (error instanceof Error ? `：${error.message}` : ""));
+        return null;
       }
-    } catch {
-      /* localStorage mirror keeps the node when the database is unavailable */
-    }
-    return node;
+    };
+    const queue=(textSaveQueuesRef.current.get(node.id) || Promise.resolve()).then(save);
+    textSaveQueuesRef.current.set(node.id,queue);
+    return queue.finally(()=>{if(textSaveQueuesRef.current.get(node.id)===queue) textSaveQueuesRef.current.delete(node.id);});
   }
   async function updateTextReference(
     textNodeId: string,
@@ -7559,7 +7463,7 @@ export function CanvasClient() {
         if (Date.now() > deadline) throw new Error(t("canvas.genFail"));
         const pr = await fetch(
           `/api/generate-image?job=${encodeURIComponent(jobId)}`,
-          { cache: "no-store" }
+          { cache: "no-store", headers: await authHeader() }
         );
         const pj = await readJsonSafe(pr);
         if (pj.status === "done") {
@@ -7960,6 +7864,7 @@ export function CanvasClient() {
   // macOS / Windows 共用键盘层：⌘ 或 Ctrl 作为主修饰键；输入框和上层界面不接管系统快捷键。
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (historyBusyRef.current) { e.preventDefault(); return; }
       const el =
         e.target instanceof HTMLElement
           ? e.target
@@ -8161,13 +8066,24 @@ export function CanvasClient() {
     };
   }, [ready, user, browsing]);
 
-  if (!ready || !user) {
+  if (!ready) {
     return (
       <div className="container py-20 text-sm text-muted-foreground">
         {t("canvas.loading")}
       </div>
     );
   }
+
+  if (!user) return (
+    <div className="container flex min-h-[60vh] flex-col items-center justify-center gap-5 py-20 text-center">
+      <h1 className="text-2xl font-semibold">{t("canvas.guestTitle")}</h1>
+      <p className="text-sm text-muted-foreground">{t("canvas.guestDescription")}</p>
+      <div className="flex gap-3">
+        <button className="rounded-lg bg-primary px-5 py-2 text-primary-foreground" onClick={() => openAuth("sign-in")}>{t("canvas.guestLogin")}</button>
+        <button className="rounded-lg border px-5 py-2" onClick={() => router.push("/")}>{t("canvas.guestHome")}</button>
+      </div>
+    </div>
+  );
 
   const loading = persistMode === "server" && works === null;
 
@@ -8365,6 +8281,14 @@ export function CanvasClient() {
       "flex h-dvh min-h-[100svh] flex-col overflow-hidden bg-background text-foreground",
       lightCanvas ? "canvas-ui-light" : "dark canvas-ui-dark"
     )}>
+      {unsavedTextCount>0 && <div role="alert" className="fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500 bg-background px-4 py-3 text-sm shadow-lg">
+        <span>{t("canvas.unsavedChanges")} ({unsavedTextCount})</span>
+        <button className="font-semibold underline" onClick={()=>void Promise.all(Array.from(unsavedTextRef.current.values()).map(node=>persistTextNode(node)))}>{t("canvas.retrySave")}</button>
+      </div>}
+      {historySaving && <div className="fixed inset-0 z-[190] cursor-wait" aria-label={t("canvas.savingChanges")}>
+        <div role="status" className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-lg bg-background px-4 py-3 text-sm shadow-lg">{t("canvas.savingChanges")}</div>
+      </div>}
+
       {ratioMenu}
       {/* 占位节点上传用的隐藏 input */}
       <input

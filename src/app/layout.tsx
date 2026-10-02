@@ -11,6 +11,7 @@ import { LocaleProvider } from "@/lib/i18n/locale-context";
 import { getServerLocale } from "@/lib/i18n/server-locale";
 import { PaymentProvider } from "@/lib/payment-context";
 import { startVideoWorker } from "@/lib/video/worker";
+import { settingsSecret, workerSecret } from "@/lib/settings-secret";
 
 // 视频后台恢复 worker:首个页面请求的模块加载即幂等启动(unref,不阻塞进程退出)
 startVideoWorker();
@@ -57,6 +58,8 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Fail closed for configured deployments before serving authenticated pages.
+  if (process.env.DATABASE_URL) { settingsSecret(); workerSecret(); }
   // 首启配置门控:**未配置的实例**(非官方云、且未填 OpenAI Key)访问任意页
   // 都引到 /setup;已配置(含 NAUMI_EDITION=cloud 官方云)完全不跳。
   // isConfigured() 在 cloud 分支直接短路返回 true,不读 DB —— 线上站零开销、永不触发。

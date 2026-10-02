@@ -4,6 +4,7 @@ import { getSetting, setSetting } from "@/lib/db";
 import { isAdminToken, emailFromToken, bearer } from "@/lib/supabase-admin";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { hashPassword, verifyPassword } from "@/lib/pw";
+import { settingsSecret } from "@/lib/settings-secret";
 
 // 兼容旧引用:密码哈希/校验已抽到 @/lib/pw,这里再导出一份。
 export { hashPassword, verifyPassword };
@@ -24,7 +25,7 @@ export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 天
 
 function secret(): string {
   // 复用落库加密用的服务端密钥(settings.ts 同源),用于给会话 cookie 签名。
-  return process.env.SETTINGS_SECRET || "naumi-insecure-default";
+  return settingsSecret();
 }
 
 export async function setAdminPassword(pw: string): Promise<void> {
