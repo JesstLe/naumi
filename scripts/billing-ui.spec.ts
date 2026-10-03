@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes, scryptSync } from "node:crypto";
+import { Pool } from "pg";
 test("management center unifies navigation, deep links, settings and legacy entries", async ({ page }) => {
     const fixture = JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json", "utf8"));
     await page.context().addCookies([{ name: "nv_admin", value: fixture.adminCookie, domain: "127.0.0.1", path: "/" }, { name: "naumi_locale", value: "zh", domain: "127.0.0.1", path: "/" }]);
@@ -189,4 +190,37 @@ test("canvas assistant retries keep streamed billing intent and original convers
  await page.addInitScript(id=>localStorage.setItem("nv:canvas:last",`tree:${id}`),fixture.artworkId);await page.goto(`/canvas?node=${fixture.artworkId}`);await page.locator(`.react-flow__node[data-id="${fixture.artworkId}"]`).click();await page.getByTitle("画布助手",{exact:true}).click();const panel=page.getByLabel("画布助手面板",{exact:true}),input=panel.getByPlaceholder("问点什么，或让助手写提示词…（Enter 发送，Shift+Enter 换行）");await input.fill("Retain assistant conversation");
  for(let i=0;i<3;i++){await panel.getByRole("button",{name:"发送",exact:true}).click();await expect.poll(()=>attempts.length).toBe(i+1);if(i<2){await expect(panel.getByText("fixture stream interrupted",{exact:true})).toBeVisible();await expect(input).toHaveValue("Retain assistant conversation");}else{await expect(panel.getByText("complete reply",{exact:true})).toBeVisible();await expect(input).toHaveValue("");}}
  expect(attempts[1]).toEqual(attempts[0]);expect(attempts[2]).toEqual(attempts[0]);expect(attempts[0].id).toBeTruthy();
+});
+
+test("configured access password gates email admins, deep links and logout", async ({ page }) => {
+    if (process.env.NAUMI_VERIFY_ISOLATED_DB !== "1" || new URL(process.env.DATABASE_URL || "http://invalid").hostname !== "127.0.0.1") throw new Error("Requires isolated local PostgreSQL");
+    const fixture = JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json", "utf8")), pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const previous = (await pool.query("SELECT v FROM app_settings WHERE k='admin_password_hash'")).rows[0]?.v, role = (await pool.query("SELECT role FROM app_users WHERE email=$1", [fixture.email])).rows[0].role;
+    const password = "isolated-ui-access-password", salt = randomBytes(16), hash = `scrypt$${salt.toString("hex")}$${scryptSync(password, salt, 32).toString("hex")}`;
+    try {
+        await pool.query("INSERT INTO app_settings(k,v) VALUES('admin_password_hash',$1) ON CONFLICT(k) DO UPDATE SET v=excluded.v", [hash]);
+        await pool.query("UPDATE app_users SET role='admin' WHERE email=$1", [fixture.email]);
+        await page.context().addCookies([{ name: "nv_user", value: fixture.userCookie, domain: "127.0.0.1", path: "/" }, { name: "nv_admin", value: fixture.adminCookie, domain: "127.0.0.1", path: "/" }]);
+        expect((await (await page.request.get("/api/admin/login")).json()).nativeAdmin).toBe(false);
+        expect((await page.request.get("/api/admin/billing")).status()).toBe(404);
+        await page.goto("/admin/billing");
+        await expect(page).toHaveURL(/\/admin\?next=/);
+        await expect(page.getByRole("heading", { name: "管理中心访问验证", exact: true })).toBeVisible();
+        await expect(page.getByLabel("普通生图 · 标准单价（积分）")).toHaveCount(0);
+        const input = page.getByPlaceholder("后台访问密码", { exact: true });
+        await input.fill("incorrect-fixture-password"); await page.getByRole("button", { name: "登录", exact: true }).click();
+        await expect(page.getByText("密码错误", { exact: true })).toBeVisible();
+        await input.fill(password); await page.getByRole("button", { name: "登录", exact: true }).click();
+        await expect(page).toHaveURL(/\/admin\/billing$/); await expect(page.getByLabel("普通生图 · 标准单价（积分）")).toBeVisible();
+        const cookie = (await page.context().cookies()).find(c => c.name === "nv_admin")!; expect(cookie.httpOnly).toBe(true); expect(cookie.value).not.toBe(fixture.adminCookie);
+        await page.getByRole("navigation", { name: "管理中心导航", exact: true }).getByRole("link", { name: "接口与站点设置", exact: true }).click();
+        await expect(page.getByRole("heading", { name: "系统设置", exact: true })).toBeVisible();
+        await page.getByRole("button", { name: "退出管理中心", exact: true }).click();
+        await expect(page.getByRole("heading", { name: "管理中心访问验证", exact: true })).toBeVisible();
+        expect((await page.request.get("/api/admin/billing")).status()).toBe(404);
+        await page.goto("/admin/center?section=users"); await expect(page.getByPlaceholder("后台访问密码", { exact: true })).toBeVisible();
+    } finally {
+        if (previous === undefined) await pool.query("DELETE FROM app_settings WHERE k='admin_password_hash'"); else await pool.query("UPDATE app_settings SET v=$1 WHERE k='admin_password_hash'", [previous]);
+        await pool.query("UPDATE app_users SET role=$2 WHERE email=$1", [fixture.email, role]); await pool.end();
+    }
 });

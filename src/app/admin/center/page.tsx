@@ -1,6 +1,4 @@
-import { headers } from "next/headers";
-import { notFound } from "next/navigation";
-import { requireAdmin } from "@/lib/admin-auth";
+import { requireAdminPage } from "@/lib/admin-page";
 import { BI_SECTIONS, type BiSection } from "@/lib/bi/contracts";
 import { BiDashboard } from "@/components/admin/bi/dashboard";
 
@@ -8,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "管理中心 — Naumi", robots: { index: false, follow: false } };
 
 export default async function AdminCenterPage({ searchParams }: { searchParams: { section?: string } }) {
-  if (!await requireAdmin(new Request("http://internal/admin/center", { headers: headers() }))) notFound();
   const section = BI_SECTIONS.includes(searchParams.section as BiSection) ? searchParams.section as BiSection : "overview";
+  await requireAdminPage(`/admin/center?section=${section}`);
   return <BiDashboard initialSection={section} />;
 }

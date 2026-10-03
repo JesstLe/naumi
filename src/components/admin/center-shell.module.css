@@ -25,9 +25,10 @@
 .group a:hover { background: #253f60; }
 .group a.active { background: #e8f0ff; color: #174b9c; font-weight: 600; }
 .back { display: flex; gap: 8px; align-items: center; padding: 16px 12px 0; font-size: 12px; color: #d2e2f7; }
+.logout { display: flex; gap: 8px; align-items: center; padding: 12px 12px 0; font-size: 12px; color: #d2e2f7; text-align: left; }
 .content { margin-left: 242px; min-width: 0; }
 .mobileHeader { display: none; }
-.sidebar a:focus-visible, .mobileHeader a:focus-visible, .mobileHeader button:focus-visible { outline: 3px solid #72a4ef; outline-offset: 2px; }
+.sidebar a:focus-visible, .sidebar button:focus-visible, .mobileHeader a:focus-visible, .mobileHeader button:focus-visible { outline: 3px solid #72a4ef; outline-offset: 2px; }
 @media (max-width: 760px) {
   .content { margin-left: 0; }
   .mobileHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; background: #182e4a; color: white; }

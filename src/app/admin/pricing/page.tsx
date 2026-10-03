@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { AdminCenterShell } from "@/components/admin/center-shell";
-import { notFound } from "next/navigation";
-import { headers } from "next/headers";
-import { requireAdmin } from "@/lib/admin-auth";
+import { requireAdminPage } from "@/lib/admin-page";
 import { Button } from "@/components/ui/button";
 import { PricingResearch } from "@/components/pricing-research";
 import { getServerLocale } from "@/lib/i18n/server-locale";
@@ -31,7 +29,7 @@ export const metadata = { title: `内部报价 — ${BRAND}`, robots: { index: f
 export const dynamic = "force-dynamic";
 
 export default async function AdminPricingPage() {
-  if (!(await requireAdmin(new Request("http://internal/admin/pricing", { headers: headers() })))) notFound();
+  await requireAdminPage("/admin/pricing");
   const current=await billingSnapshot();
   const currentQualityPrices=Object.fromEntries(IMAGE_QUALITY_IDS.map(quality=>[quality,quote(current,{feature:"image.generate",quantity:1,quality,resolution:"1K",byok:false,metered:true,paidFen:0,userGroup:"default"}).requestedCredits]));
   const english = getServerLocale() === "en";

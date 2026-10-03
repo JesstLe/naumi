@@ -1,9 +1,6 @@
-import { headers } from "next/headers";
-import { notFound } from "next/navigation";
-import { requireAdmin } from "@/lib/admin-auth";
+import { requireAdminPage } from "@/lib/admin-page";
 import { BillingManager } from "@/components/admin/billing/billing-manager";
 import { AdminCenterShell } from "@/components/admin/center-shell";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "计费管理 — Naumi", robots: { index: false, follow: false } };
-export default async function BillingPage() { if (!await requireAdmin(new Request("http://internal/admin/billing", { headers: headers() })))
-    notFound(); return <AdminCenterShell active="billing"><BillingManager /></AdminCenterShell>; }
+export default async function BillingPage() { await requireAdminPage("/admin/billing"); return <AdminCenterShell active="billing"><BillingManager /></AdminCenterShell>; }

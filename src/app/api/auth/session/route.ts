@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { activeNativeUserEmail } from "@/lib/native-auth";
 import { getLocalOperatorEmail, getOrCreateUser, getUser } from "@/lib/db";
-import { localAdminOk } from "@/lib/admin-auth";
+import { adminPasswordState } from "@/lib/admin-auth";
 import { supabaseEnabled } from "@/lib/auth-mode";
 
 export const runtime = "nodejs";
@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   if (email) {
     return NextResponse.json({ user: await getUser(email) });
   }
-  if (!supabaseEnabled && localAdminOk(req)) {
+  if (!supabaseEnabled && (req.headers.get("cookie") || "").includes("nv_admin=") && (await adminPasswordState(req)).authenticated) {
     const operatorEmail = await getLocalOperatorEmail();
     const user = await getOrCreateUser(operatorEmail, "站长");
     return NextResponse.json({ user });

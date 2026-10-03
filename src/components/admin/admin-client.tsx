@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { AdminCenterShell } from "@/components/admin/center-shell";
+import { adminDestination } from "@/lib/admin-navigation";
 import { useEffect, useState } from "react";
 import { Loader2, ShieldAlert, Lock } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
@@ -51,7 +52,9 @@ function clearCache() {
 
 export function AdminClient() {
   const router = useRouter();
-  const settingsView = useSearchParams().get("view") === "settings";
+  const searchParams = useSearchParams();
+  const settingsView = searchParams.get("view") === "settings";
+  const destination = adminDestination(searchParams.get("next"));
   const { user, ready } = useAuth();
   const { openAuth } = useAuthModal();
   const [status, setStatus] = useState<
@@ -62,8 +65,8 @@ export function AdminClient() {
   useEffect(() => {
     // Bearer-only Supabase sessions retain their original settings entry:
     // a browser page navigation cannot carry that Authorization header.
-    if (status === "ok" && localAdmin && !settingsView) router.replace("/admin/center");
-  }, [status, localAdmin, settingsView, router]);
+    if (status === "ok" && localAdmin && !settingsView) router.replace(destination);
+  }, [status, localAdmin, settingsView, destination, router]);
 
   // 本地密码登录框状态
   const [pw, setPw] = useState("");
@@ -75,14 +78,17 @@ export function AdminClient() {
     (async () => {
       // ── ① 本地管理员通道(开源版/自托管)──
       try {
-        const r = await fetch("/api/admin/login");
+        const r = await fetch("/api/admin/login", { cache: "no-store" });
+        if (!r.ok) { setPwErr("后台验证暂不可用，请稍后重试"); setStatus("local-login"); return; }
         const d = (await r.json()) as {
           localAvailable?: boolean;
           localAuthed?: boolean;
           nativeAdmin?: boolean;
+          passwordRequired?: boolean;
         };
         if (cancelled) return;
         // 本地密码会话 或 站长邮箱账号(role=admin)会话,都算已登录管理员。
+        if (d.passwordRequired && !d.localAuthed) { setStatus("local-login"); return; }
         if (d.localAuthed || d.nativeAdmin) {
           setLocalAdmin(true);
           setStatus("ok");
@@ -171,9 +177,9 @@ export function AdminClient() {
             <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl [background:var(--grad-acc)]">
               <Lock className="h-5 w-5 text-white" />
             </div>
-            <h1 className="text-lg font-semibold text-c-text">管理员登录</h1>
+            <h1 className="text-lg font-semibold text-c-text">管理中心访问验证</h1>
             <p className="text-[13px] text-c-text3">
-              请输入首启向导设置的管理员密码。
+              请输入后台访问密码。已登录管理员也需要验证。
             </p>
           </div>
           <form
@@ -189,7 +195,7 @@ export function AdminClient() {
               autoComplete="current-password"
               value={pw}
               onChange={(e) => setPw(e.target.value)}
-              placeholder="管理员密码"
+              placeholder="后台访问密码"
               disabled={pwBusy}
               error={!!pwErr}
             />

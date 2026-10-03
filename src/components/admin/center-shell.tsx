@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Activity, ArrowLeft, BarChart3, Building2, ImageIcon, Layers, Menu, Settings, ShieldCheck, Users, Wallet, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Activity, ArrowLeft, BarChart3, Building2, ImageIcon, Layers, LogOut, Menu, Settings, ShieldCheck, Users, Wallet, X } from "lucide-react";
 import type { BiSection } from "@/lib/bi/contracts";
 import styles from "./center-shell.module.css";
 
@@ -38,6 +39,16 @@ export function AdminCenterShell({ active, children, onBiNavigate }: {
   onBiNavigate?: (section: BiSection) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
+  const router = useRouter();
+  async function logout() {
+    try {
+      const response = await fetch("/api/admin/login", { method: "DELETE", cache: "no-store" });
+      if (!response.ok) throw new Error();
+      router.replace("/admin");
+      router.refresh();
+    } catch { setLogoutError("退出失败，请重试"); }
+  }
   return <div className={styles.shell}>
     <header className={styles.mobileHeader}>
       <Link href="/admin/center" prefetch={false}>Naumi 管理中心</Link>
@@ -65,6 +76,8 @@ export function AdminCenterShell({ active, children, onBiNavigate }: {
         </div>)}
       </nav>
       <Link className={styles.back} href="/" prefetch={false}><ArrowLeft size={16} />返回工作台</Link>
+      <button type="button" className={styles.logout} onClick={() => void logout()}><LogOut size={16} />退出管理中心</button>
+      {logoutError && <p className={styles.logout} role="alert">{logoutError}</p>}
     </aside>
     <div className={styles.content}>{children}</div>
   </div>;
