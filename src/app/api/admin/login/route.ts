@@ -10,7 +10,7 @@ import {
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
 import { supabaseEnabled } from "@/lib/auth-mode";
-import { nativeUserEmail } from "@/lib/native-auth";
+import { activeNativeUserEmail } from "@/lib/native-auth";
 import { getUserRole } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -27,7 +27,7 @@ export async function GET(req: Request) {
   let nativeAdmin = false;
   if (!supabaseEnabled) {
     try {
-      const nu = nativeUserEmail(req);
+      const nu = await activeNativeUserEmail(req);
       if (nu) nativeAdmin = (await getUserRole(nu)) === "admin";
     } catch {
       /* 按非管理员 */

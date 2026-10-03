@@ -293,7 +293,7 @@
     #edf1f6 43px
   );
 }
-.bars > div {
+.bars > button {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -317,8 +317,8 @@
   font-size: 9px;
   color: var(--muted);
 }
-.bars > div:nth-child(3n + 2) span,
-.bars > div:nth-child(3n) span {
+.bars > button:nth-child(3n + 2) span,
+.bars > button:nth-child(3n) span {
   display: none;
 }
 .chartDetails {
@@ -747,4 +747,76 @@
   .sidebar nav button {
     transition: none;
   }
+}
+
+.bars > button {
+  cursor: pointer;
+}
+.bars > button:hover i,
+.bars > button:focus-visible i {
+  background: #174da5;
+}
+.bars > button:focus-visible {
+  outline: 2px solid #205ecf;
+  outline-offset: 3px;
+}
+.tooltip {
+  position: fixed;
+  z-index: 180;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: min(300px, calc(100vw - 24px));
+  max-height: 230px;
+  overflow: hidden;
+  background: #142a45;
+  color: #fff;
+  border: 1px solid #445b77;
+  border-radius: 8px;
+  padding: 12px 15px;
+  font-size: 12px;
+  line-height: 1.8;
+  box-shadow: 0 5px 18px #142a4533;
+}
+.chartModes {
+  display: flex;
+  gap: 8px;
+  margin: 0 22px 14px;
+}
+.chartModes button {
+  border: 1px solid #dbe4ef;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.chartModes button[aria-pressed="true"] {
+  background: #e5efff;
+  color: #174da5;
+  border-color: #96b3e3;
+}
+.manageActions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+.profile form {
+  display: grid;
+  gap: 13px;
+}
+.tableWrap [data-bi-tip]:focus-visible {
+  outline: 2px solid #205ecf;
+  outline-offset: 3px;
+}
+
+.success {
+  border: 1px solid #b5d4bf;
+  border-radius: 7px;
+  padding: 12px 15px;
+  background: #edf8f0;
+  color: #24623a;
+  margin-bottom: 14px;
+}
+.success button {
+  float: right;
+  text-decoration: underline;
 }

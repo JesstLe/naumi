@@ -1,6 +1,6 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "crypto";
-import { getSetting } from "@/lib/db";
+import { getSetting, getPool, ensureSchema } from "@/lib/db";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { settingsSecret } from "@/lib/settings-secret";
 
@@ -109,6 +109,19 @@ export function nativeUserEmail(request: Request): string | null {
   const tok = readCookie(request, USER_COOKIE);
   if (!tok) return null;
   return verifyUserSession(tok, Date.now());
+}
+
+/** Database enforcement keeps existing cookies from bypassing bans/password resets. */
+export async function activeNativeUserEmail(request: Request): Promise<string | null> {
+  const email = nativeUserEmail(request);
+  if (!email) return null;
+  await ensureSchema();
+  const { rows } = await getPool().query("SELECT banned,auth_revoked_before FROM app_users WHERE email=$1", [email]);
+  const user = rows[0];
+  if (!user || user.banned) return null;
+  const issuedAt = Number(readCookie(request, USER_COOKIE)?.split(".")[1]) - USER_TTL_MS;
+  if (user.auth_revoked_before && issuedAt <= new Date(user.auth_revoked_before).getTime()) return null;
+  return email;
 }
 
 /** 是否启用「原生多用户」模式:无 Supabase + 已激活 Pro + 站长后台开了开关。永不抛错。 */

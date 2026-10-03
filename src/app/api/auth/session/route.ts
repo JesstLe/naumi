@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { nativeUserEmail } from "@/lib/native-auth";
+import { activeNativeUserEmail } from "@/lib/native-auth";
 import { getLocalOperatorEmail, getOrCreateUser, getUser } from "@/lib/db";
 import { localAdminOk } from "@/lib/admin-auth";
 import { supabaseEnabled } from "@/lib/auth-mode";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 //     顺手 getOrCreateUser 把操作员用户行建起来,让积分/作品/历史都挂它名下——
 //     否则用户行缺失会导致 /api/account 把作品整个挡掉(展示为空)。
 export async function GET(req: Request) {
-  const email = nativeUserEmail(req);
+  const email = await activeNativeUserEmail(req);
   if (email) {
     return NextResponse.json({ user: await getUser(email) });
   }

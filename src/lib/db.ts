@@ -59,6 +59,8 @@ async function ensureSchema(): Promise<void> {
           joined_at     timestamptz NOT NULL DEFAULT now(),
           renews_at     timestamptz NOT NULL
         );
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS management_version integer NOT NULL DEFAULT 0;
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS auth_revoked_before timestamptz;
         CREATE TABLE IF NOT EXISTS app_user_image_providers (
           id             text PRIMARY KEY,
           email          text NOT NULL REFERENCES app_users(email) ON DELETE CASCADE,
