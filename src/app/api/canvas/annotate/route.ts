@@ -1,5 +1,6 @@
+import {withBillingRequest,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { withBiRequest } from "@/lib/bi/model-observer";
-import { imageRequestBilling, settleToolImage } from "@/lib/image-quality-request";
+import { imageRequestBilling, requestImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
@@ -87,7 +88,7 @@ async function handleObservedPost(request: Request) {
     return NextResponse.json({ error: "请先在图上完成标注并填写修改指令" }, { status: 400 });
   }
 
-  const { quality } = await imageRequestBilling(request, requestedQuality);
+  const quality = requestImageQuality(request, requestedQuality);
   let cost = 0;
   let reserved = false;
   try {
@@ -160,6 +161,8 @@ async function handleObservedPost(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function billingRoutePost(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"canvas.annotate",()=>billingRoutePost(request));}

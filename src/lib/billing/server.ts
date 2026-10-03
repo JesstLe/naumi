@@ -66,6 +66,11 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
     const snapshot = await (await getBillingRuntime()).config.current();
     return quote(snapshot, await resolveBillingFacts(request, input, snapshot));
 }
+/** Trusted domain services have already authenticated and owner-checked this actor. */
+export async function quoteForActor(email:string,input:Partial<BillingFacts>&{feature:BillingFacts["feature"];quantity:number}){
+    const snapshot=await(await getBillingRuntime()).config.current();
+    return quote(snapshot,{feature:input.feature,quantity:input.quantity,quality:input.quality||"medium",resolution:input.resolution||"1K",modelId:input.modelId,providerId:input.providerId,metered:await meteringFor(snapshot),byok:false,paidFen:await totalPaidCents(email),userGroup:"default"});
+}
 export async function updateBillingCompatibility(actor: string, reason: string, change: (config: BillingConfig) => void) {
     const config = (await getBillingRuntime()).config, current = await config.current();
     const next = structuredClone(current.config);

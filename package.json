@@ -29,7 +29,8 @@
     "verify:billing-wallet": "tsx --conditions react-server scripts/verify-billing-wallet.ts",
     "verify:billing-api": "tsx --conditions react-server scripts/verify-billing-api.ts",
     "verify:billing-image-jobs": "tsx --conditions react-server scripts/verify-billing-image-jobs.ts",
-    "verify:billing-tools": "tsx --conditions react-server scripts/verify-billing-tools.ts"
+    "verify:billing-tools": "tsx --conditions react-server scripts/verify-billing-tools.ts",
+    "verify:billing-async-tasks": "tsx --conditions react-server scripts/verify-billing-async-tasks.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",

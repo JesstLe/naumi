@@ -22,7 +22,9 @@ export function ensureBillingSchema(pool: Pool): Promise<void> {
   ALTER TABLE app_billing_operations ADD COLUMN IF NOT EXISTS result_response jsonb;
   ALTER TABLE app_orders ADD COLUMN IF NOT EXISTS billing_quote jsonb;
   ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS billing_quote jsonb;
+  ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS billing_request_fingerprint text;
   ALTER TABLE app_canvas_image_tasks ADD COLUMN IF NOT EXISTS billing_quote jsonb;
+  ALTER TABLE app_canvas_image_tasks ADD COLUMN IF NOT EXISTS billing_request_fingerprint text;
   ALTER TABLE app_image_cost_audit ADD COLUMN IF NOT EXISTS billing_config_version bigint;
   ALTER TABLE app_image_cost_audit ADD COLUMN IF NOT EXISTS cost_currency text;
   ALTER TABLE app_image_cost_audit ADD COLUMN IF NOT EXISTS cost_amount_micros numeric(30,0);

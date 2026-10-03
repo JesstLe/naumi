@@ -1,5 +1,6 @@
+import {withBillingRequest,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { withBiRequest } from "@/lib/bi/model-observer";
-import { imageRequestBilling, settleToolImage } from "@/lib/image-quality-request";
+import { imageRequestBilling, requestImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
@@ -75,13 +76,13 @@ async function handleObservedPost(request: Request) {
   const ratioH = Number(ratioMatch[2]);
   if (ratioW <= 0 || ratioH <= 0) return NextResponse.json({ error: "目标比例无效" }, { status: 400 });
 
-  const { quality } = await imageRequestBilling(request, requestedQuality);
+  const quality = requestImageQuality(request, requestedQuality);
   let cost = 0;
   let reserved = false;
   try {
     const artwork = (await listArtworksByIds(email, [input.artworkId]))[0];
     if (!artwork) return NextResponse.json({ error: "图片不存在或无权访问" }, { status: 404 });
-    cost = (await imageRequestBilling(request, requestedQuality, artwork.resolution || "1K")).cost;
+
 
     const image = await readCanvasImage(artwork.image, request.url);
     let original = await sharp(image.buffer).rotate().png().toBuffer();
@@ -95,6 +96,7 @@ async function handleObservedPost(request: Request) {
       return NextResponse.json({ error: "当前图片已是该比例，无需扩图" }, { status: 400 });
     }
 
+    cost = (await imageRequestBilling(request, requestedQuality, artwork.resolution || "1K")).cost;
     if (cost > 0) {
       reserved = await reserveCredits(email, cost);
       if (!reserved) return NextResponse.json({ error: "积分不足，请联系管理员补充额度" }, { status: 402 });
@@ -190,6 +192,8 @@ async function handleObservedPost(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function billingRoutePost(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"canvas.expand",()=>billingRoutePost(request));}

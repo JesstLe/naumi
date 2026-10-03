@@ -1,5 +1,6 @@
+import {withBillingRequest,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { withBiRequest } from "@/lib/bi/model-observer";
-import { imageRequestBilling, settleToolImage } from "@/lib/image-quality-request";
+import { imageRequestBilling, requestImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
@@ -72,7 +73,7 @@ async function handleObservedPost(request: Request) {
     return NextResponse.json({ error: "OCR 文字坐标无效" }, { status: 400 });
   }
 
-  const { quality } = await imageRequestBilling(request, requestedQuality);
+  const quality = requestImageQuality(request, requestedQuality);
   let cost = 0;
   let reserved = false;
   try {
@@ -149,6 +150,8 @@ async function handleObservedPost(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function billingRoutePost(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"canvas.text-edit",()=>billingRoutePost(request));}
