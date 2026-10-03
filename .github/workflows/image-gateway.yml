@@ -5,6 +5,10 @@ on:
   pull_request:
     paths:
       - 'src/lib/billing/**'
+      - 'src/lib/model-config/**'
+      - 'src/app/admin/bi/models/**'
+      - 'scripts/*model*'
+      - 'docs/model-configuration-maintenance.md'
       - 'src/components/admin/billing/**'
       - 'src/components/**'
       - 'src/app/admin/billing/**'
@@ -65,6 +69,14 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - uses: actions/checkout@v4
+        with:
+          repository: JesstLe/naumi-router
+          ref: 4b663cfc3eed0ccbecb86568abef62fb21c396c2
+          path: output/model-config-20261004/router-source
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: output/model-config-20261004/router-source/go.mod
       - name: Verify coordinated release and failure rollback
         run: |
           for failure in 0 1; do
@@ -76,6 +88,15 @@ jobs:
         env:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
           NAUMI_VERIFY_ISOLATED_DB: '1'
+      - name: Registered model execution and private control-plane regressions
+        run: |
+          for check in coverage config publication admin execution tools router-contract performance; do
+            npm run verify:model-$check
+          done
+        env:
+          DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
+          NAUMI_VERIFY_ISOLATED_DB: '1'
+          NAUMI_VERIFY_ROUTER_SOURCE: output/model-config-20261004/router-source
       - name: Billing admin browser acceptance
         run: |
           npx playwright install --with-deps chromium

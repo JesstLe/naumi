@@ -50,6 +50,7 @@ async function readDraft(tx: PoolClient, row: any): Promise<ModelDraft> {
 }
 
 export function createModelRepository(deps: ValidationOptions & { pool: Pool; initialize: (tx: PoolClient) => Promise<ModelConfig>; ensureSchema?: () => Promise<void> }): ModelConfigRepository {
+  const immutableVersions = new Map<number, Promise<ModelSnapshot>>();
   const ensure = async () => { await deps.ensureSchema?.(); await ensureModelSchema(deps.pool); };
   const transaction = async <T>(run: (tx: PoolClient) => Promise<T>, global = false) => {
     const tx = await deps.pool.connect();
@@ -84,7 +85,18 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
         throw new ModelConfigError("CONFIG_UNAVAILABLE", "模型配置暂时不可用，请稍后重试", 503);
       }
     },
-    async byVersion(version) { requireVersion(version); await ensure(); return snapshot((await deps.pool.query("SELECT * FROM app_model_config_versions WHERE version=$1", [version])).rows[0]); },
+    async byVersion(version) {
+      requireVersion(version); await ensure();
+      let pending = immutableVersions.get(version);
+      if (!pending) {
+        pending = deps.pool.query("SELECT * FROM app_model_config_versions WHERE version=$1", [version]).then(result => snapshot(result.rows[0])).catch(error => { immutableVersions.delete(version); throw error; });
+        immutableVersions.set(version,pending);
+        if (immutableVersions.size > 64) immutableVersions.delete(immutableVersions.keys().next().value!);
+      } else { immutableVersions.delete(version); immutableVersions.set(version,pending); }
+      // Versions are append-only; the active pointer is always read separately.
+      // Return a private copy so callers cannot mutate another task's retained state.
+      return structuredClone(await pending);
+    },
     async draft(actor) {
       requireActor(actor); const current = await repo.current();
       return transaction(async tx => {
