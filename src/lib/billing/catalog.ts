@@ -1,0 +1,113 @@
+import "server-only";
+import type { Pool, PoolClient } from "pg";
+import { BillingError, type BillingConfig, type ConfigRuntime, type ConfigSnapshot } from "./types";
+import { validateBillingConfig } from "./rules/schema";
+import { ensureBillingSchema } from "./schema";
+import { fingerprint } from "./fingerprint";
+type Deps = {
+    pool: Pool;
+    ensureSchema: () => Promise<void>;
+    initialize: (tx: PoolClient) => Promise<BillingConfig>;
+};
+const POINTER = "billing_config_version";
+type Row = {
+    version: string | number;
+    config: unknown;
+    actor: string;
+    request_fingerprint: string;
+};
+function snapshot(row: Row): ConfigSnapshot {
+    const version = Number(row.version);
+    if (!Number.isSafeInteger(version) || version < 1)
+        throw new BillingError("CONFIG_UNAVAILABLE", "计费配置版本无效", 503);
+    return { version, config: validateBillingConfig(row.config) };
+}
+function validateWrite(id: string, actor: string, reason: string, version: number) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) || !actor || actor.length > 254 || !reason.trim() || reason.length > 500 || !Number.isSafeInteger(version) || version < 1)
+        throw new BillingError("INVALID_CONFIG", "配置发布参数无效", 400);
+}
+export function createConfigRuntime(deps: Deps): ConfigRuntime {
+    const ensure = async () => { await deps.ensureSchema(); await ensureBillingSchema(deps.pool); };
+    const locked = async <T>(run: (tx: PoolClient) => Promise<T>) => {
+        const tx = await deps.pool.connect();
+        try {
+            await tx.query("BEGIN");
+            await tx.query("SELECT pg_advisory_xact_lock(hashtext('naumi-billing-config'))");
+            const result = await run(tx);
+            await tx.query("COMMIT");
+            return result;
+        }
+        catch (error) {
+            await tx.query("ROLLBACK");
+            throw error;
+        }
+        finally {
+            tx.release();
+        }
+    };
+    const selectCurrent = (client: Pool | PoolClient) => client.query<Row>("SELECT v.version,v.config,v.actor,v.request_fingerprint FROM app_settings s JOIN app_billing_config_versions v ON v.version::text=s.v WHERE s.k=$1", [POINTER]);
+    const insert = async (tx: PoolClient, id: string, hash: string, actor: string, reason: string, config: BillingConfig) => {
+        const { rows } = await tx.query<Row>("INSERT INTO app_billing_config_versions(operation_id,request_fingerprint,actor,reason,config) VALUES($1,$2,$3,$4,$5::jsonb) RETURNING *", [id, hash, actor, reason, JSON.stringify(config)]);
+        await tx.query("INSERT INTO app_settings(k,v) VALUES($1,$2) ON CONFLICT(k) DO UPDATE SET v=excluded.v,updated_at=now()", [POINTER, String(rows[0].version)]);
+        return snapshot(rows[0]);
+    };
+    const publish = async (input: Parameters<ConfigRuntime["publish"]>[0], restoreTarget?: number) => {
+        validateWrite(input.id, input.actor, input.reason, input.expectedVersion);
+        const config = validateBillingConfig(input.config);
+        const hash = fingerprint({ ...input, config, ...(restoreTarget === undefined ? {} : { restoreTarget }) });
+        await ensure();
+        return locked(async (tx) => {
+            const previous = (await tx.query<Row>("SELECT * FROM app_billing_config_versions WHERE operation_id=$1", [input.id])).rows[0];
+            if (previous) {
+                if (previous.actor !== input.actor || previous.request_fingerprint !== hash)
+                    throw new BillingError("OPERATION_CONFLICT", "该操作编号已用于不同发布", 409);
+                return snapshot(previous);
+            }
+            const current = (await selectCurrent(tx)).rows[0];
+            if (!current || Number(current.version) !== input.expectedVersion)
+                throw new BillingError("CONFIG_CONFLICT", "配置已被更新，请刷新后重新发布", 409);
+            return insert(tx, input.id, hash, input.actor, input.reason, config);
+        });
+    };
+    const runtime: ConfigRuntime = {
+        async current() {
+            try {
+                await ensure();
+                const found = (await selectCurrent(deps.pool)).rows[0];
+                if (found)
+                    return snapshot(found);
+                return await locked(async (tx) => {
+                    const row = (await selectCurrent(tx)).rows[0];
+                    if (row)
+                        return snapshot(row);
+                    if ((await tx.query("SELECT 1 FROM app_settings WHERE k=$1", [POINTER])).rowCount)
+                        throw new Error("Missing billing version");
+                    const config = validateBillingConfig(await deps.initialize(tx));
+                    return insert(tx, "bootstrap", fingerprint(config), "system", "现行规则初始化", config);
+                });
+            }
+            catch {
+                throw new BillingError("CONFIG_UNAVAILABLE", "计费配置暂时不可用，请稍后重试", 503);
+            }
+        },
+        async byVersion(version) {
+            if (!Number.isSafeInteger(version) || version < 1)
+                throw new BillingError("INVALID_CONFIG", "配置版本无效", 400);
+            await ensure();
+            const row = (await deps.pool.query<Row>("SELECT * FROM app_billing_config_versions WHERE version=$1", [version])).rows[0];
+            if (!row)
+                throw new BillingError("CONFIG_UNAVAILABLE", "配置版本不存在", 404);
+            return snapshot(row);
+        },
+        async history(limit) {
+            if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+                throw new BillingError("INVALID_CONFIG", "记录数量无效", 400);
+            await ensure();
+            const { rows } = await deps.pool.query("SELECT version,actor,created_at,reason FROM app_billing_config_versions ORDER BY version DESC LIMIT $1", [limit]);
+            return rows.map(row => ({ version: Number(row.version), actor: row.actor, createdAt: row.created_at.toISOString(), reason: row.reason }));
+        },
+        publish,
+        async restore(input) { const target = await runtime.byVersion(input.targetVersion); return publish({ id: input.id, expectedVersion: input.expectedVersion, config: target.config, actor: input.actor, reason: input.reason }, input.targetVersion); },
+    };
+    return runtime;
+}

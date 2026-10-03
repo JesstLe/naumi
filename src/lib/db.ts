@@ -1,5 +1,6 @@
 import "server-only";
 import { Pool, type PoolClient } from "pg";
+import { ensureBillingSchema } from "@/lib/billing/schema";
 import {
   POINTS_PER_IMAGE,
   type PlanKey,
@@ -567,6 +568,7 @@ async function ensureSchema(): Promise<void> {
             ON app_user_image_providers (email);
         `);
       }
+      await ensureBillingSchema(getPool());
     })().catch(error => { schemaReady = null; throw error; });
   }
   return schemaReady;
