@@ -119,6 +119,7 @@ export type ConfigSnapshot = {
     config: BillingConfig;
 };
 export type BillingQuote = {
+    debitOrder?: "expires-first" | "created-first";
     schemaVersion: 1;
     configVersion: number;
     engineVersion: 1;

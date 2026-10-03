@@ -38,7 +38,7 @@ export function quote(snapshot: ConfigSnapshot, input: BillingFacts): BillingQuo
     if (tariff.settlement.qualityBasis === "executed")
         for (const quality of QUALITY_IDS)
             authorizedCredits = Math.max(authorizedCredits, amount(tariff, { ...f, quality }, costRates));
-    return { schemaVersion: 1, engineVersion: 1, configVersion: snapshot.version, facts: f, tariff, costRates, requestedCredits, authorizedCredits, reserveCredits: safe(Math.ceil(authorizedCredits * tariff.settlement.reserveBps / 10000)), matchedRuleId: matched?.id ?? null };
+    return { schemaVersion: 1, engineVersion: 1, configVersion: snapshot.version, facts: f, tariff, costRates, requestedCredits, authorizedCredits, reserveCredits: safe(Math.ceil(authorizedCredits * tariff.settlement.reserveBps / 10000)), matchedRuleId: matched?.id ?? null, debitOrder:snapshot.config.credits.debitOrder };
 }
 export function settlementFor(q: BillingQuote, r: BillingResult): Settlement {
     const ids = new Set(r.items.map(x => x.id));

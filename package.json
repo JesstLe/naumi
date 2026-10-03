@@ -25,7 +25,8 @@
     "verify:pricing-access": "node scripts/verify-pricing-access.mjs",
     "verify:billing-baseline": "tsx --conditions react-server scripts/verify-billing-baseline.ts",
     "verify:billing-rules": "tsx --conditions react-server scripts/verify-billing-rules.ts",
-    "verify:billing-config": "tsx --conditions react-server scripts/verify-billing-config.ts"
+    "verify:billing-config": "tsx --conditions react-server scripts/verify-billing-config.ts",
+    "verify:billing-wallet": "tsx --conditions react-server scripts/verify-billing-wallet.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",
