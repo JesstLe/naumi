@@ -1,3 +1,4 @@
+import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
@@ -18,7 +19,6 @@ import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
-import { TOOL_COST } from "@/lib/mock-data";
 import { getTryonLibrary } from "@/lib/tryon-store";
 import { safeError } from "@/lib/api-error";
 
@@ -33,7 +33,6 @@ import { safeError } from "@/lib/api-error";
 export const runtime = "nodejs";
 export const maxDuration = 240;
 
-const TRYON_COST = TOOL_COST.tryon;
 
 type TryonInput = {
   quality: ResolvedImageQuality;
@@ -303,7 +302,7 @@ async function runTryonJob(
       createdAt: Date.now(),
       id,
       url,
-      creditsUsed: useDb ? cost : 0, quality: input.quality,
+      creditsUsed: useDb ? synchronousChargedCredits(cost) : 0, quality: input.quality,
       user,
     });
   } catch (e) {
@@ -392,6 +391,8 @@ export async function GET(request: Request) {
   return NextResponse.json({ status: "pending" });
 }
 
-export async function POST(request: Request) {
+async function billingRoutePost(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"tool.tryon",()=>billingRoutePost(request));}

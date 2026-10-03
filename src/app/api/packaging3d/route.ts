@@ -1,3 +1,4 @@
+import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { requestImageQuality, imageQualityCost, withQualityFallback, settleToolImage, recordImageExecutionModel } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
@@ -348,7 +349,7 @@ async function handleObservedPost(request: Request) {
   return NextResponse.json({ jobId, cost });
 }
 
-export async function POST(request:Request){return withBiRequest(request,()=>handleObservedPost(request));}
+async function billingRoutePost(request:Request){return withBiRequest(request,()=>handleObservedPost(request));}
 
 export async function GET(request: Request) {
   const jobId = new URL(request.url).searchParams.get("job") ?? "";
@@ -365,3 +366,5 @@ export async function GET(request: Request) {
   return NextResponse.json(job);
 }
 import { withBiRequest,observeModelCall } from "@/lib/bi/model-observer";
+
+export async function POST(request:Request){return withBillingRequest(request,"tool.packaging3d",()=>billingRoutePost(request));}

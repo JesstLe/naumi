@@ -1,3 +1,4 @@
+import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import {
@@ -29,7 +30,6 @@ export const maxDuration = 60;
 
 // 纯本地 sharp 处理、零 API 成本,定价做成免费(0),作为引流工具 —— 比同行更低。
 // (积分系统为整数列,无法表示 0.3;免费是更干净且更低的等价方案。)
-const PRINTFILE_COST = 0;
 const MM_PER_INCH = 25.4;
 // 单边像素上限,防超大尺寸把内存打爆(8000px ≈ 67cm@300dpi,够海报)。
 const MAX_PX = 8000;
@@ -79,7 +79,7 @@ async function parseInput(request: Request): Promise<PrintInput | null> {
   };
 }
 
-export async function POST(request: Request) {
+async function billingRoutePost(request: Request) {
   let input: PrintInput | null;
   try {
     input = await parseInput(request);
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
       input.email = tokenEmail;
     }
     const useDb = dbEnabled && input.email.length > 0;
-    const cost = PRINTFILE_COST;
+    const cost = await configuredToolCost();
 
     if (dbEnabled && (await isBanned(input.email, ip))) {
       return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });
@@ -241,7 +241,7 @@ export async function POST(request: Request) {
       url,
       px: { w: wPx, h: hPx },
       spec: specLabel,
-      creditsUsed: useDb ? cost : 0,
+      creditsUsed: useDb ? synchronousChargedCredits(cost) : 0,
       user,
     });
   } catch (e) {
@@ -251,3 +251,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"tool.printfile",()=>billingRoutePost(request));}

@@ -1,3 +1,4 @@
+import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
@@ -220,6 +221,8 @@ async function handleObservedPost(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function billingRoutePost(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"tool.recolor",()=>billingRoutePost(request));}

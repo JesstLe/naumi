@@ -1,3 +1,4 @@
+import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
@@ -24,7 +25,7 @@ import { safeError } from "@/lib/api-error";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const COST = 1;
+
 
 const SYS =
   "你是电商图片的版权/知识产权风险筛查助手。看图判断它用于商用是否有侵权风险,重点查:① 知名版权卡通/动漫/游戏形象(如迪士尼米奇、三丽鸥、宝可梦等);② 品牌 logo / 商标 / 注册图形;③ 明星/公众人物肖像;④ 知名画作/IP 设计;⑤ 仿冒大牌元素。" +
@@ -61,6 +62,7 @@ async function handleObservedPost(req: Request) {
     email = tokenEmail;
   }
   const useDb = dbEnabled && email.length > 0;
+  const COST = await configuredToolCost();
 
   if (dbEnabled && (await isBanned(email, ip)))
     return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });
@@ -105,7 +107,7 @@ async function handleObservedPost(req: Request) {
       await addLedgerEntry(email, -COST, "侵权检测").catch(() => {});
     }
     const user = useDb ? await getUser(email).catch(() => null) : null;
-    return NextResponse.json({ ok: true, result: data, creditsUsed: useDb ? COST : 0, user });
+    return NextResponse.json({ ok: true, result: data, creditsUsed: useDb ? synchronousChargedCredits(COST) : 0, user });
   } catch (e) {
     if (useDb) await refundCredits(email, COST).catch(() => {});
     return NextResponse.json(
@@ -115,6 +117,8 @@ async function handleObservedPost(req: Request) {
   }
 }
 
-export async function POST(req: Request) {
+async function billingRoutePost(req: Request) {
   return withBiRequest(req, () => handleObservedPost(req));
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"tool.ipcheck",()=>billingRoutePost(request));}

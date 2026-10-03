@@ -1,4 +1,5 @@
-import { withBiRequest } from "@/lib/bi/model-observer";
+import {withBillingRequest,currentSynchronousBilling} from "@/lib/billing/synchronous";
+import {withBiRequest} from "@/lib/bi/model-observer";
 import { imageRequestBilling } from "@/lib/image-quality-request";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
@@ -49,7 +50,7 @@ async function handleObservedPost(req: Request, { params }: { params: { id: stri
     cost = billing.cost;
     if (!await reserveCredits(email, cost)) throw new WorkspaceError("可用积分不足", 402);
     reserved = true;
-    await addReservation(jobId, email, cost);
+    if(!currentSynchronousBilling())await addReservation(jobId, email, cost);
     const meta = await sharp(source).metadata();
     const width = meta.width!; const height = meta.height!;
     const size = width / height > 1.2 ? "1536x1024" : width / height < 0.83 ? "1024x1536" : "1024x1024";
@@ -78,5 +79,5 @@ async function handleObservedPost(req: Request, { params }: { params: { id: stri
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  return withBiRequest(req, () => handleObservedPost(req, { params }));
+  return withBillingRequest(req,"competitor.action",()=>withBiRequest(req, () => handleObservedPost(req, { params })));
 }

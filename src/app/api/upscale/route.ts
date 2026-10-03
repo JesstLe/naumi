@@ -1,5 +1,5 @@
+import {withBillingRequest,configuredToolCost,synchronousChargedCredits,markBillingUpstream} from "@/lib/billing/synchronous";
 import { NextResponse } from "next/server";
-import { TOOL_COST } from "@/lib/mock-data";
 import {
   dbEnabled,
   reserveCredits,
@@ -26,7 +26,6 @@ import { safeError } from "@/lib/api-error";
 export const runtime = "nodejs";
 export const maxDuration = 120; // Replicate 冷启动可能 1-2 分钟
 
-const UPSCALE_COST = TOOL_COST.upscale;
 const MODEL = process.env.REPLICATE_UPSCALE_MODEL || "nightmareai/real-esrgan";
 
 type UpscaleInput = {
@@ -126,6 +125,7 @@ async function upscaleReplicate(
   }
   const dataUri = `data:${inType};base64,${inBytes.toString("base64")}`;
   const version = await resolveReplicateVersion(MODEL, token);
+  markBillingUpstream("started");
   const create = await fetch("https://api.replicate.com/v1/predictions", {
     method: "POST",
     headers: {
@@ -146,6 +146,7 @@ async function upscaleReplicate(
     urls?: { get?: string };
   };
   if (!create.ok) {
+    markBillingUpstream([400,401,403,404,422,429].includes(create.status)?"rejected":"unknown");
     throw new Error(pred?.detail || pred?.error || `Replicate ${create.status}`);
   }
   const deadline = Date.now() + 110_000;
@@ -165,9 +166,11 @@ async function upscaleReplicate(
     pred = await g.json();
   }
   if (pred.status !== "succeeded") {
+    markBillingUpstream(pred.status==="failed"||pred.status==="canceled"?"rejected":"unknown");
     throw new Error(`Replicate 失败:${pred.error || pred.status || "未知"}`);
   }
   const outUrl = Array.isArray(pred.output) ? pred.output[0] : pred.output;
+  markBillingUpstream("succeeded");
   if (!outUrl || typeof outUrl !== "string") {
     throw new Error("Replicate 未返回图片");
   }
@@ -178,7 +181,7 @@ async function upscaleReplicate(
   return { buf, contentType };
 }
 
-export async function POST(request: Request) {
+async function billingRoutePost(request: Request) {
   let input: UpscaleInput | null;
   try {
     input = await parseInput(request);
@@ -209,7 +212,7 @@ export async function POST(request: Request) {
       input.email = tokenEmail;
     }
     const useDb = dbEnabled && input.email.length > 0;
-    const cost = UPSCALE_COST;
+    const cost = await configuredToolCost();
 
     if (dbEnabled && (await isBanned(input.email, ip))) {
       return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });
@@ -327,7 +330,7 @@ export async function POST(request: Request) {
       ok: true,
       id,
       url,
-      creditsUsed: useDb ? cost : 0,
+      creditsUsed: useDb ? synchronousChargedCredits(cost) : 0,
       user,
     });
   } catch (e) {
@@ -341,3 +344,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"tool.upscale",()=>billingRoutePost(request));}

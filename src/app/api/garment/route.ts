@@ -1,3 +1,4 @@
+import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
@@ -17,7 +18,6 @@ import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings, getCutoutSettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
-import { TOOL_COST } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------
@@ -31,7 +31,6 @@ import { safeError } from "@/lib/api-error";
 export const runtime = "nodejs";
 export const maxDuration = 200;
 
-const GARMENT_COST = TOOL_COST.garment;
 
 const BASE_PROMPT =
   "Extract ONLY the main garment / clothing item from this image (the top, dress, jacket, coat, pants, skirt or similar). Remove the model / person, any other items and the background completely. Lay the garment out flat, front-facing, neatly arranged like a clean e-commerce flat-lay product photo, on a fully transparent background. Faithfully preserve the garment's true shape, cut, colour, material, texture, prints, buttons and details. No body, no mannequin, no shadow, no border.";
@@ -255,7 +254,7 @@ async function handleObservedPost(request: Request) {
       ok: true,
       id,
       url,
-      creditsUsed: useDb ? cost : 0, quality: input.quality,
+      creditsUsed: useDb ? synchronousChargedCredits(cost) : 0, quality: input.quality,
       user,
     });
   } catch (e) {
@@ -266,6 +265,8 @@ async function handleObservedPost(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function billingRoutePost(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"tool.garment",()=>billingRoutePost(request));}
