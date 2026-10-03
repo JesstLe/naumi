@@ -12,10 +12,9 @@ import {
 } from "lucide-react";
 import { getServerLocale } from "@/lib/i18n/server-locale";
 import { BRAND } from "@/lib/brand";
-import { editionName } from "@/lib/edition";
-import { getSitePage } from "@/lib/settings";
-import { CustomPage } from "@/components/custom-page";
-import { publicCommerceEnabled } from "@/lib/commerce";
+import { betaPreviewEnabled, pricingVisible } from "@/lib/commerce";
+import { IMAGE_QUALITY_IDS } from "@/lib/image-quality";
+import { QUALITY_CREDITS } from "@/lib/mock-data";
 import {
   PRICING_PACKAGES,
   IMAGE_TIERS,
@@ -31,11 +30,14 @@ import {
 
 export const metadata = { title: `定价 — ${BRAND}` };
 
-// 客户可见定价页（积分计价）。云版渲染本页；自部署实例仍渲染站长自定义「定价」页。
+// 统一积分价目页；内测预览同时展示当前执行的测试价。
 // 数字全部来自 src/lib/pricing.ts（2026-10-02 决策稿），本文件只放文案与排版。
 
 type Copy = {
   draftNotice: string;
+  betaPricingTitle: string;
+  betaPricingNote: string;
+  betaQualityNames: Record<string, string>;
   kicker: string;
   title: string;
   intro: string;
@@ -79,6 +81,9 @@ type Copy = {
 
 const zh: Copy = {
   draftNotice: "以下是待审核的积分定价参考方案，并非当前充值或扣费标准。内测实际消耗以生成前提示和积分使用记录为准。",
+  betaPricingTitle: "当前内测生图测试价 · 积分/张",
+  betaPricingNote: "开启计费时，按所选质量档和成功张数扣积分，分辨率不额外计分；失败张数不扣，用户自带接口站内消耗为 0。下方套餐与模型价目为待审核方案。",
+  betaQualityNames: { low: "低", medium: "标准", high: "高", xhigh: "超高", max: "最高" },
   kicker: "定价",
   title: "积分方案参考",
   intro:
@@ -192,6 +197,9 @@ const zh: Copy = {
 
 const en: Copy = {
   draftNotice: "This credit pricing proposal is pending review. It is not the current top-up or billing schedule. Beta charges follow the estimate shown before generation and the account usage record.",
+  betaPricingTitle: "Current beta image rates · credits/image",
+  betaPricingNote: "When metering is enabled, successful images are charged at the selected quality tier, with no additional resolution fee. Failed images and BYOK cost 0 platform credits. The plans and model prices below are proposals pending review.",
+  betaQualityNames: { low: "Low", medium: "Standard", high: "High", xhigh: "Extra high", max: "Maximum" },
   kicker: "Pricing",
   title: "Credit pricing proposal",
   intro:
@@ -357,6 +365,20 @@ function PricingPageLayout({ c }: { c: Copy }) {
         {c.kicker}
       </p>
       <p className="mb-5 rounded-xl border border-border bg-secondary p-4 text-sm leading-relaxed">{c.draftNotice}</p>
+      {betaPreviewEnabled && (
+        <section className="mb-6 rounded-xl border border-border bg-background p-4">
+          <h2 className="text-sm font-semibold">{c.betaPricingTitle}</h2>
+          <dl className="my-3 grid grid-cols-5 gap-2 text-center">
+            {IMAGE_QUALITY_IDS.map(quality => (
+              <div key={quality}>
+                <dt className="text-xs text-muted-foreground">{c.betaQualityNames[quality]}</dt>
+                <dd className="mt-1 text-xl font-semibold">{QUALITY_CREDITS[quality]}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-xs leading-relaxed text-muted-foreground">{c.betaPricingNote}</p>
+        </section>
+      )}
       <h1 className="mt-3 max-w-3xl text-3xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-[2.75rem]">
         {c.title}
       </h1>
@@ -514,19 +536,6 @@ function PricingPageLayout({ c }: { c: Copy }) {
 }
 
 export default async function PlansPage() {
-  if (!publicCommerceEnabled) redirect("/");
-  if (editionName !== "cloud") {
-    const locale = getServerLocale();
-    const custom = await getSitePage("plans");
-    return (
-      <CustomPage
-        title={locale === "en" ? "Pricing" : "定价"}
-        content={
-          custom ||
-          (locale === "en" ? "Content coming soon." : "内容建设中，敬请期待。")
-        }
-      />
-    );
-  }
+  if (!pricingVisible) redirect("/");
   return <PricingPageLayout c={getServerLocale() === "en" ? en : zh} />;
 }

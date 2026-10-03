@@ -44,7 +44,7 @@ export function SecurityClient() {
   const { t } = useI18n();
   const router = useRouter();
   const { openAuth } = useAuthModal();
-  const { commerceVisible, pro } = usePaymentConfig();
+  const { commerceVisible } = usePaymentConfig();
 
   const [newPw, setNewPw] = useState("");
   const [newPw2, setNewPw2] = useState("");
@@ -260,11 +260,9 @@ export function SecurityClient() {
       {!supabaseEnabled && (
         <p className="mb-10 rounded-2xl border border-border bg-secondary/40 px-6 py-4 text-sm text-muted-foreground">
           {isOperatorEmail(user.email)
-            ? pro
-              ? commerceVisible
-                ? "商业版·站长账号:当前以站长身份登录,登录密码即安装向导中设置的「管理员密码」。到后台「登录与支付」开启多用户注册后,客户即可用邮箱自行注册登录、购买积分。"
+            ? commerceVisible
+                ? "站长账号:当前以站长身份登录,登录密码即安装向导中设置的「管理员密码」。到后台「登录与支付」开启多用户注册后,客户即可用邮箱自行注册登录、购买积分。"
                 : "内测站点·站长账号:当前以站长身份登录,登录密码即安装向导中设置的「管理员密码」。开启多用户注册后,受邀用户可用邮箱登录,测试积分由管理员或兑换码发放。"
-              : "开源版单用户模式:登录密码即安装向导中设置的「管理员密码」。多用户账号 / 改密等功能为 Pro 版能力。"
             : "登录密码:如需修改,退出登录后在登录窗口点「忘记密码」,通过邮箱验证重置。"}
         </p>
       )}

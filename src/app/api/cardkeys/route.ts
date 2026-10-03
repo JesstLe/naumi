@@ -7,7 +7,6 @@ import {
   cardKeyStats,
 } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
-import { proEnabled } from "@/lib/edition";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,9 +18,7 @@ async function guard(request: Request): Promise<NextResponse | null> {
   if (!(await requireAdmin(request))) {
     return NextResponse.json({ error: "无权限" }, { status: 403 });
   }
-  if (!(await proEnabled())) {
-    return NextResponse.json({ error: "该功能为 Pro 版功能" }, { status: 403 });
-  }
+
   return null;
 }
 

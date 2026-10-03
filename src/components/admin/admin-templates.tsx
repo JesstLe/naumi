@@ -34,7 +34,7 @@ export function AdminTemplates({ token }: Props) {
   const [editing, setEditing] = useState<PromptTemplate | null>(null);
   // 防浏览器把登录账号自动填进搜索框：初始只读，聚焦时才解锁（Chrome 不会往只读字段自动填充）。
   const [searchUnlocked, setSearchUnlocked] = useState(false);
-  // 同步官方模板库(Pro 权益):按页循环调 /api/admin/templates/sync 直至 done。
+  // 同步内置模板库:按页循环调 /api/admin/templates/sync 直至 done。
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [caching, setCaching] = useState(false);
@@ -171,7 +171,7 @@ export function AdminTemplates({ token }: Props) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {/* 同步官方模板库(Pro 权益;官方站自身不显示) */}
+          {/* 同步内置模板库 */}
           {token && !official && (
             <Button
               variant="outline"
@@ -184,7 +184,7 @@ export function AdminTemplates({ token }: Props) {
               ) : (
                 <Download className="h-3.5 w-3.5" />
               )}
-              同步官方模板库
+              同步内置模板库
             </Button>
           )}
           {token && (

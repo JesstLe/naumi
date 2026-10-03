@@ -12,11 +12,11 @@ import { usePaymentConfig } from "@/lib/payment-context";
 export function SiteFooter() {
   const { locale } = useI18n();
   const { name: brandName } = useBrand();
-  const { commerceVisible } = usePaymentConfig();
+  const { pricingVisible } = usePaymentConfig();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
 
   // 三栏(产品 / 资源 / 关于)—— 链接全部指向真实存在的路由,不造死链。
-  // 定价仅在公开商业化开关开启时显示;关于我们 / 联系我们始终保留。
+  // 内测可单独开放定价预览；关于我们 / 联系我们始终保留。
   // 「开源仓库」指向我们的 GitHub,仅官方站显示。空栏自动不渲染。
   const columns: {
     title: string;
@@ -37,7 +37,7 @@ export function SiteFooter() {
         { href: "/tools", label: L("创作工具", "Tools") },
         { href: "/dashboard", label: L("工作台", "Workspace") },
         { href: "/works", label: L("作品库", "Works") },
-        ...(commerceVisible
+        ...(pricingVisible
           ? [{ href: "/plans", label: L("定价", "Pricing") }]
           : []),
       ],

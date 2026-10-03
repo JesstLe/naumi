@@ -9,7 +9,7 @@ async function main() {
   const url = new URL(process.env.DATABASE_URL || "http://invalid");
   if (process.env.NAUMI_VERIFY_ISOLATED_DB !== "1" || url.hostname !== "127.0.0.1") throw new Error("Requires isolated local PostgreSQL");
   Object.assign(process.env, {
-    NAUMI_EDITION: "pro", PRO_LICENSE_KEY: "LOCAL-OFFLINE", NAUMI_MULTI_USER: "1",
+    NAUMI_MULTI_USER: "1",
     SETTINGS_SECRET: "fixture-settings-0123456789abcdef0123456789abcdef0123456789",
     VIDEO_WORKER_SECRET: "fixture-worker-0123456789abcdef0123456789abcdef0123456789",
     STORAGE_DRIVER: "local", MEDIA_DIR: path.resolve("output/credits-handoff/media"),

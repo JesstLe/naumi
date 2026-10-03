@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
-import { proEnabled, isLicenseIssuer } from "@/lib/edition";
+import { isLicenseIssuer } from "@/lib/edition";
 import {
   relayConfigured,
   listTokens,
@@ -18,9 +18,7 @@ async function guard(request: Request): Promise<NextResponse | null> {
   if (!(await requireAdmin(request))) {
     return NextResponse.json({ error: "无权限" }, { status: 403 });
   }
-  if (!(await proEnabled())) {
-    return NextResponse.json({ error: "该功能为 Pro 版功能" }, { status: 403 });
-  }
+
   if (!isLicenseIssuer(request)) {
     return NextResponse.json(
       { error: "本站不是签发站,中转密钥请到国内主站(ai.starzeco.com)后台管理。" },

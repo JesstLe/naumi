@@ -17,7 +17,6 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
-import { usePaymentConfig } from "@/lib/payment-context";
 import { authHeader } from "@/lib/supabase";
 import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
@@ -52,7 +51,6 @@ export function ReplicateClient() {
     typeof window !== "undefined" && document.documentElement.lang === "en" ? e : z;
   const { user, ready, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
-  const { pro } = usePaymentConfig();
 
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);

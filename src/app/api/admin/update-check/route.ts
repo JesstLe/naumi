@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { buildVersion } from "@/lib/version";
-import { editionName } from "@/lib/edition";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,18 +16,6 @@ const OSS_COMMITS_API =
 export async function GET(req: Request) {
   if (!(await requireAdmin(req))) {
     return NextResponse.json({ error: "需要管理员身份" }, { status: 403 });
-  }
-  // 官方云实例始终自动最新,不做检查(也避免主仓部署时间与开源仓 commit 不可比)。
-  if (editionName === "cloud") {
-    return NextResponse.json({
-      current: buildVersion(),
-      latest: buildVersion(),
-      currentLabel: "云端自动更新",
-      latestLabel: "云端自动更新",
-      updateAvailable: false,
-      reachable: false,
-      updateCmd: "",
-    });
   }
   const current = buildVersion();
   let latest = current;

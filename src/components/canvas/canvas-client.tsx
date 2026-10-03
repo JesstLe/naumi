@@ -1605,7 +1605,7 @@ export function CanvasClient() {
   const { openRecharge } = useRecharge();
   const { t } = useI18n();
   const router = useRouter();
-  const { commerceVisible, pro } = usePaymentConfig();
+  const { commerceVisible } = usePaymentConfig();
   const accountIsAdmin = useAccountAdminStatus(user);
   const [works, setWorks] = useState<Artwork[] | null>(null);
   // works 的同步镜像:供 useCallback(如缩放撤销记录)读取最新值而不重挂回调
@@ -8361,7 +8361,7 @@ export function CanvasClient() {
                   user={user}
                   remaining={credits ?? remaining}
                   dark={accountDockDark}
-                  pro={pro}
+
                   isAdmin={accountIsAdmin}
                   className="right-0 top-11"
                   onClose={() => setAccountDockOpen(false)}
@@ -9255,7 +9255,7 @@ export function CanvasClient() {
                       user={user}
                       remaining={credits ?? remaining}
                       dark={accountDockDark}
-                      pro={pro}
+
                       isAdmin={accountIsAdmin}
                       className="right-0 top-11"
                       onClose={() => setAccountDockOpen(false)}

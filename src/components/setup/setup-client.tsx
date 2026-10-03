@@ -20,10 +20,6 @@ type Txt = {
   apiKeyLabel: string;
   apiKeyPlaceholder: string;
   apiKeyHelp: string;
-  licenseLabel: string;
-  licenseOptional: string;
-  licensePlaceholder: string;
-  licenseHelp: string;
   siteNameLabel: string;
   siteNameOptional: string;
   siteNamePlaceholder: string;
@@ -57,10 +53,6 @@ const ZH: Txt = {
   apiKeyLabel: "OpenAI API Key",
   apiKeyPlaceholder: "粘贴你的 sk-... ",
   apiKeyHelp: "不知道 API Key 怎么获取?请查看对应服务商的开发者文档并创建 API Key。",
-  licenseLabel: "License Key",
-  licenseOptional: "选填 · Pro 授权",
-  licensePlaceholder: "NOVA-XXXX-XXXX-XXXX-XXXX",
-  licenseHelp: "填入后可解锁 Pro 功能(白标 / 收银 / 多用户 / 后台高阶)。没有可留空。",
   siteNameLabel: "站点名称",
   siteNameOptional: "选填",
   siteNamePlaceholder: "例如:我的商图工作台",
@@ -96,11 +88,6 @@ const EN: Txt = {
   apiKeyPlaceholder: "Paste your sk-...",
   apiKeyHelp:
     "Not sure how to get an API Key? Check your provider's developer documentation to create one.",
-  licenseLabel: "License Key",
-  licenseOptional: "Optional · Pro license",
-  licensePlaceholder: "NOVA-XXXX-XXXX-XXXX-XXXX",
-  licenseHelp:
-    "Enter to unlock Pro features (white-label / billing / multi-user / advanced admin). Leave blank if you don't have one.",
   siteNameLabel: "Site name",
   siteNameOptional: "Optional",
   siteNamePlaceholder: "e.g. My Product Studio",
@@ -136,7 +123,6 @@ export function SetupClient({ brand }: { brand: string }) {
   const router = useRouter();
 
   const [apiKey, setApiKey] = useState("");
-  const [licenseKey, setLicenseKey] = useState("");
   const [siteName, setSiteName] = useState("");
   const [adminPw, setAdminPw] = useState("");
   const [adminPw2, setAdminPw2] = useState("");
@@ -182,7 +168,6 @@ export function SetupClient({ brand }: { brand: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           apiKey: apiKey.trim(),
-          licenseKey: licenseKey.trim(),
           siteName: siteName.trim(),
           adminPassword: adminPw,
           adminEmail: adminEmail.trim(),
@@ -294,27 +279,6 @@ export function SetupClient({ brand }: { brand: string }) {
                 </p>
               </div>
 
-              {/* License Key(选填) */}
-              <div className="space-y-1.5">
-                <label className="flex items-center gap-2 text-[13px] font-semibold text-c-text">
-                  {t.licenseLabel}
-                  <span className="rounded-full bg-c-tint-v px-2 py-0.5 text-[10.5px] font-medium text-c-violet">
-                    {t.licenseOptional}
-                  </span>
-                </label>
-                <Input
-                  type="text"
-                  autoComplete="off"
-                  value={licenseKey}
-                  onChange={(e) => setLicenseKey(e.target.value)}
-                  placeholder={t.licensePlaceholder}
-                  disabled={busy}
-                />
-                <p className="text-[12px] leading-relaxed text-c-text3">
-                  {t.licenseHelp}
-                </p>
-              </div>
-
               {/* 站点名称(选填) */}
               <div className="space-y-1.5">
                 <label className="flex items-center gap-2 text-[13px] font-semibold text-c-text">
@@ -377,8 +341,8 @@ export function SetupClient({ brand }: { brand: string }) {
                 <p className="text-[12px] leading-relaxed text-c-text3">
                   {t.adminPwHelp}
                   {locale === "en"
-                    ? " Admin email is optional: on Pro (multi-user), it lets you sign in with email + password like a regular account; on the free edition you can leave it blank."
-                    : " 管理员邮箱选填:商业版(多用户)下可用邮箱+密码从登录框登录;开源版可留空,照常用密码登录。"}
+                    ? " An admin email lets you sign in with email and password like a regular account."
+                    : " 填写管理员邮箱后，可用邮箱和密码从登录框登录。"}
                 </p>
               </div>
 

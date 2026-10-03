@@ -79,12 +79,14 @@ services:
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
       # 自托管 Pro 版(edition.ts 的 license 校验已改为离线通过,不连作者服务器)
-      NAUMI_EDITION: pro
-      PRO_LICENSE_KEY: LOCAL-OFFLINE
       # 开放本地邮箱+密码注册(原生多用户模式)
       NAUMI_MULTI_USER: "1"
       # 内测默认隐藏价格、充值、购买与公开销售页；正式开放时设为 1。
       NAUMI_PUBLIC_COMMERCE: ${NAUMI_PUBLIC_COMMERCE:-0}
+      # 内测同事可查看积分方案；质量参数开关独立控制，不改变正式充值/扣费标准。
+      NAUMI_BETA_PREVIEW: ${NAUMI_BETA_PREVIEW:-0}
+      NAUMI_IMAGE_QUALITY_SUPPORTED: ${NAUMI_IMAGE_QUALITY_SUPPORTED:-0}
+      OPENAI_IMAGE_QUALITY: ${OPENAI_IMAGE_QUALITY:-medium}
       # Agent 工具内部回环调用地址(容器内 app 自身,端口是容器端口非宿主映射)
       INTERNAL_APP_ORIGIN: http://127.0.0.1:3000
       # 外置视频 worker 通过内部鉴权端点驱动恢复，app 内不再启动定时器。
@@ -96,8 +98,6 @@ services:
       VIDEO_API_MODELS: ${VIDEO_API_MODELS:-}
       VIDEO_PROVIDERS_JSON: ${VIDEO_PROVIDERS_JSON:-}
       # Optional: Pro license (or enter it in the first-run wizard instead)
-      # NAUMI_EDITION: pro
-      # PRO_LICENSE_KEY: NOVA-XXXX-XXXX-XXXX-XXXX
     extra_hosts:
       # 宿主机服务(鱼塘 8766)从容器内访问走 host.docker.internal
       - "host.docker.internal:host-gateway"

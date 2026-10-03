@@ -1,48 +1,36 @@
-# 内测商业化隐藏状态
+# 内测价目与功能开放状态
 
 更新时间：2026-10-03
 
-## 当前策略
+## 统一产品
 
-- `NAUMI_PUBLIC_COMMERCE` 是公开商业化总开关，默认值为 `0`。
-- 内测期间隐藏普通用户可见的价格、充值、购买、支付方式、会员方案和公开销售入口。
-- `/plans`、`/checkout` 以及官方云的公开部署销售页在关闭时跳回首页。
-- 创建支付订单的 API 在关闭时返回 `404`，避免仅靠前端隐藏。
-- 积分余额、积分使用记录、管理员发放积分和兑换码保留，用于内测额度管理。
-- 自部署管理员仍可使用部署、更新和 License 管理能力，但不显示 Pro / 云托管销售价格。
-- 内测期生图质量档按测试价目计费（`QUALITY_CREDITS`，见 `docs/IMAGE_QUALITY_STATUS.md`）：目的是跑通选档→扣费链路，价目非正式定价，公开商业化前必须替换。
+所有部署统一提供全部产品功能，不再区分 OSS、Pro 或云版，无需授权激活。多用户、兑换码、品牌、用量和部署管理保留管理员权限检查，已有配置和历史订单不删除。旧授权购买商品已停用，旧授权页面跳转部署与更新。
 
-## 重新开放
-
-正式开放定价与支付时，在运行环境中设置：
+## 内测配置
 
 ```env
-NAUMI_PUBLIC_COMMERCE=1
+NAUMI_BETA_PREVIEW=1
+NAUMI_IMAGE_QUALITY_SUPPORTED=1
+NAUMI_PUBLIC_COMMERCE=0
 ```
 
-修改后需要重新启动应用；Docker Compose 部署可在 `.env` 中设置后重新创建 `app` 服务。
+价目入口和 `/plans` 向内测同事开放，首屏列出当前实际测试价：低 4、标准 6、高 10、超高 14、最高 18 积分/张。开启计费时按所选档位和成功张数结算，失败张数不扣，用户自带接口的站内消耗为 0。下方套餐与模型分辨率价目标为待审核参考方案。
 
-## 验收范围
+全部质量档可选择，按所选参数提交实际通道；上游拒绝参数时使用既有回退并记录执行档位。界面明确提示实验参数效果取决于通道。
 
-- 首页页脚和旧导航不显示定价或购买积分入口。
-- 账户页只展示积分余额、使用记录和内测兑换能力，不展示充值包价格。
-- 积分不足时提示联系内测管理员补充额度，不引导购买。
-- 关于页面明确为邀请内测，不宣传付款方式或会员价格。
-- 服务条款与隐私政策在内测模式下只显示测试积分说明，不展示支付、套餐和退款条款。
-- 直接访问销售页面或直接调用创建订单接口均不可用。
+公开价目独立于支付订单：充值仍由 `NAUMI_PUBLIC_COMMERCE` 和后台支付配置控制。关闭时 `/checkout` 跳回首页，支付 API 返回 `404`；管理员发放积分与兑换码可继续用于测试。
 
-## 验证命令
+Docker Compose 修改 `.env` 后需重新创建应用。发布脚本保留生产配置，补齐上述环境绑定，移除旧 edition/license 功能绑定。
+
+## 验证
 
 ```powershell
 npx tsc --noEmit
 npm run build
-node scripts/internal-commerce-ui-smoke.mjs
+npx tsx --conditions react-server scripts/verify-quality-billing.ts
+npm run verify:image-gateway
+npm run verify:credit-billing
+npm run verify:single-product
 ```
 
-## 本次验证结果
-
-- `npx tsc --noEmit`：通过。
-- `npm run build`：通过；仅保留项目原有的 3 条 Hook dependency 警告。
-- `node scripts/internal-commerce-ui-smoke.mjs`：通过。
-- 浏览器冒烟覆盖：首页无价格和购买文案、销售路由跳回首页、支付创建与订单查询返回 `404`、账户页保留积分余额和使用记录且无购买分类与充值价格。
-- 验收截图：`output/internal-commerce-account.png`（测试产物，不提交 Git）。
+数据库验证脚本要求独立本地 PostgreSQL，以及 `NAUMI_VERIFY_ISOLATED_DB=1`。统一产品验收覆盖无需 license 的多用户与后台功能、普通用户权限拒绝、已配置实例的安装锁和旧授权商品下架。

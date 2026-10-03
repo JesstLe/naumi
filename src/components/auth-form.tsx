@@ -16,7 +16,6 @@ import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth, type SessionUser } from "@/lib/auth-context";
-import { usePaymentConfig } from "@/lib/payment-context";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { BRAND } from "@/lib/brand";
 import { OPERATOR_EMAIL } from "@/lib/operator";
@@ -160,7 +159,7 @@ export function AuthForm({
   const router = useRouter();
   const params = useSearchParams();
   const { signIn, signUp, multiUser, applyServerUser } = useAuth();
-  const { pro } = usePaymentConfig();
+
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -171,7 +170,7 @@ export function AuthForm({
   const [showPw2, setShowPw2] = useState(false);
   // 注册:同意条款
   const [agree, setAgree] = useState(false);
-  // 开源版单用户:是否已设「管理员密码」(向导里设的)。设了就走密码登录,
+
   // 一个密码同时登录用户 + 后台;没设(极老实例)回退旧的邮箱登录不锁死。
   const [localAvailable, setLocalAvailable] = useState<boolean | null>(null);
   // 忘记密码(仅多用户模式)
@@ -181,11 +180,11 @@ export function AuthForm({
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotErr, setForgotErr] = useState<string | null>(null);
   // 三种模式(mock 渲染下):
-  //  · multi  = Pro 原生多用户(邮箱+密码注册/登录,服务端会话)—— 优先。
+
   //  · pwMode = 单用户自托管(无 Supabase + 已设管理员密码)—— 一个密码进用户+后台。
   //  · legacy = 其它(旧 mock 邮箱登录)。
   const multiMode = multiUser;
-  const isSignUp = (multiUser || pro) && mode === "sign-up";
+  const isSignUp = mode === "sign-up";
   const pwMode = !multiUser && !supabaseEnabled && localAvailable === true;
   // 原生多用户注册:是否需要邮箱验证码(站长配了 SMTP 即需要,与官方站一致)
   const [emailCodeRequired, setEmailCodeRequired] = useState(false);
@@ -274,7 +273,6 @@ export function AuthForm({
     setError(null);
     setLoading(true);
 
-    // Pro 原生多用户:邮箱+密码 注册/登录 → 服务端下发会话 cookie + 返回用户。
     if (multiMode) {
       // 注册:确认密码 + 条款 + (需要时)邮箱验证码
       if (isSignUp) {
@@ -326,7 +324,6 @@ export function AuthForm({
       return;
     }
 
-    // 开源版单用户:用向导设的管理员密码登录。校验通过 → 下发后台会话 cookie
     //(/admin 也随之解锁)+ 建立本地用户会话,一个密码登录所有地方。
     if (pwMode) {
       try {
@@ -355,7 +352,6 @@ export function AuthForm({
       return;
     }
 
-    // 多用户(官方云/Pro):邮箱登录 / 注册(原逻辑不变)。
     if (isSignUp) signUp(name, email);
     else signIn(email);
     setTimeout(() => {
@@ -455,7 +451,7 @@ export function AuthForm({
   }
 
   // 是否显示 登录/注册 分段 tab(可切换注册的场景)。
-  const showTabs = multiMode && pro;
+  const showTabs = multiMode;
   // 需要昵称的旧注册路径(非多用户)。
   const legacyNameField = isSignUp && !multiMode;
 
@@ -495,7 +491,7 @@ export function AuthForm({
             autoComplete="name"
           />
         )}
-        {/* 开源版单用户:只要密码;多用户:邮箱 + 密码 */}
+        {/* 单用户:只要密码;多用户:邮箱 + 密码 */}
         {!pwMode && (
           <IconField
             icon={multiMode && !isSignUp ? User : Mail}
@@ -619,16 +615,9 @@ export function AuthForm({
       </form>
 
       {pwMode ? (
-        // 单用户密码登录(开源版 / Pro 单用户):按版本给说明。
+
         <p className="text-center text-sm text-muted-foreground">
-          {pro
-            ? "商业版·站长登录:用安装向导里设置的管理员密码。到后台「登录与支付」开启多用户后,客户将用邮箱注册/登录。"
-            : "用安装向导里设置的管理员密码登录"}
-        </p>
-      ) : !pro ? (
-        // 开源精简版且未设密码:提示多用户需 Pro。
-        <p className="text-center text-sm text-muted-foreground">
-          多用户注册需 Pro 版
+          用安装向导里设置的管理员密码登录。到后台「登录与支付」开启多用户后,用户可用邮箱注册和登录。
         </p>
       ) : (
         !showTabs && (

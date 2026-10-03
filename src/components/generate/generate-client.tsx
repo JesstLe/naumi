@@ -106,6 +106,7 @@ export function GenerateClient({
   // 在提交前回退并写任务审计(请求档/执行档/回退原因)。
   const [quality, setQuality] = useState("medium");
   const [qualityCapable, setQualityCapable] = useState(false);
+  const [qualityExperimental, setQualityExperimental] = useState(false);
   useEffect(() => {
     if (!qualityCapable && quality !== "medium") setQuality("medium");
   }, [qualityCapable, quality]);
@@ -152,9 +153,10 @@ export function GenerateClient({
     void authHeader()
       .then((headers) => fetch("/api/config", { cache: "no-store", headers }))
       .then((response) => response.json())
-      .then((config: { defaultImageModel?: string; imageModels?: ImageModelOption[]; imageQualityCapable?: boolean }) => {
+      .then((config: { defaultImageModel?: string; imageModels?: ImageModelOption[]; imageQualityCapable?: boolean; imageQualityExperimental?: boolean }) => {
         if (cancelled) return;
         setQualityCapable(!!config.imageQualityCapable);
+        setQualityExperimental(!!config.imageQualityExperimental);
         const options = Array.isArray(config.imageModels)
           ? config.imageModels.filter((item) => item?.id && item?.label)
           : [];
@@ -359,7 +361,6 @@ export function GenerateClient({
       cancelled = true;
     };
   }, [user?.email, images.length]);
-
 
   function pickFiles(list: FileList | null) {
     if (!list || list.length === 0) return;
@@ -884,6 +885,11 @@ export function GenerateClient({
                 {!qualityCapable && (
                   <p className="text-[11px] leading-relaxed text-c-text3">
                     {t("gen.qualityPending")}
+                  </p>
+                )}
+                {qualityCapable && qualityExperimental && (
+                  <p className="text-[11px] leading-relaxed text-c-text3">
+                    {t("gen.qualityBeta")} <Link href="/plans" className="underline">{t("gen.betaPricing")}</Link>
                   </p>
                 )}
               </div>

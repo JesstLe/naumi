@@ -7,8 +7,6 @@ import type { ImageJobKind, ImageJobRow } from "../src/lib/image-job-repository"
 
 async function main() {
   if (process.env.NAUMI_VERIFY_ISOLATED_DB !== "1" || !process.env.DATABASE_URL?.includes("127.0.0.1")) throw new Error("需要独立本地测试数据库");
-  process.env.NAUMI_EDITION = "pro";
-  process.env.PRO_LICENSE_KEY = "LOCAL-OFFLINE";
   process.env.NAUMI_MULTI_USER = "1";
   process.env.SETTINGS_SECRET = "fixture-settings-0123456789abcdef0123456789abcdef0123456789";
   process.env.VIDEO_WORKER_SECRET = "fixture-worker-0123456789abcdef0123456789abcdef0123456789";

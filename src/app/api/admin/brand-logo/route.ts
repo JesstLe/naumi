@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { dbEnabled } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
-import { proEnabled } from "@/lib/edition";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,8 +16,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "未配置数据库" }, { status: 503 });
   if (!(await requireAdmin(req)))
     return NextResponse.json({ error: "需要管理员身份" }, { status: 403 });
-  if (!(await proEnabled()))
-    return NextResponse.json({ error: "该功能为 Pro 版功能" }, { status: 403 });
+
   if (!storageEnabled)
     return NextResponse.json({ error: "未配置对象存储,无法上传" }, { status: 503 });
 

@@ -19,7 +19,6 @@ import {
   listUserLedger,
 } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
-import { proEnabled } from "@/lib/edition";
 import { hashPassword } from "@/lib/pw";
 
 export const runtime = "nodejs";
@@ -45,9 +44,7 @@ async function guard(req: Request): Promise<NextResponse | null> {
   if (!(await requireAdmin(req))) {
     return NextResponse.json({ error: "需要管理员身份" }, { status: 403 });
   }
-  if (!(await proEnabled())) {
-    return NextResponse.json({ error: "该功能为 Pro 版功能" }, { status: 403 });
-  }
+
   return null;
 }
 

@@ -4,7 +4,6 @@ import { resolveItem } from "@/lib/payments";
 import { getPaymentSettings, getPaymentStatus } from "@/lib/settings";
 import { alipayPrecreate } from "@/lib/pay/alipay";
 import { wechatNativePrecreate } from "@/lib/pay/wechatpay";
-import { proEnabled } from "@/lib/edition";
 import { publicCommerceEnabled } from "@/lib/commerce";
 
 export const runtime = "nodejs";
@@ -35,9 +34,7 @@ export async function POST(req: Request) {
     // 后台开关关 或 未配置收款信息 → 不开放充值(US 默认如此)。
     return NextResponse.json({ error: "充值暂未开放" }, { status: 503 });
   }
-  if (!(await proEnabled())) {
-    return NextResponse.json({ error: "该功能为 Pro 版功能" }, { status: 403 });
-  }
+
   let body: { email?: string; kind?: string; itemId?: string; method?: string };
   try {
     body = await req.json();

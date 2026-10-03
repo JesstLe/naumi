@@ -18,7 +18,7 @@ startVideoWorker();
 import { BrandProvider } from "@/lib/brand-context";
 import { getRuntimeBrand } from "@/lib/brand-runtime";
 import { getPaymentStatus } from "@/lib/settings";
-import { proEnabled, editionName } from "@/lib/edition";
+import { officialSite } from "@/lib/edition";
 import { isConfigured } from "@/lib/setup";
 import { BRAND, BRAND_FAVICON } from "@/lib/brand";
 import { Suspense } from "react";
@@ -27,7 +27,7 @@ import { AuthModal } from "@/components/auth-modal";
 import { ToastProvider } from "@/components/ui/toast";
 import { RechargeModalProvider } from "@/lib/recharge-modal-context";
 import { RechargeModal } from "@/components/credits/recharge-modal";
-import { publicCommerceEnabled } from "@/lib/commerce";
+import { publicCommerceEnabled, pricingVisible } from "@/lib/commerce";
 import { TextModelProvider } from "@/lib/text-model-context";
 
 // 站点字体:Geist(拉丁/数字,Vercel)+ 系统中文栈(见 tailwind sans),数字 tabular-nums。
@@ -60,21 +60,17 @@ export default async function RootLayout({
 }) {
   // Fail closed for configured deployments before serving authenticated pages.
   if (process.env.DATABASE_URL) { settingsSecret(); workerSecret(); }
-  // 首启配置门控:**未配置的实例**(非官方云、且未填 OpenAI Key)访问任意页
-  // 都引到 /setup;已配置(含 NAUMI_EDITION=cloud 官方云)完全不跳。
-  // isConfigured() 在 cloud 分支直接短路返回 true,不读 DB —— 线上站零开销、永不触发。
+  // Configured instances retain the setup lock regardless of hosting environment.
   const pathname = headers().get("x-pathname") || "";
   if (pathname !== "/setup" && !(await isConfigured())) {
     redirect("/setup");
   }
 
   const locale = getServerLocale();
-  // Pro 门控:官方云/自托管 Pro 激活 → 全功能;开源版锁。收银是 Pro 能力,
-  // 所以在线充值额外要求 pro(开源版即便配了收款也不显示对外收费)。
-  const pro = await proEnabled();
+
   // 后台 DB(开关 + 已配收款)→ env 兜底,SSR 注入前端门控,两站一套代码。
   const rechargeEnabled =
-    publicCommerceEnabled && pro && (await getPaymentStatus()).enabled;
+    publicCommerceEnabled && (await getPaymentStatus()).enabled;
   // 运行时品牌(白标):DB site_name/brand_logo 覆盖 → env 默认兜底;DB 无覆盖时与现状一致。
   const brand = await getRuntimeBrand();
   return (
@@ -86,9 +82,9 @@ export default async function RootLayout({
         <LocaleProvider initialLocale={locale}>
           <PaymentProvider
             commerceVisible={publicCommerceEnabled}
+            pricingVisible={pricingVisible}
             rechargeEnabled={rechargeEnabled}
-            pro={pro}
-            official={editionName === "cloud"}
+            official={officialSite}
           >
           <BrandProvider
             name={brand.name}
