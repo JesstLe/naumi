@@ -262,6 +262,15 @@ async function main() {
     const { signAcceptedModelContext } = await import("../src/lib/model-config/accepted-context");
     const { withModelRequest } = await import("../src/lib/model-config/requests");
     const { currentModelExecution } = await import("../src/lib/model-config/context");
+    const { encryptAtRest } = await import("../src/lib/settings");
+    await globalDb.setSetting("cutout_backend", "replicate");
+    await globalDb.setSetting("replicate_token_enc", encryptAtRest("fixture-segmentation-account"));
+    const segmentationRequest = new Request("http://fixture.test/api/cutout", { method: "POST", headers: { cookie } });
+    await withModelRequest(segmentationRequest, async () => {
+      assert.equal(currentModelExecution("image"), null, "Standalone segmentation can run without a generative cutout binding");
+      await assert.rejects(async () => aware.images.generate({ model: "legacy-fallback", prompt: "must not submit" }), (e: any) => e.code === "MODEL_INCOMPATIBLE");
+    });
+    await globalDb.setSetting("replicate_token_enc", "");
     const acceptedHeader = signAcceptedModelContext(email, { modelVersion: first.version, billingVersion: 1 });
     const acceptedRequest = (token: string) => new Request("http://fixture.test/api/generate-image", { method: "POST", headers: { cookie, "content-type": "application/json", "x-naumi-accepted-model-context": token }, body: JSON.stringify({ model: "image-a", quality: "high", resolution: "2K" }) });
     await withModelRequest(acceptedRequest(acceptedHeader), async () => { assert.equal(currentModelExecution("image")!.frozen.modelVersion, first.version); });

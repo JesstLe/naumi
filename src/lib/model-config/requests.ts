@@ -55,7 +55,13 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   if (quotedVersion !== undefined && quotedVersion !== null && quotedVersion !== "" && (!/^[1-9][0-9]{0,15}$/.test(String(quotedVersion)) || Number(quotedVersion) !== snapshot.version)) throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请刷新模型列表后重新提交；原输入已保留", 409);
   const purpose = purposeFor(new URL(request.url).pathname), executor = await getModelExecutor();
   const bundle: ExecutionBundle = { modelVersion: snapshot.version, billingVersion: billing.version, primary: purpose.primary };
-  if (purpose.image) {
+  let standaloneSegmentation = false;
+  if (purpose.image === "image.cutout" && !snapshot.config.bindings["image.cutout"]) {
+    const { getCutoutSettings } = await import("../settings");
+    const cutout = await getCutoutSettings();
+    standaloneSegmentation = cutout.backend !== "openai" && !!cutout.replicateToken;
+  }
+  if (purpose.image && !standaloneSegmentation) {
     const selected = String(parsed.body.model || parsed.body.modelId || "").trim();
     const requestedModelId = selected.startsWith("byok:") ? undefined : selected || undefined;
     const model = snapshot.config.publicModels.find(m => m.id === (requestedModelId || snapshot.config.bindings[purpose.image!]));

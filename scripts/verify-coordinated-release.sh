@@ -19,7 +19,8 @@ case "$*" in
  'inspect '* ) echo "ghcr.io/jesstle/naumi:$FIXTURE_COMMIT" ;;
  'exec naumi-db-1 printenv '* ) echo fixture ;;
  'exec naumi-db-1 pg_dump '* ) echo fixture-database ;;
- 'exec naumi-db-1 psql '* ) printf '1\n1\n' ;;
+ 'exec naumi-db-1 psql '* )
+   if [[ "$*" == *"payload ? 'modelExecutions'"* ]]; then echo "${FIXTURE_PENDING_MODELS:-0}"; else printf '1\n1\n'; fi ;;
  'exec -i naumi-app-1 node '* ) cat >/dev/null; echo APP_HEALTH=PASS ;;
  'compose '* )
    case "$*" in
@@ -91,6 +92,27 @@ if [[ "$FAIL_HEALTH" == 0 ]]; then
  ! grep -Eq '^[[:space:]]*(NAUMI_EDITION|PRO_LICENSE_KEY):' /opt/naumi/current/docker-compose.yml
  grep -q COORDINATED_RELEASE_READY=1 /fixture/result
  test "$(cat /opt/naumi/current/DEPLOYED_COMMIT)" = "$FIXTURE_COMMIT"
+ grep -q 'NAUMI_ROUTER_MANAGEMENT_URL: ${NAUMI_ROUTER_MANAGEMENT_URL:-}' /opt/naumi/current/docker-compose.yml
+ release=$(readlink -f /opt/naumi/current)
+ printf '\nNAUMI_ROUTER_MANAGEMENT_URL=http://fixture-control\n' >> "$release/.env"
+ printf 'server { return 200; }\n' > /etc/nginx/sites-available/naumi-ip
+ export FIXTURE_PENDING_MODELS=1
+ app_starts=$(grep -c ' up .*app' "$FIXTURE_TRACE")
+ set +e
+ "$release/ROLLBACK.sh" > /fixture/model-rollback-blocked 2>&1
+ rollback_status=$?
+ set -e
+ test "$rollback_status" != 0
+ grep -q ROLLBACK_BLOCKED_PENDING_MODEL_TASKS /fixture/model-rollback-blocked
+ grep -q 'return 503;' /etc/nginx/sites-available/naumi-ip
+ test "$(readlink -f /opt/naumi/current)" = "$release"
+ test "$(grep -c ' up .*app' "$FIXTURE_TRACE")" = "$app_starts"
+ export FIXTURE_PENDING_MODELS=0
+ "$release/ROLLBACK.sh" > /fixture/model-rollback-clear 2>&1
+ test "$(readlink -f /opt/naumi/current)" = /opt/naumi/releases/fixture-old
+ grep -q 'return 503;' /etc/nginx/sites-available/naumi-ip
+ ! grep -E ' up .*video-worker' "$FIXTURE_TRACE"
+ echo MODEL_ROLLBACK_PENDING_TASKS_AND_INGRESS_GUARD=PASS
  echo COORDINATED_SUCCESS_MAINTENANCE_AND_WORKER_GUARD=PASS
 else
  test "$status" != 0
