@@ -9,6 +9,7 @@ import { ImageOperationPending, isImageGatewayModel, withImageOperation } from "
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { withBiModelContext } from "@/lib/bi/model-observer";
+import type {BillingQuote,BillingResult} from "@/lib/billing/types";
 
 type Execution = { id: string; token: string; queue: Promise<unknown> };
 const execution = new AsyncLocalStorage<Execution>();
@@ -55,10 +56,10 @@ export function imageWorkerAuthorized(request: Request): boolean {
 export class DurableImageJobs<T extends { status: string }> {
   private memory = new Map<string, { snapshot: T; payload: unknown; email: string }>();
   constructor(readonly kind: repository.ImageJobKind) {}
-  async create(id: string, email: string, snapshot: T, payload: unknown, cost: number, reserve: boolean) {
+  async create(id: string, email: string, snapshot: T, payload: unknown, cost: number, reserve: boolean,billingQuote?:BillingQuote) {
     snapshot = { ...snapshot, paidOperationVersion: 1 };
     if (!dbEnabled) { this.memory.set(id, { snapshot, payload, email }); return; }
-    await repository.createImageJob(id, email, this.kind, await encode(snapshot, id), await encode(payload, id), cost, reserve);
+    await repository.createImageJob(id, email, this.kind, await encode(snapshot, id), await encode(payload, id), cost, reserve,billingQuote);
   }
   async get(id: string, hydrate = true): Promise<T | undefined> {
     if (!dbEnabled) return this.memory.get(id)?.snapshot;
@@ -84,8 +85,13 @@ export class DurableImageJobs<T extends { status: string }> {
     context.queue = next;
     await next;
   }
-  async settle(id: string, cost: number, reason: string) {
+  async settle(id: string, cost: number|BillingResult, reason: string) {
     if (dbEnabled) await repository.settleImageJob(id, cost, reason, execution.getStore()?.token || null);
+  }
+  async settleResults(id:string,legacyCost:number,reason:string,result:BillingResult){
+    if(!dbEnabled)return;
+    const row=await repository.getImageJob(id,this.kind);
+    await this.settle(id,row?.payload.billingQuote?result:legacyCost,reason);
   }
   /** Persist intent before paid work. Only a durable Router operation may replay. */
   async paidOperation<R>(id: string, model: string, operation: Parameters<typeof withImageOperation>[1], run: () => Promise<R>): Promise<R> {

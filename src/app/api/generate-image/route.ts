@@ -1,5 +1,8 @@
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { imageQualityCost } from "@/lib/image-quality-request";
+import {quoteForRequest} from "@/lib/billing/server";
+import {assertQuotedVersion,requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/request";
+import {BillingError} from "@/lib/billing/types";
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { NextResponse } from "next/server";
 import OpenAI, { toFile } from "openai";
@@ -88,6 +91,8 @@ type GenParams = {
   resolution: string;
   style: string;
   qualityDefault?: string;
+  billingVersion?:unknown;
+  billingCredits?:unknown;
   quality: string; // 请求质量档:low/medium/high/xhigh/max/auto;通道不支持时提交前回退默认档,请求值只入审计
   count: number;
   transparent: boolean; // 透明底(抠图):gpt-image background:transparent PNG
@@ -754,6 +759,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
     }
     return {
       prompt: s("prompt").trim(),
+      billingVersion:f.get("billingVersion")??undefined,billingCredits:f.get("billingCredits")??undefined,
       userPrompt: s("userPrompt").trim(),
       category: s("category") || "main",
       ratio: s("ratio") || "1:1",
@@ -780,6 +786,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
   const j = (await request.json()) as Partial<GenParams>;
   return {
     prompt: (j.prompt ?? "").trim(),
+    billingVersion:j.billingVersion,billingCredits:j.billingCredits,
     userPrompt: (j.userPrompt ?? "").trim(),
     category: j.category || "main",
     ratio: j.ratio || "1:1",
@@ -986,7 +993,7 @@ async function runJob(
         );
       // 按提交时的单张报价结算；部分成功和后续配置变化不会重算价目。
       const actualCost = userProvider ? 0 : images.length * (cost / p.count);
-      await JOBS.settle(jobId, actualCost, `生成 ${images.length} 张图`);
+      await JOBS.settleResults(jobId, actualCost, `生成 ${images.length} 张图`,{state:"succeeded",items:images.map(image=>({id:image.id,state:"succeeded",executedQuality:image.execution?.quality||p.quality||"medium",platformFunded:image.execution?.platformFunded}))});
       billingSettled = true;
       user = await getUser(p.email).catch(() => null);
     }
@@ -1024,7 +1031,7 @@ async function runJob(
       return;
     }
     if ((await JOBS.get(jobId, false))?.images?.length) throw e;
-    if (useDb && !billingSettled) await JOBS.settle(jobId, 0, "图片生成失败");
+    if (useDb && !billingSettled) await JOBS.settleResults(jobId, 0, "图片生成失败",{state:"failed",items:[]});
     // 原始上游 message 可能含 openai/gpt/quota 等字样,经 safeError 净化后再落库,
     // 避免随 GET 轮询回传给用户暴露所用模型。详细原因只打服务端日志。
     console.error(
@@ -1181,7 +1188,9 @@ async function handleObservedPost(request: Request) {
   // 按请求质量基础价叠加尺寸差价，提交时固定报价。
   // 选档→扣费→结算链路;请求档进任务审计,恢复/重放后结算口径不变。
   const qualityAudit = resolveImageQuality(p.quality);
-  const cost = userProvider ? 0 : p.count * await imageQualityCost(qualityAudit, p.resolution);
+  const billingQuote=useDb?await quoteForRequest(request,{feature:"image.generate",quantity:p.count,quality:qualityAudit.requested||"medium",resolution:p.resolution,modelId:imageModel.id}):undefined;
+  if(billingQuote)assertQuotedVersion(requestQuoteConfirmation(request,p),billingQuote);
+  const cost = billingQuote?.requestedCredits ?? (userProvider ? 0 : p.count * await imageQualityCost(qualityAudit, p.resolution));
 
   if (dbEnabled && (await isBanned(p.email, ip))) {
     return NextResponse.json(
@@ -1199,7 +1208,7 @@ async function handleObservedPost(request: Request) {
   p.compiledPrompt = p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide());
   p.model = imageModel.id;
   try {
-  await JOBS.create(jobId, p.email, { status: "pending", createdAt: Date.now(), quality: qualityAudit }, { p, cost, byok: !!userProvider }, cost, true);
+  await JOBS.create(jobId, p.email, { status: "pending", createdAt: Date.now(), quality: qualityAudit }, { p, cost, byok: !!userProvider }, cost, true,billingQuote);
   } catch(error) {
     const message=error instanceof Error ? error.message : "";
     return NextResponse.json({error:safeError(error,"任务保存失败，请稍后重试")},{status:message.includes("积分不足") ? 402 : 503});
@@ -1209,6 +1218,7 @@ async function handleObservedPost(request: Request) {
   return NextResponse.json({ jobId });
   } catch (e) {
     // 兜底:任何未预期异常都回 JSON,避免前端拿到纯文本 500("Internal Server Error")
+    if(e instanceof BillingError)return billingErrorResponse(e);
     return NextResponse.json(
       { error: safeError(e, "生成服务暂时不可用,请稍后重试") },
       { status: 500 }

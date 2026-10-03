@@ -1,4 +1,6 @@
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
+import {quoteForRequest} from "@/lib/billing/server";
+import {assertQuotedVersion,requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/request";
 import { imageRequestBilling, withQualityFallback, auditSettledImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality, ExecutedQuality } from "@/lib/image-quality";
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
@@ -546,7 +548,7 @@ async function runSuite(
           batchId
         );
       charged = okShots.length * (cost / (prior?.total || shots.length));
-      await JOBS.settle(jobId, charged, `一键套图 ${okShots.length} 张`);
+      await JOBS.settleResults(jobId, charged, `一键套图 ${okShots.length} 张`,{state:"succeeded",items:shots.map(shot=>({id:shot.id,state:shot.status==="done"?"succeeded":"failed",executedQuality:shot.quality?.executed||prior?.imageQuality||"medium"}))});
       user = await getUser(email).catch(() => null);
     }
 
@@ -566,7 +568,7 @@ async function runSuite(
   } catch (e) {
     if (e instanceof ImageOperationPending) { await set({ status: "pending", error: e.message }); return; }
     if ((await JOBS.get(jobId, false))?.shots.some((shot) => shot.status === "done")) throw e;
-    if (useDb) await JOBS.settle(jobId, 0, "套图生成失败");
+    if (useDb) await JOBS.settleResults(jobId, 0, "套图生成失败",{state:"failed",items:[]});
     console.error("[suite] job failed:", e instanceof Error ? e.message : e);
     await set({ status: "error", error: safeError(e, "套图生成失败,请稍后重试") });
   }
@@ -621,6 +623,7 @@ async function parseInput(request: Request) {
   }
   return {
     requestedQuality: f.get("quality") ?? undefined,
+    billingVersion:f.get("billingVersion")??undefined,billingCredits:f.get("billingCredits")??undefined,
     images,
     extra: (f.get("text") ?? "").toString().trim().slice(0, 600),
     platform: (f.get("platform") ?? "taobao").toString().trim().slice(0, 20),
@@ -700,7 +703,9 @@ async function handleObservedPost(request: Request) {
   const requested = input.structure === "custom" ? input.customShots : null;
   const SHOT_COUNT = requested?.length ?? 13;
   const billing = await imageRequestBilling(request, input.requestedQuality);
-  const cost = SHOT_COUNT * billing.cost;
+  const billingQuote=useDb?await quoteForRequest(request,{feature:"image.suite",quantity:SHOT_COUNT,quality:billing.quality.requested||"medium",resolution:"1K",modelId:model}):undefined;
+  if(billingQuote)assertQuotedVersion(requestQuoteConfirmation(request,input),billingQuote);
+  const cost = billingQuote?.requestedCredits??SHOT_COUNT * billing.cost;
 
   if (dbEnabled && (await isBanned(input.email, ip))) {
     return NextResponse.json(
@@ -713,7 +718,7 @@ async function handleObservedPost(request: Request) {
   await JOBS.create(jobId, input.email, {
     cost, quality: billing.quality, imageQuality: billing.quality.executed,
     status: "pending", shots: [], done: 0, total: SHOT_COUNT, createdAt: Date.now(), owner: input.email,
-  }, { ...input, requested, model, cost, textModel: requestedTextModel(request, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna") }, cost, true);
+  }, { ...input, requested, model, cost, textModel: requestedTextModel(request, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna") }, cost, true,billingQuote);
   } catch(error) {
     const message=error instanceof Error ? error.message : "";
     return NextResponse.json({error:safeError(error,"任务保存失败，请稍后重试")},{status:message.includes("积分不足") ? 402 : 503});
@@ -779,5 +784,5 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  return withBiRequest(request, () => handleObservedPost(request));
+  try{return await withBiRequest(request, () => handleObservedPost(request));}catch(e){return billingErrorResponse(e)}
 }
