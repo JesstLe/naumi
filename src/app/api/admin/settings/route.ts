@@ -27,7 +27,8 @@ import {
   saveCreditsMetering,
   saveSmtp,
 } from "@/lib/settings";
-import { requireAdmin } from "@/lib/admin-auth";
+import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
+import {sameSiteBillingMutation} from "@/lib/billing/access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +55,8 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const blocked = await guard(req);
   if (blocked) return blocked;
+  if (!sameSiteBillingMutation(req)) return NextResponse.json({error:"请求来源无效"},{status:403});
+  const actor = await resolveUserEmail(req) || "local-admin";
 
   let body: {
     model?: string;
@@ -162,7 +165,7 @@ export async function POST(req: Request) {
       await saveReplicateModel(body.replicateModel);
     }
     if (typeof body.signupBonus === "number" && Number.isFinite(body.signupBonus)) {
-      await setSignupBonus(body.signupBonus);
+      await setSignupBonus(body.signupBonus, actor);
     }
     if (body.encryptedKey) {
       const plain = await decryptFromClient(body.encryptedKey);
@@ -218,7 +221,7 @@ export async function POST(req: Request) {
 
     // ---- 支付:明文字段 ----
     if (typeof body.payEnabled === "boolean") {
-      await savePayEnabled(body.payEnabled);
+      await savePayEnabled(body.payEnabled, actor);
     }
     if (
       (typeof body.alipayAppid === "string" && body.alipayAppid.trim()) ||
@@ -294,7 +297,7 @@ export async function POST(req: Request) {
 
     // ---- 积分计费开关(基础,单用户也可开)----
     if (typeof body.creditsMetering === "boolean") {
-      await saveCreditsMetering(body.creditsMetering);
+      await saveCreditsMetering(body.creditsMetering, actor);
     }
 
     if (
