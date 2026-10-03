@@ -1,4 +1,5 @@
 "use client";
+import {useBilling} from "@/lib/billing/client";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -109,6 +110,7 @@ type Turn = {
 };
 
 export function GenChatClient() {
+  const billing=useBilling();
   const { user, ready } = useAuth();
   const { quality, imageCost } = useImageQuality();
   const { openAuth } = useAuthModal();
@@ -331,11 +333,11 @@ export function GenChatClient() {
       }
       // 首页带来的参考图(图生图)
       (override?.refs ?? []).forEach((f) => fd.append("image", f));
-      const startRes = await fetch("/api/generate-image", {
+      const startRes = await billing.confirmAndSubmit("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
         body: fd,
-      });
+      },{feature:"image.generate",quantity:count,quality,resolution:String(fd.get("resolution")||"1K"),modelId:chosenModel||undefined});
       const start = await startRes.json();
       if (!startRes.ok) throw new Error(start.error || t("genchat.fail"));
       const jobId: string | undefined = start.jobId;

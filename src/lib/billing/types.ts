@@ -176,6 +176,7 @@ export type GrantInput = {
 };
 export type AdjustmentInput = GrantInput;
 export type BillingService = {
+    reconcileTx(tx:Tx,input:{id:string;operationId:string;actor:string;reason:string;proof:string;result:BillingResult}):Promise<{replayed:boolean;charge:number}>;
     reserveTx(tx: Tx, input: OperationInput): Promise<{
         replayed: boolean;
     }>;

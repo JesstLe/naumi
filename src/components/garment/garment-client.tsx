@@ -1,9 +1,9 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 
 import * as React from "react";
 import { Shirt } from "lucide-react";
 import { ToolWorkspace, ToolChips } from "@/components/tools/tool-workspace";
-import { TOOL_COST } from "@/lib/mock-data";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
@@ -11,6 +11,7 @@ import { authHeader } from "@/lib/supabase";
 const ACCENT = "#7C3AED"; // 服装提取(紫)
 
 export function GarmentClient() {
+  const billing=useFeatureBilling("tool.garment",{});
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
@@ -51,7 +52,7 @@ export function GarmentClient() {
       accent={ACCENT}
       category="garment"
       regenLabel={L("以此图再提取", "Extract from this image")}
-      cost={TOOL_COST.garment}
+      cost={billing.cost}
       action={L("提取平铺图", "Extract flat lay")}
       controls={controls}
       onProcess={async (file) => {
@@ -60,7 +61,7 @@ export function GarmentClient() {
         // 后端默认白底(bg 非 black/transparent 即白底),保持原契约。
         fd.append("bg", "white");
         if (user) fd.append("email", user.email);
-        const res = await fetch("/api/garment", {
+        const res = await billing.submit("/api/garment", {
           method: "POST",
           headers: await authHeader(),
           body: fd,

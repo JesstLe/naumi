@@ -1,9 +1,9 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 
 import * as React from "react";
 import { Eraser } from "lucide-react";
 import { ToolWorkspace, ToolChips } from "@/components/tools/tool-workspace";
-import { TOOL_COST } from "@/lib/mock-data";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
@@ -11,6 +11,7 @@ import { authHeader } from "@/lib/supabase";
 const ACCENT = "#2E7CF6"; // 去水印(图像处理 · 蓝)
 
 export function DewatermarkClient() {
+  const billing=useFeatureBilling("tool.dewatermark",{});
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
@@ -50,7 +51,7 @@ export function DewatermarkClient() {
       accent={ACCENT}
       category="dewatermark"
       regenLabel={L("以此图再去水印", "Remove watermark from this image")}
-      cost={TOOL_COST.dewatermark}
+      cost={billing.cost}
       action={L("一键去水印", "Remove Watermark")}
       controls={controls}
       onProcess={async (file) => {
@@ -61,7 +62,7 @@ export function DewatermarkClient() {
         const h = hint(wmType);
         if (h) fd.append("prompt", h);
         if (user) fd.append("email", user.email);
-        const res = await fetch("/api/dewatermark", {
+        const res = await billing.submit("/api/dewatermark", {
           method: "POST",
           headers: await authHeader(),
           body: fd,

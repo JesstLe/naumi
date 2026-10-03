@@ -11,6 +11,8 @@ import { StatCard } from "@/components/ui/stat-card";
 import { useToast } from "@/components/ui/toast";
 import { authHeader } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import type {BillingConfig} from "@/lib/billing/types";
+import {microsToDecimal} from "@/lib/billing/decimal";
 import { Pager } from "@/components/admin/pager";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -101,8 +103,7 @@ const FILTER_OPTIONS: { value: FilterValue; label: string }[] = [
 // 列模板 —— 表头与数据行共用,保证对齐。
 const COL_TEMPLATE = "1.7fr .8fr .8fr 1fr 1.3fr .8fr";
 
-// 成本系数:面额(积分) / 1000 * 16(元)。
-const COST_PER_KCREDIT = 16;
+// 兑换码成本使用后台的 redeem:credit:estimate；仅为估计，不作实际支出。
 
 // 兑换码由服务端生成并入库(POST /api/cardkeys)。
 
@@ -121,11 +122,12 @@ export function CardkeysAdmin({ embedded = false }: { embedded?: boolean }) {
   const { toast } = useToast();
 
   const [cardKeys, setCardKeys] = React.useState<CardKey[]>([]);
+  const [billingConfig,setBillingConfig]=React.useState<BillingConfig|null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
 
   // 生成控件状态
-  const [credit, setCredit] = React.useState<CreditValue>("500");
-  const [count, setCount] = React.useState<CountValue>("10");
+  const [credit, setCredit] = React.useState<string>("500");
+  const [count, setCount] = React.useState<string>("10");
   const [expiry, setExpiry] = React.useState<ExpiryValue>("90");
   const [batchNote, setBatchNote] = React.useState("");
   const [generating, setGenerating] = React.useState(false);
@@ -153,6 +155,8 @@ export function CardkeysAdmin({ embedded = false }: { embedded?: boolean }) {
           return;
         }
         setCardKeys((data.cards as CardKeyServerRow[]).map(toCard));
+        const billingResponse=await fetch("/api/admin/billing",{headers:await authHeader(),cache:"no-store"});
+        if(billingResponse.ok){const billing=await billingResponse.json();if(!cancelled)setBillingConfig(billing.snapshot.config);}
       } catch {
         if (!cancelled) setLoadError("网络异常");
       }
@@ -173,7 +177,9 @@ export function CardkeysAdmin({ embedded = false }: { embedded?: boolean }) {
   // ── 预计成本 ──
   const creditNum = Number(credit);
   const countNum = Number(count);
-  const estCost = Math.round((creditNum * countNum) / 1000 * COST_PER_KCREDIT);
+  const rate=billingConfig?.costs["redeem:credit:estimate"];
+  const estCost=rate&&Number.isSafeInteger(creditNum)&&Number.isSafeInteger(countNum)&&creditNum>0&&countNum>0?microsToDecimal((BigInt(rate.amountMicros)*BigInt(creditNum)*BigInt(countNum)).toString()):null;
+  const costCurrency=rate?.currency==="CNY"?"¥":rate?.currency==="USD"?"$":"积分 ";
 
   // ── 筛选后的列表 ──
   const visibleCards =
@@ -390,25 +396,25 @@ export function CardkeysAdmin({ embedded = false }: { embedded?: boolean }) {
             <label className="mb-2 block text-[12.5px] font-medium text-c-text3">
               每张面额(积分)
             </label>
-            <Segmented<CreditValue>
+            <Segmented<string>
               options={CREDIT_OPTIONS.map((o) => ({ ...o }))}
               value={credit}
               onChange={setCredit}
-            />
+            /><Input aria-label="自定义每码积分" type="number" min={1} max={2147483647} value={credit} onChange={e=>setCredit(e.target.value)}/>
           </div>
           <div>
             <label className="mb-2 block text-[12.5px] font-medium text-c-text3">
               生成数量
             </label>
-            <Segmented<CountValue>
+            <Segmented<string>
               options={COUNT_OPTIONS.map((o) => ({ ...o }))}
               value={count}
               onChange={setCount}
-            />
+            /><Input aria-label="自定义生成数量" type="number" min={1} max={500} value={count} onChange={e=>setCount(e.target.value)}/>
           </div>
           <div>
             <label className="mb-2 block text-[12.5px] font-medium text-c-text3">
-              有效期
+              领取期限（到账积分有效期由计费后台控制）
             </label>
             <Segmented<ExpiryValue>
               options={EXPIRY_OPTIONS.map((o) => ({ ...o }))}
@@ -431,7 +437,7 @@ export function CardkeysAdmin({ embedded = false }: { embedded?: boolean }) {
           <div className="text-[13px] text-c-text3">
             预计成本{" "}
             <span className="text-[15px] font-semibold text-acc">
-              ¥{estCost.toLocaleString("en-US")}
+              {estCost===null?"未记录":`${costCurrency}${estCost}（估计）`}
             </span>
           </div>
           <Button

@@ -27,7 +27,7 @@ function amount(t: FeatureTariff, f: BillingFacts, costs: BillingQuote["costRate
 export function quote(snapshot: ConfigSnapshot, input: BillingFacts): BillingQuote {
     if (!isFeatureId(input.feature) || !Number.isInteger(input.quantity) || input.quantity < 1 || input.quantity > 10000 || !Number.isSafeInteger(input.paidFen) || input.paidFen < 0)
         throw new BillingError("INVALID_RESULT", "报价参数无效", 400);
-    const f = { ...input, quality: (QUALITY_IDS as readonly string[]).includes(input.quality) ? input.quality : "medium", resolution: (RESOLUTION_IDS as readonly string[]).includes(input.resolution) ? input.resolution : "1K" };
+    const f = { ...input, quality: (QUALITY_IDS as readonly string[]).includes(input.quality) ? input.quality : "medium", resolution: input.feature==="video.generate"&&input.resolution&&input.resolution.length<=20?input.resolution:(RESOLUTION_IDS as readonly string[]).includes(input.resolution) ? input.resolution : "1K" };
     const base = snapshot.config.features[f.feature];
     if (!base)
         throw new BillingError("INVALID_CONFIG", "未配置该功能价格", 400);

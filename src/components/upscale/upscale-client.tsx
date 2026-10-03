@@ -1,9 +1,9 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 
 import * as React from "react";
 import { Wand2 } from "lucide-react";
 import { ToolWorkspace, ToolChips } from "@/components/tools/tool-workspace";
-import { TOOL_COST } from "@/lib/mock-data";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
@@ -11,6 +11,7 @@ import { authHeader } from "@/lib/supabase";
 const ACCENT = "#2E7CF6"; // 图像处理(蓝)
 
 export function UpscaleClient() {
+  const billing=useFeatureBilling("tool.upscale",{});
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
@@ -52,7 +53,7 @@ export function UpscaleClient() {
       accent={ACCENT}
       category="upscale"
       regenLabel={L("以此图再放大", "Upscale from this image")}
-      cost={TOOL_COST.upscale}
+      cost={billing.cost}
       action={L("高清修复", "Upscale")}
       controls={controls}
       onProcess={async (file) => {
@@ -62,7 +63,7 @@ export function UpscaleClient() {
         // 增强方向「人像」→ 开人脸修复;通用/商品 → 关。
         fd.append("faceEnhance", direction === "人像" ? "1" : "0");
         if (user) fd.append("email", user.email);
-        const res = await fetch("/api/upscale", {
+        const res = await billing.submit("/api/upscale", {
           method: "POST",
           headers: await authHeader(),
           body: fd,

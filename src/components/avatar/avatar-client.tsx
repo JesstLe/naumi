@@ -1,9 +1,9 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 
 import * as React from "react";
 import { Smile } from "lucide-react";
 import { ToolWorkspace, ToolChips } from "@/components/tools/tool-workspace";
-import { TOOL_COST } from "@/lib/mock-data";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
@@ -11,6 +11,7 @@ import { authHeader } from "@/lib/supabase";
 const ACCENT = "#2E7CF6"; // 抠头像(蓝)
 
 export function AvatarClient() {
+  const billing=useFeatureBilling("tool.avatar",{});
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
@@ -53,7 +54,7 @@ export function AvatarClient() {
       accent={ACCENT}
       category="avatar"
       regenLabel={L("以此图再生成", "Regenerate from this image")}
-      cost={TOOL_COST.avatar}
+      cost={billing.cost}
       action={L("开始抠图", "Start cutout")}
       checker
       controls={controls}
@@ -64,7 +65,7 @@ export function AvatarClient() {
         // 用透明底输出(展示偏好,功能优先,不破坏契约)。
         fd.append("bg", bgColor === "白" ? "white" : "transparent");
         if (user) fd.append("email", user.email);
-        const res = await fetch("/api/avatar", {
+        const res = await billing.submit("/api/avatar", {
           method: "POST",
           headers: await authHeader(),
           body: fd,

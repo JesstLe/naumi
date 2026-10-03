@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -77,7 +78,8 @@ export function FuseClient() {
     setAssistRun({ mode, nonce: Date.now() });
   }
 
-  const cost = count * imageCost(RESOLUTION);
+  const billing=useFeatureBilling("image.generate",{quantity:count,resolution:RESOLUTION});
+  const cost=billing.cost;
 
   // 卸载时释放 objectURL,避免内存泄漏
   useEffect(() => {
@@ -200,7 +202,7 @@ export function FuseClient() {
       slots.forEach((s) => fd.append("image", s.file));
 
       // 异步任务:POST 拿 jobId,再轮询 GET,保证每个请求都短(不撞 CDN ~100s 超时)。
-      const startRes = await fetch("/api/generate-image", {
+      const startRes = await billing.submit("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
         body: fd,

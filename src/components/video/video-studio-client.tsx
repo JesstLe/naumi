@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -80,7 +81,7 @@ export function VideoStudioClient() {
   const [catalog, setCatalog] = useState<Capability[] | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [configured, setConfigured] = useState(true);
-  const [costPerTask, setCostPerTask] = useState(20);
+
   const [modelId, setModelId] = useState("");
   const [providerId, setProviderId] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -110,6 +111,8 @@ export function VideoStudioClient() {
   const fileRef = useRef<HTMLInputElement>(null);
   const activeIdRef = useRef("");
 
+  const billing=useFeatureBilling("video.generate",{modelId:modelId||undefined,providerId:providerId||undefined,resolution,quality:"medium"});
+  const costPerTask=billing.cost;
   activeIdRef.current = activeId;
   const cap = catalog?.find((c) => c.providerId === providerId && c.modelId === modelId) ?? null;
   const providerModels = catalog?.filter((c) => c.providerId === providerId) ?? [];
@@ -138,7 +141,7 @@ export function VideoStudioClient() {
       const res = await fetch("/api/video/catalog", { headers: await authHeader() });
       const data = await res.json();
       setConfigured(Boolean(data.configured));
-      setCostPerTask(Number(data.costPerTask ?? 20));
+
       const models = (data.models ?? []) as Capability[];
       setCatalog(models);
       const providerList = (data.providers ?? []) as ProviderView[];
@@ -289,7 +292,7 @@ export function VideoStudioClient() {
       };
       const results = await Promise.allSettled(Array.from({ length: taskCount }, async () => {
         const idempotencyKey = crypto.randomUUID();
-        const res = await fetch("/api/video/generate", {
+        const res = await billing.submit("/api/video/generate", {
           method: "POST",
           headers: { "content-type": "application/json", ...(await authHeader()) },
           body: JSON.stringify({

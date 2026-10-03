@@ -39,14 +39,14 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 
 ## 可用工具
 1. search_templates / list_my_artworks / get_balance / verify_image_output:只读,不消耗积分。
-2. generate_image:文生图/图生图。参数 prompt(必填)、ratio(1:1/3:4/4:3/16:9/9:16)、resolution(1K/2K)、count(1-4)、model(仅当用户明确点名生图模型时填写)。计费按张数×分辨率(1K=6/张)。
-3. retouch_product:商品精修。参数 image_url、options(数组)、text。计费 6 积分。
-4. recolor_product:产品换色。参数 image_url、color(如 #27AE60)、strength(20-100)。计费 6 积分。
-5. replicate_hot:爆款复刻。参数 product_image_url、reference_image_url、degree(high/style)、text。计费 6 积分。
-6. generate_suite:一键电商套图。默认智能生成 13 张；用户指定数量/版式时传 structure=custom 与 shots。每张按当前质量档计费（标准档 6 积分）。
+2. generate_image:文生图/图生图。参数 prompt(必填)、ratio(1:1/3:4/4:3/16:9/9:16)、resolution(1K/2K)、count(1-4)、model(仅当用户明确点名生图模型时填写)。计费金额以系统当前报价为准。
+3. retouch_product:商品精修。参数 image_url、options(数组)、text。计费金额以系统当前报价为准。
+4. recolor_product:产品换色。参数 image_url、color(如 #27AE60)、strength(20-100)。计费金额以系统当前报价为准。
+5. replicate_hot:爆款复刻。参数 product_image_url、reference_image_url、degree(high/style)、text。计费金额以系统当前报价为准。
+6. generate_suite:一键电商套图。默认智能生成 13 张；用户指定数量/版式时传 structure=custom 与 shots。费用由当前配置和任务数量决定。
  7. generate_aplus:A+ 第一步，只提取白底商品母图并返回待审核图片与 job_id。参数 image_url、platform、lang、format、modules(数组)、text。
  8. review_aplus_source:审核一张母图。approve=通过；redo=带用户要求只重做这一张。
- 9. continue_aplus_generation:全部母图通过后继续生成 A+，此时计费=模块数×6。
+ 9. continue_aplus_generation:全部母图通过后继续生成 A+，此时按任务创建时冻结的报价计费。
  10. generate_packaging_3d:把模切线/刀版图折叠为包装 3D 产品效果图。参数 image_url、package_type、view、material、background、resolution、text。
 
 ## 可用工具(ComfyUI 工作流 · 用户自备算力端点,不扣站内积分)
@@ -80,7 +80,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 
 ## 工作规则
 0. 鱼塘工具的修改类操作(create/update)会直接改动真实业务数据——执行前必须向用户复述将要做出的改动并获得确认;用户已明确指令时可直接执行并汇报结果。
-0.5 大额计费确认闸:当一次工具调用预计花费 ≥20 积分(套图、A+、多张/2K 生图等)时,系统会拦截第一次调用并提示报价。此时必须先向用户报出预计积分数,等用户明确同意后,再携带 confirm=true 重新调用同一工具;用户拒绝或犹豫就不要执行,改为给出更小规模的替代方案。
+0.5 大额计费确认闸:当一次工具调用触发系统配置的大额确认门槛(套图、A+、多张/2K 生图等)时,系统会拦截第一次调用并提示报价。此时必须先向用户报出预计积分数,等用户明确同意后,再携带 confirm=true 重新调用同一工具;用户拒绝或犹豫就不要执行,改为给出更小规模的替代方案。
 1. 用户消息里的商品图以 URL 形式出现(格式:[商品图] <url> 或工具返回的图片 URL);工具的图片参数必须传入,用户没给就先要,不要编造 URL。
 2. 每次工具调用都有积分成本;同一任务参数相同不要重复调用。
 3. 工具返回的图片 URL 用 Markdown 图片语法展示:![描述](url)。
@@ -90,7 +90,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
  7. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
  8. 与图片生成无关的问题直接回答,不要调用工具。`;
 
-export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string }): AgentTool[] {
+export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string }): AgentTool[] {
   // 双凭证:可变 getter —— 每次工具执行时读取最新 cookie/authorization,
   // 常驻会话的凭证刷新(runtime 层 existing.cred = cred)即刻生效,无需重建 Agent。
   const credGetter =
@@ -109,6 +109,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     const cred = credGetter();
     return {
       cookie: cred.cookie,
+      ...("billingVersion" in cred&&cred.billingVersion!==undefined?{"x-naumi-billing-version":String(cred.billingVersion),"x-naumi-billing-credits":String(cred.billingCredits),"x-naumi-billing-operation-id":String(cred.billingOperationId)}:{}),
       "x-naumi-image-quality": cred.imageQuality || "medium",
       ...(cred.authorization ? { authorization: cred.authorization } : {}),
     };
@@ -841,7 +842,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       name: "retouch_product",
       label: "商品精修",
       description:
-        "商品精修:增强光泽、修复瑕疵、提升清晰度、色彩校正。商品与构图不变,只提升质感。计费 6 积分。",
+        "商品精修:增强光泽、修复瑕疵、提升清晰度、色彩校正。商品与构图不变,只提升质感。计费金额以系统当前报价为准。",
       parameters: Type.Object({
         image_url: Type.String({ description: "商品图 URL" }),
         options: Type.Array(
@@ -889,7 +890,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       name: "recolor_product",
       label: "产品换色",
       description:
-        "产品换色:把商品主体换成目标颜色,形态纹理光影背景不变。计费 6 积分。",
+        "产品换色:把商品主体换成目标颜色,形态纹理光影背景不变。计费金额以系统当前报价为准。",
       parameters: Type.Object({
         image_url: Type.String({ description: "商品图 URL" }),
         color: Type.String({ description: "目标颜色十六进制,如 #27AE60" }),
@@ -929,7 +930,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       name: "replicate_hot",
       label: "爆款复刻",
       description:
-        "爆款复刻:参照爆款参考图的构图风格,把商品原图的产品放进去。计费 6 积分。",
+        "爆款复刻:参照爆款参考图的构图风格,把商品原图的产品放进去。计费金额以系统当前报价为准。",
       parameters: Type.Object({
         product_image_url: Type.String({ description: "商品原图 URL" }),
         reference_image_url: Type.String({ description: "爆款参考图 URL" }),
@@ -968,7 +969,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       name: "generate_suite",
       label: "一键电商套图",
       description:
-        "一键电商套图:默认 1 主图 + 4 副图 + 8 详情页；也可按用户要求自定义每张的类型、标题、比例与内容。每张按当前质量档计费（标准档 6 积分）。",
+        "一键电商套图:默认 1 主图 + 4 副图 + 8 详情页；也可按用户要求自定义每张的类型、标题、比例与内容。费用由当前配置和任务数量决定。",
       parameters: Type.Object({
         image_url: Type.String({
           description: "商品图 URL(可上传正面/侧面/背面多张,用逗号分隔)",

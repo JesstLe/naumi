@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -50,11 +51,12 @@ export function InpaintClient() {
   const [brush, setBrush] = useState(40);
   const [prompt, setPrompt] = useState("");
   const [resolution, setResolution] = useState<"1K" | "2K">("1K");
+  const billing=useFeatureBilling("tool.inpaint",{resolution});
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const cost = imageCost(resolution);
+  const cost = billing.cost;
 
   // AI帮写/智能优化(贴按钮弹窗,全站统一)
   const assistBtnRef = useRef<HTMLButtonElement>(null);
@@ -254,7 +256,7 @@ export function InpaintClient() {
       fd.append("resolution", resolution);
       fd.append("email", user.email);
 
-      const res = await fetch("/api/inpaint", {
+      const res = await billing.submit("/api/inpaint", {
         method: "POST",
         headers: await authHeader(),
         body: fd,

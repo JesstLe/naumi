@@ -1,9 +1,9 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 
 import * as React from "react";
 import { Wind } from "lucide-react";
 import { ToolWorkspace, ToolChips } from "@/components/tools/tool-workspace";
-import { TOOL_COST } from "@/lib/mock-data";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
@@ -11,6 +11,7 @@ import { authHeader } from "@/lib/supabase";
 const ACCENT = "#7C3AED"; // 服装去皱(紫)
 
 export function DewrinkleClient() {
+  const billing=useFeatureBilling("tool.dewrinkle",{});
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
@@ -52,7 +53,7 @@ export function DewrinkleClient() {
       accent={ACCENT}
       category="dewrinkle"
       regenLabel={L("以此图再去皱", "De-wrinkle from this image")}
-      cost={TOOL_COST.dewrinkle}
+      cost={billing.cost}
       action={L("一键去皱", "De-wrinkle")}
       controls={controls}
       onProcess={async (file) => {
@@ -62,7 +63,7 @@ export function DewrinkleClient() {
         // 去皱强度/保留纹理为展示偏好,后端无对应参数,不映射。
         fd.append("ratio", "自动");
         if (user) fd.append("email", user.email);
-        const res = await fetch("/api/dewrinkle", {
+        const res = await billing.submit("/api/dewrinkle", {
           method: "POST",
           headers: await authHeader(),
           body: fd,

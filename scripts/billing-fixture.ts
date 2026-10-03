@@ -16,7 +16,7 @@ export async function createBillingFixture() {
             } });
             return email;
         }, async close() {
-            for (const table of ["app_orders","app_video_results","app_video_tasks","app_canvas_image_tasks","app_image_jobs","app_gen_reservations", "app_billing_operations", "app_ledger", "app_credit_batches", "app_users"])
+            for (const table of ["app_billing_reconciliations","app_orders","app_video_results","app_video_tasks","app_canvas_image_tasks","app_image_jobs","app_gen_reservations", "app_billing_operations", "app_ledger", "app_credit_batches", "app_users"])
                 await pool.query(`DELETE FROM ${table} WHERE email=ANY($1::text[])`, [users]);
             await pool.end();
         } };

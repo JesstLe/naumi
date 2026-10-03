@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 
 import { cdnUrl } from "@/lib/cdn";
 import { useEffect, useRef, useState } from "react";
@@ -26,7 +27,7 @@ import { GenLoader } from "@/components/gen-loader";
 
 const MAX_UPLOAD = 20 * 1024 * 1024;
 const MAX_ITEMS = 12;
-const PRINTFILE_COST = 0; // 免费(纯本地处理),登录即可用
+ // 免费(纯本地处理),登录即可用
 const MAX_PX = 8000;
 const ACCENT = "#2E7CF6";
 const TINT = "rgba(46,124,246,.12)";
@@ -57,6 +58,7 @@ type Item = {
 };
 
 export function PrintfileClient() {
+  const billing=useFeatureBilling("tool.printfile",{});
   const { user, remaining, consumeCredits, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
   const { locale } = useI18n();
@@ -78,7 +80,7 @@ export function PrintfileClient() {
 
   const pendingCount = items.filter((i) => i.status === "pending").length;
   const doneItems = items.filter((i) => i.status === "done" && i.resultUrl);
-  const cost = pendingCount * PRINTFILE_COST;
+  const cost = pendingCount * billing.cost;
 
   // 目标像素预览(与后端同样的上限夹取)
   let wPx = Math.round((wMm / 25.4) * dpi);
@@ -207,7 +209,7 @@ export function PrintfileClient() {
       fd.append("fit", fit);
       if (user) fd.append("email", user.email);
 
-      const res = await fetch("/api/printfile", {
+      const res = await billing.submit("/api/printfile", {
         method: "POST",
         headers: await authHeader(),
         body: fd,
@@ -254,11 +256,11 @@ export function PrintfileClient() {
       setError(L("请填写成品尺寸", "Enter a size first"));
       return;
     }
-    if (remaining < queue.length * PRINTFILE_COST) {
+    if (remaining < queue.length * billing.cost) {
       setError(
         L(
-          `积分不足:本次需 ${queue.length * PRINTFILE_COST},剩余 ${remaining}`,
-          `Not enough credits: need ${queue.length * PRINTFILE_COST}, have ${remaining}`
+          `积分不足:本次需 ${queue.length * billing.cost},剩余 ${remaining}`,
+          `Not enough credits: need ${queue.length * billing.cost}, have ${remaining}`
         )
       );
       return;
@@ -297,7 +299,7 @@ export function PrintfileClient() {
       category="printfile"
       cost={cost}
       actionLabel={
-        pendingCount > 0 && PRINTFILE_COST === 0
+        pendingCount > 0 && billing.cost === 0
           ? L("生成印刷图 · 免费", "Generate · Free")
           : L("生成印刷图", "Generate")
       }
