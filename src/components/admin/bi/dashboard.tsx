@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import {microsToDecimal} from "@/lib/billing/decimal";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -57,6 +58,7 @@ type Column = {
   key: string;
   label: string;
   format?:
+    | "micros"
     | "time"
     | "credits"
     | "money"
@@ -139,6 +141,10 @@ const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
     { key: "images", label: "审计图数" },
     { key: "billed_credits", label: "已落账积分", format: "credits" },
     { key: "reason", label: "执行说明", format: "status" },
+    { key: "billing_config_version", label: "计费版本" },
+    { key: "cost_currency", label: "成本单位", format:"status" },
+    { key: "cost_amount_micros", label: "估计成本", format:"micros" },
+    { key: "cost_source", label: "成本来源", format:"status" },
   ],
   orders: [
     { key: "created_at", label: "创建时间", format: "time" },
@@ -215,6 +221,7 @@ const names: Record<string, string> = {
 };
 for (const section of sections) names[section.id] = section.label;
 Object.assign(names, {
+  CNY:"人民币",USD:"美元",credits:"积分", "manual-estimate":"手工估计", "legacy-credit-estimate":"历史积分估计",
   main: "商品主图",
   scene: "场景图",
   detail: "详情图",
@@ -253,6 +260,7 @@ function display(value: unknown, format?: Column["format"]) {
   if (typeof value === "boolean") return value ? "是" : "否";
   if (value === null || value === undefined || value === "") return "未记录";
   if (value === "unrecorded") return "未记录";
+  if(format==="micros")return microsToDecimal(String(value));
   if (format === "changes") {
     try {
       const data = JSON.parse(String(value));
@@ -1235,20 +1243,20 @@ function Overview({
                   <th>接口执行记录</th>
                   <th>审计图数</th>
                   <th>已落账积分</th>
-                  <th>质量差异记录</th>
+                  <th>质量差异记录</th><th>估计成本（按币种分组）</th>
                 </tr>
               </thead>
               <tbody>
                 {data.models.map((row) => (
                   <tr
-                    key={String(row.upstream)}
+                    key={`${row.upstream}:${row.cost_currency}`}
                     tabIndex={0}
                     data-bi-tip={`${display(row.upstream)}\n审计图片：${n(row.images)} 张\n已落账：${n(row.billed_credits)} 积分\n质量差异：${n(row.fallbacks)} 条`}
                   >
                     <td>{display(row.upstream)}</td>
                     <td>{n(row.images)}</td>
                     <td>{n(row.billed_credits)}</td>
-                    <td>{n(row.fallbacks)}</td>
+                    <td>{n(row.fallbacks)}</td><td>{display(row.cost_amount_micros,"micros")} {row.cost_amount_micros!==null&&`${display(row.cost_currency,"status")} · ${row.cost_actual?"实际":"估计"}`}</td>
                   </tr>
                 ))}
               </tbody>

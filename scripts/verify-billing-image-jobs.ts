@@ -37,6 +37,7 @@ async function main() {
         const next = structuredClone(initial.config);
         next.features["image.generate"].pricing = { mode: "fixed", credits: 17 };
         next.switches.metering = "off";
+        next.costs["*:*:high:1K"]={currency:"CNY",amountMicros:"9000000",unit:"image",source:"manual-estimate"};
         const changed = await config.publish({ id: randomUUID(), expectedVersion: initial.version, config: next, actor: "fixture", reason: "change while upstream blocked" });
         assert.equal((await route.POST(request(initial.version, 20))).status, 409, "Stale displayed quote must reject before supplier");
         release();
@@ -44,6 +45,8 @@ async function main() {
             await new Promise(resolve => setTimeout(resolve, 25));
         assert.equal(await db.getImageJobChargedCredits(jobId), 10, "Old job keeps its original price even with metering off");
         assert.equal(calls, 2);
+        let audits:any[]=[];while(Date.now()<deadline){audits=(await db.getPool().query("SELECT * FROM app_image_cost_audit WHERE job_id=$1",[jobId])).rows;if(audits.length)break;await new Promise(resolve=>setTimeout(resolve,25));}
+        assert.equal(audits.length,1);assert.equal(Number(audits[0].billing_config_version),initial.version);assert.equal(audits[0].cost_currency,"credits");assert.equal(audits[0].cost_source,"legacy-credit-estimate");assert.equal(audits[0].cost_actual,false);assert.equal(audits[0].billed_credits,10);assert.equal(audits[0].cost_credits,10);
         const row = (await db.getPool().query("SELECT payload FROM app_image_jobs WHERE id=$1", [jobId])).rows[0];
         assert.equal(row.payload.billingQuote.configVersion, initial.version);
         const { quote } = await import("../src/lib/billing/quote"), { facts } = await import("./billing-unit-fixture"), repository = await import("../src/lib/image-job-repository");

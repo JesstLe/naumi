@@ -171,7 +171,7 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
       source = `SELECT t.* FROM (${operationSource}) t WHERE t.email IN (SELECT email FROM scoped) AND ${inRange("t")} AND ($6::text='' OR t.status=$6 OR ($6='review' AND (t.status='needs_attention' OR t.stage='checking' OR t.stage='reviewing' OR t.error LIKE '%核查%')))`;
       break;
     case "models":
-      source = `SELECT c.id,c.job_id,c.email,c.requested_quality,c.executed_quality,c.upstream,c.images,c.billed_credits,c.reason,c.created_at,
+      source = `SELECT c.id,c.job_id,c.email,c.requested_quality,c.executed_quality,c.upstream,c.images,c.billed_credits,c.reason,c.created_at,c.billing_config_version,c.cost_currency,c.cost_amount_micros::text,c.cost_source,c.cost_actual,
       COALESCE(j.payload->'p'->>'model',j.payload->>'model',j.snapshot->>'model','') AS requested_model,
       COALESCE(j.payload->'p'->>'resolution',a.resolution,'') AS resolution,
       COALESCE(a.title,'') AS title,CASE WHEN a.id IS NOT NULL THEN a.id ELSE '' END AS artwork_id
@@ -263,7 +263,7 @@ async function overview(q: BiQuery, pool: PoolClient): Promise<BiOverview> {
       params,
     ),
     await pool.query(
-      `${scope} SELECT upstream,sum(images)::int AS images,sum(billed_credits)::float8 AS billed_credits,count(*) FILTER(WHERE requested_quality<>'' AND executed_quality<>'' AND requested_quality<>executed_quality)::int AS fallbacks FROM app_image_cost_audit c WHERE c.email IN (SELECT email FROM scoped) AND ${inRange("c")} GROUP BY upstream ORDER BY images DESC,upstream LIMIT 12`,
+      `${scope} SELECT upstream,cost_currency,sum(cost_amount_micros)::text AS cost_amount_micros,bool_and(COALESCE(cost_actual,false)) AS cost_actual,sum(images)::int AS images,sum(billed_credits)::float8 AS billed_credits,count(*) FILTER(WHERE requested_quality<>'' AND executed_quality<>'' AND requested_quality<>executed_quality)::int AS fallbacks FROM app_image_cost_audit c WHERE c.email IN (SELECT email FROM scoped) AND ${inRange("c")} GROUP BY upstream,cost_currency ORDER BY images DESC,upstream,cost_currency LIMIT 12`,
       params,
     ),
   ];

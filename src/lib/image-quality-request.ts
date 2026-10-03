@@ -4,6 +4,9 @@ import { imageBillCredits, qualityCostAudit } from "@/lib/mock-data";
 import { randomUUID } from "node:crypto";
 import { resolveImageQuality, isQualityUnsupportedError, type ResolvedImageQuality, type ExecutedQuality } from "@/lib/image-quality";
 import {synchronousCost,settleSynchronous,currentSynchronousBilling} from "@/lib/billing/synchronous";
+import {getPool} from "@/lib/db";
+import {frozenCostAudit} from "@/lib/billing/audit";
+import type {BillingQuote,BillingResult} from "@/lib/billing/types";
 
 /** Body parameters take precedence over the shared browser/agent preference. */
 export function requestImageQuality(request: Request, explicit?: unknown): ResolvedImageQuality {
@@ -50,10 +53,22 @@ export async function settleToolImage(email: string, cost: number, reason: strin
   await auditSettledImage(email, configured??cost, quality, imageId, imageId, resolution);
 }
 
-export async function auditSettledImage(email: string, cost: number, quality: ResolvedImageQuality, jobId: string, imageId: string, resolution = "1K") {
+export async function auditSettledImage(email: string, cost: number, quality: ResolvedImageQuality, jobId: string, imageId: string, resolution = "1K",execution?:{upstream:string;reason:string;platformFunded:boolean}) {
   if (!dbEnabled) return;
   try {
   const model = executionModels.get(quality);
+  const operationId=currentSynchronousBilling()?.operation?.id||jobId;
+  const operation=(await getPool().query("SELECT o.quote,o.state,o.settlement_result,COALESCE((SELECT -sum(delta) FROM app_ledger WHERE id=o.ledger_id AND kind='consume'),0) AS charge FROM app_billing_operations o WHERE id=$1 AND email=$2",[operationId,email.toLowerCase()])).rows[0];
+  if(operation?.quote?.schemaVersion===1){
+    if(operation.state!=="settled")return;
+    const q=operation.quote as BillingQuote,result=operation.settlement_result as BillingResult|undefined,success=result?.items.filter(i=>i.state==="succeeded")||[];
+    if(!success.length)return;
+    const billed=Number(operation.charge)/success.length,wire=execution?.upstream|| (model?`default:${model}`:"unrecorded"),item=success.find(i=>i.id===imageId);
+    const platformFunded=execution?.platformFunded??item?.platformFunded??!q.facts.byok;
+    const fields=frozenCostAudit(q,{id:imageId,quality:quality.executed,platformFunded,...(wire.startsWith("default:")?{providerId:"openai-images",modelId:wire.slice(8)}:{})},billed,success.length);
+    await recordImageCostAudit({jobId,email,imageId,requestedQuality:quality.requested||q.facts.quality,executedQuality:quality.executed,upstream:wire,images:1,billedCredits:billed,reason:execution?.reason||quality.fallbackReason||"generated",...fields});
+    return;
+  }
   await recordImageCostAudit({ jobId, email, imageId,
     ...qualityCostAudit({ requested: quality.requested || "medium", executed: quality.executed,
       upstream: model ? `default:${model}` : "unrecorded", images: 1, reason: quality.fallbackReason || "generated",
