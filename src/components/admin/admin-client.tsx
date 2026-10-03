@@ -60,8 +60,10 @@ export function AdminClient() {
   // ok 时:是否走本地管理员通道(决定 AdminSettings 用 cookie 而非 Bearer)。
   const [localAdmin, setLocalAdmin] = useState(false);
   useEffect(() => {
-    if (status === "ok" && !settingsView) router.replace("/admin/center");
-  }, [status, settingsView, router]);
+    // Bearer-only Supabase sessions retain their original settings entry:
+    // a browser page navigation cannot carry that Authorization header.
+    if (status === "ok" && localAdmin && !settingsView) router.replace("/admin/center");
+  }, [status, localAdmin, settingsView, router]);
 
   // 本地密码登录框状态
   const [pw, setPw] = useState("");
@@ -230,7 +232,7 @@ export function AdminClient() {
     );
   }
 
-  if (!settingsView) return <p className="p-8 text-sm text-muted-foreground">正在打开管理中心…</p>;
+  if (!settingsView && localAdmin) return <p className="p-8 text-sm text-muted-foreground">正在打开管理中心…</p>;
 
   return (
     <AdminCenterShell active="settings">
