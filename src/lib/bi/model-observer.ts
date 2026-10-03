@@ -7,6 +7,14 @@ import { resolveUserEmail } from "@/lib/admin-auth";
 import { currentImageOperationId } from "@/lib/image-gateway";
 import { ensureBiSchema } from "./repository";
 import {markBillingUpstream} from "@/lib/billing/synchronous";
+import { withModelRequest } from "@/lib/model-config/requests";
+import { ModelConfigError } from "@/lib/model-config/types";
+import { currentModelExecution, type ModelExecutionScope } from "@/lib/model-config/context";
+import { isManagedModelClient } from "@/lib/model-config/clients";
+
+export function modelExecutionTelemetry(scope: ModelExecutionScope | null | undefined) {
+  return scope ? { publicModelId: scope.frozen.publicModelId, providerId: scope.connection.providerId, modelVersion: scope.frozen.modelVersion, billingVersion: scope.frozen.billingVersion, digest: scope.frozen.routerDigest || scope.frozen.modelDigest } : undefined;
+}
 
 type Context = { email: string; operation: string; id?: string };
 const context = new AsyncLocalStorage<Context>();
@@ -18,7 +26,7 @@ export function withBiModelContext<T>(
 ) {
   return context.run({ email, operation, id }, run);
 }
-export async function withBiRequest<T>(
+export async function withBiRequest<T extends Response>(
   request: Request,
   run: () => Promise<T>,
 ) {
@@ -26,10 +34,8 @@ export async function withBiRequest<T>(
     ? await resolveUserEmail(request).catch(() => null)
     : null;
   if (!email) return run();
-  return context.run(
-    { email, operation: new URL(request.url).pathname.slice(0, 100) },
-    run,
-  );
+  try { return await context.run({ email, operation: new URL(request.url).pathname.slice(0, 100) }, () => withModelRequest(request, run)); }
+  catch (error) { if (error instanceof ModelConfigError) return new Response(JSON.stringify({ error: error.message, code: error.code }), { status: error.status, headers: { "content-type": "application/json", "cache-control": "no-store" } }) as T; throw error; }
 }
 
 type ObservedResponse = {
@@ -52,12 +58,13 @@ export async function recordBiModelCompletion(input: {
   durationMs: number;
   inputTokens?: unknown;
   outputTokens?: unknown;
+  execution?: ReturnType<typeof modelExecutionTelemetry> | null;
 }) {
   if (!dbEnabled) return;
   try {
     await ensureBiSchema();
     await getPool().query(
-      `INSERT INTO app_bi_model_calls(id,email,operation,operation_id,wire_model,response_model,state,duration_ms,input_tokens,output_tokens) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      `INSERT INTO app_bi_model_calls(id,email,operation,operation_id,wire_model,response_model,state,duration_ms,input_tokens,output_tokens,public_model_id,provider_id,model_version,billing_version,config_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [
         randomUUID(),
         input.email,
@@ -69,6 +76,7 @@ export async function recordBiModelCompletion(input: {
         Math.max(0, Math.min(2147483647, input.durationMs)),
         token(input.inputTokens),
         token(input.outputTokens),
+        input.execution?.publicModelId || "", input.execution?.providerId || "", input.execution?.modelVersion || null, input.execution?.billingVersion || null, input.execution?.digest || "",
       ],
     );
   } catch {
@@ -78,6 +86,7 @@ export async function recordBiModelCompletion(input: {
 export async function observeModelCall<T>(
   wireModel: string,
   run: () => PromiseLike<T>,
+  execution: ReturnType<typeof modelExecutionTelemetry> | null = modelExecutionTelemetry(currentModelExecution()),
 ): Promise<T> {
   markBillingUpstream("started");
   const actor = context.getStore();
@@ -122,26 +131,7 @@ export async function observeModelCall<T>(
     markBillingUpstream(state==="rejected"?"rejected":"unknown");
     throw error;
   } finally {
-    try {
-      await ensureBiSchema();
-      await getPool().query(
-        `INSERT INTO app_bi_model_calls(id,email,operation,operation_id,wire_model,response_model,state,duration_ms,input_tokens,output_tokens) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [
-          randomUUID(),
-          actor.email,
-          actor.operation,
-          operationId,
-          wireModel.slice(0, 200),
-          responseModel,
-          state,
-          Math.min(2147483647, Date.now() - start),
-          inputTokens,
-          outputTokens,
-        ],
-      );
-    } catch {
-      /* Telemetry must never retry, fail or change billing for a paid operation. */
-    }
+    await recordBiModelCompletion({ email: actor.email, operation: actor.operation, operationId, model: wireModel, responseModel, state, durationMs: Date.now() - start, inputTokens, outputTokens, execution });
   }
 }
 
@@ -158,10 +148,13 @@ export function observeOpenAI<T extends OpenAI>(client: T): T {
     >;
     const original = object[key].bind(resource);
     object[key] = (...args: unknown[]) => {
-      const body = args[0] as { model?: unknown };
+      const body = args[0] as { model?: unknown; messages?: { content?: unknown }[] };
+      const vision = body?.messages?.some(m => Array.isArray(m.content) && m.content.some(part => part?.type === "image_url" || part?.type === "input_image"));
+      const scope = isManagedModelClient(client) ? currentModelExecution(key === "create" ? vision ? "vision" : "text" : "image") : null;
       return observeModelCall(
-        typeof body?.model === "string" ? body.model : "unrecorded",
+        scope?.connection.wireModel || (typeof body?.model === "string" ? body.model : "unrecorded"),
         () => original(...args),
+        modelExecutionTelemetry(scope) || null,
       );
     };
   }

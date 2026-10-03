@@ -1,5 +1,6 @@
 import type { VideoProviderAdapter } from "@/lib/video/types";
-import { configuredVideoProviders } from "@/lib/video/providers/config";
+import { configuredVideoProviders, getVideoProviderConfig } from "@/lib/video/providers/config";
+import { currentModelExecution } from "@/lib/model-config/context";
 import { createDirectVideoAdapter } from "@/lib/video/providers/direct";
 import { openAiVideosAdapter } from "@/lib/video/providers/openai-videos";
 
@@ -26,6 +27,10 @@ export function registerVideoProvider(adapter: VideoProviderAdapter): void {
 }
 
 export function getVideoProvider(providerId: string): VideoProviderAdapter | null {
+  if (currentModelExecution("video")?.connection.providerId === providerId) {
+    const cfg = getVideoProviderConfig(providerId);
+    return cfg?.protocol === "openai-videos" ? openAiVideosAdapter : createDirectVideoAdapter(providerId);
+  }
   ensureProviders();
   return REGISTRY.get(providerId) ?? null;
 }

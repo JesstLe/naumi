@@ -1,4 +1,8 @@
+import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
 import "server-only";
+import { currentModelExecution, currentExecutionBundle, runLegacyModelExecution, type ExecutionBundle } from "@/lib/model-config/context";
+import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
+import { withModelRequest, modelConfigurationEnabled } from "@/lib/model-config/requests";
 import {quoteForActor} from "@/lib/billing/server";
 import {assertQuotedVersion,requestQuoteConfirmation} from "@/lib/billing/request";
 import { resolveImageQuality, type ResolvedImageQuality } from "@/lib/image-quality";
@@ -92,13 +96,17 @@ function editSize(width: number, height: number) {
   return ratio > 1.2 ? "1536x1024" as const : ratio < 0.83 ? "1024x1536" as const : "1024x1024" as const;
 }
 
-export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTaskInput>,request?:Request) {
+export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTaskInput>,request?:Request): Promise<CanvasImageTaskRow> {
   if (!dbEnabled) throw new Error("后台图片任务需要数据库支持");
   const input = normalizedInput(raw);
   validateInput(input);
   const artwork = (await listArtworksByIds(email, [input.artworkId]))[0];
   if (!artwork) throw new Error("图片不存在或无权访问");
-  const quality = resolveImageQuality(input.quality);
+  if (!currentModelExecution("image") && await modelConfigurationEnabled()) {
+    const effective = new Request("http://localhost/api/canvas/image-tasks", { method: "POST", headers: { ...(request ? Object.fromEntries(request.headers.entries()) : {}), "content-type": "application/json" }, body: JSON.stringify({ ...raw, artworkId: artwork.id, resolution: artwork.resolution || "1K" }) });
+    return withModelRequest(effective, () => enqueueTextEditTask(email, raw, request));
+  }
+  const quality = resolveConfiguredImageQuality(input.quality);
   const billingQuote=await quoteForActor(email,{feature:"canvas.image",quantity:1,quality:quality.requested||"medium",resolution:artwork.resolution||"1K"});
   if(request)assertQuotedVersion(requestQuoteConfirmation(request,raw as {billingVersion?:unknown;billingCredits?:unknown}),billingQuote);
   const cost = billingQuote.requestedCredits;
@@ -112,7 +120,7 @@ export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTa
     id,
     email,
     sourceArtworkId: artwork.id,
-    parameters: { ...input, billingResolution: artwork.resolution || "1K", qualityAudit: quality, paidOperationVersion: 1 },
+    parameters: { ...input, billingResolution: artwork.resolution || "1K", qualityAudit: quality, paidOperationVersion: 1, ...(currentExecutionBundle() ? { modelExecutions: structuredClone(currentExecutionBundle()) } : {}) },
     cost,
     metered,
   });
@@ -194,7 +202,9 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
 
 export async function processCanvasImageTask(task: CanvasImageTaskRow): Promise<void> {
   try {
-    await renderTextEdit(task);
+    const bundle = task.parameters.modelExecutions as ExecutionBundle | undefined;
+    if (bundle) await withFrozenExecutionBundle(bundle, () => renderTextEdit(task));
+    else await runLegacyModelExecution(() => renderTextEdit(task));
     console.info(`[canvas-image-task] completed id=${task.id} attempt=${task.attempts}`);
   } catch (error) {
     const current = await getCanvasImageTask(task.email, task.id);

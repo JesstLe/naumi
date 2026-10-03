@@ -12,7 +12,7 @@ import {
   listUserImageProviderRecords,
   upsertUserImageProviderRecord,
 } from "@/lib/db";
-import { decryptAtRest, maskKey } from "@/lib/settings";
+import { decryptAtRest, encryptAtRest, maskKey } from "@/lib/settings";
 
 export type UserImageProviderProtocol = "openai-images" | "chat-completions";
 
@@ -26,6 +26,23 @@ export type UserImageProvider = {
   models: string[];
   defaultModel: string;
 };
+
+/** Private durable payload only; never return this credential envelope to the browser. */
+export function freezeUserImageProvider(email: string, provider: UserImageProvider): string {
+  return encryptAtRest(JSON.stringify({ version: 1, actor: email.trim().toLowerCase(), provider }));
+}
+
+export function restoreUserImageProvider(email: string, envelope: string): UserImageProvider {
+  const plain = decryptAtRest(envelope);
+  if (!plain) throw new Error("任务自定义接口凭据无法解密，请联系管理员核查");
+  const saved = JSON.parse(plain);
+  const p = saved.provider;
+  if (saved.version !== 1 || saved.actor !== email.trim().toLowerCase() || !p ||
+      typeof p.id !== "string" || typeof p.baseUrl !== "string" || typeof p.apiKey !== "string" ||
+      !["openai-images", "chat-completions"].includes(p.protocol) || !Array.isArray(p.models) ||
+      !p.models.every((m: unknown) => typeof m === "string")) throw new Error("任务自定义接口快照无效");
+  return p as UserImageProvider;
+}
 
 /**
  * 读出供应商密文字段。落库策略(2026-09-24 起):服务器存明文,传输全程密文——

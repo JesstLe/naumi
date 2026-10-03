@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { createServer } from "node:http";
+import { createServer, type RequestListener } from "node:http";
 import { Pool } from "pg";
 
-export async function createModelFixture() {
+export async function createModelFixture(handleRequest?: RequestListener) {
   if (process.env.NAUMI_VERIFY_ISOLATED_DB !== "1" || new URL(process.env.DATABASE_URL || "http://invalid").hostname !== "127.0.0.1")
     throw new Error("Requires isolated local PostgreSQL");
   const admin = new Pool({ connectionString: process.env.DATABASE_URL, ssl: false });
   const name = `model_test_${randomUUID().replace(/-/g, "")}`;
   await admin.query(`CREATE SCHEMA ${name}`);
   const sql = new Pool({ connectionString: process.env.DATABASE_URL, ssl: false, options: `-c search_path=${name}`, max: 5 });
-  const server = createServer((_req, res) => { res.writeHead(500); res.end("No generation permitted in registry tests"); });
+  const server = createServer(handleRequest || ((_req, res) => { res.writeHead(500); res.end("No generation permitted in registry tests"); }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const marker = `fixture-secret-${randomUUID()}`;

@@ -1,3 +1,4 @@
+import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
@@ -76,7 +77,7 @@ async function handleObservedPost(req: Request) {
   try {
     const { apiKey } = await getOpenAISettings();
     if (!apiKey) throw new Error("未配置 key");
-    const client = observeOpenAI(new OpenAI({
+    const client = observeOpenAI(modelAwareOpenAI({
       apiKey,
       baseURL: (await getOpenAIBaseUrl()) || undefined,
     }));

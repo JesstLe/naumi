@@ -25,6 +25,11 @@ export async function ensureBiSchema() {
       duration_ms integer NOT NULL,input_tokens integer,output_tokens integer,created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS app_bi_model_calls_email_created ON app_bi_model_calls(email,created_at DESC);
       CREATE INDEX IF NOT EXISTS app_bi_model_calls_created ON app_bi_model_calls(created_at DESC);`);
+      await getPool().query(`ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS public_model_id text NOT NULL DEFAULT '';
+        ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS provider_id text NOT NULL DEFAULT '';
+        ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS model_version bigint;
+        ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS billing_version bigint;
+        ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS config_digest text NOT NULL DEFAULT '';`);
       await getPool().query(`CREATE TABLE IF NOT EXISTS app_bi_management_log (
         id text PRIMARY KEY,actor text NOT NULL,email text NOT NULL,action text NOT NULL,reason text NOT NULL,
         changes jsonb NOT NULL,request_fingerprint text NOT NULL,ledger_id text,created_at timestamptz NOT NULL DEFAULT now());
@@ -185,7 +190,7 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
       FROM app_orders o WHERE o.email IN (SELECT email FROM scoped) AND (CASE WHEN $6::text='paid' THEN o.paid_at ELSE o.created_at END) >= $1 AND (CASE WHEN $6::text='paid' THEN o.paid_at ELSE o.created_at END) < $2 AND ($6::text='' OR o.status=$6)`;
       break;
     case "calls":
-      source = `SELECT c.id,c.email,c.operation,c.operation_id,c.wire_model,c.response_model,c.state,c.duration_ms,c.input_tokens,c.output_tokens,c.created_at FROM app_bi_model_calls c WHERE c.email IN (SELECT email FROM scoped) AND ${inRange("c")} AND ($6::text='' OR c.state=$6)`;
+      source = `SELECT c.id,c.email,c.operation,c.operation_id,c.public_model_id,c.provider_id,c.model_version,c.billing_version,c.config_digest,c.wire_model,c.response_model,c.state,c.duration_ms,c.input_tokens,c.output_tokens,c.created_at FROM app_bi_model_calls c WHERE c.email IN (SELECT email FROM scoped) AND ${inRange("c")} AND ($6::text='' OR c.state=$6)`;
       break;
     case "conversations":
       source = `SELECT s.id,s.email,s.title,'agent' AS source,s.created_at,s.updated_at,jsonb_array_length(CASE WHEN jsonb_typeof(s.messages)='array' THEN s.messages ELSE '[]'::jsonb END) AS entries FROM app_agent_sessions s WHERE s.email IN (SELECT email FROM scoped) AND s.updated_at >= $1::timestamptz AND s.updated_at < $2::timestamptz AND ($6::text='' OR $6='agent')

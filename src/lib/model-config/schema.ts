@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Pool } from "pg";
-import { isIP } from "node:net";
+import { isIP, BlockList } from "node:net";
 import { MODEL_BINDINGS } from "./bindings";
 import { ModelConfigError, type ModelConfig } from "./types";
 
@@ -28,6 +28,12 @@ export const modelConfigSchema = z.strictObject({ schemaVersion: z.literal(1), p
 export type ValidationOptions = { trustedOrigins?: readonly string[] };
 
 // Runtime transport also checks DNS answers; this synchronous gate rejects literal private/metadata targets.
+const metadataTargets = new BlockList();
+metadataTargets.addSubnet("169.254.0.0", 16, "ipv4"); metadataTargets.addAddress("100.100.100.200", "ipv4"); metadataTargets.addAddress("fd00:ec2::254", "ipv6");
+export function modelMetadataHost(raw: string) {
+  const host = raw.toLowerCase().replace(/^\[|\]$/g, ""); const family = isIP(host);
+  return /^metadata\./.test(host) || !!family && metadataTargets.check(host, family === 6 ? "ipv6" : "ipv4");
+}
 export function privateModelHost(raw: string) {
   const host = raw.toLowerCase().replace(/^\[|\]$/g, "");
   if (host === "localhost" || !host.includes(".") && !isIP(host) || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return true;
@@ -42,7 +48,7 @@ export function validateModelEndpoint(value: string, options: ValidationOptions 
   let url: URL;
   try { url = new URL(value); } catch { throw new ModelConfigError("INVALID_ENDPOINT", "供应商接口地址无效"); }
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (url.username || url.password || url.search || url.hash || !["http:", "https:"].includes(url.protocol) || /^(169\.254\.|metadata\.)/.test(host) || host === "100.100.100.200") throw new ModelConfigError("INVALID_ENDPOINT", "接口地址不得携带凭据或指向元数据服务");
+  if (url.username || url.password || url.search || url.hash || !["http:", "https:"].includes(url.protocol) || modelMetadataHost(host)) throw new ModelConfigError("INVALID_ENDPOINT", "接口地址不得携带凭据或指向元数据服务");
   const trusted = options.trustedOrigins?.includes(url.origin);
   if ((!trusted && (privateModelHost(host) || url.protocol !== "https:"))) throw new ModelConfigError("INVALID_ENDPOINT", "内网接口必须在服务端允许列表中");
   return url.toString().replace(/\/$/, "");
@@ -112,6 +118,9 @@ export async function ensureModelSchema(pool: Pool): Promise<void> {
         await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('naumi-model-schema-v1',0))");
         await tx.query(`
       CREATE TABLE IF NOT EXISTS app_model_credentials(id uuid PRIMARY KEY,provider_id text NOT NULL,key_enc text NOT NULL,created_by text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+      CREATE TABLE IF NOT EXISTS app_model_provider_budgets(identity text PRIMARY KEY,max_concurrent int NOT NULL CHECK(max_concurrent>0));
+      CREATE TABLE IF NOT EXISTS app_model_provider_leases(identity text NOT NULL REFERENCES app_model_provider_budgets(identity),token uuid PRIMARY KEY,expires_at timestamptz NOT NULL);
+      CREATE INDEX IF NOT EXISTS app_model_provider_leases_identity ON app_model_provider_leases(identity,expires_at);
       CREATE TABLE IF NOT EXISTS app_model_config_versions(version bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,operation_id uuid UNIQUE NOT NULL,actor text NOT NULL,reason text NOT NULL,config jsonb NOT NULL,digest text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS app_model_config_state(singleton boolean PRIMARY KEY CHECK(singleton),active_version bigint REFERENCES app_model_config_versions(version));
       CREATE TABLE IF NOT EXISTS app_model_publications(id uuid PRIMARY KEY,version bigint NOT NULL REFERENCES app_model_config_versions(version),expected_version bigint NOT NULL,request_fingerprint text NOT NULL,phase text NOT NULL CHECK(phase IN ('staged','preparing','activating','applied','failed','unknown')),error_code text,updated_at timestamptz NOT NULL DEFAULT now());

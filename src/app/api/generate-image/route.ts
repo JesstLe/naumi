@@ -1,5 +1,7 @@
 import {withBillingIntent} from "@/lib/billing/intent";
 import {auditSettledImage} from "@/lib/image-quality-request";
+import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
+import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { imageQualityCost } from "@/lib/image-quality-request";
 import {quoteForRequest} from "@/lib/billing/server";
@@ -48,6 +50,8 @@ import { imageGatewayFields, ImageOperationPending, withImageIndex } from "@/lib
 import {
   assertUserImageBaseUrlAllowed,
   getUserImageProvider,
+  freezeUserImageProvider,
+  restoreUserImageProvider,
   upstreamUserImageModel,
   USER_IMAGE_MODEL_PREFIX,
 } from "@/lib/user-image-provider";
@@ -305,7 +309,7 @@ async function openaiImages(
   // 透明底只 gpt-image-1 支持(gpt-image-2 实测不支持 background:transparent),走抠图模型;
   // 其余生图走默认模型(gpt-image-2)。普通生图的兜底已统一 v2,不再落 v1。
   const model = p.transparent ? cutoutModel || "gpt-image-1" : modelIn;
-  const client = observeOpenAI(new OpenAI({
+  const client = observeOpenAI(modelAwareOpenAI({
     apiKey,
     baseURL: baseUrl || (await getOpenAIBaseUrl()) || undefined,
     // Generation runs as a background job (no CDN constraint), so allow a
@@ -313,19 +317,19 @@ async function openaiImages(
     // wait and blow past the client's poll deadline.
     timeout: 280_000,
     maxRetries: 0,
-  }));
+  }, !opts?.auditUpstream?.startsWith("byok:")));
   const prompt = p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()));
   const size = sizeFor(p.ratio, model);
   const canEdit = p.images.length > 0 && isOpenAIImagesEditModel(model);
   // 出图质量:解析结果=实际执行档。通道未接入质量参数时在提交前回退为默认档
   // (env OPENAI_IMAGE_QUALITY,缺省 medium);内测仍按请求档测试价计费。
-  const q = (p.quality || p.qualityDefault || resolveImageQuality("").executed) as
+  const q = (p.quality || p.qualityDefault || resolveConfiguredImageQuality("").executed) as
     | "low"
     | "medium"
     | "high"
     | "auto";
   // 默认档:上游报错不识别 quality 参数时,同一通道先退回默认档重试一次。
-  const qDefault = (p.qualityDefault || resolveImageQuality("").executed) as typeof q;
+  const qDefault = (p.qualityDefault || resolveConfiguredImageQuality("").executed) as typeof q;
 
   type UpstreamImage = { b64_json?: string; url?: string; execution?: GeneratedImage["execution"] };
   let data: UpstreamImage[] = [];
@@ -896,7 +900,7 @@ async function runJob(
           console.error(`[gen-quality-fallback] BYOK 不支持质量参数,回退默认 API: job=${jobId} provider=${userProvider.model}`);
           // 使用提交时固化的默认档，成功结果中保留供应商回退信息。
           return openaiImages(
-            { ...p, quality: p.qualityDefault || resolveImageQuality("").executed },
+            { ...p, quality: p.qualityDefault || resolveConfiguredImageQuality("").executed },
             apiKey,
             defaultModel,
             cutoutModel,
@@ -1047,9 +1051,17 @@ async function kickGeneration(id: string) {
   await JOBS.kick(id, async (payload) => {
     const p = payload.p as GenParams;
     const settings = await getOpenAISettings();
-    const imageModel = (await getImageModelCatalog(p.email)).find((model) => model.id === p.model);
+    if (payload.byok && typeof payload.byokSnapshot !== "string") {
+      await JOBS.patch(id, { error: "旧任务缺少自定义接口快照，已暂停提交，请联系管理员核查" });
+      return;
+    }
+    const provider = payload.byok ? restoreUserImageProvider(p.email, payload.byokSnapshot as string) : null;
+    const imageModel: ImageModelDescriptor | undefined = provider ? {
+      id: p.model, label: `自定义 · ${upstreamUserImageModel(p.model)}`,
+      provider: provider.protocol === "chat-completions" ? "user-chat-completions" : "user-openai-images",
+      supportsEdit: provider.protocol === "chat-completions" || upstreamUserImageModel(p.model).startsWith("gpt-image"),
+    } : (await getImageModelCatalog(p.email)).find((model) => model.id === p.model);
     if (!imageModel) throw new Error("任务模型暂时不可用");
-    const provider = payload.byok ? await getUserImageProvider(p.email) : null;
     if (payload.byok && !provider) throw new Error("自定义图片接口暂时不可用");
     if (provider) await assertUserImageBaseUrlAllowed(provider.baseUrl);
     await runJob(id, p, settings.apiKey, imageModel, settings.cutoutModel, settings.model,
@@ -1153,6 +1165,7 @@ async function handleObservedPost(request: Request) {
     );
   }
   let userProvider: { baseUrl: string; apiKey: string; model: string } | null = null;
+  let byokSnapshot: string | undefined;
   if (
     imageModel.provider === "user-openai-images" ||
     imageModel.provider === "user-chat-completions"
@@ -1171,6 +1184,7 @@ async function handleObservedPost(request: Request) {
       );
     }
     await assertUserImageBaseUrlAllowed(configured.baseUrl);
+    byokSnapshot = freezeUserImageProvider(p.email, configured);
     userProvider = {
       baseUrl: configured.baseUrl,
       apiKey: configured.apiKey,
@@ -1184,7 +1198,7 @@ async function handleObservedPost(request: Request) {
   // 站内不预扣、不结算、不记流水。
   // 按请求质量基础价叠加尺寸差价，提交时固定报价。
   // 选档→扣费→结算链路;请求档进任务审计,恢复/重放后结算口径不变。
-  const qualityAudit = resolveImageQuality(p.quality);
+  const qualityAudit = resolveConfiguredImageQuality(p.quality);
   const billingQuote=useDb?await quoteForRequest(request,{feature:"image.generate",quantity:p.count,quality:qualityAudit.requested||"medium",resolution:p.resolution,modelId:imageModel.id}):undefined;
   if(billingQuote)assertQuotedVersion(requestQuoteConfirmation(request,p),billingQuote);
   const cost = billingQuote?.requestedCredits ?? (userProvider ? 0 : p.count * await imageQualityCost(qualityAudit, p.resolution));
@@ -1201,11 +1215,11 @@ async function handleObservedPost(request: Request) {
   // 质量参数:入口即解析。p.quality 固化为实际执行档(恢复/重放确定性),
   // 请求档与回退原因进任务审计快照,供后台核对「请求了什么、跑了什么」。
   p.quality = qualityAudit.executed;
-  p.qualityDefault = resolveImageQuality("").executed;
+  p.qualityDefault = resolveConfiguredImageQuality("").executed;
   p.compiledPrompt = p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide());
   p.model = imageModel.id;
   try {
-  await JOBS.create(jobId, p.email, { status: "pending", createdAt: Date.now(), quality: qualityAudit }, { p, cost, byok: !!userProvider }, cost, true,billingQuote);
+  await JOBS.create(jobId, p.email, { status: "pending", createdAt: Date.now(), quality: qualityAudit }, { p, cost, byok: !!userProvider, byokSnapshot }, cost, true,billingQuote);
   } catch(error) {
     const message=error instanceof Error ? error.message : "";
     return NextResponse.json({error:safeError(error,"任务保存失败，请稍后重试")},{status:message.includes("积分不足") ? 402 : 503});

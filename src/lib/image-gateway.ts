@@ -1,5 +1,6 @@
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { currentModelExecution } from "./model-config/context";
 
 type ImageOperation = {
   /** Caller trust boundary: arbitrary BYOK endpoints are never durable Router. */
@@ -15,6 +16,8 @@ type ImageOperation = {
 const operations = new AsyncLocalStorage<ImageOperation>();
 
 export function isImageGatewayModel(model: string) {
+  const scope = currentModelExecution("image");
+  if (scope?.connection.protocol === "router-images" && [scope.frozen.publicModelId, scope.connection.wireModel].includes(model)) return true;
   return /^naumi-image-(auto|economy|standard|premium)$/.test(model);
 }
 
@@ -50,12 +53,14 @@ export async function withImageOperation<T>(model: string, operation: ImageOpera
 
 /** New API forwards extra_fields in JSON and as one JSON-valued form field. */
 export function imageGatewayFields(model: string, multipart = false) {
-  if (!isImageGatewayModel(model)) return {};
   const operation = operations.getStore();
+  if (operation?.managedGateway === false) return {};
+  if (!isImageGatewayModel(model)) return {};
   if (!operation) throw new Error("图片网关缺少稳定任务标识");
   const fields = { naumi: {
+    ...(currentModelExecution("image")?.frozen.routerDigest ? { config_digest: currentModelExecution("image")!.frozen.routerDigest, native_resolution: !!currentModelExecution("image")!.frozen.facts?.nativeResolution } : {}),
     operation_id: operation.id,
-    resolution: operation.resolution || "1K",
+    resolution: currentModelExecution("image")?.frozen.routerDigest ? currentModelExecution("image")!.frozen.facts?.resolution || "1K" : operation.resolution || "1K",
     task: operation.task || "product",
     preserve_identity: !!operation.preserveIdentity,
     text_accuracy: operation.textAccuracy || "auto",

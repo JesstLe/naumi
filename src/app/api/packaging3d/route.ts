@@ -1,4 +1,5 @@
 import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
+import { managedImageEditFetch } from "@/lib/model-config/clients";
 import { requestImageQuality, imageQualityCost, withQualityFallback, settleToolImage, recordImageExecutionModel } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
@@ -177,12 +178,7 @@ async function generate(input: Input): Promise<Buffer> {
   form.append("n", "1");
   form.append("size", "1024x1024");
   form.append("quality", input.quality.executed);
-  const response = await observeModelCall(model || "gpt-image-2",()=>fetch(`${baseUrl.replace(/\/$/, "")}/images/edits`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
-    signal: AbortSignal.timeout(280_000),
-  }));
+  const response = await managedImageEditFetch(baseUrl, apiKey, form, AbortSignal.timeout(280_000));
   const raw = await response.text();
   if (!response.ok) throw Object.assign(new Error(`图片接口 ${response.status}: ${raw.slice(0, 500)}`), { status: response.status });
   const parsed = JSON.parse(raw) as {
@@ -365,6 +361,6 @@ export async function GET(request: Request) {
   }
   return NextResponse.json(job);
 }
-import { withBiRequest,observeModelCall } from "@/lib/bi/model-observer";
+import { withBiRequest } from "@/lib/bi/model-observer";
 
 export async function POST(request:Request){return withBillingRequest(request,"tool.packaging3d",()=>billingRoutePost(request));}

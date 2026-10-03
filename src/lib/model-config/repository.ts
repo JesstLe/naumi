@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { settingsSecret } from "../settings-secret";
+import { registerProviderCapacities } from "./capacity";
 import { ensureModelSchema, validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelConfig, type ModelConfigRepository, type ModelDraft, type ModelPublication, type ModelSnapshot, type PublicationPhase } from "./types";
 
@@ -75,6 +76,7 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
           const row = (await tx.query("INSERT INTO app_model_config_versions(operation_id,actor,reason,config,digest) VALUES($1,'system','现行模型配置导入',$2::jsonb,$3) RETURNING *", [id,JSON.stringify(config),digest])).rows[0];
           await tx.query("INSERT INTO app_model_publications(id,version,expected_version,request_fingerprint,phase) VALUES($1,$2,0,'bootstrap','applied')", [id,row.version]);
           await tx.query("INSERT INTO app_model_config_state(singleton,active_version) VALUES(true,$1)", [row.version]);
+          await registerProviderCapacities(tx, config);
           return snapshot(row);
         }, true);
       } catch (error) {
@@ -157,9 +159,10 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
         const changed = await tx.query("UPDATE app_model_config_state SET active_version=$1 WHERE singleton=true AND active_version=$2", [row.version,row.expected_version]);
         if (!changed.rowCount) throw new ModelConfigError("CONFIG_CONFLICT", "配置已被更新，不能覆盖其他发布", 409);
         await tx.query("UPDATE app_model_publications SET phase='applied',error_code=NULL,updated_at=now() WHERE id=$1", [id]);
-        const versionRow = (await tx.query("SELECT actor FROM app_model_config_versions WHERE version=$1", [row.version])).rows[0];
+        const versionRow = (await tx.query("SELECT * FROM app_model_config_versions WHERE version=$1", [row.version])).rows[0];
+        await registerProviderCapacities(tx, versionRow.config);
         await tx.query("INSERT INTO app_bi_access_log(id,actor,action,target_email,section) VALUES($1,$2,'model-config-publish','','models')", [`model-publication:${id}`,versionRow.actor]);
-        return snapshot((await tx.query("SELECT * FROM app_model_config_versions WHERE version=$1", [row.version])).rows[0]);
+        return snapshot(versionRow);
       }, true);
     },
     async setPhase(id, phase, errorCode) {

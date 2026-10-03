@@ -188,7 +188,7 @@ function imageModelCatalog(primary: string, configured: unknown) {
   return Array.from(new Set([primary, ...candidates].filter(Boolean))).slice(0, 12);
 }
 
-export async function getOpenAISettings(): Promise<OpenAISettings> {
+export async function getLegacyOpenAISettings(): Promise<OpenAISettings> {
   const envKey = process.env.OPENAI_API_KEY || "";
   const envModel = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
   // 抠图/透明底:实测 gpt-image-2 不支持 background:transparent,只能 v1。
@@ -218,6 +218,13 @@ export async function getOpenAISettings(): Promise<OpenAISettings> {
     cutoutModel: envCutout,
     source: envKey ? "env" : "none",
   };
+}
+
+export async function getOpenAISettings(): Promise<OpenAISettings> {
+  const { currentModelExecution } = await import("./model-config/context");
+  const scope = currentModelExecution();
+  if (scope) return { apiKey: scope.connection.apiKey, model: scope.frozen.publicModelId, models: [scope.frozen.publicModelId], cutoutModel: scope.frozen.publicModelId, source: "db" };
+  return getLegacyOpenAISettings();
 }
 
 export async function saveOpenAIKey(plain: string): Promise<void> {

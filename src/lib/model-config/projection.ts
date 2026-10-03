@@ -6,7 +6,7 @@ import { validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelSnapshot, type UpstreamModel } from "./types";
 
 export type MoneyPrice = { resolution: string; quality: string; mode: string; currency: "CNY" | "USD"; amountMicros: string; unit?: "image" | "item" | "task" };
-export type RouterRoute = { id: string; provider: string; upstream_model: string; enabled: boolean; healthy: boolean; estimated_cost_microusd: number; expected_latency_ms: number; quality_rank: number; max_pixels: number; text_accuracy: boolean; native_4k: boolean; supports_edit: boolean; max_concurrent: number; max_reference_images?: number; preserves_identity?: boolean; estimate_source?: string; upstream_version?: string; quality_map?: Record<string,string>; native_resolutions?: string[]; supported_qualities?: string[]; money_prices?: MoneyPrice[] };
+export type RouterRoute = { id: string; provider: string; upstream_model: string; enabled: boolean; healthy: boolean; estimated_cost_microusd: number; expected_latency_ms: number; quality_rank: number; max_pixels: number; text_accuracy: boolean; native_4k: boolean; supports_edit: boolean; supports_mask?: boolean; max_concurrent: number; max_reference_images?: number; preserves_identity?: boolean; estimate_source?: string; upstream_version?: string; quality_map?: Record<string,string>; resolution_map?: Record<string,string>; native_resolutions?: string[]; supported_qualities?: string[]; money_prices?: MoneyPrice[] };
 export type RouterPayload = { digest: string; modelVersion: number; billingVersion: number; config: { routes: RouterRoute[]; providers: { id: string; protocol: string; baseUrl: string; credentialRef: string; timeoutMs: number; maxConcurrent: number }[]; aliases: { id: string; candidates: string[]; strategy: string; rules?: unknown[] }[] } };
 export type RouterProjection = { digest: string; modelVersion: number; billingVersion: number; payload: RouterPayload };
 export function modelCostRate(billing: ConfigSnapshot, model: UpstreamModel, quality: string, resolution: string, mode: string): CostRate | undefined {
@@ -49,12 +49,14 @@ export function compileRouterProjection(snapshot: ModelSnapshot, billing: Config
   const routes: RouterRoute[] = [];
   for (const id of Array.from(selected)) {
     const u = upstreams.get(id)!, p = providers.get(u.providerId)!, c = u.capabilities;
+    if (p.protocol === "openai-images" && c.nativeResolutions.some(tier => tier !== "1K" && !u.parameterMap.resolution?.[tier])) throw new ModelConfigError("INVALID_CONFIG", "OpenAI 图片原生尺寸缺少参数映射", 400, [`upstreamModels.${id}.parameterMap.resolution`]);
     const prices: MoneyPrice[] = [];
     for (const size of ["1K", "2K", "4K"]) for (const quality of c.qualities.length ? c.qualities : ["low", "medium", "high", "xhigh", "max", "auto"]) for (const mode of c.edit ? ["generate", "edit"] : ["generate"]) {
       const amount = monetaryCost(modelCostRate(billing, u, quality, size, mode));
       if (amount) prices.push({ resolution: size, quality, mode, ...amount });
     }
-    routes.push({ id: u.id, provider: p.id, upstream_model: u.model, enabled: true, healthy: true, estimated_cost_microusd: 0, expected_latency_ms: c.expectedLatencyMs, quality_rank: c.qualityRank, max_pixels: c.nativeResolutions.includes("4K") ? 4096 * 4096 : c.nativeResolutions.includes("2K") ? 2048 * 2048 : 1536 * 1024, text_accuracy: c.textAccuracy, native_4k: c.nativeResolutions.includes("4K"), supports_edit: c.edit, max_concurrent: p.maxConcurrent,
+    routes.push({ id: u.id, provider: p.id, upstream_model: u.model, enabled: true, healthy: true, estimated_cost_microusd: 0, expected_latency_ms: c.expectedLatencyMs, quality_rank: c.qualityRank, max_pixels: c.nativeResolutions.includes("4K") ? 4096 * 4096 : c.nativeResolutions.includes("2K") ? 2048 * 2048 : 1536 * 1024, text_accuracy: c.textAccuracy, native_4k: c.nativeResolutions.includes("4K"), supports_edit: c.edit, supports_mask: p.protocol === "openai-images" && c.edit, max_concurrent: p.maxConcurrent,
+      ...(u.parameterMap.resolution && Object.keys(u.parameterMap.resolution).length ? { resolution_map: u.parameterMap.resolution } : {}),
       ...(c.maxReferenceImages ? { max_reference_images: c.maxReferenceImages } : {}), ...(c.preserveIdentity ? { preserves_identity: true } : {}), ...(c.qualities.length ? { supported_qualities: c.qualities } : {}), ...(c.nativeResolutions.length ? { native_resolutions: c.nativeResolutions } : {}), ...(u.parameterMap.version ? { upstream_version: u.parameterMap.version } : {}), ...(u.parameterMap.quality && Object.keys(u.parameterMap.quality).length ? { quality_map: u.parameterMap.quality } : {}), ...(prices.length ? { money_prices: prices, estimate_source: "billing_reference" } : { estimate_source: "unrecorded" }) });
   }
   for (const alias of aliases.filter(a => a.strategy === "lowest-cost")) {

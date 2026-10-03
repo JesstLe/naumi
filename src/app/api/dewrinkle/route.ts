@@ -1,3 +1,4 @@
+import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
@@ -109,7 +110,7 @@ async function handleObservedPost(request: Request) {
     try {
       const { apiKey, model: genModel } = await getOpenAISettings();
       if (!apiKey) throw new Error("未配置 OpenAI key");
-      const client = observeOpenAI(new OpenAI({
+      const client = observeOpenAI(modelAwareOpenAI({
         apiKey,
         baseURL: (await getOpenAIBaseUrl()) || undefined,
         timeout: 200_000,

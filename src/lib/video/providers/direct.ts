@@ -1,4 +1,6 @@
 import "server-only";
+import { currentModelExecution } from "@/lib/model-config/context";
+import { modelEndpointFetch } from "@/lib/model-config/transport";
 
 import { getVideoProviderConfig, type VideoProviderRuntimeConfig } from "@/lib/video/providers/config";
 import { PermanentVideoCreateError, TransientPollError, type VideoGenerationRequest, type VideoProviderAdapter, type VideoProviderCreateResult, type VideoProviderFetchResult, type VideoProviderPollResult, type VideoTaskSnapshot, type VideoTaskStatus } from "@/lib/video/types";
@@ -221,6 +223,7 @@ async function jsonResponse(response: Response, label: string) {
 export function createDirectVideoAdapter(providerId: string): VideoProviderAdapter | null {
   const cfg = getVideoProviderConfig(providerId);
   if (!cfg || cfg.protocol === "openai-videos") return null;
+  const transport = currentModelExecution("video") ? modelEndpointFetch(cfg.baseUrl, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, currentModelExecution("video")!.connection) : fetch;
   return {
     id: providerId,
     async create(input) {
@@ -230,7 +233,7 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
         if (!field) throw new Error("视频供应商 body 幂等策略缺少字段映射");
         (requestPayload as Record<string, unknown>)[field] = input.idempotencyKey;
       }
-      const response = await fetch(base(cfg, createPath(cfg, input.modelId)), {
+      const response = await transport(base(cfg, createPath(cfg, input.modelId)), {
         method: "POST",
         headers: {
           ...headers(cfg, true),
@@ -256,7 +259,7 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
     async poll(task) {
       let response: Response;
       try {
-        response = await fetch(base(cfg, pollPath(cfg, task.upstreamTaskId)), cfg.protocol === "runninghub"
+        response = await transport(base(cfg, pollPath(cfg, task.upstreamTaskId)), cfg.protocol === "runninghub"
           ? { method: "POST", headers: headers(cfg, true), body: JSON.stringify({ apiKey: cfg.apiKey, taskId: task.upstreamTaskId }), signal: AbortSignal.timeout(30_000), cache: "no-store" }
           : { headers: headers(cfg), signal: AbortSignal.timeout(30_000), cache: "no-store" });
       }
@@ -353,7 +356,7 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
       // 上游返回的签名下载地址可能位于对象存储/CDN，禁止把供应商密钥转发到第三方主机。
       const response = cfg.protocol === "gemini" && url
         ? await fetchGeminiVideo(cfg, target)
-        : await fetch(target, { headers: url ? {} : headers(cfg), signal: AbortSignal.timeout(180_000) });
+        : await (url ? fetch : transport)(target, { headers: url ? {} : headers(cfg), signal: AbortSignal.timeout(180_000) });
       const downloaded = await readLimitedVideoResponse(response);
       return { bytes: downloaded.bytes, mimeType: downloaded.mimeType } satisfies VideoProviderFetchResult;
     },
