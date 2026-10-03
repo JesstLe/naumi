@@ -18,6 +18,8 @@
 
 生产检查采用只读设置检查、数据库隔离副本与离线固定镜像；线上验证不发起付费生图。旧应用可读取新增 schema，不代表它理解已调整的价格或新任务。回滚必须保持维护状态与 worker 停止；只有当前配置仍等于启动配置且无新在途账务时，才可审核开放旧版本。
 
+CI 另外复现同一无数据库演示问题在管理员内部报价页的路径：签名登录后返回500，修复后200；pricing-access 本地 RED→GREEN，仍在同一修复轮内。最终复测串行p95 8.29ms、并发10 p95 24.54ms，错误0。
+
 ## 实施中的判断及判断错误的代价
 
 - Ruling: Work in existing codex/billing-module-design checkout — approved plan explicitly preserves this branch/workspace; no extra worktree consent needed. Cost if wrong: concurrent edits need careful file-specific staging.
@@ -31,11 +33,11 @@
 - Task 12: Ruling: retained highQualityPaidFen as an inactive legacy compatibility field; removed misleading edit control. Current access is unchanged; conditional paid-total tariffs cover differentiated prices. Cost if wrong: operators need an explicit new access requirement.
 - Task 12: Ruling: demo users without an authoritative database show zero rather than a hardcoded grant; charged production remains fail-closed. Cost if wrong: demo credit display changes.
 - Task 12: Ruling: compare original versus final whole-route fixture (4.37s/3558 SQL -> 4.98s/4827 SQL); separate warm quote+reserve+settle benchmark p95 6.76ms/22.41ms serial/concurrency10, one new config read and zero settlement reads. A missing original per-request benchmark cannot substantiate a per-request latency delta. Cost if wrong: deployment latency needs observation.
-
-- 最终审查不裁定生产备份/版本/回滚：由发布阶段实测，未完成不得声称已发布；判断错误会造成不可恢复发布。
-- 不裁定真实供应商收费或能力：保持用户禁止付费探测的范围；未知真实供应商账单仍需外部对账。
-- 原供应商选择沿用现有配置：本次未启用 Router；判断错误会改变服务或费用来源，发布前核对主机与模型。
-- 原有 URL 抓取的 SSRF 边界不扩大成本次整改：未证实本次回归，原有风险保留；后续安全审查需独立覆盖。
-- 原有 Pro 授权并发逻辑不扩展：相关商品仍停售；以后重新开放前需单独验收授权并发。
+- Final: Ruling: production backup/version/old-image rollback was not judged — Task13 uses real read-only preflight, protected full media offhost backup and isolated production schema copy, live deployment pending — cost if wrong: irrecoverable deployment.
+- Final: Ruling: supplier charges/undocumented behavior was not judged — no paid probes authorized, frozen costs explicitly estimates — cost if wrong: requires supplier invoice reconciliation.
+- Final: Ruling: supplier route/model availability was not judged — preserve original routing, verify actual configuration hosts before/after release — cost if wrong: changed provider or service.
+- Final: Ruling: preexisting cutout/upscale URL fetch security was not judged — no new regression established; broader SSRF audit remains separate — cost if wrong: original network-fetch risk remains.
+- Final: Ruling: historical Pro license concurrency was not judged — no new regression established and historical products stay unavailable — cost if wrong: re-enabling licenses needs separate acceptance.
+- Final: Ruling: final whole-regression performance varies (4.98–7.87s vs original4.37s); report latest7.87s/4825SQL honestly, not only faster sample; isolated warm pipeline p95 8.29/24.54ms and zero errors — cost if wrong: production latency still needs observation.
 
 未处理 Minor：无。
