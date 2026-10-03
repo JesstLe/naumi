@@ -1,3 +1,4 @@
+import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
@@ -143,7 +144,7 @@ async function handleObservedPost(request: Request) {
       "硬性要求:商品的形状、结构、材质纹理(保留纹理细节)、明暗光影方向、品牌与标签文字、" +
       "背景与周围元素全部保持完全不变,只改变商品主体的颜色;换色后颜色均匀自然、光照真实,可直接上架。";
 
-    const client = observeOpenAI(new OpenAI({
+    const client = observeOpenAI(modelAwareOpenAI({
       apiKey,
       baseURL: (await getOpenAIBaseUrl()) || undefined,
       timeout: 240_000,

@@ -1,3 +1,5 @@
+import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
+import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI } from "@/lib/bi/model-observer";
 import "server-only";
 import OpenAI, { toFile } from "openai";
@@ -24,13 +26,13 @@ export async function editImage(input: {
   const configured = Number(process.env.IMAGE_EDIT_TIMEOUT_MS || 240_000);
   const timeout = Number.isFinite(configured) ? Math.max(1000, Math.min(240_000, configured)) : 240_000;
   const signal = AbortSignal.timeout(timeout);
-  const client = observeOpenAI(new OpenAI({ apiKey, baseURL: (await getOpenAIBaseUrl()) || undefined, timeout, maxRetries: 0 }));
+  const client = observeOpenAI(modelAwareOpenAI({ apiKey, baseURL: (await getOpenAIBaseUrl()) || undefined, timeout, maxRetries: 0 }));
   const files = await Promise.all(input.images.map((b, i) => {
     const type = input.types?.[i] || "image/png";
     const ext = type === "image/jpeg" ? "jpg" : type === "image/webp" ? "webp" : "png";
     return toFile(b, `image-${i}.${ext}`, { type });
   }));
-  const quality = typeof input.quality === "object" ? input.quality : resolveImageQuality(input.quality ?? "medium");
+  const quality = typeof input.quality === "object" ? input.quality : resolveConfiguredImageQuality(input.quality ?? "medium");
   const operationId = input.operationId || `edit-${randomUUID()}`;
   const response = await withQualityFallback(quality, executed => withImageOperation(model, { id: input.legacyOperationId ? operationId : `${operationId}:quality:${executed}`, ...(input.legacyOperationId ? {} : {quality: executed}), preserveIdentity: true }, async () => client.images.edit({
     ...imageGatewayFields(model, true),

@@ -1,3 +1,4 @@
+import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
@@ -194,7 +195,7 @@ async function handleObservedPost(request: Request) {
       );
     }
 
-    const client = observeOpenAI(new OpenAI({
+    const client = observeOpenAI(modelAwareOpenAI({
       apiKey,
       baseURL:
         process.env.AGENT_BASE_URL || (await getOpenAIBaseUrl()) || undefined,

@@ -1,4 +1,5 @@
 import {withBillingIntent} from "@/lib/billing/intent";
+import { modelAwareOpenAI, managedImageEditFetch } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import {quoteForRequest} from "@/lib/billing/server";
 import {assertQuotedVersion,requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/request";
@@ -244,12 +245,7 @@ async function genOneShot(
   form.append("size", sizeFor(spec.ratio));
   form.append("quality", imageOperationQuality(process.env.OPENAI_IMAGE_QUALITY || "medium"));
   appendImageGatewayFields(form, model);
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/images/edits`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
-    signal: AbortSignal.timeout(PER_SHOT_TIMEOUT),
-  });
+  const response = await managedImageEditFetch(baseUrl, apiKey, form, AbortSignal.timeout(PER_SHOT_TIMEOUT));
   const raw = await response.text();
   if (!response.ok) {
     const error = new Error(`图片接口 ${response.status}: ${raw.slice(0, 500)}`) as Error & {
@@ -433,7 +429,7 @@ async function runSuite(
   const set = (patch: Partial<Job>) => JOBS.patch(jobId, patch);
   try {
     const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
-    const client = observeOpenAI(new OpenAI({
+    const client = observeOpenAI(modelAwareOpenAI({
       apiKey,
       baseURL: baseUrl,
       timeout: PER_SHOT_TIMEOUT,

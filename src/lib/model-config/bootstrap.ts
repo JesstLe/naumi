@@ -5,9 +5,10 @@ import type { VideoProviderRuntimeConfig } from "../video/providers/config";
 import type { createCredentialStore } from "./credentials";
 import { validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelConfig, type ModelProvider, type UpstreamModel } from "./types";
+import { legacyAgentVision } from "./legacy-vision";
 
 type LegacyImage = { baseUrl: string; apiKey: string; models: string[]; defaultModel: string; cutoutModel?: string; qualitySupported: boolean; editModels?: string[] };
-type LegacyText = { baseUrl: string; apiKey: string; defaultModel: string; agentModel: string; models: string[]; aliases: Record<string,string>; visibleModels: string[]; visionModels?: string[]; agent?: { baseUrl: string; apiKey: string } };
+type LegacyText = { baseUrl: string; apiKey: string; defaultModel: string; agentModel: string; models: string[]; aliases: Record<string,string>; visibleModels: string[]; visionModels?: string[]; agent?: { baseUrl: string; apiKey: string }; vision?: { model: string; baseUrl: string; apiKey: string }; ocr?: { model: string; baseUrl: string; apiKey: string }; agentVisionModel?: string };
 export type LegacyModelSources = { image?: LegacyImage; flow?: LegacyImage; text?: LegacyText; video: VideoProviderRuntimeConfig[]; router?: ModelConfig };
 const shortHash = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 16);
 function publicId(model: string, modality: string) { return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(model) ? model : `${modality}-${shortHash(model)}`; }
@@ -18,7 +19,7 @@ export async function bootstrapModelConfig(input: ValidationOptions & { credenti
   const config: ModelConfig = { schemaVersion: 1, providers: [], upstreamModels: [], publicModels: [], pools: [], bindings: {} };
   const addProvider = async (id: string, name: string, protocol: ModelProvider["protocol"], baseUrl: string, apiKey: string, options?: ModelProvider["options"]) => {
     const ref = await input.credentials.importPlain({ providerId: id, plain: apiKey, actor: "system" }, input.tx);
-    config.providers.push({ id, name, protocol, baseUrl: baseUrl || "https://api.openai.com/v1", credentialRef: ref.id, enabled: true, timeoutMs: 120000, maxConcurrent: 4, ...(options ? { options } : {}) });
+    config.providers.push({ id, name, protocol, baseUrl: baseUrl || "https://api.openai.com/v1", credentialRef: ref.id, enabled: true, timeoutMs: protocol === "openai-images" || protocol === "new-api-flow" ? 280000 : protocol === "openai-chat" ? 90000 : 120000, maxConcurrent: 4, ...(options ? { options } : {}) });
   };
   const addModel = (providerId: string, wire: string, modality: UpstreamModel["modality"], alias = wire, visible = true, capabilities = unverifiedCapabilities()) => {
     const id = `${providerId}:${shortHash(wire)}`;
@@ -66,6 +67,17 @@ export async function bootstrapModelConfig(input: ValidationOptions & { credenti
       config.bindings["agent.text"] = addModel("platform-agent", text.agentModel, "text", text.agentModel, false, caps);
       if (caps.vision) config.bindings["agent.vision"] = config.bindings["agent.text"];
     }
+    if (text.agentVisionModel) {
+      const caps = unverifiedCapabilities(); caps.vision = true;
+      config.bindings["agent.vision"] = addModel(text.agent ? "platform-agent" : providerId, text.agentVisionModel, "text", `agent-vision-${shortHash(text.agentVisionModel)}`, false, caps);
+    }
+    for (const [id, source, bindings] of [["platform-reference", text.vision, ["vision.reference", "vision.review"]], ["platform-ocr", text.ocr, ["vision.ocr"]]] as const) {
+      if (!source?.apiKey || !source.model) continue;
+      await addProvider(id, id === "platform-ocr" ? "现行 OCR 视觉通道" : "现行参考图视觉通道", "openai-chat", source.baseUrl, source.apiKey);
+      const caps = unverifiedCapabilities(); caps.vision = true;
+      const alias = addModel(id, source.model, "text", `${id}-${shortHash(source.model)}`, false, caps);
+      for (const binding of bindings) config.bindings[binding] = alias;
+    }
     config.bindings["agent.text"] ||= config.bindings["text.generate"];
     config.bindings["text.title"] = config.bindings["text.generate"];
     config.bindings["text.competitor"] = config.bindings["text.generate"];
@@ -94,18 +106,25 @@ export async function bootstrapModelConfig(input: ValidationOptions & { credenti
 }
 
 export async function readLegacyModelSources(): Promise<LegacyModelSources> {
-  const [{ getOpenAISettings }, { getOpenAIBaseUrl }, { getNewApiImageSettings, getImageModelCatalog }, { configuredVideoProviders }] = await Promise.all([import("../settings"), import("../openai-base"), import("../image-model-catalog"), import("../video/providers/config")]);
-  const [settings, baseUrl, catalog] = await Promise.all([getOpenAISettings(), getOpenAIBaseUrl(), getImageModelCatalog()]);
-  const flow = getNewApiImageSettings();
+  const [{ getLegacyOpenAISettings }, { getLegacyOpenAIBaseUrl }, { getLegacyNewApiImageSettings, getLegacyImageModelCatalog }, { configuredVideoProviders }] = await Promise.all([import("../settings"), import("../openai-base"), import("../image-model-catalog"), import("../video/providers/config")]);
+  const [settings, baseUrl, catalog] = await Promise.all([getLegacyOpenAISettings(), getLegacyOpenAIBaseUrl(), getLegacyImageModelCatalog()]);
+  const flow = getLegacyNewApiImageSettings();
   const list = (value?: string) => (value || "").split(/[\s,]+/).map(x => x.trim()).filter(Boolean);
   const aliases = Object.fromEntries(list(process.env.TEXT_MODEL_ALIASES).map(x => x.split("=")).filter(pair => pair.length === 2));
   const defaultModel = process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna";
   const agentModel = process.env.AGENT_MODEL || "qwen3.8-flash";
-  const visionModels = [process.env.AGENT_VISION_MODEL, process.env.REFERENCE_VISION_MODEL].filter((x): x is string => !!x);
+  const agentVisionModel = process.env.AGENT_VISION_MODEL || (legacyAgentVision(agentModel) ? agentModel : undefined);
+  const visionModels = [agentVisionModel, process.env.REFERENCE_VISION_MODEL, ...(legacyAgentVision(defaultModel, "") ? [defaultModel] : [])].filter((x): x is string => !!x);
+  const agentBase = process.env.AGENT_BASE_URL || baseUrl || "https://api.openai.com/v1";
+  const agentKey = process.env.AGENT_API_KEY || settings.apiKey;
+  const imageVision = process.env.REFERENCE_VISION_SOURCE === "image";
   return {
     image: { baseUrl: baseUrl || "https://api.openai.com/v1", apiKey: settings.apiKey, models: settings.models, defaultModel: settings.model, cutoutModel: settings.cutoutModel, qualitySupported: process.env.NAUMI_IMAGE_QUALITY_SUPPORTED === "1", editModels: catalog.filter(m => m.provider === "openai-images" && m.supportsEdit).map(m => m.id) },
     flow: { baseUrl: flow.baseUrl, apiKey: flow.apiKey, models: catalog.filter(m => m.provider === "new-api-flow").map(m => m.id), defaultModel: catalog.find(m => m.provider === "new-api-flow")?.id || "", qualitySupported: false },
     text: { baseUrl: baseUrl || "https://api.openai.com/v1", apiKey: settings.apiKey, defaultModel, agentModel, models: Array.from(new Set([defaultModel, agentModel, ...list(process.env.OPENAI_TEXT_MODELS), ...list(process.env.AGENT_MODELS), ...visionModels])), aliases, visibleModels: list(process.env.TEXT_MODEL_WHITELIST), visionModels,
+      agentVisionModel,
+      vision: { model: process.env.REFERENCE_VISION_MODEL || (!imageVision && process.env.AGENT_VISION_MODEL) || "gpt-5.6-luna", baseUrl: imageVision ? baseUrl || "https://api.openai.com/v1" : agentBase, apiKey: imageVision ? settings.apiKey : agentKey },
+      ocr: { model: process.env.PADDLE_OCR_FALLBACK_MODEL || process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna", baseUrl: baseUrl || agentBase, apiKey: settings.apiKey || agentKey },
       ...(process.env.AGENT_BASE_URL || process.env.AGENT_API_KEY ? { agent: { baseUrl: process.env.AGENT_BASE_URL || baseUrl || "https://api.openai.com/v1", apiKey: process.env.AGENT_API_KEY || settings.apiKey } } : {}) },
     video: configuredVideoProviders(),
   };

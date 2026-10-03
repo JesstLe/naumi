@@ -6,6 +6,9 @@ import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { safeError } from "@/lib/api-error";
 import { createVideoGeneration } from "@/lib/video/service";
+import type { ExecutionBundle } from "@/lib/model-config/context";
+import { ModelConfigError } from "@/lib/model-config/types";
+import { BillingError } from "@/lib/billing/types";
 
 // ---------------------------------------------------------------------------
 // 原配置重试(§6):用任务快照(prompt/时长/尺寸/参考图)创建新任务。
@@ -30,6 +33,7 @@ export async function POST(
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   const task = await getVideoTask(email, id);
   if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
+  if (!["failed", "cancelled"].includes(task.status)) return NextResponse.json({ error: "仅已失败或取消的任务可以创建重试任务" }, { status: 409 });
 
   const params = task.parameters as Record<string, unknown>;
   const references = (task.videoReferences ?? []) as never[];
@@ -42,7 +46,7 @@ export async function POST(
       seconds: task.seconds || String(params.seconds ?? params.durationSeconds ?? 4),
       size: String(params.size || params.resolution || "1280x720"),
       providerId: task.providerId,
-      modelId: task.model,
+      modelId: (params.modelExecutions as ExecutionBundle | undefined)?.video?.publicModelId || task.model,
       negativePrompt: String(params.negativePrompt || "") || undefined,
       durationSeconds: Number(params.durationSeconds ?? params.seconds ?? task.seconds ?? 4),
       aspectRatio: String(params.aspectRatio || "") || undefined,
@@ -60,7 +64,7 @@ export async function POST(
   } catch (error) {
     return NextResponse.json(
       { error: safeError(error, "重试创建失败") },
-      { status: 502 }
+      { status: error instanceof ModelConfigError || error instanceof BillingError ? error.status : 502 }
     );
   }
 }

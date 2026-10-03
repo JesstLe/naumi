@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withBiRequest } from "@/lib/bi/model-observer";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
@@ -39,6 +40,9 @@ async function authedEmail(request: Request): Promise<string | null> {
 
 // ── SSE 流式执行 ───────────────────────────────────────────────────────────
 export async function PUT(request: Request) {
+  return withBiRequest(request, () => handlePut(request));
+}
+async function handlePut(request: Request) {
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录后再使用 Agent" }, { status: 401 });
@@ -296,6 +300,9 @@ export async function GET(request: Request) {
 
 // ── 一次性执行(向后兼容) ─────────────────────────────────────────────────────
 export async function POST(request: Request) {
+  return withBiRequest(request, () => handlePost(request));
+}
+async function handlePost(request: Request) {
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录后再使用 Agent" }, { status: 401 });

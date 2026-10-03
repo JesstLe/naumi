@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { currentModelExecution } from "@/lib/model-config/context";
 
 export type VideoProviderProtocol =
   | "openai-videos"
@@ -128,6 +129,11 @@ export function configuredVideoProviders(): VideoProviderRuntimeConfig[] {
 }
 
 export function getVideoProviderConfig(providerId: string): VideoProviderRuntimeConfig | null {
+  const scope = currentModelExecution("video");
+  if (scope?.connection.providerId === providerId) {
+    const c = scope.connection;
+    return { id: c.providerId, label: scope.frozen.publicModelId, protocol: c.protocol as VideoProviderProtocol, baseUrl: c.baseUrl.replace(/\/+$/, ""), apiKey: c.apiKey, models: [c.wireModel], defaultModel: c.wireModel, ...c.options, idempotencyStrategy: c.options?.idempotencyStrategy || "none" };
+  }
   return configuredVideoProviders().find((p) => p.id === providerId) ?? null;
 }
 

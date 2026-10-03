@@ -10,6 +10,8 @@ import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { withBiModelContext } from "@/lib/bi/model-observer";
 import type {BillingQuote,BillingResult} from "@/lib/billing/types";
+import { currentExecutionBundle, currentModelExecution, runLegacyModelExecution, type ExecutionBundle } from "@/lib/model-config/context";
+import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
 
 type Execution = { id: string; token: string; queue: Promise<unknown> };
 const execution = new AsyncLocalStorage<Execution>();
@@ -57,6 +59,8 @@ export class DurableImageJobs<T extends { status: string }> {
   private memory = new Map<string, { snapshot: T; payload: unknown; email: string }>();
   constructor(readonly kind: repository.ImageJobKind) {}
   async create(id: string, email: string, snapshot: T, payload: unknown, cost: number, reserve: boolean,billingQuote?:BillingQuote) {
+    const models = currentExecutionBundle();
+    if (models && payload && typeof payload === "object") payload = { ...payload, modelExecutions: structuredClone(models) };
     snapshot = { ...snapshot, paidOperationVersion: 1 };
     if (!dbEnabled) { this.memory.set(id, { snapshot, payload, email }); return; }
     await repository.createImageJob(id, email, this.kind, await encode(snapshot, id), await encode(payload, id), cost, reserve,billingQuote);
@@ -116,6 +120,7 @@ export class DurableImageJobs<T extends { status: string }> {
     const gatewayIdentity = replayable ? createHash("sha256").update(JSON.stringify([
       (await getOpenAIBaseUrl()) || "https://api.openai.com/v1", (await getOpenAISettings()).apiKey,
       process.env.NAUMI_ROUTER_STATE_DOMAIN || "",
+      ...(currentModelExecution("image")?.frozen.routerDigest ? [currentModelExecution("image")!.frozen.routerDigest] : []),
     ])).digest("hex") : undefined;
     if (previous?.state === "started" && (!previous.replayable || previous.model !== model || previous.gatewayIdentity !== gatewayIdentity)) {
       await repository.holdImageJobBilling(id);
@@ -167,7 +172,10 @@ export class DurableImageJobs<T extends { status: string }> {
           await this.patch(id, { error: "旧版本图片任务需要核查，已暂停自动提交，请联系管理员" } as unknown as Partial<T>);
           return;
         }
-        await withBiModelContext(row.email,this.kind,id,async()=>run(await decode(row.payload) as Record<string, unknown>,await decode(row.snapshot) as T));
+        const payload = await decode(row.payload) as Record<string, unknown>, snapshot = await decode(row.snapshot) as T;
+        const resume = () => withBiModelContext(row.email,this.kind,id,async()=>run(payload,snapshot));
+        if (payload.modelExecutions) await withFrozenExecutionBundle(payload.modelExecutions as ExecutionBundle, resume);
+        else await runLegacyModelExecution(resume);
       }
       catch (error) { console.error(`[image-job] ${id}:`, error instanceof Error ? error.message : error); }
       finally {

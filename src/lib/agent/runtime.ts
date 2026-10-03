@@ -1,11 +1,9 @@
-import { Agent } from "@earendil-works/pi-agent-core";
-import {
-  createModels,
-  createProvider,
-  type ImageContent,
-  type Model,
-} from "@earendil-works/pi-ai";
-import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import type { Agent } from "@earendil-works/pi-agent-core";
+import { currentModelExecution, currentExecutionBundle } from "@/lib/model-config/context";
+import { signAcceptedModelContext } from "@/lib/model-config/accepted-context";
+import { configuredPiModels } from "@/lib/model-config/pi";
+import { legacyAgentVision } from "@/lib/model-config/legacy-vision";
+import type { ImageContent, Model, createModels } from "@earendil-works/pi-ai";
 import type { UserMessage } from "@earendil-works/pi-ai";
 import {
   dbEnabled,
@@ -16,7 +14,7 @@ import {
 } from "@/lib/db";
 import { AGENT_SYSTEM_PROMPT, createNaumiTools } from "@/lib/agent/naumi-tools";
 import { getImageJob } from "@/lib/image-job-repository";
-import { recordBiModelCompletion } from "@/lib/bi/model-observer";
+import { recordBiModelCompletion, modelExecutionTelemetry } from "@/lib/bi/model-observer";
 import {agentBillingPrecheck} from "@/lib/billing/agent";
 import type {BillingQuote} from "@/lib/billing/types";
 import {fingerprint} from "@/lib/billing/fingerprint";
@@ -43,18 +41,18 @@ const SESSION_TTL = 60 * 60 * 1000; // 空闲会话 1 小时后回收
  *  - 否则按模型 id 家族正则识别(gpt-4o、gpt-5 系列、claude、gemini、qwen-vl 等天然多模态);
  *  - 运行时发图被 API 拒绝的模型记入证伪表,后续自动降级纯文本。
  *  误报是安全的:API 收了图但模型没真用时,消息里的「[商品图] url」文本行仍可走工具兜底。 */
-const VISION_MODEL_RE =
-  /(gpt-(4o|4\.1|4\.5|4-turbo|5)|chatgpt-4o|\bo[134]($|-)|claude|gemini|qwen.{0,8}vl|qvq|glm-\d(\.\d+)?v|doubao.{0,10}vision|grok-[45]|pixtral|deepseek-vl|llava|-vision|moonshot.{0,6}vision|kimi.{0,6}vision)/i;
 const VISION_REJECT_RE =
   /image|vision|multimodal|多模态|图片|image_url|content[_ ]?type|modalit/i;
 const visionRejectedModels = new Set<string>();
 
 export function agentVisionEnabled(modelId: string): boolean {
+  const scope = currentModelExecution("text") || currentModelExecution("vision");
+  if (scope) return scope.capabilities.vision;
   const forced = (process.env.AGENT_VISION || "").trim();
   if (forced === "1") return true;
   if (forced === "0") return false;
   if (visionRejectedModels.has(modelId)) return false;
-  return VISION_MODEL_RE.test(modelId);
+  return legacyAgentVision(modelId);
 }
 
 /** 发图后报错时调用:错误特征像"不接受图片输入"则记入证伪表并返回 true。 */
@@ -70,6 +68,7 @@ export function markVisionUnsupported(
 
 // 各工具的预估单价(积分),与站内 API 实际扣费保持一致(粗粒度预检用)。
 export type Session = {
+  modelExecutionStamp?: string;
   agent: Agent;
   modelId: string;
   id: string;
@@ -108,6 +107,7 @@ function gcSessions() {
 }
 
 async function ensureModels(modelId = MODEL_ID) {
+  const [{ createModels, createProvider }, { openAICompletionsApi }] = await Promise.all([import("@earendil-works/pi-ai"), import("@earendil-works/pi-ai/api/openai-completions.lazy")]);
   // 真实凭证来源:DB 配置(getOpenAISettings/getOpenAIBaseUrl,AES 落库)优先,
   // env 兜底。用闭包 auth 把实际 key/baseUrl 注入 pi-ai,而不是只读 env。
   const settings = await import("@/lib/settings").then((m) =>
@@ -192,8 +192,10 @@ export async function getOrCreateSession(
   modelId = MODEL_ID
 ): Promise<Session> {
   gcSessions();
+  const scope = currentModelExecution("text") || currentModelExecution("vision");
+  const managed = scope ? await configuredPiModels(scope) : null;
   const existing = SESSIONS.get(key(email, sessionId));
-  if (existing && (existing.running || existing.modelId === modelId)) {
+  if (existing && (existing.running || existing.modelId === modelId && existing.modelExecutionStamp === managed?.stamp)) {
     existing.lastUsedAt = Date.now();
     // 凭证刷新:token/会话可能已轮换,常驻实例必须用最新凭证
     existing.cred = cred;
@@ -201,8 +203,8 @@ export async function getOrCreateSession(
   }
 
   if (existing) SESSIONS.delete(key(email, sessionId));
-  const models = await ensureModels(modelId);
-  const model = models.getModel("naumi-relay", modelId);
+  const models = managed?.models || await ensureModels(modelId);
+  const model = models.getModel("naumi-relay", managed?.wireModel || modelId);
   if (!model) throw new Error("模型不可用");
 
   const persisted = dbEnabled
@@ -211,6 +213,7 @@ export async function getOrCreateSession(
   const session: Session = {
     id: sessionId,
     modelId,
+    modelExecutionStamp: managed?.stamp,
     email,
     title: persisted?.title || history[0]?.content.slice(0, 120) || "Agent 任务",
     cred,
@@ -222,6 +225,9 @@ export async function getOrCreateSession(
     repeatCount: 0,
     agent: null as unknown as Agent,
   };
+  const { Agent } = await import("@earendil-works/pi-agent-core");
+  // Renew only the signature lifetime: every child call retains this session's accepted versions.
+  const acceptedBundle = currentExecutionBundle();
   const agent = new Agent({
     initialState: {
       systemPrompt: AGENT_SYSTEM_PROMPT,
@@ -229,11 +235,12 @@ export async function getOrCreateSession(
       tools: createNaumiTools(
         new Request(process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"),
         email,
-        () => ({...session.cred,...session.preparedBilling}) // 可变引用:runtime 每次续期 cred 后工具即刻使用新凭证
+        () => ({...session.cred,...session.preparedBilling}),
+        acceptedBundle ? () => signAcceptedModelContext(email, acceptedBundle) : undefined
       ),
       messages: toUserMessages(history),
     },
-    streamFn: models.streamSimple.bind(models),
+    streamFn: managed ? (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed.fetch, maxRetries: 0 }) : models.streamSimple.bind(models),
     toolExecution: "sequential",
     // 积分预检:工具执行前查余额,不足直接拦截(硬门禁,不靠提示词自觉)
     beforeToolCall: async ({ toolCall, args }) => {
@@ -304,6 +311,7 @@ export async function getOrCreateSession(
           state: message.stopReason === "error" ? "agent-error" : message.stopReason === "aborted" ? "agent-aborted" : message.stopReason === "deferred" ? "agent-deferred" : "agent-completed",
           durationMs: modelStartedAt ? Date.now() - modelStartedAt : 0,
           inputTokens: message.usage?.input, outputTokens: message.usage?.output,
+          execution: modelExecutionTelemetry(scope),
         });
         const text = (e.message.content || [])
           .map((c) => {

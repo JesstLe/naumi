@@ -1,4 +1,7 @@
 import "server-only";
+import { currentModelExecution } from "@/lib/model-config/context";
+import { modelEndpointFetch } from "@/lib/model-config/transport";
+import type { VideoProviderRuntimeConfig } from "./config";
 
 import {
   PermanentVideoCreateError,
@@ -20,16 +23,27 @@ import { readLimitedVideoResponse } from "@/lib/video/result-download";
 // 配置:VIDEO_API_BASE_URL / VIDEO_API_KEY / VIDEO_API_MODEL(env,站级)。
 // ---------------------------------------------------------------------------
 
-export function resolveOpenAiVideosConfig() {
+export function resolveOpenAiVideosConfig(): Pick<VideoProviderRuntimeConfig, "baseUrl" | "apiKey"> & { model: string; options?: Pick<VideoProviderRuntimeConfig,"createPath" | "pollPath" | "contentPath" | "rawAuthorization" | "idempotencyStrategy" | "idempotencyBodyField"> } | null {
+  const scope = currentModelExecution("video");
+  if (scope?.connection.protocol === "openai-videos") return { baseUrl: scope.connection.baseUrl.replace(/\/+$/, ""), apiKey: scope.connection.apiKey, model: scope.connection.wireModel, options: { ...scope.connection.options, idempotencyStrategy: scope.connection.options?.idempotencyStrategy || "none" } };
   const baseUrl = (process.env.VIDEO_API_BASE_URL || "").trim().replace(/\/+$/, "");
   const apiKey = (process.env.VIDEO_API_KEY || "").trim();
   const model = (process.env.VIDEO_API_MODEL || "").trim();
   if (!baseUrl || !apiKey || !model) return null;
-  return { baseUrl, apiKey, model };
+  return { baseUrl, apiKey, model, options: { idempotencyStrategy: "header" } };
 }
 
-function authHeaders(apiKey: string): Record<string, string> {
-  return { authorization: `Bearer ${apiKey}` };
+function endpoint(cfg: NonNullable<ReturnType<typeof resolveOpenAiVideosConfig>>, kind: "create" | "poll" | "content", id = "") {
+  const path = kind === "create" ? cfg.options?.createPath || "/v1/videos" : kind === "poll" ? cfg.options?.pollPath || "/v1/videos/{id}" : cfg.options?.contentPath || "/v1/videos/{id}/content";
+  return `${cfg.baseUrl}${path.replaceAll("{id}", encodeURIComponent(id))}`;
+}
+
+function upstreamFetch(baseUrl: string): typeof fetch {
+  return currentModelExecution("video") ? modelEndpointFetch(baseUrl, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, currentModelExecution("video")!.connection) : fetch;
+}
+
+function authHeaders(apiKey: string, raw = false): Record<string, string> {
+  return { authorization: raw ? apiKey : `Bearer ${apiKey}` };
 }
 
 function mapStatus(raw: string): VideoTaskStatus {
@@ -57,7 +71,8 @@ export const openAiVideosAdapter: VideoProviderAdapter = {
     );
     // OpenAI-compatible endpoints commonly implement request deduplication via
     // this header. It is stable across worker recovery/restarts.
-    const idempotencyHeaders = { "Idempotency-Key": input.idempotencyKey };
+    const idempotencyHeaders: Record<string,string> = cfg.options?.idempotencyStrategy === "header" ? { "Idempotency-Key": input.idempotencyKey } : {};
+    const bodyField = cfg.options?.idempotencyStrategy === "body" ? cfg.options.idempotencyBodyField : undefined;
 
     let res: Response;
     if (imageRef?.url) {
@@ -69,17 +84,18 @@ export const openAiVideosAdapter: VideoProviderAdapter = {
       form.append("prompt", input.prompt);
       form.append("seconds", seconds);
       form.append("size", size);
+      if (bodyField) form.set(bodyField, input.idempotencyKey);
       form.append("input_reference", new Blob([bytes], { type: imageRef.mimeType || "image/png" }), "reference.png");
-      res = await fetch(`${cfg.baseUrl}/v1/videos`, {
+      res = await upstreamFetch(cfg.baseUrl)(endpoint(cfg, "create"), {
         method: "POST",
-        headers: { ...authHeaders(cfg.apiKey), ...idempotencyHeaders },
+        headers: { ...authHeaders(cfg.apiKey, cfg.options?.rawAuthorization), ...idempotencyHeaders },
         body: form,
         signal: AbortSignal.timeout(60_000),
       });
     } else {
-      res = await fetch(`${cfg.baseUrl}/v1/videos`, {
+      res = await upstreamFetch(cfg.baseUrl)(endpoint(cfg, "create"), {
         method: "POST",
-        headers: { ...authHeaders(cfg.apiKey), ...idempotencyHeaders, "content-type": "application/json" },
+        headers: { ...authHeaders(cfg.apiKey, cfg.options?.rawAuthorization), ...idempotencyHeaders, "content-type": "application/json" },
         body: JSON.stringify({
           model: input.modelId || cfg.model,
           prompt: input.prompt,
@@ -89,6 +105,7 @@ export const openAiVideosAdapter: VideoProviderAdapter = {
           ...(input.generateAudio !== undefined ? { generate_audio: input.generateAudio } : {}),
           ...(input.watermark !== undefined ? { watermark: input.watermark } : {}),
           ...(input.providerOptions || {}),
+          ...(bodyField ? { [bodyField]: input.idempotencyKey } : {}),
         }),
         signal: AbortSignal.timeout(60_000),
       });
@@ -117,9 +134,9 @@ export const openAiVideosAdapter: VideoProviderAdapter = {
     if (!cfg) throw new TransientPollError("视频服务未配置");
     let res: Response;
     try {
-      res = await fetch(
-        `${cfg.baseUrl}/v1/videos/${encodeURIComponent(task.upstreamTaskId)}`,
-        { headers: authHeaders(cfg.apiKey), signal: AbortSignal.timeout(20_000), cache: "no-store" }
+      res = await upstreamFetch(cfg.baseUrl)(
+        endpoint(cfg, "poll", task.upstreamTaskId),
+        { headers: authHeaders(cfg.apiKey, cfg.options?.rawAuthorization), signal: AbortSignal.timeout(20_000), cache: "no-store" }
       );
     } catch (error) {
       // 网络瞬时错误:调用方安排重试,不终止任务
@@ -150,9 +167,9 @@ export const openAiVideosAdapter: VideoProviderAdapter = {
   ): Promise<VideoProviderFetchResult> {
     const cfg = resolveOpenAiVideosConfig();
     if (!cfg) throw new Error("视频服务未配置");
-    const res = await fetch(
-      `${cfg.baseUrl}/v1/videos/${encodeURIComponent(task.upstreamTaskId)}/content`,
-      { headers: authHeaders(cfg.apiKey), signal: AbortSignal.timeout(180_000) }
+    const res = await upstreamFetch(cfg.baseUrl)(
+      endpoint(cfg, "content", task.upstreamTaskId),
+      { headers: authHeaders(cfg.apiKey, cfg.options?.rawAuthorization), signal: AbortSignal.timeout(180_000) }
     );
     const downloaded = await readLimitedVideoResponse(res);
     return { bytes: downloaded.bytes, mimeType: downloaded.mimeType };

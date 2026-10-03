@@ -1,3 +1,4 @@
+import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
@@ -75,7 +76,7 @@ async function visionOcr(buffer: Buffer, width: number, height: number, model: s
   // example, a mainland host timing out against it), so it is only a fallback.
   const apiKey = settings.apiKey || process.env.AGENT_API_KEY;
   if (!apiKey) throw new Error("OCR 服务和视觉模型均未配置");
-  const client = observeOpenAI(new OpenAI({
+  const client = observeOpenAI(modelAwareOpenAI({
     apiKey,
     baseURL: (await getOpenAIBaseUrl()) || process.env.AGENT_BASE_URL || undefined,
     timeout: 45_000,

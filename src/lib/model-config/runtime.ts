@@ -47,8 +47,9 @@ export function simulateModel(snapshot: ModelSnapshot, billing: ConfigSnapshot, 
     if (c.verified && c.qualityRank < rank) codes.push("QUALITY_RANK");
     if (c.verified && c.qualities.length && !c.qualities.includes(facts.quality as any)) codes.push("QUALITY_UNSUPPORTED");
     if ((facts.needsEdit || rule?.require.edit) && !c.edit) codes.push("EDIT_UNSUPPORTED");
-    if ((facts.preserveIdentity || rule?.require.preserveIdentity) && !c.preserveIdentity) codes.push("IDENTITY_UNSUPPORTED");
-    if ((facts.needsText || rule?.require.textAccuracy) && !c.textAccuracy) codes.push("TEXT_UNSUPPORTED");
+    if (facts.needsMask && (p.protocol !== "openai-images" || !c.edit)) codes.push("MASK_UNSUPPORTED");
+    if (c.verified && (facts.preserveIdentity || rule?.require.preserveIdentity) && !c.preserveIdentity) codes.push("IDENTITY_UNSUPPORTED");
+    if (c.verified && (facts.needsText || rule?.require.textAccuracy) && !c.textAccuracy) codes.push("TEXT_UNSUPPORTED");
     if ((facts.nativeResolution || rule?.require.nativeResolution) && !c.nativeResolutions.includes(facts.resolution as any)) codes.push("NATIVE_RESOLUTION");
     const maxPixels = c.nativeResolutions.includes("4K") ? 4096 * 4096 : c.nativeResolutions.includes("2K") ? 2048 * 2048 : 1536 * 1024;
     const requestedPixels = facts.resolution === "4K" ? 3840 * 2160 : facts.resolution === "2K" ? 2048 * 2048 : 1024 * 1024;
@@ -152,6 +153,12 @@ export function createModelRuntime(deps: Dependencies) {
     current: () => deps.repo.current(), byVersion: (version: number) => deps.repo.byVersion(version),
     publicCatalog: async (modality: Modality) => publicModelCatalog(await deps.repo.current(), modality),
     prepareExecution,
+    async validateExecutionProjection(input: { modelVersion: number; billingVersion: number; digest: string }) {
+      await ready();
+      const row = (await deps.pool.query("SELECT digest,phase,payload FROM app_model_router_projections WHERE model_version=$1 AND billing_version=$2", [input.modelVersion,input.billingVersion])).rows[0];
+      const { digest, ...payload } = row?.payload || {};
+      if (row?.phase !== "prepared" || row.digest !== input.digest || digest !== input.digest || createHash("sha256").update(canonicalConfig(payload)).digest("hex") !== digest) throw new ModelConfigError("EXECUTION_MISMATCH", "任务路由组合与原版本不一致", 503);
+    },
     publish: async (input: StageInput) => apply(await deps.repo.stage(input)),
     restore: async (input: RestoreInput) => apply(await deps.repo.stageRestore(input)),
     async simulate(input: { draftId: string; actor: string; facts: ModelFacts; publicModelId: string }) {

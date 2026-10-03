@@ -1,9 +1,13 @@
+import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI } from "@/lib/bi/model-observer";
 import "server-only";
 
 import OpenAI from "openai";
 import { getOpenAIBaseUrl } from "./openai-base";
 import { getOpenAISettings } from "./settings";
+import { currentModelExecution } from "./model-config/context";
+import { modelConfigurationEnabled } from "./model-config/requests";
+import { getModelRuntime } from "./model-config/server";
 
 const DEFAULT_TEXT_MODEL =
   process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna";
@@ -52,6 +56,8 @@ function looksLikeTextModel(id: string): boolean {
 }
 
 export function requestedTextModel(request: Request, fallback = DEFAULT_TEXT_MODEL): string {
+  const scope = currentModelExecution("text") || currentModelExecution("vision");
+  if (scope) return scope.frozen.publicModelId;
   const requested = (request.headers.get("x-naumi-text-model") || "").trim();
   if (!MODEL_ID.test(requested)) return fallback;
   // 假名 → 真实模型 id(请求转发永远用真实 id)
@@ -62,7 +68,12 @@ export async function textModelCatalog(): Promise<{
   defaultModel: string;
   models: string[];
   discovery: "provider" | "configured";
+  version?: number;
 }> {
+  if (await modelConfigurationEnabled()) {
+    const catalog = await (await getModelRuntime()).publicCatalog("text");
+    return { version: catalog.version, defaultModel: catalog.bindings["text.generate"] || catalog.models[0]?.id || "", models: catalog.models.map(m => m.id), discovery: "configured" };
+  }
   // 白名单模式:目录即别名/清单本身,不做上游发现(对外隔离上游真实模型名)
   if (TEXT_MODEL_WHITELIST.length) {
     return {
@@ -86,7 +97,7 @@ export async function textModelCatalog(): Promise<{
     const settings = await getOpenAISettings();
     const apiKey = process.env.AGENT_API_KEY || settings.apiKey;
     if (apiKey) {
-      const client = observeOpenAI(new OpenAI({
+      const client = observeOpenAI(modelAwareOpenAI({
         apiKey,
         baseURL: process.env.AGENT_BASE_URL || (await getOpenAIBaseUrl()) || undefined,
         timeout: 12_000,

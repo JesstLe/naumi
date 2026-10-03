@@ -1,3 +1,4 @@
+import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
 import { toVisionDataUrl } from "@/lib/vision-image";
@@ -95,7 +96,7 @@ async function handleObservedPost(req: Request) {
   }
 
   try {
-    const client = observeOpenAI(new OpenAI({
+    const client = observeOpenAI(modelAwareOpenAI({
       apiKey,
       baseURL: (await getOpenAIBaseUrl()) || undefined,
     }));

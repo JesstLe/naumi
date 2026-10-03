@@ -104,9 +104,11 @@ async function main() {
     }));
     assert.equal(concurrent.filter(x => x.status === "fulfilled").length, 1);
     const { bootstrapModelConfig } = await import("../src/lib/model-config/bootstrap");
+    const { validateModelEndpoint } = await import("../src/lib/model-config/schema");
+    for (const url of ["http://[::ffff:169.254.169.254]/latest", "http://[::ffff:100.100.100.200]/latest", "http://[fd00:ec2::254]/latest"]) assert.throws(() => validateModelEndpoint(url, { trustedOrigins: [new URL(url).origin] }), /元数据/, "Metadata targets remain forbidden even in the operator allowlist");
     const bootstrap = await bootstrapModelConfig({ credentials: f.credentials, sources: {
       image: { baseUrl: `${f.origin}/v1`, apiKey: f.marker, models: ["gpt-image-1", "image-original"], defaultModel: "image-original", cutoutModel: "gpt-image-1", qualitySupported: false },
-      text: { baseUrl: `${f.origin}/v1`, apiKey: f.marker, defaultModel: "real-text", agentModel: "agent-real", models: ["real-text"], aliases: { "text-alias": "real-text" }, visibleModels: ["text-alias"], agent: { baseUrl: `${f.origin}/agent`, apiKey: "fixture-agent-account" } },
+      text: { baseUrl: `${f.origin}/v1`, apiKey: f.marker, defaultModel: "real-text", agentModel: "agent-real", models: ["real-text"], aliases: { "text-alias": "real-text" }, visibleModels: ["text-alias"], agent: { baseUrl: `${f.origin}/agent`, apiKey: "fixture-agent-account" }, vision: { model: "reference-vision", baseUrl: `${f.origin}/reference`, apiKey: "fixture-reference-account" } },
       video: [{ id: "v1", label: "测试视频", protocol: "openai-videos", baseUrl: `${f.origin}/v1`, apiKey: f.marker, models: ["video-original"], defaultModel: "video-original", idempotencyStrategy: "header" }],
     }, trustedOrigins: [f.origin] });
     assert.equal(bootstrap.bindings["image.generate"], "image-original");
@@ -115,6 +117,9 @@ async function main() {
     const agent = bootstrap.publicModels.find(m => m.id === bootstrap.bindings["agent.text"])!;
     assert.equal(bootstrap.upstreamModels.find(m => m.id === agent.target.id)!.providerId, "platform-agent");
     assert.equal(bootstrap.providers.find(p => p.id === "platform-agent")!.baseUrl, `${f.origin}/agent`);
+    const reference = bootstrap.publicModels.find(m => m.id === bootstrap.bindings["vision.reference"])!;
+    assert.equal(bootstrap.upstreamModels.find(m => m.id === reference.target.id)!.providerId, "platform-reference");
+    assert.equal(bootstrap.providers.find(p => p.id === "platform-reference")!.baseUrl, `${f.origin}/reference`);
     assert.equal(bootstrap.publicModels.filter(m => m.modality === "text" && m.visible).length, 1);
     assert.equal(bootstrap.upstreamModels.find(m => m.model === "video-original")!.providerId, "video:v1");
     assert.ok(bootstrap.upstreamModels.every(m => !m.capabilities.verified && !m.capabilities.nativeResolutions.length));

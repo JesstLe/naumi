@@ -47,7 +47,8 @@
     "verify:model-config": "tsx --conditions react-server scripts/verify-model-config.ts",
     "verify:model-publication": "tsx --conditions react-server scripts/verify-model-publication.ts",
     "verify:model-router-contract": "tsx --conditions react-server scripts/verify-model-router-contract.ts",
-    "verify:model-admin": "tsx --conditions react-server scripts/verify-model-admin.ts"
+    "verify:model-admin": "tsx --conditions react-server scripts/verify-model-admin.ts",
+    "verify:model-execution": "tsx --conditions react-server scripts/verify-model-execution.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",

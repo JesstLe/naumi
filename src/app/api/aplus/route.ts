@@ -1,4 +1,5 @@
 import {withBillingIntent} from "@/lib/billing/intent";
+import { modelAwareOpenAI, managedImageEditFetch } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import {quoteForRequest} from "@/lib/billing/server";
 import {assertQuotedVersion,requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/request";
@@ -236,12 +237,7 @@ async function editImagesMultipart(
   form.append("size", size);
   form.append("quality", imageOperationQuality(process.env.OPENAI_IMAGE_QUALITY || "medium"));
   appendImageGatewayFields(form, model);
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/images/edits`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
-    signal: AbortSignal.timeout(PER_SHOT_TIMEOUT),
-  });
+  const response = await managedImageEditFetch(baseUrl, apiKey, form, AbortSignal.timeout(PER_SHOT_TIMEOUT));
   const raw = await response.text();
   if (!response.ok) {
     let detail = raw.slice(0, 500);
@@ -537,7 +533,7 @@ async function runAplusGeneration(jobId: string) {
   const set = (patch: Partial<Job>) => patchJob(jobId, patch);
   try {
     const { apiKey } = await getOpenAISettings();
-    const client = observeOpenAI(new OpenAI({
+    const client = observeOpenAI(modelAwareOpenAI({
       apiKey,
       baseURL: (await getOpenAIBaseUrl()) || undefined,
       timeout: PER_SHOT_TIMEOUT,

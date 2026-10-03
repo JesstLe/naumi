@@ -1,5 +1,7 @@
 import { getNewApiImageSettings } from "@/lib/image-model-catalog";
-import { observeModelCall } from "@/lib/bi/model-observer";
+import { observeModelCall, modelExecutionTelemetry } from "@/lib/bi/model-observer";
+import { currentModelExecution } from "./model-config/context";
+import { modelEndpointFetch } from "./model-config/transport";
 
 export type NewApiReferenceImage = {
   buffer: Buffer;
@@ -83,6 +85,10 @@ export async function generateNewApiImage(input: {
   settings?: { baseUrl: string; apiKey: string };
 }): Promise<{ buffer: Buffer; contentType: string }> {
   const settings = input.settings || getNewApiImageSettings();
+  const scope = currentModelExecution("image");
+  const managed = scope?.connection.protocol === "new-api-flow" && (!input.settings || input.settings.baseUrl === scope.connection.baseUrl && input.settings.apiKey === scope.connection.apiKey);
+  const wireModel = managed ? scope.connection.wireModel : input.model;
+  const submit = managed ? modelEndpointFetch(settings.baseUrl, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, scope.connection) : fetch;
   if (!settings.baseUrl || !settings.apiKey) {
     throw new Error("New API 生图分组尚未配置");
   }
@@ -98,19 +104,19 @@ export async function generateNewApiImage(input: {
         })),
       ]
     : input.prompt;
-  const response = await observeModelCall(input.model,()=>fetch(`${settings.baseUrl}/chat/completions`, {
+  const response = await observeModelCall(wireModel,()=>submit(`${settings.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${settings.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: input.model,
+      model: wireModel,
       messages: [{ role: "user", content }],
       stream: true,
     }),
     signal: AbortSignal.timeout(300_000),
-  }));
+  }), managed ? modelExecutionTelemetry(scope) : null);
   const raw = await response.text();
   if (!response.ok) throw upstreamError(raw, response.status);
   const streamContent = collectStreamContent(raw);

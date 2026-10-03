@@ -17,6 +17,7 @@ import {routeImageModel} from "@/lib/image-model-routing";
 import {configuredVideoProviders,getVideoProviderConfig} from "@/lib/video/providers/config";
 import { requestedTextModel } from "@/lib/text-models";
 import { CANVAS_FREE_DEFAULTS } from "./canvas-defaults";
+import { currentModelBillingSnapshot } from "../model-config/context";
 let runtime: ReturnType<typeof assemble> | undefined;
 function assemble() {
     return { service: createBillingService(), config: createConfigRuntime({ pool: getPool(), ensureSchema, initialize: async (tx) => {
@@ -106,12 +107,12 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
     quantity: number;
     ratio?: string;
 },frozenSnapshot?:ConfigSnapshot) {
-    const snapshot = frozenSnapshot??await billingSnapshot();
+    const snapshot = frozenSnapshot??currentModelBillingSnapshot()??await billingSnapshot();
     return compatibleQuote(snapshot, await resolveBillingFacts(request, input, snapshot));
 }
 /** Trusted domain services have already authenticated and owner-checked this actor. */
 export async function quoteForActor(email:string,input:Partial<BillingFacts>&{feature:BillingFacts["feature"];quantity:number}){
-    const snapshot=await(await getBillingRuntime()).config.current();
+    const snapshot=currentModelBillingSnapshot()??await(await getBillingRuntime()).config.current();
     return compatibleQuote(snapshot,await resolveBillingFacts(new Request("http://internal/api/billing/quote"),input,snapshot,email));
 }
 export async function updateBillingCompatibility(actor: string, reason: string, change: (config: BillingConfig) => void) {

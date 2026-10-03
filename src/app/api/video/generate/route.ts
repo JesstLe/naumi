@@ -1,5 +1,6 @@
 import {withBillingIntent} from "@/lib/billing/intent";
 import { NextResponse } from "next/server";
+import { withBiRequest } from "@/lib/bi/model-observer";
 
 import { dbEnabled, getUser } from "@/lib/db";
 import { authenticatedEmail } from "@/lib/request-auth";
@@ -20,6 +21,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 async function createSubmission(request: Request) {
+  return withBiRequest(request, () => handlePost(request));
+}
+async function handlePost(request: Request) {
   const email = await authenticatedEmail(request);
   if (dbEnabled && !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if (!rateLimit(`video-gen:${clientIp(request) || "0.0.0.0"}`, 6, 10 * 60 * 1000)) {
