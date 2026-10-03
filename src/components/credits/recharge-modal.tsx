@@ -24,7 +24,7 @@ export function RechargeModal() {
   const { openAuth } = useAuthModal();
   const { toast } = useToast();
   const { locale } = useI18n();
-  const { commerceVisible, rechargeEnabled, pro } = usePaymentConfig();
+  const { commerceVisible, rechargeEnabled } = usePaymentConfig();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
 
   const [packIdx, setPackIdx] = React.useState(1);
@@ -171,11 +171,7 @@ export function RechargeModal() {
         />
       )}
 
-      {!pro ? (
-        <div className="mt-4 rounded-[10px] bg-c-subtle px-3 py-6 text-center text-[12.5px] text-c-text3">
-          {L("该功能为 Pro 版功能。", "This is a Pro-only feature.")}
-        </div>
-      ) : paymentAvailable && effectiveTab === "pay" ? (
+      {paymentAvailable && effectiveTab === "pay" ? (
         <div className="mt-4">
           <div className="grid grid-cols-2 gap-2.5">
             {CREDIT_PACKS.map((p, i) => {

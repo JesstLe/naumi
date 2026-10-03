@@ -39,7 +39,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { browserSupabase } from "@/lib/supabase";
-import { usePaymentConfig } from "@/lib/payment-context";
 import { AdminTemplates } from "@/components/admin/admin-templates";
 import { AdminTryon } from "@/components/admin/admin-tryon";
 import { AdminArtworks } from "@/components/admin/admin-artworks";
@@ -48,7 +47,6 @@ import { ImageLightbox } from "@/components/image-lightbox";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { AdminPrompts } from "@/components/admin/admin-prompts";
 import { DeployCenter } from "@/components/operator/deploy-center";
-import { LicensesClient } from "@/components/operator/licenses-client";
 import { RelayTokensClient } from "@/components/operator/relay-tokens-client";
 import { CardkeysAdmin } from "@/components/operator/cardkeys-admin";
 import { OPERATOR_EMAIL } from "@/lib/operator";
@@ -201,7 +199,7 @@ type View = {
   wxpayCertReady?: boolean;
   wxpayCertSerial?: string;
   wxpayAppid?: string;
-  // 品牌与白标(Pro)
+
   brandName?: string;
   brandLogo?: string;
   pageAbout?: string;
@@ -296,29 +294,23 @@ function hasSubtle(): boolean {
 }
 
 // 后台左侧分栏(方案 A)
-// pro:true = 运营/变现/多用户向的分栏,仅 Pro(官方云/自托管激活)可见;
-//            开源精简版(单个自托管者)隐藏。false = 自托管者配置自己实例要用的,始终开放。
-const SECTIONS = [
-  { id: "users", label: "用户与会员", icon: Users, pro: true },
-  { id: "usage", label: "用户用量", icon: Activity, pro: true },
-  { id: "artworks", label: "作品库", icon: ImageIcon, pro: true },
-  { id: "templates", label: "模板管理", icon: LayoutGrid, pro: false },
-  { id: "tryon", label: "试穿素材库", icon: Shirt, pro: true },
-  { id: "prompts", label: "提示词配置", icon: MessageSquare, pro: false },
-  { id: "api", label: "接口与模型", icon: KeyRound, pro: false },
-  { id: "auth", label: "登录与支付", icon: ShieldCheck, pro: true },
-  { id: "brand", label: "品牌与站点", icon: Palette, pro: false },
-  { id: "pages", label: "站点页面", icon: FileText, pro: false },
-  { id: "credits", label: "积分计费", icon: Database, pro: false },
-  { id: "ledger", label: "积分流水", icon: Database, pro: true },
-  { id: "deploy", label: "部署与授权", icon: Server, pro: true },
-  { id: "cardkeys", label: "兑换码", icon: Ticket, pro: true },
-] as const;
 
-// Pro 门控的板块 id 集合(左侧导航隐藏 + 内容区兜底不渲染)。
-const PRO_SECTIONS = new Set<string>(
-  SECTIONS.filter((s) => s.pro).map((s) => s.id)
-);
+const SECTIONS = [
+  { id: "users", label: "用户与会员", icon: Users },
+  { id: "usage", label: "用户用量", icon: Activity },
+  { id: "artworks", label: "作品库", icon: ImageIcon },
+  { id: "templates", label: "模板管理", icon: LayoutGrid },
+  { id: "tryon", label: "试穿素材库", icon: Shirt },
+  { id: "prompts", label: "提示词配置", icon: MessageSquare },
+  { id: "api", label: "接口与模型", icon: KeyRound },
+  { id: "auth", label: "登录与支付", icon: ShieldCheck },
+  { id: "brand", label: "品牌与站点", icon: Palette },
+  { id: "pages", label: "站点页面", icon: FileText },
+  { id: "credits", label: "积分计费", icon: Database },
+  { id: "ledger", label: "积分流水", icon: Database },
+  { id: "deploy", label: "部署与更新", icon: Server },
+  { id: "cardkeys", label: "兑换码", icon: Ticket },
+] as const;
 
 // 配置块状态徽标:已生效(绿)/ 未生效(琥珀)。登录与支付各卡片头部统一用它。
 function ReadyBadge({
@@ -349,9 +341,9 @@ function ReadyBadge({
 // Self-gating: renders only when the signed-in user is the configured admin
 // (the API returns 403 otherwise). Drop it anywhere inside an authed page.
 export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) {
-  // 白标门控:pro=true(官方云/自托管激活)照常显示全部分栏;开源精简版只留自托管者
+
   // 配置自己实例要用的分栏(接口与模型/提示词/模板),隐藏运营/变现/多用户向的分栏。
-  const { pro } = usePaymentConfig();
+
   const [token, setToken] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [view, setView] = useState<View | null>(null);
@@ -399,7 +391,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
   const [wxpayCertSerial, setWxpayCertSerial] = useState("");
   const [wxpayApiv3Input, setWxpayApiv3Input] = useState("");
   const [wxpayCertInput, setWxpayCertInput] = useState("");
-  // ── 品牌与白标(Pro)──
+
   const [brandName, setBrandName] = useState("");
   const [brandLogo, setBrandLogo] = useState("");
   // 站点页面(关于/联系/定价)自定义内容
@@ -753,13 +745,6 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
     void probe();
   }, [probe]);
 
-  // 非 Pro 时,默认分栏(users)是被门控的 → 落到第一个开放分栏,避免显示空白内容区。
-  useEffect(() => {
-    if (!pro && PRO_SECTIONS.has(section)) {
-      setSection("api");
-    }
-  }, [pro, section]);
-
   // 站长邮箱账号:读当前绑定状态(仅自托管有意义;官方云该接口按管理员校验放行也无妨)
   useEffect(() => {
     if (!isAdmin) return;
@@ -969,7 +954,6 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
     );
   }
 
-  // 保存品牌与白标(Pro):站点名称 / Logo URL。明文;空串=清除覆盖→回退默认。
   // 用 postSettings 走同一 POST + 回填(它会读回包同步 brandName/brandLogo)。
   async function saveBrandName() {
     await postSettings({ brandName }, "站点名称已保存");
@@ -1085,7 +1069,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
       <div className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card card-shadow lg:flex-row">
         {/* 左侧分栏导航(方案 A) */}
         <nav className="flex flex-row gap-1 overflow-x-auto border-b border-border bg-card p-2 lg:w-52 lg:flex-none lg:flex-col lg:border-b-0 lg:border-r">
-          {SECTIONS.filter((s) => pro || !s.pro).map((s) => {
+          {SECTIONS.map((s) => {
             const Icon = s.icon;
             return (
               <button
@@ -1119,8 +1103,8 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
         </p>
       )}
 
-      {/* 用户与会员管理(Pro:运营/多用户向) */}
-      {pro && section === "users" && (
+      {/* 用户与会员管理 */}
+      {section === "users" && (
       <div>
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -1549,8 +1533,8 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
 
       )}
 
-      {/* 用户用量管理(Pro:按结算流水查看实际消耗) */}
-      {pro && section === "usage" && (
+      {/* 用户用量管理 */}
+      {section === "usage" && (
         <div>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -1736,10 +1720,10 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
       {/* 模板管理 */}
       {section === "templates" && <AdminTemplates token={token} />}
 
-      {pro && section === "tryon" && <AdminTryon token={token} />}
+      {section === "tryon" && <AdminTryon token={token} />}
 
-      {/* 全部作品(Pro:浏览全体用户作品,运营/多用户向) */}
-      {pro && section === "artworks" && <AdminArtworks token={token} />}
+      {/* 全部作品 */}
+      {section === "artworks" && <AdminArtworks token={token} />}
 
       {/* 提示词配置 */}
       {section === "prompts" && <AdminPrompts />}
@@ -2081,8 +2065,8 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
       </div>
       )}
 
-      {/* 管理员 · 登录与支付(Pro:收款/变现 + 微信登录配置) */}
-      {pro && section === "auth" && (
+      {/* 管理员 · 登录与支付 */}
+      {section === "auth" && (
       <div>
         <div className="mb-3 flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-primary" />
@@ -2096,7 +2080,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
           加密传输 + 服务端 AES 加密存储」，永不明文、不回显；留空则自动回退环境变量配置。
         </p>
 
-        {/* 多用户模式开关(Pro:开则访客注册/买积分/生图扣费,可对外运营卖积分) */}
+        {/* 多用户模式开关 */}
         <div className="mb-5 space-y-3 rounded-2xl border border-border bg-card p-6 card-shadow">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Users className="h-4 w-4 text-primary" />
@@ -2715,7 +2699,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
       )}
 
       {/* 管理员 · 品牌与站点(自定义站点名 / Logo,运行时 DB 覆盖,免重建镜像)。
-          基础品牌(名+Logo)开源版即可用;仅"去掉底部 Powered by 署名"需要 Pro。 */}
+          全部品牌设置统一开放。 */}
       {section === "brand" && (
       <div>
         <div className="mb-3 flex items-center gap-2">
@@ -2727,11 +2711,6 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
         </div>
         <p className="mb-4 text-sm text-muted-foreground">
           自定义站点名称与 Logo,留空则用默认。此处修改即时生效,无需重新部署。
-          {!pro && (
-            <span className="text-c-text3">
-              {" "}页脚「Powered by」署名的移除为 Pro 版能力。
-            </span>
-          )}
         </p>
 
         <div className="grid gap-5 lg:grid-cols-2">
@@ -2831,7 +2810,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
       </div>
       )}
 
-      {/* 管理员 · 站点页面(关于/联系/定价 自定义内容;开源版也可改) */}
+      {/* 管理员 · 站点页面(关于/联系/定价 自定义内容;可自定义) */}
       {section === "pages" && (
       <div>
         <div className="mb-3 flex items-center gap-2">
@@ -2988,12 +2967,12 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
       </div>
       )}
 
-      {/* 部署与授权(Pro:运营/站长向,合并「部署中心」+「授权管理」两块内容) */}
-      {pro && section === "deploy" && (
+      {/* 部署与授权 */}
+      {section === "deploy" && (
         <div>
           <div className="mb-3 flex items-center gap-2">
             <Server className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">部署与授权</h2>
+            <h2 className="text-lg font-semibold">部署与更新</h2>
             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
               仅管理员可见
             </span>
@@ -3007,7 +2986,6 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
           <DeployCenter embedded />
 
           {/* 授权管理(仅签发站显示;组件自带标题,买家实例整块自动隐藏) */}
-          <LicensesClient embedded />
 
           {/* 中转密钥管理(仅签发站 ai.starzeco.com + 配置了 relay 时显示;
               非签发站/未配置时 embedded 自动隐藏,不占位) */}
@@ -3015,8 +2993,8 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
         </div>
       )}
 
-      {/* 兑换码(Pro:运营/站长向) */}
-      {pro && section === "cardkeys" && (
+      {/* 兑换码 */}
+      {section === "cardkeys" && (
         <div>
           <div className="mb-3 flex items-center gap-2">
             <Ticket className="h-5 w-5 text-primary" />
@@ -3029,8 +3007,8 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
         </div>
       )}
 
-      {/* 积分流水(Pro:变现/运营) */}
-      {pro && section === "ledger" && usersData && usersData.ledger.length > 0 && (
+      {/* 积分流水 */}
+      {section === "ledger" && usersData && usersData.ledger.length > 0 && (
         <div>
           <div className="mb-3 flex items-center gap-2">
             <Database className="h-5 w-5 text-primary" />

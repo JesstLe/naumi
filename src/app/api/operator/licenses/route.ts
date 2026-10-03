@@ -7,7 +7,7 @@ import {
   setLicenseStatus,
 } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
-import { proEnabled, isLicenseIssuer } from "@/lib/edition";
+import { isLicenseIssuer } from "@/lib/edition";
 
 // 站长后台:Pro License 管理(列表/统计、批量生成、启用/吊销)。
 export const runtime = "nodejs";
@@ -20,9 +20,7 @@ async function guard(request: Request): Promise<NextResponse | null> {
   if (!(await requireAdmin(request))) {
     return NextResponse.json({ error: "无权限" }, { status: 403 });
   }
-  if (!(await proEnabled())) {
-    return NextResponse.json({ error: "该功能为 Pro 版功能" }, { status: 403 });
-  }
+
   return null;
 }
 

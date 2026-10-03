@@ -103,7 +103,6 @@ export function AccountDockMenu({
   user,
   remaining,
   dark,
-  pro,
   isAdmin,
   className,
   onClose,
@@ -114,7 +113,6 @@ export function AccountDockMenu({
   user: SessionUser;
   remaining: number;
   dark: boolean;
-  pro: boolean;
   isAdmin: boolean;
   className?: string;
   onClose: () => void;
@@ -174,8 +172,7 @@ export function AccountDockMenu({
         </span>
         <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
       </Link>
-      {pro && (
-        <button
+      <button
           type="button"
           onClick={() => {
             onClose();
@@ -186,7 +183,6 @@ export function AccountDockMenu({
           <Gift className="h-4 w-4" />
           {L("兑换码", "Redeem code")}
         </button>
-      )}
       <Link
         href="/account/security"
         onClick={onClose}

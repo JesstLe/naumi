@@ -6,8 +6,6 @@
 // 用法:catch (e) { return NextResponse.json({ error: safeError(e, "生成失败,请稍后重试") }, ...) }
 // ---------------------------------------------------------------------------
 
-import { editionName } from "@/lib/edition";
-
 export function safeError(e: unknown, fallback = "服务繁忙,请稍后重试"): string {
   const raw =
     e instanceof Error ? e.message : typeof e === "string" ? e : "";
@@ -35,10 +33,6 @@ export function safeError(e: unknown, fallback = "服务繁忙,请稍后重试")
       low
     )
   ) {
-    // 自部署实例(非官方云):连不上模型服务时,明确指向后台接口配置。
-    if (editionName !== "cloud") {
-      return "无法连接到 AI 服务。请在后台「接口与模型」检查接口地址、API Key 与网络连通性后重试";
- }
     return "网络繁忙,请稍后重试";
   }
 

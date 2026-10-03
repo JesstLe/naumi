@@ -19,7 +19,6 @@ import {
 import { cn } from "@/lib/utils";
 import { downloadImage } from "@/lib/download";
 import { useAuth } from "@/lib/auth-context";
-import { usePaymentConfig } from "@/lib/payment-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
 import { useImageJobResume } from "@/components/use-image-job-resume";
@@ -104,13 +103,11 @@ type SourceImage = {
   history?: { version: number; feedback: string; url: string; createdAt: number }[];
 };
 
-
 export function AplusClient() {
   const L = (z: string, e: string) =>
     typeof window !== "undefined" && document.documentElement.lang === "en" ? e : z;
   const { user, ready, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
-  const { pro } = usePaymentConfig();
 
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -632,7 +629,7 @@ export function AplusClient() {
               <span className="font-semibold text-c-text">{cost} 积分</span>
             </div>
           </div>
-          {ready && user && pro && (
+          {ready && user && (
             <p className="-mt-3 text-right text-xs text-muted-foreground">
               余额: {user.creditsTotal - user.creditsUsed}
             </p>

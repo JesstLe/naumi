@@ -53,6 +53,8 @@ services:
   app:
     image: ghcr.io/jesstle/naumi:old
     environment:
+      NAUMI_EDITION: oss
+      PRO_LICENSE_KEY: fixture-unused
       OPENAI_API_KEY: fixture-unused
       AGENT_MODEL: fixture
       AGENT_VISION_MODEL: fixture
@@ -85,6 +87,8 @@ if [[ "$FAIL_HEALTH" == 0 ]]; then
  grep -q 'NAUMI_IMAGE_QUALITY_SUPPORTED: ${NAUMI_IMAGE_QUALITY_SUPPORTED:-0}' /opt/naumi/current/docker-compose.yml
  grep -q 'OPENAI_IMAGE_QUALITY: ${OPENAI_IMAGE_QUALITY:-medium}' /opt/naumi/current/docker-compose.yml
  grep -q 'NAUMI_PUBLIC_COMMERCE: ${NAUMI_PUBLIC_COMMERCE:-0}' /opt/naumi/current/docker-compose.yml
+ grep -q 'NAUMI_BETA_PREVIEW: ${NAUMI_BETA_PREVIEW:-0}' /opt/naumi/current/docker-compose.yml
+ ! grep -Eq '^[[:space:]]*(NAUMI_EDITION|PRO_LICENSE_KEY):' /opt/naumi/current/docker-compose.yml
  grep -q COORDINATED_RELEASE_READY=1 /fixture/result
  test "$(cat /opt/naumi/current/DEPLOYED_COMMIT)" = "$FIXTURE_COMMIT"
  echo COORDINATED_SUCCESS_MAINTENANCE_AND_WORKER_GUARD=PASS

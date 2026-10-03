@@ -55,7 +55,6 @@ const MENU_COLS = [
   [MENU_CATS[2], MENU_CATS[3]],
 ].map((col) => col.filter(Boolean));
 
-
 export function AppRail() {
   const { t, locale } = useI18n();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
@@ -63,7 +62,7 @@ export function AppRail() {
   const { user, remaining, signOut } = useAuth();
   const { openAuth } = useAuthModal();
   const { openRecharge } = useRecharge();
-  const { rechargeEnabled, pro } = usePaymentConfig();
+  const { rechargeEnabled } = usePaymentConfig();
   const [acct, setAcct] = useState(false);
   // 头像菜单:桌面悬停打开,离开延迟关闭(留时间让鼠标移到菜单上)。
   const acctTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,7 +155,7 @@ export function AppRail() {
         user={user}
         remaining={remaining}
         dark={dark}
-        pro={pro}
+
         isAdmin={isAdmin}
         className={className}
         onClose={() => setAcct(false)}
@@ -300,7 +299,7 @@ export function AppRail() {
           </button>
         )}
         {/* Pro 站点未开在线充值时(海外站/收款未配)仍提供「兑换码」入口;开源版隐藏 */}
-        {user && pro && !rechargeEnabled && (
+        {user && !rechargeEnabled && (
           <button
             type="button"
             onClick={() => {

@@ -1,12 +1,12 @@
 import { FileText } from "lucide-react";
 import { getServerLocale } from "@/lib/i18n/server-locale";
 import { BRAND, BRAND_EMAIL } from "@/lib/brand";
-import { editionName } from "@/lib/edition";
+import { officialSite } from "@/lib/edition";
 import { publicCommerceEnabled } from "@/lib/commerce";
 
 // 法律主体按版本区分:官方云=广东星泽科技(国内合规);开源/Pro 自托管=部署者自己。
 // 本实例(Naumi,自托管 Pro)渲染「本站运营方」分支。
-const isCloud = editionName === "cloud";
+const isCloud = officialSite;
 
 // 条款当前版本日期(中英文共用)。
 const LAST_UPDATED = "2026-09-12";

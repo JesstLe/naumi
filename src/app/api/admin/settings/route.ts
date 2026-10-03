@@ -28,7 +28,6 @@ import {
   saveSmtp,
 } from "@/lib/settings";
 import { requireAdmin } from "@/lib/admin-auth";
-import { proEnabled } from "@/lib/edition";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,18 +79,18 @@ export async function POST(req: Request) {
     wxpayCertSerial?: string;
     wxpayAppid?: string;
     payEnabled?: boolean;
-    // 品牌与白标(Pro,明文;空串=清除覆盖→回退 env 默认)
+
     brandName?: string;
     brandLogo?: string;
     // 站长自定义页面(基础能力,开源版也可改;纯文本)
     pageAbout?: string;
     pageContact?: string;
     pagePlans?: string;
-    // 原生多用户开关(Pro 能力;!pro 时下方剥离)
+
     multiUserEnabled?: boolean;
     // 积分计费开关(基础能力,单用户也可开)
     creditsMetering?: boolean;
-    // SMTP 邮件(Pro:忘记密码用;!pro 剥离)
+
     smtpHost?: string;
     smtpPort?: number;
     smtpUser?: string;
@@ -107,31 +106,6 @@ export async function POST(req: Request) {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "请求体无效" }, { status: 400 });
-  }
-
-  // Pro 门控(方案 B 后端加固):**收款**是 Pro 能力。开源版(!pro)静默剥离这些字段,
-  // 防 curl 绕过前端门控直接写入;OpenAI Key/模型/抠图/微信登录等**基础配置照常保存**,
-  // 不影响开源版自配置。官方云/已激活 Pro → pro=true,全部正常。
-  // 注意:**站点名 + Logo(brandName/brandLogo)是开源版基础自定义能力,不剥离**——
-  // 自部署者本就该给自己的站起名换 logo;真正的 Pro 白标钩子是"去掉底部 Powered by
-  // 署名"(由 site-footer 按 pro 强制,与此处保存无关)。
-  // ⚠️以后新增「收款/多用户/后台高阶」类 Pro 写字段,记得也加进这个剥离清单。
-  if (!(await proEnabled())) {
-    body.payEnabled = undefined;
-    body.alipayAppid = undefined;
-    body.alipayPublicKey = undefined;
-    body.encryptedAlipayPrivateKey = undefined;
-    body.wxpayMchid = undefined;
-    body.wxpayCertSerial = undefined;
-    body.wxpayAppid = undefined;
-    body.encryptedWxpayApiv3 = undefined;
-    body.encryptedWxpayCert = undefined;
-    body.multiUserEnabled = undefined; // 多用户是 Pro 运营能力
-    body.smtpHost = undefined;
-    body.smtpPort = undefined;
-    body.smtpUser = undefined;
-    body.smtpPass = undefined;
-    body.smtpFrom = undefined;
   }
 
   // 解出浏览器 RSA 密文 → 明文;解密失败/为空回 null,调用方据此回 400。
@@ -296,7 +270,6 @@ export async function POST(req: Request) {
       await saveWxpayCert(plain);
     }
 
-    // ---- 品牌与白标(Pro):明文;空串 = 清除覆盖 → 前台回退 env 默认 ----
     // 注意:用 typeof 判断「字段是否出现」,空串也要写入(=清除),不能用真值跳过。
     if (typeof body.brandName === "string" || typeof body.brandLogo === "string") {
       await saveBrand({ name: body.brandName, logo: body.brandLogo });
@@ -315,7 +288,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // ---- 原生多用户开关(Pro)----
     if (typeof body.multiUserEnabled === "boolean") {
       await saveMultiUser(body.multiUserEnabled);
     }
@@ -325,7 +297,6 @@ export async function POST(req: Request) {
       await saveCreditsMetering(body.creditsMetering);
     }
 
-    // ---- SMTP 邮件(Pro:忘记密码用)----
     if (
       typeof body.smtpHost === "string" ||
       typeof body.smtpUser === "string" ||

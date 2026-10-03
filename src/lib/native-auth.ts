@@ -115,8 +115,7 @@ export function nativeUserEmail(request: Request): string | null {
 export async function multiUserEnabled(): Promise<boolean> {
   if (supabaseEnabled) return false; // Supabase 模式另有多用户实现
   try {
-    const { proEnabled } = await import("@/lib/edition");
-    if (!(await proEnabled())) return false; // 多用户是 Pro 能力
+     // 多用户是 Pro 能力
     // env 开关(compose 里设 NAUMI_MULTI_USER=1 即开,适合技术站长)或后台开关。
     if ((process.env.NAUMI_MULTI_USER ?? "").trim() === "1") return true;
     const flag = (await getSetting(MULTI_USER_SETTING))?.trim();

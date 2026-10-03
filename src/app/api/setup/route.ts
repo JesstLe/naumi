@@ -7,13 +7,11 @@ export const dynamic = "force-dynamic";
 // ---------------------------------------------------------------------------
 // 首启配置向导落库接口。**首启专用、无需登录,但必须自锁**:
 //   - 仅「未配置」的实例可写(applySetup 内部用 isConfigured() 判定);
-//   - 已配置(含 NAUMI_EDITION=cloud 官方云、或已填 OpenAI Key)→ 403,写完即锁。
-// 因此我们两站(env NAUMI_EDITION=cloud)永远返回 403,向导对线上站完全无害。
+
 // ---------------------------------------------------------------------------
 export async function POST(req: Request) {
   let body: {
     apiKey?: string;
-    licenseKey?: string;
     siteName?: string;
     adminPassword?: string;
     adminEmail?: string;
@@ -27,7 +25,6 @@ export async function POST(req: Request) {
   try {
     const result = await applySetup({
       apiKey: typeof body.apiKey === "string" ? body.apiKey : "",
-      licenseKey: typeof body.licenseKey === "string" ? body.licenseKey : "",
       siteName: typeof body.siteName === "string" ? body.siteName : "",
       adminPassword:
         typeof body.adminPassword === "string" ? body.adminPassword : "",

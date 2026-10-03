@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { dbEnabled, redeemCardKey, getUser } from "@/lib/db";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { proEnabled } from "@/lib/edition";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,9 +14,7 @@ export async function POST(request: Request) {
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
-  if (!(await proEnabled())) {
-    return NextResponse.json({ error: "该功能为 Pro 版功能" }, { status: 403 });
-  }
+
   let body: { code?: string };
   try {
     body = await request.json();

@@ -93,6 +93,8 @@ upgrade_release_compose() {
   local compose=$1 commit=$2
   [[ "$commit" =~ ^[a-f0-9]{40}$ ]]
   test -r "$compose"
+  # Product features no longer depend on edition or license environment bindings.
+  sed -i -E '/^[[:space:]]*(NAUMI_EDITION|PRO_LICENSE_KEY):/d' "$compose"
   ensure_app_env "$compose" NAUMI_VIDEO_WORKER '"0"'
   ensure_app_env "$compose" VIDEO_WORKER_SECRET '${VIDEO_WORKER_SECRET:?VIDEO_WORKER_SECRET required}'
   ensure_app_env "$compose" VIDEO_API_MODELS '${VIDEO_API_MODELS:-}'
@@ -101,6 +103,7 @@ upgrade_release_compose() {
   ensure_app_env "$compose" NAUMI_IMAGE_QUALITY_SUPPORTED '${NAUMI_IMAGE_QUALITY_SUPPORTED:-0}'
   ensure_app_env "$compose" OPENAI_IMAGE_QUALITY '${OPENAI_IMAGE_QUALITY:-medium}'
   ensure_app_env "$compose" NAUMI_PUBLIC_COMMERCE '${NAUMI_PUBLIC_COMMERCE:-0}'
+  ensure_app_env "$compose" NAUMI_BETA_PREVIEW '${NAUMI_BETA_PREVIEW:-0}'
   ensure_app_env "$compose" S3_ENDPOINT '${S3_ENDPOINT:-}'
   ensure_app_env "$compose" S3_REGION '${S3_REGION:-us-east-1}'
   ensure_app_env "$compose" S3_ACCESS_KEY_ID '${S3_ACCESS_KEY_ID:-}'
@@ -268,7 +271,7 @@ docker exec naumi-db-1 pg_dump -U "$DB_USER" -d "$DB_NAME" --format=custom > "$R
 # 媒体卷冷备改为低频手动:bash /root/backup-appdata.sh(如需)。
 echo "APPDATA_BACKUP_DISABLED: media volume not backed up per-deploy (by design)"
 touch "$RELEASE/backups/appdata.tar.gz.skipped"
-echo "(disabled by design)" > "$RELEASE/backups/appdata.tar.gz" 
+echo "(disabled by design)" > "$RELEASE/backups/appdata.tar.gz"
 docker exec naumi-db-1 psql -U "$DB_USER" -d "$DB_NAME" -Atc 'select count(*) from app_users; select count(*) from app_artworks;' > "$RELEASE/backups/counts.before"
 sha256sum "$RELEASE/backups/database.dump" "$RELEASE/backups/appdata.tar.gz" "$RELEASE/backups/nginx.before.conf" > "$RELEASE/backups/SHA256SUMS"
 

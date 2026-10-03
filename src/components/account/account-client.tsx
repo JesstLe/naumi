@@ -28,7 +28,7 @@ export function AccountClient() {
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
   const { openAuth } = useAuthModal();
   const { openRecharge } = useRecharge();
-  const { rechargeEnabled, pro } = usePaymentConfig();
+  const { rechargeEnabled } = usePaymentConfig();
   const [totalWorks, setTotalWorks] = useState<number | null>(null);
 
   useEffect(() => {
@@ -129,7 +129,7 @@ export function AccountClient() {
             {L("充值积分", "Top up")}
           </Button>
         )}
-        {pro && !rechargeEnabled && (
+        {!rechargeEnabled && (
           <Button variant="primary" onClick={() => openRecharge("code")}>
             {L("兑换码", "Redeem code")}
           </Button>
@@ -151,7 +151,7 @@ export function AccountClient() {
                 <ArrowRight className="h-3 w-3" />
               </button>
             )}
-            {pro && !rechargeEnabled && (
+            {!rechargeEnabled && (
               <button
                 type="button"
                 onClick={() => openRecharge("code")}

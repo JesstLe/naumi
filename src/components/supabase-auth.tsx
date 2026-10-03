@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { browserSupabase } from "@/lib/supabase";
 import { useI18n } from "@/lib/i18n/locale-context";
-import { usePaymentConfig } from "@/lib/payment-context";
 import { cn } from "@/lib/utils";
 
 function fmt(s: string, vars: Record<string, string | number>): string {
@@ -121,11 +120,10 @@ export function AuthPanel({
   const router = useRouter();
   const params = useSearchParams();
   const { t, locale } = useI18n();
-  // 白标门控:开源版 = 单用户,隐藏「注册」入口只留登录;官方云/Pro = 多用户(不变)。
-  // 非 Pro 时即便外部把 mode 传成 sign-up(旧路由 / ?auth=sign-up),也强制按登录渲染,
+
   // 彻底堵住注册路径。登录逻辑本身不动。
-  const { pro } = usePaymentConfig();
-  const isSignUp = pro && mode === "sign-up";
+
+  const isSignUp = mode === "sign-up";
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -1175,13 +1173,6 @@ export function AuthPanel({
                     : t("auth.useCodeLogin")}
                 </button>
               </div>
-            ) : !pro && !isSignUp ? (
-              // 开源精简版 = 单用户,隐藏「注册」路径,只留登录 + 一句小字提示。
-              <p className="text-muted-foreground">
-                {locale === "en"
-                  ? "Multi-user sign-up requires the Pro edition"
-                  : "多用户注册需 Pro 版"}
-              </p>
             ) : (
               <p className="text-muted-foreground">
                 {isSignUp ? t("auth.haveAccount") : t("auth.noAccount")}{" "}

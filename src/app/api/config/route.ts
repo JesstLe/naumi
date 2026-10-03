@@ -11,6 +11,7 @@ import {
 } from "@/lib/image-model-catalog";
 import { imageQualityCapable } from "@/lib/image-quality";
 import { authenticatedEmail } from "@/lib/request-auth";
+import { betaPreviewEnabled } from "@/lib/commerce";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,5 +38,6 @@ export async function GET(request: Request) {
     // 出图质量通道能力:上游真实处理 quality 字段时为 true,前端才放开
     // 高档选择;false 时统一按默认档执行(提交前回退,见 src/lib/image-quality.ts)。
     imageQualityCapable: imageQualityCapable(),
+    imageQualityExperimental: betaPreviewEnabled,
   });
 }
