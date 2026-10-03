@@ -21,8 +21,11 @@ on:
       - 'src/lib/mock-data.ts'
       - 'src/lib/pricing.ts'
       - 'src/app/plans/**'
+      - 'src/app/admin/pricing/**'
+      - 'src/lib/commerce.ts'
       - 'src/components/pricing-research.tsx'
       - 'scripts/verify-pricing-proposal.ts'
+      - 'scripts/verify-pricing-access.mjs'
       - '.github/workflows/image-gateway.yml'
   workflow_dispatch:
 permissions:
@@ -56,6 +59,7 @@ jobs:
           done
       - run: npm run build
       - run: npm run verify:pricing-proposal
+      - run: npm run verify:pricing-access
       - run: npm run verify:image-gateway
         env:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture

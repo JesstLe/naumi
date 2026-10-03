@@ -1,9 +1,11 @@
+import "server-only";
+
 /**
- * 客户可见的「积分」定价数据（语言中立：只放数字，文案在页面字典里）。
+ * 管理员内部的「积分」定价数据（语言中立：只放数字，文案在页面字典里）。
  *
  * 数字来源：2026-10-02《Naumi竞品锚定豆定价.xlsx》与配套决策稿。
  * 展示名称统一为积分，数值保持报告原口径，不将跨平台单位视为等值。
- * 仅供 /plans 调研展示；实际扣费仍由 QUALITY_CREDITS 管理。
+ * 仅供管理员后台调研展示；实际扣费仍由 QUALITY_CREDITS 管理。
  * Token质量路线与EXT按张路线必须分开，不能互换成本或模型名。
  */
 
@@ -335,3 +337,23 @@ export function formatCredits(credits: number): string {
 export function formatYuan(yuan: number): string {
   return yuan.toFixed(2).replace(/\.?0+$/, "");
 }
+
+/** Confidential report context; never embed it in public JavaScript chunks. */
+export const RESEARCH_NOTES = [
+  [
+    "测算按最低套餐单价4499元/60000积分，含0.6%收款费，向上取整至0.01积分。35%是报告中的可选贡献率情景，尚未选定为售价。",
+    "Estimates use ¥4499 / 60,000 credits, include a 0.6% payment fee and round credits up to 0.01. The optional 35% contribution scenario has not been adopted as a price."
+  ],
+  [
+    "最低单价年包下，报告的30个质量情景均为负贡献。例如4K*超高目标14积分，成本约1.976元/张，不亏测算26.52积分。模型名称相似不代表与竞品同等效果。",
+    "All 30 quality scenarios have negative contribution at the lowest annual unit price. 4K* extra high targets 14 credits, estimated cost ¥1.976/image, break-even 26.52 credits. Similar names do not prove equivalent results."
+  ],
+  [
+    "基准为1000文本输入token、无参考图、每次1张。文本输入$4/M、图像输入$6.4/M、图像输出$24/M；实际usage、参考图、搜索、审核和重抽会改变费用。",
+    "Baseline: 1,000 text input tokens, no references, one output. Text input $4/M, image input $6.4/M, image output $24/M. Actual usage, references, search, moderation and retries change costs."
+  ],
+  [
+    "规划假设：汇率6.7351，结算缓冲3%，每成功张额外付费重抽0.10次，运行及存储传输0.015元/张。贡献率未扣固定运维、人工、税费和获客。",
+    "Assumptions: USD/CNY 6.7351, 3% settlement buffer, 0.10 extra paid retries per successful image, ¥0.015/image operation and storage. Contribution excludes fixed operation, labor, tax and acquisition."
+  ]
+] as const;

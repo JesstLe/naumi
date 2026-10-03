@@ -889,7 +889,7 @@ export function GenerateClient({
                 )}
                 {qualityCapable && qualityExperimental && (
                   <p className="text-[11px] leading-relaxed text-c-text3">
-                    {t("gen.qualityBeta")} <Link href="/plans" className="underline">{t("gen.betaPricing")}</Link>
+                    {t("gen.qualityBeta")}
                   </p>
                 )}
               </div>

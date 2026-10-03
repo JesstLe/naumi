@@ -14,6 +14,9 @@ async function main() {
   const users = await import("../src/app/api/admin/users/route");
   const cardkeys = await import("../src/app/api/cardkeys/route");
   const settings = await import("../src/app/api/admin/settings/route");
+  const { requireAdmin, signSession } = await import("../src/lib/admin-auth");
+  const { pricingVisible } = await import("../src/lib/commerce");
+  assert.equal(pricingVisible, false, "Beta previews must not publish internal pricing");
   const health = await import("../src/app/api/health/route");
   const activate = await import("../src/app/api/pro/activate/route");
   const { resolveItem } = await import("../src/lib/payments");
@@ -25,12 +28,17 @@ async function main() {
     await db.getOrCreateUser(email, "Single product fixture");
     assert.equal(await multiUserEnabled(), true, "Multi-user mode no longer requires a license");
     const request = () => new Request("http://fixture.test", { headers: { cookie: `nv_user=${signUserSession(email, Date.now())}` } });
+    assert.equal(await requireAdmin(new Request("http://fixture.test/admin/pricing")), false);
+    assert.equal(await requireAdmin(request()), false, "Internal pricing denies ordinary accounts");
+    assert.equal(await requireAdmin(new Request("http://fixture.test", { headers: { cookie: "nv_admin=forged" } })), false);
+    assert.equal(await requireAdmin(new Request("http://fixture.test", { headers: { cookie: `nv_admin=${signSession(Date.now())}` } })), true);
     for (const route of [users, cardkeys, settings]) {
       assert.equal((await route.GET(new Request("http://fixture.test"))).status, 403);
       assert.equal((await route.GET(request())).status, 403, "Ordinary users cannot access admin features");
     }
     assert.equal((await templates.POST(request())).status, 403);
     await db.setUserRole(email, "admin");
+    assert.equal(await requireAdmin(request()), true, "Internal pricing accepts a server-verified administrator");
     const syncRequest = () => new Request("http://fixture.test", { method: "POST", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "content-type": "application/json" }, body: JSON.stringify({page:1}) });
     assert.equal((await templates.POST(syncRequest())).status, 200);
     assert.equal((await (await templates.POST(syncRequest())).json()).imported, 0, "Template sync preserves existing rows");

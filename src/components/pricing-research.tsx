@@ -1,17 +1,24 @@
 "use client";
 import { useState } from "react";
-import {
-  IMAGE_TIERS,
-  PRICING_PACKAGES,
-  QUALITY_MODELS,
-  QUALITY_QUOTES,
-  RESEARCH_QUALITIES,
-  formatCredits,
-  formatYuan,
-  yuanFromCredits,
-} from "@/lib/pricing";
+import type { PricingPackage, ImageTier, QualityQuote, SuiteBundle } from "@/lib/pricing";
 
-export function PricingResearch({ english }: { english: boolean }) {
+const formatCredits = (value: number) => Number(value.toFixed(2)).toString();
+const formatYuan = (value: number) => value.toFixed(2).replace(/\.?0+$/, "");
+const yuanFromCredits = (credits: number, pkg: PricingPackage) => Math.round(credits * pkg.priceYuan / pkg.credits * 100) / 100;
+
+type ResearchProps = {
+  english: boolean;
+  packages: PricingPackage[];
+  tiers: ImageTier[];
+  models: readonly string[];
+  quotes: QualityQuote[];
+  qualities: readonly string[];
+  notes: readonly (readonly [string, string])[];
+  bundles: SuiteBundle[];
+};
+
+// Numeric quotes arrive only as props after the server has checked administrator access.
+export function PricingResearch({ english, packages: PRICING_PACKAGES, tiers: IMAGE_TIERS, models: QUALITY_MODELS, quotes: QUALITY_QUOTES, qualities: RESEARCH_QUALITIES, notes, bundles }: ResearchProps) {
   const t = (zh: string, en: string) => (english ? en : zh);
   const names: Record<string, string> = {
     low: t("低", "Low"),
@@ -39,7 +46,7 @@ export function PricingResearch({ english }: { english: boolean }) {
     ? quote[basis]
     : (tier.rows.find((r) => r.resolution === resolution) ?? tier.rows[0])
         .credits;
-  const orchestration = images === 7 ? 4.6 : images === 13 ? 9.2 : 0;
+  const orchestration = bundles.find((bundle) => bundle.images === images)?.orchestrationCredits ?? 0;
   const total = each * images + orchestration;
   const basisNames = {
     protectedCredits: t("35%贡献率情景", "35% contribution scenario"),
@@ -146,10 +153,7 @@ export function PricingResearch({ english }: { english: boolean }) {
           </table>
         </div>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          {t(
-            "测算按最低套餐单价4499元/60000积分，含0.6%收款费，向上取整至0.01积分。35%是报告中的可选贡献率情景，尚未选定为售价。",
-            "Estimates use ¥4499 / 60,000 credits, include a 0.6% payment fee and round credits up to 0.01. The optional 35% contribution scenario has not been adopted as a price.",
-          )}
+          {t(notes[0][0], notes[0][1])}
         </p>
         <div className="mt-5 border-l-2 border-amber-500 pl-4 text-sm leading-6">
           <p className="font-semibold">
@@ -159,10 +163,7 @@ export function PricingResearch({ english }: { english: boolean }) {
             )}
           </p>
           <p className="mt-1 text-muted-foreground">
-            {t(
-              "最低单价年包下，报告的30个质量情景均为负贡献。例如4K*超高目标14积分，成本约1.976元/张，不亏测算26.52积分。模型名称相似不代表与竞品同等效果。",
-              "All 30 quality scenarios have negative contribution at the lowest annual unit price. 4K* extra high targets 14 credits, estimated cost ¥1.976/image, break-even 26.52 credits. Similar names do not prove equivalent results.",
-            )}
+            {t(notes[1][0], notes[1][1])}
           </p>
         </div>
         <details className="mt-5 rounded-lg border border-border p-4">
@@ -172,16 +173,10 @@ export function PricingResearch({ english }: { english: boolean }) {
           <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
             <p className="break-words">{QUALITY_MODELS.join(" / ")}</p>
             <p>
-              {t(
-                "基准为1000文本输入token、无参考图、每次1张。文本输入$4/M、图像输入$6.4/M、图像输出$24/M；实际usage、参考图、搜索、审核和重抽会改变费用。",
-                "Baseline: 1,000 text input tokens, no references, one output. Text input $4/M, image input $6.4/M, image output $24/M. Actual usage, references, search, moderation and retries change costs.",
-              )}
+              {t(notes[2][0], notes[2][1])}
             </p>
             <p>
-              {t(
-                "规划假设：汇率6.7351，结算缓冲3%，每成功张额外付费重抽0.10次，运行及存储传输0.015元/张。贡献率未扣固定运维、人工、税费和获客。",
-                "Assumptions: USD/CNY 6.7351, 3% settlement buffer, 0.10 extra paid retries per successful image, ¥0.015/image operation and storage. Contribution excludes fixed operation, labor, tax and acquisition.",
-              )}
+              {t(notes[3][0], notes[3][1])}
             </p>
             <p>
               {t(
