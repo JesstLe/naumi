@@ -422,7 +422,7 @@ export function WorkbenchClient() {
 
   const statPills = [
     { label: L("今日生成", "Today"), value: `${stats.today.toLocaleString("en-US")}${L(" 张", "")}` },
-    { label: L("积分余额", "Credits"), value: remaining.toLocaleString("en-US"), href: user ? "/plans" : undefined, accent: true },
+    { label: L("积分余额", "Credits"), value: remaining.toLocaleString("en-US"), href: user ? "/account" : undefined, accent: true },
     { label: L("累计作品", "Works"), value: stats.total.toLocaleString("en-US") },
   ];
 

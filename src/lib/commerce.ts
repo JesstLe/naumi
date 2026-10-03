@@ -8,10 +8,11 @@ import "server-only";
 export const publicCommerceEnabled =
   (process.env.NAUMI_PUBLIC_COMMERCE || "").trim() === "1";
 
-/** Internal testers can review pricing without enabling payment transactions. */
+/** Internal image quality previews do not publish pricing reports. */
 export const betaPreviewEnabled =
   (process.env.NAUMI_BETA_PREVIEW || "").trim() === "1";
-export const pricingVisible = publicCommerceEnabled || betaPreviewEnabled;
+/** Research quotes belong to administrators, not public sales navigation. */
+export const pricingVisible = false;
 
 /** 普通业务接口在额度不足时使用，避免内测阶段继续引导充值。 */
 export const insufficientCreditsMessage = publicCommerceEnabled

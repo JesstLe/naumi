@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Loader2, ShieldAlert, Lock } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
@@ -227,6 +228,7 @@ export function AdminClient() {
     <div className="mx-auto w-full max-w-[1400px] px-4 py-8 sm:px-6 lg:px-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">管理后台</h1>
+        {localAdmin && <Link href="/admin/pricing" prefetch={false} className="mt-3 inline-block text-sm font-medium text-primary underline">内部报价与成本测算</Link>}
       </div>
       <AdminSettings localAdmin={localAdmin} />
     </div>
