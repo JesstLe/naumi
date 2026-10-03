@@ -1,3 +1,4 @@
+import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
@@ -17,7 +18,6 @@ import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings, getCutoutSettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
-import { TOOL_COST } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------
@@ -30,7 +30,6 @@ import { safeError } from "@/lib/api-error";
 export const runtime = "nodejs";
 export const maxDuration = 200;
 
-const AVATAR_COST = TOOL_COST.avatar; // 同生图成本(gpt-image edit 一次)
 
 const BASE_PROMPT =
   "Cut out ONLY the head (with a little neck and shoulders) of the main subject in this image — a person, pet or cartoon character. Remove the body, any other subjects and the background completely. Output a clean, sharp head portrait in avatar / sticker style on a fully transparent background. Preserve the original face, hair, ears, expression and fine details exactly. No body, no extra subjects, no shadow, no border.";
@@ -254,7 +253,7 @@ async function handleObservedPost(request: Request) {
       ok: true,
       id,
       url,
-      creditsUsed: useDb ? cost : 0, quality: input.quality,
+      creditsUsed: useDb ? synchronousChargedCredits(cost) : 0, quality: input.quality,
       user,
     });
   } catch (e) {
@@ -265,6 +264,8 @@ async function handleObservedPost(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function billingRoutePost(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"tool.avatar",()=>billingRoutePost(request));}

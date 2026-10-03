@@ -1619,6 +1619,8 @@ export async function addLedgerEntry(
   delta: number,
   reason: string
 ): Promise<void> {
+  const {currentSynchronousBilling,settleSynchronous}=await import("@/lib/billing/synchronous");
+  if(delta<=0&&currentSynchronousBilling()){await settleSynchronous(reason);return;}
   await ensureSchema();
   const email = emailRaw.toLowerCase();
   if (delta < 0) {
@@ -2026,6 +2028,8 @@ export async function reserveCredits(
   emailRaw: string,
   n: number
 ): Promise<boolean> {
+  const {currentSynchronousBilling}=await import("@/lib/billing/synchronous");
+  if(currentSynchronousBilling()?.operation)return true;
   // 是否计费:①Supabase 多用户(官方云)②原生多用户 ③站长手动开的「积分计费」开关
   //(单用户也可开来给自己/他人做用量控制)。三者任一为真则扣分,否则放行(不扣)。
   // 动态 import 避免静态循环。
@@ -2034,8 +2038,7 @@ export async function reserveCredits(
   const { multiUserEnabled, creditsMeteringOn } = await import(
     "@/lib/native-auth"
   );
-  const meterOn =
-    supabaseEnabled || (await multiUserEnabled()) || (await creditsMeteringOn());
+  const meterOn = await creditMeteringEnabled();
   if (!meterOn) return true; // 未开计费 → 放行,不扣积分
   await ensureSchema();
   if (n <= 0) return true;
@@ -2056,13 +2059,18 @@ export async function refundCredits(
   emailRaw: string,
   n: number
 ): Promise<void> {
+  const {currentSynchronousBilling}=await import("@/lib/billing/synchronous");
+  const context=currentSynchronousBilling();
+  if(context?.operation){
+    const {createBillingService,withBillingTransaction}=await import("@/lib/billing/service");
+    await withBillingTransaction(getPool(),tx=>createBillingService().settleTx(tx,context.operation!,{state:context.upstream==="rejected"||context.upstream==="unobserved"||context.feature==="tool.printfile"?"failed":"unknown",items:[]}));return;
+  }
   // 与 reserveCredits 放行口径一致:未计费的场景无需退款。
   const { supabaseEnabled } = await import("@/lib/auth-mode");
   const { multiUserEnabled, creditsMeteringOn } = await import(
     "@/lib/native-auth"
   );
-  const meterOn =
-    supabaseEnabled || (await multiUserEnabled()) || (await creditsMeteringOn());
+  const meterOn = await creditMeteringEnabled();
   if (!meterOn) return;
   await ensureSchema();
   await getPool().query(
@@ -2112,10 +2120,10 @@ export async function touchReservation(jobId: string): Promise<void> {
  *  restart). Atomic claim via DELETE … RETURNING so concurrent sweeps never
  *  double-refund. Returns how many were refunded. */
 export async function sweepStaleReservations(
-  olderThanMin = 12
+  olderThanMin?:number
 ): Promise<number> {
   await ensureSchema();
-  const meterOn = await creditMeteringEnabled();
+  if(olderThanMin===undefined){const {getBillingRuntime}=await import("@/lib/billing/server");olderThanMin=(await(await getBillingRuntime()).config.current()).config.credits.staleReservationMinutes;}
   const client = await getPool().connect();
   let rows: Array<{ email: string; cost: number }> = [];
   try {
@@ -2137,11 +2145,14 @@ export async function sweepStaleReservations(
            SELECT 1 FROM app_image_jobs j
             WHERE j.id = app_gen_reservations.job_id AND NOT j.billing_settled
          )
+         AND NOT EXISTS (
+           SELECT 1 FROM app_billing_operations b WHERE b.id=app_gen_reservations.job_id AND b.state IN ('reserved','hold','manual')
+         )
      RETURNING email, cost`,
       [String(olderThanMin)]
     );
     rows = deleted.rows;
-    if (meterOn) {
+    {
       for (const row of rows) {
         await client.query(
           `UPDATE app_users SET credits_used = GREATEST(credits_used - $2, 0)
@@ -2157,7 +2168,7 @@ export async function sweepStaleReservations(
   } finally {
     client.release();
   }
-  if (meterOn) {
+  {
     for (const email of Array.from(new Set(rows.map((row) => row.email)))) {
       await refreshBalance(email).catch(() => {});
     }
@@ -4345,7 +4356,9 @@ export async function finishCompetitorGeneration(email: string, item: Competitor
       revision=revision+1,job_id=NULL,busy_until=NULL WHERE email=$1 AND id=$2 AND job_id=$3 RETURNING *`,
       [email, item.id, jobId, JSON.stringify(item)]);
     if (!rows[0]) throw new Error("Generation lease lost");
-    if (cost > 0) {
+    const {currentSynchronousBilling,settleSynchronous}=await import("@/lib/billing/synchronous");
+    if(currentSynchronousBilling())await settleSynchronous("竞品工作台生成",undefined,client);
+    else if (cost > 0) {
       await deductPrincipalFIFO(client, email, cost);
       await client.query("UPDATE app_users SET credits_used=GREATEST(credits_used-$2,0) WHERE email=$1", [email,cost]);
       await client.query("INSERT INTO app_ledger(id,email,delta,reason,kind) VALUES($1,$2,$3,$4,'consume')", [ledId(),email,-cost,"竞品工作台生成"]);

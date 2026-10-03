@@ -1,3 +1,4 @@
+import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
@@ -18,14 +19,12 @@ import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
-import { TOOL_COST } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
 // 服装去皱:gpt-image-2 把衣服上的褶皱/折痕抚平、面料平整如新,其余(版型/颜色/模特/背景)全保留。
 export const runtime = "nodejs";
 export const maxDuration = 200;
 
-const COST = TOOL_COST.dewrinkle;
 
 const BASE_PROMPT =
   "Remove ALL wrinkles, creases and folds from the clothing in this image, making the fabric look smooth, flat, neat and freshly ironed/steamed. Keep EVERYTHING ELSE strictly identical — the exact garment design, cut, colour, pattern, prints, text, logos, the person/model (face, body, pose) if present, the background, lighting and overall composition must stay the same. Only smooth out the wrinkles; do not restyle, recolor or move anything.";
@@ -194,7 +193,7 @@ async function handleObservedPost(request: Request) {
       user = await getUser(input.email).catch(() => null);
     }
 
-    return NextResponse.json({ ok: true, id, url, creditsUsed: useDb ? cost : 0, quality: input.quality, user });
+    return NextResponse.json({ ok: true, id, url, creditsUsed: useDb ? synchronousChargedCredits(cost) : 0, quality: input.quality, user });
   } catch (e) {
     return NextResponse.json(
       { error: safeError(e, "服装去皱服务暂时不可用,请稍后重试") },
@@ -203,6 +202,8 @@ async function handleObservedPost(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function billingRoutePost(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"tool.dewrinkle",()=>billingRoutePost(request));}

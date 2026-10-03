@@ -46,6 +46,9 @@ async function main() {
         await run(tx => f.service.reserveTx(tx, protectedB));
         await f.pool.query("UPDATE app_credit_batches SET remaining=8 WHERE email=$1", [protectedEmail]);
         await assert.rejects(() => run(tx => f.service.settleTx(tx, protectedA, { state: "succeeded", items: [{ id: "ok", state: "succeeded", executedQuality: "medium" }] })));
+        await f.pool.query("UPDATE app_credit_batches SET expires_at=now()-interval '1 second' WHERE email=$1",[protectedEmail]);
+        await run(tx=>f.service.settleTx(tx,protectedA,{state:"failed",items:[]}));
+        assert.equal(Number((await f.pool.query("SELECT credits_used FROM app_users WHERE email=$1",[protectedEmail])).rows[0].credits_used),6,"Failed task can release its own hold even when other holds have expired funding");
         const rollback = { ...op, id: randomUUID(), ledgerId: `rollback-${id}` };
         await assert.rejects(() => run(async (tx) => { await f.service.reserveTx(tx, rollback); throw new Error("injected failure"); }));
         assert.equal(Number((await f.pool.query("SELECT count(*) AS n FROM app_billing_operations WHERE id=$1", [rollback.id])).rows[0].n), 0);

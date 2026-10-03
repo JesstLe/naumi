@@ -3,6 +3,7 @@ import { dbEnabled, creditMeteringEnabled, addLedgerEntry, recordImageCostAudit 
 import { imageBillCredits, qualityCostAudit } from "@/lib/mock-data";
 import { randomUUID } from "node:crypto";
 import { resolveImageQuality, isQualityUnsupportedError, type ResolvedImageQuality, type ExecutedQuality } from "@/lib/image-quality";
+import {synchronousCost,settleSynchronous,currentSynchronousBilling} from "@/lib/billing/synchronous";
 
 /** Body parameters take precedence over the shared browser/agent preference. */
 export function requestImageQuality(request: Request, explicit?: unknown): ResolvedImageQuality {
@@ -15,6 +16,8 @@ export async function imageRequestBilling(request: Request, explicit?: unknown, 
 }
 
 export async function imageQualityCost(quality: ResolvedImageQuality, resolution = "1K") {
+  const configured=await synchronousCost(quality,resolution);
+  if(configured!==null)return configured;
   const metered = !dbEnabled || await creditMeteringEnabled();
   return metered ? imageBillCredits(quality.requested, resolution) : 0;
 }
@@ -42,8 +45,9 @@ export function sdkImageQuality(quality: ExecutedQuality): "low" | "medium" | "h
 /** Audit only after the credit transaction has actually committed. */
 export async function settleToolImage(email: string, cost: number, reason: string, quality: ResolvedImageQuality, imageId = `tool-${randomUUID()}`, resolution = "1K") {
   if (!dbEnabled) return;
-  if (cost > 0) await addLedgerEntry(email, -cost, `${reason} · ${quality.requested || "medium"}`);
-  await auditSettledImage(email, cost, quality, imageId, imageId, resolution);
+  const configured=await settleSynchronous(`${reason} · ${quality.requested || "medium"}`,quality);
+  if(configured===null&&cost > 0) await addLedgerEntry(email, -cost, `${reason} · ${quality.requested || "medium"}`);
+  await auditSettledImage(email, configured??cost, quality, imageId, imageId, resolution);
 }
 
 export async function auditSettledImage(email: string, cost: number, quality: ResolvedImageQuality, jobId: string, imageId: string, resolution = "1K") {

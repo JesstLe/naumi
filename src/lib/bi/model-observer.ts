@@ -6,6 +6,7 @@ import { dbEnabled, getPool } from "@/lib/db";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { currentImageOperationId } from "@/lib/image-gateway";
 import { ensureBiSchema } from "./repository";
+import {markBillingUpstream} from "@/lib/billing/synchronous";
 
 type Context = { email: string; operation: string; id?: string };
 const context = new AsyncLocalStorage<Context>();
@@ -78,6 +79,7 @@ export async function observeModelCall<T>(
   wireModel: string,
   run: () => PromiseLike<T>,
 ): Promise<T> {
+  markBillingUpstream("started");
   const actor = context.getStore();
   if (!dbEnabled || !actor) return await run();
   const operationId = currentImageOperationId() || actor.id || "";
@@ -104,6 +106,7 @@ export async function observeModelCall<T>(
       typeof response?.model === "string" ? response.model.slice(0, 200) : "";
     inputTokens = token(response?.usage?.prompt_tokens);
     outputTokens = token(response?.usage?.completion_tokens);
+    markBillingUpstream(state==="succeeded"?"succeeded":state==="rejected"?"rejected":"unknown");
     return result;
   } catch (error) {
     const status = (error as { status?: number } | null)?.status;
@@ -116,6 +119,7 @@ export async function observeModelCall<T>(
       status === 429
         ? "rejected"
         : "unknown-result";
+    markBillingUpstream(state==="rejected"?"rejected":"unknown");
     throw error;
   } finally {
     try {

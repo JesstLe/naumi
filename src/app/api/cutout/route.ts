@@ -1,6 +1,6 @@
+import {withBillingRequest,configuredToolCost,synchronousChargedCredits,markBillingUpstream} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
-import { TOOL_COST } from "@/lib/mock-data";
 import OpenAI, { toFile } from "openai";
 import {
   dbEnabled,
@@ -35,7 +35,6 @@ export const maxDuration = 120; // Replicate 冷启动可能需要 1-2 分钟
 
 // 抠图只保留「发丝级」(Replicate BiRefNet),统一 1 积分/张
 // (2026-06-17 用户去掉免费极速档:画布与 AI 抠图都只发丝级、扣 1 分)。
-const CUTOUT_COST = TOOL_COST.cutout;
 
 type CutoutInput = {
   bytes: Buffer;
@@ -136,6 +135,7 @@ async function cutoutReplicate(
   // (/v1/models/.../predictions 仅限官方模型,社区模型会 404)。
   const version = await resolveReplicateVersion(model, token);
   // Prefer:wait 尽量同步拿结果(热启动 ~8s,冷启动更久则下面轮询)。
+  markBillingUpstream("started");
   const create = await fetch("https://api.replicate.com/v1/predictions", {
     method: "POST",
     headers: {
@@ -153,6 +153,7 @@ async function cutoutReplicate(
     urls?: { get?: string };
   };
   if (!create.ok) {
+    markBillingUpstream([400,401,403,404,422,429].includes(create.status)?"rejected":"unknown");
     throw new Error(pred?.detail || pred?.error || `Replicate ${create.status}`);
   }
   // 没在 wait 窗口内完成 → 轮询(冷启动场景)
@@ -173,9 +174,11 @@ async function cutoutReplicate(
     pred = await g.json();
   }
   if (pred.status !== "succeeded") {
+    markBillingUpstream(pred.status==="failed"||pred.status==="canceled"?"rejected":"unknown");
     throw new Error(`Replicate 失败:${pred.error || pred.status || "未知"}`);
   }
   const outUrl = Array.isArray(pred.output) ? pred.output[0] : pred.output;
+  markBillingUpstream("succeeded");
   if (!outUrl || typeof outUrl !== "string") {
     throw new Error("Replicate 未返回图片");
   }
@@ -284,7 +287,7 @@ async function handleObservedPost(request: Request) {
     }
     const useDb = dbEnabled && input.email.length > 0;
     // 抠图统一 1 积分/张(只发丝级)。
-    const cost = CUTOUT_COST;
+    const cost = await configuredToolCost();
 
     if (dbEnabled && (await isBanned(input.email, ip))) {
       return NextResponse.json(
@@ -421,7 +424,7 @@ async function handleObservedPost(request: Request) {
       ok: true,
       id,
       url,
-      creditsUsed: useDb ? cost : 0,
+      creditsUsed: useDb ? synchronousChargedCredits(cost) : 0,
       user,
     });
   } catch (e) {
@@ -432,6 +435,8 @@ async function handleObservedPost(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function billingRoutePost(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"tool.cutout",()=>billingRoutePost(request));}

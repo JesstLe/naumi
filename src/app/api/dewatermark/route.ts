@@ -1,3 +1,4 @@
+import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
@@ -18,7 +19,6 @@ import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
-import { TOOL_COST } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
 // 去水印:gpt-image-2 擦除图中的水印/logo/文字叠层/时间戳/站标等标记,并自然补全被遮挡的底图,
@@ -26,7 +26,6 @@ import { safeError } from "@/lib/api-error";
 export const runtime = "nodejs";
 export const maxDuration = 200;
 
-const COST = TOOL_COST.dewatermark;
 
 const BASE_PROMPT =
   "Remove ALL watermarks, logos, text overlays, timestamps, site/station marks and semi-transparent stamps from this image, and naturally reconstruct the underlying content behind them so the result looks clean and unmarked. Keep EVERYTHING ELSE strictly identical — the exact product/subject, colours, patterns, composition, background, lighting must stay the same. Only remove the watermark/overlay marks; do not restyle, recolor, crop or move anything.";
@@ -195,7 +194,7 @@ async function handleObservedPost(request: Request) {
       user = await getUser(input.email).catch(() => null);
     }
 
-    return NextResponse.json({ ok: true, id, url, creditsUsed: useDb ? cost : 0, quality: input.quality, user });
+    return NextResponse.json({ ok: true, id, url, creditsUsed: useDb ? synchronousChargedCredits(cost) : 0, quality: input.quality, user });
   } catch (e) {
     return NextResponse.json(
       { error: safeError(e, "去水印服务暂时不可用,请稍后重试") },
@@ -204,6 +203,8 @@ async function handleObservedPost(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function billingRoutePost(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
+
+export async function POST(request:Request){return withBillingRequest(request,"tool.dewatermark",()=>billingRoutePost(request));}

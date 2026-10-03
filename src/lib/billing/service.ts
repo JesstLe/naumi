@@ -79,7 +79,7 @@ export function createBillingService(): BillingService {
             }
             const wallet = await repository.lockWallet(tx, row.email);
             const owned = Number((await tx.query("SELECT cost FROM app_gen_reservations WHERE job_id=$1 AND email=$2", [row.id, row.email])).rows[0]?.cost || 0);
-            if (wallet.principal - (wallet.reserved - owned) < settlement.charge)
+            if (settlement.charge>0 && wallet.principal - (wallet.reserved - owned) < settlement.charge)
                 throw new BillingError("INSUFFICIENT_CREDITS", "可用积分不足，不能占用其他任务的预留积分", 402);
             if (settlement.charge)
                 await repository.debitTx(tx, row.email, settlement.charge, frozen.debitOrder || "expires-first");
