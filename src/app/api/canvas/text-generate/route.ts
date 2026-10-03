@@ -16,6 +16,7 @@ import {
 } from "@/lib/storage";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
+import { withBillingRequest, configuredToolCost } from "@/lib/billing/synchronous";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -228,6 +229,7 @@ async function handleObservedPost(request: Request) {
         image_url: { url, detail: "low" as const },
       })),
     ];
+    await configuredToolCost();
     const response = await client.chat.completions.create({
       model,
       messages: [
@@ -254,5 +256,5 @@ async function handleObservedPost(request: Request) {
 }
 
 export async function POST(request: Request) {
-  return withBiRequest(request, () => handleObservedPost(request));
+  return withBillingRequest(request, "canvas.text-generate", () => withBiRequest(request, () => handleObservedPost(request)));
 }

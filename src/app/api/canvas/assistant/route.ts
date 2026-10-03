@@ -16,9 +16,10 @@ import {
 } from "@/lib/storage";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
+import { withBillingRequest, configuredToolCost, completeSynchronousStream, failSynchronousStream } from "@/lib/billing/synchronous";
 
 // ---------------------------------------------------------------------------
-// 画布助手:围绕选中节点 + 其上游生成链的多轮对话(免费,不扣积分)。
+// 画布助手:围绕选中节点 + 其上游生成链的多轮对话(后台可配置,默认免费)。
 //
 // 前端传锚定节点 id 与前端算好的上游链 id(≤5 张,归属校验防伪造),
 // 无状态重建 messages:system 人设 → 上下文块(图+元数据) → 历史截 12 条。
@@ -208,6 +209,7 @@ async function handleObservedPost(request: Request) {
       ReturnType<typeof client.chat.completions.create>
     >;
     try {
+      await configuredToolCost();
       stream = await client.chat.completions.create({
         model,
         messages: [
@@ -238,13 +240,17 @@ async function handleObservedPost(request: Request) {
             /* 连接已断开,迭代结束由 close 兜底 */
           }
         };
+        let text = "";
         try {
           for await (const chunk of stream) {
             const delta = chunk.choices?.[0]?.delta?.content;
-            if (delta) send("delta", { text: delta });
+            if (delta) { text += delta; send("delta", { text: delta }); }
           }
+          if (!text.trim()) throw new Error("助手没有返回内容");
+          await completeSynchronousStream({ text, model });
           send("done", { ok: true });
         } catch (e) {
+          await failSynchronousStream().catch(() => {});
           send("error", { error: safeError(e, "画布助手暂时不可用，请稍后重试") });
         }
         try {
@@ -257,7 +263,7 @@ async function handleObservedPost(request: Request) {
     return new Response(sse, {
       headers: {
         "content-type": "text/event-stream; charset=utf-8",
-        "cache-control": "no-cache",
+        "cache-control": "private, no-store",
       },
     });
   } catch (error) {
@@ -269,5 +275,5 @@ async function handleObservedPost(request: Request) {
 }
 
 export async function POST(request: Request) {
-  return withBiRequest(request, () => handleObservedPost(request));
+  return withBillingRequest(request, "canvas.assistant", () => withBiRequest(request, () => handleObservedPost(request)));
 }

@@ -2,6 +2,7 @@ import { BillingError, type BillingFacts, type BillingQuote, type BillingResult,
 import { isFeatureId, QUALITY_IDS, RESOLUTION_IDS } from "./rules/registry";
 import { matches, mergeTariff } from "./rules/evaluate";
 import { costPlusCredits } from "./costs";
+import { CANVAS_FREE_DEFAULTS } from "./canvas-defaults";
 const MAX = 2147483647;
 function safe(n: number) { if (!Number.isSafeInteger(n) || n < 0 || n > MAX)
     throw new BillingError("INVALID_RESULT", "积分金额超出范围", 400); return n; }
@@ -33,7 +34,11 @@ export function quote(snapshot: ConfigSnapshot, input: BillingFacts): BillingQuo
         throw new BillingError("INVALID_CONFIG", "未配置该功能价格", 400);
     const matched = base.rules.find(r => matches(r.when, f)), tariff = mergeTariff(base, matched);
     const keys=new Set<string>([f.feature]);
-    for(const quality of QUALITY_IDS){for(const [provider,model] of [[f.providerId||"*",f.modelId||"*"],[f.fallbackProviderId||"*",f.fallbackModelId||"*"]])for(const key of [`${provider}:${model}:${quality}:${f.resolution}`,`${provider}:*:${quality}:${f.resolution}`,`*:${model}:${quality}:${f.resolution}`,`*:*:${quality}:${f.resolution}`])keys.add(key);}
+    for(const quality of QUALITY_IDS){for(const [provider,model] of [[f.providerId||"*",f.modelId||"*"],[f.fallbackProviderId||"*",f.fallbackModelId||"*"]])for(const key of [`${provider}:${model}:${quality}:${f.resolution}`,`${provider}:*:${quality}:${f.resolution}`,`*:${model}:${quality}:${f.resolution}`,`*:*:${quality}:${f.resolution}`]) {
+        // Legacy wildcard costs describe images, not text replies or OCR.
+        if (f.feature in CANVAS_FREE_DEFAULTS && key.startsWith("*:*:")) continue;
+        keys.add(key);
+    }}
     if(tariff.pricing.mode==="cost-plus")keys.add(tariff.pricing.costKey);
     const costRates=Object.fromEntries(Array.from(keys).filter(key=>snapshot.config.costs[key]).map(key=>[key,structuredClone(snapshot.config.costs[key])]));
     const requestedCredits = amount(tariff, f, costRates);

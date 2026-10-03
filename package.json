@@ -37,6 +37,7 @@
     "verify:billing-reconciliation": "tsx --conditions react-server scripts/verify-billing-reconciliation.ts",
     "verify:billing-cost-audit": "tsx --conditions react-server scripts/verify-billing-cost-audit.ts",
     "verify:billing-intents": "tsx --conditions react-server scripts/verify-billing-intents.ts",
+    "verify:billing-canvas-extra": "tsx --conditions react-server scripts/verify-billing-canvas-extra.ts",
     "verify:billing-coverage": "tsx --conditions react-server scripts/verify-billing-coverage.ts",
     "verify:billing-performance": "tsx --conditions react-server scripts/verify-billing-performance.ts",
     "verify:billing-review": "tsx --conditions react-server scripts/verify-billing-review.ts",

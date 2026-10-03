@@ -1,8 +1,8 @@
 "use client";
 import type { ReactNode } from "react";
 import type { ExpiryPolicy } from "@/lib/billing/types";
-import { useEffect, useState } from "react";
-import { microsToDecimal, decimalToMicros } from "@/lib/billing/decimal";
+import { useEffect, useRef, useState } from "react";
+import { microsToDecimal, decimalToMicros, yuanToFen } from "@/lib/billing/decimal";
 export const control = "w-full rounded-lg border border-input bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary";
 export function Field({ label, children }: {
     label: string;
@@ -42,3 +42,14 @@ export function PercentField({ label, value, onChange, min = 0, max = 10000 }: {
     min?: number;
     max?: number;
 }) { return <Field label={label}><input className={control} type="number" step="0.01" min={min / 100} max={max / 100} value={value / 100} onChange={e => onChange(Math.round(Number(e.target.value) * 100))}/></Field>; }
+
+export function YuanField({ label, value, onChange }: { label: string; value: number; onChange: (fen: number) => void }) {
+    const [text, setText] = useState((value / 100).toFixed(2));
+    const emitted = useRef(value);
+    useEffect(() => { if (!Object.is(value, emitted.current) && Number.isSafeInteger(value) && value >= 0) setText((value / 100).toFixed(2)); }, [value]);
+    const valid = yuanToFen(text) !== null;
+    return <Field label={label}><input className={control} inputMode="decimal" aria-invalid={!valid} value={text} onChange={e => {
+        const next = e.target.value; setText(next);
+        const fen = yuanToFen(next); emitted.current = fen ?? NaN; onChange(emitted.current);
+    }}/>{!valid && <span className="text-xs text-destructive">请输入非负金额，最多两位小数</span>}</Field>;
+}
