@@ -2,6 +2,7 @@ import { z } from "zod";
 import { BillingError, type BillingConfig, type FeatureTariff, type Pricing } from "../types";
 import { FEATURE_IDS, QUALITY_IDS, RESOLUTION_IDS } from "./registry";
 import { conditionsOverlap, mergeTariff } from "./evaluate";
+import { withCanvasDefaults } from "../canvas-defaults";
 const integer = z.number().int().nonnegative().max(2147483647);
 const decimal = z.string().regex(/^(0|[1-9]\d{0,29})$/);
 const expiry = z.object({ unit: z.enum(["days", "months", "years"]), value: z.number().int().min(1).max(36500) }).strict();
@@ -34,7 +35,7 @@ export function validateBillingConfig(value: unknown): BillingConfig {
     try {
         if (JSON.stringify(value).length > 1000000)
             throw new Error("配置过大");
-        const c = schema.parse(value) as BillingConfig;
+        const c = schema.parse(withCanvasDefaults(value)) as BillingConfig;
         for (const feature of FEATURE_IDS) {
             const t = c.features[feature];
             checkTariff(t, c);

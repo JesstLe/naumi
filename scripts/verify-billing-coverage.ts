@@ -8,10 +8,11 @@ const config = fixtureConfig();
 for (const feature of FEATURE_IDS) {
     const source = sources[feature] || `src/app/api/${feature.startsWith("canvas.") ? "canvas/" : ""}${feature.split(".")[1]}/route.ts`, text = readFileSync(source, "utf8");
     assert.ok(text.includes(`"${feature}"`), `${feature} is wired explicitly at the real entry`);
-    assert.match(text, feature.startsWith("tool.") || ["canvas.expand", "canvas.annotate", "canvas.text-edit", "competitor.action"].includes(feature) ? /withBillingRequest/ : /quoteFor(Request|Actor)/);
-    const baseline = quote({ version: 1, config }, facts({ feature })), expected = ["tool.cutout", "tool.upscale", "tool.ipcheck"].includes(feature) ? 1 : feature === "tool.printfile" ? 0 : feature === "video.generate" ? 20 : 6;
+    assert.match(text, feature.startsWith("tool.") || ["canvas.expand", "canvas.annotate", "canvas.text-edit", "canvas.text-generate", "canvas.assistant", "canvas.ocr", "competitor.action"].includes(feature) ? /withBillingRequest/ : /quoteFor(Request|Actor)/);
+    const baseline = quote({ version: 1, config }, facts({ feature })), expected = ["tool.cutout", "tool.upscale", "tool.ipcheck"].includes(feature) ? 1 : ["tool.printfile", "canvas.text-generate", "canvas.assistant", "canvas.ocr"].includes(feature) ? 0 : feature === "video.generate" ? 20 : 6;
     assert.equal(baseline.requestedCredits, expected, `${feature} preserves the characterized default`);
     const changed = structuredClone(config);
+    changed.features[feature].enabled = true;
     changed.features[feature].pricing = { mode: "fixed", credits: 3 };
     const q = quote({ version: 2, config: changed }, facts({ feature }));
     assert.equal(q.requestedCredits, 3);

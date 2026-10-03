@@ -741,6 +741,60 @@
         "unknown": "hold"
       },
       "rules": []
+    },
+    "canvas.text-generate": {
+      "label": "画布文字生成与提示词",
+      "enabled": false,
+      "unit": "task",
+      "pricing": {
+        "mode": "fixed",
+        "credits": 0
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "canvas.assistant": {
+      "label": "画布助手对话",
+      "enabled": false,
+      "unit": "task",
+      "pricing": {
+        "mode": "fixed",
+        "credits": 0
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "canvas.ocr": {
+      "label": "画布文字识别（OCR）",
+      "enabled": false,
+      "unit": "task",
+      "pricing": {
+        "mode": "fixed",
+        "credits": 0
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
     }
   },
   "costs": {

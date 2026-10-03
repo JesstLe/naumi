@@ -6,7 +6,8 @@ test("billing administration simulates drafts and protects publishing", async ({
         throw new Error("Isolated fixture admin cookie required");
     await page.context().addCookies([{ name: "nv_admin", value: process.env.BILLING_UI_ADMIN_COOKIE, domain: "127.0.0.1", path: "/" }]);
     await page.goto("/admin/billing");
-    await page.getByLabel("普通生图 · medium 单价").fill("8");
+    await page.getByLabel("普通生图 · 标准单价（积分）").fill("8");
+    await page.getByText("详细报价试算（特殊条件与失败场景）", { exact: true }).click();
     await page.getByRole("button", { name: "模拟报价", exact: true }).click();
     await expect(page.getByTestId("simulation-charge")).toHaveText("8 积分");
     await page.getByLabel("发布说明").fill("Local acceptance");
@@ -30,7 +31,7 @@ test("publish, user stale price, conflict draft and restore", async ({ browser }
         await u.goto("/generate");
         await u.locator("textarea").first().fill("Retain this local test prompt");
         await expect(u.getByTestId("billing-estimate")).toContainText("6");
-        await a.getByLabel("普通生图 · medium 单价").fill("8");
+        await a.getByLabel("普通生图 · 标准单价（积分）").fill("8");
         await a.getByLabel("发布说明").fill("UI acceptance eight credits");
         await a.getByRole("button", { name: "查看改动", exact: true }).click();
         await a.getByRole("button", { name: "发布配置", exact: true }).click();
@@ -41,7 +42,7 @@ test("publish, user stale price, conflict draft and restore", async ({ browser }
         await expect(u.locator("textarea").first()).toHaveValue("Retain this local test prompt");
         await expect(u.getByTestId("billing-estimate")).toContainText("8");
         // Concurrent publication must preserve this page's local draft.
-        await a.getByLabel("普通生图 · medium 单价").fill("9");
+        await a.getByLabel("普通生图 · 标准单价（积分）").fill("9");
         const latest = await (await admin.request.get("/api/admin/billing")).json(), external = structuredClone(latest.snapshot.config);
         external.features["tool.cutout"].pricing = { mode: "fixed", credits: 3 };
         expect((await admin.request.post("/api/admin/billing", { data: { id: randomUUID(), expectedVersion: latest.snapshot.version, config: external, reason: "Concurrent UI fixture" } })).status()).toBe(200);
@@ -49,7 +50,7 @@ test("publish, user stale price, conflict draft and restore", async ({ browser }
         await a.getByRole("button", { name: "查看改动", exact: true }).click();
         await a.getByRole("button", { name: "发布配置", exact: true }).click();
         await expect(a.getByRole("alert").filter({ hasText: "草稿已保留" })).toBeVisible();
-        await expect(a.getByLabel("普通生图 · medium 单价")).toHaveValue("9");
+        await expect(a.getByLabel("普通生图 · 标准单价（积分）")).toHaveValue("9");
         await a.reload();
         await a.getByRole("button", { name: "版本历史", exact: true }).click();
         const row = a.getByRole("row").filter({ hasText: "UI acceptance setup" }).first();
@@ -83,8 +84,8 @@ test("uncertain submissions retain their identifier across explicit retries",asy
 });
 test("administrators can change the customer billing unit",async({page})=>{
  const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);await page.goto("/admin/billing");
- await page.getByLabel("计费单位",{exact:true}).selectOption("task");await page.getByLabel("模拟数量").fill("13");await page.getByRole("button",{name:"模拟报价",exact:true}).click();await expect(page.getByTestId("simulation-charge")).toHaveText("6 积分");
- await page.getByRole("button",{name:"查看改动",exact:true}).click();await expect(page.getByText(/单位：image → task/)).toBeVisible();
+ await page.getByLabel("计费单位",{exact:true}).selectOption("task");await page.getByText("详细报价试算（特殊条件与失败场景）",{exact:true}).click();await page.getByLabel("模拟数量").fill("13");await page.getByRole("button",{name:"模拟报价",exact:true}).click();await expect(page.getByTestId("simulation-charge")).toHaveText("6 积分");
+ await page.getByRole("button",{name:"查看改动",exact:true}).click();await expect(page.getByText(/单位：每张图片 → 每次任务/)).toBeVisible();
 });
 test("video retries retain the batch identity and uploaded reference",async({page})=>{
  const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_user",value:fixture.userCookie,domain:"127.0.0.1",path:"/"}]);
@@ -107,4 +108,32 @@ test("canvas video retries preserve the domain and billing identities",async({pa
  await page.addInitScript((id)=>localStorage.setItem("nv:canvas:last",`tree:${id}`),fixture.artworkId);const account=await (await page.request.get(`/api/account?email=${encodeURIComponent(fixture.email)}`)).json();expect(account.artworks.some((a:any)=>a.id===fixture.artworkId)).toBeTruthy();await page.goto(`/canvas?node=${fixture.artworkId}`);await page.locator(`.react-flow__node[data-id="${fixture.artworkId}"]`).click();
  for(let i=0;i<2;i++){await page.getByTitle("生成视频",{exact:true}).click();await page.getByPlaceholder("描述视频内容与运镜,如:商品缓慢旋转展示,柔和灯光").fill("Canvas retained prompt");await page.getByRole("button",{name:/以选中图片生成视频/}).click();await expect.poll(()=>attempts.length).toBe(i+1);await expect(page.getByTitle("生成视频",{exact:true})).toBeEnabled();}
  expect(attempts[1]).toEqual(attempts[0]);
+});
+
+test("business groups expose canvas prices, free controls and shared entries", async({page})=>{
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);await page.goto("/admin/billing");
+ await expect(page.getByText("高级结算设置",{exact:true})).toBeVisible();await expect(page.getByLabel("失败收费比例（%）")).not.toBeVisible();
+ await page.getByRole("button",{name:"画布",exact:true}).click();await page.getByRole("button",{name:"配置画布文字识别（OCR）",exact:true}).click();
+ await expect(page.getByRole("heading",{name:"画布文字识别（OCR）",exact:true})).toBeVisible();await expect(page.getByTestId("business-example")).toContainText("扣 0 积分");
+ await page.getByLabel("本功能参与积分计费").check();await page.getByLabel("画布文字识别（OCR） · 单价（积分）").fill("2");await expect(page.getByTestId("business-example")).toContainText("扣 2 积分");
+ await page.getByLabel("计费单位",{exact:true}).selectOption("item");await expect(page.getByTestId("business-example")).toContainText("扣 6 积分");
+ await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:"output/billing-20261003/billing-business-canvas.png",fullPage:true});await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+ await page.getByRole("button",{name:"配置普通生图",exact:true}).click();await expect(page.getByRole("heading",{name:"普通生图",exact:true})).toBeVisible();await page.getByLabel("普通生图 · 标准单价（积分）").fill("7");
+ await page.getByRole("button",{name:"图片生成",exact:true}).click();await expect(page.getByLabel("普通生图 · 标准单价（积分）")).toHaveValue("7");
+ await page.getByRole("button",{name:"设置该功能的供应商成本",exact:true}).click();await expect(page.getByLabel("成本项",{exact:true})).toHaveValue("image.generate");
+});
+test("recharge prices use yuan and preserve exact stored fen",async({page})=>{
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);const original=(await (await page.request.get("/api/admin/billing")).json()).snapshot;
+ try {await page.goto("/admin/billing");await page.getByRole("button",{name:"充值套餐",exact:true}).click();const product=Object.values(original.config.products).find((p:any)=>p.kind==="pack") as any;
+ await page.locator("summary").filter({hasText:product.title}).click();const amount=page.getByLabel(`${product.id} · 售价（元）`);await amount.fill("19.999");await expect(amount).toHaveAttribute("aria-invalid","true");await amount.fill("19.99");await expect(amount).toHaveValue("19.99");
+ await page.getByLabel("发布说明").fill("Exact yuan price UI fixture");await page.getByRole("button",{name:"查看改动",exact:true}).click();await page.getByRole("button",{name:"发布配置",exact:true}).click();await expect(page.getByRole("status")).toContainText("已发布版本");const current=(await (await page.request.get("/api/admin/billing")).json()).snapshot;expect(current.config.products[product.id].amountFen).toBe(1999);
+ }finally {const current=(await (await page.request.get("/api/admin/billing")).json()).snapshot;expect((await page.request.post("/api/admin/billing",{data:{id:randomUUID(),expectedVersion:current.version,config:original.config,reason:"Restore yuan UI fixture"}})).status()).toBe(200);}
+});
+
+test("canvas assistant retries keep streamed billing intent and original conversation",async({page})=>{
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_user",value:fixture.userCookie,domain:"127.0.0.1",path:"/"}]);await page.route("**/media/billing-ui-fixture.png",route=>route.fulfill({contentType:"image/png",body:Buffer.from(fixture.imageBase64,"base64")}));
+ const attempts:any[]=[];await page.route("**/api/canvas/assistant",route=>{attempts.push({id:route.request().headers()["x-naumi-billing-operation-id"],body:route.request().postDataJSON()});return route.fulfill({contentType:"text/event-stream",body:attempts.length<3?'event: delta\ndata: {"text":"partial reply"}\n\nevent: error\ndata: {"error":"fixture stream interrupted"}\n\n':'event: delta\ndata: {"text":"complete reply"}\n\nevent: done\ndata: {"ok":true}\n\n'});});
+ await page.addInitScript(id=>localStorage.setItem("nv:canvas:last",`tree:${id}`),fixture.artworkId);await page.goto(`/canvas?node=${fixture.artworkId}`);await page.locator(`.react-flow__node[data-id="${fixture.artworkId}"]`).click();await page.getByTitle("画布助手",{exact:true}).click();const panel=page.getByLabel("画布助手面板",{exact:true}),input=panel.getByPlaceholder("问点什么，或让助手写提示词…（Enter 发送，Shift+Enter 换行）");await input.fill("Retain assistant conversation");
+ for(let i=0;i<3;i++){await panel.getByRole("button",{name:"发送",exact:true}).click();await expect.poll(()=>attempts.length).toBe(i+1);if(i<2){await expect(panel.getByText("fixture stream interrupted",{exact:true})).toBeVisible();await expect(input).toHaveValue("Retain assistant conversation");}else{await expect(panel.getByText("complete reply",{exact:true})).toBeVisible();await expect(input).toHaveValue("");}}
+ expect(attempts[1]).toEqual(attempts[0]);expect(attempts[2]).toEqual(attempts[0]);expect(attempts[0].id).toBeTruthy();
 });

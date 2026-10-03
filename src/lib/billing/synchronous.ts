@@ -67,8 +67,13 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
             const expected = fingerprint({ email: email.toLowerCase(), quote: previous.quote, ledgerId: `led-${id}`, fingerprint: identity.hash });
             if (previous.email !== email.toLowerCase() || previous.feature !== feature || previous.request_fingerprint !== expected)
                 throw new BillingError("OPERATION_CONFLICT", "该操作编号已用于不同请求", 409);
-            if (previous.result_response && previous.state === "settled")
+            if (previous.result_response && previous.state === "settled") {
+                if (feature === "canvas.assistant") {
+                    const events = `event: delta\ndata: ${JSON.stringify({ text: previous.result_response.text || "" })}\n\nevent: done\ndata: ${JSON.stringify({ ok: true, replayed: true })}\n\n`;
+                    return new Response(events, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "private, no-store" } });
+                }
                 return billingJson(previous.result_response);
+            }
             return billingJson({ error: previous.state === "settled" ? "扣费已完成，结果需要恢复，请联系管理员" : "任务已提交，请等待结果或联系管理员核查", code: "OPERATION_PENDING", operationId: id, ...(previous.result_response ? { result: previous.result_response } : {}) }, 409);
         }
         const context: Context = { request, feature, email, id, ...identity,snapshot:await(await getBillingRuntime()).config.current(), upstream: "unobserved" };
@@ -87,6 +92,9 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
                 if(accepted.rowCount)return billingJson({code:"OPERATION_PENDING",error:"任务已经提交，结果及账务需要核查；不会重复执行",operationId:id},409);
                 return billingErrorResponse(context.error);
             }
+            // A streaming handler owns completion/settlement. Reading a clone here
+            // would buffer the entire reply and delay the first token.
+            if (response.headers.get("content-type")?.includes("text/event-stream")) return response;
             const payload = await response.clone().json().catch(() => null);
             if (context.operation) {
                 // Keep the paid output before any final wallet transaction can fail.
@@ -160,3 +168,23 @@ export async function configuredToolCost(resolution = "1K") {
     return cost;
 }
 export function synchronousChargedCredits(fallback: number) { return storage.getStore()?.charge ?? fallback; }
+
+export async function completeSynchronousStream(payload: { text: string; model: string }) {
+    const context = storage.getStore();
+    if (!context?.operation) return;
+    context.upstream = "succeeded";
+    try {
+        await getPool().query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1", [context.id, JSON.stringify(payload)]);
+        await settleSynchronous("画布助手回复完成");
+    } catch {
+        await getPool().query("UPDATE app_billing_operations SET state='manual',updated_at=now() WHERE id=$1 AND state IN ('reserved','hold','manual')", [context.id]);
+        throw new BillingError("INVALID_RESULT", "回复已保留，账务需要核查；请勿重复提交", 409);
+    }
+}
+export async function failSynchronousStream() {
+    const context = storage.getStore();
+    if (!context?.operation || context.charge !== undefined || context.upstream === "succeeded") return;
+    // A supplier stream that breaks after opening has an uncertain outcome.
+    // Keep authorization instead of retrying or charging for an incomplete reply.
+    await withBillingTransaction(getPool(), tx => service.settleTx(tx, context.operation!, { state: "unknown", items: [] }));
+}

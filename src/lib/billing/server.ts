@@ -15,6 +15,8 @@ import {getOpenAISettings,getCutoutSettings} from "@/lib/settings";
 import {getUserDefaultImageModel,isNewApiFlowImageModel,getImageModelCatalog} from "@/lib/image-model-catalog";
 import {routeImageModel} from "@/lib/image-model-routing";
 import {configuredVideoProviders,getVideoProviderConfig} from "@/lib/video/providers/config";
+import { requestedTextModel } from "@/lib/text-models";
+import { CANVAS_FREE_DEFAULTS } from "./canvas-defaults";
 let runtime: ReturnType<typeof assemble> | undefined;
 function assemble() {
     return { service: createBillingService(), config: createConfigRuntime({ pool: getPool(), ensureSchema, initialize: async (tx) => {
@@ -81,6 +83,9 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
         if(!config)throw new BillingError("INVALID_RESULT","视频供应商未配置",400);
         providerId=config.id;model=model||config.defaultModel;
         if(!config.models.includes(model))throw new BillingError("INVALID_RESULT","视频模型不可用",400);
+    }else if(["canvas.text-generate","canvas.assistant","canvas.ocr"].includes(input.feature)){
+        providerId=input.feature==="canvas.ocr"?"canvas-ocr":"agent-text";
+        model=input.feature==="canvas.ocr"&&process.env.PADDLE_OCR_BASE_URL?.trim()?"paddleocr-with-vision-fallback":requestedTextModel(request,input.feature==="canvas.ocr"?(process.env.PADDLE_OCR_FALLBACK_MODEL||process.env.OPENAI_TEXT_MODEL||process.env.AGENT_MODEL||"gpt-5.6-luna"):(process.env.OPENAI_TEXT_MODEL||process.env.AGENT_MODEL||"gpt-5.6-luna"));
     }else if(input.feature==="tool.cutout"){
         const config=await getCutoutSettings(),replicate=config.backend!=="openai"&&!!config.replicateToken;
         providerId=replicate?"replicate":"openai-images";model=replicate?config.replicateModel:config.openaiModel;
@@ -94,7 +99,7 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
     }
     const provider = input.feature === "image.generate" ? await getUserImageProvider(email) : null;
     const byok = !!provider && !!model?.startsWith("byok:") && provider.models.includes(upstreamUserImageModel(model));
-    return { feature: input.feature, quantity: input.quantity, quality: input.feature==="video.generate"?"medium":input.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium", resolution: input.resolution ?? "1K", modelId: model, providerId: byok ? `byok:${provider!.id}` : providerId,...(byok?{fallbackProviderId:"openai-images",fallbackModelId:(await getOpenAISettings()).model}:{}), byok, metered: await meteringFor(current), paidFen: await totalPaidCents(email), userGroup: "default" };
+    return { feature: input.feature, quantity: input.quantity, quality: input.feature==="video.generate"||input.feature in CANVAS_FREE_DEFAULTS?"medium":input.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium", resolution: input.feature in CANVAS_FREE_DEFAULTS?"1K":input.resolution ?? "1K", modelId: model, providerId: byok ? `byok:${provider!.id}` : providerId,...(byok?{fallbackProviderId:"openai-images",fallbackModelId:(await getOpenAISettings()).model}:{}), byok, metered: await meteringFor(current), paidFen: await totalPaidCents(email), userGroup: "default" };
 }
 export async function quoteForRequest(request: Request, input: Partial<BillingFacts> & {
     feature: BillingFacts["feature"];

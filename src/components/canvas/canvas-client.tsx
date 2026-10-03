@@ -1605,7 +1605,7 @@ export function CanvasClient() {
   const billing=useBilling();
   async function privateFetch(input:RequestInfo|URL,init:RequestInit={}){
     const path=String(input).split('?')[0];
-    const features:Record<string,FeatureId>={"/api/generate-image":"image.generate","/api/aplus":"image.aplus","/api/suite":"image.suite","/api/cutout":"tool.cutout","/api/canvas/image-tasks":"canvas.image","/api/canvas/expand":"canvas.expand","/api/canvas/text-edit":"canvas.text-edit","/api/canvas/annotate":"canvas.annotate","/api/video/generate":"video.generate"};
+    const features:Record<string,FeatureId>={"/api/generate-image":"image.generate","/api/aplus":"image.aplus","/api/suite":"image.suite","/api/cutout":"tool.cutout","/api/canvas/image-tasks":"canvas.image","/api/canvas/expand":"canvas.expand","/api/canvas/text-edit":"canvas.text-edit","/api/canvas/annotate":"canvas.annotate","/api/canvas/text-generate":"canvas.text-generate","/api/canvas/assistant":"canvas.assistant","/api/canvas/ocr":"canvas.ocr","/api/video/generate":"video.generate"};
     if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
     const form=init.body instanceof FormData?init.body:null;
     const body=form?Object.fromEntries(Array.from(form.entries()).filter((entry)=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};
@@ -1944,6 +1944,7 @@ export function CanvasClient() {
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
+  const assistantRetry = useRef<{ input: string; anchorId: string; history: AssistantTurn[]; body: string } | null>(null);
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
   const pendPromptRef = useRef<HTMLTextAreaElement>(null);
   // 占位 dock 与已生成节点保持同一自适应视野。
@@ -4467,7 +4468,7 @@ export function CanvasClient() {
       );
     }, 650);
     try {
-      const response = await privateFetchRaw("/api/canvas/ocr", {
+      const response = await privateFetch("/api/canvas/ocr", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ artworkId: artwork.id }),
@@ -4999,6 +5000,7 @@ export function CanvasClient() {
     setAssistantTurns([]);
     setAssistantInput("");
     setAssistantError(null);
+    assistantRetry.current = null;
   }
 
   // 选中节点变化时,助手面板跟着换锚定并重开新对话(上下文变了,旧对话不再适用)
@@ -5008,6 +5010,7 @@ export function CanvasClient() {
       setAssistantTurns([]);
       setAssistantInput("");
       setAssistantError(null);
+      assistantRetry.current = null;
     }
   }, [selectedId, assistantArtworkId]);
 
@@ -5017,28 +5020,30 @@ export function CanvasClient() {
     const members = active?.members ?? [];
     const source = members.find((artwork) => artwork.id === assistantArtworkId);
     if (!source) return;
-    const history = [
+    const previousAttempt = assistantRetry.current;
+    const history = previousAttempt?.input === text && previousAttempt.anchorId === source.id ? previousAttempt.history : [
       ...assistantTurns,
       { id: `as-u-${Date.now()}`, role: "user" as const, content: text },
     ];
-    setAssistantTurns(history);
-    setAssistantInput("");
+    const attempt = previousAttempt?.input === text && previousAttempt.anchorId === source.id ? previousAttempt : {
+      input: text, anchorId: source.id, history,
+      body: JSON.stringify({ anchorId: source.id, contextIds: assistantContext(members, source.id).map((artwork) => artwork.id), messages: history.map(({ role, content }) => ({ role, content })) }),
+    };
+    assistantRetry.current = attempt;
     setAssistantError(null);
     setAssistantBusy(true);
     try {
-      const response = await privateFetchRaw("/api/canvas/assistant", {
+      const response = await privateFetch("/api/canvas/assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          anchorId: source.id,
-          contextIds: assistantContext(members, source.id).map((artwork) => artwork.id),
-          messages: history.map(({ role, content }) => ({ role, content })),
-        }),
+        body: attempt.body,
       });
       if (!response.ok || !response.body) {
         const data = await readJsonSafe(response);
         throw new Error(data?.error || "画布助手暂时不可用");
       }
+      setAssistantTurns(history);
+      setAssistantInput("");
       // SSE 流式:追加一条空助手消息,随 delta 逐段填充
       setAssistantTurns((current) => [
         ...current,
@@ -5080,7 +5085,9 @@ export function CanvasClient() {
         copy[copy.length - 1] = { ...copy[copy.length - 1], content: text.trim() };
         return copy;
       });
+      if (assistantRetry.current === attempt) assistantRetry.current = null;
     } catch (error) {
+      if (assistantRetry.current === attempt) setAssistantInput(text);
       setAssistantError(error instanceof Error ? error.message : "画布助手暂时不可用");
     } finally {
       setAssistantBusy(false);
@@ -6980,7 +6987,7 @@ export function CanvasClient() {
       current.map((node) => (node.id === pending.id ? pending : node))
     );
     try {
-      const response = await privateFetchRaw("/api/canvas/text-generate", {
+      const response = await privateFetch("/api/canvas/text-generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt, sourceIds: pending.sourceIds ?? [] }),
@@ -7088,7 +7095,7 @@ export function CanvasClient() {
           };
           setTextNodes((current) => [...current, node]);
           try {
-            const response = await privateFetchRaw("/api/canvas/text-generate", {
+            const response = await privateFetch("/api/canvas/text-generate", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
@@ -7224,7 +7231,7 @@ export function CanvasClient() {
           };
           setTextNodes((current) => [...current, node]);
           try {
-            const response = await privateFetchRaw("/api/canvas/text-generate", {
+            const response = await privateFetch("/api/canvas/text-generate", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
@@ -10766,6 +10773,7 @@ export function CanvasClient() {
                           setAssistantTurns([]);
                           setAssistantInput("");
                           setAssistantError(null);
+                          assistantRetry.current = null;
                         }}
                         className="rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-[#4b5663] transition-colors hover:bg-[#f1f3f6] hover:text-[#252a33] disabled:opacity-40"
                       >
@@ -10853,7 +10861,7 @@ export function CanvasClient() {
                       className="w-full resize-none rounded-xl border border-[#dfe6ec] px-3 py-2 text-[13px] leading-relaxed text-[#252a33] outline-none transition-colors placeholder:text-[#a6aeb8] focus:border-[#248da1] disabled:opacity-60"
                     />
                     <div className="mt-2 flex items-center justify-between">
-                      <span className="text-[11px] text-[#78818e]">对话免费 · 生图按张计费</span>
+                      <span className="text-[11px] text-[#78818e]">{billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] === 0 ? "对话免费" : billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] != null ? `${billing.catalog.features["canvas.assistant"].prices.medium["1K"]} 积分 / 轮` : "对话报价加载中"} · 生图另行计费</span>
                       <button
                         type="button"
                         disabled={assistantBusy || !assistantInput.trim()}

@@ -116,6 +116,18 @@ export function BillingProvider({ children }: {
         id=id||headers.get("x-naumi-billing-operation-id")||crypto.randomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
         headers.set("x-naumi-billing-operation-id",id);
         const response = await fetch(url, { ...frozenIntentBody(init,id), headers });
+        if (response.ok && response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
+            const decoder = new TextDecoder(); let buffer = "";
+            const body = response.body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({ transform(chunk, controller) {
+                controller.enqueue(chunk); buffer += decoder.decode(chunk,{stream:true});
+                const events=buffer.split("\n\n"); buffer=events.pop()||"";
+                for(const event of events) if(event.split("\n").includes("event: done")) {
+                    const data=event.split("\n").find(line=>line.startsWith("data: "));
+                    try { if(data&&JSON.parse(data.slice(6)).ok===true){ intents.current.delete(key); try{localStorage.removeItem(key);}catch{} } } catch {}
+                }
+            } }));
+            return new Response(body,{status:response.status,headers:response.headers});
+        }
         const data=await response.clone().json().catch(()=>({}));
         if(response.ok||response.status<500&&data.code!=="OPERATION_PENDING"&&data.code!=="OPERATION_CONFLICT"){intents.current.delete(key);try{localStorage.removeItem(key);}catch{}}
         if (response.status === 409 && data.code === "PRICE_CHANGED")
@@ -130,7 +142,7 @@ export function BillingProvider({ children }: {
             await refresh();
             throw new Error("价格已更新，请确认最新报价后重新提交");
         }
-        if (!window.confirm(`本次操作预计消耗 ${q.credits} 积分，预占 ${q.reserveCredits} 积分。确认继续？`))
+        if (q.reserveCredits > 0 && !window.confirm(`本次操作预计消耗 ${q.credits} 积分，预占 ${q.reserveCredits} 积分。确认继续？`))
             throw new Error("已取消，输入已保留");
         return submit(url, init, q);
     }, [catalog, getQuote, refresh, submit]);

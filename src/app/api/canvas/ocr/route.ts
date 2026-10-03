@@ -14,6 +14,7 @@ import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { safeError } from "@/lib/api-error";
 import { collectPaddleRows, normalizeOcrSegments, scaleOcrSegments } from "@/lib/canvas-ocr";
+import { withBillingRequest, configuredToolCost, markBillingUpstream } from "@/lib/billing/synchronous";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,7 @@ async function paddleOcr(buffer: Buffer, mimeType: string) {
     try {
       const form = new FormData();
       form.append("file", new File([new Uint8Array(buffer)], "canvas-image.png", { type: mimeType }));
+      markBillingUpstream("started");
       const response = await fetch(endpoint, {
         method: "POST",
         headers: process.env.PADDLE_OCR_API_KEY
@@ -138,6 +140,7 @@ async function handleObservedPost(request: Request) {
     const height = metadata.height || artwork.height || 0;
     if (!width || !height) throw new Error("无法读取图片尺寸");
 
+    await configuredToolCost();
     let engine = "paddleocr";
     let raw: unknown;
     let scanSize: { width: number; height: number } | null = null;
@@ -177,6 +180,7 @@ async function handleObservedPost(request: Request) {
     if (!segments.length) throw new Error("未识别到可编辑文字，请换一张更清晰的图片重试");
     const elapsedMs = Date.now() - startedAt;
     console.info(`[canvas-ocr] artwork=${artworkId} engine=${engine} segments=${segments.length} attempts=${paddleAttempts} elapsed=${elapsedMs}ms`);
+    markBillingUpstream("succeeded");
     return NextResponse.json({
       ok: true,
       engine,
@@ -193,5 +197,5 @@ async function handleObservedPost(request: Request) {
 }
 
 export async function POST(request: Request) {
-  return withBiRequest(request, () => handleObservedPost(request));
+  return withBillingRequest(request, "canvas.ocr", () => withBiRequest(request, () => handleObservedPost(request)));
 }
