@@ -8,7 +8,7 @@ import { getServerLocale } from "@/lib/i18n/server-locale";
 import { BRAND } from "@/lib/brand";
 import { betaPreviewEnabled } from "@/lib/commerce";
 import { IMAGE_QUALITY_IDS } from "@/lib/image-quality";
-import {getBillingRuntime} from "@/lib/billing/server";
+import {billingSnapshot} from "@/lib/billing/server";
 import {quote} from "@/lib/billing/quote";
 import {
   PRICING_PACKAGES,
@@ -31,7 +31,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPricingPage() {
   if (!(await requireAdmin(new Request("http://internal/admin/pricing", { headers: headers() })))) notFound();
-  const current=await(await getBillingRuntime()).config.current();
+  const current=await billingSnapshot();
   const currentQualityPrices=Object.fromEntries(IMAGE_QUALITY_IDS.map(quality=>[quality,quote(current,{feature:"image.generate",quantity:1,quality,resolution:"1K",byok:false,metered:true,paidFen:0,userGroup:"default"}).requestedCredits]));
   const english = getServerLocale() === "en";
   const t = (zh: string, en: string) => (english ? en : zh);
