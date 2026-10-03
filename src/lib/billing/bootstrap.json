@@ -1,0 +1,1069 @@
+{
+  "schemaVersion": 1,
+  "features": {
+    "image.generate": {
+      "label": "image.generate",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 0,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "image.suite": {
+      "label": "image.suite",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "image.aplus": {
+      "label": "image.aplus",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.cutout": {
+      "label": "tool.cutout",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "fixed",
+        "credits": 1
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.upscale": {
+      "label": "tool.upscale",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "fixed",
+        "credits": 1
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.printfile": {
+      "label": "tool.printfile",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "fixed",
+        "credits": 0
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.ipcheck": {
+      "label": "tool.ipcheck",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "fixed",
+        "credits": 1
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.garment": {
+      "label": "tool.garment",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.avatar": {
+      "label": "tool.avatar",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.dewrinkle": {
+      "label": "tool.dewrinkle",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.dewatermark": {
+      "label": "tool.dewatermark",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.style": {
+      "label": "tool.style",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.tryon": {
+      "label": "tool.tryon",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.retouch": {
+      "label": "tool.retouch",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.recolor": {
+      "label": "tool.recolor",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.replicate": {
+      "label": "tool.replicate",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.inpaint": {
+      "label": "tool.inpaint",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.extract": {
+      "label": "tool.extract",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.garment3d": {
+      "label": "tool.garment3d",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "tool.packaging3d": {
+      "label": "tool.packaging3d",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "canvas.image": {
+      "label": "canvas.image",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "canvas.expand": {
+      "label": "canvas.expand",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "canvas.text-edit": {
+      "label": "canvas.text-edit",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "canvas.annotate": {
+      "label": "canvas.annotate",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "competitor.action": {
+      "label": "competitor.action",
+      "enabled": true,
+      "unit": "image",
+      "pricing": {
+        "mode": "quality-resolution",
+        "quality": {
+          "low": 4,
+          "medium": 6,
+          "high": 10,
+          "xhigh": 14,
+          "max": 18,
+          "auto": 6
+        },
+        "resolutionExtra": {
+          "1K": 0,
+          "2K": 2,
+          "4K": 6,
+          "5K": 10
+        }
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
+    "video.generate": {
+      "label": "video.generate",
+      "enabled": true,
+      "unit": "task",
+      "pricing": {
+        "mode": "fixed",
+        "credits": 20
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    }
+  },
+  "costs": {
+    "*:*:low:1K": {
+      "currency": "credits",
+      "amountMicros": "4000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:low:2K": {
+      "currency": "credits",
+      "amountMicros": "6000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:low:4K": {
+      "currency": "credits",
+      "amountMicros": "10000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:low:5K": {
+      "currency": "credits",
+      "amountMicros": "14000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:medium:1K": {
+      "currency": "credits",
+      "amountMicros": "6000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:medium:2K": {
+      "currency": "credits",
+      "amountMicros": "8000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:medium:4K": {
+      "currency": "credits",
+      "amountMicros": "12000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:medium:5K": {
+      "currency": "credits",
+      "amountMicros": "16000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:high:1K": {
+      "currency": "credits",
+      "amountMicros": "10000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:high:2K": {
+      "currency": "credits",
+      "amountMicros": "12000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:high:4K": {
+      "currency": "credits",
+      "amountMicros": "16000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:high:5K": {
+      "currency": "credits",
+      "amountMicros": "20000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:xhigh:1K": {
+      "currency": "credits",
+      "amountMicros": "14000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:xhigh:2K": {
+      "currency": "credits",
+      "amountMicros": "16000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:xhigh:4K": {
+      "currency": "credits",
+      "amountMicros": "20000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:xhigh:5K": {
+      "currency": "credits",
+      "amountMicros": "24000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:max:1K": {
+      "currency": "credits",
+      "amountMicros": "18000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:max:2K": {
+      "currency": "credits",
+      "amountMicros": "20000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:max:4K": {
+      "currency": "credits",
+      "amountMicros": "24000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:max:5K": {
+      "currency": "credits",
+      "amountMicros": "28000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:auto:1K": {
+      "currency": "credits",
+      "amountMicros": "6000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:auto:2K": {
+      "currency": "credits",
+      "amountMicros": "8000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:auto:4K": {
+      "currency": "credits",
+      "amountMicros": "12000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    },
+    "*:*:auto:5K": {
+      "currency": "credits",
+      "amountMicros": "16000000",
+      "unit": "image",
+      "source": "legacy-credit-estimate"
+    }
+  },
+  "products": {
+    "c-990": {
+      "id": "c-990",
+      "kind": "pack",
+      "title": "990 积分",
+      "amountFen": 9900,
+      "baseCredits": 990,
+      "bonusCredits": 0,
+      "available": true,
+      "expiry": {
+        "unit": "years",
+        "value": 2
+      }
+    },
+    "c-6240": {
+      "id": "c-6240",
+      "kind": "pack",
+      "title": "6240 积分",
+      "amountFen": 49900,
+      "baseCredits": 4990,
+      "bonusCredits": 1250,
+      "available": true,
+      "expiry": {
+        "unit": "years",
+        "value": 2
+      }
+    },
+    "c-13320": {
+      "id": "c-13320",
+      "kind": "pack",
+      "title": "13320 积分",
+      "amountFen": 99900,
+      "baseCredits": 9990,
+      "bonusCredits": 3330,
+      "available": true,
+      "expiry": {
+        "unit": "years",
+        "value": 2
+      }
+    },
+    "c-28560": {
+      "id": "c-28560",
+      "kind": "pack",
+      "title": "28560 积分",
+      "amountFen": 199900,
+      "baseCredits": 19990,
+      "bonusCredits": 8570,
+      "available": true,
+      "expiry": {
+        "unit": "years",
+        "value": 2
+      }
+    },
+    "c-76910": {
+      "id": "c-76910",
+      "kind": "pack",
+      "title": "76910 积分",
+      "amountFen": 499900,
+      "baseCredits": 49990,
+      "bonusCredits": 26920,
+      "available": true,
+      "expiry": {
+        "unit": "years",
+        "value": 2
+      }
+    },
+    "c-183320": {
+      "id": "c-183320",
+      "kind": "pack",
+      "title": "183320 积分",
+      "amountFen": 1099900,
+      "baseCredits": 109990,
+      "bonusCredits": 73330,
+      "available": true,
+      "expiry": {
+        "unit": "years",
+        "value": 2
+      }
+    },
+    "plan-starter": {
+      "id": "plan-starter",
+      "kind": "plan-display",
+      "title": "starter",
+      "amountFen": 0,
+      "baseCredits": 0,
+      "bonusCredits": 0,
+      "available": false,
+      "expiry": {
+        "unit": "years",
+        "value": 2
+      }
+    },
+    "plan-pro": {
+      "id": "plan-pro",
+      "kind": "plan-display",
+      "title": "pro",
+      "amountFen": 6800,
+      "baseCredits": 0,
+      "bonusCredits": 0,
+      "available": false,
+      "expiry": {
+        "unit": "years",
+        "value": 2
+      }
+    },
+    "plan-studio": {
+      "id": "plan-studio",
+      "kind": "plan-display",
+      "title": "studio",
+      "amountFen": 13800,
+      "baseCredits": 0,
+      "bonusCredits": 0,
+      "available": false,
+      "expiry": {
+        "unit": "years",
+        "value": 2
+      }
+    },
+    "plan-team": {
+      "id": "plan-team",
+      "kind": "plan-display",
+      "title": "team",
+      "amountFen": 34800,
+      "baseCredits": 0,
+      "bonusCredits": 0,
+      "available": false,
+      "expiry": {
+        "unit": "years",
+        "value": 2
+      }
+    },
+    "pro-license": {
+      "id": "pro-license",
+      "kind": "pro",
+      "title": "Pro 授权",
+      "amountFen": 199900,
+      "baseCredits": 0,
+      "bonusCredits": 0,
+      "available": false,
+      "expiry": {
+        "unit": "years",
+        "value": 1
+      }
+    }
+  },
+  "credits": {
+    "signup": {
+      "amount": 30,
+      "expiry": {
+        "unit": "days",
+        "value": 30
+      }
+    },
+    "purchase": {
+      "unit": "years",
+      "value": 2
+    },
+    "redeem": {
+      "unit": "years",
+      "value": 2
+    },
+    "admin": {
+      "unit": "years",
+      "value": 2
+    },
+    "debitOrder": "expires-first",
+    "staleReservationMinutes": 12
+  },
+  "switches": {
+    "metering": "legacy-auto",
+    "commerce": false,
+    "recharge": false
+  },
+  "thresholds": {
+    "highQualityPaidFen": 99900,
+    "agentConfirmCredits": 20
+  }
+}
