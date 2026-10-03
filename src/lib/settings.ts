@@ -417,8 +417,9 @@ export async function saveMultiUser(on: boolean): Promise<void> {
 }
 
 /** 保存「积分计费」开关(开启后生图按积分扣,单用户也扣;站长后台自行加积分)。 */
-export async function saveCreditsMetering(on: boolean): Promise<void> {
-  await setSetting("credits_metering", on ? "1" : "0");
+export async function saveCreditsMetering(on: boolean, actor = "local-admin"): Promise<void> {
+  const {updateBillingCompatibility} = await import("@/lib/billing/server");
+  await updateBillingCompatibility(actor, "更新积分计费开关", config => {config.switches.metering = on ? "on" : "off";});
 }
 
 export type SmtpConfig = {
@@ -517,7 +518,8 @@ export async function getPaymentSettings(): Promise<PaymentSettings> {
   let wxpayCertSerial = (process.env.WXPAY_CERT_SERIAL ?? "").trim();
   let wxpayAppid = (process.env.WXPAY_APPID ?? "").trim();
   if (dbEnabled) {
-    const pe = await getSetting(PAY_ENABLED);
+    const {getBillingRuntime} = await import("@/lib/billing/server");
+    payEnabled = (await (await getBillingRuntime()).config.current()).config.switches.recharge;
     const aAppid = await getSetting(ALIPAY_APPID);
     const aPrivEnc = await getSetting(ALIPAY_PRIVATE_KEY_ENC);
     const aPub = await getSetting(ALIPAY_PUBLIC_KEY);
@@ -527,8 +529,6 @@ export async function getPaymentSettings(): Promise<PaymentSettings> {
     const wSerial = await getSetting(WXPAY_CERT_SERIAL);
     const wAppid = await getSetting(WXPAY_APPID);
     // pay_enabled:DB 显式存了 "1"/"0" 时以 DB 为准,否则按默认兜底。
-    if (pe === "1") payEnabled = true;
-    else if (pe === "0") payEnabled = false;
     if (aAppid) alipayAppid = aAppid;
     const aPriv = aPrivEnc ? decryptAtRest(aPrivEnc) : null;
     if (aPriv) alipayPrivateKey = aPriv;
@@ -555,8 +555,9 @@ export async function getPaymentSettings(): Promise<PaymentSettings> {
 }
 
 /** 保存收款开关。 */
-export async function savePayEnabled(enabled: boolean): Promise<void> {
-  await setSetting(PAY_ENABLED, enabled ? "1" : "0");
+export async function savePayEnabled(enabled: boolean, actor = "local-admin"): Promise<void> {
+  const {updateBillingCompatibility} = await import("@/lib/billing/server");
+  await updateBillingCompatibility(actor, "更新充值开关", config => {config.switches.recharge = enabled;});
 }
 
 // ---------------------------------------------------------------------------
@@ -578,8 +579,7 @@ export async function getPaymentStatus(): Promise<{
   } catch {
     // DB 抖动兜底:layout 每页都调本函数,绝不能因 DB 异常让全站 500。
     // 按旧前端开关判定(CN=true、US=false),与正常路径默认值一致。
-    const ok = (process.env.NEXT_PUBLIC_RECHARGE_ENABLED ?? "").trim() === "true";
-    return { enabled: ok, configured: ok };
+    return { enabled: false, configured: false };
   }
 }
 

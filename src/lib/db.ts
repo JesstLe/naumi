@@ -1161,6 +1161,10 @@ const SIGNUP_BONUS_DEFAULT = 30;
 
 /** 读「新用户注册赠送积分数」(后台设置优先,默认 30)。 */
 export async function getSignupBonus(): Promise<number> {
+  if (dbEnabled) {
+    const {getBillingRuntime} = await import("@/lib/billing/server");
+    return (await (await getBillingRuntime()).config.current()).config.credits.signup.amount;
+  }
   try {
     const v = await getSetting(SIGNUP_BONUS_KEY);
     if (v != null && v !== "") {
@@ -1174,9 +1178,10 @@ export async function getSignupBonus(): Promise<number> {
 }
 
 /** 后台保存「新用户注册赠送积分数」(夹取 0..100000)。 */
-export async function setSignupBonus(n: number): Promise<void> {
+export async function setSignupBonus(n: number, actor = "local-admin"): Promise<void> {
   const safe = Math.min(Math.max(0, Math.trunc(n)), 100000);
-  await setSetting(SIGNUP_BONUS_KEY, String(safe));
+  const {updateBillingCompatibility} = await import("@/lib/billing/server");
+  await updateBillingCompatibility(actor, "更新注册赠送积分", config => {config.credits.signup.amount = safe;});
 }
 
 export async function getOrCreateUser(
@@ -5000,9 +5005,9 @@ export async function releaseVideoTaskPoll(email: string, id: string): Promise<v
 }
 
 async function creditMeteringEnabled(): Promise<boolean> {
-  const { supabaseEnabled } = await import("@/lib/auth-mode");
-  const { multiUserEnabled, creditsMeteringOn } = await import("@/lib/native-auth");
-  return supabaseEnabled || (await multiUserEnabled()) || (await creditsMeteringOn());
+  if (!dbEnabled) return false;
+  const {getBillingRuntime, meteringFor} = await import("@/lib/billing/server");
+  return meteringFor(await (await getBillingRuntime()).config.current());
 }
 
 /** 成功完成视频任务并在同一事务里只结算一次积分。 */
