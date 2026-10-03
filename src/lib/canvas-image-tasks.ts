@@ -198,6 +198,10 @@ export async function processCanvasImageTask(task: CanvasImageTaskRow): Promise<
     console.info(`[canvas-image-task] completed id=${task.id} attempt=${task.attempts}`);
   } catch (error) {
     const current = await getCanvasImageTask(task.email, task.id);
+    if (current?.parameters.upstreamResult) {
+      await holdCanvasImageTask(task.id, "图片结果已保留，完成或账务结算需要核查；补足积分后可恢复已有结果");
+      return;
+    }
     const status = (error as { status?: number } | null)?.status;
     const rejected = [400,401,403,404,422,429].includes(status || 0);
     if (error instanceof ImageOperationPending || (current?.parameters.upstreamStarted && !current.parameters.upstreamResult && !rejected)) {

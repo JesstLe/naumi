@@ -42,7 +42,21 @@ export async function getBillingRuntime() {
         throw new BillingError("CONFIG_UNAVAILABLE", "未配置数据库，计费管理暂不可用", 503);
     return runtime ?? (runtime = assemble());
 }
+export async function billingSnapshot():Promise<ConfigSnapshot> {
+    if(dbEnabled)return (await getBillingRuntime()).config.current();
+    const config=structuredClone(seed) as BillingConfig;
+    config.switches.metering="off";config.switches.commerce=false;config.switches.recharge=false;
+    return {version:0,config};
+}
+function compatibleQuote(snapshot:ConfigSnapshot,facts:BillingFacts) {
+    const q=quote(snapshot,facts),legacy=structuredClone(seed) as BillingConfig;
+    const video=Number(process.env.VIDEO_TASK_COST);if(Number.isSafeInteger(video)&&video>0)legacy.features["video.generate"].pricing={mode:"fixed",credits:video};
+    const old=quote({version:0,config:legacy},facts), canonical=(value:unknown):string=>JSON.stringify(value&&typeof value==="object"?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,JSON.parse(canonical(v))])):value);
+    q.legacyCompatible=snapshot.config.switches.metering==="legacy-auto"&&q.requestedCredits===old.requestedCredits&&q.authorizedCredits===old.authorizedCredits&&q.reserveCredits===old.reserveCredits&&q.debitOrder===old.debitOrder&&canonical(q.tariff)===canonical(old.tariff);
+    return q;
+}
 export async function meteringFor(snapshot: ConfigSnapshot) {
+    if(!dbEnabled)return false;
     if (snapshot.config.switches.metering !== "legacy-auto")
         return snapshot.config.switches.metering === "on";
     const manual = (await getSetting("credits_metering"))?.trim();
@@ -55,7 +69,8 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
 }, snapshot?: ConfigSnapshot,trustedActor?:string): Promise<BillingFacts> {
     if (!isFeatureId(input.feature))
         throw new BillingError("INVALID_CONFIG", "未知计费功能", 400);
-    const current = snapshot ?? await (await getBillingRuntime()).config.current();
+    const current = snapshot ?? await billingSnapshot();
+    if(!dbEnabled)return {feature:input.feature,quantity:input.quantity,quality:input.quality||"medium",resolution:input.resolution||"1K",byok:false,metered:false,paidFen:0,userGroup:"demo"};
     const email = trustedActor??await resolveUserEmail(request);
     if (!email)
         throw new BillingError("INVALID_RESULT", "请先登录", 401);
@@ -86,13 +101,13 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
     quantity: number;
     ratio?: string;
 },frozenSnapshot?:ConfigSnapshot) {
-    const snapshot = frozenSnapshot??await (await getBillingRuntime()).config.current();
-    return quote(snapshot, await resolveBillingFacts(request, input, snapshot));
+    const snapshot = frozenSnapshot??await billingSnapshot();
+    return compatibleQuote(snapshot, await resolveBillingFacts(request, input, snapshot));
 }
 /** Trusted domain services have already authenticated and owner-checked this actor. */
 export async function quoteForActor(email:string,input:Partial<BillingFacts>&{feature:BillingFacts["feature"];quantity:number}){
     const snapshot=await(await getBillingRuntime()).config.current();
-    return quote(snapshot,await resolveBillingFacts(new Request("http://internal/api/billing/quote"),input,snapshot,email));
+    return compatibleQuote(snapshot,await resolveBillingFacts(new Request("http://internal/api/billing/quote"),input,snapshot,email));
 }
 export async function updateBillingCompatibility(actor: string, reason: string, change: (config: BillingConfig) => void) {
     const config = (await getBillingRuntime()).config, current = await config.current();
@@ -100,4 +115,4 @@ export async function updateBillingCompatibility(actor: string, reason: string, 
     change(next);
     return config.publish({ id: randomUUID(), actor, reason, expectedVersion: current.version, config: next });
 }
-export async function billingSwitches() { const snapshot = await (await getBillingRuntime()).config.current(); return { metering: await meteringFor(snapshot), commerce: process.env.NAUMI_PUBLIC_COMMERCE === "1" && snapshot.config.switches.commerce, recharge: snapshot.config.switches.recharge, environmentCommerce: process.env.NAUMI_PUBLIC_COMMERCE === "1" }; }
+export async function billingSwitches() { const snapshot = await billingSnapshot(); return { metering: await meteringFor(snapshot), commerce: process.env.NAUMI_PUBLIC_COMMERCE === "1" && snapshot.config.switches.commerce, recharge: snapshot.config.switches.recharge, environmentCommerce: process.env.NAUMI_PUBLIC_COMMERCE === "1" }; }

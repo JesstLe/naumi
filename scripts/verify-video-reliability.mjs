@@ -130,7 +130,7 @@ assert.match(mediaRoute, /status: 206/);
 assert.match(mediaRoute, /content-range/);
 assert.match(mediaRoute, /accept-ranges/);
 assert.doesNotMatch(mediaRoute, /readFile\(/, "local video delivery must not buffer the whole file");
-assert.match(studio, /const idempotencyKey = crypto\.randomUUID\(\)[\s\S]*idempotencyKey,/);
+assert.match(studio, /const idempotencyKey = batch\.ids\[index\][\s\S]*idempotencyKey,/, "retries reuse the saved batch slot identity");
 assert.match(tasksRoute, /VALID_STATUS[\s\S]*needs_attention/);
 assert.match(tasksRoute, /tasks: tasks\.map\(publicVideoTaskView\)/);
 assert.match(tasksRoute, /task: publicVideoTaskView\(task\)/);

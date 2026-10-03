@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { getPool, ensureSchema, deductPrincipalFIFO, refreshBalance, creditMeteringEnabled, expireDueBatches } from "@/lib/db";
+import { dbEnabled, getPool, ensureSchema, deductPrincipalFIFO, refreshBalance, creditMeteringEnabled, expireDueBatches } from "@/lib/db";
 import {createBillingService} from "@/lib/billing/service";
 import type {BillingQuote,BillingResult,OperationInput} from "@/lib/billing/types";
 const billingService=createBillingService();
@@ -158,4 +158,10 @@ export async function dueImageJobs() {
     AND (snapshot->>'status'='pending' OR snapshot->'sources' @> '[{"status":"redoing"}]'::jsonb)
     ORDER BY updated_at LIMIT 3`);
   return rows as {id:string;kind:ImageJobKind}[];
+}
+
+/** Keep an uncertain paid domain job visible to billing reconciliation. */
+export async function holdImageJobBilling(id:string) {
+  if(!dbEnabled)return;
+  await getPool().query("UPDATE app_billing_operations SET state=CASE WHEN quote->'tariff'->'settlement'->>'unknown'='manual' THEN 'manual' ELSE 'hold' END,updated_at=now() WHERE id=$1 AND state='reserved'",[id]);
 }

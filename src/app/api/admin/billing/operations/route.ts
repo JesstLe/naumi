@@ -5,10 +5,12 @@ import { getBillingRuntime } from "@/lib/billing/server";
 import { getPool } from "@/lib/db";
 import { withBillingTransaction } from "@/lib/billing/service";
 import { resultSchema } from "@/lib/billing/validation";
+import { exposeAbandonedBillingOperations } from "@/lib/billing/synchronous";
 export const runtime = "nodejs", dynamic = "force-dynamic";
 export async function GET(request: Request) { const auth = await billingAuthorize(request); if (auth instanceof Response)
     return auth; try {
     await (await getBillingRuntime()).config.current();
+    await exposeAbandonedBillingOperations();
     const id = new URL(request.url).searchParams.get("id");
     if (id) {
         const row = (await getPool().query("SELECT id,email,feature,state,quote FROM app_billing_operations WHERE id=$1 AND state IN ('hold','manual')", [id])).rows[0];
@@ -23,7 +25,9 @@ const command = z.object({ id: z.uuid(), operationId: z.string().min(1).max(200)
 export async function POST(request: Request) { const auth = await billingAuthorize(request, true); if (auth instanceof Response)
     return auth; try {
     const input = command.parse(await request.json()), service = (await getBillingRuntime()).service;
-    return billingJson(await withBillingTransaction(getPool(), tx => service.reconcileTx(tx, { ...input, actor: auth.actor })));
+    const result=await withBillingTransaction(getPool(), tx => service.reconcileTx(tx, { ...input, actor: auth.actor }));
+    if(input.result.state==="succeeded")await getPool().query("UPDATE app_canvas_image_tasks SET status='queued',attempts=0,lease_until=NULL,error='',updated_at=now() WHERE id=$1 AND status='needs_attention' AND parameters->>'upstreamResult' IS NOT NULL",[input.operationId]);
+    return billingJson(result);
 }
 catch (e) {
     if (e instanceof z.ZodError || e instanceof SyntaxError)

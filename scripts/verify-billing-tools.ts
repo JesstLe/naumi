@@ -39,6 +39,7 @@ async function main() {
     globalThis.fetch = ((url: any, options: any) => originalFetch(String(url).startsWith("https://api.replicate.com") ? String(url).replace("https://api.replicate.com", base) : url, options)) as typeof fetch;
     const db = await import("../src/lib/db"), { getBillingRuntime } = await import("../src/lib/billing/server"), { signUserSession } = await import("../src/lib/native-auth");
     const config = (await getBillingRuntime()).config, initial = await config.current(), email = `billing-tools-${randomUUID()}@example.test`;
+    let displayedVersion=initial.version;
     try {
         await db.getOrCreateUser(email);
         await db.addCreditBatch(email, 1000, { source: "admin", reason: "fixture" });
@@ -46,10 +47,11 @@ async function main() {
             const current = await config.current(), next = structuredClone(initial.config);
             next.switches.metering = "on";
             next.features[`tool.${name}` as keyof typeof next.features].pricing = { mode: "fixed", credits: 3 };
-            await config.publish({ id: randomUUID(), expectedVersion: current.version, config: next, actor: "fixture", reason: `fixture ${name}` });
+            displayedVersion=(await config.publish({ id: randomUUID(), expectedVersion: current.version, config: next, actor: "fixture", reason: `fixture ${name}` })).version;
             const route = await import(`../src/app/api/${name}/route`), operation = randomUUID();
             const request = () => { const form = new FormData(); for (const key of ["image", "mask", "ref", "top"])
-                form.append(key, new Blob([image], { type: "image/png" }), `${key}.png`); form.append("quality", "medium"); form.append("style", "fixture watercolor"); form.append("color", "#ff0000"); form.append("prompt", "fixture"); form.append("dpi", "72"); form.append("wMm", "20"); form.append("hMm", "20"); return new Request(`http://fixture.test/api/${name}`, { method: "POST", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "x-naumi-billing-operation-id": operation }, body: form }); };
+                form.append(key, new Blob([image], { type: "image/png" }), `${key}.png`); form.append("quality", "medium"); form.append("style", "fixture watercolor"); form.append("color", "#ff0000"); form.append("prompt", "fixture"); form.append("dpi", "72"); form.append("wMm", "20"); form.append("hMm", "20"); return new Request(`http://fixture.test/api/${name}`, { method: "POST", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "x-naumi-billing-version":String(displayedVersion),"x-naumi-billing-credits":"3","x-naumi-billing-operation-id": operation }, body: form }); };
+            const oldRequest=request();oldRequest.headers.delete("x-naumi-billing-version");oldRequest.headers.delete("x-naumi-billing-credits");const oldCalls=calls;assert.equal((await route.POST(oldRequest)).status,409,"Unquoted changed price must be rejected");assert.equal(calls,oldCalls);
             const first = await route.POST(request());
             assert.equal(first.status, 200, `${name}: ${await first.clone().text()}`);
             const deadline = Date.now() + 20000;
@@ -71,9 +73,9 @@ async function main() {
         const artworkId=`billing-canvas-${randomUUID()}`;
         await db.addArtworks(email,[{id:artworkId,title:"Fixture",category:"main",prompt:"",status:"completed",image:`data:image/png;base64,${image.toString("base64")}`,gradient:"",resolution:"1K",width:64,height:64}],randomUUID());
         for(const name of ["expand","text-edit","annotate"]){
-          const current=await config.current(),next=structuredClone(initial.config);next.switches.metering="on";next.features[`canvas.${name}` as keyof typeof next.features].pricing={mode:"fixed",credits:3};await config.publish({id:randomUUID(),expectedVersion:current.version,config:next,actor:"fixture",reason:`canvas ${name} fixture`});
+          const current=await config.current(),next=structuredClone(initial.config);next.switches.metering="on";next.features[`canvas.${name}` as keyof typeof next.features].pricing={mode:"fixed",credits:3};displayedVersion=(await config.publish({id:randomUUID(),expectedVersion:current.version,config:next,actor:"fixture",reason:`canvas ${name} fixture`})).version;
           const route=await import(`../src/app/api/canvas/${name}/route`),id=randomUUID();
-          const request=()=>{const form=new FormData();form.append("image",new Blob([image],{type:"image/png"}),"annotated.png");form.append("artworkId",artworkId);form.append("annotations",JSON.stringify([{type:"arrow",note:"fixture edit"}]));const body=name==="annotate"?form:JSON.stringify({artworkId,ratio:"4:3",oldText:"old",newText:"new",box:{x:1,y:1,width:32,height:32}});return new Request(`http://fixture.test/api/canvas/${name}`,{method:"POST",headers:{cookie:`nv_user=${signUserSession(email,Date.now())}`,"x-naumi-billing-operation-id":id,...(name==="annotate"?{}:{"content-type":"application/json"})},body});};
+          const request=()=>{const form=new FormData();form.append("image",new Blob([image],{type:"image/png"}),"annotated.png");form.append("artworkId",artworkId);form.append("annotations",JSON.stringify([{type:"arrow",note:"fixture edit"}]));const body=name==="annotate"?form:JSON.stringify({artworkId,ratio:"4:3",oldText:"old",newText:"new",box:{x:1,y:1,width:32,height:32}});return new Request(`http://fixture.test/api/canvas/${name}`,{method:"POST",headers:{cookie:`nv_user=${signUserSession(email,Date.now())}`,"x-naumi-billing-version":String(displayedVersion),"x-naumi-billing-credits":"3","x-naumi-billing-operation-id":id,...(name==="annotate"?{}:{"content-type":"application/json"})},body});};
           const response=await route.POST(request());assert.equal(response.status,200,await response.clone().text());const before=calls;assert.equal((await route.POST(request())).status,200);assert.equal(calls,before);assert.equal(Number((await db.getPool().query("SELECT charged_credits FROM app_billing_operations WHERE id=$1",[`tool-${id}`])).rows[0].charged_credits),3);console.log(`PASS canvas.${name}: configured charge and replay`);
         }
         const { uploadImage } = await import("../src/lib/storage"), itemId = randomUUID(), imageUrl = await uploadImage(image, "image/png", `fixtures/billing-${itemId}.png`);
@@ -82,9 +84,9 @@ async function main() {
         const beforeConfig = await config.current(), nextConfig = structuredClone(initial.config);
         nextConfig.features["competitor.action"].pricing = { mode: "fixed", credits: 3 };
         nextConfig.switches.metering = "on";
-        await config.publish({ id: randomUUID(), expectedVersion: beforeConfig.version, config: nextConfig, actor: "fixture", reason: "competitor fixture" });
+        displayedVersion=(await config.publish({ id: randomUUID(), expectedVersion: beforeConfig.version, config: nextConfig, actor: "fixture", reason: "competitor fixture" })).version;
         const competitor = await import("../src/app/api/competitors/[id]/action/route"), competitorOp = randomUUID();
-        const competitorRequest = () => new Request(`http://fixture.test/api/competitors/${itemId}/action`, { method: "POST", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "content-type": "application/json", "x-naumi-billing-operation-id": competitorOp }, body: JSON.stringify({ action: "replicate", revision: 0, prompt: "fixture", regions: [], activeVersion: "" }) });
+        const competitorRequest = () => new Request(`http://fixture.test/api/competitors/${itemId}/action`, { method: "POST", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "content-type": "application/json", "x-naumi-billing-version":String(displayedVersion),"x-naumi-billing-credits":"3","x-naumi-billing-operation-id": competitorOp }, body: JSON.stringify({ action: "replicate", revision: 0, prompt: "fixture", regions: [], activeVersion: "" }) });
         const completed = await competitor.POST(competitorRequest(), { params: { id: itemId } });
         assert.equal(completed.status, 200, await completed.clone().text());
         assert.equal((await db.getCompetitorItem(email, itemId))?.versions.length, 1);
@@ -97,7 +99,7 @@ async function main() {
             mode = state;
             const id = randomUUID(), form = new FormData();
             form.append("image", new Blob([image], { type: "image/png" }), "image.png");
-            const result = await ipcheck.POST(new Request("http://fixture.test/api/ipcheck", { method: "POST", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "x-naumi-billing-operation-id": id }, body: form }));
+            const result = await ipcheck.POST(new Request("http://fixture.test/api/ipcheck", { method: "POST", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "x-naumi-billing-version":String(displayedVersion),"x-naumi-billing-credits":"1","x-naumi-billing-operation-id": id }, body: form }));
             assert.equal(result.ok, false);
             const row = (await db.getPool().query("SELECT state,reserved_credits FROM app_billing_operations WHERE id=$1", [`tool-${id}`])).rows[0];
             assert.equal(row.state, state === "rejected" ? "settled" : "hold");

@@ -8,7 +8,7 @@ async function main() {
     if (process.argv[2] === "cleanup") {
         const data = JSON.parse(readFileSync(path, "utf8")), current = await runtime.config.current();
         await runtime.config.publish({ id: randomUUID(), expectedVersion: current.version, config: data.original.config, actor: "fixture", reason: "Restore UI acceptance configuration" });
-        for (const table of ["app_billing_reconciliations", "app_billing_operations", "app_ledger", "app_credit_batches", "app_users"])
+        for (const table of ["app_billing_reconciliations", "app_billing_operations", "app_billing_intents", "app_artworks", "app_ledger", "app_credit_batches", "app_users"])
             await db.getPool().query(`DELETE FROM ${table} WHERE email=$1`, [data.email]);
     }
     else {
@@ -19,8 +19,10 @@ async function main() {
         const email = `billing-ui-${randomUUID()}@example.test`;
         await db.getOrCreateUser(email, "UI fixture");
         await db.addCreditBatch(email, 100, { source: "admin", reason: "UI fixture" });
+        const sharp=(await import("sharp")).default,bytes=await sharp({create:{width:64,height:64,channels:3,background:"white"}}).png().toBuffer(),artworkId=`billing-ui-${randomUUID()}`;
+        await db.addArtworks(email,[{id:artworkId,title:"Canvas retry fixture",category:"main",prompt:"Canvas retained prompt",status:"completed",image:"/media/billing-ui-fixture.png",gradient:"",origin:"canvas",width:64,height:64}]);
         const { signSession } = await import("../src/lib/admin-auth"), { signUserSession } = await import("../src/lib/native-auth");
-        writeFileSync(path, JSON.stringify({ original, email, adminCookie: signSession(Date.now()), userCookie: signUserSession(email, Date.now()) }));
+        writeFileSync(path, JSON.stringify({ original, email, artworkId, imageBase64:bytes.toString("base64"), adminCookie: signSession(Date.now()), userCookie: signUserSession(email, Date.now()) }));
     }
     await db.getPool().end();
 }
