@@ -29,6 +29,8 @@ import {
 } from "@/lib/settings";
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
 import {sameSiteBillingMutation} from "@/lib/billing/access";
+import { modelConfigurationEnabled } from "@/lib/model-config/requests";
+import { ModelConfigError } from "@/lib/model-config/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,7 +51,11 @@ async function guard(req: Request): Promise<NextResponse | null> {
 export async function GET(req: Request) {
   const blocked = await guard(req);
   if (blocked) return blocked;
-  return NextResponse.json(await getAdminView());
+  try {
+    return NextResponse.json({ ...await getAdminView(), modelConfigurationActive: await modelConfigurationEnabled() });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof ModelConfigError ? error.message : "管理设置暂时不可用" }, { status: 503 });
+  }
 }
 
 export async function POST(req: Request) {
@@ -109,6 +115,16 @@ export async function POST(req: Request) {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "请求体无效" }, { status: 400 });
+  }
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "请求体无效" }, { status: 400 });
+
+  if (["model", "models", "cutoutModel", "cutoutBackend", "encryptedBaseUrl", "baseUrlPlain", "baseUrlClear", "encryptedKey", "keyPlain"].some(key => Object.prototype.hasOwnProperty.call(body, key))) {
+    try {
+      if (await modelConfigurationEnabled()) return NextResponse.json({ error: "模型配置已由模型配置中心管理，请在那里修改并发布", code: "MODEL_CONFIG_MANAGED", managementPath: "/admin/bi/models" }, { status: 409 });
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof ModelConfigError ? error.message : "模型配置状态无法核对" }, { status: 503 });
+    }
   }
 
   // 解出浏览器 RSA 密文 → 明文;解密失败/为空回 null,调用方据此回 400。

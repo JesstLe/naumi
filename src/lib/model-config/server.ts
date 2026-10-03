@@ -33,7 +33,7 @@ async function assemble() {
   await repo.current();
   const billing = (await getBillingRuntime()).config;
   const runtime = createModelRuntime({ pool, repo, credentials, router, trustedOrigins, billing: () => billing.current(), billingByVersion: version => billing.byVersion(version) });
-  return { runtime, repo, credentials, router, trustedOrigins, billing };
+  return { runtime, repo, credentials, router, trustedOrigins, billing, pool };
 }
 export async function getModelAdministration() {
   if (!assembled) assembled = assemble().catch(error => { assembled = undefined; throw error; });
