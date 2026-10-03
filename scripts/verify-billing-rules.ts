@@ -10,6 +10,9 @@ async function main() {
     const config = fixtureConfig();
     assert.equal(quote({ version: 1, config }, facts({ quality: "high", resolution: "2K" })).requestedCredits, 12);
     const q = quote({ version: 1, config }, facts({ quantity: 2 }));
+        assert.equal(q.debitOrder,"expires-first");
+        config.credits.debitOrder="created-first";
+        assert.equal(q.debitOrder,"expires-first");
     assert.deepEqual(settlementFor(q, { state: "succeeded", items: [{ id: "a", state: "succeeded", executedQuality: "medium" }, { id: "b", state: "failed" }] }), { state: "settle", charge: 6, release: 6 });
     assert.equal(settlementFor(q, { state: "unknown", items: [] }).state, "hold");
     config.features["image.generate"].pricing = { mode: "fixed", credits: 8 };
