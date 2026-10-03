@@ -43,7 +43,8 @@
     "verify:billing-performance": "tsx --conditions react-server scripts/verify-billing-performance.ts",
     "verify:billing-review": "tsx --conditions react-server scripts/verify-billing-review.ts",
     "verify:billing-all": "node scripts/verify-billing-all.mjs",
-    "verify:billing-ui": "node scripts/verify-billing-ui.mjs"
+    "verify:billing-ui": "node scripts/verify-billing-ui.mjs",
+    "verify:model-config": "tsx --conditions react-server scripts/verify-model-config.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",
