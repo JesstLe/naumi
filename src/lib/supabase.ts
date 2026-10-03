@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { currentImageQuality } from "@/lib/image-quality-preference";
 
 // Browser Supabase client (anon key) — used client-side for auth only.
 // NEXT_PUBLIC_* are inlined at build time, so this is safe in client code.
@@ -32,7 +33,7 @@ export async function authHeader(): Promise<Record<string, string>> {
   if (typeof window !== "undefined") {
     const textModel = window.localStorage.getItem("naumi:text-model")?.trim();
     if (textModel) headers["x-naumi-text-model"] = textModel;
-    const quality = window.localStorage.getItem("naumi:image-quality")?.trim();
+    const quality = currentImageQuality();
     if (quality) headers["x-naumi-image-quality"] = quality;
   }
   if (!url || !anon) return headers;

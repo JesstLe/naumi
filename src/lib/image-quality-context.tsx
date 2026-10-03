@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { IMAGE_QUALITY_IDS, type ImageQualityId } from "@/lib/image-quality";
 import { imageBillCredits } from "@/lib/mock-data";
+import { updateCurrentImageQuality } from "@/lib/image-quality-preference";
 
 export const IMAGE_QUALITY_STORAGE_KEY = "naumi:image-quality";
 const QualityContext = createContext<{
@@ -22,6 +23,7 @@ export function ImageQualityProvider({ children }: { children: ReactNode }) {
   function setQuality(value: string) {
     const next = IMAGE_QUALITY_IDS.includes(value as ImageQualityId) ? value as ImageQualityId : "medium";
     updateQuality(next);
+    updateCurrentImageQuality(next);
     try { localStorage.setItem(IMAGE_QUALITY_STORAGE_KEY, next); } catch { /* Optional preference. */ }
   }
   useEffect(() => {
