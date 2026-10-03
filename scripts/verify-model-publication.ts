@@ -1,0 +1,146 @@
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
+import type { ConfigSnapshot } from "../src/lib/billing/types";
+import { fixtureConfig } from "./billing-unit-fixture";
+import { createModelFixture } from "./model-config-fixture";
+
+async function main() {
+  assert.ok(existsSync("src/lib/model-config/runtime.ts"), "Published models must control immutable execution projections");
+  const { createModelRuntime, simulateModel } = await import("../src/lib/model-config/runtime");
+  const { compileRouterProjection } = await import("../src/lib/model-config/projection");
+  const { createRouterControl } = await import("../src/lib/model-config/router-client");
+  const f = await createModelFixture();
+  const actor = "publication-admin@example.test";
+  const operations = new Map<string, { id: string; digest: string; phase: string }>();
+  const prepared = new Set<string>();
+  let activateRequests = 0, prepareRequests = 0, generationRequests = 0, disconnectAfterActivate = true, disconnectAfterPrepare = false, activeDigest = "";
+  const controlToken = "fixture-router-admin-token-20261004-independent";
+  const control = createServer(async (req, res) => {
+    if (req.headers.authorization !== `Bearer ${controlToken}`) { res.writeHead(401); res.end(); return; }
+    const parts = []; for await (const part of req) parts.push(part);
+    const body = parts.length ? JSON.parse(Buffer.concat(parts).toString()) : {};
+    const send = (status: number, data: unknown) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(data)); };
+    if (req.url === "/internal/config/state") return send(200, { digest: activeDigest });
+    if (req.url === "/internal/config/prepare") { prepareRequests++; prepared.add(body.digest); if (disconnectAfterPrepare) { disconnectAfterPrepare = false; res.destroy(); return; } return send(200, { digest: body.digest, phase: "prepared" }); }
+    if (req.url === "/internal/config/activate") {
+      activateRequests++;
+      if (!prepared.has(body.digest)) return send(404, {});
+      const previous = operations.get(body.id);
+      if (previous && previous.digest !== body.digest || !previous && activeDigest !== body.expectedDigest) return send(409, {});
+      activeDigest = body.digest; operations.set(body.id, { id: body.id, digest: body.digest, phase: "applied" });
+      if (disconnectAfterActivate) { res.destroy(); return; }
+      return send(200, operations.get(body.id));
+    }
+    if (req.url?.startsWith("/internal/config/publications/")) { const p = operations.get(req.url.split("/").at(-1)!); return send(p ? 200 : 404, p || {}); }
+    if (req.url?.includes("generations")) generationRequests++;
+    send(404, {});
+  });
+  await new Promise<void>(resolve => control.listen(0, "127.0.0.1", resolve));
+  const controlOrigin = `http://127.0.0.1:${(control.address() as { port: number }).port}`;
+  const router = createRouterControl({ baseUrl: controlOrigin, token: controlToken, envelopeSecret: "fixture-model-envelope-secret-independent-20261004", trustedOrigins: [controlOrigin] });
+  const config = fixtureConfig();
+  config.costs["supplier-cost-estimate"] = { currency: "CNY", amountMicros: "290000", unit: "image", source: "manual-estimate" };
+  let billing: ConfigSnapshot = { version: 1, config };
+  const billingHistory = new Map<number, ConfigSnapshot>([[1, billing]]);
+  const runtime = createModelRuntime({ pool: f.sql, repo: f.repo, credentials: f.credentials, router, billing: async () => billing, billingByVersion: async version => { const historical = billingHistory.get(version); assert.ok(historical); return historical; }, trustedOrigins: [f.origin] });
+  try {
+    const old = await f.repo.current(), draft = await f.repo.draft(actor);
+    const changed = structuredClone(draft.config); changed.publicModels[0].label = "新版生图";
+    changed.pools.push({ id: "image-pool", modality: "image", strategy: "lowest-cost", candidates: ["u1"], rules: [] });
+    changed.publicModels[0].target = { type: "pool", id: "image-pool" };
+    const saved = await f.repo.saveDraft({ id: draft.id, expectedRevision: draft.revision, config: changed, actor });
+    const input = { id: randomUUID(), draftId: draft.id, expectedRevision: saved.revision, expectedVersion: old.version, reason: "发布验收", actor };
+    const p = await runtime.publish(input);
+    assert.equal(p.phase, "unknown", "disconnected activation must not claim success");
+    assert.equal((await f.repo.current()).version, old.version);
+    await assert.rejects(runtime.publish({ ...input, id: randomUUID() }), (e: any) => e.status === 409);
+    disconnectAfterActivate = false;
+    const recovered = await runtime.publish(input);
+    assert.equal(recovered.phase, "applied");
+    assert.equal(activateRequests, 1, "unknown activation is reconciled by querying the same operation");
+    const latest = await f.repo.current();
+    const projections = await Promise.all([runtime.prepareExecution({ snapshot: latest, billing }), runtime.prepareExecution({ snapshot: latest, billing })]);
+    assert.equal(projections[0].digest, projections[1].digest);
+    const before = prepareRequests;
+    billing = { version: 2, config: structuredClone(config) };
+    billing.config.costs["supplier-cost-estimate"].amountMicros = "390000";
+    billingHistory.set(billing.version, billing);
+    const fresh = await runtime.prepareExecution({ snapshot: latest, billing });
+    assert.notEqual(fresh.digest, projections[0].digest);
+    assert.equal(prepareRequests, before + 1, "cost-only update prepares the new pair once");
+    const oldPair = await runtime.prepareExecution({ snapshot: latest, billing: { version: 1, config } });
+    assert.equal(oldPair.digest, projections[0].digest);
+    assert.equal(oldPair.modelVersion, latest.version); assert.equal(oldPair.billingVersion, 1);
+    const publicCatalog = await runtime.publicCatalog("image");
+    const publicText = JSON.stringify(publicCatalog);
+    for (const forbidden of ["providerId", "credentialRef", "upstreamModel", "costRef", "baseUrl", "candidates", "wire-image-one", f.marker]) assert.ok(!publicText.includes(forbidden), `Public catalog leaks ${forbidden}`);
+    const currentDraft = await f.repo.draft(actor);
+    const facts = { task: "product" as const, quality: "high", resolution: "2K", needsEdit: false, preserveIdentity: false, needsText: false, nativeResolution: true, references: 0 };
+    const simulated = await runtime.simulate({ draftId: currentDraft.id, actor, facts, publicModelId: "image-a" });
+    assert.deepEqual(simulated.eligible.map(x => x.upstreamId), ["u1"]);
+    const excluded = await runtime.simulate({ draftId: currentDraft.id, actor, facts: { ...facts, resolution: "4K" }, publicModelId: "image-a" });
+    assert.equal(excluded.eligible.length, 0); assert.ok(excluded.excluded[0].codes.includes("NATIVE_RESOLUTION"));
+    assert.equal(generationRequests, 0, "publication and simulation never call paid generation");
+    const creditCost = { version: 3, config: structuredClone(config) }; creditCost.config.costs["supplier-cost-estimate"] = { currency: "credits", amountMicros: "4000000", unit: "image", source: "legacy-credit-estimate" };
+    await assert.rejects(runtime.prepareExecution({ snapshot: latest, billing: creditCost }), /货币成本/);
+    const fx = { version: 4, config: structuredClone(config) }; fx.config.costs["supplier-cost-estimate"] = { currency: "USD", amountMicros: "10000", cnyPerUnitMicros: "7000000", unit: "image", source: "manual-estimate" };
+    const dollar = await runtime.prepareExecution({ snapshot: latest, billing: fx });
+    const convertedPrices = dollar.payload.config.routes[0].money_prices;
+    assert.ok(convertedPrices?.length);
+    assert.equal(convertedPrices[0].currency, "CNY");
+    assert.equal(convertedPrices[0].amountMicros, "70000");
+    const originalPayload = dollar.payload;
+    await f.sql.query("UPDATE app_model_router_projections SET payload=jsonb_set(payload,'{config,routes,0,upstream_model}','\"tampered-model\"') WHERE digest=$1", [dollar.digest]);
+    await assert.rejects(runtime.prepareExecution({ snapshot: latest, billing: fx }), (error: any) => error.code === "CONFIG_UNAVAILABLE");
+    await f.sql.query("UPDATE app_model_router_projections SET payload=$2::jsonb WHERE digest=$1", [dollar.digest, JSON.stringify(originalPayload)]);
+    const disconnectedBilling = { version: 8, config: structuredClone(config) };
+    disconnectAfterPrepare = true; const prepareBeforeDisconnect = prepareRequests;
+    await assert.rejects(runtime.prepareExecution({ snapshot: latest, billing: disconnectedBilling }), (error: any) => error.code === "ROUTER_UNAVAILABLE");
+    const afterDisconnect = await Promise.all([runtime.prepareExecution({ snapshot: latest, billing: disconnectedBilling }), runtime.prepareExecution({ snapshot: latest, billing: disconnectedBilling })]);
+    assert.equal(afterDisconnect[0].digest, afterDisconnect[1].digest);
+    assert.equal(prepareRequests, prepareBeforeDisconnect + 2, "same projection retries once after ambiguous preparation and concurrent callers share the lease");
+    const partial = { version: 5, config: structuredClone(config) };
+    delete partial.config.costs["supplier-cost-estimate"];
+    partial.config.costs["supplier-cost-estimate:high:1K:generate"] = { currency: "CNY", amountMicros: "10000", unit: "image", source: "manual-estimate" };
+    assert.throws(() => compileRouterProjection(latest, partial, { trustedOrigins: [f.origin] }), /成本缺项/);
+    const layout = simulateModel(latest, billing, "image-a", { ...facts, task: "layout", nativeResolution: false }, { trustedOrigins: [f.origin] });
+    assert.equal(layout.eligible.length, 0, "layout always requires text accuracy in the real Router");
+    const tooLarge = simulateModel(latest, billing, "image-a", { ...facts, resolution: "4K", nativeResolution: false }, { trustedOrigins: [f.origin] });
+    assert.equal(tooLarge.eligible.length, 0, "requested output still exceeds the route pixel cap when native is optional");
+    const mixedUnits = structuredClone(latest);
+    mixedUnits.config.upstreamModels.push({ ...structuredClone(mixedUnits.config.upstreamModels[0]), id: "u2", model: "wire-image-two", costRef: "per-image" });
+    mixedUnits.config.pools[0].candidates.push("u2");
+    const mixedBilling = { version: 9, config: structuredClone(config) };
+    mixedBilling.config.costs["supplier-cost-estimate"].unit = "task";
+    mixedBilling.config.costs["per-image"] = { currency: "CNY", amountMicros: "100000", unit: "image", source: "manual-estimate" };
+    assert.equal(simulateModel(mixedUnits, mixedBilling, "image-a", { ...facts, quantity: 1 }, { trustedOrigins: [f.origin] }).eligible[0].upstreamId, "u2");
+    assert.equal(simulateModel(mixedUnits, mixedBilling, "image-a", { ...facts, quantity: 4 }, { trustedOrigins: [f.origin] }).eligible[0].upstreamId, "u1", "batch simulation compares task costs once and image costs per image");
+
+    const draftBeforeRestore = await f.repo.draft(actor);
+    const restoreInput = { id: randomUUID(), targetVersion: old.version, expectedVersion: latest.version, reason: "恢复历史配置验收", actor };
+    await f.sql.query("CREATE FUNCTION fail_model_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture audit unavailable'; END $$");
+    await f.sql.query("CREATE TRIGGER fail_model_audit BEFORE INSERT ON app_bi_access_log FOR EACH ROW EXECUTE FUNCTION fail_model_audit()");
+    const pendingRestore = await runtime.restore(restoreInput);
+    assert.equal(pendingRestore.phase, "unknown");
+    assert.equal((await f.repo.current()).version, latest.version, "audit failure rolls back the active pointer");
+    const activationBeforeRestoreRetry = activateRequests;
+    billing = { version: 6, config: structuredClone(config) }; billingHistory.set(6, billing);
+    await f.sql.query("DROP TRIGGER fail_model_audit ON app_bi_access_log");
+    const restored = await runtime.restore(restoreInput);
+    assert.equal(restored.phase, "applied");
+    assert.equal(activateRequests, activationBeforeRestoreRetry, "restore retry reconciles the existing activation");
+    assert.deepEqual((await f.repo.current()).config, old.config);
+    assert.deepEqual(await f.repo.draft(actor), draftBeforeRestore, "restoring never overwrites the actor's unsaved working draft");
+    assert.equal((await f.sql.query("SELECT count(*)::int AS n FROM app_bi_access_log WHERE id=$1", [`model-publication:${restoreInput.id}`])).rows[0].n, 1);
+    assert.equal(Number((await f.sql.query("SELECT billing_version FROM app_model_publications WHERE id=$1", [restoreInput.id])).rows[0].billing_version), 2, "retry retains the initial billing version despite a later cost publication");
+    const badDraft = await f.repo.draft(actor), badConfig = structuredClone(badDraft.config);
+    badConfig.upstreamModels[0].costRef = "unknown-cost";
+    const badSaved = await f.repo.saveDraft({ id: badDraft.id, actor, expectedRevision: badDraft.revision, config: badConfig });
+    const rejected = await runtime.publish({ id: randomUUID(), draftId: badDraft.id, expectedRevision: badSaved.revision, expectedVersion: restored.version, reason: "成本缺项发布验收", actor });
+    assert.equal(rejected.phase, "failed", "local validation rejection is proven before activation and must not block all later publications");
+    console.log("PASS unknown publication recovery, operation conflict, immutable model/billing projections, private catalog, cost currency conversion and zero paid simulation");
+  } finally { await f.cleanup(); await new Promise<void>(resolve => control.close(() => resolve())); }
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

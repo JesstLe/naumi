@@ -1,17 +1,23 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { Pool } from "pg";
 import { createModelFixture } from "./model-config-fixture";
 
 async function main() {
   assert.ok(existsSync("src/lib/model-config/repository.ts"), "Versioned model registry must exist");
-  const { validateModelConfig } = await import("../src/lib/model-config/schema");
+  const { validateModelConfig, ensureModelSchema } = await import("../src/lib/model-config/schema");
   const { canonicalConfig } = await import("../src/lib/model-config/repository");
   assert.equal(canonicalConfig({ a: 1, A: 2 }), '{"A":2,"a":1}', "digest canonicalization uses language-independent byte key order");
   assert.ok(existsSync("src/lib/model-config/bootstrap.ts"), "Existing configured defaults must be imported without paid calls");
   const f = await createModelFixture();
   const actor = "admin@example.test";
   try {
+    const schema = `model_bootstrap_${randomUUID().replace(/-/g, "")}`;
+    await f.sql.query(`CREATE SCHEMA ${schema}`);
+    const instances = Array.from({ length: 4 }, () => new Pool({ connectionString: process.env.DATABASE_URL, ssl: false, options: `-c search_path=${schema}` }));
+    try { await Promise.all(instances.map(ensureModelSchema)); }
+    finally { await Promise.all(instances.map(p => p.end())); await f.sql.query(`DROP SCHEMA ${schema} CASCADE`); }
     const initial = await Promise.all([f.repo.current(), f.repo.current(), f.repo.current()]);
     assert.equal(new Set(initial.map(x => x.version)).size, 1);
     assert.equal(f.initializations(), 1, "bootstrap runs once under database lock");
@@ -113,6 +119,22 @@ async function main() {
     assert.equal(bootstrap.upstreamModels.find(m => m.model === "video-original")!.providerId, "video:v1");
     assert.ok(bootstrap.upstreamModels.every(m => !m.capabilities.verified && !m.capabilities.nativeResolutions.length));
     assert.ok(!JSON.stringify(bootstrap).includes(f.marker));
+    const { createRouterControl } = await import("../src/lib/model-config/router-client");
+    const { importLegacyRouter } = await import("../src/lib/model-config/legacy-router");
+    const control = createRouterControl({ baseUrl: f.origin, token: "fixture-legacy-control-independent-20261004", envelopeSecret: "fixture-legacy-envelope-independent-20261004", trustedOrigins: [f.origin] });
+    const ref = "65f46c91-9058-416b-a7bf-710d73a364f8";
+    const exported = { config: { providers: [{ id: "original-provider", protocol: "apimart-images", baseUrl: `${f.origin}/v1`, credentialRef: ref, timeoutMs: 120000, maxConcurrent: 3 }], routes: [{ id: "original-route", provider: "original-provider", upstream_model: "original-image", enabled: true, healthy: true, quality_rank: 3, expected_latency_ms: 8000, supports_edit: true, text_accuracy: false, native_4k: false }], aliases: [{ id: "naumi-image-auto", candidates: ["original-route"], strategy: "lowest-cost", minQualityRank: 1 }] }, credentials: [control.seal(ref, "original-provider", f.marker)] };
+    const tx = await f.sql.connect();
+    let imported;
+    try { await tx.query("BEGIN"); imported = await importLegacyRouter({ exported, control, credentials: f.credentials, tx }); await tx.query("COMMIT"); }
+    catch (error) { await tx.query("ROLLBACK"); throw error; } finally { tx.release(); }
+    assert.ok(imported); assert.equal(imported.upstreamModels[0].capabilities.verified, false);
+    assert.equal(imported.publicModels[0].enabled, false);
+    assert.equal(await f.credentials.read(imported.providers[0].credentialRef!, imported.providers[0].id), f.marker);
+    const compatible = await bootstrapModelConfig({ credentials: f.credentials, sources: { image: { baseUrl: `${f.origin}/v1`, apiKey: f.marker, models: ["naumi-image-auto"], defaultModel: "naumi-image-auto", qualitySupported: false }, router: imported, video: [] }, trustedOrigins: [f.origin] });
+    assert.equal(compatible.bindings["image.generate"], "naumi-image-auto");
+    assert.equal(compatible.publicModels.find(m => m.id === "naumi-image-auto")!.target.type, "upstream", "legacy defaults remain on their original direct gateway until explicit review/publication");
+    assert.ok(!JSON.stringify(compatible).includes(f.marker));
     await assert.rejects(bootstrapModelConfig({ credentials: f.credentials, sources: { video: [] } }), /尚未完成/);
     console.log("PASS model registry validation, structured rollback, isolated drafts, concurrent bootstrap, immutable versions, credential retention and redaction");
   } finally { await f.cleanup(); }

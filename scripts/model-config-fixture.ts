@@ -24,6 +24,6 @@ export async function createModelFixture() {
   const config = fixtureModelConfig(`${origin}/v1`, credential.id);
   let initializations = 0;
   const repo = createModelRepository({ pool: sql, initialize: async () => { initializations++; return config; }, trustedOrigins: [origin] });
-  return { repo, config, sql, credentials, marker, origin, initializations: () => initializations,
+  return { repo, config, sql, credentials, marker, origin, schemaName: name, initializations: () => initializations,
     async cleanup() { await sql.end(); await admin.query(`DROP SCHEMA ${name} CASCADE`); await admin.end(); await new Promise<void>(resolve => server.close(() => resolve())); } };
 }

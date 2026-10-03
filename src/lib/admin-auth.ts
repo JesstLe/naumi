@@ -72,6 +72,7 @@ export function verifySessionToken(value: string, now: number, passwordHash?: st
     if (dot < 0) return false;
     const exp = Number(value.slice(0, dot));
     const mac = value.slice(dot + 1);
+    if (!/^[a-f0-9]{64}$/.test(mac)) return false;
     if (!Number.isFinite(exp) || exp < now) return false;
     const expected = createHmac("sha256", secret())
       .update(sessionMessage(exp, passwordHash))
@@ -90,7 +91,7 @@ function readCookie(request: Request, name: string): string | null {
     const eq = part.indexOf("=");
     if (eq < 0) continue;
     if (part.slice(0, eq).trim() === name) {
-      return decodeURIComponent(part.slice(eq + 1));
+      try { return decodeURIComponent(part.slice(eq + 1)); } catch { return null; }
     }
   }
   return null;

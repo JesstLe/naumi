@@ -105,11 +105,17 @@ const schemaReady = new WeakMap<Pool, Promise<void>>();
 export async function ensureModelSchema(pool: Pool): Promise<void> {
   let pending = schemaReady.get(pool);
   if (!pending) {
-    pending = pool.query(`
+    pending = (async () => {
+      const tx = await pool.connect();
+      try {
+        await tx.query("BEGIN");
+        await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('naumi-model-schema-v1',0))");
+        await tx.query(`
       CREATE TABLE IF NOT EXISTS app_model_credentials(id uuid PRIMARY KEY,provider_id text NOT NULL,key_enc text NOT NULL,created_by text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS app_model_config_versions(version bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,operation_id uuid UNIQUE NOT NULL,actor text NOT NULL,reason text NOT NULL,config jsonb NOT NULL,digest text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS app_model_config_state(singleton boolean PRIMARY KEY CHECK(singleton),active_version bigint REFERENCES app_model_config_versions(version));
       CREATE TABLE IF NOT EXISTS app_model_publications(id uuid PRIMARY KEY,version bigint NOT NULL REFERENCES app_model_config_versions(version),expected_version bigint NOT NULL,request_fingerprint text NOT NULL,phase text NOT NULL CHECK(phase IN ('staged','preparing','activating','applied','failed','unknown')),error_code text,updated_at timestamptz NOT NULL DEFAULT now());
+      CREATE TABLE IF NOT EXISTS app_bi_access_log(id text PRIMARY KEY,actor text NOT NULL,action text NOT NULL,target_email text NOT NULL DEFAULT '',section text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS app_model_drafts(id uuid PRIMARY KEY,revision bigint NOT NULL,based_on_version bigint NOT NULL REFERENCES app_model_config_versions(version),actor text NOT NULL UNIQUE,updated_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS app_model_providers(draft_id uuid NOT NULL REFERENCES app_model_drafts(id) ON DELETE CASCADE,id text NOT NULL,position int NOT NULL,name text NOT NULL,protocol text NOT NULL,base_url text NOT NULL,credential_ref uuid REFERENCES app_model_credentials(id),enabled boolean NOT NULL,timeout_ms int NOT NULL,max_concurrent int NOT NULL,options jsonb,PRIMARY KEY(draft_id,id));
       CREATE TABLE IF NOT EXISTS app_model_upstreams(draft_id uuid NOT NULL REFERENCES app_model_drafts(id) ON DELETE CASCADE,id text NOT NULL,position int NOT NULL,provider_id text NOT NULL,model text NOT NULL,label text NOT NULL,modality text NOT NULL,enabled boolean NOT NULL,capabilities jsonb NOT NULL,parameter_map jsonb NOT NULL,cost_ref text,PRIMARY KEY(draft_id,id),FOREIGN KEY(draft_id,provider_id) REFERENCES app_model_providers(draft_id,id));
@@ -118,7 +124,11 @@ export async function ensureModelSchema(pool: Pool): Promise<void> {
       CREATE TABLE IF NOT EXISTS app_model_rules(draft_id uuid NOT NULL,pool_id text NOT NULL,id text NOT NULL,position int NOT NULL,priority int NOT NULL,conditions jsonb NOT NULL,requirements jsonb NOT NULL,PRIMARY KEY(draft_id,pool_id,id),FOREIGN KEY(draft_id,pool_id) REFERENCES app_model_pools(draft_id,id) ON DELETE CASCADE);
       CREATE TABLE IF NOT EXISTS app_model_public_models(draft_id uuid NOT NULL REFERENCES app_model_drafts(id) ON DELETE CASCADE,id text NOT NULL,position int NOT NULL,label text NOT NULL,modality text NOT NULL,enabled boolean NOT NULL,visible boolean NOT NULL,upstream_target text,pool_target text,CHECK((upstream_target IS NULL)<>(pool_target IS NULL)),PRIMARY KEY(draft_id,id),FOREIGN KEY(draft_id,upstream_target) REFERENCES app_model_upstreams(draft_id,id),FOREIGN KEY(draft_id,pool_target) REFERENCES app_model_pools(draft_id,id));
       CREATE TABLE IF NOT EXISTS app_model_bindings(draft_id uuid NOT NULL,id text NOT NULL,public_model_id text NOT NULL,PRIMARY KEY(draft_id,id),FOREIGN KEY(draft_id,public_model_id) REFERENCES app_model_public_models(draft_id,id) ON DELETE CASCADE);
-    `).then(() => undefined).catch(error => { schemaReady.delete(pool); throw error; });
+        `);
+        await tx.query("COMMIT");
+      } catch (error) { await tx.query("ROLLBACK"); throw error; }
+      finally { tx.release(); }
+    })().catch(error => { schemaReady.delete(pool); throw error; });
     schemaReady.set(pool, pending);
   }
   return pending;
