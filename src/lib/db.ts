@@ -4,6 +4,7 @@ import {
   POINTS_PER_IMAGE,
   type PlanKey,
   type PromptTemplate,
+  type QualityCostAudit,
 } from "@/lib/mock-data";
 import type { SessionUser, Invoice } from "@/lib/auth-context";
 import { remoteTemplateImageSource } from "@/lib/template-image-cache";
@@ -200,6 +201,24 @@ async function ensureSchema(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS app_ledger_created_idx
           ON app_ledger (created_at DESC);
+        -- 内部成本审计:质量档回退时记录「用户实扣(按请求档) vs 实际执行成本(按执行档)」,
+        -- 供成本利润核算。只写不改用户侧 app_ledger 账单,用户可见流水不受任何影响。
+        CREATE TABLE IF NOT EXISTS app_image_cost_audit (
+          id                text PRIMARY KEY,
+          job_id            text NOT NULL DEFAULT '',
+          email             text NOT NULL DEFAULT '',
+          requested_quality text NOT NULL DEFAULT '',
+          executed_quality  text NOT NULL DEFAULT '',
+          upstream          text NOT NULL DEFAULT '',
+          images            integer NOT NULL DEFAULT 1,
+          billed_beans      double precision NOT NULL DEFAULT 0,
+          cost_beans        double precision NOT NULL DEFAULT 0,
+          margin_beans      double precision NOT NULL DEFAULT 0,
+          reason            text NOT NULL DEFAULT '',
+          created_at        timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS app_image_cost_audit_created_idx
+          ON app_image_cost_audit (created_at DESC);
         ALTER TABLE app_users ALTER COLUMN credits_total SET DEFAULT 20;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS banned boolean NOT NULL DEFAULT false;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_ip text;
@@ -5682,4 +5701,89 @@ export async function failCanvasImageTask(input: { id: string; email: string; er
   } finally {
     client.release();
   }
+}
+
+// ---------------------------------------------------------------------------
+// 内部成本审计(质量档回退):只记不改,用户侧 app_ledger 账单不受影响。
+
+/** 写入一条成本审计。绝不让审计影响出图主流程:任何错误只打日志。 */
+export async function recordImageCostAudit(
+  input: QualityCostAudit & { jobId: string; email: string }
+): Promise<void> {
+  if (!dbEnabled) return;
+  try {
+    await ensureSchema();
+    await getPool().query(
+      `INSERT INTO app_image_cost_audit
+         (id, job_id, email, requested_quality, executed_quality, upstream,
+          images, billed_beans, cost_beans, margin_beans, reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [
+        ledId("cst"),
+        input.jobId,
+        input.email.toLowerCase(),
+        input.requestedQuality,
+        input.executedQuality,
+        input.upstream,
+        input.images,
+        input.billedBeans,
+        input.costBeans,
+        input.marginBeans,
+        input.reason,
+      ]
+    );
+  } catch (error) {
+    console.error(
+      "[cost-audit] 写入失败(不影响生成/计费):",
+      error instanceof Error ? error.message : error
+    );
+  }
+}
+
+export type ImageCostAuditRow = QualityCostAudit & {
+  id: string;
+  jobId: string;
+  email: string;
+  createdAt: string;
+};
+
+/** 内部成本审计查询:按时间倒序,供成本利润核算。 */
+export async function listImageCostAudit(
+  limit = 200
+): Promise<ImageCostAuditRow[]> {
+  if (!dbEnabled) return [];
+  await ensureSchema();
+  const { rows } = await getPool().query<{
+    id: string;
+    job_id: string;
+    email: string;
+    requested_quality: string;
+    executed_quality: string;
+    upstream: string;
+    images: number;
+    billed_beans: string;
+    cost_beans: string;
+    margin_beans: string;
+    reason: string;
+    created_at: string;
+  }>(
+    `SELECT id, job_id, email, requested_quality, executed_quality, upstream,
+            images, billed_beans, cost_beans, margin_beans, reason, created_at
+       FROM app_image_cost_audit ORDER BY created_at DESC LIMIT $1`,
+    [limit]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    jobId: r.job_id,
+    email: r.email,
+    requestedQuality: r.requested_quality,
+    executedQuality: r.executed_quality,
+    upstream: r.upstream,
+    images: r.images,
+    billedBeans: Number(r.billed_beans),
+    costBeans: Number(r.cost_beans),
+    marginBeans: Number(r.margin_beans),
+    reason: r.reason,
+    createdAt: r.created_at,
+  }));
 }

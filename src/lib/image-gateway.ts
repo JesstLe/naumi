@@ -20,6 +20,11 @@ export function isImageGatewayModel(model: string) {
 
 export function imageOperationQuality(fallback: string) { return operations.getStore()?.quality || fallback; }
 
+/** 当前图片操作 id(生图任务为 `<jobId>` 或 `<jobId>:image:<n>`);无操作上下文返回 null。 */
+export function currentImageOperationId(): string | null {
+  return operations.getStore()?.id ?? null;
+}
+
 export class ImageOperationPending extends Error {
   constructor(readonly operationId: string, readonly cause: unknown) {
     super("图片任务正在核查或恢复中，请保留当前任务等待结果");

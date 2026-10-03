@@ -502,6 +502,66 @@ export function resolutionCost(id: string): number {
   );
 }
 
+// ── 质量档计费(内测阶段)───────────────────────────────────────────────
+// 内测期积分无限,计费只为跑通「前端选什么档 → 台账按什么档扣」的完整链路,
+// 故按质量档平铺单价、不再乘分辨率;正式上线前替换为定价表
+// (模型 × 分辨率 × 质量,见 src/lib/pricing.ts 的同事定价稿)。
+// 档位非法或空串时回退 medium 价(与提交前回退的执行档保持一致)。
+export const QUALITY_BEANS: Record<string, number> = {
+  low: 4,
+  medium: 6,
+  high: 10,
+  xhigh: 14,
+  max: 18,
+  auto: 6,
+};
+
+/** 单张扣豆:按请求质量档取测试单价,非法/空档回退 medium。 */
+export function qualityBillBeans(requested: string): number {
+  return QUALITY_BEANS[requested] ?? QUALITY_BEANS.medium;
+}
+
+/** 内部成本审计条目:一次质量回退事件的「实扣 vs 应扣成本」核算。 */
+export type QualityCostAudit = {
+  /** 用户被扣费所依据的请求档 */
+  requestedQuality: string;
+  /** 实际执行档(回退后) */
+  executedQuality: string;
+  /** 真实触发的上游(byok:<model> / default:<model>) */
+  upstream: string;
+  images: number;
+  /** 用户实扣豆(与计费口径一致:请求档 × 张数) */
+  billedBeans: number;
+  /** 应扣成本豆(执行档 × 张数) */
+  costBeans: number;
+  /** 毛利 = billed - cost(测试价目下恒正;换真实定价后可能为负) */
+  marginBeans: number;
+  /** 回退原因:quality-downgrade=同通道退档 / provider-fallback=换默认API */
+  reason: string;
+};
+
+/** 构造审计条目:实扣按请求档、成本按执行档,同一单价表保证口径一致。 */
+export function qualityCostAudit(input: {
+  requested: string;
+  executed: string;
+  upstream: string;
+  images: number;
+  reason: string;
+}): QualityCostAudit {
+  const billed = input.images * qualityBillBeans(input.requested);
+  const cost = input.images * qualityBillBeans(input.executed);
+  return {
+    requestedQuality: input.requested,
+    executedQuality: input.executed,
+    upstream: input.upstream,
+    images: input.images,
+    billedBeans: billed,
+    costBeans: cost,
+    marginBeans: billed - cost,
+    reason: input.reason,
+  };
+}
+
 export function resolutionLongSide(id: string): number {
   return GENERATION_RESOLUTIONS.find((r) => r.id === id)?.longSide ?? 0;
 }
