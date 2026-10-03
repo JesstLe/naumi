@@ -47,6 +47,8 @@ export type BillingFacts = {
     resolution: string;
     providerId?: string;
     modelId?: string;
+    fallbackProviderId?: string;
+    fallbackModelId?: string;
     metered: boolean;
     byok: boolean;
     paidFen: number;
@@ -119,6 +121,7 @@ export type ConfigSnapshot = {
     config: BillingConfig;
 };
 export type BillingQuote = {
+    staleReservationMinutes?:number;
     debitOrder?: "expires-first" | "created-first";
     schemaVersion: 1;
     configVersion: number;

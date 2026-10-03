@@ -5,7 +5,6 @@ import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import OpenAI, { toFile } from "openai";
-import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 import {
   dbEnabled,

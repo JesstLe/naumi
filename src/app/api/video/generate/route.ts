@@ -1,3 +1,4 @@
+import {withBillingIntent} from "@/lib/billing/intent";
 import { NextResponse } from "next/server";
 
 import { dbEnabled, getUser } from "@/lib/db";
@@ -18,7 +19,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-export async function POST(request: Request) {
+async function createSubmission(request: Request) {
   const email = await authenticatedEmail(request);
   if (dbEnabled && !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if (!rateLimit(`video-gen:${clientIp(request) || "0.0.0.0"}`, 6, 10 * 60 * 1000)) {
@@ -82,3 +83,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function POST(request:Request){return withBillingIntent(request,()=>createSubmission(request));}

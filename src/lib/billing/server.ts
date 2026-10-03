@@ -52,11 +52,11 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
     feature: BillingFacts["feature"];
     quantity: number;
     ratio?: string;
-}, snapshot?: ConfigSnapshot): Promise<BillingFacts> {
+}, snapshot?: ConfigSnapshot,trustedActor?:string): Promise<BillingFacts> {
     if (!isFeatureId(input.feature))
         throw new BillingError("INVALID_CONFIG", "未知计费功能", 400);
     const current = snapshot ?? await (await getBillingRuntime()).config.current();
-    const email = await resolveUserEmail(request);
+    const email = trustedActor??await resolveUserEmail(request);
     if (!email)
         throw new BillingError("INVALID_RESULT", "请先登录", 401);
     let model = typeof input.modelId === "string" ? input.modelId : undefined;
@@ -79,20 +79,20 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
     }
     const provider = input.feature === "image.generate" ? await getUserImageProvider(email) : null;
     const byok = !!provider && !!model?.startsWith("byok:") && provider.models.includes(upstreamUserImageModel(model));
-    return { feature: input.feature, quantity: input.quantity, quality: input.feature==="video.generate"?"medium":input.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium", resolution: input.resolution ?? "1K", modelId: model, providerId: byok ? `byok:${provider!.id}` : providerId, byok, metered: await meteringFor(current), paidFen: await totalPaidCents(email), userGroup: "default" };
+    return { feature: input.feature, quantity: input.quantity, quality: input.feature==="video.generate"?"medium":input.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium", resolution: input.resolution ?? "1K", modelId: model, providerId: byok ? `byok:${provider!.id}` : providerId,...(byok?{fallbackProviderId:"openai-images",fallbackModelId:(await getOpenAISettings()).model}:{}), byok, metered: await meteringFor(current), paidFen: await totalPaidCents(email), userGroup: "default" };
 }
 export async function quoteForRequest(request: Request, input: Partial<BillingFacts> & {
     feature: BillingFacts["feature"];
     quantity: number;
     ratio?: string;
-}) {
-    const snapshot = await (await getBillingRuntime()).config.current();
+},frozenSnapshot?:ConfigSnapshot) {
+    const snapshot = frozenSnapshot??await (await getBillingRuntime()).config.current();
     return quote(snapshot, await resolveBillingFacts(request, input, snapshot));
 }
 /** Trusted domain services have already authenticated and owner-checked this actor. */
 export async function quoteForActor(email:string,input:Partial<BillingFacts>&{feature:BillingFacts["feature"];quantity:number}){
     const snapshot=await(await getBillingRuntime()).config.current();
-    return quote(snapshot,{feature:input.feature,quantity:input.quantity,quality:input.quality||"medium",resolution:input.resolution||"1K",modelId:input.modelId,providerId:input.providerId,metered:await meteringFor(snapshot),byok:false,paidFen:await totalPaidCents(email),userGroup:"default"});
+    return quote(snapshot,await resolveBillingFacts(new Request("http://internal/api/billing/quote"),input,snapshot,email));
 }
 export async function updateBillingCompatibility(actor: string, reason: string, change: (config: BillingConfig) => void) {
     const config = (await getBillingRuntime()).config, current = await config.current();

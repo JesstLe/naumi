@@ -134,34 +134,6 @@ export type PricingPlan = {
   highlighted?: boolean;
 };
 
-// 积分体系：1 张图 = POINTS_PER_IMAGE 积分。
-export const POINTS_PER_IMAGE = 6;
-// 高阶出图模式(high quality)单张积分:成本远高于 medium(~$0.17),固定 18 积分/张。
-// 需累计充值 ≥999 元解锁(见 db.ts HIGH_QUALITY_MIN_PAID_CENTS / SessionUser.canHigh)。
-export const HIGH_QUALITY_COST = 18;
-
-// ── 各工具单次积分「唯一价格表」──────────────────────────────────────────
-// 铁律:前端展示的 cost 与后端 route 实扣**都从这里取**,永不各写各的(历史上抠图
-// 显示4实扣1、头像显示4实扣6 就是两边硬编码飘了)。改价只改这一处。
-// 定价依据:抠图/变清晰走 Replicate 成本极低=1;gpt-image 编辑一次≈一张生图=6;
-// 3D 生成成本最高=16;局改/印花提取按分辨率走 resolutionCost,不在此表。
-export const TOOL_COST = {
-  cutout: 1, // Replicate BiRefNet
-  upscale: 1, // Replicate Real-ESRGAN
-  garment: 6, // gpt-image 编辑(服装提取)
-  avatar: 6, // gpt-image 编辑(头像/模特)
-  dewrinkle: 6, // gpt-image 编辑(去皱)
-  dewatermark: 6, // gpt-image 编辑(去水印)
-  style: 6, // gpt-image 编辑(风格化)
-  tryon: 6, // gpt-image 编辑(试穿)
-  ipcheck: 1, // 侵权检测(纯查询)
-  printfile: 0, // 印刷文件导出(免费)
-} as const;
-export type ToolKey = keyof typeof TOOL_COST;
-
-// Pro 商业授权直售价(分):¥1,999/年。官网直售自动发 Key(2026-07-03 起,替代爱发电主通道)。
-export const RMB_PRO_LICENSE_FEN = 199900;
-
 // 一键套图目标平台(前端选择器用;各平台风格提示词在 prompt-config 的 SUITE_PLATFORM_HINTS,后台可改)。
 export const SUITE_PLATFORMS = [
   { id: "taobao", label: "淘宝 / 天猫" },
@@ -179,108 +151,11 @@ export type SuitePlatform = (typeof SUITE_PLATFORMS)[number]["id"];
 export const RECHARGE_ENABLED =
   (process.env.NEXT_PUBLIC_RECHARGE_ENABLED ?? "").trim() === "true";
 
-// 人民币定价（单位：分）。这是「显示价 = 实际扣款价」的唯一真源：
-// 页面展示价、下单金额、发票金额都从这里派生，杜绝「显示美元、扣款人民币」
-// 这种汇率换算不一致的问题。调价只改这里即可。
-export const RMB_PLAN_FEN: Record<PlanKey, number> = {
-  starter: 0,
-  pro: 6800,
-  studio: 13800,
-  team: 34800,
-};
-// 积分充值包(月度会员已下线,改纯积分充值)。基准 10 积分/¥,加赠随档位递增。
-// 充值积分统一 2 年有效。价格(分)是「显示价 = 扣款价」唯一真源。
-export const RMB_PACK_FEN: Record<string, number> = {
-  "c-990": 9900,
-  "c-6240": 49900,
-  "c-13320": 99900,
-  "c-28560": 199900,
-  "c-76910": 499900,
-  "c-183320": 1099900,
-};
-
 // 分 → ¥ 显示字符串（整数不带小数，含角分则保留两位）。
 export function fenToYuan(fen: number): string {
   const yuan = fen / 100;
   return `¥${Number.isInteger(yuan) ? yuan : yuan.toFixed(2)}`;
 }
-
-export const PRICING: PricingPlan[] = [
-  {
-    id: "starter",
-    name: "免费用户",
-    price: fenToYuan(RMB_PLAN_FEN.starter),
-    priceValue: RMB_PLAN_FEN.starter / 100,
-    period: "/ 永久免费",
-    tagline: "适合个人卖家试用",
-    credits: "注册即送积分",
-    monthlyCredits: 20,
-    features: ["全部基础模板", "标准生成队列", "1024px 导出", "社区支持"],
-    cta: "免费开始",
-  },
-  {
-    id: "pro",
-    name: "入门会员",
-    price: fenToYuan(RMB_PLAN_FEN.pro),
-    priceValue: RMB_PLAN_FEN.pro / 100,
-    period: "/ 月",
-    tagline: "适合轻量测试提示词和日常生图实验。",
-    credits: "每月 700 积分",
-    monthlyCredits: 700,
-    features: ["全部高级模板", "标准生成队列", "1024px 导出", "邮件支持"],
-    cta: "开通会员",
-  },
-  {
-    id: "studio",
-    name: "创作者会员",
-    price: fenToYuan(RMB_PLAN_FEN.studio),
-    priceValue: RMB_PLAN_FEN.studio / 100,
-    period: "/ 月",
-    tagline: "适合高频复用案例、内容生产和提示词测试。",
-    credits: "每月 1,800 积分",
-    monthlyCredits: 1800,
-    features: [
-      "全部高级模板",
-      "优先生成队列",
-      "2048px 高清导出",
-      "批量生成（最多 20 张）",
-      "去除水印",
-    ],
-    cta: "开通会员",
-    highlighted: true,
-  },
-  {
-    id: "team",
-    name: "工作室会员",
-    price: fenToYuan(RMB_PLAN_FEN.team),
-    priceValue: RMB_PLAN_FEN.team / 100,
-    period: "/ 月",
-    tagline: "适合高频出图工作流和小团队使用。",
-    credits: "每月 5,200 积分",
-    monthlyCredits: 5200,
-    features: [
-      "全部创作者功能",
-      "4K 超清导出",
-      "团队协作席位 ×5",
-      "专属模板定制",
-      "API 接入",
-    ],
-    cta: "开通会员",
-  },
-];
-
-export function getPlan(id: PlanKey): PricingPlan {
-  return PRICING.find((p) => p.id === id) ?? PRICING[0];
-}
-
-// 会员等级高低排序：免费 < 入门 < 创作者 < 工作室。
-// 用于判断升级/降级（如：有效期内禁止购买更低等级）。
-export const PLAN_ORDER: Record<PlanKey, number> = {
-  starter: 0,
-  pro: 1,
-  studio: 2,
-  team: 3,
-};
 
 export type CreditPack = {
   id: string;
@@ -296,33 +171,6 @@ export type CreditPack = {
 // 千分位:990 → "990",6240 → "6,240"
 export function fmtCredits(n: number): string {
   return n.toLocaleString("en-US");
-}
-
-const PACK_DEFS: { id: string; base: number; bonus: number; discount?: string }[] = [
-  { id: "c-990", base: 990, bonus: 0 },
-  { id: "c-6240", base: 4990, bonus: 1250, discount: "约 8 折" },
-  { id: "c-13320", base: 9990, bonus: 3330, discount: "约 7.5 折" },
-  { id: "c-28560", base: 19990, bonus: 8570, discount: "约 7 折" },
-  { id: "c-76910", base: 49990, bonus: 26920, discount: "约 6.5 折" },
-  { id: "c-183320", base: 109990, bonus: 73330, discount: "约 6 折" },
-];
-
-export const CREDIT_PACKS: CreditPack[] = PACK_DEFS.map((p) => {
-  const fen = RMB_PACK_FEN[p.id];
-  return {
-    id: p.id,
-    credits: p.base + p.bonus,
-    base: p.base,
-    bonus: p.bonus,
-    price: fenToYuan(fen),
-    priceValue: fen / 100,
-    fen,
-    discount: p.discount,
-  };
-});
-
-export function getCreditPack(id: string): CreditPack | undefined {
-  return CREDIT_PACKS.find((p) => p.id === id);
 }
 
 export type Artwork = {
@@ -466,23 +314,22 @@ export const GENERATION_STYLES = [
   "节日促销",
 ];
 
-// 分辨率档位：每张消耗的积分按分辨率递增。1K = 基础积分（POINTS_PER_IMAGE）。
+// 分辨率能力元数据；价格由计费配置提供。
 // 2K / 4K / 5K 在生成后由服务端放大到对应长边像素（见 generate-image route）。
 export const MAX_GENERATION_DIMENSION = 5120;
 
 export type ResolutionTier = {
   id: string;
   label: string;
-  cost: number;
   /** 放大目标长边像素；0 表示不放大（沿用模型原生尺寸）。 */
   longSide: number;
 };
 
 export const GENERATION_RESOLUTIONS: ResolutionTier[] = [
-  { id: "1K", label: "1K 标准", cost: POINTS_PER_IMAGE, longSide: 0 },
-  { id: "2K", label: "2K 高清", cost: 8, longSide: 2048 },
-  { id: "4K", label: "4K 超清", cost: 12, longSide: 4096 },
-  { id: "5K", label: "5K 专业", cost: 16, longSide: MAX_GENERATION_DIMENSION },
+  { id: "1K", label: "1K 标准", longSide: 0 },
+  { id: "2K", label: "2K 高清", longSide: 2048 },
+  { id: "4K", label: "4K 超清", longSide: 4096 },
+  { id: "5K", label: "5K 专业", longSide: MAX_GENERATION_DIMENSION },
 ];
 
 export function isGenerationResolution(id: string): boolean {
@@ -494,36 +341,6 @@ export function resolutionForLongSide(longSide: number): string {
   if (longSide > 2048) return "4K";
   if (longSide > 1536) return "2K";
   return "1K";
-}
-
-export function resolutionCost(id: string): number {
-  return (
-    GENERATION_RESOLUTIONS.find((r) => r.id === id)?.cost ?? POINTS_PER_IMAGE
-  );
-}
-
-// ── 质量档计费(内测阶段)───────────────────────────────────────────────
-// 内测期按积分额度管理,计费只为跑通「前端选什么档 → 台账按什么档扣」的完整链路,
-// 质量基础价叠加现有分辨率差价；正式上线前替换为定价表
-// (模型 × 分辨率 × 质量,见 src/lib/pricing.ts 的同事定价稿)。
-// 档位非法或空串时回退 medium 价(与提交前回退的执行档保持一致)。
-export const QUALITY_CREDITS: Record<string, number> = {
-  low: 4,
-  medium: 6,
-  high: 10,
-  xhigh: 14,
-  max: 18,
-  auto: 6,
-};
-
-/** 单张扣积分:按请求质量档取测试单价,非法/空档回退 medium。 */
-export function qualityBillCredits(requested: string): number {
-  return QUALITY_CREDITS[requested] ?? QUALITY_CREDITS.medium;
-}
-
-/** Unified image tariff: requested quality plus the existing resolution surcharge. */
-export function imageBillCredits(requested: string, resolution = "1K"): number {
-  return qualityBillCredits(requested) + resolutionCost(resolution) - POINTS_PER_IMAGE;
 }
 
 /** 内部成本审计条目:成功图片的实际扣分与测试成本估算。 */
@@ -545,48 +362,6 @@ export type QualityCostAudit = {
   reason: string;
 };
 
-/** 构造审计条目:实扣由已结算流水提供，成本按执行档测试价估算。 */
-export function qualityCostAudit(input: {
-  requested: string;
-  executed: string;
-  upstream: string;
-  images: number;
-  reason: string;
-  billedCredits: number;
-  platformFunded: boolean;
-  resolution?: string;
-}): QualityCostAudit {
-  const billed = input.billedCredits;
-  const cost = input.platformFunded ? input.images * imageBillCredits(input.executed, input.resolution) : 0;
-  return {
-    requestedQuality: input.requested,
-    executedQuality: input.executed,
-    upstream: input.upstream,
-    images: input.images,
-    billedCredits: billed,
-    costCredits: cost,
-    marginCredits: billed - cost,
-    reason: input.reason,
-  };
-}
-
 export function resolutionLongSide(id: string): number {
   return GENERATION_RESOLUTIONS.find((r) => r.id === id)?.longSide ?? 0;
-}
-
-// 3D 服装图专属分辨率计价(成本高于平面图):1K/2K=9、4K=18、5K=24。
-// 放大长边复用 resolutionLongSide(2K=2048 / 4K=4096 / 5K=5120;1K 不放大)。
-export const GARMENT3D_COST: Record<string, number> = {
-  "1K": 9,
-  "2K": 9,
-  "4K": 18,
-  "5K": 24,
-};
-export function garment3dCost(id: string): number {
-  return GARMENT3D_COST[id] ?? GARMENT3D_COST["1K"];
-}
-
-// 包装结构推断 + 3D 渲染与 3D 服装图使用同一高成本图生图档位。
-export function packaging3dCost(id: string): number {
-  return GARMENT3D_COST[id] ?? GARMENT3D_COST["1K"];
 }

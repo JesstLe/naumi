@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { authHeader } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import type { FeatureId } from "./types";
+import {clientIntentKey} from "./client-intent";
 export type PublicQuote = {
     version: number;
     credits: number;
@@ -64,6 +65,7 @@ export function BillingProvider({ children }: {
 }) {
     const { user, ready } = useAuth(), [catalog, setCatalog] = useState<PublicCatalog | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null);
     const cache = useRef(new Map<string, Promise<PublicQuote>>()), epoch = useRef(0);
+    const intents=useRef(new Map<string,string>());
     const refresh = useCallback(async () => {
         const generation = ++epoch.current;
         setLoading(true);
@@ -102,20 +104,24 @@ export function BillingProvider({ children }: {
         cache.current.set(key, promise);
         promise.catch(() => cache.current.delete(key));
         return promise;
-    }, [catalog?.version]);
+    }, [catalog]);
     const submit = useCallback(async (url: string, init: RequestInit, displayed: PublicQuote | null) => {
         if (!displayed)
             throw new Error("报价正在加载或暂不可用，请稍后重试");
         const headers = new Headers(init.headers);
         headers.set("x-naumi-billing-version", String(displayed.version));
         headers.set("x-naumi-billing-credits", String(displayed.credits));
-        if (!headers.has("x-naumi-billing-operation-id"))
-            headers.set("x-naumi-billing-operation-id", crypto.randomUUID());
+        const key=await clientIntentKey(user?.email||"",url,init);
+        let id=intents.current.get(key);try{id=id||localStorage.getItem(key)||undefined;}catch{}
+        id=headers.get("x-naumi-billing-operation-id")||id||crypto.randomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
+        headers.set("x-naumi-billing-operation-id",id);
         const response = await fetch(url, { ...init, headers });
-        if (response.status === 409 && (await response.clone().json().catch(() => ({}))).code === "PRICE_CHANGED")
+        const data=await response.clone().json().catch(()=>({}));
+        if(response.ok||response.status<500&&data.code!=="OPERATION_PENDING"&&data.code!=="OPERATION_CONFLICT"){intents.current.delete(key);try{localStorage.removeItem(key);}catch{}}
+        if (response.status === 409 && data.code === "PRICE_CHANGED")
             await refresh();
         return response;
-    }, [refresh]);
+    }, [refresh,user?.email]);
     const confirmAndSubmit = useCallback(async (url: string, init: RequestInit, input: QuoteInput) => {
         if (!catalog)
             throw new Error("报价加载中，请稍后重试");
@@ -133,21 +139,22 @@ export function BillingProvider({ children }: {
 export function useBilling() { const value = useContext(Context); if (!value)
     throw new Error("BillingProvider is missing"); return value; }
 export function useBillingEstimate(input: QuoteInput) {
-    const billing = useBilling(), { user } = useAuth(), key = JSON.stringify(input), [result, setResult] = useState<{
+    const billing = useBilling(), { user } = useAuth(), email=user?.email, serializedInput=JSON.stringify(input),key = JSON.stringify([email,serializedInput]), [result, setResult] = useState<{
         key: string;
         quote: PublicQuote | null;
         error: string | null;
     }>({ key: "", quote: null, error: null });
+    const quoteRequest=billing.quote;
     useEffect(() => {
         let cancelled = false;
         setResult({ key, quote: null, error: null });
-        if (!user)
+        if (!email)
             return;
-        billing.quote(JSON.parse(key)).then(q => { if (!cancelled)
+        quoteRequest(JSON.parse(serializedInput)).then(q => { if (!cancelled)
             setResult({ key, quote: q, error: null }); }).catch(e => { if (!cancelled)
             setResult({ key, quote: null, error: e instanceof Error ? e.message : "报价暂不可用" }); });
         return () => { cancelled = true; };
-    }, [key, billing.quote, user?.email]);
+    }, [key, serializedInput, quoteRequest, email]);
     const current = result.key === key ? result.quote : null;
     return { quote: current, cost: current?.credits ?? 0, loading: !!user && !current && !result.error, error: result.error, submit: (url: string, init: RequestInit) => billing.submit(url, init, current) };
 }

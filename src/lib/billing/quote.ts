@@ -32,13 +32,16 @@ export function quote(snapshot: ConfigSnapshot, input: BillingFacts): BillingQuo
     if (!base)
         throw new BillingError("INVALID_CONFIG", "未配置该功能价格", 400);
     const matched = base.rules.find(r => matches(r.when, f)), tariff = mergeTariff(base, matched);
-    const costRates = structuredClone(snapshot.config.costs);
+    const keys=new Set<string>([f.feature]);
+    for(const quality of QUALITY_IDS){for(const [provider,model] of [[f.providerId||"*",f.modelId||"*"],[f.fallbackProviderId||"*",f.fallbackModelId||"*"]])for(const key of [`${provider}:${model}:${quality}:${f.resolution}`,`${provider}:*:${quality}:${f.resolution}`,`*:${model}:${quality}:${f.resolution}`,`*:*:${quality}:${f.resolution}`])keys.add(key);}
+    if(tariff.pricing.mode==="cost-plus")keys.add(tariff.pricing.costKey);
+    const costRates=Object.fromEntries(Array.from(keys).filter(key=>snapshot.config.costs[key]).map(key=>[key,structuredClone(snapshot.config.costs[key])]));
     const requestedCredits = amount(tariff, f, costRates);
     let authorizedCredits = requestedCredits;
     if (tariff.settlement.qualityBasis === "executed")
         for (const quality of QUALITY_IDS)
             authorizedCredits = Math.max(authorizedCredits, amount(tariff, { ...f, quality }, costRates));
-    return { schemaVersion: 1, engineVersion: 1, configVersion: snapshot.version, facts: f, tariff, costRates, requestedCredits, authorizedCredits, reserveCredits: safe(Math.ceil(authorizedCredits * tariff.settlement.reserveBps / 10000)), matchedRuleId: matched?.id ?? null, debitOrder:snapshot.config.credits.debitOrder };
+    return { schemaVersion: 1, engineVersion: 1, configVersion: snapshot.version, facts: f, tariff, costRates, requestedCredits, authorizedCredits, reserveCredits: safe(Math.ceil(authorizedCredits * tariff.settlement.reserveBps / 10000)), matchedRuleId: matched?.id ?? null, debitOrder:snapshot.config.credits.debitOrder,staleReservationMinutes:snapshot.config.credits.staleReservationMinutes };
 }
 export function settlementFor(q: BillingQuote, r: BillingResult): Settlement {
     const ids = new Set(r.items.map(x => x.id));

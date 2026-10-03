@@ -58,7 +58,7 @@ try {
   await checkChunks(".next/static");
   console.log("PRICING_ACCESS=PASS: HTML/RSC denied; signed admin allowed; cache and public chunks contain no private quotes");
 } finally {
-  if (server) {
+  if (server && server.exitCode === null && server.signalCode === null) {
     const stopped = new Promise(resolve => server.once("exit", resolve));
     server.kill();
     await stopped;

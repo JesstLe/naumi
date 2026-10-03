@@ -39,7 +39,7 @@ import { Media } from "@/components/media";
 import { RecordPager, RECORDS_PER_PAGE } from "@/components/tools/record-pager";
 import { GenLoader } from "@/components/gen-loader";
 import { downloadImage } from "@/lib/download";
-import { POINTS_PER_IMAGE, SUITE_PLATFORMS } from "@/lib/mock-data";
+import { SUITE_PLATFORMS } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import { TextModelSelect } from "@/components/ui/text-model-select";
 

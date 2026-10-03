@@ -68,6 +68,14 @@ async function main() {
             assert.equal(Number((await db.getPool().query("SELECT count(*) AS n FROM app_ledger WHERE id=$1", [`led-tool-${operation}`])).rows[0].n), 1);
             console.log(`PASS ${name}: configured charge, one ledger, supplier replay guard`);
         }
+        const artworkId=`billing-canvas-${randomUUID()}`;
+        await db.addArtworks(email,[{id:artworkId,title:"Fixture",category:"main",prompt:"",status:"completed",image:`data:image/png;base64,${image.toString("base64")}`,gradient:"",resolution:"1K",width:64,height:64}],randomUUID());
+        for(const name of ["expand","text-edit","annotate"]){
+          const current=await config.current(),next=structuredClone(initial.config);next.switches.metering="on";next.features[`canvas.${name}` as keyof typeof next.features].pricing={mode:"fixed",credits:3};await config.publish({id:randomUUID(),expectedVersion:current.version,config:next,actor:"fixture",reason:`canvas ${name} fixture`});
+          const route=await import(`../src/app/api/canvas/${name}/route`),id=randomUUID();
+          const request=()=>{const form=new FormData();form.append("image",new Blob([image],{type:"image/png"}),"annotated.png");form.append("artworkId",artworkId);form.append("annotations",JSON.stringify([{type:"arrow",note:"fixture edit"}]));const body=name==="annotate"?form:JSON.stringify({artworkId,ratio:"4:3",oldText:"old",newText:"new",box:{x:1,y:1,width:32,height:32}});return new Request(`http://fixture.test/api/canvas/${name}`,{method:"POST",headers:{cookie:`nv_user=${signUserSession(email,Date.now())}`,"x-naumi-billing-operation-id":id,...(name==="annotate"?{}:{"content-type":"application/json"})},body});};
+          const response=await route.POST(request());assert.equal(response.status,200,await response.clone().text());const before=calls;assert.equal((await route.POST(request())).status,200);assert.equal(calls,before);assert.equal(Number((await db.getPool().query("SELECT charged_credits FROM app_billing_operations WHERE id=$1",[`tool-${id}`])).rows[0].charged_credits),3);console.log(`PASS canvas.${name}: configured charge and replay`);
+        }
         const { uploadImage } = await import("../src/lib/storage"), itemId = randomUUID(), imageUrl = await uploadImage(image, "image/png", `fixtures/billing-${itemId}.png`);
         const item = { id: itemId, batchId: randomUUID(), path: "fixture.png", image: imageUrl, width: 64, height: 64, prompt: "fixture", regions: [], versions: [], activeVersion: "", revision: 0, busy: false, createdAt: new Date().toISOString() };
         await db.insertCompetitorItem(email, item);

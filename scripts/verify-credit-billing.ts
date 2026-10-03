@@ -76,7 +76,8 @@ async function main() {
     await runtime.config.publish({id:randomUUID(),expectedVersion:originalConfig.version,config:baseline,actor:"fixture",reason:"Isolate legacy credit regression defaults"});
     await sql.query("DELETE FROM app_settings WHERE k=ANY($1)",[["multi_user_enabled","credits_metering"]]);
 
-    const { imageBillCredits } = await import("../src/lib/mock-data");
+    const {imageBillCredits:legacyPrice}=await import("../src/lib/billing/legacy");
+    const imageBillCredits=(q:string,r="1K")=>legacyPrice(baseline,q,r);
     let fixtureIp = 0;
     const run = async (name: string, count: number, expectedCharge: number, qualities: string[], byok = false, resolution = "1K", quality = "high", headerOnly = false, customDimensions = false) => {
       scenario = name; requestCount = 0; wire.length = 0;

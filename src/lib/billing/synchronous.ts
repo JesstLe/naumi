@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { dbEnabled, getPool, ensureSchema, isBanned } from "@/lib/db";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { quoteForRequest } from "./server";
+import { quoteForRequest,getBillingRuntime } from "./server";
 import { createBillingService, withBillingTransaction } from "./service";
 import { BillingError, type FeatureId, type OperationInput, type Tx } from "./types";
 import { operationIdFor, assertQuotedVersion, requestQuoteConfirmation, billingErrorResponse } from "./request";
@@ -11,6 +11,7 @@ import { billingJson } from "./access";
 import { fingerprint } from "./fingerprint";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 type Context = {
+    snapshot?:import("./types").ConfigSnapshot;
     request: Request;
     feature: FeatureId;
     email: string;
@@ -30,7 +31,7 @@ const storage = new AsyncLocalStorage<Context>(), service = createBillingService
 export function currentSynchronousBilling() { return storage.getStore(); }
 export function markBillingUpstream(state: Context["upstream"]) { const context = storage.getStore(); if (context)
     context.upstream = state; }
-async function requestIdentity(request: Request) {
+export async function billingRequestIdentity(request: Request) {
     const copy = request.clone(), entries: unknown[] = [];
     let body: Record<string, unknown> = {};
     if ((request.headers.get("content-type") || "").includes("multipart/form-data")) {
@@ -60,7 +61,7 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
         if (await isBanned(email, request.headers.get("x-real-ip") || ""))
             return billingJson({ error: "账号已被封禁" }, 403);
         await ensureSchema();
-        const id = `tool-${operationIdFor(request)}`, identity = await requestIdentity(request);
+        const id = `tool-${operationIdFor(request)}`, identity = await billingRequestIdentity(request);
         const previous = (await getPool().query("SELECT email,feature,quote,state,result_response,request_fingerprint FROM app_billing_operations WHERE id=$1", [id])).rows[0];
         if (previous) {
             const expected = fingerprint({ email: email.toLowerCase(), quote: previous.quote, ledgerId: `led-${id}`, fingerprint: identity.hash });
@@ -70,7 +71,7 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
                 return billingJson(previous.result_response);
             return billingJson({ error: previous.state === "settled" ? "扣费已完成，结果需要恢复，请联系管理员" : "任务已提交，请等待结果或联系管理员核查", code: "OPERATION_PENDING", operationId: id, ...(previous.result_response ? { result: previous.result_response } : {}) }, 409);
         }
-        const context: Context = { request, feature, email, id, ...identity, upstream: "unobserved" };
+        const context: Context = { request, feature, email, id, ...identity,snapshot:await(await getBillingRuntime()).config.current(), upstream: "unobserved" };
         return await storage.run(context, async () => {
             let response: Response;
             try {
@@ -108,7 +109,7 @@ export async function synchronousCost(quality?: ResolvedImageQuality, resolution
     try {
         context.quality = quality;
         if (!context.operation) {
-            const q = await quoteForRequest(context.request, { feature: context.feature, quantity: 1, quality: quality?.requested || "medium", resolution });
+            const q = await quoteForRequest(context.request, { feature: context.feature, quantity: 1, quality: quality?.requested || "medium", resolution },context.snapshot);
             assertQuotedVersion(context.confirmation, q);
             context.operation = { id: context.id, email: context.email, quote: q, reason: "工具任务预占", ledgerId: `led-${context.id}`, fingerprint: context.hash };
             const reserved = await withBillingTransaction(getPool(), tx => service.reserveTx(tx, context.operation!));

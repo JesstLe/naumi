@@ -23,6 +23,7 @@ export function costPlusCredits(p: Extract<Pricing, {
 export function costRateFor(q: BillingQuote, quality: string): CostRate | undefined {
     const { providerId = "*", modelId = "*", resolution } = q.facts;
     return (providerId !== "*" && q.costRates[`${providerId}:${modelId}:${quality}:${resolution}`]) ||
+        (providerId !== "*" && q.costRates[`${providerId}:*:${quality}:${resolution}`]) ||
         (modelId !== "*" && q.costRates[`*:${modelId}:${quality}:${resolution}`]) || q.costRates[q.facts.feature] || q.costRates[`*:*:${quality}:${resolution}`];
 }
 export function estimateCost(q: BillingQuote, r: BillingResult): CostEstimate | null {

@@ -20,7 +20,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     const entry = AGENT_FEATURES[name];
     if (!entry)
         return null;
-    const runtime = await getBillingRuntime(), threshold = (await runtime.config.current()).config.thresholds.agentConfirmCredits;
+    const runtime = await getBillingRuntime(), snapshot=await runtime.config.current(),threshold=snapshot.config.thresholds.agentConfirmCredits;
     if (name === "continue_aplus_generation") {
         const job = await getImageJob(String(args.job_id || ""), "aplus");
         if (!job || job.email !== email.toLowerCase())
@@ -32,7 +32,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     }
     const quantity = name === "generate_aplus" ? (Array.isArray(args.modules) && args.modules.length ? args.modules.length : 4) : name === "generate_image" ? Math.min(4, Math.max(1, Number(args.count) || 1)) : name === "generate_suite" ? (args.structure === "custom" && Array.isArray(args.shots) ? Math.max(1, Math.min(20, args.shots.length)) : 13) : 1;
     const request = new Request("http://internal/api/billing/quote", { headers: { cookie: cred.cookie, authorization: cred.authorization, "x-naumi-image-quality": cred.imageQuality || "medium" } });
-    return { quote: await quoteForRequest(request, { feature: entry.feature, quantity, quality: args.quality || cred.imageQuality || "medium", resolution: args.resolution || "1K", modelId: args.model || args.modelId, providerId: args.providerId, ratio: args.ratio }), label: entry.label, threshold };
+    return { quote: await quoteForRequest(request, { feature: entry.feature, quantity, quality: args.quality || cred.imageQuality || "medium", resolution: args.resolution || "1K", modelId: args.model || args.modelId, providerId: args.providerId, ratio: args.ratio },snapshot), label: entry.label, threshold };
 }
 export type AgentBillingSession = {
     email: string;

@@ -1,3 +1,4 @@
+import {withBillingIntent} from "@/lib/billing/intent";
 import { NextResponse } from "next/server";
 
 import { authenticatedEmail } from "@/lib/request-auth";
@@ -11,7 +12,7 @@ import {BillingError} from "@/lib/billing/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request) {
+async function createSubmission(request: Request) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if (!rateLimit(`canvas-image-task:${clientIp(request) || "0.0.0.0"}`, 20, 10 * 60 * 1000)) {
@@ -45,3 +46,5 @@ export async function GET(request: Request) {
   const tasks = await listCanvasImageTasks(email, Number.isFinite(limit) ? limit : 50, sourceArtworkIds);
   return NextResponse.json({ ok: true, tasks: tasks.map(publicCanvasImageTask) });
 }
+
+export async function POST(request:Request){return withBillingIntent(request,()=>createSubmission(request));}

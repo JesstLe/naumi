@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Pool } from "pg";
 
 async function main() {
-  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
+  if (process.env.NAUMI_VERIFY_ISOLATED_DB !== "1" || new URL(process.env.DATABASE_URL || "http://invalid").hostname !== "127.0.0.1") throw new Error("Requires isolated local PostgreSQL");
   process.env.NAUMI_MULTI_USER = "1";
   process.env.NAUMI_EDITION = "pro";
   process.env.PRO_LICENSE_KEY = "LOCAL-OFFLINE";

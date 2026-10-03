@@ -1,3 +1,4 @@
+import {withBillingIntent} from "@/lib/billing/intent";
 import {auditSettledImage} from "@/lib/image-quality-request";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { imageQualityCost } from "@/lib/image-quality-request";
@@ -11,7 +12,6 @@ import { CATEGORY_IMAGES, img } from "@/lib/images";
 import {
   MAX_GENERATION_DIMENSION,
   resolutionForLongSide,
-  qualityCostAudit,
   resolutionLongSide,
 } from "@/lib/mock-data";
 import {
@@ -20,7 +20,6 @@ import {
   ensureTemplateRoot,
   getUser,
   isBanned,
-  recordImageCostAudit,
   getImageJobChargedCredits,
   sweepStaleReservations,
 } from "@/lib/db";
@@ -1197,7 +1196,7 @@ async function handleObservedPost(request: Request) {
     );
   }
 
-  if (useDb) await sweepStaleReservations().catch(() => {});
+  if (useDb) await sweepStaleReservations(billingQuote?.staleReservationMinutes).catch(() => {});
   const jobId = `job-${crypto.randomUUID()}`;
   // 质量参数:入口即解析。p.quality 固化为实际执行档(恢复/重放确定性),
   // 请求档与回退原因进任务审计快照,供后台核对「请求了什么、跑了什么」。
@@ -1270,6 +1269,8 @@ export async function GET(request: Request) {
   });
 }
 
-export async function POST(request: Request) {
+async function createSubmission(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
+
+export async function POST(request:Request){return withBillingIntent(request,()=>createSubmission(request));}

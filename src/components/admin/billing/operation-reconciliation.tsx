@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState,useCallback } from "react";
 import { authHeader } from "@/lib/supabase";
 import type { BillingQuote } from "@/lib/billing/types";
 import { settlementFor } from "@/lib/billing/quote";
@@ -7,15 +7,15 @@ import { FEATURE_LABELS } from "@/lib/billing/labels";
 import { Field, NumberField, Choice, control } from "./fields";
 export function OperationReconciliation() {
     const [rows, setRows] = useState<any[]>([]), [selected, setSelected] = useState<any>(null), [success, setSuccess] = useState(0), [quality, setQuality] = useState("medium"), [reason, setReason] = useState(""), [proof, setProof] = useState(""), [error, setError] = useState(""), [message, setMessage] = useState(""), [busy, setBusy] = useState(false), [commandId, setCommandId] = useState<string | null>(null);
-    const request = async (path: string, body?: unknown) => { const r = await fetch(path, { cache: "no-store", method: body ? "POST" : "GET", headers: { "content-type": "application/json", ...await authHeader() }, ...(body ? { body: JSON.stringify(body) } : {}) }), data = await r.json(); if (!r.ok)
-        throw new Error(data.error || "操作失败"); return data; };
-    const load = async () => { try {
+    const request = useCallback(async (path: string, body?: unknown) => { const r = await fetch(path, { cache: "no-store", method: body ? "POST" : "GET", headers: { "content-type": "application/json", ...await authHeader() }, ...(body ? { body: JSON.stringify(body) } : {}) }), data = await r.json(); if (!r.ok)
+        throw new Error(data.error || "操作失败"); return data; },[]);
+    const load = useCallback(async () => { try {
         setRows(await request("/api/admin/billing/operations"));
     }
     catch (e) {
         setError((e as Error).message);
-    } };
-    useEffect(() => { void load(); }, []);
+    } },[request]);
+    useEffect(() => { void load(); }, [load]);
     const quote = selected?.quote as BillingQuote | undefined;
     const result = { state: success > 0 ? "succeeded" as const : "failed" as const, items: quote ? Array.from({ length: quote.facts.quantity }, (_, i) => ({ id: `manual-${i}`, state: i < success ? "succeeded" as const : "failed" as const, executedQuality: quality })) : [] };
     let charge: number | null = null;

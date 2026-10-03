@@ -60,7 +60,7 @@ export function CheckoutClient({ pack }: { pack?: string } = {}) {
     } catch {
       setErr("网络错误，请重试 / Network error, please retry");
     }
-  }, [user, packId, method]);
+  }, [user, packId, method, purchase]);
 
   useEffect(() => {
     if (!ready) return;
@@ -72,7 +72,7 @@ export function CheckoutClient({ pack }: { pack?: string } = {}) {
     if (!packId || started.current) return;
     started.current = true;
     void createOrder();
-  }, [ready, rechargeEnabled, user, openAuth, createOrder]);
+  }, [ready, rechargeEnabled, user, openAuth, createOrder, packId]);
 
   const onPaid = useCallback(async () => {
     try {
