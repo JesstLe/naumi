@@ -1,0 +1,112 @@
+import "server-only";
+import { createHash } from "node:crypto";
+import type { PoolClient } from "pg";
+import type { VideoProviderRuntimeConfig } from "../video/providers/config";
+import type { createCredentialStore } from "./credentials";
+import { validateModelConfig, type ValidationOptions } from "./schema";
+import { ModelConfigError, type ModelConfig, type ModelProvider, type UpstreamModel } from "./types";
+
+type LegacyImage = { baseUrl: string; apiKey: string; models: string[]; defaultModel: string; cutoutModel?: string; qualitySupported: boolean; editModels?: string[] };
+type LegacyText = { baseUrl: string; apiKey: string; defaultModel: string; agentModel: string; models: string[]; aliases: Record<string,string>; visibleModels: string[]; visionModels?: string[]; agent?: { baseUrl: string; apiKey: string } };
+export type LegacyModelSources = { image?: LegacyImage; flow?: LegacyImage; text?: LegacyText; video: VideoProviderRuntimeConfig[]; router?: ModelConfig };
+const shortHash = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 16);
+function publicId(model: string, modality: string) { return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(model) ? model : `${modality}-${shortHash(model)}`; }
+const unverifiedCapabilities = (): UpstreamModel["capabilities"] => ({ verified: false, generate: true, edit: false, vision: false, transparent: false, preserveIdentity: false, textAccuracy: false, qualityRank: 3, qualities: [], nativeResolutions: [], maxReferenceImages: 0, expectedLatencyMs: 0 });
+
+/** Called under the repository's bootstrap transaction/lock. It never generates or changes billing. */
+export async function bootstrapModelConfig(input: ValidationOptions & { credentials: ReturnType<typeof createCredentialStore>; sources: LegacyModelSources; tx?: PoolClient }): Promise<ModelConfig> {
+  const config: ModelConfig = { schemaVersion: 1, providers: [], upstreamModels: [], publicModels: [], pools: [], bindings: {} };
+  const addProvider = async (id: string, name: string, protocol: ModelProvider["protocol"], baseUrl: string, apiKey: string, options?: ModelProvider["options"]) => {
+    const ref = await input.credentials.importPlain({ providerId: id, plain: apiKey, actor: "system" }, input.tx);
+    config.providers.push({ id, name, protocol, baseUrl: baseUrl || "https://api.openai.com/v1", credentialRef: ref.id, enabled: true, timeoutMs: 120000, maxConcurrent: 4, ...(options ? { options } : {}) });
+  };
+  const addModel = (providerId: string, wire: string, modality: UpstreamModel["modality"], alias = wire, visible = true, capabilities = unverifiedCapabilities()) => {
+    const id = `${providerId}:${shortHash(wire)}`;
+    if (!config.upstreamModels.some(m => m.id === id)) config.upstreamModels.push({ id, providerId, model: wire, label: wire.slice(0, 100), modality, enabled: true, capabilities, parameterMap: {} });
+    let external = publicId(alias, modality);
+    const existing = config.publicModels.find(m => m.id === external);
+    if (existing && (existing.target.id !== id || existing.modality !== modality)) external = `${modality}-${shortHash(`${providerId}:${alias}`)}`;
+    if (!config.publicModels.some(m => m.id === external)) config.publicModels.push({ id: external, label: alias.slice(0, 100), modality, enabled: true, visible, target: { type: "upstream", id } });
+    return external;
+  };
+  for (const [providerId, source, protocol, label] of [
+    ["platform-images", input.sources.image, "openai-images", "现行主生图通道"],
+    ["flow-images", input.sources.flow, "new-api-flow", "现行 Flow 通道"],
+  ] as const) {
+    if (!source?.apiKey || !source.defaultModel) continue;
+    await addProvider(providerId, label, protocol, source.baseUrl, source.apiKey);
+    for (const wire of Array.from(new Set([source.defaultModel, ...source.models, source.cutoutModel].filter((x): x is string => !!x)))) {
+      const caps = unverifiedCapabilities();
+      caps.edit = protocol === "new-api-flow" ? true : (source.editModels || []).includes(wire) || /^gpt-image|^naumi-image-(auto|economy|standard|premium)$/.test(wire);
+      caps.transparent = wire === source.cutoutModel && /^gpt-image-1(?:$|-)/.test(wire);
+      caps.qualities = source.qualitySupported ? ["low", "medium", "high", "xhigh", "max", "auto"] : [];
+      const external = addModel(providerId, wire, "image", wire, source.models.includes(wire), caps);
+      if (providerId === "platform-images" && wire === source.defaultModel) { config.bindings["image.generate"] = external; if (caps.edit) config.bindings["image.edit"] = external; }
+      if (caps.transparent && wire === source.cutoutModel) config.bindings["image.cutout"] = external;
+    }
+  }
+  const text = input.sources.text;
+  if (text?.apiKey && text.defaultModel) {
+    const providerId = "platform-text"; await addProvider(providerId, "现行文字与视觉通道", "openai-chat", text.baseUrl, text.apiKey);
+    const wires = new Set([text.defaultModel, ...(!text.agent ? [text.agentModel] : []), ...text.models, ...Object.values(text.aliases), ...(text.visionModels || []), ...text.visibleModels.map(id => text.aliases[id] || id)]);
+    for (const wire of Array.from(wires).filter(Boolean)) {
+      const aliases = Object.entries(text.aliases).filter(([, model]) => model === wire).map(([alias]) => alias);
+      const caps = unverifiedCapabilities(); caps.vision = (text.visionModels || []).includes(wire);
+      for (const alias of aliases.length ? aliases : [wire]) {
+        const visible = text.visibleModels.length ? text.visibleModels.includes(alias) : text.models.includes(wire) || wire === text.defaultModel;
+        const external = addModel(providerId, wire, "text", alias, visible, caps);
+        if (wire === text.defaultModel && (!config.bindings["text.generate"] || visible)) config.bindings["text.generate"] = external;
+        if (!text.agent && wire === text.agentModel && !config.bindings["agent.text"]) config.bindings["agent.text"] = external;
+        if (caps.vision && !config.bindings["vision.reference"]) for (const binding of ["vision.reference", "vision.review", "vision.ocr", "agent.vision"]) config.bindings[binding] = external;
+      }
+    }
+    if (text.agent) {
+      await addProvider("platform-agent", "现行 Agent 通道", "openai-chat", text.agent.baseUrl, text.agent.apiKey);
+      const caps = unverifiedCapabilities(); caps.vision = (text.visionModels || []).includes(text.agentModel);
+      config.bindings["agent.text"] = addModel("platform-agent", text.agentModel, "text", text.agentModel, false, caps);
+      if (caps.vision) config.bindings["agent.vision"] = config.bindings["agent.text"];
+    }
+    config.bindings["agent.text"] ||= config.bindings["text.generate"];
+    config.bindings["text.title"] = config.bindings["text.generate"];
+    config.bindings["text.competitor"] = config.bindings["text.generate"];
+  }
+  for (const v of input.sources.video) {
+    const id = `video:${v.id}`;
+    const { createPath, pollPath, contentPath, rawAuthorization, workflowId, idempotencyStrategy, idempotencyBodyField } = v;
+    await addProvider(id, v.label, v.protocol, v.baseUrl, v.apiKey, { createPath, pollPath, contentPath, rawAuthorization, workflowId, idempotencyStrategy, idempotencyBodyField });
+    for (const wire of Array.from(new Set([v.defaultModel, ...v.models]))) {
+      const external = addModel(id, wire, "video");
+      if (wire === v.defaultModel && !config.bindings["video.generate"]) config.bindings["video.generate"] = external;
+    }
+  }
+  // The control-plane importer supplies a validated registry with locally imported immutable credential refs.
+  // Merge its explicit aliases before first activation; unknown legacy capabilities stay direct/unverified.
+  if (input.sources.router) {
+    const router = input.sources.router;
+    config.providers.push(...router.providers); config.upstreamModels.push(...router.upstreamModels); config.pools.push(...router.pools);
+    for (const model of router.publicModels) {
+      const index = config.publicModels.findIndex(m => m.id === model.id);
+      if (index >= 0) config.publicModels[index] = model; else config.publicModels.push(model);
+    }
+  }
+  if (!config.publicModels.length) throw new ModelConfigError("CONFIG_NOT_READY", "尚未完成可用模型配置，请先完成首启设置", 503);
+  return validateModelConfig(config, input);
+}
+
+export async function readLegacyModelSources(): Promise<LegacyModelSources> {
+  const [{ getOpenAISettings }, { getOpenAIBaseUrl }, { getNewApiImageSettings, getImageModelCatalog }, { configuredVideoProviders }] = await Promise.all([import("../settings"), import("../openai-base"), import("../image-model-catalog"), import("../video/providers/config")]);
+  const [settings, baseUrl, catalog] = await Promise.all([getOpenAISettings(), getOpenAIBaseUrl(), getImageModelCatalog()]);
+  const flow = getNewApiImageSettings();
+  const list = (value?: string) => (value || "").split(/[\s,]+/).map(x => x.trim()).filter(Boolean);
+  const aliases = Object.fromEntries(list(process.env.TEXT_MODEL_ALIASES).map(x => x.split("=")).filter(pair => pair.length === 2));
+  const defaultModel = process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna";
+  const agentModel = process.env.AGENT_MODEL || "qwen3.8-flash";
+  const visionModels = [process.env.AGENT_VISION_MODEL, process.env.REFERENCE_VISION_MODEL].filter((x): x is string => !!x);
+  return {
+    image: { baseUrl: baseUrl || "https://api.openai.com/v1", apiKey: settings.apiKey, models: settings.models, defaultModel: settings.model, cutoutModel: settings.cutoutModel, qualitySupported: process.env.NAUMI_IMAGE_QUALITY_SUPPORTED === "1", editModels: catalog.filter(m => m.provider === "openai-images" && m.supportsEdit).map(m => m.id) },
+    flow: { baseUrl: flow.baseUrl, apiKey: flow.apiKey, models: catalog.filter(m => m.provider === "new-api-flow").map(m => m.id), defaultModel: catalog.find(m => m.provider === "new-api-flow")?.id || "", qualitySupported: false },
+    text: { baseUrl: baseUrl || "https://api.openai.com/v1", apiKey: settings.apiKey, defaultModel, agentModel, models: Array.from(new Set([defaultModel, agentModel, ...list(process.env.OPENAI_TEXT_MODELS), ...list(process.env.AGENT_MODELS), ...visionModels])), aliases, visibleModels: list(process.env.TEXT_MODEL_WHITELIST), visionModels,
+      ...(process.env.AGENT_BASE_URL || process.env.AGENT_API_KEY ? { agent: { baseUrl: process.env.AGENT_BASE_URL || baseUrl || "https://api.openai.com/v1", apiKey: process.env.AGENT_API_KEY || settings.apiKey } } : {}) },
+    video: configuredVideoProviders(),
+  };
+}
