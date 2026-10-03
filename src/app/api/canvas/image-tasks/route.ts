@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     if (String(body?.kind || "text-edit") !== "text-edit") {
       return NextResponse.json({ error: "暂不支持该图片编辑任务" }, { status: 400 });
     }
-    const task = await enqueueTextEditTask(email, body);
+    const task = await enqueueTextEditTask(email, { ...body, quality: body.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium" });
     return NextResponse.json({ ok: true, taskId: task.id, task: publicCanvasImageTask(task) }, { status: 202 });
   } catch (error) {
     const message = safeError(error, "图片编辑任务创建失败");

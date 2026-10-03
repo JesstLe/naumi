@@ -1,3 +1,5 @@
+import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import OpenAI, { toFile } from "openai";
 import {
@@ -7,7 +9,6 @@ import {
   addArtworks,
   getUser,
   isBanned,
-  addLedgerEntry,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
@@ -34,6 +35,7 @@ const BASE_PROMPT =
   "Re-render the uploaded image into the target art style described below. Keep the main subject, overall composition, pose, layout and key recognizable elements intact — only change the artistic style, texture and rendering. Target style: ";
 
 type StyleInput = {
+  quality: ResolvedImageQuality;
   bytes: Buffer;
   type: string;
   email: string;
@@ -54,6 +56,7 @@ async function parseInput(request: Request): Promise<StyleInput | null> {
   const style = s("style").trim();
   if (!style) return null;
   return {
+    quality: requestImageQuality(request, f.get("quality") ?? undefined),
     bytes: Buffer.from(await file.arrayBuffer()),
     type: file.type || "image/png",
     email: s("email").trim(),
@@ -110,7 +113,7 @@ export async function POST(request: Request) {
       input.email = tokenEmail;
     }
     const useDb = dbEnabled && input.email.length > 0;
-    const cost = STYLE_COST;
+    const cost = await imageQualityCost(input.quality);
 
     if (dbEnabled && (await isBanned(input.email, ip))) {
       return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });
@@ -139,13 +142,14 @@ export async function POST(request: Request) {
       const png = await toPng(input.bytes);
       const userHint = input.prompt ? ` Extra requirement: ${input.prompt}.` : "";
       const prompt = `${BASE_PROMPT}${input.style}.${userHint}`;
-      const r = await client.images.edit({
+      const r = await withQualityFallback(input.quality, async executed => client.images.edit({
+        quality: sdkImageQuality(executed),
         model: genModel || "gpt-image-2",
         image: await toFile(png, "image.png", { type: "image/png" }),
         prompt,
         n: 1,
         size: "auto" as "1024x1024",
-      });
+      }));
       const b64 = r.data?.[0]?.b64_json;
       if (!b64) throw new Error("未返回结果");
       out = Buffer.from(b64, "base64");
@@ -221,9 +225,7 @@ export async function POST(request: Request) {
           e instanceof Error ? e.message : e
         );
       }
-      if (cost > 0) {
-        await addLedgerEntry(input.email, -cost, "风格转换").catch(() => {});
-      }
+      await settleToolImage(input.email, cost, "风格转换", input.quality, id);
       user = await getUser(input.email).catch(() => null);
     }
 
@@ -231,7 +233,7 @@ export async function POST(request: Request) {
       ok: true,
       id,
       url,
-      creditsUsed: useDb ? cost : 0,
+      creditsUsed: useDb ? cost : 0, quality: input.quality,
       user,
     });
   } catch (e) {

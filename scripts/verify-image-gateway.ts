@@ -101,6 +101,28 @@ async function main() {
     const totals=await sql.query("SELECT sum(delta)::int AS charged,count(*)::int AS entries FROM app_ledger WHERE email=$1 AND kind='consume'",[email]);
     assert.equal(totals.rows[0].charged,-24); assert.equal(totals.rows[0].entries,3);
     console.log("PASS suite/A+: actual multipart fields, stable shot IDs, capabilities and independent credit settlements");
+    for (const [kind, tier, charge, originalId, route] of [
+      ["suite", "xhigh", 14, suiteId, suite], ["aplus", "max", 18, aplusId, aplus],
+    ] as const) {
+      const original = (await repo.getImageJob(originalId, kind))!;
+      const id = `${kind}-quality-${stamp}`;
+      const quality = {requested:tier,executed:tier,fallbackReason:null};
+      const snapshot = {...original.snapshot,status:"pending",shots:[shot(`${id}:shot:0`)],done:0,total:1,
+        cost:charge,imageQuality:tier,quality,renderingFinished:false};
+      await new DurableImageJobs<any>(kind).create(id,email,snapshot,{...original.payload,cost:charge},charge,true);
+      const callsBefore=wire.length;
+      await kick(route,id);
+      const completed=await waitJob(id,kind,row=>row.snapshot.status==="done" && row.lease_token===null);
+      assert.equal(completed.snapshot.creditsUsed,charge);
+      assert.equal(await db.getImageJobChargedCredits(id),charge);
+      assert.equal(wire.length,callsBefore+1);
+      assert.equal(wire.at(-1)?.quality,tier);
+      assert.ok(wire.at(-1)?.id.endsWith(`:quality:${tier}`));
+      const audit=(await sql.query("SELECT requested_quality,executed_quality,billed_credits FROM app_image_cost_audit WHERE job_id=$1",[id])).rows;
+      assert.deepEqual(audit,[{requested_quality:tier,executed_quality:tier,billed_credits:charge}]);
+      await kick(route,id);assert.equal(wire.length,callsBefore+1);assert.equal(await db.getImageJobChargedCredits(id),charge);
+    }
+    console.log("PASS suite/A+: selected quality reaches supplier, original quote and ledger audit survive replay");
     const { ImageOperationPending } = await import("../src/lib/image-gateway");
     const guardJobs = new DurableImageJobs<any>("generate");
     const guardId = `guard-${stamp}`;

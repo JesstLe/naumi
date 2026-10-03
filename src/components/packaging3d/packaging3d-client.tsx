@@ -1,4 +1,6 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
 
 import * as React from "react";
 import { Cuboid, Download, Upload, X } from "lucide-react";
@@ -7,7 +9,7 @@ import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
-import { GENERATION_RESOLUTIONS, packaging3dCost } from "@/lib/mock-data";
+import { GENERATION_RESOLUTIONS } from "@/lib/mock-data";
 import { downloadImage } from "@/lib/download";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +17,7 @@ const ACCENT = "#B7791F";
 const MAX_UPLOAD = 16 * 1024 * 1024;
 
 export function Packaging3dClient() {
+  const { imageCost } = useImageQuality();
   const { user, applyServerUser } = useAuth();
   const { locale } = useI18n();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
@@ -238,7 +241,8 @@ export function Packaging3dClient() {
       tint="var(--c-tint-a)"
       accent={ACCENT}
       category="packaging3d"
-      cost={packaging3dCost(resolution)}
+      cost={imageCost(resolution)}
+      resolution={resolution}
       actionLabel={L("生成 3D 产品图", "Generate 3D product")}
       onAction={generate}
       processing={processing}

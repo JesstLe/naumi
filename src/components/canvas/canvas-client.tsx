@@ -1,4 +1,6 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
 import { copyText } from "@/lib/clipboard";
 import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 
@@ -122,7 +124,6 @@ import {
   GENERATION_RESOLUTIONS,
   GENERATION_STYLES,
   MAX_GENERATION_DIMENSION,
-  resolutionCost,
   resolutionForLongSide,
 } from "@/lib/mock-data";
 import {
@@ -1599,6 +1600,7 @@ function layoutGraph(
 }
 
 export function CanvasClient() {
+  const { quality: genQuality, imageCost } = useImageQuality();
   const { model: textModel, setModel: setTextModel } = useTextModel();
   const { user, ready, remaining, persistMode, applyServerUser, signOut } = useAuth();
   const { openAuth } = useAuthModal();
@@ -4193,6 +4195,7 @@ export function CanvasClient() {
         fd.append("targetHeight", String(customSize.height));
       }
       fd.append("resolution", opts?.resolution || source.resolution || "1K");
+      fd.append("quality", genQuality);
       fd.append("style", opts?.style ?? "");
       fd.append("count", String(opts?.count ?? 1));
       if (genModel) {
@@ -4535,6 +4538,7 @@ export function CanvasClient() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           kind: "text-edit",
+          quality: genQuality,
           artworkId: source.id,
           oldText: segment.text,
           newText: nextText,
@@ -7417,6 +7421,7 @@ export function CanvasClient() {
         fd.append("targetHeight", String(customSize.height));
       }
       fd.append("resolution", genResolution);
+      fd.append("quality", genQuality);
       fd.append("style", genStyle ?? "");
       fd.append("count", String(genCount || 1));
       if (genModel) fd.append("model", genModel);
@@ -10451,13 +10456,14 @@ export function CanvasClient() {
                           />
                         ))}
                       </div>
+                      <ImageQualityControl compact resolution={selected?.resolution || "1K"} />
                       <button
                         type="button"
                         disabled={!expandRatio || selectedGenerating}
                         onClick={() => expandRatio && void onExpand(expandRatio)}
                         className="mt-3 w-full rounded-[10px] bg-teal-500 px-3 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        开始扩图 · 6 积分
+                        开始扩图 · {imageCost(selected?.resolution || "1K")} 积分
                       </button>
                       <p className="mt-2 text-[11px] leading-relaxed opacity-60">
                         保持原图内容不变，向四周自然延展画面到目标比例。
@@ -10924,6 +10930,7 @@ export function CanvasClient() {
               )}
 
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+                <div className="mb-3"><ImageQualityControl compact resolution={active?.members.find(a => a.id === ocrArtworkId)?.resolution || "1K"} disabled={ocrStatus === "applying"} /></div>
                 {ocrError && (
                   <div className="mb-3 border border-[#f0c8c3] bg-[#fff5f3] px-3 py-2 text-[12px] font-medium text-[#b44f43]">
                     {ocrError}
@@ -11039,7 +11046,7 @@ export function CanvasClient() {
                           className="flex h-8 items-center gap-1.5 bg-[#25313b] px-3 text-[12px] font-semibold text-white hover:bg-[#182129] disabled:cursor-not-allowed disabled:opacity-35"
                         >
                           {ocrApplyingId === segment.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                          应用
+                          应用 · {imageCost(active?.members.find(a => a.id === ocrArtworkId)?.resolution || "1K")} 积分
                         </button>
                       </div>
                     </section>
@@ -11300,6 +11307,7 @@ export function CanvasClient() {
                     }
                   />
                   {ratioControl}
+                  <ImageQualityControl compact resolution={genResolution} disabled={selectedGenerating} />
                   {generationMode === "standard" || generationMode === "detail" ? (
                     <ImageCountControl
                       value={genCount}
@@ -11316,7 +11324,7 @@ export function CanvasClient() {
                   )}
                   <span className="flex-1" />
                   <span className="text-[13px] font-semibold text-[#f0c64a]">
-                    ⚡ {genModel.startsWith("byok:") ? 0 : selectedGenerationCount * resolutionCost(genResolution)}
+                    ⚡ {genModel.startsWith("byok:") ? 0 : selectedGenerationCount * imageCost(genResolution)}
                   </span>
                   <button
                     type="button"
@@ -11437,6 +11445,7 @@ export function CanvasClient() {
                   }
                 />
                 {ratioControl}
+                <ImageQualityControl compact resolution={genResolution} disabled={selectedPendGenerating} />
                 <ImageCountControl
                   value={genCount}
                   onChange={setGenCount}
@@ -11445,7 +11454,7 @@ export function CanvasClient() {
                 />
                 <span className="flex-1" />
                 <span className="text-[13px] font-semibold text-[#f0c64a]">
-                  ⚡ {genModel.startsWith("byok:") ? 0 : genCount * resolutionCost(genResolution)}
+                  ⚡ {genModel.startsWith("byok:") ? 0 : genCount * imageCost(genResolution)}
                 </span>
                 <button
                   type="button"

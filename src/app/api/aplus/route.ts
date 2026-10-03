@@ -1,3 +1,5 @@
+import { imageRequestBilling, withQualityFallback, auditSettledImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality, ExecutedQuality } from "@/lib/image-quality";
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { appendImageGatewayFields, imageOperationQuality, ImageOperationPending, isImageGatewayModel } from "@/lib/image-gateway";
 import { NextResponse } from "next/server";
@@ -11,6 +13,7 @@ import {
   dbEnabled,
   addArtworks,
   getUser,
+  getImageJobChargedCredits,
   isBanned,
   touchReservation,
   sweepStaleReservations,
@@ -45,6 +48,7 @@ type ShotSpec = {
   prompt: string;
 };
 type ShotResult = ShotSpec & {
+  quality?: ResolvedImageQuality;
   id: string;
   status: "pending" | "done" | "error";
   url?: string;
@@ -388,6 +392,7 @@ type SourceRevision = {
 
 // --- Durable job store, including review inputs and checkpoints ---
 type Job = {
+  quality?: ResolvedImageQuality;
   imageQuality?: string;
   status: "pending" | "awaiting_review" | "done" | "error";
   stage: "preparing" | "reviewing" | "generating";
@@ -431,12 +436,13 @@ async function runSourcePreparation(jobId: string) {
     for (let index = 0; index < job.sourceInputs.length; index++) {
       if (job.sourceBuffers[index]) continue;
       try {
-        const buf = await JOBS.paidOperation(jobId, job.model, { id: `${jobId}:source:${index}:initial`, quality: job.imageQuality, task: "product", preserveIdentity: true }, () => prepareWhiteSource(
+        const quality: ResolvedImageQuality = { ...(job.quality ?? { requested: "medium", executed: (job.imageQuality || "medium") as ExecutedQuality, fallbackReason: null }) };
+        const buf = await withQualityFallback(quality, executed => JOBS.paidOperation(jobId, job.model, { id: job.quality ? `${jobId}:source:${index}:initial:quality:${executed}` : `${jobId}:source:${index}:initial`, quality: executed, task: "product", preserveIdentity: true }, () => prepareWhiteSource(
           apiKey,
           baseUrl,
           job.model,
           job.sourceInputs[index]
-        ));
+        )));
         const id = job.sources[index].id;
         job.sourceBuffers[index] = buf;
         const url = await persistOne(buf, `sources/${id}-v1`);
@@ -484,13 +490,14 @@ async function runSourceRedo(jobId: string, index: number, feedback: string) {
   try {
     const { apiKey } = await getOpenAISettings();
     const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
-    const buf = await JOBS.paidOperation(jobId, job.model, { id: job.sources[index].redoOperationId || `${jobId}:source:${index}:redo:${job.sources[index].version + 1}`, quality: job.imageQuality, task: "product", preserveIdentity: true }, () => prepareWhiteSource(
+    const quality: ResolvedImageQuality = { ...(job.quality ?? { requested: "medium", executed: (job.imageQuality || "medium") as ExecutedQuality, fallbackReason: null }) };
+    const buf = await withQualityFallback(quality, executed => JOBS.paidOperation(jobId, job.model, { id: job.quality ? `${(job.sources[index].redoOperationId || `${jobId}:source:${index}:redo:${job.sources[index].version + 1}`)}:quality:${executed}` : (job.sources[index].redoOperationId || `${jobId}:source:${index}:redo:${job.sources[index].version + 1}`), quality: executed, task: "product", preserveIdentity: true }, () => prepareWhiteSource(
       apiKey,
       baseUrl,
       job.model,
       job.sourceInputs[index],
       feedback
-    ));
+    )));
     const version = job.sources[index].version + 1;
     const id = job.sources[index].id;
     job.sourceBuffers[index] = buf;
@@ -572,16 +579,17 @@ async function runAplusGeneration(jobId: string) {
         let ok = false;
         for (let attempt = 0; attempt <= (isImageGatewayModel(job.model) ? SHOT_RETRIES : 0) && !ok; attempt++) {
           try {
-            const buf = await JOBS.paidOperation(jobId, job.model, { id: shot.id, quality: job.imageQuality, task: "layout", preserveIdentity: true, textAccuracy: "required" }, () => genOneShot(
+            const quality: ResolvedImageQuality = { ...(job.quality ?? { requested: "medium", executed: (job.imageQuality || "medium") as ExecutedQuality, fallbackReason: null }) };
+            const buf = await withQualityFallback(quality, executed => JOBS.paidOperation(jobId, job.model, { id: job.quality ? `${shot.id}:quality:${executed}` : shot.id, quality: executed, task: "layout", preserveIdentity: true, textAccuracy: "required" }, () => genOneShot(
               apiKey,
               baseUrl,
               job.model,
               shot,
               cleanImages,
               size
-            ));
+            )));
             const url = await persistOne(buf, shot.id);
-            shots[idx] = { ...shot, status: "done", url };
+            shots[idx] = { ...shot, status: "done", url, quality };
             ok = true;
           } catch (error) {
             if (error instanceof ImageOperationPending) { gatewayPending = error; break; }
@@ -640,12 +648,16 @@ async function runAplusGeneration(jobId: string) {
     }
 
 
+    const committedCharge = await getImageJobChargedCredits(jobId);
+    for (const shot of okShots) await auditSettledImage(job.email, committedCharge / okShots.length,
+      shot.quality || job.quality || {requested: "medium", executed: "medium", fallbackReason: null}, jobId, shot.id);
+
     await set({
       status: "done",
       shots: [...shots],
       done: shots.length,
       user,
-      creditsUsed: Math.round((job.cost / shots.length) * okShots.length),
+      creditsUsed: committedCharge,
       reserved: false,
     });
   } catch (e) {
@@ -679,6 +691,7 @@ async function parseInput(request: Request) {
   const rawModules = (f.getAll("module") as string[]).map((m) => m.trim());
   const modules = Array.from(new Set(rawModules)).filter((m) => APLUS_MODULES[m]);
   return {
+    requestedQuality: f.get("quality") ?? undefined,
     images,
     extra: (f.get("text") ?? "").toString().trim().slice(0, 600),
     platform: (f.get("platform") ?? "amazon").toString().trim().slice(0, 20),
@@ -852,7 +865,8 @@ export async function POST(request: Request) {
     input.email = tokenEmail;
   }
   const useDb = dbEnabled && input.email.length > 0;
-  const cost = input.modules.length * POINTS_PER_IMAGE;
+  const billing = await imageRequestBilling(request, input.requestedQuality);
+  const cost = input.modules.length * billing.cost;
 
   if (input.prepared && useDb) {
     const lineageIds = Array.from(
@@ -896,7 +910,8 @@ export async function POST(request: Request) {
   await JOBS.create(jobId, input.email, {
     status: "pending",
     stage: input.prepared ? "generating" : "preparing",
-    imageQuality: process.env.OPENAI_IMAGE_QUALITY || "medium",
+    quality: billing.quality,
+    imageQuality: billing.quality.executed,
     sources: input.images.map((_, index) => ({
       id: `aplus-source-${now}-${index}`,
       label: input.prepared ? `参考图 ${index + 1}` : `白底母图 ${index + 1}`,
@@ -936,6 +951,7 @@ export async function POST(request: Request) {
     jobId,
     total: input.modules.length,
     cost,
+    quality: billing.quality,
     next: input.prepared ? "generating" : "review_sources",
   });
 }
@@ -977,6 +993,7 @@ export async function GET(request: Request) {
     status: s.status,
     url: s.url ?? null,
     gradient: s.gradient,
+    quality: s.quality,
   }));
   return NextResponse.json({
     jobId,
@@ -992,6 +1009,8 @@ export async function GET(request: Request) {
     shots,
     user: job.status === "done" ? job.user : undefined,
     creditsUsed: job.status === "done" ? job.creditsUsed : undefined,
+    quality: job.quality,
+    cost: job.cost,
     error: job.error,
   });
 }

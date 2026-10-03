@@ -1,4 +1,6 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -104,6 +106,9 @@ type SourceImage = {
 };
 
 export function AplusClient() {
+  const { costPerImage } = useImageQuality();
+  const [quotedQuality, setQuotedQuality] = useState<string>("medium");
+  const [quotedCost, setQuotedCost] = useState<number | null>(null);
   const L = (z: string, e: string) =>
     typeof window !== "undefined" && document.documentElement.lang === "en" ? e : z;
   const { user, ready, applyServerUser } = useAuth();
@@ -139,7 +144,7 @@ export function AplusClient() {
   const [assistOpen, setAssistOpen] = useState(false);
   const [assistRun, setAssistRun] = useState<{ mode: "write" | "optimize"; nonce: number } | null>(null);
 
-  const cost = Math.max(modules.length, 1) * POINTS_PER_IMAGE;
+  const cost = jobId && quotedCost != null ? quotedCost : Math.max(modules.length, 1) * costPerImage;
   const hasResult = shots.some((s) => s.status === "done");
   const allSourcesApproved =
     sources.length > 0 && sources.every((source) => source.status === "approved");
@@ -188,6 +193,7 @@ export function AplusClient() {
   const rememberJob=useImageJobResume("aplus",user?.email,id=> { setJobId(id); setLoading(true); startPolling(id); void refreshJob(id).catch(error=>{setLoading(false);setError(error.message);}); });
 
   function applyJobState(s: any) {
+    if (s.quality?.requested) setQuotedQuality(s.quality.requested);
     if (s.parameters) {
       setPlatform(s.parameters.platform);
       setLang(s.parameters.lang);
@@ -197,6 +203,7 @@ export function AplusClient() {
     }
     if (["preparing", "reviewing", "generating"].includes(s.stage)) {
       setStage(s.stage);
+      if (typeof s.cost === "number") setQuotedCost(s.cost);
     }
     if (Array.isArray(s.sources)) setSources(s.sources);
     if (Array.isArray(s.shots)) setShots(s.shots);
@@ -287,6 +294,8 @@ export function AplusClient() {
       if (!res.ok) throw new Error(data.error || L("生成失败,请重试", "Generation failed"));
       const jobId: string = data.jobId;
       setJobId(jobId);
+      if (typeof data.cost === "number") setQuotedCost(data.cost);
+      if (data.quality?.requested) setQuotedQuality(data.quality.requested);
       rememberJob(jobId);
       if (data.total) setTotal(data.total);
       startPolling(jobId);
@@ -619,6 +628,7 @@ export function AplusClient() {
           </div>
 
           {/* 成本预估 */}
+          <ImageQualityControl value={formLocked ? quotedQuality : undefined} disabled={loading || formLocked} />
           <div className="rounded-xl bg-secondary/50 px-4 py-3 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">生成内容</span>

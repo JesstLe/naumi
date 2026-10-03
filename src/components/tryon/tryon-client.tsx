@@ -1,4 +1,6 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -48,6 +50,7 @@ const TINT = "rgba(224,86,139,.12)";
 const ACC_SOFT = "rgba(224,86,139,.08)";
 
 export function TryonClient() {
+  const { costPerImage } = useImageQuality();
   const { user, remaining, consumeCredits, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
   const { locale } = useI18n();
@@ -87,7 +90,7 @@ export function TryonClient() {
   const allModels = customModel ? [customModel, ...models] : models;
   const model = allModels.find((x) => x.id === modelId);
   const scene = scenes.find((x) => x.id === sceneId);
-  const cost = TOOL_COST.tryon;
+  const cost = costPerImage;
 
   useEffect(() => {
     let on = true;

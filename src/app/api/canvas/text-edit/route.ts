@@ -1,10 +1,10 @@
+import { imageRequestBilling, settleToolImage } from "@/lib/image-quality-request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 import { authenticatedEmail } from "@/lib/request-auth";
 import {
   addArtworks,
-  addLedgerEntry,
   dbEnabled,
   getUser,
   listArtworksByIds,
@@ -16,7 +16,6 @@ import { editImage } from "@/lib/image-edit";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
-import { resolutionCost } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
 export const runtime = "nodejs";
@@ -46,9 +45,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "改字操作过于频繁，请稍后再试" }, { status: 429 });
   }
 
+  let requestedQuality: unknown;
   let input: { artworkId: string; oldText: string; newText: string; box: Box };
   try {
     const body = (await request.json()) as Partial<typeof input>;
+    requestedQuality = (body as typeof body & {quality?:unknown}).quality;
     input = {
       artworkId: String(body.artworkId || "").trim(),
       oldText: String(body.oldText || "").trim().slice(0, 300),
@@ -70,14 +71,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "OCR 文字坐标无效" }, { status: 400 });
   }
 
-  const cost = resolutionCost("1K");
+  const { quality } = await imageRequestBilling(request, requestedQuality);
+  let cost = 0;
   let reserved = false;
   try {
     const artwork = (await listArtworksByIds(email, [input.artworkId]))[0];
     if (!artwork) return NextResponse.json({ error: "图片不存在或无权访问" }, { status: 404 });
+    cost = (await imageRequestBilling(request, requestedQuality, artwork.resolution || "1K")).cost;
     if (cost > 0) {
       reserved = await reserveCredits(email, cost);
-      if (!reserved) return NextResponse.json({ error: "积分不足，请升级方案后重试" }, { status: 402 });
+      if (!reserved) return NextResponse.json({ error: "积分不足，请联系管理员补充额度" }, { status: 402 });
     }
 
     const image = await readCanvasImage(artwork.image, request.url);
@@ -107,7 +110,7 @@ export async function POST(request: Request) {
       mask,
       prompt,
       size: editSize(width, height),
-      quality: "high",
+      quality,
     });
     const edited = await sharp(editedRaw).resize(width, height, { fit: "fill" }).png().toBuffer();
     const id = `txtedit-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
@@ -133,9 +136,9 @@ export async function POST(request: Request) {
       width,
       height,
     }], `txtedit-${Date.now()}`);
-    if (cost > 0) await addLedgerEntry(email, -cost, "画布在线改字").catch(() => {});
+    await settleToolImage(email, cost, "画布在线改字", quality, id, artwork.resolution || "1K");
     const user = await getUser(email).catch(() => null);
-    return NextResponse.json({ ok: true, id, width, height, user });
+    return NextResponse.json({ ok: true, id, width, height, user, cost, quality });
   } catch (error) {
     if (reserved && cost > 0) await refundCredits(email, cost).catch(() => {});
     return NextResponse.json(

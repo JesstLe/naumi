@@ -43,7 +43,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 3. retouch_product:商品精修。参数 image_url、options(数组)、text。计费 6 积分。
 4. recolor_product:产品换色。参数 image_url、color(如 #27AE60)、strength(20-100)。计费 6 积分。
 5. replicate_hot:爆款复刻。参数 product_image_url、reference_image_url、degree(high/style)、text。计费 6 积分。
-6. generate_suite:一键电商套图。默认智能生成 13 张；用户指定数量/版式时传 structure=custom 与 shots。每张 6 积分。
+6. generate_suite:一键电商套图。默认智能生成 13 张；用户指定数量/版式时传 structure=custom 与 shots。每张按当前质量档计费（标准档 6 积分）。
  7. generate_aplus:A+ 第一步，只提取白底商品母图并返回待审核图片与 job_id。参数 image_url、platform、lang、format、modules(数组)、text。
  8. review_aplus_source:审核一张母图。approve=通过；redo=带用户要求只重做这一张。
  9. continue_aplus_generation:全部母图通过后继续生成 A+，此时计费=模块数×6。
@@ -90,7 +90,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
  7. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
  8. 与图片生成无关的问题直接回答,不要调用工具。`;
 
-export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string }): AgentTool[] {
+export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string }): AgentTool[] {
   // 双凭证:可变 getter —— 每次工具执行时读取最新 cookie/authorization,
   // 常驻会话的凭证刷新(runtime 层 existing.cred = cred)即刻生效,无需重建 Agent。
   const credGetter =
@@ -98,6 +98,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     (() => ({
       cookie: req.headers.get("cookie") ?? "",
       authorization: req.headers.get("authorization") ?? "",
+      imageQuality: req.headers.get("x-naumi-image-quality") ?? "medium",
     }));
   // 内部 origin:INTERNAL_APP_ORIGIN env(容器内固定) > 请求 origin > 容器缺省
   const envOrigin = (process.env.INTERNAL_APP_ORIGIN || "").replace(/\/+$/, "");
@@ -108,6 +109,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     const cred = credGetter();
     return {
       cookie: cred.cookie,
+      "x-naumi-image-quality": cred.imageQuality || "medium",
       ...(cred.authorization ? { authorization: cred.authorization } : {}),
     };
   };
@@ -762,8 +764,9 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       name: "generate_image",
       label: "AI 生图",
       description:
-        "文生图/图生图:按提示词生成电商商品图。计费=count×分辨率档(1K=6/张,2K=9/张)。",
+        "文生图/图生图:按提示词生成电商商品图。计费=count×请求质量档(low=4、medium=6、high=10、xhigh=14、max=18积分/张)，再叠加尺寸差价(1K=0、2K=2、4K=6、5K=10积分/张)。",
       parameters: Type.Object({
+        quality: Type.Optional(Type.Union(["low","medium","high","xhigh","max"].map(value => Type.Literal(value)), { description: "图像质量；省略时使用用户当前所选档位" })),
         prompt: Type.String({ description: "画面描述,越具体越好" }),
         ratio: Type.Union(
           [
@@ -800,8 +803,10 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           resolution?: string;
           count?: number;
           model?: string;
+          quality?: string;
         };
         const fd = new FormData();
+        if (p.quality) fd.append("quality", p.quality);
         fd.append("prompt", p.prompt);
         fd.append("ratio", p.ratio || "1:1");
         fd.append("resolution", p.resolution || "1K");
@@ -963,7 +968,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       name: "generate_suite",
       label: "一键电商套图",
       description:
-        "一键电商套图:默认 1 主图 + 4 副图 + 8 详情页；也可按用户要求自定义每张的类型、标题、比例与内容。每张 6 积分。",
+        "一键电商套图:默认 1 主图 + 4 副图 + 8 详情页；也可按用户要求自定义每张的类型、标题、比例与内容。每张按当前质量档计费（标准档 6 积分）。",
       parameters: Type.Object({
         image_url: Type.String({
           description: "商品图 URL(可上传正面/侧面/背面多张,用逗号分隔)",
@@ -1011,7 +1016,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         confirm: Type.Optional(
           Type.Boolean({
             description:
-              "预算确认标记。套图通常花费较高(每张 6 积分),必须先向用户报出总预计积分并获得明确同意,再携带 confirm=true 调用。",
+              "预算确认标记。套图通常花费较高(每张按当前质量档计费（标准档 6 积分）),必须先向用户报出总预计积分并获得明确同意,再携带 confirm=true 调用。",
           })
         ),
       }),

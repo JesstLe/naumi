@@ -1,3 +1,5 @@
+import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import OpenAI, { toFile } from "openai";
@@ -8,7 +10,6 @@ import {
   addArtworks,
   getUser,
   isBanned,
-  addLedgerEntry,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
@@ -34,6 +35,7 @@ export const maxDuration = 240;
 const TRYON_COST = TOOL_COST.tryon;
 
 type TryonInput = {
+  quality: ResolvedImageQuality;
   top: Buffer | null; // 上装(可选)
   bottom: Buffer | null; // 下装(可选)
   modelId: string;
@@ -59,6 +61,7 @@ async function parseInput(request: Request): Promise<TryonInput | null> {
   const bottom = await grab("bottom");
   if (!top && !bottom) return null; // 至少传一个
   return {
+    quality: requestImageQuality(request, f.get("quality") ?? undefined),
     top,
     bottom,
     modelId: s("modelId").trim(),
@@ -106,6 +109,7 @@ type Job =
       id: string;
       url: string;
       creditsUsed: number;
+      quality?: ResolvedImageQuality;
       user: TryonUser;
     }
   | { status: "error"; createdAt: number; error: string };
@@ -211,14 +215,14 @@ async function runTryonJob(
         `Natural pose, realistic proportions, high quality, sharp, no text, no watermark, no border.` +
         (input.prompt ? ` Extra requirements: ${input.prompt}` : "");
 
-      const r = await client.images.edit({
+      const r = await withQualityFallback(input.quality, async executed => client.images.edit({
         model: genModel || "gpt-image-2",
         image: files,
         prompt,
         n: 1,
         size: "1024x1536" as "1024x1536",
-        quality: "high" as "high",
-      });
+        quality: sdkImageQuality(executed),
+      }));
       const b64 = r.data?.[0]?.b64_json;
       if (!b64) throw new Error("未返回试穿图");
       out = Buffer.from(b64, "base64");
@@ -289,8 +293,7 @@ async function runTryonJob(
           e instanceof Error ? e.message : e
         );
       }
-      if (cost > 0)
-        await addLedgerEntry(input.email, -cost, "服装上身").catch(() => {});
+      await settleToolImage(input.email, cost, "服装上身", input.quality, id);
       user = await getUser(input.email).catch(() => null);
     }
 
@@ -299,7 +302,7 @@ async function runTryonJob(
       createdAt: Date.now(),
       id,
       url,
-      creditsUsed: useDb ? cost : 0,
+      creditsUsed: useDb ? cost : 0, quality: input.quality,
       user,
     });
   } catch (e) {
@@ -339,7 +342,7 @@ export async function POST(request: Request) {
       input.email = tokenEmail;
     }
     const useDb = dbEnabled && input.email.length > 0;
-    const cost = TRYON_COST;
+    const cost = await imageQualityCost(input.quality);
 
     if (dbEnabled && (await isBanned(input.email, ip)))
       return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });

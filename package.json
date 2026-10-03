@@ -17,6 +17,7 @@
     "verify:image-job-routes": "tsx --conditions react-server scripts/verify-image-job-routes.ts",
     "verify:image-gateway": "tsx --conditions react-server scripts/verify-image-gateway.ts",
     "verify:credit-billing": "tsx --conditions react-server scripts/verify-credit-billing.ts",
+    "verify:global-image-quality": "tsx --conditions react-server scripts/verify-global-image-quality.ts",
     "verify:single-product": "tsx --conditions react-server scripts/verify-single-product.ts",
     "verify:pricing-proposal": "tsx --conditions react-server scripts/verify-pricing-proposal.ts",
     "verify:pricing-access": "node scripts/verify-pricing-access.mjs"

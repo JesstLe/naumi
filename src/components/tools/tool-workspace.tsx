@@ -1,4 +1,6 @@
 "use client";
+import { ImageQualityControl, QUALITY_TOOL_CATEGORIES } from "@/components/image-quality-control";
+import { useImageQuality } from "@/lib/image-quality-context";
 
 import { cdnUrl } from "@/lib/cdn";
 import * as React from "react";
@@ -102,7 +104,8 @@ export function ToolWorkspace({
   tint,
   accent,
   category,
-  cost,
+  cost: baseCost,
+  resolution = "1K",
   action,
   controls,
   onProcess,
@@ -119,6 +122,7 @@ export function ToolWorkspace({
   accent: string;
   category: string;
   cost: number;
+  resolution?: string;
   action: string;
   controls?: React.ReactNode;
   onProcess: (file: File) => Promise<ToolProcessResult>;
@@ -131,6 +135,9 @@ export function ToolWorkspace({
 }) {
   const { user, ready, remaining, consumeCredits, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
+  const { imageCost } = useImageQuality();
+  const qualityPriced = QUALITY_TOOL_CATEGORIES.has(category || "");
+  const cost = qualityPriced ? imageCost(resolution) : baseCost;
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
   const fileRef = React.useRef<HTMLInputElement>(null);
@@ -409,6 +416,7 @@ export function ToolWorkspace({
           </div>
 
           {controls}
+            {qualityPriced && <ImageQualityControl resolution={resolution} disabled={processing} />}
           </div>
 
           <div className="space-y-3 border-t border-c-line pt-4">

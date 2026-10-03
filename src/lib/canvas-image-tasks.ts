@@ -1,4 +1,6 @@
 import "server-only";
+import { resolveImageQuality, type ResolvedImageQuality } from "@/lib/image-quality";
+import { imageQualityCost, auditSettledImage } from "@/lib/image-quality-request";
 
 import { createHash } from "node:crypto";
 import sharp from "sharp";
@@ -14,6 +16,7 @@ import {
   dbEnabled,
   failCanvasImageTask,
   getCanvasImageTask,
+  getCanvasImageTaskChargedCredits,
   listArtworksByIds,
   listCanvasImageTasks,
   retryCanvasImageTask,
@@ -24,13 +27,13 @@ import { supabaseEnabled } from "@/lib/auth-mode";
 import { creditsMeteringOn, multiUserEnabled } from "@/lib/native-auth";
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { editImage } from "@/lib/image-edit";
-import { resolutionCost } from "@/lib/mock-data";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { safeError } from "@/lib/api-error";
 import { ImageOperationPending } from "@/lib/image-gateway";
 
 type Box = { x: number; y: number; width: number; height: number };
 export type TextEditTaskInput = {
+  quality?: string;
   artworkId: string;
   oldText: string;
   newText: string;
@@ -46,6 +49,7 @@ function normalizedInput(value: Partial<TextEditTaskInput>): TextEditTaskInput {
   const canvasX = value.canvasX == null ? Number.NaN : Number(value.canvasX);
   const canvasY = value.canvasY == null ? Number.NaN : Number(value.canvasY);
   return {
+    quality: typeof value.quality === "string" ? value.quality.trim().toLowerCase() : "medium",
     artworkId: String(value.artworkId || "").trim(),
     oldText: String(value.oldText || "").trim().slice(0, 300),
     newText: String(value.newText || "").trim().slice(0, 300),
@@ -92,7 +96,8 @@ export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTa
   validateInput(input);
   const artwork = (await listArtworksByIds(email, [input.artworkId]))[0];
   if (!artwork) throw new Error("图片不存在或无权访问");
-  const cost = resolutionCost("1K");
+  const quality = resolveImageQuality(input.quality);
+  const cost = await imageQualityCost(quality, artwork.resolution || "1K");
   const operationId = String(input.operationId || "").trim();
   const id = operationId
     ? `imgtask-${createHash("sha256").update(`${email.toLowerCase()}:${operationId}`).digest("hex").slice(0, 32)}`
@@ -102,7 +107,7 @@ export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTa
     id,
     email,
     sourceArtworkId: artwork.id,
-    parameters: { ...input, paidOperationVersion: 1 },
+    parameters: { ...input, billingResolution: artwork.resolution || "1K", qualityAudit: quality, paidOperationVersion: 1 },
     cost,
     metered,
   });
@@ -141,16 +146,17 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
     `新文字：${input.newText}`,
     "禁止改动其他任何元素，不要增加物体，不要改变背景、产品包装、3D数字。",
   ].join("\n");
+  const quality: ResolvedImageQuality = (task.parameters.qualityAudit as ResolvedImageQuality | undefined) ?? {requested: "high", executed: "high", fallbackReason: null};
   let editedRaw: Buffer;
   if (typeof task.parameters.upstreamResult === "string") {
     editedRaw = (await readCanvasImage(task.parameters.upstreamResult, requestOrigin)).buffer;
   } else {
     if (!await beginCanvasImageTaskSubmission(task.id)) throw new ImageOperationPending(task.id, new Error("上游提交需要核查"));
-    editedRaw = await editImage({ operationId: task.id, images: [original], mask, prompt, size: editSize(width, height), quality: "high" });
+    editedRaw = await editImage({ operationId: task.id, legacyOperationId: !task.parameters.qualityAudit, images: [original], mask, prompt, size: editSize(width, height), quality });
     const checkpoint = storageEnabled
       ? await uploadImage(new Uint8Array(editedRaw), "image/png", `canvas-text-edits/${task.id}-provider.png`)
       : `data:image/png;base64,${editedRaw.toString("base64")}`;
-    await saveCanvasImageTaskProviderResult(task.id, checkpoint);
+    await saveCanvasImageTaskProviderResult(task.id, checkpoint, quality);
   }
   await updateCanvasImageTaskProgress(task.id, 82);
   const edited = await sharp(editedRaw).resize(width, height, { fit: "fill" }).png().toBuffer();
@@ -177,6 +183,7 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
     height,
   }], `txtedit-${task.id}`);
   await completeCanvasImageTask({ id: task.id, email: task.email, resultArtworkId: artworkId });
+  await auditSettledImage(task.email, await getCanvasImageTaskChargedCredits(task.id), quality, task.id, artworkId, String(task.parameters.billingResolution || "1K"));
   return artworkId;
 }
 
@@ -222,6 +229,6 @@ export { getCanvasImageTask, listCanvasImageTasks };
 /** Public task view excludes provider submission checkpoints and raw results. */
 export function publicCanvasImageTask(task: CanvasImageTaskRow) {
   const { id, kind, sourceArtworkId, status, progress, cost, resultArtworkId, error, attempts, createdAt, completedAt } = task;
-  return { id, kind, sourceArtworkId, status, progress, cost, resultArtworkId, error, attempts, createdAt, completedAt,
+  return { quality: task.parameters.qualityAudit, id, kind, sourceArtworkId, status, progress, cost, resultArtworkId, error, attempts, createdAt, completedAt,
     parameters: normalizedInput(task.parameters as Partial<TextEditTaskInput>) };
 }

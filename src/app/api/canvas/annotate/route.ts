@@ -1,10 +1,10 @@
+import { imageRequestBilling, settleToolImage } from "@/lib/image-quality-request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 import { authenticatedEmail } from "@/lib/request-auth";
 import {
   addArtworks,
-  addLedgerEntry,
   dbEnabled,
   getUser,
   listArtworksByIds,
@@ -16,7 +16,6 @@ import { editImage } from "@/lib/image-edit";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
-import { resolutionCost } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------
@@ -52,6 +51,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "标注编辑操作过于频繁，请稍后再试" }, { status: 429 });
   }
 
+  let requestedQuality: unknown;
   let artworkId = "";
   let annotatedBuf: Buffer | null = null;
   let notes: { type: string; note: string }[] = [];
@@ -59,6 +59,7 @@ export async function POST(request: Request) {
     const ct = request.headers.get("content-type") ?? "";
     if (!ct.includes("multipart/form-data")) throw new Error("format");
     const form = await request.formData();
+    requestedQuality = form.get("quality") ?? undefined;
     artworkId = String(form.get("artworkId") || "").trim();
     const file = form.get("image");
     if (file instanceof File && file.size > 0) {
@@ -85,14 +86,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请先在图上完成标注并填写修改指令" }, { status: 400 });
   }
 
-  const cost = resolutionCost("1K");
+  const { quality } = await imageRequestBilling(request, requestedQuality);
+  let cost = 0;
   let reserved = false;
   try {
     const artwork = (await listArtworksByIds(email, [artworkId]))[0];
     if (!artwork) return NextResponse.json({ error: "图片不存在或无权访问" }, { status: 404 });
+    cost = (await imageRequestBilling(request, requestedQuality, artwork.resolution || "1K")).cost;
     if (cost > 0) {
       reserved = await reserveCredits(email, cost);
-      if (!reserved) return NextResponse.json({ error: "积分不足，请升级方案后重试" }, { status: 402 });
+      if (!reserved) return NextResponse.json({ error: "积分不足，请联系管理员补充额度" }, { status: 402 });
     }
 
     const image = await readCanvasImage(artwork.image, request.url);
@@ -118,7 +121,7 @@ export async function POST(request: Request) {
       images: [original, annotated],
       prompt,
       size: editSize(width, height),
-      quality: "high",
+      quality,
     });
     const edited = await sharp(editedRaw).resize(width, height, { fit: "fill" }).png().toBuffer();
     const id = `anno-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
@@ -144,9 +147,9 @@ export async function POST(request: Request) {
       width,
       height,
     }], `anno-${Date.now()}`);
-    if (cost > 0) await addLedgerEntry(email, -cost, "画布标注编辑").catch(() => {});
+    await settleToolImage(email, cost, "画布标注编辑", quality, id, artwork.resolution || "1K");
     const user = await getUser(email).catch(() => null);
-    return NextResponse.json({ ok: true, id, width, height, user });
+    return NextResponse.json({ ok: true, id, width, height, user, cost, quality });
   } catch (error) {
     if (reserved && cost > 0) await refundCredits(email, cost).catch(() => {});
     return NextResponse.json(

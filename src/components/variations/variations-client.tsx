@@ -1,4 +1,7 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
+
 
 import { cdnUrl } from "@/lib/cdn";
 import { useEffect, useRef, useState } from "react";
@@ -12,7 +15,6 @@ import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
 import { downloadImage } from "@/lib/download";
-import { resolutionCost } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import { ToolShell } from "@/components/tools/tool-shell";
 import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
@@ -106,7 +108,8 @@ export function VariationsClient() {
     setAssistRun({ mode, nonce: Date.now() });
   }
 
-  const cost = count * resolutionCost(RESOLUTION);
+  const { quality, imageCost } = useImageQuality();
+  const cost = count * imageCost(RESOLUTION);
   const isCustom = splitMode === "custom";
 
   // 卸载时释放 objectURL
@@ -232,7 +235,7 @@ export function VariationsClient() {
       // 比例/出图模式已从 UI 移除:比例走「自动」(跟随原图),模式固定标准档。
       fd.append("ratio", "auto");
       fd.append("resolution", RESOLUTION);
-      fd.append("quality", "medium");
+      fd.append("quality", quality);
       fd.append("count", String(count));
       fd.append("email", user.email);
       fd.append("image", slot.file);
@@ -461,6 +464,7 @@ export function VariationsClient() {
             </p>
           </div>
 
+          <ImageQualityControl disabled={loading} />
           {/* 生成数量(默认 1,最多 8) */}
           <div>
             <p className="mb-2 text-[12.5px] font-medium text-c-text2">

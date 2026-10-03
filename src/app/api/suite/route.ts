@@ -1,3 +1,5 @@
+import { imageRequestBilling, withQualityFallback, auditSettledImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality, ExecutedQuality } from "@/lib/image-quality";
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { appendImageGatewayFields, imageOperationQuality, ImageOperationPending, isImageGatewayModel } from "@/lib/image-gateway";
 import { NextResponse } from "next/server";
@@ -10,6 +12,7 @@ import {
   dbEnabled,
   addArtworks,
   getUser,
+  getImageJobChargedCredits,
   isBanned,
   sweepStaleReservations,
 } from "@/lib/db";
@@ -51,6 +54,7 @@ type RequestedShot = {
   instruction?: string;
 };
 type ShotResult = ShotSpec & {
+  quality?: ResolvedImageQuality;
   id: string;
   status: "pending" | "done" | "error";
   url?: string;
@@ -393,6 +397,8 @@ async function persistOne(buf: Buffer, id: string): Promise<string> {
 
 // --- Durable job snapshots and resumable execution -------------------------
 type Job = {
+  cost?: number;
+  quality?: ResolvedImageQuality;
   imageQuality?: string;
   status: "pending" | "done" | "error";
   shots: ShotResult[];
@@ -465,21 +471,22 @@ async function runSuite(
         let ok = false;
         for (let attempt = 0; attempt <= (isImageGatewayModel(model) ? SHOT_RETRIES : 0) && !ok; attempt++) {
           try {
-            const generated = await JOBS.paidOperation(jobId, model, { id: shot.id, quality: imageQuality, task: "layout", preserveIdentity: true, textAccuracy: "required" }, () => genOneShot(
+            const quality: ResolvedImageQuality = { ...(prior?.quality ?? { requested: "medium", executed: (imageQuality) as ExecutedQuality, fallbackReason: null }) };
+            const generated = await withQualityFallback(quality, executed => JOBS.paidOperation(jobId, model, { id: prior?.quality ? `${shot.id}:quality:${executed}` : shot.id, quality: executed, task: "layout", preserveIdentity: true, textAccuracy: "required" }, () => genOneShot(
               apiKey,
               baseUrl,
               model,
               shot,
               productReference,
               productImages.length
-            ));
+            )));
             const buf = await normalizeShotRatio(
               generated,
               shot.ratio,
               platform === "amazon" && shot.role === "main"
             );
             const url = await persistOne(buf, shot.id);
-            shots[idx] = { ...shot, status: "done", url };
+            shots[idx] = { ...shot, status: "done", url, quality };
             ok = true;
           } catch (error) {
             if (error instanceof ImageOperationPending) { gatewayPending = error; break; }
@@ -537,18 +544,22 @@ async function runSuite(
           })),
           batchId
         );
-      charged = okShots.length * POINTS_PER_IMAGE;
+      charged = okShots.length * (cost / (prior?.total || shots.length));
       await JOBS.settle(jobId, charged, `一键套图 ${okShots.length} 张`);
       user = await getUser(email).catch(() => null);
     }
 
+
+    const committedCharge = await getImageJobChargedCredits(jobId);
+    for (const shot of okShots) await auditSettledImage(email, committedCharge / okShots.length,
+      shot.quality || prior?.quality || {requested: "medium", executed: "medium", fallbackReason: null}, jobId, shot.id);
 
     await set({
       status: "done",
       shots: [...shots],
       done: shots.length,
       user,
-      creditsUsed: charged,
+      creditsUsed: committedCharge,
       mock: !apiKey,
     });
   } catch (e) {
@@ -608,6 +619,7 @@ async function parseInput(request: Request) {
     }
   }
   return {
+    requestedQuality: f.get("quality") ?? undefined,
     images,
     extra: (f.get("text") ?? "").toString().trim().slice(0, 600),
     platform: (f.get("platform") ?? "taobao").toString().trim().slice(0, 20),
@@ -686,7 +698,8 @@ export async function POST(request: Request) {
   // 与前端统一最多 4 张；超出部分在解析阶段截断，防绕过前端多传图。
   const requested = input.structure === "custom" ? input.customShots : null;
   const SHOT_COUNT = requested?.length ?? 13;
-  const cost = SHOT_COUNT * POINTS_PER_IMAGE; // 1K 档:13×6 = 78 积分
+  const billing = await imageRequestBilling(request, input.requestedQuality);
+  const cost = SHOT_COUNT * billing.cost;
 
   if (dbEnabled && (await isBanned(input.email, ip))) {
     return NextResponse.json(
@@ -697,6 +710,7 @@ export async function POST(request: Request) {
   const jobId = `suite-${crypto.randomUUID()}`;
   try {
   await JOBS.create(jobId, input.email, {
+    cost, quality: billing.quality, imageQuality: billing.quality.executed,
     status: "pending", shots: [], done: 0, total: SHOT_COUNT, createdAt: Date.now(), owner: input.email,
   }, { ...input, requested, model, cost, textModel: requestedTextModel(request, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna") }, cost, true);
   } catch(error) {
@@ -747,6 +761,7 @@ export async function GET(request: Request) {
     status: s.status,
     url: s.url ?? null,
     gradient: s.gradient,
+    quality: s.quality,
   }));
   return NextResponse.json({
     status: job.status,
@@ -755,6 +770,8 @@ export async function GET(request: Request) {
     shots,
     user: job.status === "done" ? job.user : undefined,
     creditsUsed: job.status === "done" ? job.creditsUsed : undefined,
+    quality: job.quality,
+    cost: job.cost,
     mock: job.mock,
     error: job.error,
   });

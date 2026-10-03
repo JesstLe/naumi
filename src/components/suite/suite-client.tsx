@@ -1,4 +1,6 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -229,6 +231,7 @@ function SuiteDemoShowcase() {
 }
 
 export function SuiteClient() {
+  const { costPerImage } = useImageQuality();
   const { user, ready, remaining, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
   const { t, locale } = useI18n();
@@ -290,7 +293,7 @@ export function SuiteClient() {
     }))
   );
   const shotCount = structure === "custom" ? customShots.length : 13;
-  const cost = shotCount * POINTS_PER_IMAGE;
+  const cost = shotCount * costPerImage;
   const customCounts = customShots.reduce(
     (counts, shot) => ({ ...counts, [shot.role]: counts[shot.role] + 1 }),
     { main: 0, sub: 0, detail: 0 }
@@ -947,7 +950,8 @@ export function SuiteClient() {
           )}
         </div>
 
-        <div className="rounded-xl bg-secondary/50 px-4 py-3 text-sm">
+        <ImageQualityControl disabled={loading} />
+          <div className="rounded-xl bg-secondary/50 px-4 py-3 text-sm">
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">{t("suite.output")}</span>
             <span className="font-medium">

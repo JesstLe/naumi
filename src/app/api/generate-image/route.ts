@@ -1,10 +1,11 @@
+import { imageQualityCost } from "@/lib/image-quality-request";
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { NextResponse } from "next/server";
 import OpenAI, { toFile } from "openai";
 import { CATEGORY_IMAGES, img } from "@/lib/images";
 import {
   MAX_GENERATION_DIMENSION,
-  qualityBillCredits,
+  resolutionForLongSide,
   qualityCostAudit,
   resolutionLongSide,
 } from "@/lib/mock-data";
@@ -757,7 +758,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
       ratio: s("ratio") || "1:1",
       resolution: s("resolution") || "1K",
       style: s("style"),
-      quality: s("quality").trim(),
+      quality: s("quality").trim() || request.headers.get("x-naumi-image-quality") || "medium",
       count: parseCount(s("count")),
       transparent: s("transparent") === "1",
       ratiogen: s("ratiogen") === "1",
@@ -783,7 +784,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
     ratio: j.ratio || "1:1",
     resolution: j.resolution || "1K",
     style: j.style ?? "",
-    quality: j.quality ?? "",
+    quality: j.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium",
     count: parseCount(j.count),
     transparent: !!j.transparent,
     ratiogen: !!j.ratiogen,
@@ -982,8 +983,8 @@ async function runJob(
           })),
           batchId
         );
-      // 结算与预扣同口径:按请求质量档计费(内测期跑通链路,见 POST 注释)。
-      const actualCost = userProvider ? 0 : images.length * qualityBillCredits(saved?.quality?.requested ?? "");
+      // 按提交时的单张报价结算；部分成功和后续配置变化不会重算价目。
+      const actualCost = userProvider ? 0 : images.length * (cost / p.count);
       await JOBS.settle(jobId, actualCost, `生成 ${images.length} 张图`);
       billingSettled = true;
       user = await getUser(p.email).catch(() => null);
@@ -997,7 +998,7 @@ async function runJob(
       await recordImageCostAudit({ jobId, email: p.email, imageId: image.id,
         ...qualityCostAudit({ requested: saved?.quality?.requested || "", executed: execution.quality,
           upstream: execution.upstream, images: 1, reason: execution.reason,
-          billedCredits: chargedCredits / images.length, platformFunded: execution.platformFunded }) });
+          billedCredits: chargedCredits / images.length, platformFunded: execution.platformFunded, resolution: p.resolution }) });
     }
     const executedQualities = images.map(image => image.execution?.quality || p.quality || p.qualityDefault || "medium");
     const quality = saved?.quality ? { ...saved.quality, executed: new Set(executedQualities).size > 1 ? "mixed" : executedQualities[0], executedQualities,
@@ -1085,6 +1086,7 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+  if (hasCustomWidth) p.resolution = resolutionForLongSide(Math.max(p.targetWidth, p.targetHeight));
   if (p.images.some((im) => im.buf.length > 12 * 1024 * 1024)) {
     return NextResponse.json(
       { error: "单张上传图片过大（请 < 12MB）" },
@@ -1175,10 +1177,10 @@ export async function POST(request: Request) {
   if (p.ratiogen) p.count = 1;
   // BYOK(用户自带接口)豁免计费:算力与费用都发生在用户自己的上游,
   // 站内不预扣、不结算、不记流水。
-  // 内测阶段按「请求质量档」计费(qualityBillCredits):积分无限,目的是跑通
+  // 按请求质量基础价叠加尺寸差价，提交时固定报价。
   // 选档→扣费→结算链路;请求档进任务审计,恢复/重放后结算口径不变。
   const qualityAudit = resolveImageQuality(p.quality);
-  const cost = userProvider ? 0 : p.count * qualityBillCredits(qualityAudit.requested);
+  const cost = userProvider ? 0 : p.count * await imageQualityCost(qualityAudit, p.resolution);
 
   if (dbEnabled && (await isBanned(p.email, ip))) {
     return NextResponse.json(

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled, creditMeteringEnabled } from "@/lib/db";
 import { storageEnabled } from "@/lib/storage";
 import { authMode } from "@/lib/auth-mode";
 import { multiUserEnabled } from "@/lib/native-auth";
@@ -26,6 +26,7 @@ export async function GET(request: Request) {
   const userDefaultModel = await getUserDefaultImageModel(email);
   return NextResponse.json({
     db: dbEnabled,
+    creditsMetered: dbEnabled ? await creditMeteringEnabled() : true,
     storage: storageEnabled,
     authMode,
     // 原生多用户模式(运行时开关)。开则前端启用注册/登录(邮箱+密码)+ 会话 hydrate。

@@ -1,3 +1,5 @@
+import { requestImageQuality, imageQualityCost, settleToolImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { editImage, isImageTimeout } from "@/lib/image-edit";
@@ -8,7 +10,6 @@ import {
   reserveCredits,
   refundCredits,
   addArtworks,
-  addLedgerEntry,
   getUser,
   isBanned,
 } from "@/lib/db";
@@ -42,6 +43,7 @@ async function parseInput(request: Request) {
   const rawOpts = (f.getAll("option") as string[]).map((o) => o.trim());
   const options = Array.from(new Set(rawOpts)).filter((o) => OPTIONS[o]);
   return {
+    quality: requestImageQuality(request, f.get("quality") ?? undefined),
     image: {
       buf: Buffer.from(await file.arrayBuffer()),
       type: file.type || "image/png",
@@ -77,7 +79,7 @@ export async function POST(request: Request) {
     input.email = tokenEmail;
   }
   const useDb = dbEnabled && input.email.length > 0;
-  const cost = POINTS_PER_IMAGE;
+  const cost = await imageQualityCost(input.quality);
 
   if (dbEnabled && (await isBanned(input.email, ip))) {
     return NextResponse.json(
@@ -104,15 +106,11 @@ export async function POST(request: Request) {
       "\n输出一张可直接上架的精修成片,观感自然不过度处理。";
 
     const buf = await editImage({
+      quality: input.quality,
       images: [input.image.buf],
       types: [input.image.type],
       prompt,
       size: "1024x1024",
-      quality: (process.env.OPENAI_IMAGE_QUALITY || "medium") as
-        | "low"
-        | "medium"
-        | "high"
-        | "auto",
     });
 
     let url: string;
@@ -151,14 +149,14 @@ export async function POST(request: Request) {
           ],
           `retouch-${Date.now()}`
         );
-        await addLedgerEntry(input.email, -cost, "商品精修 1 张").catch(() => {});
       } catch {
-        /* non-fatal */
+        /* Artwork history is optional; settlement is mandatory. */
       }
+      await settleToolImage(input.email, cost, "商品精修 1 张", input.quality, undefined);
       const user = await getUser(input.email).catch(() => null);
-      return NextResponse.json({ ok: true, url, cost, user });
+      return NextResponse.json({ ok: true, url, cost, quality: input.quality, user });
     }
-    return NextResponse.json({ ok: true, url, cost });
+    return NextResponse.json({ ok: true, url, cost, quality: input.quality });
   } catch (e) {
     if (useDb) await refundCredits(input.email, cost).catch(() => {});
     console.error("[retouch] failed:", e instanceof Error ? e.message : e);

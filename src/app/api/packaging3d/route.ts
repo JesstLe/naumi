@@ -1,3 +1,5 @@
+import { requestImageQuality, imageQualityCost, withQualityFallback, settleToolImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import {
@@ -7,7 +9,6 @@ import {
   addArtworks,
   getUser,
   isBanned,
-  addLedgerEntry,
   addReservation,
   settleReservation,
   sweepStaleReservations,
@@ -18,13 +19,14 @@ import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
-import { packaging3dCost, resolutionLongSide } from "@/lib/mock-data";
+import { resolutionLongSide } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 type Input = {
+  quality: ResolvedImageQuality;
   bytes: Buffer;
   type: string;
   email: string;
@@ -93,6 +95,7 @@ async function parseInput(request: Request): Promise<Input | null> {
   if (!(file instanceof File) || file.size === 0) return null;
   const value = (key: string) => (form.get(key) ?? "").toString().trim();
   return {
+    quality: requestImageQuality(request, form.get("quality") ?? undefined),
     bytes: Buffer.from(await file.arrayBuffer()),
     type: file.type || "image/png",
     email: value("email"),
@@ -171,7 +174,7 @@ async function generate(input: Input): Promise<Buffer> {
   form.append("prompt", buildPrompt(input));
   form.append("n", "1");
   form.append("size", "1024x1024");
-  form.append("quality", process.env.OPENAI_IMAGE_QUALITY || "high");
+  form.append("quality", input.quality.executed);
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/images/edits`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -179,7 +182,7 @@ async function generate(input: Input): Promise<Buffer> {
     signal: AbortSignal.timeout(280_000),
   });
   const raw = await response.text();
-  if (!response.ok) throw new Error(`图片接口 ${response.status}: ${raw.slice(0, 500)}`);
+  if (!response.ok) throw Object.assign(new Error(`图片接口 ${response.status}: ${raw.slice(0, 500)}`), { status: response.status });
   const parsed = JSON.parse(raw) as {
     data?: { b64_json?: string; url?: string }[];
   };
@@ -196,7 +199,7 @@ async function generate(input: Input): Promise<Buffer> {
 
 async function runJob(jobId: string, input: Input, cost: number, useDb: boolean) {
   try {
-    const output = await generate(input);
+    const output = await withQualityFallback(input.quality, () => generate(input));
     const id = `pack3d-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     let url = `data:image/png;base64,${output.toString("base64")}`;
     let source: string | null = null;
@@ -252,7 +255,7 @@ async function runJob(jobId: string, input: Input, cost: number, useDb: boolean)
         `pack3d-${Date.now()}`
       ).catch(() => {});
       try {
-        await addLedgerEntry(input.email, -cost, "模切线转 3D 产品图");
+        await settleToolImage(input.email, cost, "模切线转 3D 产品图", input.quality, id, input.resolution);
         charged = true;
       } catch {
         // 结算失败时释放占位，避免图片已完成但余额永久卡在“处理中”。
@@ -312,7 +315,7 @@ export async function POST(request: Request) {
     input.email = email;
   }
   const useDb = dbEnabled && input.email.length > 0;
-  const cost = packaging3dCost(input.resolution);
+  const cost = await imageQualityCost(input.quality, input.resolution);
   if (dbEnabled && (await isBanned(input.email, ip))) {
     return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });
   }

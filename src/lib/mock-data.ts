@@ -504,7 +504,7 @@ export function resolutionCost(id: string): number {
 
 // ── 质量档计费(内测阶段)───────────────────────────────────────────────
 // 内测期按积分额度管理,计费只为跑通「前端选什么档 → 台账按什么档扣」的完整链路,
-// 故按质量档平铺单价、不再乘分辨率;正式上线前替换为定价表
+// 质量基础价叠加现有分辨率差价；正式上线前替换为定价表
 // (模型 × 分辨率 × 质量,见 src/lib/pricing.ts 的同事定价稿)。
 // 档位非法或空串时回退 medium 价(与提交前回退的执行档保持一致)。
 export const QUALITY_CREDITS: Record<string, number> = {
@@ -519,6 +519,11 @@ export const QUALITY_CREDITS: Record<string, number> = {
 /** 单张扣积分:按请求质量档取测试单价,非法/空档回退 medium。 */
 export function qualityBillCredits(requested: string): number {
   return QUALITY_CREDITS[requested] ?? QUALITY_CREDITS.medium;
+}
+
+/** Unified image tariff: requested quality plus the existing resolution surcharge. */
+export function imageBillCredits(requested: string, resolution = "1K"): number {
+  return qualityBillCredits(requested) + resolutionCost(resolution) - POINTS_PER_IMAGE;
 }
 
 /** 内部成本审计条目:成功图片的实际扣分与测试成本估算。 */
@@ -549,9 +554,10 @@ export function qualityCostAudit(input: {
   reason: string;
   billedCredits: number;
   platformFunded: boolean;
+  resolution?: string;
 }): QualityCostAudit {
   const billed = input.billedCredits;
-  const cost = input.platformFunded ? input.images * qualityBillCredits(input.executed) : 0;
+  const cost = input.platformFunded ? input.images * imageBillCredits(input.executed, input.resolution) : 0;
   return {
     requestedQuality: input.requested,
     executedQuality: input.executed,

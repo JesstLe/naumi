@@ -1,4 +1,7 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
+
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -107,6 +110,7 @@ type Turn = {
 
 export function GenChatClient() {
   const { user, ready } = useAuth();
+  const { quality, imageCost } = useImageQuality();
   const { openAuth } = useAuthModal();
   const { t, te } = useI18n();
   const router = useRouter();
@@ -310,6 +314,7 @@ export function GenChatClient() {
       const chosenModel = override?.model || urlModelRef.current;
       if (chosenModel) fd.append("model", chosenModel);
       fd.append("count", String(count));
+      fd.append("quality", quality);
       fd.append("email", user.email);
       if (curBase) {
         fd.append("parentId", curBase.id);
@@ -721,6 +726,8 @@ export function GenChatClient() {
                   index={resIdx}
                   onPick={setResIdx}
                 />
+                <ImageQualityControl compact resolution={RESOLUTIONS[resIdx]?.id || "1K"} disabled={busy} />
+                <span className="text-xs text-c-text3">{count * imageCost(RESOLUTIONS[resIdx]?.id || "1K")} 积分</span>
                 <SelectChip
                   label={`×${count}`}
                   options={[1, 2, 4].map((n) => `×${n}`)}

@@ -1,4 +1,6 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -47,6 +49,7 @@ const LANGS = [
 ];
 
 export function ReplicateClient() {
+  const { costPerImage } = useImageQuality();
   const L = (z: string, e: string) =>
     typeof window !== "undefined" && document.documentElement.lang === "en" ? e : z;
   const { user, ready, applyServerUser } = useAuth();
@@ -73,7 +76,7 @@ export function ReplicateClient() {
   const [assistOpen, setAssistOpen] = useState(false);
   const [assistRun, setAssistRun] = useState<{ mode: "write" | "optimize"; nonce: number } | null>(null);
 
-  const cost = POINTS_PER_IMAGE;
+  const cost = costPerImage;
 
   const previewUrlsRef = useRef<string[]>([]);
   previewUrlsRef.current = [...previews, refPreview].filter(Boolean);
@@ -443,7 +446,8 @@ export function ReplicateClient() {
           )}
 
           {/* CTA:积分前置 */}
-          <button
+          <ImageQualityControl disabled={loading} />
+            <button
             type="button"
             onClick={generate}
             disabled={!ready || loading || analyzing}

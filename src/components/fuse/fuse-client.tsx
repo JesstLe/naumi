@@ -1,4 +1,7 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
+
 
 import { cdnUrl } from "@/lib/cdn";
 import { useEffect, useRef, useState } from "react";
@@ -21,7 +24,6 @@ import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
 import { downloadImage } from "@/lib/download";
-import { resolutionCost } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import { ToolShell } from "@/components/tools/tool-shell";
 import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
@@ -41,7 +43,7 @@ const DEFAULT_FUSE =
 
 type Slot = { id: string; file: File; url: string };
 type Ratio = "1:1" | "3:4" | "4:3" | "16:9" | "9:16" | "auto";
-type Quality = "low" | "medium" | "high";
+
 
 const RATIOS: Ratio[] = ["1:1", "3:4", "4:3", "16:9", "9:16", "auto"];
 
@@ -56,7 +58,7 @@ export function FuseClient() {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState<Ratio>("1:1");
-  const [quality, setQuality] = useState<Quality>("medium");
+  const { quality, imageCost } = useImageQuality();
   const [count, setCount] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +77,7 @@ export function FuseClient() {
     setAssistRun({ mode, nonce: Date.now() });
   }
 
-  const cost = count * resolutionCost(RESOLUTION);
+  const cost = count * imageCost(RESOLUTION);
 
   // 卸载时释放 objectURL,避免内存泄漏
   useEffect(() => {
@@ -414,31 +416,7 @@ export function FuseClient() {
               <p className="mb-2 text-[12.5px] font-medium text-c-text2">
                 {L("出图模式", "Mode")}
               </p>
-              <div className="flex gap-1.5">
-                {(
-                  [
-                    ["low", L("基础", "Basic")],
-                    ["medium", L("标准", "Standard")],
-                    ["high", L("高阶", "Fine")],
-                  ] as [Quality, string][]
-                ).map(([q, label]) => {
-                  const active = quality === q;
-                  return (
-                    <button
-                      key={q}
-                      type="button"
-                      onClick={() => setQuality(q)}
-                      style={optStyle(active)}
-                      className={cn(
-                        "flex-1 rounded-[8px] border px-2 py-1.5 text-[12px] font-medium",
-                        optClass(active)
-                      )}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
+              <ImageQualityControl disabled={loading} />
             </div>
             <div className="w-24">
               <p className="mb-2 text-[12.5px] font-medium text-c-text2">
