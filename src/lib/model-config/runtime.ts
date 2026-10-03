@@ -21,7 +21,14 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality) 
     return { id: m.id, label: m.label, modality: m.modality, supportsEdit: upstreams.some(u => u.capabilities.edit), supportsVision: upstreams.some(u => u.capabilities.vision), qualities: Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
   });
   const visible = new Set(models.map(m => m.id));
-  return { version: snapshot.version, models, bindings: Object.fromEntries(Object.entries(config.bindings).filter(([, id]) => visible.has(id))) };
+  const bindingCapabilities = Object.fromEntries(Object.entries(config.bindings).flatMap(([binding,id]) => {
+    const m = config.publicModels.find(m => m.id === id && m.enabled && m.modality === modality);
+    if (!m) return [];
+    const ids = m.target.type === "upstream" ? [m.target.id] : config.pools.find(p => p.id === m.target.id)!.candidates;
+    const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
+    return [[binding,{ qualities: Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))) }]];
+  }));
+  return { version: snapshot.version, models, bindingCapabilities, bindings: Object.fromEntries(Object.entries(config.bindings).filter(([, id]) => visible.has(id))) };
 }
 function rankFor(quality: string) { return ({ low: 1, medium: 2, high: 3, xhigh: 4, max: 5 } as Record<string,number>)[quality] || 1; }
 function matchesRule(when: ModelConfig["pools"][number]["rules"][number]["when"], f: ModelFacts) {

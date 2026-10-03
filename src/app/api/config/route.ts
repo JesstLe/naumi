@@ -41,6 +41,7 @@ export async function GET(request: Request) {
     defaultImageModel: userDefaultModel || defaultModel,
     modelVersion: managed?.version,
     imageModelBindings: managed?.bindings,
+    imageBindingCapabilities: managed?.bindingCapabilities,
     imageModels: managed ? imageModels.map(m => ({ ...m, provider: m.id.startsWith("byok:") ? m.provider : "managed" })) : imageModels,
     // 出图质量通道能力:上游真实处理 quality 字段时为 true,前端才放开
     // 高档选择;false 时统一按默认档执行(提交前回退,见 src/lib/image-quality.ts)。

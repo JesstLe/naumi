@@ -61,8 +61,9 @@ export function useImageQuality(feature?:FeatureId, modelId?: string, purpose?: 
   const value = useContext(QualityContext);
   if (!value) throw new Error("ImageQualityProvider is missing");
   const pathname=usePathname(),{catalog}=useBilling(),selected=feature??CATEGORY_FEATURES[pathname.split('/')[1]]??"image.generate";
-  const imageCost=(resolution="1K")=>catalog?.features[selected]?.prices[value.quality]?.[resolution]??0;
-  const binding = purpose || (["image.generate", "image.suite", "image.aplus", "canvas.image"].includes(selected) ? "image.generate" : selected === "tool.cutout" ? "image.cutout" : "image.edit");
+  const binding = purpose || (["image.generate", "image.suite", "image.aplus"].includes(selected) ? "image.generate" : selected === "tool.cutout" ? "image.cutout" : "image.edit");
   const allowedQualities = availableImageQualities(value.modelConfig, modelId, binding);
-  return {...value,allowedQualities,capable: allowedQualities.length > 1,imageCost,costPerImage:imageCost()};
+  const quality = allowedQualities.includes(value.quality) ? value.quality : allowedQualities[0];
+  const imageCost=(resolution="1K")=>catalog?.features[selected]?.prices[quality]?.[resolution]??0;
+  return {...value,quality,allowedQualities,capable: allowedQualities.length > 1,imageCost,costPerImage:imageCost()};
 }

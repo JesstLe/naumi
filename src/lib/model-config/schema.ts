@@ -119,6 +119,7 @@ export async function ensureModelSchema(pool: Pool): Promise<void> {
         await tx.query(`
       CREATE TABLE IF NOT EXISTS app_model_credentials(id uuid PRIMARY KEY,provider_id text NOT NULL,key_enc text NOT NULL,created_by text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS app_model_provider_budgets(identity text PRIMARY KEY,max_concurrent int NOT NULL CHECK(max_concurrent>0));
+      CREATE TABLE IF NOT EXISTS app_model_capacity_accounts(alias text PRIMARY KEY,identity text NOT NULL REFERENCES app_model_provider_budgets(identity));
       CREATE TABLE IF NOT EXISTS app_model_provider_leases(identity text NOT NULL REFERENCES app_model_provider_budgets(identity),token uuid PRIMARY KEY,expires_at timestamptz NOT NULL);
       CREATE INDEX IF NOT EXISTS app_model_provider_leases_identity ON app_model_provider_leases(identity,expires_at);
       CREATE TABLE IF NOT EXISTS app_model_config_versions(version bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,operation_id uuid UNIQUE NOT NULL,actor text NOT NULL,reason text NOT NULL,config jsonb NOT NULL,digest text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());

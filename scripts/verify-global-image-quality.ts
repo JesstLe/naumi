@@ -3,6 +3,9 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import sharp from "sharp";
+import { createModelFixture } from "./model-config-fixture";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 async function main() {
   if (process.env.NAUMI_VERIFY_ISOLATED_DB !== "1" || new URL(process.env.DATABASE_URL || "http://invalid").hostname !== "127.0.0.1") throw new Error("Requires isolated local PostgreSQL");
@@ -12,11 +15,13 @@ async function main() {
     OPENAI_API_KEY: "fixture-platform", OPENAI_IMAGE_MODEL: "gpt-image-1", OPENAI_IMAGE_MODELS: "gpt-image-1", OPENAI_IMAGE_QUALITY: "medium" });
   const image = await sharp({ create: { width: 1024, height: 1024, channels: 4, background: "white" } }).png().toBuffer();
   let scenario = "success";
+  const managedMode = process.argv.includes("--managed");
   const wire: string[] = [];
+  const wireModels: string[] = [];
   const supplier = createServer(async (request, response) => {
     const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk);
     const form = await new Request("http://fixture.test", { method: "POST", headers: { "content-type": String(request.headers["content-type"]) }, body: Buffer.concat(chunks) }).formData();
-    const quality = String(form.get("quality")); wire.push(quality);
+    const quality = String(form.get("quality")); wire.push(quality); wireModels.push(String(form.get("model")));
     response.setHeader("content-type", "application/json");
     if (scenario === "failure" || scenario === "downgrade" && quality === "xhigh") {
       response.writeHead(400); response.end(JSON.stringify({ error: { message: scenario === "failure" ? "fixture rejected prompt" : "quality is not supported" } }));
@@ -24,6 +29,19 @@ async function main() {
   });
   await new Promise<void>(resolve => supplier.listen(0, "127.0.0.1", resolve));
   process.env.OPENAI_BASE_URL = `http://127.0.0.1:${(supplier.address() as {port:number}).port}/v1`;
+  const modelFixture = managedMode ? await createModelFixture(supplier.listeners("request")[0] as import("node:http").RequestListener) : null;
+  const privateMedia = managedMode ? await mkdtemp(path.join(tmpdir(), "naumi-managed-tools-")) : null;
+  if (modelFixture) {
+    process.env.PGOPTIONS = `-c search_path=${modelFixture.schemaName}`;
+    process.env.MEDIA_DIR = privateMedia!;
+    const origin = modelFixture.origin;
+    process.env.OPENAI_BASE_URL = `${origin}/v1`;
+    Object.assign(process.env, { NAUMI_ROUTER_MANAGEMENT_URL: origin, MODEL_CONFIG_TRUSTED_ORIGINS: origin, NAUMI_ROUTER_MANAGEMENT_TOKEN: "fixture-tools-private-control-token-20261004", MODEL_CONFIG_ENVELOPE_SECRET: "fixture-tools-private-envelope-secret-20261004" });
+    modelFixture.config.providers[0].baseUrl = process.env.OPENAI_BASE_URL;
+    modelFixture.config.upstreamModels[0].model = "registered-tools-wire";
+    modelFixture.config.upstreamModels[0].parameterMap = {};
+    Object.assign(modelFixture.config.upstreamModels[0].capabilities, { qualityRank: 5, qualities: ["low", "medium", "high", "xhigh", "max"], nativeResolutions: ["1K"], preserveIdentity: true, textAccuracy: true, maxReferenceImages: 8 });
+  }
   const db = await import("../src/lib/db");
   const native = await import("../src/lib/native-auth");
   const quality = await import("../src/lib/image-quality-request");
@@ -61,6 +79,7 @@ async function main() {
     return audits;
   }
   try {
+    if (modelFixture) await modelFixture.repo.current();
     for (const [name,route] of Object.entries(routes)) {
       scenario="success"; wire.length=0;
       const actor=await user();
@@ -81,6 +100,7 @@ async function main() {
       const expected=["inpaint","extract","garment3d","packaging3d"].includes(name)?20:14;
       const audits=await assertCharge(actor.email,actor.before.creditsTotal,expected);
       assert.deepEqual(wire,["xhigh"],name); assert.equal(audits.length,1); assert.equal(audits[0].requested_quality,"xhigh");
+      if (managedMode) assert.equal(wireModels.at(-1), "registered-tools-wire", `${name} must submit the configured supplier model, not the legacy environment model`);
       console.log(`PASS ${name}: quality=xhigh, committed=${expected}`);
     }
     for(const name of ["retouch","packaging3d"] as const) {
@@ -119,6 +139,6 @@ async function main() {
     assert.equal(freeResult.status,200);assert.equal((await freeResult.json()).cost,0);await assertCharge(free.email,free.before.creditsTotal,0);
     console.log("PASS canvas: inherited dimensions, frozen queued quote and quality; timeout never retries; metering-off is free");
     console.log("GLOBAL_IMAGE_QUALITY_RESULT=PASS");
-  } finally {await sql.end();await new Promise<void>(resolve=>supplier.close(()=>resolve()));}
+  } finally {await sql.end();await new Promise<void>(resolve=>supplier.close(()=>resolve()));if(modelFixture)await modelFixture.cleanup();if(privateMedia)await rm(privateMedia,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

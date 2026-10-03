@@ -596,7 +596,7 @@ export function ModelConfigurationManager() {
         </div>
         <div className="flex flex-wrap gap-3">
           <Link className={buttonClass} href="/admin/bi">
-            运营 BI
+            管理中心
           </Link>
           <Link className={buttonClass} href="/admin/billing">
             计费与成本管理
