@@ -10,6 +10,12 @@ import { fixtureConfig } from "./billing-unit-fixture";
 import { createModelFixture } from "./model-config-fixture";
 
 async function main() {
+  const { availableImageQualities } = await import("../src/lib/model-config/public-client");
+  const publicOptions = { defaultImageModel: "standard", imageModelBindings: { "image.edit": "editor" }, imageQualityCapable: true, imageModels: [{ id: "standard", label: "同名模型", provider: "managed", supportsEdit: false, qualities: ["low", "high"] }, { id: "editor", label: "同名模型", provider: "managed", supportsEdit: true, qualities: ["medium"] }] };
+  assert.deepEqual(availableImageQualities(publicOptions), ["low", "high"]);
+  assert.deepEqual(availableImageQualities(publicOptions, undefined, "image.edit"), ["medium"]);
+  const { compactImageModelOptions } = await import("../src/lib/image-model-routing");
+  assert.equal(compactImageModelOptions(publicOptions.imageModels).length, 2, "Public aliases with identical display labels cannot collapse distinct configured routes");
   const mediaDirectory = await mkdtemp(join(tmpdir(), "naumi-model-execution-"));
   process.env.MEDIA_DIR = mediaDirectory; process.env.STORAGE_DRIVER = "local";
   assert.ok(existsSync("src/lib/model-config/execution.ts"), "Actual execution must resolve immutable model versions and credentials");

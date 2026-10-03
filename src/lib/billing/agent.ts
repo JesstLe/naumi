@@ -4,6 +4,7 @@ import type { BillingQuote, FeatureId } from "./types";
 import { dbEnabled, getUser } from "@/lib/db";
 import { fingerprint, stableJson } from "./fingerprint";
 import { getImageJob } from "@/lib/image-job-repository";
+import { currentModelBillingSnapshot } from "../model-config/context";
 export const AGENT_FEATURES: Record<string, {
     feature: FeatureId;
     label: string;
@@ -20,7 +21,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     const entry = AGENT_FEATURES[name];
     if (!entry)
         return null;
-    const runtime = await getBillingRuntime(), snapshot=await runtime.config.current(),threshold=snapshot.config.thresholds.agentConfirmCredits;
+    const runtime = await getBillingRuntime(), snapshot=currentModelBillingSnapshot()??await runtime.config.current(),threshold=snapshot.config.thresholds.agentConfirmCredits;
     if (name === "continue_aplus_generation") {
         const job = await getImageJob(String(args.job_id || ""), "aplus");
         if (!job || job.email !== email.toLowerCase())

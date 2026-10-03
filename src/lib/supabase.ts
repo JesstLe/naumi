@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { currentImageQuality } from "@/lib/image-quality-preference";
+import { currentModelCatalogVersion } from "@/lib/model-config/public-client";
 
 // Browser Supabase client (anon key) — used client-side for auth only.
 // NEXT_PUBLIC_* are inlined at build time, so this is safe in client code.
@@ -35,6 +36,8 @@ export async function authHeader(): Promise<Record<string, string>> {
     if (textModel) headers["x-naumi-text-model"] = textModel;
     const quality = currentImageQuality();
     if (quality) headers["x-naumi-image-quality"] = quality;
+    const version = currentModelCatalogVersion();
+    if (version) headers["x-naumi-model-version"] = String(version);
   }
   if (!url || !anon) return headers;
   try {
