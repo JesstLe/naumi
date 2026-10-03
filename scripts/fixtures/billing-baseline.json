@@ -1,0 +1,294 @@
+{
+  "imageCases": [
+    {
+      "quality": "medium",
+      "resolution": "1K",
+      "quantity": 1,
+      "credits": 6
+    },
+    {
+      "quality": "high",
+      "resolution": "2K",
+      "quantity": 1,
+      "credits": 12
+    },
+    {
+      "quality": "low",
+      "resolution": "5K",
+      "quantity": 1,
+      "credits": 14
+    },
+    {
+      "quality": "max",
+      "resolution": "4K",
+      "quantity": 2,
+      "credits": 48
+    },
+    {
+      "quality": "auto",
+      "resolution": "1K",
+      "quantity": 1,
+      "credits": 6
+    }
+  ],
+  "fixedCases": [
+    {
+      "feature": "tool.cutout",
+      "credits": 1
+    },
+    {
+      "feature": "tool.upscale",
+      "credits": 1
+    },
+    {
+      "feature": "tool.ipcheck",
+      "credits": 1
+    },
+    {
+      "feature": "tool.printfile",
+      "credits": 0
+    }
+  ],
+  "products": [
+    {
+      "id": "c-990",
+      "amountFen": 9900,
+      "credits": 990
+    },
+    {
+      "id": "c-6240",
+      "amountFen": 49900,
+      "credits": 6240
+    },
+    {
+      "id": "c-13320",
+      "amountFen": 99900,
+      "credits": 13320
+    },
+    {
+      "id": "c-28560",
+      "amountFen": 199900,
+      "credits": 28560
+    },
+    {
+      "id": "c-76910",
+      "amountFen": 499900,
+      "credits": 76910
+    },
+    {
+      "id": "c-183320",
+      "amountFen": 1099900,
+      "credits": 183320
+    }
+  ],
+  "entries": [
+    {
+      "feature": "image.generate",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "led-image-id"
+    },
+    {
+      "feature": "image.suite",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "led-image-id"
+    },
+    {
+      "feature": "image.aplus",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "after-review",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "led-image-id"
+    },
+    {
+      "feature": "tool.cutout",
+      "pricingMode": "fixed",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.upscale",
+      "pricingMode": "fixed",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.printfile",
+      "pricingMode": "fixed",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.ipcheck",
+      "pricingMode": "fixed",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.garment",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.avatar",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.dewrinkle",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.dewatermark",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.style",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.tryon",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.retouch",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.recolor",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.replicate",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.inpaint",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.extract",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.garment3d",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "tool.packaging3d",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "canvas.image",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "legacy-runtime",
+      "legacyIds": "led-canvas-image-id"
+    },
+    {
+      "feature": "canvas.expand",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "canvas.text-edit",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "canvas.annotate",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "competitor.action",
+      "pricingMode": "quality-resolution",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "creation",
+      "legacyIds": "legacy-ledger"
+    },
+    {
+      "feature": "video.generate",
+      "pricingMode": "fixed-env",
+      "reserveTiming": "before-execution",
+      "settlementTiming": "confirmed-result",
+      "meteringTiming": "legacy-runtime",
+      "legacyIds": "led-video-id"
+    }
+  ]
+}
