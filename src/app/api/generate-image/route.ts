@@ -34,6 +34,7 @@ import {
   type ImageModelDescriptor,
 } from "@/lib/image-model-catalog";
 import { routeImageModel } from "@/lib/image-model-routing";
+import { resolveImageQuality, type ResolvedImageQuality } from "@/lib/image-quality";
 import { generateNewApiImage } from "@/lib/new-api-image";
 import { imageGatewayFields, ImageOperationPending, withImageIndex } from "@/lib/image-gateway";
 import {
@@ -80,7 +81,7 @@ type GenParams = {
   ratio: string;
   resolution: string;
   style: string;
-  quality: string; // 出图模式:low(基础)/medium(标准)/high(高阶);空=用 env 默认
+  quality: string; // 请求质量档:low/medium/high/xhigh/max/auto;通道不支持时提交前回退默认档,请求值只入审计
   count: number;
   transparent: boolean; // 透明底(抠图):gpt-image background:transparent PNG
   ratiogen: boolean; // 改比例(ChatGPT 式重生成):用节点自身提示词+原图参考,按目标比例重画再裁切,无需额外提示词
@@ -101,13 +102,9 @@ type GenParams = {
 
 const MAX_IMAGES = 6;
 
-// gpt-image 出图质量:不设=默认 auto≈最高=最慢(实测 1K 要 50~150 秒)。
-// 默认 medium:速度快很多、质量仍够电商商用。可用 env OPENAI_IMAGE_QUALITY 调(low/medium/high/auto)。
-const IMG_QUALITY = (process.env.OPENAI_IMAGE_QUALITY || "medium") as
-  | "low"
-  | "medium"
-  | "high"
-  | "auto";
+// gpt-image 出图质量默认值与回退逻辑收敛到 src/lib/image-quality.ts:
+// 不设=默认 auto≈最高=最慢(实测 1K 要 50~150 秒),默认 medium 快很多、
+// 质量仍够电商商用;env OPENAI_IMAGE_QUALITY 调,能力开关见该模块注释。
 
 const GRADIENTS = [
   "from-rose-100 to-slate-100",
@@ -307,10 +304,13 @@ async function openaiImages(
   const prompt = p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()));
   const size = sizeFor(p.ratio, model);
   const canEdit = p.images.length > 0 && isOpenAIImagesEditModel(model);
-  // 出图模式:优先用本次请求选的(基础/标准/高阶 = low/medium/high),否则回退 env 默认。
-  const q = (["low", "medium", "high", "auto"].includes(p.quality)
-    ? p.quality
-    : IMG_QUALITY) as "low" | "medium" | "high" | "auto";
+  // 出图质量:解析结果=实际执行档。通道未接入质量参数时在提交前回退为默认档
+  // (env OPENAI_IMAGE_QUALITY,缺省 medium),请求档仅记录审计;计费不区分质量档。
+  const q = resolveImageQuality(p.quality).executed as
+    | "low"
+    | "medium"
+    | "high"
+    | "auto";
 
   let data: { b64_json?: string; url?: string }[] = [];
 
@@ -796,6 +796,8 @@ type Job = {
   error?: string;
   createdAt: number;
   sourceUrl?: string | null;
+  /** 质量审计:请求档 vs 实际执行档与回退原因(通道不支持时回退默认档)。 */
+  quality?: ResolvedImageQuality;
 };
 const JOBS = new DurableImageJobs<Job>("generate");
 
@@ -848,7 +850,7 @@ async function runJob(
         apiKey: userProvider.apiKey,
       }));
     } else if (imageModel.provider === "user-openai-images" && userProvider) {
-      images = await JOBS.paidOperation(jobId, userProvider.model, { id: jobId, managedGateway: false, resolution: p.resolution as "1K" | "2K" | "4K", preserveIdentity: p.images.length > 0 }, () => openaiImages(
+      images = await JOBS.paidOperation(jobId, userProvider.model, { id: jobId, managedGateway: false, resolution: p.resolution as "1K" | "2K" | "4K", quality: p.quality, preserveIdentity: p.images.length > 0 }, () => openaiImages(
         p,
         userProvider.apiKey,
         userProvider.model,
@@ -860,7 +862,7 @@ async function runJob(
     } else {
       images = apiKey
         ? await JOBS.paidOperation(jobId, p.transparent ? cutoutModel || "gpt-image-1" : imageModel.id, {
-            id: jobId, resolution: p.resolution as "1K" | "2K" | "4K",
+            id: jobId, resolution: p.resolution as "1K" | "2K" | "4K", quality: p.quality,
             task: p.category === "detail" ? "detail" : p.images.length ? "product" : "draft",
             preserveIdentity: p.images.length > 0,
           }, () => openaiImages(p, apiKey, imageModel.id, cutoutModel))
@@ -952,6 +954,7 @@ async function runJob(
       mode: p.images.length > 0 ? "edit" : "generate",
       persisted: useDb,
       createdAt: Date.now(),
+      quality: saved?.quality,
     });
   } catch (e) {
     if (e instanceof ImageOperationPending) {
@@ -1123,11 +1126,14 @@ export async function POST(request: Request) {
 
   if (useDb) await sweepStaleReservations().catch(() => {});
   const jobId = `job-${crypto.randomUUID()}`;
-  p.quality = ["low", "medium", "high", "auto"].includes(p.quality) ? p.quality : IMG_QUALITY;
+  // 质量参数:入口即解析。p.quality 固化为实际执行档(恢复/重放确定性),
+  // 请求档与回退原因进任务审计快照,供后台核对「请求了什么、跑了什么」。
+  const qualityAudit = resolveImageQuality(p.quality);
+  p.quality = qualityAudit.executed;
   p.compiledPrompt = p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide());
   p.model = imageModel.id;
   try {
-  await JOBS.create(jobId, p.email, { status: "pending", createdAt: Date.now() }, { p, cost, byok: !!userProvider }, cost, true);
+  await JOBS.create(jobId, p.email, { status: "pending", createdAt: Date.now(), quality: qualityAudit }, { p, cost, byok: !!userProvider }, cost, true);
   } catch(error) {
     const message=error instanceof Error ? error.message : "";
     return NextResponse.json({error:safeError(error,"任务保存失败，请稍后重试")},{status:message.includes("积分不足") ? 402 : 503});
@@ -1171,6 +1177,7 @@ export async function GET(request: Request) {
         creditsUsed: job.creditsUsed,
         mock: job.mock,
         persisted: job.persisted,
+        quality: job.quality,
       });
     }
     if (job.status === "error") {

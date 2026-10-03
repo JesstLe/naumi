@@ -101,8 +101,14 @@ export function GenerateClient({
   const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
   const [ratio, setRatio] = useState("auto");
   const [resolution, setResolution] = useState("1K");
-  // 出图统一用标准档 medium(省钱稳赚、画质够用);不再暴露低/高阶选择器。
-  const quality = "medium";
+  // 出图质量:通道接入质量参数(NAUMI_IMAGE_QUALITY_SUPPORTED=1)前,
+  // 非标准档置灰、统一按标准档执行与计费;选择仍随请求上行,由服务端
+  // 在提交前回退并写任务审计(请求档/执行档/回退原因)。
+  const [quality, setQuality] = useState("medium");
+  const [qualityCapable, setQualityCapable] = useState(false);
+  useEffect(() => {
+    if (!qualityCapable && quality !== "medium") setQuality("medium");
+  }, [qualityCapable, quality]);
   const [style, setStyle] = useState(GENERATION_STYLES[0]);
   const [count, setCount] = useState(1);
   const [files, setFiles] = useState<File[]>([]);
@@ -146,8 +152,9 @@ export function GenerateClient({
     void authHeader()
       .then((headers) => fetch("/api/config", { cache: "no-store", headers }))
       .then((response) => response.json())
-      .then((config: { defaultImageModel?: string; imageModels?: ImageModelOption[] }) => {
+      .then((config: { defaultImageModel?: string; imageModels?: ImageModelOption[]; imageQualityCapable?: boolean }) => {
         if (cancelled) return;
+        setQualityCapable(!!config.imageQualityCapable);
         const options = Array.isArray(config.imageModels)
           ? config.imageModels.filter((item) => item?.id && item?.label)
           : [];
@@ -857,6 +864,27 @@ export function GenerateClient({
                     options={[1, 2, 4].map((n) => ({ value: String(n), label: String(n) }))}
                   />
                 </div>
+              </div>
+
+              {/* 出图质量:通道未接入质量参数前非标准档置灰,实际按标准档执行与计费 */}
+              <div className="space-y-1.5">
+                <span className="text-[13px] text-c-text2">{t("gen.qualityLabel")}</span>
+                <Segmented
+                  value={quality}
+                  onChange={setQuality}
+                  options={[
+                    { value: "low", label: t("gen.qLow"), disabled: !qualityCapable },
+                    { value: "medium", label: t("gen.qMedium") },
+                    { value: "high", label: t("gen.qHigh"), disabled: !qualityCapable },
+                    { value: "xhigh", label: t("gen.qXhigh"), disabled: !qualityCapable },
+                    { value: "max", label: t("gen.qMax"), disabled: !qualityCapable },
+                  ]}
+                />
+                {!qualityCapable && (
+                  <p className="text-[11px] leading-relaxed text-c-text3">
+                    {t("gen.qualityPending")}
+                  </p>
+                )}
               </div>
             </div>
 
