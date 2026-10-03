@@ -22,7 +22,8 @@
     "verify:bi-management": "tsx --conditions react-server scripts/verify-bi-management.ts",
     "verify:single-product": "tsx --conditions react-server scripts/verify-single-product.ts",
     "verify:pricing-proposal": "tsx --conditions react-server scripts/verify-pricing-proposal.ts",
-    "verify:pricing-access": "node scripts/verify-pricing-access.mjs"
+    "verify:pricing-access": "node scripts/verify-pricing-access.mjs",
+    "verify:billing-baseline": "tsx --conditions react-server scripts/verify-billing-baseline.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",
