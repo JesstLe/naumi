@@ -168,6 +168,8 @@ export type GrantInput = {
     reason: string;
     expiry: ExpiryPolicy;
     orderId?: string;
+    expiresAt?: string;
+    debitOrder?: "expires-first" | "created-first";
     ledgerId: string;
     fingerprint: string;
     actor: string;

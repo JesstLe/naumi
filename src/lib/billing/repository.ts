@@ -91,8 +91,10 @@ export async function grantBatchTx(tx: Tx, input: {
     expiry: ExpiryPolicy;
     orderId?: string;
     ledgerId: string;
+    expiresAt?: string;
 }) {
-    const expires = expiryFrom(new Date(), input.expiry).toISOString();
+    const expires = input.expiresAt ?? expiryFrom(new Date(), input.expiry).toISOString();
+    if (!Number.isFinite(new Date(expires).getTime())) throw new BillingError("INVALID_RESULT", "积分有效期无效", 400);
     await tx.query("INSERT INTO app_credit_batches(id,email,amount,remaining,source,reason,order_id,expires_at) VALUES($1,$2,$3,$3,$4,$5,$6,$7)", [`bat-${input.id}`, input.email, input.amount, input.source, input.reason, input.orderId || null, expires]);
     await tx.query("INSERT INTO app_ledger(id,email,delta,reason,kind,expires_at) VALUES($1,$2,$3,$4,$5,$6)", [input.ledgerId, input.email, input.amount, input.reason, input.source === "purchase" ? "purchase" : "grant", expires]);
     await syncBalanceTx(tx, input.email);

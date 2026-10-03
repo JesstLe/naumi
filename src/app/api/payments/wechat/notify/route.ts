@@ -56,8 +56,7 @@ export async function POST(req: Request) {
     return fail("订单不存在", 400);
   }
   if (
-    typeof decrypted.totalFen === "number" &&
-    decrypted.totalFen !== order.amount
+    !Number.isSafeInteger(decrypted.totalFen) || decrypted.totalFen !== order.amount
   ) {
     return fail("金额不匹配", 400);
   }
@@ -68,7 +67,8 @@ export async function POST(req: Request) {
       const r = await fulfillOrder(
         decrypted.outTradeNo,
         "wechat",
-        decrypted.transactionId || null
+        decrypted.transactionId || null,
+        decrypted.totalFen
       );
       if (!r.ok) return fail(r.error || "履约失败", 400);
     } catch {

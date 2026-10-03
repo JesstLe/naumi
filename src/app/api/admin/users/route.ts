@@ -19,6 +19,9 @@ import {
   listUserLedger,
 } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
+import {resolveUserEmail} from "@/lib/admin-auth";
+import {sameSiteBillingMutation} from "@/lib/billing/access";
+import {operationIdFor,billingErrorResponse} from "@/lib/billing/request";
 import { hashPassword } from "@/lib/pw";
 
 export const runtime = "nodejs";
@@ -68,6 +71,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const blocked = await guard(req);
   if (blocked) return blocked;
+  if(!sameSiteBillingMutation(req))return NextResponse.json({error:"请求来源无效"},{status:403});
 
   let body: {
     action?: string;
@@ -148,7 +152,7 @@ export async function POST(req: Request) {
         body.months === undefined || body.months === null
           ? undefined
           : Math.trunc(Number(body.months));
-      await adjustUserCredits(email, d, "管理员调整积分", { months });
+      await adjustUserCredits(email, d, "管理员调整积分", { months,id:operationIdFor(req),actor:await resolveUserEmail(req)??"local-admin" });
     } else if (action === "ban") {
       await setUserBanned(email, body.banned === true);
     } else if (action === "note") {

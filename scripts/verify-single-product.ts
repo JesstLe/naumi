@@ -20,7 +20,7 @@ async function main() {
   const health = await import("../src/app/api/health/route");
   const activate = await import("../src/app/api/pro/activate/route");
   const { resolveItem } = await import("../src/lib/payments");
-  assert.equal(resolveItem("pro", "pro-1y"), null, "Product license purchases are retired");
+  assert.equal(await resolveItem("pro", "pro-1y"), null, "Product license purchases are retired");
   const templates = await import("../src/app/api/admin/templates/sync/route");
   const setup = await import("../src/app/api/setup/route");
   const email = `single-product-${randomUUID()}@example.test`;

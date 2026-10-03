@@ -1,32 +1,35 @@
 import "server-only";
-import {
-  getCreditPack,
-  fmtCredits,
-  RMB_PACK_FEN,
-} from "@/lib/mock-data";
-
-// RMB charge amounts (分) come from mock-data so the displayed price and the
-// amount actually charged share one source of truth — see RMB_PACK_FEN there.
-export { RMB_PACK_FEN };
-
-export type ResolvedItem = {
-  kind: "pack" | "pro";
-  itemId: string;
-  title: string;
-  credits: number;
-  amount: number; // 分
+import { getBillingRuntime } from "@/lib/billing/server";
+import type { BillingProduct, ExpiryPolicy } from "@/lib/billing/types";
+export type ProductReceipt = {
+    configVersion: number;
+    product: BillingProduct;
 };
-
+export type ResolvedItem = {
+    kind: "pack" | "pro";
+    itemId: string;
+    title: string;
+    credits: number;
+    amount: number; // 分
+    billingConfigVersion: number;
+    expiry: ExpiryPolicy;
+    billingQuote: ProductReceipt;
+};
 // 积分充值包由服务端解析,价格不可被前端篡改。历史授权订单仍保留记录,不再出售。
-export function resolveItem(kind: string, itemId: string): ResolvedItem | null {
-  if (kind !== "pack") return null;
-  const pack = getCreditPack(itemId);
-  if (!pack) return null;
-  return {
-    kind: "pack",
-    itemId,
-    title: `${fmtCredits(pack.credits)} 积分`,
-    credits: pack.credits,
-    amount: pack.fen,
-  };
+export async function resolveItem(kind: string, itemId: string): Promise<ResolvedItem | null> {
+    if (kind !== "pack")
+        return null;
+    const snapshot = await (await getBillingRuntime()).config.current(), pack = snapshot.config.products[itemId];
+    if (!pack || pack.kind !== "pack" || !pack.available)
+        return null;
+    return {
+        kind: "pack",
+        itemId,
+        title: pack.title,
+        credits: pack.baseCredits + pack.bonusCredits,
+        amount: pack.amountFen,
+        billingConfigVersion: snapshot.version,
+        expiry: structuredClone(pack.expiry),
+        billingQuote: { configVersion: snapshot.version, product: structuredClone(pack) },
+    };
 }
