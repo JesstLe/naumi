@@ -1,4 +1,5 @@
 "use client";
+import {clientIntentKey} from "@/lib/billing/client-intent";
 import {useFeatureBilling} from "@/lib/billing/preview";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -109,6 +110,7 @@ export function VideoStudioClient() {
   const [history, setHistory] = useState<TaskView[] | null>(null);
   const [busyAction, setBusyAction] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const pendingBatch=useRef<{key:string;ids:string[];references?:UploadedReference[];completed:Record<number,{taskId:string;cost:number}>}|null>(null);
   const activeIdRef = useRef("");
 
   const billing=useFeatureBilling("video.generate",{modelId:modelId||undefined,providerId:providerId||undefined,resolution,quality:"medium"});
@@ -263,6 +265,14 @@ export function VideoStudioClient() {
     setTip("");
     setSubmitting(true);
     try {
+      const batchForm=new FormData();batchForm.append("parameters",JSON.stringify({text,providerId,modelId,negativePrompt,seconds,aspectRatio,resolution,generateAudio,watermark,multiShot,cameraFixed,taskCount}));
+      if(refFile)batchForm.append("first",refFile);if(lastFrameFile)batchForm.append("last",lastFrameFile);extraRefFiles.forEach(file=>batchForm.append("extra",file));
+      const batchKey=await clientIntentKey(user?.email||"","/video/batch",{body:batchForm});
+      let batch=pendingBatch.current?.key===batchKey?pendingBatch.current:null;
+      if(!batch){try{const saved=JSON.parse(localStorage.getItem(batchKey)||"null");if(saved?.key===batchKey&&saved.ids?.length===taskCount)batch=saved;}catch{}}
+      if(!batch)batch={key:batchKey,ids:Array.from({length:taskCount},()=>crypto.randomUUID()),completed:{}};
+      pendingBatch.current=batch;
+      const saveBatch=()=>{try{localStorage.setItem(batchKey,JSON.stringify(batch));}catch{}};saveBatch();
       const uploadReference = async (file: File): Promise<UploadedReference> => {
         setUploadingRef(true);
         const fd = new FormData();
@@ -276,7 +286,8 @@ export function VideoStudioClient() {
         if (!up.ok || !upd?.reference?.url) throw new Error(upd?.error || "素材上传失败");
         return upd.reference as UploadedReference;
       };
-      const references: UploadedReference[] = [];
+      const references: UploadedReference[] = batch.references||[];
+      if(!batch.references){
       if (refFile) references.push({ ...(await uploadReference(refFile)), role: "first_frame" });
       if (lastFrameFile) references.push({ ...(await uploadReference(lastFrameFile)), role: "last_frame" });
       for (const file of extraRefFiles) {
@@ -286,15 +297,18 @@ export function VideoStudioClient() {
           role: uploaded.kind === "video" ? "source_video" : uploaded.kind === "audio" ? "source_audio" : "reference",
         });
       }
+      batch.references=references;saveBatch();
+      }
       const providerOptions = {
         ...(cap?.supportsMultiShot && cap.providerOptionKeys?.includes("multiShot") ? { multiShot } : {}),
         ...(cap?.providerOptionKeys?.includes("cameraFixed") ? { cameraFixed } : {}),
       };
-      const results = await Promise.allSettled(Array.from({ length: taskCount }, async () => {
-        const idempotencyKey = crypto.randomUUID();
+      const results = await Promise.allSettled(Array.from({ length: taskCount }, async (_,index) => {
+        if(batch.completed[index])return batch.completed[index];
+        const idempotencyKey = batch.ids[index];
         const res = await billing.submit("/api/video/generate", {
           method: "POST",
-          headers: { "content-type": "application/json", ...(await authHeader()) },
+          headers: { "content-type": "application/json", "x-naumi-billing-operation-id":idempotencyKey,"x-naumi-billing-intent-slot":String(index),...(await authHeader()) },
           body: JSON.stringify({
             source: "workbench",
             idempotencyKey,
@@ -315,13 +329,15 @@ export function VideoStudioClient() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "创建失败");
-        return data as { taskId: string; cost: number };
+        batch.completed[index]=data as { taskId: string; cost: number };saveBatch();
+        return batch.completed[index];
       }));
       const created = results
         .filter((result): result is PromiseFulfilledResult<{ taskId: string; cost: number }> => result.status === "fulfilled")
         .map((result) => result.value);
       const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
       if (!created.length) throw failed?.reason instanceof Error ? failed.reason : new Error("创建失败");
+      if(created.length===taskCount){pendingBatch.current=null;try{localStorage.removeItem(batchKey);}catch{}}
       const totalCost = created.reduce((sum, item) => sum + Number(item.cost || 0), 0);
       setTip(`已创建 ${created.length} 个任务,共扣 ${totalCost} 积分;生成约 1-3 分钟${failed ? "，部分任务创建失败" : ""}`);
       setActiveId(created[0].taskId);

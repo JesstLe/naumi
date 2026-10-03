@@ -39,6 +39,7 @@
     "verify:billing-intents": "tsx --conditions react-server scripts/verify-billing-intents.ts",
     "verify:billing-coverage": "tsx --conditions react-server scripts/verify-billing-coverage.ts",
     "verify:billing-performance": "tsx --conditions react-server scripts/verify-billing-performance.ts",
+    "verify:billing-review": "tsx --conditions react-server scripts/verify-billing-review.ts",
     "verify:billing-all": "node scripts/verify-billing-all.mjs",
     "verify:billing-ui": "node scripts/verify-billing-ui.mjs"
   },

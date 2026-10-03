@@ -82,18 +82,27 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
                 if (error instanceof BillingError)
                     context.error = error;
             }
-            if (context.error)
+            if (context.error) {
+                const accepted=await getPool().query("UPDATE app_billing_operations SET state='manual',updated_at=now() WHERE id=$1 AND state IN ('reserved','hold','manual') RETURNING id",[id]);
+                if(accepted.rowCount)return billingJson({code:"OPERATION_PENDING",error:"任务已经提交，结果及账务需要核查；不会重复执行",operationId:id},409);
                 return billingErrorResponse(context.error);
+            }
             const payload = await response.clone().json().catch(() => null);
             if (context.operation) {
+                // Keep the paid output before any final wallet transaction can fail.
+                if (response.ok && payload && JSON.stringify(payload).length < 262144)
+                    await getPool().query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1", [id, JSON.stringify(payload)]);
+                try {
                 if (response.ok && !payload?.jobId && context.charge === undefined)
                     await settleSynchronous("工具完成");
                 else if (!response.ok && context.charge === undefined) {
                     const known = context.feature === "tool.printfile" || context.upstream === "rejected" || context.upstream === "unobserved";
                     await withBillingTransaction(getPool(), tx => service.settleTx(tx, context.operation!, { state: known ? "failed" : "unknown", items: [] }));
                 }
-                if (response.ok && payload && JSON.stringify(payload).length < 262144)
-                    await getPool().query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1", [id, JSON.stringify(payload)]);
+                } catch {
+                    await getPool().query("UPDATE app_billing_operations SET state='manual',updated_at=now() WHERE id=$1 AND state IN ('reserved','hold','manual')",[id]);
+                    return billingJson({code:"OPERATION_PENDING",error:"结果已保留，账务需要核查；请勿重复创建任务",operationId:id},409);
+                }
             }
             return response;
         });
@@ -101,6 +110,15 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
     catch (error) {
         return billingErrorResponse(error);
     }
+}
+/** Expired request ownership never permits a supplier resubmission or a refund. */
+export async function exposeAbandonedBillingOperations() {
+    await getPool().query(`UPDATE app_billing_operations SET state='manual'
+      WHERE state='reserved' AND (
+        (id LIKE 'tool-%' AND updated_at < now()-make_interval(mins=>GREATEST(30,COALESCE((quote->>'staleReservationMinutes')::int,30))))
+        OR EXISTS (SELECT 1 FROM app_canvas_image_tasks c WHERE c.id=app_billing_operations.id AND c.status='needs_attention')
+        OR EXISTS (SELECT 1 FROM app_image_jobs j WHERE j.id=app_billing_operations.id AND j.snapshot->>'status'='needs_attention')
+        OR EXISTS (SELECT 1 FROM app_video_tasks v WHERE v.id=app_billing_operations.id AND v.status='needs_attention'))`);
 }
 export async function synchronousCost(quality?: ResolvedImageQuality, resolution = "1K") {
     const context = storage.getStore();

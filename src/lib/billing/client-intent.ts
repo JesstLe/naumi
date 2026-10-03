@@ -8,9 +8,18 @@ export async function clientIntentKey(email: string, url: string, init: RequestI
             body.push([key, typeof value === "string" ? value : { name: value.name, type: value.type, hash: await digest(await value.arrayBuffer()) }]);
         }
     }
-    else
-        body.push(typeof init.body === "string" ? init.body : "");
+    else if(typeof init.body === "string") {
+        let value:unknown=init.body;
+        try {const parsed=JSON.parse(init.body);if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)){delete parsed.operationId;delete parsed.idempotencyKey;value=Object.fromEntries(Object.entries(parsed).sort(([a],[b])=>a.localeCompare(b)));}}catch{}
+        body.push(value);
+    }else body.push("");
     const headers = new Headers(init.headers);
-    return `naumi:billing-intent:${await digest(new TextEncoder().encode(JSON.stringify([email, url, headers.get("x-naumi-image-quality"), headers.get("x-naumi-text-model"), body])))}`;
+    return `naumi:billing-intent:${await digest(new TextEncoder().encode(JSON.stringify([email, url, headers.get("x-naumi-image-quality"), headers.get("x-naumi-text-model"), headers.get("x-naumi-billing-intent-slot"), body])))}`;
 }
 async function digest(value: BufferSource) { return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", value))).map(n => n.toString(16).padStart(2, "0")).join(""); }
+
+export function frozenIntentBody(init:RequestInit,id:string):RequestInit {
+    if(typeof init.body!=="string")return init;
+    try {const body=JSON.parse(init.body);if(body&&typeof body==="object"&&!Array.isArray(body)){if("idempotencyKey" in body)body.idempotencyKey=id;if("operationId" in body)body.operationId=id;return {...init,body:JSON.stringify(body)};}}catch{}
+    return init;
+}

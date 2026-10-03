@@ -5554,8 +5554,9 @@ export async function saveCanvasImageTaskProviderResult(id: string, url: string,
 
 export async function holdCanvasImageTask(id: string, error: string): Promise<void> {
   await ensureSchema();
-  await getPool().query(`UPDATE app_canvas_image_tasks SET status='needs_attention',error=$2,lease_until=NULL,
-    updated_at=now() WHERE id=$1 AND status IN ('queued','processing')`, [id,error]);
+  await getPool().query(`WITH held AS (UPDATE app_canvas_image_tasks SET status='needs_attention',error=$2,lease_until=NULL,
+    updated_at=now() WHERE id=$1 AND status IN ('queued','processing') RETURNING id)
+    UPDATE app_billing_operations SET state='manual',updated_at=now() WHERE id IN (SELECT id FROM held) AND state IN ('reserved','hold')`, [id,error]);
 }
 
 export async function retryCanvasImageTask(input: { id: string; email: string; error: string; delaySeconds?: number }): Promise<void> {

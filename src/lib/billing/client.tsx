@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { authHeader } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import type { FeatureId } from "./types";
-import {clientIntentKey} from "./client-intent";
+import {clientIntentKey,frozenIntentBody} from "./client-intent";
 export type PublicQuote = {
     version: number;
     credits: number;
@@ -113,9 +113,9 @@ export function BillingProvider({ children }: {
         headers.set("x-naumi-billing-credits", String(displayed.credits));
         const key=await clientIntentKey(user?.email||"",url,init);
         let id=intents.current.get(key);try{id=id||localStorage.getItem(key)||undefined;}catch{}
-        id=headers.get("x-naumi-billing-operation-id")||id||crypto.randomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
+        id=id||headers.get("x-naumi-billing-operation-id")||crypto.randomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
         headers.set("x-naumi-billing-operation-id",id);
-        const response = await fetch(url, { ...init, headers });
+        const response = await fetch(url, { ...frozenIntentBody(init,id), headers });
         const data=await response.clone().json().catch(()=>({}));
         if(response.ok||response.status<500&&data.code!=="OPERATION_PENDING"&&data.code!=="OPERATION_CONFLICT"){intents.current.delete(key);try{localStorage.removeItem(key);}catch{}}
         if (response.status === 409 && data.code === "PRICE_CHANGED")

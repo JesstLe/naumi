@@ -81,3 +81,30 @@ test("uncertain submissions retain their identifier across explicit retries",asy
  await page.goto("/generate");await page.locator("textarea").first().fill("Fixture retained intent");await expect(page.getByTestId("billing-estimate")).toContainText("6");
  await page.getByTestId("billing-estimate").click();await expect(page.getByText("fixture submission pending",{exact:true})).toBeVisible();await page.getByTestId("billing-estimate").click();await expect.poll(()=>ids.length).toBe(2);expect(ids[0]).toBeTruthy();expect(ids[1]).toBe(ids[0]);await expect(page.locator("textarea").first()).toHaveValue("Fixture retained intent");
 });
+test("administrators can change the customer billing unit",async({page})=>{
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);await page.goto("/admin/billing");
+ await page.getByLabel("计费单位",{exact:true}).selectOption("task");await page.getByLabel("模拟数量").fill("13");await page.getByRole("button",{name:"模拟报价",exact:true}).click();await expect(page.getByTestId("simulation-charge")).toHaveText("6 积分");
+ await page.getByRole("button",{name:"查看改动",exact:true}).click();await expect(page.getByText(/单位：image → task/)).toBeVisible();
+});
+test("video retries retain the batch identity and uploaded reference",async({page})=>{
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_user",value:fixture.userCookie,domain:"127.0.0.1",path:"/"}]);
+ const model={providerId:"openai-videos",modelId:"fixture-video",label:"Fixture video",modes:["text","image"],durations:[4],aspectRatios:["16:9"],resolutions:["720p"],maxReferenceImages:1,isDefault:true};
+ await page.route("**/api/video/catalog",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({configured:true,models:[model],providers:[{id:model.providerId,label:"Fixture",defaultModel:model.modelId,models:[model]}],defaultProvider:model.providerId})}));
+ await page.route("**/api/billing/quote",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({version:1,credits:20,reserveCredits:20,feature:"video.generate",quantity:1})}));
+ let uploads=0;await page.route("**/api/video/references",route=>{uploads++;return route.fulfill({contentType:"application/json",body:JSON.stringify({reference:{id:`ref-${uploads}`,url:`/media/ref-${uploads}.png`,kind:"image"}})});});
+ const attempts:any[]=[];await page.route("**/api/video/generate",route=>{attempts.push({id:route.request().headers()["x-naumi-billing-operation-id"],body:route.request().postDataJSON()});return route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({error:"fixture lost video response",code:"OPERATION_PENDING"})});});
+ await page.goto("/video");await page.locator("textarea").first().fill("Retain this video request");await page.locator('input[type="file"]').first().setInputFiles({name:"ref.png",mimeType:"image/png",buffer:Buffer.from("local upload fixture")});
+ const button=page.getByRole("button",{name:/生成 1 条视频/});await button.click();await expect(page.getByText("fixture lost video response",{exact:true})).toBeVisible();await button.click();await expect.poll(()=>attempts.length).toBe(2);expect(attempts[1]).toEqual(attempts[0]);expect(uploads).toBe(1);
+});
+test("canvas video retries preserve the domain and billing identities",async({page})=>{
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_user",value:fixture.userCookie,domain:"127.0.0.1",path:"/"}]);
+ await page.route("**/media/billing-ui-fixture.png",route=>route.fulfill({contentType:"image/png",body:Buffer.from(fixture.imageBase64,"base64")}));
+ const version=(await (await page.request.get("/api/admin/billing",{headers:{cookie:`nv_admin=${fixture.adminCookie}`}})).json()).snapshot.version;
+ const model={providerId:"openai-videos",modelId:"fixture-video",label:"Fixture video",modes:["text","image"],durations:[4],aspectRatios:["16:9"],resolutions:["720p"],maxReferenceImages:1,isDefault:true};
+ await page.route("**/api/video/catalog",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({configured:true,models:[model],providers:[{id:model.providerId,label:"Fixture",defaultModel:model.modelId,models:[model]}],defaultProvider:model.providerId})}));
+ await page.route("**/api/billing/quote",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({version,credits:20,reserveCredits:20,feature:"video.generate",quantity:1})}));
+ const attempts:any[]=[];await page.route("**/api/video/generate",route=>{attempts.push({id:route.request().headers()["x-naumi-billing-operation-id"],body:route.request().postDataJSON()});return route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({error:"fixture lost canvas response",code:"OPERATION_PENDING"})});});page.on("dialog",dialog=>dialog.accept());
+ await page.addInitScript((id)=>localStorage.setItem("nv:canvas:last",`tree:${id}`),fixture.artworkId);const account=await (await page.request.get(`/api/account?email=${encodeURIComponent(fixture.email)}`)).json();expect(account.artworks.some((a:any)=>a.id===fixture.artworkId)).toBeTruthy();await page.goto(`/canvas?node=${fixture.artworkId}`);await page.locator(`.react-flow__node[data-id="${fixture.artworkId}"]`).click();
+ for(let i=0;i<2;i++){await page.getByTitle("生成视频",{exact:true}).click();await page.getByPlaceholder("描述视频内容与运镜,如:商品缓慢旋转展示,柔和灯光").fill("Canvas retained prompt");await page.getByRole("button",{name:/以选中图片生成视频/}).click();await expect.poll(()=>attempts.length).toBe(i+1);await expect(page.getByTitle("生成视频",{exact:true})).toBeEnabled();}
+ expect(attempts[1]).toEqual(attempts[0]);
+});

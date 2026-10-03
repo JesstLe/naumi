@@ -50,15 +50,23 @@ export function settlementFor(q: BillingQuote, r: BillingResult): Settlement {
     if (r.state === "unknown" || r.items.some(x => x.state === "unknown"))
         return { state: q.tariff.settlement.unknown, charge: 0, release: 0 };
     const succeeded = r.items.filter(x => x.state === "succeeded");
+    const executedPrices = () => succeeded.map(item => {
+        if (!item.executedQuality || !(QUALITY_IDS as readonly string[]).includes(item.executedQuality))
+            throw new BillingError("INVALID_RESULT", "缺少有效执行质量", 400);
+        return unitPrice(q.tariff, { ...q.facts, quality: item.executedQuality }, q.costRates);
+    });
     if (r.state === "failed" && succeeded.length)
         throw new BillingError("INVALID_RESULT", "任务结果状态不一致", 400);
     let charge = 0;
     if (q.tariff.settlement.successBasis === "whole-request" && succeeded.length) {
-        charge = rawAmount(q.tariff, q.facts, q.costRates);
+        charge = q.tariff.settlement.qualityBasis === "executed" && q.tariff.enabled && q.facts.metered
+            ? Math.max(...executedPrices()) * (q.tariff.unit === "task" ? 1 : q.facts.quantity)
+            : rawAmount(q.tariff, q.facts, q.costRates);
     }
     else if (succeeded.length) {
         if (q.tariff.unit === "task")
-            charge = rawAmount(q.tariff, q.facts, q.costRates);
+            charge = q.tariff.settlement.qualityBasis === "executed" && q.tariff.enabled && q.facts.metered
+                ? Math.max(...executedPrices()) : rawAmount(q.tariff, q.facts, q.costRates);
         else
             for (const item of succeeded) {
                 const quality = q.tariff.settlement.qualityBasis === "executed" ? item.executedQuality : q.facts.quality;

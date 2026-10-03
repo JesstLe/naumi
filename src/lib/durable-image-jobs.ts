@@ -118,6 +118,7 @@ export class DurableImageJobs<T extends { status: string }> {
       process.env.NAUMI_ROUTER_STATE_DOMAIN || "",
     ])).digest("hex") : undefined;
     if (previous?.state === "started" && (!previous.replayable || previous.model !== model || previous.gatewayIdentity !== gatewayIdentity)) {
+      await repository.holdImageJobBilling(id);
       throw new ImageOperationPending(operation.id, new Error("上游提交需要人工核查"));
     }
     const attempt: Attempt = { model, replayable, gatewayIdentity, state: "started" };
@@ -138,6 +139,7 @@ export class DurableImageJobs<T extends { status: string }> {
         await update((current) => ({ ...current, paidOperations: { ...current.paidOperations, [operation.id]: { ...attempt, state: "rejected" } } }));
         throw error;
       }
+      await repository.holdImageJobBilling(id);
       throw error instanceof ImageOperationPending ? error : new ImageOperationPending(operation.id, error);
     }
   }

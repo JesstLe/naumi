@@ -121,6 +121,7 @@ export type ConfigSnapshot = {
     config: BillingConfig;
 };
 export type BillingQuote = {
+    legacyCompatible?: boolean;
     staleReservationMinutes?:number;
     debitOrder?: "expires-first" | "created-first";
     schemaVersion: 1;
