@@ -16,6 +16,7 @@ import {
 } from "@/lib/db";
 import { AGENT_SYSTEM_PROMPT, createNaumiTools } from "@/lib/agent/naumi-tools";
 import { getImageJob } from "@/lib/image-job-repository";
+import { recordBiModelCompletion } from "@/lib/bi/model-observer";
 import {
   POINTS_PER_IMAGE,
   qualityBillCredits,
@@ -331,7 +332,9 @@ export async function getOrCreateSession(
     },
   });
 
+  let modelStartedAt = 0;
   agent.subscribe(async (event) => {
+    if (event.type === "message_start" && event.message.role === "assistant") modelStartedAt = Date.now();
     const push = (type: string, data: Record<string, unknown>) => {
       session.events.push({ type, at: Date.now(), data });
       if (session.events.length > 400) session.events.splice(0, 200);
@@ -371,6 +374,14 @@ export async function getOrCreateSession(
     } else if (event.type === "message_end") {
       const e = event as unknown as { message: { role: string; content: unknown[] } };
       if (e.message?.role === "assistant") {
+        const message = event.message as {model?: string; responseModel?: string; stopReason?: string; usage?: {input?: number; output?: number}};
+        if (message.model) void recordBiModelCompletion({
+          email, operation: "agent", operationId: sessionId,
+          model: message.model, responseModel: message.responseModel,
+          state: message.stopReason === "error" ? "agent-error" : message.stopReason === "aborted" ? "agent-aborted" : message.stopReason === "deferred" ? "agent-deferred" : "agent-completed",
+          durationMs: modelStartedAt ? Date.now() - modelStartedAt : 0,
+          inputTokens: message.usage?.input, outputTokens: message.usage?.output,
+        });
         const text = (e.message.content || [])
           .map((c) => {
             if (typeof c === "object" && c !== null) {

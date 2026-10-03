@@ -1,3 +1,4 @@
+import { observeOpenAI } from "@/lib/bi/model-observer";
 import "server-only";
 import OpenAI, { toFile } from "openai";
 import { getOpenAISettings } from "@/lib/settings";
@@ -23,7 +24,7 @@ export async function editImage(input: {
   const configured = Number(process.env.IMAGE_EDIT_TIMEOUT_MS || 240_000);
   const timeout = Number.isFinite(configured) ? Math.max(1000, Math.min(240_000, configured)) : 240_000;
   const signal = AbortSignal.timeout(timeout);
-  const client = new OpenAI({ apiKey, baseURL: (await getOpenAIBaseUrl()) || undefined, timeout, maxRetries: 0 });
+  const client = observeOpenAI(new OpenAI({ apiKey, baseURL: (await getOpenAIBaseUrl()) || undefined, timeout, maxRetries: 0 }));
   const files = await Promise.all(input.images.map((b, i) => {
     const type = input.types?.[i] || "image/png";
     const ext = type === "image/jpeg" ? "jpg" : type === "image/webp" ? "webp" : "png";
@@ -37,7 +38,7 @@ export async function editImage(input: {
     ...(input.mask ? { mask: await toFile(input.mask, "mask.png", { type: "image/png" }) } : {}),
     prompt: input.prompt, size: input.size, n: 1,
     quality: sdkImageQuality(executed),
-  }, { signal })));
+  }, { signal })), model);
   const result = response.data?.[0];
   const b64 = result?.b64_json;
   if (!b64 && result?.url) {

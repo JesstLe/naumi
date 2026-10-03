@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
@@ -79,7 +80,7 @@ async function toPng(buf: Buffer): Promise<Buffer> {
   }
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   let input: StyleInput | null;
   try {
     input = await parseInput(request);
@@ -133,12 +134,12 @@ export async function POST(request: Request) {
     try {
       const { apiKey, model: genModel } = await getOpenAISettings();
       if (!apiKey) throw new Error("未配置 OpenAI key");
-      const client = new OpenAI({
+      const client = observeOpenAI(new OpenAI({
         apiKey,
         baseURL: (await getOpenAIBaseUrl()) || undefined,
         timeout: 280_000,
         maxRetries: 0,
-      });
+      }));
       const png = await toPng(input.bytes);
       const userHint = input.prompt ? ` Extra requirement: ${input.prompt}.` : "";
       const prompt = `${BASE_PROMPT}${input.style}.${userHint}`;
@@ -149,7 +150,7 @@ export async function POST(request: Request) {
         prompt,
         n: 1,
         size: "auto" as "1024x1024",
-      }));
+      }), genModel || "gpt-image-2");
       const b64 = r.data?.[0]?.b64_json;
       if (!b64) throw new Error("未返回结果");
       out = Buffer.from(b64, "base64");
@@ -242,4 +243,8 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }

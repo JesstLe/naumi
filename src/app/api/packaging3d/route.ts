@@ -1,4 +1,4 @@
-import { requestImageQuality, imageQualityCost, withQualityFallback, settleToolImage } from "@/lib/image-quality-request";
+import { requestImageQuality, imageQualityCost, withQualityFallback, settleToolImage, recordImageExecutionModel } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
@@ -171,16 +171,17 @@ async function generate(input: Input): Promise<Buffer> {
     "dieline.png"
   );
   form.append("model", model || "gpt-image-2");
+  recordImageExecutionModel(input.quality, model || "gpt-image-2");
   form.append("prompt", buildPrompt(input));
   form.append("n", "1");
   form.append("size", "1024x1024");
   form.append("quality", input.quality.executed);
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/images/edits`, {
+  const response = await observeModelCall(model || "gpt-image-2",()=>fetch(`${baseUrl.replace(/\/$/, "")}/images/edits`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
     signal: AbortSignal.timeout(280_000),
-  });
+  }));
   const raw = await response.text();
   if (!response.ok) throw Object.assign(new Error(`图片接口 ${response.status}: ${raw.slice(0, 500)}`), { status: response.status });
   const parsed = JSON.parse(raw) as {
@@ -291,7 +292,7 @@ async function runJob(jobId: string, input: Input, cost: number, useDb: boolean)
   }
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   const input = await parseInput(request).catch(() => null);
   if (!input) {
     return NextResponse.json({ error: "请上传模切线图" }, { status: 400 });
@@ -347,6 +348,8 @@ export async function POST(request: Request) {
   return NextResponse.json({ jobId, cost });
 }
 
+export async function POST(request:Request){return withBiRequest(request,()=>handleObservedPost(request));}
+
 export async function GET(request: Request) {
   const jobId = new URL(request.url).searchParams.get("job") ?? "";
   const job = JOBS.get(jobId);
@@ -361,3 +364,4 @@ export async function GET(request: Request) {
   }
   return NextResponse.json(job);
 }
+import { withBiRequest,observeModelCall } from "@/lib/bi/model-observer";

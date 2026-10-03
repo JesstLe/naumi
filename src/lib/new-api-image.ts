@@ -1,4 +1,5 @@
 import { getNewApiImageSettings } from "@/lib/image-model-catalog";
+import { observeModelCall } from "@/lib/bi/model-observer";
 
 export type NewApiReferenceImage = {
   buffer: Buffer;
@@ -97,7 +98,7 @@ export async function generateNewApiImage(input: {
         })),
       ]
     : input.prompt;
-  const response = await fetch(`${settings.baseUrl}/chat/completions`, {
+  const response = await observeModelCall(input.model,()=>fetch(`${settings.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${settings.apiKey}`,
@@ -109,7 +110,7 @@ export async function generateNewApiImage(input: {
       stream: true,
     }),
     signal: AbortSignal.timeout(300_000),
-  });
+  }));
   const raw = await response.text();
   if (!response.ok) throw upstreamError(raw, response.status);
   const streamContent = collectStreamContent(raw);

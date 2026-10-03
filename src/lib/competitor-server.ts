@@ -1,3 +1,4 @@
+import { observeOpenAI } from "@/lib/bi/model-observer";
 import "server-only";
 import sharp from "sharp";
 import OpenAI from "openai";
@@ -58,7 +59,7 @@ export async function analyzeCompetitor(image: Buffer, requestedModel = "") {
   const apiKey = imageChannel ? settings.apiKey : process.env.AGENT_API_KEY || settings.apiKey;
   if (!apiKey) throw new WorkspaceError("请先配置图像理解接口", 503);
   const baseURL = imageChannel ? await getOpenAIBaseUrl() : process.env.AGENT_BASE_URL || await getOpenAIBaseUrl();
-  const client = new OpenAI({ apiKey, baseURL: baseURL || undefined, timeout: 90000, maxRetries: 0 });
+  const client = observeOpenAI(new OpenAI({ apiKey, baseURL: baseURL || undefined, timeout: 90000, maxRetries: 0 }));
   const r = await client.chat.completions.create({
     model: requestedModel || process.env.REFERENCE_VISION_MODEL || (!imageChannel && process.env.AGENT_VISION_MODEL) || "gpt-5.6-luna", max_tokens: 3000,
     messages: [{ role: "system", content:

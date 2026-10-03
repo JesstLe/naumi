@@ -1,0 +1,1376 @@
+"use client";
+
+import Link from "next/link";
+import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
+import {
+  Activity,
+  ArrowLeft,
+  BarChart3,
+  Building2,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  ImageIcon,
+  Layers,
+  Loader2,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Users,
+  Wallet,
+  X,
+} from "lucide-react";
+import type {
+  BiOverview,
+  BiResponse,
+  BiRow,
+  BiSection,
+} from "@/lib/bi/contracts";
+import { biCsvCell } from "@/lib/bi/contracts";
+import styles from "./dashboard.module.css";
+
+const sections: { id: BiSection; label: string; icon: typeof Users }[] = [
+  { id: "overview", label: "运营概览", icon: BarChart3 },
+  { id: "users", label: "用户与企业", icon: Users },
+  { id: "operations", label: "业务任务", icon: Layers },
+  { id: "ledger", label: "积分流水", icon: Wallet },
+  { id: "artworks", label: "图片与操作内容", icon: ImageIcon },
+  { id: "models", label: "模型与质量审计", icon: Activity },
+  { id: "calls", label: "模型调用记录", icon: Activity },
+  { id: "conversations", label: "对话与操作内容", icon: Layers },
+  { id: "orders", label: "充值订单", icon: Building2 },
+  { id: "access", label: "后台访问记录", icon: ShieldCheck },
+];
+type Filter = {
+  from: string;
+  to: string;
+  email: string;
+  q: string;
+  accountType: string;
+  status: string;
+};
+type Column = {
+  key: string;
+  label: string;
+  format?:
+    | "time"
+    | "credits"
+    | "money"
+    | "quality"
+    | "type"
+    | "discount"
+    | "status";
+};
+const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
+  conversations: [
+    { key: "updated_at", label: "最后活动", format: "time" },
+    { key: "email", label: "账户" },
+    { key: "title", label: "对话标题" },
+    { key: "source", label: "来源", format: "status" },
+    { key: "entries", label: "存储条目数" },
+    { key: "created_at", label: "创建时间", format: "time" },
+  ],
+  users: [
+    { key: "name", label: "用户" },
+    { key: "email", label: "账户" },
+    { key: "account_type", label: "身份", format: "type" },
+    { key: "company", label: "企业" },
+    { key: "agreed_pay_percent", label: "约定实付比例", format: "discount" },
+    { key: "available", label: "当前可用", format: "credits" },
+    { key: "reserved", label: "当前预留", format: "credits" },
+    { key: "consumed", label: "期间消费", format: "credits" },
+    { key: "artworks", label: "期间作品" },
+    { key: "last_login_at", label: "最后登录", format: "time" },
+  ],
+  ledger: [
+    { key: "created_at", label: "发生时间", format: "time" },
+    { key: "email", label: "账户" },
+    { key: "kind", label: "类型", format: "status" },
+    { key: "delta", label: "积分变动", format: "credits" },
+    { key: "reason", label: "操作与说明" },
+    { key: "expires_at", label: "到期时间", format: "time" },
+    { key: "id", label: "流水 ID" },
+  ],
+  operations: [
+    { key: "created_at", label: "提交时间", format: "time" },
+    { key: "email", label: "账户" },
+    { key: "kind", label: "操作", format: "status" },
+    { key: "status", label: "状态", format: "status" },
+    { key: "requested_model", label: "请求模型" },
+    { key: "requested_quality", label: "请求质量", format: "quality" },
+    { key: "resolution", label: "尺寸" },
+    { key: "quoted_credits", label: "冻结报价", format: "credits" },
+    { key: "billed_credits", label: "实际落账", format: "credits" },
+    { key: "content", label: "操作内容" },
+  ],
+  artworks: [
+    { key: "created_at", label: "创建时间", format: "time" },
+    { key: "email", label: "账户" },
+    { key: "title", label: "作品" },
+    { key: "category", label: "操作类别", format: "status" },
+    { key: "resolution", label: "尺寸" },
+    { key: "origin", label: "来源" },
+    { key: "prompt", label: "提示词 / 操作内容" },
+  ],
+  models: [
+    { key: "created_at", label: "审计时间", format: "time" },
+    { key: "email", label: "账户" },
+    { key: "requested_model", label: "用户请求模型" },
+    { key: "upstream", label: "接口执行记录" },
+    { key: "requested_quality", label: "请求质量", format: "quality" },
+    { key: "executed_quality", label: "实际质量", format: "quality" },
+    { key: "images", label: "审计图数" },
+    { key: "billed_credits", label: "已落账积分", format: "credits" },
+    { key: "reason", label: "执行说明", format: "status" },
+  ],
+  orders: [
+    { key: "created_at", label: "创建时间", format: "time" },
+    { key: "email", label: "账户" },
+    { key: "title", label: "购买内容" },
+    { key: "provider", label: "支付渠道", format: "status" },
+    { key: "status", label: "状态", format: "status" },
+    { key: "amount_cents", label: "订单金额", format: "money" },
+    { key: "credits", label: "购入积分", format: "credits" },
+    { key: "paid_at", label: "付款时间", format: "time" },
+  ],
+  access: [
+    { key: "created_at", label: "时间", format: "time" },
+    { key: "actor", label: "管理员" },
+    { key: "action", label: "操作", format: "status" },
+    { key: "section", label: "数据分类", format: "status" },
+    { key: "target_email", label: "指定账户" },
+  ],
+  calls: [
+    { key: "created_at", label: "调用时间", format: "time" },
+    { key: "email", label: "账户" },
+    { key: "operation", label: "操作" },
+    { key: "wire_model", label: "实际提交模型" },
+    { key: "response_model", label: "上游响应模型" },
+    { key: "state", label: "调用状态", format: "status" },
+    { key: "duration_ms", label: "响应耗时（ms）" },
+    { key: "input_tokens", label: "输入 Token" },
+    { key: "output_tokens", label: "输出 Token" },
+  ],
+};
+const qualityNames: Record<string, string> = {
+  low: "经济",
+  medium: "标准",
+  high: "高质量",
+  xhigh: "超高质量",
+  max: "极致质量",
+  auto: "自动",
+};
+const names: Record<string, string> = {
+  personal: "个人",
+  enterprise: "企业",
+  unknown: "未登记",
+  purchase: "充值",
+  consume: "消费",
+  grant: "赠送",
+  refund: "退款",
+  expire: "到期",
+  generate: "生图",
+  suite: "套图",
+  aplus: "A+",
+  video: "视频",
+  "canvas-text-edit": "画布改字",
+  queued: "排队",
+  processing: "执行中",
+  pending: "处理中",
+  done: "完成",
+  completed: "完成",
+  error: "失败",
+  failed: "失败",
+  needs_attention: "待核查",
+  paid: "已支付",
+  expired: "已过期",
+  wechat: "微信",
+  alipay: "支付宝",
+  mock: "模拟支付",
+  generated: "成功",
+  "quality-downgrade": "质量回退",
+  "upstream-unsupported": "上游不支持参数",
+  "provider-fallback": "接口回退",
+  view: "查看",
+  "view-image": "查看图片",
+  "view-trace": "查看执行链路",
+  "update-profile": "更新账户资料",
+};
+for (const section of sections) names[section.id] = section.label;
+Object.assign(names, {
+  main: "商品主图",
+  scene: "场景图",
+  detail: "详情图",
+  retouch: "商品精修",
+  upload: "导入图片",
+  user: "普通用户",
+  admin: "管理员",
+  succeeded: "接口返回成功",
+  "stream-opened": "流式连接已打开",
+  "response-received": "已收到 HTTP 响应",
+  rejected: "接口明确拒绝",
+  "unknown-result": "结果待核查",
+  agent: "智能助手",
+  genchat: "生图对话",
+  "agent-completed": "助手响应完成",
+  "agent-error": "助手响应失败",
+  "agent-aborted": "助手响应中止",
+  "agent-deferred": "助手响应暂停",
+  "view-conversation": "查看对话内容",
+});
+const n = (value: unknown) =>
+  Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+function display(value: unknown, format?: Column["format"]) {
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (value === null || value === undefined || value === "") return "未记录";
+  if (value === "unrecorded") return "未记录";
+  if (format === "time") {
+    const d = new Date(String(value));
+    return Number.isFinite(d.getTime())
+      ? d.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false })
+      : "未记录";
+  }
+  if (format === "money") return `¥${(Number(value) / 100).toFixed(2)}`;
+  if (format === "discount")
+    return `${n(value)}%（${n(Number(value) / 10)} 折）`;
+  if (format === "credits") return n(value);
+  if (format === "type" || format === "status")
+    return names[String(value)] || String(value);
+  if (format === "quality") return qualityNames[String(value)] || String(value);
+  return String(value);
+}
+function initialFilter(): Filter {
+  const today = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+  return {
+    from: new Date(Date.parse(`${today}T00:00:00Z`) - 29 * 86400_000)
+      .toISOString()
+      .slice(0, 10),
+    to: today,
+    email: "",
+    q: "",
+    accountType: "",
+    status: "",
+  };
+}
+const descriptions: Record<BiSection, string> = {
+  conversations:
+    "按最后活动时间筛选历史对话，详情仅展示用户与助手的文字内容。条目数为助手消息或生图轮次，不等同于请求次数；系统消息、工具内部数据和凭据不展示。",
+  overview:
+    "以已落账流水核对用量，按北京时间自然日统计。当前余额与期间用量分开展示。",
+  users:
+    "所有已注册账户。类型与约定折扣由管理员登记；实际扣费仍使用全站统一价目。",
+  operations:
+    "持久化业务任务：生图、套图、A+、画布改字与视频。其他工具的成功操作可在作品和流水中查看。",
+  ledger:
+    "完整积分事件。消费、赠送、充值、退款、到期与管理员调整分别保留，作品数量不代表消费积分。",
+  artworks:
+    "查看保存的图片、提示词、操作类型与作品来源。默认排除回收站；作品数包含导入和中间产物。",
+  models:
+    "请求模型、接口执行模型与质量回退来自持久审计记录。网关别名的真实模型请打开执行链路查看。",
+  orders:
+    "人民币金额按订单的分单位换算。模拟支付与真实收款分开；购入积分单价不等于账户专属折扣。",
+  access:
+    "记录 BI 数据访问、图片查看、执行链路查看和账户资料修改。此记录从 BI 上线后开始。",
+  calls:
+    "上线后开始采集文本、视觉与图片的 SDK 调用。每次尝试分别记录；流式响应仅表示连接已打开，不代表生成最终成功。网关别名的真实路由见任务执行链路。",
+};
+const statuses: Partial<Record<BiSection, [string, string][]>> = {
+  conversations: [
+    ["agent", "智能助手"],
+    ["genchat", "生图对话"],
+  ],
+  users: [
+    ["active", "正常"],
+    ["banned", "已封禁"],
+  ],
+  ledger: [
+    ["consume", "消费"],
+    ["purchase", "充值"],
+    ["grant", "赠送"],
+    ["refund", "退款"],
+    ["expire", "到期"],
+  ],
+  operations: [
+    ["pending", "处理中"],
+    ["queued", "排队"],
+    ["processing", "执行中"],
+    ["done", "完成（图片）"],
+    ["completed", "完成（画布/视频）"],
+    ["error", "失败"],
+    ["failed", "失败（视频）"],
+    ["review", "待审核 / 核查"],
+  ],
+  artworks: [
+    ["all", "含回收站"],
+    ["deleted", "仅回收站"],
+  ],
+  models: [["fallback", "仅回退记录"]],
+  orders: [
+    ["paid", "已支付"],
+    ["pending", "待支付"],
+    ["failed", "失败"],
+    ["expired", "过期"],
+  ],
+  calls: [
+    ["succeeded", "接口返回成功"],
+    ["stream-opened", "流式响应已打开"],
+    ["rejected", "明确拒绝"],
+    ["unknown-result", "结果待核查"],
+  ],
+};
+
+export function BiDashboard() {
+  const [section, setSection] = useState<BiSection>("overview");
+  const [draft, setDraft] = useState<Filter>(initialFilter);
+  const [filter, setFilter] = useState<Filter>(initialFilter);
+  const [page, setPage] = useState(1);
+  const [reload, setReload] = useState(0);
+  const [data, setData] = useState<BiResponse | null>(null);
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState<{
+    section: BiSection;
+    row: BiRow;
+  } | null>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setBusy(true);
+    setError("");
+    setData(null);
+    const params = new URLSearchParams({
+      ...filter,
+      section,
+      page: String(page),
+      size: "30",
+    });
+    void fetch(`/api/admin/bi?${params}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "读取失败");
+        return body as BiResponse;
+      })
+      .then(setData)
+      .catch((e) => {
+        if (e.name !== "AbortError") setError(e.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setBusy(false);
+      });
+    return () => controller.abort();
+  }, [filter, section, page, reload]);
+  useEffect(() => {
+    if (!selected) return;
+    const previous = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    return () => {
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [selected]);
+  function navigate(next: BiSection) {
+    setSection(next);
+    setPage(1);
+    setSelected(null);
+    setFilter((f) => ({ ...f, status: "" }));
+    setDraft((f) => ({ ...f, status: "" }));
+  }
+  function account(email: string, next: BiSection) {
+    const value = { ...filter, email, status: "" };
+    setDraft(value);
+    setFilter(value);
+    setSection(next);
+    setPage(1);
+    setSelected(null);
+  }
+  function exportPage() {
+    if (!data || section === "overview") return;
+    const cs = columns[section];
+    const text =
+      "\uFEFF" +
+      [
+        cs.map((c) => biCsvCell(c.label)).join(","),
+        ...data.rows.map((row) =>
+          cs.map((c) => biCsvCell(display(row[c.key], c.format))).join(","),
+        ),
+      ].join("\r\n");
+    const url = URL.createObjectURL(
+      new Blob([text], { type: "text/csv;charset=utf-8" }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `naumi-bi-${section}-${filter.from}-${filter.to}-page${page}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  const active = sections.find((s) => s.id === section)!;
+  return (
+    <div className={styles.shell}>
+      <aside className={styles.sidebar}>
+        <Link className={styles.brand} href="/admin" prefetch={false}>
+          Naumi <span>运营 BI</span>
+        </Link>
+        <div className={styles.private}>
+          <ShieldCheck size={16} />
+          仅管理员可见
+        </div>
+        <nav aria-label="BI 数据分类">
+          {sections.map(({ id, label, icon: Icon }) => (
+            <button
+              type="button"
+              key={id}
+              aria-current={section === id ? "page" : undefined}
+              className={section === id ? styles.active : ""}
+              onClick={() => navigate(id)}
+            >
+              <Icon size={18} />
+              {label}
+            </button>
+          ))}
+        </nav>
+        <Link className={styles.back} href="/admin" prefetch={false}>
+          <ArrowLeft size={16} />
+          返回管理后台
+        </Link>
+        <p className={styles.sidebarNote}>
+          用户资料与生成内容仅用于内部运营和问题核查。
+        </p>
+      </aside>
+      <main className={styles.main}>
+        <header className={styles.header}>
+          <div>
+            <h1>{active.label}</h1>
+            <p>{descriptions[section]}</p>
+          </div>
+          <button
+            className={styles.button}
+            type="button"
+            onClick={() => setReload((x) => x + 1)}
+            disabled={busy}
+          >
+            <RefreshCw size={16} className={busy ? styles.spin : ""} />
+            刷新
+          </button>
+        </header>
+        <form
+          className={styles.filters}
+          onSubmit={(event) => {
+            event.preventDefault();
+            setFilter({ ...draft });
+            setPage(1);
+            setSelected(null);
+          }}
+        >
+          <label>
+            开始日期
+            <input
+              aria-label="开始日期"
+              type="date"
+              required
+              value={draft.from}
+              onChange={(e) =>
+                setDraft((f) => ({ ...f, from: e.target.value }))
+              }
+            />
+          </label>
+          <label>
+            结束日期
+            <input
+              aria-label="结束日期"
+              type="date"
+              required
+              value={draft.to}
+              onChange={(e) => setDraft((f) => ({ ...f, to: e.target.value }))}
+            />
+          </label>
+          <label>
+            账户类型
+            <select
+              aria-label="账户类型"
+              value={draft.accountType}
+              onChange={(e) =>
+                setDraft((f) => ({ ...f, accountType: e.target.value }))
+              }
+            >
+              <option value="">全部类型</option>
+              <option value="personal">个人</option>
+              <option value="enterprise">企业</option>
+              <option value="unknown">未登记</option>
+            </select>
+          </label>
+          <label className={styles.search}>
+            搜索账户
+            <input
+              aria-label="搜索账户"
+              value={draft.q}
+              placeholder="姓名、邮箱、企业名称"
+              onChange={(e) => setDraft((f) => ({ ...f, q: e.target.value }))}
+            />
+          </label>
+          {statuses[section] && (
+            <label>
+              记录筛选
+              <select
+                aria-label="记录筛选"
+                value={draft.status}
+                onChange={(e) =>
+                  setDraft((f) => ({ ...f, status: e.target.value }))
+                }
+              >
+                <option value="">
+                  {section === "artworks" ? "正常作品" : "全部状态"}
+                </option>
+                {statuses[section]!.map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <button className={styles.primary} type="submit">
+            <Search size={16} />
+            查询
+          </button>
+        </form>
+        <div className={styles.scope}>
+          <span>
+            统计日期：{filter.from} 至 {filter.to} · 北京时间
+          </span>
+          {filter.email && (
+            <button
+              type="button"
+              onClick={() => {
+                const f = { ...filter, email: "" };
+                setFilter(f);
+                setDraft(f);
+                setPage(1);
+              }}
+            >
+              当前账户：{filter.email}
+              <X size={14} />
+            </button>
+          )}
+          <span className={styles.updated}>
+            {data
+              ? `更新于 ${new Date(data.generatedAt).toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false })}`
+              : ""}
+          </span>
+        </div>
+        {busy ? (
+          <div className={styles.empty} role="status">
+            <Loader2 size={24} className={styles.spin} />
+            正在读取数据…
+          </div>
+        ) : error ? (
+          <div className={styles.error} role="alert">
+            {error}
+            <button onClick={() => setReload((x) => x + 1)}>重试</button>
+          </div>
+        ) : data?.overview ? (
+          <Overview data={data.overview} onNavigate={navigate} />
+        ) : data && section !== "overview" ? (
+          <>
+            <div className={styles.tableTop}>
+              <span>
+                共 <strong>{n(data.total)}</strong> 条 · 本页 {data.rows.length}{" "}
+                条
+              </span>
+              <button
+                className={styles.button}
+                type="button"
+                disabled={!data.rows.length}
+                onClick={exportPage}
+              >
+                <Download size={15} />
+                导出本页 CSV
+              </button>
+            </div>
+            <div className={styles.tableWrap}>
+              <table>
+                <thead>
+                  <tr>
+                    {section === "artworks" && <th>图片</th>}
+                    {columns[section].map((c) => (
+                      <th key={c.key}>{c.label}</th>
+                    ))}
+                    <th>详情</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.rows.map((row, i) => (
+                    <tr key={String(row.id || row.email || i)}>
+                      {section === "artworks" && (
+                        <td>
+                          {row.has_image ? (
+                            <button
+                              className={styles.thumb}
+                              onClick={() => setSelected({ section, row })}
+                              aria-label={`查看 ${row.title || "图片"}`}
+                            >
+                              <Image
+                                unoptimized
+                                width={480}
+                                height={480}
+                                loading="lazy"
+                                src={`/api/admin/bi/media?id=${encodeURIComponent(String(row.id))}`}
+                                alt={String(row.title || "作品")}
+                                onError={(e) => {
+                                  e.currentTarget.style.display = "none";
+                                }}
+                              />
+                            </button>
+                          ) : (
+                            <span className={styles.muted}>无图片</span>
+                          )}
+                        </td>
+                      )}
+                      {columns[section].map((c) => (
+                        <td
+                          key={c.key}
+                          className={
+                            c.format === "credits" || c.format === "money"
+                              ? styles.number
+                              : undefined
+                          }
+                        >
+                          <span
+                            className={
+                              c.key === "prompt" ||
+                              c.key === "content" ||
+                              c.key === "reason"
+                                ? styles.truncated
+                                : undefined
+                            }
+                            title={String(row[c.key] ?? "")}
+                          >
+                            {display(row[c.key], c.format)}
+                          </span>
+                        </td>
+                      ))}
+                      <td>
+                        <button
+                          className={styles.textButton}
+                          onClick={() => setSelected({ section, row })}
+                        >
+                          查看
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {!data.rows.length && (
+                    <tr>
+                      <td
+                        colSpan={columns[section].length + 2}
+                        className={styles.noRows}
+                      >
+                        当前筛选下没有记录。可扩大日期范围或清除账户筛选。
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className={styles.pagination}>
+              <button
+                className={styles.button}
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                <ChevronLeft size={16} />
+                上一页
+              </button>
+              <span>
+                第 {page} 页 / {Math.max(1, Math.ceil(data.total / data.size))}{" "}
+                页
+              </span>
+              <button
+                className={styles.button}
+                disabled={page * data.size >= data.total}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                下一页
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </>
+        ) : null}
+        <footer className={styles.notes}>
+          <strong>统计口径</strong>
+          <p>
+            积分消费来自已提交的消费流水，退款单独列示；管理员调整不计入使用量。可用积分为有效批次余额减当前预留。作品数量包含导入、编辑与中间产物。模型审计仅覆盖有记录的图片，不能当作全部请求成功率；预估成本积分不代表人民币成本或利润。
+          </p>
+        </footer>
+      </main>
+      {selected && (
+        <div
+          className={styles.overlay}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setSelected(null);
+          }}
+        >
+          <section
+            className={styles.drawer}
+            role="dialog"
+            aria-modal="true"
+            aria-label="记录详情"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setSelected(null);
+              if (e.key === "Tab") {
+                const nodes = Array.from(
+                  e.currentTarget.querySelectorAll<HTMLElement>(
+                    "button:not(:disabled), input, select, textarea, a[href]",
+                  ),
+                );
+                const first = nodes[0],
+                  last = nodes.at(-1);
+                if (e.shiftKey && document.activeElement === first) {
+                  e.preventDefault();
+                  last?.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                  e.preventDefault();
+                  first?.focus();
+                }
+              }
+            }}
+          >
+            <div className={styles.drawerHead}>
+              <div>
+                <span>{names[selected.section]}</span>
+                <h2>
+                  {String(
+                    selected.row.name ||
+                      selected.row.title ||
+                      (selected.row.kind && names[String(selected.row.kind)]) ||
+                      "记录详情",
+                  )}
+                </h2>
+              </div>
+              <button
+                ref={closeRef}
+                className={styles.iconButton}
+                aria-label="关闭详情"
+                onClick={() => setSelected(null)}
+              >
+                <X size={22} />
+              </button>
+            </div>
+            {selected.row.email && (
+              <div className={styles.drill}>
+                <p>{String(selected.row.email)}</p>
+                <div>
+                  <button
+                    onClick={() => account(String(selected.row.email), "users")}
+                  >
+                    账户资料
+                  </button>
+                  <button
+                    onClick={() =>
+                      account(String(selected.row.email), "ledger")
+                    }
+                  >
+                    积分流水
+                  </button>
+                  <button
+                    onClick={() =>
+                      account(String(selected.row.email), "artworks")
+                    }
+                  >
+                    所有图片
+                  </button>
+                  <button
+                    onClick={() =>
+                      account(String(selected.row.email), "operations")
+                    }
+                  >
+                    业务任务
+                  </button>
+                  <button
+                    onClick={() =>
+                      account(String(selected.row.email), "models")
+                    }
+                  >
+                    模型记录
+                  </button>
+                  <button
+                    onClick={() => account(String(selected.row.email), "calls")}
+                  >
+                    模型调用
+                  </button>
+                  <button
+                    onClick={() =>
+                      account(String(selected.row.email), "conversations")
+                    }
+                  >
+                    对话内容
+                  </button>
+                </div>
+              </div>
+            )}
+            {selected.section === "artworks" && selected.row.has_image && (
+              <Image
+                unoptimized
+                width={2560}
+                height={2560}
+                className={styles.preview}
+                src={`/api/admin/bi/media?id=${encodeURIComponent(String(selected.row.id))}&full=1`}
+                alt={String(selected.row.title || "作品预览")}
+              />
+            )}
+            <dl className={styles.details}>
+              {Object.entries(selected.row)
+                .filter(
+                  ([key]) =>
+                    !["has_image", "has_video", "profile_note"].includes(key),
+                )
+                .map(([key, value]) => {
+                  const column = (
+                    selected.section !== "overview"
+                      ? columns[selected.section]
+                      : []
+                  ).find((c) => c.key === key);
+                  const labels: Record<string, string> = {
+                    status: "状态",
+                    ratio: "比例",
+                    state: "调用状态",
+                    operation_id: "稳定操作 ID",
+                    id: "记录 ID",
+                    job_id: "任务 ID",
+                    parent_id: "上游作品 ID",
+                    batch_id: "批次 ID",
+                    origin: "来源",
+                    image_width: "图片宽度",
+                    image_height: "图片高度",
+                    deleted_at: "回收时间",
+                    phone: "手机号",
+                    role: "权限",
+                    plan: "历史套餐标识",
+                    banned: "封禁状态",
+                    joined_at: "注册时间",
+                    last_ip: "最近登录 IP",
+                    note: "管理员备注",
+                    principal: "当前有效积分本金",
+                    expiring_30d: "30 天内到期积分",
+                    refunded: "期间退款积分",
+                    ledger_events: "期间流水条数",
+                    received_cents: "期间实际收款（元）",
+                    purchased_credits: "期间已支付购入积分",
+                    profile_updated_at: "资料更新时间",
+                    stage: "任务阶段",
+                    error: "错误记录",
+                    reserved_credits: "任务预留记录",
+                    settled: "是否已完成结算",
+                    updated_at: "更新时间",
+                    artwork_id: "对应作品 ID",
+                    cents_per_credit: "购买单价（分 / 积分）",
+                  };
+                  return (
+                    <div key={key}>
+                      <dt>{column?.label || labels[key] || key}</dt>
+                      <dd>
+                        {display(
+                          value,
+                          column?.format ||
+                            (["role", "status", "state", "category"].includes(
+                              key,
+                            )
+                              ? "status"
+                              : key.endsWith("_at")
+                                ? "time"
+                                : key === "received_cents"
+                                  ? "money"
+                                  : undefined),
+                        )}
+                      </dd>
+                    </div>
+                  );
+                })}
+            </dl>
+            {selected.section === "users" && (
+              <ProfileEditor
+                row={selected.row}
+                onSaved={() => {
+                  setSelected(null);
+                  setReload((x) => x + 1);
+                }}
+              />
+            )}
+            {selected.section === "conversations" && (
+              <ConversationViewer
+                key={String(selected.row.id)}
+                id={String(selected.row.id)}
+                email={String(selected.row.email)}
+                kind={selected.row.source === "agent" ? "agent" : "genchat"}
+              />
+            )}
+            {(selected.section === "operations" ||
+              selected.section === "models") && (
+              <ExecutionTrace
+                id={String(selected.row.job_id || selected.row.id)}
+                email={String(selected.row.email)}
+              />
+            )}
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Overview({
+  data,
+  onNavigate,
+}: {
+  data: BiOverview;
+  onNavigate: (s: BiSection) => void;
+}) {
+  const max = Math.max(1, ...data.daily.map((d) => d.consumed));
+  const metrics: [string, string, string, BiSection][] = [
+    [
+      "用户账户",
+      n(data.accounts),
+      `企业 ${n(data.enterprises)} · 有消费用户 ${n(data.activeUsers)}`,
+      "users",
+    ],
+    [
+      "期间已落账消费",
+      `${n(data.consumed)} 积分`,
+      `退款 ${n(data.refunded)} 积分（单独列示）`,
+      "ledger",
+    ],
+    [
+      "当前可用积分",
+      n(data.available),
+      `当前预留 ${n(data.reserved)} 积分`,
+      "users",
+    ],
+    [
+      "期间保存作品",
+      n(data.artworks),
+      `回收站另有 ${n(data.deletedArtworks)} 件`,
+      "artworks",
+    ],
+    [
+      "期间业务任务",
+      n(data.tasks),
+      `失败 ${n(data.failed)} · 待审核 / 核查 ${n(data.review)}`,
+      "operations",
+    ],
+    [
+      "期间实际收款",
+      `¥${(data.receivedCents / 100).toFixed(2)}`,
+      `模拟支付 ¥${(data.mockCents / 100).toFixed(2)}（未计入）`,
+      "orders",
+    ],
+  ];
+  return (
+    <>
+      <div className={styles.metrics}>
+        {metrics.map(([title, value, note, section]) => (
+          <button key={title} onClick={() => onNavigate(section)}>
+            <span>{title}</span>
+            <strong>{value}</strong>
+            <small>{note}</small>
+          </button>
+        ))}
+      </div>
+      <section className={styles.chart}>
+        <div className={styles.panelHead}>
+          <div>
+            <h2>积分消费趋势</h2>
+            <p>每日已落账消费 · 积分</p>
+          </div>
+          <span>{data.daily.length} 天</span>
+        </div>
+        <div
+          className={styles.bars}
+          role="img"
+          aria-label={
+            data.consumed
+              ? `所选日期每日消费，累计 ${data.consumed} 积分`
+              : "所选日期没有积分消费"
+          }
+        >
+          {data.daily.map((day) => (
+            <div
+              key={day.date}
+              title={`${day.date}：消费 ${n(day.consumed)}，退款 ${n(day.refunded)}，作品 ${n(day.artworks)}`}
+            >
+              <i
+                style={{
+                  height: `${(day.consumed / max) * 100}%`,
+                  minHeight: day.consumed ? "3px" : "0",
+                }}
+              />
+              <span>{day.date.slice(5)}</span>
+            </div>
+          ))}
+        </div>
+        <details className={styles.chartDetails}>
+          <summary>查看每日精确数据</summary>
+          <div className={styles.tableWrap}>
+            <table>
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>消费积分</th>
+                  <th>退款积分</th>
+                  <th>正常作品</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.daily.map((d) => (
+                  <tr key={d.date}>
+                    <td>{d.date}</td>
+                    <td>{n(d.consumed)}</td>
+                    <td>{n(d.refunded)}</td>
+                    <td>{n(d.artworks)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+      <section className={styles.modelOverview}>
+        <div className={styles.panelHead}>
+          <div>
+            <h2>接口执行模型分布</h2>
+            <p>
+              有审计记录的 {n(data.auditImages)} 张图片 · 质量差异{" "}
+              {n(data.downgradedImages)} 张
+            </p>
+          </div>
+          <button
+            className={styles.textButton}
+            onClick={() => onNavigate("models")}
+          >
+            查看审计
+          </button>
+        </div>
+        {data.models.length ? (
+          <div className={styles.tableWrap}>
+            <table>
+              <thead>
+                <tr>
+                  <th>接口执行记录</th>
+                  <th>审计图数</th>
+                  <th>已落账积分</th>
+                  <th>质量差异记录</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.models.map((row) => (
+                  <tr key={String(row.upstream)}>
+                    <td>{display(row.upstream)}</td>
+                    <td>{n(row.images)}</td>
+                    <td>{n(row.billed_credits)}</td>
+                    <td>{n(row.fallbacks)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className={styles.noRows}>
+            所选日期没有模型审计记录。历史未采集的请求不会推算补齐。
+          </p>
+        )}
+      </section>
+    </>
+  );
+}
+
+function ProfileEditor({ row, onSaved }: { row: BiRow; onSaved: () => void }) {
+  const [type, setType] = useState(String(row.account_type || "unknown"));
+  const [company, setCompany] = useState(String(row.company || ""));
+  const [percent, setPercent] = useState(
+    row.agreed_pay_percent === null ? "" : String(row.agreed_pay_percent),
+  );
+  const [note, setNote] = useState(String(row.profile_note || ""));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/bi/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: row.email,
+          accountType: type,
+          company,
+          agreedPayPercent: percent.trim() ? Number(percent) : null,
+          note,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "保存失败");
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <form className={styles.profile} onSubmit={save}>
+      <h3>账户运营资料</h3>
+      <p>
+        当前实际扣费：全站统一质量 ×
+        尺寸价。下方约定折扣仅登记资料，尚未接入扣费。
+      </p>
+      <label>
+        账户类型
+        <select
+          aria-label="登记账户类型"
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+        >
+          <option value="unknown">未登记</option>
+          <option value="personal">个人</option>
+          <option value="enterprise">企业</option>
+        </select>
+      </label>
+      <label>
+        企业名称
+        <input
+          aria-label="企业名称"
+          maxLength={200}
+          required={type === "enterprise"}
+          value={company}
+          onChange={(e) => setCompany(e.target.value)}
+        />
+      </label>
+      <label>
+        约定实付比例（%）
+        <input
+          aria-label="约定实付比例"
+          type="number"
+          min="0.01"
+          max="100"
+          step="0.01"
+          placeholder="例如 80 代表 8 折，留空为未登记"
+          value={percent}
+          onChange={(e) => setPercent(e.target.value)}
+        />
+      </label>
+      <label>
+        运营备注
+        <textarea
+          aria-label="运营备注"
+          maxLength={2000}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </label>
+      {error && (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      )}
+      <button className={styles.primary} disabled={busy} type="submit">
+        {busy ? "正在保存…" : "保存运营资料"}
+      </button>
+    </form>
+  );
+}
+
+type TraceAttempt = {
+  operationId: string;
+  model: string;
+  state: string;
+  gateway: boolean;
+  router: {
+    status: string;
+    attempts: {
+      model: string;
+      provider: string;
+      route: string;
+      state: string;
+      durationMs: number | null;
+    }[];
+  } | null;
+};
+function ExecutionTrace({ id, email }: { id: string; email: string }) {
+  const [data, setData] = useState<TraceAttempt[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const current = useRef({ version: 0 });
+  useEffect(() => {
+    const state = current.current;
+    state.version++;
+    setData(null);
+    setBusy(false);
+    setError("");
+    return () => {
+      state.version++;
+    };
+  }, [id, email]);
+  async function load() {
+    const version = current.current.version;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/admin/bi/trace?${new URLSearchParams({ id, email })}`,
+        { cache: "no-store" },
+      );
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "读取失败");
+      if (current.current.version === version) setData(body.attempts);
+    } catch (e) {
+      if (current.current.version === version)
+        setError(e instanceof Error ? e.message : "读取失败");
+    } finally {
+      if (current.current.version === version) setBusy(false);
+    }
+  }
+  return (
+    <section className={styles.trace}>
+      <h3>实际执行链路</h3>
+      <p>读取持久操作证据和网关真实路由。此操作只查询记录，不会触发生成。</p>
+      <button className={styles.button} disabled={busy} onClick={load}>
+        {busy ? (
+          <Loader2 size={16} className={styles.spin} />
+        ) : (
+          <Activity size={16} />
+        )}
+        读取执行证据
+      </button>
+      {error && <p className={styles.error}>{error}</p>}
+      {data &&
+        (!data.length ? (
+          <p>没有持久执行记录。请以接口审计信息为准；历史真实路由无法还原。</p>
+        ) : (
+          data.map((a) => (
+            <div className={styles.attempt} key={a.operationId}>
+              <strong>{a.model || "接口模型未记录"}</strong>
+              <p>操作 ID：{a.operationId}</p>
+              <p>
+                持久状态：{a.state} · {a.gateway ? "网关路由" : "直接调用"}
+              </p>
+              {a.router?.attempts.length ? (
+                a.router.attempts.map((r, i) => (
+                  <dl key={i}>
+                    <div>
+                      <dt>实际触发模型</dt>
+                      <dd>{r.model || "未记录"}</dd>
+                    </div>
+                    <div>
+                      <dt>供应商 / 路由</dt>
+                      <dd>
+                        {r.provider} / {r.route}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>尝试状态</dt>
+                      <dd>{r.state}</dd>
+                    </div>
+                    <div>
+                      <dt>耗时</dt>
+                      <dd>
+                        {r.durationMs === null
+                          ? "未记录"
+                          : `${n(r.durationMs / 1000)} 秒`}
+                      </dd>
+                    </div>
+                  </dl>
+                ))
+              ) : a.gateway ? (
+                <p className={styles.warning}>
+                  {a.router?.status === "not-configured"
+                    ? "网关审计连接尚未配置"
+                    : a.router?.status === "unavailable"
+                      ? "网关审计暂时不可用"
+                      : "网关没有对应记录"}
+                  ，无法确认真实供应商模型。
+                </p>
+              ) : null}
+            </div>
+          ))
+        ))}
+    </section>
+  );
+}
+
+function ConversationViewer({
+  id,
+  email,
+  kind,
+}: {
+  id: string;
+  email: string;
+  kind: "agent" | "genchat";
+}) {
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState<{
+    messages: { role: string; text: string; truncated: boolean }[];
+    total: number;
+    size: number;
+  } | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    setResult(null);
+    setError("");
+    const params = new URLSearchParams({ id, email, kind, page: String(page) });
+    fetch(`/api/admin/bi/conversation?${params}`, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("无法读取对话内容");
+        return response.json();
+      })
+      .then(setResult)
+      .catch((e) => {
+        if (e.name !== "AbortError") setError(e.message);
+      });
+    return () => controller.abort();
+  }, [id, email, kind, page]);
+  return (
+    <section className={styles.trace}>
+      <h3>对话文字内容</h3>
+      {error ? (
+        <p role="alert">{error}</p>
+      ) : !result ? (
+        <p>正在读取…</p>
+      ) : (
+        <>
+          {result.messages.length === 0 && <p>没有可展示的文字消息。</p>}
+          {result.messages.map((m, i) => (
+            <div key={i}>
+              <strong>{m.role === "user" ? "用户" : "助手"}</strong>
+              <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                {m.text}
+              </p>
+              {m.truncated && (
+                <small>此消息超过 20,000 字，当前展示前 20,000 字。</small>
+              )}
+            </div>
+          ))}
+          <div className={styles.pagination}>
+            <button disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
+              上一页
+            </button>
+            <span>
+              第 {page} 页 · 共 {result.total} 条文字消息
+            </span>
+            <button
+              disabled={page * result.size >= result.total}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              下一页
+            </button>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}

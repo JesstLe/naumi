@@ -1,3 +1,4 @@
+import { withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
@@ -104,7 +105,7 @@ async function upscaleTo(buf: Buffer, resolution: string): Promise<Buffer> {
   }
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   let input: InpaintInput | null;
   try {
     input = await parseInput(request);
@@ -284,4 +285,8 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }

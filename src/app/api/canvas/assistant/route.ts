@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import path from "path";
@@ -114,7 +115,7 @@ function contextMetadata(anchor: ArtworkRecord, ancestors: ArtworkRecord[]): str
   return `${line(anchor, "当前图（用户选中的节点）")}${chain}`;
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   const email = await authenticatedEmail(request);
   if (dbEnabled && !email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -184,11 +185,11 @@ export async function POST(request: Request) {
       ordered.map((artwork) => readReferenceImage(artwork.image, request.url))
     );
 
-    const client = new OpenAI({
+    const client = observeOpenAI(new OpenAI({
       apiKey,
       baseURL:
         process.env.AGENT_BASE_URL || (await getOpenAIBaseUrl()) || undefined,
-    });
+    }));
     const contextContent: Array<
       | { type: "text"; text: string }
       | { type: "image_url"; image_url: { url: string; detail: "low" } }
@@ -265,4 +266,8 @@ export async function POST(request: Request) {
       { status: 502 }
     );
   }
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }

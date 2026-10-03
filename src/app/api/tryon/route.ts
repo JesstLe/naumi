@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
@@ -137,12 +138,12 @@ async function runTryonJob(
     try {
       const { apiKey, model: genModel } = await getOpenAISettings();
       if (!apiKey) throw new Error("未配置 OpenAI key");
-      const client = new OpenAI({
+      const client = observeOpenAI(new OpenAI({
         apiKey,
         baseURL: (await getOpenAIBaseUrl()) || undefined,
         timeout: 230_000,
         maxRetries: 0,
-      });
+      }));
 
       const lib = await getTryonLibrary();
       // 人物/模特图:优先库选(modelId);否则「以此图再试穿」传来的自定义 url(仅允许 http/https)。
@@ -222,7 +223,7 @@ async function runTryonJob(
         n: 1,
         size: "1024x1536" as "1024x1536",
         quality: sdkImageQuality(executed),
-      }));
+      }), genModel || "gpt-image-2");
       const b64 = r.data?.[0]?.b64_json;
       if (!b64) throw new Error("未返回试穿图");
       out = Buffer.from(b64, "base64");
@@ -314,7 +315,7 @@ async function runTryonJob(
   }
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   let input: TryonInput | null;
   try {
     input = await parseInput(request);
@@ -389,4 +390,8 @@ export async function GET(request: Request) {
   if (job.status === "error")
     return NextResponse.json({ status: "error", error: job.error });
   return NextResponse.json({ status: "pending" });
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }

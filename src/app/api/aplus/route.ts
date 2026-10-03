@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { imageRequestBilling, withQualityFallback, auditSettledImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality, ExecutedQuality } from "@/lib/image-quality";
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
@@ -442,7 +443,7 @@ async function runSourcePreparation(jobId: string) {
           baseUrl,
           job.model,
           job.sourceInputs[index]
-        )));
+        )), job.model);
         const id = job.sources[index].id;
         job.sourceBuffers[index] = buf;
         const url = await persistOne(buf, `sources/${id}-v1`);
@@ -497,7 +498,7 @@ async function runSourceRedo(jobId: string, index: number, feedback: string) {
       job.model,
       job.sourceInputs[index],
       feedback
-    )));
+    )), job.model);
     const version = job.sources[index].version + 1;
     const id = job.sources[index].id;
     job.sourceBuffers[index] = buf;
@@ -534,12 +535,12 @@ async function runAplusGeneration(jobId: string) {
   const set = (patch: Partial<Job>) => patchJob(jobId, patch);
   try {
     const { apiKey } = await getOpenAISettings();
-    const client = new OpenAI({
+    const client = observeOpenAI(new OpenAI({
       apiKey,
       baseURL: (await getOpenAIBaseUrl()) || undefined,
       timeout: PER_SHOT_TIMEOUT,
       maxRetries: 0,
-    });
+    }));
     const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
     const cleanImages = job.sourceBuffers.map((buf) => ({
       buf: buf!,
@@ -587,7 +588,7 @@ async function runAplusGeneration(jobId: string) {
               shot,
               cleanImages,
               size
-            )));
+            )), job.model);
             const url = await persistOne(buf, shot.id);
             shots[idx] = { ...shot, status: "done", url, quality };
             ok = true;
@@ -732,7 +733,7 @@ async function kickAplus(id: string) {
   });
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   if (imageWorkerAuthorized(request)) {
     const body = await request.json();
     if (typeof body.workerJobId !== "string") return NextResponse.json({ error: "无效任务" }, { status: 400 });
@@ -1013,4 +1014,8 @@ export async function GET(request: Request) {
     cost: job.cost,
     error: job.error,
   });
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }
