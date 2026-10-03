@@ -7,6 +7,12 @@ import { ModelConfigError } from "./types";
 
 type Limit = { providerId: string; baseUrl: string; maxConcurrent: number; timeoutMs: number };
 function capacityIdentity(providerId: string, baseUrl: string) { return createHash("sha256").update(`${providerId}\n${new URL(baseUrl).origin}`).digest("hex"); }
+export async function providerCapacitySummary(pool: Pool, config: ModelConfig) {
+  const identities = config.providers.map(p => capacityIdentity(p.id, p.baseUrl));
+  const rows = (await pool.query("SELECT b.identity,b.max_concurrent,count(l.token)::int AS in_flight FROM app_model_provider_budgets b LEFT JOIN app_model_provider_leases l ON l.identity=b.identity AND l.expires_at>now() WHERE b.identity=ANY($1) GROUP BY b.identity,b.max_concurrent", [identities])).rows;
+  const byIdentity = new Map(rows.map(row => [row.identity, row]));
+  return Object.fromEntries(config.providers.map((p, i) => { const row = byIdentity.get(identities[i]); return [p.id, { maxConcurrent: row?.max_concurrent ?? p.maxConcurrent, inFlight: row?.in_flight ?? 0 }]; }));
+}
 /** Run in the publication transaction, so old tasks see a lowered limit as soon as the pointer changes. */
 export async function registerProviderCapacities(tx: PoolClient, config: ModelConfig) {
   for (const p of [...config.providers].sort((a,b) => a.id.localeCompare(b.id))) {

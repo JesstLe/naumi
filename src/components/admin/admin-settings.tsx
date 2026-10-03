@@ -156,6 +156,7 @@ type MemberDetail = {
 };
 
 type View = {
+  modelConfigurationActive?: boolean;
   model: string;
   models?: string[];
   cutoutModel: string;
@@ -1699,7 +1700,14 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
       {section === "prompts" && <AdminPrompts />}
 
       {/* 管理员 · OpenAI 接口设置 */}
-      {section === "api" && (
+      {section === "api" && view?.modelConfigurationActive && (
+        <div className="rounded-xl border border-c-border2 bg-c-card p-6">
+          <h2 className="text-lg font-semibold">模型与供应商管理</h2>
+          <p className="my-3 text-sm text-c-text3">接口、密钥、模型能力、默认用途与混合路由统一在模型配置中心维护。修改先保存为草稿，再核对差异发布。</p>
+          <a href="/admin/bi/models" className="inline-block rounded-lg bg-primary px-4 py-2 text-sm text-white">进入模型配置中心</a>
+        </div>
+      )}
+      {section === "api" && !view?.modelConfigurationActive && (
       <div>
         <div className="mb-3 flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-primary" />

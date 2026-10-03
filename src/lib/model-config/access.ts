@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { biAuthorize, biJson, sameSiteBiMutation } from "../bi/access";
 import { getModelAdministration } from "./server";
+import { providerCapacitySummary } from "./capacity";
 import { MODEL_BINDINGS } from "./bindings";
 import { MODEL_PROTOCOLS, validateModelConfig } from "./schema";
 import { compileRouterProjection } from "./projection";
@@ -45,7 +46,7 @@ export function createModelAdminHandler(deps: { authorize: typeof biAuthorize; a
       switch (action) {
         case "read": {
           const [snapshot, draft, billing] = await Promise.all([admin.repo.current(), admin.repo.draft(auth.actor), admin.billing.current()]);
-          return biJson({ snapshot, draft, protocols: MODEL_PROTOCOLS, bindings: MODEL_BINDINGS, billingVersion: billing.version, costKeys: Object.keys(billing.config.costs).sort(), costReferences: Object.entries(billing.config.costs).map(([key, rate]) => ({ key, currency: rate.currency, unit: rate.unit, source: rate.source })), concurrencyPolicy: "historical-minimum", billingManagementPath: "/admin/bi" });
+          return biJson({ snapshot, draft, providerCapacity: await providerCapacitySummary(admin.pool,snapshot.config), protocols: MODEL_PROTOCOLS, bindings: MODEL_BINDINGS, billingVersion: billing.version, costKeys: Object.keys(billing.config.costs).sort(), costReferences: Object.entries(billing.config.costs).map(([key, rate]) => ({ key, currency: rate.currency, unit: rate.unit, source: rate.source })), concurrencyPolicy: "historical-minimum", billingManagementPath: "/admin/billing" });
         }
         case "draft": { const body = draftInput.parse(await readBody(request)); return biJson(await admin.repo.saveDraft({ ...body, config: body.config as ModelConfig, actor: auth.actor })); }
         case "publish": { const body = publishInput.parse(await readBody(request)); const publication = await admin.runtime.publish({ ...body, actor: auth.actor }); return biJson(publication, publication.phase === "applied" ? 200 : publication.phase === "failed" ? 422 : 202); }

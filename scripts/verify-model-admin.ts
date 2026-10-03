@@ -19,7 +19,7 @@ async function main() {
   const billing = { version: 1, config: fixtureConfig() };
   const router = { ...control, prepare: async () => {}, state: async () => "", status: async () => null, activate: async (id: string, _expected: string, digest: string) => ({ id, digest, phase: "applied" as const }) };
   const runtime = createModelRuntime({ pool: f.sql, repo: f.repo, credentials: f.credentials, router, billing: async () => billing, trustedOrigins: [f.origin] });
-  const administration = { runtime, repo: f.repo, credentials: f.credentials, router, trustedOrigins: [f.origin], billing: { current: async () => billing } };
+  const administration = { runtime, repo: f.repo, credentials: f.credentials, router, trustedOrigins: [f.origin], billing: { current: async () => billing }, pool: f.sql };
   const handler = createModelAdminHandler({ authorize: biAuthorize, administration: async () => administration as never });
   const admin = "model-admin@example.test", personal = "model-personal@example.test", enterprise = "model-enterprise@example.test";
   const cookie = (email: string, now = Date.now()) => `nv_user=${native.signUserSession(email, now)}`;
@@ -42,6 +42,17 @@ async function main() {
     const read = await handler(request(), "read"); assert.equal(read.status, 200);
     const page = await read.json(); assert.ok(page.draft.id); assert.ok(page.protocols.includes("openai-chat"));
     assert.ok(!JSON.stringify(page).includes(f.marker));
+    const legacySettings = await import("../src/app/api/admin/settings/route");
+    const management = process.env.NAUMI_ROUTER_MANAGEMENT_URL;
+    process.env.NAUMI_ROUTER_MANAGEMENT_URL = f.origin;
+    for (const field of ["model", "models", "cutoutModel", "cutoutBackend", "encryptedBaseUrl", "baseUrlPlain", "baseUrlClear", "encryptedKey", "keyPlain"]) {
+      const locked = await legacySettings.POST(request({ [field]: field === "models" ? ["old-model"] : "old-model" }));
+      assert.equal(locked.status, 409, `Legacy settings cannot independently edit ${field}`);
+      assert.equal((await locked.json()).managementPath, "/admin/bi/models");
+    }
+    delete process.env.NAUMI_ROUTER_MANAGEMENT_URL;
+    assert.equal((await legacySettings.POST(request({ model: "old-model" }))).status, 503, "Missing management connection cannot unlock legacy writes");
+    if (management !== undefined) process.env.NAUMI_ROUTER_MANAGEMENT_URL = management;
     const next = structuredClone(page.draft.config); next.publicModels[0].label = "后台测试名称";
     const saveBody = { id: page.draft.id, expectedRevision: page.draft.revision, config: next };
     const saves = await Promise.all([handler(request(saveBody), "draft"), handler(request(saveBody), "draft")]);

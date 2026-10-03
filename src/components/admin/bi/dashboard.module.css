@@ -52,7 +52,8 @@
   flex-direction: column;
   gap: 6px;
 }
-.sidebar nav button {
+.sidebar nav button,
+.sidebar nav a {
   display: flex;
   align-items: center;
   gap: 11px;
@@ -673,7 +674,8 @@
     margin-top: 15px;
     padding-bottom: 2px;
   }
-  .sidebar nav button {
+  .sidebar nav button,
+  .sidebar nav a {
     flex-shrink: 0;
     padding: 8px;
     font-size: 11px;
