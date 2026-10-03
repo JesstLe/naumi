@@ -1,4 +1,5 @@
 "use client";
+import {useBillingProducts} from "@/lib/billing/products";
 
 import * as React from "react";
 import { Check, Loader2, Gift } from "lucide-react";
@@ -11,7 +12,7 @@ import { useAuthModal } from "@/lib/auth-modal-context";
 import { useRecharge } from "@/lib/recharge-modal-context";
 import { useToast } from "@/components/ui/toast";
 import { authHeader } from "@/lib/supabase";
-import { CREDIT_PACKS, fmtCredits } from "@/lib/mock-data";
+import { fmtCredits } from "@/lib/mock-data";
 import { usePaymentConfig } from "@/lib/payment-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { PayQrModal } from "@/components/credits/pay-qr-modal";
@@ -19,6 +20,7 @@ import { PayQrModal } from "@/components/credits/pay-qr-modal";
 type PayMethod = "alipay" | "wechat";
 
 export function RechargeModal() {
+  const {packs:CREDIT_PACKS,buy:purchase}=useBillingProducts();
   const { open, tab, closeRecharge, setTab } = useRecharge();
   const { user, remaining, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
@@ -45,8 +47,8 @@ export function RechargeModal() {
     { ok: true; credits: number } | { ok: false; msg: string } | null
   >(null);
 
-  const pack = CREDIT_PACKS[packIdx] ?? CREDIT_PACKS[0];
-  const paymentAvailable = commerceVisible && rechargeEnabled;
+  const pack = CREDIT_PACKS[packIdx] ?? CREDIT_PACKS[0] ?? {id:"",credits:0,base:0,bonus:0,price:"价格加载中",priceValue:0,fen:0};
+  const paymentAvailable = commerceVisible && rechargeEnabled && CREDIT_PACKS.length>0;
   const effectiveTab = paymentAvailable ? tab : "code";
 
   async function buy() {
@@ -56,7 +58,7 @@ export function RechargeModal() {
     }
     setBuying(true);
     try {
-      const res = await fetch("/api/payments/create", {
+      const res = await purchase("/api/payments/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

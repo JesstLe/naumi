@@ -1,4 +1,6 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
+import {CATEGORY_FEATURES} from "@/lib/billing/feature-map";
 import { ImageQualityControl, QUALITY_TOOL_CATEGORIES } from "@/components/image-quality-control";
 import { useImageQuality } from "@/lib/image-quality-context";
 
@@ -93,7 +95,8 @@ export function ToolShell({
   const { openAuth } = useAuthModal();
   const { imageCost } = useImageQuality();
   const qualityPriced = QUALITY_TOOL_CATEGORIES.has(category || "");
-  const cost = qualityPriced ? imageCost(resolution) : baseCost;
+  const billing=useFeatureBilling(CATEGORY_FEATURES[category||""]??"image.generate",{resolution});
+  const cost = baseCost;
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
   const [records, setRecords] = React.useState<
@@ -257,7 +260,7 @@ export function ToolShell({
             <button
               type="button"
               onClick={user ? onAction : () => openAuth()}
-              disabled={processing || (!!user && disabled)}
+              disabled={processing || (!!user && (disabled || !!CATEGORY_FEATURES[category||""]&&!billing.quote))}
               className="flex w-full items-center justify-center gap-2 rounded-[11px] py-3 text-[14px] font-semibold text-white shadow-btn [background:var(--grad-acc)] transition-all hover:brightness-95 disabled:opacity-50"
             >
               {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

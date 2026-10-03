@@ -1,9 +1,9 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 
 import * as React from "react";
 import { Scissors } from "lucide-react";
 import { ToolWorkspace, ToolChips } from "@/components/tools/tool-workspace";
-import { TOOL_COST } from "@/lib/mock-data";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
@@ -11,6 +11,7 @@ import { authHeader } from "@/lib/supabase";
 const ACCENT = "#2E7CF6"; // 图像处理(蓝)
 
 export function CutoutClient() {
+  const billing=useFeatureBilling("tool.cutout",{});
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
@@ -53,7 +54,7 @@ export function CutoutClient() {
       accent={ACCENT}
       category="cutout"
       regenLabel={L("以此图重新抠", "Re-cut from this image")}
-      cost={TOOL_COST.cutout}
+      cost={billing.cost}
       action={L("开始抠图", "Start cutout")}
       checker
       controls={controls}
@@ -66,7 +67,7 @@ export function CutoutClient() {
         fd.append("title", file.name.replace(/\.[^.]+$/, "") || "抠图");
         fd.append("category", "cutout");
         if (user) fd.append("email", user.email);
-        const res = await fetch("/api/cutout", {
+        const res = await billing.submit("/api/cutout", {
           method: "POST",
           headers: await authHeader(),
           body: fd,

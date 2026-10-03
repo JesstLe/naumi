@@ -293,7 +293,7 @@ async function createVideoGenerationUnlocked(
     imageForUpload = { bytes: img.buffer, mime: img.mimeType, filename: `naumi-ref-${Date.now()}.png` };
   }
 
-  const billingQuote=await quoteForActor(email,{feature:"video.generate",quantity:1,modelId,providerId});
+  const billingQuote=await quoteForActor(email,{feature:"video.generate",quantity:1,modelId,providerId,resolution:input.resolution||size});
   if(input.billingConfirmation)assertQuotedVersion(input.billingConfirmation,billingQuote);
   const cost = billingQuote.requestedCredits;
   const taskId = `vid-${Date.now()}-${Math.floor(Math.random() * 10000)}`;

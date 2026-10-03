@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 import { readToolResponse } from "@/lib/tool-response";
@@ -24,7 +25,6 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
-import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 
 // ---------------------------------------------------------------------------
@@ -44,6 +44,7 @@ const OPT_CARDS = [
 ];
 
 export function RetouchClient() {
+  const billing=useFeatureBilling("tool.retouch",{});
   const { costPerImage } = useImageQuality();
   const L = (z: string, e: string) =>
     typeof window !== "undefined" && document.documentElement.lang === "en" ? e : z;
@@ -60,7 +61,7 @@ export function RetouchClient() {
   const [viewing, setViewing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const cost = costPerImage;
+  const cost = billing.cost;
 
   useEffect(() => {
     return () => {
@@ -99,7 +100,7 @@ export function RetouchClient() {
       options.forEach((o) => fd.append("option", o));
       if (text.trim()) fd.append("text", text.trim());
       fd.append("email", user.email);
-      const res = await fetch("/api/retouch", {
+      const res = await billing.submit("/api/retouch", {
         method: "POST",
         headers: await authHeader(),
         body: fd,

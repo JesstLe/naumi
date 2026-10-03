@@ -2,7 +2,10 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { IMAGE_QUALITY_IDS, type ImageQualityId } from "@/lib/image-quality";
-import { imageBillCredits } from "@/lib/mock-data";
+import {useBilling} from "@/lib/billing/client";
+import {usePathname} from "next/navigation";
+import {CATEGORY_FEATURES} from "@/lib/billing/feature-map";
+import type {FeatureId} from "@/lib/billing/types";
 import { updateCurrentImageQuality } from "@/lib/image-quality-preference";
 
 export const IMAGE_QUALITY_STORAGE_KEY = "naumi:image-quality";
@@ -39,12 +42,15 @@ export function ImageQualityProvider({ children }: { children: ReactNode }) {
     }).catch(() => { if (!cancelled) setQuality("medium"); });
     return () => { cancelled = true; };
   }, []);
-  const imageCost = (resolution = "1K") => metered ? imageBillCredits(quality, resolution) : 0;
+  const {catalog}=useBilling();
+  const imageCost = (resolution = "1K") => catalog?.features["image.generate"].prices[quality]?.[resolution]??0;
   return <QualityContext.Provider value={{ quality, setQuality, capable, experimental, costPerImage: imageCost(), imageCost }}>{children}</QualityContext.Provider>;
 }
 
-export function useImageQuality() {
+export function useImageQuality(feature?:FeatureId) {
   const value = useContext(QualityContext);
   if (!value) throw new Error("ImageQualityProvider is missing");
-  return value;
+  const pathname=usePathname(),{catalog}=useBilling(),selected=feature??CATEGORY_FEATURES[pathname.split('/')[1]]??"image.generate";
+  const imageCost=(resolution="1K")=>catalog?.features[selected]?.prices[value.quality]?.[resolution]??0;
+  return {...value,imageCost,costPerImage:imageCost()};
 }

@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -293,7 +294,8 @@ export function SuiteClient() {
     }))
   );
   const shotCount = structure === "custom" ? customShots.length : 13;
-  const cost = shotCount * costPerImage;
+  const billing=useFeatureBilling("image.suite",{quantity:shotCount});
+  const cost=billing.cost;
   const customCounts = customShots.reduce(
     (counts, shot) => ({ ...counts, [shot.role]: counts[shot.role] + 1 }),
     { main: 0, sub: 0, detail: 0 }
@@ -436,7 +438,7 @@ export function SuiteClient() {
         );
       }
       fd.append("email", user.email);
-      const res = await fetch("/api/suite", {
+      const res = await billing.submit("/api/suite", {
         method: "POST",
         headers: await authHeader(),
         body: fd,

@@ -1,4 +1,5 @@
 "use client";
+import {useBillingProducts} from "@/lib/billing/products";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -6,12 +7,13 @@ import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { usePaymentConfig } from "@/lib/payment-context";
-import { getCreditPack, CREDIT_PACKS } from "@/lib/mock-data";
+import { type CreditPack } from "@/lib/mock-data";
 import { PayQrModal, type PayProvider } from "@/components/credits/pay-qr-modal";
 
 // 结账页:为 ?pack= 创建真实订单 → 共用 PayQrModal 展示支付宝/微信二维码 + 轮询到账。
 // 无 mock 发放——必须真实支付。月度会员已下线,只接受积分充值包。
 export function CheckoutClient({ pack }: { pack?: string } = {}) {
+  const {packs:CREDIT_PACKS,buy:purchase}=useBillingProducts();
   const params = useSearchParams();
   const { user, ready, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
@@ -27,14 +29,14 @@ export function CheckoutClient({ pack }: { pack?: string } = {}) {
   const started = useRef(false);
 
   const raw = params.get("pack") || pack || "";
-  const packId = getCreditPack(raw) ? raw : CREDIT_PACKS[0].id;
-  const pk = getCreditPack(packId) ?? CREDIT_PACKS[0];
+  const packId = CREDIT_PACKS.find(p=>p.id===raw)?.id ?? CREDIT_PACKS[0]?.id ?? "";
+  const pk = CREDIT_PACKS.find(p=>p.id===packId) ?? CREDIT_PACKS[0];
 
   // 创建订单(登录后自动发起一次)。供 PayQrModal onRefresh 复用。
   const createOrder = useCallback(async () => {
-    if (!user) return;
+    if (!user || !packId) return;
     try {
-      const res = await fetch("/api/payments/create", {
+      const res = await purchase("/api/payments/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -67,7 +69,7 @@ export function CheckoutClient({ pack }: { pack?: string } = {}) {
       openAuth("sign-up");
       return;
     }
-    if (started.current) return;
+    if (!packId || started.current) return;
     started.current = true;
     void createOrder();
   }, [ready, rechargeEnabled, user, openAuth, createOrder]);
@@ -87,7 +89,8 @@ export function CheckoutClient({ pack }: { pack?: string } = {}) {
   }, [user, applyServerUser]);
 
   if (ready && !rechargeEnabled) {
-    return (
+    if(!pk)return <p role="status" className="p-6">商品加载中或暂未开放购买</p>;
+  return (
       <div className="container flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
         <p className="text-sm text-c-text3">
           收银台未开放 / Checkout is not available

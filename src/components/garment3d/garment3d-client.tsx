@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 
 import * as React from "react";
@@ -19,6 +20,7 @@ export function Garment3dClient() {
   const [material, setMaterial] = React.useState("真实");
   const { imageCost } = useImageQuality();
   const [resolution, setResolution] = React.useState("1K");
+  const billing=useFeatureBilling("tool.garment3d",{resolution});
 
   const controls = (
     <>
@@ -63,7 +65,7 @@ export function Garment3dClient() {
       accent={ACCENT}
       category="dress3d"
       regenLabel={L("以此图再生成 3D", "Regenerate 3D from this image")}
-      cost={imageCost(resolution)}
+      cost={billing.cost}
       action={L("生成 3D 图", "Generate 3D")}
       controls={controls}
       onProcess={async (file) => {
@@ -90,7 +92,7 @@ export function Garment3dClient() {
         if (user) fd.append("email", user.email);
         // 异步任务:POST 秒回 jobId,再轮询 GET —— 3D 生成常 >100s,若同步等会被
         // Cloudflare(免费版 100s)掐断成 HTML 524、前端 JSON.parse 崩在 "<"。
-        const startRes = await fetch("/api/garment3d", {
+        const startRes = await billing.submit("/api/garment3d", {
           method: "POST",
           headers: await authHeader(),
           body: fd,

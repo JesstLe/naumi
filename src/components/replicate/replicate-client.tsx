@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -20,7 +21,6 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
-import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
 import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 import { readToolResponse } from "@/lib/tool-response";
@@ -49,6 +49,7 @@ const LANGS = [
 ];
 
 export function ReplicateClient() {
+  const billing=useFeatureBilling("tool.replicate",{});
   const { costPerImage } = useImageQuality();
   const L = (z: string, e: string) =>
     typeof window !== "undefined" && document.documentElement.lang === "en" ? e : z;
@@ -76,7 +77,7 @@ export function ReplicateClient() {
   const [assistOpen, setAssistOpen] = useState(false);
   const [assistRun, setAssistRun] = useState<{ mode: "write" | "optimize"; nonce: number } | null>(null);
 
-  const cost = costPerImage;
+  const cost = billing.cost;
 
   const previewUrlsRef = useRef<string[]>([]);
   previewUrlsRef.current = [...previews, refPreview].filter(Boolean);
@@ -171,7 +172,7 @@ export function ReplicateClient() {
       fd.append("platform", platform);
       fd.append("lang", lang);
       fd.append("email", user.email);
-      const res = await fetch("/api/replicate", {
+      const res = await billing.submit("/api/replicate", {
         method: "POST",
         headers: await authHeader(),
         body: fd,

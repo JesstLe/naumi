@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -29,8 +30,9 @@ async function api(url: string, method = "GET", body?: unknown) {
 }
 function draft(item: CompetitorItem) { return { revision: item.revision, prompt: item.prompt, regions: item.regions, activeVersion: item.activeVersion }; }
 export function CompetitorClient() {
+  const billing=useFeatureBilling("competitor.action");
   const { user, ready, applyServerUser } = useAuth();
-  const { costPerImage } = useImageQuality();
+  const costPerImage = billing.cost;
   const { openAuth } = useAuthModal();
   const [items, setItems] = useState<CompetitorItem[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -103,7 +105,10 @@ export function CompetitorClient() {
     if (!target || running[target.id] || target.busy) return;
     setRunning(all => ({ ...all, [target.id]: kind })); setError(""); setNotice("");
     try {
-      const data = await api(`/api/competitors/${target.id}/action`, "POST", { ...draft(target), action: kind, degree, ...(productId ? { productId } : {}) });
+      const payload={ ...draft(target), action: kind, degree, ...(productId ? { productId } : {}) };
+      let data;
+      if(kind==="analyze")data=await api(`/api/competitors/${target.id}/action`,"POST",payload);
+      else {const response=await billing.submit(`/api/competitors/${target.id}/action`,{method:"POST",headers:{"content-type":"application/json",...await authHeader()},body:JSON.stringify(payload)});data=await response.json();if(!response.ok)throw new Error(data.error||"生成失败");}
       accept(data.item); if (data.user) applyServerUser(data.user);
       setNotice(kind === "analyze" ? "提示词与元素已保存；勾选需要修改的元素后再生成。" : "新版本已保存，原图和历史版本保持不变。");
       return true;

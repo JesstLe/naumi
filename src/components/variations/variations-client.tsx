@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -109,7 +110,8 @@ export function VariationsClient() {
   }
 
   const { quality, imageCost } = useImageQuality();
-  const cost = count * imageCost(RESOLUTION);
+  const billing=useFeatureBilling("image.generate",{quantity:count,resolution:RESOLUTION});
+  const cost=billing.cost;
   const isCustom = splitMode === "custom";
 
   // 卸载时释放 objectURL
@@ -240,7 +242,7 @@ export function VariationsClient() {
       fd.append("email", user.email);
       fd.append("image", slot.file);
 
-      const startRes = await fetch("/api/generate-image", {
+      const startRes = await billing.submit("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
         body: fd,

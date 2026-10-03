@@ -1,4 +1,6 @@
 "use client";
+import {useBilling} from "@/lib/billing/client";
+import type {FeatureId} from "@/lib/billing/types";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 import { copyText } from "@/lib/clipboard";
@@ -135,7 +137,7 @@ import { TextModelSelect } from "@/components/ui/text-model-select";
 import { useTextModel } from "@/lib/text-model-context";
 
 /** Supabase 模式补 Authorization；原生账号模式依靠同源 HttpOnly cookie。 */
-async function privateFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+async function privateFetchRaw(input: RequestInfo | URL, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   const auth = await authHeader();
   for (const [key, value] of Object.entries(auth)) headers.set(key, value);
@@ -1600,6 +1602,18 @@ function layoutGraph(
 }
 
 export function CanvasClient() {
+  const billing=useBilling();
+  async function privateFetch(input:RequestInfo|URL,init:RequestInit={}){
+    const path=String(input).split('?')[0];
+    const features:Record<string,FeatureId>={"/api/generate-image":"image.generate","/api/aplus":"image.aplus","/api/suite":"image.suite","/api/cutout":"tool.cutout","/api/canvas/image-tasks":"canvas.image","/api/canvas/expand":"canvas.expand","/api/canvas/text-edit":"canvas.text-edit","/api/canvas/annotate":"canvas.annotate","/api/video/generate":"video.generate"};
+    if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
+    const form=init.body instanceof FormData?init.body:null;
+    const body=form?Object.fromEntries(Array.from(form.entries()).filter((entry)=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};
+    const source=active?.members.find(art=>art.id===body.artworkId);
+    const quantity=path==="/api/aplus"?Math.max(1,form?.getAll("module").length||body.modules?.length||1):path==="/api/suite"?(body.structure==="custom"?JSON.parse(String(body.shots||"[]")).length:13):Number(body.count||1);
+    const headers=new Headers(init.headers);for(const [key,value] of Object.entries(await authHeader()))headers.set(key,value);
+    return billing.confirmAndSubmit(path,{...init,headers},{feature:features[path],quantity,quality:String(body.quality||genQuality),resolution:String(body.resolution||source?.resolution||"1K"),modelId:body.modelId||body.model||undefined,providerId:body.providerId,ratio:body.ratio});
+  }
   const { quality: genQuality, imageCost } = useImageQuality();
   const { model: textModel, setModel: setTextModel } = useTextModel();
   const { user, ready, remaining, persistMode, applyServerUser, signOut } = useAuth();
@@ -4213,7 +4227,7 @@ export function CanvasClient() {
       // 第一张=主底图,其后是其余引用图 + 用户追加的参考图
       refFiles.forEach((f) => fd.append("image", f));
       (opts?.extra ?? []).forEach((f) => fd.append("image", f));
-      const startRes = await fetch("/api/generate-image", {
+      const startRes = await privateFetch("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
         body: fd,
@@ -4339,7 +4353,7 @@ export function CanvasClient() {
       fd.append("resolution", source.resolution || "1K");
       // 抠图统一发丝级(Replicate),扣 1 积分/张,与抠图页一致
       fd.append("quality", quality);
-      const res = await fetch("/api/cutout", {
+      const res = await privateFetch("/api/cutout", {
         method: "POST",
         headers: await authHeader(),
         body: fd,
@@ -5260,7 +5274,7 @@ export function CanvasClient() {
       form.append("parentId", lineage[0].id);
       form.append("parentIds", JSON.stringify(lineage.slice(1).map((artwork) => artwork.id)));
 
-      const startedResponse = await fetch("/api/aplus", {
+      const startedResponse = await privateFetch("/api/aplus", {
         method: "POST",
         headers: await authHeader(),
         body: form,
@@ -7451,7 +7465,7 @@ export function CanvasClient() {
           );
         }
       }
-      const startRes = await fetch("/api/generate-image", {
+      const startRes = await privateFetch("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
         body: fd,
@@ -10463,7 +10477,7 @@ export function CanvasClient() {
                         onClick={() => expandRatio && void onExpand(expandRatio)}
                         className="mt-3 w-full rounded-[10px] bg-teal-500 px-3 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        开始扩图 · {imageCost(selected?.resolution || "1K")} 积分
+                        开始扩图 · 提交前确认报价
                       </button>
                       <p className="mt-2 text-[11px] leading-relaxed opacity-60">
                         保持原图内容不变，向四周自然延展画面到目标比例。
@@ -11046,7 +11060,7 @@ export function CanvasClient() {
                           className="flex h-8 items-center gap-1.5 bg-[#25313b] px-3 text-[12px] font-semibold text-white hover:bg-[#182129] disabled:cursor-not-allowed disabled:opacity-35"
                         >
                           {ocrApplyingId === segment.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                          应用 · {imageCost(active?.members.find(a => a.id === ocrArtworkId)?.resolution || "1K")} 积分
+                          应用 · 提交前确认报价
                         </button>
                       </div>
                     </section>
@@ -11324,7 +11338,7 @@ export function CanvasClient() {
                   )}
                   <span className="flex-1" />
                   <span className="text-[13px] font-semibold text-[#f0c64a]">
-                    ⚡ {genModel.startsWith("byok:") ? 0 : selectedGenerationCount * imageCost(genResolution)}
+                    ⚡ {"提交前确认报价"}
                   </span>
                   <button
                     type="button"
@@ -11454,7 +11468,7 @@ export function CanvasClient() {
                 />
                 <span className="flex-1" />
                 <span className="text-[13px] font-semibold text-[#f0c64a]">
-                  ⚡ {genModel.startsWith("byok:") ? 0 : genCount * imageCost(genResolution)}
+                  ⚡ {"提交前确认报价"}
                 </span>
                 <button
                   type="button"

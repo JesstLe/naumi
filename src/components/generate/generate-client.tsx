@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 
 import { cdnUrl } from "@/lib/cdn";
@@ -498,8 +499,9 @@ export function GenerateClient({
 
   // BYOK(模型 id 带 byok: 前缀=用户自带接口)豁免站内计费,费用发生在用户自己的上游。
   // 内测阶段按请求质量档计价(与后端 qualityBillCredits 同表),跑通选档→扣费链路。
-  const costPerImage = model.startsWith("byok:") ? 0 : imageCost(resolution);
-  const cost = count * costPerImage;
+  const billing=useFeatureBilling("image.generate",{quantity:count,resolution,modelId:model||undefined,ratio});
+  const cost=billing.cost;
+  const costPerImage=count?cost/count:0;
   const insufficient = !!user && remaining < cost;
 
   async function generate() {
@@ -551,7 +553,7 @@ export function GenerateClient({
       // Kick off an async job (returns instantly), then poll for the result.
       // Keeps every HTTP request short so slow generations never hit the CDN's
       // ~100s proxy timeout.
-      const startRes = await fetch("/api/generate-image", {
+      const startRes = await billing.submit("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
         body: fd,
@@ -930,7 +932,8 @@ export function GenerateClient({
               ) : (
                 <Button
                   onClick={generate}
-                  disabled={loading}
+                  data-testid="billing-estimate"
+                  disabled={loading || !!user&&!billing.quote}
                   variant="gradient"
                   size="lg"
                   className="w-full shadow-btn"
@@ -942,6 +945,8 @@ export function GenerateClient({
                   )}
                   {loading
                     ? t("gen.generating")
+                    : user&&!billing.quote
+                      ? billing.error||"报价加载中…"
                     : !user
                       ? fmt(t("gen.loginAndGen"), { n: count })
                       : files.length > 0

@@ -41,6 +41,7 @@ export async function POST(req: Request) {
             kind?: string;
             itemId?: string;
             method?: string;
+            billingVersion?:number;billingCredits?:number;billingAmountFen?:number;
         };
         try {
             body = await req.json();
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
         if (!item) {
             return NextResponse.json({ error: "无效的商品" }, { status: 400 });
         }
+        if(body.billingVersion!==undefined&&(body.billingVersion!==item.billingConfigVersion||body.billingCredits!==item.credits||body.billingAmountFen!==item.amount))return NextResponse.json({error:"商品价格已更新，请确认最新价格后重新提交",code:"PRICE_CHANGED"},{status:409});
         // ===========================================================================
         // 原生对接模式:据 method 调支付宝/微信 precreate。
         // ===========================================================================

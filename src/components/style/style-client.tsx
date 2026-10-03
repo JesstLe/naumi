@@ -1,9 +1,9 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 
 import * as React from "react";
 import { Palette } from "lucide-react";
 import { ToolWorkspace, ToolChips } from "@/components/tools/tool-workspace";
-import { TOOL_COST } from "@/lib/mock-data";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
@@ -42,6 +42,7 @@ const COMPOSITION_MAP: Record<string, string> = {
 };
 
 export function StyleClient() {
+  const billing=useFeatureBilling("tool.style",{});
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
@@ -85,7 +86,7 @@ export function StyleClient() {
       accent={ACCENT}
       category="style"
       regenLabel={L("以此图再换风格", "Restyle from this image")}
-      cost={TOOL_COST.style}
+      cost={billing.cost}
       action={L("转换风格", "Apply style")}
       controls={controls}
       onProcess={async (file) => {
@@ -97,7 +98,7 @@ export function StyleClient() {
         fd.append("style", sty.prompt + (COMPOSITION_MAP[keep] ?? ""));
         fd.append("styleLabel", sty.label);
         if (user) fd.append("email", user.email);
-        const res = await fetch("/api/style", {
+        const res = await billing.submit("/api/style", {
           method: "POST",
           headers: await authHeader(),
           body: fd,

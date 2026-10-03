@@ -1165,37 +1165,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
               ))}
             </div>
 
-            {/* 新用户注册赠送积分(后台可配) */}
-            <div className="rounded-2xl border border-border bg-card p-6 card-shadow">
-              <div className="mb-1.5 flex items-center gap-2 text-sm font-semibold">
-                <Crown className="h-4 w-4 text-primary" />
-                新用户注册赠送积分
-              </div>
-              <p className="mb-3 text-xs text-muted-foreground">
-                每个新用户首次注册时自动赠送的积分，30 天有效。设为 0 则不赠送。
-              </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  value={bonus}
-                  disabled={busy}
-                  onChange={(e) => setBonus(e.target.value)}
-                  className="w-28 rounded-md border border-border px-3 py-2 text-sm"
-                />
-                <span className="text-sm text-muted-foreground">积分</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void saveBonus()}
-                  disabled={busy}
-                >
-                  {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                  保存
-                </Button>
-              </div>
-            </div>
-
+            <div className="rounded-2xl border bg-card p-6"><h2 className="text-sm font-semibold">注册赠送与有效期</h2><p className="mt-2 text-sm text-muted-foreground">赠送数量、到账有效期和扣款策略在计费管理统一设置。</p><Link href="/admin/billing" className="mt-3 inline-block text-sm text-primary underline">打开计费管理</Link></div>
             <div className="overflow-x-auto rounded-2xl border border-border bg-card card-shadow">
               <table className="w-full min-w-[860px] text-sm">
                 <thead className="border-b border-border text-left text-muted-foreground">
@@ -2877,53 +2847,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
           </span>
         </div>
 
-        {/* 计费开关 */}
-        <div className="mb-5 space-y-3 rounded-2xl border border-border bg-card p-6 card-shadow">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Database className="h-4 w-4 text-primary" />
-            积分计费开关
-          </div>
-          <p className="text-xs text-muted-foreground">
-            <b>开启</b>后生图按积分扣费(单用户也扣),用完需在下方加积分——适合控制用量 /
-            给他人限额使用。<b>关闭</b>则不扣积分、无限使用(默认)。多用户模式下始终计费。
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-muted-foreground">
-              积分计费:
-            </span>
-            {[
-              { v: true, label: "开启" },
-              { v: false, label: "关闭" },
-            ].map((o) => (
-              <button
-                key={o.label}
-                onClick={() => setMeteringOn(o.v)}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                  meteringOn === o.v
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:bg-secondary"
-                }`}
-              >
-                {o.label}
-              </button>
-            ))}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() =>
-                void postSettings(
-                  { creditsMetering: meteringOn },
-                  "积分计费开关已保存"
-                )
-              }
-            >
-              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-              保存
-            </Button>
-          </div>
-        </div>
-
+        <div className="mb-5 rounded-2xl border bg-card p-6"><h2 className="text-sm font-semibold">计费与充值开关</h2><p className="mt-2 text-sm text-muted-foreground">统一管理功能价格、成本、计费开关、注册赠送及大额确认门槛。</p><Link href="/admin/billing" className="mt-3 inline-block text-sm text-primary underline">打开计费管理</Link></div>
         {/* 加/减积分 */}
         <div className="space-y-3 rounded-2xl border border-border bg-card p-6 card-shadow">
           <div className="flex items-center gap-2 text-sm font-semibold">

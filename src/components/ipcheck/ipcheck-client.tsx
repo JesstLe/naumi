@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 
 import { cdnUrl } from "@/lib/cdn";
 import { useEffect, useRef, useState } from "react";
@@ -20,7 +21,7 @@ import { GenLoader } from "@/components/gen-loader";
 import { TextModelSelect } from "@/components/ui/text-model-select";
 
 const MAX_UPLOAD = 12 * 1024 * 1024;
-const COST = 1;
+
 const ACCENT = "#C2882E";
 
 type IpResult = {
@@ -57,6 +58,7 @@ const RISK_STYLE: Record<
 };
 
 export function IpcheckClient() {
+  const billing=useFeatureBilling("tool.ipcheck",{});
   const { user, remaining, consumeCredits, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
   const { locale } = useI18n();
@@ -90,11 +92,11 @@ export function IpcheckClient() {
     if (!user) return openAuth();
     if (busyRef.current) return;
     if (!img) return setError(L("请先上传图片", "Upload an image first"));
-    if (remaining < COST)
+    if (remaining < billing.cost)
       return setError(
         L(
-          `积分不足:需 ${COST},剩余 ${remaining}`,
-          `Need ${COST}, have ${remaining}`
+          `积分不足:需 ${billing.cost},剩余 ${remaining}`,
+          `Need ${billing.cost}, have ${remaining}`
         )
       );
     setError(null);
@@ -105,7 +107,7 @@ export function IpcheckClient() {
       const fd = new FormData();
       fd.append("image", img.file);
       if (user) fd.append("email", user.email);
-      const res = await fetch("/api/ipcheck", {
+      const res = await billing.submit("/api/ipcheck", {
         method: "POST",
         headers: await authHeader(),
         body: fd,
@@ -137,7 +139,7 @@ export function IpcheckClient() {
       tint="var(--c-tint-a)"
       accent={ACCENT}
       category="ipcheck"
-      cost={COST}
+      cost={billing.cost}
       actionLabel={L("开始检测", "Check")}
       onAction={run}
       processing={processing}

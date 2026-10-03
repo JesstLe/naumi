@@ -1,11 +1,12 @@
 "use client";
+import {useBillingProducts} from "@/lib/billing/products";
 
 import { useCallback, useState } from "react";
 import { Sparkles, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
-import { CREDIT_PACKS, fmtCredits, type CreditPack } from "@/lib/mock-data";
+import { fmtCredits, type CreditPack } from "@/lib/mock-data";
 import { usePaymentConfig } from "@/lib/payment-context";
 import { authHeader } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ export function CreditPacks({
     }
   ) => void;
 }) {
+  const {packs:CREDIT_PACKS,buy:purchase}=useBillingProducts();
   const { user, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
   const { t } = useI18n();
@@ -75,7 +77,7 @@ export function CreditPacks({
     setErr(null);
     setBusy(packId);
     try {
-      const res = await fetch("/api/payments/create", {
+      const res = await purchase("/api/payments/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -20,6 +20,11 @@ export function ensureBillingSchema(pool: Pool): Promise<void> {
   );
   CREATE INDEX IF NOT EXISTS app_billing_operations_email_idx ON app_billing_operations(email,created_at DESC);
   ALTER TABLE app_billing_operations ADD COLUMN IF NOT EXISTS result_response jsonb;
+  CREATE TABLE IF NOT EXISTS app_billing_reconciliations(
+   id text PRIMARY KEY,operation_id text NOT NULL,email text NOT NULL,actor text NOT NULL,
+   request_fingerprint text NOT NULL,reason text NOT NULL,proof text NOT NULL,result jsonb NOT NULL,
+   charge integer NOT NULL,created_at timestamptz NOT NULL DEFAULT now()
+  );
   ALTER TABLE app_orders ADD COLUMN IF NOT EXISTS billing_quote jsonb;
   ALTER TABLE app_card_keys ADD COLUMN IF NOT EXISTS billing_grant jsonb;
   ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS billing_quote jsonb;

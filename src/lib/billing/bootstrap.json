@@ -887,6 +887,12 @@
       "amountMicros": "16000000",
       "unit": "image",
       "source": "legacy-credit-estimate"
+    },
+    "redeem:credit:estimate": {
+      "currency": "CNY",
+      "amountMicros": "16000",
+      "unit": "item",
+      "source": "manual-estimate"
     }
   },
   "products": {

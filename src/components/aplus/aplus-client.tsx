@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -144,7 +145,8 @@ export function AplusClient() {
   const [assistOpen, setAssistOpen] = useState(false);
   const [assistRun, setAssistRun] = useState<{ mode: "write" | "optimize"; nonce: number } | null>(null);
 
-  const cost = jobId && quotedCost != null ? quotedCost : Math.max(modules.length, 1) * costPerImage;
+  const billing=useFeatureBilling("image.aplus",{quantity:Math.max(modules.length,1)});
+  const cost=jobId&&quotedCost!=null?quotedCost:billing.cost;
   const hasResult = shots.some((s) => s.status === "done");
   const allSourcesApproved =
     sources.length > 0 && sources.every((source) => source.status === "approved");
@@ -285,7 +287,7 @@ export function AplusClient() {
       fd.append("format", format);
       modules.forEach((m) => fd.append("module", m));
       fd.append("email", user.email);
-      const res = await fetch("/api/aplus", {
+      const res = await billing.submit("/api/aplus", {
         method: "POST",
         headers: await authHeader(),
         body: fd,
@@ -325,7 +327,7 @@ export function AplusClient() {
       );
     }
     try {
-      const res = await fetch("/api/aplus", {
+      const res = await billing.submit("/api/aplus", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await authHeader()) },
         body: JSON.stringify({ jobId, action, sourceIndex: index, feedback }),
@@ -352,7 +354,7 @@ export function AplusClient() {
     setLoading(true);
     setStage("generating");
     try {
-      const res = await fetch("/api/aplus", {
+      const res = await billing.submit("/api/aplus", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await authHeader()) },
         body: JSON.stringify({ jobId, action: "generate" }),

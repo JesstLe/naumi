@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -29,6 +30,7 @@ export function Packaging3dClient() {
   const [material, setMaterial] = React.useState("matte");
   const [background, setBackground] = React.useState("gray");
   const [resolution, setResolution] = React.useState("1K");
+  const billing=useFeatureBilling("tool.packaging3d",{resolution});
   const [prompt, setPrompt] = React.useState("");
   const [processing, setProcessing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -80,7 +82,7 @@ export function Packaging3dClient() {
       form.append("resolution", resolution);
       if (prompt.trim()) form.append("prompt", prompt.trim());
       if (user) form.append("email", user.email);
-      const startResponse = await fetch("/api/packaging3d", {
+      const startResponse = await billing.submit("/api/packaging3d", {
         method: "POST",
         headers: await authHeader(),
         body: form,
@@ -241,7 +243,7 @@ export function Packaging3dClient() {
       tint="var(--c-tint-a)"
       accent={ACCENT}
       category="packaging3d"
-      cost={imageCost(resolution)}
+      cost={billing.cost}
       resolution={resolution}
       actionLabel={L("生成 3D 产品图", "Generate 3D product")}
       onAction={generate}

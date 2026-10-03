@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -57,6 +58,7 @@ export function ExtractClient() {
   const [ratio, setRatio] = React.useState("自动");
   const [complete, setComplete] = React.useState("0");
   const [resolution, setResolution] = React.useState("1K");
+  const billing=useFeatureBilling("tool.extract",{resolution});
   const [output, setOutput] = React.useState("透明底");
   // 补充描述(选填,拼进提取提示词)+ AI帮写/智能优化(必传图)
   const [extra, setExtra] = React.useState("");
@@ -77,7 +79,7 @@ export function ExtractClient() {
     setAssistRun({ mode, nonce: Date.now() });
   }
 
-  const cost = imageCost(resolution);
+  const cost = billing.cost;
 
   const controls = (
     <>
@@ -260,7 +262,7 @@ export function ExtractClient() {
         fd.append("ratio", ratio);
         fd.append("resolution", resolution);
         if (user) fd.append("email", user.email);
-        const res = await fetch("/api/extract", {
+        const res = await billing.submit("/api/extract", {
           method: "POST",
           headers: await authHeader(),
           body: fd,

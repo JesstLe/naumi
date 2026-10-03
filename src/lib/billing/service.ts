@@ -31,6 +31,21 @@ async function operation(tx: Tx, input: OperationInput) {
 }
 function amount(n: number) { if (!Number.isSafeInteger(n) || n < 0 || n > 2147483647)
     throw new BillingError("INVALID_RESULT", "积分数量无效", 400); }
+async function settleLocked(tx:Tx,row:repository.OperationRow,result:import("./types").BillingResult,reason:string){
+            const frozen = row.quote as BillingQuote, settlement = settlementFor(frozen, result);
+            if (settlement.state !== "settle") {
+                await tx.query("UPDATE app_billing_operations SET state=$2,updated_at=now() WHERE id=$1", [row.id, settlement.state]);
+                return { replayed: false, charge: 0 };
+            }
+            const wallet = await repository.lockWallet(tx, row.email);
+            const owned = Number((await tx.query("SELECT cost FROM app_gen_reservations WHERE job_id=$1 AND email=$2", [row.id, row.email])).rows[0]?.cost || 0);
+            if (settlement.charge>0 && wallet.principal - (wallet.reserved - owned) < settlement.charge)
+                throw new BillingError("INSUFFICIENT_CREDITS", "可用积分不足，不能占用其他任务的预留积分", 402);
+            if (settlement.charge)
+                await repository.debitTx(tx, row.email, settlement.charge, frozen.debitOrder || "expires-first");
+            await repository.finishTx(tx, row, settlement.charge, "settled", reason);
+            return { replayed: false, charge: settlement.charge };
+}
 export function createBillingService(): BillingService {
     const grant = async (tx: Tx, input: GrantInput, adjust: boolean) => {
         identity(input.id, input.email, input.ledgerId);
@@ -55,6 +70,18 @@ export function createBillingService(): BillingService {
         return { replayed: false };
     };
     return {
+        async reconcileTx(tx,input){
+            const hash=fingerprint(input);
+            await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))",[`billing-reconciliation-${input.id}`]);
+            const previous=(await tx.query("SELECT request_fingerprint,charge FROM app_billing_reconciliations WHERE id=$1",[input.id])).rows[0];
+            if(previous){if(previous.request_fingerprint!==hash)throw new BillingError("OPERATION_CONFLICT","该核对编号已用于不同操作",409);return {replayed:true,charge:Number(previous.charge)};}
+            const row=(await tx.query<repository.OperationRow>("SELECT * FROM app_billing_operations WHERE id=$1 FOR UPDATE",[input.operationId])).rows[0];
+            if(!row||!["hold","manual"].includes(row.state))throw new BillingError("OPERATION_CONFLICT","操作不处于人工核对状态，请刷新",409);
+            if(input.result.state==="unknown"||input.result.items.some(i=>i.state==="unknown"))throw new BillingError("INVALID_RESULT","结果未知，不能强行结算",400);
+            const completed=await settleLocked(tx,row,input.result,input.reason);
+            await tx.query("INSERT INTO app_billing_reconciliations(id,operation_id,email,actor,request_fingerprint,reason,proof,result,charge) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)",[input.id,row.id,row.email,input.actor,hash,input.reason,input.proof,JSON.stringify(input.result),completed.charge]);
+            return completed;
+        },
         async reserveTx(tx, input) {
             amount(input.quote.reserveCredits);
             const { row, created } = await operation(tx, input);
@@ -72,19 +99,7 @@ export function createBillingService(): BillingService {
                 throw new BillingError("OPERATION_CONFLICT", "计费操作尚未预占", 409);
             if (["settled", "released"].includes(row.state))
                 return { replayed: true, charge: Number(row.charged_credits) };
-            const frozen = row.quote as BillingQuote, settlement = settlementFor(frozen, result);
-            if (settlement.state !== "settle") {
-                await tx.query("UPDATE app_billing_operations SET state=$2,updated_at=now() WHERE id=$1", [row.id, settlement.state]);
-                return { replayed: false, charge: 0 };
-            }
-            const wallet = await repository.lockWallet(tx, row.email);
-            const owned = Number((await tx.query("SELECT cost FROM app_gen_reservations WHERE job_id=$1 AND email=$2", [row.id, row.email])).rows[0]?.cost || 0);
-            if (settlement.charge>0 && wallet.principal - (wallet.reserved - owned) < settlement.charge)
-                throw new BillingError("INSUFFICIENT_CREDITS", "可用积分不足，不能占用其他任务的预留积分", 402);
-            if (settlement.charge)
-                await repository.debitTx(tx, row.email, settlement.charge, frozen.debitOrder || "expires-first");
-            await repository.finishTx(tx, row, settlement.charge, "settled", input.reason);
-            return { replayed: false, charge: settlement.charge };
+            return settleLocked(tx,row,result,input.reason);
         },
         async releaseTx(tx, input) {
             const { row, created } = await operation(tx, input);

@@ -17,11 +17,9 @@ import {
 import { AGENT_SYSTEM_PROMPT, createNaumiTools } from "@/lib/agent/naumi-tools";
 import { getImageJob } from "@/lib/image-job-repository";
 import { recordBiModelCompletion } from "@/lib/bi/model-observer";
-import {
-  POINTS_PER_IMAGE,
-  qualityBillCredits,
-  imageBillCredits,
-} from "@/lib/mock-data";
+import {agentBillingPrecheck} from "@/lib/billing/agent";
+import type {BillingQuote} from "@/lib/billing/types";
+import {fingerprint} from "@/lib/billing/fingerprint";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 运行时:常驻 Agent 会话管理器。
@@ -38,7 +36,7 @@ const MAX_TURNS = 24;
 const SESSION_TTL = 60 * 60 * 1000; // 空闲会话 1 小时后回收
 // 大额计费确认闸:单次工具调用预计 ≥ 此积分时,第一次调用被拦截,
 // 模型须先向用户报价,用户同意后带 confirm=true 重调(见 beforeToolCall)。
-const CONFIRM_THRESHOLD = 20;
+
 
 /** 视觉输入能力判定(默认自动):
  *  - AGENT_VISION=1 或 0 强制开或关(兜底,处理特殊中转站);
@@ -71,16 +69,6 @@ export function markVisionUnsupported(
 }
 
 // 各工具的预估单价(积分),与站内 API 实际扣费保持一致(粗粒度预检用)。
-const TOOL_COST: Record<string, { cost: number; label: string }> = {
-  generate_image: { cost: POINTS_PER_IMAGE, label: "AI 生图" },
-  retouch_product: { cost: POINTS_PER_IMAGE, label: "商品精修" },
-  recolor_product: { cost: POINTS_PER_IMAGE, label: "产品换色" },
-  replicate_hot: { cost: POINTS_PER_IMAGE, label: "爆款复刻" },
-  generate_suite: { cost: 13 * POINTS_PER_IMAGE, label: "一键套图" },
-  continue_aplus_generation: { cost: 4 * POINTS_PER_IMAGE, label: "A+ 详情页" },
-  generate_packaging_3d: { cost: 9, label: "模切线转 3D" },
-};
-
 export type Session = {
   agent: Agent;
   modelId: string;
@@ -98,6 +86,8 @@ export type Session = {
     data: Record<string, unknown>;
   }[];
   running: boolean;
+  pendingQuotes?: Map<string,Pick<BillingQuote,"configVersion"|"requestedCredits">>;
+  preparedBilling?: {billingVersion:number;billingCredits:number;billingOperationId:string};
   repeatSignature: string;
   repeatCount: number;
   /**
@@ -239,7 +229,7 @@ export async function getOrCreateSession(
       tools: createNaumiTools(
         new Request(process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"),
         email,
-        () => session.cred // 可变引用:runtime 每次续期 cred 后工具即刻使用新凭证
+        () => ({...session.cred,...session.preparedBilling}) // 可变引用:runtime 每次续期 cred 后工具即刻使用新凭证
       ),
       messages: toUserMessages(history),
     },
@@ -261,74 +251,7 @@ export async function getOrCreateSession(
           terminate: true,
         };
       }
-      const baseMeta = TOOL_COST[toolCall.name];
-      let meta =
-        toolCall.name === "generate_packaging_3d"
-          ? {
-              cost: imageBillCredits((args as { quality?: string })?.quality || session.cred.imageQuality || "medium", (args as {resolution?: string}).resolution || "1K"),
-              label: baseMeta?.label ?? "模切线转 3D",
-            }
-          : toolCall.name === "generate_image"
-            ? {
-                // 生图按 张数×请求质量档 实算,比 TOOL_COST 的单张估价准
-                cost:
-                  imageBillCredits((args as {quality?: string})?.quality || session.cred.imageQuality || "medium", (args as {resolution?: string}).resolution || "1K") *
-                  Math.min(
-                    Math.max(
-                      typeof (args as { count?: unknown }).count === "number"
-                        ? (args as { count: number }).count
-                        : 1,
-                      1
-                    ),
-                    4
-                  ),
-                label: baseMeta?.label ?? "AI 生图",
-              }
-            : toolCall.name === "generate_suite"
-              ? {
-                  cost:
-                    (args as { structure?: unknown })?.structure === "custom" &&
-                    Array.isArray((args as { shots?: unknown }).shots)
-                      ? Math.max(
-                          1,
-                          Math.min(
-                            20,
-                            (args as { shots: unknown[] }).shots.length
-                          )
-                        ) * qualityBillCredits((args as {quality?: string})?.quality || session.cred.imageQuality || "medium")
-                      : 13 * qualityBillCredits((args as {quality?: string})?.quality || session.cred.imageQuality || "medium"),
-                  label: baseMeta?.label ?? "一键套图",
-                }
-              : baseMeta && ["retouch_product", "recolor_product", "replicate_hot"].includes(toolCall.name)
-                ? { ...baseMeta, cost: qualityBillCredits(session.cred.imageQuality || "medium") } : baseMeta;
-      if (!meta || !dbEnabled || !await creditMeteringEnabled()) return undefined;
-      if (toolCall.name === "generate_image" && (args as {model?: string}).model?.startsWith("byok:")) meta = { ...meta, cost: 0 };
-      if (toolCall.name === "continue_aplus_generation") {
-        const job = await getImageJob(String((args as {job_id?: string}).job_id || ""), "aplus");
-        if (!job || job.email !== email.toLowerCase()) return { block: true, reason: "详情页任务不存在或无权访问" };
-        meta = { ...meta, cost: Number(job.snapshot.cost || 0) };
-      }
-      const u = await getUser(email).catch(() => null);
-      const balance = u ? u.creditsTotal - u.creditsUsed : Number.MAX_SAFE_INTEGER;
-      if (balance < meta.cost) {
-        return {
-          block: true,
-          reason: `余额不足:「${meta.label}」需要约 ${meta.cost} 积分,当前余额 ${balance}。请先充值或减少任务规模。`,
-          terminate: true,
-        };
-      }
-      // 大额确认闸:报价 → 用户同意 → confirm=true 放行。
-      // 拦截发生在余额检查之后,报价文案可以带上真实余额。
-      if (
-        meta.cost >= CONFIRM_THRESHOLD &&
-        (args as { confirm?: unknown }).confirm !== true
-      ) {
-        return {
-          block: true,
-          reason: `本次「${meta.label}」预计消耗约 ${meta.cost} 积分(当前余额 ${balance})。请先用一句话向用户报出这笔花费并等待明确同意;用户同意后,携带参数 confirm=true 重新调用本工具;用户拒绝或未回复就不要执行,可给出更小规模的替代方案。不要在未获得用户同意的情况下自行携带 confirm=true。`,
-        };
-      }
-      return undefined;
+      return agentBillingPrecheck(session,toolCall.name,args as Record<string,unknown>,toolCall.id);
     },
   });
 

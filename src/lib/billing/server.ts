@@ -11,6 +11,10 @@ import { supabaseEnabled } from "@/lib/auth-mode";
 import { multiUserEnabled } from "@/lib/native-auth";
 import { getUserImageProvider, upstreamUserImageModel } from "@/lib/user-image-provider";
 import { isFeatureId } from "./rules/registry";
+import {getOpenAISettings,getCutoutSettings} from "@/lib/settings";
+import {getUserDefaultImageModel,isNewApiFlowImageModel,getImageModelCatalog} from "@/lib/image-model-catalog";
+import {routeImageModel} from "@/lib/image-model-routing";
+import {configuredVideoProviders,getVideoProviderConfig} from "@/lib/video/providers/config";
 let runtime: ReturnType<typeof assemble> | undefined;
 function assemble() {
     return { service: createBillingService(), config: createConfigRuntime({ pool: getPool(), ensureSchema, initialize: async (tx) => {
@@ -47,6 +51,7 @@ export async function meteringFor(snapshot: ConfigSnapshot) {
 export async function resolveBillingFacts(request: Request, input: Partial<BillingFacts> & {
     feature: BillingFacts["feature"];
     quantity: number;
+    ratio?: string;
 }, snapshot?: ConfigSnapshot): Promise<BillingFacts> {
     if (!isFeatureId(input.feature))
         throw new BillingError("INVALID_CONFIG", "未知计费功能", 400);
@@ -54,14 +59,32 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
     const email = await resolveUserEmail(request);
     if (!email)
         throw new BillingError("INVALID_RESULT", "请先登录", 401);
-    const model = typeof input.modelId === "string" ? input.modelId : undefined;
+    let model = typeof input.modelId === "string" ? input.modelId : undefined;
+    let providerId:string|undefined;
+    if(input.feature==="video.generate"){
+        const config=getVideoProviderConfig(input.providerId||configuredVideoProviders()[0]?.id||"openai-videos");
+        if(!config)throw new BillingError("INVALID_RESULT","视频供应商未配置",400);
+        providerId=config.id;model=model||config.defaultModel;
+        if(!config.models.includes(model))throw new BillingError("INVALID_RESULT","视频模型不可用",400);
+    }else if(input.feature==="tool.cutout"){
+        const config=await getCutoutSettings(),replicate=config.backend!=="openai"&&!!config.replicateToken;
+        providerId=replicate?"replicate":"openai-images";model=replicate?config.replicateModel:config.openaiModel;
+    }else if(input.feature==="tool.upscale"){
+        providerId="replicate";model=process.env.REPLICATE_UPSCALE_MODEL||"nightmareai/real-esrgan";
+    }else if(!["tool.ipcheck","tool.printfile"].includes(input.feature)){
+        if(input.feature!=="image.generate"&&input.feature!=="image.suite"&&input.feature!=="image.aplus")model=undefined;
+        model=model||(input.feature==="image.generate"?await getUserDefaultImageModel(email):null)||(await getOpenAISettings()).model;
+        if(input.feature==="image.generate"&&input.ratio&&isNewApiFlowImageModel(model))model=routeImageModel(model,input.ratio,await getImageModelCatalog(email));
+        providerId=isNewApiFlowImageModel(model)?"new-api-flow":"openai-images";
+    }
     const provider = input.feature === "image.generate" ? await getUserImageProvider(email) : null;
     const byok = !!provider && !!model?.startsWith("byok:") && provider.models.includes(upstreamUserImageModel(model));
-    return { feature: input.feature, quantity: input.quantity, quality: input.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium", resolution: input.resolution ?? "1K", modelId: model, providerId: byok ? `byok:${provider!.id}` : undefined, byok, metered: await meteringFor(current), paidFen: await totalPaidCents(email), userGroup: "default" };
+    return { feature: input.feature, quantity: input.quantity, quality: input.feature==="video.generate"?"medium":input.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium", resolution: input.resolution ?? "1K", modelId: model, providerId: byok ? `byok:${provider!.id}` : providerId, byok, metered: await meteringFor(current), paidFen: await totalPaidCents(email), userGroup: "default" };
 }
 export async function quoteForRequest(request: Request, input: Partial<BillingFacts> & {
     feature: BillingFacts["feature"];
     quantity: number;
+    ratio?: string;
 }) {
     const snapshot = await (await getBillingRuntime()).config.current();
     return quote(snapshot, await resolveBillingFacts(request, input, snapshot));

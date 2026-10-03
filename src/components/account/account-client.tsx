@@ -1,4 +1,5 @@
 "use client";
+import {useBillingProducts} from "@/lib/billing/products";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -19,10 +20,11 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat-card";
 import { CreditLedger } from "@/components/credits/credit-ledger";
-import { CREDIT_PACKS, fmtCredits } from "@/lib/mock-data";
+import { fmtCredits } from "@/lib/mock-data";
 import { usePaymentConfig } from "@/lib/payment-context";
 
 export function AccountClient() {
+  const {packs:CREDIT_PACKS,buy:purchase}=useBillingProducts();
   const { user, ready, remaining, signOut } = useAuth();
   const { t, locale } = useI18n();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);

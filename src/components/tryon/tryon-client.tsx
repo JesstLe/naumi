@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -24,7 +25,6 @@ import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
 import { downloadImage } from "@/lib/download";
-import { TOOL_COST } from "@/lib/mock-data";
 import {
   TRYON_MODELS,
   TRYON_SCENES,
@@ -50,6 +50,7 @@ const TINT = "rgba(224,86,139,.12)";
 const ACC_SOFT = "rgba(224,86,139,.08)";
 
 export function TryonClient() {
+  const billing=useFeatureBilling("tool.tryon",{});
   const { costPerImage } = useImageQuality();
   const { user, remaining, consumeCredits, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
@@ -90,7 +91,7 @@ export function TryonClient() {
   const allModels = customModel ? [customModel, ...models] : models;
   const model = allModels.find((x) => x.id === modelId);
   const scene = scenes.find((x) => x.id === sceneId);
-  const cost = costPerImage;
+  const cost = billing.cost;
 
   useEffect(() => {
     let on = true;
@@ -226,7 +227,7 @@ export function TryonClient() {
       if (user) fd.append("email", user.email);
       // 异步任务 + 轮询:POST 立即拿 jobId(避免代理/CDN 对 ~50s 长请求超时),
       // 再轮询结果。与 AI 生图同款,长生成不再被代理切断成「Unexpected end of JSON input」。
-      const startRes = await fetch("/api/tryon", {
+      const startRes = await billing.submit("/api/tryon", {
         method: "POST",
         headers: await authHeader(),
         body: fd,

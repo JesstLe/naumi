@@ -1,4 +1,6 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
+import {CATEGORY_FEATURES} from "@/lib/billing/feature-map";
 import { ImageQualityControl, QUALITY_TOOL_CATEGORIES } from "@/components/image-quality-control";
 import { useImageQuality } from "@/lib/image-quality-context";
 
@@ -137,7 +139,8 @@ export function ToolWorkspace({
   const { openAuth } = useAuthModal();
   const { imageCost } = useImageQuality();
   const qualityPriced = QUALITY_TOOL_CATEGORIES.has(category || "");
-  const cost = qualityPriced ? imageCost(resolution) : baseCost;
+  const billing=useFeatureBilling(CATEGORY_FEATURES[category||""]??"image.generate",{resolution});
+  const cost = baseCost;
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
   const fileRef = React.useRef<HTMLInputElement>(null);
@@ -248,6 +251,7 @@ export function ToolWorkspace({
       setError("请先上传图片");
       return;
     }
+    if(!billing.quote){setError(billing.error||"报价加载中，请稍后重试");return;}
     if (remaining < cost) {
       setError(`积分不足:需 ${cost},剩余 ${remaining}`);
       return;

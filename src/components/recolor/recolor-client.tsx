@@ -1,4 +1,5 @@
 "use client";
+import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
@@ -17,7 +18,6 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
-import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 
 // ---------------------------------------------------------------------------
@@ -34,6 +34,7 @@ const PRESETS = [
 ];
 
 export function RecolorClient() {
+  const billing=useFeatureBilling("tool.recolor",{});
   const { costPerImage } = useImageQuality();
   const L = (z: string, e: string) =>
     typeof window !== "undefined" && document.documentElement.lang === "en" ? e : z;
@@ -50,7 +51,7 @@ export function RecolorClient() {
   const [viewing, setViewing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const cost = costPerImage;
+  const cost = billing.cost;
 
   useEffect(() => {
     return () => {
@@ -84,7 +85,7 @@ export function RecolorClient() {
       fd.append("color", color);
       fd.append("strength", String(strength));
       fd.append("email", user.email);
-      const res = await fetch("/api/recolor", {
+      const res = await billing.submit("/api/recolor", {
         method: "POST",
         headers: await authHeader(),
         body: fd,
