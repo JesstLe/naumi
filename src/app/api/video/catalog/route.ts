@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { configuredVideoCatalog } from "@/lib/video/capabilities";
 import { configuredVideoProviders, publicProviderSnapshot } from "@/lib/video/providers/config";
 import { videoCostPublic } from "@/lib/video/service";
+import {billingErrorResponse} from "@/lib/billing/request";
 
 // ---------------------------------------------------------------------------
 // 视频能力目录(§6):供应商、模型、能力声明与价格展示。
@@ -13,6 +14,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+ try{
   const configs = configuredVideoProviders();
   const models = configuredVideoCatalog();
   const providers = configs.map((cfg) => ({
@@ -29,7 +31,8 @@ export async function GET() {
     providers,
     defaultProvider: first?.id || "",
     defaultModel: first?.defaultModel || "",
-    costPerTask: videoCostPublic(),
+    costPerTask: await videoCostPublic(),
     models,
   });
+ }catch(e){return billingErrorResponse(e)}
 }

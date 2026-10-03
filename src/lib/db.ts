@@ -1,3 +1,5 @@
+import {reserveTaskBillingTx,settleTaskBillingTx,videoRequestFingerprint,canvasRequestFingerprint} from "@/lib/billing/task-operation";
+import {BillingError} from "@/lib/billing/types";
 import "server-only";
 import { Pool, type PoolClient } from "pg";
 import { ensureBillingSchema } from "@/lib/billing/schema";
@@ -680,6 +682,7 @@ async function deductPrincipalFIFO(
     );
     need -= take;
   }
+  if(need>0)throw new BillingError("INSUFFICIENT_CREDITS","可用积分不足或已到期",402);
   return n - need;
 }
 
@@ -4648,6 +4651,7 @@ export async function copyComfyWorkflow(email: string, id: string): Promise<stri
 // ── 视频生成任务(OpenAI videos 协议,聚合商/官方端点通用) ──────────────────────
 
 export type VideoTaskRow = {
+  billingQuote?:import("@/lib/billing/types").BillingQuote;
   id: string;
   upstreamId: string;
   model: string;
@@ -4693,6 +4697,7 @@ export type VideoResultRow = {
 
 function mapVideoTask(r: Record<string, unknown>): VideoTaskRow {
   return {
+    billingQuote:r.billing_quote as import("@/lib/billing/types").BillingQuote|undefined,
     id: String(r.id),
     upstreamId: String(r.upstream_id ?? ""),
     model: String(r.model ?? ""),
@@ -4806,6 +4811,7 @@ export async function createVideoTask(input: {
  * repeat adapter.create with the same idempotency key.
  */
 export async function createVideoTaskWithReservation(input: {
+  billingQuote?:import("@/lib/billing/types").BillingQuote;
   id: string;
   email: string;
   model: string;
@@ -4827,9 +4833,10 @@ export async function createVideoTaskWithReservation(input: {
 }): Promise<{ task: VideoTaskRow; created: boolean }> {
   await ensureSchema();
   const email = input.email.toLowerCase();
+  const requestHash=videoRequestFingerprint(input);
   const idempotencyKey = input.idempotencyKey.slice(0, 100);
-  const meterOn = await creditMeteringEnabled();
-  if (meterOn && input.cost > 0) await expireDueBatches(email);
+  const meterOn = input.billingQuote?.facts.metered??await creditMeteringEnabled();
+  if (!input.billingQuote && meterOn && input.cost > 0) await expireDueBatches(email);
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -4841,10 +4848,11 @@ export async function createVideoTaskWithReservation(input: {
       [email, idempotencyKey]
     );
     if (existing.rows[0]) {
+      if(input.billingQuote&&existing.rows[0].billing_request_fingerprint&&existing.rows[0].billing_request_fingerprint!==requestHash)throw new BillingError("OPERATION_CONFLICT","操作编号已用于不同任务",409);
       await client.query("COMMIT");
       return { task: mapVideoTask(existing.rows[0] as Record<string, unknown>), created: false };
     }
-    if (meterOn && input.cost > 0) {
+    if(input.billingQuote){await reserveTaskBillingTx(client,input.id,email,input.billingQuote,`led-video-${input.id}`);}else if (meterOn && input.cost > 0) {
       const reserved = await client.query(
         `UPDATE app_users u
             SET credits_used = credits_used + $2
@@ -4858,7 +4866,7 @@ export async function createVideoTaskWithReservation(input: {
         throw new Error(`积分不足，本条视频需要 ${input.cost} 积分`);
       }
     }
-    await client.query(
+    if(!input.billingQuote)await client.query(
       `INSERT INTO app_gen_reservations (job_id, email, cost) VALUES ($1,$2,$3)`,
       [input.id, email, input.cost]
     );
@@ -4866,9 +4874,9 @@ export async function createVideoTaskWithReservation(input: {
       `INSERT INTO app_video_tasks
          (id, email, upstream_id, model, prompt, size, seconds, status, cost, request_body,
           provider_id, source, source_id, parameters, video_references, capability_snapshot,
-          idempotency_key, next_poll_at, poll_lock_until, channel_id, provider_snapshot)
+          idempotency_key, next_poll_at, poll_lock_until, channel_id, provider_snapshot,billing_quote,billing_request_fingerprint)
        VALUES ($1,$2,'',$3,$4,$5,$6,'queued',$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,
-               $15,now(),now() + ($18 || ' seconds')::interval,$16,$17::jsonb)
+               $15,now(),now() + ($18 || ' seconds')::interval,$16,$17::jsonb,$19::jsonb,$20)
        RETURNING *`,
       [
         input.id,
@@ -4889,6 +4897,7 @@ export async function createVideoTaskWithReservation(input: {
         (input.channelId ?? input.providerId ?? "").slice(0, 100),
         JSON.stringify(input.providerSnapshot ?? {}),
         Math.max(30, Math.trunc(input.leaseSeconds ?? 210)),
+        input.billingQuote?JSON.stringify(input.billingQuote):null,requestHash,
       ]
     );
     await client.query("COMMIT");
@@ -4964,7 +4973,7 @@ export async function getVideoTask(
             provider_id, source, source_id, parameters, video_references, capability_snapshot,
             next_poll_at, poll_attempts, seconds, created_at, completed_at,
             provider_snapshot, response_body, last_response, error_detail, result_storage_key,
-            idempotency_key
+            idempotency_key,billing_quote
        FROM app_video_tasks
       WHERE email = $1 AND id = $2`,
     [email.toLowerCase(), id]
@@ -5034,22 +5043,24 @@ export async function completeVideoTask(input: {
 }): Promise<void> {
   await ensureSchema();
   const email = input.email.toLowerCase();
-  const meterOn = await creditMeteringEnabled();
+  let meterOn = false;
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     const locked = await client.query<{
+      billing_quote?:import("@/lib/billing/types").BillingQuote;parameters?:any;
       status: string;
       cost: number;
       artwork_id: string;
       video_url: string;
       result_storage_key: string;
     }>(
-      `SELECT status, cost, artwork_id, video_url, result_storage_key FROM app_video_tasks
+      `SELECT status, cost, artwork_id, video_url, result_storage_key,billing_quote,parameters FROM app_video_tasks
         WHERE email = $1 AND id = $2 FOR UPDATE`,
       [email, input.id]
     );
     const task = locked.rows[0];
+    meterOn=task?.billing_quote?.facts.metered??await creditMeteringEnabled();
     if (!task) throw new Error("视频任务不存在");
     if (task.status === "completed") {
       if (
@@ -5063,7 +5074,7 @@ export async function completeVideoTask(input: {
       await client.query("COMMIT");
       return;
     }
-    if (meterOn && Number(task.cost) > 0) {
+    if(task.billing_quote){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-video-${input.id}`,{state:"succeeded",items:[{id:input.id,state:"succeeded",executedQuality:task.parameters?.qualityAudit?.executed||task.billing_quote.facts.quality}]});}else if (meterOn && Number(task.cost) > 0) {
       const ledgerId = `led-video-${input.id}`;
       const seen = await client.query(`SELECT 1 FROM app_ledger WHERE id = $1`, [ledgerId]);
       if (!(seen.rowCount ?? 0)) {
@@ -5119,18 +5130,19 @@ export async function failVideoTask(input: {
 }): Promise<void> {
   await ensureSchema();
   const email = input.email.toLowerCase();
-  const meterOn = await creditMeteringEnabled();
+  let meterOn = false;
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const locked = await client.query<{ status: string; cost: number; credits_refunded: boolean }>(
-      `SELECT status, cost, credits_refunded FROM app_video_tasks
+    const locked = await client.query<{ status: string; cost: number; credits_refunded: boolean;billing_quote?:import("@/lib/billing/types").BillingQuote }>(
+      `SELECT status, cost, credits_refunded,billing_quote FROM app_video_tasks
         WHERE email = $1 AND id = $2 FOR UPDATE`,
       [email, input.id]
     );
     const task = locked.rows[0];
+    meterOn=task?.billing_quote?.facts.metered??await creditMeteringEnabled();
     if (!task) throw new Error("视频任务不存在");
-    if (task.status !== "completed" && !task.credits_refunded && meterOn && Number(task.cost) > 0) {
+    if(task.billing_quote&&task.status!=="completed"){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-video-${input.id}`,{state:"failed",items:[]});}else if (!task.billing_quote&&task.status !== "completed" && !task.credits_refunded && meterOn && Number(task.cost) > 0) {
       await client.query(
         `UPDATE app_users SET credits_used = GREATEST(credits_used - $2, 0)
           WHERE email = $1`,
@@ -5437,6 +5449,7 @@ export async function scheduleVideoTaskRetry(
 // ── 画布图片编辑后台任务 ──────────────────────────────────────────────────
 
 export type CanvasImageTaskRow = {
+  billingQuote?:import("@/lib/billing/types").BillingQuote;
   id: string;
   email: string;
   kind: "text-edit";
@@ -5454,6 +5467,7 @@ export type CanvasImageTaskRow = {
 
 function mapCanvasImageTask(r: Record<string, unknown>): CanvasImageTaskRow {
   return {
+    billingQuote:r.billing_quote as import("@/lib/billing/types").BillingQuote|undefined,
     id: String(r.id),
     email: String(r.email),
     kind: "text-edit",
@@ -5494,6 +5508,7 @@ export async function createCanvasImageTask(input: {
  * same operation id, so only the creator can reserve credits or own cleanup.
  */
 export async function createCanvasImageTaskWithReservation(input: {
+  billingQuote?:import("@/lib/billing/types").BillingQuote;
   id: string;
   email: string;
   sourceArtworkId: string;
@@ -5503,7 +5518,8 @@ export async function createCanvasImageTaskWithReservation(input: {
 }): Promise<{ task: CanvasImageTaskRow; created: boolean }> {
   await ensureSchema();
   const email = input.email.toLowerCase();
-  if (input.metered && input.cost > 0) await expireDueBatches(email);
+  const requestHash=canvasRequestFingerprint(input);
+  if (!input.billingQuote && input.metered && input.cost > 0) await expireDueBatches(email);
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -5513,10 +5529,11 @@ export async function createCanvasImageTaskWithReservation(input: {
       [email, input.id]
     );
     if (existing.rows[0]) {
+      if(input.billingQuote&&existing.rows[0].billing_request_fingerprint&&existing.rows[0].billing_request_fingerprint!==requestHash)throw new BillingError("OPERATION_CONFLICT","操作编号已用于不同任务",409);
       await client.query("COMMIT");
       return { task: mapCanvasImageTask(existing.rows[0] as Record<string, unknown>), created: false };
     }
-    if (input.metered && input.cost > 0) {
+    if(input.billingQuote){await reserveTaskBillingTx(client,input.id,email,input.billingQuote,`led-canvas-image-${input.id}`);}else if (input.metered && input.cost > 0) {
       const reserved = await client.query(
         `UPDATE app_users u
             SET credits_used = credits_used + $2
@@ -5528,16 +5545,16 @@ export async function createCanvasImageTaskWithReservation(input: {
       );
       if ((reserved.rowCount ?? 0) === 0) throw new Error("积分不足，请升级方案后重试");
     }
-    await client.query(
+    if(!input.billingQuote)await client.query(
       `INSERT INTO app_gen_reservations (job_id, email, cost) VALUES ($1, $2, $3)`,
       [input.id, email, input.cost]
     );
     const created = await client.query(
       `INSERT INTO app_canvas_image_tasks
-         (id, email, kind, source_artwork_id, parameters, cost)
-       VALUES ($1,$2,'text-edit',$3,$4::jsonb,$5)
+         (id, email, kind, source_artwork_id, parameters, cost,billing_quote,billing_request_fingerprint)
+       VALUES ($1,$2,'text-edit',$3,$4::jsonb,$5,$6::jsonb,$7)
        RETURNING *`,
-      [input.id, email, input.sourceArtworkId, JSON.stringify(input.parameters ?? {}), input.cost]
+      [input.id, email, input.sourceArtworkId, JSON.stringify(input.parameters ?? {}), input.cost,input.billingQuote?JSON.stringify(input.billingQuote):null,requestHash]
     );
     await client.query("COMMIT");
     return { task: mapCanvasImageTask(created.rows[0] as Record<string, unknown>), created: true };
@@ -5651,17 +5668,18 @@ export async function completeCanvasImageTask(input: {
 }): Promise<void> {
   await ensureSchema();
   const email = input.email.toLowerCase();
-  const meterOn = await creditMeteringEnabled();
+  let meterOn = false;
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const locked = await client.query<{ status: string; cost: number }>(
-      `SELECT status, cost FROM app_canvas_image_tasks WHERE email = $1 AND id = $2 FOR UPDATE`,
+    const locked = await client.query<{ status: string; cost: number;billing_quote?:import("@/lib/billing/types").BillingQuote;parameters?:any }>(
+      `SELECT status, cost,billing_quote,parameters FROM app_canvas_image_tasks WHERE email = $1 AND id = $2 FOR UPDATE`,
       [email, input.id]
     );
     const task = locked.rows[0];
+    meterOn=task?.billing_quote?.facts.metered??await creditMeteringEnabled();
     if (!task) throw new Error("图片编辑任务不存在");
-    if (task.status !== "completed" && meterOn && Number(task.cost) > 0) {
+    if(task.billing_quote&&task.status!=="completed"){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-canvas-image-${input.id}`,{state:"succeeded",items:[{id:input.id,state:"succeeded",executedQuality:task.parameters?.qualityAudit?.executed||task.billing_quote.facts.quality}]});}else if (!task.billing_quote&&task.status !== "completed" && meterOn && Number(task.cost) > 0) {
       const ledgerId = `led-canvas-image-${input.id}`;
       const seen = await client.query(`SELECT 1 FROM app_ledger WHERE id = $1`, [ledgerId]);
       if (!(seen.rowCount ?? 0)) {
@@ -5698,18 +5716,19 @@ export async function completeCanvasImageTask(input: {
 export async function failCanvasImageTask(input: { id: string; email: string; error: string }): Promise<void> {
   await ensureSchema();
   const email = input.email.toLowerCase();
-  const meterOn = await creditMeteringEnabled();
+  let meterOn = false;
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const locked = await client.query<{ status: string; cost: number; credits_refunded: boolean }>(
-      `SELECT status, cost, credits_refunded FROM app_canvas_image_tasks
+    const locked = await client.query<{ status: string; cost: number; credits_refunded: boolean;billing_quote?:import("@/lib/billing/types").BillingQuote }>(
+      `SELECT status, cost, credits_refunded,billing_quote FROM app_canvas_image_tasks
         WHERE email = $1 AND id = $2 FOR UPDATE`,
       [email, input.id]
     );
     const task = locked.rows[0];
+    meterOn=task?.billing_quote?.facts.metered??await creditMeteringEnabled();
     if (!task) throw new Error("图片编辑任务不存在");
-    if (task.status !== "completed" && !task.credits_refunded && meterOn && Number(task.cost) > 0) {
+    if(task.billing_quote&&task.status!=="completed"){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-canvas-image-${input.id}`,{state:"failed",items:[]});}else if (!task.billing_quote&&task.status !== "completed" && !task.credits_refunded && meterOn && Number(task.cost) > 0) {
       await client.query(
         `UPDATE app_users SET credits_used = GREATEST(credits_used - $2, 0) WHERE email = $1`,
         [email, Number(task.cost)]

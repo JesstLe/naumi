@@ -1,4 +1,7 @@
 import "server-only";
+import {quoteForActor,getBillingRuntime,meteringFor} from "@/lib/billing/server";
+import {quote} from "@/lib/billing/quote";
+import {assertQuotedVersion,requestQuoteConfirmation} from "@/lib/billing/request";
 
 import {
   addArtworks,
@@ -89,6 +92,7 @@ function videoExtensionForMime(mimeType: string): string {
 }
 
 export type CreateVideoInput = {
+  billingConfirmation?:{version?:number;credits?:number};
   source: VideoTaskSource;
   sourceId?: string;
   prompt: string;
@@ -289,7 +293,9 @@ async function createVideoGenerationUnlocked(
     imageForUpload = { bytes: img.buffer, mime: img.mimeType, filename: `naumi-ref-${Date.now()}.png` };
   }
 
-  const cost = videoCostPublic();
+  const billingQuote=await quoteForActor(email,{feature:"video.generate",quantity:1,modelId,providerId});
+  if(input.billingConfirmation)assertQuotedVersion(input.billingConfirmation,billingQuote);
+  const cost = billingQuote.requestedCredits;
   const taskId = `vid-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
   const idempotencyKey = input.idempotencyKey || taskId;
   const request: VideoGenerationRequest = {
@@ -333,6 +339,7 @@ async function createVideoGenerationUnlocked(
     idempotencyKey,
   };
   const claimed = await createVideoTaskWithReservation({
+      billingQuote,
       id: taskId,
       email,
       model: modelId,
@@ -522,9 +529,9 @@ async function scheduleTransientTaskRetry(
   return { ...task, error: message, pollAttempts: attempts };
 }
 
-export function videoCostPublic(): number {
-  const n = Number(process.env.VIDEO_TASK_COST || "");
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
+export async function videoCostPublic(): Promise<number> {
+  const snapshot=await(await getBillingRuntime()).config.current();
+  return quote(snapshot,{feature:"video.generate",quantity:1,quality:"medium",resolution:"1K",metered:await meteringFor(snapshot),byok:false,paidFen:0,userGroup:"default"}).requestedCredits;
 }
 
 /** 轮询并结算:领取租约 → 查上游 → 完成/失败/继续处理。返回最新任务视图。 */

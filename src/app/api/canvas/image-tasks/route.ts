@@ -5,6 +5,8 @@ import { enqueueTextEditTask, listCanvasImageTasks, publicCanvasImageTask } from
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { safeError } from "@/lib/api-error";
+import {billingErrorResponse} from "@/lib/billing/request";
+import {BillingError} from "@/lib/billing/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,9 +22,10 @@ export async function POST(request: Request) {
     if (String(body?.kind || "text-edit") !== "text-edit") {
       return NextResponse.json({ error: "暂不支持该图片编辑任务" }, { status: 400 });
     }
-    const task = await enqueueTextEditTask(email, { ...body, quality: body.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium" });
+    const task = await enqueueTextEditTask(email, { ...body, quality: body.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium" },request);
     return NextResponse.json({ ok: true, taskId: task.id, task: publicCanvasImageTask(task) }, { status: 202 });
   } catch (error) {
+    if(error instanceof BillingError)return billingErrorResponse(error);
     const message = safeError(error, "图片编辑任务创建失败");
     const status = message.includes("积分不足") ? 402 : message.includes("不存在") ? 404 : 400;
     return NextResponse.json({ error: message }, { status });

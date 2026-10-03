@@ -1,4 +1,6 @@
 import "server-only";
+import {quoteForActor} from "@/lib/billing/server";
+import {assertQuotedVersion,requestQuoteConfirmation} from "@/lib/billing/request";
 import { resolveImageQuality, type ResolvedImageQuality } from "@/lib/image-quality";
 import { imageQualityCost, auditSettledImage } from "@/lib/image-quality-request";
 
@@ -90,20 +92,23 @@ function editSize(width: number, height: number) {
   return ratio > 1.2 ? "1536x1024" as const : ratio < 0.83 ? "1024x1536" as const : "1024x1024" as const;
 }
 
-export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTaskInput>) {
+export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTaskInput>,request?:Request) {
   if (!dbEnabled) throw new Error("后台图片任务需要数据库支持");
   const input = normalizedInput(raw);
   validateInput(input);
   const artwork = (await listArtworksByIds(email, [input.artworkId]))[0];
   if (!artwork) throw new Error("图片不存在或无权访问");
   const quality = resolveImageQuality(input.quality);
-  const cost = await imageQualityCost(quality, artwork.resolution || "1K");
+  const billingQuote=await quoteForActor(email,{feature:"canvas.image",quantity:1,quality:quality.requested||"medium",resolution:artwork.resolution||"1K"});
+  if(request)assertQuotedVersion(requestQuoteConfirmation(request,raw as {billingVersion?:unknown;billingCredits?:unknown}),billingQuote);
+  const cost = billingQuote.requestedCredits;
   const operationId = String(input.operationId || "").trim();
   const id = operationId
     ? `imgtask-${createHash("sha256").update(`${email.toLowerCase()}:${operationId}`).digest("hex").slice(0, 32)}`
     : `imgtask-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-  const metered = supabaseEnabled || (await multiUserEnabled()) || (await creditsMeteringOn());
+  const metered = billingQuote.facts.metered;
   const { task } = await createCanvasImageTaskWithReservation({
+    billingQuote,
     id,
     email,
     sourceArtworkId: artwork.id,

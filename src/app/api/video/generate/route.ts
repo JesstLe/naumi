@@ -6,6 +6,8 @@ import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { safeError } from "@/lib/api-error";
 import { createVideoGeneration } from "@/lib/video/service";
+import {requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/request";
+import {BillingError} from "@/lib/billing/types";
 
 // ---------------------------------------------------------------------------
 // 视频生成入口(兼容契约保持 {ok, taskId, cost, user}):内部已迁移到视频应用层
@@ -30,6 +32,7 @@ export async function POST(request: Request) {
         aspectRatio?: string; resolution?: string; width?: number; height?: number;
         generateAudio?: boolean; watermark?: boolean; references?: unknown[];
         idempotencyKey?: string;
+        billingVersion?:unknown;billingCredits?:unknown;
         providerOptions?: Record<string, unknown>; source?: string; sourceId?: string;
       }
     | null;
@@ -45,6 +48,7 @@ export async function POST(request: Request) {
 
   try {
     const { taskId, cost } = await createVideoGeneration(email, {
+      billingConfirmation:requestQuoteConfirmation(request,body||undefined),
       source: (["canvas", "workbench", "agent", "workflow"].includes(String(body?.source))
         ? body?.source
         : imageUrl ? "agent" : artworkId ? "canvas" : "workbench") as "canvas" | "workbench" | "agent" | "workflow",
@@ -71,6 +75,7 @@ export async function POST(request: Request) {
     const user = dbEnabled ? await getUser(email).catch(() => null) : null;
     return NextResponse.json({ ok: true, taskId, cost, user });
   } catch (error) {
+    if(error instanceof BillingError)return billingErrorResponse(error);
     return NextResponse.json(
       { error: safeError(error, "视频任务创建失败") },
       { status: 502 }

@@ -26,10 +26,7 @@ export function resolveVideoConfig(): VideoClientConfig | null {
   return { baseUrl, apiKey, model };
 }
 
-export function videoCost(): number {
-  const n = Number(process.env.VIDEO_TASK_COST || "");
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
-}
+export {videoCostPublic as videoCost} from "./service";
 
 type CreateInput = {
   prompt: string;
