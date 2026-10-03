@@ -8,7 +8,6 @@ import "server-only";
 import { Pool, type PoolClient } from "pg";
 import { ensureBillingSchema } from "@/lib/billing/schema";
 import {
-  POINTS_PER_IMAGE,
   type PlanKey,
   type PromptTemplate,
   type QualityCostAudit,
@@ -1103,7 +1102,7 @@ async function invoicesFor(email: string): Promise<Invoice[]> {
 }
 
 // 累计充值(分):已支付订单金额之和。用于「高阶」出图模式解锁(≥999元=99900分)。
-export const HIGH_QUALITY_MIN_PAID_CENTS = 99900;
+
 export async function totalPaidCents(emailRaw: string): Promise<number> {
   const { rows } = await getPool().query<{ s: string }>(
     `SELECT COALESCE(SUM(amount),0)::bigint AS s
@@ -1241,7 +1240,7 @@ export type AdminUserRow = {
   artworks: number;
   banned: boolean;
   lastIp: string | null;
-  recent7: number; // 近 7 天消耗积分（生成图数 × 单价）
+  recent7: number; // 近 7 天已落账消费积分
   note: string; // 管理员备注（仅后台可见）
 };
 
@@ -1255,7 +1254,8 @@ export async function listAllUsers(): Promise<AdminUserRow[]> {
             (SELECT count(*) FROM app_artworks a
                WHERE a.email = u.email
                  AND a.created_at > now() - interval '7 days')
-              AS artworks7d
+              AS artworks7d,
+            (SELECT COALESCE(-sum(delta),0) FROM app_ledger l WHERE l.email=u.email AND l.kind='consume' AND l.delta<0 AND l.reason<>'管理员调整积分' AND l.created_at>now()-interval '7 days') AS consumed7d
        FROM app_users u
       ORDER BY artworks7d DESC, u.joined_at ASC`
   );
@@ -1269,7 +1269,7 @@ export async function listAllUsers(): Promise<AdminUserRow[]> {
     artworks: Number(r.artworks),
     banned: r.banned === true,
     lastIp: r.last_ip ?? null,
-    recent7: Number(r.artworks7d) * POINTS_PER_IMAGE,
+    recent7: Number(r.consumed7d),
     note: r.note ?? "",
   }));
 }
@@ -2035,6 +2035,7 @@ export async function sweepStaleReservations(
   olderThanMin?:number
 ): Promise<number> {
   await ensureSchema();
+  if(olderThanMin===undefined){const {currentSynchronousBilling}=await import("@/lib/billing/synchronous");olderThanMin=currentSynchronousBilling()?.snapshot?.config.credits.staleReservationMinutes;}
   if(olderThanMin===undefined){const {getBillingRuntime}=await import("@/lib/billing/server");olderThanMin=(await(await getBillingRuntime()).config.current()).config.credits.staleReservationMinutes;}
   const client = await getPool().connect();
   let rows: Array<{ email: string; cost: number }> = [];

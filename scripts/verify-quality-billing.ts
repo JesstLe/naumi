@@ -11,7 +11,9 @@
  * (开关两态分别用 NAUMI_IMAGE_QUALITY_SUPPORTED=0/1 各跑一次)
  */
 import { resolveImageQuality, isQualityUnsupportedError } from "../src/lib/image-quality";
-import { qualityBillCredits, qualityCostAudit, QUALITY_CREDITS } from "../src/lib/mock-data";
+import {qualityBillCredits as price,qualityCostAudit as audit} from "../src/lib/billing/legacy";
+import {fixtureConfig} from "./billing-unit-fixture";
+const config=fixtureConfig(),QUALITY_CREDITS=config.features["image.generate"].pricing.mode==="quality-resolution"?config.features["image.generate"].pricing.quality:{},qualityBillCredits=(q:string)=>price(config,q),qualityCostAudit=(input:Parameters<typeof audit>[1])=>audit(config,input);
 
 let failures = 0;
 function check(name: string, cond: boolean, detail = "") {

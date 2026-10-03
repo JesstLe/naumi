@@ -25,7 +25,6 @@ import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
 import { useImageJobResume } from "@/components/use-image-job-resume";
-import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { TextModelSelect } from "@/components/ui/text-model-select";

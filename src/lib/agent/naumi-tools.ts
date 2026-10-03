@@ -765,7 +765,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       name: "generate_image",
       label: "AI 生图",
       description:
-        "文生图/图生图:按提示词生成电商商品图。计费=count×请求质量档(low=4、medium=6、high=10、xhigh=14、max=18积分/张)，再叠加尺寸差价(1K=0、2K=2、4K=6、5K=10积分/张)。",
+        "文生图/图生图:按提示词生成电商商品图。计费由后台当前规则报价，包含数量、模型、质量和尺寸。",
       parameters: Type.Object({
         quality: Type.Optional(Type.Union(["low","medium","high","xhigh","max"].map(value => Type.Literal(value)), { description: "图像质量；省略时使用用户当前所选档位" })),
         prompt: Type.String({ description: "画面描述,越具体越好" }),
@@ -792,7 +792,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         confirm: Type.Optional(
           Type.Boolean({
             description:
-              "预算确认标记。本次调用预计花费 ≥20 积分时,必须先向用户报价并获得明确同意,再携带 confirm=true 调用;小额或已确认过则可省略。",
+              "预算确认标记。本次调用预计花费达到后台确认门槛时,必须先向用户报价并获得明确同意,再携带 confirm=true 调用;小额或已确认过则可省略。",
           })
         ),
       }),
@@ -1017,7 +1017,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         confirm: Type.Optional(
           Type.Boolean({
             description:
-              "预算确认标记。套图通常花费较高(每张按当前质量档计费（标准档 6 积分）),必须先向用户报出总预计积分并获得明确同意,再携带 confirm=true 调用。",
+              "预算确认标记。套图通常花费较高(按后台当前报价计费),必须先向用户报出总预计积分并获得明确同意,再携带 confirm=true 调用。",
           })
         ),
       }),
@@ -1241,7 +1241,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         confirm: Type.Optional(
           Type.Boolean({
             description:
-              "预算确认标记。A+ 按模块计费通常 ≥20 积分,必须先向用户报出总预计积分并获得明确同意,再携带 confirm=true 调用。",
+              "预算确认标记。A+ 按模块和当前规则报价,必须先向用户报出总预计积分并获得明确同意,再携带 confirm=true 调用。",
           })
         ),
       }),

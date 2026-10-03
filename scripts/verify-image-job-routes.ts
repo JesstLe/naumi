@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 
 async function main() {
-  if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1" || !process.env.DATABASE_URL) throw new Error("仅可使用独立测试数据库");
+  if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1" || new URL(process.env.DATABASE_URL || "http://invalid").hostname!=="127.0.0.1") throw new Error("仅可使用独立测试数据库");
   const base=process.env.VERIFY_APP_ORIGIN || "http://127.0.0.1:31089";
   if(new URL(base).hostname!=="127.0.0.1") throw new Error("测试仅允许本地应用");
   process.env.NAUMI_EDITION="cloud";process.env.NAUMI_MULTI_USER="1";
@@ -16,13 +16,14 @@ async function main() {
   const bytes=await sharp({create:{width:32,height:32,channels:3,background:"white"}}).png().toBuffer();
   const url=await uploadImage(bytes,"image/png",`fixtures/${stamp}.png`);
   const now=Date.now();
-  const p={prompt:"fixture",userPrompt:"fixture",category:"main",ratio:"1:1",resolution:"1K",style:"",quality:"medium",count:1,transparent:false,ratiogen:false,email,images:[],parentId:"",parentIds:[],templateId:"",templateImage:"",templatePrompt:"",origin:"",projectGroupId:"",model:"gpt-image-1",targetWidth:0,targetHeight:0};
+  const model=(await (await import("../src/lib/settings")).getOpenAISettings()).model;
+  const p={prompt:"fixture",userPrompt:"fixture",category:"main",ratio:"1:1",resolution:"1K",style:"",quality:"medium",count:1,transparent:false,ratiogen:false,email,images:[],parentId:"",parentIds:[],templateId:"",templateImage:"",templatePrompt:"",origin:"",projectGroupId:"",model,targetWidth:0,targetHeight:0};
   const generateId=`route-gen-${stamp}`,suiteId=`route-suite-${stamp}`,aplusId=`route-aplus-${stamp}`;
   const image={id:`art-${generateId}-0`,url,gradient:"",prompt:"fixture",ratio:"1:1",createdAt:new Date(now).toISOString()};
   await new DurableImageJobs<any>("generate").create(generateId,email,{status:"pending",images:[image],createdAt:now},{p,cost:6,byok:false},6,true);
   const shots=(id:string)=>[{id:`${id}-0`,label:"Fixture",role:"main",ratio:"1:1",prompt:"",text:"",status:"done",url,gradient:""},{id:`${id}-1`,label:"Failed fixture",role:"sub",ratio:"1:1",prompt:"",text:"",status:"error",gradient:""}];
-  await new DurableImageJobs<any>("suite").create(suiteId,email,{status:"pending",shots:shots(suiteId),done:2,total:2,createdAt:now,owner:email,renderingFinished:true},{images:[{buf:bytes,type:"image/png"}],extra:"",platform:"taobao",email,model:"gpt-image-1",cost:12,requested:[],textModel:"fixture-no-call"},12,true);
-  await new DurableImageJobs<any>("aplus").create(aplusId,email,{status:"pending",stage:"generating",sources:[{id:`${aplusId}-source`,label:"Fixture",status:"approved",version:1,url}],sourceInputs:[{buf:bytes,type:"image/png"}],sourceBuffers:[bytes],sourceHistory:[[]],shots:shots(aplusId),done:2,total:2,extra:"",platform:"amazon",lang:"zh",format:"1:1",modules:["main","sub"],email,model:"gpt-image-1",textModel:"fixture-no-call",useDb:true,cost:12,generationStarted:true,reserved:true,parentId:"",parentIds:[],origin:"",createdAt:now,renderingFinished:true},{},12,true);
+  await new DurableImageJobs<any>("suite").create(suiteId,email,{status:"pending",shots:shots(suiteId),done:2,total:2,createdAt:now,owner:email,renderingFinished:true},{images:[{buf:bytes,type:"image/png"}],extra:"",platform:"taobao",email,model,cost:12,requested:[],textModel:"fixture-no-call"},12,true);
+  await new DurableImageJobs<any>("aplus").create(aplusId,email,{status:"pending",stage:"generating",sources:[{id:`${aplusId}-source`,label:"Fixture",status:"approved",version:1,url}],sourceInputs:[{buf:bytes,type:"image/png"}],sourceBuffers:[bytes],sourceHistory:[[]],shots:shots(aplusId),done:2,total:2,extra:"",platform:"amazon",lang:"zh",format:"1:1",modules:["main","sub"],email,model,textModel:"fixture-no-call",useDb:true,cost:12,generationStarted:true,reserved:true,parentId:"",parentIds:[],origin:"",createdAt:now,renderingFinished:true},{},12,true);
   const headers={cookie:`nv_user=${signUserSession(email,Date.now())}`};
   const routes=[{route:"generate-image",id:generateId},{route:"suite",id:suiteId},{route:"aplus",id:aplusId}];
   await db.getPool().query("UPDATE app_image_jobs SET updated_at='2000-01-01' WHERE id=ANY($1::text[])",[routes.map(job=>job.id)]);

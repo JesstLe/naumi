@@ -8,7 +8,8 @@ import { getServerLocale } from "@/lib/i18n/server-locale";
 import { BRAND } from "@/lib/brand";
 import { betaPreviewEnabled } from "@/lib/commerce";
 import { IMAGE_QUALITY_IDS } from "@/lib/image-quality";
-import { QUALITY_CREDITS } from "@/lib/mock-data";
+import {getBillingRuntime} from "@/lib/billing/server";
+import {quote} from "@/lib/billing/quote";
 import {
   PRICING_PACKAGES,
   QUALITY_MODELS,
@@ -30,6 +31,8 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPricingPage() {
   if (!(await requireAdmin(new Request("http://internal/admin/pricing", { headers: headers() })))) notFound();
+  const current=await(await getBillingRuntime()).config.current();
+  const currentQualityPrices=Object.fromEntries(IMAGE_QUALITY_IDS.map(quality=>[quality,quote(current,{feature:"image.generate",quantity:1,quality,resolution:"1K",byok:false,metered:true,paidFen:0,userGroup:"default"}).requestedCredits]));
   const english = getServerLocale() === "en";
   const t = (zh: string, en: string) => (english ? en : zh);
   const packageNames = [
@@ -51,8 +54,8 @@ export default async function AdminPricingPage() {
     [
       t("内测现在怎么扣积分？", "How are beta credits charged?"),
       t(
-        "内测仍按所选质量档和成功张数结算：低4、标准6、高10、超高14、最高18积分/张，分辨率不额外计分。生成前查看预计消耗，失败张数不扣。积分不足请联系内测管理员补充额度。",
-        "Beta billing remains quality-based: low 4, medium 6, high 10, extra high 14, max 18 credits per successful image. Resolution adds no credits. Check the estimate before generation; failed images are not charged. Contact the beta administrator for more credits.",
+        "当前计费由计费管理后台的版本配置决定。执行前显示准确报价；已有任务沿用创建时的价格、成功范围与失败策略。",
+        "Billing follows the versioned admin configuration. Confirm the quote before execution; existing tasks retain their original prices and settlement policies.",
       ),
     ],
     [
@@ -68,8 +71,8 @@ export default async function AdminPricingPage() {
         "What if the upstream cannot support extra high quality?",
       ),
       t(
-        "当前测试按请求质量档计费。例如选择超高，上游明确拒绝参数后回退标准执行，成功1张仍扣14积分。回退不代表获得了超高效果；请求档、执行档与回退原因分别记录。",
-        "Beta billing uses the requested tier. If extra high is rejected and falls back to medium, one successful image still costs 14 credits. Fallback does not establish extra high output quality. Requested tier, executed tier and reason are recorded separately.",
+        "质量计费可配置为请求档或实际执行档，由创建任务时冻结的策略决定。回退不代表获得了超高效果；请求档、执行档与回退原因分别记录。",
+        "The frozen policy determines whether requested or executed quality sets the charge. Fallback does not establish extra high output quality. Requested tier, executed tier and reason are recorded separately.",
       ),
     ],
     [
@@ -78,8 +81,8 @@ export default async function AdminPricingPage() {
         "Do my own API credentials consume site credits?",
       ),
       t(
-        "当前用户自带接口站内消耗为0，上游供应商可能按其规则另行收费。平台接口的质量支持与实际输出效果需要分别核验。",
-        "Your own API consumes zero site credits; the supplier may charge separately. Parameter support and actual output quality require separate verification.",
+        "用户自带接口的站内收费比例由计费后台设置，上游供应商可能按其规则另行收费。平台接口的质量支持与实际输出效果需要分别核验。",
+        "Site charges for your own API follow the configured BYOK rate; the supplier may charge separately. Parameter support and actual output quality require separate verification.",
       ),
     ],
     [
@@ -175,7 +178,7 @@ export default async function AdminPricingPage() {
                   {qualityNames[q]}
                 </p>
                 <p className="mt-1 text-xl font-semibold">
-                  {QUALITY_CREDITS[q]}{" "}
+                  {currentQualityPrices[q]}{" "}
                   <span className="text-xs font-normal">
                     {t("积分/张", "credits/image")}
                   </span>

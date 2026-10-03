@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { getPlan, type PlanKey } from "@/lib/mock-data";
+import { type PlanKey } from "@/lib/mock-data";
 import { BRAND } from "@/lib/brand";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { authHeader } from "@/lib/supabase";
@@ -81,12 +81,11 @@ function nextMonthISO(): string {
 }
 
 function makeUser(name: string, email: string): SessionUser {
-  const starter = getPlan("starter");
   return {
     name: name || email.split("@")[0] || `${BRAND} 用户`,
     email,
     plan: "starter",
-    creditsTotal: starter.monthlyCredits,
+    creditsTotal: 0,
     creditsUsed: 0,
     joinedAt: new Date().toISOString(),
     renewsAt: nextMonthISO(),
@@ -325,25 +324,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Local fallback.
-      const plan = getPlan(planKey);
-      const invoice: Invoice = {
-        id: `inv-${Date.now()}`,
-        date: new Date().toISOString(),
-        plan: plan.name,
-        amount: plan.priceValue,
-        status: "paid",
-      };
-      persist({
-        ...user,
-        plan: planKey,
-        creditsTotal: plan.monthlyCredits,
-        creditsUsed: Math.min(user.creditsUsed, plan.monthlyCredits),
-        renewsAt: nextMonthISO(),
-        invoices:
-          plan.priceValue > 0 ? [invoice, ...user.invoices] : user.invoices,
-      });
-      return plan.priceValue > 0 ? invoice : null;
+      throw new Error("历史会员商品已停售，请使用当前积分充值商品");
     },
     [user, persist, serverPost]
   );

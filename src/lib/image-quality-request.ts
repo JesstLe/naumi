@@ -1,6 +1,8 @@
 import "server-only";
 import { dbEnabled, creditMeteringEnabled, addLedgerEntry, recordImageCostAudit } from "@/lib/db";
-import { imageBillCredits, qualityCostAudit } from "@/lib/mock-data";
+import { imageBillCredits, qualityCostAudit } from "@/lib/billing/legacy";
+import seed from "@/lib/billing/bootstrap.json";
+import type {BillingConfig} from "@/lib/billing/types";
 import { randomUUID } from "node:crypto";
 import { resolveImageQuality, isQualityUnsupportedError, type ResolvedImageQuality, type ExecutedQuality } from "@/lib/image-quality";
 import {synchronousCost,settleSynchronous,currentSynchronousBilling} from "@/lib/billing/synchronous";
@@ -15,14 +17,16 @@ export function requestImageQuality(request: Request, explicit?: unknown): Resol
 
 export async function imageRequestBilling(request: Request, explicit?: unknown, resolution = "1K") {
   const quality = requestImageQuality(request, explicit);
-  return { quality, cost: await imageQualityCost(quality, resolution) };
+  // Durable routes quote their full quantity after validation. Only synchronous
+  // tool contexts reserve here; avoid an extra, incomplete config lookup.
+  return { quality, cost: dbEnabled&&!currentSynchronousBilling()?0:await imageQualityCost(quality, resolution) };
 }
 
 export async function imageQualityCost(quality: ResolvedImageQuality, resolution = "1K") {
   const configured=await synchronousCost(quality,resolution);
   if(configured!==null)return configured;
   const metered = !dbEnabled || await creditMeteringEnabled();
-  return metered ? imageBillCredits(quality.requested, resolution) : 0;
+  return metered ? imageBillCredits(seed as BillingConfig,quality.requested, resolution) : 0;
 }
 
 /** Retry only a confirmed unsupported-parameter rejection, never a timeout or unclear result. */
@@ -70,7 +74,7 @@ export async function auditSettledImage(email: string, cost: number, quality: Re
     return;
   }
   await recordImageCostAudit({ jobId, email, imageId,
-    ...qualityCostAudit({ requested: quality.requested || "medium", executed: quality.executed,
+    ...qualityCostAudit(seed as BillingConfig,{ requested: quality.requested || "medium", executed: quality.executed,
       upstream: model ? `default:${model}` : "unrecorded", images: 1, reason: quality.fallbackReason || "generated",
       billedCredits: cost, platformFunded: true, resolution }) });
   } catch { /* Audit enrichment must not undo a committed credit transaction. */ }

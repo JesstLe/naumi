@@ -1,3 +1,4 @@
+import {withBillingIntent} from "@/lib/billing/intent";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import {quoteForRequest} from "@/lib/billing/server";
 import {assertQuotedVersion,requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/request";
@@ -10,7 +11,6 @@ import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
 import { requestedTextModel } from "@/lib/text-models";
-import { POINTS_PER_IMAGE } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 import {
   dbEnabled,
@@ -1021,6 +1021,8 @@ export async function GET(request: Request) {
   });
 }
 
-export async function POST(request: Request) {
+async function createSubmission(request: Request) {
   try{return await withBiRequest(request, () => handleObservedPost(request));}catch(e){return billingErrorResponse(e)}
 }
+
+export async function POST(request:Request){return withBillingIntent(request,()=>createSubmission(request));}

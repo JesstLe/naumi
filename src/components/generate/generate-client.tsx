@@ -28,7 +28,6 @@ import {
   GENERATION_RATIOS,
   GENERATION_RESOLUTIONS,
   GENERATION_STYLES,
-  qualityBillCredits,
   type Category,
   type PromptTemplate,
 } from "@/lib/mock-data";

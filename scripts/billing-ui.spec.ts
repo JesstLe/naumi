@@ -75,3 +75,9 @@ test("configuration failure stays visible and cannot publish", async ({ page }) 
     await expect(page.getByRole("status")).toContainText("配置读取失败");
     await expect(page.getByRole("button", { name: "发布配置", exact: true })).toHaveCount(0);
 });
+test("uncertain submissions retain their identifier across explicit retries",async({page})=>{
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_user",value:fixture.userCookie,domain:"127.0.0.1",path:"/"}]);
+ const ids:string[]=[];await page.route("**/api/generate-image",async route=>{ids.push(route.request().headers()["x-naumi-billing-operation-id"]);await route.fulfill({status:ids.length===1?503:409,contentType:"application/json",body:JSON.stringify({code:ids.length===1?"CONFIG_UNAVAILABLE":"OPERATION_PENDING",error:"fixture submission pending"})});});
+ await page.goto("/generate");await page.locator("textarea").first().fill("Fixture retained intent");await expect(page.getByTestId("billing-estimate")).toContainText("6");
+ await page.getByTestId("billing-estimate").click();await expect(page.getByText("fixture submission pending",{exact:true})).toBeVisible();await page.getByTestId("billing-estimate").click();await expect.poll(()=>ids.length).toBe(2);expect(ids[0]).toBeTruthy();expect(ids[1]).toBe(ids[0]);await expect(page.locator("textarea").first()).toHaveValue("Fixture retained intent");
+});

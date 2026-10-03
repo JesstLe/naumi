@@ -31,7 +31,16 @@
     "verify:billing-image-jobs": "tsx --conditions react-server scripts/verify-billing-image-jobs.ts",
     "verify:billing-tools": "tsx --conditions react-server scripts/verify-billing-tools.ts",
     "verify:billing-async-tasks": "tsx --conditions react-server scripts/verify-billing-async-tasks.ts",
-    "verify:billing-entitlements": "tsx --conditions react-server scripts/verify-billing-entitlements.ts"
+    "verify:billing-entitlements": "tsx --conditions react-server scripts/verify-billing-entitlements.ts",
+    "verify:billing-agent": "tsx --conditions react-server scripts/verify-billing-agent.ts",
+    "verify:billing-facts": "tsx --conditions react-server scripts/verify-billing-facts.ts",
+    "verify:billing-reconciliation": "tsx --conditions react-server scripts/verify-billing-reconciliation.ts",
+    "verify:billing-cost-audit": "tsx --conditions react-server scripts/verify-billing-cost-audit.ts",
+    "verify:billing-intents": "tsx --conditions react-server scripts/verify-billing-intents.ts",
+    "verify:billing-coverage": "tsx --conditions react-server scripts/verify-billing-coverage.ts",
+    "verify:billing-performance": "tsx --conditions react-server scripts/verify-billing-performance.ts",
+    "verify:billing-all": "node scripts/verify-billing-all.mjs",
+    "verify:billing-ui": "node scripts/verify-billing-ui.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",

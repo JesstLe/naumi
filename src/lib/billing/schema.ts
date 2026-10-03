@@ -21,6 +21,7 @@ export function ensureBillingSchema(pool: Pool): Promise<void> {
   CREATE INDEX IF NOT EXISTS app_billing_operations_email_idx ON app_billing_operations(email,created_at DESC);
   ALTER TABLE app_billing_operations ADD COLUMN IF NOT EXISTS result_response jsonb;
   ALTER TABLE app_billing_operations ADD COLUMN IF NOT EXISTS settlement_result jsonb;
+  CREATE TABLE IF NOT EXISTS app_billing_intents(id text PRIMARY KEY,email text NOT NULL,path text NOT NULL,request_fingerprint text NOT NULL,response jsonb,response_status integer,created_at timestamptz NOT NULL DEFAULT now());
   CREATE TABLE IF NOT EXISTS app_billing_reconciliations(
    id text PRIMARY KEY,operation_id text NOT NULL,email text NOT NULL,actor text NOT NULL,
    request_fingerprint text NOT NULL,reason text NOT NULL,proof text NOT NULL,result jsonb NOT NULL,

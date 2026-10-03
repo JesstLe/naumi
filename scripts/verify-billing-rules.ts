@@ -56,6 +56,8 @@ async function main() {
     assert.equal(quote({ version: 9, config: rules }, facts()).requestedCredits, 6);
     rules.features["image.generate"].rules.push({ id: "conflict", priority: 1, when: {}, pricing: { mode: "fixed", credits: 9 } });
     assert.throws(() => validateBillingConfig(rules));
+    const unrelated=fixtureConfig();for(let i=0;i<5000;i++)unrelated.costs[`unrelated-${i}`]={currency:"CNY",amountMicros:"10000",unit:"image",source:"manual-estimate"};
+    assert.ok(Object.keys(quote({version:10,config:unrelated},facts()).costRates).length<=30,"A quote freezes only relevant cost keys, not every supplier's rate table");
     console.log("PASS dynamic quotes, frozen prices, partial/failure/BYOK policies, result validation");
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

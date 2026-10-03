@@ -1922,7 +1922,7 @@ export function CanvasClient() {
 
   useEffect(() => {
     let cancelled = false;
-    void privateFetch("/api/video/catalog")
+    void privateFetchRaw("/api/video/catalog")
       .then((response) => response.json())
       .then((data) => {
         if (cancelled) return;
@@ -2082,7 +2082,7 @@ export function CanvasClient() {
       const tpl =
         list.find((t) => t.id === templateId) ?? (list[0] as Artwork | undefined);
       if (!tpl) return;
-      const r = await privateFetch("/api/artworks/add", {
+      const r = await privateFetchRaw("/api/artworks/add", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -2324,10 +2324,10 @@ export function CanvasClient() {
             headers: await authHeader(),
           })
         ).json())(),
-      privateFetch(`/api/projects?email=${encodeURIComponent(target)}`)
+      privateFetchRaw(`/api/projects?email=${encodeURIComponent(target)}`)
         .then((r) => r.json())
         .catch(() => ({ names: {} })),
-      privateFetch(`/api/canvas/text-nodes?email=${encodeURIComponent(target)}`)
+      privateFetchRaw(`/api/canvas/text-nodes?email=${encodeURIComponent(target)}`)
         .then((r) => r.json())
         .catch(() => ({ persisted: false, nodes: [] })),
     ])
@@ -2762,7 +2762,7 @@ export function CanvasClient() {
     ) ?? current);
     if (!user || readOnly || dimensionSyncRef.current.has(id)) return;
     dimensionSyncRef.current.add(id);
-    void privateFetch("/api/artworks/dimensions", {
+    void privateFetchRaw("/api/artworks/dimensions", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id, width: w, height: h }),
@@ -2790,7 +2790,7 @@ export function CanvasClient() {
         : art
     ) ?? current);
     if (!user || readOnly) return;
-    void privateFetch("/api/artworks/canvas-size", {
+    void privateFetchRaw("/api/artworks/canvas-size", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id, x, y, width, height }),
@@ -2834,7 +2834,7 @@ export function CanvasClient() {
         : art
     ) ?? current);
     if (!user || readOnly) return;
-    void privateFetch("/api/artworks/canvas-size", {
+    void privateFetchRaw("/api/artworks/canvas-size", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id, width: nextWidth, height: nextHeight, sizeOnly: true }),
@@ -2855,7 +2855,7 @@ export function CanvasClient() {
     const source = worksRef.current?.find((item) => item.id === id);
     if (!source?.videoUrl) return;
     try {
-      const response = await privateFetch("/api/video/extract", {
+      const response = await privateFetchRaw("/api/video/extract", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ videoUrl: source.videoUrl, kind, timestamp, parentArtworkId: id }),
@@ -2912,7 +2912,7 @@ export function CanvasClient() {
           (_, index) => sourceIds.slice(index * 80, index * 80 + 80)
         );
         const responses = await Promise.all(sourceIdChunks.map((chunk) =>
-          privateFetch(`/api/video/tasks?source=canvas&limit=500&sourceIds=${encodeURIComponent(chunk.join(","))}`)
+          privateFetchRaw(`/api/video/tasks?source=canvas&limit=500&sourceIds=${encodeURIComponent(chunk.join(","))}`)
         ));
         if (stopped) return;
         if (responses.some((response) => !response.ok)) throw new Error("视频任务查询失败");
@@ -2998,7 +2998,7 @@ export function CanvasClient() {
           const source = currentProject.members.find((item) => item.id === task.sourceId);
           const sourceNode = source ? rfRef.current?.getNode(source.id) : null;
           const size = sourceNode && source ? flowNodeSize(sourceNode) : source ? artworkNodeSize(source) : { width: NODE_W, height: NODE_H };
-          const positionResponse = await privateFetch("/api/artworks/position", {
+          const positionResponse = await privateFetchRaw("/api/artworks/position", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
@@ -3053,7 +3053,7 @@ export function CanvasClient() {
           (_, index) => sourceIds.slice(index * 80, index * 80 + 80)
         );
         const responses = await Promise.all(sourceIdChunks.map((chunk) =>
-          privateFetch(`/api/canvas/image-tasks?limit=500&sourceIds=${encodeURIComponent(chunk.join(","))}`)
+          privateFetchRaw(`/api/canvas/image-tasks?limit=500&sourceIds=${encodeURIComponent(chunk.join(","))}`)
         ));
         if (stopped) return;
         if (responses.some((response) => !response.ok)) throw new Error("图片编辑任务查询失败");
@@ -3121,7 +3121,7 @@ export function CanvasClient() {
             const x = task.parameters?.canvasX == null ? Number.NaN : Number(task.parameters.canvasX);
             const y = task.parameters?.canvasY == null ? Number.NaN : Number(task.parameters.canvasY);
             if (Number.isFinite(x) && Number.isFinite(y)) {
-              const positionResponse = await privateFetch("/api/artworks/position", {
+              const positionResponse = await privateFetchRaw("/api/artworks/position", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({ id: task.resultArtworkId, x: Math.round(x), y: Math.round(y) }),
@@ -3885,7 +3885,7 @@ export function CanvasClient() {
       prev ? prev.map((w) => (w.id === id ? { ...w, title: name } : w)) : prev
     );
     try {
-      const res = await privateFetch("/api/artworks/rename", {
+      const res = await privateFetchRaw("/api/artworks/rename", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: user.email, id, title: name }),
@@ -3907,7 +3907,7 @@ export function CanvasClient() {
         work.id === id ? { ...work, title: title.trim() } : work
       ) ?? current
     );
-    await privateFetch("/api/artworks/rename", {
+    await privateFetchRaw("/api/artworks/rename", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: user.email, id, title: title.trim() }),
@@ -3923,7 +3923,7 @@ export function CanvasClient() {
       items?.map((item) => (item.id === id ? { ...item, marked } : item)) ?? items
     );
     try {
-      const response = await privateFetch("/api/artworks/mark", {
+      const response = await privateFetchRaw("/api/artworks/mark", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id, marked }),
@@ -3951,7 +3951,7 @@ export function CanvasClient() {
     const previous = names[key];
     setNames((prev) => ({ ...prev, [key]: name }));
     try {
-      const res = await privateFetch("/api/projects", {
+      const res = await privateFetchRaw("/api/projects", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: user.email, key, name }),
@@ -4028,7 +4028,7 @@ export function CanvasClient() {
     const valid = ids.filter(Boolean);
     if (!em || valid.length === 0) return works ?? [];
     try {
-      const r = await privateFetch(
+      const r = await privateFetchRaw(
         `/api/artworks/get?email=${encodeURIComponent(em)}&ids=${valid
           .map(encodeURIComponent)
           .join(",")}`,
@@ -4072,7 +4072,7 @@ export function CanvasClient() {
       return;
     }
     try {
-      const r = await privateFetch(`/api/artworks/trash?email=${encodeURIComponent(em)}`);
+      const r = await privateFetchRaw(`/api/artworks/trash?email=${encodeURIComponent(em)}`);
       const d = await expectJsonOk(r, t("canvas.genFail"));
       setTrashItems((d?.artworks ?? []) as Artwork[]);
     } catch {
@@ -4084,7 +4084,7 @@ export function CanvasClient() {
     if (!em || ids.length === 0 || trashBusy) return;
     setTrashBusy(true);
     try {
-      const res = await privateFetch("/api/artworks/trash", {
+      const res = await privateFetchRaw("/api/artworks/trash", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: em, action, ids }),
@@ -4275,7 +4275,7 @@ export function CanvasClient() {
           newIds.map((id, i) => {
             const y = resultY;
             resultY += (generated[i]?.height || 110) + NODE_LABEL_H + 24;
-            return privateFetch("/api/artworks/position", {
+            return privateFetchRaw("/api/artworks/position", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
@@ -4366,7 +4366,7 @@ export function CanvasClient() {
       // 落到生成占位处(源节点右侧或用户拖动后的位置),与生成流一致
       const basePos = generationTaskPosRef.current[taskId] ?? taskPosition;
       if (basePos) {
-        await privateFetch("/api/artworks/position", {
+        await privateFetchRaw("/api/artworks/position", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -4467,7 +4467,7 @@ export function CanvasClient() {
       );
     }, 650);
     try {
-      const response = await privateFetch("/api/canvas/ocr", {
+      const response = await privateFetchRaw("/api/canvas/ocr", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ artworkId: artwork.id }),
@@ -4645,7 +4645,7 @@ export function CanvasClient() {
       const response = await run();
       const data = await readJsonSafe(response);
       if (!response.ok || !data?.id) throw new Error(data?.error || `${label}失败`);
-      await privateFetch("/api/artworks/position", {
+      await privateFetchRaw("/api/artworks/position", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: data.id, x: Math.round(x), y: Math.round(y) }),
@@ -4807,7 +4807,7 @@ export function CanvasClient() {
       for (;;) {
         await new Promise((r) => setTimeout(r, 5000));
         if (contextEpoch !== canvasContextEpochRef.current || activeProjectRef.current?.key !== contextProjectKey) return;
-        const poll = await privateFetch(`/api/video/tasks?id=${encodeURIComponent(taskId)}`);
+        const poll = await privateFetchRaw(`/api/video/tasks?id=${encodeURIComponent(taskId)}`);
         const pollData = await readJsonSafe(poll);
         if (!poll.ok) throw new Error(pollData?.error || "视频任务查询失败");
         const task = pollData?.task as
@@ -4834,7 +4834,7 @@ export function CanvasClient() {
           break;
         }
         if (task?.status === "completed" && task.artworkId) {
-          const positionResponse = await privateFetch("/api/artworks/position", {
+          const positionResponse = await privateFetchRaw("/api/artworks/position", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ id: task.artworkId, x: Math.round(x), y: Math.round(y) }),
@@ -4929,7 +4929,7 @@ export function CanvasClient() {
       );
     }, 1200);
     try {
-      const response = await privateFetch("/api/comfyui/run", {
+      const response = await privateFetchRaw("/api/comfyui/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ artworkId: source.id, ...payload }),
@@ -4940,7 +4940,7 @@ export function CanvasClient() {
       for (let i = 0; i < images.length; i++) {
         const x = Math.round(baseX + i * 40);
         const y = Math.round(baseY + i * 40);
-        await privateFetch("/api/artworks/position", {
+        await privateFetchRaw("/api/artworks/position", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ id: images[i].id, x, y }),
@@ -4952,7 +4952,7 @@ export function CanvasClient() {
       // 视频产物已落成画布节点,同样 merge 挂树(与图片并列)
       const videoArtworkId = String(data.videoArtworkId || "");
       if (videoArtworkId) {
-        await privateFetch("/api/artworks/position", {
+        await privateFetchRaw("/api/artworks/position", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -5026,7 +5026,7 @@ export function CanvasClient() {
     setAssistantError(null);
     setAssistantBusy(true);
     try {
-      const response = await privateFetch("/api/canvas/assistant", {
+      const response = await privateFetchRaw("/api/canvas/assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -5323,7 +5323,7 @@ export function CanvasClient() {
         ids.map((id) => {
           const y = detailY;
           detailY += artworkNodeSize(freshById.get(id) ?? { width: NODE_W, height: 110 }).height + 24;
-          return privateFetch("/api/artworks/position", {
+          return privateFetchRaw("/api/artworks/position", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
@@ -5524,7 +5524,7 @@ export function CanvasClient() {
     setSelectedTextId(null);
     setSelectedPendId(null);
     try {
-      const response = await privateFetch("/api/canvas/nodes/delete", {
+      const response = await privateFetchRaw("/api/canvas/nodes/delete", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ artworkIds, textIds }),
@@ -5596,7 +5596,7 @@ export function CanvasClient() {
     else if (act.kind === "mark") act.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side]}));
     let operationId = historyAttemptsRef.current.get(act);
     if (!operationId) { operationId=crypto.randomUUID(); historyAttemptsRef.current.set(act,operationId); }
-    const response=await privateFetch("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
+    const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
     await expectJsonOk(response,t("canvas.genFail"));
     // All operations below are local applications of an already committed transaction.
     for (const op of operations) {
@@ -5706,7 +5706,7 @@ export function CanvasClient() {
     setSidebarOpen(false);
     try {
       if (ids.length) {
-        const res = await privateFetch("/api/artworks/delete", {
+        const res = await privateFetchRaw("/api/artworks/delete", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ email: user.email, ids }),
@@ -5714,14 +5714,14 @@ export function CanvasClient() {
         await expectJsonOk(res, t("canvas.genFail"));
       }
       if (p.textNodes.length) {
-        const textRes = await privateFetch("/api/canvas/text-nodes", {
+        const textRes = await privateFetchRaw("/api/canvas/text-nodes", {
           method: "DELETE",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ ids: p.textNodes.map((node) => node.id) }),
         });
         if (!textRes.ok) await expectJsonOk(textRes, t("canvas.genFail"));
       }
-      const nameRes = await privateFetch("/api/projects", {
+      const nameRes = await privateFetchRaw("/api/projects", {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ key: p.key }),
@@ -5799,7 +5799,7 @@ export function CanvasClient() {
     try {
       const responses = await Promise.all(
         selectedBatchIds.map((id) =>
-          privateFetch("/api/artworks/mark", {
+          privateFetchRaw("/api/artworks/mark", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ id, marked }),
@@ -5836,7 +5836,7 @@ export function CanvasClient() {
     assignments: Array<{ id: string; canvasGroupId: string | null }>
   ) {
     if (!assignments.length) return assignments;
-    const response = await privateFetch("/api/canvas/groups", {
+    const response = await privateFetchRaw("/api/canvas/groups", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ assignments }),
@@ -5862,7 +5862,7 @@ export function CanvasClient() {
       selectedBatchArts.map((artwork) => [artwork.id, artwork.canvasGroupId ?? null])
     );
     try {
-      const response = await privateFetch("/api/canvas/groups", {
+      const response = await privateFetchRaw("/api/canvas/groups", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "group", ids: selectedBatchIds }),
@@ -5934,7 +5934,7 @@ export function CanvasClient() {
       : 0;
     setStitching(true);
     try {
-      const response = await privateFetch("/api/canvas/stitch", {
+      const response = await privateFetchRaw("/api/canvas/stitch", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -6065,7 +6065,7 @@ export function CanvasClient() {
       up.push(...parents(id));
     }
     try {
-      const res = await privateFetch("/api/artworks/parents", {
+      const res = await privateFetchRaw("/api/artworks/parents", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -6117,7 +6117,7 @@ export function CanvasClient() {
       return;
     }
     try {
-      const res = await privateFetch("/api/artworks/parents", {
+      const res = await privateFetchRaw("/api/artworks/parents", {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -6275,7 +6275,7 @@ export function CanvasClient() {
         : prev
     );
     for (const [id, c] of Array.from(coord.entries())) {
-      privateFetch("/api/artworks/position", {
+      privateFetchRaw("/api/artworks/position", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: user.email, id, x: c.x, y: c.y }),
@@ -6328,7 +6328,7 @@ export function CanvasClient() {
     const sx = sn?.position.x ?? a.canvasX ?? 0;
     const sy = sn?.position.y ?? a.canvasY ?? 0;
     try {
-      const r = await privateFetch("/api/artworks/add", {
+      const r = await privateFetchRaw("/api/artworks/add", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -6624,7 +6624,7 @@ export function CanvasClient() {
     const pos = historyPicker;
     setHistoryPicker(null);
     try {
-      const r = await privateFetch("/api/artworks/add", {
+      const r = await privateFetchRaw("/api/artworks/add", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -6786,7 +6786,7 @@ export function CanvasClient() {
     unsavedTextRef.current.set(node.id,node);
     const save=async()=> {
       try {
-        const response=await privateFetch("/api/canvas/text-nodes",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(node),signal:AbortSignal.timeout(20_000)});
+        const response=await privateFetchRaw("/api/canvas/text-nodes",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(node),signal:AbortSignal.timeout(20_000)});
         const data=await expectJsonOk(response,t("canvas.genFail"));
         if(unsavedTextRef.current.get(node.id)===node) {
           unsavedTextRef.current.delete(node.id);
@@ -6980,7 +6980,7 @@ export function CanvasClient() {
       current.map((node) => (node.id === pending.id ? pending : node))
     );
     try {
-      const response = await privateFetch("/api/canvas/text-generate", {
+      const response = await privateFetchRaw("/api/canvas/text-generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt, sourceIds: pending.sourceIds ?? [] }),
@@ -7088,7 +7088,7 @@ export function CanvasClient() {
           };
           setTextNodes((current) => [...current, node]);
           try {
-            const response = await privateFetch("/api/canvas/text-generate", {
+            const response = await privateFetchRaw("/api/canvas/text-generate", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
@@ -7224,7 +7224,7 @@ export function CanvasClient() {
           };
           setTextNodes((current) => [...current, node]);
           try {
-            const response = await privateFetch("/api/canvas/text-generate", {
+            const response = await privateFetchRaw("/api/canvas/text-generate", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
@@ -7503,7 +7503,7 @@ export function CanvasClient() {
           newIds.map((id, index) => {
             const y = generatedY;
             generatedY += (generatedSizes[index]?.height || 110) + NODE_LABEL_H + 24;
-            return privateFetch("/api/artworks/position", {
+            return privateFetchRaw("/api/artworks/position", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
@@ -7721,7 +7721,7 @@ export function CanvasClient() {
           )
         : prev
     );
-    privateFetch("/api/artworks/position", {
+    privateFetchRaw("/api/artworks/position", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: user.email, id, x, y }),
@@ -7780,7 +7780,7 @@ export function CanvasClient() {
     void Promise.all(
       [
         ...artworkMoves.map((move) =>
-          privateFetch("/api/artworks/position", {
+          privateFetchRaw("/api/artworks/position", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
