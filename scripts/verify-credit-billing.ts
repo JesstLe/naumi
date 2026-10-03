@@ -68,7 +68,9 @@ async function main() {
     assert.deepEqual(migrated, { billed_credits: 10, cost_credits: 6, margin_credits: 4 });
     console.log("PASS old audit column migration preserves values");
 
-    const run = async (name: string, count: number, expectedCharge: number, qualities: string[], byok = false) => {
+    const { imageBillCredits } = await import("../src/lib/mock-data");
+    let fixtureIp = 0;
+    const run = async (name: string, count: number, expectedCharge: number, qualities: string[], byok = false, resolution = "1K", quality = "high", headerOnly = false, customDimensions = false) => {
       scenario = name; requestCount = 0; wire.length = 0;
       const email = `credits-${randomUUID()}@example.test`;
       await db.getOrCreateUser(email, "Credits fixture");
@@ -77,15 +79,15 @@ async function main() {
       if (byok) await db.upsertUserImageProviderRecord({ id: `provider-${randomUUID()}`, email,
         name: "Fixture", isActive: true, enabled: true, protocol: "openai-images",
         baseUrlEnc: baseUrl, apiKeyEnc: "fixture-byok", models: ["gpt-image-1"], defaultModel: "gpt-image-1" });
-      const headers = { cookie: `nv_user=${signUserSession(email, Date.now())}`, "content-type": "application/json" };
+      const headers = { cookie: `nv_user=${signUserSession(email, Date.now())}`, "content-type": "application/json", "x-real-ip": `127.0.0.${++fixtureIp}`, "x-naumi-image-quality": headerOnly ? quality : "low" };
       if (name === "partial") hold = new Promise<void>(resolve => { release = resolve; });
       const submitted = await route.POST(new Request("http://fixture.test/api/generate-image", { method: "POST", headers,
-        body: JSON.stringify({ prompt: name, model: byok ? "byok:gpt-image-1" : "gpt-image-1", count, quality: "high", resolution: "1K", ratio: "1:1" }) }));
+        body: JSON.stringify({ prompt: name, model: byok ? "byok:gpt-image-1" : "gpt-image-1", count, quality: headerOnly ? undefined : quality, resolution: customDimensions ? "1K" : resolution, ...(customDimensions ? {targetWidth:4096,targetHeight:2048} : {}), ratio: "1:1" }) }));
       assert.equal(submitted.status, 200, await submitted.clone().text());
       const { jobId } = await submitted.json();
       if (name === "partial") {
         await wait(async () => requestCount === count);
-        assert.equal(Number((await sql.query("SELECT reserved_cost FROM app_image_jobs WHERE id=$1", [jobId])).rows[0].reserved_cost), 20);
+        assert.equal(Number((await sql.query("SELECT reserved_cost FROM app_image_jobs WHERE id=$1", [jobId])).rows[0].reserved_cost), count * imageBillCredits(quality, resolution));
         process.env.NAUMI_MULTI_USER = "0";
         assert.equal(await db.creditMeteringEnabled(), false);
         release!(); hold = undefined;
@@ -105,7 +107,7 @@ async function main() {
       assert.equal(audits.length, qualities.length);
       assert.deepEqual(audits.map(a => a.executed_quality).sort(), [...qualities].sort());
       assert.equal(audits.reduce((n, a) => n + a.billed_credits, 0), expectedCharge);
-      const cost = byok && name !== "byok-platform" ? 0 : qualities.reduce((n, q) => n + (q === "high" ? 10 : 6), 0);
+      const cost = byok && name !== "byok-platform" ? 0 : qualities.reduce((n, q) => n + imageBillCredits(q, resolution), 0);
       assert.equal(audits.reduce((n, a) => n + a.cost_credits, 0), cost);
       assert.equal(audits.reduce((n, a) => n + a.margin_credits, 0), expectedCharge - cost);
       if (name !== "failure") {
@@ -142,6 +144,15 @@ async function main() {
     await run("mixed", 2, 20, ["medium", "high"]);
     await run("byok-downgrade", 1, 0, ["medium"], true);
     await run("byok-platform", 1, 0, ["medium"], true);
+    for (const resolution of ["1K", "2K", "4K", "5K"]) {
+      for (const quality of ["low", "medium", "high", "xhigh", "max"]) {
+        await run(`tariff-${quality}-${resolution}`, 1, imageBillCredits(quality, resolution), [quality], false, resolution, quality, true);
+      }
+    }
+    await run("partial", 2, 16, ["high"], false, "4K");
+    await run("downgrade", 1, 16, ["medium"], false, "4K");
+    await run("byok-downgrade", 1, 0, ["medium"], true, "4K");
+    await run("custom-dimensions", 1, 12, ["medium"], false, "4K", "medium", true, true);
     // Metering is frozen on submission; disable it for the next public request.
     process.env.NAUMI_MULTI_USER = "0";
     await db.setSetting("multi_user_enabled", "0");

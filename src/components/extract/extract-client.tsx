@@ -1,4 +1,6 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
 
 import * as React from "react";
 import { Stamp, Wand2, Sparkles } from "lucide-react";
@@ -8,7 +10,7 @@ import { SelectMenu } from "@/components/ui/select-menu";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
-import { GENERATION_RESOLUTIONS, resolutionCost } from "@/lib/mock-data";
+import { GENERATION_RESOLUTIONS } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
 const ACCENT = "#C2882E"; // 印花提取(琥珀)
@@ -46,6 +48,7 @@ const CATEGORIES = [
 const RATIOS = ["自动", "1:1", "3:4", "4:3", "16:9", "9:16"];
 
 export function ExtractClient() {
+  const { imageCost } = useImageQuality();
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
@@ -74,7 +77,7 @@ export function ExtractClient() {
     setAssistRun({ mode, nonce: Date.now() });
   }
 
-  const cost = resolutionCost(resolution);
+  const cost = imageCost(resolution);
 
   const controls = (
     <>
@@ -238,6 +241,7 @@ export function ExtractClient() {
       category="print"
       regenLabel={L("以此图再提取印花", "Extract print from this image")}
       cost={cost}
+      resolution={resolution}
       action={L("提取印花", "Extract print")}
       checker
       controls={controls}

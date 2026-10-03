@@ -11,13 +11,15 @@ import {
   dbEnabled,
   getAgentSession,
   getUser,
+  creditMeteringEnabled,
   saveAgentSession,
 } from "@/lib/db";
 import { AGENT_SYSTEM_PROMPT, createNaumiTools } from "@/lib/agent/naumi-tools";
+import { getImageJob } from "@/lib/image-job-repository";
 import {
-  packaging3dCost,
   POINTS_PER_IMAGE,
-  resolutionCost,
+  qualityBillCredits,
+  imageBillCredits,
 } from "@/lib/mock-data";
 
 // ---------------------------------------------------------------------------
@@ -85,7 +87,7 @@ export type Session = {
   email: string;
   title: string;
   /** 凭证对(cookie+authorization),会话续期时刷新 */
-  cred: { cookie: string; authorization: string };
+  cred: { cookie: string; authorization: string; imageQuality?: string };
   createdAt: number;
   lastUsedAt: number;
   /** 运行状态快照,给前端轮询/SSE 用 */
@@ -195,7 +197,7 @@ export async function getOrCreateSession(
   email: string,
   sessionId: string,
   history: { role: string; content: string }[],
-  cred: { cookie: string; authorization: string } = { cookie: "", authorization: "" },
+  cred: { cookie: string; authorization: string; imageQuality?: string } = { cookie: "", authorization: "" },
   modelId = MODEL_ID
 ): Promise<Session> {
   gcSessions();
@@ -259,25 +261,17 @@ export async function getOrCreateSession(
         };
       }
       const baseMeta = TOOL_COST[toolCall.name];
-      const meta =
+      let meta =
         toolCall.name === "generate_packaging_3d"
           ? {
-              cost: packaging3dCost(
-                typeof (args as { resolution?: unknown })?.resolution === "string"
-                  ? (args as { resolution: string }).resolution
-                  : "1K"
-              ),
+              cost: imageBillCredits((args as { quality?: string })?.quality || session.cred.imageQuality || "medium", (args as {resolution?: string}).resolution || "1K"),
               label: baseMeta?.label ?? "模切线转 3D",
             }
           : toolCall.name === "generate_image"
             ? {
-                // 生图按 张数×分辨率档 实算,比 TOOL_COST 的单张估价准
+                // 生图按 张数×请求质量档 实算,比 TOOL_COST 的单张估价准
                 cost:
-                  resolutionCost(
-                    (args as { resolution?: string })?.resolution === "2K"
-                      ? "2K"
-                      : "1K"
-                  ) *
+                  imageBillCredits((args as {quality?: string})?.quality || session.cred.imageQuality || "medium", (args as {resolution?: string}).resolution || "1K") *
                   Math.min(
                     Math.max(
                       typeof (args as { count?: unknown }).count === "number"
@@ -300,12 +294,19 @@ export async function getOrCreateSession(
                             20,
                             (args as { shots: unknown[] }).shots.length
                           )
-                        ) * POINTS_PER_IMAGE
-                      : 13 * POINTS_PER_IMAGE,
+                        ) * qualityBillCredits((args as {quality?: string})?.quality || session.cred.imageQuality || "medium")
+                      : 13 * qualityBillCredits((args as {quality?: string})?.quality || session.cred.imageQuality || "medium"),
                   label: baseMeta?.label ?? "一键套图",
                 }
-              : baseMeta;
-      if (!meta || !dbEnabled) return undefined;
+              : baseMeta && ["retouch_product", "recolor_product", "replicate_hot"].includes(toolCall.name)
+                ? { ...baseMeta, cost: qualityBillCredits(session.cred.imageQuality || "medium") } : baseMeta;
+      if (!meta || !dbEnabled || !await creditMeteringEnabled()) return undefined;
+      if (toolCall.name === "generate_image" && (args as {model?: string}).model?.startsWith("byok:")) meta = { ...meta, cost: 0 };
+      if (toolCall.name === "continue_aplus_generation") {
+        const job = await getImageJob(String((args as {job_id?: string}).job_id || ""), "aplus");
+        if (!job || job.email !== email.toLowerCase()) return { block: true, reason: "详情页任务不存在或无权访问" };
+        meta = { ...meta, cost: Number(job.snapshot.cost || 0) };
+      }
       const u = await getUser(email).catch(() => null);
       const balance = u ? u.creditsTotal - u.creditsUsed : Number.MAX_SAFE_INTEGER;
       if (balance < meta.cost) {

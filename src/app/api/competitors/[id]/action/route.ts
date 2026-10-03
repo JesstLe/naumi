@@ -1,3 +1,4 @@
+import { imageRequestBilling } from "@/lib/image-quality-request";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
@@ -43,7 +44,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       return NextResponse.json({ item: saved });
     }
     await sweepStaleReservations();
-    cost = supabaseEnabled || await multiUserEnabled() || await creditsMeteringOn() ? 6 : 0;
+    const billing = await imageRequestBilling(req);
+    cost = billing.cost;
     if (!await reserveCredits(email, cost)) throw new WorkspaceError("可用积分不足", 402);
     reserved = true;
     await addReservation(jobId, email, cost);
@@ -57,7 +59,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       ? `只修改遮罩透明区域，不移动整图构图，不修改其他区域。分别执行以下选区要求；不同选区的要求不可互换。\n${instructions}`
       : `${body.degree === "layout" ? "借鉴参考图的构图、排版层级、布光与色彩关系，生成类似但独立的新电商图片。" : "仅借鉴参考图的色彩、材质和视觉风格，自由设计新构图。"}${product ? "第一张为用户自己的产品，产品外观、品牌和包装以第一张为准；最后一张为竞品参考图，不复制竞品品牌或产品。" : "第一张为竞品参考图。"}\n用户可编辑提示词：${body.prompt}`;
     const images = !edit && product ? [await readCompetitorImage(currentImage(product)), source] : [source];
-    let output = await editImage({ images, mask, prompt, size });
+    let output = await editImage({ images, mask, prompt, size, quality: billing.quality });
     output = edit ? await preserveOutsideMask(source, output, mask!) : await sharp(output).resize(width, height, { fit: "fill" }).png().toBuffer();
     const versionId = randomUUID();
     const url = await uploadImage(output, "image/png", `competitors/${item.id}/${versionId}.png`);

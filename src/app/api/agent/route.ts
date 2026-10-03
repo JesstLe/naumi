@@ -93,6 +93,7 @@ export async function PUT(request: Request) {
     {
       cookie: request.headers.get("cookie") ?? "",
       authorization: request.headers.get("authorization") ?? "",
+      imageQuality: request.headers.get("x-naumi-image-quality") || "medium",
     },
     modelId
   );
@@ -331,6 +332,7 @@ export async function POST(request: Request) {
   const session = await getOrCreateSession(email, tempId, history, {
     cookie: request.headers.get("cookie") ?? "",
     authorization: request.headers.get("authorization") ?? "",
+      imageQuality: request.headers.get("x-naumi-image-quality") || "medium",
   }, postModelId);
   if (session.running) {
     return NextResponse.json({ error: "任务正在执行中" }, { status: 409 });

@@ -1,4 +1,5 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
 
 import { cdnUrl } from "@/lib/cdn";
 import { takePendingRefs } from "@/lib/pending-refs";
@@ -104,12 +105,7 @@ export function GenerateClient({
   // 出图质量:通道接入质量参数(NAUMI_IMAGE_QUALITY_SUPPORTED=1)前,
   // 非标准档置灰、统一按标准档执行与计费;选择仍随请求上行,由服务端
   // 在提交前回退并写任务审计(请求档/执行档/回退原因)。
-  const [quality, setQuality] = useState("medium");
-  const [qualityCapable, setQualityCapable] = useState(false);
-  const [qualityExperimental, setQualityExperimental] = useState(false);
-  useEffect(() => {
-    if (!qualityCapable && quality !== "medium") setQuality("medium");
-  }, [qualityCapable, quality]);
+  const { quality, setQuality, capable: qualityCapable, experimental: qualityExperimental, imageCost } = useImageQuality();
   const [style, setStyle] = useState(GENERATION_STYLES[0]);
   const [count, setCount] = useState(1);
   const [files, setFiles] = useState<File[]>([]);
@@ -155,8 +151,6 @@ export function GenerateClient({
       .then((response) => response.json())
       .then((config: { defaultImageModel?: string; imageModels?: ImageModelOption[]; imageQualityCapable?: boolean; imageQualityExperimental?: boolean }) => {
         if (cancelled) return;
-        setQualityCapable(!!config.imageQualityCapable);
-        setQualityExperimental(!!config.imageQualityExperimental);
         const options = Array.isArray(config.imageModels)
           ? config.imageModels.filter((item) => item?.id && item?.label)
           : [];
@@ -504,7 +498,7 @@ export function GenerateClient({
 
   // BYOK(模型 id 带 byok: 前缀=用户自带接口)豁免站内计费,费用发生在用户自己的上游。
   // 内测阶段按请求质量档计价(与后端 qualityBillCredits 同表),跑通选档→扣费链路。
-  const costPerImage = model.startsWith("byok:") ? 0 : qualityBillCredits(quality);
+  const costPerImage = model.startsWith("byok:") ? 0 : imageCost(resolution);
   const cost = count * costPerImage;
   const insufficient = !!user && remaining < cost;
 

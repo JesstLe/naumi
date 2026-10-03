@@ -29,6 +29,7 @@ import { RechargeModalProvider } from "@/lib/recharge-modal-context";
 import { RechargeModal } from "@/components/credits/recharge-modal";
 import { publicCommerceEnabled, pricingVisible } from "@/lib/commerce";
 import { TextModelProvider } from "@/lib/text-model-context";
+import { ImageQualityProvider } from "@/lib/image-quality-context";
 
 // 站点字体:Geist(拉丁/数字,Vercel)+ 系统中文栈(见 tailwind sans),数字 tabular-nums。
 // 中文不走网页字体(CJK 字体包数 MB,拖慢加载),用系统 PingFang/YaHei。
@@ -92,7 +93,7 @@ export default async function RootLayout({
             logoHasText={brand.logoHasText}
           >
           <AuthProvider>
-            <TextModelProvider>
+            <TextModelProvider><ImageQualityProvider>
             <AuthModalProvider>
               <RechargeModalProvider>
                 <ToastProvider>
@@ -105,7 +106,7 @@ export default async function RootLayout({
                 </ToastProvider>
               </RechargeModalProvider>
             </AuthModalProvider>
-            </TextModelProvider>
+            </ImageQualityProvider></TextModelProvider>
           </AuthProvider>
           </BrandProvider>
           </PaymentProvider>

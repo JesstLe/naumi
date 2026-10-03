@@ -1,4 +1,6 @@
 "use client";
+import { ImageQualityControl, QUALITY_TOOL_CATEGORIES } from "@/components/image-quality-control";
+import { useImageQuality } from "@/lib/image-quality-context";
 
 import { cdnUrl } from "@/lib/cdn";
 import * as React from "react";
@@ -41,7 +43,8 @@ export function ToolShell({
   tint,
   accent,
   category,
-  cost,
+  cost: baseCost,
+  resolution = "1K",
   actionLabel,
   onAction,
   processing,
@@ -65,6 +68,7 @@ export function ToolShell({
   accent: string;
   category?: string;
   cost: number;
+  resolution?: string;
   actionLabel: string;
   onAction: () => void;
   processing: boolean;
@@ -87,6 +91,9 @@ export function ToolShell({
 }) {
   const { user, ready } = useAuth();
   const { openAuth } = useAuthModal();
+  const { imageCost } = useImageQuality();
+  const qualityPriced = QUALITY_TOOL_CATEGORIES.has(category || "");
+  const cost = qualityPriced ? imageCost(resolution) : baseCost;
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
   const [records, setRecords] = React.useState<
@@ -243,6 +250,7 @@ export function ToolShell({
 
           <div className="nv-panel-scroll flex flex-col gap-[18px] lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1.5">
             {left}
+            {qualityPriced && <ImageQualityControl resolution={resolution} disabled={processing} />}
           </div>
 
           <div className="space-y-3 border-t border-c-line pt-4">

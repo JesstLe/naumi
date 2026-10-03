@@ -1,3 +1,5 @@
+import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import OpenAI, { toFile } from "openai";
 import {
@@ -7,7 +9,6 @@ import {
   addArtworks,
   getUser,
   isBanned,
-  addLedgerEntry,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
@@ -35,6 +36,7 @@ const BASE_PROMPT =
   "Extract ONLY the main garment / clothing item from this image (the top, dress, jacket, coat, pants, skirt or similar). Remove the model / person, any other items and the background completely. Lay the garment out flat, front-facing, neatly arranged like a clean e-commerce flat-lay product photo, on a fully transparent background. Faithfully preserve the garment's true shape, cut, colour, material, texture, prints, buttons and details. No body, no mannequin, no shadow, no border.";
 
 type GarmentInput = {
+  quality: ResolvedImageQuality;
   bytes: Buffer;
   type: string;
   email: string;
@@ -53,6 +55,7 @@ async function parseInput(request: Request): Promise<GarmentInput | null> {
   if (!(file instanceof File && file.size > 0)) return null;
   const bgRaw = s("bg");
   return {
+    quality: requestImageQuality(request, f.get("quality") ?? undefined),
     bytes: Buffer.from(await file.arrayBuffer()),
     type: file.type || "image/png",
     email: s("email").trim(),
@@ -125,7 +128,7 @@ export async function POST(request: Request) {
       input.email = tokenEmail;
     }
     const useDb = dbEnabled && input.email.length > 0;
-    const cost = GARMENT_COST;
+    const cost = await imageQualityCost(input.quality);
 
     if (dbEnabled && (await isBanned(input.email, ip))) {
       return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });
@@ -157,7 +160,8 @@ export async function POST(request: Request) {
         ? ` Specifically extract: ${input.prompt}.`
         : "";
       const prompt = BASE_PROMPT + userHint;
-      const r = await client.images.edit({
+      const r = await withQualityFallback(input.quality, async executed => client.images.edit({
+        quality: sdkImageQuality(executed),
         // 透明底只 gpt-image-1 支持(gpt-image-2 实测报错),服装平铺透明底必须用它。
         model: openaiModel || "gpt-image-1",
         image: await toFile(png, "image.png", { type: "image/png" }),
@@ -165,7 +169,7 @@ export async function POST(request: Request) {
         n: 1,
         size: "auto" as "1024x1024",
         background: "transparent" as const,
-      });
+      }));
       const b64 = r.data?.[0]?.b64_json;
       if (!b64) throw new Error("未返回平铺图");
       out = Buffer.from(b64, "base64");
@@ -242,9 +246,7 @@ export async function POST(request: Request) {
           e instanceof Error ? e.message : e
         );
       }
-      if (cost > 0) {
-        await addLedgerEntry(input.email, -cost, "服装提取").catch(() => {});
-      }
+      await settleToolImage(input.email, cost, "服装提取", input.quality, id);
       user = await getUser(input.email).catch(() => null);
     }
 
@@ -252,7 +254,7 @@ export async function POST(request: Request) {
       ok: true,
       id,
       url,
-      creditsUsed: useDb ? cost : 0,
+      creditsUsed: useDb ? cost : 0, quality: input.quality,
       user,
     });
   } catch (e) {

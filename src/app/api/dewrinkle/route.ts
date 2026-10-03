@@ -1,3 +1,5 @@
+import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import OpenAI, { toFile } from "openai";
@@ -8,7 +10,6 @@ import {
   addArtworks,
   getUser,
   isBanned,
-  addLedgerEntry,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
@@ -28,7 +29,8 @@ const COST = TOOL_COST.dewrinkle;
 const BASE_PROMPT =
   "Remove ALL wrinkles, creases and folds from the clothing in this image, making the fabric look smooth, flat, neat and freshly ironed/steamed. Keep EVERYTHING ELSE strictly identical — the exact garment design, cut, colour, pattern, prints, text, logos, the person/model (face, body, pose) if present, the background, lighting and overall composition must stay the same. Only smooth out the wrinkles; do not restyle, recolor or move anything.";
 
-type Input = { bytes: Buffer; type: string; email: string; prompt: string; ratio: string };
+type Input = {
+  quality: ResolvedImageQuality; bytes: Buffer; type: string; email: string; prompt: string; ratio: string };
 
 function sizeForRatio(ratio: string): "auto" | "1024x1024" | "1536x1024" | "1024x1536" {
   if (!ratio || ratio === "自动" || ratio === "auto") return "auto";
@@ -48,6 +50,7 @@ async function parseInput(request: Request): Promise<Input | null> {
   const file = f.get("image");
   if (!(file instanceof File && file.size > 0)) return null;
   return {
+    quality: requestImageQuality(request, f.get("quality") ?? undefined),
     bytes: Buffer.from(await file.arrayBuffer()),
     type: file.type || "image/png",
     email: s("email").trim(),
@@ -91,7 +94,7 @@ export async function POST(request: Request) {
       input.email = tokenEmail;
     }
     const useDb = dbEnabled && input.email.length > 0;
-    const cost = COST;
+    const cost = await imageQualityCost(input.quality);
 
     if (dbEnabled && (await isBanned(input.email, ip)))
       return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });
@@ -114,14 +117,14 @@ export async function POST(request: Request) {
       });
       const png = await toPng(input.bytes);
       const prompt = BASE_PROMPT + (input.prompt ? ` Extra: ${input.prompt}.` : "");
-      const r = await client.images.edit({
+      const r = await withQualityFallback(input.quality, async executed => client.images.edit({
         model: genModel || "gpt-image-2",
         image: await toFile(png, "image.png", { type: "image/png" }),
         prompt,
         n: 1,
         size: sizeForRatio(input.ratio) as "1024x1024",
-        quality: "high" as "high",
-      });
+        quality: sdkImageQuality(executed),
+      }));
       const b64 = r.data?.[0]?.b64_json;
       if (!b64) throw new Error("未返回结果图");
       out = Buffer.from(b64, "base64");
@@ -186,11 +189,11 @@ export async function POST(request: Request) {
       } catch (e) {
         console.error("[dewrinkle] addArtworks failed:", e instanceof Error ? e.message : e);
       }
-      if (cost > 0) await addLedgerEntry(input.email, -cost, "服装去皱").catch(() => {});
+      await settleToolImage(input.email, cost, "服装去皱", input.quality, id);
       user = await getUser(input.email).catch(() => null);
     }
 
-    return NextResponse.json({ ok: true, id, url, creditsUsed: useDb ? cost : 0, user });
+    return NextResponse.json({ ok: true, id, url, creditsUsed: useDb ? cost : 0, quality: input.quality, user });
   } catch (e) {
     return NextResponse.json(
       { error: safeError(e, "服装去皱服务暂时不可用,请稍后重试") },

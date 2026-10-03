@@ -5597,10 +5597,10 @@ export async function beginCanvasImageTaskSubmission(id: string): Promise<boolea
   return rows.length === 1;
 }
 
-export async function saveCanvasImageTaskProviderResult(id: string, url: string): Promise<void> {
+export async function saveCanvasImageTaskProviderResult(id: string, url: string, quality?: unknown): Promise<void> {
   await ensureSchema();
-  await getPool().query(`UPDATE app_canvas_image_tasks SET parameters=parameters || jsonb_build_object('upstreamResult',$2::text),
-    updated_at=now() WHERE id=$1 AND status='processing'`, [id,url]);
+  await getPool().query(`UPDATE app_canvas_image_tasks SET parameters=parameters || jsonb_build_object('upstreamResult',$2::text) || CASE WHEN $3::jsonb IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('qualityAudit',$3::jsonb) END,
+    updated_at=now() WHERE id=$1 AND status='processing'`, [id,url,quality ? JSON.stringify(quality) : null]);
 }
 
 export async function holdCanvasImageTask(id: string, error: string): Promise<void> {
@@ -5754,6 +5754,12 @@ export async function recordImageCostAudit(
 export async function getImageJobChargedCredits(jobId: string): Promise<number> {
   if (!dbEnabled) return 0;
   const { rows } = await getPool().query("SELECT COALESCE(-sum(delta),0) AS charged FROM app_ledger WHERE id=$1 AND kind='consume'", [`led-image-${jobId}`]);
+  return Number(rows[0].charged);
+}
+
+export async function getCanvasImageTaskChargedCredits(taskId: string): Promise<number> {
+  if (!dbEnabled) return 0;
+  const { rows } = await getPool().query("SELECT COALESCE(-sum(delta),0) AS charged FROM app_ledger WHERE id=$1 AND kind='consume'", [`led-canvas-image-${taskId}`]);
   return Number(rows[0].charged);
 }
 

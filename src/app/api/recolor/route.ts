@@ -1,3 +1,5 @@
+import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import OpenAI, { toFile } from "openai";
@@ -8,7 +10,6 @@ import {
   reserveCredits,
   refundCredits,
   addArtworks,
-  addLedgerEntry,
   getUser,
   isBanned,
 } from "@/lib/db";
@@ -74,6 +75,7 @@ async function parseInput(request: Request) {
     Math.min(100, parseInt(typeof rawStrength === "string" ? rawStrength : "100", 10) || 100)
   );
   return {
+    quality: requestImageQuality(request, f.get("quality") ?? undefined),
     image: {
       buf: Buffer.from(await file.arrayBuffer()),
       type: file.type || "image/png",
@@ -113,7 +115,7 @@ export async function POST(request: Request) {
     input.email = tokenEmail;
   }
   const useDb = dbEnabled && input.email.length > 0;
-  const cost = POINTS_PER_IMAGE;
+  const cost = await imageQualityCost(input.quality);
 
   if (dbEnabled && (await isBanned(input.email, ip))) {
     return NextResponse.json(
@@ -149,18 +151,14 @@ export async function POST(request: Request) {
     const file = await toFile(input.image.buf, "product.png", {
       type: input.image.type,
     });
-    const r = await client.images.edit({
+    const r = await withQualityFallback(input.quality, async executed => client.images.edit({
       model,
       image: file,
       prompt,
       n: 1,
       size: "1024x1024",
-      quality: (process.env.OPENAI_IMAGE_QUALITY || "medium") as
-        | "low"
-        | "medium"
-        | "high"
-        | "auto",
-    });
+      quality: sdkImageQuality(executed),
+    }));
     const d = r.data?.[0];
     if (!d) throw new Error("空返回");
     const buf = d.b64_json
@@ -203,14 +201,14 @@ export async function POST(request: Request) {
           ],
           `recolor-${Date.now()}`
         );
-        await addLedgerEntry(input.email, -cost, `产品换色(${name}) 1 张`).catch(() => {});
       } catch {
-        /* non-fatal */
+        /* Artwork history is optional; settlement is mandatory. */
       }
+      await settleToolImage(input.email, cost, `产品换色(${name}) 1 张`, input.quality, undefined);
       const user = await getUser(input.email).catch(() => null);
-      return NextResponse.json({ ok: true, url, cost, user });
+      return NextResponse.json({ ok: true, url, cost, quality: input.quality, user });
     }
-    return NextResponse.json({ ok: true, url, cost });
+    return NextResponse.json({ ok: true, url, cost, quality: input.quality });
   } catch (e) {
     if (useDb) await refundCredits(input.email, cost).catch(() => {});
     console.error("[recolor] failed:", e instanceof Error ? e.message : e);

@@ -1,3 +1,5 @@
+import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import OpenAI, { toFile } from "openai";
@@ -8,7 +10,6 @@ import {
   addArtworks,
   getUser,
   isBanned,
-  addLedgerEntry,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
@@ -16,7 +17,7 @@ import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
-import { garment3dCost, resolutionLongSide } from "@/lib/mock-data";
+import { resolutionLongSide } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,7 @@ const BASE_PROMPT =
   "Render the uploaded clothing as a clean professional 3D ghost-mannequin e-commerce product image: present the garment as if worn by an invisible (hollow) mannequin, with realistic three-dimensional volume, natural structure, folds and drape, front-facing, neatly shaped. Remove any real person, model, hanger or messy background completely. Center the garment on a clean soft light-gray studio background with gentle product lighting and a soft shadow. Faithfully preserve the garment's exact design, colour, pattern, prints, text, fabric, buttons, collar and all details.";
 
 type Input = {
+  quality: ResolvedImageQuality;
   bytes: Buffer;
   type: string;
   email: string;
@@ -72,6 +74,7 @@ async function parseInput(request: Request): Promise<Input | null> {
   const file = f.get("image");
   if (!(file instanceof File && file.size > 0)) return null;
   return {
+    quality: requestImageQuality(request, f.get("quality") ?? undefined),
     bytes: Buffer.from(await file.arrayBuffer()),
     type: file.type || "image/png",
     email: s("email").trim(),
@@ -127,6 +130,7 @@ type Job = {
   id?: string;
   url?: string;
   creditsUsed?: number;
+  quality?: ResolvedImageQuality;
   user?: Awaited<ReturnType<typeof getUser>>;
   error?: string;
 };
@@ -160,14 +164,14 @@ async function runJob(
       const hint = cat ? ` The item is a ${cat}.` : "";
       const userHint = input.prompt ? ` Extra requirement: ${input.prompt}.` : "";
       const prompt = BASE_PROMPT + hint + userHint;
-      const r = await client.images.edit({
+      const r = await withQualityFallback(input.quality, async executed => client.images.edit({
         model: genModel || "gpt-image-2",
         image: await toFile(png, "image.png", { type: "image/png" }),
         prompt,
         n: 1,
         size: sizeForRatio(input.ratio) as "1024x1024",
-        quality: "high" as "high",
-      });
+        quality: sdkImageQuality(executed),
+      }));
       const b64 = r.data?.[0]?.b64_json;
       if (!b64) throw new Error("未返回 3D 图");
       out = Buffer.from(b64, "base64");
@@ -234,7 +238,7 @@ async function runJob(
       } catch (e) {
         console.error("[garment3d] addArtworks failed:", e instanceof Error ? e.message : e);
       }
-      if (cost > 0) await addLedgerEntry(input.email, -cost, "3D 服装图").catch(() => {});
+      await settleToolImage(input.email, cost, "3D 服装图", input.quality, id, input.resolution);
       user = await getUser(input.email).catch(() => null);
     }
 
@@ -243,7 +247,7 @@ async function runJob(
       ts: Date.now(),
       id,
       url,
-      creditsUsed: useDb ? cost : 0,
+      creditsUsed: useDb ? cost : 0, quality: input.quality,
       user,
     });
   } catch (e) {
@@ -279,7 +283,7 @@ export async function POST(request: Request) {
       input.email = tokenEmail;
     }
     const useDb = dbEnabled && input.email.length > 0;
-    const cost = garment3dCost(input.resolution);
+    const cost = await imageQualityCost(input.quality, input.resolution);
 
     if (dbEnabled && (await isBanned(input.email, ip)))
       return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });

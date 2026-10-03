@@ -32,6 +32,8 @@ export async function authHeader(): Promise<Record<string, string>> {
   if (typeof window !== "undefined") {
     const textModel = window.localStorage.getItem("naumi:text-model")?.trim();
     if (textModel) headers["x-naumi-text-model"] = textModel;
+    const quality = window.localStorage.getItem("naumi:image-quality")?.trim();
+    if (quality) headers["x-naumi-image-quality"] = quality;
   }
   if (!url || !anon) return headers;
   try {

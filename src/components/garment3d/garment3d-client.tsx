@@ -1,9 +1,10 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
 
 import * as React from "react";
 import { Box } from "lucide-react";
 import { ToolWorkspace, ToolChips } from "@/components/tools/tool-workspace";
-import { garment3dCost, GENERATION_RESOLUTIONS } from "@/lib/mock-data";
+import { GENERATION_RESOLUTIONS } from "@/lib/mock-data";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
@@ -16,6 +17,7 @@ export function Garment3dClient() {
   const L = (z: string, e: string) => (locale === "en" ? e : z);
   const [view, setView] = React.useState("正面");
   const [material, setMaterial] = React.useState("真实");
+  const { imageCost } = useImageQuality();
   const [resolution, setResolution] = React.useState("1K");
 
   const controls = (
@@ -61,7 +63,7 @@ export function Garment3dClient() {
       accent={ACCENT}
       category="dress3d"
       regenLabel={L("以此图再生成 3D", "Regenerate 3D from this image")}
-      cost={garment3dCost(resolution)}
+      cost={imageCost(resolution)}
       action={L("生成 3D 图", "Generate 3D")}
       controls={controls}
       onProcess={async (file) => {

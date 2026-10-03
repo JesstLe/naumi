@@ -4,14 +4,17 @@ import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { imageGatewayFields, withImageOperation } from "@/lib/image-gateway";
 import { randomUUID } from "node:crypto";
+import { resolveImageQuality, type ExecutedQuality, type ResolvedImageQuality } from "@/lib/image-quality";
+import { withQualityFallback, sdkImageQuality } from "@/lib/image-quality-request";
 
 /** Shared Images edit transport; callers own masks, credit settlement and storage. */
 export async function editImage(input: {
 	operationId?: string;
+  legacyOperationId?: boolean;
   images: Buffer[]; mask?: Buffer; prompt: string;
   size: "1024x1024" | "1536x1024" | "1024x1536";
   types?: string[];
-  quality?: "low" | "medium" | "high" | "auto";
+  quality?: ExecutedQuality | ResolvedImageQuality;
 }) {
   const { apiKey, model } = await getOpenAISettings();
   if (!apiKey) throw new Error("模型接口未配置");
@@ -26,13 +29,15 @@ export async function editImage(input: {
     const ext = type === "image/jpeg" ? "jpg" : type === "image/webp" ? "webp" : "png";
     return toFile(b, `image-${i}.${ext}`, { type });
   }));
-  const response = await withImageOperation(model, { id: input.operationId || `edit-${randomUUID()}`, preserveIdentity: true }, async () => client.images.edit({
+  const quality = typeof input.quality === "object" ? input.quality : resolveImageQuality(input.quality ?? "medium");
+  const operationId = input.operationId || `edit-${randomUUID()}`;
+  const response = await withQualityFallback(quality, executed => withImageOperation(model, { id: input.legacyOperationId ? operationId : `${operationId}:quality:${executed}`, ...(input.legacyOperationId ? {} : {quality: executed}), preserveIdentity: true }, async () => client.images.edit({
     ...imageGatewayFields(model, true),
     model, image: files.length === 1 ? files[0] : files,
     ...(input.mask ? { mask: await toFile(input.mask, "mask.png", { type: "image/png" }) } : {}),
     prompt: input.prompt, size: input.size, n: 1,
-    ...(input.quality ? { quality: input.quality } : {}),
-  }, { signal }));
+    quality: sdkImageQuality(executed),
+  }, { signal })));
   const result = response.data?.[0];
   const b64 = result?.b64_json;
   if (!b64 && result?.url) {

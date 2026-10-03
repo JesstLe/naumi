@@ -1,3 +1,5 @@
+import { requestImageQuality, imageQualityCost, settleToolImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { editImage } from "@/lib/image-edit";
 import {
@@ -7,13 +9,12 @@ import {
   addArtworks,
   getUser,
   isBanned,
-  addLedgerEntry,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
-import { isGenerationResolution, resolutionCost, resolutionLongSide } from "@/lib/mock-data";
+import { isGenerationResolution, resolutionLongSide } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------
@@ -29,6 +30,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 type InpaintInput = {
+  quality: ResolvedImageQuality;
   image: Buffer;
   imageType: string;
   mask: Buffer;
@@ -52,6 +54,7 @@ async function parseInput(request: Request): Promise<InpaintInput | null> {
   if (!(maskFile instanceof File && maskFile.size > 0)) return null;
 
   return {
+    quality: requestImageQuality(request, f.get("quality") ?? undefined),
     image: Buffer.from(await imgFile.arrayBuffer()),
     imageType: imgFile.type || "image/png",
     mask: Buffer.from(await maskFile.arrayBuffer()),
@@ -141,7 +144,7 @@ export async function POST(request: Request) {
       input.email = tokenEmail;
     }
     const useDb = dbEnabled && input.email.length > 0;
-    const cost = resolutionCost(input.resolution);
+    const cost = await imageQualityCost(input.quality, input.resolution);
 
     if (dbEnabled && (await isBanned(input.email, ip))) {
       return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });
@@ -181,6 +184,7 @@ export async function POST(request: Request) {
       }
       // 带 mask 的局部重绘(透明区 = 编辑区),用后台配置的主力模型(gpt-image-2)。
       const generated = await editImage({
+      quality: input.quality,
         images: [imgPng],
         mask: maskPng,
         prompt: input.prompt,
@@ -259,9 +263,7 @@ export async function POST(request: Request) {
           e instanceof Error ? e.message : e
         );
       }
-      if (cost > 0) {
-        await addLedgerEntry(input.email, -cost, "局部改图").catch(() => {});
-      }
+      await settleToolImage(input.email, cost, "局部改图", input.quality, id, input.resolution);
       user = await getUser(input.email).catch(() => null);
     }
 
@@ -269,7 +271,7 @@ export async function POST(request: Request) {
       ok: true,
       id,
       url,
-      creditsUsed: useDb ? cost : 0,
+      creditsUsed: useDb ? cost : 0, quality: input.quality,
       user,
     });
   } catch (e) {

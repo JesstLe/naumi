@@ -1,4 +1,6 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -64,7 +66,7 @@ export function AnnotateEditorModal({
   onClose,
   onSubmitted,
 }: {
-  artwork: { id: string; image: string; title: string };
+  artwork: { id: string; image: string; title: string; resolution?: string | null };
   onClose: () => void;
   onSubmitted: (formData: FormData) => Promise<void>;
 }) {
@@ -72,6 +74,7 @@ export function AnnotateEditorModal({
   const [natW, setNatW] = useState(0);
   const [natH, setNatH] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const { imageCost } = useImageQuality();
   const [tool, setTool] = useState<AnnotateTool>("arrow");
   const [brushSlider, setBrushSlider] = useState(5);
   const [items, setItems] = useState<AnnotateItem[]>([]);
@@ -509,6 +512,7 @@ export function AnnotateEditorModal({
               >
                 清空
               </button>
+              <ImageQualityControl resolution={artwork.resolution || "1K"} disabled={submitting} />
               <button
                 type="button"
                 disabled={submitting || !items.length || !imgUrl}
@@ -521,7 +525,7 @@ export function AnnotateEditorModal({
                   </>
                 ) : (
                   <>
-                    <Sparkles className="h-4 w-4" /> 生成修改结果 · 6 积分
+                    <Sparkles className="h-4 w-4" /> 生成修改结果 · {imageCost(artwork.resolution || "1K")} 积分
                   </>
                 )}
               </button>

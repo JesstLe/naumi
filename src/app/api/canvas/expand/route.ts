@@ -1,10 +1,10 @@
+import { imageRequestBilling, settleToolImage } from "@/lib/image-quality-request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 import { authenticatedEmail } from "@/lib/request-auth";
 import {
   addArtworks,
-  addLedgerEntry,
   dbEnabled,
   getUser,
   listArtworksByIds,
@@ -16,7 +16,6 @@ import { editImage } from "@/lib/image-edit";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
-import { resolutionCost } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------
@@ -53,9 +52,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "扩图操作过于频繁，请稍后再试" }, { status: 429 });
   }
 
+  let requestedQuality: unknown;
   let input: { artworkId: string; ratio: string; anchor: string };
   try {
     const body = (await request.json()) as Partial<typeof input>;
+    requestedQuality = (body as typeof body & {quality?:unknown}).quality;
     input = {
       artworkId: String(body.artworkId || "").trim(),
       ratio: String(body.ratio || "").trim(),
@@ -73,11 +74,13 @@ export async function POST(request: Request) {
   const ratioH = Number(ratioMatch[2]);
   if (ratioW <= 0 || ratioH <= 0) return NextResponse.json({ error: "目标比例无效" }, { status: 400 });
 
-  const cost = resolutionCost("1K");
+  const { quality } = await imageRequestBilling(request, requestedQuality);
+  let cost = 0;
   let reserved = false;
   try {
     const artwork = (await listArtworksByIds(email, [input.artworkId]))[0];
     if (!artwork) return NextResponse.json({ error: "图片不存在或无权访问" }, { status: 404 });
+    cost = (await imageRequestBilling(request, requestedQuality, artwork.resolution || "1K")).cost;
 
     const image = await readCanvasImage(artwork.image, request.url);
     let original = await sharp(image.buffer).rotate().png().toBuffer();
@@ -93,7 +96,7 @@ export async function POST(request: Request) {
 
     if (cost > 0) {
       reserved = await reserveCredits(email, cost);
-      if (!reserved) return NextResponse.json({ error: "积分不足，请升级方案后重试" }, { status: 402 });
+      if (!reserved) return NextResponse.json({ error: "积分不足，请联系管理员补充额度" }, { status: 402 });
     }
 
     // 最小外扩:先按高定宽,不够再按宽定高(只外扩不裁切)
@@ -148,7 +151,7 @@ export async function POST(request: Request) {
       mask,
       prompt,
       size: editSize(targetW, targetH),
-      quality: "high",
+      quality,
     });
     const edited = await sharp(editedRaw).resize(targetW, targetH, { fit: "fill" }).png().toBuffer();
     const id = `exp-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
@@ -174,9 +177,9 @@ export async function POST(request: Request) {
       width: targetW,
       height: targetH,
     }], `exp-${Date.now()}`);
-    if (cost > 0) await addLedgerEntry(email, -cost, "画布扩图").catch(() => {});
+    await settleToolImage(email, cost, "画布扩图", quality, id, artwork.resolution || "1K");
     const user = await getUser(email).catch(() => null);
-    return NextResponse.json({ ok: true, id, width: targetW, height: targetH, user });
+    return NextResponse.json({ ok: true, id, width: targetW, height: targetH, user, cost, quality });
   } catch (error) {
     if (reserved && cost > 0) await refundCredits(email, cost).catch(() => {});
     return NextResponse.json(

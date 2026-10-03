@@ -1,4 +1,6 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -19,7 +21,6 @@ import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
 import { downloadImage } from "@/lib/download";
-import { resolutionCost } from "@/lib/mock-data";
 import { BeforeAfter } from "@/components/ui/before-after";
 import { cn } from "@/lib/utils";
 import { ToolShell } from "@/components/tools/tool-shell";
@@ -32,6 +33,7 @@ const ACC_SOFT = "rgba(124,92,255,.08)";
 const MAX_UPLOAD = 12 * 1024 * 1024;
 
 export function InpaintClient() {
+  const { imageCost } = useImageQuality();
   const { user, remaining, consumeCredits, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
   const { locale } = useI18n();
@@ -52,7 +54,7 @@ export function InpaintClient() {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const cost = resolutionCost(resolution);
+  const cost = imageCost(resolution);
 
   // AI帮写/智能优化(贴按钮弹窗,全站统一)
   const assistBtnRef = useRef<HTMLButtonElement>(null);
@@ -297,6 +299,7 @@ export function InpaintClient() {
       onRegen={regenFrom}
       regenLabel="以此图再改图"
       cost={cost}
+      resolution={resolution}
       actionLabel={L("开始改图", "Generate")}
       onAction={generate}
       processing={loading}

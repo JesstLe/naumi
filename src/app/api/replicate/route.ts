@@ -1,3 +1,5 @@
+import { requestImageQuality, imageQualityCost, settleToolImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { editImage, isImageTimeout } from "@/lib/image-edit";
@@ -8,7 +10,6 @@ import {
   reserveCredits,
   refundCredits,
   addArtworks,
-  addLedgerEntry,
   getUser,
   isBanned,
 } from "@/lib/db";
@@ -55,6 +56,7 @@ async function parseInput(request: Request) {
       ? { buf: Buffer.from(await ref.arrayBuffer()), type: ref.type || "image/png" }
       : null;
   return {
+    quality: requestImageQuality(request, f.get("quality") ?? undefined),
     products,
     ref: refImg,
     degree: (f.get("degree") ?? "high").toString().trim() === "style" ? "style" : "high",
@@ -94,7 +96,7 @@ export async function POST(request: Request) {
     input.email = tokenEmail;
   }
   const useDb = dbEnabled && input.email.length > 0;
-  const cost = POINTS_PER_IMAGE;
+  const cost = await imageQualityCost(input.quality);
 
   if (dbEnabled && (await isBanned(input.email, ip))) {
     return NextResponse.json(
@@ -130,15 +132,11 @@ export async function POST(request: Request) {
 
     const images = [...input.products, input.ref];
     const buf = await editImage({
+      quality: input.quality,
       images: images.map(im => im.buf),
       types: images.map(im => im.type),
       prompt,
       size: "1024x1024",
-      quality: (process.env.OPENAI_IMAGE_QUALITY || "medium") as
-        | "low"
-        | "medium"
-        | "high"
-        | "auto",
     });
 
     let url: string;
@@ -177,14 +175,14 @@ export async function POST(request: Request) {
           ],
           `replicate-${Date.now()}`
         );
-        await addLedgerEntry(input.email, -cost, "爆款复刻 1 张").catch(() => {});
       } catch {
-        /* non-fatal */
+        /* Artwork history is optional; settlement is mandatory. */
       }
+      await settleToolImage(input.email, cost, "爆款复刻 1 张", input.quality, undefined);
       const user = await getUser(input.email).catch(() => null);
-      return NextResponse.json({ ok: true, url, cost, user });
+      return NextResponse.json({ ok: true, url, cost, quality: input.quality, user });
     }
-    return NextResponse.json({ ok: true, url, cost });
+    return NextResponse.json({ ok: true, url, cost, quality: input.quality });
   } catch (e) {
     if (useDb) await refundCredits(input.email, cost).catch(() => {});
     console.error("[replicate] failed:", e instanceof Error ? e.message : e);

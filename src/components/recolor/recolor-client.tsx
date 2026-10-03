@@ -1,4 +1,6 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -32,6 +34,7 @@ const PRESETS = [
 ];
 
 export function RecolorClient() {
+  const { costPerImage } = useImageQuality();
   const L = (z: string, e: string) =>
     typeof window !== "undefined" && document.documentElement.lang === "en" ? e : z;
   const { user, ready, applyServerUser } = useAuth();
@@ -47,7 +50,7 @@ export function RecolorClient() {
   const [viewing, setViewing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const cost = POINTS_PER_IMAGE;
+  const cost = costPerImage;
 
   useEffect(() => {
     return () => {
@@ -252,7 +255,8 @@ export function RecolorClient() {
           )}
 
           {/* CTA:积分前置 */}
-          <button
+          <ImageQualityControl disabled={loading} />
+            <button
             type="button"
             onClick={generate}
             disabled={loading}

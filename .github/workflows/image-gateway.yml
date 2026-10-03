@@ -17,6 +17,7 @@ on:
       - 'scripts/verify-coordinated-release.sh'
       - 'scripts/verify-image-gateway.ts'
       - 'scripts/verify-credit-billing.ts'
+      - 'scripts/verify-global-image-quality.ts'
       - 'scripts/verify-single-product.ts'
       - 'src/lib/mock-data.ts'
       - 'src/lib/pricing.ts'
@@ -65,6 +66,10 @@ jobs:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
           NAUMI_VERIFY_ISOLATED_DB: '1'
       - run: npm run verify:credit-billing
+        env:
+          DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
+          NAUMI_VERIFY_ISOLATED_DB: '1'
+      - run: npm run verify:global-image-quality
         env:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
           NAUMI_VERIFY_ISOLATED_DB: '1'

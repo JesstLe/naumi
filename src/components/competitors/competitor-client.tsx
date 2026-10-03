@@ -1,4 +1,7 @@
 "use client";
+import { useImageQuality } from "@/lib/image-quality-context";
+import { ImageQualityControl } from "@/components/image-quality-control";
+
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -27,6 +30,7 @@ async function api(url: string, method = "GET", body?: unknown) {
 function draft(item: CompetitorItem) { return { revision: item.revision, prompt: item.prompt, regions: item.regions, activeVersion: item.activeVersion }; }
 export function CompetitorClient() {
   const { user, ready, applyServerUser } = useAuth();
+  const { costPerImage } = useImageQuality();
   const { openAuth } = useAuthModal();
   const [items, setItems] = useState<CompetitorItem[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -251,6 +255,7 @@ export function CompetitorClient() {
       </section>
       <aside className="cmp-properties">
         {item ? <>
+<ImageQualityControl disabled={busy || batchBusy} /><p className="text-xs text-c-text3">每张 {costPerImage} 积分；仅成功出图计费</p>
 <div className="cmp-panel-heading"><span>提示词</span><button disabled={busy} onClick={()=>void action("analyze")}><ScanLine size={15}/>反推提示词</button></div>
 <TextModelSelect compact />
           <textarea aria-label="反推提示词" rows={7} maxLength={8000} value={item.prompt} disabled={busy} placeholder="反推参考图，或直接填写生成要求" onChange={e=>change({prompt:e.target.value})}/>

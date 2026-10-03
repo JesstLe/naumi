@@ -1,3 +1,5 @@
+import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
+import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import OpenAI, { toFile } from "openai";
 import {
@@ -7,7 +9,6 @@ import {
   addArtworks,
   getUser,
   isBanned,
-  addLedgerEntry,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
@@ -15,7 +16,6 @@ import { resolveUserEmail } from "@/lib/admin-auth";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { getOpenAISettings, getCutoutSettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
-import { resolutionCost } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------
@@ -82,6 +82,7 @@ const BASE_PROMPT =
   "Extract ONLY the decorative print / graphic / logo / pattern printed on the product in this image. Remove the product itself, any model and the background completely. Lay the extracted artwork out flat, front-facing and undistorted as a single clean standalone graphic on a fully transparent background. Faithfully preserve the original colours, textures, typography and fine details of the print. No product, no mockup, no shadow, no border.";
 
 type ExtractInput = {
+  quality: ResolvedImageQuality;
   bytes: Buffer;
   type: string;
   email: string;
@@ -105,6 +106,7 @@ async function parseInput(request: Request): Promise<ExtractInput | null> {
   if (!(file instanceof File && file.size > 0)) return null;
   const bgRaw = s("bg");
   return {
+    quality: requestImageQuality(request, f.get("quality") ?? undefined),
     bytes: Buffer.from(await file.arrayBuffer()),
     type: file.type || "image/png",
     email: s("email").trim(),
@@ -189,7 +191,7 @@ export async function POST(request: Request) {
       input.email = tokenEmail;
     }
     const useDb = dbEnabled && input.email.length > 0;
-    const cost = resolutionCost(input.resolution);
+    const cost = await imageQualityCost(input.quality, input.resolution);
 
     if (dbEnabled && (await isBanned(input.email, ip))) {
       return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });
@@ -233,7 +235,8 @@ export async function POST(request: Request) {
           : "";
       const prompt =
         BASE_PROMPT + modeHint + completeHint + categoryHint + userHint;
-      const r = await client.images.edit({
+      const r = await withQualityFallback(input.quality, async executed => client.images.edit({
+        quality: sdkImageQuality(executed),
         // 透明底只 gpt-image-1 支持(gpt-image-2 实测报错),印花透明底必须用它。
         model: openaiModel || "gpt-image-1",
         image: await toFile(png, "image.png", { type: "image/png" }),
@@ -241,7 +244,7 @@ export async function POST(request: Request) {
         n: 1,
         size: sizeForRatio(input.ratio) as "1024x1024",
         background: "transparent" as const,
-      });
+      }));
       const b64 = r.data?.[0]?.b64_json;
       if (!b64) throw new Error("未返回图案");
       out = Buffer.from(b64, "base64");
@@ -322,9 +325,7 @@ export async function POST(request: Request) {
           e instanceof Error ? e.message : e
         );
       }
-      if (cost > 0) {
-        await addLedgerEntry(input.email, -cost, "印花提取").catch(() => {});
-      }
+      await settleToolImage(input.email, cost, "印花提取", input.quality, id, input.resolution);
       user = await getUser(input.email).catch(() => null);
     }
 
@@ -332,7 +333,7 @@ export async function POST(request: Request) {
       ok: true,
       id,
       url,
-      creditsUsed: useDb ? cost : 0,
+      creditsUsed: useDb ? cost : 0, quality: input.quality,
       user,
     });
   } catch (e) {
