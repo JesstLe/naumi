@@ -17,7 +17,8 @@
     "verify:image-job-routes": "tsx --conditions react-server scripts/verify-image-job-routes.ts",
     "verify:image-gateway": "tsx --conditions react-server scripts/verify-image-gateway.ts",
     "verify:credit-billing": "tsx --conditions react-server scripts/verify-credit-billing.ts",
-    "verify:single-product": "tsx --conditions react-server scripts/verify-single-product.ts"
+    "verify:single-product": "tsx --conditions react-server scripts/verify-single-product.ts",
+    "verify:pricing-proposal": "tsx scripts/verify-pricing-proposal.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",

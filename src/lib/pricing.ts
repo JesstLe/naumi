@@ -1,17 +1,10 @@
 /**
  * 客户可见的「积分」定价数据（语言中立：只放数字，文案在页面字典里）。
  *
- * 数字来源：2026-10-02《Naumi 竞品锚定积分定价》决策稿
- * （Naumi竞品锚定积分定价.xlsx / Naumi竞品锚定积分套餐决策稿.docx）。
- * 状态：待负责人最终审核；调价只改本文件，页面自动同步。
- *
- * 内部备注（不得渲染到页面）：
- * - 当前上游按张接口无独立 quality 参数，因此只按「模型 × 分辨率」计价，
- *   销售页不出现低／中／高等质量档；接入支持质量参数的供应商后再扩展。
- * - GPT Image 2.5 档为低价候选，与竞品的质量对齐尚未实测验证。
- * - Seedream 4.5（3 积分/张）毛利过薄，仅限量测试，暂不进销售页。
- * - 套餐条款（连续包月、年包按月发放、当期未用不结转、折扣不叠加）
- *   为拟定条款，正式上线前需再次确认。
+ * 数字来源：2026-10-02《Naumi竞品锚定豆定价.xlsx》与配套决策稿。
+ * 展示名称统一为积分，数值保持报告原口径，不将跨平台单位视为等值。
+ * 仅供 /plans 调研展示；实际扣费仍由 QUALITY_CREDITS 管理。
+ * Token质量路线与EXT按张路线必须分开，不能互换成本或模型名。
  */
 
 /** 积分套餐：套餐决定积分单价。 */
@@ -34,6 +27,7 @@ export type ResolutionKey = "1k" | "2k" | "4k" | "flat";
 /** 单图档位：模型 × 分辨率决定一张扣几积分。 */
 export type ImageTier = {
   id: string;
+  model: string;
   rows: { resolution: ResolutionKey; credits: number }[];
 };
 
@@ -48,16 +42,48 @@ export type SuiteBundle = {
 };
 
 export const PRICING_PACKAGES: PricingPackage[] = [
-  { id: "trial-monthly", kind: "monthly", priceYuan: 29, credits: 190, monthlyCredits: 190 },
-  { id: "standard-monthly", kind: "monthly", priceYuan: 99, credits: 775, monthlyCredits: 775, highlighted: true },
-  { id: "bulk-monthly", kind: "monthly", priceYuan: 299, credits: 2500, monthlyCredits: 2500 },
-  { id: "team-yearly", kind: "yearly", priceYuan: 1099, credits: 12000, monthlyCredits: 1000 },
-  { id: "volume-yearly", kind: "yearly", priceYuan: 4499, credits: 60000, monthlyCredits: 5000 },
+  {
+    id: "trial-monthly",
+    kind: "monthly",
+    priceYuan: 29,
+    credits: 190,
+    monthlyCredits: 190,
+  },
+  {
+    id: "standard-monthly",
+    kind: "monthly",
+    priceYuan: 99,
+    credits: 775,
+    monthlyCredits: 775,
+    highlighted: true,
+  },
+  {
+    id: "bulk-monthly",
+    kind: "monthly",
+    priceYuan: 299,
+    credits: 2500,
+    monthlyCredits: 2500,
+  },
+  {
+    id: "team-yearly",
+    kind: "yearly",
+    priceYuan: 1099,
+    credits: 12000,
+    monthlyCredits: 1000,
+  },
+  {
+    id: "volume-yearly",
+    kind: "yearly",
+    priceYuan: 4499,
+    credits: 60000,
+    monthlyCredits: 5000,
+  },
 ];
 
 export const IMAGE_TIERS: ImageTier[] = [
   {
     id: "swift",
+    model: "GPT 2 EXT",
     rows: [
       { resolution: "1k", credits: 1.7 },
       { resolution: "2k", credits: 2.55 },
@@ -66,6 +92,7 @@ export const IMAGE_TIERS: ImageTier[] = [
   },
   {
     id: "standard",
+    model: "Nano Banana 2 EXT",
     rows: [
       { resolution: "1k", credits: 3 },
       { resolution: "2k", credits: 4 },
@@ -74,6 +101,7 @@ export const IMAGE_TIERS: ImageTier[] = [
   },
   {
     id: "flagship",
+    model: "Nano Banana Pro EXT",
     rows: [
       { resolution: "1k", credits: 5 },
       { resolution: "2k", credits: 5 },
@@ -82,13 +110,195 @@ export const IMAGE_TIERS: ImageTier[] = [
   },
   {
     id: "batch",
+    model: "Seedream 5.0 Flash",
     rows: [{ resolution: "flat", credits: 2 }],
   },
 ];
 
+export const RESEARCH_DATE = "2026-10-02";
+export const QUALITY_MODELS = [
+  "gpt-image-2.5-flare",
+  "gpt-image-2.5-sunburst",
+] as const;
+export const RESEARCH_QUALITIES = [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+export type ResearchQuality = (typeof RESEARCH_QUALITIES)[number];
+export type QualityQuote = {
+  resolution: "1k" | "2k" | "4k";
+  pixels: string;
+  quality: ResearchQuality;
+  targetCredits: number;
+  variableCostYuan: number;
+  minimumCredits: number;
+  protectedCredits: number;
+};
+
+// 来源：质量定价!F/I/L/N，第7至35行flare记录。sunburst对应记录相同。
+// 最低与35%情景按4499/60000元每积分计算；并非已启用的固定单张价。
+export const QUALITY_QUOTES: QualityQuote[] = [
+  {
+    resolution: "1k",
+    pixels: "1024×1024",
+    quality: "low",
+    targetCredits: 1,
+    variableCostYuan: 0.0814190776832,
+    minimumCredits: 1.1,
+    protectedCredits: 1.69,
+  },
+  {
+    resolution: "1k",
+    pixels: "1024×1024",
+    quality: "medium",
+    targetCredits: 1,
+    variableCostYuan: 0.1259223016088,
+    minimumCredits: 1.69,
+    protectedCredits: 2.61,
+  },
+  {
+    resolution: "1k",
+    pixels: "1024×1024",
+    quality: "high",
+    targetCredits: 2,
+    variableCostYuan: 0.3671187868352,
+    minimumCredits: 4.93,
+    protectedCredits: 7.61,
+  },
+  {
+    resolution: "1k",
+    pixels: "1024×1024",
+    quality: "xhigh",
+    targetCredits: 4,
+    variableCostYuan: 0.6172891731824,
+    minimumCredits: 8.29,
+    protectedCredits: 12.79,
+  },
+  {
+    resolution: "1k",
+    pixels: "1024×1024",
+    quality: "max",
+    targetCredits: 9,
+    variableCostYuan: 1.3319047277408,
+    minimumCredits: 17.87,
+    protectedCredits: 27.59,
+  },
+  {
+    resolution: "2k",
+    pixels: "2048×2048",
+    quality: "low",
+    targetCredits: 1,
+    variableCostYuan: 0.1182303863624,
+    minimumCredits: 1.59,
+    protectedCredits: 2.45,
+  },
+  {
+    resolution: "2k",
+    pixels: "2048×2048",
+    quality: "medium",
+    targetCredits: 1,
+    variableCostYuan: 0.2088851017664,
+    minimumCredits: 2.81,
+    protectedCredits: 4.33,
+  },
+  {
+    resolution: "2k",
+    pixels: "2048×2048",
+    quality: "high",
+    targetCredits: 5,
+    variableCostYuan: 0.6989699874656,
+    minimumCredits: 9.38,
+    protectedCredits: 14.48,
+  },
+  {
+    resolution: "2k",
+    pixels: "2048×2048",
+    quality: "xhigh",
+    targetCredits: 8,
+    variableCostYuan: 1.2071858162456,
+    minimumCredits: 16.2,
+    protectedCredits: 25,
+  },
+  {
+    resolution: "2k",
+    pixels: "2048×2048",
+    quality: "max",
+    targetCredits: 18,
+    variableCostYuan: 2.6593095302624,
+    minimumCredits: 35.68,
+    protectedCredits: 55.08,
+  },
+  {
+    resolution: "4k",
+    pixels: "2880×2880",
+    quality: "low",
+    targetCredits: 1,
+    variableCostYuan: 0.1662132862328,
+    minimumCredits: 2.24,
+    protectedCredits: 3.45,
+  },
+  {
+    resolution: "4k",
+    pixels: "2880×2880",
+    quality: "medium",
+    targetCredits: 2,
+    variableCostYuan: 0.3171213377336,
+    minimumCredits: 4.26,
+    protectedCredits: 6.57,
+  },
+  {
+    resolution: "4k",
+    pixels: "2880×2880",
+    quality: "high",
+    targetCredits: 8,
+    variableCostYuan: 1.131548649656,
+    minimumCredits: 15.19,
+    protectedCredits: 23.44,
+  },
+  {
+    resolution: "4k",
+    pixels: "2880×2880",
+    quality: "xhigh",
+    targetCredits: 14,
+    variableCostYuan: 1.9761942000464,
+    minimumCredits: 26.52,
+    protectedCredits: 40.93,
+  },
+  {
+    resolution: "4k",
+    pixels: "2880×2880",
+    quality: "max",
+    targetCredits: 30,
+    variableCostYuan: 4.3894410381848,
+    minimumCredits: 58.9,
+    protectedCredits: 90.9,
+  },
+];
+
+/** 测算保持未舍入的套餐积分单价，最终积分只向上取整到0.01。 */
+export function budgetCredits(
+  costYuan: number,
+  pkg: PricingPackage,
+  margin = 0.35,
+): number {
+  return (
+    Math.ceil(
+      (costYuan / (1 - 0.006 - margin) / (pkg.priceYuan / pkg.credits)) * 100,
+    ) / 100
+  );
+}
+
 export const SUITE_BUNDLES: SuiteBundle[] = [
   { id: "suite-7", images: 7, imageCreditsEach: 4, orchestrationCredits: 4.6 },
-  { id: "suite-13", images: 13, imageCreditsEach: 4, orchestrationCredits: 9.2 },
+  {
+    id: "suite-13",
+    images: 13,
+    imageCreditsEach: 4,
+    orchestrationCredits: 9.2,
+  },
 ];
 
 /** 参考折算使用的套餐：常用月包（99 元 / 775 积分）。 */
@@ -96,7 +306,8 @@ export const REFERENCE_PACKAGE_ID = "standard-monthly";
 
 export function getReferencePackage(): PricingPackage {
   return (
-    PRICING_PACKAGES.find((p) => p.id === REFERENCE_PACKAGE_ID) ?? PRICING_PACKAGES[0]
+    PRICING_PACKAGES.find((p) => p.id === REFERENCE_PACKAGE_ID) ??
+    PRICING_PACKAGES[0]
   );
 }
 
