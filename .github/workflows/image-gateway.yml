@@ -20,6 +20,9 @@ on:
       - 'scripts/verify-single-product.ts'
       - 'src/lib/mock-data.ts'
       - 'src/lib/pricing.ts'
+      - 'src/app/plans/**'
+      - 'src/components/pricing-research.tsx'
+      - 'scripts/verify-pricing-proposal.ts'
       - '.github/workflows/image-gateway.yml'
   workflow_dispatch:
 permissions:
@@ -52,6 +55,7 @@ jobs:
             docker run --rm --network none -e NAUMI_VERIFY_RELEASE_FIXTURE=1 -e FAIL_HEALTH=$failure -v "$PWD/scripts/deploy-release.sh:/deploy.sh:ro" -v "$PWD/scripts/verify-coordinated-release.sh:/verify.sh:ro" --entrypoint bash node:24-bookworm-slim /verify.sh
           done
       - run: npm run build
+      - run: npm run verify:pricing-proposal
       - run: npm run verify:image-gateway
         env:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
