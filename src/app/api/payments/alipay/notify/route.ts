@@ -55,7 +55,7 @@ export async function POST(req: Request) {
   // ③ 仅在交易成功状态履约(幂等,fulfillOrder 内部 FOR UPDATE + 已付即 no-op)。
   if (tradeStatus === "TRADE_SUCCESS" || tradeStatus === "TRADE_FINISHED") {
     try {
-      const r = await fulfillOrder(outTradeNo, "alipay", tradeNo);
+      const r = await fulfillOrder(outTradeNo, "alipay", tradeNo,notifyFen);
       if (!r.ok) return new Response("failure", { status: 200 });
     } catch {
       return new Response("failure", { status: 200 });

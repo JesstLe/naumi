@@ -390,6 +390,7 @@ async function main() {
     for (const table of [
       "app_bi_management_log",
       "app_bi_access_log",
+      "app_billing_operations",
       "app_ledger",
       "app_credit_batches",
     ])

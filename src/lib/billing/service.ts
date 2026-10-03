@@ -47,7 +47,7 @@ export function createBillingService(): BillingService {
         else {
             if (-input.amount > wallet.principal - wallet.reserved)
                 throw new BillingError("INSUFFICIENT_CREDITS", "扣减不能占用在途预留积分", 402);
-            await repository.debitTx(tx, email, -input.amount, "expires-first");
+            await repository.debitTx(tx, email, -input.amount, input.debitOrder ?? "expires-first");
             await tx.query("INSERT INTO app_ledger(id,email,delta,reason,kind) VALUES($1,$2,$3,$4,'consume')", [input.ledgerId, email, input.amount, input.reason]);
             await repository.syncBalanceTx(tx, email);
         }

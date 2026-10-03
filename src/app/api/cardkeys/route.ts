@@ -7,6 +7,9 @@ import {
   cardKeyStats,
 } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
+import {resolveUserEmail} from "@/lib/admin-auth";
+import {sameSiteBillingMutation} from "@/lib/billing/access";
+import {billingErrorResponse} from "@/lib/billing/request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +37,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const blocked = await guard(request);
   if (blocked) return blocked;
+  if(!sameSiteBillingMutation(request))return NextResponse.json({error:"请求来源无效"},{status:403});
   let body: {
     credits?: number;
     count?: number;
@@ -50,7 +54,7 @@ export async function POST(request: Request) {
   const count = Number(body.count);
   const expiryDays =
     body.expiryDays == null || body.expiryDays === 0 ? null : Number(body.expiryDays);
-  if (!(credits > 0) || !(count > 0) || count > 500) {
+  if (!Number.isSafeInteger(credits) || credits<=0 || credits>2147483647 || !Number.isSafeInteger(count) || count<1 || count > 500 || expiryDays!==null&&(!Number.isSafeInteger(expiryDays)||expiryDays<1||expiryDays>36500)) {
     return NextResponse.json(
       { error: "面额需 > 0,数量需 1–500" },
       { status: 400 }
@@ -62,6 +66,7 @@ export async function POST(request: Request) {
     expiryDays,
     batch: String(body.batch ?? ""),
     note: String(body.note ?? ""),
+    actor:await resolveUserEmail(request)??"local-admin",
   });
   const stats = await cardKeyStats();
   return NextResponse.json({ cards, stats });
@@ -71,6 +76,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const blocked = await guard(request);
   if (blocked) return blocked;
+  if(!sameSiteBillingMutation(request))return NextResponse.json({error:"请求来源无效"},{status:403});
   let body: { code?: string; status?: string };
   try {
     body = await request.json();

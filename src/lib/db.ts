@@ -1,3 +1,7 @@
+import {randomUUID} from "node:crypto";
+import type {ProductReceipt} from "@/lib/payments";
+import {signupGrantTx,administrativeGrantInput} from "@/lib/billing/entitlements";
+import {withBillingTransaction} from "@/lib/billing/service";
 import {reserveTaskBillingTx,settleTaskBillingTx,videoRequestFingerprint,canvasRequestFingerprint} from "@/lib/billing/task-operation";
 import {BillingError} from "@/lib/billing/types";
 import "server-only";
@@ -687,35 +691,13 @@ async function deductPrincipalFIFO(
 }
 
 /** 新建积分批次(充值/赠送/迁移/后台)+ 写 +流水 + 同步余额。 */
-export async function addCreditBatch(
-  emailRaw: string,
-  amount: number,
-  opts: {
-    source: "purchase" | "grant" | "migrate" | "admin";
-    reason: string;
-    expiresAt?: Date; // 默认 2 年;赠送由调用方传 30 天
-    orderId?: string | null;
-    ledgerKind?: "purchase" | "grant";
-  }
-): Promise<void> {
-  await ensureSchema();
-  if (amount <= 0) return;
-  const email = emailRaw.toLowerCase();
-  const expires = (opts.expiresAt ?? twoYearsFromNow()).toISOString();
-  const kind =
-    opts.ledgerKind ?? (opts.source === "purchase" ? "purchase" : "grant");
-  await getPool().query(
-    `INSERT INTO app_credit_batches
-       (id, email, amount, remaining, source, reason, order_id, expires_at)
-     VALUES ($1,$2,$3,$3,$4,$5,$6,$7)`,
-    [ledId("bat"), email, amount, opts.source, opts.reason, opts.orderId ?? null, expires]
-  );
-  await getPool().query(
-    `INSERT INTO app_ledger (id, email, delta, reason, kind, expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-    [ledId(), email, amount, opts.reason, kind, expires]
-  );
-  await refreshBalance(email);
+export async function addCreditBatch(emailRaw:string,amount:number,opts:{source:"purchase"|"grant"|"migrate"|"admin";reason:string;expiresAt?:Date;orderId?:string|null;ledgerKind?:"purchase"|"grant";id?:string;actor?:string}):Promise<void>{
+  await ensureSchema(); if(amount<=0)return;
+  const {getBillingRuntime}=await import("@/lib/billing/server"), runtime=await getBillingRuntime(),snapshot=await runtime.config.current();
+  await withBillingTransaction(getPool(),async tx=>{
+    const input=await administrativeGrantInput(tx,{email:emailRaw.toLowerCase(),amount,reason:opts.reason,source:opts.source,actor:opts.actor??"system",id:opts.id,expiresAt:opts.expiresAt?.toISOString(),orderId:opts.orderId??undefined},snapshot);
+    await runtime.service.grantTx(tx,input);
+  });
 }
 
 // ===========================================================================
@@ -732,6 +714,7 @@ export type CardKeyRow = {
   created_at: Date;
   used_by: string | null;
   used_at: Date | null;
+  billing_grant?: {configVersion:number;expiry:import("@/lib/billing/types").ExpiryPolicy;actor:string};
 };
 
 // 无歧义字符集(去掉 0/O/1/I/L),NOVA-XXXX-XXXX-XXXX。
@@ -752,12 +735,16 @@ export async function generateCardKeys(opts: {
   expiryDays: number | null;
   batch: string;
   note: string;
+  actor?: string;
 }): Promise<CardKeyRow[]> {
   await ensureSchema();
   const expires =
     opts.expiryDays && opts.expiryDays > 0
       ? new Date(Date.now() + opts.expiryDays * 86400000).toISOString()
       : null;
+  if(!Number.isSafeInteger(opts.credits)||opts.credits<=0||opts.credits>2147483647||!Number.isSafeInteger(opts.count)||opts.count<1||opts.count>500||opts.expiryDays!==null&&(!Number.isSafeInteger(opts.expiryDays)||opts.expiryDays<1||opts.expiryDays>36500))throw new BillingError("INVALID_RESULT","兑换码参数无效",400);
+  const {getBillingRuntime}=await import("@/lib/billing/server"), snapshot=await(await getBillingRuntime()).config.current();
+  const receipt={configVersion:snapshot.version,expiry:snapshot.config.credits.redeem,actor:opts.actor??"local-admin"};
   const out: CardKeyRow[] = [];
   for (let i = 0; i < opts.count; i++) {
     // 重试避免 PK 撞码(概率极低)。
@@ -765,11 +752,11 @@ export async function generateCardKeys(opts: {
     for (let attempt = 0; attempt < 5 && !inserted; attempt++) {
       const code = randCardCode();
       const { rows } = await getPool().query<CardKeyRow>(
-        `INSERT INTO app_card_keys (code, credits, batch, note, expires_at)
-         VALUES ($1,$2,$3,$4,$5)
+        `INSERT INTO app_card_keys (code, credits, batch, note, expires_at,billing_grant)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb)
          ON CONFLICT (code) DO NOTHING
-         RETURNING code, credits, status, batch, note, expires_at, created_at, used_by, used_at`,
-        [code, opts.credits, opts.batch, opts.note, expires]
+         RETURNING code, credits, status, batch, note, expires_at, created_at, used_by, used_at,billing_grant`,
+        [code, opts.credits, opts.batch, opts.note, expires,JSON.stringify(receipt)]
       );
       if (rows[0]) inserted = rows[0];
     }
@@ -782,7 +769,7 @@ export async function generateCardKeys(opts: {
 export async function listCardKeys(): Promise<CardKeyRow[]> {
   await ensureSchema();
   const { rows } = await getPool().query<CardKeyRow>(
-    `SELECT code, credits, status, batch, note, expires_at, created_at, used_by, used_at
+    `SELECT code, credits, status, batch, note, expires_at, created_at, used_by, used_at,billing_grant
        FROM app_card_keys ORDER BY created_at DESC LIMIT 500`
   );
   return rows;
@@ -801,41 +788,25 @@ export async function setCardKeyStatus(
 }
 
 /** 兑换:原子领取(unused→used)后用 grant 批次加积分。失败抛中文原因。 */
-export async function redeemCardKey(
-  codeRaw: string,
-  emailRaw: string
-): Promise<{ credits: number }> {
-  await ensureSchema();
-  const code = codeRaw.trim().toUpperCase();
-  const email = emailRaw.toLowerCase();
-  // 原子领取:只有 unused 且未过期才翻成 used,防并发重复兑换。
-  const { rows } = await getPool().query<{ credits: number }>(
-    `UPDATE app_card_keys
-        SET status = 'used', used_by = $2, used_at = now()
-      WHERE code = $1 AND status = 'unused'
-        AND (expires_at IS NULL OR expires_at > now())
-      RETURNING credits`,
-    [code, email]
-  );
-  if (!rows[0]) {
-    const { rows: chk } = await getPool().query<{
-      status: string;
-      expires_at: Date | null;
-    }>(`SELECT status, expires_at FROM app_card_keys WHERE code = $1`, [code]);
-    if (!chk[0]) throw new Error("兑换码不存在");
-    if (chk[0].status === "used") throw new Error("兑换码已被使用");
-    if (chk[0].status === "disabled") throw new Error("兑换码已停用");
-    if (chk[0].expires_at && chk[0].expires_at <= new Date())
-      throw new Error("兑换码已过期");
-    throw new Error("兑换码无效");
-  }
-  const credits = rows[0].credits;
-  await addCreditBatch(email, credits, {
-    source: "grant",
-    reason: "兑换码",
-    ledgerKind: "grant",
+export async function redeemCardKey(codeRaw:string,emailRaw:string):Promise<{credits:number}>{
+  await ensureSchema(); const code=codeRaw.trim().toUpperCase(),email=emailRaw.toLowerCase();
+  const {getBillingRuntime}=await import("@/lib/billing/server"),runtime=await getBillingRuntime();
+  return withBillingTransaction(getPool(),async tx=>{
+    const card=(await tx.query<CardKeyRow>("SELECT * FROM app_card_keys WHERE code=$1 FOR UPDATE",[code])).rows[0];
+    if(!card)throw new Error("兑换码不存在");
+    if(card.status==="used"){
+      if(card.used_by===email&&(await tx.query("SELECT state FROM app_billing_operations WHERE id=$1 AND email=$2",[`redeem-${code}`,email])).rows[0]?.state==="settled")return {credits:card.credits};
+      throw new Error("兑换码已被使用");
+    }
+    if(card.status==="disabled")throw new Error("兑换码已停用");
+    if(card.expires_at&&card.expires_at<=new Date())throw new Error("兑换码已过期");
+    // Legacy issued cards keep their original two-year credit validity.
+    const expiry=card.billing_grant?.expiry??{unit:"years" as const,value:2};
+    const id=`redeem-${code}`;
+    await runtime.service.grantTx(tx,{id,email,amount:card.credits,source:"grant",reason:"兑换码",expiry,ledgerId:`led-${id}`,actor:email,fingerprint:code});
+    await tx.query("UPDATE app_card_keys SET status='used',used_by=$2,used_at=now() WHERE code=$1",[code,email]);
+    return {credits:card.credits};
   });
-  return { credits };
 }
 
 /** 兑换码统计(站长后台卡片)。 */
@@ -1187,36 +1158,16 @@ export async function setSignupBonus(n: number, actor = "local-admin"): Promise<
   await updateBillingCompatibility(actor, "更新注册赠送积分", config => {config.credits.signup.amount = safe;});
 }
 
-export async function getOrCreateUser(
-  emailRaw: string,
-  name?: string
-): Promise<SessionUser> {
-  await ensureSchema();
-  const email = emailRaw.toLowerCase();
-  // 首次创建余额从 0 起,靠下面的「新人赠送」批次设额度;老用户(冲突)不补发。
-  // xmax=0 表示本语句是 INSERT(新行)而非 ON CONFLICT 的 UPDATE。
-  const { rows } = await getPool().query<UserRow & { is_new: boolean }>(
-    `INSERT INTO app_users (email, name, plan, credits_total, credits_used, renews_at)
-       VALUES ($1, $2, 'starter', 0, 0, $3)
-     ON CONFLICT (email) DO UPDATE
-       SET name = CASE WHEN $2 <> '' THEN $2 ELSE app_users.name END
-     RETURNING *, (xmax = 0) AS is_new`,
-    [email, name ?? "", oneMonthFromNowISO()]
-  );
-  if (rows[0]?.is_new) {
-    const bonus = await getSignupBonus(); // 后台可配,默认 30;0=不赠送
-    if (bonus > 0) {
-      const d = new Date();
-      d.setDate(d.getDate() + 30); // 新人赠送:30 天有效
-      await addCreditBatch(email, bonus, {
-        source: "grant",
-        reason: "新人赠送",
-        expiresAt: d,
-        ledgerKind: "grant",
-      }).catch(() => {});
-    }
-  }
-  return toSessionUser(rows[0]);
+export async function getOrCreateUser(emailRaw:string,name?:string):Promise<SessionUser>{
+  await ensureSchema(); const email=emailRaw.toLowerCase();
+  const {getBillingRuntime}=await import("@/lib/billing/server"),snapshot=await(await getBillingRuntime()).config.current();
+  const row=await withBillingTransaction(getPool(),async tx=>{
+    const inserted=(await tx.query<UserRow&{is_new:boolean}>(`INSERT INTO app_users(email,name,plan,credits_total,credits_used,renews_at)
+      VALUES($1,$2,'starter',0,0,$3) ON CONFLICT(email) DO UPDATE SET name=CASE WHEN $2<>'' THEN $2 ELSE app_users.name END RETURNING *, (xmax=0) AS is_new`,[email,name??"",oneMonthFromNowISO()])).rows[0];
+    if(inserted.is_new)await signupGrantTx(tx,email,snapshot);
+    return (await tx.query<UserRow>("SELECT * FROM app_users WHERE email=$1",[email])).rows[0];
+  });
+  return toSessionUser(row);
 }
 
 // --- 原生多用户:密码存取(Pro 多用户模式,不依赖 Supabase) ---
@@ -1529,49 +1480,15 @@ export async function setOwnerAccount(
 
 // 后台手动调积分:正数 = 新建一个赠送批次(获取),有效期可按月设置(opts.months;
 // 0 或负 = 永久,缺省 = 24 个月);负数 = FIFO 扣本金 + 记消耗流水(不动在途占位)。
-export async function adjustUserCredits(
-  emailRaw: string,
-  delta: number,
-  reason: string,
-  opts: { months?: number } = {}
-): Promise<void> {
-  await ensureSchema();
-  const email = emailRaw.toLowerCase();
-  if (delta === 0) return;
-  if (delta > 0) {
-    const m = opts.months;
-    const expiresAt = new Date();
-    if (m === undefined || m === null) {
-      expiresAt.setFullYear(expiresAt.getFullYear() + 2); // 兜底 2 年
-    } else if (m <= 0) {
-      expiresAt.setFullYear(expiresAt.getFullYear() + 100); // 永久(远期)
-    } else {
-      expiresAt.setMonth(expiresAt.getMonth() + Math.trunc(m));
-    }
-    await addCreditBatch(email, delta, {
-      source: "admin",
-      reason,
-      ledgerKind: "grant",
-      expiresAt,
-    });
-    return;
-  }
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    await deductPrincipalFIFO(client, email, -delta);
-    await client.query(
-      `INSERT INTO app_ledger (id, email, delta, reason, kind) VALUES ($1,$2,$3,$4,'consume')`,
-      [ledId(), email, delta, reason]
-    );
-    await client.query("COMMIT");
-  } catch (e) {
-    await client.query("ROLLBACK");
-    throw e;
-  } finally {
-    client.release();
-  }
-  await refreshBalance(email).catch(() => {});
+export async function adjustUserCredits(emailRaw:string,delta:number,reason:string,opts:{months?:number;id?:string;actor?:string}={}):Promise<void>{
+  await ensureSchema(); if(delta===0)return;
+  if(opts.months!==undefined&&(!Number.isSafeInteger(opts.months)||opts.months>1200))throw new BillingError("INVALID_RESULT","积分有效期无效",400);
+  const {getBillingRuntime}=await import("@/lib/billing/server"),runtime=await getBillingRuntime(),snapshot=await runtime.config.current();
+  await withBillingTransaction(getPool(),async tx=>{
+    const input=await administrativeGrantInput(tx,{email:emailRaw.toLowerCase(),amount:delta,reason,actor:opts.actor??"local-admin",id:opts.id,
+      expiry:opts.months===undefined?undefined:opts.months<=0?{unit:"years",value:100}:{unit:"months",value:opts.months}},snapshot);
+    await runtime.service.adjustTx(tx,input);
+  });
 }
 
 export type LedgerRow = {
@@ -1789,6 +1706,7 @@ export type OrderRow = {
   providerTxn: string | null;
   createdAt: string;
   paidAt: string | null;
+  billingQuote?: ProductReceipt;
 };
 
 type OrderDbRow = {
@@ -1804,6 +1722,7 @@ type OrderDbRow = {
   provider_txn: string | null;
   created_at: Date;
   paid_at: Date | null;
+  billing_quote?: ProductReceipt|null;
 };
 
 function rowToOrder(r: OrderDbRow): OrderRow {
@@ -1820,6 +1739,7 @@ function rowToOrder(r: OrderDbRow): OrderRow {
     providerTxn: r.provider_txn ?? null,
     createdAt: new Date(r.created_at).toISOString(),
     paidAt: r.paid_at ? new Date(r.paid_at).toISOString() : null,
+    billingQuote:r.billing_quote??undefined,
   };
 }
 
@@ -1830,14 +1750,15 @@ export async function createOrder(o: {
   title: string;
   credits: number;
   amount: number;
+  billingQuote?: ProductReceipt;
 }): Promise<OrderRow> {
   await ensureSchema();
   const id = `ord-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
   const { rows } = await getPool().query<OrderDbRow>(
     `INSERT INTO app_orders
-       (id, email, kind, item_id, title, credits, amount, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'pending') RETURNING *`,
-    [id, o.email.toLowerCase(), o.kind, o.itemId, o.title, o.credits, o.amount]
+       (id, email, kind, item_id, title, credits, amount, status,billing_quote)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8::jsonb) RETURNING *`,
+    [id, o.email.toLowerCase(), o.kind, o.itemId, o.title, o.credits, o.amount,o.billingQuote?JSON.stringify(o.billingQuote):null]
   );
   return rowToOrder(rows[0]);
 }
@@ -1856,9 +1777,11 @@ export async function getOrder(id: string): Promise<OrderRow | null> {
 export async function fulfillOrder(
   orderId: string,
   provider: string,
-  providerTxn?: string | null
+  providerTxn?: string | null,
+  amountFen?:number
 ): Promise<{ ok: boolean; alreadyPaid: boolean; order?: OrderRow; error?: string }> {
   await ensureSchema();
+  const {getBillingRuntime}=await import("@/lib/billing/server"),runtime=await getBillingRuntime(),snapshot=await runtime.config.current();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -1871,6 +1794,9 @@ export async function fulfillOrder(
       await client.query("ROLLBACK");
       return { ok: false, alreadyPaid: false, error: "订单不存在" };
     }
+    if(amountFen!==undefined&&(!Number.isSafeInteger(amountFen)||amountFen!==o.amount)){
+      await client.query("ROLLBACK"); return {ok:false,alreadyPaid:false,error:"金额不匹配"};
+    }
     if (o.status === "paid") {
       await client.query("COMMIT");
       return { ok: true, alreadyPaid: true, order: rowToOrder(o) };
@@ -1878,28 +1804,11 @@ export async function fulfillOrder(
     // Pro 授权直售订单:不发积分,标记已付后在事务外幂等生成 License Key
     // (ensureProLicenseForOrder,按 batch=orderId 去重)。积分订单走原批次逻辑。
     if (o.kind !== "pro") {
-      // 到账 = 建一个 2 年有效的积分批次(不再分 plan/pack,按订单存的 credits 入账;
-      // 遗留的会员订单后付款也能正常入账)。在同一事务里写批次 + 购买流水 + 同步余额。
-      const reason = `购买${o.title || "积分"}`;
-      const expISO = twoYearsFromNow().toISOString();
-      await client.query(
-        `INSERT INTO app_credit_batches
-           (id, email, amount, remaining, source, reason, order_id, expires_at)
-         VALUES ($1,$2,$3,$3,'purchase',$4,$5,$6)`,
-        [ledId("bat"), o.email, o.credits, reason, o.id, expISO]
-      );
-      await client.query(
-        `INSERT INTO app_ledger (id, email, delta, reason, kind, expires_at)
-           VALUES ($1,$2,$3,$4,'purchase',$5)`,
-        [ledId(), o.email, o.credits, reason, expISO]
-      );
-      await client.query(
-        `UPDATE app_users SET credits_total = (
-           SELECT COALESCE(SUM(remaining),0) FROM app_credit_batches
-            WHERE email = $1 AND expires_at > now() AND remaining > 0)
-          WHERE email = $1`,
-        [o.email]
-      );
+      // Guest recipients get a wallet atomically with the same signup policy as registration.
+      const inserted=await client.query("INSERT INTO app_users(email,name,plan,credits_total,credits_used,renews_at) VALUES($1,'','starter',0,0,$2) ON CONFLICT(email) DO NOTHING",[o.email,oneMonthFromNowISO()]);
+      if(inserted.rowCount)await signupGrantTx(client,o.email,snapshot);
+      const expiry=o.billing_quote?.product.expiry??{unit:"years" as const,value:2};
+      if(o.credits>0)await runtime.service.grantTx(client,{id:`order-${o.id}`,email:o.email,amount:o.credits,source:"purchase",reason:`购买${o.title||"积分"}`,expiry,orderId:o.id,ledgerId:`led-order-${o.id}`,actor:provider,fingerprint:o.id});
     }
     await client.query(
       `UPDATE app_orders SET status='paid', provider=$2, provider_txn=$3,
