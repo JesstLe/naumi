@@ -1,12 +1,12 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { AdminCenterShell } from "@/components/admin/center-shell";
 import {microsToDecimal} from "@/lib/billing/decimal";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
-  ArrowLeft,
   BarChart3,
   Building2,
   ChevronLeft,
@@ -385,8 +385,9 @@ const statuses: Partial<Record<BiSection, [string, string][]>> = {
   ],
 };
 
-export function BiDashboard() {
-  const [section, setSection] = useState<BiSection>("overview");
+export function BiDashboard({ initialSection = "overview" }: { initialSection?: BiSection }) {
+  const router = useRouter();
+  const [section, setSection] = useState<BiSection>(initialSection);
   const [draft, setDraft] = useState<Filter>(initialFilter);
   const [filter, setFilter] = useState<Filter>(initialFilter);
   const [page, setPage] = useState(1);
@@ -400,6 +401,16 @@ export function BiDashboard() {
     row: BiRow;
   } | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const navigatedSection = useRef(initialSection);
+  useEffect(() => {
+    if (navigatedSection.current === initialSection) return;
+    navigatedSection.current = initialSection;
+    setSection(initialSection);
+    setPage(1);
+    setSelected(null);
+    setFilter(f => ({ ...f, status: "" }));
+    setDraft(f => ({ ...f, status: "" }));
+  }, [initialSection]);
   useEffect(() => {
     const controller = new AbortController();
     setBusy(true);
@@ -438,6 +449,8 @@ export function BiDashboard() {
     };
   }, [selected]);
   function navigate(next: BiSection, day?: string) {
+    navigatedSection.current = next;
+    router.push(`/admin/center?section=${next}`, { scroll: false });
     setSection(next);
     setPage(1);
     setSelected(null);
@@ -455,6 +468,8 @@ export function BiDashboard() {
     }
   }
   function account(email: string, next: BiSection) {
+    navigatedSection.current = next;
+    router.push(`/admin/center?section=${next}`, { scroll: false });
     const value = { ...filter, email, status: "" };
     setDraft(value);
     setFilter(value);
@@ -484,38 +499,9 @@ export function BiDashboard() {
   }
   const active = sections.find((s) => s.id === section)!;
   return (
+    <AdminCenterShell active={section} onBiNavigate={navigate}>
     <div className={styles.shell}>
       <BiTooltip />
-      <aside className={styles.sidebar}>
-        <Link className={styles.brand} href="/admin" prefetch={false}>
-          Naumi <span>运营 BI</span>
-        </Link>
-        <div className={styles.private}>
-          <ShieldCheck size={16} />
-          仅管理员可见
-        </div>
-        <nav aria-label="BI 数据分类">
-          {sections.map(({ id, label, icon: Icon }) => (
-            <button
-              type="button"
-              key={id}
-              aria-current={section === id ? "page" : undefined}
-              className={section === id ? styles.active : ""}
-              onClick={() => navigate(id)}
-            >
-              <Icon size={18} />
-              {label}
-            </button>
-          ))}
-        </nav>
-        <Link className={styles.back} href="/admin" prefetch={false}>
-          <ArrowLeft size={16} />
-          返回管理后台
-        </Link>
-        <p className={styles.sidebarNote}>
-          用户资料与生成内容仅用于内部运营和问题核查。
-        </p>
-      </aside>
       <main className={styles.main}>
         <header className={styles.header}>
           <div>
@@ -1041,6 +1027,7 @@ export function BiDashboard() {
         </div>
       )}
     </div>
+    </AdminCenterShell>
   );
 }
 

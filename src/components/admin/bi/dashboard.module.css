@@ -87,7 +87,7 @@
   line-height: 1.8;
 }
 .main {
-  margin-left: 222px;
+  margin-left: 0;
   min-width: 0;
   flex: 1;
   padding: 32px 36px 24px;
@@ -629,7 +629,7 @@
     padding-inline: 12px;
   }
   .main {
-    margin-left: 192px;
+    margin-left: 0;
   }
   .metrics {
     gap: 10px;

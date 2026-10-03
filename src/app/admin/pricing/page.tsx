@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AdminCenterShell } from "@/components/admin/center-shell";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { requireAdmin } from "@/lib/admin-auth";
@@ -117,6 +118,7 @@ export default async function AdminPricingPage() {
     ],
   ];
   return (
+    <AdminCenterShell active="pricing">
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
       <header className="max-w-3xl">
         <p className="text-sm font-medium text-primary">
@@ -506,7 +508,7 @@ export default async function AdminPricingPage() {
         </p>
         <div className="flex gap-3">
           <Button asChild>
-            <Link href="/admin">{t("返回管理后台", "Back to administration")}</Link>
+            <Link href="/admin/center">{t("返回管理中心", "Back to administration")}</Link>
           </Button>
           <Button asChild variant="outline">
             <Link href="/contact">{t("反馈定价方案", "Discuss pricing")}</Link>
@@ -514,5 +516,6 @@ export default async function AdminPricingPage() {
         </div>
       </div>
     </div>
+    </AdminCenterShell>
   );
 }

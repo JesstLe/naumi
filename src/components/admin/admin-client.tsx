@@ -1,6 +1,7 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AdminCenterShell } from "@/components/admin/center-shell";
 import { useEffect, useState } from "react";
 import { Loader2, ShieldAlert, Lock } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
@@ -49,6 +50,8 @@ function clearCache() {
 }
 
 export function AdminClient() {
+  const router = useRouter();
+  const settingsView = useSearchParams().get("view") === "settings";
   const { user, ready } = useAuth();
   const { openAuth } = useAuthModal();
   const [status, setStatus] = useState<
@@ -56,6 +59,9 @@ export function AdminClient() {
   >("loading");
   // ok 时:是否走本地管理员通道(决定 AdminSettings 用 cookie 而非 Bearer)。
   const [localAdmin, setLocalAdmin] = useState(false);
+  useEffect(() => {
+    if (status === "ok" && !settingsView) router.replace("/admin/center");
+  }, [status, settingsView, router]);
 
   // 本地密码登录框状态
   const [pw, setPw] = useState("");
@@ -224,14 +230,17 @@ export function AdminClient() {
     );
   }
 
+  if (!settingsView) return <p className="p-8 text-sm text-muted-foreground">正在打开管理中心…</p>;
+
   return (
+    <AdminCenterShell active="settings">
     <div className="mx-auto w-full max-w-[1400px] px-4 py-8 sm:px-6 lg:px-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">管理后台</h1>
-        <Link href="/admin/billing" prefetch={false} className="mt-3 inline-block text-sm font-medium text-primary underline">计费管理：价格、成本与规则</Link>
-        {localAdmin && <div className="mt-3 flex flex-wrap gap-5"><Link href="/admin/pricing" prefetch={false} className="text-sm font-medium text-primary underline">内部报价与成本测算</Link><Link href="/admin/bi" prefetch={false} className="text-sm font-medium text-primary underline">运营 BI 与用户数据</Link></div>}
+        <h1 className="text-2xl font-bold tracking-tight">系统设置</h1>
+        <p className="mt-2 text-sm text-muted-foreground">管理供应商接口、模型和站点设置。价格、成本与赠送规则在计费管理中调整。</p>
       </div>
       <AdminSettings localAdmin={localAdmin} />
     </div>
+    </AdminCenterShell>
   );
 }

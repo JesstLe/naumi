@@ -8,12 +8,13 @@ import { cn } from "@/lib/utils";
 /**
  * 全站工作台壳:左侧图标导航栏(手机为底部 tab)+ 右侧内容区。
  * - 登录/注册页:无壳(全屏)。
+ * - 管理中心:使用独立管理导航，不叠加用户工作台导航。
  * - 画布页:有壳、无页脚(全屏沉浸由画布自身处理)。
  * - 其余页:壳 + 页脚(保留 ICP 备案等)。
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname() || "/";
-  const noShell = path === "/sign-in" || path === "/sign-up" || path.startsWith("/admin/bi");
+  const noShell = path === "/sign-in" || path === "/sign-up" || path === "/admin" || path.startsWith("/admin/");
   const isCanvas = path.startsWith("/canvas");
   // 沉浸全屏(无页脚):画布 / 对话生成。生图/套图/工作台改成和工具页一致的自然流(带页脚)。
   const isImmersive = isCanvas || path.startsWith("/genchat");

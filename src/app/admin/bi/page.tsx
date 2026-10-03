@@ -1,18 +1,5 @@
-import { headers } from "next/headers";
-import { notFound } from "next/navigation";
-import { requireAdmin } from "@/lib/admin-auth";
-import { BiDashboard } from "@/components/admin/bi/dashboard";
-export const metadata = {
-  title: "运营 BI — Naumi",
-  robots: { index: false, follow: false },
-};
+// The former BI address remains a supported entry to the management center.
+import AdminCenterPage from "../center/page";
 export const dynamic = "force-dynamic";
-export default async function BiPage() {
-  if (
-    !(await requireAdmin(
-      new Request("http://internal/admin/bi", { headers: headers() }),
-    ))
-  )
-    notFound();
-  return <BiDashboard />;
-}
+export const metadata = { title: "管理中心 — Naumi", robots: { index: false, follow: false } };
+export default AdminCenterPage;
