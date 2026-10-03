@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname() || "/";
-  const noShell = path === "/sign-in" || path === "/sign-up";
+  const noShell = path === "/sign-in" || path === "/sign-up" || path.startsWith("/admin/bi");
   const isCanvas = path.startsWith("/canvas");
   // 沉浸全屏(无页脚):画布 / 对话生成。生图/套图/工作台改成和工具页一致的自然流(带页脚)。
   const isImmersive = isCanvas || path.startsWith("/genchat");

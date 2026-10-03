@@ -1,3 +1,4 @@
+import { withBiRequest } from "@/lib/bi/model-observer";
 import { imageRequestBilling } from "@/lib/image-quality-request";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
@@ -15,7 +16,7 @@ import { requestedTextModel } from "@/lib/text-models";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+async function handleObservedPost(req: Request, { params }: { params: { id: string } }) {
   let email = ""; let lease = ""; let reserved = false;
   let cost = 0;
   try {
@@ -74,4 +75,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   } finally {
     if (lease) await releaseCompetitorItem(email, params.id, lease);
   }
+}
+
+export async function POST(req: Request, { params }: { params: { id: string } }) {
+  return withBiRequest(req, () => handleObservedPost(req, { params }));
 }

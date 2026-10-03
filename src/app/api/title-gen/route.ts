@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 
 // 标题生成:据产品图(可选)+ 用户卖点/描述,生成一组电商标题 + 卖点短语。
 // 纯文本 LLM(gpt-4o-mini),免费(不扣积分),需登录 + 按 IP 限流,防脚本刷 key。
-export async function POST(req: Request) {
+async function handleObservedPost(req: Request) {
   let email = "";
   if (dbEnabled) {
     const tokenEmail = await resolveUserEmail(req);
@@ -94,10 +95,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    const client = new OpenAI({
+    const client = observeOpenAI(new OpenAI({
       apiKey,
       baseURL: (await getOpenAIBaseUrl()) || undefined,
-    });
+    }));
     const sys = await getTitleSystem();
     const ctx: string[] = [`需要 ${count} 条标题`];
     if (platform) ctx.push(`平台:${platform}`);
@@ -179,4 +180,8 @@ export async function POST(req: Request) {
       { status: 502 }
     );
   }
+}
+
+export async function POST(req: Request) {
+  return withBiRequest(req, () => handleObservedPost(req));
 }

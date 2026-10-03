@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
@@ -19,7 +20,7 @@ type VisionResult = {
   retryAdvice: string;
 };
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   const email = dbEnabled ? await resolveUserEmail(request) : null;
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -42,11 +43,11 @@ export async function POST(request: Request) {
     Buffer.from(await image.arrayBuffer()),
     image.type || "image/png"
   );
-  const client = new OpenAI({
+  const client = observeOpenAI(new OpenAI({
     apiKey,
     baseURL:
       process.env.AGENT_BASE_URL || (await getOpenAIBaseUrl()) || undefined,
-  });
+  }));
   try {
     const response = await client.chat.completions.create({
       model: requestedTextModel(request, process.env.AGENT_VISION_MODEL || "qwen3.8-flash"),
@@ -92,4 +93,8 @@ function parseJson(raw: string): unknown {
   const end = fenced.lastIndexOf("}");
   if (start < 0 || end <= start) throw new Error("视觉模型未返回 JSON");
   return JSON.parse(fenced.slice(start, end + 1));
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }

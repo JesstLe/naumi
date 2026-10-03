@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import path from "path";
@@ -92,7 +93,7 @@ function referenceMetadata(artworks: ArtworkRecord[]): string {
     .join("\n\n");
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   const email = await authenticatedEmail(request);
   if (dbEnabled && !email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -192,11 +193,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const client = new OpenAI({
+    const client = observeOpenAI(new OpenAI({
       apiKey,
       baseURL:
         process.env.AGENT_BASE_URL || (await getOpenAIBaseUrl()) || undefined,
-    });
+    }));
     // 按模式拼系统提示词与用户内容:
     //  general=画布通用文字生成;reverse=竞品图→逆向生图提示词;assist=逆向词按用户产品改写。
     const systemPrompt =
@@ -250,4 +251,8 @@ export async function POST(request: Request) {
       { status: 502 }
     );
   }
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }

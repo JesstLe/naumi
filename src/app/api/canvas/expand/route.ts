@@ -1,3 +1,4 @@
+import { withBiRequest } from "@/lib/bi/model-observer";
 import { imageRequestBilling, settleToolImage } from "@/lib/image-quality-request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
@@ -45,7 +46,7 @@ function editSize(width: number, height: number) {
   return ratio > 1.2 ? "1536x1024" as const : ratio < 0.83 ? "1024x1536" as const : "1024x1024" as const;
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   const email = await authenticatedEmail(request);
   if (dbEnabled && !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if (!rateLimit(`canvas-expand:${clientIp(request) || "0.0.0.0"}`, 20, 10 * 60 * 1000)) {
@@ -187,4 +188,8 @@ export async function POST(request: Request) {
       { status: 502 }
     );
   }
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }

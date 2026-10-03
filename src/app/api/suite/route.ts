@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { imageRequestBilling, withQualityFallback, auditSettledImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality, ExecutedQuality } from "@/lib/image-quality";
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
@@ -430,12 +431,12 @@ async function runSuite(
   const set = (patch: Partial<Job>) => JOBS.patch(jobId, patch);
   try {
     const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
-    const client = new OpenAI({
+    const client = observeOpenAI(new OpenAI({
       apiKey,
       baseURL: baseUrl,
       timeout: PER_SHOT_TIMEOUT,
       maxRetries: 0,
-    });
+    }));
 
     // 第0层:规划 13 张
     const prior = await JOBS.get(jobId);
@@ -479,7 +480,7 @@ async function runSuite(
               shot,
               productReference,
               productImages.length
-            )));
+            )), model);
             const buf = await normalizeShotRatio(
               generated,
               shot.ratio,
@@ -638,7 +639,7 @@ async function kickSuite(id: string) {
   });
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   if (imageWorkerAuthorized(request)) {
     const body = await request.json();
     if (typeof body.workerJobId !== "string") return NextResponse.json({ error: "无效任务" }, { status: 400 });
@@ -775,4 +776,8 @@ export async function GET(request: Request) {
     mock: job.mock,
     error: job.error,
   });
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }

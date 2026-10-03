@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
@@ -29,7 +30,7 @@ const SYS =
   "你是电商图片的版权/知识产权风险筛查助手。看图判断它用于商用是否有侵权风险,重点查:① 知名版权卡通/动漫/游戏形象(如迪士尼米奇、三丽鸥、宝可梦等);② 品牌 logo / 商标 / 注册图形;③ 明星/公众人物肖像;④ 知名画作/IP 设计;⑤ 仿冒大牌元素。" +
   '只输出 JSON:{"risk":"high|medium|low","riskLabel":"高风险|中风险|低风险","summary":"一句话总体结论","items":[{"name":"风险元素","reason":"为什么有风险"}],"advice":"商用建议(中文,1-2句)"}。无明显风险则 risk=low、items=[]。不要输出 JSON 以外的内容。';
 
-export async function POST(req: Request) {
+async function handleObservedPost(req: Request) {
   const ip = clientIp(req);
   if (!rateLimit(`ipcheck:${ip}`, 40, 600_000))
     return NextResponse.json({ error: "请求过于频繁,请稍后再试" }, { status: 429 });
@@ -73,10 +74,10 @@ export async function POST(req: Request) {
   try {
     const { apiKey } = await getOpenAISettings();
     if (!apiKey) throw new Error("未配置 key");
-    const client = new OpenAI({
+    const client = observeOpenAI(new OpenAI({
       apiKey,
       baseURL: (await getOpenAIBaseUrl()) || undefined,
-    });
+    }));
     const resp = await client.chat.completions.create({
       model: requestedTextModel(req, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna"),
       response_format: { type: "json_object" },
@@ -112,4 +113,8 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function POST(req: Request) {
+  return withBiRequest(req, () => handleObservedPost(req));
 }

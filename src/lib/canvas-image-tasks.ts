@@ -152,7 +152,7 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
     editedRaw = (await readCanvasImage(task.parameters.upstreamResult, requestOrigin)).buffer;
   } else {
     if (!await beginCanvasImageTaskSubmission(task.id)) throw new ImageOperationPending(task.id, new Error("上游提交需要核查"));
-    editedRaw = await editImage({ operationId: task.id, legacyOperationId: !task.parameters.qualityAudit, images: [original], mask, prompt, size: editSize(width, height), quality });
+    editedRaw = await withBiModelContext(task.email,"canvas-text-edit",task.id,()=>editImage({ operationId: task.id, legacyOperationId: !task.parameters.qualityAudit, images: [original], mask, prompt, size: editSize(width, height), quality }));
     const checkpoint = storageEnabled
       ? await uploadImage(new Uint8Array(editedRaw), "image/png", `canvas-text-edits/${task.id}-provider.png`)
       : `data:image/png;base64,${editedRaw.toString("base64")}`;
@@ -232,3 +232,4 @@ export function publicCanvasImageTask(task: CanvasImageTaskRow) {
   return { quality: task.parameters.qualityAudit, id, kind, sourceArtworkId, status, progress, cost, resultArtworkId, error, attempts, createdAt, completedAt,
     parameters: normalizedInput(task.parameters as Partial<TextEditTaskInput>) };
 }
+import { withBiModelContext } from "@/lib/bi/model-observer";

@@ -1,3 +1,4 @@
+import { withBiRequest } from "@/lib/bi/model-observer";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -12,7 +13,7 @@ export async function GET(req: Request) {
   try { return NextResponse.json({ items: await listCompetitorItems(await competitorActor(req)) }); }
   catch(e) { return competitorError(e); }
 }
-export async function POST(req: Request) {
+async function handleObservedPost(req: Request) {
   let url = "";
   try {
     const email = await competitorActor(req);
@@ -37,4 +38,8 @@ export async function POST(req: Request) {
     if (item.id !== id) await deleteImageByUrl(url);
     return NextResponse.json({ item });
   } catch(e) { if (url) await deleteImageByUrl(url); return competitorError(e); }
+}
+
+export async function POST(req: Request) {
+  return withBiRequest(req, () => handleObservedPost(req));
 }

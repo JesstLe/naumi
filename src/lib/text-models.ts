@@ -1,3 +1,4 @@
+import { observeOpenAI } from "@/lib/bi/model-observer";
 import "server-only";
 
 import OpenAI from "openai";
@@ -85,12 +86,12 @@ export async function textModelCatalog(): Promise<{
     const settings = await getOpenAISettings();
     const apiKey = process.env.AGENT_API_KEY || settings.apiKey;
     if (apiKey) {
-      const client = new OpenAI({
+      const client = observeOpenAI(new OpenAI({
         apiKey,
         baseURL: process.env.AGENT_BASE_URL || (await getOpenAIBaseUrl()) || undefined,
         timeout: 12_000,
         maxRetries: 0,
-      });
+      }));
       const page = await client.models.list();
       discovered = page.data
         .map((model) => model.id.trim())

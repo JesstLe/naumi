@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
@@ -86,7 +87,7 @@ async function parseInput(request: Request) {
   };
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   const input = await parseInput(request).catch(() => null);
   if (!input) {
     return NextResponse.json({ error: "请上传一张商品原图" }, { status: 400 });
@@ -142,12 +143,12 @@ export async function POST(request: Request) {
       "硬性要求:商品的形状、结构、材质纹理(保留纹理细节)、明暗光影方向、品牌与标签文字、" +
       "背景与周围元素全部保持完全不变,只改变商品主体的颜色;换色后颜色均匀自然、光照真实,可直接上架。";
 
-    const client = new OpenAI({
+    const client = observeOpenAI(new OpenAI({
       apiKey,
       baseURL: (await getOpenAIBaseUrl()) || undefined,
       timeout: 240_000,
       maxRetries: 0,
-    });
+    }));
     const file = await toFile(input.image.buf, "product.png", {
       type: input.image.type,
     });
@@ -158,7 +159,7 @@ export async function POST(request: Request) {
       n: 1,
       size: "1024x1024",
       quality: sdkImageQuality(executed),
-    }));
+    }), model);
     const d = r.data?.[0];
     if (!d) throw new Error("空返回");
     const buf = d.b64_json
@@ -217,4 +218,8 @@ export async function POST(request: Request) {
       { status: 502 }
     );
   }
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }

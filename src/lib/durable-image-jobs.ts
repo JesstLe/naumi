@@ -8,6 +8,7 @@ import * as repository from "@/lib/image-job-repository";
 import { ImageOperationPending, isImageGatewayModel, withImageOperation } from "@/lib/image-gateway";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
+import { withBiModelContext } from "@/lib/bi/model-observer";
 
 type Execution = { id: string; token: string; queue: Promise<unknown> };
 const execution = new AsyncLocalStorage<Execution>();
@@ -158,7 +159,7 @@ export class DurableImageJobs<T extends { status: string }> {
           await this.patch(id, { error: "旧版本图片任务需要核查，已暂停自动提交，请联系管理员" } as unknown as Partial<T>);
           return;
         }
-        await run(await decode(row.payload) as Record<string, unknown>, await decode(row.snapshot) as T);
+        await withBiModelContext(row.email,this.kind,id,async()=>run(await decode(row.payload) as Record<string, unknown>,await decode(row.snapshot) as T));
       }
       catch (error) { console.error(`[image-job] ${id}:`, error instanceof Error ? error.message : error); }
       finally {

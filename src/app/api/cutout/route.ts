@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
 import { TOOL_COST } from "@/lib/mock-data";
 import OpenAI, { toFile } from "openai";
@@ -217,12 +218,12 @@ async function cutoutOpenAI(
   apiKey: string,
   model: string
 ): Promise<Buffer> {
-  const client = new OpenAI({
+  const client = observeOpenAI(new OpenAI({
     apiKey,
     baseURL: (await getOpenAIBaseUrl()) || undefined,
     timeout: 120_000,
     maxRetries: 0,
-  });
+  }));
   // 先用 sharp 规整成干净 PNG,避免 "Invalid image file"
   let png = bytes;
   try {
@@ -250,7 +251,7 @@ async function cutoutOpenAI(
   return Buffer.from(b64, "base64");
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   let input: CutoutInput | null;
   try {
     input = await parseInput(request);
@@ -429,4 +430,8 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }

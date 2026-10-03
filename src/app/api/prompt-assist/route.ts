@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
@@ -21,7 +22,7 @@ export const dynamic = "force-dynamic";
 // AI 帮写:把用户的简短想法 +(可选)上传的产品图,扩写成完整的电商生图提示词。
 // 多模态:有产品图时把图发给视觉模型(gpt-4o-mini),据图写出贴合该产品的提示词。
 // 纯文本 LLM,免费(不扣积分),但需登录 + 按 IP 限流,防脚本刷我们的 key。
-export async function POST(req: Request) {
+async function handleObservedPost(req: Request) {
   if (dbEnabled) {
     const tokenEmail = await resolveUserEmail(req);
     if (!tokenEmail) {
@@ -83,10 +84,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    const client = new OpenAI({
+    const client = observeOpenAI(new OpenAI({
       apiKey,
       baseURL: (await getOpenAIBaseUrl()) || undefined,
-    });
+    }));
     // 分功能页写法指令(prompt-config.ts 可审计)。
     // 关键:帮写(write)时,若有功能页专用指令,**不叠加通用「写整图大片」系统**
     // ——否则那段又长又强势的通用系统会盖过功能页语义(印花提取被写成整图模特大片)。
@@ -146,4 +147,8 @@ export async function POST(req: Request) {
       { status: 502 }
     );
   }
+}
+
+export async function POST(req: Request) {
+  return withBiRequest(req, () => handleObservedPost(req));
 }

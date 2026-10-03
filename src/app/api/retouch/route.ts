@@ -1,3 +1,4 @@
+import { withBiRequest } from "@/lib/bi/model-observer";
 import { requestImageQuality, imageQualityCost, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
@@ -54,7 +55,7 @@ async function parseInput(request: Request) {
   };
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   const input = await parseInput(request).catch(() => null);
   if (!input) {
     return NextResponse.json({ error: "请上传一张商品原图" }, { status: 400 });
@@ -165,4 +166,8 @@ export async function POST(request: Request) {
       { status: isImageTimeout(e) ? 504 : 502 }
     );
   }
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }

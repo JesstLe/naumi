@@ -1,3 +1,4 @@
+import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { imageQualityCost } from "@/lib/image-quality-request";
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { NextResponse } from "next/server";
@@ -299,7 +300,7 @@ async function openaiImages(
   // 透明底只 gpt-image-1 支持(gpt-image-2 实测不支持 background:transparent),走抠图模型;
   // 其余生图走默认模型(gpt-image-2)。普通生图的兜底已统一 v2,不再落 v1。
   const model = p.transparent ? cutoutModel || "gpt-image-1" : modelIn;
-  const client = new OpenAI({
+  const client = observeOpenAI(new OpenAI({
     apiKey,
     baseURL: baseUrl || (await getOpenAIBaseUrl()) || undefined,
     // Generation runs as a background job (no CDN constraint), so allow a
@@ -307,7 +308,7 @@ async function openaiImages(
     // wait and blow past the client's poll deadline.
     timeout: 280_000,
     maxRetries: 0,
-  });
+  }));
   const prompt = p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()));
   const size = sizeFor(p.ratio, model);
   const canEdit = p.images.length > 0 && isOpenAIImagesEditModel(model);
@@ -1053,7 +1054,7 @@ async function kickGeneration(id: string) {
   });
 }
 
-export async function POST(request: Request) {
+async function handleObservedPost(request: Request) {
   if (imageWorkerAuthorized(request)) {
     const body = await request.json();
     if (typeof body.workerJobId !== "string") return NextResponse.json({ error: "无效任务" }, { status: 400 });
@@ -1259,4 +1260,8 @@ export async function GET(request: Request) {
     db: dbEnabled,
     storage: storageEnabled,
   });
+}
+
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handleObservedPost(request));
 }
