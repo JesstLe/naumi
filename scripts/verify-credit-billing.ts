@@ -45,6 +45,8 @@ async function main() {
   const { signUserSession } = await import("../src/lib/native-auth");
   const route = await import("../src/app/api/generate-image/route");
   const sql = db.getPool();
+  let originalConfig:import("../src/lib/billing/types").ConfigSnapshot|undefined;
+  let originalSettings:{k:string;v:string}[]=[];
   const wait = async (predicate: () => Promise<boolean>) => {
     const deadline = Date.now() + 20000;
     while (Date.now() < deadline) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
@@ -67,6 +69,12 @@ async function main() {
     const migrated = (await sql.query("SELECT billed_credits,cost_credits,margin_credits FROM app_image_cost_audit WHERE id=$1", [legacy])).rows[0];
     assert.deepEqual(migrated, { billed_credits: 10, cost_credits: 6, margin_credits: 4 });
     console.log("PASS old audit column migration preserves values");
+    const runtime=await (await import("../src/lib/billing/server")).getBillingRuntime();
+    originalConfig=await runtime.config.current();
+    originalSettings=(await sql.query("SELECT k,v FROM app_settings WHERE k=ANY($1)",[["multi_user_enabled","credits_metering"]])).rows;
+    const baseline=(await import("./billing-unit-fixture")).fixtureConfig();
+    await runtime.config.publish({id:randomUUID(),expectedVersion:originalConfig.version,config:baseline,actor:"fixture",reason:"Isolate legacy credit regression defaults"});
+    await sql.query("DELETE FROM app_settings WHERE k=ANY($1)",[["multi_user_enabled","credits_metering"]]);
 
     const { imageBillCredits } = await import("../src/lib/mock-data");
     let fixtureIp = 0;
@@ -160,6 +168,8 @@ async function main() {
     assert.equal(await db.creditMeteringEnabled(), false);
     await run("meter-off", 1, 0, ["high"]);
     console.log("CREDIT_BILLING_RESULT=PASS");
-  } finally { release?.(); await sql.end(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  } finally { release?.();
+    if(originalConfig){const runtime=await (await import("../src/lib/billing/server")).getBillingRuntime(),current=await runtime.config.current();await runtime.config.publish({id:randomUUID(),expectedVersion:current.version,config:originalConfig.config,actor:"fixture",reason:"Restore credit regression configuration"});await sql.query("DELETE FROM app_settings WHERE k=ANY($1)",[["multi_user_enabled","credits_metering"]]);for(const row of originalSettings)await sql.query("INSERT INTO app_settings(k,v) VALUES($1,$2)",[row.k,row.v]);}
+    await sql.end(); await new Promise<void>(resolve => server.close(() => resolve())); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,3 +1,4 @@
+import {auditSettledImage} from "@/lib/image-quality-request";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { imageQualityCost } from "@/lib/image-quality-request";
 import {quoteForRequest} from "@/lib/billing/server";
@@ -1003,10 +1004,7 @@ async function runJob(
     const chargedCredits = await getImageJobChargedCredits(jobId);
     for (const image of images) {
       const execution = image.execution || { quality: p.quality || p.qualityDefault || "medium", upstream: userProvider ? `byok:${userProvider.model}` : `default:${imageModel.id}`, reason: "generated", platformFunded: !userProvider && !!apiKey };
-      await recordImageCostAudit({ jobId, email: p.email, imageId: image.id,
-        ...qualityCostAudit({ requested: saved?.quality?.requested || "", executed: execution.quality,
-          upstream: execution.upstream, images: 1, reason: execution.reason,
-          billedCredits: chargedCredits / images.length, platformFunded: execution.platformFunded, resolution: p.resolution }) });
+      await auditSettledImage(p.email,chargedCredits/images.length,{requested:saved?.quality?.requested||"medium",executed:execution.quality as import("@/lib/image-quality").ExecutedQuality,fallbackReason:null},jobId,image.id,p.resolution,execution);
     }
     const executedQualities = images.map(image => image.execution?.quality || p.quality || p.qualityDefault || "medium");
     const quality = saved?.quality ? { ...saved.quality, executed: new Set(executedQualities).size > 1 ? "mixed" : executedQualities[0], executedQualities,

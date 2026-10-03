@@ -44,6 +44,7 @@ async function settleLocked(tx:Tx,row:repository.OperationRow,result:import("./t
             if (settlement.charge)
                 await repository.debitTx(tx, row.email, settlement.charge, frozen.debitOrder || "expires-first");
             await repository.finishTx(tx, row, settlement.charge, "settled", reason);
+            await tx.query("UPDATE app_billing_operations SET settlement_result=$2::jsonb WHERE id=$1",[row.id,JSON.stringify(result)]);
             return { replayed: false, charge: settlement.charge };
 }
 export function createBillingService(): BillingService {

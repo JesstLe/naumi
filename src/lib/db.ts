@@ -5666,7 +5666,7 @@ export async function failCanvasImageTask(input: { id: string; email: string; er
 
 /** 写入一条成本审计。绝不让审计影响出图主流程:任何错误只打日志。 */
 export async function recordImageCostAudit(
-  input: QualityCostAudit & { jobId: string; email: string; imageId: string }
+  input: Omit<QualityCostAudit,"costCredits"|"marginCredits"> & {costCredits:number|null;marginCredits:number|null} & Partial<import("@/lib/billing/audit").CostAuditFields> & { jobId: string; email: string; imageId: string }
 ): Promise<void> {
   if (!dbEnabled) return;
   try {
@@ -5674,10 +5674,10 @@ export async function recordImageCostAudit(
     await getPool().query(
       `INSERT INTO app_image_cost_audit
          (id, job_id, email, requested_quality, executed_quality, upstream,
-          images, billed_credits, cost_credits, margin_credits, reason)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          images, billed_credits, cost_credits, margin_credits, reason,billing_config_version,cost_currency,cost_amount_micros,cost_source,cost_actual)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        ON CONFLICT(id) DO UPDATE SET billed_credits=EXCLUDED.billed_credits,
-         cost_credits=EXCLUDED.cost_credits,margin_credits=EXCLUDED.margin_credits`,
+         cost_credits=EXCLUDED.cost_credits,margin_credits=EXCLUDED.margin_credits,billing_config_version=EXCLUDED.billing_config_version,cost_currency=EXCLUDED.cost_currency,cost_amount_micros=EXCLUDED.cost_amount_micros,cost_source=EXCLUDED.cost_source,cost_actual=EXCLUDED.cost_actual`,
       [
         `cst-${input.jobId}-${input.imageId}`,
         input.jobId,
@@ -5690,6 +5690,11 @@ export async function recordImageCostAudit(
         input.costCredits,
         input.marginCredits,
         input.reason,
+        input.billingConfigVersion??null,
+        input.costCurrency===undefined?"credits":input.costCurrency,
+        input.costAmountMicros===undefined?(input.costCredits===null?null:String(Math.round(input.costCredits*1000000))):input.costAmountMicros,
+        input.costSource===undefined?"legacy-credit-estimate":input.costSource,
+        input.costActual===undefined?false:input.costActual,
       ]
     );
   } catch (error) {
@@ -5713,7 +5718,7 @@ export async function getCanvasImageTaskChargedCredits(taskId: string): Promise<
   return Number(rows[0].charged);
 }
 
-export type ImageCostAuditRow = QualityCostAudit & {
+export type ImageCostAuditRow = Omit<QualityCostAudit,"costCredits"|"marginCredits"> & import("@/lib/billing/audit").CostAuditFields & {
   id: string;
   jobId: string;
   email: string;
@@ -5735,13 +5740,14 @@ export async function listImageCostAudit(
     upstream: string;
     images: number;
     billed_credits: string;
-    cost_credits: string;
-    margin_credits: string;
+    cost_credits: string|null;
+    margin_credits: string|null;
+    billing_config_version:string|null;cost_currency:string|null;cost_amount_micros:string|null;cost_source:string|null;cost_actual:boolean|null;
     reason: string;
     created_at: string;
   }>(
     `SELECT id, job_id, email, requested_quality, executed_quality, upstream,
-            images, billed_credits, cost_credits, margin_credits, reason, created_at
+            images, billed_credits, cost_credits, margin_credits, reason, created_at,billing_config_version,cost_currency,cost_amount_micros,cost_source,cost_actual
        FROM app_image_cost_audit ORDER BY created_at DESC LIMIT $1`,
     [limit]
   );
@@ -5754,8 +5760,9 @@ export async function listImageCostAudit(
     upstream: r.upstream,
     images: r.images,
     billedCredits: Number(r.billed_credits),
-    costCredits: Number(r.cost_credits),
-    marginCredits: Number(r.margin_credits),
+    costCredits: r.cost_credits===null?null:Number(r.cost_credits),
+    marginCredits: r.margin_credits===null?null:Number(r.margin_credits),
+    billingConfigVersion:r.billing_config_version===null?null:Number(r.billing_config_version),costCurrency:r.cost_currency,costAmountMicros:r.cost_amount_micros,costSource:r.cost_source,costActual:r.cost_actual,
     reason: r.reason,
     createdAt: r.created_at,
   }));
