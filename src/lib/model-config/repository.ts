@@ -124,6 +124,24 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
       }, true);
     },
     async publication(id) { requireUUID(id); await ensure(); const row = await selectPublication(deps.pool, id); if (!row) throw new ModelConfigError("PUBLICATION_UNAVAILABLE", "发布记录不存在", 404); return publication(row); },
+    async stageRestore(input) {
+      requireUUID(input.id); requireActor(input.actor); requireVersion(input.expectedVersion); requireVersion(input.targetVersion);
+      if (typeof input.reason !== "string" || !input.reason.trim() || input.reason.length > 500) throw new ModelConfigError("INVALID_CONFIG", "请填写恢复原因");
+      const fingerprint = createHmac("sha256", settingsSecret()).update(canonicalConfig({ type: "restore", ...input })).digest("hex");
+      await ensure();
+      return transaction(async tx => {
+        const previous = await selectPublication(tx, input.id);
+        if (previous) { if (previous.request_fingerprint !== fingerprint) throw new ModelConfigError("OPERATION_CONFLICT", "操作编号已用于其他发布", 409); return publication(previous); }
+        if ((await tx.query("SELECT 1 FROM app_model_publications WHERE phase NOT IN ('applied','failed') LIMIT 1")).rowCount) throw new ModelConfigError("PUBLICATION_PENDING", "已有发布结果待核对", 409);
+        const active = await selectCurrent(tx);
+        if (!active || Number(active.version) !== input.expectedVersion) throw new ModelConfigError("CONFIG_CONFLICT", "配置已被更新，请刷新后重新恢复", 409);
+        const old = snapshot((await tx.query("SELECT * FROM app_model_config_versions WHERE version=$1", [input.targetVersion])).rows[0]);
+        await checkCredentials(tx, old.config);
+        const row = (await tx.query("INSERT INTO app_model_config_versions(operation_id,actor,reason,config,digest) VALUES($1,$2,$3,$4::jsonb,$5) RETURNING version", [input.id,input.actor,input.reason,JSON.stringify(old.config),old.digest])).rows[0];
+        await tx.query("INSERT INTO app_model_publications(id,version,expected_version,request_fingerprint,phase) VALUES($1,$2,$3,$4,'staged')", [input.id,row.version,input.expectedVersion,fingerprint]);
+        return publication({ id: input.id, version: row.version, digest: old.digest, phase: "staged" });
+      }, true);
+    },
     async history(limit) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new ModelConfigError("INVALID_CONFIG", "记录数量无效");
       await ensure(); const { rows } = await deps.pool.query("SELECT p.*,v.digest,v.actor,v.reason,v.created_at FROM app_model_publications p JOIN app_model_config_versions v ON p.version=v.version ORDER BY v.version DESC LIMIT $1", [limit]);
@@ -139,6 +157,8 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
         const changed = await tx.query("UPDATE app_model_config_state SET active_version=$1 WHERE singleton=true AND active_version=$2", [row.version,row.expected_version]);
         if (!changed.rowCount) throw new ModelConfigError("CONFIG_CONFLICT", "配置已被更新，不能覆盖其他发布", 409);
         await tx.query("UPDATE app_model_publications SET phase='applied',error_code=NULL,updated_at=now() WHERE id=$1", [id]);
+        const versionRow = (await tx.query("SELECT actor FROM app_model_config_versions WHERE version=$1", [row.version])).rows[0];
+        await tx.query("INSERT INTO app_bi_access_log(id,actor,action,target_email,section) VALUES($1,$2,'model-config-publish','','models')", [`model-publication:${id}`,versionRow.actor]);
         return snapshot((await tx.query("SELECT * FROM app_model_config_versions WHERE version=$1", [row.version])).rows[0]);
       }, true);
     },

@@ -52,6 +52,7 @@ export function verifyUserSession(value: string, now: number): string | null {
     const parts = value.split(".");
     if (parts.length !== 3) return null;
     const [eb, expStr, mac] = parts;
+    if (!/^[a-f0-9]{64}$/.test(mac)) return null;
     const exp = Number(expStr);
     if (!Number.isFinite(exp) || exp < now) return null;
     const expected = createHmac("sha256", secret())
@@ -83,6 +84,7 @@ export function verifyResetToken(value: string, now: number): string | null {
     const parts = value.split(".");
     if (parts.length !== 3) return null;
     const [eb, expStr, mac] = parts;
+    if (!/^[a-f0-9]{64}$/.test(mac)) return null;
     const exp = Number(expStr);
     if (!Number.isFinite(exp) || exp < now) return null;
     const expected = createHmac("sha256", secret())
@@ -103,7 +105,7 @@ function readCookie(request: Request, name: string): string | null {
     const eq = part.indexOf("=");
     if (eq < 0) continue;
     if (part.slice(0, eq).trim() === name) {
-      return decodeURIComponent(part.slice(eq + 1));
+      try { return decodeURIComponent(part.slice(eq + 1)); } catch { return null; }
     }
   }
   return null;
