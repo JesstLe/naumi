@@ -7,7 +7,7 @@ import { Activity, ArrowLeft, BarChart3, Building2, ImageIcon, Layers, LogOut, M
 import type { BiSection } from "@/lib/bi/contracts";
 import styles from "./center-shell.module.css";
 
-type Section = BiSection | "billing" | "pricing" | "settings";
+type Section = BiSection | "billing" | "pricing" | "settings" | "model-config";
 type Entry = { id: Section; label: string; icon: typeof Users; href?: string };
 const groups: { label: string; entries: Entry[] }[] = [
   { label: "运营概览", entries: [{ id: "overview", label: "数据概览", icon: BarChart3 }] },
@@ -29,7 +29,10 @@ const groups: { label: string; entries: Entry[] }[] = [
     { id: "management", label: "用户管理日志", icon: ShieldCheck },
     { id: "access", label: "后台访问记录", icon: ShieldCheck },
   ] },
-  { label: "系统设置", entries: [{ id: "settings", label: "接口与站点设置", icon: Settings, href: "/admin?view=settings" }] },
+  { label: "系统设置", entries: [
+    { id: "model-config", label: "模型配置中心", icon: Layers, href: "/admin/bi/models" },
+    { id: "settings", label: "接口与站点设置", icon: Settings, href: "/admin?view=settings" },
+  ] },
 ];
 
 /** Shared navigation only; each page and API retains its own administrator checks. */

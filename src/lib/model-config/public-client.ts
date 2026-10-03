@@ -15,6 +15,7 @@ export type PublicImageConfiguration = {
   defaultImageModel?: string;
   imageModels?: PublicImageModel[];
   imageModelBindings?: Record<string, string>;
+  imageBindingCapabilities?: Record<string, { qualities: string[]; nativeResolutions: string[] }>;
   imageQualityCapable?: boolean;
   imageQualityExperimental?: boolean;
 };
@@ -36,9 +37,10 @@ export function availableImageQualities(
         config.imageModelBindings?.[binding] ||
         config.defaultImageModel),
   );
-  if (model?.qualities !== undefined) {
+  const qualities = !modelId ? config?.imageBindingCapabilities?.[binding]?.qualities ?? model?.qualities : model?.qualities;
+  if (qualities !== undefined) {
     const allowed = IMAGE_QUALITY_IDS.filter((q) =>
-      model.qualities!.includes(q),
+      qualities.includes(q),
     );
     return allowed.length ? allowed : ["medium"];
   }

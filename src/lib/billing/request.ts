@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { BillingError, type BillingQuote } from "./types";
 import { billingJson } from "./access";
+import { ModelConfigError } from "../model-config/types";
 export function assertQuotedVersion(client: {
     version?: number;
     credits?: number;
@@ -26,6 +27,8 @@ export function operationIdFor(request: Request, explicit?: string) {
     return id;
 }
 export function billingErrorResponse(error: unknown) {
+    if (error instanceof ModelConfigError)
+        return billingJson({ error: error.message, code: error.code }, error.status);
     if (error instanceof BillingError)
         return billingJson({ error: error.message, code: error.code }, error.status);
     return billingJson({ error: "计费服务暂时不可用，请稍后重试" }, 503);

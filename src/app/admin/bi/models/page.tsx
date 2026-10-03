@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/admin-auth";
 import { ModelConfigurationManager } from "@/components/admin/model-config/manager";
+import { AdminCenterShell } from "@/components/admin/center-shell";
 export const metadata = {
   title: "模型配置中心 — Naumi",
   robots: { index: false, follow: false },
@@ -14,5 +15,5 @@ export default async function ModelsPage() {
     ))
   )
     notFound();
-  return <ModelConfigurationManager />;
+  return <AdminCenterShell active="model-config"><ModelConfigurationManager /></AdminCenterShell>;
 }

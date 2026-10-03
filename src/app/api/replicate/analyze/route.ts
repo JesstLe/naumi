@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { competitorActor, competitorError, normalizeUpload, analyzeCompetitor, WorkspaceError } from "@/lib/competitor-server";
 import { rateLimit } from "@/lib/rate-limit";
 import { requestedTextModel } from "@/lib/text-models";
+import { withBiRequest } from "@/lib/bi/model-observer";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
 /** Reuse the competitor workbench's vision compression, prompt and region analysis. */
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   try {
     const email = await competitorActor(request);
     if (!rateLimit(`replicate-analyze:${email}`, 30, 600_000)) throw new WorkspaceError("分析过于频繁，请稍后重试", 429);
@@ -20,4 +21,7 @@ export async function POST(request: Request) {
   } catch (error) {
     return competitorError(error);
   }
+}
+export async function POST(request: Request) {
+  return withBiRequest(request, () => handlePost(request));
 }

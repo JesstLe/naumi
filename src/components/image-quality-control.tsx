@@ -1,7 +1,6 @@
 "use client";
 
 import { useImageQuality } from "@/lib/image-quality-context";
-import { useEffect } from "react";
 import { IMAGE_QUALITY_IDS } from "@/lib/image-quality";
 import {useBilling} from "@/lib/billing/client";
 import {usePathname} from "next/navigation";
@@ -12,12 +11,12 @@ export const QUALITY_TOOL_CATEGORIES = new Set(["retouch", "recolor", "replicate
 
 export function ImageQualityControl({ disabled = false, compact = false, resolution = "1K", value, modelId, binding }: { disabled?: boolean; compact?: boolean; resolution?: string; value?: string; modelId?: string; binding?: string }) {
   const { quality, setQuality, capable, experimental, allowedQualities, modelConfig } = useImageQuality(undefined, modelId, binding);
-  useEffect(() => { if (!disabled && !allowedQualities.includes(quality)) setQuality(allowedQualities[0]); }, [disabled, quality, allowedQualities, setQuality]);
   const { t } = useI18n();
   const {catalog}=useBilling(),pathname=usePathname(),feature=CATEGORY_FEATURES[pathname.split('/')[1]]??"image.generate";
   const labels = { low: "gen.qLow", medium: "gen.qMedium", high: "gen.qHigh", xhigh: "gen.qXhigh", max: "gen.qMax" } as const;
   const selectedModel = modelConfig?.imageModels?.find(m => m.id === (modelId || modelConfig.imageModelBindings?.[binding || "image.generate"] || modelConfig.defaultImageModel));
-  const nativeHint = modelConfig?.modelVersion && resolution !== "1K" ? selectedModel?.nativeResolutions?.includes(resolution) ? `${resolution} 使用原生尺寸通道` : `${resolution} 使用基础出图后放大；仍按所选尺寸报价` : "";
+  const nativeResolutions = !modelId && binding ? modelConfig?.imageBindingCapabilities?.[binding]?.nativeResolutions ?? selectedModel?.nativeResolutions : selectedModel?.nativeResolutions;
+  const nativeHint = modelConfig?.modelVersion && resolution !== "1K" ? nativeResolutions?.includes(resolution) ? `${resolution} 使用原生尺寸通道` : `${resolution} 使用基础出图后放大；仍按所选尺寸报价` : "";
   return <div className={compact ? "min-w-28" : "space-y-2"}>
     <label className="flex items-center gap-2 text-xs">
       {!compact && <span>{t("gen.qualityLabel")}</span>}

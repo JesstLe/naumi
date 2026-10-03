@@ -25,6 +25,7 @@ async function main() {
   const calls: { model: string; quality: string; size: string; authorization: string; path: string; operation?: string }[] = [];
   const png = await sharp({ create: { width: 2048, height: 2048, channels: 3, background: "#fff" } }).png().toBuffer();
   let disconnect = false;
+  let visionReply = false;
   let globalDb: Awaited<typeof import("../src/lib/db")> | undefined;
   const f = await createModelFixture(async (req, res) => {
     const parts = []; for await (const part of req) parts.push(part);
@@ -37,7 +38,7 @@ async function main() {
       res.end(`data: ${JSON.stringify({ id: "fixture-stream", object: "chat.completion.chunk", model: body.model, choices: [{ index: 0, delta: { role: "assistant", content: "fixture streamed reply" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: "fixture-stream", object: "chat.completion.chunk", model: body.model, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 } })}\n\ndata: [DONE]\n\n`);
       return;
     }
-    const response = JSON.stringify(req.url?.includes("video") ? { id: "accepted-video-one", status: "processing" } : req.url?.includes("chat/completions") ? { model: body.model, choices: [{ message: { role: "assistant", content: "fixture reply" } }] } : { data: [{ b64_json: png.toString("base64") }] });
+    const response = JSON.stringify(req.url?.includes("video") ? { id: "accepted-video-one", status: "processing" } : req.url?.includes("chat/completions") ? { model: body.model, choices: [{ message: { role: "assistant", content: visionReply ? JSON.stringify({ prompt: "清晰展示商品材质和背景的电商产品照片", regions: [] }) : "fixture reply" } }] } : { data: [{ b64_json: png.toString("base64") }] });
     const compressed = gzipSync(response);
     res.writeHead(200, { "content-type": "application/json", "content-encoding": "gzip", "content-length": compressed.length }); res.end(compressed);
   });
@@ -52,6 +53,16 @@ async function main() {
     const nextLease = await capacity.acquire({ providerId: "capacity-provider", baseUrl: `${f.origin}/v1`, maxConcurrent: 2, timeoutMs: 5000 });
     await assert.rejects(capacity.acquire({ providerId: "capacity-provider", baseUrl: `${f.origin}/v1`, maxConcurrent: 2, timeoutMs: 5000 }), (e: any) => e.code === "PROVIDER_BUSY");
     await nextLease.release();
+    const sharedConfig = structuredClone(f.config);
+    sharedConfig.providers = await Promise.all(["shared-account-a", "shared-account-b"].map(async id => ({ ...f.config.providers[0], id, maxConcurrent: 1, credentialRef: (await f.credentials.importPlain({ providerId: id, plain: "fixture-same-supplier-account", actor: "fixture" })).id })));
+    const { registerProviderCapacities, providerCapacitySummary } = await import("../src/lib/model-config/capacity");
+    const capacityTx = await f.sql.connect();
+    try { await capacityTx.query("BEGIN"); await registerProviderCapacities(capacityTx, sharedConfig); await capacityTx.query("COMMIT"); } finally { capacityTx.release(); }
+    const sharedLease = await capacity.acquire({ providerId: "shared-account-a", baseUrl: `${f.origin}/v1`, maxConcurrent: 1, timeoutMs: 5000 });
+    try {
+      await assert.rejects(capacity.acquire({ providerId: "shared-account-b", baseUrl: `${f.origin}/another-protocol`, maxConcurrent: 4, timeoutMs: 5000 }), (e: any) => e.code === "PROVIDER_BUSY", "Duplicating a supplier account under another provider ID cannot bypass its concurrency limit");
+      assert.equal((await providerCapacitySummary(f.sql, sharedConfig))["shared-account-b"].inFlight, 1);
+    } finally { await sharedLease.release(); }
     f.config.upstreamModels[0].parameterMap = { quality: { high: "hd" }, resolution: { "2K": "2048x2048" } };
     f.config.upstreamModels[0].capabilities.preserveIdentity = true;
     f.config.upstreamModels[0].capabilities.textAccuracy = true;
@@ -70,6 +81,14 @@ async function main() {
     f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels.at(-1)!), id: "video-openai-u1", providerId: "video-openai" });
     f.config.publicModels.push({ id: "video-openai-a", label: "视频协议测试", modality: "video", enabled: true, visible: true, target: { type: "upstream", id: "video-openai-u1" } });
     const first = await f.repo.current();
+    const { publicModelCatalog } = await import("../src/lib/model-config/runtime");
+    const hiddenConfig = structuredClone(first.config);
+    hiddenConfig.upstreamModels.push({ ...structuredClone(hiddenConfig.upstreamModels[0]), id: "hidden-editor-wire", capabilities: { ...structuredClone(hiddenConfig.upstreamModels[0].capabilities), qualities: ["medium"] } });
+    hiddenConfig.publicModels.push({ id: "private-editor-alias", label: "内部编辑默认", modality: "image", enabled: true, visible: false, target: { type: "upstream", id: "hidden-editor-wire" } });
+    hiddenConfig.bindings["image.edit"] = "private-editor-alias";
+    const hiddenCatalog = publicModelCatalog({ ...first, config: hiddenConfig }, "image");
+    assert.ok(!JSON.stringify(hiddenCatalog).includes("private-editor-alias"));
+    assert.deepEqual(availableImageQualities({ defaultImageModel: "image-a", imageModels: hiddenCatalog.models, imageBindingCapabilities: hiddenCatalog.bindingCapabilities }, undefined, "image.edit"), ["medium"], "Hidden default models expose safe capability summaries without exposing internal IDs");
     const facts = { task: "product" as const, quality: "high", resolution: "2K", needsEdit: false, preserveIdentity: false, needsText: false, nativeResolution: true, references: 0 };
     const oldTask = await executor.resolve({ binding: "image.generate", requestedModelId: "image-a", snapshot: first, billing, facts });
     const oldVideo = await executor.resolve({ binding: "video.generate", snapshot: first, billing });
@@ -175,6 +194,9 @@ async function main() {
     assert.equal(calls.length, beforeReplay, "Replaying an accepted durable intent cannot submit another paid task");
     const finalDraft = await f.repo.draft("fixture-admin");
     const finalConfig = structuredClone(finalDraft.config);
+    finalConfig.upstreamModels.find(u => u.id === "text-u1")!.capabilities.vision = true;
+    finalConfig.bindings["vision.reference"] = "text-a";
+    finalConfig.bindings["text.competitor"] = "text-a";
     finalConfig.providers.find(p => p.id === "video-provider")!.credentialRef = (await f.credentials.importPlain({ providerId: "video-provider", plain: "fixture-video-final-key", actor: "fixture" })).id;
     const finalSaved = await f.repo.saveDraft({ id: finalDraft.id, expectedRevision: finalDraft.revision, config: finalConfig, actor: "fixture-admin" });
     const finalStaged = await f.repo.stage({ id: randomUUID(), draftId: finalSaved.id, expectedRevision: finalSaved.revision, expectedVersion: second.version, reason: "视频接单后轮换", actor: "fixture-admin" });
@@ -214,6 +236,29 @@ async function main() {
     await globalDb.setSetting("multi_user_enabled", "1");
     const { signUserSession } = await import("../src/lib/native-auth");
     const cookie = `nv_user=${signUserSession(email, Date.now())}`;
+    const analysisRoute = await import("../src/app/api/replicate/analyze/route");
+    const analysisForm = new FormData(); analysisForm.set("ref", new Blob([new Uint8Array(png)], { type: "image/png" }), "fixture.png");
+    visionReply = true;
+    const analysisResponse = await analysisRoute.POST(new Request("http://fixture.test/api/replicate/analyze", { method: "POST", headers: { cookie }, body: analysisForm }));
+    visionReply = false;
+    assert.equal(analysisResponse.status, 200, "Reference analysis entry must use the managed vision binding");
+    assert.equal(calls.at(-1)!.authorization, "Bearer fixture-text-account");
+    assert.equal(calls.at(-1)!.model, "wire-text-one");
+    const { quoteForRequest, quoteForActor } = await import("../src/lib/billing/server");
+    const quoteRequest = new Request("http://fixture.test/api/billing/quote", { headers: { cookie } });
+    const beforeQuotes = calls.length;
+    for (const feature of ["image.generate", "tool.recolor", "canvas.image", "video.generate", "canvas.text-generate"] as const) {
+      const q = await quoteForRequest(quoteRequest, { feature, quantity: 1 });
+      assert.equal(q.facts.modelId, feature === "video.generate" ? "video-a" : feature === "canvas.text-generate" ? "text-a" : "image-a", `${feature} quotes must use the same registry default as execution`);
+      assert.equal(q.facts.providerId, feature === "video.generate" ? "video-provider" : feature === "canvas.text-generate" ? "text-provider" : "p1");
+    }
+    await executor.runBundle({ modelVersion: first.version, billingVersion: billing.version, primary: "text", text: oldText }, billing, async () => {
+      const q = await quoteForActor(email, { feature: "image.generate", quantity: 1 });
+      assert.equal(q.facts.modelId, "image-a", "Agent image quotes cannot inherit the primary text alias");
+      assert.equal(q.facts.providerId, "p1");
+    });
+    assert.equal(calls.length, beforeQuotes, "Quotes must not call any supplier");
+    await assert.rejects(quoteForRequest(new Request("http://fixture.test/api/billing/quote", { headers: { cookie, "x-naumi-model-version": String(first.version) } }), { feature: "image.generate", quantity: 1 }), (e: any) => e.code === "MODEL_CHANGED");
     const { signAcceptedModelContext } = await import("../src/lib/model-config/accepted-context");
     const { withModelRequest } = await import("../src/lib/model-config/requests");
     const { currentModelExecution } = await import("../src/lib/model-config/context");

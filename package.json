@@ -48,7 +48,8 @@
     "verify:model-publication": "tsx --conditions react-server scripts/verify-model-publication.ts",
     "verify:model-router-contract": "tsx --conditions react-server scripts/verify-model-router-contract.ts",
     "verify:model-admin": "tsx --conditions react-server scripts/verify-model-admin.ts",
-    "verify:model-execution": "tsx --conditions react-server scripts/verify-model-execution.ts"
+    "verify:model-execution": "tsx --conditions react-server scripts/verify-model-execution.ts",
+    "verify:model-tools": "tsx --conditions react-server scripts/verify-global-image-quality.ts --managed"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",
