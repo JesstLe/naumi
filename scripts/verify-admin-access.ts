@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 async function main() {
   if (process.env.NAUMI_VERIFY_ISOLATED_DB !== "1" || new URL(process.env.DATABASE_URL || "http://invalid").hostname !== "127.0.0.1") throw new Error("Requires isolated local PostgreSQL");
+  process.env.SETTINGS_SECRET = "fixture-settings-0123456789abcdef0123456789abcdef0123456789";
   const db = await import("../src/lib/db"), auth = await import("../src/lib/admin-auth"), native = await import("../src/lib/native-auth"), login = await import("../src/app/api/admin/login/route"), billing = await import("../src/app/api/admin/billing/route"), bi = await import("../src/app/api/admin/bi/route"), settings = await import("../src/app/api/admin/settings/route"), { adminDestination } = await import("../src/lib/admin-navigation");
   const email = `admin-access-${randomUUID()}@example.test`, previous = await db.getSetting(auth.ADMIN_PW_HASH_SETTING), pool = db.getPool();
   const req = (cookie = "", password?: string, origin?: string) => new Request("http://fixture.test/api/admin/login", { method: password === undefined ? "GET" : "POST", headers: { cookie, ...(password === undefined ? {} : { "content-type": "application/json" }), ...(origin ? { origin } : {}) }, ...(password === undefined ? {} : { body: JSON.stringify({ password }) }) });
