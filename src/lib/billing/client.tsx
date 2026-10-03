@@ -4,6 +4,7 @@ import { authHeader } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import type { FeatureId } from "./types";
 import {clientIntentKey,frozenIntentBody} from "./client-intent";
+import { MODEL_CATALOG_REFRESH } from "../model-config/public-client";
 export type PublicQuote = {
     version: number;
     credits: number;
@@ -132,6 +133,7 @@ export function BillingProvider({ children }: {
         if(response.ok||response.status<500&&data.code!=="OPERATION_PENDING"&&data.code!=="OPERATION_CONFLICT"){intents.current.delete(key);try{localStorage.removeItem(key);}catch{}}
         if (response.status === 409 && data.code === "PRICE_CHANGED")
             await refresh();
+        if (response.status === 409 && data.code === "MODEL_CHANGED") window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
         return response;
     }, [refresh,user?.email]);
     const confirmAndSubmit = useCallback(async (url: string, init: RequestInit, input: QuoteInput) => {

@@ -62,7 +62,7 @@ export function compactImageModelOptions<T extends ImageModelRoutingOption>(
   const seen = new Set<string>();
   return ordered.filter((item) => {
     const family = imageModelFamily(item.id);
-    const key = family || item.label || item.id;
+    const key = item.provider === "managed" ? item.id : family || item.label || item.id;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

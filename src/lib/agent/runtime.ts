@@ -1,6 +1,7 @@
 import type { Agent } from "@earendil-works/pi-agent-core";
 import { currentModelExecution, currentExecutionBundle } from "@/lib/model-config/context";
 import { signAcceptedModelContext } from "@/lib/model-config/accepted-context";
+import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
 import { configuredPiModels } from "@/lib/model-config/pi";
 import { legacyAgentVision } from "@/lib/model-config/legacy-vision";
 import type { ImageContent, Model, createModels } from "@earendil-works/pi-ai";
@@ -258,7 +259,8 @@ export async function getOrCreateSession(
           terminate: true,
         };
       }
-      return agentBillingPrecheck(session,toolCall.name,args as Record<string,unknown>,toolCall.id);
+      const precheck = () => agentBillingPrecheck(session,toolCall.name,args as Record<string,unknown>,toolCall.id);
+      return acceptedBundle ? withFrozenExecutionBundle(acceptedBundle, precheck) : precheck();
     },
   });
 

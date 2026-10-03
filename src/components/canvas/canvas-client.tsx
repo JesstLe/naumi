@@ -1614,7 +1614,7 @@ export function CanvasClient() {
     const headers=new Headers(init.headers);for(const [key,value] of Object.entries(await authHeader()))headers.set(key,value);
     return billing.confirmAndSubmit(path,{...init,headers},{feature:features[path],quantity,quality:String(body.quality||genQuality),resolution:String(body.resolution||source?.resolution||"1K"),modelId:body.modelId||body.model||undefined,providerId:body.providerId,ratio:body.ratio});
   }
-  const { quality: genQuality, imageCost } = useImageQuality();
+  const { quality: genQuality, imageCost, modelConfig } = useImageQuality();
   const { model: textModel, setModel: setTextModel } = useTextModel();
   const { user, ready, remaining, persistMode, applyServerUser, signOut } = useAuth();
   const { openAuth } = useAuthModal();
@@ -1781,12 +1781,8 @@ export function CanvasClient() {
   }
 
   useEffect(() => {
-    let cancelled = false;
-    void authHeader()
-      .then((headers) => fetch("/api/config", { cache: "no-store", headers }))
-      .then((response) => response.json())
-      .then((config: { defaultImageModel?: string; imageModels?: ImageModelOption[] }) => {
-        if (cancelled) return;
+        const config = modelConfig;
+        if (!config) return;
         const options = Array.isArray(config.imageModels)
           ? config.imageModels.filter((item) => item?.id && item?.label)
           : [];
@@ -1803,12 +1799,7 @@ export function CanvasClient() {
           if (normalized.some((item) => item.id === saved)) return saved;
           return normalized.find((item) => item.id === fallback)?.id || normalized[0]?.id || "";
         });
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [modelConfig]);
 
   function pickGenerationModel(model: string) {
     setGenModel(model);
@@ -10477,7 +10468,7 @@ export function CanvasClient() {
                           />
                         ))}
                       </div>
-                      <ImageQualityControl compact resolution={selected?.resolution || "1K"} />
+                      <ImageQualityControl compact modelId={genModel} resolution={selected?.resolution || "1K"} />
                       <button
                         type="button"
                         disabled={!expandRatio || selectedGenerating}
@@ -10952,7 +10943,7 @@ export function CanvasClient() {
               )}
 
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-                <div className="mb-3"><ImageQualityControl compact resolution={active?.members.find(a => a.id === ocrArtworkId)?.resolution || "1K"} disabled={ocrStatus === "applying"} /></div>
+                <div className="mb-3"><ImageQualityControl compact binding="image.edit" resolution={active?.members.find(a => a.id === ocrArtworkId)?.resolution || "1K"} disabled={ocrStatus === "applying"} /></div>
                 {ocrError && (
                   <div className="mb-3 border border-[#f0c8c3] bg-[#fff5f3] px-3 py-2 text-[12px] font-medium text-[#b44f43]">
                     {ocrError}
@@ -11329,7 +11320,7 @@ export function CanvasClient() {
                     }
                   />
                   {ratioControl}
-                  <ImageQualityControl compact resolution={genResolution} disabled={selectedGenerating} />
+                  <ImageQualityControl compact modelId={genModel} resolution={genResolution} disabled={selectedGenerating} />
                   {generationMode === "standard" || generationMode === "detail" ? (
                     <ImageCountControl
                       value={genCount}
@@ -11467,7 +11458,7 @@ export function CanvasClient() {
                   }
                 />
                 {ratioControl}
-                <ImageQualityControl compact resolution={genResolution} disabled={selectedPendGenerating} />
+                <ImageQualityControl compact modelId={genModel} resolution={genResolution} disabled={selectedPendGenerating} />
                 <ImageCountControl
                   value={genCount}
                   onChange={setGenCount}
