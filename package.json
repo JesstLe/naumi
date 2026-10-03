@@ -27,7 +27,8 @@
     "verify:billing-rules": "tsx --conditions react-server scripts/verify-billing-rules.ts",
     "verify:billing-config": "tsx --conditions react-server scripts/verify-billing-config.ts",
     "verify:billing-wallet": "tsx --conditions react-server scripts/verify-billing-wallet.ts",
-    "verify:billing-api": "tsx --conditions react-server scripts/verify-billing-api.ts"
+    "verify:billing-api": "tsx --conditions react-server scripts/verify-billing-api.ts",
+    "verify:billing-image-jobs": "tsx --conditions react-server scripts/verify-billing-image-jobs.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",

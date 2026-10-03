@@ -1,19 +1,27 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { getPool, ensureSchema, deductPrincipalFIFO, refreshBalance, creditMeteringEnabled, expireDueBatches } from "@/lib/db";
+import {createBillingService} from "@/lib/billing/service";
+import type {BillingQuote,BillingResult,OperationInput} from "@/lib/billing/types";
+const billingService=createBillingService();
+function billingOperation(row:{id:string;email:string;payload:{billingQuote:BillingQuote}},reason:string):OperationInput{return {id:row.id,email:row.email,quote:row.payload.billingQuote,reason,ledgerId:`led-image-${row.id}`,fingerprint:row.id};}
 
 export type ImageJobKind = "generate" | "suite" | "aplus";
 export type ImageJobRow = { id: string; email: string; kind: ImageJobKind; snapshot: Record<string, unknown>; payload: Record<string, unknown>; lease_token: string | null; billing_settled: boolean };
 
-export async function createImageJob(id: string, email: string, kind: ImageJobKind, snapshot: unknown, payload: unknown, cost: number, reserve: boolean) {
+export async function createImageJob(id: string, email: string, kind: ImageJobKind, snapshot: unknown, payload: unknown, cost: number, reserve: boolean, billingQuote?:BillingQuote) {
   await ensureSchema();
-  const metered = await creditMeteringEnabled();
-  if (metered && reserve) await expireDueBatches(email);
+  const metered = billingQuote?.facts.metered ?? await creditMeteringEnabled();
+  if (!billingQuote && metered && reserve) await expireDueBatches(email);
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    await client.query(`INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,cost,metered) VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7)`, [id, email.toLowerCase(), kind, JSON.stringify(snapshot), JSON.stringify(payload), cost, metered]);
-    if (reserve && cost > 0 && metered) {
+    const frozenPayload={...(payload as object),...(billingQuote?{billingQuote}:{})};
+    await client.query(`INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,cost,metered) VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7)`, [id, email.toLowerCase(), kind, JSON.stringify(snapshot), JSON.stringify(frozenPayload), cost, metered]);
+    if (billingQuote && reserve) {
+      await billingService.reserveTx(client,billingOperation({id,email,payload:{billingQuote}},"图片任务预占"));
+      await client.query("UPDATE app_image_jobs SET reserved_cost=$2 WHERE id=$1",[id,billingQuote.reserveCredits]);
+    } else if (!billingQuote && reserve && cost > 0 && metered) {
       const result = await client.query(`UPDATE app_users u SET credits_used=credits_used+$2 WHERE email=$1 AND
         (SELECT COALESCE(sum(remaining),0) FROM app_credit_batches WHERE email=$1 AND expires_at>now())-credits_used >= $2`, [email.toLowerCase(), cost]);
       if (!result.rowCount) throw new Error("积分不足，请充值后重试");
@@ -58,7 +66,7 @@ export async function saveImageJob(id: string, snapshot: unknown, token: string 
 }
 
 /** Exact charge and full reservation release occur once in the same transaction. */
-export async function settleImageJob(id: string, charged: number, reason: string, token: string | null) {
+export async function settleImageJob(id: string, charged: number|BillingResult, reason: string, token: string | null) {
   const client = await getPool().connect();
   let email = "";
   try {
@@ -69,12 +77,23 @@ export async function settleImageJob(id: string, charged: number, reason: string
     email = row.email;
     if (!row.billing_settled) {
       if (row.lease_token !== token || (token && new Date(row.lease_until).getTime() <= Date.now())) throw new Error("任务执行权已过期");
+      if(row.payload.billingQuote){
+        if(typeof charged==="number")throw new Error("新任务结算必须包含实际结果");
+        const op=billingOperation(row,reason);
+        const reserved=await client.query("SELECT 1 FROM app_billing_operations WHERE id=$1",[id]);
+        if(reserved.rowCount){
+          const settled=await billingService.settleTx(client,op,charged);
+          if(charged.state==="unknown"){await client.query("COMMIT");return;}
+        }else if(charged.state!=="failed")throw new Error("任务尚未完成计费预占");
+      }else{
+      if(typeof charged!=="number")throw new Error("旧任务须按已保存价格恢复结算");
       const actual = Math.min(row.cost, Math.max(0, Math.trunc(charged)));
       if (row.metered && actual > 0) {
         await deductPrincipalFIFO(client, email, actual);
         await client.query(`INSERT INTO app_ledger(id,email,delta,reason,kind) VALUES($1,$2,$3,$4,'consume')`, [`led-image-${id}`, email, -actual, reason]);
       }
       if (row.metered) await client.query(`UPDATE app_users SET credits_used=GREATEST(credits_used-$2,0) WHERE email=$1`, [email, row.reserved_cost]);
+      }
       await client.query(`UPDATE app_image_jobs SET billing_settled=true WHERE id=$1`, [id]);
       await client.query(`DELETE FROM app_gen_reservations WHERE job_id=$1`, [id]);
     }
@@ -93,14 +112,16 @@ export async function reserveReviewedImageJob(id: string) {
     if (!row || row.snapshot.stage !== "reviewing" || row.snapshot.generationStarted ||
       row.snapshot.sources.some((source: {status:string}) => source.status !== "approved") ||
       (row.lease_until && new Date(row.lease_until).getTime()>Date.now())) throw new Error("任务尚未完成审核或已进入生成阶段");
-    if (row.metered && row.cost>0) {
+    if(row.payload.billingQuote){
+      await billingService.reserveTx(client,billingOperation(row,"A+ 审核后预占"));
+    }else if (row.metered && row.cost>0) {
       const result = await client.query(`UPDATE app_users SET credits_used=credits_used+$2 WHERE email=$1 AND
         (SELECT COALESCE(sum(remaining),0) FROM app_credit_batches WHERE email=$1 AND expires_at>now())-credits_used >= $2`, [row.email,row.cost]);
       if (!result.rowCount) throw new Error("积分不足，请充值后重试");
       await client.query(`INSERT INTO app_gen_reservations(job_id,email,cost) VALUES($1,$2,$3)`, [id,row.email,row.cost]);
     }
-    await client.query(`UPDATE app_image_jobs SET reserved_cost=CASE WHEN metered THEN cost ELSE 0 END,
-      snapshot=snapshot || '{"generationStarted":true,"reserved":true,"status":"pending","stage":"generating"}'::jsonb WHERE id=$1`, [id]);
+    await client.query(`UPDATE app_image_jobs SET reserved_cost=$2,
+      snapshot=snapshot || '{"generationStarted":true,"reserved":true,"status":"pending","stage":"generating"}'::jsonb WHERE id=$1`, [id,row.payload.billingQuote?.reserveCredits??(row.metered?row.cost:0)]);
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
