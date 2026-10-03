@@ -4,7 +4,7 @@ import OpenAI, { toFile } from "openai";
 import { CATEGORY_IMAGES, img } from "@/lib/images";
 import {
   MAX_GENERATION_DIMENSION,
-  qualityBillBeans,
+  qualityBillCredits,
   qualityCostAudit,
   resolutionLongSide,
 } from "@/lib/mock-data";
@@ -15,6 +15,7 @@ import {
   getUser,
   isBanned,
   recordImageCostAudit,
+  getImageJobChargedCredits,
   sweepStaleReservations,
 } from "@/lib/db";
 import { clientIp } from "@/lib/ip";
@@ -36,9 +37,9 @@ import {
   type ImageModelDescriptor,
 } from "@/lib/image-model-catalog";
 import { routeImageModel } from "@/lib/image-model-routing";
-import { resolveImageQuality, isQualityUnsupportedError, type ResolvedImageQuality } from "@/lib/image-quality";
+import { resolveImageQuality, isQualityUnsupportedError } from "@/lib/image-quality";
 import { generateNewApiImage } from "@/lib/new-api-image";
-import { imageGatewayFields, ImageOperationPending, withImageIndex, currentImageOperationId } from "@/lib/image-gateway";
+import { imageGatewayFields, ImageOperationPending, withImageIndex } from "@/lib/image-gateway";
 import {
   assertUserImageBaseUrlAllowed,
   getUserImageProvider,
@@ -70,6 +71,7 @@ export type GeneratedImage = {
   createdAt: string;
   width?: number;
   height?: number;
+  execution?: { quality: string; upstream: string; reason: string; platformFunded: boolean };
 };
 
 type GenImage = { buf: Buffer; type: string };
@@ -83,6 +85,7 @@ type GenParams = {
   ratio: string;
   resolution: string;
   style: string;
+  qualityDefault?: string;
   quality: string; // 请求质量档:low/medium/high/xhigh/max/auto;通道不支持时提交前回退默认档,请求值只入审计
   count: number;
   transparent: boolean; // 透明底(抠图):gpt-image background:transparent PNG
@@ -166,30 +169,6 @@ function transparentUnsupported(e: unknown): boolean {
     (e as { message?: string })?.message ??
     String((e as { error?: { message?: string } })?.error?.message ?? "");
   return /transparent background is not supported/i.test(msg);
-}
-
-// 质量回退成本审计:写一条「实扣(请求档) vs 应扣成本(执行档)」内部记录供毛利核算。
-// 只记不改:用户侧账单(预扣/结算/app_ledger)完全不动,写入失败也只打日志。
-// 层 2(同通道退档)按张触发;openaiImages 里 p.quality 仍是请求档(开关开启才会
-// 走到层 2),重解析即得原始请求档,与计费口径(saved.quality.requested)一致。
-function auditQualityDowngrade(
-  p: GenParams,
-  upstream: string,
-  executed: string
-) {
-  const opId = currentImageOperationId();
-  const jobId = opId ? opId.split(":image:")[0] : "";
-  void recordImageCostAudit({
-    jobId,
-    email: p.email,
-    ...qualityCostAudit({
-      requested: resolveImageQuality(p.quality).requested,
-      executed,
-      upstream,
-      images: 1,
-      reason: "quality-downgrade",
-    }),
-  });
 }
 
 // 改比例(ChatGPT 式重生成)固定指令:不需要用户额外提示词。
@@ -314,7 +293,7 @@ async function openaiImages(
   modelIn: string,
   cutoutModel: string,
   baseUrl?: string,
-  opts?: { auditUpstream?: string }
+  opts?: { auditUpstream?: string; providerFallback?: boolean }
 ): Promise<GeneratedImage[]> {
   // 透明底只 gpt-image-1 支持(gpt-image-2 实测不支持 background:transparent),走抠图模型;
   // 其余生图走默认模型(gpt-image-2)。普通生图的兜底已统一 v2,不再落 v1。
@@ -332,26 +311,24 @@ async function openaiImages(
   const size = sizeFor(p.ratio, model);
   const canEdit = p.images.length > 0 && isOpenAIImagesEditModel(model);
   // 出图质量:解析结果=实际执行档。通道未接入质量参数时在提交前回退为默认档
-  // (env OPENAI_IMAGE_QUALITY,缺省 medium),请求档仅记录审计;计费不区分质量档。
-  const q = resolveImageQuality(p.quality).executed as
+  // (env OPENAI_IMAGE_QUALITY,缺省 medium);内测仍按请求档测试价计费。
+  const q = (p.quality || p.qualityDefault || resolveImageQuality("").executed) as
     | "low"
     | "medium"
     | "high"
     | "auto";
   // 默认档:上游报错不识别 quality 参数时,同一通道先退回默认档重试一次。
-  const qDefault = resolveImageQuality("").executed as typeof q;
+  const qDefault = (p.qualityDefault || resolveImageQuality("").executed) as typeof q;
 
-  let data: { b64_json?: string; url?: string }[] = [];
+  type UpstreamImage = { b64_json?: string; url?: string; execution?: GeneratedImage["execution"] };
+  let data: UpstreamImage[] = [];
 
   // 兼容服务经常接受 n>1 却只返回 1 张。统一拆成 count 次 n=1，既能保证
   // 用户选择的数量真实执行，也能在个别请求失败时保留其余成功结果。
   async function fanOut(
-    worker: (index: number) => Promise<{ b64_json?: string; url?: string }>
-  ): Promise<{ b64_json?: string; url?: string }[]> {
-    const settled: PromiseSettledResult<{
-      b64_json?: string;
-      url?: string;
-    }>[] = new Array(p.count);
+    worker: (index: number) => Promise<UpstreamImage>
+  ): Promise<UpstreamImage[]> {
+    const settled: PromiseSettledResult<UpstreamImage>[] = new Array(p.count);
     let cursor = 0;
     // 每个 job 最多只向全局闸门提交 4 个活动 worker，避免一个 8 图任务
     // 预先占满等待队列，让稍后提交的其他节点长期排在它后面。
@@ -373,7 +350,7 @@ async function openaiImages(
         }
       })
     );
-    const succeeded: { b64_json?: string; url?: string }[] = [];
+    const succeeded: UpstreamImage[] = [];
     const failed: unknown[] = [];
     for (const result of settled) {
       if (result.status === "fulfilled") succeeded.push(result.value);
@@ -457,6 +434,7 @@ async function openaiImages(
     };
     data = await fanOut(async () => {
       let r;
+      let executedQuality: string = q;
       try {
         r = await editOnce(p.transparent, q);
       } catch (e) {
@@ -466,12 +444,12 @@ async function openaiImages(
           // 上游不识别 quality 参数:同通道退回默认档重试,出图不受影响
           console.error(`[gen-quality-fallback] 同通道退默认档 model=${model} req=${q}`);
           r = await editOnce(p.transparent, qDefault);
-          auditQualityDowngrade(p, opts?.auditUpstream ?? `model:${model}`, qDefault);
+          executedQuality = qDefault;
         } else throw e;
       }
       const image = r.data?.[0];
       if (!image) throw new Error("OpenAI 未返回图片");
-      return image;
+      return { ...image, execution: { quality: executedQuality, upstream: opts?.auditUpstream || `default:${model}`, reason: opts?.providerFallback ? "provider-fallback" : executedQuality !== q ? "quality-downgrade" : "generated", platformFunded: !opts?.auditUpstream?.startsWith("byok:") } };
     });
   } else {
     const generateOnce = async (transparent: boolean, quality: typeof q) => {
@@ -490,6 +468,7 @@ async function openaiImages(
     };
     data = await fanOut(async () => {
       let r;
+      let executedQuality: string = q;
       try {
         r = await generateOnce(p.transparent, q);
       } catch (e) {
@@ -499,12 +478,12 @@ async function openaiImages(
           // 上游不识别 quality 参数:同通道退回默认档重试,出图不受影响
           console.error(`[gen-quality-fallback] 同通道退默认档 model=${model} req=${q}`);
           r = await generateOnce(p.transparent, qDefault);
-          auditQualityDowngrade(p, opts?.auditUpstream ?? `model:${model}`, qDefault);
+          executedQuality = qDefault;
         } else throw e;
       }
       const image = r.data?.[0];
       if (!image) throw new Error("OpenAI 未返回图片");
-      return image;
+      return { ...image, execution: { quality: executedQuality, upstream: opts?.auditUpstream || `default:${model}`, reason: opts?.providerFallback ? "provider-fallback" : executedQuality !== q ? "quality-downgrade" : "generated", platformFunded: !opts?.auditUpstream?.startsWith("byok:") } };
     });
   }
 
@@ -518,6 +497,7 @@ async function openaiImages(
     prompt: p.prompt,
     ratio: p.ratio,
     createdAt: new Date().toISOString(),
+    execution: d.execution,
   }));
   if (images.length === 0) throw new Error("OpenAI 未返回图片");
   return images;
@@ -836,7 +816,7 @@ type Job = {
   createdAt: number;
   sourceUrl?: string | null;
   /** 质量审计:请求档 vs 实际执行档与回退原因(通道不支持时回退默认档)。 */
-  quality?: ResolvedImageQuality;
+  quality?: { requested: string; executed: string; fallbackReason: string | null; executedQualities?: string[] };
 };
 const JOBS = new DurableImageJobs<Job>("generate");
 
@@ -879,9 +859,6 @@ async function runJob(
   cost: number
 ) {
   let billingSettled = false;
-  // BYOK 上游连默认档也拒绝质量参数时置为上游标识,成功出图后写一条成本审计
-  // (实扣按请求档不变,成本按默认档核算,供毛利计算)。
-  let qualityProviderFallbackFrom: string | null = null;
   try {
     const saved = await JOBS.get(jobId);
     let images: GeneratedImage[];
@@ -908,15 +885,14 @@ async function runJob(
         } catch (e) {
           if (!apiKey || !defaultModel || !isQualityUnsupportedError(e)) throw e;
           console.error(`[gen-quality-fallback] BYOK 不支持质量参数,回退默认 API: job=${jobId} provider=${userProvider.model}`);
-          qualityProviderFallbackFrom = userProvider.model;
-          // quality 传空串 → 执行档落 env 默认,层 2 不会再触发(避免审计重复计数)。
+          // 使用提交时固化的默认档，成功结果中保留供应商回退信息。
           return openaiImages(
-            { ...p, quality: "" },
+            { ...p, quality: p.qualityDefault || resolveImageQuality("").executed },
             apiKey,
             defaultModel,
             cutoutModel,
             undefined,
-            { auditUpstream: `default:${defaultModel}` }
+            { auditUpstream: `default:${defaultModel} (from byok:${userProvider.model})`, providerFallback: true }
           );
         }
       });
@@ -930,6 +906,15 @@ async function runJob(
             preserveIdentity: p.images.length > 0,
           }, () => openaiImages(p, apiKey, imageModel.id, cutoutModel, undefined, { auditUpstream: `default:${imageModel.id}` }))
         : mockImages(p);
+    }
+    // Chat-completions channels have no quality parameter; audit their default tier.
+    if (imageModel.provider === "user-chat-completions" || imageModel.provider === "new-api-flow") {
+      images = images.map(image => ({ ...image, execution: {
+        quality: p.qualityDefault || "medium",
+        upstream: userProvider ? `byok:${userProvider.model}` : `flow:${imageModel.id}`,
+        reason: p.quality !== p.qualityDefault ? "quality-downgrade" : "generated",
+        platformFunded: !userProvider,
+      } }));
     }
     images = await enforceOutputShape(images, p);
     if (!(p.targetWidth > 0 && p.targetHeight > 0)) {
@@ -998,34 +983,30 @@ async function runJob(
           batchId
         );
       // 结算与预扣同口径:按请求质量档计费(内测期跑通链路,见 POST 注释)。
-      const actualCost = userProvider ? 0 : images.length * qualityBillBeans(saved?.quality?.requested ?? "");
+      const actualCost = userProvider ? 0 : images.length * qualityBillCredits(saved?.quality?.requested ?? "");
       await JOBS.settle(jobId, actualCost, `生成 ${images.length} 张图`);
       billingSettled = true;
       user = await getUser(p.email).catch(() => null);
     }
 
 
-    const actualCost = userProvider ? 0 : images.length * qualityBillBeans(saved?.quality?.requested ?? "");
-    // 供应商回退审计:用户实扣保持请求档不变,这里补记真实触发的默认上游与
-    // 按执行档核算的成本豆(billed - cost = 本单毛利)。
-    if (qualityProviderFallbackFrom) {
-      void recordImageCostAudit({
-        jobId,
-        email: p.email,
-        ...qualityCostAudit({
-          requested: saved?.quality?.requested ?? "",
-          executed: resolveImageQuality("").executed,
-          upstream: `default:${defaultModel} (from byok:${qualityProviderFallbackFrom})`,
-          images: images.length,
-          reason: "provider-fallback",
-        }),
-      });
+    // Audit successful, settled images using persisted execution metadata.
+    const chargedCredits = await getImageJobChargedCredits(jobId);
+    for (const image of images) {
+      const execution = image.execution || { quality: p.quality || p.qualityDefault || "medium", upstream: userProvider ? `byok:${userProvider.model}` : `default:${imageModel.id}`, reason: "generated", platformFunded: !userProvider && !!apiKey };
+      await recordImageCostAudit({ jobId, email: p.email, imageId: image.id,
+        ...qualityCostAudit({ requested: saved?.quality?.requested || "", executed: execution.quality,
+          upstream: execution.upstream, images: 1, reason: execution.reason,
+          billedCredits: chargedCredits / images.length, platformFunded: execution.platformFunded }) });
     }
+    const executedQualities = images.map(image => image.execution?.quality || p.quality || p.qualityDefault || "medium");
+    const quality = saved?.quality ? { ...saved.quality, executed: new Set(executedQualities).size > 1 ? "mixed" : executedQualities[0], executedQualities,
+      fallbackReason: images.some(image => image.execution?.reason === "provider-fallback") ? "provider-fallback" : images.some(image => image.execution?.reason === "quality-downgrade") ? "upstream-unsupported" : saved.quality.fallbackReason } : undefined;
     await JOBS.set(jobId, {
       status: "done",
       images,
       user,
-      creditsUsed: actualCost,
+      creditsUsed: chargedCredits,
       mock:
         !apiKey &&
         !userProvider &&
@@ -1033,7 +1014,7 @@ async function runJob(
       mode: p.images.length > 0 ? "edit" : "generate",
       persisted: useDb,
       createdAt: Date.now(),
-      quality: saved?.quality,
+      quality,
     });
   } catch (e) {
     if (e instanceof ImageOperationPending) {
@@ -1194,10 +1175,10 @@ export async function POST(request: Request) {
   if (p.ratiogen) p.count = 1;
   // BYOK(用户自带接口)豁免计费:算力与费用都发生在用户自己的上游,
   // 站内不预扣、不结算、不记流水。
-  // 内测阶段按「请求质量档」计费(qualityBillBeans):积分无限,目的是跑通
+  // 内测阶段按「请求质量档」计费(qualityBillCredits):积分无限,目的是跑通
   // 选档→扣费→结算链路;请求档进任务审计,恢复/重放后结算口径不变。
   const qualityAudit = resolveImageQuality(p.quality);
-  const cost = userProvider ? 0 : p.count * qualityBillBeans(qualityAudit.requested);
+  const cost = userProvider ? 0 : p.count * qualityBillCredits(qualityAudit.requested);
 
   if (dbEnabled && (await isBanned(p.email, ip))) {
     return NextResponse.json(
@@ -1211,6 +1192,7 @@ export async function POST(request: Request) {
   // 质量参数:入口即解析。p.quality 固化为实际执行档(恢复/重放确定性),
   // 请求档与回退原因进任务审计快照,供后台核对「请求了什么、跑了什么」。
   p.quality = qualityAudit.executed;
+  p.qualityDefault = resolveImageQuality("").executed;
   p.compiledPrompt = p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide());
   p.model = imageModel.id;
   try {
@@ -1253,7 +1235,7 @@ export async function GET(request: Request) {
       return NextResponse.json({
         status: "done",
         ok: true,
-        images: job.images,
+        images: (job.images || []).map(({ execution, ...image }) => image),
         user: job.user,
         creditsUsed: job.creditsUsed,
         mock: job.mock,

@@ -211,14 +211,22 @@ async function ensureSchema(): Promise<void> {
           executed_quality  text NOT NULL DEFAULT '',
           upstream          text NOT NULL DEFAULT '',
           images            integer NOT NULL DEFAULT 1,
-          billed_beans      double precision NOT NULL DEFAULT 0,
-          cost_beans        double precision NOT NULL DEFAULT 0,
-          margin_beans      double precision NOT NULL DEFAULT 0,
+          billed_credits      double precision NOT NULL DEFAULT 0,
+          cost_credits        double precision NOT NULL DEFAULT 0,
+          margin_credits      double precision NOT NULL DEFAULT 0,
           reason            text NOT NULL DEFAULT '',
           created_at        timestamptz NOT NULL DEFAULT now()
         );
         CREATE INDEX IF NOT EXISTS app_image_cost_audit_created_idx
           ON app_image_cost_audit (created_at DESC);
+        -- Preserve audit data created by the earlier terminology during upgrade.
+        DO $$ BEGIN
+          IF EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='app_image_cost_audit' AND column_name='billed_beans') THEN
+            ALTER TABLE app_image_cost_audit RENAME COLUMN billed_beans TO billed_credits;
+            ALTER TABLE app_image_cost_audit RENAME COLUMN cost_beans TO cost_credits;
+            ALTER TABLE app_image_cost_audit RENAME COLUMN margin_beans TO margin_credits;
+          END IF;
+        END $$;
         ALTER TABLE app_users ALTER COLUMN credits_total SET DEFAULT 20;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS banned boolean NOT NULL DEFAULT false;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_ip text;
@@ -5708,7 +5716,7 @@ export async function failCanvasImageTask(input: { id: string; email: string; er
 
 /** 写入一条成本审计。绝不让审计影响出图主流程:任何错误只打日志。 */
 export async function recordImageCostAudit(
-  input: QualityCostAudit & { jobId: string; email: string }
+  input: QualityCostAudit & { jobId: string; email: string; imageId: string }
 ): Promise<void> {
   if (!dbEnabled) return;
   try {
@@ -5716,19 +5724,21 @@ export async function recordImageCostAudit(
     await getPool().query(
       `INSERT INTO app_image_cost_audit
          (id, job_id, email, requested_quality, executed_quality, upstream,
-          images, billed_beans, cost_beans, margin_beans, reason)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          images, billed_credits, cost_credits, margin_credits, reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT(id) DO UPDATE SET billed_credits=EXCLUDED.billed_credits,
+         cost_credits=EXCLUDED.cost_credits,margin_credits=EXCLUDED.margin_credits`,
       [
-        ledId("cst"),
+        `cst-${input.jobId}-${input.imageId}`,
         input.jobId,
         input.email.toLowerCase(),
         input.requestedQuality,
         input.executedQuality,
         input.upstream,
         input.images,
-        input.billedBeans,
-        input.costBeans,
-        input.marginBeans,
+        input.billedCredits,
+        input.costCredits,
+        input.marginCredits,
         input.reason,
       ]
     );
@@ -5738,6 +5748,13 @@ export async function recordImageCostAudit(
       error instanceof Error ? error.message : error
     );
   }
+}
+
+/** Read the committed charge, including BYOK and disabled metering (zero). */
+export async function getImageJobChargedCredits(jobId: string): Promise<number> {
+  if (!dbEnabled) return 0;
+  const { rows } = await getPool().query("SELECT COALESCE(-sum(delta),0) AS charged FROM app_ledger WHERE id=$1 AND kind='consume'", [`led-image-${jobId}`]);
+  return Number(rows[0].charged);
 }
 
 export type ImageCostAuditRow = QualityCostAudit & {
@@ -5761,14 +5778,14 @@ export async function listImageCostAudit(
     executed_quality: string;
     upstream: string;
     images: number;
-    billed_beans: string;
-    cost_beans: string;
-    margin_beans: string;
+    billed_credits: string;
+    cost_credits: string;
+    margin_credits: string;
     reason: string;
     created_at: string;
   }>(
     `SELECT id, job_id, email, requested_quality, executed_quality, upstream,
-            images, billed_beans, cost_beans, margin_beans, reason, created_at
+            images, billed_credits, cost_credits, margin_credits, reason, created_at
        FROM app_image_cost_audit ORDER BY created_at DESC LIMIT $1`,
     [limit]
   );
@@ -5780,9 +5797,9 @@ export async function listImageCostAudit(
     executedQuality: r.executed_quality,
     upstream: r.upstream,
     images: r.images,
-    billedBeans: Number(r.billed_beans),
-    costBeans: Number(r.cost_beans),
-    marginBeans: Number(r.margin_beans),
+    billedCredits: Number(r.billed_credits),
+    costCredits: Number(r.cost_credits),
+    marginCredits: Number(r.margin_credits),
     reason: r.reason,
     createdAt: r.created_at,
   }));

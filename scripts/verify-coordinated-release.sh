@@ -82,6 +82,9 @@ if grep -E ' up .*video-worker' "$FIXTURE_TRACE"; then
 fi
 if [[ "$FAIL_HEALTH" == 0 ]]; then
  test "$status" = 0
+ grep -q 'NAUMI_IMAGE_QUALITY_SUPPORTED: ${NAUMI_IMAGE_QUALITY_SUPPORTED:-0}' /opt/naumi/current/docker-compose.yml
+ grep -q 'OPENAI_IMAGE_QUALITY: ${OPENAI_IMAGE_QUALITY:-medium}' /opt/naumi/current/docker-compose.yml
+ grep -q 'NAUMI_PUBLIC_COMMERCE: ${NAUMI_PUBLIC_COMMERCE:-0}' /opt/naumi/current/docker-compose.yml
  grep -q COORDINATED_RELEASE_READY=1 /fixture/result
  test "$(cat /opt/naumi/current/DEPLOYED_COMMIT)" = "$FIXTURE_COMMIT"
  echo COORDINATED_SUCCESS_MAINTENANCE_AND_WORKER_GUARD=PASS

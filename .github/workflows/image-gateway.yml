@@ -14,6 +14,9 @@ on:
       - 'scripts/deploy-release.sh'
       - 'scripts/verify-coordinated-release.sh'
       - 'scripts/verify-image-gateway.ts'
+      - 'scripts/verify-credit-billing.ts'
+      - 'src/lib/mock-data.ts'
+      - 'src/lib/pricing.ts'
       - '.github/workflows/image-gateway.yml'
   workflow_dispatch:
 permissions:
@@ -47,6 +50,10 @@ jobs:
           done
       - run: npm run build
       - run: npm run verify:image-gateway
+        env:
+          DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
+          NAUMI_VERIFY_ISOLATED_DB: '1'
+      - run: npm run verify:credit-billing
         env:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
           NAUMI_VERIFY_ISOLATED_DB: '1'

@@ -15,7 +15,8 @@
     "verify:video-postgres": "tsx --conditions react-server scripts/verify-video-postgres.ts",
     "verify:product-fixes": "tsx --conditions react-server scripts/verify-product-fixes.ts",
     "verify:image-job-routes": "tsx --conditions react-server scripts/verify-image-job-routes.ts",
-    "verify:image-gateway": "tsx --conditions react-server scripts/verify-image-gateway.ts"
+    "verify:image-gateway": "tsx --conditions react-server scripts/verify-image-gateway.ts",
+    "verify:credit-billing": "tsx --conditions react-server scripts/verify-credit-billing.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",
