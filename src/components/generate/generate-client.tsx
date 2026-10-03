@@ -26,7 +26,7 @@ import {
   GENERATION_RATIOS,
   GENERATION_RESOLUTIONS,
   GENERATION_STYLES,
-  resolutionCost,
+  qualityBillBeans,
   type Category,
   type PromptTemplate,
 } from "@/lib/mock-data";
@@ -502,7 +502,8 @@ export function GenerateClient({
   }
 
   // BYOK(模型 id 带 byok: 前缀=用户自带接口)豁免站内计费,费用发生在用户自己的上游。
-  const costPerImage = model.startsWith("byok:") ? 0 : resolutionCost(resolution);
+  // 内测阶段按请求质量档计价(与后端 qualityBillBeans 同表),跑通选档→扣费链路。
+  const costPerImage = model.startsWith("byok:") ? 0 : qualityBillBeans(quality);
   const cost = count * costPerImage;
   const insufficient = !!user && remaining < cost;
 

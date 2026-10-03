@@ -62,3 +62,23 @@ export function resolveImageQuality(requested: unknown): ResolvedImageQuality {
     fallbackReason: req && req !== fallback ? "channel-unsupported" : null,
   };
 }
+
+/**
+ * 识别「上游不识别 quality 参数」的报错:400 且 message 同时提到 quality
+ * 与不支持/非法类措辞(兼容服务、BYOK 常见 "quality is not supported"、
+ * "invalid quality" 等)。命中后调用方应回退默认档/默认 API 重试,
+ * 保证出图不受影响。非 400(超时/5xx)不命中——那走网关恢复路径。
+ */
+export function isQualityUnsupportedError(e: unknown): boolean {
+  const status = (e as { status?: number } | null)?.status ?? 0;
+  if (status !== 400) return false;
+  const msg =
+    (e as { message?: string })?.message ??
+    String((e as { error?: { message?: string } })?.error?.message ?? "");
+  return (
+    /quality/i.test(msg) &&
+    /(not supported|unsupported|invalid|unknown|not allowed|unrecognized|unsupported parameter|不支持的|无效|不支持)/i.test(
+      msg
+    )
+  );
+}
