@@ -1,6 +1,6 @@
 import "server-only";
 import { timingSafeEqual, createHmac } from "crypto";
-import { getSetting, setSetting } from "@/lib/db";
+import { dbEnabled, getSetting, setSetting } from "@/lib/db";
 import { isAdminToken, emailFromToken, bearer } from "@/lib/supabase-admin";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { hashPassword, verifyPassword } from "@/lib/pw";
@@ -52,15 +52,21 @@ export async function verifyAdminPassword(pw: string): Promise<boolean> {
   }
 }
 
-// 签名会话令牌:"<exp>.<hmacHex>",hmac = HMAC-SHA256(secret, "admin:"+exp)。
+// 签名会话令牌:"<exp>.<hmacHex>"，启用密码时 MAC 同时绑定当前密码哈希。
 // 无状态:不需要在 DB 存 session,靠签名 + 过期时间自证。
-export function signSession(now: number): string {
+export function signSession(now: number, passwordHash?: string): string {
   const exp = now + SESSION_TTL_MS;
-  const mac = createHmac("sha256", secret()).update(`admin:${exp}`).digest("hex");
+  const mac = createHmac("sha256", secret()).update(sessionMessage(exp, passwordHash)).digest("hex");
   return `${exp}.${mac}`;
 }
 
-export function verifySessionToken(value: string, now: number): boolean {
+function sessionMessage(exp: number, passwordHash?: string): string {
+  // Bind password-authenticated sessions to the stored hash. Setting or
+  // rotating the password revokes both legacy and previous password sessions.
+  return passwordHash ? `admin-access:${exp}:${passwordHash}` : `admin:${exp}`;
+}
+
+export function verifySessionToken(value: string, now: number, passwordHash?: string): boolean {
   try {
     const dot = value.lastIndexOf(".");
     if (dot < 0) return false;
@@ -68,7 +74,7 @@ export function verifySessionToken(value: string, now: number): boolean {
     const mac = value.slice(dot + 1);
     if (!Number.isFinite(exp) || exp < now) return false;
     const expected = createHmac("sha256", secret())
-      .update(`admin:${exp}`)
+      .update(sessionMessage(exp, passwordHash))
       .digest("hex");
     const a = Buffer.from(mac, "hex");
     const b = Buffer.from(expected, "hex");
@@ -97,12 +103,30 @@ export function localAdminOk(request: Request): boolean {
   return verifySessionToken(tok, Date.now());
 }
 
+export async function adminPasswordState(request: Request): Promise<{ configured: boolean; authenticated: boolean }> {
+  // An unavailable database must not downgrade password protection to an
+  // email-only login. Let callers fail closed instead of treating errors as unset.
+  const hash = dbEnabled ? await getSetting(ADMIN_PW_HASH_SETTING) : null;
+  const token = readCookie(request, ADMIN_COOKIE);
+  return { configured: !!hash, authenticated: !!token && verifySessionToken(token, Date.now(), hash || undefined) };
+}
+
+export async function authenticateAdminPassword(password: string, now = Date.now()): Promise<string | null> {
+  if (!password || !dbEnabled) return null;
+  const hash = await getSetting(ADMIN_PW_HASH_SETTING);
+  if (!hash || !verifyPassword(password, hash)) return null;
+  return signSession(now, hash);
+}
+
 /**
  * 统一管理员校验:**本地会话 或 Supabase 管理员 token** 任一通过。
  * 所有 admin 接口用它替代裸 isAdminToken,兼容"官方云 Supabase"与"自托管本地口令"。
  */
 export async function requireAdmin(request: Request): Promise<boolean> {
-  if (localAdminOk(request)) return true;
+  let access;
+  try { access = await adminPasswordState(request); } catch { return false; }
+  if (access.authenticated) return true;
+  if (access.configured) return false;
   // 原生多用户:站长邮箱账号(app_users.role=admin)的会话也算管理员——
   // 站长与官方站一致地用邮箱+密码从普通登录框登录,即拥有后台权限。
   if (!supabaseEnabled) {
@@ -139,7 +163,7 @@ export async function resolveUserEmail(
     const nu = await activeNativeUserEmail(request);
     if (nu) return nu;
     // 单用户:登录后的站长(admin cookie)。
-    if (localAdminOk(request)) {
+    if (readCookie(request, ADMIN_COOKIE) && (await adminPasswordState(request)).authenticated) {
       const { getLocalOperatorEmail } = await import("@/lib/db");
       return getLocalOperatorEmail();
     }
