@@ -7,7 +7,7 @@
  * quality 参数。关闭时：任何非默认档请求都在提交上游之前回退为默认档
  * (环境变量 OPENAI_IMAGE_QUALITY,缺省 medium)执行，任务审计记录
  * requestedQuality / executedQuality / qualityFallback，前台选择器同步置灰
- * 明示。计费始终按实际执行档，不按请求档。
+ * 明示。内测测试价按请求档计费；实际执行档独立留痕。
  *
  * 回退只发生在提交前。已提交上游但超时/结果不明的任务走网关恢复路径，
  * 不得改参数换通道重发(重复付费风险)。
@@ -16,7 +16,7 @@
 export const IMAGE_QUALITY_IDS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type ImageQualityId = (typeof IMAGE_QUALITY_IDS)[number];
 
-/** 实际传给上游并计费的档位;auto=交给提供方决定。 */
+/** 实际传给上游的档位;auto=交给提供方决定。 */
 export type ExecutedQuality = ImageQualityId | "auto";
 
 export type ResolvedImageQuality = {
