@@ -1,6 +1,5 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import type { BillingConfig, ConfigSnapshot, FeatureId } from "@/lib/billing/types";
 import { FEATURE_IDS } from "@/lib/billing/rules/registry";
 import { FEATURE_LABELS } from "@/lib/billing/labels";
@@ -75,7 +74,7 @@ export function BillingManager() {
     if (!draft || !snapshot)
         return <div className="mx-auto max-w-6xl p-6"><p role="status">{error || "正在读取计费配置…"}</p>{error && <button onClick={() => void load()}>重新读取</button>}</div>;
     const tariff = draft.features[feature], diff = changes(snapshot.config, draft), costKeys = Object.keys(draft.costs);
-    return <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-7 sm:px-6"><header className="flex flex-col justify-between gap-4 sm:flex-row"><div><Link href="/admin" className="text-sm text-primary">返回管理后台</Link><h1 className="mt-3 text-2xl font-semibold">计费管理</h1><p className="mt-2 text-sm text-muted-foreground">当前版本 {snapshot.version}。选择业务操作，调整积分价格或供应商成本，核对后发布。已有任务和订单保留原规则。</p></div><div className="self-start rounded-lg bg-muted px-3 py-2 text-sm">{effective?.metering ? "积分计费开启" : "积分计费关闭"}{effective?.environmentCommerce === false && <p className="mt-1 text-xs text-muted-foreground">服务器购买总开关关闭</p>}</div></header>
+    return <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-7 sm:px-6"><header className="flex flex-col justify-between gap-4 sm:flex-row"><div><h1 className="text-2xl font-semibold">计费管理</h1><p className="mt-2 text-sm text-muted-foreground">当前版本 {snapshot.version}。选择业务操作，调整积分价格或供应商成本，核对后发布。已有任务和订单保留原规则。</p></div><div className="self-start rounded-lg bg-muted px-3 py-2 text-sm">{effective?.metering ? "积分计费开启" : "积分计费关闭"}{effective?.environmentCommerce === false && <p className="mt-1 text-xs text-muted-foreground">服务器购买总开关关闭</p>}</div></header>
  <nav className="flex flex-wrap gap-2" aria-label="计费管理分区">{([["prices", "业务收费"], ["costs", "供应商成本"], ["rules", "特殊定价规则"], ["products", "充值套餐"], ["credits", "赠送与总开关"], ["history", "版本历史"], ["operations", "人工核对"]] as const).map(([id, label]) => <button key={id} aria-pressed={tab === id} className={`rounded-lg px-4 py-2 text-sm ${tab === id ? 'bg-primary text-primary-foreground' : 'border bg-card'}`} onClick={() => setTab(id)}>{label}</button>)}</nav>
  <div className="rounded-2xl border bg-card p-4 sm:p-6">{(tab === "rules") && <div className="mb-6 max-w-sm"><Choice label="选择功能" value={feature} options={FEATURE_IDS.map(id => [id, FEATURE_LABELS[id]])} onChange={v => setFeature(v as FeatureId)}/></div>}
  {tab === "prices" && <BusinessPrices config={draft} feature={feature} onSelect={setFeature} onChange={value => edit(c => { c.features[feature] = value; })} onCost={() => { setSelectedCost(feature); setTab("costs"); }}/>}

@@ -1,6 +1,59 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+test("management center unifies navigation, deep links, settings and legacy entries", async ({ page }) => {
+    const fixture = JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json", "utf8"));
+    await page.context().addCookies([{ name: "nv_admin", value: fixture.adminCookie, domain: "127.0.0.1", path: "/" }, { name: "naumi_locale", value: "zh", domain: "127.0.0.1", path: "/" }]);
+    await page.goto("/admin");
+    await expect(page).toHaveURL(/\/admin\/center$/);
+    await expect(page.getByRole("heading", { name: "运营概览", exact: true })).toBeVisible();
+    const nav = page.getByRole("navigation", { name: "管理中心导航", exact: true });
+    await expect(nav.getByRole("link", { name: "数据概览", exact: true })).toHaveAttribute("aria-current", "page");
+    await nav.getByRole("link", { name: "用户与企业", exact: true }).click();
+    await expect(page).toHaveURL(/section=users/);
+    await expect(page.getByRole("heading", { name: "用户与企业", exact: true })).toBeVisible();
+    await page.reload();
+    await expect(nav.getByRole("link", { name: "用户与企业", exact: true })).toHaveAttribute("aria-current", "page");
+    await page.getByRole("button", { name: "新增用户", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "记录详情", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "新增用户", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "关闭详情", exact: true }).click();
+    await nav.getByRole("link", { name: "价格、成本与规则", exact: true }).click();
+    await expect(page.getByLabel("普通生图 · 标准单价（积分）")).toBeVisible();
+    await expect(nav.getByRole("link", { name: "价格、成本与规则", exact: true })).toHaveAttribute("aria-current", "page");
+    await page.screenshot({ path: "output/billing-20261003/management-center-desktop.png", fullPage: true });
+    await nav.getByRole("link", { name: "接口与站点设置", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "系统设置", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/view=settings/);
+    await nav.getByRole("link", { name: "内部定价测算", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "积分定价方案", exact: true })).toBeVisible();
+    await page.goto("/admin/bi?section=orders");
+    await expect(page.getByRole("heading", { name: "充值订单", exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "展开管理导航", exact: true }).click();
+    await expect(nav.getByRole("link", { name: "充值订单", exact: true })).toBeVisible();
+    await page.screenshot({ path: "output/billing-20261003/management-center-mobile-menu.png", fullPage: true });
+    await nav.getByRole("link", { name: "价格、成本与规则", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "计费管理", exact: true })).toBeVisible();
+    await expect(nav).not.toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: "output/billing-20261003/management-center-mobile.png", fullPage: true });
+    await page.goto("/admin/center?section=unknown");
+    await expect(page.getByRole("heading", { name: "运营概览", exact: true })).toBeVisible();
+});
+
+test("management center pages reject anonymous and ordinary member sessions", async ({ page }) => {
+    const fixture = JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json", "utf8"));
+    for (const member of [false, true]) {
+        if (member) await page.context().addCookies([{ name: "nv_user", value: fixture.userCookie, domain: "127.0.0.1", path: "/" }]);
+        for (const path of ["/admin/center", "/admin/bi", "/admin/billing", "/admin/pricing"]) expect((await page.request.get(path)).status()).toBe(404);
+        await page.goto("/admin?view=settings");
+        await expect(page.getByRole("heading", { name: "系统设置", exact: true })).toHaveCount(0);
+        expect((await page.request.get("/api/admin/bi?section=users")).status()).toBe(404);
+        expect((await page.request.get("/api/admin/billing")).status()).toBe(404);
+    }
+});
+
 test("billing administration simulates drafts and protects publishing", async ({ page }) => {
     if (!process.env.BILLING_UI_ADMIN_COOKIE)
         throw new Error("Isolated fixture admin cookie required");
