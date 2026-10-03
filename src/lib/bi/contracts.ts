@@ -9,6 +9,7 @@ export const BI_SECTIONS = [
   "conversations",
   "orders",
   "access",
+  "management",
 ] as const;
 export type BiSection = (typeof BI_SECTIONS)[number];
 export type BiRow = Record<string, string | number | boolean | null>;
@@ -47,6 +48,8 @@ export type BiOverview = {
     consumed: number;
     refunded: number;
     artworks: number;
+    receivedCents: number;
+    mockCents: number;
   }[];
   models: BiRow[];
 };

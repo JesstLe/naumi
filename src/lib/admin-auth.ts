@@ -107,8 +107,8 @@ export async function requireAdmin(request: Request): Promise<boolean> {
   // 站长与官方站一致地用邮箱+密码从普通登录框登录,即拥有后台权限。
   if (!supabaseEnabled) {
     try {
-      const { nativeUserEmail } = await import("@/lib/native-auth");
-      const nu = nativeUserEmail(request);
+      const { activeNativeUserEmail } = await import("@/lib/native-auth");
+      const nu = await activeNativeUserEmail(request);
       if (nu) {
         const { getUserRole } = await import("@/lib/db");
         if ((await getUserRole(nu)) === "admin") return true;
@@ -135,8 +135,8 @@ export async function resolveUserEmail(
   if (tokenEmail) return tokenEmail;
   if (!supabaseEnabled) {
     // 原生多用户:已登录用户的会话 cookie。
-    const { nativeUserEmail } = await import("@/lib/native-auth");
-    const nu = nativeUserEmail(request);
+    const { activeNativeUserEmail } = await import("@/lib/native-auth");
+    const nu = await activeNativeUserEmail(request);
     if (nu) return nu;
     // 单用户:登录后的站长(admin cookie)。
     if (localAdminOk(request)) {

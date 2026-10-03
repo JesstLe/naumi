@@ -29,6 +29,8 @@ import type {
 } from "@/lib/bi/contracts";
 import { biCsvCell } from "@/lib/bi/contracts";
 import styles from "./dashboard.module.css";
+import { UserManager } from "./user-manager";
+import { BiTooltip } from "./tooltip";
 
 const sections: { id: BiSection; label: string; icon: typeof Users }[] = [
   { id: "overview", label: "运营概览", icon: BarChart3 },
@@ -41,6 +43,7 @@ const sections: { id: BiSection; label: string; icon: typeof Users }[] = [
   { id: "conversations", label: "对话与操作内容", icon: Layers },
   { id: "orders", label: "充值订单", icon: Building2 },
   { id: "access", label: "后台访问记录", icon: ShieldCheck },
+  { id: "management", label: "用户管理日志", icon: ShieldCheck },
 ];
 type Filter = {
   from: string;
@@ -60,9 +63,19 @@ type Column = {
     | "quality"
     | "type"
     | "discount"
+    | "changes"
     | "status";
 };
 const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
+  management: [
+    { key: "created_at", label: "操作时间", format: "time" },
+    { key: "actor", label: "管理员" },
+    { key: "email", label: "目标账户" },
+    { key: "action", label: "管理操作", format: "status" },
+    { key: "reason", label: "操作原因" },
+    { key: "changes", label: "变更前后", format: "changes" },
+    { key: "ledger_id", label: "关联流水" },
+  ],
   conversations: [
     { key: "updated_at", label: "最后活动", format: "time" },
     { key: "email", label: "账户" },
@@ -75,6 +88,8 @@ const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
     { key: "name", label: "用户" },
     { key: "email", label: "账户" },
     { key: "account_type", label: "身份", format: "type" },
+    { key: "role", label: "权限", format: "status" },
+    { key: "banned", label: "已封禁" },
     { key: "company", label: "企业" },
     { key: "agreed_pay_percent", label: "约定实付比例", format: "discount" },
     { key: "available", label: "当前可用", format: "credits" },
@@ -89,6 +104,7 @@ const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
     { key: "kind", label: "类型", format: "status" },
     { key: "delta", label: "积分变动", format: "credits" },
     { key: "reason", label: "操作与说明" },
+    { key: "management_reason", label: "管理员调整原因" },
     { key: "expires_at", label: "到期时间", format: "time" },
     { key: "id", label: "流水 ID" },
   ],
@@ -218,6 +234,18 @@ Object.assign(names, {
   "agent-aborted": "助手响应中止",
   "agent-deferred": "助手响应暂停",
   "view-conversation": "查看对话内容",
+  create: "创建账户",
+  profile: "编辑用户资料",
+  ban: "封禁状态修改",
+  role: "权限修改",
+  adjust: "调整积分",
+  "reset-password": "重置密码",
+  "manage-create": "创建账户",
+  "manage-profile": "编辑用户资料",
+  "manage-ban": "封禁状态修改",
+  "manage-role": "权限修改",
+  "manage-adjust": "调整积分",
+  "manage-reset-password": "重置密码",
 });
 const n = (value: unknown) =>
   Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
@@ -225,6 +253,33 @@ function display(value: unknown, format?: Column["format"]) {
   if (typeof value === "boolean") return value ? "是" : "否";
   if (value === null || value === undefined || value === "") return "未记录";
   if (value === "unrecorded") return "未记录";
+  if (format === "changes") {
+    try {
+      const data = JSON.parse(String(value));
+      const out: string[] = [];
+      for (const [key, label] of [
+        ["before", "修改前"],
+        ["after", "修改后"],
+      ]) {
+        if (data[key]) {
+          const r = data[key];
+          out.push(
+            `${label}：姓名 ${r.name || "未登记"}；手机 ${r.phone || "未登记"}；权限 ${r.role === "admin" ? "管理员" : "普通用户"}；${r.banned ? "已封禁" : "正常"}；备注 ${r.note || "无"}`,
+          );
+        }
+      }
+      if (data.delta)
+        out.push(
+          `积分变动 ${data.delta > 0 ? "+" : ""}${data.delta}，可用 ${data.availableBefore} → ${data.availableAfter}`,
+        );
+      if (data.expiresAt)
+        out.push(`新增积分到期：${display(data.expiresAt, "time")}`);
+      if (data.sessionsRevoked) out.push("旧登录会话已失效");
+      return out.join("\n") || "无账户字段变更";
+    } catch {
+      return "无法读取变更详情";
+    }
+  }
   if (format === "time") {
     const d = new Date(String(value));
     return Number.isFinite(d.getTime())
@@ -254,6 +309,8 @@ function initialFilter(): Filter {
   };
 }
 const descriptions: Record<BiSection, string> = {
+  management:
+    "用户管理操作的原因、变更前后与关联积分流水。密码与密钥不会进入日志；积分操作按编号防止重复提交。",
   conversations:
     "按最后活动时间筛选历史对话，详情仅展示用户与助手的文字内容。条目数为助手消息或生图轮次，不等同于请求次数；系统消息、工具内部数据和凭据不展示。",
   overview:
@@ -269,7 +326,7 @@ const descriptions: Record<BiSection, string> = {
   models:
     "请求模型、接口执行模型与质量回退来自持久审计记录。网关别名的真实模型请打开执行链路查看。",
   orders:
-    "人民币金额按订单的分单位换算。模拟支付与真实收款分开；购入积分单价不等于账户专属折扣。",
+    "人民币金额按订单的分单位换算。已支付筛选按付款日期，其余按创建日期。模拟支付与真实收款分开；购入积分单价不等于账户专属折扣。",
   access:
     "记录 BI 数据访问、图片查看、执行链路查看和账户资料修改。此记录从 BI 上线后开始。",
   calls:
@@ -329,6 +386,7 @@ export function BiDashboard() {
   const [data, setData] = useState<BiResponse | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [selected, setSelected] = useState<{
     section: BiSection;
     row: BiRow;
@@ -371,12 +429,22 @@ export function BiDashboard() {
       if (previous?.isConnected) previous.focus();
     };
   }, [selected]);
-  function navigate(next: BiSection) {
+  function navigate(next: BiSection, day?: string) {
     setSection(next);
     setPage(1);
     setSelected(null);
     setFilter((f) => ({ ...f, status: "" }));
     setDraft((f) => ({ ...f, status: "" }));
+    if (day) {
+      const value = {
+        ...filter,
+        from: day,
+        to: day,
+        status: next === "orders" ? "paid" : "",
+      };
+      setDraft(value);
+      setFilter(value);
+    }
   }
   function account(email: string, next: BiSection) {
     const value = { ...filter, email, status: "" };
@@ -409,6 +477,7 @@ export function BiDashboard() {
   const active = sections.find((s) => s.id === section)!;
   return (
     <div className={styles.shell}>
+      <BiTooltip />
       <aside className={styles.sidebar}>
         <Link className={styles.brand} href="/admin" prefetch={false}>
           Naumi <span>运营 BI</span>
@@ -455,6 +524,14 @@ export function BiDashboard() {
             刷新
           </button>
         </header>
+        {notice && (
+          <div className={styles.success} role="status">
+            {notice}
+            <button onClick={() => setNotice("")} aria-label="关闭操作提示">
+              关闭
+            </button>
+          </div>
+        )}
         <form
           className={styles.filters}
           onSubmit={(event) => {
@@ -575,6 +652,14 @@ export function BiDashboard() {
         ) : data && section !== "overview" ? (
           <>
             <div className={styles.tableTop}>
+              {section === "users" && (
+                <button
+                  className={styles.primary}
+                  onClick={() => setSelected({ section: "users", row: {} })}
+                >
+                  新增用户
+                </button>
+              )}
               <span>
                 共 <strong>{n(data.total)}</strong> 条 · 本页 {data.rows.length}{" "}
                 条
@@ -638,14 +723,17 @@ export function BiDashboard() {
                           }
                         >
                           <span
+                            tabIndex={0}
+                            data-bi-tip={`${c.label}：${display(row[c.key], c.format)}`}
+                            aria-label={`${c.label}：${display(row[c.key], c.format)}`}
                             className={
                               c.key === "prompt" ||
                               c.key === "content" ||
-                              c.key === "reason"
+                              c.key === "reason" ||
+                              c.key === "changes"
                                 ? styles.truncated
                                 : undefined
                             }
-                            title={String(row[c.key] ?? "")}
                           >
                             {display(row[c.key], c.format)}
                           </span>
@@ -656,7 +744,7 @@ export function BiDashboard() {
                           className={styles.textButton}
                           onClick={() => setSelected({ section, row })}
                         >
-                          查看
+                          {section === "users" ? "管理用户" : "查看"}
                         </button>
                       </td>
                     </tr>
@@ -820,6 +908,26 @@ export function BiDashboard() {
                 alt={String(selected.row.title || "作品预览")}
               />
             )}
+            {selected.section === "users" && (
+              <UserManager
+                row={selected.row.email ? selected.row : undefined}
+                onSaved={(email) => {
+                  const value = {
+                    ...filter,
+                    q: "",
+                    email,
+                    accountType: "",
+                    status: "",
+                  };
+                  setFilter(value);
+                  setDraft(value);
+                  setPage(1);
+                  setSelected(null);
+                  setReload((x) => x + 1);
+                  setNotice("用户管理操作已完成，账户数据已更新。");
+                }}
+              />
+            )}
             <dl className={styles.details}>
               {Object.entries(selected.row)
                 .filter(
@@ -833,6 +941,9 @@ export function BiDashboard() {
                       : []
                   ).find((c) => c.key === key);
                   const labels: Record<string, string> = {
+                    management_version: "管理资料版本",
+                    management_actor: "调整管理员",
+                    ledger_id: "关联积分流水",
                     status: "状态",
                     ratio: "比例",
                     state: "调用状态",
@@ -874,22 +985,27 @@ export function BiDashboard() {
                         {display(
                           value,
                           column?.format ||
-                            (["role", "status", "state", "category"].includes(
-                              key,
-                            )
-                              ? "status"
-                              : key.endsWith("_at")
-                                ? "time"
-                                : key === "received_cents"
-                                  ? "money"
-                                  : undefined),
+                            (key === "changes"
+                              ? "changes"
+                              : [
+                                    "role",
+                                    "status",
+                                    "state",
+                                    "category",
+                                  ].includes(key)
+                                ? "status"
+                                : key.endsWith("_at")
+                                  ? "time"
+                                  : key === "received_cents"
+                                    ? "money"
+                                    : undefined),
                         )}
                       </dd>
                     </div>
                   );
                 })}
             </dl>
-            {selected.section === "users" && (
+            {selected.section === "users" && selected.row.email && (
               <ProfileEditor
                 row={selected.row}
                 onSaved={() => {
@@ -925,9 +1041,16 @@ function Overview({
   onNavigate,
 }: {
   data: BiOverview;
-  onNavigate: (s: BiSection) => void;
+  onNavigate: (s: BiSection, day?: string) => void;
 }) {
-  const max = Math.max(1, ...data.daily.map((d) => d.consumed));
+  const [mode, setMode] = useState<"credits" | "money" | "images">("credits");
+  const metric = (d: BiOverview["daily"][number]) =>
+    mode === "credits"
+      ? d.consumed
+      : mode === "money"
+        ? d.receivedCents / 100
+        : d.artworks;
+  const max = Math.max(1, ...data.daily.map(metric));
   const metrics: [string, string, string, BiSection][] = [
     [
       "用户账户",
@@ -970,7 +1093,11 @@ function Overview({
     <>
       <div className={styles.metrics}>
         {metrics.map(([title, value, note, section]) => (
-          <button key={title} onClick={() => onNavigate(section)}>
+          <button
+            key={title}
+            data-bi-tip={`${title}：${value}\n${note}\n点击查看明细`}
+            onClick={() => onNavigate(section)}
+          >
             <span>{title}</span>
             <strong>{value}</strong>
             <small>{note}</small>
@@ -980,33 +1107,78 @@ function Overview({
       <section className={styles.chart}>
         <div className={styles.panelHead}>
           <div>
-            <h2>积分消费趋势</h2>
-            <p>每日已落账消费 · 积分</p>
+            <h2>
+              {mode === "credits"
+                ? "积分消费趋势"
+                : mode === "money"
+                  ? "实际收款趋势"
+                  : "保存作品趋势"}
+            </h2>
+            <p>
+              北京时间自然日 ·{" "}
+              {mode === "credits"
+                ? "积分"
+                : mode === "money"
+                  ? "人民币元（模拟支付未计入）"
+                  : "件"}{" "}
+              · 悬停查看，点击查看当日明细
+            </p>
           </div>
           <span>{data.daily.length} 天</span>
         </div>
+        <div className={styles.chartModes} role="group" aria-label="趋势指标">
+          {(
+            [
+              ["credits", "消费积分"],
+              ["money", "实际收款"],
+              ["images", "作品数量"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              aria-pressed={mode === id}
+              onClick={() => setMode(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div
           className={styles.bars}
-          role="img"
+          role="group"
           aria-label={
-            data.consumed
-              ? `所选日期每日消费，累计 ${data.consumed} 积分`
-              : "所选日期没有积分消费"
+            mode === "money"
+              ? `所选日期实际收款，累计 ${(data.receivedCents / 100).toFixed(2)} 元`
+              : mode === "images"
+                ? `所选日期作品，累计 ${data.artworks} 件`
+                : `所选日期每日消费，累计 ${data.consumed} 积分`
           }
         >
           {data.daily.map((day) => (
-            <div
+            <button
+              type="button"
               key={day.date}
-              title={`${day.date}：消费 ${n(day.consumed)}，退款 ${n(day.refunded)}，作品 ${n(day.artworks)}`}
+              data-bi-tip={`${day.date}\n消费：${n(day.consumed)} 积分\n退款：${n(day.refunded)} 积分\n实际收款：¥${(day.receivedCents / 100).toFixed(2)}\n模拟支付：¥${(day.mockCents / 100).toFixed(2)}（未计入）\n作品：${n(day.artworks)} 件\n点击查看当日明细`}
+              aria-label={`${day.date} ${mode === "money" ? "实际收款 " + (day.receivedCents / 100).toFixed(2) + " 元" : mode === "credits" ? "消费 " + day.consumed + " 积分" : "作品 " + day.artworks + " 件"}，点击查看明细`}
+              onClick={() =>
+                onNavigate(
+                  mode === "credits"
+                    ? "ledger"
+                    : mode === "money"
+                      ? "orders"
+                      : "artworks",
+                  day.date,
+                )
+              }
             >
               <i
                 style={{
-                  height: `${(day.consumed / max) * 100}%`,
-                  minHeight: day.consumed ? "3px" : "0",
+                  height: `${(metric(day) / max) * 100}%`,
+                  minHeight: metric(day) ? "3px" : "0",
                 }}
               />
               <span>{day.date.slice(5)}</span>
-            </div>
+            </button>
           ))}
         </div>
         <details className={styles.chartDetails}>
@@ -1019,6 +1191,8 @@ function Overview({
                   <th>消费积分</th>
                   <th>退款积分</th>
                   <th>正常作品</th>
+                  <th>实际收款（元）</th>
+                  <th>模拟支付（元）</th>
                 </tr>
               </thead>
               <tbody>
@@ -1028,6 +1202,8 @@ function Overview({
                     <td>{n(d.consumed)}</td>
                     <td>{n(d.refunded)}</td>
                     <td>{n(d.artworks)}</td>
+                    <td>{(d.receivedCents / 100).toFixed(2)}</td>
+                    <td>{(d.mockCents / 100).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1064,7 +1240,11 @@ function Overview({
               </thead>
               <tbody>
                 {data.models.map((row) => (
-                  <tr key={String(row.upstream)}>
+                  <tr
+                    key={String(row.upstream)}
+                    tabIndex={0}
+                    data-bi-tip={`${display(row.upstream)}\n审计图片：${n(row.images)} 张\n已落账：${n(row.billed_credits)} 积分\n质量差异：${n(row.fallbacks)} 条`}
+                  >
                     <td>{display(row.upstream)}</td>
                     <td>{n(row.images)}</td>
                     <td>{n(row.billed_credits)}</td>

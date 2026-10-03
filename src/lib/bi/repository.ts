@@ -25,6 +25,12 @@ export async function ensureBiSchema() {
       duration_ms integer NOT NULL,input_tokens integer,output_tokens integer,created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS app_bi_model_calls_email_created ON app_bi_model_calls(email,created_at DESC);
       CREATE INDEX IF NOT EXISTS app_bi_model_calls_created ON app_bi_model_calls(created_at DESC);`);
+      await getPool().query(`CREATE TABLE IF NOT EXISTS app_bi_management_log (
+        id text PRIMARY KEY,actor text NOT NULL,email text NOT NULL,action text NOT NULL,reason text NOT NULL,
+        changes jsonb NOT NULL,request_fingerprint text NOT NULL,ledger_id text,created_at timestamptz NOT NULL DEFAULT now());
+        CREATE INDEX IF NOT EXISTS app_bi_management_created ON app_bi_management_log(created_at DESC);
+        CREATE INDEX IF NOT EXISTS app_bi_management_email ON app_bi_management_log(email,created_at DESC);
+        CREATE UNIQUE INDEX IF NOT EXISTS app_bi_management_ledger ON app_bi_management_log(ledger_id) WHERE ledger_id IS NOT NULL;`);
     })().catch((error) => {
       ready = null;
       throw error;
@@ -47,7 +53,7 @@ export async function logBiAccess(
 // All source tables are independently aggregated. Joining raw ledger/artwork/job rows
 // would multiply amounts. Parameters are shared across every view and count query.
 const scope = `WITH query_window AS (SELECT $1::timestamptz AS starts, $2::timestamptz AS ends), scoped AS (
-  SELECT emails.email FROM (SELECT email FROM app_users UNION SELECT email FROM app_ledger UNION SELECT email FROM app_artworks UNION SELECT email FROM app_image_jobs UNION SELECT email FROM app_bi_model_calls UNION SELECT email FROM app_video_tasks UNION SELECT email FROM app_canvas_image_tasks UNION SELECT email FROM app_agent_sessions UNION SELECT email FROM app_genchat_sessions) emails
+  SELECT emails.email FROM (SELECT email FROM app_users UNION SELECT email FROM app_ledger UNION SELECT email FROM app_orders UNION SELECT email FROM app_artworks UNION SELECT email FROM app_image_jobs UNION SELECT email FROM app_bi_model_calls UNION SELECT email FROM app_bi_management_log UNION SELECT email FROM app_video_tasks UNION SELECT email FROM app_canvas_image_tasks UNION SELECT email FROM app_agent_sessions UNION SELECT email FROM app_genchat_sessions) emails
   LEFT JOIN app_users u ON u.email=emails.email LEFT JOIN app_bi_account_profiles p ON p.email=emails.email
   WHERE ($3::text='' OR emails.email=$3) AND ($4::text='' OR position(lower($4) in lower(emails.email||' '||COALESCE(u.name,'')||' '||COALESCE(p.company,'')))>0)
   AND ($5::text='' OR COALESCE(p.account_type,'unknown')=$5)
@@ -133,8 +139,11 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
   const binds = [...values(q), q.status, q.size, (q.page - 1) * q.size];
   let source = "";
   switch (q.section) {
+    case "management":
+      source = `SELECT m.id,m.actor,m.email,m.action,m.reason,m.changes::text AS changes,m.ledger_id,m.created_at FROM app_bi_management_log m WHERE m.email IN (SELECT email FROM scoped) AND ${inRange("m")} AND ($6::text='' OR m.action=$6)`;
+      break;
     case "users":
-      source = `SELECT u.email,u.name,u.phone,u.role,u.plan,u.banned,u.joined_at,u.last_login_at,u.last_ip,u.note,
+      source = `SELECT u.email,u.name,u.phone,u.role,u.plan,u.banned,u.joined_at,u.last_login_at,u.last_ip,u.note,u.management_version,
       COALESCE(p.account_type,'unknown') AS account_type,COALESCE(p.company,'') AS company,p.agreed_pay_percent,
       COALESCE(p.note,'') AS profile_note,p.updated_at AS profile_updated_at,
       COALESCE(b.principal,0)::float8 AS principal,u.credits_used AS reserved,
@@ -151,7 +160,7 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
       WHERE u.email IN (SELECT email FROM scoped) AND ($6::text='' OR CASE WHEN u.banned THEN 'banned' ELSE 'active' END=$6)`;
       break;
     case "ledger":
-      source = `SELECT l.id,l.email,l.delta,l.kind,l.reason,l.expires_at,l.created_at FROM app_ledger l WHERE l.email IN (SELECT email FROM scoped) AND ${inRange("l")} AND ($6::text='' OR l.kind=$6)`;
+      source = `SELECT l.id,l.email,l.delta,l.kind,l.reason,l.expires_at,l.created_at,COALESCE(m.reason,'') AS management_reason,m.actor AS management_actor FROM app_ledger l LEFT JOIN app_bi_management_log m ON m.ledger_id=l.id WHERE l.email IN (SELECT email FROM scoped) AND ${inRange("l")} AND ($6::text='' OR l.kind=$6)`;
       break;
     case "artworks":
       source = `SELECT a.id,a.email,a.title,a.category,a.prompt,a.status,a.ratio,a.resolution,a.image_width,a.image_height,a.origin,a.parent_id,a.batch_id,a.created_at,a.deleted_at,
@@ -173,7 +182,7 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
     case "orders":
       source = `SELECT o.id,o.email,o.kind,o.title,o.item_id,o.credits,o.amount AS amount_cents,o.status,o.provider,o.created_at,o.paid_at,
       CASE WHEN o.credits>0 AND o.status='paid' THEN o.amount::float8/o.credits ELSE NULL END AS cents_per_credit
-      FROM app_orders o WHERE o.email IN (SELECT email FROM scoped) AND ${inRange("o")} AND ($6::text='' OR o.status=$6)`;
+      FROM app_orders o WHERE o.email IN (SELECT email FROM scoped) AND (CASE WHEN $6::text='paid' THEN o.paid_at ELSE o.created_at END) >= $1 AND (CASE WHEN $6::text='paid' THEN o.paid_at ELSE o.created_at END) < $2 AND ($6::text='' OR o.status=$6)`;
       break;
     case "calls":
       source = `SELECT c.id,c.email,c.operation,c.operation_id,c.wire_model,c.response_model,c.state,c.duration_ms,c.input_tokens,c.output_tokens,c.created_at FROM app_bi_model_calls c WHERE c.email IN (SELECT email FROM scoped) AND ${inRange("c")} AND ($6::text='' OR c.state=$6)`;
@@ -249,7 +258,8 @@ async function overview(q: BiQuery, pool: PoolClient): Promise<BiOverview> {
       `${scope}, days AS (SELECT d::date AS date FROM generate_series(($1::timestamptz AT TIME ZONE 'Asia/Shanghai')::date,(($2::timestamptz AT TIME ZONE 'Asia/Shanghai')::date-1),interval '1 day') d),
       usage AS (SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS date,sum(-delta) FILTER(WHERE kind='consume' AND delta<0 AND reason<>'管理员调整积分') AS consumed,sum(delta) FILTER(WHERE kind='refund' AND delta>0) AS refunded FROM app_ledger l WHERE l.email IN (SELECT email FROM scoped) AND ${inRange("l")} GROUP BY 1),
       images AS (SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS date,count(*) AS artworks FROM app_artworks a WHERE a.email IN (SELECT email FROM scoped) AND a.deleted_at IS NULL AND ${inRange("a")} GROUP BY 1)
-      SELECT to_char(d.date,'YYYY-MM-DD') AS date,COALESCE(u.consumed,0)::float8 AS consumed,COALESCE(u.refunded,0)::float8 AS refunded,COALESCE(i.artworks,0)::int AS artworks FROM days d LEFT JOIN usage u USING(date) LEFT JOIN images i USING(date) ORDER BY d.date`,
+      , payments AS (SELECT (paid_at AT TIME ZONE 'Asia/Shanghai')::date AS date,sum(amount) FILTER(WHERE provider IN ('wechat','alipay')) AS received,sum(amount) FILTER(WHERE provider='mock') AS mock FROM app_orders WHERE email IN (SELECT email FROM scoped) AND status='paid' AND paid_at >= $1 AND paid_at < $2 GROUP BY 1)
+      SELECT to_char(d.date,'YYYY-MM-DD') AS date,COALESCE(u.consumed,0)::float8 AS consumed,COALESCE(u.refunded,0)::float8 AS refunded,COALESCE(i.artworks,0)::int AS artworks,COALESCE(p.received,0)::float8 AS "receivedCents",COALESCE(p.mock,0)::float8 AS "mockCents" FROM days d LEFT JOIN usage u USING(date) LEFT JOIN images i USING(date) LEFT JOIN payments p USING(date) ORDER BY d.date`,
       params,
     ),
     await pool.query(
