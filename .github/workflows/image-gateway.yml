@@ -69,11 +69,10 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - uses: actions/checkout@v4
-        with:
-          repository: JesstLe/naumi-router
-          ref: de0707a3b560ba7311cca972420987853c6077c6
-          path: output/model-config-20261004/router-source
+      - name: Verify and unpack pinned Router test source
+        run: |
+          python3 scripts/verify-router-fixture.py
+          python3 scripts/prepare-router-fixture.py --destination output/model-config-20261004/router-source
       - uses: actions/setup-go@v5
         with:
           go-version-file: output/model-config-20261004/router-source/go.mod
@@ -91,7 +90,7 @@ jobs:
           NAUMI_VERIFY_ISOLATED_DB: '1'
       - name: Registered model execution and private control-plane regressions
         run: |
-          for check in coverage config publication admin execution tools router-contract performance; do
+          for check in coverage config publication admin execution tools router-contract performance review flow shared-capacity; do
             npm run verify:model-$check
           done
         env:

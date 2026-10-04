@@ -16,7 +16,7 @@ import tempfile
 from urllib.parse import urlsplit
 
 APP_KEYS = {"NAUMI_ROUTER_MANAGEMENT_URL", "NAUMI_ROUTER_MANAGEMENT_TOKEN", "NAUMI_ROUTER_GENERATION_URL", "NAUMI_ROUTER_GENERATION_TOKEN", "MODEL_CONFIG_ENVELOPE_SECRET", "MODEL_CONFIG_TRUSTED_ORIGINS"}
-ROUTER_KEYS = {"NAUMI_ROUTER_MANAGEMENT_ADDR", "NAUMI_ROUTER_MANAGEMENT_TOKEN", "MODEL_CONFIG_ENVELOPE_SECRET", "MODEL_CONFIG_TRUSTED_ORIGINS"}
+ROUTER_KEYS = {"NAUMI_ROUTER_MANAGEMENT_ADDR", "NAUMI_ROUTER_MANAGEMENT_TOKEN", "MODEL_CONFIG_ENVELOPE_SECRET", "MODEL_CONFIG_TRUSTED_ORIGINS", "NAUMI_MODEL_CAPACITY_URL"}
 
 def read_env(path):
     result = {}
@@ -106,7 +106,7 @@ def prepare(app_path, router_path, origins_path, output):
     values = {**private, "MODEL_CONFIG_TRUSTED_ORIGINS": ",".join(trusted)}
     app_values = {**values, "NAUMI_ROUTER_MANAGEMENT_URL": "http://172.20.0.1:8086", "NAUMI_ROUTER_GENERATION_URL": "http://172.20.0.1:8087/v1", "NAUMI_ROUTER_GENERATION_TOKEN": generation}
     write_private(output / "app.env", merged(app_path.read_text(), APP_KEYS, app_values))
-    write_private(output / "router.env", merged(router_path.read_text(), ROUTER_KEYS, {**values, "NAUMI_ROUTER_MANAGEMENT_ADDR": "127.0.0.1:8082"}))
+    write_private(output / "router.env", merged(router_path.read_text(), ROUTER_KEYS, {**values, "NAUMI_ROUTER_MANAGEMENT_ADDR": "127.0.0.1:8082", "NAUMI_MODEL_CAPACITY_URL": "http://127.0.0.1:3012/api/internal/model-capacity"}))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)

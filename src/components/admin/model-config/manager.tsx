@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authHeader } from "@/lib/supabase";
+import { publicationNotStaged } from "@/lib/model-config/publication-result";
 import type {
   ModelConfig,
   ModelDraft,
@@ -157,6 +158,7 @@ class AdminError extends Error {
     message: string,
     public code: string,
     public fields: string[] = [],
+    public operationNotStaged = false,
   ) {
     super(message);
   }
@@ -243,6 +245,7 @@ export function ModelConfigurationManager() {
         data.error || "模型管理请求失败",
         data.code || "REQUEST_FAILED",
         data.fields || [],
+        data.operationNotStaged === true,
       );
     return data;
   }, []);
@@ -448,6 +451,13 @@ export function ModelConfigurationManager() {
         );
     } catch (e) {
       setReview(null);
+      if (e instanceof AdminError && publicationNotStaged(e)) {
+        remember(null);
+        setValidation(null);
+        setError(`${e.message}。本次未创建发布，输入已保留；核对最新配置后可继续编辑与发布。`);
+        setRemote(await request(""));
+        throw e;
+      }
       setError(
         e instanceof Error
           ? `${e.message}。操作编号已保留，请核查此操作后再继续。`

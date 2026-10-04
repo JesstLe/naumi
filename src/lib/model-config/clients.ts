@@ -10,6 +10,7 @@ export const isManagedModelClient = (client: OpenAI) => managedClients.has(clien
 
 export function executionFetch(scope: ModelExecutionScope, options: ValidationOptions = {}): typeof fetch {
   const { connection, frozen, parameterMap } = scope;
+  if (connection.protocol === "new-api-flow") return flowImageFetch(scope, options);
   if (!["openai-images", "openai-chat", "router-images"].includes(connection.protocol)) throw new ModelConfigError("UNSUPPORTED_PROTOCOL", "该模型需使用其协议适配器", 400);
   const transport = modelEndpointFetch(connection.baseUrl, options, connection);
   const mappedFetch: typeof fetch = async (input, init) => {
@@ -41,6 +42,40 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
     catch (error) {
       // SDKs otherwise turn this local pre-submission rejection into an unknown connection failure.
       if (error instanceof ModelConfigError && error.code === "PROVIDER_BUSY") return Response.json({ error: { message: error.message, type: "naumi_capacity", code: error.code } }, { status: 429 });
+      throw error;
+    }
+  };
+}
+
+/** Translate the image SDK contract once; Flow submits exactly one chat-based paid call. */
+function flowImageFetch(scope: ModelExecutionScope, options: ValidationOptions): typeof fetch {
+  const submit: typeof fetch = async (input, init) => {
+    const request = new Request(input, init), url = new URL(request.url);
+    if (url.origin !== new URL(scope.connection.baseUrl).origin || request.method !== "POST" || !/\/images\/(generations|edits)$/.test(url.pathname)) throw new ModelConfigError("UNSUPPORTED_PROTOCOL", "Flow 仅支持图片生成和参考图编辑", 400);
+    const editing = url.pathname.endsWith("/edits"), images: { buffer: Buffer; mimeType: string }[] = [];
+    let body: Record<string, unknown>;
+    if (request.headers.get("content-type")?.includes("multipart/form-data")) {
+      const form = await request.formData();
+      if (form.has("mask")) throw new ModelConfigError("MODEL_INCOMPATIBLE", "Flow 不支持蒙版编辑", 400);
+      body = Object.fromEntries(Array.from(form.entries()).filter(([, value]) => typeof value === "string"));
+      for (const [key, value] of Array.from(form.entries())) if (/^image(?:\[\])?$/.test(key)) {
+        if (typeof value === "string" || !value.type.startsWith("image/")) throw new ModelConfigError("INVALID_REQUEST", "Flow 参考图需要上传图片文件", 400);
+        images.push({ buffer: Buffer.from(await value.arrayBuffer()), mimeType: value.type });
+      }
+    } else if (request.headers.get("content-type")?.includes("application/json")) body = await request.json();
+    else throw new ModelConfigError("INVALID_REQUEST", "模型请求编码无效", 400);
+    if (body.mask) throw new ModelConfigError("MODEL_INCOMPATIBLE", "Flow 不支持蒙版编辑", 400);
+    if (body.n !== undefined && Number(body.n) !== 1) throw new ModelConfigError("MODEL_INCOMPATIBLE", "Flow 每次提交仅支持单张生成", 400);
+    if (!scope.capabilities[editing ? "edit" : "generate"] || editing && !images.length || images.length > scope.capabilities.maxReferenceImages) throw new ModelConfigError("MODEL_INCOMPATIBLE", "当前 Flow 模型不满足图片编辑或参考图要求", 400);
+    if (typeof body.prompt !== "string" || !body.prompt.trim()) throw new ModelConfigError("INVALID_REQUEST", "图片提示词不能为空", 400);
+    const { generateNewApiImage } = await import("../new-api-image");
+    const image = await generateNewApiImage({ model: scope.connection.wireModel, prompt: body.prompt, images, settings: scope.connection, execution: scope, signal: request.signal, trustedOrigins: options.trustedOrigins });
+    return Response.json({ created: Math.floor(Date.now() / 1000), data: [{ b64_json: image.buffer.toString("base64") }] });
+  };
+  return async (input, init) => {
+    try { return await submit(input, init); }
+    catch (error) {
+      if (error instanceof ModelConfigError && ["MODEL_INCOMPATIBLE", "INVALID_REQUEST", "PROVIDER_BUSY"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_pre_submission", code: error.code } }, { status: error.status });
       throw error;
     }
   };

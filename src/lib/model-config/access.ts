@@ -71,7 +71,13 @@ export function createModelAdminHandler(deps: { authorize: typeof biAuthorize; a
         }
       }
     } catch (error) {
-      if (error instanceof ModelConfigError) return biJson({ error: error.message, code: error.code, ...(error.fields.length ? { fields: error.fields } : {}) }, error.status);
+      if (error instanceof ModelConfigError) {
+        // These stage exceptions are raised before INSERT and transaction
+        // rollback completes before they escape. Later activation/commit
+        // conflicts are persisted as an unknown publication instead.
+        const operationNotStaged = ["publish", "restore"].includes(action) && ["CONFIG_CONFLICT", "DRAFT_CONFLICT", "PUBLICATION_PENDING"].includes(error.code);
+        return biJson({ error: error.message, code: error.code, ...(operationNotStaged ? { operationNotStaged: true } : {}), ...(error.fields.length ? { fields: error.fields } : {}) }, error.status);
+      }
       if (error instanceof z.ZodError || error instanceof SyntaxError) return biJson({ error: "管理参数无效", code: "INVALID_REQUEST" }, 400);
       return biJson({ error: "模型管理暂时不可用，请稍后重试", code: "CONFIG_UNAVAILABLE" }, 503);
     }

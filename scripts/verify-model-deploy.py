@@ -3,10 +3,12 @@
 import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 
 spec = importlib.util.spec_from_file_location("model_deploy", Path(__file__).with_name("prepare-model-deploy.py"))
+sys.dont_write_bytecode = True
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 with tempfile.TemporaryDirectory(prefix="naumi-model-deploy-") as folder:
@@ -27,6 +29,7 @@ with tempfile.TemporaryDirectory(prefix="naumi-model-deploy-") as folder:
     assert "EXISTING_KEY=unchanged" in first
     values = module.read_env(out / "app.env")
     router_values = module.read_env(out / "router.env")
+    assert router_values["NAUMI_MODEL_CAPACITY_URL"] == "http://127.0.0.1:3012/api/internal/model-capacity"
     assert values["NAUMI_ROUTER_GENERATION_TOKEN"] == "fixture-legacy-generation-token-unchanged"
     assert values["NAUMI_ROUTER_MANAGEMENT_TOKEN"] == router_values["NAUMI_ROUTER_MANAGEMENT_TOKEN"]
     assert values["MODEL_CONFIG_ENVELOPE_SECRET"] == router_values["MODEL_CONFIG_ENVELOPE_SECRET"]

@@ -36,7 +36,7 @@ import { PermanentVideoCreateError, TransientPollError } from "@/lib/video/types
 import { getVideoProvider } from "@/lib/video/providers/adapter";
 import { readLimitedVideoResponse } from "@/lib/video/result-download";
 import {
-  getVideoModelCapability,
+  configuredVideoCapability,
   validateAgainstCapability,
 } from "@/lib/video/capabilities";
 import { resolveOpenAiVideosConfig } from "@/lib/video/providers/openai-videos";
@@ -244,7 +244,7 @@ async function createVideoGenerationUnlocked(
   const modelId = execution?.connection.wireModel || String(input.modelId || providerConfig.defaultModel);
   const cfg = providerId === VIDEO_PROVIDER_ID ? resolveVideoServiceConfig() : providerConfig;
   if (!cfg) throw new Error("视频服务未配置(需在服务器设置 VIDEO_API_BASE_URL/KEY/MODEL)");
-  const cap = { ...getVideoModelCapability(providerConfig.protocol === "openai-videos" ? VIDEO_PROVIDER_ID : providerId, modelId), providerId };
+  const cap = configuredVideoCapability(providerConfig.protocol, providerId, modelId, execution?.capabilities);
   const durationSeconds = Number(input.durationSeconds ?? input.seconds) || cap.defaultDuration || 4;
 
   // 素材:画布图或 agent URL → 唯一 first_frame 参考(能力声明上限内)

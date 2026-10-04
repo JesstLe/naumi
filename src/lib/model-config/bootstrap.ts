@@ -6,6 +6,7 @@ import type { createCredentialStore } from "./credentials";
 import { validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelConfig, type ModelProvider, type UpstreamModel } from "./types";
 import { legacyAgentVision } from "./legacy-vision";
+import { configuredVideoCapability } from "../video/capabilities";
 
 type LegacyImage = { baseUrl: string; apiKey: string; models: string[]; defaultModel: string; cutoutModel?: string; qualitySupported: boolean; editModels?: string[] };
 type LegacyText = { baseUrl: string; apiKey: string; defaultModel: string; agentModel: string; models: string[]; aliases: Record<string,string>; visibleModels: string[]; visionModels?: string[]; agent?: { baseUrl: string; apiKey: string }; vision?: { model: string; baseUrl: string; apiKey: string }; ocr?: { model: string; baseUrl: string; apiKey: string }; agentVisionModel?: string };
@@ -39,6 +40,7 @@ export async function bootstrapModelConfig(input: ValidationOptions & { credenti
     for (const wire of Array.from(new Set([source.defaultModel, ...source.models, source.cutoutModel].filter((x): x is string => !!x)))) {
       const caps = unverifiedCapabilities();
       caps.edit = protocol === "new-api-flow" ? true : (source.editModels || []).includes(wire) || /^gpt-image|^naumi-image-(auto|economy|standard|premium)$/.test(wire);
+      if (protocol === "new-api-flow") caps.maxReferenceImages = 6;
       caps.transparent = wire === source.cutoutModel && /^gpt-image-1(?:$|-)/.test(wire);
       caps.qualities = source.qualitySupported ? ["low", "medium", "high", "xhigh", "max", "auto"] : [];
       const external = addModel(providerId, wire, "image", wire, source.models.includes(wire), caps);
@@ -87,7 +89,9 @@ export async function bootstrapModelConfig(input: ValidationOptions & { credenti
     const { createPath, pollPath, contentPath, rawAuthorization, workflowId, idempotencyStrategy, idempotencyBodyField } = v;
     await addProvider(id, v.label, v.protocol, v.baseUrl, v.apiKey, { createPath, pollPath, contentPath, rawAuthorization, workflowId, idempotencyStrategy, idempotencyBodyField });
     for (const wire of Array.from(new Set([v.defaultModel, ...v.models]))) {
-      const external = addModel(id, wire, "video");
+      const caps = unverifiedCapabilities();
+      caps.maxReferenceImages = configuredVideoCapability(v.protocol, v.id, wire).maxReferenceImages;
+      const external = addModel(id, wire, "video", wire, true, caps);
       if (wire === v.defaultModel && !config.bindings["video.generate"]) config.bindings["video.generate"] = external;
     }
   }
