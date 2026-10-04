@@ -72,7 +72,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: JesstLe/naumi-router
-          ref: badaf451506d5d5a80c4a36e84c527aee8a7137e
+          ref: de0707a3b560ba7311cca972420987853c6077c6
           path: output/model-config-20261004/router-source
       - uses: actions/setup-go@v5
         with:
