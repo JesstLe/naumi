@@ -23,21 +23,25 @@ async function main() {
   const handler = createModelAdminHandler({ authorize: biAuthorize, administration: async () => administration as never });
   const admin = "model-admin@example.test", personal = "model-personal@example.test", enterprise = "model-enterprise@example.test";
   const cookie = (email: string, now = Date.now()) => `nv_user=${native.signUserSession(email, now)}`;
-  const request = (body?: unknown, session = cookie(admin), extra: Record<string, string> = {}, path = "/api/admin/bi/model-config") => new Request(`http://fixture.test${path}`, { method: body === undefined ? "GET" : "POST", headers: { cookie: session, "content-type": "application/json", ...extra }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  let adminSession = cookie(admin);
+  const request = (body?: unknown, session = adminSession, extra: Record<string, string> = {}, path = "/api/admin/bi/model-config") => new Request(`http://fixture.test${path}`, { method: body === undefined ? "GET" : "POST", headers: { cookie: session, "content-type": "application/json", ...extra }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   try {
     await db.ensureSchema(); await db.setSetting("multi_user_enabled", "1");
     for (const email of [admin, personal, enterprise]) await db.getOrCreateUser(email, email);
     await db.setUserRole(admin, "admin");
     const local = await import("../src/lib/admin-auth");
+    await local.setAdminPassword("ModelAdminFixture2026!");
+    const passwordSession = await local.authenticateAdminPassword("ModelAdminFixture2026!"); assert.ok(passwordSession);
+    adminSession = `${cookie(admin)}; nv_admin=${passwordSession}`;
     assert.equal(native.verifyUserSession(`${native.signUserSession(admin, Date.now())}broken`, Date.now()), null);
     assert.equal(native.verifyResetToken(`${native.signResetToken(admin, Date.now())}broken`, Date.now()), null);
     assert.equal(local.verifySessionToken(`${local.signSession(Date.now())}broken`, Date.now()), false);
-    for (const session of ["", cookie(personal), cookie(enterprise), `${cookie(admin)}broken`, cookie(admin, 0), "nv_admin=%ZZ", "nv_user=%ZZ"]) {
+    for (const session of ["", cookie(admin), cookie(personal), cookie(enterprise), `${cookie(admin)}broken`, cookie(admin, 0), "nv_admin=%ZZ", "nv_user=%ZZ"]) {
       const denied = await handler(request(undefined, session), "read");
       assert.equal(denied.status, 404);
       assert.equal(denied.headers.get("cache-control"), "private, no-store, max-age=0");
     }
-    assert.equal((await handler(request({}, cookie(admin), { origin: "https://evil.test" }), "publish")).status, 403);
+    assert.equal((await handler(request({}, adminSession, { origin: "https://evil.test" }), "publish")).status, 403);
     assert.equal((await handler(request({ actor: "another@example.test" }), "publish")).status, 400);
     const read = await handler(request(), "read"); assert.equal(read.status, 200);
     const page = await read.json(); assert.ok(page.draft.id); assert.ok(page.protocols.includes("openai-chat"));
@@ -69,7 +73,7 @@ async function main() {
     assert.equal((await handler(request(publication), "publish")).status, 200);
     assert.equal((await handler(request(publication), "publish")).status, 200);
     assert.equal((await handler(request({ ...publication, id: randomUUID() }), "publish")).status, 409);
-    assert.equal((await handler(request(undefined, cookie(admin), {}, "/api/admin/bi/model-config/versions?limit=-1"), "history")).status, 400);
+    assert.equal((await handler(request(undefined, adminSession, {}, "/api/admin/bi/model-config/versions?limit=-1"), "history")).status, 400);
     const { getPublicKeyPem } = await import("../src/lib/settings");
     const ciphertext = publicEncrypt({ key: await getPublicKeyPem(), padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from(f.marker)).toString("base64");
     const created = await handler(request({ providerId: "new-provider", ciphertext }), "credentials");
