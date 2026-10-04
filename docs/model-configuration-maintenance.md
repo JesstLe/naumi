@@ -39,3 +39,5 @@ Router 管理监听使用 `NAUMI_ROUTER_MANAGEMENT_ADDR`，持久配置目录使
 回滚旧 Naumi 前暂停 worker 和生成入口。旧版本不能处理的新格式任务留待兼容 worker 完成或人工核查，不能改写快照重新发起。回滚旧 Router 时保留新版 Router 的对应摘要恢复服务与状态备份；旧 Router 只接旧格式请求。不要恢复旧数据库覆盖新账务，不要删除媒体或配置状态。`ROLLBACK.sh --check` 仅证明回滚文件与固定镜像存在，不能代替这项兼容性核查。
 
 验证命令包括 `verify:model-config`、`verify:model-publication`、`verify:model-admin`、`verify:model-execution`、`verify:model-tools`、`verify:model-router-contract`，以及全部原计费、生图、视频、BI 回归和 Router race/vet。测试必须使用隔离本地数据库与假供应商，不以真实用户或付费请求做权限、密钥、扣费和恢复验收。
+
+部署准备使用 scripts/prepare-model-deploy.py 在服务器私有目录生成 app.env/router.env：保留原配置和生成令牌，仅添加独立管理令牌、封装密钥与精确允许来源。重复准备保留同一密钥，源文件不变。安装 Router 仓库的 deploy/server/model-management-bridge.conf 到私有 Nginx 配置，8086 只代理配置管理、8087 只代理生图／编辑及恢复查询；原 8085 BI 代理保留。凭据文件保持 0600、目录 0700。新版 Router 带 model-config-v1 标记；已启用管理时，安装器不能自动重启缺少该标记的旧二进制。发布记录必须给出固定新版恢复服务及操作说明。
