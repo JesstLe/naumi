@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "verify:video-reliability": "node scripts/verify-video-reliability.mjs",
+    "verify:video-reliability": "tsx --conditions react-server scripts/verify-video-reliability.mjs",
     "verify:video-memory": "node --expose-gc scripts/verify-video-memory.mjs",
     "audit:video-intents": "tsx scripts/audit-video-creation-intents.ts",
     "verify:video-providers": "tsx --conditions react-server scripts/verify-video-providers.ts",
