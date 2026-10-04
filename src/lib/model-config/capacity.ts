@@ -58,7 +58,7 @@ export function createProviderCapacity(pool: Pool) {
     } catch (error) { await tx.query("ROLLBACK"); throw error; } finally { tx.release(); }
     if (!allowed) throw new ModelConfigError("PROVIDER_BUSY", "当前模型通道繁忙，请稍后再试；本次未提交上游", 429);
     let released = false;
-    return { async release() { if (released) return; await pool.query("DELETE FROM app_model_provider_leases WHERE token=$1", [token]); released = true; } };
+    return { token, async release() { if (released) return; await pool.query("DELETE FROM app_model_provider_leases WHERE token=$1", [token]); released = true; } };
   } };
 }
 

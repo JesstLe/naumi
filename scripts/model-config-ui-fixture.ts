@@ -17,7 +17,13 @@ async function main() {
     activations = 0,
     generationRequests = 0;
   let close = async () => {};
+  let publishOther: () => Promise<void> = async () => { throw new Error("Fixture is not ready"); };
   const f = await createModelFixture(async (req, res) => {
+    if (req.url === "/fixture/publish-other" && req.method === "POST") {
+      try { await publishOther(); res.end("ok"); }
+      catch { res.writeHead(500); res.end("Fixture publication failed"); }
+      return;
+    }
     if (req.url === "/fixture/drop-next-activation" && req.method === "POST") {
       dropActivation = true;
       res.end("ok");
@@ -97,6 +103,19 @@ async function main() {
     ensureSchema: db.ensureSchema,
     initialize: async () => costs,
   }).current();
+  const { createRouterControl } = await import("../src/lib/model-config/router-client");
+  const { createModelRuntime } = await import("../src/lib/model-config/runtime");
+  const control = createRouterControl({ baseUrl: f.origin, token: process.env.NAUMI_ROUTER_MANAGEMENT_TOKEN!, envelopeSecret: process.env.MODEL_CONFIG_ENVELOPE_SECRET!, trustedOrigins: [f.origin] });
+  const runtime = createModelRuntime({ pool: f.sql, repo: f.repo, credentials: f.credentials, router: control, trustedOrigins: [f.origin], billing: async () => ({ version: 1, config: costs }) });
+  publishOther = async () => {
+    const snapshot = await f.repo.current(), actor = "other-fixture-admin";
+    const draft = await f.repo.draft(actor), config = structuredClone(snapshot.config);
+    config.publicModels[0].label = "Other administrator update";
+    const saved = await f.repo.saveDraft({ id: draft.id, actor, expectedRevision: draft.revision, config });
+    const { randomUUID } = await import("node:crypto");
+    const result = await runtime.publish({ id: randomUUID(), draftId: saved.id, expectedRevision: saved.revision, expectedVersion: snapshot.version, actor, reason: "Disposable concurrent-admin conflict verification" });
+    if (result.phase !== "applied") throw new Error("Fixture publication not applied");
+  };
   const executable = join(folder, "router.exe");
   const build = spawnSync("go", ["build", "-o", executable, "./cmd/server"], {
     cwd: source,
@@ -111,6 +130,7 @@ async function main() {
       NAUMI_ROUTER_TOKEN: "fixture-ui-generation-independent-20261004",
       NAUMI_HTTP_ADDR: "127.0.0.1:54981",
       NAUMI_ROUTER_MANAGEMENT_ADDR: "127.0.0.1:54982",
+      NAUMI_MODEL_CAPACITY_URL: "http://127.0.0.1:54980/api/internal/model-capacity",
       NAUMI_ROUTES_CONFIG: resolve(source, "config/routes.example.json"),
       NAUMI_STATE_DIR: join(folder, "state"),
     },

@@ -37,7 +37,7 @@ async function requestFacts(request: Request) {
 function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; vision?: ModelBinding; video?: ModelBinding; primary: "image" | "text" | "vision" | "video" } {
   if (path === "/api/video/generate") return { video: "video.generate", primary: "video" };
   if (path === "/api/agent") return { text: "agent.text", vision: "agent.vision", primary: "text" };
-  if (path.includes("verify-image")) return { text: "agent.text", vision: "agent.vision", primary: "vision" };
+  if (path.includes("verify-image")) return { vision: "vision.review", primary: "vision" };
   if (path.includes("/canvas/ocr")) return { vision: "vision.ocr", primary: "vision" };
   if (path.includes("title-gen")) return { text: "text.title", primary: "text" };
   if (path.includes("replicate/analyze") || /\/competitors\/[^/]+\/action/.test(path) || path.includes("ipcheck")) return { text: "text.competitor", vision: "vision.reference", primary: "text" };

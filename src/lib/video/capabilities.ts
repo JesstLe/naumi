@@ -214,6 +214,16 @@ export function validateAgainstCapability(
   return { ok: true };
 }
 
+/** Adapter features are a ceiling; the immutable registry can restrict them. */
+export function configuredVideoCapability(protocol: string, providerId: string, modelId: string, restrictions?: { maxReferenceImages: number }): VideoModelCapability {
+  const adapter = getVideoModelCapability(protocol === "openai-videos" ? "openai-videos" : providerId, modelId);
+  const maxReferenceImages = restrictions ? Math.min(adapter.maxReferenceImages, restrictions.maxReferenceImages) : adapter.maxReferenceImages;
+  return { ...adapter, providerId, maxReferenceImages,
+    modes: maxReferenceImages === 0 ? adapter.modes.filter(mode => mode !== "image" && mode !== "frames") : adapter.modes,
+    supportsFirstFrame: maxReferenceImages > 0 && adapter.supportsFirstFrame,
+    supportsLastFrame: maxReferenceImages > 0 && adapter.supportsLastFrame };
+}
+
 export type VideoCatalogEntry = VideoModelCapability & { isDefault: boolean };
 
 /** 能力目录(/api/video/catalog 数据源):env 配置的默认模型标 isDefault。 */

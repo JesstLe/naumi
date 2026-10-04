@@ -12,8 +12,11 @@ const bundles = new AsyncLocalStorage<ResolvedExecutionBundle | null>();
 export function currentModelExecution(role?: "image" | "text" | "vision" | "video") {
   const current = context.getStore();
   if (current === null) return null;
-  if (current && (!role || current.frozen.modality === role || role === "vision" && current.capabilities.vision)) return current;
   const bundle = bundles.getStore();
+  // A separately configured visual purpose is authoritative even when the
+  // primary text model can also consume images.
+  if (role === "vision" && bundle?.vision) return bundle.vision;
+  if (current && (!role || current.frozen.modality === role || role === "vision" && current.capabilities.vision)) return current;
   return (role ? bundle?.[role] : bundle?.image || bundle?.text || bundle?.vision || bundle?.video) || null;
 }
 export const currentExecutionBundle = () => bundles.getStore()?.frozen;

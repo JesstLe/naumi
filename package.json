@@ -51,7 +51,10 @@
     "verify:model-execution": "tsx --conditions react-server scripts/verify-model-execution.ts",
     "verify:model-tools": "tsx --conditions react-server scripts/verify-global-image-quality.ts --managed",
     "verify:model-performance": "tsx --conditions react-server scripts/verify-model-performance.ts",
-    "verify:model-coverage": "tsx --conditions react-server scripts/verify-model-config-coverage.ts"
+    "verify:model-coverage": "tsx --conditions react-server scripts/verify-model-config-coverage.ts",
+    "verify:model-review": "tsx --conditions react-server scripts/verify-model-review.ts",
+    "verify:model-flow": "tsx --conditions react-server scripts/verify-model-flow.ts",
+    "verify:model-shared-capacity": "tsx --conditions react-server scripts/verify-model-shared-capacity.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",

@@ -25,3 +25,6 @@ audit-artifacts/**/rollback-fixture-*/
 .zcode/
 .zcodeignore
 /audit-artifacts/
+
+# Python deployment fixture caches
+__pycache__/

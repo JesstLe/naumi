@@ -315,7 +315,7 @@ if [ "\$COORDINATED" = 1 ]; then
   if [ "\$MODEL_RELEASE" = 1 ]; then
     dbu=\$(docker exec naumi-db-1 printenv POSTGRES_USER)
     dbn=\$(docker exec naumi-db-1 printenv POSTGRES_DB)
-    pending=\$(docker exec naumi-db-1 psql -U "\$dbu" -d "\$dbn" -Atc "SELECT (SELECT count(*) FROM app_image_jobs WHERE payload ? 'modelExecutions' AND billing_settled=false)+(SELECT count(*) FROM app_canvas_image_tasks WHERE parameters ? 'modelExecutions' AND status IN ('queued','processing'))+(SELECT count(*) FROM app_video_tasks WHERE parameters ? 'modelExecutions' AND status IN ('queued','processing','attention'));" )
+    pending=\$(docker exec naumi-db-1 psql -U "\$dbu" -d "\$dbn" -Atc "SELECT (SELECT count(*) FROM app_image_jobs WHERE payload ? 'modelExecutions' AND billing_settled=false)+(SELECT count(*) FROM app_canvas_image_tasks WHERE parameters ? 'modelExecutions' AND status IN ('queued','processing','needs_attention'))+(SELECT count(*) FROM app_video_tasks WHERE parameters ? 'modelExecutions' AND status IN ('queued','processing','needs_attention'));" )
     if [ "\$pending" != 0 ]; then
       echo ROLLBACK_BLOCKED_PENDING_MODEL_TASKS WORKERS_PAUSED INGRESS_MAINTENANCE >&2
       exit 1

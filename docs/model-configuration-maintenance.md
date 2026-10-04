@@ -32,6 +32,10 @@ Naumi 应用需要六项私有连接设置：`NAUMI_ROUTER_MANAGEMENT_URL`、`NA
 
 Router 管理监听使用 `NAUMI_ROUTER_MANAGEMENT_ADDR`，持久配置目录使用 `NAUMI_CONFIG_STATE_DIR`，与原 `NAUMI_STATE_DIR` 一起备份。管理接口仅绑定回环，容器通过私有桥接代理访问精确路径；公开站点不代理 `/internal/config/`。供应商地址要求 HTTPS；确需访问服务器内网服务时，由服务器配置精确 origin 允许列表，元数据地址仍不能放行。不同 origin 的重定向不允许携带密钥。
 
+Router 还需配置 `NAUMI_MODEL_CAPACITY_URL=http://127.0.0.1:3012/api/internal/model-capacity`。混合候选提交前回调 Naumi，核对原版本和摘要，再取得同一个 PostgreSQL 账户租约；直连旧任务和新混合池不能各自取得一套额度。回调使用独立管理令牌，公开入口禁止代理该路径。连接失败或回执未知时不提交上游；进程重启、释放回执丢失时租约仍保留，至供应商超时加 60 秒后可回收。
+
+Flow 模型通过统一适配器支持 SDK 生图、参考图编辑及原生表单工具调用，均转换为一次 `chat/completions` 请求，使用任务冻结的模型与凭据。不支持蒙版或单次多张请求，会在提交前明确拒绝；参考图不会静默截断，结果未知也不会自动重发。
+
 ## 发布与恢复
 
 使用两个仓库的固定提交、已验证镜像和 Router 二进制摘要。发布前暂停入口与 worker，确认没有正在提交的付费任务，备份 PostgreSQL、生产配置、媒体清单和增量、Router 执行／配置状态及 New API 数据。校验备份可读且对应暂停后的数据；保留生产配置、数据库与媒体卷。先部署兼容旧请求的 Router，再使用 `scripts/deploy-release.sh` 协调发布 Naumi，确认版本、权限、公开脱敏、模拟零生成、用户／账务指纹和媒体不变后恢复入口。
