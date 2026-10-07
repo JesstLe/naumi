@@ -12,7 +12,7 @@ export type CostRate = {
     cnyPerUnitMicros?: string;
     source: "manual-estimate" | "legacy-credit-estimate";
 };
-export type Pricing = {
+export type Pricing = import("./api-cost").ApiCostPricing | {
     mode: "fixed";
     credits: number;
 } | {
@@ -56,6 +56,7 @@ export type SettlementPolicy = {
     unknown: "hold" | "manual";
 };
 export type BillingFacts = {
+    ratio?: string;
     feature: FeatureId;
     quantity: number;
     quality: string;
@@ -136,6 +137,10 @@ export type ConfigSnapshot = {
     config: BillingConfig;
 };
 export type BillingQuote = {
+    refundExpiry?: ExpiryPolicy;
+    imagePreset?: import("../model-config/image-preset").ImagePreset;
+    requestedParameters?: import("../model-config/image-preset").ImageParameters;
+    effectiveParameters?: import("../model-config/image-preset").ImageParameters;
     modelVersion?: number;
     procurement?: import("../model-config/business-schema").Procurement;
     legacyCompatible?: boolean;
@@ -153,6 +158,7 @@ export type BillingQuote = {
     matchedRuleId: string | null;
 };
 export type BillingResult = {
+    apiCost?: { status: "reported" | "estimated" | "pending"; numerator?: string; denominator?: string; source: string; callIds: string[] };
     usage?: { inputTokens: number; outputTokens: number; cachedInputTokens?: number; imageInputTokens?: number };
     state: "succeeded" | "failed" | "unknown";
     items: {
@@ -205,6 +211,7 @@ export type BillingService = {
     settleTx(tx: Tx, input: OperationInput, result: BillingResult): Promise<{
         replayed: boolean;
         charge: number;
+        state?: "settled" | "released" | "manual" | "hold";
     }>;
     releaseTx(tx: Tx, input: OperationInput): Promise<{
         replayed: boolean;

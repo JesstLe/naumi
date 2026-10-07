@@ -4,6 +4,7 @@ import { BillingError, type BillingService, type OperationInput, type GrantInput
 import { fingerprint } from "./fingerprint";
 import { settlementFor } from "./quote";
 import * as repository from "./repository";
+import { operationApiCost } from "./api-cost-ledger";
 export async function withBillingTransaction<T>(pool: Pool, action: (tx: Tx) => Promise<T>): Promise<T> {
     const tx = await pool.connect();
     try {
@@ -32,10 +33,12 @@ async function operation(tx: Tx, input: OperationInput) {
 function amount(n: number) { if (!Number.isSafeInteger(n) || n < 0 || n > 2147483647)
     throw new BillingError("INVALID_RESULT", "积分数量无效", 400); }
 async function settleLocked(tx:Tx,row:repository.OperationRow,result:import("./types").BillingResult,reason:string){
-            const frozen = row.quote as BillingQuote, settlement = settlementFor(frozen, result);
+            const frozen = row.quote as BillingQuote;
+            if (frozen.tariff.pricing.mode === "api-cost-plus") result={...result,apiCost:await operationApiCost(tx,row.id,row.email,frozen,result)};
+            const settlement = settlementFor(frozen, result);
             if (settlement.state !== "settle") {
                 await tx.query("UPDATE app_billing_operations SET state=$2,settlement_result=$3::jsonb,updated_at=now() WHERE id=$1", [row.id, settlement.state, JSON.stringify(result)]);
-                return { replayed: false, charge: 0 };
+                return { replayed: false, charge: 0, state: settlement.state };
             }
             const wallet = await repository.lockWallet(tx, row.email);
             const owned = Number((await tx.query("SELECT cost FROM app_gen_reservations WHERE job_id=$1 AND email=$2", [row.id, row.email])).rows[0]?.cost || 0);
@@ -45,7 +48,7 @@ async function settleLocked(tx:Tx,row:repository.OperationRow,result:import("./t
                 await repository.debitTx(tx, row.email, settlement.charge, frozen.debitOrder || "expires-first");
             await repository.finishTx(tx, row, settlement.charge, "settled", reason);
             await tx.query("UPDATE app_billing_operations SET settlement_result=$2::jsonb WHERE id=$1",[row.id,JSON.stringify(result)]);
-            return { replayed: false, charge: settlement.charge };
+            return { replayed: false, charge: settlement.charge, state: "settled" as const };
 }
 export function createBillingService(): BillingService {
     const grant = async (tx: Tx, input: GrantInput, adjust: boolean) => {
@@ -99,7 +102,7 @@ export function createBillingService(): BillingService {
             if (created || row.state === "prepared")
                 throw new BillingError("OPERATION_CONFLICT", "计费操作尚未预占", 409);
             if (["settled", "released"].includes(row.state))
-                return { replayed: true, charge: Number(row.charged_credits) };
+                return { replayed: true, charge: Number(row.charged_credits), state: row.state as "settled" | "released" };
             return settleLocked(tx,row,result,input.reason);
         },
         async releaseTx(tx, input) {
@@ -114,4 +117,33 @@ export function createBillingService(): BillingService {
         },
         grantTx: (tx, input) => grant(tx, input, false), adjustTx: (tx, input) => grant(tx, input, true),
     };
+}
+
+/** Fee compensation never submits generation. Serializes against normal settlement.
+ * Late increases are an explicit review, not an extra wallet debit. Reductions
+ * refund at most what this operation actually charged and keep original evidence. */
+export async function refreshApiCostOperation(tx:Tx,id:string) {
+    const row=(await tx.query("SELECT * FROM app_billing_operations WHERE id=$1 FOR UPDATE",[id])).rows[0];
+    if(!row || !["manual","hold","settled"].includes(row.state) || !row.quote?.imagePreset || !row.settlement_result || row.quote.tariff.pricing.mode!=="api-cost-plus")return;
+    const result={...row.settlement_result,apiCost:await operationApiCost(tx,id,row.email,row.quote,row.settlement_result)};
+    if(result.apiCost?.status==="pending") { await tx.query("UPDATE app_billing_operations SET updated_at=now() WHERE id=$1",[id]); return; }
+    if(["manual","hold"].includes(row.state)) {
+      const settled=await settleLocked(tx,row,result,"APIMart费用补查结算");
+      if(settled.state==="settled")await tx.query("UPDATE app_image_jobs SET billing_settled=true WHERE id=$1",[id]);
+      return;
+    }
+    const reviewId=fingerprint({id,cost:result.apiCost});
+    if((await tx.query("SELECT 1 FROM app_billing_api_cost_reviews WHERE id=$1",[reviewId])).rowCount) { await tx.query("UPDATE app_billing_operations SET updated_at=now() WHERE id=$1",[id]); return; }
+    const desired=settlementFor(row.quote,result), before=Number(row.charged_credits), confirmed=result.apiCost?.status==="reported";
+    let refund=0,status=desired.state!=="settle"?"needs-review":desired.charge>before?"increase-not-charged":"confirmed";
+    if(confirmed && desired.state==="settle" && desired.charge<before && row.quote.refundExpiry) {
+      refund=before-desired.charge;
+      await repository.lockWallet(tx,row.email);
+      await repository.grantBatchTx(tx,{id:`api-refund-${reviewId}`,email:row.email,amount:refund,source:"refund",reason:"供应商费用修订返还",expiry:row.quote.refundExpiry,ledgerId:`led-api-refund-${reviewId}`});
+      await tx.query("UPDATE app_billing_operations SET charged_credits=$2,updated_at=now() WHERE id=$1",[id,desired.charge]);
+      status="refunded";
+    }
+    await tx.query("INSERT INTO app_billing_api_cost_reviews(id,operation_id,before_result,after_result,status,refund_credits) VALUES($1,$2,$3::jsonb,$4::jsonb,$5,$6)",[reviewId,id,JSON.stringify(row.settlement_result),JSON.stringify(result),status,refund]);
+    if(status==="confirmed"||status==="refunded")await tx.query("UPDATE app_billing_operations SET settlement_result=$2::jsonb WHERE id=$1",[id,JSON.stringify(result)]);
+    await tx.query("UPDATE app_billing_operations SET updated_at=now() WHERE id=$1",[id]);
 }

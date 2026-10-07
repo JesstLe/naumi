@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS app_supplier_calls(
  UNIQUE(account_id,attempt_id),CHECK(amount_micros IS NULL OR amount_micros>=0),CHECK(credits_micros IS NULL OR credits_micros>=0)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS app_supplier_calls_task ON app_supplier_calls(account_id,task_id) WHERE task_id IS NOT NULL;
+ALTER TABLE app_supplier_calls ADD COLUMN IF NOT EXISTS parameters jsonb;
+ALTER TABLE app_supplier_calls ADD COLUMN IF NOT EXISTS billing_unit_id text;
 CREATE INDEX IF NOT EXISTS app_supplier_calls_operation ON app_supplier_calls(operation_id,started_at);
 CREATE INDEX IF NOT EXISTS app_supplier_calls_time ON app_supplier_calls(account_id,completed_at,model);
 CREATE INDEX IF NOT EXISTS app_supplier_calls_filters ON app_supplier_calls(user_email,feature,started_at);

@@ -10,6 +10,7 @@ import { getAPIMartTask, queryAPIMartUsage } from "./apimart";
 import { importRouterOperation } from "./router";
 import { reconcileUsage } from "./reconciliation";
 import { costPolicy } from "./policy";
+import { refreshApiCostOperation,withBillingTransaction } from "../billing/service";
 
 export async function runSupplierCostWorker(ledger: ReturnType<typeof createSupplierLedger> = supplierLedger(), options: { fetcher?: typeof fetch; batch?: number } = {}) {
   await ensureSupplierSchema(ledger.pool);
@@ -68,6 +69,11 @@ export async function runSupplierCostWorker(ledger: ReturnType<typeof createSupp
     }
     await ledger.pool.query("UPDATE app_supplier_cost_jobs SET state=$3,due_at=now()+make_interval(secs=>$4),lease_id=NULL,lease_until=NULL,last_error=$5,attempts=CASE WHEN $5::text IS NULL THEN 0 ELSE attempts END,updated_at=now() WHERE key=$1 AND lease_id=$2", [job.key,job.lease_id,error && job.attempts>=20 ? "needs-attention" : next==null ? "done" : "queued",next||0,error]);
   }
+  const pending=(await ledger.pool.query(`SELECT id FROM app_billing_operations WHERE quote->'tariff'->'pricing'->>'mode'='api-cost-plus'
+    AND state IN('manual','hold','settled') AND settlement_result IS NOT NULL
+    AND (state IN('manual','hold') OR EXISTS(SELECT 1 FROM app_supplier_calls c WHERE c.operation_id=app_billing_operations.id AND c.updated_at>app_billing_operations.updated_at))
+    ORDER BY CASE WHEN state IN('manual','hold') THEN 0 ELSE 1 END,updated_at ASC LIMIT 100`)).rows;
+  for(const op of pending) await withBillingTransaction(ledger.pool,tx=>refreshApiCostOperation(tx,op.id));
   return { processed, claimed:jobs.length };
 }
 export async function scanSupplierCostsOnce() { if (!dbEnabled) return 0; try { return (await runSupplierCostWorker()).processed; } catch { return 0; } }

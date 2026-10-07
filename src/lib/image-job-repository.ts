@@ -83,7 +83,7 @@ export async function settleImageJob(id: string, charged: number|BillingResult, 
         const reserved=await client.query("SELECT 1 FROM app_billing_operations WHERE id=$1",[id]);
         if(reserved.rowCount){
           const settled=await billingService.settleTx(client,op,charged);
-          if(charged.state==="unknown"){await client.query("COMMIT");return;}
+            if(charged.state==="unknown" || settled.state==="manual" || settled.state==="hold"){await client.query("COMMIT");return;}
         }else if(charged.state!=="failed")throw new Error("任务尚未完成计费预占");
       }else{
       if(typeof charged!=="number")throw new Error("旧任务须按已保存价格恢复结算");

@@ -24,7 +24,7 @@ async function checkCredentials(tx: PoolClient, config: ModelConfig) {
   }
 }
 async function writeDraft(tx: PoolClient, draftId: string, config: ModelConfig) {
-  for (const table of ["fixed_costs", "business", "bindings", "public_models", "rules", "candidates", "pools", "upstreams", "providers"]) await tx.query(`DELETE FROM app_model_${table} WHERE draft_id=$1`, [draftId]);
+  for (const table of ["image_presets", "fixed_costs", "business", "bindings", "public_models", "rules", "candidates", "pools", "upstreams", "providers"]) await tx.query(`DELETE FROM app_model_${table} WHERE draft_id=$1`, [draftId]);
   for (const [i, p] of Array.from(config.providers.entries())) await tx.query("INSERT INTO app_model_providers(draft_id,id,position,name,protocol,base_url,credential_ref,enabled,timeout_ms,max_concurrent,options) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)", [draftId,p.id,i,p.name,p.protocol,p.baseUrl,p.credentialRef || null,p.enabled,p.timeoutMs,p.maxConcurrent,p.options ? JSON.stringify(p.options) : null]);
   for (const [i, u] of Array.from(config.upstreamModels.entries())) await tx.query("INSERT INTO app_model_upstreams(draft_id,id,position,provider_id,model,label,modality,enabled,capabilities,parameter_map,cost_ref,procurement) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12::jsonb)", [draftId,u.id,i,u.providerId,u.model,u.label,u.modality,u.enabled,JSON.stringify(u.capabilities),JSON.stringify(u.parameterMap),u.costRef || null,u.procurement ? JSON.stringify(u.procurement) : null]);
   for (const [i, p] of Array.from(config.pools.entries())) {
@@ -34,6 +34,7 @@ async function writeDraft(tx: PoolClient, draftId: string, config: ModelConfig) 
   }
   for (const [i, m] of Array.from(config.publicModels.entries())) await tx.query("INSERT INTO app_model_public_models(draft_id,id,position,label,modality,enabled,visible,upstream_target,pool_target) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", [draftId,m.id,i,m.label,m.modality,m.enabled,m.visible,m.target.type === "upstream" ? m.target.id : null,m.target.type === "pool" ? m.target.id : null]);
   if (config.business) await tx.query("INSERT INTO app_model_business(draft_id,config) VALUES($1,$2::jsonb)", [draftId,JSON.stringify(config.business)]);
+  if (config.defaultImagePreset) await tx.query("INSERT INTO app_model_image_presets(draft_id,config) VALUES($1,$2::jsonb)", [draftId,JSON.stringify(config.defaultImagePreset)]);
   if (config.fixedMonthlyCosts) await tx.query("INSERT INTO app_model_fixed_costs(draft_id,config) VALUES($1,$2::jsonb)", [draftId,JSON.stringify(config.fixedMonthlyCosts)]);
   for (const [purpose, model] of Object.entries(config.bindings)) await tx.query("INSERT INTO app_model_bindings(draft_id,id,public_model_id) VALUES($1,$2,$3)", [draftId,purpose,model]);
 }
@@ -52,6 +53,8 @@ async function readDraft(tx: PoolClient, row: any): Promise<ModelDraft> {
   if (business) config.business = business.config;
   const monthly = (await tx.query("SELECT config FROM app_model_fixed_costs WHERE draft_id=$1", [row.id])).rows[0];
   if (monthly) config.fixedMonthlyCosts = monthly.config;
+  const preset = (await tx.query("SELECT config FROM app_model_image_presets WHERE draft_id=$1", [row.id])).rows[0];
+  if (preset) config.defaultImagePreset = preset.config;
   return { id: row.id, revision: Number(row.revision), basedOnVersion: Number(row.based_on_version), config };
 }
 

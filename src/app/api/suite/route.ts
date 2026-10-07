@@ -472,7 +472,7 @@ async function runSuite(
         for (let attempt = 0; attempt <= (isImageGatewayModel(model) ? SHOT_RETRIES : 0) && !ok; attempt++) {
           try {
             const quality: ResolvedImageQuality = { ...(prior?.quality ?? { requested: "medium", executed: (imageQuality) as ExecutedQuality, fallbackReason: null }) };
-            const generated = await withQualityFallback(quality, executed => JOBS.paidOperation(jobId, model, { id: prior?.quality ? `${shot.id}:quality:${executed}` : shot.id, quality: executed, task: "layout", preserveIdentity: true, textAccuracy: "required" }, () => genOneShot(
+            const generated = await withQualityFallback(quality, executed => JOBS.paidOperation(jobId, model, { id: prior?.quality ? `${shot.id}:quality:${executed}` : shot.id, quality: executed, ratio: shot.ratio, task: "layout", preserveIdentity: true, textAccuracy: "required" }, () => genOneShot(
               apiKey,
               baseUrl,
               model,

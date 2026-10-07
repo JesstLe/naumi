@@ -5617,7 +5617,8 @@ export async function completeCanvasImageTask(input: {
     const task = locked.rows[0];
     meterOn=task?.billing_quote?.facts.metered??await creditMeteringEnabled();
     if (!task) throw new Error("图片编辑任务不存在");
-    if(task.billing_quote&&task.status!=="completed"){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-canvas-image-${input.id}`,{state:"succeeded",items:[{id:input.id,state:"succeeded",executedQuality:task.parameters?.qualityAudit?.executed||task.billing_quote.facts.quality}]});}else if (!task.billing_quote&&task.status !== "completed" && meterOn && Number(task.cost) > 0) {
+    let billingPending=false;
+    if(task.billing_quote&&task.status!=="completed"){const settled=await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-canvas-image-${input.id}`,{state:"succeeded",items:[{id:input.id,state:"succeeded",executedQuality:task.parameters?.qualityAudit?.executed||task.billing_quote.facts.quality}]});billingPending=settled.state==="manual"||settled.state==="hold";}else if (!task.billing_quote&&task.status !== "completed" && meterOn && Number(task.cost) > 0) {
       const ledgerId = `led-canvas-image-${input.id}`;
       const seen = await client.query(`SELECT 1 FROM app_ledger WHERE id = $1`, [ledgerId]);
       if (!(seen.rowCount ?? 0)) {
@@ -5640,7 +5641,7 @@ export async function completeCanvasImageTask(input: {
         WHERE email = $1 AND id = $2`,
       [email, input.id, input.resultArtworkId]
     );
-    await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    if(!billingPending) await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");

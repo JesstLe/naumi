@@ -10,12 +10,13 @@ import { ModelConfigError, type ModelFacts, type ModelSnapshot, type Modality, t
 import { runModelExecution, runExecutionBundle, type ExecutionBundle, type ResolvedExecutionBundle, type ModelExecutionScope } from "./context";
 import { executionOpenAI } from "./clients";
 import { businessRoutePlan, selectedBusinessOption } from "./business";
+import { selectedImagePreset, presetPublicId, effectiveImageParameters } from "./image-preset";
 
-export type ExecutionModel = { feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
+export type ExecutionModel = { requestedParameters?: import("./image-preset").ImageParameters; feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
 export type ExecutionConnection = { providerId: string; protocol: string; baseUrl: string; apiKey: string; wireModel: string; timeoutMs: number; credentialRef?: string; maxConcurrent?: number; options?: ModelProvider["options"] };
 type Dependencies = ValidationOptions & { runtime: Pick<ModelRuntime, "byVersion" | "prepareExecution"> & Partial<Pick<ModelRuntime, "validateExecutionProjection">>; credentials: ReturnType<typeof createCredentialStore>; gateway: () => { baseUrl: string; apiKey: string } };
-const factsSchema = z.strictObject({ task: z.enum(["draft", "product", "detail", "layout"]), quality: z.string().max(10), resolution: z.enum(["1K", "2K", "4K"]), needsEdit: z.boolean(), needsMask: z.boolean().optional(), preserveIdentity: z.boolean(), needsText: z.boolean(), nativeResolution: z.boolean(), references: z.number().int().min(0).max(32), quantity: z.number().int().min(1).max(4).optional(), inputLength: z.number().int().min(0).max(1000000).optional() });
-const executionSchema = z.strictObject({ feature: z.string().max(100).optional(), modelVersion: z.number().int().positive(), billingVersion: z.number().int().positive(), modelDigest: z.string().regex(/^[a-f0-9]{64}$/), publicModelId: z.string().max(100), binding: z.string().max(100), modality: z.enum(["image", "text", "video"]), target: z.strictObject({ type: z.enum(["upstream", "pool"]), id: z.string().max(100) }), credentialRef: z.uuid().optional(), routerDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), facts: factsSchema.optional() });
+const factsSchema = z.strictObject({ task: z.enum(["draft", "product", "detail", "layout"]), quality: z.string().max(10), resolution: z.enum(["1K", "2K", "4K"]), ratio: z.string().max(20).optional(), needsEdit: z.boolean(), needsMask: z.boolean().optional(), preserveIdentity: z.boolean(), needsText: z.boolean(), nativeResolution: z.boolean(), references: z.number().int().min(0).max(32), quantity: z.number().int().min(1).max(4).optional(), inputLength: z.number().int().min(0).max(1000000).optional() });
+const executionSchema = z.strictObject({ requestedParameters: z.strictObject({quality:z.string().max(20),resolution:z.string().max(20),ratio:z.string().max(20)}).optional(), feature: z.string().max(100).optional(), modelVersion: z.number().int().positive(), billingVersion: z.number().int().positive(), modelDigest: z.string().regex(/^[a-f0-9]{64}$/), publicModelId: z.string().max(100), binding: z.string().max(100), modality: z.enum(["image", "text", "video"]), target: z.strictObject({ type: z.enum(["upstream", "pool"]), id: z.string().max(100) }), credentialRef: z.uuid().optional(), routerDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), facts: factsSchema.optional() });
 export function createModelExecutor(deps: Dependencies) {
   const describe = async (raw: ExecutionModel): Promise<ModelExecutionScope> => {
     const parsed = executionSchema.safeParse(raw);
@@ -29,7 +30,8 @@ export function createModelExecutor(deps: Dependencies) {
     if (snapshot.digest !== frozen.modelDigest || !publicModel || (plan ? frozen.target.type !== "upstream" || frozen.target.id !== plan.initialId : publicModel.target.type !== frozen.target.type || publicModel.target.id !== frozen.target.id) || !purpose || purpose.modality !== frozen.modality) throw new ModelConfigError("EXECUTION_MISMATCH", "任务与原模型版本不一致", 503);
     const upstream = frozen.target.type === "upstream" ? snapshot.config.upstreamModels.find(u => u.id === frozen.target.id)! : undefined;
     const provider = upstream ? snapshot.config.providers.find(p => p.id === upstream.providerId)! : undefined;
-    const routed = frozen.target.type === "pool" || provider && ["apimart-images", "fal-images"].includes(provider.protocol);
+    const preset = selectedImagePreset(snapshot.config,frozen.feature,frozen.publicModelId,frozen.binding);
+    const routed = !preset && (frozen.target.type === "pool" || provider && ["apimart-images", "fal-images"].includes(provider.protocol));
     if (provider?.credentialRef !== frozen.credentialRef || routed !== !!frozen.routerDigest) throw new ModelConfigError("EXECUTION_MISMATCH", "任务凭据或路由版本不一致", 503);
     if (routed) {
       if (!deps.runtime.validateExecutionProjection) throw new ModelConfigError("CONFIG_UNAVAILABLE", "执行路由版本无法核对", 503);
@@ -46,6 +48,7 @@ export function createModelExecutor(deps: Dependencies) {
       return { providerId: p.id, protocol: p.protocol, baseUrl: p.baseUrl, apiKey: await deps.credentials.read(p.credentialRef!, p.id), credentialRef: p.credentialRef, wireModel: u.model, timeoutMs: p.timeoutMs, maxConcurrent: p.maxConcurrent, options: p.options };
     };
     const scope: ModelExecutionScope = { frozen, connection: await connectionFor(upstream!.id), capabilities: upstream!.capabilities, parameterMap: upstream!.parameterMap, businessOption, procurement: upstream!.procurement };
+    if (preset) Object.assign(scope,{ imagePreset: structuredClone(preset), audited:true });
     if (plan) {
       const targets = Object.fromEntries(await Promise.all(plan.targets.map(async id => {
         const u = snapshot.config.upstreamModels.find(u => u.id === id)!;
@@ -60,8 +63,14 @@ export function createModelExecutor(deps: Dependencies) {
       const purpose = MODEL_BINDINGS[input.binding as ModelBinding];
       if (!purpose) throw new ModelConfigError("INVALID_REQUEST", "未知模型用途");
       const config = validateModelConfig(input.snapshot.config, deps);
+      const preset = selectedImagePreset(config,input.feature,input.requestedModelId,input.binding);
+      const requestedParameters = preset && input.facts ? {quality:input.facts.quality,resolution:input.facts.resolution,ratio:input.facts.ratio||"1:1"} : undefined;
+      if (preset && input.facts) {
+        const parameters = effectiveImageParameters(preset,requestedParameters!);
+        input = {...input,facts:{...input.facts,...parameters.effective,nativeResolution:parameters.nativeResolution && input.facts.resolution !== "1K"}};
+      }
       const option = selectedBusinessOption(config, input.feature, input.requestedModelId);
-      const id = option?.modelId || input.requestedModelId || config.bindings[input.binding];
+      const id = preset ? presetPublicId(preset,input.requestedModelId) : option?.modelId || input.requestedModelId || config.bindings[input.binding];
       const model = config.publicModels.find(m => m.id === id && m.enabled && m.modality === purpose.modality && (!input.requestedModelId || m.visible));
       if (!model) throw new ModelConfigError("MODEL_UNAVAILABLE", "所选模型不可用，请刷新模型列表后重试", 409);
       const plan = businessRoutePlan(config, option, input.facts);
@@ -81,9 +90,9 @@ export function createModelExecutor(deps: Dependencies) {
         }
         if (provider?.protocol === "openai-images" && input.facts.nativeResolution && input.facts.resolution !== "1K" && !upstream!.parameterMap.resolution?.[input.facts.resolution as "2K" | "4K"]) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该原生尺寸缺少已核验的接口参数映射", 400);
       }
-      const routed = model.target.type === "pool" || provider && ["apimart-images", "fal-images"].includes(provider.protocol);
+      const routed = !preset && (model.target.type === "pool" || provider && ["apimart-images", "fal-images"].includes(provider.protocol));
       const projection = routed ? await deps.runtime.prepareExecution({ snapshot: input.snapshot, billing: input.billing }) : undefined;
-      return { ...(input.feature ? { feature: input.feature } : {}), modelVersion: input.snapshot.version, billingVersion: input.billing.version, modelDigest: input.snapshot.digest, publicModelId: model.id, binding: input.binding, modality: model.modality, target: structuredClone(target), ...(provider?.credentialRef ? { credentialRef: provider.credentialRef } : {}), ...(projection ? { routerDigest: projection.digest } : {}), ...(input.facts ? { facts: structuredClone(input.facts) } : {}) };
+      return { ...(requestedParameters ? {requestedParameters} : {}), ...(input.feature ? { feature: input.feature } : {}), modelVersion: input.snapshot.version, billingVersion: input.billing.version, modelDigest: input.snapshot.digest, publicModelId: model.id, binding: input.binding, modality: model.modality, target: structuredClone(target), ...(provider?.credentialRef ? { credentialRef: provider.credentialRef } : {}), ...(projection ? { routerDigest: projection.digest } : {}), ...(input.facts ? { facts: structuredClone(input.facts) } : {}) };
     },
     describe,
     async clientFor(model: ExecutionModel) { const scope = await describe(model); return { client: executionOpenAI(scope, deps), wireModel: scope.connection.wireModel }; },

@@ -79,7 +79,9 @@ export function createSupplierLedger(pool: Pool) {
       const rows = (await pool.query("SELECT * FROM app_supplier_calls WHERE operation_id=$1 ORDER BY started_at,id", [operation])).rows;
       const adjustments = (await pool.query("SELECT a.* FROM app_supplier_cost_adjustments a JOIN app_supplier_calls c ON c.id=a.call_id WHERE c.operation_id=$1 ORDER BY a.created_at", [operation])).rows;
       const outputs=(await pool.query("SELECT o.* FROM app_supplier_call_outputs o JOIN app_supplier_calls c ON c.id=o.call_id WHERE c.operation_id=$1 ORDER BY o.call_id,o.output_index",[operation])).rows;
-      return { rows, adjustments,outputs };
+      const billing=(await pool.query("SELECT quote->'imagePreset'->>'factorBps' AS factor_bps,charged_credits,state,settlement_result FROM app_billing_operations WHERE id=$1",[operation])).rows[0];
+      const feeReviews=(await pool.query("SELECT * FROM app_billing_api_cost_reviews WHERE operation_id=$1 ORDER BY created_at",[operation])).rows;
+      return { rows, adjustments,outputs,billing,feeReviews };
     },
   };
   return api;

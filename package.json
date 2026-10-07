@@ -65,7 +65,10 @@
     "verify:model-coverage": "tsx --conditions react-server scripts/verify-model-config-coverage.ts",
     "verify:model-review": "tsx --conditions react-server scripts/verify-model-review.ts",
     "verify:model-flow": "tsx --conditions react-server scripts/verify-model-flow.ts",
-    "verify:model-shared-capacity": "tsx --conditions react-server scripts/verify-model-shared-capacity.ts"
+    "verify:model-shared-capacity": "tsx --conditions react-server scripts/verify-model-shared-capacity.ts",
+    "verify:apimart-preset": "tsx --conditions react-server scripts/verify-apimart-default-preset.ts",
+    "verify:apimart-preset-ui": "node scripts/verify-apimart-preset-ui.mjs",
+    "verify:apimart-preset-entries": "tsx --conditions react-server scripts/verify-apimart-preset-entries.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",

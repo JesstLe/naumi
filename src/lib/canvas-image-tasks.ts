@@ -104,7 +104,7 @@ export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTa
   const artwork = (await listArtworksByIds(email, [input.artworkId]))[0];
   if (!artwork) throw new Error("图片不存在或无权访问");
   if (!currentModelExecution("image") && await modelConfigurationEnabled()) {
-    const effective = new Request("http://localhost/api/canvas/image-tasks", { method: "POST", headers: { ...(request ? Object.fromEntries(request.headers.entries()) : {}), "content-type": "application/json" }, body: JSON.stringify({ ...raw, artworkId: artwork.id, resolution: artwork.resolution || "1K" }) });
+    const effective = new Request("http://localhost/api/canvas/image-tasks", { method: "POST", headers: { ...(request ? Object.fromEntries(request.headers.entries()) : {}), "content-type": "application/json" }, body: JSON.stringify({ ...raw, artworkId: artwork.id, resolution: artwork.resolution || "1K",ratio:artwork.ratio||"1:1" }) });
     return withModelRequest(effective, () => enqueueTextEditTask(email, raw, request));
   }
   const quality = resolveConfiguredImageQuality(input.quality);
@@ -165,7 +165,7 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
   if (typeof task.parameters.upstreamResult === "string") {
     editedRaw = (await readCanvasImage(task.parameters.upstreamResult, requestOrigin)).buffer;
   } else {
-    if (!await beginCanvasImageTaskSubmission(task.id)) throw new ImageOperationPending(task.id, new Error("上游提交需要核查"));
+    if (!await beginCanvasImageTaskSubmission(task.id) && !currentModelExecution("image")?.imagePreset) throw new ImageOperationPending(task.id, new Error("上游提交需要核查"));
     editedRaw = await withBiModelContext(task.email,"canvas-text-edit",task.id,()=>editImage({ operationId: task.id, legacyOperationId: !task.parameters.qualityAudit, images: [original], mask, prompt, size: editSize(width, height), quality }));
     const checkpoint = storageEnabled
       ? await uploadImage(new Uint8Array(editedRaw), "image/png", `canvas-text-edits/${task.id}-provider.png`)

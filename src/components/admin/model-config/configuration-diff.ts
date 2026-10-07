@@ -30,6 +30,7 @@ function values(config: ModelConfig) {
     "bindings",
     "business",
     "fixedMonthlyCosts",
+    "defaultImagePreset",
   ] as const)
     walk(section, config[section]);
   return out;

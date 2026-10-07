@@ -13,6 +13,7 @@ import { operationIdFor, assertQuotedVersion, requestQuoteConfirmation, billingE
 import { billingJson } from "./access";
 import { fingerprint } from "./fingerprint";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
+import { currentModelExecution } from "@/lib/model-config/context";
 type Context = {
     usageIncomplete?: boolean;
     usage?: import("./types").BillingResult["usage"];
@@ -159,7 +160,8 @@ export async function synchronousCost(quality?: ResolvedImageQuality, resolution
     try {
         context.quality = quality;
         if (!context.operation) {
-            const q = await quoteForRequest(context.request, { feature: context.feature, quantity: 1, quality: quality?.requested || "medium", resolution },context.snapshot);
+            const requested=currentModelExecution("image")?.frozen.requestedParameters;
+            const q = await quoteForRequest(context.request, { feature: context.feature, quantity: 1, quality: quality?.requested || requested?.quality || "medium", resolution:resolution!=="1K"?resolution:requested?.resolution||resolution,ratio:requested?.ratio },context.snapshot);
             assertQuotedVersion(context.confirmation, q);
             context.operation = { id: context.id, email: context.email, quote: q, reason: "工具任务预占", ledgerId: `led-${context.id}`, fingerprint: context.hash };
             const reserved = await withBillingTransaction(getPool(), tx => service.reserveTx(tx, context.operation!));
@@ -181,7 +183,7 @@ export async function settleSynchronous(reason: string, quality?: ResolvedImageQ
     const result = { usage: context.usageIncomplete ? undefined : context.usage, state: "succeeded" as const, items: [{ id: context.id, state: "succeeded" as const, executedQuality: quality?.executed || context.quality?.executed || "medium" }] };
     const settled = tx ? await service.settleTx(tx, { ...context.operation, reason }, result) : await withBillingTransaction(getPool(), client => service.settleTx(client, { ...context.operation!, reason }, result));
     context.charge = settled.charge;
-    if (settlementFor(context.operation.quote, result).state !== "settle") throw new BillingError("INVALID_RESULT", "结果已保留，供应商实际用量缺失，进入待核对流程", 409);
+    if (settled.state === "manual" || settled.state === "hold") throw new BillingError("INVALID_RESULT", "结果已保留，供应商费用或实际用量缺失，进入待核对流程", 409);
     return settled.charge;
 }
 export async function configuredToolCost(resolution = "1K") {
