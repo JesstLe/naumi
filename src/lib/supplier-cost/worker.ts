@@ -66,7 +66,7 @@ export async function runSupplierCostWorker(ledger: ReturnType<typeof createSupp
       error = e instanceof Error && /^supplier-query-http-\d+$/.test(e.message) ? e.message : "费用补查未完成；请核对原凭据、接口与任务记录";
       next = Math.min(3600,60 * 2 ** Math.min(job.attempts,6));
     }
-    await ledger.pool.query("UPDATE app_supplier_cost_jobs SET state=$3,due_at=now()+make_interval(secs=>$4),lease_id=NULL,lease_until=NULL,last_error=$5,attempts=CASE WHEN $5 IS NULL THEN 0 ELSE attempts END,updated_at=now() WHERE key=$1 AND lease_id=$2", [job.key,job.lease_id,error && job.attempts>=20 ? "needs-attention" : next==null ? "done" : "queued",next||0,error]);
+    await ledger.pool.query("UPDATE app_supplier_cost_jobs SET state=$3,due_at=now()+make_interval(secs=>$4),lease_id=NULL,lease_until=NULL,last_error=$5,attempts=CASE WHEN $5::text IS NULL THEN 0 ELSE attempts END,updated_at=now() WHERE key=$1 AND lease_id=$2", [job.key,job.lease_id,error && job.attempts>=20 ? "needs-attention" : next==null ? "done" : "queued",next||0,error]);
   }
   return { processed, claimed:jobs.length };
 }
