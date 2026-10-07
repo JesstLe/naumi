@@ -33,7 +33,16 @@ node scripts/build-browser-billing-crypto-fixture.mjs
 
 ## 发布状态
 
-- 待提交与生产发布：固定 SHA 镜像，原配置与数据库备份，回滚预检、实际版本/健康/浏览器 HTTP 验证。
+- 已提交并推送 `95e1cd8d9d22ea8d3262774ed9fa927051a2af48`，PR [#5](https://github.com/JesstLe/naumi/pull/5) 以模型配置分支为基底，未合并其他尚开放的 PR。
+- 修复提交的[完整回归 CI](https://github.com/JesstLe/naumi/actions/runs/37558898645)通过，包含全部计费、模型执行、后台浏览器验收及原业务回归。[镜像 CI](https://github.com/JesstLe/naumi/actions/runs/37558898524)构建成功，但 GitHub artifact 存储配额阻止离线包上传；本机从相同提交归档用原 Dockerfile 构建 Linux amd64 固定镜像，核验版本、SHA-256/UUID 实现和 sharp 原生模块后离线发布。没有向生产持久分发 GitHub 凭据。
+- 实际 release：`/opt/naumi/releases/95e1cd8d9d22-20261007-100525`；app/worker 同为 `ghcr.io/jesstle/naumi:95e1cd8d9d22ea8d3262774ed9fa927051a2af48`，镜像 ID `sha256:e0c8f391f24e8e689a585ce367b9d098c3dda10794d756a39dcb0add723c5ab0`；公开版本 `1791337673`。
+- 源码包 SHA256 `50cfd7118c5a27030b3554a3d250c9897ec1d69c45e381ca6d0c29a905665b75`；镜像 gzip 包 SHA256 `35cd08b2f5aea918a59a278b0b98354ae7b228d5000a54c88d5d02033b9e9cd6`。上传摘要与 gzip CRC 通过。
+- 发布前入口维护、暂停 worker/app、确认无进行中任务或待结算操作；使用既有 `scripts/deploy-release.sh` 协调发布。独立备份 `/opt/naumi/backups/http-billing-crypto-20261007-retry` 保留数据库 custom dump、配置、Nginx、旧路径和数据/媒体校验清单。媒体卷不重建、不恢复、不清理，保持现有媒体备份策略。
+- 用户/余额、流水、积分批次、作品、计费与模型配置、设置和模型凭据逐表摘要完全一致；媒体逐文件 SHA256 清单一致，生产 .env 与 Nginx 逐字节一致，模型和计费版本仍为 1。
+- 首页、画布、视频、health、version 返回 200；数据库健康，匿名后台和公开内部容量接口保持原有 404。app/worker 同版本且运行。
+- 首次最后验收把匿名后台预期误写为 403，但原代码和旧版都约定 404；保护流程真实恢复旧 app/worker、原版本 `1791096317` 与原 Nginx，数据未恢复或改写。纠正检查后重新发布成功。新 release 的 `ROLLBACK.sh --check` 通过，旧 release/镜像/备份保留。
+- 发布后 T3 浏览器直接调用线上 webpack 模块导出的 SHA-256、UUID 和 clientIntentKey：真实 HTTP 下 known vector、1000 个 UUID v4、JSON 重试及文件指纹全部通过，`DEPLOYED_HTTP_CRYPTO=PASS`，供应商调用为 0。修复源码真实 BillingProvider 的隔离接口 fixture 再次通过，未把模拟验收标为付费生成成功。
+- 本文为发布后记录；后续文档提交不代表另外的运行镜像。
 - 远端模型分支在生产基线后仅多一个发布验收文档提交；修复分支从实际运行的生产源码构建，未包含未经部署的业务改动。
 
 隔离测试均不调用付费供应商。生产验收不创建付费生成或修改用户账务。
