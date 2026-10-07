@@ -13,7 +13,7 @@ import { StageInspector } from "./stage-inspector";
 import { cnyCredits } from "@/lib/billing/money";
 
 function displayedCredits(amount:string,p:{creditsPerCnyMicros:string;rounding:"ceil"|"floor"|"nearest"}) {try{return cnyCredits(amount,p);}catch{return "金额超出范围";}}
-function MoneyField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+export function MoneyField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return <Field label={label}><input type="number" min="0" step="0.000001" className={inputClass} value={Number(value || "0") / 1000000} onChange={e => { const raw = e.target.value; if (/^\d+(\.\d{0,6})?$/.test(raw)) { const [a,b = ""] = raw.split("."); onChange((BigInt(a) * BigInt(1000000) + BigInt(b.padEnd(6,"0"))).toString()); } }} /></Field>;
 }
 const defaultPrice = (): Extract<Pricing, { mode: "cny-fixed" }> => ({ mode: "cny-fixed", amountMicros: "1000000", creditsPerCnyMicros: "100000000", rounding: "ceil" });

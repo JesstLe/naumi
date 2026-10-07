@@ -12,7 +12,9 @@ import type {
   ModelFacts,
 } from "@/lib/model-config/types";
 import { BusinessEditor } from "./business-editor";
+import { ModelBatchEditor } from "./batch-editor";
 import type { ConfigSnapshot } from "@/lib/billing/types";
+import type { ProviderCatalogResult } from "@/lib/model-config/catalog";
 import { ProviderEditor } from "./provider-editor";
 import { UpstreamEditor } from "./upstream-editor";
 import { PoolEditor, PublicModelEditor } from "./routing-editor";
@@ -67,6 +69,7 @@ type Simulation = {
   billingVersion: number;
 };
 const tabs = [
+  { id: "batch", label: "模型批量配置" },
   { id: "business", label: "功能计费与路由" },
   { id: "providers", label: "供应商" },
   { id: "upstreamModels", label: "上游模型" },
@@ -196,7 +199,7 @@ function Diff({ changes }: { changes: ConfigurationChange[] }) {
 export function ModelConfigurationManager({ billingMode = false }: { billingMode?: boolean } = {}) {
   const [state, setState] = useState<AdminState | null>(null),
     [config, setConfig] = useState<ModelConfig | null>(null),
-    [tab, setTab] = useState<Tab>(billingMode ? "business" : "providers"),
+    [tab, setTab] = useState<Tab>(billingMode ? "batch" : "providers"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [fields, setFields] = useState<string[]>([]),
@@ -211,6 +214,8 @@ export function ModelConfigurationManager({ billingMode = false }: { billingMode
     [reason, setReason] = useState(""),
     [remote, setRemote] = useState<AdminState | null>(null),
     [newId, setNewId] = useState("");
+  const [catalog, setCatalog] = useState<Record<string, ProviderCatalogResult & { cached?: boolean; stale?: boolean; lastSuccessAt?: string }>>({});
+  const catalogInitialized = useRef(false);
   const [simulationModel, setSimulationModel] = useState(""),
     [facts, setFacts] = useState<ModelFacts>({
       task: "product",
@@ -253,6 +258,29 @@ export function ModelConfigurationManager({ billingMode = false }: { billingMode
       );
     return data;
   }, []);
+  const refreshCatalog = useCallback(async (providerId?: string) => {
+    if (!state || !config) return;
+    setBusy(true); setError("");
+    try {
+      if (providerId) {
+        const result = await request("/catalog", { providerId, draftId: state.draft.id, expectedRevision: state.draft.revision });
+        setCatalog((current) => ({ ...current, [providerId]: result }));
+      } else {
+        const result = await request("/catalog");
+        setCatalog(Object.fromEntries((result.providers || []).map((item: ProviderCatalogResult) => [item.providerId, item])));
+        const stale = (result.providers || []).filter((item: { stale?: boolean }) => item.stale);
+        for (let i=0;i<stale.length;i+=2) {
+          await Promise.all(stale.slice(i,i+2).map(async (item: ProviderCatalogResult) => {
+            const discovered=await request("/catalog",{providerId:item.providerId,draftId:state.draft.id,expectedRevision:state.draft.revision});
+            setCatalog(current=>({...current,[item.providerId]:discovered}));
+          }));
+        }
+      }
+      setNotice("已读取供应商模型目录；目录发现不会自动发布配置或改变价格。");
+    } catch (e) { setError(e instanceof Error ? e.message : "供应商模型目录读取失败"); }
+    finally { setBusy(false); }
+  }, [config, request, state]);
+  useEffect(() => { if (tab === "providers" && state && config && !catalogInitialized.current) {catalogInitialized.current=true;void refreshCatalog();} }, [config, refreshCatalog, state, tab]);
   const adopt = useCallback((data: AdminState) => {
     setState(data);
     setConfig(structuredClone(data.draft.config));
@@ -695,6 +723,7 @@ export function ModelConfigurationManager({ billingMode = false }: { billingMode
         disabled={busy || pending || (!!operation && !operation.publication)}
         className="min-w-0 space-y-5"
       >
+        {tab === "batch" && <ModelBatchEditor config={config} billing={state.billingSnapshot} onChange={edit} onNavigate={setTab} />}
         {["providers", "upstreamModels", "publicModels", "pools"].includes(
           tab,
         ) && (
@@ -716,11 +745,14 @@ export function ModelConfigurationManager({ billingMode = false }: { billingMode
           const data=await res.json();if(!res.ok)throw new Error(data.error||"模拟失败");return data;
         }} />}
         {tab === "providers" &&
-          config.providers.map((p, i) => (
+          <>
+          <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-c-text3">目录按已保存草稿连接读取；修改地址或凭据后先保存草稿。目录缓存 5 分钟，失败时保留上次结果。</p><button type="button" className={buttonClass} disabled={busy} onClick={() => void refreshCatalog()}>刷新供应商模型目录</button></div>
+          {config.providers.map((p, i) => (
             <ProviderEditor
               key={p.id}
               provider={p}
               capacity={state.providerCapacity?.[p.id]}
+              catalog={catalog[p.id]}
               protocols={state.protocols}
               onSavingChange={(value) => {
                 lock.current = value;
@@ -732,6 +764,7 @@ export function ModelConfigurationManager({ billingMode = false }: { billingMode
               }
             />
           ))}
+          </>}
         {tab === "upstreamModels" &&
           config.upstreamModels.map((m, i) => (
             <UpstreamEditor
