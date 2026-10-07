@@ -58,3 +58,7 @@ docker exec naumi-app-1 node scripts/repair-canvas-text-model.mjs --rollback 1
 证据目录：`E:\Workspace\naumi\output\text-model-recovery-20261007`。原配置摘要 `e095a70baccd3ce4e67c9664e60e25f7f1763b98b7ca7279117a5fbeb25b6578`；新配置摘要 `354ad66ad5714d816d8eef1852a7264385b3976a1569e1844b81b920ce0ed2a5`。
 
 用户下一步：刷新当前画布页面，再打开文字节点。前端内存中旧的空模型列表会在刷新后重新读取。
+
+## 末尾连通性复核
+
+恢复发布、Router 回执、目录查询、凭据一致性和生产浏览器菜单验收均已成功。但本轮结束前再次请求公网 `/api/health` 和 `/api/text-models` 出现超时（curl 退出 28、HTTP 000），后续有界 SSH 检查同样超时（退出 255）。没有据此重启服务器或撤销已确认的配置发布。最新实时健康状态待连通后复核，不能把较早的 HTTP 200 当作末尾实时可达证明。
