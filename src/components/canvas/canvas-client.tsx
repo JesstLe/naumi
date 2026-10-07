@@ -1,5 +1,6 @@
 "use client";
 import {useBilling} from "@/lib/billing/client";
+import { browserRandomUUID } from "@/lib/browser-crypto";
 import type {FeatureId} from "@/lib/billing/types";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -4515,9 +4516,7 @@ export function CanvasClient() {
     const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
     const x = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
     const y = sourceNode?.position.y ?? source.canvasY ?? 0;
-    const operationId = typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const operationId = browserRandomUUID();
     const pendingId = `pend-text-edit-${operationId}`;
     const pending: Pend = {
       id: pendingId,
@@ -4738,9 +4737,7 @@ export function CanvasClient() {
     const x = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
     const y = (sourceNode?.position.y ?? source.canvasY ?? 0) + sourceSize.height + Y_GAP;
     const pendingId = `pend-video-${Date.now()}`;
-    const videoOperationId = typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const videoOperationId = browserRandomUUID();
     setPendNodes((current) => [
       ...current,
       {
@@ -5593,7 +5590,7 @@ export function CanvasClient() {
     else if (act.kind === "art-size") operations.push({type:"size",id:act.id,...act[side]});
     else if (act.kind === "mark") act.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side]}));
     let operationId = historyAttemptsRef.current.get(act);
-    if (!operationId) { operationId=crypto.randomUUID(); historyAttemptsRef.current.set(act,operationId); }
+    if (!operationId) { operationId=browserRandomUUID(); historyAttemptsRef.current.set(act,operationId); }
     const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
     await expectJsonOk(response,t("canvas.genFail"));
     // All operations below are local applications of an already committed transaction.

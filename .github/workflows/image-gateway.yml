@@ -69,6 +69,8 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: HTTP and HTTPS billing request fingerprints and UUID compatibility
+        run: npm run verify:browser-billing-crypto
       - name: Verify and unpack pinned Router test source
         run: |
           python3 scripts/verify-router-fixture.py

@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth-context";
 import type { FeatureId } from "./types";
 import {clientIntentKey,frozenIntentBody} from "./client-intent";
 import { MODEL_CATALOG_REFRESH } from "../model-config/public-client";
+import { browserRandomUUID } from "../browser-crypto";
 export type PublicQuote = {
     version: number;
     credits: number;
@@ -114,7 +115,7 @@ export function BillingProvider({ children }: {
         headers.set("x-naumi-billing-credits", String(displayed.credits));
         const key=await clientIntentKey(user?.email||"",url,init);
         let id=intents.current.get(key);try{id=id||localStorage.getItem(key)||undefined;}catch{}
-        id=id||headers.get("x-naumi-billing-operation-id")||crypto.randomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
+        id=id||headers.get("x-naumi-billing-operation-id")||browserRandomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
         headers.set("x-naumi-billing-operation-id",id);
         const response = await fetch(url, { ...frozenIntentBody(init,id), headers });
         if (response.ok && response.body && response.headers.get("content-type")?.includes("text/event-stream")) {

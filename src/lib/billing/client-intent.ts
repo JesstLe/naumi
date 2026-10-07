@@ -1,3 +1,5 @@
+import { browserSha256Hex } from "../browser-crypto";
+
 /** Hashes request content locally; stores only an opaque operation identifier. */
 export async function clientIntentKey(email: string, url: string, init: RequestInit) {
     const body: unknown[] = [];
@@ -16,7 +18,9 @@ export async function clientIntentKey(email: string, url: string, init: RequestI
     const headers = new Headers(init.headers);
     return `naumi:billing-intent:${await digest(new TextEncoder().encode(JSON.stringify([email, url, headers.get("x-naumi-image-quality"), headers.get("x-naumi-text-model"), headers.get("x-naumi-billing-intent-slot"), body])))}`;
 }
-async function digest(value: BufferSource) { return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", value))).map(n => n.toString(16).padStart(2, "0")).join(""); }
+async function digest(value: ArrayBuffer | Uint8Array) {
+    return browserSha256Hex(value instanceof Uint8Array ? value : new Uint8Array(value));
+}
 
 export function frozenIntentBody(init:RequestInit,id:string):RequestInit {
     if(typeof init.body!=="string")return init;
