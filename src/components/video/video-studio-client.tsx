@@ -1,4 +1,5 @@
 "use client";
+import { browserRandomUUID } from "@/lib/browser-crypto";
 import {clientIntentKey} from "@/lib/billing/client-intent";
 import {useFeatureBilling} from "@/lib/billing/preview";
 
@@ -270,7 +271,7 @@ export function VideoStudioClient() {
       const batchKey=await clientIntentKey(user?.email||"","/video/batch",{body:batchForm});
       let batch=pendingBatch.current?.key===batchKey?pendingBatch.current:null;
       if(!batch){try{const saved=JSON.parse(localStorage.getItem(batchKey)||"null");if(saved?.key===batchKey&&saved.ids?.length===taskCount)batch=saved;}catch{}}
-      if(!batch)batch={key:batchKey,ids:Array.from({length:taskCount},()=>crypto.randomUUID()),completed:{}};
+      if(!batch)batch={key:batchKey,ids:Array.from({length:taskCount},()=>browserRandomUUID()),completed:{}};
       pendingBatch.current=batch;
       const saveBatch=()=>{try{localStorage.setItem(batchKey,JSON.stringify(batch));}catch{}};saveBatch();
       const uploadReference = async (file: File): Promise<UploadedReference> => {
