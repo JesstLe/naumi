@@ -53,13 +53,13 @@ export async function bootstrapModelConfig(input: ValidationOptions & { credenti
     const providerId = "platform-text"; await addProvider(providerId, "现行文字与视觉通道", "openai-chat", text.baseUrl, text.apiKey);
     // Legacy whitelists may contain wire IDs or public aliases. Normalize the
     // allowlist before comparing: otherwise every aliased default becomes hidden.
-    const visibleWires = new Set(text.visibleModels.map(id => text.aliases[id] || id));
+    const visibleWires = new Set(text.visibleModels.filter(id => !text.aliases[id]));
     const wires = new Set([text.defaultModel, ...(!text.agent ? [text.agentModel] : []), ...text.models, ...Object.values(text.aliases), ...(text.visionModels || []), ...text.visibleModels.map(id => text.aliases[id] || id)]);
     for (const wire of Array.from(wires).filter(Boolean)) {
       const aliases = Object.entries(text.aliases).filter(([, model]) => model === wire).map(([alias]) => alias);
       const caps = unverifiedCapabilities(); caps.vision = (text.visionModels || []).includes(wire);
       for (const alias of aliases.length ? aliases : [wire]) {
-        const visible = text.visibleModels.length ? visibleWires.has(wire) : text.models.includes(wire) || wire === text.defaultModel;
+        const visible = text.visibleModels.length ? text.visibleModels.includes(alias) || visibleWires.has(wire) : text.models.includes(wire) || wire === text.defaultModel;
         const external = addModel(providerId, wire, "text", alias, visible, caps);
         if (wire === text.defaultModel && (!config.bindings["text.generate"] || visible)) config.bindings["text.generate"] = external;
         if (!text.agent && wire === text.agentModel && !config.bindings["agent.text"]) config.bindings["agent.text"] = external;

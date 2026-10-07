@@ -41,12 +41,13 @@ if (process.argv.includes('--baseline')) {
   } else {
     const {bootstrapModelConfig} = await import('../src/lib/model-config/bootstrap.ts');
     for (const whitelist of [['legacy-text-wire'], ['original-text-alias']]) {
-      const imported = await bootstrapModelConfig({credentials: {importPlain: async () => ({id: '00000000-0000-4000-8000-000000000001'})}, sources: {video: [], text: {baseUrl: 'https://fixture.example/v1', apiKey: 'fixture-key', defaultModel: 'legacy-text-wire', agentModel: 'legacy-text-wire', models: ['legacy-text-wire'], aliases: {'original-text-alias': 'legacy-text-wire'}, visibleModels: whitelist, agent: {baseUrl: 'https://agent.fixture.example/v1', apiKey: 'fixture-agent-key'}}}});
+      const imported = await bootstrapModelConfig({credentials: {importPlain: async () => ({id: '00000000-0000-4000-8000-000000000001'})}, sources: {video: [], text: {baseUrl: 'https://fixture.example/v1', apiKey: 'fixture-key', defaultModel: 'legacy-text-wire', agentModel: 'legacy-text-wire', models: ['legacy-text-wire'], aliases: {'original-text-alias': 'legacy-text-wire', 'other-alias': 'legacy-text-wire'}, visibleModels: whitelist, agent: {baseUrl: 'https://agent.fixture.example/v1', apiKey: 'fixture-agent-key'}}}});
       assert.equal(imported.publicModels.find(m => m.id === 'original-text-alias').visible, true);
       assert.equal(catalog(imported).models[0].id, 'original-text-alias');
       const defaultUpstream = imported.upstreamModels.find(m => m.id === imported.publicModels.find(m => m.id === 'original-text-alias').target.id);
       assert.equal(defaultUpstream.providerId, 'platform-agent');
       assert.equal(imported.publicModels.find(m => m.id === imported.bindings['agent.text']).visible, false);
+      assert.equal(imported.publicModels.find(m => m.id === 'other-alias').visible, whitelist.includes('legacy-text-wire'), 'An explicit alias allowlist must not expose sibling aliases');
     }
     assert.deepEqual(recoveryPlan(plan.config).config, plan.config, 'Repeated plan is idempotent');
     const agentConfig = structuredClone(config);
