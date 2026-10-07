@@ -17,6 +17,7 @@ import {
 } from "@/lib/storage";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
+import { CANVAS_TEXT_OUTPUT_INSTRUCTION, canvasTextInput, canvasAnswerText, canvasTextFailure, reportCanvasTextFailure } from "@/lib/canvas-text-output";
 import { withBillingRequest, configuredToolCost, completeSynchronousStream, failSynchronousStream } from "@/lib/billing/synchronous";
 
 // ---------------------------------------------------------------------------
@@ -189,6 +190,7 @@ async function handleObservedPost(request: Request) {
 
     const client = observeOpenAI(modelAwareOpenAI({
       apiKey,
+      maxRetries: 0,
       baseURL:
         process.env.AGENT_BASE_URL || (await getOpenAIBaseUrl()) || undefined,
     }));
@@ -214,13 +216,14 @@ async function handleObservedPost(request: Request) {
       stream = await client.chat.completions.create({
         model,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: `${SYSTEM_PROMPT}\n\n${CANVAS_TEXT_OUTPUT_INSTRUCTION}` },
           { role: "user", content: contextContent },
           { role: "assistant", content: "收到，我已了解画布上下文（当前图与上游生成链），可以开始对话。" },
-          ...history,
+          ...history.map(turn => turn.role === "user" ? { ...turn, content: canvasTextInput(turn.content) } : turn),
         ],
         temperature: 0.7,
         max_tokens: 1800,
+        modalities: ["text"],
         stream: true,
       });
     } catch (error) {
@@ -242,12 +245,27 @@ async function handleObservedPost(request: Request) {
           }
         };
         let text = "";
+        let lastChoice: unknown;
+        let imageChoice: unknown;
         try {
           for await (const chunk of stream) {
-            const delta = chunk.choices?.[0]?.delta?.content;
+            const choice = chunk.choices?.[0];
+            if (choice) {
+              lastChoice = choice;
+              const code = canvasTextFailure(choice).code;
+              if (code === "TEXT_OUTPUT_IMAGE" || code === "TEXT_OUTPUT_REFUSED") imageChoice = choice;
+            }
+            const delta = canvasAnswerText(choice?.delta?.content);
             if (delta) { text += delta; send("delta", { text: delta }); }
           }
-          if (!text.trim()) throw new Error("助手没有返回内容");
+          if (!text.trim() || imageChoice) {
+            const failure = canvasTextFailure(imageChoice || lastChoice);
+            reportCanvasTextFailure("assistant", failure.code);
+            await failSynchronousStream();
+            send("error", failure);
+            controller.close();
+            return;
+          }
           await completeSynchronousStream({ text, model });
           send("done", { ok: true });
         } catch (e) {
