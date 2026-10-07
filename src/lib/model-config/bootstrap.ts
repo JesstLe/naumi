@@ -51,12 +51,15 @@ export async function bootstrapModelConfig(input: ValidationOptions & { credenti
   const text = input.sources.text;
   if (text?.apiKey && text.defaultModel) {
     const providerId = "platform-text"; await addProvider(providerId, "现行文字与视觉通道", "openai-chat", text.baseUrl, text.apiKey);
+    // Legacy whitelists may contain wire IDs or public aliases. Normalize the
+    // allowlist before comparing: otherwise every aliased default becomes hidden.
+    const visibleWires = new Set(text.visibleModels.map(id => text.aliases[id] || id));
     const wires = new Set([text.defaultModel, ...(!text.agent ? [text.agentModel] : []), ...text.models, ...Object.values(text.aliases), ...(text.visionModels || []), ...text.visibleModels.map(id => text.aliases[id] || id)]);
     for (const wire of Array.from(wires).filter(Boolean)) {
       const aliases = Object.entries(text.aliases).filter(([, model]) => model === wire).map(([alias]) => alias);
       const caps = unverifiedCapabilities(); caps.vision = (text.visionModels || []).includes(wire);
       for (const alias of aliases.length ? aliases : [wire]) {
-        const visible = text.visibleModels.length ? text.visibleModels.includes(alias) : text.models.includes(wire) || wire === text.defaultModel;
+        const visible = text.visibleModels.length ? visibleWires.has(wire) : text.models.includes(wire) || wire === text.defaultModel;
         const external = addModel(providerId, wire, "text", alias, visible, caps);
         if (wire === text.defaultModel && (!config.bindings["text.generate"] || visible)) config.bindings["text.generate"] = external;
         if (!text.agent && wire === text.agentModel && !config.bindings["agent.text"]) config.bindings["agent.text"] = external;
@@ -67,6 +70,13 @@ export async function bootstrapModelConfig(input: ValidationOptions & { credenti
       await addProvider("platform-agent", "现行 Agent 通道", "openai-chat", text.agent.baseUrl, text.agent.apiKey);
       const caps = unverifiedCapabilities(); caps.vision = (text.visionModels || []).includes(text.agentModel);
       config.bindings["agent.text"] = addModel("platform-agent", text.agentModel, "text", text.agentModel, false, caps);
+      // Canvas text used AGENT_* before managed routing. When that model is the
+      // default, retain its account/endpoint rather than the image gateway's key.
+      if (text.defaultModel === text.agentModel) {
+        const textDefault = config.publicModels.find(m => m.id === config.bindings["text.generate"]);
+        const agentDefault = config.publicModels.find(m => m.id === config.bindings["agent.text"]);
+        if (textDefault && agentDefault) textDefault.target = { ...agentDefault.target };
+      }
       if (caps.vision) config.bindings["agent.vision"] = config.bindings["agent.text"];
     }
     if (text.agentVisionModel) {
