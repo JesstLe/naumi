@@ -76,7 +76,7 @@
 - 新增 SQL 已在 PostgreSQL 执行，迁移前备份：`/opt/naumi/backups/billing-routing-20261007-20261007-122516`；备份目录包含环境、Compose、Nginx、可读的 PostgreSQL dump 与 SHA256。
 - `scripts/deploy-release.sh` 首次在 Nginx reload 阶段失败：旧重启时 Nginx 因 Docker 网桥 172.20.0.1 尚未就绪而启动失败。恢复 Nginx 后，新应用直连验收通过，沿该发布目录完成权限/健康/计数/固定镜像校验并更新 current 链接。没有删除数据库或媒体。
 - 生产回滚保护发现 2 个带模型快照的未结算图片任务，阻止退回旧应用；没有绕过保护或重提这些任务。代码回滚在独立副本成功，发布成功与失败恢复链分别通过隔离容器测试。生产 `ROLLBACK.sh --check` 通过，但不是生产回滚已完成。
-- Nginx 增加 `/etc/systemd/system/nginx.service.d/naumi-docker-startup.conf`，等待 Docker 且失败后重试；现运行态 `active`，未为了验收重启生产主机。撤销该单独启动修复：移除该精确文件并运行 `systemctl daemon-reload`（不恢复数据库）。原状态记录在当前发布的 `backups/nginx-startup.before`。
+- Nginx 增加 `/etc/systemd/system/nginx.service.d/naumi-docker-startup.conf`，等待 Docker 且失败后重试；现运行态 `active`，未为了验收重启生产主机。该持久启动顺序修复保留，未修改数据库或媒体。
 - 公网 `http://101.133.166.67/api/health=200`，数据库正常；普通访问后台 API=404，匿名后台页面=307 登录跳转，管理员后台/阶段 API=200。模型目录不含供应商密钥与成本。
 - 生产继续 `STORAGE_DRIVER=s3`，环境文件字节一致，发布前后均 75 用户、1968 作品。原模型有效版本仍为 1，26 个公开模型；没有自动发布新售价或改变客户模型，功能配置条目仍为 0。普通生图/工具/画布图片目录各 13 个模型，文字目录当前为空，需管理员登记并核验文字供应商后配置，不能把空目录说成已接通。
 - 已完成页面、权限、迁移与目录线上验收，供应商调用 0；改价实际调用/扣费、路由、冻结与后处理恢复验收使用本地协议端点，不是供应商实际账单或质量证明。
