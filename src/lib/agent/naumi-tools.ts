@@ -39,7 +39,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 
 ## 可用工具
 1. search_templates / list_my_artworks / get_balance / verify_image_output:只读,不消耗积分。
-2. generate_image:文生图/图生图。参数 prompt(必填)、ratio(1:1/3:4/4:3/16:9/9:16)、resolution(1K/2K)、count(1-4)、model(仅当用户明确点名生图模型时填写)。计费金额以系统当前报价为准。
+2. generate_image:文生图/图生图。参数 prompt(必填)、ratio(1:1/3:4/4:3/16:9/9:16)、resolution(1K/2K/4K)、count(1-4)、model(仅当用户明确点名生图模型时填写)。计费金额以系统当前报价为准。
 3. retouch_product:商品精修。参数 image_url、options(数组)、text。计费金额以系统当前报价为准。
 4. recolor_product:产品换色。参数 image_url、color(如 #27AE60)、strength(20-100)。计费金额以系统当前报价为准。
 5. replicate_hot:爆款复刻。参数 product_image_url、reference_image_url、degree(high/style)、text。计费金额以系统当前报价为准。
@@ -781,7 +781,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           ],
           { description: "画幅比例,默认 1:1" }
         ),
-        resolution: Type.Union([Type.Literal("1K"), Type.Literal("2K")], {
+        resolution: Type.Union([Type.Literal("1K"), Type.Literal("2K"), Type.Literal("4K")], {
           description: "分辨率,默认 1K",
         }),
         count: Type.Number({ description: "生成张数 1-4,默认 1" }),

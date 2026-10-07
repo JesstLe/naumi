@@ -15,6 +15,7 @@ export type PublicQuote = {
     version: number;
     credits: number;
     reserveCredits: number;
+    authorizedCredits?: number;
     feature: FeatureId;
     quantity: number;
 };
@@ -118,10 +119,11 @@ export function BillingProvider({ children }: {
         if (!displayed)
             throw new Error("报价正在加载或暂不可用，请稍后重试");
         const headers = new Headers(init.headers);
+        if(displayed.mode==="api-cost-plus" && !window.confirm(`本次估算 ${displayed.credits} 积分，最多授权 ${displayed.authorizedCredits ?? displayed.reserveCredits} 积分。按实际完整 API 成本与已锁定倍率结算；费用未知时待核账。是否提交？`)) throw new Error("已取消提交");
         if (displayed?.modelVersion) headers.set("x-naumi-model-version", String(displayed.modelVersion));
         if (displayed?.modelId) headers.set("x-naumi-feature-model", displayed.modelId);
         headers.set("x-naumi-billing-version", String(displayed.version));
-        headers.set("x-naumi-billing-credits", String(displayed.credits));
+        headers.set("x-naumi-billing-credits", String(displayed.mode==="api-cost-plus" ? displayed.authorizedCredits ?? displayed.reserveCredits : displayed.credits));
         const key=await clientIntentKey(user?.email||"",url,{...init,headers});
         let id=intents.current.get(key);try{id=id||localStorage.getItem(key)||undefined;}catch{}
         id=id||headers.get("x-naumi-billing-operation-id")||browserRandomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
@@ -182,4 +184,4 @@ export function useBillingEstimate(input: QuoteInput) {
 }
 export function BillingEstimate({ input }: {
     input: QuoteInput;
-}) { const state = useBillingEstimate(input); return <span data-testid="billing-estimate" role="status">{state.error || (!state.quote ? "报价加载中…" : `${state.cost} 积分`)}</span>; }
+}) { const state = useBillingEstimate(input); return <span data-testid="billing-estimate" role="status">{state.error || (!state.quote ? "报价加载中…" : state.quote.mode==="api-cost-plus" ? `估算 ${state.cost} 积分 · 上限 ${state.quote.authorizedCredits ?? state.quote.reserveCredits}` : `${state.cost} 积分`)}</span>; }

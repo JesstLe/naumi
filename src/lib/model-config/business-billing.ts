@@ -5,8 +5,44 @@ import { modelConfigurationEnabled } from "./requests";
 import { selectedBusinessOption } from "./business";
 import { ModelConfigError, type ModelSnapshot } from "./types";
 import type { BillingFacts, BillingQuote, ConfigSnapshot } from "../billing/types";
+import { selectedImagePreset, effectiveImageParameters } from "./image-preset";
+import { procurementCost, apiCostCredits } from "../billing/api-cost";
+import { rounded } from "../billing/money";
+
+export function freezeImagePresetQuote(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts, create: (s:ConfigSnapshot,f:BillingFacts)=>BillingQuote): BillingQuote | null {
+  const preset = facts.byok ? undefined : selectedImagePreset(models.config,facts.feature,facts.modelId);
+  if (!preset) return null;
+  if (models.config.business?.[facts.feature]?.enabled === false) throw new ModelConfigError("FEATURE_DISABLED","该功能已停用",409);
+  const parameters = effectiveImageParameters(preset,{quality:facts.quality,resolution:facts.resolution,ratio:facts.ratio||currentModelExecution("image")?.frozen.requestedParameters?.ratio||"1:1"});
+  const v = preset.prices.find(v=>v.quality===parameters.effective.quality&&v.resolution===parameters.effective.resolution);
+  const cost = v && procurementCost(v.procurement,v.estimatedUsage,1,preset.fx?.rateMicros);
+  if (!v || !cost) throw new ModelConfigError("INVALID_CONFIG","完整输入输出成本未知，请先维护有效规格的估算",400);
+  // Token estimate is per output; actual total task receipts remain authoritative.
+  const config = structuredClone(snapshot.config), tariff = config.features[facts.feature];
+  const p = {mode:"api-cost-plus" as const,factorBps:preset.factorBps,estimateCnyMicros:rounded(cost.numerator,cost.denominator,"ceil").toString(),authorizationCnyMicros:(BigInt(preset.authorizationCnyMicros)*BigInt(facts.quantity)).toString(),creditsPerCnyMicros:preset.creditsPerCnyMicros,rounding:preset.rounding};
+  const estimated = apiCostCredits(cost.numerator*BigInt(facts.quantity),cost.denominator,p);
+  if (cost.numerator * BigInt(preset.factorBps) > BigInt(preset.authorizationCnyMicros)*cost.denominator*BigInt(10000)) throw new ModelConfigError("INVALID_CONFIG","预计售价超过授权上限，请管理员核对预设",400);
+  tariff.enabled=true; tariff.unit="image"; tariff.rules=[]; tariff.pricing=p;
+  tariff.settlement={...tariff.settlement,qualityBasis:"requested",successBasis:"successful-units",failureBps:0,reserveBps:10000};
+  const q=create({version:snapshot.version,config},{...facts,quality:parameters.effective.quality});
+  q.requestedCredits=facts.metered?estimated:0;
+  return {...q,refundExpiry:structuredClone(snapshot.config.credits.admin),modelVersion:models.version,legacyCompatible:false,imagePreset:structuredClone(preset),requestedParameters:parameters.requested,effectiveParameters:parameters.effective,procurement:structuredClone(v.procurement),costRates:{}};
+}
 
 export function businessBillingSnapshot(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts): ConfigSnapshot {
+  const preset = selectedImagePreset(models.config, facts.feature, facts.modelId);
+  if (preset) {
+    const config = structuredClone(snapshot.config), tariff = config.features[facts.feature], params = effectiveImageParameters(preset, { quality:facts.quality, resolution:facts.resolution, ratio:facts.ratio || "1:1" });
+    const item = preset.prices.find(v => v.quality === params.effective.quality && v.resolution === params.effective.resolution) || preset.prices[0];
+    if (!item) throw new ModelConfigError("INVALID_CONFIG", "默认 APIMart 预设缺少可报价成本");
+    const cost = procurementCost(item.procurement,item.estimatedUsage,1,preset.fx?.rateMicros);
+    if(!cost) throw new ModelConfigError("INVALID_CONFIG", "完整输入输出成本未知");
+    const estimate = rounded(cost.numerator,cost.denominator,"ceil").toString();
+    tariff.enabled = true; tariff.unit = "image"; tariff.rules = [];
+    tariff.pricing = { mode:"api-cost-plus", factorBps:preset.factorBps, estimateCnyMicros:estimate, authorizationCnyMicros:preset.authorizationCnyMicros, creditsPerCnyMicros:preset.creditsPerCnyMicros, rounding:preset.rounding };
+    tariff.settlement = { ...tariff.settlement, qualityBasis:"requested", successBasis:"successful-units", failureBps:0, reserveBps:10000 };
+    return {version:snapshot.version,config};
+  }
   const option = selectedBusinessOption(models.config, facts.feature, facts.modelId);
   if (!option?.pricing) return snapshot;
   const config = structuredClone(snapshot.config), tariff = config.features[facts.feature];
@@ -22,6 +58,8 @@ export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnap
   const models = version ? await admin.repo.byVersion(version) : await admin.repo.current();
   const requested = request.headers.get("x-naumi-model-version");
   if (requested && Number(requested) !== models.version) throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请重新确认报价", 409);
+  const presetQuote=freezeImagePresetQuote(snapshot,models,facts,create);
+  if (presetQuote) return presetQuote;
   const q = create(businessBillingSnapshot(snapshot, models, facts), facts);
   q.modelVersion = models.version;
   if (models.config.business?.[facts.feature]) q.legacyCompatible = false;

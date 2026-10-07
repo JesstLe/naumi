@@ -924,7 +924,7 @@ async function runJob(
     } else {
       images = apiKey
         ? await JOBS.paidOperation(jobId, p.transparent ? cutoutModel || "gpt-image-1" : imageModel.id, {
-            id: jobId, resolution: p.resolution as "1K" | "2K" | "4K", quality: p.quality,
+            id: jobId, resolution: p.resolution as "1K" | "2K" | "4K", quality: p.quality, ratio:p.ratio,
             task: p.category === "detail" ? "detail" : p.images.length ? "product" : "draft",
             preserveIdentity: p.images.length > 0,
           }, () => openaiImages(p, apiKey, imageModel.id, cutoutModel, undefined, { auditUpstream: `default:${imageModel.id}` }))
@@ -949,7 +949,7 @@ async function runJob(
       }));
     } else {
     images = await enforceOutputShape(images, p);
-    if (!(p.targetWidth > 0 && p.targetHeight > 0)) {
+    if (!scope?.imagePreset && !(p.targetWidth > 0 && p.targetHeight > 0)) {
       images = await upscaleImages(images, p.resolution);
     }
     }
@@ -1164,7 +1164,7 @@ async function handleObservedPost(request: Request) {
     ? await getUserDefaultImageModel(actorEmail)
     : null;
   const catalog = await getImageModelCatalog(actorEmail);
-  const requestedModel = p.model || userDefaultModel || defaultModel;
+  const requestedModel = currentModelExecution("image")?.imagePreset ? currentModelExecution("image")!.frozen.publicModelId : p.model || userDefaultModel || defaultModel;
   const model = routeImageModel(requestedModel, p.ratio, catalog);
   const imageModel = catalog.find((item) => item.id === model);
   if (!imageModel) {

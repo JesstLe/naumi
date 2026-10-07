@@ -1,10 +1,12 @@
 import type { ModelSnapshot, ModelFacts } from "./types";
 import type { ConfigSnapshot, BillingFacts } from "../billing/types";
 import { businessRoutePlan, selectedBusinessOption, procurementCny } from "./business";
-import { businessBillingSnapshot } from "./business-billing";
+import { businessBillingSnapshot, freezeImagePresetQuote } from "./business-billing";
 import { quote } from "../billing/quote";
 import { cnyCredits, usageAmount } from "../billing/money";
 export function businessPreview(models: ModelSnapshot, billing: ConfigSnapshot, facts: BillingFacts, routeFacts: ModelFacts) {
+  const presetQuote=freezeImagePresetQuote(billing,models,facts,quote);
+  if(presetQuote){const q=presetQuote,p=q.tariff.pricing as import("../billing/api-cost").ApiCostPricing,c=BigInt(p.estimateCnyMicros),price=(c*BigInt(p.factorBps)+BigInt(9999))/BigInt(10000);return {modelId:q.facts.modelId,upstreamId:q.imagePreset!.upstreamId,credits:q.requestedCredits,reserveCredits:q.reserveCredits,mode:p.mode,priceCnyMicros:price.toString(),procurement:q.procurement,expectedContributionCnyMicros:(price-c).toString(),contributionStatus:"暂估：售价减 API 成本，不是净利润",requestedParameters:q.requestedParameters,effectiveParameters:q.effectiveParameters,route:null};}
   const option = selectedBusinessOption(models.config, facts.feature, facts.modelId);
   const modelId = option?.modelId || facts.modelId || "", model = models.config.publicModels.find(m => m.id === modelId);
   const plan = businessRoutePlan(models.config, option, routeFacts);

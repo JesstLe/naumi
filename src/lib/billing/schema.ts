@@ -27,6 +27,11 @@ export function ensureBillingSchema(pool: Pool): Promise<void> {
    request_fingerprint text NOT NULL,reason text NOT NULL,proof text NOT NULL,result jsonb NOT NULL,
    charge integer NOT NULL,created_at timestamptz NOT NULL DEFAULT now()
   );
+  CREATE TABLE IF NOT EXISTS app_billing_api_cost_reviews(
+    id text PRIMARY KEY,operation_id text NOT NULL REFERENCES app_billing_operations(id),
+    before_result jsonb,after_result jsonb NOT NULL,status text NOT NULL,refund_credits int NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now()
+  );
   ALTER TABLE app_orders ADD COLUMN IF NOT EXISTS billing_quote jsonb;
   ALTER TABLE app_card_keys ADD COLUMN IF NOT EXISTS billing_grant jsonb;
   ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS billing_quote jsonb;

@@ -9,6 +9,7 @@ import { ModelConfigError, type ModelFacts } from "./types";
 import type { ModelBinding } from "./bindings";
 import { resolutionForLongSide } from "../mock-data";
 import { acceptedModelVersions } from "./accepted-context";
+import { effectiveImageParameters, selectedImagePreset, presetPublicId } from "./image-preset";
 
 export async function modelConfigurationEnabled() {
   if (!dbEnabled || legacyModelExecutionActive()) return false;
@@ -36,6 +37,7 @@ async function requestFacts(request: Request) {
   } catch { /* The route owns detailed payload validation; no generation is performed here. */ }
   return { body, references: Math.min(32, references) };
 }
+function imageRatio(width:number,height:number) { const gcd=(a:number,b:number):number=>b?gcd(b,a%b):a; const g=gcd(Math.round(width),Math.round(height)); return `${Math.round(width)/g}:${Math.round(height)/g}`; }
 function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; vision?: ModelBinding; video?: ModelBinding; primary: "image" | "text" | "vision" | "video" } {
   if (path === "/api/video/generate") return { video: "video.generate", primary: "video" };
   if (path === "/api/agent") return { text: "agent.text", vision: "agent.vision", primary: "text" };
@@ -70,23 +72,28 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const selected = String(parsed.body.model || parsed.body.modelId || "").trim();
     const explicit = request.headers.get("x-naumi-feature-model") || selected || "";
     const requestedModelId = explicit.startsWith("byok:") ? undefined : explicit || undefined;
+    const preset = selectedImagePreset(snapshot.config, mainFeature, requestedModelId, purpose.image);
     const option = selectedBusinessOption(snapshot.config, mainFeature, requestedModelId);
     if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);
-    const model = snapshot.config.publicModels.find(m => m.id === (option?.modelId || requestedModelId || snapshot.config.bindings[purpose.image!]));
+    const model = snapshot.config.publicModels.find(m => m.id === (preset ? presetPublicId(preset,requestedModelId) : option?.modelId || requestedModelId || snapshot.config.bindings[purpose.image!]));
     const upstreams = model?.target.type === "pool" ? snapshot.config.upstreamModels.filter(u => snapshot.config.pools.find(p => p.id === model.target.id)?.candidates.includes(u.id)) : snapshot.config.upstreamModels.filter(u => u.id === model?.target.id);
     const qualities = option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
     if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(String(parsed.body.ratio || "1:1"))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
     const requestedQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "medium");
+    const outputResolution = Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K");
+    const ratio = /^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1";
+    const presetParams = preset ? effectiveImageParameters(preset, { quality: requestedQuality, resolution: outputResolution, ratio }) : null;
+    const effectiveQuality = presetParams?.effective.quality || requestedQuality;
     if (option && (parsed.body.quality || request.headers.get("x-naumi-image-quality")) && qualities.length && !qualities.includes(requestedQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持该质量，不会静默退档", 400);
     const defaultQuality = qualities.some(q => q === (process.env.OPENAI_IMAGE_QUALITY || "medium")) ? process.env.OPENAI_IMAGE_QUALITY || "medium" : qualities[0] || process.env.OPENAI_IMAGE_QUALITY || "medium";
-    const outputResolution = Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K");
     if (option?.parameters?.resolutions?.length && !option.parameters.resolutions.includes(outputResolution as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该尺寸", 400);
-    const native = ["1K", "2K", "4K"].includes(outputResolution) && upstreams.some(u => u.capabilities.nativeResolutions.includes(outputResolution as "1K" | "2K" | "4K"));
+    const native = presetParams ? presetParams.nativeResolution : ["1K", "2K", "4K"].includes(outputResolution) && upstreams.some(u => u.capabilities.nativeResolutions.includes(outputResolution as "1K" | "2K" | "4K"));
     const needsEdit = purpose.image === "image.edit" || purpose.image === "image.cutout" || parsed.references > 0;
     const needsText = new URL(request.url).pathname.includes("/canvas/image-tasks");
     const task = String(parsed.body.taskType || parsed.body.task || "");
-    const facts: ModelFacts = { task: ["draft", "product", "detail", "layout"].includes(task) ? task as ModelFacts["task"] : needsText ? "layout" : "product", quality: qualities.includes(requestedQuality as any) ? requestedQuality : defaultQuality, resolution: native ? outputResolution : "1K", needsEdit, preserveIdentity: needsEdit, needsText, nativeResolution: native && outputResolution !== "1K", references: parsed.references, quantity: 1, inputLength: String(parsed.body.prompt || parsed.body.text || "").length };
+    const facts: ModelFacts = { task: ["draft", "product", "detail", "layout"].includes(task) ? task as ModelFacts["task"] : needsText ? "layout" : "product", quality: qualities.includes(effectiveQuality as any) ? effectiveQuality : defaultQuality, resolution: native ? outputResolution : "1K", ratio, needsEdit, preserveIdentity: needsEdit, needsText, nativeResolution: native && outputResolution !== "1K", references: parsed.references, quantity: 1, inputLength: String(parsed.body.prompt || parsed.body.text || "").length };
     facts.needsMask = !!parsed.body.needsMask || new URL(request.url).pathname.includes("/canvas/image-tasks");
+    if (presetParams) { facts.quality = requestedQuality; facts.resolution = outputResolution; }
     bundle.image = await executor.resolve({ feature: mainFeature, binding: purpose.image, requestedModelId, snapshot, billing, facts });
   }
   const requestedTextModelId = purpose.primary === "text" || purpose.primary === "vision" ? request.headers.get("x-naumi-feature-model")?.trim() || request.headers.get("x-naumi-text-model")?.trim() || undefined : undefined;

@@ -23,6 +23,7 @@ export function validateBusinessConfig(config: ModelConfig) {
     for (const o of f!.options) {
       const model = config.publicModels.find(m => m.id === o.modelId);
       if (!model || o.enabled && !compatible.some(m => m.id === model.id)) fail("功能模型能力不兼容或未启用", field);
+      if(config.defaultImagePreset?.enabled && config.defaultImagePreset.aliases.some(a=>a.id===o.modelId)) continue;
       if (model!.target.type === "pool") fail("功能模型请指定真实上游，再开启阶段路由；旧混合池单独维护，避免关闭路由后仍分流", field);
       const p = o.pricing;
       if (o.enabled && !p) fail("启用的功能模型必须设置明确用户售价", field);

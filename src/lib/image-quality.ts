@@ -25,7 +25,7 @@ export type ResolvedImageQuality = {
   /** 实际执行档 */
   executed: ExecutedQuality;
   /** 回退原因;null = 按请求执行 */
-  fallbackReason: "channel-unsupported" | "upstream-unsupported" | null;
+  fallbackReason: "channel-unsupported" | "upstream-unsupported" | "preset-quality-cap" | null;
 };
 
 /** 当前通道是否真实支持质量参数(接线的上游会处理 quality 字段)。 */

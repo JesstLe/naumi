@@ -14,7 +14,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     authorization: string;
     imageQuality?: string;
 }): Promise<{
-    quote: Pick<BillingQuote, "configVersion" | "requestedCredits">;
+    quote: Pick<BillingQuote, "configVersion" | "requestedCredits"> & Partial<Pick<BillingQuote,"modelVersion" | "authorizedCredits" | "imagePreset">>;
     label: string;
     threshold: number;
 } | null> {
@@ -43,7 +43,7 @@ export type AgentBillingSession = {
         imageQuality?: string;
     };
     id: string;
-    pendingQuotes?: Map<string, Pick<BillingQuote, "configVersion" | "requestedCredits">>;
+    pendingQuotes?: Map<string, Pick<BillingQuote, "configVersion" | "requestedCredits"> & Partial<Pick<BillingQuote,"modelVersion" | "authorizedCredits" | "imagePreset">>>;
     preparedBilling?: {
         billingVersion: number;
         billingCredits: number;
@@ -63,22 +63,24 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
     }
     if (!quoted)
         return undefined;
+    const costPlus=!!quoted.quote.imagePreset, cap=quoted.quote.authorizedCredits??quoted.quote.requestedCredits;
     const meta = { cost: name === "generate_aplus" ? 0 : quoted.quote.requestedCredits, label: quoted.label };
     const pricingArgs = { ...args as Record<string, unknown> };
     delete pricingArgs.confirm;
     const quoteKey = name + ":" + stableJson(pricingArgs), previous = session.pendingQuotes?.get(quoteKey);
     session.pendingQuotes ??= new Map();
     session.pendingQuotes.set(quoteKey, quoted.quote);
+    if(costPlus && args.confirm===true && !previous)return {block:true,reason:`请先向用户展示估算 ${meta.cost} 积分与最高授权 ${cap} 积分，等待明确同意后再提交。`};
     if ((args as {
         confirm?: unknown;
-    }).confirm === true && previous && (previous.configVersion !== quoted.quote.configVersion || previous.requestedCredits !== quoted.quote.requestedCredits))
+    }).confirm === true && previous && (previous.configVersion !== quoted.quote.configVersion || previous.requestedCredits !== quoted.quote.requestedCredits || previous.authorizedCredits !== quoted.quote.authorizedCredits || previous.modelVersion !== quoted.quote.modelVersion))
         return { block: true, reason: `价格已更新，本次需要 ${meta.cost} 积分。请重新向用户报价并等待明确同意。` };
-    session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: quoted.quote.requestedCredits, billingOperationId: fingerprint({ session: session.id, call: callId }) };
+    session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: costPlus?cap:quoted.quote.requestedCredits, billingOperationId: fingerprint({ session: session.id, call: callId }) };
     const u = await getUser(session.email);
     if (!u)
         return { block: true, reason: "积分账户不可用，请先登录后重试" };
     const balance = u.creditsTotal - u.creditsUsed;
-    if (balance < meta.cost) {
+    if (balance < (costPlus?cap:meta.cost)) {
         return {
             block: true,
             reason: `余额不足:「${meta.label}」需要约 ${meta.cost} 积分,当前余额 ${balance}。请先充值或减少任务规模。`,
@@ -87,13 +89,13 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
     }
     // 大额确认闸:报价 → 用户同意 → confirm=true 放行。
     // 拦截发生在余额检查之后,报价文案可以带上真实余额。
-    if (meta.cost >= quoted.threshold &&
+    if ((meta.cost >= quoted.threshold || costPlus) &&
         (args as {
             confirm?: unknown;
         }).confirm !== true) {
         return {
             block: true,
-            reason: `本次「${meta.label}」预计消耗约 ${meta.cost} 积分(当前余额 ${balance})。请先用一句话向用户报出这笔花费并等待明确同意;用户同意后,携带参数 confirm=true 重新调用本工具;用户拒绝或未回复就不要执行,可给出更小规模的替代方案。不要在未获得用户同意的情况下自行携带 confirm=true。`,
+            reason: `本次「${meta.label}」预计消耗约 ${meta.cost} 积分${costPlus?`，按实际API成本结算，最多授权 ${cap} 积分`:""}(当前余额 ${balance})。请先用一句话向用户报出这笔花费并等待明确同意;用户同意后,携带参数 confirm=true 重新调用本工具;用户拒绝或未回复就不要执行,可给出更小规模的替代方案。不要在未获得用户同意的情况下自行携带 confirm=true。`,
         };
     }
     return undefined;

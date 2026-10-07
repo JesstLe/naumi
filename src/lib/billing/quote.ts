@@ -4,11 +4,13 @@ import { matches, mergeTariff } from "./rules/evaluate";
 import { costPlusCredits } from "./costs";
 import { CANVAS_FREE_DEFAULTS } from "./canvas-defaults";
 import { cnyCredits, usageAmount } from "./money";
+import { apiCostCredits, apiCostSettlement } from "./api-cost";
 const MAX = 2147483647;
 function safe(n: number) { if (!Number.isSafeInteger(n) || n < 0 || n > MAX)
     throw new BillingError("INVALID_RESULT", "积分金额超出范围", 400); return n; }
 function unitPrice(t: FeatureTariff, f: BillingFacts, costs: BillingQuote["costRates"]): number {
     const p = t.pricing;
+    if (p.mode === "api-cost-plus") return apiCostCredits(BigInt(p.estimateCnyMicros),BigInt(1),p);
     if (p.mode === "cny-fixed") {
         const variant = p.variants?.filter(v => (!v.quality || v.quality === f.quality) && (!v.resolution || v.resolution === f.resolution)).sort((a,b) => Number(!!b.quality) + Number(!!b.resolution) - Number(!!a.quality) - Number(!!a.resolution))[0];
         return safe(cnyCredits(variant?.amountMicros ?? p.amountMicros, p));
@@ -49,6 +51,7 @@ export function quote(snapshot: ConfigSnapshot, input: BillingFacts): BillingQuo
     const costRates=Object.fromEntries(Array.from(keys).filter(key=>snapshot.config.costs[key]).map(key=>[key,structuredClone(snapshot.config.costs[key])]));
     const requestedCredits = amount(tariff, f, costRates);
     let authorizedCredits = requestedCredits;
+    if (tariff.pricing.mode === "api-cost-plus" && tariff.enabled && f.metered && !f.byok) authorizedCredits = cnyCredits(tariff.pricing.authorizationCnyMicros,tariff.pricing);
     if (tariff.settlement.qualityBasis === "executed")
         for (const quality of QUALITY_IDS)
             authorizedCredits = Math.max(authorizedCredits, amount(tariff, { ...f, quality }, costRates));
@@ -68,6 +71,7 @@ export function settlementFor(q: BillingQuote, r: BillingResult): Settlement {
     });
     if (r.state === "failed" && succeeded.length)
         throw new BillingError("INVALID_RESULT", "任务结果状态不一致", 400);
+    if (q.tariff.pricing.mode === "api-cost-plus" && q.tariff.enabled && q.facts.metered) return apiCostSettlement(q,r);
     if (q.tariff.pricing.mode === "usage" && q.tariff.enabled && q.facts.metered) {
         if (!succeeded.length) return { state: "settle", charge: 0, release: q.reserveCredits };
         const money = usageAmount(q.tariff.pricing, r.usage);

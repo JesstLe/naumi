@@ -580,7 +580,7 @@ async function runAplusGeneration(jobId: string) {
         for (let attempt = 0; attempt <= (isImageGatewayModel(job.model) ? SHOT_RETRIES : 0) && !ok; attempt++) {
           try {
             const quality: ResolvedImageQuality = { ...(job.quality ?? { requested: "medium", executed: (job.imageQuality || "medium") as ExecutedQuality, fallbackReason: null }) };
-            const buf = await withQualityFallback(quality, executed => JOBS.paidOperation(jobId, job.model, { id: job.quality ? `${shot.id}:quality:${executed}` : shot.id, quality: executed, task: "layout", preserveIdentity: true, textAccuracy: "required" }, () => genOneShot(
+            const buf = await withQualityFallback(quality, executed => JOBS.paidOperation(jobId, job.model, { id: job.quality ? `${shot.id}:quality:${executed}` : shot.id, quality: executed, ratio: shot.ratio, task: "layout", preserveIdentity: true, textAccuracy: "required" }, () => genOneShot(
               apiKey,
               baseUrl,
               job.model,
@@ -945,7 +945,7 @@ async function handleObservedPost(request: Request) {
     origin: input.origin,
     entry: request.headers.get("x-naumi-client-entry") === "agent" ? "agent" : "toolbox",
     createdAt: now,
-  }, {}, cost, input.prepared,billingQuote);
+  }, {}, cost, input.prepared || !!billingQuote?.imagePreset,billingQuote);
   } catch(error) {
     const message=error instanceof Error ? error.message : "";
     return NextResponse.json({error:safeError(error,"任务保存失败，请稍后重试")},{status:message.includes("积分不足") ? 402 : 503});

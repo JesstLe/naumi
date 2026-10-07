@@ -12,6 +12,7 @@ import type {
   ModelFacts,
 } from "@/lib/model-config/types";
 import { BusinessEditor } from "./business-editor";
+import { ImagePresetEditor } from "./image-preset-editor";
 import { ModelBatchEditor } from "./batch-editor";
 import type { ConfigSnapshot } from "@/lib/billing/types";
 import type { ProviderCatalogResult } from "@/lib/model-config/catalog";
@@ -69,6 +70,7 @@ type Simulation = {
   billingVersion: number;
 };
 const tabs = [
+  { id: "imagePreset", label: "APIMart 默认预设" },
   { id: "batch", label: "模型批量配置" },
   { id: "business", label: "功能计费与路由" },
   { id: "providers", label: "供应商" },
@@ -724,6 +726,7 @@ export function ModelConfigurationManager({ billingMode = false }: { billingMode
         className="min-w-0 space-y-5"
       >
         {tab === "batch" && <ModelBatchEditor config={config} billing={state.billingSnapshot} onChange={edit} onNavigate={setTab} />}
+        {tab === "imagePreset" && <ImagePresetEditor config={config} billing={state.billingSnapshot} onChange={edit} />}
         {["providers", "upstreamModels", "publicModels", "pools"].includes(
           tab,
         ) && (

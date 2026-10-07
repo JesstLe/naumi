@@ -8,7 +8,7 @@ export function assertQuotedVersion(client: {
 }, current: BillingQuote) {
     if (client.version === undefined && client.credits === undefined && (current.legacyCompatible === true || current.authorizedCredits === 0))
         return; // Compatibility is permitted only for verified unchanged terms.
-    if (client.version !== current.configVersion || client.credits !== current.requestedCredits)
+    if (client.version !== current.configVersion || client.credits !== (current.tariff.pricing.mode==="api-cost-plus"?current.authorizedCredits:current.requestedCredits))
         throw new BillingError("PRICE_CHANGED", "价格已更新，请确认最新报价后重试", 409);
 }
 export function requestQuoteConfirmation(request: Request, body?: {

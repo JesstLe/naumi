@@ -1,4 +1,5 @@
 import { stageRoutingFetch } from "./stage-routing";
+import { apimartPresetFetch } from "./apimart-preset";
 import "server-only";
 import OpenAI from "openai";
 import { currentExecutionBundle, currentModelExecution, type ModelExecutionScope } from "./context";
@@ -13,6 +14,15 @@ export const isManagedModelClient = (client: OpenAI) => managedClients.has(clien
 export function executionFetch(scope: ModelExecutionScope, options: ValidationOptions = {}): typeof fetch {
   if (scope.businessOption && !scope.audited) return stageRoutingFetch(scope, options);
   const { connection, frozen, parameterMap } = scope;
+  if (scope.imagePreset && connection.protocol === "apimart-images") {
+    const adapter=apimartPresetFetch(scope,options);
+    return async(input,init)=>{try{return await adapter(input,init);}catch(error){
+      // The SDK otherwise hides our definite parameter/output rejection inside
+      // a connection error. Unknown paid acceptance remains Pending, not 4xx.
+      if(error instanceof ModelConfigError && ["INVALID_REQUEST","MODEL_INCOMPATIBLE","OPERATION_CONFLICT"].includes(error.code))return Response.json({error:{message:error.message,type:"naumi_preset_rejection",code:error.code}},{status:error.status});
+      throw error;
+    }};
+  }
   if (connection.protocol === "new-api-flow") return flowImageFetch(scope, options);
   if (!["openai-images", "openai-chat", "router-images"].includes(connection.protocol)) throw new ModelConfigError("UNSUPPORTED_PROTOCOL", "该模型需使用其协议适配器", 400);
   const transport = modelEndpointFetch(connection.baseUrl, options, { ...connection, costScope: scope });

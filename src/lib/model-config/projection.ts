@@ -33,6 +33,9 @@ export function compileRouterProjection(snapshot: ModelSnapshot, billing: Config
   const providers = new Map(config.providers.map(p => [p.id,p]));
   const selected = new Set<string>(); const aliases: RouterPayload["config"]["aliases"] = [];
   for (const model of config.publicModels.filter(m => m.enabled && m.modality === "image")) {
+    // The first preset uses the application's durable APIMart adapter. Older
+    // Router aliases remain immutable for already submitted operations.
+    if (config.defaultImagePreset?.enabled && config.defaultImagePreset.aliases.some(a => a.id === model.id)) continue;
     if (model.target.type === "upstream") {
       const upstream = upstreams.get(model.target.id)!;
       if (!["apimart-images", "fal-images"].includes(providers.get(upstream.providerId)!.protocol)) continue;
@@ -57,7 +60,7 @@ export function compileRouterProjection(snapshot: ModelSnapshot, billing: Config
       const amount = monetaryCost(modelCostRate(billing, u, quality, size, mode));
       if (amount) prices.push({ resolution: size, quality, mode, ...amount });
     }
-    routes.push({ id: u.id, provider: p.id, upstream_model: u.model, enabled: true, healthy: true, estimated_cost_microusd: 0, expected_latency_ms: c.expectedLatencyMs, quality_rank: c.qualityRank, max_pixels: c.nativeResolutions.includes("4K") ? 4096 * 4096 : c.nativeResolutions.includes("2K") ? 2048 * 2048 : 1536 * 1024, text_accuracy: c.textAccuracy, native_4k: c.nativeResolutions.includes("4K"), supports_edit: c.edit, supports_mask: p.protocol === "openai-images" && c.edit, max_concurrent: p.maxConcurrent,
+    routes.push({ id: u.id, provider: p.id, upstream_model: u.model, enabled: true, healthy: true, estimated_cost_microusd: 0, expected_latency_ms: c.expectedLatencyMs, quality_rank: c.qualityRank, max_pixels: c.nativeResolutions.includes("4K") ? 4096 * 4096 : c.nativeResolutions.includes("2K") ? 2048 * 2048 : 1536 * 1024, text_accuracy: c.textAccuracy, native_4k: c.nativeResolutions.includes("4K"), supports_edit: c.edit, ...(p.protocol === "openai-images" && c.edit ? {supports_mask:true} : {}), max_concurrent: p.maxConcurrent,
       ...(u.parameterMap.resolution && Object.keys(u.parameterMap.resolution).length ? { resolution_map: u.parameterMap.resolution } : {}),
       ...(c.maxReferenceImages ? { max_reference_images: c.maxReferenceImages } : {}), ...(c.preserveIdentity ? { preserves_identity: true } : {}), ...(c.qualities.length ? { supported_qualities: c.qualities } : {}), ...(c.nativeResolutions.length ? { native_resolutions: c.nativeResolutions } : {}), ...(u.parameterMap.version ? { upstream_version: u.parameterMap.version } : {}), ...(u.parameterMap.quality && Object.keys(u.parameterMap.quality).length ? { quality_map: u.parameterMap.quality } : {}), ...(prices.length ? { money_prices: prices, estimate_source: "billing_reference" } : { estimate_source: "unrecorded" }) });
   }

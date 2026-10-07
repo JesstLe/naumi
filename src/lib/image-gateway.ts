@@ -9,6 +9,7 @@ type ImageOperation = {
   quality?: string;
   id: string;
   resolution?: "1K" | "2K" | "4K";
+  ratio?: string;
   task?: "draft" | "product" | "detail" | "layout";
   preserveIdentity?: boolean;
   textAccuracy?: "auto" | "required" | "best_effort";
@@ -17,7 +18,7 @@ const operations = new AsyncLocalStorage<ImageOperation>();
 
 export function isImageGatewayModel(model: string) {
   const scope = currentModelExecution("image");
-  if (scope?.connection.protocol === "router-images" && [scope.frozen.publicModelId, scope.connection.wireModel].includes(model)) return true;
+  if ((scope?.connection.protocol === "router-images" || scope?.imagePreset) && [scope!.frozen.publicModelId, scope!.connection.wireModel].includes(model)) return true;
   return /^naumi-image-(auto|economy|standard|premium)$/.test(model);
 }
 
@@ -27,6 +28,7 @@ export function imageOperationQuality(fallback: string) { return operations.getS
 export function currentImageOperationId(): string | null {
   return operations.getStore()?.id ?? null;
 }
+export function currentImageOperationParameters() { const p=operations.getStore();return p?{resolution:p.resolution,ratio:p.ratio,quality:p.quality}:undefined; }
 
 export class ImageOperationPending extends Error {
   constructor(readonly operationId: string, readonly cause: unknown) {

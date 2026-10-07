@@ -1,4 +1,5 @@
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
+import { currentModelExecution } from "./model-config/context";
 import "server-only";
 import { dbEnabled, creditMeteringEnabled, addLedgerEntry, recordImageCostAudit } from "@/lib/db";
 import { imageBillCredits, qualityCostAudit } from "@/lib/billing/legacy";
@@ -37,6 +38,7 @@ export async function withQualityFallback<T>(quality: ResolvedImageQuality, run:
   if (executionModel) executionModels.set(quality, executionModel);
   try { return await run(quality.executed); }
   catch (error) {
+    if(currentModelExecution("image")?.imagePreset) throw error;
     const fallback = resolveConfiguredImageQuality("").executed;
     if (quality.executed === fallback || !isQualityUnsupportedError(error)) throw error;
     quality.executed = fallback;

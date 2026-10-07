@@ -12,6 +12,12 @@ export const FEATURE_BINDINGS: Partial<Record<FeatureId, ModelBinding>> = {
   "video.generate": "video.generate",
 };
 export function selectedBusinessOption(config: ModelConfig, feature?: string, selected?: string): BusinessOption | undefined {
+  if (feature && config.business?.[feature as FeatureId]?.enabled === false) throw new ModelConfigError("FEATURE_DISABLED", "该功能已停用", 409);
+  const preset = config.defaultImagePreset, binding = FEATURE_BINDINGS[feature as FeatureId];
+  if (preset?.enabled && ["image.generate", "image.edit"].includes(binding || "")) {
+    const chosen = selected || config.business?.[feature as FeatureId]?.defaultModelId || config.bindings[binding!];
+    if (!chosen || preset.defaultModelIds.includes(chosen) || preset.aliases.some(a => a.id === chosen || a.label === chosen)) return undefined;
+  }
   const f = feature ? config.business?.[feature as FeatureId] : undefined;
   if (!f) return undefined;
   if (!f.enabled) throw new ModelConfigError("FEATURE_DISABLED", "该功能已停用", 409);
