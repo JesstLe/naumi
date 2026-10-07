@@ -12,6 +12,7 @@ import {
   Field,
 } from "./fields";
 import { authHeader } from "@/lib/supabase";
+import type { ProviderCatalogResult } from "@/lib/model-config/catalog";
 
 async function encryptCredential(plain: string) {
   if (!crypto.subtle) throw new Error("密钥保存需要 HTTPS 或本地安全连接");
@@ -53,6 +54,7 @@ export function ProviderEditor({
   saveCredential,
   onSavingChange,
   capacity,
+  catalog,
 }: {
   provider: ModelProvider;
   capacity?: { maxConcurrent: number; inFlight: number };
@@ -60,6 +62,7 @@ export function ProviderEditor({
   onChange: (p: ModelProvider) => void;
   saveCredential: (providerId: string, ciphertext: string) => Promise<string>;
   onSavingChange: (saving: boolean) => void;
+  catalog?: ProviderCatalogResult & { cached?: boolean; stale?: boolean; lastSuccessAt?: string; configuredModels?: { id: string; label: string }[] };
 }) {
   const [secret, setSecret] = useState(""),
     [saving, setSaving] = useState(false),
@@ -129,6 +132,19 @@ export function ProviderEditor({
           凭据：{p.credentialRef ? `已配置 · ${p.credentialRef}` : "尚未配置"}
           。轮换后旧任务保留原凭据。历史版本仍在使用时，并发按保留版本的最低限制执行。
         </p>
+        {catalog && (
+          <div className="border border-c-border bg-c-bg p-3 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">供应商模型目录</span>
+              <span className="text-c-text3">{!catalog.fetchedAt ? "尚未读取" : catalog.status === "ok" ? `已发现 ${catalog.models.length} 个` : catalog.status === "empty" ? "接口返回为空" : catalog.error || "暂不可用"}</span>
+            </div>
+            {catalog.models.length > 0 && <div className="mt-2 flex max-h-60 flex-wrap gap-2 overflow-auto">{catalog.models.map((model) => <span key={model.id} className="break-all border border-c-border bg-white px-2 py-1" title={model.id}>{model.label}{model.label !== model.id ? ` · ${model.id}` : ""}</span>)}</div>}
+            {!catalog.models.length && !!catalog.configuredModels?.length && <p className="mt-2 text-c-text3">已配置（不是本次接口发现）：{catalog.configuredModels.map(model=>model.label||model.id).join("、")}</p>}
+            {catalog.models.length>0 && catalog.status!=="ok" && <p className="mt-2 text-amber-700">当前显示上次成功目录，本次请求未成功。</p>}
+            {catalog.truncated && <p className="mt-2 text-c-text3">目录较大，仅展示前 600 个模型。</p>}
+            {catalog.lastSuccessAt && <p className="mt-2 text-c-text3">上次成功读取：{new Date(catalog.lastSuccessAt).toLocaleString("zh-CN")}</p>}
+          </div>
+        )}
         {capacity && (
           <p className="text-xs text-c-text3">
             当前保守并发上限：{capacity.maxConcurrent} · 有效执行占用：

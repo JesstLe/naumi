@@ -18,7 +18,7 @@ async function main() {
     clean.publicModels=clean.publicModels.filter((m:any)=>m.id!=="enterprise-image");delete clean.business?.["image.generate"];delete clean.business?.["tool.garment"];
     assert.equal((await admin.request.put(`${origin}/api/admin/bi/model-config/draft`,{data:{id:state.draft.id,expectedRevision:state.draft.revision,config:clean}})).status(),200);
     const page=await admin.newPage();page.setDefaultTimeout(30000);
-    await page.goto(`${origin}/admin/billing`);await page.getByTestId("business-routing-editor").waitFor();
+    await page.goto(`${origin}/admin/billing`);await page.getByRole("button",{name:"功能计费与路由",exact:true}).click();await page.getByTestId("business-routing-editor").waitFor();
     await page.getByLabel("新增公开模型 ID",{exact:true}).fill("enterprise-image");
     await page.getByRole("button",{name:"添加模型选项",exact:true}).click();
     await page.getByLabel("前端展示名称",{exact:true}).fill("灵动企业2.5");
@@ -33,7 +33,7 @@ async function main() {
     await page.getByLabel("发布 / 恢复原因",{exact:true}).fill("Browser business acceptance - actual Go Router publication");
     await page.getByRole("button",{name:"确认发布此草稿",exact:true}).click();
     await page.getByRole("dialog").waitFor({state:"hidden"});
-    await page.reload();await page.getByTestId("business-routing-editor").waitFor();
+    await page.reload();await page.getByRole("button",{name:"功能计费与路由",exact:true}).click();await page.getByTestId("business-routing-editor").waitFor();
     assert.equal(await page.getByLabel("前端展示名称",{exact:true}).inputValue(),"灵动企业2.5");
     assert.equal(await page.getByLabel("用户售价（人民币元 / 成功单位）",{exact:true}).inputValue(),String(price));
     await page.screenshot({path:`${folder}/business-admin-desktop.png`,fullPage:true});
