@@ -333,7 +333,7 @@ export function GenChatClient() {
       }
       // 首页带来的参考图(图生图)
       (override?.refs ?? []).forEach((f) => fd.append("image", f));
-      const startRes = await billing.confirmAndSubmit("/api/generate-image", {
+      const startRes = await billing.quoteAndSubmit("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
         body: fd,

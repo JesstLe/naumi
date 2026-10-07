@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "verify:direct-generation": "tsx scripts/verify-direct-generation.ts",
     "verify:browser-billing-crypto": "tsx scripts/verify-browser-billing-crypto.ts",
     "dev": "next dev",
     "build": "next build",
