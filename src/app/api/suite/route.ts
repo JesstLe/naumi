@@ -399,6 +399,7 @@ type Job = {
   cost?: number;
   quality?: ResolvedImageQuality;
   imageQuality?: string;
+  entry?: string;
   status: "pending" | "done" | "error";
   shots: ShotResult[];
   done: number;
@@ -530,6 +531,7 @@ async function runSuite(
             id: s.id,
             title: `套图·${s.label}`,
             category: s.role === "detail" ? "detail" : "main",
+            creationProvenance: { version: 1, operation: "suite", entry: prior?.entry || "toolbox", ref: jobId, evidence: "server-route" },
             prompt: "",
             status: "completed",
             image: s.url!,
@@ -712,7 +714,7 @@ async function handleObservedPost(request: Request) {
   const jobId = `suite-${crypto.randomUUID()}`;
   try {
   await JOBS.create(jobId, input.email, {
-    cost, quality: billing.quality, imageQuality: billing.quality.executed,
+    cost, quality: billing.quality, imageQuality: billing.quality.executed, entry: request.headers.get("x-naumi-client-entry") === "agent" ? "agent" : "toolbox",
     status: "pending", shots: [], done: 0, total: SHOT_COUNT, createdAt: Date.now(), owner: input.email,
   }, { ...input, requested, model, cost, textModel: requestedTextModel(request, process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna") }, cost, true,billingQuote);
   } catch(error) {

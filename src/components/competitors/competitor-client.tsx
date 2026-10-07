@@ -205,7 +205,7 @@ export function CompetitorClient() {
   async function toCanvas() {
     if (!item) return;
     try {
-      await api("/api/artworks/add", "POST", { src: { image: currentImage(item), title: item.path.split("/").pop(), prompt: item.prompt, category: "main" } });
+      await api("/api/artworks/add", "POST", { entry: "competitor", src: { image: currentImage(item), title: item.path.split("/").pop(), prompt: item.prompt, category: "main" } });
       setNotice("已存入作品库，可在画布中通过历史作品添加。");
     } catch(e) { setError((e as Error).message); }
   }

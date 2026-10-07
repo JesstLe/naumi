@@ -162,6 +162,7 @@ async function handleObservedPost(req: Request) {
             id,
             title: (titles[0] || "标题生成").slice(0, 80),
             category: "titles",
+            creationProvenance: { version: 1, operation: "title-gen", entry: "toolbox", ref: id, evidence: "server-route" },
             // prompt 存「生成的标题」,这样右列点记录时能把标题带出来给用户看
             prompt: titles[0] || "",
             status: "completed",

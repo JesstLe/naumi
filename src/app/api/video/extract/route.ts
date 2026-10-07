@@ -70,6 +70,7 @@ export async function POST(request: Request) {
         id: artworkId,
         title: kind === "frame" ? `视频帧 · ${Math.round(timestamp)}s` : "视频音轨",
         category: kind === "frame" ? "main" : "audio",
+        creationProvenance: { version: 1, operation: "video-extract", entry: "canvas", ref: id, evidence: "server-route" },
         prompt: "",
         status: "completed",
         image: kind === "frame" ? url : "",

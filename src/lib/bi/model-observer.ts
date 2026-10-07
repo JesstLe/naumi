@@ -6,7 +6,9 @@ import { dbEnabled, getPool } from "@/lib/db";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { currentImageOperationId } from "@/lib/image-gateway";
 import { ensureBiSchema } from "./repository";
-import {markBillingUpstream, recordBillingUsage} from "@/lib/billing/synchronous";
+import {markBillingUpstream, recordBillingUsage, currentSynchronousBilling} from "@/lib/billing/synchronous";
+import { withArtworkCreation } from "@/lib/artwork-provenance-context";
+import { provenanceEntry } from "@/lib/artwork-provenance";
 import { withModelRequest } from "@/lib/model-config/requests";
 import { ModelConfigError } from "@/lib/model-config/types";
 import { currentModelExecution, type ModelExecutionScope } from "@/lib/model-config/context";
@@ -36,7 +38,8 @@ export async function withBiRequest<T extends Response>(
     ? await resolveUserEmail(request).catch(() => null)
     : null;
   if (!email) return run();
-  try { return await context.run({ email, operation: new URL(request.url).pathname.slice(0, 100) }, () => withModelRequest(request, run)); }
+  const path = new URL(request.url).pathname.slice(0, 100);
+  try { return await context.run({ email, operation: path }, () => withArtworkCreation({ path, operationId: currentSynchronousBilling()?.id, entry: provenanceEntry(request.headers.get("x-naumi-client-entry"), path.startsWith("/api/canvas/") ? "canvas" : "toolbox") }, () => withModelRequest(request, run))); }
   catch (error) { if (error instanceof ModelConfigError) return new Response(JSON.stringify({ error: error.message, code: error.code }), { status: error.status, headers: { "content-type": "application/json", "cache-control": "no-store" } }) as T; throw error; }
 }
 

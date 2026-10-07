@@ -690,6 +690,7 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
         id: artworkId,
         title: `视频 · ${task.prompt.slice(0, 24)}`,
         category: "video",
+        creationProvenance: { version: 1, operation: "video", entry: "video", ref: task.id, evidence: "server-route" },
         prompt: task.prompt,
         status: "completed",
         image: url,

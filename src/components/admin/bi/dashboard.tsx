@@ -126,10 +126,12 @@ const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
     { key: "created_at", label: "创建时间", format: "time" },
     { key: "email", label: "账户" },
     { key: "title", label: "作品" },
-    { key: "category", label: "操作类别", format: "status" },
-    { key: "resolution", label: "尺寸" },
-    { key: "origin", label: "来源" },
-    { key: "prompt", label: "提示词 / 操作内容" },
+    { key: "operation_label", label: "创建操作" },
+    { key: "dimensions", label: "图片尺寸" },
+    { key: "source_label", label: "创建来源" },
+    { key: "provenance_status", label: "溯源状态" },
+    { key: "provenance_ref", label: "来源编号" },
+    { key: "prompt_display", label: "提示词 / 操作内容" },
   ],
   models: [
     { key: "created_at", label: "审计时间", format: "time" },
@@ -481,6 +483,17 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
     setPage(1);
     setSelected(null);
   }
+  async function openSourceArtwork(id: string, email: string) {
+    try {
+      const params = new URLSearchParams({ section: "artworks", id, email, status: "all" });
+      const response = await fetch(`/api/admin/bi?${params}`, { cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok || !body.rows?.[0]) throw new Error(body.error || "源作品已清理或不存在");
+      setSelected({ section: "artworks", row: body.rows[0] });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "读取源作品失败");
+    }
+  }
   function exportPage() {
     if (!data || section === "overview") return;
     const cs = columns[section];
@@ -726,6 +739,7 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                             aria-label={`${c.label}：${display(row[c.key], c.format)}`}
                             className={
                               c.key === "prompt" ||
+                              c.key === "prompt_display" ||
                               c.key === "content" ||
                               c.key === "reason" ||
                               c.key === "changes"
@@ -906,6 +920,11 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                 alt={String(selected.row.title || "作品预览")}
               />
             )}
+            {selected.section === "artworks" && selected.row.source_artwork_id && (
+              <button className={styles.textButton} onClick={() => void openSourceArtwork(String(selected.row.source_artwork_id), String(selected.row.email))}>
+                查看复制源作品
+              </button>
+            )}
             {selected.section === "users" && (
               <UserManager
                 row={selected.row.email ? selected.row : undefined}
@@ -950,7 +969,16 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                     job_id: "任务 ID",
                     parent_id: "上游作品 ID",
                     batch_id: "批次 ID",
-                    origin: "来源",
+                    origin: "当前画布标记（非创建来源）",
+                    source_label: "创建来源",
+                    provenance_status: "溯源状态",
+                    provenance_ref: "来源事件 / 任务编号",
+                    provenance_evidence: "溯源证据",
+                    source_artwork_id: "复制源作品编号",
+                    template_id: "模板编号",
+                    dimensions: "实际图片尺寸",
+                    operation_label: "创建操作",
+                    prompt_display: "提示词 / 操作内容",
                     image_width: "图片宽度",
                     image_height: "图片高度",
                     deleted_at: "回收时间",
@@ -1021,7 +1049,7 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
               />
             )}
             {(selected.section === "operations" ||
-              selected.section === "models") && (
+              selected.section === "models" || (selected.section === "artworks" && selected.row.job_id)) && (
               <ExecutionTrace
                 id={String(selected.row.job_id || selected.row.id)}
                 email={String(selected.row.email)}

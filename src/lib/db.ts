@@ -1,4 +1,6 @@
 import {randomUUID} from "node:crypto";
+import { creationProvenance, type ArtworkProvenance } from "@/lib/artwork-provenance";
+import { currentArtworkCreation } from "@/lib/artwork-provenance-context";
 import type {ProductReceipt} from "@/lib/payments";
 import {signupGrantTx,administrativeGrantInput} from "@/lib/billing/entitlements";
 import {withBillingTransaction} from "@/lib/billing/service";
@@ -120,6 +122,7 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_width double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_height double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS origin text;
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS creation_provenance jsonb;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS marked boolean NOT NULL DEFAULT false;
         -- 稳定项目分组:同一画布项目的所有节点共享 group_id,删中间节点也不改它,
         -- 避免"删一个连接节点 → 下游节点跑去别的项目"。
@@ -316,6 +319,7 @@ async function ensureSchema(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS app_video_tasks_email_idx
           ON app_video_tasks (email, created_at DESC);
+        CREATE INDEX IF NOT EXISTS app_video_tasks_artwork_idx ON app_video_tasks(email, artwork_id);
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS poll_lock_until timestamptz;
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS credits_refunded boolean NOT NULL DEFAULT false;
         -- 视频子系统重写(Phase 1):规范化参数、来源、能力快照与后台恢复调度。
@@ -382,6 +386,7 @@ async function ensureSchema(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS app_canvas_image_tasks_email_idx
           ON app_canvas_image_tasks (email, created_at DESC);
+        CREATE INDEX IF NOT EXISTS app_canvas_image_tasks_artwork_idx ON app_canvas_image_tasks(email, result_artwork_id);
         CREATE INDEX IF NOT EXISTS app_canvas_image_tasks_due_idx
           ON app_canvas_image_tasks (created_at)
           WHERE status IN ('queued', 'processing');
@@ -2110,6 +2115,7 @@ export async function setSetting(k: string, v: string): Promise<void> {
 }
 
 export type ArtworkRecord = {
+  creationProvenance?: ArtworkProvenance | null;
   id: string;
   title: string;
   category: string;
@@ -2509,8 +2515,8 @@ export async function addArtworks(
         `INSERT INTO app_artworks
            (id, email, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id, parent_ids, group_id, canvas_group_id, origin,
-            image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, video_url)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+            image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, video_url, creation_provenance)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27::jsonb)
          ON CONFLICT (id) DO UPDATE SET deleted_at = NULL WHERE app_artworks.email = EXCLUDED.email`,
         [
           a.id,
@@ -2539,6 +2545,7 @@ export async function addArtworks(
           a.canvasWidth ?? null,
           a.canvasHeight ?? null,
           a.videoUrl ?? null,
+          JSON.stringify(creationProvenance({ id: a.id, batchId: batchId ?? a.batchId, templateId: a.templateId, explicit: a.creationProvenance, ...currentArtworkCreation() })),
         ]
       );
     }
@@ -2558,7 +2565,7 @@ export async function listArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, created_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, creation_provenance, created_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NULL
       ORDER BY created_at DESC LIMIT 1000`,
@@ -2591,6 +2598,7 @@ export async function listArtworks(
     groupId: r.group_id ?? null,
     canvasGroupId: r.canvas_group_id ?? null,
     origin: r.origin ?? null,
+    creationProvenance: r.creation_provenance ?? null,
     marked: !!r.marked,
     videoUrl: r.video_url ?? null,
     createdAt: new Date(r.created_at).toISOString(),
@@ -2609,7 +2617,7 @@ export async function listArtworksByIds(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, created_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, creation_provenance, created_at
        FROM app_artworks
       WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), clean]
@@ -2641,6 +2649,7 @@ export async function listArtworksByIds(
     groupId: r.group_id ?? null,
     canvasGroupId: r.canvas_group_id ?? null,
     origin: r.origin ?? null,
+    creationProvenance: r.creation_provenance ?? null,
     marked: !!r.marked,
     videoUrl: r.video_url ?? null,
     createdAt: new Date(r.created_at).toISOString(),
@@ -2677,8 +2686,8 @@ export async function ensureTemplateRoot(
   await getPool().query(
     `INSERT INTO app_artworks
        (id, email, title, category, prompt, status, image_url, gradient,
-        style, ratio, resolution, source_url, batch_id, parent_id, template_id, group_id)
-     VALUES ($1,$2,$3,$4,$5,'completed',$6,$7,NULL,$8,NULL,NULL,NULL,NULL,$9,$1)`,
+        style, ratio, resolution, source_url, batch_id, parent_id, template_id, group_id, creation_provenance)
+     VALUES ($1,$2,$3,$4,$5,'completed',$6,$7,NULL,$8,NULL,NULL,NULL,NULL,$9,$1,$10::jsonb)`,
     [
       id,
       email,
@@ -2689,6 +2698,7 @@ export async function ensureTemplateRoot(
       tpl.gradient || "from-slate-100 to-zinc-100",
       tpl.ratio || "1:1",
       tpl.templateId,
+      JSON.stringify({ version: 1, operation: "template", entry: "template", ref: tpl.templateId, evidence: "server-route" }),
     ]
   );
   return id;
@@ -3200,7 +3210,7 @@ export async function listDeletedArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, created_at, deleted_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, creation_provenance, created_at, deleted_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NOT NULL
       ORDER BY deleted_at DESC LIMIT 200`,
@@ -3233,6 +3243,7 @@ export async function listDeletedArtworks(
     groupId: r.group_id ?? null,
     canvasGroupId: r.canvas_group_id ?? null,
     origin: r.origin ?? null,
+    creationProvenance: r.creation_provenance ?? null,
     marked: !!r.marked,
     videoUrl: r.video_url ?? null,
     createdAt: new Date(r.created_at).toISOString(),

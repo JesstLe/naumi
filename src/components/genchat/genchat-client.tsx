@@ -310,6 +310,7 @@ export function GenChatClient() {
       const fd = new FormData();
       fd.append("prompt", prompt);
       fd.append("category", "main");
+      fd.append("entry", "genchat");
       fd.append("ratio", override?.ratio ?? GENERATION_RATIOS[ratioIdx]?.id ?? "auto");
       fd.append("resolution", override?.resolution ?? "1K");
       fd.append("style", override?.style ?? GENERATION_STYLES[styleIdx] ?? "");

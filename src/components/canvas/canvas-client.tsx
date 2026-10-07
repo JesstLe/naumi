@@ -6338,6 +6338,7 @@ export function CanvasClient() {
           x: Math.round(sx + 40),
           y: Math.round(sy + artworkNodeSize(a).height + 30),
           src: {
+            id: a.id,
             image: a.image,
             videoUrl: a.videoUrl ?? null,
             title: `${a.title} 副本`,
@@ -6634,7 +6635,9 @@ export function CanvasClient() {
           x: Math.round(pos.x),
           y: Math.round(pos.y),
           src: {
+            id: a.id,
             image: a.image,
+            videoUrl: a.videoUrl ?? null,
             title: a.title,
             category: a.category,
             prompt: a.prompt,

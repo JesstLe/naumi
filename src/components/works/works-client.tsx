@@ -261,8 +261,12 @@ export function WorksClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: user.email,
+          entry: "works",
           src: {
+            // Creation entry is independent from the canvas destination.
+            id: w.id,
             image: w.image,
+            videoUrl: w.videoUrl ?? null,
             title: w.title,
             prompt: w.prompt,
             category: w.category,

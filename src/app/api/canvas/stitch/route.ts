@@ -132,6 +132,7 @@ export async function POST(request: Request) {
         id,
         title,
         category: "detail",
+        creationProvenance: { version: 1, operation: "canvas-stitch", entry: "canvas", ref: id, evidence: "server-route" },
         prompt: `按画布顺序纵向拼接 ${ids.length} 张详情图`,
         status: "completed",
         image,
