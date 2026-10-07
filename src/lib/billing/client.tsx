@@ -59,7 +59,7 @@ type Client = {
     refresh: () => Promise<void>;
     quote: (input: QuoteInput) => Promise<PublicQuote>;
     submit: (url: string, init: RequestInit, displayed: PublicQuote | null) => Promise<Response>;
-    confirmAndSubmit: (url: string, init: RequestInit, input: QuoteInput) => Promise<Response>;
+    quoteAndSubmit: (url: string, init: RequestInit, input: QuoteInput) => Promise<Response>;
 };
 const Context = createContext<Client | null>(null);
 export function BillingProvider({ children }: {
@@ -137,7 +137,7 @@ export function BillingProvider({ children }: {
         if (response.status === 409 && data.code === "MODEL_CHANGED") window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
         return response;
     }, [refresh,user?.email]);
-    const confirmAndSubmit = useCallback(async (url: string, init: RequestInit, input: QuoteInput) => {
+    const quoteAndSubmit = useCallback(async (url: string, init: RequestInit, input: QuoteInput) => {
         if (!catalog)
             throw new Error("报价加载中，请稍后重试");
         const q = await getQuote(input);
@@ -145,11 +145,9 @@ export function BillingProvider({ children }: {
             await refresh();
             throw new Error("价格已更新，请确认最新报价后重新提交");
         }
-        if (q.reserveCredits > 0 && !window.confirm(`本次操作预计消耗 ${q.credits} 积分，预占 ${q.reserveCredits} 积分。确认继续？`))
-            throw new Error("已取消，输入已保留");
         return submit(url, init, q);
     }, [catalog, getQuote, refresh, submit]);
-    return <Context.Provider value={{ catalog, loading, error, refresh, quote: getQuote, submit, confirmAndSubmit }}>{children}</Context.Provider>;
+    return <Context.Provider value={{ catalog, loading, error, refresh, quote: getQuote, submit, quoteAndSubmit }}>{children}</Context.Provider>;
 }
 export function useBilling() { const value = useContext(Context); if (!value)
     throw new Error("BillingProvider is missing"); return value; }

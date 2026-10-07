@@ -1613,7 +1613,7 @@ export function CanvasClient() {
     const source=active?.members.find(art=>art.id===body.artworkId);
     const quantity=path==="/api/aplus"?Math.max(1,form?.getAll("module").length||body.modules?.length||1):path==="/api/suite"?(body.structure==="custom"?JSON.parse(String(body.shots||"[]")).length:13):Number(body.count||1);
     const headers=new Headers(init.headers);for(const [key,value] of Object.entries(await authHeader()))headers.set(key,value);
-    return billing.confirmAndSubmit(path,{...init,headers},{feature:features[path],quantity,quality:String(body.quality||genQuality),resolution:String(body.resolution||source?.resolution||"1K"),modelId:body.modelId||body.model||undefined,providerId:body.providerId,ratio:body.ratio});
+    return billing.quoteAndSubmit(path,{...init,headers},{feature:features[path],quantity,quality:String(body.quality||genQuality),resolution:String(body.resolution||source?.resolution||"1K"),modelId:body.modelId||body.model||undefined,providerId:body.providerId,ratio:body.ratio});
   }
   const { quality: genQuality, imageCost, modelConfig } = useImageQuality();
   const { model: textModel, setModel: setTextModel } = useTextModel();
@@ -10472,7 +10472,7 @@ export function CanvasClient() {
                         onClick={() => expandRatio && void onExpand(expandRatio)}
                         className="mt-3 w-full rounded-[10px] bg-teal-500 px-3 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        开始扩图 · 提交前确认报价
+                        开始扩图
                       </button>
                       <p className="mt-2 text-[11px] leading-relaxed opacity-60">
                         保持原图内容不变，向四周自然延展画面到目标比例。
@@ -11056,7 +11056,7 @@ export function CanvasClient() {
                           className="flex h-8 items-center gap-1.5 bg-[#25313b] px-3 text-[12px] font-semibold text-white hover:bg-[#182129] disabled:cursor-not-allowed disabled:opacity-35"
                         >
                           {ocrApplyingId === segment.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                          应用 · 提交前确认报价
+                          应用
                         </button>
                       </div>
                     </section>
@@ -11333,9 +11333,6 @@ export function CanvasClient() {
                     </span>
                   )}
                   <span className="flex-1" />
-                  <span className="text-[13px] font-semibold text-[#f0c64a]">
-                    ⚡ {"提交前确认报价"}
-                  </span>
                   <button
                     type="button"
                     onClick={() => void retrySelected()}
@@ -11463,9 +11460,6 @@ export function CanvasClient() {
                   light={lightCanvas}
                 />
                 <span className="flex-1" />
-                <span className="text-[13px] font-semibold text-[#f0c64a]">
-                  ⚡ {"提交前确认报价"}
-                </span>
                 <button
                   type="button"
                   onClick={() => void generatePend()}

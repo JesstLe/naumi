@@ -158,10 +158,30 @@ test("canvas video retries preserve the domain and billing identities",async({pa
  const model={providerId:"openai-videos",modelId:"fixture-video",label:"Fixture video",modes:["text","image"],durations:[4],aspectRatios:["16:9"],resolutions:["720p"],maxReferenceImages:1,isDefault:true};
  await page.route("**/api/video/catalog",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({configured:true,models:[model],providers:[{id:model.providerId,label:"Fixture",defaultModel:model.modelId,models:[model]}],defaultProvider:model.providerId})}));
  await page.route("**/api/billing/quote",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({version,credits:20,reserveCredits:20,feature:"video.generate",quantity:1})}));
- const attempts:any[]=[];await page.route("**/api/video/generate",route=>{attempts.push({id:route.request().headers()["x-naumi-billing-operation-id"],body:route.request().postDataJSON()});return route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({error:"fixture lost canvas response",code:"OPERATION_PENDING"})});});page.on("dialog",dialog=>dialog.accept());
+ let confirmations=0;page.on("dialog",dialog=>{confirmations++;void dialog.dismiss();});
+ const attempts:any[]=[];await page.route("**/api/video/generate",route=>{attempts.push({id:route.request().headers()["x-naumi-billing-operation-id"],body:route.request().postDataJSON()});return route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({error:"fixture lost canvas response",code:"OPERATION_PENDING"})});});
  await page.addInitScript((id)=>localStorage.setItem("nv:canvas:last",`tree:${id}`),fixture.artworkId);const account=await (await page.request.get(`/api/account?email=${encodeURIComponent(fixture.email)}`)).json();expect(account.artworks.some((a:any)=>a.id===fixture.artworkId)).toBeTruthy();await page.goto(`/canvas?node=${fixture.artworkId}`);await page.locator(`.react-flow__node[data-id="${fixture.artworkId}"]`).click();
  for(let i=0;i<2;i++){await page.getByTitle("生成视频",{exact:true}).click();await page.getByPlaceholder("描述视频内容与运镜,如:商品缓慢旋转展示,柔和灯光").fill("Canvas retained prompt");await page.getByRole("button",{name:/以选中图片生成视频/}).click();await expect.poll(()=>attempts.length).toBe(i+1);await expect(page.getByTitle("生成视频",{exact:true})).toBeEnabled();}
- expect(attempts[1]).toEqual(attempts[0]);
+ expect(attempts[1]).toEqual(attempts[0]);expect(confirmations).toBe(0);
+});
+
+test("canvas images and toolbox submit on one click without fee dialogs",async({page})=>{
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_user",value:fixture.userCookie,domain:"127.0.0.1",path:"/"},{name:"naumi_locale",value:"zh",domain:"127.0.0.1",path:"/"}]);
+ let confirmations=0;page.on("dialog",dialog=>{confirmations++;void dialog.dismiss();});
+ const version=(await(await page.request.get("/api/admin/billing",{headers:{cookie:`nv_admin=${fixture.adminCookie}`}})).json()).snapshot.version;
+ await page.route("**/api/billing/quote",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({version,credits:6,reserveCredits:6,feature:"image.generate",quantity:1})}));
+ await page.route("**/media/billing-ui-fixture.png",route=>route.fulfill({contentType:"image/png",body:Buffer.from(fixture.imageBase64,"base64")}));
+ await page.route("**/api/download?**",route=>route.fulfill({contentType:"image/png",body:Buffer.from(fixture.imageBase64,"base64")}));
+ const attempts:{path:string,headers:Record<string,string>}[]=[];
+ for(const path of ["generate-image","cutout"])await page.route(`**/api/${path}`,route=>{attempts.push({path,headers:route.request().headers()});return route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({error:`fixture direct ${path}`,code:"OPERATION_PENDING"})});});
+ await page.addInitScript(id=>localStorage.setItem("nv:canvas:last",`tree:${id}`),fixture.artworkId);
+ await page.goto(`/canvas?node=${fixture.artworkId}`);await page.locator(`.react-flow__node[data-id="${fixture.artworkId}"]`).click();
+ await expect(page.getByText("提交前确认报价",{exact:true})).toHaveCount(0);
+ await page.getByTitle("生成新版本",{exact:true}).click();await expect.poll(()=>attempts.filter(a=>a.path==="generate-image").length).toBe(1);
+ await page.goto("/cutout");await page.locator('input[type="file"]').first().setInputFiles({name:"reference.png",mimeType:"image/png",buffer:Buffer.from(fixture.imageBase64,"base64")});
+ await page.getByRole("button",{name:/开始抠图.*消耗 6 积分/}).click();await expect.poll(()=>attempts.filter(a=>a.path==="cutout").length).toBe(1);
+ expect(confirmations).toBe(0);expect(attempts).toHaveLength(2);
+ for(const attempt of attempts){expect(attempt.headers["x-naumi-billing-version"]).toBe(String(version));expect(attempt.headers["x-naumi-billing-credits"]).toBe("6");expect(attempt.headers["x-naumi-billing-operation-id"]).toBeTruthy();}
 });
 
 test("business groups expose canvas prices, free controls and shared entries", async({page})=>{
