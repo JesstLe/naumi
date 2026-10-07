@@ -30,6 +30,7 @@ import { WorkLightbox, type LightboxWork } from "@/components/works/work-lightbo
 type Artwork = {
   id: string;
   image: string;
+  videoUrl?: string | null;
   title?: string;
   status?: string;
   gradient?: string;
