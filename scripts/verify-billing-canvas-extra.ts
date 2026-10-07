@@ -33,13 +33,21 @@ async function main() {
         if(mode==="rejected"){res.writeHead(400,{"content-type":"application/json"});res.end(JSON.stringify({error:{message:"fixture rejected"}}));return;}
         if(req.url==="/ocr"){res.setHeader("content-type","application/json");res.end(JSON.stringify({rec_texts:["hello"],rec_scores:[0.99],rec_polys:[[[1,1],[50,1],[50,20],[1,20]]]}));return;}
         const body=JSON.parse(raw);assert.equal(body.model,"fixture-text");
+        assert.deepEqual(body.modalities,["text"]);
+        assert.ok(body.messages[0].content.includes("不要生成、编辑或返回图片"));
+        if(mode==="image") {
+            const image={images:[{type:"image_url",image_url:{url:"data:image/png;base64,fixture"}}],content:null};
+            if(body.stream){res.writeHead(200,{"content-type":"text/event-stream"});res.end(`data: ${JSON.stringify({choices:[{delta:image}]})}\n\ndata: ${JSON.stringify({choices:[{delta:{},finish_reason:"stop"}]})}\n\ndata: [DONE]\n\n`);}
+            else{res.setHeader("content-type","application/json");res.end(JSON.stringify({choices:[{message:image,finish_reason:"stop"}]}));}
+            return;
+        }
         if(body.stream){
             res.writeHead(200,{"content-type":"text/event-stream"});
             res.write(`data: ${JSON.stringify({choices:[{delta:{content:"first "}}]})}\n\n`);
             if(mode==="paused")await new Promise<void>(resolve=>{release=resolve;});
             if(mode==="broken"){await new Promise(r=>setTimeout(r,25));res.destroy();return;}
             res.end(`data: ${JSON.stringify({choices:[{delta:{content:"reply"}}]})}\n\ndata: [DONE]\n\n`);
-        }else{res.setHeader("content-type","application/json");res.end(JSON.stringify({choices:[{message:{content:"fixture reply"}}]}));}
+        }else{res.setHeader("content-type","application/json");res.end(JSON.stringify({choices:[{message:{content:mode==="parts"?[{type:"reasoning",text:"PRIVATE"},{type:"text",text:"fixture reply"}]:"fixture reply"}}]}));}
     });
     await new Promise<void>(resolve=>mock.listen(0,"127.0.0.1",resolve));
     const base=`http://127.0.0.1:${(mock.address() as {port:number}).port}`;
@@ -54,7 +62,7 @@ async function main() {
         const artworkId=randomUUID(),imageUrl=await uploadImage(image,"image/png",`fixtures/${artworkId}.png`);
         await db.addArtworks(email,[{id:artworkId,title:"Fixture",category:"main",prompt:"Fixture",status:"completed",image:imageUrl,gradient:"",origin:"canvas",width:64,height:64}]);
         const configure = async(credits:number, enabled=true)=>{const current=await runtime.current(),config=structuredClone(current.config);config.switches.metering="on";for(const id of Object.keys(routes) as (keyof typeof routes)[]){config.features[id].enabled=enabled;config.features[id].pricing={mode:"fixed",credits};}version=(await runtime.publish({id:randomUUID(),expectedVersion:current.version,config,actor:"fixture",reason:"Canvas extra acceptance"})).version;displayed=enabled?credits:0;}
-        const request = (feature:keyof typeof routes,id:string, confirmed=true)=>{return new Request(`http://fixture.test/api/canvas/${feature.split(".")[1]}`,{method:"POST",headers:{cookie:`nv_user=${signUserSession(email,Date.now())}`,"content-type":"application/json","x-naumi-billing-operation-id":id,...(confirmed?{"x-naumi-billing-version":String(version),"x-naumi-billing-credits":String(displayed)}:{})},body:JSON.stringify(feature==="canvas.text-generate"?{prompt:"Fixture"}:feature==="canvas.assistant"?{anchorId:artworkId,messages:[{role:"user",content:"Fixture"}]}:{artworkId})});}
+        const request = (feature:keyof typeof routes,id:string, confirmed=true,textMode?:string)=>{return new Request(`http://fixture.test/api/canvas/${feature.split(".")[1]}`,{method:"POST",headers:{cookie:`nv_user=${signUserSession(email,Date.now())}`,"content-type":"application/json","x-naumi-billing-operation-id":id,...(confirmed?{"x-naumi-billing-version":String(version),"x-naumi-billing-credits":String(displayed)}:{})},body:JSON.stringify(feature==="canvas.text-generate"?{prompt:"Fixture",...(textMode?{mode:textMode,sourceIds:[artworkId],...(textMode==="assist"?{productIds:[artworkId]}:{})}:{})}:feature==="canvas.assistant"?{anchorId:artworkId,messages:[{role:"user",content:"Fixture"}]}:{artworkId})});}
         await configure(3);
         for(const feature of Object.keys(routes) as (keyof typeof routes)[]){
             const id=randomUUID(), before=calls;
@@ -64,6 +72,18 @@ async function main() {
             const after=calls,replayed=await routes[feature].POST(request(feature,id));assert.equal(replayed.status,200);const replayText=await replayed.text();if(feature==="canvas.assistant"){assert.ok(replayText.includes('"text":"first reply"'));assert.ok(replayText.includes('"replayed":true'));}else assert.deepEqual(JSON.parse(replayText),JSON.parse(text));assert.equal(calls,after);
             assert.equal((await db.getPool().query("SELECT charged_credits FROM app_billing_operations WHERE id=$1",[`tool-${id}`])).rows[0].charged_credits,3);
         }
+        for(const textMode of ["general","reverse","assist"]){
+            mode="parts";const id=randomUUID(),before=calls,response=await routes["canvas.text-generate"].POST(request("canvas.text-generate",id,true,textMode));
+            assert.equal(response.status,200);assert.equal((await response.json()).text,"fixture reply");assert.equal(calls,before+1);
+        }
+        mode="image";
+        for(const feature of ["canvas.text-generate","canvas.assistant"] as const){
+            const id=randomUUID(),before=calls,response=await routes[feature].POST(request(feature,id,true,"general"));
+            const payload=await response.text();assert.ok(payload.includes("TEXT_OUTPUT_IMAGE"));assert.ok(!payload.includes("data:image"));
+            assert.equal(calls,before+1);assert.deepEqual((await db.getPool().query("SELECT state,charged_credits,reserved_credits FROM app_billing_operations WHERE id=$1",[`tool-${id}`])).rows[0],{state:"hold",charged_credits:0,reserved_credits:3});
+            assert.equal((await routes[feature].POST(request(feature,id,true,"general"))).status,409);assert.equal(calls,before+1,"Unknown output must never be submitted again with the same ID");
+        }
+        mode="success";
         await configure(0,false);
         const free=await routes["canvas.text-generate"].POST(request("canvas.text-generate",randomUUID(),false));assert.equal(free.status,200);await free.text();
         await configure(3);mode="paused";

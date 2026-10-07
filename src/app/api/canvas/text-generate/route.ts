@@ -18,6 +18,7 @@ import {
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
 import { withBillingRequest, configuredToolCost } from "@/lib/billing/synchronous";
+import { CANVAS_TEXT_OUTPUT_INSTRUCTION, canvasTextInput, canvasAnswerText, canvasTextFailure, reportCanvasTextFailure } from "@/lib/canvas-text-output";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -197,6 +198,7 @@ async function handleObservedPost(request: Request) {
 
     const client = observeOpenAI(modelAwareOpenAI({
       apiKey,
+      maxRetries: 0,
       baseURL:
         process.env.AGENT_BASE_URL || (await getOpenAIBaseUrl()) || undefined,
     }));
@@ -224,7 +226,7 @@ async function handleObservedPost(request: Request) {
       | { type: "text"; text: string }
       | { type: "image_url"; image_url: { url: string; detail: "low" } }
     > = [
-      { type: "text", text: userText },
+      { type: "text", text: canvasTextInput(userText) },
       ...allImages.map((url) => ({
         type: "image_url" as const,
         image_url: { url, detail: "low" as const },
@@ -236,16 +238,20 @@ async function handleObservedPost(request: Request) {
       messages: [
         {
           role: "system",
-          content: systemPrompt,
+          content: `${systemPrompt}\n\n${CANVAS_TEXT_OUTPUT_INSTRUCTION}`,
         },
-        { role: "user", content: allImages.length ? userContent : userText },
+        { role: "user", content: allImages.length ? userContent : canvasTextInput(userText) },
       ],
       temperature: 0.75,
       max_tokens: 1800,
+      modalities: ["text"],
     });
-    const text = (response.choices[0]?.message?.content || "").trim();
-    if (!text) {
-      return NextResponse.json({ error: "文字生成没有返回内容，请重试" }, { status: 502 });
+    const choice = response.choices?.[0];
+    const text = canvasAnswerText(choice?.message?.content).trim();
+    const failure = canvasTextFailure(choice);
+    if (!text || failure.code === "TEXT_OUTPUT_IMAGE" || failure.code === "TEXT_OUTPUT_REFUSED") {
+      reportCanvasTextFailure("text-generate", failure.code);
+      return NextResponse.json(failure, { status: 502 });
     }
     return NextResponse.json({ text, model, referenceCount: references.length });
   } catch (error) {
