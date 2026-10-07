@@ -9,10 +9,10 @@ import { useI18n } from "@/lib/i18n/locale-context";
 
 export const QUALITY_TOOL_CATEGORIES = new Set(["retouch", "recolor", "replicate", "garment3d", "packaging3d", "garment", "avatar", "style", "tryon", "dewatermark", "dewrinkle", "inpaint", "print"]);
 
-export function ImageQualityControl({ disabled = false, compact = false, resolution = "1K", value, modelId, binding }: { disabled?: boolean; compact?: boolean; resolution?: string; value?: string; modelId?: string; binding?: string }) {
-  const { quality, setQuality, capable, experimental, allowedQualities, modelConfig } = useImageQuality(undefined, modelId, binding);
+export function ImageQualityControl({ feature: requestedFeature, disabled = false, compact = false, resolution = "1K", value, modelId, binding }: { feature?: import("@/lib/billing/types").FeatureId; disabled?: boolean; compact?: boolean; resolution?: string; value?: string; modelId?: string; binding?: string }) {
+  const { quality, setQuality, capable, experimental, allowedQualities, modelConfig } = useImageQuality(requestedFeature, modelId, binding);
   const { t } = useI18n();
-  const {catalog}=useBilling(),pathname=usePathname(),feature=CATEGORY_FEATURES[pathname.split('/')[1]]??"image.generate";
+  const {catalog}=useBilling(),pathname=usePathname(),feature=requestedFeature??CATEGORY_FEATURES[pathname.split('/')[1]]??"image.generate";
   const labels = { low: "gen.qLow", medium: "gen.qMedium", high: "gen.qHigh", xhigh: "gen.qXhigh", max: "gen.qMax" } as const;
   const selectedModel = modelConfig?.imageModels?.find(m => m.id === (modelId || modelConfig.imageModelBindings?.[binding || "image.generate"] || modelConfig.defaultImageModel));
   const nativeResolutions = !modelId && binding ? modelConfig?.imageBindingCapabilities?.[binding]?.nativeResolutions ?? selectedModel?.nativeResolutions : selectedModel?.nativeResolutions;

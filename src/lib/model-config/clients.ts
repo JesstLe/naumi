@@ -1,3 +1,4 @@
+import { stageRoutingFetch } from "./stage-routing";
 import "server-only";
 import OpenAI from "openai";
 import { currentExecutionBundle, currentModelExecution, type ModelExecutionScope } from "./context";
@@ -9,6 +10,7 @@ const managedClients = new WeakSet<OpenAI>();
 export const isManagedModelClient = (client: OpenAI) => managedClients.has(client);
 
 export function executionFetch(scope: ModelExecutionScope, options: ValidationOptions = {}): typeof fetch {
+  if (scope.businessOption && !scope.audited) return stageRoutingFetch(scope, options);
   const { connection, frozen, parameterMap } = scope;
   if (connection.protocol === "new-api-flow") return flowImageFetch(scope, options);
   if (!["openai-images", "openai-chat", "router-images"].includes(connection.protocol)) throw new ModelConfigError("UNSUPPORTED_PROTOCOL", "该模型需使用其协议适配器", 400);
@@ -18,6 +20,7 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
     if (request.method !== "POST" || !/\/(?:images\/(?:generations|edits)|chat\/completions)$/.test(new URL(request.url).pathname)) return transport(request);
     const map = (body: Record<string, any>) => {
       body.model = connection.wireModel;
+      if ((scope.businessOption?.pricing?.mode === "usage" || scope.procurement?.basis === "tokens") && body.stream && connection.protocol === "openai-chat") body.stream_options = { ...body.stream_options, include_usage: true };
       if (connection.protocol !== "router-images") {
         if (typeof body.quality === "string" && parameterMap.quality?.[body.quality as keyof typeof parameterMap.quality]) body.quality = parameterMap.quality[body.quality as keyof typeof parameterMap.quality];
         const resolution = frozen.facts?.resolution as keyof NonNullable<typeof parameterMap.resolution>;
@@ -41,7 +44,7 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
     try { return await mappedFetch(input, init); }
     catch (error) {
       // SDKs otherwise turn this local pre-submission rejection into an unknown connection failure.
-      if (error instanceof ModelConfigError && error.code === "PROVIDER_BUSY") return Response.json({ error: { message: error.message, type: "naumi_capacity", code: error.code } }, { status: 429 });
+      if (error instanceof ModelConfigError && error.code === "PROVIDER_BUSY") return Response.json({ error: { message: error.message, type: "naumi_capacity", billing_status: "not_charged", code: error.code } }, { status: 429 });
       throw error;
     }
   };
@@ -75,7 +78,7 @@ function flowImageFetch(scope: ModelExecutionScope, options: ValidationOptions):
   return async (input, init) => {
     try { return await submit(input, init); }
     catch (error) {
-      if (error instanceof ModelConfigError && ["MODEL_INCOMPATIBLE", "INVALID_REQUEST", "PROVIDER_BUSY"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_pre_submission", code: error.code } }, { status: error.status });
+      if (error instanceof ModelConfigError && ["MODEL_INCOMPATIBLE", "INVALID_REQUEST", "PROVIDER_BUSY"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_pre_submission", billing_status: "not_charged", code: error.code } }, { status: error.status });
       throw error;
     }
   };

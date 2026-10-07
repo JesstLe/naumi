@@ -1,3 +1,5 @@
+import { featureForPath } from "./feature-path";
+import { selectedBusinessOption, FEATURE_BINDINGS } from "./business";
 import "server-only";
 import { dbEnabled, getPool } from "../db";
 import { getModelAdministration } from "./server";
@@ -29,7 +31,7 @@ async function requestFacts(request: Request) {
       }
     } else if (request.headers.get("content-type")?.includes("json")) {
       body = await copy.json();
-      references = Array.isArray(body.images) ? body.images.length : body.image || body.imageUrl || body.originalUrl || body.artworkId ? 1 : 0;
+      references = Array.isArray(body.images) ? body.images.length : Array.isArray(body.sourceIds) ? body.sourceIds.length : Array.isArray(body.contextIds) ? body.contextIds.length : body.anchorId ? 1 : body.image || body.imageUrl || body.originalUrl || body.artworkId ? 1 : 0;
     }
   } catch { /* The route owns detailed payload validation; no generation is performed here. */ }
   return { body, references: Math.min(32, references) };
@@ -53,34 +55,50 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   const [snapshot, billing] = await Promise.all([accepted ? admin.repo.byVersion(accepted.modelVersion) : admin.repo.current(), accepted ? admin.billing.byVersion(accepted.billingVersion) : admin.billing.current()]);
   const quotedVersion = request.headers.get("x-naumi-model-version") || parsed.body.modelVersion;
   if (quotedVersion !== undefined && quotedVersion !== null && quotedVersion !== "" && (!/^[1-9][0-9]{0,15}$/.test(String(quotedVersion)) || Number(quotedVersion) !== snapshot.version)) throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请刷新模型列表后重新提交；原输入已保留", 409);
+  const feature = featureForPath(new URL(request.url).pathname);
   const purpose = purposeFor(new URL(request.url).pathname), executor = await getModelExecutor();
+  if (feature === "competitor.action" && parsed.body.action !== "analyze") Object.assign(purpose, { image:"image.edit", text:"text.competitor", vision:"vision.reference", primary:"image" });
+  const mainFeature = feature === "competitor.action" && parsed.body.action === "analyze" ? undefined : feature;
   const bundle: ExecutionBundle = { modelVersion: snapshot.version, billingVersion: billing.version, primary: purpose.primary };
   let standaloneSegmentation = false;
-  if (purpose.image === "image.cutout" && !snapshot.config.bindings["image.cutout"]) {
+  if (purpose.image === "image.cutout" && !snapshot.config.business?.["tool.cutout"] && !snapshot.config.bindings["image.cutout"]) {
     const { getCutoutSettings } = await import("../settings");
     const cutout = await getCutoutSettings();
     standaloneSegmentation = cutout.backend !== "openai" && !!cutout.replicateToken;
   }
   if (purpose.image && !standaloneSegmentation) {
     const selected = String(parsed.body.model || parsed.body.modelId || "").trim();
-    const requestedModelId = selected.startsWith("byok:") ? undefined : selected || undefined;
-    const model = snapshot.config.publicModels.find(m => m.id === (requestedModelId || snapshot.config.bindings[purpose.image!]));
+    const explicit = request.headers.get("x-naumi-feature-model") || selected || "";
+    const requestedModelId = explicit.startsWith("byok:") ? undefined : explicit || undefined;
+    const option = selectedBusinessOption(snapshot.config, mainFeature, requestedModelId);
+    if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);
+    const model = snapshot.config.publicModels.find(m => m.id === (option?.modelId || requestedModelId || snapshot.config.bindings[purpose.image!]));
     const upstreams = model?.target.type === "pool" ? snapshot.config.upstreamModels.filter(u => snapshot.config.pools.find(p => p.id === model.target.id)?.candidates.includes(u.id)) : snapshot.config.upstreamModels.filter(u => u.id === model?.target.id);
-    const qualities = Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
+    const qualities = option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
+    if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(String(parsed.body.ratio || "1:1"))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
     const requestedQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "medium");
+    if (option && (parsed.body.quality || request.headers.get("x-naumi-image-quality")) && qualities.length && !qualities.includes(requestedQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持该质量，不会静默退档", 400);
     const defaultQuality = qualities.some(q => q === (process.env.OPENAI_IMAGE_QUALITY || "medium")) ? process.env.OPENAI_IMAGE_QUALITY || "medium" : qualities[0] || process.env.OPENAI_IMAGE_QUALITY || "medium";
     const outputResolution = Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K");
+    if (option?.parameters?.resolutions?.length && !option.parameters.resolutions.includes(outputResolution as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该尺寸", 400);
     const native = ["1K", "2K", "4K"].includes(outputResolution) && upstreams.some(u => u.capabilities.nativeResolutions.includes(outputResolution as "1K" | "2K" | "4K"));
     const needsEdit = purpose.image === "image.edit" || purpose.image === "image.cutout" || parsed.references > 0;
     const needsText = new URL(request.url).pathname.includes("/canvas/image-tasks");
-    const facts: ModelFacts = { task: needsText ? "layout" : "product", quality: qualities.includes(requestedQuality as any) ? requestedQuality : defaultQuality, resolution: native ? outputResolution : "1K", needsEdit, preserveIdentity: needsEdit, needsText, nativeResolution: native && outputResolution !== "1K", references: parsed.references, quantity: 1 };
+    const task = String(parsed.body.taskType || parsed.body.task || "");
+    const facts: ModelFacts = { task: ["draft", "product", "detail", "layout"].includes(task) ? task as ModelFacts["task"] : needsText ? "layout" : "product", quality: qualities.includes(requestedQuality as any) ? requestedQuality : defaultQuality, resolution: native ? outputResolution : "1K", needsEdit, preserveIdentity: needsEdit, needsText, nativeResolution: native && outputResolution !== "1K", references: parsed.references, quantity: 1, inputLength: String(parsed.body.prompt || parsed.body.text || "").length };
     facts.needsMask = !!parsed.body.needsMask || new URL(request.url).pathname.includes("/canvas/image-tasks");
-    bundle.image = await executor.resolve({ binding: purpose.image, requestedModelId, snapshot, billing, facts });
+    bundle.image = await executor.resolve({ feature: mainFeature, binding: purpose.image, requestedModelId, snapshot, billing, facts });
   }
-  const requestedTextModelId = request.headers.get("x-naumi-text-model")?.trim() || undefined;
-  if (purpose.video) bundle.video = await executor.resolve({ binding: purpose.video, requestedModelId: parsed.body.modelId || undefined, snapshot, billing });
-  if (purpose.text && (requestedTextModelId || snapshot.config.bindings[purpose.text])) bundle.text = await executor.resolve({ binding: purpose.text, requestedModelId: requestedTextModelId, snapshot, billing });
-  if (purpose.vision && snapshot.config.bindings[purpose.vision]) bundle.vision = await executor.resolve({ binding: purpose.vision, snapshot, billing });
+  const requestedTextModelId = purpose.primary === "text" || purpose.primary === "vision" ? request.headers.get("x-naumi-feature-model")?.trim() || request.headers.get("x-naumi-text-model")?.trim() || undefined : undefined;
+  if (purpose.video) bundle.video = await executor.resolve({ feature, binding: purpose.video, requestedModelId: request.headers.get("x-naumi-feature-model")?.trim() || parsed.body.modelId || undefined, snapshot, billing });
+  if (purpose.text && (requestedTextModelId || snapshot.config.bindings[purpose.text] || purpose.primary === "text" && mainFeature && snapshot.config.business?.[mainFeature])) bundle.text = await executor.resolve({ ...(purpose.primary === "text" ? { feature: mainFeature } : {}), binding: purpose.text, requestedModelId: requestedTextModelId, snapshot, billing, facts: { task: "product", quality: "medium", resolution: "1K", needsEdit: false, needsText: false, preserveIdentity: false, nativeResolution: false, references: parsed.references, inputLength: JSON.stringify(parsed.body.messages || parsed.body.prompt || "").length } });
+  if (purpose.primary === "text" && purpose.text && mainFeature && snapshot.config.business?.[mainFeature] && bundle.text) {
+    const scope = await executor.describe(bundle.text);
+    if (parsed.references && scope.businessOption?.parameters?.inputTypes && !scope.businessOption.parameters.inputTypes.includes("image")) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能未开放图片输入", 400);
+    if (scope.capabilities.vision) bundle.vision = bundle.text;
+    else if (parsed.references || (Array.isArray(parsed.body.sourceIds) && parsed.body.sourceIds.length) || parsed.body.anchorId) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持图片输入", 400);
+  }
+  if (!bundle.vision && purpose.vision && (snapshot.config.bindings[purpose.vision] || purpose.primary === "vision" && feature && snapshot.config.business?.[feature])) bundle.vision = await executor.resolve({ ...(purpose.primary === "vision" ? { feature, requestedModelId: requestedTextModelId } : {}), binding: purpose.vision, snapshot, billing });
   if (purpose.primary === "vision" && !bundle.vision || purpose.primary === "text" && !bundle.text || purpose.primary === "video" && !bundle.video) throw new ModelConfigError("MODEL_UNAVAILABLE", "当前用途没有可用模型绑定，请联系管理员配置", 503);
   if (new URL(request.url).pathname === "/api/agent" && parsed.references > 0) {
     if (!bundle.vision) throw new ModelConfigError("MODEL_INCOMPATIBLE", "Agent 视觉用途尚未配置，请联系管理员", 400);

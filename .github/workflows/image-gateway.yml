@@ -94,6 +94,11 @@ jobs:
         env:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
           NAUMI_VERIFY_ISOLATED_DB: '1'
+      - name: Feature models, RMB usage, routing and postprocess recovery
+        run: npm run verify:business-routing
+        env:
+          DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
+          NAUMI_VERIFY_ISOLATED_DB: '1'
       - name: Registered model execution and private control-plane regressions
         run: |
           for check in coverage config publication admin execution tools router-contract performance review flow shared-capacity; do
@@ -110,6 +115,12 @@ jobs:
         env:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
           NAUMI_VERIFY_ISOLATED_DB: '1'
+      - name: Business admin publication and feature model browser acceptance
+        run: npm run verify:business-ui
+        env:
+          DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
+          NAUMI_VERIFY_ISOLATED_DB: '1'
+          NAUMI_VERIFY_ROUTER_SOURCE: output/model-config-20261004/router-source
       - run: npm run verify:pricing-proposal
       - run: npm run verify:pricing-access
       - run: npm run verify:image-gateway

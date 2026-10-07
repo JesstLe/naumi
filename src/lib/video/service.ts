@@ -216,7 +216,7 @@ export async function createVideoGeneration(
     const admin = await getModelAdministration();
     const [snapshot, billing] = await Promise.all([admin.repo.current(), admin.billing.current()]);
     const executor = await getModelExecutor();
-    const video = await executor.resolve({ binding: "video.generate", requestedModelId: input.modelId || undefined, snapshot, billing });
+    const video = await executor.resolve({ feature:"video.generate", binding: "video.generate", requestedModelId: input.modelId || undefined, snapshot, billing });
     return executor.runBundle({ modelVersion: snapshot.version, billingVersion: billing.version, primary: "video", video }, billing, () => createVideoGeneration(email, input));
   }
   return createVideoGenerationUnlocked(email, {

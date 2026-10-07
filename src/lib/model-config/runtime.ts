@@ -1,3 +1,5 @@
+import { compatiblePublicModels, FEATURE_BINDINGS } from "./business";
+import type { FeatureId } from "../billing/rules/registry";
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import type { Pool } from "pg";
@@ -13,12 +15,16 @@ import { ModelConfigError, type ModelConfig, type ModelConfigRepository, type Mo
 export type RoutingSimulation = { eligible: { upstreamId: string; providerId: string; rank: number }[]; excluded: { upstreamId: string; codes: string[] }[]; modelVersion: number; billingVersion: number };
 type Dependencies = ValidationOptions & { pool: Pool; repo: ModelConfigRepository; credentials: ReturnType<typeof createCredentialStore>; router: RouterControl; billing: () => Promise<ConfigSnapshot>; billingByVersion?: (version: number) => Promise<ConfigSnapshot> };
 
-export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality) {
+export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, feature?: FeatureId) {
   const config = snapshot.config;
-  const models = config.publicModels.filter(m => m.enabled && m.visible && m.modality === modality).map(m => {
+  const f = feature ? config.business?.[feature] : undefined;
+  const compatible = feature && FEATURE_BINDINGS[feature] ? compatiblePublicModels(config, FEATURE_BINDINGS[feature]!).map(m => m.id) : undefined;
+  const configuredIds = f ? f.enabled ? [...f.options].filter(o => o.enabled).sort((a,b) => a.sort-b.sort).map(o => o.modelId) : [] : undefined;
+  const models = config.publicModels.filter(m => m.enabled && m.visible && m.modality === modality && (!compatible || compatible.includes(m.id)) && (!configuredIds || configuredIds.includes(m.id))).sort((a,b) => configuredIds ? configuredIds.indexOf(a.id)-configuredIds.indexOf(b.id) : 0).map(m => {
     const ids = m.target.type === "upstream" ? [m.target.id] : config.pools.find(p => p.id === m.target.id)!.candidates;
     const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
-    return { id: m.id, label: m.label, modality: m.modality, supportsEdit: upstreams.some(u => u.capabilities.edit), supportsVision: upstreams.some(u => u.capabilities.vision), qualities: Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
+    const option = f?.options.find(o => o.modelId === m.id);
+    return { id: m.id, label: m.label, modality: m.modality, supportsEdit: upstreams.some(u => u.capabilities.edit), supportsVision: upstreams.some(u => u.capabilities.vision), qualities: option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: option?.parameters?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
   });
   const visible = new Set(models.map(m => m.id));
   const bindingCapabilities = Object.fromEntries(Object.entries(config.bindings).flatMap(([binding,id]) => {
@@ -28,7 +34,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality) 
     const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
     return [[binding,{ qualities: Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))) }]];
   }));
-  return { version: snapshot.version, models, bindingCapabilities, bindings: Object.fromEntries(Object.entries(config.bindings).filter(([, id]) => visible.has(id))) };
+  return { version: snapshot.version, feature, defaultModelId: f?.enabled ? f.defaultModelId : feature && FEATURE_BINDINGS[feature] ? config.bindings[FEATURE_BINDINGS[feature]!] : undefined, models, bindingCapabilities, bindings: Object.fromEntries(Object.entries(config.bindings).filter(([, id]) => visible.has(id))) };
 }
 function rankFor(quality: string) { return ({ low: 1, medium: 2, high: 3, xhigh: 4, max: 5 } as Record<string,number>)[quality] || 1; }
 function matchesRule(when: ModelConfig["pools"][number]["rules"][number]["when"], f: ModelFacts) {
@@ -158,7 +164,7 @@ export function createModelRuntime(deps: Dependencies) {
   };
   return {
     current: () => deps.repo.current(), byVersion: (version: number) => deps.repo.byVersion(version),
-    publicCatalog: async (modality: Modality) => publicModelCatalog(await deps.repo.current(), modality),
+    publicCatalog: async (modality: Modality, feature?: FeatureId) => publicModelCatalog(await deps.repo.current(), modality, feature),
     prepareExecution,
     async validateExecutionProjection(input: { modelVersion: number; billingVersion: number; digest: string }) {
       await ready();

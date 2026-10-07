@@ -19,6 +19,7 @@ import { requestedTextModel } from "@/lib/text-models";
 import { CANVAS_FREE_DEFAULTS } from "./canvas-defaults";
 import { currentModelBillingSnapshot } from "../model-config/context";
 import { managedBillingModel } from "../model-config/billing-model";
+import { freezeBusinessQuote } from "../model-config/business-billing";
 let runtime: ReturnType<typeof assemble> | undefined;
 function assemble() {
     return { service: createBillingService(), config: createConfigRuntime({ pool: getPool(), ensureSchema, initialize: async (tx) => {
@@ -78,13 +79,11 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
     const email = trustedActor??await resolveUserEmail(request);
     if (!email)
         throw new BillingError("INVALID_RESULT", "请先登录", 401);
-    let model = typeof input.modelId === "string" ? input.modelId : undefined;
+    let model = request.headers.get("x-naumi-feature-model") || (typeof input.modelId === "string" ? input.modelId : undefined);
     let providerId:string|undefined;
     const provider = input.feature === "image.generate" ? await getUserImageProvider(email) : null;
     const byok = !!provider && !!model?.startsWith("byok:") && provider.models.includes(upstreamUserImageModel(model));
-    const cutout = input.feature === "tool.cutout" ? await getCutoutSettings() : null;
-    const replicateCutout = cutout && cutout.backend !== "openai" && !!cutout.replicateToken;
-    const managed = !byok && !replicateCutout ? await managedBillingModel(request, input.feature, model) : null;
+    const managed = !byok ? await managedBillingModel(request, input.feature, model) : null;
     if (managed) {
         model = managed.modelId; providerId = managed.providerId;
     }else if(input.feature==="video.generate"){
@@ -115,12 +114,13 @@ export async function quoteForRequest(request: Request, input: Partial<BillingFa
     ratio?: string;
 },frozenSnapshot?:ConfigSnapshot) {
     const snapshot = frozenSnapshot??currentModelBillingSnapshot()??await billingSnapshot();
-    return compatibleQuote(snapshot, await resolveBillingFacts(request, input, snapshot));
+    return freezeBusinessQuote(request, snapshot, await resolveBillingFacts(request, input, snapshot), compatibleQuote);
 }
 /** Trusted domain services have already authenticated and owner-checked this actor. */
 export async function quoteForActor(email:string,input:Partial<BillingFacts>&{feature:BillingFacts["feature"];quantity:number}){
     const snapshot=currentModelBillingSnapshot()??await(await getBillingRuntime()).config.current();
-    return compatibleQuote(snapshot,await resolveBillingFacts(new Request("http://internal/api/billing/quote"),input,snapshot,email));
+    const request = new Request("http://internal/api/billing/quote");
+    return freezeBusinessQuote(request,snapshot,await resolveBillingFacts(request,input,snapshot,email),compatibleQuote);
 }
 export async function updateBillingCompatibility(actor: string, reason: string, change: (config: BillingConfig) => void) {
     const config = (await getBillingRuntime()).config, current = await config.current();

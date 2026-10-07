@@ -24,15 +24,17 @@ async function checkCredentials(tx: PoolClient, config: ModelConfig) {
   }
 }
 async function writeDraft(tx: PoolClient, draftId: string, config: ModelConfig) {
-  for (const table of ["bindings", "public_models", "rules", "candidates", "pools", "upstreams", "providers"]) await tx.query(`DELETE FROM app_model_${table} WHERE draft_id=$1`, [draftId]);
+  for (const table of ["fixed_costs", "business", "bindings", "public_models", "rules", "candidates", "pools", "upstreams", "providers"]) await tx.query(`DELETE FROM app_model_${table} WHERE draft_id=$1`, [draftId]);
   for (const [i, p] of Array.from(config.providers.entries())) await tx.query("INSERT INTO app_model_providers(draft_id,id,position,name,protocol,base_url,credential_ref,enabled,timeout_ms,max_concurrent,options) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)", [draftId,p.id,i,p.name,p.protocol,p.baseUrl,p.credentialRef || null,p.enabled,p.timeoutMs,p.maxConcurrent,p.options ? JSON.stringify(p.options) : null]);
-  for (const [i, u] of Array.from(config.upstreamModels.entries())) await tx.query("INSERT INTO app_model_upstreams(draft_id,id,position,provider_id,model,label,modality,enabled,capabilities,parameter_map,cost_ref) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11)", [draftId,u.id,i,u.providerId,u.model,u.label,u.modality,u.enabled,JSON.stringify(u.capabilities),JSON.stringify(u.parameterMap),u.costRef || null]);
+  for (const [i, u] of Array.from(config.upstreamModels.entries())) await tx.query("INSERT INTO app_model_upstreams(draft_id,id,position,provider_id,model,label,modality,enabled,capabilities,parameter_map,cost_ref,procurement) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12::jsonb)", [draftId,u.id,i,u.providerId,u.model,u.label,u.modality,u.enabled,JSON.stringify(u.capabilities),JSON.stringify(u.parameterMap),u.costRef || null,u.procurement ? JSON.stringify(u.procurement) : null]);
   for (const [i, p] of Array.from(config.pools.entries())) {
     await tx.query("INSERT INTO app_model_pools(draft_id,id,position,modality,strategy) VALUES($1,$2,$3,$4,$5)", [draftId,p.id,i,p.modality,p.strategy]);
     for (const [j, u] of Array.from(p.candidates.entries())) await tx.query("INSERT INTO app_model_candidates(draft_id,pool_id,upstream_id,position) VALUES($1,$2,$3,$4)", [draftId,p.id,u,j]);
     for (const [j, r] of Array.from(p.rules.entries())) await tx.query("INSERT INTO app_model_rules(draft_id,pool_id,id,position,priority,conditions,requirements) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb)", [draftId,p.id,r.id,j,r.priority,JSON.stringify(r.when),JSON.stringify(r.require)]);
   }
   for (const [i, m] of Array.from(config.publicModels.entries())) await tx.query("INSERT INTO app_model_public_models(draft_id,id,position,label,modality,enabled,visible,upstream_target,pool_target) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", [draftId,m.id,i,m.label,m.modality,m.enabled,m.visible,m.target.type === "upstream" ? m.target.id : null,m.target.type === "pool" ? m.target.id : null]);
+  if (config.business) await tx.query("INSERT INTO app_model_business(draft_id,config) VALUES($1,$2::jsonb)", [draftId,JSON.stringify(config.business)]);
+  if (config.fixedMonthlyCosts) await tx.query("INSERT INTO app_model_fixed_costs(draft_id,config) VALUES($1,$2::jsonb)", [draftId,JSON.stringify(config.fixedMonthlyCosts)]);
   for (const [purpose, model] of Object.entries(config.bindings)) await tx.query("INSERT INTO app_model_bindings(draft_id,id,public_model_id) VALUES($1,$2,$3)", [draftId,purpose,model]);
 }
 async function readDraft(tx: PoolClient, row: any): Promise<ModelDraft> {
@@ -41,11 +43,15 @@ async function readDraft(tx: PoolClient, row: any): Promise<ModelDraft> {
   const providers = await read("providers"), upstreams = await read("upstreams"), publics = await read("public_models"), pools = await read("pools"), candidates = await read("candidates"), rules = await read("rules"), bindings = await read("bindings");
   const config: ModelConfig = { schemaVersion: 1,
     providers: providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, baseUrl: p.base_url, ...(p.credential_ref ? { credentialRef: p.credential_ref } : {}), enabled: p.enabled, timeoutMs: p.timeout_ms, maxConcurrent: p.max_concurrent, ...(p.options ? { options: p.options } : {}) })),
-    upstreamModels: upstreams.map(u => ({ id: u.id, providerId: u.provider_id, model: u.model, label: u.label, modality: u.modality, enabled: u.enabled, capabilities: u.capabilities, parameterMap: u.parameter_map, ...(u.cost_ref ? { costRef: u.cost_ref } : {}) })),
+    upstreamModels: upstreams.map(u => ({ id: u.id, providerId: u.provider_id, model: u.model, label: u.label, modality: u.modality, enabled: u.enabled, capabilities: u.capabilities, parameterMap: u.parameter_map, ...(u.cost_ref ? { costRef: u.cost_ref } : {}), ...(u.procurement ? { procurement: u.procurement } : {}) })),
     publicModels: publics.map(m => ({ id: m.id, label: m.label, modality: m.modality, enabled: m.enabled, visible: m.visible, target: m.upstream_target ? { type: "upstream", id: m.upstream_target } : { type: "pool", id: m.pool_target } })),
     pools: pools.map(p => ({ id: p.id, modality: p.modality, strategy: p.strategy, candidates: candidates.filter(c => c.pool_id === p.id).map(c => c.upstream_id), rules: rules.filter(r => r.pool_id === p.id).map(r => ({ id: r.id, priority: r.priority, when: r.conditions, require: r.requirements })) })),
     bindings: Object.fromEntries(bindings.map(b => [b.id, b.public_model_id])),
   };
+  const business = (await tx.query("SELECT config FROM app_model_business WHERE draft_id=$1", [row.id])).rows[0];
+  if (business) config.business = business.config;
+  const monthly = (await tx.query("SELECT config FROM app_model_fixed_costs WHERE draft_id=$1", [row.id])).rows[0];
+  if (monthly) config.fixedMonthlyCosts = monthly.config;
   return { id: row.id, revision: Number(row.revision), basedOnVersion: Number(row.based_on_version), config };
 }
 

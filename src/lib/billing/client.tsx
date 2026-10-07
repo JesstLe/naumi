@@ -5,8 +5,13 @@ import { useAuth } from "@/lib/auth-context";
 import type { FeatureId } from "./types";
 import {clientIntentKey,frozenIntentBody} from "./client-intent";
 import { MODEL_CATALOG_REFRESH } from "../model-config/public-client";
+import { chosenFeatureModel, FEATURE_MODEL_SELECTION } from "../model-config/feature-client";
 import { browserRandomUUID } from "../browser-crypto";
 export type PublicQuote = {
+    modelVersion?: number;
+    modelId?: string;
+    mode?: string;
+    authorization?: boolean;
     version: number;
     credits: number;
     reserveCredits: number;
@@ -94,7 +99,9 @@ export function BillingProvider({ children }: {
     }, []);
     useEffect(() => { if (ready)
         void refresh(); }, [ready, user?.email, refresh]);
-    const getQuote = useCallback((input: QuoteInput) => {
+    useEffect(()=>{const changed=()=>{cache.current.clear();};window.addEventListener(FEATURE_MODEL_SELECTION,changed);window.addEventListener(MODEL_CATALOG_REFRESH,changed);return()=>{window.removeEventListener(FEATURE_MODEL_SELECTION,changed);window.removeEventListener(MODEL_CATALOG_REFRESH,changed);};},[]);
+    const getQuote = useCallback((rawInput: QuoteInput) => {
+        const input = { ...rawInput, modelId: rawInput.modelId || chosenFeatureModel(rawInput.feature) };
         const key = JSON.stringify([catalog?.version, input]);
         let promise = cache.current.get(key);
         if (promise)
@@ -111,9 +118,11 @@ export function BillingProvider({ children }: {
         if (!displayed)
             throw new Error("报价正在加载或暂不可用，请稍后重试");
         const headers = new Headers(init.headers);
+        if (displayed?.modelVersion) headers.set("x-naumi-model-version", String(displayed.modelVersion));
+        if (displayed?.modelId) headers.set("x-naumi-feature-model", displayed.modelId);
         headers.set("x-naumi-billing-version", String(displayed.version));
         headers.set("x-naumi-billing-credits", String(displayed.credits));
-        const key=await clientIntentKey(user?.email||"",url,init);
+        const key=await clientIntentKey(user?.email||"",url,{...init,headers});
         let id=intents.current.get(key);try{id=id||localStorage.getItem(key)||undefined;}catch{}
         id=id||headers.get("x-naumi-billing-operation-id")||browserRandomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
         headers.set("x-naumi-billing-operation-id",id);

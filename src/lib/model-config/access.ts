@@ -35,6 +35,8 @@ function configurationDiff(before: ModelConfig, after: ModelConfig) {
     for (const id of Array.from(next.keys())) if (!old.has(id)) changes.push({ entity, id, change: "added" });
   }
   for (const id of Array.from(new Set([...Object.keys(before.bindings), ...Object.keys(after.bindings)]))) if (before.bindings[id] !== after.bindings[id]) changes.push({ entity: "bindings", id, change: before.bindings[id] ? after.bindings[id] ? "changed" : "removed" : "added" });
+  for (const feature of Array.from(new Set([...Object.keys(before.business || {}), ...Object.keys(after.business || {})]))) if (JSON.stringify(before.business?.[feature as keyof NonNullable<ModelConfig["business"]>]) !== JSON.stringify(after.business?.[feature as keyof NonNullable<ModelConfig["business"]>])) changes.push({ entity: "business", id: feature, change: "changed" });
+  if (JSON.stringify(before.fixedMonthlyCosts) !== JSON.stringify(after.fixedMonthlyCosts)) changes.push({entity:"fixedMonthlyCosts",id:"monthly",change:"changed"});
   return changes;
 }
 export function createModelAdminHandler(deps: { authorize: typeof biAuthorize; administration: () => Promise<Administration> }) {
@@ -46,7 +48,7 @@ export function createModelAdminHandler(deps: { authorize: typeof biAuthorize; a
       switch (action) {
         case "read": {
           const [snapshot, draft, billing] = await Promise.all([admin.repo.current(), admin.repo.draft(auth.actor), admin.billing.current()]);
-          return biJson({ snapshot, draft, providerCapacity: await providerCapacitySummary(admin.pool,snapshot.config), protocols: MODEL_PROTOCOLS, bindings: MODEL_BINDINGS, billingVersion: billing.version, costKeys: Object.keys(billing.config.costs).sort(), costReferences: Object.entries(billing.config.costs).map(([key, rate]) => ({ key, currency: rate.currency, unit: rate.unit, source: rate.source })), concurrencyPolicy: "historical-minimum", billingManagementPath: "/admin/billing" });
+          return biJson({ snapshot, draft, providerCapacity: await providerCapacitySummary(admin.pool,snapshot.config), protocols: MODEL_PROTOCOLS, bindings: MODEL_BINDINGS, billingVersion: billing.version, billingSnapshot: billing, businessFeatures: MODEL_BINDINGS, costKeys: Object.keys(billing.config.costs).sort(), costReferences: Object.entries(billing.config.costs).map(([key, rate]) => ({ key, currency: rate.currency, unit: rate.unit, source: rate.source, amountMicros: rate.amountMicros, cnyPerUnitMicros: rate.cnyPerUnitMicros })), concurrencyPolicy: "historical-minimum", billingManagementPath: "/admin/billing" });
         }
         case "draft": { const body = draftInput.parse(await readBody(request)); return biJson(await admin.repo.saveDraft({ ...body, config: body.config as ModelConfig, actor: auth.actor })); }
         case "publish": { const body = publishInput.parse(await readBody(request)); const publication = await admin.runtime.publish({ ...body, actor: auth.actor }); return biJson(publication, publication.phase === "applied" ? 200 : publication.phase === "failed" ? 422 : 202); }

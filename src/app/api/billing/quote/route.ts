@@ -7,7 +7,7 @@ export const runtime = "nodejs", dynamic = "force-dynamic";
 export async function POST(request: Request) { if (!sameSiteBillingMutation(request))
     return billingJson({ error: "请求来源无效" }, 403); try {
     const q = await quoteForRequest(request, publicFactsSchema.parse(await request.json()));
-    return billingJson({ version: q.configVersion, credits: q.requestedCredits, reserveCredits: q.reserveCredits, feature: q.facts.feature, quantity: q.facts.quantity });
+    return billingJson({ version: q.configVersion, modelVersion: q.modelVersion, modelId: q.facts.modelId, mode: q.tariff.pricing.mode, authorization: q.tariff.pricing.mode === "usage", credits: q.requestedCredits, reserveCredits: q.reserveCredits, feature: q.facts.feature, quantity: q.facts.quantity });
 }
 catch (e) {
     if (e instanceof z.ZodError || e instanceof SyntaxError)

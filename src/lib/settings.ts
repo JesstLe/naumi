@@ -281,6 +281,9 @@ export type CutoutSettings = {
 };
 
 export async function getCutoutSettings(): Promise<CutoutSettings> {
+  const { currentModelExecution } = await import("./model-config/context");
+  const scope = currentModelExecution("image");
+  if (scope?.frozen.feature === "tool.cutout" && scope.businessOption) return { backend: "openai", openaiModel: scope.frozen.publicModelId, replicateToken: "", replicateModel: "" };
   const envModel = process.env.OPENAI_CUTOUT_MODEL || "gpt-image-1";
   const envReplicateToken = process.env.REPLICATE_API_TOKEN || "";
   const envReplicateModel =

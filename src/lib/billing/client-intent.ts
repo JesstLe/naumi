@@ -16,7 +16,7 @@ export async function clientIntentKey(email: string, url: string, init: RequestI
         body.push(value);
     }else body.push("");
     const headers = new Headers(init.headers);
-    return `naumi:billing-intent:${await digest(new TextEncoder().encode(JSON.stringify([email, url, headers.get("x-naumi-image-quality"), headers.get("x-naumi-text-model"), headers.get("x-naumi-billing-intent-slot"), body])))}`;
+    return `naumi:billing-intent:${await digest(new TextEncoder().encode(JSON.stringify([email, url, headers.get("x-naumi-image-quality"), headers.get("x-naumi-text-model"), headers.get("x-naumi-feature-model"), headers.get("x-naumi-billing-intent-slot"), body])))}`;
 }
 async function digest(value: ArrayBuffer | Uint8Array) {
     return browserSha256Hex(value instanceof Uint8Array ? value : new Uint8Array(value));

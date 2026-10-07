@@ -7,6 +7,7 @@ import {billingErrorResponse} from "@/lib/billing/request";
 import { modelConfigurationEnabled } from "@/lib/model-config/requests";
 import { getModelRuntime } from "@/lib/model-config/server";
 import { configuredVideoCapability } from "@/lib/video/capabilities";
+import { publicModelCatalog } from "@/lib/model-config/runtime";
 
 // ---------------------------------------------------------------------------
 // 视频能力目录(§6):供应商、模型、能力声明与价格展示。
@@ -20,10 +21,12 @@ export async function GET() {
  try{
   if (await modelConfigurationEnabled()) {
     const snapshot = await (await getModelRuntime()).current();
-    const models = snapshot.config.publicModels.filter(m => m.modality === "video" && m.visible && m.enabled).map(m => {
+    const catalog = publicModelCatalog(snapshot, "video", "video.generate");
+    const models = catalog.models.map(publicModel => {
+      const m = snapshot.config.publicModels.find(m => m.id === publicModel.id)!;
       const u = snapshot.config.upstreamModels.find(u => u.id === m.target.id)!;
       const p = snapshot.config.providers.find(p => p.id === u.providerId)!;
-      return { ...configuredVideoCapability(p.protocol, p.id, u.model, u.capabilities), modelId: m.id, providerId: "managed-video", label: m.label, isDefault: snapshot.config.bindings["video.generate"] === m.id };
+      return { ...configuredVideoCapability(p.protocol, p.id, u.model, u.capabilities), modelId: m.id, providerId: "managed-video", label: m.label, isDefault: (catalog.defaultModelId || snapshot.config.bindings["video.generate"]) === m.id };
     });
     const defaultModel = models.find(m => m.isDefault)?.modelId || models[0]?.modelId || "";
     const providers = models.length ? [{ id: "managed-video", label: "视频模型", defaultModel, models, configured: true }] : [];

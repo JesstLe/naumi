@@ -89,6 +89,17 @@ async function main() {
   await db.ensureSchema();
   const { setAdminPassword } = await import("../src/lib/admin-auth");
   await setAdminPassword("ModelUiFixture2026!");
+  const { signUserSession } = await import("../src/lib/native-auth");
+  const member="business-ui@example.test";
+  await db.setSetting("multi_user_enabled","1"); await db.getOrCreateUser(member,"业务验收"); await db.addCreditBatch(member,1000,{source:"grant",reason:"isolated UI"});
+  if (process.env.NAUMI_VERIFY_BUSINESS_UI === "1") {
+    const credential=await f.credentials.importPlain({providerId:"text-p",plain:"fixture-text-only",actor:"fixture"});
+    f.config.providers.push({...f.config.providers[0],id:"text-p",name:"Fixture text",protocol:"openai-chat",credentialRef:credential.id});
+    f.config.upstreamModels.push({...structuredClone(f.config.upstreamModels[0]),id:"text-u",providerId:"text-p",model:"wire-text-private",modality:"text",capabilities:{...f.config.upstreamModels[0].capabilities,vision:true}});
+    f.config.publicModels.push({id:"text-public",label:"业务文字",modality:"text",enabled:true,visible:true,target:{type:"upstream",id:"text-u"}});
+    Object.assign(f.config.bindings,{"agent.text":"text-public","text.generate":"text-public","vision.reference":"text-public"});
+    f.config.business={"canvas.text-generate":{enabled:true,defaultModelId:"text-public",options:[{modelId:"text-public",enabled:true,sort:0,unit:"task",pricing:{mode:"cny-fixed",amountMicros:"500000",creditsPerCnyMicros:"100000000",rounding:"ceil"}}]}};
+  }
   await f.repo.current();
   const { createConfigRuntime } = await import("../src/lib/billing/catalog");
   const costs = fixtureConfig();
@@ -159,6 +170,7 @@ async function main() {
     "output/model-ui-fixture.json",
     JSON.stringify({
       schemaName: f.schemaName,
+      userCookie:signUserSession(member,Date.now()),
       folder,
       controlOrigin: f.origin,
       routerPID: router.pid,

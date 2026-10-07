@@ -10,6 +10,8 @@ export type RouterRoute = { id: string; provider: string; upstream_model: string
 export type RouterPayload = { digest: string; modelVersion: number; billingVersion: number; config: { routes: RouterRoute[]; providers: { id: string; protocol: string; baseUrl: string; credentialRef: string; timeoutMs: number; maxConcurrent: number }[]; aliases: { id: string; candidates: string[]; strategy: string; rules?: unknown[] }[] } };
 export type RouterProjection = { digest: string; modelVersion: number; billingVersion: number; payload: RouterPayload };
 export function modelCostRate(billing: ConfigSnapshot, model: UpstreamModel, quality: string, resolution: string, mode: string): CostRate | undefined {
+  const procurement=model.procurement;
+  if (procurement && procurement.confirmed !== false && procurement.basis !== "tokens" && procurement.amountMicros !== undefined) return { currency:procurement.currency,unit:procurement.basis,amountMicros:procurement.amountMicros,source:"manual-estimate",...(procurement.cnyPerUnitMicros ? {cnyPerUnitMicros:procurement.cnyPerUnitMicros} : {}) };
   if (!model.costRef) return undefined;
   const rates = billing.config.costs, key = model.costRef;
   return rates[`${key}:${quality}:${resolution}:${mode}`] || rates[`${key}:${quality}:${resolution}`] || rates[`${key}:${mode}`] || rates[key];

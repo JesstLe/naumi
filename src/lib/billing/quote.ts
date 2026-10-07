@@ -3,11 +3,17 @@ import { isFeatureId, QUALITY_IDS, RESOLUTION_IDS } from "./rules/registry";
 import { matches, mergeTariff } from "./rules/evaluate";
 import { costPlusCredits } from "./costs";
 import { CANVAS_FREE_DEFAULTS } from "./canvas-defaults";
+import { cnyCredits, usageAmount } from "./money";
 const MAX = 2147483647;
 function safe(n: number) { if (!Number.isSafeInteger(n) || n < 0 || n > MAX)
     throw new BillingError("INVALID_RESULT", "积分金额超出范围", 400); return n; }
 function unitPrice(t: FeatureTariff, f: BillingFacts, costs: BillingQuote["costRates"]): number {
     const p = t.pricing;
+    if (p.mode === "cny-fixed") {
+        const variant = p.variants?.filter(v => (!v.quality || v.quality === f.quality) && (!v.resolution || v.resolution === f.resolution)).sort((a,b) => Number(!!b.quality) + Number(!!b.resolution) - Number(!!a.quality) - Number(!!a.resolution))[0];
+        return safe(cnyCredits(variant?.amountMicros ?? p.amountMicros, p));
+    }
+    if (p.mode === "usage") return safe(cnyCredits(p.authorizationCnyMicros, p));
     if (p.mode === "fixed")
         return safe(p.credits);
     if (p.mode === "quality-resolution")
@@ -62,6 +68,15 @@ export function settlementFor(q: BillingQuote, r: BillingResult): Settlement {
     });
     if (r.state === "failed" && succeeded.length)
         throw new BillingError("INVALID_RESULT", "任务结果状态不一致", 400);
+    if (q.tariff.pricing.mode === "usage" && q.tariff.enabled && q.facts.metered) {
+        if (!succeeded.length) return { state: "settle", charge: 0, release: q.reserveCredits };
+        const money = usageAmount(q.tariff.pricing, r.usage);
+        if (money === null) return { state: "manual", charge: 0, release: 0 };
+        if (money > BigInt(q.tariff.pricing.authorizationCnyMicros)) return { state: "manual", charge: 0, release: 0 };
+        const charge = safe(Math.ceil(cnyCredits(money, q.tariff.pricing) * (q.facts.byok ? q.tariff.settlement.byokBps : 10000) / 10000));
+        if (charge > q.authorizedCredits) return { state: "manual", charge: 0, release: 0 };
+        return { state: "settle", charge, release: q.reserveCredits - charge };
+    }
     let charge = 0;
     if (q.tariff.settlement.successBasis === "whole-request" && succeeded.length) {
         charge = q.tariff.settlement.qualityBasis === "executed" && q.tariff.enabled && q.facts.metered

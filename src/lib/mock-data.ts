@@ -194,6 +194,8 @@ export type Artwork = {
   canvasY?: number | null;
   width?: number | null; // 图片真实像素宽度
   height?: number | null;
+  processingKind?: "base" | "resize" | "native" | "ai-upscale" | null;
+  postprocessStatus?: "succeeded" | "failed-kept-base" | "pending" | null;
   canvasWidth?: number | null; // 图片节点在无限画布中的显示宽度，与原图像素分离
   canvasHeight?: number | null;
   groupId?: string | null; // 稳定项目分组:同项目所有节点共享,删节点也不变
