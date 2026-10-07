@@ -75,7 +75,10 @@ export async function bootstrapModelConfig(input: ValidationOptions & { credenti
       if (text.defaultModel === text.agentModel) {
         const textDefault = config.publicModels.find(m => m.id === config.bindings["text.generate"]);
         const agentDefault = config.publicModels.find(m => m.id === config.bindings["agent.text"]);
-        if (textDefault && agentDefault) textDefault.target = { ...agentDefault.target };
+        if (textDefault && agentDefault) {
+          const previousTarget = textDefault.target;
+          for (const alias of config.publicModels.filter(m => m.modality === "text" && m.target.type === previousTarget.type && m.target.id === previousTarget.id)) alias.target = { ...agentDefault.target };
+        }
       }
       if (caps.vision) config.bindings["agent.vision"] = config.bindings["agent.text"];
     }
