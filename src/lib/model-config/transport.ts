@@ -8,9 +8,11 @@ import { privateModelHost, modelMetadataHost, validateModelEndpoint, type Valida
 import { ModelConfigError } from "./types";
 import { capacityFetch } from "./capacity";
 import { dbEnabled, getPool } from "../db";
+import { supplierCostFetch } from "../supplier-cost/collect";
+import type { ModelExecutionScope } from "./context";
 
 /** Pins validated DNS answers for the actual connection; redirects never carry supplier credentials. */
-export function modelEndpointFetch(baseUrl: string, options: ValidationOptions = {}, provider?: { providerId: string; maxConcurrent?: number; timeoutMs: number }): typeof fetch {
+export function modelEndpointFetch(baseUrl: string, options: ValidationOptions = {}, provider?: { providerId: string; maxConcurrent?: number; timeoutMs: number; apiKey?: string; wireModel?: string; protocol?: string; credentialRef?: string; costScope?: ModelExecutionScope; costDisabled?: boolean; actor?:{userEmail:string;feature:string} }): typeof fetch {
   const base = new URL(validateModelEndpoint(baseUrl, options));
   const trusted = options.trustedOrigins?.includes(base.origin);
   const transport: typeof fetch = async (input, init) => {
@@ -51,5 +53,7 @@ export function modelEndpointFetch(baseUrl: string, options: ValidationOptions =
       } else upstream.end();
     });
   };
-  return provider?.maxConcurrent && dbEnabled && process.env.NAUMI_ROUTER_MANAGEMENT_URL ? capacityFetch(transport, getPool(), { ...provider, baseUrl, maxConcurrent: provider.maxConcurrent }) : transport;
+  // Acquire the local capacity gate FIRST: a locally rejected request is not a supplier attempt.
+  const observed = provider && !provider.costDisabled ? supplierCostFetch(transport, { ...provider, baseUrl }) : transport;
+  return provider?.maxConcurrent && dbEnabled && process.env.NAUMI_ROUTER_MANAGEMENT_URL ? capacityFetch(observed, getPool(), { ...provider, baseUrl, maxConcurrent: provider.maxConcurrent }) : observed;
 }

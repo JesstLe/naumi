@@ -3,6 +3,7 @@ import { observeModelCall, modelExecutionTelemetry } from "@/lib/bi/model-observ
 import { currentModelExecution, type ModelExecutionScope } from "./model-config/context";
 import { ModelConfigError } from "./model-config/types";
 import { modelEndpointFetch } from "./model-config/transport";
+import { supplierCostFetch } from "./supplier-cost/collect";
 
 export type NewApiReferenceImage = {
   buffer: Buffer;
@@ -92,7 +93,7 @@ export async function generateNewApiImage(input: {
   const scope = input.execution || currentModelExecution("image");
   const managed = scope?.connection.protocol === "new-api-flow" && (!input.settings || input.settings.baseUrl === scope.connection.baseUrl && input.settings.apiKey === scope.connection.apiKey);
   const wireModel = managed ? scope.connection.wireModel : input.model;
-  const submit = managed ? modelEndpointFetch(settings.baseUrl, { trustedOrigins: input.trustedOrigins || (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, scope.connection) : fetch;
+  const submit = managed ? modelEndpointFetch(settings.baseUrl, { trustedOrigins: input.trustedOrigins || (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, {...scope.connection,costScope:scope}) : supplierCostFetch(fetch,{providerId:"legacy-flow",apiKey:settings.apiKey,baseUrl:settings.baseUrl,wireModel,protocol:"new-api-flow"});
   if (!settings.baseUrl || !settings.apiKey) {
     throw new Error("New API 生图分组尚未配置");
   }

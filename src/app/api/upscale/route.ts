@@ -1,3 +1,4 @@
+import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import {withBillingRequest,configuredToolCost,synchronousChargedCredits,markBillingUpstream} from "@/lib/billing/synchronous";
 import { NextResponse } from "next/server";
 import {
@@ -126,7 +127,8 @@ async function upscaleReplicate(
   const dataUri = `data:${inType};base64,${inBytes.toString("base64")}`;
   const version = await resolveReplicateVersion(MODEL, token);
   markBillingUpstream("started");
-  const create = await fetch("https://api.replicate.com/v1/predictions", {
+  const costFetch = supplierCostFetch(fetch,{providerId:"replicate",protocol:"replicate",baseUrl:"https://api.replicate.com",apiKey:token,wireModel:MODEL,phase:"upscale",observeTaskGets:true});
+  const create = await costFetch("https://api.replicate.com/v1/predictions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -159,7 +161,7 @@ async function upscaleReplicate(
     if (Date.now() > deadline) throw new Error("Replicate 超时");
     if (!pred.urls?.get) break;
     await new Promise((r) => setTimeout(r, 2000));
-    const g = await fetch(pred.urls.get, {
+    const g = await costFetch(pred.urls.get, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });

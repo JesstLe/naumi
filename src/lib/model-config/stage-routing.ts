@@ -5,6 +5,7 @@ import { executionFetch } from "./clients";
 import { procurementCny } from "./business";
 import { ModelConfigError } from "./types";
 import { beginExecutionStage, finishExecutionStage } from "./execution-audit";
+import { modelCostPhase } from "../supplier-cost/phase";
 
 function auditStream(response: Response, id: string) {
   const reader=response.body!.getReader(),decoder=new TextDecoder();
@@ -42,7 +43,7 @@ export function stageRoutingFetch(scope: ModelExecutionScope, options: Validatio
         const suffix = path.slice(prefix.length), headers = new Headers(request.headers);
         headers.set("authorization", `Bearer ${active.connection.apiKey}`);
         const copy = request.clone();
-        const res = await executionFetch({ ...active, routing: undefined, audited: true }, options)(`${active.connection.baseUrl.replace(/\/$/, "")}${suffix}`, { method: request.method, headers, body: request.method === "POST" ? await copy.arrayBuffer() : undefined, signal: request.signal });
+        const res = await executionFetch({ ...active, routing: undefined, audited: true, costPhase: attempt > 1 ? "fallback" : modelCostPhase(active.frozen.binding,active.frozen.modality), costRuleId: ruleId }, options)(`${active.connection.baseUrl.replace(/\/$/, "")}${suffix}`, { method: request.method, headers, body: request.method === "POST" ? await copy.arrayBuffer() : undefined, signal: request.signal });
         const rejected = [400,401,403,404,422,429].includes(res.status);
         // Failure HTTP status alone does not prove a paid task was not accepted.
         const receipt = rejected && res.headers.get("content-type")?.includes("application/json") ? await res.clone().json().catch(() => null) : null;

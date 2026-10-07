@@ -1,5 +1,6 @@
 import { currentModelExecution } from "@/lib/model-config/context";
 import { configuredPiModels } from "@/lib/model-config/pi";
+import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import type { createModels, Model } from "@earendil-works/pi-ai";
 import type { UserMessage } from "@earendil-works/pi-ai";
 import { getOpenAISettings } from "@/lib/settings";
@@ -99,7 +100,7 @@ export class PiBridge implements AgentBridge {
     getCred: () => { cookie: string; authorization: string };
   }): Promise<AgentSession> {
     const scope = currentModelExecution("text") || currentModelExecution("vision");
-    const managed = scope ? await configuredPiModels(scope) : null;
+    const managed = scope ? await configuredPiModels(scope,{userEmail:opts.email,feature:'agent.text'}) : null;
     const models = managed?.models || await this.ensureModels();
     const model = models.getModel("naumi-relay", managed?.wireModel || MODEL_ID) as Model<typeof MODEL_API>;
 
@@ -121,7 +122,7 @@ export class PiBridge implements AgentBridge {
           })
         ),
       },
-      streamFn: managed ? (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed.fetch, maxRetries: 0 }) : models.streamSimple.bind(models),
+      streamFn: (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:opts.email,feature:'agent.text'}}), maxRetries: 0 }),
       toolExecution: "sequential",
       beforeToolCall: async (context: unknown) => {
         if (!opts.beforeToolCall) return undefined;

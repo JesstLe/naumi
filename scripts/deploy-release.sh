@@ -103,6 +103,8 @@ upgrade_release_compose() {
   ensure_app_env "$compose" NAUMI_ROUTER_MANAGEMENT_TOKEN '${NAUMI_ROUTER_MANAGEMENT_TOKEN:-}'
   ensure_app_env "$compose" NAUMI_ROUTER_GENERATION_URL '${NAUMI_ROUTER_GENERATION_URL:-}'
   ensure_app_env "$compose" NAUMI_ROUTER_GENERATION_TOKEN '${NAUMI_ROUTER_GENERATION_TOKEN:-}'
+  ensure_app_env "$compose" NAUMI_ROUTER_COST_URL '${NAUMI_ROUTER_COST_URL:-}'
+  ensure_app_env "$compose" NAUMI_ROUTER_COST_TOKEN '${NAUMI_ROUTER_COST_TOKEN:-}'
   ensure_app_env "$compose" MODEL_CONFIG_ENVELOPE_SECRET '${MODEL_CONFIG_ENVELOPE_SECRET:-}'
   ensure_app_env "$compose" MODEL_CONFIG_TRUSTED_ORIGINS '${MODEL_CONFIG_TRUSTED_ORIGINS:-}'
   ensure_app_env "$compose" STORAGE_DRIVER '${STORAGE_DRIVER:-local}'

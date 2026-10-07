@@ -36,7 +36,11 @@ async function main() {
     }).port}`;
     process.env.OPENAI_BASE_URL = `${base}/v1`;
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = ((url: any, options: any) => originalFetch(String(url).startsWith("https://api.replicate.com") ? String(url).replace("https://api.replicate.com", base) : url, options)) as typeof fetch;
+    globalThis.fetch = ((url: RequestInfo | URL, options?: RequestInit) => {
+        const request=new Request(url,options),target=request.url.replace(/^https:\/\/api\.replicate\.com/,base);
+        if(new URL(target).origin!==base)throw new Error('Fixture forbids external supplier requests');
+        return originalFetch(new Request(target,request));
+    }) as typeof fetch;
     const db = await import("../src/lib/db"), { getBillingRuntime } = await import("../src/lib/billing/server"), { signUserSession } = await import("../src/lib/native-auth");
     const config = (await getBillingRuntime()).config, initial = await config.current(), email = `billing-tools-${randomUUID()}@example.test`;
     let displayedVersion=initial.version;

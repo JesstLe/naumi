@@ -1,6 +1,7 @@
 import "server-only";
 import { currentModelExecution } from "@/lib/model-config/context";
 import { modelEndpointFetch } from "@/lib/model-config/transport";
+import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import type { VideoProviderRuntimeConfig } from "./config";
 
 import {
@@ -39,7 +40,10 @@ function endpoint(cfg: NonNullable<ReturnType<typeof resolveOpenAiVideosConfig>>
 }
 
 function upstreamFetch(baseUrl: string): typeof fetch {
-  return currentModelExecution("video") ? modelEndpointFetch(baseUrl, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, currentModelExecution("video")!.connection) : fetch;
+  const scope=currentModelExecution('video');
+  const transport=scope ? modelEndpointFetch(baseUrl, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, {...scope.connection,costDisabled:true}) : fetch;
+  const cfg=resolveOpenAiVideosConfig();
+  return supplierCostFetch(transport,scope?{...scope.connection,costScope:scope,phase:'video-generation'}:{providerId:'legacy-video',protocol:'openai-videos',baseUrl,apiKey:cfg?.apiKey,wireModel:cfg?.model,phase:'video-generation'});
 }
 
 function authHeaders(apiKey: string, raw = false): Record<string, string> {

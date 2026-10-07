@@ -495,7 +495,10 @@ async function submitQueuedVideoTask(
   if (!adapter) throw new Error(`视频适配器 ${task.providerId} 未注册`);
   const request = preparedRequest ?? requestFromQueuedTask(task);
   const image = preparedImage ?? await imageForQueuedTask(task, request);
-  const created = await createWithLocalImage(adapter, request, image);
+  const {withBiModelContext}=await import("@/lib/bi/model-observer");
+  const created = await withBiModelContext(email,'video.generate',task.id,()=>createWithLocalImage(adapter, request, image));
+  const {videoSupplierReceipt}=await import("@/lib/supplier-cost/video");
+  await videoSupplierReceipt(task.id,created.upstreamTaskId,created.status,created.rawResponse);
   await markVideoTaskCreated({
     email,
     id: task.id,
@@ -627,6 +630,8 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
   let completionObserved = false;
   try {
     const result = await adapter.poll(snapshot);
+    const {videoSupplierReceipt}=await import("@/lib/supplier-cost/video");
+    await videoSupplierReceipt(task.id,task.upstreamId,result.status,result.rawResponse);
     pollSucceeded = true;
     completionObserved = result.status === "completed";
     if (completionObserved) {

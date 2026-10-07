@@ -12,7 +12,7 @@ import { executionOpenAI } from "./clients";
 import { businessRoutePlan, selectedBusinessOption } from "./business";
 
 export type ExecutionModel = { feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
-export type ExecutionConnection = { providerId: string; protocol: string; baseUrl: string; apiKey: string; wireModel: string; timeoutMs: number; maxConcurrent?: number; options?: ModelProvider["options"] };
+export type ExecutionConnection = { providerId: string; protocol: string; baseUrl: string; apiKey: string; wireModel: string; timeoutMs: number; credentialRef?: string; maxConcurrent?: number; options?: ModelProvider["options"] };
 type Dependencies = ValidationOptions & { runtime: Pick<ModelRuntime, "byVersion" | "prepareExecution"> & Partial<Pick<ModelRuntime, "validateExecutionProjection">>; credentials: ReturnType<typeof createCredentialStore>; gateway: () => { baseUrl: string; apiKey: string } };
 const factsSchema = z.strictObject({ task: z.enum(["draft", "product", "detail", "layout"]), quality: z.string().max(10), resolution: z.enum(["1K", "2K", "4K"]), needsEdit: z.boolean(), needsMask: z.boolean().optional(), preserveIdentity: z.boolean(), needsText: z.boolean(), nativeResolution: z.boolean(), references: z.number().int().min(0).max(32), quantity: z.number().int().min(1).max(4).optional(), inputLength: z.number().int().min(0).max(1000000).optional() });
 const executionSchema = z.strictObject({ feature: z.string().max(100).optional(), modelVersion: z.number().int().positive(), billingVersion: z.number().int().positive(), modelDigest: z.string().regex(/^[a-f0-9]{64}$/), publicModelId: z.string().max(100), binding: z.string().max(100), modality: z.enum(["image", "text", "video"]), target: z.strictObject({ type: z.enum(["upstream", "pool"]), id: z.string().max(100) }), credentialRef: z.uuid().optional(), routerDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), facts: factsSchema.optional() });
@@ -43,7 +43,7 @@ export function createModelExecutor(deps: Dependencies) {
     }
     const connectionFor = async (id: string) => {
       const u = snapshot.config.upstreamModels.find(u => u.id === id)!, p = snapshot.config.providers.find(p => p.id === u.providerId)!;
-      return { providerId: p.id, protocol: p.protocol, baseUrl: p.baseUrl, apiKey: await deps.credentials.read(p.credentialRef!, p.id), wireModel: u.model, timeoutMs: p.timeoutMs, maxConcurrent: p.maxConcurrent, options: p.options };
+      return { providerId: p.id, protocol: p.protocol, baseUrl: p.baseUrl, apiKey: await deps.credentials.read(p.credentialRef!, p.id), credentialRef: p.credentialRef, wireModel: u.model, timeoutMs: p.timeoutMs, maxConcurrent: p.maxConcurrent, options: p.options };
     };
     const scope: ModelExecutionScope = { frozen, connection: await connectionFor(upstream!.id), capabilities: upstream!.capabilities, parameterMap: upstream!.parameterMap, businessOption, procurement: upstream!.procurement };
     if (plan) {

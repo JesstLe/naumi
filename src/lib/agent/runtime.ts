@@ -3,6 +3,7 @@ import { currentModelExecution, currentExecutionBundle } from "@/lib/model-confi
 import { signAcceptedModelContext } from "@/lib/model-config/accepted-context";
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
 import { configuredPiModels } from "@/lib/model-config/pi";
+import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import { legacyAgentVision } from "@/lib/model-config/legacy-vision";
 import type { ImageContent, Model, createModels } from "@earendil-works/pi-ai";
 import type { UserMessage } from "@earendil-works/pi-ai";
@@ -194,7 +195,7 @@ export async function getOrCreateSession(
 ): Promise<Session> {
   gcSessions();
   const scope = currentModelExecution("text") || currentModelExecution("vision");
-  const managed = scope ? await configuredPiModels(scope) : null;
+  const managed = scope ? await configuredPiModels(scope,{userEmail:email,feature:'agent.text'}) : null;
   const existing = SESSIONS.get(key(email, sessionId));
   if (existing && (existing.running || existing.modelId === modelId && existing.modelExecutionStamp === managed?.stamp)) {
     existing.lastUsedAt = Date.now();
@@ -241,7 +242,7 @@ export async function getOrCreateSession(
       ),
       messages: toUserMessages(history),
     },
-    streamFn: managed ? (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed.fetch, maxRetries: 0 }) : models.streamSimple.bind(models),
+    streamFn: (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 }),
     toolExecution: "sequential",
     // 积分预检:工具执行前查余额,不足直接拦截(硬门禁,不靠提示词自觉)
     beforeToolCall: async ({ toolCall, args }) => {
