@@ -418,6 +418,7 @@ type Job = {
   parentId: string;
   parentIds: string[];
   origin: string;
+  entry?: string;
   user?: Awaited<ReturnType<typeof getUser>>;
   creditsUsed?: number;
   error?: string;
@@ -627,6 +628,7 @@ async function runAplusGeneration(jobId: string) {
             id: s.id,
             title: `A+·${s.label}`,
             category: "detail",
+            creationProvenance: { version: 1, operation: "aplus", entry: job.origin === "canvas" ? "canvas" : job.entry || "toolbox", ref: jobId, evidence: "server-route" },
             prompt: "",
             status: "completed",
             image: s.url!,
@@ -941,6 +943,7 @@ async function handleObservedPost(request: Request) {
     parentId: input.parentId,
     parentIds: input.parentIds.filter((id) => id !== input.parentId),
     origin: input.origin,
+    entry: request.headers.get("x-naumi-client-entry") === "agent" ? "agent" : "toolbox",
     createdAt: now,
   }, {}, cost, input.prepared,billingQuote);
   } catch(error) {

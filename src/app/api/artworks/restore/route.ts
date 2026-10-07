@@ -34,6 +34,8 @@ export async function POST(request: Request) {
       email,
       records.map((r) => ({
         id: r.id,
+        // Conflict restores preserve the database's original creation record.
+        creationProvenance: { version: 1, operation: "restore", entry: "restore", ref: r.id, evidence: "server-route" },
         title: r.title,
         category: r.category,
         prompt: r.prompt,

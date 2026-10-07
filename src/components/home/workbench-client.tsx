@@ -618,6 +618,7 @@ export function WorkbenchClient() {
       const fd = new FormData();
       fd.append("image", f);
       fd.append("title", "Agent 上传");
+      fd.append("entry", "agent");
       const res = await fetch("/api/artworks/add", {
         method: "POST",
         headers: await authHeader(),
@@ -625,7 +626,7 @@ export function WorkbenchClient() {
       });
       const d = await res.json();
       const url = d?.artwork?.image || d?.image || d?.url;
-      const id = d?.artwork?.id || null;
+      const id = d?.artwork?.id || d?.id || null;
       if (url && id) artworkIdRef.current[imageKey(url)] = id;
       return url || null;
     } catch {

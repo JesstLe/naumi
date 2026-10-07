@@ -40,6 +40,7 @@ export async function POST(
       id: artworkId,
       title: `视频 · ${task.prompt.slice(0, 24)}`,
       category: "video",
+      creationProvenance: { version: 1, operation: "video", entry: "canvas", ref: task.id, evidence: "server-route" },
       prompt: task.prompt,
       status: "completed",
       image: task.videoUrl,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, addArtworks, setArtworkPosition } from "@/lib/db";
+import { dbEnabled, addArtworks, setArtworkPosition, listArtworksByIds } from "@/lib/db";
+import { provenanceEntry } from "@/lib/artwork-provenance";
 import { uploadImage } from "@/lib/storage";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { adaptiveCanvasImageSize } from "@/lib/mock-data";
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
           id,
           title,
           category: "main",
+          creationProvenance: { version: 1, operation: "upload", entry: provenanceEntry(fd.get("entry"), "canvas"), ref: id, evidence: "server-route" },
           prompt: "",
           status: "completed",
           image: url,
@@ -123,12 +125,14 @@ export async function POST(request: Request) {
 
   // ── 创建副本 / 粘贴节点 ──
   let body: {
+    entry?: string;
     email?: string;
     parentId?: string | null; // 顶层覆盖:落到当前项目某父节点下
     linked?: boolean; // true=画连线(衍生);false/缺省=独立节点(canvas-add,不连线)
     x?: number;
     y?: number;
     src?: {
+      id?: string;
       image?: string;
       videoUrl?: string | null;
       title?: string;
@@ -158,6 +162,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "缺少参数" }, { status: 400 });
   }
   const id = newId();
+  const sourceId = String(src.id || "").trim().slice(0, 240);
+  if (sourceId) {
+    const original = (await listArtworksByIds(email, [sourceId]))[0];
+    if (!original || original.image !== image || (original.videoUrl || null) !== videoUrl)
+      return NextResponse.json({ error: "复制源作品不存在或不匹配" }, { status: 404 });
+  }
   // 顶层 parentId(从历史加到当前项目)优先于 src.parentId(纯副本)
   const parentId =
     body.parentId !== undefined ? body.parentId : (src.parentId ?? null);
@@ -171,6 +181,7 @@ export async function POST(request: Request) {
         id,
         title: src.title || "作品",
         category: src.category || "main",
+        creationProvenance: { version: 1, operation: sourceId ? "copy" : src.templateId ? "template" : "import", entry: provenanceEntry(body.entry, "canvas"), ref: id, ...(sourceId ? { sourceArtworkId: sourceId } : {}), evidence: "server-route" },
         prompt: src.prompt || "",
         status: "completed",
         image,

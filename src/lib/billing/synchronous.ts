@@ -1,6 +1,8 @@
 import { settlementFor } from "./quote";
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { withArtworkCreation } from "@/lib/artwork-provenance-context";
+import { provenanceEntry } from "@/lib/artwork-provenance";
 import { createHash } from "node:crypto";
 import { dbEnabled, getPool, ensureSchema, isBanned } from "@/lib/db";
 import { resolveUserEmail } from "@/lib/admin-auth";
@@ -101,7 +103,7 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
         return await storage.run(context, async () => {
             let response: Response;
             try {
-                response = await action();
+                response = await withArtworkCreation({ path: new URL(request.url).pathname, operationId: id, entry: provenanceEntry(request.headers.get("x-naumi-client-entry"), new URL(request.url).pathname.startsWith("/api/canvas/") ? "canvas" : "toolbox") }, action);
             }
             catch (error) {
                 response = error instanceof BillingError ? billingErrorResponse(error) : billingJson({ error: "操作失败，请稍后重试" }, 500);

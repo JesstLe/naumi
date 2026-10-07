@@ -148,7 +148,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         const res = await fetch(base + path, {
           ...init,
           signal,
-          headers: { ...(init?.headers ?? {}), ...authHeaders() },
+          headers: { ...(init?.headers ?? {}), ...authHeaders(), "x-naumi-client-entry": "agent" },
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -811,6 +811,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         const fd = new FormData();
         if (p.quality) fd.append("quality", p.quality);
         fd.append("prompt", p.prompt);
+        fd.append("entry", "agent");
         fd.append("ratio", p.ratio || "1:1");
         fd.append("resolution", p.resolution || "1K");
         fd.append("count", String(Math.min(Math.max(p.count || 1, 1), 4)));

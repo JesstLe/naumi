@@ -1,0 +1,120 @@
+import assert from "node:assert/strict";
+import { readFile, rm } from "node:fs/promises";
+import path from "node:path";
+import sharp from "sharp";
+import { createModelFixture } from "./model-config-fixture";
+
+async function main() {
+  const baseline = process.argv.includes("--baseline");
+  const f = await createModelFixture();
+  process.env.PGOPTIONS = `-c search_path=${f.schemaName}`;
+  process.env.NAUMI_MULTI_USER = "1";
+  process.env.STORAGE_DRIVER = "local";
+  process.env.MEDIA_DIR = path.resolve(`output/provenance-fix-20261007/test-media-${f.schemaName}`);
+  const db = await import("../src/lib/db");
+  const bi = await import("../src/lib/bi/repository");
+  const { parseBiQuery } = await import("../src/lib/bi/contracts");
+  const email = "provenance-fixture@example.test", other = "other-fixture@example.test";
+  const item = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: id, category: "main", prompt: "", status: "completed", image: `/media/canvas-uploads/${id}.png`, gradient: "from-slate-100 to-white", width: 750, height: 1000, ...extra });
+  const query = () => bi.queryBi(parseBiQuery(new URLSearchParams({ section: "artworks", email, size: "100" })));
+  try {
+    await bi.ensureBiSchema();
+    await db.getOrCreateUser(email, "溯源验收用户");
+    await db.getOrCreateUser(other, "其他用户");
+    await db.setSetting("multi_user_enabled", "1");
+    await db.addArtworks(email, [item("legacy-upload", { source: "canvas-add" })]);
+    if (baseline) {
+      const row = (await query()).rows[0];
+      assert.equal(row.origin, null);
+      assert.equal(row.resolution, null);
+      assert.equal(row.category, "main");
+      assert.equal(row.source_label, undefined);
+      console.log("BASELINE=PASS BUG_REPRODUCED origin=NULL resolution=NULL category=main source_label=ABSENT");
+      return;
+    }
+    const { artworkBiPresentation, resolveArtworkProvenance } = await import("../src/lib/artwork-provenance");
+    const { withArtworkCreation } = await import("../src/lib/artwork-provenance-context");
+    const { signUserSession } = await import("../src/lib/native-auth");
+    const add = await import("../src/app/api/artworks/add/route");
+    const restore = await import("../src/app/api/artworks/restore/route");
+    const cookie = `nv_user=${signUserSession(email, Date.now())}`;
+    const request = (body: unknown) => new Request("http://fixture.test/api/artworks/add", { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify(body) });
+    // Historical rows remain untouched: only their presentation uses evidence.
+    await f.sql.query("UPDATE app_artworks SET creation_provenance=NULL WHERE id='legacy-upload'");
+    await f.sql.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered) VALUES('job-evidence',$1,'generate','{}','{\"p\":{\"origin\":\"\"}}',false),('job-other',$2,'generate','{}','{}',false)", [email, other]);
+    await db.addArtworks(email, [item("legacy-job", { batchId: "b-job-evidence", image: "/media/generated.png" }), item("legacy-unknown", { image: "/media/unknown.png" }), item("legacy-foreign-job", { batchId: "b-job-other", image: "/media/unknown.png" })]);
+    await f.sql.query("UPDATE app_artworks SET creation_provenance=NULL WHERE id LIKE 'legacy-%'");
+    await withArtworkCreation({ path: "/api/retouch", operationId: "tool-stable-id", entry: "agent" }, () => db.addArtworks(email, [item("tool-output", { image: "/media/retouched.png" })]));
+    const tool = (await db.listArtworksByIds(email, ["tool-output"]))[0];
+    assert.deepEqual(tool.creationProvenance, { version: 1, operation: "retouch", entry: "agent", ref: "tool-stable-id", evidence: "server-route" });
+    await db.setArtworkOrigin(email, "tool-output", "canvas");
+    assert.deepEqual((await db.listArtworksByIds(email, ["tool-output"]))[0].creationProvenance, tool.creationProvenance);
+    const bytes = await sharp({ create: { width: 750, height: 1000, channels: 3, background: "white" } }).png().toBuffer();
+    const form = new FormData();
+    form.append("image", new File([bytes], "upload.png", { type: "image/png" }));
+    form.append("entry", "canvas");
+    const uploadResponse = await add.POST(new Request("http://fixture.test/api/artworks/add", { method: "POST", headers: { cookie }, body: form }));
+    assert.equal(uploadResponse.status, 200);
+    const uploaded = await uploadResponse.json();
+    const upload = (await db.listArtworksByIds(email, [uploaded.id]))[0];
+    assert.equal(upload.creationProvenance?.operation, "upload");
+    assert.equal(upload.creationProvenance?.ref, upload.id);
+    const copiedResponse = await add.POST(request({ entry: "works", parentId: "legacy-job", src: { id: upload.id, image: upload.image, width: 750, height: 1000 } }));
+    assert.equal(copiedResponse.status, 200);
+    const copied = await copiedResponse.json();
+    const copy = (await db.listArtworksByIds(email, [copied.id]))[0];
+    assert.equal(copy.creationProvenance?.sourceArtworkId, upload.id);
+    assert.equal(copy.creationProvenance?.entry, "works");
+    assert.equal(copy.parentId, "legacy-job", "project root is not the copy source");
+    assert.equal((await add.POST(request({ src: { id: upload.id, image: "/media/tampered.png" } }))).status, 404);
+    await db.addArtworks(other, [item("foreign-copy")]);
+    assert.equal((await add.POST(request({ src: { id: "foreign-copy", image: "/media/canvas-uploads/foreign-copy.png" } }))).status, 404);
+    const importedResponse = await add.POST(request({ entry: "competitor", src: { image: "/media/imported.png" } }));
+    assert.equal(importedResponse.status, 200);
+    const imported = await importedResponse.json();
+    assert.equal((await db.listArtworksByIds(email, [imported.id]))[0].creationProvenance?.operation, "import");
+    await db.deleteArtworksByIds(email, [copy.id]);
+    const restored = await restore.POST(request({ records: [{ ...copy, creationProvenance: { version: 1, operation: "fake", entry: "fake", ref: "fake", evidence: "fake" } }] }));
+    assert.equal(restored.status, 200);
+    assert.deepEqual((await db.listArtworksByIds(email, [copy.id]))[0].creationProvenance, copy.creationProvenance);
+    const root = await db.ensureTemplateRoot(email, { templateId: "tpl-evidence", image: "/media/template.png", title: "模板", prompt: "" });
+    assert.equal((await db.listArtworksByIds(email, [root!]))[0].creationProvenance?.operation, "template");
+    for (const name of ["generate", "suite", "aplus", "video", "canvas-text-edit", "comfyui"]) {
+      await db.addArtworks(email, [item(`async-${name}`, { creationProvenance: { version: 1, operation: name, entry: "canvas", ref: `task-${name}`, evidence: "server-route" } })]);
+    }
+    const rows = (await query()).rows;
+    const row = (id: string) => rows.find(r => r.id === id)!;
+    assert.equal(row("legacy-upload").source_label, "画布 · 上传图片");
+    assert.equal(row("legacy-upload").operation_label, "上传图片");
+    assert.equal(row("legacy-upload").dimensions, "750×1000");
+    assert.equal(row("legacy-upload").prompt_display, "不适用：上传文件");
+    assert.equal(row("legacy-job").job_id, "job-evidence");
+    assert.equal(row("legacy-job").source_label, "生成图片（入口待核验）");
+    assert.equal(row("legacy-unknown").source_label, "历史记录待核验");
+    assert.equal(row("legacy-foreign-job").job_id, null);
+    assert.equal(row("legacy-foreign-job").source_label, "历史记录待核验");
+    assert.equal(row(copy.id).source_artwork_id, upload.id);
+    assert.equal(row(copy.id).provenance_ref, copy.id);
+    const exact = await bi.queryBi(parseBiQuery(new URLSearchParams({ section: "artworks", email, id: upload.id, status: "all", from: "2020-01-01", to: "2020-01-01" })));
+    assert.equal(exact.total, 1); assert.equal(exact.rows[0].id, upload.id);
+    const foreignExact = await bi.queryBi(parseBiQuery(new URLSearchParams({ section: "artworks", email, id: "foreign-copy", status: "all" })));
+    assert.equal(foreignExact.total, 0);
+    assert.ok(rows.every(r => r.source_label && r.provenance_ref && r.provenance_status));
+    assert.ok(rows.every(r => !("image_url" in r) && !("source_url" in r) && !("creation_provenance" in r)));
+    assert.equal((await f.sql.query("SELECT creation_provenance FROM app_artworks WHERE id='legacy-job'")).rows[0].creation_provenance, null);
+    assert.equal(resolveArtworkProvenance({ id: "copied-upload", source_url: "canvas-add", image_url: "/media/canvas-uploads/someone-else.png" })?.operation, "canvas-add");
+    assert.equal(resolveArtworkProvenance({ id: "unknown-derived", source_url: "derived" })?.operation, "derived");
+    assert.equal(resolveArtworkProvenance({ id: "unknown-print", batch_id: "prt-123" })?.operation, "print-operation");
+    assert.equal(artworkBiPresentation({ id: "moved-to-canvas", job_id: "old-job", job_kind: "generate", job_origin: "", origin: "canvas" }).source_label, "生成图片（入口待核验）");
+    assert.equal(artworkBiPresentation({ id: "bad-size", image_width: -1, image_height: 0 }).dimensions, "尺寸待核验");
+    const migration = await readFile("scripts/migrations/20261007-artwork-provenance.sql", "utf8");
+    await f.sql.query(migration); await f.sql.query(migration);
+    assert.equal((await f.sql.query("SELECT count(*)::int AS n FROM app_artworks WHERE id LIKE 'async-%' AND creation_provenance IS NULL")).rows[0].n, 0);
+    console.log("ARTWORK_PROVENANCE=PASS upload/copy/import/template/async/tool immutable-origin owner-isolation historical-evidence dimensions prompt migration-idempotent URL-redaction");
+  } finally {
+    await db.getPool().end();
+    await f.cleanup();
+    await rm(process.env.MEDIA_DIR!, { recursive: true, force: true });
+  }
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

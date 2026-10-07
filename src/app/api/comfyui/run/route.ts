@@ -169,6 +169,7 @@ export async function POST(request: Request) {
           id,
           title: `${source?.title || "工作流"} · ${workflow.name}`,
           category: "comfy-workflow",
+          creationProvenance: { version: 1, operation: "comfyui", entry: "toolbox", ref: promptId, evidence: "server-route" },
           prompt: typeof body?.prompt === "string" && body.prompt
             ? body.prompt.slice(0, 500)
             : JSON.stringify({ workflowId, workflowName: workflow.name }),
@@ -197,6 +198,7 @@ export async function POST(request: Request) {
             id: vidArtId,
             title: `${source?.title || "工作流"} · ${workflow.name} 视频`,
             category: "video",
+            creationProvenance: { version: 1, operation: "comfyui", entry: "toolbox", ref: promptId, evidence: "server-route" },
             prompt: typeof body?.prompt === "string" && body.prompt
               ? body.prompt.slice(0, 500)
               : workflow.name,

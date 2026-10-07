@@ -13,6 +13,7 @@ import {assertQuotedVersion,requestQuoteConfirmation,billingErrorResponse} from 
 import {BillingError} from "@/lib/billing/types";
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { NextResponse } from "next/server";
+import { provenanceEntry } from "@/lib/artwork-provenance";
 import OpenAI, { toFile } from "openai";
 import { CATEGORY_IMAGES, img } from "@/lib/images";
 import {
@@ -116,6 +117,7 @@ type GenParams = {
   templateImage: string;
   templatePrompt: string;
   origin: string; // "canvas"=在画布里产出(永远留画布);空=生图页/工具等普通产出
+  entry?: string;
   projectGroupId: string; // 纯文字画布生成首张图片时沿用当前画布项目
   model: string;
   targetWidth: number;
@@ -787,6 +789,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
       templateImage: s("templateImage").trim(),
       templatePrompt: s("templatePrompt").trim(),
       origin: s("origin").trim(),
+      entry: provenanceEntry(s("entry"), "generate"),
       projectGroupId: s("projectGroupId").trim(),
       model: s("model").trim(),
       targetWidth: parseDimension(s("targetWidth")),
@@ -814,6 +817,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
     templateImage: (j.templateImage ?? "").trim(),
     templatePrompt: (j.templatePrompt ?? "").trim(),
     origin: (j.origin ?? "").trim(),
+    entry: provenanceEntry(j.entry, "generate"),
     projectGroupId: (j.projectGroupId ?? "").trim(),
     model: typeof (j as Partial<GenParams>).model === "string" ? (j as Partial<GenParams>).model!.trim() : "",
     targetWidth: parseDimension((j as Partial<GenParams>).targetWidth),
@@ -1006,6 +1010,7 @@ async function runJob(
             parentIds: p.parentIds.filter((x) => x && x !== parent),
             groupId: p.projectGroupId || undefined,
             origin: p.origin || null,
+            creationProvenance: { version: 1, operation: "generate", entry: p.origin === "canvas" ? "canvas" : provenanceEntry(p.entry), ref: jobId, evidence: "server-route" },
             width: im.width ?? null,
             height: im.height ?? null,
             processingKind: im.processingKind ?? null,

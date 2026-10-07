@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { ensureSchema, getPool } from "@/lib/db";
 import type { BiOverview, BiQuery, BiResponse, BiRow } from "./contracts";
+import { artworkBiPresentation } from "@/lib/artwork-provenance";
 
 let ready: Promise<void> | null = null;
 export async function ensureBiSchema() {
@@ -141,7 +142,8 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
     result.overview = await snapshot((client) => overview(q, client));
     return result;
   }
-  const binds = [...values(q), q.status, q.size, (q.page - 1) * q.size];
+  const filterBinds = [...values(q), q.status, ...(q.section === "artworks" ? [q.recordId || ""] : [])];
+  const binds = [...filterBinds, q.size, (q.page - 1) * q.size];
   let source = "";
   switch (q.section) {
     case "management":
@@ -169,8 +171,15 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
       break;
     case "artworks":
       source = `SELECT a.id,a.email,a.title,a.category,a.prompt,a.status,a.ratio,a.resolution,a.image_width,a.image_height,a.origin,a.parent_id,a.batch_id,a.created_at,a.deleted_at,
+      a.creation_provenance,a.source_url,a.image_url,a.template_id,
+      j.id AS job_id,j.kind AS job_kind,COALESCE(j.payload->'p'->>'origin',j.payload->>'origin') AS job_origin,
+      COALESCE(j.payload->'p'->>'entry',j.payload->>'entry') AS job_entry,
+      c.id AS canvas_task_id,c.kind AS canvas_task_kind,v.id AS video_task_id,v.source AS video_task_source,
       (a.image_url<>'') AS has_image,(COALESCE(a.video_url,'')<>'') AS has_video
-      FROM app_artworks a WHERE a.email IN (SELECT email FROM scoped) AND ${inRange("a")} AND (($6::text='' AND a.deleted_at IS NULL) OR ($6='deleted' AND a.deleted_at IS NOT NULL) OR $6='all')`;
+      FROM app_artworks a LEFT JOIN app_image_jobs j ON j.email=a.email AND j.id=CASE WHEN a.creation_provenance->>'operation' IN ('generate','suite','aplus') THEN a.creation_provenance->>'ref' WHEN a.batch_id LIKE 'b-job-%' THEN substring(a.batch_id from 3) ELSE a.batch_id END
+      LEFT JOIN LATERAL (SELECT id,kind FROM app_canvas_image_tasks WHERE email=a.email AND result_artwork_id=a.id ORDER BY created_at,id LIMIT 1) c ON true
+      LEFT JOIN LATERAL (SELECT id,source FROM app_video_tasks WHERE email=a.email AND artwork_id=a.id ORDER BY created_at,id LIMIT 1) v ON true
+      WHERE a.email IN (SELECT email FROM scoped) AND (${inRange("a")} OR $7::text<>'') AND ($7::text='' OR a.id=$7) AND (($6::text='' AND a.deleted_at IS NULL) OR ($6='deleted' AND a.deleted_at IS NOT NULL) OR $6='all')`;
       break;
     case "operations":
       source = `SELECT t.* FROM (${operationSource}) t WHERE t.email IN (SELECT email FROM scoped) AND ${inRange("t")} AND ($6::text='' OR t.status=$6 OR ($6='review' AND (t.status='needs_attention' OR t.stage='checking' OR t.stage='reviewing' OR t.error LIKE '%核查%')))`;
@@ -211,15 +220,20 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
   const [count, page] = await snapshot(async (client) => [
     await client.query(
       `${scope} SELECT count(*)::int AS total FROM (${source}) result`,
-      binds.slice(0, 6),
+      filterBinds,
     ),
     await client.query(
-      `${scope} SELECT * FROM (${source}) result ORDER BY ${order} LIMIT $7 OFFSET $8`,
+      `${scope} SELECT * FROM (${source}) result ORDER BY ${order} LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2}`,
       binds,
     ),
   ]);
   result.total = count.rows[0].total;
-  result.rows = normalize(page.rows);
+  result.rows = normalize(q.section === "artworks" ? page.rows.map(raw => {
+    const presentation = artworkBiPresentation(raw);
+    // Do not expose private/signed source URLs or raw JSON in the BI list/CSV.
+    const { creation_provenance, source_url, image_url, job_kind, job_origin, job_entry, canvas_task_kind, video_task_source, ...row } = raw;
+    return { ...row, ...presentation };
+  }) : page.rows);
   return result;
 }
 

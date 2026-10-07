@@ -14,6 +14,7 @@ export const BI_SECTIONS = [
 export type BiSection = (typeof BI_SECTIONS)[number];
 export type BiRow = Record<string, string | number | boolean | null>;
 export type BiQuery = {
+  recordId?: string;
   section: BiSection;
   from: string;
   to: string;
@@ -105,6 +106,7 @@ export function parseBiQuery(
     return value;
   };
   return {
+    recordId: (params.get("id") || "").trim().slice(0, 240),
     section: section as BiSection,
     from,
     to,

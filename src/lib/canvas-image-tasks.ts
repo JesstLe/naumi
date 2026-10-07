@@ -183,6 +183,7 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
     id: artworkId,
     title: `${artwork.title || "图片"} · 改字`,
     category: "canvas-text-edit",
+    creationProvenance: { version: 1, operation: "canvas-text-edit", entry: "canvas", ref: task.id, evidence: "server-route" },
     prompt,
     status: "completed",
     image: url,
