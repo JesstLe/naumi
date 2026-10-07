@@ -26,7 +26,8 @@
 - [x] 后处理 checkpoint 与独立恢复
 - [x] 隔离数据库/本地协议端点集成验收
 - [x] 浏览器验收
-- [ ] Git 选择性提交、固定镜像发布与线上真实供应商验收
+- [x] Git 选择性提交、推送、固定镜像发布与线上只读验收
+- [ ] 真实供应商付费/质量验收与未接通阶段能力
 
 本文件随实现更新。隔离测试供应商验证协议和业务链，不代表真实供应商质量验收。
 
@@ -67,3 +68,23 @@
 验收环境为本地隔离 PostgreSQL、实际 Next 服务与锁定 Go Router，供应商为本地协议 fixture（没有真实付费）；生产发布只能证明服务、权限、目录、版本与迁移状态，不代表真实供应商质量/结算验收完成。
 
 旧钱包浏览器回归：`output/billing-routing-20261007/billing-ui-delivery5.log`，15 passed。基线归档 SHA256：`9dfe4be036152c187b7db5ad9508d6f1180d7c431992facd8dca5c636cad0454`。
+
+## 生产交付（2026-10-07）
+
+- 已推送分支：`codex/billing-model-routing`。应用固定提交：`ed69d0ab93f7dd421ebef9f61010d928e2e7b011`；发布目录：`/opt/naumi/releases/ed69d0ab93f7-20261007-122518`。
+- GitHub 镜像构建成功，离线 Artifact 因仓库配额耗尽上传失败，生产 GHCR 拉取返回 403；使用本机从同一提交构建的固定镜像离线发布（不在生产构建），`BUILD_VERSION=1791346455`。本机镜像摘要：`sha256:206a56477a8008c82ac85b13fc55273a7c1a70458ccaa75d2fa1f1dd5c114db4`。镜像归档 SHA256：`874ee8638227e53e28d3e57e25f12b657a615dc10d8707eb8ec0ee8a6e1c13e7`。
+- 新增 SQL 已在 PostgreSQL 执行，迁移前备份：`/opt/naumi/backups/billing-routing-20261007-20261007-122516`；备份目录包含环境、Compose、Nginx、可读的 PostgreSQL dump 与 SHA256。
+- `scripts/deploy-release.sh` 首次在 Nginx reload 阶段失败：旧重启时 Nginx 因 Docker 网桥 172.20.0.1 尚未就绪而启动失败。恢复 Nginx 后，新应用直连验收通过，沿该发布目录完成权限/健康/计数/固定镜像校验并更新 current 链接。没有删除数据库或媒体。
+- 生产回滚保护发现 2 个带模型快照的未结算图片任务，阻止退回旧应用；没有绕过保护或重提这些任务。代码回滚在独立副本成功，发布成功与失败恢复链分别通过隔离容器测试。生产 `ROLLBACK.sh --check` 通过，但不是生产回滚已完成。
+- Nginx 增加 `/etc/systemd/system/nginx.service.d/naumi-docker-startup.conf`，等待 Docker 且失败后重试；现运行态 `active`，未为了验收重启生产主机。撤销该单独启动修复：移除该精确文件并运行 `systemctl daemon-reload`（不恢复数据库）。原状态记录在当前发布的 `backups/nginx-startup.before`。
+- 公网 `http://101.133.166.67/api/health=200`，数据库正常；普通访问后台 API=404，匿名后台页面=307 登录跳转，管理员后台/阶段 API=200。模型目录不含供应商密钥与成本。
+- 生产继续 `STORAGE_DRIVER=s3`，环境文件字节一致，发布前后均 75 用户、1968 作品。原模型有效版本仍为 1，26 个公开模型；没有自动发布新售价或改变客户模型，功能配置条目仍为 0。普通生图/工具/画布图片目录各 13 个模型，文字目录当前为空，需管理员登记并核验文字供应商后配置，不能把空目录说成已接通。
+- 已完成页面、权限、迁移与目录线上验收，供应商调用 0；改价实际调用/扣费、路由、冻结与后处理恢复验收使用本地协议端点，不是供应商实际账单或质量证明。
+
+### 改动与证据入口
+
+完整 77 文件改动清单：`output/billing-routing-20261007/changed-files.txt`，代码差异：`DIFF_FILE.patch`。核心模块为 `src/components/admin/model-config/business-editor.tsx`、`src/lib/model-config/business*.ts`、`src/lib/model-config/stage-routing.ts`、`src/lib/billing/money.ts`、`src/lib/media-postprocess.ts`、`src/app/api/models/route.ts`、`src/app/api/admin/billing/models/**`，以及既有工具/画布/计费执行入口。
+
+四个交付制品位于 `output/billing-routing-20261007/`：`MODIFIED_FILE.tar.gz`（已部署应用源码）、`DIFF_FILE.patch`、`VERIFICATION.txt`（精确命令/输入/输出/退出状态）、`ROLLBACK.sh`（只允许独立验收副本，非生产回滚脚本）。生产回滚脚本是 `/opt/naumi/ROLLBACK_RELEASE.sh`，保留未结算任务保护。原始代码归档 SHA256 保持不变。
+
+线上证据：`production-final-acceptance.log`、`production-finalize.log`、`production-final-state.log`。本地回滚证据：`package-delivery.log`，基线与恢复后模型/计费测试退出状态均为 0。
