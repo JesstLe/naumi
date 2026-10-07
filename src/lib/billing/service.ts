@@ -34,7 +34,7 @@ function amount(n: number) { if (!Number.isSafeInteger(n) || n < 0 || n > 214748
 async function settleLocked(tx:Tx,row:repository.OperationRow,result:import("./types").BillingResult,reason:string){
             const frozen = row.quote as BillingQuote, settlement = settlementFor(frozen, result);
             if (settlement.state !== "settle") {
-                await tx.query("UPDATE app_billing_operations SET state=$2,updated_at=now() WHERE id=$1", [row.id, settlement.state]);
+                await tx.query("UPDATE app_billing_operations SET state=$2,settlement_result=$3::jsonb,updated_at=now() WHERE id=$1", [row.id, settlement.state, JSON.stringify(result)]);
                 return { replayed: false, charge: 0 };
             }
             const wallet = await repository.lockWallet(tx, row.email);

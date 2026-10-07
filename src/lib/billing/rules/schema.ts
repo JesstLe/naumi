@@ -1,3 +1,4 @@
+import { billingPricingSchema } from "./pricing-schema";
 import { z } from "zod";
 import { BillingError, type BillingConfig, type FeatureTariff, type Pricing } from "../types";
 import { FEATURE_IDS, QUALITY_IDS, RESOLUTION_IDS } from "./registry";
@@ -7,17 +8,16 @@ const integer = z.number().int().nonnegative().max(2147483647);
 const decimal = z.string().regex(/^(0|[1-9]\d{0,29})$/);
 const expiry = z.object({ unit: z.enum(["days", "months", "years"]), value: z.number().int().min(1).max(36500) }).strict();
 const prices = z.record(z.string().min(1).max(100), integer);
-const pricing = z.discriminatedUnion("mode", [
-    z.object({ mode: z.literal("fixed"), credits: integer }).strict(),
-    z.object({ mode: z.literal("quality-resolution"), quality: prices, resolutionExtra: prices }).strict(),
-    z.object({ mode: z.literal("tiers"), dimension: z.enum(["quantity", "quality", "resolution"]), prices }).strict(),
-    z.object({ mode: z.literal("cost-plus"), costKey: z.string().min(1).max(300), creditsPerCnyMicros: decimal, factorBps: integer, rounding: z.enum(["ceil", "floor", "nearest"]), minimum: integer, maximum: integer }).strict(),
-]);
+const pricing = billingPricingSchema;
 const policy = z.object({ qualityBasis: z.enum(["requested", "executed"]), successBasis: z.enum(["successful-units", "whole-request"]), failureBps: z.number().int().min(0).max(10000), byokBps: z.number().int().min(0).max(10000), reserveBps: z.number().int().min(10000).max(100000), unknown: z.enum(["hold", "manual"]) }).strict();
 const condition = z.object({ quality: z.array(z.enum(QUALITY_IDS)).min(1).optional(), resolution: z.array(z.enum(RESOLUTION_IDS)).min(1).optional(), byok: z.boolean().optional(), userGroup: z.array(z.string().min(1).max(100)).min(1).optional(), minQuantity: z.number().int().min(1).max(10000).optional(), maxQuantity: z.number().int().min(1).max(10000).optional(), minPaidFen: integer.optional(), providerId: z.array(z.string().max(300)).min(1).optional(), modelId: z.array(z.string().max(300)).min(1).optional() }).strict();
 const tariff = z.object({ label: z.string().min(1).max(100), enabled: z.boolean(), unit: z.enum(["image", "item", "task"]), pricing, settlement: policy, rules: z.array(z.object({ id: z.string().min(1).max(100), priority: integer, when: condition, pricing: pricing.optional(), settlement: policy.partial().optional() }).strict()).max(100) }).strict();
 const schema = z.object({ schemaVersion: z.literal(1), features: z.record(z.enum(FEATURE_IDS), tariff), costs: z.record(z.string().min(1).max(300), z.object({ currency: z.enum(["CNY", "USD", "credits"]), amountMicros: decimal, unit: z.enum(["image", "item", "task"]), cnyPerUnitMicros: decimal.optional(), source: z.enum(["manual-estimate", "legacy-credit-estimate"]) }).strict()), products: z.record(z.string().min(1).max(100), z.object({ id: z.string().min(1).max(100), kind: z.enum(["pack", "pro", "plan-display"]), title: z.string().min(1).max(200), amountFen: integer, baseCredits: integer, bonusCredits: integer, available: z.boolean(), expiry }).strict()), credits: z.object({ signup: z.object({ amount: integer, expiry }).strict(), purchase: expiry, redeem: expiry, admin: expiry, debitOrder: z.enum(["expires-first", "created-first"]), staleReservationMinutes: z.number().int().min(1).max(525600) }).strict(), switches: z.object({ metering: z.enum(["legacy-auto", "on", "off"]), commerce: z.boolean(), recharge: z.boolean() }).strict(), thresholds: z.object({ highQualityPaidFen: integer, agentConfirmCredits: integer }).strict() }).strict();
-function checkPricing(p: Pricing, c: BillingConfig) {
+export function checkPricing(p: Pricing, c: BillingConfig) {
+    if (p.mode === "cny-fixed" && p.variants) {
+        const seen = new Set<string>();
+        for (const v of p.variants) { const key = `${v.quality || "*"}:${v.resolution || "*"}`; if (seen.has(key)) throw new Error("差价条件重复"); seen.add(key); }
+    }
     if (p.mode === "quality-resolution") {
         if (!QUALITY_IDS.every(k => Number.isInteger(p.quality[k])) || !RESOLUTION_IDS.every(k => Number.isInteger(p.resolutionExtra[k])))
             throw new Error("质量和分辨率价格必须完整");

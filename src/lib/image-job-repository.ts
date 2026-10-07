@@ -49,7 +49,7 @@ export async function listActiveImageJobs(email: string, kind: ImageJobKind) {
 export async function claimImageJob(id: string, kind: ImageJobKind): Promise<ImageJobRow | null> {
   await ensureSchema();
   const { rows } = await getPool().query(`UPDATE app_image_jobs SET lease_token=$3,lease_until=now()+interval '120 seconds'
-    WHERE id=$1 AND kind=$2 AND (lease_until IS NULL OR lease_until<now()) AND snapshot->>'status' NOT IN ('done','error') RETURNING *`, [id, kind, randomUUID()]);
+    WHERE id=$1 AND kind=$2 AND (lease_until IS NULL OR lease_until<now()) AND snapshot->>'status' NOT IN ('done','error','needs_attention') RETURNING *`, [id, kind, randomUUID()]);
   return rows[0] || null;
 }
 

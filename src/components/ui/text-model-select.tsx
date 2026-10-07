@@ -5,20 +5,30 @@ import { Check, ChevronDown, Plus, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useTextModel } from "@/lib/text-model-context";
+import type { FeatureId } from "@/lib/billing/rules/registry";
+import { useFeatureModels } from "@/lib/model-config/feature-client";
 import { ModelIcon } from "@/components/ui/model-icon";
 
 export function TextModelSelect({
+  feature = "canvas.text-generate",
   compact = false,
   dark = false,
   direction = "down",
   className,
 }: {
+  feature?: FeatureId;
   compact?: boolean;
   dark?: boolean;
   direction?: "up" | "down";
   className?: string;
 }) {
-  const { model, models, setModel } = useTextModel();
+  const global = useTextModel();
+  const featureState = useFeatureModels(feature);
+  const managed = featureState.catalog?.managed === true;
+  const model = managed ? featureState.selected : global.model;
+  const models = managed ? featureState.catalog!.models.map(m => m.id) : global.models;
+  const setModel = (id: string) => { if (managed) featureState.setSelected(id); global.setModel(id); };
+  const label = (id: string) => featureState.catalog?.models.find(m => m.id === id)?.label || id;
   const [open, setOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
   const [custom, setCustom] = useState("");
@@ -47,11 +57,11 @@ export function TextModelSelect({
             )}
           >
             <ModelIcon modelId={item} size={14} />
-            <span className="min-w-0 flex-1 truncate">{item}</span>
+            <span className="min-w-0 flex-1 truncate">{label(item)}</span>
             {item === model && <Check className="h-3.5 w-3.5 flex-none text-acc" />}
           </button>
         ))}
-        <button
+        {!managed && <button
           type="button"
           onClick={() => {
             setOpen(false);
@@ -64,7 +74,7 @@ export function TextModelSelect({
           )}
         >
           <Plus className="h-3.5 w-3.5" /> 自定义模型 ID
-        </button>
+        </button>}
       </div>
     </>
   ) : null;
@@ -84,7 +94,7 @@ export function TextModelSelect({
         title={`文字模型：${model}`}
       >
         <ModelIcon modelId={model} size={14} />
-        <span className="min-w-0 truncate">{model}</span>
+        <span className="min-w-0 truncate">{label(model)}</span>
         <ChevronDown className="h-3.5 w-3.5 flex-none opacity-60" />
       </button>
       {menu}

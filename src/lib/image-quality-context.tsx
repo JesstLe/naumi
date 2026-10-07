@@ -9,6 +9,7 @@ import type {FeatureId} from "@/lib/billing/types";
 import { updateCurrentImageQuality } from "@/lib/image-quality-preference";
 import { authHeader } from "./supabase";
 import { useAuth } from "./auth-context";
+import { useFeatureModels } from "./model-config/feature-client";
 import { availableImageQualities, rememberModelCatalogVersion, MODEL_CATALOG_REFRESH, type PublicImageConfiguration } from "./model-config/public-client";
 
 export const IMAGE_QUALITY_STORAGE_KEY = "naumi:image-quality";
@@ -61,8 +62,10 @@ export function useImageQuality(feature?:FeatureId, modelId?: string, purpose?: 
   const value = useContext(QualityContext);
   if (!value) throw new Error("ImageQualityProvider is missing");
   const pathname=usePathname(),{catalog}=useBilling(),selected=feature??CATEGORY_FEATURES[pathname.split('/')[1]]??"image.generate";
+  const { catalog: featureCatalog, selected: selectedModel } = useFeatureModels(selected);
   const binding = purpose || (["image.generate", "image.suite", "image.aplus"].includes(selected) ? "image.generate" : selected === "tool.cutout" ? "image.cutout" : "image.edit");
-  const allowedQualities = availableImageQualities(value.modelConfig, modelId, binding);
+  const configured = featureCatalog?.models.find(m => m.id === (modelId || selectedModel));
+  const allowedQualities = configured?.qualities?.length ? IMAGE_QUALITY_IDS.filter(q => configured.qualities!.includes(q)) : availableImageQualities(value.modelConfig, modelId, binding);
   const quality = allowedQualities.includes(value.quality) ? value.quality : allowedQualities[0];
   const imageCost=(resolution="1K")=>catalog?.features[selected]?.prices[quality]?.[resolution]??0;
   return {...value,quality,allowedQualities,capable: allowedQualities.length > 1,imageCost,costPerImage:imageCost()};

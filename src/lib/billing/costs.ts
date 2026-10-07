@@ -1,5 +1,6 @@
 import type { BillingQuote, BillingResult, CostEstimate, CostRate, Pricing } from "./types";
 import { BillingError } from "./types";
+import { usageAmount } from "./money";
 const MICRO = BigInt(1000000), BPS = BigInt(10000);
 export function costPlusCredits(p: Extract<Pricing, {
     mode: "cost-plus";
@@ -32,6 +33,12 @@ export function estimateCost(q: BillingQuote, r: BillingResult): CostEstimate | 
     const items = r.items.filter(x => x.state === "succeeded" && x.platformFunded !== false);
     if (!items.length)
         return null;
+    if (q.procurement) {
+        const p = q.procurement;
+        if (p.confirmed === false) return null;
+        const value = p.basis === "tokens" ? usageAmount({ inputMicrosPerMillion: p.inputMicrosPerMillion!, outputMicrosPerMillion: p.outputMicrosPerMillion!, cachedInputMicrosPerMillion: p.cachedInputMicrosPerMillion, imageInputMicrosPerMillion: p.imageInputMicrosPerMillion }, r.usage) : p.amountMicros === undefined ? null : BigInt(p.amountMicros) * BigInt(p.basis === "task" ? 1 : items.length);
+        return value === null ? null : { currency: p.currency, amountMicros: value.toString(), source: `${p.source};${p.updatedAt}`, actual: p.basis === "tokens" };
+    }
     let currency: CostEstimate["currency"] | undefined, total = BigInt(0);
     const sources = new Set<string>(), tasks = new Set<CostRate>();
     for (const item of items) {

@@ -115,6 +115,8 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_y double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS image_width integer;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS image_height integer;
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS processing_kind text;
+        ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS postprocess_status text;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_width double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS canvas_height double precision;
         ALTER TABLE app_artworks ADD COLUMN IF NOT EXISTS origin text;
@@ -2128,6 +2130,8 @@ export type ArtworkRecord = {
   canvasY?: number | null;
   width?: number | null; // 原图实际像素宽度
   height?: number | null;
+  processingKind?: "base" | "resize" | "native" | "ai-upscale" | null;
+  postprocessStatus?: "succeeded" | "failed-kept-base" | "pending" | null;
   canvasWidth?: number | null; // 无限画布节点显示尺寸；与原图像素分离
   canvasHeight?: number | null;
   groupId?: string | null; // 稳定项目分组:同项目所有节点共享,删节点也不变
@@ -2505,8 +2509,8 @@ export async function addArtworks(
         `INSERT INTO app_artworks
            (id, email, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id, parent_ids, group_id, canvas_group_id, origin,
-            image_width, image_height, canvas_width, canvas_height, video_url)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21,$22,$23,$24)
+            image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, video_url)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
          ON CONFLICT (id) DO UPDATE SET deleted_at = NULL WHERE app_artworks.email = EXCLUDED.email`,
         [
           a.id,
@@ -2530,6 +2534,8 @@ export async function addArtworks(
           a.origin ?? null,
           a.width ?? null,
           a.height ?? null,
+          a.processingKind ?? null,
+          a.postprocessStatus ?? null,
           a.canvasWidth ?? null,
           a.canvasHeight ?? null,
           a.videoUrl ?? null,
@@ -2552,7 +2558,7 @@ export async function listArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, created_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, created_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NULL
       ORDER BY created_at DESC LIMIT 1000`,
@@ -2578,6 +2584,8 @@ export async function listArtworks(
     canvasY: r.canvas_y ?? null,
     width: r.image_width ?? null,
     height: r.image_height ?? null,
+    processingKind: r.processing_kind ?? null,
+    postprocessStatus: r.postprocess_status ?? null,
     canvasWidth: r.canvas_width ?? null,
     canvasHeight: r.canvas_height ?? null,
     groupId: r.group_id ?? null,
@@ -2601,7 +2609,7 @@ export async function listArtworksByIds(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, created_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, created_at
        FROM app_artworks
       WHERE email = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL`,
     [emailRaw.toLowerCase(), clean]
@@ -2626,6 +2634,8 @@ export async function listArtworksByIds(
     canvasY: r.canvas_y ?? null,
     width: r.image_width ?? null,
     height: r.image_height ?? null,
+    processingKind: r.processing_kind ?? null,
+    postprocessStatus: r.postprocess_status ?? null,
     canvasWidth: r.canvas_width ?? null,
     canvasHeight: r.canvas_height ?? null,
     groupId: r.group_id ?? null,
@@ -2745,6 +2755,8 @@ function rowToAdminArtwork(r: {
   batch_id: string | null;
   image_width: number | null;
   image_height: number | null;
+  processing_kind?: ArtworkRecord["processingKind"];
+  postprocess_status?: ArtworkRecord["postprocessStatus"];
   created_at: Date;
 }): AdminArtwork {
   return {
@@ -2763,12 +2775,14 @@ function rowToAdminArtwork(r: {
     batchId: r.batch_id ?? null,
     width: r.image_width ?? null,
     height: r.image_height ?? null,
+    processingKind: r.processing_kind ?? null,
+    postprocessStatus: r.postprocess_status ?? null,
     createdAt: new Date(r.created_at).toISOString(),
   };
 }
 
 const ADMIN_ARTWORK_COLS = `id, email, title, category, prompt, status,
-  image_url, gradient, style, ratio, resolution, source_url, batch_id, image_width, image_height,
+  image_url, gradient, style, ratio, resolution, source_url, batch_id, image_width, image_height, processing_kind, postprocess_status,
   created_at`;
 
 /** Admin: every user's artworks, newest first, with owner email + total. */
@@ -3186,7 +3200,7 @@ export async function listDeletedArtworks(
   const { rows } = await getPool().query(
     `SELECT id, title, category, prompt, status, image_url, gradient,
             style, ratio, resolution, source_url, batch_id, parent_id, template_id,
-            parent_ids, canvas_x, canvas_y, image_width, image_height, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, created_at, deleted_at
+            parent_ids, canvas_x, canvas_y, image_width, image_height, processing_kind, postprocess_status, canvas_width, canvas_height, group_id, canvas_group_id, origin, marked, video_url, created_at, deleted_at
        FROM app_artworks
       WHERE email = $1 AND deleted_at IS NOT NULL
       ORDER BY deleted_at DESC LIMIT 200`,
@@ -3212,6 +3226,8 @@ export async function listDeletedArtworks(
     canvasY: r.canvas_y ?? null,
     width: r.image_width ?? null,
     height: r.image_height ?? null,
+    processingKind: r.processing_kind ?? null,
+    postprocessStatus: r.postprocess_status ?? null,
     canvasWidth: r.canvas_width ?? null,
     canvasHeight: r.canvas_height ?? null,
     groupId: r.group_id ?? null,

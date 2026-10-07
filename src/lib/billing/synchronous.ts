@@ -1,3 +1,4 @@
+import { settlementFor } from "./quote";
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
@@ -11,6 +12,8 @@ import { billingJson } from "./access";
 import { fingerprint } from "./fingerprint";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 type Context = {
+    usageIncomplete?: boolean;
+    usage?: import("./types").BillingResult["usage"];
     snapshot?:import("./types").ConfigSnapshot;
     request: Request;
     feature: FeatureId;
@@ -29,6 +32,24 @@ type Context = {
 };
 const storage = new AsyncLocalStorage<Context>(), service = createBillingService();
 export function currentSynchronousBilling() { return storage.getStore(); }
+/** Only supplier receipts count as actual usage; absence remains unknown. */
+export function recordBillingUsage(raw: unknown, imageInput = false) {
+    const context = storage.getStore();
+    if (!context) return;
+    const missing = () => { context.usageIncomplete = true; };
+    if (!raw || typeof raw !== "object") return missing();
+    const u = raw as { prompt_tokens?: unknown; completion_tokens?: unknown; input_tokens?: unknown; output_tokens?: unknown; prompt_tokens_details?: { cached_tokens?: unknown }; input_tokens_details?: { cached_tokens?: unknown; image_tokens?: unknown } };
+    const inputTokens = u.prompt_tokens ?? u.input_tokens, outputTokens = u.completion_tokens ?? u.output_tokens;
+    const valid = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+    if (!valid(inputTokens) || !valid(outputTokens)) return missing();
+    const cachedInputTokens = u.prompt_tokens_details?.cached_tokens ?? u.input_tokens_details?.cached_tokens ?? 0;
+    const imageInputTokens = u.input_tokens_details?.image_tokens ?? (u.prompt_tokens_details as { image_tokens?: unknown } | undefined)?.image_tokens ?? 0;
+    const price = context.operation?.quote.tariff.pricing;
+    if (price?.mode === "usage" && ((price.cachedInputMicrosPerMillion !== undefined && u.prompt_tokens_details?.cached_tokens === undefined && u.input_tokens_details?.cached_tokens === undefined) || (imageInput && price.imageInputMicrosPerMillion !== undefined && u.input_tokens_details?.image_tokens === undefined && (u.prompt_tokens_details as { image_tokens?: unknown } | undefined)?.image_tokens === undefined))) return missing();
+    if (!valid(cachedInputTokens) || !valid(imageInputTokens) || cachedInputTokens + imageInputTokens > inputTokens) return missing();
+    const old = context.usage;
+    context.usage = { inputTokens: (old?.inputTokens || 0) + inputTokens, outputTokens: (old?.outputTokens || 0) + outputTokens, cachedInputTokens: (old?.cachedInputTokens || 0) + cachedInputTokens, imageInputTokens: (old?.imageInputTokens || 0) + imageInputTokens };
+}
 export function markBillingUpstream(state: Context["upstream"]) { const context = storage.getStore(); if (context)
     context.upstream = state; }
 export async function billingRequestIdentity(request: Request) {
@@ -49,7 +70,7 @@ export async function billingRequestIdentity(request: Request) {
     }
     else
         entries.push(await copy.text());
-    return { hash: createHash("sha256").update(JSON.stringify([new URL(request.url).pathname, request.headers.get("x-naumi-image-quality"), request.headers.get("x-naumi-text-model"), entries])).digest("hex"), confirmation: requestQuoteConfirmation(request, body) };
+    return { hash: createHash("sha256").update(JSON.stringify([new URL(request.url).pathname, request.headers.get("x-naumi-image-quality"), request.headers.get("x-naumi-text-model"), request.headers.get("x-naumi-feature-model"), entries])).digest("hex"), confirmation: requestQuoteConfirmation(request, body) };
 }
 export async function withBillingRequest(request: Request, feature: FeatureId, action: () => Promise<Response>): Promise<Response> {
     if (!dbEnabled)
@@ -106,6 +127,7 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
                 else if (!response.ok && context.charge === undefined) {
                     const known = context.feature === "tool.printfile" || context.upstream === "rejected" || context.upstream === "unobserved";
                     await withBillingTransaction(getPool(), tx => service.settleTx(tx, context.operation!, { state: known ? "failed" : "unknown", items: [] }));
+                    if (!known && context.operation.quote.modelVersion && ["cny-fixed","usage"].includes(context.operation.quote.tariff.pricing.mode)) return billingJson({code:"OPERATION_PENDING",error:"供应商结果及付费状态需要核查，请查询原任务；不会重复提交",operationId:id},409);
                 }
                 } catch {
                     await getPool().query("UPDATE app_billing_operations SET state='manual',updated_at=now() WHERE id=$1 AND state IN ('reserved','hold','manual')",[id]);
@@ -154,9 +176,10 @@ export async function settleSynchronous(reason: string, quality?: ResolvedImageQ
     const context = storage.getStore();
     if (!context?.operation)
         return null;
-    const result = { state: "succeeded" as const, items: [{ id: context.id, state: "succeeded" as const, executedQuality: quality?.executed || context.quality?.executed || "medium" }] };
+    const result = { usage: context.usageIncomplete ? undefined : context.usage, state: "succeeded" as const, items: [{ id: context.id, state: "succeeded" as const, executedQuality: quality?.executed || context.quality?.executed || "medium" }] };
     const settled = tx ? await service.settleTx(tx, { ...context.operation, reason }, result) : await withBillingTransaction(getPool(), client => service.settleTx(client, { ...context.operation!, reason }, result));
     context.charge = settled.charge;
+    if (settlementFor(context.operation.quote, result).state !== "settle") throw new BillingError("INVALID_RESULT", "结果已保留，供应商实际用量缺失，进入待核对流程", 409);
     return settled.charge;
 }
 export async function configuredToolCost(resolution = "1K") {

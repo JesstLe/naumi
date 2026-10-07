@@ -11,6 +11,8 @@ import type {
   ModelVersionSummary,
   ModelFacts,
 } from "@/lib/model-config/types";
+import { BusinessEditor } from "./business-editor";
+import type { ConfigSnapshot } from "@/lib/billing/types";
 import { ProviderEditor } from "./provider-editor";
 import { UpstreamEditor } from "./upstream-editor";
 import { PoolEditor, PublicModelEditor } from "./routing-editor";
@@ -30,6 +32,7 @@ import {
 } from "./fields";
 
 type AdminState = {
+  billingSnapshot?: ConfigSnapshot;
   providerCapacity?: Record<
     string,
     { maxConcurrent: number; inFlight: number }
@@ -64,6 +67,7 @@ type Simulation = {
   billingVersion: number;
 };
 const tabs = [
+  { id: "business", label: "功能计费与路由" },
   { id: "providers", label: "供应商" },
   { id: "upstreamModels", label: "上游模型" },
   { id: "publicModels", label: "公开模型" },
@@ -189,10 +193,10 @@ function Diff({ changes }: { changes: ConfigurationChange[] }) {
   );
 }
 
-export function ModelConfigurationManager() {
+export function ModelConfigurationManager({ billingMode = false }: { billingMode?: boolean } = {}) {
   const [state, setState] = useState<AdminState | null>(null),
     [config, setConfig] = useState<ModelConfig | null>(null),
-    [tab, setTab] = useState<Tab>("providers"),
+    [tab, setTab] = useState<Tab>(billingMode ? "business" : "providers"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [fields, setFields] = useState<string[]>([]),
@@ -597,7 +601,7 @@ export function ModelConfigurationManager() {
           <p className="mb-2 text-xs text-c-text3">
             Naumi · 内部管理 · 仅管理员可见
           </p>
-          <h1 className="text-2xl font-semibold">模型配置中心</h1>
+          <h1 className="text-2xl font-semibold">{billingMode ? "计费与模型路由管理" : "模型配置中心"}</h1>
           <p className="mt-2 text-sm text-c-text2">
             生效版本 {state.snapshot.version} · 计费版本 {state.billingVersion}{" "}
             · 草稿修订 {state.draft.revision} ·{" "}
@@ -706,6 +710,11 @@ export function ModelConfigurationManager() {
             </button>
           </div>
         )}
+        {tab === "business" && <BusinessEditor config={config} billing={state.billingSnapshot} onChange={edit} onPreview={async (feature,modelId,facts) => {
+          const draft = await save();
+          const res = await fetch("/api/admin/billing/models/preview", { method:"POST",headers:{...await authHeader(),"content-type":"application/json"},body:JSON.stringify({draftId:draft.id,expectedRevision:draft.revision,feature,modelId,...facts}) });
+          const data=await res.json();if(!res.ok)throw new Error(data.error||"模拟失败");return data;
+        }} />}
         {tab === "providers" &&
           config.providers.map((p, i) => (
             <ProviderEditor

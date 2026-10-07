@@ -6,7 +6,7 @@ import { dbEnabled, getPool } from "@/lib/db";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { currentImageOperationId } from "@/lib/image-gateway";
 import { ensureBiSchema } from "./repository";
-import {markBillingUpstream} from "@/lib/billing/synchronous";
+import {markBillingUpstream, recordBillingUsage} from "@/lib/billing/synchronous";
 import { withModelRequest } from "@/lib/model-config/requests";
 import { ModelConfigError } from "@/lib/model-config/types";
 import { currentModelExecution, type ModelExecutionScope } from "@/lib/model-config/context";
@@ -18,6 +18,7 @@ export function modelExecutionTelemetry(scope: ModelExecutionScope | null | unde
 
 type Context = { email: string; operation: string; id?: string };
 const context = new AsyncLocalStorage<Context>();
+export const currentBiOperationId = () => context.getStore()?.id;
 export function withBiModelContext<T>(
   email: string,
   operation: string,
@@ -87,11 +88,11 @@ export async function observeModelCall<T>(
   wireModel: string,
   run: () => PromiseLike<T>,
   execution: ReturnType<typeof modelExecutionTelemetry> | null = modelExecutionTelemetry(currentModelExecution()),
+  usageOptions?: { imageInput: boolean },
 ): Promise<T> {
   markBillingUpstream("started");
   const actor = context.getStore();
-  if (!dbEnabled || !actor) return await run();
-  const operationId = currentImageOperationId() || actor.id || "";
+  const operationId = currentImageOperationId() || actor?.id || "";
   const start = Date.now();
   let state = "failed",
     responseModel = "",
@@ -115,7 +116,14 @@ export async function observeModelCall<T>(
       typeof response?.model === "string" ? response.model.slice(0, 200) : "";
     inputTokens = token(response?.usage?.prompt_tokens);
     outputTokens = token(response?.usage?.completion_tokens);
+    if (state === "succeeded" && usageOptions) recordBillingUsage(response?.usage, usageOptions.imageInput);
     markBillingUpstream(state==="succeeded"?"succeeded":state==="rejected"?"rejected":"unknown");
+    if (state === "stream-opened") {
+      const source = result as AsyncIterable<any>;
+      const wrapped = Object.create(result as object);
+      wrapped[Symbol.asyncIterator] = async function* () { let usage: unknown; for await (const chunk of source) { if (chunk?.usage) usage = chunk.usage; yield chunk; } if (usageOptions) recordBillingUsage(usage, usageOptions.imageInput); };
+      return wrapped as T;
+    }
     return result;
   } catch (error) {
     const status = (error as { status?: number } | null)?.status;
@@ -131,7 +139,7 @@ export async function observeModelCall<T>(
     markBillingUpstream(state==="rejected"?"rejected":"unknown");
     throw error;
   } finally {
-    await recordBiModelCompletion({ email: actor.email, operation: actor.operation, operationId, model: wireModel, responseModel, state, durationMs: Date.now() - start, inputTokens, outputTokens, execution });
+    if (actor) await recordBiModelCompletion({ email: actor.email, operation: actor.operation, operationId, model: wireModel, responseModel, state, durationMs: Date.now() - start, inputTokens, outputTokens, execution });
   }
 }
 
@@ -155,6 +163,7 @@ export function observeOpenAI<T extends OpenAI>(client: T): T {
         scope?.connection.wireModel || (typeof body?.model === "string" ? body.model : "unrecorded"),
         () => original(...args),
         modelExecutionTelemetry(scope) || null,
+        key === "create" ? { imageInput: !!vision } : undefined,
       );
     };
   }

@@ -1,3 +1,4 @@
+import { currentModelExecution } from "@/lib/model-config/context";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
@@ -148,13 +149,14 @@ async function handleObservedPost(request: Request) {
     let paddleAttempts = 0;
     let fallbackReason = "";
     try {
-      const paddle = await paddleOcr(image.buffer, image.mimeType);
+      const managed = !!currentModelExecution("vision")?.businessOption;
+      const paddle = managed ? null : await paddleOcr(image.buffer, image.mimeType);
       if (!paddle) throw new Error("PaddleOCR 未配置");
       raw = paddle.rows;
       paddleAttempts = paddle.attempts;
       if (!paddle.rows.length) throw new Error("PaddleOCR 返回空结果");
     } catch (error) {
-      if (process.env.PADDLE_OCR_REQUIRED === "true") throw error;
+      if (!currentModelExecution("vision")?.businessOption && process.env.PADDLE_OCR_REQUIRED === "true") throw error;
       engine = "vision-fallback";
       fallbackReason = safeError(error, "PaddleOCR 暂不可用").slice(0, 160);
       console.warn(`[canvas-ocr] paddle fallback artwork=${artworkId} reason=${fallbackReason}`);

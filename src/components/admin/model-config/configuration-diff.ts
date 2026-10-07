@@ -28,6 +28,8 @@ function values(config: ModelConfig) {
     "publicModels",
     "pools",
     "bindings",
+    "business",
+    "fixedMonthlyCosts",
   ] as const)
     walk(section, config[section]);
   return out;

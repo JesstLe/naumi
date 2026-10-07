@@ -1,4 +1,5 @@
 "use client";
+import { FeatureModelSelect } from "./feature-model-select";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import {CATEGORY_FEATURES} from "@/lib/billing/feature-map";
 import { ImageQualityControl, QUALITY_TOOL_CATEGORIES } from "@/components/image-quality-control";
@@ -420,6 +421,7 @@ export function ToolWorkspace({
           </div>
 
           {controls}
+            {category && <FeatureModelSelect feature={CATEGORY_FEATURES[category] || "image.generate"} disabled={processing} />}
             {qualityPriced && <ImageQualityControl resolution={resolution} disabled={processing} />}
           </div>
 

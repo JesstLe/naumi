@@ -1,3 +1,7 @@
+import { getPool } from "@/lib/db";
+import { readManagedObject } from "@/lib/storage";
+import { runPostprocess, PostprocessPending } from "@/lib/media-postprocess";
+import { currentModelExecution } from "@/lib/model-config/context";
 import {withBillingIntent} from "@/lib/billing/intent";
 import {auditSettledImage} from "@/lib/image-quality-request";
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
@@ -80,6 +84,8 @@ export type GeneratedImage = {
   createdAt: string;
   width?: number;
   height?: number;
+  processingKind?: "base" | "resize" | "native" | "ai-upscale";
+  postprocessStatus?: "succeeded" | "failed-kept-base" | "pending";
   execution?: { quality: string; upstream: string; reason: string; platformFunded: boolean };
 };
 
@@ -818,7 +824,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
 // --- Async job store ------------------------------------------------------
 // Persisted snapshots and leased execution survive process restarts.
 type Job = {
-  status: "pending" | "done" | "error";
+  status: "pending" | "done" | "error" | "needs_attention";
   images?: GeneratedImage[];
   user?: Awaited<ReturnType<typeof getUser>>;
   creditsUsed?: number;
@@ -929,9 +935,19 @@ async function runJob(
         platformFunded: !userProvider,
       } }));
     }
+    const scope = currentModelExecution("image"), post = scope?.businessOption?.postprocess;
+    if (post?.enabled) {
+      images = await Promise.all(images.map(async (image,index) => {
+        const decoded = dataUrlToBytes(image.url);
+        const bytes = decoded ? Buffer.from(decoded.bytes) : (await readManagedObject(image.url,64*1024*1024)).bytes;
+        const result = await runPostprocess({ id: `${jobId}:postprocess:${index}`, parentId:jobId, email:p.email, modelVersion:scope!.frozen.modelVersion, bytes, policy:post });
+        return { ...image,url:result.url,width:result.width,height:result.height,processingKind:result.kind,postprocessStatus:result.status };
+      }));
+    } else {
     images = await enforceOutputShape(images, p);
     if (!(p.targetWidth > 0 && p.targetHeight > 0)) {
       images = await upscaleImages(images, p.resolution);
+    }
     }
     images = await attachImageDimensions(images);
     images = images.map((image, index) => ({ ...image, id: `art-${jobId}-${index}` }));
@@ -992,6 +1008,8 @@ async function runJob(
             origin: p.origin || null,
             width: im.width ?? null,
             height: im.height ?? null,
+            processingKind: im.processingKind ?? null,
+            postprocessStatus: im.postprocessStatus ?? null,
           })),
           batchId
         );
@@ -1027,8 +1045,9 @@ async function runJob(
       quality,
     });
   } catch (e) {
-    if (e instanceof ImageOperationPending) {
-      await JOBS.patch(jobId, { status: "pending", error: e.message });
+    if (e instanceof ImageOperationPending || e instanceof PostprocessPending) {
+      const exhausted = e instanceof PostprocessPending && (await getPool().query("SELECT 1 FROM app_media_postprocess WHERE operation_id=$1 AND attempts>=3",[e.operationId])).rowCount;
+      await JOBS.patch(jobId, { status: exhausted ? "needs_attention" : "pending", error: e.message });
       return;
     }
     if ((await JOBS.get(jobId, false))?.images?.length) throw e;

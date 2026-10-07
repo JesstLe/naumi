@@ -20,6 +20,7 @@ test("management center unifies navigation, deep links, settings and legacy entr
     await expect(page.getByRole("heading", { name: "新增用户", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "关闭详情", exact: true }).click();
     await nav.getByRole("link", { name: "价格、成本与规则", exact: true }).click();
+    await page.getByRole("link", { name: "钱包、充值与兼容价格", exact: true }).click();
     await expect(page.getByLabel("普通生图 · 标准单价（积分）")).toBeVisible();
     await expect(nav.getByRole("link", { name: "价格、成本与规则", exact: true })).toHaveAttribute("aria-current", "page");
     await page.screenshot({ path: "output/billing-20261003/management-center-desktop.png", fullPage: true });
@@ -35,6 +36,7 @@ test("management center unifies navigation, deep links, settings and legacy entr
     await expect(nav.getByRole("link", { name: "充值订单", exact: true })).toBeVisible();
     await page.screenshot({ path: "output/billing-20261003/management-center-mobile-menu.png", fullPage: true });
     await nav.getByRole("link", { name: "价格、成本与规则", exact: true }).click();
+    await page.getByRole("link", { name: "钱包、充值与兼容价格", exact: true }).click();
     await expect(page.getByRole("heading", { name: "计费管理", exact: true })).toBeVisible();
     await expect(nav).not.toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -59,7 +61,7 @@ test("billing administration simulates drafts and protects publishing", async ({
     if (!process.env.BILLING_UI_ADMIN_COOKIE)
         throw new Error("Isolated fixture admin cookie required");
     await page.context().addCookies([{ name: "nv_admin", value: process.env.BILLING_UI_ADMIN_COOKIE, domain: "127.0.0.1", path: "/" }]);
-    await page.goto("/admin/billing");
+    await page.goto("/admin/billing?section=wallet");
     await page.getByLabel("普通生图 · 标准单价（积分）").fill("8");
     await page.getByText("详细报价试算（特殊条件与失败场景）", { exact: true }).click();
     await page.getByRole("button", { name: "模拟报价", exact: true }).click();
@@ -72,16 +74,19 @@ test("billing administration simulates drafts and protects publishing", async ({
     await page.screenshot({ path: "output/billing-20261003/billing-mobile.png", fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
-test("anonymous visitors cannot access configuration", async ({ page }) => { await page.goto("/admin/billing"); await expect(page.getByRole("heading", { name: "计费管理", exact: true })).toHaveCount(0); expect((await page.request.get("/api/admin/billing")).status()).toBe(404); });
+test("anonymous visitors cannot access configuration", async ({ page }) => { await page.goto("/admin/billing?section=wallet"); await expect(page.getByRole("heading", { name: "计费管理", exact: true })).toHaveCount(0); expect((await page.request.get("/api/admin/billing")).status()).toBe(404); });
 test("publish, user stale price, conflict draft and restore", async ({ browser }) => {
     const fixture = JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json", "utf8"));
     const admin = await browser.newContext(), member = await browser.newContext();
     await admin.addCookies([{ name: "nv_admin", value: fixture.adminCookie, domain: "127.0.0.1", path: "/" }]);
     await member.addCookies([{ name: "nv_user", value: fixture.userCookie, domain: "127.0.0.1", path: "/" }]);
+    await member.addCookies([{name:"naumi_locale",value:"zh",domain:"127.0.0.1",path:"/"}]);
     const a = await admin.newPage(), u = await member.newPage();
     try {
-        await a.goto("/admin/billing");
+        await a.goto("/admin/billing?section=wallet");
         const initial = await (await admin.request.get("/api/admin/billing")).json();
+        await expect.poll(async()=> (await (await member.request.get("/api/auth/session")).json()).user?.email).toBe(fixture.email);
+        expect((await member.request.get("/api/config")).status()).toBe(200);
         await u.goto("/generate");
         await u.locator("textarea").first().fill("Retain this local test prompt");
         await expect(u.getByTestId("billing-estimate")).toContainText("6");
@@ -125,7 +130,7 @@ test("configuration failure stays visible and cannot publish", async ({ page }) 
     const fixture = JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json", "utf8"));
     await page.context().addCookies([{ name: "nv_admin", value: fixture.adminCookie, domain: "127.0.0.1", path: "/" }]);
     await page.route("**/api/admin/billing", async (route) => { await new Promise(resolve => setTimeout(resolve, 500)); await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "配置读取失败，请重试" }) }); });
-    await page.goto("/admin/billing");
+    await page.goto("/admin/billing?section=wallet");
     await expect(page.getByRole("status")).toContainText("正在读取计费配置");
     await expect(page.getByRole("status")).toContainText("配置读取失败");
     await expect(page.getByRole("button", { name: "发布配置", exact: true })).toHaveCount(0);
@@ -137,7 +142,7 @@ test("uncertain submissions retain their identifier across explicit retries",asy
  await page.getByTestId("billing-estimate").click();await expect(page.getByText("fixture submission pending",{exact:true})).toBeVisible();await page.getByTestId("billing-estimate").click();await expect.poll(()=>ids.length).toBe(2);expect(ids[0]).toBeTruthy();expect(ids[1]).toBe(ids[0]);await expect(page.locator("textarea").first()).toHaveValue("Fixture retained intent");
 });
 test("administrators can change the customer billing unit",async({page})=>{
- const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);await page.goto("/admin/billing");
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);await page.goto("/admin/billing?section=wallet");
  await page.getByLabel("计费单位",{exact:true}).selectOption("task");await page.getByText("详细报价试算（特殊条件与失败场景）",{exact:true}).click();await page.getByLabel("模拟数量").fill("13");await page.getByRole("button",{name:"模拟报价",exact:true}).click();await expect(page.getByTestId("simulation-charge")).toHaveText("6 积分");
  await page.getByRole("button",{name:"查看改动",exact:true}).click();await expect(page.getByText(/单位：每张图片 → 每次任务/)).toBeVisible();
 });
@@ -185,7 +190,7 @@ test("canvas images and toolbox submit on one click without fee dialogs",async({
 });
 
 test("business groups expose canvas prices, free controls and shared entries", async({page})=>{
- const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);await page.goto("/admin/billing");
+ const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);await page.goto("/admin/billing?section=wallet");
  await expect(page.getByText("高级结算设置",{exact:true})).toBeVisible();await expect(page.getByLabel("失败收费比例（%）")).not.toBeVisible();
  await page.getByRole("button",{name:"画布",exact:true}).click();await page.getByRole("button",{name:"配置画布文字识别（OCR）",exact:true}).click();
  await expect(page.getByRole("heading",{name:"画布文字识别（OCR）",exact:true})).toBeVisible();await expect(page.getByTestId("business-example")).toContainText("扣 0 积分");
@@ -198,7 +203,7 @@ test("business groups expose canvas prices, free controls and shared entries", a
 });
 test("recharge prices use yuan and preserve exact stored fen",async({page})=>{
  const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);const original=(await (await page.request.get("/api/admin/billing")).json()).snapshot;
- try {await page.goto("/admin/billing");await page.getByRole("button",{name:"充值套餐",exact:true}).click();const product=Object.values(original.config.products).find((p:any)=>p.kind==="pack") as any;
+ try {await page.goto("/admin/billing?section=wallet");await page.getByRole("button",{name:"充值套餐",exact:true}).click();const product=Object.values(original.config.products).find((p:any)=>p.kind==="pack") as any;
  await page.locator("summary").filter({hasText:product.title}).click();const amount=page.getByLabel(`${product.id} · 售价（元）`);await amount.fill("19.999");await expect(amount).toHaveAttribute("aria-invalid","true");await amount.fill("19.99");await expect(amount).toHaveValue("19.99");
  await page.getByLabel("发布说明").fill("Exact yuan price UI fixture");await page.getByRole("button",{name:"查看改动",exact:true}).click();await page.getByRole("button",{name:"发布配置",exact:true}).click();await expect(page.getByRole("status")).toContainText("已发布版本");const current=(await (await page.request.get("/api/admin/billing")).json()).snapshot;expect(current.config.products[product.id].amountFen).toBe(1999);
  }finally {const current=(await (await page.request.get("/api/admin/billing")).json()).snapshot;expect((await page.request.post("/api/admin/billing",{data:{id:randomUUID(),expectedVersion:current.version,config:original.config,reason:"Restore yuan UI fixture"}})).status()).toBe(200);}
@@ -223,7 +228,7 @@ test("configured access password gates email admins, deep links and logout", asy
         await page.context().addCookies([{ name: "nv_user", value: fixture.userCookie, domain: "127.0.0.1", path: "/" }, { name: "nv_admin", value: fixture.adminCookie, domain: "127.0.0.1", path: "/" }]);
         expect((await (await page.request.get("/api/admin/login")).json()).nativeAdmin).toBe(false);
         expect((await page.request.get("/api/admin/billing")).status()).toBe(404);
-        await page.goto("/admin/billing");
+        await page.goto("/admin/billing?section=wallet");
         await expect(page).toHaveURL(/\/admin\?next=/);
         await expect(page.getByRole("heading", { name: "管理中心访问验证", exact: true })).toBeVisible();
         await expect(page.getByLabel("普通生图 · 标准单价（积分）")).toHaveCount(0);
@@ -231,7 +236,8 @@ test("configured access password gates email admins, deep links and logout", asy
         await input.fill("incorrect-fixture-password"); await page.getByRole("button", { name: "登录", exact: true }).click();
         await expect(page.getByText("密码错误", { exact: true })).toBeVisible();
         await input.fill(password); await page.getByRole("button", { name: "登录", exact: true }).click();
-        await expect(page).toHaveURL(/\/admin\/billing$/); await expect(page.getByLabel("普通生图 · 标准单价（积分）")).toBeVisible();
+        await expect(page).toHaveURL(/\/admin\/billing$/); await page.getByRole("link", { name: "钱包、充值与兼容价格", exact: true }).click();
+    await expect(page.getByLabel("普通生图 · 标准单价（积分）")).toBeVisible();
         const cookie = (await page.context().cookies()).find(c => c.name === "nv_admin")!; expect(cookie.httpOnly).toBe(true); expect(cookie.value).not.toBe(fixture.adminCookie);
         await page.getByRole("navigation", { name: "管理中心导航", exact: true }).getByRole("link", { name: "接口与站点设置", exact: true }).click();
         await expect(page.getByRole("heading", { name: "系统设置", exact: true })).toBeVisible();

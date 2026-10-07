@@ -31,6 +31,21 @@ export type Pricing = {
     rounding: "ceil" | "floor" | "nearest";
     minimum: number;
     maximum: number;
+} | {
+    mode: "cny-fixed";
+    amountMicros: string;
+    creditsPerCnyMicros: string;
+    rounding: "ceil" | "floor" | "nearest";
+    variants?: { quality?: string; resolution?: string; amountMicros: string }[];
+} | {
+    mode: "usage";
+    inputMicrosPerMillion: string;
+    outputMicrosPerMillion: string;
+    cachedInputMicrosPerMillion?: string;
+    imageInputMicrosPerMillion?: string;
+    authorizationCnyMicros: string;
+    creditsPerCnyMicros: string;
+    rounding: "ceil" | "floor" | "nearest";
 };
 export type SettlementPolicy = {
     qualityBasis: "requested" | "executed";
@@ -121,6 +136,8 @@ export type ConfigSnapshot = {
     config: BillingConfig;
 };
 export type BillingQuote = {
+    modelVersion?: number;
+    procurement?: import("../model-config/business-schema").Procurement;
     legacyCompatible?: boolean;
     staleReservationMinutes?:number;
     debitOrder?: "expires-first" | "created-first";
@@ -136,6 +153,7 @@ export type BillingQuote = {
     matchedRuleId: string | null;
 };
 export type BillingResult = {
+    usage?: { inputTokens: number; outputTokens: number; cachedInputTokens?: number; imageInputTokens?: number };
     state: "succeeded" | "failed" | "unknown";
     items: {
         id: string;

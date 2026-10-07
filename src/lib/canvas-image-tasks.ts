@@ -1,3 +1,4 @@
+import { runPostprocess } from "./media-postprocess";
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
 import "server-only";
 import { currentModelExecution, currentExecutionBundle, runLegacyModelExecution, type ExecutionBundle } from "@/lib/model-config/context";
@@ -172,7 +173,9 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
     await saveCanvasImageTaskProviderResult(task.id, checkpoint, quality);
   }
   await updateCanvasImageTaskProgress(task.id, 82);
-  const edited = await sharp(editedRaw).resize(width, height, { fit: "fill" }).png().toBuffer();
+  const scope = currentModelExecution("image"), post = scope?.businessOption?.postprocess;
+  const processed = post?.enabled ? await runPostprocess({ id: `${task.id}:postprocess`,parentId:task.id,email:task.email,modelVersion:scope!.frozen.modelVersion,bytes:editedRaw,policy:post }) : null;
+  const edited = processed ? (await readCanvasImage(processed.url, requestOrigin)).buffer : await sharp(editedRaw).resize(width, height, { fit: "fill" }).png().toBuffer();
   const artworkId = `txtedit-${task.id}`;
   let url = `data:image/png;base64,${edited.toString("base64")}`;
   if (storageEnabled) url = await uploadImage(new Uint8Array(edited), "image/png", `canvas-text-edits/${artworkId}.png`);
@@ -192,8 +195,10 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
     parentIds: [],
     groupId: artwork.groupId || undefined,
     origin: "canvas",
-    width,
-    height,
+    width: processed?.width || width,
+    height: processed?.height || height,
+    processingKind: processed?.kind || "base",
+    postprocessStatus: processed?.status || "succeeded",
   }], `txtedit-${task.id}`);
   await completeCanvasImageTask({ id: task.id, email: task.email, resultArtworkId: artworkId });
   await auditSettledImage(task.email, await getCanvasImageTaskChargedCredits(task.id), quality, task.id, artworkId, String(task.parameters.billingResolution || "1K"));
