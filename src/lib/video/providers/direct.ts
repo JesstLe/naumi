@@ -1,6 +1,7 @@
 import "server-only";
 import { currentModelExecution } from "@/lib/model-config/context";
 import { modelEndpointFetch } from "@/lib/model-config/transport";
+import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 
 import { getVideoProviderConfig, type VideoProviderRuntimeConfig } from "@/lib/video/providers/config";
 import { PermanentVideoCreateError, TransientPollError, type VideoGenerationRequest, type VideoProviderAdapter, type VideoProviderCreateResult, type VideoProviderFetchResult, type VideoProviderPollResult, type VideoTaskSnapshot, type VideoTaskStatus } from "@/lib/video/types";
@@ -223,7 +224,9 @@ async function jsonResponse(response: Response, label: string) {
 export function createDirectVideoAdapter(providerId: string): VideoProviderAdapter | null {
   const cfg = getVideoProviderConfig(providerId);
   if (!cfg || cfg.protocol === "openai-videos") return null;
-  const transport = currentModelExecution("video") ? modelEndpointFetch(cfg.baseUrl, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, currentModelExecution("video")!.connection) : fetch;
+  const scope=currentModelExecution('video');
+  const transport = scope ? modelEndpointFetch(cfg.baseUrl, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, {...scope.connection,costDisabled:true}) : fetch;
+  const submit=supplierCostFetch(transport,scope?{...scope.connection,costScope:scope,phase:'video-generation'}:{providerId:cfg.id,baseUrl:cfg.baseUrl,apiKey:cfg.apiKey,wireModel:cfg.defaultModel,protocol:cfg.protocol,phase:'video-generation'});
   return {
     id: providerId,
     async create(input) {
@@ -233,7 +236,7 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
         if (!field) throw new Error("视频供应商 body 幂等策略缺少字段映射");
         (requestPayload as Record<string, unknown>)[field] = input.idempotencyKey;
       }
-      const response = await transport(base(cfg, createPath(cfg, input.modelId)), {
+      const response = await submit(base(cfg, createPath(cfg, input.modelId)), {
         method: "POST",
         headers: {
           ...headers(cfg, true),

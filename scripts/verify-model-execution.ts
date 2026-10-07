@@ -43,6 +43,9 @@ async function main() {
     res.writeHead(200, { "content-type": "application/json", "content-encoding": "gzip", "content-length": compressed.length }); res.end(compressed);
   });
   const billing = { version: 1, config: fixtureConfig() };
+  // HTTP instrumentation now opens the shared ledger pool on the FIRST supplier call.
+  // Bind the isolated schema before any executor call, not only before video setup.
+  process.env.PGOPTIONS = `-c search_path=${f.schemaName}`;
   const executor = createModelExecutor({ runtime: { byVersion: f.repo.byVersion, prepareExecution: async () => { throw new Error("Direct supplier must not call Router preparation"); } }, credentials: f.credentials, trustedOrigins: [f.origin], gateway: () => { throw new Error("Direct supplier must not use a gateway"); } });
   try {
     const { createProviderCapacity } = await import("../src/lib/model-config/capacity");

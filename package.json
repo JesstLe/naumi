@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "verify:supplier-cost": "tsx --conditions react-server scripts/verify-supplier-cost.ts",
+    "verify:supplier-cost-ui": "node scripts/verify-supplier-cost-ui.mjs",
     "verify:canvas-text-output": "tsx --conditions react-server scripts/verify-canvas-text-output.ts",
     "verify:direct-generation": "tsx scripts/verify-direct-generation.ts",
     "verify:browser-billing-crypto": "tsx scripts/verify-browser-billing-crypto.ts",

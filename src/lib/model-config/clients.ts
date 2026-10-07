@@ -6,6 +6,7 @@ import { modelEndpointFetch } from "./transport";
 import type { ValidationOptions } from "./schema";
 import { ModelConfigError } from "./types";
 import { appendImageGatewayFields } from "../image-gateway";
+import { supplierCostFetch } from "../supplier-cost/collect";
 const managedClients = new WeakSet<OpenAI>();
 export const isManagedModelClient = (client: OpenAI) => managedClients.has(client);
 
@@ -14,7 +15,7 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
   const { connection, frozen, parameterMap } = scope;
   if (connection.protocol === "new-api-flow") return flowImageFetch(scope, options);
   if (!["openai-images", "openai-chat", "router-images"].includes(connection.protocol)) throw new ModelConfigError("UNSUPPORTED_PROTOCOL", "该模型需使用其协议适配器", 400);
-  const transport = modelEndpointFetch(connection.baseUrl, options, connection);
+  const transport = modelEndpointFetch(connection.baseUrl, options, { ...connection, costScope: scope });
   const mappedFetch: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
     if (request.method !== "POST" || !/\/(?:images\/(?:generations|edits)|chat\/completions)$/.test(new URL(request.url).pathname)) return transport(request);
@@ -92,7 +93,7 @@ export function executionOpenAI(scope: ModelExecutionScope, options: ValidationO
 export async function managedImageEditFetch(baseUrl: string, apiKey: string, form: FormData, signal: AbortSignal) {
   const scope = currentModelExecution("image");
   const connection = scope?.connection;
-  const transport = scope ? executionFetch(scope, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }) : fetch;
+  const transport = scope ? executionFetch(scope, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }) : supplierCostFetch(fetch,{providerId:"legacy-image",apiKey,baseUrl,protocol:"openai-images"});
   if (connection?.protocol === "router-images") appendImageGatewayFields(form, scope!.frozen.publicModelId);
   const { observeModelCall, modelExecutionTelemetry } = await import("../bi/model-observer");
   return observeModelCall(connection?.wireModel || String(form.get("model") || "unrecorded"), () => transport(`${(connection?.baseUrl || baseUrl).replace(/\/$/, "")}/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${connection?.apiKey || apiKey}` }, body: form, signal }), modelExecutionTelemetry(scope) || null);
@@ -100,7 +101,7 @@ export async function managedImageEditFetch(baseUrl: string, apiKey: string, for
 
 /** The explicit factory redirects each resource to its frozen modality; legacy/BYOK callers retain their own connection. */
 export function modelAwareOpenAI(options: ConstructorParameters<typeof OpenAI>[0], managed = true): OpenAI {
-  const legacy = new OpenAI(options);
+  const legacy = new OpenAI({ ...options, maxRetries:0,fetch: supplierCostFetch(options?.fetch || fetch, { providerId: managed ? "legacy-openai" : "byok", apiKey: typeof options?.apiKey==='string' ? options.apiKey : undefined, baseUrl: options?.baseURL || "https://api.openai.com/v1", protocol: "openai-compatible" }) });
   if (!managed) return legacy;
   managedClients.add(legacy);
   const clients = new WeakMap<ModelExecutionScope, OpenAI>();

@@ -1,3 +1,4 @@
+import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import {withBillingRequest,configuredToolCost,synchronousChargedCredits,markBillingUpstream} from "@/lib/billing/synchronous";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
@@ -137,7 +138,8 @@ async function cutoutReplicate(
   const version = await resolveReplicateVersion(model, token);
   // Prefer:wait 尽量同步拿结果(热启动 ~8s,冷启动更久则下面轮询)。
   markBillingUpstream("started");
-  const create = await fetch("https://api.replicate.com/v1/predictions", {
+  const costFetch = supplierCostFetch(fetch,{providerId:"replicate",protocol:"replicate",baseUrl:"https://api.replicate.com",apiKey:token,wireModel:model,phase:"cutout",observeTaskGets:true});
+  const create = await costFetch("https://api.replicate.com/v1/predictions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -168,7 +170,7 @@ async function cutoutReplicate(
     if (Date.now() > deadline) throw new Error("Replicate 超时");
     if (!pred.urls?.get) break;
     await new Promise((r) => setTimeout(r, 2000));
-    const g = await fetch(pred.urls.get, {
+    const g = await costFetch(pred.urls.get, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });

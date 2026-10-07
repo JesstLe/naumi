@@ -19,6 +19,7 @@ export function modelExecutionTelemetry(scope: ModelExecutionScope | null | unde
 type Context = { email: string; operation: string; id?: string };
 const context = new AsyncLocalStorage<Context>();
 export const currentBiOperationId = () => context.getStore()?.id;
+export const currentBiContext = () => context.getStore();
 export function withBiModelContext<T>(
   email: string,
   operation: string,

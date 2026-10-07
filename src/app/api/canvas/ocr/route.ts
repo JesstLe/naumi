@@ -1,3 +1,4 @@
+import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import { currentModelExecution } from "@/lib/model-config/context";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
@@ -33,7 +34,7 @@ async function paddleOcr(buffer: Buffer, mimeType: string) {
       const form = new FormData();
       form.append("file", new File([new Uint8Array(buffer)], "canvas-image.png", { type: mimeType }));
       markBillingUpstream("started");
-      const response = await fetch(endpoint, {
+      const response = await supplierCostFetch(fetch,{providerId:"paddle-ocr",protocol:"paddle-ocr",apiKey:process.env.PADDLE_OCR_API_KEY,baseUrl:endpoint,wireModel:"paddle-ocr",phase:"ocr"})(endpoint, {
         method: "POST",
         headers: process.env.PADDLE_OCR_API_KEY
           ? { Authorization: `Bearer ${process.env.PADDLE_OCR_API_KEY}` }
