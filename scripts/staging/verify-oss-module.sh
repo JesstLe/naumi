@@ -12,7 +12,7 @@ cat > "$TEMP/env" <<'ENV'
 POSTGRES_PASSWORD=fixture-password
 SETTINGS_SECRET=fixture-secret
 VIDEO_WORKER_SECRET=fixture-worker-secret
-NAUMI_OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
+NAUMI_OSS_ENDPOINT=https://s3.oss-cn-hangzhou.aliyuncs.com
 NAUMI_OSS_REGION=cn-hangzhou
 NAUMI_OSS_ACCESS_KEY_ID=fixture-not-real
 NAUMI_OSS_SECRET_ACCESS_KEY=fixture-not-real
@@ -30,13 +30,16 @@ import copy, importlib.util, json, sys
 spec=importlib.util.spec_from_file_location('osscheck','/opt/naumi-staging/config/verify-oss-compose.py')
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 b,o=(json.load(open(p)) for p in sys.argv[1:])
-cases=[('NAUMI_STAGING_HISTORY_GUARD','0'),('DATABASE_URL','postgres://production.invalid/db'),('S3_ENDPOINT','https://bucket.oss-cn-hangzhou.aliyuncs.com'),('S3_ENDPOINT','http://oss-cn-hangzhou.aliyuncs.com'),('S3_FORCE_PATH_STYLE','true'),('S3_PUBLIC_BASE_URL','https://public.invalid')]
+cases=[('NAUMI_STAGING_HISTORY_GUARD','0'),('DATABASE_URL','postgres://production.invalid/db'),('S3_ENDPOINT','https://bucket.s3.oss-cn-hangzhou.aliyuncs.com'),('S3_ENDPOINT','http://s3.oss-cn-hangzhou.aliyuncs.com'),('S3_FORCE_PATH_STYLE','true'),('S3_PUBLIC_BASE_URL','https://public.invalid'),('S3_ENDPOINT','https://oss-cn-hangzhou.aliyuncs.com'),('S3_REGION','cn-beijing')]
 for k,v in cases:
     bad=copy.deepcopy(o);bad['services']['app']['environment'][k]=v
     try: m.verify(b,bad)
     except AssertionError: pass
     else: raise AssertionError('negative configuration accepted')
-print('OSS_COMPOSE_NEGATIVE=PASS CASES=6 CREDENTIALS_PRINTED=0')
+print('OSS_COMPOSE_NEGATIVE=PASS CASES=8 CREDENTIALS_PRINTED=0')
+internal=copy.deepcopy(o);internal['services']['app']['environment']['S3_ENDPOINT']='https://s3.oss-cn-hangzhou-internal.aliyuncs.com'
+m.verify(b,internal)
+print('OSS_S3_ENDPOINT=PASS PUBLIC=1 INTERNAL=1 REGION_MISMATCH=REJECTED NATIVE_OSS=REJECTED')
 PY
 grep -v '^NAUMI_OSS_' "$TEMP/env" > "$TEMP/env.no-oss"
 if docker compose --profile workers --env-file "$TEMP/env.no-oss" -f "$BASE" -f "$OVERLAY" config --quiet > "$TEMP/missing.log" 2>&1; then
