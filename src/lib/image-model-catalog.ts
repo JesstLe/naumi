@@ -50,7 +50,9 @@ export function isNewApiFlowImageModel(model: string) {
     /^gemini-\d+(?:\.\d+)?-(?:pro|flash)-image-(?:landscape|portrait|square|four-three|three-four)$/i.test(
       model
     ) ||
-    /^imagen-\d+(?:\.\d+)?-generate-preview-(?:landscape|portrait)$/i.test(model)
+    /^imagen-\d+(?:\.\d+)?-generate-preview-(?:landscape|portrait)$/i.test(model) ||
+    // 即梦 jimeng-free-api:chat/completions 流式生图协议与 new-api-flow 兼容
+    /^jimeng-image-[a-z0-9][a-z0-9.-]*$/i.test(model)
   );
 }
 
