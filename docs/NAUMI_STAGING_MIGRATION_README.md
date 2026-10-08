@@ -259,3 +259,5 @@ docker build --network=host \
 - 操作脚本：`scripts/staging/export-mihomo-config.cjs`（只导出到受保护的忽略目录）、`scripts/staging/install-mihomo.sh`（新机专用，拒绝生产 current/已有容器）。源码里不保存代理配置、节点凭据或订阅链接。
 - 回滚：`/opt/naumi-staging/config/proxy-package/ROLLBACK.sh --check`；实际卸载为 `--apply`，会关闭 Mihomo、移除本次 Docker drop-in 并重启新机 Docker，保留私有安装包。副本演练使用 `--fixture /opt/naumi-staging/evidence/proxy-rollback-fixture`，不停止正在使用的代理。
 - 代理服务刚重启时应等端口就绪再验证；不要在镜像/数据传输过程中重启代理。一次镜像拉取与代理重启重叠导致 EOF，按原镜像 tag 续拉，不把该次视为成功。
+- 已完成真实文件下载（上游 README 3,194 bytes）和 `hello-world` 镜像拉取，镜像 ID：`sha256:5e23090353324d887c48ad5e5c56d294eab81588df9605b07d1afe895f9cc8f8`。代理重启后 GitHub 再次 HTTP 200，Mihomo enabled/active，Docker info 确认 daemon 使用回环代理。
+- PostgreSQL/Node 较大基础镜像尚未完成拉取（已下载部分层，未取得完整镜像）。后续核验当前已缓存层后续拉，或使用经哈希验证的离线镜像；当前没有 app/db/Worker 容器运行，不以小镜像成功声称完整构建链已贯通。
