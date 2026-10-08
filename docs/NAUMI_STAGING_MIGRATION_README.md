@@ -609,7 +609,7 @@ fixture整体exit0。wrapper的缺配置门槛实际exit78；有真实配置的�
 ### 当前推进分类与回传门槛
 
 - 上一goal turn是progress（七文件提交4f99658、隔离模块PASS、文档副本回滚和远端hash同步）；本轮继续有协议纠正和真实探针准备进展，目标保持active。没有已确认仍在运行的付费任务供等待，也不将缺参数当一个运行中job。
-- 本轮新旧机只读刷新：新机65adfe...、app/worker/db运行、history guard1、storage local、health200、Mihomo enabled/active；旧机仍84e1af...、health200。全表image未结算1、video pending0；新机未结算来源应按origin_rows区分，不自动处理冻结旧任务。
+- 本轮新旧机只读刷新：新机65adfe...、app/worker/db运行、history guard1、storage local、health200、Mihomo enabled/active；旧机仍84e1af...、health200。随后只读来源核验：`IMAGE_UNSETTLED_IMPORTED=1`、`IMAGE_UNSETTLED_NEW=0`、`VIDEO_PENDING_NEW=0`；这笔未结算确实属于冻结历史，不重放、不自动退款/结算，不能当作仍运行的新增job。证据 `staging-pending-origin-20261009.txt` / exit0。
 - 旧机固定镜像回传包已准备，但 `deploy-release.sh` 不执行本次三份显式增量SQL，也不自动发布Router快照。正式窗口沿协调发布流程：入口维护、暂停worker、检查生产未完成任务、当场备份、增量SQL及Router协调、同镜像发布/回滚与验收后开放；不得把“调用deploy-release.sh”当所有迁移和模型配置已完成。本轮没有执行生产发布。
 - 本轮证据：`oss-probe-fixture-20261009.txt`、`oss-live-config-gate-20261009.txt`、`oss-module-s3-endpoint-20261009.txt`（新机evidence）；固定运行候选/回传包保持65adfe...，新增脚本属于交接分支，不替换候选业务源码。
 - 本人页面登录、有效视频供应商token、OSS参数/凭据和下班回传时刻仍待用户输入；未重复收费或测试库回灌。接手时在第16节提示词基础上优先读第17节端点纠正、探针receipt与latch规则。
