@@ -224,6 +224,7 @@ export function FuseClient() {
           { cache: "no-store", headers: await authHeader() }
         );
         const s = await sres.json();
+        if (sres.ok && s.user) applyServerUser(s.user);
         if (s.status === "done") data = s;
         else if (s.status === "error")
           throw new Error(s.error ?? L("融合失败", "Failed"));
