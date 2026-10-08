@@ -7,6 +7,7 @@ import { imageRequestBilling, withQualityFallback, auditSettledImage } from "@/l
 import type { ResolvedImageQuality, ExecutedQuality } from "@/lib/image-quality";
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { appendImageGatewayFields, imageOperationQuality, ImageOperationPending, isImageGatewayModel } from "@/lib/image-gateway";
+import { imageJobPollState } from "@/lib/image-job-failure";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
@@ -564,7 +565,7 @@ async function runSuite(
       mock: !apiKey,
     });
   } catch (e) {
-    if (e instanceof ImageOperationPending) { await set({ status: "pending", error: e.message }); return; }
+    if (e instanceof ImageOperationPending) { await JOBS.handlePending(jobId, e); return; }
     if ((await JOBS.get(jobId, false))?.shots.some((shot) => shot.status === "done")) throw e;
     if (useDb) await JOBS.settleResults(jobId, 0, "套图生成失败",{state:"failed",items:[]});
     console.error("[suite] job failed:", e instanceof Error ? e.message : e);
@@ -768,11 +769,11 @@ export async function GET(request: Request) {
     quality: s.quality,
   }));
   return NextResponse.json({
-    status: job.status,
+    status: imageJobPollState(job.status),
     done: job.done,
     total: job.total,
     shots,
-    user: job.status === "done" ? job.user : undefined,
+    user: job.status === "done" ? job.user : imageJobPollState(job.status) === "error" && dbEnabled ? await getUser(job.owner) : undefined,
     creditsUsed: job.status === "done" ? job.creditsUsed : undefined,
     quality: job.quality,
     cost: job.cost,

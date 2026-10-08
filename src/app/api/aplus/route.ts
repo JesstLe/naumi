@@ -7,6 +7,7 @@ import { imageRequestBilling, withQualityFallback, auditSettledImage } from "@/l
 import type { ResolvedImageQuality, ExecutedQuality } from "@/lib/image-quality";
 import { DurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { appendImageGatewayFields, imageOperationQuality, ImageOperationPending, isImageGatewayModel } from "@/lib/image-gateway";
+import { imageJobPollState } from "@/lib/image-job-failure";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
 import { toVisionDataUrl } from "@/lib/vision-image";
@@ -476,7 +477,7 @@ async function runSourcePreparation(jobId: string) {
     }
     await patchJob(jobId, { status: "awaiting_review", stage: "reviewing" });
   } catch (e) {
-    if (e instanceof ImageOperationPending) { await patchJob(jobId, { status: "pending", error: e.message }); return; }
+    if (e instanceof ImageOperationPending) { await JOBS.handlePending(jobId, e); return; }
     await patchJob(jobId, {
       status: "error",
       error: safeError(e, "白底母图准备失败，请重新上传"),
@@ -517,7 +518,7 @@ async function runSourceRedo(jobId: string, index: number, feedback: string) {
       sourceHistory: [...job.sourceHistory],
     });
   } catch (e) {
-    if (e instanceof ImageOperationPending) { await patchJob(jobId, { error: e.message }); return; }
+    if (e instanceof ImageOperationPending) { await JOBS.handlePending(jobId, e); return; }
     job.sources[index] = {
       ...job.sources[index],
       status: "error",
@@ -662,7 +663,7 @@ async function runAplusGeneration(jobId: string) {
       reserved: false,
     });
   } catch (e) {
-    if (e instanceof ImageOperationPending) { await set({ status: "pending", error: e.message }); return; }
+    if (e instanceof ImageOperationPending) { await JOBS.handlePending(jobId, e); return; }
     if ((await JOBS.get(jobId, false))?.shots.some((shot) => shot.status === "done")) throw e;
     if (job.useDb) await JOBS.settleResults(jobId, 0, "详情页生成失败",{state:"failed",items:[]});
     console.error("[aplus] job failed:", e instanceof Error ? e.message : e);
@@ -1002,7 +1003,7 @@ export async function GET(request: Request) {
   }));
   return NextResponse.json({
     jobId,
-    status: job.status,
+    status: imageJobPollState(job.status),
     stage: job.stage,
     parameters: { platform:job.platform, lang:job.lang, format:job.format, text:job.extra, modules:job.modules },
     sources: job.sources.map((source, index) => ({
@@ -1012,7 +1013,7 @@ export async function GET(request: Request) {
     done: job.done,
     total: job.total,
     shots,
-    user: job.status === "done" ? job.user : undefined,
+    user: job.status === "done" ? job.user : imageJobPollState(job.status) === "error" && job.useDb ? await getUser(job.email) : undefined,
     creditsUsed: job.status === "done" ? job.creditsUsed : undefined,
     quality: job.quality,
     cost: job.cost,

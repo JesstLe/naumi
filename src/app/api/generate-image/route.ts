@@ -51,7 +51,8 @@ import {
 import { routeImageModel } from "@/lib/image-model-routing";
 import { resolveImageQuality, isQualityUnsupportedError } from "@/lib/image-quality";
 import { generateNewApiImage } from "@/lib/new-api-image";
-import { imageGatewayFields, ImageOperationPending, withImageIndex } from "@/lib/image-gateway";
+import { imageGatewayFields, ImageOperationPending, isImageGatewayModel, withImageIndex } from "@/lib/image-gateway";
+import { imageJobPollState } from "@/lib/image-job-failure";
 import {
   assertUserImageBaseUrlAllowed,
   getUserImageProvider,
@@ -378,7 +379,7 @@ async function openaiImages(
     // Wait for all workers to settle, then preserve the complete job. Router
     // replays successful indices when the worker later recovers this batch.
     const pending = failed.find((error) => error instanceof ImageOperationPending);
-    if (pending) throw pending;
+    if (pending && (isImageGatewayModel(model) || succeeded.length === 0)) throw pending;
     if (failed.length > 0) {
       console.error(
         `[generate-image] partial upstream failure: requested=${p.count} succeeded=${succeeded.length} failed=${failed.length}`,
@@ -553,7 +554,7 @@ async function newApiFlowImages(
     else failures.push(result.reason);
   }
   const pending = failures.find((error) => error instanceof ImageOperationPending);
-  if (pending) throw pending;
+  if (pending && (isImageGatewayModel(model) || images.length === 0)) throw pending;
   if (failures.length) {
     console.error(
       `[generate-image] New API partial failure: requested=${p.count} succeeded=${images.length} failed=${failures.length}`,
@@ -1050,7 +1051,8 @@ async function runJob(
       quality,
     });
   } catch (e) {
-    if (e instanceof ImageOperationPending || e instanceof PostprocessPending) {
+    if (e instanceof ImageOperationPending) { await JOBS.handlePending(jobId, e); return; }
+    if (e instanceof PostprocessPending) {
       const exhausted = e instanceof PostprocessPending && (await getPool().query("SELECT 1 FROM app_media_postprocess WHERE operation_id=$1 AND attempts>=3",[e.operationId])).rowCount;
       await JOBS.patch(jobId, { status: exhausted ? "needs_attention" : "pending", error: e.message });
       return;
@@ -1076,7 +1078,7 @@ async function kickGeneration(id: string) {
     const p = payload.p as GenParams;
     const settings = await getOpenAISettings();
     if (payload.byok && typeof payload.byokSnapshot !== "string") {
-      await JOBS.patch(id, { error: "旧任务缺少自定义接口快照，已暂停提交，请联系管理员核查" });
+      await JOBS.patch(id, { status: "needs_attention", error: "旧任务缺少自定义接口快照，已暂停提交，请联系管理员核查" });
       return;
     }
     const provider = payload.byok ? restoreUserImageProvider(p.email, payload.byokSnapshot as string) : null;
@@ -1291,8 +1293,9 @@ export async function GET(request: Request) {
         quality: job.quality,
       });
     }
-    if (job.status === "error") {
-      return NextResponse.json({ status: "error", error: job.error });
+    if (imageJobPollState(job.status) === "error") {
+      const owner = dbEnabled ? await JOBS.owner(jobId) : undefined;
+      return NextResponse.json({ status: "error", error: job.error, reviewRequired: job.status === "needs_attention", user: owner ? await getUser(owner) : undefined });
     }
     return NextResponse.json({ status: "pending", error: job.error || "" });
   }

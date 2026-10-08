@@ -4246,6 +4246,7 @@ export function CanvasClient() {
           { cache: "no-store", headers: await authHeader() }
         );
         const pj = await readJsonSafe(pr);
+        if (pr.ok && pj.user) applyServerUser(pj.user);
         if (pj.status === "done") {
           generated = ((pj.images ?? []) as { id?: string; url?: string; width?: number; height?: number }[])
             .filter(
@@ -5306,7 +5307,7 @@ export function CanvasClient() {
               : task
           )
         );
-        if (poll.status === "error") throw new Error(poll.error || t("canvas.genFail"));
+        if (poll.status === "error") { if (poll.user) applyServerUser(poll.user); throw new Error(poll.error || t("canvas.genFail")); }
         if (poll.status === "done") {
           shots = (poll.shots ?? []) as typeof shots;
           if (poll.user) applyServerUser(poll.user);
@@ -7489,6 +7490,7 @@ export function CanvasClient() {
           { cache: "no-store", headers: await authHeader() }
         );
         const pj = await readJsonSafe(pr);
+        if (pr.ok && pj.user) applyServerUser(pj.user);
         if (pj.status === "done") {
           generatedSizes = ((pj.images ?? []) as { id?: string; width?: number; height?: number }[])
             .filter((image): image is { id: string; width?: number; height?: number } => !!image.id)

@@ -576,6 +576,7 @@ export function GenerateClient({
     while (generationPollingRef.current===jobId) {
       const response=await fetch(`/api/generate-image?job=${encodeURIComponent(jobId)}`,{cache:"no-store",headers:await authHeader()});
       const data=await response.json();
+      if(response.ok && data.user) applyServerUser(data.user);
       if (!response.ok) { if(response.status===404 || response.status===403) rememberJob(null); throw new Error(data.error || t("gen.errFail")); }
       if(data.status==="error") { rememberJob(null); throw new Error(data.error || t("gen.errFail")); }
       if(data.status==="done") {
@@ -583,7 +584,7 @@ export function GenerateClient({
         setImages(current=>[...current,...data.images.filter((image:GeneratedImage)=>!current.some(existing=>existing.id===image.id))]);
         setShownRec(null); rememberJob(null); generationPollingRef.current=null; return;
       }
-      if(Date.now()>deadline) throw new Error(t("gen.errTimeout"));
+      if(Date.now()>deadline) { rememberJob(null); generationPollingRef.current=null; throw new Error(t("gen.errTimeout")); }
       await new Promise(resolve=>setTimeout(resolve,2500));
     }
   }
