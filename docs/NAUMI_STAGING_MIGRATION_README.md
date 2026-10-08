@@ -613,3 +613,47 @@ fixture整体exit0。wrapper的缺配置门槛实际exit78；有真实配置的�
 - 旧机固定镜像回传包已准备，但 `deploy-release.sh` 不执行本次三份显式增量SQL，也不自动发布Router快照。正式窗口沿协调发布流程：入口维护、暂停worker、检查生产未完成任务、当场备份、增量SQL及Router协调、同镜像发布/回滚与验收后开放；不得把“调用deploy-release.sh”当所有迁移和模型配置已完成。本轮没有执行生产发布。
 - 本轮证据：`oss-probe-fixture-20261009.txt`、`oss-live-config-gate-20261009.txt`、`oss-module-s3-endpoint-20261009.txt`（新机evidence）；固定运行候选/回传包保持65adfe...，新增脚本属于交接分支，不替换候选业务源码。
 - 本人页面登录、有效视频供应商token、OSS参数/凭据和下班回传时刻仍待用户输入；未重复收费或测试库回灌。接手时在第16节提示词基础上优先读第17节端点纠正、探针receipt与latch规则。
+
+## 18. 回传部署脚本隔离演练与最新输入检查（2026-10-09）
+
+### 本轮完成
+
+- 已将 `scripts/staging/check-goal-inputs.mjs` 和 `scripts/staging/run-return-deploy-fixture.sh` 纳入交接分支。前者只查询新机工作库和冻结参照库，两个 PostgreSQL 连接都设置 `default_transaction_read_only=on`；不解密、不输出 token，不登录或访问供应商，不创建任务。后者核对新机 staging 标记、无生产 current、候选 revision 和固定 IMAGE_ID，再运行候选本身的部署/协调验收脚本。
+- 在新机执行 `docker exec naumi-staging-app-1 node /tmp/check-goal-inputs.mjs`（先将已核验脚本复制到容器 `/tmp`），exit0：
+
+```text
+VIDEO_CONFIG_CHANGED_FROM_SNAPSHOT=0 PROVIDER_REQUESTS=0 GENERATED_TASKS=0
+NEW_VIDEO_DONE=0
+GOAL_INPUT_REFRESH=READONLY DB_WRITES=0
+```
+
+这表示相关视频配置和加密凭据与冻结参照一致，且没有新增成功视频；不是再次请求401供应商的结果。`.env.oss` 和探针 latch 均不存在，没有待等待的真实 OSS 作业。app health200，Mihomo enabled/active；原密钥 hash 保持，SSH 临时副本每次调用后不存在。本人页面仍显示登录框，未完成密码登录验收。
+
+- 运行 `bash /opt/naumi-staging/config/run-return-deploy-fixture.sh`，输入是候选65adfe...内的 `scripts/deploy-release.sh` 和 `scripts/verify-coordinated-release.sh`，分别传 `FAIL_HEALTH=0/1`。固定镜像内 network none，不挂 Docker socket、生产目录或真实数据库；mock Docker/DB/nginx，仅改一次性容器文件系统。
+
+```text
+MODEL_ROLLBACK_PENDING_TASKS_AND_INGRESS_GUARD=PASS
+COORDINATED_SUCCESS_MAINTENANCE_AND_WORKER_GUARD=PASS
+COORDINATED_FAILURE_ROLLBACK_WORKER_GUARD=PASS
+RETURN_DEPLOY_FIXTURE=PASS CANDIDATE_DEPLOY_SCRIPT=1 SUCCESS_AND_FAILURE=1 DATABASE=MOCK DOCKER=MOCK SOCKET_MOUNTED=0 REAL_SERVICES_CHANGED=0
+RETURN_DEPLOY_FIXTURE_EXIT=0
+```
+
+- 本轮证明候选部署脚本成功/健康失败两分支保留维护入口、worker暂停，以及回滚前有未完成模型任务时拒绝提前恢复；不是生产发布/生产回滚，不证明旧机真实 Docker load 已完成。既有回传包、运行候选和生产 release 均未替换。
+- 证据：`/opt/naumi-staging/evidence/goal-input-refresh-20261009.txt`、`/opt/naumi-staging/evidence/return-deploy-fixture-20261009.txt`；本机回读副本在 `E:\Workspace\naumi\output\staging-functional-20261009`。
+
+### 接手与剩余输入
+
+独立准备与本轮交接收尾已完成，全目标仍 active；视频成功、本人页面验收、OSS实迁及窗口内旧机回传未完成。仅执行配置缺失检查不能把目标标为完成，也不应重复收费请求或无限增加mock演练。
+
+接手优先处理用户提供的新输入：有效视频配置、本人完成页面登录验收、独立OSS bucket/region/S3 endpoint与受保护配置文件、明确北京时间发布日期和时刻。缺输入时保持现有服务，不选未经确认窗口，不回灌测试DB，不重放已验收receipt；按实际连续阻塞轮次记录状态。
+
+```text
+在 codex/staging-media-handoff worktree 先读 AGENTS.md 和本 README 第13—18节。
+核验当前新机/生产版本后，只推进新提供输入对应阶段。Clash/Mihomo已安装，
+不重复导出凭据或重启服务。已有图/改图/OCR/失败视频只用receipt核验；视频
+成功须有效配置与独立新receipt。OSS先运行真实探针，后做copy、全内容hash、
+冻结切换和新增媒体回收回滚；缺配置不把mock算live。本人页面验收与指定
+发布窗口到位后才把同一镜像、源码及增量迁移回传旧机，不覆盖生产DB。
+每模块更新文档和证据，选择性提交推送，原私钥和其他工作区保持不动。
+```
