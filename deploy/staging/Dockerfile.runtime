@@ -1,0 +1,18 @@
+# Consume the standalone output built and tested on the staging host.
+# Context: /opt/naumi-staging/releases/<fixed-commit>/runtime
+FROM node:24-bookworm-slim
+WORKDIR /app
+ARG BUILD_VERSION=0
+ARG SOURCE_COMMIT
+LABEL org.opencontainers.image.revision=$SOURCE_COMMIT
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0 MEDIA_DIR=/data/media BUILD_VERSION=$BUILD_VERSION
+RUN groupadd -g 1001 nodejs && useradd -u 1001 -g nodejs -m nextjs
+COPY --chown=nextjs:nodejs standalone ./
+COPY --chown=nextjs:nodejs static ./.next/static
+COPY --chown=nextjs:nodejs public ./public
+COPY --chown=nextjs:nodejs scripts ./scripts
+RUN mkdir -p /data/media && chown -R nextjs:nodejs /data
+VOLUME /data
+USER nextjs
+EXPOSE 3000
+CMD ["node", "server.js"]
