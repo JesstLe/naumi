@@ -1,6 +1,6 @@
 # Naumi 新服务器预发布与晚间回传方案
 
-> 状态：预发布 app/Worker 已启动，首笔真实生图与结算通过；全量 4,767 源对象 MD5 核验通过，NAS 导出通道已撤下；4 个源端既存缺失引用单独记录（2026-10-09）。
+> 状态：新机 app/Worker/Router 与下载代理正常；全量媒体、生图、改图与失败视频退款通过；同一固定镜像回传档案已准备。视频成功出片（供应商 401）、本人密码登录、OSS 参数及晚间生产回传尚未完成。4 个源端既存媒体缺失单独记录（2026-10-09）。
 >
 > 本文是本任务的交接入口。后续 Agent 先阅读本文，再检查本文列出的状态、证据和阻塞项；不要凭对话上下文猜测迁移进度。
 
@@ -243,13 +243,13 @@
 1. npm ci、候选构建、runtime 已完成；不重跑整套。先核验运行 app/Worker 的实际镜像、最近日志和媒体传输。`prepare-build-deps.sh <commit>` 从原 lockfile 安装并保存 lock hash；`build-candidate.sh <commit>` 在新机运行 Next build，用同一 standalone 输出构建固定 tag 镜像（revision label/BUILD_VERSION），不含本地构建产物或凭据。`scripts/staging/run-history-runtime.sh <40位commit>` 只克隆工作库为独立 fixture、运行测试并清理，不修改工作副本。
 2. 媒体复制与全清单 MD5 已完成；不重跑整卷导出，不为 4 个源端既存缺失伪造文件或改写历史任务。继续历史页面抽样验收，源缺失需要单独恢复来源。
 3. 独立 Router/app 白名单配置已生效，后续只补齐旧 Yutang/OCR 依赖所需的独立实例，不改已有公网供应商地址或生产管理端。
-4. app/Worker 已通过历史隔离门槛并启动；继续按模块完成用户本人登录、历史媒体、编辑、视频与失败账务验收。首笔生图成功不代表所有供应商和视频模块已贯通。
-5. 更新本文、验证证据，选择性提交推送；晚间回传与 OSS 为后续阶段，目标保持 active。
+4. app/Worker 已通过历史隔离门槛并启动；历史读取、真实改图及失败视频退款已验收，见第 13 节。本人密码登录、成功视频仍未验收。已有付费测试只通过第 14 节 wrapper 查询，先恢复 receipt，不直接重提任务。
+5. 同一候选镜像与干净源码已在新机打包并核验，见第 14 节；更新本文和交接四件套后选择性提交推送。晚间回传与 OSS 为后续阶段，目标保持 active，准备包不等于生产发布。
 
 ### 接手提示词
 
 ```text
-继续 E:\Workspace\naumi 的新服务器预发布准备任务。先读取 AGENTS.md、README.md 与 docs/NAUMI_STAGING_MIGRATION_README.md，再核验 Git 状态和服务器实际进度。旧服务器 101.133.166.67 保持生产；新服务器 120.27.162.85 使用完整不脱敏副本与独立本地媒体，真实模型消费无额外预算上限，仅用户本人测试。不要共享生产数据库/媒体写路径或 Router 管理配置，不重放复制来的历史任务。按“下一执行点”完成镜像获取、全量复制、独立 Router 与历史任务保护，再启用真实应用。每阶段更新文档、命令证据、剩余工作和恢复方案；任务文件选择性提交推送，不自动在此次准备阶段发布到旧服务器。不在 Git/日志保存凭据或明文数据。
+继续 Naumi 新服务器预发布任务。任务 worktree 是 C:\Users\13357\.codex\worktrees\staging-media-handoff\naumi，分支 codex/staging-media-handoff；主工作区 E:\Workspace\naumi 由其他工作使用，不切换或覆盖。先读 AGENTS.md、README.md 和 docs/NAUMI_STAGING_MIGRATION_README.md，再核验 Git 和实际 runtime。旧机 101.133.166.67 持续生产；新机 120.27.162.85 使用不脱敏全量副本、本地媒体、独立 Router，允许真实消费，仅用户本人测试。全量复制与候选构建已经完成，勿重复导出或构建。候选 65adfe8742e7a1fe120e7ce7a94409c50c76eb44，已有生图/改图/失败视频 IDs 与 host receipt 见第 13、14 节。已有功能验收通过 run-functional-receipt.sh 恢复 receipt，勿直接重提付费任务。继续处理视频有效凭据、本人浏览器登录、独立旧内网依赖、OSS 参数以及晚间回传门槛；包已在新机，准备不是发布。禁止回灌测试库、串写生产或重放历史任务。每阶段更新 README、literal 证据、四件套与剩余项，选择性提交推送；凭据不进 Git/日志，原私钥不改，临时副本用后清理。
 ```
 
 ## 11. 下载代理（2026-10-08 用户追加授权）
@@ -368,3 +368,58 @@ docker build --network=host \
 - 视频成功出片仍待可用凭据；用户密码登录、OSS 迁移参数和晚间回传窗口仍待完成，目标继续 active；继续准备其他独立验收和发布包，不把凭据阻塞扩大为整项停工。
 
 - 已发现并修正的验收脚本问题：视频领域契约仍匹配旧 `privateFetch`，应用早已改为 `privateFetchRaw`，只调整契约锚点；billing 老回归要求无管理员密码的空库，且支付回调 fixture 需要非 staging 开关，故明确放在 `naumi_staging_billing_fixture` 的 empty/disposable 环境。首次只读源码 `/app/data/media` 写入失败导致 canvas needs_attention；设置隔离的 `MEDIA_DIR=/app/output/billing-fixture-media` 后全部通过，未改应用业务代码或真实副本。
+
+## 14. 付费测试 receipt 与固定镜像回传档案（2026-10-09）
+
+### 已有测试的唯一 host 入口
+
+```bash
+bash /opt/naumi-staging/config/run-functional-receipt.sh \
+  65adfe8742e7a1fe120e7ce7a94409c50c76eb44 --verify
+```
+
+- wrapper 使用 host `flock`、候选 IMAGE_ID/revision 校验及 staging 标记；每次将 `/opt/naumi-staging/evidence/functional-receipt-20261009.json` 恢复到 app 容器，再执行已有测试查询。
+- 缺 receipt、缺 edit operation/video task ID、镜像不符或锁占用时停止，不创建第二笔任务。`--edit`、`--video` 也只核验 receipt 内已有 ID；有效视频凭据到位后，先另行设计新验收记录，再提交一笔新测试，不删除失败记录或清空旧 receipt。
+- EXIT trap 在运行成功或失败后均原子保存 host receipt；即使失败视频的 `--video` 返回 2，也保存记录并保留非零状态。若容器消失导致保存失败，原 host receipt 保留并 exit 74；不得把这个 exit 当验收成功。
+- fixture：`python3 /opt/naumi-staging/config/verify-functional-wrapper.py` → `FUNCTIONAL_WRAPPER_FIXTURE=PASS RESTORE=1 FAILURE_PERSIST=1 MISSING_BLOCK=1 IMAGE_BLOCK=1 INCOMPLETE_BLOCK=1 LOCK_BLOCK=1 SUPPLIER_CALLS=0` / 0。
+- 真实 `--verify` → `FUNCTIONAL_RECEIPT=RESTORED FIXED_IMAGE=VERIFIED MODE=--verify`、第 13 节真实改图/失败视频退款 PASS、`FUNCTIONAL_RECEIPT=PERSISTED COMMAND_EXIT=0` / 0。没有新付费提交；失败视频查询不会请求供应商。
+- 本机改图结果已视觉查看：蓝色陶瓷杯、原杯形和白色背景可辨识；这是结果查看，不代替本人密码登录/页面操作，也不据此声称 mask 像素外完全不变。
+
+### 已准备且重新打开校验的回传包
+
+新机目录：
+`/opt/naumi-staging/return-packages/65adfe8742e7a1fe120e7ce7a94409c50c76eb44/`
+
+| 文件 | 字节 / SHA256 或内容 |
+|---|---|
+| `source.tar.gz` | 24,724,372 / `47cf7cc203951e4b7baa4d28a38bae2464f8e11d47316175511d60595b098d9b` |
+| `image.tar.gz` | 116,460,606 / `b0854c1c5b985276d169ce9db5c2afcf055566f18916b276ec28b05586042ff4` |
+| `COMMIT` | `65adfe8742e7a1fe120e7ce7a94409c50c76eb44` |
+| `IMAGE_ID` | 新机 Docker 29 OCI manifest：`sha256:3cda12e2fe7ce6a6a5ebfb2d0448186569c6ec83a946a82cf111b94963f54056` |
+| `IMAGE_CONFIG_ID` | 传统 Docker config：`sha256:2fcf4ac8119cc574a73b410cab990112dff0c214ff031b34adeab5ceb09ef2c8` |
+| `BUILD_VERSION` | `1791464553`，与新机实际构建一致 |
+| `SHA256SUMS` | 上述六文件的完整 SHA256；包内执行 `sha256sum -c SHA256SUMS` 全部 OK |
+
+- `package-return-release.sh` 使用 `docker image save` 导出正在运行的同一镜像，不再构建，不包括 `.env`、数据库、媒体或测试数据。源码使用最初冻结的 clean archive；全部 951 运行源码文件与明确 `git archive 65adfe...` 的文件内容哈希相同，只排除 26 个 Git 已跟踪的 `output/` 和 `audit-artifacts/` 历史验收产物。不是任意工作区打包。
+- 源码核验：`verify-return-source.py <source.tar.gz> <explicit-commit-file-hash.json>` → `RETURN_SOURCE_GIT=PASS TRACKED_FILES=951 EXCLUDED_TRACKED_ARTIFACTS=26` / 0。
+- 镜像核验重新打开 gzip/tar，确认 tag/revision、OCI manifest 指向 config，并逐 blob 校验内容摘要；`RETURN_IMAGE=PASS FIXED_BUILT_IMAGE=1 IMAGE_CONFIG_ID=sha256:2fcf4ac8119cc574a73b410cab990112dff0c214ff031b34adeab5ceb09ef2c8` / 0。
+- 最终：`RETURN_PACKAGE=PASS COMMIT=65adfe8742e7a1fe120e7ce7a94409c50c76eb44 IMAGE_ID=sha256:3cda12e2fe7ce6a6a5ebfb2d0448186569c6ec83a946a82cf111b94963f54056 PRODUCTION_DEPLOYED=0 DATABASE_MEDIA_INCLUDED=0` / 0。
+- 首轮包测试错误地将 OCI manifest digest 与 config digest 直接比较而 exit 1；已修正并在同一归档重跑/回读通过。旧机采用传统 Docker store 时 `.Id` 可能显示 IMAGE_CONFIG_ID，而不是新机 OCI manifest；回传验收要按实际 Docker 存储格式验证两者关联与 revision/BUILD_VERSION，不为“对齐 ID”重新构建。
+- 脚本支持同一 COMMIT/IMAGE_ID/source hash 的续验，不覆盖不同候选。候选业务镜像仍停在 65adfe...；本轮只增加验收/打包工具和文档，新的工具提交并未进入候选镜像。
+
+### 回传窗口门槛与恢复
+
+1. 本人页面登录及受影响核心功能通过；视频成功链路补验（当前 token 401，失败退款已经通过）。明确旧 Yutang/OCR 独立依赖与 OSS 后续范围，不能把“包存在”当全部功能贯通。
+2. 确定具体下班窗口；窗口前重新盘点生产 commit、镜像、容量、在途任务与备份状态。这里的生产版本/计数属于 10-08 快照，不能直接沿用；若生产已前进，先审查候选差异，禁止旧候选盲目降级。
+3. 从新机复制该目录的 source/image/hash清单到旧机专用 incoming 目录，旧机只校验/load，不重建。保留生产 `.env`/数据库/NAS、Router配置；不复制新机 runtime 配置，不导入测试库或新机消费记录。
+4. 以现有 `scripts/deploy-release.sh <commit> <source.tar.gz> <image.tar.gz>` 流程发布；实际备份和具体 release 的 `ROLLBACK.sh --check` 在窗口内准备。涉及 Router 快照协议的变更按现有 coordinated 发布门槛排空任务、短暂关闭入口后发布，不改全量复制时的源状态。
+5. 线上健康/实际 revision/BUILD_VERSION/镜像关联及受影响功能通过后恢复入口与 Worker。失败时用该 release 回滚代码/配置，保留新产生的生产数据与媒体；不会恢复旧 dump 或测试 dump 覆盖生产。
+6. 四件套的 `ROLLBACK.sh --fixture` 只恢复另一个 README 副本，不停止新机 app/Mihomo，也不是生产回滚；生产回滚必须使用具体生产 release 的脚本。
+
+### 本轮状态与剩余项
+
+- 最新只读检查：app、video-worker、db 运行；Mihomo 与独立 Router active，Mihomo enabled；新机 app health 200，剩余空间约 80 GiB。Clash/Mihomo 配置已复用，原本机配置未改，不重复安装。
+- 本轮下载复验：GitHub release HTML 实际下载 219,873 bytes，`PROXY_DOWNLOAD=PASS` / 0；HTTP/SOCKS 与 DNS 的本地监听地址分别为 `127.0.0.1:7897` / `127.0.0.1:1053`，Docker daemon 的 HTTP/HTTPS 代理均为回环7897。一次 raw.githubusercontent.com 下载 SSL 错误 exit 35，未把它算成功；GitHub release 下载已单独通过，不代表任意站点始终可达。首次监听检查误匹配 peer 的 `0.0.0.0:*`，已改成只检查 ss 本地地址列，实测没有公网监听，也没有更改代理配置。
+- 不等待凭据即可完成的收尾：receipt wrapper、fixture、固定候选回传档案、README/证据同步，已完成。
+- 尚未完成：视频成功出片、本人密码登录/页面下载、旧内网供应商独立实例、OSS bucket/参数/凭据及晚间生产回传。全目标保持 active，本轮没有旧机生产发布。
+- 本轮原始 literal 证据增加：`functional-wrapper-fixture-20261009.txt`、`functional-wrapper-20261009.txt`、`return-source-git-20261009.txt`、`return-package-20261009.txt`，均位于 `/opt/naumi-staging/evidence/`，0600。
