@@ -205,7 +205,7 @@
 
 ## 9. 当前阻塞
 
-- 新机 Docker Hub 直连超时；GHCR 返回正常认证响应、GitHub 可达。镜像获取/构建所需基础镜像应先验证合规镜像源或离线导入，不把登录成功等同于镜像可用。
+- 新机 Docker Hub 直连超时；已按用户授权安装复用本机配置的 Mihomo 下载代理。代理访问 GitHub=200、Docker Hub/GHCR=401（正常认证响应），真实镜像拉取验收另见“下载代理”。
 - 全量数据库和媒体尚未复制。数据规模适合当前新机磁盘，但 NAS 对象与残留本地媒体需要按对象 key 和哈希核对，不将残留本地卷视作完整数据。
 - 历史任务来源隔离及页面/API 惰性恢复保护尚未实施。生产存在 1 笔未结算生图任务，必须保留原始 dump 和状态。
 - 生产 Router 实际位置、配置快照及新机独立 Router 尚待盘点和准备；新环境未执行真实收费测试。
@@ -235,3 +235,27 @@
 ```text
 继续 E:\Workspace\naumi 的新服务器预发布准备任务。先读取 AGENTS.md、README.md 与 docs/NAUMI_STAGING_MIGRATION_README.md，再核验 Git 状态和服务器实际进度。旧服务器 101.133.166.67 保持生产；新服务器 120.27.162.85 使用完整不脱敏副本与独立本地媒体，真实模型消费无额外预算上限，仅用户本人测试。不要共享生产数据库/媒体写路径或 Router 管理配置，不重放复制来的历史任务。按“下一执行点”完成镜像获取、全量复制、独立 Router 与历史任务保护，再启用真实应用。每阶段更新文档、命令证据、剩余工作和恢复方案；任务文件选择性提交推送，不自动在此次准备阶段发布到旧服务器。不在 Git/日志保存凭据或明文数据。
 ```
+
+## 11. 下载代理（2026-10-08 用户追加授权）
+
+- 用户允许新机安装 Clash 并复用本机配置，供下载使用。安装的是官方 Mihomo/Clash 兼容内核 `v1.19.32`，Linux amd64-compatible；压缩包 SHA256 与 GitHub release asset digest 一致：`ba3ce607747a07f948fc35780e108a4a7c7f552a38b9bd4d115f313ebcb89c20`。
+- 原本机 Clash 配置未修改。新机副本保留 52 个节点、516 条规则和本机当前选择；处理 YAML 将部分 REALITY short-id 当科学计数法的问题，保持原始十六进制文本语义，不更换节点凭据。
+- 新机 HTTP/SOCKS mixed proxy：`127.0.0.1:7897`；DNS 只监听 `127.0.0.1:1053`，不改宿主 DNS。关闭 TUN、自动路由和控制面，不开放公网代理，不接管 Naumi 应用流量。
+- 服务：`mihomo.service`，开机启动，非 root 专用用户，失败自动恢复；配置 `/etc/mihomo/config.yaml` 为 root:mihomo 0640；私有安装包 `/opt/naumi-staging/config/proxy-package` 为 root 0700。
+- Docker 专用代理 drop-in：`/etc/systemd/system/docker.service.d/20-naumi-proxy.conf`。只重启了新机 Docker（没有容器运行），没有改老服务器或全局应用环境。
+- CLI 下载按需用 `naumi-with-proxy <command>`；私有 GitHub 仓库仍需要独立认证，网络可达不等于拥有仓库读权限。此前未推送的状态记录提交已通过本机现有代理推送成功。
+- 新机 Docker 构建涉及容器内 npm 下载时，明确使用 `--network=host` 与预定义代理 build args；这些参数不作为运行时全局代理或写入镜像环境。
+
+```bash
+naumi-with-proxy curl -fsSL https://github.com/MetaCubeX/mihomo/releases/latest -o /tmp/mihomo-release.html
+docker build --network=host \
+  --build-arg HTTP_PROXY=http://127.0.0.1:7897 \
+  --build-arg HTTPS_PROXY=http://127.0.0.1:7897 \
+  --build-arg NO_PROXY=localhost,127.0.0.1,::1,.local \
+  --build-arg BUILD_VERSION=<候选提交时间戳> \
+  -t ghcr.io/jesstle/naumi:<40位候选提交> .
+```
+
+- 操作脚本：`scripts/staging/export-mihomo-config.cjs`（只导出到受保护的忽略目录）、`scripts/staging/install-mihomo.sh`（新机专用，拒绝生产 current/已有容器）。源码里不保存代理配置、节点凭据或订阅链接。
+- 回滚：`/opt/naumi-staging/config/proxy-package/ROLLBACK.sh --check`；实际卸载为 `--apply`，会关闭 Mihomo、移除本次 Docker drop-in 并重启新机 Docker，保留私有安装包。副本演练使用 `--fixture /opt/naumi-staging/evidence/proxy-rollback-fixture`，不停止正在使用的代理。
+- 代理服务刚重启时应等端口就绪再验证；不要在镜像/数据传输过程中重启代理。一次镜像拉取与代理重启重叠导致 EOF，按原镜像 tag 续拉，不把该次视为成功。
