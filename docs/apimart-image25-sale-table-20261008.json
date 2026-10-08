@@ -1,0 +1,5298 @@
+{
+  "schemaVersion": 1,
+  "sourceCheckedAt": "2026-10-08",
+  "sourceUrls": {
+    "pricing": "https://apimart.ai/zh/pricing",
+    "native": "https://docs.apimart.ai/cn/api-reference/images/gpt-image-2.5/generation"
+  },
+  "models": [
+    "gpt-image-2.5-flare",
+    "gpt-image-2.5-sunburst"
+  ],
+  "qualities": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+  ],
+  "tiers": [
+    "gold",
+    "platinum",
+    "diamond",
+    "site_official"
+  ],
+  "multiplier": 3,
+  "pricingBasis": "native-output-reference",
+  "liveBillingChanged": false,
+  "accountTierVerified": false,
+  "conversion": null,
+  "conversionNotice": "",
+  "rows": [
+    {
+      "ratio": "1:1",
+      "resolution": "1k",
+      "pixels": "1024x1024",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 196,
+            "outputUsd": "0.004704",
+            "saleUsd": "0.014112"
+          },
+          "platinum": {
+            "outputTokens": 196,
+            "outputUsd": "0.0044688",
+            "saleUsd": "0.0134064"
+          },
+          "diamond": {
+            "outputTokens": 196,
+            "outputUsd": "0.0042336",
+            "saleUsd": "0.0127008"
+          },
+          "site_official": {
+            "outputTokens": 196,
+            "outputUsd": "0.00588",
+            "saleUsd": "0.01764"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 439,
+            "outputUsd": "0.010536",
+            "saleUsd": "0.031608"
+          },
+          "platinum": {
+            "outputTokens": 439,
+            "outputUsd": "0.0100092",
+            "saleUsd": "0.0300276"
+          },
+          "diamond": {
+            "outputTokens": 439,
+            "outputUsd": "0.0094824",
+            "saleUsd": "0.0284472"
+          },
+          "site_official": {
+            "outputTokens": 439,
+            "outputUsd": "0.01317",
+            "saleUsd": "0.03951"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1756,
+            "outputUsd": "0.042144",
+            "saleUsd": "0.126432"
+          },
+          "platinum": {
+            "outputTokens": 1756,
+            "outputUsd": "0.0400368",
+            "saleUsd": "0.1201104"
+          },
+          "diamond": {
+            "outputTokens": 1756,
+            "outputUsd": "0.0379296",
+            "saleUsd": "0.1137888"
+          },
+          "site_official": {
+            "outputTokens": 1756,
+            "outputUsd": "0.05268",
+            "saleUsd": "0.15804"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 3122,
+            "outputUsd": "0.074928",
+            "saleUsd": "0.224784"
+          },
+          "platinum": {
+            "outputTokens": 3122,
+            "outputUsd": "0.0711816",
+            "saleUsd": "0.2135448"
+          },
+          "diamond": {
+            "outputTokens": 3122,
+            "outputUsd": "0.0674352",
+            "saleUsd": "0.2023056"
+          },
+          "site_official": {
+            "outputTokens": 3122,
+            "outputUsd": "0.09366",
+            "saleUsd": "0.28098"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 7024,
+            "outputUsd": "0.168576",
+            "saleUsd": "0.505728"
+          },
+          "platinum": {
+            "outputTokens": 7024,
+            "outputUsd": "0.1601472",
+            "saleUsd": "0.4804416"
+          },
+          "diamond": {
+            "outputTokens": 7024,
+            "outputUsd": "0.1517184",
+            "saleUsd": "0.4551552"
+          },
+          "site_official": {
+            "outputTokens": 7024,
+            "outputUsd": "0.21072",
+            "saleUsd": "0.63216"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "3:2",
+      "resolution": "1k",
+      "pixels": "1536x1024",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 158,
+            "outputUsd": "0.003792",
+            "saleUsd": "0.011376"
+          },
+          "platinum": {
+            "outputTokens": 158,
+            "outputUsd": "0.0036024",
+            "saleUsd": "0.0108072"
+          },
+          "diamond": {
+            "outputTokens": 158,
+            "outputUsd": "0.0034128",
+            "saleUsd": "0.0102384"
+          },
+          "site_official": {
+            "outputTokens": 158,
+            "outputUsd": "0.00474",
+            "saleUsd": "0.01422"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 343,
+            "outputUsd": "0.008232",
+            "saleUsd": "0.024696"
+          },
+          "platinum": {
+            "outputTokens": 343,
+            "outputUsd": "0.0078204",
+            "saleUsd": "0.0234612"
+          },
+          "diamond": {
+            "outputTokens": 343,
+            "outputUsd": "0.0074088",
+            "saleUsd": "0.0222264"
+          },
+          "site_official": {
+            "outputTokens": 343,
+            "outputUsd": "0.01029",
+            "saleUsd": "0.03087"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1372,
+            "outputUsd": "0.032928",
+            "saleUsd": "0.098784"
+          },
+          "platinum": {
+            "outputTokens": 1372,
+            "outputUsd": "0.0312816",
+            "saleUsd": "0.0938448"
+          },
+          "diamond": {
+            "outputTokens": 1372,
+            "outputUsd": "0.0296352",
+            "saleUsd": "0.0889056"
+          },
+          "site_official": {
+            "outputTokens": 1372,
+            "outputUsd": "0.04116",
+            "saleUsd": "0.12348"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2459,
+            "outputUsd": "0.059016",
+            "saleUsd": "0.177048"
+          },
+          "platinum": {
+            "outputTokens": 2459,
+            "outputUsd": "0.0560652",
+            "saleUsd": "0.1681956"
+          },
+          "diamond": {
+            "outputTokens": 2459,
+            "outputUsd": "0.0531144",
+            "saleUsd": "0.1593432"
+          },
+          "site_official": {
+            "outputTokens": 2459,
+            "outputUsd": "0.07377",
+            "saleUsd": "0.22131"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 5488,
+            "outputUsd": "0.131712",
+            "saleUsd": "0.395136"
+          },
+          "platinum": {
+            "outputTokens": 5488,
+            "outputUsd": "0.1251264",
+            "saleUsd": "0.3753792"
+          },
+          "diamond": {
+            "outputTokens": 5488,
+            "outputUsd": "0.1185408",
+            "saleUsd": "0.3556224"
+          },
+          "site_official": {
+            "outputTokens": 5488,
+            "outputUsd": "0.16464",
+            "saleUsd": "0.49392"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "2:3",
+      "resolution": "1k",
+      "pixels": "1024x1536",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 158,
+            "outputUsd": "0.003792",
+            "saleUsd": "0.011376"
+          },
+          "platinum": {
+            "outputTokens": 158,
+            "outputUsd": "0.0036024",
+            "saleUsd": "0.0108072"
+          },
+          "diamond": {
+            "outputTokens": 158,
+            "outputUsd": "0.0034128",
+            "saleUsd": "0.0102384"
+          },
+          "site_official": {
+            "outputTokens": 158,
+            "outputUsd": "0.00474",
+            "saleUsd": "0.01422"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 343,
+            "outputUsd": "0.008232",
+            "saleUsd": "0.024696"
+          },
+          "platinum": {
+            "outputTokens": 343,
+            "outputUsd": "0.0078204",
+            "saleUsd": "0.0234612"
+          },
+          "diamond": {
+            "outputTokens": 343,
+            "outputUsd": "0.0074088",
+            "saleUsd": "0.0222264"
+          },
+          "site_official": {
+            "outputTokens": 343,
+            "outputUsd": "0.01029",
+            "saleUsd": "0.03087"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1372,
+            "outputUsd": "0.032928",
+            "saleUsd": "0.098784"
+          },
+          "platinum": {
+            "outputTokens": 1372,
+            "outputUsd": "0.0312816",
+            "saleUsd": "0.0938448"
+          },
+          "diamond": {
+            "outputTokens": 1372,
+            "outputUsd": "0.0296352",
+            "saleUsd": "0.0889056"
+          },
+          "site_official": {
+            "outputTokens": 1372,
+            "outputUsd": "0.04116",
+            "saleUsd": "0.12348"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2459,
+            "outputUsd": "0.059016",
+            "saleUsd": "0.177048"
+          },
+          "platinum": {
+            "outputTokens": 2459,
+            "outputUsd": "0.0560652",
+            "saleUsd": "0.1681956"
+          },
+          "diamond": {
+            "outputTokens": 2459,
+            "outputUsd": "0.0531144",
+            "saleUsd": "0.1593432"
+          },
+          "site_official": {
+            "outputTokens": 2459,
+            "outputUsd": "0.07377",
+            "saleUsd": "0.22131"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 5488,
+            "outputUsd": "0.131712",
+            "saleUsd": "0.395136"
+          },
+          "platinum": {
+            "outputTokens": 5488,
+            "outputUsd": "0.1251264",
+            "saleUsd": "0.3753792"
+          },
+          "diamond": {
+            "outputTokens": 5488,
+            "outputUsd": "0.1185408",
+            "saleUsd": "0.3556224"
+          },
+          "site_official": {
+            "outputTokens": 5488,
+            "outputUsd": "0.16464",
+            "saleUsd": "0.49392"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "4:3",
+      "resolution": "1k",
+      "pixels": "1024x768",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 134,
+            "outputUsd": "0.003216",
+            "saleUsd": "0.009648"
+          },
+          "platinum": {
+            "outputTokens": 134,
+            "outputUsd": "0.0030552",
+            "saleUsd": "0.0091656"
+          },
+          "diamond": {
+            "outputTokens": 134,
+            "outputUsd": "0.0028944",
+            "saleUsd": "0.0086832"
+          },
+          "site_official": {
+            "outputTokens": 134,
+            "outputUsd": "0.00402",
+            "saleUsd": "0.01206"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 301,
+            "outputUsd": "0.007224",
+            "saleUsd": "0.021672"
+          },
+          "platinum": {
+            "outputTokens": 301,
+            "outputUsd": "0.0068628",
+            "saleUsd": "0.0205884"
+          },
+          "diamond": {
+            "outputTokens": 301,
+            "outputUsd": "0.0065016",
+            "saleUsd": "0.0195048"
+          },
+          "site_official": {
+            "outputTokens": 301,
+            "outputUsd": "0.00903",
+            "saleUsd": "0.02709"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1204,
+            "outputUsd": "0.028896",
+            "saleUsd": "0.086688"
+          },
+          "platinum": {
+            "outputTokens": 1204,
+            "outputUsd": "0.0274512",
+            "saleUsd": "0.0823536"
+          },
+          "diamond": {
+            "outputTokens": 1204,
+            "outputUsd": "0.0260064",
+            "saleUsd": "0.0780192"
+          },
+          "site_official": {
+            "outputTokens": 1204,
+            "outputUsd": "0.03612",
+            "saleUsd": "0.10836"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2140,
+            "outputUsd": "0.05136",
+            "saleUsd": "0.15408"
+          },
+          "platinum": {
+            "outputTokens": 2140,
+            "outputUsd": "0.048792",
+            "saleUsd": "0.146376"
+          },
+          "diamond": {
+            "outputTokens": 2140,
+            "outputUsd": "0.046224",
+            "saleUsd": "0.138672"
+          },
+          "site_official": {
+            "outputTokens": 2140,
+            "outputUsd": "0.0642",
+            "saleUsd": "0.1926"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 4815,
+            "outputUsd": "0.11556",
+            "saleUsd": "0.34668"
+          },
+          "platinum": {
+            "outputTokens": 4815,
+            "outputUsd": "0.109782",
+            "saleUsd": "0.329346"
+          },
+          "diamond": {
+            "outputTokens": 4815,
+            "outputUsd": "0.104004",
+            "saleUsd": "0.312012"
+          },
+          "site_official": {
+            "outputTokens": 4815,
+            "outputUsd": "0.14445",
+            "saleUsd": "0.43335"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "3:4",
+      "resolution": "1k",
+      "pixels": "768x1024",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 134,
+            "outputUsd": "0.003216",
+            "saleUsd": "0.009648"
+          },
+          "platinum": {
+            "outputTokens": 134,
+            "outputUsd": "0.0030552",
+            "saleUsd": "0.0091656"
+          },
+          "diamond": {
+            "outputTokens": 134,
+            "outputUsd": "0.0028944",
+            "saleUsd": "0.0086832"
+          },
+          "site_official": {
+            "outputTokens": 134,
+            "outputUsd": "0.00402",
+            "saleUsd": "0.01206"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 301,
+            "outputUsd": "0.007224",
+            "saleUsd": "0.021672"
+          },
+          "platinum": {
+            "outputTokens": 301,
+            "outputUsd": "0.0068628",
+            "saleUsd": "0.0205884"
+          },
+          "diamond": {
+            "outputTokens": 301,
+            "outputUsd": "0.0065016",
+            "saleUsd": "0.0195048"
+          },
+          "site_official": {
+            "outputTokens": 301,
+            "outputUsd": "0.00903",
+            "saleUsd": "0.02709"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1204,
+            "outputUsd": "0.028896",
+            "saleUsd": "0.086688"
+          },
+          "platinum": {
+            "outputTokens": 1204,
+            "outputUsd": "0.0274512",
+            "saleUsd": "0.0823536"
+          },
+          "diamond": {
+            "outputTokens": 1204,
+            "outputUsd": "0.0260064",
+            "saleUsd": "0.0780192"
+          },
+          "site_official": {
+            "outputTokens": 1204,
+            "outputUsd": "0.03612",
+            "saleUsd": "0.10836"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2140,
+            "outputUsd": "0.05136",
+            "saleUsd": "0.15408"
+          },
+          "platinum": {
+            "outputTokens": 2140,
+            "outputUsd": "0.048792",
+            "saleUsd": "0.146376"
+          },
+          "diamond": {
+            "outputTokens": 2140,
+            "outputUsd": "0.046224",
+            "saleUsd": "0.138672"
+          },
+          "site_official": {
+            "outputTokens": 2140,
+            "outputUsd": "0.0642",
+            "saleUsd": "0.1926"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 4815,
+            "outputUsd": "0.11556",
+            "saleUsd": "0.34668"
+          },
+          "platinum": {
+            "outputTokens": 4815,
+            "outputUsd": "0.109782",
+            "saleUsd": "0.329346"
+          },
+          "diamond": {
+            "outputTokens": 4815,
+            "outputUsd": "0.104004",
+            "saleUsd": "0.312012"
+          },
+          "site_official": {
+            "outputTokens": 4815,
+            "outputUsd": "0.14445",
+            "saleUsd": "0.43335"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "5:4",
+      "resolution": "1k",
+      "pixels": "1280x1024",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 173,
+            "outputUsd": "0.004152",
+            "saleUsd": "0.012456"
+          },
+          "platinum": {
+            "outputTokens": 173,
+            "outputUsd": "0.0039444",
+            "saleUsd": "0.0118332"
+          },
+          "diamond": {
+            "outputTokens": 173,
+            "outputUsd": "0.0037368",
+            "saleUsd": "0.0112104"
+          },
+          "site_official": {
+            "outputTokens": 173,
+            "outputUsd": "0.00519",
+            "saleUsd": "0.01557"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 378,
+            "outputUsd": "0.009072",
+            "saleUsd": "0.027216"
+          },
+          "platinum": {
+            "outputTokens": 378,
+            "outputUsd": "0.0086184",
+            "saleUsd": "0.0258552"
+          },
+          "diamond": {
+            "outputTokens": 378,
+            "outputUsd": "0.0081648",
+            "saleUsd": "0.0244944"
+          },
+          "site_official": {
+            "outputTokens": 378,
+            "outputUsd": "0.01134",
+            "saleUsd": "0.03402"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1510,
+            "outputUsd": "0.03624",
+            "saleUsd": "0.10872"
+          },
+          "platinum": {
+            "outputTokens": 1510,
+            "outputUsd": "0.034428",
+            "saleUsd": "0.103284"
+          },
+          "diamond": {
+            "outputTokens": 1510,
+            "outputUsd": "0.032616",
+            "saleUsd": "0.097848"
+          },
+          "site_official": {
+            "outputTokens": 1510,
+            "outputUsd": "0.0453",
+            "saleUsd": "0.1359"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2702,
+            "outputUsd": "0.064848",
+            "saleUsd": "0.194544"
+          },
+          "platinum": {
+            "outputTokens": 2702,
+            "outputUsd": "0.0616056",
+            "saleUsd": "0.1848168"
+          },
+          "diamond": {
+            "outputTokens": 2702,
+            "outputUsd": "0.0583632",
+            "saleUsd": "0.1750896"
+          },
+          "site_official": {
+            "outputTokens": 2702,
+            "outputUsd": "0.08106",
+            "saleUsd": "0.24318"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 6119,
+            "outputUsd": "0.146856",
+            "saleUsd": "0.440568"
+          },
+          "platinum": {
+            "outputTokens": 6119,
+            "outputUsd": "0.1395132",
+            "saleUsd": "0.4185396"
+          },
+          "diamond": {
+            "outputTokens": 6119,
+            "outputUsd": "0.1321704",
+            "saleUsd": "0.3965112"
+          },
+          "site_official": {
+            "outputTokens": 6119,
+            "outputUsd": "0.18357",
+            "saleUsd": "0.55071"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "4:5",
+      "resolution": "1k",
+      "pixels": "1024x1280",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 173,
+            "outputUsd": "0.004152",
+            "saleUsd": "0.012456"
+          },
+          "platinum": {
+            "outputTokens": 173,
+            "outputUsd": "0.0039444",
+            "saleUsd": "0.0118332"
+          },
+          "diamond": {
+            "outputTokens": 173,
+            "outputUsd": "0.0037368",
+            "saleUsd": "0.0112104"
+          },
+          "site_official": {
+            "outputTokens": 173,
+            "outputUsd": "0.00519",
+            "saleUsd": "0.01557"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 378,
+            "outputUsd": "0.009072",
+            "saleUsd": "0.027216"
+          },
+          "platinum": {
+            "outputTokens": 378,
+            "outputUsd": "0.0086184",
+            "saleUsd": "0.0258552"
+          },
+          "diamond": {
+            "outputTokens": 378,
+            "outputUsd": "0.0081648",
+            "saleUsd": "0.0244944"
+          },
+          "site_official": {
+            "outputTokens": 378,
+            "outputUsd": "0.01134",
+            "saleUsd": "0.03402"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1510,
+            "outputUsd": "0.03624",
+            "saleUsd": "0.10872"
+          },
+          "platinum": {
+            "outputTokens": 1510,
+            "outputUsd": "0.034428",
+            "saleUsd": "0.103284"
+          },
+          "diamond": {
+            "outputTokens": 1510,
+            "outputUsd": "0.032616",
+            "saleUsd": "0.097848"
+          },
+          "site_official": {
+            "outputTokens": 1510,
+            "outputUsd": "0.0453",
+            "saleUsd": "0.1359"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2702,
+            "outputUsd": "0.064848",
+            "saleUsd": "0.194544"
+          },
+          "platinum": {
+            "outputTokens": 2702,
+            "outputUsd": "0.0616056",
+            "saleUsd": "0.1848168"
+          },
+          "diamond": {
+            "outputTokens": 2702,
+            "outputUsd": "0.0583632",
+            "saleUsd": "0.1750896"
+          },
+          "site_official": {
+            "outputTokens": 2702,
+            "outputUsd": "0.08106",
+            "saleUsd": "0.24318"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 6119,
+            "outputUsd": "0.146856",
+            "saleUsd": "0.440568"
+          },
+          "platinum": {
+            "outputTokens": 6119,
+            "outputUsd": "0.1395132",
+            "saleUsd": "0.4185396"
+          },
+          "diamond": {
+            "outputTokens": 6119,
+            "outputUsd": "0.1321704",
+            "saleUsd": "0.3965112"
+          },
+          "site_official": {
+            "outputTokens": 6119,
+            "outputUsd": "0.18357",
+            "saleUsd": "0.55071"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "16:9",
+      "resolution": "1k",
+      "pixels": "1536x864",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 120,
+            "outputUsd": "0.00288",
+            "saleUsd": "0.00864"
+          },
+          "platinum": {
+            "outputTokens": 120,
+            "outputUsd": "0.002736",
+            "saleUsd": "0.008208"
+          },
+          "diamond": {
+            "outputTokens": 120,
+            "outputUsd": "0.002592",
+            "saleUsd": "0.007776"
+          },
+          "site_official": {
+            "outputTokens": 120,
+            "outputUsd": "0.0036",
+            "saleUsd": "0.0108"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 280,
+            "outputUsd": "0.00672",
+            "saleUsd": "0.02016"
+          },
+          "platinum": {
+            "outputTokens": 280,
+            "outputUsd": "0.006384",
+            "saleUsd": "0.019152"
+          },
+          "diamond": {
+            "outputTokens": 280,
+            "outputUsd": "0.006048",
+            "saleUsd": "0.018144"
+          },
+          "site_official": {
+            "outputTokens": 280,
+            "outputUsd": "0.0084",
+            "saleUsd": "0.0252"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1078,
+            "outputUsd": "0.025872",
+            "saleUsd": "0.077616"
+          },
+          "platinum": {
+            "outputTokens": 1078,
+            "outputUsd": "0.0245784",
+            "saleUsd": "0.0737352"
+          },
+          "diamond": {
+            "outputTokens": 1078,
+            "outputUsd": "0.0232848",
+            "saleUsd": "0.0698544"
+          },
+          "site_official": {
+            "outputTokens": 1078,
+            "outputUsd": "0.03234",
+            "saleUsd": "0.09702"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 1917,
+            "outputUsd": "0.046008",
+            "saleUsd": "0.138024"
+          },
+          "platinum": {
+            "outputTokens": 1917,
+            "outputUsd": "0.0437076",
+            "saleUsd": "0.1311228"
+          },
+          "diamond": {
+            "outputTokens": 1917,
+            "outputUsd": "0.0414072",
+            "saleUsd": "0.1242216"
+          },
+          "site_official": {
+            "outputTokens": 1917,
+            "outputUsd": "0.05751",
+            "saleUsd": "0.17253"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 4312,
+            "outputUsd": "0.103488",
+            "saleUsd": "0.310464"
+          },
+          "platinum": {
+            "outputTokens": 4312,
+            "outputUsd": "0.0983136",
+            "saleUsd": "0.2949408"
+          },
+          "diamond": {
+            "outputTokens": 4312,
+            "outputUsd": "0.0931392",
+            "saleUsd": "0.2794176"
+          },
+          "site_official": {
+            "outputTokens": 4312,
+            "outputUsd": "0.12936",
+            "saleUsd": "0.38808"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "9:16",
+      "resolution": "1k",
+      "pixels": "864x1536",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 120,
+            "outputUsd": "0.00288",
+            "saleUsd": "0.00864"
+          },
+          "platinum": {
+            "outputTokens": 120,
+            "outputUsd": "0.002736",
+            "saleUsd": "0.008208"
+          },
+          "diamond": {
+            "outputTokens": 120,
+            "outputUsd": "0.002592",
+            "saleUsd": "0.007776"
+          },
+          "site_official": {
+            "outputTokens": 120,
+            "outputUsd": "0.0036",
+            "saleUsd": "0.0108"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 280,
+            "outputUsd": "0.00672",
+            "saleUsd": "0.02016"
+          },
+          "platinum": {
+            "outputTokens": 280,
+            "outputUsd": "0.006384",
+            "saleUsd": "0.019152"
+          },
+          "diamond": {
+            "outputTokens": 280,
+            "outputUsd": "0.006048",
+            "saleUsd": "0.018144"
+          },
+          "site_official": {
+            "outputTokens": 280,
+            "outputUsd": "0.0084",
+            "saleUsd": "0.0252"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1078,
+            "outputUsd": "0.025872",
+            "saleUsd": "0.077616"
+          },
+          "platinum": {
+            "outputTokens": 1078,
+            "outputUsd": "0.0245784",
+            "saleUsd": "0.0737352"
+          },
+          "diamond": {
+            "outputTokens": 1078,
+            "outputUsd": "0.0232848",
+            "saleUsd": "0.0698544"
+          },
+          "site_official": {
+            "outputTokens": 1078,
+            "outputUsd": "0.03234",
+            "saleUsd": "0.09702"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 1917,
+            "outputUsd": "0.046008",
+            "saleUsd": "0.138024"
+          },
+          "platinum": {
+            "outputTokens": 1917,
+            "outputUsd": "0.0437076",
+            "saleUsd": "0.1311228"
+          },
+          "diamond": {
+            "outputTokens": 1917,
+            "outputUsd": "0.0414072",
+            "saleUsd": "0.1242216"
+          },
+          "site_official": {
+            "outputTokens": 1917,
+            "outputUsd": "0.05751",
+            "saleUsd": "0.17253"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 4312,
+            "outputUsd": "0.103488",
+            "saleUsd": "0.310464"
+          },
+          "platinum": {
+            "outputTokens": 4312,
+            "outputUsd": "0.0983136",
+            "saleUsd": "0.2949408"
+          },
+          "diamond": {
+            "outputTokens": 4312,
+            "outputUsd": "0.0931392",
+            "saleUsd": "0.2794176"
+          },
+          "site_official": {
+            "outputTokens": 4312,
+            "outputUsd": "0.12936",
+            "saleUsd": "0.38808"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "2:1",
+      "resolution": "1k",
+      "pixels": "2048x1024",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 132,
+            "outputUsd": "0.003168",
+            "saleUsd": "0.009504"
+          },
+          "platinum": {
+            "outputTokens": 132,
+            "outputUsd": "0.0030096",
+            "saleUsd": "0.0090288"
+          },
+          "diamond": {
+            "outputTokens": 132,
+            "outputUsd": "0.0028512",
+            "saleUsd": "0.0085536"
+          },
+          "site_official": {
+            "outputTokens": 132,
+            "outputUsd": "0.00396",
+            "saleUsd": "0.01188"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 295,
+            "outputUsd": "0.00708",
+            "saleUsd": "0.02124"
+          },
+          "platinum": {
+            "outputTokens": 295,
+            "outputUsd": "0.006726",
+            "saleUsd": "0.020178"
+          },
+          "diamond": {
+            "outputTokens": 295,
+            "outputUsd": "0.006372",
+            "saleUsd": "0.019116"
+          },
+          "site_official": {
+            "outputTokens": 295,
+            "outputUsd": "0.00885",
+            "saleUsd": "0.02655"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1180,
+            "outputUsd": "0.02832",
+            "saleUsd": "0.08496"
+          },
+          "platinum": {
+            "outputTokens": 1180,
+            "outputUsd": "0.026904",
+            "saleUsd": "0.080712"
+          },
+          "diamond": {
+            "outputTokens": 1180,
+            "outputUsd": "0.025488",
+            "saleUsd": "0.076464"
+          },
+          "site_official": {
+            "outputTokens": 1180,
+            "outputUsd": "0.0354",
+            "saleUsd": "0.1062"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2098,
+            "outputUsd": "0.050352",
+            "saleUsd": "0.151056"
+          },
+          "platinum": {
+            "outputTokens": 2098,
+            "outputUsd": "0.0478344",
+            "saleUsd": "0.1435032"
+          },
+          "diamond": {
+            "outputTokens": 2098,
+            "outputUsd": "0.0453168",
+            "saleUsd": "0.1359504"
+          },
+          "site_official": {
+            "outputTokens": 2098,
+            "outputUsd": "0.06294",
+            "saleUsd": "0.18882"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 4720,
+            "outputUsd": "0.11328",
+            "saleUsd": "0.33984"
+          },
+          "platinum": {
+            "outputTokens": 4720,
+            "outputUsd": "0.107616",
+            "saleUsd": "0.322848"
+          },
+          "diamond": {
+            "outputTokens": 4720,
+            "outputUsd": "0.101952",
+            "saleUsd": "0.305856"
+          },
+          "site_official": {
+            "outputTokens": 4720,
+            "outputUsd": "0.1416",
+            "saleUsd": "0.4248"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "1:2",
+      "resolution": "1k",
+      "pixels": "1024x2048",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 132,
+            "outputUsd": "0.003168",
+            "saleUsd": "0.009504"
+          },
+          "platinum": {
+            "outputTokens": 132,
+            "outputUsd": "0.0030096",
+            "saleUsd": "0.0090288"
+          },
+          "diamond": {
+            "outputTokens": 132,
+            "outputUsd": "0.0028512",
+            "saleUsd": "0.0085536"
+          },
+          "site_official": {
+            "outputTokens": 132,
+            "outputUsd": "0.00396",
+            "saleUsd": "0.01188"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 295,
+            "outputUsd": "0.00708",
+            "saleUsd": "0.02124"
+          },
+          "platinum": {
+            "outputTokens": 295,
+            "outputUsd": "0.006726",
+            "saleUsd": "0.020178"
+          },
+          "diamond": {
+            "outputTokens": 295,
+            "outputUsd": "0.006372",
+            "saleUsd": "0.019116"
+          },
+          "site_official": {
+            "outputTokens": 295,
+            "outputUsd": "0.00885",
+            "saleUsd": "0.02655"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1180,
+            "outputUsd": "0.02832",
+            "saleUsd": "0.08496"
+          },
+          "platinum": {
+            "outputTokens": 1180,
+            "outputUsd": "0.026904",
+            "saleUsd": "0.080712"
+          },
+          "diamond": {
+            "outputTokens": 1180,
+            "outputUsd": "0.025488",
+            "saleUsd": "0.076464"
+          },
+          "site_official": {
+            "outputTokens": 1180,
+            "outputUsd": "0.0354",
+            "saleUsd": "0.1062"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2098,
+            "outputUsd": "0.050352",
+            "saleUsd": "0.151056"
+          },
+          "platinum": {
+            "outputTokens": 2098,
+            "outputUsd": "0.0478344",
+            "saleUsd": "0.1435032"
+          },
+          "diamond": {
+            "outputTokens": 2098,
+            "outputUsd": "0.0453168",
+            "saleUsd": "0.1359504"
+          },
+          "site_official": {
+            "outputTokens": 2098,
+            "outputUsd": "0.06294",
+            "saleUsd": "0.18882"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 4720,
+            "outputUsd": "0.11328",
+            "saleUsd": "0.33984"
+          },
+          "platinum": {
+            "outputTokens": 4720,
+            "outputUsd": "0.107616",
+            "saleUsd": "0.322848"
+          },
+          "diamond": {
+            "outputTokens": 4720,
+            "outputUsd": "0.101952",
+            "saleUsd": "0.305856"
+          },
+          "site_official": {
+            "outputTokens": 4720,
+            "outputUsd": "0.1416",
+            "saleUsd": "0.4248"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "21:9",
+      "resolution": "1k",
+      "pixels": "2016x864",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 105,
+            "outputUsd": "0.00252",
+            "saleUsd": "0.00756"
+          },
+          "platinum": {
+            "outputTokens": 105,
+            "outputUsd": "0.002394",
+            "saleUsd": "0.007182"
+          },
+          "diamond": {
+            "outputTokens": 105,
+            "outputUsd": "0.002268",
+            "saleUsd": "0.006804"
+          },
+          "site_official": {
+            "outputTokens": 105,
+            "outputUsd": "0.00315",
+            "saleUsd": "0.00945"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 225,
+            "outputUsd": "0.0054",
+            "saleUsd": "0.0162"
+          },
+          "platinum": {
+            "outputTokens": 225,
+            "outputUsd": "0.00513",
+            "saleUsd": "0.01539"
+          },
+          "diamond": {
+            "outputTokens": 225,
+            "outputUsd": "0.00486",
+            "saleUsd": "0.01458"
+          },
+          "site_official": {
+            "outputTokens": 225,
+            "outputUsd": "0.00675",
+            "saleUsd": "0.02025"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 943,
+            "outputUsd": "0.022632",
+            "saleUsd": "0.067896"
+          },
+          "platinum": {
+            "outputTokens": 943,
+            "outputUsd": "0.0215004",
+            "saleUsd": "0.0645012"
+          },
+          "diamond": {
+            "outputTokens": 943,
+            "outputUsd": "0.0203688",
+            "saleUsd": "0.0611064"
+          },
+          "site_official": {
+            "outputTokens": 943,
+            "outputUsd": "0.02829",
+            "saleUsd": "0.08487"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 1617,
+            "outputUsd": "0.038808",
+            "saleUsd": "0.116424"
+          },
+          "platinum": {
+            "outputTokens": 1617,
+            "outputUsd": "0.0368676",
+            "saleUsd": "0.1106028"
+          },
+          "diamond": {
+            "outputTokens": 1617,
+            "outputUsd": "0.0349272",
+            "saleUsd": "0.1047816"
+          },
+          "site_official": {
+            "outputTokens": 1617,
+            "outputUsd": "0.04851",
+            "saleUsd": "0.14553"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 3682,
+            "outputUsd": "0.088368",
+            "saleUsd": "0.265104"
+          },
+          "platinum": {
+            "outputTokens": 3682,
+            "outputUsd": "0.0839496",
+            "saleUsd": "0.2518488"
+          },
+          "diamond": {
+            "outputTokens": 3682,
+            "outputUsd": "0.0795312",
+            "saleUsd": "0.2385936"
+          },
+          "site_official": {
+            "outputTokens": 3682,
+            "outputUsd": "0.11046",
+            "saleUsd": "0.33138"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "9:21",
+      "resolution": "1k",
+      "pixels": "864x2016",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 105,
+            "outputUsd": "0.00252",
+            "saleUsd": "0.00756"
+          },
+          "platinum": {
+            "outputTokens": 105,
+            "outputUsd": "0.002394",
+            "saleUsd": "0.007182"
+          },
+          "diamond": {
+            "outputTokens": 105,
+            "outputUsd": "0.002268",
+            "saleUsd": "0.006804"
+          },
+          "site_official": {
+            "outputTokens": 105,
+            "outputUsd": "0.00315",
+            "saleUsd": "0.00945"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 225,
+            "outputUsd": "0.0054",
+            "saleUsd": "0.0162"
+          },
+          "platinum": {
+            "outputTokens": 225,
+            "outputUsd": "0.00513",
+            "saleUsd": "0.01539"
+          },
+          "diamond": {
+            "outputTokens": 225,
+            "outputUsd": "0.00486",
+            "saleUsd": "0.01458"
+          },
+          "site_official": {
+            "outputTokens": 225,
+            "outputUsd": "0.00675",
+            "saleUsd": "0.02025"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 943,
+            "outputUsd": "0.022632",
+            "saleUsd": "0.067896"
+          },
+          "platinum": {
+            "outputTokens": 943,
+            "outputUsd": "0.0215004",
+            "saleUsd": "0.0645012"
+          },
+          "diamond": {
+            "outputTokens": 943,
+            "outputUsd": "0.0203688",
+            "saleUsd": "0.0611064"
+          },
+          "site_official": {
+            "outputTokens": 943,
+            "outputUsd": "0.02829",
+            "saleUsd": "0.08487"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 1617,
+            "outputUsd": "0.038808",
+            "saleUsd": "0.116424"
+          },
+          "platinum": {
+            "outputTokens": 1617,
+            "outputUsd": "0.0368676",
+            "saleUsd": "0.1106028"
+          },
+          "diamond": {
+            "outputTokens": 1617,
+            "outputUsd": "0.0349272",
+            "saleUsd": "0.1047816"
+          },
+          "site_official": {
+            "outputTokens": 1617,
+            "outputUsd": "0.04851",
+            "saleUsd": "0.14553"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 3682,
+            "outputUsd": "0.088368",
+            "saleUsd": "0.265104"
+          },
+          "platinum": {
+            "outputTokens": 3682,
+            "outputUsd": "0.0839496",
+            "saleUsd": "0.2518488"
+          },
+          "diamond": {
+            "outputTokens": 3682,
+            "outputUsd": "0.0795312",
+            "saleUsd": "0.2385936"
+          },
+          "site_official": {
+            "outputTokens": 3682,
+            "outputUsd": "0.11046",
+            "saleUsd": "0.33138"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "3:1",
+      "resolution": "1k",
+      "pixels": "1536x512",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 56,
+            "outputUsd": "0.001344",
+            "saleUsd": "0.004032"
+          },
+          "platinum": {
+            "outputTokens": 56,
+            "outputUsd": "0.0012768",
+            "saleUsd": "0.0038304"
+          },
+          "diamond": {
+            "outputTokens": 56,
+            "outputUsd": "0.0012096",
+            "saleUsd": "0.0036288"
+          },
+          "site_official": {
+            "outputTokens": 56,
+            "outputUsd": "0.00168",
+            "saleUsd": "0.00504"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 134,
+            "outputUsd": "0.003216",
+            "saleUsd": "0.009648"
+          },
+          "platinum": {
+            "outputTokens": 134,
+            "outputUsd": "0.0030552",
+            "saleUsd": "0.0091656"
+          },
+          "diamond": {
+            "outputTokens": 134,
+            "outputUsd": "0.0028944",
+            "saleUsd": "0.0086832"
+          },
+          "site_official": {
+            "outputTokens": 134,
+            "outputUsd": "0.00402",
+            "saleUsd": "0.01206"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 535,
+            "outputUsd": "0.01284",
+            "saleUsd": "0.03852"
+          },
+          "platinum": {
+            "outputTokens": 535,
+            "outputUsd": "0.012198",
+            "saleUsd": "0.036594"
+          },
+          "diamond": {
+            "outputTokens": 535,
+            "outputUsd": "0.011556",
+            "saleUsd": "0.034668"
+          },
+          "site_official": {
+            "outputTokens": 535,
+            "outputUsd": "0.01605",
+            "saleUsd": "0.04815"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 937,
+            "outputUsd": "0.022488",
+            "saleUsd": "0.067464"
+          },
+          "platinum": {
+            "outputTokens": 937,
+            "outputUsd": "0.0213636",
+            "saleUsd": "0.0640908"
+          },
+          "diamond": {
+            "outputTokens": 937,
+            "outputUsd": "0.0202392",
+            "saleUsd": "0.0607176"
+          },
+          "site_official": {
+            "outputTokens": 937,
+            "outputUsd": "0.02811",
+            "saleUsd": "0.08433"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 2140,
+            "outputUsd": "0.05136",
+            "saleUsd": "0.15408"
+          },
+          "platinum": {
+            "outputTokens": 2140,
+            "outputUsd": "0.048792",
+            "saleUsd": "0.146376"
+          },
+          "diamond": {
+            "outputTokens": 2140,
+            "outputUsd": "0.046224",
+            "saleUsd": "0.138672"
+          },
+          "site_official": {
+            "outputTokens": 2140,
+            "outputUsd": "0.0642",
+            "saleUsd": "0.1926"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "1:3",
+      "resolution": "1k",
+      "pixels": "512x1536",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 56,
+            "outputUsd": "0.001344",
+            "saleUsd": "0.004032"
+          },
+          "platinum": {
+            "outputTokens": 56,
+            "outputUsd": "0.0012768",
+            "saleUsd": "0.0038304"
+          },
+          "diamond": {
+            "outputTokens": 56,
+            "outputUsd": "0.0012096",
+            "saleUsd": "0.0036288"
+          },
+          "site_official": {
+            "outputTokens": 56,
+            "outputUsd": "0.00168",
+            "saleUsd": "0.00504"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 134,
+            "outputUsd": "0.003216",
+            "saleUsd": "0.009648"
+          },
+          "platinum": {
+            "outputTokens": 134,
+            "outputUsd": "0.0030552",
+            "saleUsd": "0.0091656"
+          },
+          "diamond": {
+            "outputTokens": 134,
+            "outputUsd": "0.0028944",
+            "saleUsd": "0.0086832"
+          },
+          "site_official": {
+            "outputTokens": 134,
+            "outputUsd": "0.00402",
+            "saleUsd": "0.01206"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 535,
+            "outputUsd": "0.01284",
+            "saleUsd": "0.03852"
+          },
+          "platinum": {
+            "outputTokens": 535,
+            "outputUsd": "0.012198",
+            "saleUsd": "0.036594"
+          },
+          "diamond": {
+            "outputTokens": 535,
+            "outputUsd": "0.011556",
+            "saleUsd": "0.034668"
+          },
+          "site_official": {
+            "outputTokens": 535,
+            "outputUsd": "0.01605",
+            "saleUsd": "0.04815"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 937,
+            "outputUsd": "0.022488",
+            "saleUsd": "0.067464"
+          },
+          "platinum": {
+            "outputTokens": 937,
+            "outputUsd": "0.0213636",
+            "saleUsd": "0.0640908"
+          },
+          "diamond": {
+            "outputTokens": 937,
+            "outputUsd": "0.0202392",
+            "saleUsd": "0.0607176"
+          },
+          "site_official": {
+            "outputTokens": 937,
+            "outputUsd": "0.02811",
+            "saleUsd": "0.08433"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 2140,
+            "outputUsd": "0.05136",
+            "saleUsd": "0.15408"
+          },
+          "platinum": {
+            "outputTokens": 2140,
+            "outputUsd": "0.048792",
+            "saleUsd": "0.146376"
+          },
+          "diamond": {
+            "outputTokens": 2140,
+            "outputUsd": "0.046224",
+            "saleUsd": "0.138672"
+          },
+          "site_official": {
+            "outputTokens": 2140,
+            "outputUsd": "0.0642",
+            "saleUsd": "0.1926"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "1:1",
+      "resolution": "2k",
+      "pixels": "2048x2048",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 397,
+            "outputUsd": "0.009528",
+            "saleUsd": "0.028584"
+          },
+          "platinum": {
+            "outputTokens": 397,
+            "outputUsd": "0.0090516",
+            "saleUsd": "0.0271548"
+          },
+          "diamond": {
+            "outputTokens": 397,
+            "outputUsd": "0.0085752",
+            "saleUsd": "0.0257256"
+          },
+          "site_official": {
+            "outputTokens": 397,
+            "outputUsd": "0.01191",
+            "saleUsd": "0.03573"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 892,
+            "outputUsd": "0.021408",
+            "saleUsd": "0.064224"
+          },
+          "platinum": {
+            "outputTokens": 892,
+            "outputUsd": "0.0203376",
+            "saleUsd": "0.0610128"
+          },
+          "diamond": {
+            "outputTokens": 892,
+            "outputUsd": "0.0192672",
+            "saleUsd": "0.0578016"
+          },
+          "site_official": {
+            "outputTokens": 892,
+            "outputUsd": "0.02676",
+            "saleUsd": "0.08028"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 3568,
+            "outputUsd": "0.085632",
+            "saleUsd": "0.256896"
+          },
+          "platinum": {
+            "outputTokens": 3568,
+            "outputUsd": "0.0813504",
+            "saleUsd": "0.2440512"
+          },
+          "diamond": {
+            "outputTokens": 3568,
+            "outputUsd": "0.0770688",
+            "saleUsd": "0.2312064"
+          },
+          "site_official": {
+            "outputTokens": 3568,
+            "outputUsd": "0.10704",
+            "saleUsd": "0.32112"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 6343,
+            "outputUsd": "0.152232",
+            "saleUsd": "0.456696"
+          },
+          "platinum": {
+            "outputTokens": 6343,
+            "outputUsd": "0.1446204",
+            "saleUsd": "0.4338612"
+          },
+          "diamond": {
+            "outputTokens": 6343,
+            "outputUsd": "0.1370088",
+            "saleUsd": "0.4110264"
+          },
+          "site_official": {
+            "outputTokens": 6343,
+            "outputUsd": "0.19029",
+            "saleUsd": "0.57087"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 14272,
+            "outputUsd": "0.342528",
+            "saleUsd": "1.027584"
+          },
+          "platinum": {
+            "outputTokens": 14272,
+            "outputUsd": "0.3254016",
+            "saleUsd": "0.9762048"
+          },
+          "diamond": {
+            "outputTokens": 14272,
+            "outputUsd": "0.3082752",
+            "saleUsd": "0.9248256"
+          },
+          "site_official": {
+            "outputTokens": 14272,
+            "outputUsd": "0.42816",
+            "saleUsd": "1.28448"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "3:2",
+      "resolution": "2k",
+      "pixels": "2048x1360",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 211,
+            "outputUsd": "0.005064",
+            "saleUsd": "0.015192"
+          },
+          "platinum": {
+            "outputTokens": 211,
+            "outputUsd": "0.0048108",
+            "saleUsd": "0.0144324"
+          },
+          "diamond": {
+            "outputTokens": 211,
+            "outputUsd": "0.0045576",
+            "saleUsd": "0.0136728"
+          },
+          "site_official": {
+            "outputTokens": 211,
+            "outputUsd": "0.00633",
+            "saleUsd": "0.01899"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 460,
+            "outputUsd": "0.01104",
+            "saleUsd": "0.03312"
+          },
+          "platinum": {
+            "outputTokens": 460,
+            "outputUsd": "0.010488",
+            "saleUsd": "0.031464"
+          },
+          "diamond": {
+            "outputTokens": 460,
+            "outputUsd": "0.009936",
+            "saleUsd": "0.029808"
+          },
+          "site_official": {
+            "outputTokens": 460,
+            "outputUsd": "0.0138",
+            "saleUsd": "0.0414"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1838,
+            "outputUsd": "0.044112",
+            "saleUsd": "0.132336"
+          },
+          "platinum": {
+            "outputTokens": 1838,
+            "outputUsd": "0.0419064",
+            "saleUsd": "0.1257192"
+          },
+          "diamond": {
+            "outputTokens": 1838,
+            "outputUsd": "0.0397008",
+            "saleUsd": "0.1191024"
+          },
+          "site_official": {
+            "outputTokens": 1838,
+            "outputUsd": "0.05514",
+            "saleUsd": "0.16542"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 3216,
+            "outputUsd": "0.077184",
+            "saleUsd": "0.231552"
+          },
+          "platinum": {
+            "outputTokens": 3216,
+            "outputUsd": "0.0733248",
+            "saleUsd": "0.2199744"
+          },
+          "diamond": {
+            "outputTokens": 3216,
+            "outputUsd": "0.0694656",
+            "saleUsd": "0.2083968"
+          },
+          "site_official": {
+            "outputTokens": 3216,
+            "outputUsd": "0.09648",
+            "saleUsd": "0.28944"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 7351,
+            "outputUsd": "0.176424",
+            "saleUsd": "0.529272"
+          },
+          "platinum": {
+            "outputTokens": 7351,
+            "outputUsd": "0.1676028",
+            "saleUsd": "0.5028084"
+          },
+          "diamond": {
+            "outputTokens": 7351,
+            "outputUsd": "0.1587816",
+            "saleUsd": "0.4763448"
+          },
+          "site_official": {
+            "outputTokens": 7351,
+            "outputUsd": "0.22053",
+            "saleUsd": "0.66159"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "2:3",
+      "resolution": "2k",
+      "pixels": "1360x2048",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 211,
+            "outputUsd": "0.005064",
+            "saleUsd": "0.015192"
+          },
+          "platinum": {
+            "outputTokens": 211,
+            "outputUsd": "0.0048108",
+            "saleUsd": "0.0144324"
+          },
+          "diamond": {
+            "outputTokens": 211,
+            "outputUsd": "0.0045576",
+            "saleUsd": "0.0136728"
+          },
+          "site_official": {
+            "outputTokens": 211,
+            "outputUsd": "0.00633",
+            "saleUsd": "0.01899"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 460,
+            "outputUsd": "0.01104",
+            "saleUsd": "0.03312"
+          },
+          "platinum": {
+            "outputTokens": 460,
+            "outputUsd": "0.010488",
+            "saleUsd": "0.031464"
+          },
+          "diamond": {
+            "outputTokens": 460,
+            "outputUsd": "0.009936",
+            "saleUsd": "0.029808"
+          },
+          "site_official": {
+            "outputTokens": 460,
+            "outputUsd": "0.0138",
+            "saleUsd": "0.0414"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1838,
+            "outputUsd": "0.044112",
+            "saleUsd": "0.132336"
+          },
+          "platinum": {
+            "outputTokens": 1838,
+            "outputUsd": "0.0419064",
+            "saleUsd": "0.1257192"
+          },
+          "diamond": {
+            "outputTokens": 1838,
+            "outputUsd": "0.0397008",
+            "saleUsd": "0.1191024"
+          },
+          "site_official": {
+            "outputTokens": 1838,
+            "outputUsd": "0.05514",
+            "saleUsd": "0.16542"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 3216,
+            "outputUsd": "0.077184",
+            "saleUsd": "0.231552"
+          },
+          "platinum": {
+            "outputTokens": 3216,
+            "outputUsd": "0.0733248",
+            "saleUsd": "0.2199744"
+          },
+          "diamond": {
+            "outputTokens": 3216,
+            "outputUsd": "0.0694656",
+            "saleUsd": "0.2083968"
+          },
+          "site_official": {
+            "outputTokens": 3216,
+            "outputUsd": "0.09648",
+            "saleUsd": "0.28944"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 7351,
+            "outputUsd": "0.176424",
+            "saleUsd": "0.529272"
+          },
+          "platinum": {
+            "outputTokens": 7351,
+            "outputUsd": "0.1676028",
+            "saleUsd": "0.5028084"
+          },
+          "diamond": {
+            "outputTokens": 7351,
+            "outputUsd": "0.1587816",
+            "saleUsd": "0.4763448"
+          },
+          "site_official": {
+            "outputTokens": 7351,
+            "outputUsd": "0.22053",
+            "saleUsd": "0.66159"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "4:3",
+      "resolution": "2k",
+      "pixels": "2048x1536",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 247,
+            "outputUsd": "0.005928",
+            "saleUsd": "0.017784"
+          },
+          "platinum": {
+            "outputTokens": 247,
+            "outputUsd": "0.0056316",
+            "saleUsd": "0.0168948"
+          },
+          "diamond": {
+            "outputTokens": 247,
+            "outputUsd": "0.0053352",
+            "saleUsd": "0.0160056"
+          },
+          "site_official": {
+            "outputTokens": 247,
+            "outputUsd": "0.00741",
+            "saleUsd": "0.02223"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 556,
+            "outputUsd": "0.013344",
+            "saleUsd": "0.040032"
+          },
+          "platinum": {
+            "outputTokens": 556,
+            "outputUsd": "0.0126768",
+            "saleUsd": "0.0380304"
+          },
+          "diamond": {
+            "outputTokens": 556,
+            "outputUsd": "0.0120096",
+            "saleUsd": "0.0360288"
+          },
+          "site_official": {
+            "outputTokens": 556,
+            "outputUsd": "0.01668",
+            "saleUsd": "0.05004"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 2223,
+            "outputUsd": "0.053352",
+            "saleUsd": "0.160056"
+          },
+          "platinum": {
+            "outputTokens": 2223,
+            "outputUsd": "0.0506844",
+            "saleUsd": "0.1520532"
+          },
+          "diamond": {
+            "outputTokens": 2223,
+            "outputUsd": "0.0480168",
+            "saleUsd": "0.1440504"
+          },
+          "site_official": {
+            "outputTokens": 2223,
+            "outputUsd": "0.06669",
+            "saleUsd": "0.20007"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 3952,
+            "outputUsd": "0.094848",
+            "saleUsd": "0.284544"
+          },
+          "platinum": {
+            "outputTokens": 3952,
+            "outputUsd": "0.0901056",
+            "saleUsd": "0.2703168"
+          },
+          "diamond": {
+            "outputTokens": 3952,
+            "outputUsd": "0.0853632",
+            "saleUsd": "0.2560896"
+          },
+          "site_official": {
+            "outputTokens": 3952,
+            "outputUsd": "0.11856",
+            "saleUsd": "0.35568"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 8892,
+            "outputUsd": "0.213408",
+            "saleUsd": "0.640224"
+          },
+          "platinum": {
+            "outputTokens": 8892,
+            "outputUsd": "0.2027376",
+            "saleUsd": "0.6082128"
+          },
+          "diamond": {
+            "outputTokens": 8892,
+            "outputUsd": "0.1920672",
+            "saleUsd": "0.5762016"
+          },
+          "site_official": {
+            "outputTokens": 8892,
+            "outputUsd": "0.26676",
+            "saleUsd": "0.80028"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "3:4",
+      "resolution": "2k",
+      "pixels": "1536x2048",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 247,
+            "outputUsd": "0.005928",
+            "saleUsd": "0.017784"
+          },
+          "platinum": {
+            "outputTokens": 247,
+            "outputUsd": "0.0056316",
+            "saleUsd": "0.0168948"
+          },
+          "diamond": {
+            "outputTokens": 247,
+            "outputUsd": "0.0053352",
+            "saleUsd": "0.0160056"
+          },
+          "site_official": {
+            "outputTokens": 247,
+            "outputUsd": "0.00741",
+            "saleUsd": "0.02223"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 556,
+            "outputUsd": "0.013344",
+            "saleUsd": "0.040032"
+          },
+          "platinum": {
+            "outputTokens": 556,
+            "outputUsd": "0.0126768",
+            "saleUsd": "0.0380304"
+          },
+          "diamond": {
+            "outputTokens": 556,
+            "outputUsd": "0.0120096",
+            "saleUsd": "0.0360288"
+          },
+          "site_official": {
+            "outputTokens": 556,
+            "outputUsd": "0.01668",
+            "saleUsd": "0.05004"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 2223,
+            "outputUsd": "0.053352",
+            "saleUsd": "0.160056"
+          },
+          "platinum": {
+            "outputTokens": 2223,
+            "outputUsd": "0.0506844",
+            "saleUsd": "0.1520532"
+          },
+          "diamond": {
+            "outputTokens": 2223,
+            "outputUsd": "0.0480168",
+            "saleUsd": "0.1440504"
+          },
+          "site_official": {
+            "outputTokens": 2223,
+            "outputUsd": "0.06669",
+            "saleUsd": "0.20007"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 3952,
+            "outputUsd": "0.094848",
+            "saleUsd": "0.284544"
+          },
+          "platinum": {
+            "outputTokens": 3952,
+            "outputUsd": "0.0901056",
+            "saleUsd": "0.2703168"
+          },
+          "diamond": {
+            "outputTokens": 3952,
+            "outputUsd": "0.0853632",
+            "saleUsd": "0.2560896"
+          },
+          "site_official": {
+            "outputTokens": 3952,
+            "outputUsd": "0.11856",
+            "saleUsd": "0.35568"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 8892,
+            "outputUsd": "0.213408",
+            "saleUsd": "0.640224"
+          },
+          "platinum": {
+            "outputTokens": 8892,
+            "outputUsd": "0.2027376",
+            "saleUsd": "0.6082128"
+          },
+          "diamond": {
+            "outputTokens": 8892,
+            "outputUsd": "0.1920672",
+            "saleUsd": "0.5762016"
+          },
+          "site_official": {
+            "outputTokens": 8892,
+            "outputUsd": "0.26676",
+            "saleUsd": "0.80028"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "5:4",
+      "resolution": "2k",
+      "pixels": "2560x2048",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 377,
+            "outputUsd": "0.009048",
+            "saleUsd": "0.027144"
+          },
+          "platinum": {
+            "outputTokens": 377,
+            "outputUsd": "0.0085956",
+            "saleUsd": "0.0257868"
+          },
+          "diamond": {
+            "outputTokens": 377,
+            "outputUsd": "0.0081432",
+            "saleUsd": "0.0244296"
+          },
+          "site_official": {
+            "outputTokens": 377,
+            "outputUsd": "0.01131",
+            "saleUsd": "0.03393"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 826,
+            "outputUsd": "0.019824",
+            "saleUsd": "0.059472"
+          },
+          "platinum": {
+            "outputTokens": 826,
+            "outputUsd": "0.0188328",
+            "saleUsd": "0.0564984"
+          },
+          "diamond": {
+            "outputTokens": 826,
+            "outputUsd": "0.0178416",
+            "saleUsd": "0.0535248"
+          },
+          "site_official": {
+            "outputTokens": 826,
+            "outputUsd": "0.02478",
+            "saleUsd": "0.07434"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 3303,
+            "outputUsd": "0.079272",
+            "saleUsd": "0.237816"
+          },
+          "platinum": {
+            "outputTokens": 3303,
+            "outputUsd": "0.0753084",
+            "saleUsd": "0.2259252"
+          },
+          "diamond": {
+            "outputTokens": 3303,
+            "outputUsd": "0.0713448",
+            "saleUsd": "0.2140344"
+          },
+          "site_official": {
+            "outputTokens": 3303,
+            "outputUsd": "0.09909",
+            "saleUsd": "0.29727"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 5911,
+            "outputUsd": "0.141864",
+            "saleUsd": "0.425592"
+          },
+          "platinum": {
+            "outputTokens": 5911,
+            "outputUsd": "0.1347708",
+            "saleUsd": "0.4043124"
+          },
+          "diamond": {
+            "outputTokens": 5911,
+            "outputUsd": "0.1276776",
+            "saleUsd": "0.3830328"
+          },
+          "site_official": {
+            "outputTokens": 5911,
+            "outputUsd": "0.17733",
+            "saleUsd": "0.53199"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 13385,
+            "outputUsd": "0.32124",
+            "saleUsd": "0.96372"
+          },
+          "platinum": {
+            "outputTokens": 13385,
+            "outputUsd": "0.305178",
+            "saleUsd": "0.915534"
+          },
+          "diamond": {
+            "outputTokens": 13385,
+            "outputUsd": "0.289116",
+            "saleUsd": "0.867348"
+          },
+          "site_official": {
+            "outputTokens": 13385,
+            "outputUsd": "0.40155",
+            "saleUsd": "1.20465"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "4:5",
+      "resolution": "2k",
+      "pixels": "2048x2560",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 377,
+            "outputUsd": "0.009048",
+            "saleUsd": "0.027144"
+          },
+          "platinum": {
+            "outputTokens": 377,
+            "outputUsd": "0.0085956",
+            "saleUsd": "0.0257868"
+          },
+          "diamond": {
+            "outputTokens": 377,
+            "outputUsd": "0.0081432",
+            "saleUsd": "0.0244296"
+          },
+          "site_official": {
+            "outputTokens": 377,
+            "outputUsd": "0.01131",
+            "saleUsd": "0.03393"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 826,
+            "outputUsd": "0.019824",
+            "saleUsd": "0.059472"
+          },
+          "platinum": {
+            "outputTokens": 826,
+            "outputUsd": "0.0188328",
+            "saleUsd": "0.0564984"
+          },
+          "diamond": {
+            "outputTokens": 826,
+            "outputUsd": "0.0178416",
+            "saleUsd": "0.0535248"
+          },
+          "site_official": {
+            "outputTokens": 826,
+            "outputUsd": "0.02478",
+            "saleUsd": "0.07434"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 3303,
+            "outputUsd": "0.079272",
+            "saleUsd": "0.237816"
+          },
+          "platinum": {
+            "outputTokens": 3303,
+            "outputUsd": "0.0753084",
+            "saleUsd": "0.2259252"
+          },
+          "diamond": {
+            "outputTokens": 3303,
+            "outputUsd": "0.0713448",
+            "saleUsd": "0.2140344"
+          },
+          "site_official": {
+            "outputTokens": 3303,
+            "outputUsd": "0.09909",
+            "saleUsd": "0.29727"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 5911,
+            "outputUsd": "0.141864",
+            "saleUsd": "0.425592"
+          },
+          "platinum": {
+            "outputTokens": 5911,
+            "outputUsd": "0.1347708",
+            "saleUsd": "0.4043124"
+          },
+          "diamond": {
+            "outputTokens": 5911,
+            "outputUsd": "0.1276776",
+            "saleUsd": "0.3830328"
+          },
+          "site_official": {
+            "outputTokens": 5911,
+            "outputUsd": "0.17733",
+            "saleUsd": "0.53199"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 13385,
+            "outputUsd": "0.32124",
+            "saleUsd": "0.96372"
+          },
+          "platinum": {
+            "outputTokens": 13385,
+            "outputUsd": "0.305178",
+            "saleUsd": "0.915534"
+          },
+          "diamond": {
+            "outputTokens": 13385,
+            "outputUsd": "0.289116",
+            "saleUsd": "0.867348"
+          },
+          "site_official": {
+            "outputTokens": 13385,
+            "outputUsd": "0.40155",
+            "saleUsd": "1.20465"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "16:9",
+      "resolution": "2k",
+      "pixels": "2048x1152",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 157,
+            "outputUsd": "0.003768",
+            "saleUsd": "0.011304"
+          },
+          "platinum": {
+            "outputTokens": 157,
+            "outputUsd": "0.0035796",
+            "saleUsd": "0.0107388"
+          },
+          "diamond": {
+            "outputTokens": 157,
+            "outputUsd": "0.0033912",
+            "saleUsd": "0.0101736"
+          },
+          "site_official": {
+            "outputTokens": 157,
+            "outputUsd": "0.00471",
+            "saleUsd": "0.01413"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 367,
+            "outputUsd": "0.008808",
+            "saleUsd": "0.026424"
+          },
+          "platinum": {
+            "outputTokens": 367,
+            "outputUsd": "0.0083676",
+            "saleUsd": "0.0251028"
+          },
+          "diamond": {
+            "outputTokens": 367,
+            "outputUsd": "0.0079272",
+            "saleUsd": "0.0237816"
+          },
+          "site_official": {
+            "outputTokens": 367,
+            "outputUsd": "0.01101",
+            "saleUsd": "0.03303"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1413,
+            "outputUsd": "0.033912",
+            "saleUsd": "0.101736"
+          },
+          "platinum": {
+            "outputTokens": 1413,
+            "outputUsd": "0.0322164",
+            "saleUsd": "0.0966492"
+          },
+          "diamond": {
+            "outputTokens": 1413,
+            "outputUsd": "0.0305208",
+            "saleUsd": "0.0915624"
+          },
+          "site_official": {
+            "outputTokens": 1413,
+            "outputUsd": "0.04239",
+            "saleUsd": "0.12717"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2511,
+            "outputUsd": "0.060264",
+            "saleUsd": "0.180792"
+          },
+          "platinum": {
+            "outputTokens": 2511,
+            "outputUsd": "0.0572508",
+            "saleUsd": "0.1717524"
+          },
+          "diamond": {
+            "outputTokens": 2511,
+            "outputUsd": "0.0542376",
+            "saleUsd": "0.1627128"
+          },
+          "site_official": {
+            "outputTokens": 2511,
+            "outputUsd": "0.07533",
+            "saleUsd": "0.22599"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 5650,
+            "outputUsd": "0.1356",
+            "saleUsd": "0.4068"
+          },
+          "platinum": {
+            "outputTokens": 5650,
+            "outputUsd": "0.12882",
+            "saleUsd": "0.38646"
+          },
+          "diamond": {
+            "outputTokens": 5650,
+            "outputUsd": "0.12204",
+            "saleUsd": "0.36612"
+          },
+          "site_official": {
+            "outputTokens": 5650,
+            "outputUsd": "0.1695",
+            "saleUsd": "0.5085"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "9:16",
+      "resolution": "2k",
+      "pixels": "1152x2048",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 157,
+            "outputUsd": "0.003768",
+            "saleUsd": "0.011304"
+          },
+          "platinum": {
+            "outputTokens": 157,
+            "outputUsd": "0.0035796",
+            "saleUsd": "0.0107388"
+          },
+          "diamond": {
+            "outputTokens": 157,
+            "outputUsd": "0.0033912",
+            "saleUsd": "0.0101736"
+          },
+          "site_official": {
+            "outputTokens": 157,
+            "outputUsd": "0.00471",
+            "saleUsd": "0.01413"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 367,
+            "outputUsd": "0.008808",
+            "saleUsd": "0.026424"
+          },
+          "platinum": {
+            "outputTokens": 367,
+            "outputUsd": "0.0083676",
+            "saleUsd": "0.0251028"
+          },
+          "diamond": {
+            "outputTokens": 367,
+            "outputUsd": "0.0079272",
+            "saleUsd": "0.0237816"
+          },
+          "site_official": {
+            "outputTokens": 367,
+            "outputUsd": "0.01101",
+            "saleUsd": "0.03303"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1413,
+            "outputUsd": "0.033912",
+            "saleUsd": "0.101736"
+          },
+          "platinum": {
+            "outputTokens": 1413,
+            "outputUsd": "0.0322164",
+            "saleUsd": "0.0966492"
+          },
+          "diamond": {
+            "outputTokens": 1413,
+            "outputUsd": "0.0305208",
+            "saleUsd": "0.0915624"
+          },
+          "site_official": {
+            "outputTokens": 1413,
+            "outputUsd": "0.04239",
+            "saleUsd": "0.12717"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2511,
+            "outputUsd": "0.060264",
+            "saleUsd": "0.180792"
+          },
+          "platinum": {
+            "outputTokens": 2511,
+            "outputUsd": "0.0572508",
+            "saleUsd": "0.1717524"
+          },
+          "diamond": {
+            "outputTokens": 2511,
+            "outputUsd": "0.0542376",
+            "saleUsd": "0.1627128"
+          },
+          "site_official": {
+            "outputTokens": 2511,
+            "outputUsd": "0.07533",
+            "saleUsd": "0.22599"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 5650,
+            "outputUsd": "0.1356",
+            "saleUsd": "0.4068"
+          },
+          "platinum": {
+            "outputTokens": 5650,
+            "outputUsd": "0.12882",
+            "saleUsd": "0.38646"
+          },
+          "diamond": {
+            "outputTokens": 5650,
+            "outputUsd": "0.12204",
+            "saleUsd": "0.36612"
+          },
+          "site_official": {
+            "outputTokens": 5650,
+            "outputUsd": "0.1695",
+            "saleUsd": "0.5085"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "2:1",
+      "resolution": "2k",
+      "pixels": "2688x1344",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 180,
+            "outputUsd": "0.00432",
+            "saleUsd": "0.01296"
+          },
+          "platinum": {
+            "outputTokens": 180,
+            "outputUsd": "0.004104",
+            "saleUsd": "0.012312"
+          },
+          "diamond": {
+            "outputTokens": 180,
+            "outputUsd": "0.003888",
+            "saleUsd": "0.011664"
+          },
+          "site_official": {
+            "outputTokens": 180,
+            "outputUsd": "0.0054",
+            "saleUsd": "0.0162"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 405,
+            "outputUsd": "0.00972",
+            "saleUsd": "0.02916"
+          },
+          "platinum": {
+            "outputTokens": 405,
+            "outputUsd": "0.009234",
+            "saleUsd": "0.027702"
+          },
+          "diamond": {
+            "outputTokens": 405,
+            "outputUsd": "0.008748",
+            "saleUsd": "0.026244"
+          },
+          "site_official": {
+            "outputTokens": 405,
+            "outputUsd": "0.01215",
+            "saleUsd": "0.03645"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1617,
+            "outputUsd": "0.038808",
+            "saleUsd": "0.116424"
+          },
+          "platinum": {
+            "outputTokens": 1617,
+            "outputUsd": "0.0368676",
+            "saleUsd": "0.1106028"
+          },
+          "diamond": {
+            "outputTokens": 1617,
+            "outputUsd": "0.0349272",
+            "saleUsd": "0.1047816"
+          },
+          "site_official": {
+            "outputTokens": 1617,
+            "outputUsd": "0.04851",
+            "saleUsd": "0.14553"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2874,
+            "outputUsd": "0.068976",
+            "saleUsd": "0.206928"
+          },
+          "platinum": {
+            "outputTokens": 2874,
+            "outputUsd": "0.0655272",
+            "saleUsd": "0.1965816"
+          },
+          "diamond": {
+            "outputTokens": 2874,
+            "outputUsd": "0.0620784",
+            "saleUsd": "0.1862352"
+          },
+          "site_official": {
+            "outputTokens": 2874,
+            "outputUsd": "0.08622",
+            "saleUsd": "0.25866"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 6466,
+            "outputUsd": "0.155184",
+            "saleUsd": "0.465552"
+          },
+          "platinum": {
+            "outputTokens": 6466,
+            "outputUsd": "0.1474248",
+            "saleUsd": "0.4422744"
+          },
+          "diamond": {
+            "outputTokens": 6466,
+            "outputUsd": "0.1396656",
+            "saleUsd": "0.4189968"
+          },
+          "site_official": {
+            "outputTokens": 6466,
+            "outputUsd": "0.19398",
+            "saleUsd": "0.58194"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "1:2",
+      "resolution": "2k",
+      "pixels": "1344x2688",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 180,
+            "outputUsd": "0.00432",
+            "saleUsd": "0.01296"
+          },
+          "platinum": {
+            "outputTokens": 180,
+            "outputUsd": "0.004104",
+            "saleUsd": "0.012312"
+          },
+          "diamond": {
+            "outputTokens": 180,
+            "outputUsd": "0.003888",
+            "saleUsd": "0.011664"
+          },
+          "site_official": {
+            "outputTokens": 180,
+            "outputUsd": "0.0054",
+            "saleUsd": "0.0162"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 405,
+            "outputUsd": "0.00972",
+            "saleUsd": "0.02916"
+          },
+          "platinum": {
+            "outputTokens": 405,
+            "outputUsd": "0.009234",
+            "saleUsd": "0.027702"
+          },
+          "diamond": {
+            "outputTokens": 405,
+            "outputUsd": "0.008748",
+            "saleUsd": "0.026244"
+          },
+          "site_official": {
+            "outputTokens": 405,
+            "outputUsd": "0.01215",
+            "saleUsd": "0.03645"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1617,
+            "outputUsd": "0.038808",
+            "saleUsd": "0.116424"
+          },
+          "platinum": {
+            "outputTokens": 1617,
+            "outputUsd": "0.0368676",
+            "saleUsd": "0.1106028"
+          },
+          "diamond": {
+            "outputTokens": 1617,
+            "outputUsd": "0.0349272",
+            "saleUsd": "0.1047816"
+          },
+          "site_official": {
+            "outputTokens": 1617,
+            "outputUsd": "0.04851",
+            "saleUsd": "0.14553"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2874,
+            "outputUsd": "0.068976",
+            "saleUsd": "0.206928"
+          },
+          "platinum": {
+            "outputTokens": 2874,
+            "outputUsd": "0.0655272",
+            "saleUsd": "0.1965816"
+          },
+          "diamond": {
+            "outputTokens": 2874,
+            "outputUsd": "0.0620784",
+            "saleUsd": "0.1862352"
+          },
+          "site_official": {
+            "outputTokens": 2874,
+            "outputUsd": "0.08622",
+            "saleUsd": "0.25866"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 6466,
+            "outputUsd": "0.155184",
+            "saleUsd": "0.465552"
+          },
+          "platinum": {
+            "outputTokens": 6466,
+            "outputUsd": "0.1474248",
+            "saleUsd": "0.4422744"
+          },
+          "diamond": {
+            "outputTokens": 6466,
+            "outputUsd": "0.1396656",
+            "saleUsd": "0.4189968"
+          },
+          "site_official": {
+            "outputTokens": 6466,
+            "outputUsd": "0.19398",
+            "saleUsd": "0.58194"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "21:9",
+      "resolution": "2k",
+      "pixels": "2688x1152",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 143,
+            "outputUsd": "0.003432",
+            "saleUsd": "0.010296"
+          },
+          "platinum": {
+            "outputTokens": 143,
+            "outputUsd": "0.0032604",
+            "saleUsd": "0.0097812"
+          },
+          "diamond": {
+            "outputTokens": 143,
+            "outputUsd": "0.0030888",
+            "saleUsd": "0.0092664"
+          },
+          "site_official": {
+            "outputTokens": 143,
+            "outputUsd": "0.00429",
+            "saleUsd": "0.01287"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 306,
+            "outputUsd": "0.007344",
+            "saleUsd": "0.022032"
+          },
+          "platinum": {
+            "outputTokens": 306,
+            "outputUsd": "0.0069768",
+            "saleUsd": "0.0209304"
+          },
+          "diamond": {
+            "outputTokens": 306,
+            "outputUsd": "0.0066096",
+            "saleUsd": "0.0198288"
+          },
+          "site_official": {
+            "outputTokens": 306,
+            "outputUsd": "0.00918",
+            "saleUsd": "0.02754"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1285,
+            "outputUsd": "0.03084",
+            "saleUsd": "0.09252"
+          },
+          "platinum": {
+            "outputTokens": 1285,
+            "outputUsd": "0.029298",
+            "saleUsd": "0.087894"
+          },
+          "diamond": {
+            "outputTokens": 1285,
+            "outputUsd": "0.027756",
+            "saleUsd": "0.083268"
+          },
+          "site_official": {
+            "outputTokens": 1285,
+            "outputUsd": "0.03855",
+            "saleUsd": "0.11565"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2202,
+            "outputUsd": "0.052848",
+            "saleUsd": "0.158544"
+          },
+          "platinum": {
+            "outputTokens": 2202,
+            "outputUsd": "0.0502056",
+            "saleUsd": "0.1506168"
+          },
+          "diamond": {
+            "outputTokens": 2202,
+            "outputUsd": "0.0475632",
+            "saleUsd": "0.1426896"
+          },
+          "site_official": {
+            "outputTokens": 2202,
+            "outputUsd": "0.06606",
+            "saleUsd": "0.19818"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 5016,
+            "outputUsd": "0.120384",
+            "saleUsd": "0.361152"
+          },
+          "platinum": {
+            "outputTokens": 5016,
+            "outputUsd": "0.1143648",
+            "saleUsd": "0.3430944"
+          },
+          "diamond": {
+            "outputTokens": 5016,
+            "outputUsd": "0.1083456",
+            "saleUsd": "0.3250368"
+          },
+          "site_official": {
+            "outputTokens": 5016,
+            "outputUsd": "0.15048",
+            "saleUsd": "0.45144"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "9:21",
+      "resolution": "2k",
+      "pixels": "1152x2688",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 143,
+            "outputUsd": "0.003432",
+            "saleUsd": "0.010296"
+          },
+          "platinum": {
+            "outputTokens": 143,
+            "outputUsd": "0.0032604",
+            "saleUsd": "0.0097812"
+          },
+          "diamond": {
+            "outputTokens": 143,
+            "outputUsd": "0.0030888",
+            "saleUsd": "0.0092664"
+          },
+          "site_official": {
+            "outputTokens": 143,
+            "outputUsd": "0.00429",
+            "saleUsd": "0.01287"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 306,
+            "outputUsd": "0.007344",
+            "saleUsd": "0.022032"
+          },
+          "platinum": {
+            "outputTokens": 306,
+            "outputUsd": "0.0069768",
+            "saleUsd": "0.0209304"
+          },
+          "diamond": {
+            "outputTokens": 306,
+            "outputUsd": "0.0066096",
+            "saleUsd": "0.0198288"
+          },
+          "site_official": {
+            "outputTokens": 306,
+            "outputUsd": "0.00918",
+            "saleUsd": "0.02754"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1285,
+            "outputUsd": "0.03084",
+            "saleUsd": "0.09252"
+          },
+          "platinum": {
+            "outputTokens": 1285,
+            "outputUsd": "0.029298",
+            "saleUsd": "0.087894"
+          },
+          "diamond": {
+            "outputTokens": 1285,
+            "outputUsd": "0.027756",
+            "saleUsd": "0.083268"
+          },
+          "site_official": {
+            "outputTokens": 1285,
+            "outputUsd": "0.03855",
+            "saleUsd": "0.11565"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2202,
+            "outputUsd": "0.052848",
+            "saleUsd": "0.158544"
+          },
+          "platinum": {
+            "outputTokens": 2202,
+            "outputUsd": "0.0502056",
+            "saleUsd": "0.1506168"
+          },
+          "diamond": {
+            "outputTokens": 2202,
+            "outputUsd": "0.0475632",
+            "saleUsd": "0.1426896"
+          },
+          "site_official": {
+            "outputTokens": 2202,
+            "outputUsd": "0.06606",
+            "saleUsd": "0.19818"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 5016,
+            "outputUsd": "0.120384",
+            "saleUsd": "0.361152"
+          },
+          "platinum": {
+            "outputTokens": 5016,
+            "outputUsd": "0.1143648",
+            "saleUsd": "0.3430944"
+          },
+          "diamond": {
+            "outputTokens": 5016,
+            "outputUsd": "0.1083456",
+            "saleUsd": "0.3250368"
+          },
+          "site_official": {
+            "outputTokens": 5016,
+            "outputUsd": "0.15048",
+            "saleUsd": "0.45144"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "3:1",
+      "resolution": "2k",
+      "pixels": "3072x1024",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 103,
+            "outputUsd": "0.002472",
+            "saleUsd": "0.007416"
+          },
+          "platinum": {
+            "outputTokens": 103,
+            "outputUsd": "0.0023484",
+            "saleUsd": "0.0070452"
+          },
+          "diamond": {
+            "outputTokens": 103,
+            "outputUsd": "0.0022248",
+            "saleUsd": "0.0066744"
+          },
+          "site_official": {
+            "outputTokens": 103,
+            "outputUsd": "0.00309",
+            "saleUsd": "0.00927"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 247,
+            "outputUsd": "0.005928",
+            "saleUsd": "0.017784"
+          },
+          "platinum": {
+            "outputTokens": 247,
+            "outputUsd": "0.0056316",
+            "saleUsd": "0.0168948"
+          },
+          "diamond": {
+            "outputTokens": 247,
+            "outputUsd": "0.0053352",
+            "saleUsd": "0.0160056"
+          },
+          "site_official": {
+            "outputTokens": 247,
+            "outputUsd": "0.00741",
+            "saleUsd": "0.02223"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 988,
+            "outputUsd": "0.023712",
+            "saleUsd": "0.071136"
+          },
+          "platinum": {
+            "outputTokens": 988,
+            "outputUsd": "0.0225264",
+            "saleUsd": "0.0675792"
+          },
+          "diamond": {
+            "outputTokens": 988,
+            "outputUsd": "0.0213408",
+            "saleUsd": "0.0640224"
+          },
+          "site_official": {
+            "outputTokens": 988,
+            "outputUsd": "0.02964",
+            "saleUsd": "0.08892"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 1729,
+            "outputUsd": "0.041496",
+            "saleUsd": "0.124488"
+          },
+          "platinum": {
+            "outputTokens": 1729,
+            "outputUsd": "0.0394212",
+            "saleUsd": "0.1182636"
+          },
+          "diamond": {
+            "outputTokens": 1729,
+            "outputUsd": "0.0373464",
+            "saleUsd": "0.1120392"
+          },
+          "site_official": {
+            "outputTokens": 1729,
+            "outputUsd": "0.05187",
+            "saleUsd": "0.15561"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 3952,
+            "outputUsd": "0.094848",
+            "saleUsd": "0.284544"
+          },
+          "platinum": {
+            "outputTokens": 3952,
+            "outputUsd": "0.0901056",
+            "saleUsd": "0.2703168"
+          },
+          "diamond": {
+            "outputTokens": 3952,
+            "outputUsd": "0.0853632",
+            "saleUsd": "0.2560896"
+          },
+          "site_official": {
+            "outputTokens": 3952,
+            "outputUsd": "0.11856",
+            "saleUsd": "0.35568"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "1:3",
+      "resolution": "2k",
+      "pixels": "1024x3072",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 103,
+            "outputUsd": "0.002472",
+            "saleUsd": "0.007416"
+          },
+          "platinum": {
+            "outputTokens": 103,
+            "outputUsd": "0.0023484",
+            "saleUsd": "0.0070452"
+          },
+          "diamond": {
+            "outputTokens": 103,
+            "outputUsd": "0.0022248",
+            "saleUsd": "0.0066744"
+          },
+          "site_official": {
+            "outputTokens": 103,
+            "outputUsd": "0.00309",
+            "saleUsd": "0.00927"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 247,
+            "outputUsd": "0.005928",
+            "saleUsd": "0.017784"
+          },
+          "platinum": {
+            "outputTokens": 247,
+            "outputUsd": "0.0056316",
+            "saleUsd": "0.0168948"
+          },
+          "diamond": {
+            "outputTokens": 247,
+            "outputUsd": "0.0053352",
+            "saleUsd": "0.0160056"
+          },
+          "site_official": {
+            "outputTokens": 247,
+            "outputUsd": "0.00741",
+            "saleUsd": "0.02223"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 988,
+            "outputUsd": "0.023712",
+            "saleUsd": "0.071136"
+          },
+          "platinum": {
+            "outputTokens": 988,
+            "outputUsd": "0.0225264",
+            "saleUsd": "0.0675792"
+          },
+          "diamond": {
+            "outputTokens": 988,
+            "outputUsd": "0.0213408",
+            "saleUsd": "0.0640224"
+          },
+          "site_official": {
+            "outputTokens": 988,
+            "outputUsd": "0.02964",
+            "saleUsd": "0.08892"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 1729,
+            "outputUsd": "0.041496",
+            "saleUsd": "0.124488"
+          },
+          "platinum": {
+            "outputTokens": 1729,
+            "outputUsd": "0.0394212",
+            "saleUsd": "0.1182636"
+          },
+          "diamond": {
+            "outputTokens": 1729,
+            "outputUsd": "0.0373464",
+            "saleUsd": "0.1120392"
+          },
+          "site_official": {
+            "outputTokens": 1729,
+            "outputUsd": "0.05187",
+            "saleUsd": "0.15561"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 3952,
+            "outputUsd": "0.094848",
+            "saleUsd": "0.284544"
+          },
+          "platinum": {
+            "outputTokens": 3952,
+            "outputUsd": "0.0901056",
+            "saleUsd": "0.2703168"
+          },
+          "diamond": {
+            "outputTokens": 3952,
+            "outputUsd": "0.0853632",
+            "saleUsd": "0.2560896"
+          },
+          "site_official": {
+            "outputTokens": 3952,
+            "outputUsd": "0.11856",
+            "saleUsd": "0.35568"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "1:1",
+      "resolution": "4k",
+      "pixels": "2880x2880",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 659,
+            "outputUsd": "0.015816",
+            "saleUsd": "0.047448"
+          },
+          "platinum": {
+            "outputTokens": 659,
+            "outputUsd": "0.0150252",
+            "saleUsd": "0.0450756"
+          },
+          "diamond": {
+            "outputTokens": 659,
+            "outputUsd": "0.0142344",
+            "saleUsd": "0.0427032"
+          },
+          "site_official": {
+            "outputTokens": 659,
+            "outputUsd": "0.01977",
+            "saleUsd": "0.05931"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 1483,
+            "outputUsd": "0.035592",
+            "saleUsd": "0.106776"
+          },
+          "platinum": {
+            "outputTokens": 1483,
+            "outputUsd": "0.0338124",
+            "saleUsd": "0.1014372"
+          },
+          "diamond": {
+            "outputTokens": 1483,
+            "outputUsd": "0.0320328",
+            "saleUsd": "0.0960984"
+          },
+          "site_official": {
+            "outputTokens": 1483,
+            "outputUsd": "0.04449",
+            "saleUsd": "0.13347"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 5930,
+            "outputUsd": "0.14232",
+            "saleUsd": "0.42696"
+          },
+          "platinum": {
+            "outputTokens": 5930,
+            "outputUsd": "0.135204",
+            "saleUsd": "0.405612"
+          },
+          "diamond": {
+            "outputTokens": 5930,
+            "outputUsd": "0.128088",
+            "saleUsd": "0.384264"
+          },
+          "site_official": {
+            "outputTokens": 5930,
+            "outputUsd": "0.1779",
+            "saleUsd": "0.5337"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 10542,
+            "outputUsd": "0.253008",
+            "saleUsd": "0.759024"
+          },
+          "platinum": {
+            "outputTokens": 10542,
+            "outputUsd": "0.2403576",
+            "saleUsd": "0.7210728"
+          },
+          "diamond": {
+            "outputTokens": 10542,
+            "outputUsd": "0.2277072",
+            "saleUsd": "0.6831216"
+          },
+          "site_official": {
+            "outputTokens": 10542,
+            "outputUsd": "0.31626",
+            "saleUsd": "0.94878"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 23719,
+            "outputUsd": "0.569256",
+            "saleUsd": "1.707768"
+          },
+          "platinum": {
+            "outputTokens": 23719,
+            "outputUsd": "0.5407932",
+            "saleUsd": "1.6223796"
+          },
+          "diamond": {
+            "outputTokens": 23719,
+            "outputUsd": "0.5123304",
+            "saleUsd": "1.5369912"
+          },
+          "site_official": {
+            "outputTokens": 23719,
+            "outputUsd": "0.71157",
+            "saleUsd": "2.13471"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "3:2",
+      "resolution": "4k",
+      "pixels": "3520x2336",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 450,
+            "outputUsd": "0.0108",
+            "saleUsd": "0.0324"
+          },
+          "platinum": {
+            "outputTokens": 450,
+            "outputUsd": "0.01026",
+            "saleUsd": "0.03078"
+          },
+          "diamond": {
+            "outputTokens": 450,
+            "outputUsd": "0.00972",
+            "saleUsd": "0.02916"
+          },
+          "site_official": {
+            "outputTokens": 450,
+            "outputUsd": "0.0135",
+            "saleUsd": "0.0405"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 982,
+            "outputUsd": "0.023568",
+            "saleUsd": "0.070704"
+          },
+          "platinum": {
+            "outputTokens": 982,
+            "outputUsd": "0.0223896",
+            "saleUsd": "0.0671688"
+          },
+          "diamond": {
+            "outputTokens": 982,
+            "outputUsd": "0.0212112",
+            "saleUsd": "0.0636336"
+          },
+          "site_official": {
+            "outputTokens": 982,
+            "outputUsd": "0.02946",
+            "saleUsd": "0.08838"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 3926,
+            "outputUsd": "0.094224",
+            "saleUsd": "0.282672"
+          },
+          "platinum": {
+            "outputTokens": 3926,
+            "outputUsd": "0.0895128",
+            "saleUsd": "0.2685384"
+          },
+          "diamond": {
+            "outputTokens": 3926,
+            "outputUsd": "0.0848016",
+            "saleUsd": "0.2544048"
+          },
+          "site_official": {
+            "outputTokens": 3926,
+            "outputUsd": "0.11778",
+            "saleUsd": "0.35334"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 6870,
+            "outputUsd": "0.16488",
+            "saleUsd": "0.49464"
+          },
+          "platinum": {
+            "outputTokens": 6870,
+            "outputUsd": "0.156636",
+            "saleUsd": "0.469908"
+          },
+          "diamond": {
+            "outputTokens": 6870,
+            "outputUsd": "0.148392",
+            "saleUsd": "0.445176"
+          },
+          "site_official": {
+            "outputTokens": 6870,
+            "outputUsd": "0.2061",
+            "saleUsd": "0.6183"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 15703,
+            "outputUsd": "0.376872",
+            "saleUsd": "1.130616"
+          },
+          "platinum": {
+            "outputTokens": 15703,
+            "outputUsd": "0.3580284",
+            "saleUsd": "1.0740852"
+          },
+          "diamond": {
+            "outputTokens": 15703,
+            "outputUsd": "0.3391848",
+            "saleUsd": "1.0175544"
+          },
+          "site_official": {
+            "outputTokens": 15703,
+            "outputUsd": "0.47109",
+            "saleUsd": "1.41327"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "2:3",
+      "resolution": "4k",
+      "pixels": "2336x3520",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 450,
+            "outputUsd": "0.0108",
+            "saleUsd": "0.0324"
+          },
+          "platinum": {
+            "outputTokens": 450,
+            "outputUsd": "0.01026",
+            "saleUsd": "0.03078"
+          },
+          "diamond": {
+            "outputTokens": 450,
+            "outputUsd": "0.00972",
+            "saleUsd": "0.02916"
+          },
+          "site_official": {
+            "outputTokens": 450,
+            "outputUsd": "0.0135",
+            "saleUsd": "0.0405"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 982,
+            "outputUsd": "0.023568",
+            "saleUsd": "0.070704"
+          },
+          "platinum": {
+            "outputTokens": 982,
+            "outputUsd": "0.0223896",
+            "saleUsd": "0.0671688"
+          },
+          "diamond": {
+            "outputTokens": 982,
+            "outputUsd": "0.0212112",
+            "saleUsd": "0.0636336"
+          },
+          "site_official": {
+            "outputTokens": 982,
+            "outputUsd": "0.02946",
+            "saleUsd": "0.08838"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 3926,
+            "outputUsd": "0.094224",
+            "saleUsd": "0.282672"
+          },
+          "platinum": {
+            "outputTokens": 3926,
+            "outputUsd": "0.0895128",
+            "saleUsd": "0.2685384"
+          },
+          "diamond": {
+            "outputTokens": 3926,
+            "outputUsd": "0.0848016",
+            "saleUsd": "0.2544048"
+          },
+          "site_official": {
+            "outputTokens": 3926,
+            "outputUsd": "0.11778",
+            "saleUsd": "0.35334"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 6870,
+            "outputUsd": "0.16488",
+            "saleUsd": "0.49464"
+          },
+          "platinum": {
+            "outputTokens": 6870,
+            "outputUsd": "0.156636",
+            "saleUsd": "0.469908"
+          },
+          "diamond": {
+            "outputTokens": 6870,
+            "outputUsd": "0.148392",
+            "saleUsd": "0.445176"
+          },
+          "site_official": {
+            "outputTokens": 6870,
+            "outputUsd": "0.2061",
+            "saleUsd": "0.6183"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 15703,
+            "outputUsd": "0.376872",
+            "saleUsd": "1.130616"
+          },
+          "platinum": {
+            "outputTokens": 15703,
+            "outputUsd": "0.3580284",
+            "saleUsd": "1.0740852"
+          },
+          "diamond": {
+            "outputTokens": 15703,
+            "outputUsd": "0.3391848",
+            "saleUsd": "1.0175544"
+          },
+          "site_official": {
+            "outputTokens": 15703,
+            "outputUsd": "0.47109",
+            "saleUsd": "1.41327"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "4:3",
+      "resolution": "4k",
+      "pixels": "3312x2480",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 491,
+            "outputUsd": "0.011784",
+            "saleUsd": "0.035352"
+          },
+          "platinum": {
+            "outputTokens": 491,
+            "outputUsd": "0.0111948",
+            "saleUsd": "0.0335844"
+          },
+          "diamond": {
+            "outputTokens": 491,
+            "outputUsd": "0.0106056",
+            "saleUsd": "0.0318168"
+          },
+          "site_official": {
+            "outputTokens": 491,
+            "outputUsd": "0.01473",
+            "saleUsd": "0.04419"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 1104,
+            "outputUsd": "0.026496",
+            "saleUsd": "0.079488"
+          },
+          "platinum": {
+            "outputTokens": 1104,
+            "outputUsd": "0.0251712",
+            "saleUsd": "0.0755136"
+          },
+          "diamond": {
+            "outputTokens": 1104,
+            "outputUsd": "0.0238464",
+            "saleUsd": "0.0715392"
+          },
+          "site_official": {
+            "outputTokens": 1104,
+            "outputUsd": "0.03312",
+            "saleUsd": "0.09936"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 4413,
+            "outputUsd": "0.105912",
+            "saleUsd": "0.317736"
+          },
+          "platinum": {
+            "outputTokens": 4413,
+            "outputUsd": "0.1006164",
+            "saleUsd": "0.3018492"
+          },
+          "diamond": {
+            "outputTokens": 4413,
+            "outputUsd": "0.0953208",
+            "saleUsd": "0.2859624"
+          },
+          "site_official": {
+            "outputTokens": 4413,
+            "outputUsd": "0.13239",
+            "saleUsd": "0.39717"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 7845,
+            "outputUsd": "0.18828",
+            "saleUsd": "0.56484"
+          },
+          "platinum": {
+            "outputTokens": 7845,
+            "outputUsd": "0.178866",
+            "saleUsd": "0.536598"
+          },
+          "diamond": {
+            "outputTokens": 7845,
+            "outputUsd": "0.169452",
+            "saleUsd": "0.508356"
+          },
+          "site_official": {
+            "outputTokens": 7845,
+            "outputUsd": "0.23535",
+            "saleUsd": "0.70605"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 17650,
+            "outputUsd": "0.4236",
+            "saleUsd": "1.2708"
+          },
+          "platinum": {
+            "outputTokens": 17650,
+            "outputUsd": "0.40242",
+            "saleUsd": "1.20726"
+          },
+          "diamond": {
+            "outputTokens": 17650,
+            "outputUsd": "0.38124",
+            "saleUsd": "1.14372"
+          },
+          "site_official": {
+            "outputTokens": 17650,
+            "outputUsd": "0.5295",
+            "saleUsd": "1.5885"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "3:4",
+      "resolution": "4k",
+      "pixels": "2480x3312",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 491,
+            "outputUsd": "0.011784",
+            "saleUsd": "0.035352"
+          },
+          "platinum": {
+            "outputTokens": 491,
+            "outputUsd": "0.0111948",
+            "saleUsd": "0.0335844"
+          },
+          "diamond": {
+            "outputTokens": 491,
+            "outputUsd": "0.0106056",
+            "saleUsd": "0.0318168"
+          },
+          "site_official": {
+            "outputTokens": 491,
+            "outputUsd": "0.01473",
+            "saleUsd": "0.04419"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 1104,
+            "outputUsd": "0.026496",
+            "saleUsd": "0.079488"
+          },
+          "platinum": {
+            "outputTokens": 1104,
+            "outputUsd": "0.0251712",
+            "saleUsd": "0.0755136"
+          },
+          "diamond": {
+            "outputTokens": 1104,
+            "outputUsd": "0.0238464",
+            "saleUsd": "0.0715392"
+          },
+          "site_official": {
+            "outputTokens": 1104,
+            "outputUsd": "0.03312",
+            "saleUsd": "0.09936"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 4413,
+            "outputUsd": "0.105912",
+            "saleUsd": "0.317736"
+          },
+          "platinum": {
+            "outputTokens": 4413,
+            "outputUsd": "0.1006164",
+            "saleUsd": "0.3018492"
+          },
+          "diamond": {
+            "outputTokens": 4413,
+            "outputUsd": "0.0953208",
+            "saleUsd": "0.2859624"
+          },
+          "site_official": {
+            "outputTokens": 4413,
+            "outputUsd": "0.13239",
+            "saleUsd": "0.39717"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 7845,
+            "outputUsd": "0.18828",
+            "saleUsd": "0.56484"
+          },
+          "platinum": {
+            "outputTokens": 7845,
+            "outputUsd": "0.178866",
+            "saleUsd": "0.536598"
+          },
+          "diamond": {
+            "outputTokens": 7845,
+            "outputUsd": "0.169452",
+            "saleUsd": "0.508356"
+          },
+          "site_official": {
+            "outputTokens": 7845,
+            "outputUsd": "0.23535",
+            "saleUsd": "0.70605"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 17650,
+            "outputUsd": "0.4236",
+            "saleUsd": "1.2708"
+          },
+          "platinum": {
+            "outputTokens": 17650,
+            "outputUsd": "0.40242",
+            "saleUsd": "1.20726"
+          },
+          "diamond": {
+            "outputTokens": 17650,
+            "outputUsd": "0.38124",
+            "saleUsd": "1.14372"
+          },
+          "site_official": {
+            "outputTokens": 17650,
+            "outputUsd": "0.5295",
+            "saleUsd": "1.5885"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "5:4",
+      "resolution": "4k",
+      "pixels": "3216x2576",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 535,
+            "outputUsd": "0.01284",
+            "saleUsd": "0.03852"
+          },
+          "platinum": {
+            "outputTokens": 535,
+            "outputUsd": "0.012198",
+            "saleUsd": "0.036594"
+          },
+          "diamond": {
+            "outputTokens": 535,
+            "outputUsd": "0.011556",
+            "saleUsd": "0.034668"
+          },
+          "site_official": {
+            "outputTokens": 535,
+            "outputUsd": "0.01605",
+            "saleUsd": "0.04815"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 1173,
+            "outputUsd": "0.028152",
+            "saleUsd": "0.084456"
+          },
+          "platinum": {
+            "outputTokens": 1173,
+            "outputUsd": "0.0267444",
+            "saleUsd": "0.0802332"
+          },
+          "diamond": {
+            "outputTokens": 1173,
+            "outputUsd": "0.0253368",
+            "saleUsd": "0.0760104"
+          },
+          "site_official": {
+            "outputTokens": 1173,
+            "outputUsd": "0.03519",
+            "saleUsd": "0.10557"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 4690,
+            "outputUsd": "0.11256",
+            "saleUsd": "0.33768"
+          },
+          "platinum": {
+            "outputTokens": 4690,
+            "outputUsd": "0.106932",
+            "saleUsd": "0.320796"
+          },
+          "diamond": {
+            "outputTokens": 4690,
+            "outputUsd": "0.101304",
+            "saleUsd": "0.303912"
+          },
+          "site_official": {
+            "outputTokens": 4690,
+            "outputUsd": "0.1407",
+            "saleUsd": "0.4221"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 8393,
+            "outputUsd": "0.201432",
+            "saleUsd": "0.604296"
+          },
+          "platinum": {
+            "outputTokens": 8393,
+            "outputUsd": "0.1913604",
+            "saleUsd": "0.5740812"
+          },
+          "diamond": {
+            "outputTokens": 8393,
+            "outputUsd": "0.1812888",
+            "saleUsd": "0.5438664"
+          },
+          "site_official": {
+            "outputTokens": 8393,
+            "outputUsd": "0.25179",
+            "saleUsd": "0.75537"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 19006,
+            "outputUsd": "0.456144",
+            "saleUsd": "1.368432"
+          },
+          "platinum": {
+            "outputTokens": 19006,
+            "outputUsd": "0.4333368",
+            "saleUsd": "1.3000104"
+          },
+          "diamond": {
+            "outputTokens": 19006,
+            "outputUsd": "0.4105296",
+            "saleUsd": "1.2315888"
+          },
+          "site_official": {
+            "outputTokens": 19006,
+            "outputUsd": "0.57018",
+            "saleUsd": "1.71054"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "4:5",
+      "resolution": "4k",
+      "pixels": "2576x3216",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 535,
+            "outputUsd": "0.01284",
+            "saleUsd": "0.03852"
+          },
+          "platinum": {
+            "outputTokens": 535,
+            "outputUsd": "0.012198",
+            "saleUsd": "0.036594"
+          },
+          "diamond": {
+            "outputTokens": 535,
+            "outputUsd": "0.011556",
+            "saleUsd": "0.034668"
+          },
+          "site_official": {
+            "outputTokens": 535,
+            "outputUsd": "0.01605",
+            "saleUsd": "0.04815"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 1173,
+            "outputUsd": "0.028152",
+            "saleUsd": "0.084456"
+          },
+          "platinum": {
+            "outputTokens": 1173,
+            "outputUsd": "0.0267444",
+            "saleUsd": "0.0802332"
+          },
+          "diamond": {
+            "outputTokens": 1173,
+            "outputUsd": "0.0253368",
+            "saleUsd": "0.0760104"
+          },
+          "site_official": {
+            "outputTokens": 1173,
+            "outputUsd": "0.03519",
+            "saleUsd": "0.10557"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 4690,
+            "outputUsd": "0.11256",
+            "saleUsd": "0.33768"
+          },
+          "platinum": {
+            "outputTokens": 4690,
+            "outputUsd": "0.106932",
+            "saleUsd": "0.320796"
+          },
+          "diamond": {
+            "outputTokens": 4690,
+            "outputUsd": "0.101304",
+            "saleUsd": "0.303912"
+          },
+          "site_official": {
+            "outputTokens": 4690,
+            "outputUsd": "0.1407",
+            "saleUsd": "0.4221"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 8393,
+            "outputUsd": "0.201432",
+            "saleUsd": "0.604296"
+          },
+          "platinum": {
+            "outputTokens": 8393,
+            "outputUsd": "0.1913604",
+            "saleUsd": "0.5740812"
+          },
+          "diamond": {
+            "outputTokens": 8393,
+            "outputUsd": "0.1812888",
+            "saleUsd": "0.5438664"
+          },
+          "site_official": {
+            "outputTokens": 8393,
+            "outputUsd": "0.25179",
+            "saleUsd": "0.75537"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 19006,
+            "outputUsd": "0.456144",
+            "saleUsd": "1.368432"
+          },
+          "platinum": {
+            "outputTokens": 19006,
+            "outputUsd": "0.4333368",
+            "saleUsd": "1.3000104"
+          },
+          "diamond": {
+            "outputTokens": 19006,
+            "outputUsd": "0.4105296",
+            "saleUsd": "1.2315888"
+          },
+          "site_official": {
+            "outputTokens": 19006,
+            "outputUsd": "0.57018",
+            "saleUsd": "1.71054"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "16:9",
+      "resolution": "4k",
+      "pixels": "3840x2160",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 371,
+            "outputUsd": "0.008904",
+            "saleUsd": "0.026712"
+          },
+          "platinum": {
+            "outputTokens": 371,
+            "outputUsd": "0.0084588",
+            "saleUsd": "0.0253764"
+          },
+          "diamond": {
+            "outputTokens": 371,
+            "outputUsd": "0.0080136",
+            "saleUsd": "0.0240408"
+          },
+          "site_official": {
+            "outputTokens": 371,
+            "outputUsd": "0.01113",
+            "saleUsd": "0.03339"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 865,
+            "outputUsd": "0.02076",
+            "saleUsd": "0.06228"
+          },
+          "platinum": {
+            "outputTokens": 865,
+            "outputUsd": "0.019722",
+            "saleUsd": "0.059166"
+          },
+          "diamond": {
+            "outputTokens": 865,
+            "outputUsd": "0.018684",
+            "saleUsd": "0.056052"
+          },
+          "site_official": {
+            "outputTokens": 865,
+            "outputUsd": "0.02595",
+            "saleUsd": "0.07785"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 3336,
+            "outputUsd": "0.080064",
+            "saleUsd": "0.240192"
+          },
+          "platinum": {
+            "outputTokens": 3336,
+            "outputUsd": "0.0760608",
+            "saleUsd": "0.2281824"
+          },
+          "diamond": {
+            "outputTokens": 3336,
+            "outputUsd": "0.0720576",
+            "saleUsd": "0.2161728"
+          },
+          "site_official": {
+            "outputTokens": 3336,
+            "outputUsd": "0.10008",
+            "saleUsd": "0.30024"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 5930,
+            "outputUsd": "0.14232",
+            "saleUsd": "0.42696"
+          },
+          "platinum": {
+            "outputTokens": 5930,
+            "outputUsd": "0.135204",
+            "saleUsd": "0.405612"
+          },
+          "diamond": {
+            "outputTokens": 5930,
+            "outputUsd": "0.128088",
+            "saleUsd": "0.384264"
+          },
+          "site_official": {
+            "outputTokens": 5930,
+            "outputUsd": "0.1779",
+            "saleUsd": "0.5337"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 13342,
+            "outputUsd": "0.320208",
+            "saleUsd": "0.960624"
+          },
+          "platinum": {
+            "outputTokens": 13342,
+            "outputUsd": "0.3041976",
+            "saleUsd": "0.9125928"
+          },
+          "diamond": {
+            "outputTokens": 13342,
+            "outputUsd": "0.2881872",
+            "saleUsd": "0.8645616"
+          },
+          "site_official": {
+            "outputTokens": 13342,
+            "outputUsd": "0.40026",
+            "saleUsd": "1.20078"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "9:16",
+      "resolution": "4k",
+      "pixels": "2160x3840",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 371,
+            "outputUsd": "0.008904",
+            "saleUsd": "0.026712"
+          },
+          "platinum": {
+            "outputTokens": 371,
+            "outputUsd": "0.0084588",
+            "saleUsd": "0.0253764"
+          },
+          "diamond": {
+            "outputTokens": 371,
+            "outputUsd": "0.0080136",
+            "saleUsd": "0.0240408"
+          },
+          "site_official": {
+            "outputTokens": 371,
+            "outputUsd": "0.01113",
+            "saleUsd": "0.03339"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 865,
+            "outputUsd": "0.02076",
+            "saleUsd": "0.06228"
+          },
+          "platinum": {
+            "outputTokens": 865,
+            "outputUsd": "0.019722",
+            "saleUsd": "0.059166"
+          },
+          "diamond": {
+            "outputTokens": 865,
+            "outputUsd": "0.018684",
+            "saleUsd": "0.056052"
+          },
+          "site_official": {
+            "outputTokens": 865,
+            "outputUsd": "0.02595",
+            "saleUsd": "0.07785"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 3336,
+            "outputUsd": "0.080064",
+            "saleUsd": "0.240192"
+          },
+          "platinum": {
+            "outputTokens": 3336,
+            "outputUsd": "0.0760608",
+            "saleUsd": "0.2281824"
+          },
+          "diamond": {
+            "outputTokens": 3336,
+            "outputUsd": "0.0720576",
+            "saleUsd": "0.2161728"
+          },
+          "site_official": {
+            "outputTokens": 3336,
+            "outputUsd": "0.10008",
+            "saleUsd": "0.30024"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 5930,
+            "outputUsd": "0.14232",
+            "saleUsd": "0.42696"
+          },
+          "platinum": {
+            "outputTokens": 5930,
+            "outputUsd": "0.135204",
+            "saleUsd": "0.405612"
+          },
+          "diamond": {
+            "outputTokens": 5930,
+            "outputUsd": "0.128088",
+            "saleUsd": "0.384264"
+          },
+          "site_official": {
+            "outputTokens": 5930,
+            "outputUsd": "0.1779",
+            "saleUsd": "0.5337"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 13342,
+            "outputUsd": "0.320208",
+            "saleUsd": "0.960624"
+          },
+          "platinum": {
+            "outputTokens": 13342,
+            "outputUsd": "0.3041976",
+            "saleUsd": "0.9125928"
+          },
+          "diamond": {
+            "outputTokens": 13342,
+            "outputUsd": "0.2881872",
+            "saleUsd": "0.8645616"
+          },
+          "site_official": {
+            "outputTokens": 13342,
+            "outputUsd": "0.40026",
+            "saleUsd": "1.20078"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "2:1",
+      "resolution": "4k",
+      "pixels": "3840x1920",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 300,
+            "outputUsd": "0.0072",
+            "saleUsd": "0.0216"
+          },
+          "platinum": {
+            "outputTokens": 300,
+            "outputUsd": "0.00684",
+            "saleUsd": "0.02052"
+          },
+          "diamond": {
+            "outputTokens": 300,
+            "outputUsd": "0.00648",
+            "saleUsd": "0.01944"
+          },
+          "site_official": {
+            "outputTokens": 300,
+            "outputUsd": "0.009",
+            "saleUsd": "0.027"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 675,
+            "outputUsd": "0.0162",
+            "saleUsd": "0.0486"
+          },
+          "platinum": {
+            "outputTokens": 675,
+            "outputUsd": "0.01539",
+            "saleUsd": "0.04617"
+          },
+          "diamond": {
+            "outputTokens": 675,
+            "outputUsd": "0.01458",
+            "saleUsd": "0.04374"
+          },
+          "site_official": {
+            "outputTokens": 675,
+            "outputUsd": "0.02025",
+            "saleUsd": "0.06075"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 2700,
+            "outputUsd": "0.0648",
+            "saleUsd": "0.1944"
+          },
+          "platinum": {
+            "outputTokens": 2700,
+            "outputUsd": "0.06156",
+            "saleUsd": "0.18468"
+          },
+          "diamond": {
+            "outputTokens": 2700,
+            "outputUsd": "0.05832",
+            "saleUsd": "0.17496"
+          },
+          "site_official": {
+            "outputTokens": 2700,
+            "outputUsd": "0.081",
+            "saleUsd": "0.243"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 4799,
+            "outputUsd": "0.115176",
+            "saleUsd": "0.345528"
+          },
+          "platinum": {
+            "outputTokens": 4799,
+            "outputUsd": "0.1094172",
+            "saleUsd": "0.3282516"
+          },
+          "diamond": {
+            "outputTokens": 4799,
+            "outputUsd": "0.1036584",
+            "saleUsd": "0.3109752"
+          },
+          "site_official": {
+            "outputTokens": 4799,
+            "outputUsd": "0.14397",
+            "saleUsd": "0.43191"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 10798,
+            "outputUsd": "0.259152",
+            "saleUsd": "0.777456"
+          },
+          "platinum": {
+            "outputTokens": 10798,
+            "outputUsd": "0.2461944",
+            "saleUsd": "0.7385832"
+          },
+          "diamond": {
+            "outputTokens": 10798,
+            "outputUsd": "0.2332368",
+            "saleUsd": "0.6997104"
+          },
+          "site_official": {
+            "outputTokens": 10798,
+            "outputUsd": "0.32394",
+            "saleUsd": "0.97182"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "1:2",
+      "resolution": "4k",
+      "pixels": "1920x3840",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 300,
+            "outputUsd": "0.0072",
+            "saleUsd": "0.0216"
+          },
+          "platinum": {
+            "outputTokens": 300,
+            "outputUsd": "0.00684",
+            "saleUsd": "0.02052"
+          },
+          "diamond": {
+            "outputTokens": 300,
+            "outputUsd": "0.00648",
+            "saleUsd": "0.01944"
+          },
+          "site_official": {
+            "outputTokens": 300,
+            "outputUsd": "0.009",
+            "saleUsd": "0.027"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 675,
+            "outputUsd": "0.0162",
+            "saleUsd": "0.0486"
+          },
+          "platinum": {
+            "outputTokens": 675,
+            "outputUsd": "0.01539",
+            "saleUsd": "0.04617"
+          },
+          "diamond": {
+            "outputTokens": 675,
+            "outputUsd": "0.01458",
+            "saleUsd": "0.04374"
+          },
+          "site_official": {
+            "outputTokens": 675,
+            "outputUsd": "0.02025",
+            "saleUsd": "0.06075"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 2700,
+            "outputUsd": "0.0648",
+            "saleUsd": "0.1944"
+          },
+          "platinum": {
+            "outputTokens": 2700,
+            "outputUsd": "0.06156",
+            "saleUsd": "0.18468"
+          },
+          "diamond": {
+            "outputTokens": 2700,
+            "outputUsd": "0.05832",
+            "saleUsd": "0.17496"
+          },
+          "site_official": {
+            "outputTokens": 2700,
+            "outputUsd": "0.081",
+            "saleUsd": "0.243"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 4799,
+            "outputUsd": "0.115176",
+            "saleUsd": "0.345528"
+          },
+          "platinum": {
+            "outputTokens": 4799,
+            "outputUsd": "0.1094172",
+            "saleUsd": "0.3282516"
+          },
+          "diamond": {
+            "outputTokens": 4799,
+            "outputUsd": "0.1036584",
+            "saleUsd": "0.3109752"
+          },
+          "site_official": {
+            "outputTokens": 4799,
+            "outputUsd": "0.14397",
+            "saleUsd": "0.43191"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 10798,
+            "outputUsd": "0.259152",
+            "saleUsd": "0.777456"
+          },
+          "platinum": {
+            "outputTokens": 10798,
+            "outputUsd": "0.2461944",
+            "saleUsd": "0.7385832"
+          },
+          "diamond": {
+            "outputTokens": 10798,
+            "outputUsd": "0.2332368",
+            "saleUsd": "0.6997104"
+          },
+          "site_official": {
+            "outputTokens": 10798,
+            "outputUsd": "0.32394",
+            "saleUsd": "0.97182"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "21:9",
+      "resolution": "4k",
+      "pixels": "3840x1648",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 234,
+            "outputUsd": "0.005616",
+            "saleUsd": "0.016848"
+          },
+          "platinum": {
+            "outputTokens": 234,
+            "outputUsd": "0.0053352",
+            "saleUsd": "0.0160056"
+          },
+          "diamond": {
+            "outputTokens": 234,
+            "outputUsd": "0.0050544",
+            "saleUsd": "0.0151632"
+          },
+          "site_official": {
+            "outputTokens": 234,
+            "outputUsd": "0.00702",
+            "saleUsd": "0.02106"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 500,
+            "outputUsd": "0.012",
+            "saleUsd": "0.036"
+          },
+          "platinum": {
+            "outputTokens": 500,
+            "outputUsd": "0.0114",
+            "saleUsd": "0.0342"
+          },
+          "diamond": {
+            "outputTokens": 500,
+            "outputUsd": "0.0108",
+            "saleUsd": "0.0324"
+          },
+          "site_official": {
+            "outputTokens": 500,
+            "outputUsd": "0.015",
+            "saleUsd": "0.045"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 2099,
+            "outputUsd": "0.050376",
+            "saleUsd": "0.151128"
+          },
+          "platinum": {
+            "outputTokens": 2099,
+            "outputUsd": "0.0478572",
+            "saleUsd": "0.1435716"
+          },
+          "diamond": {
+            "outputTokens": 2099,
+            "outputUsd": "0.0453384",
+            "saleUsd": "0.1360152"
+          },
+          "site_official": {
+            "outputTokens": 2099,
+            "outputUsd": "0.06297",
+            "saleUsd": "0.18891"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 3598,
+            "outputUsd": "0.086352",
+            "saleUsd": "0.259056"
+          },
+          "platinum": {
+            "outputTokens": 3598,
+            "outputUsd": "0.0820344",
+            "saleUsd": "0.2461032"
+          },
+          "diamond": {
+            "outputTokens": 3598,
+            "outputUsd": "0.0777168",
+            "saleUsd": "0.2331504"
+          },
+          "site_official": {
+            "outputTokens": 3598,
+            "outputUsd": "0.10794",
+            "saleUsd": "0.32382"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 8196,
+            "outputUsd": "0.196704",
+            "saleUsd": "0.590112"
+          },
+          "platinum": {
+            "outputTokens": 8196,
+            "outputUsd": "0.1868688",
+            "saleUsd": "0.5606064"
+          },
+          "diamond": {
+            "outputTokens": 8196,
+            "outputUsd": "0.1770336",
+            "saleUsd": "0.5311008"
+          },
+          "site_official": {
+            "outputTokens": 8196,
+            "outputUsd": "0.24588",
+            "saleUsd": "0.73764"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "9:21",
+      "resolution": "4k",
+      "pixels": "1648x3840",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 234,
+            "outputUsd": "0.005616",
+            "saleUsd": "0.016848"
+          },
+          "platinum": {
+            "outputTokens": 234,
+            "outputUsd": "0.0053352",
+            "saleUsd": "0.0160056"
+          },
+          "diamond": {
+            "outputTokens": 234,
+            "outputUsd": "0.0050544",
+            "saleUsd": "0.0151632"
+          },
+          "site_official": {
+            "outputTokens": 234,
+            "outputUsd": "0.00702",
+            "saleUsd": "0.02106"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 500,
+            "outputUsd": "0.012",
+            "saleUsd": "0.036"
+          },
+          "platinum": {
+            "outputTokens": 500,
+            "outputUsd": "0.0114",
+            "saleUsd": "0.0342"
+          },
+          "diamond": {
+            "outputTokens": 500,
+            "outputUsd": "0.0108",
+            "saleUsd": "0.0324"
+          },
+          "site_official": {
+            "outputTokens": 500,
+            "outputUsd": "0.015",
+            "saleUsd": "0.045"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 2099,
+            "outputUsd": "0.050376",
+            "saleUsd": "0.151128"
+          },
+          "platinum": {
+            "outputTokens": 2099,
+            "outputUsd": "0.0478572",
+            "saleUsd": "0.1435716"
+          },
+          "diamond": {
+            "outputTokens": 2099,
+            "outputUsd": "0.0453384",
+            "saleUsd": "0.1360152"
+          },
+          "site_official": {
+            "outputTokens": 2099,
+            "outputUsd": "0.06297",
+            "saleUsd": "0.18891"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 3598,
+            "outputUsd": "0.086352",
+            "saleUsd": "0.259056"
+          },
+          "platinum": {
+            "outputTokens": 3598,
+            "outputUsd": "0.0820344",
+            "saleUsd": "0.2461032"
+          },
+          "diamond": {
+            "outputTokens": 3598,
+            "outputUsd": "0.0777168",
+            "saleUsd": "0.2331504"
+          },
+          "site_official": {
+            "outputTokens": 3598,
+            "outputUsd": "0.10794",
+            "saleUsd": "0.32382"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 8196,
+            "outputUsd": "0.196704",
+            "saleUsd": "0.590112"
+          },
+          "platinum": {
+            "outputTokens": 8196,
+            "outputUsd": "0.1868688",
+            "saleUsd": "0.5606064"
+          },
+          "diamond": {
+            "outputTokens": 8196,
+            "outputUsd": "0.1770336",
+            "saleUsd": "0.5311008"
+          },
+          "site_official": {
+            "outputTokens": 8196,
+            "outputUsd": "0.24588",
+            "saleUsd": "0.73764"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "3:1",
+      "resolution": "4k",
+      "pixels": "3840x1280",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 139,
+            "outputUsd": "0.003336",
+            "saleUsd": "0.010008"
+          },
+          "platinum": {
+            "outputTokens": 139,
+            "outputUsd": "0.0031692",
+            "saleUsd": "0.0095076"
+          },
+          "diamond": {
+            "outputTokens": 139,
+            "outputUsd": "0.0030024",
+            "saleUsd": "0.0090072"
+          },
+          "site_official": {
+            "outputTokens": 139,
+            "outputUsd": "0.00417",
+            "saleUsd": "0.01251"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 332,
+            "outputUsd": "0.007968",
+            "saleUsd": "0.023904"
+          },
+          "platinum": {
+            "outputTokens": 332,
+            "outputUsd": "0.0075696",
+            "saleUsd": "0.0227088"
+          },
+          "diamond": {
+            "outputTokens": 332,
+            "outputUsd": "0.0071712",
+            "saleUsd": "0.0215136"
+          },
+          "site_official": {
+            "outputTokens": 332,
+            "outputUsd": "0.00996",
+            "saleUsd": "0.02988"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1328,
+            "outputUsd": "0.031872",
+            "saleUsd": "0.095616"
+          },
+          "platinum": {
+            "outputTokens": 1328,
+            "outputUsd": "0.0302784",
+            "saleUsd": "0.0908352"
+          },
+          "diamond": {
+            "outputTokens": 1328,
+            "outputUsd": "0.0286848",
+            "saleUsd": "0.0860544"
+          },
+          "site_official": {
+            "outputTokens": 1328,
+            "outputUsd": "0.03984",
+            "saleUsd": "0.11952"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2324,
+            "outputUsd": "0.055776",
+            "saleUsd": "0.167328"
+          },
+          "platinum": {
+            "outputTokens": 2324,
+            "outputUsd": "0.0529872",
+            "saleUsd": "0.1589616"
+          },
+          "diamond": {
+            "outputTokens": 2324,
+            "outputUsd": "0.0501984",
+            "saleUsd": "0.1505952"
+          },
+          "site_official": {
+            "outputTokens": 2324,
+            "outputUsd": "0.06972",
+            "saleUsd": "0.20916"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 5311,
+            "outputUsd": "0.127464",
+            "saleUsd": "0.382392"
+          },
+          "platinum": {
+            "outputTokens": 5311,
+            "outputUsd": "0.1210908",
+            "saleUsd": "0.3632724"
+          },
+          "diamond": {
+            "outputTokens": 5311,
+            "outputUsd": "0.1147176",
+            "saleUsd": "0.3441528"
+          },
+          "site_official": {
+            "outputTokens": 5311,
+            "outputUsd": "0.15933",
+            "saleUsd": "0.47799"
+          }
+        }
+      }
+    },
+    {
+      "ratio": "1:3",
+      "resolution": "4k",
+      "pixels": "1280x3840",
+      "prices": {
+        "low": {
+          "gold": {
+            "outputTokens": 139,
+            "outputUsd": "0.003336",
+            "saleUsd": "0.010008"
+          },
+          "platinum": {
+            "outputTokens": 139,
+            "outputUsd": "0.0031692",
+            "saleUsd": "0.0095076"
+          },
+          "diamond": {
+            "outputTokens": 139,
+            "outputUsd": "0.0030024",
+            "saleUsd": "0.0090072"
+          },
+          "site_official": {
+            "outputTokens": 139,
+            "outputUsd": "0.00417",
+            "saleUsd": "0.01251"
+          }
+        },
+        "medium": {
+          "gold": {
+            "outputTokens": 332,
+            "outputUsd": "0.007968",
+            "saleUsd": "0.023904"
+          },
+          "platinum": {
+            "outputTokens": 332,
+            "outputUsd": "0.0075696",
+            "saleUsd": "0.0227088"
+          },
+          "diamond": {
+            "outputTokens": 332,
+            "outputUsd": "0.0071712",
+            "saleUsd": "0.0215136"
+          },
+          "site_official": {
+            "outputTokens": 332,
+            "outputUsd": "0.00996",
+            "saleUsd": "0.02988"
+          }
+        },
+        "high": {
+          "gold": {
+            "outputTokens": 1328,
+            "outputUsd": "0.031872",
+            "saleUsd": "0.095616"
+          },
+          "platinum": {
+            "outputTokens": 1328,
+            "outputUsd": "0.0302784",
+            "saleUsd": "0.0908352"
+          },
+          "diamond": {
+            "outputTokens": 1328,
+            "outputUsd": "0.0286848",
+            "saleUsd": "0.0860544"
+          },
+          "site_official": {
+            "outputTokens": 1328,
+            "outputUsd": "0.03984",
+            "saleUsd": "0.11952"
+          }
+        },
+        "xhigh": {
+          "gold": {
+            "outputTokens": 2324,
+            "outputUsd": "0.055776",
+            "saleUsd": "0.167328"
+          },
+          "platinum": {
+            "outputTokens": 2324,
+            "outputUsd": "0.0529872",
+            "saleUsd": "0.1589616"
+          },
+          "diamond": {
+            "outputTokens": 2324,
+            "outputUsd": "0.0501984",
+            "saleUsd": "0.1505952"
+          },
+          "site_official": {
+            "outputTokens": 2324,
+            "outputUsd": "0.06972",
+            "saleUsd": "0.20916"
+          }
+        },
+        "max": {
+          "gold": {
+            "outputTokens": 5311,
+            "outputUsd": "0.127464",
+            "saleUsd": "0.382392"
+          },
+          "platinum": {
+            "outputTokens": 5311,
+            "outputUsd": "0.1210908",
+            "saleUsd": "0.3632724"
+          },
+          "diamond": {
+            "outputTokens": 5311,
+            "outputUsd": "0.1147176",
+            "saleUsd": "0.3441528"
+          },
+          "site_official": {
+            "outputTokens": 5311,
+            "outputUsd": "0.15933",
+            "saleUsd": "0.47799"
+          }
+        }
+      }
+    }
+  ]
+}
