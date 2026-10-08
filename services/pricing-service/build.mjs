@@ -1,0 +1,11 @@
+import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { mkdir, cp, writeFile } from 'node:fs/promises';
+const here=dirname(fileURLToPath(import.meta.url)),out=resolve(here,'dist');
+await mkdir(out,{recursive:true});
+await build({entryPoints:[resolve(here,'server.ts')],outfile:resolve(out,'server.mjs'),bundle:true,platform:'node',target:'node24',format:'esm'});
+await cp(resolve(here,'public'),resolve(out,'public'),{recursive:true});
+await cp(resolve(here,'catalog.json'),resolve(out,'catalog.json'));
+await writeFile(resolve(out,'package.json'),JSON.stringify({name:'naumi-pricing-standalone',private:true,type:'module',scripts:{start:'node server.mjs'},engines:{node:'>=24'}},null,2)+'\n');
+console.log('BUILD_PASS: independent Node24 bundle + UI + catalog; no npm dependencies or provider credentials required at runtime');
