@@ -8,12 +8,19 @@ const decimal = z.string().regex(/^(0|[1-9]\d{0,6})(\.\d{1,6})?$/);
 const positive = decimal.refine(v => micros(v) > BigInt(0), "金额必须大于0");
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const ratesSchema = z.strictObject({ text_input_uncached: decimal, text_input_cached: decimal, image_input_uncached: decimal, image_input_cached: decimal, image_output: decimal });
+const specSchema = z.strictObject({ resolution: z.enum(["1K", "2K", "4K"]), ratio: z.string().regex(/^[1-9]\d{0,2}:[1-9]\d{0,2}$/), quality: z.enum(QUALITIES) });
+export const quickPresetSchema = z.strictObject({
+  publicId: id, label: z.string().trim().min(1).max(80), supplier: z.literal("apimart"),
+  actualModel: z.enum(MODEL_IDS), upstreamVersion: z.enum(["flare", "sunburst"]).optional(),
+  spec: specSchema, saleCny: decimal.optional(),
+});
+export type QuickPreset = z.infer<typeof quickPresetSchema>;
 export const configSchema = z.strictObject({
   schemaVersion: z.literal(1), tier: z.enum(TIERS), multiplier: positive.refine(v => micros(v) <= BigInt(100000000), "倍率上限100"),
   fx: z.strictObject({ usdToCny: positive, basis: z.enum(["budget", "admin-rate", "recharge"]), evidence: z.string().trim().min(1).max(300) }),
   qualityPolicy: z.enum(["full", "cap-medium"]),
   creditConversion: z.strictObject({ creditsPerCny: positive, rounding: z.enum(["ceil", "floor", "nearest"]) }).nullable(),
-  aliases: z.array(z.strictObject({ publicId: id, label: z.string().trim().min(1).max(80), model: z.enum(MODEL_IDS), version: z.enum(["flare", "sunburst"]).optional(), enabled: z.boolean(), multiplier: positive.optional() })).min(1).max(30),
+  aliases: z.array(z.strictObject({ publicId: id, label: z.string().trim().min(1).max(80), model: z.enum(MODEL_IDS), version: z.enum(["flare", "sunburst"]).optional(), enabled: z.boolean(), multiplier: positive.optional(), supplier: z.literal("apimart").optional(), quickSpec: specSchema.optional() })).min(1).max(30),
   nativeRates: z.record(z.enum(TIERS), ratesSchema),
   extPrices: z.record(z.enum(TIERS), z.strictObject({ "1K": decimal, "2K": decimal, "4K": decimal })),
   // Explicit manual unit sales are distinct from supplier procurement costs.
@@ -71,6 +78,11 @@ export type QuoteRequest = z.infer<typeof quoteSchema>;
 export function quoteKey(r: Pick<QuoteRequest, "publicId" | "resolution" | "ratio" | "quality">) { return `${r.publicId}|${r.resolution}|${r.ratio}|${r.quality}`; }
 export function validateConfig(value: unknown, catalog: Catalog): PricingConfig {
   const c = configSchema.parse(value);
+  for (const alias of c.aliases) {
+    if (!catalog.native.models.includes(alias.model) && alias.model !== "gpt-image-2.5-ext") throw new Error("目录中不存在实际模型");
+    if (alias.version && !catalog.ext.versions.includes(alias.version)) throw new Error("目录中不存在EXT版本");
+    if (alias.quickSpec && alias.enabled) price(c, catalog, { publicId: alias.publicId, ...alias.quickSpec, quantity: 1 });
+  }
   for (const key of Object.keys(c.fixedSales)) {
     const [publicId, resolution, ratio, quality, extra] = key.split("|");
     const alias = c.aliases.find(a => a.publicId === publicId);
@@ -78,6 +90,29 @@ export function validateConfig(value: unknown, catalog: Catalog): PricingConfig 
     if (alias.model.endsWith("-ext") ? !catalog.ext.parameters.size.enum.includes(ratio) : !catalog.native.output_reference_matrix.some(r => r.size === ratio && r.resolution.toUpperCase() === resolution)) throw new Error(`模型不支持此售价规格：${key}`);
   }
   return c;
+}
+/** Quick MVP uses the same versioned configuration and exact pricing engine. */
+export function prepareQuickPreset(config: PricingConfig, catalog: Catalog, input: unknown) {
+  const preset = quickPresetSchema.parse(input);
+  if ((preset.actualModel === "gpt-image-2.5-ext") !== !!preset.upstreamVersion) throw new Error("仅EXT需要flare/sunburst版本");
+  const next = structuredClone(config);
+  const alias: PricingConfig["aliases"][number] = { publicId: preset.publicId, label: preset.label, supplier: preset.supplier,
+    model: preset.actualModel, ...(preset.upstreamVersion ? { version: preset.upstreamVersion } : {}), enabled: true, multiplier: "3", quickSpec: preset.spec };
+  const index = next.aliases.findIndex(a => a.publicId === preset.publicId);
+  if (index < 0) next.aliases.push(alias); else next.aliases[index] = alias;
+  // Replacing an alias must not inherit stale fixed prices from its previous supplier/model.
+  for (const key of Object.keys(next.fixedSales)) if (key.startsWith(preset.publicId + "|")) delete next.fixedSales[key];
+  validateConfig(next, catalog);
+  const request = { publicId: preset.publicId, ...preset.spec, quantity: 1 };
+  const suggestion = price(next, catalog, request);
+  if (preset.saleCny !== undefined) {
+    const quality = suggestion.effective.quality || preset.spec.quality;
+    next.fixedSales[quoteKey({ ...request, quality: quality as any })] = preset.saleCny;
+  }
+  validateConfig(next, catalog);
+  return { config: next, preset, preview: { ...price(next, catalog, request), suggestedSaleCny: suggestion.saleCny,
+    supplier: "apimart", catalogDate: catalog.checked_date, sources: catalog.sources, tier: next.tier,
+    outputUnit: preset.actualModel.endsWith("-ext") ? "元/交付张（包价）" : "元/张（输出参考估计）", simulated: true, productionApplied: false } };
 }
 /** Pure engine: no fetch, credentials, wallet mutation, DB or configuration globals. */
 export function price(config: PricingConfig, catalog: Catalog, input: unknown) {
