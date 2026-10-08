@@ -18,11 +18,18 @@ async function main() {
     assert.equal((await pool.query("SELECT current_database() name")).rows[0].name, "naumi_staging_history_fixture");
     // Only this disposable clone is used: never test billing by changing the working copy.
     const manifest = (await pool.query("SELECT table_name,key_column FROM naumi_staging_guard.origin_rows GROUP BY 1,2 ORDER BY 1")).rows;
+    // Additive migrations may add nullable columns. Compare the complete original
+    // column projection, not a changed JSON shape, while preserving every old field.
+    for (const t of manifest) {
+      t.originalColumns = (await pool.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 ORDER BY ordinal_position", [t.table_name])).rows.map(r => r.column_name);
+      assert.ok(t.originalColumns.length);
+      for (const c of t.originalColumns) assert.match(c, /^[a-z_][a-z0-9_]*$/);
+    }
     const originHashes = async () => {
       const hashes = [];
       for (const t of manifest) {
         assert.match(t.table_name, /^app_[a-z_]+$/); assert.match(t.key_column, /^[a-z_]+$/);
-        hashes.push((await pool.query(`SELECT md5(COALESCE(string_agg(md5(to_jsonb(r)::text),'' ORDER BY r.${t.key_column}::text),'')) hash FROM public.${t.table_name} r JOIN naumi_staging_guard.origin_rows o ON o.table_name=$1 AND o.row_key=r.${t.key_column}::text`, [t.table_name])).rows[0].hash);
+        hashes.push({ table: t.table_name, hash: (await pool.query(`SELECT md5(COALESCE(string_agg(md5((SELECT to_jsonb(original) FROM (SELECT ${t.originalColumns.map((c: string) => `r.${c}`).join(",")} ) original)::text),'' ORDER BY r.${t.key_column}::text),'')) hash FROM public.${t.table_name} r JOIN naumi_staging_guard.origin_rows o ON o.table_name=$1 AND o.row_key=r.${t.key_column}::text`, [t.table_name])).rows[0].hash });
       }
       return hashes;
     };

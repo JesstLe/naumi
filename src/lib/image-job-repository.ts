@@ -170,8 +170,8 @@ export async function dueImageJobs() {
 
 /** Keep an uncertain paid domain job visible to billing reconciliation. */
 export async function holdImageJobBilling(id:string) {
-  await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   if(!dbEnabled)return;
+  await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   await getPool().query("UPDATE app_billing_operations SET state=CASE WHEN quote->'tariff'->'settlement'->>'unknown'='manual' THEN 'manual' ELSE 'hold' END,updated_at=now() WHERE id=$1 AND state='reserved'",[id]);
 }
 
