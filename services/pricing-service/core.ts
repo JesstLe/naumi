@@ -12,8 +12,8 @@ const specSchema = z.strictObject({ resolution: z.enum(["1K", "2K", "4K"]), rati
 export const quickPresetSchema = z.strictObject({
   publicId: id, label: z.string().trim().min(1).max(80), supplier: z.literal("apimart"),
   actualModel: z.enum(MODEL_IDS), upstreamVersion: z.enum(["flare", "sunburst"]).optional(),
-  spec: specSchema, saleCny: decimal.optional(),
-});
+  spec: specSchema, saleCny: decimal.optional(), creditsPerCny: positive.optional(), rounding: z.enum(["ceil", "floor", "nearest"]).optional(),
+}).refine(p => p.rounding === undefined || p.creditsPerCny !== undefined, "设置积分取整时必须提供每元兑换积分");
 export type QuickPreset = z.infer<typeof quickPresetSchema>;
 export const configSchema = z.strictObject({
   schemaVersion: z.literal(1), tier: z.enum(TIERS), multiplier: positive.refine(v => micros(v) <= BigInt(100000000), "倍率上限100"),
@@ -96,6 +96,7 @@ export function prepareQuickPreset(config: PricingConfig, catalog: Catalog, inpu
   const preset = quickPresetSchema.parse(input);
   if ((preset.actualModel === "gpt-image-2.5-ext") !== !!preset.upstreamVersion) throw new Error("仅EXT需要flare/sunburst版本");
   const next = structuredClone(config);
+  if (preset.creditsPerCny !== undefined) next.creditConversion = { creditsPerCny: preset.creditsPerCny, rounding: preset.rounding || config.creditConversion?.rounding || "ceil" };
   const alias: PricingConfig["aliases"][number] = { publicId: preset.publicId, label: preset.label, supplier: preset.supplier,
     model: preset.actualModel, ...(preset.upstreamVersion ? { version: preset.upstreamVersion } : {}), enabled: true, multiplier: "3", quickSpec: preset.spec };
   const index = next.aliases.findIndex(a => a.publicId === preset.publicId);
@@ -141,7 +142,8 @@ export function price(config: PricingConfig, catalog: Catalog, input: unknown) {
   const fixed = config.fixedSales[quoteKey({ ...r, quality: (effectiveQuality || r.quality) as any })];
   const sale = fixed !== undefined ? mul(money(fixed), { n: BigInt(r.quantity), d: BigInt(1) }) : cny && mul(cny, money(multiplier));
   const profit = sale && cny ? { n: sale.n * cny.d - cny.n * sale.d, d: sale.d * cny.d } : null;
-  const credits = sale && config.creditConversion ? rounded(sale.n * micros(config.creditConversion.creditsPerCny), sale.d * MICRO, config.creditConversion.rounding).toString() : null;
+  const converted = sale && config.creditConversion ? mul(sale, money(config.creditConversion.creditsPerCny)) : null;
+  const credits = converted && config.creditConversion ? rounded(converted.n, converted.d, config.creditConversion.rounding).toString() : null;
   return {
     publicId: alias.publicId, label: alias.label, actualModel: alias.model, upstreamVersion: alias.version || null,
     requested: r, effective: { resolution: ext ? r.resolution : r.resolution.toLowerCase(), size: r.ratio, ...(effectiveQuality ? { quality: effectiveQuality } : {}) },
@@ -149,7 +151,9 @@ export function price(config: PricingConfig, catalog: Catalog, input: unknown) {
     costUsd: cost ? decimalString(cost) : null, costCny: cny ? decimalString(cny) : null,
     costUsdExact: cost ? exactReceipt(cost) : null, costCnyExact: cny ? exactReceipt(cny) : null,
     multiplier, saleCny: sale ? decimalString(sale) : null, pricingMode: fixed !== undefined ? "fixed-unit" : "cost-plus",
-    saleExact: sale ? exactReceipt(sale) : null, credits, fx: config.fx,
+    saleExact: sale ? exactReceipt(sale) : null, credits, creditsUnrounded: converted ? decimalString(converted) : null,
+    creditConversion: config.creditConversion,
+    cnyPerCredit: config.creditConversion ? decimalString({ n: MICRO, d: micros(config.creditConversion.creditsPerCny) }) : null, fx: config.fx,
     profitCny: profit ? (profit.n < BigInt(0) ? "-" + decimalString({ n: -profit.n, d: profit.d }) : decimalString(profit)) : null,
     profitLabel: "售价减API成本", profitFinal: false, supplierCostVerified: false,
     warnings: [scope === "output-only" ? "只包含输出；输入费用未齐，不是完整调用报价" : "", config.fx.basis === "budget" ? "人民币使用预算汇率，折算估计" : "", effectiveQuality === "auto" ? "auto展示max预留估计；实际档位待返回" : "", ext ? catalog.ext.rollout_notice : "", !config.creditConversion ? "积分兑换未配置" : "", r.reportedTotalUsd !== undefined ? "费用为手工试算输入，未与供应商账单核验" : ""].filter(Boolean),
