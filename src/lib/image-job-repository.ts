@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { dbEnabled, getPool, ensureSchema, deductPrincipalFIFO, refreshBalance, creditMeteringEnabled, expireDueBatches } from "@/lib/db";
 import {createBillingService} from "@/lib/billing/service";
 import type {BillingQuote,BillingResult,OperationInput} from "@/lib/billing/types";
+import { IMAGE_JOB_RELEASED_MESSAGE, imageJobHasResults } from "./image-job-failure";
+import { lockWallet, syncBalanceTx } from "./billing/repository";
 const billingService=createBillingService();
 function billingOperation(row:{id:string;email:string;payload:{billingQuote:BillingQuote}},reason:string):OperationInput{return {id:row.id,email:row.email,quote:row.payload.billingQuote,reason,ledgerId:`led-image-${row.id}`,fingerprint:row.id};}
 
@@ -42,7 +44,7 @@ export async function getImageJob(id: string, kind: ImageJobKind): Promise<Image
 export async function listActiveImageJobs(email: string, kind: ImageJobKind) {
   await ensureSchema();
   const { rows } = await getPool().query(`SELECT id,snapshot->>'status' AS status FROM app_image_jobs
-    WHERE email=$1 AND kind=$2 AND snapshot->>'status' NOT IN ('done','error') ORDER BY created_at DESC LIMIT 30`, [email.toLowerCase(), kind]);
+    WHERE email=$1 AND kind=$2 AND snapshot->>'status' NOT IN ('done','error','needs_attention') ORDER BY created_at DESC LIMIT 30`, [email.toLowerCase(), kind]);
   return rows;
 }
 
@@ -164,4 +166,44 @@ export async function dueImageJobs() {
 export async function holdImageJobBilling(id:string) {
   if(!dbEnabled)return;
   await getPool().query("UPDATE app_billing_operations SET state=CASE WHEN quote->'tariff'->'settlement'->>'unknown'='manual' THEN 'manual' ELSE 'hold' END,updated_at=now() WHERE id=$1 AND state='reserved'",[id]);
+}
+
+/** Stop an undelivered operation without pretending its supplier cost is zero.
+ * Serializes against settlement and other workers; only this job's remaining
+ * reservation is released. Supplier calls and paid intent remain untouched. */
+export async function failUndeliveredImageJob(id: string, token: string | null, reasonCode: string) {
+  const tx = await getPool().connect();
+  try {
+    await tx.query("BEGIN");
+    const row = (await tx.query("SELECT * FROM app_image_jobs WHERE id=$1 FOR UPDATE", [id])).rows[0];
+    if (!row || row.billing_settled || ["done", "error"].includes(row.snapshot.status)) {
+      await tx.query("COMMIT"); return false;
+    }
+    if (row.lease_token !== token || token && new Date(row.lease_until).getTime() <= Date.now()) throw new Error("任务执行权已过期");
+    if (imageJobHasResults(row.snapshot)) { await tx.query("COMMIT"); return false; }
+    const hasSupplierLedger = (await tx.query("SELECT to_regclass('app_supplier_calls') IS NOT NULL AS present")).rows[0].present;
+    if (hasSupplierLedger && (await tx.query("SELECT 1 FROM app_supplier_calls WHERE operation_id=$1 AND delivered>0 LIMIT 1", [id])).rowCount) {
+      await tx.query("COMMIT"); return false;
+    }
+    let released = 0;
+    const billing = (await tx.query("SELECT * FROM app_billing_operations WHERE id=$1 FOR UPDATE", [id])).rows[0];
+    if (billing && ["settled", "released"].includes(billing.state)) { await tx.query("COMMIT"); return false; }
+    if (billing) {
+      released = Number((await tx.query("SELECT cost FROM app_gen_reservations WHERE job_id=$1 AND email=$2", [id, row.email])).rows[0]?.cost || 0);
+      await billingService.releaseTx(tx, billingOperation(row, "图片未交付，释放预占积分"));
+    } else {
+      await lockWallet(tx, row.email);
+      const reservation = (await tx.query("DELETE FROM app_gen_reservations WHERE job_id=$1 AND email=$2 RETURNING cost", [id, row.email])).rows[0];
+      released = Number(reservation?.cost || 0);
+      if (released) await tx.query("UPDATE app_users SET credits_used=GREATEST(credits_used-$2,0) WHERE email=$1", [row.email, released]);
+      await syncBalanceTx(tx, row.email);
+    }
+    const proof = { reasonCode, customerOutcome: "failed", supplierOutcome: "unknown", supplierCost: "pending", releasedCredits: released };
+    await tx.query("INSERT INTO app_billing_reconciliations(id,operation_id,email,actor,request_fingerprint,reason,proof,result,charge) VALUES($1,$2,$3,'system:image-job', $4,'图片未交付，释放预占积分',$5,$6::jsonb,0)",
+      [`image-release-${id}`, id, row.email, `image-release-${id}`, JSON.stringify(proof), JSON.stringify({ state: "unknown", ...proof })]);
+    await tx.query(`UPDATE app_image_jobs SET snapshot=snapshot || $2::jsonb,billing_settled=true,reserved_cost=0,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1`,
+      [id, JSON.stringify({ status: "error", error: IMAGE_JOB_RELEASED_MESSAGE, failureCode: reasonCode, customerBilling: "released", supplierCostStatus: "pending", creditsReleased: released, stoppedAt: Date.now() })]);
+    await tx.query("COMMIT"); return true;
+  } catch (error) { await tx.query("ROLLBACK"); throw error; }
+  finally { tx.release(); }
 }
