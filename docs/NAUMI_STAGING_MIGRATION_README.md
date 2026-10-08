@@ -196,6 +196,7 @@
 - [x] 创建独立预发布 Compose 和配置模板；尚未填入真实凭据或启动 app/db/Worker。
 - [x] 在新服务器使用纯 fixture 凭据解析 Compose，隔离断言通过；Docker enabled/active。没有启动 app/db/Worker，没有导入真实数据。
 - [x] 根 README 和 AGENTS.md 添加交接入口；文档基线/修改版与独立副本回滚验收通过，回滚后原 README 哈希一致。
+- [x] 准备提交 `7c7f3d97b9aa3c18fc58015527405a3a5a474919` 已导出干净源码包并在新机核对 SHA256，源码位于 `/opt/naumi-staging/source/7c7f3d97b9aa3c18fc58015527405a3a5a474919-clean`；代码已推送当前分支。准备提交不代表生产候选已验收。
 - [ ] 全量数据库和媒体副本。
 - [ ] 历史任务重放保护。
 - [ ] 预发布真实测试。
@@ -209,6 +210,17 @@
 - 历史任务来源隔离及页面/API 惰性恢复保护尚未实施。生产存在 1 笔未结算生图任务，必须保留原始 dump 和状态。
 - 生产 Router 实际位置、配置快照及新机独立 Router 尚待盘点和准备；新环境未执行真实收费测试。
 - 预发布 app/db/Worker 尚未启动，未宣称全量环境贯通、OSS 切换或晚间生产发布完成。
+
+### 本阶段验证与证据
+
+- 新机 `Docker 29.1.3`、`Compose 2.40.3`；Docker `enabled/active`，初始化脚本重复执行通过。
+- Compose 用 fixture 凭据在新机解析，结果：`STAGING_COMPOSE_RESULT=PASS PROJECT=naumi-staging MEDIA=local DB=private APP=loopback WORKER=opt-in`。没有启用数据库或 app，没有真实数据/消费发生。
+- README 基线结果：`HANDOFF_LINK=ABSENT` / exit 1；修改版：`HANDOFF_LINK=PRESENT` / exit 0；独立副本回滚：`ROLLBACK_RESULT=PASS ORIGINAL_README_RESTORED=1 FIXTURE_ONLY=1` / exit 0。回滚前后基线 SHA256 相同，只演练文档副本，不声称已卸载 Docker 或回滚生产。
+- 干净源码包 SHA256：`c605f56f361bf168a3006f411096926595c04b0a21e716d03c206ea0af82ba45`。不包含 `.env`、私钥、`node_modules`、本地运行数据、`output` 或 `audit-artifacts`。初次直接 `git archive` 包含仓库已跟踪的演示 output；已生成过滤后的 clean 包，构建只使用 clean 源码。
+- 本机直连 GitHub push 曾超时；通过新服务器临时 SSH SOCKS 路由推送成功，不改持久 Git 代理配置。
+- 第一次 Compose 配置核验遗漏 `--profile workers`，未列出 opt-in worker 导致 service-set 断言失败；补上 profile 后通过。Windows stdin 尾部 CRLF 曾造成盘点退出 127；在 SSH 输入上规范化 CRLF 后盘点退出 0。
+- 本地证据目录：`E:\Workspace\naumi\output\staging-setup-20261008`（Git 忽略）；新机交接/回滚演练目录：`/opt/naumi-staging/evidence/handoff`。
+- 此阶段生产仅执行只读盘点，应用、Worker 和数据库未重启；生产固定镜像未切换。全量复制和真实测试属于下一阶段。
 
 ## 10. 下一执行点（接手后从这里继续）
 
