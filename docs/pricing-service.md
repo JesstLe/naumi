@@ -46,7 +46,7 @@ node services/pricing-service/build.mjs
 node services/pricing-service/dist/server.mjs
 ```
 
-复制包需Node24；运行无需数据库服务器或供应商密钥。SQLite建表幂等，`PRAGMA user_version=1`；重启不会重新覆盖管理员已保存配置。打包不会包含 `.data`。
+复制包需Node24；运行无需数据库服务器或供应商密钥。SQLite建表幂等，`PRAGMA user_version=2`；重启不会重新覆盖管理员已保存配置。打包不会包含 `.data`。
 
 ### 操作步骤
 
@@ -114,3 +114,34 @@ node node_modules/tsx/dist/cli.mjs services/pricing-service/rollback.ts 1 "E:/Wo
 可执行 `services/pricing-service/ROLLBACK.sh` 等价调用；`--test`只操作临时独立数据库做恢复演练。数据库备份应在停止该微服务后复制 `.sqlite`（含未checkpoint时的wal/shm）或使用SQLite在线备份；不要用文件复制覆盖正在工作的库。
 
 验收证据：`output/pricing-service-20261008/VERIFICATION.txt`、源码副本、补丁、截图和独立恢复库。原目录数据hash及现有钱包金额代码保持不变。
+
+## 最简模型定价 MVP（2026-10-08）
+
+已完成「快速配置」页：选择/新增前端显示模型 ID 和名称 → 实际供应商 → 实际模型 ID（EXT 分离 version）→ 选择分辨率/比例/质量 → 自动加载人民币输出成本 → 显示 3 倍建议售价/手动设售价 → 应用 → 模拟请求验证。
+
+- 供应商和规格列表来自服务端已核查 APIMart 目录，不从前端猜测 ID。当前只提供 APIMart；目录能力不表示真实账号已开通，EXT 账号能力仍待核验。
+- 输出成本复用当前已发布的会员档、采购价、汇率、质量策略和精确 BigInt 定价引擎。原生为输出参考 token × 单价的估计，未包含输入；EXT 为按交付张包价。预算人民币换算明确标为估计。本次不发起收费 API。
+- 留空售价：该展示模型各规格成本乘 3；填写售价：只覆盖当前有效规格，其他规格仍为 3 倍。应用会清掉该展示 ID 的旧规格固定售价，页面明确提示；不改其他展示模型。
+- 复用同一个 aliases/fixedSales 配置版本，而非另建一套定价。快速配置绑定 supplier、quickSpec；普通配置页保留这些字段。公开 ID 用来新增或替换同 ID 配置。
+- SQLite 自动创建 `simulated_upstream(id,version,digest,acknowledged_at)`，并将 `user_version` 升级到 2。已有版本、草稿、报价不重置。应用和模拟 ACK 在同一事务；ACK 注入失败时连同版本、草稿、历史全部回退。
+- 普通应用和回滚也同步模拟 ACK。消费端真实读取已发布版本并冻结报价；回放幂等，新版本不修改旧报价。真实供应商、Router、用户钱包、生产服务均未接入。
+- 未发布普通草稿会阻止快速应用，防止覆盖管理员修改；冲突提示后可在完整定价页应用该草稿，或通过版本回滚清除草稿。
+
+### 新接口
+
+所有接口沿用本地管理口令鉴权和 Host/Origin 检查。
+
+|接口|请求 / 行为|
+|---|---|
+|GET `/v1/mvp/catalog`|供应商、实际模型 ID、EXT version、目录规格、来源和更新时间，`accountAvailabilityVerified=false`|
+|POST `/v1/mvp/preview`|`{publicId,label,supplier:"apimart",actualModel,upstreamVersion?,spec:{resolution,ratio,quality},saleCny?}`；只计算不保存|
+|POST `/v1/mvp/apply`|`{expectedVersion,expectedRevision,preset:上述请求}`；原子发布配置与模拟版本 ACK|
+|POST `/v1/mvp/simulate`|`{publicId,expectedVersion}` + `Idempotency-Key`；从已发布快速规格冻结报价，返回实际模型 payload；`realApiCalled=false`|
+
+回执包含 `simulated=true`、`productionApplied=false`、`upstream.realUpstreamApplied=false`。模拟确认不代表配置发送到了 APIMart；后续接真实 Router 时需要替换版本确认适配器。
+
+### 验收与回滚
+
+新增测试：`node node_modules/tsx/dist/cli.mjs services/pricing-service/tests/verify-quick.ts`。覆盖 450 项原生规格、人民币成本/精确三倍、手动/零售价、EXT、质量 cap、401、非法模型/规格、版本冲突、未发布草稿保护、ACK 故障事务回退、模拟消费与幂等冻结、重开数据库持久化和配置回滚。原 1800 项测试、TypeScript 检查、独立 bundle 构建均通过。
+
+模块记录与截图：`E:/Workspace/naumi/output/pricing-mvp-20261008/`。代码回滚可撤销本模块提交并重建 bundle；配置回滚优先用「版本记录」或现有 rollback.ts，自动同步模拟 ACK。新增表可保留，旧服务不读取它；不需要删除数据库。

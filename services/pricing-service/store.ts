@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { initialConfig, validateConfig, price, quoteSchema, type Catalog, type PricingConfig } from "./core";
+import { initialConfig, validateConfig, price, quoteSchema, prepareQuickPreset, type Catalog, type PricingConfig } from "./core";
 
 // Node 24 built-in SQLite; no extra driver, project .env or production DB access.
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite");
@@ -21,13 +21,15 @@ export class PricingStore {
       CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1),current_version INTEGER NOT NULL,draft TEXT NOT NULL,draft_revision INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS quotes(id TEXT PRIMARY KEY,idempotency_key TEXT UNIQUE NOT NULL,fingerprint TEXT NOT NULL,snapshot TEXT NOT NULL,result TEXT NOT NULL,created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT,action TEXT NOT NULL,actor TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL);
-      PRAGMA user_version=1;`);
+      CREATE TABLE IF NOT EXISTS simulated_upstream(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL,digest TEXT NOT NULL,acknowledged_at TEXT NOT NULL);
+      PRAGMA user_version=2;`);
     this.tx(() => {
       if (!this.db.prepare("SELECT 1 FROM state WHERE id=1").get()) {
         const config = initialConfig(this.catalog), now = new Date().toISOString();
         this.db.prepare("INSERT INTO versions VALUES(1,?,?,?,?,?)").run(JSON.stringify(config), digest(config), "首次独立初始化", "system", now);
         this.db.prepare("INSERT INTO state VALUES(1,1,?,1)").run(JSON.stringify(config));
       }
+      if (!this.db.prepare("SELECT 1 FROM simulated_upstream WHERE id=1").get()) this.acknowledge(this.snapshot());
     });
   }
   private tx<T>(fn: () => T): T { this.db.exec("BEGIN IMMEDIATE"); try { const r = fn(); this.db.exec("COMMIT"); return r; } catch (e) { this.db.exec("ROLLBACK"); throw e; } }
@@ -64,10 +66,28 @@ export class PricingStore {
     const version = this.db.prepare("SELECT MAX(version)+1 AS v FROM versions").get().v;
     this.db.prepare("INSERT INTO versions VALUES(?,?,?,?,?,?)").run(version, JSON.stringify(config), digest(config), reason, actor, new Date().toISOString());
     this.db.prepare("UPDATE state SET current_version=?,draft=?,draft_revision=draft_revision+1 WHERE id=1").run(version, JSON.stringify(config));
-    this.audit("apply", actor, reason); return this.snapshot();
+    const installed = this.snapshot(); this.acknowledge(installed);
+    this.audit("apply", actor, reason); return installed;
   }
   private audit(action: string, actor: string, reason: string) { this.db.prepare("INSERT INTO audit(action,actor,reason,created_at) VALUES(?,?,?,?)").run(action, actor, reason, new Date().toISOString()); }
   history() { return this.db.prepare("SELECT version,digest,reason,actor,created_at AS createdAt FROM versions ORDER BY version DESC LIMIT 100").all(); }
+  private acknowledge(snapshot: Snapshot) {
+    this.db.prepare("INSERT INTO simulated_upstream VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET version=excluded.version,digest=excluded.digest,acknowledged_at=excluded.acknowledged_at").run(snapshot.version, snapshot.digest, new Date().toISOString());
+  }
+  upstreamState() {
+    const row = this.db.prepare("SELECT version,digest,acknowledged_at AS acknowledgedAt FROM simulated_upstream WHERE id=1").get();
+    return { ...row, mode: "simulated", status: "acknowledged", productionApplied: false, realUpstreamApplied: false };
+  }
+  quickApply(input: unknown, expectedVersion: number, expectedRevision: number, actor: string) {
+    return this.tx(() => {
+      const current = this.snapshot(), draft = this.draft();
+      if (current.version !== expectedVersion || draft.revision !== expectedRevision) throw new ServiceError(409, "VERSION_CONFLICT", "配置已变化，请重新加载后预览");
+      if (digest(validateConfig(draft.config, this.catalog)) !== digest(validateConfig(current.config, this.catalog))) throw new ServiceError(409, "UNPUBLISHED_DRAFT", "存在未应用草稿，请先应用或回滚草稿，避免快速配置覆盖修改");
+      const prepared = prepareQuickPreset(current.config, this.catalog, input);
+      const published = this.install(prepared.config, `快速配置 ${prepared.preset.publicId}`, actor);
+      return { current: published, preview: prepared.preview, upstream: this.upstreamState(), productionApplied: false };
+    });
+  }
   freeze(input: unknown, key: string) {
     return this.tx(() => {
       const normalized = quoteSchema.parse(input);

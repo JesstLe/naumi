@@ -6,7 +6,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { PricingStore, ServiceError } from "./store";
-import { matrix, price } from "./core";
+import { matrix, price, prepareQuickPreset, quickPresetSchema, QUALITIES } from "./core";
 import { FEATURE_IDS } from "../../src/lib/billing/rules/registry";
 
 const dir = dirname(fileURLToPath(import.meta.url));
@@ -39,7 +39,29 @@ export function createPricingServer(store: PricingStore, token: string) {
         return res.end(readFileSync(resolve(dir, "public", name)));
       }
       if (!isAuthorized(req, token)) throw new ServiceError(401, "ADMIN_REQUIRED", "请先输入本地管理口令");
-      if (method === "GET" && u.pathname === "/v1/state") return json(res, 200, { current: store.snapshot(), draft: store.draft(), history: store.history(), features: FEATURE_IDS, sources: store.catalog.sources, catalogDate: store.catalog.checked_date, mode: "standalone-preview" });
+      if (method === "GET" && u.pathname === "/v1/state") return json(res, 200, { current: store.snapshot(), draft: store.draft(), history: store.history(), features: FEATURE_IDS, sources: store.catalog.sources, catalogDate: store.catalog.checked_date, upstream: store.upstreamState(), mode: "standalone-preview" });
+      if (method === "GET" && u.pathname === "/v1/mvp/catalog") {
+        const native = store.catalog.native.models.map(model => ({ model, label: model, specs: store.catalog.native.output_reference_matrix.map(s => ({ resolution: s.resolution.toUpperCase(), ratio: s.size, pixels: s.pixels })), qualities: QUALITIES }));
+        const ext = store.catalog.ext.versions.map(version => ({ model: "gpt-image-2.5-ext", version, label: `gpt-image-2.5-ext / ${version}`, specs: ["1K", "2K", "4K"].flatMap(resolution => store.catalog.ext.parameters.size.enum.filter(r => r !== "auto").map(ratio => ({ resolution, ratio, pixels: null }))), qualities: QUALITIES }));
+        return json(res, 200, { suppliers: [{ id: "apimart", name: "APIMart", models: [...native, ...ext] }], sources: store.catalog.sources, checkedDate: store.catalog.checked_date, source: "verified-local-catalog", accountAvailabilityVerified: false });
+      }
+      if (method === "POST" && u.pathname === "/v1/mvp/preview") return json(res, 200, { ...prepareQuickPreset(store.snapshot().config, store.catalog, await body(req)).preview, configVersion: store.snapshot().version });
+      if (method === "POST" && u.pathname === "/v1/mvp/apply") {
+        const b = z.strictObject({ expectedVersion: z.number().int().positive(), expectedRevision: z.number().int().positive(), preset: quickPresetSchema }).parse(await body(req));
+        return json(res, 200, store.quickApply(b.preset, b.expectedVersion, b.expectedRevision, "local-admin"));
+      }
+      if (method === "POST" && u.pathname === "/v1/mvp/simulate") {
+        const b = z.strictObject({ publicId: z.string(), expectedVersion: z.number().int().positive() }).parse(await body(req));
+        const key = req.headers["idempotency-key"];
+        if (typeof key !== "string" || !/^[a-zA-Z0-9._:-]{1,100}$/.test(key)) throw new ServiceError(400, "KEY_REQUIRED", "模拟请求需要幂等编号");
+        const s = store.snapshot();
+        if (s.version !== b.expectedVersion) throw new ServiceError(409, "VERSION_CONFLICT", "当前版本已变化，请重新加载");
+        const alias = s.config.aliases.find(a => a.publicId === b.publicId && a.enabled);
+        if (!alias?.quickSpec) throw new ServiceError(400, "QUICK_PRESET_REQUIRED", "请先应用快速配置");
+        const q = store.freeze({ publicId: alias.publicId, ...alias.quickSpec, quantity: 1 }, `mvp:${key}`);
+        return json(res, 200, { quote: q, upstream: store.upstreamState(), simulated: true, realApiCalled: false,
+          payload: { model: q.actualModel, ...(q.upstreamVersion ? { version: q.upstreamVersion } : {}), ...q.effective, n: 1 }, message: "模拟执行已读取发布版本；未发起真实生成" });
+      }
       if (method === "GET" && u.pathname === "/v1/matrix") { const s = store.snapshot(); return json(res, 200, { version: s.version, rows: matrix(s.config, store.catalog, u.searchParams.get("publicId") || s.config.aliases[0].publicId, u.searchParams.get("resolution") || undefined) }); }
       if (method === "GET" && u.pathname === "/v1/export") return json(res, 200, store.exportPackage());
       if (method === "GET" && u.pathname.startsWith("/v1/quotes/")) return json(res, 200, store.getQuote(u.pathname.slice(11)));
