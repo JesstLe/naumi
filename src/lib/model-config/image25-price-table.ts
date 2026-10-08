@@ -35,6 +35,17 @@ export type TableConversion = {
   creditsPerCnyMicros?: string;
   rounding?: "ceil" | "nearest" | "floor";
   modelVersion: number;
+  referenceOnly?: boolean;
+};
+// A visible fallback only for reference-table conversion. It is explicitly a
+// budget estimate until an administrator publishes a recharge or admin rate.
+export const IMAGE25_BUDGET_FX: TableConversion = {
+  rateMicros: "7000000",
+  basis: "budget",
+  evidence: "预算换算：1 USD = 7.000000 CNY（待管理员核验）",
+  updatedAt: "2026-10-08T00:00:00Z",
+  modelVersion: 1,
+  referenceOnly: true,
 };
 export function validTableConversion(value: TableConversion | null | undefined): TableConversion | null {
   if (!value || !value.evidence.trim() || !Number.isSafeInteger(value.modelVersion) || value.modelVersion < 1 || !Number.isFinite(Date.parse(value.updatedAt))) return null;
@@ -92,15 +103,23 @@ export function buildImage25PriceTable(): Image25PriceRow[] {
   });
 }
 export function image25TablePayload(conversion: TableConversion | null = null, conversionNotice = "") {
+  const validated = validTableConversion(conversion);
+  const rows = buildImage25PriceTable().map(row => ({ ...row,
+    prices: Object.fromEntries(IMAGE25_QUALITIES.map(q => [q, Object.fromEntries(IMAGE25_TIERS.map(tier => {
+      const cell = row.prices[q][tier];
+      return [tier, { ...cell, outputCny: priceTableConversion(cell.outputUsd, validated).cny, saleCny: priceTableConversion(cell.saleUsd, validated).cny }];
+    }))])) as Record<Image25Quality, Record<Image25Tier, Image25PriceCell & { outputCny: string | null; saleCny: string | null }>>,
+  }));
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    displayCurrency: "CNY" as const,
     sourceCheckedAt: reference.checked_date,
     sourceUrls: { pricing: reference.sources.pricing, native: reference.sources.native },
     models: IMAGE25_NATIVE_MODELS, qualities: IMAGE25_QUALITIES, tiers: IMAGE25_TIERS,
     multiplier: IMAGE25_SALE_MULTIPLIER, pricingBasis: "native-output-reference" as const,
     liveBillingChanged: false, accountTierVerified: false,
-    conversion: validTableConversion(conversion), conversionNotice,
-    rows: buildImage25PriceTable(),
+    conversion: validated, conversionNotice,
+    rows,
   };
 }
 export type Image25TablePayload = ReturnType<typeof image25TablePayload>;
