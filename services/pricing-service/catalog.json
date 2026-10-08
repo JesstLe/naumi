@@ -1,0 +1,2787 @@
+{
+  "checked_date": "2026-10-08",
+  "timezone": "Asia/Shanghai",
+  "evidence_scope": "public_ui_and_documentation_only",
+  "paid_requests_sent": 0,
+  "account_price_tier_verified": false,
+  "production_model_verified": false,
+  "sources": {
+    "detail": "https://apimart.ai/zh/model/gpt-image-2-5",
+    "pricing": "https://apimart.ai/zh/pricing",
+    "native": "https://docs.apimart.ai/cn/api-reference/images/gpt-image-2.5/generation",
+    "ext": "https://docs.apimart.ai/cn/api-reference/images/gpt-image-2.5-ext/generation",
+    "task": "https://docs.apimart.ai/cn/api-reference/tasks/status"
+  },
+  "endpoint": "POST https://api.apimart.ai/v1/images/generations",
+  "amount_encoding": "decimal_string",
+  "site_display_supplier_credits_per_usd": "10",
+  "naumi_credit_conversion_verified": false,
+  "cny_fx_verified": false,
+  "native": {
+    "models": [
+      "gpt-image-2.5-flare",
+      "gpt-image-2.5-sunburst"
+    ],
+    "parameters": {
+      "model": {
+        "type": "string",
+        "default": null,
+        "required": true,
+        "enum": [
+          "gpt-image-2.5-flare",
+          "gpt-image-2.5-sunburst"
+        ]
+      },
+      "prompt": {
+        "type": "string",
+        "default": null,
+        "required": true,
+        "max_length_documented": false
+      },
+      "size": {
+        "type": "string",
+        "default": "auto",
+        "required": false,
+        "enum": [
+          "auto",
+          "1:1",
+          "3:2",
+          "2:3",
+          "4:3",
+          "3:4",
+          "5:4",
+          "4:5",
+          "16:9",
+          "9:16",
+          "2:1",
+          "1:2",
+          "21:9",
+          "9:21",
+          "3:1",
+          "1:3"
+        ],
+        "custom_pixels": true
+      },
+      "resolution": {
+        "type": "string",
+        "default": "1k",
+        "required": false,
+        "enum": [
+          "1k",
+          "2k",
+          "4k"
+        ],
+        "ignored_with_exact_pixel_size": true
+      },
+      "quality": {
+        "type": "string",
+        "default": "auto",
+        "required": false,
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "auto"
+        ],
+        "auto_reserves": "max"
+      },
+      "n": {
+        "type": "integer",
+        "default": 1,
+        "required": false,
+        "minimum": 1,
+        "maximum": 4
+      },
+      "output_format": {
+        "type": "string",
+        "default": "png",
+        "required": false,
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ]
+      },
+      "output_compression": {
+        "type": "integer",
+        "default": null,
+        "required": false,
+        "minimum": 0,
+        "maximum": 100,
+        "applies_to": [
+          "jpeg",
+          "webp"
+        ]
+      },
+      "background": {
+        "type": "string",
+        "default": null,
+        "required": false,
+        "enum": [
+          "transparent",
+          "opaque",
+          "auto"
+        ],
+        "transparent_formats": [
+          "png",
+          "webp"
+        ]
+      },
+      "moderation": {
+        "type": "string",
+        "default": "low",
+        "required": false,
+        "enum": [
+          "auto",
+          "low"
+        ]
+      },
+      "image_urls": {
+        "type": "string[]",
+        "default": null,
+        "required": false,
+        "max_items": 16,
+        "input_formats": [
+          "public_http_url",
+          "public_https_url"
+        ],
+        "charges_input": true
+      },
+      "mask_url": {
+        "type": "string",
+        "default": null,
+        "required": false,
+        "requires": "image_urls",
+        "formats": [
+          "http_url",
+          "https_url",
+          "png_data_url"
+        ],
+        "first_reference_only": true,
+        "alpha_png": true,
+        "same_pixels_as_first_reference": true,
+        "transparent_alpha_zero_means_edit": true,
+        "size_guidance_conflict_mb": [
+          4,
+          50
+        ],
+        "conservative_max_mb": 4
+      }
+    },
+    "usd_per_million_tokens": {
+      "gold": {
+        "text_input_uncached": "4",
+        "text_input_cached": "1",
+        "image_input_uncached": "6.4",
+        "image_input_cached": "1.6",
+        "image_output": "24"
+      },
+      "platinum": {
+        "text_input_uncached": "3.8",
+        "text_input_cached": "0.95",
+        "image_input_uncached": "6.08",
+        "image_input_cached": "1.52",
+        "image_output": "22.8"
+      },
+      "diamond": {
+        "text_input_uncached": "3.6",
+        "text_input_cached": "0.9",
+        "image_input_uncached": "5.76",
+        "image_input_cached": "1.44",
+        "image_output": "21.6"
+      },
+      "site_official": {
+        "text_input_uncached": "5",
+        "text_input_cached": "1.25",
+        "image_input_uncached": "8",
+        "image_input_cached": "2",
+        "image_output": "30"
+      }
+    },
+    "supplier_credits_per_million_tokens": {
+      "gold": {
+        "text_input_uncached": "40",
+        "text_input_cached": "10",
+        "image_input_uncached": "64.0",
+        "image_input_cached": "16.0",
+        "image_output": "240"
+      },
+      "platinum": {
+        "text_input_uncached": "38.0",
+        "text_input_cached": "9.50",
+        "image_input_uncached": "60.80",
+        "image_input_cached": "15.20",
+        "image_output": "228.0"
+      },
+      "diamond": {
+        "text_input_uncached": "36.0",
+        "text_input_cached": "9.0",
+        "image_input_uncached": "57.60",
+        "image_input_cached": "14.40",
+        "image_output": "216.0"
+      },
+      "site_official": {
+        "text_input_uncached": "50",
+        "text_input_cached": "12.50",
+        "image_input_uncached": "80",
+        "image_input_cached": "20",
+        "image_output": "300"
+      }
+    },
+    "output_reference_matrix": [
+      {
+        "size": "1:1",
+        "resolution": "1k",
+        "pixels": "1024x1024",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 196,
+            "output_only_usd_estimate": {
+              "gold": "0.004704",
+              "platinum": "0.0044688",
+              "diamond": "0.0042336",
+              "site_official": "0.00588"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 439,
+            "output_only_usd_estimate": {
+              "gold": "0.010536",
+              "platinum": "0.0100092",
+              "diamond": "0.0094824",
+              "site_official": "0.01317"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1756,
+            "output_only_usd_estimate": {
+              "gold": "0.042144",
+              "platinum": "0.0400368",
+              "diamond": "0.0379296",
+              "site_official": "0.05268"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 3122,
+            "output_only_usd_estimate": {
+              "gold": "0.074928",
+              "platinum": "0.0711816",
+              "diamond": "0.0674352",
+              "site_official": "0.09366"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 7024,
+            "output_only_usd_estimate": {
+              "gold": "0.168576",
+              "platinum": "0.1601472",
+              "diamond": "0.1517184",
+              "site_official": "0.21072"
+            }
+          }
+        }
+      },
+      {
+        "size": "3:2",
+        "resolution": "1k",
+        "pixels": "1536x1024",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 158,
+            "output_only_usd_estimate": {
+              "gold": "0.003792",
+              "platinum": "0.0036024",
+              "diamond": "0.0034128",
+              "site_official": "0.00474"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 343,
+            "output_only_usd_estimate": {
+              "gold": "0.008232",
+              "platinum": "0.0078204",
+              "diamond": "0.0074088",
+              "site_official": "0.01029"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1372,
+            "output_only_usd_estimate": {
+              "gold": "0.032928",
+              "platinum": "0.0312816",
+              "diamond": "0.0296352",
+              "site_official": "0.04116"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2459,
+            "output_only_usd_estimate": {
+              "gold": "0.059016",
+              "platinum": "0.0560652",
+              "diamond": "0.0531144",
+              "site_official": "0.07377"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 5488,
+            "output_only_usd_estimate": {
+              "gold": "0.131712",
+              "platinum": "0.1251264",
+              "diamond": "0.1185408",
+              "site_official": "0.16464"
+            }
+          }
+        }
+      },
+      {
+        "size": "2:3",
+        "resolution": "1k",
+        "pixels": "1024x1536",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 158,
+            "output_only_usd_estimate": {
+              "gold": "0.003792",
+              "platinum": "0.0036024",
+              "diamond": "0.0034128",
+              "site_official": "0.00474"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 343,
+            "output_only_usd_estimate": {
+              "gold": "0.008232",
+              "platinum": "0.0078204",
+              "diamond": "0.0074088",
+              "site_official": "0.01029"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1372,
+            "output_only_usd_estimate": {
+              "gold": "0.032928",
+              "platinum": "0.0312816",
+              "diamond": "0.0296352",
+              "site_official": "0.04116"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2459,
+            "output_only_usd_estimate": {
+              "gold": "0.059016",
+              "platinum": "0.0560652",
+              "diamond": "0.0531144",
+              "site_official": "0.07377"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 5488,
+            "output_only_usd_estimate": {
+              "gold": "0.131712",
+              "platinum": "0.1251264",
+              "diamond": "0.1185408",
+              "site_official": "0.16464"
+            }
+          }
+        }
+      },
+      {
+        "size": "4:3",
+        "resolution": "1k",
+        "pixels": "1024x768",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 134,
+            "output_only_usd_estimate": {
+              "gold": "0.003216",
+              "platinum": "0.0030552",
+              "diamond": "0.0028944",
+              "site_official": "0.00402"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 301,
+            "output_only_usd_estimate": {
+              "gold": "0.007224",
+              "platinum": "0.0068628",
+              "diamond": "0.0065016",
+              "site_official": "0.00903"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1204,
+            "output_only_usd_estimate": {
+              "gold": "0.028896",
+              "platinum": "0.0274512",
+              "diamond": "0.0260064",
+              "site_official": "0.03612"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2140,
+            "output_only_usd_estimate": {
+              "gold": "0.05136",
+              "platinum": "0.048792",
+              "diamond": "0.046224",
+              "site_official": "0.0642"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 4815,
+            "output_only_usd_estimate": {
+              "gold": "0.11556",
+              "platinum": "0.109782",
+              "diamond": "0.104004",
+              "site_official": "0.14445"
+            }
+          }
+        }
+      },
+      {
+        "size": "3:4",
+        "resolution": "1k",
+        "pixels": "768x1024",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 134,
+            "output_only_usd_estimate": {
+              "gold": "0.003216",
+              "platinum": "0.0030552",
+              "diamond": "0.0028944",
+              "site_official": "0.00402"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 301,
+            "output_only_usd_estimate": {
+              "gold": "0.007224",
+              "platinum": "0.0068628",
+              "diamond": "0.0065016",
+              "site_official": "0.00903"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1204,
+            "output_only_usd_estimate": {
+              "gold": "0.028896",
+              "platinum": "0.0274512",
+              "diamond": "0.0260064",
+              "site_official": "0.03612"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2140,
+            "output_only_usd_estimate": {
+              "gold": "0.05136",
+              "platinum": "0.048792",
+              "diamond": "0.046224",
+              "site_official": "0.0642"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 4815,
+            "output_only_usd_estimate": {
+              "gold": "0.11556",
+              "platinum": "0.109782",
+              "diamond": "0.104004",
+              "site_official": "0.14445"
+            }
+          }
+        }
+      },
+      {
+        "size": "5:4",
+        "resolution": "1k",
+        "pixels": "1280x1024",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 173,
+            "output_only_usd_estimate": {
+              "gold": "0.004152",
+              "platinum": "0.0039444",
+              "diamond": "0.0037368",
+              "site_official": "0.00519"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 378,
+            "output_only_usd_estimate": {
+              "gold": "0.009072",
+              "platinum": "0.0086184",
+              "diamond": "0.0081648",
+              "site_official": "0.01134"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1510,
+            "output_only_usd_estimate": {
+              "gold": "0.03624",
+              "platinum": "0.034428",
+              "diamond": "0.032616",
+              "site_official": "0.0453"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2702,
+            "output_only_usd_estimate": {
+              "gold": "0.064848",
+              "platinum": "0.0616056",
+              "diamond": "0.0583632",
+              "site_official": "0.08106"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 6119,
+            "output_only_usd_estimate": {
+              "gold": "0.146856",
+              "platinum": "0.1395132",
+              "diamond": "0.1321704",
+              "site_official": "0.18357"
+            }
+          }
+        }
+      },
+      {
+        "size": "4:5",
+        "resolution": "1k",
+        "pixels": "1024x1280",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 173,
+            "output_only_usd_estimate": {
+              "gold": "0.004152",
+              "platinum": "0.0039444",
+              "diamond": "0.0037368",
+              "site_official": "0.00519"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 378,
+            "output_only_usd_estimate": {
+              "gold": "0.009072",
+              "platinum": "0.0086184",
+              "diamond": "0.0081648",
+              "site_official": "0.01134"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1510,
+            "output_only_usd_estimate": {
+              "gold": "0.03624",
+              "platinum": "0.034428",
+              "diamond": "0.032616",
+              "site_official": "0.0453"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2702,
+            "output_only_usd_estimate": {
+              "gold": "0.064848",
+              "platinum": "0.0616056",
+              "diamond": "0.0583632",
+              "site_official": "0.08106"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 6119,
+            "output_only_usd_estimate": {
+              "gold": "0.146856",
+              "platinum": "0.1395132",
+              "diamond": "0.1321704",
+              "site_official": "0.18357"
+            }
+          }
+        }
+      },
+      {
+        "size": "16:9",
+        "resolution": "1k",
+        "pixels": "1536x864",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 120,
+            "output_only_usd_estimate": {
+              "gold": "0.00288",
+              "platinum": "0.002736",
+              "diamond": "0.002592",
+              "site_official": "0.0036"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 280,
+            "output_only_usd_estimate": {
+              "gold": "0.00672",
+              "platinum": "0.006384",
+              "diamond": "0.006048",
+              "site_official": "0.0084"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1078,
+            "output_only_usd_estimate": {
+              "gold": "0.025872",
+              "platinum": "0.0245784",
+              "diamond": "0.0232848",
+              "site_official": "0.03234"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 1917,
+            "output_only_usd_estimate": {
+              "gold": "0.046008",
+              "platinum": "0.0437076",
+              "diamond": "0.0414072",
+              "site_official": "0.05751"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 4312,
+            "output_only_usd_estimate": {
+              "gold": "0.103488",
+              "platinum": "0.0983136",
+              "diamond": "0.0931392",
+              "site_official": "0.12936"
+            }
+          }
+        }
+      },
+      {
+        "size": "9:16",
+        "resolution": "1k",
+        "pixels": "864x1536",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 120,
+            "output_only_usd_estimate": {
+              "gold": "0.00288",
+              "platinum": "0.002736",
+              "diamond": "0.002592",
+              "site_official": "0.0036"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 280,
+            "output_only_usd_estimate": {
+              "gold": "0.00672",
+              "platinum": "0.006384",
+              "diamond": "0.006048",
+              "site_official": "0.0084"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1078,
+            "output_only_usd_estimate": {
+              "gold": "0.025872",
+              "platinum": "0.0245784",
+              "diamond": "0.0232848",
+              "site_official": "0.03234"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 1917,
+            "output_only_usd_estimate": {
+              "gold": "0.046008",
+              "platinum": "0.0437076",
+              "diamond": "0.0414072",
+              "site_official": "0.05751"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 4312,
+            "output_only_usd_estimate": {
+              "gold": "0.103488",
+              "platinum": "0.0983136",
+              "diamond": "0.0931392",
+              "site_official": "0.12936"
+            }
+          }
+        }
+      },
+      {
+        "size": "2:1",
+        "resolution": "1k",
+        "pixels": "2048x1024",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 132,
+            "output_only_usd_estimate": {
+              "gold": "0.003168",
+              "platinum": "0.0030096",
+              "diamond": "0.0028512",
+              "site_official": "0.00396"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 295,
+            "output_only_usd_estimate": {
+              "gold": "0.00708",
+              "platinum": "0.006726",
+              "diamond": "0.006372",
+              "site_official": "0.00885"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1180,
+            "output_only_usd_estimate": {
+              "gold": "0.02832",
+              "platinum": "0.026904",
+              "diamond": "0.025488",
+              "site_official": "0.0354"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2098,
+            "output_only_usd_estimate": {
+              "gold": "0.050352",
+              "platinum": "0.0478344",
+              "diamond": "0.0453168",
+              "site_official": "0.06294"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 4720,
+            "output_only_usd_estimate": {
+              "gold": "0.11328",
+              "platinum": "0.107616",
+              "diamond": "0.101952",
+              "site_official": "0.1416"
+            }
+          }
+        }
+      },
+      {
+        "size": "1:2",
+        "resolution": "1k",
+        "pixels": "1024x2048",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 132,
+            "output_only_usd_estimate": {
+              "gold": "0.003168",
+              "platinum": "0.0030096",
+              "diamond": "0.0028512",
+              "site_official": "0.00396"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 295,
+            "output_only_usd_estimate": {
+              "gold": "0.00708",
+              "platinum": "0.006726",
+              "diamond": "0.006372",
+              "site_official": "0.00885"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1180,
+            "output_only_usd_estimate": {
+              "gold": "0.02832",
+              "platinum": "0.026904",
+              "diamond": "0.025488",
+              "site_official": "0.0354"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2098,
+            "output_only_usd_estimate": {
+              "gold": "0.050352",
+              "platinum": "0.0478344",
+              "diamond": "0.0453168",
+              "site_official": "0.06294"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 4720,
+            "output_only_usd_estimate": {
+              "gold": "0.11328",
+              "platinum": "0.107616",
+              "diamond": "0.101952",
+              "site_official": "0.1416"
+            }
+          }
+        }
+      },
+      {
+        "size": "21:9",
+        "resolution": "1k",
+        "pixels": "2016x864",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 105,
+            "output_only_usd_estimate": {
+              "gold": "0.00252",
+              "platinum": "0.002394",
+              "diamond": "0.002268",
+              "site_official": "0.00315"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 225,
+            "output_only_usd_estimate": {
+              "gold": "0.0054",
+              "platinum": "0.00513",
+              "diamond": "0.00486",
+              "site_official": "0.00675"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 943,
+            "output_only_usd_estimate": {
+              "gold": "0.022632",
+              "platinum": "0.0215004",
+              "diamond": "0.0203688",
+              "site_official": "0.02829"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 1617,
+            "output_only_usd_estimate": {
+              "gold": "0.038808",
+              "platinum": "0.0368676",
+              "diamond": "0.0349272",
+              "site_official": "0.04851"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 3682,
+            "output_only_usd_estimate": {
+              "gold": "0.088368",
+              "platinum": "0.0839496",
+              "diamond": "0.0795312",
+              "site_official": "0.11046"
+            }
+          }
+        }
+      },
+      {
+        "size": "9:21",
+        "resolution": "1k",
+        "pixels": "864x2016",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 105,
+            "output_only_usd_estimate": {
+              "gold": "0.00252",
+              "platinum": "0.002394",
+              "diamond": "0.002268",
+              "site_official": "0.00315"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 225,
+            "output_only_usd_estimate": {
+              "gold": "0.0054",
+              "platinum": "0.00513",
+              "diamond": "0.00486",
+              "site_official": "0.00675"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 943,
+            "output_only_usd_estimate": {
+              "gold": "0.022632",
+              "platinum": "0.0215004",
+              "diamond": "0.0203688",
+              "site_official": "0.02829"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 1617,
+            "output_only_usd_estimate": {
+              "gold": "0.038808",
+              "platinum": "0.0368676",
+              "diamond": "0.0349272",
+              "site_official": "0.04851"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 3682,
+            "output_only_usd_estimate": {
+              "gold": "0.088368",
+              "platinum": "0.0839496",
+              "diamond": "0.0795312",
+              "site_official": "0.11046"
+            }
+          }
+        }
+      },
+      {
+        "size": "3:1",
+        "resolution": "1k",
+        "pixels": "1536x512",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 56,
+            "output_only_usd_estimate": {
+              "gold": "0.001344",
+              "platinum": "0.0012768",
+              "diamond": "0.0012096",
+              "site_official": "0.00168"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 134,
+            "output_only_usd_estimate": {
+              "gold": "0.003216",
+              "platinum": "0.0030552",
+              "diamond": "0.0028944",
+              "site_official": "0.00402"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 535,
+            "output_only_usd_estimate": {
+              "gold": "0.01284",
+              "platinum": "0.012198",
+              "diamond": "0.011556",
+              "site_official": "0.01605"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 937,
+            "output_only_usd_estimate": {
+              "gold": "0.022488",
+              "platinum": "0.0213636",
+              "diamond": "0.0202392",
+              "site_official": "0.02811"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 2140,
+            "output_only_usd_estimate": {
+              "gold": "0.05136",
+              "platinum": "0.048792",
+              "diamond": "0.046224",
+              "site_official": "0.0642"
+            }
+          }
+        }
+      },
+      {
+        "size": "1:3",
+        "resolution": "1k",
+        "pixels": "512x1536",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 56,
+            "output_only_usd_estimate": {
+              "gold": "0.001344",
+              "platinum": "0.0012768",
+              "diamond": "0.0012096",
+              "site_official": "0.00168"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 134,
+            "output_only_usd_estimate": {
+              "gold": "0.003216",
+              "platinum": "0.0030552",
+              "diamond": "0.0028944",
+              "site_official": "0.00402"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 535,
+            "output_only_usd_estimate": {
+              "gold": "0.01284",
+              "platinum": "0.012198",
+              "diamond": "0.011556",
+              "site_official": "0.01605"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 937,
+            "output_only_usd_estimate": {
+              "gold": "0.022488",
+              "platinum": "0.0213636",
+              "diamond": "0.0202392",
+              "site_official": "0.02811"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 2140,
+            "output_only_usd_estimate": {
+              "gold": "0.05136",
+              "platinum": "0.048792",
+              "diamond": "0.046224",
+              "site_official": "0.0642"
+            }
+          }
+        }
+      },
+      {
+        "size": "1:1",
+        "resolution": "2k",
+        "pixels": "2048x2048",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 397,
+            "output_only_usd_estimate": {
+              "gold": "0.009528",
+              "platinum": "0.0090516",
+              "diamond": "0.0085752",
+              "site_official": "0.01191"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 892,
+            "output_only_usd_estimate": {
+              "gold": "0.021408",
+              "platinum": "0.0203376",
+              "diamond": "0.0192672",
+              "site_official": "0.02676"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 3568,
+            "output_only_usd_estimate": {
+              "gold": "0.085632",
+              "platinum": "0.0813504",
+              "diamond": "0.0770688",
+              "site_official": "0.10704"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 6343,
+            "output_only_usd_estimate": {
+              "gold": "0.152232",
+              "platinum": "0.1446204",
+              "diamond": "0.1370088",
+              "site_official": "0.19029"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 14272,
+            "output_only_usd_estimate": {
+              "gold": "0.342528",
+              "platinum": "0.3254016",
+              "diamond": "0.3082752",
+              "site_official": "0.42816"
+            }
+          }
+        }
+      },
+      {
+        "size": "3:2",
+        "resolution": "2k",
+        "pixels": "2048x1360",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 211,
+            "output_only_usd_estimate": {
+              "gold": "0.005064",
+              "platinum": "0.0048108",
+              "diamond": "0.0045576",
+              "site_official": "0.00633"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 460,
+            "output_only_usd_estimate": {
+              "gold": "0.01104",
+              "platinum": "0.010488",
+              "diamond": "0.009936",
+              "site_official": "0.0138"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1838,
+            "output_only_usd_estimate": {
+              "gold": "0.044112",
+              "platinum": "0.0419064",
+              "diamond": "0.0397008",
+              "site_official": "0.05514"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 3216,
+            "output_only_usd_estimate": {
+              "gold": "0.077184",
+              "platinum": "0.0733248",
+              "diamond": "0.0694656",
+              "site_official": "0.09648"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 7351,
+            "output_only_usd_estimate": {
+              "gold": "0.176424",
+              "platinum": "0.1676028",
+              "diamond": "0.1587816",
+              "site_official": "0.22053"
+            }
+          }
+        }
+      },
+      {
+        "size": "2:3",
+        "resolution": "2k",
+        "pixels": "1360x2048",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 211,
+            "output_only_usd_estimate": {
+              "gold": "0.005064",
+              "platinum": "0.0048108",
+              "diamond": "0.0045576",
+              "site_official": "0.00633"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 460,
+            "output_only_usd_estimate": {
+              "gold": "0.01104",
+              "platinum": "0.010488",
+              "diamond": "0.009936",
+              "site_official": "0.0138"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1838,
+            "output_only_usd_estimate": {
+              "gold": "0.044112",
+              "platinum": "0.0419064",
+              "diamond": "0.0397008",
+              "site_official": "0.05514"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 3216,
+            "output_only_usd_estimate": {
+              "gold": "0.077184",
+              "platinum": "0.0733248",
+              "diamond": "0.0694656",
+              "site_official": "0.09648"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 7351,
+            "output_only_usd_estimate": {
+              "gold": "0.176424",
+              "platinum": "0.1676028",
+              "diamond": "0.1587816",
+              "site_official": "0.22053"
+            }
+          }
+        }
+      },
+      {
+        "size": "4:3",
+        "resolution": "2k",
+        "pixels": "2048x1536",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 247,
+            "output_only_usd_estimate": {
+              "gold": "0.005928",
+              "platinum": "0.0056316",
+              "diamond": "0.0053352",
+              "site_official": "0.00741"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 556,
+            "output_only_usd_estimate": {
+              "gold": "0.013344",
+              "platinum": "0.0126768",
+              "diamond": "0.0120096",
+              "site_official": "0.01668"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 2223,
+            "output_only_usd_estimate": {
+              "gold": "0.053352",
+              "platinum": "0.0506844",
+              "diamond": "0.0480168",
+              "site_official": "0.06669"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 3952,
+            "output_only_usd_estimate": {
+              "gold": "0.094848",
+              "platinum": "0.0901056",
+              "diamond": "0.0853632",
+              "site_official": "0.11856"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 8892,
+            "output_only_usd_estimate": {
+              "gold": "0.213408",
+              "platinum": "0.2027376",
+              "diamond": "0.1920672",
+              "site_official": "0.26676"
+            }
+          }
+        }
+      },
+      {
+        "size": "3:4",
+        "resolution": "2k",
+        "pixels": "1536x2048",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 247,
+            "output_only_usd_estimate": {
+              "gold": "0.005928",
+              "platinum": "0.0056316",
+              "diamond": "0.0053352",
+              "site_official": "0.00741"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 556,
+            "output_only_usd_estimate": {
+              "gold": "0.013344",
+              "platinum": "0.0126768",
+              "diamond": "0.0120096",
+              "site_official": "0.01668"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 2223,
+            "output_only_usd_estimate": {
+              "gold": "0.053352",
+              "platinum": "0.0506844",
+              "diamond": "0.0480168",
+              "site_official": "0.06669"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 3952,
+            "output_only_usd_estimate": {
+              "gold": "0.094848",
+              "platinum": "0.0901056",
+              "diamond": "0.0853632",
+              "site_official": "0.11856"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 8892,
+            "output_only_usd_estimate": {
+              "gold": "0.213408",
+              "platinum": "0.2027376",
+              "diamond": "0.1920672",
+              "site_official": "0.26676"
+            }
+          }
+        }
+      },
+      {
+        "size": "5:4",
+        "resolution": "2k",
+        "pixels": "2560x2048",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 377,
+            "output_only_usd_estimate": {
+              "gold": "0.009048",
+              "platinum": "0.0085956",
+              "diamond": "0.0081432",
+              "site_official": "0.01131"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 826,
+            "output_only_usd_estimate": {
+              "gold": "0.019824",
+              "platinum": "0.0188328",
+              "diamond": "0.0178416",
+              "site_official": "0.02478"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 3303,
+            "output_only_usd_estimate": {
+              "gold": "0.079272",
+              "platinum": "0.0753084",
+              "diamond": "0.0713448",
+              "site_official": "0.09909"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 5911,
+            "output_only_usd_estimate": {
+              "gold": "0.141864",
+              "platinum": "0.1347708",
+              "diamond": "0.1276776",
+              "site_official": "0.17733"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 13385,
+            "output_only_usd_estimate": {
+              "gold": "0.32124",
+              "platinum": "0.305178",
+              "diamond": "0.289116",
+              "site_official": "0.40155"
+            }
+          }
+        }
+      },
+      {
+        "size": "4:5",
+        "resolution": "2k",
+        "pixels": "2048x2560",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 377,
+            "output_only_usd_estimate": {
+              "gold": "0.009048",
+              "platinum": "0.0085956",
+              "diamond": "0.0081432",
+              "site_official": "0.01131"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 826,
+            "output_only_usd_estimate": {
+              "gold": "0.019824",
+              "platinum": "0.0188328",
+              "diamond": "0.0178416",
+              "site_official": "0.02478"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 3303,
+            "output_only_usd_estimate": {
+              "gold": "0.079272",
+              "platinum": "0.0753084",
+              "diamond": "0.0713448",
+              "site_official": "0.09909"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 5911,
+            "output_only_usd_estimate": {
+              "gold": "0.141864",
+              "platinum": "0.1347708",
+              "diamond": "0.1276776",
+              "site_official": "0.17733"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 13385,
+            "output_only_usd_estimate": {
+              "gold": "0.32124",
+              "platinum": "0.305178",
+              "diamond": "0.289116",
+              "site_official": "0.40155"
+            }
+          }
+        }
+      },
+      {
+        "size": "16:9",
+        "resolution": "2k",
+        "pixels": "2048x1152",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 157,
+            "output_only_usd_estimate": {
+              "gold": "0.003768",
+              "platinum": "0.0035796",
+              "diamond": "0.0033912",
+              "site_official": "0.00471"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 367,
+            "output_only_usd_estimate": {
+              "gold": "0.008808",
+              "platinum": "0.0083676",
+              "diamond": "0.0079272",
+              "site_official": "0.01101"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1413,
+            "output_only_usd_estimate": {
+              "gold": "0.033912",
+              "platinum": "0.0322164",
+              "diamond": "0.0305208",
+              "site_official": "0.04239"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2511,
+            "output_only_usd_estimate": {
+              "gold": "0.060264",
+              "platinum": "0.0572508",
+              "diamond": "0.0542376",
+              "site_official": "0.07533"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 5650,
+            "output_only_usd_estimate": {
+              "gold": "0.1356",
+              "platinum": "0.12882",
+              "diamond": "0.12204",
+              "site_official": "0.1695"
+            }
+          }
+        }
+      },
+      {
+        "size": "9:16",
+        "resolution": "2k",
+        "pixels": "1152x2048",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 157,
+            "output_only_usd_estimate": {
+              "gold": "0.003768",
+              "platinum": "0.0035796",
+              "diamond": "0.0033912",
+              "site_official": "0.00471"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 367,
+            "output_only_usd_estimate": {
+              "gold": "0.008808",
+              "platinum": "0.0083676",
+              "diamond": "0.0079272",
+              "site_official": "0.01101"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1413,
+            "output_only_usd_estimate": {
+              "gold": "0.033912",
+              "platinum": "0.0322164",
+              "diamond": "0.0305208",
+              "site_official": "0.04239"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2511,
+            "output_only_usd_estimate": {
+              "gold": "0.060264",
+              "platinum": "0.0572508",
+              "diamond": "0.0542376",
+              "site_official": "0.07533"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 5650,
+            "output_only_usd_estimate": {
+              "gold": "0.1356",
+              "platinum": "0.12882",
+              "diamond": "0.12204",
+              "site_official": "0.1695"
+            }
+          }
+        }
+      },
+      {
+        "size": "2:1",
+        "resolution": "2k",
+        "pixels": "2688x1344",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 180,
+            "output_only_usd_estimate": {
+              "gold": "0.00432",
+              "platinum": "0.004104",
+              "diamond": "0.003888",
+              "site_official": "0.0054"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 405,
+            "output_only_usd_estimate": {
+              "gold": "0.00972",
+              "platinum": "0.009234",
+              "diamond": "0.008748",
+              "site_official": "0.01215"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1617,
+            "output_only_usd_estimate": {
+              "gold": "0.038808",
+              "platinum": "0.0368676",
+              "diamond": "0.0349272",
+              "site_official": "0.04851"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2874,
+            "output_only_usd_estimate": {
+              "gold": "0.068976",
+              "platinum": "0.0655272",
+              "diamond": "0.0620784",
+              "site_official": "0.08622"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 6466,
+            "output_only_usd_estimate": {
+              "gold": "0.155184",
+              "platinum": "0.1474248",
+              "diamond": "0.1396656",
+              "site_official": "0.19398"
+            }
+          }
+        }
+      },
+      {
+        "size": "1:2",
+        "resolution": "2k",
+        "pixels": "1344x2688",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 180,
+            "output_only_usd_estimate": {
+              "gold": "0.00432",
+              "platinum": "0.004104",
+              "diamond": "0.003888",
+              "site_official": "0.0054"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 405,
+            "output_only_usd_estimate": {
+              "gold": "0.00972",
+              "platinum": "0.009234",
+              "diamond": "0.008748",
+              "site_official": "0.01215"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1617,
+            "output_only_usd_estimate": {
+              "gold": "0.038808",
+              "platinum": "0.0368676",
+              "diamond": "0.0349272",
+              "site_official": "0.04851"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2874,
+            "output_only_usd_estimate": {
+              "gold": "0.068976",
+              "platinum": "0.0655272",
+              "diamond": "0.0620784",
+              "site_official": "0.08622"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 6466,
+            "output_only_usd_estimate": {
+              "gold": "0.155184",
+              "platinum": "0.1474248",
+              "diamond": "0.1396656",
+              "site_official": "0.19398"
+            }
+          }
+        }
+      },
+      {
+        "size": "21:9",
+        "resolution": "2k",
+        "pixels": "2688x1152",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 143,
+            "output_only_usd_estimate": {
+              "gold": "0.003432",
+              "platinum": "0.0032604",
+              "diamond": "0.0030888",
+              "site_official": "0.00429"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 306,
+            "output_only_usd_estimate": {
+              "gold": "0.007344",
+              "platinum": "0.0069768",
+              "diamond": "0.0066096",
+              "site_official": "0.00918"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1285,
+            "output_only_usd_estimate": {
+              "gold": "0.03084",
+              "platinum": "0.029298",
+              "diamond": "0.027756",
+              "site_official": "0.03855"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2202,
+            "output_only_usd_estimate": {
+              "gold": "0.052848",
+              "platinum": "0.0502056",
+              "diamond": "0.0475632",
+              "site_official": "0.06606"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 5016,
+            "output_only_usd_estimate": {
+              "gold": "0.120384",
+              "platinum": "0.1143648",
+              "diamond": "0.1083456",
+              "site_official": "0.15048"
+            }
+          }
+        }
+      },
+      {
+        "size": "9:21",
+        "resolution": "2k",
+        "pixels": "1152x2688",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 143,
+            "output_only_usd_estimate": {
+              "gold": "0.003432",
+              "platinum": "0.0032604",
+              "diamond": "0.0030888",
+              "site_official": "0.00429"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 306,
+            "output_only_usd_estimate": {
+              "gold": "0.007344",
+              "platinum": "0.0069768",
+              "diamond": "0.0066096",
+              "site_official": "0.00918"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1285,
+            "output_only_usd_estimate": {
+              "gold": "0.03084",
+              "platinum": "0.029298",
+              "diamond": "0.027756",
+              "site_official": "0.03855"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2202,
+            "output_only_usd_estimate": {
+              "gold": "0.052848",
+              "platinum": "0.0502056",
+              "diamond": "0.0475632",
+              "site_official": "0.06606"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 5016,
+            "output_only_usd_estimate": {
+              "gold": "0.120384",
+              "platinum": "0.1143648",
+              "diamond": "0.1083456",
+              "site_official": "0.15048"
+            }
+          }
+        }
+      },
+      {
+        "size": "3:1",
+        "resolution": "2k",
+        "pixels": "3072x1024",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 103,
+            "output_only_usd_estimate": {
+              "gold": "0.002472",
+              "platinum": "0.0023484",
+              "diamond": "0.0022248",
+              "site_official": "0.00309"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 247,
+            "output_only_usd_estimate": {
+              "gold": "0.005928",
+              "platinum": "0.0056316",
+              "diamond": "0.0053352",
+              "site_official": "0.00741"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 988,
+            "output_only_usd_estimate": {
+              "gold": "0.023712",
+              "platinum": "0.0225264",
+              "diamond": "0.0213408",
+              "site_official": "0.02964"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 1729,
+            "output_only_usd_estimate": {
+              "gold": "0.041496",
+              "platinum": "0.0394212",
+              "diamond": "0.0373464",
+              "site_official": "0.05187"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 3952,
+            "output_only_usd_estimate": {
+              "gold": "0.094848",
+              "platinum": "0.0901056",
+              "diamond": "0.0853632",
+              "site_official": "0.11856"
+            }
+          }
+        }
+      },
+      {
+        "size": "1:3",
+        "resolution": "2k",
+        "pixels": "1024x3072",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 103,
+            "output_only_usd_estimate": {
+              "gold": "0.002472",
+              "platinum": "0.0023484",
+              "diamond": "0.0022248",
+              "site_official": "0.00309"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 247,
+            "output_only_usd_estimate": {
+              "gold": "0.005928",
+              "platinum": "0.0056316",
+              "diamond": "0.0053352",
+              "site_official": "0.00741"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 988,
+            "output_only_usd_estimate": {
+              "gold": "0.023712",
+              "platinum": "0.0225264",
+              "diamond": "0.0213408",
+              "site_official": "0.02964"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 1729,
+            "output_only_usd_estimate": {
+              "gold": "0.041496",
+              "platinum": "0.0394212",
+              "diamond": "0.0373464",
+              "site_official": "0.05187"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 3952,
+            "output_only_usd_estimate": {
+              "gold": "0.094848",
+              "platinum": "0.0901056",
+              "diamond": "0.0853632",
+              "site_official": "0.11856"
+            }
+          }
+        }
+      },
+      {
+        "size": "1:1",
+        "resolution": "4k",
+        "pixels": "2880x2880",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 659,
+            "output_only_usd_estimate": {
+              "gold": "0.015816",
+              "platinum": "0.0150252",
+              "diamond": "0.0142344",
+              "site_official": "0.01977"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 1483,
+            "output_only_usd_estimate": {
+              "gold": "0.035592",
+              "platinum": "0.0338124",
+              "diamond": "0.0320328",
+              "site_official": "0.04449"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 5930,
+            "output_only_usd_estimate": {
+              "gold": "0.14232",
+              "platinum": "0.135204",
+              "diamond": "0.128088",
+              "site_official": "0.1779"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 10542,
+            "output_only_usd_estimate": {
+              "gold": "0.253008",
+              "platinum": "0.2403576",
+              "diamond": "0.2277072",
+              "site_official": "0.31626"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 23719,
+            "output_only_usd_estimate": {
+              "gold": "0.569256",
+              "platinum": "0.5407932",
+              "diamond": "0.5123304",
+              "site_official": "0.71157"
+            }
+          }
+        }
+      },
+      {
+        "size": "3:2",
+        "resolution": "4k",
+        "pixels": "3520x2336",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 450,
+            "output_only_usd_estimate": {
+              "gold": "0.0108",
+              "platinum": "0.01026",
+              "diamond": "0.00972",
+              "site_official": "0.0135"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 982,
+            "output_only_usd_estimate": {
+              "gold": "0.023568",
+              "platinum": "0.0223896",
+              "diamond": "0.0212112",
+              "site_official": "0.02946"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 3926,
+            "output_only_usd_estimate": {
+              "gold": "0.094224",
+              "platinum": "0.0895128",
+              "diamond": "0.0848016",
+              "site_official": "0.11778"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 6870,
+            "output_only_usd_estimate": {
+              "gold": "0.16488",
+              "platinum": "0.156636",
+              "diamond": "0.148392",
+              "site_official": "0.2061"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 15703,
+            "output_only_usd_estimate": {
+              "gold": "0.376872",
+              "platinum": "0.3580284",
+              "diamond": "0.3391848",
+              "site_official": "0.47109"
+            }
+          }
+        }
+      },
+      {
+        "size": "2:3",
+        "resolution": "4k",
+        "pixels": "2336x3520",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 450,
+            "output_only_usd_estimate": {
+              "gold": "0.0108",
+              "platinum": "0.01026",
+              "diamond": "0.00972",
+              "site_official": "0.0135"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 982,
+            "output_only_usd_estimate": {
+              "gold": "0.023568",
+              "platinum": "0.0223896",
+              "diamond": "0.0212112",
+              "site_official": "0.02946"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 3926,
+            "output_only_usd_estimate": {
+              "gold": "0.094224",
+              "platinum": "0.0895128",
+              "diamond": "0.0848016",
+              "site_official": "0.11778"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 6870,
+            "output_only_usd_estimate": {
+              "gold": "0.16488",
+              "platinum": "0.156636",
+              "diamond": "0.148392",
+              "site_official": "0.2061"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 15703,
+            "output_only_usd_estimate": {
+              "gold": "0.376872",
+              "platinum": "0.3580284",
+              "diamond": "0.3391848",
+              "site_official": "0.47109"
+            }
+          }
+        }
+      },
+      {
+        "size": "4:3",
+        "resolution": "4k",
+        "pixels": "3312x2480",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 491,
+            "output_only_usd_estimate": {
+              "gold": "0.011784",
+              "platinum": "0.0111948",
+              "diamond": "0.0106056",
+              "site_official": "0.01473"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 1104,
+            "output_only_usd_estimate": {
+              "gold": "0.026496",
+              "platinum": "0.0251712",
+              "diamond": "0.0238464",
+              "site_official": "0.03312"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 4413,
+            "output_only_usd_estimate": {
+              "gold": "0.105912",
+              "platinum": "0.1006164",
+              "diamond": "0.0953208",
+              "site_official": "0.13239"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 7845,
+            "output_only_usd_estimate": {
+              "gold": "0.18828",
+              "platinum": "0.178866",
+              "diamond": "0.169452",
+              "site_official": "0.23535"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 17650,
+            "output_only_usd_estimate": {
+              "gold": "0.4236",
+              "platinum": "0.40242",
+              "diamond": "0.38124",
+              "site_official": "0.5295"
+            }
+          }
+        }
+      },
+      {
+        "size": "3:4",
+        "resolution": "4k",
+        "pixels": "2480x3312",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 491,
+            "output_only_usd_estimate": {
+              "gold": "0.011784",
+              "platinum": "0.0111948",
+              "diamond": "0.0106056",
+              "site_official": "0.01473"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 1104,
+            "output_only_usd_estimate": {
+              "gold": "0.026496",
+              "platinum": "0.0251712",
+              "diamond": "0.0238464",
+              "site_official": "0.03312"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 4413,
+            "output_only_usd_estimate": {
+              "gold": "0.105912",
+              "platinum": "0.1006164",
+              "diamond": "0.0953208",
+              "site_official": "0.13239"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 7845,
+            "output_only_usd_estimate": {
+              "gold": "0.18828",
+              "platinum": "0.178866",
+              "diamond": "0.169452",
+              "site_official": "0.23535"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 17650,
+            "output_only_usd_estimate": {
+              "gold": "0.4236",
+              "platinum": "0.40242",
+              "diamond": "0.38124",
+              "site_official": "0.5295"
+            }
+          }
+        }
+      },
+      {
+        "size": "5:4",
+        "resolution": "4k",
+        "pixels": "3216x2576",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 535,
+            "output_only_usd_estimate": {
+              "gold": "0.01284",
+              "platinum": "0.012198",
+              "diamond": "0.011556",
+              "site_official": "0.01605"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 1173,
+            "output_only_usd_estimate": {
+              "gold": "0.028152",
+              "platinum": "0.0267444",
+              "diamond": "0.0253368",
+              "site_official": "0.03519"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 4690,
+            "output_only_usd_estimate": {
+              "gold": "0.11256",
+              "platinum": "0.106932",
+              "diamond": "0.101304",
+              "site_official": "0.1407"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 8393,
+            "output_only_usd_estimate": {
+              "gold": "0.201432",
+              "platinum": "0.1913604",
+              "diamond": "0.1812888",
+              "site_official": "0.25179"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 19006,
+            "output_only_usd_estimate": {
+              "gold": "0.456144",
+              "platinum": "0.4333368",
+              "diamond": "0.4105296",
+              "site_official": "0.57018"
+            }
+          }
+        }
+      },
+      {
+        "size": "4:5",
+        "resolution": "4k",
+        "pixels": "2576x3216",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 535,
+            "output_only_usd_estimate": {
+              "gold": "0.01284",
+              "platinum": "0.012198",
+              "diamond": "0.011556",
+              "site_official": "0.01605"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 1173,
+            "output_only_usd_estimate": {
+              "gold": "0.028152",
+              "platinum": "0.0267444",
+              "diamond": "0.0253368",
+              "site_official": "0.03519"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 4690,
+            "output_only_usd_estimate": {
+              "gold": "0.11256",
+              "platinum": "0.106932",
+              "diamond": "0.101304",
+              "site_official": "0.1407"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 8393,
+            "output_only_usd_estimate": {
+              "gold": "0.201432",
+              "platinum": "0.1913604",
+              "diamond": "0.1812888",
+              "site_official": "0.25179"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 19006,
+            "output_only_usd_estimate": {
+              "gold": "0.456144",
+              "platinum": "0.4333368",
+              "diamond": "0.4105296",
+              "site_official": "0.57018"
+            }
+          }
+        }
+      },
+      {
+        "size": "16:9",
+        "resolution": "4k",
+        "pixels": "3840x2160",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 371,
+            "output_only_usd_estimate": {
+              "gold": "0.008904",
+              "platinum": "0.0084588",
+              "diamond": "0.0080136",
+              "site_official": "0.01113"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 865,
+            "output_only_usd_estimate": {
+              "gold": "0.02076",
+              "platinum": "0.019722",
+              "diamond": "0.018684",
+              "site_official": "0.02595"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 3336,
+            "output_only_usd_estimate": {
+              "gold": "0.080064",
+              "platinum": "0.0760608",
+              "diamond": "0.0720576",
+              "site_official": "0.10008"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 5930,
+            "output_only_usd_estimate": {
+              "gold": "0.14232",
+              "platinum": "0.135204",
+              "diamond": "0.128088",
+              "site_official": "0.1779"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 13342,
+            "output_only_usd_estimate": {
+              "gold": "0.320208",
+              "platinum": "0.3041976",
+              "diamond": "0.2881872",
+              "site_official": "0.40026"
+            }
+          }
+        }
+      },
+      {
+        "size": "9:16",
+        "resolution": "4k",
+        "pixels": "2160x3840",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 371,
+            "output_only_usd_estimate": {
+              "gold": "0.008904",
+              "platinum": "0.0084588",
+              "diamond": "0.0080136",
+              "site_official": "0.01113"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 865,
+            "output_only_usd_estimate": {
+              "gold": "0.02076",
+              "platinum": "0.019722",
+              "diamond": "0.018684",
+              "site_official": "0.02595"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 3336,
+            "output_only_usd_estimate": {
+              "gold": "0.080064",
+              "platinum": "0.0760608",
+              "diamond": "0.0720576",
+              "site_official": "0.10008"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 5930,
+            "output_only_usd_estimate": {
+              "gold": "0.14232",
+              "platinum": "0.135204",
+              "diamond": "0.128088",
+              "site_official": "0.1779"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 13342,
+            "output_only_usd_estimate": {
+              "gold": "0.320208",
+              "platinum": "0.3041976",
+              "diamond": "0.2881872",
+              "site_official": "0.40026"
+            }
+          }
+        }
+      },
+      {
+        "size": "2:1",
+        "resolution": "4k",
+        "pixels": "3840x1920",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 300,
+            "output_only_usd_estimate": {
+              "gold": "0.0072",
+              "platinum": "0.00684",
+              "diamond": "0.00648",
+              "site_official": "0.009"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 675,
+            "output_only_usd_estimate": {
+              "gold": "0.0162",
+              "platinum": "0.01539",
+              "diamond": "0.01458",
+              "site_official": "0.02025"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 2700,
+            "output_only_usd_estimate": {
+              "gold": "0.0648",
+              "platinum": "0.06156",
+              "diamond": "0.05832",
+              "site_official": "0.081"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 4799,
+            "output_only_usd_estimate": {
+              "gold": "0.115176",
+              "platinum": "0.1094172",
+              "diamond": "0.1036584",
+              "site_official": "0.14397"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 10798,
+            "output_only_usd_estimate": {
+              "gold": "0.259152",
+              "platinum": "0.2461944",
+              "diamond": "0.2332368",
+              "site_official": "0.32394"
+            }
+          }
+        }
+      },
+      {
+        "size": "1:2",
+        "resolution": "4k",
+        "pixels": "1920x3840",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 300,
+            "output_only_usd_estimate": {
+              "gold": "0.0072",
+              "platinum": "0.00684",
+              "diamond": "0.00648",
+              "site_official": "0.009"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 675,
+            "output_only_usd_estimate": {
+              "gold": "0.0162",
+              "platinum": "0.01539",
+              "diamond": "0.01458",
+              "site_official": "0.02025"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 2700,
+            "output_only_usd_estimate": {
+              "gold": "0.0648",
+              "platinum": "0.06156",
+              "diamond": "0.05832",
+              "site_official": "0.081"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 4799,
+            "output_only_usd_estimate": {
+              "gold": "0.115176",
+              "platinum": "0.1094172",
+              "diamond": "0.1036584",
+              "site_official": "0.14397"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 10798,
+            "output_only_usd_estimate": {
+              "gold": "0.259152",
+              "platinum": "0.2461944",
+              "diamond": "0.2332368",
+              "site_official": "0.32394"
+            }
+          }
+        }
+      },
+      {
+        "size": "21:9",
+        "resolution": "4k",
+        "pixels": "3840x1648",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 234,
+            "output_only_usd_estimate": {
+              "gold": "0.005616",
+              "platinum": "0.0053352",
+              "diamond": "0.0050544",
+              "site_official": "0.00702"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 500,
+            "output_only_usd_estimate": {
+              "gold": "0.012",
+              "platinum": "0.0114",
+              "diamond": "0.0108",
+              "site_official": "0.015"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 2099,
+            "output_only_usd_estimate": {
+              "gold": "0.050376",
+              "platinum": "0.0478572",
+              "diamond": "0.0453384",
+              "site_official": "0.06297"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 3598,
+            "output_only_usd_estimate": {
+              "gold": "0.086352",
+              "platinum": "0.0820344",
+              "diamond": "0.0777168",
+              "site_official": "0.10794"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 8196,
+            "output_only_usd_estimate": {
+              "gold": "0.196704",
+              "platinum": "0.1868688",
+              "diamond": "0.1770336",
+              "site_official": "0.24588"
+            }
+          }
+        }
+      },
+      {
+        "size": "9:21",
+        "resolution": "4k",
+        "pixels": "1648x3840",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 234,
+            "output_only_usd_estimate": {
+              "gold": "0.005616",
+              "platinum": "0.0053352",
+              "diamond": "0.0050544",
+              "site_official": "0.00702"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 500,
+            "output_only_usd_estimate": {
+              "gold": "0.012",
+              "platinum": "0.0114",
+              "diamond": "0.0108",
+              "site_official": "0.015"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 2099,
+            "output_only_usd_estimate": {
+              "gold": "0.050376",
+              "platinum": "0.0478572",
+              "diamond": "0.0453384",
+              "site_official": "0.06297"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 3598,
+            "output_only_usd_estimate": {
+              "gold": "0.086352",
+              "platinum": "0.0820344",
+              "diamond": "0.0777168",
+              "site_official": "0.10794"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 8196,
+            "output_only_usd_estimate": {
+              "gold": "0.196704",
+              "platinum": "0.1868688",
+              "diamond": "0.1770336",
+              "site_official": "0.24588"
+            }
+          }
+        }
+      },
+      {
+        "size": "3:1",
+        "resolution": "4k",
+        "pixels": "3840x1280",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 139,
+            "output_only_usd_estimate": {
+              "gold": "0.003336",
+              "platinum": "0.0031692",
+              "diamond": "0.0030024",
+              "site_official": "0.00417"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 332,
+            "output_only_usd_estimate": {
+              "gold": "0.007968",
+              "platinum": "0.0075696",
+              "diamond": "0.0071712",
+              "site_official": "0.00996"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1328,
+            "output_only_usd_estimate": {
+              "gold": "0.031872",
+              "platinum": "0.0302784",
+              "diamond": "0.0286848",
+              "site_official": "0.03984"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2324,
+            "output_only_usd_estimate": {
+              "gold": "0.055776",
+              "platinum": "0.0529872",
+              "diamond": "0.0501984",
+              "site_official": "0.06972"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 5311,
+            "output_only_usd_estimate": {
+              "gold": "0.127464",
+              "platinum": "0.1210908",
+              "diamond": "0.1147176",
+              "site_official": "0.15933"
+            }
+          }
+        }
+      },
+      {
+        "size": "1:3",
+        "resolution": "4k",
+        "pixels": "1280x3840",
+        "qualities": {
+          "low": {
+            "output_tokens_reference": 139,
+            "output_only_usd_estimate": {
+              "gold": "0.003336",
+              "platinum": "0.0031692",
+              "diamond": "0.0030024",
+              "site_official": "0.00417"
+            }
+          },
+          "medium": {
+            "output_tokens_reference": 332,
+            "output_only_usd_estimate": {
+              "gold": "0.007968",
+              "platinum": "0.0075696",
+              "diamond": "0.0071712",
+              "site_official": "0.00996"
+            }
+          },
+          "high": {
+            "output_tokens_reference": 1328,
+            "output_only_usd_estimate": {
+              "gold": "0.031872",
+              "platinum": "0.0302784",
+              "diamond": "0.0286848",
+              "site_official": "0.03984"
+            }
+          },
+          "xhigh": {
+            "output_tokens_reference": 2324,
+            "output_only_usd_estimate": {
+              "gold": "0.055776",
+              "platinum": "0.0529872",
+              "diamond": "0.0501984",
+              "site_official": "0.06972"
+            }
+          },
+          "max": {
+            "output_tokens_reference": 5311,
+            "output_only_usd_estimate": {
+              "gold": "0.127464",
+              "platinum": "0.1210908",
+              "diamond": "0.1147176",
+              "site_official": "0.15933"
+            }
+          }
+        }
+      }
+    ],
+    "matrix_scope": "output_only_estimate_excluding_prompt_and_reference_inputs",
+    "auto_or_custom_pixel_fixed_token_reference_available": false,
+    "custom_pixel_constraints": {
+      "both_sides_multiple_of": 16,
+      "max_side": 3840,
+      "min_area": 655360,
+      "max_area": 8294400,
+      "max_aspect_ratio": "3:1",
+      "experimental_above": "2560x1440"
+    },
+    "remote_download_defaults": {
+      "max_mb": 20,
+      "timeout_seconds": 60,
+      "deployment_may_override": true
+    },
+    "partial_image_streaming": false
+  },
+  "ext": {
+    "model": "gpt-image-2.5-ext",
+    "versions": [
+      "flare",
+      "sunburst"
+    ],
+    "parameters": {
+      "model": {
+        "type": "string",
+        "default": null,
+        "required": true,
+        "enum": [
+          "gpt-image-2.5-ext"
+        ]
+      },
+      "version": {
+        "type": "string",
+        "default": "flare",
+        "required": false,
+        "enum": [
+          "flare",
+          "sunburst"
+        ]
+      },
+      "prompt": {
+        "type": "string",
+        "default": null,
+        "required": true,
+        "trimmed_nonempty": true,
+        "max_length_documented": false
+      },
+      "resolution": {
+        "type": "string",
+        "default": "1K",
+        "required": false,
+        "enum": [
+          "1K",
+          "2K",
+          "4K"
+        ]
+      },
+      "size": {
+        "type": "string",
+        "default": "auto",
+        "required": false,
+        "enum": [
+          "auto",
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "5:4",
+          "4:5",
+          "21:9"
+        ]
+      },
+      "n": {
+        "type": "integer",
+        "default": 1,
+        "required": false,
+        "minimum": 1,
+        "maximum": 4
+      },
+      "image_urls": {
+        "type": "string[]",
+        "default": null,
+        "required": false,
+        "max_items": 16,
+        "input_formats": [
+          "accessible_url",
+          "data_url"
+        ],
+        "extra_fee": false
+      }
+    },
+    "prices_per_successfully_delivered_image": {
+      "1K": {
+        "gold": {
+          "supplier_credits_per_image_displayed": "0.085",
+          "usd_per_image_approx_displayed": "0.0085",
+          "usd_per_image_derived_from_site_credit_ratio": "0.0085"
+        },
+        "platinum": {
+          "supplier_credits_per_image_displayed": "0.0808",
+          "usd_per_image_approx_displayed": "0.0081",
+          "usd_per_image_derived_from_site_credit_ratio": "0.00808"
+        },
+        "diamond": {
+          "supplier_credits_per_image_displayed": "0.0765",
+          "usd_per_image_approx_displayed": "0.0077",
+          "usd_per_image_derived_from_site_credit_ratio": "0.00765"
+        },
+        "site_official": {
+          "supplier_credits_per_image_displayed": "0.1063",
+          "usd_per_image_approx_displayed": "0.0106",
+          "usd_per_image_derived_from_site_credit_ratio": "0.01063"
+        }
+      },
+      "2K": {
+        "gold": {
+          "supplier_credits_per_image_displayed": "0.14",
+          "usd_per_image_approx_displayed": "0.014",
+          "usd_per_image_derived_from_site_credit_ratio": "0.014"
+        },
+        "platinum": {
+          "supplier_credits_per_image_displayed": "0.133",
+          "usd_per_image_approx_displayed": "0.0133",
+          "usd_per_image_derived_from_site_credit_ratio": "0.0133"
+        },
+        "diamond": {
+          "supplier_credits_per_image_displayed": "0.126",
+          "usd_per_image_approx_displayed": "0.0126",
+          "usd_per_image_derived_from_site_credit_ratio": "0.0126"
+        },
+        "site_official": {
+          "supplier_credits_per_image_displayed": "0.175",
+          "usd_per_image_approx_displayed": "0.0175",
+          "usd_per_image_derived_from_site_credit_ratio": "0.0175"
+        }
+      },
+      "4K": {
+        "gold": {
+          "supplier_credits_per_image_displayed": "0.21",
+          "usd_per_image_approx_displayed": "0.021",
+          "usd_per_image_derived_from_site_credit_ratio": "0.021"
+        },
+        "platinum": {
+          "supplier_credits_per_image_displayed": "0.1995",
+          "usd_per_image_approx_displayed": "0.02",
+          "usd_per_image_derived_from_site_credit_ratio": "0.01995"
+        },
+        "diamond": {
+          "supplier_credits_per_image_displayed": "0.189",
+          "usd_per_image_approx_displayed": "0.0189",
+          "usd_per_image_derived_from_site_credit_ratio": "0.0189"
+        },
+        "site_official": {
+          "supplier_credits_per_image_displayed": "0.2625",
+          "usd_per_image_approx_displayed": "0.0263",
+          "usd_per_image_derived_from_site_credit_ratio": "0.02625"
+        }
+      }
+    },
+    "same_prices_for_both_versions": true,
+    "account_upgrade_verified": false,
+    "rollout_notice": "ext 渠道灰度升级中：目前仅部分账号已切换至 2.5，等待官方完成全部账号升级。",
+    "output_pixel_matrix_documented": false,
+    "not_documented_parameters": [
+      "quality",
+      "mask_url",
+      "background",
+      "output_format",
+      "output_compression",
+      "moderation",
+      "custom_pixel_size"
+    ]
+  },
+  "cost_priority": [
+    "reported_task_total",
+    "usage_times_locked_rates_estimate",
+    "pending_confirmation"
+  ],
+  "task_fee_fields": {
+    "cost": "data.cost",
+    "supplier_credits": "data.credits_cost",
+    "usage": "data.usage if present"
+  },
+  "submission_task_id": {
+    "native_documented": "data[0].task_id",
+    "ext_versioned_documented": "data.id"
+  },
+  "ext_recommended_headers": {
+    "X-APIMart-Response-Version": "2026-07-27",
+    "Idempotency-Key": "one stable key per operation"
+  },
+  "naumi_requested_markup": "1.5",
+  "naumi_markup_applied_by_this_research": false,
+  "unverified": [
+    "production_actual_default_id",
+    "account_tier_and_multiplier",
+    "ext_account_upgrade",
+    "actual_task_response",
+    "recharge_and_fx_basis",
+    "naumi_points_conversion",
+    "ext_pixel_dimensions",
+    "ext_undocumented_parameter_behavior"
+  ],
+  "pricing_api_attempt": {
+    "url": "https://apimart.ai/api/pricing",
+    "http_status": 404,
+    "curl_exit": 22
+  }
+}

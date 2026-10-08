@@ -1,0 +1,11 @@
+{
+  "name": "@naumi/pricing-review",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx server.ts",
+    "build": "node build.mjs",
+    "test": "tsx tests/verify.ts"
+  },
+  "engines": { "node": ">=24" }
+}
