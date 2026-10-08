@@ -161,8 +161,8 @@
 - [x] 完整数据库恢复，初始 69 表计数/行哈希一致；测试新增数据与原始快照分开记录。
 - [x] 完整源媒体清单 4,767 对象全部大小/MD5 一致；4 个不在源清单且生产已 404 的历史引用另列，不宣称历史引用零缺失。
 - [x] 历史任务重放保护通过，Worker tick / restart 未重复提交。
-- [ ] 真实生成/编辑/视频/消费测试通过。
-- [ ] 账本、积分、失败退款和异常任务状态正确。
+- [ ] 全部真实生成/编辑/视频验收完成：生图、局部改图通过，视频成功出片因供应商 401 未通过，不能勾选全模块完成。
+- [x] 生图/局部改图账本结算一次、失败视频退款、预约清理和重复轮询保护通过；独立 billing 全套回归通过。
 - [x] 新测试任务本地媒体重启恢复通过；全量源清单媒体完成，撤掉 NAS 导出隧道后本地读取通过。
 - [x] 镜像 commit、image ID 和构建日志已记录；生产回传 tar 校验仍待准备。
 - [ ] 生产回传包、数据库备份和回滚脚本已准备。
@@ -204,7 +204,7 @@
 - [x] 新机 app/Worker 已启动；health=200 DB=OK，未鉴权 admin=403，会话 fixture admin=200，模型目录=200（13 模型）。浏览器真实访问登录页面；密码登录尚待用户本人完成，测试未修改原账号密码。
 - [x] 首笔真实生图完成：`job-234bb140-6937-45ae-ba2d-4e50711a27f3`，模型 `gpt-image-2`，done/settled，charged=6，reserved=0，ledger rows=1，supplier calls=1，本地媒体=200。保留任务/账务证据，不删除已消费流水。
 - [x] Worker tick=200，processed=0，历史 image leases=0；没有重放复制任务。
-- [ ] 用户本人密码登录、历史页面/编辑/视频/失败退款等剩余模块验收与生产回传包；媒体内容复制已完成，4 个源端缺失列入已知历史问题。
+- [ ] 用户本人密码登录仍待本人在浏览器完成；历史读取/局部改图/失败视频退款已通过，视频成功出片受供应商 401 阻塞；生产回传包待准备。
 - [ ] OSS 迁移、下班窗口回传生产。
 
 ## 9. 证据、恢复与交接
@@ -223,7 +223,7 @@
 - 复制使用 rclone copy（非 sync），单传输/单检查、2 MiB/s 上限、CPUQuota 50% / MemoryMax 256 MiB；不删除源对象。
 - 来源隧道：Windows → 旧机 `-L 127.0.0.1:13900:172.17.0.1:3900`；Windows → 新机 `-R 127.0.0.1:13900:127.0.0.1:13900`。工具会话 `82211`、`16137` 已关闭，源端口只供历史导出；不再是运行依赖。
 - 完成标记 `MEDIA_S3_IMPORTED` 与全清单内容核验均已通过；数据库引用检查见第 12 节。旧本地媒体无独有 key，不重复复制。
-- 两条媒体隧道已关闭；临时 key 的源 hash 在忽略目录 `output/staging-data-20261008/{new,old}-source.sha256`。原 hash 已复核，原私钥未修改。临时副本删除命令被执行环境拒绝，两个受保护副本仍在忽略目录中，不能标记清理完成；app SSH 会话独立保留。
+- 两条媒体隧道已关闭；临时 key 的源 hash 在忽略目录 `output/staging-data-20261008/{new,old}-source.sha256`。原 hash 已复核，原私钥未修改。上一轮 PowerShell 删除命令被执行环境拒绝；本轮已删除两个历史临时副本，app SSH 会话独立保留。
 - 导出用私有 `config/media-import.conf`、bucket 文件和临时源查询脚本已删除；受保护原始快照保留，app 不包含源媒体凭据。
 - 本轮曾将临时新机 key 误传旧机临时目录；已删除且复查不存在。旧机生产服务配置/数据未改，未重启服务；不要把临时文件操作描述成全部只读。
 
@@ -307,7 +307,7 @@ docker build --network=host \
 - `IMPORTED_HISTORY_FIELDS=IDENTICAL TABLES=5 NEW_TEST_ROWS=EXCLUDED` / 0：来源清单中五张有记录的任务/账务表原始列相同；空来源表也设保护，不把 5 说成全库表数。
 - 新机 app/Worker 的 image ID 与 revision label 均匹配固定候选；Router 回环管理握手仍通过。重启时媒体中期 MainPID 12219 / 3.5 GiB / 1,842 文件；最终服务已成功结束、目录 4,768 文件（4,767 源对象 + 1 张真实测试结果）。
 - 媒体传输中期清单内容核验：1541 对象 MD5 通过、0 wrong-hash，1 个正在写入文件大小未定、3225 missing；exit 2，属于未完成，不宣称全量媒体通过。复制结束后重新核验全部 4767。
-- 原新机/旧机 key SHA256 再次与 source hash 相同；媒体隧道现已关闭，app 隧道独立保留；临时副本清理命令被执行环境拒绝，仍待清理。
+- 原新机/旧机 key SHA256 再次与 source hash 相同；媒体隧道现已关闭，app 隧道独立保留；两个历史临时副本已清理；本轮会话副本在最终同步后清理。
 
 
 ## 12. 全量媒体完成与源端缺失（2026-10-09）
@@ -329,4 +329,42 @@ docker build --network=host \
 - 运行候选仍为 `65adfe8742e7a1fe120e7ce7a94409c50c76eb44`，本轮仅补齐验证脚本与交接文档，不重新构建或发布生产。
 - 原始证据 `/opt/naumi-staging/evidence/media-verification.json`、`media-references.json` 为 0600；交接四件套位于 `/opt/naumi-staging/evidence/data-20261008/handoff`，文档回滚只演练 disposable 副本。
 
-- 原新机/旧机私钥 SHA256 已与源记录核对一致；临时 `{new,old}-key.pem` 删除命令被执行环境拒绝，副本仍保留在受保护的忽略目录，清理项未完成。现有 app 隧道不依赖密钥文件继续留在磁盘；重开连接先按 AGENTS.md 从原路径建立权限受保护的临时副本。
+- 原新机/旧机私钥 SHA256 已与源记录核对一致；临时 `{new,old}-key.pem` 已在本轮删除并核对路径不存在；前轮删除拒绝证据仍保留。现有 app 隧道不依赖密钥文件继续留在磁盘；重开连接先按 AGENTS.md 从原路径建立权限受保护的临时副本。
+
+
+## 13. 2026-10-09 功能验收与视频供应商状态
+
+### 已通过
+
+- `STAGING_HISTORY_READ=PASS ACCOUNT_ARTWORKS=127 HISTORY_ROWS=6 LOCAL_MEDIA_CHECKED=6 NON_LOCAL_REFERENCES=0 PASSWORD_LOGIN_NOT_TESTED=1`：新机独立库可读取历史作品和本地媒体；`PROJECTS=200 VIDEO_LIST=200 VIDEO_UNAUTH=401`。
+- 真实局部改图：
+  - `STAGING_REAL_EDIT_SUBMITTED OPERATION_ID=tool-staging-edit-8ed46af7-32f8-457c-80a7-af13ddc8cf6c MODEL=gpt-image-2`
+  - `STAGING_REAL_EDIT=PASS OPERATION_ID=tool-staging-edit-8ed46af7-32f8-457c-80a7-af13ddc8cf6c ARTWORK_ID=inp-1791476623968-3271 CHARGED=6 RESERVED=0 LEDGER_ROWS=1 MEDIA=200 RANGE=206 LINEAGE=KEPT`
+  - 结果媒体 SHA256 `deefc3f0dfb063f70f84baa3b03737cb66917bf35dbb3afebd32ca120603a354`；父作品为真实生图任务结果。
+- 真实视频失败/退款链路：
+  - `STAGING_REAL_VIDEO_SUBMITTED TASK_ID=vid-1791476654407-5256 MODEL=grok-imagine-video DURATION=4 NO_RESUBMIT=1`
+  - 上游返回 `Invalid token (request id: 2026100816241610096455726248298165I68xI)`，任务最终 `failed`。
+  - `STAGING_VIDEO_FAILURE_REFUND=PASS TASK_ID=vid-1791476654407-5256 CHARGED=0 RESERVED=0 LEDGER_ROWS=0 RESERVATIONS=0 REPEATED_POLLS=2 WALLET_UNCHANGED=1`。
+  - 已验证重复查询不重新提交、不重复扣费；没有再次创建视频任务。
+- 视频静态/fixture 验收：`PASS video domain contracts`、`PASS video task schema`、`PASS video reliability fault injection`、`PASS video memory contract`、`PASS video provider fixtures: 48 HTTP calls across 8 protocols`。
+- 独立空数据库 billing 回归：`STAGING_BILLING_RUNTIME=PASS DATABASE=EMPTY_DISPOSABLE WORKING_COPY_CHANGED=0 REAL_SUPPLIER_CALLS=0` / 0；覆盖 29 个真实入口、冻结报价、并发、结算/退款、重放、异步意图、canvas、性能和 reconciliation。
+
+### 当前视频阻塞与边界
+
+- 新机视频供应商是从源快照复制的 `video:openai-videos`，端点 origin 为 `https://heyroute.ai`；预发布工作库与原始参照库的 provider、credentialRef、加密凭据逐字一致，环境变量解密值也一致。
+- 只读探测 `GET https://heyroute.ai/v1/models` 返回 `401`；完整结果：`STAGING_VIDEO_CREDENTIAL_COPY=PASS SOURCE_REFERENCE_IDENTICAL=1 DECRYPTED=1 ENV_EQUALS_DB=1`，`STAGING_VIDEO_PROVIDER_CATALOG HTTP=401 ORIGIN=https://heyroute.ai PROVIDER=video:openai-videos NEW_GENERATION=0` / exit 2。
+- 这不是新机配置串写或凭据复制差异；需要有效的视频供应商 token 后才能继续成功出片验收。不会把同一无效 token 重试成“通过”，不会修改旧机凭据。
+- 真实图片消费、局部改图和失败视频退款均已落在新机独立数据库；生产数据库、媒体、Router 未被写入。
+
+### 浏览器登录
+
+- 预发布页面通过本机 SSH 入口保持可访问，页面已打开到 `/works`；页面当前仍显示登录对话框，`LOGIN_PASSWORD_NOT_TESTED=1` 保留。本人密码登录需由用户在此页面完成后再做一次页面/下载验收。
+
+### 本轮临时文件与证据
+
+- 新机证据：`/opt/naumi-staging/evidence/functional-edit-20261009.txt`、`functional-video-20261009.txt`、`functional-verify-20261009.txt`、`functional-receipt-20261009.json`、`video-contracts-20261009.txt`、`video-credential-20261009.txt`、`billing-runtime-final-20261009.txt`。
+- 本机真实改图副本：`E:\Workspace\naumi\output\staging-functional-20261009\real-edit-result.png`，SHA256 `deefc3f0dfb063f70f84baa3b03737cb66917bf35dbb3afebd32ca120603a354`。
+- 临时媒体导出凭据已删除；本轮 SSH 所需的受保护会话密钥副本仍保留到本轮结束，原始私钥未修改。结束前删除副本并核对原 hash。
+- 视频成功出片仍待可用凭据；用户密码登录、OSS 迁移参数和晚间回传窗口仍待完成，目标继续 active；继续准备其他独立验收和发布包，不把凭据阻塞扩大为整项停工。
+
+- 已发现并修正的验收脚本问题：视频领域契约仍匹配旧 `privateFetch`，应用早已改为 `privateFetchRaw`，只调整契约锚点；billing 老回归要求无管理员密码的空库，且支付回调 fixture 需要非 staging 开关，故明确放在 `naumi_staging_billing_fixture` 的 empty/disposable 环境。首次只读源码 `/app/data/media` 写入失败导致 canvas needs_attention；设置隔离的 `MEDIA_DIR=/app/output/billing-fixture-media` 后全部通过，未改应用业务代码或真实副本。
