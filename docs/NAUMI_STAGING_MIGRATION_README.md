@@ -223,7 +223,7 @@
 - 复制使用 rclone copy（非 sync），单传输/单检查、2 MiB/s 上限、CPUQuota 50% / MemoryMax 256 MiB；不删除源对象。
 - 来源隧道：Windows → 旧机 `-L 127.0.0.1:13900:172.17.0.1:3900`；Windows → 新机 `-R 127.0.0.1:13900:127.0.0.1:13900`。工具会话 `82211`、`16137` 已关闭，源端口只供历史导出；不再是运行依赖。
 - 完成标记 `MEDIA_S3_IMPORTED` 与全清单内容核验均已通过；数据库引用检查见第 12 节。旧本地媒体无独有 key，不重复复制。
-- 两条媒体隧道已关闭；临时 key 的源 hash 在忽略目录 `output/staging-data-20261008/{new,old}-source.sha256`。最终证据同步后复核原 hash 并删除受保护副本；原私钥不修改。app SSH 会话独立保留。
+- 两条媒体隧道已关闭；临时 key 的源 hash 在忽略目录 `output/staging-data-20261008/{new,old}-source.sha256`。原 hash 已复核，最终同步后临时副本已清理；原私钥未修改。app SSH 会话独立保留，重建隧道时需从原私钥重新建立受保护副本。
 - 导出用私有 `config/media-import.conf`、bucket 文件和临时源查询脚本已删除；受保护原始快照保留，app 不包含源媒体凭据。
 - 本轮曾将临时新机 key 误传旧机临时目录；已删除且复查不存在。旧机生产服务配置/数据未改，未重启服务；不要把临时文件操作描述成全部只读。
 
@@ -307,7 +307,7 @@ docker build --network=host \
 - `IMPORTED_HISTORY_FIELDS=IDENTICAL TABLES=5 NEW_TEST_ROWS=EXCLUDED` / 0：来源清单中五张有记录的任务/账务表原始列相同；空来源表也设保护，不把 5 说成全库表数。
 - 新机 app/Worker 的 image ID 与 revision label 均匹配固定候选；Router 回环管理握手仍通过。重启时媒体中期 MainPID 12219 / 3.5 GiB / 1,842 文件；最终服务已成功结束、目录 4,768 文件（4,767 源对象 + 1 张真实测试结果）。
 - 媒体传输中期清单内容核验：1541 对象 MD5 通过、0 wrong-hash，1 个正在写入文件大小未定、3225 missing；exit 2，属于未完成，不宣称全量媒体通过。复制结束后重新核验全部 4767。
-- 原新机/旧机 key SHA256 再次与 source hash 相同；媒体隧道现已关闭，app 隧道独立保留；最终同步后清理临时副本。
+- 原新机/旧机 key SHA256 再次与 source hash 相同；媒体隧道现已关闭，app 隧道独立保留；最终同步后临时副本已清理。
 
 
 ## 12. 全量媒体完成与源端缺失（2026-10-09）
@@ -328,3 +328,5 @@ docker build --network=host \
 - 本地仓库被其他工作切换到 main；本轮交接收尾在独立 worktree `C:\Users\13357\.codex\worktrees\staging-media-handoff\naumi`，分支 `codex/staging-media-handoff`，基于已推送 `af973c465c368594c0268b793c81f76d58c48f91`。不切换或覆盖主工作区，不将其他工作的源码/服务或 `.env.bak-jimeng` 混入提交。
 - 运行候选仍为 `65adfe8742e7a1fe120e7ce7a94409c50c76eb44`，本轮仅补齐验证脚本与交接文档，不重新构建或发布生产。
 - 原始证据 `/opt/naumi-staging/evidence/media-verification.json`、`media-references.json` 为 0600；交接四件套位于 `/opt/naumi-staging/evidence/data-20261008/handoff`，文档回滚只演练 disposable 副本。
+
+- 原新机/旧机私钥 SHA256 已与源记录核对一致；临时 `{new,old}-key.pem` 已清理。现有 app 隧道不依赖密钥文件继续留在磁盘；重开连接先按 AGENTS.md 从原路径建立权限受保护的临时副本。
