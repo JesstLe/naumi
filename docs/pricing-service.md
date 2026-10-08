@@ -145,3 +145,13 @@ node node_modules/tsx/dist/cli.mjs services/pricing-service/rollback.ts 1 "E:/Wo
 新增测试：`node node_modules/tsx/dist/cli.mjs services/pricing-service/tests/verify-quick.ts`。覆盖 450 项原生规格、人民币成本/精确三倍、手动/零售价、EXT、质量 cap、401、非法模型/规格、版本冲突、未发布草稿保护、ACK 故障事务回退、模拟消费与幂等冻结、重开数据库持久化和配置回滚。原 1800 项测试、TypeScript 检查、独立 bundle 构建均通过。
 
 模块记录与截图：`E:/Workspace/naumi/output/pricing-mvp-20261008/`。代码回滚可撤销本模块提交并重建 bundle；配置回滚优先用「版本记录」或现有 rollback.ts，自动同步模拟 ACK。新增表可保留，旧服务不读取它；不需要删除数据库。
+
+## 售价与积分自定义换算（2026-10-08）
+
+- 「快速配置」售价旁新增可编辑的“每 1 元兑换积分（全局，可自定义）”与向上/向下/四舍五入选项。无历史规则时表单建议 10，不在启动/迁移时覆盖已有规则；应用前不改变生效版本。
+- 预览和模拟消费均复用纯定价核心：人民币售价 × 每元积分，保留有理数精度，最后才按指定方式舍入。返回 `creditsUnrounded`、`credits`、`creditConversion`、`cnyPerCredit`。页面展示反向关系、原积分和整数结果，不以已舍入的人民币显示值做扣费计算。
+- `POST /v1/mvp/preview`、`POST /v1/mvp/apply` 的 preset 支持 `creditsPerCny`（正十进制字符串，最多6位小数）和 `rounding`；只有取整设置却没有兑换率时拒绝请求，省略二者的旧接口保留已有规则。空/零/负数/非法兑换率不作为有效零费用。
+- 同一全局 `creditConversion` 供全部展示模型、矩阵和试算读取；普通「定价配置」编辑的是同一字段，避免维护两套关系。修改兑换率不改变采购成本或人民币售价。
+- 兑换率与售价、执行映射及模拟 ACK 一同发布。冻结报价保存旧兑换率和原扣积分，新版本只影响新报价；配置回滚恢复之前规则，服务重启保持当前规则。
+- 验收：0.75元 × 10 = 7.5积分，向上/四舍五入为8、向下为7；×20为15；0.123456元 × 12.5 = 1.5432原积分。覆盖零售价、非法率、应用、模拟、重复请求、冻结、重启和回滚。独立服务仍不执行真实用户钱包扣费。
+- 无数据库建表变更，仅版本配置JSON扩展接口输入和报价返回字段。恢复使用现有版本记录或 rollback.ts；证据目录 `E:/Workspace/naumi/output/pricing-credit-20261008/`。

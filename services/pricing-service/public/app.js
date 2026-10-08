@@ -61,7 +61,7 @@ function quickModel() { return quickCatalog.suppliers.find(s=>s.id===$('quick-su
 function quickInput() {
   const m=quickModel(),r={publicId:$('quick-public').value.trim(),label:$('quick-label').value.trim(),supplier:$('quick-supplier').value,actualModel:m.model,
     ...(m.version?{upstreamVersion:m.version}:{}),spec:{resolution:$('quick-resolution').value,ratio:$('quick-ratio').value,quality:$('quick-quality').value}};
-  if($('quick-sale').value.trim()!=='')r.saleCny=$('quick-sale').value.trim();return r;
+  if($('quick-sale').value.trim()!=='')r.saleCny=$('quick-sale').value.trim();r.creditsPerCny=$('quick-credits').value.trim();r.rounding=$('quick-rounding').value;return r;
 }
 function quickSpecs(preferred) {
   const m=quickModel(),oldResolution=preferred?.resolution||$('quick-resolution').value,oldRatio=preferred?.ratio||$('quick-ratio').value;
@@ -83,6 +83,7 @@ async function selectQuickAlias() {
   let effectiveQuality=$('quick-quality').value;
   if(alias?.model!=='gpt-image-2.5-ext'&&c.qualityPolicy==='cap-medium')effectiveQuality=effectiveQuality==='low'?'low':'medium';
   $('quick-sale').value=spec?(c.fixedSales[`${alias.publicId}|${spec.resolution}|${spec.ratio}|${effectiveQuality}`]||''):'';
+  $('quick-credits').value=c.creditConversion?.creditsPerCny||'10';$('quick-rounding').value=c.creditConversion?.rounding||'ceil';
   quickSimulateKey='';$('quick-result').hidden=true;$('quick-json').textContent='';await previewQuick();
 }
 async function loadQuick() {
@@ -100,14 +101,15 @@ async function previewQuick() {
     const q=await api('/v1/mvp/preview','POST',input);
     if(seq!==quickSequence)return;quickPreviewSignature=signature;
     $('quick-preview').className='';
-    const rows=[['输出成本（人民币 / 张）',precise(q.costCny)+' · 估计'],['3倍建议售价',precise(q.suggestedSaleCny)],['将应用的售价',precise(q.saleCny)],['售价减API成本',precise(q.profitCny)+' · 暂估'],['有效参数',`${q.effective.resolution} / ${q.effective.size} / ${q.effective.quality||'不传 quality'}`]];
+    const rows=[['输出成本（人民币 / 张）',precise(q.costCny)+' · 估计'],['3倍建议售价',precise(q.suggestedSaleCny)],['将应用的售价',precise(q.saleCny)],['换算前积分',precise(q.creditsUnrounded)],['预计扣积分',q.credits===null?'待配置':`${q.credits} 积分 · ${{ceil:'向上取整',floor:'向下取整',nearest:'四舍五入'}[q.creditConversion?.rounding]||''}`],['售价减API成本',precise(q.profitCny)+' · 暂估'],['有效参数',`${q.effective.resolution} / ${q.effective.size} / ${q.effective.quality||'不传 quality'}`]];
+    $('quick-credit-info').textContent=q.creditConversion?`1 元 = ${q.creditConversion.creditsPerCny} 积分；1 积分 ≈ ${precise(q.cnyPerCredit)} 元。此兑换规则对本服务全部模型生效；应用后更新，新报价使用新规则。`:'积分兑换尚未配置';
     $('quick-preview').innerHTML=`<div class="quote-lines">${rows.map(([k,v])=>`<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
     $('quick-source').textContent=`来源：已核查 APIMart 目录（${q.catalogDate}）及当前已发布采购配置 · ${q.tier}档 · 1 USD = ${q.fx.usdToCny} CNY。${q.costScope==='output-only'?'原生只含输出参考成本，不含输入；非完整调用报价。':'EXT按交付张包价，账户可用性尚未核验。'}${q.fx.basis==='budget'?'人民币为预算折算估计。':''}修改采购价 / 汇率请使用「定价配置」。`;
   } catch(e) { if(seq!==quickSequence)return;$('quick-preview').className='warning';$('quick-preview').textContent=e.message; }
 }
 $('quick-existing').onchange=()=>action(selectQuickAlias);
 for(const name of ['quick-model','quick-resolution','quick-quality','quick-ratio'])$(name).onchange=()=>{if(name==='quick-model'||name==='quick-resolution')quickSpecs();$('quick-sale').value='';$('quick-result').hidden=true;previewQuick();};
-for(const name of ['quick-public','quick-label','quick-sale'])$(name).oninput=()=>{quickPreviewSignature='';previewQuick();};
+for(const name of ['quick-public','quick-label','quick-sale','quick-credits'])$(name).oninput=()=>{quickPreviewSignature='';previewQuick();};$('quick-rounding').onchange=()=>{quickPreviewSignature='';previewQuick();};
 $('quick-refresh').onclick=()=>action(previewQuick);
 $('quick-apply').onclick=()=>action(async()=>{
   const preset=quickInput();if(quickPreviewSignature!==JSON.stringify(preset))throw Error('请等待成本加载成功后再应用');
@@ -122,9 +124,10 @@ $('quick-simulate').onclick=()=>action(async()=>{
   const applied={publicId:alias.publicId,label:alias.label,supplier:alias.supplier||'apimart',actualModel:alias.model,...(alias.version?{upstreamVersion:alias.version}:{}),spec:alias.quickSpec};
   const effectiveQuality=alias.model==='gpt-image-2.5-ext'||state.current.config.qualityPolicy!=='cap-medium'?alias.quickSpec.quality:alias.quickSpec.quality==='low'?'low':'medium';
   const fixed=state.current.config.fixedSales[`${alias.publicId}|${alias.quickSpec.resolution}|${alias.quickSpec.ratio}|${effectiveQuality}`];if(fixed!==undefined)applied.saleCny=fixed;
+  if(state.current.config.creditConversion){applied.creditsPerCny=state.current.config.creditConversion.creditsPerCny;applied.rounding=state.current.config.creditConversion.rounding;}
   if(JSON.stringify(input)!==JSON.stringify(applied))throw Error('当前编辑尚未应用，请先应用再验证');
   if(!quickSimulateKey)quickSimulateKey=crypto.randomUUID();
   const r=await api('/v1/mvp/simulate','POST',{publicId:alias.publicId,expectedVersion:state.current.version},{'Idempotency-Key':quickSimulateKey});
-  $('quick-result').hidden=false;$('quick-result').textContent=`模拟执行：${r.quote.publicId} → APIMart / ${r.payload.model}${r.payload.version?' / '+r.payload.version:''} · 冻结 v${r.quote.configVersion} · 售价 ${precise(r.quote.saleCny)} 元 · 未产生费用。`;
+  $('quick-result').hidden=false;$('quick-result').textContent=`模拟执行：${r.quote.publicId} → APIMart / ${r.payload.model}${r.payload.version?' / '+r.payload.version:''} · 冻结 v${r.quote.configVersion} · 售价 ${precise(r.quote.saleCny)} 元 / ${r.quote.credits??'待配置'} 积分 · 未产生费用。`;
   $('quick-json').textContent=JSON.stringify(r,null,2);
 });
