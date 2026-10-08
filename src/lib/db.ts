@@ -8,6 +8,7 @@ import {reserveTaskBillingTx,settleTaskBillingTx,videoRequestFingerprint,canvasR
 import {BillingError} from "@/lib/billing/types";
 import "server-only";
 import { Pool, type PoolClient } from "pg";
+import { excludeImportedHistory, isImportedHistory } from "./staging-history";
 import { ensureBillingSchema } from "@/lib/billing/schema";
 import {
   type PlanKey,
@@ -2051,6 +2052,7 @@ export async function sweepStaleReservations(
     const deleted = await client.query<{ email: string; cost: number }>(
       `DELETE FROM app_gen_reservations
        WHERE created_at < now() - ($1 || ' minutes')::interval
+         ${excludeImportedHistory("app_gen_reservations")}
          AND NOT EXISTS (
            SELECT 1 FROM app_video_tasks v
             WHERE v.id = app_gen_reservations.job_id
@@ -4942,6 +4944,7 @@ export async function claimVideoTaskPoll(
   leaseSeconds = 210
 ): Promise<boolean> {
   await ensureSchema();
+  if (await isImportedHistory(getPool(), "app_video_tasks", id)) return false;
   const { rowCount } = await getPool().query(
     `UPDATE app_video_tasks
         SET poll_lock_until = now() + ($3 || ' seconds')::interval,
@@ -5327,7 +5330,7 @@ export async function listDueVideoTaskRefs(limit = 5): Promise<
         AND error_code <> 'creation_unknown'
         AND (next_poll_at IS NULL OR next_poll_at <= now())
         AND (poll_lock_until IS NULL OR poll_lock_until < now())
-      ORDER BY created_at
+      ${excludeImportedHistory("app_video_tasks")} ORDER BY created_at
       LIMIT $1`,
     [Math.min(Math.max(limit, 1), 20)]
   );
@@ -5534,6 +5537,7 @@ export async function claimNextCanvasImageTask(leaseSeconds = 330): Promise<Canv
         WHERE status IN ('queued','processing')
           AND (lease_until IS NULL OR lease_until < now())
           AND attempts < 3
+          ${excludeImportedHistory("app_canvas_image_tasks")}
         ORDER BY created_at
         FOR UPDATE SKIP LOCKED
         LIMIT 1

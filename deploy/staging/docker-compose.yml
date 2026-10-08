@@ -38,6 +38,8 @@ services:
       R2_PUBLIC_BASE_URL: ""
       INTERNAL_APP_ORIGIN: http://127.0.0.1:3000
       NAUMI_VIDEO_WORKER: "0"
+      NAUMI_ENVIRONMENT: staging
+      NAUMI_STAGING_HISTORY_GUARD: "1"
       VIDEO_WORKER_SECRET: ${VIDEO_WORKER_SECRET:?Independent staging worker secret required}
     ports:
       - "127.0.0.1:13012:3000"

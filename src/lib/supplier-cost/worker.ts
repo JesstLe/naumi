@@ -11,6 +11,7 @@ import { importRouterOperation } from "./router";
 import { reconcileUsage } from "./reconciliation";
 import { costPolicy } from "./policy";
 import { refreshApiCostOperation,withBillingTransaction } from "../billing/service";
+import { excludeImportedHistory, stagingHistoryGuardEnabled } from "../staging-history";
 
 export async function runSupplierCostWorker(ledger: ReturnType<typeof createSupplierLedger> = supplierLedger(), options: { fetcher?: typeof fetch; batch?: number } = {}) {
   await ensureSupplierSchema(ledger.pool);
@@ -19,14 +20,15 @@ export async function runSupplierCostWorker(ledger: ReturnType<typeof createSupp
     SELECT 'task:'||c.id,'task',c.account_id,jsonb_build_object('callId',c.id)
     FROM app_supplier_calls c JOIN app_supplier_accounts a ON a.id=c.account_id
     WHERE c.task_id IS NOT NULL AND a.protocol IN('apimart-images','apimart') AND a.credential_ref IS NOT NULL
+    ${excludeImportedHistory("app_supplier_calls", "c")}
     AND NOT EXISTS(SELECT 1 FROM app_supplier_cost_jobs j WHERE j.key='task:'||c.id)
     ON CONFLICT(key) DO NOTHING`);
   const accounts = (await ledger.pool.query("SELECT * FROM app_supplier_accounts WHERE protocol IN('apimart-images','apimart') AND credential_ref IS NOT NULL AND usage_enabled")).rows;
   for (const account of accounts) {
     const p = costPolicy(account.policy);
-    if (!account.last_usage_at || Date.now() - new Date(account.last_usage_at).getTime() >= p.intervalSeconds * 1000) await ledger.pool.query("INSERT INTO app_supplier_cost_jobs(key,kind,account_id,payload) VALUES($1,'usage',$2,'{}') ON CONFLICT(key) DO UPDATE SET state=CASE WHEN app_supplier_cost_jobs.state='done' THEN 'queued' ELSE app_supplier_cost_jobs.state END", [`usage:${account.id}`,account.id]);
+    if (!account.last_usage_at || Date.now() - new Date(account.last_usage_at).getTime() >= p.intervalSeconds * 1000) await ledger.pool.query("INSERT INTO app_supplier_cost_jobs(key,kind,account_id,payload) VALUES($1,'usage',$2,'{}') ON CONFLICT(key) DO UPDATE SET state=CASE WHEN app_supplier_cost_jobs.state='done' THEN 'queued' ELSE app_supplier_cost_jobs.state END", [`${stagingHistoryGuardEnabled() ? "staging:" : ""}usage:${account.id}`,account.id]);
   }
-  const jobs = (await ledger.pool.query(`WITH due AS (SELECT key FROM app_supplier_cost_jobs WHERE state='queued' AND due_at<=now() AND (lease_until IS NULL OR lease_until<now()) ORDER BY due_at LIMIT $1 FOR UPDATE SKIP LOCKED) UPDATE app_supplier_cost_jobs j SET lease_id=$2,lease_until=now()+interval '120 seconds',attempts=attempts+1,updated_at=now() FROM due WHERE j.key=due.key RETURNING j.*`, [Math.min(10,Math.max(1,options.batch||3)),randomUUID()])).rows;
+  const jobs = (await ledger.pool.query(`WITH due AS (SELECT key FROM app_supplier_cost_jobs WHERE state='queued' AND due_at<=now() AND (lease_until IS NULL OR lease_until<now()) ${excludeImportedHistory("app_supplier_cost_jobs")} ORDER BY due_at LIMIT $1 FOR UPDATE SKIP LOCKED) UPDATE app_supplier_cost_jobs j SET lease_id=$2,lease_until=now()+interval '120 seconds',attempts=attempts+1,updated_at=now() FROM due WHERE j.key=due.key RETURNING j.*`, [Math.min(10,Math.max(1,options.batch||3)),randomUUID()])).rows;
   let processed = 0;
   for (const job of jobs) {
     let next: number | null = null, error: string | null = null;
@@ -72,7 +74,7 @@ export async function runSupplierCostWorker(ledger: ReturnType<typeof createSupp
   const pending=(await ledger.pool.query(`SELECT id FROM app_billing_operations WHERE quote->'tariff'->'pricing'->>'mode'='api-cost-plus'
     AND state IN('manual','hold','settled') AND settlement_result IS NOT NULL
     AND (state IN('manual','hold') OR EXISTS(SELECT 1 FROM app_supplier_calls c WHERE c.operation_id=app_billing_operations.id AND c.updated_at>app_billing_operations.updated_at))
-    ORDER BY CASE WHEN state IN('manual','hold') THEN 0 ELSE 1 END,updated_at ASC LIMIT 100`)).rows;
+    ${excludeImportedHistory("app_billing_operations")} ORDER BY CASE WHEN state IN('manual','hold') THEN 0 ELSE 1 END,updated_at ASC LIMIT 100`)).rows;
   for(const op of pending) await withBillingTransaction(ledger.pool,tx=>refreshApiCostOperation(tx,op.id));
   return { processed, claimed:jobs.length };
 }

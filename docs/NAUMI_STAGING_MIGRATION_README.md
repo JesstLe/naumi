@@ -1,6 +1,6 @@
 # Naumi 新服务器预发布与晚间回传方案
 
-> 状态：方案已确认，准备阶段（2026-10-08）
+> 状态：数据导入与历史隔离验收进行中（2026-10-08）；app/Worker 尚未启动。
 >
 > 本文是本任务的交接入口。后续 Agent 先阅读本文，再检查本文列出的状态、证据和阻塞项；不要凭对话上下文猜测迁移进度。
 
@@ -185,50 +185,59 @@
 
 每推进一个阶段，更新本文的状态、命令、结果、时间和证据路径。凭据、私钥、API Key、完整 `.env` 和明文备份不得写入本文或 Git。
 
-## 8. 当前状态
+## 8. 当前状态（2026-10-08，本轮重新核验）
 
-- [x] 迁移目标和环境边界已由用户确认。
-- [x] 新服务器不接 NAS、先使用本地媒体，后续独立迁 OSS 已确认。
-- [x] 全量数据、不脱敏、用户本人测试、允许真实消费已确认。
-- [x] 新服务器 SSH、资源和现有服务盘点；新机原先未安装 Docker，没有 Naumi 项目。
-- [x] 新机安装 Docker 29.1.3、Compose 2.40.3，设置 Docker 开机启动，创建独立持久化目录。
-- [x] 完成只读生产数据库计数、S3 对象规模和实际固定镜像盘点；未修改/重启生产服务。
-- [x] 创建独立预发布 Compose 和配置模板；尚未填入真实凭据或启动 app/db/Worker。
-- [x] 在新服务器使用纯 fixture 凭据解析 Compose，隔离断言通过；Docker enabled/active。没有启动 app/db/Worker，没有导入真实数据。
-- [x] 根 README 和 AGENTS.md 添加交接入口；文档基线/修改版与独立副本回滚验收通过，回滚后原 README 哈希一致。
-- [x] 准备提交 `7c7f3d97b9aa3c18fc58015527405a3a5a474919` 已导出干净源码包并在新机核对 SHA256，源码位于 `/opt/naumi-staging/source/7c7f3d97b9aa3c18fc58015527405a3a5a474919-clean`；代码已推送当前分支。准备提交不代表生产候选已验收。
-- [ ] 全量数据库和媒体副本。
-- [ ] 历史任务重放保护。
-- [ ] 预发布真实测试。
-- [ ] OSS 迁移。
-- [ ] 晚间生产回传。
+- [x] 用户确认完整不脱敏副本、本人测试、真实消费无额外预算上限；不接 NAS，后续独立迁 OSS。
+- [x] 新机 Docker 29.1.3、Compose 2.40.3 与 Mihomo v1.19.32 均 active；Docker/Mihomo 开机恢复已验收。
+- [x] PostgreSQL、生产固定 app 与 Node 24 基础镜像离线导入，档案哈希核对通过；不再循环重拉超时的大镜像。
+- [x] 全量一致性 dump 恢复为工作库 `naumi_staging` 和参照库 `naumi_snapshot_reference`；69 张 public app 表全行 JSON 排序哈希相同。用户 76、作品 2381、账本 1444、图片任务 276、视频任务 0。
+- [x] 原 dump 1,177,992 bytes，SHA256 `4e95627f2a4b65b0089e9f1ab13e1ad7190460d422a61bd2f6953fae6e4e007d`；原配置和 dump 0400，快照父目录 0700。
+- [x] 工作库建立 `naumi_staging_guard.origin_rows` 和历史 UPDATE/DELETE 防护；原任务和账务内容不改写。独立第三库恢复演练通过，演练库已删除。
+- [x] 历史 helper 首轮类型检查/fixture 通过：生产默认无额外来源查询，错误环境失败关闭。
+- [ ] 应用层真实数据库验收：保护 claim、due 扫描、付费执行、旧预占清理、旧账务核对、费用补查、后处理恢复。完成审查后在新机一次性运行独立克隆库验收；不能以 helper 模拟测试替代。
+- [ ] S3 全量媒体正在复制。源清单 4,767 对象、8,641,139,439 bytes；新机 `naumi-staging-media-import.service` 运行，目标 `/opt/naumi-staging/data/media`。首次本轮核验已复制 310 MiB，未完成。
+- [ ] 旧机约 6 GiB 残留本地媒体尚未复制/核对；与 S3 重复项必须按 key/hash 合并，S3 当前对象优先。
+- [x] Router 原始 binary/config/SQLite 私有快照上传并核对包哈希；独立 Router 尚未安装启动。
+- [ ] 新机固定 commit 源码构建/测试链及候选镜像。
+- [ ] app/Worker 启动、登录/媒体/真实生成账务/重启验收。
+- [ ] OSS 迁移、下班窗口回传生产。
 
-## 9. 当前阻塞
+## 9. 证据、恢复与交接
 
-- 新机 Docker Hub 直连超时；已按用户授权安装复用本机配置的 Mihomo 下载代理。代理访问 GitHub=200、Docker Hub/GHCR=401（正常认证响应），真实镜像拉取验收另见“下载代理”。
-- 全量数据库和媒体尚未复制。数据规模适合当前新机磁盘，但 NAS 对象与残留本地媒体需要按对象 key 和哈希核对，不将残留本地卷视作完整数据。
-- 历史任务来源隔离及页面/API 惰性恢复保护尚未实施。生产存在 1 笔未结算生图任务，必须保留原始 dump 和状态。
-- 生产 Router 实际位置、配置快照及新机独立 Router 尚待盘点和准备；新环境未执行真实收费测试。
-- 预发布 app/db/Worker 尚未启动，未宣称全量环境贯通、OSS 切换或晚间生产发布完成。
+本地证据：`E:\Workspace\naumi\output\staging-data-20261008`；新机快照 `/opt/naumi-staging/snapshots/20261008-full`，数据库哈希证据 `/opt/naumi-staging/evidence/database-{reference,working}-hashes.txt`。
 
-### 本阶段验证与证据
+已执行结果（0 表示退出状态）：
 
-- 新机 `Docker 29.1.3`、`Compose 2.40.3`；Docker `enabled/active`，初始化脚本重复执行通过。
-- Compose 用 fixture 凭据在新机解析，结果：`STAGING_COMPOSE_RESULT=PASS PROJECT=naumi-staging MEDIA=local DB=private APP=loopback WORKER=opt-in`。没有启用数据库或 app，没有真实数据/消费发生。
-- README 基线结果：`HANDOFF_LINK=ABSENT` / exit 1；修改版：`HANDOFF_LINK=PRESENT` / exit 0；独立副本回滚：`ROLLBACK_RESULT=PASS ORIGINAL_README_RESTORED=1 FIXTURE_ONLY=1` / exit 0。回滚前后基线 SHA256 相同，只演练文档副本，不声称已卸载 Docker 或回滚生产。
-- 干净源码包 SHA256：`c605f56f361bf168a3006f411096926595c04b0a21e716d03c206ea0af82ba45`。不包含 `.env`、私钥、`node_modules`、本地运行数据、`output` 或 `audit-artifacts`。初次直接 `git archive` 包含仓库已跟踪的演示 output；已生成过滤后的 clean 包，构建只使用 clean 源码。
-- 本机直连 GitHub push 曾超时；通过新服务器临时 SSH SOCKS 路由推送成功，不改持久 Git 代理配置。
-- 第一次 Compose 配置核验遗漏 `--profile workers`，未列出 opt-in worker 导致 service-set 断言失败；补上 profile 后通过。Windows stdin 尾部 CRLF 曾造成盘点退出 127；在 SSH 输入上规范化 CRLF 后盘点退出 0。
-- 本地证据目录：`E:\Workspace\naumi\output\staging-setup-20261008`（Git 忽略）；新机交接/回滚演练目录：`/opt/naumi-staging/evidence/handoff`。
-- 此阶段生产仅执行只读盘点，应用、Worker 和数据库未重启；生产固定镜像未切换。全量复制和真实测试属于下一阶段。
+- `bash /opt/naumi-staging/config/verify-database-copies.sh` → `DATABASE_ALL_PUBLIC_TABLES=IDENTICAL APP_TABLES=69` / 0。
+- 历史防护 SQL → `MODIFIED_HISTORY_MUTATION=BLOCKED`、`MODIFIED_LEDGER_MUTATION=BLOCKED`、`NEW_TEST_TASK_WRITES=ALLOWED`、`HISTORY_GUARD_VERIFICATION=PASS FIXTURE_DATA=ROLLED_BACK` / 0。
+- `/opt/naumi-staging/config/ROLLBACK.sh --fixture` → `DATABASE_ROLLBACK_FIXTURE=PASS ORIGINAL_DUMP_RESTORED=1 PRIMARY_STAGING_DATABASE_CHANGED=0` / 0；这是另一个库的恢复演练，不是撤销工作库保护。
+- `npx tsx --conditions react-server scripts/staging/verify-history-helper.ts` → `STAGING_HISTORY_HELPER=PASS PRODUCTION_DEFAULT=UNCHANGED FAIL_CLOSED=1` / 0；首轮类型检查通过，后续新模块需要新机真实库验收。
 
-## 10. 下一执行点（接手后从这里继续）
+### 正在运行的媒体导出
 
-1. 核验镜像获取路径。新机 GHCR 网络可达，但仓库镜像是否公开/是否需要认证尚未核验；旧机已存在生产固定镜像和 PostgreSQL 镜像，可在不向生产磁盘写出大包的情况下流式导出到新机，读取操作需要限速及健康监测。新机未来本地构建还需要 Node 24 基础镜像；不能将“已有应用镜像”误当“本地构建链已完成”。
-2. 先准备“不可变原始 dump + 对象清单 + 工作副本”。执行全量复制时只写新机，生产端不打包媒体或删除对象。核对 S3 与残留本地卷同名对象，记录缺失引用与绝对 URL；数据可能持续变化，需要用同一轮源端清单评估一致性。
-3. 核验生产 Router 位置和版本，准备独立 Router、管理令牌、可信来源、恢复/费用端点；不要简单把生产 `.env` 整文件用于 app 启动。
-4. 编写并验收历史任务保护：复制时所有既有任务 ID 进入来源清单，页面 GET、手动恢复、worker tick 与费用补查均不得对这些 ID 重放或自动改变账务。新的测试任务允许正常执行。恢复历史任务的专门测试在另一个可重置副本内进行，不自动覆盖主要预发布副本。
-5. 以上完成后才导入完整工作副本、启用真实配置，用户通过 SSH 隧道访问；后续逐模块验收，不频繁重跑全部大测试。
+- 复制使用 rclone copy（非 sync），单传输/单检查、2 MiB/s 上限、CPUQuota 50% / MemoryMax 256 MiB；不删除源对象。
+- 来源隧道：Windows → 旧机 `-L 127.0.0.1:13900:172.17.0.1:3900`；Windows → 新机 `-R 127.0.0.1:13900:127.0.0.1:13900`。当前工具会话分别 `82211`、`16137`，源端口只供历史导出。
+- 完成标记 `MEDIA_S3_IMPORTED` 不是完整性验收；还要核对清单大小/内容、补齐旧本地媒体并检查数据库引用和绝对 URL。
+- **传输结束前保留两条隧道和临时 key**。临时 key 位于忽略目录 `output/staging-data-20261008/{new,old}-key.pem`，原私钥未修改；源 hash 保存在同目录 `{new,old}-source.sha256`。结束后核对原 hash 并清理副本。
+- 导出用私有 `config/media-import.conf` 和 bucket 文件，最终 app 不包含这些源媒体凭据。
+- 本轮曾将临时新机 key 误传旧机临时目录；已删除且复查不存在。旧机生产服务配置/数据未改，未重启服务；不要把临时文件操作描述成全部只读。
+
+### 独立 Router 和配置待办
+
+- 生产 Router 位于 `/opt/naumi-gateway/current`，service `naumi-router.service`，state `/var/lib/naumi-gateway/router`；`E:\Workspace\router` 是另一个项目。
+- 新机原始 Router 快照包 SHA256 `d91d3a8f427517b38fab6f354d235587a365516329dff16ff93cb8a0dd43ffda`，解压在快照目录 `router/`。
+- SQLite 在线 tar 快照须 integrity_check；需要时从旧机 SQLite backup API 取得一致性副本。
+- 工作 Router 使用独立 state、generation/management token、监听端口和新机 capacity 回调；不复用生产管理地址。
+- `SETTINGS_SECRET` / envelope secret 需要兼容解密。仅数据库恢复用 `.env.db-restore` 的 SETTINGS_SECRET 是随机占位，不能用于 app。
+- 生产 Yutang 地址为旧宿主 `host.docker.internal:8766`；此供应商依赖需单独迁移/核验，不能标为新环境可用。
+
+## 10. 下一执行点
+
+1. 在新机按固定已提交 commit 建立 npm 依赖和验证链；不在本机构建候选镜像。`scripts/staging/run-history-runtime.sh <40位commit>` 只克隆工作库为独立 fixture、运行测试并清理，不修改工作副本。
+2. 持续观察正在运行的媒体服务，不因观察超时反复重启；补齐残留本地媒体，执行清单/内容/引用核验。
+3. 完成独立 Router 与真实 app 配置白名单隔离，核验数据库、通知/支付和 Router 管理地址，不直接启用 production.env。
+4. 所有历史恢复/费用/账务入口验收后才启动 app 和 opt-in Worker；按模块完成登录、媒体、真实生成费用和重启恢复。
+5. 更新本文、验证证据，选择性提交推送；晚间回传与 OSS 为后续阶段，目标保持 active。
 
 ### 接手提示词
 
@@ -260,4 +269,4 @@ docker build --network=host \
 - 回滚：`/opt/naumi-staging/config/proxy-package/ROLLBACK.sh --check`；实际卸载为 `--apply`，会关闭 Mihomo、移除本次 Docker drop-in 并重启新机 Docker，保留私有安装包。副本演练使用 `--fixture /opt/naumi-staging/evidence/proxy-rollback-fixture`，不停止正在使用的代理。
 - 代理服务刚重启时应等端口就绪再验证；不要在镜像/数据传输过程中重启代理。一次镜像拉取与代理重启重叠导致 EOF，按原镜像 tag 续拉，不把该次视为成功。
 - 已完成真实文件下载（上游 README 3,194 bytes）和 `hello-world` 镜像拉取，镜像 ID：`sha256:5e23090353324d887c48ad5e5c56d294eab81588df9605b07d1afe895f9cc8f8`。代理重启后 GitHub 再次 HTTP 200，Mihomo enabled/active，Docker info 确认 daemon 使用回环代理。
-- PostgreSQL/Node 较大基础镜像尚未完成拉取（已下载部分层，未取得完整镜像）。后续核验当前已缓存层后续拉，或使用经哈希验证的离线镜像；当前没有 app/db/Worker 容器运行，不以小镜像成功声称完整构建链已贯通。
+- PostgreSQL/Node 大镜像下载多次超时，已切换为哈希验证的离线导入；PostgreSQL 数据库已启动，app/Worker 未启动。小镜像与离线导入不代表源码构建链验收完成。

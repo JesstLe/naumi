@@ -5,6 +5,7 @@ import type { Pool } from "pg";
 import { dbEnabled, getPool } from "./db";
 import { uploadImage } from "./storage";
 import { readManagedObject } from "./storage";
+import { assertMutableStagingTask } from "./staging-history";
 import type { Postprocess } from "./model-config/business-schema";
 export class PostprocessPending extends Error { constructor(public operationId: string) { super("底图已保存，后处理未完成；恢复只重做此阶段"); } }
 const ready = new WeakMap<Pool, Promise<unknown>>();
@@ -29,6 +30,10 @@ export async function transformImage(bytes: Buffer, policy: Postprocess) {
 export async function runPostprocess(input: { id: string; parentId: string; email: string; modelVersion: number; bytes: Buffer; policy: Postprocess }): Promise<PostprocessResult> {
   if (!dbEnabled) { const r=await transformImage(input.bytes,input.policy);return {url:await uploadImage(r.bytes,"image/png",`postprocess/${createHash("sha256").update(input.id).digest("hex")}.png`),width:r.width,height:r.height,kind:r.kind,status:"succeeded"}; }
   const pool=getPool(); await ensurePostprocessSchema(pool);
+  await assertMutableStagingTask(pool, "app_media_postprocess", input.id);
+  await assertMutableStagingTask(pool, "app_billing_operations", input.parentId);
+  await assertMutableStagingTask(pool, "app_image_jobs", input.parentId);
+  await assertMutableStagingTask(pool, "app_canvas_image_tasks", input.parentId);
   const digest=createHash("sha256").update(input.bytes).update(JSON.stringify(input.policy)).digest("hex"), key=createHash("sha256").update(input.id).digest("hex");
   const exists=(await pool.query("SELECT * FROM app_media_postprocess WHERE operation_id=$1",[input.id])).rows[0];
   if (exists && (exists.digest!==digest || exists.email!==input.email || Number(exists.model_version)!==input.modelVersion)) throw new Error("后处理任务与冻结配置不一致");
@@ -44,6 +49,10 @@ export async function resumePostprocess(id: string, email: string, explicitRetry
   let row=(await pool.query("SELECT * FROM app_media_postprocess WHERE operation_id=$1 AND email=$2",[id,email])).rows[0];
   if (!row) throw new Error("后处理任务不存在");
   if (row.state==="succeeded") return {url:row.result_url,width:row.width,height:row.height,kind:row.processing_kind,status:"succeeded"};
+  await assertMutableStagingTask(pool, "app_media_postprocess", id);
+  await assertMutableStagingTask(pool, "app_billing_operations", row.parent_operation_id);
+  await assertMutableStagingTask(pool, "app_image_jobs", row.parent_operation_id);
+  await assertMutableStagingTask(pool, "app_canvas_image_tasks", row.parent_operation_id);
   if (row.state === "failed" && row.policy.failure === "keep-base" && !explicitRetry) {
     const base=await readManagedObject(row.base_url,64*1024*1024),meta=await sharp(base.bytes).metadata();
     return {url:row.base_url,width:meta.width||0,height:meta.height||0,kind:"base",status:"failed-kept-base"};
