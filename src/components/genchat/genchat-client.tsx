@@ -111,7 +111,7 @@ type Turn = {
 
 export function GenChatClient() {
   const billing=useBilling();
-  const { user, ready } = useAuth();
+  const { user, ready, applyServerUser } = useAuth();
   const { quality, imageCost } = useImageQuality();
   const { openAuth } = useAuthModal();
   const { t, te } = useI18n();
@@ -352,6 +352,7 @@ export function GenChatClient() {
           { cache: "no-store", headers: await authHeader() }
         );
         const pj = await pr.json();
+        if (pr.ok && pj.user) applyServerUser(pj.user);
         if (pj.status === "done") {
           images = ((pj.images ?? []) as { id: string; url?: string; image?: string }[]).map(
             (im) => ({ id: im.id, image: im.image || im.url || "" })

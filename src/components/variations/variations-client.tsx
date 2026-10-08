@@ -264,6 +264,7 @@ export function VariationsClient() {
           { cache: "no-store", headers: await authHeader() }
         );
         const s = await sres.json();
+        if (sres.ok && s.user) applyServerUser(s.user);
         if (s.status === "done") data = s;
         else if (s.status === "error")
           throw new Error(s.error ?? L("生成失败", "Failed"));
