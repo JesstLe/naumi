@@ -1,6 +1,6 @@
 # Naumi 新服务器预发布与晚间回传方案
 
-> 状态：新机 app/Worker/Router 与下载代理正常；全量媒体、生图、改图、真实 OCR 与失败视频退款通过；固定镜像回传包及全量快照增量迁移/恢复演练完成。视频成功出片（供应商 401）、本人密码登录、OSS 参数及晚间生产回传尚未完成。源端既存媒体缺失和未运行的本地业务适配器单独记录（2026-10-09）。
+> 状态：新机 app/Worker/Router 与下载代理正常；全量媒体、生图、改图、真实 OCR 与失败视频退款通过；固定镜像回传包及全量快照增量迁移/恢复演练完成；OSS opt-in overlay 和两种寻址的隔离测试已通过，未真实切换 OSS。视频成功出片（供应商 401）、本人密码登录、OSS 参数及晚间生产回传尚未完成。源端既存媒体缺失和未运行的本地业务适配器单独记录（2026-10-09）。
 >
 > 本文是本任务的交接入口。后续 Agent 先阅读本文，再检查本文列出的状态、证据和阻塞项；不要凭对话上下文猜测迁移进度。
 
@@ -480,3 +480,75 @@ RETURN_MIGRATION=PASS SOURCE=FULL_REFERENCE_SNAPSHOT PRODUCTION_RUN=0 SUPPLIER_C
 - 下次已有OCR只执行 `run-real-ocr.sh --verify`；无需再生成fixture或重放图/视频。当前浏览器仍是本人登录对话框，未输入本人密码。
 - 下一实际阶段：有效视频凭据→一次新任务成功出片；本人登录与页面验收；OSS bucket/region/endpoint与专用凭据准备→新机独立迁移验证；确认下班发布窗口并刷生产基线→同镜像回传。业务适配器源端既不可用的恢复要求单独确认，不能虚报已迁移。
 - 本轮goal分类是 progress：完成真实OCR与幂等重放、全快照迁移/恢复演练并纠正依赖状态；全目标继续 active。
+
+## 16. 下载代理复验与 OSS 切换准备（2026-10-09 01:54 CST）
+
+### 当前实际状态
+
+- 用户授权的新机 Clash 已使用 Mihomo v1.19.32 安装，复用本机实际配置；本轮不重复安装、不重启 Docker/代理/应用。原本机 `clash-verge.yaml` 与导出前 SHA256 记录相同，原私钥 hash 未变，会话副本每次结束清理。
+- `bash /opt/naumi-staging/config/check-proxy-final.sh` / 0：enabled/active；HTTP/SOCKS 与 DNS 仅在回环7897/1053；GitHub release HTML 实际下载219,912 bytes；`PROXY_DOWNLOAD=PASS`。`ROLLBACK.sh --check` 和重新建立的文件副本演练通过：`PROXY_ROLLBACK=PASS FIXTURE_ONLY=1 PROXY_FILES_ABSENT=1`、`RESTORED_FIXTURE_STATUS=PREINSTALL_FILES_ABSENT`；线上修改后配置保持原hash、服务继续active。
+- 已安装代理的 `ROLLBACK.sh --apply` 含“无容器”门槛；当前已有app/db/worker，因此不要为卸载代理删除真实容器，也不要声称现有脚本能无影响卸载当前环境。此时真正卸载需另行编排应用停机、移除Docker代理并测试恢复；本轮只有文件副本演练。
+- app仍为固定候选65adfe...、health200、storage local；`.env.oss` 不存在。新机没有OSS业务写入或NAS连接，旧机没有发布、重启或数据写入。
+- 生产热修复84e1af...与开发提交a6b891e的stable patch-id都为 `dbd0a01d994204952cf62688bd299b9c611fdb96`，候选包含对应开发提交。这证明该补丁等价，不证明其他差异都已验收；窗口前仍需刷新生产基线和完整差异。
+
+### OSS overlay 与真实协议门槛
+
+- baseline Compose明确设置 `STORAGE_DRIVER=local` 并清空S3字段；仅把真实OSS参数放env不会切换。新增 `deploy/staging/docker-compose.oss.yml`，必须明确加第二个 `-f`；baseline不改，绝不自动启用overlay。
+- overlay只覆盖app存储字段，独立 `NAUMI_OSS_*` 插值；虚拟主机寻址、私有bucket、`S3_PUBLIC_BASE_URL=""`，保留既有 `/media/<key>` 数据库URL及应用媒体代理，不批量改作品历史URL。Worker镜像、数据库、Router、来源guard、本机媒体挂载都保持不变。
+- 模板 `deploy/staging/.env.oss.example` 只有字段。真实参数存 `/opt/naumi-staging/config/.env.oss`，root0600；区域endpoint不含bucket前缀、path、query，专用Bucket/AccessKey不复用生产媒体凭据；参数本轮未提供。
+- 当前 `storage.ts` 使用aws4fetch、`service=s3` 和 `AWS4-HMAC-SHA256`。mock只能验证这套签名请求/HTTP行为；不能由“OSS支持对象存储”推导阿里OSS真实endpoint一定接受此签名。必须对明确region/bucket做真实PUT/HEAD/GET/Range/DELETE及内容hash核验，再决定复用S3驱动或适配OSS SDK。失败时留在local，不把mock当真实OSS验收；如需改业务驱动，重新构建并验收新的固定候选及回传包。
+
+### 已完成的隔离模块验收
+
+先将仓库下脚本逐一复制到新机config：`verify-oss-runtime.ts`、`run-oss-fixture.sh`、`verify-oss-module.sh`、`verify-compose.py`、`verify-oss-compose.py`；将baseline模板复制为 `oss-baseline-fixture.yml`，overlay复制为 `docker-compose.oss.yml`。这些是测试/候选模板，不覆盖正在运行的Compose。
+
+```bash
+bash /opt/naumi-staging/config/verify-oss-module.sh \
+  65adfe8742e7a1fe120e7ce7a94409c50c76eb44
+```
+
+- 模块fixture只生成mock env；使用 `--profile workers` 渲染Compose。基线local检查通过，overlay验证所有非存储字段逐字不变；6个负向用例（guard、生产DB连接、错误endpoint、HTTP、path-style、publicBase）被拒绝，缺真实参数时Compose非零退出。
+- 两种寻址（path与virtual-host）分别使用现有固定standalone镜像、只读冻结源码/依赖和一个只读可读PNG；`--network none`、不挂数据库/真实媒体/凭据。virtual-host用容器自身127.0.0.1 hosts映射，不解析真实OSS域名。
+- 真实 `storage.ts` fixture PUT/GET/HEAD/Range、字节hash、读取大小限制和路径遍历拒绝通过；真实固定镜像 `/media` 返回200/206/404及未读取对象的故障503。
+
+```text
+OSS_COMPOSE=PASS OVERLAY_ONLY=1 DATABASE_UNCHANGED=1 IMAGE_UNCHANGED=1 HISTORY_GUARD=1 MEDIA_URL=PRIVATE_PROXY
+OSS_COMPOSE_NEGATIVE=PASS CASES=6 CREDENTIALS_PRINTED=0
+OSS_COMPOSE_MISSING_PARAMS=BLOCKED EXIT=NONZERO
+OSS_TRANSPORT_FIXTURE=PASS PUT=1 GET=1 HEAD=1 RANGE=206 CONTENT_SHA256=IDENTICAL MAX_BYTES=ENFORCED TRAVERSAL=BLOCKED
+OSS_FIXED_IMAGE_FIXTURE=PASS MEDIA=200 RANGE=206 MISSING=404 OUTAGE=503 DB=NONE NETWORK=ISOLATED LIVE_OSS=NOT_TESTED
+OSS_FIXTURE_CLEANUP=PASS DELETE=2 REAL_CREDENTIALS=0 REAL_SUPPLIER_CALLS=0 STAGING_RUNTIME_CHANGED=0
+OSS_RUNTIME_MATRIX=PASS PATH=1 VIRTUAL_HOST=1 LIVE_OSS=NOT_TESTED
+OSS_MODULE=PASS MOCK_CREDENTIALS=1 LIVE_SWITCH=0
+```
+
+- command exit0；每种寻址各两次上传/删除只在内存mock内，非真实OSS写入。上面的PUT=1等是覆盖断言而非整个fixture的累计请求次数；故障响应会被客户端重试。一次原URL重复GET返回200而非预期503，改用独立未读取key注入故障，保留原失败记录；缓存是可能机制，没有由此声称线上媒体缓存行为完整验收。
+- 首次挂载错误exit125：新脚本不存在于只读冻结源码，Docker创建嵌套挂载点失败。现脚本独立挂到 `/tmp`，通过 `NAUMI_STAGING_SOURCE_ROOT=/source` 导入，不创建占位、不改冻结候选。第二次exit1为上述故障测试原URL返回200；Compose第一次exit1因未启用workers profile。均保留证据，未视为通过。Node package type warning不修改候选package.json。
+
+### 真实迁移执行顺序（尚未执行）
+
+1. 取得独立bucket、region、endpoint和受保护凭据路径，确认协议兼容后仅对独立临时key运行上述真实存储读写/删除验收。对私有bucket匿名读取应被拒绝；应用代理仍能读。
+2. 使用新机专用rclone配置，先验证列举/复制权限及目标bucket现有对象；保留本地媒体。先 `copy`，不用 `sync` 或删除源；不能复用生产Garage脚本的size-only检查。rclone本机v1.60.1-DEV已存在，不据此证明OSS后端可用。
+3. 首轮本地→OSS copy可在线进行，记录原清单、对象数/字节/hash；源随测试变化时不能将一次copy视作最终一致。停新机app与worker前检查新机所有测试任务无未结算/未完成项，保存持久receipt和本地快照，确认测试停止后冻结写入。
+4. 冻结期间再做增量copy、全量源清单SHA256、目标下载内容完整核验（如rclone `check --download`，不要只比较size/不可靠multipart ETag）；保留详细结果和冻结清单hash。清单包含迁移后新增测试对象，不能只用原4767源清单证明新数据也迁走。
+5. 同时加载受保护base env和OSS env，渲染baseline+overlay到0600临时文件，运行 `verify-oss-compose.py <baseline.json> <merged.json>` 并核对候选镜像未变。再明确启用overlay，仅重建新机app/worker；健康、历史/新媒体、Range、一次独立新写入和真实页面验收通过才完成切换。所有渲染文件受保护并及时删除，不打印环境/凭据。
+6. 切换后本地副本继续保留。回滚先停新机写入，保存OSS清单并将OSS切换后新增/变更对象copy回本地，完整下载hash校验；空间不足或核验失败时保持停止并保留证据。核验通过再去掉overlay重建local服务，恢复健康和全部新旧媒体。不得直接去overlay而丢OSS切换后媒体；不删OSS对象，不更改数据库URL。
+
+以上是执行门槛和设计，不是已实现/已跑通的自动迁移/回滚工具；待实际OSS参数与协议验收后按结果实现并测试专用工具。当前只准备overlay和隔离模块fixture。
+
+### 交接状态与下一输入
+
+- 新证据：`/opt/naumi-staging/evidence/oss-module-20261009.txt`、`oss-runtime-first-mount-failure-20261009.txt`、`oss-runtime-cache-failure-20261009.txt`、`oss-compose-profile-failure-20261009.txt`、`proxy-final-20261009.txt`；本机已回读的模块/代理证据在 `E:\Workspace\naumi\output\staging-functional-20261009`。
+- 分支 `codex/staging-media-handoff`；本轮仅准备脚本/overlay/README，不改生产业务运行候选。主工作区其他人的即梦/图标工作及未跟踪文件保持原样。
+- 浏览器本人登录框仍未完成；保留登录tab与13012隧道。缺有效视频凭据、OSS专用配置、下班回传时刻；不重复问已发的问题、不重复创建收费任务。目标保持 active，已完成Clash授权事项与OSS隔离准备，不宣称全部迁移/发布完成。
+
+接手Agent可复用以下提示词：
+
+```text
+先读AGENTS.md和docs/NAUMI_STAGING_MIGRATION_README.md第13—16节，在
+codex/staging-media-handoff独立worktree核对Git与新机现态。旧机保持生产，
+不回灌测试DB，不重提receipt中图/视频/OCR。先读取用户新增的视频/OSS私有
+配置路径与窗口信息；缺配置时不猜bucket/token。OSS mock通过不等于真实
+兼容；先验真实协议，再实现新机copy/download-hash/冻结切换/媒体回收回滚
+工具。每模块更新README与证据，选择性提交推送，不改原私钥与主工作区。
+```
