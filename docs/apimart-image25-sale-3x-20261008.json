@@ -1,0 +1,559 @@
+{
+  "date": "2026-10-08",
+  "models": [
+    "gpt-image-2.5-flare",
+    "gpt-image-2.5-sunburst"
+  ],
+  "source_file": "apimart-image25-pricing-20261008.json",
+  "source_sha256": "08332679b685ff6b3a0d58fa9edb148a9399672c38b68eb56641910cad2c8299",
+  "base": "gold_output_only_usd_estimate",
+  "multiplier": "3",
+  "currency": "USD",
+  "unit": "per_output_image",
+  "amount_encoding": "decimal_string",
+  "includes_prompt_and_reference_input_cost": false,
+  "production_pricing_changed": false,
+  "formula": "reference output tokens * 24 USD / 1000000 * 3",
+  "sale_reference_matrix": [
+    {
+      "size": "1:1",
+      "resolution": "1k",
+      "pixels": "1024x1024",
+      "sale_usd_per_image": {
+        "low": "0.014112",
+        "medium": "0.031608",
+        "high": "0.126432",
+        "xhigh": "0.224784",
+        "max": "0.505728"
+      }
+    },
+    {
+      "size": "3:2",
+      "resolution": "1k",
+      "pixels": "1536x1024",
+      "sale_usd_per_image": {
+        "low": "0.011376",
+        "medium": "0.024696",
+        "high": "0.098784",
+        "xhigh": "0.177048",
+        "max": "0.395136"
+      }
+    },
+    {
+      "size": "2:3",
+      "resolution": "1k",
+      "pixels": "1024x1536",
+      "sale_usd_per_image": {
+        "low": "0.011376",
+        "medium": "0.024696",
+        "high": "0.098784",
+        "xhigh": "0.177048",
+        "max": "0.395136"
+      }
+    },
+    {
+      "size": "4:3",
+      "resolution": "1k",
+      "pixels": "1024x768",
+      "sale_usd_per_image": {
+        "low": "0.009648",
+        "medium": "0.021672",
+        "high": "0.086688",
+        "xhigh": "0.154080",
+        "max": "0.346680"
+      }
+    },
+    {
+      "size": "3:4",
+      "resolution": "1k",
+      "pixels": "768x1024",
+      "sale_usd_per_image": {
+        "low": "0.009648",
+        "medium": "0.021672",
+        "high": "0.086688",
+        "xhigh": "0.154080",
+        "max": "0.346680"
+      }
+    },
+    {
+      "size": "5:4",
+      "resolution": "1k",
+      "pixels": "1280x1024",
+      "sale_usd_per_image": {
+        "low": "0.012456",
+        "medium": "0.027216",
+        "high": "0.108720",
+        "xhigh": "0.194544",
+        "max": "0.440568"
+      }
+    },
+    {
+      "size": "4:5",
+      "resolution": "1k",
+      "pixels": "1024x1280",
+      "sale_usd_per_image": {
+        "low": "0.012456",
+        "medium": "0.027216",
+        "high": "0.108720",
+        "xhigh": "0.194544",
+        "max": "0.440568"
+      }
+    },
+    {
+      "size": "16:9",
+      "resolution": "1k",
+      "pixels": "1536x864",
+      "sale_usd_per_image": {
+        "low": "0.008640",
+        "medium": "0.020160",
+        "high": "0.077616",
+        "xhigh": "0.138024",
+        "max": "0.310464"
+      }
+    },
+    {
+      "size": "9:16",
+      "resolution": "1k",
+      "pixels": "864x1536",
+      "sale_usd_per_image": {
+        "low": "0.008640",
+        "medium": "0.020160",
+        "high": "0.077616",
+        "xhigh": "0.138024",
+        "max": "0.310464"
+      }
+    },
+    {
+      "size": "2:1",
+      "resolution": "1k",
+      "pixels": "2048x1024",
+      "sale_usd_per_image": {
+        "low": "0.009504",
+        "medium": "0.021240",
+        "high": "0.084960",
+        "xhigh": "0.151056",
+        "max": "0.339840"
+      }
+    },
+    {
+      "size": "1:2",
+      "resolution": "1k",
+      "pixels": "1024x2048",
+      "sale_usd_per_image": {
+        "low": "0.009504",
+        "medium": "0.021240",
+        "high": "0.084960",
+        "xhigh": "0.151056",
+        "max": "0.339840"
+      }
+    },
+    {
+      "size": "21:9",
+      "resolution": "1k",
+      "pixels": "2016x864",
+      "sale_usd_per_image": {
+        "low": "0.007560",
+        "medium": "0.016200",
+        "high": "0.067896",
+        "xhigh": "0.116424",
+        "max": "0.265104"
+      }
+    },
+    {
+      "size": "9:21",
+      "resolution": "1k",
+      "pixels": "864x2016",
+      "sale_usd_per_image": {
+        "low": "0.007560",
+        "medium": "0.016200",
+        "high": "0.067896",
+        "xhigh": "0.116424",
+        "max": "0.265104"
+      }
+    },
+    {
+      "size": "3:1",
+      "resolution": "1k",
+      "pixels": "1536x512",
+      "sale_usd_per_image": {
+        "low": "0.004032",
+        "medium": "0.009648",
+        "high": "0.038520",
+        "xhigh": "0.067464",
+        "max": "0.154080"
+      }
+    },
+    {
+      "size": "1:3",
+      "resolution": "1k",
+      "pixels": "512x1536",
+      "sale_usd_per_image": {
+        "low": "0.004032",
+        "medium": "0.009648",
+        "high": "0.038520",
+        "xhigh": "0.067464",
+        "max": "0.154080"
+      }
+    },
+    {
+      "size": "1:1",
+      "resolution": "2k",
+      "pixels": "2048x2048",
+      "sale_usd_per_image": {
+        "low": "0.028584",
+        "medium": "0.064224",
+        "high": "0.256896",
+        "xhigh": "0.456696",
+        "max": "1.027584"
+      }
+    },
+    {
+      "size": "3:2",
+      "resolution": "2k",
+      "pixels": "2048x1360",
+      "sale_usd_per_image": {
+        "low": "0.015192",
+        "medium": "0.033120",
+        "high": "0.132336",
+        "xhigh": "0.231552",
+        "max": "0.529272"
+      }
+    },
+    {
+      "size": "2:3",
+      "resolution": "2k",
+      "pixels": "1360x2048",
+      "sale_usd_per_image": {
+        "low": "0.015192",
+        "medium": "0.033120",
+        "high": "0.132336",
+        "xhigh": "0.231552",
+        "max": "0.529272"
+      }
+    },
+    {
+      "size": "4:3",
+      "resolution": "2k",
+      "pixels": "2048x1536",
+      "sale_usd_per_image": {
+        "low": "0.017784",
+        "medium": "0.040032",
+        "high": "0.160056",
+        "xhigh": "0.284544",
+        "max": "0.640224"
+      }
+    },
+    {
+      "size": "3:4",
+      "resolution": "2k",
+      "pixels": "1536x2048",
+      "sale_usd_per_image": {
+        "low": "0.017784",
+        "medium": "0.040032",
+        "high": "0.160056",
+        "xhigh": "0.284544",
+        "max": "0.640224"
+      }
+    },
+    {
+      "size": "5:4",
+      "resolution": "2k",
+      "pixels": "2560x2048",
+      "sale_usd_per_image": {
+        "low": "0.027144",
+        "medium": "0.059472",
+        "high": "0.237816",
+        "xhigh": "0.425592",
+        "max": "0.963720"
+      }
+    },
+    {
+      "size": "4:5",
+      "resolution": "2k",
+      "pixels": "2048x2560",
+      "sale_usd_per_image": {
+        "low": "0.027144",
+        "medium": "0.059472",
+        "high": "0.237816",
+        "xhigh": "0.425592",
+        "max": "0.963720"
+      }
+    },
+    {
+      "size": "16:9",
+      "resolution": "2k",
+      "pixels": "2048x1152",
+      "sale_usd_per_image": {
+        "low": "0.011304",
+        "medium": "0.026424",
+        "high": "0.101736",
+        "xhigh": "0.180792",
+        "max": "0.406800"
+      }
+    },
+    {
+      "size": "9:16",
+      "resolution": "2k",
+      "pixels": "1152x2048",
+      "sale_usd_per_image": {
+        "low": "0.011304",
+        "medium": "0.026424",
+        "high": "0.101736",
+        "xhigh": "0.180792",
+        "max": "0.406800"
+      }
+    },
+    {
+      "size": "2:1",
+      "resolution": "2k",
+      "pixels": "2688x1344",
+      "sale_usd_per_image": {
+        "low": "0.012960",
+        "medium": "0.029160",
+        "high": "0.116424",
+        "xhigh": "0.206928",
+        "max": "0.465552"
+      }
+    },
+    {
+      "size": "1:2",
+      "resolution": "2k",
+      "pixels": "1344x2688",
+      "sale_usd_per_image": {
+        "low": "0.012960",
+        "medium": "0.029160",
+        "high": "0.116424",
+        "xhigh": "0.206928",
+        "max": "0.465552"
+      }
+    },
+    {
+      "size": "21:9",
+      "resolution": "2k",
+      "pixels": "2688x1152",
+      "sale_usd_per_image": {
+        "low": "0.010296",
+        "medium": "0.022032",
+        "high": "0.092520",
+        "xhigh": "0.158544",
+        "max": "0.361152"
+      }
+    },
+    {
+      "size": "9:21",
+      "resolution": "2k",
+      "pixels": "1152x2688",
+      "sale_usd_per_image": {
+        "low": "0.010296",
+        "medium": "0.022032",
+        "high": "0.092520",
+        "xhigh": "0.158544",
+        "max": "0.361152"
+      }
+    },
+    {
+      "size": "3:1",
+      "resolution": "2k",
+      "pixels": "3072x1024",
+      "sale_usd_per_image": {
+        "low": "0.007416",
+        "medium": "0.017784",
+        "high": "0.071136",
+        "xhigh": "0.124488",
+        "max": "0.284544"
+      }
+    },
+    {
+      "size": "1:3",
+      "resolution": "2k",
+      "pixels": "1024x3072",
+      "sale_usd_per_image": {
+        "low": "0.007416",
+        "medium": "0.017784",
+        "high": "0.071136",
+        "xhigh": "0.124488",
+        "max": "0.284544"
+      }
+    },
+    {
+      "size": "1:1",
+      "resolution": "4k",
+      "pixels": "2880x2880",
+      "sale_usd_per_image": {
+        "low": "0.047448",
+        "medium": "0.106776",
+        "high": "0.426960",
+        "xhigh": "0.759024",
+        "max": "1.707768"
+      }
+    },
+    {
+      "size": "3:2",
+      "resolution": "4k",
+      "pixels": "3520x2336",
+      "sale_usd_per_image": {
+        "low": "0.032400",
+        "medium": "0.070704",
+        "high": "0.282672",
+        "xhigh": "0.494640",
+        "max": "1.130616"
+      }
+    },
+    {
+      "size": "2:3",
+      "resolution": "4k",
+      "pixels": "2336x3520",
+      "sale_usd_per_image": {
+        "low": "0.032400",
+        "medium": "0.070704",
+        "high": "0.282672",
+        "xhigh": "0.494640",
+        "max": "1.130616"
+      }
+    },
+    {
+      "size": "4:3",
+      "resolution": "4k",
+      "pixels": "3312x2480",
+      "sale_usd_per_image": {
+        "low": "0.035352",
+        "medium": "0.079488",
+        "high": "0.317736",
+        "xhigh": "0.564840",
+        "max": "1.270800"
+      }
+    },
+    {
+      "size": "3:4",
+      "resolution": "4k",
+      "pixels": "2480x3312",
+      "sale_usd_per_image": {
+        "low": "0.035352",
+        "medium": "0.079488",
+        "high": "0.317736",
+        "xhigh": "0.564840",
+        "max": "1.270800"
+      }
+    },
+    {
+      "size": "5:4",
+      "resolution": "4k",
+      "pixels": "3216x2576",
+      "sale_usd_per_image": {
+        "low": "0.038520",
+        "medium": "0.084456",
+        "high": "0.337680",
+        "xhigh": "0.604296",
+        "max": "1.368432"
+      }
+    },
+    {
+      "size": "4:5",
+      "resolution": "4k",
+      "pixels": "2576x3216",
+      "sale_usd_per_image": {
+        "low": "0.038520",
+        "medium": "0.084456",
+        "high": "0.337680",
+        "xhigh": "0.604296",
+        "max": "1.368432"
+      }
+    },
+    {
+      "size": "16:9",
+      "resolution": "4k",
+      "pixels": "3840x2160",
+      "sale_usd_per_image": {
+        "low": "0.026712",
+        "medium": "0.062280",
+        "high": "0.240192",
+        "xhigh": "0.426960",
+        "max": "0.960624"
+      }
+    },
+    {
+      "size": "9:16",
+      "resolution": "4k",
+      "pixels": "2160x3840",
+      "sale_usd_per_image": {
+        "low": "0.026712",
+        "medium": "0.062280",
+        "high": "0.240192",
+        "xhigh": "0.426960",
+        "max": "0.960624"
+      }
+    },
+    {
+      "size": "2:1",
+      "resolution": "4k",
+      "pixels": "3840x1920",
+      "sale_usd_per_image": {
+        "low": "0.021600",
+        "medium": "0.048600",
+        "high": "0.194400",
+        "xhigh": "0.345528",
+        "max": "0.777456"
+      }
+    },
+    {
+      "size": "1:2",
+      "resolution": "4k",
+      "pixels": "1920x3840",
+      "sale_usd_per_image": {
+        "low": "0.021600",
+        "medium": "0.048600",
+        "high": "0.194400",
+        "xhigh": "0.345528",
+        "max": "0.777456"
+      }
+    },
+    {
+      "size": "21:9",
+      "resolution": "4k",
+      "pixels": "3840x1648",
+      "sale_usd_per_image": {
+        "low": "0.016848",
+        "medium": "0.036000",
+        "high": "0.151128",
+        "xhigh": "0.259056",
+        "max": "0.590112"
+      }
+    },
+    {
+      "size": "9:21",
+      "resolution": "4k",
+      "pixels": "1648x3840",
+      "sale_usd_per_image": {
+        "low": "0.016848",
+        "medium": "0.036000",
+        "high": "0.151128",
+        "xhigh": "0.259056",
+        "max": "0.590112"
+      }
+    },
+    {
+      "size": "3:1",
+      "resolution": "4k",
+      "pixels": "3840x1280",
+      "sale_usd_per_image": {
+        "low": "0.010008",
+        "medium": "0.023904",
+        "high": "0.095616",
+        "xhigh": "0.167328",
+        "max": "0.382392"
+      }
+    },
+    {
+      "size": "1:3",
+      "resolution": "4k",
+      "pixels": "1280x3840",
+      "sale_usd_per_image": {
+        "low": "0.010008",
+        "medium": "0.023904",
+        "high": "0.095616",
+        "xhigh": "0.167328",
+        "max": "0.382392"
+      }
+    }
+  ]
+}
