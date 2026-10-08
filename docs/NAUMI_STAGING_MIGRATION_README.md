@@ -1,6 +1,6 @@
 # Naumi 新服务器预发布与晚间回传方案
 
-> 状态：新机 app/Worker/Router 与下载代理正常；全量媒体、生图、改图与失败视频退款通过；同一固定镜像回传档案已准备。视频成功出片（供应商 401）、本人密码登录、OSS 参数及晚间生产回传尚未完成。4 个源端既存媒体缺失单独记录（2026-10-09）。
+> 状态：新机 app/Worker/Router 与下载代理正常；全量媒体、生图、改图、真实 OCR 与失败视频退款通过；固定镜像回传包及全量快照增量迁移/恢复演练完成。视频成功出片（供应商 401）、本人密码登录、OSS 参数及晚间生产回传尚未完成。源端既存媒体缺失和未运行的本地业务适配器单独记录（2026-10-09）。
 >
 > 本文是本任务的交接入口。后续 Agent 先阅读本文，再检查本文列出的状态、证据和阻塞项；不要凭对话上下文猜测迁移进度。
 
@@ -236,7 +236,7 @@
 - 工作 Router 使用独立 state、generation/management token、监听端口和新机 capacity 回调；不复用生产管理地址。
 - app 真配置 `/opt/naumi-staging/config/.env` 已通过生产键白名单生成，0600，保留生产 SETTINGS_SECRET 与独立 Router envelope secret；独立 DB/Worker/Router token，清空源存储和旧内网依赖。仅数据库恢复用 `.env.db-restore` 的 SETTINGS_SECRET 是随机占位，不能用于 app。
 - 应用读取 SMTP、短信、微信登录及支付配置时，预发布强制关闭外部动作，不删除数据库原始配置；模型调用不受这一关闭影响。已通过真实库/runtime 验收：`STAGING_EXTERNAL_ACTIONS=BLOCKED SMTP=OFF SMS=OFF WECHAT=OFF PAYMENT=OFF` / 0。
-- 生产 Yutang 地址为旧宿主 `host.docker.internal:8766`；此供应商依赖需单独迁移/核验，不能标为新环境可用。
+- 生产 Yutang 配置是旧宿主 `host.docker.internal:8766`；它是鱼塘业务工具适配器，不是生图/视频供应商。2026-10-09 刷新检查该端口拒绝连接，旧机也没有运行它；新机缺此宿主别名。OCR 实际走公网视觉模型，真实验收见第 15 节，不再假设存在一个运行中的旧 PaddleOCR 实例可搬迁。
 
 ## 10. 下一执行点
 
@@ -421,6 +421,62 @@ bash /opt/naumi-staging/config/run-functional-receipt.sh \
 - 最新只读检查：app、video-worker、db 运行；Mihomo 与独立 Router active，Mihomo enabled；新机 app health 200，剩余空间约 80 GiB。Clash/Mihomo 配置已复用，原本机配置未改，不重复安装。
 - 本轮下载复验：GitHub release HTML 实际下载 219,873 bytes，`PROXY_DOWNLOAD=PASS` / 0；HTTP/SOCKS 与 DNS 的本地监听地址分别为 `127.0.0.1:7897` / `127.0.0.1:1053`，Docker daemon 的 HTTP/HTTPS 代理均为回环7897。一次 raw.githubusercontent.com 下载 SSL 错误 exit 35，未把它算成功；GitHub release 下载已单独通过，不代表任意站点始终可达。首次监听检查误匹配 peer 的 `0.0.0.0:*`，已改成只检查 ss 本地地址列，实测没有公网监听，也没有更改代理配置。
 - 不等待凭据即可完成的收尾：receipt wrapper、fixture、固定候选回传档案、README/证据同步，已完成。
-- 尚未完成：视频成功出片、本人密码登录/页面下载、旧内网供应商独立实例、OSS bucket/参数/凭据及晚间生产回传。全目标保持 active，本轮没有旧机生产发布。
+- 尚未完成：视频成功出片、本人密码登录/页面下载、源端既不可用的本地业务适配器独立实例、OSS bucket/参数/凭据及晚间生产回传。OCR 公网视觉路径已通过，见第 15 节。全目标保持 active，本轮没有旧机生产发布。
 - 本轮原始 literal 证据增加：`functional-wrapper-fixture-20261009.txt`、`functional-wrapper-20261009.txt`、`return-source-git-20261009.txt`、`return-package-20261009.txt`，均位于 `/opt/naumi-staging/evidence/`，0600。
 - 最终密钥状态：历史 `new-key.pem` / `old-key.pem` 和本轮 `E:\Workspace\naumi\output\staging-data-20261008\session-key.pem` 均已删除并核对不存在，两把原始私钥 hash 与 source 记录一致。先前 `Remove-Item` 被工具执行环境拒绝（命令未启动），这一失败记录保留；随后对已核验绝对路径的单一临时文件执行 `cmd.exe /d /c del /f /q <session-key.pem绝对路径>` 成功，`SESSION_KEY_COPY_EXISTS=0` / 0。没有删除目录或原私钥。app 隧道与待本人登录的页面继续保留；额外交接 shell 只用于密钥删除后的最终文档同步，结束即关闭。
+
+## 15. 真实 OCR、依赖刷新与回传增量迁移演练（2026-10-09）
+
+### 真实 OCR 与重放
+
+- 新上传的可读测试图片：`NAUMI TEST` / `20261009`，1000×400；本机用明确 Arial 字体离线绘制，并视觉检查后上传。它是新机测试作品，不改历史图片。
+- 作品 `art-1791480355441-779901`，操作 `tool-staging-ocr-054ea2d2-3e96-40c7-af2c-46f8ca052a70`；通过实际 `/api/artworks/add`、`/api/billing/quote`、`/api/canvas/ocr` 运行，不是 mock。
+- OCR 使用源配置的 `vision.ocr` 默认绑定 `platform-ocr-e33230db3dd7d2f0`，公网 `platform-ocr`；PaddleOCR env 在生产/预发布均未配置，业务实际结果 engine `vision-fallback`。默认内部 alias 不在用户可见列表，正常路径不传显式 model selection；没有修改凭据、模型绑定、售价或生产配置。
+- `bash /opt/naumi-staging/config/run-real-ocr.sh --verify` / 0：
+
+```text
+STAGING_OCR_REPLAY=PASS SAME_OPERATION=1 SUPPLIER_CALLS_UNCHANGED=1 WALLET_UNCHANGED=1
+STAGING_REAL_OCR=PASS OPERATION_ID=tool-staging-ocr-054ea2d2-3e96-40c7-af2c-46f8ca052a70 ENGINE=vision-fallback SEGMENTS=3 FIXTURE_TEXT=EXACT BOUNDS=VALID CHARGED=0 RESERVED=0 LEDGER_ROWS=0 SUPPLIER_CALLS=1 IMPORTED_OPERATION=0 PASSWORD_LOGIN_NOT_TESTED=1
+STAGING_OCR_RECEIPT=PERSISTED COMMAND_EXIT=0
+```
+
+- 识别文本包含全部预期字符串，全部框在原图像素边界内。当前 OCR 售价为 0，因此没有负向消费账本；供应商真实调用恰 1 条，不能将“用户扣费0”当“未调用或无供应商成本”。同 operation 再 POST 原请求返回相同持久结果，调用数和钱包均不变。
+- Wrapper 加 host 锁、固定镜像核对、host receipt 恢复及不确定执行 latch。host receipt：`/opt/naumi-staging/evidence/ocr-readable-receipt-20261009.json`；latch 若因 kill/container 丢失保留，返回 75 要求核对，不直接再付费提交。`--submit` 对已有 operation 也只核验，不重提。
+- 第一次测试 `tool-staging-ocr-0bf738c0-29b8-4038-a19d-6866822d687e` 对应 `art-1791480151641-818048`：容器无字体使 SVG 的文字渲染为方框，OCR 如实识别方框；操作 settled、charged/reserved0，未通过预期文本断言。原作品、任务、供应商记录、`ocr-receipt-20261009.json` 均保留，不伪造 PASS。新的可读 fixture 使用独立 receipt 和独立 operation。
+- 其他 fixture 调试失败单独保留：显式传隐藏内部 OCR alias 的报价409（未调用供应商）；复制0600 fixture后应用UID读文件失败（未调用供应商，后改所有者）；零价账本断言把JS负零与零 strictEqual导致 exit1（真实调用已成功），只修断言并 `--verify` 原 operation，没重提第三笔。不是应用业务bug。
+- `module-final-20261009.txt`：`IMPORTED_HISTORY_FIELDS=IDENTICAL TABLES=5 NEW_TEST_ROWS=EXCLUDED`，历史来源清单内任务/账务原始字段仍相同；不是整库实时全行相同。
+
+### 生产刷新与本地业务适配器
+
+- 2026-10-09 01:16 CST 只读刷新生产：release `/opt/naumi/releases/84e1afdee610-20261008-160926`，app/worker `84e1afdee61013f3d5320b00bf688ae125b98179`，image `sha256:888b156a7d77fcd3a0cea9f4c8cdb01d6a728f494041ac7397227d48e34135c1`，health200，剩余磁盘约5.5GiB。没有重启生产；检查脚本只短暂复制到 `/tmp`/app容器进行元数据读取，没有业务请求。
+- 生产 Yutang env 已配置，而 `host.docker.internal:8766` TCP `ECONNREFUSED`；巡检3966、SCM3967也拒绝连接。运行service/container没有对应实例。新机这三个默认宿主名均 `ENOTFOUND`，没有从预发布建立到生产的桥接。
+- 读取两个app的实际模型配置证实 OCR 是公网 `platform-ocr`；不安装一个假设的Paddle服务，不把Yutang误列为生成供应商。若后续要求恢复鱼塘/巡检/SCM业务，需取得相应独立源码、业务快照与配置，在新机独立部署；不将代理指向旧机、不自动触发生产业务工具或真实平台在线采集。
+- 源码Yutang/巡检/SCM封装使用空 env 回退默认地址；“env清空”不等于工具被显式禁用。目前缺DNS/服务证明它们不可达；今后为新机添加宿主别名或本地服务前再次核验这些路径，勿把原空 env 当永久隔离门槛。
+- 当前生产84e1...和候选65adfe...不构成单纯fast-forward（生产热修复提交独立发布）；主工作区 `main` 有其他工作的2个未推送即梦/图标提交，不加入本任务。正式回传先审查差异与运行测试结果，不仅比较commit字符串；本轮没有替换候选或新建业务镜像。
+
+### 全量参照快照上的增量迁移与副本恢复
+
+运行：`bash /opt/naumi-staging/config/run-return-migrations.sh` / 0。
+
+- 只在新机从不变 `naumi_snapshot_reference` dump恢复 `naumi_return_migration_fixture`，不用正在真实测试的工作库，不终止app DB sessions。
+- 在恢复的完整69表上依序应用冻结候选的三个SQL：`20261007-artwork-provenance.sql`、`20261007-supplier-cost-ledger.sql`、`20261007-apimart-default-preset.sql`；同一顺序再运行一次。每次比较原始全部列/行哈希相同。
+
+```text
+RETURN_MIGRATION_BASELINE=PASS FULL_SNAPSHOT=1
+RETURN_MIGRATION_APPLY=PASS ITERATION=1 ORIGINAL_FIELDS_UNCHANGED=1
+RETURN_MIGRATION_APPLY=PASS ITERATION=2 ORIGINAL_FIELDS_UNCHANGED=1
+RETURN_MIGRATION_MODIFIED=PASS REQUIRED_COLUMNS=3 REQUIRED_TABLES=2 IDEMPOTENT=1
+RETURN_MIGRATION_ROLLBACK=PASS SEPARATE_DATABASE=1 ORIGINAL_SCHEMA_DATA=RESTORED WORKING_COPY_CHANGED=0
+RETURN_MIGRATION=PASS SOURCE=FULL_REFERENCE_SNAPSHOT PRODUCTION_RUN=0 SUPPLIER_CALLS=0
+```
+
+- 增量字段、表都出现，新增元数据不改原始历史。另建 `naumi_return_rollback_fixture` 用原dump恢复；原始字段/行哈希与schema列顺序/类型/nullable完全一致。恢复的是另一副本，不是在真实工作库/生产逆向DROP新增列；正式生产回滚仍保留additive schema和实时数据。
+- 以上证明三个显式增量SQL在全量原始快照上的幂等与恢复，不等于所有运行时代码/Router配置已生产验收，也不代替窗口内生产备份。
+- 临时dump SHA256 `128c31dd70dca23e5bb38688e6d903b03239c7066196cd859ca70198defafb61`；成功后删除dump及两个fixture DB，最终 `RETURN_MIGRATION_FIXTURE_CLEANUP=PASS DATABASES=0 TEMP_DUMP=ABSENT`。保留hash、输出与原始参照库，不回灌测试数据。
+
+### 证据与接手顺序
+
+- `/opt/naumi-staging/evidence/ocr-readable-verify-20261009.txt`、`ocr-readable-acceptance-20261009.txt`、`ocr-unreadable-fixture-20261009.txt`、`return-migrations-20261009.txt`、`module-final-20261009.txt`。本机副本在 `E:\Workspace\naumi\output\staging-functional-20261009`；依赖元数据检查输出在 `E:\Workspace\naumi\output\staging-data-20261008\{new,old}-private-dependencies-20261009.txt`。
+- 下次已有OCR只执行 `run-real-ocr.sh --verify`；无需再生成fixture或重放图/视频。当前浏览器仍是本人登录对话框，未输入本人密码。
+- 下一实际阶段：有效视频凭据→一次新任务成功出片；本人登录与页面验收；OSS bucket/region/endpoint与专用凭据准备→新机独立迁移验证；确认下班发布窗口并刷生产基线→同镜像回传。业务适配器源端既不可用的恢复要求单独确认，不能虚报已迁移。
+- 本轮goal分类是 progress：完成真实OCR与幂等重放、全快照迁移/恢复演练并纠正依赖状态；全目标继续 active。
