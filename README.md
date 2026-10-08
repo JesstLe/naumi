@@ -12,6 +12,10 @@ Open-source AI e-commerce visual studio — generate, batch-suite, cut out, try 
 
 ---
 
+## 新服务器预发布与交接
+
+当前新服务器准备工作、全量数据副本、真实测试、本地媒体、后续 OSS 和下班窗口回传约定，统一记录在 [预发布交接 README](docs/NAUMI_STAGING_MIGRATION_README.md)。接手此任务的 Agent 应先阅读该文档，再核验实际状态；不要把预发布数据库回传覆盖生产。
+
 ## ✨ 功能 / Features
 
 - **AI 生图** — 文生图 / 图生图,电商风格化提示词体系,1K/2K/4K
