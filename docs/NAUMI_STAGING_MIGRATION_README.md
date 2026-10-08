@@ -495,8 +495,8 @@ RETURN_MIGRATION=PASS SOURCE=FULL_REFERENCE_SNAPSHOT PRODUCTION_RUN=0 SUPPLIER_C
 
 - baseline Compose明确设置 `STORAGE_DRIVER=local` 并清空S3字段；仅把真实OSS参数放env不会切换。新增 `deploy/staging/docker-compose.oss.yml`，必须明确加第二个 `-f`；baseline不改，绝不自动启用overlay。
 - overlay只覆盖app存储字段，独立 `NAUMI_OSS_*` 插值；虚拟主机寻址、私有bucket、`S3_PUBLIC_BASE_URL=""`，保留既有 `/media/<key>` 数据库URL及应用媒体代理，不批量改作品历史URL。Worker镜像、数据库、Router、来源guard、本机媒体挂载都保持不变。
-- 模板 `deploy/staging/.env.oss.example` 只有字段。真实参数存 `/opt/naumi-staging/config/.env.oss`，root0600；区域endpoint不含bucket前缀、path、query，专用Bucket/AccessKey不复用生产媒体凭据；参数本轮未提供。
-- 当前 `storage.ts` 使用aws4fetch、`service=s3` 和 `AWS4-HMAC-SHA256`。mock只能验证这套签名请求/HTTP行为；不能由“OSS支持对象存储”推导阿里OSS真实endpoint一定接受此签名。必须对明确region/bucket做真实PUT/HEAD/GET/Range/DELETE及内容hash核验，再决定复用S3驱动或适配OSS SDK。失败时留在local，不把mock当真实OSS验收；如需改业务驱动，重新构建并验收新的固定候选及回传包。
+- 模板 `deploy/staging/.env.oss.example` 只有字段。真实参数存 `/opt/naumi-staging/config/.env.oss`，root0600；S3兼容区域endpoint不含bucket前缀、path、query，专用Bucket/AccessKey不复用生产媒体凭据；参数本轮未提供。2026-10-09后续官方文档核验纠正了原普通OSS域名说明：采用 `https://s3.oss-<region>.aliyuncs.com` 或同region的 `-internal` 域名，见第17节。
+- 当前 `storage.ts` 使用aws4fetch、`service=s3` 和 `AWS4-HMAC-SHA256`。官方已确认OSS的AWS S3兼容SigV4能力，mock仍只验证客户端HTTP行为；实际bucket/区域/账号的数据API可用性待真实PUT/HEAD/GET/Range/DELETE及内容hash核验。失败时留在local，不把mock当真实OSS验收；如需改业务驱动，重新构建并验收新的固定候选及回传包。
 
 ### 已完成的隔离模块验收
 
@@ -529,7 +529,7 @@ OSS_MODULE=PASS MOCK_CREDENTIALS=1 LIVE_SWITCH=0
 
 1. 取得独立bucket、region、endpoint和受保护凭据路径，确认协议兼容后仅对独立临时key运行上述真实存储读写/删除验收。对私有bucket匿名读取应被拒绝；应用代理仍能读。
 2. 使用新机专用rclone配置，先验证列举/复制权限及目标bucket现有对象；保留本地媒体。先 `copy`，不用 `sync` 或删除源；不能复用生产Garage脚本的size-only检查。rclone本机v1.60.1-DEV已存在，不据此证明OSS后端可用。
-3. 首轮本地→OSS copy可在线进行，记录原清单、对象数/字节/hash；源随测试变化时不能将一次copy视作最终一致。停新机app与worker前检查新机所有测试任务无未结算/未完成项，保存持久receipt和本地快照，确认测试停止后冻结写入。
+3. 首轮本地→OSS copy可在线进行，记录原清单、对象数/字节/hash；源随测试变化时不能将一次copy视作最终一致。停新机app与worker前检查所有“新增测试任务”无未结算/未完成项（按 `origin_rows` 排除冻结导入任务；本轮全表未结算1不代表新增任务正在运行），保存持久receipt和本地快照，确认测试停止后冻结写入。
 4. 冻结期间再做增量copy、全量源清单SHA256、目标下载内容完整核验（如rclone `check --download`，不要只比较size/不可靠multipart ETag）；保留详细结果和冻结清单hash。清单包含迁移后新增测试对象，不能只用原4767源清单证明新数据也迁走。
 5. 同时加载受保护base env和OSS env，渲染baseline+overlay到0600临时文件，运行 `verify-oss-compose.py <baseline.json> <merged.json>` 并核对候选镜像未变。再明确启用overlay，仅重建新机app/worker；健康、历史/新媒体、Range、一次独立新写入和真实页面验收通过才完成切换。所有渲染文件受保护并及时删除，不打印环境/凭据。
 6. 切换后本地副本继续保留。回滚先停新机写入，保存OSS清单并将OSS切换后新增/变更对象copy回本地，完整下载hash校验；空间不足或核验失败时保持停止并保留证据。核验通过再去掉overlay重建local服务，恢复健康和全部新旧媒体。不得直接去overlay而丢OSS切换后媒体；不删OSS对象，不更改数据库URL。
@@ -552,3 +552,64 @@ codex/staging-media-handoff独立worktree核对Git与新机现态。旧机保持
 兼容；先验真实协议，再实现新机copy/download-hash/冻结切换/媒体回收回滚
 工具。每模块更新README与证据，选择性提交推送，不改原私钥与主工作区。
 ```
+
+## 17. OSS 官方端点纠正与真实验收探针（2026-10-09）
+
+### 官方协议证据与已纠正项
+
+本轮直接读取阿里官方正文，不仅使用搜索摘要：
+
+- [Accessing OSS with the AWS SDK](https://www.alibabacloud.com/help/en/oss/developer-reference/use-aws-sdks-to-access-oss)（2026-04-17更新）：公开S3兼容域名 `https://s3.oss-{region}.aliyuncs.com`，内部域名 `https://s3.oss-{region}-internal.aliyuncs.com`；Node示例使用同bucket区域和SigV4。官方支持AWS SigV4，某些SDK的aws-chunked编码仍存在差异。
+- [S3 API on OSS: supported operations and limitations](https://www.alibabacloud.com/help/en/oss/developer-reference/compatibility-with-amazon-s3)（2026-09-17更新）：包括PutObject/GetObject/HeadObject/DeleteObject；采用virtual-host请求；multipart ETag不同于S3，不能直接当内容hash。另一SDK文档的path-style文字存在不一致，本任务按更新的兼容性正文用virtual-host；path-style仅作通用客户端fixture。
+- AWS SDK页面另提示大陆新OSS用户的默认公网数据API可能需自定义域名；实际账号情况未取得，不宣称该账号一定受影响，也不让应用走匿名公网bucket来避开。优先核验新机与bucket同区域内网S3兼容入口；若确需CNAME/SDK适配，另行实现测试，不在校验器里放行任意域名。
+
+上一版 `verify-oss-compose.py` 只接受普通 `oss-...`，漏了S3兼容域名。本轮按官方入口纠正为 `s3.oss-<region>`，支持同区域internal并检查region完全匹配；更新mock env模板。旧结果保留历史记录，不再据旧fixture声称端点选择正确。当前新机storage仍local，不曾把错误端点用于真实数据。
+
+### 新增探针与凭据解析
+
+脚本：`prepare-oss-probe.py`、`verify-oss-live.ts`、`run-oss-live-probe.sh`。将三个脚本及 `verify-compose.py`/`verify-oss-compose.py` 放新机config后执行：
+
+```bash
+bash /opt/naumi-staging/config/run-oss-live-probe.sh \
+  65adfe8742e7a1fe120e7ce7a94409c50c76eb44
+```
+
+- 当前真实输出 `OSS_LIVE_PROBE=CONFIG_PENDING REAL_REQUESTS=0` / exit78，`.env.oss`仍不存在。本轮没有真实OSS网络请求；probe准备完成不等于live通过。
+- 用户只需把模板五字段放在该受保护文件中并告知路径；parser不执行shell/source、命令替换或插值，拒绝未知/重复/缺字段、错region/端点、非root当前UID所有者、group/world权限和symlink。只渲染临时0600 Docker env，不打印值，不改源配置，完成后清理私有临时env。
+- wrapper核对当前app候选revision/image、host staging标记并使用flock。独立容器运行正在验收的固定镜像与只读冻结源码，不挂app DB/工作媒体/模型凭据；它不是重启真实app。container临时bridge网络仅用于该OSS协议验收，standalone server只绑容器回环。
+- probe创建唯一 `naumi-staging-preflight/<uuid>.bin` 1024-byte随机对象，在PUT前原子保存receipt/key；以候选真实 `storage.ts` 验PUT、HEAD、全文byte/SHA256、Range206、匿名403、候选实际 `/media`200/206。原媒体、历史URL、DB和模型账务不改。
+- DELETE只针对该唯一探针key；PUT超时可能已经写入也会尝试清理，必须DELETE成功且最终GET404才通过cleanup。不用“exists=false”冒充404（权限/网络失败也可能false）。receipt在私有证据目录，包含对象key、候选image/commit、源配置hash及结果，不含AccessKey/secret。
+- probe返回0代表本次live读写+删除链通过；读写失败但删除确认成功返回2；清理失败或receipt缺失返回74。host `oss-live-probe.inflight` 在启动前记录证据目录和具名容器句柄，完成且cleanup确认PASS才解除；中断/清理不确定会保留receipt位置。下一次wrapper exit75而不再创建对象，先检查该具名容器是否仍在运行（若运行继续等待该句柄，缺配置文件也先保留旧latch），再核对旧key、人工清理并解除latch，不循环探测。
+- 真实bucket测试到位后仍需生产级媒体copy/full-download-hash/冻结overlay切换及回收新媒体回滚；probe不自动启用overlay、不回传生产。
+
+### 新模块验收
+
+```bash
+bash /opt/naumi-staging/config/verify-oss-module.sh \
+  65adfe8742e7a1fe120e7ce7a94409c50c76eb44
+bash /opt/naumi-staging/config/run-oss-probe-fixture.sh \
+  65adfe8742e7a1fe120e7ce7a94409c50c76eb44
+```
+
+1. 更新后的Compose模块：非存储字段不变，8个负向用例拒绝；普通OSS/native endpoint与region不匹配拒绝，S3 public/internal入口接受；两种通用寻址的固定镜像模拟传输继续通过。此处public/internal是配置验证，不是live网络验证。
+2. parser fixture：8种异常（native入口、重复字段、命令替换、错region、HTTP、未知字段、0644、symlink）拒绝，不执行命令。
+3. 实际候选容器中，新的live probe对内存存储完整运行三个分支：成功exit0、GET字节不符exit2且清理PASS、清理403 exit74且receipt标记FAIL。该fixture使用 `--network none`、`/evidence` tmpfs；23次模拟HTTP请求，真实OSS/模型请求0。清理失败fixture对象仅存在内存，随fixture结束销毁，不是删真实bucket。
+
+```text
+OSS_PROBE_CONFIG_FIXTURE=PASS PUBLIC=1 LITERAL_PARSER=1 MODE_0600=1 NEGATIVE_CASES=8 COMMAND_EXECUTION=0
+OSS_LIVE_PROBE_FIXTURE=PASS CASE=success EXPECTED_EXIT=0 RECEIPT=1 CLEANUP=PASS
+OSS_LIVE_PROBE_FIXTURE=PASS CASE=read-failure EXPECTED_EXIT=2 RECEIPT=1 CLEANUP=PASS
+OSS_LIVE_PROBE_FIXTURE=PASS CASE=cleanup-failure EXPECTED_EXIT=74 RECEIPT=1 CLEANUP=FAIL
+OSS_LIVE_PROBE_CONTRACT=PASS CASES=3 MOCK_HTTP_REQUESTS=23 REAL_OSS_REQUESTS=0 MODEL_CALLS=0
+OSS_PROBE_FIXTURE=PASS LIVE_SWITCH=0 REAL_REQUESTS=0
+```
+
+fixture整体exit0。wrapper的缺配置门槛实际exit78；有真实配置的整个wrapper、kill/断连后的人工清理和真实OSS ACL尚未live验收，不以子进程fixture代替这些。
+
+### 当前推进分类与回传门槛
+
+- 上一goal turn是progress（七文件提交4f99658、隔离模块PASS、文档副本回滚和远端hash同步）；本轮继续有协议纠正和真实探针准备进展，目标保持active。没有已确认仍在运行的付费任务供等待，也不将缺参数当一个运行中job。
+- 本轮新旧机只读刷新：新机65adfe...、app/worker/db运行、history guard1、storage local、health200、Mihomo enabled/active；旧机仍84e1af...、health200。全表image未结算1、video pending0；新机未结算来源应按origin_rows区分，不自动处理冻结旧任务。
+- 旧机固定镜像回传包已准备，但 `deploy-release.sh` 不执行本次三份显式增量SQL，也不自动发布Router快照。正式窗口沿协调发布流程：入口维护、暂停worker、检查生产未完成任务、当场备份、增量SQL及Router协调、同镜像发布/回滚与验收后开放；不得把“调用deploy-release.sh”当所有迁移和模型配置已完成。本轮没有执行生产发布。
+- 本轮证据：`oss-probe-fixture-20261009.txt`、`oss-live-config-gate-20261009.txt`、`oss-module-s3-endpoint-20261009.txt`（新机evidence）；固定运行候选/回传包保持65adfe...，新增脚本属于交接分支，不替换候选业务源码。
+- 本人页面登录、有效视频供应商token、OSS参数/凭据和下班回传时刻仍待用户输入；未重复收费或测试库回灌。接手时在第16节提示词基础上优先读第17节端点纠正、探针receipt与latch规则。
