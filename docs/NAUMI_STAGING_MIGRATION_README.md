@@ -364,7 +364,7 @@ docker build --network=host \
 
 - 新机证据：`/opt/naumi-staging/evidence/functional-edit-20261009.txt`、`functional-video-20261009.txt`、`functional-verify-20261009.txt`、`functional-receipt-20261009.json`、`video-contracts-20261009.txt`、`video-credential-20261009.txt`、`billing-runtime-final-20261009.txt`。
 - 本机真实改图副本：`E:\Workspace\naumi\output\staging-functional-20261009\real-edit-result.png`，SHA256 `deefc3f0dfb063f70f84baa3b03737cb66917bf35dbb3afebd32ca120603a354`。
-- 临时媒体导出凭据已删除；本轮 SSH 所需的受保护会话密钥副本仍保留到本轮结束，原始私钥未修改。结束前删除副本并核对原 hash。
+- 临时媒体导出凭据已删除；本轮 SSH 会话密钥副本已在最终收尾删除并核对不存在，两把原始私钥 hash 均未变；最终执行证据与前次删除拒绝分别保留。
 - 视频成功出片仍待可用凭据；用户密码登录、OSS 迁移参数和晚间回传窗口仍待完成，目标继续 active；继续准备其他独立验收和发布包，不把凭据阻塞扩大为整项停工。
 
 - 已发现并修正的验收脚本问题：视频领域契约仍匹配旧 `privateFetch`，应用早已改为 `privateFetchRaw`，只调整契约锚点；billing 老回归要求无管理员密码的空库，且支付回调 fixture 需要非 staging 开关，故明确放在 `naumi_staging_billing_fixture` 的 empty/disposable 环境。首次只读源码 `/app/data/media` 写入失败导致 canvas needs_attention；设置隔离的 `MEDIA_DIR=/app/output/billing-fixture-media` 后全部通过，未改应用业务代码或真实副本。
@@ -423,4 +423,4 @@ bash /opt/naumi-staging/config/run-functional-receipt.sh \
 - 不等待凭据即可完成的收尾：receipt wrapper、fixture、固定候选回传档案、README/证据同步，已完成。
 - 尚未完成：视频成功出片、本人密码登录/页面下载、旧内网供应商独立实例、OSS bucket/参数/凭据及晚间生产回传。全目标保持 active，本轮没有旧机生产发布。
 - 本轮原始 literal 证据增加：`functional-wrapper-fixture-20261009.txt`、`functional-wrapper-20261009.txt`、`return-source-git-20261009.txt`、`return-package-20261009.txt`，均位于 `/opt/naumi-staging/evidence/`，0600。
-- 收尾密钥状态：历史 `new-key.pem` / `old-key.pem` 已删除且核对不存在，两把原始私钥 hash 与 source 记录一致。当前 `E:\Workspace\naumi\output\staging-data-20261008\session-key.pem` 仍存在、仅当前本机用户 ACL；本轮检查绝对路径后执行 `Remove-Item -LiteralPath <该临时副本> -Force` 被工具执行环境拒绝（命令未启动），没有宣称清理完成。后续先处理这一具名临时副本，不修改原私钥。app 隧道与待本人登录的页面继续保留；关闭额外交接 shell 不会关闭 app 隧道。
+- 最终密钥状态：历史 `new-key.pem` / `old-key.pem` 和本轮 `E:\Workspace\naumi\output\staging-data-20261008\session-key.pem` 均已删除并核对不存在，两把原始私钥 hash 与 source 记录一致。先前 `Remove-Item` 被工具执行环境拒绝（命令未启动），这一失败记录保留；随后对已核验绝对路径的单一临时文件执行 `cmd.exe /d /c del /f /q <session-key.pem绝对路径>` 成功，`SESSION_KEY_COPY_EXISTS=0` / 0。没有删除目录或原私钥。app 隧道与待本人登录的页面继续保留；额外交接 shell 只用于密钥删除后的最终文档同步，结束即关闭。
