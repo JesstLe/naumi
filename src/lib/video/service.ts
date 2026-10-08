@@ -32,6 +32,8 @@ import {
 } from "@/lib/db";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { completeVideoTask } from "@/lib/db";
+import { getPool } from "@/lib/db";
+import { isImportedHistory } from "@/lib/staging-history";
 import { PermanentVideoCreateError, TransientPollError } from "@/lib/video/types";
 import { getVideoProvider } from "@/lib/video/providers/adapter";
 import { readLimitedVideoResponse } from "@/lib/video/result-download";
@@ -580,6 +582,7 @@ export async function pollAndSettle(
 ): Promise<VideoTaskRow | null> {
   const task = await getVideoTask(email, id);
   if (!task) return null;
+  if (await isImportedHistory(getPool(), "app_video_tasks", id)) return task;
   if (task.parameters?.modelExecutions) return withFrozenExecutionBundle(task.parameters.modelExecutions as import("@/lib/model-config/context").ExecutionBundle, () => pollAndSettleTask(email, id, task));
   return runLegacyModelExecution(() => pollAndSettleTask(email, id, task));
 }

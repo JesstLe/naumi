@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { ensureSupplierSchema } from "./schema";
 import { multiplyMicros } from "./money";
+import { assertMutableStagingTask } from "../staging-history";
 import type { AccountInput, CallInput, CostReceipt, CostFilter, FxSnapshot } from "./types";
 
 export function createSupplierLedger(pool: Pool) {
@@ -21,6 +22,10 @@ export function createSupplierLedger(pool: Pool) {
     },
     async begin(input: CallInput) {
       return transaction(async tx => {
+        await assertMutableStagingTask(tx, "app_billing_operations", input.operationId);
+        await assertMutableStagingTask(tx, "app_image_jobs", input.operationId);
+        await assertMutableStagingTask(tx, "app_canvas_image_tasks", input.operationId);
+        await assertMutableStagingTask(tx, "app_video_tasks", input.operationId);
         const account = (await tx.query("SELECT fx FROM app_supplier_accounts WHERE id=$1", [input.accountId])).rows[0];
         if (!account) throw new Error("supplier account missing");
         if(input.taskId){
@@ -35,6 +40,7 @@ export function createSupplierLedger(pool: Pool) {
     },
     async apply(callId: string, receipt: CostReceipt, observedAt = new Date().toISOString()) {
       return transaction(async tx => {
+        await assertMutableStagingTask(tx, "app_supplier_calls", callId);
         const row = (await tx.query("SELECT * FROM app_supplier_calls WHERE id=$1 FOR UPDATE", [callId])).rows[0];
         if (!row) throw new Error("supplier call missing");
         if(receipt.source==='router-durable-receipt' && row.evidence?.source==='apimart-task-query')return row;
@@ -63,6 +69,7 @@ export function createSupplierLedger(pool: Pool) {
     async task(accountId: string, taskId: string) { await ensureSupplierSchema(pool); return (await pool.query("SELECT * FROM app_supplier_calls WHERE account_id=$1 AND task_id=$2", [accountId,taskId])).rows[0]; },
     async enqueue(key: string, kind: "task" | "router" | "usage", payload: unknown, accountId?: string, tx?: PoolClient) {
       await ensureSupplierSchema(pool);
+      await assertMutableStagingTask(tx || pool, "app_supplier_cost_jobs", key);
       await (tx || pool).query(`INSERT INTO app_supplier_cost_jobs(key,kind,payload,account_id) VALUES($1,$2,$3::jsonb,$4) ON CONFLICT(key) DO UPDATE SET due_at=LEAST(app_supplier_cost_jobs.due_at,now()),state=CASE WHEN app_supplier_cost_jobs.lease_until>now() THEN app_supplier_cost_jobs.state ELSE 'queued' END,updated_at=now()`, [key,kind,JSON.stringify(payload),accountId||null]);
     },
     async list(f: CostFilter = {}) {

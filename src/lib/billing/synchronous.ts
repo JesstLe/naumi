@@ -14,6 +14,7 @@ import { billingJson } from "./access";
 import { fingerprint } from "./fingerprint";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { currentModelExecution } from "@/lib/model-config/context";
+import { excludeImportedHistory } from "../staging-history";
 type Context = {
     usageIncomplete?: boolean;
     usage?: import("./types").BillingResult["usage"];
@@ -151,7 +152,8 @@ export async function exposeAbandonedBillingOperations() {
         (id LIKE 'tool-%' AND updated_at < now()-make_interval(mins=>GREATEST(30,COALESCE((quote->>'staleReservationMinutes')::int,30))))
         OR EXISTS (SELECT 1 FROM app_canvas_image_tasks c WHERE c.id=app_billing_operations.id AND c.status='needs_attention')
         OR EXISTS (SELECT 1 FROM app_image_jobs j WHERE j.id=app_billing_operations.id AND j.snapshot->>'status'='needs_attention')
-        OR EXISTS (SELECT 1 FROM app_video_tasks v WHERE v.id=app_billing_operations.id AND v.status='needs_attention'))`);
+        OR EXISTS (SELECT 1 FROM app_video_tasks v WHERE v.id=app_billing_operations.id AND v.status='needs_attention'))
+      ${excludeImportedHistory("app_billing_operations")}`);
 }
 export async function synchronousCost(quality?: ResolvedImageQuality, resolution = "1K") {
     const context = storage.getStore();

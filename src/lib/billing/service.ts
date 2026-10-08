@@ -5,6 +5,7 @@ import { fingerprint } from "./fingerprint";
 import { settlementFor } from "./quote";
 import * as repository from "./repository";
 import { operationApiCost } from "./api-cost-ledger";
+import { assertMutableStagingTask, isImportedHistory } from "../staging-history";
 export async function withBillingTransaction<T>(pool: Pool, action: (tx: Tx) => Promise<T>): Promise<T> {
     const tx = await pool.connect();
     try {
@@ -26,6 +27,7 @@ function identity(id: string, email: string, ledgerId: string) {
         throw new BillingError("INVALID_RESULT", "计费操作参数无效", 400);
 }
 async function operation(tx: Tx, input: OperationInput) {
+    await assertMutableStagingTask(tx, "app_billing_operations", input.id);
     identity(input.id, input.email, input.ledgerId);
     const email = input.email.toLowerCase();
     return repository.lockOperation(tx, { id: input.id, email, feature: input.quote.facts.feature, quote: input.quote, ledgerId: input.ledgerId, hash: fingerprint({ email, quote: input.quote, ledgerId: input.ledgerId, fingerprint: input.fingerprint }) });
@@ -75,6 +77,7 @@ export function createBillingService(): BillingService {
     };
     return {
         async reconcileTx(tx,input){
+            await assertMutableStagingTask(tx, "app_billing_operations", input.operationId);
             const hash=fingerprint(input);
             await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))",[`billing-reconciliation-${input.id}`]);
             const previous=(await tx.query("SELECT request_fingerprint,charge FROM app_billing_reconciliations WHERE id=$1",[input.id])).rows[0];
@@ -123,6 +126,7 @@ export function createBillingService(): BillingService {
  * Late increases are an explicit review, not an extra wallet debit. Reductions
  * refund at most what this operation actually charged and keep original evidence. */
 export async function refreshApiCostOperation(tx:Tx,id:string) {
+    if (await isImportedHistory(tx, "app_billing_operations", id)) return;
     const row=(await tx.query("SELECT * FROM app_billing_operations WHERE id=$1 FOR UPDATE",[id])).rows[0];
     if(!row || !["manual","hold","settled"].includes(row.state) || !row.quote?.imagePreset || !row.settlement_result || row.quote.tariff.pricing.mode!=="api-cost-plus")return;
     const result={...row.settlement_result,apiCost:await operationApiCost(tx,id,row.email,row.quote,row.settlement_result)};

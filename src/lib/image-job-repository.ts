@@ -5,6 +5,7 @@ import {createBillingService} from "@/lib/billing/service";
 import type {BillingQuote,BillingResult,OperationInput} from "@/lib/billing/types";
 import { IMAGE_JOB_RELEASED_MESSAGE, imageJobHasResults } from "./image-job-failure";
 import { lockWallet, syncBalanceTx } from "./billing/repository";
+import { assertMutableStagingTask, excludeImportedHistory, isImportedHistory } from "./staging-history";
 const billingService=createBillingService();
 function billingOperation(row:{id:string;email:string;payload:{billingQuote:BillingQuote}},reason:string):OperationInput{return {id:row.id,email:row.email,quote:row.payload.billingQuote,reason,ledgerId:`led-image-${row.id}`,fingerprint:row.id};}
 
@@ -50,6 +51,7 @@ export async function listActiveImageJobs(email: string, kind: ImageJobKind) {
 
 export async function claimImageJob(id: string, kind: ImageJobKind): Promise<ImageJobRow | null> {
   await ensureSchema();
+  if (await isImportedHistory(getPool(), "app_image_jobs", id)) return null;
   const { rows } = await getPool().query(`UPDATE app_image_jobs SET lease_token=$3,lease_until=now()+interval '120 seconds'
     WHERE id=$1 AND kind=$2 AND (lease_until IS NULL OR lease_until<now()) AND snapshot->>'status' NOT IN ('done','error','needs_attention') RETURNING *`, [id, kind, randomUUID()]);
   return rows[0] || null;
@@ -61,6 +63,7 @@ export async function heartbeatImageJob(id: string, token: string) {
 }
 
 export async function saveImageJob(id: string, snapshot: unknown, token: string | null) {
+  await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   const result = await getPool().query(`UPDATE app_image_jobs SET snapshot=$2::jsonb,updated_at=now()
     WHERE id=$1 AND (($3::text IS NOT NULL AND lease_token=$3 AND lease_until>now()) OR
       ($3::text IS NULL AND (lease_until IS NULL OR lease_until<now())))`, [id, JSON.stringify(snapshot), token]);
@@ -69,6 +72,7 @@ export async function saveImageJob(id: string, snapshot: unknown, token: string 
 
 /** Exact charge and full reservation release occur once in the same transaction. */
 export async function settleImageJob(id: string, charged: number|BillingResult, reason: string, token: string | null) {
+  await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   const client = await getPool().connect();
   let email = "";
   try {
@@ -106,6 +110,7 @@ export async function settleImageJob(id: string, charged: number|BillingResult, 
 }
 
 export async function reserveReviewedImageJob(id: string) {
+  await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -131,6 +136,7 @@ export async function reserveReviewedImageJob(id: string) {
 
 /** Edit one source under a row lock so concurrent approvals cannot overwrite each other. */
 export async function reviewImageSource(id: string, index: number, redo: boolean, feedback = "") {
+  await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   const client=await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -158,12 +164,13 @@ export async function dueImageJobs() {
   await ensureSchema();
   const { rows } = await getPool().query(`SELECT id,kind FROM app_image_jobs WHERE (lease_until IS NULL OR lease_until<now())
     AND (snapshot->>'status'='pending' OR snapshot->'sources' @> '[{"status":"redoing"}]'::jsonb)
-    ORDER BY updated_at LIMIT 3`);
+    ${excludeImportedHistory("app_image_jobs")} ORDER BY updated_at LIMIT 3`);
   return rows as {id:string;kind:ImageJobKind}[];
 }
 
 /** Keep an uncertain paid domain job visible to billing reconciliation. */
 export async function holdImageJobBilling(id:string) {
+  await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   if(!dbEnabled)return;
   await getPool().query("UPDATE app_billing_operations SET state=CASE WHEN quote->'tariff'->'settlement'->>'unknown'='manual' THEN 'manual' ELSE 'hold' END,updated_at=now() WHERE id=$1 AND state='reserved'",[id]);
 }
@@ -172,6 +179,7 @@ export async function holdImageJobBilling(id:string) {
  * Serializes against settlement and other workers; only this job's remaining
  * reservation is released. Supplier calls and paid intent remain untouched. */
 export async function failUndeliveredImageJob(id: string, token: string | null, reasonCode: string) {
+  await assertMutableStagingTask(getPool(), "app_image_jobs", id);
   const tx = await getPool().connect();
   try {
     await tx.query("BEGIN");

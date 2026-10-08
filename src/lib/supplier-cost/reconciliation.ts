@@ -4,6 +4,7 @@ import { abs } from "./money";
 import type { UsageItem } from "./adapters";
 import type { createSupplierLedger } from "./repository";
 import { costPolicy } from "./policy";
+import { excludeImportedHistory } from "../staging-history";
 export async function reconcileUsage(ledger: ReturnType<typeof createSupplierLedger>, account: any, input: { start: string; end: string; items: UsageItem[]; total: unknown; evidence: unknown }) {
   const policy = costPolicy(account.policy), runId = randomUUID();
   return ledger.transaction(async tx => {
@@ -26,8 +27,8 @@ export async function reconcileUsage(ledger: ReturnType<typeof createSupplierLed
       const match = abs(delta)<=BigInt(policy.amountToleranceMicros) && abs(creditDelta)<=BigInt(policy.creditsToleranceMicros) && item.requests===l.requests;
       const status = pending ? "pending-local-costs" : match ? "matched" : delta>BigInt(0) || creditDelta>BigInt(0) ? "unattributed" : "mismatch";
       await tx.query(`INSERT INTO app_supplier_usage_buckets(account_id,window_start,window_end,model,date,run_id,remote_amount_micros,remote_credits_micros,remote_requests,local_amount_micros,local_credits_micros,local_requests,pending,status,amount_delta_micros,credits_delta_micros) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`, [account.id,input.start,input.end,item.model.toLowerCase(),item.date,runId,item.amountMicros,item.creditsMicros,item.requests,l.amount,l.credits,l.requests,pending,status,delta.toString(),creditDelta.toString()]);
-      if (status === "matched") await tx.query(`UPDATE app_supplier_calls SET cost_status='reconciled',updated_at=now() WHERE account_id=$1 AND lower(COALESCE(actual_model,model))=$2 AND to_char(completed_at AT TIME ZONE $3,'YYYY-MM-DD')=$4 AND completed_at >= $5 AND completed_at < $6 AND cost_status='reported' AND posting_time_known`, [account.id,item.model.toLowerCase(),policy.timezone,item.date,input.start,input.end]);
-      else await tx.query(`UPDATE app_supplier_calls SET cost_status='reported',updated_at=now() WHERE account_id=$1 AND lower(COALESCE(actual_model,model))=$2 AND to_char(completed_at AT TIME ZONE $3,'YYYY-MM-DD')=$4 AND completed_at >= $5 AND completed_at < $6 AND cost_status='reconciled'`,[account.id,item.model.toLowerCase(),policy.timezone,item.date,input.start,input.end]);
+      if (status === "matched") await tx.query(`UPDATE app_supplier_calls SET cost_status='reconciled',updated_at=now() WHERE account_id=$1 AND lower(COALESCE(actual_model,model))=$2 AND to_char(completed_at AT TIME ZONE $3,'YYYY-MM-DD')=$4 AND completed_at >= $5 AND completed_at < $6 AND cost_status='reported' AND posting_time_known ${excludeImportedHistory("app_supplier_calls")}`, [account.id,item.model.toLowerCase(),policy.timezone,item.date,input.start,input.end]);
+      else await tx.query(`UPDATE app_supplier_calls SET cost_status='reported',updated_at=now() WHERE account_id=$1 AND lower(COALESCE(actual_model,model))=$2 AND to_char(completed_at AT TIME ZONE $3,'YYYY-MM-DD')=$4 AND completed_at >= $5 AND completed_at < $6 AND cost_status='reconciled' ${excludeImportedHistory("app_supplier_calls")}`,[account.id,item.model.toLowerCase(),policy.timezone,item.date,input.start,input.end]);
       output.push({ ...item, status, pending, amountDeltaMicros: delta.toString(), creditsDeltaMicros: creditDelta.toString() });
     }
     return { runId, buckets: output };

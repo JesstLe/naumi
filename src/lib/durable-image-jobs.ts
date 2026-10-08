@@ -1,7 +1,8 @@
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled, getPool } from "@/lib/db";
+import { assertMutableStagingTask } from "./staging-history";
 import { uploadImage, readManagedObject } from "@/lib/storage";
 import { workerSecret } from "@/lib/settings-secret";
 import * as repository from "@/lib/image-job-repository";
@@ -115,6 +116,7 @@ export class DurableImageJobs<T extends { status: string }> {
   }
   /** Persist intent before paid work. Only a durable Router operation may replay. */
   async paidOperation<R>(id: string, model: string, operation: Parameters<typeof withImageOperation>[1], run: () => Promise<R>): Promise<R> {
+    if (dbEnabled) await assertMutableStagingTask(getPool(), "app_image_jobs", id);
     type Attempt = { model: string; replayable: boolean; gatewayIdentity?: string; state: "started" | "done" | "rejected"; result?: R };
     type Snapshot = T & { paidOperations?: Record<string, Attempt> };
     const update = async (change: (current: Snapshot) => Snapshot) => {
