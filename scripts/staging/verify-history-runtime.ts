@@ -7,6 +7,8 @@ import { refreshApiCostOperation, withBillingTransaction } from "../../src/lib/b
 import { runSupplierCostWorker } from "../../src/lib/supplier-cost/worker";
 import { createSupplierLedger } from "../../src/lib/supplier-cost/repository";
 import { recoverPostprocess } from "../../src/lib/postprocess-recovery";
+import { getPaymentSettings, getSmtpConfig, getWechatSettings } from "../../src/lib/settings";
+import { smsEnabled, sendSmsCode } from "../../src/lib/sms";
 
 async function main() {
   assert.equal(process.env.NAUMI_ENVIRONMENT, "staging");
@@ -25,6 +27,12 @@ async function main() {
       return hashes;
     };
     const before = await originHashes();
+    assert.equal(await getSmtpConfig(), null);
+    assert.equal((await getWechatSettings()).enabled, false);
+    assert.equal((await getPaymentSettings()).payEnabled, false);
+    assert.equal((await getPaymentSettings()).wxpayApiv3, "");
+    assert.equal(smsEnabled, false);
+    await assert.rejects(sendSmsCode("staging-fixture"), /预发布环境/);
     await ensureSchema();
     const old = (await pool.query("SELECT id,email,kind FROM app_image_jobs ORDER BY id LIMIT 1")).rows[0];
     assert.ok(old);
@@ -62,6 +70,7 @@ async function main() {
     assert.deepEqual(await originHashes(), before);
     console.log(`STAGING_HISTORY_RUNTIME=PASS IMPORTED_ROWS=UNCHANGED PAID_REPLAY=${paid} RESUMED=${resumed} NEW_TASK=SETTLED`);
     console.log(`SUPPLIER_FIXTURE=PASS NETWORK=MOCKED CLAIMED_NEW=${worker.claimed} MOCK_FETCHES=${supplierFetches}`);
+    console.log('STAGING_EXTERNAL_ACTIONS=BLOCKED SMTP=OFF SMS=OFF WECHAT=OFF PAYMENT=OFF');
   } finally { await pool.end(); }
 }
 main().catch(e => { console.error(e.message); process.exitCode = 1; });

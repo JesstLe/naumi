@@ -1,5 +1,6 @@
 import "server-only";
 import crypto from "crypto";
+import { stagingHistoryGuardEnabled } from "./staging-history";
 
 // ---------------------------------------------------------------------------
 // 阿里云「短信认证服务」(Dypnsapi) — managed phone OTP. We call SendSmsVerifyCode
@@ -15,7 +16,7 @@ const TEMPLATE_CODE = process.env.SMS_TEMPLATE_CODE ?? "";
 const VALID_SEC = Number(process.env.SMS_VALID_SEC ?? "300");
 const CODE_LENGTH = process.env.SMS_CODE_LENGTH ?? "6";
 
-export const smsEnabled = Boolean(AK && SECRET && SIGN_NAME && TEMPLATE_CODE);
+export const smsEnabled = !stagingHistoryGuardEnabled() && Boolean(AK && SECRET && SIGN_NAME && TEMPLATE_CODE);
 
 const ENDPOINT = "https://dypnsapi.aliyuncs.com/";
 const VERSION = "2017-05-25";
@@ -30,6 +31,7 @@ async function call(
   action: string,
   params: Record<string, string>
 ): Promise<Record<string, unknown>> {
+  if (stagingHistoryGuardEnabled()) throw new Error("预发布环境未启用短信发送");
   const common: Record<string, string> = {
     Format: "JSON",
     Version: VERSION,

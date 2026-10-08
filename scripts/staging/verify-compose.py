@@ -22,6 +22,8 @@ def verify(config):
     assert env["STORAGE_DRIVER"] == "local", "local storage"
     assert env["MEDIA_DIR"] == "/data/media", "media path"
     assert env["NAUMI_VIDEO_WORKER"] == "0", "internal worker disabled"
+    assert env["NAUMI_ENVIRONMENT"] == "staging", "staging environment"
+    assert env["NAUMI_STAGING_HISTORY_GUARD"] == "1", "history guard mandatory"
     assert "@db:5432/" in env["DATABASE_URL"], "independent database"
     assert "101.133.166.67" not in env["DATABASE_URL"], "production database isolation"
     for key in ("NAUMI_ROUTER_MANAGEMENT_URL", "NAUMI_ROUTER_GENERATION_URL", "NAUMI_ROUTER_COST_URL"):

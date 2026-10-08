@@ -2,6 +2,7 @@ import "server-only";
 import crypto from "crypto";
 import { dbEnabled, getSetting, setSetting, getSignupBonus } from "@/lib/db";
 import { settingsSecret } from "@/lib/settings-secret";
+import { stagingHistoryGuardEnabled } from "./staging-history";
 
 // ---------------------------------------------------------------------------
 // Runtime-mutable OpenAI settings, editable from the admin page.
@@ -337,6 +338,7 @@ export type WechatSettings = {
 };
 
 export async function getWechatSettings(): Promise<WechatSettings> {
+  if (stagingHistoryGuardEnabled()) return { appid: "", secret: "", token: "", emailDomain: "staging.invalid", enabled: false };
   const envAppid = process.env.WECHAT_MP_APPID ?? "";
   const envSecret = process.env.WECHAT_MP_SECRET ?? "";
   const envToken = process.env.WECHAT_MP_TOKEN ?? "";
@@ -442,6 +444,7 @@ export type SmtpConfig = {
 
 /** 读 SMTP 配置(DB 优先 → env 兜底)。信息不全返回 null(视为未配置)。 */
 export async function getSmtpConfig(): Promise<SmtpConfig | null> {
+  if (stagingHistoryGuardEnabled()) return null;
   let host = process.env.SMTP_HOST || "";
   let user = process.env.SMTP_USER || "";
   let pass = process.env.SMTP_PASS || "";
@@ -514,6 +517,10 @@ export type PaymentSettings = {
 };
 
 export async function getPaymentSettings(): Promise<PaymentSettings> {
+  if (stagingHistoryGuardEnabled()) return {
+    payEnabled: false, alipayAppid: "", alipayPrivateKey: "", alipayPublicKey: "",
+    wxpayMchid: "", wxpayApiv3: "", wxpayCert: "", wxpayCertSerial: "", wxpayAppid: "",
+  };
   // 收款开关默认值对齐前端开关 NEXT_PUBLIC_RECHARGE_ENABLED(CN=true、US 未设=false);
   // DB 显式 1/0 可覆盖。
   let payEnabled =

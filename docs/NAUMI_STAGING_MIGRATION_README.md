@@ -196,8 +196,8 @@
 - [x] 历史 helper 首轮类型检查/fixture 通过：生产默认无额外来源查询，错误环境失败关闭。
 - [ ] 应用层真实数据库验收：保护 claim、due 扫描、付费执行、旧预占清理、旧账务核对、费用补查、后处理恢复。完成审查后在新机一次性运行独立克隆库验收；不能以 helper 模拟测试替代。
 - [ ] S3 全量媒体正在复制。源清单 4,767 对象、8,641,139,439 bytes；新机 `naumi-staging-media-import.service` 运行，目标 `/opt/naumi-staging/data/media`。首次本轮核验已复制 310 MiB，未完成。
-- [ ] 旧机约 6 GiB 残留本地媒体尚未复制/核对；与 S3 重复项必须按 key/hash 合并，S3 当前对象优先。
-- [x] Router 原始 binary/config/SQLite 私有快照上传并核对包哈希；独立 Router 尚未安装启动。
+- [x] 旧本地媒体来源清单已核验：3,658 文件 / 6,366,112,727 bytes，全部 key 已在 4,767 S3 对象清单中；local-only=0。因此不重复传输旧本地卷，同名使用当前 S3 权威对象，仍须目标内容核验。
+- [x] 独立 Router 已安装启动：`naumi-staging-router.service` enabled/active，generation/management 分别只绑定新机 Docker 网关 `172.18.0.1:18081/18082`。独立令牌、execution store、capacity 回调；管理与 models 查询 HTTP 200，旧管理令牌和无凭据访问被拒绝，未调用供应商。
 - [ ] 新机固定 commit 源码构建/测试链及候选镜像。
 - [ ] app/Worker 启动、登录/媒体/真实生成账务/重启验收。
 - [ ] OSS 迁移、下班窗口回传生产。
@@ -225,8 +225,9 @@
 ### 独立 Router 和配置待办
 
 - 生产 Router 位于 `/opt/naumi-gateway/current`，service `naumi-router.service`，state `/var/lib/naumi-gateway/router`；`E:\Workspace\router` 是另一个项目。
+- 新机 Router 工作目录 `/opt/naumi-staging/router`；非 root 专用用户，配置 0600，state 0700。旧 execution DB 不导入，以防复制供应商在途任务。
 - 新机原始 Router 快照包 SHA256 `d91d3a8f427517b38fab6f354d235587a365516329dff16ff93cb8a0dd43ffda`，解压在快照目录 `router/`。
-- SQLite 在线 tar 快照须 integrity_check；需要时从旧机 SQLite backup API 取得一致性副本。
+- 已按实际源码纠正：`configurations.db` 是 **bbolt**，不是 SQLite；SQLite integrity_check 已失败并未作为验收。工作副本 hash 与原始快照一致，Router 成功打开、重建保留版本并返回管理状态；需要进一步 bbolt 页/事务一致性检查时使用 bbolt 工具，而非 sqlite。
 - 工作 Router 使用独立 state、generation/management token、监听端口和新机 capacity 回调；不复用生产管理地址。
 - `SETTINGS_SECRET` / envelope secret 需要兼容解密。仅数据库恢复用 `.env.db-restore` 的 SETTINGS_SECRET 是随机占位，不能用于 app。
 - 生产 Yutang 地址为旧宿主 `host.docker.internal:8766`；此供应商依赖需单独迁移/核验，不能标为新环境可用。
