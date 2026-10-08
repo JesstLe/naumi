@@ -1,6 +1,6 @@
 # Naumi 新服务器预发布与晚间回传方案
 
-> 状态：预发布 app/Worker 已启动，首笔真实生图与结算通过；全量媒体传输仍进行中（2026-10-08）。
+> 状态：预发布 app/Worker 已启动，首笔真实生图与结算通过；全量 4,767 源对象 MD5 核验通过，NAS 导出通道已撤下；4 个源端既存缺失引用单独记录（2026-10-09）。
 >
 > 本文是本任务的交接入口。后续 Agent 先阅读本文，再检查本文列出的状态、证据和阻塞项；不要凭对话上下文猜测迁移进度。
 
@@ -159,11 +159,11 @@
 
 - [x] 新服务器资源和磁盘容量确认。
 - [x] 完整数据库恢复，初始 69 表计数/行哈希一致；测试新增数据与原始快照分开记录。
-- [ ] 完整媒体副本可读取，抽样哈希一致。
+- [x] 完整源媒体清单 4,767 对象全部大小/MD5 一致；4 个不在源清单且生产已 404 的历史引用另列，不宣称历史引用零缺失。
 - [x] 历史任务重放保护通过，Worker tick / restart 未重复提交。
 - [ ] 真实生成/编辑/视频/消费测试通过。
 - [ ] 账本、积分、失败退款和异常任务状态正确。
-- [x] 新测试任务本地媒体重启恢复通过；全量历史媒体仍待复制和内容验收。
+- [x] 新测试任务本地媒体重启恢复通过；全量源清单媒体完成，撤掉 NAS 导出隧道后本地读取通过。
 - [x] 镜像 commit、image ID 和构建日志已记录；生产回传 tar 校验仍待准备。
 - [ ] 生产回传包、数据库备份和回滚脚本已准备。
 
@@ -195,7 +195,7 @@
 - [x] 工作库建立 `naumi_staging_guard.origin_rows` 和历史 UPDATE/DELETE 防护；原任务和账务内容不改写。独立第三库恢复演练通过，演练库已删除。
 - [x] 历史 helper 首轮类型检查/fixture 通过：生产默认无额外来源查询，错误环境失败关闭。
 - [x] 新机独立克隆库真实 runtime 验收：`STAGING_HISTORY_RUNTIME=PASS IMPORTED_ROWS=UNCHANGED PAID_REPLAY=0 RESUMED=0 NEW_TASK=SETTLED`；历史 claim/due/sweep/paidOperation/费用补查/后处理保护通过，新增 fixture 可保存和结算。fixture 库及其临时 env 已清理，工作副本未变。
-- [ ] S3 全量媒体正在复制。源清单 4,767 对象、8,641,139,439 bytes；新机 `naumi-staging-media-import.service` 运行，目标 `/opt/naumi-staging/data/media`。首次本轮核验已复制 310 MiB，未完成。
+- [x] S3 全量媒体复制完成：4,767 对象、8,641,139,439 bytes，全部大小和 MD5 一致；目标 `/opt/naumi-staging/data/media`。服务 inactive / Result=success / MainPID=0；完成标记为 `2026-10-08T14:30:40Z`。此前 310 MiB / 3.5 GiB 为中途观察，不再代表当前状态。
 - [x] 旧本地媒体来源清单已核验：3,658 文件 / 6,366,112,727 bytes，全部 key 已在 4,767 S3 对象清单中；local-only=0。因此不重复传输旧本地卷，同名使用当前 S3 权威对象，仍须目标内容核验。
 - [x] 独立 Router 已安装启动：`naumi-staging-router.service` enabled/active，generation/management 分别只绑定新机 Docker 网关 `172.18.0.1:18081/18082`。独立令牌、execution store、capacity 回调；管理与 models 查询 HTTP 200，旧管理令牌和无凭据访问被拒绝，未调用供应商。
 - [x] 新机 npm ci 已成功（官方直连、8 sockets、持久 cache）：`STAGING_NPM_CI=PASS HOST=STAGING COMMIT=959f14fc8445a4b7aa9c2b4fcc2233de0caf627b LOCKFILE=UNCHANGED` / 0。代理首次 ECONNRESET / 1 已记录，不以此成功覆盖失败事实。
@@ -204,7 +204,7 @@
 - [x] 新机 app/Worker 已启动；health=200 DB=OK，未鉴权 admin=403，会话 fixture admin=200，模型目录=200（13 模型）。浏览器真实访问登录页面；密码登录尚待用户本人完成，测试未修改原账号密码。
 - [x] 首笔真实生图完成：`job-234bb140-6937-45ae-ba2d-4e50711a27f3`，模型 `gpt-image-2`，done/settled，charged=6，reserved=0，ledger rows=1，supplier calls=1，本地媒体=200。保留任务/账务证据，不删除已消费流水。
 - [x] Worker tick=200，processed=0，历史 image leases=0；没有重放复制任务。
-- [ ] 完整历史媒体、用户本人密码登录、视频/编辑/失败退款等剩余模块验收与生产回传包。
+- [ ] 用户本人密码登录、历史页面/编辑/视频/失败退款等剩余模块验收与生产回传包；媒体内容复制已完成，4 个源端缺失列入已知历史问题。
 - [ ] OSS 迁移、下班窗口回传生产。
 
 ## 9. 证据、恢复与交接
@@ -218,13 +218,13 @@
 - `/opt/naumi-staging/config/ROLLBACK.sh --fixture` → `DATABASE_ROLLBACK_FIXTURE=PASS ORIGINAL_DUMP_RESTORED=1 PRIMARY_STAGING_DATABASE_CHANGED=0` / 0；这是另一个库的恢复演练，不是撤销工作库保护。
 - `npx tsx --conditions react-server scripts/staging/verify-history-helper.ts` → `STAGING_HISTORY_HELPER=PASS PRODUCTION_DEFAULT=UNCHANGED FAIL_CLOSED=1` / 0；首轮类型检查通过，后续新模块需要新机真实库验收。
 
-### 正在运行的媒体导出
+### 已结束的媒体导出（2026-10-09）
 
 - 复制使用 rclone copy（非 sync），单传输/单检查、2 MiB/s 上限、CPUQuota 50% / MemoryMax 256 MiB；不删除源对象。
-- 来源隧道：Windows → 旧机 `-L 127.0.0.1:13900:172.17.0.1:3900`；Windows → 新机 `-R 127.0.0.1:13900:127.0.0.1:13900`。当前工具会话分别 `82211`、`16137`，源端口只供历史导出。
-- 完成标记 `MEDIA_S3_IMPORTED` 不是完整性验收；还要核对清单大小/内容、补齐旧本地媒体并检查数据库引用和绝对 URL。
-- **传输结束前保留两条隧道和临时 key**。临时 key 位于忽略目录 `output/staging-data-20261008/{new,old}-key.pem`，原私钥未修改；源 hash 保存在同目录 `{new,old}-source.sha256`。结束后核对原 hash 并清理副本。
-- 导出用私有 `config/media-import.conf` 和 bucket 文件，最终 app 不包含这些源媒体凭据。
+- 来源隧道：Windows → 旧机 `-L 127.0.0.1:13900:172.17.0.1:3900`；Windows → 新机 `-R 127.0.0.1:13900:127.0.0.1:13900`。工具会话 `82211`、`16137` 已关闭，源端口只供历史导出；不再是运行依赖。
+- 完成标记 `MEDIA_S3_IMPORTED` 与全清单内容核验均已通过；数据库引用检查见第 12 节。旧本地媒体无独有 key，不重复复制。
+- 两条媒体隧道已关闭；临时 key 的源 hash 在忽略目录 `output/staging-data-20261008/{new,old}-source.sha256`。最终证据同步后复核原 hash 并删除受保护副本；原私钥不修改。app SSH 会话独立保留。
+- 导出用私有 `config/media-import.conf`、bucket 文件和临时源查询脚本已删除；受保护原始快照保留，app 不包含源媒体凭据。
 - 本轮曾将临时新机 key 误传旧机临时目录；已删除且复查不存在。旧机生产服务配置/数据未改，未重启服务；不要把临时文件操作描述成全部只读。
 
 ### 独立 Router 和配置待办
@@ -241,7 +241,7 @@
 ## 10. 下一执行点
 
 1. npm ci、候选构建、runtime 已完成；不重跑整套。先核验运行 app/Worker 的实际镜像、最近日志和媒体传输。`prepare-build-deps.sh <commit>` 从原 lockfile 安装并保存 lock hash；`build-candidate.sh <commit>` 在新机运行 Next build，用同一 standalone 输出构建固定 tag 镜像（revision label/BUILD_VERSION），不含本地构建产物或凭据。`scripts/staging/run-history-runtime.sh <40位commit>` 只克隆工作库为独立 fixture、运行测试并清理，不修改工作副本。
-2. 持续观察正在运行的媒体服务，不因观察超时反复重启；补齐残留本地媒体，执行清单/内容/引用核验。
+2. 媒体复制与全清单 MD5 已完成；不重跑整卷导出，不为 4 个源端既存缺失伪造文件或改写历史任务。继续历史页面抽样验收，源缺失需要单独恢复来源。
 3. 独立 Router/app 白名单配置已生效，后续只补齐旧 Yutang/OCR 依赖所需的独立实例，不改已有公网供应商地址或生产管理端。
 4. app/Worker 已通过历史隔离门槛并启动；继续按模块完成用户本人登录、历史媒体、编辑、视频与失败账务验收。首笔生图成功不代表所有供应商和视频模块已贯通。
 5. 更新本文、验证证据，选择性提交推送；晚间回传与 OSS 为后续阶段，目标保持 active。
@@ -290,7 +290,7 @@ docker build --network=host \
 
 - 首轮 runtime 断言发现旧 supplier-call 表添加新 nullable 列后 `to_jsonb(r)` 形状发生变化；历史字段值没有改变，DB UPDATE/DELETE 触发器未被绕过。测试已改为显式投影全部原始列，并保留表名/hash 诊断，兼容已审查的 additive schema。
 - 第二轮在新机 `run-history-runtime.sh 65adfe8742e7a1fe120e7ce7a94409c50c76eb44` 全部通过 / 0：历史原始字段无变化、新任务结算正常、外部通知/支付关闭。供应商 mock fetch 0 次，不是“真实生成已验收”。
-- 媒体进度最近约 3.5 GiB，仍在复制；`verify-media.py` 对源清单逐项检查本地文件大小/MD5，复制完成标记与全部内容通过前不得勾选完整媒体。`Hashes` 未提供完整 MD5 时另运行 rclone download check。
+- 媒体中期约 3.5 GiB；最终 `verify-media.py` 全部 4,767 对象 MD5 通过 / 0，详见第 12 节。源清单每项均提供 MD5，无须再做 rclone download check。
 
 ### 当前运行入口与版本
 
@@ -305,6 +305,26 @@ docker build --network=host \
 - 仅重启新机 app、Worker、Router；没有重启新机 Docker/Mihomo/媒体传输，也没有重启旧机生产。
 - `STAGING_POST_RESTART=PASS JOB_ID=job-234bb140-6937-45ae-ba2d-4e50711a27f3 STATUS=done CHARGED=6 RESERVED=0 LEDGER_ROWS=1 MEDIA=200` / 0。
 - `IMPORTED_HISTORY_FIELDS=IDENTICAL TABLES=5 NEW_TEST_ROWS=EXCLUDED` / 0：来源清单中五张有记录的任务/账务表原始列相同；空来源表也设保护，不把 5 说成全库表数。
-- 新机 app/Worker 的 image ID 与 revision label 均匹配固定候选；Router 回环管理握手仍通过。媒体 MainPID 12219 未变，最新约 3.5 GiB / 1,842 文件，结束标记尚未出现。包含 1 张新测试结果，因此文件总数不能直接当作历史 S3 完成对象数。
+- 新机 app/Worker 的 image ID 与 revision label 均匹配固定候选；Router 回环管理握手仍通过。重启时媒体中期 MainPID 12219 / 3.5 GiB / 1,842 文件；最终服务已成功结束、目录 4,768 文件（4,767 源对象 + 1 张真实测试结果）。
 - 媒体传输中期清单内容核验：1541 对象 MD5 通过、0 wrong-hash，1 个正在写入文件大小未定、3225 missing；exit 2，属于未完成，不宣称全量媒体通过。复制结束后重新核验全部 4767。
-- 原新机/旧机 key SHA256 再次与 source hash 相同；临时副本因正在运行的媒体隧道保留，传输完成后清理。
+- 原新机/旧机 key SHA256 再次与 source hash 相同；媒体隧道现已关闭，app 隧道独立保留；最终同步后清理临时副本。
+
+
+## 12. 全量媒体完成与源端缺失（2026-10-09）
+
+- `python3 /opt/naumi-staging/config/verify-media.py` → `MEDIA_VERIFY={"copy_finished": true, "md5_checked": 4767, "missing": 0, "source_bytes": 8641139439, "source_objects": 4767, "wrong_hash": 0, "wrong_size": 0}`；`MEDIA_CONTENT_VERIFICATION=PASS FULL_MANIFEST_MD5=1` / 0。
+- `python3 /opt/naumi-staging/config/verify-media-references.py` → `MEDIA_REFERENCES={"managed_reference_keys": 4338, "missing": 4, "missing_in_source_manifest": 4, "present": 4334}` / 2。exit 2 特意保留引用缺失信号，不将源端既存问题当作零缺失。只读遍历原始参照库全部 public 表 JSON，不改写工作库。
+- 以下 4 个 key 不在冻结 S3 清单中；旧机本地也无对应文件，生产 `127.0.0.1:3012/media/<key>` 再次均 HTTP 404。临时 S3 `lsjson --stat` 实时补查因导出隧道超时未得到结论，不能将超时说成对象不存在；“冻结源清单缺失 + 生产 404”已分别核实。
+
+| 已有缺失引用 | 生产读取 |
+|---|---|
+| `canvas-uploads/art-1789365293381-246366.webp` | 404 |
+| `generations/gen-1789365293518-249729-0.png` | 404 |
+| `generations/gen-1789365293518-249729-1.png` | 404 |
+| `sources/src-1789365293520.webp` | 404 |
+
+- 不伪造文件、不修改历史作品/任务、不重复扣费。源清单媒体全量复制与历史引用完整性是两个独立结论。
+- `naumi-staging-media-import` inactive / Result=success / MainPID=0；两条 13900 媒体隧道已撤下，临时导出凭据已删。预发布读取本地目录，不依赖 NAS。
+- 本地仓库被其他工作切换到 main；本轮交接收尾在独立 worktree `C:\Users\13357\.codex\worktrees\staging-media-handoff\naumi`，分支 `codex/staging-media-handoff`，基于已推送 `af973c465c368594c0268b793c81f76d58c48f91`。不切换或覆盖主工作区，不将其他工作的源码/服务或 `.env.bak-jimeng` 混入提交。
+- 运行候选仍为 `65adfe8742e7a1fe120e7ce7a94409c50c76eb44`，本轮仅补齐验证脚本与交接文档，不重新构建或发布生产。
+- 原始证据 `/opt/naumi-staging/evidence/media-verification.json`、`media-references.json` 为 0600；交接四件套位于 `/opt/naumi-staging/evidence/data-20261008/handoff`，文档回滚只演练 disposable 副本。
