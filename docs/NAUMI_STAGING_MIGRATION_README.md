@@ -423,3 +423,4 @@ bash /opt/naumi-staging/config/run-functional-receipt.sh \
 - 不等待凭据即可完成的收尾：receipt wrapper、fixture、固定候选回传档案、README/证据同步，已完成。
 - 尚未完成：视频成功出片、本人密码登录/页面下载、旧内网供应商独立实例、OSS bucket/参数/凭据及晚间生产回传。全目标保持 active，本轮没有旧机生产发布。
 - 本轮原始 literal 证据增加：`functional-wrapper-fixture-20261009.txt`、`functional-wrapper-20261009.txt`、`return-source-git-20261009.txt`、`return-package-20261009.txt`，均位于 `/opt/naumi-staging/evidence/`，0600。
+- 收尾密钥状态：历史 `new-key.pem` / `old-key.pem` 已删除且核对不存在，两把原始私钥 hash 与 source 记录一致。当前 `E:\Workspace\naumi\output\staging-data-20261008\session-key.pem` 仍存在、仅当前本机用户 ACL；本轮检查绝对路径后执行 `Remove-Item -LiteralPath <该临时副本> -Force` 被工具执行环境拒绝（命令未启动），没有宣称清理完成。后续先处理这一具名临时副本，不修改原私钥。app 隧道与待本人登录的页面继续保留；关闭额外交接 shell 不会关闭 app 隧道。
