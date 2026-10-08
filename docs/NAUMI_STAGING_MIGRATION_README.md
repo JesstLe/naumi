@@ -198,7 +198,7 @@
 - [ ] S3 全量媒体正在复制。源清单 4,767 对象、8,641,139,439 bytes；新机 `naumi-staging-media-import.service` 运行，目标 `/opt/naumi-staging/data/media`。首次本轮核验已复制 310 MiB，未完成。
 - [x] 旧本地媒体来源清单已核验：3,658 文件 / 6,366,112,727 bytes，全部 key 已在 4,767 S3 对象清单中；local-only=0。因此不重复传输旧本地卷，同名使用当前 S3 权威对象，仍须目标内容核验。
 - [x] 独立 Router 已安装启动：`naumi-staging-router.service` enabled/active，generation/management 分别只绑定新机 Docker 网关 `172.18.0.1:18081/18082`。独立令牌、execution store、capacity 回调；管理与 models 查询 HTTP 200，旧管理令牌和无凭据访问被拒绝，未调用供应商。
-- [ ] 新机固定 commit 源码构建/测试链及候选镜像。
+- [ ] 新机固定 commit 构建与验收进行中：候选源码 `959f14fc8445a4b7aa9c2b4fcc2233de0caf627b` 已导入，clean 包 SHA256 `a4f3954899dc2ad62cf6f0dd16fdce4876af4e08d7c3815b67d808005eb4863a`。代理 npm ci 首次 ECONNRESET / exit 1；实测同包 npm 官方直连 HTTP 200（1.04s），改用新机直连、8 sockets、持久 npm cache，service `naumi-staging-npm-direct`。尚无候选镜像。
 - [ ] app/Worker 启动、登录/媒体/真实生成账务/重启验收。
 - [ ] OSS 迁移、下班窗口回传生产。
 
@@ -229,12 +229,13 @@
 - 新机原始 Router 快照包 SHA256 `d91d3a8f427517b38fab6f354d235587a365516329dff16ff93cb8a0dd43ffda`，解压在快照目录 `router/`。
 - 已按实际源码纠正：`configurations.db` 是 **bbolt**，不是 SQLite；SQLite integrity_check 已失败并未作为验收。工作副本 hash 与原始快照一致，Router 成功打开、重建保留版本并返回管理状态；需要进一步 bbolt 页/事务一致性检查时使用 bbolt 工具，而非 sqlite。
 - 工作 Router 使用独立 state、generation/management token、监听端口和新机 capacity 回调；不复用生产管理地址。
-- `SETTINGS_SECRET` / envelope secret 需要兼容解密。仅数据库恢复用 `.env.db-restore` 的 SETTINGS_SECRET 是随机占位，不能用于 app。
+- app 真配置 `/opt/naumi-staging/config/.env` 已通过生产键白名单生成，0600，保留生产 SETTINGS_SECRET 与独立 Router envelope secret；独立 DB/Worker/Router token，清空源存储和旧内网依赖。仅数据库恢复用 `.env.db-restore` 的 SETTINGS_SECRET 是随机占位，不能用于 app。
+- 应用读取 SMTP、短信、微信登录及支付配置时，预发布强制关闭外部动作，不删除数据库原始配置；模型调用不受这一关闭影响。尚须真实库/runtime 验收。
 - 生产 Yutang 地址为旧宿主 `host.docker.internal:8766`；此供应商依赖需单独迁移/核验，不能标为新环境可用。
 
 ## 10. 下一执行点
 
-1. 在新机按固定已提交 commit 建立 npm 依赖和验证链；不在本机构建候选镜像。`scripts/staging/run-history-runtime.sh <40位commit>` 只克隆工作库为独立 fixture、运行测试并清理，不修改工作副本。
+1. 观察 `naumi-staging-npm-direct` 完成；不要重启活跃下载。`prepare-build-deps.sh <commit>` 从原 lockfile 安装并保存 lock hash；`build-candidate.sh <commit>` 在新机运行 Next build，用同一 standalone 输出构建固定 tag 镜像（revision label/BUILD_VERSION），不含本地构建产物或凭据。`scripts/staging/run-history-runtime.sh <40位commit>` 只克隆工作库为独立 fixture、运行测试并清理，不修改工作副本。
 2. 持续观察正在运行的媒体服务，不因观察超时反复重启；补齐残留本地媒体，执行清单/内容/引用核验。
 3. 完成独立 Router 与真实 app 配置白名单隔离，核验数据库、通知/支付和 Router 管理地址，不直接启用 production.env。
 4. 所有历史恢复/费用/账务入口验收后才启动 app 和 opt-in Worker；按模块完成登录、媒体、真实生成费用和重启恢复。
@@ -271,3 +272,11 @@ docker build --network=host \
 - 代理服务刚重启时应等端口就绪再验证；不要在镜像/数据传输过程中重启代理。一次镜像拉取与代理重启重叠导致 EOF，按原镜像 tag 续拉，不把该次视为成功。
 - 已完成真实文件下载（上游 README 3,194 bytes）和 `hello-world` 镜像拉取，镜像 ID：`sha256:5e23090353324d887c48ad5e5c56d294eab81588df9605b07d1afe895f9cc8f8`。代理重启后 GitHub 再次 HTTP 200，Mihomo enabled/active，Docker info 确认 daemon 使用回环代理。
 - PostgreSQL/Node 大镜像下载多次超时，已切换为哈希验证的离线导入；PostgreSQL 数据库已启动，app/Worker 未启动。小镜像与离线导入不代表源码构建链验收完成。
+
+### 本轮模块脚本
+
+- `history-origin-guard.sql` 初次导入保护；`extend-history-guard.sql` 针对既有副本仅扩展后处理来源，不重建历史来源。
+- `verify-history-runtime.ts` 读取历史 ID、运行 claim/due/sweep/paidOperation/费用补查/后处理路径，在独立克隆验证历史记录哈希不变；新增 fixture task 可以保存和结算；供应商 fetch 使用 mock，不产生真实费用。
+- `prepare-router.py` / `install-router.sh` / `verify-router.py` 准备工作 Router 与只读管理握手；系统依赖 `acl` 已装。
+- `prepare-app-config.py` 只白名单导出，绝不打印密钥；已存在配置时停止覆盖，先核对现有状态。
+- `prepare-build-deps.sh` / `build-candidate.sh` / `deploy/staging/Dockerfile.runtime` 为新机依赖、构建及固定候选镜像入口。
