@@ -1,0 +1,1196 @@
+{
+  "date": "2026-10-08",
+  "models": [
+    "gpt-image-2.5-flare",
+    "gpt-image-2.5-sunburst"
+  ],
+  "source_file": "apimart-image25-sale-3x-20261008.json",
+  "source_sha256": "cf0187ba6d0b836bf7edd47bc5c80b75f2854f02d5dfa9ce26919ba38f2a3647",
+  "base": "gold_output_only_usd_estimate",
+  "multiplier": "3",
+  "currency": "CNY",
+  "unit": "per_output_image",
+  "amount_encoding": "decimal_string",
+  "includes_prompt_and_reference_input_cost": false,
+  "production_pricing_changed": false,
+  "formula": "gold output-only USD estimate * 3 * 7",
+  "fx_snapshot": {
+    "usd_to_cny": "7",
+    "basis": "budget_assumption",
+    "live_rate_verified": false,
+    "recharge_cost_verified": false
+  },
+  "display_rounding": "4 decimal places, ROUND_HALF_UP; exact Decimal values preserved",
+  "sale_reference_matrix": [
+    {
+      "size": "1:1",
+      "resolution": "1k",
+      "pixels": "1024x1024",
+      "sale_usd_per_image": {
+        "low": "0.014112",
+        "medium": "0.031608",
+        "high": "0.126432",
+        "xhigh": "0.224784",
+        "max": "0.505728"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.098784",
+        "medium": "0.221256",
+        "high": "0.885024",
+        "xhigh": "1.573488",
+        "max": "3.540096"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0988",
+        "medium": "0.2213",
+        "high": "0.8850",
+        "xhigh": "1.5735",
+        "max": "3.5401"
+      }
+    },
+    {
+      "size": "3:2",
+      "resolution": "1k",
+      "pixels": "1536x1024",
+      "sale_usd_per_image": {
+        "low": "0.011376",
+        "medium": "0.024696",
+        "high": "0.098784",
+        "xhigh": "0.177048",
+        "max": "0.395136"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.079632",
+        "medium": "0.172872",
+        "high": "0.691488",
+        "xhigh": "1.239336",
+        "max": "2.765952"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0796",
+        "medium": "0.1729",
+        "high": "0.6915",
+        "xhigh": "1.2393",
+        "max": "2.7660"
+      }
+    },
+    {
+      "size": "2:3",
+      "resolution": "1k",
+      "pixels": "1024x1536",
+      "sale_usd_per_image": {
+        "low": "0.011376",
+        "medium": "0.024696",
+        "high": "0.098784",
+        "xhigh": "0.177048",
+        "max": "0.395136"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.079632",
+        "medium": "0.172872",
+        "high": "0.691488",
+        "xhigh": "1.239336",
+        "max": "2.765952"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0796",
+        "medium": "0.1729",
+        "high": "0.6915",
+        "xhigh": "1.2393",
+        "max": "2.7660"
+      }
+    },
+    {
+      "size": "4:3",
+      "resolution": "1k",
+      "pixels": "1024x768",
+      "sale_usd_per_image": {
+        "low": "0.009648",
+        "medium": "0.021672",
+        "high": "0.086688",
+        "xhigh": "0.154080",
+        "max": "0.346680"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.067536",
+        "medium": "0.151704",
+        "high": "0.606816",
+        "xhigh": "1.078560",
+        "max": "2.426760"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0675",
+        "medium": "0.1517",
+        "high": "0.6068",
+        "xhigh": "1.0786",
+        "max": "2.4268"
+      }
+    },
+    {
+      "size": "3:4",
+      "resolution": "1k",
+      "pixels": "768x1024",
+      "sale_usd_per_image": {
+        "low": "0.009648",
+        "medium": "0.021672",
+        "high": "0.086688",
+        "xhigh": "0.154080",
+        "max": "0.346680"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.067536",
+        "medium": "0.151704",
+        "high": "0.606816",
+        "xhigh": "1.078560",
+        "max": "2.426760"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0675",
+        "medium": "0.1517",
+        "high": "0.6068",
+        "xhigh": "1.0786",
+        "max": "2.4268"
+      }
+    },
+    {
+      "size": "5:4",
+      "resolution": "1k",
+      "pixels": "1280x1024",
+      "sale_usd_per_image": {
+        "low": "0.012456",
+        "medium": "0.027216",
+        "high": "0.108720",
+        "xhigh": "0.194544",
+        "max": "0.440568"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.087192",
+        "medium": "0.190512",
+        "high": "0.761040",
+        "xhigh": "1.361808",
+        "max": "3.083976"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0872",
+        "medium": "0.1905",
+        "high": "0.7610",
+        "xhigh": "1.3618",
+        "max": "3.0840"
+      }
+    },
+    {
+      "size": "4:5",
+      "resolution": "1k",
+      "pixels": "1024x1280",
+      "sale_usd_per_image": {
+        "low": "0.012456",
+        "medium": "0.027216",
+        "high": "0.108720",
+        "xhigh": "0.194544",
+        "max": "0.440568"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.087192",
+        "medium": "0.190512",
+        "high": "0.761040",
+        "xhigh": "1.361808",
+        "max": "3.083976"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0872",
+        "medium": "0.1905",
+        "high": "0.7610",
+        "xhigh": "1.3618",
+        "max": "3.0840"
+      }
+    },
+    {
+      "size": "16:9",
+      "resolution": "1k",
+      "pixels": "1536x864",
+      "sale_usd_per_image": {
+        "low": "0.008640",
+        "medium": "0.020160",
+        "high": "0.077616",
+        "xhigh": "0.138024",
+        "max": "0.310464"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.060480",
+        "medium": "0.141120",
+        "high": "0.543312",
+        "xhigh": "0.966168",
+        "max": "2.173248"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0605",
+        "medium": "0.1411",
+        "high": "0.5433",
+        "xhigh": "0.9662",
+        "max": "2.1732"
+      }
+    },
+    {
+      "size": "9:16",
+      "resolution": "1k",
+      "pixels": "864x1536",
+      "sale_usd_per_image": {
+        "low": "0.008640",
+        "medium": "0.020160",
+        "high": "0.077616",
+        "xhigh": "0.138024",
+        "max": "0.310464"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.060480",
+        "medium": "0.141120",
+        "high": "0.543312",
+        "xhigh": "0.966168",
+        "max": "2.173248"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0605",
+        "medium": "0.1411",
+        "high": "0.5433",
+        "xhigh": "0.9662",
+        "max": "2.1732"
+      }
+    },
+    {
+      "size": "2:1",
+      "resolution": "1k",
+      "pixels": "2048x1024",
+      "sale_usd_per_image": {
+        "low": "0.009504",
+        "medium": "0.021240",
+        "high": "0.084960",
+        "xhigh": "0.151056",
+        "max": "0.339840"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.066528",
+        "medium": "0.148680",
+        "high": "0.594720",
+        "xhigh": "1.057392",
+        "max": "2.378880"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0665",
+        "medium": "0.1487",
+        "high": "0.5947",
+        "xhigh": "1.0574",
+        "max": "2.3789"
+      }
+    },
+    {
+      "size": "1:2",
+      "resolution": "1k",
+      "pixels": "1024x2048",
+      "sale_usd_per_image": {
+        "low": "0.009504",
+        "medium": "0.021240",
+        "high": "0.084960",
+        "xhigh": "0.151056",
+        "max": "0.339840"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.066528",
+        "medium": "0.148680",
+        "high": "0.594720",
+        "xhigh": "1.057392",
+        "max": "2.378880"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0665",
+        "medium": "0.1487",
+        "high": "0.5947",
+        "xhigh": "1.0574",
+        "max": "2.3789"
+      }
+    },
+    {
+      "size": "21:9",
+      "resolution": "1k",
+      "pixels": "2016x864",
+      "sale_usd_per_image": {
+        "low": "0.007560",
+        "medium": "0.016200",
+        "high": "0.067896",
+        "xhigh": "0.116424",
+        "max": "0.265104"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.052920",
+        "medium": "0.113400",
+        "high": "0.475272",
+        "xhigh": "0.814968",
+        "max": "1.855728"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0529",
+        "medium": "0.1134",
+        "high": "0.4753",
+        "xhigh": "0.8150",
+        "max": "1.8557"
+      }
+    },
+    {
+      "size": "9:21",
+      "resolution": "1k",
+      "pixels": "864x2016",
+      "sale_usd_per_image": {
+        "low": "0.007560",
+        "medium": "0.016200",
+        "high": "0.067896",
+        "xhigh": "0.116424",
+        "max": "0.265104"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.052920",
+        "medium": "0.113400",
+        "high": "0.475272",
+        "xhigh": "0.814968",
+        "max": "1.855728"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0529",
+        "medium": "0.1134",
+        "high": "0.4753",
+        "xhigh": "0.8150",
+        "max": "1.8557"
+      }
+    },
+    {
+      "size": "3:1",
+      "resolution": "1k",
+      "pixels": "1536x512",
+      "sale_usd_per_image": {
+        "low": "0.004032",
+        "medium": "0.009648",
+        "high": "0.038520",
+        "xhigh": "0.067464",
+        "max": "0.154080"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.028224",
+        "medium": "0.067536",
+        "high": "0.269640",
+        "xhigh": "0.472248",
+        "max": "1.078560"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0282",
+        "medium": "0.0675",
+        "high": "0.2696",
+        "xhigh": "0.4722",
+        "max": "1.0786"
+      }
+    },
+    {
+      "size": "1:3",
+      "resolution": "1k",
+      "pixels": "512x1536",
+      "sale_usd_per_image": {
+        "low": "0.004032",
+        "medium": "0.009648",
+        "high": "0.038520",
+        "xhigh": "0.067464",
+        "max": "0.154080"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.028224",
+        "medium": "0.067536",
+        "high": "0.269640",
+        "xhigh": "0.472248",
+        "max": "1.078560"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0282",
+        "medium": "0.0675",
+        "high": "0.2696",
+        "xhigh": "0.4722",
+        "max": "1.0786"
+      }
+    },
+    {
+      "size": "1:1",
+      "resolution": "2k",
+      "pixels": "2048x2048",
+      "sale_usd_per_image": {
+        "low": "0.028584",
+        "medium": "0.064224",
+        "high": "0.256896",
+        "xhigh": "0.456696",
+        "max": "1.027584"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.200088",
+        "medium": "0.449568",
+        "high": "1.798272",
+        "xhigh": "3.196872",
+        "max": "7.193088"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.2001",
+        "medium": "0.4496",
+        "high": "1.7983",
+        "xhigh": "3.1969",
+        "max": "7.1931"
+      }
+    },
+    {
+      "size": "3:2",
+      "resolution": "2k",
+      "pixels": "2048x1360",
+      "sale_usd_per_image": {
+        "low": "0.015192",
+        "medium": "0.033120",
+        "high": "0.132336",
+        "xhigh": "0.231552",
+        "max": "0.529272"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.106344",
+        "medium": "0.231840",
+        "high": "0.926352",
+        "xhigh": "1.620864",
+        "max": "3.704904"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.1063",
+        "medium": "0.2318",
+        "high": "0.9264",
+        "xhigh": "1.6209",
+        "max": "3.7049"
+      }
+    },
+    {
+      "size": "2:3",
+      "resolution": "2k",
+      "pixels": "1360x2048",
+      "sale_usd_per_image": {
+        "low": "0.015192",
+        "medium": "0.033120",
+        "high": "0.132336",
+        "xhigh": "0.231552",
+        "max": "0.529272"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.106344",
+        "medium": "0.231840",
+        "high": "0.926352",
+        "xhigh": "1.620864",
+        "max": "3.704904"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.1063",
+        "medium": "0.2318",
+        "high": "0.9264",
+        "xhigh": "1.6209",
+        "max": "3.7049"
+      }
+    },
+    {
+      "size": "4:3",
+      "resolution": "2k",
+      "pixels": "2048x1536",
+      "sale_usd_per_image": {
+        "low": "0.017784",
+        "medium": "0.040032",
+        "high": "0.160056",
+        "xhigh": "0.284544",
+        "max": "0.640224"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.124488",
+        "medium": "0.280224",
+        "high": "1.120392",
+        "xhigh": "1.991808",
+        "max": "4.481568"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.1245",
+        "medium": "0.2802",
+        "high": "1.1204",
+        "xhigh": "1.9918",
+        "max": "4.4816"
+      }
+    },
+    {
+      "size": "3:4",
+      "resolution": "2k",
+      "pixels": "1536x2048",
+      "sale_usd_per_image": {
+        "low": "0.017784",
+        "medium": "0.040032",
+        "high": "0.160056",
+        "xhigh": "0.284544",
+        "max": "0.640224"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.124488",
+        "medium": "0.280224",
+        "high": "1.120392",
+        "xhigh": "1.991808",
+        "max": "4.481568"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.1245",
+        "medium": "0.2802",
+        "high": "1.1204",
+        "xhigh": "1.9918",
+        "max": "4.4816"
+      }
+    },
+    {
+      "size": "5:4",
+      "resolution": "2k",
+      "pixels": "2560x2048",
+      "sale_usd_per_image": {
+        "low": "0.027144",
+        "medium": "0.059472",
+        "high": "0.237816",
+        "xhigh": "0.425592",
+        "max": "0.963720"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.190008",
+        "medium": "0.416304",
+        "high": "1.664712",
+        "xhigh": "2.979144",
+        "max": "6.746040"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.1900",
+        "medium": "0.4163",
+        "high": "1.6647",
+        "xhigh": "2.9791",
+        "max": "6.7460"
+      }
+    },
+    {
+      "size": "4:5",
+      "resolution": "2k",
+      "pixels": "2048x2560",
+      "sale_usd_per_image": {
+        "low": "0.027144",
+        "medium": "0.059472",
+        "high": "0.237816",
+        "xhigh": "0.425592",
+        "max": "0.963720"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.190008",
+        "medium": "0.416304",
+        "high": "1.664712",
+        "xhigh": "2.979144",
+        "max": "6.746040"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.1900",
+        "medium": "0.4163",
+        "high": "1.6647",
+        "xhigh": "2.9791",
+        "max": "6.7460"
+      }
+    },
+    {
+      "size": "16:9",
+      "resolution": "2k",
+      "pixels": "2048x1152",
+      "sale_usd_per_image": {
+        "low": "0.011304",
+        "medium": "0.026424",
+        "high": "0.101736",
+        "xhigh": "0.180792",
+        "max": "0.406800"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.079128",
+        "medium": "0.184968",
+        "high": "0.712152",
+        "xhigh": "1.265544",
+        "max": "2.847600"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0791",
+        "medium": "0.1850",
+        "high": "0.7122",
+        "xhigh": "1.2655",
+        "max": "2.8476"
+      }
+    },
+    {
+      "size": "9:16",
+      "resolution": "2k",
+      "pixels": "1152x2048",
+      "sale_usd_per_image": {
+        "low": "0.011304",
+        "medium": "0.026424",
+        "high": "0.101736",
+        "xhigh": "0.180792",
+        "max": "0.406800"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.079128",
+        "medium": "0.184968",
+        "high": "0.712152",
+        "xhigh": "1.265544",
+        "max": "2.847600"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0791",
+        "medium": "0.1850",
+        "high": "0.7122",
+        "xhigh": "1.2655",
+        "max": "2.8476"
+      }
+    },
+    {
+      "size": "2:1",
+      "resolution": "2k",
+      "pixels": "2688x1344",
+      "sale_usd_per_image": {
+        "low": "0.012960",
+        "medium": "0.029160",
+        "high": "0.116424",
+        "xhigh": "0.206928",
+        "max": "0.465552"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.090720",
+        "medium": "0.204120",
+        "high": "0.814968",
+        "xhigh": "1.448496",
+        "max": "3.258864"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0907",
+        "medium": "0.2041",
+        "high": "0.8150",
+        "xhigh": "1.4485",
+        "max": "3.2589"
+      }
+    },
+    {
+      "size": "1:2",
+      "resolution": "2k",
+      "pixels": "1344x2688",
+      "sale_usd_per_image": {
+        "low": "0.012960",
+        "medium": "0.029160",
+        "high": "0.116424",
+        "xhigh": "0.206928",
+        "max": "0.465552"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.090720",
+        "medium": "0.204120",
+        "high": "0.814968",
+        "xhigh": "1.448496",
+        "max": "3.258864"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0907",
+        "medium": "0.2041",
+        "high": "0.8150",
+        "xhigh": "1.4485",
+        "max": "3.2589"
+      }
+    },
+    {
+      "size": "21:9",
+      "resolution": "2k",
+      "pixels": "2688x1152",
+      "sale_usd_per_image": {
+        "low": "0.010296",
+        "medium": "0.022032",
+        "high": "0.092520",
+        "xhigh": "0.158544",
+        "max": "0.361152"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.072072",
+        "medium": "0.154224",
+        "high": "0.647640",
+        "xhigh": "1.109808",
+        "max": "2.528064"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0721",
+        "medium": "0.1542",
+        "high": "0.6476",
+        "xhigh": "1.1098",
+        "max": "2.5281"
+      }
+    },
+    {
+      "size": "9:21",
+      "resolution": "2k",
+      "pixels": "1152x2688",
+      "sale_usd_per_image": {
+        "low": "0.010296",
+        "medium": "0.022032",
+        "high": "0.092520",
+        "xhigh": "0.158544",
+        "max": "0.361152"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.072072",
+        "medium": "0.154224",
+        "high": "0.647640",
+        "xhigh": "1.109808",
+        "max": "2.528064"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0721",
+        "medium": "0.1542",
+        "high": "0.6476",
+        "xhigh": "1.1098",
+        "max": "2.5281"
+      }
+    },
+    {
+      "size": "3:1",
+      "resolution": "2k",
+      "pixels": "3072x1024",
+      "sale_usd_per_image": {
+        "low": "0.007416",
+        "medium": "0.017784",
+        "high": "0.071136",
+        "xhigh": "0.124488",
+        "max": "0.284544"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.051912",
+        "medium": "0.124488",
+        "high": "0.497952",
+        "xhigh": "0.871416",
+        "max": "1.991808"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0519",
+        "medium": "0.1245",
+        "high": "0.4980",
+        "xhigh": "0.8714",
+        "max": "1.9918"
+      }
+    },
+    {
+      "size": "1:3",
+      "resolution": "2k",
+      "pixels": "1024x3072",
+      "sale_usd_per_image": {
+        "low": "0.007416",
+        "medium": "0.017784",
+        "high": "0.071136",
+        "xhigh": "0.124488",
+        "max": "0.284544"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.051912",
+        "medium": "0.124488",
+        "high": "0.497952",
+        "xhigh": "0.871416",
+        "max": "1.991808"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0519",
+        "medium": "0.1245",
+        "high": "0.4980",
+        "xhigh": "0.8714",
+        "max": "1.9918"
+      }
+    },
+    {
+      "size": "1:1",
+      "resolution": "4k",
+      "pixels": "2880x2880",
+      "sale_usd_per_image": {
+        "low": "0.047448",
+        "medium": "0.106776",
+        "high": "0.426960",
+        "xhigh": "0.759024",
+        "max": "1.707768"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.332136",
+        "medium": "0.747432",
+        "high": "2.988720",
+        "xhigh": "5.313168",
+        "max": "11.954376"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.3321",
+        "medium": "0.7474",
+        "high": "2.9887",
+        "xhigh": "5.3132",
+        "max": "11.9544"
+      }
+    },
+    {
+      "size": "3:2",
+      "resolution": "4k",
+      "pixels": "3520x2336",
+      "sale_usd_per_image": {
+        "low": "0.032400",
+        "medium": "0.070704",
+        "high": "0.282672",
+        "xhigh": "0.494640",
+        "max": "1.130616"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.226800",
+        "medium": "0.494928",
+        "high": "1.978704",
+        "xhigh": "3.462480",
+        "max": "7.914312"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.2268",
+        "medium": "0.4949",
+        "high": "1.9787",
+        "xhigh": "3.4625",
+        "max": "7.9143"
+      }
+    },
+    {
+      "size": "2:3",
+      "resolution": "4k",
+      "pixels": "2336x3520",
+      "sale_usd_per_image": {
+        "low": "0.032400",
+        "medium": "0.070704",
+        "high": "0.282672",
+        "xhigh": "0.494640",
+        "max": "1.130616"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.226800",
+        "medium": "0.494928",
+        "high": "1.978704",
+        "xhigh": "3.462480",
+        "max": "7.914312"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.2268",
+        "medium": "0.4949",
+        "high": "1.9787",
+        "xhigh": "3.4625",
+        "max": "7.9143"
+      }
+    },
+    {
+      "size": "4:3",
+      "resolution": "4k",
+      "pixels": "3312x2480",
+      "sale_usd_per_image": {
+        "low": "0.035352",
+        "medium": "0.079488",
+        "high": "0.317736",
+        "xhigh": "0.564840",
+        "max": "1.270800"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.247464",
+        "medium": "0.556416",
+        "high": "2.224152",
+        "xhigh": "3.953880",
+        "max": "8.895600"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.2475",
+        "medium": "0.5564",
+        "high": "2.2242",
+        "xhigh": "3.9539",
+        "max": "8.8956"
+      }
+    },
+    {
+      "size": "3:4",
+      "resolution": "4k",
+      "pixels": "2480x3312",
+      "sale_usd_per_image": {
+        "low": "0.035352",
+        "medium": "0.079488",
+        "high": "0.317736",
+        "xhigh": "0.564840",
+        "max": "1.270800"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.247464",
+        "medium": "0.556416",
+        "high": "2.224152",
+        "xhigh": "3.953880",
+        "max": "8.895600"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.2475",
+        "medium": "0.5564",
+        "high": "2.2242",
+        "xhigh": "3.9539",
+        "max": "8.8956"
+      }
+    },
+    {
+      "size": "5:4",
+      "resolution": "4k",
+      "pixels": "3216x2576",
+      "sale_usd_per_image": {
+        "low": "0.038520",
+        "medium": "0.084456",
+        "high": "0.337680",
+        "xhigh": "0.604296",
+        "max": "1.368432"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.269640",
+        "medium": "0.591192",
+        "high": "2.363760",
+        "xhigh": "4.230072",
+        "max": "9.579024"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.2696",
+        "medium": "0.5912",
+        "high": "2.3638",
+        "xhigh": "4.2301",
+        "max": "9.5790"
+      }
+    },
+    {
+      "size": "4:5",
+      "resolution": "4k",
+      "pixels": "2576x3216",
+      "sale_usd_per_image": {
+        "low": "0.038520",
+        "medium": "0.084456",
+        "high": "0.337680",
+        "xhigh": "0.604296",
+        "max": "1.368432"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.269640",
+        "medium": "0.591192",
+        "high": "2.363760",
+        "xhigh": "4.230072",
+        "max": "9.579024"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.2696",
+        "medium": "0.5912",
+        "high": "2.3638",
+        "xhigh": "4.2301",
+        "max": "9.5790"
+      }
+    },
+    {
+      "size": "16:9",
+      "resolution": "4k",
+      "pixels": "3840x2160",
+      "sale_usd_per_image": {
+        "low": "0.026712",
+        "medium": "0.062280",
+        "high": "0.240192",
+        "xhigh": "0.426960",
+        "max": "0.960624"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.186984",
+        "medium": "0.435960",
+        "high": "1.681344",
+        "xhigh": "2.988720",
+        "max": "6.724368"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.1870",
+        "medium": "0.4360",
+        "high": "1.6813",
+        "xhigh": "2.9887",
+        "max": "6.7244"
+      }
+    },
+    {
+      "size": "9:16",
+      "resolution": "4k",
+      "pixels": "2160x3840",
+      "sale_usd_per_image": {
+        "low": "0.026712",
+        "medium": "0.062280",
+        "high": "0.240192",
+        "xhigh": "0.426960",
+        "max": "0.960624"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.186984",
+        "medium": "0.435960",
+        "high": "1.681344",
+        "xhigh": "2.988720",
+        "max": "6.724368"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.1870",
+        "medium": "0.4360",
+        "high": "1.6813",
+        "xhigh": "2.9887",
+        "max": "6.7244"
+      }
+    },
+    {
+      "size": "2:1",
+      "resolution": "4k",
+      "pixels": "3840x1920",
+      "sale_usd_per_image": {
+        "low": "0.021600",
+        "medium": "0.048600",
+        "high": "0.194400",
+        "xhigh": "0.345528",
+        "max": "0.777456"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.151200",
+        "medium": "0.340200",
+        "high": "1.360800",
+        "xhigh": "2.418696",
+        "max": "5.442192"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.1512",
+        "medium": "0.3402",
+        "high": "1.3608",
+        "xhigh": "2.4187",
+        "max": "5.4422"
+      }
+    },
+    {
+      "size": "1:2",
+      "resolution": "4k",
+      "pixels": "1920x3840",
+      "sale_usd_per_image": {
+        "low": "0.021600",
+        "medium": "0.048600",
+        "high": "0.194400",
+        "xhigh": "0.345528",
+        "max": "0.777456"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.151200",
+        "medium": "0.340200",
+        "high": "1.360800",
+        "xhigh": "2.418696",
+        "max": "5.442192"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.1512",
+        "medium": "0.3402",
+        "high": "1.3608",
+        "xhigh": "2.4187",
+        "max": "5.4422"
+      }
+    },
+    {
+      "size": "21:9",
+      "resolution": "4k",
+      "pixels": "3840x1648",
+      "sale_usd_per_image": {
+        "low": "0.016848",
+        "medium": "0.036000",
+        "high": "0.151128",
+        "xhigh": "0.259056",
+        "max": "0.590112"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.117936",
+        "medium": "0.252000",
+        "high": "1.057896",
+        "xhigh": "1.813392",
+        "max": "4.130784"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.1179",
+        "medium": "0.2520",
+        "high": "1.0579",
+        "xhigh": "1.8134",
+        "max": "4.1308"
+      }
+    },
+    {
+      "size": "9:21",
+      "resolution": "4k",
+      "pixels": "1648x3840",
+      "sale_usd_per_image": {
+        "low": "0.016848",
+        "medium": "0.036000",
+        "high": "0.151128",
+        "xhigh": "0.259056",
+        "max": "0.590112"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.117936",
+        "medium": "0.252000",
+        "high": "1.057896",
+        "xhigh": "1.813392",
+        "max": "4.130784"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.1179",
+        "medium": "0.2520",
+        "high": "1.0579",
+        "xhigh": "1.8134",
+        "max": "4.1308"
+      }
+    },
+    {
+      "size": "3:1",
+      "resolution": "4k",
+      "pixels": "3840x1280",
+      "sale_usd_per_image": {
+        "low": "0.010008",
+        "medium": "0.023904",
+        "high": "0.095616",
+        "xhigh": "0.167328",
+        "max": "0.382392"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.070056",
+        "medium": "0.167328",
+        "high": "0.669312",
+        "xhigh": "1.171296",
+        "max": "2.676744"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0701",
+        "medium": "0.1673",
+        "high": "0.6693",
+        "xhigh": "1.1713",
+        "max": "2.6767"
+      }
+    },
+    {
+      "size": "1:3",
+      "resolution": "4k",
+      "pixels": "1280x3840",
+      "sale_usd_per_image": {
+        "low": "0.010008",
+        "medium": "0.023904",
+        "high": "0.095616",
+        "xhigh": "0.167328",
+        "max": "0.382392"
+      },
+      "sale_cny_per_image_exact": {
+        "low": "0.070056",
+        "medium": "0.167328",
+        "high": "0.669312",
+        "xhigh": "1.171296",
+        "max": "2.676744"
+      },
+      "sale_cny_per_image_display_4dp": {
+        "low": "0.0701",
+        "medium": "0.1673",
+        "high": "0.6693",
+        "xhigh": "1.1713",
+        "max": "2.6767"
+      }
+    }
+  ]
+}
