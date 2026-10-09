@@ -45,10 +45,10 @@ export function ModelMvp() {
   const [row, setRow] = useState<MvpRow | null>(null), [connect, setConnect] = useState(false);
   const [register, setRegister] = useState<{ providerId: string; model: string } | null>(null), [refreshing, setRefreshing] = useState<string[]>([]);
   const mounted = useRef(true), loadingGuard = useRef(false), mutationGuard = useRef(false);
-  const refreshProvider = useCallback(async (providerId: string) => {
+  const refreshProvider = useCallback(async (providerId: string, force = true) => {
     setRefreshing(old => [...old, providerId]);
     try {
-      const catalog: CatalogEntry = await api({ action: "discover", providerId });
+      const catalog: CatalogEntry = await api({ action: "discover", providerId, force });
       if (mounted.current) setState(old => old ? { ...old, catalogs: [...old.catalogs.filter(p => p.providerId !== providerId), catalog] } : old);
     } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : "目录查询失败"); }
     finally { if (mounted.current) setRefreshing(old => old.filter(id => id !== providerId)); }
@@ -62,7 +62,7 @@ export function ModelMvp() {
       setState(data);
       if (discover) for (const p of data.providers.filter(p => p.enabled && p.configured)) {
         const catalog = data.catalogs.find(c => c.providerId === p.id);
-        if (!catalog || catalog.stale) await refreshProvider(p.id);
+        if (!catalog || catalog.stale) await refreshProvider(p.id, false);
       }
     } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : "读取失败"); }
     finally { loadingGuard.current = false; if (mounted.current) setLoading(false); }
