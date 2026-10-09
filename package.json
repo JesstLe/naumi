@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "verify:admin-mvp": "tsx --conditions react-server scripts/verify-admin-mvp.ts",
+    "verify:admin-mvp-ui": "node scripts/verify-admin-mvp-ui.mjs",
     "verify:model-batch": "tsx --conditions react-server scripts/verify-model-batch.ts",
     "verify:model-batch-ui": "node scripts/verify-model-batch-ui.mjs",
     "verify:provider-catalog": "tsx --conditions react-server scripts/verify-provider-catalog.ts",
