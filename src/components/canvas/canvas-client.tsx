@@ -10,6 +10,7 @@ import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCa
 import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
 import { CanvasParameterPopover } from "./parameter-popover";
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
+import { CanvasAssistantPanel } from "./canvas-assistant-panel";
 
 import {
   createContext,
@@ -10506,138 +10507,6 @@ export function CanvasClient() {
               </button>
             </div>
           )}
-
-          {/* 画布助手面板:与 OCR 面板同款右贴布局,互斥打开 */}
-          {assistantArtworkId &&
-            (() => {
-              const anchor = active?.members.find((artwork) => artwork.id === assistantArtworkId);
-              if (!anchor) return null;
-              const contextArts = assistantContext(active?.members ?? [], anchor.id);
-              return (
-                <aside
-                  aria-label="画布助手面板"
-                  className="canvas-ui-surface canvas-ui-surface-solid canvas-ui-side-panel absolute bottom-4 right-4 top-4 z-30 flex w-[min(390px,calc(100%-2rem))] flex-col overflow-hidden border"
-                >
-                  <div className="flex items-start justify-between border-b border-[var(--canvas-ui-border)] px-4 py-3.5">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 text-[15px] font-bold">
-                        <MessageSquareText className="h-4 w-4 text-[#248da1]" /> 画布助手
-                      </div>
-                      <p className="mt-1 truncate text-[12px] canvas-ui-muted">
-                        {anchor.title || "图片节点"}
-                      </p>
-                    </div>
-                    <div className="flex flex-none items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={!assistantTurns.length}
-                        onClick={() => {
-                          setAssistantTurns([]);
-                          setAssistantInput("");
-                          setAssistantError(null);
-                          assistantRetry.current = null;
-                        }}
-                        className="rounded-lg px-2.5 py-1.5 text-[12px] font-semibold canvas-ui-muted transition-colors canvas-ui-action disabled:opacity-40"
-                      >
-                        新对话
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="关闭画布助手"
-                        onClick={() => setAssistantArtworkId(null)}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg canvas-ui-action"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 上下文条:当前图 + 上游缩略图(第一张为当前图,青框标出) */}
-                  <div className="flex items-center gap-2 border-b border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] px-4 py-2">
-                    <span className="flex-none text-[11px] font-semibold canvas-ui-muted">上下文</span>
-                    <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
-                      {contextArts.map((artwork, index) => (
-                        <img
-                          key={artwork.id}
-                          src={cdnUrl(artwork.image)}
-                          alt={artwork.title}
-                          title={index === 0 ? `当前图：${artwork.title || ""}` : `上游 ${index}：${artwork.title || ""}`}
-                          className={cn(
-                            "h-10 w-10 flex-none rounded-md border object-cover",
-                            index === 0 ? "border-2 border-[#248da1]" : "border border-[var(--canvas-ui-border)]"
-                          )}
-                        />
-                      ))}
-                    </div>
-                    <span className="flex-none text-[11px] canvas-ui-muted">{contextArts.length} 张</span>
-                  </div>
-
-                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
-                    {!assistantTurns.length && !assistantBusy && (
-                      <div className="rounded-xl border border-dashed border-[var(--canvas-ui-border)] px-3 py-5 text-center text-[12px] leading-relaxed canvas-ui-muted">
-                        已带上当前图与上游生成链。
-                        <br />
-                        试试：「点评这张图的商业表现力」或「把背景换成咖啡店场景，给我提示词」。
-                      </div>
-                    )}
-                    {assistantTurns.map((turn) =>
-                      turn.role === "user" ? (
-                        <div key={turn.id} className="flex justify-end">
-                          <div className="max-w-[85%] break-words whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[#248da1] px-3.5 py-2 text-[13px] leading-relaxed text-white">
-                            {turn.content}
-                          </div>
-                        </div>
-                      ) : (
-                        <div key={turn.id} className="flex justify-start">
-                          <div className="max-w-[92%] break-words space-y-1 canvas-ui-message rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-[13px] leading-relaxed canvas-ui-text">
-                            {renderAssistantContent(turn.content)}
-                          </div>
-                        </div>
-                      )
-                    )}
-                    {assistantBusy && (
-                      <div className="flex items-center gap-2 text-[12px] canvas-ui-muted">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-[#248da1]" /> 正在思考…
-                      </div>
-                    )}
-                    {assistantError && (
-                      <div className="border border-[#f0c8c3] bg-[#fff5f3] px-3 py-2 text-[12px] font-medium text-[#b44f43]">
-                        {assistantError}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="border-t border-[var(--canvas-ui-border)] p-3">
-                    <textarea
-                      rows={2}
-                      value={assistantInput}
-                      disabled={assistantBusy}
-                      placeholder="问点什么，或让助手写提示词…（Enter 发送，Shift+Enter 换行）"
-                      onChange={(event) => setAssistantInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                          event.preventDefault();
-                          void sendAssistantMessage();
-                        }
-                      }}
-                      className="canvas-ui-input w-full resize-none rounded-xl border px-3 py-2 text-[13px] leading-relaxed canvas-ui-text outline-none transition-colors focus:ring-1 focus:ring-[var(--canvas-ui-border-strong)] disabled:opacity-60"
-                    />
-                    <div className="mt-2 flex items-center justify-between">
-                      <span className="text-[11px] canvas-ui-muted">{billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] === 0 ? "对话免费" : billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] != null ? `${billing.catalog.features["canvas.assistant"].prices.medium["1K"]} 积分 / 轮` : "对话报价加载中"} · 生图另行计费</span>
-                      <button
-                        type="button"
-                        disabled={assistantBusy || !assistantInput.trim()}
-                        onClick={() => void sendAssistantMessage()}
-                        className="flex items-center gap-1.5 rounded-lg canvas-ui-primary px-3.5 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#1d7a8c] disabled:opacity-40"
-                      >
-                        <Zap className="h-3.5 w-3.5" /> 发送
-                      </button>
-                    </div>
-                  </div>
-                </aside>
-              );
-            })()}
-
           {/* 标注编辑弹窗：提交即关闭，landEditResult 在画布占位节点中后台继续落地。 */}
           {annotateArtwork && (
             <AnnotateEditorModal
@@ -11611,6 +11480,49 @@ export function CanvasClient() {
             </div>
           )}
         </div>
+        {/* 助手作为画布的并列侧栏：桌面让出空间，窄屏浮层；OCR仍互斥。 */}
+        {assistantArtworkId && !browsing && (() => {
+          const anchor = active?.members.find(artwork => artwork.id === assistantArtworkId);
+          if (!anchor) return null;
+          return <CanvasAssistantPanel key={anchor.id} light={lightCanvas} anchorTitle={anchor.title || t("canvas.toolbar.addImageNode")}
+            contextImages={assistantContext(active?.members ?? [], anchor.id).map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) }))}
+            turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError}
+            labels={{title: t("canvas.assistant.title"),
+              scrollToBottom: t("canvas.assistant.scrollToBottom"),
+              newChat: t("canvas.assistant.newChat"),
+              history: t("canvas.assistant.history"),
+              close: t("canvas.assistant.close"),
+              back: t("canvas.assistant.back"),
+              morning: t("canvas.assistant.morning"),
+              afternoon: t("canvas.assistant.afternoon"),
+              evening: t("canvas.assistant.evening"),
+              question: t("canvas.assistant.question"),
+              changeTasks: t("canvas.assistant.changeTasks"),
+              placeholder: t("canvas.assistant.placeholder"),
+              send: t("canvas.assistant.send"),
+              references: t("canvas.assistant.references"),
+              closeReferences: t("canvas.assistant.closeReferences"),
+              currentImage: t("canvas.assistant.currentImage"),
+              upstreamImage: t("canvas.assistant.upstreamImage"),
+              thinking: t("canvas.assistant.thinking"),
+              copy: t("canvas.assistant.copy"),
+              copied: t("canvas.assistant.copied"),
+              emptyHistory: t("canvas.assistant.emptyHistory"),
+              currentChat: t("canvas.assistant.currentChat"),
+              agent: t("canvas.assistant.agent"),
+              mode: t("canvas.assistant.mode"),
+              retry: t("canvas.assistant.retry")}}
+            tasks={["main", "detail", "scene", "retouch", "background", "copyLayout", "review", "prompt"].map(id => ({ id, label: t(`canvas.assistant.${id}`), prompt: t(`canvas.assistant.${id}Prompt`) }))}
+            costLabel={billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] === 0 ? "对话免费 · 生图另行计费" : billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] != null ? `${billing.catalog.features["canvas.assistant"].prices.medium["1K"]} 积分 / 轮 · 生图另行计费` : "对话报价加载中 · 生图另行计费"}
+            onInputChange={setAssistantInput} onSend={() => void sendAssistantMessage()}
+            onNewChat={() => { setAssistantTurns([]); setAssistantInput(""); setAssistantError(null); assistantRetry.current = null; }}
+            onRestoreChat={turns => { setAssistantTurns(turns); setAssistantInput(""); setAssistantError(null); assistantRetry.current = null; }}
+            onClose={() => setAssistantArtworkId(null)}
+            onPreview={image => setLightbox({ src: image.image, alt: image.title })}
+            onCopy={copyText} renderContent={renderAssistantContent}
+          />;
+        })()}
+
       </div>
       {/* 智能帮写:选择产品白底图(帮写与生成图片都以它为产品参照) */}
       {productPicker && (
