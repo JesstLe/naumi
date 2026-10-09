@@ -10,6 +10,7 @@ import type { ModelBinding } from "./bindings";
 import { resolutionForLongSide } from "../mock-data";
 import { acceptedModelVersions } from "./accepted-context";
 import { effectiveImageParameters, selectedImagePreset, presetPublicId } from "./image-preset";
+import { routeImageModel } from "../image-model-routing";
 
 export async function modelConfigurationEnabled() {
   if (!dbEnabled || legacyModelExecutionActive()) return false;
@@ -71,7 +72,17 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   if (purpose.image && !standaloneSegmentation) {
     const selected = String(parsed.body.model || parsed.body.modelId || "").trim();
     const explicit = request.headers.get("x-naumi-feature-model") || selected || "";
-    const requestedModelId = explicit.startsWith("byok:") ? undefined : explicit || undefined;
+    const explicitModelId = explicit.startsWith("byok:") ? undefined : explicit || undefined;
+    const featureDefault = mainFeature ? snapshot.config.business?.[mainFeature]?.defaultModelId : undefined;
+    const configuredModelId = explicitModelId || featureDefault || snapshot.config.bindings[purpose.image];
+    const outputResolution = Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K");
+    const ratio = /^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1";
+    const routedModelId = routeImageModel(
+      configuredModelId,
+      ratio,
+      snapshot.config.publicModels.filter(model => model.enabled && model.modality === "image"),
+    );
+    const requestedModelId = (explicitModelId || featureDefault || routedModelId !== configuredModelId) ? routedModelId : undefined;
     const preset = selectedImagePreset(snapshot.config, mainFeature, requestedModelId, purpose.image);
     const option = selectedBusinessOption(snapshot.config, mainFeature, requestedModelId);
     if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);
@@ -80,8 +91,6 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const qualities = option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
     if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(String(parsed.body.ratio || "1:1"))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
     const requestedQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "medium");
-    const outputResolution = Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K");
-    const ratio = /^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1";
     const presetParams = preset ? effectiveImageParameters(preset, { quality: requestedQuality, resolution: outputResolution, ratio }) : null;
     const effectiveQuality = presetParams?.effective.quality || requestedQuality;
     if (option && (parsed.body.quality || request.headers.get("x-naumi-image-quality")) && qualities.length && !qualities.includes(requestedQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持该质量，不会静默退档", 400);
