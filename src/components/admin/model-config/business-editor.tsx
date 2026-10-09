@@ -10,6 +10,7 @@ import type { BusinessOption, BusinessRouting, Procurement } from "@/lib/model-c
 import { Field, Choice, TextField, NumberField, Toggle, Panel, buttonClass, inputClass } from "./fields";
 import { authHeader } from "@/lib/supabase";
 import { StageInspector } from "./stage-inspector";
+import { adminConfiguredFeature } from "@/lib/model-config/selection-policy";
 import { cnyCredits } from "@/lib/billing/money";
 
 function displayedCredits(amount:string,p:{creditsPerCnyMicros:string;rounding:"ceil"|"floor"|"nearest"}) {try{return cnyCredits(amount,p);}catch{return "金额超出范围";}}
@@ -55,7 +56,7 @@ export function BusinessEditor({ config, billing, onChange, onPreview }: { confi
         <button className={buttonClass} onClick={addAlias}>添加模型选项</button>
         <Choice label="复用公开模型" value="" options={[{ value: "", label: "选择已有兼容模型" }, ...compatible.filter(m => !f?.options.some(o => o.modelId === m.id)).map(m => ({ value: m.id, label: `${m.label} · ${m.id}` }))]} onChange={id => { if (id) edit(c => { c.business ||= {}; c.business[feature] ||= { enabled: true, defaultModelId: id, options: [] }; c.business[feature]!.options.push({ modelId: id, enabled: true, sort: c.business[feature]!.options.length, unit: MODEL_BINDINGS[binding].modality === "text" ? "task" : "image", pricing: defaultPrice() }); const m = c.publicModels.find(m => m.id === id)!; if (m.target.type === "upstream") loadProcurement(c, m.target.id); }); }} />
       </div>
-      {f && <div className="flex flex-wrap gap-4"><Toggle label="启用功能" value={f.enabled} onChange={value => edit(c => { c.business![feature]!.enabled = value; })} /><Choice label="默认模型" value={f.defaultModelId} options={f.options.map(o => ({ value: o.modelId, label: config.publicModels.find(m => m.id === o.modelId)?.label || o.modelId }))} onChange={id => edit(c => { c.business![feature]!.defaultModelId = id; })} /></div>}
+      {f && <div className="flex flex-wrap gap-4"><Toggle label="启用功能" value={f.enabled} onChange={value => edit(c => { c.business![feature]!.enabled = value; })} /><Choice label={adminConfiguredFeature(feature) ? "统一执行模型" : "默认模型"} value={f.defaultModelId} options={f.options.filter(o => o.enabled).map(o => ({ value: o.modelId, label: config.publicModels.find(m => m.id === o.modelId)?.label || o.modelId }))} onChange={id => edit(c => { c.business![feature]!.defaultModelId = id; })} /></div>}
       {f?.options.map((o, index) => {
         const m = config.publicModels.find(m => m.id === o.modelId)!, u = m?.target.type === "upstream" ? config.upstreamModels.find(u => u.id === m.target.id) : undefined;
         const p = o.pricing || defaultPrice(), money = procurementCny(u?.procurement), cost = u?.procurement;

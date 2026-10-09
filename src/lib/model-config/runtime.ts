@@ -1,4 +1,5 @@
 import { compatiblePublicModels, FEATURE_BINDINGS } from "./business";
+import { adminConfiguredFeature } from "./selection-policy";
 import type { FeatureId } from "../billing/rules/registry";
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
@@ -21,6 +22,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
   const f = feature ? config.business?.[feature] : undefined;
   const compatible = feature && FEATURE_BINDINGS[feature] ? compatiblePublicModels(config, FEATURE_BINDINGS[feature]!).map(m => m.id) : undefined;
   const preset = selectedImagePreset(config,feature,undefined,feature ? undefined : "image.generate");
+  const defaultModelId = preset ? preset.aliases[0].id : f?.enabled ? f.defaultModelId : feature && FEATURE_BINDINGS[feature] ? config.bindings[FEATURE_BINDINGS[feature]!] : undefined;
   const configuredIds = f?.enabled===false ? [] : preset ? [...preset.aliases.map(a => a.id),...(f?.options.filter(o => o.enabled && !preset.defaultModelIds.includes(o.modelId)).map(o => o.modelId) || [])] : f ? [...f.options].filter(o => o.enabled).sort((a,b) => a.sort-b.sort).map(o => o.modelId) : undefined;
   const models = config.publicModels.filter(m => m.enabled && m.visible && m.modality === modality && (!compatible || compatible.includes(m.id)) && (!configuredIds || configuredIds.includes(m.id))).sort((a,b) => configuredIds ? configuredIds.indexOf(a.id)-configuredIds.indexOf(b.id) : 0).map(m => {
     const ids = m.target.type === "upstream" ? [m.target.id] : config.pools.find(p => p.id === m.target.id)!.candidates;
@@ -29,7 +31,8 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
     if (preset?.aliases.some(a => a.id === m.id)) return { id:m.id,label:m.label,modality:m.modality,supportsEdit:true,supportsVision:false,qualities:[...DISPLAY_QUALITIES],nativeResolutions:preset.resolutions,qualitySupported:true };
     return { id: m.id, label: m.label, modality: m.modality, supportsEdit: upstreams.some(u => u.capabilities.edit), supportsVision: upstreams.some(u => u.capabilities.vision), qualities: option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: option?.parameters?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
   });
-  const visible = new Set(models.map(m => m.id));
+  const publishedModels = adminConfiguredFeature(feature) ? models.filter(m => m.id === defaultModelId) : models;
+  const visible = new Set(publishedModels.map(m => m.id));
   const bindingCapabilities = Object.fromEntries(Object.entries(config.bindings).flatMap(([binding,id]) => {
     const m = config.publicModels.find(m => m.id === id && m.enabled && m.modality === modality);
     if (!m) return [];
@@ -38,7 +41,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
     const defaultPreset = selectedImagePreset(config,undefined,id,binding);
     return [[binding,{ qualities: defaultPreset ? [...DISPLAY_QUALITIES] : Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: defaultPreset?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))) }]];
   }));
-  return { version: snapshot.version, feature, defaultModelId: preset ? preset.aliases[0].id : f?.enabled ? f.defaultModelId : feature && FEATURE_BINDINGS[feature] ? config.bindings[FEATURE_BINDINGS[feature]!] : undefined, models, bindingCapabilities, bindings: Object.fromEntries(Object.entries(config.bindings).map(([binding,id]) => [binding, selectedImagePreset(config,undefined,id,binding)?.aliases[0].id || id]).filter(([, id]) => visible.has(id))) };
+  return { version: snapshot.version, feature, selectionMode: adminConfiguredFeature(feature) ? "admin" : "user", defaultModelId, models: publishedModels, bindingCapabilities, bindings: Object.fromEntries(Object.entries(config.bindings).map(([binding,id]) => [binding, selectedImagePreset(config,undefined,id,binding)?.aliases[0].id || id]).filter(([, id]) => visible.has(id))) };
 }
 function rankFor(quality: string) { return ({ low: 1, medium: 2, high: 3, xhigh: 4, max: 5 } as Record<string,number>)[quality] || 1; }
 function matchesRule(when: ModelConfig["pools"][number]["rules"][number]["when"], f: ModelFacts) {

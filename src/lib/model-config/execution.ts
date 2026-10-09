@@ -1,4 +1,5 @@
 import "server-only";
+import { requestedFeatureModel } from "./selection-policy";
 import { z } from "zod";
 import type { ConfigSnapshot } from "../billing/types";
 import type { createCredentialStore } from "./credentials";
@@ -60,6 +61,7 @@ export function createModelExecutor(deps: Dependencies) {
   };
   return {
     async resolve(input: { feature?: string; binding: string; requestedModelId?: string; snapshot: ModelSnapshot; billing: ConfigSnapshot; facts?: ModelFacts }): Promise<ExecutionModel> {
+      input = { ...input, requestedModelId: requestedFeatureModel(input.feature, input.requestedModelId) };
       const purpose = MODEL_BINDINGS[input.binding as ModelBinding];
       if (!purpose) throw new ModelConfigError("INVALID_REQUEST", "未知模型用途");
       const config = validateModelConfig(input.snapshot.config, deps);

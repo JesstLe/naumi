@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { MODEL_CATALOG_REFRESH } from "./public-client";
 import type { FeatureId } from "../billing/rules/registry";
 import { authHeader } from "../supabase";
+import { adminConfiguredFeature } from "./selection-policy";
 export type FeatureCatalog = { managed: boolean; supported?: boolean; feature: FeatureId; version?: number; defaultModelId?: string; models: { id: string; label: string; modality: string; supportsEdit: boolean; qualities?: string[]; nativeResolutions?: string[] }[] };
 const catalogs = new Map<FeatureId, FeatureCatalog>(), selections = new Map<FeatureId, string>();
 export const FEATURE_MODEL_SELECTION = "naumi:feature-model-selected";
@@ -21,9 +22,10 @@ function loadCatalog(feature: FeatureId) {
   }
   return promise;
 }
-export function chosenFeatureModel(feature: FeatureId) { return selections.get(feature) || catalogs.get(feature)?.defaultModelId; }
+export function chosenFeatureModel(feature: FeatureId) { return adminConfiguredFeature(feature) ? undefined : selections.get(feature) || catalogs.get(feature)?.defaultModelId; }
 export function featureModelManaged(feature: FeatureId) { return catalogs.get(feature)?.managed === true; }
 export function selectFeatureModel(feature: FeatureId, id: string) {
+  if (adminConfiguredFeature(feature)) return;
   if (!catalogs.get(feature)?.models.some(m => m.id === id)) return;
   selections.set(feature, id);
   try { localStorage.setItem(`naumi:model:${feature}`, id); } catch {}
@@ -38,6 +40,12 @@ export function useFeatureModels(feature: FeatureId) {
         const data = await loadCatalog(feature);
         if (cancelled) return;
         catalogs.set(feature, data); setCatalog(data); setError(null);
+        if (adminConfiguredFeature(feature)) {
+          selections.delete(feature);
+          try { localStorage.removeItem(`naumi:model:${feature}`); } catch {}
+          setSelected(data.defaultModelId || "");
+          return;
+        }
         let saved = selections.get(feature); try { saved ||= localStorage.getItem(`naumi:model:${feature}`) || undefined; } catch {}
         const id = data.models.some((m: { id: string }) => m.id === saved) ? saved : data.defaultModelId || data.models[0]?.id;
         if (id) selections.set(feature, id); else selections.delete(feature);
