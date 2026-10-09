@@ -38,6 +38,7 @@ jobs:
           push: true
           build-args: |
             BUILD_VERSION=${{ env.BUILD_VERSION }}
+            SOURCE_COMMIT=${{ github.sha }}
           tags: |
             ghcr.io/jesstle/naumi:${{ github.sha }}
             ${{ github.ref == 'refs/heads/main' && 'ghcr.io/jesstle/naumi:latest' || '' }}

@@ -12,6 +12,7 @@ import { runModelExecution, runExecutionBundle, type ExecutionBundle, type Resol
 import { executionOpenAI } from "./clients";
 import { businessRoutePlan, selectedBusinessOption } from "./business";
 import { selectedImagePreset, presetPublicId, effectiveImageParameters } from "./image-preset";
+import { assertToolScope, featureDefaultModel } from "./tool-scope";
 
 export type ExecutionModel = { requestedParameters?: import("./image-preset").ImageParameters; feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
 export type ExecutionConnection = { providerId: string; protocol: string; baseUrl: string; apiKey: string; wireModel: string; timeoutMs: number; credentialRef?: string; maxConcurrent?: number; options?: ModelProvider["options"] };
@@ -72,9 +73,10 @@ export function createModelExecutor(deps: Dependencies) {
         input = {...input,facts:{...input.facts,...parameters.effective,nativeResolution:parameters.nativeResolution && input.facts.resolution !== "1K"}};
       }
       const option = selectedBusinessOption(config, input.feature, input.requestedModelId);
-      const id = preset ? presetPublicId(preset,input.requestedModelId) : option?.modelId || input.requestedModelId || config.bindings[input.binding];
+      const id = preset ? presetPublicId(preset,input.requestedModelId) : option?.modelId || input.requestedModelId || featureDefaultModel(config,input.feature,input.binding as ModelBinding);
       const model = config.publicModels.find(m => m.id === id && m.enabled && m.modality === purpose.modality && (!input.requestedModelId || m.visible));
       if (!model) throw new ModelConfigError("MODEL_UNAVAILABLE", "所选模型不可用，请刷新模型列表后重试", 409);
+      assertToolScope(config,input.feature,model.id);
       const plan = businessRoutePlan(config, option, input.facts);
       const target = plan ? { type: "upstream" as const, id: plan.initialId } : model.target;
       const upstream = target.type === "upstream" ? config.upstreamModels.find(u => u.id === target.id)! : undefined;

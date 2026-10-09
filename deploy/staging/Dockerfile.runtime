@@ -5,7 +5,7 @@ WORKDIR /app
 ARG BUILD_VERSION=0
 ARG SOURCE_COMMIT
 LABEL org.opencontainers.image.revision=$SOURCE_COMMIT
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0 MEDIA_DIR=/data/media BUILD_VERSION=$BUILD_VERSION
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0 MEDIA_DIR=/data/media BUILD_VERSION=$BUILD_VERSION SOURCE_COMMIT=$SOURCE_COMMIT
 RUN groupadd -g 1001 nodejs && useradd -u 1001 -g nodejs -m nextjs
 COPY --chown=nextjs:nodejs standalone ./
 COPY --chown=nextjs:nodejs static ./.next/static

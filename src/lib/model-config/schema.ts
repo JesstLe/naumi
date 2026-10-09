@@ -6,6 +6,8 @@ import type { Pool } from "pg";
 import { isIP, BlockList } from "node:net";
 import { MODEL_BINDINGS } from "./bindings";
 import { ModelConfigError, type ModelConfig } from "./types";
+import { FEATURE_IDS } from "../billing/rules/registry";
+import { validateToolScopes } from "./tool-scope";
 
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const name = z.string().trim().min(1).max(100);
@@ -27,7 +29,7 @@ const mappedValue = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const parameterMap = z.strictObject({ quality: z.partialRecord(quality, mappedValue).optional(), resolution: z.partialRecord(resolution, mappedValue).optional(), version: mappedValue.optional() });
 const upstream = z.strictObject({ id, providerId: id, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), label: name, modality, enabled: z.boolean(), capabilities, parameterMap, costRef: z.string().min(1).max(200).optional(), procurement: procurementSchema.optional() });
 const rule = z.strictObject({ id, priority: z.number().int().min(0).max(100000), when: z.strictObject({ task: z.array(z.enum(["draft", "product", "detail", "layout"])).min(1).max(4).optional(), quality: z.array(quality).min(1).max(6).optional(), resolution: z.array(resolution).min(1).max(3).optional(), needsEdit: z.boolean().optional(), needsText: z.boolean().optional(), preserveIdentity: z.boolean().optional(), nativeResolution: z.boolean().optional() }), require: z.strictObject({ preserveIdentity: z.boolean().optional(), textAccuracy: z.boolean().optional(), minQualityRank: z.number().int().min(1).max(5).optional(), nativeResolution: z.boolean().optional(), edit: z.boolean().optional() }) });
-export const modelConfigSchema = z.strictObject({ schemaVersion: z.literal(1), providers: z.array(providerSchema).max(100), upstreamModels: z.array(upstream).max(600), publicModels: z.array(z.strictObject({ id, label: name, modality, enabled: z.boolean(), visible: z.boolean(), target: z.discriminatedUnion("type", [z.strictObject({ type: z.literal("upstream"), id }), z.strictObject({ type: z.literal("pool"), id })]) })).max(200), pools: z.array(z.strictObject({ id, modality: z.literal("image"), strategy: z.enum(["priority", "lowest-cost", "latency"]), candidates: z.array(id).min(1).max(50), rules: z.array(rule).max(1000) })).max(100), bindings: z.record(z.string(), id), business: businessFeaturesSchema.optional(), fixedMonthlyCosts: fixedMonthlyCostsSchema.optional(), defaultImagePreset: imagePresetSchema.optional() });
+export const modelConfigSchema = z.strictObject({ schemaVersion: z.literal(1), providers: z.array(providerSchema).max(100), upstreamModels: z.array(upstream).max(600), publicModels: z.array(z.strictObject({ id, label: name, modality, enabled: z.boolean(), visible: z.boolean(), toolScope: z.strictObject({features:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length),defaultFor:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length)}).optional(), target: z.discriminatedUnion("type", [z.strictObject({ type: z.literal("upstream"), id }), z.strictObject({ type: z.literal("pool"), id })]) })).max(200), pools: z.array(z.strictObject({ id, modality: z.literal("image"), strategy: z.enum(["priority", "lowest-cost", "latency"]), candidates: z.array(id).min(1).max(50), rules: z.array(rule).max(1000) })).max(100), bindings: z.record(z.string(), id), business: businessFeaturesSchema.optional(), fixedMonthlyCosts: fixedMonthlyCostsSchema.optional(), defaultImagePreset: imagePresetSchema.optional() });
 export type ValidationOptions = { trustedOrigins?: readonly string[] };
 
 // Runtime transport also checks DNS answers; this synchronous gate rejects literal private/metadata targets.
@@ -109,6 +111,7 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
     if (config.publicModels.some(m => m.enabled && m.modality === kind) && !config.bindings[binding]) fail("缺少有效默认用途模型", [`bindings.${binding}`]);
   }
   validateBusinessConfig(config);
+  validateToolScopes(config);
   return config;
 }
 
@@ -140,6 +143,7 @@ export async function ensureModelSchema(pool: Pool): Promise<void> {
       CREATE TABLE IF NOT EXISTS app_model_public_models(draft_id uuid NOT NULL REFERENCES app_model_drafts(id) ON DELETE CASCADE,id text NOT NULL,position int NOT NULL,label text NOT NULL,modality text NOT NULL,enabled boolean NOT NULL,visible boolean NOT NULL,upstream_target text,pool_target text,CHECK((upstream_target IS NULL)<>(pool_target IS NULL)),PRIMARY KEY(draft_id,id),FOREIGN KEY(draft_id,upstream_target) REFERENCES app_model_upstreams(draft_id,id),FOREIGN KEY(draft_id,pool_target) REFERENCES app_model_pools(draft_id,id));
       ALTER TABLE app_model_upstreams ADD COLUMN IF NOT EXISTS procurement jsonb;
       CREATE TABLE IF NOT EXISTS app_model_business(draft_id uuid PRIMARY KEY REFERENCES app_model_drafts(id) ON DELETE CASCADE,config jsonb NOT NULL);
+      ALTER TABLE app_model_public_models ADD COLUMN IF NOT EXISTS tool_scope jsonb;
       CREATE TABLE IF NOT EXISTS app_model_image_presets(draft_id uuid PRIMARY KEY REFERENCES app_model_drafts(id) ON DELETE CASCADE,config jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS app_model_fixed_costs(draft_id uuid PRIMARY KEY REFERENCES app_model_drafts(id) ON DELETE CASCADE,config jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS app_model_bindings(draft_id uuid NOT NULL,id text NOT NULL,public_model_id text NOT NULL,PRIMARY KEY(draft_id,id),FOREIGN KEY(draft_id,public_model_id) REFERENCES app_model_public_models(draft_id,id) ON DELETE CASCADE);

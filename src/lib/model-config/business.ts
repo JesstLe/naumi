@@ -3,6 +3,7 @@ import { ModelConfigError } from "./types";
 import type { FeatureId } from "../billing/rules/registry";
 import type { BusinessOption, BusinessRouting, Procurement } from "./business-schema";
 import { MODEL_BINDINGS, type ModelBinding } from "./bindings";
+import { featureDefaultModel } from "./tool-scope";
 
 export const FEATURE_BINDINGS: Partial<Record<FeatureId, ModelBinding>> = {
   "image.generate": "image.generate", "image.suite": "image.generate", "image.aplus": "image.generate",
@@ -15,13 +16,13 @@ export function selectedBusinessOption(config: ModelConfig, feature?: string, se
   if (feature && config.business?.[feature as FeatureId]?.enabled === false) throw new ModelConfigError("FEATURE_DISABLED", "该功能已停用", 409);
   const preset = config.defaultImagePreset, binding = FEATURE_BINDINGS[feature as FeatureId];
   if (preset?.enabled && ["image.generate", "image.edit"].includes(binding || "")) {
-    const chosen = selected || config.business?.[feature as FeatureId]?.defaultModelId || config.bindings[binding!];
+    const chosen = selected || featureDefaultModel(config, feature, binding);
     if (!chosen || preset.defaultModelIds.includes(chosen) || preset.aliases.some(a => a.id === chosen || a.label === chosen)) return undefined;
   }
   const f = feature ? config.business?.[feature as FeatureId] : undefined;
   if (!f) return undefined;
   if (!f.enabled) throw new ModelConfigError("FEATURE_DISABLED", "该功能已停用", 409);
-  const option = f.options.find(o => o.modelId === (selected || f.defaultModelId) && o.enabled);
+  const option = f.options.find(o => o.modelId === (selected || featureDefaultModel(config,feature,binding)) && o.enabled);
   if (!option) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该模型未在当前功能的已生效列表中", 400);
   return option;
 }
