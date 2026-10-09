@@ -27,7 +27,7 @@ export type MvpState = {
 };
 
 export function mvpCandidates(config: ModelConfig): MvpCandidate[] {
-  return config.upstreamModels.filter(u => u.enabled && u.capabilities.verified && config.providers.some(p => p.id === u.providerId && p.enabled && p.credentialRef))
+  return config.upstreamModels.filter(u => u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled && p.credentialRef))
     .map(u => ({ id: u.id, model: u.model, label: u.label, modality: u.modality, verified: u.capabilities.verified, providerId: u.providerId, provider: config.providers.find(p => p.id === u.providerId)!.name }));
 }
 
@@ -84,26 +84,23 @@ export function switchMvpModel(source: ModelConfig, row: MvpRow, upstreamId: str
 }
 function assertMvpTarget(config: ModelConfig, row: MvpRow, upstreamId: string) {
   const u = config.upstreamModels.find(u => u.id === upstreamId), p = config.providers.find(p => p.id === u?.providerId);
-  if (!u?.enabled || !p?.enabled || !p.credentialRef || !u.capabilities.verified || u.modality !== row.modality)
-    throw new ModelConfigError("MODEL_INCOMPATIBLE", "请选择已启用、已核验且类型一致的上游模型");
+  if (!u?.enabled || !p?.enabled || !p.credentialRef || u.modality !== row.modality)
+    throw new ModelConfigError("MODEL_INCOMPATIBLE", "请选择已启用、已接入且类型一致的上游模型");
   if (row.preset && upstreamId !== config.defaultImagePreset?.upstreamId)
     throw new ModelConfigError("PRESET_REVIEW_REQUIRED", "该模型使用专用定价预设；更换实际模型前，请在模型配置中心核验新模型的能力、参数和采购价格");
   if (row.preset) return;
+  for (const feature of row.features) {
+    const binding = FEATURE_BINDINGS[feature.id as keyof typeof FEATURE_BINDINGS];
+    if (binding && !u.capabilities[MODEL_BINDINGS[binding].capability]) throw new ModelConfigError("MODEL_INCOMPATIBLE", "新模型不支持当前使用功能的输入或输出");
+    if (feature.id === "canvas.assistant" && !u.capabilities.vision) throw new ModelConfigError("MODEL_INCOMPATIBLE", "画布助手需要支持图片理解的文字模型");
+  }
   for (const old of row.publicIds) {
-    const m = config.publicModels.find(m => m.id === old)!;
-    const previous = m.target.type === "upstream" ? [m.target.id] : config.pools.find(p => p.id === m.target.id)!.candidates;
-    // Do not silently reduce the capabilities already offered to users.
-    for (const id of previous) {
-      const before = config.upstreamModels.find(x => x.id === id)!;
-      for (const flag of ["generate", "edit", "vision", "transparent", "preserveIdentity", "textAccuracy"] as const)
-        if (before.capabilities[flag] && !u.capabilities[flag]) throw new ModelConfigError("MODEL_INCOMPATIBLE", "新模型不满足当前模型的输入或输出能力");
-      if (before.capabilities.qualities.some(q => !u.capabilities.qualities.includes(q)) || before.capabilities.nativeResolutions.some(r => !u.capabilities.nativeResolutions.includes(r)) || before.capabilities.maxReferenceImages > u.capabilities.maxReferenceImages)
-        throw new ModelConfigError("MODEL_INCOMPATIBLE", "新模型不满足当前的质量、尺寸或参考图规格");
-    }
     for (const [binding, modelId] of Object.entries(config.bindings)) if (modelId === old && !u.capabilities[MODEL_BINDINGS[binding as keyof typeof MODEL_BINDINGS].capability]) throw new ModelConfigError("MODEL_INCOMPATIBLE", "新模型不满足用途绑定的能力");
     for (const [feature, f] of Object.entries(config.business || {})) for (const o of f?.options || []) if (o.modelId === old) {
       const purpose = FEATURE_BINDINGS[feature as keyof typeof FEATURE_BINDINGS];
       if (o.enabled && purpose && !u.capabilities[MODEL_BINDINGS[purpose].capability]) throw new ModelConfigError("MODEL_INCOMPATIBLE", "新模型不满足使用功能的能力");
+      if (o.parameters?.qualities?.some(q => !u.capabilities.qualities.includes(q)) || o.parameters?.resolutions?.some(r => !u.capabilities.nativeResolutions.includes(r))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "新模型不满足功能明确配置的质量或尺寸规格");
+      if (o.parameters?.inputTypes?.includes("image") && u.modality === "text" && !u.capabilities.vision) throw new ModelConfigError("MODEL_INCOMPATIBLE", "新模型不支持当前图片输入");
       if (o.parameters?.inputTypes?.includes("mask") && p.protocol !== "openai-images") throw new ModelConfigError("MODEL_INCOMPATIBLE", "新协议不支持现有蒙版输入");
     }
   }
