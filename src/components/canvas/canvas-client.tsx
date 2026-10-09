@@ -54,6 +54,7 @@ import {
   Trash2,
   Upload,
   RotateCcw,
+  RotateCw,
   Scissors,
   Sun,
   Type,
@@ -8150,7 +8151,7 @@ export function CanvasClient() {
         ),
       }))}
       onPick={pickGenerationModel}
-      triggerClass="canvas-ui-control flex max-w-[190px] cursor-pointer items-center gap-1.5 rounded-[9px] border px-2.5 py-1.5 text-[12.5px] font-semibold disabled:cursor-default disabled:opacity-70"
+      triggerClass="canvas-ui-control flex h-8 max-w-[190px] cursor-pointer items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold disabled:cursor-default disabled:opacity-70"
       trigger={
         <>
           <ModelIcon modelId={genModel} size={15} />
@@ -8166,7 +8167,7 @@ export function CanvasClient() {
       ref={ratioBtnRef}
       type="button"
       onClick={openRatioMenu}
-      className="canvas-ui-control flex items-center gap-1.5 rounded-[9px] border px-2.5 py-1.5 text-[12.5px] font-semibold transition-colors"
+      className="canvas-ui-control flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold transition-colors"
     >
       📐
       <span>
@@ -9235,12 +9236,12 @@ export function CanvasClient() {
                 </div>
               </div>
 
-              {/* Photoshop 式工具组织保留在底部：常驻主工具，创建/视图工具向上飞出。 */}
+              {/* 常用工具常驻底部，完整创建菜单与设置向上飞出。 */}
               {!readOnly && (
                 <div
                   data-testid="canvas-main-toolbar"
                   aria-label={t("canvas.toolPalette")}
-                  className="canvas-ui-surface absolute bottom-[76px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 overflow-visible rounded-2xl border px-1.5 py-1.5 text-[#20242c] shadow-[0_12px_34px_rgba(15,23,42,0.18)] backdrop-blur min-[800px]:bottom-5"
+                  className="canvas-ui-surface absolute bottom-[76px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0 overflow-x-auto rounded-2xl border px-1 py-1.5 text-[#20242c] shadow-[0_12px_34px_rgba(15,23,42,0.18)] backdrop-blur min-[390px]:gap-0.5 min-[390px]:px-1.5 min-[800px]:bottom-5"
                 >
                   <button
                     type="button"
@@ -9302,7 +9303,7 @@ export function CanvasClient() {
                   <CanvasActionMenu label={t("canvas.toolbar.addToCanvas")} light={lightCanvas}
                     open={addMenuOpen} onOpenChange={open => { setMoreToolsOpen(false); setAddMenuOpen(open); }}
                     triggerIcon={Plus} iconOnly triggerTestId="canvas-add-node-button" menuTestId="canvas-create-menu"
-                    triggerClassName="flex h-10 w-10 flex-none items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 sm:h-12 sm:w-12"
+                    triggerClassName="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 sm:h-9 sm:w-9"
                     items={[
                       { id: "text", icon: Type, label: t("canvas.toolbar.addText"), hint: t("canvas.toolbar.addTextHint"),
                         onSelect: () => { const c = centerScreen(); addTextNodeAtScreen(c.x, c.y); } },
@@ -9313,7 +9314,37 @@ export function CanvasClient() {
                       { id: "history", icon: Clock, label: t("canvas.fromHistory"), hint: t("canvas.toolbar.historyHint"), onSelect: toolHistory },
                     ]}
                   />
+                  <button type="button" data-tool="text" aria-label={t("canvas.toolbar.addText")} title={t("canvas.toolbar.addText")}
+                    onClick={() => { const c = centerScreen(); addTextNodeAtScreen(c.x, c.y); }}
+                    className="canvas-ui-action flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9">
+                    <Type className="h-[18px] w-[18px]" aria-hidden="true" />
+                  </button>
+                  <button type="button" data-tool="image-node" aria-label={t("canvas.toolbar.addImageNode")} title={t("canvas.toolbar.addImageNode")}
+                    onClick={toolAddNode}
+                    className="canvas-ui-action flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9">
+                    <ImagePlus className="h-[18px] w-[18px]" aria-hidden="true" />
+                  </button>
+                  <button type="button" data-tool="upload" aria-label={t("canvas.uploadImage")} title={t("canvas.uploadImage")}
+                    onClick={() => { const c = centerScreen(); triggerUpload(c.x, c.y); }}
+                    className="canvas-ui-action flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9">
+                    <Upload className="h-[18px] w-[18px]" aria-hidden="true" />
+                  </button>
+                  <button type="button" data-tool="history" aria-label={t("canvas.fromHistory")} title={t("canvas.fromHistory")}
+                    onClick={toolHistory}
+                    className="canvas-ui-action flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9">
+                    <Clock className="h-[18px] w-[18px]" aria-hidden="true" />
+                  </button>
                   <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
+                  <button type="button" data-tool="undo" aria-label={t("canvas.undo")} title={`${t("canvas.undo")} (${shortcut("Z")})`}
+                    disabled={historySaving || undoStack.length === 0} onClick={() => void doUndo()}
+                    className="canvas-ui-action flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors disabled:opacity-40 sm:h-9 sm:w-9">
+                    <RotateCcw className="h-[18px] w-[18px]" aria-hidden="true" />
+                  </button>
+                  <button type="button" data-tool="redo" aria-label={t("canvas.redo")} title={`${t("canvas.redo")} (${isMac ? "⇧⌘Z" : "CtrlY"})`}
+                    disabled={historySaving || redoStack.length === 0} onClick={() => void doRedo()}
+                    className="canvas-ui-action flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors disabled:opacity-40 sm:h-9 sm:w-9">
+                    <RotateCw className="h-[18px] w-[18px]" aria-hidden="true" />
+                  </button>
                   <CanvasActionMenu label={t("canvas.toolbar.settings")} light={lightCanvas}
                     open={moreToolsOpen} onOpenChange={open => { setAddMenuOpen(false); setMoreToolsOpen(open); }}
                     iconOnly dataTool="more" menuTestId="canvas-more-tools-menu"
@@ -10074,11 +10105,22 @@ export function CanvasClient() {
               )}
             >
               {selected && <>
+              <button type="button" data-action="rename" aria-label={t("canvas.editName")} title={t("canvas.toolbar.renameHint")}
+                disabled={!selected} onClick={() => { if (selected) { setNodeRenameValue(selected.title); setRenamingNodeId(selected.id); } }}
+                className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40">
+                <Pencil className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.editName")}
+              </button>
+              <button type="button" data-action="assistant" aria-label={t("canvas.toolbar.assistant")} title={t("canvas.toolbar.assistantHint")}
+                disabled={!selected || readOnly} onClick={() => selected && openAssistant(selected)}
+                className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40">
+                <MessageSquareText className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.assistant")}
+              </button>
               {QUICK_ACTIONS.filter(
-                (a) => a.key === "bg"
+                (a) => ["bg", "angle", "caption"].includes(a.key)
               ).map((a) => (
                 <button
                   key={a.key}
+                  data-action={a.key}
                   type="button"
                   disabled={selectedGenerating || !selected}
                   title={!selected ? t("canvas.toolNeedImage") : t(`canvas.toolbar.${a.key}Hint`)}
@@ -10261,7 +10303,7 @@ export function CanvasClient() {
               </>}
               <CanvasActionMenu triggerRef={imageMoreRef} label={t("canvas.toolbar.imageMore")} light={lightCanvas}
                 items={[
-                  ...QUICK_ACTIONS.filter(a => ["relight", "angle", "caption"].includes(a.key)).map(a => ({
+                  ...QUICK_ACTIONS.filter(a => a.key === "relight").map(a => ({
                     id: a.key, icon: a.icon, label: t(`canvas.qa.${a.key}`), hint: t(`canvas.toolbar.${a.key}Hint`),
                     disabled: selectedGenerating || !selected, onSelect: () => onQuickAction(a.key),
                   })),
@@ -10269,10 +10311,6 @@ export function CanvasClient() {
                     disabled: !selected || readOnly, onSelect: () => setComfyOpen(true) },
                   { id: "video", icon: Video, label: t("canvas.toolbar.video"), hint: t("canvas.toolbar.videoHint"),
                     disabled: readOnly || videoBusy, onSelect: () => { setVideoOpen(open => !open); if (selected) setVideoPrompt(selected.prompt || ""); } },
-                  { id: "assistant", icon: MessageSquareText, label: t("canvas.toolbar.assistant"), hint: t("canvas.toolbar.assistantHint"),
-                    disabled: !selected || readOnly, onSelect: () => { if (selected) openAssistant(selected); } },
-                  { id: "rename", icon: Pencil, label: t("canvas.editName"), hint: t("canvas.toolbar.renameHint"),
-                    disabled: !selected, onSelect: () => { if (selected) { setNodeRenameValue(selected.title); setRenamingNodeId(selected.id); } } },
                 ].filter(item => selected || item.id === "video")}
               />
 
@@ -11035,7 +11073,7 @@ export function CanvasClient() {
                       { value: "split", label: t("canvas.modeSplit") },
                     ]}
                     onPick={(value) => setGenerationMode(value as GenerationMode)}
-                    triggerClass="canvas-ui-control flex cursor-pointer items-center gap-1.5 rounded-[9px] border px-2.5 py-1.5 text-[12.5px] font-semibold disabled:opacity-45"
+                    triggerClass="canvas-ui-control flex h-8 cursor-pointer items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold disabled:opacity-45"
                     trigger={
                       <>
                         {generationMode === "detail" ? (
@@ -11063,7 +11101,7 @@ export function CanvasClient() {
                       light={lightCanvas}
                     />
                   ) : (
-                    <span className="canvas-ui-control rounded-[9px] border px-2.5 py-1.5 text-[12.5px] font-semibold">
+                    <span className="canvas-ui-control inline-flex h-8 items-center rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold">
                       🖼 {generationMode === "split"
                         ? t("canvas.viewNodesCount")
                         : t("canvas.viewSheetCount")}
@@ -11175,7 +11213,7 @@ export function CanvasClient() {
                     { value: "detail", label: t("canvas.modeDetail") },
                   ]}
                   onPick={(value) => setGenerationMode(value as GenerationMode)}
-                  triggerClass="canvas-ui-control flex cursor-pointer items-center gap-1.5 rounded-[9px] border px-2.5 py-1.5 text-[12.5px] font-semibold disabled:opacity-45"
+                triggerClass="canvas-ui-control flex h-8 cursor-pointer items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold disabled:opacity-45"
                   trigger={
                     <>
                       {generationMode === "detail" ? (

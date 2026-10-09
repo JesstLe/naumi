@@ -86,7 +86,7 @@ export function ImageQualitySelect({ value, options, onChange, disabled, compact
         } else if (event.key === "Tab") { close(); }
       }}
       className={cn("inline-flex min-w-0 items-center justify-between gap-2 border text-left font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-        compact ? "max-w-40 rounded-[9px] px-2 py-1.5 text-[12px]" : "w-full rounded-lg px-3 py-2 text-sm",
+        compact ? "h-8 max-w-40 rounded-[9px] px-2.5 py-0 text-[12.5px] font-semibold" : "w-full rounded-lg px-3 py-2 text-sm",
         useCanvasStyle ? "canvas-ui-control" : "border-c-border bg-c-card text-c-text hover:border-c-text3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
         open && "ring-1 ring-primary/30")}>
       <span className="min-w-0 truncate">{selected?.label ?? value}</span>

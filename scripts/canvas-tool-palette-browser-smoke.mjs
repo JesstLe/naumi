@@ -62,9 +62,12 @@ try {
   const palette = page.getByTestId("canvas-main-toolbar");
   await expect(palette).toBeVisible();
   const paletteBox = await palette.boundingBox();
-  assert(paletteBox && paletteBox.width > 190 && paletteBox.width < 300, JSON.stringify(paletteBox));
+  assert(paletteBox && paletteBox.width > 400 && paletteBox.width < 520, JSON.stringify(paletteBox));
   assert(Math.abs((paletteBox.x + paletteBox.width / 2) - 720) < 2 && paletteBox.y + paletteBox.height <= 881, JSON.stringify(paletteBox));
-  assert.equal(await palette.locator("button").count(), 5);
+  assert.equal(await palette.locator("button").count(), 11);
+  const addBox = await palette.getByTestId("canvas-add-node-button").boundingBox();
+  const moveBox = await palette.locator('[data-tool="move"]').boundingBox();
+  assert(addBox && moveBox && addBox.width === moveBox.width && addBox.height === moveBox.height, "add and move containers must match");
   pass("desktop canvas exposes a centered bottom Photoshop-style palette");
 
   await palette.locator('[data-tool="hand"]').click();
@@ -95,7 +98,7 @@ try {
     parent: element.parentElement?.getBoundingClientRect().toJSON(),
   }));
   assert(dockBox && paletteWithDockBox && dockBox.y + dockBox.height <= paletteWithDockBox.y, JSON.stringify({ dockBox, paletteWithDockBox, dockGeometry }));
-  pass("text creation from the single menu keeps its dock above the persistent bottom palette");
+  pass("text creation from the full menu keeps its dock above the persistent bottom palette");
 
   await page.keyboard.press("Escape");
   await page.locator(".react-flow__pane").click({ position: { x: 1050, y: 650 }, force: true });
@@ -115,7 +118,9 @@ try {
   await page.waitForTimeout(350);
   const mobileBox = await palette.boundingBox();
   assert(mobileBox && mobileBox.x >= 8 && mobileBox.x + mobileBox.width <= 382, JSON.stringify(mobileBox));
-  assert(mobileBox.width < 300 && mobileBox.y >= 700 && mobileBox.y + mobileBox.height <= 768, JSON.stringify(mobileBox));
+  assert(mobileBox.width <= 374 && mobileBox.y >= 700 && mobileBox.y + mobileBox.height <= 768, JSON.stringify(mobileBox));
+  assert.equal(await palette.locator("button").count(), 11);
+  assert(await palette.evaluate(el => el.scrollWidth <= el.clientWidth), "390px palette must expose all 11 controls without scrolling");
   const mobileDockBox = await textDock.boundingBox();
   assert(mobileDockBox && mobileDockBox.x >= 8 && mobileDockBox.x + mobileDockBox.width <= 382, JSON.stringify(mobileDockBox));
   assert(mobileDockBox.y + mobileDockBox.height <= mobileBox.y, JSON.stringify({ mobileDockBox, mobileBox }));
