@@ -6,7 +6,7 @@ import { createMvpHandler } from "../src/lib/model-config/mvp-access";
 import { createModelRuntime, publicModelCatalog } from "../src/lib/model-config/runtime";
 import { createRouterControl, type RouterStatus } from "../src/lib/model-config/router-client";
 import { createModelExecutor } from "../src/lib/model-config/execution";
-import { mvpRows } from "../src/lib/model-config/mvp";
+import { mvpRows, switchMvpModel } from "../src/lib/model-config/mvp";
 import { ModelConfigError } from "../src/lib/model-config/types";
 
 async function main() {
@@ -41,6 +41,10 @@ async function main() {
     assert.equal(data.rows[0].label, publicModelCatalog(old, "image", "image.generate").models[0].id);
     assert.equal(data.rows[0].alias, "测试生图"); assert.ok(data.rows[0].features.some((f: any) => f.id === "canvas.image"));
     assert.ok(data.rows[0].candidateIds.includes("u2")); assert.equal(data.rows[0].routes[0].model, "wire-image-one");
+    const legacy = structuredClone(old); legacy.config.upstreamModels.forEach(u => { u.capabilities.verified = false; });
+    const legacyRows = mvpRows(legacy, [{ ...publicModelCatalog(legacy, "image", "image.generate"), feature: "image.generate" }]);
+    assert.ok(legacyRows[0].candidateIds.includes("u2"), "existing legacy targets must remain selectable with explicit unverified status");
+    assert.equal(switchMvpModel(legacy.config, legacyRows[0], "u2").publicModels[0].target.id, "u2");
     assert.ok(!JSON.stringify(data).includes(f.marker)); assert.ok(!JSON.stringify(data).includes("credentialRef"));
     const denied = createMvpHandler({ authorize: async () => Response.json({}, { status: 404 }) as never, administration: async () => { throw Error("must not assemble"); }, managed: async () => true });
     assert.equal((await denied(request())).status, 404);
