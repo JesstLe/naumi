@@ -29,3 +29,9 @@ assert.equal(imageModelDisplayId("imagen-4.0-generate-preview-landscape"), "imag
 assert.ok(isNewApiFlowImageModel("jimeng-image-5.0-pro"));
 assert.ok(isNewApiFlowImageModel("jimeng-image-v8.2"));
 console.log("PASS image model families collapse to clean IDs, ratios route to variants, and Jimeng IDs are recognized");
+const renamed = models.map(m => ({ ...m, provider: "managed", label: m.id.startsWith("gemini-") ? "精致产品图" : m.id === "gpt-image-2" ? "标准产品图" : m.id }));
+assert.equal(compactImageModelOptions(renamed)[0].label, "标准产品图");
+assert.equal(compactImageModelOptions(renamed)[1].label, "精致产品图");
+assert.equal(compactImageModelOptions(renamed, ["gemini-3.0-pro-image-portrait"])[0].label, "精致产品图");
+assert.equal(routeImageModel("gemini-3.0-pro-image-square", "16:9", renamed), "gemini-3.0-pro-image-landscape");
+assert.equal(compactImageModelOptions(models.map(m => ({ ...m, provider: "managed" })))[1].label, "gemini-3.0-pro-image", "different legacy ratio labels must still collapse to the clean family");

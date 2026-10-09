@@ -13,8 +13,7 @@ async function main() {
     const page = await admin.newPage(); page.setDefaultTimeout(45000);
     const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
     await page.goto(`${origin}/admin/mvp`);
-    await expect(page.getByRole("heading", { name: "image-a", exact: true })).toBeVisible();
-    await expect(page.getByText("配置别名：灵动图片")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "灵动图片", exact: true })).toBeVisible();
     await expect(page.getByText("gpt-image-2", { exact: true })).toBeVisible();
     await page.screenshot({ path: "output/admin-mvp-20261009/models-desktop.png", fullPage: true });
     await page.getByRole("button", { name: "更换模型" }).first().click();
@@ -30,6 +29,13 @@ async function main() {
     await expect(page.getByText("gpt-image-1.5", { exact: true })).toBeVisible();
     const before = (await (await admin.request.get(`${origin}/api/models?feature=image.generate`)).json()).models;
     assert.equal(before[0].label, "灵动图片");
+    await page.getByRole("button", { name: "修改显示名称", exact: true }).first().click();
+    await page.getByLabel("显示名称", { exact: true }).fill("产品摄影模型");
+    await page.screenshot({ path: "output/admin-mvp-20261009/rename-dialog.png", fullPage: true });
+    await page.getByRole("button", { name: "保存并生效", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "产品摄影模型", exact: true })).toBeVisible();
+    const renamedCatalog = await (await admin.request.get(`${origin}/api/models?feature=image.generate`)).json();
+    assert.equal(renamedCatalog.models[0].label, "产品摄影模型"); assert.equal(renamedCatalog.models[0].id, before[0].id);
     await page.getByRole("tab", { name: "上游来源" }).click();
     await page.getByRole("button", { name: "查看模型目录" }).first().click();
     await expect(page.getByText("catalog-image-new", { exact: true })).toBeVisible();
@@ -50,7 +56,7 @@ async function main() {
     await page.getByRole("tab", { name: "模型映射" }).click();
     await page.getByRole("button", { name: "文字", exact: true }).click();
     await expect(page.getByRole("heading", { name: "创作助手", exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "image-a", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "产品摄影模型", exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "全部", exact: true }).click();
     await page.getByLabel("搜索模型", { exact: true }).fill("不存在的模型");
     await expect(page.getByRole("heading", { name: "没有匹配的模型" })).toBeVisible();

@@ -51,6 +51,8 @@
 .route p { margin:4px 0 0; color:#718495; font-size:11px; display:flex; flex-wrap:wrap; gap:10px; }
 .route p>span { font-size:10px; color:#4c8877; }
 .switchButton { justify-self:end; color:#245d83; font-size:12px!important; padding:9px 0 9px 9px; white-space:nowrap; }
+.rowActions { display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
+@media (max-width:600px) { .rowActions { grid-column:2; grid-row:1; align-self:start; } }
 .footerNote { display:flex; align-items:flex-start; gap:7px; margin-top:17px; color:#718495; font-size:11px; line-height:1.8; }
 .footerNote svg { margin-top:3px; flex-shrink:0; }
 .empty { min-height:220px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:30px; color:#6d8397; text-align:center; font-size:13px; }
