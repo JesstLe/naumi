@@ -1,6 +1,7 @@
 "use client";
 
 import { useImageQuality } from "@/lib/image-quality-context";
+import { CANVAS_QUALITIES } from "@/lib/canvas/generation-parameters";
 import { IMAGE_QUALITY_IDS } from "@/lib/image-quality";
 import {useBilling} from "@/lib/billing/client";
 import {usePathname} from "next/navigation";
@@ -22,7 +23,7 @@ export function ImageQualityControl({ feature: requestedFeature, disabled = fals
       {!compact && <span>{t("gen.qualityLabel")}</span>}
       <select aria-label={t("gen.qualityLabel")} title={nativeHint} value={value || quality} onChange={event => setQuality(event.target.value)} disabled={disabled}
         className={compact ? "canvas-ui-control max-w-40 rounded-[9px] border px-2 py-1.5 text-[12px]" : "w-full rounded-lg border border-c-border bg-c-card px-3 py-2 text-sm text-c-text"}>
-        {IMAGE_QUALITY_IDS.map(id => <option key={id} value={id} disabled={!allowedQualities.includes(id)}>{t(labels[id])} · {catalog?.features[feature]?.prices[id]?.[resolution]??"—"} 积分/张</option>)}
+        {(pathname === "/canvas" ? CANVAS_QUALITIES : IMAGE_QUALITY_IDS).map(id => <option key={id} value={id} disabled={!allowedQualities.includes(id)}>{t(labels[id])} · {catalog?.features[feature]?.prices[id]?.[resolution]??"—"} 积分/张</option>)}
       </select>
     </label>
     {!compact && <p className="text-[11px] leading-relaxed text-c-text3">{!capable ? t("gen.qualityPending") : experimental ? t("gen.qualityBeta") : ""}</p>}
