@@ -10,7 +10,7 @@ const source = read(clientFile);
 const block = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
 const main = block('data-testid="canvas-main-toolbar"', '{selectedBatchArts.length');
 const image = block('data-testid="image-node-toolbar"', '{/* 文字节点工具条');
-const text = block('data-testid="text-node-toolbar"', '{/* 画布助手面板');
+const text = block('data-testid="text-node-toolbar"', '{/* 标注编辑弹窗');
 if (process.argv.includes('--followup-baseline')) {
   assert.equal((main.match(/data-tool="/g) || []).length, 3);
   assert.equal((main.match(/<CanvasActionMenu /g) || []).length, 2);
@@ -96,4 +96,4 @@ if (baselineIndex >= 0) {
   protectedCount = original.length;
 }
 console.log(`TOOLBAR_BUSINESS=PASS PROTECTED_DECLARATIONS=${protectedCount} PROMPTS_GENERATION_ROUTING_BILLING=UNCHANGED PROVIDER_CALLS=0`);
-console.log('TOOLBAR_MODIFIED=PASS PRIMARY_DOCK=11 CREATION_SHORTCUTS=4 IMAGE_PRIMARY=14 HIGH_FREQUENCY=RENAME_ASSISTANT_ANGLE_CAPTION_VISIBLE TEXT_PRIMARY=6 REFERENCE_ENTRIES=1_PER_TYPE VIEW_UTILITIES=SINGLE_ENTRY LOCALES=ZH_EN ADD_MOVE_SIZE=MATCHED COMPOSER_CONTROLS=32PX');
+console.log(`TOOLBAR_MODIFIED=PASS PRIMARY_DOCK=11 CREATION_SHORTCUTS=4 IMAGE_PRIMARY=${source.includes('setCropArtwork(selected)') ? 16 : 14} HIGH_FREQUENCY=RENAME_ASSISTANT_ANGLE_CAPTION_VISIBLE TEXT_PRIMARY=${source.includes('aria-label={L("文字样式"') ? 8 : 6} REFERENCE_ENTRIES=1_PER_TYPE VIEW_UTILITIES=SINGLE_ENTRY LOCALES=ZH_EN ADD_MOVE_SIZE=MATCHED COMPOSER_CONTROLS=32PX`);

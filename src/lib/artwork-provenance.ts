@@ -19,6 +19,7 @@ export const operationLabels: Record<string, string> = {
   "canvas-annotate": "画布标注", "canvas-stitch": "画布拼图", video: "生成视频",
   "video-extract": "视频提帧", comfyui: "工作流生成", "server-save": "保存作品",
   "canvas-add": "加入画布（操作待核验）",
+  "canvas-crop": "本地裁剪", "canvas-replace": "替换图片版本",
   derived: "派生操作（具体操作待核验）",
   "print-operation": "印花处理（具体工具待核验）",
 };
