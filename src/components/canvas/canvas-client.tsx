@@ -11,6 +11,10 @@ import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
 import { CanvasParameterPopover } from "./parameter-popover";
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
+import { NodePropertiesPanel } from "./node-properties-panel";
+import { ImageCropDialog } from "./image-crop-dialog";
+import { defaultNodeSettings, validNodeSettings, nodeTextStyle, type CanvasNodeSettings, type CanvasCrop } from "@/lib/canvas/node-settings";
+const DEFAULT_CANVAS_SETTINGS = defaultNodeSettings();
 
 import {
   createContext,
@@ -49,6 +53,12 @@ import {
   X,
   Pencil,
   MoreHorizontal,
+  Crop,
+  SlidersHorizontal,
+  Lock,
+  Unlock,
+  ArrowUpToLine,
+  ArrowDownToLine,
   Loader2,
   Sparkles,
   Download,
@@ -712,6 +722,8 @@ function TextCanvasNode({ data, selected }: NodeProps) {
     selected?: boolean;
     lightCanvas?: boolean;
     expanded?: boolean;
+    settings?: CanvasNodeSettings;
+    readOnly?: boolean;
   };
   const active = selected || d.selected;
   const body = d.content || d.prompt;
@@ -719,7 +731,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
   return (
     <div className="group relative flex h-full w-full flex-col">
       <NodeResizer
-        isVisible={active && !d.expanded}
+        isVisible={active && !d.expanded && !d.readOnly && !d.settings?.locked}
         minWidth={TEXT_NODE_MIN_W}
         minHeight={TEXT_NODE_MIN_H}
         maxWidth={TEXT_NODE_MAX_W}
@@ -787,14 +799,16 @@ function TextCanvasNode({ data, selected }: NodeProps) {
         ) : editableBody ? (
           <textarea
             aria-label="编辑生成文本"
+            readOnly={d.readOnly || d.settings?.locked}
+            style={nodeTextStyle(d.settings || DEFAULT_CANVAS_SETTINGS)}
             value={d.content}
             onChange={(event) => ctx?.onContentChange(d.__id, event.target.value)}
             onBlur={(event) => ctx?.onContentCommit(d.__id, event.currentTarget.value)}
             onPointerDown={(event) => event.stopPropagation()}
-            className="canvas-ui-text nodrag nowheel h-full min-h-[96px] w-full resize-none overflow-auto border-0 bg-transparent p-0 text-[12px] leading-[1.65] outline-none"
+            className={cn(!d.settings?.text.color && "canvas-ui-text", "nodrag nowheel h-full min-h-[96px] w-full resize-none overflow-auto border-0 bg-transparent p-0 text-[12px] leading-[1.65] outline-none")}
           />
         ) : body ? (
-          <p className="whitespace-pre-wrap break-words">{body}</p>
+          <p style={nodeTextStyle(d.settings || DEFAULT_CANVAS_SETTINGS)} className="whitespace-pre-wrap break-words">{body}</p>
         ) : (
           <p className="canvas-ui-muted">输入需求后生成文字内容</p>
         )}
@@ -832,6 +846,7 @@ function TextCanvasNode({ data, selected }: NodeProps) {
           type="button"
           className="nodrag flex h-6 w-6 items-center justify-center text-[#7d8694] hover:bg-[#ff6b63]/15 hover:text-[#ff6b63]"
           title="删除文字节点"
+          disabled={d.readOnly || d.settings?.locked}
           onClick={(event) => {
             event.stopPropagation();
             ctx?.onRemove(d.__id);
@@ -1196,6 +1211,8 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
     onCanvasRatioRepair?: (id: string, width: number, height: number) => void;
     onRenameRequest?: (id: string, label: string) => void;
     onVideoExtract?: (id: string, kind: "frame" | "audio", timestamp: number) => void;
+    settings?: CanvasNodeSettings;
+    readOnly?: boolean;
   };
   const imageWidth = d.width && d.width > 0 ? Math.round(d.width) : undefined;
   const imageHeight = d.height && d.height > 0 ? Math.round(d.height) : undefined;
@@ -1236,7 +1253,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
       data-canvas-group-id={d.canvasGroupId || undefined}
     >
       <NodeResizer
-        isVisible={selected && !d.pending}
+        isVisible={selected && !d.pending && !d.readOnly && !d.settings?.locked}
         keepAspectRatio
         minWidth={IMAGE_NODE_MIN_W}
         minHeight={IMAGE_NODE_MIN_H}
@@ -1270,6 +1287,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
         {selected && d.marked && (
           <MapPin className="h-3 w-3 flex-none fill-amber-400 text-amber-400" />
         )}
+        {d.settings?.locked && <Lock className="h-3.5 w-3.5 shrink-0" aria-label="节点已锁定" />}
         {selected && d.canvasGroupId && (
           <Combine className="h-3 w-3 flex-none text-[#6bd7ec]" aria-label="已成组" />
         )}
@@ -1627,7 +1645,7 @@ export function CanvasClient() {
   const { user, ready, remaining, persistMode, applyServerUser, signOut } = useAuth();
   const { openAuth } = useAuthModal();
   const { openRecharge } = useRecharge();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const { commerceVisible } = usePaymentConfig();
   const accountIsAdmin = useAccountAdminStatus(user);
@@ -1642,6 +1660,37 @@ export function CanvasClient() {
   // 管理员看指定用户:?email=<用户> → 只读查看该用户画布;?node=<作品id> → 预选中那张
   const [targetEmail, setTargetEmail] = useState<string | null>(null);
   const [readOnly, setReadOnly] = useState(false);
+  const [nodeSettings, setNodeSettings] = useState<Record<string, CanvasNodeSettings>>({});
+  const nodeSettingsRef = useRef(nodeSettings); nodeSettingsRef.current = nodeSettings;
+  const [nodeSettingsReady, setNodeSettingsReady] = useState(false);
+  const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const [cropArtwork, setCropArtwork] = useState<Artwork | null>(null);
+  const [localEditBusy, setLocalEditBusy] = useState(false);
+  const localEditBusyRef = useRef(false);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
+  const replaceTargetRef = useRef<Artwork | null>(null);
+  const localEditAttempt = useRef<{fingerprint:string;id:string}|null>(null);
+  const L = (zh: string, en: string) => locale === "en" ? en : zh;
+  const settingsFor = (id: string) => nodeSettingsRef.current[id] || DEFAULT_CANVAS_SETTINGS;
+  const isNodeLocked = (id: string) => settingsFor(id).locked;
+
+  useEffect(() => {
+    if (!ready || !user) return;
+    const email=(targetEmail || user.email).toLowerCase();
+    let stopped=false;setNodeSettingsReady(false);setNodeSettings({});
+    void privateFetchRaw(`/api/canvas/node-settings?email=${encodeURIComponent(email)}`).then(async response=>{
+      const data=await expectJsonOk(response,"节点属性读取失败");if(stopped)return;
+      const raw=data.persisted ? data.settings : JSON.parse(localStorage.getItem(`naumi:node-settings:${email}`) || '{}');
+      setNodeSettings(Object.fromEntries(Object.entries(raw || {}).map(([id,value])=>[id,validNodeSettings(value)])));
+      setNodeSettingsReady(true);
+    }).catch(()=>{if(!stopped)flashTip(L("节点属性读取失败，请刷新重试","Properties failed to load. Refresh to retry."));});
+    return ()=>{stopped=true;};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[ready,user?.email,targetEmail]);
+  useEffect(()=>{
+    if(!nodeSettingsReady || !user || readOnly)return;
+    try{localStorage.setItem(`naumi:node-settings:${user.email.toLowerCase()}`,JSON.stringify(nodeSettings));}catch{/* best effort */}
+  },[nodeSettings,nodeSettingsReady,user,readOnly]);
   const pendingNodeRef = useRef<string | null>(null);
   // 文件拖入完成后只打开对应项目，不自动弹出节点功能；用户点击图片后再显示。
   const openPendingNodeWithoutSelectionRef = useRef(false);
@@ -2168,6 +2217,7 @@ export function CanvasClient() {
     height: node.height,
   });
   type UndoAct =
+    | { kind: "node-settings"; id: string; text: boolean; from: CanvasNodeSettings; to: CanvasNodeSettings }
     | { kind: "move"; id: string; from: { x: number; y: number }; to: { x: number; y: number } }
     | {
         kind: "move-many";
@@ -2414,6 +2464,7 @@ export function CanvasClient() {
     if (!textNodesReady || readOnly) return;
     const updates: CanvasTextNode[] = [];
     for (const node of textNodes) {
+      if (nodeSettingsRef.current[node.id]?.locked) continue;
       const sig = `${node.content.length}|${node.prompt.length}|${node.sourceIds?.length ?? 0}|${node.productIds?.length ?? 0}|${node.width}`;
       if (fittedTextNodesRef.current.get(node.id) === sig) continue;
       fittedTextNodesRef.current.set(node.id, sig);
@@ -2778,6 +2829,7 @@ export function CanvasClient() {
     id: string,
     bounds: { x: number; y: number; width: number; height: number }
   ) => {
+    if (readOnly || nodeSettingsRef.current[id]?.locked) return;
     const x = Math.round(bounds.x);
     const y = Math.round(bounds.y);
     const width = Math.round(bounds.width);
@@ -2824,6 +2876,7 @@ export function CanvasClient() {
   }, [user, readOnly, pushUndo]);
 
   const onArtworkCanvasRatioRepair = useCallback((id: string, width: number, height: number) => {
+    if (readOnly || nodeSettingsRef.current[id]?.locked) return;
     const nextWidth = Math.round(width);
     const nextHeight = Math.round(height);
     if (
@@ -2847,6 +2900,7 @@ export function CanvasClient() {
   }, [user, readOnly]);
 
   const requestNodeRename = useCallback((id: string, label: string) => {
+    if(readOnly || nodeSettingsRef.current[id]?.locked)return;
     if (readOnly) return;
     setSelectedId(id);
     setSelectedPendId(null);
@@ -3490,6 +3544,13 @@ export function CanvasClient() {
       }
     }
     // 防御:节点/边按 id 去重,并丢弃指向不存在节点的悬空边
+    for (let index=0;index<displayNodes.length;index++) {
+      const node=displayNodes[index];
+      if (node.id.startsWith("pend-") || node.id.startsWith("task-")) continue;
+      const settings=nodeSettings[node.id] || DEFAULT_CANVAS_SETTINGS;
+      displayNodes[index]={...node,zIndex:settings.order,draggable:nodeSettingsReady && !readOnly && !settings.locked,
+        data:{...node.data,settings,readOnly:readOnly || !nodeSettingsReady}};
+    }
     // (React Flow 遇到重复 key 或悬空边会抛出 client-side exception → 白屏)
     const nSeen = new Set<string>();
     const finalNodes = displayNodes.filter((n) =>
@@ -3521,6 +3582,9 @@ export function CanvasClient() {
     textNodes,
     expandedTextIds,
     lightCanvas,
+    nodeSettings,
+    nodeSettingsReady,
+    readOnly,
   ]);
 
   // 受控节点状态(支持拖拽);仅当底层数据/位置真正变化时重新灌入,拖拽过程中不重置。
@@ -3529,7 +3593,7 @@ export function CanvasClient() {
   const nodesSig = displayNodes
     .map(
       (n) =>
-        `${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
+        `${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
           (n.data as { pending?: boolean }).pending ? 1 : 0
         }:${(n.data as { inChain?: boolean }).inChain ? 1 : 0}:${n.className ?? ""}:${
           Math.round((n.data as { progress?: number }).progress ?? -1)
@@ -3895,7 +3959,7 @@ export function CanvasClient() {
     const id = renamingNodeId;
     const name = nodeRenameValue.trim();
     setRenamingNodeId(null);
-    if (!id || !user || readOnly || !name) return;
+    if (!id || !user || readOnly || !name || isNodeLocked(id)) return;
     const textNode = textNodes.find((node) => node.id === id);
     if (textNode) {
       if (textNode.title === name) return;
@@ -4485,6 +4549,7 @@ export function CanvasClient() {
 
   async function openImageTextEditor(artwork: Artwork) {
     if (readOnly || !user) return;
+    setPropertiesOpen(false);
     const requestEpoch = ocrRequestEpochRef.current + 1;
     ocrRequestEpochRef.current = requestEpoch;
     setAssistantArtworkId(null); // 与画布助手面板互斥
@@ -5027,6 +5092,7 @@ export function CanvasClient() {
 
   function openAssistant(artwork: Artwork) {
     if (readOnly || !user) return;
+    setPropertiesOpen(false);
     setOcrArtworkId(null); // 与在线改字面板互斥
     setAssistantArtworkId(artwork.id);
     setAssistantTurns([]);
@@ -5538,6 +5604,7 @@ export function CanvasClient() {
   // 混合选择仍只记一条 undo，避免用户需要撤销两次才能恢复。
   async function runDelete(ids: string[]) {
     if (!user || readOnly) return;
+    if (!nodeSettingsReady || ids.some(isNodeLocked)) { flashTip(L("请先解锁选中的节点","Unlock selected nodes first")); return; }
     const uniqueIds = Array.from(
       new Set(
         ids.filter(
@@ -5626,6 +5693,7 @@ export function CanvasClient() {
     else if (act.kind === "rename") operations.push({type:"rename",id:act.id,title:act[side]});
     else if (act.kind === "art-size") operations.push({type:"size",id:act.id,...act[side]});
     else if (act.kind === "mark") act.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side]}));
+    else if (act.kind === "node-settings") operations.push({type:"node-settings",id:act.id,text:act.text,settings:act[side]});
     let operationId = historyAttemptsRef.current.get(act);
     if (!operationId) { operationId=browserRandomUUID(); historyAttemptsRef.current.set(act,operationId); }
     const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
@@ -5644,6 +5712,9 @@ export function CanvasClient() {
       } else if (op.type === "text-delete") {
         setTextNodes(current=>current.filter(node=>node.id!==id));
         setSelectedTextId(current=>current===id ? null : current);
+      } else if (op.type === "node-settings") {
+        const next={...nodeSettingsRef.current,[id]:op.settings as CanvasNodeSettings};
+        nodeSettingsRef.current=next;setNodeSettings(next);
       } else if (op.type === "position" && op.text) setTextNodes(current=>current.map(node=>node.id===id ? {...node,canvasX:op.x as number,canvasY:op.y as number} : node));
       else if (op.type === "text-patch") setTextNodes(current=>current.map(node=>node.id===id ? {...node,...op.fields as TextPatchFields} : node));
       else setWorks(current=>current?.map(node=> {
@@ -5691,6 +5762,62 @@ export function CanvasClient() {
       setUndoStack(stack=>[...stack,act]);
     } catch (error) { flashTip(error instanceof Error ? error.message : t("canvas.genFail")); }
     finally { historyBusyRef.current=false; setHistorySaving(false); }
+  }
+
+  function openProperties() {
+    setAssistantArtworkId(null);setOcrArtworkId(null);setPropertiesOpen(true);
+  }
+  async function commitNodeSettings(id: string, to: CanvasNodeSettings) {
+    if (!user || readOnly || !nodeSettingsReady || historyBusyRef.current) return false;
+    const from=settingsFor(id);
+    if(JSON.stringify(from)===JSON.stringify(to))return true;
+    historyBusyRef.current=true;setHistorySaving(true);
+    try {
+      await Promise.all(Array.from(textSaveQueuesRef.current.values()));
+      const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({operationId:browserRandomUUID(),operations:[{type:"node-settings",id,text:id.startsWith("text-"),settings:to}]}),signal:AbortSignal.timeout(20000)});
+      const data=await expectJsonOk(response,L("属性保存失败","Failed to save properties"));
+      const next={...nodeSettingsRef.current,[id]:to};
+      if(!data.persisted)localStorage.setItem(`naumi:node-settings:${user.email.toLowerCase()}`,JSON.stringify(next));
+      nodeSettingsRef.current=next;setNodeSettings(next);pushUndo({kind:"node-settings",id,text:id.startsWith("text-"),from,to});return true;
+    } catch(error){flashTip(error instanceof Error?error.message:t("canvas.saveFailed"));return false;}
+    finally {historyBusyRef.current=false;setHistorySaving(false);}
+  }
+  function nodeManagementItems(id: string) {
+    const settings=settingsFor(id),disabled=readOnly || !nodeSettingsReady || historySaving;
+    const orders=Object.values(nodeSettings).map(item=>item.order);
+    return [
+      {id:"lock-node",icon:settings.locked?Unlock:Lock,label:settings.locked?L("解锁节点","Unlock node"):L("锁定节点","Lock node"),disabled,
+        onSelect:()=>void commitNodeSettings(id,{...settings,locked:!settings.locked})},
+      {id:"front-node",icon:ArrowUpToLine,label:L("置于顶层","Bring to front"),disabled:disabled||settings.locked,
+        onSelect:()=>void commitNodeSettings(id,{...settings,order:Math.min(100000,Math.max(0,...orders)+1)})},
+      {id:"back-node",icon:ArrowDownToLine,label:L("置于底层","Send to back"),disabled:disabled||settings.locked,
+        onSelect:()=>void commitNodeSettings(id,{...settings,order:Math.max(-100000,Math.min(0,...orders)-1)})},
+    ];
+  }
+  function requestReplace(artwork: Artwork) {
+    if(readOnly || isNodeLocked(artwork.id) || localEditBusyRef.current)return;
+    replaceTargetRef.current=artwork;replaceInputRef.current?.click();
+  }
+  async function saveLocalImageEdit(artwork: Artwork, crop?: CanvasCrop, file?: File) {
+    if(!user || readOnly || !nodeSettingsReady || isNodeLocked(artwork.id) || localEditBusyRef.current)return;
+    if(file && (file.size>MAX_UPLOAD || !["image/png","image/jpeg","image/webp"].includes(file.type))){flashTip(L("请选择12MB以内的PNG、JPEG或WebP","Choose a PNG, JPEG or WebP up to 12MB"));return;}
+    localEditBusyRef.current=true;setLocalEditBusy(true);
+    try{
+      const fingerprint=JSON.stringify({id:artwork.id,crop,file:file?{name:file.name,size:file.size,lastModified:file.lastModified}:null});
+      if(localEditAttempt.current?.fingerprint!==fingerprint)localEditAttempt.current={fingerprint,id:browserRandomUUID()};
+      const operationId=localEditAttempt.current!.id;
+      let body:BodyInit;let headers:Record<string,string>|undefined;
+      if(file){const fd=new FormData();fd.set("image",file);fd.set("id",artwork.id);fd.set("operationId",operationId);body=fd;}
+      else{headers={"content-type":"application/json"};body=JSON.stringify({mode:"crop",id:artwork.id,operationId,crop});}
+      const response=await privateFetchRaw("/api/canvas/local-image-edit",{method:"POST",headers,body,signal:AbortSignal.timeout(60000)});
+      const data=await expectJsonOk(response,L("图片编辑失败","Image edit failed"));
+      if(!data.id)throw new Error(t("canvas.genFail"));
+      const fresh=await mergeWorks([data.id]);pushAddUndo(data.id,fresh);
+      pendingNodeRef.current=data.id;setSelectedId(data.id);setSelectedTextId(null);setCropArtwork(null);localEditAttempt.current=null;
+      flashTip(L("新版本已保存，原图保留","New version saved; original kept"));
+    }catch(error){flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
+    finally{localEditBusyRef.current=false;setLocalEditBusy(false);if(replaceInputRef.current)replaceInputRef.current.value="";}
   }
   // 添加节点后记一笔可撤销(从刚刷新的列表取完整记录)
   function pushAddUndo(newId: string | null, fresh: Artwork[]) {
@@ -6272,7 +6399,7 @@ export function CanvasClient() {
       extractVideoToCanvas
     );
     const coord = new Map(
-      laid.map((n) => [
+      laid.filter(n=>!isNodeLocked(n.id)).map((n) => [
         n.id,
         { x: Math.round(n.position.x), y: Math.round(n.position.y) },
       ])
@@ -6876,7 +7003,7 @@ export function CanvasClient() {
     id: string,
     bounds: { x: number; y: number; width: number; height: number }
   ) {
-    if (readOnly) return;
+    if (readOnly || isNodeLocked(id)) return;
     const current = textNodes.find((node) => node.id === id);
     if (!current) return;
     const updated: CanvasTextNode = {
@@ -6970,6 +7097,7 @@ export function CanvasClient() {
   }
 
   function changeTextNodeContent(id: string, content: string) {
+    if(readOnly || isNodeLocked(id))return;
     setTextNodes((current) =>
       current.map((node) =>
         node.id === id
@@ -6980,6 +7108,7 @@ export function CanvasClient() {
   }
 
   function commitTextNodeContent(id: string, content: string) {
+    if(readOnly || isNodeLocked(id))return;
     const node = textNodes.find((item) => item.id === id);
     if (node) {
       const updated = {
@@ -7001,7 +7130,7 @@ export function CanvasClient() {
     }
   }
   async function generateTextNode() {
-    if (!selectedText || !textPrompt.trim() || selectedText.status === "generating") return;
+    if (!selectedText || readOnly || !nodeSettingsReady || isNodeLocked(selectedText.id) || !textPrompt.trim() || selectedText.status === "generating") return;
     const prompt = textPrompt.trim();
     const pending: CanvasTextNode = {
       ...selectedText,
@@ -7730,6 +7859,7 @@ export function CanvasClient() {
 
   // 拖拽后记住节点坐标(本地即时生效 + 异步持久化)
   function saveNodePosition(id: string, x: number, y: number) {
+    if (isNodeLocked(id)) return;
     if (readOnly || id.startsWith("task-") || !user) return;
     setWorks((prev) =>
       prev
@@ -7753,6 +7883,8 @@ export function CanvasClient() {
     }>
   ) {
     if (readOnly || !user || !moves.length) return;
+    moves=moves.filter(move=>!isNodeLocked(move.id));
+    if(!moves.length)return;
     const artworkMoves = moves.filter((move) => !move.id.startsWith("text-"));
     const textMoves = moves.filter((move) => move.id.startsWith("text-"));
     const artworkPositions = new Map(
@@ -7882,6 +8014,8 @@ export function CanvasClient() {
       comfyOpen ||
       ocrArtworkId ||
       assistantArtworkId ||
+      (propertiesOpen && (selectedId || selectedTextId)) ||
+      cropArtwork ||
       ratioMenuOpen ||
       expandOpen ||
       videoOpen ||
@@ -8060,6 +8194,7 @@ export function CanvasClient() {
     canvasTool,
     browsing,
     canvasShortcutLayerOpen,
+    nodeSettingsReady,
   ]);
 
   // Ctrl/⌘ + 滚轮:阻止浏览器整页缩放(画布内由 React Flow 自己缩放)
@@ -8748,6 +8883,7 @@ export function CanvasClient() {
               )}
               connectionRadius={32}
               nodes={rfNodes}
+              elevateNodesOnSelect={false}
               edges={rfEdges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
@@ -8892,7 +9028,7 @@ export function CanvasClient() {
                   groupedDragStartRef.current = {
                     anchorId: node.id,
                     starts: Object.fromEntries(
-                      groupMembers.map((item) => [
+                      groupMembers.filter(item=>!isNodeLocked(item.id)).map((item) => [
                         item.id,
                         positions.get(item.id) ?? {
                           x: item.canvasX ?? 0,
@@ -10107,7 +10243,7 @@ export function CanvasClient() {
             >
               {selected && <>
               <button type="button" data-action="rename" aria-label={t("canvas.editName")} title={t("canvas.toolbar.renameHint")}
-                disabled={!selected} onClick={() => { if (selected) { setNodeRenameValue(selected.title); setRenamingNodeId(selected.id); } }}
+                disabled={!selected || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={() => { if (selected) { setNodeRenameValue(selected.title); setRenamingNodeId(selected.id); } }}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40">
                 <Pencil className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.editName")}
               </button>
@@ -10312,6 +10448,13 @@ export function CanvasClient() {
                     disabled: !selected || readOnly, onSelect: () => setComfyOpen(true) },
                   { id: "video", icon: Video, label: t("canvas.toolbar.video"), hint: t("canvas.toolbar.videoHint"),
                     disabled: readOnly || videoBusy, onSelect: () => { setVideoOpen(open => !open); if (selected) setVideoPrompt(selected.prompt || ""); } },
+                  ...(selected ? [
+                    {id:"copy-node",icon:Copy,label:t("canvas.copyNode"),onSelect:()=>copyNodeToClip(selected,true)},
+                    {id:"copy-image",icon:ImageIcon,label:t("canvas.copyImage"),onSelect:()=>void copyImageToClipboard(selected.image)},
+                    {id:"duplicate-node",icon:Plus,label:t("canvas.duplicate"),disabled:readOnly,onSelect:()=>void duplicateArt(selected)},
+                    ...nodeManagementItems(selected.id),
+                    {id:"properties",icon:SlidersHorizontal,label:L("属性设置","Properties"),onSelect:openProperties},
+                  ] : []),
                 ].filter(item => selected || item.id === "video")}
               />
 
@@ -10387,6 +10530,14 @@ export function CanvasClient() {
               {/* 画布助手:围绕选中节点+上游链对话,可一键生图回画布 */}
 
               {selected && <>
+              {!selected.videoUrl && <>
+                <button type="button" aria-label={L("裁剪图片","Crop image")} title={L("裁剪并保存为新版本","Crop and save a new version")}
+                  disabled={localEditBusy || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={()=>setCropArtwork(selected)}
+                  className="canvas-ui-action flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[13px] font-semibold disabled:opacity-40"><Crop className="h-4 w-4" />{L("裁剪","Crop")}</button>
+                <button type="button" aria-label={L("替换图片","Replace image")} title={L("上传替换图并保存为新版本","Upload a replacement as a new version")}
+                  disabled={localEditBusy || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={()=>requestReplace(selected)}
+                  className="canvas-ui-action flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[13px] font-semibold disabled:opacity-40"><ImagePlus className="h-4 w-4" />{L("替换","Replace")}</button>
+              </>}
               <button
                 type="button"
                 title={t("canvas.toolbar.downloadImage")}
@@ -10438,7 +10589,7 @@ export function CanvasClient() {
             >
               <button
                 type="button"
-                disabled={assistBusy}
+                disabled={assistBusy || !nodeSettingsReady || isNodeLocked(selectedText.id)}
                 onClick={() => setProductPicker({ textNodeIds: [selectedText.id] })}
                 aria-label={t("canvas.toolbar.productCopy")}
                 title={t("canvas.assistWriteHint")}
@@ -10463,6 +10614,8 @@ export function CanvasClient() {
               </button>
 
               <span className="canvas-ui-divider mx-1.5 h-5 w-px flex-none" />
+              <button type="button" aria-label={L("文字样式","Text style")} title={L("文字样式","Text style")} onClick={openProperties}
+                className="canvas-ui-action flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[13px] font-semibold"><SlidersHorizontal className="h-4 w-4" />{L("样式","Style")}</button>
               <button
                 type="button"
                 disabled={!selectedText.content}
@@ -10486,6 +10639,7 @@ export function CanvasClient() {
               </button>
               <button
                 type="button"
+                disabled={!nodeSettingsReady || isNodeLocked(selectedText.id)}
                 onClick={() => {
                   setNodeRenameValue(selectedText.title);
                   setRenamingNodeId(selectedText.id);
@@ -10499,12 +10653,15 @@ export function CanvasClient() {
               <button
                 type="button"
                 onClick={() => void removeTextNode(selectedText.id)}
+                disabled={!nodeSettingsReady || isNodeLocked(selectedText.id)}
                 aria-label={t("canvas.deleteNodeTitle")}
                 title={t("canvas.deleteNodeTitle")}
                 className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[#9aa1ae] transition-colors hover:bg-[#ff6b63]/15 hover:text-[#ff6b63]"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
+              <CanvasActionMenu iconOnly label={L("更多节点操作","More node actions")} light={lightCanvas}
+                items={[...nodeManagementItems(selectedText.id),{id:"properties",icon:SlidersHorizontal,label:L("属性设置","Properties"),onSelect:openProperties}]} />
             </div>
           )}
           {/* 标注编辑弹窗：提交即关闭，landEditResult 在画布占位节点中后台继续落地。 */}
@@ -10751,7 +10908,7 @@ export function CanvasClient() {
             )}
 
           {/* 底部生成器(配方):选中节点正下方居中,横向 dock(原型 dock) */}
-          {selected && selectedBatchArts.length <= 1 && (
+          {selected && selectedBatchArts.length <= 1 && !propertiesOpen && (
             <div
               data-testid="image-node-dock"
               key={`dock-${selected.id}`}
@@ -11123,7 +11280,7 @@ export function CanvasClient() {
           )}
 
           {/* 文字生成节点：布局与图片节点一致，配色跟随画布黑/白主题。 */}
-          {selectedText && selectedTextBatchNodes.length <= 1 && !readOnly && (
+          {selectedText && selectedTextBatchNodes.length <= 1 && !readOnly && !propertiesOpen && !isNodeLocked(selectedText.id) && (
             <div
               ref={textComposerDockRef}
               key={`tdock-${selectedText.id}`}
@@ -11480,6 +11637,19 @@ export function CanvasClient() {
             </div>
           )}
         </div>
+        {propertiesOpen && !browsing && (selectedText || selected) && <NodePropertiesPanel
+          key={(selectedText || selected)!.id} title={(selectedText || selected)!.title} kind={selectedText ? "text" : "image"}
+          settings={nodeSettings[(selectedText || selected)!.id] || DEFAULT_CANVAS_SETTINGS} light={lightCanvas} english={locale==='en'} busy={historySaving || localEditBusy} readOnly={readOnly || !nodeSettingsReady}
+          content={selectedText?.content || selectedText?.prompt}
+          displaySize={selectedText ? {width:selectedText.width,height:selectedText.height} : artworkNodeSize(selected!)}
+          imageEditable={!selected?.videoUrl}
+          imageSize={selected?.width && selected?.height ? {width:selected.width,height:selected.height} : undefined}
+          onSave={settings=>commitNodeSettings((selectedText || selected)!.id,settings)} onClose={()=>setPropertiesOpen(false)}
+          onCrop={()=>selected && setCropArtwork(selected)} onReplace={()=>selected && requestReplace(selected)} />}
+        {cropArtwork && <ImageCropDialog image={cdnUrl(cropArtwork.image)} title={cropArtwork.title} light={lightCanvas} english={locale==='en'} busy={localEditBusy}
+          onApply={crop=>saveLocalImageEdit(cropArtwork,crop)} onClose={()=>{if(!localEditBusyRef.current)setCropArtwork(null);}} />}
+        <input ref={replaceInputRef} data-testid="canvas-replace-image-input" type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
+          onChange={event=>{const file=event.target.files?.[0],target=replaceTargetRef.current;if(file && target)void saveLocalImageEdit(target,undefined,file);}} />
         {/* 助手作为画布的并列侧栏：桌面让出空间，窄屏浮层；OCR仍互斥。 */}
         {assistantArtworkId && !browsing && (() => {
           const anchor = active?.members.find(artwork => artwork.id === assistantArtworkId);
