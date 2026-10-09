@@ -43,6 +43,7 @@ export function ModelMvp() {
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [pending, setPending] = useState<Operation | null>(null);
   const [tab, setTab] = useState("models"), [filter, setFilter] = useState("all"), [search, setSearch] = useState("");
   const [row, setRow] = useState<MvpRow | null>(null), [connect, setConnect] = useState(false);
+  const [rename, setRename] = useState<MvpRow | null>(null);
   const [register, setRegister] = useState<{ providerId: string; model: string } | null>(null), [refreshing, setRefreshing] = useState<string[]>([]);
   const mounted = useRef(true), loadingGuard = useRef(false), mutationGuard = useRef(false);
   const refreshProvider = useCallback(async (providerId: string, force = true) => {
@@ -77,13 +78,13 @@ export function ModelMvp() {
   async function run(operation: Operation) {
     if (mutationGuard.current) return;
     mutationGuard.current = true; setBusy(true); setError(""); setNotice(""); setPending(operation);
-    setRow(null); setConnect(false); setRegister(null);
+    setRow(null); setRename(null); setConnect(false); setRegister(null);
     try { sessionStorage.setItem(pendingKey, JSON.stringify(operation)); } catch {}
     try {
       const result = await api(operation);
       if (result.publication.phase !== "applied") { setNotice("发布结果待核对。请点击“核对并继续”，系统会沿用同一操作，不重复创建发布。"); return; }
       clearPending(); setRow(null); setConnect(false); setRegister(null);
-      setNotice(operation.action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : operation.action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。");
+      setNotice(operation.action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : operation.action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : operation.action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。");
       await load(true);
     } catch (e) {
       const failure = e as Error & { operationNotStaged?: boolean; publication?: { phase: string } };
@@ -110,7 +111,7 @@ export function ModelMvp() {
       <div className={styles.mapping}><div className={styles.tableHead}><span>前端名称</span><span>实际调用模型 / 上游来源</span><span>操作</span></div>{rows.map(r => <article className={styles.modelRow} key={r.id}>
         <div className={styles.modelName}><span className={styles.modality}>{types[r.modality]}</span><h2>{r.label}</h2>{r.alias !== r.label && <p>配置别名：{r.alias}</p>}<div className={styles.featureTags}>{r.features.map(f => <span key={f.id}>{f.label}</span>)}</div></div>
         <div className={styles.routes}>{r.routes.map((route, index) => <div key={`${route.upstreamId}-${route.kind}`} className={styles.route}><span className={styles.routeDot} data-enabled={route.enabled} /><div><code>{route.model}</code><p>{route.provider}<span>{r.conditional || r.preset || r.publicIds.length > 1 ? route.kind : "已配置"}</span></p></div></div>)}{r.conditional && <p className={styles.ruleNote}>具体调用由条件或回退规则决定</p>}</div>
-        <button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRow(r)}>更换模型 <ChevronRight size={15} /></button>
+        <div className={styles.rowActions}><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRename(r)}>修改显示名称</button><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRow(r)}>更换模型 <ChevronRight size={15} /></button></div>
       </article>)}</div>
       {!rows.length && <div className={styles.empty}><Search /><h2>{state.rows.length ? "没有匹配的模型" : "前端暂无可见模型"}</h2><p>{state.rows.length ? "尝试其他名称、功能或类型。" : "这里只显示前端当前已启用、可展示的模型。"}</p></div>}
       <p className={styles.footerNote}><CircleHelp size={15} />同一前端模型用于多个功能时，更换会对这些功能一起生效。个人自带密钥的模型不在此管理。</p>
@@ -119,6 +120,7 @@ export function ModelMvp() {
       return <Source key={p.id} provider={p} catalog={catalog} refreshing={refreshingNow} locked={locked} candidates={state.candidates} onRefresh={() => void refreshProvider(p.id)} onRegister={model => setRegister({ providerId: p.id, model })} />;
     })}</div>{!state.providers.length && <div className={styles.empty}><Unplug /><h2>接入第一个上游来源</h2><p>输入接口地址与 API Key，系统会自动发现模型 ID。</p></div>}</section>}
     {row && state && <SwitchDialog row={row} state={state} locked={locked} busy={busy} onClose={() => setRow(null)} onSave={upstreamId => void run(operation("switch", { rowId: row.id, upstreamId }))} />}
+    {rename && <RenameDialog row={rename} locked={locked} onClose={() => setRename(null)} onSave={label => void run(operation("rename", { rowId: rename.id, label }))} />}
     {connect && state && <ConnectDialog locked={locked} onClose={() => setConnect(false)} onSave={(fields, id) => run({ ...operation("connect", fields), id })} />}
     {register && state && <RegisterDialog model={register.model} protocol={state.providers.find(p => p.id === register.providerId)!.protocol} locked={locked} onClose={() => setRegister(null)} onSave={fields => void run(operation("register", { ...register, ...fields }))} />}
   </main>;
@@ -147,6 +149,11 @@ function SwitchDialog({ row, state, locked, busy, onClose, onSave }: { row: MvpR
     {!candidates.length && <p className={styles.ruleNote}>暂无兼容模型。先在上游来源中添加模型并确认能力；当前已展示的输入和规格必须得到支持。</p>}
     <p className={styles.ruleNote}>兼容筛选使用现有能力记录；旧接入能力未核验时会明确标注。此处不会自动发送付费生成请求。</p>
   </div><footer className={styles.dialogFooter}><button className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button className={styles.primary} disabled={!selected || locked} onClick={() => onSave(selected)}>{busy && <Loader2 size={16} className={styles.spin} />}切换并生效</button></footer></Dialog>;
+}
+
+function RenameDialog({ row, locked, onClose, onSave }: { row: MvpRow; locked: boolean; onClose: () => void; onSave: (label: string) => void }) {
+  const [label, setLabel] = useState(row.label);
+  return <Dialog title="修改前端显示名称" onClose={onClose} locked={locked}><form onSubmit={e => { e.preventDefault(); if (label.trim()) onSave(label.trim()); }}><div className={styles.dialogBody}><p className={styles.ruleNote}>此名称将用于前端模型选项。实际调用模型、模型 ID、价格和用途保持原配置。{row.publicIds.length > 1 && "该模型家族的所有比例分支会统一使用新名称。"}</p><label className={styles.field}>显示名称<input aria-label="显示名称" autoFocus required maxLength={100} value={label} onChange={e => setLabel(e.target.value)} disabled={locked} /><small>{label.length} / 100</small></label><p className={styles.ruleNote}>影响：{row.features.map(f => f.label).join("、")}</p></div><footer className={styles.dialogFooter}><button type="button" className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button type="submit" className={styles.primary} disabled={locked || !label.trim() || label.trim() === row.label}>保存并生效</button></footer></form></Dialog>;
 }
 
 function ConnectDialog({ locked, onClose, onSave }: { locked: boolean; onClose: () => void; onSave: (fields: Record<string, unknown>, id: string) => Promise<void> }) {

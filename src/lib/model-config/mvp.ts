@@ -82,6 +82,16 @@ export function switchMvpModel(source: ModelConfig, row: MvpRow, upstreamId: str
   }
   return config;
 }
+/** Labels are shared across a family; identifiers, targets and billing stay intact. */
+export function renameMvpModel(source: ModelConfig, row: MvpRow, label: string): ModelConfig {
+  const name = label.trim();
+  if (!name || name.length > 100 || /[\u0000-\u001f\u007f]/.test(name)) throw new ModelConfigError("INVALID_LABEL", "显示名称需要 1–100 个字符，不能包含换行或控制字符");
+  const config = structuredClone(source);
+  const ids = new Set(config.publicModels.filter(m => m.modality === row.modality && (row.modality === "image" ? imageModelDisplayId(m.id) === row.id : m.id === row.id)).map(m => m.id));
+  for (const model of config.publicModels) if (ids.has(model.id)) model.label = name;
+  for (const alias of config.defaultImagePreset?.aliases || []) if (ids.has(alias.id)) alias.label = name;
+  return config;
+}
 function assertMvpTarget(config: ModelConfig, row: MvpRow, upstreamId: string) {
   const u = config.upstreamModels.find(u => u.id === upstreamId), p = config.providers.find(p => p.id === u?.providerId);
   if (!u?.enabled || !p?.enabled || !p.credentialRef || u.modality !== row.modality)

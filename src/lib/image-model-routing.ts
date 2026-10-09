@@ -3,6 +3,7 @@ export type ImageModelRoutingOption = {
   provider?: string;
   label?: string;
   supportsEdit?: boolean;
+  modality?: string;
 };
 
 const FLOW_VARIANT_SUFFIXES = [
@@ -69,6 +70,10 @@ export function compactImageModelOptions<T extends ImageModelRoutingOption>(
     const key = displayId;
     if (seen.has(key)) return [];
     seen.add(key);
-    return [{ ...item, label: displayId }];
+    const family = options.filter(option => imageModelDisplayId(option.id) === displayId);
+    const label = item.label?.trim();
+    const managed = item.provider === "managed" || item.modality === "image";
+    const custom = managed && label && label !== item.id && family.every(option => option.label?.trim() === label);
+    return [{ ...item, label: custom ? label : displayId }];
   });
 }

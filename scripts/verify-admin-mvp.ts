@@ -6,7 +6,8 @@ import { createMvpHandler } from "../src/lib/model-config/mvp-access";
 import { createModelRuntime, publicModelCatalog } from "../src/lib/model-config/runtime";
 import { createRouterControl, type RouterStatus } from "../src/lib/model-config/router-client";
 import { createModelExecutor } from "../src/lib/model-config/execution";
-import { mvpRows, switchMvpModel } from "../src/lib/model-config/mvp";
+import { mvpRows, switchMvpModel, renameMvpModel } from "../src/lib/model-config/mvp";
+import { compactImageModelOptions, routeImageModel } from "../src/lib/image-model-routing";
 import { ModelConfigError } from "../src/lib/model-config/types";
 
 async function main() {
@@ -38,7 +39,7 @@ async function main() {
     const fullDraft = await f.repo.saveDraft({ id: sharedDraft.id, expectedRevision: sharedDraft.revision, config: unsaved, actor });
     const page = await handler(request()); assert.equal(page.status, 200);
     const data = await page.json();
-    assert.equal(data.rows[0].label, publicModelCatalog(old, "image", "image.generate").models[0].id);
+    assert.equal(data.rows[0].label, "测试生图");
     assert.equal(data.rows[0].alias, "测试生图"); assert.ok(data.rows[0].features.some((f: any) => f.id === "canvas.image"));
     assert.ok(data.rows[0].candidateIds.includes("u2")); assert.equal(data.rows[0].routes[0].model, "wire-image-one");
     const legacy = structuredClone(old); legacy.config.upstreamModels.forEach(u => { u.capabilities.verified = false; });
@@ -65,6 +66,24 @@ async function main() {
     assert.equal((await executor.clientFor(frozen)).wireModel, "wire-image-one", "accepted tasks retain their old actual model");
     const fresh = await executor.resolve({ binding: "image.generate", snapshot: current, billing }); assert.equal((await executor.clientFor(fresh)).wireModel, "wire-image-two");
     assert.equal((await handler(request({ ...switchBody, id: randomUUID() }))).status, 409);
+    const rename = { action: "rename", id: randomUUID(), expectedVersion: current.version, rowId: data.rows[0].id, label: "  产品摄影模型  " };
+    assert.equal((await handler(request({ ...rename, label: "   " }))).status, 400);
+    assert.equal((await handler(request({ ...rename, label: "a\nb" }))).status, 400);
+    assert.equal((await handler(request(rename))).status, 200);
+    const renamed = await f.repo.current();
+    assert.equal(renamed.config.publicModels[0].label, "产品摄影模型");
+    const expected = structuredClone(current.config); expected.publicModels[0].label = "产品摄影模型";
+    assert.deepEqual(renamed.config, expected, "rename must only change the display label");
+    assert.equal(compactImageModelOptions(publicModelCatalog(renamed, "image", "image.generate").models)[0].label, "产品摄影模型");
+    assert.deepEqual(await f.repo.draft(actor), fullDraft);
+    assert.equal((await handler(request(rename))).status, 200); assert.equal((await f.repo.current()).version, renamed.version);
+    const family = structuredClone(current.config);
+    family.publicModels = ["square", "portrait", "landscape"].map((suffix, i) => ({ ...current.config.publicModels[0], id: `family-image-${suffix}`, label: `family-image-${suffix}`, visible: i !== 2 }));
+    const familyRow = { ...data.rows[0], id: "family-image", publicIds: ["family-image-square", "family-image-portrait"] };
+    const renamedFamily = renameMvpModel(family, familyRow, "统一显示名称");
+    assert.ok(renamedFamily.publicModels.every(m => m.label === "统一显示名称"), "hidden ratio siblings must also inherit the name");
+    assert.equal(compactImageModelOptions(renamedFamily.publicModels)[0].label, "统一显示名称");
+    assert.equal(routeImageModel("family-image-square", "9:16", renamedFamily.publicModels), "family-image-portrait");
     const { getPublicKeyPem } = await import("../src/lib/settings");
     const ciphertext = publicEncrypt({ key: await getPublicKeyPem(), padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from("mvp-isolated-provider-key")).toString("base64");
     const connectId = randomUUID();
@@ -73,7 +92,7 @@ async function main() {
     const credentialRef = (await credentialResponse.json()).id;
     const plainResponse = await handler(request({ action: "credential", providerId: `mvp-${randomUUID()}`, keyPlain: "http-fixture-provider-key" }));
     assert.equal(plainResponse.status, 200); assert.ok(!(await plainResponse.text()).includes("http-fixture-provider-key"));
-    const connect = { action: "connect", id: connectId, expectedVersion: current.version, name: "新目录来源", protocol: "openai-images", baseUrl: `${f.origin}/another-v1`, credentialRef };
+    const connect = { action: "connect", id: connectId, expectedVersion: renamed.version, name: "新目录来源", protocol: "openai-images", baseUrl: `${f.origin}/another-v1`, credentialRef };
     assert.equal((await handler(request(connect))).status, 200);
     const connected = await f.repo.current(), newProvider = connected.config.providers.find(p => p.name === "新目录来源")!;
     assert.ok(newProvider); assert.equal(await f.credentials.read(newProvider.credentialRef!, newProvider.id), "mvp-isolated-provider-key");
