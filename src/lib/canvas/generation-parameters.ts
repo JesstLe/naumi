@@ -54,17 +54,24 @@ export function validateCanvasParameters(body: Record<string, unknown>, headerQu
 export async function canvasParameterError(request: Request): Promise<Response | null> {
   const path = new URL(request.url).pathname;
   let body: Record<string, unknown>;
+  let duplicateParameter = false;
   try {
     const copy = request.clone();
     if (request.headers.get("content-type")?.includes("multipart/form-data")) {
       const form = await copy.formData();
-      body = Object.fromEntries(Array.from(form.entries()).filter(([, value]) => typeof value === "string"));
+      body = {};
+      for (const [key, value] of Array.from(form.entries())) {
+        if (typeof value !== "string") continue;
+        if (["origin", "ratio", "resolution", "quality", "count", "targetWidth", "targetHeight"].includes(key) && form.getAll(key).length > 1) duplicateParameter = true;
+        if (!(key in body)) body[key] = value;
+      }
+      if (form.getAll("origin").includes("canvas")) body.origin = "canvas";
     } else {
       body = await copy.json();
     }
   } catch { return null; /* Route owns malformed-body handling. */ }
   if (!body || typeof body !== "object") return null;
   if (path === "/api/generate-image" && body.origin !== "canvas") return null;
-  const error = validateCanvasParameters(body, request.headers.get("x-naumi-image-quality"));
+  const error = duplicateParameter ? "画布参数不能重复提交" : validateCanvasParameters(body, request.headers.get("x-naumi-image-quality"));
   return error ? new Response(JSON.stringify({ error, code: "CANVAS_PARAMETER_UNSUPPORTED" }), { status: 400, headers: { "content-type": "application/json", "cache-control": "no-store" } }) : null;
 }
