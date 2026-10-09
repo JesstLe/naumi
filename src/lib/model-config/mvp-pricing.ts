@@ -44,7 +44,7 @@ export function editMvpCredits(billing:ConfigSnapshot,models:ModelSnapshot,row:M
       allowed.add(cell.effectiveQuality+":"+cell.resolution);
       if(pricing.prices[cell.effectiveQuality]?.[cell.resolution]===null || pricing.prices[cell.effectiveQuality]?.[cell.resolution]===undefined)throw new ModelConfigError("INVALID_PRICE","请填写全部可用规格的积分，或仅选择适用工具");
     }
-    if(QUALITY_IDS.some(q=>RESOLUTION_IDS.some(r=>pricing.prices[q][r]!==null && !allowed.has(q+":"+r))))throw new ModelConfigError("INVALID_PRICE","不支持的规格不能设置积分");
+    if(QUALITY_IDS.some(q=>RESOLUTION_IDS.some(r=>pricing.prices[q][r]!==null && !allowed.has(q+":"+r))))throw new ModelConfigError("INVALID_PRICE","本系统未开放的规格不能设置积分");
   }
   const config=structuredClone(billing.config);
   const ids=models.config.publicModels.filter(m=>m.modality===row.modality && (row.modality==="image"?imageModelDisplayId(m.id)===row.id:m.id===row.id)).map(m=>m.id);
