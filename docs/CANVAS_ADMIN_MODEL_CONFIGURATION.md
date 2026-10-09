@@ -15,7 +15,7 @@
 - `verify-canvas-admin-runtime.ts`：一次性空数据库/独立schema/本地Router协议fixture，七功能body/header覆盖、报价与执行一致、管理员发布默认切换、21份冻结bundle和旧版本409。不访问真实供应商、生产库或克隆工作库。
 - `verify-canvas-admin-client.tsx`：七功能选择组件SSR为空、用户缓存选择失效。
 - 新机 `verify-canvas-admin-module.sh`集中执行上述检查及既有business-routing完整回归。baseline/modified均已exit0；完整business-routing包含本地供应商HTTP协议fixture，不是真实模型消费。
-- 本机干净非增量全量类型检查exit0、修改组件/策略的ESLint exit0；早期增量缓存错误已以非增量结果区分。构建与运行发布另见迁移README最新状态。
+- 本机干净非增量全量类型检查exit0、修改组件/策略的ESLint exit0；早期增量缓存错误已以非增量结果区分。新机完整构建及固定镜像发布exit0，线上七操作目录/报价防覆盖验证通过；指定账号真实浏览器画布验收通过。代码commit、image及部署失败自动回滚记录见迁移README第22节。
 
 ## 交接与回滚
 
