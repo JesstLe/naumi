@@ -4,12 +4,13 @@ import type { Pool } from "pg";
 import { discoverProviderCatalog, type ProviderCatalogResult } from "./catalog";
 import type { ModelProvider } from "./types";
 import type { createCredentialStore } from "./credentials";
+import {ingestSupplierDirectory} from "../supplier-models/repository";
 
 export const PROVIDER_CATALOG_SQL = `CREATE TABLE IF NOT EXISTS app_model_provider_catalog(
  fingerprint text PRIMARY KEY,provider_id text NOT NULL,result jsonb NOT NULL,last_success_at timestamptz,
  updated_at timestamptz NOT NULL DEFAULT now()
 );`;
-export type CatalogEntry = ProviderCatalogResult & { cached: boolean; stale: boolean; lastSuccessAt?: string; refreshing?: boolean };
+export type CatalogEntry = ProviderCatalogResult & { cached: boolean; stale: boolean; lastSuccessAt?: string; refreshing?: boolean; metadataSaved?:boolean };
 const ready = new WeakMap<Pool,Promise<unknown>>();
 async function ensure(pool:Pool){let p=ready.get(pool);if(!p){p=(async()=>{const tx=await pool.connect();try{await tx.query('BEGIN');await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('model-provider-catalog-schema',0))");await tx.query(PROVIDER_CATALOG_SQL);await tx.query('COMMIT')}catch(e){await tx.query('ROLLBACK');throw e}finally{tx.release()}})().catch(e=>{ready.delete(pool);throw e});ready.set(pool,p)}await p;}
 const fingerprint=(p:ModelProvider)=>createHash('sha256').update(JSON.stringify([p.id,p.baseUrl,p.protocol,p.credentialRef||null])).digest('hex');
@@ -24,18 +25,23 @@ export async function readProviderCatalog(pool:Pool,providers:ModelProvider[]){
   return providers.map(p=>entry(rows.find(r=>r.fingerprint===fingerprint(p)),p));
 }
 export async function refreshProviderCatalog(pool:Pool,p:ModelProvider,credentials:ReturnType<typeof createCredentialStore>,trustedOrigins:readonly string[],fetcher?:typeof fetch,force=false){
-  await ensure(pool);const tx=await pool.connect();
-  try{
-    await tx.query('BEGIN');
-    const locked=(await tx.query('SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS locked',['provider-catalog:'+fingerprint(p)])).rows[0].locked;
-    const old=(await tx.query('SELECT * FROM app_model_provider_catalog WHERE fingerprint=$1',[fingerprint(p)])).rows[0];
-    if(!locked){await tx.query('COMMIT');return {...entry(old,p),refreshing:true};}
-    if(old&&!entry(old,p).stale&&!force){await tx.query('COMMIT');return entry(old,p);}
-    const result=await discoverProviderCatalog(p,credentials,trustedOrigins,fetcher);
-    const success=['ok','empty'].includes(result.status);
-    const saved={...result,models:success?result.models:old?.result.models||[]};
-    const row=(await tx.query(`INSERT INTO app_model_provider_catalog(fingerprint,provider_id,result,last_success_at) VALUES($1,$2,$3::jsonb,CASE WHEN $4 THEN now() ELSE NULL END)
-      ON CONFLICT(fingerprint) DO UPDATE SET result=EXCLUDED.result,last_success_at=COALESCE(EXCLUDED.last_success_at,app_model_provider_catalog.last_success_at),updated_at=now() RETURNING *`,[fingerprint(p),p.id,JSON.stringify(saved),success])).rows[0];
-    await tx.query('COMMIT');return {...entry(row,p),cached:false};
-  }catch(e){await tx.query('ROLLBACK');throw e}finally{tx.release()}
+  await ensure(pool);
+  const discovered=await(async()=>{
+    const tx=await pool.connect();
+    try{
+      await tx.query('BEGIN');
+      const locked=(await tx.query('SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS locked',['provider-catalog:'+fingerprint(p)])).rows[0].locked;
+      const old=(await tx.query('SELECT * FROM app_model_provider_catalog WHERE fingerprint=$1',[fingerprint(p)])).rows[0];
+      if(!locked){await tx.query('COMMIT');return {...entry(old,p),refreshing:true};}
+      if(old&&!entry(old,p).stale&&!force){await tx.query('COMMIT');return entry(old,p);}
+      const result=await discoverProviderCatalog(p,credentials,trustedOrigins,fetcher);
+      const success=['ok','empty'].includes(result.status),saved={...result,models:success?result.models:old?.result.models||[]};
+      const row=(await tx.query(`INSERT INTO app_model_provider_catalog(fingerprint,provider_id,result,last_success_at) VALUES($1,$2,$3::jsonb,CASE WHEN $4 THEN now() ELSE NULL END)
+        ON CONFLICT(fingerprint) DO UPDATE SET result=EXCLUDED.result,last_success_at=COALESCE(EXCLUDED.last_success_at,app_model_provider_catalog.last_success_at),updated_at=now() RETURNING *`,[fingerprint(p),p.id,JSON.stringify(saved),success])).rows[0];
+      await tx.query('COMMIT');return {...entry(row,p),cached:false};
+    }catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
+  })();
+  // Release discovery's connection before advisory metadata writes: parallel refreshes must not exhaust the pool.
+  if(discovered.models.length){const metadataSaved=await ingestSupplierDirectory(pool,p,discovered.models).then(()=>true,()=>false);return {...discovered,metadataSaved};}
+  return discovered;
 }
