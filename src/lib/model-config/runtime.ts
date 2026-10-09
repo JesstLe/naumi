@@ -15,6 +15,7 @@ import { ModelConfigError, type ModelConfig, type ModelConfigRepository, type Mo
 import { DISPLAY_QUALITIES, selectedImagePreset, presetPublicId, effectiveImageParameters } from "./image-preset";
 import { featureDefaultModel, modelAllowedForFeature } from "./tool-scope";
 import {modelCreditView} from "./mvp-pricing";
+import {qualityPresentation,policyQuality} from "./quality-policy";
 
 export type RoutingSimulation = { eligible: { upstreamId: string; providerId: string; rank: number }[]; excluded: { upstreamId: string; codes: string[] }[]; modelVersion: number; billingVersion: number };
 type Dependencies = ValidationOptions & { pool: Pool; repo: ModelConfigRepository; credentials: ReturnType<typeof createCredentialStore>; router: RouterControl; billing: () => Promise<ConfigSnapshot>; billingByVersion?: (version: number) => Promise<ConfigSnapshot> };
@@ -31,7 +32,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
     const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
     const option = f?.options.find(o => o.modelId === m.id);
     if (preset?.aliases.some(a => a.id === m.id)) return { id:m.id,label:m.label,modality:m.modality,supportsEdit:true,supportsVision:false,qualities:[...DISPLAY_QUALITIES],nativeResolutions:preset.resolutions,generationParameters:{ratios:preset.ratios,resolutions:preset.resolutions,combinations:Object.keys(preset.outputDimensions || {})},qualitySupported:true };
-    return { id: m.id, label: m.label, modality: m.modality, supportsEdit: upstreams.some(u => u.capabilities.edit), supportsVision: upstreams.some(u => u.capabilities.vision), qualities: option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: option?.parameters?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), generationParameters: option?.parameters ? {ratios:option.parameters.ratios,resolutions:option.parameters.resolutions} : undefined, qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
+    return { id: m.id, label: m.label, modality: m.modality, supportsEdit: upstreams.some(u => u.capabilities.edit), supportsVision: upstreams.some(u => u.capabilities.vision), qualities: option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), ...qualityPresentation(upstreams), nativeResolutions: option?.parameters?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), generationParameters: option?.parameters ? {ratios:option.parameters.ratios,resolutions:option.parameters.resolutions} : undefined, qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
   });
   const publishedModels = !includeAll && adminConfiguredFeature(feature) ? models.filter(m => m.id === defaultModelId) : models;
   const visible = new Set(publishedModels.map(m => m.id));
@@ -41,7 +42,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
     const ids = m.target.type === "upstream" ? [m.target.id] : config.pools.find(p => p.id === m.target.id)!.candidates;
     const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
     const defaultPreset = selectedImagePreset(config,undefined,id,binding);
-    return [[binding,{ qualities: defaultPreset ? [...DISPLAY_QUALITIES] : Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: defaultPreset?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))) }]];
+    return [[binding,{ qualities: defaultPreset ? [...DISPLAY_QUALITIES] : qualityPresentation(upstreams)?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: defaultPreset?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))) }]];
   }));
   return { version: snapshot.version, feature, selectionMode: adminConfiguredFeature(feature) ? "admin" : "user", defaultModelId, models: publishedModels, bindingCapabilities, bindings: Object.fromEntries(Object.entries(config.bindings).map(([binding,id]) => [binding, selectedImagePreset(config,undefined,id,binding)?.aliases[0].id || id]).filter(([, id]) => visible.has(id))) };
 }
@@ -67,9 +68,16 @@ export function simulateModel(snapshot: ModelSnapshot, billing: ConfigSnapshot, 
     const codes: string[] = [];
     if (!u.enabled || !p.enabled) codes.push("DISABLED");
     if (pool?.rules.length && !rule) codes.push("RULE_UNMATCHED");
-    const rank = Math.max(rankFor(facts.quality), facts.task === "draft" ? 1 : 2, rule?.require.minQualityRank || 1);
+    let nativeQuality = facts.quality;
+    if (u.parameterMap.qualityPolicy) {
+      try { nativeQuality = policyQuality(u.parameterMap.qualityPolicy, facts.quality) || "medium"; }
+      catch { codes.push("QUALITY_UNSUPPORTED"); }
+    }
+    // An explicitly named display tier is not a promise that the model has a
+    // corresponding intrinsic quality rank. Explicit route requirements still apply.
+    const rank = Math.max(u.parameterMap.qualityPolicy ? 1 : rankFor(nativeQuality), facts.task === "draft" ? 1 : 2, rule?.require.minQualityRank || 1);
     if (c.verified && c.qualityRank < rank) codes.push("QUALITY_RANK");
-    if (c.verified && c.qualities.length && !c.qualities.includes(facts.quality as any)) codes.push("QUALITY_UNSUPPORTED");
+    if (!u.parameterMap.qualityPolicy && c.verified && c.qualities.length && !c.qualities.includes(facts.quality as any)) codes.push("QUALITY_UNSUPPORTED");
     if ((facts.needsEdit || rule?.require.edit) && !c.edit) codes.push("EDIT_UNSUPPORTED");
     if (facts.needsMask && (preset ? !preset.supportsMask : p.protocol !== "openai-images" || !c.edit)) codes.push("MASK_UNSUPPORTED");
     if (c.verified && (facts.preserveIdentity || rule?.require.preserveIdentity) && !c.preserveIdentity) codes.push("IDENTITY_UNSUPPORTED");

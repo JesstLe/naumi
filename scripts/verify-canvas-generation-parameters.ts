@@ -18,8 +18,8 @@ async function main() {
   }
   assert.deepEqual(CANVAS_RATIO_OPTIONS.map(r => r.id), ["auto", "1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9"]);
   assert.deepEqual(CANVAS_RESOLUTIONS, ["1K", "2K", "4K"]);
-  assert.deepEqual(CANVAS_QUALITIES, ["low", "medium", "high"]);
-  for (const ratio of CANVAS_RATIO_OPTIONS) for (const resolution of CANVAS_RESOLUTIONS) for (const q of ["low", "medium", "high"]) for (const count of [1, 2, 3, 4]) {
+  assert.deepEqual(CANVAS_QUALITIES, ["low", "medium", "high", "xhigh", "max"]);
+  for (const ratio of CANVAS_RATIO_OPTIONS) for (const resolution of CANVAS_RESOLUTIONS) for (const q of ["low", "medium", "high", "xhigh", "max"] as const) for (const count of [1, 2, 3, 4]) {
     assert.equal(validateCanvasParameters({ ratio: ratio.id, resolution, quality: q, count }), null);
   }
   for (const ratio of ["21:9", "4:5", "5:4", "900:900", "1920:1080", "bad"]) {
@@ -29,8 +29,8 @@ async function main() {
   assert.equal(normalizeCanvasResolution("5K"), "4K");
   assert.equal(normalizeCanvasCount(8), 4);
   assert.equal(normalizeCanvasCount(NaN), 1);
-  assert.equal(normalizeCanvasQuality("max"), "high");
-  assert.equal(normalizeCanvasQuality("xhigh"), "high");
+  assert.equal(normalizeCanvasQuality("max"), "max");
+  assert.equal(normalizeCanvasQuality("xhigh"), "xhigh");
   const legacy = Object.freeze({ ratio: "900:1200", resolution: "5K", count: 8, quality: "max", width: 900, height: 1200 });
   const submission = { ratio: normalizeCanvasRatio(legacy.ratio), resolution: normalizeCanvasResolution(legacy.resolution), count: normalizeCanvasCount(legacy.count), quality: normalizeCanvasQuality(legacy.quality) };
   assert.equal(validateCanvasParameters(submission), null);
@@ -40,7 +40,7 @@ async function main() {
   assert.deepEqual(options.ratios, ["auto", "1:1", "16:9"]); assert.deepEqual(options.resolutions, ["1K", "2K"]);
   assert.equal(canvasCombinationSupported(options, "auto", "1K"), true);
   assert.equal(canvasCombinationSupported(options, "16:9", "1K"), false);
-  const invalid = [{ resolution: "5K" }, { ratio: "21:9" }, { ratio: "900:900" }, { targetWidth: "900", targetHeight: "900" }, { targetWidth: "0" }, { count: 5 }, { count: 8 }, { count: "1.2" }, { quality: "max" }];
+  const invalid = [{ resolution: "5K" }, { ratio: "21:9" }, { ratio: "900:900" }, { targetWidth: "900", targetHeight: "900" }, { targetWidth: "0" }, { count: 5 }, { count: 8 }, { count: "1.2" }, { quality: "invalid" }];
   const routes = ["/api/generate-image", "/api/canvas/expand", "/api/canvas/text-edit", "/api/canvas/annotate", "/api/canvas/image-tasks"];
   for (const route of routes) {
     assert.match(read(`src/app${route}/route.ts`), /const invalid = await canvasParameterError\(request\); if \(invalid\) return invalid; return withBilling/);
@@ -70,6 +70,6 @@ async function main() {
   assert.match(client, /body.quality = normalizeCanvasQuality/); assert.match(client, /ratio: selected.ratio \|\| genRatio/); // routes through runGen/central boundary
   assert.match(client, /const requestedRatio = normalizeCanvasRatio/g);
   assert.match(read("src/lib/model-config/requests.ts"), /canvasRequest && presetParams/);
-  console.log("MODIFIED=PASS ENUM_COMBINATIONS=288 RAW_JSON_MULTIPART_REJECTIONS=90 ACTUAL_ROUTES=5 LEGACY_REDO_BATCH=NORMALIZED QUALITY_QUOTE_EXECUTION=CONSISTENT FROZEN_HISTORY=UNCHANGED PROVIDER_CALLS=0");
+  console.log("MODIFIED=PASS ENUM_COMBINATIONS=480 RAW_JSON_MULTIPART_REJECTIONS=90 ACTUAL_ROUTES=5 LEGACY_REDO_BATCH=NORMALIZED QUALITY_QUOTE_EXECUTION=CONSISTENT FROZEN_HISTORY=UNCHANGED PROVIDER_CALLS=0");
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

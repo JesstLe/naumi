@@ -9,6 +9,7 @@ import { selectedImagePreset, effectiveImageParameters } from "./image-preset";
 import { procurementCost, apiCostCredits } from "../billing/api-cost";
 import { rounded } from "../billing/money";
 import {mvpCreditRule,applyCreditOverride} from "./credit-overrides";
+import {policyQuality} from "./quality-policy";
 
 export function freezeImagePresetQuote(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts, create: (s:ConfigSnapshot,f:BillingFacts)=>BillingQuote): BillingQuote | null {
   const preset = facts.byok ? undefined : selectedImagePreset(models.config,facts.feature,facts.modelId);
@@ -76,6 +77,11 @@ export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnap
   if (models.config.business?.[facts.feature]) q.legacyCompatible = false;
   const scope = currentModelExecution(), model = models.config.publicModels.find(m => m.id === facts.modelId);
   const upstream = models.config.upstreamModels.find(u => u.id === (scope?.frozen.target.type === "upstream" && scope.frozen.publicModelId === facts.modelId ? scope.frozen.target.id : model?.target.id));
+  if (upstream?.parameterMap.qualityPolicy) {
+    const wire = policyQuality(upstream.parameterMap.qualityPolicy, facts.quality);
+    q.requestedParameters = {quality:facts.quality,resolution:facts.resolution,ratio:facts.ratio||"1:1"};
+    q.effectiveParameters = {...q.requestedParameters,quality:wire||"auto"};
+  }
   // A route can pay several suppliers. Never label the initial-model cost as
   // this operation's total; execution stages remain the authoritative estimate.
   if (!q.procurement && !selectedBusinessOption(models.config,facts.feature,facts.modelId)?.routing?.enabled && upstream?.procurement) q.procurement = structuredClone(upstream.procurement);

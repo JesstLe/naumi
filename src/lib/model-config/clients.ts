@@ -8,6 +8,7 @@ import type { ValidationOptions } from "./schema";
 import { ModelConfigError } from "./types";
 import { appendImageGatewayFields } from "../image-gateway";
 import { supplierCostFetch } from "../supplier-cost/collect";
+import {policyQuality} from "./quality-policy";
 const managedClients = new WeakSet<OpenAI>();
 export const isManagedModelClient = (client: OpenAI) => managedClients.has(client);
 
@@ -33,7 +34,10 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
       body.model = connection.wireModel;
       if ((scope.businessOption?.pricing?.mode === "usage" || scope.procurement?.basis === "tokens") && body.stream && connection.protocol === "openai-chat") body.stream_options = { ...body.stream_options, include_usage: true };
       if (connection.protocol !== "router-images") {
-        if (typeof body.quality === "string" && parameterMap.quality?.[body.quality as keyof typeof parameterMap.quality]) body.quality = parameterMap.quality[body.quality as keyof typeof parameterMap.quality];
+        if (parameterMap.qualityPolicy) {
+          const wire = policyQuality(parameterMap.qualityPolicy, frozen.facts?.quality || body.quality);
+          if (wire === undefined) delete body.quality; else body.quality = wire;
+        } else if (typeof body.quality === "string" && parameterMap.quality?.[body.quality as keyof typeof parameterMap.quality]) body.quality = parameterMap.quality[body.quality as keyof typeof parameterMap.quality];
         const resolution = frozen.facts?.resolution as keyof NonNullable<typeof parameterMap.resolution>;
         if (resolution && parameterMap.resolution?.[resolution]) body.size = parameterMap.resolution[resolution];
       }
@@ -41,6 +45,7 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
     };
     if (request.headers.get("content-type")?.includes("multipart/form-data")) {
       const form = await request.formData(); const fields = map(Object.fromEntries(Array.from(form.entries()).filter(([, value]) => typeof value === "string")));
+      if (parameterMap.qualityPolicy?.mode === "omit") form.delete("quality");
       for (const [key, value] of Object.entries(fields)) if (typeof value === "string") form.set(key, value);
       const headers = new Headers(request.headers); headers.delete("content-type"); headers.delete("content-length");
       return transport(request.url, { method: request.method, headers, body: form, signal: request.signal });
@@ -83,7 +88,7 @@ function flowImageFetch(scope: ModelExecutionScope, options: ValidationOptions):
     if (!scope.capabilities[editing ? "edit" : "generate"] || editing && !images.length || images.length > scope.capabilities.maxReferenceImages) throw new ModelConfigError("MODEL_INCOMPATIBLE", "当前 Flow 模型不满足图片编辑或参考图要求", 400);
     if (typeof body.prompt !== "string" || !body.prompt.trim()) throw new ModelConfigError("INVALID_REQUEST", "图片提示词不能为空", 400);
     const { generateNewApiImage } = await import("../new-api-image");
-    const image = await generateNewApiImage({ model: scope.connection.wireModel, prompt: body.prompt, images, settings: scope.connection, execution: scope, signal: request.signal, trustedOrigins: options.trustedOrigins });
+    const image = await generateNewApiImage({ model: scope.connection.wireModel, prompt: body.prompt, quality: typeof body.quality === "string" ? body.quality : undefined, images, settings: scope.connection, execution: scope, signal: request.signal, trustedOrigins: options.trustedOrigins });
     return Response.json({ created: Math.floor(Date.now() / 1000), data: [{ b64_json: image.buffer.toString("base64") }] });
   };
   return async (input, init) => {

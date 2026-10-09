@@ -105,7 +105,7 @@ export function GenerateClient({
   // 出图质量:通道接入质量参数(NAUMI_IMAGE_QUALITY_SUPPORTED=1)前,
   // 非标准档置灰、统一按标准档执行与计费;选择仍随请求上行,由服务端
   // 在提交前回退并写任务审计(请求档/执行档/回退原因)。
-  const { quality, setQuality, capable: qualityCapable, experimental: qualityExperimental, imageCost, modelConfig, allowedQualities } = useImageQuality(undefined, model);
+  const { quality, setQuality, qualityLabels, capable: qualityCapable, experimental: qualityExperimental, imageCost, modelConfig, allowedQualities } = useImageQuality(undefined, model);
   const [style, setStyle] = useState(GENERATION_STYLES[0]);
   const [count, setCount] = useState(1);
   const [files, setFiles] = useState<File[]>([]);
@@ -864,11 +864,11 @@ export function GenerateClient({
                   value={quality}
                   onChange={setQuality}
                   options={[
-                    { value: "low", label: t("gen.qLow"), disabled: !allowedQualities.includes("low") },
-                    { value: "medium", label: t("gen.qMedium"), disabled: !allowedQualities.includes("medium") },
-                    { value: "high", label: t("gen.qHigh"), disabled: !allowedQualities.includes("high") },
-                    { value: "xhigh", label: t("gen.qXhigh"), disabled: !allowedQualities.includes("xhigh") },
-                    { value: "max", label: t("gen.qMax"), disabled: !allowedQualities.includes("max") },
+                    { value: "low", label: qualityLabels.low || t("gen.qLow"), disabled: !allowedQualities.includes("low") },
+                    { value: "medium", label: qualityLabels.medium || t("gen.qMedium"), disabled: !allowedQualities.includes("medium") },
+                    { value: "high", label: qualityLabels.high || t("gen.qHigh"), disabled: !allowedQualities.includes("high") },
+                    { value: "xhigh", label: qualityLabels.xhigh || t("gen.qXhigh"), disabled: !allowedQualities.includes("xhigh") },
+                    { value: "max", label: qualityLabels.max || t("gen.qMax"), disabled: !allowedQualities.includes("max") },
                   ]}
                 />
                 {!qualityCapable && (

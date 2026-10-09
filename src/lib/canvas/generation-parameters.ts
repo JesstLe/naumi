@@ -10,7 +10,7 @@ export const CANVAS_RATIO_OPTIONS = [
   { id: "16:9", w: 16, h: 9 },
 ] as const;
 export const CANVAS_RESOLUTIONS = ["1K", "2K", "4K"] as const;
-export const CANVAS_QUALITIES = ["low", "medium", "high"] as const;
+export const CANVAS_QUALITIES = ["low", "medium", "high", "xhigh", "max"] as const;
 export const CANVAS_MAX_COUNT = 4;
 
 export function normalizeCanvasRatio(value: unknown): string {
@@ -24,7 +24,7 @@ export function normalizeCanvasCount(value: unknown): number {
   return Number.isFinite(n) ? Math.min(CANVAS_MAX_COUNT, Math.max(1, Math.round(n))) : 1;
 }
 export function normalizeCanvasQuality(value: unknown): typeof CANVAS_QUALITIES[number] {
-  return value === "low" ? "low" : ["high", "xhigh", "max"].includes(String(value)) ? "high" : "medium";
+  return (CANVAS_QUALITIES as readonly unknown[]).includes(value) ? value as typeof CANVAS_QUALITIES[number] : "medium";
 }
 export type CanvasModelParameters = { ratios?: string[]; resolutions?: string[]; combinations?: string[] };
 export function canvasModelParameters(declared?: CanvasModelParameters) {
@@ -44,7 +44,7 @@ export function validateCanvasParameters(body: Record<string, unknown>, headerQu
   if (body.resolution !== undefined && !(CANVAS_RESOLUTIONS as readonly unknown[]).includes(body.resolution)) return "画布仅支持 1K、2K、4K";
   if (body.count !== undefined && (!Number.isInteger(Number(body.count)) || Number(body.count) < 1 || Number(body.count) > CANVAS_MAX_COUNT)) return "画布单次生成张数为 1–4 张";
   const quality = body.quality ?? headerQuality;
-  if (quality != null && !(CANVAS_QUALITIES as readonly unknown[]).includes(quality)) return "画布仅支持低、中、高质量";
+  if (quality != null && !(CANVAS_QUALITIES as readonly unknown[]).includes(quality)) return "画布质量档位无效，请刷新模型参数";
   return null;
 }
 

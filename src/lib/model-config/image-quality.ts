@@ -1,7 +1,15 @@
 import "server-only";
 import { resolveImageQuality } from "../image-quality";
 import { currentModelExecution } from "./context";
+import {policyQuality} from "./quality-policy";
+import {IMAGE_QUALITY_IDS,type ResolvedImageQuality,type ExecutedQuality} from "../image-quality";
 export function resolveConfiguredImageQuality(requested: unknown) {
+  const scope = currentModelExecution("image"), policy = scope?.parameterMap.qualityPolicy;
+  if (policy) {
+    const req = scope?.frozen.facts?.quality || (typeof requested === "string" && requested ? requested : "medium");
+    const wire = policyQuality(policy, req);
+    return {requested:req,executed:wire===undefined?"auto":(IMAGE_QUALITY_IDS as readonly string[]).includes(wire)||wire==="auto"?wire as ExecutedQuality:req as ExecutedQuality,upstreamValue:wire??null,fallbackReason:wire===undefined?"configured-omit":wire!==req?"configured-mapping":null} satisfies ResolvedImageQuality;
+  }
   const preset = currentModelExecution("image")?.imagePreset;
   if (preset) { const value = typeof requested === "string" ? requested.trim().toLowerCase() : "medium"; return {requested:value,executed:(value === "low" ? "low" : "medium") as "low" | "medium",fallbackReason:value === "low" || value === "medium" ? null : "preset-quality-cap" as const}; }
   return resolveImageQuality(requested, currentModelExecution("image")?.capabilities.qualities);
