@@ -342,21 +342,22 @@ export function AnnotateEditorModal({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="canvas-ui-mask fixed inset-0 z-[60] flex items-center justify-center p-4 backdrop-blur-sm"
       onClick={() => !submitting && onClose()}
     >
       <div
-        className="flex h-full max-h-[880px] w-full max-w-[1180px] overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+        role="dialog" aria-modal="true" aria-label="标注编辑"
+        className="canvas-ui-surface canvas-ui-surface-solid flex h-full max-h-[880px] w-full max-w-[1180px] flex-col overflow-hidden rounded-2xl border md:flex-row"
         onClick={(event) => event.stopPropagation()}
       >
         {/* 左:原图 + 标注层 */}
-        <div className="relative flex min-w-0 flex-1 items-center justify-center bg-neutral-950 p-4">
+        <div className="canvas-ui-section relative flex h-[35%] min-h-0 min-w-0 flex-none items-center justify-center p-3 md:h-auto md:flex-1 md:p-4">
           {loadError ? (
-            <div className="max-w-xs text-center text-sm leading-relaxed text-red-300">
+            <div className="max-w-xs text-center text-sm leading-relaxed text-red-500">
               {loadError}
             </div>
           ) : !imgUrl ? (
-            <div className="flex items-center gap-2 text-sm text-neutral-400">
+            <div className="flex items-center gap-2 text-sm text-[var(--canvas-ui-muted)]">
               <Loader2 className="h-4 w-4 animate-spin" /> 正在加载原图…
             </div>
           ) : (
@@ -366,7 +367,7 @@ export function AnnotateEditorModal({
                 src={imgUrl}
                 alt={artwork.title}
                 draggable={false}
-                className="block max-h-[calc(100vh-9rem)] max-w-full select-none object-contain"
+                className="block max-h-[calc(35dvh-3rem)] md:max-h-[calc(100dvh-4rem)] max-w-full select-none object-contain"
               />
               <canvas
                 ref={canvasRef}
@@ -384,13 +385,13 @@ export function AnnotateEditorModal({
         </div>
 
         {/* 右:工具 + 指令列表 */}
-        <aside className="flex w-[330px] flex-none flex-col border-l border-border">
-          <div className="flex items-start justify-between border-b border-border px-4 py-3.5">
+        <aside className="canvas-ui-border flex min-h-0 w-full flex-1 flex-col border-t md:w-[330px] md:flex-none md:border-l md:border-t-0">
+          <div className="flex items-start justify-between border-b border-[var(--canvas-ui-border)] px-4 py-3.5">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-[15px] font-bold text-foreground">
+              <div className="flex items-center gap-2 text-[15px] font-bold text-[var(--canvas-ui-text)]">
                 <ArrowUpRight className="h-4 w-4 text-red-500" /> 标注编辑
               </div>
-              <p className="mt-1 truncate text-[12px] text-muted-foreground">
+              <p className="mt-1 truncate text-[12px] text-[var(--canvas-ui-muted)]">
                 {artwork.title || "图片节点"}
               </p>
             </div>
@@ -399,13 +400,13 @@ export function AnnotateEditorModal({
               aria-label="关闭标注编辑"
               disabled={submitting}
               onClick={onClose}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--canvas-ui-muted)] transition-colors hover:bg-[var(--canvas-ui-soft-hover)] hover:text-[var(--canvas-ui-text)] disabled:opacity-40"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="border-b border-border px-4 py-3">
+          <div className="border-b border-[var(--canvas-ui-border)] px-4 py-3">
             <div className="flex items-center gap-1.5">
               {([
                 { key: "arrow", icon: ArrowUpRight, label: "箭头" },
@@ -420,7 +421,7 @@ export function AnnotateEditorModal({
                   className={
                     tool === key
                       ? "flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500/15 px-2 py-2 text-[13px] font-semibold text-red-500"
-                      : "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                      : "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[13px] font-medium text-[var(--canvas-ui-muted)] transition-colors hover:bg-[var(--canvas-ui-soft-hover)] hover:text-[var(--canvas-ui-text)]"
                   }
                 >
                   <Icon className="h-4 w-4" /> {label}
@@ -428,7 +429,7 @@ export function AnnotateEditorModal({
               ))}
             </div>
             {tool === "brush" && (
-              <label className="mt-3 flex items-center gap-2.5 text-[12px] text-muted-foreground">
+              <label className="mt-3 flex items-center gap-2.5 text-[12px] text-[var(--canvas-ui-muted)]">
                 笔刷粗细
                 <input
                   type="range"
@@ -440,26 +441,26 @@ export function AnnotateEditorModal({
                   onChange={(event) => setBrushSlider(Number(event.target.value))}
                   className="h-1.5 flex-1 accent-red-500"
                 />
-                <span className="w-4 text-right font-semibold text-foreground">{brushSlider}</span>
+                <span className="w-4 text-right font-semibold text-[var(--canvas-ui-text)]">{brushSlider}</span>
               </label>
             )}
-            <p className="mt-2.5 text-[12px] leading-relaxed text-muted-foreground">
+            <p className="mt-2.5 text-[12px] leading-relaxed text-[var(--canvas-ui-muted)]">
               {TOOL_HINT[tool]}，随后在右侧填写这条标注要怎么改。
             </p>
           </div>
 
           <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
             {!items.length && (
-              <div className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-[12px] leading-relaxed text-muted-foreground">
+              <div className="rounded-xl border border-dashed border-[var(--canvas-ui-border)] px-3 py-6 text-center text-[12px] leading-relaxed text-[var(--canvas-ui-muted)]">
                 还没有标注。
                 <br />
                 画一条箭头开始：每条标注对应一条独立的修改指令。
               </div>
             )}
             {items.map((item, index) => (
-              <div key={item.id} className="rounded-xl border border-border bg-secondary/40 p-2.5">
+              <div key={item.id} className="rounded-xl border border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] p-2.5">
                 <div className="mb-1.5 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-[12px] font-semibold text-muted-foreground">
+                  <span className="flex items-center gap-1.5 text-[12px] font-semibold text-[var(--canvas-ui-muted)]">
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white">
                       {index + 1}
                     </span>
@@ -470,7 +471,7 @@ export function AnnotateEditorModal({
                     aria-label={`删除标注 ${index + 1}`}
                     disabled={submitting}
                     onClick={() => setItems((current) => current.filter((entry) => entry.id !== item.id))}
-                    className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-red-500 disabled:opacity-40"
+                    className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--canvas-ui-muted)] transition-colors hover:bg-[var(--canvas-ui-soft-hover)] hover:text-red-500 disabled:opacity-40"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -488,7 +489,7 @@ export function AnnotateEditorModal({
                       )
                     )
                   }
-                  className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-red-500/60 disabled:opacity-60"
+                  className="canvas-ui-input w-full resize-none rounded-lg border border-[var(--canvas-ui-border)] bg-background px-2.5 py-2 text-[13px] text-[var(--canvas-ui-text)] outline-none transition-colors placeholder:text-[var(--canvas-ui-muted)] focus:border-red-500/60 disabled:opacity-60"
                 />
               </div>
             ))}
@@ -499,7 +500,8 @@ export function AnnotateEditorModal({
             )}
           </div>
 
-          <div className="border-t border-border px-4 py-3">
+          <div className="flex-none border-t border-[var(--canvas-ui-border)] px-4 py-3">
+            <div className="mb-2"><ImageQualityControl compact resolution={artwork.resolution || "1K"} disabled={submitting} /></div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -508,16 +510,15 @@ export function AnnotateEditorModal({
                   setItems([]);
                   setError(null);
                 }}
-                className="rounded-lg bg-secondary px-3 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-secondary/80 disabled:opacity-40"
+                className="rounded-lg bg-[var(--canvas-ui-soft)] px-3 py-2 text-[13px] font-medium text-[var(--canvas-ui-text)] transition-colors hover:bg-[var(--canvas-ui-soft-hover)] disabled:opacity-40"
               >
                 清空
               </button>
-              <ImageQualityControl resolution={artwork.resolution || "1K"} disabled={submitting} />
               <button
                 type="button"
                 disabled={submitting || !items.length || !imgUrl}
                 onClick={() => void submit()}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-red-600 disabled:opacity-40"
+                className="canvas-ui-primary flex min-w-0 flex-1 flex-wrap items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-red-600 disabled:opacity-40"
               >
                 {submitting ? (
                   <>
