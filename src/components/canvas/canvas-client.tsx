@@ -6,12 +6,14 @@ import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 import { copyText } from "@/lib/clipboard";
 import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
+import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
 
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -1721,6 +1723,8 @@ export function CanvasClient() {
   } | null>(null);
   // 生成器面板停靠在选中节点正下方(不再可拖);panelRef 仍用于测量
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const nodeToolbarRef = useRef<HTMLDivElement | null>(null);
+  const [dockMetrics, setDockMetrics] = useState({ dockHeight: 0, toolbarHeight: 50, toolbarWidth: 0 });
   // 底部 dock 提示词框:随内容自适应长高。显式写入最小高度，避免 macOS
   // Chromium/Safari 在 flex + max-height 组合下把 textarea 压缩成约两行。
   const promptAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -3662,7 +3666,7 @@ export function CanvasClient() {
   }, [nodeScreen, canvasSize.width, canvasSize.height, dockWidth, overlaySafeArea]);
 
   // 底部生成器:节点正下方,中心对齐 anchorCenterX
-  const dockStyle = useMemo<
+  const preferredDockStyle = useMemo<
     { left: number; top: number; width: number; maxHeight?: number } | undefined
   >(() => {
     if (!nodeScreen || anchorCenterX == null) return undefined;
@@ -3708,7 +3712,9 @@ export function CanvasClient() {
       };
     }
     if (aboveSpace >= minimumComfort) {
-      const maxHeight = Math.max(120, aboveSpace);
+      // The top is computed from this height. Allowing the panel to grow beyond
+      // it puts a long prompt/footer inside the action bar above the node.
+      const maxHeight = Math.min(preferredHeight, aboveSpace);
       return {
         left,
         top: Math.max(safeTop, aboveBottom - Math.min(preferredHeight, maxHeight)),
@@ -3822,7 +3828,7 @@ export function CanvasClient() {
   // 顶部图像工具条:尽量锚定节点中心，但按自身宽度独立夹取。
   // Dock 在低高度宽屏会为左下视图工具条向右平移；若工具条复用 Dock 中心，
   // 1093×614 下 1077px 宽的操作条会被推到 x=103.5..1180.5 而越出视口。
-  const topbarStyle = useMemo<{ left: number; top: number } | undefined>(() => {
+  const preferredTopbarStyle = useMemo<{ left: number; top: number } | undefined>(() => {
     if (!nodeScreen) return undefined;
     const TBAR_H = 46;
     const cw = canvasSize.width;
@@ -3830,7 +3836,7 @@ export function CanvasClient() {
       1,
       cw - overlaySafeArea.left - overlaySafeArea.right
     );
-    const renderedWidth = Math.min(1088, availableWidth);
+    const renderedWidth = Math.min(dockMetrics.toolbarWidth || 1088, availableWidth);
     const half = renderedWidth / 2;
     const left = cw
       ? Math.max(
@@ -3843,7 +3849,44 @@ export function CanvasClient() {
       : nodeScreen.cx;
     const top = Math.max(overlaySafeArea.top, nodeScreen.top - TBAR_H - 12);
     return { left, top };
-  }, [nodeScreen, canvasSize.width, overlaySafeArea]);
+  }, [nodeScreen, canvasSize.width, overlaySafeArea, dockMetrics.toolbarWidth]);
+
+  // Measure border boxes, not animated transforms. Prompt growth, wrapped chips,
+  // scrollbars, zoom and selection changes all share the same collision resolver.
+  const docksReady = !!preferredDockStyle && !!preferredTopbarStyle;
+  useLayoutEffect(() => {
+    if (!docksReady) return;
+    const dock = selectedTextId ? textComposerDockRef.current : panelRef.current;
+    const toolbar = nodeToolbarRef.current;
+    if (!dock || !toolbar) return;
+    const measure = () => setDockMetrics((previous) => {
+      const next = { dockHeight: dock.offsetHeight, toolbarHeight: toolbar.offsetHeight, toolbarWidth: toolbar.offsetWidth };
+      return previous.dockHeight === next.dockHeight && previous.toolbarHeight === next.toolbarHeight && previous.toolbarWidth === next.toolbarWidth ? previous : next;
+    });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    observer.observe(toolbar);
+    return () => observer.disconnect();
+  }, [docksReady, canvasSize.width, canvasSize.height, selectedId, selectedPendId, selectedTextId, selectedBatchArts.length, selectedTextBatchNodes.length, readOnly, browsing, textComposerExpanded]);
+
+  const { dock: dockStyle, toolbar: topbarStyle } = useMemo(() => {
+    if (!preferredDockStyle || !preferredTopbarStyle || !canvasSize.height || readOnly) {
+      return { dock: preferredDockStyle, toolbar: preferredTopbarStyle };
+    }
+    return separateCanvasDocks({
+      dock: textComposerExpanded && selectedTextId
+        ? { ...preferredDockStyle, top: overlaySafeArea.top, maxHeight: canvasSize.height - overlaySafeArea.bottom - overlaySafeArea.top }
+        : preferredDockStyle,
+      toolbar: preferredTopbarStyle,
+      dockHeight: textComposerExpanded && selectedTextId
+        ? canvasSize.height - overlaySafeArea.bottom - overlaySafeArea.top
+        : dockMetrics.dockHeight || (selectedTextId ? 360 : 310),
+      toolbarHeight: dockMetrics.toolbarHeight,
+      safeTop: overlaySafeArea.top,
+      safeBottom: canvasSize.height - overlaySafeArea.bottom,
+    });
+  }, [preferredDockStyle, preferredTopbarStyle, canvasSize.height, readOnly, dockMetrics, selectedTextId, textComposerExpanded, overlaySafeArea]);
 
   // 重命名节点:本地改标题 + 落库(节点标签 = 作品 title)
   async function saveNodeRename() {
@@ -10315,9 +10358,10 @@ export function CanvasClient() {
             <div
               key={selectedId ?? selectedPendId ?? "tb"}
               data-testid="image-node-toolbar"
+              ref={nodeToolbarRef}
               style={{ left: topbarStyle.left, top: topbarStyle.top }}
               className={cn(
-                "canvas-ui-surface cz-anim-top absolute z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 rounded-[14px] border p-1.5 [&>*]:shrink-0 [&_button]:whitespace-nowrap",
+                "canvas-ui-surface canvas-dock-entry absolute z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 rounded-[14px] border p-1.5 [&>*]:shrink-0 [&_button]:whitespace-nowrap",
                 expandOpen || videoOpen ? "overflow-visible" : "overflow-x-auto"
               )}
             >
@@ -10665,9 +10709,10 @@ export function CanvasClient() {
             <div
               key={`text-toolbar-${selectedText.id}`}
               data-testid="text-node-toolbar"
+              ref={nodeToolbarRef}
               style={{ left: topbarStyle.left, top: topbarStyle.top }}
               className={cn(
-                "canvas-ui-surface cz-anim-top absolute z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 overflow-x-auto rounded-[14px] border p-1.5",
+                "canvas-ui-surface canvas-dock-entry absolute z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 overflow-x-auto rounded-[14px] border p-1.5",
                 !lightCanvas && "!border-[#40444f]"
               )}
             >
@@ -11126,7 +11171,7 @@ export function CanvasClient() {
               key={`dock-${selected.id}`}
               ref={panelRef}
               style={dockStyle ?? { left: 12, bottom: 12, maxHeight: "60%" }}
-              className="canvas-ui-surface cz-anim-bottom absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
+              className="canvas-ui-surface canvas-dock-entry absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
             >
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
               <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
@@ -11378,11 +11423,12 @@ export function CanvasClient() {
           {selectedPend && !readOnly && (
             <div
               data-testid="pending-node-dock"
+              ref={panelRef}
               key={`pdock-${selectedPend.id}`}
               style={dockStyle ?? { left: 12, bottom: 12 }}
-              className="canvas-ui-surface cz-anim-bottom absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
+              className="canvas-ui-surface canvas-dock-entry absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
             >
-              <div className="px-4 pb-1.5 pt-3.5">
+              <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   {pendInputArts.length > 0 ? (
                     pendInputArts.map((a) => (
@@ -11501,18 +11547,20 @@ export function CanvasClient() {
                   ? {
                       left: overlaySafeArea.left,
                       right: overlaySafeArea.right,
-                      top: overlaySafeArea.top,
+                      top: dockStyle?.top ?? overlaySafeArea.top,
                       bottom: overlaySafeArea.bottom,
                       width: "auto",
+                      maxHeight: dockStyle?.maxHeight,
+                      minHeight: Math.min(218, dockStyle?.maxHeight ?? 218),
                     }
-                  : dockStyle ?? {
+                  : dockStyle ? { ...dockStyle, minHeight: Math.min(218, dockStyle.maxHeight ?? 218) } : {
                       left: 12,
                       bottom: 12,
                       width: canvasSize.width ? Math.max(1, Math.min(820, canvasSize.width - 24)) : 820,
                     }
               }
               className={cn(
-                "cz-anim-bottom absolute z-20 flex min-h-[218px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border shadow-2xl",
+                "canvas-dock-entry absolute z-20 flex min-h-[218px] max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border shadow-2xl",
                 textComposerExpanded ? "resize-none" : "resize-y",
                 lightCanvas
                   ? "border-[#dfe4ea] bg-white text-[#252933] shadow-[0_18px_45px_rgba(7,12,24,0.18)]"
