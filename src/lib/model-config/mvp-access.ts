@@ -24,7 +24,7 @@ const input = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("credential"), providerId: identifier, ciphertext: z.string().min(1).max(32768).optional(), keyPlain: z.string().min(1).max(16384).optional() }),
   z.strictObject({ action: z.literal("switch"), ...common, rowId: identifier, upstreamId: identifier }),
   z.strictObject({ action: z.literal("connect"), ...common, name: z.string().trim().min(1).max(100), baseUrl: z.string().max(1024), protocol: z.enum(MVP_PROTOCOLS), credentialRef: z.uuid() }),
-  z.strictObject({ action: z.literal("register"), ...common, providerId: identifier, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), confirmed: z.literal(true), edit: z.boolean(), vision: z.boolean(), qualities: z.array(z.enum(["low", "medium", "high", "xhigh", "max", "auto"])).max(6), resolutions: z.array(z.enum(["1K", "2K", "4K"])).max(3), maxReferenceImages: z.number().int().min(0).max(32) }),
+  z.strictObject({ action: z.literal("register"), ...common, providerId: identifier, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), confirmed: z.literal(true), edit: z.boolean(), vision: z.boolean(), qualityRank: z.number().int().min(1).max(5).default(2), qualities: z.array(z.enum(["low", "medium", "high", "xhigh", "max", "auto"])).max(6), resolutions: z.array(z.enum(["1K", "2K", "4K"])).max(3), maxReferenceImages: z.number().int().min(0).max(32) }),
 ]);
 type Administration = Awaited<ReturnType<typeof getModelAdministration>>;
 function rows(snapshot: ModelSnapshot) {
@@ -81,7 +81,7 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
           if (p.protocol === "new-api-flow" && !isNewApiFlowImageModel(body.model)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该模型 ID 尚未由当前图片适配器支持，请在完整配置中心核验协议");
           if (body.resolutions.some(r => r !== "1K") && p.protocol === "openai-images") throw new ModelConfigError("MODEL_INCOMPATIBLE", "OpenAI 图片 2K/4K 需要专用尺寸参数映射，请在完整配置中心配置");
           const modality = p.protocol === "openai-chat" ? "text" : p.protocol === "openai-videos" ? "video" : "image";
-          config.upstreamModels.push({ id: `mvp-${body.id}`, providerId: p.id, model: body.model, label: body.model.slice(0, 100), modality, enabled: true, parameterMap: {}, capabilities: { verified: true, generate: true, edit: modality === "image" && body.edit, vision: modality === "text" && body.vision, transparent: false, preserveIdentity: false, textAccuracy: false, qualityRank: 1, qualities: modality === "image" ? body.qualities : [], nativeResolutions: modality === "image" ? body.resolutions : [], maxReferenceImages: body.maxReferenceImages, expectedLatencyMs: 30000 } });
+          config.upstreamModels.push({ id: `mvp-${body.id}`, providerId: p.id, model: body.model, label: body.model.slice(0, 100), modality, enabled: true, parameterMap: {}, capabilities: { verified: true, generate: true, edit: modality === "image" && body.edit, vision: modality === "text" && body.vision, transparent: false, preserveIdentity: false, textAccuracy: false, qualityRank: body.qualityRank, qualities: modality === "image" ? body.qualities : [], nativeResolutions: modality === "image" ? body.resolutions : [], maxReferenceImages: body.maxReferenceImages, expectedLatencyMs: 30000 } });
         }
         config = validateModelConfig(config, { trustedOrigins: admin.trustedOrigins });
         compileRouterProjection({ version: snapshot.version + 1, digest: "", config }, await admin.billing.current(), { trustedOrigins: admin.trustedOrigins });
