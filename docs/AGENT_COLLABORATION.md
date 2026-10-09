@@ -2,6 +2,8 @@
 
 ## 当前固定版本（2026-10-09）
 
+- 最新新机运行源码 `17bfa9c2c40f341b0bbee96f57861476389dc245`，Image ID `sha256:8726cdee58bf0ccffb49037285a2b4fcb8d5c3cd55236ce2a254b63b7e26c8ec`，版本 `1791551890` / `v2026.10.09-211810`。画布生图Dock/请求/报价统一canvas.image，四项范围切换与旧缓存/焦点/手机已验收；原v33完整配置恢复为v42、草稿和计费v8保留。证据 `/opt/naumi-staging/evidence/canvas-model-scope-20261009-r2`，回滚跳过中间138912f至稳定23abb395；见 `docs/changes/2026-10-09-canvas-model-scope.md`。用户随后要求取消用户自带接口，该后续任务尚待发布。以下为历史版本。
+
 - 最新新机运行源码 `23abb39547c580d76608c046189187d0474982d6`，镜像同SHA，Image ID `sha256:23263cdf511480ca7f6ac3fe25f7d79ff79dba582c0003788b2c305a86262de2`，版本 `1791549148` / `v2026.10.09-203228`。供应商模型元数据/成本库增量三表与真实页面验收通过，861条记录中23条来自现有配置，未知资料不冒充实测；模型v33/草稿和计费v8保留。证据 `/opt/naumi-staging/evidence/supplier-model-metadata-20261009`，可执行回滚至支持matrix的44c9eb8，保留新增资料表与记录。见 `docs/changes/2026-10-09-supplier-model-metadata.md`。以下版本为前序发布记录，文档提交不另发镜像。
 
 - 最新新机运行源码 `44c9eb877c004754cbf06d59ecb70c1ff471dfc4`，镜像同SHA，Image ID `sha256:3fe8c709593e81fc398d43bf0537ec5e573ece32ab3e5f1f9b158769f0e4a761`，版本 `1791546283` / `v2026.10.09-194443`。MVP质量×分辨率积分表与前端报价已验收；模型v25/草稿保留、原价格恢复为计费v8。证据 `/opt/naumi-staging/evidence/mvp-credit-pricing-20261009-r4`；matrix/MVP规则回滚兼容门槛见 `docs/changes/2026-10-09-mvp-credit-pricing.md`。以下75affea为前序发布记录。
