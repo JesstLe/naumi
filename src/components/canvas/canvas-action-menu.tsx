@@ -81,7 +81,7 @@ export function CanvasActionMenu({ label, light, items, disabled = false,
         }
       }}
       className={triggerClassName ?? "canvas-ui-action flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[13px] font-semibold transition-colors disabled:opacity-40"}>
-      <TriggerIcon className={cn(triggerTestId === "canvas-add-node-button" ? "h-[22px] w-[22px]" : "h-4 w-4", "shrink-0")} aria-hidden="true" />{!iconOnly && label}
+      <TriggerIcon className={cn(iconOnly ? "h-[18px] w-[18px]" : "h-4 w-4", "shrink-0")} aria-hidden="true" />{!iconOnly && label}
     </button>
     {open && createPortal(
       <div data-canvas-hotkeys-blocked="true" className={cn("fixed inset-0 z-[200]", light ? "canvas-ui-light" : "canvas-ui-dark")}

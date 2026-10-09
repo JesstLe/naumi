@@ -18,7 +18,7 @@ if (baseline) {
   const barAst = ts.createSourceFile('toolbar.tsx', `<div ${toolbar}`, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const consolidated = toolbar.includes('<CanvasActionMenu');
   const expected = consolidated
-    ? ['a.icon', 'Scissors', 'ScanSearch', 'Maximize2', 'Type', 'Maximize2', 'PenLine', 'Download', 'Maximize', 'Upload']
+    ? ['Pencil', 'MessageSquareText', 'a.icon', 'Scissors', 'ScanSearch', 'Maximize2', 'Type', 'Maximize2', 'PenLine', 'Download', 'Maximize', 'Upload']
     : ['a.icon', 'Scissors', 'ScanSearch', 'Maximize2', 'Type', 'Maximize2', 'PenLine', 'Workflow', 'Video', 'MessageSquareText', 'Pencil', 'Upload', 'Download', 'Maximize'];
   const icons = [];
   function collect(node) {

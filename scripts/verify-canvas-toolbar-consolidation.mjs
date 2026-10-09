@@ -11,6 +11,16 @@ const block = (start, end) => source.slice(source.indexOf(start), source.indexOf
 const main = block('data-testid="canvas-main-toolbar"', '{selectedBatchArts.length');
 const image = block('data-testid="image-node-toolbar"', '{/* 文字节点工具条');
 const text = block('data-testid="text-node-toolbar"', '{/* 画布助手面板');
+if (process.argv.includes('--followup-baseline')) {
+  assert.equal((main.match(/data-tool="/g) || []).length, 3);
+  assert.equal((main.match(/<CanvasActionMenu /g) || []).length, 2);
+  assert.ok(main.includes('h-10 w-10') && main.includes('sm:h-12 sm:w-12'));
+  for (const id of ['assistant', 'rename']) assert.ok(image.includes(`id: "${id}"`));
+  assert.ok(image.includes('["relight", "angle", "caption"]'));
+  assert.ok(read('src/components/ui/image-quality-select.tsx').includes('px-2 py-1.5 text-[12px]'));
+  console.log('FOLLOWUP_BASELINE=PASS DOCK=5 HIGH_FREQUENCY=HIDDEN ADD_MOVE_SIZE=MISMATCH QUALITY_CONTROLS=MISMATCH');
+  process.exit(0);
+}
 if (process.argv.includes('--baseline')) {
   for (const tool of ['text', 'image-node', 'upload', 'history', 'generate', 'link']) assert.ok(main.includes(`data-tool="${tool}"`));
   assert.ok(main.includes('setShowMinimap') && main.includes('setSnapGrid'));
@@ -20,18 +30,35 @@ if (process.argv.includes('--baseline')) {
   process.exit(0);
 }
 
-assert.equal((main.match(/data-tool="/g) || []).length, 3);
+assert.equal((main.match(/data-tool="/g) || []).length, 9);
 assert.equal((main.match(/<CanvasActionMenu /g) || []).length, 2);
 for (const id of ['text', 'image-node', 'upload', 'history']) assert.equal((main.match(new RegExp(`id: "${id}"`, 'g')) || []).length, 1);
+for (const id of ['text', 'image-node', 'upload', 'history', 'undo', 'redo']) assert.equal((main.match(new RegExp(`data-tool="${id}"`, 'g')) || []).length, 1);
+assert.ok(main.includes('void doUndo()') && main.includes('void doRedo()'));
+assert.ok(main.includes('historySaving || undoStack.length === 0') && main.includes('historySaving || redoStack.length === 0'));
 for (const token of ['data-tool="generate"', 'data-tool="link"', 'setShowMinimap', 'setSnapGrid', 'tidyLayout()', 'fitView(']) assert.ok(!main.includes(token), token);
 for (const token of ['menuTestId="canvas-create-menu"', 'menuTestId="canvas-more-tools-menu"']) assert.ok(main.includes(token));
 assert.ok(!image.includes('extraInputRef.current?.click()'));
 assert.ok(!text.includes('setTextReferenceMenuOpen'));
 assert.equal((source.match(/aria-label=\{t\("canvas.toolbar.addReference"\)\}/g) || []).length, 1);
 assert.equal((source.match(/aria-label=\{t\("canvas.textAddReference"\)\}/g) || []).length, 1);
-for (const id of ['workflow', 'video', 'assistant', 'rename']) assert.ok(image.includes(`id: "${id}"`));
+for (const id of ['workflow', 'video']) assert.ok(image.includes(`id: "${id}"`));
+const imageMenu = image.slice(image.indexOf('<CanvasActionMenu'), image.indexOf('{/* 视频:'));
+for (const id of ['assistant', 'rename']) {
+  assert.ok(!imageMenu.includes(`id: "${id}"`));
+  assert.ok(image.includes(`data-action="${id}"`));
+  assert.ok(image.indexOf(`data-action="${id}"`) < image.indexOf('<CanvasActionMenu'));
+}
+assert.ok(!imageMenu.includes('"angle"') && !imageMenu.includes('"caption"'));
 for (const id of ['relight', 'angle', 'caption']) assert.ok(image.includes(`"${id}"`));
-assert.ok(image.includes('(a) => a.key === "bg"'));
+assert.ok(image.includes('(a) => ["bg", "angle", "caption"].includes(a.key)'));
+assert.match(main, /triggerClassName="flex h-7 w-7 .*sm:h-9 sm:w-9"/);
+assert.ok(!main.includes('h-10 w-10') && !main.includes('sm:h-12 sm:w-12'));
+const qualitySelect = read('src/components/ui/image-quality-select.tsx');
+assert.ok(qualitySelect.includes('h-8 max-w-40 rounded-[9px] px-2.5 py-0 text-[12.5px] font-semibold'));
+assert.ok(source.includes('canvas-ui-control flex h-8 max-w-[190px]'));
+assert.ok(source.includes('canvas-ui-control flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0'));
+assert.equal((source.match(/triggerClass="canvas-ui-control flex h-8 cursor-pointer/g) || []).length, 2);
 assert.ok(image.includes('onPick={(v) => onHd(v)}') && image.includes('onPick={(v) => onRatioGen(v)}'));
 assert.ok(image.includes('onCutout("fine")') && image.includes('openImageTextEditor(selected)') && image.includes('onExpand(expandRatio)'));
 assert.equal((image.match(/<CanvasActionPanel /g) || []).length, 2);
@@ -69,4 +96,4 @@ if (baselineIndex >= 0) {
   protectedCount = original.length;
 }
 console.log(`TOOLBAR_BUSINESS=PASS PROTECTED_DECLARATIONS=${protectedCount} PROMPTS_GENERATION_ROUTING_BILLING=UNCHANGED PROVIDER_CALLS=0`);
-console.log('TOOLBAR_MODIFIED=PASS PRIMARY_DOCK=5 CREATION_ENTRIES=4 IMAGE_PRIMARY=10 TEXT_PRIMARY=6 REFERENCE_ENTRIES=1_PER_TYPE VIEW_UTILITIES=SINGLE_ENTRY LOCALES=ZH_EN');
+console.log('TOOLBAR_MODIFIED=PASS PRIMARY_DOCK=11 CREATION_SHORTCUTS=4 IMAGE_PRIMARY=14 HIGH_FREQUENCY=RENAME_ASSISTANT_ANGLE_CAPTION_VISIBLE TEXT_PRIMARY=6 REFERENCE_ENTRIES=1_PER_TYPE VIEW_UTILITIES=SINGLE_ENTRY LOCALES=ZH_EN ADD_MOVE_SIZE=MATCHED COMPOSER_CONTROLS=32PX');
