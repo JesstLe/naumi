@@ -657,3 +657,21 @@ RETURN_DEPLOY_FIXTURE_EXIT=0
 发布窗口到位后才把同一镜像、源码及增量迁移回传旧机，不覆盖生产DB。
 每模块更新文档和证据，选择性提交推送，原私钥和其他工作区保持不动。
 ```
+
+## 19. 本机验收入口恢复（2026-10-09 13:50 CST）
+
+- 恢复后的第一轮推进审计：上一轮为 no progress（缺输入检查没有改变下一动作），本轮最初仍缺视频/OSS/窗口输入；随后发现本机13012没有监听、页面显示“无法访问此站点”，而新机health200。这是需要实际修复的新情况，不是等待中的模型任务。
+- 新增 `scripts/staging/manage-staging-tunnel.ps1`，固定目标新机和回环远端13012；Start/Verify/Stop只管理忽略目录receipt记录的本机SSH进程。PID、进程创建时间、命令目标/forward及监听所属进程必须一致；不杀其他SSH、不暴露公网端口。密钥在随机临时目录创建受保护副本，握手/health通过后立即删除；每次核对原hash与ACL不变，不持久保存key。
+- 实际运行入口（在当前独立worktree）：
+
+```powershell
+pwsh -NoProfile -File scripts/staging/manage-staging-tunnel.ps1 -Mode Start -ReceiptDirectory E:\Workspace\naumi\output\staging-data-20261008\tunnels
+pwsh -NoProfile -File scripts/staging/manage-staging-tunnel.ps1 -Mode Verify -ReceiptDirectory E:\Workspace\naumi\output\staging-data-20261008\tunnels
+```
+
+- baseline本机curl：`LOCAL_HEALTH=000` / exit7。Start后 `STAGING_TUNNEL=PASS LOCAL_ADDRESS=127.0.0.1 LOCAL_PORT=13012 HEALTH=200 PID=16872`、`TEMP_KEY=ABSENT ORIGINAL_HASH=UNCHANGED ORIGINAL_ACL=UNCHANGED` / exit0；跨调用Verify相同PID/health200 / exit0。公网/旧机/新机应用均未改。
+- 另建13013测试隧道后Stop：`STAGING_TUNNEL=STOPPED LOCAL_PORT=13013 SERVICES_CHANGED=0` / exit0；Get-NetTCPConnection确认13013没有监听，原13012仍health200。恢复副本curl返回 `FIXTURE_RESTORED_HEALTH=000` / exit28（超时而非预期连接拒绝7），按实际记录，不冒充7；端口无监听是恢复状态证据。这是第二隧道进程回滚，不是服务/生产回滚。
+- 初版Stop误将PowerShell自动解析的JSON DateTime与字符串比较而返回 `TUNNEL_PID_REUSED` / exit1，未终止任何进程；改为UTC ticks比较，再对同一receipt/进程Stop成功，不重建该测试隧道。首次批量验收命令未启动；改用独立调用并保留失败状态。
+- 浏览器重新绑定已有标签页被工具URL检查拒绝，本轮没有绕过或改用另一浏览器。HTTP health与作品页已在本机CLI核验；本人密码登录、页面下载/功能验收仍未完成。用户可打开 `http://127.0.0.1:13012/works` 自行刷新和登录。
+- receipt不含私钥，仅保存目标、forward、PID与创建时间；SSH退出后重新Start可恢复，不安装常驻服务/计划任务，也不声称重启后自动重连。Stop命令仅用于主动关闭本机入口；当前13012继续保留。
+- 全目标保持active，本轮有实际入口恢复进展；仍缺有效视频配置、本人页面验收、OSS专用配置和明确北京时间回传窗口。不以入口恢复替代全目标完成。
