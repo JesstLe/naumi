@@ -5,6 +5,8 @@ import { procurementSchema } from "./business-schema";
 import { FEATURE_BINDINGS } from "./business";
 import type { FeatureId } from "../billing/types";
 import type { ConfigSnapshot } from "../billing/types";
+import { featureDefaultModel } from "./tool-scope";
+import type { ModelBinding } from "./bindings";
 
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const micros = z.string().regex(/^(0|[1-9]\d{0,14})$/);
@@ -55,7 +57,7 @@ export function isDefaultImageFeature(feature?: string, binding?: string) {
 export function selectedImagePreset(config: ModelConfig, feature?: string, selected?: string, binding?: string): ImagePreset | undefined {
   const p = config.defaultImagePreset;
   if (!p?.enabled || !isDefaultImageFeature(feature, binding)) return undefined;
-  const chosen = selected || config.business?.[feature as FeatureId]?.defaultModelId || config.bindings[binding || FEATURE_BINDINGS[feature as FeatureId]!];
+  const chosen = selected || featureDefaultModel(config, feature, (binding || FEATURE_BINDINGS[feature as FeatureId]) as ModelBinding);
   return !chosen || p.defaultModelIds.includes(chosen) || p.aliases.some(a => a.id === chosen || a.label === chosen) ? p : undefined;
 }
 export function presetPublicId(p: ImagePreset, selected?: string) { return p.aliases.find(a => a.id === selected || a.label === selected)?.id || p.aliases[0].id; }
@@ -107,7 +109,8 @@ export function installImagePresetAliases(config: ModelConfig) {
   }
   validateImagePreset(config);
   for (const a of p.aliases) {
-    const model = { ...a, modality: "image" as const, enabled: true, visible: true, target: { type: "upstream" as const, id: p.upstreamId! } };
+    const existing = config.publicModels.find(m => m.id === a.id);
+    const model = { ...a, ...(existing?.toolScope ? {toolScope:existing.toolScope} : {}), modality: "image" as const, enabled: true, visible: true, target: { type: "upstream" as const, id: p.upstreamId! } };
     const i = config.publicModels.findIndex(m => m.id === a.id);
     if (i < 0) config.publicModels.push(model); else config.publicModels[i] = model;
   }

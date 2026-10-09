@@ -17,7 +17,9 @@ test ! -e "$RELEASE/runtime"
 expected=$(sha256sum "$SOURCE/package-lock.json" | cut -d' ' -f1)
 test "$expected" = "$(cat "$ROOT/evidence/npm-lock.sha256")"
 mkdir -p "$RELEASE"
+VERSION=$(date +%s)
 docker run --rm --name naumi-staging-next-build --network none \
+ -e BUILD_VERSION="$VERSION" -e SOURCE_COMMIT="$COMMIT" \
  -e NEXT_TELEMETRY_DISABLED=1 -e NODE_OPTIONS=--max-old-space-size=4096 \
  -v "$SOURCE:/app" -v naumi-staging-build-deps:/app/node_modules \
  -w /app node:24-bookworm-slim npm run build
@@ -27,7 +29,6 @@ cp -a "$SOURCE/.next/static" "$RELEASE/runtime/static"
 cp -a "$SOURCE/public" "$RELEASE/runtime/public"
 cp "$SOURCE/scripts/video-worker.mjs" "$SOURCE/scripts/rotate-settings-secret.mjs" "$RELEASE/runtime/scripts/"
 cp "$SOURCE/deploy/staging/Dockerfile.runtime" "$RELEASE/runtime/Dockerfile"
-VERSION=$(date +%s)
 docker build --pull=false --network none --build-arg BUILD_VERSION="$VERSION" \
  --build-arg SOURCE_COMMIT="$COMMIT" -t "ghcr.io/jesstle/naumi:$COMMIT" "$RELEASE/runtime"
 docker image inspect "ghcr.io/jesstle/naumi:$COMMIT" --format '{{.Id}}' > "$RELEASE/IMAGE_ID"
