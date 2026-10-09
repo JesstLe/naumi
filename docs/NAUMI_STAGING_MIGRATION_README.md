@@ -775,3 +775,7 @@ hash、nginx -t、reload并核验公网200/admin403/worker403与业务容器未�
 
 新机已发布并验收画布UI源码e2e607c，公网版本1791533867。新增助手/改字侧栏、工作流弹窗、主工具栏和批量操作沿用canvas-ui主题，标注窄屏纵向布局且质量控件独立一行；既有管理员策略、模型家族与Dock避让保留。实现与证据见 `docs/changes/2026-10-09-canvas-ui-alignment.md`，远程 `/opt/naumi-staging/evidence/canvas-ui-release-20261009`。用户确认多个agent共同更新新机；从现在采用 `docs/AGENT_COLLABORATION.md` 的独立分支/worktree、选择性提交、main整合和串行发布/基线校验规则。旧机不回传、local媒体、视频/OSS延期约定不变。
 
+## 25. 质量选择菜单样式（2026-10-09）
+
+任务分支 `codex/image-quality-dropdown-style`，只替换质量控件的原生菜单，使用与画布一致的主题令牌和portal。质量档位、能力限制、计价与模型配置不变，详细实现与验收状态见 `docs/changes/2026-10-09-image-quality-dropdown.md`。集中源码测试、类型检查与lint通过；新机固定版本构建、串行发布与浏览器验收进行中，不以本节文档提交代替发布证据。旧机不连接、不回传；local媒体、视频/OSS延期约定保留。
+
