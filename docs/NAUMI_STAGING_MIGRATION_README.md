@@ -777,5 +777,5 @@ hash、nginx -t、reload并核验公网200/admin403/worker403与业务容器未�
 
 ## 25. 质量选择菜单样式（2026-10-09）
 
-任务分支 `codex/image-quality-dropdown-style`，只替换质量控件的原生菜单，使用与画布一致的主题令牌和portal。质量档位、能力限制、计价与模型配置不变，详细实现与验收状态见 `docs/changes/2026-10-09-image-quality-dropdown.md`。集中源码测试、类型检查与lint通过；新机固定版本构建、串行发布与浏览器验收进行中，不以本节文档提交代替发布证据。旧机不连接、不回传；local媒体、视频/OSS延期约定保留。
+任务分支 `codex/image-quality-dropdown-style`，只替换质量控件的原生菜单，使用与画布一致的主题令牌和portal。质量档位、能力限制、计价与模型配置不变，详细实现与验收状态见 `docs/changes/2026-10-09-image-quality-dropdown.md`。集中源码测试、类型检查、lint、参数/Dock回归通过；新机固定源码f859393已构建、串行发布并完成实际浅/深色、窄屏、选择交互验收，公网版本1791541892。证据 `/opt/naumi-staging/evidence/image-quality-dropdown-20261009-r2`，保留备份与可执行回滚，源码副本反向patch恢复原生菜单通过，主服务保持修改。本节文档提交不是额外业务发布。旧机不连接、不回传；local媒体、视频/OSS延期约定保留。
 
