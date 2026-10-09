@@ -810,3 +810,11 @@ hash、nginx -t、reload并核验公网200/admin403/worker403与业务容器未�
 当前GPT五档已开放并原样发送，模型配置v58，价格v8/完整草稿/默认模型/行序/历史端点/ComfyUI保留。供应商实际七次尝试：GPT六次（五档和无效值）均返回图片，只记接受请求、效果未验证；Flow一次连接结果不明后停止，未重提，不声称供应商费用0。隔离请求/JSON/multipart/Flow/冻结任务/积分与实际线上五档改名、映射、关闭档拒绝、omit报价、手机、版本均验收通过，浏览器收费生成0。真实供应商测试与浏览器验收消费区分记录。
 
 证据 `/opt/naumi-staging/evidence/mvp-model-parameters-20261009-release`，实测原始结果 `/opt/naumi-staging/evidence/mvp-model-parameters-20261009/probe-results.json`；详情 `docs/changes/2026-10-09-mvp-model-parameters.md`。发布全程共用锁、备份和最终健康验证，锁已释放。旧镜像65cec197不识别qualityPolicy，回滚脚本必须先恢复兼容v48配置，核验拥有版本且无新未结算图片任务；已实际验证临时v56恢复至v57，再正式启用v58，并验证过期版本拒绝覆盖。保留DB/媒体/Compose/Router/代理/账号，旧机不连接/不回传，local与视频/OSS延期约定保持；测试/文档跟进不另发镜像。
+
+## 33. 同事画布 UI 与节点编辑集中合并发布（2026-10-10）
+
+按用户要求，将最新 `codex/canvas-node-editing` /61cc4be（包含图标、工具栏和助手侧栏依赖）整体合入 main 并发布新机。当前固定源码3610074a4db5523798138b997a8045e365f45137，APP/Worker 镜像 sha256:635b89f8e4f415a452fd8f02cd9883c4dcb80c27a50b7a4bb15fa30932432ea4，版本1791561629 / v2026.10.10-000029，浏览器与服务器核对一致。包含高频工具、400px助手/手机浮层、裁剪替换新图片版本、文字样式/锁定/层级/属性，修正版号浮层挡属性保存按钮的合并冲突。
+
+隔离真实数据库和完整HTTP/画布验证像素编辑、撤销重做、文字样式刷新、权限/幂等/事务回滚；关键12个生成函数保留，五档/480参数组合、Dock2625案例、管理员模型/冻结任务/积分/ComfyUI回归通过。线上桌面/390px五档、侧栏、属性和版本通过；线上用模拟节点、history拦截和SSE stub，无真实供应商消费，不冒充线上真实保存/供应商对话。原model v58/billing v8、配置/草稿hash、历史接口/ComfyUI摘要一致。新增两张懒初始化表为增量，实际应用权限创建通过。
+
+证据 `/opt/naumi-staging/evidence/canvas-ui-integration-20261009`，详情 `docs/changes/2026-10-09-canvas-ui-integration.md`。全程deploy.lock、备份/固定构建/上线/健康与实际版本验收完成，锁已释放。回滚至8ca8329保留现有qualityPolicy、新表和图片，不回灌DB/删除媒体；可执行脚本核对当前候选并自行取锁。DB/媒体/Compose/Router/账号/公网代理保持；旧机不连接/回传，视频和OSS延期、local约定保持。文档跟进不另发业务镜像。
