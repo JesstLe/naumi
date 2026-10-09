@@ -52,6 +52,8 @@ async function main() {
       assert.equal(response?.status, 400); assert.equal((await response!.json()).code, "CANVAS_PARAMETER_UNSUPPORTED");
     }
   }
+  const duplicate = new FormData(); duplicate.append("origin", "canvas"); duplicate.append("ratio", "21:9"); duplicate.append("ratio", "1:1");
+  assert.equal((await canvasParameterError(new Request("http://fixture.test/api/generate-image", {method:"POST",body:duplicate})))?.status,400);
   // Actual route exports reject invalid raw requests before DB, receipts or suppliers.
   const actual = await Promise.all([
     import("../src/app/api/generate-image/route"), import("../src/app/api/canvas/expand/route"),

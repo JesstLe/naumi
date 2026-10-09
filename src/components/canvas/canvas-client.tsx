@@ -8248,7 +8248,7 @@ export function CanvasClient() {
               <p className="canvas-ui-muted mb-2 text-[12px] font-semibold">
                 {t("canvas.ratio")}
               </p>
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 {CANVAS_RATIOS.filter(r => generationParameters.ratios.includes(r.id)).map((r) => (
                   <button
                     key={r.id}
