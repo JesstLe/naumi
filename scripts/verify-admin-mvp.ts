@@ -1,0 +1,90 @@
+import assert from "node:assert/strict";
+import { constants, publicEncrypt, randomUUID } from "node:crypto";
+import { createModelFixture } from "./model-config-fixture";
+import { fixtureConfig } from "./billing-unit-fixture";
+import { createMvpHandler } from "../src/lib/model-config/mvp-access";
+import { createModelRuntime, publicModelCatalog } from "../src/lib/model-config/runtime";
+import { createRouterControl, type RouterStatus } from "../src/lib/model-config/router-client";
+import { createModelExecutor } from "../src/lib/model-config/execution";
+import { mvpRows, switchMvpModel } from "../src/lib/model-config/mvp";
+import { ModelConfigError } from "../src/lib/model-config/types";
+
+async function main() {
+  const f = await createModelFixture();
+  let activeDigest = "", activations = 0, dropNext = false, catalogQueries = 0;
+  const applied = new Map<string, RouterStatus>();
+  const router = createRouterControl({ baseUrl: f.origin, token: "mvp-fixture-router-token-independent-long", envelopeSecret: "mvp-fixture-envelope-independent-long", trustedOrigins: [f.origin] });
+  router.prepare = async () => {};
+  router.state = async () => activeDigest;
+  router.status = async id => applied.get(id) || null;
+  router.activate = async (id, expected, digest) => {
+    assert.equal(activeDigest, expected); activations++; activeDigest = digest;
+    const p: RouterStatus = { id, digest, phase: "applied" }; applied.set(id, p);
+    if (dropNext) { dropNext = false; throw new ModelConfigError("ROUTER_UNAVAILABLE", "fixture disconnect", 503); }
+    return p;
+  };
+  const billing = { version: 1, config: fixtureConfig() };
+  const runtime = createModelRuntime({ pool: f.sql, repo: f.repo, credentials: f.credentials, router, trustedOrigins: [f.origin], billing: async () => billing, billingByVersion: async () => billing });
+  const administration = async () => ({ pool: f.sql, repo: f.repo, credentials: f.credentials, router, runtime, billing: { current: async () => billing }, trustedOrigins: [f.origin] }) as never;
+  const actor = "mvp-admin@example.test";
+  const handler = createMvpHandler({ authorize: async () => ({ actor }), administration, managed: async () => true,
+    fetcher: async (_url, init) => { assert.equal(init?.method || "GET", "GET"); catalogQueries++; return Response.json({ data: [{ id: "wire-image-one" }, { id: "directory-image-new" }, { id: "wire-image-two" }] }); } });
+  const request = (body?: unknown, origin?: string) => new Request("http://fixture.test/api/admin/mvp", { method: body ? "POST" : "GET", headers: { ...(body ? { "content-type": "application/json" } : {}), ...(origin ? { origin } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  try {
+    f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels[0]), id: "u2", model: "wire-image-two", label: "Second actual model" });
+    const old = await f.repo.current();
+    const sharedDraft = await f.repo.draft(actor), unsaved = structuredClone(sharedDraft.config);
+    unsaved.publicModels[0].label = "未发布的名称";
+    const fullDraft = await f.repo.saveDraft({ id: sharedDraft.id, expectedRevision: sharedDraft.revision, config: unsaved, actor });
+    const page = await handler(request()); assert.equal(page.status, 200);
+    const data = await page.json();
+    assert.equal(data.rows[0].label, publicModelCatalog(old, "image", "image.generate").models[0].id);
+    assert.equal(data.rows[0].alias, "测试生图"); assert.ok(data.rows[0].features.some((f: any) => f.id === "canvas.image"));
+    assert.ok(data.rows[0].candidateIds.includes("u2")); assert.equal(data.rows[0].routes[0].model, "wire-image-one");
+    const legacy = structuredClone(old); legacy.config.upstreamModels.forEach(u => { u.capabilities.verified = false; });
+    const legacyRows = mvpRows(legacy, [{ ...publicModelCatalog(legacy, "image", "image.generate"), feature: "image.generate" }]);
+    assert.ok(legacyRows[0].candidateIds.includes("u2"), "existing legacy targets must remain selectable with explicit unverified status");
+    assert.equal(switchMvpModel(legacy.config, legacyRows[0], "u2").publicModels[0].target.id, "u2");
+    assert.ok(!JSON.stringify(data).includes(f.marker)); assert.ok(!JSON.stringify(data).includes("credentialRef"));
+    const denied = createMvpHandler({ authorize: async () => Response.json({}, { status: 404 }) as never, administration: async () => { throw Error("must not assemble"); }, managed: async () => true });
+    assert.equal((await denied(request())).status, 404);
+    assert.equal((await handler(request({ action: "discover", providerId: "p1" }, "https://evil.test"))).status, 403);
+    assert.equal((await handler(request({ action: "discover", providerId: "p1", baseUrl: "http://169.254.169.254" }))).status, 400);
+    assert.equal((await handler(request({ action: "discover", providerId: "p1" }))).status, 200); assert.equal(catalogQueries, 1);
+    const executor = createModelExecutor({ runtime, credentials: f.credentials, trustedOrigins: [f.origin], gateway: () => ({ baseUrl: f.origin, apiKey: "fixture" }) });
+    const frozen = await executor.resolve({ binding: "image.generate", snapshot: old, billing });
+    const switchBody = { action: "switch", id: randomUUID(), expectedVersion: old.version, rowId: data.rows[0].id, upstreamId: "u2" };
+    dropNext = true;
+    const uncertain = await handler(request(switchBody)); assert.equal(uncertain.status, 202); assert.equal((await uncertain.json()).publication.phase, "unknown");
+    assert.equal((await f.repo.current()).version, old.version);
+    const recovered = await handler(request(switchBody)); assert.equal(recovered.status, 200); assert.equal((await recovered.json()).publication.phase, "applied"); assert.equal(activations, 1);
+    assert.equal((await handler(request(switchBody))).status, 200); assert.equal(activations, 1);
+    const current = await f.repo.current(); assert.equal(current.config.publicModels[0].target.id, "u2"); assert.equal(current.config.publicModels[0].label, "测试生图");
+    assert.deepEqual(current.config.bindings, old.config.bindings); assert.deepEqual(current.config.business, old.config.business);
+    assert.deepEqual(await f.repo.draft(actor), fullDraft, "MVP must preserve full administration drafts");
+    assert.equal((await executor.clientFor(frozen)).wireModel, "wire-image-one", "accepted tasks retain their old actual model");
+    const fresh = await executor.resolve({ binding: "image.generate", snapshot: current, billing }); assert.equal((await executor.clientFor(fresh)).wireModel, "wire-image-two");
+    assert.equal((await handler(request({ ...switchBody, id: randomUUID() }))).status, 409);
+    const { getPublicKeyPem } = await import("../src/lib/settings");
+    const ciphertext = publicEncrypt({ key: await getPublicKeyPem(), padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from("mvp-isolated-provider-key")).toString("base64");
+    const connectId = randomUUID();
+    const credentialResponse = await handler(request({ action: "credential", providerId: `mvp-${connectId}`, ciphertext }));
+    assert.equal(credentialResponse.status, 200);
+    const credentialRef = (await credentialResponse.json()).id;
+    const plainResponse = await handler(request({ action: "credential", providerId: `mvp-${randomUUID()}`, keyPlain: "http-fixture-provider-key" }));
+    assert.equal(plainResponse.status, 200); assert.ok(!(await plainResponse.text()).includes("http-fixture-provider-key"));
+    const connect = { action: "connect", id: connectId, expectedVersion: current.version, name: "新目录来源", protocol: "openai-images", baseUrl: `${f.origin}/another-v1`, credentialRef };
+    assert.equal((await handler(request(connect))).status, 200);
+    const connected = await f.repo.current(), newProvider = connected.config.providers.find(p => p.name === "新目录来源")!;
+    assert.ok(newProvider); assert.equal(await f.credentials.read(newProvider.credentialRef!, newProvider.id), "mvp-isolated-provider-key");
+    const registration = { action: "register", id: randomUUID(), expectedVersion: connected.version, providerId: newProvider.id, model: "directory-image-new", confirmed: true, edit: true, vision: false, qualities: ["medium", "high"], resolutions: ["1K"], maxReferenceImages: 4 };
+    assert.equal((await handler(request({ ...registration, confirmed: false }))).status, 400);
+    assert.equal((await handler(request({ ...registration, model: "not-in-catalog" }))).status, 400);
+    assert.equal((await handler(request(registration))).status, 200);
+    assert.ok((await f.repo.current()).config.upstreamModels.some(u => u.model === "directory-image-new"));
+    const invisible = structuredClone(old); invisible.config.publicModels[0].visible = false;
+    assert.equal(mvpRows(invisible, [{ ...publicModelCatalog(invisible, "image", "image.generate"), feature: "image.generate" }]).length, 0);
+    console.log("ADMIN_MVP=PASS ACTIVE_CATALOG=PASS SOURCES=PASS SWITCH_EXECUTION=PASS FROZEN_TASK=PASS DRAFT_PRESERVED=PASS SAME_ID_RECOVERY=PASS RSA_CREDENTIAL=PASS DISCOVERY=PASS EXPLICIT_CAPABILITIES=PASS NON_ADMIN=404 CSRF=403 VERSION_CONFLICT=409 PAID_GENERATION=0");
+  } finally { const db = await import("../src/lib/db"); await db.getPool().end(); await f.cleanup(); }
+}
+main().catch(e => { console.error(e); process.exitCode = 1; });
