@@ -8,7 +8,9 @@ export function mvpCreditRule(snapshot:ConfigSnapshot,facts:BillingFacts){
 export function applyCreditOverride(snapshot:ConfigSnapshot,base:ConfigSnapshot,facts:BillingFacts):ConfigSnapshot{
   const rule=mvpCreditRule(snapshot,facts);if(!rule?.pricing)return base;
   const config=structuredClone(base.config),tariff=config.features[facts.feature];
-  tariff.pricing=structuredClone(rule.pricing);tariff.rules=[];
+  // A selected model may receive a price in an otherwise free tool. Enable
+  // only this matched quote; other models and the global metering switch stay intact.
+  tariff.enabled=true;tariff.pricing=structuredClone(rule.pricing);tariff.rules=[];
   tariff.settlement={...tariff.settlement,qualityBasis:"requested",successBasis:"successful-units",failureBps:0,reserveBps:10000};
   return {version:snapshot.version,config};
 }

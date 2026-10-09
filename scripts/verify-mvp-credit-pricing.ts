@@ -29,6 +29,10 @@ async function main(){
   assert.deepEqual(priced.config.costs,before.config.costs);assert.deepEqual(priced.config.features["tool.recolor"],before.config.features["tool.recolor"]);
   const frozen=quote(businessBillingSnapshot(priced,models,facts({modelId:family+"-square",quantity:3})),facts({modelId:family+"-square",quantity:3}));
   assert.equal(frozen.requestedCredits,21);assert.equal(frozen.reserveCredits,21);
+  const freeTool=structuredClone(priced);freeTool.config.features["canvas.image"].enabled=false;
+  const freeFacts=facts({feature:"canvas.image",modelId:family+"-square"});
+  assert.equal(quote(businessBillingSnapshot(freeTool,models,freeFacts),freeFacts).requestedCredits,7,"Selected model can be priced in an otherwise free tool");
+  const unchangedFree=facts({feature:"canvas.image",modelId:"image-a"});assert.equal(quote(businessBillingSnapshot(freeTool,models,unchangedFree),unchangedFree).requestedCredits,0);
   assert.equal(quote(businessBillingSnapshot(priced,models,facts({modelId:family+"-portrait"})),facts({modelId:family+"-portrait"})).requestedCredits,7);
   assert.equal(quote(businessBillingSnapshot(priced,models,facts({modelId:family+"-square",byok:true})),facts({modelId:family+"-square",byok:true})).requestedCredits,0);
   assert.equal((await handler(req({...body,id:randomUUID()}))).status,409,"Stale billing version");
