@@ -1,6 +1,6 @@
 # Naumi 新服务器预发布与晚间回传方案
 
-> 最新状态（2026-10-09）：用户已确认预发布验收完毕；新机继续用于构建和测试，媒体保持 local。视频配置暂时跳过，OSS 后续单独配置，不再作为当前环境交付阻塞项，也不视为已通过。用户明确要求先不回传，只有后续明确要求回传时才操作旧机；不自动发布或安排回传。第20节是最新交接决策，旧章节的未验收/阻塞描述仅保留历史证据。
+> 最新状态（2026-10-09）：用户已确认预发布验收完毕；新机继续用于构建和测试，媒体保持 local。视频配置暂时跳过，OSS 后续单独配置，不再作为当前环境交付阻塞项，也不视为已通过。用户明确要求先不回传，只有后续明确要求回传时才操作旧机；不自动发布或安排回传。第20节是最新交接决策。另按用户要求已开放公网Web入口 `http://120.27.162.85/`，第21节记录运行/回滚证据；内部服务仍私有。
 >
 > 本文是本任务的交接入口。后续 Agent 先阅读本文，再检查本文列出的状态、证据和阻塞项；不要凭对话上下文猜测迁移进度。
 
@@ -705,4 +705,45 @@ pwsh -NoProfile -File scripts/staging/manage-staging-tunnel.ps1 -Mode Verify -Re
 先不回传，只有用户后续明确要求回传才启动生产基线刷新、候选差异审查、
 新机必要重验、备份、增量迁移/Router协调及固定版本发布；禁止自动回传，
 禁止新机测试DB回灌。每模块更新文档，保护原私钥与其他工作区。
+```
+
+## 21. 用户授权的公网Web入口（2026-10-09）
+
+### 当前入口与实现
+
+- 用户明确要求“把新服务器允许可以公网访问吧”。本轮只开放Naumi Web，入口为 `http://120.27.162.85/`，作品页 `http://120.27.162.85/works`。当前是HTTP/80；本轮没有域名、TLS证书或443，不声称HTTPS已完成。登录仍沿用原账号，未变更账号密码或禁用认证。
+- APP保持 `127.0.0.1:13012:3000`；新增独立systemd `naumi-staging-public.service`，NGINX反代至回环APP，enabled/active，自动启动、失败恢复。配置支持64MiB请求、长生成响应、WebSocket升级及真实来源header；不接管DB、Router或代理端口。公开内部 `/api/video/worker/` 返回403，点文件路径返回404；用户管理员API保留应用403鉴权。
+- NGINX来自Ubuntu官方软件源 `nginx` 和 `nginx-common` 固定 `1.24.0-2ubuntu7.18`，只提取到 `/usr/local/lib/naumi-staging-web`，未执行系统包安装/postinst，未引入默认NGINX站点或重启Docker。包/hash在 `/opt/naumi-staging/config/public-nginx-package`，运行二进制hash另存证据；服务使用systemd资源/文件系统约束和www-data worker。请求access日志关闭，不记录cookie/token。
+- 本机独立HTTP直连（不走SSH隧道）作品页/health200，未登录admin403、公开worker403；内置浏览器实际打开公网作品页并保留交付标签。匿名session返回user:null。未执行密码登录/收费生成，用户此前的本人验收记录不变。
+- APP/Worker/DB的Config、HostConfig、StartedAt与Image完整hash对比前后一致，未重启这三个服务。DB没有公开端口；APP仍回环，Clash7897/1053和Router18081/18082监听地址保持原样。没有更改UFW/云安全组规则，实际公网80连通；旧机未连接或发布。
+
+### 可执行文件与回滚
+
+仓库：`deploy/staging/nginx-public.conf`、`deploy/staging/naumi-staging-public.service`、`scripts/staging/{download-public-nginx,enable-public-web,verify-public-web,rollback-public-web}.sh`。启用脚本拒绝覆盖已有unit/80占用，复用前先检查实际状态；当前已运行，不重复enable。
+
+四件套：`/opt/naumi-staging/evidence/public-web-20261009/{MODIFIED_FILE.conf,DIFF_FILE.patch,VERIFICATION.txt,ROLLBACK.sh}`。baseline是原“无公网网关/无80监听”的明确记录，原APP/Worker/DB配置/开始时间hash独立保留；不存在原NGINX配置可备份，不把marker冒充原配置。源码与私有环境/DB/媒体均未改。
+
+```bash
+/usr/local/lib/naumi-staging-web/usr/sbin/nginx -e stderr -t -c /opt/naumi-staging/evidence/public-web-20261009/MODIFIED_FILE.conf
+systemctl is-active naumi-staging-public.service
+systemctl is-enabled naumi-staging-public.service
+# 只在用户要求关闭公网时执行；不停止app/db/worker。
+/opt/naumi-staging/evidence/public-web-20261009/ROLLBACK.sh --apply
+```
+
+- baseline本机公网curl：`BASELINE_PUBLIC_HTTP=000` / exit7；新机本地80也返回 `BASELINE_HOST_HTTP=000` / exit7。
+- 修改后：`PUBLIC_WEB=PASS LISTEN=80 HEALTH=200 ADMIN_UNAUTH=403 WORKER_PUBLIC=403 APP_BINDING=UNCHANGED APPLICATION_RESTARTED=0` / exit0。
+- 回滚演练使用同一NGINX配置第二副本，只监听回环18080；建立独立临时systemd服务，health200后执行 `ROLLBACK.sh --fixture`，仅停用并删除该临时unit。输出 `PUBLIC_WEB_ROLLBACK=PASS FIXTURE_PORT=18080 RESTORED=NO_LISTENER MAIN_PORT=80 HEALTH=200 APP=200 MODIFIED_FILE_LEFT_CHANGED=1` / exit0。主80仍运行、MODIFIED hash未变；这证明真实第二网关副本回滚，不冒充公网主入口已经被关闭。实际--apply分支保留软件包/配置文件并移除本次unit，关闭80但不动业务容器；主入口--apply未执行。
+- `PUBLIC_WEB_INVARIANTS=PASS APP_WORKER_DB_CONFIG_AND_START_TIME=IDENTICAL DB_PUBLIC_PORTS=0 APP_DIRECT=LOOPBACK ENV_PATH=404`。完整命令/输出/hash见四件套VERIFICATION，本机副本 `E:\Workspace\naumi\output\staging-public-web-20261009`。
+- 首次Docker官方NGINX下载在中断后进程/句柄均消失且镜像不存在，未重启一个尚在运行的拉取；改用Ubuntu官方apt下载。首版systemd日志配置 `/dev/stderr` 无法重开导致启动失败exit1，改用NGINX原生 `stderr` 后同配置路径通过，保留原失败配置/journal。不更改业务候选来修网关问题。
+
+公网授权只改变访问入口；第20节“视频/OSS后续、先不回传”继续有效，自动目标继续不等于生产回传授权。
+
+```text
+接手先读AGENTS.md和README第20—21节。新机公网http://120.27.162.85已开，
+app仍回环13012，独立naumi-staging-public.service处理80；不要把DB/Router/
+Clash改成公网，不关闭账号鉴权，不重复enable覆盖当前unit。改网关先保存
+hash、nginx -t、reload并核验公网200/admin403/worker403与业务容器未重启。
+回滚只有明确要求时执行对应public-web证据目录ROLLBACK.sh --apply；
+视频/OSS延期，旧机回传仍须用户明确要求，禁止测试DB回灌。
 ```

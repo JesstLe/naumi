@@ -1,0 +1,30 @@
+[Unit]
+Description=Naumi staging public web gateway
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/naumi-staging-web/usr/sbin/nginx -e stderr -c /opt/naumi-staging/evidence/public-web-20261009/MODIFIED_FILE.conf -g "daemon off;"
+ExecReload=/usr/local/lib/naumi-staging-web/usr/sbin/nginx -e stderr -c /opt/naumi-staging/evidence/public-web-20261009/MODIFIED_FILE.conf -s reload
+KillSignal=SIGQUIT
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=naumi-staging-public
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/naumi-staging-web /run/naumi-staging-public
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_CHOWN CAP_DAC_OVERRIDE
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=256M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target
