@@ -5419,7 +5419,6 @@ export function CanvasClient() {
   const QUICK_ACTIONS: {
     key: string;
     icon: LucideIcon;
-    emoji: string;
     prompt: string;
     transparent?: boolean;
     resolution?: string;
@@ -5428,42 +5427,36 @@ export function CanvasClient() {
       {
         key: "bg",
         icon: ImageIcon,
-        emoji: "🖼",
         prompt:
           "在保持主体完全不变的前提下,把背景替换为简洁高级的纯色或微场景背景,光影与主体自然衔接,电商主图风格,商业产品摄影,干净通透",
       },
       {
         key: "cutout",
         icon: Scissors,
-        emoji: "✂️",
         prompt: "精确沿主体边缘抠出主体,移除背景,输出干净的透明底 PNG",
         transparent: true,
       },
       {
         key: "relight",
         icon: Sun,
-        emoji: "💡",
         prompt:
           "为主体重新布光,柔和专业的商业棚拍灯光,增强质感、立体感与高光层次,主体、角度与构图保持不变",
       },
       {
         key: "angle",
         icon: Rotate3d,
-        emoji: "🧭",
         prompt:
           "保持同一主体、材质与风格,换一个拍摄视角(约 45° 侧前方)重新呈现,商业产品摄影,背景与光线协调一致",
       },
       {
         key: "caption",
         icon: Type,
-        emoji: "🅣",
         prompt:
           "在画面留白区域加入精致的中文营销标题与卖点文案排版,字体现代、层级清晰、排版高级,主体保持不变,电商主图风格",
       },
       {
         key: "hd",
         icon: Wand2,
-        emoji: "🔍",
         prompt:
           "在不改变画面内容、主体与构图的前提下,提升清晰度、细节与质感,输出高清成片",
         resolution: "2K",
@@ -10263,7 +10256,7 @@ export function CanvasClient() {
                 : menu;
             })()}
 
-          {/* 顶部图像工具条:选中节点(含空白节点)正上方居中(原型 .cz-toolbar,emoji+配色+inT 入场) */}
+          {/* 顶部图像工具条：统一使用16px Lucide线性图标，颜色继承画布主题。 */}
           {(selected || selectedPend) &&
             selectedBatchArts.length <= 1 &&
             !readOnly &&
@@ -10289,7 +10282,7 @@ export function CanvasClient() {
                   onClick={() => onQuickAction(a.key)}
                   className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
                 >
-                  <span className="text-[15px] leading-none">{a.emoji}</span>
+                  <a.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                   {t(`canvas.qa.${a.key}`)}
                 </button>
               ))}
@@ -10301,7 +10294,7 @@ export function CanvasClient() {
                 onClick={() => onCutout("fine")}
                 className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
               >
-                <span className="text-[15px] leading-none">✂️</span>
+                <Scissors className="h-4 w-4 shrink-0" aria-hidden="true" />
                 {t("canvas.qa.cutout")}
               </button>
               {/* 高清:下拉选分辨率(深色弹出,向下) */}
@@ -10323,7 +10316,7 @@ export function CanvasClient() {
                 )}
                 trigger={
                   <>
-                    <span className="text-[15px] leading-none">🔍</span>
+                    <ScanSearch className="h-4 w-4 shrink-0" aria-hidden="true" />
                     {t("canvas.qa.hd")}
                   </>
                 }
@@ -10350,13 +10343,13 @@ export function CanvasClient() {
                 )}
                 trigger={
                   <>
-                    <span className="text-[15px] leading-none">⤢</span>
+                    <Maximize2 className="h-4 w-4 shrink-0" aria-hidden="true" />
                     {t("canvas.qa.ratio")}
                   </>
                 }
               />
               <span className="canvas-ui-divider mx-1.5 h-5 w-px flex-none" />
-              {/* 尾部图标:✏️编辑 / 📤上传 / ⬇️下载 / ⛶放大(对齐原型 .ic) */}
+              {/* 尾部图标：重命名 / 添加图片 / 下载 / 查看大图，保持原点击行为。 */}
               <button
                 type="button"
                 title="在线改字"
@@ -10364,7 +10357,7 @@ export function CanvasClient() {
                 onClick={() => selected && void openImageTextEditor(selected)}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
               >
-                <Type className="h-4 w-4" /> 改字
+                <Type className="h-4 w-4 shrink-0" aria-hidden="true" /> 改字
               </button>
               {/* 扩图:选目标比例 + 原图锚点,outpaint 保原图内容补全四周 */}
               <div className="relative flex items-center">
@@ -10378,7 +10371,7 @@ export function CanvasClient() {
                   }}
                   className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
                 >
-                  <Maximize2 className="h-4 w-4" /> 扩图
+                  <Maximize2 className="h-4 w-4 shrink-0" aria-hidden="true" /> 扩图
                 </button>
                 {expandOpen && selected && (
                   <>
@@ -10457,7 +10450,7 @@ export function CanvasClient() {
                 onClick={() => selected && setAnnotateArtwork(selected)}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
               >
-                <PenLine className="h-4 w-4" /> 标注
+                <PenLine className="h-4 w-4 shrink-0" aria-hidden="true" /> 标注
               </button>
               {/* ComfyUI 工作流(BYOC):跑用户自备端点上的工作流,产物挂回画布 */}
               <button
@@ -10467,7 +10460,7 @@ export function CanvasClient() {
                 onClick={() => setComfyOpen(true)}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
               >
-                <Workflow className="h-4 w-4" /> 工作流
+                <Workflow className="h-4 w-4 shrink-0" aria-hidden="true" /> 工作流
               </button>
               {/* 视频:OpenAI videos 协议,图生视频/文生视频,产物为画布视频节点 */}
               <div className="relative flex items-center">
@@ -10481,7 +10474,7 @@ export function CanvasClient() {
                   }}
                   className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
                 >
-                  <Video className="h-4 w-4" /> 视频
+                  <Video className="h-4 w-4 shrink-0" aria-hidden="true" /> 视频
                 </button>
                 {videoOpen && (
                   <>
@@ -10560,11 +10553,12 @@ export function CanvasClient() {
                 onClick={() => selected && openAssistant(selected)}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
               >
-                <MessageSquareText className="h-4 w-4" /> 助手
+                <MessageSquareText className="h-4 w-4 shrink-0" aria-hidden="true" /> 助手
               </button>
               <button
                 type="button"
                 title={t("canvas.editName")}
+                aria-label={t("canvas.editName")}
                 disabled={!selected}
                 onClick={() => {
                   if (!selected) return;
@@ -10573,11 +10567,12 @@ export function CanvasClient() {
                 }}
                 className="canvas-ui-action flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors disabled:opacity-40"
               >
-                ✏️
+                <Pencil className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button>
               <button
                 type="button"
                 title={selected ? t("canvas.addImage") : t("canvas.uploadImage")}
+                aria-label={selected ? t("canvas.addImage") : t("canvas.uploadImage")}
                 onClick={() =>
                   selected
                     ? extraInputRef.current?.click()
@@ -10585,22 +10580,24 @@ export function CanvasClient() {
                 }
                 className="canvas-ui-action flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors"
               >
-                📤
+                <Upload className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button>
               <button
                 type="button"
                 title={t("canvas.ctxDownload")}
+                aria-label={t("canvas.ctxDownload")}
                 disabled={!selected}
                 onClick={() =>
                   selected && void downloadOne(selected.image, selected.title)
                 }
                 className="canvas-ui-action flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors disabled:opacity-40"
               >
-                ⬇️
+                <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button>
               <button
                 type="button"
                 title={t("canvas.viewLarge")}
+                aria-label={t("canvas.viewLarge")}
                 disabled={!selected}
                 onClick={() =>
                   selected &&
@@ -10608,7 +10605,7 @@ export function CanvasClient() {
                 }
                 className="canvas-ui-action flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[15px] leading-none transition-colors disabled:opacity-40"
               >
-                ⛶
+                <Maximize className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button>
             </div>
           )}
