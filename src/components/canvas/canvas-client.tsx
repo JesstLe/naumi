@@ -9,6 +9,7 @@ import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters, canvasCombinationSupported } from "@/lib/canvas/generation-parameters";
 import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
 import { CanvasParameterPopover } from "./parameter-popover";
+import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 
 import {
   createContext,
@@ -90,6 +91,7 @@ import {
   MousePointer2,
   Hand,
   ImagePlus,
+  Copy,
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
@@ -512,6 +514,7 @@ function RatioIcon({ w, h }: { w: number; h: number }) {
 function DarkSelect({
   trigger,
   triggerClass,
+  hint,
   value,
   options,
   onPick,
@@ -521,6 +524,7 @@ function DarkSelect({
 }: {
   trigger: ReactNode;
   triggerClass?: string;
+  hint?: string;
   value: string;
   options: { value: string; label: ReactNode }[];
   onPick: (v: string) => void;
@@ -547,6 +551,9 @@ function DarkSelect({
         ref={btnRef}
         type="button"
         onClick={toggle}
+        title={hint}
+        aria-expanded={open}
+        aria-haspopup="true"
         disabled={disabled}
         className={triggerClass}
       >
@@ -1903,6 +1910,8 @@ export function CanvasClient() {
   const [expandAnchor, setExpandAnchor] = useState("center");
   // 视频生成(OpenAI videos 协议,站内计费):面板状态 + 轮询句柄
   const [videoOpen, setVideoOpen] = useState(false);
+  const imageMoreRef = useRef<HTMLButtonElement>(null);
+  const expandButtonRef = useRef<HTMLButtonElement>(null);
   const [videoPrompt, setVideoPrompt] = useState("");
   const [videoSeconds, setVideoSeconds] = useState("4");
   const [videoLandscape, setVideoLandscape] = useState(true);
@@ -2006,7 +2015,7 @@ export function CanvasClient() {
   const isMac = desktopPlatform === "mac";
   const modifierKey = isMac ? "⌘" : "Ctrl";
   const shortcut = (key: string) => `${modifierKey}${key}`;
-  // PS 式左侧工具栏：创建菜单与更多工具菜单互斥。
+  // 主工具栏仅保留选择/移动、创建和设置；创建菜单与设置菜单互斥。
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [moreToolsOpen, setMoreToolsOpen] = useState(false);
   // 左下角缩放下拉菜单 + 可输入的缩放值
@@ -7363,21 +7372,6 @@ export function CanvasClient() {
       })
     );
   }
-  // 底部工具条:✦ 生成衍生(选中则聚焦生成器,否则选根/提示)
-  function toolGenerate() {
-    if (readOnly) return;
-    if (selected) {
-      setFocusId(selected.id);
-      return;
-    }
-    const root = activeRootId();
-    if (root) {
-      setSelectedId(root);
-      setFocusId(root);
-    } else {
-      flashTip(t("canvas.tipSelectFirst"));
-    }
-  }
   // 底部工具条:🕘 从生成历史选择(画布中心)
   function toolHistory() {
     if (readOnly) return;
@@ -9252,7 +9246,8 @@ export function CanvasClient() {
                     type="button"
                     data-tool="move"
                     onClick={() => setCanvasTool("move")}
-                    title={`${t("canvas.moveTool")} (V)`}
+                    aria-label={`${t("canvas.moveTool")} (V)`}
+                title={`${t("canvas.moveTool")} (V)`}
                     aria-pressed={canvasTool === "move"}
                     className={cn(
                       "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
@@ -9273,7 +9268,8 @@ export function CanvasClient() {
                       setSelectedTextId(null);
                       clearCanvasSelection();
                     }}
-                    title={`${t("canvas.boxSelect")} (M)`}
+                    aria-label={`${t("canvas.boxSelect")} (M)`}
+                title={`${t("canvas.boxSelect")} (M)`}
                     aria-pressed={canvasTool === "marquee"}
                     className={cn(
                       "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
@@ -9288,7 +9284,8 @@ export function CanvasClient() {
                     type="button"
                     data-tool="hand"
                     onClick={() => setCanvasTool("hand")}
-                    title={`${t("canvas.handTool")} (H)`}
+                    aria-label={`${t("canvas.handTool")} (H)`}
+                title={`${t("canvas.handTool")} (H)`}
                     aria-pressed={canvasTool === "hand"}
                     className={cn(
                       "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
@@ -9302,225 +9299,31 @@ export function CanvasClient() {
 
                   <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
 
-                  {/* ＋ 弹出「添加节点/上传图片/从生成历史选择」菜单 */}
-                  {addMenuOpen && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-0"
-                        onClick={() => setAddMenuOpen(false)}
-                      />
-                      <div className="canvas-ui-surface menu-pop-up absolute bottom-[calc(100%+10px)] left-0 z-10 w-60 overflow-hidden rounded-xl border p-1.5">
-                        <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-medium canvas-ui-muted">
-                          {t("canvas.newNode")}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddMenuOpen(false);
-                            const c = centerScreen();
-                            addTextNodeAtScreen(c.x, c.y);
-                          }}
-                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors"
-                        >
-                          <span className="flex h-8 w-8 items-center justify-center canvas-ui-control rounded-lg border">
-                            <Type className="h-4 w-4" />
-                          </span>
-                          <span className="flex-1 font-medium">{t("canvas.textGenerate")}</span>
-                          <span className="text-[11px] canvas-ui-muted">⇧T</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddMenuOpen(false);
-                            toolAddNode();
-                          }}
-                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors"
-                        >
-                          <span className="flex h-8 w-8 items-center justify-center canvas-ui-control rounded-lg border">
-                            <ImageIcon className="h-4 w-4" />
-                          </span>
-                          <span className="font-medium">{t("canvas.imageNode")}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddMenuOpen(false);
-                            const c = centerScreen();
-                            triggerUpload(c.x, c.y);
-                          }}
-                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors"
-                        >
-                          <Upload className="ml-2 h-4 w-4 canvas-ui-muted" />
-                          {t("canvas.uploadImage")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddMenuOpen(false);
-                            toolHistory();
-                          }}
-                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors"
-                        >
-                          <Clock className="ml-2 h-4 w-4 canvas-ui-muted" />
-                          {t("canvas.fromHistory")}
-                        </button>
-                      </div>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMoreToolsOpen(false);
-                      setAddMenuOpen((v) => !v);
-                    }}
-                    title={t("canvas.addNode")}
-                    data-testid="canvas-add-node-button"
-                    className={cn(
-                      "flex h-10 w-10 flex-none items-center justify-center rounded-md shadow-sm transition-colors sm:h-12 sm:w-12",
-                      addMenuOpen
-                        ? "bg-primary/90 text-primary-foreground"
-                        : "bg-primary text-primary-foreground hover:bg-primary/90"
-                    )}
-                  >
-                    <Plus
-                      className={cn(
-                        "h-[22px] w-[22px] transition-transform",
-                        addMenuOpen && "rotate-45"
-                      )}
-                    />
-                  </button>
-                  <button
-                    type="button"
-                    data-tool="text"
-                    onClick={() => {
-                      const c = centerScreen();
-                      addTextNodeAtScreen(c.x, c.y);
-                    }}
-                    title={`${t("canvas.textGenerate")} (⇧T)`}
-                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md canvas-ui-action transition-colors sm:h-9 sm:w-9"
-                  >
-                    <Type className="h-[18px] w-[18px]" />
-                  </button>
-                  <button
-                    type="button"
-                    data-tool="image-node"
-                    onClick={toolAddNode}
-                    title={t("canvas.imageNode")}
-                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md canvas-ui-action transition-colors sm:h-9 sm:w-9"
-                  >
-                    <ImagePlus className="h-[18px] w-[18px]" />
-                  </button>
-                  <button
-                    type="button"
-                    data-tool="upload"
-                    onClick={() => {
-                      const c = centerScreen();
-                      triggerUpload(c.x, c.y);
-                    }}
-                    title={t("canvas.uploadImage")}
-                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md canvas-ui-action transition-colors sm:h-9 sm:w-9"
-                  >
-                    <Upload className="h-[18px] w-[18px]" />
-                  </button>
-
+                  <CanvasActionMenu label={t("canvas.toolbar.addToCanvas")} light={lightCanvas}
+                    open={addMenuOpen} onOpenChange={open => { setMoreToolsOpen(false); setAddMenuOpen(open); }}
+                    triggerIcon={Plus} iconOnly triggerTestId="canvas-add-node-button" menuTestId="canvas-create-menu"
+                    triggerClassName="flex h-10 w-10 flex-none items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 sm:h-12 sm:w-12"
+                    items={[
+                      { id: "text", icon: Type, label: t("canvas.toolbar.addText"), hint: t("canvas.toolbar.addTextHint"),
+                        onSelect: () => { const c = centerScreen(); addTextNodeAtScreen(c.x, c.y); } },
+                      { id: "image-node", icon: ImagePlus, label: t("canvas.toolbar.addImageNode"), hint: t("canvas.toolbar.addImageNodeHint"),
+                        onSelect: toolAddNode },
+                      { id: "upload", icon: Upload, label: t("canvas.uploadImage"), hint: t("canvas.toolbar.uploadHint"),
+                        onSelect: () => { const c = centerScreen(); triggerUpload(c.x, c.y); } },
+                      { id: "history", icon: Clock, label: t("canvas.fromHistory"), hint: t("canvas.toolbar.historyHint"), onSelect: toolHistory },
+                    ]}
+                  />
                   <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
-
-                  <button
-                    type="button"
-                    data-tool="generate"
-                    onClick={toolGenerate}
-                    title={t("canvas.spawnGenerate")}
-                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md canvas-ui-action transition-colors sm:h-9 sm:w-9"
-                  >
-                    <Sparkles className="h-[18px] w-[18px]" />
-                  </button>
-                  <button
-                    type="button"
-                    data-tool="history"
-                    onClick={toolHistory}
-                    title={t("canvas.fromHistory")}
-                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md canvas-ui-action transition-colors sm:h-9 sm:w-9"
-                  >
-                    <Clock className="h-[18px] w-[18px]" />
-                  </button>
-                  <button
-                    type="button"
-                    data-tool="link"
-                    onClick={() => flashTip(t("canvas.linkTip"))}
-                    title={t("canvas.linkTip")}
-                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md canvas-ui-action transition-colors sm:h-9 sm:w-9"
-                  >
-                    <Link2 className="h-[18px] w-[18px]" />
-                  </button>
-
-                  <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
-
-                  {moreToolsOpen && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-0"
-                        onClick={() => setMoreToolsOpen(false)}
-                      />
-                      <div data-testid="canvas-more-tools-menu" className="canvas-ui-surface menu-pop-up absolute bottom-[calc(100%+10px)] right-0 z-10 w-64 overflow-hidden rounded-xl border p-1.5">
-                        <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-medium canvas-ui-muted">
-                          {t("canvas.moreTools")}
-                        </p>
-                        <button type="button" onClick={() => { setMoreToolsOpen(false); tidyLayout(); }} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors">
-                          <LayoutGrid className="h-4 w-4 canvas-ui-muted" />{t("canvas.ctxTidy")}
-                        </button>
-                        <button type="button" onClick={() => setShowMinimap((v) => !v)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors">
-                          <MapIcon className="h-4 w-4 canvas-ui-muted" />{t("canvas.minimap")}
-                          <span className="ml-auto text-xs canvas-ui-muted">{showMinimap ? "ON" : "OFF"}</span>
-                        </button>
-                        <button type="button" onClick={() => setSnapGrid((v) => !v)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors">
-                          <Magnet className="h-4 w-4 canvas-ui-muted" />{t("canvas.snap")}
-                          <span className="ml-auto text-xs canvas-ui-muted">{snapGrid ? "ON" : "OFF"}</span>
-                        </button>
-                        <button type="button" onClick={() => { setMoreToolsOpen(false); rfRef.current?.fitView({ duration: 400, padding: 0.2, maxZoom: 1 }); }} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors">
-                          <Maximize className="h-4 w-4 canvas-ui-muted" />{t("canvas.ctxFit")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setLightCanvas((v) => {
-                              const next = !v;
-                              try {
-                                localStorage.setItem("nv:canvas:bg", next ? "light" : "dark");
-                              } catch {
-                                /* 本地记忆失败不影响切换 */
-                              }
-                              return next;
-                            })
-                          }
-                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors"
-                        >
-                          <Sun className="h-4 w-4 canvas-ui-muted" />{t("canvas.toggleBg")}
-                          <span className="ml-auto text-xs canvas-ui-muted">{lightCanvas ? "LIGHT" : "DARK"}</span>
-                        </button>
-                        <button type="button" onClick={() => { setMoreToolsOpen(false); setHelpOpen(true); }} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors">
-                          <Keyboard className="h-4 w-4 canvas-ui-muted" />{t("canvas.shortcuts")}
-                        </button>
-                      </div>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    data-tool="more"
-                    onClick={() => {
-                      setAddMenuOpen(false);
-                      setMoreToolsOpen((v) => !v);
-                    }}
-                    title={t("canvas.moreTools")}
-                    aria-expanded={moreToolsOpen}
-                    className={cn(
-                      "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
-                      moreToolsOpen
-                        ? "canvas-ui-control"
-                        : "canvas-ui-action"
-                    )}
-                  >
-                    <MoreHorizontal className="h-[18px] w-[18px]" />
-                  </button>
+                  <CanvasActionMenu label={t("canvas.toolbar.settings")} light={lightCanvas}
+                    open={moreToolsOpen} onOpenChange={open => { setAddMenuOpen(false); setMoreToolsOpen(open); }}
+                    iconOnly dataTool="more" menuTestId="canvas-more-tools-menu"
+                    triggerClassName="canvas-ui-action flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9"
+                    items={[
+                      { id: "theme", icon: Sun, label: t(lightCanvas ? "canvas.toolbar.darkCanvas" : "canvas.toolbar.lightCanvas"),
+                        onSelect: () => setLightCanvas(v => { const next = !v; try { localStorage.setItem("nv:canvas:bg", next ? "light" : "dark"); } catch { /* Keep theme switching even without local storage. */ } return next; }) },
+                      { id: "help", icon: Keyboard, label: t("canvas.shortcuts"), onSelect: () => setHelpOpen(true) },
+                    ]}
+                  />
                 </div>
               )}
 
@@ -9766,6 +9569,7 @@ export function CanvasClient() {
                 <button
                   type="button"
                   title={t("canvas.ctxTidy")}
+                  aria-label={t("canvas.ctxTidy")}
                   onClick={tidyLayout}
                   className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 >
@@ -9775,6 +9579,8 @@ export function CanvasClient() {
               <button
                 type="button"
                 title={t("canvas.minimap")}
+                aria-pressed={showMinimap}
+                aria-label={t("canvas.minimap")}
                 onClick={() => setShowMinimap((v) => !v)}
                 className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-secondary",
@@ -9786,6 +9592,8 @@ export function CanvasClient() {
               <button
                 type="button"
                 title={t("canvas.snap")}
+                aria-pressed={snapGrid}
+                aria-label={t("canvas.snap")}
                 onClick={() => setSnapGrid((v) => !v)}
                 className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-secondary",
@@ -9797,6 +9605,7 @@ export function CanvasClient() {
               <button
                 type="button"
                 title={t("canvas.ctxFit")}
+                aria-label={t("canvas.ctxFit")}
                 onClick={() =>
                   rfRef.current?.fitView({ duration: 400, padding: 0.2, maxZoom: 1 })
                 }
@@ -9810,6 +9619,9 @@ export function CanvasClient() {
                 <button
                   type="button"
                   onClick={() => setZoomMenuOpen((v) => !v)}
+                  title={t("canvas.toolbar.zoom")}
+                  aria-label={`${t("canvas.toolbar.zoom")} ${zoomPercentLabel(viewport.zoom)}`}
+                  aria-expanded={zoomMenuOpen}
                   className="rounded-lg px-1.5 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 >
                   {zoomPercentLabel(viewport.zoom)}
@@ -9853,16 +9665,6 @@ export function CanvasClient() {
                           label: "缩小",
                           hk: `${modifierKey} -`,
                           fn: () => rfRef.current?.zoomOut({ duration: 200 }),
-                        },
-                        {
-                          label: "适合屏幕",
-                          hk: `${modifierKey} 0`,
-                          fn: () =>
-                            rfRef.current?.fitView({
-                              duration: 300,
-                              padding: 0.2,
-                              maxZoom: 1,
-                            }),
                         },
                         { sep: true },
                         {
@@ -10268,17 +10070,18 @@ export function CanvasClient() {
               style={{ left: topbarStyle.left, top: topbarStyle.top }}
               className={cn(
                 "canvas-ui-surface canvas-dock-entry absolute z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 rounded-[14px] border p-1.5 [&>*]:shrink-0 [&_button]:whitespace-nowrap",
-                expandOpen || videoOpen ? "overflow-visible" : "overflow-x-auto"
+                "overflow-x-auto"
               )}
             >
+              {selected && <>
               {QUICK_ACTIONS.filter(
-                (a) => a.key !== "hd" && a.key !== "cutout"
+                (a) => a.key === "bg"
               ).map((a) => (
                 <button
                   key={a.key}
                   type="button"
                   disabled={selectedGenerating || !selected}
-                  title={!selected ? t("canvas.toolNeedImage") : undefined}
+                  title={!selected ? t("canvas.toolNeedImage") : t(`canvas.toolbar.${a.key}Hint`)}
                   onClick={() => onQuickAction(a.key)}
                   className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
                 >
@@ -10290,7 +10093,7 @@ export function CanvasClient() {
               <button
                 type="button"
                 disabled={selectedGenerating || !selected}
-                title={!selected ? t("canvas.toolNeedImage") : undefined}
+                title={!selected ? t("canvas.toolNeedImage") : t("canvas.toolbar.cutoutHint")}
                 onClick={() => onCutout("fine")}
                 className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
               >
@@ -10299,6 +10102,7 @@ export function CanvasClient() {
               </button>
               {/* 高清:下拉选分辨率(深色弹出,向下) */}
               <DarkSelect
+                hint={t("canvas.toolbar.hdHint")}
                 dir="down"
                 light={lightCanvas}
                 disabled={selectedGenerating || !selected}
@@ -10323,6 +10127,7 @@ export function CanvasClient() {
               />
               {/* 改比例(ChatGPT 式重生成):选目标比例,按原图重画再裁切,无需提示词 */}
               <DarkSelect
+                hint={t("canvas.toolbar.ratioHint")}
                 dir="down"
                 light={lightCanvas}
                 disabled={selectedGenerating || !selected}
@@ -10349,21 +10154,23 @@ export function CanvasClient() {
                 }
               />
               <span className="canvas-ui-divider mx-1.5 h-5 w-px flex-none" />
-              {/* 尾部图标：重命名 / 添加图片 / 下载 / 查看大图，保持原点击行为。 */}
+              {/* 内容编辑与生成变换使用不同名称，避免暗示只是修改参数。 */}
               <button
                 type="button"
-                title="在线改字"
+                title={t("canvas.toolbar.editTextHint")}
                 disabled={!selected || selectedGenerating || readOnly}
                 onClick={() => selected && void openImageTextEditor(selected)}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
               >
-                <Type className="h-4 w-4 shrink-0" aria-hidden="true" /> 改字
+                <Type className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.editText")}
               </button>
               {/* 扩图:选目标比例 + 原图锚点,outpaint 保原图内容补全四周 */}
               <div className="relative flex items-center">
                 <button
                   type="button"
-                  title="扩图"
+                  ref={expandButtonRef}
+                  aria-expanded={expandOpen}
+                  title={t("canvas.toolbar.expandHint")}
                   disabled={!selected || selectedGenerating || readOnly}
                   onClick={() => {
                     setExpandOpen((open) => !open);
@@ -10371,12 +10178,10 @@ export function CanvasClient() {
                   }}
                   className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
                 >
-                  <Maximize2 className="h-4 w-4 shrink-0" aria-hidden="true" /> 扩图
+                  <Maximize2 className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.expand")}
                 </button>
                 {expandOpen && selected && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setExpandOpen(false)} />
-                    <div className="canvas-ui-surface absolute left-1/2 top-full z-20 mt-2 w-[256px] -translate-x-1/2 rounded-[14px] border p-3 shadow-[0_18px_50px_rgba(8,15,30,0.35)]">
+                    <CanvasActionPanel anchorRef={expandButtonRef} label={t("canvas.toolbar.expand")} light={lightCanvas} width={256} onClose={() => setExpandOpen(false)}>
                       <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider opacity-70">
                         目标比例
                       </p>
@@ -10438,48 +10243,44 @@ export function CanvasClient() {
                       <p className="mt-2 text-[11px] leading-relaxed opacity-60">
                         保持原图内容不变，向四周自然延展画面到目标比例。
                       </p>
-                    </div>
-                  </>
+                    </CanvasActionPanel>
                 )}
               </div>
               {/* 标注编辑:箭头/涂抹/编号标注 + 逐条指令改图 */}
               <button
                 type="button"
-                title="标注编辑"
+                title={t("canvas.toolbar.annotateHint")}
                 disabled={!selected || selectedGenerating || readOnly}
                 onClick={() => selected && setAnnotateArtwork(selected)}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
               >
-                <PenLine className="h-4 w-4 shrink-0" aria-hidden="true" /> 标注
+                <PenLine className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.annotate")}
               </button>
-              {/* ComfyUI 工作流(BYOC):跑用户自备端点上的工作流,产物挂回画布 */}
-              <button
-                type="button"
-                title="ComfyUI 工作流"
-                disabled={!selected || readOnly}
-                onClick={() => setComfyOpen(true)}
-                className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
-              >
-                <Workflow className="h-4 w-4 shrink-0" aria-hidden="true" /> 工作流
-              </button>
+              {/* 低频处理与节点管理使用一个可访问的Portal菜单。 */}
+
+              </>}
+              <CanvasActionMenu triggerRef={imageMoreRef} label={t("canvas.toolbar.imageMore")} light={lightCanvas}
+                items={[
+                  ...QUICK_ACTIONS.filter(a => ["relight", "angle", "caption"].includes(a.key)).map(a => ({
+                    id: a.key, icon: a.icon, label: t(`canvas.qa.${a.key}`), hint: t(`canvas.toolbar.${a.key}Hint`),
+                    disabled: selectedGenerating || !selected, onSelect: () => onQuickAction(a.key),
+                  })),
+                  { id: "workflow", icon: Workflow, label: t("canvas.toolbar.workflow"), hint: t("canvas.toolbar.workflowHint"),
+                    disabled: !selected || readOnly, onSelect: () => setComfyOpen(true) },
+                  { id: "video", icon: Video, label: t("canvas.toolbar.video"), hint: t("canvas.toolbar.videoHint"),
+                    disabled: readOnly || videoBusy, onSelect: () => { setVideoOpen(open => !open); if (selected) setVideoPrompt(selected.prompt || ""); } },
+                  { id: "assistant", icon: MessageSquareText, label: t("canvas.toolbar.assistant"), hint: t("canvas.toolbar.assistantHint"),
+                    disabled: !selected || readOnly, onSelect: () => { if (selected) openAssistant(selected); } },
+                  { id: "rename", icon: Pencil, label: t("canvas.editName"), hint: t("canvas.toolbar.renameHint"),
+                    disabled: !selected, onSelect: () => { if (selected) { setNodeRenameValue(selected.title); setRenamingNodeId(selected.id); } } },
+                ].filter(item => selected || item.id === "video")}
+              />
+
               {/* 视频:OpenAI videos 协议,图生视频/文生视频,产物为画布视频节点 */}
               <div className="relative flex items-center">
-                <button
-                  type="button"
-                  title="生成视频"
-                  disabled={readOnly || videoBusy}
-                  onClick={() => {
-                    setVideoOpen((open) => !open);
-                    if (selected) setVideoPrompt(selected.prompt || "");
-                  }}
-                  className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
-                >
-                  <Video className="h-4 w-4 shrink-0" aria-hidden="true" /> 视频
-                </button>
+
                 {videoOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setVideoOpen(false)} />
-                    <div className="canvas-ui-surface absolute left-1/2 top-full z-20 mt-2 w-[280px] -translate-x-1/2 rounded-[14px] border p-3 shadow-[0_18px_50px_rgba(8,15,30,0.35)]">
+                    <CanvasActionPanel anchorRef={imageMoreRef} label={t("canvas.toolbar.video")} light={lightCanvas} width={280} onClose={() => setVideoOpen(false)}>
                       <textarea
                         value={videoPrompt}
                         onChange={(event) => setVideoPrompt(event.target.value)}
@@ -10541,51 +10342,16 @@ export function CanvasClient() {
                       <p className="mt-2 text-[11px] leading-relaxed opacity-60">
                         {selected ? `以选中${selected.category === "audio" ? "音轨" : selected.videoUrl ? "视频" : "图片"}作为生成参考。` : "未选择参考节点,将纯文字生成。"}生成约需 1-3 分钟,完成后出现在画布。
                       </p>
-                    </div>
-                  </>
+                    </CanvasActionPanel>
                 )}
               </div>
               {/* 画布助手:围绕选中节点+上游链对话,可一键生图回画布 */}
+
+              {selected && <>
               <button
                 type="button"
-                title="画布助手"
-                disabled={!selected || readOnly}
-                onClick={() => selected && openAssistant(selected)}
-                className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
-              >
-                <MessageSquareText className="h-4 w-4 shrink-0" aria-hidden="true" /> 助手
-              </button>
-              <button
-                type="button"
-                title={t("canvas.editName")}
-                aria-label={t("canvas.editName")}
-                disabled={!selected}
-                onClick={() => {
-                  if (!selected) return;
-                  setNodeRenameValue(selected.title);
-                  setRenamingNodeId(selected.id);
-                }}
-                className="canvas-ui-action flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors disabled:opacity-40"
-              >
-                <Pencil className="h-4 w-4 shrink-0" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                title={selected ? t("canvas.addImage") : t("canvas.uploadImage")}
-                aria-label={selected ? t("canvas.addImage") : t("canvas.uploadImage")}
-                onClick={() =>
-                  selected
-                    ? extraInputRef.current?.click()
-                    : selectedPend && onPendUpload(selectedPend.id)
-                }
-                className="canvas-ui-action flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors"
-              >
-                <Upload className="h-4 w-4 shrink-0" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                title={t("canvas.ctxDownload")}
-                aria-label={t("canvas.ctxDownload")}
+                title={t("canvas.toolbar.downloadImage")}
+                aria-label={t("canvas.toolbar.downloadImage")}
                 disabled={!selected}
                 onClick={() =>
                   selected && void downloadOne(selected.image, selected.title)
@@ -10607,6 +10373,12 @@ export function CanvasClient() {
               >
                 <Maximize className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button>
+              </>}
+              {!selected && selectedPend && <button type="button" onClick={() => onPendUpload(selectedPend.id)}
+                title={t("canvas.toolbar.fillImageHint")} aria-label={t("canvas.toolbar.fillImage")}
+                className="canvas-ui-action flex h-[34px] items-center gap-1.5 rounded-[9px] px-2.5 text-[13px] font-semibold">
+                <Upload className="h-4 w-4 shrink-0" aria-hidden="true" />{t("canvas.toolbar.fillImage")}
+              </button>}
             </div>
           )}
 
@@ -10629,6 +10401,7 @@ export function CanvasClient() {
                 type="button"
                 disabled={assistBusy}
                 onClick={() => setProductPicker({ textNodeIds: [selectedText.id] })}
+                aria-label={t("canvas.toolbar.productCopy")}
                 title={t("canvas.assistWriteHint")}
                 className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
               >
@@ -10637,26 +10410,19 @@ export function CanvasClient() {
                 ) : (
                   <PenLine className="h-4 w-4" />
                 )}
-                {t("canvas.assistWrite")}
+                {t("canvas.toolbar.productCopy")}
               </button>
               <button
                 type="button"
                 onClick={() => setGenImageMenu({ textNodeIds: [selectedText.id] })}
+                aria-label={t("canvas.toolbar.textToImages")}
                 title={t("canvas.genImagesHint")}
                 className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors"
               >
                 <ImageIcon className="h-4 w-4" />
-                {t("canvas.genImages")}
+                {t("canvas.toolbar.textToImages")}
               </button>
-              <button
-                type="button"
-                onClick={() => setTextReferenceMenuOpen((open) => !open)}
-                title={t("canvas.textAddReference")}
-                className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors"
-              >
-                <Plus className="h-4 w-4" />
-                {t("canvas.textAddReference")}
-              </button>
+
               <span className="canvas-ui-divider mx-1.5 h-5 w-px flex-none" />
               <button
                 type="button"
@@ -10664,18 +10430,20 @@ export function CanvasClient() {
                 onClick={() =>
                   void copyText(selectedText.content).then((ok) => ok && showCopyTip())
                 }
+                aria-label={t("canvas.copyToClipboard")}
                 title={t("canvas.copyToClipboard")}
                 className="canvas-ui-action flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[16px] transition-colors disabled:opacity-40"
               >
-                ⧉
+                <Copy className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button>
               <button
                 type="button"
                 onClick={() => setFocusId(selectedText.id)}
-                title={t("canvas.dockFocus")}
+                aria-label={t("canvas.toolbar.focusNode")}
+                title={t("canvas.toolbar.focusNode")}
                 className="canvas-ui-action flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[15px] transition-colors"
               >
-                ⊡
+                <ScanSearch className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button>
               <button
                 type="button"
@@ -10683,14 +10451,16 @@ export function CanvasClient() {
                   setNodeRenameValue(selectedText.title);
                   setRenamingNodeId(selectedText.id);
                 }}
+                aria-label={t("canvas.editName")}
                 title={t("canvas.editName")}
                 className="canvas-ui-action flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[16px] transition-colors"
               >
-                ✏️
+                <Pencil className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button>
               <button
                 type="button"
                 onClick={() => void removeTextNode(selectedText.id)}
+                aria-label={t("canvas.deleteNodeTitle")}
                 title={t("canvas.deleteNodeTitle")}
                 className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] text-[#9aa1ae] transition-colors hover:bg-[#ff6b63]/15 hover:text-[#ff6b63]"
               >
@@ -11208,7 +10978,8 @@ export function CanvasClient() {
                         <button
                           type="button"
                           onClick={() => extraInputRef.current?.click()}
-                          title={t("canvas.addImage")}
+                          title={t("canvas.toolbar.addReference")}
+                          aria-label={t("canvas.toolbar.addReference")}
                           className="canvas-ui-action flex h-[46px] w-[46px] flex-none items-center justify-center rounded-[9px] border border-dashed border-[var(--canvas-ui-border)] transition-colors hover:!border-[#6366f1]/60"
                         >
                           <Upload className="h-4 w-4" />
@@ -11482,6 +11253,8 @@ export function CanvasClient() {
                 <button
                   type="button"
                   title={t("canvas.textAddReference")}
+                  aria-label={t("canvas.textAddReference")}
+                  aria-expanded={textReferenceMenuOpen}
                   onClick={() => setTextReferenceMenuOpen((open) => !open)}
                   className={cn(
                     "mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-[9px] border transition-colors",
