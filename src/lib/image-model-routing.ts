@@ -18,6 +18,10 @@ function flowModelPrefix(model: string) {
   return suffix ? model.slice(0, -(suffix.length + 1)) : null;
 }
 
+export function imageModelDisplayId(model: string) {
+  return flowModelPrefix(model) || model;
+}
+
 function flowVariantForRatio(ratio: string) {
   const [rawWidth, rawHeight] = ratio.split(":").map(Number);
   if (!(rawWidth > 0 && rawHeight > 0)) return null;
@@ -60,11 +64,11 @@ export function compactImageModelOptions<T extends ImageModelRoutingOption>(
     ...options,
   ] as T[];
   const seen = new Set<string>();
-  return ordered.filter((item) => {
-    const family = imageModelFamily(item.id);
-    const key = item.provider === "managed" ? item.id : family || item.label || item.id;
-    if (seen.has(key)) return false;
+  return ordered.flatMap((item) => {
+    const displayId = imageModelDisplayId(item.id);
+    const key = displayId;
+    if (seen.has(key)) return [];
     seen.add(key);
-    return true;
+    return [{ ...item, label: displayId }];
   });
 }
