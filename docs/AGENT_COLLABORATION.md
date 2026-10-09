@@ -2,6 +2,8 @@
 
 ## 当前固定版本（2026-10-09）
 
+- 最新新机运行源码 `44c9eb877c004754cbf06d59ecb70c1ff471dfc4`，镜像同SHA，Image ID `sha256:3fe8c709593e81fc398d43bf0537ec5e573ece32ab3e5f1f9b158769f0e4a761`，版本 `1791546283` / `v2026.10.09-194443`。MVP质量×分辨率积分表与前端报价已验收；模型v25/草稿保留、原价格恢复为计费v8。证据 `/opt/naumi-staging/evidence/mvp-credit-pricing-20261009-r4`；matrix/MVP规则回滚兼容门槛见 `docs/changes/2026-10-09-mvp-credit-pricing.md`。以下75affea为前序发布记录。
+
 - 新机：120.27.162.85。源码 `75affea3b69ea518ee5270e718faadc77294ab95` 已进入main并发布，新增模型家族工具范围多选和全站已加载/服务器版本比较；保留同事质量菜单、画布 UI、参数校验、后台改名和弹层修复。
 - 镜像：`ghcr.io/jesstle/naumi:75affea3b69ea518ee5270e718faadc77294ab95`。
 - Image ID：`sha256:6f32884606de1c78ac81e2d5711ad67ffe52b59acb02a7d9368786fd54138897`；公网版本 `1791542483`，网页 `v2026.10.09-184123`。
