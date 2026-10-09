@@ -7,7 +7,6 @@ import {
   activateUserImageProviderRecord,
   countUserImageProviderRecords,
   deleteUserImageProviderRecord,
-  getUserImageProviderRecord,
   getUserImageProviderRecordById,
   listUserImageProviderRecords,
   upsertUserImageProviderRecord,
@@ -162,20 +161,11 @@ export async function listUserImageProviders(
 
 /** 消费侧入口:取当前激活的供应商(任何时刻至多一个;目录与生图都只认它)。 */
 export async function getUserImageProvider(
-  email: string
+  _email: string
 ): Promise<UserImageProvider | null> {
-  const row = await getUserImageProviderRecord(email);
-  if (!row) return null;
-  return {
-    id: row.id,
-    name: row.name,
-    isActive: true,
-    protocol: row.protocol,
-    baseUrl: readSecret(row.baseUrlEnc),
-    apiKey: readSecret(row.apiKeyEnc),
-    models: normalizeUserImageModels(row.models),
-    defaultModel: row.models.includes(row.defaultModel) ? row.defaultModel : row.models[0] || "",
-  };
+  // New catalogs, defaults and quotes never consume account-owned endpoints.
+  // Existing tasks use restoreUserImageProvider on their immutable encrypted payload.
+  return null;
 }
 
 export type UserImageProviderView = {

@@ -1,5 +1,5 @@
 import { featureForRequest } from "./feature-path";
-import { requestedFeatureModel } from "./selection-policy";
+import { requestedFeatureModel, assertPlatformImageSelection } from "./selection-policy";
 import { selectedBusinessOption, FEATURE_BINDINGS } from "./business";
 import "server-only";
 import { dbEnabled, getPool } from "../db";
@@ -53,9 +53,11 @@ function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; 
   return { image: path.includes("cutout") ? "image.cutout" : path.includes("generate-image") ? "image.generate" : "image.edit", primary: "image" };
 }
 export async function withModelRequest<T>(request: Request, run: () => Promise<T>): Promise<T> {
-  if (!await modelConfigurationEnabled()) return run();
+  const [managed, parsed] = await Promise.all([modelConfigurationEnabled(), requestFacts(request)]);
+  assertPlatformImageSelection(parsed.body.model, parsed.body.modelId, request.headers.get("x-naumi-feature-model"));
+  if (!managed) return run();
   const admin = await getModelAdministration();
-  const [accepted, parsed] = await Promise.all([acceptedModelVersions(request), requestFacts(request)]);
+  const accepted = await acceptedModelVersions(request);
   if (new URL(request.url).pathname === "/api/aplus" && parsed.body.jobId && ["approve_source", "redo_source", "generate"].includes(parsed.body.action)) return run();
   const [snapshot, billing] = await Promise.all([accepted ? admin.repo.byVersion(accepted.modelVersion) : admin.repo.current(), accepted ? admin.billing.byVersion(accepted.billingVersion) : admin.billing.current()]);
   const quotedVersion = request.headers.get("x-naumi-model-version") || parsed.body.modelVersion;

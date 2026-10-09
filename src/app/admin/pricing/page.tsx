@@ -76,12 +76,12 @@ export default async function AdminPricingPage() {
     ],
     [
       t(
-        "自带接口需要站内积分吗？",
-        "Do my own API credentials consume site credits?",
+        "模型和积分价格由谁配置？",
+        "Who manages models and credit prices?",
       ),
       t(
-        "用户自带接口的站内收费比例由计费后台设置，上游供应商可能按其规则另行收费。平台接口的质量支持与实际输出效果需要分别核验。",
-        "Site charges for your own API follow the configured BYOK rate; the supplier may charge separately. Parameter support and actual output quality require separate verification.",
+        "模型来源、可用规格与积分价格由管理员统一配置，实际消耗以生成前报价和任务记录为准。",
+        "Administrators manage model sources, available specifications and credit prices. Check the quote before generation and the task record for actual charges.",
       ),
     ],
     [
@@ -188,8 +188,8 @@ export default async function AdminPricingPage() {
           </div>
           <p className="mt-4 text-sm leading-6">
             {t(
-              "开启计费时按请求质量档及成功张数结算，分辨率不额外计分，失败张数不扣。超高回退标准执行，成功1张仍扣14积分。自带接口站内消耗为0。",
-              "With metering on, billing uses requested quality and successful image count. Resolution adds no fee; failed images are not charged. Extra high falling back to medium still costs 14 credits per successful image. Your own API consumes zero site credits.",
+              "生图价格按模型及开放的质量、分辨率配置，创建任务时冻结报价与结算策略。实际消耗以生成前提示和任务积分记录为准。",
+              "Image prices follow the configured model, quality and resolution. Quotes and settlement policies are frozen when the task is accepted. Check the generation estimate and task credit record for actual consumption.",
             )}
           </p>
           <p className="mt-2 text-sm text-muted-foreground">

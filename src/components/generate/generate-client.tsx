@@ -488,7 +488,6 @@ export function GenerateClient({
     setAssistOpen(true);
   }
 
-  // BYOK(模型 id 带 byok: 前缀=用户自带接口)豁免站内计费,费用发生在用户自己的上游。
   // 内测阶段按请求质量档计价(与后端 qualityBillCredits 同表),跑通选档→扣费链路。
   const billing=useFeatureBilling("image.generate",{quantity:count,resolution,modelId:model||undefined,ratio});
   const cost=billing.cost;

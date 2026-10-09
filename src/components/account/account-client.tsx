@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ShieldCheck,
-  ImagePlus,
   LogOut,
   ChevronRight,
   ArrowRight,
@@ -89,14 +88,6 @@ export function AccountClient() {
       tint: "var(--c-tint-b)",
       color: "var(--c-blue)",
       href: "/account/security",
-    },
-    {
-      label: L("图片生成接口", "Image provider"),
-      desc: L("接入自己的 API Key 和模型站", "Use your own API key and image endpoint"),
-      Icon: ImagePlus,
-      tint: "var(--c-tint-g)",
-      color: "var(--c-success)",
-      href: "/account/image-provider",
     },
     {
       label: L("退出登录", "Sign out"),

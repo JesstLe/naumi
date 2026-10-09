@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Gem,
   Gift,
-  ImagePlus,
   LogOut,
   Moon,
   Settings,
@@ -190,14 +189,6 @@ export function AccountDockMenu({
       >
         <Settings className="h-4 w-4" />
         {t("menu.security")}
-      </Link>
-      <Link
-        href="/account/image-provider"
-        onClick={onClose}
-        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"
-      >
-        <ImagePlus className="h-4 w-4" />
-        {t("menu.imageProvider")}
       </Link>
       {isAdmin && (
         <Link

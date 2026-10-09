@@ -4,6 +4,7 @@ import { readManagedObject } from "@/lib/storage";
 import { runPostprocess, PostprocessPending } from "@/lib/media-postprocess";
 import { currentModelExecution } from "@/lib/model-config/context";
 import { featureForRequest } from "@/lib/model-config/feature-path";
+import { assertPlatformImageSelection } from "@/lib/model-config/selection-policy";
 import {withBillingIntent} from "@/lib/billing/intent";
 import {auditSettledImage} from "@/lib/image-quality-request";
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
@@ -1114,6 +1115,8 @@ async function handleObservedPost(request: Request) {
   if (!p) {
     return NextResponse.json({ error: "请求格式不正确" }, { status: 400 });
   }
+  try { assertPlatformImageSelection(p.model, request.headers.get("x-naumi-feature-model")); }
+  catch (error) { return billingErrorResponse(error); }
   // 改比例(ratiogen)用固定重构图指令,可以没有用户提示词;其余路径仍要求 prompt。
   if (!p.prompt && !p.ratiogen) {
     return NextResponse.json({ error: "prompt 不能为空" }, { status: 400 });
