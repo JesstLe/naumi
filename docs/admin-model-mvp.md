@@ -39,3 +39,15 @@ APIMart 专用默认预设涉及模型专属能力证据、原生参数矩阵及
 APIMart URL 接受根地址或 `/v1`；新来源规范化为根地址，Router 适配器亦去掉末尾 `/v1`，避免生成路径重复。多个同地址账户可以作为独立来源保存。固定 Router 源码 `b3fc8dd61e62c564ac2ba2a08cf943f7c391970c` 保存在验收源码包中；Go 全量测试通过。API 与已明确批准的媒体来源使用独立 `NAUMI_MODEL_PROXY_URL` / `NAUMI_MODEL_PROXY_ORIGINS`，其他媒体仍校验公网地址。`scripts/verify-model-proxy.ts` 验证来源隔离、CONNECT 和密钥边界。
 
 受管图片任务向 Router 传递冻结的文字能力要求，避免完整提示词中的“不要文字”等系统约束被再次推断成文字绘制需求；显式操作要求仍优先，旧路由继续使用自动推断。`scripts/verify-managed-gateway-facts.ts` 验证普通生图、冻结文字需求、显式要求和旧路由，`verify-image-gateway.ts` 验证任务恢复、原报价和积分结算。
+
+## 新机实际验收（2026-10-09）
+
+固定应用 `f5a6f69b217ebeff6733fcd934c48a2d6a351c2c`、版本 `1791536938` 已在 `120.27.162.85` 发布；镜像 `sha256:bee98a62902b37fc2ce9936d7fdbe1870c13b8c0770a3d8f5ee664799538fe28`。公网 UI 手动刷新发现 376 个模型，按供应商文档添加 `gpt-image-2.5-ext`（参考图最多16、1K/2K/4K、无 quality 原生参数），完成真实页面切换。
+
+通过应用报价和 `/api/generate-image` 提交单张真实图片，任务 `job-b0a6972b-ae35-4f9f-88f5-adf08fcb1cd3` 完成，返回并保存 1254×1254 PNG，媒体 HTTP200、作品记录存在、账单已结算6积分、预占0。Router 保存同一 APIMart 任务 `task_01M4FZ326X0ST4C1HG9PJD8C9S` 的 completed 回执，供应商报告 USD0.0085；该项是 Router 回执证据，不冒充完整采购账本对账。
+
+测试后将全局 `gpt-image-2` 默认路径还原原主生图通道，避免单次文生图验收替代全部编辑/蒙版/画布能力验收；APImart 来源和新模型保留在可切换列表，生效模型版本6。桌面、手机、未登录404、公开版本及数据库健康通过。
+
+首次任务因提示词二次推断被 Router 拒绝，客户扣费0。随后发现发布脚本把 Router 恢复代码误插到回滚 `--check` 分支：已修正，只在 `--apply` 执行，并验证三个回滚检查均不改变运行二进制；实际进程二进制及代理环境均核实。旧 Router 下未取得任务 ID 的 `job-ad99d97d-ff60-4ac2-bde9-11864d201a19` 未重发，使用现有 `failUndeliveredImageJob` 释放客户预占、扣费0，供应商未知费用与原始尝试保留 pending 核对。
+
+服务器证据 `/opt/naumi-staging/evidence/admin-mvp-apimart-e2e-20261009`，包含固定源码、数据库/配置备份、独立应用与 Router 回滚、部署日志、验收结果。未连接或修改旧生产机。
