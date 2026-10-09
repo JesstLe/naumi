@@ -9,6 +9,7 @@ import { ModelConfigError, type ModelFacts } from "./types";
 import type { ModelBinding } from "./bindings";
 import { resolutionForLongSide } from "../mock-data";
 import { acceptedModelVersions } from "./accepted-context";
+import { routeImageModel } from "../image-model-routing";
 
 export async function modelConfigurationEnabled() {
   if (!dbEnabled || legacyModelExecutionActive()) return false;
@@ -69,7 +70,15 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   if (purpose.image && !standaloneSegmentation) {
     const selected = String(parsed.body.model || parsed.body.modelId || "").trim();
     const explicit = request.headers.get("x-naumi-feature-model") || selected || "";
-    const requestedModelId = explicit.startsWith("byok:") ? undefined : explicit || undefined;
+    const explicitModelId = explicit.startsWith("byok:") ? undefined : explicit || undefined;
+    const featureDefault = mainFeature ? snapshot.config.business?.[mainFeature]?.defaultModelId : undefined;
+    const configuredModelId = explicitModelId || featureDefault || snapshot.config.bindings[purpose.image];
+    const routedModelId = routeImageModel(
+      configuredModelId,
+      String(parsed.body.ratio || "1:1"),
+      snapshot.config.publicModels.filter(model => model.enabled && model.modality === "image"),
+    );
+    const requestedModelId = (explicitModelId || featureDefault || routedModelId !== configuredModelId) ? routedModelId : undefined;
     const option = selectedBusinessOption(snapshot.config, mainFeature, requestedModelId);
     if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);
     const model = snapshot.config.publicModels.find(m => m.id === (option?.modelId || requestedModelId || snapshot.config.bindings[purpose.image!]));
@@ -85,7 +94,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const needsEdit = purpose.image === "image.edit" || purpose.image === "image.cutout" || parsed.references > 0;
     const needsText = new URL(request.url).pathname.includes("/canvas/image-tasks");
     const task = String(parsed.body.taskType || parsed.body.task || "");
-    const facts: ModelFacts = { task: ["draft", "product", "detail", "layout"].includes(task) ? task as ModelFacts["task"] : needsText ? "layout" : "product", quality: qualities.includes(requestedQuality as any) ? requestedQuality : defaultQuality, resolution: native ? outputResolution : "1K", needsEdit, preserveIdentity: needsEdit, needsText, nativeResolution: native && outputResolution !== "1K", references: parsed.references, quantity: 1, inputLength: String(parsed.body.prompt || parsed.body.text || "").length };
+    const facts: ModelFacts = { task: ["draft", "product", "detail", "layout"].includes(task) ? task as ModelFacts["task"] : needsText ? "layout" : "product", quality: qualities.includes(requestedQuality as any) ? requestedQuality : defaultQuality, resolution: native ? outputResolution : "1K", ratio: String(parsed.body.ratio || "1:1"), needsEdit, preserveIdentity: needsEdit, needsText, nativeResolution: native && outputResolution !== "1K", references: parsed.references, quantity: 1, inputLength: String(parsed.body.prompt || parsed.body.text || "").length };
     facts.needsMask = !!parsed.body.needsMask || new URL(request.url).pathname.includes("/canvas/image-tasks");
     bundle.image = await executor.resolve({ feature: mainFeature, binding: purpose.image, requestedModelId, snapshot, billing, facts });
   }

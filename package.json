@@ -65,6 +65,7 @@
     "verify:model-coverage": "tsx --conditions react-server scripts/verify-model-config-coverage.ts",
     "verify:model-review": "tsx --conditions react-server scripts/verify-model-review.ts",
     "verify:model-flow": "tsx --conditions react-server scripts/verify-model-flow.ts",
+    "verify:image-model-family-routing": "tsx --conditions react-server scripts/verify-image-model-family-routing.ts",
     "verify:model-shared-capacity": "tsx --conditions react-server scripts/verify-model-shared-capacity.ts"
   },
   "dependencies": {

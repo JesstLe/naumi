@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { MODEL_CATALOG_REFRESH } from "./public-client";
 import type { FeatureId } from "../billing/rules/registry";
+import { compactImageModelOptions, imageModelDisplayId } from "../image-model-routing";
 import { authHeader } from "../supabase";
 export type FeatureCatalog = { managed: boolean; supported?: boolean; feature: FeatureId; version?: number; defaultModelId?: string; models: { id: string; label: string; modality: string; supportsEdit: boolean; qualities?: string[]; nativeResolutions?: string[] }[] };
 const catalogs = new Map<FeatureId, FeatureCatalog>(), selections = new Map<FeatureId, string>();
@@ -14,6 +15,10 @@ function loadCatalog(feature: FeatureId) {
     promise = (async () => {
       const res = await fetch(`/api/models?feature=${encodeURIComponent(feature)}`, { cache: "no-store", headers: await authHeader() }), data = await res.json();
       if (!res.ok) throw new Error(data.error || "模型列表加载失败");
+      if (data.models?.some((m: { modality: string }) => m.modality === "image")) {
+        data.models = compactImageModelOptions(data.models, [data.defaultModelId].filter(Boolean));
+        data.defaultModelId = data.models.find((m: { id: string }) => imageModelDisplayId(m.id) === imageModelDisplayId(data.defaultModelId || ""))?.id || data.models[0]?.id;
+      }
       return data as FeatureCatalog;
     })();
     inflight.set(feature,promise);
@@ -39,7 +44,7 @@ export function useFeatureModels(feature: FeatureId) {
         if (cancelled) return;
         catalogs.set(feature, data); setCatalog(data); setError(null);
         let saved = selections.get(feature); try { saved ||= localStorage.getItem(`naumi:model:${feature}`) || undefined; } catch {}
-        const id = data.models.some((m: { id: string }) => m.id === saved) ? saved : data.defaultModelId || data.models[0]?.id;
+        const id = data.models.find(m => imageModelDisplayId(m.id) === imageModelDisplayId(saved || ""))?.id || data.defaultModelId || data.models[0]?.id;
         if (id) selections.set(feature, id); else selections.delete(feature);
         setSelected(id || "");
       } catch (e) { if (!cancelled) { setError(e instanceof Error ? e.message : "读取失败"); setCatalog(null); catalogs.delete(feature); } }
