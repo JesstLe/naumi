@@ -30,6 +30,7 @@ if (process.argv.includes("--baseline")) {
   assert.equal(nextQualityOption(options, 0, -1), 3);
   assert.equal(nextQualityOption([{ disabled: true }], 0, 1), -1);
   assert.equal(nextQualityOption([], -1, 1), -1);
+  assert.equal(qualityMenuPosition({ left: 20, top: 20, bottom: 56, width: 160 }, 1440, 900, 3).maxHeight, 118);
   for (const [w, h] of [[1440, 900], [390, 844], [320, 220], [390, 120]]) {
     for (const rect of [{ left: 20, top: 20, bottom: 56, width: 160 }, { left: w - 170, top: h - 60, bottom: h - 24, width: 160 }, { left: -20, top: h / 2 - 18, bottom: h / 2 + 18, width: w + 200 }]) {
       const position = qualityMenuPosition(rect, w, h, 5);
