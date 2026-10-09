@@ -2,6 +2,8 @@
 
 ## 当前固定版本（2026-10-09）
 
+- 最新新机运行源码 `5618bc6316ca1357dba00e9e6415c6a2507eebd1`，Image ID `sha256:5dddd3dd295549d315116c18b12d9bd27ad13ba15c950d00069336074f0021a7`，版本1791554146 / `v2026.10.09-215546`。按用户选择只取消用户自带图片API，账号/菜单入口和新请求关闭；ComfyUI保留，历史冻结任务恢复兼容。模型v42/草稿、计费v8、旧接口/工作流记录不变，线上验收付费调用0。证据 `/opt/naumi-staging/evidence/disable-user-image-provider-20261009-r2`，回滚至17bfa9c，详见 `docs/changes/2026-10-09-user-image-api-retirement.md`。以下为历史版本。
+
 - 最新新机运行源码 `17bfa9c2c40f341b0bbee96f57861476389dc245`，Image ID `sha256:8726cdee58bf0ccffb49037285a2b4fcb8d5c3cd55236ce2a254b63b7e26c8ec`，版本 `1791551890` / `v2026.10.09-211810`。画布生图Dock/请求/报价统一canvas.image，四项范围切换与旧缓存/焦点/手机已验收；原v33完整配置恢复为v42、草稿和计费v8保留。证据 `/opt/naumi-staging/evidence/canvas-model-scope-20261009-r2`，回滚跳过中间138912f至稳定23abb395；见 `docs/changes/2026-10-09-canvas-model-scope.md`。用户随后要求取消用户自带接口，该后续任务尚待发布。以下为历史版本。
 
 - 最新新机运行源码 `23abb39547c580d76608c046189187d0474982d6`，镜像同SHA，Image ID `sha256:23263cdf511480ca7f6ac3fe25f7d79ff79dba582c0003788b2c305a86262de2`，版本 `1791549148` / `v2026.10.09-203228`。供应商模型元数据/成本库增量三表与真实页面验收通过，861条记录中23条来自现有配置，未知资料不冒充实测；模型v33/草稿和计费v8保留。证据 `/opt/naumi-staging/evidence/supplier-model-metadata-20261009`，可执行回滚至支持matrix的44c9eb8，保留新增资料表与记录。见 `docs/changes/2026-10-09-supplier-model-metadata.md`。以下版本为前序发布记录，文档提交不另发镜像。
