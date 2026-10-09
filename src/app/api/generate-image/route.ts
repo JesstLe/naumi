@@ -1168,7 +1168,8 @@ async function handleObservedPost(request: Request) {
     ? await getUserDefaultImageModel(actorEmail)
     : null;
   const catalog = await getImageModelCatalog(actorEmail);
-  const acceptedModel = currentModelExecution("image")?.frozen.publicModelId;
+  const imageScope = currentModelExecution("image");
+  const acceptedModel = p.origin === "canvas" || imageScope?.imagePreset ? imageScope?.frozen.publicModelId : undefined;
   const requestedModel = acceptedModel || p.model || userDefaultModel || defaultModel;
   const model = acceptedModel || routeImageModel(requestedModel, p.ratio, catalog);
   const imageModel = catalog.find((item) => item.id === model);
