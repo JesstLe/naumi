@@ -8,3 +8,8 @@ export function featureForPath(path: string): FeatureId | undefined {
   if (/^\/api\/competitors\/[^/]+\/action$/.test(path)) return "competitor.action";
   return paths[path];
 }
+
+/** The shared generation endpoint also serves canvas; its policy must match that entry. */
+export function featureForRequest(path: string, body: { origin?: unknown }): FeatureId | undefined {
+  return path === "/api/generate-image" && body.origin === "canvas" ? "canvas.image" : featureForPath(path);
+}

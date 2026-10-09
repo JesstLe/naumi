@@ -136,7 +136,7 @@ import {
 } from "@/lib/image-model-routing";
 import { ModelIcon } from "@/components/ui/model-icon";
 import { adminConfiguredFeature } from "@/lib/model-config/selection-policy";
-import { chosenFeatureModel, featureModelManaged } from "@/lib/model-config/feature-client";
+import { chosenFeatureModel, featureModelManaged, useFeatureModels } from "@/lib/model-config/feature-client";
 import { TextModelSelect } from "@/components/ui/text-model-select";
 import { useTextModel } from "@/lib/text-model-context";
 
@@ -1591,7 +1591,7 @@ export function CanvasClient() {
   const billing=useBilling();
   async function privateFetch(input:RequestInfo|URL,init:RequestInit={}){
     const path=String(input).split('?')[0];
-    const features:Record<string,FeatureId>={"/api/generate-image":"image.generate","/api/aplus":"image.aplus","/api/suite":"image.suite","/api/cutout":"tool.cutout","/api/canvas/image-tasks":"canvas.image","/api/canvas/expand":"canvas.expand","/api/canvas/text-edit":"canvas.text-edit","/api/canvas/annotate":"canvas.annotate","/api/canvas/text-generate":"canvas.text-generate","/api/canvas/assistant":"canvas.assistant","/api/canvas/ocr":"canvas.ocr","/api/video/generate":"video.generate"};
+    const features:Record<string,FeatureId>={"/api/generate-image":"canvas.image","/api/aplus":"image.aplus","/api/suite":"image.suite","/api/cutout":"tool.cutout","/api/canvas/image-tasks":"canvas.image","/api/canvas/expand":"canvas.expand","/api/canvas/text-edit":"canvas.text-edit","/api/canvas/annotate":"canvas.annotate","/api/canvas/text-generate":"canvas.text-generate","/api/canvas/assistant":"canvas.assistant","/api/canvas/ocr":"canvas.ocr","/api/video/generate":"video.generate"};
     if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
     const form=init.body instanceof FormData?init.body:null;
     const body=form?Object.fromEntries(Array.from(form.entries()).filter((entry)=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};
@@ -1660,7 +1660,8 @@ export function CanvasClient() {
   const cancelEditRef = useRef(false); // Esc 取消时跳过失焦保存
   const [editPrompt, setEditPrompt] = useState("");
   const [genModel, setGenModel] = useState("");
-  const { quality: genQuality, imageCost, modelConfig } = useImageQuality(undefined, genModel);
+  const { quality: genQuality, imageCost, modelConfig } = useImageQuality("canvas.image", genModel);
+  const { catalog: canvasImageCatalog, error: canvasImageCatalogError } = useFeatureModels("canvas.image");
   const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
   const [genRatio, setGenRatio] = useState("auto"); // 默认自适应
   const [genResolution, setGenResolution] = useState("1K"); // 默认 1K
@@ -1777,6 +1778,16 @@ export function CanvasClient() {
   }
 
   useEffect(() => {
+        if (canvasImageCatalog?.managed) {
+          const options = canvasImageCatalog.models.filter(item => item.id === canvasImageCatalog.defaultModelId);
+          setImageModels(options);
+          setGenModel(options[0]?.id || "");
+          return;
+        }
+        // Never briefly expose the unrestricted generation list while a managed canvas loads.
+        if (canvasImageCatalog?.managed !== false && modelConfig?.modelVersion) {
+          setImageModels([]); setGenModel(""); return;
+        }
         const config = modelConfig;
         if (!config) return;
         const options = Array.isArray(config.imageModels)
@@ -1795,7 +1806,7 @@ export function CanvasClient() {
           if (normalized.some((item) => item.id === saved)) return saved;
           return normalized.find((item) => item.id === fallback)?.id || normalized[0]?.id || "";
         });
-  }, [modelConfig]);
+  }, [modelConfig, canvasImageCatalog]);
 
   useEffect(() => {
     const parameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
@@ -1804,6 +1815,7 @@ export function CanvasClient() {
   }, [genModel, imageModels]);
 
   function pickGenerationModel(model: string) {
+    if (canvasImageCatalog?.managed) return;
     setGenModel(model);
     window.localStorage.setItem("naumi:canvas-image-model", model);
   }
@@ -8141,13 +8153,13 @@ export function CanvasClient() {
   };
   const generationParameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
   const activeImageModelLabel =
-    imageModels.find((item) => item.id === genModel)?.label || genModel;
+    imageModels.find((item) => item.id === genModel)?.label || (canvasImageCatalogError ? "模型加载失败" : "模型加载中");
   const modelControl = (disabled = false) => (
     <DarkSelect
       dir="up"
       light={lightCanvas}
       value={genModel}
-      disabled={disabled || imageModels.length < 2}
+      disabled={disabled || canvasImageCatalog?.managed || imageModels.length < 2}
       options={imageModels.map((item) => ({
         value: item.id,
         label: (
@@ -8167,7 +8179,7 @@ export function CanvasClient() {
       trigger={
         <>
           <ModelIcon modelId={genModel} size={15} />
-          <span className="truncate" title={t("canvas.dockModelHint")}>
+          <span data-testid="canvas-generation-model" className="truncate" title={canvasImageCatalog?.managed ? "由管理员在画布生图范围中统一配置" : t("canvas.dockModelHint")}>
             {activeImageModelLabel || t("canvas.dockModel")}
           </span>
         </>
@@ -11286,7 +11298,7 @@ export function CanvasClient() {
                     }
                   />
                   {ratioControl}
-                  <ImageQualityControl compact modelId={genModel} resolution={genResolution} disabled={selectedGenerating} />
+                  <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} disabled={selectedGenerating} />
                   {generationMode === "standard" || generationMode === "detail" ? (
                     <ImageCountControl
                       value={genCount}
@@ -11422,7 +11434,7 @@ export function CanvasClient() {
                   }
                 />
                 {ratioControl}
-                <ImageQualityControl compact modelId={genModel} resolution={genResolution} disabled={selectedPendGenerating} />
+                <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} disabled={selectedPendGenerating} />
                 <ImageCountControl
                   value={genCount}
                   onChange={setGenCount}
