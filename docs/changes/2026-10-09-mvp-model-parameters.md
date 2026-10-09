@@ -12,7 +12,7 @@
 
 仅在新机 120.27.162.85 测试，凭据从既有加密库在进程内读取，未写入文件或日志。原可见 GPT 显示名 gpt-image-2.5、真实 ID gpt-image-2（TDH 来源），依次 low / medium / high / xhigh / max / invalid_probe_value，六次均 HTTP 200 并返回图片。连故意无效值也被接受，因此不能证明原生五档、效果差异或参数被忽略；结果只记 `accepted_effect_unverified`。一次 Flow 无 quality 探测连接状态不明，记 `unknown_stop_no_retry` 并停止，未重提，也不声称供应商费用为零。总计七次实际尝试，六次明确出图，一次结果不明；绕过应用用户任务，不扣用户积分、不创建作品。供应商费用未确定。
 
-证据 `/opt/naumi-staging/evidence/mvp-model-parameters-20261009/probe-results.json`。模型官方参数文档只作参考，不能代替代理供应商实测：OpenAI image-generation guide、image-gen prompting cookbook；当前供应商模型 ID 不等于前端别名。
+证据 `/opt/naumi-staging/evidence/mvp-model-parameters-20261009/probe-results.json`。模型官方参数文档只作参考，不能代替代理供应商实测：[OpenAI image-generation guide](https://developers.openai.com/api/docs/guides/image-generation/index.html)、[image-gen prompting cookbook](https://developers.openai.com/cookbook/examples/multimodal/image-gen-models-prompting-guide)；当前供应商模型 ID 不等于前端别名。
 
 ## 验收与发布
 
@@ -21,6 +21,16 @@
 画布参数穷举 480 个组合；工具范围、MVP 发布、七项管理员画布执行、积分矩阵、自带图片 API 关闭/ComfyUI 保留、质量菜单、全局质量、家族路由、APIMart 预设均通过。类型检查与相关 lint 通过。UI 脚本初次误用 button 而实际是 tab、第二次把画布 multipart 当 JSON，均为验收脚本错误，原配置已恢复，修正后完整通过。
 
 发布仅针对新机，固定源码镜像，共用 deploy.lock 从备份到线上浏览器验收连续持锁。保留本地媒体、数据库、账号鉴权、Router 连接、Compose 与公网代理，旧机不连接、不回传。视频与 OSS 延期约定保持。实际版本与发布证据完成后追加。
+
+### 已发布与线上验收
+
+- 运行源码 `8ca8329aec4af8af6e526bfa9ab3824648bc1e92`，镜像 ID `sha256:3c281c586bc309a6f60e1e963428de545766187529ef07a6b2b3c27306902d71`。APP/Worker 相同固定镜像，数据库与公网代理运行身份未变，health DB ok。`/api/version` 为 `1791559097`，浏览器实际加载 `v2026.10.09-231817`，发布锁已释放。
+- 线上真实保存五档/改名/映射，生图选择 GPT 后显示定制档位，画布 max multipart 提交保持 max（供应商生成被浏览器拦截）；关闭 xhigh 后报价 409，omit 后报价 effective=auto，手机与稳定行序通过。恢复原完整配置、草稿和计费 v8 均核对一致。
+- 线上默认生图模型为 Gemini，第一次验收误假定默认 GPT，第二次未兼容模型菜单的积分副标题。两次只影响脚本定位，分别恢复为模型 v50/v52，未更改用户默认、未收费生成。修正后完整验收恢复至 v55。最终只读检查等待最高档实际选中、加载稳定后截图，确认客户端/服务器版本相同。
+- 原兼容完整配置仍为 v48。创建临时映射 v56，实际执行回滚兼容配置恢复至 v57，证明旧字段已移除且草稿/价格保留；没有回退主镜像。随后 GPT 五档 profile 正式生效 v58，模式 passthrough，来源实际 ID `platform-images:9ba2827204791ed8` / `gpt-image-2`，状态 accepted、依据注明无效值也被接受和效果未验证。其他模型、模型顺序、默认选择、采购价、客户计费 v8 保持。十个生图/画布×档位报价各轮通过，无收费生成。
+- 回滚版本防覆盖实测：当前 v58，传过期拥有版本 v57，恢复被拒绝且仍 v58。`ROLLBACK.sh --check` 只读通过；真正回退前会拒绝新机未结算图片任务或后续管理员配置，避免旧代码解析新冻结 profile。
+- 历史自带图片端点、ComfyUI 端点/工作流和计费 v8 前后完整行摘要一致；自带图片 API 仍 410，ComfyUI 鉴权保持。临时浏览器会话和应用 /tmp 验收助手已移除，用户原私钥未改动。
+- 发布证据 `/opt/naumi-staging/evidence/mvp-model-parameters-20261009-release`，含 env/Compose/数据库备份、固定源码包、构建/部署日志、截图、最终配置/版本摘要、供应商实测结果和可执行回滚。`ROLLBACK.sh --apply` 自行取共用发布锁；仅在运行镜像和拥有配置版本仍匹配且无新待结算图片任务时执行。测试/文档跟进提交不另发业务镜像。
 
 ### 旧镜像回滚兼容性
 
