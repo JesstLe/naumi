@@ -10,6 +10,7 @@ function safe(n: number) { if (!Number.isSafeInteger(n) || n < 0 || n > MAX)
     throw new BillingError("INVALID_RESULT", "积分金额超出范围", 400); return n; }
 function unitPrice(t: FeatureTariff, f: BillingFacts, costs: BillingQuote["costRates"]): number {
     const p = t.pricing;
+    if(p.mode==="matrix"){const price=p.prices[f.quality]?.[f.resolution];if(price===null || price===undefined)throw new BillingError("INVALID_RESULT","该质量与分辨率尚未配置积分价格，请选择其他规格",400);return safe(price);}
     if (p.mode === "api-cost-plus") return apiCostCredits(BigInt(p.estimateCnyMicros),BigInt(1),p);
     if (p.mode === "cny-fixed") {
         const variant = p.variants?.filter(v => (!v.quality || v.quality === f.quality) && (!v.resolution || v.resolution === f.resolution)).sort((a,b) => Number(!!b.quality) + Number(!!b.resolution) - Number(!!a.quality) - Number(!!a.resolution))[0];

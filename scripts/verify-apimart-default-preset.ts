@@ -46,12 +46,15 @@ async function main(){
   const executor=createModelExecutor({runtime,credentials:f.credentials,gateway:()=>({baseUrl:f.origin,apiKey:"unused"}),trustedOrigins:[f.origin]});
   const mf={task:"product" as const,quality:"max",resolution:"4K",ratio:"16:9",needsEdit:true,needsMask:true,needsText:true,preserveIdentity:true,nativeResolution:true,references:1};
   for(const alias of ["灵动2.5","gpt-image2.5"]){const e=await executor.resolve({snapshot:current,billing,binding:"image.edit",feature:"canvas.image",requestedModelId:alias,facts:mf});assert.equal(e.target.id,"u1");assert.equal(e.facts?.quality,"medium");assert.equal((await executor.describe(e)).connection.wireModel,"fixture-apimart-exact");assert.equal(e.requestedParameters?.quality,"max");assert.equal(e.routerDigest,undefined);}
-  const {businessBillingSnapshot}=await import("../src/lib/model-config/business-billing");
   const priced=structuredClone(billing);priced.config.features["image.generate"].rules.push({id:"mvp-credit-fixture",priority:999,when:{modelId:["gpt-image2.5"],byok:false},pricing:{mode:"fixed",credits:7}});
   const pricedFacts=facts({modelId:"gpt-image2.5",quantity:2,quality:"max",resolution:"4K",ratio:"16:9"});
-  assert.equal(freezeImagePresetQuote(priced,current,pricedFacts,quote),null,"Customer fixed credit override takes precedence over supplier cost-plus");
-  const pricedQuote=quote(businessBillingSnapshot(priced,current,pricedFacts),pricedFacts);
+  const pricedQuote=freezeImagePresetQuote(priced,current,pricedFacts,quote)!;
   assert.equal(pricedQuote.requestedCredits,14);assert.equal(settlementFor(pricedQuote,{state:"succeeded",items:[{id:"a",state:"succeeded",executedQuality:"medium"},{id:"b",state:"failed"}]}).charge,7);
+  const tiered=structuredClone(priced);tiered.config.features["image.generate"].rules[0].pricing={mode:"quality-resolution",quality:{low:2,medium:7,high:9,xhigh:11,max:13,auto:7},resolutionExtra:{"1K":0,"2K":2,"4K":4,"5K":6}};
+  const tieredQuote=freezeImagePresetQuote(tiered,current,pricedFacts,quote)!;
+  assert.equal(tieredQuote.facts.quality,"medium");assert.equal(tieredQuote.requestedParameters?.quality,"max");assert.equal(tieredQuote.requestedCredits,22,"Charge supported medium+4K, not unsupported max+4K");
+  const exact=structuredClone(priced);exact.config.features["image.generate"].rules[0].pricing={mode:"matrix",prices:Object.fromEntries(["low","medium","high","xhigh","max","auto"].map(quality=>[quality,Object.fromEntries(["1K","2K","4K","5K"].map(resolution=>[resolution,quality==="medium"&&resolution!=="5K"?12:quality==="low"&&resolution!=="5K"?7:null]))]))};
+  const exactQuote=freezeImagePresetQuote(exact,current,pricedFacts,quote)!;assert.equal(exactQuote.requestedCredits,24);assert.equal(exactQuote.facts.quality,"medium");assert.deepEqual(exactQuote.procurement,p.prices.find(v=>v.quality==="medium"&&v.resolution==="4K")!.procurement);
   assert.deepEqual(current.config.defaultImagePreset,p,"Credit override does not alter supplier parameters or prices");
   const q=freezeImagePresetQuote(billing,current,facts({modelId:"gpt-image2.5",quality:"max",resolution:"4K",ratio:"16:9"}),quote)!;
   assert.equal(q.effectiveParameters?.quality,"medium");assert.equal(q.requestedParameters?.quality,"max");assert.equal(q.requestedCredits,apiCostCredits(BigInt(500000),BigInt(1),q.tariff.pricing as any));

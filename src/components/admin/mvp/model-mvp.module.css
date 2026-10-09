@@ -57,6 +57,16 @@
 .scopeHeading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
 .priceGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 14px; }
 .priceCaption { font-size:10px; color:#718495; text-align:right; }
+.priceTools { max-height:150px; overflow-y:auto; overscroll-behavior:contain; padding-right:4px; }
+.bulkPrice { display:flex; align-items:center; gap:12px; }.bulkPrice .field { flex:1; }
+.priceTableScroll { max-width:100%; overflow-x:auto; overscroll-behavior:contain; margin:4px 0 18px; }
+.priceTable { width:100%; min-width:470px; border-collapse:separate; border-spacing:0; font-size:12px; }
+.priceTable caption { text-align:left; font-size:13px; font-weight:600; padding:10px 0; color:#315873; }
+.priceTable th,.priceTable td { padding:10px 7px; border-bottom:1px solid #e1eaf1; text-align:center; }
+.priceTable thead th { background:#eef4f9; color:#3c617e; }.priceTable tbody th { background:#f7fafc; position:sticky; left:0; min-width:95px; }
+.priceTable input { width:64px; min-width:0; padding:8px 5px; text-align:center; border:1px solid #cadbe8; border-radius:6px; background:white; color:#245d83; }
+.priceTable input:focus { outline:2px solid #75aacd; outline-offset:2px; }.priceTable input:disabled { background:#f4f7fa; }
+.priceTable td[data-unavailable=true] { color:#98a8b5; background:#f7f9fb; font-size:10px; }.priceTable td small { display:block; color:#718495; font-size:10px; }
 .scopeGrid + .field { margin-top:22px; }
 @media(max-width:600px){.dialogFooter { flex-wrap:wrap; }.priceGrid { gap:0 9px; }}
 .scopeHeading b { font-size:16px; overflow-wrap:anywhere; }

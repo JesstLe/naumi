@@ -27,6 +27,7 @@ export type MvpRow = {
   pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").MvpCreditPricing}[];
 };
 export type MvpCandidate = { id: string; model: string; label: string; providerId: string; provider: string; modality: string; verified: boolean };
+export type MvpCreditGrid = {quality:string;resolution:string;credits:number|null;available:boolean;effectiveQuality:string;estimated:boolean}[];
 export type MvpState = {
   version: number; managed: boolean; rows: MvpRow[]; candidates: MvpCandidate[];
   billingVersion?:number;

@@ -83,7 +83,7 @@ async function main() {
     await family.getByRole("button",{name:"设置积分",exact:true}).click();
     const price=page.getByRole("dialog",{name:"设置模型积分"});
     await price.getByRole("button",{name:"全选应用工具",exact:true}).click();
-    await price.getByLabel("每单位消耗积分",{exact:true}).fill("7");
+    await price.getByLabel("积分计价方式",{exact:true}).selectOption("fixed");await price.getByLabel("每单位消耗积分",{exact:true}).fill("7");
     await page.screenshot({path:"output/admin-mvp-20261009/pricing-fixed.png",fullPage:true});
     await price.getByRole("button",{name:"保存积分并生效",exact:true}).click();await expect(price).toHaveCount(0);
     const priced=await(await admin.request.get(origin+"/api/admin/mvp")).json();assert.equal(priced.version,priceBefore.version);assert.ok(priced.billingVersion>priceBefore.billingVersion);
@@ -98,8 +98,9 @@ async function main() {
     await frontend.getByRole("button",{name:/^gemini-3.0-pro-image .*7 积分/}).click();await expect(frontend.getByTestId("billing-estimate")).toContainText("7");
     await frontend.screenshot({path:"output/admin-mvp-20261009/pricing-frontend.png",fullPage:true});
     await family.getByRole("button",{name:"设置积分",exact:true}).click();await price.getByRole("button",{name:"全选应用工具",exact:true}).click();
-    await price.getByLabel("积分计价方式",{exact:true}).selectOption("quality-resolution");
-    await price.getByLabel("标准基础积分",{exact:true}).fill("8");await price.getByLabel("高质量基础积分",{exact:true}).fill("9");await price.getByLabel("2K追加积分",{exact:true}).fill("4");
+    await price.getByLabel("积分计价方式",{exact:true}).selectOption("matrix");
+    await expect(price.getByRole("table",{name:"模型积分价格表"})).toBeVisible();
+    await price.getByLabel("标准 · 1K 积分",{exact:true}).fill("8");await price.getByLabel("高 · 2K 积分",{exact:true}).fill("13");await price.getByLabel("标准 · 2K 积分",{exact:true}).fill("17");
     await page.screenshot({path:"output/admin-mvp-20261009/pricing-matrix.png",fullPage:true});
     await price.getByRole("button",{name:"保存积分并生效",exact:true}).click();await expect(price).toHaveCount(0);
     assert.equal((await(await quote({feature:"image.generate",modelId:"gemini-3.0-pro-image-portrait",quantity:3,quality:"high",resolution:"2K"})).json()).credits,39);

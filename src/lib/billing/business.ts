@@ -26,6 +26,7 @@ export function unitLabel(unit: FeatureTariff["unit"]) { return unit === "image"
 export function pricingSummary(tariff: FeatureTariff) {
     if (!tariff.enabled) return "免费";
     const p = tariff.pricing;
+    if(p.mode==="matrix")return "按质量与分辨率价格表收费";
     if (p.mode === "fixed") return `${p.credits} 积分 / ${unitLabel(tariff.unit)}`;
     if (p.mode === "quality-resolution") return `${p.quality.medium + p.resolutionExtra["1K"]} 积分 / ${unitLabel(tariff.unit)}（标准 1K）`;
     return p.mode === "tiers" ? "按档位收费" : "按供应商成本加成";

@@ -11,12 +11,17 @@ import { rounded } from "../billing/money";
 import {mvpCreditRule,applyCreditOverride} from "./credit-overrides";
 
 export function freezeImagePresetQuote(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts, create: (s:ConfigSnapshot,f:BillingFacts)=>BillingQuote): BillingQuote | null {
-  if(mvpCreditRule(snapshot,facts)) return null;
   const preset = facts.byok ? undefined : selectedImagePreset(models.config,facts.feature,facts.modelId);
   if (!preset) return null;
   if (models.config.business?.[facts.feature]?.enabled === false) throw new ModelConfigError("FEATURE_DISABLED","该功能已停用",409);
   const parameters = effectiveImageParameters(preset,{quality:facts.quality,resolution:facts.resolution,ratio:facts.ratio||currentModelExecution("image")?.frozen.requestedParameters?.ratio||"1:1"});
   const v = preset.prices.find(v=>v.quality===parameters.effective.quality&&v.resolution===parameters.effective.resolution);
+  if(mvpCreditRule(snapshot,facts)){
+    const adjusted={...facts,quality:parameters.effective.quality,resolution:parameters.effective.resolution};
+    const config=structuredClone(snapshot.config);config.features[facts.feature].unit="image";
+    const q=create(applyCreditOverride(snapshot,{version:snapshot.version,config},adjusted),adjusted);
+    return {...q,modelVersion:models.version,legacyCompatible:false,imagePreset:structuredClone(preset),requestedParameters:parameters.requested,effectiveParameters:parameters.effective,procurement:structuredClone(v?.procurement),costRates:{}};
+  }
   const cost = v && procurementCost(v.procurement,v.estimatedUsage,1,preset.fx?.rateMicros);
   if (!v || !cost) throw new ModelConfigError("INVALID_CONFIG","完整输入输出成本未知，请先维护有效规格的估算",400);
   // Token estimate is per output; actual total task receipts remain authoritative.
@@ -68,8 +73,6 @@ export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnap
   const q = create(businessBillingSnapshot(snapshot, models, facts), facts);
   q.modelVersion = models.version;
   if(mvpCreditRule(snapshot,facts)) q.legacyCompatible=false;
-  const pricedPreset=mvpCreditRule(snapshot,facts) && selectedImagePreset(models.config,facts.feature,facts.modelId);
-  if(pricedPreset){const parameters=effectiveImageParameters(pricedPreset,{quality:facts.quality,resolution:facts.resolution,ratio:facts.ratio||"1:1"});q.imagePreset=structuredClone(pricedPreset);q.requestedParameters=parameters.requested;q.effectiveParameters=parameters.effective;q.procurement=structuredClone(pricedPreset.prices.find(p=>p.quality===parameters.effective.quality && p.resolution===parameters.effective.resolution)?.procurement);}
   if (models.config.business?.[facts.feature]) q.legacyCompatible = false;
   const scope = currentModelExecution(), model = models.config.publicModels.find(m => m.id === facts.modelId);
   const upstream = models.config.upstreamModels.find(u => u.id === (scope?.frozen.target.type === "upstream" && scope.frozen.publicModelId === facts.modelId ? scope.frozen.target.id : model?.target.id));

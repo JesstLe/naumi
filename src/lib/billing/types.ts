@@ -13,6 +13,9 @@ export type CostRate = {
     source: "manual-estimate" | "legacy-credit-estimate";
 };
 export type Pricing = import("./api-cost").ApiCostPricing | {
+    mode: "matrix";
+    prices: Record<string, Record<string, number | null>>;
+} | {
     mode: "fixed";
     credits: number;
 } | {
