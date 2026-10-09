@@ -460,6 +460,7 @@
 /* Canvas chrome follows the canvas background instead of the app-level theme. */
 .canvas-stage,
 .canvas-ui-dark {
+  color-scheme: dark;
   --canvas-ui-panel: rgba(25, 27, 33, .96);
   --canvas-ui-panel-solid: #191b21;
   --canvas-ui-soft: #1f2229;
@@ -474,6 +475,7 @@
 }
 .canvas-stage.canvas-light,
 .canvas-ui-light {
+  color-scheme: light;
   --background: 220 23% 97%;
   --foreground: 220 14% 17%;
   --card: 0 0% 100%;
@@ -531,6 +533,27 @@
   color: var(--canvas-ui-text) !important;
 }
 .canvas-ui-input::placeholder { color: var(--canvas-ui-muted) !important; }
+.canvas-ui-input:focus-visible,
+.canvas-ui-control:focus-visible,
+.canvas-ui-action:focus-visible {
+  outline: 2px solid var(--canvas-ui-border-strong);
+  outline-offset: 2px;
+}
+/* Shared chrome for later canvas panels; borders must not paint their whole body. */
+.canvas-ui-border { border-color: var(--canvas-ui-border) !important; }
+.canvas-ui-section {
+  border-color: var(--canvas-ui-border) !important;
+  background: var(--canvas-ui-soft) !important;
+  color: var(--canvas-ui-text) !important;
+}
+.canvas-ui-mask { background: var(--canvas-ui-mask) !important; }
+.canvas-ui-message {
+  background: var(--canvas-ui-soft) !important;
+  color: var(--canvas-ui-text) !important;
+}
+.canvas-ui-side-panel { border-radius: 18px; }
+.canvas-ui-side-panel textarea { min-width: 0; }
+.canvas-ui-side-panel textarea:focus-visible { outline-offset: -2px; }
 .canvas-ui-node-card {
   background: var(--canvas-ui-panel-solid) !important;
   color: var(--canvas-ui-text) !important;
