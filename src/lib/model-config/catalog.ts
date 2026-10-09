@@ -64,7 +64,7 @@ export async function discoverProviderCatalog(
     const {models,truncated} = parseModels(body);
     return { ...base, status: models.length ? "ok" : "empty", models, truncated };
   } catch (error) {
-    const code = error instanceof Error && /^supplier-query-http-\d+$/.test(error.message) ? error.message : "目录暂时不可用";
+    const code = error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name) ? "目录连接超时，请检查上游网络或服务端代理配置" : error instanceof Error && /^supplier-query-http-\d+$/.test(error.message) ? error.message : "目录暂时不可用，请检查接口协议、地址或网络连接";
     return { ...base, status: "error", models: [], error: code };
   }
 }

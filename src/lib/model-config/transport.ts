@@ -2,6 +2,7 @@ import "server-only";
 import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import { Readable } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import { privateModelHost, modelMetadataHost, validateModelEndpoint, type ValidationOptions } from "./schema";
@@ -15,6 +16,14 @@ import type { ModelExecutionScope } from "./context";
 export function modelEndpointFetch(baseUrl: string, options: ValidationOptions = {}, provider?: { providerId: string; maxConcurrent?: number; timeoutMs: number; apiKey?: string; wireModel?: string; protocol?: string; credentialRef?: string; costScope?: ModelExecutionScope; costDisabled?: boolean; actor?:{userEmail:string;feature:string} }): typeof fetch {
   const base = new URL(validateModelEndpoint(baseUrl, options));
   const trusted = options.trustedOrigins?.includes(base.origin);
+  // Only server-approved origins can use a proxy. Other destinations retain DNS pinning and private-address rejection.
+  const proxyOrigins = (process.env.MODEL_CONFIG_PROXY_ORIGINS || "").split(/[\s,]+/).filter(Boolean);
+  let proxyAgent: HttpsProxyAgent<string> | undefined;
+  if (base.protocol === "https:" && proxyOrigins.includes(base.origin) && process.env.MODEL_CONFIG_PROXY_URL) {
+    const proxy = new URL(process.env.MODEL_CONFIG_PROXY_URL);
+    if (!["http:", "https:"].includes(proxy.protocol) || proxy.search || proxy.hash || modelMetadataHost(proxy.hostname)) throw new ModelConfigError("INVALID_ENDPOINT", "服务端模型代理配置无效");
+    proxyAgent = new HttpsProxyAgent(proxy);
+  }
   const transport: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
@@ -23,7 +32,7 @@ export function modelEndpointFetch(baseUrl: string, options: ValidationOptions =
     return new Promise<Response>((resolve, reject) => {
       const headers = Object.fromEntries(request.headers.entries());
       const transport = url.protocol === "https:" ? httpsRequest : httpRequest;
-      const upstream = transport(url, { method: request.method, headers, signal: request.signal, lookup: (host, _opts, callback) => {
+      const upstream = transport(url, { method: request.method, headers, signal: request.signal, ...(proxyAgent ? { agent: proxyAgent } : {}), lookup: (host, _opts, callback) => {
         void lookup(host, { all: true, verbatim: true }).then(answers => {
           if (!answers.length || answers.some(a => modelMetadataHost(a.address) || !trusted && privateModelHost(a.address))) throw new ModelConfigError("INVALID_ENDPOINT", "模型域名解析到禁止访问的地址");
           // Node may request all addresses when auto-selecting address families.

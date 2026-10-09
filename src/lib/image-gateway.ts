@@ -59,13 +59,17 @@ export function imageGatewayFields(model: string, multipart = false) {
   if (operation?.managedGateway === false) return {};
   if (!isImageGatewayModel(model)) return {};
   if (!operation) throw new Error("图片网关缺少稳定任务标识");
+  const frozenFacts = currentModelExecution("image")?.frozen.routerDigest ? currentModelExecution("image")!.frozen.facts : undefined;
   const fields = { naumi: {
     ...(currentModelExecution("image")?.frozen.routerDigest ? { config_digest: currentModelExecution("image")!.frozen.routerDigest, native_resolution: !!currentModelExecution("image")!.frozen.facts?.nativeResolution } : {}),
     operation_id: operation.id,
     resolution: currentModelExecution("image")?.frozen.routerDigest ? currentModelExecution("image")!.frozen.facts?.resolution || "1K" : operation.resolution || "1K",
     task: operation.task || "product",
     preserve_identity: !!operation.preserveIdentity,
-    text_accuracy: operation.textAccuracy || "auto",
+    // Managed routing already checked the frozen task requirements. Re-parsing
+    // the compiled prompt would mistake instructions such as “不要文字” for a
+    // new text requirement, rejecting a model that passed the original check.
+    text_accuracy: operation.textAccuracy || (frozenFacts ? frozenFacts.needsText ? "required" : "best_effort" : "auto"),
   } };
   return { extra_fields: multipart ? JSON.stringify(fields) : fields };
 }
