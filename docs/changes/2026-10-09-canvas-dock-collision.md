@@ -2,7 +2,7 @@
 
 ## 交付范围
 
-- 只修代码与本机验收；本轮不发布、不连接服务器。
+- 初始要求只修代码；用户随后明确要求“直接发布并验收”，本轮已发布新机 `120.27.162.85`，旧机未回传。
 - 基线：`8b501ac9223fdea9e9d3531d2d2acea26f4c8f47`。
 - 保留图片生成、模型管理、计费与画布节点业务。界面沿用现有浅色布局。
 
@@ -26,9 +26,18 @@
 
 ## 接手发布
 
-源码位于 `E:\Workspace\naumi`；本次修复提交后由其他 Agent 按用户安排发布。依赖的 `dock-placement.ts` 已在基线主线中，本次提交包含调用接入、CSS、回归脚本和本文件。发布 Agent 应基于完整主线构建，勿只复制单个 TSX。
+源码位于 `E:\Workspace\naumi`；Dock 修复提交 `17aa3e6`，发布提交 `7a34942c833617460ab9e48a067c26e22c0b2c8c`。发布版本合并已有管理员模型策略和模型家族显示修复，未重新开放画布操作模型选择器。
 
-证据位于 `E:\Workspace\naumi\output\canvas-dock-collision-20261009`：`MODIFIED_FILE.tar` 为四个源码文件包，`DIFF_FILE.patch` 为完整本次变更，`VERIFICATION.txt` 为命令/输出/退出码记录，`ROLLBACK.sh` 为带哈希保护的源码回滚脚本。该脚本不是服务器发布回滚命令。
+证据位于 `E:\Workspace\naumi\output\canvas-dock-collision-20261009`：`MODIFIED_FILE.tar.gz` 为实际发布固定源码包，`DIFF_FILE.patch` 相对于新机此前版本 `1f23c02`，`VERIFICATION.txt` 为命令/输出/退出码记录。`ROLLBACK.sh` 在新机使用 `--fixture` 演练源码副本回滚、使用 `--apply` 回滚新机应用/Worker；远程证据目录为 `/opt/naumi-staging/evidence/dock-model-release-20261009`。
+
+## 新机发布验收
+
+- 固定镜像：`ghcr.io/jesstle/naumi:7a34942c833617460ab9e48a067c26e22c0b2c8c`。
+- 镜像 ID：`sha256:e271d91c2b9808790f327fb2659440f44e3a73bcbeca4f40d234b397b04cc8b4`，公网 `BUILD_VERSION=1791531509`。
+- 新机已备份数据库与配置；仅修改 `NAUMI_IMAGE`。DB 容器、媒体挂载、Compose 和公网反代保持不变。
+- 公网模型菜单只有 `gpt-image-2`、`gemini-3.0-pro-image`、`imagen-4.0-generate-preview`、`gemini-3.1-flash-image`，没有方向/比例后缀。
+- 公网 1234×550、1024×420、1093×614、390×844 的图片 Dock 间距最小 12px，生成按钮命中正确元素；长提示词已恢复，未触发生成消费。
+- 七项管理员模型策略和报价覆盖检查通过；未登录管理/Worker 接口仍为 403。旧服务器未连接、未发布。
 
 复验命令：
 
@@ -40,5 +49,5 @@ node node_modules/typescript/bin/tsc --noEmit --incremental false --pretty false
 接手提示词：
 
 ```text
-阅读 docs/changes/2026-10-09-canvas-dock-collision.md 和对应 VERIFICATION.txt，检查本次 Git 提交。按用户最新部署目标发布完整主线，并验收长提示词、低高度窗口下的双 Dock 间距及按钮点击。本次执行 Agent 未发布；不要把本机截图视为线上结果。仅在用户明确要求时回传旧服务器。
+阅读 docs/changes/2026-10-09-canvas-dock-collision.md 和对应 VERIFICATION.txt。新机已发布 7a34942，保持模型家族显示、双 Dock 避让与管理员模型策略；先核验当前版本再做后续工作。视频和 OSS 后续独立处理，仅在用户明确要求时回传旧服务器。
 ```
