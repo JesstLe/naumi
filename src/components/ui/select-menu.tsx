@@ -21,7 +21,7 @@ export function SelectMenu({
   size = "md",
 }: {
   value: string;
-  options: { value: string; label: ReactNode }[];
+  options: { value: string; label: ReactNode;buttonLabel?:ReactNode }[];
   onChange: (v: string) => void;
   disabled?: boolean;
   /** 触发钮额外类(常用于宽度,如 "w-full") */
@@ -93,7 +93,7 @@ export function SelectMenu({
           className
         )}
       >
-        <span className="min-w-0 truncate">{current?.label ?? value}</span>
+        <span className="min-w-0 truncate">{current?.buttonLabel ?? current?.label ?? value}</span>
         <ChevronDown
           className={cn(
             "h-3.5 w-3.5 flex-none text-muted-foreground transition-transform",

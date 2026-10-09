@@ -235,6 +235,7 @@ export type ConfigRuntime = {
     publish(input: {
         id: string;
         expectedVersion: number;
+        expectedModelVersion?: number;
         config: BillingConfig;
         actor: string;
         reason: string;

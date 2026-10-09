@@ -10,6 +10,7 @@ async function main() {
   const admin = await browser.newContext({ viewport: { width: 1440, height: 1050 } }), member = await browser.newContext();
   try {
     assert.equal((await admin.request.post(`${origin}/api/admin/login`, { data: { password: "MvpFixture2026!" } })).status(), 200);
+    await admin.addCookies([{name:"nv_user",value:f.memberCookie,domain:"127.0.0.1",path:"/"}]);
     const page = await admin.newPage(); page.setDefaultTimeout(45000);
     const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
     await page.goto(`${origin}/admin/mvp`);
@@ -78,6 +79,34 @@ async function main() {
     assert.deepEqual(scoped.draft,configBeforeScope.draft);assert.deepEqual(scoped.snapshot.config.business,configBeforeScope.snapshot.config.business);assert.deepEqual(scoped.snapshot.config.bindings,configBeforeScope.snapshot.config.bindings);
     assert.ok(!(await(await admin.request.get(origin+"/api/models?feature=image.aplus")).json()).models.some((m:any)=>m.id.startsWith("gemini-3.0-pro-image-")));
     assert.ok((await(await admin.request.get(origin+"/api/models?feature=canvas.image")).json()).models[0].id.startsWith("gemini-3.0-pro-image-"));
+    const priceBefore=await(await admin.request.get(origin+"/api/admin/mvp")).json();
+    await family.getByRole("button",{name:"设置积分",exact:true}).click();
+    const price=page.getByRole("dialog",{name:"设置模型积分"});
+    await price.getByRole("button",{name:"全选应用工具",exact:true}).click();
+    await price.getByLabel("每单位消耗积分",{exact:true}).fill("7");
+    await page.screenshot({path:"output/admin-mvp-20261009/pricing-fixed.png",fullPage:true});
+    await price.getByRole("button",{name:"保存积分并生效",exact:true}).click();await expect(price).toHaveCount(0);
+    const priced=await(await admin.request.get(origin+"/api/admin/mvp")).json();assert.equal(priced.version,priceBefore.version);assert.ok(priced.billingVersion>priceBefore.billingVersion);
+    const quote=(data:unknown)=>admin.request.post(origin+"/api/billing/quote",{data});
+    const firstQuote=await quote({feature:"image.generate",modelId:"gemini-3.0-pro-image-square",quantity:1});assert.equal(firstQuote.status(),200);assert.equal((await firstQuote.json()).credits,7);
+    const canvasQuote=await quote({feature:"canvas.image",quantity:2});assert.equal(canvasQuote.status(),200);const cq=await canvasQuote.json();assert.equal(cq.credits,14);assert.equal(cq.modelId,"gemini-3.0-pro-image-square");
+    assert.equal((await quote({feature:"image.aplus",modelId:"gemini-3.0-pro-image-square",quantity:1})).status(),400);
+    const hints=await(await admin.request.get(origin+"/api/models?feature=image.generate")).json();assert.ok(hints.models.find((m:any)=>m.id.startsWith("gemini-3.0-pro-image")).creditHint.includes("7 积分/张"));
+    const frontend=await admin.newPage();await frontend.goto(origin+"/generate");
+    await frontend.getByRole("button",{name:"产品摄影模型",exact:true}).click();
+    await expect(frontend.getByRole("button",{name:/^gemini-3.0-pro-image .*7 积分/})).toBeVisible();
+    await frontend.getByRole("button",{name:/^gemini-3.0-pro-image .*7 积分/}).click();await expect(frontend.getByTestId("billing-estimate")).toContainText("7");
+    await frontend.screenshot({path:"output/admin-mvp-20261009/pricing-frontend.png",fullPage:true});
+    await family.getByRole("button",{name:"设置积分",exact:true}).click();await price.getByRole("button",{name:"全选应用工具",exact:true}).click();
+    await price.getByLabel("积分计价方式",{exact:true}).selectOption("quality-resolution");
+    await price.getByLabel("标准基础积分",{exact:true}).fill("8");await price.getByLabel("高质量基础积分",{exact:true}).fill("9");await price.getByLabel("2K追加积分",{exact:true}).fill("4");
+    await page.screenshot({path:"output/admin-mvp-20261009/pricing-matrix.png",fullPage:true});
+    await price.getByRole("button",{name:"保存积分并生效",exact:true}).click();await expect(price).toHaveCount(0);
+    assert.equal((await(await quote({feature:"image.generate",modelId:"gemini-3.0-pro-image-portrait",quantity:3,quality:"high",resolution:"2K"})).json()).credits,39);
+    await frontend.evaluate(()=>window.dispatchEvent(new Event("naumi:model-catalog-refresh")));await expect(frontend.getByTestId("billing-estimate")).toContainText("8");
+    await frontend.close();
+    await family.getByRole("button",{name:"设置积分",exact:true}).click();await price.getByRole("button",{name:"全选应用工具",exact:true}).click();await price.getByRole("button",{name:"恢复原计价",exact:true}).click();await expect(price).toHaveCount(0);
+    const reset=await(await admin.request.get(origin+"/api/admin/mvp")).json();assert.ok(reset.rows.find((r:any)=>r.id==="gemini-3.0-pro-image").pricing.every((v:any)=>!v.override));assert.equal(reset.version,priceBefore.version);
     await family.getByRole("button",{name:"编辑范围",exact:true}).click();
     await scope.getByRole("button",{name:"全选可用工具",exact:true}).click();
     assert.equal(await scope.locator('input[type=checkbox]:enabled:not(:checked)').count(),0);
@@ -110,7 +139,7 @@ async function main() {
     assert.equal((await member.request.get(origin + "/api/admin/mvp")).status(), 404);
     const stats = await (await fetch(f.control + "/stats")).json(); assert.equal(stats.paid, 0);
     assert.equal(errors.length, 0, errors.join("\n"));
-    console.log("ADMIN_MVP_BROWSER=PASS NAME_WIRE_SOURCE=PASS TOOL_SCOPE_SUBSET_ALL_NONE=PASS FAMILY_DEFAULT=PASS VERSION_MATCH_UPDATE_ROLLBACK_OFFLINE_REFRESH=PASS SWITCH_RECOVERY_RELOAD=PASS CONNECT_RSA_AUTO_DISCOVERY=PASS REGISTER=PASS FILTER_SEARCH=PASS MOBILE=PASS NON_ADMIN=404 PAID_GENERATION=0");
+    console.log("ADMIN_MVP_BROWSER=PASS PRICE_FIXED_MATRIX_RESTORE=PASS FRONTEND_REFERENCE_ACTUAL_QUOTE=PASS CANVAS_PRICE_SCOPE=PASS NAME_WIRE_SOURCE=PASS TOOL_SCOPE_SUBSET_ALL_NONE=PASS FAMILY_DEFAULT=PASS VERSION_MATCH_UPDATE_ROLLBACK_OFFLINE_REFRESH=PASS SWITCH_RECOVERY_RELOAD=PASS CONNECT_RSA_AUTO_DISCOVERY=PASS REGISTER=PASS FILTER_SEARCH=PASS MOBILE=PASS NON_ADMIN=404 PAID_GENERATION=0");
   } finally { await admin.close(); await member.close(); await browser.close(); }
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });

@@ -8,6 +8,8 @@ import type { MvpState, MvpRow } from "@/lib/model-config/mvp";
 import type { CatalogEntry } from "@/lib/model-config/catalog-store";
 import { encryptCredential } from "../model-config/provider-editor";
 import styles from "./model-mvp.module.css";
+import type {MvpCreditPricing} from "@/lib/model-config/credit-overrides";
+import {MODEL_CATALOG_REFRESH} from "@/lib/model-config/public-client";
 
 type State = MvpState & { catalogs: CatalogEntry[] };
 type Operation = Record<string, unknown> & { action: string; id: string; expectedVersion: number };
@@ -45,6 +47,7 @@ export function ModelMvp() {
   const [row, setRow] = useState<MvpRow | null>(null), [connect, setConnect] = useState(false);
   const [rename, setRename] = useState<MvpRow | null>(null);
   const [scope,setScope]=useState<MvpRow|null>(null);
+  const [price,setPrice]=useState<MvpRow|null>(null);
   const [register, setRegister] = useState<{ providerId: string; model: string } | null>(null), [refreshing, setRefreshing] = useState<string[]>([]);
   const mounted = useRef(true), loadingGuard = useRef(false), mutationGuard = useRef(false);
   const directoryInFlight = useRef(new Set<string>());
@@ -94,19 +97,20 @@ export function ModelMvp() {
     try { sessionStorage.setItem(pendingKey, JSON.stringify(operation)); } catch {}
     try {
       const result = await api(operation);
-      if (result.publication.phase !== "applied") { setScope(null); setNotice("发布结果待核对。请点击“核对并继续”，系统会沿用同一操作，不重复创建发布。"); return; }
-      clearPending(); setRow(null); setScope(null); setConnect(false); setRegister(null);
-      setNotice(operation.action === "scope" ? "工具范围已生效。新请求使用新范围，已经开始的任务保留原配置。" : operation.action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : operation.action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : operation.action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。");
+      if (result.publication.phase !== "applied") { setScope(null);setPrice(null); setNotice("发布结果待核对。请点击“核对并继续”，系统会沿用同一操作，不重复创建发布。"); return; }
+      clearPending(); setRow(null); setScope(null);setPrice(null); setConnect(false); setRegister(null);
+      if(operation.action==="pricing")window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
+      setNotice(operation.action === "pricing" ? "积分售价已生效。前端报价与实际扣费使用同一配置，已开始的任务保留原报价。" : operation.action === "scope" ? "工具范围已生效。新请求使用新范围，已经开始的任务保留原配置。" : operation.action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : operation.action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : operation.action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。");
       await load(true);
     } catch (e) {
       const failure = e as Error & { operationNotStaged?: boolean; publication?: { phase: string } };
       if (failure.operationNotStaged || failure.publication?.phase === "failed") clearPending();
-      else setScope(null);
+      else {setScope(null);setPrice(null);}
       setError(failure.message || "操作失败，请重试");
     } finally { setBusy(false); mutationGuard.current = false; }
   }
   function operation(action: string, fields: Record<string, unknown>): Operation {
-    return { ...fields, action, id: browserRandomUUID(), expectedVersion: state!.version };
+    return { ...fields, action, id: browserRandomUUID(), expectedVersion: state!.version,...(action==="pricing"?{expectedBillingVersion:state!.billingVersion}:{}) };
   }
   const rows = state?.rows.filter(r => (filter === "all" || r.modality === filter) && `${r.label} ${r.alias} ${r.routes.map(x => `${x.model} ${x.provider}`).join(" ")} ${r.features.map(f => f.label).join(" ")}`.toLowerCase().includes(search.toLowerCase())) || [];
   const locked = busy || !!pending;
@@ -124,7 +128,7 @@ export function ModelMvp() {
       <div className={styles.mapping}><div className={styles.tableHead}><span>前端名称</span><span>实际调用模型 / 上游来源</span><span>操作</span></div>{rows.map(r => <article className={styles.modelRow} key={r.id} data-testid={`mvp-model-${r.id}`}>
         <div className={styles.modelName}><span className={styles.modality}>{types[r.modality]}</span><h2>{r.label}</h2>{r.publicIds.length > 1 && <p>模型家族 · {r.publicIds.length} 个比例分支，统一管理</p>}<div className={styles.scopeSummary}><span>应用工具 {r.features.length} 项</span><button disabled={locked || !state.managed} onClick={()=>setScope(r)}>编辑范围</button></div><div className={styles.featureTags}>{r.features.map(f => <span key={f.id}>{f.label}</span>)}</div>{!r.features.length && <p>尚未应用到工具，可随时重新选择范围。</p>}</div>
         <div className={styles.routes}>{r.routes.map((route, index) => <div key={`${route.upstreamId}-${route.kind}`} className={styles.route}><span className={styles.routeDot} data-enabled={route.enabled} /><div><code>{route.model}</code><p>{route.provider}<span>{r.conditional || r.preset || r.publicIds.length > 1 ? route.kind : "已配置"}</span></p></div></div>)}{r.conditional && <p className={styles.ruleNote}>具体调用由条件或回退规则决定</p>}</div>
-        <div className={styles.rowActions}><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRename(r)}>修改显示名称</button><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRow(r)}>更换模型 <ChevronRight size={15} /></button></div>
+        <div className={styles.rowActions}><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRename(r)}>修改显示名称</button><button className={styles.switchButton} disabled={locked || !state.managed || !r.features.length} onClick={() => {setError("");setPrice(r);}}>设置积分</button><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRow(r)}>更换模型 <ChevronRight size={15} /></button><small className={styles.priceCaption}>{r.pricing?.[0]?.credits!==null && r.pricing?.[0] ? `${r.pricing[0].estimated?"预估":"参考"} ${r.pricing[0].credits} 积分/${r.pricing[0].unit==="image"?"张":r.pricing[0].unit==="item"?"项":"次"}` : "按工具配置售价"}</small></div>
       </article>)}</div>
       {!rows.length && <div className={styles.empty}><Search /><h2>{state.rows.length ? "没有匹配的模型" : "前端暂无可见模型"}</h2><p>{state.rows.length ? "尝试其他名称、功能或类型。" : "这里只显示前端当前已启用、可展示的模型。"}</p></div>}
       <p className={styles.footerNote}><CircleHelp size={15} />同一前端模型用于多个功能时，更换会对这些功能一起生效。个人自带密钥的模型不在此管理。</p>
@@ -135,9 +139,31 @@ export function ModelMvp() {
     {row && state && <SwitchDialog row={row} state={state} locked={locked} busy={busy} onClose={() => setRow(null)} onSave={upstreamId => void run(operation("switch", { rowId: row.id, upstreamId }))} />}
     {rename && <RenameDialog row={rename} locked={locked} onClose={() => setRename(null)} onSave={label => void run(operation("rename", { rowId: rename.id, label }))} />}
     {scope && <ScopeDialog row={scope} locked={locked} error={error} onClose={()=>setScope(null)} onSave={features=>void run(operation("scope",{rowId:scope.id,features}))}/>}
+    {price && <PriceDialog row={price} locked={locked} error={error} onClose={()=>setPrice(null)} onSave={(features,pricing)=>void run(operation("pricing",{rowId:price.id,features,pricing}))}/>}
     {connect && state && <ConnectDialog locked={locked} onClose={() => setConnect(false)} onSave={(fields, id) => run({ ...operation("connect", fields), id })} />}
     {register && state && <RegisterDialog model={register.model} protocol={state.providers.find(p => p.id === register.providerId)!.protocol} locked={locked} onClose={() => setRegister(null)} onSave={fields => void run(operation("register", { ...register, ...fields }))} />}
   </main>;
+}
+
+function PriceDialog({row,locked,error,onClose,onSave}:{row:MvpRow;locked:boolean;error:string;onClose:()=>void;onSave:(features:string[],pricing:MvpCreditPricing|null)=>void}){
+  const views=row.pricing || [],first=views[0],existing=first?.override;
+  const [selected,setSelected]=useState<string[]>(first?[first.feature]:[]),[mode,setMode]=useState(existing?.mode || "fixed");
+  const [amount,setAmount]=useState(existing?.mode==="fixed"?existing.credits:first?.credits ?? NaN);
+  const [quality,setQuality]=useState<Record<string,number>>(existing?.mode==="quality-resolution"?existing.quality:Object.fromEntries(["low","medium","high","xhigh","max","auto"].map(q=>[q,first?.credits ?? NaN])));
+  const [extra,setExtra]=useState<Record<string,number>>(existing?.mode==="quality-resolution"?existing.resolutionExtra:{"1K":0,"2K":0,"4K":0,"5K":0});
+  const free=mode==="fixed"?amount===0:Object.values(quality).some(q=>Object.values(extra).some(r=>q+r===0));
+  const numberField=(label:string,value:number,set:(n:number)=>void)=><label className={styles.field}>{label}<input aria-label={label} required type="number" min={0} max={2147483647} step={1} disabled={locked} value={Number.isNaN(value)?"":value} onChange={e=>set(e.target.value===""?NaN:Number(e.target.value))}/></label>;
+  const validNumber=(n:number)=>Number.isInteger(n)&&n>=0&&n<=2147483647;
+  const valid=mode==="fixed"?validNumber(amount):Object.values(quality).every(validNumber)&&Object.values(extra).every(validNumber)&&Object.values(quality).every(q=>Object.values(extra).every(r=>validNumber(q+r)));
+  return <Dialog title="设置模型积分" locked={locked} onClose={onClose}><form onSubmit={e=>{e.preventDefault();if(valid && selected.length)onSave(selected,mode==="fixed"?{mode:"fixed",credits:amount}:{mode:"quality-resolution",quality,resolutionExtra:extra});}}><div className={styles.dialogBody}>
+    {error && <p role="alert" className={styles.error}>{error}</p>}<div className={styles.scopeHeading}><b>{row.label}</b><span>{row.publicIds.length>1?"全家族统一售价":"前端模型售价"}</span></div><p className={styles.ruleNote}>设置用户消耗的积分。供应商成本继续按原记录核算。按张/按项随数量计算，按次每个任务计算一次；已开始的任务保留原报价。</p>
+    <div className={styles.scopeControls}><b>本次更新 {selected.length} 个工具</b><button type="button" disabled={locked} onClick={()=>setSelected(views.map(v=>v.feature))}>全选应用工具</button><button type="button" disabled={locked} onClick={()=>setSelected([])}>清空</button></div>
+    <div className={styles.scopeGrid}>{views.map(v=><label className={styles.scopeOption} data-selected={selected.includes(v.feature)} key={v.feature}><input type="checkbox" aria-label={v.label} disabled={locked} checked={selected.includes(v.feature)} onChange={()=>setSelected(old=>old.includes(v.feature)?old.filter(x=>x!==v.feature):[...old,v.feature])}/><span><b>{v.label}</b><small>{v.estimated?"预估":"当前"}标准1K {v.credits ?? "待核对"} 积分/{v.unit==="image"?"张":v.unit==="item"?"项":"次"}{v.override?" · 已自定义":""}</small></span></label>)}</div>
+    <label className={styles.field}>计价方式<select aria-label="积分计价方式" value={mode} disabled={locked} onChange={e=>setMode(e.target.value as typeof mode)}><option value="fixed">统一积分</option><option value="quality-resolution">质量基础积分 + 分辨率追加</option></select></label>
+    {mode==="fixed"?<>{numberField("每单位消耗积分",amount,setAmount)}<p className={styles.ruleNote}>所有质量档和分辨率统一按此积分售价；按工具原计费单位计算。</p></>:<><div className={styles.priceGrid}>{[["low","草稿"],["medium","标准"],["high","高质量"],["xhigh","精细"],["max","最高"],["auto","自动"]].map(([id,name])=><div key={id}>{numberField(name+"基础积分",quality[id],n=>setQuality(old=>({...old,[id]:n})))}</div>)}</div><div className={styles.priceGrid}>{["1K","2K","4K","5K"].map(r=><div key={r}>{numberField(r+"追加积分",extra[r],n=>setExtra(old=>({...old,[r]:n})))}</div>)}</div><p className={styles.ruleNote}>每单位积分 = 质量基础积分 + 分辨率追加积分。这里维护售价，工具和模型允许的规格保持原范围。</p></>}
+    {free && <p className={styles.ruleNote}>0 积分规格将免费使用。</p>}
+    <p className={styles.scopeNote}>模型选项显示标准1K参考价；前端提交按钮按当前规格和数量展示实际报价。原来按用量或成本计价的工具，将对本模型改用此处的固定积分规则。</p>
+    </div><footer className={styles.dialogFooter}><button type="button" className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button type="button" className={styles.secondary} disabled={locked || !selected.length || !views.some(v=>selected.includes(v.feature)&&v.override)} onClick={()=>onSave(selected,null)}>恢复原计价</button><button type="submit" className={styles.primary} disabled={locked || !selected.length || !valid}>保存积分并生效</button></footer></form></Dialog>;
 }
 
 function ScopeDialog({row,locked,error,onClose,onSave}:{row:MvpRow;locked:boolean;error:string;onClose:()=>void;onSave:(features:string[])=>void}){

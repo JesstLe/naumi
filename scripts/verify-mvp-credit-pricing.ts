@@ -1,0 +1,61 @@
+import assert from "node:assert/strict";
+import {randomUUID} from "node:crypto";
+import {createModelFixture} from "./model-config-fixture";
+import {fixtureConfig,facts} from "./billing-unit-fixture";
+import {createConfigRuntime} from "../src/lib/billing/catalog";
+import {createMvpHandler} from "../src/lib/model-config/mvp-access";
+import {businessBillingSnapshot} from "../src/lib/model-config/business-billing";
+import {quote} from "../src/lib/billing/quote";
+import {createBillingService,withBillingTransaction} from "../src/lib/billing/service";
+
+async function main(){
+ const f=await createModelFixture();process.env.PGOPTIONS=`-c search_path=${f.schemaName}`;
+ const db=await import("../src/lib/db");await db.ensureSchema();
+ const billing=createConfigRuntime({pool:f.sql,ensureSchema:db.ensureSchema,initialize:async()=>fixtureConfig()});
+ const actor="price-admin@example.test",family="gemini-3.0-pro-image";
+ f.config.publicModels.push(...["square","portrait"].map(s=>({...structuredClone(f.config.publicModels[0]),id:family+"-"+s,label:family+"-"+s})));
+ f.config.publicModels[1].toolScope={features:["image.generate","tool.style","canvas.image"],defaultFor:["canvas.image"]};
+ f.config.publicModels[2].toolScope={features:["image.generate","tool.style","canvas.image"],defaultFor:[]};
+ f.config.business={"image.generate":{enabled:true,defaultModelId:family+"-square",options:["square","portrait"].map(s=>({modelId:family+"-"+s,enabled:true,sort:0,unit:"image" as const,pricing:{mode:"cny-fixed" as const,amountMicros:"500000",creditsPerCnyMicros:"100000000",rounding:"ceil" as const}}))}};
+ const handler=createMvpHandler({authorize:async()=>({actor}),managed:async()=>true,administration:async()=>({pool:f.sql,repo:f.repo,credentials:f.credentials,billing,trustedOrigins:[f.origin],runtime:{publish:()=>{throw Error("Price must not activate Router");}}}) as never});
+ const req=(body?:unknown)=>new Request("http://fixture.test/api/admin/mvp",{method:body?"POST":"GET",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
+ try{
+  const models=await f.repo.current(),draft=await f.repo.draft(actor),before=await billing.current();
+  const state=await(await handler(req())).json(),row=state.rows.find((r:any)=>r.id===family);
+  assert.equal(row.pricing.find((p:any)=>p.feature==="image.generate").credits,50);
+  const body={action:"pricing",id:randomUUID(),expectedVersion:models.version,expectedBillingVersion:before.version,rowId:family,features:["image.generate","tool.style","canvas.image"],pricing:{mode:"fixed",credits:7}};
+  const publish=await handler(req(body));assert.equal(publish.status,200);const publication=await publish.json(),priced=await billing.current();
+  assert.equal(publication.billingVersion,priced.version);assert.deepEqual(await f.repo.current(),models);assert.deepEqual(await f.repo.draft(actor),draft);
+  assert.deepEqual(priced.config.costs,before.config.costs);assert.deepEqual(priced.config.features["tool.recolor"],before.config.features["tool.recolor"]);
+  const frozen=quote(businessBillingSnapshot(priced,models,facts({modelId:family+"-square",quantity:3})),facts({modelId:family+"-square",quantity:3}));
+  assert.equal(frozen.requestedCredits,21);assert.equal(frozen.reserveCredits,21);
+  assert.equal(quote(businessBillingSnapshot(priced,models,facts({modelId:family+"-portrait"})),facts({modelId:family+"-portrait"})).requestedCredits,7);
+  assert.equal(quote(businessBillingSnapshot(priced,models,facts({modelId:family+"-square",byok:true})),facts({modelId:family+"-square",byok:true})).requestedCredits,0);
+  assert.equal((await handler(req({...body,id:randomUUID()}))).status,409,"Stale billing version");
+  assert.equal((await handler(req({...body,id:randomUUID(),expectedVersion:999,expectedBillingVersion:priced.version}))).status,409);
+  assert.equal((await handler(req({...body,pricing:{mode:"fixed",credits:8}}))).status,409,"Same ID cannot change price");
+  assert.equal((await handler(req({...body,id:randomUUID(),expectedBillingVersion:priced.version,features:[]}))).status,400);
+  assert.equal((await handler(req({...body,id:randomUUID(),expectedBillingVersion:priced.version,features:["image.aplus"]}))).status,400);
+  assert.equal((await handler(req({...body,id:randomUUID(),expectedBillingVersion:priced.version,pricing:{mode:"fixed",credits:-1}}))).status,400);
+  const matrix={mode:"quality-resolution",quality:{low:1,medium:7,high:9,xhigh:11,max:13,auto:7},resolutionExtra:{"1K":0,"2K":4,"4K":8,"5K":10}};
+  assert.equal((await handler(req({...body,id:randomUUID(),expectedBillingVersion:priced.version,pricing:matrix}))).status,200);
+  const latest=await billing.current(),advancedFacts=facts({modelId:family+"-portrait",quantity:3,quality:"high",resolution:"2K"});
+  assert.equal(quote(businessBillingSnapshot(latest,models,advancedFacts),advancedFacts).requestedCredits,39);
+  const replay=await handler(req(body));assert.equal(replay.status,200);assert.equal((await replay.json()).billingVersion,priced.version);assert.equal((await billing.current()).version,latest.version);
+  await assert.rejects(billing.publish({id:randomUUID(),expectedVersion:latest.version,expectedModelVersion:999,config:latest.config,actor,reason:"Concurrent model change fixture"}),{code:"CONFIG_CONFLICT"});
+  const email="pricing-wallet@example.test";await db.getOrCreateUser(email,"Pricing fixture");
+  const service=createBillingService(),run=<T>(action:(tx:import("pg").PoolClient)=>Promise<T>)=>withBillingTransaction(f.sql,action);
+  const fund=randomUUID();await run(tx=>service.grantTx(tx,{id:fund,email,amount:100,source:"admin",reason:"fixture",expiry:{unit:"days",value:30},ledgerId:"grant-"+fund,fingerprint:fund,actor}));
+  const funded=Number((await f.sql.query("SELECT credits_total FROM app_users WHERE email=$1",[email])).rows[0].credits_total);
+  const id=randomUUID(),op={id,email,quote:frozen,reason:"fixture frozen price",ledgerId:"price-"+id,fingerprint:id};
+  await run(tx=>service.reserveTx(tx,op));const partial={state:"succeeded" as const,items:[{id:"a",state:"succeeded" as const,executedQuality:"medium"},{id:"b",state:"succeeded" as const,executedQuality:"medium"},{id:"c",state:"failed" as const}]};
+  assert.equal((await run(tx=>service.settleTx(tx,op,partial))).charge,14,"Previously frozen 7 credits, two successful images");
+  assert.equal((await run(tx=>service.settleTx(tx,op,partial))).replayed,true);
+  const failed={...op,id:randomUUID(),ledgerId:"failed-"+id};await run(tx=>service.reserveTx(tx,failed));assert.equal((await run(tx=>service.settleTx(tx,failed,{state:"failed",items:[]}))).charge,0);
+  const wallet=(await f.sql.query("SELECT credits_total,credits_used FROM app_users WHERE email=$1",[email])).rows[0];assert.equal(Number(wallet.credits_total),funded-14);assert.equal(Number(wallet.credits_used),0);
+  const restore={...body,id:randomUUID(),expectedBillingVersion:latest.version,pricing:null};assert.equal((await handler(req(restore))).status,200);
+  assert.deepEqual((await billing.current()).config,before.config);
+  console.log("MVP_CREDITS=PASS FAMILY_TOOL_SCOPE=PASS BUSINESS_OVERRIDE=PASS MATRIX_QUANTITY=PASS VERSIONS_REPLAY=PASS WALLET_FROZEN_PARTIAL_FAILED=PASS DRAFT_SUPPLIER_PRESERVED=PASS RESTORE=PASS REAL_GENERATION=0");
+ }finally{await db.getPool().end();await f.cleanup();}
+}
+main().catch(e=>{console.error(e);process.exitCode=1;});

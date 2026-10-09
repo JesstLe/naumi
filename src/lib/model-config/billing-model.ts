@@ -8,6 +8,7 @@ import { modelConfigurationEnabled } from "./requests";
 import { getModelAdministration } from "./server";
 import { ModelConfigError } from "./types";
 import { presetPublicId, selectedImagePreset } from "./image-preset";
+import {featureDefaultModel,assertToolScope} from "./tool-scope";
 
 const billingBinding = (feature: FeatureId) => FEATURE_BINDINGS[feature];
 
@@ -26,11 +27,12 @@ export async function managedBillingModel(request: Request, feature: FeatureId, 
     throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请刷新模型列表后重新提交；原输入已保留", 409);
   const requested = requestedFeatureModel(feature, selected || (role === "text" ? request.headers.get("x-naumi-text-model")?.trim() : undefined));
   const preset = selectedImagePreset(snapshot.config,feature,requested,binding);
-  if (preset) return { modelId: presetPublicId(preset,requested), providerId: snapshot.config.upstreamModels.find(u => u.id === preset.upstreamId)!.providerId };
+  if (preset) {const id=presetPublicId(preset,requested);assertToolScope(snapshot.config,feature,id);return { modelId:id, providerId: snapshot.config.upstreamModels.find(u => u.id === preset.upstreamId)!.providerId };}
   const option = selectedBusinessOption(snapshot.config, feature, requested);
   if (feature === "tool.cutout" && !option && !snapshot.config.bindings[binding]) return null;
-  const model = snapshot.config.publicModels.find(m => m.id === (option?.modelId || requested || snapshot.config.bindings[binding]) && m.enabled && m.modality === MODEL_BINDINGS[binding].modality && (!requested || m.visible));
+  const model = snapshot.config.publicModels.find(m => m.id === (option?.modelId || requested || featureDefaultModel(snapshot.config,feature,binding)) && m.enabled && m.modality === MODEL_BINDINGS[binding].modality && (!requested || m.visible));
   if (!model) throw new ModelConfigError("MODEL_UNAVAILABLE", "当前用途没有可用模型，请联系管理员配置", 409);
+  assertToolScope(snapshot.config,feature,model.id);
   if (model.target.type === "pool") return { modelId: model.id, providerId: "managed-router" };
   const upstream = snapshot.config.upstreamModels.find(u => u.id === model.target.id);
   const provider = snapshot.config.providers.find(p => p.id === upstream?.providerId);

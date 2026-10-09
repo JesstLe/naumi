@@ -46,6 +46,13 @@ async function main(){
   const executor=createModelExecutor({runtime,credentials:f.credentials,gateway:()=>({baseUrl:f.origin,apiKey:"unused"}),trustedOrigins:[f.origin]});
   const mf={task:"product" as const,quality:"max",resolution:"4K",ratio:"16:9",needsEdit:true,needsMask:true,needsText:true,preserveIdentity:true,nativeResolution:true,references:1};
   for(const alias of ["灵动2.5","gpt-image2.5"]){const e=await executor.resolve({snapshot:current,billing,binding:"image.edit",feature:"canvas.image",requestedModelId:alias,facts:mf});assert.equal(e.target.id,"u1");assert.equal(e.facts?.quality,"medium");assert.equal((await executor.describe(e)).connection.wireModel,"fixture-apimart-exact");assert.equal(e.requestedParameters?.quality,"max");assert.equal(e.routerDigest,undefined);}
+  const {businessBillingSnapshot}=await import("../src/lib/model-config/business-billing");
+  const priced=structuredClone(billing);priced.config.features["image.generate"].rules.push({id:"mvp-credit-fixture",priority:999,when:{modelId:["gpt-image2.5"],byok:false},pricing:{mode:"fixed",credits:7}});
+  const pricedFacts=facts({modelId:"gpt-image2.5",quantity:2,quality:"max",resolution:"4K",ratio:"16:9"});
+  assert.equal(freezeImagePresetQuote(priced,current,pricedFacts,quote),null,"Customer fixed credit override takes precedence over supplier cost-plus");
+  const pricedQuote=quote(businessBillingSnapshot(priced,current,pricedFacts),pricedFacts);
+  assert.equal(pricedQuote.requestedCredits,14);assert.equal(settlementFor(pricedQuote,{state:"succeeded",items:[{id:"a",state:"succeeded",executedQuality:"medium"},{id:"b",state:"failed"}]}).charge,7);
+  assert.deepEqual(current.config.defaultImagePreset,p,"Credit override does not alter supplier parameters or prices");
   const q=freezeImagePresetQuote(billing,current,facts({modelId:"gpt-image2.5",quality:"max",resolution:"4K",ratio:"16:9"}),quote)!;
   assert.equal(q.effectiveParameters?.quality,"medium");assert.equal(q.requestedParameters?.quality,"max");assert.equal(q.requestedCredits,apiCostCredits(BigInt(500000),BigInt(1),q.tariff.pricing as any));
   assert.equal(BigInt(500000)*BigInt(p.factorBps)/BigInt(10000),BigInt(750000));assert.equal(q.requestedCredits,8,"bootstrap is 10 credits/CNY, ceil(7.5)=8, not guessed 100/CNY");

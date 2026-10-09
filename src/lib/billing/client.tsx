@@ -100,7 +100,7 @@ export function BillingProvider({ children }: {
     }, []);
     useEffect(() => { if (ready)
         void refresh(); }, [ready, user?.email, refresh]);
-    useEffect(()=>{const changed=()=>{cache.current.clear();};window.addEventListener(FEATURE_MODEL_SELECTION,changed);window.addEventListener(MODEL_CATALOG_REFRESH,changed);return()=>{window.removeEventListener(FEATURE_MODEL_SELECTION,changed);window.removeEventListener(MODEL_CATALOG_REFRESH,changed);};},[]);
+    useEffect(()=>{const changed=()=>{cache.current.clear();};const modelsChanged=()=>{void refresh();};window.addEventListener(FEATURE_MODEL_SELECTION,changed);window.addEventListener(MODEL_CATALOG_REFRESH,modelsChanged);return()=>{window.removeEventListener(FEATURE_MODEL_SELECTION,changed);window.removeEventListener(MODEL_CATALOG_REFRESH,modelsChanged);};},[refresh]);
     const getQuote = useCallback((rawInput: QuoteInput) => {
         const input = { ...rawInput, modelId: rawInput.modelId || chosenFeatureModel(rawInput.feature) };
         const key = JSON.stringify([catalog?.version, input]);

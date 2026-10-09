@@ -5,7 +5,7 @@ import type { FeatureId } from "../billing/rules/registry";
 import { compactImageModelOptions, imageModelDisplayId } from "../image-model-routing";
 import { authHeader } from "../supabase";
 import { adminConfiguredFeature } from "./selection-policy";
-export type FeatureCatalog = { managed: boolean; supported?: boolean; feature: FeatureId; version?: number; defaultModelId?: string; models: { id: string; label: string; modality: string; supportsEdit: boolean; qualities?: string[]; nativeResolutions?: string[] }[] };
+export type FeatureCatalog = { managed: boolean; supported?: boolean; feature: FeatureId; version?: number; defaultModelId?: string; models: { id: string; label: string;creditHint?:string; modality: string; supportsEdit: boolean; qualities?: string[]; nativeResolutions?: string[] }[] };
 const catalogs = new Map<FeatureId, FeatureCatalog>(), selections = new Map<FeatureId, string>();
 export const FEATURE_MODEL_SELECTION = "naumi:feature-model-selected";
 const EVENT = FEATURE_MODEL_SELECTION;

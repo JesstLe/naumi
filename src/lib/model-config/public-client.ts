@@ -2,6 +2,7 @@ import { IMAGE_QUALITY_IDS, type ImageQualityId } from "../image-quality";
 
 export const MODEL_CATALOG_REFRESH = "naumi:model-catalog-refresh";
 export type PublicImageModel = {
+  creditHint?:string;
   id: string;
   label: string;
   supportsEdit: boolean;

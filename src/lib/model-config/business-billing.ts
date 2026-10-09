@@ -8,8 +8,10 @@ import type { BillingFacts, BillingQuote, ConfigSnapshot } from "../billing/type
 import { selectedImagePreset, effectiveImageParameters } from "./image-preset";
 import { procurementCost, apiCostCredits } from "../billing/api-cost";
 import { rounded } from "../billing/money";
+import {mvpCreditRule,applyCreditOverride} from "./credit-overrides";
 
 export function freezeImagePresetQuote(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts, create: (s:ConfigSnapshot,f:BillingFacts)=>BillingQuote): BillingQuote | null {
+  if(mvpCreditRule(snapshot,facts)) return null;
   const preset = facts.byok ? undefined : selectedImagePreset(models.config,facts.feature,facts.modelId);
   if (!preset) return null;
   if (models.config.business?.[facts.feature]?.enabled === false) throw new ModelConfigError("FEATURE_DISABLED","该功能已停用",409);
@@ -29,7 +31,7 @@ export function freezeImagePresetQuote(snapshot: ConfigSnapshot, models: ModelSn
   return {...q,refundExpiry:structuredClone(snapshot.config.credits.admin),modelVersion:models.version,legacyCompatible:false,imagePreset:structuredClone(preset),requestedParameters:parameters.requested,effectiveParameters:parameters.effective,procurement:structuredClone(v.procurement),costRates:{}};
 }
 
-export function businessBillingSnapshot(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts): ConfigSnapshot {
+function originalBusinessBillingSnapshot(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts): ConfigSnapshot {
   const preset = selectedImagePreset(models.config, facts.feature, facts.modelId);
   if (preset) {
     const config = structuredClone(snapshot.config), tariff = config.features[facts.feature], params = effectiveImageParameters(preset, { quality:facts.quality, resolution:facts.resolution, ratio:facts.ratio || "1:1" });
@@ -51,6 +53,9 @@ export function businessBillingSnapshot(snapshot: ConfigSnapshot, models: ModelS
   tariff.settlement = { ...tariff.settlement, qualityBasis: "requested", successBasis: "successful-units", failureBps: 0, reserveBps: 10000 };
   return { version: snapshot.version, config };
 }
+export function businessBillingSnapshot(snapshot:ConfigSnapshot,models:ModelSnapshot,facts:BillingFacts){
+  return applyCreditOverride(snapshot,originalBusinessBillingSnapshot(snapshot,models,facts),facts);
+}
 export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnapshot, facts: BillingFacts, create: (s: ConfigSnapshot, f: BillingFacts) => BillingQuote) {
   if (facts.byok || !await modelConfigurationEnabled()) return create(snapshot, facts);
   const admin = await getModelAdministration();
@@ -62,12 +67,15 @@ export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnap
   if (presetQuote) return presetQuote;
   const q = create(businessBillingSnapshot(snapshot, models, facts), facts);
   q.modelVersion = models.version;
+  if(mvpCreditRule(snapshot,facts)) q.legacyCompatible=false;
+  const pricedPreset=mvpCreditRule(snapshot,facts) && selectedImagePreset(models.config,facts.feature,facts.modelId);
+  if(pricedPreset){const parameters=effectiveImageParameters(pricedPreset,{quality:facts.quality,resolution:facts.resolution,ratio:facts.ratio||"1:1"});q.imagePreset=structuredClone(pricedPreset);q.requestedParameters=parameters.requested;q.effectiveParameters=parameters.effective;q.procurement=structuredClone(pricedPreset.prices.find(p=>p.quality===parameters.effective.quality && p.resolution===parameters.effective.resolution)?.procurement);}
   if (models.config.business?.[facts.feature]) q.legacyCompatible = false;
   const scope = currentModelExecution(), model = models.config.publicModels.find(m => m.id === facts.modelId);
   const upstream = models.config.upstreamModels.find(u => u.id === (scope?.frozen.target.type === "upstream" && scope.frozen.publicModelId === facts.modelId ? scope.frozen.target.id : model?.target.id));
   // A route can pay several suppliers. Never label the initial-model cost as
   // this operation's total; execution stages remain the authoritative estimate.
-  if (!selectedBusinessOption(models.config,facts.feature,facts.modelId)?.routing?.enabled && upstream?.procurement) q.procurement = structuredClone(upstream.procurement);
+  if (!q.procurement && !selectedBusinessOption(models.config,facts.feature,facts.modelId)?.routing?.enabled && upstream?.procurement) q.procurement = structuredClone(upstream.procurement);
   else if (models.config.business?.[facts.feature]) q.costRates = {};
   return q;
 }

@@ -72,7 +72,7 @@ const RATIO_ASPECT: Record<string, string> = {
 
 const MAX_UPLOAD = 12 * 1024 * 1024;
 const MAX_IMAGES = 6;
-type ImageModelOption = { id: string; label: string; supportsEdit: boolean };
+type ImageModelOption = { id: string; label: string; supportsEdit: boolean; creditHint?: string };
 
 export function GenerateClient({
   seedTemplateId,
@@ -791,11 +791,13 @@ export function GenerateClient({
                   onChange={pickModel}
                   options={imageModels.map((item) => ({
                     value: item.id,
+                    buttonLabel:<span className="flex min-w-0 items-center gap-2"><ModelIcon modelId={item.id} size={16}/><span className="truncate">{item.supportsEdit ? item.label : `${item.label} · ${t("canvas.modelTextOnly")}`}</span></span>,
                     label: (
                       <span className="flex min-w-0 items-center gap-2">
                         <ModelIcon modelId={item.id} size={16} />
                         <span className="truncate">
                           {item.supportsEdit ? item.label : `${item.label} · ${t("canvas.modelTextOnly")}`}
+                          {item.creditHint && <small className="block text-[10px] font-normal text-muted-foreground">{item.creditHint}</small>}
                         </span>
                       </span>
                     ),

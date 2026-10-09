@@ -66,6 +66,7 @@ export function createConfigRuntime(deps: Deps): ConfigRuntime {
             const current = (await selectCurrent(tx)).rows[0];
             if (!current || Number(current.version) !== input.expectedVersion)
                 throw new BillingError("CONFIG_CONFLICT", "配置已被更新，请刷新后重新发布", 409);
+            if(input.expectedModelVersion!==undefined){const model=(await tx.query("SELECT active_version FROM app_model_config_state WHERE singleton=true FOR SHARE")).rows[0];if(Number(model?.active_version)!==input.expectedModelVersion)throw new BillingError("CONFIG_CONFLICT","模型配置已更新，请刷新后重新设置积分",409);}
             return insert(tx, input.id, hash, input.actor, input.reason, config);
         });
     };
