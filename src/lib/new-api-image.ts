@@ -99,6 +99,23 @@ export async function generateNewApiImage(input: {
   }
   const references = managed ? input.images || [] : (input.images || []).slice(0, 6);
   if (managed && references.length > scope.capabilities.maxReferenceImages) throw new ModelConfigError("MODEL_INCOMPATIBLE", "参考图片超过当前模型上限", 400);
+  // The Jimeng streaming chat adapter hardcodes 1:1; its image endpoint accepts ratio.
+  if (/^jimeng-image-[a-z0-9][a-z0-9.-]*$/i.test(wireModel)) {
+    const ratio = scope?.frozen.facts?.ratio || "1:1";
+    if (!["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9"].includes(ratio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "即梦接口未开放该比例", 400);
+    const response = await observeModelCall(wireModel, () => submit(`${settings.baseUrl}/images/generations`, {
+      method: "POST", headers: { Authorization: `Bearer ${settings.apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: wireModel, prompt: input.prompt, ratio, resolution: (scope?.frozen.facts?.resolution || "1K").toLowerCase(), n: 1, response_format: "b64_json", filePaths: references.map(image => `data:${image.mimeType};base64,${image.buffer.toString("base64")}`) }),
+      signal: AbortSignal.any([input.signal || new AbortController().signal, AbortSignal.timeout(managed ? scope.connection.timeoutMs : 300_000)]),
+    }), managed ? modelExecutionTelemetry(scope) : null);
+    const raw = await response.text();
+    if (!response.ok) throw upstreamError(raw, response.status);
+    const encoded = JSON.parse(raw).data?.[0]?.b64_json;
+    if (typeof encoded !== "string" || !encoded.length || encoded.length > 45 * 1024 * 1024) throw new Error("即梦未返回有效图片内容");
+    const buffer = Buffer.from(encoded, "base64");
+    if (!buffer.length || buffer.length > 32 * 1024 * 1024) throw new Error("即梦图片大小无效");
+    return { buffer, contentType: "image/png" };
+  }
   const content = references.length
     ? [
         { type: "text", text: input.prompt },
