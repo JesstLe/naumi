@@ -31,3 +31,9 @@ APIMart 专用默认预设涉及模型专属能力证据、原生参数矩阵及
 ## 本轮分支核对
 
 2026-10-09 拉取主线至 `d0bd81f`。`canvas-dock-collision`、`image-job-stopping-release`、`supplier-cost-reconciliation` 的功能已在主线；`bi-model-configuration`、`billing-module-design`、`staging-media-handoff` 仅保留额外发布交接记录。`image25-output-price-table` 的成本表、`pricing-page-preview` 的价格预览未合入且与本 MVP 无关，本轮不合并。
+
+## APIMart 接入修正
+
+真实新机直连 APIMart 时 DNS 解析异常且连接超时；同机现有代理可取得用户已保存来源的 376 个模型 ID。模型传输新增服务端显式 `MODEL_CONFIG_PROXY_URL` / `MODEL_CONFIG_PROXY_ORIGINS`，只对精确批准的 HTTPS origin 走 CONNECT 代理，其余目标继续原 DNS 绑定与内网拒绝。代理端看不到 TLS 内的供应商 Authorization。手动刷新目录可绕过旧失败缓存。
+
+APIMart URL 接受根地址或 `/v1`；新来源规范化为根地址，Router 适配器亦去掉末尾 `/v1`，避免生成路径重复。多个同地址账户可以作为独立来源保存。固定 Router 源码 `b3fc8dd61e62c564ac2ba2a08cf943f7c391970c` 保存在验收源码包中；Go 全量测试通过。API 与已明确批准的媒体来源使用独立 `NAUMI_MODEL_PROXY_URL` / `NAUMI_MODEL_PROXY_ORIGINS`，其他媒体仍校验公网地址。`scripts/verify-model-proxy.ts` 验证来源隔离、CONNECT 和密钥边界。

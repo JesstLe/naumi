@@ -20,7 +20,7 @@ import { isNewApiFlowImageModel } from "../image-model-catalog";
 const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const common = { id: z.uuid(), expectedVersion: z.number().int().positive() };
 const input = z.discriminatedUnion("action", [
-  z.strictObject({ action: z.literal("discover"), providerId: identifier }),
+  z.strictObject({ action: z.literal("discover"), providerId: identifier, force: z.boolean().optional() }),
   z.strictObject({ action: z.literal("credential"), providerId: identifier, ciphertext: z.string().min(1).max(32768).optional(), keyPlain: z.string().min(1).max(16384).optional() }),
   z.strictObject({ action: z.literal("switch"), ...common, rowId: identifier, upstreamId: identifier }),
   z.strictObject({ action: z.literal("connect"), ...common, name: z.string().trim().min(1).max(100), baseUrl: z.string().max(1024), protocol: z.enum(MVP_PROTOCOLS), credentialRef: z.uuid() }),
@@ -49,7 +49,7 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
       if (body.action === "discover") {
         const p = snapshot.config.providers.find(p => p.id === body.providerId);
         if (!p) throw new ModelConfigError("PROVIDER_UNAVAILABLE", "上游来源不存在", 404);
-        return biJson(await refreshProviderCatalog(admin.pool, p, admin.credentials, admin.trustedOrigins, deps.fetcher));
+        return biJson(await refreshProviderCatalog(admin.pool, p, admin.credentials, admin.trustedOrigins, deps.fetcher, body.force));
       }
       lock = await admin.pool.connect(); lockKey = `admin-mvp:${body.id}`;
       await lock.query("SELECT pg_advisory_lock(hashtextextended($1,0))", [lockKey]);
@@ -68,8 +68,7 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
           if (!row) throw new ModelConfigError("MODEL_UNAVAILABLE", "前端当前没有展示该模型，请刷新", 409);
           config = switchMvpModel(config, row, body.upstreamId);
         } else if (body.action === "connect") {
-          const endpoint = validateModelEndpoint(body.baseUrl, { trustedOrigins: admin.trustedOrigins });
-          if (config.providers.some(p => p.baseUrl.replace(/\/$/, "") === endpoint && p.protocol === body.protocol)) throw new ModelConfigError("PROVIDER_EXISTS", "该地址和协议已接入，请使用现有来源");
+          const endpoint = validateModelEndpoint(body.protocol === "apimart-images" ? body.baseUrl.replace(/\/v1\/?$/, "") : body.baseUrl, { trustedOrigins: admin.trustedOrigins });
           const providerId = `mvp-${body.id}`;
           await admin.credentials.read(body.credentialRef, providerId);
           config.providers.push({ id: providerId, name: body.name, baseUrl: endpoint, protocol: body.protocol, credentialRef: body.credentialRef, enabled: true, timeoutMs: 120000, maxConcurrent: 4 });
