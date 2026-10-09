@@ -6,7 +6,7 @@
 
 Open-source AI e-commerce visual studio — generate, batch-suite, cut out, try on and canvas-compose production-ready product images.
 
-[快速开始](#-快速开始--quick-start) · [功能](#-功能--features) · [版本](#-版本--editions) · [License](#-license)
+[快速开始](#-快速开始--quick-start) · [功能](#-功能--features) · [技术栈](#-技术栈--stack) · [License](#-license)
 
 </div>
 
@@ -14,19 +14,23 @@ Open-source AI e-commerce visual studio — generate, batch-suite, cut out, try 
 
 ## 新服务器预发布与交接
 
-当前新服务器准备工作、全量数据副本、真实测试、本地媒体、后续 OSS 和下班窗口回传约定，统一记录在 [预发布交接 README](docs/NAUMI_STAGING_MIGRATION_README.md)。接手此任务的 Agent 应先阅读该文档，再核验实际状态；不要把预发布数据库回传覆盖生产。
+新服务器的验收、访问入口与后续迁移约定，统一记录在 [预发布交接 README](docs/NAUMI_STAGING_MIGRATION_README.md)，最新验收与回传约定见第 20 节，公网入口见第 21 节。新机继续用于构建和测试，媒体保持本地存储；只有用户明确要求回传时才操作旧机，不将预发布数据库回灌生产。多 Agent 协作遵循 [协作说明](docs/AGENT_COLLABORATION.md)。
 
 ## ✨ 功能 / Features
 
-- **AI 生图** — 文生图 / 图生图,电商风格化提示词体系,1K/2K/4K
-- **一键套图** — 上传产品图,自动产出 1 主图 + 4 副图 + 8 详情图整套素材
-- **18 款图像工具** — 发丝级抠图、高清放大、局部改图、风格转换、服装平铺提取、3D 展示、虚拟试穿、去皱、去水印、印花提取、侵权检测、爆款标题……
+- **AI 生图** — 文生图 / 图生图，支持多比例与批量生成，分辨率和质量选项按模型能力提供
+- **一键套图** — 上传产品图，智能匹配或自定义主图、副图与详情页
+- **图像工具** — 抠图、高清放大、局部改图、产品精修与换色、服装提取、虚拟试穿、印花提取、标题生成等
 - **创作画布** — React Flow 血缘画布,每张图的来源与迭代一目了然
 - **对话生图** — 聊天式改图,一句话继续迭代
-- **完整后台** — 模板库、提示词配置、API Key 管理(浏览器 RSA 加密 + AES 落库)
+- **管理后台** — 模板库、提示词、模型与供应商配置、用户及积分管理，敏感凭据加密存储
 - **国际化** — 中 / 英双语,按浏览器语言自动切换
 
+功能入口与可用模型以实例配置为准；生成和处理任务需要配置对应的模型或服务凭据。
+
 ## 🖥 界面预览 / UI
+
+以下为界面与效果示例，实际界面以当前运行版本为准。
 
 <p align="center">
   <img src="docs/screenshots/home.png" width="840" alt="Naumi 首页" />
@@ -54,7 +58,7 @@ Open-source AI e-commerce visual studio — generate, batch-suite, cut out, try 
   <tr>
     <td align="center" width="50%">
       <img src="public/demos/suite-before.webp" width="170" alt="" /> ➜ <img src="public/demos/suite-after.webp" width="170" alt="" /><br />
-      <b>一键套图</b> — 1 主图 + 4 副图 + 8 详情图
+      <b>一键套图</b> — 主图、副图与详情页组合生成
     </td>
     <td align="center" width="50%">
       <img src="public/demos/tryon-before.webp" width="170" alt="" /> ➜ <img src="public/demos/tryon-after.webp" width="170" alt="" /><br />
@@ -95,145 +99,74 @@ Open-source AI e-commerce visual studio — generate, batch-suite, cut out, try 
 
 ## 🚀 快速开始 / Quick start
 
-### 🐳 第 0 步:安装 Docker(没装的话)
+### 安装
 
-#### 🇨🇳 大陆服务器(推荐,稳定)—— 走阿里云源
-
-> `get.docker.com` 是国外站,大陆访问它常被网络**间歇性重置**(时好时坏、报 `curl: (35) Connection reset`),不可靠。下面用阿里云内网源(`mirrors.aliyun.com`),秒装、稳定。
-
-**Ubuntu / Debian:**
+准备 Linux 服务器以及 Git、Docker、Docker Compose v2、OpenSSL。可用以下命令检查 Docker：
 
 ```bash
-apt-get update && apt-get install -y ca-certificates curl gnupg
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-chmod a+r /etc/apt/keyrings/docker.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://mirrors.aliyun.com/docker-ce/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
-apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-systemctl enable --now docker
+docker --version
+docker compose version
 ```
 
-**CentOS / Alibaba Cloud Linux:**
-
-```bash
-yum install -y yum-utils
-yum-config-manager --add-repo https://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
-yum install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-systemctl enable --now docker
-```
-
-#### 🌎 海外服务器 —— 一条命令
-
-```bash
-curl -fsSL https://get.docker.com | bash && systemctl enable --now docker
-```
-
-装完用 `docker -v && docker compose version` 验证两个都有输出即可。
-
-**部署注意事项:**
-
-- **大陆服务器拉镜像慢/失败**:给 Docker 配镜像加速 —— `/etc/docker/daemon.json` 写入 `{"registry-mirrors":["https://docker.m.daocloud.io"]}` 后 `systemctl restart docker`。
-- **防火墙/安全组**:放行 `80` 端口(HTTP)——阿里云/腾讯云在控制台「安全组」加一条 80 规则即可,浏览器直接 `http://公网IP` 打开。若 80 已被占用(装了宝塔/nginx),用 `HTTP_PORT=8080 docker compose up -d` 换个端口。
-- **内存**:建议 ≥2GB;若镜像拉取失败触发本地构建,构建期需 ~2-4GB(小内存机器可先加 swap)。
-- **大陆服务器连不上模型**:见下方「中国大陆服务器部署」配置 `OPENAI_BASE_URL` 中转。
-
-### 🚀 第 1 步:安装网站程序
-
-Docker 就绪后,**一条命令**装好(自动拉代码 + 拉预构建镜像 + 启动;大陆优先走国内镜像,秒级完成,无需本地编译):
+新实例可使用安装脚本：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/JesstLe/naumi/main/install.sh | bash
 ```
 
-> 若这条因网络取不到脚本,改用 git 拉下来再跑**同一个脚本**:
->
-> ```bash
-> git clone https://github.com/JesstLe/naumi && cd naumi && bash install.sh
-> ```
-
-打开 **http://<你的服务器公网IP>**(本机测试用 `http://localhost`) — 首启配置向导会引导你填入 OpenAI API Key(必填)、管理员密码(用于登录后台)、Pro License Key(选填)与站点名称,填完即用,**无需改任何代码或配置文件**。默认监听 **80 端口**,记得在云厂商安全组放行 80。
-
-> 不知道 API Key 怎么获取?请查看对应服务商的开发者文档并创建 API Key。
-
-Compose 自带 Postgres 与持久化数据卷;生成的图片默认存本地磁盘(`/data/media`),配置 Cloudflare R2 后自动切对象存储。**改了源码想用自己的构建**:在项目目录跑 `docker compose up -d --build`。
-
-### 🎛 已装宝塔面板(BT Panel)?
-
-完全兼容,只是宝塔自带的 Nginx 通常占了 80 端口。**一键脚本会自动检测 80 是否被占用并改用 8080**,不会冲突。
-
-宝塔用户推荐用面板接管域名与证书(最顺):
-
-1. Docker 就绪(宝塔「软件商店」可一键装 Docker),按上面装好 Naumi(会跑在 `8080`);
-2. 宝塔「网站」→ 添加站点(绑你的域名)→ 站点设置 →「反向代理」→ 目标 URL 填 `http://127.0.0.1:8080`;
-3. 站点设置 →「SSL」→ Let's Encrypt 一键申请证书。
-
-之后用 `https://你的域名` 访问,宝塔自动管理续期。
-
-### 🔒 绑定域名 + HTTPS(可选,推荐正式对外使用)
-
-默认是 `http://IP`(80 端口,明文)。有域名的话,把域名的 A 记录指向服务器 IP,即可自动签发免费 HTTPS 证书:
+也可以先拉取仓库再执行脚本：
 
 ```bash
-# 1) 让 app 退到内部端口,把 80/443 让给反代
-HTTP_PORT=8080 docker compose up -d
-# 2) 一条命令起 Caddy 反代 + 自动 HTTPS(把 your-domain.com 换成你的域名)
-docker run -d --name naumi-caddy --restart always   --add-host host.docker.internal:host-gateway   -p 80:80 -p 443:443 -v caddy_data:/data   caddy:2 caddy reverse-proxy --from your-domain.com --to host.docker.internal:8080
+git clone https://github.com/JesstLe/naumi
+cd naumi
+bash install.sh
 ```
 
-之后用 `https://your-domain.com` 访问,证书自动签发与续期。
+安装器会准备 `.env`、生成独立加密密钥和 Worker 密钥，尝试拉取预构建镜像；拉取失败时回退到本地构建。执行时间取决于网络和服务器资源。已有实例会沿用保存的端口，脚本也可能更新已有安装；现有服务器发布应使用下方的固定版本发布流程。
 
-### 🇨🇳 中国大陆服务器部署
+首次安装默认使用 **80 端口**；如果 80 已被其他服务占用，安装器会改用 **8080**。按安装器输出的地址访问，并在防火墙或云安全组放行对应 Web 端口。直接使用仓库的 `docker-compose.yml` 时，默认端口是 **3012**，也可通过 `.env` 中的 `HTTP_PORT` 调整。
 
-大陆服务器**无法直连** `api.openai.com`。设置环境变量 `OPENAI_BASE_URL` 指向任意 **OpenAI 兼容中转 / 网关**即可(自建海外中转或第三方中转服务均可),全部生成接口自动生效:
+未配置实例的首启向导提供 OpenAI API Key、管理员密码、管理员邮箱和站点名称配置。完成后进入后台配置实际使用的模型和服务凭据。
+
+### 数据与媒体
+
+Compose 包含 PostgreSQL、应用和视频 Worker，数据库与媒体使用持久化数据卷。图片和视频默认存储在容器的 `/data/media`。
+
+当前 Compose 默认 `STORAGE_DRIVER=local`。切换对象存储需显式设置 `STORAGE_DRIVER=r2` 或 `STORAGE_DRIVER=s3`，并补齐对应存储配置；已有媒体的迁移另行处理。
+
+### 模型连接
+
+服务器无法访问模型服务时，为对应通道配置可访问的服务地址。例如，图片生成通道可在 `.env` 中配置：
+
+```dotenv
+OPENAI_BASE_URL=https://your-image-gateway.example.com/v1
+```
+
+Agent 文本 / 视觉通道使用独立的 `AGENT_BASE_URL`、`AGENT_API_KEY` 和 `AGENT_MODEL`。画布操作的管理员模型配置见 [配置说明](docs/CANVAS_ADMIN_MODEL_CONFIGURATION.md)。不同供应商和功能使用各自的配置，修改一个通道地址不会自动覆盖全部接口。
+
+### 域名与 HTTPS
+
+将域名指向服务器，通过 Nginx、Caddy 或宝塔面板配置反向代理与 HTTPS，代理目标使用应用实际监听的端口。Web 入口与应用端口的关系以部署配置为准。
+
+### 源码构建与已有实例发布
+
+本地或独立开发实例修改源码后，可执行：
 
 ```bash
-# docker-compose.yml 的 environment 或 .env 中:
-OPENAI_BASE_URL=https://your-relay.example.com/v1
+docker compose up -d --build
 ```
 
-**自建海外中转(一条命令)**:有任意一台海外服务器即可。准备一个指向它的域名(没有域名可用免费的 `<服务器IP>.sslip.io`),在海外机上跑:
+运行前需要在 `.env` 配置独立的 `SETTINGS_SECRET` 和 `VIDEO_WORKER_SECRET`。已有实例须保留原加密密钥、生产配置、数据库和媒体。
 
-```bash
-docker run -d --name openai-relay --restart always -p 80:80 -p 443:443 -v caddy_data:/data caddy:2 \
-  caddy reverse-proxy --from relay.yourdomain.com --to https://api.openai.com --change-host-header
-```
-
-证书自动签发。然后大陆实例填 `OPENAI_BASE_URL=https://relay.yourdomain.com/v1`,全部生成功能即通。
-
-没有海外服务器、不想折腾?可以使用**云端托管**(免部署,大陆开箱即用),或配置任意 OpenAI 兼容中转服务。海外服务器部署无需此配置。
-
-### 🌐 服务器推荐
-
-**免备案(香港、美国)** — 海外机可直连模型,开箱即用:
-
-👉 [雨云 RainYun](https://www.rainyun.com/MTE1OTc0Ng==_)
-
-**需备案(中国大陆)** — 大陆访问快,搭配上面的中转方案使用:
-
-👉 [阿里云](https://www.aliyun.com/minisite/goods?userCode=nzlr5f7z)
-
-## 📦 版本 / Editions
-
-|                   | 开源版 Community    | Pro 自托管           | 云端托管 Cloud          |
-| ----------------- | ---------------- | ----------------- | ------------------- |
-| 价格                | **¥0**(AGPL-3.0) | **¥1,999/年起**     | **¥3,999/年起**       |
-| 全部生成与图像工具         | ✅                | ✅                 | ✅                   |
-| 创作画布 / 对话生图       | ✅                | ✅                 | ✅                   |
-| 自带 API Key · 单机自用 | ✅                | ✅                 | 含算力积分               |
-| 白标(自有品牌/去署名)      | —                | ✅                 | ✅                   |
-| 多用户注册 / 团队        | —                | ✅                 | ✅                   |
-| 收银台(支付宝/微信直收)     | —                | ✅                 | ✅                   |
-| 运营后台高阶(用户/发卡/流水)  | —                | ✅                 | ✅                   |
-| 商业授权(可闭源自用)       | AGPL 义务          | ✅                 | ✅                   |
-| 部署                | 自部署              | 自部署 + License Key | **免运维,专属实例 + 自有域名** |
+现有服务器使用固定提交镜像与 `scripts/deploy-release.sh` 发布，先备份并准备回滚，再核验健康、实际版本与受影响功能。新机发布须遵循 [协作说明](docs/AGENT_COLLABORATION.md) 的全程锁与基线检查；旧机回传须用户明确要求。文档修改不触发服务器发布。
 
 ## 🧱 技术栈 / Stack
 
-Next.js 14 (App Router) · TypeScript · Tailwind CSS · PostgreSQL · OpenAI Images API · Replicate(抠图/放大) · Cloudflare R2(可选)
+Next.js 14 (App Router) · React · TypeScript · Tailwind CSS · React Flow · PostgreSQL · OpenAI 兼容模型接口 · Replicate · 本地 / R2 / S3 兼容存储
 
 ## 📄 License
 
-MIT
+许可条款见仓库的 [LICENSE](LICENSE) 文件。
 
 ---
 
