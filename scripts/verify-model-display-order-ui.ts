@@ -41,7 +41,9 @@ async function main() {
       await dialog.getByRole("button", { name: "保存范围并生效", exact: true }).click();
       const r = await response, result = await r.json();
       assert.equal(r.status(), 200); assert.equal(result.publication.phase, "applied"); lastPublication = result.publication.version;
-      await expect(dialog).toHaveCount(0); await expect(headings).toHaveText(labels);
+      await expect(dialog).toHaveCount(0);
+      await expect(page.getByText(`模型配置 v${lastPublication}`, { exact: true })).toBeVisible();
+      await expect(headings).toHaveText(labels);
       assert.deepEqual((await get("/api/admin/mvp")).rows.map((r: any) => r.id), state.rows.map((r: any) => r.id));
     };
     await saveScope(false);
