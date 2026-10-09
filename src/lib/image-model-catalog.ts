@@ -185,7 +185,7 @@ export async function getImageModelCatalog(email?: string | null, supplied?: Mod
   if (!supplied && !scope && !await modelConfigurationEnabled()) return getLegacyImageModelCatalog(email);
   const runtime = await getModelRuntime();
   const snapshot = supplied || (scope ? await runtime.byVersion(scope.frozen.modelVersion) : await runtime.current());
-  const managed: ImageModelDescriptor[] = publicModelCatalog(snapshot, "image").models.map(m => {
+  const managed: ImageModelDescriptor[] = publicModelCatalog(snapshot, "image", scope?.frozen.feature === "canvas.image" ? "canvas.image" : undefined).models.map(m => {
     const model = snapshot.config.publicModels.find(p => p.id === m.id)!;
     const upstream = model.target.type === "upstream" ? snapshot.config.upstreamModels.find(u => u.id === model.target.id) : undefined;
     const protocol = upstream ? snapshot.config.providers.find(p => p.id === upstream.providerId)?.protocol : undefined;

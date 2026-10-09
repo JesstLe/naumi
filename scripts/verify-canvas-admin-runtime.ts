@@ -30,6 +30,9 @@ async function main() {
   const { getModelExecutor } = await import("../src/lib/model-config/execution");
   const quoteApi = await import("../src/app/api/billing/quote/route");
   const modelsApi = await import("../src/app/api/models/route");
+  const { quoteForRequest } = await import("../src/lib/billing/server");
+  const { featureForRequest } = await import("../src/lib/model-config/feature-path");
+  const { getImageModelCatalog } = await import("../src/lib/image-model-catalog");
   const email = "canvas-policy@example.test";
   const request = (path: string, body?: unknown, headers: Record<string, string> = {}) => new Request(`http://fixture.test${path}`, {
     method: body ? "POST" : "GET", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "content-type": "application/json", origin: "http://fixture.test", ...headers }, ...(body ? { body: JSON.stringify(body) } : {}),
@@ -62,6 +65,22 @@ async function main() {
       return admin.repo.current();
     };
     const first = await publish();
+    // Canvas Dock uses the shared generation endpoint: JSON and multipart must
+    // follow canvas scope, its price, and its frozen default rather than body/cache overrides.
+    if (!baseline) {
+      const canvasBody={origin:"canvas",model:"image-b",prompt:"scope fixture",quality:"medium",resolution:"1K"};
+      const form=new FormData();for(const [key,value] of Object.entries(canvasBody))form.set(key,value);
+      const formRequest=new Request("http://fixture.test/api/generate-image",{method:"POST",headers:{cookie:`nv_user=${signUserSession(email,Date.now())}`,origin:"http://fixture.test","x-naumi-feature-model":"image-b"},body:form});
+      for(const r of [request("/api/generate-image",canvasBody,{"x-naumi-feature-model":"image-b"}),formRequest]) {
+        const accepted=await withModelRequest(r,async()=>({catalog:await getImageModelCatalog(email),bundle:structuredClone(currentExecutionBundle()!),quote:await quoteForRequest(r,{feature:featureForRequest("/api/generate-image",canvasBody)!,quantity:2,modelId:"image-b",quality:"medium",resolution:"1K"})}));
+        assert.equal(accepted.bundle.image!.feature,"canvas.image");assert.equal(accepted.bundle.image!.binding,"image.edit");assert.equal(accepted.bundle.image!.publicModelId,"image-a");
+        assert.equal(accepted.quote.facts.feature,"canvas.image");assert.equal(accepted.quote.facts.modelId,"image-a");assert.equal(accepted.quote.requestedCredits,20);
+        assert.deepEqual(accepted.catalog.map(m=>m.id),["image-a"]);
+      }
+      const ordinary=request("/api/generate-image",{model:"image-b",prompt:"ordinary fixture"});
+      const ordinaryBundle=await withModelRequest(ordinary,async()=>structuredClone(currentExecutionBundle()!));
+      assert.equal(ordinaryBundle.image!.feature,"image.generate");assert.equal(ordinaryBundle.image!.publicModelId,"image-b");
+    }
     const frozen = [];
     for (const feature of features) {
       const prefix = ["canvas.ocr", "canvas.assistant", "canvas.text-generate"].includes(feature) ? "text" : "image";
@@ -84,6 +103,11 @@ async function main() {
       config.business![feature]!.defaultModelId = forged;
     }
     const second = await publish(); assert.ok(second.version > first.version);
+    if(!baseline){
+      const r=request("/api/generate-image",{origin:"canvas",model:"image-a",prompt:"scope fixture"});
+      const bundle=await withModelRequest(r,async()=>structuredClone(currentExecutionBundle()!));assert.equal(bundle.image!.publicModelId,"image-b");
+      await assert.rejects(withModelRequest(request("/api/generate-image",{origin:"canvas",prompt:"fixture"},{"x-naumi-model-version":String(first.version)}),async()=>null),(e:any)=>e.code==="MODEL_CHANGED");
+    }
     const executor = await getModelExecutor();
     for (const bundle of frozen) await executor.runBundle(bundle, await billing.config.byVersion(bundle.billingVersion), async () => assert.equal(currentExecutionBundle()!.modelVersion, first.version));
     for (const feature of features) {
@@ -94,7 +118,7 @@ async function main() {
       await assert.rejects(withModelRequest(stale, async () => null), (e: any) => e.code === "MODEL_CHANGED");
     }
     console.log(baseline ? "CANVAS_RUNTIME_BASELINE=PASS FEATURES=7 CLIENT_OVERRIDE=ACTIVE QUOTE_OVERRIDE=ACTIVE"
-      : "CANVAS_ADMIN_RUNTIME=PASS FEATURES=7 BODY_HEADER_OVERRIDE=IGNORED QUOTE_EXECUTION=CONSISTENT ADMIN_PUBLISH_SWITCH=PASS FROZEN_BUNDLES=21 STALE_VERSION=409 REAL_SUPPLIER_CALLS=0");
+      : "CANVAS_ADMIN_RUNTIME=PASS FEATURES=7 DOCK_SHARED_ENDPOINT_JSON_FORM=PASS BODY_HEADER_OVERRIDE=IGNORED QUOTE_EXECUTION=CONSISTENT ADMIN_PUBLISH_SWITCH=PASS FROZEN_BUNDLES=21 STALE_VERSION=409 REAL_SUPPLIER_CALLS=0");
   } finally { await db.getPool().end(); await f.cleanup(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

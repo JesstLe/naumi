@@ -1,4 +1,4 @@
-import { featureForPath } from "./feature-path";
+import { featureForRequest } from "./feature-path";
 import { requestedFeatureModel } from "./selection-policy";
 import { selectedBusinessOption, FEATURE_BINDINGS } from "./business";
 import "server-only";
@@ -60,8 +60,9 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   const [snapshot, billing] = await Promise.all([accepted ? admin.repo.byVersion(accepted.modelVersion) : admin.repo.current(), accepted ? admin.billing.byVersion(accepted.billingVersion) : admin.billing.current()]);
   const quotedVersion = request.headers.get("x-naumi-model-version") || parsed.body.modelVersion;
   if (quotedVersion !== undefined && quotedVersion !== null && quotedVersion !== "" && (!/^[1-9][0-9]{0,15}$/.test(String(quotedVersion)) || Number(quotedVersion) !== snapshot.version)) throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请刷新模型列表后重新提交；原输入已保留", 409);
-  const feature = featureForPath(new URL(request.url).pathname);
+  const feature = featureForRequest(new URL(request.url).pathname, parsed.body);
   const purpose = purposeFor(new URL(request.url).pathname), executor = await getModelExecutor();
+  if (feature === "canvas.image") purpose.image = "image.edit";
   if (feature === "competitor.action" && parsed.body.action !== "analyze") Object.assign(purpose, { image:"image.edit", text:"text.competitor", vision:"vision.reference", primary:"image" });
   const mainFeature = feature === "competitor.action" && parsed.body.action === "analyze" ? undefined : feature;
   const bundle: ExecutionBundle = { modelVersion: snapshot.version, billingVersion: billing.version, primary: purpose.primary };

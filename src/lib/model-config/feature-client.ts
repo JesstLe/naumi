@@ -1,11 +1,11 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { MODEL_CATALOG_REFRESH } from "./public-client";
+import { MODEL_CATALOG_REFRESH, rememberModelCatalogVersion } from "./public-client";
 import type { FeatureId } from "../billing/rules/registry";
 import { compactImageModelOptions, imageModelDisplayId } from "../image-model-routing";
 import { authHeader } from "../supabase";
 import { adminConfiguredFeature } from "./selection-policy";
-export type FeatureCatalog = { managed: boolean; supported?: boolean; feature: FeatureId; version?: number; defaultModelId?: string; models: { id: string; label: string;creditHint?:string; modality: string; supportsEdit: boolean; qualities?: string[]; nativeResolutions?: string[] }[] };
+export type FeatureCatalog = { managed: boolean; supported?: boolean; feature: FeatureId; version?: number; defaultModelId?: string; models: { id: string; label: string;creditHint?:string; modality: string; supportsEdit: boolean; qualities?: string[]; nativeResolutions?: string[]; generationParameters?: {ratios?:string[];resolutions?:string[];combinations?:string[]} }[] };
 const catalogs = new Map<FeatureId, FeatureCatalog>(), selections = new Map<FeatureId, string>();
 export const FEATURE_MODEL_SELECTION = "naumi:feature-model-selected";
 const EVENT = FEATURE_MODEL_SELECTION;
@@ -44,7 +44,10 @@ export function useFeatureModels(feature: FeatureId) {
       try {
         const data = await loadCatalog(feature);
         if (cancelled) return;
+        const previousVersion = catalogs.get(feature)?.version;
         catalogs.set(feature, data); setCatalog(data); setError(null);
+        if (data.managed) rememberModelCatalogVersion(data.version);
+        if (previousVersion && previousVersion !== data.version) window.dispatchEvent(new Event(EVENT));
         if (adminConfiguredFeature(feature)) {
           selections.delete(feature);
           try { localStorage.removeItem(`naumi:model:${feature}`); } catch {}
@@ -57,9 +60,11 @@ export function useFeatureModels(feature: FeatureId) {
         setSelected(id || "");
       } catch (e) { if (!cancelled) { setError(e instanceof Error ? e.message : "读取失败"); setCatalog(null); catalogs.delete(feature); } }
     };
-    const changed = () => setSelected(chosenFeatureModel(feature) || "");
+    const changed = () => setSelected((adminConfiguredFeature(feature) ? catalogs.get(feature)?.defaultModelId : chosenFeatureModel(feature)) || "");
+    const visible = () => { if (document.visibilityState === "visible") void load(); };
     void load(); window.addEventListener(MODEL_CATALOG_REFRESH, load); window.addEventListener(EVENT, changed);
-    return () => { cancelled = true; window.removeEventListener(MODEL_CATALOG_REFRESH, load); window.removeEventListener(EVENT, changed); };
+    window.addEventListener("focus", load); document.addEventListener("visibilitychange", visible);
+    return () => { cancelled = true; window.removeEventListener(MODEL_CATALOG_REFRESH, load); window.removeEventListener(EVENT, changed); window.removeEventListener("focus", load); document.removeEventListener("visibilitychange", visible); };
   }, [feature]);
   return { catalog, selected, error, setSelected: useCallback((id: string) => selectFeatureModel(feature, id), [feature]) };
 }

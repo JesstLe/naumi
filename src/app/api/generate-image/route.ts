@@ -3,6 +3,7 @@ import { getPool } from "@/lib/db";
 import { readManagedObject } from "@/lib/storage";
 import { runPostprocess, PostprocessPending } from "@/lib/media-postprocess";
 import { currentModelExecution } from "@/lib/model-config/context";
+import { featureForRequest } from "@/lib/model-config/feature-path";
 import {withBillingIntent} from "@/lib/billing/intent";
 import {auditSettledImage} from "@/lib/image-quality-request";
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
@@ -1167,8 +1168,9 @@ async function handleObservedPost(request: Request) {
     ? await getUserDefaultImageModel(actorEmail)
     : null;
   const catalog = await getImageModelCatalog(actorEmail);
-  const requestedModel = currentModelExecution("image")?.imagePreset ? currentModelExecution("image")!.frozen.publicModelId : p.model || userDefaultModel || defaultModel;
-  const model = routeImageModel(requestedModel, p.ratio, catalog);
+  const acceptedModel = currentModelExecution("image")?.frozen.publicModelId;
+  const requestedModel = acceptedModel || p.model || userDefaultModel || defaultModel;
+  const model = acceptedModel || routeImageModel(requestedModel, p.ratio, catalog);
   const imageModel = catalog.find((item) => item.id === model);
   if (!imageModel) {
     return NextResponse.json(
@@ -1226,7 +1228,7 @@ async function handleObservedPost(request: Request) {
   // 按请求质量基础价叠加尺寸差价，提交时固定报价。
   // 选档→扣费→结算链路;请求档进任务审计,恢复/重放后结算口径不变。
   const qualityAudit = resolveConfiguredImageQuality(p.quality);
-  const billingQuote=useDb?await quoteForRequest(request,{feature:"image.generate",quantity:p.count,quality:qualityAudit.requested||"medium",resolution:p.resolution,modelId:imageModel.id}):undefined;
+  const billingQuote=useDb?await quoteForRequest(request,{feature:featureForRequest("/api/generate-image",p)!,quantity:p.count,quality:qualityAudit.requested||"medium",resolution:p.resolution,modelId:imageModel.id}):undefined;
   if(billingQuote)assertQuotedVersion(requestQuoteConfirmation(request,p),billingQuote);
   const cost = billingQuote?.requestedCredits ?? (userProvider ? 0 : p.count * await imageQualityCost(qualityAudit, p.resolution));
 
