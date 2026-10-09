@@ -23,14 +23,14 @@ export async function readProviderCatalog(pool:Pool,providers:ModelProvider[]){
   const rows=(await pool.query('SELECT * FROM app_model_provider_catalog WHERE fingerprint=ANY($1::text[])',[providers.map(fingerprint)])).rows;
   return providers.map(p=>entry(rows.find(r=>r.fingerprint===fingerprint(p)),p));
 }
-export async function refreshProviderCatalog(pool:Pool,p:ModelProvider,credentials:ReturnType<typeof createCredentialStore>,trustedOrigins:readonly string[],fetcher?:typeof fetch){
+export async function refreshProviderCatalog(pool:Pool,p:ModelProvider,credentials:ReturnType<typeof createCredentialStore>,trustedOrigins:readonly string[],fetcher?:typeof fetch,force=false){
   await ensure(pool);const tx=await pool.connect();
   try{
     await tx.query('BEGIN');
     const locked=(await tx.query('SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS locked',['provider-catalog:'+fingerprint(p)])).rows[0].locked;
     const old=(await tx.query('SELECT * FROM app_model_provider_catalog WHERE fingerprint=$1',[fingerprint(p)])).rows[0];
     if(!locked){await tx.query('COMMIT');return {...entry(old,p),refreshing:true};}
-    if(old&&!entry(old,p).stale){await tx.query('COMMIT');return entry(old,p);}
+    if(old&&!entry(old,p).stale&&!force){await tx.query('COMMIT');return entry(old,p);}
     const result=await discoverProviderCatalog(p,credentials,trustedOrigins,fetcher);
     const success=['ok','empty'].includes(result.status);
     const saved={...result,models:success?result.models:old?.result.models||[]};
