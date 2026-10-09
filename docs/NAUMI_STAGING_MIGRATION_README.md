@@ -756,6 +756,7 @@ hash、nginx -t、reload并核验公网200/admin403/worker403与业务容器未�
 视频/OSS延期，旧机回传仍须用户明确要求，禁止测试DB回灌。
 ```
 
+
 ## 23. 管理后台 MVP 与 APIMart 端到端验收（2026-10-09）
 
 用户指定只更新新机 `120.27.162.85`。管理导航顶部新增 `/admin/mvp`，展示前端名称→真实模型→来源，支持来源接入、自动目录、能力确认、兼容目标切换。用户侧界面未改。分支核对、实现及完整验收说明见 `docs/admin-model-mvp.md`。
@@ -769,3 +770,8 @@ hash、nginx -t、reload并核验公网200/admin403/worker403与业务容器未�
 - 证据目录 `/opt/naumi-staging/evidence/admin-mvp-apimart-e2e-20261009`，应用回滚 `ROLLBACK.sh`、Router回滚 `ROLLBACK-router.sh`，均有备份和无变更 `--check` 验证。历史final证据目录回滚检查误恢复Router的问题已修正；后续使用最新证据目录。
 
 数据库、媒体、历史保护、账号鉴权、公网反代与私网服务边界保留；旧生产机未连接/修改。视频与OSS仍按第20节另行处理，不自动回传。
+
+## 24. 画布新增面板 UI 与多 Agent 协作（2026-10-09）
+
+新机已发布并验收画布UI源码e2e607c，公网版本1791533867。新增助手/改字侧栏、工作流弹窗、主工具栏和批量操作沿用canvas-ui主题，标注窄屏纵向布局且质量控件独立一行；既有管理员策略、模型家族与Dock避让保留。实现与证据见 `docs/changes/2026-10-09-canvas-ui-alignment.md`，远程 `/opt/naumi-staging/evidence/canvas-ui-release-20261009`。用户确认多个agent共同更新新机；从现在采用 `docs/AGENT_COLLABORATION.md` 的独立分支/worktree、选择性提交、main整合和串行发布/基线校验规则。旧机不回传、local媒体、视频/OSS延期约定不变。
+

@@ -90,9 +90,11 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const model = snapshot.config.publicModels.find(m => m.id === (preset ? presetPublicId(preset,requestedModelId) : option?.modelId || requestedModelId || snapshot.config.bindings[purpose.image!]));
     const upstreams = model?.target.type === "pool" ? snapshot.config.upstreamModels.filter(u => snapshot.config.pools.find(p => p.id === model.target.id)?.candidates.includes(u.id)) : snapshot.config.upstreamModels.filter(u => u.id === model?.target.id);
     const qualities = option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
-    if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(String(parsed.body.ratio || "1:1"))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
+    if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(ratio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
     const requestedQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "medium");
     const presetParams = preset ? effectiveImageParameters(preset, { quality: requestedQuality, resolution: outputResolution, ratio }) : null;
+    const canvasRequest = parsed.body.origin === "canvas" || new URL(request.url).pathname.startsWith("/api/canvas/");
+    if (canvasRequest && presetParams && parsed.body.resolution && (!presetParams.nativeResolution || !presetParams.nativeRatio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未核验该尺寸与比例组合，请选择已开放参数", 400);
     const effectiveQuality = presetParams?.effective.quality || requestedQuality;
     if (option && (parsed.body.quality || request.headers.get("x-naumi-image-quality")) && qualities.length && !qualities.includes(requestedQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持该质量，不会静默退档", 400);
     const defaultQuality = qualities.some(q => q === (process.env.OPENAI_IMAGE_QUALITY || "medium")) ? process.env.OPENAI_IMAGE_QUALITY || "medium" : qualities[0] || process.env.OPENAI_IMAGE_QUALITY || "medium";

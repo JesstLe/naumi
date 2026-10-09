@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { CANVAS_QUALITIES, normalizeCanvasQuality } from "@/lib/canvas/generation-parameters";
 import { IMAGE_QUALITY_IDS, type ImageQualityId } from "@/lib/image-quality";
 import {useBilling} from "@/lib/billing/client";
 import {usePathname} from "next/navigation";
@@ -65,8 +66,10 @@ export function useImageQuality(feature?:FeatureId, modelId?: string, purpose?: 
   const { catalog: featureCatalog, selected: selectedModel } = useFeatureModels(selected);
   const binding = purpose || (["image.generate", "image.suite", "image.aplus"].includes(selected) ? "image.generate" : selected === "tool.cutout" ? "image.cutout" : "image.edit");
   const configured = featureCatalog?.models.find(m => m.id === (modelId || selectedModel));
-  const allowedQualities = configured?.qualities?.length ? IMAGE_QUALITY_IDS.filter(q => configured.qualities!.includes(q)) : availableImageQualities(value.modelConfig, modelId, binding);
-  const quality = allowedQualities.includes(value.quality) ? value.quality : allowedQualities[0];
+  const modelQualities = configured?.qualities?.length ? IMAGE_QUALITY_IDS.filter(q => configured.qualities!.includes(q)) : availableImageQualities(value.modelConfig, modelId, binding);
+  const allowedQualities = pathname === "/canvas" ? modelQualities.filter(q => (CANVAS_QUALITIES as readonly string[]).includes(q)) : modelQualities;
+  const preferred = pathname === "/canvas" ? normalizeCanvasQuality(value.quality) : value.quality;
+  const quality = allowedQualities.includes(preferred) ? preferred : allowedQualities[0] || "medium";
   const imageCost=(resolution="1K")=>catalog?.features[selected]?.prices[quality]?.[resolution]??0;
   return {...value,quality,allowedQualities,capable: allowedQualities.length > 1,imageCost,costPerImage:imageCost()};
 }

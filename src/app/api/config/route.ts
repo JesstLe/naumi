@@ -43,7 +43,7 @@ export async function GET(request: Request) {
     modelVersion: managed?.version,
     imageModelBindings: managed?.bindings,
     imageBindingCapabilities: managed?.bindingCapabilities,
-    imageModels: managed ? imageModels.filter(m => m.id.startsWith("byok:") || featureCatalog!.models.some(v => v.id === m.id)).map(m => ({ ...m, provider: m.id.startsWith("byok:") ? m.provider : "managed" })) : imageModels,
+    imageModels: managed ? imageModels.filter(m => m.id.startsWith("byok:") || featureCatalog!.models.some(v => v.id === m.id)).map(m => ({ ...m, ...(m.id.startsWith("byok:") ? {} : featureCatalog!.models.find(v => v.id === m.id)), provider: m.id.startsWith("byok:") ? m.provider : "managed" })) : imageModels,
     // 出图质量通道能力:上游真实处理 quality 字段时为 true,前端才放开
     // 高档选择;false 时统一按默认档执行(提交前回退,见 src/lib/image-quality.ts)。
     imageQualityCapable: managed ? !!managed.models.find(m => m.id === defaultModel)?.qualitySupported : imageQualityCapable(),
