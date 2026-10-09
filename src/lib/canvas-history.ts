@@ -2,6 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { getPool, ensureSchema } from "@/lib/db";
+import { nodeSettingsSchema } from "@/lib/canvas/node-settings";
+import { ensureCanvasSettingsSchema } from "@/lib/canvas-node-settings-store";
 
 const id = z.string().min(1).max(200);
 const coordinate = z.number().finite().min(-1e7).max(1e7);
@@ -26,12 +28,14 @@ export const historyRequest = z.object({
     z.object({ type: z.literal("rename"), id, title: z.string().max(80) }),
     z.object({ type: z.literal("size"), id, x: coordinate, y: coordinate, width: z.number().min(80).max(4096), height: z.number().min(80).max(4096) }),
     z.object({ type: z.literal("mark"), id, marked: z.boolean() }),
+    z.object({ type: z.literal("node-settings"), id, text: z.boolean(), settings: nodeSettingsSchema }),
   ])).min(1).max(400),
 });
 
 /** A whole history step commits once, including mixed image/text operations. */
 export async function saveCanvasHistory(email: string, input: z.infer<typeof historyRequest>) {
   await ensureSchema();
+  if (input.operations.some(op => op.type === "node-settings")) await ensureCanvasSettingsSchema();
   const client = await getPool().connect();
   const fingerprint = createHash("sha256").update(JSON.stringify(input.operations)).digest("hex");
   try {
@@ -55,11 +59,18 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
         if (!result.rowCount) throw new Error("文字节点不存在或无权修改");
         continue;
       }
-      const text = op.type === "text-delete" || op.type === "text-patch" || (op.type === "position" && op.text);
+      const text = op.type === "text-delete" || op.type === "text-patch" || ((op.type === "position" || op.type === "node-settings") && op.text);
       const table = text ? "app_canvas_text_nodes" : "app_artworks";
       const owned = await client.query(`SELECT * FROM ${table} WHERE email=$1 AND id=$2 FOR UPDATE`, [email,op.id]);
       if (!owned.rows.length) throw new Error("节点不存在或无权修改，请刷新画布");
       const row = owned.rows[0];
+      if (op.type === "node-settings") {
+        if (!text && row.deleted_at) throw new Error("节点已删除，请刷新画布");
+        await client.query(`INSERT INTO app_canvas_node_settings(email,node_id,kind,settings) VALUES($1,$2,$3,$4::jsonb)
+          ON CONFLICT(email,node_id) DO UPDATE SET kind=EXCLUDED.kind,settings=EXCLUDED.settings,updated_at=now()`,
+          [email,op.id,op.text ? "text" : "image",JSON.stringify(op.settings)]);
+        continue;
+      }
       if (op.type === "visibility") await client.query("UPDATE app_artworks SET deleted_at=CASE WHEN $3 THEN NULL ELSE now() END WHERE email=$1 AND id=$2",[email,op.id,op.visible]);
       else if (op.type === "text-delete") await client.query("DELETE FROM app_canvas_text_nodes WHERE email=$1 AND id=$2",[email,op.id]);
       else if (op.type === "position") await client.query(`UPDATE ${table} SET canvas_x=$3,canvas_y=$4 WHERE email=$1 AND id=$2`,[email,op.id,op.x,op.y]);

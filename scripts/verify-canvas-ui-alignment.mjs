@@ -21,7 +21,10 @@ if(baseline){
 }else{
  assert.match(toolbar,/canvas-ui-surface/);
  assert.doesNotMatch(toolbar,/bg-white|text-\[#697386\]/);
- assert.equal((panels.match(/canvas-ui-surface canvas-ui-surface-solid canvas-ui-side-panel/g)||[]).length,2);
+ if (client.includes('<CanvasAssistantPanel')) {
+   assert.equal((client.match(/canvas-ui-surface canvas-ui-surface-solid canvas-ui-side-panel/g)||[]).length,1);
+   assert.match(read('src/components/canvas/canvas-assistant-panel.tsx'), /canvas-ui-surface canvas-ui-surface-solid canvas-ui-side-panel/);
+ } else assert.equal((panels.match(/canvas-ui-surface canvas-ui-surface-solid canvas-ui-side-panel/g)||[]).length,2);
  assert.doesNotMatch(comfy,/\b(?:bg|text|border)-c-/);
  assert.match(comfy,/canvas-ui-surface/);
  assert.match(comfy,/role="dialog" aria-modal="true"/);
