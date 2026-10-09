@@ -50,9 +50,18 @@ async function main() {
   Object.assign(f.config.bindings, { "agent.text": "smart-text", "text.generate": "smart-text", "vision.ocr": "smart-text" });
   f.config.upstreamModels.push({...structuredClone(f.config.upstreamModels[0]),id:"family-image",model:"fixture-family-wire"});
   f.config.publicModels.push(...["square","portrait","three-four"].map(s=>({...structuredClone(f.config.publicModels[0]),id:"gemini-3.0-pro-image-"+s,label:"gemini-3.0-pro-image-"+s,target:{type:"upstream" as const,id:"family-image"}})));
+  if(process.env.VERIFY_CANVAS_NODE_EDITING === "1") f.config.upstreamModels[0].parameterMap.qualityPolicy={mode:"map",choices:(["low","medium","high","xhigh","max"] as const).map((id,i)=>({id,label:["低","标准","高","超高","最高"][i],value:["xhigh","max"].includes(id)?"high":id}))};
   const db = await import("../src/lib/db"), auth = await import("../src/lib/admin-auth"), native = await import("../src/lib/native-auth");
   await db.ensureSchema(); await db.setSetting("multi_user_enabled","1"); await f.repo.current(); await auth.setAdminPassword("MvpFixture2026!");
   await db.getOrCreateUser("mvp-member@example.test", "普通成员");
+  if(process.env.VERIFY_CANVAS_NODE_EDITING === "1") {
+    process.env.STORAGE_DRIVER="local";
+    const sharp=(await import("sharp")).default,{uploadImage}=await import("../src/lib/storage");
+    const png=await sharp({create:{width:640,height:480,channels:3,background:"#dce9e2"}}).png().toBuffer(),image=await uploadImage(png,"image/png","fixtures/integration-image.png");
+    await db.addArtworks("mvp-member@example.test",[{id:"integration-image",title:"合并验收图片",category:"main",prompt:"本地像素编辑验收",image,status:"completed",gradient:"",origin:"canvas",width:640,height:480,canvasWidth:320,canvasHeight:240}]);
+    await db.getPool().query("UPDATE app_artworks SET canvas_x=100,canvas_y=100 WHERE id='integration-image'");
+    const now=new Date().toISOString();await db.upsertCanvasTextNode("mvp-member@example.test",{id:"text-integration",projectKey:"tree:integration-image",title:"合并验收文字",prompt:"",content:"画布整合验收\n保留模型与积分配置",status:"completed",canvasX:480,canvasY:100,width:300,height:210,createdAt:now,updatedAt:now,sourceIds:["integration-image"],targetIds:[],productIds:[]});
+  }
   if(process.env.VERIFY_RETIRED_ENDPOINTS === "1") await db.upsertUserImageProviderRecord({id:"retired-ui-provider",email:"mvp-member@example.test",name:"Historical UI fixture",isActive:true,enabled:true,protocol:"openai-images",baseUrlEnc:f.origin+"/v1",apiKeyEnc:"old-ui-fixture-only-key",models:["gpt-image-own"],defaultModel:"gpt-image-own"});
   const { createConfigRuntime } = await import("../src/lib/billing/catalog");
   const fixtureBilling=fixtureConfig();fixtureBilling.switches.metering="on";
