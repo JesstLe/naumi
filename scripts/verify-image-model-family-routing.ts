@@ -32,6 +32,9 @@ console.log("PASS image model families collapse to clean IDs, ratios route to va
 const renamed = models.map(m => ({ ...m, provider: "managed", label: m.id.startsWith("gemini-") ? "精致产品图" : m.id === "gpt-image-2" ? "标准产品图" : m.id }));
 assert.equal(compactImageModelOptions(renamed)[0].label, "标准产品图");
 assert.equal(compactImageModelOptions(renamed)[1].label, "精致产品图");
-assert.equal(compactImageModelOptions(renamed, ["gemini-3.0-pro-image-portrait"])[0].label, "精致产品图");
+const preferred = compactImageModelOptions(renamed, ["gemini-3.0-pro-image-portrait"]);
+assert.deepEqual(preferred.map(m => imageModelDisplayId(m.id)), compactImageModelOptions(renamed).map(m => imageModelDisplayId(m.id)), "saved/default selection must not promote a family");
+assert.equal(preferred[1].label, "精致产品图");
+assert.equal(preferred[1].id, "gemini-3.0-pro-image-portrait", "retain the preferred ratio representative within its original family position");
 assert.equal(routeImageModel("gemini-3.0-pro-image-square", "16:9", renamed), "gemini-3.0-pro-image-landscape");
 assert.equal(compactImageModelOptions(models.map(m => ({ ...m, provider: "managed" })))[1].label, "gemini-3.0-pro-image", "different legacy ratio labels must still collapse to the clean family");

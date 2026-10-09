@@ -46,7 +46,9 @@ export function mvpRows(snapshot: ModelSnapshot, catalogs: { feature: string; de
   for(const model of unrestricted.config.publicModels) delete model.toolScope;
   const eligibleCatalogs=new Map(Object.entries(FEATURE_BINDINGS).map(([feature,binding])=>[feature,new Set(publicModelCatalog(unrestricted,MODEL_BINDINGS[binding!].modality,feature as FeatureId,true).models.map(m=>m.id))]));
   const inventory = config.publicModels.filter(m=>m.enabled && m.visible);
-  for (const catalog of [...catalogs,{feature:"",models:inventory}]) {
+  // Seed the complete inventory in configured order before attaching tool membership.
+  // Removing a family from an early tool must not move its management row.
+  for (const catalog of [{feature:"",models:inventory},...catalogs]) {
     const displayed = catalog.models.some(m => m.modality === "image") ? compactImageModelOptions(catalog.models, [catalog.defaultModelId || ""]) : catalog.models;
     for (const shown of displayed) {
       const key = shown.modality === "image" ? imageModelDisplayId(shown.id) : shown.id;

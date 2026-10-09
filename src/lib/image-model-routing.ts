@@ -59,18 +59,15 @@ export function compactImageModelOptions<T extends ImageModelRoutingOption>(
   options: T[],
   preferredIds: string[] = []
 ): T[] {
-  const byId = new Map(options.map((item) => [item.id, item]));
-  const ordered = [
-    ...preferredIds.map((id) => byId.get(id)).filter(Boolean),
-    ...options,
-  ] as T[];
   const seen = new Set<string>();
-  return ordered.flatMap((item) => {
-    const displayId = imageModelDisplayId(item.id);
+  // Preferences choose a family's representative, never its position in the menu.
+  return options.flatMap((option) => {
+    const displayId = imageModelDisplayId(option.id);
     const key = displayId;
     if (seen.has(key)) return [];
     seen.add(key);
     const family = options.filter(option => imageModelDisplayId(option.id) === displayId);
+    const item = preferredIds.map(id => family.find(member => member.id === id)).find(Boolean) || option;
     const label = item.label?.trim();
     const managed = item.provider === "managed" || item.modality === "image";
     const custom = managed && label && label !== item.id && family.every(option => option.label?.trim() === label);
