@@ -1,3 +1,4 @@
+import { canvasParameterError } from "@/lib/canvas/generation-parameters";
 import {withBillingIntent} from "@/lib/billing/intent";
 import { NextResponse } from "next/server";
 
@@ -47,4 +48,4 @@ export async function GET(request: Request) {
   return NextResponse.json({ ok: true, tasks: tasks.map(publicCanvasImageTask) });
 }
 
-export async function POST(request:Request){return withBillingIntent(request,()=>createSubmission(request));}
+export async function POST(request:Request){const invalid = await canvasParameterError(request); if (invalid) return invalid; return withBillingIntent(request,()=>createSubmission(request));}

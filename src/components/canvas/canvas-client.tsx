@@ -6,6 +6,7 @@ import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 import { copyText } from "@/lib/clipboard";
 import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
+import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters, canvasCombinationSupported } from "@/lib/canvas/generation-parameters";
 import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
 
 import {
@@ -126,10 +127,7 @@ import { bytesLabel, prepareImageUploads, uploadFormData } from "@/lib/client-im
 import {
   adaptiveCanvasImageSize,
   type Artwork,
-  GENERATION_RESOLUTIONS,
   GENERATION_STYLES,
-  MAX_GENERATION_DIMENSION,
-  resolutionForLongSide,
 } from "@/lib/mock-data";
 import {
   compactImageModelOptions,
@@ -162,10 +160,10 @@ const X_GAP = 90; // 层间横向间距
 const Y_GAP = 48; // 同层兄弟纵向间距
 const MAX_TOTAL_IMAGES = 6; // 节点图 + 追加参考图 合计上限
 const MAX_UPLOAD = 12 * 1024 * 1024;
-const MAX_GENERATION_COUNT = 8;
+const MAX_GENERATION_COUNT = CANVAS_MAX_COUNT;
 type CanvasPrimaryTool = "move" | "marquee" | "hand";
 // 扩图可选目标比例(ratioTilesC 同款,去掉 auto 与极端档 2:1/1:2)
-const EXPAND_RATIOS = ["1:1", "4:3", "3:2", "16:9", "4:5", "3:4", "2:3", "9:16"] as const;
+const EXPAND_RATIOS = CANVAS_RATIO_OPTIONS.filter(r => r.id !== "auto").map(r => r.id);
 // 扩图锚点九宫格(原图贴哪一侧,新内容补其余方向) + 提示文案
 const ANCHOR_GRID = ["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"] as const;
 const ANCHOR_TITLE: Record<string, string> = {
@@ -430,22 +428,9 @@ async function expectJsonOk(res: Response, fallback: string): Promise<any> {
 
 // 画布生成器:比例选项(对齐参考站图1 的网格)。w/h 只用于画小图标;
 // 实际出图尺寸由后端 sizeFor 按方向(横/竖/方)映射到 gpt-image 支持的尺寸。
-const CANVAS_RATIOS: { id: string; w: number; h: number }[] = [
-  { id: "auto", w: 0, h: 0 },
-  { id: "1:1", w: 1, h: 1 },
-  { id: "9:16", w: 9, h: 16 },
-  { id: "16:9", w: 16, h: 9 },
-  { id: "3:4", w: 3, h: 4 },
-  { id: "4:3", w: 4, h: 3 },
-  { id: "3:2", w: 3, h: 2 },
-  { id: "2:3", w: 2, h: 3 },
-  { id: "4:5", w: 4, h: 5 },
-  { id: "5:4", w: 5, h: 4 },
-  { id: "21:9", w: 21, h: 9 },
-];
-const CANVAS_RES = GENERATION_RESOLUTIONS.map((resolution) => resolution.id);
-const STANDARD_RATIO_IDS = new Set(CANVAS_RATIOS.map((ratio) => ratio.id));
-type ImageModelOption = { id: string; label: string; supportsEdit: boolean };
+const CANVAS_RATIOS = CANVAS_RATIO_OPTIONS;
+const CANVAS_RES = CANVAS_RESOLUTIONS;
+type ImageModelOption = { id: string; label: string; supportsEdit: boolean; generationParameters?: { ratios?: string[]; resolutions?: string[]; combinations?: string[] } };
 
 function artworkImageSize(art: Pick<Artwork, "width" | "height">) {
   const withCanvas = art as Pick<
@@ -469,14 +454,6 @@ function artworkImageSize(art: Pick<Artwork, "width" | "height">) {
 function artworkNodeSize(art: Pick<Artwork, "width" | "height">) {
   const image = artworkImageSize(art);
   return { width: image.width, height: image.height + NODE_LABEL_H, imageHeight: image.height };
-}
-
-function customDimensionsForRatio(ratio: string) {
-  if (STANDARD_RATIO_IDS.has(ratio)) return null;
-  const [width, height] = ratio.split(":").map(Number);
-  return width >= 64 && height >= 64 && width <= MAX_GENERATION_DIMENSION && height <= MAX_GENERATION_DIMENSION
-    ? { width: Math.round(width), height: Math.round(height) }
-    : null;
 }
 
 function flowNodeSize(node: Node | undefined) {
@@ -1617,13 +1594,25 @@ export function CanvasClient() {
     if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
     const form=init.body instanceof FormData?init.body:null;
     const body=form?Object.fromEntries(Array.from(form.entries()).filter((entry)=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};
+    if (path === "/api/generate-image") {
+      body.ratio = normalizeCanvasRatio(body.ratio);
+      body.resolution = normalizeCanvasResolution(body.resolution);
+      body.count = String(normalizeCanvasCount(body.count));
+      delete body.targetWidth; delete body.targetHeight;
+      if (form) { form.delete("targetWidth"); form.delete("targetHeight"); }
+    }
+    if (path === "/api/generate-image" || ["/api/canvas/image-tasks", "/api/canvas/expand", "/api/canvas/annotate", "/api/canvas/text-edit"].includes(path)) {
+      body.quality = normalizeCanvasQuality(body.quality || genQuality);
+      if (form) for (const key of ["ratio", "resolution", "count", "quality"]) { if (body[key] !== undefined) form.set(key, String(body[key])); }
+      else init = { ...init, body: JSON.stringify(body) };
+    }
     const source=active?.members.find(art=>art.id===body.artworkId);
     const quantity=path==="/api/aplus"?Math.max(1,form?.getAll("module").length||body.modules?.length||1):path==="/api/suite"?(body.structure==="custom"?JSON.parse(String(body.shots||"[]")).length:13):Number(body.count||1);
     const headers=new Headers(init.headers);for(const [key,value] of Object.entries(await authHeader()))headers.set(key,value);
+    if (body.quality) headers.set("x-naumi-image-quality", String(body.quality));
     const feature=features[path],modelId=adminConfiguredFeature(feature) ? undefined : featureModelManaged(feature) && !["image.generate","video.generate"].includes(feature) ? chosenFeatureModel(feature) : body.modelId||body.model||undefined;
     return billing.quoteAndSubmit(path,{...init,headers},{feature,quantity,quality:String(body.quality||genQuality),resolution:String(body.resolution||source?.resolution||"1K"),modelId,providerId:body.providerId,ratio:body.ratio});
   }
-  const { quality: genQuality, imageCost, modelConfig } = useImageQuality();
   const { model: textModel, setModel: setTextModel } = useTextModel();
   const { user, ready, remaining, persistMode, applyServerUser, signOut } = useAuth();
   const { openAuth } = useAuthModal();
@@ -1670,10 +1659,9 @@ export function CanvasClient() {
   const cancelEditRef = useRef(false); // Esc 取消时跳过失焦保存
   const [editPrompt, setEditPrompt] = useState("");
   const [genModel, setGenModel] = useState("");
+  const { quality: genQuality, imageCost, modelConfig } = useImageQuality(undefined, genModel);
   const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
   const [genRatio, setGenRatio] = useState("auto"); // 默认自适应
-  const [customWidth, setCustomWidth] = useState(900);
-  const [customHeight, setCustomHeight] = useState(900);
   const [genResolution, setGenResolution] = useState("1K"); // 默认 1K
   const [ratioMenuOpen, setRatioMenuOpen] = useState(false); // 比例/分辨率弹出面板
   const ratioBtnRef = useRef<HTMLButtonElement>(null);
@@ -1811,6 +1799,12 @@ export function CanvasClient() {
           return normalized.find((item) => item.id === fallback)?.id || normalized[0]?.id || "";
         });
   }, [modelConfig]);
+
+  useEffect(() => {
+    const parameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
+    setGenRatio(current => parameters.ratios.includes(normalizeCanvasRatio(current)) ? normalizeCanvasRatio(current) : "auto");
+    setGenResolution(current => parameters.resolutions.includes(normalizeCanvasResolution(current)) ? normalizeCanvasResolution(current) : parameters.resolutions[0] || "1K");
+  }, [genModel, imageModels]);
 
   function pickGenerationModel(model: string) {
     setGenModel(model);
@@ -4017,13 +4011,9 @@ export function CanvasClient() {
     carryPromptRef.current = null;
     // 预填该节点自己的提示词(可编辑),便于"看着配方改一改再生成";有 carry 的优先用 carry
     setEditPrompt(carried ?? selected?.prompt ?? "");
-    const nextRatio = selected?.ratio || "auto";
+    const nextRatio = normalizeCanvasRatio(selected?.ratio);
     setGenRatio(nextRatio); // 默认自适应
-    const custom = customDimensionsForRatio(nextRatio);
-    if (custom) {
-      setCustomWidth(selected?.width || custom.width);
-      setCustomHeight(selected?.height || custom.height);
-    }
+
     setGenStyle(selected?.style || GENERATION_STYLES[0]);
     setGenerationMode("standard");
     setRatioMenuOpen(false);
@@ -4243,17 +4233,13 @@ export function CanvasClient() {
       fd.append("prompt", text);
       if (opts?.userPrompt?.trim()) fd.append("userPrompt", opts.userPrompt.trim());
       fd.append("category", source.category || "main");
-      const requestedRatio = opts?.ratio || source.ratio || "1:1";
+      const requestedRatio = normalizeCanvasRatio(opts?.ratio || source.ratio);
       fd.append("ratio", requestedRatio);
-      const customSize = customDimensionsForRatio(requestedRatio);
-      if (customSize) {
-        fd.append("targetWidth", String(customSize.width));
-        fd.append("targetHeight", String(customSize.height));
-      }
-      fd.append("resolution", opts?.resolution || source.resolution || "1K");
+
+      fd.append("resolution", normalizeCanvasResolution(opts?.resolution || source.resolution));
       fd.append("quality", genQuality);
       fd.append("style", opts?.style ?? "");
-      fd.append("count", String(opts?.count ?? 1));
+      fd.append("count", String(normalizeCanvasCount(opts?.count)));
       if (genModel) {
         // The node owns the ratio/resolution choice. The server repeats this
         // routing as the authoritative guard before calling the upstream model.
@@ -5508,7 +5494,7 @@ export function CanvasClient() {
     if (readOnly || !selected || selectedGenerating) return;
     void runCutout(selected, quality === "fast" ? "fast" : "fine");
   }
-  // 高清:按所选分辨率(1K/2K/4K/5K)放大当前节点
+  // 高清:按所选分辨率(1K/2K/4K)放大当前节点
   function onHd(resolution: string) {
     if (readOnly || !selected || selectedGenerating) return;
     void runGen(
@@ -7475,17 +7461,13 @@ export function CanvasClient() {
       const fd = new FormData();
       fd.append("prompt", promptToUse);
       fd.append("category", "main");
-      const requestedRatio = opts?.ratio || genRatio || "auto";
+      const requestedRatio = normalizeCanvasRatio(opts?.ratio || genRatio);
       fd.append("ratio", requestedRatio);
-      const customSize = customDimensionsForRatio(requestedRatio);
-      if (customSize) {
-        fd.append("targetWidth", String(customSize.width));
-        fd.append("targetHeight", String(customSize.height));
-      }
+
       fd.append("resolution", genResolution);
       fd.append("quality", genQuality);
       fd.append("style", genStyle ?? "");
-      fd.append("count", String(genCount || 1));
+      fd.append("count", String(normalizeCanvasCount(genCount)));
       if (genModel) fd.append("model", genModel);
       fd.append("email", user.email);
       fd.append("origin", "canvas"); // 画布里产出 → 永远留画布
@@ -8162,7 +8144,7 @@ export function CanvasClient() {
     if (r) setRatioMenuRect({ left: r.left, top: r.top });
     setRatioMenuOpen((v) => !v);
   };
-  const activeCustomSize = customDimensionsForRatio(genRatio);
+  const generationParameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
   const activeImageModelLabel =
     imageModels.find((item) => item.id === genModel)?.label || genModel;
   const modelControl = (disabled = false) => (
@@ -8206,7 +8188,7 @@ export function CanvasClient() {
     >
       📐
       <span>
-        {genRatio === "auto" ? t("canvas.ratioAuto") : activeCustomSize ? `${activeCustomSize.width}×${activeCustomSize.height}` : genRatio} ·{" "}
+        {genRatio === "auto" ? t("canvas.ratioAuto") : genRatio} ·{" "}
         {genResolution}
       </span>
       <ChevronDown
@@ -8240,19 +8222,20 @@ export function CanvasClient() {
                   ratioMenuRect.top +
                   8,
               }}
-              className="canvas-ui-surface menu-pop-up fixed max-h-[min(76vh,620px)] w-[336px] overflow-y-auto rounded-2xl border p-4"
+              data-testid="canvas-generation-parameters" className="canvas-ui-surface menu-pop-up fixed max-h-[min(76vh,620px)] w-[336px] overflow-y-auto rounded-2xl border p-4"
             >
               <p className="canvas-ui-muted mb-2 text-[12px] font-semibold">
                 {t("canvas.resolution")}
               </p>
-              <div className="mb-4 grid grid-cols-4 gap-2">
-                {CANVAS_RES.map((r) => (
+              <div className="mb-4 grid grid-cols-3 gap-2">
+                {generationParameters.resolutions.map((r) => (
                   <button
                     key={r}
                     type="button"
                     onClick={() => setGenResolution(r)}
+                    disabled={!canvasCombinationSupported(generationParameters, genRatio, r)}
                     className={cn(
-                      "rounded-xl border py-2.5 text-sm font-semibold transition-colors",
+                      "rounded-xl border py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40",
                       genResolution === r
                         ? "canvas-ui-control !border-[#6366f1] font-semibold"
                         : "canvas-ui-control"
@@ -8265,14 +8248,15 @@ export function CanvasClient() {
               <p className="canvas-ui-muted mb-2 text-[12px] font-semibold">
                 {t("canvas.ratio")}
               </p>
-              <div className="grid grid-cols-5 gap-2">
-                {CANVAS_RATIOS.map((r) => (
+              <div className="grid grid-cols-4 gap-2">
+                {CANVAS_RATIOS.filter(r => generationParameters.ratios.includes(r.id)).map((r) => (
                   <button
                     key={r.id}
                     type="button"
                     onClick={() => setGenRatio(r.id)}
+                    disabled={!canvasCombinationSupported(generationParameters, r.id, genResolution)}
                     className={cn(
-                      "flex flex-col items-center justify-center gap-1.5 rounded-xl border py-2.5 transition-colors",
+                      "flex flex-col items-center justify-center gap-1.5 rounded-xl border py-2.5 transition-colors disabled:cursor-not-allowed disabled:opacity-40",
                       genRatio === r.id
                         ? "canvas-ui-control !border-[#6366f1] font-semibold"
                         : "canvas-ui-control"
@@ -8285,48 +8269,7 @@ export function CanvasClient() {
                   </button>
                 ))}
               </div>
-              <div className="canvas-ui-divider mt-4 border-t bg-transparent pt-3">
-                <p className="canvas-ui-muted mb-2 text-[12px] font-semibold">{t("canvas.customSize")}</p>
-                <div className="flex items-center gap-2">
-                  <input
-                    aria-label={t("canvas.customWidth")}
-                    type="number"
-                    min={64}
-                    max={MAX_GENERATION_DIMENSION}
-                    value={customWidth}
-                    onChange={(event) => setCustomWidth(Number(event.target.value))}
-                    className="canvas-ui-input min-w-0 flex-1 rounded-lg border px-2 py-2 text-center text-sm outline-none focus:!border-[#6366f1]"
-                  />
-                  <span className="canvas-ui-muted">×</span>
-                  <input
-                    aria-label={t("canvas.customHeight")}
-                    type="number"
-                    min={64}
-                    max={MAX_GENERATION_DIMENSION}
-                    value={customHeight}
-                    onChange={(event) => setCustomHeight(Number(event.target.value))}
-                    className="canvas-ui-input min-w-0 flex-1 rounded-lg border px-2 py-2 text-center text-sm outline-none focus:!border-[#6366f1]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const width = Math.min(MAX_GENERATION_DIMENSION, Math.max(64, Math.round(customWidth || 64)));
-                      const height = Math.min(MAX_GENERATION_DIMENSION, Math.max(64, Math.round(customHeight || 64)));
-                      setCustomWidth(width);
-                      setCustomHeight(height);
-                      setGenRatio(`${width}:${height}`);
-                      setGenResolution(resolutionForLongSide(Math.max(width, height)));
-                    }}
-                    className={cn(
-                      "rounded-lg border px-3 py-2 text-xs font-semibold",
-                      activeCustomSize ? "canvas-ui-control !border-[#6366f1]" : "canvas-ui-control"
-                    )}
-                  >
-                    {t("canvas.applySize")}
-                  </button>
-                </div>
-                <p className="canvas-ui-muted mt-1.5 text-[10px]">64–{MAX_GENERATION_DIMENSION} px</p>
-              </div>
+
             </div>
           </div>,
           document.body
@@ -9340,7 +9283,7 @@ export function CanvasClient() {
                 <div
                   data-testid="canvas-main-toolbar"
                   aria-label={t("canvas.toolPalette")}
-                  className="absolute bottom-[76px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 overflow-visible border border-[#d9dee7] bg-white/95 px-1.5 py-1.5 text-[#20242c] shadow-[0_12px_34px_rgba(15,23,42,0.18)] backdrop-blur min-[800px]:bottom-5"
+                  className="canvas-ui-surface absolute bottom-[76px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0.5 overflow-visible rounded-2xl border px-1.5 py-1.5 text-[#20242c] shadow-[0_12px_34px_rgba(15,23,42,0.18)] backdrop-blur min-[800px]:bottom-5"
                 >
                   <button
                     type="button"
@@ -9351,8 +9294,8 @@ export function CanvasClient() {
                     className={cn(
                       "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
                       canvasTool === "move"
-                        ? "bg-[#20242c] text-white shadow-sm"
-                        : "text-[#697386] hover:bg-[#eef1f5] hover:text-[#20242c]"
+                        ? "canvas-ui-primary shadow-sm"
+                        : "canvas-ui-action"
                     )}
                   >
                     <MousePointer2 className="h-[18px] w-[18px]" />
@@ -9372,8 +9315,8 @@ export function CanvasClient() {
                     className={cn(
                       "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
                       canvasTool === "marquee"
-                        ? "bg-[#20242c] text-white shadow-sm"
-                        : "text-[#697386] hover:bg-[#eef1f5] hover:text-[#20242c]"
+                        ? "canvas-ui-primary shadow-sm"
+                        : "canvas-ui-action"
                     )}
                   >
                     <BoxSelect className="h-[18px] w-[18px]" />
@@ -9387,14 +9330,14 @@ export function CanvasClient() {
                     className={cn(
                       "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
                       canvasTool === "hand"
-                        ? "bg-[#20242c] text-white shadow-sm"
-                        : "text-[#697386] hover:bg-[#eef1f5] hover:text-[#20242c]"
+                        ? "canvas-ui-primary shadow-sm"
+                        : "canvas-ui-action"
                     )}
                   >
                     <Hand className="h-[18px] w-[18px]" />
                   </button>
 
-                  <span className="mx-0.5 h-5 w-px flex-none bg-[#dfe3e8] sm:mx-1 sm:h-6" />
+                  <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
 
                   {/* ＋ 弹出「添加节点/上传图片/从生成历史选择」菜单 */}
                   {addMenuOpen && (
@@ -9403,8 +9346,8 @@ export function CanvasClient() {
                         className="fixed inset-0 z-0"
                         onClick={() => setAddMenuOpen(false)}
                       />
-                      <div className="menu-pop-up absolute bottom-[calc(100%+10px)] left-0 z-10 w-60 overflow-hidden border border-[#dfe3e8] bg-white p-1.5 text-[#252933] shadow-2xl">
-                        <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-medium text-[#9aa1ab]">
+                      <div className="canvas-ui-surface menu-pop-up absolute bottom-[calc(100%+10px)] left-0 z-10 w-60 overflow-hidden rounded-xl border p-1.5">
+                        <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-medium canvas-ui-muted">
                           {t("canvas.newNode")}
                         </p>
                         <button
@@ -9414,13 +9357,13 @@ export function CanvasClient() {
                             const c = centerScreen();
                             addTextNodeAtScreen(c.x, c.y);
                           }}
-                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]"
+                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors"
                         >
-                          <span className="flex h-8 w-8 items-center justify-center border border-[#e3e6eb] bg-[#f7f8fa] text-[#20242c]">
+                          <span className="flex h-8 w-8 items-center justify-center canvas-ui-control rounded-lg border">
                             <Type className="h-4 w-4" />
                           </span>
                           <span className="flex-1 font-medium">{t("canvas.textGenerate")}</span>
-                          <span className="text-[11px] text-[#adb3bd]">⇧T</span>
+                          <span className="text-[11px] canvas-ui-muted">⇧T</span>
                         </button>
                         <button
                           type="button"
@@ -9428,9 +9371,9 @@ export function CanvasClient() {
                             setAddMenuOpen(false);
                             toolAddNode();
                           }}
-                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]"
+                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors"
                         >
-                          <span className="flex h-8 w-8 items-center justify-center border border-[#e3e6eb] bg-[#f7f8fa] text-[#20242c]">
+                          <span className="flex h-8 w-8 items-center justify-center canvas-ui-control rounded-lg border">
                             <ImageIcon className="h-4 w-4" />
                           </span>
                           <span className="font-medium">{t("canvas.imageNode")}</span>
@@ -9442,9 +9385,9 @@ export function CanvasClient() {
                             const c = centerScreen();
                             triggerUpload(c.x, c.y);
                           }}
-                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]"
+                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors"
                         >
-                          <Upload className="ml-2 h-4 w-4 text-[#747d8b]" />
+                          <Upload className="ml-2 h-4 w-4 canvas-ui-muted" />
                           {t("canvas.uploadImage")}
                         </button>
                         <button
@@ -9453,9 +9396,9 @@ export function CanvasClient() {
                             setAddMenuOpen(false);
                             toolHistory();
                           }}
-                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]"
+                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors"
                         >
-                          <Clock className="ml-2 h-4 w-4 text-[#747d8b]" />
+                          <Clock className="ml-2 h-4 w-4 canvas-ui-muted" />
                           {t("canvas.fromHistory")}
                         </button>
                       </div>
@@ -9491,7 +9434,7 @@ export function CanvasClient() {
                       addTextNodeAtScreen(c.x, c.y);
                     }}
                     title={`${t("canvas.textGenerate")} (⇧T)`}
-                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c] sm:h-9 sm:w-9"
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md canvas-ui-action transition-colors sm:h-9 sm:w-9"
                   >
                     <Type className="h-[18px] w-[18px]" />
                   </button>
@@ -9500,7 +9443,7 @@ export function CanvasClient() {
                     data-tool="image-node"
                     onClick={toolAddNode}
                     title={t("canvas.imageNode")}
-                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c] sm:h-9 sm:w-9"
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md canvas-ui-action transition-colors sm:h-9 sm:w-9"
                   >
                     <ImagePlus className="h-[18px] w-[18px]" />
                   </button>
@@ -9512,19 +9455,19 @@ export function CanvasClient() {
                       triggerUpload(c.x, c.y);
                     }}
                     title={t("canvas.uploadImage")}
-                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c] sm:h-9 sm:w-9"
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md canvas-ui-action transition-colors sm:h-9 sm:w-9"
                   >
                     <Upload className="h-[18px] w-[18px]" />
                   </button>
 
-                  <span className="mx-0.5 h-5 w-px flex-none bg-[#dfe3e8] sm:mx-1 sm:h-6" />
+                  <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
 
                   <button
                     type="button"
                     data-tool="generate"
                     onClick={toolGenerate}
                     title={t("canvas.spawnGenerate")}
-                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c] sm:h-9 sm:w-9"
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md canvas-ui-action transition-colors sm:h-9 sm:w-9"
                   >
                     <Sparkles className="h-[18px] w-[18px]" />
                   </button>
@@ -9533,7 +9476,7 @@ export function CanvasClient() {
                     data-tool="history"
                     onClick={toolHistory}
                     title={t("canvas.fromHistory")}
-                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c] sm:h-9 sm:w-9"
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md canvas-ui-action transition-colors sm:h-9 sm:w-9"
                   >
                     <Clock className="h-[18px] w-[18px]" />
                   </button>
@@ -9542,12 +9485,12 @@ export function CanvasClient() {
                     data-tool="link"
                     onClick={() => flashTip(t("canvas.linkTip"))}
                     title={t("canvas.linkTip")}
-                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-[#697386] transition-colors hover:bg-[#eef1f5] hover:text-[#20242c] sm:h-9 sm:w-9"
+                    className="flex h-7 w-7 flex-none items-center justify-center rounded-md canvas-ui-action transition-colors sm:h-9 sm:w-9"
                   >
                     <Link2 className="h-[18px] w-[18px]" />
                   </button>
 
-                  <span className="mx-0.5 h-5 w-px flex-none bg-[#dfe3e8] sm:mx-1 sm:h-6" />
+                  <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
 
                   {moreToolsOpen && (
                     <>
@@ -9555,23 +9498,23 @@ export function CanvasClient() {
                         className="fixed inset-0 z-0"
                         onClick={() => setMoreToolsOpen(false)}
                       />
-                      <div data-testid="canvas-more-tools-menu" className="menu-pop-up absolute bottom-[calc(100%+10px)] right-0 z-10 w-64 overflow-hidden border border-[#dfe3e8] bg-white p-1.5 text-[#252933] shadow-2xl">
-                        <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-medium text-[#9aa1ab]">
+                      <div data-testid="canvas-more-tools-menu" className="canvas-ui-surface menu-pop-up absolute bottom-[calc(100%+10px)] right-0 z-10 w-64 overflow-hidden rounded-xl border p-1.5">
+                        <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-medium canvas-ui-muted">
                           {t("canvas.moreTools")}
                         </p>
-                        <button type="button" onClick={() => { setMoreToolsOpen(false); tidyLayout(); }} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]">
-                          <LayoutGrid className="h-4 w-4 text-[#747d8b]" />{t("canvas.ctxTidy")}
+                        <button type="button" onClick={() => { setMoreToolsOpen(false); tidyLayout(); }} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors">
+                          <LayoutGrid className="h-4 w-4 canvas-ui-muted" />{t("canvas.ctxTidy")}
                         </button>
-                        <button type="button" onClick={() => setShowMinimap((v) => !v)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]">
-                          <MapIcon className="h-4 w-4 text-[#747d8b]" />{t("canvas.minimap")}
-                          <span className="ml-auto text-xs text-[#9aa1ab]">{showMinimap ? "ON" : "OFF"}</span>
+                        <button type="button" onClick={() => setShowMinimap((v) => !v)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors">
+                          <MapIcon className="h-4 w-4 canvas-ui-muted" />{t("canvas.minimap")}
+                          <span className="ml-auto text-xs canvas-ui-muted">{showMinimap ? "ON" : "OFF"}</span>
                         </button>
-                        <button type="button" onClick={() => setSnapGrid((v) => !v)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]">
-                          <Magnet className="h-4 w-4 text-[#747d8b]" />{t("canvas.snap")}
-                          <span className="ml-auto text-xs text-[#9aa1ab]">{snapGrid ? "ON" : "OFF"}</span>
+                        <button type="button" onClick={() => setSnapGrid((v) => !v)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors">
+                          <Magnet className="h-4 w-4 canvas-ui-muted" />{t("canvas.snap")}
+                          <span className="ml-auto text-xs canvas-ui-muted">{snapGrid ? "ON" : "OFF"}</span>
                         </button>
-                        <button type="button" onClick={() => { setMoreToolsOpen(false); rfRef.current?.fitView({ duration: 400, padding: 0.2, maxZoom: 1 }); }} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]">
-                          <Maximize className="h-4 w-4 text-[#747d8b]" />{t("canvas.ctxFit")}
+                        <button type="button" onClick={() => { setMoreToolsOpen(false); rfRef.current?.fitView({ duration: 400, padding: 0.2, maxZoom: 1 }); }} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors">
+                          <Maximize className="h-4 w-4 canvas-ui-muted" />{t("canvas.ctxFit")}
                         </button>
                         <button
                           type="button"
@@ -9586,13 +9529,13 @@ export function CanvasClient() {
                               return next;
                             })
                           }
-                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]"
+                          className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors"
                         >
-                          <Sun className="h-4 w-4 text-[#747d8b]" />{t("canvas.toggleBg")}
-                          <span className="ml-auto text-xs text-[#9aa1ab]">{lightCanvas ? "LIGHT" : "DARK"}</span>
+                          <Sun className="h-4 w-4 canvas-ui-muted" />{t("canvas.toggleBg")}
+                          <span className="ml-auto text-xs canvas-ui-muted">{lightCanvas ? "LIGHT" : "DARK"}</span>
                         </button>
-                        <button type="button" onClick={() => { setMoreToolsOpen(false); setHelpOpen(true); }} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-[#f5f6f8]">
-                          <Keyboard className="h-4 w-4 text-[#747d8b]" />{t("canvas.shortcuts")}
+                        <button type="button" onClick={() => { setMoreToolsOpen(false); setHelpOpen(true); }} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm canvas-ui-action rounded-lg transition-colors">
+                          <Keyboard className="h-4 w-4 canvas-ui-muted" />{t("canvas.shortcuts")}
                         </button>
                       </div>
                     </>
@@ -9609,8 +9552,8 @@ export function CanvasClient() {
                     className={cn(
                       "flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9",
                       moreToolsOpen
-                        ? "bg-[#eef1f5] text-[#20242c]"
-                        : "text-[#697386] hover:bg-[#eef1f5] hover:text-[#20242c]"
+                        ? "canvas-ui-control"
+                        : "canvas-ui-action"
                     )}
                   >
                     <MoreHorizontal className="h-[18px] w-[18px]" />
@@ -9621,9 +9564,9 @@ export function CanvasClient() {
               {selectedBatchArts.length > 1 && !readOnly && (
                 <div
                   aria-label={t("canvas.batchActions")}
-                  className="cz-anim-bottom-center absolute bottom-[128px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl min-[800px]:bottom-[84px]"
+                  className="canvas-ui-surface cz-anim-bottom-center absolute bottom-[128px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border p-1.5 text-[#20242c] shadow-2xl min-[800px]:bottom-[84px]"
                 >
-                  <span className="whitespace-nowrap px-2 text-xs font-semibold text-[#5f6877]">
+                  <span className="whitespace-nowrap px-2 text-xs font-semibold canvas-ui-muted">
                     {fmt(t("canvas.batchSelected"), {
                       n: selectedBatchArts.length,
                     })}
@@ -9635,7 +9578,7 @@ export function CanvasClient() {
                         ? ungroupBatchSelection()
                         : groupBatchSelection())
                     }
-                    className="flex h-9 items-center gap-1.5 border border-[#cfd7e5] bg-[#f8fafc] px-3 text-xs font-semibold text-[#394557] transition-colors hover:border-[#9fb0c8] hover:bg-[#eef3f8]"
+                    className="flex h-9 items-center gap-1.5 canvas-ui-control rounded-xl border px-3 text-xs font-semibold transition-colors"
                   >
                     <Combine className="h-4 w-4" />
                     {t(
@@ -9647,7 +9590,7 @@ export function CanvasClient() {
                   <button
                     type="button"
                     onClick={createMergeNodeFromSelection}
-                    className="flex h-9 items-center gap-1.5 rounded-xl bg-[#315fc8] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#274fa9]"
+                    className="flex h-9 items-center gap-1.5 rounded-xl canvas-ui-primary px-3 text-xs font-semibold text-white transition-colors hover:opacity-90"
                   >
                     <Combine className="h-4 w-4" />
                     {t("canvas.batchGenerate")}
@@ -9657,7 +9600,7 @@ export function CanvasClient() {
                     disabled={batchRunBusy}
                     onClick={() => void batchRunImages(selectedBatchArts)}
                     title={t("canvas.batchRunImages")}
-                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#315fc8] transition-colors hover:bg-[#e8efff] disabled:opacity-45"
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors disabled:opacity-45"
                   >
                     {batchRunBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                     {t("canvas.batchRunImages")}
@@ -9667,7 +9610,7 @@ export function CanvasClient() {
                     disabled={promptMining}
                     onClick={() => void reversePromptsForSelection(selectedBatchArts)}
                     title={t("canvas.batchRunText")}
-                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8] disabled:opacity-45"
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors disabled:opacity-45"
                   >
                     {promptMining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Type className="h-4 w-4" />}
                     {t("canvas.batchRunText")}
@@ -9677,7 +9620,7 @@ export function CanvasClient() {
                     disabled={promptMining}
                     onClick={() => void reversePromptsForSelection(selectedBatchArts)}
                     title={t("canvas.reverseHint")}
-                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8] disabled:opacity-45"
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors disabled:opacity-45"
                   >
                     {promptMining ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -9689,7 +9632,7 @@ export function CanvasClient() {
                   <button
                     type="button"
                     onClick={() => void markBatchSelection()}
-                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8]"
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors"
                   >
                     <MapPin className="h-4 w-4" />
                     {t(
@@ -9703,7 +9646,7 @@ export function CanvasClient() {
                     disabled={stitching}
                     onClick={() => void stitchBatchSelection()}
                     title={t("canvas.stitchOrderHint")}
-                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8] disabled:opacity-45"
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors disabled:opacity-45"
                   >
                     {stitching ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -9716,7 +9659,7 @@ export function CanvasClient() {
                     type="button"
                     disabled={zipping}
                     onClick={() => void downloadBatchSelection()}
-                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8] disabled:opacity-45"
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors disabled:opacity-45"
                   >
                     {zipping ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -9748,9 +9691,9 @@ export function CanvasClient() {
                 <div
                   aria-label={t("canvas.textBatchActions")}
                   data-testid="text-batch-bar"
-                  className="cz-anim-bottom-center absolute bottom-[128px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border border-[#d9dfeb] bg-white p-1.5 text-[#20242c] shadow-2xl min-[800px]:bottom-[84px]"
+                  className="canvas-ui-surface cz-anim-bottom-center absolute bottom-[128px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border p-1.5 text-[#20242c] shadow-2xl min-[800px]:bottom-[84px]"
                 >
-                  <span className="whitespace-nowrap px-2 text-xs font-semibold text-[#5f6877]">
+                  <span className="whitespace-nowrap px-2 text-xs font-semibold canvas-ui-muted">
                     {fmt(t("canvas.textBatchSelected"), {
                       n: selectedTextBatchNodes.length,
                     })}
@@ -9763,7 +9706,7 @@ export function CanvasClient() {
                         textNodeIds: selectedTextBatchNodes.map((node) => node.id),
                       })
                     }
-                    className="flex h-9 items-center gap-1.5 rounded-xl bg-[#315fc8] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#274fa9] disabled:opacity-45"
+                    className="flex h-9 items-center gap-1.5 rounded-xl canvas-ui-primary px-3 text-xs font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-45"
                   >
                     {assistBusy ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -9779,7 +9722,7 @@ export function CanvasClient() {
                         textNodeIds: selectedTextBatchNodes.map((node) => node.id),
                       })
                     }
-                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-[#4d5665] transition-colors hover:bg-[#f0f3f8]"
+                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors"
                   >
                     <ImageIcon className="h-4 w-4" />
                     {t("canvas.genImages")}
@@ -10798,14 +10741,14 @@ export function CanvasClient() {
               return (
                 <aside
                   aria-label="画布助手面板"
-                  className="absolute bottom-4 right-4 top-4 z-30 flex w-[min(390px,calc(100%-2rem))] flex-col overflow-hidden border border-[#d9e0e8] bg-white text-[#252a33] shadow-[0_22px_70px_rgba(8,15,30,0.32)]"
+                  className="canvas-ui-surface canvas-ui-surface-solid canvas-ui-side-panel absolute bottom-4 right-4 top-4 z-30 flex w-[min(390px,calc(100%-2rem))] flex-col overflow-hidden border"
                 >
-                  <div className="flex items-start justify-between border-b border-[#e8ecf1] px-4 py-3.5">
+                  <div className="flex items-start justify-between border-b border-[var(--canvas-ui-border)] px-4 py-3.5">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 text-[15px] font-bold">
                         <MessageSquareText className="h-4 w-4 text-[#248da1]" /> 画布助手
                       </div>
-                      <p className="mt-1 truncate text-[12px] text-[#78818e]">
+                      <p className="mt-1 truncate text-[12px] canvas-ui-muted">
                         {anchor.title || "图片节点"}
                       </p>
                     </div>
@@ -10819,7 +10762,7 @@ export function CanvasClient() {
                           setAssistantError(null);
                           assistantRetry.current = null;
                         }}
-                        className="rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-[#4b5663] transition-colors hover:bg-[#f1f3f6] hover:text-[#252a33] disabled:opacity-40"
+                        className="rounded-lg px-2.5 py-1.5 text-[12px] font-semibold canvas-ui-muted transition-colors canvas-ui-action disabled:opacity-40"
                       >
                         新对话
                       </button>
@@ -10827,7 +10770,7 @@ export function CanvasClient() {
                         type="button"
                         aria-label="关闭画布助手"
                         onClick={() => setAssistantArtworkId(null)}
-                        className="flex h-8 w-8 items-center justify-center text-[#7a8390] hover:bg-[#f1f3f6] hover:text-[#252a33]"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg canvas-ui-action"
                       >
                         <X className="h-4 w-4" />
                       </button>
@@ -10835,8 +10778,8 @@ export function CanvasClient() {
                   </div>
 
                   {/* 上下文条:当前图 + 上游缩略图(第一张为当前图,青框标出) */}
-                  <div className="flex items-center gap-2 border-b border-[#e8ecf1] bg-[#f7fafb] px-4 py-2">
-                    <span className="flex-none text-[11px] font-semibold text-[#4b5663]">上下文</span>
+                  <div className="flex items-center gap-2 border-b border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] px-4 py-2">
+                    <span className="flex-none text-[11px] font-semibold canvas-ui-muted">上下文</span>
                     <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
                       {contextArts.map((artwork, index) => (
                         <img
@@ -10846,17 +10789,17 @@ export function CanvasClient() {
                           title={index === 0 ? `当前图：${artwork.title || ""}` : `上游 ${index}：${artwork.title || ""}`}
                           className={cn(
                             "h-10 w-10 flex-none rounded-md border object-cover",
-                            index === 0 ? "border-2 border-[#248da1]" : "border border-[#e2e8ee]"
+                            index === 0 ? "border-2 border-[#248da1]" : "border border-[var(--canvas-ui-border)]"
                           )}
                         />
                       ))}
                     </div>
-                    <span className="flex-none text-[11px] text-[#78818e]">{contextArts.length} 张</span>
+                    <span className="flex-none text-[11px] canvas-ui-muted">{contextArts.length} 张</span>
                   </div>
 
                   <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
                     {!assistantTurns.length && !assistantBusy && (
-                      <div className="rounded-xl border border-dashed border-[#dbe3ea] px-3 py-5 text-center text-[12px] leading-relaxed text-[#78818e]">
+                      <div className="rounded-xl border border-dashed border-[var(--canvas-ui-border)] px-3 py-5 text-center text-[12px] leading-relaxed canvas-ui-muted">
                         已带上当前图与上游生成链。
                         <br />
                         试试：「点评这张图的商业表现力」或「把背景换成咖啡店场景，给我提示词」。
@@ -10865,20 +10808,20 @@ export function CanvasClient() {
                     {assistantTurns.map((turn) =>
                       turn.role === "user" ? (
                         <div key={turn.id} className="flex justify-end">
-                          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[#248da1] px-3.5 py-2 text-[13px] leading-relaxed text-white">
+                          <div className="max-w-[85%] break-words whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[#248da1] px-3.5 py-2 text-[13px] leading-relaxed text-white">
                             {turn.content}
                           </div>
                         </div>
                       ) : (
                         <div key={turn.id} className="flex justify-start">
-                          <div className="max-w-[92%] space-y-1 rounded-2xl rounded-bl-sm bg-[#f1f5f8] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#252a33]">
+                          <div className="max-w-[92%] break-words space-y-1 canvas-ui-message rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-[13px] leading-relaxed canvas-ui-text">
                             {renderAssistantContent(turn.content)}
                           </div>
                         </div>
                       )
                     )}
                     {assistantBusy && (
-                      <div className="flex items-center gap-2 text-[12px] text-[#78818e]">
+                      <div className="flex items-center gap-2 text-[12px] canvas-ui-muted">
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-[#248da1]" /> 正在思考…
                       </div>
                     )}
@@ -10889,7 +10832,7 @@ export function CanvasClient() {
                     )}
                   </div>
 
-                  <div className="border-t border-[#e8ecf1] p-3">
+                  <div className="border-t border-[var(--canvas-ui-border)] p-3">
                     <textarea
                       rows={2}
                       value={assistantInput}
@@ -10902,15 +10845,15 @@ export function CanvasClient() {
                           void sendAssistantMessage();
                         }
                       }}
-                      className="w-full resize-none rounded-xl border border-[#dfe6ec] px-3 py-2 text-[13px] leading-relaxed text-[#252a33] outline-none transition-colors placeholder:text-[#a6aeb8] focus:border-[#248da1] disabled:opacity-60"
+                      className="canvas-ui-input w-full resize-none rounded-xl border px-3 py-2 text-[13px] leading-relaxed canvas-ui-text outline-none transition-colors focus:ring-1 focus:ring-[var(--canvas-ui-border-strong)] disabled:opacity-60"
                     />
                     <div className="mt-2 flex items-center justify-between">
-                      <span className="text-[11px] text-[#78818e]">{billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] === 0 ? "对话免费" : billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] != null ? `${billing.catalog.features["canvas.assistant"].prices.medium["1K"]} 积分 / 轮` : "对话报价加载中"} · 生图另行计费</span>
+                      <span className="text-[11px] canvas-ui-muted">{billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] === 0 ? "对话免费" : billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] != null ? `${billing.catalog.features["canvas.assistant"].prices.medium["1K"]} 积分 / 轮` : "对话报价加载中"} · 生图另行计费</span>
                       <button
                         type="button"
                         disabled={assistantBusy || !assistantInput.trim()}
                         onClick={() => void sendAssistantMessage()}
-                        className="flex items-center gap-1.5 rounded-lg bg-[#248da1] px-3.5 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#1d7a8c] disabled:opacity-40"
+                        className="flex items-center gap-1.5 rounded-lg canvas-ui-primary px-3.5 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#1d7a8c] disabled:opacity-40"
                       >
                         <Zap className="h-3.5 w-3.5" /> 发送
                       </button>
@@ -10947,14 +10890,14 @@ export function CanvasClient() {
           {ocrArtworkId && (
             <aside
               aria-label="在线改字面板"
-              className="absolute bottom-4 right-4 top-4 z-30 flex w-[min(390px,calc(100%-2rem))] flex-col overflow-hidden border border-[#d9e0e8] bg-white text-[#252a33] shadow-[0_22px_70px_rgba(8,15,30,0.32)]"
+              className="canvas-ui-surface canvas-ui-surface-solid canvas-ui-side-panel absolute bottom-4 right-4 top-4 z-30 flex w-[min(390px,calc(100%-2rem))] flex-col overflow-hidden border"
             >
-              <div className="flex items-start justify-between border-b border-[#e8ecf1] px-4 py-3.5">
+              <div className="flex items-start justify-between border-b border-[var(--canvas-ui-border)] px-4 py-3.5">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 text-[15px] font-bold">
                     <Type className="h-4 w-4 text-[#248da1]" /> 在线改字
                   </div>
-                  <p className="mt-1 truncate text-[12px] text-[#78818e]">
+                  <p className="mt-1 truncate text-[12px] canvas-ui-muted">
                     {active?.members.find((artwork) => artwork.id === ocrArtworkId)?.title || "图片节点"}
                   </p>
                 </div>
@@ -10971,15 +10914,15 @@ export function CanvasClient() {
                     setOcrApplyingId(null);
                     setOcrStatus("idle");
                   }}
-                  className="flex h-8 w-8 items-center justify-center text-[#7a8390] hover:bg-[#f1f3f6] hover:text-[#252a33]"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg canvas-ui-action"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
 
               {(ocrStatus === "scanning" || ocrStatus === "applying") && (
-                <div className="border-b border-[#e8ecf1] bg-[#f7fafb] px-4 py-3">
-                  <div className="flex items-center justify-between text-[12px] font-semibold text-[#4b5663]">
+                <div className="border-b border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] px-4 py-3">
+                  <div className="flex items-center justify-between text-[12px] font-semibold canvas-ui-muted">
                     <span className="flex items-center gap-2">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-[#248da1]" />
                       {ocrStatus === "scanning" ? "正在扫描整张图片并提取文字" : "正在匹配原图字体并生成结果"}
@@ -11008,7 +10951,7 @@ export function CanvasClient() {
                   </div>
                 )}
                 {ocrStatus === "ready" && ocrSegments.length === 0 && (
-                  <div className="py-12 text-center text-[13px] text-[#7c8591]">
+                  <div className="py-12 text-center text-[13px] canvas-ui-muted">
                     没有识别到可编辑文字。
                   </div>
                 )}
@@ -11016,8 +10959,8 @@ export function CanvasClient() {
                   const artwork = active?.members.find((item) => item.id === ocrArtworkId);
                   if (!artwork?.image) return null;
                   return (
-                    <div className="mb-3 border border-[#dfe5eb] bg-[#f4f6f8] p-2">
-                      <div className="mb-2 flex items-center justify-between text-[11px] font-semibold text-[#687483]">
+                    <div className="mb-3 rounded-xl border border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] p-2">
+                      <div className="mb-2 flex items-center justify-between text-[11px] font-semibold canvas-ui-muted">
                         <span>整图文字定位</span>
                         <span>{ocrSegments.length} 处</span>
                       </div>
@@ -11077,19 +11020,19 @@ export function CanvasClient() {
                       onMouseEnter={() => setOcrFocusedId(segment.id)}
                       onFocusCapture={() => setOcrFocusedId(segment.id)}
                       className={cn(
-                        "border bg-[#fbfcfd] p-3 transition-colors",
-                        ocrFocusedId === segment.id ? "border-[#315fc8]" : "border-[#e0e5eb]"
+                        "rounded-xl border bg-[var(--canvas-ui-soft)] p-3 transition-colors",
+                        ocrFocusedId === segment.id ? "border-[#315fc8]" : "border-[var(--canvas-ui-border)]"
                       )}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold uppercase tracking-wide text-[#73808d]">
+                        <span className="text-[11px] font-bold uppercase tracking-wide canvas-ui-muted">
                           文字 {index + 1}
                         </span>
-                        <span className="text-[10px] text-[#98a1ac]">
+                        <span className="text-[10px] canvas-ui-muted">
                           {Math.round(segment.confidence * 100)}% · {segment.box.x},{segment.box.y} · {segment.box.width}×{segment.box.height}
                         </span>
                       </div>
-                      <p className="mt-2 break-words text-[12px] text-[#737d89]">
+                      <p className="mt-2 break-words text-[12px] canvas-ui-muted">
                         原文：{segment.text}
                       </p>
                       <textarea
@@ -11101,7 +11044,7 @@ export function CanvasClient() {
                         ))}
                         rows={2}
                         maxLength={300}
-                        className="mt-2 w-full resize-y border border-[#cfd7e0] bg-white px-2.5 py-2 text-[14px] font-medium leading-5 outline-none transition-colors focus:border-[#248da1]"
+                        className="canvas-ui-input mt-2 w-full resize-y rounded-lg border px-2.5 py-2 text-[14px] font-medium leading-5 outline-none transition-colors focus:border-[#248da1]"
                       />
                       <div className="mt-2 flex justify-end">
                         <button
@@ -11109,7 +11052,7 @@ export function CanvasClient() {
                           aria-label={`应用文字 ${index + 1}`}
                           disabled={ocrStatus === "applying" || !segment.editedText.trim() || segment.editedText.trim() === segment.text}
                           onClick={() => void applyOcrSegment(segment)}
-                          className="flex h-8 items-center gap-1.5 bg-[#25313b] px-3 text-[12px] font-semibold text-white hover:bg-[#182129] disabled:cursor-not-allowed disabled:opacity-35"
+                          className="canvas-ui-primary flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold text-white hover:bg-[#182129] disabled:cursor-not-allowed disabled:opacity-35"
                         >
                           {ocrApplyingId === segment.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
                           应用
@@ -11119,7 +11062,7 @@ export function CanvasClient() {
                   ))}
                 </div>
               </div>
-              <div className="border-t border-[#e8ecf1] bg-[#f8fafb] px-4 py-2 text-[10px] text-[#87919d]">
+              <div className="border-t border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] px-4 py-2 text-[10px] canvas-ui-muted">
                 {ocrEngine ? `识别引擎：${ocrEngine === "paddleocr" ? "PaddleOCR" : "视觉模型兜底"}` : "优先使用 PaddleOCR 扫描整图"}
               </div>
             </aside>

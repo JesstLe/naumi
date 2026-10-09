@@ -8,6 +8,7 @@ export type PublicImageModel = {
   provider?: string;
   qualities?: string[];
   nativeResolutions?: string[];
+  generationParameters?: { ratios?: string[]; resolutions?: string[]; combinations?: string[] };
   qualitySupported?: boolean;
 };
 export type PublicImageConfiguration = {

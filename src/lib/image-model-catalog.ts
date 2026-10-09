@@ -24,6 +24,7 @@ export type ImageModelDescriptor = {
   provider: ImageModelProvider;
   qualities?: string[];
   nativeResolutions?: string[];
+  generationParameters?: { ratios?: string[]; resolutions?: string[]; combinations?: string[] };
   qualitySupported?: boolean;
 };
 
