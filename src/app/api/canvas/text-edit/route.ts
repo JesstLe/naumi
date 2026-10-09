@@ -1,3 +1,4 @@
+import { canvasParameterError } from "@/lib/canvas/generation-parameters";
 import {withBillingRequest,synchronousChargedCredits} from "@/lib/billing/synchronous";
 import { withBiRequest } from "@/lib/bi/model-observer";
 import { imageRequestBilling, requestImageQuality, settleToolImage } from "@/lib/image-quality-request";
@@ -154,4 +155,4 @@ async function billingRoutePost(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
 
-export async function POST(request:Request){return withBillingRequest(request,"canvas.text-edit",()=>billingRoutePost(request));}
+export async function POST(request:Request){const invalid = await canvasParameterError(request); if (invalid) return invalid; return withBillingRequest(request,"canvas.text-edit",()=>billingRoutePost(request));}

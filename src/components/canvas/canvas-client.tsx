@@ -6,6 +6,7 @@ import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 import { copyText } from "@/lib/clipboard";
 import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
+import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters, canvasCombinationSupported } from "@/lib/canvas/generation-parameters";
 import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
 
 import {
@@ -126,10 +127,7 @@ import { bytesLabel, prepareImageUploads, uploadFormData } from "@/lib/client-im
 import {
   adaptiveCanvasImageSize,
   type Artwork,
-  GENERATION_RESOLUTIONS,
   GENERATION_STYLES,
-  MAX_GENERATION_DIMENSION,
-  resolutionForLongSide,
 } from "@/lib/mock-data";
 import {
   compactImageModelOptions,
@@ -162,10 +160,10 @@ const X_GAP = 90; // 层间横向间距
 const Y_GAP = 48; // 同层兄弟纵向间距
 const MAX_TOTAL_IMAGES = 6; // 节点图 + 追加参考图 合计上限
 const MAX_UPLOAD = 12 * 1024 * 1024;
-const MAX_GENERATION_COUNT = 8;
+const MAX_GENERATION_COUNT = CANVAS_MAX_COUNT;
 type CanvasPrimaryTool = "move" | "marquee" | "hand";
 // 扩图可选目标比例(ratioTilesC 同款,去掉 auto 与极端档 2:1/1:2)
-const EXPAND_RATIOS = ["1:1", "4:3", "3:2", "16:9", "4:5", "3:4", "2:3", "9:16"] as const;
+const EXPAND_RATIOS = CANVAS_RATIO_OPTIONS.filter(r => r.id !== "auto").map(r => r.id);
 // 扩图锚点九宫格(原图贴哪一侧,新内容补其余方向) + 提示文案
 const ANCHOR_GRID = ["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"] as const;
 const ANCHOR_TITLE: Record<string, string> = {
@@ -430,22 +428,9 @@ async function expectJsonOk(res: Response, fallback: string): Promise<any> {
 
 // 画布生成器:比例选项(对齐参考站图1 的网格)。w/h 只用于画小图标;
 // 实际出图尺寸由后端 sizeFor 按方向(横/竖/方)映射到 gpt-image 支持的尺寸。
-const CANVAS_RATIOS: { id: string; w: number; h: number }[] = [
-  { id: "auto", w: 0, h: 0 },
-  { id: "1:1", w: 1, h: 1 },
-  { id: "9:16", w: 9, h: 16 },
-  { id: "16:9", w: 16, h: 9 },
-  { id: "3:4", w: 3, h: 4 },
-  { id: "4:3", w: 4, h: 3 },
-  { id: "3:2", w: 3, h: 2 },
-  { id: "2:3", w: 2, h: 3 },
-  { id: "4:5", w: 4, h: 5 },
-  { id: "5:4", w: 5, h: 4 },
-  { id: "21:9", w: 21, h: 9 },
-];
-const CANVAS_RES = GENERATION_RESOLUTIONS.map((resolution) => resolution.id);
-const STANDARD_RATIO_IDS = new Set(CANVAS_RATIOS.map((ratio) => ratio.id));
-type ImageModelOption = { id: string; label: string; supportsEdit: boolean };
+const CANVAS_RATIOS = CANVAS_RATIO_OPTIONS;
+const CANVAS_RES = CANVAS_RESOLUTIONS;
+type ImageModelOption = { id: string; label: string; supportsEdit: boolean; generationParameters?: { ratios?: string[]; resolutions?: string[]; combinations?: string[] } };
 
 function artworkImageSize(art: Pick<Artwork, "width" | "height">) {
   const withCanvas = art as Pick<
@@ -469,14 +454,6 @@ function artworkImageSize(art: Pick<Artwork, "width" | "height">) {
 function artworkNodeSize(art: Pick<Artwork, "width" | "height">) {
   const image = artworkImageSize(art);
   return { width: image.width, height: image.height + NODE_LABEL_H, imageHeight: image.height };
-}
-
-function customDimensionsForRatio(ratio: string) {
-  if (STANDARD_RATIO_IDS.has(ratio)) return null;
-  const [width, height] = ratio.split(":").map(Number);
-  return width >= 64 && height >= 64 && width <= MAX_GENERATION_DIMENSION && height <= MAX_GENERATION_DIMENSION
-    ? { width: Math.round(width), height: Math.round(height) }
-    : null;
 }
 
 function flowNodeSize(node: Node | undefined) {
@@ -1617,13 +1594,25 @@ export function CanvasClient() {
     if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
     const form=init.body instanceof FormData?init.body:null;
     const body=form?Object.fromEntries(Array.from(form.entries()).filter((entry)=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};
+    if (path === "/api/generate-image") {
+      body.ratio = normalizeCanvasRatio(body.ratio);
+      body.resolution = normalizeCanvasResolution(body.resolution);
+      body.count = String(normalizeCanvasCount(body.count));
+      delete body.targetWidth; delete body.targetHeight;
+      if (form) { form.delete("targetWidth"); form.delete("targetHeight"); }
+    }
+    if (path === "/api/generate-image" || ["/api/canvas/image-tasks", "/api/canvas/expand", "/api/canvas/annotate", "/api/canvas/text-edit"].includes(path)) {
+      body.quality = normalizeCanvasQuality(body.quality || genQuality);
+      if (form) for (const key of ["ratio", "resolution", "count", "quality"]) { if (body[key] !== undefined) form.set(key, String(body[key])); }
+      else init = { ...init, body: JSON.stringify(body) };
+    }
     const source=active?.members.find(art=>art.id===body.artworkId);
     const quantity=path==="/api/aplus"?Math.max(1,form?.getAll("module").length||body.modules?.length||1):path==="/api/suite"?(body.structure==="custom"?JSON.parse(String(body.shots||"[]")).length:13):Number(body.count||1);
     const headers=new Headers(init.headers);for(const [key,value] of Object.entries(await authHeader()))headers.set(key,value);
+    if (body.quality) headers.set("x-naumi-image-quality", String(body.quality));
     const feature=features[path],modelId=adminConfiguredFeature(feature) ? undefined : featureModelManaged(feature) && !["image.generate","video.generate"].includes(feature) ? chosenFeatureModel(feature) : body.modelId||body.model||undefined;
     return billing.quoteAndSubmit(path,{...init,headers},{feature,quantity,quality:String(body.quality||genQuality),resolution:String(body.resolution||source?.resolution||"1K"),modelId,providerId:body.providerId,ratio:body.ratio});
   }
-  const { quality: genQuality, imageCost, modelConfig } = useImageQuality();
   const { model: textModel, setModel: setTextModel } = useTextModel();
   const { user, ready, remaining, persistMode, applyServerUser, signOut } = useAuth();
   const { openAuth } = useAuthModal();
@@ -1670,10 +1659,9 @@ export function CanvasClient() {
   const cancelEditRef = useRef(false); // Esc 取消时跳过失焦保存
   const [editPrompt, setEditPrompt] = useState("");
   const [genModel, setGenModel] = useState("");
+  const { quality: genQuality, imageCost, modelConfig } = useImageQuality(undefined, genModel);
   const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
   const [genRatio, setGenRatio] = useState("auto"); // 默认自适应
-  const [customWidth, setCustomWidth] = useState(900);
-  const [customHeight, setCustomHeight] = useState(900);
   const [genResolution, setGenResolution] = useState("1K"); // 默认 1K
   const [ratioMenuOpen, setRatioMenuOpen] = useState(false); // 比例/分辨率弹出面板
   const ratioBtnRef = useRef<HTMLButtonElement>(null);
@@ -1811,6 +1799,12 @@ export function CanvasClient() {
           return normalized.find((item) => item.id === fallback)?.id || normalized[0]?.id || "";
         });
   }, [modelConfig]);
+
+  useEffect(() => {
+    const parameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
+    setGenRatio(current => parameters.ratios.includes(normalizeCanvasRatio(current)) ? normalizeCanvasRatio(current) : "auto");
+    setGenResolution(current => parameters.resolutions.includes(normalizeCanvasResolution(current)) ? normalizeCanvasResolution(current) : parameters.resolutions[0] || "1K");
+  }, [genModel, imageModels]);
 
   function pickGenerationModel(model: string) {
     setGenModel(model);
@@ -4017,13 +4011,9 @@ export function CanvasClient() {
     carryPromptRef.current = null;
     // 预填该节点自己的提示词(可编辑),便于"看着配方改一改再生成";有 carry 的优先用 carry
     setEditPrompt(carried ?? selected?.prompt ?? "");
-    const nextRatio = selected?.ratio || "auto";
+    const nextRatio = normalizeCanvasRatio(selected?.ratio);
     setGenRatio(nextRatio); // 默认自适应
-    const custom = customDimensionsForRatio(nextRatio);
-    if (custom) {
-      setCustomWidth(selected?.width || custom.width);
-      setCustomHeight(selected?.height || custom.height);
-    }
+
     setGenStyle(selected?.style || GENERATION_STYLES[0]);
     setGenerationMode("standard");
     setRatioMenuOpen(false);
@@ -4243,17 +4233,13 @@ export function CanvasClient() {
       fd.append("prompt", text);
       if (opts?.userPrompt?.trim()) fd.append("userPrompt", opts.userPrompt.trim());
       fd.append("category", source.category || "main");
-      const requestedRatio = opts?.ratio || source.ratio || "1:1";
+      const requestedRatio = normalizeCanvasRatio(opts?.ratio || source.ratio);
       fd.append("ratio", requestedRatio);
-      const customSize = customDimensionsForRatio(requestedRatio);
-      if (customSize) {
-        fd.append("targetWidth", String(customSize.width));
-        fd.append("targetHeight", String(customSize.height));
-      }
-      fd.append("resolution", opts?.resolution || source.resolution || "1K");
+
+      fd.append("resolution", normalizeCanvasResolution(opts?.resolution || source.resolution));
       fd.append("quality", genQuality);
       fd.append("style", opts?.style ?? "");
-      fd.append("count", String(opts?.count ?? 1));
+      fd.append("count", String(normalizeCanvasCount(opts?.count)));
       if (genModel) {
         // The node owns the ratio/resolution choice. The server repeats this
         // routing as the authoritative guard before calling the upstream model.
@@ -5508,7 +5494,7 @@ export function CanvasClient() {
     if (readOnly || !selected || selectedGenerating) return;
     void runCutout(selected, quality === "fast" ? "fast" : "fine");
   }
-  // 高清:按所选分辨率(1K/2K/4K/5K)放大当前节点
+  // 高清:按所选分辨率(1K/2K/4K)放大当前节点
   function onHd(resolution: string) {
     if (readOnly || !selected || selectedGenerating) return;
     void runGen(
@@ -7475,17 +7461,13 @@ export function CanvasClient() {
       const fd = new FormData();
       fd.append("prompt", promptToUse);
       fd.append("category", "main");
-      const requestedRatio = opts?.ratio || genRatio || "auto";
+      const requestedRatio = normalizeCanvasRatio(opts?.ratio || genRatio);
       fd.append("ratio", requestedRatio);
-      const customSize = customDimensionsForRatio(requestedRatio);
-      if (customSize) {
-        fd.append("targetWidth", String(customSize.width));
-        fd.append("targetHeight", String(customSize.height));
-      }
+
       fd.append("resolution", genResolution);
       fd.append("quality", genQuality);
       fd.append("style", genStyle ?? "");
-      fd.append("count", String(genCount || 1));
+      fd.append("count", String(normalizeCanvasCount(genCount)));
       if (genModel) fd.append("model", genModel);
       fd.append("email", user.email);
       fd.append("origin", "canvas"); // 画布里产出 → 永远留画布
@@ -8162,7 +8144,7 @@ export function CanvasClient() {
     if (r) setRatioMenuRect({ left: r.left, top: r.top });
     setRatioMenuOpen((v) => !v);
   };
-  const activeCustomSize = customDimensionsForRatio(genRatio);
+  const generationParameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
   const activeImageModelLabel =
     imageModels.find((item) => item.id === genModel)?.label || genModel;
   const modelControl = (disabled = false) => (
@@ -8206,7 +8188,7 @@ export function CanvasClient() {
     >
       📐
       <span>
-        {genRatio === "auto" ? t("canvas.ratioAuto") : activeCustomSize ? `${activeCustomSize.width}×${activeCustomSize.height}` : genRatio} ·{" "}
+        {genRatio === "auto" ? t("canvas.ratioAuto") : genRatio} ·{" "}
         {genResolution}
       </span>
       <ChevronDown
@@ -8240,19 +8222,20 @@ export function CanvasClient() {
                   ratioMenuRect.top +
                   8,
               }}
-              className="canvas-ui-surface menu-pop-up fixed max-h-[min(76vh,620px)] w-[336px] overflow-y-auto rounded-2xl border p-4"
+              data-testid="canvas-generation-parameters" className="canvas-ui-surface menu-pop-up fixed max-h-[min(76vh,620px)] w-[336px] overflow-y-auto rounded-2xl border p-4"
             >
               <p className="canvas-ui-muted mb-2 text-[12px] font-semibold">
                 {t("canvas.resolution")}
               </p>
-              <div className="mb-4 grid grid-cols-4 gap-2">
-                {CANVAS_RES.map((r) => (
+              <div className="mb-4 grid grid-cols-3 gap-2">
+                {generationParameters.resolutions.map((r) => (
                   <button
                     key={r}
                     type="button"
                     onClick={() => setGenResolution(r)}
+                    disabled={!canvasCombinationSupported(generationParameters, genRatio, r)}
                     className={cn(
-                      "rounded-xl border py-2.5 text-sm font-semibold transition-colors",
+                      "rounded-xl border py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40",
                       genResolution === r
                         ? "canvas-ui-control !border-[#6366f1] font-semibold"
                         : "canvas-ui-control"
@@ -8266,13 +8249,14 @@ export function CanvasClient() {
                 {t("canvas.ratio")}
               </p>
               <div className="grid grid-cols-5 gap-2">
-                {CANVAS_RATIOS.map((r) => (
+                {CANVAS_RATIOS.filter(r => generationParameters.ratios.includes(r.id)).map((r) => (
                   <button
                     key={r.id}
                     type="button"
                     onClick={() => setGenRatio(r.id)}
+                    disabled={!canvasCombinationSupported(generationParameters, r.id, genResolution)}
                     className={cn(
-                      "flex flex-col items-center justify-center gap-1.5 rounded-xl border py-2.5 transition-colors",
+                      "flex flex-col items-center justify-center gap-1.5 rounded-xl border py-2.5 transition-colors disabled:cursor-not-allowed disabled:opacity-40",
                       genRatio === r.id
                         ? "canvas-ui-control !border-[#6366f1] font-semibold"
                         : "canvas-ui-control"
@@ -8285,48 +8269,7 @@ export function CanvasClient() {
                   </button>
                 ))}
               </div>
-              <div className="canvas-ui-divider mt-4 border-t bg-transparent pt-3">
-                <p className="canvas-ui-muted mb-2 text-[12px] font-semibold">{t("canvas.customSize")}</p>
-                <div className="flex items-center gap-2">
-                  <input
-                    aria-label={t("canvas.customWidth")}
-                    type="number"
-                    min={64}
-                    max={MAX_GENERATION_DIMENSION}
-                    value={customWidth}
-                    onChange={(event) => setCustomWidth(Number(event.target.value))}
-                    className="canvas-ui-input min-w-0 flex-1 rounded-lg border px-2 py-2 text-center text-sm outline-none focus:!border-[#6366f1]"
-                  />
-                  <span className="canvas-ui-muted">×</span>
-                  <input
-                    aria-label={t("canvas.customHeight")}
-                    type="number"
-                    min={64}
-                    max={MAX_GENERATION_DIMENSION}
-                    value={customHeight}
-                    onChange={(event) => setCustomHeight(Number(event.target.value))}
-                    className="canvas-ui-input min-w-0 flex-1 rounded-lg border px-2 py-2 text-center text-sm outline-none focus:!border-[#6366f1]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const width = Math.min(MAX_GENERATION_DIMENSION, Math.max(64, Math.round(customWidth || 64)));
-                      const height = Math.min(MAX_GENERATION_DIMENSION, Math.max(64, Math.round(customHeight || 64)));
-                      setCustomWidth(width);
-                      setCustomHeight(height);
-                      setGenRatio(`${width}:${height}`);
-                      setGenResolution(resolutionForLongSide(Math.max(width, height)));
-                    }}
-                    className={cn(
-                      "rounded-lg border px-3 py-2 text-xs font-semibold",
-                      activeCustomSize ? "canvas-ui-control !border-[#6366f1]" : "canvas-ui-control"
-                    )}
-                  >
-                    {t("canvas.applySize")}
-                  </button>
-                </div>
-                <p className="canvas-ui-muted mt-1.5 text-[10px]">64–{MAX_GENERATION_DIMENSION} px</p>
-              </div>
+
             </div>
           </div>,
           document.body

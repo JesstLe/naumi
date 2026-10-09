@@ -1,3 +1,4 @@
+import { canvasParameterError } from "@/lib/canvas/generation-parameters";
 import { getPool } from "@/lib/db";
 import { readManagedObject } from "@/lib/storage";
 import { runPostprocess, PostprocessPending } from "@/lib/media-postprocess";
@@ -1314,4 +1315,4 @@ async function createSubmission(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
 
-export async function POST(request:Request){return withBillingIntent(request,()=>createSubmission(request));}
+export async function POST(request:Request){const invalid = await canvasParameterError(request); if (invalid) return invalid; return withBillingIntent(request,()=>createSubmission(request));}
