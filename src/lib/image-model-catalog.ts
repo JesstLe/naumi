@@ -18,6 +18,7 @@ export type ImageModelProvider =
   | "user-chat-completions";
 
 export type ImageModelDescriptor = {
+  creditHint?:string;
   id: string;
   label: string;
   supportsEdit: boolean;

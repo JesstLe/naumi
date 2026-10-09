@@ -24,10 +24,12 @@ export type MvpRow = {
   routes: { upstreamId: string; model: string; providerId: string; provider: string; kind: string; enabled: boolean }[];
   preset: boolean; conditional: boolean; candidateIds: string[];
   scopeOptions: {id:string;label:string;selected:boolean;available:boolean;adminDefault:boolean;reason?:string}[];
+  pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").MvpCreditPricing}[];
 };
 export type MvpCandidate = { id: string; model: string; label: string; providerId: string; provider: string; modality: string; verified: boolean };
 export type MvpState = {
   version: number; managed: boolean; rows: MvpRow[]; candidates: MvpCandidate[];
+  billingVersion?:number;
   providers: { id: string; name: string; baseUrl: string; protocol: string; enabled: boolean; configured: boolean }[];
 };
 

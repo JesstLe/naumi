@@ -11,6 +11,9 @@ import { FEATURE_BINDINGS } from "./business";
 import { MODEL_BINDINGS } from "./bindings";
 import { mvpRows, mvpCandidates, MVP_PROTOCOLS, switchMvpModel, renameMvpModel, applyMvpToolScope } from "./mvp";
 import { FEATURE_IDS } from "../billing/rules/registry";
+import {QUALITY_IDS,RESOLUTION_IDS} from "../billing/rules/registry";
+import {BillingError} from "../billing/types";
+import {editMvpCredits,mvpPriceViews} from "./mvp-pricing";
 import { canonicalConfig } from "./repository";
 import { validateModelConfig, validateModelEndpoint } from "./schema";
 import { compileRouterProjection } from "./projection";
@@ -20,12 +23,15 @@ import { isNewApiFlowImageModel } from "../image-model-catalog";
 
 const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const common = { id: z.uuid(), expectedVersion: z.number().int().positive() };
+const credits=z.number().int().min(0).max(2147483647);
+const creditPricing=z.discriminatedUnion("mode",[z.strictObject({mode:z.literal("fixed"),credits}),z.strictObject({mode:z.literal("quality-resolution"),quality:z.record(z.enum(QUALITY_IDS),credits),resolutionExtra:z.record(z.enum(RESOLUTION_IDS),credits)})]);
 const input = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("discover"), providerId: identifier, force: z.boolean().optional() }),
   z.strictObject({ action: z.literal("credential"), providerId: identifier, ciphertext: z.string().min(1).max(32768).optional(), keyPlain: z.string().min(1).max(16384).optional() }),
   z.strictObject({ action: z.literal("switch"), ...common, rowId: identifier, upstreamId: identifier }),
   z.strictObject({ action: z.literal("rename"), ...common, rowId: identifier, label: z.string().trim().min(1).max(100).regex(/^[^\u0000-\u001f\u007f]+$/) }),
   z.strictObject({action:z.literal("scope"),...common,rowId:identifier,features:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length)}),
+  z.strictObject({action:z.literal("pricing"),...common,expectedBillingVersion:z.number().int().positive(),rowId:identifier,features:z.array(z.enum(FEATURE_IDS)).min(1).max(FEATURE_IDS.length),pricing:creditPricing.nullable()}),
   z.strictObject({ action: z.literal("connect"), ...common, name: z.string().trim().min(1).max(100), baseUrl: z.string().max(1024), protocol: z.enum(MVP_PROTOCOLS), credentialRef: z.uuid() }),
   z.strictObject({ action: z.literal("register"), ...common, providerId: identifier, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), confirmed: z.literal(true), edit: z.boolean(), vision: z.boolean(), qualityRank: z.number().int().min(1).max(5).default(2), qualities: z.array(z.enum(["low", "medium", "high", "xhigh", "max", "auto"])).max(6), resolutions: z.array(z.enum(["1K", "2K", "4K"])).max(3), maxReferenceImages: z.number().int().min(0).max(32) }),
 ]);
@@ -42,7 +48,7 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
     try {
       const admin = await deps.administration();
       const snapshot = await admin.repo.current();
-      if (request.method === "GET") return biJson({ version: snapshot.version, managed: await deps.managed(), rows: rows(snapshot), candidates: mvpCandidates(snapshot.config), providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs: await readProviderCatalog(admin.pool, snapshot.config.providers) });
+      if (request.method === "GET") {const billing=await admin.billing.current();return biJson({ version: snapshot.version,billingVersion:billing.version, managed: await deps.managed(), rows: rows(snapshot).map(row=>({...row,pricing:mvpPriceViews(billing,snapshot,row)})), candidates: mvpCandidates(snapshot.config), providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs: await readProviderCatalog(admin.pool, snapshot.config.providers) });}
       const body = input.parse(JSON.parse(await readBounded(new Response(request.body), 48000)));
       if (body.action === "credential") {
         if (!!body.ciphertext === !!body.keyPlain || !/^mvp-[0-9a-f-]{36}$/i.test(body.providerId)) throw new ModelConfigError("INVALID_CREDENTIAL", "凭据参数无效");
@@ -56,6 +62,18 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
       }
       lock = await admin.pool.connect(); lockKey = `admin-mvp:${body.id}`;
       await lock.query("SELECT pg_advisory_lock(hashtextextended($1,0))", [lockKey]);
+      if(body.action==="pricing"){
+        const billing=await admin.billing.current();
+        const actor=`${auth.actor.slice(0,180)}#mvp-price:${createHash("sha256").update(canonicalConfig(body)).digest("hex").slice(0,32)}`,reason=`MVP 积分售价 ${body.rowId}`;
+        const previous=(await admin.pool.query("SELECT config,actor FROM app_billing_config_versions WHERE operation_id=$1",[body.id])).rows[0];staged=!!previous;
+        if(previous && previous.actor!==actor)throw new BillingError("OPERATION_CONFLICT","该操作编号已用于不同积分设置",409);
+        if(!previous && snapshot.version!==body.expectedVersion)throw new ModelConfigError("CONFIG_CONFLICT","模型配置已更新，请刷新后重新设置积分",409);
+        const row=rows(snapshot).find(r=>r.id===body.rowId);if(!previous && !row)throw new ModelConfigError("MODEL_UNAVAILABLE","模型不存在，请刷新",409);
+        if(!previous && !await deps.managed())throw new ModelConfigError("CONFIG_UNAVAILABLE","请先启用统一模型配置后设置模型积分",409);
+        const config=previous?.config || editMvpCredits(billing,snapshot,row!,body.features,body.pricing);
+        const published=await admin.billing.publish({id:body.id,expectedVersion:body.expectedBillingVersion,expectedModelVersion:body.expectedVersion,config,actor,reason});
+        return biJson({publication:{id:body.id,version:published.version,phase:"applied"},billingVersion:published.version});
+      }
       // Dedicated operation drafts preserve unfinished work in the full administration UI.
       const fingerprint = createHash("sha256").update(canonicalConfig(body)).digest("hex").slice(0, 20);
       const actor = `${auth.actor.slice(0, 150)}#mvp:${body.id}:${fingerprint}`;
@@ -94,6 +112,7 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
       const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
       return biJson({ publication }, publication.phase === "applied" ? 200 : publication.phase === "failed" ? 422 : 202);
     } catch (e) {
+      if(e instanceof BillingError)return biJson({error:e.message,code:e.code,operationNotStaged:["CONFIG_CONFLICT","INVALID_CONFIG","OPERATION_CONFLICT"].includes(e.code)},e.status);
       if (e instanceof ModelConfigError) return biJson({ error: e.message, code: e.code, operationNotStaged: !staged || ["CONFIG_CONFLICT", "DRAFT_CONFLICT", "PUBLICATION_PENDING"].includes(e.code) }, e.status);
       if (e instanceof z.ZodError || e instanceof SyntaxError) return biJson({ error: "参数无效，请检查填写内容", operationNotStaged: true }, 400);
       // An ambiguous transport failure must keep the operation ID for reconciliation.

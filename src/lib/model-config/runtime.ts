@@ -14,6 +14,7 @@ import { validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelConfig, type ModelConfigRepository, type ModelFacts, type ModelPublication, type ModelSnapshot, type Modality, type RestoreInput, type StageInput } from "./types";
 import { DISPLAY_QUALITIES, selectedImagePreset, presetPublicId, effectiveImageParameters } from "./image-preset";
 import { featureDefaultModel, modelAllowedForFeature } from "./tool-scope";
+import {modelCreditView} from "./mvp-pricing";
 
 export type RoutingSimulation = { eligible: { upstreamId: string; providerId: string; rank: number }[]; excluded: { upstreamId: string; codes: string[] }[]; modelVersion: number; billingVersion: number };
 type Dependencies = ValidationOptions & { pool: Pool; repo: ModelConfigRepository; credentials: ReturnType<typeof createCredentialStore>; router: RouterControl; billing: () => Promise<ConfigSnapshot>; billingByVersion?: (version: number) => Promise<ConfigSnapshot> };
@@ -174,7 +175,7 @@ export function createModelRuntime(deps: Dependencies) {
   };
   return {
     current: () => deps.repo.current(), byVersion: (version: number) => deps.repo.byVersion(version),
-    publicCatalog: async (modality: Modality, feature?: FeatureId) => publicModelCatalog(await deps.repo.current(), modality, feature),
+    publicCatalog: async (modality: Modality, feature?: FeatureId) => {const snapshot=await deps.repo.current(),catalog=publicModelCatalog(snapshot,modality,feature);if(!feature)return catalog;const billing=await deps.billing();return {...catalog,models:catalog.models.map(model=>{const v=modelCreditView(billing,snapshot,feature,model.id);const unit=v.unit==="image"?"张":v.unit==="item"?"项":"次";return {...model,creditHint:v.credits===null?"价格需核对":`${v.estimated?"预估":"参考"}${modality==="image"?"标准1K ":""}${v.credits} 积分/${unit}`};})};},
     prepareExecution,
     async validateExecutionProjection(input: { modelVersion: number; billingVersion: number; digest: string }) {
       await ready();

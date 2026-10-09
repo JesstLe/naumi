@@ -31,6 +31,7 @@ async function main() {
   process.env.PGOPTIONS = `-c search_path=${f.schemaName}`;
   process.env.NEXT_DIST_DIR = "output/admin-mvp-20261009/next";
   process.env.NAUMI_VIDEO_WORKER = "0";
+  process.env.NAUMI_MULTI_USER = "1";
   process.env.BUILD_VERSION="1791542000";
   process.env.SOURCE_COMMIT="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   process.env.VIDEO_WORKER_SECRET = "mvp-ui-worker-private-secret-independent-long";
@@ -50,10 +51,12 @@ async function main() {
   f.config.upstreamModels.push({...structuredClone(f.config.upstreamModels[0]),id:"family-image",model:"fixture-family-wire"});
   f.config.publicModels.push(...["square","portrait","three-four"].map(s=>({...structuredClone(f.config.publicModels[0]),id:"gemini-3.0-pro-image-"+s,label:"gemini-3.0-pro-image-"+s,target:{type:"upstream" as const,id:"family-image"}})));
   const db = await import("../src/lib/db"), auth = await import("../src/lib/admin-auth"), native = await import("../src/lib/native-auth");
-  await db.ensureSchema(); await f.repo.current(); await auth.setAdminPassword("MvpFixture2026!");
+  await db.ensureSchema(); await db.setSetting("multi_user_enabled","1"); await f.repo.current(); await auth.setAdminPassword("MvpFixture2026!");
   await db.getOrCreateUser("mvp-member@example.test", "普通成员");
   const { createConfigRuntime } = await import("../src/lib/billing/catalog");
-  await createConfigRuntime({ pool: f.sql, ensureSchema: db.ensureSchema, initialize: async () => fixtureConfig() }).current();
+  const fixtureBilling=fixtureConfig();fixtureBilling.switches.metering="on";
+  const billing=createConfigRuntime({ pool: f.sql, ensureSchema: db.ensureSchema, initialize: async () => fixtureBilling });
+  const beforeBilling=await billing.current();await billing.publish({id:crypto.randomUUID(),expectedVersion:beforeBilling.version,config:fixtureBilling,actor:"fixture",reason:"Enable isolated UI pricing"});
   await mkdir("output/admin-mvp-20261009", { recursive: true });
   const next = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", "54989"], { env: process.env, windowsHide: true, stdio: "inherit" });
   let closing = false;
