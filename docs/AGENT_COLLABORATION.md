@@ -2,10 +2,10 @@
 
 ## 当前固定版本（2026-10-09）
 
-- 新机：120.27.162.85。组合源码 `10f03a7d544d8b4f085d3c84ed68f36a91f03caf` 已进入 main 并发布，包含画布 UI、参数组合校验、后台 MVP 显示名称编辑、比例弹层滚动与定位修复。
-- 镜像：`ghcr.io/jesstle/naumi:10f03a7d544d8b4f085d3c84ed68f36a91f03caf`。
-- Image ID：`sha256:77a9d2aa198c436a77f4ac653f8dcfc28e87faef6e5fa30b4199e735c3e94c99`；公网版本 `1791540704`。
-- 回滚备份和证据：`/opt/naumi-staging/evidence/canvas-dock-menu-20261009`；细节见 `docs/changes/2026-10-09-canvas-parameter-popover.md`。文档提交不代表新的业务镜像。
+- 新机：120.27.162.85。源码 `f859393de304725458811e75186665a1191b4ee8` 已进入main并发布，在10f03a7组合版本上新增质量下拉菜单样式修复；保留画布UI、参数组合校验、后台MVP显示名称编辑、比例弹层滚动与定位修复。
+- 镜像：`ghcr.io/jesstle/naumi:f859393de304725458811e75186665a1191b4ee8`。
+- Image ID：`sha256:22f4449431d22e30746d1df2f4f629a063e37cdaf52acb30d89719187c5cd714`；公网版本 `1791541892`。
+- 回滚备份和证据：`/opt/naumi-staging/evidence/image-quality-dropdown-20261009-r2`；细节见 `docs/changes/2026-10-09-image-quality-dropdown.md`。旧组合证据保留，文档提交不代表新的业务镜像。
 - 旧机101.133.166.67继续运行，不连接/不回传；视频与OSS仍延期。
 
 ## 分支与目录
