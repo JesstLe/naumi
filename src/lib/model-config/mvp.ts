@@ -7,6 +7,7 @@ import { publicModelCatalog } from "./runtime";
 import { adminConfiguredFeature } from "./selection-policy";
 import { featureDefaultModel } from "./tool-scope";
 import type { FeatureId } from "../billing/rules/registry";
+import { qualityConfiguration, qualityPolicySchema } from "./quality-policy";
 
 export const MVP_PROTOCOLS = ["openai-images", "new-api-flow", "apimart-images", "openai-chat", "openai-videos"] as const;
 export const featureNames: Record<string, string> = {
@@ -23,6 +24,7 @@ export type MvpRow = {
   features: { id: string; label: string }[];
   routes: { upstreamId: string; model: string; providerId: string; provider: string; kind: string; enabled: boolean }[];
   preset: boolean; conditional: boolean; candidateIds: string[];
+  qualityConfig?: ReturnType<typeof qualityConfiguration>;
   scopeOptions: {id:string;label:string;selected:boolean;available:boolean;adminDefault:boolean;reason?:string}[];
   pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").MvpCreditPricing}[];
 };
@@ -82,8 +84,23 @@ export function mvpRows(snapshot: ModelSnapshot, catalogs: { feature: string; de
       try { assertMvpTarget(config, row, c.id); return true; } catch { return false; }
     }).map(c => c.id);
     row.scopeOptions = mvpScopeOptions(row,eligibleCatalogs);
+    if (row.modality === "image") row.qualityConfig = qualityConfiguration(config, [...new Set(row.routes.map(r => r.upstreamId))]);
   }
   return Array.from(rows.values());
+}
+
+export function applyMvpQualityParameters(source: ModelConfig, row: MvpRow, input: { choices: { id: string; label: string }[]; routes: { upstreamId: string; mode: string; values: Record<string,string>; evidence?: { status: string; source: string; checkedAt: string } }[] } | null) {
+  if (row.modality !== "image" || row.preset || !row.qualityConfig?.routes.every(r => r.editable)) throw new ModelConfigError("MODEL_PARAMETERS_ADAPTER", "此模型的外部路由或成本预设需在对应适配器中管理参数，不能覆盖其执行契约", 400);
+  const config = structuredClone(source), ids = row.qualityConfig.routes.map(r => r.upstreamId);
+  if (input && (new Set(input.routes.map(r => r.upstreamId)).size !== ids.length || input.routes.length !== ids.length || input.routes.some(r => !ids.includes(r.upstreamId)))) throw new ModelConfigError("INVALID_REQUEST", "请配置该家族的全部实际模型来源", 400);
+  for (const id of ids) {
+    const u = config.upstreamModels.find(u => u.id === id)!;
+    if (!input) { delete u.parameterMap.qualityPolicy; continue; }
+    const route = input.routes.find(r => r.upstreamId === id)!;
+    const policy = qualityPolicySchema.parse({ mode: route.mode, choices: input.choices.map(c => ({ ...c, ...(route.mode === "map" ? {value: route.values[c.id]} : {}) })), evidence: route.evidence });
+    u.parameterMap.qualityPolicy = policy;
+  }
+  return config;
 }
 
 /** Read eligibility without the user's scope restrictions, while retaining prices, capability and business policy. */

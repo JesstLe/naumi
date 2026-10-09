@@ -1,5 +1,6 @@
 import { featureForRequest } from "./feature-path";
 import { requestedFeatureModel, assertPlatformImageSelection } from "./selection-policy";
+import {qualityPresentation} from "./quality-policy";
 import { selectedBusinessOption, FEATURE_BINDINGS } from "./business";
 import "server-only";
 import { dbEnabled, getPool } from "../db";
@@ -93,14 +94,15 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);
     const model = snapshot.config.publicModels.find(m => m.id === (preset ? presetPublicId(preset,requestedModelId) : option?.modelId || requestedModelId || featureDefaultModel(snapshot.config,mainFeature,purpose.image)));
     const upstreams = model?.target.type === "pool" ? snapshot.config.upstreamModels.filter(u => snapshot.config.pools.find(p => p.id === model.target.id)?.candidates.includes(u.id)) : snapshot.config.upstreamModels.filter(u => u.id === model?.target.id);
-    const qualities = option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
+    const presentation = qualityPresentation(upstreams);
+    const qualities = presentation?.qualities || option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
     if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(ratio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
     const requestedQuality = String(parsed.body.quality || request.headers.get("x-naumi-image-quality") || "medium");
     const presetParams = preset ? effectiveImageParameters(preset, { quality: requestedQuality, resolution: outputResolution, ratio }) : null;
     const canvasRequest = parsed.body.origin === "canvas" || new URL(request.url).pathname.startsWith("/api/canvas/");
     if (canvasRequest && presetParams && parsed.body.resolution && (!presetParams.nativeResolution || !presetParams.nativeRatio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未核验该尺寸与比例组合，请选择已开放参数", 400);
     const effectiveQuality = presetParams?.effective.quality || requestedQuality;
-    if (option && (parsed.body.quality || request.headers.get("x-naumi-image-quality")) && qualities.length && !qualities.includes(requestedQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持该质量，不会静默退档", 400);
+    if ((option || presentation) && (parsed.body.quality || request.headers.get("x-naumi-image-quality")) && qualities.length && !qualities.includes(requestedQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持该质量，不会静默退档", 400);
     const defaultQuality = qualities.some(q => q === (process.env.OPENAI_IMAGE_QUALITY || "medium")) ? process.env.OPENAI_IMAGE_QUALITY || "medium" : qualities[0] || process.env.OPENAI_IMAGE_QUALITY || "medium";
     if (option?.parameters?.resolutions?.length && !option.parameters.resolutions.includes(outputResolution as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该尺寸", 400);
     const native = presetParams ? presetParams.nativeResolution : ["1K", "2K", "4K"].includes(outputResolution) && upstreams.some(u => u.capabilities.nativeResolutions.includes(outputResolution as "1K" | "2K" | "4K"));

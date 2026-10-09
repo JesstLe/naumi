@@ -73,7 +73,8 @@ export async function auditSettledImage(email: string, cost: number, quality: Re
     const billed=Number(operation.charge)/success.length,wire=execution?.upstream|| (model?`default:${model}`:"unrecorded"),item=success.find(i=>i.id===imageId);
     const platformFunded=execution?.platformFunded??item?.platformFunded??!q.facts.byok;
     const fields=frozenCostAudit(q,{id:imageId,quality:quality.executed,platformFunded,...(wire.startsWith("default:")?{providerId:"openai-images",modelId:wire.slice(8)}:{})},billed,success.length);
-    await recordImageCostAudit({jobId,email,imageId,requestedQuality:quality.requested||q.facts.quality,executedQuality:quality.executed,upstream:wire,images:1,billedCredits:billed,reason:execution?.reason||quality.fallbackReason||"generated",...fields});
+    const mappedReason = quality.upstreamValue !== undefined ? `${quality.fallbackReason || "configured-passthrough"}:${quality.requested}→${quality.upstreamValue ?? "omitted"}` : undefined;
+    await recordImageCostAudit({jobId,email,imageId,requestedQuality:quality.requested||q.facts.quality,executedQuality:quality.executed,upstream:wire,images:1,billedCredits:billed,reason:execution?.reason||mappedReason||quality.fallbackReason||"generated",...fields});
     return;
   }
   await recordImageCostAudit({ jobId, email, imageId,

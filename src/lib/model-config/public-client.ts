@@ -8,6 +8,7 @@ export type PublicImageModel = {
   supportsEdit: boolean;
   provider?: string;
   qualities?: string[];
+  qualityLabels?: Record<string,string>;
   nativeResolutions?: string[];
   generationParameters?: { ratios?: string[]; resolutions?: string[]; combinations?: string[] };
   qualitySupported?: boolean;

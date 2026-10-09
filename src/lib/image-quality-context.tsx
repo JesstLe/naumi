@@ -71,5 +71,6 @@ export function useImageQuality(feature?:FeatureId, modelId?: string, purpose?: 
   const preferred = pathname === "/canvas" ? normalizeCanvasQuality(value.quality) : value.quality;
   const quality = allowedQualities.includes(preferred) ? preferred : allowedQualities[0] || "medium";
   const imageCost=(resolution="1K")=>catalog?.features[selected]?.prices[quality]?.[resolution]??0;
-  return {...value,quality,allowedQualities,capable: allowedQualities.length > 1,imageCost,costPerImage:imageCost()};
+  const qualityLabels = configured?.qualityLabels || value.modelConfig?.imageModels?.find(m => m.id === modelId)?.qualityLabels || {};
+  return {...value,quality,qualityLabels,allowedQualities,capable: allowedQualities.length > 1,imageCost,costPerImage:imageCost()};
 }
