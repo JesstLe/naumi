@@ -8,6 +8,7 @@ import { copyText } from "@/lib/clipboard";
 import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters, canvasCombinationSupported } from "@/lib/canvas/generation-parameters";
 import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
+import { CanvasParameterPopover } from "./parameter-popover";
 
 import {
   createContext,
@@ -1665,10 +1666,6 @@ export function CanvasClient() {
   const [genResolution, setGenResolution] = useState("1K"); // 默认 1K
   const [ratioMenuOpen, setRatioMenuOpen] = useState(false); // 比例/分辨率弹出面板
   const ratioBtnRef = useRef<HTMLButtonElement>(null);
-  const [ratioMenuRect, setRatioMenuRect] = useState<{
-    left: number;
-    top: number;
-  } | null>(null);
   const [genStyle, setGenStyle] = useState(GENERATION_STYLES[0]);
   const [genCount, setGenCount] = useState(1);
   const [generationMode, setGenerationMode] =
@@ -8140,8 +8137,6 @@ export function CanvasClient() {
   // dock 里的「比例·分辨率」按钮(对齐参考站图1)。面板用 portal 渲染到 body,
   // 脱离 dock 的 overflow-hidden(否则向上展开的分辨率行会被裁掉)。
   const openRatioMenu = () => {
-    const r = ratioBtnRef.current?.getBoundingClientRect();
-    if (r) setRatioMenuRect({ left: r.left, top: r.top });
     setRatioMenuOpen((v) => !v);
   };
   const generationParameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
@@ -8200,30 +8195,8 @@ export function CanvasClient() {
     </button>
   );
   const ratioMenu =
-    ratioMenuOpen && ratioMenuRect
-      ? createPortal(
-          <div
-            className={cn("fixed inset-0 z-[200]", lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}
-            onClick={() => setRatioMenuOpen(false)}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                left: Math.max(
-                  8,
-                  Math.min(
-                    ratioMenuRect.left,
-                    (typeof window !== "undefined" ? window.innerWidth : 9999) -
-                      344
-                  )
-                ),
-                bottom:
-                  (typeof window !== "undefined" ? window.innerHeight : 0) -
-                  ratioMenuRect.top +
-                  8,
-              }}
-              data-testid="canvas-generation-parameters" className="canvas-ui-surface menu-pop-up fixed max-h-[min(76vh,620px)] w-[336px] overflow-y-auto rounded-2xl border p-4"
-            >
+    ratioMenuOpen
+      ? <CanvasParameterPopover anchorRef={ratioBtnRef} light={lightCanvas} onClose={() => setRatioMenuOpen(false)}>
               <p className="canvas-ui-muted mb-2 text-[12px] font-semibold">
                 {t("canvas.resolution")}
               </p>
@@ -8270,10 +8243,7 @@ export function CanvasClient() {
                 ))}
               </div>
 
-            </div>
-          </div>,
-          document.body
-        )
+          </CanvasParameterPopover>
       : null;
 
   return (
