@@ -585,6 +585,9 @@
 .cz-anim-top { animation: cz-inT 0.24s both; }
 .cz-anim-bottom { animation: cz-inB 0.26s both; }
 .cz-anim-bottom-center { animation: cz-inBC 0.26s both; }
+/* Paired node overlays must not translate into each other during entry. */
+@keyframes canvas-dock-fade { from { opacity: 0; } to { opacity: 1; } }
+.canvas-dock-entry { animation: canvas-dock-fade 0.16s both; }
 /* 弹出菜单入场(大厂式:淡入 + 轻微缩放,从锚点方向长出)。复用:
    .menu-pop(右键/光标处,origin 左上)·.menu-pop-up(向上弹,origin 底部)·.menu-pop-down(向下弹,origin 顶部) */
 @keyframes menu-pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
@@ -595,7 +598,7 @@
   .menu-pop, .menu-pop-up, .menu-pop-down { animation: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cz-anim-top, .cz-anim-bottom, .cz-anim-bottom-center { animation: none; }
+  .cz-anim-top, .cz-anim-bottom, .cz-anim-bottom-center, .canvas-dock-entry { animation: none; }
   .cz-anim-bottom-center { transform: translateX(-50%); }
 }
 
