@@ -46,27 +46,38 @@ export function ModelMvp() {
   const [rename, setRename] = useState<MvpRow | null>(null);
   const [register, setRegister] = useState<{ providerId: string; model: string } | null>(null), [refreshing, setRefreshing] = useState<string[]>([]);
   const mounted = useRef(true), loadingGuard = useRef(false), mutationGuard = useRef(false);
+  const directoryInFlight = useRef(new Set<string>());
   const refreshProvider = useCallback(async (providerId: string, force = true) => {
+    if (directoryInFlight.current.has(providerId)) return;
+    directoryInFlight.current.add(providerId);
     setRefreshing(old => [...old, providerId]);
     try {
-      const catalog: CatalogEntry = await api({ action: "discover", providerId, force });
+      let catalog: CatalogEntry = await api({ action: "discover", providerId, force });
+      // Another page/request may own the discovery lock. Wait for its cached
+      // result instead of presenting its temporary empty response as final.
+      for (let attempt = 0; catalog.refreshing && attempt < 30; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (!mounted.current) return;
+        catalog = await api({ action: "discover", providerId, force: false });
+      }
       if (mounted.current) setState(old => old ? { ...old, catalogs: [...old.catalogs.filter(p => p.providerId !== providerId), catalog] } : old);
     } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : "目录查询失败"); }
-    finally { if (mounted.current) setRefreshing(old => old.filter(id => id !== providerId)); }
+    finally { directoryInFlight.current.delete(providerId); if (mounted.current) setRefreshing(old => old.filter(id => id !== providerId)); }
   }, []);
   const load = useCallback(async (discover = false) => {
     if (loadingGuard.current) return;
     loadingGuard.current = true; setLoading(true);
+    let discoverProviders: State["providers"] = [];
     try {
       const data: State = await api();
       if (!mounted.current) return;
       setState(data);
-      if (discover) for (const p of data.providers.filter(p => p.enabled && p.configured)) {
-        const catalog = data.catalogs.find(c => c.providerId === p.id);
-        if (!catalog || catalog.stale) await refreshProvider(p.id, false);
-      }
+      if (discover) discoverProviders = data.providers.filter(p => p.enabled && p.configured && (!data.catalogs.find(c => c.providerId === p.id) || data.catalogs.find(c => c.providerId === p.id)!.stale));
     } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : "读取失败"); }
     finally { loadingGuard.current = false; if (mounted.current) setLoading(false); }
+    // Directory discovery can take much longer than the active configuration
+    // read. It must not suppress the fresh read after a successful publication.
+    void (async () => { for (const p of discoverProviders) if (mounted.current) await refreshProvider(p.id, false); })();
   }, [refreshProvider]);
   useEffect(() => {
     mounted.current = true;

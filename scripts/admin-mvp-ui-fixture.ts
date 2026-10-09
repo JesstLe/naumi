@@ -12,7 +12,7 @@ async function main() {
     if (req.url === "/stop") { send(200, {}); setTimeout(() => void close(), 150); return; }
     if (req.url === "/drop-next") { dropNext = true; send(200, {}); return; }
     if (req.url === "/stats") { send(200, { queries, paid }); return; }
-    if (req.url?.endsWith("/models") && req.method === "GET") { queries++; send(200, { data: [{ id: "gpt-image-2" }, { id: "gpt-image-1.5" }, { id: "catalog-image-new" }] }); return; }
+    if (req.url?.endsWith("/models") && req.method === "GET") { queries++; if (queries === 1) await new Promise(resolve => setTimeout(resolve, 2500)); send(200, { data: [{ id: "gpt-image-2" }, { id: "gpt-image-1.5" }, { id: "catalog-image-new" }] }); return; }
     const parts: Buffer[] = []; for await (const chunk of req) parts.push(chunk);
     const body = parts.length ? JSON.parse(Buffer.concat(parts).toString()) : {};
     if (req.url === "/internal/config/state") return send(200, { digest: activeDigest });
