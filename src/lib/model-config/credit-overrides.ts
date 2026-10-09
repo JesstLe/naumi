@@ -14,4 +14,4 @@ export function applyCreditOverride(snapshot:ConfigSnapshot,base:ConfigSnapshot,
   tariff.settlement={...tariff.settlement,qualityBasis:"requested",successBasis:"successful-units",failureBps:0,reserveBps:10000};
   return {version:snapshot.version,config};
 }
-export type MvpCreditPricing=Extract<Pricing,{mode:"fixed"|"quality-resolution"}>;
+export type MvpCreditPricing=Extract<Pricing,{mode:"fixed"|"quality-resolution"|"matrix"}>;

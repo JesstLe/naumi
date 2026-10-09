@@ -41,10 +41,17 @@ async function main(){
   assert.equal((await handler(req({...body,id:randomUUID(),expectedBillingVersion:priced.version,features:[]}))).status,400);
   assert.equal((await handler(req({...body,id:randomUUID(),expectedBillingVersion:priced.version,features:["image.aplus"]}))).status,400);
   assert.equal((await handler(req({...body,id:randomUUID(),expectedBillingVersion:priced.version,pricing:{mode:"fixed",credits:-1}}))).status,400);
-  const matrix={mode:"quality-resolution",quality:{low:1,medium:7,high:9,xhigh:11,max:13,auto:7},resolutionExtra:{"1K":0,"2K":4,"4K":8,"5K":10}};
+  const prices=Object.fromEntries(["low","medium","high","xhigh","max","auto"].map(q=>[q,{"1K":null,"2K":null,"4K":null,"5K":null}])) as Record<string,Record<string,number|null>>;
+  Object.assign(prices.medium,{"1K":8,"2K":17});Object.assign(prices.high,{"1K":9,"2K":13});
+  const matrix={mode:"matrix",prices};
   assert.equal((await handler(req({...body,id:randomUUID(),expectedBillingVersion:priced.version,pricing:matrix}))).status,200);
   const latest=await billing.current(),advancedFacts=facts({modelId:family+"-portrait",quantity:3,quality:"high",resolution:"2K"});
   assert.equal(quote(businessBillingSnapshot(latest,models,advancedFacts),advancedFacts).requestedCredits,39);
+  assert.equal(quote(businessBillingSnapshot(latest,models,facts({modelId:family+"-square",resolution:"2K"})),facts({modelId:family+"-square",resolution:"2K"})).requestedCredits,17,"Independent cell prices, not additive formula");
+  assert.throws(()=>quote(businessBillingSnapshot(latest,models,facts({modelId:family+"-square",resolution:"4K"})),facts({modelId:family+"-square",resolution:"4K"})),{code:"INVALID_RESULT"});
+  const priceView=await handler(new Request("http://fixture.test/api/admin/mvp?rowId="+family+"&feature=image.generate"));assert.equal(priceView.status,200);
+  const grid=(await priceView.json()).grid;assert.equal(grid.find((c:any)=>c.quality==="high"&&c.resolution==="2K").credits,13);assert.equal(grid.find((c:any)=>c.quality==="low"&&c.resolution==="1K").available,false);
+  const badMatrix=structuredClone(matrix);badMatrix.prices.high["2K"]=null;assert.equal((await handler(req({...body,id:randomUUID(),expectedBillingVersion:latest.version,pricing:badMatrix}))).status,400);
   const replay=await handler(req(body));assert.equal(replay.status,200);assert.equal((await replay.json()).billingVersion,priced.version);assert.equal((await billing.current()).version,latest.version);
   await assert.rejects(billing.publish({id:randomUUID(),expectedVersion:latest.version,expectedModelVersion:999,config:latest.config,actor,reason:"Concurrent model change fixture"}),{code:"CONFIG_CONFLICT"});
   const email="pricing-wallet@example.test";await db.getOrCreateUser(email,"Pricing fixture");

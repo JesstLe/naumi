@@ -13,7 +13,7 @@ import { mvpRows, mvpCandidates, MVP_PROTOCOLS, switchMvpModel, renameMvpModel, 
 import { FEATURE_IDS } from "../billing/rules/registry";
 import {QUALITY_IDS,RESOLUTION_IDS} from "../billing/rules/registry";
 import {BillingError} from "../billing/types";
-import {editMvpCredits,mvpPriceViews} from "./mvp-pricing";
+import {editMvpCredits,mvpPriceViews,modelCreditGrid} from "./mvp-pricing";
 import { canonicalConfig } from "./repository";
 import { validateModelConfig, validateModelEndpoint } from "./schema";
 import { compileRouterProjection } from "./projection";
@@ -24,7 +24,7 @@ import { isNewApiFlowImageModel } from "../image-model-catalog";
 const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const common = { id: z.uuid(), expectedVersion: z.number().int().positive() };
 const credits=z.number().int().min(0).max(2147483647);
-const creditPricing=z.discriminatedUnion("mode",[z.strictObject({mode:z.literal("fixed"),credits}),z.strictObject({mode:z.literal("quality-resolution"),quality:z.record(z.enum(QUALITY_IDS),credits),resolutionExtra:z.record(z.enum(RESOLUTION_IDS),credits)})]);
+const creditPricing=z.discriminatedUnion("mode",[z.strictObject({mode:z.literal("matrix"),prices:z.record(z.enum(QUALITY_IDS),z.record(z.enum(RESOLUTION_IDS),credits.nullable()))}),z.strictObject({mode:z.literal("fixed"),credits}),z.strictObject({mode:z.literal("quality-resolution"),quality:z.record(z.enum(QUALITY_IDS),credits),resolutionExtra:z.record(z.enum(RESOLUTION_IDS),credits)})]);
 const input = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("discover"), providerId: identifier, force: z.boolean().optional() }),
   z.strictObject({ action: z.literal("credential"), providerId: identifier, ciphertext: z.string().min(1).max(32768).optional(), keyPlain: z.string().min(1).max(16384).optional() }),
@@ -48,6 +48,11 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
     try {
       const admin = await deps.administration();
       const snapshot = await admin.repo.current();
+      if(request.method==="GET" && new URL(request.url).searchParams.has("rowId")){
+        const params=new URL(request.url).searchParams,rowId=identifier.parse(params.get("rowId")),feature=z.enum(FEATURE_IDS).parse(params.get("feature"));
+        const row=rows(snapshot).find(r=>r.id===rowId);if(!row || !row.features.some(f=>f.id===feature))throw new ModelConfigError("MODEL_UNAVAILABLE","该模型未应用到此工具",400);
+        const billing=await admin.billing.current();return biJson({version:snapshot.version,billingVersion:billing.version,grid:modelCreditGrid(billing,snapshot,row,feature)});
+      }
       if (request.method === "GET") {const billing=await admin.billing.current();return biJson({ version: snapshot.version,billingVersion:billing.version, managed: await deps.managed(), rows: rows(snapshot).map(row=>({...row,pricing:mvpPriceViews(billing,snapshot,row)})), candidates: mvpCandidates(snapshot.config), providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs: await readProviderCatalog(admin.pool, snapshot.config.providers) });}
       const body = input.parse(JSON.parse(await readBounded(new Response(request.body), 48000)));
       if (body.action === "credential") {
