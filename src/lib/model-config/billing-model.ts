@@ -1,5 +1,6 @@
 import { FEATURE_BINDINGS, selectedBusinessOption } from "./business";
 import "server-only";
+import { requestedFeatureModel } from "./selection-policy";
 import type { FeatureId } from "../billing/rules/registry";
 import { MODEL_BINDINGS, type ModelBinding } from "./bindings";
 import { currentExecutionBundle, currentModelExecution } from "./context";
@@ -23,7 +24,7 @@ export async function managedBillingModel(request: Request, feature: FeatureId, 
   const quoted = request.headers.get("x-naumi-model-version");
   if (quoted && (!/^[1-9][0-9]{0,15}$/.test(quoted) || Number(quoted) !== snapshot.version))
     throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请刷新模型列表后重新提交；原输入已保留", 409);
-  const requested = selected || (role === "text" ? request.headers.get("x-naumi-text-model")?.trim() : undefined);
+  const requested = requestedFeatureModel(feature, selected || (role === "text" ? request.headers.get("x-naumi-text-model")?.trim() : undefined));
   const preset = selectedImagePreset(snapshot.config,feature,requested,binding);
   if (preset) return { modelId: presetPublicId(preset,requested), providerId: snapshot.config.upstreamModels.find(u => u.id === preset.upstreamId)!.providerId };
   const option = selectedBusinessOption(snapshot.config, feature, requested);

@@ -1,4 +1,5 @@
 import { featureForPath } from "./feature-path";
+import { requestedFeatureModel } from "./selection-policy";
 import { selectedBusinessOption, FEATURE_BINDINGS } from "./business";
 import "server-only";
 import { dbEnabled, getPool } from "../db";
@@ -71,7 +72,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   if (purpose.image && !standaloneSegmentation) {
     const selected = String(parsed.body.model || parsed.body.modelId || "").trim();
     const explicit = request.headers.get("x-naumi-feature-model") || selected || "";
-    const requestedModelId = explicit.startsWith("byok:") ? undefined : explicit || undefined;
+    const requestedModelId = requestedFeatureModel(mainFeature, explicit.startsWith("byok:") ? undefined : explicit || undefined);
     const preset = selectedImagePreset(snapshot.config, mainFeature, requestedModelId, purpose.image);
     const option = selectedBusinessOption(snapshot.config, mainFeature, requestedModelId);
     if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);
@@ -96,7 +97,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     if (presetParams) { facts.quality = requestedQuality; facts.resolution = outputResolution; }
     bundle.image = await executor.resolve({ feature: mainFeature, binding: purpose.image, requestedModelId, snapshot, billing, facts });
   }
-  const requestedTextModelId = purpose.primary === "text" || purpose.primary === "vision" ? request.headers.get("x-naumi-feature-model")?.trim() || request.headers.get("x-naumi-text-model")?.trim() || undefined : undefined;
+  const requestedTextModelId = requestedFeatureModel(mainFeature, purpose.primary === "text" || purpose.primary === "vision" ? request.headers.get("x-naumi-feature-model")?.trim() || request.headers.get("x-naumi-text-model")?.trim() || undefined : undefined);
   if (purpose.video) bundle.video = await executor.resolve({ feature, binding: purpose.video, requestedModelId: request.headers.get("x-naumi-feature-model")?.trim() || parsed.body.modelId || undefined, snapshot, billing });
   if (purpose.text && (requestedTextModelId || snapshot.config.bindings[purpose.text] || purpose.primary === "text" && mainFeature && snapshot.config.business?.[mainFeature])) bundle.text = await executor.resolve({ ...(purpose.primary === "text" ? { feature: mainFeature } : {}), binding: purpose.text, requestedModelId: requestedTextModelId, snapshot, billing, facts: { task: "product", quality: "medium", resolution: "1K", needsEdit: false, needsText: false, preserveIdentity: false, nativeResolution: false, references: parsed.references, inputLength: JSON.stringify(parsed.body.messages || parsed.body.prompt || "").length } });
   if (purpose.primary === "text" && purpose.text && mainFeature && snapshot.config.business?.[mainFeature] && bundle.text) {

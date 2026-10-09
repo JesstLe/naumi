@@ -134,7 +134,7 @@ import {
   routeImageModel,
 } from "@/lib/image-model-routing";
 import { ModelIcon } from "@/components/ui/model-icon";
-import { FeatureModelSelect } from "@/components/tools/feature-model-select";
+import { adminConfiguredFeature } from "@/lib/model-config/selection-policy";
 import { chosenFeatureModel, featureModelManaged } from "@/lib/model-config/feature-client";
 import { TextModelSelect } from "@/components/ui/text-model-select";
 import { useTextModel } from "@/lib/text-model-context";
@@ -1618,7 +1618,7 @@ export function CanvasClient() {
     const source=active?.members.find(art=>art.id===body.artworkId);
     const quantity=path==="/api/aplus"?Math.max(1,form?.getAll("module").length||body.modules?.length||1):path==="/api/suite"?(body.structure==="custom"?JSON.parse(String(body.shots||"[]")).length:13):Number(body.count||1);
     const headers=new Headers(init.headers);for(const [key,value] of Object.entries(await authHeader()))headers.set(key,value);
-    const feature=features[path],modelId=featureModelManaged(feature) && !["image.generate","video.generate"].includes(feature) ? chosenFeatureModel(feature) : body.modelId||body.model||undefined;
+    const feature=features[path],modelId=adminConfiguredFeature(feature) ? undefined : featureModelManaged(feature) && !["image.generate","video.generate"].includes(feature) ? chosenFeatureModel(feature) : body.modelId||body.model||undefined;
     return billing.quoteAndSubmit(path,{...init,headers},{feature,quantity,quality:String(body.quality||genQuality),resolution:String(body.resolution||source?.resolution||"1K"),modelId,providerId:body.providerId,ratio:body.ratio});
   }
   const { quality: genQuality, imageCost, modelConfig } = useImageQuality();
@@ -10476,7 +10476,6 @@ export function CanvasClient() {
                           />
                         ))}
                       </div>
-                      <FeatureModelSelect feature="canvas.expand" disabled={selectedGenerating} />
                       <ImageQualityControl compact feature="canvas.expand" resolution={selected?.resolution || "1K"} />
                       <button
                         type="button"
@@ -11329,7 +11328,6 @@ export function CanvasClient() {
                     }
                   />
                   {ratioControl}
-                  <details className="w-full text-xs"><summary className="cursor-pointer">图片编辑操作模型</summary><div className="mt-2 grid grid-cols-2 gap-2"><FeatureModelSelect feature="canvas.image" /><FeatureModelSelect feature="canvas.annotate" /><FeatureModelSelect feature="canvas.text-edit" /><FeatureModelSelect feature="canvas.ocr" /><FeatureModelSelect feature="canvas.assistant" /></div></details>
                   <ImageQualityControl compact modelId={genModel} resolution={genResolution} disabled={selectedGenerating} />
                   {generationMode === "standard" || generationMode === "detail" ? (
                     <ImageCountControl
