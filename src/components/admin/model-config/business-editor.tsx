@@ -12,6 +12,7 @@ import { authHeader } from "@/lib/supabase";
 import { StageInspector } from "./stage-inspector";
 import { adminConfiguredFeature } from "@/lib/model-config/selection-policy";
 import { cnyCredits } from "@/lib/billing/money";
+import { featureDefaultModel,modelAllowedForFeature } from "@/lib/model-config/tool-scope";
 
 function displayedCredits(amount:string,p:{creditsPerCnyMicros:string;rounding:"ceil"|"floor"|"nearest"}) {try{return cnyCredits(amount,p);}catch{return "金额超出范围";}}
 export function MoneyField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
@@ -21,8 +22,8 @@ const defaultPrice = (): Extract<Pricing, { mode: "cny-fixed" }> => ({ mode: "cn
 export function BusinessEditor({ config, billing, onChange, onPreview }: { config: ModelConfig; billing?: ConfigSnapshot; onChange: (c: ModelConfig) => void; onPreview: (feature: FeatureId, modelId: string, facts: { quality: string; resolution: "1K"|"2K"|"4K"; references: number; inputLength: number; task: "product" }) => Promise<unknown> }) {
   const [preview,setPreview]=useState<unknown>(null),[previewQuality,setPreviewQuality]=useState("medium"),[previewResolution,setPreviewResolution]=useState<"1K"|"2K"|"4K">("1K"),[previewReferences,setPreviewReferences]=useState(0),[previewLength,setPreviewLength]=useState(100);
   const [feature, setFeature] = useState<FeatureId>("image.generate"), [newId, setNewId] = useState(""), [selectedUpstream, setSelectedUpstream] = useState(""), [message, setMessage] = useState("");
-  const f = config.business?.[feature], binding = FEATURE_BINDINGS[feature], compatible = binding ? compatiblePublicModels(config, binding).filter(m => m.target.type === "upstream") : [];
-  const edit = (fn: (c: ModelConfig) => void) => { const next = structuredClone(config); fn(next); onChange(next); setMessage(""); setPreview(null); };
+  const f = config.business?.[feature], binding = FEATURE_BINDINGS[feature], compatible = binding ? compatiblePublicModels(config, binding).filter(m => m.target.type === "upstream" && modelAllowedForFeature(m,feature)) : [];
+  const edit = (fn: (c: ModelConfig) => void) => { const next = structuredClone(config); fn(next); const changed=next.business?.[feature]; if(changed && (!f || changed.defaultModelId!==f.defaultModelId || !changed.enabled)) for(const m of next.publicModels) if(m.toolScope)m.toolScope.defaultFor=m.toolScope.defaultFor.filter(id=>id!==feature); onChange(next); setMessage(""); setPreview(null); };
   const optionEdit = (index: number, fn: (o: BusinessOption) => void) => edit(c => fn(c.business![feature]!.options[index]));
   const upstreams = config.upstreamModels.filter(u => binding && u.modality === MODEL_BINDINGS[binding].modality && u.capabilities[MODEL_BINDINGS[binding].capability] && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
   function loadProcurement(c: ModelConfig, id: string) {
@@ -56,7 +57,7 @@ export function BusinessEditor({ config, billing, onChange, onPreview }: { confi
         <button className={buttonClass} onClick={addAlias}>添加模型选项</button>
         <Choice label="复用公开模型" value="" options={[{ value: "", label: "选择已有兼容模型" }, ...compatible.filter(m => !f?.options.some(o => o.modelId === m.id)).map(m => ({ value: m.id, label: `${m.label} · ${m.id}` }))]} onChange={id => { if (id) edit(c => { c.business ||= {}; c.business[feature] ||= { enabled: true, defaultModelId: id, options: [] }; c.business[feature]!.options.push({ modelId: id, enabled: true, sort: c.business[feature]!.options.length, unit: MODEL_BINDINGS[binding].modality === "text" ? "task" : "image", pricing: defaultPrice() }); const m = c.publicModels.find(m => m.id === id)!; if (m.target.type === "upstream") loadProcurement(c, m.target.id); }); }} />
       </div>
-      {f && <div className="flex flex-wrap gap-4"><Toggle label="启用功能" value={f.enabled} onChange={value => edit(c => { c.business![feature]!.enabled = value; })} /><Choice label={adminConfiguredFeature(feature) ? "统一执行模型" : "默认模型"} value={f.defaultModelId} options={f.options.filter(o => o.enabled).map(o => ({ value: o.modelId, label: config.publicModels.find(m => m.id === o.modelId)?.label || o.modelId }))} onChange={id => edit(c => { c.business![feature]!.defaultModelId = id; })} /></div>}
+      {f && <div className="flex flex-wrap gap-4"><Toggle label="启用功能" value={f.enabled} onChange={value => edit(c => { c.business![feature]!.enabled = value; })} /><Choice label={adminConfiguredFeature(feature) ? "统一执行模型" : "默认模型"} value={featureDefaultModel(config,feature,binding) || f.defaultModelId} options={f.options.filter(o => o.enabled && config.publicModels.some(m=>m.id===o.modelId && modelAllowedForFeature(m,feature))).map(o => ({ value: o.modelId, label: config.publicModels.find(m => m.id === o.modelId)?.label || o.modelId }))} onChange={id => edit(c => { for(const m of c.publicModels) if(m.toolScope)m.toolScope.defaultFor=m.toolScope.defaultFor.filter(f=>f!==feature); c.business![feature]!.defaultModelId = id; })} /></div>}
       {f?.options.map((o, index) => {
         const m = config.publicModels.find(m => m.id === o.modelId)!, u = m?.target.type === "upstream" ? config.upstreamModels.find(u => u.id === m.target.id) : undefined;
         const p = o.pricing || defaultPrice(), money = procurementCny(u?.procurement), cost = u?.procurement;

@@ -52,6 +52,23 @@
 .route p>span { font-size:10px; color:#4c8877; }
 .switchButton { justify-self:end; color:#245d83; font-size:12px!important; padding:9px 0 9px 9px; white-space:nowrap; }
 .rowActions { display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
+.scopeSummary { display:flex; align-items:center; gap:13px; margin:14px 0 8px; font-size:11px; color:#718495; }
+.scopeSummary button { color:#245d83; font-size:11px!important; text-decoration:underline; text-underline-offset:3px; }
+.scopeHeading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.scopeHeading b { font-size:16px; overflow-wrap:anywhere; }
+.scopeHeading>span { flex-shrink:0; font-size:12px; color:#245d83; }
+.scopeControls { display:flex; flex-wrap:wrap; align-items:center; gap:14px; margin:15px 0; font-size:12px; color:#496d87; }
+.scopeControls .secondary { min-height:34px; padding:6px 12px; }
+.scopeGroups { margin:20px 0; display:grid; gap:20px; }
+.scopeGroups legend { display:flex; align-items:center; justify-content:space-between; width:100%; margin-bottom:10px; font-size:12px; }
+.scopeGroups legend button { font-size:11px; color:#326d96; }
+.scopeGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+.scopeOption { min-height:43px; display:flex; align-items:center; gap:10px; padding:10px; border:1px solid #dee7ee; border-radius:7px; cursor:pointer; }
+.scopeOption[data-selected=true] { background:#eef6fc; border-color:#73a5c8; }
+.scopeOption[data-disabled=true] { opacity:.5; cursor:not-allowed; }
+.scopeOption b { display:block; font-size:12px; font-weight:500; }
+.scopeOption small { display:block; font-size:10px; margin-top:3px; color:#718495; }
+.scopeNote { font-size:11px; line-height:1.85; color:#6d8192; border-top:1px solid #e5edf3; padding-top:14px; }
 @media (max-width:600px) { .rowActions { grid-column:2; grid-row:1; align-self:start; } }
 .footerNote { display:flex; align-items:flex-start; gap:7px; margin-top:17px; color:#718495; font-size:11px; line-height:1.8; }
 .footerNote svg { margin-top:3px; flex-shrink:0; }
@@ -87,6 +104,7 @@
 .added { display:flex; align-items:center; gap:4px; font-size:11px; color:#4d8a72; flex-shrink:0; }
 .dialog { --ink:#20344a; --muted:#667c8f; width:min(620px,calc(100vw - 28px)); max-height:calc(100dvh - 40px); margin:auto; padding:0; border:1px solid #dbe4ec; border-radius:15px; color:var(--ink); background:white; box-shadow:0 20px 80px #17334d30; font-family:"Segoe UI","Microsoft YaHei",sans-serif; }
 .dialog::backdrop { background:#16365055; backdrop-filter:blur(3px); }
+.dialog { overflow-y:auto; overscroll-behavior:contain; }
 .dialogHeader { display:flex; align-items:center; justify-content:space-between; padding:22px 26px; border-bottom:1px solid #e6edf3; position:sticky; top:0; background:white; z-index:1; }
 .dialogHeader h2 { font-size:18px; font-weight:600; }
 .dialogHeader button { color:#6b8092; padding:4px; }

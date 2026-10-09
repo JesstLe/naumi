@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // 允许跨域,方便任意实例读取。
 export async function GET() {
   return NextResponse.json(
-    { version: buildVersion() },
-    { headers: { "Access-Control-Allow-Origin": "*" } }
+    { version: buildVersion(),commit:process.env.SOURCE_COMMIT || "" },
+    { headers: { "Access-Control-Allow-Origin": "*", "Cache-Control":"no-store, max-age=0", "Pragma":"no-cache", "Expires":"0" } }
   );
 }

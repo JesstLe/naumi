@@ -11,6 +11,9 @@ RUN npm ci
 # ── build ───────────────────────────────────────────────────────────────────
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
+ARG BUILD_VERSION=0
+ARG SOURCE_COMMIT=
+ENV BUILD_VERSION=$BUILD_VERSION SOURCE_COMMIT=$SOURCE_COMMIT
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # 可选:接自托管 GoTrue/Supabase 认证时按实例传入(NEXT_PUBLIC_* 是构建期内联,
@@ -32,12 +35,14 @@ FROM node:24-bookworm-slim AS runner
 WORKDIR /app
 # 构建版本号(CI 传入 date +%s):后台"检查更新"用它跟官方站比对。
 ARG BUILD_VERSION=0
+ARG SOURCE_COMMIT=
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
     MEDIA_DIR=/data/media \
-    BUILD_VERSION=$BUILD_VERSION
+    BUILD_VERSION=$BUILD_VERSION \
+    SOURCE_COMMIT=$SOURCE_COMMIT
 
 # Non-root user
 RUN groupadd -g 1001 nodejs && useradd -u 1001 -g nodejs -m nextjs

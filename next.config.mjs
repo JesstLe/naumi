@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  env: {NEXT_PUBLIC_BUILD_VERSION:process.env.BUILD_VERSION || "0",NEXT_PUBLIC_SOURCE_COMMIT:process.env.SOURCE_COMMIT || ""},
   // 并行验收/开发可用 NEXT_DIST_DIR 隔离构建缓存，避免多个 Next 进程争用 .next。
   distDir: process.env.NEXT_DIST_DIR || ".next",
   // standalone 输出:Docker 镜像用(.next/standalone 自带精简 node_modules)。

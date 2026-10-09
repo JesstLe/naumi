@@ -31,6 +31,8 @@ async function main() {
   process.env.PGOPTIONS = `-c search_path=${f.schemaName}`;
   process.env.NEXT_DIST_DIR = "output/admin-mvp-20261009/next";
   process.env.NAUMI_VIDEO_WORKER = "0";
+  process.env.BUILD_VERSION="1791542000";
+  process.env.SOURCE_COMMIT="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   process.env.VIDEO_WORKER_SECRET = "mvp-ui-worker-private-secret-independent-long";
   process.env.NAUMI_ROUTER_MANAGEMENT_URL = f.origin;
   process.env.NAUMI_ROUTER_MANAGEMENT_TOKEN = "mvp-ui-router-private-token-independent-long";
@@ -45,6 +47,8 @@ async function main() {
   f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels[0]), id: "text1", providerId: "p2", label: "文字模型", model: "gpt-4.1", modality: "text", capabilities: { ...f.config.upstreamModels[0].capabilities, edit: false, vision: true, qualities: [], nativeResolutions: [] } });
   f.config.publicModels.push({ id: "smart-text", label: "创作助手", modality: "text", enabled: true, visible: true, target: { type: "upstream", id: "text1" } });
   Object.assign(f.config.bindings, { "agent.text": "smart-text", "text.generate": "smart-text", "vision.ocr": "smart-text" });
+  f.config.upstreamModels.push({...structuredClone(f.config.upstreamModels[0]),id:"family-image",model:"fixture-family-wire"});
+  f.config.publicModels.push(...["square","portrait","three-four"].map(s=>({...structuredClone(f.config.publicModels[0]),id:"gemini-3.0-pro-image-"+s,label:"gemini-3.0-pro-image-"+s,target:{type:"upstream" as const,id:"family-image"}})));
   const db = await import("../src/lib/db"), auth = await import("../src/lib/admin-auth"), native = await import("../src/lib/native-auth");
   await db.ensureSchema(); await f.repo.current(); await auth.setAdminPassword("MvpFixture2026!");
   await db.getOrCreateUser("mvp-member@example.test", "普通成员");

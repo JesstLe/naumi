@@ -1,8 +1,12 @@
-import type { ModelConfig, ModelSnapshot } from "./types";
+import type { ModelConfig, ModelSnapshot, Modality } from "./types";
 import { ModelConfigError } from "./types";
 import { FEATURE_BINDINGS } from "./business";
 import { MODEL_BINDINGS } from "./bindings";
 import { compactImageModelOptions, imageModelDisplayId } from "../image-model-routing";
+import { publicModelCatalog } from "./runtime";
+import { adminConfiguredFeature } from "./selection-policy";
+import { featureDefaultModel } from "./tool-scope";
+import type { FeatureId } from "../billing/rules/registry";
 
 export const MVP_PROTOCOLS = ["openai-images", "new-api-flow", "apimart-images", "openai-chat", "openai-videos"] as const;
 export const featureNames: Record<string, string> = {
@@ -15,10 +19,11 @@ export const featureNames: Record<string, string> = {
   "tool.inpaint": "局部重绘", "tool.extract": "提取", "tool.garment3d": "服装 3D", "tool.packaging3d": "包装 3D",
 };
 export type MvpRow = {
-  id: string; label: string; alias: string; modality: string; publicIds: string[];
+  id: string; label: string; alias: string; modality: Modality; publicIds: string[];
   features: { id: string; label: string }[];
   routes: { upstreamId: string; model: string; providerId: string; provider: string; kind: string; enabled: boolean }[];
   preset: boolean; conditional: boolean; candidateIds: string[];
+  scopeOptions: {id:string;label:string;selected:boolean;available:boolean;adminDefault:boolean;reason?:string}[];
 };
 export type MvpCandidate = { id: string; model: string; label: string; providerId: string; provider: string; modality: string; verified: boolean };
 export type MvpState = {
@@ -34,17 +39,21 @@ export function mvpCandidates(config: ModelConfig): MvpCandidate[] {
 /** Receives the same public catalogs consumed by the frontend, after selection policy. */
 export function mvpRows(snapshot: ModelSnapshot, catalogs: { feature: string; defaultModelId?: string; models: { id: string; label: string; modality: string }[] }[]): MvpRow[] {
   const config = snapshot.config, rows = new Map<string, MvpRow>();
-  for (const catalog of catalogs) {
+  const unrestricted=structuredClone(snapshot);
+  for(const model of unrestricted.config.publicModels) delete model.toolScope;
+  const eligibleCatalogs=new Map(Object.entries(FEATURE_BINDINGS).map(([feature,binding])=>[feature,new Set(publicModelCatalog(unrestricted,MODEL_BINDINGS[binding!].modality,feature as FeatureId,true).models.map(m=>m.id))]));
+  const inventory = config.publicModels.filter(m=>m.enabled && m.visible);
+  for (const catalog of [...catalogs,{feature:"",models:inventory}]) {
     const displayed = catalog.models.some(m => m.modality === "image") ? compactImageModelOptions(catalog.models, [catalog.defaultModelId || ""]) : catalog.models;
     for (const shown of displayed) {
       const key = shown.modality === "image" ? imageModelDisplayId(shown.id) : shown.id;
       let row = rows.get(key);
       if (!row) {
         const publicIds = config.publicModels.filter(m => m.enabled && m.visible && m.modality === shown.modality && (shown.modality === "image" ? imageModelDisplayId(m.id) === key : m.id === key)).map(m => m.id);
-        row = { id: key, label: shown.label, alias: config.publicModels.find(m => m.id === shown.id)!.label, modality: shown.modality, publicIds, features: [], routes: [], preset: false, conditional: false, candidateIds: [] };
+        row = { id: key, label: shown.label, alias: config.publicModels.find(m => m.id === shown.id)!.label, modality: shown.modality as Modality, publicIds, features: [], routes: [], preset: false, conditional: false, candidateIds: [], scopeOptions:[] };
         rows.set(key, row);
       }
-      row.features.push({ id: catalog.feature, label: featureNames[catalog.feature] || catalog.feature });
+      if(catalog.feature) row.features.push({ id: catalog.feature, label: featureNames[catalog.feature] || catalog.feature });
     }
   }
   for (const row of Array.from(rows.values())) {
@@ -67,8 +76,52 @@ export function mvpRows(snapshot: ModelSnapshot, catalogs: { feature: string; de
     row.candidateIds = mvpCandidates(config).filter(c => {
       try { assertMvpTarget(config, row, c.id); return true; } catch { return false; }
     }).map(c => c.id);
+    row.scopeOptions = mvpScopeOptions(row,eligibleCatalogs);
   }
   return Array.from(rows.values());
+}
+
+/** Read eligibility without the user's scope restrictions, while retaining prices, capability and business policy. */
+function mvpScopeOptions(row:MvpRow,eligibleCatalogs:Map<string,Set<string>>) {
+  return Object.entries(FEATURE_BINDINGS).filter(([,binding])=>MODEL_BINDINGS[binding!].modality===row.modality).map(([feature,binding])=>{
+    const available=row.publicIds.every(id=>eligibleCatalogs.get(feature)?.has(id));
+    return {id:feature,label:featureNames[feature] || feature,available,selected:row.features.some(f=>f.id===feature),adminDefault:adminConfiguredFeature(feature),...(!available ? {reason:"当前模型能力或工具配置未开放此选项"} : {})};
+  });
+}
+
+/** Scope is independent from prices, supplier targets and full configuration drafts. */
+export function applyMvpToolScope(source:ModelConfig,row:MvpRow,features:string[]):ModelConfig {
+  const selected=new Set(features);
+  if(selected.size!==features.length || features.some(id=>!row.scopeOptions.some(o=>o.id===id && o.available)))
+    throw new ModelConfigError("MODEL_INCOMPATIBLE","请选择该模型支持且已在工具配置中开放的范围");
+  const config=structuredClone(source);
+  const family=(id:string)=>row.modality==="image" ? imageModelDisplayId(id)===row.id : id===row.id;
+  const scopeFor=(id:string)=>{
+    const m=config.publicModels.find(m=>m.id===id)!;
+    if(!m.toolScope){
+      const base=structuredClone(config);for(const model of base.publicModels) delete model.toolScope;
+      m.toolScope={features:Object.entries(FEATURE_BINDINGS).filter(([f,b])=>MODEL_BINDINGS[b!].modality===m.modality && publicModelCatalog({version:1,digest:"",config:base},m.modality,f as FeatureId,true).models.some(x=>x.id===m.id)).map(([f])=>f as FeatureId),defaultFor:[]};
+    }
+    return m.toolScope;
+  };
+  const defaults=new Map(Object.entries(FEATURE_BINDINGS).filter(([,b])=>MODEL_BINDINGS[b!].modality===row.modality).map(([f,b])=>[f,publicModelCatalog({version:1,digest:"",config:source},row.modality,f as FeatureId,true).defaultModelId || featureDefaultModel(source,f,b)]));
+  for(const model of config.publicModels.filter(m=>m.modality===row.modality && family(m.id)))
+    model.toolScope={features:[...selected] as FeatureId[],defaultFor:model.toolScope?.defaultFor.filter(f=>selected.has(f)) || []};
+  const assignDefault=(feature:string,id:string)=>{
+    for(const m of config.publicModels) if(m.toolScope) m.toolScope.defaultFor=m.toolScope.defaultFor.filter(f=>f!==feature);
+    scopeFor(id).defaultFor.push(feature as FeatureId);
+  };
+  for(const option of row.scopeOptions){
+    if(source.business?.[option.id as FeatureId]?.enabled===false) continue;
+    const old=defaults.get(option.id);
+    if(selected.has(option.id) && option.adminDefault) assignDefault(option.id,row.publicIds[0]);
+    else if(!selected.has(option.id) && old && family(old)){
+      const remaining=publicModelCatalog({version:1,digest:"",config},row.modality,option.id as FeatureId,true).models.filter(m=>!family(m.id));
+      if(!remaining.length) throw new ModelConfigError("TOOL_REQUIRES_MODEL",`${option.label}需要保留至少一个可用模型，请先配置替代模型再移除此范围`);
+      assignDefault(option.id,remaining[0].id);
+    }
+  }
+  return config;
 }
 
 /** A simple switch is global to the public alias/family, and preserves every price and binding. */

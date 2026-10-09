@@ -13,25 +13,26 @@ import { canonicalConfig } from "./repository";
 import { validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelConfig, type ModelConfigRepository, type ModelFacts, type ModelPublication, type ModelSnapshot, type Modality, type RestoreInput, type StageInput } from "./types";
 import { DISPLAY_QUALITIES, selectedImagePreset, presetPublicId, effectiveImageParameters } from "./image-preset";
+import { featureDefaultModel, modelAllowedForFeature } from "./tool-scope";
 
 export type RoutingSimulation = { eligible: { upstreamId: string; providerId: string; rank: number }[]; excluded: { upstreamId: string; codes: string[] }[]; modelVersion: number; billingVersion: number };
 type Dependencies = ValidationOptions & { pool: Pool; repo: ModelConfigRepository; credentials: ReturnType<typeof createCredentialStore>; router: RouterControl; billing: () => Promise<ConfigSnapshot>; billingByVersion?: (version: number) => Promise<ConfigSnapshot> };
 
-export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, feature?: FeatureId) {
+export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, feature?: FeatureId, includeAll = false) {
   const config = snapshot.config;
   const f = feature ? config.business?.[feature] : undefined;
   const compatible = feature && FEATURE_BINDINGS[feature] ? compatiblePublicModels(config, FEATURE_BINDINGS[feature]!).map(m => m.id) : undefined;
   const preset = selectedImagePreset(config,feature,undefined,feature ? undefined : "image.generate");
-  const defaultModelId = preset ? preset.aliases[0].id : f?.enabled ? f.defaultModelId : feature && FEATURE_BINDINGS[feature] ? config.bindings[FEATURE_BINDINGS[feature]!] : undefined;
+  const defaultModelId = preset ? preset.aliases[0].id : featureDefaultModel(config,feature,feature ? FEATURE_BINDINGS[feature] : undefined);
   const configuredIds = f?.enabled===false ? [] : preset ? [...preset.aliases.map(a => a.id),...(f?.options.filter(o => o.enabled && !preset.defaultModelIds.includes(o.modelId)).map(o => o.modelId) || [])] : f ? [...f.options].filter(o => o.enabled).sort((a,b) => a.sort-b.sort).map(o => o.modelId) : undefined;
-  const models = config.publicModels.filter(m => m.enabled && m.visible && m.modality === modality && (!compatible || compatible.includes(m.id)) && (!configuredIds || configuredIds.includes(m.id))).sort((a,b) => configuredIds ? configuredIds.indexOf(a.id)-configuredIds.indexOf(b.id) : 0).map(m => {
+  const models = config.publicModels.filter(m => m.enabled && m.visible && m.modality === modality && modelAllowedForFeature(m,feature) && (!compatible || compatible.includes(m.id)) && (!configuredIds || configuredIds.includes(m.id))).sort((a,b) => configuredIds ? configuredIds.indexOf(a.id)-configuredIds.indexOf(b.id) : 0).map(m => {
     const ids = m.target.type === "upstream" ? [m.target.id] : config.pools.find(p => p.id === m.target.id)!.candidates;
     const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
     const option = f?.options.find(o => o.modelId === m.id);
     if (preset?.aliases.some(a => a.id === m.id)) return { id:m.id,label:m.label,modality:m.modality,supportsEdit:true,supportsVision:false,qualities:[...DISPLAY_QUALITIES],nativeResolutions:preset.resolutions,generationParameters:{ratios:preset.ratios,resolutions:preset.resolutions,combinations:Object.keys(preset.outputDimensions || {})},qualitySupported:true };
     return { id: m.id, label: m.label, modality: m.modality, supportsEdit: upstreams.some(u => u.capabilities.edit), supportsVision: upstreams.some(u => u.capabilities.vision), qualities: option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: option?.parameters?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), generationParameters: option?.parameters ? {ratios:option.parameters.ratios,resolutions:option.parameters.resolutions} : undefined, qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
   });
-  const publishedModels = adminConfiguredFeature(feature) ? models.filter(m => m.id === defaultModelId) : models;
+  const publishedModels = !includeAll && adminConfiguredFeature(feature) ? models.filter(m => m.id === defaultModelId) : models;
   const visible = new Set(publishedModels.map(m => m.id));
   const bindingCapabilities = Object.fromEntries(Object.entries(config.bindings).flatMap(([binding,id]) => {
     const m = config.publicModels.find(m => m.id === id && m.enabled && m.modality === modality);
