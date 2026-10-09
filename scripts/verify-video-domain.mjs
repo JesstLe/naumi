@@ -114,7 +114,7 @@ assert.match(videoRecovery, /const sourceIds = project\.members\.map\(\(item\) =
 assert.match(videoRecovery, /Math\.ceil\(sourceIds\.length \/ 80\)/, "视频恢复必须对来源作品 ID 分块");
 assert.match(videoRecovery, /sourceIds\.slice\(index \* 80, index \* 80 \+ 80\)/, "视频恢复分块大小必须保持 80");
 assert.ok(
-  videoRecovery.includes('privateFetch(`/api/video/tasks?source=canvas&limit=500&sourceIds=${encodeURIComponent(chunk.join(","))}`)'),
+  videoRecovery.includes('privateFetchRaw(`/api/video/tasks?source=canvas&limit=500&sourceIds=${encodeURIComponent(chunk.join(","))}`)'),
   "画布必须用 sourceIds 分块和 limit=500 恢复后台视频任务"
 );
 assert.match(

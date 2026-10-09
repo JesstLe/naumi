@@ -1,4 +1,5 @@
 import "server-only";
+import { requestedFeatureModel } from "../model-config/selection-policy";
 import { randomUUID } from "node:crypto";
 import { dbEnabled, getPool, ensureSchema, getSetting, totalPaidCents } from "@/lib/db";
 import seed from "./bootstrap.json";
@@ -79,7 +80,7 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
     const email = trustedActor??await resolveUserEmail(request);
     if (!email)
         throw new BillingError("INVALID_RESULT", "请先登录", 401);
-    let model = request.headers.get("x-naumi-feature-model") || (typeof input.modelId === "string" ? input.modelId : undefined);
+    let model = requestedFeatureModel(input.feature, request.headers.get("x-naumi-feature-model") || (typeof input.modelId === "string" ? input.modelId : undefined));
     let providerId:string|undefined;
     const provider = input.feature === "image.generate" ? await getUserImageProvider(email) : null;
     const byok = !!provider && !!model?.startsWith("byok:") && provider.models.includes(upstreamUserImageModel(model));

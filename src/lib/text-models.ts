@@ -1,6 +1,8 @@
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI } from "@/lib/bi/model-observer";
 import "server-only";
+import { adminConfiguredFeature } from "./model-config/selection-policy";
+import { featureForPath } from "./model-config/feature-path";
 
 import OpenAI from "openai";
 import { getOpenAIBaseUrl } from "./openai-base";
@@ -58,6 +60,7 @@ function looksLikeTextModel(id: string): boolean {
 export function requestedTextModel(request: Request, fallback = DEFAULT_TEXT_MODEL): string {
   const scope = currentModelExecution("text") || currentModelExecution("vision");
   if (scope) return scope.frozen.publicModelId;
+  if (adminConfiguredFeature(featureForPath(new URL(request.url).pathname))) return fallback;
   const requested = (request.headers.get("x-naumi-text-model") || "").trim();
   if (!MODEL_ID.test(requested)) return fallback;
   // 假名 → 真实模型 id(请求转发永远用真实 id)
