@@ -148,11 +148,11 @@ try {
   const regularToolbarButtonBox = await mainToolbarButtons.nth(1).boundingBox();
   assert(addButtonBox && regularToolbarButtonBox, "canvas toolbar buttons are missing");
   assert(
-    addButtonBox.width <= regularToolbarButtonBox.width + 12 &&
-      addButtonBox.height <= regularToolbarButtonBox.height + 12,
-    `add button is disproportionately large: ${JSON.stringify({ addButtonBox, regularToolbarButtonBox })}`
+    addButtonBox.width === regularToolbarButtonBox.width &&
+      addButtonBox.height === regularToolbarButtonBox.height,
+    `add and arrow containers must match: ${JSON.stringify({ addButtonBox, regularToolbarButtonBox })}`
   );
-  assert(addButtonBox.width >= 40 && addButtonBox.height >= 40);
+  assert(addButtonBox.width >= 36 && addButtonBox.height >= 36);
   pass("imports keep intrinsic pixels while adaptive image-only nodes, filenames, and consistently sized dock icons stay clearly visible");
 
   await page.setViewportSize({ width: 2560, height: 1440 });

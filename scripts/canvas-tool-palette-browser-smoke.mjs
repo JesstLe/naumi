@@ -62,9 +62,12 @@ try {
   const palette = page.getByTestId("canvas-main-toolbar");
   await expect(palette).toBeVisible();
   const paletteBox = await palette.boundingBox();
-  assert(paletteBox && paletteBox.width > 380 && paletteBox.width > paletteBox.height * 6, JSON.stringify(paletteBox));
+  assert(paletteBox && paletteBox.width > 400 && paletteBox.width < 520, JSON.stringify(paletteBox));
   assert(Math.abs((paletteBox.x + paletteBox.width / 2) - 720) < 2 && paletteBox.y + paletteBox.height <= 881, JSON.stringify(paletteBox));
-  assert.equal(await palette.locator("button[data-tool]").count(), 10);
+  assert.equal(await palette.locator("button").count(), 11);
+  const addBox = await palette.getByTestId("canvas-add-node-button").boundingBox();
+  const moveBox = await palette.locator('[data-tool="move"]').boundingBox();
+  assert(addBox && moveBox && addBox.width === moveBox.width && addBox.height === moveBox.height, "add and move containers must match");
   pass("desktop canvas exposes a centered bottom Photoshop-style palette");
 
   await palette.locator('[data-tool="hand"]').click();
@@ -78,12 +81,12 @@ try {
   pass("V M H switch move, marquee, and hand interaction modes");
 
   await palette.getByTestId("canvas-add-node-button").click();
-  await expect(page.getByText("新增节点", { exact: true })).toBeVisible();
-  await expect(page.getByText("上传图片", { exact: true })).toBeVisible();
+  const createMenu = page.getByTestId("canvas-create-menu");
+  await expect(createMenu).toBeVisible();
+  await expect(createMenu.getByRole("menuitem", { name: /上传图片/ })).toBeVisible();
   await page.waitForTimeout(180);
   await page.screenshot({ path: path.join(output, "desktop-create-flyout.png"), fullPage: true });
-  await palette.getByTestId("canvas-add-node-button").click();
-  await palette.locator('[data-tool="text"]').click();
+  await createMenu.locator('[data-action="text"]').click();
   const textDock = page.getByTestId("text-node-dock");
   await expect(textDock).toBeVisible();
   await expect(palette).toBeVisible();
@@ -95,26 +98,29 @@ try {
     parent: element.parentElement?.getBoundingClientRect().toJSON(),
   }));
   assert(dockBox && paletteWithDockBox && dockBox.y + dockBox.height <= paletteWithDockBox.y, JSON.stringify({ dockBox, paletteWithDockBox, dockGeometry }));
-  pass("direct text creation keeps its dock above the persistent bottom palette");
+  pass("text creation from the full menu keeps its dock above the persistent bottom palette");
 
   await page.keyboard.press("Escape");
   await page.locator(".react-flow__pane").click({ position: { x: 1050, y: 650 }, force: true });
   await palette.locator('[data-tool="more"]').click();
   const moreMenu = page.getByTestId("canvas-more-tools-menu");
-  await expect(moreMenu.getByText("更多工具", { exact: true })).toBeVisible();
-  for (const label of ["整理画布", "小地图", "网格吸附", "适应视图", "切换底色（黑/白）", "快捷键与帮助"]) {
-    await expect(moreMenu.getByText(label, { exact: label !== "小地图" && label !== "网格吸附" && label !== "切换底色（黑/白）" })).toBeVisible();
-  }
+  await expect(moreMenu).toHaveAttribute("aria-label", "画布设置");
+  await expect(moreMenu.locator('[data-action="theme"]')).toBeVisible();
+  await expect(moreMenu.locator('[data-action="help"]')).toBeVisible();
+  const viewToolbar = page.getByTestId("canvas-view-toolbar");
+  for (const label of ["整理画布", "小地图", "网格吸附", "适应视图"]) await expect(viewToolbar.getByRole("button", { name: label, exact: true })).toBeVisible();
   await page.waitForTimeout(180);
   await page.screenshot({ path: path.join(output, "desktop-more-tools.png"), fullPage: true });
-  pass("more-tools flyout exposes layout, navigation, appearance, and help utilities");
+  pass("settings contain appearance/help only; view tools are not duplicated");
 
-  await palette.locator('[data-tool="more"]').click({ force: true });
+  await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(350);
   const mobileBox = await palette.boundingBox();
   assert(mobileBox && mobileBox.x >= 8 && mobileBox.x + mobileBox.width <= 382, JSON.stringify(mobileBox));
-  assert(mobileBox.width > mobileBox.height * 6 && mobileBox.y >= 700 && mobileBox.y + mobileBox.height <= 768, JSON.stringify(mobileBox));
+  assert(mobileBox.width <= 374 && mobileBox.y >= 700 && mobileBox.y + mobileBox.height <= 768, JSON.stringify(mobileBox));
+  assert.equal(await palette.locator("button").count(), 11);
+  assert(await palette.evaluate(el => el.scrollWidth <= el.clientWidth), "390px palette must expose all 11 controls without scrolling");
   const mobileDockBox = await textDock.boundingBox();
   assert(mobileDockBox && mobileDockBox.x >= 8 && mobileDockBox.x + mobileDockBox.width <= 382, JSON.stringify(mobileDockBox));
   assert(mobileDockBox.y + mobileDockBox.height <= mobileBox.y, JSON.stringify({ mobileDockBox, mobileBox }));
