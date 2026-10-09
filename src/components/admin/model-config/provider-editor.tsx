@@ -14,7 +14,7 @@ import {
 import { authHeader } from "@/lib/supabase";
 import type { ProviderCatalogResult } from "@/lib/model-config/catalog";
 
-async function encryptCredential(plain: string) {
+export async function encryptCredential(plain: string) {
   if (!crypto.subtle) throw new Error("密钥保存需要 HTTPS 或本地安全连接");
   const response = await fetch("/api/admin/pubkey", {
     cache: "no-store",
