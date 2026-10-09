@@ -6,7 +6,9 @@ import {createMvpHandler} from "../src/lib/model-config/mvp-access";
 import {createModelRuntime,publicModelCatalog} from "../src/lib/model-config/runtime";
 import {createModelExecutor} from "../src/lib/model-config/execution";
 import {createRouterControl,type RouterStatus} from "../src/lib/model-config/router-client";
-import {applyMvpToolScope} from "../src/lib/model-config/mvp";
+import {applyMvpToolScope,mvpRows} from "../src/lib/model-config/mvp";
+import {FEATURE_BINDINGS} from "../src/lib/model-config/business";
+import {MODEL_BINDINGS} from "../src/lib/model-config/bindings";
 import {validateModelConfig} from "../src/lib/model-config/schema";
 
 async function main(){
@@ -23,6 +25,11 @@ async function main(){
  try{
   f.config.publicModels.push(...["square","portrait"].map(s=>({...structuredClone(f.config.publicModels[0]),id:"gemini-3.0-pro-image-"+s,label:"gemini-3.0-pro-image-"+s})));
   const before=await f.repo.current(),draft=await f.repo.draft(actor),state=await(await handler(request())).json();
+  const order=state.rows.map((r:any)=>r.id);
+  const catalogs=(snapshot:typeof before)=>Object.entries(FEATURE_BINDINGS).map(([feature,binding])=>({...publicModelCatalog(snapshot,MODEL_BINDINGS[binding!].modality,feature as never),feature}));
+  const removedFirst={...before,config:applyMvpToolScope(before.config,state.rows[0],[])};
+  assert.deepEqual(mvpRows(removedFirst,catalogs(removedFirst)).map(r=>r.id),order,"removing the first model from early tools must preserve the inventory order");
+  assert.deepEqual(mvpRows(before,catalogs(before).reverse()).map(r=>r.id),order,"tool traversal order must not determine model positions");
   const row=state.rows.find((r:any)=>r.id==="gemini-3.0-pro-image");assert.equal(row.publicIds.length,2);assert.ok(row.scopeOptions.find((o:any)=>o.id==="tool.cutout").reason);
   const executor=createModelExecutor({runtime,credentials:f.credentials,trustedOrigins:[f.origin],gateway:()=>({baseUrl:f.origin,apiKey:"fixture"})});
   const frozen=await executor.resolve({feature:"image.aplus",binding:"image.generate",requestedModelId:row.publicIds[0],snapshot:before,billing});
@@ -33,6 +40,7 @@ async function main(){
   drop=true;assert.equal((await handler(request(body))).status,202);
   assert.equal((await handler(request(body))).status,200);assert.equal(activations,1);
   const changed=await f.repo.current();
+  assert.deepEqual((await(await handler(request())).json()).rows.map((r:any)=>r.id),order);
   for(const m of changed.config.publicModels.filter(m=>row.publicIds.includes(m.id)))assert.deepEqual(m.toolScope?.features,body.features);
   assert.equal((await handler(request(body))).status,200);assert.equal((await f.repo.current()).version,changed.version);
   assert.equal((await handler(request({...body,id:randomUUID()}))).status,409);
@@ -49,8 +57,10 @@ async function main(){
   const all=rowNow.scopeOptions.filter((o:any)=>o.available).map((o:any)=>o.id);
   assert.equal((await handler(request({...body,id:randomUUID(),expectedVersion:changed.version,features:all}))).status,200);
   const full=await f.repo.current();
+  assert.deepEqual((await(await handler(request())).json()).rows.map((r:any)=>r.id),order);
   assert.equal((await handler(request({...body,id:randomUUID(),expectedVersion:full.version,features:[]}))).status,200);
   const empty=await f.repo.current();assert.equal(publicModelCatalog(empty,"image","canvas.image").models[0].id,"image-a");
+  assert.deepEqual((await(await handler(request())).json()).rows.map((r:any)=>r.id),order);
   const hidden=(await(await handler(request())).json()).rows.find((r:any)=>r.id===row.id);assert.equal(hidden.features.length,0);assert.ok(hidden.scopeOptions.length>0);
   const single={...before,config:structuredClone(before.config)};single.config.publicModels=single.config.publicModels.filter(m=>m.id==="image-a");
   const only=(await import("../src/lib/model-config/mvp")).mvpRows(single,[{...publicModelCatalog(single,"image","image.generate"),feature:"image.generate"}])[0];
