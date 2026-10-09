@@ -1,5 +1,5 @@
 import "server-only";
-import { requestedFeatureModel } from "../model-config/selection-policy";
+import { requestedFeatureModel, assertPlatformImageSelection } from "../model-config/selection-policy";
 import { randomUUID } from "node:crypto";
 import { dbEnabled, getPool, ensureSchema, getSetting, totalPaidCents } from "@/lib/db";
 import seed from "./bootstrap.json";
@@ -75,6 +75,7 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
 }, snapshot?: ConfigSnapshot,trustedActor?:string): Promise<BillingFacts> {
     if (!isFeatureId(input.feature))
         throw new BillingError("INVALID_CONFIG", "未知计费功能", 400);
+    assertPlatformImageSelection(input.modelId, request.headers.get("x-naumi-feature-model"));
     const current = snapshot ?? await billingSnapshot();
     if(!dbEnabled)return {feature:input.feature,quantity:input.quantity,quality:input.quality||"medium",resolution:input.resolution||"1K",byok:false,metered:false,paidFen:0,userGroup:"demo"};
     const email = trustedActor??await resolveUserEmail(request);

@@ -53,6 +53,7 @@ async function main() {
   const db = await import("../src/lib/db"), auth = await import("../src/lib/admin-auth"), native = await import("../src/lib/native-auth");
   await db.ensureSchema(); await db.setSetting("multi_user_enabled","1"); await f.repo.current(); await auth.setAdminPassword("MvpFixture2026!");
   await db.getOrCreateUser("mvp-member@example.test", "普通成员");
+  if(process.env.VERIFY_RETIRED_ENDPOINTS === "1") await db.upsertUserImageProviderRecord({id:"retired-ui-provider",email:"mvp-member@example.test",name:"Historical UI fixture",isActive:true,enabled:true,protocol:"openai-images",baseUrlEnc:f.origin+"/v1",apiKeyEnc:"old-ui-fixture-only-key",models:["gpt-image-own"],defaultModel:"gpt-image-own"});
   const { createConfigRuntime } = await import("../src/lib/billing/catalog");
   const fixtureBilling=fixtureConfig();fixtureBilling.switches.metering="on";
   const billing=createConfigRuntime({ pool: f.sql, ensureSchema: db.ensureSchema, initialize: async () => fixtureBilling });

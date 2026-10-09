@@ -10,7 +10,6 @@ import {
   Sparkles,
   ShieldCheck,
   Lock,
-  ImagePlus,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
@@ -150,12 +149,6 @@ export function UserMenu() {
               href="/account/security"
               icon={<Lock className="h-4 w-4" />}
               label={t("menu.security")}
-              onNavigate={() => setOpen(false)}
-            />
-            <MenuLink
-              href="/account/image-provider"
-              icon={<ImagePlus className="h-4 w-4" />}
-              label={t("menu.imageProvider")}
               onNavigate={() => setOpen(false)}
             />
             {isAdmin && (

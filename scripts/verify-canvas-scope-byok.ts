@@ -1,24 +1,2 @@
-/** Actual generation handlers, two local mock channels; no external supplier access. */
-import assert from 'node:assert/strict';import {randomUUID} from 'node:crypto';import sharp from 'sharp';import {createModelFixture} from './model-config-fixture';import {fixtureConfig} from './billing-unit-fixture';
-async function main(){
- const wire:string[]=[];let digest='';const png=await sharp({create:{width:1024,height:1024,channels:4,background:'white'}}).png().toBuffer();
- const f=await createModelFixture(async(req,res)=>{const parts:Buffer[]=[];for await(const p of req)parts.push(Buffer.from(p));const body=parts.length?JSON.parse(Buffer.concat(parts).toString()):{};res.setHeader('content-type','application/json');
-  if(req.url==='/internal/config/state')return res.end(JSON.stringify({digest}));if(req.url==='/internal/config/prepare')return res.end(JSON.stringify({digest:body.digest,phase:'prepared'}));if(req.url==='/internal/config/activate'){digest=body.digest;return res.end(JSON.stringify({id:body.id,digest,phase:'applied'}));}
-  if(req.url==='/v1/images/generations'){wire.push(body.model);return res.end(JSON.stringify({data:[{b64_json:png.toString('base64')}]}));}res.writeHead(405);res.end('{}');
- });
- Object.assign(process.env,{PGOPTIONS:`-c search_path=${f.schemaName}`,NAUMI_MULTI_USER:'1',NAUMI_ROUTER_MANAGEMENT_URL:f.origin,NAUMI_ROUTER_MANAGEMENT_TOKEN:'fixture-canvas-scope-control-long-only',MODEL_CONFIG_ENVELOPE_SECRET:'fixture-canvas-scope-envelope-long-only',MODEL_CONFIG_TRUSTED_ORIGINS:f.origin,USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK:'true',OPENAI_API_KEY:'fixture-only',STORAGE_DRIVER:'local',MEDIA_DIR:'output/canvas-scope-fix-20261009/byok-media'});
- const db=await import('../src/lib/db');try{
-  await db.ensureSchema();f.config.upstreamModels[0].capabilities.preserveIdentity=true;await f.repo.current();await db.setSetting('multi_user_enabled','1');const email='canvas-scope-byok@example.test';await db.getOrCreateUser(email);await db.addCreditBatch(email,1000,{source:'admin',reason:'isolated funding'});
-  const {getBillingRuntime}=await import('../src/lib/billing/server'),billing=(await getBillingRuntime()).config,before=await billing.current(),config=fixtureConfig();config.switches.metering='on';await billing.publish({id:randomUUID(),expectedVersion:before.version,config,actor:'fixture',reason:'isolated scope'});
-  const {saveUserImageProvider}=await import('../src/lib/user-image-provider');await saveUserImageProvider({email,name:'Local own mock',activate:true,protocol:'openai-images',baseUrl:f.origin+'/v1',apiKey:'fixture-own-never-real',models:['gpt-image-own'],defaultModel:'gpt-image-own'});
-  const {signUserSession}=await import('../src/lib/native-auth'),cookie=`nv_user=${signUserSession(email,Date.now())}`,quoteApi=await import('../src/app/api/billing/quote/route'),gen=await import('../src/app/api/generate-image/route');
-  const jobs=[];
-  for(const canvas of [false,true]){
-   const feature=canvas?'canvas.image':'image.generate',body={prompt:'Local mock only',model:'byok:gpt-image-own',quality:'medium',resolution:'1K',ratio:'1:1',count:1,...(canvas?{origin:'canvas'}:{})};const quoted=await quoteApi.POST(new Request(f.origin+'/api/billing/quote',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({feature,modelId:body.model,quantity:1,quality:'medium',resolution:'1K'})}));assert.equal(quoted.status,200,await quoted.clone().text());const q=await quoted.json();assert.equal(q.modelId,canvas?'image-a':body.model);if(!canvas)assert.equal(q.credits,0);
-   const submission=await gen.POST(new Request(f.origin+'/api/generate-image',{method:'POST',headers:{cookie,'content-type':'application/json','x-real-ip':'127.0.0.231','x-naumi-billing-operation-id':randomUUID(),...(q.modelVersion?{'x-naumi-model-version':String(q.modelVersion)}:{}),'x-naumi-billing-version':String(q.version),'x-naumi-billing-credits':String(q.credits)},body:JSON.stringify(body)}));assert.equal(submission.status,200,await submission.clone().text());const created=await submission.json();jobs.push(created.jobId);
-   let status:any;for(let n=0;n<100;n++){status=await(await gen.GET(new Request(f.origin+'/api/generate-image?job='+created.jobId,{headers:{cookie}}))).json();if(['done','error'].includes(status.status))break;await new Promise(r=>setTimeout(r,50));}assert.equal(status.status,'done',JSON.stringify(status));assert.equal(wire.at(-1),canvas?'wire-image-one':'gpt-image-own');if(!canvas)assert.equal(await db.getImageJobChargedCredits(created.jobId),0);
-  }
-  assert.deepEqual(wire,['gpt-image-own','wire-image-one']);console.log('CANVAS_SCOPE_BYOK=PASS ORDINARY_OWN_CHANNEL=PASS ORDINARY_EXEMPT=PASS CANVAS_ADMIN_MODEL=PASS ACTUAL_HANDLER_AND_MOCK_WIRE=PASS REAL_PAID_GENERATION=0');
- }finally{await db.getPool().end();await f.cleanup();}
-}
-main().catch(e=>{console.error(e);process.exitCode=1});
+// The formerly open BYOK contract was retired on 2026-10-09; verify the replacement and frozen tasks.
+import './verify-user-endpoint-retirement';
