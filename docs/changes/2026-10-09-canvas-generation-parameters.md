@@ -33,3 +33,14 @@ src/lib/canvas/generation-parameters.ts；新请求在报价前归一化，接�
 集中执行参数脚本、类型/样式检查与Dock/模型/UI回归，选择性提交推送。
 发布持新机deploy.lock；留备份、源码副本回滚及真实浏览器验收证据，只发布新机。
 ```
+
+## 发布与验收结果（2026-10-09）
+
+- 先将其他Agent新机已运行的f5a6f69后台MVP/代理/网关修复完整整合为b5db7fa，经517f672合并，再推送main9d86b5109352d22ad3534bfb937374ab1c8b6188；没有用旧77dbe79镜像覆盖新机。
+- 新机镜像ghcr.io/jesstle/naumi:9d86b5109352d22ad3534bfb937374ab1c8b6188，Image ID sha256:f9e6b468e1c0355214df969de75c5710640b471582c8027aa1a5657d936bd3f6，公网版本1791538241。
+- prepare/build/deploy exit0；基线、288组合/90JSON-FormData拒绝/5实际route、2625Dock/UI/模型家族/代理/冻结能力回归通过。独立源码第二副本反向patch恢复16个原hash和基线行为；主服务和候选保持修改。
+- 真实线上30次非法参数请求全部400，错误码CANVAS_PARAMETER_UNSUPPORTED；前后任务、账单、intent、积分流水计数不变，供应商调用0。七管理员功能策略及MVP页面通过；DB容器、Compose和公网代理未改/未重启，仅NAUMI_IMAGE替换。
+- 已登录浏览器验收菜单为1K/2K/4K及八种标准比例，移除自定义；质量仅低/标准/高，输入8张自动收敛4张，增加按钮禁用；实际截图live-parameters-dark.png。验收后刷新恢复1张，保留原深色主题/默认视口。
+- 共用deploy.lock从基线备份到浏览器验收全程持有，锁探针exit75；备份DB仅归档不回灌。旧机未连接/回传，视频/OSS仍延期，local媒体保留。
+- 远端证据/四件套目录 `/opt/naumi-staging/evidence/canvas-parameters-20261009`；原私钥hash/ACL不变，临时副本清理。
+- 回滚命令（须先核对当前仍为本候选；不会覆盖别的Agent更新）：`flock -n -E 75 /opt/naumi-staging/releases/deploy.lock bash /opt/naumi-staging/evidence/canvas-parameters-20261009/ROLLBACK.sh --apply`。本轮只演练--fixture，没有回滚主服务。
