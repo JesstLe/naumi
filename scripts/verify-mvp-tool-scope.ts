@@ -1,0 +1,62 @@
+import assert from "node:assert/strict";
+import {randomUUID} from "node:crypto";
+import {createModelFixture} from "./model-config-fixture";
+import {fixtureConfig} from "./billing-unit-fixture";
+import {createMvpHandler} from "../src/lib/model-config/mvp-access";
+import {createModelRuntime,publicModelCatalog} from "../src/lib/model-config/runtime";
+import {createModelExecutor} from "../src/lib/model-config/execution";
+import {createRouterControl,type RouterStatus} from "../src/lib/model-config/router-client";
+import {applyMvpToolScope} from "../src/lib/model-config/mvp";
+import {validateModelConfig} from "../src/lib/model-config/schema";
+
+async function main(){
+ const f=await createModelFixture();let digest="",activations=0,drop=false;
+ const publications=new Map<string,RouterStatus>();
+ const router=createRouterControl({baseUrl:f.origin,token:"scope-router-private-fixture-long",envelopeSecret:"scope-envelope-private-fixture-long",trustedOrigins:[f.origin]});
+ router.prepare=async()=>{};router.state=async()=>digest;router.status=async id=>publications.get(id)||null;
+ router.activate=async(id,expected,next)=>{assert.equal(expected,digest);digest=next;activations++;const p:RouterStatus={id,digest:next,phase:"applied"};publications.set(id,p);if(drop){drop=false;throw Error("Unknown fixture result");}return p;};
+ const billing={version:1,config:fixtureConfig()};
+ const runtime=createModelRuntime({pool:f.sql,repo:f.repo,credentials:f.credentials,router,trustedOrigins:[f.origin],billing:async()=>billing,billingByVersion:async()=>billing});
+ const actor="scope-admin@fixture.test";
+ const handler=createMvpHandler({authorize:async()=>({actor}),managed:async()=>true,administration:async()=>({pool:f.sql,repo:f.repo,credentials:f.credentials,router,runtime,billing:{current:async()=>billing},trustedOrigins:[f.origin]}) as never});
+ const request=(body?:unknown)=>new Request("http://fixture.test/api/admin/mvp",{method:body?"POST":"GET",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
+ try{
+  f.config.publicModels.push(...["square","portrait"].map(s=>({...structuredClone(f.config.publicModels[0]),id:"gemini-3.0-pro-image-"+s,label:"gemini-3.0-pro-image-"+s})));
+  const before=await f.repo.current(),draft=await f.repo.draft(actor),state=await(await handler(request())).json();
+  const row=state.rows.find((r:any)=>r.id==="gemini-3.0-pro-image");assert.equal(row.publicIds.length,2);assert.ok(row.scopeOptions.find((o:any)=>o.id==="tool.cutout").reason);
+  const executor=createModelExecutor({runtime,credentials:f.credentials,trustedOrigins:[f.origin],gateway:()=>({baseUrl:f.origin,apiKey:"fixture"})});
+  const frozen=await executor.resolve({feature:"image.aplus",binding:"image.generate",requestedModelId:row.publicIds[0],snapshot:before,billing});
+  const body={action:"scope",id:randomUUID(),expectedVersion:before.version,rowId:row.id,features:["image.generate","tool.style","canvas.image"]};
+  assert.equal((await handler(request({...body,features:["tool.cutout"]}))).status,400);
+  assert.equal((await handler(request({...body,features:["image.generate","image.generate"]}))).status,400);
+  assert.equal((await handler(request({...body,features:["not-real"]}))).status,400);
+  drop=true;assert.equal((await handler(request(body))).status,202);
+  assert.equal((await handler(request(body))).status,200);assert.equal(activations,1);
+  const changed=await f.repo.current();
+  for(const m of changed.config.publicModels.filter(m=>row.publicIds.includes(m.id)))assert.deepEqual(m.toolScope?.features,body.features);
+  assert.equal((await handler(request(body))).status,200);assert.equal((await f.repo.current()).version,changed.version);
+  assert.equal((await handler(request({...body,id:randomUUID()}))).status,409);
+  assert.deepEqual(await f.repo.draft(actor),draft);
+  assert.deepEqual(changed.config.business,before.config.business);assert.deepEqual(changed.config.bindings,before.config.bindings);assert.deepEqual(changed.config.upstreamModels,before.config.upstreamModels);
+  const withoutScope=structuredClone(changed.config);for(const m of withoutScope.publicModels)delete m.toolScope;assert.deepEqual(withoutScope,before.config);
+  assert.ok(!publicModelCatalog(changed,"image","image.aplus").models.some(m=>row.publicIds.includes(m.id)));
+  assert.ok(publicModelCatalog(changed,"image","image.generate").models.some(m=>row.publicIds.includes(m.id)));
+  assert.equal(publicModelCatalog(changed,"image","canvas.image").models[0].id,row.publicIds[0]);
+  assert.equal((await executor.resolve({feature:"canvas.image",binding:"image.edit",requestedModelId:"image-a",snapshot:changed,billing})).publicModelId,row.publicIds[0]);
+  await assert.rejects(executor.resolve({feature:"image.aplus",binding:"image.generate",requestedModelId:row.publicIds[1],snapshot:changed,billing}),/未应用到当前工具/);
+  assert.equal((await executor.clientFor(frozen)).wireModel,"wire-image-one");
+  const rowNow=(await(await handler(request())).json()).rows.find((r:any)=>r.id===row.id);
+  const all=rowNow.scopeOptions.filter((o:any)=>o.available).map((o:any)=>o.id);
+  assert.equal((await handler(request({...body,id:randomUUID(),expectedVersion:changed.version,features:all}))).status,200);
+  const full=await f.repo.current();
+  assert.equal((await handler(request({...body,id:randomUUID(),expectedVersion:full.version,features:[]}))).status,200);
+  const empty=await f.repo.current();assert.equal(publicModelCatalog(empty,"image","canvas.image").models[0].id,"image-a");
+  const hidden=(await(await handler(request())).json()).rows.find((r:any)=>r.id===row.id);assert.equal(hidden.features.length,0);assert.ok(hidden.scopeOptions.length>0);
+  const single={...before,config:structuredClone(before.config)};single.config.publicModels=single.config.publicModels.filter(m=>m.id==="image-a");
+  const only=(await import("../src/lib/model-config/mvp")).mvpRows(single,[{...publicModelCatalog(single,"image","image.generate"),feature:"image.generate"}])[0];
+  assert.throws(()=>applyMvpToolScope(single.config,only,[]),/保留至少一个/);
+  const invalid=structuredClone(empty.config);invalid.publicModels[0].toolScope={features:["tool.cutout"],defaultFor:[]};assert.throws(()=>validateModelConfig(invalid,{trustedOrigins:[f.origin]}),/模型能力/);
+  console.log("MVP_TOOL_SCOPE=PASS FAMILY=PASS SUBSET_ALL_NONE=PASS DEFAULT_FALLBACK=PASS RAW_REQUEST_REJECTED=PASS FROZEN_TASK=PASS DRAFT_PRICE_ROUTE_PRESERVED=PASS RETRY_CONFLICT=PASS LAST_MODEL_PROTECTED=PASS PAID_GENERATION=0");
+ }finally{await f.cleanup();}
+}
+main().catch(e=>{console.error(e);process.exitCode=1});

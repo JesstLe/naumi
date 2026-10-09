@@ -1,0 +1,18 @@
+.root { position:fixed; right:12px; bottom:12px; z-index:40; font-family:inherit; color:hsl(var(--foreground)); }
+.badge { display:flex; align-items:center; gap:7px; padding:5px 9px; border:1px solid #a0afbd45; border-radius:6px; font-size:10px; background:hsl(var(--background)); opacity:.86; box-shadow:0 2px 8px #1b304a0a; }
+.badge:hover { opacity:1; }
+.badge[data-update=true] { border-color:#d6a45e; }
+.badge span { color:#946015; font-weight:600; }
+.panel { width:min(360px,calc(100vw - 24px)); position:absolute; right:0; bottom:calc(100% + 8px); padding:18px; border:1px solid #a0afbd60; border-radius:11px; background:hsl(var(--background)); color:hsl(var(--foreground)); box-shadow:0 10px 40px #132e4826; font-size:12px; max-height:calc(100dvh - 120px); overflow-y:auto; }
+.panel header { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; font-size:14px; }
+.panel dl { display:grid; gap:14px; }
+.panel dl>div { display:grid; grid-template-columns:85px minmax(0,1fr); gap:10px; }
+.panel dt { opacity:.6; }
+.panel small { display:block; font-size:10px; opacity:.55; margin-top:3px; overflow-wrap:anywhere; }
+.panel p { line-height:1.8; margin:18px 0 15px; opacity:.75; }
+.panel footer { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.panel footer button { display:flex; align-items:center; gap:5px; min-height:32px; padding:6px 9px; border:1px solid #a0afbd60; border-radius:6px; }
+.panel .refresh { color:white; background:#245d83; border-color:#245d83; }
+.panel .note { margin-top:10px; }
+.root button:focus-visible { outline:3px solid #68a3cc; outline-offset:3px; }
+@media(max-width:767px){.root{right:8px;bottom:72px;}.badge{font-size:9px;}}

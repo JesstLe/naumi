@@ -44,6 +44,7 @@ export function ModelMvp() {
   const [tab, setTab] = useState("models"), [filter, setFilter] = useState("all"), [search, setSearch] = useState("");
   const [row, setRow] = useState<MvpRow | null>(null), [connect, setConnect] = useState(false);
   const [rename, setRename] = useState<MvpRow | null>(null);
+  const [scope,setScope]=useState<MvpRow|null>(null);
   const [register, setRegister] = useState<{ providerId: string; model: string } | null>(null), [refreshing, setRefreshing] = useState<string[]>([]);
   const mounted = useRef(true), loadingGuard = useRef(false), mutationGuard = useRef(false);
   const directoryInFlight = useRef(new Set<string>());
@@ -93,13 +94,14 @@ export function ModelMvp() {
     try { sessionStorage.setItem(pendingKey, JSON.stringify(operation)); } catch {}
     try {
       const result = await api(operation);
-      if (result.publication.phase !== "applied") { setNotice("发布结果待核对。请点击“核对并继续”，系统会沿用同一操作，不重复创建发布。"); return; }
-      clearPending(); setRow(null); setConnect(false); setRegister(null);
-      setNotice(operation.action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : operation.action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : operation.action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。");
+      if (result.publication.phase !== "applied") { setScope(null); setNotice("发布结果待核对。请点击“核对并继续”，系统会沿用同一操作，不重复创建发布。"); return; }
+      clearPending(); setRow(null); setScope(null); setConnect(false); setRegister(null);
+      setNotice(operation.action === "scope" ? "工具范围已生效。新请求使用新范围，已经开始的任务保留原配置。" : operation.action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : operation.action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : operation.action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。");
       await load(true);
     } catch (e) {
       const failure = e as Error & { operationNotStaged?: boolean; publication?: { phase: string } };
       if (failure.operationNotStaged || failure.publication?.phase === "failed") clearPending();
+      else setScope(null);
       setError(failure.message || "操作失败，请重试");
     } finally { setBusy(false); mutationGuard.current = false; }
   }
@@ -112,7 +114,7 @@ export function ModelMvp() {
     <div className={styles.topline}><span className={styles.miniBrand}><span className={styles.brandMark}>N</span>Naumi <span>模型工作台</span></span><Link href="/admin/bi/models">完整配置中心 <ChevronRight size={14} /></Link></div>
     <header className={styles.hero}><div><h1>把模型连接，变简单。</h1><p>从用户看到的名字，到真正执行的模型。<br />在这里看清每条连接，也能直接更换它。</p></div><button className={styles.primary} onClick={() => { setTab("sources"); setConnect(true); }} disabled={!state || locked}><Plus size={17} />接入上游</button></header>
     <div className={styles.flow} aria-label="模型连接路径"><span><ImageIcon size={19} /><b>前端名称</b><small>用户看到的名称 / 别名</small></span><ArrowRight size={19} /><span><Database size={19} /><b>实际模型</b><small>请求中真正使用的模型 ID</small></span><ArrowRight size={19} /><span><Unplug size={19} /><b>上游来源</b><small>模型从哪个接口提供</small></span></div>
-    <div className={styles.tabs}><div role="tablist" aria-label="MVP 模型管理"><button role="tab" id="models-tab" aria-selected={tab === "models"} aria-controls="models-panel" onClick={() => setTab("models")}>模型映射 <span>{state?.rows.length ?? "—"}</span></button><button role="tab" id="sources-tab" aria-selected={tab === "sources"} aria-controls="sources-panel" onClick={() => setTab("sources")}>上游来源 <span>{state?.providers.length ?? "—"}</span></button></div><span className={styles.version}>{state ? `生效版本 v${state.version}` : "正在读取生效配置"}<button aria-label="刷新生效配置" disabled={loading || locked} onClick={() => { setError(""); void load(true); }}><RefreshCw size={15} className={loading ? styles.spin : ""} /></button></span></div>
+    <div className={styles.tabs}><div role="tablist" aria-label="MVP 模型管理"><button role="tab" id="models-tab" aria-selected={tab === "models"} aria-controls="models-panel" onClick={() => setTab("models")}>模型映射 <span>{state?.rows.length ?? "—"}</span></button><button role="tab" id="sources-tab" aria-selected={tab === "sources"} aria-controls="sources-panel" onClick={() => setTab("sources")}>上游来源 <span>{state?.providers.length ?? "—"}</span></button></div><span className={styles.version}>{state ? `模型配置 v${state.version}` : "正在读取生效配置"}<button aria-label="刷新生效配置" disabled={loading || locked} onClick={() => { setError(""); void load(true); }}><RefreshCw size={15} className={loading ? styles.spin : ""} /></button></span></div>
     {error && <div role="alert" className={styles.error}>{error}</div>}
     {notice && <div role="status" className={styles.notice}>{notice}</div>}
     {pending && <div className={styles.pending}><span>有一项发布结果需要核对，已保留操作编号。</span><button className={styles.primary} disabled={busy} onClick={() => void run(pending)}>{busy && <Loader2 size={16} className={styles.spin} />}核对并继续</button></div>}
@@ -120,7 +122,7 @@ export function ModelMvp() {
     {!state && loading ? <div className={styles.empty}><Loader2 className={styles.spin} />正在读取前端模型与真实路由…</div> : !state ? <div className={styles.empty}><Unplug /><h2>模型配置暂时无法读取</h2><p>检查数据库和 Router 管理连接后重试。</p><button className={styles.secondary} onClick={() => void load(true)}>重新读取</button></div> : tab === "models" ? <section id="models-panel" role="tabpanel" aria-labelledby="models-tab">
       <div className={styles.toolbar}><div className={styles.filters} aria-label="模型类型">{[["all", "全部"], ["image", "图片"], ["text", "文字"], ["video", "视频"]].map(([id, label]) => <button key={id} aria-pressed={filter === id} onClick={() => setFilter(id)}>{label}</button>)}</div><label className={styles.search}><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索名称、模型 ID 或功能" aria-label="搜索模型" /></label></div>
       <div className={styles.mapping}><div className={styles.tableHead}><span>前端名称</span><span>实际调用模型 / 上游来源</span><span>操作</span></div>{rows.map(r => <article className={styles.modelRow} key={r.id}>
-        <div className={styles.modelName}><span className={styles.modality}>{types[r.modality]}</span><h2>{r.label}</h2>{r.alias !== r.label && <p>配置别名：{r.alias}</p>}<div className={styles.featureTags}>{r.features.map(f => <span key={f.id}>{f.label}</span>)}</div></div>
+        <div className={styles.modelName}><span className={styles.modality}>{types[r.modality]}</span><h2>{r.label}</h2>{r.publicIds.length > 1 && <p>模型家族 · {r.publicIds.length} 个比例分支，统一管理</p>}<div className={styles.scopeSummary}><span>应用工具 {r.features.length} 项</span><button disabled={locked || !state.managed} onClick={()=>setScope(r)}>编辑范围</button></div><div className={styles.featureTags}>{r.features.map(f => <span key={f.id}>{f.label}</span>)}</div>{!r.features.length && <p>尚未应用到工具，可随时重新选择范围。</p>}</div>
         <div className={styles.routes}>{r.routes.map((route, index) => <div key={`${route.upstreamId}-${route.kind}`} className={styles.route}><span className={styles.routeDot} data-enabled={route.enabled} /><div><code>{route.model}</code><p>{route.provider}<span>{r.conditional || r.preset || r.publicIds.length > 1 ? route.kind : "已配置"}</span></p></div></div>)}{r.conditional && <p className={styles.ruleNote}>具体调用由条件或回退规则决定</p>}</div>
         <div className={styles.rowActions}><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRename(r)}>修改显示名称</button><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRow(r)}>更换模型 <ChevronRight size={15} /></button></div>
       </article>)}</div>
@@ -132,9 +134,29 @@ export function ModelMvp() {
     })}</div>{!state.providers.length && <div className={styles.empty}><Unplug /><h2>接入第一个上游来源</h2><p>输入接口地址与 API Key，系统会自动发现模型 ID。</p></div>}</section>}
     {row && state && <SwitchDialog row={row} state={state} locked={locked} busy={busy} onClose={() => setRow(null)} onSave={upstreamId => void run(operation("switch", { rowId: row.id, upstreamId }))} />}
     {rename && <RenameDialog row={rename} locked={locked} onClose={() => setRename(null)} onSave={label => void run(operation("rename", { rowId: rename.id, label }))} />}
+    {scope && <ScopeDialog row={scope} locked={locked} error={error} onClose={()=>setScope(null)} onSave={features=>void run(operation("scope",{rowId:scope.id,features}))}/>}
     {connect && state && <ConnectDialog locked={locked} onClose={() => setConnect(false)} onSave={(fields, id) => run({ ...operation("connect", fields), id })} />}
     {register && state && <RegisterDialog model={register.model} protocol={state.providers.find(p => p.id === register.providerId)!.protocol} locked={locked} onClose={() => setRegister(null)} onSave={fields => void run(operation("register", { ...register, ...fields }))} />}
   </main>;
+}
+
+function ScopeDialog({row,locked,error,onClose,onSave}:{row:MvpRow;locked:boolean;error:string;onClose:()=>void;onSave:(features:string[])=>void}){
+  const [selected,setSelected]=useState(()=>row.features.map(f=>f.id));
+  const [search,setSearch]=useState("");
+  const available=row.scopeOptions.filter(o=>o.available),shown=row.scopeOptions.filter(o=>o.label.includes(search.trim()));
+  const toggle=(ids:string[])=>setSelected(old=>ids.every(id=>old.includes(id)) ? old.filter(id=>!ids.includes(id)) : [...new Set([...old,...ids])]);
+  const changed=selected.length!==row.features.length || selected.some(id=>!row.features.some(f=>f.id===id));
+  const groups=[{id:"image",label:"生图与内容",test:(id:string)=>id.startsWith("image.") || id.startsWith("competitor.") || id.startsWith("video.")},{id:"tool",label:"编辑工具",test:(id:string)=>id.startsWith("tool.")},{id:"canvas",label:"画布工具",test:(id:string)=>id.startsWith("canvas.")}];
+  return <Dialog title="选择应用工具" locked={locked} onClose={onClose}><div className={styles.dialogBody}>
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+    <div className={styles.scopeHeading}><b>{row.label}</b><span>已选 {selected.length} / {available.length} 项</span></div>
+    <p className={styles.ruleNote}>{row.publicIds.length>1 ? "整个模型家族统一应用，包含所有比例分支。" : "勾选此模型可应用的工具。"}画布工具使用管理员默认模型，勾选后会设为该工具默认。</p>
+    <div className={styles.scopeControls}><button className={styles.secondary} disabled={locked} onClick={()=>setSelected(available.map(o=>o.id))}>全选可用工具</button><button disabled={locked} onClick={()=>setSelected([])}>清空选择</button><button disabled={locked} onClick={()=>setSelected(row.features.map(f=>f.id))}>恢复当前范围</button></div>
+    <label className={styles.search}><Search size={15}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="查找工具" aria-label="查找应用工具" /></label>
+    <div className={styles.scopeGroups}>{groups.map(group=>{const options=shown.filter(o=>group.test(o.id)),ids=options.filter(o=>o.available).map(o=>o.id);if(!options.length)return null;return <fieldset key={group.id} disabled={locked}><legend><b>{group.label}</b><button disabled={locked || !ids.length} onClick={()=>toggle(ids)}>{ids.length && ids.every(id=>selected.includes(id)) ? "取消本组" : "选择本组"}</button></legend><div className={styles.scopeGrid}>{options.map(o=><label key={o.id} className={styles.scopeOption} data-selected={selected.includes(o.id)} data-disabled={!o.available}><input type="checkbox" aria-label={o.label} disabled={!o.available || locked} checked={selected.includes(o.id)} onChange={()=>toggle([o.id])}/><span><b>{o.label}</b>{o.adminDefault && o.available && <small>设为工具默认</small>}{o.reason && <small>{o.reason}</small>}</span></label>)}</div></fieldset>;})}</div>
+    {!shown.length && <p className={styles.ruleNote}>没有匹配的工具。</p>}
+    <p className={styles.scopeNote}>移出范围后，用户不能再在该工具选择此模型。默认模型会使用现有可用替代项；没有替代项时将提示先配置。供应商路由和售价保持原配置。</p>
+    </div><footer className={styles.dialogFooter}><button className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button className={styles.primary} disabled={locked || !changed} onClick={()=>onSave(selected)}>保存范围并生效</button></footer></Dialog>;
 }
 
 function Source({ provider: p, catalog, candidates, refreshing, locked, onRefresh, onRegister }: { provider: State["providers"][number]; catalog?: CatalogEntry; candidates: State["candidates"]; refreshing: boolean; locked: boolean; onRefresh: () => void; onRegister: (model: string) => void }) {
