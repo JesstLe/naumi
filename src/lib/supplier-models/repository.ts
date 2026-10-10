@@ -51,7 +51,7 @@ export async function ingestSupplierSources(pool: Pool, provider: ModelProvider,
    await tx.query("INSERT INTO app_supplier_source_snapshots(provider_id,kind,source_url,content_hash,source_data) VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT(provider_id,kind,content_hash) DO UPDATE SET last_seen_at=now()", [provider.id,kind,url,sourceHash(safe),JSON.stringify(safe)]);
   };
   if (["ok", "empty"].includes(directory.status)) await snapshot("authenticated-directory", directoryUrl, {provider: {id: provider.id,name:provider.name,baseUrl:provider.baseUrl,protocol:provider.protocol},models: directory.models, truncated:!!directory.truncated});
-  if (published) await snapshot("public-pricing", published.url, published.body);
+  if (published?.body.success===true) await snapshot("public-pricing", published.url, published.body);
   if(published?.specifications)await snapshot("public-parameters",published.specifications.url,published.specifications.body);
   const oldModels = (await tx.query("SELECT model_id FROM app_supplier_model_metadata WHERE provider_id=$1", [provider.id])).rows.map(r => r.model_id as string);
   let added = 0;
