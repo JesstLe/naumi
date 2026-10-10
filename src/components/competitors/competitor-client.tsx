@@ -16,6 +16,7 @@ import { RegionEditor } from "./region-editor";
 import { bytesLabel, prepareImageUpload, uploadFormData } from "@/lib/client-image-upload";
 import "./competitors.css";
 import { TextModelSelect } from "@/components/ui/text-model-select";
+import { createImageDownloadName } from "@/lib/download";
 
 type UploadTask = {
   id: string; batch: string; file: File; path: string;
@@ -195,7 +196,7 @@ export function CompetitorClient() {
       const res = await fetch(`/api/competitors/${saved.id}/image?${q}`, { headers: await authHeader() });
       if (!res.ok) throw new Error("下载失败，请重试");
       const url = URL.createObjectURL(await res.blob()); const a = document.createElement("a");
-      a.href = url; a.download = `${saved.path.split("/").pop()?.replace(/\.[^.]+$/, "")}${region ? '-element' : ''}.png`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      a.href = url; a.download = createImageDownloadName(); a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch(e) { setError((e as Error).message); }
   }
   async function remove() {
