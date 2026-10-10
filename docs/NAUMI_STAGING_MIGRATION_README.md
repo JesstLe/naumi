@@ -908,3 +908,10 @@ TypeScript、隔离原生数据库发布/解析/报价/冻结和浏览器分组�
 最新新机业务源码1600cff5c8ad1befbdf6b25e50c875ccc8b95bb5，APP/Worker Image ID sha256:80d5021de0e7f16b826c50739993879ed2ec3e752c3b56453a176a758a5c1bab，版号1791621584 / v2026.10.10-163944。包含前序9a158d7图片/文字从已接入上游新增供应通道、文字优先级/权重/有效输出前失败回退，以及本轮合入c27abc4批量工具栏、e668dc6模型菜单去掉重复参考报价、5510d56单图统一下载命名。历史交接文档一并合入，专用回滚版本保留，不覆盖当前功能。
 
 沿用同事验收，仅补3项快速合并契约、Linux正式构建、线上原生检查及桌面/手机真实Shift选择（模拟节点）、实际模型菜单和报价、后台通道入口冒烟。付费调用0，模型v106/计费v8、完整配置/草稿、数据库/媒体/Compose/其他env/Router和公开代理保留；元数据切换前后指纹一致，打开后台后正常目录发现新增2条system-discovery修订，采购价1144点保持。完整备份含最新切换前DB快照，固定9a158d7回滚及证据 /opt/naumi-staging/evidence/remote-branches-20261010，最终健康/版本/镜像/UI通过，锁释放、临时会话清理。旧机未连接/回传，OSS/视频沿用延期约定。详见docs/changes/2026-10-10-remote-branches-release.md与2026-10-10-channel-onboarding-text-routing.md；文档跟进不另发镜像。
+
+
+## 2026-10-10 画布 Agent 执行与持久历史发布
+
+新机固定源码36255e03253703d2a524cf72cde67f0305956a2e，镜像同SHA，Image ID sha256:3b0a788fd1aa53a02b45519a0473c7f9caf17a0d93a2e098f6eb7e7adcc0bfff，实际1791624706 / v2026.10.10-173146。已合入canvas-agent-entry界面，并接通工具、画布结果和数据库对话生命周期。隔离工具链和生命周期、集中线上界面与原生失败历史恢复通过；模型v106、计费v8和配置/草稿/元数据/采购价格指纹保留。备份与证据 /opt/naumi-staging/evidence/canvas-agent-execution-20261010-r3，回滚1600cff，最终健康与版本通过，锁已释放。旧机未连接。
+
+真实图片编辑E2E仍受文字供应商阻塞：glm-5.3-flash 404，hy4-preview超时；没有工具执行或图片扣费，不能记录为真实端到端成功。已向用户请求可用、支持图片理解/工具调用的文字上游。保持既有管理员配置，视频/OSS延期约定不变。详见docs/changes/2026-10-10-canvas-agent-execution.md。
