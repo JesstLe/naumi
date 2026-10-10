@@ -745,7 +745,17 @@ systemctl is-enabled naumi-staging-public.service
 
 用户纠正“这个东西不应该由用户选择，而是应该由管理员统一配置”。本次移除画布编辑模型面板与扩图选择，七个canvas操作通过后台现有业务模型 `defaultModelId` 统一决定。客户端旧缓存/body/header覆盖均被收口，报价、实际执行与任务冻结保持一致；普通生图/视频选择不动。实现、测试和接手提示词见 `docs/CANVAS_ADMIN_MODEL_CONFIGURATION.md`。
 
-baseline和modified在新机一次性空库中集中验证exit0；七功能新请求覆盖、管理员发布切换、21份冻结bundle、过期版本409与business-routing完整回归通过，没有真实供应商调用。源码原hash已保存，主服务未用于回滚演练。新固定候选待构建/上线，完成后追加实际commit/image/运行验证。旧65adfe回传包保留为历史候选，不代表此次修复；后续明确回传前必须重新打包并刷新生产基线。旧机仍不连接/回传，视频、OSS和local存储约定不变。
+baseline和modified在新机一次性空库中集中验证exit0；七功能新请求覆盖、管理员发布切换、21份冻结bundle、过期版本409与business-routing完整回归通过，没有真实供应商调用。源码原hash已保存，另一源码副本逆向patch与11文件hash恢复/基线行为复验exit0。旧65adfe回传包保留为历史候选，不代表此次修复；后续明确回传前必须重新打包并刷新生产基线。旧机仍不连接/回传，视频、OSS和local存储约定不变。
+
+### 固定新候选与上线验收
+
+- 业务代码commit `1f23c02f4841b632698f76b14b3e6fbccf441f1d` 已中文提交并推送 `codex/staging-media-handoff`。固定Git源码归档hash `268443426cb1e62e4add7dcd92dd6d20f7843422c910e6c696789f395577a3f0`；新机使用冻结依赖volume、network none完成完整Next构建exit0与固定镜像构建exit0。
+- 实际APP/Worker镜像 `ghcr.io/jesstle/naumi:1f23c02f4841b632698f76b14b3e6fbccf441f1d`，IMAGE_ID `sha256:6df63e822b970e6d05adb453f90f4afcd6a890d19cb212206386fcfe8f8f36b0`，BUILD_VERSION `1791528778`。`/opt/naumi-staging/source/1f23c02f4841b632698f76b14b3e6fbccf441f1d-clean`未更改旧65adfe源码。
+- 受保护env仅改 `NAUMI_IMAGE`；备份保留在证据目录 `env.before-release`，权限600，不下载/公开。部署仅重建app/worker，DB的Config/HostConfig/StartedAt/Image hash一致，公网NGINX PID/开始时间一致。数据库、媒体、Router和其他env未覆盖；历史保护1和local存储保留。
+- Live七操作目录 `selectionMode=admin`，报价 body/header伪造模型后仍与正常报价相同；普通生图 `selectionMode=user`。隐藏的OCR默认绑定允许目录无可见选项，不因此改为用户选择或擅自曝光隐藏模型。没有新增真实生成/模型消费。公网health/canvas200、未登录admin403、公开worker403、.env404；APP/Worker运行镜像和label核对一致。
+- 用户提供测试账号后，在公网浏览器实际登录，打开既有“产品.jpg”项目、选择图片和打开扩图面板；“图片编辑操作模型”与“执行模型”元素均0，普通生图 `gpt-image-2`选择器仍1。未点开始扩图/生成；截图本机 `E:\Workspace\naumi\output\canvas-admin-models-20261009\canvas-admin-ui.jpg`。后台访问沿用独立访问密码门槛，未变更访问认证或实际业务配置。
+- 初次部署的验收脚本错误地要求隐藏OCR模型必须出现在可见目录；第二次错误地hash整个docker inspect（包含动态Health日志）。两次均触发真实新机服务回滚并恢复65adfe/health200，再修正验收脚本后第三次发布exit0。失败日志 `DEPLOY-attempt1.log/DEPLOY-attempt2.log`保留，不将这两次失败记为业务代码失败或最终已发布。最终 `DEPLOY.log/DEPLOY.exit=0`，新候选继续运行。
+- 四件套 `/opt/naumi-staging/evidence/canvas-admin-models-20261009/{MODIFIED_FILE.tsx,DIFF_FILE.patch,VERIFICATION.txt,ROLLBACK.sh}`；本机同名副本在上述output目录。ROLLBACK源码副本复验、实际服务失败自动回滚均已有记录；主MODIFIED保持修改后状态。新机当前候选已取代旧运行候选，但用户此前验收记录仅覆盖原65adfe，此次修复的验收依据是本节集中/真实页面结果。
 
 ```text
 接手先读AGENTS.md和README第20—21节。新机公网http://120.27.162.85已开，
