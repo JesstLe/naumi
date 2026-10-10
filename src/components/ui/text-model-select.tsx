@@ -56,7 +56,7 @@ export function TextModelSelect({
               dark ? "hover:bg-[#2b2f38]" : "hover:bg-c-subtle"
             )}
           >
-            <ModelIcon modelId={item} size={14} />
+            <ModelIcon modelId={item} modelName={label(item)} size={14} />
             <span className="min-w-0 flex-1 truncate">{label(item)}</span>
             {item === model && <Check className="h-3.5 w-3.5 flex-none text-acc" />}
           </button>
@@ -93,7 +93,7 @@ export function TextModelSelect({
         )}
         title={`文字模型：${model}`}
       >
-        <ModelIcon modelId={model} size={14} />
+        <ModelIcon modelId={model} modelName={label(model)} size={14} />
         <span className="min-w-0 truncate">{label(model)}</span>
         <ChevronDown className="h-3.5 w-3.5 flex-none opacity-60" />
       </button>
