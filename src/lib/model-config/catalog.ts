@@ -37,12 +37,12 @@ function parseModels(body: any): { models: ProviderCatalogModel[]; sourceModels:
   const models = rows.map((row: any) => {
     const id = typeof row === "string" ? row : row?.id;
     const ownedBy = typeof row?.owned_by === "string" ? row.owned_by.slice(0, 100) : undefined;
-    if (!identifier(id) || seen.has(id)) return null;
+    if (typeof id !== "string" || !id.trim() || id.length > 160 || /[\u0000-\u001f\u007f]/.test(id) || seen.has(id)) return null;
     seen.add(id);
     const raw = typeof row === "object" && row ? cleanSource(row) : undefined;
     return { id, label: typeof row?.name === "string" && row.name.trim() ? row.name.trim().slice(0, 160) : id, ...(ownedBy ? { ownedBy } : {}), ...(raw && JSON.stringify(raw).length <= 30000 ? {sourceMetadata: raw} : {}) };
   }).filter(Boolean) as ProviderCatalogModel[];
-  return { models: models.slice(0,600), sourceModels: models, truncated: !!body.has_more || !!body.next_page };
+  return { models: models.filter(m=>identifier(m.id)).slice(0,600), sourceModels: models, truncated: !!body.has_more || !!body.next_page };
 }
 
 export async function discoverProviderCatalog(
