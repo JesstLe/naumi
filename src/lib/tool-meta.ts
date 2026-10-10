@@ -129,14 +129,14 @@ export const TOOLS: ToolMeta[] = [
     key: "AI 抠图", en: "Cutout", slug: "cutout", href: "/cutout", category: "图像处理",
     Icon: Scissors, desc: "自动识别主体去背景,发丝级边缘精度",
     action: "开始抠图", cost: 4,
-    ctrls: [{ label: "边缘羽化", opts: ["关", "弱", "强"] }, { label: "输出背景", opts: ["透明", "白底", "纯色"] }],
+    ctrls: [],
     live: true, inMenu: true,
   },
   {
     key: "抠头像", en: "Head cutout", slug: "avatar", href: "/avatar", category: "图像处理",
     Icon: Smile, desc: "人像、证件照精准抠取,自动补光",
     action: "开始抠图", cost: 4,
-    ctrls: [{ label: "证件底色", opts: ["白", "蓝", "红"] }, { label: "尺寸规格", opts: ["一寸", "二寸", "自定义"] }],
+    ctrls: [{ label: "输出背景", opts: ["白", "黑", "透明"] }],
     live: true, inMenu: false,
   },
   {
@@ -150,7 +150,7 @@ export const TOOLS: ToolMeta[] = [
     key: "AI 变清晰", en: "Upscale", slug: "upscale", href: "/upscale", category: "图像处理",
     Icon: Wand2, desc: "模糊图、老照片一键高清修复放大",
     action: "高清修复", cost: 6,
-    ctrls: [{ label: "放大倍数", opts: ["2x", "4x", "8x"] }, { label: "增强方向", opts: ["通用", "人像", "商品"] }],
+    ctrls: [{ label: "放大倍数", opts: ["2x", "4x"] }, { label: "增强方向", opts: ["通用", "人像", "商品"] }],
     live: true, inMenu: true,
   },
   {
@@ -194,14 +194,14 @@ export const TOOLS: ToolMeta[] = [
     key: "服装提取", en: "Garment extract", slug: "garment", href: "/garment", category: "服装电商",
     Icon: Shirt, desc: "从模特图中提取平铺服装图",
     action: "提取平铺图", cost: 8,
-    ctrls: [{ label: "保留细节", opts: ["标准", "精细"] }, { label: "输出形态", opts: ["平铺", "挂拍"] }],
+    ctrls: [{ label: "保留细节", opts: ["标准", "精细"] }],
     live: true, inMenu: true,
   },
   {
     key: "3D 服装图", en: "3D garment", slug: "garment3d", href: "/garment3d", category: "服装电商",
-    Icon: Box, desc: "生成立体可旋转的服装展示图",
+    Icon: Box, desc: "生成具有立体质感的服装展示图",
     action: "生成 3D 图", cost: 16,
-    ctrls: [{ label: "视角", opts: ["正面", "45°", "360°"] }, { label: "材质", opts: ["真实", "光泽", "哑光"] }],
+    ctrls: [{ label: "视角", opts: ["正面", "45°", "背面"] }, { label: "材质", opts: ["真实", "光泽", "哑光"] }],
     live: true, inMenu: true,
   },
   {

@@ -1,4 +1,6 @@
 "use client";
+import {toolImageError} from "@/lib/tool-ui";
+import {SelectMenu} from "@/components/ui/select-menu";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -151,20 +153,20 @@ export function AplusClient() {
     sources.length > 0 && sources.every((source) => source.status === "approved");
   const formLocked = !!jobId && !finished;
 
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      previews.forEach((p) => URL.revokeObjectURL(p));
-    };
-  }, [previews]);
+  const previewUrls = useRef<string[]>([]);
+  previewUrls.current = previews;
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    previewUrls.current.forEach(url => URL.revokeObjectURL(url));
+  }, []);
 
   function pickFiles(list: FileList | null) {
-    if (!list) return;
+    if (!list || loading) return;
     const next: File[] = [...files];
     const nextPrev: string[] = [...previews];
     for (const f of Array.from(list)) {
       if (next.length >= MAX_IMAGES) break;
-      if (f.size > MAX_UPLOAD) continue;
+      if (toolImageError(f, MAX_UPLOAD)) { setError(L("请选择12MB以内的PNG / JPG / WebP图片", "Choose a PNG / JPG / WebP under 12MB")); continue; }
       next.push(f);
       nextPrev.push(URL.createObjectURL(f));
     }
@@ -254,6 +256,7 @@ export function AplusClient() {
   }
 
   async function generate() {
+    if (loading) return;
     setError(null);
     if (!user) {
       if (ready) openAuth("sign-in");
@@ -424,9 +427,9 @@ export function AplusClient() {
         </nav>
       </div>
 
-      <div className="grid gap-5 lg:h-[890px] lg:grid-cols-[320px_1fr]">
+      <div className="grid gap-5 tool-layout-grid lg:grid-cols-[320px_minmax(0,1fr)]">
         {/* 左:参数面板 */}
-        <div className="h-fit space-y-5 rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
+        <fieldset disabled={loading} className="h-fit space-y-5 rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
           {/* 工具头 */}
           <div className="flex items-center gap-3">
             <span className="grid h-11 w-11 flex-none place-items-center rounded-[10px]" style={{ background: "rgba(79,70,229,.12)", color: "#4F46E5" }}>
@@ -499,51 +502,18 @@ export function AplusClient() {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <label className="text-sm font-medium">上架平台</label>
-              <select
-                value={platform}
-                onChange={(e) => setPlatform(e.target.value)}
-                disabled={formLocked}
-                className="w-full rounded-[10px] border border-border bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-              >
-                {PLATFORMS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+              <SelectMenu label="上架平台" value={platform} onChange={setPlatform} disabled={formLocked} className="w-full" options={PLATFORMS.map((p) => ({value:p.id,label:p.label}))} />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">语言</label>
-              <select
-                value={lang}
-                onChange={(e) => setLang(e.target.value)}
-                disabled={formLocked}
-                className="w-full rounded-[10px] border border-border bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-              >
-                {LANGS.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.label}
-                  </option>
-                ))}
-              </select>
+              <SelectMenu label="语言" value={lang} onChange={setLang} disabled={formLocked} className="w-full" options={LANGS.map((l) => ({value:l.id,label:l.label}))} />
             </div>
           </div>
 
           {/* 图片比例 */}
           <div className="space-y-2">
             <label className="text-sm font-medium">图片比例</label>
-            <select
-              value={format}
-              onChange={(e) => setFormat(e.target.value)}
-              disabled={formLocked}
-              className="w-full rounded-[10px] border border-border bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-            >
-              {FORMATS.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
+            <SelectMenu label="图片比例" value={format} onChange={setFormat} disabled={formLocked} className="w-full" options={FORMATS.map((f) => ({value:f.id,label:f.label}))} />
           </div>
 
           {/* 商品卖点 & 要求 */}
@@ -678,7 +648,7 @@ export function AplusClient() {
           <p className="text-xs leading-relaxed text-muted-foreground">
             每个模块约 1-2 分钟,期间可留在本页查看进度;生成结果自动存入「作品库」,保留 180 天。
           </p>
-        </div>
+        </fieldset>
 
         {/* 右:结果区 */}
         <div className="flex min-h-[520px] flex-col rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">

@@ -22,3 +22,10 @@
 @media(max-width:640px){.cmp-header{padding:12px}.cmp-layout{display:flex;flex-direction:column}.cmp-library{border-right:0;border-bottom:1px solid #e2e5e8}.cmp-file-list{display:flex;max-height:150px;overflow:auto}.cmp-file{min-width:180px;max-width:200px}.cmp-library-tools{justify-content:flex-start}.cmp-panel-heading{margin-bottom:8px}.cmp-stage{height:52vh;min-height:280px}.cmp-toolbar{padding:8px}.cmp-properties{padding:14px}.cmp-title h1{font-size:16px}}
 
 .cmp-library-tools{flex-wrap:wrap}.cmp-library-tools button{flex:1 0 40%}
+
+/* Shared workbench control proportions, without changing editor coordinate or zoom behavior. */
+.cmp-workspace :is(button,input:not([type=checkbox]):not([type=file]),select,textarea){border-radius:10px}
+.cmp-workspace .cmp-primary{background:var(--grad-acc);color:#fff;border-color:var(--acc)}
+.cmp-workspace .cmp-library,.cmp-workspace .cmp-properties{background:var(--c-card)}
+
+.cmp-workspace .cmp-region { border-radius: 0; }

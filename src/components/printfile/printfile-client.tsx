@@ -1,4 +1,5 @@
 "use client";
+import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
 
 import { cdnUrl } from "@/lib/cdn";
@@ -128,6 +129,7 @@ export function PrintfileClient() {
   }
 
   function addFiles(files: File[]) {
+    if (processing) return;
     if (!user) {
       openAuth();
       return;
@@ -136,8 +138,8 @@ export function PrintfileClient() {
     const room = MAX_ITEMS - items.length;
     const next: Item[] = [];
     for (const f of files.slice(0, Math.max(0, room))) {
-      if (f.size > MAX_UPLOAD) {
-        setError(L("单张图片需小于 20MB", "Each image must be < 20MB"));
+      if (toolImageError(f, MAX_UPLOAD)) {
+        setError(L("请选择20MB以内的PNG / JPG / WebP图片", "Choose a PNG / JPG / WebP under 20MB"));
         continue;
       }
       next.push({
@@ -151,6 +153,7 @@ export function PrintfileClient() {
   }
 
   function removeItem(id: string) {
+    if (processing) return;
     setItems((prev) => {
       const it = prev.find((x) => x.id === id);
       if (it) URL.revokeObjectURL(it.url);
@@ -160,6 +163,7 @@ export function PrintfileClient() {
 
   // 以此结果图再做:把成品图载入成该队列项的新输入图、回到待处理(不自动扣分,需用户再点生成)
   async function regenFrom(id: string, url: string) {
+    if (processing) return;
     if (!user) {
       openAuth();
       return;
@@ -170,7 +174,7 @@ export function PrintfileClient() {
         blob = await (await fetch(url)).blob();
       } else {
         const r = await fetch(
-          `/api/download?u=${encodeURIComponent(url)}&n=input.png`
+          `/api/download?u=${encodeURIComponent(url)}&n=input.png`, {headers:await authHeader()}
         );
         if (!r.ok) throw new Error("download failed");
         blob = await r.blob();
@@ -178,6 +182,7 @@ export function PrintfileClient() {
       const file = new File([blob], "input.png", {
         type: blob.type || "image/png",
       });
+      if(toolImageError(file,MAX_UPLOAD))throw new Error("invalid image");
       const nextUrl = URL.createObjectURL(file);
       setItems((prev) =>
         prev.map((x) => {
@@ -552,6 +557,7 @@ export function PrintfileClient() {
                         <span className="text-[10px] leading-tight">
                           {it.error || L("失败", "Failed")}
                         </span>
+                        <button type="button" disabled={processing} onClick={()=>setItems(all=>all.map(item=>item.id===it.id?{...item,status:"pending",error:undefined}:item))} className="rounded-md border border-white/70 px-2 py-1 text-xs">{L("重试","Retry")}</button>
                       </div>
                     )}
                     <button

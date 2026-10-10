@@ -21,7 +21,7 @@ export function ImageQualityControl({ feature: requestedFeature, disabled = fals
   const nativeHint = modelConfig?.modelVersion && resolution !== "1K" ? nativeResolutions?.includes(resolution) ? `${resolution} 使用原生尺寸通道` : `${resolution} 使用基础出图后放大；仍按所选尺寸报价` : "";
   return <div className={compact ? "min-w-28" : "space-y-2"}>
     <div className="flex items-center gap-2 text-xs">
-      {!compact && <span>{t("gen.qualityLabel")}</span>}
+      {!compact && <span className="shrink-0 whitespace-nowrap">{t("gen.qualityLabel")}</span>}
       <ImageQualitySelect label={t("gen.qualityLabel")} title={nativeHint} value={value || quality}
         onChange={setQuality} disabled={disabled} compact={compact} canvas={pathname === "/canvas"}
         options={(pathname === "/canvas" ? CANVAS_QUALITIES : IMAGE_QUALITY_IDS).map(id => ({

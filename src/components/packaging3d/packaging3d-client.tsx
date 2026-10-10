@@ -46,7 +46,7 @@ export function Packaging3dClient() {
 
   function handleFile(next: File | null) {
     setError(null);
-    if (!next) return;
+    if (!next || processing) return;
     if (next.size > MAX_UPLOAD) {
       setError(L("文件不能超过 16MB", "File must be under 16MB"));
       return;
@@ -62,6 +62,7 @@ export function Packaging3dClient() {
   }
 
   function clearFile() {
+    if (processing) return;
     if (preview) URL.revokeObjectURL(preview);
     setFile(null);
     setPreview("");
@@ -131,14 +132,14 @@ export function Packaging3dClient() {
           onChange={(event) => handleFile(event.target.files?.[0] ?? null)}
         />
         {preview ? (
-          <div className="relative border border-c-border bg-white p-2">
+          <div className="relative rounded-xl border border-c-border bg-white p-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={preview} alt="dieline" className="h-40 w-full object-contain" />
             <button
               type="button"
               onClick={clearFile}
               aria-label={L("移除", "Remove")}
-              className="absolute right-2 top-2 grid h-7 w-7 place-items-center bg-slate-900/75 text-white"
+              className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-lg bg-slate-900/75 text-white"
             >
               <X className="h-4 w-4" />
             </button>
@@ -153,7 +154,7 @@ export function Packaging3dClient() {
               event.preventDefault();
               handleFile(event.dataTransfer.files?.[0] ?? null);
             }}
-            className="flex h-40 w-full flex-col items-center justify-center border border-dashed border-c-border2 bg-c-subtle2 text-c-text3 transition-colors hover:border-amber-600 hover:text-c-text"
+            className="flex h-40 w-full flex-col items-center justify-center rounded-xl border border-dashed border-c-border2 bg-c-subtle2 text-c-text3 transition-colors hover:border-amber-600 hover:text-c-text"
           >
             <Upload className="mb-2 h-5 w-5" />
             <span className="text-[12px] font-medium">{L("上传模切线图", "Upload dieline")}</span>
@@ -269,7 +270,7 @@ export function Packaging3dClient() {
                 <button
                   type="button"
                   onClick={() => zoom(preview)}
-                  className="flex min-h-0 flex-1 items-center justify-center border border-c-border bg-white p-3"
+                  className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-c-border bg-white p-3"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={preview} alt="dieline" className="max-h-[650px] max-w-full object-contain" />
@@ -300,7 +301,7 @@ export function Packaging3dClient() {
               </div>
             </div>
           ) : preview ? (
-            <div className="flex flex-1 flex-col items-center justify-center border border-c-border bg-white p-5">
+            <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-c-border bg-white p-5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={preview} alt="dieline" className="max-h-[610px] max-w-full object-contain" />
               <p className="mt-4 text-[11px] text-c-text4">
