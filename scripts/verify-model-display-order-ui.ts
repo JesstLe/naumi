@@ -5,12 +5,12 @@ import { chromium, expect as baseExpect } from "@playwright/test";
 import { compactImageModelOptions } from "../src/lib/image-model-routing";
 
 async function main() {
-  const live = Boolean(process.env.MVP_BROWSER_COOKIE_FILE);
+  const live = Boolean(process.env.MODEL_MANAGEMENT_BROWSER_COOKIE_FILE);
   if (!live && process.env.NAUMI_VERIFY_ISOLATED_DB !== "1") throw Error("Requires isolated fixture or protected staging session");
   const origin = live ? "http://120.27.162.85" : "http://127.0.0.1:54989";
   const out = `output/stable-model-order-20261009/${live ? "live" : "local"}`;
   await mkdir(out, { recursive: true });
-  const fixture = live ? null : JSON.parse(await readFile("output/admin-mvp-20261009/fixture.json", "utf8"));
+  const fixture = live ? null : JSON.parse(await readFile("output/model-management-fixture/fixture.json", "utf8"));
   const expect = baseExpect.configure({ timeout: 45000 });
   const browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : undefined, headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -18,18 +18,18 @@ async function main() {
   const errors: string[] = [];
   const get = async (path: string) => { const r = await context.request.get(origin + path); assert.equal(r.status(), 200); return r.json(); };
   try {
-    if (live) await context.addCookies(JSON.parse(await readFile(process.env.MVP_BROWSER_COOKIE_FILE!, "utf8")));
+    if (live) await context.addCookies(JSON.parse(await readFile(process.env.MODEL_MANAGEMENT_BROWSER_COOKIE_FILE!, "utf8")));
     else {
       assert.equal((await context.request.post(origin + "/api/admin/login", { data: { password: "MvpFixture2026!" } })).status(), 200);
       await context.addCookies([{ name: "nv_user", value: fixture.memberCookie, domain: "127.0.0.1", path: "/" }]);
     }
     await context.addCookies([{ name: "naumi_locale", value: "zh", url: origin }]);
     before = await get("/api/admin/bi/model-config");
-    const state = await get("/api/admin/mvp"), labels = state.rows.map((r: any) => r.label);
+    const state = await get("/api/admin/model-management"), labels = state.rows.map((r: any) => r.label);
     const first = state.rows.find((r: any) => r.modality === "image" && r.features.some((f: any) => f.id === "image.generate"));
     assert.ok(first);
     const page = await context.newPage(); page.setDefaultTimeout(45000); page.on("pageerror", e => errors.push(e.message));
-    await page.goto(origin + "/admin/mvp");
+    await page.goto(origin + "/admin/model-management");
     const headings = page.locator("article").getByRole("heading");
     await expect(headings).toHaveText(labels);
     const row = page.locator("article").filter({ has: page.getByRole("heading", { name: first.label, exact: true }) });
@@ -37,14 +37,14 @@ async function main() {
       await row.getByRole("button", { name: "编辑范围", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "选择应用工具", exact: true });
       await dialog.getByRole("checkbox", { name: "自由生图", exact: true }).setChecked(enabled);
-      const response = page.waitForResponse(r => r.url().endsWith("/api/admin/mvp") && r.request().method() === "POST" && r.request().postDataJSON()?.action === "scope");
+      const response = page.waitForResponse(r => r.url().endsWith("/api/admin/model-management") && r.request().method() === "POST" && r.request().postDataJSON()?.action === "scope");
       await dialog.getByRole("button", { name: "保存范围并生效", exact: true }).click();
       const r = await response, result = await r.json();
       assert.equal(r.status(), 200); assert.equal(result.publication.phase, "applied"); lastPublication = result.publication.version;
       await expect(dialog).toHaveCount(0);
       await expect(page.getByText(`模型配置 v${lastPublication}`, { exact: true })).toBeVisible();
       await expect(headings).toHaveText(labels);
-      assert.deepEqual((await get("/api/admin/mvp")).rows.map((r: any) => r.id), state.rows.map((r: any) => r.id));
+      assert.deepEqual((await get("/api/admin/model-management")).rows.map((r: any) => r.id), state.rows.map((r: any) => r.id));
     };
     await saveScope(false);
     assert.ok(!(await get("/api/config")).imageModels.some((m: any) => first.publicIds.includes(m.id)));

@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { constants, publicEncrypt, randomUUID } from "node:crypto";
 import { createModelFixture } from "./model-config-fixture";
 import { fixtureConfig } from "./billing-unit-fixture";
-import { createMvpHandler } from "../src/lib/model-config/mvp-access";
+import { createModelManagementHandler } from "../src/lib/model-config/management-access";
 import { createModelRuntime, publicModelCatalog } from "../src/lib/model-config/runtime";
 import { createRouterControl, type RouterStatus } from "../src/lib/model-config/router-client";
 import { createModelExecutor } from "../src/lib/model-config/execution";
-import { mvpRows, switchMvpModel, renameMvpModel } from "../src/lib/model-config/mvp";
+import { managedModelRows, switchManagedModel, renameManagedModel } from "../src/lib/model-config/management";
 import { compactImageModelOptions, routeImageModel } from "../src/lib/image-model-routing";
 import { ModelConfigError } from "../src/lib/model-config/types";
 
@@ -28,9 +28,9 @@ async function main() {
   const runtime = createModelRuntime({ pool: f.sql, repo: f.repo, credentials: f.credentials, router, trustedOrigins: [f.origin], billing: async () => billing, billingByVersion: async () => billing });
   const administration = async () => ({ pool: f.sql, repo: f.repo, credentials: f.credentials, router, runtime, billing: { current: async () => billing }, trustedOrigins: [f.origin] }) as never;
   const actor = "mvp-admin@example.test";
-  const handler = createMvpHandler({ authorize: async () => ({ actor }), administration, managed: async () => true,
+  const handler = createModelManagementHandler({ authorize: async () => ({ actor }), administration, managed: async () => true,
     fetcher: async (_url, init) => { assert.equal(init?.method || "GET", "GET"); catalogQueries++; return Response.json({ data: [{ id: "wire-image-one" }, { id: "directory-image-new" }, { id: "wire-image-two" }] }); } });
-  const request = (body?: unknown, origin?: string) => new Request("http://fixture.test/api/admin/mvp", { method: body ? "POST" : "GET", headers: { ...(body ? { "content-type": "application/json" } : {}), ...(origin ? { origin } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const request = (body?: unknown, origin?: string) => new Request("http://fixture.test/api/admin/model-management", { method: body ? "POST" : "GET", headers: { ...(body ? { "content-type": "application/json" } : {}), ...(origin ? { origin } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
   try {
     f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels[0]), id: "u2", model: "wire-image-two", label: "Second actual model" });
     const old = await f.repo.current();
@@ -43,11 +43,11 @@ async function main() {
     assert.equal(data.rows[0].alias, "测试生图"); assert.ok(data.rows[0].features.some((f: any) => f.id === "canvas.image"));
     assert.ok(data.rows[0].candidateIds.includes("u2")); assert.equal(data.rows[0].routes[0].model, "wire-image-one");
     const legacy = structuredClone(old); legacy.config.upstreamModels.forEach(u => { u.capabilities.verified = false; });
-    const legacyRows = mvpRows(legacy, [{ ...publicModelCatalog(legacy, "image", "image.generate"), feature: "image.generate" }]);
+    const legacyRows = managedModelRows(legacy, [{ ...publicModelCatalog(legacy, "image", "image.generate"), feature: "image.generate" }]);
     assert.ok(legacyRows[0].candidateIds.includes("u2"), "existing legacy targets must remain selectable with explicit unverified status");
-    assert.equal(switchMvpModel(legacy.config, legacyRows[0], "u2").publicModels[0].target.id, "u2");
+    assert.equal(switchManagedModel(legacy.config, legacyRows[0], "u2").publicModels[0].target.id, "u2");
     assert.ok(!JSON.stringify(data).includes(f.marker)); assert.ok(!JSON.stringify(data).includes("credentialRef"));
-    const denied = createMvpHandler({ authorize: async () => Response.json({}, { status: 404 }) as never, administration: async () => { throw Error("must not assemble"); }, managed: async () => true });
+    const denied = createModelManagementHandler({ authorize: async () => Response.json({}, { status: 404 }) as never, administration: async () => { throw Error("must not assemble"); }, managed: async () => true });
     assert.equal((await denied(request())).status, 404);
     assert.equal((await handler(request({ action: "discover", providerId: "p1" }, "https://evil.test"))).status, 403);
     assert.equal((await handler(request({ action: "discover", providerId: "p1", baseUrl: "http://169.254.169.254" }))).status, 400);
@@ -62,7 +62,7 @@ async function main() {
     assert.equal((await handler(request(switchBody))).status, 200); assert.equal(activations, 1);
     const current = await f.repo.current(); assert.equal(current.config.publicModels[0].target.id, "u2"); assert.equal(current.config.publicModels[0].label, "测试生图");
     assert.deepEqual(current.config.bindings, old.config.bindings); assert.deepEqual(current.config.business, old.config.business);
-    assert.deepEqual(await f.repo.draft(actor), fullDraft, "MVP must preserve full administration drafts");
+    assert.deepEqual(await f.repo.draft(actor), fullDraft, "MODEL_MANAGEMENT must preserve full administration drafts");
     assert.equal((await executor.clientFor(frozen)).wireModel, "wire-image-one", "accepted tasks retain their old actual model");
     const fresh = await executor.resolve({ binding: "image.generate", snapshot: current, billing }); assert.equal((await executor.clientFor(fresh)).wireModel, "wire-image-two");
     assert.equal((await handler(request({ ...switchBody, id: randomUUID() }))).status, 409);
@@ -80,7 +80,7 @@ async function main() {
     const family = structuredClone(current.config);
     family.publicModels = ["square", "portrait", "landscape"].map((suffix, i) => ({ ...current.config.publicModels[0], id: `family-image-${suffix}`, label: `family-image-${suffix}`, visible: i !== 2 }));
     const familyRow = { ...data.rows[0], id: "family-image", publicIds: ["family-image-square", "family-image-portrait"] };
-    const renamedFamily = renameMvpModel(family, familyRow, "统一显示名称");
+    const renamedFamily = renameManagedModel(family, familyRow, "统一显示名称");
     assert.ok(renamedFamily.publicModels.every(m => m.label === "统一显示名称"), "hidden ratio siblings must also inherit the name");
     assert.equal(compactImageModelOptions(renamedFamily.publicModels)[0].label, "统一显示名称");
     assert.equal(routeImageModel("family-image-square", "9:16", renamedFamily.publicModels), "family-image-portrait");
@@ -102,8 +102,8 @@ async function main() {
     assert.equal((await handler(request(registration))).status, 200);
     assert.ok((await f.repo.current()).config.upstreamModels.some(u => u.model === "directory-image-new"));
     const invisible = structuredClone(old); invisible.config.publicModels[0].visible = false;
-    assert.equal(mvpRows(invisible, [{ ...publicModelCatalog(invisible, "image", "image.generate"), feature: "image.generate" }]).length, 0);
-    console.log("ADMIN_MVP=PASS ACTIVE_CATALOG=PASS SOURCES=PASS SWITCH_EXECUTION=PASS FROZEN_TASK=PASS DRAFT_PRESERVED=PASS SAME_ID_RECOVERY=PASS RSA_CREDENTIAL=PASS DISCOVERY=PASS EXPLICIT_CAPABILITIES=PASS NON_ADMIN=404 CSRF=403 VERSION_CONFLICT=409 PAID_GENERATION=0");
+    assert.equal(managedModelRows(invisible, [{ ...publicModelCatalog(invisible, "image", "image.generate"), feature: "image.generate" }]).length, 0);
+    console.log("ADMIN_MODEL_MANAGEMENT=PASS ACTIVE_CATALOG=PASS SOURCES=PASS SWITCH_EXECUTION=PASS FROZEN_TASK=PASS DRAFT_PRESERVED=PASS SAME_ID_RECOVERY=PASS RSA_CREDENTIAL=PASS DISCOVERY=PASS EXPLICIT_CAPABILITIES=PASS NON_ADMIN=404 CSRF=403 VERSION_CONFLICT=409 PAID_GENERATION=0");
   } finally { const db = await import("../src/lib/db"); await db.getPool().end(); await f.cleanup(); }
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });

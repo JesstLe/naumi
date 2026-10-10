@@ -10,12 +10,12 @@ import { readProviderCatalog, refreshProviderCatalog } from "./catalog-store";
 import { publicModelCatalog } from "./runtime";
 import { FEATURE_BINDINGS } from "./business";
 import { MODEL_BINDINGS } from "./bindings";
-import { mvpRows, mvpCandidates, MVP_PROTOCOLS, switchMvpModel, renameMvpModel, applyMvpToolScope, applyMvpQualityParameters, orderMvpModels } from "./mvp";
+import { managedModelRows, managedModelCandidates, MODEL_MANAGEMENT_PROTOCOLS, switchManagedModel, renameManagedModel, applyModelToolScope, applyModelQualityParameters, orderManagedModels } from "./management";
 import { DISPLAY_QUALITY_IDS } from "./quality-policy";
 import { FEATURE_IDS } from "../billing/rules/registry";
 import {QUALITY_IDS,RESOLUTION_IDS} from "../billing/rules/registry";
 import {BillingError} from "../billing/types";
-import {editMvpCredits,mvpPriceViews,modelCreditGrid} from "./mvp-pricing";
+import {editManagedModelCredits,managedModelPriceViews,modelCreditGrid} from "./management-pricing";
 import { canonicalConfig } from "./repository";
 import { validateModelConfig, validateModelEndpoint } from "./schema";
 import { compileRouterProjection } from "./projection";
@@ -37,14 +37,16 @@ const input = z.discriminatedUnion("action", [
   z.strictObject({action:z.literal("scope"),...common,rowId:identifier,features:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length),canvas:z.boolean().optional()}),
   z.strictObject({action:z.literal("parameters"),...common,rowId:identifier,parameters:z.strictObject({choices:z.array(z.strictObject({id:z.enum(DISPLAY_QUALITY_IDS),label:z.string().trim().min(1).max(30)})).min(1).max(5),routes:z.array(z.strictObject({upstreamId:identifier,mode:z.enum(["map","passthrough","omit"]),values:z.record(z.string(),z.string().max(100)),metadataRef:z.strictObject({id:z.uuid(),revision:z.number().int().positive()}).nullable().optional(),evidence:z.strictObject({status:z.enum(["unverified","documented","accepted","rejected"]),source:z.string().max(1000),checkedAt:z.string().max(30)}).optional()})).min(1).max(100)}).nullable()}),
   z.strictObject({action:z.literal("pricing"),...common,expectedBillingVersion:z.number().int().positive(),rowId:identifier,features:z.array(z.enum(FEATURE_IDS)).min(1).max(FEATURE_IDS.length),pricing:creditPricing.nullable()}),
-  z.strictObject({ action: z.literal("connect"), ...common, name: z.string().trim().min(1).max(100), baseUrl: z.string().max(1024), protocol: z.enum(MVP_PROTOCOLS), credentialRef: z.uuid() }),
+  z.strictObject({ action: z.literal("connect"), ...common, name: z.string().trim().min(1).max(100), baseUrl: z.string().max(1024), protocol: z.enum(MODEL_MANAGEMENT_PROTOCOLS), credentialRef: z.uuid() }),
   z.strictObject({ action: z.literal("register"), ...common, providerId: identifier, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), confirmed: z.literal(true), edit: z.boolean(), vision: z.boolean(), qualityRank: z.number().int().min(1).max(5).default(2), qualities: z.array(z.enum(["low", "medium", "high", "xhigh", "max", "auto"])).max(6), resolutions: z.array(z.enum(["1K", "2K", "4K"])).max(3), maxReferenceImages: z.number().int().min(0).max(32) }),
 ]);
 type Administration = Awaited<ReturnType<typeof getModelAdministration>>;
 function rows(snapshot: ModelSnapshot) {
-  return mvpRows(snapshot, Object.entries(FEATURE_BINDINGS).map(([feature, binding]) => ({ ...publicModelCatalog(snapshot, MODEL_BINDINGS[binding!].modality, feature as keyof typeof FEATURE_BINDINGS), feature })));
+  return managedModelRows(snapshot, Object.entries(FEATURE_BINDINGS).map(([feature, binding]) => ({ ...publicModelCatalog(snapshot, MODEL_BINDINGS[binding!].modality, feature as keyof typeof FEATURE_BINDINGS), feature })));
 }
-export function createMvpHandler(deps: { authorize: typeof biAuthorize; administration: () => Promise<Administration>; managed: () => Promise<boolean>; fetcher?: typeof fetch }) {
+// Persisted provider IDs, actor markers and locks retain their original namespace.
+// Both route generations must serialize and reconcile the same operation IDs.
+export function createModelManagementHandler(deps: { authorize: typeof biAuthorize; administration: () => Promise<Administration>; managed: () => Promise<boolean>; fetcher?: typeof fetch }) {
   return async (request: Request) => {
     const auth = await deps.authorize(request); if (auth instanceof Response) return auth;
     if (request.method !== "GET" && !sameSiteBiMutation(request)) return biJson({ error: "不允许跨站修改" }, 403);
@@ -60,7 +62,7 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
       }
       if (request.method === "GET") {const billing=await admin.billing.current(),defaults=await readQualityDefaults(admin.pool,snapshot.config),modelRows=rows(snapshot);
         for(const row of modelRows)for(const route of row.qualityConfig?.routes || []){const d=defaults.get(route.upstreamId);route.metadataDefaults=d || null;if(!route.configured&&d?.available){route.mode=d.mode;route.values={...d.values};route.metadataRef={id:d.id,revision:d.revision};}else if(!route.configured){route.mode="omit";route.values={};}}
-        return biJson({ version: snapshot.version,billingVersion:billing.version, managed: await deps.managed(), rows: modelRows.map(row=>({...row,pricing:mvpPriceViews(billing,snapshot,row)})), candidates: mvpCandidates(snapshot.config), providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs: await readProviderCatalog(admin.pool, snapshot.config.providers) });}
+        return biJson({ version: snapshot.version,billingVersion:billing.version, managed: await deps.managed(), rows: modelRows.map(row=>({...row,pricing:managedModelPriceViews(billing,snapshot,row)})), candidates: managedModelCandidates(snapshot.config), providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs: await readProviderCatalog(admin.pool, snapshot.config.providers) });}
       const body = input.parse(JSON.parse(await readBounded(new Response(request.body), 48000)));
       if (body.action === "credential") {
         if (!!body.ciphertext === !!body.keyPlain || !/^mvp-[0-9a-f-]{36}$/i.test(body.providerId)) throw new ModelConfigError("INVALID_CREDENTIAL", "凭据参数无效");
@@ -76,13 +78,13 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
       await lock.query("SELECT pg_advisory_lock(hashtextextended($1,0))", [lockKey]);
       if(body.action==="pricing"){
         const billing=await admin.billing.current();
-        const actor=`${auth.actor.slice(0,180)}#mvp-price:${createHash("sha256").update(canonicalConfig(body)).digest("hex").slice(0,32)}`,reason=`MVP 积分售价 ${body.rowId}`;
+        const actor=`${auth.actor.slice(0,180)}#mvp-price:${createHash("sha256").update(canonicalConfig(body)).digest("hex").slice(0,32)}`,reason=`模型管理积分售价 ${body.rowId}`;
         const previous=(await admin.pool.query("SELECT config,actor FROM app_billing_config_versions WHERE operation_id=$1",[body.id])).rows[0];staged=!!previous;
         if(previous && previous.actor!==actor)throw new BillingError("OPERATION_CONFLICT","该操作编号已用于不同积分设置",409);
         if(!previous && snapshot.version!==body.expectedVersion)throw new ModelConfigError("CONFIG_CONFLICT","模型配置已更新，请刷新后重新设置积分",409);
         const row=rows(snapshot).find(r=>r.id===body.rowId);if(!previous && !row)throw new ModelConfigError("MODEL_UNAVAILABLE","模型不存在，请刷新",409);
         if(!previous && !await deps.managed())throw new ModelConfigError("CONFIG_UNAVAILABLE","请先启用统一模型配置后设置模型积分",409);
-        const config=previous?.config || editMvpCredits(billing,snapshot,row!,body.features,body.pricing);
+        const config=previous?.config || editManagedModelCredits(billing,snapshot,row!,body.features,body.pricing);
         const published=await admin.billing.publish({id:body.id,expectedVersion:body.expectedBillingVersion,expectedModelVersion:body.expectedVersion,config,actor,reason});
         return biJson({publication:{id:body.id,version:published.version,phase:"applied"},billingVersion:published.version});
       }
@@ -105,7 +107,7 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
             delete model.toolScope.systems;
           }
         } else if(body.action === "order") {
-          config=orderMvpModels(config,rows(snapshot),body.rowIds);
+          config=orderManagedModels(config,rows(snapshot),body.rowIds);
         } else if (body.action === "switch" || body.action === "rename" || body.action === "scope" || body.action === "parameters") {
           const row = rows(snapshot).find(r => r.id === body.rowId);
           if (!row) throw new ModelConfigError("MODEL_UNAVAILABLE", "前端当前没有展示该模型，请刷新", 409);
@@ -116,7 +118,7 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
               if(route.mode==="map")for(const choice of body.parameters.choices)if(!route.values[choice.id]?.trim() && route.metadataRef && d?.mode==="map")route.values[choice.id]=d.values[choice.id] || "";
             }
           }
-          config = body.action === "parameters" ? applyMvpQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyMvpToolScope(config,row,body.features,body.canvas) : body.action === "rename" ? renameMvpModel(config, row, body.label) : switchMvpModel(config, row, body.upstreamId);
+          config = body.action === "parameters" ? applyModelQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyModelToolScope(config,row,body.features,body.canvas) : body.action === "rename" ? renameManagedModel(config, row, body.label) : switchManagedModel(config, row, body.upstreamId);
         } else if (body.action === "connect") {
           const endpoint = validateModelEndpoint(body.protocol === "apimart-images" ? body.baseUrl.replace(/\/v1\/?$/, "") : body.baseUrl, { trustedOrigins: admin.trustedOrigins });
           const providerId = `mvp-${body.id}`;
@@ -124,7 +126,7 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
           config.providers.push({ id: providerId, name: body.name, baseUrl: endpoint, protocol: body.protocol, credentialRef: body.credentialRef, enabled: true, timeoutMs: 120000, maxConcurrent: 4 });
         } else {
           const p = config.providers.find(p => p.id === body.providerId);
-          if (!p?.enabled || !p.credentialRef || !MVP_PROTOCOLS.includes(p.protocol as typeof MVP_PROTOCOLS[number])) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该来源尚未启用或协议未支持快捷接入");
+          if (!p?.enabled || !p.credentialRef || !MODEL_MANAGEMENT_PROTOCOLS.includes(p.protocol as typeof MODEL_MANAGEMENT_PROTOCOLS[number])) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该来源尚未启用或协议未支持快捷接入");
           const catalog = await refreshProviderCatalog(admin.pool, p, admin.credentials, admin.trustedOrigins, deps.fetcher);
           if (catalog.status !== "ok" || catalog.stale || !catalog.models.some(m => m.id === body.model)) throw new ModelConfigError("CATALOG_UNAVAILABLE", "请先成功刷新该来源的模型目录，再添加目录中的模型");
           if (config.upstreamModels.some(m => m.providerId === p.id && m.model === body.model)) throw new ModelConfigError("MODEL_EXISTS", "该模型已接入，可直接在切换列表中选择");
@@ -138,7 +140,7 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
         draft = await admin.repo.saveDraft({ id: draft.id, expectedRevision: draft.revision, config, actor });
       }
       staged = true;
-      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
+      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `模型管理 ${body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
       return biJson({ publication }, publication.phase === "applied" ? 200 : publication.phase === "failed" ? 422 : 202);
     } catch (e) {
       if(e instanceof BillingError)return biJson({error:e.message,code:e.code,operationNotStaged:["CONFIG_CONFLICT","INVALID_CONFIG","OPERATION_CONFLICT"].includes(e.code)},e.status);
@@ -151,4 +153,4 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
     }
   };
 }
-export const mvpHandler = createMvpHandler({ authorize: biAuthorize, administration: getModelAdministration, managed: modelConfigurationEnabled });
+export const modelManagementHandler = createModelManagementHandler({ authorize: biAuthorize, administration: getModelAdministration, managed: modelConfigurationEnabled });

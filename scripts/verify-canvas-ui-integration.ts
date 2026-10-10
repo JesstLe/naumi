@@ -4,12 +4,12 @@ import {chromium,expect as baseExpect} from "@playwright/test";
 import sharp from "sharp";
 
 async function main(){
- const live=Boolean(process.env.MVP_BROWSER_COOKIE_FILE);if(!live&&process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw Error("Requires isolated fixture or protected staging session");
+ const live=Boolean(process.env.MODEL_MANAGEMENT_BROWSER_COOKIE_FILE);if(!live&&process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw Error("Requires isolated fixture or protected staging session");
  const origin=live?"http://120.27.162.85":"http://127.0.0.1:54989",out=`output/canvas-ui-integration-20261009/${live?"live":"local"}`;await mkdir(out,{recursive:true});
- const fixture=live?null:JSON.parse(await readFile("output/admin-mvp-20261009/fixture.json","utf8")),browser=await chromium.launch({channel:process.platform==="win32"?"msedge":undefined,headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000}}),expect=baseExpect.configure({timeout:45000});
+ const fixture=live?null:JSON.parse(await readFile("output/model-management-fixture/fixture.json","utf8")),browser=await chromium.launch({channel:process.platform==="win32"?"msedge":undefined,headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000}}),expect=baseExpect.configure({timeout:45000});
  const get=async(path:string)=>{const r=await context.request.get(origin+path);assert.equal(r.status(),200);return r.json();};let mocked=0,blocked=0;const errors:string[]=[];
  try{
-  if(live)await context.addCookies(JSON.parse(await readFile(process.env.MVP_BROWSER_COOKIE_FILE!,"utf8")));else{await context.request.post(origin+"/api/admin/login",{data:{password:"MvpFixture2026!"}});await context.addCookies([{name:"nv_user",value:fixture.memberCookie,domain:"127.0.0.1",path:"/"}]);}
+  if(live)await context.addCookies(JSON.parse(await readFile(process.env.MODEL_MANAGEMENT_BROWSER_COOKIE_FILE!,"utf8")));else{await context.request.post(origin+"/api/admin/login",{data:{password:"MvpFixture2026!"}});await context.addCookies([{name:"nv_user",value:fixture.memberCookie,domain:"127.0.0.1",path:"/"}]);}
   await context.addCookies([{name:"naumi_locale",value:"zh",url:origin}]);const before=await get("/api/admin/bi/model-config"),email=live?(await get("/api/auth/session")).user.email:"mvp-member@example.test",now=new Date().toISOString(),user={name:"合并验收",email,plan:"starter",creditsTotal:10000,creditsUsed:0,joinedAt:now,renewsAt:now,invoices:[]};
   const image={id:"integration-image",email,title:"合并验收图片",category:"main",prompt:"本地像素编辑验收",status:"completed",image:origin+"/cutout-hero.jpg",gradient:"",origin:"canvas",parentId:null,parentIds:[],groupId:"integration-image",width:640,height:480,canvasWidth:320,canvasHeight:240,canvasX:100,canvasY:100,createdAt:now};
   const text={id:"text-integration",projectKey:"tree:integration-image",title:"合并验收文字",prompt:"",content:"画布整合验收\n保留模型与积分配置",status:"completed",canvasX:480,canvasY:100,width:300,height:210,createdAt:now,updatedAt:now,sourceIds:["integration-image"],targetIds:[],productIds:[]};

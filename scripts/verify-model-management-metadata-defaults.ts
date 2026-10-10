@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
 import {createModelFixture} from "./model-config-fixture";
 import {fixtureConfig} from "./billing-unit-fixture";
-import {createMvpHandler} from "../src/lib/model-config/mvp-access";
+import {createModelManagementHandler} from "../src/lib/model-config/management-access";
 import {createModelRuntime} from "../src/lib/model-config/runtime";
 import {importConfiguredSupplierModels,listSupplierModels,saveSupplierModel} from "../src/lib/supplier-models/repository";
 import {metadataQualityDefaults} from "../src/lib/supplier-models/quality-defaults";
@@ -11,8 +11,8 @@ async function main(){
  const f=await createModelFixture();let digest="";const published=new Map();
  const router={prepare:async()=>{},state:async()=>digest,status:async(id:string)=>published.get(id)||null,activate:async(id:string,_old:string,next:string)=>{digest=next;const s={id,digest:next,phase:"applied"};published.set(id,s);return s;}} as never;
  const billing={version:1,config:fixtureConfig()},runtime=createModelRuntime({pool:f.sql,repo:f.repo,credentials:f.credentials,router,trustedOrigins:[f.origin],billing:async()=>billing});
- const actor="metadata-default-test",handler=createMvpHandler({authorize:async()=>({actor}),managed:async()=>true,administration:async()=>({pool:f.sql,repo:f.repo,credentials:f.credentials,router,runtime,billing:{current:async()=>billing},trustedOrigins:[f.origin]}) as never});
- const req=(body?:unknown)=>new Request(f.origin+"/api/admin/mvp",{method:body?"POST":"GET",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
+ const actor="metadata-default-test",handler=createModelManagementHandler({authorize:async()=>({actor}),managed:async()=>true,administration:async()=>({pool:f.sql,repo:f.repo,credentials:f.credentials,router,runtime,billing:{current:async()=>billing},trustedOrigins:[f.origin]}) as never});
+ const req=(body?:unknown)=>new Request(f.origin+"/api/admin/model-management",{method:body?"POST":"GET",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
  try{
   const credential=await f.credentials.importPlain({providerId:"p2",plain:"fixture-only-second-provider",actor:"fixture"});
   f.config.providers.push({...f.config.providers[0],id:"p2",credentialRef:credential.id});

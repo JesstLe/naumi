@@ -9,7 +9,7 @@ import { featureDefaultModel } from "./tool-scope";
 import type { FeatureId } from "../billing/rules/registry";
 import { qualityConfiguration, qualityPolicySchema } from "./quality-policy";
 
-export const MVP_PROTOCOLS = ["openai-images", "new-api-flow", "apimart-images", "openai-chat", "openai-videos"] as const;
+export const MODEL_MANAGEMENT_PROTOCOLS = ["openai-images", "new-api-flow", "apimart-images", "openai-chat", "openai-videos"] as const;
 export const featureNames: Record<string, string> = {
   "image.generate": "自由生图", "image.suite": "组图", "image.aplus": "A+ 页面",
   "canvas.image": "画布生图", "canvas.expand": "画布扩图", "canvas.text-edit": "画布改字", "canvas.annotate": "画布标注",
@@ -19,7 +19,7 @@ export const featureNames: Record<string, string> = {
   "tool.style": "风格", "tool.tryon": "试穿", "tool.retouch": "精修", "tool.recolor": "改色", "tool.replicate": "复刻",
   "tool.inpaint": "局部重绘", "tool.extract": "提取", "tool.garment3d": "服装 3D", "tool.packaging3d": "包装 3D",
 };
-export type MvpRow = {
+export type ManagedModelRow = {
   id: string; label: string; alias: string; modality: Modality; publicIds: string[];
   features: { id: string; label: string }[];
   routes: { upstreamId: string; model: string; providerId: string; provider: string; kind: string; enabled: boolean }[];
@@ -27,24 +27,24 @@ export type MvpRow = {
   canvasUnified?:boolean;
   qualityConfig?: ReturnType<typeof qualityConfiguration>;
   scopeOptions: {id:string;label:string;selected:boolean;available:boolean;adminDefault:boolean;reason?:string}[];
-  pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").MvpCreditPricing}[];
+  pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").ManagedModelCreditPricing}[];
 };
-export type MvpCandidate = { id: string; model: string; label: string; providerId: string; provider: string; modality: string; verified: boolean };
-export type MvpCreditGrid = {quality:string;resolution:string;credits:number|null;available:boolean;effectiveQuality:string;estimated:boolean}[];
-export type MvpState = {
-  version: number; managed: boolean; rows: MvpRow[]; candidates: MvpCandidate[];
+export type ManagedModelCandidate = { id: string; model: string; label: string; providerId: string; provider: string; modality: string; verified: boolean };
+export type ManagedModelCreditGrid = {quality:string;resolution:string;credits:number|null;available:boolean;effectiveQuality:string;estimated:boolean}[];
+export type ModelManagementState = {
+  version: number; managed: boolean; rows: ManagedModelRow[]; candidates: ManagedModelCandidate[];
   billingVersion?:number;
   providers: { id: string; name: string; baseUrl: string; protocol: string; enabled: boolean; configured: boolean }[];
 };
 
-export function mvpCandidates(config: ModelConfig): MvpCandidate[] {
+export function managedModelCandidates(config: ModelConfig): ManagedModelCandidate[] {
   return config.upstreamModels.filter(u => u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled && p.credentialRef))
     .map(u => ({ id: u.id, model: u.model, label: u.label, modality: u.modality, verified: u.capabilities.verified, providerId: u.providerId, provider: config.providers.find(p => p.id === u.providerId)!.name }));
 }
 
 /** Receives the same public catalogs consumed by the frontend, after selection policy. */
-export function mvpRows(snapshot: ModelSnapshot, catalogs: { feature: string; defaultModelId?: string; models: { id: string; label: string; modality: string }[] }[]): MvpRow[] {
-  const config = snapshot.config, rows = new Map<string, MvpRow>();
+export function managedModelRows(snapshot: ModelSnapshot, catalogs: { feature: string; defaultModelId?: string; models: { id: string; label: string; modality: string }[] }[]): ManagedModelRow[] {
+  const config = snapshot.config, rows = new Map<string, ManagedModelRow>();
   const unrestricted=structuredClone(snapshot);
   for(const model of unrestricted.config.publicModels) delete model.toolScope;
   const eligibleCatalogs=new Map(Object.entries(FEATURE_BINDINGS).map(([feature,binding])=>[feature,new Set(publicModelCatalog(unrestricted,MODEL_BINDINGS[binding!].modality,feature as FeatureId,true).models.map(m=>m.id))]));
@@ -81,17 +81,17 @@ export function mvpRows(snapshot: ModelSnapshot, catalogs: { feature: string; de
       row.conditional = true; add(o.routing.defaultUpstreamId, "路由默认");
       for (const r of o.routing.rules) add(r.targetUpstreamId, r.stage === "failure" ? "失败回退" : "条件调用");
     }
-    row.candidateIds = mvpCandidates(config).filter(c => {
-      try { assertMvpTarget(config, row, c.id); return true; } catch { return false; }
+    row.candidateIds = managedModelCandidates(config).filter(c => {
+      try { assertManagedTarget(config, row, c.id); return true; } catch { return false; }
     }).map(c => c.id);
-    row.scopeOptions = mvpScopeOptions(row,eligibleCatalogs);
+    row.scopeOptions = managedModelScopeOptions(row,eligibleCatalogs);
     row.canvasUnified = row.publicIds.every(id=>config.publicModels.find(m=>m.id===id)?.toolScope?.systems?.includes("canvas"));
     if (row.modality === "image") row.qualityConfig = qualityConfiguration(config, [...new Set(row.routes.map(r => r.upstreamId))]);
   }
   return Array.from(rows.values());
 }
 
-export function applyMvpQualityParameters(source: ModelConfig, row: MvpRow, input: { choices: { id: string; label: string }[]; routes: { upstreamId: string; mode: string; values: Record<string,string>; evidence?: { status: string; source: string; checkedAt: string } }[] } | null) {
+export function applyModelQualityParameters(source: ModelConfig, row: ManagedModelRow, input: { choices: { id: string; label: string }[]; routes: { upstreamId: string; mode: string; values: Record<string,string>; evidence?: { status: string; source: string; checkedAt: string } }[] } | null) {
   if (row.modality !== "image" || row.preset || !row.qualityConfig?.routes.every(r => r.editable)) throw new ModelConfigError("MODEL_PARAMETERS_ADAPTER", "此模型的外部路由或成本预设需在对应适配器中管理参数，不能覆盖其执行契约", 400);
   const config = structuredClone(source), ids = row.qualityConfig.routes.map(r => r.upstreamId);
   if (input && (new Set(input.routes.map(r => r.upstreamId)).size !== ids.length || input.routes.length !== ids.length || input.routes.some(r => !ids.includes(r.upstreamId)))) throw new ModelConfigError("INVALID_REQUEST", "请配置该家族的全部实际模型来源", 400);
@@ -106,7 +106,7 @@ export function applyMvpQualityParameters(source: ModelConfig, row: MvpRow, inpu
 }
 
 /** Read eligibility without the user's scope restrictions, while retaining prices, capability and business policy. */
-function mvpScopeOptions(row:MvpRow,eligibleCatalogs:Map<string,Set<string>>) {
+function managedModelScopeOptions(row:ManagedModelRow,eligibleCatalogs:Map<string,Set<string>>) {
   return Object.entries(FEATURE_BINDINGS).filter(([,binding])=>MODEL_BINDINGS[binding!].modality===row.modality).map(([feature,binding])=>{
     const available=row.publicIds.every(id=>eligibleCatalogs.get(feature)?.has(id));
     return {id:feature,label:featureNames[feature] || feature,available,selected:row.features.some(f=>f.id===feature),adminDefault:adminConfiguredFeature(feature),...(!available ? {reason:"当前模型能力或工具配置未开放此选项"} : {})};
@@ -114,7 +114,7 @@ function mvpScopeOptions(row:MvpRow,eligibleCatalogs:Map<string,Set<string>>) {
 }
 
 /** Scope is independent from prices, supplier targets and full configuration drafts. */
-export function applyMvpToolScope(source:ModelConfig,row:MvpRow,features:string[],canvas?:boolean):ModelConfig {
+export function applyModelToolScope(source:ModelConfig,row:ManagedModelRow,features:string[],canvas?:boolean):ModelConfig {
   const selected=new Set(features);
   if(selected.size!==features.length || features.some(id=>!row.scopeOptions.some(o=>o.id===id && o.available)))
     throw new ModelConfigError("MODEL_INCOMPATIBLE","请选择该模型支持且已在工具配置中开放的范围");
@@ -150,7 +150,7 @@ export function applyMvpToolScope(source:ModelConfig,row:MvpRow,features:string[
 }
 
 /** Persist family ordering without changing model availability, defaults or pricing. */
-export function orderMvpModels(source:ModelConfig,rows:MvpRow[],rowIds:string[]):ModelConfig {
+export function orderManagedModels(source:ModelConfig,rows:ManagedModelRow[],rowIds:string[]):ModelConfig {
   if(rowIds.length!==rows.length || new Set(rowIds).size!==rows.length || rowIds.some(id=>!rows.some(row=>row.id===id)))
     throw new ModelConfigError("INVALID_MODEL_ORDER","排序必须包含当前全部模型，且不能重复，请刷新后重试");
   const config=structuredClone(source),rank=new Map(rowIds.map((id,index)=>[id,index]));
@@ -167,8 +167,8 @@ export function orderMvpModels(source:ModelConfig,rows:MvpRow[],rowIds:string[])
 }
 
 /** A simple switch is global to the public alias/family, and preserves every price and binding. */
-export function switchMvpModel(source: ModelConfig, row: MvpRow, upstreamId: string): ModelConfig {
-  assertMvpTarget(source, row, upstreamId);
+export function switchManagedModel(source: ModelConfig, row: ManagedModelRow, upstreamId: string): ModelConfig {
+  assertManagedTarget(source, row, upstreamId);
   const config = structuredClone(source);
   if (row.preset) return config;
   for (const id of row.publicIds) {
@@ -178,7 +178,7 @@ export function switchMvpModel(source: ModelConfig, row: MvpRow, upstreamId: str
   return config;
 }
 /** Labels are shared across a family; identifiers, targets and billing stay intact. */
-export function renameMvpModel(source: ModelConfig, row: MvpRow, label: string): ModelConfig {
+export function renameManagedModel(source: ModelConfig, row: ManagedModelRow, label: string): ModelConfig {
   const name = label.trim();
   if (!name || name.length > 100 || /[\u0000-\u001f\u007f]/.test(name)) throw new ModelConfigError("INVALID_LABEL", "显示名称需要 1–100 个字符，不能包含换行或控制字符");
   const config = structuredClone(source);
@@ -187,7 +187,7 @@ export function renameMvpModel(source: ModelConfig, row: MvpRow, label: string):
   for (const alias of config.defaultImagePreset?.aliases || []) if (ids.has(alias.id)) alias.label = name;
   return config;
 }
-function assertMvpTarget(config: ModelConfig, row: MvpRow, upstreamId: string) {
+function assertManagedTarget(config: ModelConfig, row: ManagedModelRow, upstreamId: string) {
   const u = config.upstreamModels.find(u => u.id === upstreamId), p = config.providers.find(p => p.id === u?.providerId);
   if (!u?.enabled || !p?.enabled || !p.credentialRef || u.modality !== row.modality)
     throw new ModelConfigError("MODEL_INCOMPATIBLE", "请选择已启用、已接入且类型一致的上游模型");

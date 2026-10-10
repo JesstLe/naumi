@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
 import {createModelFixture} from "./model-config-fixture";
 import {fixtureConfig} from "./billing-unit-fixture";
-import {createMvpHandler} from "../src/lib/model-config/mvp-access";
+import {createModelManagementHandler} from "../src/lib/model-config/management-access";
 import {createModelRuntime,publicModelCatalog} from "../src/lib/model-config/runtime";
 import {createModelExecutor} from "../src/lib/model-config/execution";
 import {createRouterControl,type RouterStatus} from "../src/lib/model-config/router-client";
-import {applyMvpToolScope,mvpRows,orderMvpModels} from "../src/lib/model-config/mvp";
+import {applyModelToolScope,managedModelRows,orderManagedModels} from "../src/lib/model-config/management";
 import {FEATURE_BINDINGS} from "../src/lib/model-config/business";
 import {MODEL_BINDINGS} from "../src/lib/model-config/bindings";
 import {validateModelConfig} from "../src/lib/model-config/schema";
@@ -20,16 +20,16 @@ async function main(){
  const billing={version:1,config:fixtureConfig()};
  const runtime=createModelRuntime({pool:f.sql,repo:f.repo,credentials:f.credentials,router,trustedOrigins:[f.origin],billing:async()=>billing,billingByVersion:async()=>billing});
  const actor="scope-admin@fixture.test";
- const handler=createMvpHandler({authorize:async()=>({actor}),managed:async()=>true,administration:async()=>({pool:f.sql,repo:f.repo,credentials:f.credentials,router,runtime,billing:{current:async()=>billing},trustedOrigins:[f.origin]}) as never});
- const request=(body?:unknown)=>new Request("http://fixture.test/api/admin/mvp",{method:body?"POST":"GET",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
+ const handler=createModelManagementHandler({authorize:async()=>({actor}),managed:async()=>true,administration:async()=>({pool:f.sql,repo:f.repo,credentials:f.credentials,router,runtime,billing:{current:async()=>billing},trustedOrigins:[f.origin]}) as never});
+ const request=(body?:unknown)=>new Request("http://fixture.test/api/admin/model-management",{method:body?"POST":"GET",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
  try{
   f.config.publicModels.push(...["square","portrait"].map(s=>({...structuredClone(f.config.publicModels[0]),id:"gemini-3.0-pro-image-"+s,label:"gemini-3.0-pro-image-"+s})));
   const before=await f.repo.current(),draft=await f.repo.draft(actor),state=await(await handler(request())).json();
   const order=state.rows.map((r:any)=>r.id);
   const catalogs=(snapshot:typeof before)=>Object.entries(FEATURE_BINDINGS).map(([feature,binding])=>({...publicModelCatalog(snapshot,MODEL_BINDINGS[binding!].modality,feature as never),feature}));
-  const removedFirst={...before,config:applyMvpToolScope(before.config,state.rows[0],[])};
-  assert.deepEqual(mvpRows(removedFirst,catalogs(removedFirst)).map(r=>r.id),order,"removing the first model from early tools must preserve the inventory order");
-  assert.deepEqual(mvpRows(before,catalogs(before).reverse()).map(r=>r.id),order,"tool traversal order must not determine model positions");
+  const removedFirst={...before,config:applyModelToolScope(before.config,state.rows[0],[])};
+  assert.deepEqual(managedModelRows(removedFirst,catalogs(removedFirst)).map(r=>r.id),order,"removing the first model from early tools must preserve the inventory order");
+  assert.deepEqual(managedModelRows(before,catalogs(before).reverse()).map(r=>r.id),order,"tool traversal order must not determine model positions");
   const row=state.rows.find((r:any)=>r.id==="gemini-3.0-pro-image");assert.equal(row.publicIds.length,2);assert.ok(row.scopeOptions.find((o:any)=>o.id==="tool.cutout").reason);
   const executor=createModelExecutor({runtime,credentials:f.credentials,trustedOrigins:[f.origin],gateway:()=>({baseUrl:f.origin,apiKey:"fixture"})});
   const frozen=await executor.resolve({feature:"image.aplus",binding:"image.generate",requestedModelId:row.publicIds[0],snapshot:before,billing});
@@ -63,8 +63,8 @@ async function main(){
   assert.deepEqual((await(await handler(request())).json()).rows.map((r:any)=>r.id),order);
   const hidden=(await(await handler(request())).json()).rows.find((r:any)=>r.id===row.id);assert.equal(hidden.features.length,0);assert.ok(hidden.scopeOptions.length>0);
   const single={...before,config:structuredClone(before.config)};single.config.publicModels=single.config.publicModels.filter(m=>m.id==="image-a");
-  const only=(await import("../src/lib/model-config/mvp")).mvpRows(single,[{...publicModelCatalog(single,"image","image.generate"),feature:"image.generate"}])[0];
-  assert.throws(()=>applyMvpToolScope(single.config,only,[]),/保留至少一个/);
+  const only=(await import("../src/lib/model-config/management")).managedModelRows(single,[{...publicModelCatalog(single,"image","image.generate"),feature:"image.generate"}])[0];
+  assert.throws(()=>applyModelToolScope(single.config,only,[]),/保留至少一个/);
   const invalid=structuredClone(empty.config);invalid.publicModels[0].toolScope={features:["tool.cutout"],defaultFor:[]};assert.throws(()=>validateModelConfig(invalid,{trustedOrigins:[f.origin]}),/模型能力/);
 
   // Native publication of a complete family order, conflict/retry and scope edits.
@@ -81,7 +81,7 @@ async function main(){
   assert.deepEqual(ordered.config.bindings,empty.config.bindings);
   const pricedSource=structuredClone(empty.config);
   pricedSource.business={"canvas.image":{enabled:true,defaultModelId:"image-a",options:empty.config.publicModels.map((m,i)=>({modelId:m.id,enabled:true,sort:i,unit:"image" as const,pricing:{mode:"cny-fixed" as const,amountMicros:String((i+1)*100000),creditsPerCnyMicros:"100000000",rounding:"ceil" as const}}))}};
-  const pricedOrder=orderMvpModels(pricedSource,stateForOrder.rows,reordered);
+  const pricedOrder=orderManagedModels(pricedSource,stateForOrder.rows,reordered);
   const expected=pricedSource.publicModels.filter(m=>row.publicIds.includes(m.id)).map(m=>m.id).concat("image-a");
   assert.equal(pricedOrder.business!["canvas.image"]!.defaultModelId,"image-a");
   assert.deepEqual(pricedOrder.business!["canvas.image"]!.options.map(({sort,...o})=>o),pricedSource.business!["canvas.image"]!.options.map(({sort,...o})=>o));
@@ -101,7 +101,7 @@ async function main(){
   const compat={action:"scope-compat",id:randomUUID(),expectedVersion:grouped.version};assert.equal((await handler(request(compat))).status,200);
   const compatible=await f.repo.current(),expectedCompatible=structuredClone(grouped.config);for(const m of expectedCompatible.publicModels)if(m.toolScope)delete m.toolScope.systems;
   assert.deepEqual(compatible.config,expectedCompatible);assert.equal((await handler(request(compat))).status,200);assert.deepEqual(await f.repo.draft(actor),draft);
-  console.log("MODEL_ORDER_NATIVE=PASS SCOPE_ORDER_PRESERVED=PASS USER_MODEL_SELECTION=PASS MVP_TOOL_SCOPE=PASS FAMILY=PASS SUBSET_ALL_NONE=PASS DEFAULT_FALLBACK=PASS RAW_REQUEST_REJECTED=PASS FROZEN_TASK=PASS DRAFT_PRICE_ROUTE_PRESERVED=PASS RETRY_CONFLICT=PASS LAST_MODEL_PROTECTED=PASS PAID_GENERATION=0");
+  console.log("MODEL_ORDER_NATIVE=PASS SCOPE_ORDER_PRESERVED=PASS USER_MODEL_SELECTION=PASS MODEL_MANAGEMENT_TOOL_SCOPE=PASS FAMILY=PASS SUBSET_ALL_NONE=PASS DEFAULT_FALLBACK=PASS RAW_REQUEST_REJECTED=PASS FROZEN_TASK=PASS DRAFT_PRICE_ROUTE_PRESERVED=PASS RETRY_CONFLICT=PASS LAST_MODEL_PROTECTED=PASS PAID_GENERATION=0");
  }finally{await f.cleanup();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

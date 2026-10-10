@@ -14,7 +14,7 @@ import { validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelConfig, type ModelConfigRepository, type ModelFacts, type ModelPublication, type ModelSnapshot, type Modality, type RestoreInput, type StageInput } from "./types";
 import { DISPLAY_QUALITIES, selectedImagePreset, presetPublicId, effectiveImageParameters } from "./image-preset";
 import { featureDefaultModel, modelAllowedForFeature } from "./tool-scope";
-import {modelCreditView} from "./mvp-pricing";
+import {modelCreditView} from "./management-pricing";
 import {qualityPresentation,policyQuality} from "./quality-policy";
 
 export type RoutingSimulation = { eligible: { upstreamId: string; providerId: string; rank: number }[]; excluded: { upstreamId: string; codes: string[] }[]; modelVersion: number; billingVersion: number };
