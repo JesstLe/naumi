@@ -59,7 +59,7 @@ export function Image25PriceTable() {
         <table className="w-full border-collapse text-right text-xs tabular-nums" aria-label="原生输出参考价与三倍售价">
           <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700"><tr>
             <th rowSpan={2} className="whitespace-nowrap border-b border-slate-300 px-3 py-3 text-left">比例</th><th rowSpan={2} className="whitespace-nowrap border-b border-slate-300 px-3 py-3 text-left">分辨率</th><th rowSpan={2} className="whitespace-nowrap border-b border-slate-300 px-3 py-3 text-left">实际像素</th>
-            {qualities.map(q => <th key={q} colSpan={2} className="border-b border-l border-slate-300 px-3 py-3 text-center">{qualityNames[q]}{q === "medium" ? "（现有质量上限）" : ""}</th>)}
+            {qualities.map(q => <th key={q} colSpan={2} className="border-b border-l border-slate-300 px-3 py-3 text-center">{qualityNames[q]}{q === "medium" ? "（参考标准档）" : ""}</th>)}
           </tr><tr>{qualities.flatMap(q => [<th key={`${q}-output`} className="whitespace-nowrap border-b border-l border-slate-300 px-3 py-2 font-normal">输出参考价</th>, <th key={`${q}-sale`} className="whitespace-nowrap border-b border-slate-300 px-3 py-2">售价 ×3</th>])}</tr></thead>
           <tbody>{rows.map(row => <tr key={`${row.resolution}:${row.ratio}`} data-testid={`price-row-${row.resolution}-${row.ratio}`} className="border-b border-slate-200 even:bg-slate-50 hover:bg-slate-100">
             <th scope="row" className="whitespace-nowrap px-3 py-3 text-left font-medium">{row.ratio}</th><td className="whitespace-nowrap px-3 py-3 text-left">{row.resolution.toUpperCase()}</td><td className="whitespace-nowrap px-3 py-3 text-left text-slate-600">{row.pixels.replace("x", "×")}</td>
@@ -71,7 +71,7 @@ export function Image25PriceTable() {
         </table>
       </div>
       <section className="space-y-2 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-600">
-        <p>高于 medium 的档位是原生能力参考，并未改变当前生图质量上限。若实际按 medium 执行，应采用 medium 的输出价 ×3，不能用请求的 high / max 档重复抬价。auto、自定义像素不猜固定报价。</p>
+        <p>本表按来源日期记录供应商原生档位，不代表当前前端档位或实际发送参数。实际支持能力与参数映射以模型管理和元数据库为准；参考价格应匹配实际执行档位。auto、自定义像素不猜固定报价。</p>
         <p>{data.conversionNotice}</p>
         {data.conversion && <p>换算依据：{data.conversion.evidence}；更新时间：{data.conversion.updatedAt}。{data.conversion.basis === "budget" ? "预算汇率：人民币金额为折算估计，非实际充值汇率。" : "人民币显示保留六位小数，积分按已有规则最终舍入。"}</p>}
         <p>售价减输出价不是实际利润；只有真实输入、输出及其他成本齐全后才能核算。原生 4K 是档位，1:1 对应 2880×2880，并非 4096×4096。</p>
