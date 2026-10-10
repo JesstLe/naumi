@@ -1,5 +1,6 @@
 "use client";
-import {toolImageError} from "@/lib/tool-ui";
+import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
+import {toolImageError, validToolImages} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -94,6 +95,8 @@ export function VariationsClient() {
   const [prompt, setPrompt] = useState("");
   const [count, setCount] = useState(1);
   const [loading, setLoading] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<GeneratedImage[]>([]);
   // AI帮写/智能优化(贴按钮弹窗,全站统一)
@@ -116,12 +119,7 @@ export function VariationsClient() {
   const isCustom = splitMode === "custom";
 
   // 卸载时释放 objectURL
-  useEffect(() => {
-    return () => {
-      if (slot) URL.revokeObjectURL(slot.url);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useObjectUrlCleanup([slot?.url]);
 
   // 从作品页点图裂变作品带 ?view=<url> 进来:右侧直接展示这张结果。
   useEffect(() => {
@@ -153,13 +151,10 @@ export function VariationsClient() {
       setError(L("请选择12MB以内的PNG / JPG / WebP图片", "Choose a PNG / JPG / WebP under 12MB"));
       return;
     }
+    const next = { id: `s-${Date.now()}`, file: f, url: URL.createObjectURL(f) };
     setSlot((prev) => {
       if (prev) URL.revokeObjectURL(prev.url);
-      return {
-        id: `s-${Date.now()}`,
-        file: f,
-        url: URL.createObjectURL(f),
-      };
+      return next;
     });
   }
 
@@ -186,9 +181,10 @@ export function VariationsClient() {
           : await (async()=>{const response=await fetch(`/api/download?u=${encodeURIComponent(url)}&n=input.png`,{headers:await authHeader()});if(!response.ok)throw new Error("download failed");return response.blob();})();
       const f = new File([blob], "input.png", { type: blob.type || "image/png" });
       if(toolImageError(f,MAX_UPLOAD))throw new Error("invalid image");
+      const next = { id: `s-${Date.now()}`, file: f, url: URL.createObjectURL(f) };
       setSlot((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
-        return { id: `s-${Date.now()}`, file: f, url: URL.createObjectURL(f) };
+        return next;
       });
       setResults([]);
       setError(null);
@@ -254,13 +250,14 @@ export function VariationsClient() {
       const start = await startRes.json();
       if (!startRes.ok) throw new Error(start.error ?? L("生成失败", "Failed"));
       const jobId: string | undefined = start.jobId;
-      if (!jobId) throw new Error(L("任务创建失败,请重试", "Could not start job"));
+      if (typeof jobId !== "string" || !jobId.trim()) throw new Error(L("任务创建失败,请重试", "Could not start job"));
 
       const deadline = Date.now() + 6 * 60 * 1000;
       let data: { images: GeneratedImage[]; user?: SessionUser | null } | null =
         null;
       while (!data) {
         await new Promise((r) => setTimeout(r, 2500));
+        if (!mounted.current) return;
         if (Date.now() > deadline)
           throw new Error(L("生成超时,请重试", "Timed out, please retry"));
         const sres = await fetch(
@@ -268,9 +265,13 @@ export function VariationsClient() {
           { cache: "no-store", headers: await authHeader() }
         );
         const s = await sres.json();
+        if (!mounted.current) return;
           if (!sres.ok) throw new Error(s.error || L("任务读取失败，请重试", "Could not read job; retry"));
         if (sres.ok && s.user) applyServerUser(s.user);
-        if (s.status === "done") data = s;
+        if (s.status === "done") {
+          if (!validToolImages(s.images)) throw new Error(L("生成结果异常，请重试", "Invalid image result; retry"));
+          data = s;
+        }
         else if (s.status === "error")
           throw new Error(s.error ?? L("生成失败", "Failed"));
       }
@@ -279,11 +280,12 @@ export function VariationsClient() {
       else consumeCredits(cost);
       setResults(data.images);
     } catch (e) {
+      if (!mounted.current) return;
       setError(
         e instanceof Error ? e.message : L("生成失败,请重试", "Failed, please retry")
       );
     } finally {
-      setLoading(false);
+      if (mounted.current) setLoading(false);
     }
   }
 

@@ -9,3 +9,11 @@ export function toolImageError(file: {name:string;type:string;size:number}, maxB
   return null;
 }
 export function toolSourceUrl(source?:string) {return source && /^(https?:\/\/|\/media\/|data:image\/|blob:)/.test(source)?source:undefined;}
+
+/** Reject malformed completed jobs before rendering or local credit fallback. */
+export function validToolImages(value: unknown): value is import("@/app/api/generate-image/route").GeneratedImage[] {
+  return Array.isArray(value) && value.length > 0 && value.every(image =>
+    image && typeof image.id === "string" && image.id.trim() &&
+    typeof image.url === "string" && !!toolSourceUrl(image.url)
+  );
+}

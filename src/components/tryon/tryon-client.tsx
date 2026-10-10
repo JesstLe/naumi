@@ -1,4 +1,5 @@
 "use client";
+import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
@@ -109,13 +110,7 @@ export function TryonClient() {
     };
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (top) URL.revokeObjectURL(top.url);
-      if (bottom) URL.revokeObjectURL(bottom.url);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useObjectUrlCleanup([top?.url, bottom?.url, customModel?.thumb]);
 
   // 打开选择弹窗时探测一次 CDN(模块级缓存,全站只探一次);不通 → 图片直接用原始源
   useEffect(() => {
