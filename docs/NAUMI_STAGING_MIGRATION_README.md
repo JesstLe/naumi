@@ -928,3 +928,8 @@ GPT-6 Astra仍为显示名，真实主模型glm-5.3-flash，备用hy4-preview与
 本轮只改运行配置，无网站源码/Schema/镜像切换；仍运行36255e03253703d2a524cf72cde67f0305956a2e，Image ID sha256:3b0a788fd1aa53a02b45519a0473c7f9caf17a0d93a2e098f6eb7e7adcc0bfff，网站版号1791624706 / v2026.10.10-173146。新机健康、版本、env/Compose指纹通过；旧机未连接。
 
 完整数据库备份/可读目录/修复及真实验收证据：/opt/naumi-staging/evidence/agent-404-fix-20261010。配置发布和真实验收均持deploy.lock，现已释放。ROLLBACK.txt及fix-provider.mjs --rollback通过原生版本发布仅回退该provider URL，保留其余管理员后续设置；不回灌数据库/媒体。临时帮助脚本与内存登录令牌已清理，无新本机登录JSON。空间维护计数：自36255起累计成功发布1次（本次配置发布计一次，文档提交不计），尚未到3次清理门槛。
+
+
+## 2026-10-10 晚间最近分支集中发布准备
+
+用户要求将最近完成分支合入main并发布新机。已整合工作流粘贴、新工作台示例、小球预览与Logo方案，并包含主线Naumi品牌清理；沿用分支验收，必要合并检查通过。发布仍仅120.27.162.85，固定镜像/备份/回滚/全程锁正在准备，尚未宣称上线。详见docs/changes/2026-10-10-recent-branches-release.md。
