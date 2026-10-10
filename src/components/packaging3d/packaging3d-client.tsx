@@ -1,4 +1,5 @@
 "use client";
+import {toolImageError, toolSourceUrl} from "@/lib/tool-ui";
 import {useImageResolutions} from "@/lib/model-config/resolution-client";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
@@ -47,12 +48,8 @@ export function Packaging3dClient() {
   function handleFile(next: File | null) {
     setError(null);
     if (!next || processing) return;
-    if (next.size > MAX_UPLOAD) {
-      setError(L("文件不能超过 16MB", "File must be under 16MB"));
-      return;
-    }
-    if (!/^image\/(png|jpeg|webp|svg\+xml)$/i.test(next.type)) {
-      setError(L("支持 PNG、JPG、WebP、SVG", "PNG, JPG, WebP and SVG are supported"));
+    if (toolImageError(next, MAX_UPLOAD, "image/png,image/jpeg,image/webp,image/svg+xml")) {
+      setError(L("请选择16MB以内的PNG / JPG / WebP / SVG文件", "Choose a PNG / JPG / WebP / SVG under 16MB"));
       return;
     }
     if (preview) URL.revokeObjectURL(preview);
@@ -91,7 +88,8 @@ export function Packaging3dClient() {
       });
       const start = await startResponse.json();
       if (!startResponse.ok) throw new Error(start.error || L("生成失败", "Generation failed"));
-      const jobId = start.jobId as string;
+      const jobId = start.jobId;
+      if (typeof jobId !== "string" || !jobId.trim()) throw new Error(L("任务创建失败，请重试", "Could not start job; retry"));
       const deadline = Date.now() + 6 * 60 * 1000;
       while (Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 2500));
@@ -103,7 +101,7 @@ export function Packaging3dClient() {
         if (!response.ok) throw new Error(job.error || L("任务读取失败", "Could not read job"));
         if (job.status === "error") throw new Error(job.error || L("生成失败", "Generation failed"));
         if (job.status === "done") {
-          if (!job.url) throw new Error(L("图片接口未返回结果", "No image was returned"));
+          if (typeof job.url !== "string" || !toolSourceUrl(job.url)) throw new Error(L("图片接口未返回结果", "No image was returned"));
           setResult(job.url);
           if (job.user) applyServerUser(job.user);
           setRefreshKey((value) => value + 1);

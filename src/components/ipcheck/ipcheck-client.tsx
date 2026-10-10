@@ -1,4 +1,5 @@
 "use client";
+import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
 
@@ -72,12 +73,7 @@ export function IpcheckClient() {
   const [result, setResult] = useState<IpResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (img) URL.revokeObjectURL(img.url);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useObjectUrlCleanup([img?.url]);
 
   function pick(f: File) {
     if (processing) return;

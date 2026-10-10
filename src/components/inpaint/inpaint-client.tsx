@@ -1,4 +1,5 @@
 "use client";
+import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
@@ -73,12 +74,7 @@ export function InpaintClient() {
     setAssistRun({ mode, nonce: Date.now() });
   }
 
-  useEffect(() => {
-    return () => {
-      if (imgUrl) URL.revokeObjectURL(imgUrl);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useObjectUrlCleanup([imgUrl]);
 
   function loadFile(f: File) {
     if (loading) return;
