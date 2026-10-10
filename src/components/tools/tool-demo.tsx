@@ -4,158 +4,15 @@ import { ImageIcon } from "lucide-react";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { cdnUrl } from "@/lib/cdn";
 
-/**
- * 功能页空态演示:中间显示「原图 → 效果」一对图 + 一句功能标题,
- * 让用户一进页面就明白这个工具是做什么的(对标同行)。
- *
- * 素材策略:每个工具配「真实的」一对 before/after(贴合该功能)才显示对比图;
- * 没配真实图的工具,只显示功能标题 + 干净提示(不放假图,避免误导)。
- * 真实图填进对应工具的 before/after 即可(传 R2 后的 URL)。
- */
-
-// 每个工具的演示配置:title=功能标题。
-// 两种演示形式(配其一即可):
-//   combo  = 一张「前后合成图」(左原/右效果,或左效果/右原),单图就能说清效果;
-//   before/after = 分开的两张图,组件自动拼成「原图 → 效果」。
-// 都没配则只显示标题 + 干净提示(不放假图)。
-export const TOOL_DEMOS: Record<
-  string,
-  {
-    title: string;
-    combo?: string;
-    before?: string;
-    after?: string;
-    gallery?: string[];
-  }
-> = {
-  upscale: {
-    title: "模糊图、老照片,一键高清修复放大",
-    before: "/demos/upscale-before.webp",
-    after: "/demos/upscale-after.webp",
-  },
-  cutout: { title: "一键抠出主体,发丝级透明底", combo: "/demos/cutout-combo.png" },
-  style: {
-    title: "一张图,秒换全新画面风格",
-    before: "/demos/style-before.webp",
-    after: "/demos/style-after.webp",
-  },
-  garment: {
-    title: "模特图,自动提取成平铺电商主图",
-    before: "/demos/garment-before.webp",
-    after: "/demos/garment-after.webp",
-  },
-  dress3d: {
-    title: "平铺服装,一键生成 3D 立体效果",
-    before: "/demos/dress3d-before.webp",
-    after: "/demos/dress3d-after.webp",
-  },
-  dewrinkle: {
-    title: "褶皱衣服,一键熨平成精致质感",
-    before: "/demos/dewrinkle-before.webp",
-    after: "/demos/dewrinkle-after.webp",
-  },
-  agent: {
-    title: "一句话下达任务,自动编排多个工具完成",
-    before: "/demos/agent-before.webp",
-    after: "/demos/agent-after.webp",
-  },
-  avatar: {
-    title: "普通照片,秒变干净头像素材",
-    before: "/demos/avatar-before.webp",
-    after: "/demos/avatar-after.webp",
-  },
-  packaging3d: {
-    title: "平面模切线,生成完整包装 3D 效果",
-    before: "/demos/packaging3d-before.webp",
-    after: "/demos/packaging3d-after.webp",
-  },
-  replicate: {
-    title: "商品原图 + 风格参考,复刻同款商业视觉",
-    before: "/demos/replicate-before.webp",
-    after: "/demos/replicate-after.webp",
-  },
-  retouch: {
-    title: "普通商品图,一键精修成商业级成片",
-    before: "/demos/retouch-before.webp",
-    after: "/demos/retouch-after.webp",
-  },
-  recolor: {
-    title: "保留商品结构和纹理,一键更换配色",
-    before: "/demos/recolor-before.webp",
-    after: "/demos/recolor-after.webp",
-  },
-  print: {
-    title: "成品图上的印花,一键提取成素材",
-    before: "/demos/print-before.webp",
-    after: "/demos/print-after.webp",
-  },
-  variation: {
-    title: "一张图,裂变出整组系列素材",
-    before: "/demos/variation-before.webp",
-    after: "/demos/variation-after.webp",
-  },
-  fusion: {
-    title: "多图元素,融合成无缝视觉合成",
-    before: "/demos/fusion-before.webp",
-    after: "/demos/fusion-after.webp",
-  },
-  inpaint: {
-    title: "圈出要改的地方,描述一下就重绘",
-    before: "/demos/inpaint-before.webp",
-    after: "/demos/inpaint-after.webp",
-  },
-  printfile: {
-    title: "上传图,一键生成印刷级文件",
-    before: "/demos/printfile-before.webp",
-    after: "/demos/printfile-after.webp",
-  },
-  tryon: {
-    title: "模特 + 服装,一键虚拟试穿上身",
-    before: "/demos/tryon-before.webp",
-    after: "/demos/tryon-after.webp",
-  },
-  titles: {
-    title: "看图识卖点,一键出爆款营销标题",
-    before: "/demos/titles-before.webp",
-    after: "/demos/titles-after.webp",
-  },
-  image: {
-    title: "一句话或产品图,生成电商大片",
-    before: "/demos/image-before.webp",
-    after: "/demos/image-after.webp",
-  },
-  suite: {
-    title: "上传产品图,自动出整套电商套图",
-    before: "/demos/suite-before.webp",
-    after: "/demos/suite-after.webp",
-  },
-  ipcheck: {
-    title: "看图识别版权 / IP 侵权风险",
-    gallery: [
-      "/demos/ipcheck-1.webp",
-      "/demos/ipcheck-2.webp",
-      "/demos/ipcheck-3.webp",
-    ],
-  },
-  dewatermark: {
-    title: "一键擦除水印 / logo / 文字,自然补全",
-    before: "/demos/dewatermark-before.webp",
-    after: "/demos/dewatermark-after.webp",
-  },
-};
+import { TOOL_DEMOS, type ToolDemoConfig } from "@/lib/tool-demo-catalog";
+export { TOOL_DEMOS } from "@/lib/tool-demo-catalog";
 
 /** 取某工具的演示配置。combo / before/after 都可能为空(未配真实图)。 */
 export function getDemo(key?: string) {
   if (!key) return null;
   const d = TOOL_DEMOS[key];
   if (!d) return null;
-  return {
-    title: d.title,
-    combo: d.combo,
-    before: d.before,
-    after: d.after,
-    gallery: d.gallery,
-  };
+  return { ...d };
 }
 
 export function ToolDemo({
@@ -164,14 +21,14 @@ export function ToolDemo({
   before,
   after,
   gallery,
+  beforeLabel,
+  beforeLabelEn,
+  afterLabel,
+  afterLabelEn,
+  transparent = false,
   compact = false,
   notice = false,
-}: {
-  title: string;
-  combo?: string;
-  before?: string;
-  after?: string;
-  gallery?: string[];
+}: ToolDemoConfig & {
   compact?: boolean;
   notice?: boolean;
 }) {
@@ -180,6 +37,7 @@ export function ToolDemo({
   const hasPair = !!before && !!after;
   return (
     <div
+      data-testid="tool-demo"
       className={
         compact
           ? "flex w-full flex-col items-center gap-3 text-center"
@@ -196,14 +54,17 @@ export function ToolDemo({
         {title}
       </h3>
       {gallery?.length ? (
-        <div className="flex w-full items-stretch justify-center gap-2 sm:gap-3">
+        <div className="grid w-full max-w-[560px] grid-cols-3 items-stretch gap-2 sm:gap-3">
           {gallery.map((g, i) => (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               key={i}
               src={cdnUrl(g)}
-              alt=""
-              className="w-[clamp(88px,28vw,180px)] rounded-2xl border border-c-border bg-c-subtle2 object-contain shadow-card"
+              alt={`${title} ${L("示例", "example")} ${i + 1}`}
+              width={640}
+              height={1080}
+              decoding="async"
+              className="h-auto w-full min-w-0 rounded-xl border border-c-border bg-white object-contain shadow-card"
             />
           ))}
         </div>
@@ -217,22 +78,22 @@ export function ToolDemo({
           />
         </div>
       ) : hasPair ? (
-        <div className={compact ? "flex w-full items-center justify-center gap-2.5" : "flex w-full items-center justify-center gap-3 sm:gap-5"}>
-          <figure className="flex shrink-0 flex-col items-center gap-1.5">
+        <div className={`grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3 ${compact ? "max-w-[340px]" : "max-w-[560px]"}`}>
+          <figure className="flex min-w-0 flex-col items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={cdnUrl(before!)}
-              alt={L("原图", "Original")}
-              className={
-                compact
-                  ? "aspect-square w-[88px] rounded-xl border border-c-border bg-c-subtle2 object-contain shadow-card sm:w-[clamp(104px,24vw,140px)]"
-                  : "aspect-square w-[96px] rounded-2xl border border-c-border bg-c-subtle2 object-contain shadow-card sm:w-[clamp(110px,34vw,220px)]"
-              }
+              alt={`${title} · ${L(beforeLabel || "原图", beforeLabelEn || "Original")}`}
+              width={640}
+              height={720}
+              decoding="async"
+              className="aspect-[8/9] h-auto w-full rounded-xl border border-c-border bg-white object-contain shadow-card"
             />
-            <figcaption className="text-[11.5px] text-c-text3">{L("原图", "Original")}</figcaption>
+            <figcaption className="text-[11.5px] text-c-text3">{L(beforeLabel || "原图", beforeLabelEn || "Original")}</figcaption>
           </figure>
           <svg
-            className={compact ? "h-7 w-7 flex-none text-acc" : "h-8 w-8 flex-none text-acc sm:h-10 sm:w-10"}
+            aria-hidden="true"
+            className="mb-6 h-5 w-5 flex-none text-c-text4 sm:h-6 sm:w-6"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -242,19 +103,19 @@ export function ToolDemo({
           >
             <path d="M5 12h14M13 6l6 6-6 6" />
           </svg>
-          <figure className="flex shrink-0 flex-col items-center gap-1.5">
+          <figure className="flex min-w-0 flex-col items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={cdnUrl(after!)}
-              alt={L("效果", "Result")}
-              className={
-                compact
-                  ? "aspect-square w-[88px] rounded-xl border-2 border-acc bg-c-subtle2 object-contain shadow-card sm:w-[clamp(104px,24vw,140px)]"
-                  : "aspect-square w-[96px] rounded-2xl border-2 border-acc bg-c-subtle2 object-contain shadow-card sm:w-[clamp(110px,34vw,220px)]"
-              }
+              alt={`${title} · ${L(afterLabel || "效果示例", afterLabelEn || "Result example")}`}
+              width={640}
+              height={720}
+              decoding="async"
+              style={transparent ? { backgroundColor: "#ffffff", backgroundImage: "conic-gradient(#e8edf2 25%, #ffffff 0 50%, #e8edf2 0 75%, #ffffff 0)", backgroundSize: "16px 16px" } : undefined}
+              className="aspect-[8/9] h-auto w-full rounded-xl border border-c-border bg-white object-contain shadow-card"
             />
             <figcaption className="text-[11.5px] font-medium text-acc">
-              {L("效果", "Result")}
+              {L(afterLabel || "效果示例", afterLabelEn || "Result example")}
             </figcaption>
           </figure>
         </div>

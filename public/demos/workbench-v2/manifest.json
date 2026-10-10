@@ -1,0 +1,1832 @@
+{
+  "version": "workbench-v2",
+  "kind": "original-generated-demo-not-benchmark",
+  "assets": [
+    {
+      "key": "upscale",
+      "role": "before",
+      "path": "/demos/workbench-v2/upscale-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 24636,
+      "sha256": "426b5e4c737f635b2afe0d046342cff3d2ce500e3d4d5bd2992bd4cf8da098b8",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-upscale-f134cb64-7a2e-4dbe-b918-c7c7b78144ad",
+        "jobId": "job-a4d832b2-2d67-4633-a8c6-d6594fb61d51",
+        "artworkId": "art-job-a4d832b2-2d67-4633-a8c6-d6594fb61d51-0",
+        "promptHash": "134107c55f4c5e98d38bc1045aa006fad3c3fb1bba3e7900c09019607765184b",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "a52fc0c6d5c9e6f6d881f23fa7ddf5c6363bd61fa03f97d5bc962ef834e8e838",
+        "generatedAt": "2026-10-10T11:54:52.309Z"
+      }
+    },
+    {
+      "key": "upscale",
+      "role": "after",
+      "path": "/demos/workbench-v2/upscale-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 68386,
+      "sha256": "26b78ee0542025d76ab7faa415faefd14e2fcdb33d34b1a11429fa92657ad1bd",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-upscale-f134cb64-7a2e-4dbe-b918-c7c7b78144ad",
+        "jobId": "job-a4d832b2-2d67-4633-a8c6-d6594fb61d51",
+        "artworkId": "art-job-a4d832b2-2d67-4633-a8c6-d6594fb61d51-0",
+        "promptHash": "134107c55f4c5e98d38bc1045aa006fad3c3fb1bba3e7900c09019607765184b",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "a52fc0c6d5c9e6f6d881f23fa7ddf5c6363bd61fa03f97d5bc962ef834e8e838",
+        "generatedAt": "2026-10-10T11:54:52.309Z"
+      }
+    },
+    {
+      "key": "cutout",
+      "role": "before",
+      "path": "/demos/workbench-v2/cutout-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 132714,
+      "sha256": "c6366c43fbd640ad85727cd6a9803e2f4127b421f42cfef3adae00b74e4fefeb",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-cutout-r2-0591733f-8150-42eb-8fdc-670cd8a8e839",
+        "jobId": "job-f358ab9d-aef5-4447-b016-4a3ab6bd393a",
+        "artworkId": "art-job-f358ab9d-aef5-4447-b016-4a3ab6bd393a-0",
+        "promptHash": "aa64b756354f909904c89d531b0a56e66a4abaf008e81fec3732966dd9d75809",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "dac229efbdc46175a77d3e0b241d4bd6121346d4b7068f6c29196a57857ab983",
+        "generatedAt": "2026-10-10T12:03:56.853Z"
+      }
+    },
+    {
+      "key": "cutout",
+      "role": "after",
+      "path": "/demos/workbench-v2/cutout-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 77602,
+      "sha256": "24b9abe9f622b1dd4b89c43b67236e045cca170d1a6b59e32dd58d6d16698b49",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 90,
+        "background": "transparent"
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-cutout-r2-0591733f-8150-42eb-8fdc-670cd8a8e839",
+        "jobId": "job-f358ab9d-aef5-4447-b016-4a3ab6bd393a",
+        "artworkId": "art-job-f358ab9d-aef5-4447-b016-4a3ab6bd393a-0",
+        "promptHash": "aa64b756354f909904c89d531b0a56e66a4abaf008e81fec3732966dd9d75809",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "dac229efbdc46175a77d3e0b241d4bd6121346d4b7068f6c29196a57857ab983",
+        "generatedAt": "2026-10-10T12:03:56.853Z",
+        "alpha": true
+      }
+    },
+    {
+      "key": "style",
+      "role": "before",
+      "path": "/demos/workbench-v2/style-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 46706,
+      "sha256": "7eedd928d6d87f7176e817a94aac8184b9587f31a3b3d1f93387577dda68a100",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-style-29707b57-38e8-446f-a309-220c83a66dc9",
+        "jobId": "job-9f3c4284-5894-4d43-8681-1891db59f69e",
+        "artworkId": "art-job-9f3c4284-5894-4d43-8681-1891db59f69e-0",
+        "promptHash": "79d95a3843d38a5dbc66525f1efe3744e70c2e75b36b143e2487ae610de1a606",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "c9939f09777e8992011363cbc4dfb2d8ea884b0b87ee9c59164185b82eb54b5b",
+        "generatedAt": "2026-10-10T11:57:31.352Z"
+      }
+    },
+    {
+      "key": "style",
+      "role": "after",
+      "path": "/demos/workbench-v2/style-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 90382,
+      "sha256": "87a87c049572c227ea017fb08b0114bbd8ff96cce812f28e739c751cc2f0e37d",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-style-29707b57-38e8-446f-a309-220c83a66dc9",
+        "jobId": "job-9f3c4284-5894-4d43-8681-1891db59f69e",
+        "artworkId": "art-job-9f3c4284-5894-4d43-8681-1891db59f69e-0",
+        "promptHash": "79d95a3843d38a5dbc66525f1efe3744e70c2e75b36b143e2487ae610de1a606",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "c9939f09777e8992011363cbc4dfb2d8ea884b0b87ee9c59164185b82eb54b5b",
+        "generatedAt": "2026-10-10T11:57:31.352Z"
+      }
+    },
+    {
+      "key": "garment",
+      "role": "before",
+      "path": "/demos/workbench-v2/garment-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 69944,
+      "sha256": "b89e3d0bce7dfabe55630fa4fc5af33cbc43d8caee7cd35ef3bf5ea4cb3e81c9",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-garment-28442887-114f-4bf4-bfa8-8348321be839",
+        "jobId": "job-15dad077-17a0-4633-9bfc-23880296d37f",
+        "artworkId": "art-job-15dad077-17a0-4633-9bfc-23880296d37f-0",
+        "promptHash": "42aafad65674de6e69e0c1b3b3f7d455d92d593f7e705d146195c322599f2218",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "94267452f0d884df65640223c15efb42689d87c66b799d052d5d40d6666f0af8",
+        "generatedAt": "2026-10-10T11:56:56.985Z"
+      }
+    },
+    {
+      "key": "garment",
+      "role": "after",
+      "path": "/demos/workbench-v2/garment-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 57638,
+      "sha256": "5d00c9b3c3aed332b7a66da4252ce12d7ae0266ab0be71a75d024e38706cad37",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-garment-28442887-114f-4bf4-bfa8-8348321be839",
+        "jobId": "job-15dad077-17a0-4633-9bfc-23880296d37f",
+        "artworkId": "art-job-15dad077-17a0-4633-9bfc-23880296d37f-0",
+        "promptHash": "42aafad65674de6e69e0c1b3b3f7d455d92d593f7e705d146195c322599f2218",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "94267452f0d884df65640223c15efb42689d87c66b799d052d5d40d6666f0af8",
+        "generatedAt": "2026-10-10T11:56:56.985Z"
+      }
+    },
+    {
+      "key": "dress3d",
+      "role": "before",
+      "path": "/demos/workbench-v2/dress3d-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 27854,
+      "sha256": "e71573828da0107712f608c080dbbe7d7ec04c5a932c47071732cad533d288f5",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-dress3d-cd0c49a8-4e31-44c2-a2c0-aac1ace6a7bc",
+        "jobId": "job-67c2c10d-00ec-4bf8-ac45-0d4de7cbaca8",
+        "artworkId": "art-job-67c2c10d-00ec-4bf8-ac45-0d4de7cbaca8-0",
+        "promptHash": "f564c7d11d602af1a7ac03e2218bf4f42f18bd141e48db04bcaaa50bb8cabdbf",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "5a646cb25ba40471b7958b29a8cc92a328f97c2a4a9c5a6aecbdf1e2ae73abc9",
+        "generatedAt": "2026-10-10T11:56:54.508Z"
+      }
+    },
+    {
+      "key": "dress3d",
+      "role": "after",
+      "path": "/demos/workbench-v2/dress3d-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 28824,
+      "sha256": "48534e3b1abeb126ec11cbf3d218aae647c26ec3831a66eb8ba59c50f164a25f",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-dress3d-cd0c49a8-4e31-44c2-a2c0-aac1ace6a7bc",
+        "jobId": "job-67c2c10d-00ec-4bf8-ac45-0d4de7cbaca8",
+        "artworkId": "art-job-67c2c10d-00ec-4bf8-ac45-0d4de7cbaca8-0",
+        "promptHash": "f564c7d11d602af1a7ac03e2218bf4f42f18bd141e48db04bcaaa50bb8cabdbf",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "5a646cb25ba40471b7958b29a8cc92a328f97c2a4a9c5a6aecbdf1e2ae73abc9",
+        "generatedAt": "2026-10-10T11:56:54.508Z"
+      }
+    },
+    {
+      "key": "dewrinkle",
+      "role": "before",
+      "path": "/demos/workbench-v2/dewrinkle-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 96176,
+      "sha256": "7f63d803f9b54764807d5b2ae67736cd361b7f0856e20febdb54927658b0dbe6",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-dewrinkle-8ea04873-7610-443b-85f3-5fc69ae532c7",
+        "jobId": "job-2dcb6dd5-a3ad-4533-b99a-44b171eeb030",
+        "artworkId": "art-job-2dcb6dd5-a3ad-4533-b99a-44b171eeb030-0",
+        "promptHash": "169de1acc771abfd997475871bf2aa4a3c39f8131650f1c9f5242ad54cf2a0cd",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "d52684c7c2881569257fa63db5b5ab28b963618df97b0005170ac103a05a5310",
+        "generatedAt": "2026-10-10T11:57:32.378Z"
+      }
+    },
+    {
+      "key": "dewrinkle",
+      "role": "after",
+      "path": "/demos/workbench-v2/dewrinkle-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 81434,
+      "sha256": "b5d6d646a4948b77b33ea8085e64b4f0f8de0b37a1bf448d165a6810e18b33af",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-dewrinkle-8ea04873-7610-443b-85f3-5fc69ae532c7",
+        "jobId": "job-2dcb6dd5-a3ad-4533-b99a-44b171eeb030",
+        "artworkId": "art-job-2dcb6dd5-a3ad-4533-b99a-44b171eeb030-0",
+        "promptHash": "169de1acc771abfd997475871bf2aa4a3c39f8131650f1c9f5242ad54cf2a0cd",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "d52684c7c2881569257fa63db5b5ab28b963618df97b0005170ac103a05a5310",
+        "generatedAt": "2026-10-10T11:57:32.378Z"
+      }
+    },
+    {
+      "key": "agent",
+      "role": "before",
+      "path": "/demos/workbench-v2/agent-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 13418,
+      "sha256": "012a049e5d147af14ced353e44b69be9e97b1872595193edb8eef3be503d6046",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-agent-a9486cc4-ace5-4fcd-9f1d-223c6ddf6af6",
+        "jobId": "job-81b029b9-8fb7-483f-b13d-260c78e62586",
+        "artworkId": "art-job-81b029b9-8fb7-483f-b13d-260c78e62586-0",
+        "promptHash": "b4b4f466f2a4e78f97f40b14d241d6d8a0ce52d0fa5288a9f3fd9b77b625e66d",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "cafd99a60ee99ade3f9dff7519b2890c6eb4e6f29f908e20538dde5fa9c5975f",
+        "generatedAt": "2026-10-10T11:57:53.507Z"
+      }
+    },
+    {
+      "key": "agent",
+      "role": "after",
+      "path": "/demos/workbench-v2/agent-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 81414,
+      "sha256": "8827ab2d3474b5303323731695e2225678a188f86834e315f5b9edac685cfac6",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-agent-a9486cc4-ace5-4fcd-9f1d-223c6ddf6af6",
+        "jobId": "job-81b029b9-8fb7-483f-b13d-260c78e62586",
+        "artworkId": "art-job-81b029b9-8fb7-483f-b13d-260c78e62586-0",
+        "promptHash": "b4b4f466f2a4e78f97f40b14d241d6d8a0ce52d0fa5288a9f3fd9b77b625e66d",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "cafd99a60ee99ade3f9dff7519b2890c6eb4e6f29f908e20538dde5fa9c5975f",
+        "generatedAt": "2026-10-10T11:57:53.507Z"
+      }
+    },
+    {
+      "key": "avatar",
+      "role": "before",
+      "path": "/demos/workbench-v2/avatar-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 50116,
+      "sha256": "ce1b89b6885cf135e47bd838fea5ecf2674da314c7ad9afbc68d22b52b01972d",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-avatar-e7c7d15f-a829-482a-b82b-a7e78fc41d51",
+        "jobId": "job-c5aaadbb-7682-4a33-a569-64ed50ce9177",
+        "artworkId": "art-job-c5aaadbb-7682-4a33-a569-64ed50ce9177-0",
+        "promptHash": "7cda7ced5f800553ee4ac413ed73178f09f9f062f2e232390cade2881334a4ec",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "f67f8b0b342313d7bb3b37d235eff5e7ad9236cef70205ecaaa0749c20107503",
+        "generatedAt": "2026-10-10T11:57:52.697Z"
+      }
+    },
+    {
+      "key": "avatar",
+      "role": "after",
+      "path": "/demos/workbench-v2/avatar-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 45914,
+      "sha256": "0253e3afce64889447987c1cf9151a1ba13c38f9ef9b73a42231d5ec8d50373b",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-avatar-e7c7d15f-a829-482a-b82b-a7e78fc41d51",
+        "jobId": "job-c5aaadbb-7682-4a33-a569-64ed50ce9177",
+        "artworkId": "art-job-c5aaadbb-7682-4a33-a569-64ed50ce9177-0",
+        "promptHash": "7cda7ced5f800553ee4ac413ed73178f09f9f062f2e232390cade2881334a4ec",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "f67f8b0b342313d7bb3b37d235eff5e7ad9236cef70205ecaaa0749c20107503",
+        "generatedAt": "2026-10-10T11:57:52.697Z"
+      }
+    },
+    {
+      "key": "packaging3d",
+      "role": "before",
+      "path": "/demos/workbench-v2/packaging3d-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 18686,
+      "sha256": "f8ae9ee99f2dce9e6489dad99df9b59237c51432182ea3f35ac482662c08ad6f",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-packaging3d-c119ce1e-1918-4c74-928e-2227baf08ae8",
+        "jobId": "job-f9f93ef8-5d1f-48b3-9d5c-6cda5e1d1ee2",
+        "artworkId": "art-job-f9f93ef8-5d1f-48b3-9d5c-6cda5e1d1ee2-0",
+        "promptHash": "ea9b87e8303876e63e0b2e2ceb949c933d0669a90557a93ad54fe5e3e0903efb",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "fc8408eb4420e4a6c8be7b16e845a1927e2092c76fe443ac538dab56a1aff8bd",
+        "generatedAt": "2026-10-10T11:58:02.423Z"
+      }
+    },
+    {
+      "key": "packaging3d",
+      "role": "after",
+      "path": "/demos/workbench-v2/packaging3d-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 17416,
+      "sha256": "2425706c4f837f65f3a06194a36da94406b392a8a81c0f295206d0b7becaf6b0",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-packaging3d-c119ce1e-1918-4c74-928e-2227baf08ae8",
+        "jobId": "job-f9f93ef8-5d1f-48b3-9d5c-6cda5e1d1ee2",
+        "artworkId": "art-job-f9f93ef8-5d1f-48b3-9d5c-6cda5e1d1ee2-0",
+        "promptHash": "ea9b87e8303876e63e0b2e2ceb949c933d0669a90557a93ad54fe5e3e0903efb",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "fc8408eb4420e4a6c8be7b16e845a1927e2092c76fe443ac538dab56a1aff8bd",
+        "generatedAt": "2026-10-10T11:58:02.423Z"
+      }
+    },
+    {
+      "key": "replicate",
+      "role": "before",
+      "path": "/demos/workbench-v2/replicate-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 34798,
+      "sha256": "269f7ce13f4ca92cc9aaf6f89cac63103d59188b6dd07a33625824a32dcd6812",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-replicate-b58ded33-dafc-485b-abc5-733954bf0570",
+        "jobId": "job-87114aa8-dcdc-401c-9917-a27ad2925efc",
+        "artworkId": "art-job-87114aa8-dcdc-401c-9917-a27ad2925efc-0",
+        "promptHash": "7e05546f9c87d639e92e02cb7752278d40c95d724dbb4715578766d114e341d8",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "47ba476d39417b6ddf7065b0f506cc2d4cba326b201f8b9ee3449e232215b4b0",
+        "generatedAt": "2026-10-10T11:58:08.761Z"
+      }
+    },
+    {
+      "key": "replicate",
+      "role": "after",
+      "path": "/demos/workbench-v2/replicate-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 43484,
+      "sha256": "e8e088981d9972afd35598b761a7cf8315a829dfe980b5a2d90442524a4d48e0",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-replicate-b58ded33-dafc-485b-abc5-733954bf0570",
+        "jobId": "job-87114aa8-dcdc-401c-9917-a27ad2925efc",
+        "artworkId": "art-job-87114aa8-dcdc-401c-9917-a27ad2925efc-0",
+        "promptHash": "7e05546f9c87d639e92e02cb7752278d40c95d724dbb4715578766d114e341d8",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "47ba476d39417b6ddf7065b0f506cc2d4cba326b201f8b9ee3449e232215b4b0",
+        "generatedAt": "2026-10-10T11:58:08.761Z"
+      }
+    },
+    {
+      "key": "retouch",
+      "role": "before",
+      "path": "/demos/workbench-v2/retouch-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 19680,
+      "sha256": "86a1235551046fbdca648646be704de59611a512dcd37746f0a46153e64c232d",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-retouch-d5e049f9-ead7-49a5-ad9e-ed09b1dc30a5",
+        "jobId": "job-95ffaf8b-a3ba-4351-9f6e-ea1f4c433134",
+        "artworkId": "art-job-95ffaf8b-a3ba-4351-9f6e-ea1f4c433134-0",
+        "promptHash": "d9fb39b5ba1221cba1c447d9d402cbeefd3cbf139940f4a728137515c30933da",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "d9a3eb767945b9b08bc99e2eab7e5bf2ca02167df7cddbb42737540f069e8fd7",
+        "generatedAt": "2026-10-10T11:58:18.780Z"
+      }
+    },
+    {
+      "key": "retouch",
+      "role": "after",
+      "path": "/demos/workbench-v2/retouch-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 19114,
+      "sha256": "40d719a7100850b92b878d49632988711f7ede881c17d629aca69a48a3f0b2b4",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-retouch-d5e049f9-ead7-49a5-ad9e-ed09b1dc30a5",
+        "jobId": "job-95ffaf8b-a3ba-4351-9f6e-ea1f4c433134",
+        "artworkId": "art-job-95ffaf8b-a3ba-4351-9f6e-ea1f4c433134-0",
+        "promptHash": "d9fb39b5ba1221cba1c447d9d402cbeefd3cbf139940f4a728137515c30933da",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "d9a3eb767945b9b08bc99e2eab7e5bf2ca02167df7cddbb42737540f069e8fd7",
+        "generatedAt": "2026-10-10T11:58:18.780Z"
+      }
+    },
+    {
+      "key": "recolor",
+      "role": "before",
+      "path": "/demos/workbench-v2/recolor-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 83836,
+      "sha256": "d1917fdbc601e35226579c65924554c288b179d766299790822298e97a38e3ee",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-recolor-958172e6-23c4-484b-aeeb-32cd89ac2d96",
+        "jobId": "job-b74be4b5-805a-41a5-abc6-f9a1671b0cea",
+        "artworkId": "art-job-b74be4b5-805a-41a5-abc6-f9a1671b0cea-0",
+        "promptHash": "4cd3fa750f2ae76c71bb9bade376e4fa36a8ee6725d78b9c8eaf43a3891e97d0",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "d3be97bb22259474a2987d42b661ec4c5aaab1857ca6918697f0e8143b920963",
+        "generatedAt": "2026-10-10T11:58:24.786Z"
+      }
+    },
+    {
+      "key": "recolor",
+      "role": "after",
+      "path": "/demos/workbench-v2/recolor-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 86190,
+      "sha256": "b110dc8e1de3416dc7e4dff20ac2c92687c624610e87cc62ac2dd4052320f4df",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-recolor-958172e6-23c4-484b-aeeb-32cd89ac2d96",
+        "jobId": "job-b74be4b5-805a-41a5-abc6-f9a1671b0cea",
+        "artworkId": "art-job-b74be4b5-805a-41a5-abc6-f9a1671b0cea-0",
+        "promptHash": "4cd3fa750f2ae76c71bb9bade376e4fa36a8ee6725d78b9c8eaf43a3891e97d0",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "d3be97bb22259474a2987d42b661ec4c5aaab1857ca6918697f0e8143b920963",
+        "generatedAt": "2026-10-10T11:58:24.786Z"
+      }
+    },
+    {
+      "key": "print",
+      "role": "before",
+      "path": "/demos/workbench-v2/print-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 89682,
+      "sha256": "6b01299e3f5903f35389626b9b115301780da5ab8797f338ac70f372e66f6958",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-print-349cdbf8-e432-48f6-b802-981b9452b731",
+        "jobId": "job-d33441b6-8fdd-4929-984d-987853b87a22",
+        "artworkId": "art-job-d33441b6-8fdd-4929-984d-987853b87a22-0",
+        "promptHash": "e159ba55d935093ced13a5c3aaa69fab7aab1678759b6c359751c2d69097c6f6",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "2dccdd83e12bbe17663aba0989b88bb330e1c5b990a90f8afbb30741041f6296",
+        "generatedAt": "2026-10-10T11:58:53.988Z"
+      }
+    },
+    {
+      "key": "print",
+      "role": "after",
+      "path": "/demos/workbench-v2/print-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 236716,
+      "sha256": "e7b57600dffee87c8818a6facb1f6afa2e49e5a188519d698feda5b49ee6a172",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-print-349cdbf8-e432-48f6-b802-981b9452b731",
+        "jobId": "job-d33441b6-8fdd-4929-984d-987853b87a22",
+        "artworkId": "art-job-d33441b6-8fdd-4929-984d-987853b87a22-0",
+        "promptHash": "e159ba55d935093ced13a5c3aaa69fab7aab1678759b6c359751c2d69097c6f6",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "2dccdd83e12bbe17663aba0989b88bb330e1c5b990a90f8afbb30741041f6296",
+        "generatedAt": "2026-10-10T11:58:53.988Z"
+      }
+    },
+    {
+      "key": "variation",
+      "role": "before",
+      "path": "/demos/workbench-v2/variation-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 33236,
+      "sha256": "2427e9be6aa4d2edf439832f1d3a2fd84fb153b37bc5569aba5cc75719a22454",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-variation-7ee60566-19ca-4889-a079-2a219d538402",
+        "jobId": "job-1beaea6c-ddb4-47bb-bc06-4d3c734c8a7f",
+        "artworkId": "art-job-1beaea6c-ddb4-47bb-bc06-4d3c734c8a7f-0",
+        "promptHash": "922ce24d7c700c9d3df81afb7e576ab327eccc5defcc2cc14541e62f3ad92176",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "5c4efa4f75c9bc327dd99e59995d19f6d1fc777ef38ce80e281f27a736177e69",
+        "generatedAt": "2026-10-10T11:58:40.028Z"
+      }
+    },
+    {
+      "key": "variation",
+      "role": "after",
+      "path": "/demos/workbench-v2/variation-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 49426,
+      "sha256": "434c5e358da2b302fcfab6fcabaa5adf1278d393c6ad96b161bafc07255c2915",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-variation-7ee60566-19ca-4889-a079-2a219d538402",
+        "jobId": "job-1beaea6c-ddb4-47bb-bc06-4d3c734c8a7f",
+        "artworkId": "art-job-1beaea6c-ddb4-47bb-bc06-4d3c734c8a7f-0",
+        "promptHash": "922ce24d7c700c9d3df81afb7e576ab327eccc5defcc2cc14541e62f3ad92176",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "5c4efa4f75c9bc327dd99e59995d19f6d1fc777ef38ce80e281f27a736177e69",
+        "generatedAt": "2026-10-10T11:58:40.028Z"
+      }
+    },
+    {
+      "key": "fusion",
+      "role": "before",
+      "path": "/demos/workbench-v2/fusion-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 47024,
+      "sha256": "64bf0215345c8cb492c507ad5996bf1d1aeea509cc26e9fb7db25a6f266c377f",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-fusion-1f2a19f0-3497-4da8-8bcc-53f1f3066776",
+        "jobId": "job-84591e03-5ced-4285-b2ab-59cdbc379cf3",
+        "artworkId": "art-job-84591e03-5ced-4285-b2ab-59cdbc379cf3-0",
+        "promptHash": "ccc7bb0da7e0ece3fdadc4bb0125aa27919999e8723cf1f3a04e0d3a6b1bef9d",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "ae4bf3b39016909068d90eb45fbbe7c667a83f781f0ead2ffc2df2a38e884133",
+        "generatedAt": "2026-10-10T11:58:44.963Z"
+      }
+    },
+    {
+      "key": "fusion",
+      "role": "after",
+      "path": "/demos/workbench-v2/fusion-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 62614,
+      "sha256": "6aa528a7aa387b1e2b39b4fc85e4b0f99882f0b7a6e00f423e2159b30216bcd9",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-fusion-1f2a19f0-3497-4da8-8bcc-53f1f3066776",
+        "jobId": "job-84591e03-5ced-4285-b2ab-59cdbc379cf3",
+        "artworkId": "art-job-84591e03-5ced-4285-b2ab-59cdbc379cf3-0",
+        "promptHash": "ccc7bb0da7e0ece3fdadc4bb0125aa27919999e8723cf1f3a04e0d3a6b1bef9d",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "ae4bf3b39016909068d90eb45fbbe7c667a83f781f0ead2ffc2df2a38e884133",
+        "generatedAt": "2026-10-10T11:58:44.963Z"
+      }
+    },
+    {
+      "key": "inpaint",
+      "role": "before",
+      "path": "/demos/workbench-v2/inpaint-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 68064,
+      "sha256": "002e9c6964f5948b2912dc10941632c45f64cf500f62dd4663523726591d0dac",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-inpaint-f3a31089-b3ed-483c-b1f7-0749b0c29516",
+        "jobId": "job-f157487f-d2a3-47da-877b-19f48980339a",
+        "artworkId": "art-job-f157487f-d2a3-47da-877b-19f48980339a-0",
+        "promptHash": "befacc295688037c40fcfdee8699364de25a7ebc0d020c96f7b1bce957deebcf",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "097945967bb3b7c3a494baf96234363da099994f57ac2f392216dbb8204b88aa",
+        "generatedAt": "2026-10-10T11:59:41.633Z"
+      }
+    },
+    {
+      "key": "inpaint",
+      "role": "after",
+      "path": "/demos/workbench-v2/inpaint-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 71086,
+      "sha256": "ff48854073d180bbcb655f014b849d2d37dc58377084af42f816d897436ee7cb",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-inpaint-f3a31089-b3ed-483c-b1f7-0749b0c29516",
+        "jobId": "job-f157487f-d2a3-47da-877b-19f48980339a",
+        "artworkId": "art-job-f157487f-d2a3-47da-877b-19f48980339a-0",
+        "promptHash": "befacc295688037c40fcfdee8699364de25a7ebc0d020c96f7b1bce957deebcf",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "097945967bb3b7c3a494baf96234363da099994f57ac2f392216dbb8204b88aa",
+        "generatedAt": "2026-10-10T11:59:41.633Z"
+      }
+    },
+    {
+      "key": "printfile",
+      "role": "before",
+      "path": "/demos/workbench-v2/printfile-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 47300,
+      "sha256": "50347abc3a0c4da99d475f5eb93847606c0e8276a2395a8e405b2571a7e871e0",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-printfile-75c4e9d1-5eb5-4694-952a-dbed476cf7b1",
+        "jobId": "job-87db4be6-bfba-406f-95b8-72230406b878",
+        "artworkId": "art-job-87db4be6-bfba-406f-95b8-72230406b878-0",
+        "promptHash": "f45e1eb845f13ff9e5be0edf109285dfdea1c5b41b0d6a1dbb8acbfc1851676e",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "47b04ea6a0cbad7a8e15ad1c00c74d6327439e91af5a006c789c0d7a4b6d179e",
+        "generatedAt": "2026-10-10T11:59:17.893Z"
+      }
+    },
+    {
+      "key": "printfile",
+      "role": "after",
+      "path": "/demos/workbench-v2/printfile-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 52868,
+      "sha256": "711eea0218751e4e001145a42a0ee5bd94a18863391cd4dc1382dcb136bfdda8",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-printfile-75c4e9d1-5eb5-4694-952a-dbed476cf7b1",
+        "jobId": "job-87db4be6-bfba-406f-95b8-72230406b878",
+        "artworkId": "art-job-87db4be6-bfba-406f-95b8-72230406b878-0",
+        "promptHash": "f45e1eb845f13ff9e5be0edf109285dfdea1c5b41b0d6a1dbb8acbfc1851676e",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "47b04ea6a0cbad7a8e15ad1c00c74d6327439e91af5a006c789c0d7a4b6d179e",
+        "generatedAt": "2026-10-10T11:59:17.893Z"
+      }
+    },
+    {
+      "key": "tryon",
+      "role": "before",
+      "path": "/demos/workbench-v2/tryon-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 25088,
+      "sha256": "18b66edc34cfac6958b3accd82ecab5317ac328eb5a4440691010b57d41319ab",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-tryon-d35e1eac-d333-4ecb-9732-19715c5f9491",
+        "jobId": "job-e9b67ca0-07a4-4f12-9a0b-c8059ab7ccc6",
+        "artworkId": "art-job-e9b67ca0-07a4-4f12-9a0b-c8059ab7ccc6-0",
+        "promptHash": "5dd3e3b89660b88c1b5ac43f8f9ed671f4976c21025395a9f130d6f90b2469c0",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "a69bc84383635e14f56a9f4b572bb5b4869083f2d68ea5f86dccdf7883d9e6ba",
+        "generatedAt": "2026-10-10T11:59:11.054Z"
+      }
+    },
+    {
+      "key": "tryon",
+      "role": "after",
+      "path": "/demos/workbench-v2/tryon-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 29646,
+      "sha256": "ad019233c68b830af27470a98d8b23c31b106e5a042e4492ef10b21563730bcd",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-tryon-d35e1eac-d333-4ecb-9732-19715c5f9491",
+        "jobId": "job-e9b67ca0-07a4-4f12-9a0b-c8059ab7ccc6",
+        "artworkId": "art-job-e9b67ca0-07a4-4f12-9a0b-c8059ab7ccc6-0",
+        "promptHash": "5dd3e3b89660b88c1b5ac43f8f9ed671f4976c21025395a9f130d6f90b2469c0",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "a69bc84383635e14f56a9f4b572bb5b4869083f2d68ea5f86dccdf7883d9e6ba",
+        "generatedAt": "2026-10-10T11:59:11.054Z"
+      }
+    },
+    {
+      "key": "titles",
+      "role": "before",
+      "path": "/demos/workbench-v2/titles-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 47130,
+      "sha256": "8802f578f1dc462e6ed444d8b4593ca2125339f9302713d480f65856baf7693a",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-titles-b5242aaf-6a91-4565-a2fe-fa49f8b3c47d",
+        "jobId": "job-9973437b-1fa5-4ccc-9313-b7411beaabee",
+        "artworkId": "art-job-9973437b-1fa5-4ccc-9313-b7411beaabee-0",
+        "promptHash": "a38bae543803bc89624bfc47c16214d889b9547f3ee1a3d01a1aea882c6dd898",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "d2655c0a927783051ae00852f7614f9b02e68493441cf10e48235735ff741d26",
+        "generatedAt": "2026-10-10T11:59:20.070Z"
+      }
+    },
+    {
+      "key": "titles",
+      "role": "after",
+      "path": "/demos/workbench-v2/titles-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 30178,
+      "sha256": "482301d5bc8f310ec78bc47698ba55ababc6be05051f722b22b07eb63f1199e8",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-titles-b5242aaf-6a91-4565-a2fe-fa49f8b3c47d",
+        "jobId": "job-9973437b-1fa5-4ccc-9313-b7411beaabee",
+        "artworkId": "art-job-9973437b-1fa5-4ccc-9313-b7411beaabee-0",
+        "promptHash": "a38bae543803bc89624bfc47c16214d889b9547f3ee1a3d01a1aea882c6dd898",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "d2655c0a927783051ae00852f7614f9b02e68493441cf10e48235735ff741d26",
+        "generatedAt": "2026-10-10T11:59:20.070Z"
+      }
+    },
+    {
+      "key": "image",
+      "role": "before",
+      "path": "/demos/workbench-v2/image-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 4006,
+      "sha256": "af90c6ed8538601c29343f3d0697cb30aaa280c3274ed0e110fe2583225d92e8",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-image-cb73476e-8b26-462d-b350-befd26ad4d2c",
+        "jobId": "job-fa0062d3-5c65-403a-b497-a8391c79ba27",
+        "artworkId": "art-job-fa0062d3-5c65-403a-b497-a8391c79ba27-0",
+        "promptHash": "cd54e260e7389ffb10a9ee75dd7e7771c7b034b32f1aca6dd0611315527e73a7",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "9e1475a539e297816a569152f34b94b13e604e24ce471352c5c448c3624be6ce",
+        "generatedAt": "2026-10-10T11:59:32.057Z"
+      }
+    },
+    {
+      "key": "image",
+      "role": "after",
+      "path": "/demos/workbench-v2/image-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 66638,
+      "sha256": "859a4b0a4f3b82b5347134e1fc10820ec4e4de4b28c227c7be2f98b95a2af55a",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-image-cb73476e-8b26-462d-b350-befd26ad4d2c",
+        "jobId": "job-fa0062d3-5c65-403a-b497-a8391c79ba27",
+        "artworkId": "art-job-fa0062d3-5c65-403a-b497-a8391c79ba27-0",
+        "promptHash": "cd54e260e7389ffb10a9ee75dd7e7771c7b034b32f1aca6dd0611315527e73a7",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "9e1475a539e297816a569152f34b94b13e604e24ce471352c5c448c3624be6ce",
+        "generatedAt": "2026-10-10T11:59:32.057Z"
+      }
+    },
+    {
+      "key": "suite",
+      "role": "before",
+      "path": "/demos/workbench-v2/suite-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 24106,
+      "sha256": "8d132f11f4bc4474566c27a0c2a4fe3af24cdf62f191054b4419be0c281f2dd8",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-suite-c48568d6-d52b-4283-bd22-68d0e402211a",
+        "jobId": "job-3083d4c0-2d60-4e9d-8d36-4626a1a31a98",
+        "artworkId": "art-job-3083d4c0-2d60-4e9d-8d36-4626a1a31a98-0",
+        "promptHash": "53f39d061d197ab82f799af1960cdd739c6aceab06b1c95e35e2f8bc8c13935b",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "fa6b15633d8a67d45d2f4d4a015daf2f205ebb2b96a0597f29a9027910095dd4",
+        "generatedAt": "2026-10-10T11:59:49.069Z"
+      }
+    },
+    {
+      "key": "suite",
+      "role": "after",
+      "path": "/demos/workbench-v2/suite-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 70492,
+      "sha256": "278d6ad114b66a7f09ce0e59436331580d7e99d588b19e05f8c8453b97a4cf43",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-suite-c48568d6-d52b-4283-bd22-68d0e402211a",
+        "jobId": "job-3083d4c0-2d60-4e9d-8d36-4626a1a31a98",
+        "artworkId": "art-job-3083d4c0-2d60-4e9d-8d36-4626a1a31a98-0",
+        "promptHash": "53f39d061d197ab82f799af1960cdd739c6aceab06b1c95e35e2f8bc8c13935b",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "fa6b15633d8a67d45d2f4d4a015daf2f205ebb2b96a0597f29a9027910095dd4",
+        "generatedAt": "2026-10-10T11:59:49.069Z"
+      }
+    },
+    {
+      "key": "dewatermark",
+      "role": "before",
+      "path": "/demos/workbench-v2/dewatermark-before.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 140108,
+      "sha256": "711216a8b7166fdba32168452be7a99db3cac2ab0e1eaacf4d0cadf64369797f",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 1022,
+          "height": 1151
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-dewatermark-9cf959c1-f065-494f-846b-668972341f86",
+        "jobId": "job-7975e4cb-f704-4cc6-960b-d0788e13581c",
+        "artworkId": "art-job-7975e4cb-f704-4cc6-960b-d0788e13581c-0",
+        "promptHash": "1b6d4befb538557349ea7df4c9c8ee7ed8c11e09445a17e357122d8efa46aec9",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "cad9de33da8d3363b7f7563da4716af46494e21824261546b78b7ae916a3e9d7",
+        "generatedAt": "2026-10-10T12:00:01.694Z"
+      }
+    },
+    {
+      "key": "dewatermark",
+      "role": "after",
+      "path": "/demos/workbench-v2/dewatermark-after.webp",
+      "width": 640,
+      "height": 720,
+      "bytes": 148276,
+      "sha256": "e47e326d76743254843d84b8cb9b65237ecb35d1aa43a1f4d09d3b556a2092a7",
+      "processing": {
+        "region": {
+          "left": 1026,
+          "top": 0,
+          "width": 1022,
+          "height": 1151
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-dewatermark-9cf959c1-f065-494f-846b-668972341f86",
+        "jobId": "job-7975e4cb-f704-4cc6-960b-d0788e13581c",
+        "artworkId": "art-job-7975e4cb-f704-4cc6-960b-d0788e13581c-0",
+        "promptHash": "1b6d4befb538557349ea7df4c9c8ee7ed8c11e09445a17e357122d8efa46aec9",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "cad9de33da8d3363b7f7563da4716af46494e21824261546b78b7ae916a3e9d7",
+        "generatedAt": "2026-10-10T12:00:01.694Z"
+      }
+    },
+    {
+      "key": "ipcheck",
+      "role": "1",
+      "path": "/demos/workbench-v2/ipcheck-1.webp",
+      "width": 640,
+      "height": 1080,
+      "bytes": 85462,
+      "sha256": "9b55f2fd703c335522bc3fa8d087737de24b90fe796c8fa37d1ce48ea3f2bc07",
+      "processing": {
+        "region": {
+          "left": 0,
+          "top": 0,
+          "width": 680,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-ipcheck-5c83d71e-d49f-41e8-9b58-bbe09e35fcd1",
+        "jobId": "job-678a2878-484e-4640-94b1-fadbb5c857bd",
+        "artworkId": "art-job-678a2878-484e-4640-94b1-fadbb5c857bd-0",
+        "promptHash": "b0f5b0e93a806ae576bae5432ecb62b661d119714e35ea44f90c1ac4b59cd70f",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "93b4884169f79cd6230c8f9095b26b74ade1f7c8b1de14cd221b1c121de7b8d8",
+        "generatedAt": "2026-10-10T11:59:58.265Z"
+      }
+    },
+    {
+      "key": "ipcheck",
+      "role": "2",
+      "path": "/demos/workbench-v2/ipcheck-2.webp",
+      "width": 640,
+      "height": 1080,
+      "bytes": 43176,
+      "sha256": "856e6189e4683020a06da44a5ee810e73af6d459f9d98c137203c2e8a7bedf70",
+      "processing": {
+        "region": {
+          "left": 684,
+          "top": 0,
+          "width": 678,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-ipcheck-5c83d71e-d49f-41e8-9b58-bbe09e35fcd1",
+        "jobId": "job-678a2878-484e-4640-94b1-fadbb5c857bd",
+        "artworkId": "art-job-678a2878-484e-4640-94b1-fadbb5c857bd-0",
+        "promptHash": "b0f5b0e93a806ae576bae5432ecb62b661d119714e35ea44f90c1ac4b59cd70f",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "93b4884169f79cd6230c8f9095b26b74ade1f7c8b1de14cd221b1c121de7b8d8",
+        "generatedAt": "2026-10-10T11:59:58.265Z"
+      }
+    },
+    {
+      "key": "ipcheck",
+      "role": "3",
+      "path": "/demos/workbench-v2/ipcheck-3.webp",
+      "width": 640,
+      "height": 1080,
+      "bytes": 48652,
+      "sha256": "983f444fd84a65775b5a0a83dffbfc21de0118939dee7aca1a19619e5fddd21f",
+      "processing": {
+        "region": {
+          "left": 1366,
+          "top": 0,
+          "width": 680,
+          "height": 1153
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-ipcheck-5c83d71e-d49f-41e8-9b58-bbe09e35fcd1",
+        "jobId": "job-678a2878-484e-4640-94b1-fadbb5c857bd",
+        "artworkId": "art-job-678a2878-484e-4640-94b1-fadbb5c857bd-0",
+        "promptHash": "b0f5b0e93a806ae576bae5432ecb62b661d119714e35ea44f90c1ac4b59cd70f",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "93b4884169f79cd6230c8f9095b26b74ade1f7c8b1de14cd221b1c121de7b8d8",
+        "generatedAt": "2026-10-10T11:59:58.265Z"
+      }
+    },
+    {
+      "key": "suite-coffee",
+      "role": "src",
+      "path": "/demos/workbench-v2/suite-coffee-src.webp",
+      "width": 640,
+      "height": 640,
+      "bytes": 20448,
+      "sha256": "a1263794082ed9edc9849617ca30fb86d2af8a4f119eb5bb3642d57f3692f231",
+      "processing": {
+        "region": {
+          "left": 16,
+          "top": 16,
+          "width": 650,
+          "height": 650
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-suite-coffee-a5f677a1-897a-42d1-9698-eb74cf05332c",
+        "jobId": "job-0e4020b9-5e12-4f7b-b593-44f7d60121ac",
+        "artworkId": "art-job-0e4020b9-5e12-4f7b-b593-44f7d60121ac-0",
+        "promptHash": "3fc00633bc6f175d7dc0464697566ee99c218606ffedc2a11abf9e9d6e97bec0",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "95a7ef9887429712f1804d0a4e3da6fc5bd1da909119706a45273655631493aa",
+        "generatedAt": "2026-10-10T12:00:12.982Z"
+      }
+    },
+    {
+      "key": "suite-coffee",
+      "role": "main",
+      "path": "/demos/workbench-v2/suite-coffee-main.webp",
+      "width": 640,
+      "height": 640,
+      "bytes": 34508,
+      "sha256": "bc16e7c45d4d82153ec9ba5a953c104e7796b00fe1538355635b72fad58ed937",
+      "processing": {
+        "region": {
+          "left": 698,
+          "top": 16,
+          "width": 650,
+          "height": 650
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-suite-coffee-a5f677a1-897a-42d1-9698-eb74cf05332c",
+        "jobId": "job-0e4020b9-5e12-4f7b-b593-44f7d60121ac",
+        "artworkId": "art-job-0e4020b9-5e12-4f7b-b593-44f7d60121ac-0",
+        "promptHash": "3fc00633bc6f175d7dc0464697566ee99c218606ffedc2a11abf9e9d6e97bec0",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "95a7ef9887429712f1804d0a4e3da6fc5bd1da909119706a45273655631493aa",
+        "generatedAt": "2026-10-10T12:00:12.982Z"
+      }
+    },
+    {
+      "key": "suite-coffee",
+      "role": "scene",
+      "path": "/demos/workbench-v2/suite-coffee-scene.webp",
+      "width": 640,
+      "height": 640,
+      "bytes": 49524,
+      "sha256": "e41212b33606344ed826112845e7a39dde8f97ebcb0280b7362ff048d80170b7",
+      "processing": {
+        "region": {
+          "left": 1380,
+          "top": 16,
+          "width": 650,
+          "height": 650
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-suite-coffee-a5f677a1-897a-42d1-9698-eb74cf05332c",
+        "jobId": "job-0e4020b9-5e12-4f7b-b593-44f7d60121ac",
+        "artworkId": "art-job-0e4020b9-5e12-4f7b-b593-44f7d60121ac-0",
+        "promptHash": "3fc00633bc6f175d7dc0464697566ee99c218606ffedc2a11abf9e9d6e97bec0",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "95a7ef9887429712f1804d0a4e3da6fc5bd1da909119706a45273655631493aa",
+        "generatedAt": "2026-10-10T12:00:12.982Z"
+      }
+    },
+    {
+      "key": "suite-coffee",
+      "role": "detail",
+      "path": "/demos/workbench-v2/suite-coffee-detail.webp",
+      "width": 640,
+      "height": 640,
+      "bytes": 38876,
+      "sha256": "aba3a0deb22f45491a140aa50b58f30449b1393d44fc977002f808c31b7b3b5c",
+      "processing": {
+        "region": {
+          "left": 16,
+          "top": 698,
+          "width": 650,
+          "height": 650
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-suite-coffee-a5f677a1-897a-42d1-9698-eb74cf05332c",
+        "jobId": "job-0e4020b9-5e12-4f7b-b593-44f7d60121ac",
+        "artworkId": "art-job-0e4020b9-5e12-4f7b-b593-44f7d60121ac-0",
+        "promptHash": "3fc00633bc6f175d7dc0464697566ee99c218606ffedc2a11abf9e9d6e97bec0",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "95a7ef9887429712f1804d0a4e3da6fc5bd1da909119706a45273655631493aa",
+        "generatedAt": "2026-10-10T12:00:12.982Z"
+      }
+    },
+    {
+      "key": "suite-coffee",
+      "role": "structure",
+      "path": "/demos/workbench-v2/suite-coffee-structure.webp",
+      "width": 640,
+      "height": 640,
+      "bytes": 27510,
+      "sha256": "62dc4b1623352a6b8321fc414ecbc8fc03421f5fb476fbad6ca6f3ca73f4573b",
+      "processing": {
+        "region": {
+          "left": 698,
+          "top": 698,
+          "width": 650,
+          "height": 650
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-suite-coffee-a5f677a1-897a-42d1-9698-eb74cf05332c",
+        "jobId": "job-0e4020b9-5e12-4f7b-b593-44f7d60121ac",
+        "artworkId": "art-job-0e4020b9-5e12-4f7b-b593-44f7d60121ac-0",
+        "promptHash": "3fc00633bc6f175d7dc0464697566ee99c218606ffedc2a11abf9e9d6e97bec0",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "95a7ef9887429712f1804d0a4e3da6fc5bd1da909119706a45273655631493aa",
+        "generatedAt": "2026-10-10T12:00:12.982Z"
+      }
+    },
+    {
+      "key": "suite-speaker",
+      "role": "src",
+      "path": "/demos/workbench-v2/suite-speaker-src.webp",
+      "width": 640,
+      "height": 640,
+      "bytes": 51980,
+      "sha256": "f0fbe190f3f3a635c5d87a46dd87e762c9755567dade42adceb05ff2144477e7",
+      "processing": {
+        "region": {
+          "left": 16,
+          "top": 16,
+          "width": 650,
+          "height": 650
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-suite-speaker-e0cf349f-94e0-42fd-8e8d-50c2567353a4",
+        "jobId": "job-95a62022-5500-4dcc-8562-c20dba2824c4",
+        "artworkId": "art-job-95a62022-5500-4dcc-8562-c20dba2824c4-0",
+        "promptHash": "bf0c904733ed58a77190293837ae5f3877bd1e43d3836f23f0cf550c1b4ad888",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "2332aefa5135cba1c469b3267f75f051ecbd94e6bef938f8332f5b436063b3aa",
+        "generatedAt": "2026-10-10T12:00:25.463Z"
+      }
+    },
+    {
+      "key": "suite-speaker",
+      "role": "main",
+      "path": "/demos/workbench-v2/suite-speaker-main.webp",
+      "width": 640,
+      "height": 640,
+      "bytes": 47728,
+      "sha256": "34503bd71b910ac0931a7c32fa84785e3347df093d41d5274d726736b66bd2ed",
+      "processing": {
+        "region": {
+          "left": 698,
+          "top": 16,
+          "width": 650,
+          "height": 650
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-suite-speaker-e0cf349f-94e0-42fd-8e8d-50c2567353a4",
+        "jobId": "job-95a62022-5500-4dcc-8562-c20dba2824c4",
+        "artworkId": "art-job-95a62022-5500-4dcc-8562-c20dba2824c4-0",
+        "promptHash": "bf0c904733ed58a77190293837ae5f3877bd1e43d3836f23f0cf550c1b4ad888",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "2332aefa5135cba1c469b3267f75f051ecbd94e6bef938f8332f5b436063b3aa",
+        "generatedAt": "2026-10-10T12:00:25.463Z"
+      }
+    },
+    {
+      "key": "suite-speaker",
+      "role": "scene",
+      "path": "/demos/workbench-v2/suite-speaker-scene.webp",
+      "width": 640,
+      "height": 640,
+      "bytes": 58160,
+      "sha256": "7a4ac767b7b34b4bf0dfca107431ca452c521443723e255b4bc983b5c6e01698",
+      "processing": {
+        "region": {
+          "left": 1380,
+          "top": 16,
+          "width": 650,
+          "height": 650
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-suite-speaker-e0cf349f-94e0-42fd-8e8d-50c2567353a4",
+        "jobId": "job-95a62022-5500-4dcc-8562-c20dba2824c4",
+        "artworkId": "art-job-95a62022-5500-4dcc-8562-c20dba2824c4-0",
+        "promptHash": "bf0c904733ed58a77190293837ae5f3877bd1e43d3836f23f0cf550c1b4ad888",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "2332aefa5135cba1c469b3267f75f051ecbd94e6bef938f8332f5b436063b3aa",
+        "generatedAt": "2026-10-10T12:00:25.463Z"
+      }
+    },
+    {
+      "key": "suite-speaker",
+      "role": "detail",
+      "path": "/demos/workbench-v2/suite-speaker-detail.webp",
+      "width": 640,
+      "height": 640,
+      "bytes": 61514,
+      "sha256": "200b1989cd2f17ca74ae35c1b6538efd670b04f2cac349dfd00a16c7bddecf6e",
+      "processing": {
+        "region": {
+          "left": 16,
+          "top": 698,
+          "width": 650,
+          "height": 650
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-suite-speaker-e0cf349f-94e0-42fd-8e8d-50c2567353a4",
+        "jobId": "job-95a62022-5500-4dcc-8562-c20dba2824c4",
+        "artworkId": "art-job-95a62022-5500-4dcc-8562-c20dba2824c4-0",
+        "promptHash": "bf0c904733ed58a77190293837ae5f3877bd1e43d3836f23f0cf550c1b4ad888",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "2332aefa5135cba1c469b3267f75f051ecbd94e6bef938f8332f5b436063b3aa",
+        "generatedAt": "2026-10-10T12:00:25.463Z"
+      }
+    },
+    {
+      "key": "suite-speaker",
+      "role": "structure",
+      "path": "/demos/workbench-v2/suite-speaker-structure.webp",
+      "width": 640,
+      "height": 640,
+      "bytes": 48856,
+      "sha256": "8f6f4e81833e5caac37f715f5ef812c93e399fb39fdfb29281740cef4e27a594",
+      "processing": {
+        "region": {
+          "left": 698,
+          "top": 698,
+          "width": 650,
+          "height": 650
+        },
+        "fit": "contain",
+        "format": "webp",
+        "quality": 88
+      },
+      "source": {
+        "method": "naumi-native-generation",
+        "operationId": "demo-v2-suite-speaker-e0cf349f-94e0-42fd-8e8d-50c2567353a4",
+        "jobId": "job-95a62022-5500-4dcc-8562-c20dba2824c4",
+        "artworkId": "art-job-95a62022-5500-4dcc-8562-c20dba2824c4-0",
+        "promptHash": "bf0c904733ed58a77190293837ae5f3877bd1e43d3836f23f0cf550c1b4ad888",
+        "modelId": "gpt-image-2",
+        "quality": "high",
+        "resolution": "2K",
+        "sourceSha256": "2332aefa5135cba1c469b3267f75f051ecbd94e6bef938f8332f5b436063b3aa",
+        "generatedAt": "2026-10-10T12:00:25.463Z"
+      }
+    }
+  ]
+}
