@@ -17,6 +17,8 @@ import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { GenerationPlaceholder } from "./generation-placeholder";
 import { generationPlaceholderSize, placeGenerationPreview, type GenerationStage } from "@/lib/canvas/generation-feedback";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
+import { CanvasAgentToggle } from "./canvas-agent-toggle";
+import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
 import { NodePropertiesPanel } from "./node-properties-panel";
 import { ImageCropDialog } from "./image-crop-dialog";
 import { defaultNodeSettings, validNodeSettings, nodeTextStyle, type CanvasNodeSettings, type CanvasCrop } from "@/lib/canvas/node-settings";
@@ -2028,6 +2030,24 @@ export function CanvasClient() {
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const assistantRetry = useRef<{ input: string; anchorId: string; history: AssistantTurn[]; body: string } | null>(null);
+  const assistantRequestEpoch = useRef(0);
+  const assistantAbort = useRef<AbortController | null>(null);
+  const { open: assistantOpen, focusInput: assistantFocusInput, disclose: discloseAssistant, suspend: suspendAssistant } = useCanvasAssistantDisclosure(user?.email);
+  const assistantVisible = assistantOpen && !propertiesOpen && !ocrArtworkId;
+  const assistantProject = useRef({ key: activeKey, email: user?.email });
+  useEffect(() => {
+    if (assistantProject.current.key === activeKey && assistantProject.current.email === user?.email) return;
+    assistantProject.current = { key: activeKey, email: user?.email };
+    assistantRequestEpoch.current += 1;
+    assistantAbort.current?.abort();
+    setAssistantArtworkId(null);
+    setAssistantTurns([]);
+    setAssistantInput("");
+    setAssistantError(null);
+    setAssistantBusy(false);
+    assistantRetry.current = null;
+  }, [activeKey, user?.email]);
+  useEffect(() => () => { assistantRequestEpoch.current += 1; assistantAbort.current?.abort(); }, []);
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
   const pendPromptRef = useRef<HTMLTextAreaElement>(null);
   // 占位 dock 与已生成节点保持同一自适应视野。
@@ -3740,7 +3760,7 @@ export function CanvasClient() {
       right: 8,
       top: canvasSize.width > 0 && canvasSize.width < 768 ? 108 : 64,
       // 窄屏主工具栏位于视图控制条上方，需要同时避开两层底部控件。
-      bottom: canvasSize.width > 0 && canvasSize.width < 800 ? 128 : 84,
+      bottom: canvasSize.width > 0 && canvasSize.width < 1000 ? 128 : 84,
     }),
     [canvasSize.width]
   );
@@ -4614,7 +4634,7 @@ export function CanvasClient() {
     setPropertiesOpen(false);
     const requestEpoch = ocrRequestEpochRef.current + 1;
     ocrRequestEpochRef.current = requestEpoch;
-    setAssistantArtworkId(null); // 与画布助手面板互斥
+    suspendAssistant(); // 与画布助手面板互斥，不覆盖用户显隐偏好
     setOcrArtworkId(artwork.id);
     setOcrSegments([]);
     setOcrEngine("");
@@ -5156,23 +5176,35 @@ export function CanvasClient() {
     if (readOnly || !user) return;
     setPropertiesOpen(false);
     setOcrArtworkId(null); // 与在线改字面板互斥
+    discloseAssistant(true);
+    if (assistantBusy || assistantArtworkId === artwork.id) return;
     setAssistantArtworkId(artwork.id);
     setAssistantTurns([]);
-    setAssistantInput("");
     setAssistantError(null);
     assistantRetry.current = null;
   }
 
+  function closeAssistant() {
+    discloseAssistant(false);
+  }
+
+  function toggleAssistant() {
+    if (assistantVisible) { closeAssistant(); return; }
+    setPropertiesOpen(false);
+    setOcrArtworkId(null);
+    discloseAssistant(true);
+    if (selected && !assistantBusy && selected.id !== assistantArtworkId) openAssistant(selected);
+  }
+
   // 选中节点变化时,助手面板跟着换锚定并重开新对话(上下文变了,旧对话不再适用)
   useEffect(() => {
-    if (assistantArtworkId && selectedId && selectedId !== assistantArtworkId) {
+    if (assistantOpen && !assistantBusy && selectedId && selectedId !== assistantArtworkId) {
       setAssistantArtworkId(selectedId);
       setAssistantTurns([]);
-      setAssistantInput("");
       setAssistantError(null);
       assistantRetry.current = null;
     }
-  }, [selectedId, assistantArtworkId]);
+  }, [selectedId, assistantArtworkId, assistantOpen, assistantBusy]);
 
   async function sendAssistantMessage() {
     const text = assistantInput.trim();
@@ -5190,6 +5222,9 @@ export function CanvasClient() {
       body: JSON.stringify({ anchorId: source.id, contextIds: assistantContext(members, source.id).map((artwork) => artwork.id), messages: history.map(({ role, content }) => ({ role, content })) }),
     };
     assistantRetry.current = attempt;
+    const epoch = ++assistantRequestEpoch.current;
+    const controller = new AbortController();
+    assistantAbort.current = controller;
     setAssistantError(null);
     setAssistantBusy(true);
     try {
@@ -5197,7 +5232,9 @@ export function CanvasClient() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: attempt.body,
+        signal: controller.signal,
       });
+      if (epoch !== assistantRequestEpoch.current) return;
       if (!response.ok || !response.body) {
         const data = await readJsonSafe(response);
         throw new Error(data?.error || "画布助手暂时不可用");
@@ -5216,6 +5253,7 @@ export function CanvasClient() {
       let streamError: string | null = null;
       for (;;) {
         const { done, value } = await reader.read();
+        if (epoch !== assistantRequestEpoch.current) { await reader.cancel(); return; }
         if (done) break;
         buf += decoder.decode(value, { stream: true });
         const parts = buf.split("\n\n");
@@ -5247,10 +5285,11 @@ export function CanvasClient() {
       });
       if (assistantRetry.current === attempt) assistantRetry.current = null;
     } catch (error) {
+      if (epoch !== assistantRequestEpoch.current) return;
       if (assistantRetry.current === attempt) setAssistantInput(text);
       setAssistantError(error instanceof Error ? error.message : "画布助手暂时不可用");
     } finally {
-      setAssistantBusy(false);
+      if (epoch === assistantRequestEpoch.current) { assistantAbort.current = null; setAssistantBusy(false); }
     }
   }
 
@@ -5829,7 +5868,7 @@ export function CanvasClient() {
   }
 
   function openProperties() {
-    setAssistantArtworkId(null);setOcrArtworkId(null);setPropertiesOpen(true);
+    suspendAssistant();setOcrArtworkId(null);setPropertiesOpen(true);
   }
   async function commitNodeSettings(id: string, to: CanvasNodeSettings) {
     if (!user || readOnly || !nodeSettingsReady || historyBusyRef.current) return false;
@@ -6580,6 +6619,7 @@ export function CanvasClient() {
    * 其余场景只有确认是本画布节点格式时才执行内部节点粘贴。
    */
   function handleCanvasPaste(event: ClipboardEvent) {
+    if (event.target instanceof Element && event.target.closest('[data-canvas-hotkeys-scope="assistant"]')) return;
     if (
       !ready ||
       !user ||
@@ -6587,7 +6627,7 @@ export function CanvasClient() {
       browsing ||
       loading ||
       canvasShortcutLayerOpen ||
-      document.querySelector('[data-canvas-hotkeys-blocked="true"], .fixed.inset-0')
+      document.querySelector('[data-canvas-hotkeys-blocked="true"]:not(button), .fixed.inset-0')
     ) {
       return;
     }
@@ -8076,7 +8116,6 @@ export function CanvasClient() {
       annotateArtwork ||
       comfyOpen ||
       ocrArtworkId ||
-      assistantArtworkId ||
       (propertiesOpen && (selectedId || selectedTextId)) ||
       cropArtwork ||
       ratioMenuOpen ||
@@ -8108,9 +8147,10 @@ export function CanvasClient() {
       if (
         e.defaultPrevented ||
         e.isComposing ||
+        el?.closest('[data-canvas-hotkeys-blocked="true"], [data-canvas-hotkeys-scope="assistant"]') ||
         canvasShortcutLayerOpen ||
         document.querySelector(
-          '[data-canvas-hotkeys-blocked="true"], .fixed.inset-0'
+          '[data-canvas-hotkeys-blocked="true"]:not(button), .fixed.inset-0'
         ) ||
         tag === "INPUT" ||
         tag === "TEXTAREA" ||
@@ -9364,7 +9404,8 @@ export function CanvasClient() {
               </div>
 
               {/* 右上:分享(下载)/ 模板库 / 会员特惠+积分 / 头像 */}
-              <div data-testid="canvas-top-actions" className="absolute right-3 top-[60px] z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 overflow-visible md:top-3">
+              <div data-testid="canvas-top-actions" style={{ top: canvasSize.width > 0 && canvasSize.width < 768 ? 60 : 12 }} className="absolute right-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 overflow-visible">
+                {!readOnly && <CanvasAgentToggle open={assistantVisible} label={t("canvas.assistant.entry")} onClick={toggleAssistant} />}
                 {active && (
                   <button
                     type="button"
@@ -9402,7 +9443,7 @@ export function CanvasClient() {
                     </span>
                   </button>
                 ) : (
-                  <span className="canvas-ui-surface canvas-ui-muted flex items-center gap-1 rounded-xl border px-2.5 py-2 text-xs font-semibold backdrop-blur">
+                  <span className="canvas-ui-surface canvas-ui-muted flex items-center gap-1 rounded-xl border px-2.5 py-2 text-xs font-semibold backdrop-blur max-[390px]:hidden">
                     <Zap className="h-3.5 w-3.5" />
                     {credits != null ? credits : "—"}
                   </span>
@@ -9440,6 +9481,7 @@ export function CanvasClient() {
               {!readOnly && (
                 <div
                   data-testid="canvas-main-toolbar"
+                  style={{ bottom: canvasSize.width > 0 && canvasSize.width < 1000 ? 76 : 20 }}
                   aria-label={t("canvas.toolPalette")}
                   className="canvas-ui-surface absolute bottom-[76px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-0 overflow-x-auto rounded-2xl border px-1 py-1.5 text-[#20242c] shadow-[0_12px_34px_rgba(15,23,42,0.18)] backdrop-blur min-[390px]:gap-0.5 min-[390px]:px-1.5 min-[800px]:bottom-5"
                 >
@@ -10131,7 +10173,7 @@ export function CanvasClient() {
                         )}
                         {!readOnly && (
                           <Item
-                            label="画布助手"
+                            label={t("canvas.assistant.entry")}
                             onClick={() => {
                               setCtxMenu(null);
                               openAssistant(node);
@@ -11671,11 +11713,10 @@ export function CanvasClient() {
         <input ref={replaceInputRef} data-testid="canvas-replace-image-input" type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
           onChange={event=>{const file=event.target.files?.[0],target=replaceTargetRef.current;if(file && target)void saveLocalImageEdit(target,undefined,file);}} />
         {/* 助手作为画布的并列侧栏：桌面让出空间，窄屏浮层；OCR仍互斥。 */}
-        {assistantArtworkId && !browsing && (() => {
+        {!browsing && !readOnly && (() => {
           const anchor = active?.members.find(artwork => artwork.id === assistantArtworkId);
-          if (!anchor) return null;
-          return <CanvasAssistantPanel modelControl={<TextModelSelect feature="canvas.assistant" compact dark={!lightCanvas} />} key={anchor.id} light={lightCanvas} anchorTitle={anchor.title || t("canvas.toolbar.addImageNode")}
-            contextImages={assistantContext(active?.members ?? [], anchor.id).map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) }))}
+          return <CanvasAssistantPanel open={assistantVisible} focusInput={assistantFocusInput} contextReady={Boolean(anchor)} modelControl={<TextModelSelect feature="canvas.assistant" compact composer dark={!lightCanvas} />} key={`assistant:${anchor?.id || "empty"}`} light={lightCanvas} anchorTitle={anchor?.title || t("canvas.assistant.selectImage")}
+            contextImages={anchor ? assistantContext(active?.members ?? [], anchor.id).map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) })) : []}
             turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError}
             labels={{title: t("canvas.assistant.title"),
               scrollToBottom: t("canvas.assistant.scrollToBottom"),
@@ -11686,7 +11727,7 @@ export function CanvasClient() {
               morning: t("canvas.assistant.morning"),
               afternoon: t("canvas.assistant.afternoon"),
               evening: t("canvas.assistant.evening"),
-              question: t("canvas.assistant.question"),
+              question: t(anchor ? "canvas.assistant.question" : "canvas.assistant.emptyQuestion"),
               changeTasks: t("canvas.assistant.changeTasks"),
               placeholder: t("canvas.assistant.placeholder"),
               send: t("canvas.assistant.send"),
@@ -11700,14 +11741,14 @@ export function CanvasClient() {
               emptyHistory: t("canvas.assistant.emptyHistory"),
               currentChat: t("canvas.assistant.currentChat"),
               agent: t("canvas.assistant.agent"),
-              mode: t("canvas.assistant.mode"),
+              mode: t(anchor ? "canvas.assistant.mode" : "canvas.assistant.selectImage"),
               retry: t("canvas.assistant.retry")}}
             tasks={["main", "detail", "scene", "retouch", "background", "copyLayout", "review", "prompt"].map(id => ({ id, label: t(`canvas.assistant.${id}`), prompt: t(`canvas.assistant.${id}Prompt`) }))}
             costLabel={billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] === 0 ? "对话免费 · 生图另行计费" : billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] != null ? `${billing.catalog.features["canvas.assistant"].prices.medium["1K"]} 积分 / 轮 · 生图另行计费` : "对话报价加载中 · 生图另行计费"}
             onInputChange={setAssistantInput} onSend={() => void sendAssistantMessage()}
             onNewChat={() => { setAssistantTurns([]); setAssistantInput(""); setAssistantError(null); assistantRetry.current = null; }}
             onRestoreChat={turns => { setAssistantTurns(turns); setAssistantInput(""); setAssistantError(null); assistantRetry.current = null; }}
-            onClose={() => setAssistantArtworkId(null)}
+            onClose={closeAssistant}
             onPreview={image => setLightbox({ src: image.image, alt: image.title })}
             onCopy={copyText} renderContent={renderAssistantContent}
           />;

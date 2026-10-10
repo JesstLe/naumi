@@ -15,12 +15,14 @@ import { ModelIcon } from "@/components/ui/model-icon";
 export function TextModelSelect({
   feature = "canvas.text-generate",
   compact = false,
+  composer = false,
   dark = false,
   direction = "down",
   className,
 }: {
   feature?: FeatureId;
   compact?: boolean;
+  composer?: boolean;
   dark?: boolean;
   direction?: "up" | "down";
   className?: string;
@@ -101,10 +103,10 @@ export function TextModelSelect({
   ) : null;
 
   return (
-    <div ref={root} className={cn("relative", className)}>
-      {toolPage ? <SelectMenu label="文字模型" value={model} size={compact?"sm":"md"} className="max-w-full" onChange={id=>{
+    <div ref={root} className={cn("relative", className)} title={composer ? label(model) : undefined}>
+      {toolPage || composer ? <SelectMenu label="文字模型" value={model} size={compact?"sm":"md"} className={cn("max-w-full", composer && "w-full !rounded-full !border-transparent !bg-transparent !px-1.5 canvas-ui-text hover:!bg-[var(--canvas-ui-soft-hover)]")} popoverClassName={composer ? "tool-popover" : undefined} onChange={id=>{
         if(id === "__custom_model__"){setCustom(model);setCustomOpen(true);}else setModel(id);
-      }} options={[...models.map(id=>({value:id,label:<span className="flex items-center gap-2"><ModelIcon modelId={id} modelName={label(id)} size={14}/>{label(id)}</span>})),...(!managed?[{value:"__custom_model__",label:"自定义模型 ID"}]:[])]}/> : <button
+      }} options={[...models.map(id=>({value:id,label:<span className="flex min-w-0 items-center gap-2"><ModelIcon modelId={id} modelName={label(id)} size={14}/><span className="min-w-0 truncate">{label(id)}</span></span>})),...(!managed?[{value:"__custom_model__",label:"自定义模型 ID"}]:[])]}/> : <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         className={cn(
@@ -120,7 +122,7 @@ export function TextModelSelect({
         <span className="min-w-0 truncate">{label(model)}</span>
         <ChevronDown className="h-3.5 w-3.5 flex-none opacity-60" />
       </button>}
-      {!toolPage && menu}
+      {!toolPage && !composer && menu}
       {customOpen && typeof document !== "undefined" &&
         createPortal(
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 p-4" onClick={() => setCustomOpen(false)}>

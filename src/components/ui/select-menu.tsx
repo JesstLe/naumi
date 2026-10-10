@@ -8,8 +8,8 @@ import {qualityMenuPosition,nextQualityOption} from "./image-quality-select-layo
 
 type Option={value:string;label:ReactNode;buttonLabel?:ReactNode;disabled?:boolean};
 /** Shared light popover. Keep focus on its combobox; active option is announced by aria-activedescendant. */
-export function SelectMenu({value,options,onChange,disabled,className,size="md",label,id}:{
- value:string;options:Option[];onChange:(value:string)=>void;disabled?:boolean;className?:string;size?:"sm"|"md";label?:string;id?:string;
+export function SelectMenu({value,options,onChange,disabled,className,size="md",label,id,popoverClassName}:{
+ value:string;options:Option[];onChange:(value:string)=>void;disabled?:boolean;className?:string;size?:"sm"|"md";label?:string;id?:string;popoverClassName?:string;
 }){
  const generated=useId(),listId=`${generated}-list`,button=useRef<HTMLButtonElement>(null),panel=useRef<HTMLDivElement>(null);
  const [menu,setMenu]=useState<ReturnType<typeof qualityMenuPosition>|null>(null),[active,setActive]=useState(-1);
@@ -52,7 +52,7 @@ export function SelectMenu({value,options,onChange,disabled,className,size="md",
    className={cn("flex min-w-0 items-center justify-between gap-2 rounded-[10px] border border-c-border2 bg-c-card text-left font-medium text-c-text transition-colors hover:border-acc/45 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-acc/15 disabled:cursor-not-allowed disabled:opacity-50",size==="sm"?"h-8 px-2.5 text-xs":"h-[42px] px-3 text-[13.5px]",open&&"border-acc ring-[3px] ring-acc/15",className)}>
    <span className="min-w-0 truncate">{current?.buttonLabel??current?.label??value}</span><ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-c-text3 transition-transform",open&&"rotate-180")}/>
   </button>
-  {open&&menu&&createPortal(<div className={cn("fixed inset-0 z-[300]",lightTool&&"tool-popover")} onPointerDown={event=>{event.stopPropagation();close();}}>
+  {open&&menu&&createPortal(<div className={cn("fixed inset-0 z-[300]",lightTool&&"tool-popover",popoverClassName)} onPointerDown={event=>{event.stopPropagation();close();}}>
    <div ref={panel} id={listId} role="listbox" aria-label={label} style={menu} onPointerDown={event=>{event.preventDefault();event.stopPropagation();}}
     className="fixed overflow-y-auto overscroll-contain rounded-xl border border-c-border2 bg-c-card p-1 text-c-text shadow-pop">
     {options.map((o,index)=><div key={o.value} id={`${listId}-${index}`} role="option" aria-selected={o.value===value} aria-disabled={!!o.disabled}
