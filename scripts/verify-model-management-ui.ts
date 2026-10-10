@@ -122,9 +122,11 @@ async function main() {
     assert.equal((await quote({feature:"image.aplus",modelId:"gemini-3.0-pro-image-square",quantity:1})).status(),400);
     const hints=await(await admin.request.get(origin+"/api/models?feature=image.generate")).json();assert.ok(hints.models.find((m:any)=>m.id.startsWith("gemini-3.0-pro-image")).creditHint.includes("7 积分/张"));
     const frontend=await admin.newPage();await frontend.goto(origin+"/generate");
-    await frontend.getByRole("button",{name:"产品摄影模型",exact:true}).click();
-    await expect(frontend.getByRole("button",{name:/^gemini-3.0-pro-image .*7 积分/})).toBeVisible();
-    await frontend.getByRole("button",{name:/^gemini-3.0-pro-image .*7 积分/}).click();await expect(frontend.getByTestId("billing-estimate")).toContainText("7");
+    await frontend.getByRole("combobox",{name:"产品摄影模型",exact:true}).click();
+    const pricedModelLabel=hints.models.find((m:any)=>m.id.startsWith("gemini-3.0-pro-image")).label;
+    const modelOption=frontend.getByRole("option",{name:pricedModelLabel,exact:true});
+    await expect(modelOption).toBeVisible();await expect(frontend.getByRole("listbox")).not.toContainText("积分");
+    await modelOption.click();await expect(frontend.getByTestId("billing-estimate")).toContainText("7");
     await frontend.screenshot({path:"output/model-management-fixture/pricing-frontend.png",fullPage:true});
     await family.getByRole("button",{name:"设置积分",exact:true}).click();await price.getByRole("button",{name:"全选应用工具",exact:true}).click();
     await price.getByLabel("积分计价方式",{exact:true}).selectOption("matrix");
