@@ -843,3 +843,10 @@ TypeScript、隔离原生数据库发布/解析/报价/冻结和浏览器分组�
 原生改名前模型和积分发布记录重试、参数／范围／权限／冻结钱包，以及浏览器旧地址跳转、跨API同操作恢复、旧sessionStorage核对、接入／改名／积分／手机通过；线上正式入口、新旧API权限、参数与单个画布范围、元数据库弹窗、模型顺序／选择刷新／报价／扩图和手机通过。验收不提交生产配置，不发收费生成；模型v66／价格v8／完整配置／草稿及元数据库861条、修订863条、采购价格完整指纹保持。
 
 证据与完整备份 /opt/naumi-staging/evidence/model-management-naming-20261010-r2，全程deploy.lock，最终健康／实际版本／浏览器验证完成，锁已释放。固定兼容回滚b73533d74a2b4c92761bd6d2ef5c2745668d9f64 / sha256:9e98745315e8a637633671f4c7c62326f926a093b2cd53c1ca2a32629df155c4基于08e0354，仅添加新地址兼容层，回滚后新书签和已加载前端仍可访问；DB、媒体、Compose、其他环境字段与代理保持，旧机未连接，视频／OSS仍延期。详见docs/changes/2026-10-10-model-management-naming.md，当前模块说明docs/admin-model-management.md。文档与验收跟进不另发业务镜像。
+
+
+## 37. 四个同事功能分支集中上线（2026-10-10）
+
+用户要求将此前列出的四个未合入功能分支全部合入：canvas-toolbar-copy、model-brand-icons、image25-output-price-table、pricing-page-preview，已保留提交历史并进入main。固定业务源码6446fab68aaccc6cccdfa8217bbaebed95d27ac9，APP/Worker Image ID sha256:f1c5f505d129d38b08a1aabcfb9a4d1925efd0f22a28f94fbd0348fb8d5235ca，实际版本1791600281 / v2026.10.10-104441。包含工具提示精简、33品牌本地SVG/别名识别、管理员原生输出参考价矩阵/人民币筛选下载、套餐预览代码；公开套餐页遵守主线最新关闭规则，价格表不自动应用到真实积分。
+
+集中类型/源图标和金额/参数/冻结积分/完整节点编辑与浏览器验收通过。线上真实价格API权限/405、公开定价404、菜单品牌/渐变唯一、四家族选择刷新报价/排序弹窗、范围/元数据映射和手机通过；不提交业务配置、不发收费生成。模型v66/计费v8、完整配置/草稿hash与元数据861条/修订863条/采购价格完整hash不变。全程deploy.lock、完整备份与固定5cb8600回滚准备，最终健康db.ok/版号/镜像一致且锁释放，临时浏览器会话清理。证据/备份 /opt/naumi-staging/evidence/colleague-integration-20261010，详见docs/changes/2026-10-10-colleague-branches-integration.md。旧机未连接/回传，DB/媒体/Compose/其他环境字段与代理保持，local媒体/视频OSS延期约定保留；文档跟进不另发镜像。
