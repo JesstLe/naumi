@@ -14,7 +14,9 @@ export function Logo({ className }: { className?: string }) {
         alt={name}
         className={cn(
           // wordmark (含文字) 用大点宽度;icon 用方形
-          logoHasText ? "h-9 w-auto" : "h-8 w-auto rounded-lg"
+          logoHasText ? "h-9 w-auto" : "h-8 w-auto rounded-lg",
+          // 仅默认单色标随主题反白，不改变用户上传的彩色/白标图片。
+          logo === "/brand/naumi/symbol-black.svg" && "dark:brightness-0 dark:invert"
         )}
       />
       {/* logo 已含品牌文字时不再渲染外置文字,避免重复 */}

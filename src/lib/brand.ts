@@ -2,15 +2,17 @@
 export const BRAND: string =
   (process.env.NEXT_PUBLIC_BRAND_NAME ?? "").trim() || "Naumi";
 
-// 默认统一复用仓库中的 Naumi Logo；各位置可显式指定自己的资源。
+// 默认采用方案 A「胶囊 N」。透明黑标用于浅色 UI，黑底白标兼容明暗画布。
+// 显式白标仍沿用原来的 Logo → favicon → square 回退顺序。
+const customLogo = (process.env.NEXT_PUBLIC_BRAND_LOGO ?? "").trim();
 export const BRAND_LOGO: string =
-  (process.env.NEXT_PUBLIC_BRAND_LOGO ?? "").trim() || "/logo.png";
+  customLogo || "/brand/naumi/symbol-black.svg";
 export const BRAND_CANVAS_LOGO: string =
-  (process.env.NEXT_PUBLIC_BRAND_CANVAS_LOGO ?? "").trim() || BRAND_LOGO;
+  (process.env.NEXT_PUBLIC_BRAND_CANVAS_LOGO ?? "").trim() || customLogo || "/brand/naumi/app-dark.svg";
 export const BRAND_LOGO_HAS_TEXT: boolean =
   (process.env.NEXT_PUBLIC_BRAND_LOGO_HAS_TEXT ?? "").trim() === "true";
 export const BRAND_FAVICON: string =
-  (process.env.NEXT_PUBLIC_BRAND_FAVICON ?? "").trim() || BRAND_LOGO;
+  (process.env.NEXT_PUBLIC_BRAND_FAVICON ?? "").trim() || customLogo || "/brand/naumi/app-dark.png";
 export const BRAND_SQUARE_LOGO: string =
   (process.env.NEXT_PUBLIC_BRAND_SQUARE_LOGO ?? "").trim() || BRAND_FAVICON;
 export const BRAND_EMAIL: string =
