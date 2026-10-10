@@ -8,7 +8,7 @@ const read = (name: string) => fs.readFileSync(path.join(root, name), "utf8");
 const control = read("src/components/image-quality-control.tsx");
 // Business contracts are identical before and after the presentation-only fix.
 assert.match(control, /pathname === "\/canvas" \? CANVAS_QUALITIES : IMAGE_QUALITY_IDS/);
-assert.match(control, /!allowedQualities.includes\(id\)/);
+assert.match(control, /filter\(id => allowedQualities.includes\(id\)\)/);
 assert.match(control, /catalog\?\.features\[feature\]\?\.prices\[id\]\?\.\[resolution\]/);
 assert.match(control, /value \|\| quality/);
 assert.match(control, /nativeHint/);

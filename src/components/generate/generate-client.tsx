@@ -3,6 +3,7 @@ import {toolSourceUrl, toolImageError} from "@/lib/tool-ui";
 import {useImageResolutions} from "@/lib/model-config/resolution-client";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
+import { IMAGE_QUALITY_IDS } from "@/lib/image-quality";
 
 import { cdnUrl } from "@/lib/cdn";
 import { takePendingRefs } from "@/lib/pending-refs";
@@ -105,9 +106,7 @@ export function GenerateClient({
   const [ratio, setRatio] = useState("auto");
   const [resolution, setResolution] = useState("1K");
   const displayResolutions=useImageResolutions("image.generate",resolution,setResolution,model);
-  // 出图质量:通道接入质量参数(NAUMI_IMAGE_QUALITY_SUPPORTED=1)前,
-  // 非标准档置灰、统一按标准档执行与计费;选择仍随请求上行,由服务端
-  // 在提交前回退并写任务审计(请求档/执行档/回退原因)。
+  // 质量选项和有效选中档位由当前模型配置决定，实际参数映射由服务端执行。
   const { quality, setQuality, qualityLabels, capable: qualityCapable, experimental: qualityExperimental, imageCost, modelConfig, allowedQualities } = useImageQuality(undefined, model);
   const [style, setStyle] = useState(GENERATION_STYLES[0]);
   const [count, setCount] = useState(1);
@@ -890,19 +889,16 @@ export function GenerateClient({
                 </div>
               </div>
 
-              {/* 出图质量:通道未接入质量参数前非标准档置灰,实际按标准档执行与计费 */}
+              {/* 仅展示当前模型配置开放的质量档位。 */}
               <div className="space-y-1.5">
                 <span className="text-[13px] text-c-text2">{t("gen.qualityLabel")}</span>
                 <Segmented
                   value={quality}
                   onChange={setQuality}
-                  options={[
-                    { value: "low", label: qualityLabels.low || t("gen.qLow"), disabled: !allowedQualities.includes("low") },
-                    { value: "medium", label: qualityLabels.medium || t("gen.qMedium"), disabled: !allowedQualities.includes("medium") },
-                    { value: "high", label: qualityLabels.high || t("gen.qHigh"), disabled: !allowedQualities.includes("high") },
-                    { value: "xhigh", label: qualityLabels.xhigh || t("gen.qXhigh"), disabled: !allowedQualities.includes("xhigh") },
-                    { value: "max", label: qualityLabels.max || t("gen.qMax"), disabled: !allowedQualities.includes("max") },
-                  ]}
+                  options={IMAGE_QUALITY_IDS.filter(id => allowedQualities.includes(id)).map(id => ({
+                    value: id,
+                    label: qualityLabels[id] || t({ low: "gen.qLow", medium: "gen.qMedium", high: "gen.qHigh", xhigh: "gen.qXhigh", max: "gen.qMax" }[id]),
+                  }))}
                 />
                 {!qualityCapable && (
                   <p className="text-[11px] leading-relaxed text-c-text3">

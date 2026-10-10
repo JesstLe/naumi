@@ -1,3 +1,4 @@
+import {publicUpstreamIds} from "./channel-policy";
 import type { ModelConfig, ModelFacts } from "./types";
 import { ModelConfigError } from "./types";
 import type { FeatureId } from "../billing/rules/registry";
@@ -51,7 +52,7 @@ export function procurementCny(p?: Procurement): Procurement | undefined {
 export function compatiblePublicModels(config: ModelConfig, binding: ModelBinding) {
   const purpose = MODEL_BINDINGS[binding];
   return config.publicModels.filter(m => m.enabled && m.visible && m.modality === purpose.modality &&
-    (m.target.type === "upstream" ? [m.target.id] : config.pools.find(p => p.id === m.target.id)?.candidates || []).some(id => {
+    publicUpstreamIds(config,m).some(id => {
       const u = config.upstreamModels.find(u => u.id === id);
       return u?.enabled && u.capabilities[purpose.capability] && config.providers.some(p => p.id === u.providerId && p.enabled);
     }));

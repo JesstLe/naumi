@@ -1,3 +1,4 @@
+import {channelEditable} from "./channel-policy";
 import type { ModelConfig, ModelSnapshot, Modality } from "./types";
 import { ModelConfigError } from "./types";
 import { FEATURE_BINDINGS } from "./business";
@@ -20,7 +21,7 @@ export const featureNames: Record<string, string> = {
   "tool.inpaint": "局部重绘", "tool.extract": "提取", "tool.garment3d": "服装 3D", "tool.packaging3d": "包装 3D",
 };
 export type ManagedModelRow = {
-  id: string; label: string; alias: string; modality: Modality; displayResolutions?: string[]; publicIds: string[];
+  id: string; label: string; alias: string; modality: Modality; supplierRouting?:ModelConfig["publicModels"][number]["supplierRouting"]; channelsEditable?:boolean; displayResolutions?: string[]; publicIds: string[];
   features: { id: string; label: string }[];
   routes: { upstreamId: string; model: string; providerId: string; provider: string; kind: string; enabled: boolean }[];
   preset: boolean; conditional: boolean; candidateIds: string[];
@@ -33,8 +34,8 @@ export type ManagedModelCandidate = { id: string; model: string; label: string; 
 export type ManagedModelCreditGrid = {quality:string;resolution:string;credits:number|null;available:boolean;effectiveQuality:string;estimated:boolean}[];
 export type ModelManagementState = {
   version: number; managed: boolean; rows: ManagedModelRow[]; candidates: ManagedModelCandidate[];
-  billingVersion?:number;
-  providers: { id: string; name: string; baseUrl: string; protocol: string; enabled: boolean; configured: boolean }[];
+  billingVersion?:number;channelHealth?:Record<string,{state:string;failures:number;retryAt:string|null;lastStatus:number|null}>;providerCapacity?:Record<string,{maxConcurrent:number;inFlight:number}>;
+  providers: { id: string; name: string; baseUrl: string; protocol: string; maxConcurrent:number; enabled: boolean; configured: boolean }[];
 };
 
 export function managedModelCandidates(config: ModelConfig): ManagedModelCandidate[] {
@@ -65,15 +66,17 @@ export function managedModelRows(snapshot: ModelSnapshot, catalogs: { feature: s
     }
   }
   for (const row of Array.from(rows.values())) {
-    const add = (id: string, kind: string) => {
+    const add = (id: string, kind: string, enabled=true) => {
       const u = config.upstreamModels.find(u => u.id === id), p = config.providers.find(p => p.id === u?.providerId);
-      if (u && p && !row.routes.some(r => r.upstreamId === id && r.kind === kind)) row.routes.push({ upstreamId: id, model: u.model, providerId: p.id, provider: p.name, kind, enabled: u.enabled && p.enabled });
+      if (u && p && !row.routes.some(r => r.upstreamId === id && r.kind === kind)) row.routes.push({ upstreamId: id, model: u.model, providerId: p.id, provider: p.name, kind, enabled: enabled && u.enabled && p.enabled });
     };
+    row.supplierRouting=config.publicModels.find(m=>m.id===row.publicIds[0])?.supplierRouting;row.channelsEditable=channelEditable(config,row.publicIds);
     row.displayResolutions = config.publicModels.find(m => m.id === row.publicIds[0])?.displayResolutions;
     row.preset = !!config.defaultImagePreset?.enabled && row.publicIds.some(id => config.defaultImagePreset!.aliases.some(a => a.id === id));
     for (const id of row.publicIds) {
       const m = config.publicModels.find(m => m.id === id)!;
       if (row.preset) add(config.defaultImagePreset!.upstreamId!, "默认预设");
+      else if(m.supplierRouting)for(const c of m.supplierRouting.channels)add(c.upstreamId,c.enabled?`供应通道 · 优先级 ${c.priority} · 权重 ${c.weight}`:"停用通道",c.enabled);
       else if (m.target.type === "upstream") add(m.target.id, row.publicIds.length > 1 ? "按比例选择" : "默认调用");
       else { row.conditional = true; for (const u of config.pools.find(p => p.id === m.target.id)!.candidates) add(u, "路由池候选"); }
     }
@@ -171,6 +174,7 @@ export function orderManagedModels(source:ModelConfig,rows:ManagedModelRow[],row
 export function switchManagedModel(source: ModelConfig, row: ManagedModelRow, upstreamId: string): ModelConfig {
   assertManagedTarget(source, row, upstreamId);
   const config = structuredClone(source);
+  for(const m of config.publicModels.filter(m=>row.publicIds.includes(m.id)))delete m.supplierRouting;
   if (row.preset) return config;
   for (const id of row.publicIds) {
     config.publicModels.find(m => m.id === id)!.target = { type: "upstream", id: upstreamId };

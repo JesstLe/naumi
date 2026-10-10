@@ -19,6 +19,7 @@ async function main() {
     await expect(page.getByText("gpt-image-2", { exact: true })).toBeVisible();
     const legacyPage=await admin.request.get(origin+"/admin/mvp?view=models",{maxRedirects:0});assert.equal(legacyPage.status(),308);assert.ok(legacyPage.headers().location.endsWith("/admin/model-management?view=models"));
     const legacyLibrary=await admin.request.get(origin+"/admin/mvp/library?brand=Google",{maxRedirects:0});assert.equal(legacyLibrary.status(),308);assert.ok(legacyLibrary.headers().location.endsWith("/admin/model-management/library?brand=Google"));
+    for(let i=0;i<30;i++){const s=await(await admin.request.get(origin+"/api/admin/model-management")).json();if(s.providers.filter((p:any)=>p.enabled&&p.configured).every((p:any)=>s.catalogs.some((c:any)=>c.providerId===p.id&&c.models.length)))break;await page.waitForTimeout(200);}await page.waitForTimeout(500);
     const current=await(await admin.request.get(origin+"/api/admin/model-management")).json();assert.deepEqual(await(await admin.request.get(origin+"/api/admin/mvp")).json(),current);
     assert.deepEqual(await(await admin.request.get(origin+"/api/admin/mvp/library")).json(),await(await admin.request.get(origin+"/api/admin/model-management/library")).json());
     const recovered={action:"rename",id:randomUUID(),expectedVersion:current.version,rowId:current.rows[0].id,label:current.rows[0].label};
@@ -153,6 +154,12 @@ async function main() {
     await family.getByRole("button",{name:"编辑范围",exact:true}).click();await scope.getByRole("button",{name:"清空选择",exact:true}).click();await scope.getByRole("button",{name:"保存范围并生效",exact:true}).click();await expect(scope).toHaveCount(0);
     await expect(family.getByText("应用工具 0 项",{exact:true})).toBeVisible();
     assert.equal((await(await admin.request.get(origin+"/api/models?feature=canvas.image")).json()).models[0].id,"image-a");
+    const first=page.getByTestId("managed-model-image-a");await first.getByRole("button",{name:/供应通道/}).click();
+    const channelsDialog=page.getByRole("dialog",{name:"供应通道与分流",exact:true});await channelsDialog.getByLabel("添加供应通道",{exact:true}).selectOption("u1");await channelsDialog.getByRole("button",{name:"添加通道",exact:true}).click();
+    await channelsDialog.getByLabel("通道权重 u2",{exact:true}).fill("7");await channelsDialog.getByLabel("通道权重 u1",{exact:true}).fill("3");await channelsDialog.getByRole("button",{name:"保存通道并生效",exact:true}).click();await expect(channelsDialog).toHaveCount(0);
+    const channelsState=await(await admin.request.get(origin+"/api/admin/model-management")).json();assert.equal(channelsState.rows[0].supplierRouting.channels.length,2);assert.equal(channelsState.rows[0].supplierRouting.mode,"balanced");
+    await page.reload();await first.getByRole("button",{name:/供应通道/}).click();await expect(channelsDialog.getByLabel("通道权重 u2",{exact:true})).toHaveValue("7");await expect(channelsDialog.getByLabel("通道权重 u1",{exact:true})).toHaveValue("3");await page.screenshot({path:"output/model-management-fixture/supplier-channels.png"});
+    await page.setViewportSize({width:390,height:844});assert.ok(await channelsDialog.evaluate(e=>e.scrollWidth<=e.clientWidth+1));await page.screenshot({path:"output/model-management-fixture/supplier-channels-mobile.png"});await page.setViewportSize({width:1440,height:1050});await channelsDialog.getByRole("button",{name:"恢复单通道",exact:true}).click();await expect(channelsDialog).toHaveCount(0);
     const loaded=page.getByTestId("site-version");await expect(loaded).toHaveAttribute("data-loaded-version","1791542000");
     let simulatedVersion="1791542001",versionFailure=false;
     await page.route("**/api/version",route=>route.fulfill(versionFailure ? {status:503,json:{error:"fixture offline"}} : {json:{version:simulatedVersion,commit:"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}));

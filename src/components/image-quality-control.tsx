@@ -24,8 +24,8 @@ export function ImageQualityControl({ feature: requestedFeature, disabled = fals
       {!compact && <span className="shrink-0 whitespace-nowrap">{t("gen.qualityLabel")}</span>}
       <ImageQualitySelect label={t("gen.qualityLabel")} title={nativeHint} value={value || quality}
         onChange={setQuality} disabled={disabled} compact={compact} canvas={pathname === "/canvas"}
-        options={(pathname === "/canvas" ? CANVAS_QUALITIES : IMAGE_QUALITY_IDS).map(id => ({
-          value: id, disabled: !allowedQualities.includes(id),
+        options={(pathname === "/canvas" ? CANVAS_QUALITIES : IMAGE_QUALITY_IDS).filter(id => allowedQualities.includes(id)).map(id => ({
+          value: id,
           label: `${qualityLabels[id] || t(labels[id])} · ${catalog?.features[feature]?.prices[id]?.[resolution]??"—"} 积分/张`,
         }))} />
     </div>

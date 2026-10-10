@@ -6,6 +6,7 @@ import {supplierMetadataSchema,unknownSupplierMetadata,type SupplierMetadata,typ
 import type {ModelConfig,ModelProvider} from "../model-config/types";
 import type {ProviderCatalogModel} from "../model-config/catalog";
 import {imageModelDisplayId} from "../image-model-routing";
+import { cleanSource, documentedMetadata, sourceHash, type PublicSupplierDirectory } from "./discovery";
 
 export class SupplierMetadataError extends Error{constructor(public code:string,message:string,public status=400){super(message);}}
 const serial=(v:unknown):string=>JSON.stringify(v&&typeof v==="object"?Array.isArray(v)?v.map(x=>JSON.parse(serial(x))):Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>[k,JSON.parse(serial(x))])):v);
@@ -32,6 +33,49 @@ export async function ingestSupplierDirectory(pool:Pool,p:ModelProvider,models:P
  await ensureSupplierModels(pool);const tx=await pool.connect();let added=0;
  try{await tx.query("BEGIN");for(const m of models)if(await insert(tx,p,m,unknownSupplierMetadata()))added++;await tx.query("COMMIT");return added;}
  catch(e){await tx.query("ROLLBACK");throw e;}finally{tx.release();}
+}
+export async function ingestSupplierSources(pool: Pool, provider: ModelProvider, directory: {models: ProviderCatalogModel[]; fetchedAt: string; truncated?: boolean; status: string}, published: PublicSupplierDirectory | null) {
+ await ensureSupplierModels(pool);
+ const tx = await pool.connect();
+ try {
+  await tx.query("BEGIN");
+  const accessible = new Map(directory.models.map(m => [m.id, m]));
+  const publishedRows = (published?.body.data || []).filter((m: any) => typeof m.model_name === "string" && !!m.model_name.trim() && m.model_name.length <= 160 && !/[\u0000-\u001f\u007f]/.test(m.model_name));
+  const publicMap = new Map<string, any>(publishedRows.map((m: any) => [m.model_name, m]));
+  const directoryUrl = provider.baseUrl.replace(/\/$/, "") + "/models";
+  const snapshot = async (kind: string, url: string, data: unknown) => {
+   const safe = cleanSource(data);
+   await tx.query("INSERT INTO app_supplier_source_snapshots(provider_id,kind,source_url,content_hash,source_data) VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT(provider_id,kind,content_hash) DO UPDATE SET last_seen_at=now()", [provider.id,kind,url,sourceHash(safe),JSON.stringify(safe)]);
+  };
+  if (["ok", "empty"].includes(directory.status)) await snapshot("authenticated-directory", directoryUrl, {provider: {id: provider.id,name:provider.name,baseUrl:provider.baseUrl,protocol:provider.protocol},models: directory.models, truncated:!!directory.truncated});
+  if (published) await snapshot("public-pricing", published.url, published.body);
+  const oldModels = (await tx.query("SELECT model_id FROM app_supplier_model_metadata WHERE provider_id=$1", [provider.id])).rows.map(r => r.model_id as string);
+  let added = 0;
+  for (const id of new Set([...accessible.keys(), ...publicMap.keys(), ...oldModels])) {
+   const raw = publicMap.get(id), listed = accessible.get(id);
+   if (!raw && !listed && !["ok", "empty"].includes(directory.status)) continue;
+   const initial = raw && published ? documentedMetadata(raw, published) : unknownSupplierMetadata();
+   if (await insert(tx, provider, listed || {id,label:id}, initial)) added++;
+   const row = (await tx.query("SELECT * FROM app_supplier_model_metadata WHERE provider_id=$1 AND model_id=$2 FOR UPDATE", [provider.id,id])).rows[0];
+   const metadata = supplierMetadataSchema.parse(row.metadata);
+   const prior = metadata.parameterMetadata.upstreamImport as any;
+   const {observedAt: _previousObservation, ...previousSource} = prior || {};
+   const source = {
+    ...previousSource,
+    accessibleWithCurrentKey: listed ? true : ["ok", "empty"].includes(directory.status) && !directory.truncated ? false : null,
+    directoryUrl,
+    ...(listed?.sourceMetadata ? {authenticatedModel:listed.sourceMetadata} : {}),
+    ...(raw && published ? {publicUrl:published.url,publicHash:sourceHash(raw),publicModel:raw} : {}),
+   };
+   // Same source refresh updates lastSeen, without spamming revisions or replacing manual edits.
+   if (serial(previousSource) === serial(source)) continue;
+   metadata.parameterMetadata.upstreamImport = {...source,observedAt: directory.fetchedAt || published?.fetchedAt || new Date().toISOString()};
+   const parsed = supplierMetadataSchema.parse(metadata), revision = Number(row.revision)+1;
+   await tx.query("UPDATE app_supplier_model_metadata SET metadata=$2::jsonb,revision=$3,updated_by='system-discovery',updated_at=now() WHERE id=$1",[row.id,JSON.stringify(parsed),revision]);
+   await tx.query("INSERT INTO app_supplier_model_metadata_versions(model_id,revision,actor,metadata) VALUES($1,$2,'system-discovery',$3::jsonb)",[row.id,revision,JSON.stringify(parsed)]);
+  }
+  await tx.query("COMMIT"); return added;
+ } catch(e) { await tx.query("ROLLBACK"); throw e; } finally {tx.release();}
 }
 export async function importConfiguredSupplierModels(pool:Pool,config:ModelConfig){
  await ensureSupplierModels(pool);const tx=await pool.connect();let added=0;

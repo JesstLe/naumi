@@ -52,7 +52,7 @@ async function main() {
     assert.equal((await denied(request())).status, 404);
     assert.equal((await handler(request({ action: "discover", providerId: "p1" }, "https://evil.test"))).status, 403);
     assert.equal((await handler(request({ action: "discover", providerId: "p1", baseUrl: "http://169.254.169.254" }))).status, 400);
-    assert.equal((await handler(request({ action: "discover", providerId: "p1" }))).status, 200); assert.equal(catalogQueries, 1);
+    assert.equal((await handler(request({ action: "discover", providerId: "p1" }))).status, 200); assert.equal(catalogQueries, 2);
     const executor = createModelExecutor({ runtime, credentials: f.credentials, trustedOrigins: [f.origin], gateway: () => ({ baseUrl: f.origin, apiKey: "fixture" }) });
     const frozen = await executor.resolve({ binding: "image.generate", snapshot: old, billing });
     const switchBody = { action: "switch", id: randomUUID(), expectedVersion: old.version, rowId: data.rows[0].id, upstreamId: "u2" };
