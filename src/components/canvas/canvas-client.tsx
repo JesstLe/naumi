@@ -8,6 +8,7 @@ import { copyText } from "@/lib/clipboard";
 import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters, canvasCombinationSupported } from "@/lib/canvas/generation-parameters";
 import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
+import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasParameterPopover } from "./parameter-popover";
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
@@ -6402,70 +6403,59 @@ export function CanvasClient() {
     const p = relPoint(e);
     setCtxMenu({ x: p.x, y: p.y, cx: e.clientX, cy: e.clientY });
   }
-  // 整理画布:抛掉手动坐标,按血缘自动重排并持久化,再适应视图
-  function tidyLayout() {
-    if (!active || readOnly || !user) return;
+  // 全部图文参与布局；锁定/运行节点作为障碍。一个事务、一个撤销步骤。
+  async function tidyLayout() {
+    if (!active || readOnly || !user || !nodeSettingsReady || !textNodesReady || historyBusyRef.current) return;
     setCtxMenu(null);
-    const stripped = active.members.map((m) => ({
-      ...m,
-      canvasX: null,
-      canvasY: null,
-    }));
-    const { nodes: laid } = layoutGraph(
-      stripped,
-      "",
-      onNodeDimensions,
-      onArtworkCanvasResize,
-      onArtworkCanvasRatioRepair,
-      requestNodeRename,
-      extractVideoToCanvas
-    );
-    const coord = new Map(
-      laid.filter(n=>!isNodeLocked(n.id)).map((n) => [
-        n.id,
-        { x: Math.round(n.position.x), y: Math.round(n.position.y) },
-      ])
-    );
-    // 整理画布是全图重排:记一条 move-many 撤销(From=用户当前看到的坐标,取 RF 实时位置)
-    const rfPositions = new Map(
-      (rfRef.current?.getNodes() ?? []).map((n) => [n.id, n.position])
-    );
-    const moves = active.members
-      .map((m) => {
-        const to = coord.get(m.id);
-        const from = rfPositions.get(m.id) ?? {
-          x: m.canvasX ?? 0,
-          y: m.canvasY ?? 0,
-        };
-        return to
-          ? {
-              id: m.id,
-              from: { x: Math.round(from.x), y: Math.round(from.y) },
-              to,
-            }
-          : null;
-      })
-      .filter((move): move is NonNullable<typeof move> => !!move);
-    if (moves.length) pushUndo({ kind: "move-many", moves });
-    setWorks((prev) =>
-      prev
-        ? prev.map((w) => {
-            const c = coord.get(w.id);
-            return c ? { ...w, canvasX: c.x, canvasY: c.y } : w;
-          })
-        : prev
-    );
-    for (const [id, c] of Array.from(coord.entries())) {
-      privateFetchRaw("/api/artworks/position", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: user.email, id, x: c.x, y: c.y }),
-      }).catch(() => {});
+    historyBusyRef.current = true;
+    setHistorySaving(true);
+    try {
+      await Promise.all(Array.from(textSaveQueuesRef.current.values()));
+      if (unsavedTextRef.current.size) throw new Error(L("请先保存未保存的文字节点", "Save pending text changes first"));
+      const currentNodes = rfRef.current?.getNodes() ?? rfNodes;
+      const currentEdges = rfRef.current?.getEdges() ?? rfEdges;
+      const artworkIds = new Set(active.members.map(member => member.id));
+      const textIds = new Set(active.textNodes.map(node => node.id));
+      const mobileIds = new Set([...artworkIds, ...textIds]);
+      const input = currentNodes.map(node => ({
+        id: node.id, ...flowNodeSize(node), x: node.position.x, y: node.position.y,
+        fixed: !mobileIds.has(node.id) || isNodeLocked(node.id),
+        group: (node.data as { canvasGroupId?: string | null }).canvasGroupId,
+      }));
+      const positions = smartLayout(input, currentEdges);
+      const moves = input.filter(node => !node.fixed).flatMap(node => {
+        const to = positions.get(node.id)!;
+        const from = { x: node.x, y: node.y };
+        return to.x === from.x && to.y === from.y ? [] : [{ id: node.id, from, to }];
+      });
+      if (moves.length > 400) throw new Error(L("本次整理最多支持400个移动节点", "Arrange up to 400 movable nodes at a time"));
+      if (moves.length) {
+        const act: UndoAct = { kind: "move-many", moves };
+        // applyHistory persists atomically BEFORE moving local nodes; failed saves leave the canvas intact.
+        await applyHistory(act, false);
+        pushUndo(act);
+      }
+      let frames = 0;
+      const fitArrangedView = () => {
+        const instance = rfRef.current;
+        const liveNodes = instance?.getNodes() ?? [];
+        const readyToFit = liveNodes.length > 0 && moves.every(move => {
+          const live = liveNodes.find(node => node.id === move.id);
+          return live?.position.x === move.to.x && live?.position.y === move.to.y;
+        });
+        if (instance && readyToFit) {
+          void instance.fitView({ nodes: Array.from(mobileIds, id => ({ id })), duration: 500, padding: 0.18, maxZoom: 1 });
+        } else if (++frames < 60) {
+          requestAnimationFrame(fitArrangedView);
+        }
+      };
+      requestAnimationFrame(fitArrangedView);
+    } catch (error) {
+      flashTip(error instanceof Error ? error.message : t("canvas.saveFailed"));
+    } finally {
+      historyBusyRef.current = false;
+      setHistorySaving(false);
     }
-    setTimeout(
-      () => rfRef.current?.fitView({ duration: 500, padding: 0.25, maxZoom: 1 }),
-      60
-    );
   }
 
   // 下载单张图
@@ -9761,6 +9751,7 @@ export function CanvasClient() {
                   title={t("canvas.ctxTidy")}
                   aria-label={t("canvas.ctxTidy")}
                   onClick={tidyLayout}
+                  disabled={historySaving || !nodeSettingsReady || !textNodesReady}
                   className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 >
                   <LayoutGrid className="h-4 w-4" />
@@ -10143,7 +10134,7 @@ export function CanvasClient() {
                           />
                         )}
                         {!readOnly && (
-                          <Item label={t("canvas.optimizeLayout")} onClick={tidyLayout} />
+                          <Item label={t("canvas.optimizeLayout")} disabled={historySaving || !nodeSettingsReady || !textNodesReady} onClick={tidyLayout} />
                         )}
                         <Sep />
                         {!readOnly && (
