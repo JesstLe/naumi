@@ -10,7 +10,7 @@ import {
 } from "@/lib/relay";
 
 // 签发站后台:中转密钥管理(生成/列表/停用启用/续费/删除)。
-// 三重门控:管理员身份 + Pro + 仅签发站(host=ai.starzeco.com,且配置了 relay env)。
+// 三重门控:管理员身份 + Pro + 仅签发站(host=配置的签发站,且配置了 relay env)。
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ async function guard(request: Request): Promise<NextResponse | null> {
 
   if (!isLicenseIssuer(request)) {
     return NextResponse.json(
-      { error: "本站不是签发站,中转密钥请到国内主站(ai.starzeco.com)后台管理。" },
+      { error: "本站不是签发站，中转密钥请到配置的签发站后台管理。" },
       { status: 403 }
     );
   }

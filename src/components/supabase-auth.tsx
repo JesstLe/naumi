@@ -1,4 +1,5 @@
 "use client";
+import { PHONE_DOMAIN as PHONE_EMAIL_DOMAIN } from "@/lib/account-identity";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -38,8 +39,7 @@ const WECHAT_LOGIN =
 const PHONE_RE = /^1[3-9]\d{9}$/;
 // Must match the server's PHONE_EMAIL_DOMAIN so the client can derive a phone
 // user's synthetic-email account for password sign-in.
-const PHONE_EMAIL_DOMAIN =
-  process.env.NEXT_PUBLIC_PHONE_EMAIL_DOMAIN || "phone.starzeco.com";
+
 const RESEND_COOLDOWN_SEC = 60;
 
 // Outer page wrapper — full-page background + centering. In compact mode

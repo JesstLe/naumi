@@ -2358,7 +2358,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
             <Input
               value={wechatEmailDomain}
               onChange={(e) => setWechatEmailDomain(e.target.value)}
-              placeholder="wx.starzeco.com"
+              placeholder="wx.naumi.local"
             />
             <Button
               variant="outline"
@@ -2715,7 +2715,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
             <Input
               value={brandName}
               onChange={(e) => setBrandName(e.target.value)}
-              placeholder="例如 星泽商图"
+              placeholder="例如 Naumi"
             />
             <Button
               variant="outline"
@@ -2930,7 +2930,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
 
           {/* 授权管理(仅签发站显示;组件自带标题,买家实例整块自动隐藏) */}
 
-          {/* 中转密钥管理(仅签发站 ai.starzeco.com + 配置了 relay 时显示;
+          {/* 中转密钥管理(仅签发站 配置的签发站 + 配置了 relay 时显示;
               非签发站/未配置时 embedded 自动隐藏,不占位) */}
           <RelayTokensClient embedded />
         </div>

@@ -3,18 +3,18 @@ import "server-only";
 /** Hosting identity only affects publisher copy; it never gates product features. */
 export const officialSite = process.env.NAUMI_OFFICIAL_SITE === "1";
 
-// Legacy license issuance endpoints retain their original host and admin checks.
+// Issuance requires an explicit flag or an explicitly configured server host.
 export function isLicenseIssuerHost(hostRaw: string | null | undefined): boolean {
   const flag = (process.env.LICENSE_ISSUER || "").trim().toLowerCase();
   if (flag === "1" || flag === "true" || flag === "yes") return true;
   if (flag === "0" || flag === "false" || flag === "no") return false;
-  let serverHost = "ai.starzeco.com";
+  let serverHost: string;
   try {
-    serverHost = new URL(
-      process.env.LICENSE_SERVER_URL || "https://ai.starzeco.com"
-    ).host.toLowerCase();
+    const url = new URL((process.env.LICENSE_SERVER_URL || "").trim());
+    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+    serverHost = url.host.toLowerCase();
   } catch {
-    /* 用默认 */
+    return false;
   }
   const reqHost = (hostRaw || "").toLowerCase().trim();
   if (!reqHost) return false;

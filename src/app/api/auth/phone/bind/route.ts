@@ -1,3 +1,4 @@
+import { PHONE_DOMAIN } from "@/lib/account-identity";
 import { NextResponse } from "next/server";
 import { smsEnabled, checkSmsCode } from "@/lib/sms";
 import { adminSupabase, bearer } from "@/lib/supabase-admin";
@@ -11,7 +12,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const PHONE_RE = /^1[3-9]\d{9}$/;
-const EMAIL_DOMAIN = process.env.PHONE_EMAIL_DOMAIN ?? "phone.starzeco.com";
+const EMAIL_DOMAIN = process.env.PHONE_EMAIL_DOMAIN?.trim() || PHONE_DOMAIN;
 
 // POST { phone, code } with a Bearer token → verify the SMS code and bind the
 // phone to the current (email) account, so they can also sign in by phone.

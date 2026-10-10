@@ -1,4 +1,5 @@
 "use client";
+import { BRAND } from "@/lib/brand";
 import {toolImageError} from "@/lib/tool-ui";
 import {SelectMenu} from "@/components/ui/select-menu";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -479,7 +480,7 @@ export function SuiteClient() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `星泽商图-套图-${Date.now()}.zip`;
+      a.download = `${BRAND}-套图-${Date.now()}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -579,7 +580,7 @@ export function SuiteClient() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `星泽商图-套图记录-${items.length}张.zip`;
+      a.download = `${BRAND}-套图记录-${items.length}张.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1232,7 +1233,7 @@ export function SuiteClient() {
           src={cdnUrl(viewing.url)}
           alt={viewing.label}
           onClose={() => setViewing(null)}
-          downloadName="星泽商图-套图"
+          downloadName={`${BRAND}-套图`}
         />
       )}
       {/* 记录列放大 */}
@@ -1240,7 +1241,7 @@ export function SuiteClient() {
         <ImageLightbox
           src={recView}
           onClose={() => setRecView("")}
-          downloadName="星泽商图-套图"
+          downloadName={`${BRAND}-套图`}
         />
       )}
     </div>

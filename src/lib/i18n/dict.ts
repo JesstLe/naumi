@@ -2185,7 +2185,7 @@ export function lookup(locale: Locale, key: string): unknown {
 
 /** Resolve a dot-path key to a string for a locale, falling back to zh then key.
  * 自动把字典里所有 "{brand}" 占位符替换成 NEXT_PUBLIC_BRAND_NAME (海外={brand},
- * 国内=星泽商图)。这样改品牌名只需要改一处 env,不用动每一个翻译键。 */
+ * 国内=Naumi)。这样改品牌名只需要改一处 env,不用动每一个翻译键。 */
 function applyBrand(s: string): string {
   return s.includes("{brand}") ? s.replaceAll("{brand}", BRAND) : s;
 }
