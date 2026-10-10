@@ -9,7 +9,7 @@ import { readProviderCatalog, refreshProviderCatalog } from "./catalog-store";
 import { publicModelCatalog } from "./runtime";
 import { FEATURE_BINDINGS } from "./business";
 import { MODEL_BINDINGS } from "./bindings";
-import { mvpRows, mvpCandidates, MVP_PROTOCOLS, switchMvpModel, renameMvpModel, applyMvpToolScope, applyMvpQualityParameters } from "./mvp";
+import { mvpRows, mvpCandidates, MVP_PROTOCOLS, switchMvpModel, renameMvpModel, applyMvpToolScope, applyMvpQualityParameters, orderMvpModels } from "./mvp";
 import { DISPLAY_QUALITY_IDS } from "./quality-policy";
 import { FEATURE_IDS } from "../billing/rules/registry";
 import {QUALITY_IDS,RESOLUTION_IDS} from "../billing/rules/registry";
@@ -31,6 +31,7 @@ const input = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("credential"), providerId: identifier, ciphertext: z.string().min(1).max(32768).optional(), keyPlain: z.string().min(1).max(16384).optional() }),
   z.strictObject({ action: z.literal("switch"), ...common, rowId: identifier, upstreamId: identifier }),
   z.strictObject({ action: z.literal("rename"), ...common, rowId: identifier, label: z.string().trim().min(1).max(100).regex(/^[^\u0000-\u001f\u007f]+$/) }),
+  z.strictObject({action:z.literal("order"),...common,rowIds:z.array(identifier).min(1).max(500)}),
   z.strictObject({action:z.literal("scope"),...common,rowId:identifier,features:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length)}),
   z.strictObject({action:z.literal("parameters"),...common,rowId:identifier,parameters:z.strictObject({choices:z.array(z.strictObject({id:z.enum(DISPLAY_QUALITY_IDS),label:z.string().trim().min(1).max(30)})).min(1).max(5),routes:z.array(z.strictObject({upstreamId:identifier,mode:z.enum(["map","passthrough","omit"]),values:z.record(z.string(),z.string().max(100)),evidence:z.strictObject({status:z.enum(["unverified","documented","accepted","rejected"]),source:z.string().max(1000),checkedAt:z.string().max(30)}).optional()})).min(1).max(100)}).nullable()}),
   z.strictObject({action:z.literal("pricing"),...common,expectedBillingVersion:z.number().int().positive(),rowId:identifier,features:z.array(z.enum(FEATURE_IDS)).min(1).max(FEATURE_IDS.length),pricing:creditPricing.nullable()}),
@@ -91,7 +92,9 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
       let draft = await admin.repo.draft(actor);
       if (!previous && draft.revision === 1) {
         let config = structuredClone(snapshot.config);
-        if (body.action === "switch" || body.action === "rename" || body.action === "scope" || body.action === "parameters") {
+        if(body.action === "order") {
+          config=orderMvpModels(config,rows(snapshot),body.rowIds);
+        } else if (body.action === "switch" || body.action === "rename" || body.action === "scope" || body.action === "parameters") {
           const row = rows(snapshot).find(r => r.id === body.rowId);
           if (!row) throw new ModelConfigError("MODEL_UNAVAILABLE", "前端当前没有展示该模型，请刷新", 409);
           config = body.action === "parameters" ? applyMvpQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyMvpToolScope(config,row,body.features) : body.action === "rename" ? renameMvpModel(config, row, body.label) : switchMvpModel(config, row, body.upstreamId);
@@ -116,7 +119,7 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
         draft = await admin.repo.saveDraft({ id: draft.id, expectedRevision: draft.revision, config, actor });
       }
       staged = true;
-      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
+      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "order" ? "模型展示排序" : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
       return biJson({ publication }, publication.phase === "applied" ? 200 : publication.phase === "failed" ? 422 : 202);
     } catch (e) {
       if(e instanceof BillingError)return biJson({error:e.message,code:e.code,operationNotStaged:["CONFIG_CONFLICT","INVALID_CONFIG","OPERATION_CONFLICT"].includes(e.code)},e.status);

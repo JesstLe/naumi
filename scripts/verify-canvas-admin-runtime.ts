@@ -4,6 +4,7 @@ import { createModelFixture } from "./model-config-fixture";
 
 async function main() {
   const baseline = process.argv.includes("--baseline");
+  const selectable=(feature:string)=>["canvas.image","canvas.expand","canvas.text-edit","canvas.annotate"].includes(feature);
   let active = "";
   const prepared = new Set<string>();
   const f = await createModelFixture(async (req, res) => {
@@ -73,9 +74,9 @@ async function main() {
       const formRequest=new Request("http://fixture.test/api/generate-image",{method:"POST",headers:{cookie:`nv_user=${signUserSession(email,Date.now())}`,origin:"http://fixture.test","x-naumi-feature-model":"image-b"},body:form});
       for(const r of [request("/api/generate-image",canvasBody,{"x-naumi-feature-model":"image-b"}),formRequest]) {
         const accepted=await withModelRequest(r,async()=>({catalog:await getImageModelCatalog(email),bundle:structuredClone(currentExecutionBundle()!),quote:await quoteForRequest(r,{feature:featureForRequest("/api/generate-image",canvasBody)!,quantity:2,modelId:"image-b",quality:"medium",resolution:"1K"})}));
-        assert.equal(accepted.bundle.image!.feature,"canvas.image");assert.equal(accepted.bundle.image!.binding,"image.edit");assert.equal(accepted.bundle.image!.publicModelId,"image-a");
-        assert.equal(accepted.quote.facts.feature,"canvas.image");assert.equal(accepted.quote.facts.modelId,"image-a");assert.equal(accepted.quote.requestedCredits,20);
-        assert.deepEqual(accepted.catalog.map(m=>m.id),["image-a"]);
+        assert.equal(accepted.bundle.image!.feature,"canvas.image");assert.equal(accepted.bundle.image!.binding,"image.edit");assert.equal(accepted.bundle.image!.publicModelId,"image-b");
+        assert.equal(accepted.quote.facts.feature,"canvas.image");assert.equal(accepted.quote.facts.modelId,"image-b");assert.equal(accepted.quote.requestedCredits,40);
+        assert.deepEqual(accepted.catalog.map(m=>m.id),["image-a","image-b"]);
       }
       const ordinary=request("/api/generate-image",{model:"image-b",prompt:"ordinary fixture"});
       const ordinaryBundle=await withModelRequest(ordinary,async()=>structuredClone(currentExecutionBundle()!));
@@ -85,7 +86,7 @@ async function main() {
     for (const feature of features) {
       const prefix = ["canvas.ocr", "canvas.assistant", "canvas.text-generate"].includes(feature) ? "text" : "image";
       const path = `/api/canvas/${feature === "canvas.image" ? "image-tasks" : feature.slice(7)}`;
-      const forged = `${prefix}-b`, expected = baseline ? forged : `${prefix}-a`;
+      const forged = `${prefix}-b`, expected = baseline || selectable(feature) ? forged : `${prefix}-a`;
       for (const headers of [{ "x-naumi-feature-model": forged }, { "x-naumi-text-model": forged }, {}] as Record<string, string>[]) {
         const r = request(path, { model: forged, modelId: forged, prompt: "fixture", quality: "medium" }, headers);
         const bundle = await withModelRequest(r, async () => structuredClone(currentExecutionBundle()!));
@@ -97,15 +98,15 @@ async function main() {
       }
       const quoted = await quoteApi.POST(request("/api/billing/quote", { feature, quantity: 1, modelId: forged }, { "x-naumi-feature-model": forged }));
       assert.equal(quoted.status, 200, await quoted.clone().text()); const q = await quoted.json();
-      assert.equal(q.modelId, expected); assert.equal(q.credits, baseline ? 20 : 10);
+      assert.equal(q.modelId, expected); assert.equal(q.credits, baseline || selectable(feature) ? 20 : 10);
       const catalog = await (await modelsApi.GET(request(`/api/models?feature=${feature}`))).json();
-      assert.equal(catalog.models.length, baseline ? 2 : 1);
+      assert.equal(catalog.models.length, baseline || selectable(feature) ? 2 : 1);
       config.business![feature]!.defaultModelId = forged;
     }
     const second = await publish(); assert.ok(second.version > first.version);
     if(!baseline){
       const r=request("/api/generate-image",{origin:"canvas",model:"image-a",prompt:"scope fixture"});
-      const bundle=await withModelRequest(r,async()=>structuredClone(currentExecutionBundle()!));assert.equal(bundle.image!.publicModelId,"image-b");
+      const bundle=await withModelRequest(r,async()=>structuredClone(currentExecutionBundle()!));assert.equal(bundle.image!.publicModelId,"image-a");
       await assert.rejects(withModelRequest(request("/api/generate-image",{origin:"canvas",prompt:"fixture"},{"x-naumi-model-version":String(first.version)}),async()=>null),(e:any)=>e.code==="MODEL_CHANGED");
     }
     const executor = await getModelExecutor();
@@ -113,12 +114,23 @@ async function main() {
     for (const feature of features) {
       const prefix = ["canvas.ocr", "canvas.assistant", "canvas.text-generate"].includes(feature) ? "text" : "image";
       const q = await (await quoteApi.POST(request("/api/billing/quote", { feature, quantity: 1, modelId: `${prefix}-a` }))).json();
-      assert.equal(q.modelId, baseline ? `${prefix}-a` : `${prefix}-b`);
+      assert.equal(q.modelId, baseline || selectable(feature) ? `${prefix}-a` : `${prefix}-b`);
       const stale = request(`/api/canvas/${feature === "canvas.image" ? "image-tasks" : feature.slice(7)}`, { prompt: "fixture" }, { "x-naumi-model-version": String(first.version) });
       await assert.rejects(withModelRequest(stale, async () => null), (e: any) => e.code === "MODEL_CHANGED");
     }
+    // Availability is still enforced even with a forged body/header; removing
+    // a selected model must reject new work without altering frozen executions.
+    config.publicModels.find(m=>m.id==="image-b")!.toolScope={features:[],defaultFor:[]};
+    for(const feature of features.filter(selectable))config.business![feature]!.defaultModelId="image-a";
+    const restricted=await publish();
+    for(const feature of features.filter(selectable)) {
+      const path=feature==="canvas.image"?"/api/generate-image":`/api/canvas/${feature.slice(7)}`;
+      await assert.rejects(withModelRequest(request(path,{origin:"canvas",model:"image-b",prompt:"fixture"},{"x-naumi-feature-model":"image-b"}),async()=>null),(e:any)=>e.code==="MODEL_OUTSIDE_TOOL_SCOPE");
+      assert.equal((await quoteApi.POST(request("/api/billing/quote",{feature,modelId:"image-b",quantity:1}))).status,400);
+    }
+    for (const bundle of frozen) await executor.runBundle(bundle, await billing.config.byVersion(bundle.billingVersion), async () => assert.equal(currentExecutionBundle()!.modelVersion, first.version));
     console.log(baseline ? "CANVAS_RUNTIME_BASELINE=PASS FEATURES=7 CLIENT_OVERRIDE=ACTIVE QUOTE_OVERRIDE=ACTIVE"
-      : "CANVAS_ADMIN_RUNTIME=PASS FEATURES=7 DOCK_SHARED_ENDPOINT_JSON_FORM=PASS BODY_HEADER_OVERRIDE=IGNORED QUOTE_EXECUTION=CONSISTENT ADMIN_PUBLISH_SWITCH=PASS FROZEN_BUNDLES=21 STALE_VERSION=409 REAL_SUPPLIER_CALLS=0");
+      : "CANVAS_SCOPED_RUNTIME=PASS FEATURES=7 DOCK_SHARED_ENDPOINT_JSON_FORM=PASS IMAGE_SELECTION=HONORED TEXT_DEFAULT=ENFORCED QUOTE_EXECUTION=CONSISTENT DEFAULT_CHANGE_DOES_NOT_OVERRIDE_SELECTION=PASS FROZEN_BUNDLES=21 STALE_VERSION=409 REAL_SUPPLIER_CALLS=0");
   } finally { await db.getPool().end(); await f.cleanup(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

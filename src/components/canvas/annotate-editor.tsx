@@ -1,6 +1,7 @@
 "use client";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
+import { FeatureModelSelect } from "@/components/tools/feature-model-select";
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -74,7 +75,7 @@ export function AnnotateEditorModal({
   const [natW, setNatW] = useState(0);
   const [natH, setNatH] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const { imageCost } = useImageQuality();
+  const { imageCost } = useImageQuality("canvas.annotate");
   const [tool, setTool] = useState<AnnotateTool>("arrow");
   const [brushSlider, setBrushSlider] = useState(5);
   const [items, setItems] = useState<AnnotateItem[]>([]);
@@ -501,7 +502,7 @@ export function AnnotateEditorModal({
           </div>
 
           <div className="flex-none border-t border-[var(--canvas-ui-border)] px-4 py-3">
-            <div className="mb-2"><ImageQualityControl compact resolution={artwork.resolution || "1K"} disabled={submitting} /></div>
+            <div className="mb-2"><FeatureModelSelect feature="canvas.annotate" disabled={submitting} /><ImageQualityControl compact feature="canvas.annotate" resolution={artwork.resolution || "1K"} disabled={submitting} /></div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
