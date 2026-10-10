@@ -2,6 +2,8 @@
 
 ## 当前固定版本（2026-10-10）
 
+- 最新新机运行源码 `08e0354f9d5910b67b174b609a004848d17cd73a`，Image ID `sha256:141f5a05cf11c31c919bffa2e2cc78e8be6f140d2622ca33e67b2fb46da45ca7`，版本1791597752 / `v2026.10.10-100232`。MVP质量映射读取精确供应商元数据默认，可恢复默认与手动编辑；画布单个系统勾选、模块用途、图片／文字能力池与共享选择、Agent文字选择已上线。原生和隔离浏览器发布／冲突／冻结／A+授权及同事节点编辑回归通过；线上只读弹窗、手机、选择／刷新／排序／报价通过，模型v66／价格v8／完整配置／草稿与采购价格、元数据内容和修订保留（目录发现仅更新last_seen_at）。证据 `/opt/naumi-staging/evidence/metadata-canvas-20261010`，全程发布锁已释放。固定兼容回滚镜像855762070fa0a973f83cb3f9611b1f933cea57e6可读当前和历史systems字段；正常回滚不改配置，不回灌DB／媒体。详见 `docs/changes/2026-10-10-metadata-defaults-canvas-system.md`。以下为历史版本，验收／文档跟进不另发镜像。
+
 - 最新新机运行源码 `365878e012d39e5137fc12217c69661f0941fb10`，Image ID `sha256:3197935bcfa180f6ef96ee57f2da31af3b433726bd3d6740eea027e4a03e6ba6`，版本1791595122 / `v2026.10.10-091842`。画布四项图片工具在范围内允许选择，MVP新增持久家族排序；原生发布/报价/范围拒绝/冻结任务与浏览器分组、排序、刷新、回退验收通过。线上生图13个分支合并为4家族，模型v66、计费v8、完整配置/草稿及用户接口/ComfyUI指纹原样保留。真实供应商调用0。证据 `/opt/naumi-staging/evidence/canvas-scoped-selection-20261010-r2`，可回滚至3610074，无新增字段或迁移；详见 `docs/changes/2026-10-10-canvas-scoped-model-selection.md`。以下为历史版本，文档跟进不另发镜像。
 
 - 最新新机运行源码 `3610074a4db5523798138b997a8045e365f45137`，Image ID `sha256:635b89f8e4f415a452fd8f02cd9883c4dcb80c27a50b7a4bb15fa30932432ea4`，版本1791561629 / `v2026.10.10-000029`。按用户要求完整合入 `codex/canvas-node-editing`（继承工具栏和助手侧栏），修复版号挡住属性保存按钮；隔离真实DB/完整画布与线上只读/模拟节点桌面手机验收通过。模型v58、价格v8、草稿和历史/ComfyUI保留，真实供应商调用0。证据 `/opt/naumi-staging/evidence/canvas-ui-integration-20261009`，可执行锁定回滚至8ca8329，保留新增表与媒体。详见 `docs/changes/2026-10-09-canvas-ui-integration.md`。下面为历史版本，文档跟进不另发镜像。
