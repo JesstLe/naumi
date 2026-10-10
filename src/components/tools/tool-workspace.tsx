@@ -1,9 +1,11 @@
 "use client";
+import type { FeatureId } from "@/lib/billing/types";
+import {toolImageError, toolSourceUrl} from "@/lib/tool-ui";
+import { X } from "lucide-react";
 import { FeatureModelSelect } from "./feature-model-select";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import {CATEGORY_FEATURES} from "@/lib/billing/feature-map";
 import { ImageQualityControl, QUALITY_TOOL_CATEGORIES } from "@/components/image-quality-control";
-import { useImageQuality } from "@/lib/image-quality-context";
 
 import { cdnUrl } from "@/lib/cdn";
 import * as React from "react";
@@ -79,9 +81,10 @@ export function ToolChips({
             <button
               key={o.value}
               type="button"
+              aria-pressed={active}
               onClick={() => onChange(o.value)}
               className={cn(
-                "rounded-[8px] px-3.5 py-2 text-[13px] font-medium transition-colors",
+                "min-h-9 rounded-[10px] px-3.5 py-2 text-[13px] font-medium transition-colors",
                 active ? "text-white" : "bg-c-subtle text-c-text2 hover:bg-c-subtle2"
               )}
               style={active ? { background: accent } : undefined}
@@ -107,6 +110,7 @@ export function ToolWorkspace({
   tint,
   accent,
   category,
+  feature: requestedFeature,
   cost: baseCost,
   resolution = "1K",
   action,
@@ -114,7 +118,8 @@ export function ToolWorkspace({
   onProcess,
   checker = false,
   accept = "image/png,image/jpeg,image/webp",
-  uploadHint = "支持 JPG / PNG,最大 20MB",
+  maxUploadBytes = 12 * 1024 * 1024,
+  uploadHint = "JPG / PNG / WebP · 12MB",
   regenLabel = "以此图重新生成",
   onFileChange,
 }: {
@@ -124,6 +129,7 @@ export function ToolWorkspace({
   tint: string;
   accent: string;
   category: string;
+  feature?: FeatureId;
   cost: number;
   resolution?: string;
   action: string;
@@ -131,6 +137,7 @@ export function ToolWorkspace({
   onProcess: (file: File) => Promise<ToolProcessResult>;
   checker?: boolean;
   accept?: string;
+  maxUploadBytes?: number;
   uploadHint?: string;
   regenLabel?: string;
   /** 当前输入图变化时通知(AI帮写等需要拿到图的场景);null=清空 */
@@ -138,9 +145,9 @@ export function ToolWorkspace({
 }) {
   const { user, ready, remaining, consumeCredits, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
-  const { imageCost } = useImageQuality();
-  const qualityPriced = QUALITY_TOOL_CATEGORIES.has(category || "");
-  const billing=useFeatureBilling(CATEGORY_FEATURES[category||""]??"image.generate",{resolution});
+  const feature = requestedFeature || CATEGORY_FEATURES[category || ""] || "image.generate";
+  const qualityPriced = QUALITY_TOOL_CATEGORIES.has(category || "") || feature === "tool.garment3d";
+  const billing=useFeatureBilling(feature,{resolution});
   const cost = baseCost;
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
@@ -157,6 +164,8 @@ export function ToolWorkspace({
   const [shown, setShown] = React.useState<RecordItem | null>(null);
   const [zipping, setZipping] = React.useState(false);
   const [recPage, setRecPage] = React.useState(0);
+  const [recordError, setRecordError] = React.useState("");
+  const [recordRetry, setRecordRetry] = React.useState(0);
 
   React.useEffect(() => {
     return () => {
@@ -171,13 +180,15 @@ export function ToolWorkspace({
       return;
     }
     let cancelled = false;
+    setRecordError("");
     (async () => {
       try {
         const r = await fetch(
           `/api/account?email=${encodeURIComponent(user.email)}`,
           { headers: await authHeader() }
         );
-        if (!r.ok || cancelled) return;
+        if (cancelled) return;
+        if (!r.ok) throw new Error(locale === "en" ? "History unavailable" : "记录加载失败");
         const d = await r.json();
         const arts = (d.artworks ?? []) as {
           id: string;
@@ -199,19 +210,20 @@ export function ToolWorkspace({
               id: a.id,
               url: a.image,
               prompt: a.prompt,
-              source: a.source,
+              source: toolSourceUrl(a.source),
               gradient: a.gradient,
             }))
         );
+        setSelected(new Set());
         setRecPage(0);
       } catch {
-        if (!cancelled) setRecords([]);
+        if (!cancelled) { setRecords([]); setRecordError(locale === "en" ? "History unavailable" : "记录加载失败"); }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.email, category, result]);
+  }, [user?.email, category, result, recordRetry, locale]);
 
   // 工具页 Ctrl+V 截图 → 直接进上传槽(全站 20+ 单图工具共用此组件)
   const onWindowPaste = useClipboardImagePaste(
@@ -229,11 +241,13 @@ export function ToolWorkspace({
   }, [onWindowPaste]);
 
   function pick(files: FileList | null) {
+    if (processing) return;
     if (!user) return openAuth();
     const f = files?.[0];
     if (!f) return;
-    if (f.size > 20 * 1024 * 1024) {
-      setError("图片需小于 20MB");
+    const issue=toolImageError(f,maxUploadBytes,accept);
+    if (issue) {
+      setError(issue === "size" ? L(`图片需小于 ${Math.round(maxUploadBytes/1024/1024)}MB`, `Image must be under ${Math.round(maxUploadBytes/1024/1024)}MB`) : L("请选择有效的图片文件", "Choose a valid image file"));
       return;
     }
     setError(null);
@@ -246,7 +260,9 @@ export function ToolWorkspace({
     onFileChange?.(f, url);
   }
 
+  const busy=React.useRef(false);
   async function run() {
+    if(busy.current)return;
     if (!user) return openAuth();
     if (!file) {
       setError("请先上传图片");
@@ -259,6 +275,7 @@ export function ToolWorkspace({
     }
     setError(null);
     setShown(null);
+    busy.current=true;
     setProcessing(true);
     setResult("");
     try {
@@ -270,21 +287,21 @@ export function ToolWorkspace({
     } catch (e) {
       setError(e instanceof Error ? e.message : "处理失败");
     } finally {
+      busy.current=false;
       setProcessing(false);
     }
   }
 
   // 「以此图重新生成」:把指定图载入成新的输入图、清空旧结果,等用户再点处理(不自动扣分)。
   async function regenFrom(url: string) {
-    if (!url) return;
+    if (processing || !url) return;
     try {
       const blob =
         url.startsWith("blob:") || url.startsWith("data:")
           ? await (await fetch(url)).blob()
-          : await (
-              await fetch(`/api/download?u=${encodeURIComponent(url)}&n=input.png`)
-            ).blob();
+          : await (async()=>{const response=await fetch(`/api/download?u=${encodeURIComponent(url)}&n=input.png`,{headers:await authHeader()});if(!response.ok)throw new Error("download failed");return response.blob();})();
       const f = new File([blob], "input.png", { type: blob.type || "image/png" });
+      if(toolImageError(f,maxUploadBytes,accept))throw new Error("invalid image");
       if (preview) URL.revokeObjectURL(preview);
       const url2 = URL.createObjectURL(f);
       setFile(f);
@@ -321,7 +338,7 @@ export function ToolWorkspace({
     try {
       const res = await fetch("/api/suite/download", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeader()) },
         body: JSON.stringify({ items }),
       });
       if (!res.ok) throw new Error("zip failed");
@@ -350,11 +367,13 @@ export function ToolWorkspace({
   const hasContent = !!(dispOriginal || dispResult);
 
   return (
-    <div className="w-full px-5 py-6 sm:px-6 lg:px-8">
+    <div data-tool-workspace="tool-workspace" className="w-full px-4 py-5 sm:px-6 lg:px-8" onDragOver={e=>{e.preventDefault();}} onDrop={e=>{e.preventDefault();pick(e.dataTransfer.files);}}>
       <input
         ref={fileRef}
         type="file"
         accept={accept}
+        disabled={processing}
+        data-testid="tool-upload-input"
         hidden
         onChange={(e) => {
           pick(e.target.files);
@@ -371,7 +390,7 @@ export function ToolWorkspace({
       </nav>
 
       {/* 三栏等高:整行固定高度(lg+),各栏内部滚动 → 页面高度一致、图片不再浮在大空区 */}
-      <div className="mt-4 grid gap-5 lg:h-[890px] lg:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_280px]">
+      <div className="mt-4 grid gap-5 tool-layout-grid lg:grid-cols-[320px_minmax(0,1fr)] tool-layout-three xl:grid-cols-[320px_minmax(0,1fr)_280px]">
         {/* 左:参数(头部/生成按钮钉住,中间参数区内部滚动) */}
         <div className="flex flex-col gap-[18px] rounded-card border border-c-border bg-c-card p-5 shadow-card lg:h-full lg:overflow-hidden">
           <div className="flex items-center gap-3">
@@ -388,48 +407,50 @@ export function ToolWorkspace({
           </div>
 
           {/* 可滚动参数区(内容多时内部上下滚,头部与底部按钮不动) */}
-          <div className="nv-panel-scroll flex flex-col gap-[18px] lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1.5">
+          <fieldset disabled={processing} className="nv-panel-scroll flex flex-col gap-[18px] lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1.5">
           {/* 上传 */}
           <div>
             <p className="mb-2 text-[12.5px] font-medium text-c-text2">{L("上传图片", "Upload image")}</p>
             {preview ? (
               <div
-                className="group relative h-16 w-16 overflow-hidden rounded-field border border-c-border"
+                className="group relative h-28 w-full overflow-hidden rounded-field border border-c-border"
                 style={checker ? CHECKER : undefined}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={preview} alt="" className="h-full w-full object-cover" />
+                <img src={preview} alt="" className="h-full w-full object-contain" />
                 <button
                   type="button"
                   onClick={() => fileRef.current?.click()}
-                  className="absolute inset-0 flex items-center justify-center bg-[rgba(22,24,29,.45)] text-[10px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  className="absolute inset-0 flex items-center justify-center bg-[rgba(22,24,29,.45)] text-[10px] font-medium text-white opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
                 >
                   {L("更换", "Change")}
                 </button>
+                <button type="button" aria-label={L("移除图片", "Remove image")} onClick={()=>{if(preview)URL.revokeObjectURL(preview);if(fileRef.current)fileRef.current.value="";setFile(null);setPreview("");setResult("");setShown(null);setError(null);onFileChange?.(null,"");}} className="absolute right-1 top-1 z-10 grid h-7 w-7 place-items-center rounded-lg border border-c-border2 bg-c-card text-c-text"><X className="h-4 w-4" /></button>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
                 title={uploadHint}
-                className="flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-field border-[1.5px] border-dashed border-c-border2 bg-c-subtle2 text-c-text3 transition-colors hover:border-acc hover:text-acc"
+                className="flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-field border-[1.5px] border-dashed border-c-border2 bg-c-subtle2 text-c-text3 transition-colors hover:border-acc hover:text-acc"
               >
                 <Upload className="h-4 w-4" />
-                <span className="text-[10px] font-medium">{L("上传", "Upload")}</span>
+                <span className="text-[10px] font-medium">{L("点击或拖拽上传", "Click or drag to upload")}</span>
+                <span className="text-[11px]">{uploadHint}</span>
               </button>
             )}
           </div>
 
           {controls}
-            {category && <FeatureModelSelect feature={CATEGORY_FEATURES[category] || "image.generate"} disabled={processing} />}
-            {qualityPriced && <ImageQualityControl resolution={resolution} disabled={processing} />}
-          </div>
+            {category && <FeatureModelSelect feature={feature} disabled={processing} />}
+            {qualityPriced && <ImageQualityControl feature={feature} resolution={resolution} disabled={processing} />}
+          </fieldset>
 
           <div className="space-y-3 border-t border-c-line pt-4">
             <button
               type="button"
               onClick={run}
-              disabled={processing}
+              disabled={!ready || processing || (!!user && (!file || !billing.quote))}
               className="flex w-full items-center justify-center gap-2 rounded-[11px] py-3 text-[14px] font-semibold text-white shadow-btn [background:var(--grad-acc)] transition-all hover:brightness-95 disabled:opacity-70"
             >
               {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -441,7 +462,7 @@ export function ToolWorkspace({
                     ? L(`${action}(消耗 ${cost} 积分)`, `${action} (${cost} credits)`)
                     : action}
             </button>
-            {error && <p className="text-[12.5px] text-c-danger">{error}</p>}
+            {(error || billing.error) && <p role="alert" className="break-words text-[12.5px] text-c-danger">{error || billing.error}</p>}
           </div>
         </div>
 
@@ -475,7 +496,7 @@ export function ToolWorkspace({
             )
           ) : (
             <>
-              <div className="grid flex-1 grid-cols-2 gap-4">
+              <div className="tool-compare grid flex-1 grid-cols-2 gap-4">
                 <div className="flex flex-col gap-2">
                   <span className="text-[12px] font-medium text-c-text3">{L("原图", "Original")}</span>
                   <div className="group/orig relative flex flex-1 items-center justify-center overflow-hidden rounded-[13px] border border-c-border bg-c-subtle2">
@@ -490,7 +511,8 @@ export function ToolWorkspace({
                         />
                         <button
                           type="button"
-                          onClick={() => regenFrom(dispOriginal)}
+                          disabled={processing}
+                            onClick={() => regenFrom(dispOriginal)}
                           className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-[rgba(22,24,29,.6)] px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur transition-colors hover:bg-[rgba(22,24,29,.8)]"
                         >
                           <RefreshCw className="h-3 w-3" />
@@ -523,7 +545,8 @@ export function ToolWorkspace({
                         />
                         <button
                           type="button"
-                          onClick={() => regenFrom(dispResult)}
+                          disabled={processing}
+                            onClick={() => regenFrom(dispResult)}
                           className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-[rgba(22,24,29,.6)] px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur transition-colors hover:bg-[rgba(22,24,29,.8)]"
                         >
                           <RefreshCw className="h-3 w-3" />
@@ -551,12 +574,12 @@ export function ToolWorkspace({
             </>
           )}
           <p className="mt-3 text-center text-[11px] text-c-text4">
-            {L("生成结果将自动保存到「作品库」,保留 180 天", "Results are auto-saved to your Library for 180 days")}
+            {L("结果保存至作品库", "Saved to Library")}
           </p>
         </div>
 
         {/* 右:本工具记录 */}
-        <aside className="hidden rounded-card border border-c-border bg-c-card p-4 shadow-card xl:flex xl:h-full xl:flex-col">
+        <aside className="tool-history rounded-card border border-c-border bg-c-card p-4 shadow-card xl:h-full">
           <div className="mb-3 flex min-h-[28px] items-center gap-1.5">
             <Clock className="h-4 w-4 text-c-text3" />
             <span className="text-[13px] font-semibold text-c-text">{L("本工具记录", "Tool history")}</span>
@@ -581,13 +604,13 @@ export function ToolWorkspace({
           </div>
           <div className="nv-panel-scroll min-h-0 flex-1 overflow-y-auto pr-0.5">
             {records === null && user ? (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="tool-history-grid grid grid-cols-2 gap-2">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="nv-skeleton aspect-square rounded-lg" />
                 ))}
               </div>
             ) : records && records.length > 0 ? (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="tool-history-grid grid grid-cols-2 gap-2">
                 {records
                   .slice(recPage * RECORDS_PER_PAGE, (recPage + 1) * RECORDS_PER_PAGE)
                   .map((r) => {
@@ -595,7 +618,6 @@ export function ToolWorkspace({
                   return (
                     <div
                       key={r.id}
-                      onClick={() => clickRecord(r)}
                       title={L("点击查看原图 / 成品", "Click to view original / result")}
                       className={cn(
                         "group relative cursor-pointer overflow-hidden rounded-lg border-2 transition-all",
@@ -606,7 +628,8 @@ export function ToolWorkspace({
                             : "border-c-border hover:border-c-border2"
                       )}
                     >
-                      <Media
+                      <button type="button" onClick={()=>clickRecord(r)} aria-label={L("查看历史图片", "View history image")} className="block w-full text-left">
+                        <Media
                         src={cdnUrl(r.url)}
                         alt=""
                         gradient={r.gradient}
@@ -614,9 +637,12 @@ export function ToolWorkspace({
                         ratio="aspect-square"
                         className="rounded-none border-0 transition-transform group-hover:scale-105"
                       />
+                      </button>
                       {/* 左上选择框:点它才选中(用于批量打包下载) */}
-                      <span
+                      <button type="button"
                         role="checkbox"
+                          tabIndex={0}
+                          aria-label={L("选择历史图片", "Select history image")}
                         aria-checked={sel}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -630,7 +656,7 @@ export function ToolWorkspace({
                         )}
                       >
                         <Check className="h-3 w-3" strokeWidth={3} />
-                      </span>
+                      </button>
                     </div>
                   );
                 })}
@@ -644,6 +670,7 @@ export function ToolWorkspace({
             total={Math.ceil((records?.length ?? 0) / RECORDS_PER_PAGE)}
             onPage={setRecPage}
           />
+          {recordError && <div role="alert" className="mt-2 flex items-center justify-between gap-2 text-xs text-c-danger">{recordError}<button type="button" onClick={() => setRecordRetry(v=>v+1)} className="text-acc">{L("重试", "Retry")}</button></div>}
           <Link
             href={`/works?cat=${category}`}
             className="mt-3 text-center text-[12px] font-medium text-acc hover:underline"

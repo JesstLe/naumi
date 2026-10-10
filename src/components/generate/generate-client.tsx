@@ -1,4 +1,5 @@
 "use client";
+import {toolSourceUrl} from "@/lib/tool-ui";
 import {useImageResolutions} from "@/lib/model-config/resolution-client";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
@@ -120,6 +121,8 @@ export function GenerateClient({
   // 右栏「本工具记录」折叠态;结果筛选(全部/已完成)。
   const [historyOpen, setHistoryOpen] = useState(true);
   const [recPage, setRecPage] = useState(0);
+  const [recordError, setRecordError] = useState(false);
+  const [recordRetry, setRecordRetry] = useState(0);
   const [resultFilter, setResultFilter] = useState<"all" | "done">("all");
   // 移动端单列:参数/结果 分段切换(桌面忽略,始终三栏)。
   const [mobileTab, setMobileTab] = useState<"params" | "result">("params");
@@ -298,11 +301,9 @@ export function GenerateClient({
     void loadBaseImage(params.get("src") || gen || "");
   }, [params, loadBaseImage]);
 
-  useEffect(() => {
-    return () => {
-      filePreviews.forEach((u) => URL.revokeObjectURL(u));
-    };
-  }, [filePreviews]);
+  const previewUrls = useRef<string[]>([]);
+  previewUrls.current = filePreviews;
+  useEffect(() => () => previewUrls.current.forEach(url=>URL.revokeObjectURL(url)), []);
 
   // 拉「本工具记录」:登录后取最近作品;每次生成完(images 变)刷新一次。
   useEffect(() => {
@@ -317,7 +318,9 @@ export function GenerateClient({
           `/api/account?email=${encodeURIComponent(user.email)}`,
           { headers: await authHeader() }
         );
-        if (!r.ok || cancelled) return;
+        if (cancelled) return;
+        if (!r.ok) throw new Error("history");
+        setRecordError(false);
         const d = await r.json();
         const arts = (d.artworks ?? []) as {
           id: string;
@@ -337,21 +340,22 @@ export function GenerateClient({
               url: a.image,
               prompt: a.prompt,
               gradient: a.gradient,
-              source: a.source,
+              source: toolSourceUrl(a.source),
             }))
         );
+        setRecSel(new Set());
         setRecPage(0);
       } catch {
-        /* ignore */
+        if (!cancelled) { setRecords([]); setRecordError(true); }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.email, images.length]);
+  }, [user?.email, images.length, recordRetry]);
 
   function pickFiles(list: FileList | null) {
-    if (!list || list.length === 0) return;
+    if (!list || !list.length || loading) return;
     const slotsLeft = MAX_IMAGES - files.length;
     if (slotsLeft <= 0) {
       setError(`最多上传 ${MAX_IMAGES} 张产品图`);
@@ -448,7 +452,7 @@ export function GenerateClient({
     try {
       const res = await fetch("/api/suite/download", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeader()) },
         body: JSON.stringify({ items }),
       });
       if (!res.ok) throw new Error("zip failed");
@@ -497,6 +501,7 @@ export function GenerateClient({
   const insufficient = !!user && remaining < cost;
 
   async function generate() {
+    if (loading) return;
     // 未登录:直接弹登录/注册窗(优先于提示词等校验),登录后再生成。
     if (!user) {
       if (ready) openAuth("sign-up");
@@ -633,14 +638,14 @@ export function GenerateClient({
         </div>
         <div
           className={cn(
-            "grid gap-5 lg:h-[890px] lg:grid-cols-[320px_1fr]",
+            "grid gap-5 tool-layout-grid lg:grid-cols-[320px_minmax(0,1fr)]",
             historyOpen
-              ? "xl:grid-cols-[320px_1fr_280px]"
-              : "xl:grid-cols-[320px_1fr_46px]"
+              ? "tool-layout-three xl:grid-cols-[320px_minmax(0,1fr)_280px]"
+              : "xl:grid-cols-[320px_minmax(0,1fr)_46px]"
           )}
         >
           {/* Control panel — Rodin 紧凑式(下拉参数) */}
-          <div
+          <fieldset disabled={loading}
             className={cn(
               "h-fit space-y-5 rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto",
               mobileTab === "result" && "hidden lg:block"
@@ -950,7 +955,7 @@ export function GenerateClient({
                 </Button>
               )}
             </div>
-          </div>
+          </fieldset>
 
           {/* Result canvas */}
           <div
@@ -974,7 +979,7 @@ export function GenerateClient({
                     {locale === "en" ? "← Back to current" : "← 返回当前"}
                   </button>
                 </div>
-                <div className="grid flex-1 grid-cols-2 gap-4">
+                <div className="tool-compare grid flex-1 grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
                     <span className="text-[12px] font-medium text-c-text3">
                       {locale === "en" ? "Source" : "原图"}
@@ -1224,7 +1229,8 @@ export function GenerateClient({
 
           {/* 第 3 列:本工具记录(可折叠,仅 xl 宽屏) */}
           {historyOpen ? (
-            <aside className="hidden rounded-2xl border border-c-border bg-c-card p-4 shadow-card xl:flex xl:h-full xl:flex-col xl:overflow-hidden">
+            <aside className="tool-history rounded-2xl border border-c-border bg-c-card p-4 shadow-card xl:h-full xl:overflow-hidden">
+        {recordError && <div role="alert" className="mb-3 flex items-center justify-between gap-2 text-xs text-c-danger">{locale==="en"?"History unavailable":"记录加载失败"}<button type="button" onClick={()=>setRecordRetry(v=>v+1)} className="text-acc">{locale==="en"?"Retry":"重试"}</button></div>}
               <div className="mb-3 flex min-h-[28px] flex-none items-center gap-1.5">
                 <span className="flex items-center gap-1.5 text-[13px] font-semibold text-c-text">
                   <Clock className="h-4 w-4 text-c-text3" />
@@ -1273,7 +1279,6 @@ export function GenerateClient({
                       return (
                       <div
                         key={r.id}
-                        onClick={() => setShownRec(r)}
                         title={locale === "en" ? "View source / result" : "点击查看原图 / 成品"}
                         className={cn(
                           "group relative cursor-pointer overflow-hidden rounded-lg border-2 transition-all",
@@ -1284,16 +1289,18 @@ export function GenerateClient({
                               : "border-c-border hover:border-c-border2"
                         )}
                       >
-                        <Media
-                          src={cdnUrl(r.url)}
-                          alt={r.prompt || ""}
-                          gradient={r.gradient}
-                          thumbWidth={240}
-                          ratio="aspect-square"
-                          className="rounded-none border-0 transition-transform group-hover:scale-105"
-                        />
+                        <button type="button" onClick={()=>setShownRec(r)} aria-label={locale === "en" ? "View history image" : "查看历史图片"} className="block w-full text-left">
+                          <Media
+                            src={cdnUrl(r.url)}
+                            alt={r.prompt || ""}
+                            gradient={r.gradient}
+                            thumbWidth={240}
+                            ratio="aspect-square"
+                            className="rounded-none border-0 transition-transform group-hover:scale-105"
+                          />
+                        </button>
                         {/* 左上选择框:点它才选中(用于批量打包下载) */}
-                        <span
+                        <button type="button" aria-label={locale === "en" ? "Select history image" : "选择历史图片"}
                           role="checkbox"
                           aria-checked={sel}
                           onClick={(e) => {
@@ -1308,7 +1315,7 @@ export function GenerateClient({
                           )}
                         >
                           <Check className="h-3 w-3" strokeWidth={3} />
-                        </span>
+                        </button>
                       </div>
                       );
                     })}

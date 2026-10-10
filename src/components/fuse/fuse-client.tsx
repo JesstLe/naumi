@@ -1,4 +1,5 @@
 "use client";
+import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -105,6 +106,7 @@ export function FuseClient() {
   }, []);
 
   function addFiles(files: File[]) {
+    if (loading) return;
     if (!user) {
       openAuth();
       return;
@@ -113,8 +115,8 @@ export function FuseClient() {
     const room = MAX_IMAGES - slots.length;
     const next: Slot[] = [];
     for (const f of files.slice(0, Math.max(0, room))) {
-      if (f.size > MAX_UPLOAD) {
-        setError(L("单张图片需小于 12MB", "Each image must be < 12MB"));
+      if (toolImageError(f, MAX_UPLOAD)) {
+        setError(L("请选择12MB以内的PNG / JPG / WebP图片", "Choose a PNG / JPG / WebP under 12MB"));
         continue;
       }
       next.push({
@@ -127,6 +129,7 @@ export function FuseClient() {
   }
 
   function removeSlot(id: string) {
+    if (loading) return;
     setSlots((prev) => {
       const s = prev.find((x) => x.id === id);
       if (s) URL.revokeObjectURL(s.url);
@@ -136,6 +139,7 @@ export function FuseClient() {
 
   // 「以此图再融合」:把该结果图下载成 File,设成第一张输入图,清空旧结果,等用户再点生成。
   async function regenFrom(url: string) {
+    if (loading) return;
     if (!user) {
       openAuth();
       return;
@@ -146,12 +150,13 @@ export function FuseClient() {
       const fetchUrl = isLocal
         ? url
         : `/api/download?u=${encodeURIComponent(url)}&n=input.png`;
-      const res = await fetch(fetchUrl);
+      const res = await fetch(fetchUrl, {headers:await authHeader()});
       if (!res.ok) throw new Error("download failed");
       const blob = await res.blob();
       const file = new File([blob], "fusion.png", {
         type: blob.type || "image/png",
       });
+      if(toolImageError(file,MAX_UPLOAD))throw new Error("invalid image");
       const slot: Slot = {
         id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         file,
@@ -169,6 +174,7 @@ export function FuseClient() {
   }
 
   async function generate() {
+    if (loading) return;
     if (!user) {
       openAuth();
       return;
@@ -224,6 +230,7 @@ export function FuseClient() {
           { cache: "no-store", headers: await authHeader() }
         );
         const s = await sres.json();
+          if (!sres.ok) throw new Error(s.error || L("任务读取失败，请重试", "Could not read job; retry"));
         if (sres.ok && s.user) applyServerUser(s.user);
         if (s.status === "done") data = s;
         else if (s.status === "error")
@@ -264,6 +271,7 @@ export function FuseClient() {
       tint={TINT}
       accent={ACCENT}
       category="fusion"
+      feature="image.generate"
       onRegen={regenFrom}
       regenLabel="以此图再融合"
       cost={cost}

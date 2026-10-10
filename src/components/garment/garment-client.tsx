@@ -16,7 +16,6 @@ export function GarmentClient() {
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
   const [detail, setDetail] = React.useState("标准");
-  const [form, setForm] = React.useState("平铺");
 
   const controls = (
     <>
@@ -30,16 +29,7 @@ export function GarmentClient() {
         onChange={setDetail}
         accent={ACCENT}
       />
-      <ToolChips
-        label={L("输出形态", "Output style")}
-        options={[
-          { value: "平铺", label: L("平铺", "Flat lay") },
-          { value: "挂拍", label: L("挂拍", "Hanging") },
-        ]}
-        value={form}
-        onChange={setForm}
-        accent={ACCENT}
-      />
+
     </>
   );
 
@@ -60,6 +50,7 @@ export function GarmentClient() {
         fd.append("image", file);
         // 后端默认白底(bg 非 black/transparent 即白底),保持原契约。
         fd.append("bg", "white");
+        fd.append("prompt", detail === "精细" ? "Preserve fine fabric texture, stitching, buttons and print details with high fidelity." : "Preserve the garment shape, color and main details.");
         if (user) fd.append("email", user.email);
         const res = await billing.submit("/api/garment", {
           method: "POST",

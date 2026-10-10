@@ -1,4 +1,7 @@
 "use client";
+import {downloadImage} from "@/lib/download";
+import {toolImageError} from "@/lib/tool-ui";
+import {useI18n} from "@/lib/i18n/locale-context";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -36,14 +39,16 @@ const PRESETS = [
 export function RecolorClient() {
   const billing=useFeatureBilling("tool.recolor",{});
   const { costPerImage } = useImageQuality();
-  const L = (z: string, e: string) =>
-    typeof window !== "undefined" && document.documentElement.lang === "en" ? e : z;
+  const {locale}=useI18n();
+  const L = (z: string, e: string) => locale === "en" ? e : z;
   const { user, ready, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
   const [color, setColor] = useState("#2E86DE");
+  const [hexDraft,setHexDraft]=useState("2E86DE");
+  useEffect(()=>setHexDraft(color.slice(1).toUpperCase()),[color]);
   const [strength, setStrength] = useState(100);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -60,7 +65,10 @@ export function RecolorClient() {
   }, [preview]);
 
   function pickFile(f: File | null) {
-    if (!f || f.size > MAX_UPLOAD) return;
+    if (!f || loading) return;
+    const issue=toolImageError(f,MAX_UPLOAD);
+    if(issue){setError(issue==="size"?L("图片需小于12MB","Image must be under 12MB"):L("请选择有效的图片文件","Choose a valid image file"));return;}
+    setError(null);
     if (preview) URL.revokeObjectURL(preview);
     setFile(f);
     setPreview(URL.createObjectURL(f));
@@ -68,6 +76,7 @@ export function RecolorClient() {
   }
 
   async function generate() {
+    if(loading)return;
     setError(null);
     if (!user) {
       if (ready) openAuth("sign-in");
@@ -116,9 +125,9 @@ export function RecolorClient() {
         </nav>
       </div>
 
-      <div className="grid gap-5 lg:h-[890px] lg:grid-cols-[320px_1fr]">
+      <div className="grid gap-5 tool-layout-grid lg:grid-cols-[320px_minmax(0,1fr)]">
         {/* 左:参数面板 */}
-        <div className="h-fit space-y-5 rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
+        <fieldset disabled={loading} className="h-fit space-y-5 rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
           {/* 工具头 */}
           <div className="flex items-center gap-3">
             <span className="grid h-11 w-11 flex-none place-items-center rounded-[10px]" style={{ background: "rgba(79,70,229,.12)", color: "#4F46E5" }}>
@@ -190,6 +199,7 @@ export function RecolorClient() {
                   type="button"
                   onClick={() => setColor(c)}
                   aria-label={c}
+                  aria-pressed={c===color}
                   className={cnColor(c, color)}
                   style={{ background: c }}
                 />
@@ -218,15 +228,18 @@ export function RecolorClient() {
                 className="h-9 w-9 flex-none rounded-lg border border-border"
                 style={{ background: color }}
               />
-              <div className="flex h-9 flex-1 items-center rounded-[10px] border border-border bg-secondary px-3">
+              <div className="flex h-[42px] min-w-0 flex-1 items-center rounded-[10px] border border-border bg-secondary px-3">
                 <span className="text-xs font-medium text-muted-foreground">HEX</span>
                 <input
-                  value={color.replace("#", "").toUpperCase()}
+                  aria-label={L("HEX颜色", "HEX color")}
+                  value={hexDraft}
                   onChange={(e) => {
                     const v = e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6);
+                    setHexDraft(v.toUpperCase());
                     if (v.length === 6) setColor(`#${v.toLowerCase()}`);
                   }}
                   className="ml-2 w-full bg-transparent text-sm uppercase outline-none"
+                  onBlur={()=>setHexDraft(color.slice(1).toUpperCase())}
                   placeholder="2E86DE"
                 />
               </div>
@@ -260,7 +273,7 @@ export function RecolorClient() {
             <button
             type="button"
             onClick={generate}
-            disabled={loading}
+            disabled={!ready || loading || (!!user && (!file || !billing.quote))}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-[15px] font-semibold text-white shadow-btn [background:var(--grad-acc)] transition-all hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? (
@@ -274,9 +287,9 @@ export function RecolorClient() {
           </button>
 
           <p className="text-xs leading-relaxed text-muted-foreground">
-            单张约 1 分钟,生成结果自动存入「作品库」,保留 180 天。
+            结果保存至作品库。
           </p>
-        </div>
+        </fieldset>
 
         {/* 右:结果区(原图/换色效果 对比) */}
         <div className="flex min-h-[520px] flex-col rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
@@ -295,14 +308,14 @@ export function RecolorClient() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-c-text">换色效果</h3>
-                <a
-                  href={result}
-                  download="recolor.png"
+                <button
+                  type="button"
+                  onClick={()=>void downloadImage(result,"recolor")}
                   className="inline-flex items-center gap-1.5 rounded-[10px] border border-border px-3 py-1.5 text-[12.5px] font-medium text-c-text transition-colors hover:bg-secondary"
                 >
                   <Download className="h-3.5 w-3.5" />
                   下载
-                </a>
+                </button>
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="relative overflow-hidden rounded-xl border border-border bg-card">

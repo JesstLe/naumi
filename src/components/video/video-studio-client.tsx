@@ -1,4 +1,5 @@
 "use client";
+import {SelectMenu} from "@/components/ui/select-menu";
 import { browserRandomUUID } from "@/lib/browser-crypto";
 import {clientIntentKey} from "@/lib/billing/client-intent";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -82,6 +83,7 @@ export function VideoStudioClient() {
   const { openAuth } = useAuthModal();
   const [catalog, setCatalog] = useState<Capability[] | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
+  const [catalogError,setCatalogError] = useState(false);
   const [configured, setConfigured] = useState(true);
 
   const [modelId, setModelId] = useState("");
@@ -108,6 +110,7 @@ export function VideoStudioClient() {
   // 当前关注的任务(中央预览);activePoll 由 effect 驱动
   const [activeId, setActiveId] = useState("");
   const [activeTask, setActiveTask] = useState<TaskView | null>(null);
+  const [historyError, setHistoryError] = useState(false);
   const [history, setHistory] = useState<TaskView[] | null>(null);
   const [busyAction, setBusyAction] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -127,7 +130,8 @@ export function VideoStudioClient() {
     }
     try {
       const res = await fetch("/api/video/tasks?limit=50", { headers: await authHeader() });
-      if (!res.ok) return;
+      if (!res.ok) throw new Error("history");
+      setHistoryError(false);
       const data = await res.json();
       if (Array.isArray(data.tasks)) {
         setHistory(data.tasks);
@@ -136,15 +140,17 @@ export function VideoStudioClient() {
           setActiveId(data.tasks[0].id);
         }
       }
-    } catch { /* keep */ }
+    } catch { setHistory(items=>items??[]); setHistoryError(true); }
   }, [user]);
 
   const loadCatalog = useCallback(async () => {
     try {
       const res = await fetch("/api/video/catalog", { headers: await authHeader() });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "模型读取失败");
       setConfigured(Boolean(data.configured));
 
+      setCatalogError(false);
       const models = (data.models ?? []) as Capability[];
       setCatalog(models);
       const providerList = (data.providers ?? []) as ProviderView[];
@@ -158,7 +164,7 @@ export function VideoStudioClient() {
         setAspectRatio(def.aspectRatios[0] || "16:9");
         setResolution(def.resolutions[0] || "1280x720");
       }
-    } catch { /* keep */ }
+    } catch { setCatalog([]); setConfigured(false); setCatalogError(true); }
   }, []);
 
   useEffect(() => {
@@ -180,7 +186,7 @@ export function VideoStudioClient() {
     if (!cap.supportsWatermark) setWatermark(false);
     if (!cap.supportsMultiShot) setMultiShot(false);
     if (!cap.providerOptionKeys?.includes("cameraFixed")) setCameraFixed(false);
-  }, [modelId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [modelId,providerId,catalog]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function selectProvider(id: string) {
     setProviderId(id);
@@ -234,7 +240,7 @@ export function VideoStudioClient() {
 
   function pickRef(list: FileList | null) {
     const f = list?.[0];
-    if (!f) return;
+    if (!f || submitting || uploadingRef) return;
     if (!/^image\/(png|jpe?g|webp)$/.test(f.type)) {
       setError("仅支持 PNG / JPG / WebP 参考图");
       return;
@@ -464,21 +470,20 @@ export function VideoStudioClient() {
           </Link>
         </header>
 
-        {!configured && (
+        {catalogError && <p role="alert" className="mb-4 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">视频模型加载失败<button type="button" onClick={()=>void loadCatalog()} className="text-acc">重试</button></p>}
+        {!configured && !catalogError && (
           <p className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[13px] text-amber-700">
             视频服务未配置:需要管理员在服务器设置 VIDEO_API_BASE_URL / KEY / MODEL。
           </p>
         )}
 
-        <div className="grid gap-5 lg:grid-cols-[340px_1fr_320px]">
+        <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)_280px]">
           {/* 左:参数区 */}
-          <section className="rounded-2xl border border-c-border bg-c-card p-4 shadow-card">
+          <fieldset disabled={submitting || uploadingRef} className="min-w-0 rounded-2xl border border-c-border bg-c-card p-4 shadow-card">
             {providers.length > 1 && (
               <>
                 <p className="mb-1.5 text-[12.5px] font-semibold text-c-text2">供应商</p>
-                <select value={providerId} onChange={(e) => selectProvider(e.target.value)} className="mb-3 w-full rounded-lg border border-c-border bg-c-subtle px-3 py-2 text-[13px] text-c-text outline-none focus:ring-1 focus:ring-primary">
-                  {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
-                </select>
+                <SelectMenu label="供应商" value={providerId} onChange={selectProvider} className="mb-3 w-full" options={providers.map(p=>({value:p.id,label:p.label}))} />
               </>
             )}
             <p className="mb-2 text-[12.5px] font-semibold text-c-text2">模型</p>
@@ -587,14 +592,10 @@ export function VideoStudioClient() {
 
             <div className="mt-3 grid grid-cols-2 gap-2">
               <label className="text-[12px] text-c-text3">画幅
-                <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="mt-1 w-full rounded-lg border border-c-border bg-c-subtle px-2 py-1.5 text-[12.5px] text-c-text">
-                  {(cap?.aspectRatios ?? ["16:9", "9:16", "1:1"]).map((ratio) => <option key={ratio}>{ratio}</option>)}
-                </select>
+                <SelectMenu label="画幅" value={aspectRatio} onChange={setAspectRatio} className="mt-1 w-full" options={(cap?.aspectRatios??["16:9","9:16","1:1"]).map(value=>({value,label:value}))} />
               </label>
               <label className="text-[12px] text-c-text3">分辨率
-                <select value={resolution} onChange={(e) => setResolution(e.target.value)} className="mt-1 w-full rounded-lg border border-c-border bg-c-subtle px-2 py-1.5 text-[12.5px] text-c-text">
-                  {(cap?.resolutions ?? ["1280x720", "720x1280"]).map((item) => <option key={item}>{item}</option>)}
-                </select>
+                <SelectMenu label="分辨率" value={resolution} onChange={setResolution} className="mt-1 w-full" options={(cap?.resolutions??["1280x720","720x1280"]).map(value=>({value,label:value}))} />
               </label>
             </div>
             {cap?.supportsNegativePrompt && <input value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} placeholder="负面提示词（可选）" className="mt-3 w-full rounded-lg border border-c-border bg-c-subtle px-3 py-2 text-[12.5px] outline-none focus:ring-1 focus:ring-primary" />}
@@ -618,7 +619,7 @@ export function VideoStudioClient() {
             <button
               type="button"
               onClick={() => void submit()}
-              disabled={!prompt.trim() || submitting || !configured}
+              disabled={!ready || !prompt.trim() || submitting || !configured || !cap}
               className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary text-[13.5px] font-bold text-white shadow-btn transition-all hover:opacity-90 disabled:opacity-50"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
@@ -626,7 +627,7 @@ export function VideoStudioClient() {
             </button>
             {error && <p className="mt-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-600">{error}</p>}
             {tip && <p className="mt-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700">{tip}</p>}
-          </section>
+          </fieldset>
 
           {/* 中:预览区 */}
           <section className="flex min-h-[420px] flex-col rounded-2xl border border-c-border bg-c-card p-4 shadow-card">
@@ -726,7 +727,7 @@ export function VideoStudioClient() {
           </section>
 
           {/* 右:历史区 */}
-          <section className="rounded-2xl border border-c-border bg-c-card p-4 shadow-card">
+          <section className="lg:col-span-2 xl:col-span-1 rounded-2xl border border-c-border bg-c-card p-4 shadow-card">
             <div className="mb-2 flex items-center justify-between">
               <p className="text-[12.5px] font-semibold text-c-text2">任务历史</p>
               <button
@@ -738,6 +739,7 @@ export function VideoStudioClient() {
                 <RefreshCw className="h-3.5 w-3.5" />
               </button>
             </div>
+            {historyError && <p role="alert" className="mb-2 text-xs text-c-danger">历史加载失败，请点击刷新重试</p>}
             <div className="nv-panel-scroll max-h-[70vh] space-y-1.5 overflow-y-auto">
               {!history ? (
                 <p className="py-3 text-xs text-c-text3">读取中…</p>

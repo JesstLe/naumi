@@ -1,4 +1,6 @@
 "use client";
+import {toolImageError} from "@/lib/tool-ui";
+import {SelectMenu} from "@/components/ui/select-menu";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -89,7 +91,7 @@ export function ReplicateClient() {
     const nextPrev: string[] = [...previews];
     for (const f of Array.from(list)) {
       if (next.length >= MAX_IMAGES) break;
-      if (f.size > MAX_UPLOAD) continue;
+      if (toolImageError(f, MAX_UPLOAD)) { setError(L("请选择12MB以内的PNG / JPG / WebP图片", "Choose a PNG / JPG / WebP under 12MB")); continue; }
       next.push(f);
       nextPrev.push(URL.createObjectURL(f));
     }
@@ -105,7 +107,7 @@ export function ReplicateClient() {
   function pickRef(f: File | null) {
     if (!f || operationRef.current) return;
     if (refFileRef.current) refFileRef.current.value = "";
-    if (f.size > MAX_UPLOAD) { setError(L("参考图请控制在 12MB 以内", "Reference image must be under 12MB")); return; }
+    if (toolImageError(f, MAX_UPLOAD)) { setError(L("参考图请控制在 12MB 以内", "Reference image must be under 12MB")); return; }
     if (refPreview) URL.revokeObjectURL(refPreview);
     setRef(f);
     setRefPreview(URL.createObjectURL(f));
@@ -217,7 +219,7 @@ export function ReplicateClient() {
         </nav>
       </div>
 
-      <div className="grid gap-5 lg:h-[890px] lg:grid-cols-[320px_1fr]">
+      <div className="grid gap-5 tool-layout-grid lg:grid-cols-[320px_minmax(0,1fr)]">
         {/* 左:参数面板 */}
         <fieldset disabled={loading || analyzing} className="min-w-0 h-fit space-y-5 rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
           {/* 工具头 */}
@@ -412,31 +414,11 @@ export function ReplicateClient() {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <label className="text-sm font-medium">上架平台</label>
-              <select
-                value={platform}
-                onChange={(e) => setPlatform(e.target.value)}
-                className="w-full rounded-[10px] border border-border bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-              >
-                {PLATFORMS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+              <SelectMenu label="上架平台" value={platform} onChange={setPlatform} className="w-full" options={PLATFORMS.map((p) => ({value:p.id,label:p.label}))} />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">语言</label>
-              <select
-                value={lang}
-                onChange={(e) => setLang(e.target.value)}
-                className="w-full rounded-[10px] border border-border bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-              >
-                {LANGS.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.label}
-                  </option>
-                ))}
-              </select>
+              <SelectMenu label="语言" value={lang} onChange={setLang} className="w-full" options={LANGS.map((l) => ({value:l.id,label:l.label}))} />
             </div>
           </div>
 

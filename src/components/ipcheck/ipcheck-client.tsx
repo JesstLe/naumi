@@ -1,4 +1,5 @@
 "use client";
+import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
 
 import { cdnUrl } from "@/lib/cdn";
@@ -79,9 +80,10 @@ export function IpcheckClient() {
   }, []);
 
   function pick(f: File) {
+    if (processing) return;
     if (!user) return openAuth();
-    if (f.size > MAX_UPLOAD)
-      return setError(L("图片需小于 12MB", "Image must be < 12MB"));
+    if (toolImageError(f, MAX_UPLOAD))
+      return setError(L("请选择12MB以内的PNG / JPG / WebP图片", "Choose a PNG / JPG / WebP under 12MB"));
     setError(null);
     if (img) URL.revokeObjectURL(img.url);
     setImg({ file: f, url: URL.createObjectURL(f) });
@@ -151,7 +153,7 @@ export function IpcheckClient() {
         <>
           <div>
             <p className="mb-2 text-[12.5px] font-medium text-c-text2">{L("分析模型", "Analysis model")}</p>
-            <TextModelSelect />
+            <TextModelSelect feature="tool.ipcheck" />
           </div>
           <input
             ref={fileRef}

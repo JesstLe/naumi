@@ -16,32 +16,21 @@ export function AvatarClient() {
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
   const [bgColor, setBgColor] = React.useState("白");
-  const [size, setSize] = React.useState("一寸");
 
   const controls = (
     <>
       <ToolChips
-        label={L("证件底色", "Background color")}
+        label={L("输出背景", "Output background")}
         options={[
           { value: "白", label: L("白", "White") },
-          { value: "蓝", label: L("蓝", "Blue") },
-          { value: "红", label: L("红", "Red") },
+          { value: "黑", label: L("黑", "Black") },
+          { value: "透明", label: L("透明", "Transparent") },
         ]}
         value={bgColor}
         onChange={setBgColor}
         accent={ACCENT}
       />
-      <ToolChips
-        label={L("尺寸规格", "Size")}
-        options={[
-          { value: "一寸", label: L("一寸", "1-inch") },
-          { value: "二寸", label: L("二寸", "2-inch") },
-          { value: "自定义", label: L("自定义", "Custom") },
-        ]}
-        value={size}
-        onChange={setSize}
-        accent={ACCENT}
-      />
+
     </>
   );
 
@@ -61,9 +50,7 @@ export function AvatarClient() {
       onProcess={async (file) => {
         const fd = new FormData();
         fd.append("image", file);
-        // 证件底色「白」→ 后端白底;蓝/红 后端不支持纯证件底色,
-        // 用透明底输出(展示偏好,功能优先,不破坏契约)。
-        fd.append("bg", bgColor === "白" ? "white" : "transparent");
+        fd.append("bg", bgColor === "白" ? "white" : bgColor === "黑" ? "black" : "transparent");
         if (user) fd.append("email", user.email);
         const res = await billing.submit("/api/avatar", {
           method: "POST",
