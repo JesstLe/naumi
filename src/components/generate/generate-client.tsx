@@ -828,7 +828,6 @@ export function GenerateClient({
                         <ModelIcon modelId={item.id} modelName={item.label} size={16} />
                         <span className="truncate">
                           {item.supportsEdit ? item.label : `${item.label} · ${t("canvas.modelTextOnly")}`}
-                          {item.creditHint && <small className="block text-[10px] font-normal text-muted-foreground">{item.creditHint}</small>}
                         </span>
                       </span>
                     ),
