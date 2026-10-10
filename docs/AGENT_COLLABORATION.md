@@ -56,6 +56,8 @@
 
 ## 分支与目录
 
+空间维护：遵循AGENTS.md的2026-10-10约定，每累计3次成功发布清理本机/新机的无用构建和测试产物，记录清理前后空间，保护运行/回滚版本、备份、数据库与媒体。起始记录：运行源码36255e03253703d2a524cf72cde67f0305956a2e，自约定起累计成功发布0次；本次仅保存约定，未执行空间删除，也未创建按时间触发的自动任务。后续发布交接更新累计次数，清理后归零。
+
 1. 每个 agent 使用自己的 `codex/<任务名>` 分支和独立 worktree；不在别人正在使用的 checkout 上切分支、reset、clean 或 rebase。
 2. 本轮交接分支：`codex/canvas-ui-alignment`；worktree：`C:\Users\13357\.codex\worktrees\canvas-ui-alignment\naumi`。UI 源码先前已完成 main 提交，本分支补充发布验收与协作记录。
 3. 开工先 fetch origin，并记录 origin/main 的40位SHA。先阅读相关模块文档，再检查 git status，明确本轮文件范围。
