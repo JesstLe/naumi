@@ -347,7 +347,7 @@ const zh: Dict = {
     undo: "撤销",
     redo: "重做",
     assistant: {
-      title: "对话", newChat: "新建对话", history: "本节点对话记录", close: "收起助手", back: "返回当前对话",
+      title: "画布 Agent", entry: "画布 Agent", emptyQuestion: "今天想创作什么？", selectImage: "选择一张图片开始", newChat: "新建对话", history: "本节点对话记录", close: "收起助手", back: "返回当前对话",
       morning: "你好，早上好", afternoon: "你好，下午好", evening: "你好，晚上好", question: "想怎么处理这张图片？",
       changeTasks: "换一换", placeholder: "输入需求，Enter 发送，Shift+Enter 换行", send: "发送消息",
       references: "查看参考图片", closeReferences: "关闭参考图片", currentImage: "当前图片", upstreamImage: "上游参考", thinking: "正在思考…",
@@ -1355,7 +1355,7 @@ const en: Dict = {
     undo: "Undo",
     redo: "Redo",
     assistant: {
-      title: "Chat", newChat: "New conversation", history: "Conversations for this node", close: "Collapse assistant", back: "Back to current chat",
+      title: "Canvas Agent", entry: "Canvas Agent", emptyQuestion: "What would you like to create?", selectImage: "Select an image to start", newChat: "New conversation", history: "Conversations for this node", close: "Collapse assistant", back: "Back to current chat",
       morning: "Hi, good morning", afternoon: "Hi, good afternoon", evening: "Hi, good evening", question: "What would you like to change?",
       changeTasks: "More ideas", placeholder: "Describe your request. Enter to send, Shift+Enter for a new line", send: "Send message",
       references: "View reference images", closeReferences: "Close reference images", currentImage: "Current image", upstreamImage: "Upstream reference", thinking: "Thinking…",
