@@ -1,4 +1,5 @@
 "use client";
+import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
 
@@ -92,10 +93,7 @@ export function PrintfileClient() {
     hPx = Math.round(hPx / over);
   }
 
-  useEffect(() => {
-    return () => items.forEach((i) => URL.revokeObjectURL(i.url));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useObjectUrlCleanup(items.map(item => item.url));
 
   function pickPreset(key: string) {
     setPreset(key);

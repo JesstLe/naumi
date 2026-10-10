@@ -7,6 +7,8 @@ import path from 'node:path';
 import {chromium,expect as baseExpect} from '@playwright/test';
 
 const baseline=process.argv.includes('--baseline');
+const round2=process.argv.includes('--round2');
+const round2Fixture={};
 const managedFixture=process.argv.includes('--managed-fixture');
 const only=process.argv.find(a=>a.startsWith('--only='))?.slice(7).split(',');
 const output=path.resolve(process.env.TOOLS_EVIDENCE_DIR||'output/workbench-tools-ui/browser');
@@ -35,9 +37,18 @@ try {
  const features=Object.fromEntries(['image.generate','image.suite','image.aplus','tool.cutout','tool.avatar','tool.upscale','tool.garment','tool.garment3d','tool.style','tool.dewrinkle','tool.dewatermark','tool.extract','tool.printfile','tool.ipcheck','tool.tryon','tool.retouch','tool.recolor','tool.replicate','tool.inpaint','tool.packaging3d','text.titles','video.generate'].map(f=>[f,{label:f,enabled:true,unit:'image',prices:{low:{'1K':2,'2K':4},medium:{'1K':4,'2K':8},high:{'1K':8,'2K':16},xhigh:{'1K':16,'2K':32},max:{'1K':32,'2K':64}}}]));
  page=await context.newPage();page.on('pageerror',e=>errors.push({url:page.url(),message:e.stack||e.message}));
  await page.route('**/api/**',async route=>{
-  const req=route.request(),url=new URL(req.url()),p=url.pathname;requests.push([req.method(),p]);
+  const req=route.request(),url=new URL(req.url()),p=url.pathname;requests.push([req.method(),p, url.search]);
+  if(round2&&p==='/api/download'){if(round2Fixture.delay)await new Promise(r=>setTimeout(r,round2Fixture.delay));return route.fulfill(round2Fixture.download==='image'?{contentType:'image/png',body:await readFile('public/demos/suite-demo/suppl-src.png')}:{status:round2Fixture.download==='html'?200:503,contentType:'text/html',body:'download fixture unavailable'});}
   if(p==='/api/download')return route.fulfill(downloadFixture?{contentType:'image/png',body:await readFile('public/demos/suite-demo/suppl-src.png')}:{status:503,json:{error:'fixture download failed'}});
+  if(round2&&p==='/api/video/tasks'&&round2Fixture.video){
+   const task={id:'round2-video',prompt:'第二轮视频轮询验收',status:'completed',progress:100,cost:4,model:'fixture-video-1',seconds:'4',videoUrl:'',artworkId:'',error:'',createdAt:new Date().toISOString()};
+   return route.fulfill({json:url.searchParams.has('id')?{task}:{tasks:[task]}});
+  }
   if(p==='/api/billing/quote'){const body=req.postDataJSON();return route.fulfill({json:{...body,credits:4*(body.quantity||1),reserveCredits:4*(body.quantity||1),version:1}});}
+  if(round2&&['/api/title-gen','/api/generate-image','/api/packaging3d'].includes(p)){
+   if(req.method()!=='GET'){writes++;submissions.push({path:p,body:req.postDataBuffer()?.toString('utf8')||'',headers:req.headers()});if(p==='/api/title-gen')return route.fulfill({json:round2Fixture.malformed?{titles:'invalid',sellingPoints:{}}:{titles:['第二轮验收商品标题'],sellingPoints:['第二轮卖点']}});return route.fulfill({json:round2Fixture.missingJob?{}:{jobId:'round2-job'}});}
+   return route.fulfill({json:round2Fixture.malformed?{status:'done',user}:{status:'done',images:[{id:'gen-round2',url:image,prompt:'第二轮',ratio:'1:1',gradient:'',createdAt:new Date().toISOString()}],url:image,user}});
+  }
   if(req.method()!=='GET'){
    writes++;submissions.push({path:p,body:req.postDataBuffer()?.toString('utf8')||'',headers:req.headers()});
    await new Promise(r=>setTimeout(r,600));
@@ -70,7 +81,8 @@ try {
  // Serve full compiler bytes; local Windows dev streaming previously truncated JS at 256KiB.
  await page.route('**/_next/static/chunks/**',async route=>{const relative=new URL(route.request().url()).pathname.replace('/_next/','');const file=path.resolve(dist,relative);assert.ok(file.startsWith(path.resolve(dist)+path.sep));await route.fulfill({contentType:'application/javascript',body:await readFile(file)});});
  await page.route('**/demos/**',async route=>{const relative=decodeURIComponent(new URL(route.request().url()).pathname);const file=path.resolve('public','.'+relative);assert.ok(file.startsWith(path.resolve('public')+path.sep));try{await route.fulfill({contentType:'image/png',body:await readFile(file)});}catch{await route.abort();}});
- for(const tool of [...tools,{slug:'tools',href:'/tools',key:'工具中心'}].filter(t=>!only||only.includes(t.slug))){
+ if(round2){await (await import('./verify-workbench-tools-round2-browser.mjs')).runRound2({page,context,base,expect,assert,fixture:round2Fixture,requests,errors,interactions,baseline,output});}
+ if(!round2)for(const tool of [...tools,{slug:'tools',href:'/tools',key:'工具中心'}].filter(t=>!only||only.includes(t.slug))){
   await page.setViewportSize({width:1440,height:900});
   await page.goto(base+tool.href);await expect(page.locator('main h1').first()).toBeVisible();
   // Wait for actual auth hydration and initial query state, not only SSR markup.
@@ -180,11 +192,12 @@ try {
    }
   }
  }
- if(!baseline){
+ if(!baseline&&!round2){
   historyFailure=true;await page.goto(base+'/avatar');await expect(page.getByRole('alert').filter({hasText:'记录加载失败'})).toBeVisible();historyFailure=false;await page.getByRole('button',{name:'重试',exact:true}).click();await expect(page.getByRole('button',{name:'查看历史图片'})).toBeVisible();interactions.push({tool:'avatar',test:'failed history retry'});
  }
  await writeFile(path.join(output,'result.json'),JSON.stringify({baseline,managedFixture,tools:tools.length,results,errors,writes,requests,interactions,submissions},null,2));
  if(!baseline){assert.deepEqual(errors,[]);assert.ok(results.every(r=>r.overflow<=1),JSON.stringify(results.filter(r=>r.overflow>1)));}
- console.log(`${baseline?'BASELINE':'MODIFIED'}_BROWSER=${errors.length?'ERRORS':'PASS'} TOOLS=${new Set(results.filter(r=>r.tool!=='tools').map(r=>r.tool)).size} VIEWPORTS=3 OVERFLOW_CASES=${results.filter(r=>r.overflow>1).length} CLIENT_ERRORS=${errors.length} FIXTURE_POSTS=${writes} INTERACTIONS=${interactions.length} REAL_UPSTREAM=0${managedFixture?' MODEL_MODE=MANAGED':''}`);
+ if(round2)console.log(`${baseline?'BASELINE':'MODIFIED'}_ROUND2_BROWSER=PASS CASES=${interactions.length} CONFIRMED_GAPS=${baseline?6:0} REAL_UPSTREAM=0`);
+ else console.log(`${baseline?'BASELINE':'MODIFIED'}_BROWSER=${errors.length?'ERRORS':'PASS'} TOOLS=${new Set(results.filter(r=>r.tool!=='tools').map(r=>r.tool)).size} VIEWPORTS=3 OVERFLOW_CASES=${results.filter(r=>r.overflow>1).length} CLIENT_ERRORS=${errors.length} FIXTURE_POSTS=${writes} INTERACTIONS=${interactions.length} REAL_UPSTREAM=0${managedFixture?' MODEL_MODE=MANAGED':''}`);
 }catch(error){await page?.screenshot({path:path.join(output,'failure.png'),fullPage:true}).catch(()=>{});await writeFile(path.join(output,'failure.json'),JSON.stringify({results,errors,requests,interactions,submissions},null,2));throw error;}
 finally{await browser?.close();if(app?.pid){if(process.platform==='win32'){try{execFileSync('taskkill',['/PID',String(app.pid),'/T','/F'],{stdio:'pipe'});}catch{}}else app.kill('SIGTERM');}await writeFile('tsconfig.json',originalConfig);await writeFile(path.join(output,'next.log'),logs.join(''));}

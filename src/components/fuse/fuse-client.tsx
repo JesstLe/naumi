@@ -1,5 +1,6 @@
 "use client";
-import {toolImageError} from "@/lib/tool-ui";
+import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
+import {toolImageError, validToolImages} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -63,6 +64,8 @@ export function FuseClient() {
   const { quality, imageCost } = useImageQuality();
   const [count, setCount] = useState(1);
   const [loading, setLoading] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<GeneratedImage[]>([]);
   // AI帮写/智能优化(贴按钮弹窗,全站统一)
@@ -83,10 +86,7 @@ export function FuseClient() {
   const cost=billing.cost;
 
   // 卸载时释放 objectURL,避免内存泄漏
-  useEffect(() => {
-    return () => slots.forEach((s) => URL.revokeObjectURL(s.url));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useObjectUrlCleanup(slots.map(slot => slot.url));
 
   // 从作品页点融图作品带 ?view=<url> 进来:右侧直接展示这张融合结果。
   useEffect(() => {
@@ -216,13 +216,14 @@ export function FuseClient() {
       const start = await startRes.json();
       if (!startRes.ok) throw new Error(start.error ?? L("融合失败", "Failed"));
       const jobId: string | undefined = start.jobId;
-      if (!jobId) throw new Error(L("任务创建失败,请重试", "Could not start job"));
+      if (typeof jobId !== "string" || !jobId.trim()) throw new Error(L("任务创建失败,请重试", "Could not start job"));
 
       const deadline = Date.now() + 6 * 60 * 1000;
       let data: { images: GeneratedImage[]; user?: SessionUser | null } | null =
         null;
       while (!data) {
         await new Promise((r) => setTimeout(r, 2500));
+        if (!mounted.current) return;
         if (Date.now() > deadline)
           throw new Error(L("生成超时,请重试", "Timed out, please retry"));
         const sres = await fetch(
@@ -230,9 +231,13 @@ export function FuseClient() {
           { cache: "no-store", headers: await authHeader() }
         );
         const s = await sres.json();
+        if (!mounted.current) return;
           if (!sres.ok) throw new Error(s.error || L("任务读取失败，请重试", "Could not read job; retry"));
         if (sres.ok && s.user) applyServerUser(s.user);
-        if (s.status === "done") data = s;
+        if (s.status === "done") {
+          if (!validToolImages(s.images)) throw new Error(L("生成结果异常，请重试", "Invalid image result; retry"));
+          data = s;
+        }
         else if (s.status === "error")
           throw new Error(s.error ?? L("融合失败", "Failed"));
       }
@@ -241,11 +246,12 @@ export function FuseClient() {
       else consumeCredits(cost);
       setResults(data.images);
     } catch (e) {
+      if (!mounted.current) return;
       setError(
         e instanceof Error ? e.message : L("融合失败,请重试", "Failed, please retry")
       );
     } finally {
-      setLoading(false);
+      if (mounted.current) setLoading(false);
     }
   }
 
