@@ -78,6 +78,17 @@ async function main() {
     assert.equal(compactImageModelOptions(publicModelCatalog(renamed, "image", "image.generate").models)[0].label, "产品摄影模型");
     assert.deepEqual(await f.repo.draft(actor), fullDraft);
     assert.equal((await handler(request(rename))).status, 200); assert.equal((await f.repo.current()).version, renamed.version);
+    const mixed = structuredClone(current);
+    mixed.config.upstreamModels.push({ ...structuredClone(mixed.config.upstreamModels[0]), id: "text-wire", model: "hy4-preview", modality: "text" });
+    mixed.config.publicModels.push({ id: "gpt6Astra", label: "GPT-6Astra", modality: "text", enabled: true, visible: true, target: { type: "upstream", id: "text-wire" } });
+    const textRow = managedModelRows(mixed, []).find(r => r.id === "gpt6Astra")!;
+    assert.equal(textRow.label, "GPT-6Astra", "Mixed image/text inventory must preserve the published text name");
+    assert.equal(textRow.routes[0].model, "hy4-preview");
+    const textRenamed = renameManagedModel(mixed.config, textRow, "GPT-6 Astra 定制");
+    assert.equal(managedModelRows({ ...mixed, config: textRenamed }, []).find(r => r.id === textRow.id)!.label, "GPT-6 Astra 定制");
+    assert.equal(textRenamed.publicModels.find(m => m.id === textRow.id)!.target.id, "text-wire");
+    const mixedOptions = [{ id: "family-image-square", label: "图片名称", modality: "image" }, { id: "family-image", label: "文字名称", modality: "text" }, { id: "family-image-portrait", label: "图片名称", modality: "image" }, { id: "video-landscape", label: "视频名称", modality: "video" }];
+    assert.deepEqual(compactImageModelOptions(mixedOptions), [mixedOptions[0], mixedOptions[1], mixedOptions[3]], "Non-image names and order must survive image grouping, even when IDs resemble image variants");
     const family = structuredClone(current.config);
     family.publicModels = ["square", "portrait", "landscape"].map((suffix, i) => ({ ...current.config.publicModels[0], id: `family-image-${suffix}`, label: `family-image-${suffix}`, visible: i !== 2 }));
     const familyRow = { ...data.rows[0], id: "family-image", publicIds: ["family-image-square", "family-image-portrait"] };

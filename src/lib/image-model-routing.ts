@@ -62,11 +62,14 @@ export function compactImageModelOptions<T extends ImageModelRoutingOption>(
   const seen = new Set<string>();
   // Preferences choose a family's representative, never its position in the menu.
   return options.flatMap((option) => {
+    // Management inventories also contain text/video models. Their public names
+    // must not be replaced by image-family IDs or grouped as ratio variants.
+    if (option.modality && option.modality !== "image") return [option];
     const displayId = imageModelDisplayId(option.id);
     const key = displayId;
     if (seen.has(key)) return [];
     seen.add(key);
-    const family = options.filter(option => imageModelDisplayId(option.id) === displayId);
+    const family = options.filter(option => (!option.modality || option.modality === "image") && imageModelDisplayId(option.id) === displayId);
     const item = preferredIds.map(id => family.find(member => member.id === id)).find(Boolean) || option;
     const label = item.label?.trim();
     const managed = item.provider === "managed" || item.modality === "image";

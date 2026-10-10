@@ -68,6 +68,24 @@ async function main() {
     await page.getByRole("tab", { name: "模型映射" }).click();
     await page.getByRole("button", { name: "文字", exact: true }).click();
     await expect(page.getByTestId("managed-model-smart-text")).toBeVisible();
+    const textCard = page.getByTestId("managed-model-smart-text");
+    await expect(textCard.getByRole("heading", { name: "创作助手", exact: true })).toBeVisible();
+    await textCard.getByRole("button", { name: "修改显示名称", exact: true }).click();
+    const textRename = page.getByRole("dialog", { name: "修改前端显示名称", exact: true });
+    await expect(textRename.getByLabel("显示名称", { exact: true })).toHaveValue("创作助手");
+    await textRename.getByLabel("显示名称", { exact: true }).fill("GPT-6Astra");
+    await textRename.getByRole("button", { name: "保存并生效", exact: true }).click();
+    await expect(textRename).toHaveCount(0);
+    await expect(textCard.getByRole("heading", { name: "GPT-6Astra", exact: true })).toBeVisible();
+    const textCatalog = await (await admin.request.get(origin + "/api/models?feature=canvas.text-generate")).json();
+    assert.equal(textCatalog.models.find((m: any) => m.id === "smart-text").label, "GPT-6Astra");
+    await page.reload();
+    await page.getByRole("button", { name: "文字", exact: true }).click();
+    await expect(textCard.getByRole("heading", { name: "GPT-6Astra", exact: true })).toBeVisible();
+    await textCard.getByRole("button", { name: "修改显示名称", exact: true }).click();
+    await expect(textRename.getByLabel("显示名称", { exact: true })).toHaveValue("GPT-6Astra");
+    await textRename.getByRole("button", { name: "取消", exact: true }).click();
+
     await expect(page.getByRole("heading", { name: "产品摄影模型", exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "全部", exact: true }).click();
     await page.getByLabel("搜索模型", { exact: true }).fill("不存在的模型");
