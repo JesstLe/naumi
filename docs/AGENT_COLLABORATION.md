@@ -1,5 +1,11 @@
 # Naumi 多 Agent Git 与新机发布协作
 
+## 当前新机：石墨小球柔白眼睛（2026-10-10）
+
+固定业务源码9ec5c1f1efec1d0df8cf4ee0e0dd43e57fbe12b2已发布新机，APP/Worker镜像同SHA，Image ID sha256:a7ac5995337bb81568b748aa1fd8d4d198e25e139b0549c2b5b8b478ef3463c4，实际1791646599 / v2026.10.10-233639。仅石墨主题eyes改为#f5f5f7、accent改为#d9dce5，靛蓝/珍珠、Logo和交互保留。102项契约/Linux构建、线上6项JS资源/版号及浏览器10个SVG/20只柔白眼/旧荧光色0通过。
+
+全程deploy.lock、完整DB/env/Compose备份，模型v108/积分v8与完整设置/草稿/ComfyUI/供应商元数据/修订/采购价指纹不变；仅NAUMI_IMAGE切换。证据及固定afaa61d回滚 /opt/naumi-staging/evidence/naumi-orb-eye-palette-20261010，ROLLBACK-STAGING.sh --apply只切镜像。源码副本回滚恢复原调色表精确哈希与74项基线；新机保持新色。最终健康/版本通过、锁释放、临时脚本/私钥副本清理；旧机未连接。维护后累计成功发布1次，约77%占用/22GiB可用。详见docs/changes/2026-10-10-naumi-orb-eye-palette.md；文档提交不另发镜像。以下为历史。
+
 ## 当前新机：A / 胶囊 N 正式品牌标识（2026-10-10）
 
 用户选择第一套Logo，固定业务源码afaa61d0f1aa184f3b364e6ada27fb569d27cb00已发布120.27.162.85，APP/Worker镜像同SHA，Image ID sha256:0032e599806245aaf31394a81c7894e2007f8ad3dbb21878e2b1e71e4a590c5a，实际1791637618 / v2026.10.10-210658。透明黑N用于默认共享Logo，黑底白N用于顶栏方形标、明暗画布及favicon，白标设置保留。50项品牌/28项素材/类型/Linux构建及线上25项字节/页面/版号检查和真实浏览器首页、页脚、已有画布、小球页通过；源码副本回滚恢复原标和46项基线检查。
