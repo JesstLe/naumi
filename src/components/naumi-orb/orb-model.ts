@@ -11,7 +11,7 @@ export const ORB_STATES = [
 
 export type OrbState = typeof ORB_STATES[number]["key"];
 export const ORB_THEMES = {
-  naumi: { label: "石墨", en: "Graphite", body: "#181b23", eyes: "#e8ff6f", accent: "#e8ff6f" },
+  naumi: { label: "石墨", en: "Graphite", body: "#181b23", eyes: "#f5f5f7", accent: "#d9dce5" },
   indigo: { label: "靛蓝", en: "Indigo", body: "#4f46e5", eyes: "#f8f7ff", accent: "#bdb8ff" },
   pearl: { label: "珍珠", en: "Pearl", body: "#e5e6e9", eyes: "#282b36", accent: "#e5e6e9" },
 } as const;
