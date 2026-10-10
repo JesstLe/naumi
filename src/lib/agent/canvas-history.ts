@@ -1,0 +1,45 @@
+import "server-only";
+import {createHash} from "node:crypto";
+import {NextResponse} from "next/server";
+import {authenticatedEmail} from "../request-auth";
+import {getPool,listArtworksByIds,listAgentSessions,getAgentSession,renameAgentSession,deleteAgentSession} from "../db";
+import {getSession,removeRuntimeSession,renameRuntimeSession} from "./runtime";
+
+export const canvasSessionPrefix=(anchorId:string)=>"cv-"+createHash("sha256").update(anchorId).digest("hex").slice(0,12)+"-";
+/** Server-scoped history, independent from the sidebar's mounting lifetime. */
+export async function canvasAgentHistory(request:Request){
+ const email=await authenticatedEmail(request);if(!email)return NextResponse.json({error:"请先登录"},{status:401});
+ const url=new URL(request.url),anchorId=url.searchParams.get("anchorId")||"",id=url.searchParams.get("id")||"";
+ if(!(await listArtworksByIds(email,[anchorId])).length)return NextResponse.json({error:"图片不存在或无权访问"},{status:404});
+ const prefix=canvasSessionPrefix(anchorId);if(id&&(!id.startsWith(prefix)||id.length>64))return NextResponse.json({error:"该会话不属于当前图片"},{status:404});
+ if(request.method==="GET"){
+  if(!id){await listAgentSessions(email,1);const rows=await getPool().query("SELECT id,title,updated_at FROM app_agent_sessions WHERE email=$1 AND id LIKE $2 ORDER BY updated_at DESC LIMIT 50",[email.toLowerCase(),prefix+"%"]);return NextResponse.json({sessions:rows.rows.map(row=>({id:row.id,title:row.title,updatedAt:row.updated_at}))});}
+  const saved=await getAgentSession(email,id);if(!saved)return NextResponse.json({error:"会话不存在"},{status:404});
+  const steps=Array.isArray(saved.steps)?saved.steps:[];
+  const messages: {role:string;content:string}[]=Array.isArray(saved.messages)?saved.messages.filter((message:any)=>["user","assistant"].includes(message?.role)&&typeof message?.content==="string"):[];
+  const artifactIds:string[]=Array.from(new Set<string>(steps.flatMap((step:any)=>step.type==="artifacts"?(step.artifacts||[]).map((art:any)=>String(art.id)):[])));
+  const owned=await listArtworksByIds(email,artifactIds),byId=new Map(owned.map(art=>[art.id,art]));
+  const turns=messages.map((message,index)=>({id:`${id}-${index}`,role:message.role,content:message.content,artifacts:[] as {id:string;image:string;title:string}[]}));
+  // Match per-turn output to the user message, without trusting model-written URLs.
+  for(const step of steps as any[])if(step.type==="artifacts"){
+   const context=(steps as any[]).find(item=>item.type==="canvas_turn"&&item.turnId===step.turnId);
+   const start=Number.isInteger(context?.messageIndex)?context.messageIndex:turns.findIndex(turn=>turn.role==="user"&&turn.content===context?.message);
+   const subsequent=turns.slice(Math.max(0,start+1)),nextUser=subsequent.findIndex(turn=>turn.role==="user");
+   const target=subsequent.slice(0,nextUser<0?undefined:nextUser).reverse().find(turn=>turn.role==="assistant");
+   if(target)for(const reference of step.artifacts||[]){const art=byId.get(reference.id);if(art&&!target.artifacts.some(item=>item.id===art.id))target.artifacts.push({id:art.id,image:art.image,title:art.title});}
+  }
+  const currentTurn=steps.findLastIndex((step:any)=>step.type==="canvas_turn"),error=(steps.slice(Math.max(0,currentTurn)) as any[]).findLast(step=>step.type==="error"),running=!!(getSession(email,id)?.running || getSession(email,id)?.canvasExecuting);
+  const interrupted=!running&&currentTurn>=0&&!steps.slice(currentTurn).some((step:any)=>step.type==="agent_end");
+  const pending=(steps as any[])[currentTurn];if(running&&pending&&pending.messageIndex>=turns.length)turns.push({id:id+"-pending",role:"user",content:String(pending.message),artifacts:[]});
+  return NextResponse.json({session:{id:saved.id,title:saved.title,turns,steps:saved.steps,running,status:running?"running":error||interrupted?"failed":"completed",error:error?.message||(interrupted?"任务因服务中断而停止，请核对已有结果，避免重复生图":undefined)}});
+ }
+ if(!id)return NextResponse.json({error:"缺少会话编号"},{status:400});
+ if(getSession(email,id)?.running || getSession(email,id)?.canvasExecuting)return NextResponse.json({error:"任务仍在执行，请先停止"},{status:409});
+ await getSession(email,id)?.persistPending;
+ if(request.method==="PATCH"){
+  const body=await request.json().catch(()=>null),title=String(body?.title||"").trim().slice(0,120);if(!title)return NextResponse.json({error:"请输入会话名称"},{status:400});
+  if(!await renameAgentSession(email,id,title))return NextResponse.json({error:"会话不存在"},{status:404});renameRuntimeSession(email,id,title);return NextResponse.json({ok:true});
+ }
+ if(request.method==="DELETE"){removeRuntimeSession(email,id);await deleteAgentSession(email,id);return NextResponse.json({ok:true});}
+ return NextResponse.json({error:"不支持的操作"},{status:405});
+}

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowRight, ArrowRightToLine, ArrowUp, Check, Copy, Frame, History, Image as ImageIcon, Infinity as InfinityIcon, LayoutTemplate, Loader2, MessageSquarePlus, Palette, Plus, RefreshCw, ScanLine, SlidersHorizontal, Type, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type CanvasAssistantTurn = { id: string; role: "user" | "assistant"; content: string };
+export type CanvasAssistantTurn = { id: string; role: "user" | "assistant"; content: string; artifacts?: {id:string;image:string;title:string}[] };
 export type CanvasAssistantTask = { id: string; label: string; prompt: string };
 export type CanvasAssistantLabels = {
   title: string; newChat: string; history: string; close: string; back: string;
@@ -13,12 +13,12 @@ export type CanvasAssistantLabels = {
   thinking: string; copy: string; copied: string; emptyHistory: string; currentChat: string;
   agent: string; mode: string; retry: string; scrollToBottom: string;
 };
-type SavedConversation = { id: string; title: string; turns: CanvasAssistantTurn[] };
+export type SavedConversation = { id: string; title: string; turns: CanvasAssistantTurn[]; updatedAt?:string };
 
 /** Presentation-only sidebar: the parent owns SSE, context, model routing and billing. */
 export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns, input, busy, error,
   costLabel, labels, tasks, onInputChange, onSend, onNewChat, onRestoreChat, onClose, onPreview,
-  onCopy, renderContent, modelControl,
+  onCopy, renderContent, modelControl, steps = [], onStop, historyLoader, onRenameHistory, onDeleteHistory,
 }: {
   light: boolean;
   anchorTitle: string;
@@ -29,12 +29,17 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   error: string | null;
   costLabel: string;
   modelControl?: ReactNode;
+  steps?: {id:string;label:string;status:"running"|"done"|"error"}[];
+  onStop?: () => void;
+  historyLoader?: () => Promise<SavedConversation[]>;
+  onRenameHistory?: (id:string,title:string) => Promise<void>;
+  onDeleteHistory?: (id:string) => Promise<void>;
   labels: CanvasAssistantLabels;
   tasks: CanvasAssistantTask[];
   onInputChange: (value: string) => void;
   onSend: () => void;
   onNewChat: () => void;
-  onRestoreChat: (turns: CanvasAssistantTurn[]) => void;
+  onRestoreChat: (turns: CanvasAssistantTurn[], id?:string) => void;
   onClose: () => void;
   onPreview: (image: { image: string; title: string }) => void;
   onCopy: (content: string) => Promise<boolean>;
@@ -51,6 +56,9 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   const [historyOpen, setHistoryOpen] = useState(false);
   const [overlay, setOverlay] = useState(false);
   const [saved, setSaved] = useState<SavedConversation[]>([]);
+  const [historyLoading,setHistoryLoading]=useState(false),[historyError,setHistoryError]=useState("");
+  const loader=useRef(historyLoader);loader.current=historyLoader;
+  useEffect(()=>{if(!historyOpen||!loader.current)return;let active=true;setHistoryLoading(true);setHistoryError("");void loader.current().then(items=>{if(active)setSaved(items);}).catch(()=>{if(active)setHistoryError("历史记录读取失败，请重新打开重试");}).finally(()=>{if(active)setHistoryLoading(false);});return()=>{active=false;};},[historyOpen]);
   const [copied, setCopied] = useState<string | null>(null);
   const [hour] = useState(() => new Date().getHours());
   const greeting = hour < 12 ? labels.morning : hour < 18 ? labels.afternoon : labels.evening;
@@ -106,6 +114,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   }, [copied]);
 
   function rememberCurrent() {
+    if (historyLoader) return;
     if (!turns.some(turn => turn.content.trim())) return;
     const snapshot = turns.map(turn => ({ ...turn }));
     const title = turns.find(turn => turn.role === "user")?.content.trim().slice(0, 42) || anchorTitle;
@@ -163,16 +172,18 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
     <div ref={scrollArea} data-testid="canvas-assistant-scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin] [scrollbar-color:var(--canvas-ui-border)_transparent]"
       onScroll={event => { const el = event.currentTarget; keepAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; setShowScrollToBottom(!keepAtBottom.current); }}>
       {historyOpen ? <section className="space-y-2 p-4" aria-label={labels.history}>
+        {historyLoading && <p role="status" className="text-[12px]">正在读取历史对话…</p>}
+        {historyError && <p role="alert" className="text-[12px]">{historyError}</p>}
         {turns.length > 0 && <button type="button" className="canvas-ui-control flex w-full items-center gap-2 rounded-xl border px-3 py-3 text-left text-[13px]"
           onClick={() => { setHistoryOpen(false); composer.current?.focus({ preventScroll: true }); }}>
           <MessageSquarePlus className="h-4 w-4 shrink-0" />{labels.currentChat}
         </button>}
         {!saved.length && <p className="canvas-ui-muted py-10 text-center text-[13px]">{labels.emptyHistory}</p>}
-        {saved.map(item => <button key={item.id} type="button" data-testid="canvas-assistant-history-item" disabled={busy}
+        {saved.map(item => <div key={item.id} className="rounded-xl border border-[var(--canvas-ui-border)]"><button type="button" data-testid="canvas-assistant-history-item" disabled={busy}
           className="canvas-ui-action flex w-full items-start gap-2 rounded-xl border border-[var(--canvas-ui-border)] px-3 py-3 text-left text-[13px]"
-          onClick={() => { rememberCurrent(); onRestoreChat(item.turns.map(turn => ({ ...turn }))); keepAtBottom.current = true; setHistoryOpen(false); composer.current?.focus({ preventScroll: true }); }}>
+          onClick={() => { rememberCurrent(); onRestoreChat(item.turns.map(turn => ({ ...turn })), historyLoader ? item.id : undefined); keepAtBottom.current = true; setHistoryOpen(false); composer.current?.focus({ preventScroll: true }); }}>
           <History className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span className="min-w-0 break-words">{item.title}</span>
-        </button>)}
+        </button>{(onRenameHistory||onDeleteHistory)&&<div className="flex justify-end gap-3 px-3 pb-2 text-[11px]">{onRenameHistory&&<button type="button" onClick={()=>{const title=window.prompt("修改会话名称",item.title);if(title?.trim())void onRenameHistory(item.id,title).then(()=>setSaved(items=>items.map(entry=>entry.id===item.id?{...entry,title}:entry))).catch(()=>setHistoryError("改名失败，请重试"));}}>改名</button>}{onDeleteHistory&&<button type="button" onClick={()=>{if(window.confirm("删除此对话记录？生成的图片会保留。"))void onDeleteHistory(item.id).then(()=>setSaved(items=>items.filter(entry=>entry.id!==item.id))).catch(()=>setHistoryError("删除失败，运行中的任务需先停止"));}}>删除</button>}</div>}</div>)}
       </section> : <div className={cn("flex min-h-full flex-col", !turns.length && !busy ? "justify-center px-6 py-8 max-[480px]:px-5" : "gap-5 px-5 py-5")}>
         {!turns.length && !busy && <section data-testid="canvas-assistant-welcome">
           <h3 className="text-[22px] font-semibold leading-[1.45] tracking-tight">{greeting}<br /><span className="canvas-ui-muted text-[18px] font-normal">{labels.question}</span></h3>
@@ -190,11 +201,16 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           <div className="canvas-ui-message max-w-[90%] whitespace-pre-wrap break-words rounded-[16px] rounded-br-[5px] px-3.5 py-2.5 text-[13px] leading-6">{turn.content}</div>
         </div> : <article key={turn.id} className="min-w-0 text-[13px] leading-6">
           <div className="space-y-2 whitespace-pre-wrap break-words canvas-ui-text">{renderContent(turn.content)}</div>
+          {!!turn.artifacts?.length && <div className="mt-3 grid grid-cols-2 gap-2" data-testid="canvas-assistant-results">{turn.artifacts.map(art => <button type="button" key={art.id} onClick={() => onPreview(art)} className="overflow-hidden rounded-xl border border-[var(--canvas-ui-border)] text-left">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={art.image} alt={art.title} className="aspect-square w-full object-contain" /><span className="block truncate px-2 py-1 text-[11px]">{art.title}</span>
+          </button>)}</div>}
           {turn.content.trim() && !busy && <button type="button" aria-label={copied === turn.id ? labels.copied : labels.copy} title={copied === turn.id ? labels.copied : labels.copy}
             className={cn(iconButton, "mt-1")} onClick={() => { void onCopy(turn.content).then(ok => { if (ok) setCopied(turn.id); }); }}>
             {copied === turn.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           </button>}
         </article>)}
+        {!!steps.length && <div data-testid="canvas-assistant-progress" className="space-y-2 rounded-xl border border-[var(--canvas-ui-border)] p-3 text-[12px]">{steps.map(step => <div key={step.id} className="flex items-center gap-2">{step.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : step.status === "error" ? <X className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}<span>{step.label}</span></div>)}</div>}
         {busy && <div role="status" className="canvas-ui-muted flex items-center gap-2 text-[12px]"><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />{labels.thinking}</div>}
       </div>}
     </div>
@@ -241,9 +257,9 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
             <button ref={referenceTrigger} type="button" aria-label={labels.references} title={labels.references} aria-expanded={referencesOpen} className={cn(iconButton, "canvas-ui-control rounded-full")} onClick={() => setReferencesOpen(open => !open)}><Plus className="h-4 w-4" aria-hidden="true" /></button>
             <span className="canvas-ui-muted inline-flex items-center gap-1.5 text-[12px] font-semibold"><InfinityIcon className="h-4 w-4" aria-hidden="true" />{labels.agent}</span>
           </div>
-          <button type="button" aria-label={labels.send} title={labels.send} disabled={busy || !input.trim()} onClick={onSend}
+          <button type="button" aria-label={busy && onStop ? "停止任务" : labels.send} title={busy && onStop ? "停止任务" : labels.send} disabled={busy ? !onStop : !input.trim()} onClick={busy && onStop ? onStop : onSend}
             className="canvas-ui-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-85 disabled:opacity-35">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ArrowUp className="h-[18px] w-[18px]" aria-hidden="true" />}
+            {busy ? <span className="h-3 w-3 rounded-sm bg-current" aria-hidden="true" /> : <ArrowUp className="h-[18px] w-[18px]" aria-hidden="true" />}
           </button>
         </div>
       </div>

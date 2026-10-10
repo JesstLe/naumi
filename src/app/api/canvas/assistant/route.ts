@@ -19,6 +19,8 @@ import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
 import { CANVAS_TEXT_OUTPUT_INSTRUCTION, canvasTextInput, canvasAnswerText, canvasTextFailure, reportCanvasTextFailure } from "@/lib/canvas-text-output";
 import { withBillingRequest, configuredToolCost, completeSynchronousStream, failSynchronousStream } from "@/lib/billing/synchronous";
+import { runCanvasAgent } from "@/lib/agent/canvas";
+import { canvasAgentHistory } from "@/lib/agent/canvas-history";
 
 // ---------------------------------------------------------------------------
 // 画布助手:围绕选中节点 + 其上游生成链的多轮对话(后台可配置,默认免费)。
@@ -32,7 +34,7 @@ import { withBillingRequest, configuredToolCost, completeSynchronousStream, fail
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 800;
 
 const MAX_CONTEXT_IMAGES = 5;
 const MAX_REFERENCE_BYTES = 12 * 1024 * 1024;
@@ -294,5 +296,9 @@ async function handleObservedPost(request: Request) {
 }
 
 export async function POST(request: Request) {
-  return withBillingRequest(request, "canvas.assistant", () => withBiRequest(request, () => handleObservedPost(request)));
+  const agentMode = (await request.clone().json().catch(() => null))?.mode === "agent";
+  return withBillingRequest(request, "canvas.assistant", () => withBiRequest(request, () => agentMode ? runCanvasAgent(request) : handleObservedPost(request)));
 }
+export const GET = canvasAgentHistory;
+export const PATCH = canvasAgentHistory;
+export const DELETE = canvasAgentHistory;

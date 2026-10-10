@@ -1445,7 +1445,7 @@ function lineageChain(
 }
 
 // 画布助手的一轮对话(user/assistant 纯文本;assistant 内容可含 [[GEN]]…[[/GEN]] 生图块)
-type AssistantTurn = { id: string; role: "user" | "assistant"; content: string };
+type AssistantTurn = { id: string; role: "user" | "assistant"; content: string; artifacts?: {id:string;image:string;title:string}[] };
 
 // 画布助手上下文:锚定节点 + 上游祖先(BFS 近者优先),最多 5 张(与后端 MAX_CONTEXT_IMAGES 对齐)
 function assistantContext(members: Artwork[], anchorId: string): Artwork[] {
@@ -2026,6 +2026,9 @@ export function CanvasClient() {
   const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantSteps, setAssistantSteps] = useState<{id:string;label:string;status:"running"|"done"|"error"}[]>([]);
+  const assistantController = useRef<AbortController | null>(null);
+  const assistantSessionId = useRef(browserRandomUUID());
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const assistantRetry = useRef<{ input: string; anchorId: string; history: AssistantTurn[]; body: string } | null>(null);
   // 拉线「生成衍生图」:建好空白节点后,把光标自动落进提示词框,引导用户写"改什么"
@@ -4611,6 +4614,8 @@ export function CanvasClient() {
 
   async function openImageTextEditor(artwork: Artwork) {
     if (readOnly || !user) return;
+    assistantController.current?.abort();
+    assistantController.current = null;
     setPropertiesOpen(false);
     const requestEpoch = ocrRequestEpochRef.current + 1;
     ocrRequestEpochRef.current = requestEpoch;
@@ -5161,6 +5166,34 @@ export function CanvasClient() {
     setAssistantInput("");
     setAssistantError(null);
     assistantRetry.current = null;
+    assistantSessionId.current = browserRandomUUID();
+    setAssistantSteps([]);
+    setAssistantBusy(false);
+  }
+
+  async function stopAssistantTask() {
+    assistantController.current?.abort();
+    const sessionId=assistantSessionId.current;
+    if(sessionId.startsWith("cv-"))await privateFetchRaw(`/api/agent?sessionId=${encodeURIComponent(sessionId)}`,{method:"DELETE"}).catch(()=>null);
+  }
+
+  async function restoreAssistantConversation(anchorId:string,id:string) {
+    const controller=new AbortController();assistantController.current=controller;
+    assistantSessionId.current=id;setAssistantBusy(true);setAssistantInput("");setAssistantError(null);assistantRetry.current=null;
+    try{
+      for(;;){
+        const response=await privateFetchRaw(`/api/canvas/assistant?anchorId=${encodeURIComponent(anchorId)}&id=${encodeURIComponent(id)}`,{signal:controller.signal});
+        const data=await expectJsonOk(response,"历史对话读取失败");
+        if(controller.signal.aborted||assistantController.current!==controller)return;
+        setAssistantTurns(data.session.turns);
+        const steps=new Map<string,{id:string;label:string;status:"running"|"done"|"error"}>();
+        for(const step of data.session.steps||[])if(["tool_start","tool_end"].includes(step.type))steps.set(step.id,{id:step.id,label:step.summary||step.tool,status:step.type==="tool_start"?(data.session.running?"running":"error"):step.isError?"error":"done"});
+        setAssistantSteps([...steps.values()].slice(-10));
+        if(!data.session.running){if(data.session.error)setAssistantError(data.session.error);const ids=data.session.turns.flatMap((turn:AssistantTurn)=>(turn.artifacts||[]).map(art=>art.id));if(ids.length)await mergeWorks(ids);break;}
+        await new Promise(resolve=>window.setTimeout(resolve,1000));
+      }
+    }catch(error){if(assistantController.current===controller)setAssistantError(controller.signal.aborted?"已停止跟随任务，请在历史中核对已有结果":error instanceof Error?error.message:"历史对话读取失败");}
+    finally{if(assistantController.current===controller){assistantController.current=null;setAssistantBusy(false);}}
   }
 
   // 选中节点变化时,助手面板跟着换锚定并重开新对话(上下文变了,旧对话不再适用)
@@ -5171,8 +5204,12 @@ export function CanvasClient() {
       setAssistantInput("");
       setAssistantError(null);
       assistantRetry.current = null;
+      assistantSessionId.current = browserRandomUUID();
+      setAssistantSteps([]);
+      setAssistantBusy(false);
     }
   }, [selectedId, assistantArtworkId]);
+  useEffect(() => () => { assistantController.current?.abort(); }, [assistantArtworkId]);
 
   async function sendAssistantMessage() {
     const text = assistantInput.trim();
@@ -5187,17 +5224,25 @@ export function CanvasClient() {
     ];
     const attempt = previousAttempt?.input === text && previousAttempt.anchorId === source.id ? previousAttempt : {
       input: text, anchorId: source.id, history,
-      body: JSON.stringify({ anchorId: source.id, contextIds: assistantContext(members, source.id).map((artwork) => artwork.id), messages: history.map(({ role, content }) => ({ role, content })) }),
+      body: JSON.stringify({ mode: "agent", sessionId: assistantSessionId.current, turnId: browserRandomUUID(), anchorId: source.id, contextIds: assistantContext(members, source.id).map((artwork) => artwork.id), messages: history.map(({ role, content }) => ({ role, content })), imageModelId: chosenFeatureModel("canvas.image") || genModel, ratio: genRatio === "auto" ? source.ratio || "1:1" : genRatio, resolution: genResolution, quality: genQuality }),
     };
     assistantRetry.current = attempt;
     setAssistantError(null);
     setAssistantBusy(true);
+    setAssistantSteps([]);
+    const controller = new AbortController();
+    const acceptedSession = assistantSessionId.current;
+    let serverSessionId = acceptedSession;
+    assistantController.current = controller;
+    const artifactIds = new Set<string>();
     try {
       const response = await privateFetch("/api/canvas/assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: attempt.body,
+        signal: controller.signal,
       });
+      if(acceptedSession!==assistantSessionId.current||controller.signal.aborted)throw new Error("任务上下文已切换");
       if (!response.ok || !response.body) {
         const data = await readJsonSafe(response);
         throw new Error(data?.error || "画布助手暂时不可用");
@@ -5214,6 +5259,7 @@ export function CanvasClient() {
       let buf = "";
       let text = "";
       let streamError: string | null = null;
+      let completed = false;
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -5221,11 +5267,14 @@ export function CanvasClient() {
         const parts = buf.split("\n\n");
         buf = parts.pop() ?? "";
         for (const part of parts) {
+          if(acceptedSession!==assistantSessionId.current||controller.signal.aborted)throw new Error("任务上下文已切换");
           const evLine = part.split("\n").find((l) => l.startsWith("event: "));
           const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
           if (!evLine || !dataLine) continue;
           const type = evLine.slice(7).trim();
           const data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
+          if(type==="open")serverSessionId=String(data.sessionId||acceptedSession);
+          if(type==="done" && data.ok===true)completed=true;
           if (type === "delta") {
             text += (data.text as string) || "";
             setAssistantTurns((current) => {
@@ -5234,11 +5283,22 @@ export function CanvasClient() {
               return copy;
             });
           } else if (type === "error") {
-            streamError = (data.error as string) || "画布助手暂时不可用";
+            streamError = (data.error as string) || (data.message as string) || "画布助手暂时不可用";
+          } else if (type === "tool_start" || type === "tool_end") {
+            const id = String(data.id || data.tool), label = String(data.summary || ({generate_image:"生成图片",recolor_product:"替换颜色",retouch_product:"精修图片",replicate_hot:"复刻图片",verify_image_output:"检查生成结果",get_balance:"检查积分",search_templates:"查找模板"} as Record<string,string>)[String(data.tool)] || "执行工具");
+            setAssistantSteps(current => [...current.filter(step => step.id !== id), {id,label,status:type === "tool_start" ? "running" : data.isError ? "error" : "done"}]);
+          } else if (type === "artifacts" && Array.isArray(data.artifacts)) {
+            const artifacts = data.artifacts as {id:string;image:string;title:string}[];
+            artifacts.forEach(art => artifactIds.add(art.id));
+            setAssistantTurns(current => { const copy = [...current], last = copy[copy.length-1]; if(last) copy[copy.length-1] = {...last, artifacts:Array.from(new Map([...(last.artifacts || []),...artifacts].map(art=>[art.id,art])).values())}; return copy; });
+          } else if (type === "final") {
+            text = String(data.reply || text);
+            setAssistantTurns(current => { const copy = [...current], last = copy[copy.length-1]; if(last) copy[copy.length-1] = {...last,content:text}; return copy; });
           }
         }
       }
       if (streamError) throw new Error(streamError);
+      if (!completed) throw new Error("任务连接已中断，请从历史核对执行结果，避免重复生图");
       if (!text.trim()) throw new Error("助手没有返回内容，请重试");
       setAssistantTurns((current) => {
         const copy = [...current];
@@ -5246,11 +5306,14 @@ export function CanvasClient() {
         return copy;
       });
       if (assistantRetry.current === attempt) assistantRetry.current = null;
+      assistantSessionId.current = serverSessionId;
     } catch (error) {
+      if(acceptedSession!==assistantSessionId.current)return;
       if (assistantRetry.current === attempt) setAssistantInput(text);
-      setAssistantError(error instanceof Error ? error.message : "画布助手暂时不可用");
+      setAssistantError(controller.signal.aborted ? "任务已停止。已受理的生图结果请在作品库核对，避免重复提交。" : error instanceof Error ? error.message : "画布助手暂时不可用");
     } finally {
-      setAssistantBusy(false);
+      if (artifactIds.size) { const ids = [...artifactIds]; const fresh = await mergeWorks(ids); pushAddUndoMany(ids,fresh); }
+      if (assistantController.current === controller) { assistantController.current = null; setAssistantBusy(false); }
     }
   }
 
@@ -11676,7 +11739,7 @@ export function CanvasClient() {
           if (!anchor) return null;
           return <CanvasAssistantPanel modelControl={<TextModelSelect feature="canvas.assistant" compact dark={!lightCanvas} />} key={anchor.id} light={lightCanvas} anchorTitle={anchor.title || t("canvas.toolbar.addImageNode")}
             contextImages={assistantContext(active?.members ?? [], anchor.id).map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) }))}
-            turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError}
+            turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} steps={assistantSteps} onStop={() => void stopAssistantTask()}
             labels={{title: t("canvas.assistant.title"),
               scrollToBottom: t("canvas.assistant.scrollToBottom"),
               newChat: t("canvas.assistant.newChat"),
@@ -11705,8 +11768,11 @@ export function CanvasClient() {
             tasks={["main", "detail", "scene", "retouch", "background", "copyLayout", "review", "prompt"].map(id => ({ id, label: t(`canvas.assistant.${id}`), prompt: t(`canvas.assistant.${id}Prompt`) }))}
             costLabel={billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] === 0 ? "对话免费 · 生图另行计费" : billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] != null ? `${billing.catalog.features["canvas.assistant"].prices.medium["1K"]} 积分 / 轮 · 生图另行计费` : "对话报价加载中 · 生图另行计费"}
             onInputChange={setAssistantInput} onSend={() => void sendAssistantMessage()}
-            onNewChat={() => { setAssistantTurns([]); setAssistantInput(""); setAssistantError(null); assistantRetry.current = null; }}
-            onRestoreChat={turns => { setAssistantTurns(turns); setAssistantInput(""); setAssistantError(null); assistantRetry.current = null; }}
+            onNewChat={() => { assistantSessionId.current = browserRandomUUID(); setAssistantSteps([]); setAssistantTurns([]); setAssistantInput(""); setAssistantError(null); assistantRetry.current = null; }}
+            historyLoader={async () => { const response=await privateFetchRaw(`/api/canvas/assistant?anchorId=${encodeURIComponent(anchor.id)}`);const data=await expectJsonOk(response,"历史记录读取失败");return (data.sessions||[]).map((session:{id:string;title:string;updatedAt:string})=>({...session,turns:[]})); }}
+            onRenameHistory={async(id,title)=>{await expectJsonOk(await privateFetchRaw(`/api/canvas/assistant?anchorId=${encodeURIComponent(anchor.id)}&id=${encodeURIComponent(id)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({title})}),"会话改名失败");}}
+            onDeleteHistory={async(id)=>{await expectJsonOk(await privateFetchRaw(`/api/canvas/assistant?anchorId=${encodeURIComponent(anchor.id)}&id=${encodeURIComponent(id)}`,{method:"DELETE"}),"删除会话失败");if(assistantSessionId.current===id){assistantSessionId.current=browserRandomUUID();setAssistantTurns([]);setAssistantSteps([]);}}}
+            onRestoreChat={(turns,id) => { if(id){void restoreAssistantConversation(anchor.id,id);return;}assistantSessionId.current=browserRandomUUID();setAssistantSteps([]);setAssistantTurns(turns);setAssistantInput("");setAssistantError(null);assistantRetry.current=null; }}
             onClose={() => setAssistantArtworkId(null)}
             onPreview={image => setLightbox({ src: image.image, alt: image.title })}
             onCopy={copyText} renderContent={renderAssistantContent}

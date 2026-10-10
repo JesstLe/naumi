@@ -1,5 +1,7 @@
-import { Type } from "typebox";
+import { Type, type TSchema } from "typebox";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { CanvasAgentContext } from "./canvas-context";
+import {dataUrlToBytes,isManagedImageUrl,readManagedObject} from "../storage";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 工具集:站内生成能力的 AgentTool 包装,由 pi-agent 编排调用。
@@ -90,7 +92,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
  7. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
  8. 与图片生成无关的问题直接回答,不要调用工具。`;
 
-export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string }, acceptedModelContext?: string | (() => string)): AgentTool[] {
+export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext): AgentTool[] {
   // 双凭证:可变 getter —— 每次工具执行时读取最新 cookie/authorization,
   // 常驻会话的凭证刷新(runtime 层 existing.cred = cred)即刻生效,无需重建 Agent。
   const credGetter =
@@ -207,6 +209,10 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
   }
 
   async function urlToFile(raw: string, signal?: AbortSignal): Promise<File> {
+    if(canvas?.imageUrls.includes(raw)){
+      const inline=dataUrlToBytes(raw),object=inline?{bytes:inline.bytes,contentType:inline.contentType}:isManagedImageUrl(raw)?await readManagedObject(raw,MAX_IMAGE_BYTES):null;
+      if(object){if(signal?.aborted)throw new Error("aborted");if(!/^image\/(png|jpeg|webp)$/i.test(object.contentType)||object.bytes.length>MAX_IMAGE_BYTES)throw new Error("参考图片格式或大小不支持");return new File([Buffer.from(object.bytes)],"reference.png",{type:object.contentType});}
+    }
     const u = assertSafeImageUrl(raw);
     const res = await fetch(u.toString(), {
       signal,
@@ -812,10 +818,16 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         if (p.quality) fd.append("quality", p.quality);
         fd.append("prompt", p.prompt);
         fd.append("entry", "agent");
-        fd.append("ratio", p.ratio || "1:1");
-        fd.append("resolution", p.resolution || "1K");
+        fd.append("ratio", p.ratio || canvas?.ratio || "1:1");
+        fd.append("resolution", p.resolution || canvas?.resolution || "1K");
         fd.append("count", String(Math.min(Math.max(p.count || 1, 1), 4)));
-        if (p.model) fd.append("model", p.model);
+        if (p.model || canvas?.imageModelId) fd.append("model", p.model || canvas!.imageModelId!);
+        if (canvas) {
+          fd.append("origin", "canvas");
+          fd.append("parentId", canvas.anchorId);
+          fd.append("userPrompt", p.prompt);
+          for (const url of canvas.imageUrls) fd.append("image", await urlToFile(url, signal));
+        }
         const d = await withToolTimeout(
           "generate_image",
           async () => {
@@ -1699,6 +1711,22 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     },
   ];
 
+  if (canvas) {
+    const generation = tools.find(tool => tool.name === "generate_image")!;
+    for (const tool of tools.filter(tool => ["recolor_product", "retouch_product", "replicate_hot"].includes(tool.name))) {
+      tool.execute = (id, params, signal, onUpdate) => {
+        const p = params as Record<string, unknown>;
+        const prompt = tool.name === "recolor_product"
+          ? `将当前参考图的商品颜色替换为 ${String(p.color || "目标颜色")}，强度 ${Number(p.strength) || 100}。保持商品形态、纹理、文字、光影及背景不变。`
+          : tool.name === "retouch_product"
+            ? `精修当前参考图：${Array.isArray(p.options) ? p.options.join("、") : "增强质感、修复瑕疵"}。${String(p.text || "")}。保留商品主体和原有构图。`
+            : `参考当前图和上游参考图，复刻构图风格，保留当前商品身份。${String(p.text || "")}`;
+        return generation.execute(id, { prompt, ratio: canvas.ratio, resolution: canvas.resolution, quality: canvas.quality, count: 1 }, signal, onUpdate);
+      };
+      // Canvas edits share the selected canvas.image model and its quote.
+      tool.parameters = Type.Object({ ...(tool.parameters as unknown as {properties:Record<string,TSchema>}).properties, confirm: Type.Optional(Type.Boolean({ description: "仅在用户明确确认本次系统报价后设为true" })) });
+    }
+  }
   return [...tools, ...yutangTools, ...reviewTools, ...scmTools];
 }
 

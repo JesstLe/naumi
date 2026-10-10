@@ -1,6 +1,6 @@
 import "server-only";
 import type { ModelExecutionScope } from "./context";
-import { modelEndpointFetch } from "./transport";
+import { executionFetch } from "./clients";
 
 /** Each instance closes over one immutable account; running streams never re-read mutable settings. */
 export async function configuredPiModels(scope: ModelExecutionScope,actor?:{userEmail:string;feature:string}) {
@@ -14,5 +14,5 @@ export async function configuredPiModels(scope: ModelExecutionScope,actor?:{user
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 }], api: openAICompletionsApi() }));
   return { models, wireModel: c.wireModel,
     stamp: `${frozen.modelVersion}:${frozen.credentialRef}:${frozen.publicModelId}`,
-    fetch: modelEndpointFetch(c.baseUrl, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, {...c,costScope:scope,actor}) };
+    fetch: executionFetch(scope, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }) };
 }

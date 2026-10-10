@@ -5,6 +5,7 @@ import { dbEnabled, getUser } from "@/lib/db";
 import { fingerprint, stableJson } from "./fingerprint";
 import { getImageJob } from "@/lib/image-job-repository";
 import { currentModelBillingSnapshot } from "../model-config/context";
+import { CANVAS_IMAGE_TOOLS, type CanvasAgentContext } from "../agent/canvas-context";
 export const AGENT_FEATURES: Record<string, {
     feature: FeatureId;
     label: string;
@@ -13,12 +14,15 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     cookie: string;
     authorization: string;
     imageQuality?: string;
+    canvas?: CanvasAgentContext;
 }): Promise<{
     quote: Pick<BillingQuote, "configVersion" | "requestedCredits"> & Partial<Pick<BillingQuote,"modelVersion" | "authorizedCredits" | "imagePreset">>;
     label: string;
     threshold: number;
 } | null> {
-    const entry = AGENT_FEATURES[name];
+    const canvas = cred.canvas;
+    if (canvas && CANVAS_IMAGE_TOOLS.has(name) && name !== "generate_image") args = {...args,quality:canvas.quality,resolution:canvas.resolution,ratio:canvas.ratio,model:canvas.imageModelId,modelId:undefined};
+    const entry = canvas && CANVAS_IMAGE_TOOLS.has(name) ? { feature: "canvas.image" as const, label: AGENT_FEATURES[name]?.label || "画布生图" } : AGENT_FEATURES[name];
     if (!entry)
         return null;
     const runtime = await getBillingRuntime(), snapshot=currentModelBillingSnapshot()??await runtime.config.current(),threshold=snapshot.config.thresholds.agentConfirmCredits;
@@ -33,7 +37,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     }
     const quantity = name === "generate_aplus" ? (Array.isArray(args.modules) && args.modules.length ? args.modules.length : 4) : name === "generate_image" ? Math.min(4, Math.max(1, Number(args.count) || 1)) : name === "generate_suite" ? (args.structure === "custom" && Array.isArray(args.shots) ? Math.max(1, Math.min(20, args.shots.length)) : 13) : 1;
     const request = new Request("http://internal/api/billing/quote", { headers: { cookie: cred.cookie, authorization: cred.authorization, "x-naumi-image-quality": cred.imageQuality || "medium" } });
-    return { quote: await quoteForRequest(request, { feature: entry.feature, quantity, quality: args.quality || cred.imageQuality || "medium", resolution: args.resolution || "1K", modelId: args.model || args.modelId, providerId: args.providerId, ratio: args.ratio },snapshot), label: entry.label, threshold };
+    return { quote: await quoteForRequest(request, { feature: entry.feature, quantity, quality: args.quality || canvas?.quality || cred.imageQuality || "medium", resolution: args.resolution || canvas?.resolution || "1K", modelId: args.model || args.modelId || (CANVAS_IMAGE_TOOLS.has(name) ? canvas?.imageModelId : undefined), providerId: args.providerId, ratio: args.ratio || canvas?.ratio },snapshot), label: entry.label, threshold };
 }
 export type AgentBillingSession = {
     email: string;
@@ -41,9 +45,12 @@ export type AgentBillingSession = {
         cookie: string;
         authorization: string;
         imageQuality?: string;
+        canvas?: CanvasAgentContext;
     };
     id: string;
     pendingQuotes?: Map<string, Pick<BillingQuote, "configVersion" | "requestedCredits"> & Partial<Pick<BillingQuote,"modelVersion" | "authorizedCredits" | "imagePreset">>>;
+    turnId?: string;
+    pendingQuoteTurns?: Map<string,string>;
     preparedBilling?: {
         billingVersion: number;
         billingCredits: number;
@@ -70,6 +77,14 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
     const quoteKey = name + ":" + stableJson(pricingArgs), previous = session.pendingQuotes?.get(quoteKey);
     session.pendingQuotes ??= new Map();
     session.pendingQuotes.set(quoteKey, quoted.quote);
+    if(session.turnId && (meta.cost>=quoted.threshold || costPlus)) {
+        session.pendingQuoteTurns ??= new Map();
+        const promptedTurn=session.pendingQuoteTurns.get(quoteKey);
+        if(args.confirm!==true || !previous || promptedTurn===session.turnId){
+            session.pendingQuoteTurns.set(quoteKey,session.turnId);
+            return {block:true,terminate:true,reason:`本次「${meta.label}」预计 ${meta.cost} 积分，最高授权 ${cap} 积分。请向用户展示报价并等待下一条消息明确同意后再执行；本轮不能自行确认。`};
+        }
+    }
     if(costPlus && args.confirm===true && !previous)return {block:true,reason:`请先向用户展示估算 ${meta.cost} 积分与最高授权 ${cap} 积分，等待明确同意后再提交。`};
     if ((args as {
         confirm?: unknown;
