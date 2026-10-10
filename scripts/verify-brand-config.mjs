@@ -41,7 +41,7 @@ function cloudMarkup(url) {
 const brand = load("src/lib/brand.ts");
 eq(brand.BRAND, "Naumi");
 for (const key of ["BRAND_LOGO", "BRAND_CANVAS_LOGO", "BRAND_FAVICON", "BRAND_SQUARE_LOGO"]) {
-  eq(brand[key], "/logo.png");
+  eq(brand[key], key === "BRAND_LOGO" ? "/brand/naumi/symbol-black.svg" : key === "BRAND_CANVAS_LOGO" ? "/brand/naumi/app-dark.svg" : "/brand/naumi/app-dark.png");
   eq(fs.existsSync(path.join(root, "public", brand[key])), true);
 }
 eq(brand.BRAND_LOGO_HAS_TEXT, false);
@@ -61,6 +61,11 @@ const fallback = load("src/lib/brand.ts", { NEXT_PUBLIC_BRAND_LOGO: "/custom.png
 eq(fallback.BRAND_CANVAS_LOGO, "/custom.png");
 eq(fallback.BRAND_FAVICON, "/custom.png");
 eq(fallback.BRAND_SQUARE_LOGO, "/custom.png");
+const blank = load("src/lib/brand.ts", { NEXT_PUBLIC_BRAND_LOGO: "   ", NEXT_PUBLIC_BRAND_FAVICON: " " });
+eq(blank.BRAND_LOGO, brand.BRAND_LOGO);
+eq(blank.BRAND_CANVAS_LOGO, brand.BRAND_CANVAS_LOGO);
+eq(blank.BRAND_FAVICON, brand.BRAND_FAVICON);
+eq(load("src/lib/brand.ts", { NEXT_PUBLIC_BRAND_FAVICON: "/only-favicon.svg" }).BRAND_SQUARE_LOGO, "/only-favicon.svg");
 
 const identity = load("src/lib/account-identity.ts");
 eq(identity.PHONE_DOMAIN, "phone.naumi.local");
