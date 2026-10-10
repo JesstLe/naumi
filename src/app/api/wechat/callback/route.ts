@@ -4,6 +4,7 @@ import {
   xmlField,
   markWxScan,
 } from "@/lib/wechat";
+import { getRuntimeBrand } from "@/lib/brand-runtime";
 
 // 微信公众号「服务器配置」指向的回调端点(明文模式)。
 // GET  = 微信验证服务器有效性(原样回 echostr)。
@@ -55,10 +56,11 @@ export async function POST(req: Request) {
       return xmlReply(openid, ghId, "✅ 登录成功!回到电脑上,马上开始创作吧。");
     }
     if (event === "subscribe") {
+      const brand = await getRuntimeBrand();
       return xmlReply(
         openid,
         ghId,
-        "欢迎关注星泽商图 🎉 AI 一键生成电商主图/套图/抠图,电脑访问 ai.starzeco.com 即刻体验。"
+        `欢迎关注${brand.name}！AI 一键生成电商主图、套图和抠图。`
       );
     }
     return ack();
@@ -66,10 +68,11 @@ export async function POST(req: Request) {
 
   // 普通消息(粉丝发文字等):固定简短回复,避免完全无响应
   if (msgType === "text" && openid) {
+    const brand = await getRuntimeBrand();
     return xmlReply(
       openid,
       ghId,
-      "感谢留言!产品入口:ai.starzeco.com(AI 电商视觉工作台)。"
+      `感谢留言！欢迎使用${brand.name}。`
     );
   }
   return ack();

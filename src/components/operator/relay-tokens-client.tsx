@@ -362,7 +362,7 @@ export function RelayTokensClient({ embedded = false }: { embedded?: boolean }) 
 
       {notConfigured ? (
         <div className="mt-6 rounded-card border border-c-border bg-c-card p-6 text-[13px] leading-relaxed text-c-text3 shadow-card">
-          本站未配置中转服务。需在签发站(ai.starzeco.com)服务端设置{" "}
+          本站未配置中转服务。需在签发站服务端设置{" "}
           <code className="rounded bg-c-subtle px-1.5 py-0.5 font-mono text-[12px] text-c-text2">
             RELAY_MANAGE_URL
           </code>{" "}

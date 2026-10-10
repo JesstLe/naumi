@@ -129,11 +129,11 @@ export function pollWxSession(
   return { status: "done", openid: s.openid };
 }
 
-// ---- 微信账号身份:openid → 合成邮箱(对齐手机号登录的 {phone}@phone.starzeco.com) ----
+// ---- 微信账号身份:openid → 合成邮箱(对齐手机号登录的 {phone}@phone.naumi.local) ----
 // 邮箱大小写不敏感而 openid 大小写敏感 → 小写化后追加原值短哈希消除碰撞。
 export async function wxSyntheticEmail(openid: string): Promise<string> {
   const { emailDomain } = await getWechatSettings();
-  const domain = emailDomain || "wx.starzeco.com";
+  const domain = emailDomain || "wx.naumi.local";
   const h = createHash("sha1").update(openid).digest("hex").slice(0, 6);
   return `${openid.toLowerCase()}-${h}@${domain}`;
 }

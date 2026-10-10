@@ -1,3 +1,4 @@
+import { PHONE_DOMAIN } from "@/lib/account-identity";
 import { NextResponse } from "next/server";
 import { smsEnabled, checkSmsCode } from "@/lib/sms";
 import { adminSupabase } from "@/lib/supabase-admin";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 const PHONE_RE = /^1[3-9]\d{9}$/;
 // Phone users get a synthetic email as their stable account identity. Display
 // name is the phone number (see SessionBridge / auth-context).
-const EMAIL_DOMAIN = process.env.PHONE_EMAIL_DOMAIN ?? "phone.starzeco.com";
+const EMAIL_DOMAIN = process.env.PHONE_EMAIL_DOMAIN?.trim() || PHONE_DOMAIN;
 
 // POST { phone, code } → verify the SMS code, then provision (login = register)
 // a Supabase user and return a magic-link token_hash the client uses to

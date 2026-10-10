@@ -11,9 +11,15 @@ import { Button } from "@/components/ui/button";
  * docs/cloud-provisioning.md。
  * 非购买站(海外官方站、自托管实例)打开本弹窗时,主按钮引导到国内官方站开通。
  */
-// 云端托管的购买站(自助支付只在这里;其它实例引导过去)
-const CLOUD_BUY_HOST = "ai.starzeco.com";
-const CLOUD_BUY_URL = `https://${CLOUD_BUY_HOST}/deploy`;
+// 外部开通入口必须显式配置，未配置时不提供猜测的购买链接。
+const CLOUD_BUY_URL = (() => {
+  try {
+    const url = new URL(process.env.NEXT_PUBLIC_CLOUD_BUY_URL || "");
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : "";
+  } catch {
+    return "";
+  }
+})();
 
 const BENEFITS = [
   "免部署 · 自动更新,无需自己的服务器",
@@ -34,7 +40,7 @@ export function CloudModal({
   // 是否就在购买站上(挂载后判 host,SSR 期间按“不是”渲染,避免水合不一致)
   const [onBuyHost, setOnBuyHost] = React.useState(false);
   React.useEffect(() => {
-    setOnBuyHost(window.location.host === CLOUD_BUY_HOST);
+    setOnBuyHost(!!CLOUD_BUY_URL && window.location.host === new URL(CLOUD_BUY_URL).host);
   }, []);
 
   return (
@@ -70,7 +76,7 @@ export function CloudModal({
         </ol>
       </div>
 
-      <Button variant="primary" className="mt-4 w-full" asChild>
+      {CLOUD_BUY_URL ? <Button variant="primary" className="mt-4 w-full" asChild>
         <a
           href={onBuyHost ? "/deploy" : CLOUD_BUY_URL}
           target={onBuyHost ? undefined : "_blank"}
@@ -79,7 +85,9 @@ export function CloudModal({
           <ExternalLink className="h-4 w-4" />
           前往官方站开通云端
         </a>
-      </Button>
+      </Button> : <Button variant="primary" className="mt-4 w-full" disabled>
+        联系管理员开通云端
+      </Button>}
     </Modal>
   );
 }

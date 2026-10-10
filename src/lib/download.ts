@@ -3,7 +3,7 @@
 // data: URLs download directly. Credits are NOT touched — this only retrieves
 // an already-generated, already-stored image.
 //
-// 文件名统一为 `<域名>_<年>_<月日>_<随机后缀>.png`(如 ai.starzeco.com_2026_0707_a1b2c3.png)。
+// 文件名统一为 `<域名>_<年>_<月日>_<随机后缀>.png`(如 配置的签发站_2026_0707_a1b2c3.png)。
 // 域名取当前站点 hostname —— 各实例(国内/海外/自托管)自动带自己的品牌域名,不写死。
 // baseName 保留形参兼容各调用方,不再参与命名。
 export function createImageDownloadName(now = new Date()): string {

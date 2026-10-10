@@ -10,7 +10,7 @@ import { downloadImage } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/locale-context";
 
-/** 作品详情灯箱(设计 showView,星泽商图.dc.html 2034–2073)。
+/** 作品详情灯箱(设计 showView,作品库设计稿 2034–2073)。
  *  920px 卡面 + rgba(12,13,16,.72) blur-5 深色遮罩;左大预览 + 右 300px 详情面板。
  *  自带 portal/overlay(不复用 Modal 的居中 p-6 卡面,因本屏是左右贴边分栏布局)。 */
 

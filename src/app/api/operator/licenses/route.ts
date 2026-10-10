@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "本站不是许可证签发站,请到国内主站(ai.starzeco.com)后台生成许可证。此处生成的 Key 买家将无法激活。",
+          "本站不是许可证签发站，请到配置的签发站后台生成许可证。",
       },
       { status: 403 }
     );
