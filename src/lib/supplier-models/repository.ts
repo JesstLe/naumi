@@ -40,7 +40,7 @@ export async function ingestSupplierSources(pool: Pool, provider: ModelProvider,
  try {
   await tx.query("BEGIN");
   const accessible = new Map(directory.models.map(m => [m.id, m]));
-  const publishedRows = (published?.body.data || []).filter((m: any) => typeof m.model_name === "string" && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/.test(m.model_name));
+  const publishedRows = (published?.body.data || []).filter((m: any) => typeof m.model_name === "string" && !!m.model_name.trim() && m.model_name.length <= 160 && !/[\u0000-\u001f\u007f]/.test(m.model_name));
   const publicMap = new Map<string, any>(publishedRows.map((m: any) => [m.model_name, m]));
   const directoryUrl = provider.baseUrl.replace(/\/$/, "") + "/models";
   const snapshot = async (kind: string, url: string, data: unknown) => {

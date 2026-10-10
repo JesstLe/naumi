@@ -9,17 +9,19 @@ async function main() {
  try {
   const initial = await f.repo.current();
   let amount = 0.12;
+  const named = {model_name:"可灵3.0-特惠",tags:"video",price:{currency:"CNY",unit:"second",request:0.5}};
   const fetcher: typeof fetch = async (url, init) => {
    if (String(url).endsWith("/api/pricing")) {
     assert.equal(new Headers(init?.headers).has("authorization"),false);
-    return Response.json({success:true,data:[{model_name:"gpt-image-2.5",icon:"OpenAI",tags:"image,openai",description:"Public parameters",price:{currency:"CNY",unit:"image",request:amount},group_prices:{"生图":{currency:"CNY",unit:"image",request:0.08}},api_key:"sk-test0000000000000000"},{model_name:"unavailable-text",icon:"Claude.Color",tags:"text",price:{currency:"USD",unit:"1M_tokens",input:1,output:3}},{model_name:"ratio-only",model_ratio:2,completion_ratio:3}]});
+    return Response.json({success:true,data:[{model_name:"gpt-image-2.5",icon:"OpenAI",tags:"image,openai",description:"Public parameters",price:{currency:"CNY",unit:"image",request:amount},group_prices:{"生图":{currency:"CNY",unit:"image",request:0.08}},api_key:"sk-test0000000000000000"},{model_name:"unavailable-text",icon:"Claude.Color",tags:"text",price:{currency:"USD",unit:"1M_tokens",input:1,output:3}},{model_name:"ratio-only",model_ratio:2,completion_ratio:3},named]});
    }
-   return Response.json({data:[{id:"gpt-image-2.5",owned_by:"system",extra:{parameters:["size","quality"],authorization:"secret"}}]});
+   return Response.json({data:[{id:"gpt-image-2.5",owned_by:"system",extra:{parameters:["size","quality"],authorization:"secret"}},{id:named.model_name}]});
   };
   const refresh = () => refreshProviderCatalog(f.sql,f.config.providers[0],f.credentials,[f.origin],fetcher,true);
   const first = await refresh(); assert.equal(first.metadataSaved,true); assert.equal(first.models.length,1); assert.equal("sourceModels" in first,false);
   const filter={query:"",provider:"p1",family:"",brand:"",basis:"",state:"",page:1};
-  let listing=await listSupplierModels(f.sql,filter); assert.equal(listing.total,3);
+  let listing=await listSupplierModels(f.sql,filter); assert.equal(listing.total,4);
+  assert.equal((listing.models.find(m=>m.modelId===named.model_name)!.parameterMetadata.upstreamImport as any).accessibleWithCurrentKey,true);
   const image=listing.models.find(m=>m.modelId==="gpt-image-2.5")!,text=listing.models.find(m=>m.modelId==="unavailable-text")!,ratio=listing.models.find(m=>m.modelId==="ratio-only")!;
   assert.equal((image.parameterMetadata.upstreamImport as any).accessibleWithCurrentKey,true);
   assert.equal((text.parameterMetadata.upstreamImport as any).accessibleWithCurrentKey,false);
