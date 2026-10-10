@@ -1,0 +1,6 @@
+.orb { position: relative; width: 100%; aspect-ratio: 1; }
+.surface { width: 100%; height: 100%; }
+.surface svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.orbButton { display: block; width: 100%; height: 100%; border: 0; border-radius: 50%; padding: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.orbButton:focus-visible { outline: 2px solid #6863dc; outline-offset: 8px; }
+.retry { position: absolute; inset: 35% 15%; border: 1px solid #dedee8; border-radius: 12px; background: #fff; color: #515261; font-size: 12px; }
