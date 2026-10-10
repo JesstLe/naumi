@@ -325,7 +325,7 @@ function ResolutionsDialog({row,locked,error,onClose,onSave}:{row:ManagedModelRo
       <p className={styles.ruleNote}>{route.metadataDefaults?.reason || "尚无对应元数据，继续原传参；可手动维护映射。"}{!route.editable?" 此路径由原适配器管理。":""}</p>
       <label className={styles.field}>分辨率参数处理<select aria-label={`${route.provider} ${route.model} 分辨率参数处理`} value={route.mode} onChange={e=>update(route.upstreamId,{mode:e.target.value as typeof route.mode,metadataRef:null})}><option value="legacy">沿用原传参</option><option value="map">按显示档位映射实际值</option><option value="omit">不发送分辨率参数</option></select></label>
       {route.mode==="map"&&<>
-        <div className={styles.parameterDefaults}><b>{route.fieldKnown?"传参方式已自动匹配":"这条通道的接口规格尚待确认"}</b><p>{route.fieldKnown?"无需选择接口字段，下面选择该显示档位实际使用的规格。":"元数据库还没有可靠的接口定义。可先沿用原调用；有供应商资料时在高级设置维护。系统不会默认把 size 当作分辨率。"}</p></div>
+        <div className={styles.parameterDefaults}><b>{route.configured?"使用已保存的通道规格":route.fieldKnown?"传参方式已自动匹配":"这条通道的接口规格尚待确认"}</b><p>{route.fieldKnown?"无需选择接口字段，下面选择该显示档位实际使用的规格。":"元数据库还没有可靠的接口定义。可先沿用原调用；有供应商资料时在高级设置维护。系统不会默认把 size 当作分辨率。"}</p></div>
         <table className={`${styles.priceTable} ${styles.resolutionTable}`}><thead><tr><th>前端显示</th><th>实际使用的上游规格</th></tr></thead><tbody>{selected.map(id=>{
           const d=route.metadataDefaults;const sourceValues=d?.field===route.field?[...Object.values(d.values),...d.nativeValues.filter(v=>route.field!=="size"||/^(auto|\d+x\d+)$/.test(v))]:[];
           const options=[...new Set([...sourceValues,...Object.values(route.values)].filter(Boolean))];
