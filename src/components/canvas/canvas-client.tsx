@@ -12,6 +12,7 @@ import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasParameterPopover } from "./parameter-popover";
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surface";
+import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { GenerationPlaceholder } from "./generation-placeholder";
 import { generationPlaceholderSize, placeGenerationPreview, type GenerationStage } from "@/lib/canvas/generation-feedback";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
@@ -9556,15 +9557,13 @@ export function CanvasClient() {
               )}
 
               {selectedBatchArts.length > 1 && !readOnly && (
-                <div
-                  aria-label={t("canvas.batchActions")}
-                  className="canvas-ui-surface cz-anim-bottom-center absolute bottom-[128px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border p-1.5 text-[#20242c] shadow-2xl min-[800px]:bottom-[84px]"
+                <BatchSelectionToolbar
+                  label={t("canvas.batchActions")}
+                  testId="image-batch-bar"
+                  selectionLabel={fmt(t("canvas.batchSelected"), { n: selectedBatchArts.length })}
+                  clearLabel={t("canvas.batchClear")}
+                  onClear={() => clearCanvasSelection(true)}
                 >
-                  <span className="whitespace-nowrap px-2 text-xs font-semibold canvas-ui-muted">
-                    {fmt(t("canvas.batchSelected"), {
-                      n: selectedBatchArts.length,
-                    })}
-                  </span>
                   <button
                     type="button"
                     onClick={() =>
@@ -9670,28 +9669,16 @@ export function CanvasClient() {
                     <Trash2 className="h-4 w-4" />
                     {t("canvas.delete")}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => clearCanvasSelection(true)}
-                    aria-label={t("canvas.batchClear")}
-                    title={t("canvas.batchClear")}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl text-[#7a8494] transition-colors hover:bg-[#f0f3f8] hover:text-[#20242c]"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
+                </BatchSelectionToolbar>
               )}
               {selectedTextBatchNodes.length > 1 && !readOnly && selectedBatchArts.length === 0 && (
-                <div
-                  aria-label={t("canvas.textBatchActions")}
-                  data-testid="text-batch-bar"
-                  className="canvas-ui-surface cz-anim-bottom-center absolute bottom-[128px] left-1/2 z-30 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-2xl border p-1.5 text-[#20242c] shadow-2xl min-[800px]:bottom-[84px]"
+                <BatchSelectionToolbar
+                  label={t("canvas.textBatchActions")}
+                  testId="text-batch-bar"
+                  selectionLabel={fmt(t("canvas.textBatchSelected"), { n: selectedTextBatchNodes.length })}
+                  clearLabel={t("canvas.batchClear")}
+                  onClear={() => clearCanvasSelection(true)}
                 >
-                  <span className="whitespace-nowrap px-2 text-xs font-semibold canvas-ui-muted">
-                    {fmt(t("canvas.textBatchSelected"), {
-                      n: selectedTextBatchNodes.length,
-                    })}
-                  </span>
                   <button
                     type="button"
                     disabled={assistBusy}
@@ -9721,16 +9708,7 @@ export function CanvasClient() {
                     <ImageIcon className="h-4 w-4" />
                     {t("canvas.genImages")}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => clearCanvasSelection(true)}
-                    aria-label={t("canvas.batchClear")}
-                    title={t("canvas.batchClear")}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl text-[#7a8494] transition-colors hover:bg-[#f0f3f8] hover:text-[#20242c]"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
+                </BatchSelectionToolbar>
               )}
             </>
           )}
