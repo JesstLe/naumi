@@ -41,7 +41,8 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
           const wire = policyQuality(parameterMap.qualityPolicy, frozen.facts?.quality || body.quality);
           if (wire === undefined) delete body.quality; else body.quality = wire;
         } else if (typeof body.quality === "string" && parameterMap.quality?.[body.quality as keyof typeof parameterMap.quality]) body.quality = parameterMap.quality[body.quality as keyof typeof parameterMap.quality];
-        const resolution = frozen.facts?.resolution as keyof NonNullable<typeof parameterMap.resolution>;
+        const requestedResolution=frozen.facts?.requestedResolution;
+        const resolution = (!parameterMap.resolutionPolicy && requestedResolution && (scope.capabilities.nativeResolutions as string[]).includes(requestedResolution) ? requestedResolution : frozen.facts?.resolution) as keyof NonNullable<typeof parameterMap.resolution>;
         if(parameterMap.resolutionPolicy)mapResolution(body,parameterMap.resolutionPolicy,frozen.facts?.requestedResolution||resolution);
         else if (resolution && parameterMap.resolution?.[resolution]) body.size = parameterMap.resolution[resolution];
       }
