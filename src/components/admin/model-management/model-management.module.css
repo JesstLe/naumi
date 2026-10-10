@@ -181,3 +181,7 @@
 .canvasModules span { color:#74869c; }
 
 .parameterRoute .priceTable input { width:100%; min-width:100px; max-width:260px; }
+
+.resolutionTable { min-width:0; table-layout:fixed; }
+.resolutionTable th:first-child { width:90px; min-width:0; }
+.parameterRoute legend { overflow-wrap:anywhere; }
