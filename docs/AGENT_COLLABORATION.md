@@ -1,5 +1,21 @@
 # Naumi 多 Agent Git 与新机发布协作
 
+## 晚间集中发布结果（2026-10-10）
+
+四个同事分支及main品牌清理已完整合入，固定业务源码c66a826c6887642169874d223abb3fcf1ea9cf7a已发布新机120.27.162.85。APP/Worker镜像ghcr.io/jesstle/naumi:c66a826c6887642169874d223abb3fcf1ea9cf7a，Image ID sha256:c469311060bb3ff2b7ee20dfd61f574fbdb50e560baca0c647e91999524d868b，实际版号1791635460 / v2026.10.10-203100。
+
+合入canvas-workflow-paste d36ec8a、workbench-demo-refresh 4495ab0、naumi-brand-orb 60e44db、naumi-logo-explorations 5565c46，并包含21a6616品牌清理。小球保持独立/brand-orb预览，不接业务Agent；Logo六方案作为版本化设计素材保存，不替换正式Logo。工作流导入只迁移复制数据，不触发模型；新增app_canvas_workflow_imports/app_canvas_workflow_asset_ops两张表，回滚保留记录与素材。
+
+沿用各分支已有隔离数据库/真实剪贴板/浏览器/构建验收，补充快速合并契约和集中Linux正式构建通过。线上原生模型管理、文字通道与画布模型用途、工作流鉴权/无效请求/新增表通过；实际生产资源的桌面/390px新示例、套图切换、小球SVG与状态、既有项目画布Agent入口、工作流清单接口通过。线上验收模型消费0。第一次浏览器断言误在画布项目列表找Agent入口，进入已有验收项目后定向检查通过；未重复跑已通过的示例/小球检查。
+
+模型v108/积分v8、完整已发布配置及草稿、用户ComfyUI资料、供应商元数据/修订/人工采购价格切换及浏览器前后指纹保持。DB/业务媒体/Compose/其他env/Router/公网代理不覆盖，仅NAUMI_IMAGE切换；APP/Worker固定镜像和公开健康/版号通过，旧机未连接。
+
+完整DB备份（已核对pg_restore目录）、切换前最新DB快照、env/Compose备份、固定36255e0回滚及证据位于/opt/naumi-staging/evidence/recent-branches-release-20261010。ROLLBACK.sh --apply只切回固定旧镜像，不回灌数据库、不删除新表或媒体。首次切换前检查因帮助脚本引用上一轮备份目录被安全拦住，无线上改动；修正证据引用后刷新锁/基线再发布，未重复构建。最终锁已释放，临时容器帮助脚本和内存登录令牌已清理；未创建本机登录JSON。
+
+空间：构建前新机75%占用/约24.2GiB可用，切换后76%/约24GiB可用；本机C/E均超过190GiB可用。自36255基线起累计成功发布2次（Agent地址配置发布+本次镜像发布），尚未达到每3次清理门槛；本次未删除其他任务或有效回滚资料。文档后续提交不另发镜像。视频/OSS仍按用户约定延期，未记为通过。
+
+以下为历史版本与当时验收状态。
+
 ## 2026-10-10 Agent 404 地址修复（当前已解除主通道阻塞）
 
 仅向新机发布模型配置v107→v108：供应商“多模态chat”（mvp-592d52d8-cb9b-4fce-9c11-0de433e14532）选择openai-chat协议，却使用https://open.bigmodel.cn/api/anthropic/v1，目录200而chat/completions返回404。相同密钥的普通/api/paas/v4接口返回429余额不足；实测Coding Plan兼容地址https://open.bigmodel.cn/api/coding/paas/v4返回200并成功调用工具，已通过原生配置发布流程改为该地址。
