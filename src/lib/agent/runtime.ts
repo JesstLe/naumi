@@ -301,12 +301,13 @@ export async function getOrCreateSession(
       const e = event as unknown as {
         toolCallId: string;
         toolName?: string;
+        isError?: boolean;
         result?: { content?: unknown[]; isError?: boolean };
       };
       // 轨迹对外只暴露公开摘要:details.publicSummary 优先(不含内部全文)
       const details = (e.result as { details?: { publicSummary?: string } } | undefined)
         ?.details;
-      if (!e.result?.isError && session.onToolResult) {
+      if (!e.isError && !e.result?.isError && session.onToolResult) {
         const pending = session.onToolResult(e.result, e.toolName || "");
         session.toolResultsPending = Promise.all([session.toolResultsPending || Promise.resolve(),pending]).then(()=>undefined);
         void session.toolResultsPending.catch(()=>undefined);
@@ -318,10 +319,10 @@ export async function getOrCreateSession(
         tool: e.toolName ?? "",
         summary:
           details?.publicSummary ||
-          (e.result?.isError
+          (e.isError || e.result?.isError
             ? "工具执行失败，请查看安全错误提示"
             : "工具执行完成"),
-        isError: !!e.result?.isError,
+        isError: !!(e.isError || e.result?.isError),
       });
       void persistAgentSession(session);
     } else if (event.type === "message_update") {
