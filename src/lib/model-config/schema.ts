@@ -88,7 +88,7 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
     if (!p) fail("上游供应商不存在", [`upstreamModels.${m.id}.providerId`]);
     const expected = ["openai-images", "new-api-flow", "apimart-images", "fal-images"].includes(p.protocol) ? "image" : p.protocol === "openai-chat" ? "text" : "video";
     if (m.modality !== expected) fail("供应商协议与模态不匹配");
-    if(m.parameterMap.resolutionPolicy && p.protocol==="openai-images" && m.parameterMap.resolutionPolicy.field.includes("."))fail("OpenAI 图片分辨率映射需使用平面参数字段");
+    if(m.parameterMap.resolutionPolicy && p.protocol==="openai-images" && (m.parameterMap.resolutionPolicy.field.includes(".")||m.parameterMap.resolutionPolicy.ratioField?.includes(".")))fail("OpenAI 图片分辨率映射需使用平面参数字段");
     unique(m.capabilities.qualities, `upstreamModels.${m.id}.qualities`); unique(m.capabilities.nativeResolutions, `upstreamModels.${m.id}.nativeResolutions`);
     if ((m.parameterMap.qualityPolicy || m.parameterMap.resolutionPolicy) && (!["openai-images","new-api-flow"].includes(p.protocol) || config.defaultImagePreset?.enabled && config.defaultImagePreset.upstreamId === m.id || config.publicModels.some(v=>v.enabled && v.target.type === "pool" && pools.get(v.target.id)?.candidates.includes(m.id)))) fail("此路径的显示参数必须由外部路由或成本预设适配器管理", [`upstreamModels.${m.id}.parameterMap.qualityPolicy`]);
   }

@@ -45,7 +45,7 @@ async function main(){
     const request=(body?:unknown)=>new Request(f.origin+"/api/admin/model-management",{method:body?"POST":"GET",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
     const state=await(await handler(request())).json(),row=state.rows[0];
     assert.equal(row.resolutionConfig.routes[0].mode,"map");assert.equal(row.resolutionConfig.routes[1].mode,"legacy");
-    const parameters={routes:[{upstreamId:"u1",mode:"map",field:"size",values:metadata.parameterMetadata.resolutionDefaults.values,metadataRef:{id:record.id,revision:1}},{upstreamId:"u2",mode:"map",field:"image_config.image_size",values:{"1K":"1K","2K":"2K","4K":"2K"}}]};
+    const parameters={routes:[{upstreamId:"u1",mode:"map",field:"size",values:metadata.parameterMetadata.resolutionDefaults.values,metadataRef:{id:record.id,revision:1}},{upstreamId:"u2",mode:"map",field:"resolution",ratioField:"size",values:{"1K":"1k","2K":"2k","4K":"2k"}}]};
     const body={action:"resolutions",id:randomUUID(),expectedVersion:original.version,rowId:row.id,resolutions:["1K","2K","4K"],parameters};
     assert.equal((await handler(request({...body,parameters:{routes:parameters.routes.slice(0,1)}}))).status,400);
     assert.equal((await handler(request({...body,parameters:{routes:[{...parameters.routes[0],values:{"1K":"1024x1024"}},parameters.routes[1]]}}))).status,400);
@@ -65,11 +65,22 @@ async function main(){
     const legacyScope=(await executor.describe(legacyFrozen)).supplierRouting!.targets[0].scope;
     const transport=(await import("../src/lib/model-config/clients")).executionFetch(legacyScope,{trustedOrigins:[f.origin]});
     const legacyResponse=await transport(f.origin+"/v1/images/generations",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"stale",prompt:"legacy mixed route",size:"1024x1024"})});await legacyResponse.text();assert.equal(wire.at(-1).size,"2048x2048","A legacy channel retains its recorded native mapping alongside custom channels");
-    failFirst=true;await executor.run(frozen,()=>client.images.generate({model:"stale",prompt:"fallback",size:"1024x1024"}));assert.equal(wire.at(-1).model,"nano-banana-pro");assert.equal(wire.at(-1).image_config.image_size,"2K");assert.equal(wire.at(-1).size,undefined);
+    failFirst=true;await executor.run(frozen,()=>client.images.generate({model:"stale",prompt:"fallback",size:"1024x1024"}));assert.equal(wire.at(-1).model,"nano-banana-pro");assert.equal(wire.at(-1).resolution,"2k");assert.equal(wire.at(-1).size,"1:1","Resolution and aspect ratio are distinct fields");
     const restore={action:"resolutions",id:randomUUID(),expectedVersion:mapped.version,rowId:row.id,resolutions:["1K"],parameters:null};assert.equal((await handler(request(restore))).status,200);
     const restored=await admin.repo.current();assert.equal(restored.config.upstreamModels[0].parameterMap.resolutionPolicy,undefined);assert.deepEqual(restored.config.upstreamModels[0].parameterMap.resolution,original.config.upstreamModels[0].parameterMap.resolution);
     const scope=await executor.describe(frozen);assert.equal(scope.supplierRouting!.targets[0].scope.parameterMap.resolutionPolicy!.values["4K"],"2048x2048","Accepted job preserves mapping after later publication");
     const {mapResolution}=await import("../src/lib/model-config/resolution-policy");assert.deepEqual(mapResolution({size:"old",resolution:"old",image_config:{image_size:"old",ratio:"1:1"}},{mode:"omit",field:"size",values:{}},"4K"),{image_config:{ratio:"1:1"}});
+    const {ingestSupplierSources,readSupplierModel}=await import("../src/lib/supplier-models/repository");
+    const docsModel={id:"nano-banana-pro",modality:"image",parameters:[{path:"resolution",options:["1k","2k","4k"],documentation:{values_confirmed:true}},{path:"size",options:["auto","1:1","3:4"],documentation:{values_confirmed:true}}]};
+    const source={url:f.origin+"/api/pricing",fetchedAt:new Date().toISOString(),hash:"fixture",body:{data:[{model_name:"nano-banana-pro",tags:"image"}]},specifications:{url:"https://console.prompt-hubs.com/docs/catalog.json",fetchedAt:new Date().toISOString(),hash:"fixture",body:{version:"fixture",capability_version:"fixture",models:[docsModel,{...docsModel,id:"public-only-model"}]}}};
+    const directory={models:[],status:"ok",fetchedAt:source.fetchedAt};await ingestSupplierSources(f.sql,f.config.providers[1],directory,source);
+    const docRow=(await f.sql.query("SELECT id,revision FROM app_supplier_model_metadata WHERE provider_id='p2' AND model_id='nano-banana-pro'")).rows[0];
+    const defaults=metadataResolutionDefaults(await readSupplierModel(f.sql,docRow.id));assert.equal(defaults.field,"resolution");assert.equal(defaults.ratioField,"size");assert.equal(defaults.values["4K"],"4k");assert.equal(defaults.state,"documented");
+    await ingestSupplierSources(f.sql,f.config.providers[1],directory,{...source,fetchedAt:new Date().toISOString()});assert.equal((await readSupplierModel(f.sql,docRow.id)).revision,Number(docRow.revision),"Same public spec does not spam revisions");
+    assert.equal((await f.sql.query("SELECT count(*) FROM app_supplier_model_metadata WHERE model_id='public-only-model'")).rows[0].count,"1","Archive public model parameters even without key access");
+    const manualDoc=await readSupplierModel(f.sql,record.id);assert.equal(metadataResolutionDefaults(manualDoc).field,"size","Explicit manual library defaults retain priority");
+    assert.deepEqual(await admin.repo.current(),restored,"Spec intake never opens execution models or alters customer settings");
+    assert.deepEqual(mapResolution({}, {mode:"map",field:"image_config.image_size",values:{"4K":"2K"}},"4K"),{image_config:{image_size:"2K"}});
     console.log("PASS resolution metadata defaults/revision, native API persistence/replay, display vs wire parameters, JSON+multipart, Flow fallback own mapping, frozen task and restore; paid calls=0");
   }finally{await db.getPool().end();await f.cleanup();}
 }

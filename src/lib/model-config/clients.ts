@@ -43,7 +43,7 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
         } else if (typeof body.quality === "string" && parameterMap.quality?.[body.quality as keyof typeof parameterMap.quality]) body.quality = parameterMap.quality[body.quality as keyof typeof parameterMap.quality];
         const requestedResolution=frozen.facts?.requestedResolution;
         const resolution = (!parameterMap.resolutionPolicy && requestedResolution && (scope.capabilities.nativeResolutions as string[]).includes(requestedResolution) ? requestedResolution : frozen.facts?.resolution) as keyof NonNullable<typeof parameterMap.resolution>;
-        if(parameterMap.resolutionPolicy)mapResolution(body,parameterMap.resolutionPolicy,frozen.facts?.requestedResolution||resolution);
+        if(parameterMap.resolutionPolicy)mapResolution(body,parameterMap.resolutionPolicy,frozen.facts?.requestedResolution||resolution,frozen.facts?.ratio);
         else if (resolution && parameterMap.resolution?.[resolution]) body.size = parameterMap.resolution[resolution];
       }
       return body;
