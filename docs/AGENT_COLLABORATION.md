@@ -1,5 +1,13 @@
 # Naumi 多 Agent Git 与新机发布协作
 
+## 当前新机：A / 胶囊 N 正式品牌标识（2026-10-10）
+
+用户选择第一套Logo，固定业务源码afaa61d0f1aa184f3b364e6ada27fb569d27cb00已发布120.27.162.85，APP/Worker镜像同SHA，Image ID sha256:0032e599806245aaf31394a81c7894e2007f8ad3dbb21878e2b1e71e4a590c5a，实际1791637618 / v2026.10.10-210658。透明黑N用于默认共享Logo，黑底白N用于顶栏方形标、明暗画布及favicon，白标设置保留。50项品牌/28项素材/类型/Linux构建及线上25项字节/页面/版号检查和真实浏览器首页、页脚、已有画布、小球页通过；源码副本回滚恢复原标和46项基线检查。
+
+全程deploy.lock与DB/env/Compose完整备份，模型v108/积分v8、设置/草稿、ComfyUI、供应商元数据/修订/人工采购价指纹保持；仅NAUMI_IMAGE切换。证据及固定c66a826回滚 /opt/naumi-staging/evidence/naumi-logo-adoption-20261010，ROLLBACK-STAGING.sh --apply只切镜像，不回灌DB。最终健康/版本通过、锁释放；临时帮助脚本/私钥副本清理，旧机未连接。首次祖先清单CRLF预检查退出未改变线上，修正后一次正式构建/发布通过。
+
+第三次成功发布后持锁清理仅本轮源码.next/cache约497MiB，运行/回滚镜像、源包和备份及其他任务保留；约76%占用/23GiB可用，维护计数归零。详见docs/changes/2026-10-10-naumi-logo-adoption.md；后续文档提交不另发镜像。以下为历史版本。
+
 ## 晚间集中发布结果（2026-10-10）
 
 四个同事分支及main品牌清理已完整合入，固定业务源码c66a826c6887642169874d223abb3fcf1ea9cf7a已发布新机120.27.162.85。APP/Worker镜像ghcr.io/jesstle/naumi:c66a826c6887642169874d223abb3fcf1ea9cf7a，Image ID sha256:c469311060bb3ff2b7ee20dfd61f574fbdb50e560baca0c647e91999524d868b，实际版号1791635460 / v2026.10.10-203100。
