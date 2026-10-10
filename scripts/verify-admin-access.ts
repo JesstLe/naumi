@@ -28,7 +28,7 @@ async function main() {
     const hash = await db.getSetting(auth.ADMIN_PW_HASH_SETTING); assert.equal(auth.verifySessionToken(auth.signSession(Date.now() - auth.SESSION_TTL_MS - 1, hash!), Date.now(), hash!), false);
     assert.match((await login.DELETE()).headers.get("set-cookie") || "", /Max-Age=0/);
     for (const target of ["https://evil.test", "//evil.test/admin", "/admin\\evil.test", "/api/admin/settings", "/admin"]) assert.equal(adminDestination(target), "/admin/center");
-    assert.equal(adminDestination("/admin/billing"), "/admin/billing"); assert.equal(adminDestination("/admin?view=settings"), "/admin?view=settings");
+    assert.equal(adminDestination("/admin/billing"), "/admin/billing"); assert.equal(adminDestination("/admin/billing/price-table"), "/admin/billing/price-table"); assert.equal(adminDestination("/admin?view=settings"), "/admin?view=settings");
     assert.equal(adminDestination("/admin/mvp?view=models"),"/admin/model-management?view=models");assert.equal(adminDestination("/admin/mvp/library?brand=Google"),"/admin/model-management/library?brand=Google");assert.equal(adminDestination("/admin/model-management/library?brand=Google"),"/admin/model-management/library?brand=Google");assert.equal(adminDestination("/admin/mvp/unknown"),"/admin/center");
     console.log("ADMIN_ACCESS=PASS: password gate, native-admin and legacy-cookie rejection, private/HttpOnly session, cross-site rejection, rotation, expiry, logout, protected APIs and safe return URLs");
   } finally {
