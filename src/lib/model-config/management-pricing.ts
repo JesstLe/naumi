@@ -26,7 +26,7 @@ export function managedModelPriceViews(billing:ConfigSnapshot,models:ModelSnapsh
 export function modelCreditGrid(billing:ConfigSnapshot,models:ModelSnapshot,row:ManagedModelRow,feature:FeatureId):ManagedModelCreditGrid{
   const model=publicModelCatalog(models,row.modality,feature,true).models.find(m=>row.publicIds.includes(m.id));
   if(!model)throw new ModelConfigError("MODEL_UNAVAILABLE","此工具没有可报价模型",400);
-  const qualities=model.qualities?.length ? model.qualities : ["medium"],resolutions=model.nativeResolutions?.length ? model.nativeResolutions : ["1K"];
+  const qualities=model.qualities?.length ? model.qualities : ["medium"],resolutions=model.generationParameters?.resolutions || (model.nativeResolutions?.length ? model.nativeResolutions : ["1K"]);
   const preset=selectedImagePreset(models.config,feature,model.id);
   return QUALITY_IDS.flatMap(quality=>RESOLUTION_IDS.map(resolution=>{
     const available=row.modality!=="image"?quality==="medium"&&resolution==="1K":qualities.includes(quality as never)&&resolutions.includes(resolution as never);

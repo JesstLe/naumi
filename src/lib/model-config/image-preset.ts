@@ -110,7 +110,7 @@ export function installImagePresetAliases(config: ModelConfig) {
   validateImagePreset(config);
   for (const a of p.aliases) {
     const existing = config.publicModels.find(m => m.id === a.id);
-    const model = { ...a, ...(existing?.toolScope ? {toolScope:existing.toolScope} : {}), modality: "image" as const, enabled: true, visible: true, target: { type: "upstream" as const, id: p.upstreamId! } };
+    const model = { ...a, ...(existing?.displayResolutions ? {displayResolutions:existing.displayResolutions} : {}), ...(existing?.toolScope ? {toolScope:existing.toolScope} : {}), modality: "image" as const, enabled: true, visible: true, target: { type: "upstream" as const, id: p.upstreamId! } };
     const i = config.publicModels.findIndex(m => m.id === a.id);
     if (i < 0) config.publicModels.push(model); else config.publicModels[i] = model;
   }
