@@ -39,11 +39,11 @@ export async function registerProviderCapacities(tx: PoolClient, config: ModelCo
   }
 }
 export function createProviderCapacity(pool: Pool) {
-  return { async acquire(input: Limit) {
+  return { async acquire(input: Limit,connection?:PoolClient) {
     await ensureModelSchema(pool);
     const logical = capacityIdentity(input.providerId,input.baseUrl), token = randomUUID();
     let identity = logical;
-    const tx = await pool.connect(); let allowed = false;
+    const tx = connection || await pool.connect(); let allowed = false;
     try {
       await tx.query("BEGIN");
       await tx.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('naumi-model-capacity-accounts',0))");
@@ -55,7 +55,7 @@ export function createProviderCapacity(pool: Pool) {
       allowed = count < budget.max_concurrent;
       if (allowed) await tx.query("INSERT INTO app_model_provider_leases(identity,token,expires_at) VALUES($1,$2,now()+($3 * interval '1 millisecond'))", [identity, token, input.timeoutMs + 60000]);
       await tx.query("COMMIT");
-    } catch (error) { await tx.query("ROLLBACK"); throw error; } finally { tx.release(); }
+    } catch (error) { await tx.query("ROLLBACK"); throw error; } finally { if(!connection)tx.release(); }
     if (!allowed) throw new ModelConfigError("PROVIDER_BUSY", "当前模型通道繁忙，请稍后再试；本次未提交上游", 429);
     let released = false;
     return { token, async release() { if (released) return; await pool.query("DELETE FROM app_model_provider_leases WHERE token=$1", [token]); released = true; } };

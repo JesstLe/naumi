@@ -1,5 +1,8 @@
 import {applyDisplayResolutions} from "./resolution-options";
 import "server-only";
+import {channelHealthSummary} from "./channel-scheduler";
+import {providerCapacitySummary} from "./capacity";
+import {channelPolicySchema,applyChannelPolicy} from "./channel-policy";
 import {readQualityDefaults} from "../supplier-models/quality-access";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -12,7 +15,7 @@ import { publicModelCatalog } from "./runtime";
 import { FEATURE_BINDINGS } from "./business";
 import { MODEL_BINDINGS } from "./bindings";
 import { managedModelRows, managedModelCandidates, MODEL_MANAGEMENT_PROTOCOLS, switchManagedModel, renameManagedModel, applyModelToolScope, applyModelQualityParameters, orderManagedModels } from "./management";
-import { DISPLAY_QUALITY_IDS } from "./quality-policy";
+import { DISPLAY_QUALITY_IDS,qualityPolicySchema } from "./quality-policy";
 import { FEATURE_IDS } from "../billing/rules/registry";
 import {QUALITY_IDS,RESOLUTION_IDS} from "../billing/rules/registry";
 import {BillingError} from "../billing/types";
@@ -29,6 +32,7 @@ const common = { id: z.uuid(), expectedVersion: z.number().int().positive() };
 const credits=z.number().int().min(0).max(2147483647);
 const creditPricing=z.discriminatedUnion("mode",[z.strictObject({mode:z.literal("matrix"),prices:z.record(z.enum(QUALITY_IDS),z.record(z.enum(RESOLUTION_IDS),credits.nullable()))}),z.strictObject({mode:z.literal("fixed"),credits}),z.strictObject({mode:z.literal("quality-resolution"),quality:z.record(z.enum(QUALITY_IDS),credits),resolutionExtra:z.record(z.enum(RESOLUTION_IDS),credits)})]);
 const input = z.discriminatedUnion("action", [
+  z.strictObject({action:z.literal("channels"),...common,rowId:identifier,policy:channelPolicySchema.nullable()}),
   z.strictObject({action:z.literal("resolutions"),...common,rowId:identifier,resolutions:z.array(z.enum(["1K","2K","4K"])).min(1).max(3).nullable()}),
   z.strictObject({ action: z.literal("discover"), providerId: identifier, force: z.boolean().optional() }),
   z.strictObject({ action: z.literal("credential"), providerId: identifier, ciphertext: z.string().min(1).max(32768).optional(), keyPlain: z.string().min(1).max(16384).optional() }),
@@ -40,7 +44,7 @@ const input = z.discriminatedUnion("action", [
   z.strictObject({action:z.literal("parameters"),...common,rowId:identifier,parameters:z.strictObject({choices:z.array(z.strictObject({id:z.enum(DISPLAY_QUALITY_IDS),label:z.string().trim().min(1).max(30)})).min(1).max(5),routes:z.array(z.strictObject({upstreamId:identifier,mode:z.enum(["map","passthrough","omit"]),values:z.record(z.string(),z.string().max(100)),metadataRef:z.strictObject({id:z.uuid(),revision:z.number().int().positive()}).nullable().optional(),evidence:z.strictObject({status:z.enum(["unverified","documented","accepted","rejected"]),source:z.string().max(1000),checkedAt:z.string().max(30)}).optional()})).min(1).max(100)}).nullable()}),
   z.strictObject({action:z.literal("pricing"),...common,expectedBillingVersion:z.number().int().positive(),rowId:identifier,features:z.array(z.enum(FEATURE_IDS)).min(1).max(FEATURE_IDS.length),pricing:creditPricing.nullable()}),
   z.strictObject({ action: z.literal("connect"), ...common, name: z.string().trim().min(1).max(100), baseUrl: z.string().max(1024), protocol: z.enum(MODEL_MANAGEMENT_PROTOCOLS), credentialRef: z.uuid() }),
-  z.strictObject({ action: z.literal("register"), ...common, providerId: identifier, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), confirmed: z.literal(true), edit: z.boolean(), vision: z.boolean(), qualityRank: z.number().int().min(1).max(5).default(2), qualities: z.array(z.enum(["low", "medium", "high", "xhigh", "max", "auto"])).max(6), resolutions: z.array(z.enum(["1K", "2K", "4K"])).max(3), maxReferenceImages: z.number().int().min(0).max(32) }),
+  z.strictObject({ action: z.literal("register"), ...common, providerId: identifier, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), confirmed: z.literal(true), capabilityVerified:z.boolean().optional(), qualityPolicy:qualityPolicySchema.optional(), edit: z.boolean(), vision: z.boolean(), qualityRank: z.number().int().min(1).max(5).default(2), qualities: z.array(z.enum(["low", "medium", "high", "xhigh", "max", "auto"])).max(6), resolutions: z.array(z.enum(["1K", "2K", "4K"])).max(3), maxReferenceImages: z.number().int().min(0).max(32) }),
 ]);
 type Administration = Awaited<ReturnType<typeof getModelAdministration>>;
 function rows(snapshot: ModelSnapshot) {
@@ -64,7 +68,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       }
       if (request.method === "GET") {const billing=await admin.billing.current(),defaults=await readQualityDefaults(admin.pool,snapshot.config),modelRows=rows(snapshot);
         for(const row of modelRows)for(const route of row.qualityConfig?.routes || []){const d=defaults.get(route.upstreamId);route.metadataDefaults=d || null;if(!route.configured&&d?.available){route.mode=d.mode;route.values={...d.values};route.metadataRef={id:d.id,revision:d.revision};}else if(!route.configured){route.mode="omit";route.values={};}}
-        return biJson({ version: snapshot.version,billingVersion:billing.version, managed: await deps.managed(), rows: modelRows.map(row=>({...row,pricing:managedModelPriceViews(billing,snapshot,row)})), candidates: managedModelCandidates(snapshot.config), providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs: await readProviderCatalog(admin.pool, snapshot.config.providers) });}
+        return biJson({ version: snapshot.version,billingVersion:billing.version, managed: await deps.managed(), rows: modelRows.map(row=>({...row,pricing:managedModelPriceViews(billing,snapshot,row)})), candidates: managedModelCandidates(snapshot.config), channelHealth:await channelHealthSummary(admin.pool,snapshot.config),providerCapacity:await providerCapacitySummary(admin.pool,snapshot.config),providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, maxConcurrent:p.maxConcurrent, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs: await readProviderCatalog(admin.pool, snapshot.config.providers) });}
       const body = input.parse(JSON.parse(await readBounded(new Response(request.body), 48000)));
       if (body.action === "credential") {
         if (!!body.ciphertext === !!body.keyPlain || !/^mvp-[0-9a-f-]{36}$/i.test(body.providerId)) throw new ModelConfigError("INVALID_CREDENTIAL", "凭据参数无效");
@@ -110,7 +114,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
           }
         } else if(body.action === "order") {
           config=orderManagedModels(config,rows(snapshot),body.rowIds);
-        } else if (body.action === "switch" || body.action === "rename" || body.action === "scope" || body.action === "parameters" || body.action === "resolutions") {
+        } else if (body.action === "switch" || body.action === "rename" || body.action === "scope" || body.action === "parameters" || body.action === "resolutions" || body.action === "channels") {
           const row = rows(snapshot).find(r => r.id === body.rowId);
           if (!row) throw new ModelConfigError("MODEL_UNAVAILABLE", "前端当前没有展示该模型，请刷新", 409);
           if(body.action === "parameters" && body.parameters){
@@ -120,7 +124,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
               if(route.mode==="map")for(const choice of body.parameters.choices)if(!route.values[choice.id]?.trim() && route.metadataRef && d?.mode==="map")route.values[choice.id]=d.values[choice.id] || "";
             }
           }
-          config = body.action === "resolutions" ? applyDisplayResolutions(config,row,body.resolutions) : body.action === "parameters" ? applyModelQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyModelToolScope(config,row,body.features,body.canvas) : body.action === "rename" ? renameManagedModel(config, row, body.label) : switchManagedModel(config, row, body.upstreamId);
+          config = body.action === "channels" ? applyChannelPolicy(config,row,body.policy) : body.action === "resolutions" ? applyDisplayResolutions(config,row,body.resolutions) : body.action === "parameters" ? applyModelQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyModelToolScope(config,row,body.features,body.canvas) : body.action === "rename" ? renameManagedModel(config, row, body.label) : switchManagedModel(config, row, body.upstreamId);
         } else if (body.action === "connect") {
           const endpoint = validateModelEndpoint(body.protocol === "apimart-images" ? body.baseUrl.replace(/\/v1\/?$/, "") : body.baseUrl, { trustedOrigins: admin.trustedOrigins });
           const providerId = `mvp-${body.id}`;
@@ -135,14 +139,14 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
           if (p.protocol === "new-api-flow" && !isNewApiFlowImageModel(body.model)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该模型 ID 尚未由当前图片适配器支持，请在完整配置中心核验协议");
           if (body.resolutions.some(r => r !== "1K") && p.protocol === "openai-images") throw new ModelConfigError("MODEL_INCOMPATIBLE", "OpenAI 图片 2K/4K 需要专用尺寸参数映射，请在完整配置中心配置");
           const modality = p.protocol === "openai-chat" ? "text" : p.protocol === "openai-videos" ? "video" : "image";
-          config.upstreamModels.push({ id: `mvp-${body.id}`, providerId: p.id, model: body.model, label: body.model.slice(0, 100), modality, enabled: true, parameterMap: {}, capabilities: { verified: true, generate: true, edit: modality === "image" && body.edit, vision: modality === "text" && body.vision, transparent: false, preserveIdentity: false, textAccuracy: false, qualityRank: body.qualityRank, qualities: modality === "image" ? body.qualities : [], nativeResolutions: modality === "image" ? body.resolutions : [], maxReferenceImages: body.maxReferenceImages, expectedLatencyMs: 30000 } });
+          config.upstreamModels.push({ id: `mvp-${body.id}`, providerId: p.id, model: body.model, label: body.model.slice(0, 100), modality, enabled: true, parameterMap: body.qualityPolicy?{qualityPolicy:body.qualityPolicy}:{}, capabilities: { verified: body.capabilityVerified ?? true, generate: true, edit: modality === "image" && body.edit, vision: modality === "text" && body.vision, transparent: false, preserveIdentity: false, textAccuracy: false, qualityRank: body.qualityRank, qualities: modality === "image" ? body.qualities : [], nativeResolutions: modality === "image" ? body.resolutions : [], maxReferenceImages: body.maxReferenceImages, expectedLatencyMs: 30000 } });
         }
         config = validateModelConfig(config, { trustedOrigins: admin.trustedOrigins });
         compileRouterProjection({ version: snapshot.version + 1, digest: "", config }, await admin.billing.current(), { trustedOrigins: admin.trustedOrigins });
         draft = await admin.repo.saveDraft({ id: draft.id, expectedRevision: draft.revision, config, actor });
       }
       staged = true;
-      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "resolutions" ? `分辨率选项 ${body.rowId}` : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
+      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "channels" ? `供应通道 ${body.rowId}` : body.action === "resolutions" ? `分辨率选项 ${body.rowId}` : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
       return biJson({ publication }, publication.phase === "applied" ? 200 : publication.phase === "failed" ? 422 : 202);
     } catch (e) {
       if(e instanceof BillingError)return biJson({error:e.message,code:e.code,operationNotStaged:["CONFIG_CONFLICT","INVALID_CONFIG","OPERATION_CONFLICT"].includes(e.code)},e.status);
