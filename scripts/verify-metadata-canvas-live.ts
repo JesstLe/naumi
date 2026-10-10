@@ -4,7 +4,7 @@ import {chromium,expect as baseExpect} from "@playwright/test";
 
 async function main(){
  const cookieFile=process.env.MODEL_MANAGEMENT_BROWSER_COOKIE_FILE;if(!cookieFile)throw Error("Protected staging session required");
- const origin="http://120.27.162.85",out="output/metadata-canvas-20261010/live";await mkdir(out,{recursive:true});
+ const origin="http://120.27.162.85",out=process.env.MODEL_MANAGEMENT_LIVE_OUTPUT_DIR || "output/metadata-canvas-20261010/live";await mkdir(out,{recursive:true});
  const browser=await chromium.launch({channel:process.platform==="win32"?"msedge":undefined,headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000}}),expect=baseExpect.configure({timeout:30000});
  let attemptedWrites=0;const errors:string[]=[],blockedPaths:string[]=[];
  try{
@@ -17,7 +17,7 @@ async function main(){
   const anonymous=await browser.newContext();try{for(const path of ["/api/admin/mvp","/api/admin/model-management","/api/admin/mvp/library","/api/admin/model-management/library"])assert.equal((await anonymous.request.get(origin+path)).status(),404);}finally{await anonymous.close();}
   const row=state.rows.find((r:any)=>r.modality==="image"&&!r.preset&&r.qualityConfig.routes.every((v:any)=>v.editable));assert.ok(row,"Editable production image model required");const upstream=row.qualityConfig.routes[0];
   const page=await context.newPage();page.on("pageerror",e=>errors.push(e.message));await page.route("**/api/**",async route=>{if(route.request().method()!=="GET"){const path=new URL(route.request().url()).pathname,body=route.request().postDataJSON();blockedPaths.push(path);if(path==="/api/admin/model-management"&&body.action==="discover")return route.fulfill({json:state.catalogs.find((c:any)=>c.providerId===body.providerId)||{providerId:body.providerId,models:[],status:"empty",refreshing:false}});if(path.startsWith("/api/admin/"))attemptedWrites++;return route.fulfill({status:409,json:{error:"Read-only live acceptance"}});}return route.continue();});
-  await page.goto(origin+"/admin/model-management");const card=page.getByTestId("managed-model-"+row.id);
+  await page.goto(origin+"/admin/model-management");const card=page.getByTestId("managed-model-"+row.id);await expect(card).toBeVisible();await expect(page.getByRole("link",{name:"模型管理 模型与积分 新",exact:true})).toBeVisible();await page.screenshot({path:out+"/model-management-desktop.png"});
   await card.getByRole("button",{name:"参数设置",exact:true}).click();const params=page.getByRole("dialog",{name:"模型参数设置",exact:true});
   const high=params.getByLabel(`high上游值 ${upstream.upstreamId}`,{exact:true});await expect(high).toBeEditable();await high.fill("medium");await expect(params.getByLabel(`核对状态 ${upstream.upstreamId}`,{exact:true})).toHaveValue("unverified");
   const defaults=params.getByRole("button",{name:"使用元数据默认映射",exact:true});await expect(defaults).toBeVisible();if(upstream.metadataDefaults?.available){await defaults.click();for(const [id,value]of Object.entries(upstream.metadataDefaults.values))await expect(params.getByLabel(`${id}上游值 ${upstream.upstreamId}`,{exact:true})).toHaveValue(value as string);await high.fill("medium");}
