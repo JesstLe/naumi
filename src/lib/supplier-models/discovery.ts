@@ -23,9 +23,9 @@ export async function discoverPublicSupplierDirectory(provider: ModelProvider, t
     const endpoint = validateModelEndpoint(provider.baseUrl, { trustedOrigins });
     const url = new URL("/api/pricing", endpoint).toString();
     const response = await (fetcher || modelEndpointFetch(endpoint, { trustedOrigins }))(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(8000) });
-    if (!response.ok) { await response.body?.cancel(); return null; }
-    const body = cleanSource(JSON.parse(await readBounded(response)));
-    if (body.success !== true || !Array.isArray(body.data) || body.data.length > 10000) return null;
+    let body:any=null;
+    if(response.ok){const parsed=cleanSource(JSON.parse(await readBounded(response)));if(parsed.success===true&&Array.isArray(parsed.data)&&parsed.data.length<=10000)body=parsed;}
+    else await response.body?.cancel();
     let specifications:SupplierSpecificationCatalog|undefined;
     // This is a documented export endpoint of this supplier, not a guessed convention for every host.
     if(new URL(endpoint).hostname==="newapi.prompt-hubs.com"||new URL(endpoint).hostname==="console.prompt-hubs.com"){
@@ -35,6 +35,8 @@ export async function discoverPublicSupplierDirectory(provider: ModelProvider, t
         if(docsResponse.ok){const docs=cleanSource(JSON.parse(await readBounded(docsResponse)));if(docs.success===true&&Array.isArray(docs.models)&&docs.models.length<=10000){const stable={version:docs.version,capability_version:docs.capability_version,models:docs.models};specifications={url:docsUrl,fetchedAt:new Date().toISOString(),hash:sourceHash(stable),body:stable};}}else await docsResponse.body?.cancel();
       }catch{/* A temporary missing spec export leaves recorded defaults and manual data intact. */}
     }
+    if(!body&&!specifications)return null;
+    body ||= {success:false,data:[]};
     return { url, fetchedAt: new Date().toISOString(), hash: sourceHash(body), body,...(specifications?{specifications}:{}) };
   } catch { return null; }
 }
