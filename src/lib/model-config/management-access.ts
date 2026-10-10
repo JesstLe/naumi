@@ -154,4 +154,3 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
   };
 }
 export const modelManagementHandler = createModelManagementHandler({ authorize: biAuthorize, administration: getModelAdministration, managed: modelConfigurationEnabled });
-
