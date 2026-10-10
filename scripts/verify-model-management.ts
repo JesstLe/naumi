@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { constants, publicEncrypt, randomUUID } from "node:crypto";
+import { constants, publicEncrypt, randomUUID, createHash } from "node:crypto";
+import { canonicalConfig } from "../src/lib/model-config/repository";
 import { createModelFixture } from "./model-config-fixture";
 import { fixtureConfig } from "./billing-unit-fixture";
 import { createModelManagementHandler } from "../src/lib/model-config/management-access";
@@ -103,7 +104,12 @@ async function main() {
     assert.ok((await f.repo.current()).config.upstreamModels.some(u => u.model === "directory-image-new"));
     const invisible = structuredClone(old); invisible.config.publicModels[0].visible = false;
     assert.equal(managedModelRows(invisible, [{ ...publicModelCatalog(invisible, "image", "image.generate"), feature: "image.generate" }]).length, 0);
-    console.log("ADMIN_MODEL_MANAGEMENT=PASS ACTIVE_CATALOG=PASS SOURCES=PASS SWITCH_EXECUTION=PASS FROZEN_TASK=PASS DRAFT_PRESERVED=PASS SAME_ID_RECOVERY=PASS RSA_CREDENTIAL=PASS DISCOVERY=PASS EXPLICIT_CAPABILITIES=PASS NON_ADMIN=404 CSRF=403 VERSION_CONFLICT=409 PAID_GENERATION=0");
+    const historical=await f.repo.current(),historicalRow=(await(await handler(request())).json()).rows[0],historicalBody={action:"rename",id:randomUUID(),expectedVersion:historical.version,rowId:historicalRow.id,label:"历史待核对名称"};
+    const historicalActor=`${actor.slice(0,150)}#mvp:${historicalBody.id}:${createHash("sha256").update(canonicalConfig(historicalBody)).digest("hex").slice(0,20)}`;
+    const historicalDraft=await f.repo.draft(historicalActor),savedHistoricalDraft=await f.repo.saveDraft({id:historicalDraft.id,expectedRevision:historicalDraft.revision,config:renameManagedModel(historical.config,historicalRow,historicalBody.label),actor:historicalActor});
+    await runtime.publish({id:historicalBody.id,draftId:savedHistoricalDraft.id,expectedRevision:savedHistoricalDraft.revision,expectedVersion:historical.version,actor:historicalActor,reason:`MVP 改名 ${historicalBody.rowId} → ${historicalBody.label}`});
+    const historicalVersion=(await f.repo.current()).version;assert.equal((await handler(request(historicalBody))).status,200,"Pre-rename persisted publication fingerprint must replay");assert.equal((await f.repo.current()).version,historicalVersion);
+    console.log("ADMIN_MODEL_MANAGEMENT=PASS HISTORICAL_REASON_FINGERPRINT_REPLAY=PASS ACTIVE_CATALOG=PASS SOURCES=PASS SWITCH_EXECUTION=PASS FROZEN_TASK=PASS DRAFT_PRESERVED=PASS SAME_ID_RECOVERY=PASS RSA_CREDENTIAL=PASS DISCOVERY=PASS EXPLICIT_CAPABILITIES=PASS NON_ADMIN=404 CSRF=403 VERSION_CONFLICT=409 PAID_GENERATION=0");
   } finally { const db = await import("../src/lib/db"); await db.getPool().end(); await f.cleanup(); }
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });
