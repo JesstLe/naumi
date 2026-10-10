@@ -1,6 +1,7 @@
 # Naumi 多 Agent Git 与新机发布协作
 
 ## 当前固定版本（2026-10-10）
+- 最新新机运行源码dc4c4e7de51ca422e59b117078935ad19b7d2381，Image ID sha256:aeac30a4fb4c8b7b44d8dbedfff7b8307a9ce3e7fd4c8b5b15e3b0246befb759，版号1791604344 / v2026.10.10-115224。模型管理新增家族输出分辨率多选/全选/恢复，生图/提取/服装包装3D/画布/价格表统一；关闭档位拦截、冻结历史版本保留。按用户要求Nano Banana Pro与Nano Banana 2都开启1K/2K/4K（模型v80->82，仅授权展示字段变化），计费v8、旧草稿、供应商能力/映射/元数据861与修订863/采购价完整指纹保持。原生、完整管理/画布隔离浏览器与线上两款后台刷新/生图/画布/4K报价/选择排序手机通过，付费调用0。证据/备份/兼容回滚位于/opt/naumi-staging/evidence/model-display-resolutions-20261010；必须回滚固定兼容d1efcf8d69c753c48a19b0a83076d789c6875a1b（旧UI+新后端契约），禁止直接原7099丢失字段。全程锁已释放，详见docs/changes/2026-10-10-model-display-resolutions.md。以下为历史版本；文档跟进不另发镜像。
 
 - 最新新机运行源码7099f06959934e3a2a8145ba76f4e973d0b5cb2b，Image ID sha256:d37d28cda1eea2da592ad6587f4005148dceab1c78b3e38665372cca08a8337d，实际版号1791601939 / v2026.10.10-111219。修复混合inventory中图片家族聚合误覆盖文字/视频显示名；gpt6Astra后台标题/编辑框/刷新及前端目录均为已保存GPT-6Astra，实际hy4-preview保持。原生/完整隔离浏览器与线上文字/参数范围/库/四图片家族选择排序报价/手机通过。用户最新模型v76、计费v8、完整配置/草稿和861条元数据、863条修订、采购价格指纹保持，收费生成0。证据/备份 /opt/naumi-staging/evidence/management-text-name-20261010，固定回滚6446fab，最终健康/版号通过、锁释放。详见docs/changes/2026-10-10-management-text-display-name.md；以下为历史版本，文档跟进不另发镜像。
 
