@@ -1,5 +1,6 @@
 import { compatiblePublicModels, FEATURE_BINDINGS } from "./business";
 import { adminConfiguredFeature } from "./selection-policy";
+import {publicUpstreamIds} from "./channel-policy";
 import type { FeatureId } from "../billing/rules/registry";
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
@@ -28,7 +29,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
   let defaultModelId = preset ? preset.aliases[0].id : featureDefaultModel(config,feature,feature ? FEATURE_BINDINGS[feature] : undefined);
   const configuredIds = f?.enabled===false ? [] : preset ? [...preset.aliases.map(a => a.id),...(f?.options.filter(o => o.enabled && !preset.defaultModelIds.includes(o.modelId)).map(o => o.modelId) || [])] : f ? [...f.options].filter(o => o.enabled).sort((a,b) => a.sort-b.sort).map(o => o.modelId) : undefined;
   const models = config.publicModels.filter(m => m.enabled && m.visible && m.modality === modality && modelAllowedForFeature(m,feature) && (!compatible || compatible.includes(m.id)) && (!configuredIds || configuredIds.includes(m.id))).sort((a,b) => configuredIds ? configuredIds.indexOf(a.id)-configuredIds.indexOf(b.id) : 0).map(m => {
-    const ids = m.target.type === "upstream" ? [m.target.id] : config.pools.find(p => p.id === m.target.id)!.candidates;
+    const ids = publicUpstreamIds(config,m);
     const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
     const option = f?.options.find(o => o.modelId === m.id);
     if (preset?.aliases.some(a => a.id === m.id)) return { id:m.id,label:m.label,modality:m.modality,supportsEdit:true,supportsVision:false,qualities:[...DISPLAY_QUALITIES],nativeResolutions:preset.resolutions,generationParameters:{ratios:preset.ratios,resolutions:m.displayResolutions || preset.resolutions,combinations:Object.keys(preset.outputDimensions || {})},qualitySupported:true };
@@ -40,7 +41,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
   const bindingCapabilities = Object.fromEntries(Object.entries(config.bindings).flatMap(([binding,id]) => {
     const m = config.publicModels.find(m => m.id === id && m.enabled && m.modality === modality);
     if (!m) return [];
-    const ids = m.target.type === "upstream" ? [m.target.id] : config.pools.find(p => p.id === m.target.id)!.candidates;
+    const ids = publicUpstreamIds(config,m);
     const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
     const defaultPreset = selectedImagePreset(config,undefined,id,binding);
     return [[binding,{ qualities: defaultPreset ? [...DISPLAY_QUALITIES] : qualityPresentation(upstreams)?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: defaultPreset?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))) }]];
@@ -60,7 +61,7 @@ export function simulateModel(snapshot: ModelSnapshot, billing: ConfigSnapshot, 
   const model = config.publicModels.find(m => m.id === publicModelId && m.enabled && m.modality === "image");
   if (!model) throw new ModelConfigError("MODEL_UNAVAILABLE", "图片模型不可用", 400);
   const pool = model.target.type === "pool" ? config.pools.find(p => p.id === model.target.id)! : null;
-  const ids = pool ? pool.candidates : [model.target.id];
+  const ids = publicUpstreamIds(config,model);
   const rule = pool?.rules.filter(r => matchesRule(r.when, facts)).sort((a,b) => b.priority - a.priority)[0];
   const eligible: RoutingSimulation["eligible"] = [], excluded: RoutingSimulation["excluded"] = [];
   const costs = new Map<string, ReturnType<typeof monetaryCost>>();
@@ -68,6 +69,7 @@ export function simulateModel(snapshot: ModelSnapshot, billing: ConfigSnapshot, 
     const u = config.upstreamModels.find(u => u.id === id)!, p = config.providers.find(p => p.id === u.providerId)!, c = u.capabilities;
     const codes: string[] = [];
     if (!u.enabled || !p.enabled) codes.push("DISABLED");
+    if(model.supplierRouting&&!c[facts.needsEdit?"edit":"generate"])codes.push("OPERATION_UNSUPPORTED");
     if (pool?.rules.length && !rule) codes.push("RULE_UNMATCHED");
     let nativeQuality = facts.quality;
     if (u.parameterMap.qualityPolicy) {
@@ -87,7 +89,7 @@ export function simulateModel(snapshot: ModelSnapshot, billing: ConfigSnapshot, 
     const maxPixels = c.nativeResolutions.includes("4K") ? 4096 * 4096 : c.nativeResolutions.includes("2K") ? 2048 * 2048 : 1536 * 1024;
     const requestedPixels = facts.resolution === "4K" ? 3840 * 2160 : facts.resolution === "2K" ? 2048 * 2048 : 1024 * 1024;
     if (pool && requestedPixels > maxPixels) codes.push("PIXEL_LIMIT");
-    if (c.verified && facts.references > c.maxReferenceImages) codes.push("REFERENCE_LIMIT");
+    if ((c.verified || model.supplierRouting && c.maxReferenceImages > 0) && facts.references > c.maxReferenceImages) codes.push("REFERENCE_LIMIT");
     const money = monetaryCost(modelCostRate(billing, u, facts.quality, facts.resolution, facts.needsEdit ? "edit" : "generate"));
     costs.set(id, money ? { ...money, amountMicros: (BigInt(money.amountMicros) * BigInt(money.unit === "task" ? 1 : facts.quantity ?? 1)).toString() } : null);
     if (pool?.strategy === "lowest-cost" && !money) codes.push("COST_UNRECORDED");

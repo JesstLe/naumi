@@ -17,13 +17,15 @@ function upstreamError(raw: string, status: number) {
       error?: { message?: string } | string;
       message?: string;
     };
+    if ((body as any).billing_status === "not_charged" || typeof body.error === "object" && (body.error as any)?.billing_status === "not_charged") throw new ModelConfigError("UPSTREAM_REJECTED_NOT_CHARGED","上游明确拒绝且未收费",status);
     const message =
       typeof body.error === "string"
         ? body.error
         : body.error?.message || body.message || raw.slice(0, 500);
-    return new Error(`${status} ${message}`);
-  } catch {
-    return new Error(`${status} ${raw.slice(0, 500)}`);
+    return Object.assign(new Error(`${status} ${message}`), {status});
+  } catch (error) {
+    if(error instanceof ModelConfigError)throw error;
+    return Object.assign(new Error(`${status} ${raw.slice(0, 500)}`), {status});
   }
 }
 
@@ -119,9 +121,10 @@ export async function generateNewApiImage(input: {
     if (!buffer.length || buffer.length > 32 * 1024 * 1024) throw new Error("即梦图片大小无效");
     return { buffer, contentType: "image/png" };
   }
+  const prompt=/^nano-banana-/i.test(wireModel)&&scope?.frozen.facts?.ratio?`${input.prompt}\nImage aspect ratio: ${scope.frozen.facts.ratio}.`:input.prompt;
   const content = references.length
     ? [
-        { type: "text", text: input.prompt },
+        { type: "text", text: prompt },
         ...references.map((image) => ({
           type: "image_url",
           image_url: {
@@ -129,7 +132,7 @@ export async function generateNewApiImage(input: {
           },
         })),
       ]
-    : input.prompt;
+    : prompt;
   const response = await observeModelCall(wireModel,()=>submit(`${settings.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -147,12 +150,14 @@ export async function generateNewApiImage(input: {
   const raw = await response.text();
   if (!response.ok) throw upstreamError(raw, response.status);
   const streamContent = collectStreamContent(raw);
+  const inline=streamContent.match(/data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)/);
+  if(inline){if(inline[2].length>45*1024*1024)throw new Error("返回图片超过大小限制");const buffer=Buffer.from(inline[2],"base64");if(!buffer.length||buffer.length>32*1024*1024)throw new Error("返回图片大小无效");return {buffer,contentType:inline[1]};}
   const imageUrl = extractImageUrl(streamContent);
   if (!imageUrl) {
     throw new Error(`New API 生图分组未返回图片：${streamContent.slice(-300)}`);
   }
   const imageResponse = await fetch(imageUrl, {
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.any([input.signal || new AbortController().signal, AbortSignal.timeout(60_000)]),
   });
   if (!imageResponse.ok) {
     throw new Error(`生成图片下载失败 ${imageResponse.status}`);

@@ -61,12 +61,12 @@ async function main() {
       return route.continue();
     });
     await ui.goto(origin + "/generate"); await ui.waitForLoadState("networkidle");
-    const modelButton = ui.getByText("生图模型", { exact: true }).locator("..").getByRole("button");
-    const menu = ui.locator("div.fixed.max-h-80");
-    const menuOrder = async () => { await modelButton.click(); await expect(menu).toBeVisible(); return (await menu.getByRole("button").allInnerTexts()).map(t => t.split("\n")[0].trim()); };
+    const modelButton = ui.getByText("生图模型", { exact: true }).locator("..").getByRole("combobox");
+    const menu = ui.getByRole("listbox");
+    const menuOrder = async () => { await modelButton.click(); await expect(menu).toBeVisible(); return (await menu.getByRole("option").allInnerTexts()).map(t => t.split("\n")[0].trim()); };
     const expected = display.map(m => m.supportsEdit ? m.label : `${m.label} · 仅文生图`);
     assert.deepEqual(await menuOrder(), expected);
-    await menu.getByRole("button").last().click();
+    await menu.getByRole("option").last().click();
     assert.deepEqual(await menuOrder(), expected);
     await ui.screenshot({ path: out + "/selected-menu-order.png", animations: "disabled" });
     await ui.reload(); await ui.waitForLoadState("networkidle");
