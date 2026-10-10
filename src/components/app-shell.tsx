@@ -20,7 +20,7 @@ import {useI18n} from "@/lib/i18n/locale-context";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname() || "/";
   const {toast}=useToast(),{locale}=useI18n();
-  const noShell = path === "/sign-in" || path === "/sign-up" || path === "/admin" || path.startsWith("/admin/");
+  const noShell = path === "/brand-orb" || path === "/sign-in" || path === "/sign-up" || path === "/admin" || path.startsWith("/admin/");
   const isCanvas = path.startsWith("/canvas");
   const isToolPage = path === "/tools" || path === "/dashboard" || TOOLS.some(tool => tool.href === path);
   // 沉浸全屏(无页脚):画布 / 对话生成。生图/套图/工作台改成和工具页一致的自然流(带页脚)。
