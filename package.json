@@ -7,6 +7,7 @@
     "verify:model-management-ui": "node scripts/verify-model-management-ui.mjs",
     "verify:admin-mvp": "npm run verify:model-management",
     "verify:admin-mvp-ui": "npm run verify:model-management-ui",
+    "verify:image25-price-table": "tsx scripts/verify-image25-price-table.ts",
     "verify:model-batch": "tsx --conditions react-server scripts/verify-model-batch.ts",
     "verify:model-batch-ui": "node scripts/verify-model-batch-ui.mjs",
     "verify:provider-catalog": "tsx --conditions react-server scripts/verify-provider-catalog.ts",
