@@ -850,3 +850,12 @@ TypeScript、隔离原生数据库发布/解析/报价/冻结和浏览器分组�
 用户要求将此前列出的四个未合入功能分支全部合入：canvas-toolbar-copy、model-brand-icons、image25-output-price-table、pricing-page-preview，已保留提交历史并进入main。固定业务源码6446fab68aaccc6cccdfa8217bbaebed95d27ac9，APP/Worker Image ID sha256:f1c5f505d129d38b08a1aabcfb9a4d1925efd0f22a28f94fbd0348fb8d5235ca，实际版本1791600281 / v2026.10.10-104441。包含工具提示精简、33品牌本地SVG/别名识别、管理员原生输出参考价矩阵/人民币筛选下载、套餐预览代码；公开套餐页遵守主线最新关闭规则，价格表不自动应用到真实积分。
 
 集中类型/源图标和金额/参数/冻结积分/完整节点编辑与浏览器验收通过。线上真实价格API权限/405、公开定价404、菜单品牌/渐变唯一、四家族选择刷新报价/排序弹窗、范围/元数据映射和手机通过；不提交业务配置、不发收费生成。模型v66/计费v8、完整配置/草稿hash与元数据861条/修订863条/采购价格完整hash不变。全程deploy.lock、完整备份与固定5cb8600回滚准备，最终健康db.ok/版号/镜像一致且锁释放，临时浏览器会话清理。证据/备份 /opt/naumi-staging/evidence/colleague-integration-20261010，详见docs/changes/2026-10-10-colleague-branches-integration.md。旧机未连接/回传，DB/媒体/Compose/其他环境字段与代理保持，local媒体/视频OSS延期约定保留；文档跟进不另发镜像。
+
+
+## 38. 后台文字模型名称与已保存前端名称一致（2026-10-10）
+
+用户保存GPT-6Astra后前端已变而后台仍显示gpt6Astra，根因为混合inventory误用图片家族聚合。固定源码7099f06959934e3a2a8145ba76f4e973d0b5cb2b已发布新机，APP/Worker Image ID sha256:d37d28cda1eea2da592ad6587f4005148dceab1c78b3e38665372cca08a8337d，实际版本1791601939 / v2026.10.10-111219。图片聚合跳过明确非图片项，保持文字/视频label与顺序；未重写任何模型配置。
+
+旧函数复现、原生混合inventory/再次改名/前缀碰撞与完整Next+PG文字保存/标题/目录/刷新/再开编辑框及图片/价格/范围/排序/手机通过。线上所有非图片标题/编辑框与保存名称及前端文字目录一致，GPT-6Astra专门截图/刷新验证，真实hy4-preview保持；参数/库/画布用途、四家族顺序/选择/报价/手机通过。用户最新模型v76/价格v8、整个配置与所有草稿hash、元数据861条/修订863条/采购价格hash不变，收费生成0。
+
+全程deploy.lock、完整备份与固定6446fab回滚准备，最终健康/实际镜像/版本/浏览器验收通过、锁释放，临时会话helper清理。证据/备份 /opt/naumi-staging/evidence/management-text-name-20261010，详见docs/changes/2026-10-10-management-text-display-name.md。DB/媒体/Compose/其他env/公网代理保持，旧机不连接/回传，local媒体/视频OSS延期约定不变；文档跟进不另发镜像。

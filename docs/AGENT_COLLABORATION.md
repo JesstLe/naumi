@@ -2,6 +2,9 @@
 
 ## 当前固定版本（2026-10-10）
 
+- 最新新机运行源码7099f06959934e3a2a8145ba76f4e973d0b5cb2b，Image ID sha256:d37d28cda1eea2da592ad6587f4005148dceab1c78b3e38665372cca08a8337d，实际版号1791601939 / v2026.10.10-111219。修复混合inventory中图片家族聚合误覆盖文字/视频显示名；gpt6Astra后台标题/编辑框/刷新及前端目录均为已保存GPT-6Astra，实际hy4-preview保持。原生/完整隔离浏览器与线上文字/参数范围/库/四图片家族选择排序报价/手机通过。用户最新模型v76、计费v8、完整配置/草稿和861条元数据、863条修订、采购价格指纹保持，收费生成0。证据/备份 /opt/naumi-staging/evidence/management-text-name-20261010，固定回滚6446fab，最终健康/版号通过、锁释放。详见docs/changes/2026-10-10-management-text-display-name.md；以下为历史版本，文档跟进不另发镜像。
+
+
 - 最新新机运行源码6446fab68aaccc6cccdfa8217bbaebed95d27ac9，Image ID sha256:f1c5f505d129d38b08a1aabcfb9a4d1925efd0f22a28f94fbd0348fb8d5235ca，实际版号1791600281 / v2026.10.10-104441。按用户要求完整合入canvas-toolbar-copy、model-brand-icons、image25-output-price-table、pricing-page-preview；套餐预览遵守最新公开定价关闭规则，管理员价格表只读不改扣费。集中隔离DB/浏览器/生成参数与积分通过，线上品牌/稳定模型选择/参数范围/价格筛选下载和手机通过。模型v66、价格v8、完整配置/草稿与元数据库861条、修订863条及采购价格指纹保持，收费生成0。证据/备份 /opt/naumi-staging/evidence/colleague-integration-20261010，固定回滚5cb8600，最终健康/实际版本通过、deploy.lock已释放。详见docs/changes/2026-10-10-colleague-branches-integration.md。以下为历史版本；文档跟进不另发镜像。
 
 
