@@ -38,3 +38,17 @@
 执行node scripts/verify-model-brand-icons.mjs及typecheck/build。
 统一新机发布前验收文字节点gpt6Astra、图片品牌、菜单和未知模型兜底；旧机禁止自动回传。
 ```
+
+## 彩色版本补齐（2026-10-10，后续修正）
+- 基线提交 `8ce0367f33f3c644bc53fa938d81703d92a5acf0`，沿用 `codex/model-brand-icons`，仍只推分支不发布。
+- 上版Gemini选用了Mono，部分标为Color的旧资源只取了路径、漏了渐变，因此千问和即梦也呈黑色。
+- 按相同固定LobeHub 5.23.0源补齐10种Color版本：Gemini、Qwen、Kimi、Jimeng、MiniMax、Mistral、Zhipu、Meta、Wenxin、Hunyuan。
+- Gemini恢复蓝色底形与绿/红/黄三组渐变；所有图层、clipPath、渐变颜色及几何均保留。不是给单色SVG任意套颜色。
+- 渐变/裁切ID采用React useId，各实例独立，防止节点/菜单同时显示时串色；Kimi原Color使用白色K，配源品牌#000底板保证浅色UI可读。
+- OpenAI和Grok在此版本库只有Mono，保留黑白标识，其余品牌维持已有彩色。
+- 模型识别、ID/显示名优先级、三个选择器、生成路由与计费未改变，逐字对照通过。
+- 原始单色复现、10种Color颜色断言、多个同品牌SVG引用唯一性、17品牌回归、TypeScript和组件lint通过。
+- 实际浏览器组件预览检查Gemini 16/24/32px及品牌网格，颜色正确、4个实例各自渐变ID，无控制台错误；这不是线上验收。本轮未重跑完整生产构建。
+- 回滚仅在带标记源码副本恢复5个原文件hash和原Gemini Mono，实际分支保留彩色修复。
+- 本轮证据：`E:\Workspace\naumi\output\model-brand-colors-20261010`。
+- 统一合并后运行 `node scripts/verify-model-brand-icons.mjs`、`node scripts/verify-model-brand-colors.mjs` 与构建，再验收真实节点/菜单图标。

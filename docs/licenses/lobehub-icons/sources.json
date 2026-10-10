@@ -37,23 +37,11 @@
       "paths": 1,
       "svgPathsSha256": "bd44b1c84829f788c23af49103c012d4dad2cc9a424fedfb6db8a580d9545acd"
     },
-    "QwenColor": {
-      "file": "package/es/Qwen/components/Color.js",
-      "sha256": "fc6cb50ed89a8d615f966425933cc8f242931241818d69de4995f934957b85e4",
-      "paths": 1,
-      "svgPathsSha256": "d3955dd900dfc7b9ed9cc091499997871cd29aa3b837e1823a20fe07301f0ee5"
-    },
     "GrokMono": {
       "file": "package/es/Grok/components/Mono.js",
       "sha256": "a6c6ef35668e728cb6719f9fb3509db873d193c295a673008eca2cc6045fcfb0",
       "paths": 1,
       "svgPathsSha256": "b1c7535771ab4ca56c3678ac60cdbaccbcf7f7e53c6343717332e20bbb0c546b"
-    },
-    "KimiMono": {
-      "file": "package/es/Kimi/components/Mono.js",
-      "sha256": "0f210bff499774a3e3dba2a27725db803022a17c6fbc30292822063606bcce19",
-      "paths": 2,
-      "svgPathsSha256": "d0f62b661c08ea23f6b5659205d665509f92dce9d9cf9ff95a7173a7a12be7d6"
     },
     "DoubaoColor": {
       "file": "package/es/Doubao/components/Color.js",
@@ -61,53 +49,131 @@
       "paths": 4,
       "svgPathsSha256": "91199983096f5f7097dfc89f509083c79bf4ae0b38e7fa78fd45428213548147"
     },
+    "GeminiColor": {
+      "file": "package/es/Gemini/components/Color.js",
+      "sha256": "c135ced5c8433accc58ad187dc9eef67c99ecc5c3178750b6ab65b88ae17341b",
+      "paths": 4,
+      "svgPathsSha256": "46e4b560d21b31d5231d36c9f6524ff5a9a1befafb97f1733696ecd2e6c05eff",
+      "colors": [
+        "#08B962",
+        "#3186FF",
+        "#F94543",
+        "#FABC12"
+      ]
+    },
+    "QwenColor": {
+      "file": "package/es/Qwen/components/Color.js",
+      "sha256": "fc6cb50ed89a8d615f966425933cc8f242931241818d69de4995f934957b85e4",
+      "paths": 1,
+      "svgPathsSha256": "d3955dd900dfc7b9ed9cc091499997871cd29aa3b837e1823a20fe07301f0ee5",
+      "colors": [
+        "#6336E7",
+        "#6F69F7"
+      ]
+    },
+    "KimiColor": {
+      "file": "package/es/Kimi/components/Color.js",
+      "sha256": "42f71237801e674c4d2c5c22990642524227441ed357079ae79b68c5ed5fe865",
+      "paths": 2,
+      "svgPathsSha256": "d0f62b661c08ea23f6b5659205d665509f92dce9d9cf9ff95a7173a7a12be7d6",
+      "colors": [
+        "#1783FF",
+        "#fff"
+      ],
+      "wrapper": "Black plate uses source Kimi AVATAR_BACKGROUND=#000 for white glyph contrast"
+    },
     "JimengColor": {
       "file": "package/es/Jimeng/components/Color.js",
       "sha256": "d5899bef6ff39c90a0c70cbb499657791403b5ebed93d512121348b6b3da0cac",
       "paths": 2,
-      "svgPathsSha256": "8156babe6f9223a228933252098ac8aa0dedbdab617cf054580bf3e2a5b68c95"
+      "svgPathsSha256": "8156babe6f9223a228933252098ac8aa0dedbdab617cf054580bf3e2a5b68c95",
+      "colors": [
+        "#1C6FFF",
+        "#24B5EF",
+        "#26DFFB",
+        "#27B2F0",
+        "#30F5FE",
+        "#F0FEFC",
+        "#FBC610",
+        "#FD9C22"
+      ]
     },
-    "MinimaxMono": {
-      "file": "package/es/Minimax/components/Mono.js",
-      "sha256": "fb345242dcc5b0605c79cf4295470f7be650bc40356ba1fb81bba35f467d031a",
+    "MinimaxColor": {
+      "file": "package/es/Minimax/components/Color.js",
+      "sha256": "8ae19383bfc44bda27d683fce62e9f82a4cc09c8fbd7eda1ed06f0837de973fa",
       "paths": 1,
-      "svgPathsSha256": "feb4b3e101899b47720e511179ea5d64cb28c9eb82d6259b688c45288f8a55af"
+      "svgPathsSha256": "feb4b3e101899b47720e511179ea5d64cb28c9eb82d6259b688c45288f8a55af",
+      "colors": [
+        "#E2167E",
+        "#FE603C"
+      ]
     },
-    "MistralMono": {
-      "file": "package/es/Mistral/components/Mono.js",
-      "sha256": "a96bce5c9122c4bddfae23642fdee4e800a2edca63372e2828756bfc06a69a9d",
-      "paths": 1,
-      "svgPathsSha256": "49383b76763f4b4fc2879b68b946e3912b2cdeb6fefceacac9a8f46043e4980a"
+    "MistralColor": {
+      "file": "package/es/Mistral/components/Color.js",
+      "sha256": "769896a1000a49606a37b751b3ffcd22f09014ec6a8664e8ff714c7e05b762fc",
+      "paths": 5,
+      "svgPathsSha256": "b4bb093f8448d8d1c76f2ad67eeeeb56742060846a53815bc9d55a19c7712f26",
+      "colors": [
+        "#E10500",
+        "#FA500F",
+        "#FF8205",
+        "#FFAF00"
+      ]
     },
-    "ZhipuMono": {
-      "file": "package/es/Zhipu/components/Mono.js",
-      "sha256": "c6626fac1909101c49c5ddb8c6de91391ae4130d68040402bdddee0bb6da3e8d",
+    "ZhipuColor": {
+      "file": "package/es/Zhipu/components/Color.js",
+      "sha256": "a1e4d41094dd000cd9e4f6a3832ec06c94fb379be3a0818ef1f83bab47d61081",
       "paths": 1,
-      "svgPathsSha256": "b01bcdadb70a10bae9119b4847302691f3c10be99ee77652df81634bb207b318"
+      "svgPathsSha256": "b01bcdadb70a10bae9119b4847302691f3c10be99ee77652df81634bb207b318",
+      "colors": [
+        "#3859FF"
+      ]
     },
-    "MetaMono": {
-      "file": "package/es/Meta/components/Mono.js",
-      "sha256": "68717b5a42833e9fd4caf50730279f670f8bcc7da9e3a826a41b3b2ffdbb5cc5",
-      "paths": 1,
-      "svgPathsSha256": "03e50d8e230c5499ba3d3e8acc8eb2f186aff63516509e3df78a2509bc5db861"
+    "MetaColor": {
+      "file": "package/es/Meta/components/Color.js",
+      "sha256": "b2bbb5c606694b277ef84df2e042d74b32d9a165b6f8d3cd4d7d2148bd521370",
+      "paths": 15,
+      "svgPathsSha256": "35089a0e80254e1da8fc89c45cf30f1971987f5baabeb63b9a3cb09360c3ba2e",
+      "colors": [
+        "#0064DF",
+        "#0064E0",
+        "#0072EC",
+        "#007CF6",
+        "#007FF8",
+        "#007FF9",
+        "#0080F9",
+        "#0081FA",
+        "#0082FB",
+        "#0279F1",
+        "#027AF3",
+        "#0377EF",
+        "#0471E9",
+        "#0668E1",
+        "#0867DF"
+      ]
     },
-    "GeminiMono": {
-      "file": "package/es/Gemini/components/Mono.js",
-      "sha256": "ba273c8532310e85c90aaaf0311de23d92e5c7abe3eca069e7d7f41962e3f438",
-      "paths": 1,
-      "svgPathsSha256": "3cdeb9521c4294cbcba96aa138286847561b2d87231b4d4f3fb836795ecdeed9"
+    "WenxinColor": {
+      "file": "package/es/Wenxin/components/Color.js",
+      "sha256": "a702fa6cef6a9396ca7bc16339c56e62a53f335f509487373b8a7b7d4f787962",
+      "paths": 2,
+      "svgPathsSha256": "ae1929c2eb35e4fc2c518edfe7704c22f485efbed15f5ecfc94e45a176b1c57d",
+      "colors": [
+        "#012F8D",
+        "#0A51C3",
+        "#23A4FB"
+      ]
     },
-    "WenxinMono": {
-      "file": "package/es/Wenxin/components/Mono.js",
-      "sha256": "346179146c034e636851e22ce390a50b4b25b59dc3aa8d341c820e0028339950",
-      "paths": 1,
-      "svgPathsSha256": "841bdb5b66bbe22cc19498bf13ccd96d27880359e5778a12e8f1491c61543867"
-    },
-    "HunyuanMono": {
-      "file": "package/es/Hunyuan/components/Mono.js",
-      "sha256": "147aaacc8923dc2b867e1eeeaeb659728ecf7283f73145934d94d458f512cc3d",
-      "paths": 1,
-      "svgPathsSha256": "47918685199cb283a18833766832dede24d3737dac9bcc82182dfba5235d64c6"
+    "HunyuanColor": {
+      "file": "package/es/Hunyuan/components/Color.js",
+      "sha256": "9924a75a5be1cf16f26ebc49c4bee854793505a2899817a6db4eaaea200b9e82",
+      "paths": 4,
+      "svgPathsSha256": "df589d8ce5b96ea0280c991af2bf763f7ccb17306f3accb3fa43643834f377a1",
+      "colors": [
+        "#0055E9",
+        "#00BCFF",
+        "#A8DFF5",
+        "#ECECEE"
+      ]
     }
   }
 }

@@ -3,17 +3,17 @@
 import { Sparkles } from "lucide-react";
 import { resolveModelBrand, type ModelBrand } from "@/lib/model-brand";
 import {
-  OpenAIMono, GoogleColor, GeminiMono, NanoBananaColor, ClaudeColor, DeepSeekColor,
-  QwenColor, GrokMono, KimiMono, DoubaoColor, JimengColor, MinimaxMono, MistralMono,
-  ZhipuMono, MetaMono, WenxinMono, HunyuanMono,
+  OpenAIMono, GoogleColor, GeminiColor, NanoBananaColor, ClaudeColor, DeepSeekColor,
+  QwenColor, GrokMono, KimiColor, DoubaoColor, JimengColor, MinimaxColor, MistralColor,
+  ZhipuColor, MetaColor, WenxinColor, HunyuanColor,
 } from "./model-brand-icons";
 
 /** Exhaustive local registry. Unknown identities keep the neutral icon. */
 const BRAND_ICONS: Record<ModelBrand, (props: { size: number }) => JSX.Element> = {
-  openai: OpenAIMono, google: GoogleColor, gemini: GeminiMono, "nano-banana": NanoBananaColor,
-  claude: ClaudeColor, deepseek: DeepSeekColor, qwen: QwenColor, grok: GrokMono, kimi: KimiMono,
-  doubao: DoubaoColor, jimeng: JimengColor, minimax: MinimaxMono, mistral: MistralMono,
-  zhipu: ZhipuMono, meta: MetaMono, wenxin: WenxinMono, hunyuan: HunyuanMono,
+  openai: OpenAIMono, google: GoogleColor, gemini: GeminiColor, "nano-banana": NanoBananaColor,
+  claude: ClaudeColor, deepseek: DeepSeekColor, qwen: QwenColor, grok: GrokMono, kimi: KimiColor,
+  doubao: DoubaoColor, jimeng: JimengColor, minimax: MinimaxColor, mistral: MistralColor,
+  zhipu: ZhipuColor, meta: MetaColor, wenxin: WenxinColor, hunyuan: HunyuanColor,
 };
 
 export function ModelIcon({ modelId, modelName, brand, size = 16 }: {
