@@ -21,7 +21,7 @@ if (process.argv.includes("--baseline")) {
   assert.match(control, /<ImageQualitySelect/);
   assert.match(control, /onChange=\{setQuality\}/);
   const menu = read("src/components/ui/image-quality-select.tsx");
-  for (const token of ['role="combobox"', 'role="listbox"', 'role="option"', "aria-disabled", "aria-activedescendant", "canvas-ui-surface-solid", "canvas-ui-control", "canvas-ui-light", "canvas-ui-dark", "createPortal", "ArrowDown", "ArrowUp", '"Home"', '"End"', '"Escape"', '"Tab"', "onBlur={close}", "onPointerDown", "option.disabled || disabled", "data-canvas-hotkeys-blocked", "scrollIntoView", "window.removeEventListener"]) assert.ok(menu.includes(token), token);
+  for (const token of ['role="combobox"', 'role="listbox"', 'role="option"', "aria-disabled", "aria-activedescendant", "canvas-ui-surface-solid", "canvas-ui-control", "canvas-ui-light", "canvas-ui-dark", "createPortal", "ArrowDown", "ArrowUp", '"Home"', '"End"', '"Escape"', '"Tab"', "onBlur={close}", "onPointerDown", "option.disabled || disabled", "data-canvas-hotkeys-blocked", "list.scrollTop", "window.removeEventListener"]) assert.ok(menu.includes(token), token);
   const options = [{ disabled: true }, {}, { disabled: true }, {}, { disabled: true }];
   assert.equal(nextQualityOption(options, -1, 1), 1);
   assert.equal(nextQualityOption(options, 1, 1), 3);

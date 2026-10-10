@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import {toolImageError} from "@/lib/tool-ui";
+import {useToast} from "./toast";
 import { UploadCloud, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { cn } from "@/lib/utils";
@@ -14,6 +16,7 @@ export function DropZone({
   hint,
   compact,
   className,
+  disabled = false,
 }: {
   onFiles: (files: File[]) => void;
   accept?: string;
@@ -22,20 +25,28 @@ export function DropZone({
   hint?: React.ReactNode;
   compact?: boolean;
   className?: string;
+  disabled?: boolean;
 }) {
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
+  const {toast}=useToast();
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [drag, setDrag] = React.useState(false);
   const pick = (files: FileList | null) => {
-    if (files && files.length) onFiles(Array.from(files));
+    if (disabled || !files?.length) return;
+    const selected=Array.from(files).slice(0,multiple?undefined:1);
+    const valid=selected.filter(file=>!toolImageError(file,Number.MAX_SAFE_INTEGER,accept));
+    if(valid.length!==selected.length)toast(L("请选择支持的文件格式","Choose a supported file"),"error");
+    if(valid.length)onFiles(valid);
   };
   return (
     <div
-      onClick={() => inputRef.current?.click()}
+      role="button" tabIndex={disabled?-1:0} aria-disabled={disabled} aria-label={title??L("上传图片","Upload image")}
+      onKeyDown={e=>{if(!disabled&&(e.key==="Enter"||e.key===" ")){e.preventDefault();inputRef.current?.click();}}}
+      onClick={() => {if(!disabled)inputRef.current?.click();}}
       onDragOver={(e) => {
         e.preventDefault();
-        setDrag(true);
+        if(!disabled)setDrag(true);
       }}
       onDragLeave={() => setDrag(false)}
       onDrop={(e) => {
@@ -58,6 +69,7 @@ export function DropZone({
         type="file"
         accept={accept}
         multiple={multiple}
+        disabled={disabled}
         className="hidden"
         onChange={(e) => {
           pick(e.target.files);

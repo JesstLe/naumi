@@ -57,7 +57,7 @@ export function ToolCard({ tool }: { tool: ToolMeta }) {
     );
   }
   return (
-    <Link href={tool.href} prefetch className={cls}>
+    <Link href={tool.href} prefetch={false} className={cls}>
       {inner}
     </Link>
   );
@@ -98,7 +98,7 @@ export function CreateHubPage() {
         <div>
           <h1 className="text-[26px] font-bold text-c-text">{L("创作", "Create")}</h1>
           <p className="mt-1 text-[13.5px] text-c-text3">
-            {L(`${TOOL_COUNT_LABEL}，覆盖电商出图全流程`, "24 AI tools for the full e-commerce workflow")}
+            {L(TOOL_COUNT_LABEL, `${TOOLS.length} creative tools`)}
           </p>
         </div>
         <div className="relative w-full sm:w-[300px]">
@@ -106,6 +106,7 @@ export function CreateHubPage() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
+            aria-label={L("搜索工具", "Search tools")}
             placeholder={L("搜索工具…", "Search tools…")}
             className="h-10 w-full rounded-[10px] border border-c-border2 bg-c-card pl-9 pr-3 text-[13px] text-c-text placeholder:text-c-text4 focus-visible:border-acc focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(79,70,229,.12)]"
           />
@@ -124,6 +125,7 @@ export function CreateHubPage() {
             <button
               key={c}
               type="button"
+              aria-pressed={active}
               onClick={() => setFilter(c)}
               className={cn(
                 "rounded-full px-3.5 py-2 text-[12.5px] font-medium transition-colors",

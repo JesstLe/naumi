@@ -24,6 +24,7 @@ export function ImageQualitySelect({ value, options, onChange, disabled, compact
   const panel = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<ReturnType<typeof qualityMenuPosition> | null>(null);
   const [theme, setTheme] = useState("canvas-ui-light");
+  const [lightTool,setLightTool]=useState(false);
   const [active, setActive] = useState(-1);
   const open = menu !== null && !disabled;
   const selected = options.find(option => option.value === value);
@@ -31,7 +32,8 @@ export function ImageQualitySelect({ value, options, onChange, disabled, compact
 
   function close() { setMenu(null); }
   function show(direction: 1 | -1 = 1) {
-    if (disabled || !button.current) return;
+    if (disabled || !button.current || !options.length) return;
+    setLightTool(!!button.current.closest('.tool-page'));
     const root = button.current.closest(".canvas-ui-light, .canvas-ui-dark");
     setTheme(root?.classList.contains("canvas-ui-dark") ? "canvas-ui-dark" : "canvas-ui-light");
     setMenu(qualityMenuPosition(button.current.getBoundingClientRect(), window.innerWidth, window.innerHeight, options.length));
@@ -51,7 +53,9 @@ export function ImageQualitySelect({ value, options, onChange, disabled, compact
     if (!open) return;
     const scroll = (event: Event) => {
       if (event.target instanceof Node && panel.current?.contains(event.target)) return;
-      setMenu(null);
+      const rect = button.current?.getBoundingClientRect();
+      if (!rect || rect.bottom <= 0 || rect.top >= window.innerHeight) { setMenu(null); return; }
+      setMenu(qualityMenuPosition(rect, window.innerWidth, window.innerHeight, options.length));
     };
     const resize = () => setMenu(null);
     window.addEventListener("scroll", scroll, true);
@@ -60,10 +64,13 @@ export function ImageQualitySelect({ value, options, onChange, disabled, compact
       window.removeEventListener("scroll", scroll, true);
       window.removeEventListener("resize", resize);
     };
-  }, [open]);
+  }, [open, options.length]);
 
   useEffect(() => {
-    if (open && active >= 0) panel.current?.children[active]?.scrollIntoView({ block: "nearest" });
+    const list=panel.current,item=list?.children[active] as HTMLElement|undefined;
+    if(!open||!list||!item)return;
+    if(item.offsetTop<list.scrollTop)list.scrollTop=item.offsetTop;
+    else if(item.offsetTop+item.offsetHeight>list.scrollTop+list.clientHeight)list.scrollTop=item.offsetTop+item.offsetHeight-list.clientHeight;
   }, [active, open]);
 
   useEffect(() => { if (disabled) setMenu(null); }, [disabled]);
@@ -93,7 +100,7 @@ export function ImageQualitySelect({ value, options, onChange, disabled, compact
       <ChevronDown className={cn("h-3 w-3 shrink-0 opacity-60 transition-transform", open && "rotate-180")} />
     </button>
     {open && menu && createPortal(
-      <div data-canvas-hotkeys-blocked="true" className={cn("fixed inset-0 z-[300]", useCanvasStyle && theme)}
+      <div data-canvas-hotkeys-blocked="true" className={cn("fixed inset-0 z-[300]", useCanvasStyle && theme,lightTool&&"tool-popover")}
         onPointerDown={event => { event.stopPropagation(); close(); }}>
         <div ref={panel} id={id} role="listbox" aria-label={label}
           data-testid="image-quality-menu" style={menu}

@@ -1,4 +1,5 @@
 "use client";
+import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -80,12 +81,13 @@ export function InpaintClient() {
   }, []);
 
   function loadFile(f: File) {
+    if (loading) return;
     if (!user) {
       openAuth();
       return;
     }
-    if (f.size > MAX_UPLOAD) {
-      setError(L("图片需小于 12MB", "Image must be < 12MB"));
+    if (toolImageError(f, MAX_UPLOAD)) {
+      setError(L("请选择12MB以内的PNG / JPG / WebP图片", "Choose a PNG / JPG / WebP under 12MB"));
       return;
     }
     setError(null);
@@ -134,7 +136,7 @@ export function InpaintClient() {
   }
 
   function onDown(e: React.PointerEvent) {
-    if (!imgUrl) return;
+    if (!imgUrl || loading) return;
     drawing.current = true;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     paint(e);
@@ -148,6 +150,7 @@ export function InpaintClient() {
   }
 
   function clearMask() {
+    if (loading) return;
     const c = canvasRef.current;
     if (!c) return;
     c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
@@ -156,6 +159,7 @@ export function InpaintClient() {
 
   // 以结果图再改图:把成品图载入成输入原图,清空涂抹与结果,重新涂抹再生成(不自动扣分)。
   async function regenFrom(url: string) {
+    if (loading) return;
     if (!user) {
       openAuth();
       return;
@@ -167,7 +171,7 @@ export function InpaintClient() {
         blob = await (await fetch(url)).blob();
       } else {
         const res = await fetch(
-          `/api/download?u=${encodeURIComponent(url)}&n=input.png`
+          `/api/download?u=${encodeURIComponent(url)}&n=input.png`, {headers:await authHeader()}
         );
         if (!res.ok) throw new Error();
         blob = await res.blob();
@@ -175,6 +179,7 @@ export function InpaintClient() {
       const f = new File([blob], "input.png", {
         type: blob.type || "image/png",
       });
+      if(toolImageError(f,MAX_UPLOAD))throw new Error("invalid image");
       // 替换输入原图 + preview,释放旧 objectURL
       if (imgUrl) URL.revokeObjectURL(imgUrl);
       const next = URL.createObjectURL(f);
@@ -216,6 +221,7 @@ export function InpaintClient() {
   }
 
   async function generate() {
+    if (loading) return;
     if (!user) {
       openAuth();
       return;

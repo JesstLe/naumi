@@ -1,4 +1,5 @@
 "use client";
+import {SelectMenu} from "@/components/ui/select-menu";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -236,7 +237,7 @@ export function CompetitorClient() {
     </details>}
     <div className="cmp-layout">
       <aside className="cmp-library"><div className="cmp-panel-heading">参考素材</div>
-        <select aria-label="文件夹筛选" value={folder} onChange={e => setFolder(e.target.value)}><option value="all">全部文件夹</option>{folders.map(f => <option key={f}>{f}</option>)}</select>
+        <SelectMenu label="文件夹筛选" value={folder} onChange={setFolder} className="w-full" options={[{value:"all",label:"全部文件夹"},...folders.map(value=>({value,label:value}))]} />
         <div className="cmp-library-tools"><button disabled={!visible.length} onClick={() => setSelected(visible.every(i => selected.includes(i.id)) ? [] : visible.map(i => i.id))}>全选 / 清空</button><button disabled={!selected.length || batchBusy} onClick={() => void runBatch("analyze")}>批量反推 ({selected.length})</button><button disabled={!selected.length || batchBusy} onClick={() => void runBatch("replicate")}>批量生成</button><button disabled={!selected.length} onClick={exportPrompts}>导出提示词</button></div>
         <div className="cmp-file-list">{visible.map(i => <div key={i.id} className={`cmp-file ${activeId===i.id ? "active" : ""}`}>
           <input type="checkbox" aria-label={`选择 ${i.path}`} checked={selected.includes(i.id)} onChange={e => setSelected(all => e.target.checked ? [...all,i.id] : all.filter(id=>id!==i.id))}/>
@@ -264,15 +265,15 @@ export function CompetitorClient() {
 <div className="cmp-panel-heading"><span>提示词</span><button disabled={busy} onClick={()=>void action("analyze")}><ScanLine size={15}/>反推提示词</button></div>
 <TextModelSelect compact />
           <textarea aria-label="反推提示词" rows={7} maxLength={8000} value={item.prompt} disabled={busy} placeholder="反推参考图，或直接填写生成要求" onChange={e=>change({prompt:e.target.value})}/>
-          <div className="cmp-field"><label htmlFor="cmp-degree">参考方式</label><select id="cmp-degree" value={degree} onChange={e=>setDegree(e.target.value)}><option value="layout">构图与排版</option><option value="style">仅参考风格</option></select></div>
-          <div className="cmp-field"><label htmlFor="cmp-product">替换为我的产品</label><select id="cmp-product" value={productId} onChange={e=>setProductId(e.target.value)}><option value="">不替换产品</option>{items.map(i=><option value={i.id} key={i.id}>{i.path}</option>)}</select><button disabled={uploading} onClick={()=>productInput.current?.click()}>上传产品图</button></div>
+          <div className="cmp-field"><label htmlFor="cmp-degree">参考方式</label><SelectMenu id="cmp-degree" label="参考方式" value={degree} onChange={setDegree} className="w-full" disabled={busy} options={[{value:"layout",label:"构图与排版"},{value:"style",label:"仅参考风格"}]} /></div>
+          <div className="cmp-field"><label htmlFor="cmp-product">替换为我的产品</label><SelectMenu id="cmp-product" label="替换为我的产品" value={productId} onChange={setProductId} className="w-full" disabled={busy} options={[{value:"",label:"不替换产品"},...items.map(i=>({value:i.id,label:i.path}))]} /><button disabled={uploading} onClick={()=>productInput.current?.click()}>上传产品图</button></div>
           <button className="cmp-primary cmp-full" disabled={busy||!item.prompt.trim()} onClick={()=>void action("replicate")}>{running[item.id]==="replicate"?"生成中…":"生成类似图片 / 重做"}</button>
           <div className="cmp-section-title">元素 / 选区 <span>{item.regions.length}/20</span></div>
           <div className="cmp-regions-list">{item.regions.map((r,i)=><div key={r.id} className={r.id===regionId?"selected":""}><input aria-label={`启用 ${r.label}`} type="checkbox" checked={r.enabled} disabled={busy} onChange={e=>change({regions:item.regions.map(a=>a.id===r.id?{...a,enabled:e.target.checked}:a)})}/><button onClick={()=>{setRegionId(r.id);setDrawing(false);}}>{i+1}. {r.label}</button><span>{REGION_LABELS[r.kind]}</span></div>)}</div>
           {!item.regions.length&&<p className="cmp-empty-small">点击“框选元素”，拖动创建选区；或反推提示词获取建议选区。</p>}
           {current && <fieldset className="cmp-region-form" disabled={busy}>
             <label>元素名称<input aria-label="元素名称" value={current.label} onChange={e=>regionChange({label:e.target.value})}/></label>
-            <label>修改类型<select aria-label="修改类型" value={current.kind} onChange={e=>regionChange({kind:e.target.value as CompetitorRegion["kind"]})}>{Object.entries(REGION_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
+            <label>修改类型<SelectMenu label="修改类型" value={current.kind} onChange={kind=>regionChange({kind:kind as CompetitorRegion["kind"]})} className="w-full" disabled={busy} options={Object.entries(REGION_LABELS).map(([value,label])=>({value,label}))} /></label>
             {current.kind==="color"&&<label>目标颜色<input type="color" aria-label="目标颜色" value={current.color} onChange={e=>regionChange({color:e.target.value})}/></label>}
             <label>修改要求<textarea aria-label="选区修改要求" rows={3} maxLength={1500} value={current.instruction} onChange={e=>regionChange({instruction:e.target.value})} placeholder="例如：改成米白色，保留纹理与阴影"/></label>
             <div className="cmp-coordinates">{(["x","y","width","height"] as const).map(k=><label key={k}>{({x:"左",y:"上",width:"宽",height:"高"})[k]} %<input type="number" aria-label={`选区${k}`} min={(k === "width" || k === "height") ? 0.2 : 0} max={100} step={.1} value={Number((current[k]*100).toFixed(1))} onChange={e=>{

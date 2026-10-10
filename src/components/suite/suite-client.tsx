@@ -1,4 +1,6 @@
 "use client";
+import {toolImageError} from "@/lib/tool-ui";
+import {SelectMenu} from "@/components/ui/select-menu";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -277,6 +279,8 @@ export function SuiteClient() {
   const [recView, setRecView] = useState("");
   const [recZip, setRecZip] = useState(false);
   const [recPage, setRecPage] = useState(0);
+  const [recordError, setRecordError] = useState(false);
+  const [recordRetry, setRecordRetry] = useState(0);
   // 点记录 → 中间载入该张大图 + 提示词;null=显示当前套图结果。
   const [shownRec, setShownRec] = useState<{
     id: string;
@@ -336,20 +340,20 @@ export function SuiteClient() {
     });
   }
 
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      previews.forEach((p) => URL.revokeObjectURL(p));
-    };
-  }, [previews]);
+  const previewUrls = useRef<string[]>([]);
+  previewUrls.current = previews;
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    previewUrls.current.forEach(url => URL.revokeObjectURL(url));
+  }, []);
 
   function pickFiles(list: FileList | null) {
-    if (!list) return;
+    if (!list || loading) return;
     const next: File[] = [...files];
     const nextPrev: string[] = [...previews];
     for (const f of Array.from(list)) {
       if (next.length >= maxProduct) break;
-      if (f.size > MAX_UPLOAD) continue;
+      if (toolImageError(f, MAX_UPLOAD)) { setError(L("请选择12MB以内的PNG / JPG / WebP图片", "Choose a PNG / JPG / WebP under 12MB")); continue; }
       next.push(f);
       nextPrev.push(URL.createObjectURL(f));
     }
@@ -398,6 +402,7 @@ export function SuiteClient() {
   }
 
   async function generate() {
+    if (loading) return;
     setError(null);
     // 未登录:直接弹登录/注册窗(优先于上传校验),登录后再点生成。
     if (!user) {
@@ -466,7 +471,7 @@ export function SuiteClient() {
     try {
       const res = await fetch("/api/suite/download", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeader()) },
         body: JSON.stringify({ items }),
       });
       if (!res.ok) throw new Error("zip failed");
@@ -507,7 +512,9 @@ export function SuiteClient() {
           `/api/account?email=${encodeURIComponent(user.email)}`,
           { headers: await authHeader() }
         );
-        if (!r.ok || cancelled) return;
+        if (cancelled) return;
+        if (!r.ok) throw new Error("history");
+        setRecordError(false);
         const d = await r.json();
         const arts = (d.artworks ?? []) as {
           id: string;
@@ -534,16 +541,17 @@ export function SuiteClient() {
               prompt: a.prompt,
             }))
         );
+        setRecSel(new Set());
         setRecPage(0);
         setShownRec(null);
       } catch {
-        if (!cancelled) setRecItems([]);
+        if (!cancelled) { setRecItems([]); setRecordError(true); }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.email, finished]);
+  }, [user?.email, finished, recordRetry]);
 
   function toggleRecSel(id: string) {
     setRecSel((s) => {
@@ -563,7 +571,7 @@ export function SuiteClient() {
     try {
       const res = await fetch("/api/suite/download", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeader()) },
         body: JSON.stringify({ items }),
       });
       if (!res.ok) throw new Error("zip failed");
@@ -600,9 +608,9 @@ export function SuiteClient() {
             <span className="font-semibold text-c-text">{t("suite.title")}</span>
           </nav>
         </div>
-    <div className="grid gap-5 lg:h-[890px] lg:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_280px]">
+    <div className="grid gap-5 tool-layout-grid lg:grid-cols-[320px_minmax(0,1fr)] tool-layout-three xl:grid-cols-[320px_minmax(0,1fr)_280px]">
       {/* 左:参数面板 */}
-      <div className="h-fit space-y-5 rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
+      <fieldset disabled={loading} className="h-fit space-y-5 rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
         {/* 工具头:图标 + 名称 + 描述(与其它工具页一致) */}
         <div className="flex items-center gap-3">
           <span className="grid h-11 w-11 flex-none place-items-center rounded-[10px]" style={{ background: "rgba(79,70,229,.12)", color: "#4F46E5" }}>
@@ -845,32 +853,8 @@ export function SuiteClient() {
                     <span className="w-5 text-center text-[11px] font-semibold text-c-text3">
                       {index + 1}
                     </span>
-                    <select
-                      value={shot.role}
-                      onChange={(event) =>
-                        updateCustomShot(shot.id, {
-                          role: event.target.value as CustomShot["role"],
-                        })
-                      }
-                      aria-label={L(`第 ${index + 1} 张类型`, `Shot ${index + 1} role`)}
-                      className="h-8 border border-c-border bg-white px-2 text-[12px] outline-none focus:border-primary"
-                    >
-                      <option value="main">{L("主图", "Hero")}</option>
-                      <option value="sub">{L("副图", "Sub")}</option>
-                      <option value="detail">{L("详情", "Detail")}</option>
-                    </select>
-                    <select
-                      value={shot.ratio}
-                      onChange={(event) =>
-                        updateCustomShot(shot.id, { ratio: event.target.value })
-                      }
-                      aria-label={L(`第 ${index + 1} 张画幅`, `Shot ${index + 1} ratio`)}
-                      className="h-8 border border-c-border bg-white px-2 text-[12px] outline-none focus:border-primary"
-                    >
-                      {["1:1", "3:4", "4:3", "16:9", "9:16"].map((ratio) => (
-                        <option key={ratio} value={ratio}>{ratio}</option>
-                      ))}
-                    </select>
+                    <SelectMenu label={L(`第 ${index+1} 张类型`,`Shot ${index+1} role`)} value={shot.role} onChange={role=>updateCustomShot(shot.id,{role:role as CustomShot["role"]})} size="sm" options={[{value:"main",label:L("主图","Hero")},{value:"sub",label:L("副图","Sub")},{value:"detail",label:L("详情","Detail")}]} />
+                    <SelectMenu label={L(`第 ${index+1} 张画幅`,`Shot ${index+1} ratio`)} value={shot.ratio} onChange={ratio=>updateCustomShot(shot.id,{ratio})} size="sm" options={["1:1","3:4","4:3","16:9","9:16"].map(value=>({value,label:value}))} />
                     <div className="ml-auto flex items-center">
                       <button
                         type="button"
@@ -1003,7 +987,7 @@ export function SuiteClient() {
         <p className="text-xs leading-relaxed text-muted-foreground">
           {t("suite.note")}
         </p>
-      </div>
+      </fieldset>
 
       {/* 中:结果区 */}
       <div className="flex min-h-[520px] flex-col rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
@@ -1141,7 +1125,8 @@ export function SuiteClient() {
       </div>
 
       {/* 右:本工具记录(套图历史) */}
-      <aside className="hidden rounded-card border border-c-border bg-c-card p-4 shadow-card xl:flex xl:h-full xl:flex-col">
+      <aside className="tool-history rounded-card border border-c-border bg-c-card p-4 shadow-card xl:h-full">
+        {recordError && <div role="alert" className="mb-3 flex items-center justify-between gap-2 text-xs text-c-danger">{locale==="en"?"History unavailable":"记录加载失败"}<button type="button" onClick={()=>setRecordRetry(v=>v+1)} className="text-acc">{locale==="en"?"Retry":"重试"}</button></div>}
         <div className="mb-3 flex min-h-[28px] items-center gap-1.5">
           <Clock className="h-4 w-4 text-c-text3" />
           <span className="text-[13px] font-semibold text-c-text">本工具记录</span>
@@ -1180,7 +1165,6 @@ export function SuiteClient() {
                   return (
                     <div
                       key={r.id}
-                      onClick={() => setShownRec(r)}
                       title="点击查看大图 / 详情"
                       className={cn(
                         "group relative cursor-pointer overflow-hidden rounded-lg border-2 transition-all",
@@ -1191,15 +1175,17 @@ export function SuiteClient() {
                             : "border-c-border hover:border-c-border2"
                       )}
                     >
-                      <Media
-                        src={cdnUrl(r.url)}
-                        alt=""
-                        gradient={r.gradient}
-                        thumbWidth={220}
-                        ratio="aspect-square"
-                        className="rounded-none border-0 transition-transform group-hover:scale-105"
-                      />
-                      <span
+                      <button type="button" onClick={()=>setShownRec(r)} aria-label={locale === "en" ? "View history image" : "查看历史图片"} className="block w-full text-left">
+                        <Media
+                          src={cdnUrl(r.url)}
+                          alt=""
+                          gradient={r.gradient}
+                          thumbWidth={220}
+                          ratio="aspect-square"
+                          className="rounded-none border-0 transition-transform group-hover:scale-105"
+                        />
+                      </button>
+                      <button type="button" aria-label={locale === "en" ? "Select history image" : "选择历史图片"}
                         role="checkbox"
                         aria-checked={sel}
                         onClick={(e) => {
@@ -1214,7 +1200,7 @@ export function SuiteClient() {
                         )}
                       >
                         <Check className="h-3 w-3" strokeWidth={3} />
-                      </span>
+                      </button>
                     </div>
                   );
                 })}
