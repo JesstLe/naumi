@@ -4,7 +4,7 @@ import {mkdir,writeFile,readFile} from "node:fs/promises";
 import {createModelFixture} from "./model-config-fixture";
 
 async function main(){
- let f:any,email="",db:any,cookie="",digest="",childWrites=0,modelCalls=0,analysis=false;
+ let f:any,email="",db:any,cookie="",digest="",childWrites=0,modelCalls=0,analysis=false,holdModel=false;
  const calls:any[]=[], png=await readFile("public/demos/suite-demo/suppl-src.png");
  const fixtureMedia="output/canvas-agent-execution/media";await mkdir(fixtureMedia,{recursive:true});await writeFile(fixtureMedia+"/anchor.png",png);
  Object.assign(process.env,{STORAGE_DRIVER:"local",MEDIA_DIR:fixtureMedia,NAUMI_MULTI_USER:"1",OPENAI_API_KEY:"fixture",AGENT_API_KEY:"fixture"});
@@ -29,7 +29,7 @@ async function main(){
   if(req.url?.endsWith("/chat/completions")){
    modelCalls++;calls.push(body);assert.equal(body.model,"wire-text");assert.ok(body.tools.some((tool:any)=>tool.function.name==="recolor_product"));assert.ok(JSON.stringify(body.messages).includes("image_url"));assert.ok(!JSON.stringify(body.messages).includes("本次任务的输出必须是纯文字"));
    const toolDone=body.messages.some((message:any)=>message.role==="tool"),frame=(delta:any,finish_reason:any=null)=>"data: "+JSON.stringify({id:"fixture-completion",object:"chat.completion.chunk",created:1,model:body.model,choices:[{index:0,delta,finish_reason}]})+"\n\n";
-   res.setHeader("content-type","text/event-stream");res.write(frame({role:"assistant"}));
+   res.setHeader("content-type","text/event-stream");res.write(frame({role:"assistant"}));if(holdModel){res.on("close",()=>undefined);return;}
    if(analysis||toolDone){res.write(frame({content:analysis?"图片以植物绿色为主。":"已完成换色，结果已放回画布。"}));res.write(frame({},"stop"));}
    else{res.write(frame({tool_calls:[{index:0,id:"call-recolor",type:"function",function:{name:"recolor_product",arguments:JSON.stringify({image_url:f.origin+"/media/anchor.png",color:"#0000FF",strength:100})}}]}));res.write(frame({},"tool_calls"));}
    return res.end("data: [DONE]\n\n");
@@ -71,6 +71,11 @@ async function main(){
   const crossNode=new Request(f.origin+"/api/canvas/assistant?anchorId=not-owned&id="+savedId,{headers:{cookie}});assert.equal((await lifecycle.GET(crossNode)).status,404);
   assert.equal((await lifecycle.DELETE(historyRequest("DELETE",savedId))).status,200);assert.equal((await lifecycle.GET(historyRequest("GET",savedId))).status,404);assert.equal((await db.listArtworksByIds(email,["result-one"])).length,1);
   analysis=true;const discussion={...task,sessionId:randomUUID(),turnId:randomUUID(),messages:[{role:"user",content:"只分析图片，不要生图"}]};assert.match(await(await handler(request(discussion,randomUUID()))).text(),/图片以植物绿色为主/);assert.equal(childWrites,1);
+  holdModel=true;const abortController=new AbortController(),cancelTask={...discussion,sessionId:randomUUID(),turnId:randomUUID()},cancelRequest=new Request(request(cancelTask,randomUUID()),{signal:abortController.signal});
+  const cancelResponse=await handler(cancelRequest),cancelReader=cancelResponse.body!.getReader(),openChunk=await cancelReader.read(),cancelId=JSON.parse(new TextDecoder().decode(openChunk.value).match(/data: ([^\n]+)/)![1]).sessionId;
+  assert.equal((await(await lifecycle.GET(historyRequest("GET",cancelId))).json()).session.running,true);assert.equal((await lifecycle.DELETE(historyRequest("DELETE",cancelId))).status,409);
+  abortController.abort();while(!(await cancelReader.read()).done){};for(let i=0;i<30&&getSession(email,cancelId)?.canvasExecuting;i++)await new Promise(r=>setTimeout(r,100));
+  const canceled=await(await lifecycle.GET(historyRequest("GET",cancelId))).json();assert.equal(canceled.session.running,false);assert.equal(canceled.session.status,"failed");assert.match(canceled.session.error,/停止/);assert.equal(childWrites,1);holdModel=false;
   const forbidden=await handler(request({...task,sessionId:randomUUID(),anchorId:"not-owned"},randomUUID()));assert.equal(forbidden.status,404);
   const imageAsText=new Request(f.origin+"/api/canvas/assistant",{method:"POST",headers:{cookie,"content-type":"application/json","x-naumi-feature-model":"image-a"},body:JSON.stringify(task)});assert.ok([400,409].includes((await handler(imageAsText)).status));
   const charges=await db.getPool().query("SELECT quote,charged_credits FROM app_billing_operations WHERE email=$1 AND feature='canvas.image'",[email]);assert.equal(charges.rows.length,1);assert.equal(Number(charges.rows[0].charged_credits),4);
@@ -78,7 +83,7 @@ async function main(){
   const canvasSession={...session,turnId:"turn-one"};
   const expensive=structuredClone(config);expensive.thresholds.agentConfirmCredits=3;await billing.config.publish({id:randomUUID(),expectedVersion:price.version,config:expensive,actor:"fixture",reason:"confirmation fixture"});assert.equal((await agentBillingPrecheck(session,"recolor_product",{color:"#0000FF"},randomUUID()))?.block,true);
   assert.equal((await agentBillingPrecheck(canvasSession,"recolor_product",{color:"#0000FF",confirm:true},randomUUID()))?.block,true);assert.equal((await agentBillingPrecheck(canvasSession,"recolor_product",{color:"#0000FF",confirm:true},randomUUID()))?.block,true);canvasSession.turnId="turn-two";assert.equal(await agentBillingPrecheck(canvasSession,"recolor_product",{color:"#0000FF",confirm:true},randomUUID()),undefined);
-  console.log("CANVAS_AGENT_EXECUTION=PASS REAL_RUNTIME_TOOLS=PASS OWNED_REFERENCES=PASS CANVAS_MODEL_SCOPE=PASS OUTPUT_PARENT_PROJECT_POSITION=PASS REPLAY_NO_DUPLICATE=PASS ANALYSIS_NO_IMAGE=PASS MODALITY_GUARD=PASS BILLING_ONCE_4=PASS CONFIRMATION=PASS PERSISTED_HISTORY_RESTART_RESUME_RENAME_DELETE=PASS ACTIVE_HISTORY_GUARD=PASS SAME_TURN_SELF_CONFIRM_BLOCKED=PASS PAID_UPSTREAM_CALLS=0");
+  console.log("CANVAS_AGENT_EXECUTION=PASS REAL_RUNTIME_TOOLS=PASS OWNED_REFERENCES=PASS CANVAS_MODEL_SCOPE=PASS OUTPUT_PARENT_PROJECT_POSITION=PASS REPLAY_NO_DUPLICATE=PASS ANALYSIS_NO_IMAGE=PASS MODALITY_GUARD=PASS BILLING_ONCE_4=PASS CONFIRMATION=PASS PERSISTED_HISTORY_RESTART_RESUME_RENAME_DELETE=PASS CANCEL_PERSISTENCE=PASS ACTIVE_HISTORY_GUARD=PASS SAME_TURN_SELF_CONFIRM_BLOCKED=PASS PAID_UPSTREAM_CALLS=0");
  }finally{await db.getPool().end();await f.cleanup();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
