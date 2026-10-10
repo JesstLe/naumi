@@ -68,6 +68,7 @@ import {
   RotateCw,
   Scissors,
   Sun,
+  Moon,
   Type,
   Rotate3d,
   Wand2,
@@ -9509,8 +9510,6 @@ export function CanvasClient() {
                     iconOnly dataTool="more" menuTestId="canvas-more-tools-menu"
                     triggerClassName="canvas-ui-action flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors sm:h-9 sm:w-9"
                     items={[
-                      { id: "theme", icon: Sun, label: t(lightCanvas ? "canvas.toolbar.darkCanvas" : "canvas.toolbar.lightCanvas"),
-                        onSelect: () => setLightCanvas(v => { const next = !v; try { localStorage.setItem("nv:canvas:bg", next ? "light" : "dark"); } catch { /* Keep theme switching even without local storage. */ } return next; }) },
                       { id: "help", icon: Keyboard, label: t("canvas.shortcuts"), onSelect: () => setHelpOpen(true) },
                     ]}
                   />
@@ -9746,7 +9745,7 @@ export function CanvasClient() {
             </div>
           )}
 
-          {/* 左下角工具(原型 cz-bl):整理画布 / 小地图 / 网格吸附 / 适应视图 / 缩放% */}
+          {/* 左下角视图工具:整理画布 / 小地图 / 网格吸附 / 适应视图 / 画布颜色 / 缩放% */}
           {!browsing && (active || creatingNew) && (
             <div
               data-testid="canvas-view-toolbar"
@@ -9802,6 +9801,17 @@ export function CanvasClient() {
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
               >
                 <Maximize className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                data-testid="canvas-theme-toggle"
+                aria-label={t(lightCanvas ? "canvas.toolbar.darkCanvas" : "canvas.toolbar.lightCanvas")}
+                title={t(lightCanvas ? "canvas.toolbar.darkCanvas" : "canvas.toolbar.lightCanvas")}
+                aria-pressed={!lightCanvas}
+                onClick={() => setLightCanvas(v => { const next = !v; try { localStorage.setItem("nv:canvas:bg", next ? "light" : "dark"); } catch { /* Keep theme switching even without local storage. */ } return next; })}
+                className="canvas-ui-action flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315fc8]"
+              >
+                {lightCanvas ? <Moon className="h-4 w-4" aria-hidden="true" /> : <Sun className="h-4 w-4" aria-hidden="true" />}
               </button>
               <span className="mx-0.5 h-5 w-px bg-border" />
               {/* 缩放 % → 点击弹出缩放菜单(放大/缩小/适合屏幕/缩放至…) */}
