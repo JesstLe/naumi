@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEventHandler } from "react";
 import { loadOrbEngine, type OrbEngine } from "./orb-engine";
 import { ORB_STATES, ORB_THEMES, gazeFromPoint, orbCanAnimate, type OrbState, type OrbTheme } from "./orb-model";
 import styles from "./orb.module.css";
@@ -13,10 +13,16 @@ export interface NaumiOrbProps {
   thumbnail?: boolean;
   label?: string;
   className?: string;
+  onActivate?: () => void;
+  onKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
+  actionLabel?: string;
+  expanded?: boolean;
+  controls?: string;
 }
 
 export function NaumiOrb({ state = "idle", theme = "naumi", followPointer = true,
-  motion = true, thumbnail = false, label = "Naumi 小球", className = "" }: NaumiOrbProps) {
+  motion = true, thumbnail = false, label = "Naumi 小球", className = "", onActivate,
+  onKeyDown, actionLabel, expanded, controls }: NaumiOrbProps) {
   const host = useRef<HTMLDivElement>(null);
   const engine = useRef<OrbEngine>();
   const active = useRef(false);
@@ -94,10 +100,11 @@ export function NaumiOrb({ state = "idle", theme = "naumi", followPointer = true
   return (
     <div className={`${styles.orb} ${className}`} data-orb-state={state} data-orb-theme={theme}>
       {thumbnail ? <div ref={host} className={styles.surface} aria-hidden="true" /> :
-        <button type="button" className={styles.orbButton} onClick={spin} aria-label={`${label}，点击转一圈`}>
+        <button type="button" className={styles.orbButton} onClick={onActivate || spin} onKeyDown={onKeyDown}
+          aria-label={actionLabel || `${label}，点击转一圈`} aria-expanded={expanded} aria-controls={controls}>
           <div ref={host} className={styles.surface} aria-hidden="true" />
         </button>}
-      {failed && <button className={styles.retry} type="button" onClick={() => setAttempt(value => value + 1)}>重新加载</button>}
+      {failed && <button data-orb-retry="true" className={styles.retry} type="button" onClick={() => setAttempt(value => value + 1)}>重新加载</button>}
     </div>
   );
 }
