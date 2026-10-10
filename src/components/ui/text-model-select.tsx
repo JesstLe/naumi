@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import {usePathname} from "next/navigation";
+import {TOOLS} from "@/lib/tool-meta";
+import {SelectMenu} from "./select-menu";
 import { Check, ChevronDown, Plus, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
@@ -22,6 +25,8 @@ export function TextModelSelect({
   direction?: "up" | "down";
   className?: string;
 }) {
+  const pathname = usePathname();
+  const toolPage = pathname === "/dashboard" || TOOLS.some(t => t.href === pathname);
   const global = useTextModel();
   const featureState = useFeatureModels(feature);
   const managed = featureState.catalog?.managed === true;
@@ -81,7 +86,9 @@ export function TextModelSelect({
 
   return (
     <div className={cn("relative", className)}>
-      <button
+      {toolPage ? <SelectMenu label="文字模型" value={model} size={compact?"sm":"md"} className="max-w-full" onChange={id=>{
+        if(id === "__custom_model__"){setCustom(model);setCustomOpen(true);}else setModel(id);
+      }} options={[...models.map(id=>({value:id,label:<span className="flex items-center gap-2"><ModelIcon modelId={id} modelName={label(id)} size={14}/>{label(id)}</span>})),...(!managed?[{value:"__custom_model__",label:"自定义模型 ID"}]:[])]}/> : <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         className={cn(
@@ -96,15 +103,15 @@ export function TextModelSelect({
         <ModelIcon modelId={model} modelName={label(model)} size={14} />
         <span className="min-w-0 truncate">{label(model)}</span>
         <ChevronDown className="h-3.5 w-3.5 flex-none opacity-60" />
-      </button>
-      {menu}
+      </button>}
+      {!toolPage && menu}
       {customOpen && typeof document !== "undefined" &&
         createPortal(
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 p-4" onClick={() => setCustomOpen(false)}>
-            <div className="w-full max-w-md border border-c-border bg-white p-5 shadow-pop" onClick={(event) => event.stopPropagation()}>
+            <div role="dialog" aria-modal="true" aria-label="使用其他文本模型" onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setCustomOpen(false);}}} className="w-full max-w-md rounded-2xl border border-c-border bg-white p-5 shadow-pop tool-popover" onClick={(event) => event.stopPropagation()}>
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-base font-bold text-c-text">使用其他文本模型</h3>
-                <button type="button" onClick={() => setCustomOpen(false)} className="text-c-text3 hover:text-c-text">
+                <button type="button" aria-label="关闭自定义模型" onClick={() => setCustomOpen(false)} className="text-c-text3 hover:text-c-text">
                   <X className="h-4 w-4" />
                 </button>
               </div>

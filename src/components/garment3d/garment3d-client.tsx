@@ -30,7 +30,7 @@ export function Garment3dClient() {
         options={[
           { value: "正面", label: L("正面", "Front") },
           { value: "45°", label: "45°" },
-          { value: "360°", label: "360°" },
+          { value: "背面", label: L("背面", "Back") },
         ]}
         value={view}
         onChange={setView}
@@ -60,11 +60,13 @@ export function Garment3dClient() {
   return (
     <ToolWorkspace
       name={L("3D 服装图", "3D Garment")}
-      desc={L("生成立体可旋转的服装展示图", "Generate a rotatable 3D garment showcase")}
+      desc={L("生成具有立体质感的服装展示图", "Generate a 3D-style garment image")}
       Icon={Box}
       tint="var(--c-tint-v)"
       accent={ACCENT}
       category="dress3d"
+      feature="tool.garment3d"
+      resolution={resolution}
       regenLabel={L("以此图再生成 3D", "Regenerate 3D from this image")}
       cost={billing.cost}
       action={L("生成 3D 图", "Generate 3D")}
@@ -80,8 +82,8 @@ export function Garment3dClient() {
         const viewHint =
           view === "45°"
             ? "show the garment from a 45-degree angle"
-            : view === "360°"
-            ? "render as a rotatable 360-degree turntable product view"
+            : view === "背面"
+            ? "show the garment from the back"
             : "front-facing view";
         const materialHint =
           material === "光泽"
@@ -111,9 +113,10 @@ export function Garment3dClient() {
             throw new Error(L("生成超时,请重试", "Timed out, please retry"));
           const sres = await fetch(
             `/api/garment3d?job=${encodeURIComponent(jobId)}`,
-            { cache: "no-store" }
+            { cache: "no-store", headers: await authHeader() }
           );
           const s = await sres.json();
+          if (!sres.ok) throw new Error(s.error || L("任务读取失败，请重试", "Could not read job; retry"));
           if (s.status === "done") data = s;
           else if (s.status === "error")
             throw new Error(s.error ?? L("生成失败", "Failed"));

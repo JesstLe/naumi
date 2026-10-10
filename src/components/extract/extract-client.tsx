@@ -242,6 +242,7 @@ export function ExtractClient() {
       tint="var(--c-tint-a)"
       accent={ACCENT}
       category="print"
+      feature="tool.extract"
       regenLabel={L("以此图再提取印花", "Extract print from this image")}
       cost={cost}
       resolution={resolution}

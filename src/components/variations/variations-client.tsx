@@ -1,4 +1,5 @@
 "use client";
+import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -140,6 +141,7 @@ export function VariationsClient() {
   }, []);
 
   function addFile(files: File[]) {
+    if (loading) return;
     if (!user) {
       openAuth();
       return;
@@ -147,8 +149,8 @@ export function VariationsClient() {
     setError(null);
     const f = files[0];
     if (!f) return;
-    if (f.size > MAX_UPLOAD) {
-      setError(L("图片需小于 12MB", "Image must be < 12MB"));
+    if (toolImageError(f, MAX_UPLOAD)) {
+      setError(L("请选择12MB以内的PNG / JPG / WebP图片", "Choose a PNG / JPG / WebP under 12MB"));
       return;
     }
     setSlot((prev) => {
@@ -162,6 +164,7 @@ export function VariationsClient() {
   }
 
   function removeSlot() {
+    if (loading) return;
     setSlot((prev) => {
       if (prev) URL.revokeObjectURL(prev.url);
       return null;
@@ -170,6 +173,7 @@ export function VariationsClient() {
 
   // 「以此图再裂变」:把指定结果图载入成参考图(输入图)、清空旧结果,等用户再点「开始裂变」(不自动扣分)。
   async function regenFrom(url: string) {
+    if (loading) return;
     if (!user) {
       openAuth();
       return;
@@ -179,10 +183,9 @@ export function VariationsClient() {
       const blob =
         url.startsWith("blob:") || url.startsWith("data:")
           ? await (await fetch(url)).blob()
-          : await (
-              await fetch(`/api/download?u=${encodeURIComponent(url)}&n=input.png`)
-            ).blob();
+          : await (async()=>{const response=await fetch(`/api/download?u=${encodeURIComponent(url)}&n=input.png`,{headers:await authHeader()});if(!response.ok)throw new Error("download failed");return response.blob();})();
       const f = new File([blob], "input.png", { type: blob.type || "image/png" });
+      if(toolImageError(f,MAX_UPLOAD))throw new Error("invalid image");
       setSlot((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
         return { id: `s-${Date.now()}`, file: f, url: URL.createObjectURL(f) };
@@ -195,6 +198,7 @@ export function VariationsClient() {
   }
 
   async function generate() {
+    if (loading) return;
     if (!user) {
       openAuth();
       return;
@@ -264,6 +268,7 @@ export function VariationsClient() {
           { cache: "no-store", headers: await authHeader() }
         );
         const s = await sres.json();
+          if (!sres.ok) throw new Error(s.error || L("任务读取失败，请重试", "Could not read job; retry"));
         if (sres.ok && s.user) applyServerUser(s.user);
         if (s.status === "done") data = s;
         else if (s.status === "error")
@@ -304,6 +309,7 @@ export function VariationsClient() {
       tint={TINT}
       accent={ACCENT}
       category="variation"
+      feature="image.generate"
       onRegen={regenFrom}
       regenLabel="以此图再裂变"
       cost={cost}

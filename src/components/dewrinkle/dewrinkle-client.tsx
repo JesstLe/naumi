@@ -60,8 +60,9 @@ export function DewrinkleClient() {
         const fd = new FormData();
         fd.append("image", file);
         // 比例固定走「自动」(后端 sizeForRatio 据此决定输出尺寸);
-        // 去皱强度/保留纹理为展示偏好,后端无对应参数,不映射。
+        // Encode visible controls into the existing prompt contract.
         fd.append("ratio", "自动");
+        fd.append("prompt", `${strength === "轻" ? "Gently smooth small creases" : strength === "中" ? "Smooth visible garment wrinkles" : "Thoroughly remove deep garment wrinkles"}. ${keepTexture === "是" ? "Preserve original weave, seams and material texture." : "Prioritize a clean, smooth fabric finish."}`);
         if (user) fd.append("email", user.email);
         const res = await billing.submit("/api/dewrinkle", {
           method: "POST",

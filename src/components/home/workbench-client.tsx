@@ -1,4 +1,5 @@
 "use client";
+import {toolImageError} from "@/lib/tool-ui";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -613,7 +614,7 @@ export function WorkbenchClient() {
 
   /** 上传单张参考图 → 站内 URL;失败返回 null 不阻塞主消息。 */
   async function uploadOne(f: File): Promise<string | null> {
-    if (f.size > MAX_UPLOAD) return null;
+    if (toolImageError(f,MAX_UPLOAD)) {setError("请选择12MB以内的PNG / JPG / WebP图片");return null;}
     try {
       const fd = new FormData();
       fd.append("image", f);
@@ -625,11 +626,13 @@ export function WorkbenchClient() {
         body: fd,
       });
       const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "图片上传失败，请重试");
       const url = d?.artwork?.image || d?.image || d?.url;
       const id = d?.artwork?.id || d?.id || null;
       if (url && id) artworkIdRef.current[imageKey(url)] = id;
       return url || null;
-    } catch {
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "图片上传失败，请重试");
       return null;
     }
   }
@@ -654,7 +657,7 @@ export function WorkbenchClient() {
 
   async function send(text?: string, attachmentUrls?: string[]) {
     const content = (text ?? input).trim();
-    if (!content || busy) return;
+    if (!content || busy || uploading) return;
     // 未登录:先确认登录态再弹登录框,避免发出去吃 401
     if (!user) {
       if (!ready) return;
@@ -935,7 +938,11 @@ export function WorkbenchClient() {
         setUploading(true);
         for (const f of composerFiles) {
           const u = await uploadOne(f);
-          if (u) urls.push(u);
+          if (!u) {
+            setComposerError(L("参考图上传失败，请重试", "Reference upload failed; retry"));
+            return;
+          }
+          urls.push(u);
         }
         setUploading(false);
       }
@@ -1163,7 +1170,7 @@ export function WorkbenchClient() {
                   <button
                     type="button"
                     onClick={() => fileRef.current?.click()}
-                    disabled={uploading}
+                    disabled={uploading || busy}
                     title="上传商品图"
                     className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-c-text3 transition-colors hover:bg-secondary hover:text-c-text disabled:opacity-50"
                   >
@@ -1178,7 +1185,7 @@ export function WorkbenchClient() {
                 <button
                   type="button"
                   onClick={() => void send()}
-                  disabled={busy || !input.trim()}
+                  disabled={busy || uploading || !input.trim()}
                   aria-label="发送"
                   className="flex h-10 w-10 flex-none items-center justify-center rounded-full text-white shadow-btn [background:var(--grad-acc)] transition-all hover:opacity-90 disabled:opacity-30"
                 >

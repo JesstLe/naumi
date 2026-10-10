@@ -1,4 +1,5 @@
 "use client";
+import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -134,9 +135,10 @@ export function TryonClient() {
   }, [picker]);
 
   function pick(slot: "top" | "bottom", f: File) {
+    if (processing) return;
     if (!user) return openAuth();
-    if (f.size > MAX_UPLOAD)
-      return setError(L("图片需小于 12MB", "Image must be < 12MB"));
+    if (toolImageError(f, MAX_UPLOAD))
+      return setError(L("请选择12MB以内的PNG / JPG / WebP图片", "Choose a PNG / JPG / WebP under 12MB"));
     setError(null);
     const cur = slot === "top" ? top : bottom;
     if (cur) URL.revokeObjectURL(cur.url);
@@ -146,6 +148,7 @@ export function TryonClient() {
     setResult(null);
   }
   function clearSlot(slot: "top" | "bottom") {
+    if (processing) return;
     const cur = slot === "top" ? top : bottom;
     if (cur) URL.revokeObjectURL(cur.url);
     if (slot === "top") setTop(null);
@@ -156,15 +159,15 @@ export function TryonClient() {
   // 人物输入 = 库模特选择(url 形态),故造一个临时自定义模特并选中;预览用本地 blob,
   // 后端取图用原始 url(已托管,可直接 fetch)。不自动扣分:用户改完服装再点「开始试穿」。
   async function regenFrom(url: string) {
+    if (processing) return;
     if (!url) return;
     try {
       // 预览缩略图:远程 url 走代理下载成 blob;blob:/data: 直接 fetch。
       const blob =
         url.startsWith("blob:") || url.startsWith("data:")
           ? await (await fetch(url)).blob()
-          : await (
-              await fetch(`/api/download?u=${encodeURIComponent(url)}&n=input.png`)
-            ).blob();
+          : await (async()=>{const response=await fetch(`/api/download?u=${encodeURIComponent(url)}&n=input.png`,{headers:await authHeader()});if(!response.ok)throw new Error("download failed");return response.blob();})();
+      if(toolImageError({name:"input.png",type:blob.type,size:blob.size},MAX_UPLOAD))throw new Error("invalid image");
       const previewUrl = URL.createObjectURL(blob);
       // 后端实际取图用的 url:远程原 url 直接复用(已托管);本地 blob:/data: 把 blob 重新转 object URL 不行,
       // 但 tryon 结果一定是 R2 托管 url,所以这里 backendUrl 用原 url 即可。

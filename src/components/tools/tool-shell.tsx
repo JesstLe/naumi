@@ -1,9 +1,10 @@
 "use client";
+import type { FeatureId } from "@/lib/billing/types";
+import {toolSourceUrl} from "@/lib/tool-ui";
 import { FeatureModelSelect } from "./feature-model-select";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import {CATEGORY_FEATURES} from "@/lib/billing/feature-map";
 import { ImageQualityControl, QUALITY_TOOL_CATEGORIES } from "@/components/image-quality-control";
-import { useImageQuality } from "@/lib/image-quality-context";
 
 import { cdnUrl } from "@/lib/cdn";
 import * as React from "react";
@@ -46,6 +47,7 @@ export function ToolShell({
   tint,
   accent,
   category,
+  feature: requestedFeature,
   cost: baseCost,
   resolution = "1K",
   actionLabel,
@@ -58,7 +60,7 @@ export function ToolShell({
   resultTitle = "处理结果",
   resultHint,
   refreshKey,
-  footerNote = "生成结果将自动保存到「作品库」,保留 180 天",
+  footerNote = "",
   onRegen,
   regenLabel = "以此图重新生成",
   rightPanel,
@@ -70,6 +72,7 @@ export function ToolShell({
   tint: string;
   accent: string;
   category?: string;
+  feature?: FeatureId;
   cost: number;
   resolution?: string;
   actionLabel: string;
@@ -94,9 +97,9 @@ export function ToolShell({
 }) {
   const { user, ready } = useAuth();
   const { openAuth } = useAuthModal();
-  const { imageCost } = useImageQuality();
+  const feature = requestedFeature || CATEGORY_FEATURES[category || ""] || "image.generate";
   const qualityPriced = QUALITY_TOOL_CATEGORIES.has(category || "");
-  const billing=useFeatureBilling(CATEGORY_FEATURES[category||""]??"image.generate",{resolution});
+  const billing=useFeatureBilling(feature,{resolution});
   const cost = baseCost;
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
@@ -113,6 +116,8 @@ export function ToolShell({
   const [viewing, setViewing] = React.useState("");
   const [zipping, setZipping] = React.useState(false);
   const [recPage, setRecPage] = React.useState(0);
+  const [recordError, setRecordError] = React.useState("");
+  const [recordRetry, setRecordRetry] = React.useState(0);
   // 点记录 → 中间载入该记录的「原图 / 成品对比」;null=显示工具当前结果。
   const [shown, setShown] = React.useState<{
     id: string;
@@ -129,13 +134,15 @@ export function ToolShell({
       return;
     }
     let cancelled = false;
+    setRecordError("");
     (async () => {
       try {
         const r = await fetch(
           `/api/account?email=${encodeURIComponent(user.email)}`,
           { headers: await authHeader() }
         );
-        if (!r.ok || cancelled) return;
+        if (cancelled) return;
+        if (!r.ok) throw new Error(locale === "en" ? "History unavailable" : "记录加载失败");
         const d = await r.json();
         const arts = (d.artworks ?? []) as {
           id: string;
@@ -157,20 +164,21 @@ export function ToolShell({
               id: a.id,
               url: a.image,
               gradient: a.gradient,
-              source: a.source,
+              source: toolSourceUrl(a.source),
               prompt: a.prompt,
             }))
         );
+        setSelected(new Set());
         setRecPage(0);
         setShown(null);
       } catch {
-        if (!cancelled) setRecords([]);
+        if (!cancelled) { setRecords([]); setRecordError(locale === "en" ? "History unavailable" : "记录加载失败"); }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.email, category, refreshKey]);
+  }, [user?.email, category, refreshKey, recordRetry, locale]);
 
   function toggleSelect(id: string) {
     setSelected((s) => {
@@ -191,7 +199,7 @@ export function ToolShell({
     try {
       const res = await fetch("/api/suite/download", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeader()) },
         body: JSON.stringify({ items }),
       });
       if (!res.ok) throw new Error("zip failed");
@@ -216,7 +224,7 @@ export function ToolShell({
   const threeCol = !!category || !!rightPanel;
 
   return (
-    <div className="w-full px-5 py-6 sm:px-6 lg:px-8">
+    <div data-tool-workspace="tool-shell" className="w-full px-4 py-5 sm:px-6 lg:px-8">
       {/* 面包屑 */}
       <nav className="flex items-center gap-1.5 text-[13px]">
         <Link
@@ -231,10 +239,10 @@ export function ToolShell({
 
       <div
         className={cn(
-          "mt-4 grid gap-5 lg:h-[890px]",
+          "mt-4 grid gap-5 tool-layout-grid",
           threeCol
-            ? "lg:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_280px]"
-            : "lg:grid-cols-[320px_1fr]"
+            ? "lg:grid-cols-[320px_minmax(0,1fr)] tool-layout-three xl:grid-cols-[320px_minmax(0,1fr)_280px]"
+            : "lg:grid-cols-[320px_minmax(0,1fr)]"
         )}
       >
         {/* 左:参数(头部/生成按钮钉住,中间参数区内部滚动) */}
@@ -252,17 +260,17 @@ export function ToolShell({
             </div>
           </div>
 
-          <div className="nv-panel-scroll flex flex-col gap-[18px] lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1.5">
+          <fieldset disabled={processing} className="nv-panel-scroll flex flex-col gap-[18px] lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1.5">
             {left}
-            {category && <FeatureModelSelect feature={CATEGORY_FEATURES[category] || "image.generate"} disabled={processing} />}
-            {qualityPriced && <ImageQualityControl resolution={resolution} disabled={processing} />}
-          </div>
+            {category && category !== "titles" && category !== "ipcheck" && <FeatureModelSelect feature={feature} disabled={processing} />}
+            {qualityPriced && <ImageQualityControl feature={feature} resolution={resolution} disabled={processing} />}
+          </fieldset>
 
           <div className="space-y-3 border-t border-c-line pt-4">
             <button
               type="button"
-              onClick={user ? onAction : () => openAuth()}
-              disabled={processing || (!!user && (disabled || !!CATEGORY_FEATURES[category||""]&&!billing.quote))}
+              onClick={() => {if(processing)return;if(!user){openAuth();return;}onAction();}}
+              disabled={!ready || processing || (!!user && (disabled || !!(requestedFeature || CATEGORY_FEATURES[category||""])&&!billing.quote))}
               className="flex w-full items-center justify-center gap-2 rounded-[11px] py-3 text-[14px] font-semibold text-white shadow-btn [background:var(--grad-acc)] transition-all hover:brightness-95 disabled:opacity-50"
             >
               {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -274,7 +282,7 @@ export function ToolShell({
                     ? L(`${actionLabel}(消耗 ${cost} 积分)`, `${actionLabel} (${cost} credits)`)
                     : actionLabel}
             </button>
-            {error && <p className="text-[12.5px] text-c-danger">{error}</p>}
+            {(error || ((requestedFeature || CATEGORY_FEATURES[category || ""]) && billing.error)) && <p role="alert" className="break-words text-[12.5px] text-c-danger">{error || ((requestedFeature || CATEGORY_FEATURES[category || ""]) && billing.error)}</p>}
           </div>
         </div>
 
@@ -299,7 +307,7 @@ export function ToolShell({
           <div className="nv-panel-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
             {shown ? (
               <>
-                <div className="grid flex-1 grid-cols-2 gap-4">
+                <div className="tool-compare grid flex-1 grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
                     <span className="text-[12px] font-medium text-c-text3">
                       {L("原图", "Original")}
@@ -317,7 +325,8 @@ export function ToolShell({
                           {onRegen && (
                             <button
                               type="button"
-                              onClick={() => onRegen(shown.source!)}
+                              disabled={processing}
+                              onClick={() => {if(!processing)onRegen(shown.source!);}}
                               className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-[rgba(22,24,29,.6)] px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur transition-colors hover:bg-[rgba(22,24,29,.8)]"
                             >
                               <RefreshCw className="h-3 w-3" />
@@ -348,7 +357,8 @@ export function ToolShell({
                       {onRegen && (
                         <button
                           type="button"
-                          onClick={() => onRegen(shown.url)}
+                          disabled={processing}
+                            onClick={() => {if(!processing)onRegen(shown.url);}}
                           className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-[rgba(22,24,29,.6)] px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur transition-colors hover:bg-[rgba(22,24,29,.8)]"
                         >
                           <RefreshCw className="h-3 w-3" />
@@ -381,13 +391,13 @@ export function ToolShell({
 
         {/* 右:自定义面板(标题生成的「图片列表」等),传了就替代本工具记录 */}
         {threeCol && rightPanel && (
-          <aside className="hidden rounded-card border border-c-border bg-c-card p-4 shadow-card xl:flex xl:h-full xl:flex-col">
+          <aside className="tool-history rounded-card border border-c-border bg-c-card p-4 shadow-card xl:h-full">
             {rightPanel}
           </aside>
         )}
         {/* 右:本工具记录 */}
         {threeCol && !rightPanel && (
-          <aside className="hidden rounded-card border border-c-border bg-c-card p-4 shadow-card xl:flex xl:h-full xl:flex-col">
+          <aside className="tool-history rounded-card border border-c-border bg-c-card p-4 shadow-card xl:h-full">
             <div className="mb-3 flex min-h-[28px] items-center gap-1.5">
               <Clock className="h-4 w-4 text-c-text3" />
               <span className="text-[13px] font-semibold text-c-text">
@@ -416,7 +426,7 @@ export function ToolShell({
             </div>
             <div className="nv-panel-scroll min-h-0 flex-1 overflow-y-auto pr-0.5">
               {records === null && user ? (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="tool-history-grid grid grid-cols-2 gap-2">
                   {Array.from({ length: 6 }).map((_, i) => (
                     <div
                       key={i}
@@ -425,7 +435,7 @@ export function ToolShell({
                   ))}
                 </div>
               ) : records && records.length > 0 ? (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="tool-history-grid grid grid-cols-2 gap-2">
                   {records
                     .slice(recPage * RECORDS_PER_PAGE, (recPage + 1) * RECORDS_PER_PAGE)
                     .map((r) => {
@@ -433,7 +443,6 @@ export function ToolShell({
                     return (
                       <div
                         key={r.id}
-                        onClick={() => setShown(r)}
                         title={L("点击查看原图 / 成品", "Click to view original / result")}
                         className={cn(
                           "group relative cursor-pointer overflow-hidden rounded-lg border-2 transition-all",
@@ -444,7 +453,8 @@ export function ToolShell({
                               : "border-c-border hover:border-c-border2"
                         )}
                       >
-                        <Media
+                        <button type="button" onClick={()=>setShown(r)} aria-label={L("查看历史图片", "View history image")} className="block w-full text-left">
+                          <Media
                           src={cdnUrl(r.url)}
                           alt=""
                           gradient={r.gradient}
@@ -452,9 +462,12 @@ export function ToolShell({
                           ratio="aspect-square"
                           className="rounded-none border-0 transition-transform group-hover:scale-105"
                         />
+                        </button>
                         {/* 左上选择框:点它才选中(用于批量打包下载) */}
-                        <span
+                        <button type="button"
                           role="checkbox"
+                          tabIndex={0}
+                          aria-label={L("选择历史图片", "Select history image")}
                           aria-checked={sel}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -468,7 +481,7 @@ export function ToolShell({
                           )}
                         >
                           <Check className="h-3 w-3" strokeWidth={3} />
-                        </span>
+                        </button>
                       </div>
                     );
                   })}
@@ -484,6 +497,7 @@ export function ToolShell({
               total={Math.ceil((records?.length ?? 0) / RECORDS_PER_PAGE)}
               onPage={setRecPage}
             />
+            {recordError && <div role="alert" className="mt-2 flex items-center justify-between gap-2 text-xs text-c-danger">{recordError}<button type="button" onClick={() => setRecordRetry(v=>v+1)} className="text-acc">{L("重试", "Retry")}</button></div>}
             <Link
               href={category ? `/works?cat=${category}` : "/works"}
               className="mt-3 text-center text-[12px] font-medium text-acc hover:underline"
@@ -530,9 +544,10 @@ export function ShellChips({
             <button
               key={o.key}
               type="button"
+              aria-pressed={active}
               onClick={() => onChange(o.key)}
               className={cn(
-                "rounded-[8px] px-3.5 py-2 text-[13px] font-medium transition-colors",
+                "min-h-9 rounded-[10px] px-3.5 py-2 text-[13px] font-medium transition-colors",
                 active
                   ? "text-white"
                   : "bg-c-subtle text-c-text2 hover:bg-c-subtle2"

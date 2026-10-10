@@ -1,4 +1,5 @@
 "use client";
+import {toolImageError} from "@/lib/tool-ui";
 import { copyText } from "@/lib/clipboard";
 
 import { useEffect, useRef, useState } from "react";
@@ -163,8 +164,9 @@ export function TitleGenClient() {
   }, [thumb]);
 
   function pickFile(f: File | null) {
+    if (loading) return;
     if (!f) return;
-    if (f.size > MAX_UPLOAD) {
+    if (toolImageError(f, MAX_UPLOAD)) {
       setError(L("图片需小于 8MB", "Image must be < 8MB"));
       return;
     }
@@ -182,6 +184,7 @@ export function TitleGenClient() {
   }
 
   async function generate() {
+    if (loading) return;
     if (!user) {
       openAuth();
       return;
