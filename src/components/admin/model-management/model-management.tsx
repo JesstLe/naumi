@@ -12,7 +12,7 @@ import { encryptCredential } from "../model-config/provider-editor";
 import styles from "./model-management.module.css";
 import type {ManagedModelCreditPricing} from "@/lib/model-config/credit-overrides";
 import {DISPLAY_QUALITY_IDS,DEFAULT_QUALITY_LABELS} from "@/lib/model-config/quality-policy";
-import {RESOLUTION_FIELDS,type ResolutionParameters} from "@/lib/model-config/resolution-policy";
+import {RESOLUTION_FIELDS,RATIO_FIELDS,type ResolutionParameters} from "@/lib/model-config/resolution-policy";
 import {MODEL_CATALOG_REFRESH} from "@/lib/model-config/public-client";
 
 type State = ModelManagementState & { catalogs: CatalogEntry[] };
@@ -312,22 +312,34 @@ function ResolutionsDialog({row,locked,error,onClose,onSave}:{row:ManagedModelRo
   const [selected,setSelected]=useState(row.displayResolutions || ["1K","2K","4K"]);
   const [routes,setRoutes]=useState(()=>row.resolutionConfig?.routes.map(r=>({...r,values:{...r.values}})) || []);
   const update=(id:string,patch:Partial<typeof routes[number]>)=>setRoutes(old=>old.map(r=>r.upstreamId===id?{...r,...patch}:r));
-  const valid=selected.length>0&&routes.every(r=>r.mode!=="map"||selected.every(id=>r.values[id]?.trim()));
-  const parameters=():ResolutionParameters=>({routes:routes.map(r=>({upstreamId:r.upstreamId,mode:r.mode,field:r.field,values:r.values,metadataRef:r.metadataRef}))});
+  const valid=selected.length>0&&routes.every(r=>r.mode!=="map"||r.fieldKnown&&selected.every(id=>r.values[id]?.trim()));
+  const parameters=():ResolutionParameters=>({routes:routes.map(r=>({upstreamId:r.upstreamId,mode:r.mode,field:r.field,ratioField:r.ratioField||null,values:r.values,metadataRef:r.metadataRef}))});
   return <Dialog title="分辨率显示与实际参数" locked={locked} onClose={onClose}><form onSubmit={e=>{e.preventDefault();if(valid)onSave(selected,routes.length&&!row.preset?parameters():undefined);}}><div className={styles.dialogBody}>
     <div className={styles.scopeHeading}><b>{row.label}</b><span>按模型家族统一显示，各供应通道独立传参</span></div>
     {error && <p role="alert" className={styles.error}>{error}</p>}
-    <p className={styles.ruleNote}>前端档位决定用户可选的输出分辨率；实际发送值决定上游如何生成。默认读取对应供应商与模型的元数据，可按接口说明修改。映射到较低原生规格时，输出仍沿用现有放大流程。</p>
+    <p className={styles.ruleNote}>前端档位决定用户可选的输出分辨率；实际发送值决定上游如何生成。系统自动匹配对应供应商的接口规格，只需选择实际档位。映射到较低规格时，输出仍沿用现有放大流程。</p>
     <div className={styles.scopeControls}><b>前端显示分辨率</b><button type="button" disabled={locked} onClick={()=>setSelected(["1K","2K","4K"])}>全选</button></div>
     <div className={styles.parameterChoices}>{["1K","2K","4K"].map(id=><label key={id} className={styles.parameterChoice}><input type="checkbox" aria-label={`显示 ${id}`} disabled={locked} checked={selected.includes(id)} onChange={e=>setSelected(old=>e.target.checked?[...old,id]:old.filter(v=>v!==id))}/><b>{id}</b></label>)}</div>
     {routes.map((route,index)=><fieldset key={route.upstreamId} className={`${styles.capabilities} ${styles.parameterRoute}`} disabled={locked||!route.editable}><legend>{route.provider} · {route.model}{row.routes.filter(r=>r.upstreamId===route.upstreamId).every(r=>!r.enabled)?" · 停用通道":""}</legend>
       <p className={styles.ruleNote}>已记录支持规格：{route.nativeValues.length?route.nativeValues.join("、"):"未知 / 待维护"}{route.metadataDefaults?.source?` · ${route.metadataDefaults.source} · 元数据 v${route.metadataDefaults.revision}`:""}</p>
       <p className={styles.ruleNote}>{route.metadataDefaults?.reason || "尚无对应元数据，继续原传参；可手动维护映射。"}{!route.editable?" 此路径由原适配器管理。":""}</p>
       <label className={styles.field}>分辨率参数处理<select aria-label={`${route.provider} ${route.model} 分辨率参数处理`} value={route.mode} onChange={e=>update(route.upstreamId,{mode:e.target.value as typeof route.mode,metadataRef:null})}><option value="legacy">沿用原传参</option><option value="map">按显示档位映射实际值</option><option value="omit">不发送分辨率参数</option></select></label>
-      {route.mode==="map"&&<><label className={styles.field}>实际参数名<select aria-label={`${route.provider} ${route.model} 分辨率参数名`} value={route.field} onChange={e=>update(route.upstreamId,{field:e.target.value as typeof route.field,metadataRef:null})}>{RESOLUTION_FIELDS.filter(f=>route.protocol!=="openai-images"||!f.includes(".")).map(f=><option key={f} value={f}>{f}</option>)}</select></label>
-      <table className={`${styles.priceTable} ${styles.resolutionTable}`}><thead><tr><th>前端显示</th><th>实际发送的 {route.field}</th></tr></thead><tbody>{selected.map(id=><tr key={id}><th>{id}</th><td><input aria-label={`${route.provider} ${route.model} ${id} 实际分辨率`} list={`resolution-native-${index}`} value={route.values[id]||""} placeholder={route.field==="size"?"如 1024x1024，按该接口实际规格填写":"如 1K，按接口实际值填写"} maxLength={100} onChange={e=>update(route.upstreamId,{values:{...route.values,[id]:e.target.value},metadataRef:null})}/></td></tr>)}</tbody></table><datalist id={`resolution-native-${index}`}>{route.nativeValues.map(v=><option key={v} value={v}/>)}</datalist></>}
+      {route.mode==="map"&&<>
+        <div className={styles.parameterDefaults}><b>{route.fieldKnown?"传参方式已自动匹配":"这条通道的接口规格尚待确认"}</b><p>{route.fieldKnown?"无需选择接口字段，下面选择该显示档位实际使用的规格。":"元数据库还没有可靠的接口定义。可先沿用原调用；有供应商资料时在高级设置维护。系统不会默认把 size 当作分辨率。"}</p></div>
+        <table className={`${styles.priceTable} ${styles.resolutionTable}`}><thead><tr><th>前端显示</th><th>实际使用的上游规格</th></tr></thead><tbody>{selected.map(id=>{
+          const d=route.metadataDefaults;const sourceValues=d?.field===route.field?[...Object.values(d.values),...d.nativeValues.filter(v=>route.field!=="size"||/^(auto|\d+x\d+)$/.test(v))]:[];
+          const options=[...new Set([...sourceValues,...Object.values(route.values)].filter(Boolean))];
+          return <tr key={id}><th>{id}</th><td><select aria-label={`${route.provider} ${route.model} ${id} 实际分辨率`} disabled={!route.fieldKnown||!options.length} value={route.values[id]||""} onChange={e=>update(route.upstreamId,{values:{...route.values,[id]:e.target.value},metadataRef:null})}><option value="">{options.length?"选择实际规格":"暂无已确认规格"}</option>{options.map(v=><option key={v} value={v}>{v}</option>)}</select></td></tr>;
+        })}</tbody></table>
+        <details className={styles.parameterAdvanced}><summary>高级设置 · 手动配置接口参数</summary><p className={styles.ruleNote}>常规使用由系统自动确定。仅在供应商定义特殊参数或需自定义映射时修改；修改后按手动配置执行。</p>
+          <label className={styles.field}>实际参数名<select aria-label={`${route.provider} ${route.model} 分辨率参数名`} value={route.fieldKnown?route.field:""} onChange={e=>{if(e.target.value)update(route.upstreamId,{field:e.target.value as typeof route.field,ratioField:undefined,fieldKnown:true,metadataRef:null});}}><option value="" disabled>按供应商文档选择参数</option>{RESOLUTION_FIELDS.filter(f=>route.protocol!=="openai-images"||!f.includes(".")).map(f=><option key={f} value={f}>{f}</option>)}</select></label>
+          <label className={styles.field}>比例参数<select aria-label={`${route.provider} ${route.model} 比例参数名`} value={route.ratioField||""} onChange={e=>update(route.upstreamId,{ratioField:e.target.value as typeof route.ratioField||undefined,metadataRef:null})}><option value="">沿用适配器处理</option>{RATIO_FIELDS.filter(f=>f!==route.field&&(route.protocol!=="openai-images"||!f.includes("."))).map(f=><option key={f} value={f}>{f}</option>)}</select></label>
+          {selected.map(id=><label key={id} className={styles.field}>{id} 自定义实际值<input aria-label={`${route.provider} ${route.model} ${id} 自定义分辨率`} value={route.values[id]||""} placeholder="按实际接口定义填写" maxLength={100} onChange={e=>update(route.upstreamId,{values:{...route.values,[id]:e.target.value},metadataRef:null})}/></label>)}
+        </details>
+      </>}
+
       {route.mode==="omit"&&<p className={styles.ruleNote}>此通道使用供应商默认生成规格，输出再按现有流程处理。</p>}
-      {route.editable&&route.metadataDefaults?.available&&<button type="button" className={styles.secondary} onClick={()=>{const d=route.metadataDefaults!;update(route.upstreamId,{mode:d.mode,field:d.field,values:{...d.values},metadataRef:{id:d.id,revision:d.revision}});}}>使用元数据默认映射</button>}
+      {route.editable&&route.metadataDefaults?.available&&<button type="button" className={styles.secondary} onClick={()=>{const d=route.metadataDefaults!;update(route.upstreamId,{mode:d.mode,field:d.field,ratioField:d.ratioField,fieldKnown:true,values:{...d.values},metadataRef:{id:d.id,revision:d.revision}});}}>使用元数据默认映射</button>}
     </fieldset>)}
     <p className={styles.scopeNote}>至少选择一档，所有比例分支同步。新增档位的积分在“设置积分”中维护。这里只管理显示和执行映射；元数据库中的能力声明由供应商资料独立维护。</p>
   </div><footer className={styles.dialogFooter}><button type="button" className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button type="button" className={styles.secondary} disabled={locked || !row.displayResolutions} onClick={()=>onSave(null)}>恢复默认显示</button><button type="submit" className={styles.primary} disabled={locked || !valid}>保存分辨率并生效</button></footer></form></Dialog>;
