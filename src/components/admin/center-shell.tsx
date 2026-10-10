@@ -13,7 +13,7 @@ const groups: { label: string; entries: Entry[] }[] = [
   { label: "运营概览", entries: [{ id: "overview", label: "数据概览", icon: BarChart3 }] },
   { label: "用户管理", entries: [{ id: "users", label: "用户与企业", icon: Users }] },
   { label: "计费管理", entries: [
-    { id: "billing", label: "价格、成本与规则", icon: Wallet, href: "/admin/billing" },
+    { id: "billing", label: "模型价格表", icon: Wallet, href: "/admin/billing/price-table" },
     { id: "pricing", label: "内部定价测算", icon: BarChart3, href: "/admin/pricing" },
   ] },
   { label: "业务记录", entries: [
