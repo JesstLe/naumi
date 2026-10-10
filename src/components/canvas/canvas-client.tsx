@@ -10308,7 +10308,7 @@ export function CanvasClient() {
                 light={lightCanvas}
                 disabled={selectedGenerating || !selected}
                 value=""
-                options={CANVAS_RES.map((resolution) => ({
+                options={generationParameters.resolutions.map((resolution) => ({
                   value: resolution,
                   label: resolution,
                 }))}

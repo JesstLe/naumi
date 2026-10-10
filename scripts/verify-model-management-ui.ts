@@ -136,6 +136,16 @@ async function main() {
     await frontend.close();
     await family.getByRole("button",{name:"设置积分",exact:true}).click();await price.getByRole("button",{name:"全选应用工具",exact:true}).click();await price.getByRole("button",{name:"恢复原计价",exact:true}).click();await expect(price).toHaveCount(0);
     const reset=await(await admin.request.get(origin+"/api/admin/model-management")).json();assert.ok(reset.rows.find((r:any)=>r.id==="gemini-3.0-pro-image").pricing.every((v:any)=>!v.override));assert.equal(reset.version,priceBefore.version);
+    await family.getByRole("button",{name:"分辨率设置",exact:true}).click();
+    const resolutionsDialog=page.getByRole("dialog",{name:"前端分辨率选项",exact:true});
+    await resolutionsDialog.getByRole("checkbox",{name:"显示 2K",exact:true}).uncheck();await resolutionsDialog.getByRole("checkbox",{name:"显示 4K",exact:true}).uncheck();
+    await resolutionsDialog.getByRole("button",{name:"保存分辨率并生效",exact:true}).click();await expect(resolutionsDialog).toHaveCount(0);
+    const resCatalog=await(await admin.request.get(origin+"/api/models?feature=image.generate")).json();assert.ok(resCatalog.models.filter((m:any)=>m.id.startsWith("gemini-3.0-pro-image")).every((m:any)=>JSON.stringify(m.generationParameters.resolutions)===JSON.stringify(["1K"])));
+    assert.equal((await quote({feature:"image.generate",modelId:"gemini-3.0-pro-image-square",quality:"medium",resolution:"4K",quantity:1})).status(),409);
+    const resFront=await admin.newPage();await resFront.goto(origin+"/generate?model=gemini-3.0-pro-image-square&resolution=4K");await expect(resFront.getByRole("tab",{name:"1K",exact:true})).toBeVisible();await expect(resFront.getByRole("tab",{name:"4K",exact:true})).toHaveCount(0);await expect(resFront.getByRole("tab",{name:"1K",exact:true})).toHaveAttribute("aria-selected","true");
+    await family.getByRole("button",{name:"分辨率设置",exact:true}).click();await resolutionsDialog.getByRole("button",{name:"全选",exact:true}).click();await resolutionsDialog.getByRole("button",{name:"保存分辨率并生效",exact:true}).click();await expect(resolutionsDialog).toHaveCount(0);
+    await resFront.evaluate(()=>window.dispatchEvent(new Event("naumi:model-catalog-refresh")));for(const id of ["1K","2K","4K"])await expect(resFront.getByRole("tab",{name:id,exact:true})).toBeVisible();await resFront.getByRole("tab",{name:"4K",exact:true}).click();await expect(resFront.getByRole("tab",{name:"4K",exact:true})).toHaveAttribute("aria-selected","true");await resFront.screenshot({path:"output/model-management-fixture/resolutions-frontend.png",fullPage:true});
+    await page.reload();await family.getByRole("button",{name:"分辨率设置",exact:true}).click();for(const id of ["1K","2K","4K"])await expect(resolutionsDialog.getByRole("checkbox",{name:"显示 "+id,exact:true})).toBeChecked();await resolutionsDialog.getByRole("button",{name:"恢复默认分辨率",exact:true}).click();await expect(resolutionsDialog).toHaveCount(0);await resFront.close();
     await family.getByRole("button",{name:"编辑范围",exact:true}).click();
     await scope.getByRole("button",{name:"全选可用工具",exact:true}).click();
     assert.equal(await scope.locator('input[type=checkbox]:enabled:not(:checked)').count(),0);

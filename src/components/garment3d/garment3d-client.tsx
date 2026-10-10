@@ -1,11 +1,11 @@
 "use client";
+import {useImageResolutions} from "@/lib/model-config/resolution-client";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 
 import * as React from "react";
 import { Box } from "lucide-react";
 import { ToolWorkspace, ToolChips } from "@/components/tools/tool-workspace";
-import { GENERATION_RESOLUTIONS } from "@/lib/mock-data";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
@@ -20,6 +20,7 @@ export function Garment3dClient() {
   const [material, setMaterial] = React.useState("真实");
   const { imageCost } = useImageQuality();
   const [resolution, setResolution] = React.useState("1K");
+  const displayResolutions=useImageResolutions("tool.garment3d",resolution,setResolution);
   const billing=useFeatureBilling("tool.garment3d",{resolution});
 
   const controls = (
@@ -48,7 +49,7 @@ export function Garment3dClient() {
       />
       <ToolChips
         label={L("分辨率", "Resolution")}
-        options={GENERATION_RESOLUTIONS.map(({ id }) => ({ value: id, label: id }))}
+        options={displayResolutions.map((id) => ({ value: id, label: id }))}
         value={resolution}
         onChange={setResolution}
         accent={ACCENT}
