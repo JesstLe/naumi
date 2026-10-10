@@ -11,6 +11,9 @@ import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasParameterPopover } from "./parameter-popover";
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
+import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surface";
+import { GenerationPlaceholder } from "./generation-placeholder";
+import { generationPlaceholderSize, placeGenerationPreview, type GenerationStage } from "@/lib/canvas/generation-feedback";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
 import { NodePropertiesPanel } from "./node-properties-panel";
 import { ImageCropDialog } from "./image-crop-dialog";
@@ -309,6 +312,11 @@ const DETAIL_MODULE_ORDER = [
 ] as const;
 
 type CanvasGenerationTask = {
+  stage?: GenerationStage;
+  startedAt?: number;
+  previewSize?: { width: number; height: number };
+  count?: number;
+  completed?: number;
   id: string;
   operationKey: string;
   sourceId: string;
@@ -902,6 +910,11 @@ function PendNode({ data, selected }: NodeProps) {
     fileName?: string;
     fileInfo?: string;
     generating?: boolean;
+    generationStage?: GenerationStage;
+    generationStartedAt?: number;
+    generationSize?: { width: number; height: number };
+    generationCount?: number;
+    generationKind?: "image" | "video";
     needsAttention?: boolean;
     attentionTitle?: string;
     attentionHint?: string;
@@ -912,14 +925,15 @@ function PendNode({ data, selected }: NodeProps) {
   };
   const sel = selected || d.selected;
   return (
-    <div className={cn("group relative w-[320px]", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}>
+    <div style={d.generating ? { width: d.generationSize?.width ?? 384 } : undefined} className={cn("group relative w-[320px]", d.lightCanvas ? "canvas-ui-light" : "canvas-ui-dark")}>
       {/* 标签(图片上方,对齐原型 .lb2) */}
       <div className="canvas-ui-text mb-1.5 flex h-[30px] items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold">
-        <span>🖼</span>
+        <ImageIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
         <span className="truncate">{d.label}</span>
       </div>
       {/* 占位卡(原型 .nb2 + .ph2:单层卡片,选中=teal) */}
       <div
+        style={d.generating ? { height: d.generationSize?.height ?? 384 } : undefined}
         className={cn(
           "canvas-ui-node-card relative flex h-[200px] flex-col items-center justify-center rounded-[12px] border px-5 text-center transition-all",
           sel
@@ -944,22 +958,7 @@ function PendNode({ data, selected }: NodeProps) {
             </Link>
           </div>
         ) : d.generating ? (
-          <div className="flex w-full flex-col items-center gap-2.5">
-            <Loader2 className="h-5 w-5 animate-spin text-[#6366f1]" />
-            <div className="canvas-ui-text text-[12px] font-medium">
-              {typeof d.progress === "number" && d.progress > 0
-                ? `处理中（${Math.round(d.progress)}%）`
-                : "生成中…"}
-            </div>
-            {typeof d.progress === "number" && d.progress > 0 && (
-              <div className="canvas-ui-control h-1.5 w-full overflow-hidden rounded-full border-0">
-                <div
-                  className="h-full rounded-full bg-[#28b7d1] transition-all"
-                  style={{ width: `${Math.min(100, Math.round(d.progress))}%` }}
-                />
-              </div>
-            )}
-          </div>
+          <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} kind={d.generationKind} />
         ) : d.uploading ? (
           <div className="flex w-full flex-col items-center gap-2.5">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -1200,6 +1199,10 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
     prompt?: string;
     date?: string;
     pending?: boolean;
+    generationStage?: GenerationStage;
+    generationStartedAt?: number;
+    generationCount?: number;
+    generationCompleted?: number;
     inChain?: boolean;
     marked?: boolean;
     canvasGroupId?: string | null;
@@ -1318,10 +1321,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
         )}
       >
         {d.pending ? (
-          <div className="canvas-ui-node-card flex h-[110px] flex-col items-center justify-center gap-2">
-            <Loader2 className="h-5 w-5 animate-spin text-[#6366f1]" />
-            <span className="canvas-ui-muted text-[12px]">生成中…</span>
-          </div>
+          <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} completed={d.generationCompleted} />
         ) : d.videoUrl ? (
           <VideoNodeSurface url={d.videoUrl} selected={selected} kind={d.category === "audio" ? "audio" : "video"} onExtract={(kind, timestamp) => d.onVideoExtract?.(d.id, kind, timestamp)} />
         ) : (
@@ -1925,6 +1925,10 @@ export function CanvasClient() {
     progress: number;
     fileInfo?: string;
     inputs: string[]; // 多输入:连进这个空白节点的源节点 id(生成时作参考图)
+    generationStage?: GenerationStage;
+    generationStartedAt?: number;
+    generationSize?: { width: number; height: number };
+    generationCount?: number;
     generating?: boolean; // 该空白节点正在文生图/合并生成中
     taskId?: string; // 视频等后台任务 ID，刷新后可从任务表恢复占位节点
     taskKind?: "video" | "image-edit"; // 不同后台任务独立恢复，避免彼此清理占位节点
@@ -3407,13 +3411,17 @@ export function CanvasClient() {
     for (const task of generationTasks) {
       if (!nodes.some((node) => node.id === task.sourceId)) continue;
       const pos = generationTaskPosRef.current[task.id] ?? task.position;
+      const previewSize = task.previewSize ?? generationPlaceholderSize("1:1");
       baseNodes = [
         ...baseNodes,
         {
           id: task.id,
           type: "art",
           position: pos,
-          data: { id: task.id, pending: true, label: task.label, lightCanvas },
+          style: previewSize,
+          data: { id: task.id, pending: true, label: task.label, lightCanvas, ...previewSize,
+            generationStage: task.stage, generationStartedAt: task.startedAt,
+            generationCount: task.count, generationCompleted: task.completed },
           selectable: false,
           draggable: true,
         },
@@ -3480,6 +3488,11 @@ export function CanvasClient() {
           progress: p.progress,
           fileInfo: p.fileInfo,
           generating: p.generating,
+          generationStage: p.generationStage,
+          generationStartedAt: p.generationStartedAt,
+          generationSize: p.generationSize,
+          generationCount: p.generationCount,
+          generationKind: p.taskKind === "video" ? "video" : "image",
           needsAttention: p.needsAttention,
           attentionTitle: p.attentionTitle,
           attentionHint: p.attentionHint,
@@ -3614,10 +3627,22 @@ export function CanvasClient() {
   // 受控节点状态(支持拖拽);仅当底层数据/位置真正变化时重新灌入,拖拽过程中不重置。
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const previewRevealedRef = useRef(new Set<string>());
+  useEffect(() => {
+    const previews = rfNodes.filter(node => node.data.pending || node.data.generating);
+    const keys = previews.map(node => `${node.id}:${node.data.generationStartedAt ?? "restored"}`);
+    const unseen = previews.filter((_, index) => !previewRevealedRef.current.has(keys[index]));
+    previewRevealedRef.current = new Set(keys);
+    if (!unseen.length || !rfRef.current) return;
+    // Reveal once per submission. Polling and dragging must not keep moving the camera.
+    const sourceIds = generationTasks.filter(task => unseen.some(node => node.id === task.id)).map(task => task.sourceId);
+    void rfRef.current.fitView({ nodes: [...sourceIds, ...unseen.map(node => node.id)].map(id => ({ id })),
+      padding: 0.24, maxZoom: rfRef.current.getViewport().zoom, duration: 240 });
+  }, [rfNodes, generationTasks]);
   const nodesSig = displayNodes
     .map(
       (n) =>
-        `${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
+        `${JSON.stringify([n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
           (n.data as { pending?: boolean }).pending ? 1 : 0
         }:${(n.data as { inChain?: boolean }).inChain ? 1 : 0}:${n.className ?? ""}:${
           Math.round((n.data as { progress?: number }).progress ?? -1)
@@ -3837,6 +3862,8 @@ export function CanvasClient() {
   // 新锚点留在安全区外。尺寸或锚点变化时做最小平移；拖动同一节点不会触发，
   // 因而不改变缩放、不修改持久化坐标，也不和正常拖动竞争。
   useEffect(() => {
+    // 右键菜单按点击位置固定；自动锚点平移不应立即关闭刚打开的菜单。
+    if (ctxMenu) return;
     const anchorId = selectedId ?? selectedPendId ?? selectedTextId;
     const previous = previousCanvasSizeRef.current;
     const previousAnchor = previousViewportAnchorRef.current;
@@ -3913,6 +3940,7 @@ export function CanvasClient() {
     selectedId,
     selectedPendId,
     selectedTextId,
+    ctxMenu,
   ]);
 
   // 顶部图像工具条:尽量锚定节点中心，但按自身宽度独立夹取。
@@ -4281,14 +4309,16 @@ export function CanvasClient() {
       (task) => task.sourceId === source.id
     ).length;
     const sourceSize = flowNodeSize(sourceNode);
-    const taskPosition = sourceNode
+    const previewSize = generationPlaceholderSize(opts?.ratio || source.ratio);
+    const preferredPosition = sourceNode
       ? {
           x: sourceNode.position.x + sourceSize.width + X_GAP,
           y:
             sourceNode.position.y +
-            (opts?.taskOffset ?? siblingTaskCount) * (NODE_H + 24),
+            (opts?.taskOffset ?? siblingTaskCount) * (previewSize.height + NODE_LABEL_H + 24),
         }
       : { x: 0, y: 0 };
+    const taskPosition = placeGenerationPreview(preferredPosition, previewSize, rfNodes.map(node => ({ ...node.position, ...flowNodeSize(node) })));
     generationTaskPosRef.current[taskId] = taskPosition;
     setGenerationTasks((current) => [
       ...current,
@@ -4297,6 +4327,7 @@ export function CanvasClient() {
         operationKey,
         sourceId: source.id,
         label: opts?.taskLabel || t("canvas.pending"),
+        stage: "preparing", startedAt: Date.now(), previewSize, count: requestedCount,
         position: taskPosition,
       },
     ]);
@@ -4360,6 +4391,7 @@ export function CanvasClient() {
       if (!startRes.ok) throw new Error(start.error || t("canvas.genFail"));
       const jobId: string | undefined = start.jobId;
       if (!jobId) throw new Error(t("canvas.genFail"));
+      setGenerationTasks(current => current.map(task => task.id === taskId ? { ...task, stage: "generating" } : task));
       const deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
       let generated: GeneratedResult[] = [];
@@ -4372,7 +4404,9 @@ export function CanvasClient() {
         );
         const pj = await readJsonSafe(pr);
         if (pr.ok && pj.user) applyServerUser(pj.user);
+        if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
         if (pj.status === "done") {
+          setGenerationTasks(current => current.map(task => task.id === taskId ? { ...task, stage: "saving" } : task));
           generated = ((pj.images ?? []) as { id?: string; url?: string; width?: number; height?: number }[])
             .filter(
               (image): image is { id: string; url: string; width?: number; height?: number } =>
@@ -4380,6 +4414,7 @@ export function CanvasClient() {
             )
             .map((image) => ({ id: image.id, url: image.url, width: image.width, height: image.height }));
           newIds = generated.map((image) => image.id);
+          if (!newIds.length) throw new Error(t("canvas.genFail"));
           if (pj.user) applyServerUser(pj.user); // 即时回写余额积分
           break;
         }
@@ -4463,6 +4498,7 @@ export function CanvasClient() {
         operationKey,
         sourceId: source.id,
         label: "主体提取中…",
+        stage: "generating", startedAt: Date.now(), previewSize: generationPlaceholderSize(source.ratio),
         position: taskPosition,
       },
     ]);
@@ -5352,6 +5388,7 @@ export function CanvasClient() {
         operationKey,
         sourceId: source.id,
         label: fmt(t("canvas.detailProgress"), { done: 0, total: count }),
+        stage: "preparing", startedAt: Date.now(), previewSize: generationPlaceholderSize(genRatio), count, completed: 0,
         position: basePosition,
       },
     ]);
@@ -5430,6 +5467,7 @@ export function CanvasClient() {
               ? {
                   ...task,
                   label: fmt(t("canvas.detailProgress"), { done, total: count }),
+                  stage: poll.status === "done" ? "saving" : "generating", completed: done,
                 }
               : task
           )
@@ -6378,24 +6416,26 @@ export function CanvasClient() {
     node: { id: string }
   ) {
     e.preventDefault();
+    e.stopPropagation();
     if (node.id.startsWith("task-")) return;
-    if (node.id.startsWith("text-")) {
-      setSelectedId(null);
-      setSelectedPendId(null);
-      setSelectedTextId(node.id);
-      setCtxMenu(null);
+    setSpawnMenu(null);
+    const p = relPoint(e);
+    if (node.id.startsWith("text-") || node.id.startsWith("pend-")) {
+      setSelectedId(null); setMultiSel([]);
+      setRfNodes(current => current.map(item => item.selected ? { ...item, selected: false } : item));
+      setSelectedPendId(node.id.startsWith("pend-") ? node.id : null);
+      setSelectedTextId(node.id.startsWith("text-") ? node.id : null);
+      setCtxMenu({ x: p.x, y: p.y, cx: e.clientX, cy: e.clientY, nodeId: node.id });
       return;
     }
-    setSpawnMenu(null);
     contextSelectionBaseRef.current = [...multiSel];
     const modified = e.ctrlKey || e.metaKey;
     if (modified) {
       toggleArtworkBatchSelection(node.id);
-    } else if (!multiSel.includes(node.id)) {
+    } else if (multiSel.length < 2 || !multiSel.includes(node.id)) {
       // 普通右键未选节点遵循桌面习惯：先成为唯一选中对象。
       applyArtworkSelection([node.id]);
     }
-    const p = relPoint(e);
     setCtxMenu({ x: p.x, y: p.y, cx: e.clientX, cy: e.clientY, nodeId: node.id });
   }
   function onPaneContextMenu(e: ReactMouseEvent | MouseEvent) {
@@ -7582,8 +7622,12 @@ export function CanvasClient() {
       inputArts[0]?.prompt?.trim() ||
       FAITHFUL_REGEN_PROMPT;
     setGenError(null);
+    const generationSize = generationPlaceholderSize(opts?.ratio || genRatio);
+    const generationPosition = placeGenerationPreview({ x: pend.x, y: pend.y }, generationSize,
+      (rfRef.current?.getNodes() ?? rfNodes).filter(node => node.id !== pend.id).map(node => ({ ...node.position, ...flowNodeSize(node) })));
     setPendNodes((prev) =>
-      prev.map((p) => (p.id === pend.id ? { ...p, generating: true } : p))
+      prev.map((p) => (p.id === pend.id ? { ...p, generating: true, generationStage: "preparing", generationStartedAt: Date.now(),
+        ...generationPosition, generationSize, generationCount: normalizeCanvasCount(genCount) } : p))
     );
     try {
       const fd = new FormData();
@@ -7632,6 +7676,7 @@ export function CanvasClient() {
       if (!startRes.ok) throw new Error(start.error || t("canvas.genFail"));
       const jobId: string | undefined = start.jobId;
       if (!jobId) throw new Error(t("canvas.genFail"));
+      setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "generating" } : p));
       const deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
       let generatedSizes: { id: string; width?: number; height?: number }[] = [];
@@ -7644,11 +7689,14 @@ export function CanvasClient() {
         );
         const pj = await readJsonSafe(pr);
         if (pr.ok && pj.user) applyServerUser(pj.user);
+        if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
         if (pj.status === "done") {
+          setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "saving" } : p));
           generatedSizes = ((pj.images ?? []) as { id?: string; width?: number; height?: number }[])
             .filter((image): image is { id: string; width?: number; height?: number } => !!image.id)
             .map((image) => ({ id: image.id, width: image.width, height: image.height }));
           newIds = generatedSizes.map((image) => image.id);
+          if (!newIds.length) throw new Error(t("canvas.genFail"));
           if (pj.user) applyServerUser(pj.user); // 即时回写余额积分
           break;
         }
@@ -7657,7 +7705,8 @@ export function CanvasClient() {
       }
       // 把生成结果落到空白节点的位置
       if (newIds.length) {
-        let generatedY = pend.y;
+        const livePosition = rfRef.current?.getNode(pend.id)?.position ?? generationPosition;
+        let generatedY = livePosition.y;
         await Promise.all(
           newIds.map((id, index) => {
             const y = generatedY;
@@ -7668,7 +7717,7 @@ export function CanvasClient() {
               body: JSON.stringify({
                 email: user.email,
                 id,
-                x: Math.round(pend.x),
+                x: Math.round(livePosition.x),
                 y: Math.round(y),
               }),
             }).catch(() => {});
@@ -7676,9 +7725,9 @@ export function CanvasClient() {
         );
         pendingNodeRef.current = newIds[0];
       }
+      const fresh = await mergeWorks(newIds);
       setPendNodes((prev) => prev.filter((p) => p.id !== pend.id));
       setSelectedPendId((current) => (current === pend.id ? null : current));
-      const fresh = await mergeWorks(newIds);
       pushAddUndo(newIds[0] ?? null, fresh);
       if (newIds.length && inputTextNodes.length) {
         const updatedTextNodes = inputTextNodes.map((node) => ({
@@ -8986,7 +9035,7 @@ export function CanvasClient() {
               }}
               onMoveStart={() => {
                 if (spawnMenu) setSpawnMenu(null);
-                if (ctxMenu) setCtxMenu(null);
+                // 菜单遮罩处理用户点击关闭；程序化视口动画不应取消右键菜单。
               }}
               onNodeContextMenu={onNodeContextMenu}
               onPaneContextMenu={onPaneContextMenu}
@@ -9968,76 +10017,18 @@ export function CanvasClient() {
               const node = ctxMenu.nodeId
                 ? active?.members.find((m) => m.id === ctxMenu.nodeId)
                 : null;
-              if (ctxMenu.nodeId && !node) return null;
-              const Item = ({
-                label,
-                hk,
-                onClick,
-                danger,
-                disabled,
-              }: {
-                label: string;
-                hk?: string;
-                onClick?: () => void;
-                danger?: boolean;
-                disabled?: boolean;
-              }) => (
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => {
-                    if (disabled) return;
-                    setCtxMenu(null);
-                    onClick?.();
-                  }}
-                  className={cn(
-                    "flex w-full items-center justify-between gap-4 px-3 py-2 text-left text-sm transition-colors",
-                    disabled
-                      ? "canvas-ui-muted cursor-default opacity-40"
-                      : danger
-                        ? "text-[#ff6b63] hover:bg-[#ff6b63]/12"
-                        : "canvas-ui-action"
-                  )}
-                >
-                  <span className="truncate">{label}</span>
-                  {hk && (
-                    <span className="canvas-ui-muted text-xs opacity-70">{hk}</span>
-                  )}
-                </button>
-              );
+              const textNode = textNodes.find(item => item.id === ctxMenu.nodeId && item.projectKey === activeKey);
+              const pendNode = pendNodes.find(item => item.id === ctxMenu.nodeId);
+              if (ctxMenu.nodeId && !node && !textNode && !pendNode) return null;
+              const mutationDisabled = readOnly || !nodeSettingsReady || historySaving || Boolean(ctxMenu.nodeId && isNodeLocked(ctxMenu.nodeId));
               const Sep = () => <div className="canvas-ui-divider my-1 h-px" />;
-              const vw =
-                typeof window !== "undefined" ? window.innerWidth : 9999;
-              const vh =
-                typeof window !== "undefined" ? window.innerHeight : 9999;
               const batchContextSelection = Boolean(
                 node &&
                   selectedBatchArts.length > 1 &&
                   selectedBatchIds.includes(node.id)
               );
               const menu = (
-                <div className={lightCanvas ? "canvas-ui-light" : "canvas-ui-dark"}>
-                  <div
-                    data-testid="canvas-context-menu-backdrop"
-                    className="fixed inset-0 z-[998]"
-                    onPointerDown={() => setCtxMenu(null)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setCtxMenu(null);
-                    }}
-                  />
-                  <div
-                    onPointerDown={(e) => e.stopPropagation()}
-                    style={{
-                      position: "fixed",
-                      left: Math.max(8, Math.min(ctxMenu.cx, vw - 228)),
-                      top: Math.max(
-                        8,
-                        Math.min(ctxMenu.cy, vh - (batchContextSelection ? 480 : 360))
-                      ),
-                    }}
-                    className="canvas-ui-surface menu-pop z-[999] w-[216px] overflow-hidden rounded-xl border py-1"
-                  >
+                <ContextMenuSurface x={ctxMenu.cx} y={ctxMenu.cy} light={lightCanvas} onClose={() => setCtxMenu(null)}>
                     {node && batchContextSelection ? (
                       /* 已选图片组内右键：保留整组选择并直接提供批量对象操作。 */
                       <>
@@ -10061,6 +10052,7 @@ export function CanvasClient() {
                               ? "canvas.batchUngroup"
                               : "canvas.batchGroup"
                           )}
+                          disabled={readOnly}
                           onClick={() =>
                             void (selectedBatchCanvasGroupId
                               ? ungroupBatchSelection()
@@ -10069,24 +10061,25 @@ export function CanvasClient() {
                         />
                         <Item
                           label={t("canvas.batchGenerate")}
+                          disabled={readOnly}
                           onClick={createMergeNodeFromSelection}
                         />
                         <Sep />
                         <Item
                           label={t("canvas.batchRunImages")}
-                          disabled={batchRunBusy}
+                          disabled={batchRunBusy || readOnly}
                           onClick={() => void batchRunImages(selectedBatchArts)}
                         />
                         <Item
                           label={t("canvas.batchRunText")}
-                          disabled={promptMining}
+                          disabled={promptMining || readOnly}
                           onClick={() =>
                             void reversePromptsForSelection(selectedBatchArts)
                           }
                         />
                         <Item
                           label={t("canvas.batchStitch")}
-                          disabled={stitching}
+                          disabled={stitching || readOnly}
                           onClick={() => void stitchBatchSelection()}
                         />
                         <Sep />
@@ -10096,6 +10089,7 @@ export function CanvasClient() {
                               ? "canvas.batchUnmark"
                               : "canvas.batchMark"
                           )}
+                          disabled={readOnly}
                           onClick={() => void markBatchSelection()}
                         />
                         <Item
@@ -10105,13 +10099,36 @@ export function CanvasClient() {
                         />
                         <Item
                           label={t("canvas.delete")}
+                          disabled={readOnly}
                           danger
                           onClick={() => batchDelete(selectedBatchIds)}
                         />
                       </>
-                    ) : node ? (
-                      /* 节点右键菜单(对齐原型 cznode) */
+                    ) : textNode ? (
                       <>
+                        <Item label={t("canvas.editName")} disabled={mutationDisabled} onClick={() => { setNodeRenameValue(textNode.title); setRenamingNodeId(textNode.id); }} />
+                        <Item label={t("canvas.toolbar.productCopy")} disabled={mutationDisabled || assistBusy} onClick={() => setProductPicker({ textNodeIds: [textNode.id] })} />
+                        <Item label={t("canvas.toolbar.textToImages")} disabled={mutationDisabled || textNode.status === "generating"} onClick={() => setGenImageMenu({ textNodeIds: [textNode.id] })} />
+                        <Sep />
+                        <Item label={t("canvas.copyToClipboard")} disabled={!textNode.content} onClick={() => void copyText(textNode.content).then(ok => ok && showCopyTip())} />
+                        <Item label={L("文字样式", "Text style")} disabled={readOnly} onClick={openProperties} />
+                        {nodeManagementItems(textNode.id).map(item => <Item key={item.id} label={item.label} disabled={item.disabled} onClick={item.onSelect} />)}
+                        <Sep />
+                        <Item label={t("canvas.deleteNodeTitle")} danger disabled={mutationDisabled} onClick={() => void removeTextNode(textNode.id)} />
+                      </>
+                    ) : pendNode ? (
+                      <>
+                        <Item label={t("canvas.ctxGenerate")} disabled={readOnly || pendNode.generating || pendNode.uploading || pendNode.needsAttention} onClick={() => setSelectedPendId(pendNode.id)} />
+                        <Item label={t("canvas.uploadImage")} disabled={readOnly || pendNode.generating || pendNode.uploading || pendNode.needsAttention} onClick={() => onPendUpload(pendNode.id)} />
+                        <Item label={t("canvas.delete")} danger disabled={readOnly || pendNode.generating || pendNode.uploading || pendNode.needsAttention} onClick={() => onPendRemove(pendNode.id)} />
+                      </>
+                    ) : node ? (
+                      /* 图片操作复用工具栏动作，不新增业务请求。 */
+                      <>
+                        <Item label={t("canvas.editName")} disabled={mutationDisabled} onClick={() => { setNodeRenameValue(node.title); setRenamingNodeId(node.id); }} />
+                        <Item label={L("属性设置", "Properties")} disabled={readOnly} onClick={openProperties} />
+                        {nodeManagementItems(node.id).map(item => <Item key={item.id} label={item.label} disabled={item.disabled} onClick={item.onSelect} />)}
+                        <Sep />
                         <Item
                           label={t("canvas.ctxDownload")}
                           onClick={() =>
@@ -10161,6 +10178,7 @@ export function CanvasClient() {
                         {!readOnly && (
                           <Item
                             label={t("canvas.duplicate")}
+                            disabled={mutationDisabled}
                             onClick={() => void duplicateArt(node)}
                           />
                         )}
@@ -10187,6 +10205,7 @@ export function CanvasClient() {
                         {!readOnly && (
                           <Item
                             label={t("canvas.delete")}
+                            disabled={mutationDisabled}
                             hk={isMac ? "⌘⌫" : "Del"}
                             danger
                             onClick={() => void deleteTree(node.id)}
@@ -10241,8 +10260,7 @@ export function CanvasClient() {
                         />
                       </>
                     )}
-                  </div>
-                </div>
+                </ContextMenuSurface>
               );
               return typeof document !== "undefined"
                 ? createPortal(menu, document.body)
@@ -10941,7 +10959,7 @@ export function CanvasClient() {
               className="canvas-ui-surface canvas-dock-entry absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
             >
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
-              <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
+              <div className={cn("min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5", selectedGenerating && "hidden")}>
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   {!readOnly && (
                     <>
@@ -11195,7 +11213,7 @@ export function CanvasClient() {
               style={dockStyle ?? { left: 12, bottom: 12 }}
               className="canvas-ui-surface canvas-dock-entry absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
             >
-              <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
+              <div className={cn("min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5", selectedPendGenerating && "hidden")}>
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   {pendInputArts.length > 0 ? (
                     pendInputArts.map((a) => (

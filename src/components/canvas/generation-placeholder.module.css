@@ -1,0 +1,5 @@
+.sheen { position:absolute; inset:0; pointer-events:none; background:linear-gradient(115deg,transparent 15%,rgba(110,140,220,.08) 45%,transparent 75%); background-size:220% 100%; animation:canvas-sheen 3s ease-in-out infinite; }
+.spinner { animation:canvas-spin 1.4s linear infinite; }
+@keyframes canvas-sheen { 0% {background-position:150% 0} 100% {background-position:-100% 0} }
+@keyframes canvas-spin { to {transform:rotate(360deg)} }
+@media (prefers-reduced-motion:reduce) { .sheen,.spinner {animation:none} }
