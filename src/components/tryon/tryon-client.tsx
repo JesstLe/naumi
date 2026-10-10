@@ -1,4 +1,5 @@
 "use client";
+import { BRAND } from "@/lib/brand";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -705,7 +706,7 @@ export function TryonClient() {
         <ImageLightbox
           src={lightbox.url}
           onClose={() => setLightbox(null)}
-          downloadName={lightbox.name || "星泽商图-试穿"}
+          downloadName={lightbox.name || `${BRAND}-试穿`}
         />
       )}
     </>

@@ -1,4 +1,5 @@
 "use client";
+import { PHONE_DOMAIN } from "@/lib/account-identity";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -32,8 +33,7 @@ function fmt(s: string, vars: Record<string, string | number>): string {
 
 const PHONE_RE = /^1[3-9]\d{9}$/;
 
-const PHONE_DOMAIN =
-  process.env.NEXT_PUBLIC_PHONE_EMAIL_DOMAIN || "phone.starzeco.com";
+
 
 function maskPhone(p: string): string {
   return /^\d{11}$/.test(p) ? `${p.slice(0, 3)}****${p.slice(7)}` : p;

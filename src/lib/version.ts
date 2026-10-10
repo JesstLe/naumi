@@ -9,9 +9,9 @@ export function buildVersion(): string {
   return (process.env.BUILD_VERSION || "0").trim();
 }
 
-// 供后台更新检查:向"官方版本服务器"查最新构建版本。默认 ai.starzeco.com。
+// 更新检查只使用显式配置的服务器；未配置时返回空值，不猜测外部地址。
 export function updateServer(): string {
-  return (process.env.UPDATE_SERVER_URL || "https://ai.starzeco.com").replace(
+  return (process.env.UPDATE_SERVER_URL || "").trim().replace(
     /\/$/,
     ""
   );

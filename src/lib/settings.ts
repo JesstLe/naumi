@@ -342,7 +342,7 @@ export async function getWechatSettings(): Promise<WechatSettings> {
   const envAppid = process.env.WECHAT_MP_APPID ?? "";
   const envSecret = process.env.WECHAT_MP_SECRET ?? "";
   const envToken = process.env.WECHAT_MP_TOKEN ?? "";
-  const envDomain = process.env.WECHAT_EMAIL_DOMAIN ?? "wx.starzeco.com";
+  const envDomain = process.env.WECHAT_EMAIL_DOMAIN?.trim() || "wx.naumi.local";
   let appid = envAppid;
   let secret = envSecret;
   let token = envToken;

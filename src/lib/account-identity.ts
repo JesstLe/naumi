@@ -1,11 +1,11 @@
 // Shared, client-safe helpers for account identity display.
 //
 // Phone-registered users have a hidden synthetic email
-// (`<phone>@phone.starzeco.com`) as their internal account key. We never show
+// (`<phone>@phone.naumi.local`) as their internal account key. We never show
 // that synthetic email — phone users see their (masked) phone number instead.
 
-const PHONE_DOMAIN =
-  process.env.NEXT_PUBLIC_PHONE_EMAIL_DOMAIN || "phone.starzeco.com";
+export const PHONE_DOMAIN =
+  process.env.NEXT_PUBLIC_PHONE_EMAIL_DOMAIN?.trim() || "phone.naumi.local";
 export const USERNAME_DOMAIN =
   process.env.NEXT_PUBLIC_USERNAME_EMAIL_DOMAIN || "username.naumi.local";
 

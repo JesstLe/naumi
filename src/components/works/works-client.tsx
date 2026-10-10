@@ -1,4 +1,5 @@
 "use client";
+import { BRAND } from "@/lib/brand";
 
 import { cdnUrl } from "@/lib/cdn";
 import { useEffect, useMemo, useState } from "react";
@@ -22,7 +23,7 @@ import { cn } from "@/lib/utils";
 import { WorkLightbox, type LightboxWork } from "@/components/works/work-lightbox";
 
 // ---------------------------------------------------------------------------
-// 作品库(设计 screen==='works',星泽商图.dc.html 1247–1328)。
+// 作品库(设计 screen==='works',作品库设计稿 1247–1328)。
 // 数据源与首页一致:GET /api/account?email=... → artworks[]。
 // 搜索在当前已加载作品中即时筛选；收藏持久化到 /api/favorites；删除走软删除接口。
 // ---------------------------------------------------------------------------
@@ -462,7 +463,7 @@ export function WorksClient() {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url;
-                a.download = `星泽商图-作品-${Date.now()}.zip`;
+                a.download = `${BRAND}-作品-${Date.now()}.zip`;
                 document.body.appendChild(a);
                 a.click();
                 a.remove();

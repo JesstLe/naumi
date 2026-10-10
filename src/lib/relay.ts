@@ -1,6 +1,6 @@
 // 中转密钥管理:签发站后台 → 美国 relay-auth 服务的管理 API 的瘦客户端。
 //
-// 只在签发站(ai.starzeco.com)配置这两个 env,别处不配 → relayConfigured()=false,
+// 只在签发站(配置的签发站)配置这两个 env,别处不配 → relayConfigured()=false,
 // 面板自动隐藏/提示未配置。密钥只存签发站服务端 env,永不下发到浏览器。
 //   RELAY_MANAGE_URL    形如 https://relay.example.com/_manage
 //   RELAY_ADMIN_SECRET  relay-auth 的 Bearer 密钥
