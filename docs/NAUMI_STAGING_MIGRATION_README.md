@@ -1,5 +1,13 @@
 # Naumi 新服务器预发布与晚间回传方案
 
+## 最新运行版本：画布悬浮 Agent 小球（2026-10-11验收）
+
+固定业务源码5e4851fac70e9260a0cec800e101dc6a7c51ca68已发布新机120.27.162.85；APP/Worker Image ID sha256:322847ab7f484c7c42f5b2fb151e7cc74372e12f3e26a6fa5ee68bebffca5078，实际1791647970 / v2026.10.10-235930。画布加入石墨/柔白可拖动小球、账号位置记忆与键盘操作，点击复用现有Agent侧栏，表情跟随真实SSE及历史终态；没有新增调度器、计费路径或Schema。
+
+114项新模块/102项小球契约、类型/正式Linux构建、线上12项资源/版号和桌面/390px拖动、关闭面板继续运行通过。真实get_balance→recolor_product→verify_image_output，球thinking→working→done、1张图回画布、父节点/项目、数据库历史恢复通过，唯一canvas.image扣6积分/预留0，无重复生图。只读取消时球stopped，恢复错误历史error，不误报完成；另一次只读任务先完成而没有取消，不记为取消通过。触摸注入接口未支持，实体手机触摸仍待实机验收。
+
+全程deploy.lock、DB/env/Compose完整备份、临切最新数据快照及固定9ec5c1回滚--check，模型v108/积分v8与设置/草稿/ComfyUI/元数据/修订/采购价最终指纹保持，仅NAUMI_IMAGE切换。证据 /opt/naumi-staging/evidence/canvas-agent-orb-20261010，ROLLBACK-STAGING.sh --apply只切镜像不回灌DB。最终健康/版本通过、锁释放、临时脚本/私钥副本清理，旧机未连接/回传。维护后累计成功发布2次，约79%占用/21GiB可用；文档提交不另发镜像，视频/OSS延期与禁止自动回传约定保持。详见docs/changes/2026-10-10-canvas-agent-orb.md；以下为历史。
+
 ## 最新运行版本：石墨小球柔白眼睛（2026-10-10）
 
 用户要求修改眼睛配色，固定源码9ec5c1f1efec1d0df8cf4ee0e0dd43e57fbe12b2已发布新机；APP/Worker Image ID sha256:a7ac5995337bb81568b748aa1fd8d4d198e25e139b0549c2b5b8b478ef3463c4，实际1791646599 / v2026.10.10-233639。主球、角落球、八状态缩略图和外观按钮从荧光黄绿同步改为柔白#f5f5f7；其他主题/Logo/动效保留。102项契约/正式Linux构建、线上6项资源与版号及实际10个SVG/20只柔白眼/旧荧光色0通过，源码副本恢复原文件精确哈希及74项基线。
