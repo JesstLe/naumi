@@ -185,3 +185,9 @@
 .resolutionTable { min-width:0; table-layout:fixed; }
 .resolutionTable th:first-child { width:90px; min-width:0; }
 .parameterRoute legend { overflow-wrap:anywhere; }
+
+.resolutionTable select { width:100%; min-width:0; border:1px solid #cadbe8; border-radius:7px; padding:10px 8px; background:white; color:#245d83; }
+.resolutionTable select:disabled { color:#8293a2; background:#f4f7fa; }
+.parameterAdvanced { margin-top:14px; padding:12px; border:1px dashed #dce6f0; border-radius:8px; }
+.parameterAdvanced summary { cursor:pointer; color:#617a90; font-size:12px; }
+.parameterAdvanced[open] summary { margin-bottom:12px; }
