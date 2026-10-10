@@ -1,5 +1,8 @@
 # Naumi 多 Agent Git 与新机发布协作
 
+
+- 最新新机运行源码36255e03253703d2a524cf72cde67f0305956a2e，Image ID sha256:3b0a788fd1aa53a02b45519a0473c7f9caf17a0d93a2e098f6eb7e7adcc0bfff，实际1791624706 / v2026.10.10-173146。画布Agent连接现有工具执行/报价/停止与数据库历史，修复用户消息丢失；合入同事canvas-agent-entry常驻入口/输入框模型选择。隔离实际工具链/重启恢复/改名删除/取消/幂等计费和集中线上桌面手机交互通过；原生失败历史恢复通过。真实供应链仍阻塞：文字gpt6Astra的glm-5.3-flash返回404，hy4-preview超时，生图未发生、扣费0；不能宣称真实生图端到端通过，需要可用的文字通道。模型v106、计费v8、完整配置/草稿及元数据/采购价格指纹保持，证据 /opt/naumi-staging/evidence/canvas-agent-execution-20261010-r3，固定回滚1600cff，健康/版本通过、锁释放；详见docs/changes/2026-10-10-canvas-agent-execution.md。后续先处理供应商阻塞，不重复开发工具桥接。
+
 ## 当前固定版本（2026-10-10）
 - 最新新机业务源码1600cff5c8ad1befbdf6b25e50c875ccc8b95bb5，Image ID sha256:80d5021de0e7f16b826c50739993879ed2ec3e752c3b56453a176a758a5c1bab，版号1791621584 / v2026.10.10-163944。合入远端canvas-interaction-feedback(c27abc4)、model-selector-clean-labels(e668dc6)、image-download-naming(5510d56)，并保留四个历史交接文档分支；专用兼容回滚分支不覆盖当前业务。画布图片/文字批量栏统一尺寸与横向滚动，模型列表去掉重复参考价、提交报价保留，单图下载统一域名/日期/六位后缀。沿用同事验收，合并契约、Linux构建、线上桌面/手机真实Shift选择（模拟节点）、实际生图模型菜单/报价及文字通道入口通过，收费0。模型v106、计费v8、完整配置/草稿、数据库/媒体和采购价保留；切换前后元数据指纹一致，后台打开后目录自动发现新增2条system-discovery修订，未改人工采购价。备份/固定9a158d7回滚/证据 /opt/naumi-staging/evidence/remote-branches-20261010，锁释放、临时会话清理，旧机未操作。详见docs/changes/2026-10-10-remote-branches-release.md；文档跟进不另发镜像。
 
