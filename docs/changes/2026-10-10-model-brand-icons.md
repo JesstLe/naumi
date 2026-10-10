@@ -52,3 +52,26 @@
 - 回滚仅在带标记源码副本恢复5个原文件hash和原Gemini Mono，实际分支保留彩色修复。
 - 本轮证据：`E:\Workspace\naumi\output\model-brand-colors-20261010`。
 - 统一合并后运行 `node scripts/verify-model-brand-icons.mjs`、`node scripts/verify-model-brand-colors.mjs` 与构建，再验收真实节点/菜单图标。
+
+## 覆盖补充与彩色优先（2026-10-10）
+- 基线 `1ccf8a9eff483a3ea9e967083c3c083fb0d2dbd7`；沿用 `codex/model-brand-icons`，不自行合并或发布。
+- 从17种扩大到33种品牌/产品家族标识，固定LobeHub 5.23.0中有Color的优先完整采用：25项Color、8项Mono。
+- 新增16项源资源：ByteDance、FLUX、Stability AI、Ideogram、Recraft、Sora、Kling、Hailuo、Alibaba、PixVerse、Runway、Stepfun、Yi、InternLM、Cohere、Midjourney。
+- 生图补Seedream/FLUX/SDXL与Stable Diffusion/Ideogram/Recraft/Midjourney；视频补Seedance/Sora/可灵/海螺/万相/PixVerse/Runway；文字补阶跃星辰/零一万物/InternLM/Cohere及Command别名。
+- 固定库没有Seedream/Seedance/Wan专用标识，因此分别采用已验证的母公司ByteDance/Alibaba彩色标识；不把母公司标识说成产品专用logo。
+- 彩色优先不是随意染色：OpenAI、Grok、FLUX、Ideogram、Recraft、Runway、Stepfun、Midjourney此版库只有Mono，原样保留。未来源库提供Color再替换。
+- 识别支持ID/显示名称、中英文前缀、版本号、provider/model命名空间；产品规则排在母公司规则之前，如doubao-seedream归ByteDance，minimax-hailuo归Hailuo。
+- 仅扩展示层，不改变模型启用、上游配置、能力/参数、消费预算、生成或计费；新增图标不代表对应模型已经接入。
+- 新脚本 `scripts/verify-model-brand-coverage.mjs`：原17项缺口真实render复现、129项ID/显示名/反例检查、33品牌渲染、25项Color源色断言、同品牌多实例渐变引用检查通过。
+- `verify-model-brand-icons`来源/路径hash计数改为动态，33项源资源通过；此前Gemini彩色回归、TypeScript、组件lint通过。
+- 浏览器隔离真实ModelIcon预览33身份+未知兜底、42实例，Sora/可灵16/24/32px与Gemini等渐变显示正确，无重复ID或控制台错误。不是线上验收，无供应商消费。
+- `next build`退出0，编译/类型检查/88页生成通过，已有img警告保留；Windows依赖junction的standalone复制告警不作为服务器部署包成功。
+- 源码副本回滚恢复6个原文件hash和17项注册表，实际分支保留33项实现。
+- 证据 `E:\Workspace\naumi\output\model-brand-coverage-20261010`。
+
+```text
+接手刷新origin/main，整合codex/model-brand-icons全部提交，不覆盖同事canvas改动。
+执行node scripts/verify-model-brand-icons.mjs、node scripts/verify-model-brand-colors.mjs、node scripts/verify-model-brand-coverage.mjs及构建。
+验收模型触发标签/菜单中新增产品及彩色SVG多实例；只有图标更新，未启用任何新模型。
+统一部署新机时遵守deploy.lock与备份回滚；本任务仍不自动回传旧机。
+```

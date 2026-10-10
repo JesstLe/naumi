@@ -73,7 +73,8 @@ for (const [name, asset] of Object.entries(provenance.assets)) {
   for (const color of asset.colors || []) assert.ok(fn.getText(svgAst).includes(color), `${name}: source color ${color}`);
 }
 assert.match(fs.readFileSync(path.join(root, "docs/licenses/lobehub-icons/LICENSE"), "utf8"), /MIT License/);
-console.log("ASSETS=PASS LOBEHUB_VERSION=5.23.0 LOCAL_SVG_GEOMETRY_HASHES=17 LICENSE=MIT");
+assert.equal(Object.keys(provenance.assets).length, Object.keys(MODEL_BRANDS).length);
+console.log(`ASSETS=PASS LOBEHUB_VERSION=5.23.0 LOCAL_SVG_GEOMETRY_HASHES=${Object.keys(provenance.assets).length} LICENSE=MIT`);
 const i = process.argv.indexOf("--business-baseline");
 if (i >= 0) {
   const before = path.resolve(process.argv[i + 1]);

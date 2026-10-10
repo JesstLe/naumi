@@ -6,6 +6,9 @@ import {
   OpenAIMono, GoogleColor, GeminiColor, NanoBananaColor, ClaudeColor, DeepSeekColor,
   QwenColor, GrokMono, KimiColor, DoubaoColor, JimengColor, MinimaxColor, MistralColor,
   ZhipuColor, MetaColor, WenxinColor, HunyuanColor,
+  ByteDanceColor, FluxMono, StabilityColor, IdeogramMono, RecraftMono, SoraColor,
+  KlingColor, HailuoColor, AlibabaColor, PixVerseColor, RunwayMono, StepfunMono,
+  YiColor, InternLMColor, CohereColor, MidjourneyMono,
 } from "./model-brand-icons";
 
 /** Exhaustive local registry. Unknown identities keep the neutral icon. */
@@ -14,6 +17,10 @@ const BRAND_ICONS: Record<ModelBrand, (props: { size: number }) => JSX.Element> 
   claude: ClaudeColor, deepseek: DeepSeekColor, qwen: QwenColor, grok: GrokMono, kimi: KimiColor,
   doubao: DoubaoColor, jimeng: JimengColor, minimax: MinimaxColor, mistral: MistralColor,
   zhipu: ZhipuColor, meta: MetaColor, wenxin: WenxinColor, hunyuan: HunyuanColor,
+  bytedance: ByteDanceColor, flux: FluxMono, stability: StabilityColor, ideogram: IdeogramMono,
+  recraft: RecraftMono, sora: SoraColor, kling: KlingColor, hailuo: HailuoColor, alibaba: AlibabaColor,
+  pixverse: PixVerseColor, runway: RunwayMono, stepfun: StepfunMono, yi: YiColor,
+  internlm: InternLMColor, cohere: CohereColor, midjourney: MidjourneyMono,
 };
 
 export function ModelIcon({ modelId, modelName, brand, size = 16 }: {
