@@ -4,14 +4,15 @@ import { FEATURE_BINDINGS, compatiblePublicModels } from "./business";
 import { MODEL_BINDINGS, type ModelBinding } from "./bindings";
 
 export function modelAllowedForFeature(model: PublicModel, feature?: string) {
-  return !feature || !model.toolScope || model.toolScope.features.includes(feature as never);
+  return !feature || !model.toolScope || feature.startsWith("canvas.") && model.toolScope.systems?.includes("canvas") || model.toolScope.features.includes(feature as never);
 }
 export function featureDefaultModel(config: ModelConfig, feature?: string, binding?: ModelBinding): string | undefined {
   return (feature && config.publicModels.find(m => m.enabled && m.visible && m.toolScope?.defaultFor.includes(feature as never))?.id) ||
     (feature && config.business?.[feature as keyof NonNullable<ModelConfig["business"]>]?.defaultModelId) || (binding && config.bindings[binding]) || undefined;
 }
-export function assertToolScope(config: ModelConfig, feature: string | undefined, id: string) {
+export function assertToolScope(config: ModelConfig, feature: string | undefined, id: string, system?:"canvas") {
   const model = config.publicModels.find(m => m.id === id);
+  if(system==="canvas" && ["image.aplus","image.suite"].includes(feature || "") && model?.toolScope?.systems?.includes("canvas"))return;
   if (model && !modelAllowedForFeature(model, feature)) throw new ModelConfigError("MODEL_OUTSIDE_TOOL_SCOPE", "该模型未应用到当前工具，请选择该工具已开放的模型", 400);
 }
 export function validateToolScopes(config: ModelConfig) {

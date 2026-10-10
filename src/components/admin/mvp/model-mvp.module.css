@@ -172,3 +172,12 @@
 .orderName small { color:#74869c; font-size:10px; overflow-wrap:anywhere; }
 .orderList button { padding:8px; border:1px solid #dce6f0; border-radius:7px; }
 .orderList button:disabled { opacity:.3; }
+
+.parameterDefaults { padding:12px; margin-bottom:14px; background:#f4f8fc; border:1px solid #dce6f0; border-radius:8px; font-size:12px; }
+.parameterDefaults p { color:#74869c; line-height:1.6; margin:6px 0; }
+
+.canvasModules { list-style:none; padding:0; display:grid; gap:8px; font-size:12px; }
+.canvasModules li { display:flex; justify-content:space-between; gap:12px; }
+.canvasModules span { color:#74869c; }
+
+.parameterRoute .priceTable input { width:100%; min-width:100px; max-width:260px; }

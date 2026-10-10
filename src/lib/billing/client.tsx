@@ -20,6 +20,7 @@ export type PublicQuote = {
     quantity: number;
 };
 export type QuoteInput = {
+    canvas?:boolean;
     feature: FeatureId;
     quantity: number;
     quality?: string;
@@ -107,7 +108,7 @@ export function BillingProvider({ children }: {
         let promise = cache.current.get(key);
         if (promise)
             return promise;
-        promise = (async () => { const res = await fetch("/api/billing/quote", { method: "POST", headers: { "content-type": "application/json", ...await authHeader() }, body: JSON.stringify(input) }), data = await res.json(); if (!res.ok)
+        promise = (async () => { const {canvas,...facts}=input; const res = await fetch("/api/billing/quote", { method: "POST", headers: { "content-type": "application/json", ...await authHeader(),...(canvas?{"x-naumi-canvas":"1"}:{}) }, body: JSON.stringify(facts) }), data = await res.json(); if (!res.ok)
             throw new Error(data.error || "报价暂不可用"); return data as PublicQuote; })();
         if (cache.current.size >= 200)
             cache.current.clear();

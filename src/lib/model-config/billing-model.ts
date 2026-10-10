@@ -27,16 +27,16 @@ export async function managedBillingModel(request: Request, feature: FeatureId, 
     throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请刷新模型列表后重新提交；原输入已保留", 409);
   const requested = requestedFeatureModel(feature, selected || (role === "text" ? request.headers.get("x-naumi-text-model")?.trim() : undefined));
   const preset = selectedImagePreset(snapshot.config,feature,requested,binding);
-  if (preset) {const id=presetPublicId(preset,requested);assertToolScope(snapshot.config,feature,id);return { modelId:id, providerId: snapshot.config.upstreamModels.find(u => u.id === preset.upstreamId)!.providerId };}
+  if (preset) {const id=presetPublicId(preset,requested);assertToolScope(snapshot.config,feature,id,request.headers.get("x-naumi-canvas")==="1"?"canvas":undefined);return { modelId:id, providerId: snapshot.config.upstreamModels.find(u => u.id === preset.upstreamId)!.providerId };}
   const option = selectedBusinessOption(snapshot.config, feature, requested);
   if (feature === "tool.cutout" && !option && !snapshot.config.bindings[binding]) return null;
   const model = snapshot.config.publicModels.find(m => m.id === (option?.modelId || requested || featureDefaultModel(snapshot.config,feature,binding)) && m.enabled && m.modality === MODEL_BINDINGS[binding].modality && (!requested || m.visible));
   if (!model) throw new ModelConfigError("MODEL_UNAVAILABLE", "当前用途没有可用模型，请联系管理员配置", 409);
-  assertToolScope(snapshot.config,feature,model.id);
+  assertToolScope(snapshot.config,feature,model.id,request.headers.get("x-naumi-canvas")==="1"?"canvas":undefined);
   if (model.target.type === "pool") return { modelId: model.id, providerId: "managed-router" };
   const upstream = snapshot.config.upstreamModels.find(u => u.id === model.target.id);
   const provider = snapshot.config.providers.find(p => p.id === upstream?.providerId);
-  if (!upstream?.enabled || !provider?.enabled || !upstream.capabilities[MODEL_BINDINGS[binding].capability])
+  if (!upstream?.enabled || !provider?.enabled || !upstream.capabilities[feature==="canvas.assistant"?"vision":MODEL_BINDINGS[binding].capability])
     throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
   return { modelId: model.id, providerId: ["apimart-images", "fal-images"].includes(provider.protocol) ? "managed-router" : provider.id };
 }

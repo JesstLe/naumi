@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import {resolve} from "node:path";
+import {pathToFileURL} from "node:url";
 import { randomUUID } from "node:crypto";
 import { createModelFixture } from "./model-config-fixture";
 
 async function main() {
   const baseline = process.argv.includes("--baseline");
-  const selectable=(feature:string)=>["canvas.image","canvas.expand","canvas.text-edit","canvas.annotate"].includes(feature);
+  const selectable=(_feature:string)=>true;
   let active = "";
   const prepared = new Set<string>();
   const f = await createModelFixture(async (req, res) => {
@@ -121,16 +123,46 @@ async function main() {
     // Availability is still enforced even with a forged body/header; removing
     // a selected model must reject new work without altering frozen executions.
     config.publicModels.find(m=>m.id==="image-b")!.toolScope={features:[],defaultFor:[]};
-    for(const feature of features.filter(selectable))config.business![feature]!.defaultModelId="image-a";
+    for(const feature of features.filter(feature=>["canvas.image","canvas.expand","canvas.text-edit","canvas.annotate"].includes(feature)))config.business![feature]!.defaultModelId="image-a";
     const restricted=await publish();
-    for(const feature of features.filter(selectable)) {
+    for(const feature of features.filter(feature=>["canvas.image","canvas.expand","canvas.text-edit","canvas.annotate"].includes(feature))) {
       const path=feature==="canvas.image"?"/api/generate-image":`/api/canvas/${feature.slice(7)}`;
       await assert.rejects(withModelRequest(request(path,{origin:"canvas",model:"image-b",prompt:"fixture"},{"x-naumi-feature-model":"image-b"}),async()=>null),(e:any)=>e.code==="MODEL_OUTSIDE_TOOL_SCOPE");
       assert.equal((await quoteApi.POST(request("/api/billing/quote",{feature,modelId:"image-b",quantity:1}))).status,400);
     }
     for (const bundle of frozen) await executor.runBundle(bundle, await billing.config.byVersion(bundle.billingVersion), async () => assert.equal(currentExecutionBundle()!.modelVersion, first.version));
+    config.publicModels.find(m=>m.id==="image-b")!.toolScope={systems:["canvas"],features:["canvas.image","canvas.expand","canvas.text-edit","canvas.annotate"],defaultFor:[]};
+    const grouped=await publish();
+    const aplus=request("/api/aplus",{origin:"canvas",model:"image-b",prompt:"fixture",quality:"medium"},{"x-naumi-feature-model":"image-b"});
+    assert.equal((await withModelRequest(aplus,async()=>structuredClone(currentExecutionBundle()!))).image!.publicModelId,"image-b");
+    await assert.rejects(withModelRequest(request("/api/aplus",{model:"image-b",prompt:"fixture"}),async()=>null),(e:any)=>e.code==="MODEL_OUTSIDE_TOOL_SCOPE");
+    const canvasAplusQuote=await quoteApi.POST(request("/api/billing/quote",{feature:"image.aplus",modelId:"image-b",quantity:1},{"x-naumi-canvas":"1"}));assert.equal(canvasAplusQuote.status,200);assert.equal((await canvasAplusQuote.json()).modelId,"image-b");
+    assert.equal((await quoteApi.POST(request("/api/billing/quote",{feature:"image.aplus",modelId:"image-b",quantity:1}))).status,400);
+    for(const feature of ["canvas.text-generate","canvas.assistant","canvas.ocr"]){const path=`/api/canvas/${feature.slice(7)}`;await assert.rejects(withModelRequest(request(path,{modelId:"image-b",prompt:"fixture"},{"x-naumi-feature-model":"image-b"}),async()=>null),(e:any)=>["MODEL_UNAVAILABLE","MODEL_INCOMPATIBLE"].includes(e.code));}
+    config.upstreamModels.push({...structuredClone(config.upstreamModels.find(u=>u.id==="text-a")!),id:"text-plain",model:"wire-plain",capabilities:{...config.upstreamModels.find(u=>u.id==="text-a")!.capabilities,vision:false}});
+    config.publicModels.push({id:"text-plain",label:"plain",modality:"text",enabled:true,visible:true,target:{type:"upstream",id:"text-plain"},toolScope:{systems:["canvas"],features:["canvas.text-generate"],defaultFor:[]}});
+    for(const feature of ["canvas.text-generate"] as const)config.business![feature]!.options.push({...structuredClone(config.business![feature]!.options[0]),modelId:"text-plain",sort:2});
+    delete config.business!["canvas.assistant"];
+    const plain=await publish();
+    assert.ok((await(await modelsApi.GET(request("/api/models?feature=canvas.text-generate"))).json()).models.some((m:any)=>m.id==="text-plain"));
+    assert.ok(!(await(await modelsApi.GET(request("/api/models?feature=canvas.assistant"))).json()).models.some((m:any)=>m.id==="text-plain"));
+    assert.equal((await quoteApi.POST(request("/api/billing/quote",{feature:"canvas.assistant",modelId:"text-plain",quantity:1}))).status,400);
+    await assert.rejects(withModelRequest(request("/api/canvas/assistant",{modelId:"text-plain",prompt:"fixture"}),async()=>null),(e:any)=>e.code==="MODEL_INCOMPATIBLE");
+    for (const bundle of frozen) await executor.runBundle(bundle, await billing.config.byVersion(bundle.billingVersion), async () => assert.equal(currentExecutionBundle()!.modelVersion, first.version));
+    if(process.env.ROLLBACK_SCHEMA_SOURCE){
+      const oldSchema=await import(pathToFileURL(resolve(process.env.ROLLBACK_SCHEMA_SOURCE,"src/lib/model-config/schema.ts")).href);
+      assert.deepEqual(oldSchema.validateModelConfig(plain.config,{trustedOrigins:[f.origin]}),plain.config);
+      const oldExecution=await import(pathToFileURL(resolve(process.env.ROLLBACK_SCHEMA_SOURCE,"src/lib/model-config/execution.ts")).href);
+      const oldExecutor=oldExecution.createModelExecutor({runtime:admin.runtime,credentials:f.credentials,trustedOrigins:[f.origin],gateway:()=>({baseUrl:f.origin,apiKey:"fixture"})});
+      const groupedImage=await executor.resolve({scopeSystem:"canvas",feature:"image.aplus",binding:"image.generate",requestedModelId:"image-b",snapshot:plain,billing:await billing.config.current()});
+      const groupedText=await executor.resolve({feature:"canvas.text-generate",binding:"text.generate",requestedModelId:"text-plain",snapshot:plain,billing:await billing.config.current()});
+      assert.equal((await oldExecutor.clientFor(groupedImage)).wireModel,config.upstreamModels.find(u=>u.id==="u2")!.model);
+      assert.equal((await oldExecutor.clientFor(groupedText)).wireModel,"wire-plain");
+      for(const bundle of frozen)for(const role of ["image","text","vision"] as const)if(bundle[role])assert.ok((await oldExecutor.clientFor(bundle[role])).wireModel);
+      console.log("ROLLBACK_SCHEMA_HISTORICAL_GROUPS=PASS OLD_EXECUTOR_FROZEN_IMAGE_TEXT_APLUS=PASS LEGACY_FROZEN_BUNDLES=PASS PAID_CALLS=0");
+    }
     console.log(baseline ? "CANVAS_RUNTIME_BASELINE=PASS FEATURES=7 CLIENT_OVERRIDE=ACTIVE QUOTE_OVERRIDE=ACTIVE"
-      : "CANVAS_SCOPED_RUNTIME=PASS FEATURES=7 DOCK_SHARED_ENDPOINT_JSON_FORM=PASS IMAGE_SELECTION=HONORED TEXT_DEFAULT=ENFORCED QUOTE_EXECUTION=CONSISTENT DEFAULT_CHANGE_DOES_NOT_OVERRIDE_SELECTION=PASS FROZEN_BUNDLES=21 STALE_VERSION=409 REAL_SUPPLIER_CALLS=0");
+      : "CANVAS_SCOPED_RUNTIME=PASS FEATURES=7 DOCK_SHARED_ENDPOINT_JSON_FORM=PASS IMAGE_SELECTION=HONORED TEXT_POOL_SELECTION=PASS QUOTE_EXECUTION=CONSISTENT DEFAULT_CHANGE_DOES_NOT_OVERRIDE_SELECTION=PASS FROZEN_BUNDLES=21 STALE_VERSION=409 CANVAS_APLUS_SCOPE_QUOTE=PASS OUTSIDE_CANVAS_REJECTED=PASS IMAGE_TEXT_CROSS_CALL_REJECTED=PASS ASSISTANT_REQUIRES_VISION=PASS REAL_SUPPLIER_CALLS=0");
   } finally { await db.getPool().end(); await f.cleanup(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1643,8 +1643,9 @@ export function CanvasClient() {
     const quantity=path==="/api/aplus"?Math.max(1,form?.getAll("module").length||body.modules?.length||1):path==="/api/suite"?(body.structure==="custom"?JSON.parse(String(body.shots||"[]")).length:13):Number(body.count||1);
     const headers=new Headers(init.headers);for(const [key,value] of Object.entries(await authHeader()))headers.set(key,value);
     if (body.quality) headers.set("x-naumi-image-quality", String(body.quality));
-    const feature=features[path],modelId=adminConfiguredFeature(feature) ? undefined : featureModelManaged(feature) && !["image.generate","video.generate"].includes(feature) ? chosenFeatureModel(feature) : body.modelId||body.model||undefined;
-    return billing.quoteAndSubmit(path,{...init,headers},{feature,quantity,quality:String(body.quality||genQuality),resolution:String(body.resolution||source?.resolution||"1K"),modelId,providerId:body.providerId,ratio:body.ratio});
+    headers.set("x-naumi-canvas","1");
+    const feature=features[path],modelId=["/api/aplus","/api/suite"].includes(path)?body.modelId||body.model||genModel:adminConfiguredFeature(feature) ? undefined : featureModelManaged(feature) && !["image.generate","video.generate"].includes(feature) ? chosenFeatureModel(feature) : body.modelId||body.model||undefined;
+    return billing.quoteAndSubmit(path,{...init,headers},{canvas:true,feature,quantity,quality:String(body.quality||genQuality),resolution:String(body.resolution||source?.resolution||"1K"),modelId,providerId:body.providerId,ratio:body.ratio});
   }
   const { model: textModel, setModel: setTextModel } = useTextModel();
   const { user, ready, remaining, persistMode, applyServerUser, signOut } = useAuth();
@@ -10762,7 +10763,7 @@ export function CanvasClient() {
               )}
 
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-                <div className="mb-3"><FeatureModelSelect feature="canvas.text-edit" disabled={ocrStatus === "applying"} /><ImageQualityControl compact feature="canvas.text-edit" resolution={active?.members.find(a => a.id === ocrArtworkId)?.resolution || "1K"} disabled={ocrStatus === "applying"} /></div>
+                <div className="mb-3"><label className="mb-2 block text-xs">文字识别模型<TextModelSelect feature="canvas.ocr" compact dark={!lightCanvas} /></label><FeatureModelSelect feature="canvas.text-edit" disabled={ocrStatus === "applying"} /><ImageQualityControl compact feature="canvas.text-edit" resolution={active?.members.find(a => a.id === ocrArtworkId)?.resolution || "1K"} disabled={ocrStatus === "applying"} /></div>
                 {ocrError && (
                   <div className="mb-3 border border-[#f0c8c3] bg-[#fff5f3] px-3 py-2 text-[12px] font-medium text-[#b44f43]">
                     {ocrError}
@@ -11676,7 +11677,7 @@ export function CanvasClient() {
         {assistantArtworkId && !browsing && (() => {
           const anchor = active?.members.find(artwork => artwork.id === assistantArtworkId);
           if (!anchor) return null;
-          return <CanvasAssistantPanel key={anchor.id} light={lightCanvas} anchorTitle={anchor.title || t("canvas.toolbar.addImageNode")}
+          return <CanvasAssistantPanel modelControl={<TextModelSelect feature="canvas.assistant" compact dark={!lightCanvas} />} key={anchor.id} light={lightCanvas} anchorTitle={anchor.title || t("canvas.toolbar.addImageNode")}
             contextImages={assistantContext(active?.members ?? [], anchor.id).map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) }))}
             turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError}
             labels={{title: t("canvas.assistant.title"),

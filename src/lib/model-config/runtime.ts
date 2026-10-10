@@ -23,9 +23,9 @@ type Dependencies = ValidationOptions & { pool: Pool; repo: ModelConfigRepositor
 export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, feature?: FeatureId, includeAll = false) {
   const config = snapshot.config;
   const f = feature ? config.business?.[feature] : undefined;
-  const compatible = feature && FEATURE_BINDINGS[feature] ? compatiblePublicModels(config, FEATURE_BINDINGS[feature]!).map(m => m.id) : undefined;
+  const compatible = feature && FEATURE_BINDINGS[feature] ? compatiblePublicModels(config, FEATURE_BINDINGS[feature]!).filter(m=>feature!=="canvas.assistant" || m.target.type==="upstream" && config.upstreamModels.some(u=>u.id===m.target.id&&u.enabled&&u.capabilities.vision)).map(m => m.id) : undefined;
   const preset = selectedImagePreset(config,feature,undefined,feature ? undefined : "image.generate");
-  const defaultModelId = preset ? preset.aliases[0].id : featureDefaultModel(config,feature,feature ? FEATURE_BINDINGS[feature] : undefined);
+  let defaultModelId = preset ? preset.aliases[0].id : featureDefaultModel(config,feature,feature ? FEATURE_BINDINGS[feature] : undefined);
   const configuredIds = f?.enabled===false ? [] : preset ? [...preset.aliases.map(a => a.id),...(f?.options.filter(o => o.enabled && !preset.defaultModelIds.includes(o.modelId)).map(o => o.modelId) || [])] : f ? [...f.options].filter(o => o.enabled).sort((a,b) => a.sort-b.sort).map(o => o.modelId) : undefined;
   const models = config.publicModels.filter(m => m.enabled && m.visible && m.modality === modality && modelAllowedForFeature(m,feature) && (!compatible || compatible.includes(m.id)) && (!configuredIds || configuredIds.includes(m.id))).sort((a,b) => configuredIds ? configuredIds.indexOf(a.id)-configuredIds.indexOf(b.id) : 0).map(m => {
     const ids = m.target.type === "upstream" ? [m.target.id] : config.pools.find(p => p.id === m.target.id)!.candidates;
@@ -34,6 +34,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
     if (preset?.aliases.some(a => a.id === m.id)) return { id:m.id,label:m.label,modality:m.modality,supportsEdit:true,supportsVision:false,qualities:[...DISPLAY_QUALITIES],nativeResolutions:preset.resolutions,generationParameters:{ratios:preset.ratios,resolutions:preset.resolutions,combinations:Object.keys(preset.outputDimensions || {})},qualitySupported:true };
     return { id: m.id, label: m.label, modality: m.modality, supportsEdit: upstreams.some(u => u.capabilities.edit), supportsVision: upstreams.some(u => u.capabilities.vision), qualities: option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), ...qualityPresentation(upstreams), nativeResolutions: option?.parameters?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))), generationParameters: option?.parameters ? {ratios:option.parameters.ratios,resolutions:option.parameters.resolutions} : undefined, qualitySupported: upstreams.some(u => u.capabilities.qualities.length > 0) };
   });
+  if(!models.some(m=>m.id===defaultModelId))defaultModelId=models[0]?.id;
   const publishedModels = !includeAll && adminConfiguredFeature(feature) ? models.filter(m => m.id === defaultModelId) : models;
   const visible = new Set(publishedModels.map(m => m.id));
   const bindingCapabilities = Object.fromEntries(Object.entries(config.bindings).flatMap(([binding,id]) => {

@@ -1,4 +1,5 @@
 import "server-only";
+import {readQualityDefaults} from "../supplier-models/quality-access";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { PoolClient } from "pg";
@@ -31,9 +32,10 @@ const input = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("credential"), providerId: identifier, ciphertext: z.string().min(1).max(32768).optional(), keyPlain: z.string().min(1).max(16384).optional() }),
   z.strictObject({ action: z.literal("switch"), ...common, rowId: identifier, upstreamId: identifier }),
   z.strictObject({ action: z.literal("rename"), ...common, rowId: identifier, label: z.string().trim().min(1).max(100).regex(/^[^\u0000-\u001f\u007f]+$/) }),
+  z.strictObject({action:z.literal("scope-compat"),...common}),
   z.strictObject({action:z.literal("order"),...common,rowIds:z.array(identifier).min(1).max(500)}),
-  z.strictObject({action:z.literal("scope"),...common,rowId:identifier,features:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length)}),
-  z.strictObject({action:z.literal("parameters"),...common,rowId:identifier,parameters:z.strictObject({choices:z.array(z.strictObject({id:z.enum(DISPLAY_QUALITY_IDS),label:z.string().trim().min(1).max(30)})).min(1).max(5),routes:z.array(z.strictObject({upstreamId:identifier,mode:z.enum(["map","passthrough","omit"]),values:z.record(z.string(),z.string().max(100)),evidence:z.strictObject({status:z.enum(["unverified","documented","accepted","rejected"]),source:z.string().max(1000),checkedAt:z.string().max(30)}).optional()})).min(1).max(100)}).nullable()}),
+  z.strictObject({action:z.literal("scope"),...common,rowId:identifier,features:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length),canvas:z.boolean().optional()}),
+  z.strictObject({action:z.literal("parameters"),...common,rowId:identifier,parameters:z.strictObject({choices:z.array(z.strictObject({id:z.enum(DISPLAY_QUALITY_IDS),label:z.string().trim().min(1).max(30)})).min(1).max(5),routes:z.array(z.strictObject({upstreamId:identifier,mode:z.enum(["map","passthrough","omit"]),values:z.record(z.string(),z.string().max(100)),metadataRef:z.strictObject({id:z.uuid(),revision:z.number().int().positive()}).nullable().optional(),evidence:z.strictObject({status:z.enum(["unverified","documented","accepted","rejected"]),source:z.string().max(1000),checkedAt:z.string().max(30)}).optional()})).min(1).max(100)}).nullable()}),
   z.strictObject({action:z.literal("pricing"),...common,expectedBillingVersion:z.number().int().positive(),rowId:identifier,features:z.array(z.enum(FEATURE_IDS)).min(1).max(FEATURE_IDS.length),pricing:creditPricing.nullable()}),
   z.strictObject({ action: z.literal("connect"), ...common, name: z.string().trim().min(1).max(100), baseUrl: z.string().max(1024), protocol: z.enum(MVP_PROTOCOLS), credentialRef: z.uuid() }),
   z.strictObject({ action: z.literal("register"), ...common, providerId: identifier, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), confirmed: z.literal(true), edit: z.boolean(), vision: z.boolean(), qualityRank: z.number().int().min(1).max(5).default(2), qualities: z.array(z.enum(["low", "medium", "high", "xhigh", "max", "auto"])).max(6), resolutions: z.array(z.enum(["1K", "2K", "4K"])).max(3), maxReferenceImages: z.number().int().min(0).max(32) }),
@@ -56,7 +58,9 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
         const row=rows(snapshot).find(r=>r.id===rowId);if(!row || !row.features.some(f=>f.id===feature))throw new ModelConfigError("MODEL_UNAVAILABLE","该模型未应用到此工具",400);
         const billing=await admin.billing.current();return biJson({version:snapshot.version,billingVersion:billing.version,grid:modelCreditGrid(billing,snapshot,row,feature)});
       }
-      if (request.method === "GET") {const billing=await admin.billing.current();return biJson({ version: snapshot.version,billingVersion:billing.version, managed: await deps.managed(), rows: rows(snapshot).map(row=>({...row,pricing:mvpPriceViews(billing,snapshot,row)})), candidates: mvpCandidates(snapshot.config), providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs: await readProviderCatalog(admin.pool, snapshot.config.providers) });}
+      if (request.method === "GET") {const billing=await admin.billing.current(),defaults=await readQualityDefaults(admin.pool,snapshot.config),modelRows=rows(snapshot);
+        for(const row of modelRows)for(const route of row.qualityConfig?.routes || []){const d=defaults.get(route.upstreamId);route.metadataDefaults=d || null;if(!route.configured&&d?.available){route.mode=d.mode;route.values={...d.values};route.metadataRef={id:d.id,revision:d.revision};}else if(!route.configured){route.mode="omit";route.values={};}}
+        return biJson({ version: snapshot.version,billingVersion:billing.version, managed: await deps.managed(), rows: modelRows.map(row=>({...row,pricing:mvpPriceViews(billing,snapshot,row)})), candidates: mvpCandidates(snapshot.config), providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs: await readProviderCatalog(admin.pool, snapshot.config.providers) });}
       const body = input.parse(JSON.parse(await readBounded(new Response(request.body), 48000)));
       if (body.action === "credential") {
         if (!!body.ciphertext === !!body.keyPlain || !/^mvp-[0-9a-f-]{36}$/i.test(body.providerId)) throw new ModelConfigError("INVALID_CREDENTIAL", "凭据参数无效");
@@ -92,12 +96,27 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
       let draft = await admin.repo.draft(actor);
       if (!previous && draft.revision === 1) {
         let config = structuredClone(snapshot.config);
-        if(body.action === "order") {
+        if(body.action === "scope-compat") {
+          // Deployment rollback expands the system grant before an older image
+          // reads this config. Preserve ordinary tool scope and every price.
+          for(const model of config.publicModels)if(model.toolScope?.systems?.includes("canvas")){
+            const available=Object.entries(FEATURE_BINDINGS).filter(([feature,binding])=>feature.startsWith("canvas.")&&MODEL_BINDINGS[binding!].modality===model.modality&&publicModelCatalog(snapshot,model.modality,feature as never,true).models.some(m=>m.id===model.id)).map(([feature])=>feature);
+            model.toolScope.features=[...new Set([...model.toolScope.features,...available])] as typeof model.toolScope.features;
+            delete model.toolScope.systems;
+          }
+        } else if(body.action === "order") {
           config=orderMvpModels(config,rows(snapshot),body.rowIds);
         } else if (body.action === "switch" || body.action === "rename" || body.action === "scope" || body.action === "parameters") {
           const row = rows(snapshot).find(r => r.id === body.rowId);
           if (!row) throw new ModelConfigError("MODEL_UNAVAILABLE", "前端当前没有展示该模型，请刷新", 409);
-          config = body.action === "parameters" ? applyMvpQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyMvpToolScope(config,row,body.features) : body.action === "rename" ? renameMvpModel(config, row, body.label) : switchMvpModel(config, row, body.upstreamId);
+          if(body.action === "parameters" && body.parameters){
+            const defaults=await readQualityDefaults(admin.pool,config);
+            for(const route of body.parameters.routes){const d=defaults.get(route.upstreamId);
+              if(route.metadataRef && (!d || route.metadataRef.id!==d.id || route.metadataRef.revision!==d.revision))throw new ModelConfigError("METADATA_CHANGED","元数据默认值已更新，请重新打开参数设置后核对",409);
+              if(route.mode==="map")for(const choice of body.parameters.choices)if(!route.values[choice.id]?.trim() && route.metadataRef && d?.mode==="map")route.values[choice.id]=d.values[choice.id] || "";
+            }
+          }
+          config = body.action === "parameters" ? applyMvpQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyMvpToolScope(config,row,body.features,body.canvas) : body.action === "rename" ? renameMvpModel(config, row, body.label) : switchMvpModel(config, row, body.upstreamId);
         } else if (body.action === "connect") {
           const endpoint = validateModelEndpoint(body.protocol === "apimart-images" ? body.baseUrl.replace(/\/v1\/?$/, "") : body.baseUrl, { trustedOrigins: admin.trustedOrigins });
           const providerId = `mvp-${body.id}`;
@@ -119,7 +138,7 @@ export function createMvpHandler(deps: { authorize: typeof biAuthorize; administ
         draft = await admin.repo.saveDraft({ id: draft.id, expectedRevision: draft.revision, config, actor });
       }
       staged = true;
-      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "order" ? "模型展示排序" : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
+      const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
       return biJson({ publication }, publication.phase === "applied" ? 200 : publication.phase === "failed" ? 422 : 202);
     } catch (e) {
       if(e instanceof BillingError)return biJson({error:e.message,code:e.code,operationNotStaged:["CONFIG_CONFLICT","INVALID_CONFIG","OPERATION_CONFLICT"].includes(e.code)},e.status);

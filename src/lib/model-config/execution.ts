@@ -61,7 +61,7 @@ export function createModelExecutor(deps: Dependencies) {
     return scope;
   };
   return {
-    async resolve(input: { feature?: string; binding: string; requestedModelId?: string; snapshot: ModelSnapshot; billing: ConfigSnapshot; facts?: ModelFacts }): Promise<ExecutionModel> {
+    async resolve(input: { scopeSystem?:"canvas"; feature?: string; binding: string; requestedModelId?: string; snapshot: ModelSnapshot; billing: ConfigSnapshot; facts?: ModelFacts }): Promise<ExecutionModel> {
       input = { ...input, requestedModelId: requestedFeatureModel(input.feature, input.requestedModelId) };
       const purpose = MODEL_BINDINGS[input.binding as ModelBinding];
       if (!purpose) throw new ModelConfigError("INVALID_REQUEST", "未知模型用途");
@@ -76,12 +76,12 @@ export function createModelExecutor(deps: Dependencies) {
       const id = preset ? presetPublicId(preset,input.requestedModelId) : option?.modelId || input.requestedModelId || featureDefaultModel(config,input.feature,input.binding as ModelBinding);
       const model = config.publicModels.find(m => m.id === id && m.enabled && m.modality === purpose.modality && (!input.requestedModelId || m.visible));
       if (!model) throw new ModelConfigError("MODEL_UNAVAILABLE", "所选模型不可用，请刷新模型列表后重试", 409);
-      assertToolScope(config,input.feature,model.id);
+      assertToolScope(config,input.feature,model.id,input.scopeSystem);
       const plan = businessRoutePlan(config, option, input.facts);
       const target = plan ? { type: "upstream" as const, id: plan.initialId } : model.target;
       const upstream = target.type === "upstream" ? config.upstreamModels.find(u => u.id === target.id)! : undefined;
       const provider = upstream ? config.providers.find(p => p.id === upstream.providerId)! : undefined;
-      if (upstream && !upstream.capabilities[purpose.capability]) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
+      if (upstream && !upstream.capabilities[input.feature==="canvas.assistant"?"vision":purpose.capability]) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
       if (purpose.modality === "image" && input.facts) {
         const result = simulateModel(input.snapshot, input.billing, model.id, input.facts, deps);
         if (!result.eligible.length) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不满足图片质量、尺寸或参考要求", 400);
