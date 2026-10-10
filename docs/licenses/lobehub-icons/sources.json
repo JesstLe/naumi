@@ -174,6 +174,161 @@
         "#A8DFF5",
         "#ECECEE"
       ]
+    },
+    "ByteDanceColor": {
+      "file": "package/es/ByteDance/components/Color.js",
+      "sha256": "11eb4d62b19ac790e886e2b0d539673272b4fa3a1c32710224e585d27f956309",
+      "paths": 4,
+      "svgPathsSha256": "7afcd1a3cd61144ea92388e852cdef5365df89d054893dfaec850d6d318dd2f4",
+      "colors": [
+        "#00C8D2",
+        "#325AB4",
+        "#3C8CFF",
+        "#78E6DC"
+      ]
+    },
+    "FluxMono": {
+      "file": "package/es/Flux/components/Mono.js",
+      "sha256": "c05159135b52d2b366d5e0a17f896f1302fa7c829a1970e2231f1d4aae398a9c",
+      "paths": 2,
+      "svgPathsSha256": "fbf25d84dceb19c61e895e91e01e89416d872f298a3f85a328196a79e0bf508f",
+      "colors": []
+    },
+    "StabilityColor": {
+      "file": "package/es/Stability/components/Color.js",
+      "sha256": "f8495512d35e1a9267ea0b85042ce5b495827a34cab14d8e70687188276dec01",
+      "paths": 2,
+      "svgPathsSha256": "db9b7528d4ae543e8a8f47e6d44eff1ab6a173f97d77106c4a990a0fb498841c",
+      "colors": [
+        "#9D39FF",
+        "#A380FF",
+        "#E80000"
+      ]
+    },
+    "IdeogramMono": {
+      "file": "package/es/Ideogram/components/Mono.js",
+      "sha256": "99acebcc6485a99f7e64828d8381e8dda8b775acb4c482e993854ae999876fa1",
+      "paths": 1,
+      "svgPathsSha256": "e4e0a2dd906e342317c8ea9e8412304714cc6f2eaa594a1a47ade95dba246d03",
+      "colors": []
+    },
+    "RecraftMono": {
+      "file": "package/es/Recraft/components/Mono.js",
+      "sha256": "1538522e6ebd74b37a1b997fed70ae7f3ccb214d33e1237464850a68424c6e99",
+      "paths": 2,
+      "svgPathsSha256": "447a999da8586c9e57adf2cf7161d226fb760b10b9b395586ca1bdef1266483c",
+      "colors": []
+    },
+    "SoraColor": {
+      "file": "package/es/Sora/components/Color.js",
+      "sha256": "d4e1097a828707292da5200f4b83ebca1e08a645a874b1582cb75e2f67c9e2ce",
+      "paths": 6,
+      "svgPathsSha256": "8b6614ad5ea00f8b2b144b65197cf3c475484e719f6ca3ba65f925c3401547fc",
+      "colors": [
+        "#012659",
+        "#0968DA",
+        "#6BB6FE",
+        "#fff"
+      ]
+    },
+    "KlingColor": {
+      "file": "package/es/Kling/components/Color.js",
+      "sha256": "56b9363db973d6113e7f7678d89d8c1dadf349a90fd1971504be07c77298d7cc",
+      "paths": 4,
+      "svgPathsSha256": "881bc3a31e8ef604bb0c879238d1b6dc31d1b8687fe5efe31d6ad9a11246a2b8",
+      "colors": [
+        "#003EFF",
+        "#04A6F0",
+        "#0BF2F9",
+        "#0BFFE7",
+        "#0DF35E",
+        "#FFF959"
+      ]
+    },
+    "HailuoColor": {
+      "file": "package/es/Hailuo/components/Color.js",
+      "sha256": "5086a4cd2a1445fe199ca045271e39157ac05bc31a99e8a998f80c42e1aa2557",
+      "paths": 1,
+      "svgPathsSha256": "57b3b4fa0b310121f94595753fc4d575eb6f2b8568c035cf14be91b0305414bc",
+      "colors": [
+        "#D266DA",
+        "#D584EF",
+        "#E9405D",
+        "#FF5538",
+        "#FFAB0C"
+      ]
+    },
+    "AlibabaColor": {
+      "file": "package/es/Alibaba/components/Color.js",
+      "sha256": "f6e9d16b743425e41062478f4b43e138862f9f36e5870f8620b3fdac059ba5b0",
+      "paths": 1,
+      "svgPathsSha256": "762686667121efa4f90ba3d5aab73a3f497e6cd09c9b9cfd5694887778133c66",
+      "colors": [
+        "#FF6003"
+      ]
+    },
+    "PixVerseColor": {
+      "file": "package/es/PixVerse/components/Color.js",
+      "sha256": "9a659e75e81211fd0c6eccd66e0772e5ca7a65dc4ba80dc59da2c6475ddb3d78",
+      "paths": 2,
+      "svgPathsSha256": "f073b8b38c8308863ef2b731319dca80c78bbc0272ab6d3e61078e24ef48875c",
+      "colors": [
+        "#442FBA",
+        "#E36CFA",
+        "#E470EC",
+        "#FE9E58",
+        "#FFA052"
+      ]
+    },
+    "RunwayMono": {
+      "file": "package/es/Runway/components/Mono.js",
+      "sha256": "bcc747d1a15b92c6587e5649501f7fca5006b85982cc4a73173e5afcda1f9ea7",
+      "paths": 1,
+      "svgPathsSha256": "007d66a9638991c9d37ec7ace29a264f273be4e939e8421a2d6a5871dd2eab43",
+      "colors": []
+    },
+    "StepfunMono": {
+      "file": "package/es/Stepfun/components/Mono.js",
+      "sha256": "e4754320b2d351dc13211d71b85082dffe8f795a32cba2f5c422ff87dd26801d",
+      "paths": 1,
+      "svgPathsSha256": "4a0157e6bfb20b15bd0e8f71101b0dae4e39a61bf80998805185bcdb18a0f5b9",
+      "colors": []
+    },
+    "YiColor": {
+      "file": "package/es/Yi/components/Color.js",
+      "sha256": "88ba61a3d2139c4c15fcf628b0bdcb68dc2583686e944735dead635d5c164026",
+      "paths": 1,
+      "svgPathsSha256": "a9e1993b23ad0ca43fcdad97beb65b922a3ae54559083c12f10aebaccb8da997",
+      "colors": [
+        "#00FF25"
+      ]
+    },
+    "InternLMColor": {
+      "file": "package/es/InternLM/components/Color.js",
+      "sha256": "149c48090153a99b840f332d07e4e626ac160b6d949f0f495ec0773ac0d5ad99",
+      "paths": 12,
+      "svgPathsSha256": "349eea4a9da848165f45ee7d3f6fdcd82d6b2f502ec381d9c352bc5e8e4aa13f",
+      "colors": [
+        "#858599"
+      ]
+    },
+    "CohereColor": {
+      "file": "package/es/Cohere/components/Color.js",
+      "sha256": "19123b094a58fd0e5502f6118f1a68ef8459471f5c79186ea7ad411c70d04270",
+      "paths": 3,
+      "svgPathsSha256": "a50916c00e64b2420353db1fcaca3f211f283d0d39dc176e5a402de09c49929b",
+      "colors": [
+        "#39594D",
+        "#D18EE2",
+        "#FF7759"
+      ]
+    },
+    "MidjourneyMono": {
+      "file": "package/es/Midjourney/components/Mono.js",
+      "sha256": "86e8b5322a5b164b2e03cc9d35f44597d7a4f97d3aad3b9246ff36d107e39ec5",
+      "paths": 1,
+      "svgPathsSha256": "14cea13b35a8fbe9a7488f3b35f7bf1b828e2f72f894153cbd4c9f304ebc0089",
+      "colors": []
     }
   }
 }
