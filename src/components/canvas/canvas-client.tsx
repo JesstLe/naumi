@@ -151,6 +151,7 @@ import {
 import { ModelIcon } from "@/components/ui/model-icon";
 import { adminConfiguredFeature } from "@/lib/model-config/selection-policy";
 import { chosenFeatureModel, featureModelManaged, useFeatureModels } from "@/lib/model-config/feature-client";
+import { FeatureModelSelect } from "@/components/tools/feature-model-select";
 import { TextModelSelect } from "@/components/ui/text-model-select";
 import { useTextModel } from "@/lib/text-model-context";
 
@@ -586,12 +587,16 @@ function DarkSelect({
             onClick={() => setOpen(false)}
           >
             <div
+              data-testid="canvas-select-options"
               onClick={(e) => e.stopPropagation()}
               style={
                 dir === "down"
-                  ? { left: rect.left, top: rect.bottom + 8 }
+                  ? { left: rect.left, top: rect.bottom + 8, maxHeight: Math.max(80, window.innerHeight-rect.bottom-24), overflowY: "auto", overscrollBehavior: "contain" }
                   : {
                       left: rect.left,
+                      maxHeight: Math.max(80, rect.top-24),
+                      overflowY: "auto",
+                      overscrollBehavior: "contain",
                       bottom:
                         (typeof window !== "undefined"
                           ? window.innerHeight
@@ -1630,7 +1635,7 @@ export function CanvasClient() {
       if (form) { form.delete("targetWidth"); form.delete("targetHeight"); }
     }
     if (path === "/api/generate-image" || ["/api/canvas/image-tasks", "/api/canvas/expand", "/api/canvas/annotate", "/api/canvas/text-edit"].includes(path)) {
-      body.quality = normalizeCanvasQuality(body.quality || genQuality);
+      body.quality = normalizeCanvasQuality(body.quality || canvasToolQualities[features[path]] || genQuality);
       if (form) for (const key of ["ratio", "resolution", "count", "quality"]) { if (body[key] !== undefined) form.set(key, String(body[key])); }
       else init = { ...init, body: JSON.stringify(body) };
     }
@@ -1719,7 +1724,11 @@ export function CanvasClient() {
   const [editPrompt, setEditPrompt] = useState("");
   const [genModel, setGenModel] = useState("");
   const { quality: genQuality, imageCost, modelConfig } = useImageQuality("canvas.image", genModel);
-  const { catalog: canvasImageCatalog, error: canvasImageCatalogError } = useFeatureModels("canvas.image");
+  const expandQuality = useImageQuality("canvas.expand").quality;
+  const textEditQuality = useImageQuality("canvas.text-edit").quality;
+  const annotateQuality = useImageQuality("canvas.annotate").quality;
+  const canvasToolQualities: Partial<Record<FeatureId,string>> = {"canvas.expand":expandQuality,"canvas.text-edit":textEditQuality,"canvas.annotate":annotateQuality};
+  const { catalog: canvasImageCatalog, selected: canvasImageModel, setSelected: setCanvasImageModel, error: canvasImageCatalogError } = useFeatureModels("canvas.image");
   const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
   const [genRatio, setGenRatio] = useState("auto"); // 默认自适应
   const [genResolution, setGenResolution] = useState("1K"); // 默认 1K
@@ -1837,9 +1846,9 @@ export function CanvasClient() {
 
   useEffect(() => {
         if (canvasImageCatalog?.managed) {
-          const options = canvasImageCatalog.models.filter(item => item.id === canvasImageCatalog.defaultModelId);
+          const options = canvasImageCatalog.models;
           setImageModels(options);
-          setGenModel(options[0]?.id || "");
+          setGenModel(options.find(item => item.id === canvasImageModel)?.id || canvasImageCatalog.defaultModelId || options[0]?.id || "");
           return;
         }
         // Never briefly expose the unrestricted generation list while a managed canvas loads.
@@ -1864,7 +1873,7 @@ export function CanvasClient() {
           if (normalized.some((item) => item.id === saved)) return saved;
           return normalized.find((item) => item.id === fallback)?.id || normalized[0]?.id || "";
         });
-  }, [modelConfig, canvasImageCatalog]);
+  }, [modelConfig, canvasImageCatalog, canvasImageModel]);
 
   useEffect(() => {
     const parameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
@@ -1873,7 +1882,7 @@ export function CanvasClient() {
   }, [genModel, imageModels]);
 
   function pickGenerationModel(model: string) {
-    if (canvasImageCatalog?.managed) return;
+    if (canvasImageCatalog?.managed) { setCanvasImageModel(model); return; }
     setGenModel(model);
     window.localStorage.setItem("naumi:canvas-image-model", model);
   }
@@ -8283,7 +8292,7 @@ export function CanvasClient() {
       dir="up"
       light={lightCanvas}
       value={genModel}
-      disabled={disabled || canvasImageCatalog?.managed || imageModels.length < 2}
+      disabled={disabled || imageModels.length < 2}
       options={imageModels.map((item) => ({
         value: item.id,
         label: (
@@ -8303,7 +8312,7 @@ export function CanvasClient() {
       trigger={
         <>
           <ModelIcon modelId={genModel} size={15} />
-          <span data-testid="canvas-generation-model" className="truncate" title={canvasImageCatalog?.managed ? "由管理员在画布生图范围中统一配置" : t("canvas.dockModelHint")}>
+          <span data-testid="canvas-generation-model" className="truncate" title={t("canvas.dockModelHint")}>
             {activeImageModelLabel || t("canvas.dockModel")}
           </span>
         </>
@@ -10422,6 +10431,7 @@ export function CanvasClient() {
                           />
                         ))}
                       </div>
+                      <FeatureModelSelect feature="canvas.expand" disabled={selectedGenerating} />
                       <ImageQualityControl compact feature="canvas.expand" resolution={selected?.resolution || "1K"} />
                       <button
                         type="button"
@@ -10752,7 +10762,7 @@ export function CanvasClient() {
               )}
 
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-                <div className="mb-3"><ImageQualityControl compact binding="image.edit" resolution={active?.members.find(a => a.id === ocrArtworkId)?.resolution || "1K"} disabled={ocrStatus === "applying"} /></div>
+                <div className="mb-3"><FeatureModelSelect feature="canvas.text-edit" disabled={ocrStatus === "applying"} /><ImageQualityControl compact feature="canvas.text-edit" resolution={active?.members.find(a => a.id === ocrArtworkId)?.resolution || "1K"} disabled={ocrStatus === "applying"} /></div>
                 {ocrError && (
                   <div className="mb-3 border border-[#f0c8c3] bg-[#fff5f3] px-3 py-2 text-[12px] font-medium text-[#b44f43]">
                     {ocrError}

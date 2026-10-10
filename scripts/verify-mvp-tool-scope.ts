@@ -6,7 +6,7 @@ import {createMvpHandler} from "../src/lib/model-config/mvp-access";
 import {createModelRuntime,publicModelCatalog} from "../src/lib/model-config/runtime";
 import {createModelExecutor} from "../src/lib/model-config/execution";
 import {createRouterControl,type RouterStatus} from "../src/lib/model-config/router-client";
-import {applyMvpToolScope,mvpRows} from "../src/lib/model-config/mvp";
+import {applyMvpToolScope,mvpRows,orderMvpModels} from "../src/lib/model-config/mvp";
 import {FEATURE_BINDINGS} from "../src/lib/model-config/business";
 import {MODEL_BINDINGS} from "../src/lib/model-config/bindings";
 import {validateModelConfig} from "../src/lib/model-config/schema";
@@ -49,8 +49,8 @@ async function main(){
   const withoutScope=structuredClone(changed.config);for(const m of withoutScope.publicModels)delete m.toolScope;assert.deepEqual(withoutScope,before.config);
   assert.ok(!publicModelCatalog(changed,"image","image.aplus").models.some(m=>row.publicIds.includes(m.id)));
   assert.ok(publicModelCatalog(changed,"image","image.generate").models.some(m=>row.publicIds.includes(m.id)));
-  assert.equal(publicModelCatalog(changed,"image","canvas.image").models[0].id,row.publicIds[0]);
-  assert.equal((await executor.resolve({feature:"canvas.image",binding:"image.edit",requestedModelId:"image-a",snapshot:changed,billing})).publicModelId,row.publicIds[0]);
+  assert.deepEqual(publicModelCatalog(changed,"image","canvas.image").models.map(m=>m.id),["image-a",...row.publicIds]);
+  assert.equal((await executor.resolve({feature:"canvas.image",binding:"image.edit",requestedModelId:"image-a",snapshot:changed,billing})).publicModelId,"image-a");
   await assert.rejects(executor.resolve({feature:"image.aplus",binding:"image.generate",requestedModelId:row.publicIds[1],snapshot:changed,billing}),/未应用到当前工具/);
   assert.equal((await executor.clientFor(frozen)).wireModel,"wire-image-one");
   const rowNow=(await(await handler(request())).json()).rows.find((r:any)=>r.id===row.id);
@@ -66,7 +66,36 @@ async function main(){
   const only=(await import("../src/lib/model-config/mvp")).mvpRows(single,[{...publicModelCatalog(single,"image","image.generate"),feature:"image.generate"}])[0];
   assert.throws(()=>applyMvpToolScope(single.config,only,[]),/保留至少一个/);
   const invalid=structuredClone(empty.config);invalid.publicModels[0].toolScope={features:["tool.cutout"],defaultFor:[]};assert.throws(()=>validateModelConfig(invalid,{trustedOrigins:[f.origin]}),/模型能力/);
-  console.log("MVP_TOOL_SCOPE=PASS FAMILY=PASS SUBSET_ALL_NONE=PASS DEFAULT_FALLBACK=PASS RAW_REQUEST_REJECTED=PASS FROZEN_TASK=PASS DRAFT_PRICE_ROUTE_PRESERVED=PASS RETRY_CONFLICT=PASS LAST_MODEL_PROTECTED=PASS PAID_GENERATION=0");
+
+  // Native publication of a complete family order, conflict/retry and scope edits.
+  const stateForOrder=await(await handler(request())).json(),reordered=[...stateForOrder.rows.map((r:any)=>r.id)].reverse();
+  const orderBody={action:"order",id:randomUUID(),expectedVersion:empty.version,rowIds:reordered};
+  assert.equal((await handler(request({...orderBody,rowIds:reordered.slice(1)}))).status,400);
+  assert.equal((await handler(request({...orderBody,rowIds:reordered.map(()=>reordered[0])}))).status,400);
+  assert.equal((await handler(request(orderBody))).status,200);
+  const ordered=await f.repo.current();
+  assert.deepEqual((await(await handler(request())).json()).rows.map((r:any)=>r.id),reordered);
+  assert.equal((await handler(request(orderBody))).status,200);assert.equal((await f.repo.current()).version,ordered.version);
+  assert.equal((await handler(request({...orderBody,id:randomUUID()}))).status,409);
+  assert.deepEqual(ordered.config.upstreamModels,empty.config.upstreamModels);
+  assert.deepEqual(ordered.config.bindings,empty.config.bindings);
+  const pricedSource=structuredClone(empty.config);
+  pricedSource.business={"canvas.image":{enabled:true,defaultModelId:"image-a",options:empty.config.publicModels.map((m,i)=>({modelId:m.id,enabled:true,sort:i,unit:"image" as const,pricing:{mode:"cny-fixed" as const,amountMicros:String((i+1)*100000),creditsPerCnyMicros:"100000000",rounding:"ceil" as const}}))}};
+  const pricedOrder=orderMvpModels(pricedSource,stateForOrder.rows,reordered);
+  const expected=pricedSource.publicModels.filter(m=>row.publicIds.includes(m.id)).map(m=>m.id).concat("image-a");
+  assert.equal(pricedOrder.business!["canvas.image"]!.defaultModelId,"image-a");
+  assert.deepEqual(pricedOrder.business!["canvas.image"]!.options.map(({sort,...o})=>o),pricedSource.business!["canvas.image"]!.options.map(({sort,...o})=>o));
+  for(const m of pricedOrder.publicModels)delete m.toolScope;
+  assert.deepEqual(publicModelCatalog({version:1,digest:"",config:pricedOrder},"image","canvas.image").models.map(m=>m.id),expected);
+
+  const orderedRow=(await(await handler(request())).json()).rows.find((r:any)=>r.id===row.id);
+  assert.equal((await handler(request({action:"scope",id:randomUUID(),expectedVersion:ordered.version,rowId:row.id,features:all}))).status,200);
+  const withScope=await f.repo.current();
+  assert.deepEqual((await(await handler(request())).json()).rows.map((r:any)=>r.id),reordered);
+  assert.deepEqual(publicModelCatalog(withScope,"image","canvas.image").models.map(m=>m.id),[...row.publicIds,"image-a"]);
+  assert.equal((await executor.resolve({feature:"canvas.image",binding:"image.edit",requestedModelId:row.publicIds[0],snapshot:withScope,billing})).publicModelId,row.publicIds[0]);
+  assert.deepEqual(await f.repo.draft(actor),draft);
+  console.log("MODEL_ORDER_NATIVE=PASS SCOPE_ORDER_PRESERVED=PASS USER_MODEL_SELECTION=PASS MVP_TOOL_SCOPE=PASS FAMILY=PASS SUBSET_ALL_NONE=PASS DEFAULT_FALLBACK=PASS RAW_REQUEST_REJECTED=PASS FROZEN_TASK=PASS DRAFT_PRICE_ROUTE_PRESERVED=PASS RETRY_CONFLICT=PASS LAST_MODEL_PROTECTED=PASS PAID_GENERATION=0");
  }finally{await f.cleanup();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

@@ -164,3 +164,11 @@
 .parameterRoute legend { padding:0 6px; font-size:12px; color:#3d5874; }
 .parameterEvidence { display:grid; grid-template-columns:180px minmax(0,1fr); gap:14px; margin-top:16px; }
 @media(max-width:640px) { .parameterChoices,.parameterEvidence { grid-template-columns:minmax(0,1fr); } .parameterRoute { padding:12px; } }
+
+.orderList { list-style:none; padding:0; margin:16px 0; display:grid; gap:8px; }
+.orderList li { display:flex; align-items:center; gap:10px; border:1px solid #dce6f0; border-radius:10px; padding:10px 12px; }
+.orderNumber { width:22px; color:#74869c; font-size:12px; }
+.orderName { flex:1; min-width:0; display:grid; gap:3px; font-size:13px; }
+.orderName small { color:#74869c; font-size:10px; overflow-wrap:anywhere; }
+.orderList button { padding:8px; border:1px solid #dce6f0; border-radius:7px; }
+.orderList button:disabled { opacity:.3; }

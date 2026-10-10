@@ -146,6 +146,23 @@ export function applyMvpToolScope(source:ModelConfig,row:MvpRow,features:string[
   return config;
 }
 
+/** Persist family ordering without changing model availability, defaults or pricing. */
+export function orderMvpModels(source:ModelConfig,rows:MvpRow[],rowIds:string[]):ModelConfig {
+  if(rowIds.length!==rows.length || new Set(rowIds).size!==rows.length || rowIds.some(id=>!rows.some(row=>row.id===id)))
+    throw new ModelConfigError("INVALID_MODEL_ORDER","排序必须包含当前全部模型，且不能重复，请刷新后重试");
+  const config=structuredClone(source),rank=new Map(rowIds.map((id,index)=>[id,index]));
+  const key=(m:ModelConfig["publicModels"][number])=>m.modality==="image"?imageModelDisplayId(m.id):m.id;
+  const visible=config.publicModels.filter(m=>m.enabled&&m.visible&&rank.has(key(m))).sort((a,b)=>rank.get(key(a))!-rank.get(key(b))!);
+  let index=0;
+  config.publicModels=config.publicModels.map(m=>m.enabled&&m.visible&&rank.has(key(m))?visible[index++]:m);
+  // Business catalogs have their own option sort values. Keep them in the same
+  // published order without changing defaults, availability, routes or prices.
+  const publicRank=new Map(config.publicModels.map((m,i)=>[m.id,i]));
+  for(const feature of Object.values(config.business || {}))
+    [...feature!.options].sort((a,b)=>(publicRank.get(a.modelId)??Infinity)-(publicRank.get(b.modelId)??Infinity)).forEach((option,i)=>{option.sort=i;});
+  return config;
+}
+
 /** A simple switch is global to the public alias/family, and preserves every price and binding. */
 export function switchMvpModel(source: ModelConfig, row: MvpRow, upstreamId: string): ModelConfig {
   assertMvpTarget(source, row, upstreamId);
