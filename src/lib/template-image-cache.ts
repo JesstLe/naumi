@@ -235,9 +235,10 @@ async function requestImage(url: URL): Promise<IncomingMessage> {
   });
 }
 
-async function downloadImage(source: string): Promise<{ bytes: Buffer } & ImageType> {
+async function downloadImage(source: string, options?: { allowSvg?: boolean; validate?: (url: string) => unknown }): Promise<{ bytes: Buffer } & ImageType> {
   let current = new URL(source);
   for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
+    options?.validate?.(current.href);
     const response = await requestImage(current);
     const status = response.statusCode || 0;
 
@@ -265,11 +266,16 @@ async function downloadImage(source: string): Promise<{ bytes: Buffer } & ImageT
       throw new Error("远程地址返回的不是图片");
     }
     const bytes = await readLimitedBody(response);
-    const type = sniffImageType(bytes);
+    const type = sniffImageType(bytes) || (options?.allowSvg && /^\s*(?:<\?xml[^>]*>\s*)?<svg[\s>]/i.test(bytes.toString("utf8")) ? { contentType: "image/svg+xml", extension: "svg" } : null);
     if (!type) throw new Error("仅支持 PNG、JPG、WebP、GIF 或 AVIF 图片");
     return { bytes, ...type };
   }
   throw new Error("图片源重定向次数过多");
+}
+
+/** Bounded, DNS-pinned public asset download. SVG is inert data and must be validated before rendering. */
+export async function fetchPublicImageBytes(source: string, options?: { allowSvg?: boolean; validate?: (url: string) => unknown }) {
+  return downloadImage(source, options);
 }
 
 function indexFileFor(source: string): string {
