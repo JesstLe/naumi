@@ -4,17 +4,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, ArrowUp, ArrowDown, Check, ChevronRight, CircleHelp, Database, ImageIcon, Loader2, Plus, RefreshCw, Search, Unplug, X } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
 import { browserRandomUUID } from "@/lib/browser-crypto";
-import type { MvpState, MvpRow } from "@/lib/model-config/mvp";
+import type { ModelManagementState, ManagedModelRow } from "@/lib/model-config/management";
 import type { CatalogEntry } from "@/lib/model-config/catalog-store";
 import { encryptCredential } from "../model-config/provider-editor";
-import styles from "./model-mvp.module.css";
-import type {MvpCreditPricing} from "@/lib/model-config/credit-overrides";
+import styles from "./model-management.module.css";
+import type {ManagedModelCreditPricing} from "@/lib/model-config/credit-overrides";
 import {DISPLAY_QUALITY_IDS,DEFAULT_QUALITY_LABELS} from "@/lib/model-config/quality-policy";
 import {MODEL_CATALOG_REFRESH} from "@/lib/model-config/public-client";
 
-type State = MvpState & { catalogs: CatalogEntry[] };
+type State = ModelManagementState & { catalogs: CatalogEntry[] };
 type Operation = Record<string, unknown> & { action: string; id: string; expectedVersion: number };
-const endpoint = "/api/admin/mvp", pendingKey = "naumi:admin:mvp:pending";
+// Keep the stored pending key so pre-rename ambiguous operations can be reconciled.
+const endpoint = "/api/admin/model-management", pendingKey = "naumi:admin:mvp:pending";
 const types: Record<string, string> = { image: "图片", text: "文字", video: "视频" };
 const protocols = [
   ["openai-images", "OpenAI 图片", "https://api.example.com/v1"],
@@ -32,8 +33,8 @@ async function api(body?: unknown) {
 function Dialog({ title, children, onClose, locked = false }: { title: string; children: React.ReactNode; onClose: () => void; locked?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => { const dialog = ref.current!; dialog.showModal(); return () => dialog.close(); }, []);
-  return <dialog ref={ref} className={styles.dialog} aria-labelledby="mvp-dialog-title" onCancel={event => { event.preventDefault(); if (!locked) onClose(); }}>
-    <header className={styles.dialogHeader}><h2 id="mvp-dialog-title">{title}</h2><button aria-label="关闭" disabled={locked} onClick={onClose}><X size={20} /></button></header>{children}
+  return <dialog ref={ref} className={styles.dialog} aria-labelledby="model-management-dialog-title" onCancel={event => { event.preventDefault(); if (!locked) onClose(); }}>
+    <header className={styles.dialogHeader}><h2 id="model-management-dialog-title">{title}</h2><button aria-label="关闭" disabled={locked} onClick={onClose}><X size={20} /></button></header>{children}
   </dialog>;
 }
 function useArray(initial: string[] = []) {
@@ -41,16 +42,16 @@ function useArray(initial: string[] = []) {
   return [items, (value: string) => setItems(old => old.includes(value) ? old.filter(v => v !== value) : [...old, value])] as const;
 }
 
-export function ModelMvp() {
+export function ModelManagement() {
   const [state, setState] = useState<State | null>(null), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [pending, setPending] = useState<Operation | null>(null);
   const [tab, setTab] = useState("models"), [filter, setFilter] = useState("all"), [search, setSearch] = useState("");
-  const [row, setRow] = useState<MvpRow | null>(null), [connect, setConnect] = useState(false);
-  const [rename, setRename] = useState<MvpRow | null>(null);
+  const [row, setRow] = useState<ManagedModelRow | null>(null), [connect, setConnect] = useState(false);
+  const [rename, setRename] = useState<ManagedModelRow | null>(null);
   const [sorting,setSorting]=useState(false);
-  const [scope,setScope]=useState<MvpRow|null>(null);
-  const [parameters,setParameters]=useState<MvpRow|null>(null);
-  const [price,setPrice]=useState<MvpRow|null>(null);
+  const [scope,setScope]=useState<ManagedModelRow|null>(null);
+  const [parameters,setParameters]=useState<ManagedModelRow|null>(null);
+  const [price,setPrice]=useState<ManagedModelRow|null>(null);
   const [register, setRegister] = useState<{ providerId: string; model: string } | null>(null), [refreshing, setRefreshing] = useState<string[]>([]);
   const mounted = useRef(true), loadingGuard = useRef(false), mutationGuard = useRef(false);
   const directoryInFlight = useRef(new Set<string>());
@@ -119,17 +120,17 @@ export function ModelMvp() {
   const rows = state?.rows.filter(r => (filter === "all" || r.modality === filter) && `${r.label} ${r.alias} ${r.routes.map(x => `${x.model} ${x.provider}`).join(" ")} ${r.features.map(f => f.label).join(" ")}`.toLowerCase().includes(search.toLowerCase())) || [];
   const locked = busy || !!pending;
   return <main className={styles.page}>
-    <div className={styles.topline}><span className={styles.miniBrand}><span className={styles.brandMark}>N</span>Naumi <span>模型工作台</span></span><div className={styles.libraryLinks}><Link href="/admin/mvp/library">元数据与成本库 <Database size={14}/></Link><Link href="/admin/bi/models">完整配置中心 <ChevronRight size={14} /></Link></div></div>
+    <div className={styles.topline}><span className={styles.miniBrand}><span className={styles.brandMark}>N</span>Naumi <span>模型工作台</span></span><div className={styles.libraryLinks}><Link href="/admin/model-management/library">元数据与成本库 <Database size={14}/></Link><Link href="/admin/bi/models">完整配置中心 <ChevronRight size={14} /></Link></div></div>
     <header className={styles.hero}><div><h1>把模型连接，变简单。</h1><p>从用户看到的名字，到真正执行的模型。<br />在这里看清每条连接，也能直接更换它。</p></div><button className={styles.primary} onClick={() => { setTab("sources"); setConnect(true); }} disabled={!state || locked}><Plus size={17} />接入上游</button></header>
     <div className={styles.flow} aria-label="模型连接路径"><span><ImageIcon size={19} /><b>前端名称</b><small>用户看到的名称 / 别名</small></span><ArrowRight size={19} /><span><Database size={19} /><b>实际模型</b><small>请求中真正使用的模型 ID</small></span><ArrowRight size={19} /><span><Unplug size={19} /><b>上游来源</b><small>模型从哪个接口提供</small></span></div>
-    <div className={styles.tabs}><div role="tablist" aria-label="MVP 模型管理"><button role="tab" id="models-tab" aria-selected={tab === "models"} aria-controls="models-panel" onClick={() => setTab("models")}>模型映射 <span>{state?.rows.length ?? "—"}</span></button><button role="tab" id="sources-tab" aria-selected={tab === "sources"} aria-controls="sources-panel" onClick={() => setTab("sources")}>上游来源 <span>{state?.providers.length ?? "—"}</span></button></div><span className={styles.version}>{state ? `模型配置 v${state.version}` : "正在读取生效配置"}<button aria-label="刷新生效配置" disabled={loading || locked} onClick={() => { setError(""); void load(true); }}><RefreshCw size={15} className={loading ? styles.spin : ""} /></button></span></div>
+    <div className={styles.tabs}><div role="tablist" aria-label="模型管理"><button role="tab" id="models-tab" aria-selected={tab === "models"} aria-controls="models-panel" onClick={() => setTab("models")}>模型映射 <span>{state?.rows.length ?? "—"}</span></button><button role="tab" id="sources-tab" aria-selected={tab === "sources"} aria-controls="sources-panel" onClick={() => setTab("sources")}>上游来源 <span>{state?.providers.length ?? "—"}</span></button></div><span className={styles.version}>{state ? `模型配置 v${state.version}` : "正在读取生效配置"}<button aria-label="刷新生效配置" disabled={loading || locked} onClick={() => { setError(""); void load(true); }}><RefreshCw size={15} className={loading ? styles.spin : ""} /></button></span></div>
     {error && <div role="alert" className={styles.error}>{error}</div>}
     {notice && <div role="status" className={styles.notice}>{notice}</div>}
     {pending && <div className={styles.pending}><span>有一项发布结果需要核对，已保留操作编号。</span><button className={styles.primary} disabled={busy} onClick={() => void run(pending)}>{busy && <Loader2 size={16} className={styles.spin} />}核对并继续</button></div>}
     {state && !state.managed && <div className={styles.error}>当前实例未启用统一模型配置，下面是注册表中的模型。用户侧仍使用旧配置；请先在完整配置中心完成接入。</div>}
     {!state && loading ? <div className={styles.empty}><Loader2 className={styles.spin} />正在读取前端模型与真实路由…</div> : !state ? <div className={styles.empty}><Unplug /><h2>模型配置暂时无法读取</h2><p>检查数据库和 Router 管理连接后重试。</p><button className={styles.secondary} onClick={() => void load(true)}>重新读取</button></div> : tab === "models" ? <section id="models-panel" role="tabpanel" aria-labelledby="models-tab">
       <div className={styles.toolbar}><div className={styles.filters} aria-label="模型类型">{[["all", "全部"], ["image", "图片"], ["text", "文字"], ["video", "视频"]].map(([id, label]) => <button key={id} aria-pressed={filter === id} onClick={() => setFilter(id)}>{label}</button>)}</div><button className={styles.secondary} disabled={locked} onClick={()=>setSorting(true)}>调整排序</button><label className={styles.search}><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索名称、模型 ID 或功能" aria-label="搜索模型" /></label></div>
-      <div className={styles.mapping}><div className={styles.tableHead}><span>前端名称</span><span>实际调用模型 / 上游来源</span><span>操作</span></div>{rows.map(r => <article className={styles.modelRow} key={r.id} data-testid={`mvp-model-${r.id}`}>
+      <div className={styles.mapping}><div className={styles.tableHead}><span>前端名称</span><span>实际调用模型 / 上游来源</span><span>操作</span></div>{rows.map(r => <article className={styles.modelRow} key={r.id} data-testid={`managed-model-${r.id}`}>
         <div className={styles.modelName}><span className={styles.modality}>{types[r.modality]}</span><h2>{r.label}</h2>{r.publicIds.length > 1 && <p>模型家族 · {r.publicIds.length} 个比例分支，统一管理</p>}<div className={styles.scopeSummary}><span>应用工具 {r.features.length} 项</span><button disabled={locked || !state.managed} onClick={()=>setScope(r)}>编辑范围</button></div><div className={styles.featureTags}>{r.features.map(f => <span key={f.id}>{f.label}</span>)}</div>{!r.features.length && <p>尚未应用到工具，可随时重新选择范围。</p>}</div>
         <div className={styles.routes}>{r.routes.map((route, index) => <div key={`${route.upstreamId}-${route.kind}`} className={styles.route}><span className={styles.routeDot} data-enabled={route.enabled} /><div><code>{route.model}</code><p>{route.provider}<span>{r.conditional || r.preset || r.publicIds.length > 1 ? route.kind : "已配置"}</span></p></div></div>)}{r.conditional && <p className={styles.ruleNote}>具体调用由条件或回退规则决定</p>}</div>
         <div className={styles.rowActions}><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRename(r)}>修改显示名称</button>{r.modality === "image" && <button className={styles.switchButton} disabled={locked || r.preset || !r.qualityConfig?.routes.every(v=>v.editable)} title={r.preset || !r.qualityConfig?.routes.every(v=>v.editable)?"此路径由外部路由或成本预设管理参数":"配置显示档位与实际传参"} onClick={()=>{setError("");setParameters(r);}}>参数设置</button>}<button className={styles.switchButton} disabled={locked || !state.managed || !r.features.length} onClick={() => {setError("");setPrice(r);}}>设置积分</button><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRow(r)}>更换模型 <ChevronRight size={15} /></button><small className={styles.priceCaption}>{r.pricing?.[0]?.credits!==null && r.pricing?.[0] ? `${r.pricing[0].estimated?"预估":"参考"} ${r.pricing[0].credits} 积分/${r.pricing[0].unit==="image"?"张":r.pricing[0].unit==="item"?"项":"次"}` : "按工具配置售价"}</small></div>
@@ -153,11 +154,11 @@ export function ModelMvp() {
 
 const priceQualities=["low","medium","high","xhigh","max","auto"],priceResolutions=["1K","2K","4K","5K"];
 const priceQualityNames:Record<string,string>={low:"低",medium:"标准",high:"高",xhigh:"超高",max:"最高",auto:"自动"};
-function PriceDialog({row,locked,error,onClose,onSave}:{row:MvpRow;locked:boolean;error:string;onClose:()=>void;onSave:(features:string[],pricing:MvpCreditPricing|null)=>void}){
+function PriceDialog({row,locked,error,onClose,onSave}:{row:ManagedModelRow;locked:boolean;error:string;onClose:()=>void;onSave:(features:string[],pricing:ManagedModelCreditPricing|null)=>void}){
   const views=row.pricing || [],first=views[0];
   const [selected,setSelected]=useState<string[]>(first?[first.feature]:[]),[active,setActive]=useState(first?.feature || ""),[mode,setMode]=useState(row.modality==="image"?"matrix":"fixed");
   const [amount,setAmount]=useState(first?.credits ?? NaN),[bulk,setBulk]=useState(first?.credits ?? NaN);
-  type Draft={cells:import("@/lib/model-config/mvp").MvpCreditGrid;prices:Record<string,Record<string,number|null>>};
+  type Draft={cells:import("@/lib/model-config/management").ManagedModelCreditGrid;prices:Record<string,Record<string,number|null>>};
   const [drafts,setDrafts]=useState<Record<string,Draft>>({}),[loading,setLoading]=useState(false),[loadError,setLoadError]=useState("");
   useEffect(()=>{
     if(!active || drafts[active])return;let cancelled=false;setLoading(true);setLoadError("");
@@ -188,7 +189,7 @@ function PriceDialog({row,locked,error,onClose,onSave}:{row:MvpRow;locked:boolea
     </div><footer className={styles.dialogFooter}><button type="button" className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button type="button" className={styles.secondary} disabled={locked || !selected.length || !views.some(v=>selected.includes(v.feature)&&v.override)} onClick={()=>onSave(selected,null)}>恢复原计价</button><button type="submit" className={styles.primary} disabled={locked || loading || !selected.length || !valid}>保存积分并生效</button></footer></form></Dialog>;
 }
 
-function OrderDialog({rows,locked,error,onClose,onSave}:{rows:MvpRow[];locked:boolean;error:string;onClose:()=>void;onSave:(ids:string[])=>void}){
+function OrderDialog({rows,locked,error,onClose,onSave}:{rows:ManagedModelRow[];locked:boolean;error:string;onClose:()=>void;onSave:(ids:string[])=>void}){
   const [ids,setIds]=useState(()=>rows.map(row=>row.id));
   const move=(index:number,delta:number)=>setIds(old=>{const next=[...old];[next[index],next[index+delta]]=[next[index+delta],next[index]];return next;});
   const changed=ids.some((id,i)=>id!==rows[i].id);
@@ -199,7 +200,7 @@ function OrderDialog({rows,locked,error,onClose,onSave}:{rows:MvpRow[];locked:bo
   </div><footer className={styles.dialogFooter}><button className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button className={styles.secondary} disabled={locked} onClick={()=>setIds(rows.map(row=>row.id))}>恢复当前顺序</button><button className={styles.primary} disabled={locked || !changed} onClick={()=>onSave(ids)}>保存排序并生效</button></footer></Dialog>;
 }
 
-function ScopeDialog({row,locked,error,onClose,onSave}:{row:MvpRow;locked:boolean;error:string;onClose:()=>void;onSave:(features:string[],canvas?:boolean)=>void}){
+function ScopeDialog({row,locked,error,onClose,onSave}:{row:ManagedModelRow;locked:boolean;error:string;onClose:()=>void;onSave:(features:string[],canvas?:boolean)=>void}){
   const [selected,setSelected]=useState(()=>row.features.map(f=>f.id));
   const [search,setSearch]=useState("");
   const [canvas,setCanvas]=useState<boolean|undefined>(row.canvasUnified?true:undefined);
@@ -225,7 +226,7 @@ function ScopeDialog({row,locked,error,onClose,onSave}:{row:MvpRow;locked:boolea
     </div><footer className={styles.dialogFooter}><button className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button className={styles.primary} disabled={locked || !changed} onClick={()=>onSave(selected,effectiveCanvas)}>保存范围并生效</button></footer></Dialog>;
 }
 
-function ParametersDialog({row,locked,error,onClose,onSave}:{row:MvpRow;locked:boolean;error:string;onClose:()=>void;onSave:(value:{choices:{id:string;label:string}[];routes:NonNullable<MvpRow["qualityConfig"]>["routes"]}|null)=>void}){
+function ParametersDialog({row,locked,error,onClose,onSave}:{row:ManagedModelRow;locked:boolean;error:string;onClose:()=>void;onSave:(value:{choices:{id:string;label:string}[];routes:NonNullable<ManagedModelRow["qualityConfig"]>["routes"]}|null)=>void}){
   const initial=row.qualityConfig!;
   const [choices,setChoices]=useState(initial.choices),[routes,setRoutes]=useState(initial.routes);
   useEffect(()=>setRoutes(old=>old.map(route=>({...route,metadataDefaults:initial.routes.find(r=>r.upstreamId===route.upstreamId)?.metadataDefaults || null}))),[initial.routes]);
@@ -262,7 +263,7 @@ function Source({ provider: p, catalog, candidates, refreshing, locked, onRefres
   </article>;
 }
 
-function SwitchDialog({ row, state, locked, busy, onClose, onSave }: { row: MvpRow; state: State; locked: boolean; busy: boolean; onClose: () => void; onSave: (id: string) => void }) {
+function SwitchDialog({ row, state, locked, busy, onClose, onSave }: { row: ManagedModelRow; state: State; locked: boolean; busy: boolean; onClose: () => void; onSave: (id: string) => void }) {
   const [selected, setSelected] = useState(""), [search, setSearch] = useState("");
   const candidates = state.candidates.filter(c => row.candidateIds.includes(c.id) && `${c.model} ${c.provider}`.toLowerCase().includes(search.toLowerCase()));
   return <Dialog title="更换实际模型" onClose={onClose} locked={locked}><div className={styles.dialogBody}><div className={styles.currentConnection}><span>前端名称<b>{row.label}</b></span><ArrowRight size={18} /><span>当前实际模型<b>{Array.from(new Set(row.routes.map(r => r.model))).join(" / ")}</b></span></div><p className={styles.ruleNote}>名称保持不变。影响：{row.features.map(f => f.label).join("、")}。{row.publicIds.length > 1 && "该家族的所有比例分支会一起切换。"}{row.conditional && "更换后将改为固定调用，原条件路由和失败回退会关闭。"}</p>
@@ -274,7 +275,7 @@ function SwitchDialog({ row, state, locked, busy, onClose, onSave }: { row: MvpR
   </div><footer className={styles.dialogFooter}><button className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button className={styles.primary} disabled={!selected || locked} onClick={() => onSave(selected)}>{busy && <Loader2 size={16} className={styles.spin} />}切换并生效</button></footer></Dialog>;
 }
 
-function RenameDialog({ row, locked, onClose, onSave }: { row: MvpRow; locked: boolean; onClose: () => void; onSave: (label: string) => void }) {
+function RenameDialog({ row, locked, onClose, onSave }: { row: ManagedModelRow; locked: boolean; onClose: () => void; onSave: (label: string) => void }) {
   const [label, setLabel] = useState(row.label);
   return <Dialog title="修改前端显示名称" onClose={onClose} locked={locked}><form onSubmit={e => { e.preventDefault(); if (label.trim()) onSave(label.trim()); }}><div className={styles.dialogBody}><p className={styles.ruleNote}>此名称将用于前端模型选项。实际调用模型、模型 ID、价格和用途保持原配置。{row.publicIds.length > 1 && "该模型家族的所有比例分支会统一使用新名称。"}</p><label className={styles.field}>显示名称<input aria-label="显示名称" autoFocus required maxLength={100} value={label} onChange={e => setLabel(e.target.value)} disabled={locked} /><small>{label.length} / 100</small></label><p className={styles.ruleNote}>影响：{row.features.map(f => f.label).join("、")}</p></div><footer className={styles.dialogFooter}><button type="button" className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button type="submit" className={styles.primary} disabled={locked || !label.trim() || label.trim() === row.label}>保存并生效</button></footer></form></Dialog>;
 }

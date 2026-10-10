@@ -8,7 +8,7 @@ let paid=0;
 try{
  for(const theme of ["light","dark"]){
   const context=await browser.newContext({viewport:{width:1920,height:911}});
-  if(process.env.MVP_BROWSER_COOKIE_FILE) await context.addCookies([JSON.parse(await readFile(process.env.MVP_BROWSER_COOKIE_FILE,"utf8"))]);
+  if(process.env.MODEL_MANAGEMENT_BROWSER_COOKIE_FILE) await context.addCookies([JSON.parse(await readFile(process.env.MODEL_MANAGEMENT_BROWSER_COOKIE_FILE,"utf8"))]);
   const email="popover-fixture@local.test",id="popover-image",key="tree:"+id,now=new Date().toISOString();
   const user={name:"Popover fixture",email,plan:"starter",creditsTotal:20,creditsUsed:0,joinedAt:now,renewsAt:now,invoices:[]};
   await context.addInitScript(({email,user,key,theme})=>{localStorage.setItem("naumi:user:"+email,JSON.stringify(user));localStorage.setItem("naumi:last-email",email);localStorage.setItem("nv:canvas:bg",theme);localStorage.setItem("nv:canvas:last",key);},{email,user,key,theme});

@@ -29,7 +29,7 @@ async function main() {
     send(405, { error: "Generation forbidden" });
   });
   process.env.PGOPTIONS = `-c search_path=${f.schemaName}`;
-  process.env.NEXT_DIST_DIR = "output/admin-mvp-20261009/next";
+  process.env.NEXT_DIST_DIR = "output/model-management-fixture/next";
   process.env.NAUMI_VIDEO_WORKER = "0";
   process.env.NAUMI_MULTI_USER = "1";
   process.env.BUILD_VERSION="1791542000";
@@ -67,16 +67,16 @@ async function main() {
   const fixtureBilling=fixtureConfig();fixtureBilling.switches.metering="on";
   const billing=createConfigRuntime({ pool: f.sql, ensureSchema: db.ensureSchema, initialize: async () => fixtureBilling });
   const beforeBilling=await billing.current();await billing.publish({id:crypto.randomUUID(),expectedVersion:beforeBilling.version,config:fixtureBilling,actor:"fixture",reason:"Enable isolated UI pricing"});
-  await mkdir("output/admin-mvp-20261009", { recursive: true });
+  await mkdir("output/model-management-fixture", { recursive: true });
   const next = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", "54989"], { env: process.env, windowsHide: true, stdio: "inherit" });
   let closing = false;
   close = async () => {
     if (closing) return; closing = true;
     if (process.platform === "win32") await new Promise(resolve => spawn("taskkill", ["/pid", String(next.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }).once("exit", resolve));
     else next.kill();
-    await db.getPool().end(); await f.cleanup(); await rm("output/admin-mvp-20261009/fixture.json", { force: true }); process.exit(0);
+    await db.getPool().end(); await f.cleanup(); await rm("output/model-management-fixture/fixture.json", { force: true }); process.exit(0);
   };
-  await writeFile("output/admin-mvp-20261009/fixture.json", JSON.stringify({ control: f.origin, memberCookie: native.signUserSession("mvp-member@example.test", Date.now()), schemaName: f.schemaName }));
+  await writeFile("output/model-management-fixture/fixture.json", JSON.stringify({ control: f.origin, memberCookie: native.signUserSession("mvp-member@example.test", Date.now()), schemaName: f.schemaName }));
   process.on("SIGINT", () => void close()); process.on("SIGTERM", () => void close());
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });

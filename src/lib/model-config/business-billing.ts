@@ -8,7 +8,7 @@ import type { BillingFacts, BillingQuote, ConfigSnapshot } from "../billing/type
 import { selectedImagePreset, effectiveImageParameters } from "./image-preset";
 import { procurementCost, apiCostCredits } from "../billing/api-cost";
 import { rounded } from "../billing/money";
-import {mvpCreditRule,applyCreditOverride} from "./credit-overrides";
+import {managedModelCreditRule,applyCreditOverride} from "./credit-overrides";
 import {policyQuality} from "./quality-policy";
 
 export function freezeImagePresetQuote(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts, create: (s:ConfigSnapshot,f:BillingFacts)=>BillingQuote): BillingQuote | null {
@@ -17,7 +17,7 @@ export function freezeImagePresetQuote(snapshot: ConfigSnapshot, models: ModelSn
   if (models.config.business?.[facts.feature]?.enabled === false) throw new ModelConfigError("FEATURE_DISABLED","该功能已停用",409);
   const parameters = effectiveImageParameters(preset,{quality:facts.quality,resolution:facts.resolution,ratio:facts.ratio||currentModelExecution("image")?.frozen.requestedParameters?.ratio||"1:1"});
   const v = preset.prices.find(v=>v.quality===parameters.effective.quality&&v.resolution===parameters.effective.resolution);
-  if(mvpCreditRule(snapshot,facts)){
+  if(managedModelCreditRule(snapshot,facts)){
     const adjusted={...facts,quality:parameters.effective.quality,resolution:parameters.effective.resolution};
     const config=structuredClone(snapshot.config);config.features[facts.feature].unit="image";
     const q=create(applyCreditOverride(snapshot,{version:snapshot.version,config},adjusted),adjusted);
@@ -73,7 +73,7 @@ export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnap
   if (presetQuote) return presetQuote;
   const q = create(businessBillingSnapshot(snapshot, models, facts), facts);
   q.modelVersion = models.version;
-  if(mvpCreditRule(snapshot,facts)) q.legacyCompatible=false;
+  if(managedModelCreditRule(snapshot,facts)) q.legacyCompatible=false;
   if (models.config.business?.[facts.feature]) q.legacyCompatible = false;
   const scope = currentModelExecution(), model = models.config.publicModels.find(m => m.id === facts.modelId);
   const upstream = models.config.upstreamModels.find(u => u.id === (scope?.frozen.target.type === "upstream" && scope.frozen.publicModelId === facts.modelId ? scope.frozen.target.id : model?.target.id));

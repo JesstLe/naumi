@@ -7,7 +7,7 @@ import { Activity, ArrowLeft, BarChart3, Building2, ImageIcon, Layers, LogOut, M
 import type { BiSection } from "@/lib/bi/contracts";
 import styles from "./center-shell.module.css";
 
-type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "mvp";
+type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-management";
 type Entry = { id: Section; label: string; icon: typeof Users; href?: string };
 const groups: { label: string; entries: Entry[] }[] = [
   { label: "运营概览", entries: [{ id: "overview", label: "数据概览", icon: BarChart3 }] },
@@ -63,7 +63,7 @@ export function AdminCenterShell({ active, children, onBiNavigate }: {
       <Link className={styles.brand} href="/admin/center" prefetch={false}>Naumi <span>管理中心</span></Link>
       <p className={styles.private}><ShieldCheck size={15} />仅管理员可见</p>
       <nav aria-label="管理中心导航">
-        <div className={styles.mvpEntry}><Link href="/admin/mvp" prefetch={false} aria-current={active === "mvp" ? "page" : undefined} className={active === "mvp" ? styles.mvpActive : ""} onClick={() => setOpen(false)}><Layers size={18} /><span>MVP <small>模型连接</small></span><span className={styles.mvpBadge}>新</span></Link></div>
+        <div className={styles.modelManagementEntry}><Link href="/admin/model-management" prefetch={false} aria-current={active === "model-management" ? "page" : undefined} className={active === "model-management" ? styles.modelManagementActive : ""} onClick={() => setOpen(false)}><Layers size={18} /><span>模型管理 <small>模型与积分</small></span><span className={styles.modelManagementBadge}>新</span></Link></div>
         {groups.map(group => <div className={styles.group} key={group.label}>
           <p className={styles.groupLabel}>{group.label}</p>
           {group.entries.map(({ id, label, icon: Icon, href }) => <Link key={id} prefetch={false}

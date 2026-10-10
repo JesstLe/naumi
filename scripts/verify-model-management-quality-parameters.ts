@@ -21,15 +21,15 @@ async function main(){
   if(req.url==="/v1/images/generations"||req.url==="/v1/images/edits"){wire.push(body);return res.end(JSON.stringify({data:[{b64_json:png.toString("base64")}]}));}
   res.statusCode=404;res.end('{}');
  });
- Object.assign(process.env,{PGOPTIONS:`-c search_path=${f.schemaName}`,NAUMI_MULTI_USER:"1",NAUMI_ROUTER_MANAGEMENT_URL:f.origin,NAUMI_ROUTER_MANAGEMENT_TOKEN:"quality-policy-router-fixture-long",MODEL_CONFIG_ENVELOPE_SECRET:"quality-policy-envelope-fixture-long",MODEL_CONFIG_TRUSTED_ORIGINS:f.origin,OPENAI_API_KEY:"fixture-only",OPENAI_IMAGE_MODEL:"gpt-image-2",STORAGE_DRIVER:"local",MEDIA_DIR:"output/mvp-model-parameters-20261009/media"});
+ Object.assign(process.env,{PGOPTIONS:`-c search_path=${f.schemaName}`,NAUMI_MULTI_USER:"1",NAUMI_ROUTER_MANAGEMENT_URL:f.origin,NAUMI_ROUTER_MANAGEMENT_TOKEN:"quality-policy-router-fixture-long",MODEL_CONFIG_ENVELOPE_SECRET:"quality-policy-envelope-fixture-long",MODEL_CONFIG_TRUSTED_ORIGINS:f.origin,OPENAI_API_KEY:"fixture-only",OPENAI_IMAGE_MODEL:"gpt-image-2",STORAGE_DRIVER:"local",MEDIA_DIR:"output/managed-model-parameters-20261009/media"});
  const db=await import("../src/lib/db");
  try{
   f.config.upstreamModels[0].capabilities.preserveIdentity=true;
   const original=await f.repo.current();await db.ensureSchema();await db.setSetting("multi_user_enabled","1");const email="quality-policy@example.test";await db.getOrCreateUser(email);await db.addCreditBatch(email,10000,{source:"admin",reason:"isolated fixture"});
   const admin=await(await import("../src/lib/model-config/server")).getModelAdministration(),b0=await admin.billing.current(),billing=fixtureConfig();billing.switches.metering="on";await admin.billing.publish({id:randomUUID(),expectedVersion:b0.version,config:billing,actor:"fixture",reason:"fixture"});
   const priceBefore=await admin.billing.current(),draft=await admin.repo.draft("fixture-admin");
-  const handler=(await import("../src/lib/model-config/mvp-access")).createMvpHandler({authorize:async()=>({actor:"fixture-admin"}),managed:async()=>true,administration:async()=>admin});
-  const request=(body?:unknown)=>new Request(f.origin+"/api/admin/mvp",{method:body?"POST":"GET",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
+  const handler=(await import("../src/lib/model-config/management-access")).createModelManagementHandler({authorize:async()=>({actor:"fixture-admin"}),managed:async()=>true,administration:async()=>admin});
+  const request=(body?:unknown)=>new Request(f.origin+"/api/admin/model-management",{method:body?"POST":"GET",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
   const initial=await(await handler(request())).json(),row=initial.rows[0],choices=DISPLAY_QUALITY_IDS.map(id=>({id,label:id==="max"?"旗舰":DEFAULT_QUALITY_LABELS[id]}));
   const parameters={choices,routes:[{upstreamId:"u1",mode:"map",values:{low:"medium",medium:"medium",high:"low",xhigh:"high",max:"high"},evidence:{status:"accepted",source:"isolated HTTP mock only",checkedAt:"2026-10-09"}}]};
   const body={action:"parameters",id:randomUUID(),expectedVersion:original.version,rowId:row.id,parameters};
@@ -58,7 +58,7 @@ async function main(){
   const flowConfig=structuredClone((await admin.repo.current()).config);flowConfig.providers[0].protocol="new-api-flow";flowConfig.upstreamModels[0].model="gemini-3.0-pro-image-square";flowConfig.upstreamModels[0].parameterMap.qualityPolicy!.mode="map";flowConfig.upstreamModels[0].parameterMap.qualityPolicy!.choices=choices.map(c=>({...c,value:"vendor-high"}));const flow=await publishConfig(flowConfig);
   const ff=await executor.resolve({feature:"image.generate",binding:"image.generate",snapshot:flow,billing:priceBefore,requestedModelId:"image-a",facts:frozen.facts});await(await executor.clientFor(ff)).client.images.generate({model:"image-a",prompt:"flow map",quality:"max" as never,n:1});assert.equal(wire.at(-1).quality,"vendor-high");
   flowConfig.upstreamModels[0].parameterMap.qualityPolicy!.mode="omit";const noFlow=await publishConfig(flowConfig);const nf=await executor.resolve({feature:"image.generate",binding:"image.generate",snapshot:noFlow,billing:priceBefore,requestedModelId:"image-a",facts:frozen.facts});await(await executor.clientFor(nf)).client.images.generate({model:"image-a",prompt:"flow omit",quality:"max" as never,n:1});assert.ok(!("quality" in wire.at(-1)));
-  assert.deepEqual(await admin.billing.current(),priceBefore);console.log("MVP_PARAMETERS=PASS FIVE_CUSTOM_LABELS=PASS JSON_MULTIPART_MAP_OMIT=PASS FLOW_MAP_OMIT=PASS NO_DOUBLE_MAPPING=PASS REQUESTED_PRICE_NATIVE_AUDIT=PASS FROZEN_POLICY=PASS CAPABILITIES_PRICE_DRAFT_PRESERVED=PASS REAL_PAID_CALLS=0");
+  assert.deepEqual(await admin.billing.current(),priceBefore);console.log("MODEL_MANAGEMENT_PARAMETERS=PASS FIVE_CUSTOM_LABELS=PASS JSON_MULTIPART_MAP_OMIT=PASS FLOW_MAP_OMIT=PASS NO_DOUBLE_MAPPING=PASS REQUESTED_PRICE_NATIVE_AUDIT=PASS FROZEN_POLICY=PASS CAPABILITIES_PRICE_DRAFT_PRESERVED=PASS REAL_PAID_CALLS=0");
  }finally{await db.getPool().end();await f.cleanup();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

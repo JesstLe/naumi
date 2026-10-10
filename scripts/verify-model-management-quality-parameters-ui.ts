@@ -5,23 +5,23 @@ import {chromium,expect as baseExpect} from "@playwright/test";
 import {DISPLAY_QUALITY_IDS,DEFAULT_QUALITY_LABELS} from "../src/lib/model-config/quality-policy";
 
 async function main(){
- const live=Boolean(process.env.MVP_BROWSER_COOKIE_FILE);
+ const live=Boolean(process.env.MODEL_MANAGEMENT_BROWSER_COOKIE_FILE);
  if(!live&&process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw Error("Requires isolated fixture or protected staging session");
- const origin=live?"http://120.27.162.85":"http://127.0.0.1:54989",out=`output/mvp-model-parameters-20261009/${live?"live":"local"}`;
+ const origin=live?"http://120.27.162.85":"http://127.0.0.1:54989",out=`output/managed-model-parameters-20261009/${live?"live":"local"}`;
  await mkdir(out,{recursive:true});
- const fixture=live?null:JSON.parse(await readFile("output/admin-mvp-20261009/fixture.json","utf8"));
+ const fixture=live?null:JSON.parse(await readFile("output/model-management-fixture/fixture.json","utf8"));
  const browser=await chromium.launch({channel:process.platform==="win32"?"msedge":undefined,headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000}}),expect=baseExpect.configure({timeout:45000});
  let last:number|undefined,before:any,blocked=0;const errors:string[]=[];
  const get=async(path:string)=>{const r=await context.request.get(origin+path);assert.equal(r.status(),200);return r.json();};
  try{
-  if(live)await context.addCookies(JSON.parse(await readFile(process.env.MVP_BROWSER_COOKIE_FILE!,"utf8")));
+  if(live)await context.addCookies(JSON.parse(await readFile(process.env.MODEL_MANAGEMENT_BROWSER_COOKIE_FILE!,"utf8")));
   else{assert.equal((await context.request.post(origin+"/api/admin/login",{data:{password:"MvpFixture2026!"}})).status(),200);await context.addCookies([{name:"nv_user",value:fixture.memberCookie,domain:"127.0.0.1",path:"/"}]);}
   await context.addCookies([{name:"naumi_locale",value:"zh",url:origin}]);
-  before=await get("/api/admin/bi/model-config");const state=await get("/api/admin/mvp"),row=state.rows.find((r:any)=>r.modality==="image"&&!r.preset&&r.qualityConfig?.routes.every((r:any)=>r.editable));assert.ok(row);
-  const admin=await context.newPage();admin.setDefaultTimeout(45000);admin.on("pageerror",e=>errors.push(e.message));await admin.goto(origin+"/admin/mvp");
+  before=await get("/api/admin/bi/model-config");const state=await get("/api/admin/model-management"),row=state.rows.find((r:any)=>r.modality==="image"&&!r.preset&&r.qualityConfig?.routes.every((r:any)=>r.editable));assert.ok(row);
+  const admin=await context.newPage();admin.setDefaultTimeout(45000);admin.on("pageerror",e=>errors.push(e.message));await admin.goto(origin+"/admin/model-management");
   const card=admin.locator("article").filter({has:admin.getByRole("heading",{name:row.label,exact:true})}),dialog=admin.getByRole("dialog",{name:"模型参数设置",exact:true});
   const open=async()=>{await card.getByRole("button",{name:"参数设置",exact:true}).click();await expect(dialog).toBeVisible();};
-  const save=async()=>{const response=admin.waitForResponse(r=>r.url().endsWith("/api/admin/mvp")&&r.request().method()==="POST"&&r.request().postDataJSON()?.action==="parameters");await dialog.getByRole("button",{name:"保存参数并生效",exact:true}).click();const r=await response,result=await r.json();assert.equal(r.status(),200,JSON.stringify(result));assert.equal(result.publication.phase,"applied");last=result.publication.version;await expect(dialog).toHaveCount(0);await expect(admin.getByText(`模型配置 v${last}`,{exact:true})).toBeVisible();assert.deepEqual((await get("/api/admin/mvp")).rows.map((r:any)=>r.id),state.rows.map((r:any)=>r.id));};
+  const save=async()=>{const response=admin.waitForResponse(r=>r.url().endsWith("/api/admin/model-management")&&r.request().method()==="POST"&&r.request().postDataJSON()?.action==="parameters");await dialog.getByRole("button",{name:"保存参数并生效",exact:true}).click();const r=await response,result=await r.json();assert.equal(r.status(),200,JSON.stringify(result));assert.equal(result.publication.phase,"applied");last=result.publication.version;await expect(dialog).toHaveCount(0);await expect(admin.getByText(`模型配置 v${last}`,{exact:true})).toBeVisible();assert.deepEqual((await get("/api/admin/model-management")).rows.map((r:any)=>r.id),state.rows.map((r:any)=>r.id));};
   await open();await dialog.getByRole("button",{name:"启用五档",exact:true}).click();await dialog.getByLabel("max显示名称",{exact:true}).fill("旗舰验收");
   for(const route of row.qualityConfig.routes){await dialog.getByLabel(`参数处理 ${route.upstreamId}`,{exact:true}).selectOption("map");for(const id of DISPLAY_QUALITY_IDS)await dialog.getByLabel(`${id}上游值 ${route.upstreamId}`,{exact:true}).fill(id==="low"?"low":id==="medium"?"medium":"high");}
   await admin.screenshot({path:out+"/quality-mapping-desktop.png",animations:"disabled"});await admin.setViewportSize({width:390,height:844});assert.ok(await dialog.evaluate(e=>e.scrollWidth<=e.clientWidth+1));await admin.screenshot({path:out+"/quality-mapping-mobile.png",animations:"disabled"});await admin.setViewportSize({width:1440,height:1000});await save();
@@ -45,6 +45,6 @@ async function main(){
   await canvas.evaluate(()=>window.dispatchEvent(new Event("focus")));await dock.getByTestId("image-quality-select").click();await expect(canvas.getByRole("option").filter({hasText:"超高"})).toBeDisabled();
   assert.equal(errors.length,0,errors.join("\n"));if(fixture)assert.equal((await(await context.request.get(fixture.control+"/stats")).json()).paid,0);
  }finally{try{if(last!==undefined){const current=await get("/api/admin/bi/model-config");assert.equal(current.snapshot.version,last,"Do not overwrite a later administrator change");const r=await context.request.post(origin+"/api/admin/bi/model-config/versions",{data:{id:randomUUID(),targetVersion:before.snapshot.version,expectedVersion:last,reason:"Restore original configuration after quality parameter UI acceptance"}});assert.equal(r.status(),200);assert.equal((await r.json()).phase,"applied");const restored=await get("/api/admin/bi/model-config");assert.deepEqual(restored.snapshot.config,before.snapshot.config);assert.deepEqual(restored.draft,before.draft);assert.deepEqual(restored.billingSnapshot,before.billingSnapshot);await writeFile(out+"/restored.json",JSON.stringify({modelVersion:restored.snapshot.version,billingVersion:restored.billingSnapshot.version,originalConfigRestored:true,draftPricesPreserved:true,paidCalls:0}));console.log(`RESTORED_MODEL_VERSION=${restored.snapshot.version}`);}}finally{await browser.close();}}
- console.log("MVP_PARAMETERS_UI=PASS CUSTOM_FIVE_TIERS=PASS REAL_PUBLISH=PASS CANVAS_MAX_PAYLOAD=PASS DISABLED_TIER_REJECTED=PASS OMIT_QUOTE=PASS MOBILE=PASS ORDER_DRAFT_PRICES_PRESERVED=PASS REAL_PAID_GENERATION=0");
+ console.log("MODEL_MANAGEMENT_PARAMETERS_UI=PASS CUSTOM_FIVE_TIERS=PASS REAL_PUBLISH=PASS CANVAS_MAX_PAYLOAD=PASS DISABLED_TIER_REJECTED=PASS OMIT_QUOTE=PASS MOBILE=PASS ORDER_DRAFT_PRICES_PRESERVED=PASS REAL_PAID_GENERATION=0");
 }
 main().catch(e=>{console.error(e.message);process.exitCode=1;});

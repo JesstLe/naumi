@@ -3,7 +3,7 @@ import {randomUUID} from "node:crypto";
 import {createModelFixture} from "./model-config-fixture";
 import {fixtureConfig,facts} from "./billing-unit-fixture";
 import {createConfigRuntime} from "../src/lib/billing/catalog";
-import {createMvpHandler} from "../src/lib/model-config/mvp-access";
+import {createModelManagementHandler} from "../src/lib/model-config/management-access";
 import {businessBillingSnapshot} from "../src/lib/model-config/business-billing";
 import {quote} from "../src/lib/billing/quote";
 import {createBillingService,withBillingTransaction} from "../src/lib/billing/service";
@@ -17,8 +17,8 @@ async function main(){
  f.config.publicModels[1].toolScope={features:["image.generate","tool.style","canvas.image"],defaultFor:["canvas.image"]};
  f.config.publicModels[2].toolScope={features:["image.generate","tool.style","canvas.image"],defaultFor:[]};
  f.config.business={"image.generate":{enabled:true,defaultModelId:family+"-square",options:["square","portrait"].map(s=>({modelId:family+"-"+s,enabled:true,sort:0,unit:"image" as const,pricing:{mode:"cny-fixed" as const,amountMicros:"500000",creditsPerCnyMicros:"100000000",rounding:"ceil" as const}}))}};
- const handler=createMvpHandler({authorize:async()=>({actor}),managed:async()=>true,administration:async()=>({pool:f.sql,repo:f.repo,credentials:f.credentials,billing,trustedOrigins:[f.origin],runtime:{publish:()=>{throw Error("Price must not activate Router");}}}) as never});
- const req=(body?:unknown)=>new Request("http://fixture.test/api/admin/mvp",{method:body?"POST":"GET",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
+ const handler=createModelManagementHandler({authorize:async()=>({actor}),managed:async()=>true,administration:async()=>({pool:f.sql,repo:f.repo,credentials:f.credentials,billing,trustedOrigins:[f.origin],runtime:{publish:()=>{throw Error("Price must not activate Router");}}}) as never});
+ const req=(body?:unknown)=>new Request("http://fixture.test/api/admin/model-management",{method:body?"POST":"GET",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
  try{
   const models=await f.repo.current(),draft=await f.repo.draft(actor),before=await billing.current();
   const state=await(await handler(req())).json(),row=state.rows.find((r:any)=>r.id===family);
@@ -49,7 +49,7 @@ async function main(){
   assert.equal(quote(businessBillingSnapshot(latest,models,advancedFacts),advancedFacts).requestedCredits,39);
   assert.equal(quote(businessBillingSnapshot(latest,models,facts({modelId:family+"-square",resolution:"2K"})),facts({modelId:family+"-square",resolution:"2K"})).requestedCredits,17,"Independent cell prices, not additive formula");
   assert.throws(()=>quote(businessBillingSnapshot(latest,models,facts({modelId:family+"-square",resolution:"4K"})),facts({modelId:family+"-square",resolution:"4K"})),{code:"INVALID_RESULT"});
-  const priceView=await handler(new Request("http://fixture.test/api/admin/mvp?rowId="+family+"&feature=image.generate"));assert.equal(priceView.status,200);
+  const priceView=await handler(new Request("http://fixture.test/api/admin/model-management?rowId="+family+"&feature=image.generate"));assert.equal(priceView.status,200);
   const grid=(await priceView.json()).grid;assert.equal(grid.find((c:any)=>c.quality==="high"&&c.resolution==="2K").credits,13);assert.equal(grid.find((c:any)=>c.quality==="low"&&c.resolution==="1K").available,false);
   const badMatrix=structuredClone(matrix);badMatrix.prices.high["2K"]=null;assert.equal((await handler(req({...body,id:randomUUID(),expectedBillingVersion:latest.version,pricing:badMatrix}))).status,400);
   const replay=await handler(req(body));assert.equal(replay.status,200);assert.equal((await replay.json()).billingVersion,priced.version);assert.equal((await billing.current()).version,latest.version);
@@ -66,7 +66,7 @@ async function main(){
   const wallet=(await f.sql.query("SELECT credits_total,credits_used FROM app_users WHERE email=$1",[email])).rows[0];assert.equal(Number(wallet.credits_total),funded-14);assert.equal(Number(wallet.credits_used),0);
   const restore={...body,id:randomUUID(),expectedBillingVersion:latest.version,pricing:null};assert.equal((await handler(req(restore))).status,200);
   assert.deepEqual((await billing.current()).config,before.config);
-  console.log("MVP_CREDITS=PASS FAMILY_TOOL_SCOPE=PASS BUSINESS_OVERRIDE=PASS MATRIX_QUANTITY=PASS VERSIONS_REPLAY=PASS WALLET_FROZEN_PARTIAL_FAILED=PASS DRAFT_SUPPLIER_PRESERVED=PASS RESTORE=PASS REAL_GENERATION=0");
+  console.log("MODEL_MANAGEMENT_CREDITS=PASS FAMILY_TOOL_SCOPE=PASS BUSINESS_OVERRIDE=PASS MATRIX_QUANTITY=PASS VERSIONS_REPLAY=PASS WALLET_FROZEN_PARTIAL_FAILED=PASS DRAFT_SUPPLIER_PRESERVED=PASS RESTORE=PASS REAL_GENERATION=0");
  }finally{await db.getPool().end();await f.cleanup();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

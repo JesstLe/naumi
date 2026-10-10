@@ -1,4 +1,5 @@
-import { mvpHandler } from "@/lib/model-config/mvp-access";
+/** Legacy clients use the same handler, operation lock and authorization. */
+import { modelManagementHandler } from "@/lib/model-config/management-access";
 export const runtime = "nodejs", dynamic = "force-dynamic";
-export const GET = mvpHandler;
-export const POST = mvpHandler;
+export const GET = modelManagementHandler;
+export const POST = modelManagementHandler;
