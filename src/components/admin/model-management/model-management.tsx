@@ -50,14 +50,16 @@ export function ModelManagement() {
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [pending, setPending] = useState<Operation | null>(null);
   const [tab, setTab] = useState("models"), [filter, setFilter] = useState("all"), [search, setSearch] = useState("");
   const [row, setRow] = useState<ManagedModelRow | null>(null), [connect, setConnect] = useState(false);
+  const [switchProvider, setSwitchProvider] = useState("");
   const [rename, setRename] = useState<ManagedModelRow | null>(null);
   const [sorting,setSorting]=useState(false);
   const [scope,setScope]=useState<ManagedModelRow|null>(null);
   const [channelRow,setChannelRow]=useState<ManagedModelRow|null>(null);
+  const [channelDraft,setChannelDraft]=useState<ChannelPolicy|null>(null);
   const [resolutionRow,setResolutionRow]=useState<ManagedModelRow|null>(null);
   const [parameters,setParameters]=useState<ManagedModelRow|null>(null);
   const [price,setPrice]=useState<ManagedModelRow|null>(null);
-  const [register, setRegister] = useState<{ providerId: string; model: string } | null>(null), [refreshing, setRefreshing] = useState<string[]>([]);
+  const [register, setRegister] = useState<{ providerId: string; model: string; returnRowId?: string; returnChannelRowId?:string } | null>(null), [refreshing, setRefreshing] = useState<string[]>([]);
   const mounted = useRef(true), loadingGuard = useRef(false), mutationGuard = useRef(false);
   const directoryInFlight = useRef(new Set<string>());
   const refreshProvider = useCallback(async (providerId: string, force = true) => {
@@ -81,16 +83,19 @@ export function ModelManagement() {
     if (loadingGuard.current) return;
     loadingGuard.current = true; setLoading(true);
     let discoverProviders: State["providers"] = [];
+    let loaded: State | null = null;
     try {
       const data: State = await api();
       if (!mounted.current) return;
       setState(data);
+      loaded = data;
       if (discover) discoverProviders = data.providers.filter(p => p.enabled && p.configured && (!data.catalogs.find(c => c.providerId === p.id) || data.catalogs.find(c => c.providerId === p.id)!.stale));
     } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : "读取失败"); }
     finally { loadingGuard.current = false; if (mounted.current) setLoading(false); }
     // Directory discovery can take much longer than the active configuration
     // read. It must not suppress the fresh read after a successful publication.
     void (async () => { for (const p of discoverProviders) if (mounted.current) await refreshProvider(p.id, false); })();
+    return loaded;
   }, [refreshProvider]);
   useEffect(() => {
     mounted.current = true;
@@ -101,6 +106,8 @@ export function ModelManagement() {
   const clearPending = () => { setPending(null); try { sessionStorage.removeItem(pendingKey); } catch {} };
   async function run(operation: Operation) {
     if (mutationGuard.current) return;
+    const returnRowId = operation.action === "register" ? register?.returnRowId : undefined;
+    const returnChannelRowId = operation.action === "register" ? register?.returnChannelRowId : undefined;
     mutationGuard.current = true; setBusy(true); setError(""); setNotice(""); setPending(operation);
     setRow(null); setRename(null); setConnect(false); setRegister(null);
     try { sessionStorage.setItem(pendingKey, JSON.stringify(operation)); } catch {}
@@ -108,9 +115,11 @@ export function ModelManagement() {
       const result = await api(operation);
       if (result.publication.phase !== "applied") { setScope(null);setPrice(null);setParameters(null);setResolutionRow(null);setChannelRow(null);setSorting(false); setNotice("发布结果待核对。请点击“核对并继续”，系统会沿用同一操作，不重复创建发布。"); return; }
       clearPending(); setRow(null); setScope(null);setPrice(null);setParameters(null);setResolutionRow(null);setChannelRow(null);setSorting(false); setConnect(false); setRegister(null);
-      if(["pricing","parameters","resolutions","channels","order","scope"].includes(operation.action))window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
+      if(["pricing","parameters","resolutions","channels","order","scope","switch","rename"].includes(operation.action))window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
       setNotice(operation.action === "channels" ? "供应通道已生效，新任务使用新策略，已接受任务保留原配置。" : operation.action === "resolutions" ? "分辨率显示与供应通道映射已生效。新任务使用新配置，已接受任务保留原参数。" : operation.action === "order" ? "模型排序已生效，前端各工具按此顺序展示可用模型。" : operation.action === "parameters" ? "显示档位与上游映射已生效。新请求使用新参数，已接受的任务保留原映射。" : operation.action === "pricing" ? "积分售价已生效。前端报价与实际扣费使用同一配置，已开始的任务保留原报价。" : operation.action === "scope" ? "工具范围已生效。新请求使用新范围，已经开始的任务保留原配置。" : operation.action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : operation.action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : operation.action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。");
-      await load(true);
+      const refreshed = await load(true);
+      if(returnRowId && refreshed) setRow(refreshed.rows.find(r=>r.id===returnRowId) || null);
+      if(returnChannelRowId && refreshed) setChannelRow(refreshed.rows.find(r=>r.id===returnChannelRowId) || null);
     } catch (e) {
       const failure = e as Error & { code?:string; operationNotStaged?: boolean; publication?: { phase: string } };
       if (failure.operationNotStaged || failure.publication?.phase === "failed") clearPending();
@@ -138,7 +147,7 @@ export function ModelManagement() {
       <div className={styles.mapping}><div className={styles.tableHead}><span>前端名称</span><span>实际调用模型 / 上游来源</span><span>操作</span></div>{rows.map(r => <article className={styles.modelRow} key={r.id} data-testid={`managed-model-${r.id}`}>
         <div className={styles.modelName}><span className={styles.modality}>{types[r.modality]}</span><h2>{r.label}</h2>{r.publicIds.length > 1 && <p>模型家族 · {r.publicIds.length} 个比例分支，统一管理</p>}<div className={styles.scopeSummary}><span>应用工具 {r.features.length} 项</span><button disabled={locked || !state.managed} onClick={()=>setScope(r)}>编辑范围</button></div><div className={styles.featureTags}>{r.features.map(f => <span key={f.id}>{f.label}</span>)}</div>{!r.features.length && <p>尚未应用到工具，可随时重新选择范围。</p>}</div>
         <div className={styles.routes}>{r.routes.map((route, index) => <div key={`${route.upstreamId}-${route.kind}`} className={styles.route}><span className={styles.routeDot} data-enabled={route.enabled} /><div><code>{route.model}</code><p>{route.provider}<span>{r.supplierRouting || r.conditional || r.preset || r.publicIds.length > 1 ? route.kind : "已配置"}</span></p></div></div>)}{r.conditional && <p className={styles.ruleNote}>具体调用由条件或回退规则决定</p>}</div>
-        <div className={styles.rowActions}><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRename(r)}>修改显示名称</button>{r.modality === "image" && <button className={styles.switchButton} disabled={locked || r.preset || !r.qualityConfig?.routes.every(v=>v.editable)} title={r.preset || !r.qualityConfig?.routes.every(v=>v.editable)?"此路径由外部路由或成本预设管理参数":"配置显示档位与实际传参"} onClick={()=>{setError("");setParameters(r);}}>参数设置</button>}{r.modality === "image" && <button className={styles.switchButton} disabled={locked || !state.managed} onClick={()=>{setError("");setResolutionRow(r);}}>分辨率设置</button>}{r.channelsEditable && <button className={styles.switchButton} disabled={locked || !state.managed} onClick={()=>{setError("");setChannelRow(r);}}>供应通道{r.supplierRouting?` · ${r.supplierRouting.channels.filter(c=>c.enabled).length}`:""}</button>}<button className={styles.switchButton} disabled={locked || !state.managed || !r.features.length} onClick={() => {setError("");setPrice(r);}}>设置积分</button><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRow(r)}>更换模型 <ChevronRight size={15} /></button><small className={styles.priceCaption}>{r.pricing?.[0]?.credits!==null && r.pricing?.[0] ? `${r.pricing[0].estimated?"预估":"参考"} ${r.pricing[0].credits} 积分/${r.pricing[0].unit==="image"?"张":r.pricing[0].unit==="item"?"项":"次"}` : "按工具配置售价"}</small></div>
+        <div className={styles.rowActions}><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRename(r)}>修改显示名称</button>{r.modality === "image" && <button className={styles.switchButton} disabled={locked || r.preset || !r.qualityConfig?.routes.every(v=>v.editable)} title={r.preset || !r.qualityConfig?.routes.every(v=>v.editable)?"此路径由外部路由或成本预设管理参数":"配置显示档位与实际传参"} onClick={()=>{setError("");setParameters(r);}}>参数设置</button>}{r.modality === "image" && <button className={styles.switchButton} disabled={locked || !state.managed} onClick={()=>{setError("");setResolutionRow(r);}}>分辨率设置</button>}{r.channelsEditable && <button className={styles.switchButton} disabled={locked || !state.managed} onClick={()=>{setError("");setChannelDraft(null);setChannelRow(r);}}>供应通道{r.supplierRouting?` · ${r.supplierRouting.channels.filter(c=>c.enabled).length}`:""}</button>}<button className={styles.switchButton} disabled={locked || !state.managed || !r.features.length} onClick={() => {setError("");setPrice(r);}}>设置积分</button><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => {setSwitchProvider(r.routes[0]?.providerId||"");setRow(r);}}>{r.modality==="image"?"更换模型":"更换通道 / 模型"} <ChevronRight size={15} /></button><small className={styles.priceCaption}>{r.pricing?.[0]?.credits!==null && r.pricing?.[0] ? `${r.pricing[0].estimated?"预估":"参考"} ${r.pricing[0].credits} 积分/${r.pricing[0].unit==="image"?"张":r.pricing[0].unit==="item"?"项":"次"}` : "按工具配置售价"}</small></div>
       </article>)}</div>
       {!rows.length && <div className={styles.empty}><Search /><h2>{state.rows.length ? "没有匹配的模型" : "前端暂无可见模型"}</h2><p>{state.rows.length ? "尝试其他名称、功能或类型。" : "这里只显示前端当前已启用、可展示的模型。"}</p></div>}
       <p className={styles.footerNote}><CircleHelp size={15} />同一前端模型用于多个功能时，更换会对这些功能一起生效。模型来源与积分价格由管理后台统一配置。</p>
@@ -146,16 +155,16 @@ export function ModelManagement() {
       const catalog = state.catalogs.find(c => c.providerId === p.id), refreshingNow = refreshing.includes(p.id);
       return <Source key={p.id} provider={p} catalog={catalog} refreshing={refreshingNow} locked={locked} candidates={state.candidates} onRefresh={() => void refreshProvider(p.id)} onRegister={model => setRegister({ providerId: p.id, model })} />;
     })}</div>{!state.providers.length && <div className={styles.empty}><Unplug /><h2>接入第一个上游来源</h2><p>输入接口地址与 API Key，系统会自动发现模型 ID。</p></div>}</section>}
-    {row && state && <SwitchDialog row={row} state={state} locked={locked} busy={busy} onClose={() => setRow(null)} onSave={upstreamId => void run(operation("switch", { rowId: row.id, upstreamId }))} />}
+    {row && state && <SwitchDialog row={state.rows.find(r=>r.id===row.id) || row} state={state} initialProvider={switchProvider} refreshing={refreshing} locked={locked} busy={busy} onRefresh={providerId=>void refreshProvider(providerId)} onRegister={(providerId,model)=>{setSwitchProvider(providerId);setRegister({providerId,model,returnRowId:row.id});setRow(null);}} onClose={() => setRow(null)} onSave={upstreamId => void run(operation("switch", { rowId: row.id, upstreamId }))} />}
     {rename && <RenameDialog row={rename} locked={locked} onClose={() => setRename(null)} onSave={label => void run(operation("rename", { rowId: rename.id, label }))} />}
-    {channelRow && state && <ChannelsDialog row={channelRow} state={state} locked={locked} error={error} onClose={()=>setChannelRow(null)} onSave={policy=>void run(operation("channels",{rowId:channelRow.id,policy}))}/>}
+    {channelRow && state && <ChannelsDialog row={state.rows.find(r=>r.id===channelRow.id)||channelRow} state={state} initial={channelDraft} refreshing={refreshing} locked={locked} error={error} onRefresh={id=>void refreshProvider(id)} onRegister={(providerId,model,draft)=>{setChannelDraft(draft);setRegister({providerId,model,returnChannelRowId:channelRow.id});setChannelRow(null);}} onClose={()=>setChannelRow(null)} onSave={policy=>void run(operation("channels",{rowId:channelRow.id,policy}))}/>}
     {resolutionRow && <ResolutionsDialog row={resolutionRow} locked={locked} error={error} onClose={()=>setResolutionRow(null)} onSave={(resolutions,parameters)=>void run(operation("resolutions",{rowId:resolutionRow.id,resolutions,...(parameters!==undefined?{parameters}:{})}))}/>}
     {parameters && <ParametersDialog row={state?.rows.find(r=>r.id===parameters.id) || parameters} locked={locked} error={error} onClose={()=>setParameters(null)} onSave={value=>void run(operation("parameters",{rowId:parameters.id,parameters:value}))}/>}
     {sorting && state && <OrderDialog rows={state.rows} locked={locked} error={error} onClose={()=>setSorting(false)} onSave={rowIds=>void run(operation("order",{rowIds}))} />}
     {scope && <ScopeDialog row={scope} locked={locked} error={error} onClose={()=>setScope(null)} onSave={(features,canvas)=>void run(operation("scope",{rowId:scope.id,features,...(canvas!==undefined?{canvas}:{})}))}/>}
     {price && <PriceDialog row={price} locked={locked} error={error} onClose={()=>setPrice(null)} onSave={(features,pricing)=>void run(operation("pricing",{rowId:price.id,features,pricing}))}/>}
     {connect && state && <ConnectDialog locked={locked} onClose={() => setConnect(false)} onSave={(fields, id) => run({ ...operation("connect", fields), id })} />}
-    {register && state && <RegisterDialog model={register.model} protocol={state.providers.find(p => p.id === register.providerId)!.protocol} locked={locked} onClose={() => setRegister(null)} onSave={fields => void run(operation("register", { ...register, ...fields }))} />}
+    {register && state && <RegisterDialog model={register.model} protocol={state.providers.find(p => p.id === register.providerId)!.protocol} locked={locked} onClose={() => {if(register.returnRowId)setRow(state.rows.find(r=>r.id===register.returnRowId) || null);if(register.returnChannelRowId)setChannelRow(state.rows.find(r=>r.id===register.returnChannelRowId) || null);setRegister(null);}} onSave={fields => void run(operation("register", {providerId:register.providerId,model:register.model,...fields}))} />}
   </main>;
 }
 
@@ -270,14 +279,24 @@ function Source({ provider: p, catalog, candidates, refreshing, locked, onRefres
   </article>;
 }
 
-function SwitchDialog({ row, state, locked, busy, onClose, onSave }: { row: ManagedModelRow; state: State; locked: boolean; busy: boolean; onClose: () => void; onSave: (id: string) => void }) {
+function SwitchDialog({ row, state, initialProvider, refreshing, locked, busy, onRefresh, onRegister, onClose, onSave }: { row: ManagedModelRow; state: State; initialProvider:string; refreshing:string[]; locked: boolean; busy: boolean; onRefresh:(providerId:string)=>void; onRegister:(providerId:string,model:string)=>void; onClose: () => void; onSave: (id: string) => void }) {
   const [selected, setSelected] = useState(""), [search, setSearch] = useState("");
-  const candidates = state.candidates.filter(c => row.candidateIds.includes(c.id) && `${c.model} ${c.provider}`.toLowerCase().includes(search.toLowerCase()));
-  return <Dialog title="更换实际模型" onClose={onClose} locked={locked}><div className={styles.dialogBody}><div className={styles.currentConnection}><span>前端名称<b>{row.label}</b></span><ArrowRight size={18} /><span>当前实际模型<b>{Array.from(new Set(row.routes.map(r => r.model))).join(" / ")}</b></span></div><p className={styles.ruleNote}>名称保持不变。影响：{row.features.map(f => f.label).join("、")}。{row.publicIds.length > 1 && "该家族的所有比例分支会一起切换。"}{(row.conditional || row.supplierRouting) && "更换后将改为固定调用，原条件路由和失败回退会关闭。"}</p>
+  const protocol=row.modality==="text"?"openai-chat":row.modality==="video"?"openai-videos":null;
+  const providers=state.providers.filter(p=>p.enabled&&p.configured&&(!protocol||p.protocol===protocol)&& (protocol||state.candidates.some(c=>c.providerId===p.id&&row.candidateIds.includes(c.id))));
+  const [providerId,setProviderId]=useState(()=>providers.some(p=>p.id===initialProvider)?initialProvider:row.routes[0]?.providerId||"");
+  const candidates = state.candidates.filter(c => row.candidateIds.includes(c.id) && (!providerId||c.providerId===providerId) && `${c.model} ${c.provider}`.toLowerCase().includes(search.toLowerCase()));
+  const catalog=state.catalogs.find(c=>c.providerId===providerId),refreshingNow=refreshing.includes(providerId),provider=providers.find(p=>p.id===providerId);
+  const registered=state.candidates.filter(c=>c.providerId===providerId);
+  const discovered=protocol?(catalog?.models||[]).filter(m=>!registered.some(c=>c.model===m.id)&&`${m.id} ${m.label}`.toLowerCase().includes(search.toLowerCase())):[];
+  const incompatible=registered.filter(c=>!row.candidateIds.includes(c.id)&&`${c.model} ${c.label}`.toLowerCase().includes(search.toLowerCase()));
+  return <Dialog title={row.modality==="text"?"更换文字通道与模型":"更换实际模型"} onClose={onClose} locked={locked}><div className={styles.dialogBody}><div className={styles.currentConnection}><span>前端名称<b>{row.label}</b></span><ArrowRight size={18} /><span>当前实际模型<b>{Array.from(new Set(row.routes.map(r => r.model))).join(" / ")}</b><small>{Array.from(new Set(row.routes.map(r=>r.provider))).join(" / ")}</small></span></div><p className={styles.ruleNote}>名称保持不变。影响：{row.features.map(f => f.label).join("、")}。{row.publicIds.length > 1 && "该家族的所有比例分支会一起切换。"}{(row.conditional || row.supplierRouting) && "更换后将改为固定调用，原条件路由和失败回退会关闭。"}</p>
     {row.preset && <div className={styles.notice}>此模型使用专用能力与定价预设。更换到不同实际模型前，需要在<Link href="/admin/bi/models">完整配置中心</Link>核验新模型的参数和采购价格。</div>}
+    <label className={styles.field}>供应通道<select aria-label="选择供应通道" value={providerId} disabled={locked} onChange={e=>{setProviderId(e.target.value);setSelected("");setSearch("");}}><option value="">全部可用通道</option>{providers.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>{provider&&<small>{provider.baseUrl}</small>}</label>
     <label className={styles.search}><Search size={16} /><input aria-label="搜索可切换模型" placeholder="搜索模型 ID 或上游来源" value={search} onChange={e => setSearch(e.target.value)} /></label>
     <fieldset className={styles.candidateList} disabled={locked}><legend>选择兼容的实际模型</legend>{candidates.map(c => <label key={c.id} className={styles.candidate} data-selected={selected === c.id}><input type="radio" name="actual-model" value={c.id} checked={selected === c.id} onChange={() => setSelected(c.id)} /><span><code>{c.model}</code><small>{c.provider}{row.routes.some(r => r.upstreamId === c.id) ? " · 当前路径" : c.verified ? " · 能力已确认" : " · 已接入，能力未核验"}</small></span>{selected === c.id && <Check size={17} />}</label>)}</fieldset>
-    {!candidates.length && <p className={styles.ruleNote}>暂无兼容模型。先在上游来源中添加模型并确认能力；当前已展示的输入和规格必须得到支持。</p>}
+    {!candidates.length && <p className={styles.ruleNote}>此通道暂无已接入且兼容的模型。可从下面的目录添加并确认能力，或选择其他通道。{row.modality==="text"&&row.features.some(f=>["canvas.assistant","canvas.ocr"].includes(f.id))&&"当前用途包含图片理解，需要支持文字及图片输入。"}</p>}
+    {!!incompatible.length&&<p className={styles.ruleNote}>此通道另有 {incompatible.length} 个已接入模型不满足当前用途的能力要求，请在完整配置中心核对能力。</p>}
+    {protocol&&provider&&<section aria-label="通道模型目录"><div className={styles.scopeHeading}><b>从此通道添加实际模型</b><button type="button" className={styles.secondary} disabled={locked||refreshingNow} onClick={()=>onRefresh(providerId)}>{refreshingNow?<Loader2 size={14} className={styles.spin}/>:<RefreshCw size={14}/>}刷新目录</button></div><p className={styles.ruleNote}>目录仅表示供应商提供该 ID，确认能力后才会进入可切换列表。{catalog?.stale&&"目录已过期，请刷新后添加。"}{catalog?.status==="error"&&catalog.error}</p><div className={styles.catalogList}>{discovered.slice(0,30).map(m=><div key={m.id}><code>{m.id}</code><button type="button" disabled={locked||refreshingNow||catalog?.stale||catalog?.status!=="ok"} onClick={()=>onRegister(providerId,m.id)}>添加并确认能力 <Plus size={13}/></button></div>)}</div>{discovered.length>30&&<p className={styles.ruleNote}>共 {discovered.length} 个待接入模型，输入模型 ID 可缩小范围。</p>}{!discovered.length&&<p className={styles.ruleNote}>没有匹配的待接入模型，可刷新目录或调整搜索。</p>}</section>}
     <p className={styles.ruleNote}>兼容筛选使用现有能力记录；旧接入能力未核验时会明确标注。此处不会自动发送付费生成请求。</p>
   </div><footer className={styles.dialogFooter}><button className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button className={styles.primary} disabled={!selected || locked} onClick={() => onSave(selected)}>{busy && <Loader2 size={16} className={styles.spin} />}切换并生效</button></footer></Dialog>;
 }
@@ -345,10 +364,10 @@ function ResolutionsDialog({row,locked,error,onClose,onSave}:{row:ManagedModelRo
   </div><footer className={styles.dialogFooter}><button type="button" className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button type="button" className={styles.secondary} disabled={locked || !row.displayResolutions} onClick={()=>onSave(null)}>恢复默认显示</button><button type="submit" className={styles.primary} disabled={locked || !valid}>保存分辨率并生效</button></footer></form></Dialog>;
 }
 
-function ChannelsDialog({row,state,locked,error,onClose,onSave}:{row:ManagedModelRow;state:State;locked:boolean;error:string;onClose:()=>void;onSave:(policy:ChannelPolicy|null)=>void}){
- const [mode,setMode]=useState<ChannelPolicy["mode"]>(row.supplierRouting?.mode||"balanced");
- const [channels,setChannels]=useState<ChannelPolicy["channels"]>(()=>row.supplierRouting?.channels||row.routes.slice(0,1).map(r=>({upstreamId:r.upstreamId,enabled:true,priority:1,weight:1})));
- const candidateGroups=new Set<string>();const candidates=state.candidates.filter(c=>c.modality==="image"&&CHANNEL_PROTOCOLS.includes(state.providers.find(p=>p.id===c.providerId)?.protocol||"")).filter(c=>{const key=c.providerId+":"+imageModelDisplayId(c.model);if(channels.some(ch=>ch.upstreamId===c.id)){candidateGroups.add(key);return true;}if(candidateGroups.has(key))return false;candidateGroups.add(key);return true;}),available=candidates.filter(c=>!channels.some(ch=>ch.upstreamId===c.id));
+function ChannelsDialog({row,state,initial,refreshing,locked,error,onRefresh,onRegister,onClose,onSave}:{row:ManagedModelRow;state:State;initial:ChannelPolicy|null;refreshing:string[];locked:boolean;error:string;onRefresh:(id:string)=>void;onRegister:(providerId:string,model:string,draft:ChannelPolicy)=>void;onClose:()=>void;onSave:(policy:ChannelPolicy|null)=>void}){
+ const [mode,setMode]=useState<ChannelPolicy["mode"]>(initial?.mode||row.supplierRouting?.mode||"balanced");
+ const [channels,setChannels]=useState<ChannelPolicy["channels"]>(()=>initial?.channels||row.supplierRouting?.channels||row.routes.slice(0,1).map(r=>({upstreamId:r.upstreamId,enabled:true,priority:1,weight:1})));
+ const candidateGroups=new Set<string>();const candidates=state.candidates.filter(c=>c.modality===row.modality&&CHANNEL_PROTOCOLS.includes(state.providers.find(p=>p.id===c.providerId)?.protocol||"")&&(row.modality!=="text"||row.candidateIds.includes(c.id))).filter(c=>{const key=c.providerId+":"+(row.modality==="image"?imageModelDisplayId(c.model):c.model);if(channels.some(ch=>ch.upstreamId===c.id)){candidateGroups.add(key);return true;}if(candidateGroups.has(key))return false;candidateGroups.add(key);return true;}),available=candidates.filter(c=>!channels.some(ch=>ch.upstreamId===c.id));
  const [adding,setAdding]=useState("");const update=(id:string,patch:Partial<ChannelPolicy["channels"][number]>)=>setChannels(old=>old.map(c=>c.upstreamId===id?{...c,...patch}:c));
  const valid=channels.some(c=>c.enabled)&&channels.every(c=>Number.isInteger(c.priority)&&c.priority>=1&&c.priority<=100&&Number.isInteger(c.weight)&&c.weight>=1&&c.weight<=1000);
  return <Dialog title="供应通道与分流" locked={locked} onClose={onClose}><form onSubmit={e=>{e.preventDefault();if(valid)onSave({mode,channels});}}><div className={styles.dialogBody}>
@@ -357,6 +376,15 @@ function ChannelsDialog({row,state,locked,error,onClose,onSave}:{row:ManagedMode
  <p className={styles.ruleNote}>优先级数字越小越优先；同级权重 7 和 3 约对应 70% 与 30%。满载时自动选择有余量的通道，全部繁忙时保留输入。</p>
  {channels.map(c=>{const candidate=candidates.find(v=>v.id===c.upstreamId),provider=state.providers.find(p=>p.id===candidate?.providerId),capacity=provider&&state.providerCapacity?.[provider.id];return <fieldset key={c.upstreamId} disabled={locked} className={styles.parameterRoute} data-testid={"supplier-channel-"+c.upstreamId}><legend>{candidate?.provider||"已登记通道"} · <code>{candidate?.model||c.upstreamId}</code></legend><label><input type="checkbox" aria-label={"启用通道 "+c.upstreamId} checked={c.enabled} onChange={e=>update(c.upstreamId,{enabled:e.target.checked})}/>启用</label><div className={styles.parameterChoices}><label className={styles.field}>优先级<input aria-label={"通道优先级 "+c.upstreamId} type="number" min={1} max={100} value={c.priority} onChange={e=>update(c.upstreamId,{priority:Number(e.target.value)})}/></label><label className={styles.field}>分流权重<input aria-label={"通道权重 "+c.upstreamId} type="number" min={1} max={1000} disabled={mode==="priority"} value={c.weight} onChange={e=>update(c.upstreamId,{weight:Number(e.target.value)})}/></label></div><p className={styles.ruleNote}>并发 {capacity?.inFlight||0} / {capacity?.maxConcurrent||provider?.maxConcurrent||1} · {({available:"最近调用成功",cooldown:"暂停，等待恢复",recovering:"恢复探测中",failed:"最近调用失败",unobserved:"尚未调用"} as Record<string,string>)[state.channelHealth?.[c.upstreamId]?.state||"unobserved"]} · {candidate?.verified?"能力已登记":"参数能力未全面核对"}</p><button type="button" className={styles.secondary} onClick={()=>setChannels(old=>old.filter(v=>v.upstreamId!==c.upstreamId))}>移除通道</button></fieldset>})}
  <label className={styles.field}>添加供应通道<select aria-label="添加供应通道" value={adding} disabled={locked||channels.length>=20} onChange={e=>setAdding(e.target.value)}><option value="">选择已接入的实际模型</option>{available.map(c=><option key={c.id} value={c.id}>{c.provider} · {c.model}</option>)}</select></label><button type="button" className={styles.secondary} disabled={locked||!adding||channels.length>=20} onClick={()=>{setChannels(old=>[...old,{upstreamId:adding,enabled:true,priority:1,weight:1}]);setAdding("");}}>添加通道</button>
- <p className={styles.ruleNote}>通道报错、超时或未返回有效图片时，同一任务自动尝试其他可用通道。每条通道最多尝试一次，成功后只结算一次积分；全部失败才结束任务。连续失败的通道会暂停并尝试恢复。</p>
+ <ChannelDirectory row={row} state={state} refreshing={refreshing} locked={locked||channels.length>=20} onRefresh={onRefresh} onRegister={(providerId,model)=>onRegister(providerId,model,{mode,channels})}/>
+ <p className={styles.ruleNote}>{row.modality==="text"?"通道报错、超时、返回空结果，或流式输出开始前失败时，自动尝试其他可用通道；已输出文字后中断不会拼接其他模型回答。":"通道报错、超时或未返回有效图片时，同一任务自动尝试其他可用通道。"}每条通道最多尝试一次，成功后只结算一次积分；全部失败才结束任务。连续失败的通道会暂停并尝试恢复。</p>
  </div><footer className={styles.dialogFooter}><button type="button" className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button type="button" className={styles.secondary} disabled={locked||!row.supplierRouting} onClick={()=>onSave(null)}>恢复单通道</button><button className={styles.primary} disabled={locked||!valid}>保存通道并生效</button></footer></form></Dialog>;
+}
+
+function ChannelDirectory({row,state,refreshing,locked,onRefresh,onRegister}:{row:ManagedModelRow;state:State;refreshing:string[];locked:boolean;onRefresh:(id:string)=>void;onRegister:(providerId:string,model:string)=>void}){
+ const providers=state.providers.filter(p=>p.enabled&&p.configured&&CHANNEL_PROTOCOLS.includes(p.protocol)&&(row.modality==="text"?p.protocol==="openai-chat":p.protocol!=="openai-chat"));
+ const [providerId,setProviderId]=useState(""),[query,setQuery]=useState("");
+ const catalog=state.catalogs.find(c=>c.providerId===providerId),refreshingNow=refreshing.includes(providerId);
+ const matches=(catalog?.models||[]).filter(m=>m.id.toLowerCase().includes(query.toLowerCase())),missing=matches.filter(m=>!state.candidates.some(c=>c.providerId===providerId&&c.model===m.id));
+ return <section aria-label="新增通道来源"><h3>从已接入上游新增通道</h3><p className={styles.ruleNote}>先选择上游，再添加并确认实际模型；返回后从“添加供应通道”中选入本模型。{row.modality==="text"&&row.features.some(f=>["canvas.assistant","canvas.ocr"].includes(f.id))&&"当前用途需要图片理解能力。"}</p><label className={styles.field}>已接入上游<select aria-label="新增通道的上游来源" value={providerId} disabled={locked} onChange={e=>{setProviderId(e.target.value);setQuery("");}}><option value="">选择上游来源</option>{providers.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>{providerId&&<><button type="button" className={styles.secondary} disabled={locked||refreshingNow} onClick={()=>onRefresh(providerId)}>{refreshingNow?<Loader2 size={14} className={styles.spin}/>:<RefreshCw size={14}/>}刷新此上游目录</button><label className={styles.search}><Search size={14}/><input aria-label="搜索新增通道模型" placeholder="搜索实际模型 ID" value={query} onChange={e=>setQuery(e.target.value)}/></label><p className={styles.ruleNote}>{catalog?.stale?"目录已过期，请刷新后添加。":catalog?.status==="error"?catalog.error:"目录仅代表模型 ID 可访问，不代表全部能力已验证。"}</p><div className={styles.catalogList}>{missing.slice(0,30).map(m=><div key={m.id}><code>{m.id}</code><button type="button" disabled={locked||refreshingNow||catalog?.stale||catalog?.status!=="ok"} onClick={()=>onRegister(providerId,m.id)}>添加并确认能力 <Plus size={13}/></button></div>)}</div>{!missing.length&&<p className={styles.ruleNote}>{matches.length?"匹配模型已接入，兼容的模型可从上方“添加供应通道”选入；不满足用途能力的模型需先核对能力。":"暂无匹配模型，请刷新目录或调整搜索。"}</p>}{missing.length>30&&<p className={styles.ruleNote}>共 {missing.length} 个待接入模型，请搜索缩小范围。</p>}</>}</section>;
 }
