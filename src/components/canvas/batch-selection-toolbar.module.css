@@ -1,0 +1,67 @@
+.surface {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  max-width: calc(100% - 1.5rem);
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--canvas-ui-border);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgb(20 32 52 / 12%), 0 2px 6px rgb(20 32 52 / 5%);
+}
+
+.count {
+  flex: none;
+  padding: 0 10px 0 6px;
+  border-right: 1px solid var(--canvas-ui-border);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 24px;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 0;
+  gap: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--canvas-ui-border-strong) transparent;
+}
+
+.actions > button {
+  flex: none;
+  height: 36px;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 8px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.actions > button > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.surface button:focus-visible {
+  outline: 2px solid var(--canvas-ui-border-strong);
+  outline-offset: -2px;
+}
+
+.dismiss {
+  flex: none;
+  padding-left: 6px;
+  border-left: 1px solid var(--canvas-ui-border);
+}
+
+@media (max-width: 479px) {
+  .surface { gap: 4px; }
+  .count { padding-right: 6px; padding-left: 2px; }
+  .dismiss { padding-left: 4px; }
+}
