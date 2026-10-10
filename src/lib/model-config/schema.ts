@@ -2,6 +2,7 @@ import { businessFeaturesSchema, procurementSchema, fixedMonthlyCostsSchema } fr
 import { validateBusinessConfig } from "./business-validation";
 import { imagePresetSchema, installImagePresetAliases } from "./image-preset";
 import { z } from "zod";
+import {channelPolicySchema,validateChannelPolicies,publicUpstreamIds} from "./channel-policy";
 import type { Pool } from "pg";
 import { isIP, BlockList } from "node:net";
 import { MODEL_BINDINGS } from "./bindings";
@@ -30,7 +31,7 @@ const mappedValue = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const parameterMap = z.strictObject({ qualityPolicy: qualityPolicySchema.optional(), quality: z.partialRecord(quality, mappedValue).optional(), resolution: z.partialRecord(resolution, mappedValue).optional(), version: mappedValue.optional() });
 const upstream = z.strictObject({ id, providerId: id, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), label: name, modality, enabled: z.boolean(), capabilities, parameterMap, costRef: z.string().min(1).max(200).optional(), procurement: procurementSchema.optional() });
 const rule = z.strictObject({ id, priority: z.number().int().min(0).max(100000), when: z.strictObject({ task: z.array(z.enum(["draft", "product", "detail", "layout"])).min(1).max(4).optional(), quality: z.array(quality).min(1).max(6).optional(), resolution: z.array(resolution).min(1).max(3).optional(), needsEdit: z.boolean().optional(), needsText: z.boolean().optional(), preserveIdentity: z.boolean().optional(), nativeResolution: z.boolean().optional() }), require: z.strictObject({ preserveIdentity: z.boolean().optional(), textAccuracy: z.boolean().optional(), minQualityRank: z.number().int().min(1).max(5).optional(), nativeResolution: z.boolean().optional(), edit: z.boolean().optional() }) });
-export const modelConfigSchema = z.strictObject({ schemaVersion: z.literal(1), providers: z.array(providerSchema).max(100), upstreamModels: z.array(upstream).max(600), publicModels: z.array(z.strictObject({ id, label: name, modality, enabled: z.boolean(), visible: z.boolean(), displayResolutions: z.array(resolution).min(1).max(3).refine(v => new Set(v).size === v.length, "分辨率不能重复").optional(), toolScope: z.strictObject({systems:z.array(z.literal("canvas")).max(1).optional(),features:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length),defaultFor:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length)}).optional(), target: z.discriminatedUnion("type", [z.strictObject({ type: z.literal("upstream"), id }), z.strictObject({ type: z.literal("pool"), id })]) })).max(200), pools: z.array(z.strictObject({ id, modality: z.literal("image"), strategy: z.enum(["priority", "lowest-cost", "latency"]), candidates: z.array(id).min(1).max(50), rules: z.array(rule).max(1000) })).max(100), bindings: z.record(z.string(), id), business: businessFeaturesSchema.optional(), fixedMonthlyCosts: fixedMonthlyCostsSchema.optional(), defaultImagePreset: imagePresetSchema.optional() });
+export const modelConfigSchema = z.strictObject({ schemaVersion: z.literal(1), providers: z.array(providerSchema).max(100), upstreamModels: z.array(upstream).max(600), publicModels: z.array(z.strictObject({ id, label: name, modality, enabled: z.boolean(), visible: z.boolean(), supplierRouting:channelPolicySchema.optional(), displayResolutions: z.array(resolution).min(1).max(3).refine(v => new Set(v).size === v.length, "分辨率不能重复").optional(), toolScope: z.strictObject({systems:z.array(z.literal("canvas")).max(1).optional(),features:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length),defaultFor:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length)}).optional(), target: z.discriminatedUnion("type", [z.strictObject({ type: z.literal("upstream"), id }), z.strictObject({ type: z.literal("pool"), id })]) })).max(200), pools: z.array(z.strictObject({ id, modality: z.literal("image"), strategy: z.enum(["priority", "lowest-cost", "latency"]), candidates: z.array(id).min(1).max(50), rules: z.array(rule).max(1000) })).max(100), bindings: z.record(z.string(), id), business: businessFeaturesSchema.optional(), fixedMonthlyCosts: fixedMonthlyCostsSchema.optional(), defaultImagePreset: imagePresetSchema.optional() });
 export type ValidationOptions = { trustedOrigins?: readonly string[] };
 
 // Runtime transport also checks DNS answers; this synchronous gate rejects literal private/metadata targets.
@@ -97,7 +98,8 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
       if (config.publicModels.some(m => m.enabled && m.target.type === "pool" && m.target.id === pool.id)) fail("混合路由候选能力尚未确认");
     }
   }
-  const candidates = (m: ModelConfig["publicModels"][number]) => m.target.type === "upstream" ? [upstreams.get(m.target.id)] : pools.get(m.target.id)?.candidates.map(u => upstreams.get(u));
+  validateChannelPolicies(config);
+  const candidates = (m: ModelConfig["publicModels"][number]) => publicUpstreamIds(config,m).map(id=>upstreams.get(id));
   for (const m of config.publicModels) {
     if (m.displayResolutions && m.modality !== "image") fail("只有图片模型可以设置输出分辨率");
     if (m.target.type === "pool" && m.modality !== "image") fail("混合路由仅支持图片");
@@ -148,6 +150,9 @@ export async function ensureModelSchema(pool: Pool): Promise<void> {
       CREATE TABLE IF NOT EXISTS app_model_business(draft_id uuid PRIMARY KEY REFERENCES app_model_drafts(id) ON DELETE CASCADE,config jsonb NOT NULL);
       ALTER TABLE app_model_public_models ADD COLUMN IF NOT EXISTS tool_scope jsonb;
       ALTER TABLE app_model_public_models ADD COLUMN IF NOT EXISTS display_resolutions jsonb;
+      ALTER TABLE app_model_public_models ADD COLUMN IF NOT EXISTS supplier_routing jsonb;
+      CREATE TABLE IF NOT EXISTS app_model_channel_balances(schedule_key text NOT NULL,channel_key text NOT NULL,served bigint NOT NULL DEFAULT 0,PRIMARY KEY(schedule_key,channel_key));
+      CREATE TABLE IF NOT EXISTS app_model_channel_health(key text PRIMARY KEY,failures int NOT NULL DEFAULT 0,open_until timestamptz,probe_until timestamptz,last_status int,last_success_at timestamptz,updated_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS app_model_image_presets(draft_id uuid PRIMARY KEY REFERENCES app_model_drafts(id) ON DELETE CASCADE,config jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS app_model_fixed_costs(draft_id uuid PRIMARY KEY REFERENCES app_model_drafts(id) ON DELETE CASCADE,config jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS app_model_bindings(draft_id uuid NOT NULL,id text NOT NULL,public_model_id text NOT NULL,PRIMARY KEY(draft_id,id),FOREIGN KEY(draft_id,public_model_id) REFERENCES app_model_public_models(draft_id,id) ON DELETE CASCADE);
