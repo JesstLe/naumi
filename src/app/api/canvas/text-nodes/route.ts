@@ -42,10 +42,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "缺少文字节点参数" }, { status: 400 });
   }
   const width = Math.round(
-    Math.min(1200, Math.max(220, Number(body.width) || 300))
+    Math.min(4096, Math.max(8, Number(body.width) || 300))
   );
   const height = Math.round(
-    Math.min(1200, Math.max(140, Number(body.height) || 176))
+    Math.min(100000, Math.max(8, Number(body.height) || 176))
   );
   const sourceIds = Array.from(
     new Set(
@@ -53,14 +53,24 @@ export async function POST(request: Request) {
         .map((source) => String(source).trim())
         .filter(Boolean)
     )
-  ).slice(0, 5);
+  ).slice(0, 200);
   if (sourceIds.length) {
     const references = await listArtworksByIds(email, sourceIds);
-    if (references.length !== sourceIds.length) {
+    const projectTexts = (await listCanvasTextNodes(email)).filter(node => node.projectKey === projectKey);
+    const texts = projectTexts.filter(node => sourceIds.includes(node.id) && node.id !== id);
+    if (new Set([...references.map(node => node.id), ...texts.map(node => node.id)]).size !== sourceIds.length) {
       return NextResponse.json(
-        { error: "部分引用图片不存在或无权访问" },
+        { error: "部分引用节点不存在或无权访问" },
         { status: 400 }
       );
+    }
+    // A source text must not already depend on the target, even indirectly.
+    const byId = new Map(projectTexts.map(node => [node.id,node]));
+    const todo = texts.map(node=>node.id),seen = new Set<string>();
+    while (todo.length) {
+      const source = todo.pop()!;
+      if (source === id) return NextResponse.json({error:"不能形成循环连线"},{status:400});
+      if (seen.has(source)) continue; seen.add(source); todo.push(...(byId.get(source)?.sourceIds || []));
     }
   }
   // 产品图绑定(帮写节点生成图片时作为 edit 首参考):首张为主产品图
