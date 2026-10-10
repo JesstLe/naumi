@@ -881,3 +881,8 @@ TypeScript、隔离原生数据库发布/解析/报价/冻结和浏览器分组�
 隔离原生HTTP/SSE/无图坏图/断连/超时/参考图/取消/多进程容量与真实任务钱包结算、完整管理浏览器/类型检查通过。真实单参考Nano2任务job-4a1e4220-3c4f-4ded-950f-25361279611b，Flow403后同任务Prompt Hubs200、媒体200、全程pending至done，报价6且唯一consume=-6；Pro任务job-b7875626-c97e-49d8-9c4e-ff4b13ff9549两源分别失败/超时，确认耗尽结束、预占释放、客户扣费0。临时正常API设置主备后均恢复，原完整模型配置指纹保持（v94→恢复v98），Pro旧Flow停用及原7/新3保持；计费v8、原84草稿、元数据库修订与采购价格指纹不变。线上浏览器通道说明、启停/权重、手机和生图分辨率通过且无配置写入。
 
 完整DB/env/Compose备份、固定兼容回滚f6e9c47a59ae4e9dd8214c1d19dba0e3ed5696d3与证据 /opt/naumi-staging/evidence/supplier-fallback-20261010；无Schema新增，DB/媒体/Compose/其他env/代理保持。最终健康、APP/Worker固定镜像与实际版本核实，持续deploy.lock在验收后释放，临时签名会话/容器helper已清理，原SSH私钥保持。旧机未连接，OSS/视频延期不变。详见docs/changes/2026-10-10-supplier-fallback-fix.md；文档跟进不另发业务镜像。
+## 42. 后台关闭质量档位时前端直接隐藏（2026-10-10）
+
+业务源码ba84ea3e7c6d05b797338cc0de55427df8aeaaca已发布120.27.162.85，APP/Worker固定镜像同SHA，Image ID sha256:152de000953f139c39808182d41a966ecd656f33cbf42f9ab1f8c4612831ff8b，实际版号1791610783 / v2026.10.10-133943。共享质量控件覆盖画布及其他生图工具，独立生图页同步按allowedQualities过滤，未开放“超高/最高”直接隐藏；后台开放则显示并沿用设置名称，缓存关闭档位回退到可选档，参数映射和售价保持。
+
+隔离真实发布浏览器验证五档→关闭超高→三档、缓存最高回退、实际报价/提交参数和关闭档拒绝、草稿/售价恢复；定位/键盘/TypeScript检查通过。线上GPT五档、两款香蕉三档，生图/画布/手机仅显示允许项且无灰色占位，业务写入和付费生成0。模型v98、计费v8、完整配置和草稿、元数据库/修订/采购价格完整指纹不变。完整DB/env/Compose备份及证据 /opt/naumi-staging/evidence/quality-options-visibility-20261010，固定回滚95ac9306a516e61e96f5ca26636c6a4421e2fa01；无Schema迁移，DB/媒体/Compose/其他env/代理保持。最终健康、APP/Worker镜像、版号和浏览器核验后锁释放，临时会话清理，原SSH私钥保持。旧机未连接，视频/OSS延期不变；详情docs/changes/2026-10-10-quality-options-visibility.md，文档跟进不另发业务镜像。
