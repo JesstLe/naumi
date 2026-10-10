@@ -1,7 +1,7 @@
 // Optional per-instance image CDN.
 //
 // When NEXT_PUBLIC_IMAGE_BASE_URL is set (国内 instance →
-// https://cdn.starzeco.com, an Aliyun OSS domain that mirror-back-sources from
+// 配置的 CDN 域名, an Aliyun OSS domain that mirror-back-sources from
 // our R2 bucket), rewrite our R2 public image URLs to that domain so
 // mainland-China users load images from a domestic, ICP-filed CDN instead of
 // *.r2.dev (which has no reliable China edge). The 海外 instance leaves the var
@@ -31,7 +31,7 @@ export function cdnUrl(src: string | null | undefined): string {
   return s;
 }
 
-// CDN 可达性主动探测(2026-07-03):开代理的用户,浏览器对 cdn.starzeco.com 的
+// CDN 可达性主动探测(2026-07-03):开代理的用户,浏览器对 配置的 CDN 域名 的
 // 请求会被代理「挂起」——既不成功也不触发 onerror,被动回退等不到。所以首次用
 // 改写源前先探测一张(3.5s 超时),不通 → 本会话内全部直接用原始源。
 // 结果模块级缓存,全站只探一次;海外/自托管(无改写)不会调用到。
@@ -70,7 +70,7 @@ export function probeCdnHealth(sampleRewrittenUrl: string): Promise<boolean> {
 // 图片加载失败时的「换源重试」(onError 用):
 //   当前用改写地址(国内 CDN)失败 → 回退原始 R2;当前用原始失败 → 试改写(若不同)。
 // 场景(2026-07-03 实测):开全局代理的用户,浏览器出口在境外 → 访问不了仅限
-// 中国内地的 cdn.starzeco.com;而直连用户又访问不了被墙的 r2.dev。两个源总有
+// 中国内地的 配置的 CDN 域名;而直连用户又访问不了被墙的 r2.dev。两个源总有
 // 一个能通,失败就换到另一个。dataset 标记只换一次,防两边都挂时死循环。
 // 返回 true = 已换源重试(调用方先别进 error 态);false = 没得换了。
 export function onImgError(

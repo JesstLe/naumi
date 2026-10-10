@@ -70,7 +70,7 @@ const s = (id: string, name: string, env: SceneEnv): TryonScene => ({
 });
 
 export const TRYON_MODELS: TryonModel[] = [
-  // 星泽定制
+  // 自定义模特
   m("star1", "苏晚棠", "cn", "f"),
   // 中国(18)
   m("f1", "林晚晴", "cn", "f"),

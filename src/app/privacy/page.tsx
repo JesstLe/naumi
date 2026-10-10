@@ -1,15 +1,12 @@
 import { ShieldCheck } from "lucide-react";
 import { getServerLocale } from "@/lib/i18n/server-locale";
 import { BRAND, BRAND_EMAIL } from "@/lib/brand";
-import { officialSite } from "@/lib/edition";
 import { publicCommerceEnabled } from "@/lib/commerce";
 
-// 法律主体按版本区分:官方云=广东星泽科技(国内合规);开源/Pro 自托管=部署者自己,
-// 本实例(Naumi,自托管 Pro)渲染「本站运营方」分支。
-const isCloud = officialSite;
+// 法律主体由实际部署运营方承担，不内置第三方公司或备案信息。
 
 // 政策当前版本日期(中英文共用)。
-const LAST_UPDATED = "2026-09-12";
+const LAST_UPDATED = "2026-10-10";
 
 export const metadata = { title: `隐私政策 — ${BRAND}` };
 
@@ -165,9 +162,7 @@ function PrivacyZh() {
         <section>
           <h2 className="text-base font-semibold text-foreground">10. 联系我们</h2>
           <p className="mt-2">
-            {isCloud
-              ? "本服务由广东星泽科技有限公司（备案号：粤ICP备2025390640号-1）运营。"
-              : "本服务由本站运营方自主部署运营。"}
+            本服务由本站运营方自主部署运营。
             如对本政策有任何疑问，或希望行使上述权利，请通过
             {" "}{BRAND_EMAIL} 联系我们。
           </p>
@@ -357,9 +352,7 @@ function PrivacyEn() {
             10. Contact us
           </h2>
           <p className="mt-2">
-            {isCloud
-              ? "The service is operated by Guangdong Xingze Technology Co., Ltd. (ICP filing: 粤ICP备2025390640号-1)."
-              : "The service is operated by the operator of this site."}{" "}
+            The service is operated by the operator of this site.{" "}
             For any questions about this policy, or to exercise the rights
             above, contact us at {BRAND_EMAIL}.
           </p>

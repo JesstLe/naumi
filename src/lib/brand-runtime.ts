@@ -11,7 +11,7 @@ import { BRAND, BRAND_LOGO, BRAND_LOGO_HAS_TEXT } from "@/lib/brand";
 //   就不生效 → 必须做「运行时 DB 覆盖」:后台改一次 → 落库 → 每次渲染实时读回。
 //
 // 安全铁律:**DB 里没有品牌覆盖项时,必须回退到 env 默认值,渲染结果与现状完全一致。**
-//   我们线上两站靠 env NEXT_PUBLIC_BRAND_NAME=星泽商图 显示品牌,DB 无覆盖 →
+//   未设置 DB 覆盖的实例使用 NEXT_PUBLIC_BRAND_NAME 配置或默认 Naumi →
 //   name = BRAND(env)、logo = BRAND_LOGO(env),与现在一模一样。
 //
 // 存储 key:

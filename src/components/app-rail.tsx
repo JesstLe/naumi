@@ -181,7 +181,7 @@ export function AppRail() {
           <span
             className={cn(
               "flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-[9px]",
-              !BRAND_SQUARE_LOGO.includes("starzeco") && "[background:var(--grad-acc)]"
+              "[background:var(--grad-acc)]"
             )}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -1,15 +1,12 @@
 import { FileText } from "lucide-react";
 import { getServerLocale } from "@/lib/i18n/server-locale";
 import { BRAND, BRAND_EMAIL } from "@/lib/brand";
-import { officialSite } from "@/lib/edition";
 import { publicCommerceEnabled } from "@/lib/commerce";
 
-// 法律主体按版本区分:官方云=广东星泽科技(国内合规);开源/Pro 自托管=部署者自己。
-// 本实例(Naumi,自托管 Pro)渲染「本站运营方」分支。
-const isCloud = officialSite;
+// 法律主体由实际部署运营方承担，不内置第三方公司或备案信息。
 
 // 条款当前版本日期(中英文共用)。
-const LAST_UPDATED = "2026-09-12";
+const LAST_UPDATED = "2026-10-10";
 
 export const metadata = { title: `服务条款 — ${BRAND}` };
 
@@ -35,7 +32,7 @@ function TermsZh() {
           <h2 className="text-base font-semibold text-foreground">1. 服务说明</h2>
           <p className="mt-2">
             {BRAND}（「我们」/「本平台」，由
-            {isCloud ? "广东星泽科技有限公司" : "本站运营方"}
+            本站运营方
             运营）是一款
             面向电商营销的 B2B 生产力工具，
             服务对象为电商卖家、品牌方与代运营团队，帮助其高效产出商业视觉，
@@ -187,14 +184,10 @@ function TermsZh() {
             12. 适用法律与争议解决
           </h2>
           <p className="mt-2">
-            {isCloud
-              ? "本服务由广东星泽科技有限公司（备案号：粤ICP备2025390640号-1）运营。本条款的订立、效力、解释与履行适用中华人民共和国大陆地区法律。"
-              : "本服务由本站运营方自主部署运营。本条款的订立、效力、解释与履行适用运营方所在地法律。"}
+            本服务由本站运营方自主部署运营。本条款的订立、效力、解释与履行适用运营方所在地法律。
           </p>
           <p className="mt-2">
-            {isCloud
-              ? "如发生争议，双方应先友好协商；协商不成时，任一方可向广东星泽科技有限公司所在地有管辖权的人民法院提起诉讼。"
-              : "如发生争议，双方应先友好协商；协商不成时，任一方可向运营方所在地有管辖权的法院提起诉讼。"}
+            如发生争议，双方应先友好协商；协商不成时，任一方可向运营方所在地有管辖权的法院提起诉讼。
           </p>
         </section>
 
@@ -230,9 +223,7 @@ function TermsEn() {
           </h2>
           <p className="mt-2">
             {BRAND} (&ldquo;we&rdquo; / &ldquo;the platform&rdquo;, operated by{" "}
-            {isCloud
-              ? "Guangdong Xingze Technology Co., Ltd."
-              : "the operator of this site"}
+            the operator of this site
             ) is a B2B productivity tool for
             e-commerce marketing, serving online sellers,
             brands and agencies to efficiently produce commercial visuals.
@@ -437,14 +428,10 @@ function TermsEn() {
             12. Governing law & disputes
           </h2>
           <p className="mt-2">
-            {isCloud
-              ? "The service is operated by Guangdong Xingze Technology Co., Ltd. (ICP filing: 粤ICP备2025390640号-1). The formation, validity, interpretation and performance of these terms are governed by the laws of the mainland of the People's Republic of China."
-              : "The service is operated by the operator of this site. These terms are governed by the laws of the operator's jurisdiction."}
+            The service is operated by the operator of this site. These terms are governed by the laws of the operator&apos;s jurisdiction.
           </p>
           <p className="mt-2">
-            {isCloud
-              ? "In case of a dispute, the parties shall first negotiate in good faith; failing that, either party may bring an action before the people's court with jurisdiction at the location of Guangdong Xingze Technology Co., Ltd."
-              : "In case of a dispute, the parties shall first negotiate in good faith; failing that, either party may bring an action before a court with jurisdiction at the operator's location."}
+            In case of a dispute, the parties shall first negotiate in good faith; failing that, either party may bring an action before a court with jurisdiction at the operator&apos;s location.
           </p>
         </section>
 

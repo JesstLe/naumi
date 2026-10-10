@@ -347,7 +347,7 @@ export function SiteHeader() {
 
         <div className="flex items-center gap-2">
           {/* 母站入口 — 仅当 NEXT_PUBLIC_BRAND_PARENT_URL 设了才显示。
-              国内 ai.starzeco.com 设 https://starzeco.com 后,这里出现「↗ 星泽官网」。
+              国内 配置的签发站 设 配置的母站地址 后,这里出现「↗ 品牌官网」。
               海外站不设 → 这里啥也没有。 */}
           {BRAND_PARENT_URL && (
             <a

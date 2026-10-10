@@ -3,7 +3,7 @@ import { isWechatEnabled, pollWxSession, wxSyntheticEmail } from "@/lib/wechat";
 import { adminSupabase } from "@/lib/supabase-admin";
 
 // 轮询扫码登录会话。命中后按手机号登录同款方式建号/登录:
-// openid → 合成邮箱({openid小写}-{短哈希}@wx.starzeco.com)→ Supabase 建用户
+// openid → 合成邮箱({openid小写}-{短哈希}@wx.naumi.local)→ Supabase 建用户
 // → magiclink token_hash 回给前端 verifyOtp 建会话(登录即注册)。
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
