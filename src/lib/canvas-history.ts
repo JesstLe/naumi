@@ -10,7 +10,7 @@ const coordinate = z.number().finite().min(-1e7).max(1e7);
 const textFields = z.object({
   title: z.string().max(80), prompt: z.string().max(4000).optional(), content: z.string().max(20000),
   sourceIds: z.array(id).max(200), targetIds: z.array(id).max(200), productIds: z.array(id).max(200),
-  width: z.number().min(80).max(4096), height: z.number().min(80).max(4096),
+  width: z.number().min(8).max(4096), height: z.number().min(8).max(100000),
 });
 const textNode = textFields.extend({ id, prompt: z.string().max(4000), projectKey: id, canvasX: coordinate, canvasY: coordinate,
   status: z.enum(["idle", "generating", "completed", "failed"]), createdAt: z.string().datetime(),
@@ -29,6 +29,7 @@ export const historyRequest = z.object({
     z.object({ type: z.literal("size"), id, x: coordinate, y: coordinate, width: z.number().min(80).max(4096), height: z.number().min(80).max(4096) }),
     z.object({ type: z.literal("mark"), id, marked: z.boolean() }),
     z.object({ type: z.literal("node-settings"), id, text: z.boolean(), settings: nodeSettingsSchema }),
+    z.object({ type: z.literal("workflow-asset"), id, assetOperationId: z.string().uuid(), filled: z.boolean() }),
   ])).min(1).max(400),
 });
 
@@ -36,6 +37,7 @@ export const historyRequest = z.object({
 export async function saveCanvasHistory(email: string, input: z.infer<typeof historyRequest>) {
   await ensureSchema();
   if (input.operations.some(op => op.type === "node-settings")) await ensureCanvasSettingsSchema();
+  if (input.operations.some(op => op.type === "workflow-asset")) await (await import("@/lib/canvas-workflow-import")).ensureWorkflowImportSchema();
   const client = await getPool().connect();
   const fingerprint = createHash("sha256").update(JSON.stringify(input.operations)).digest("hex");
   try {
@@ -64,6 +66,14 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       const owned = await client.query(`SELECT * FROM ${table} WHERE email=$1 AND id=$2 FOR UPDATE`, [email,op.id]);
       if (!owned.rows.length) throw new Error("节点不存在或无权修改，请刷新画布");
       const row = owned.rows[0];
+      if (op.type === "workflow-asset") {
+        const versions = await client.query("SELECT before_asset,after_asset FROM app_canvas_workflow_asset_ops WHERE email=$1 AND id=$2 AND node_id=$3", [email,op.assetOperationId,op.id]);
+        const version = versions.rows[0];
+        if (!version || row.deleted_at || ![version.before_asset.image,version.after_asset.image].includes(row.image_url)) throw new Error("补图版本已改变，请刷新画布");
+        const asset = op.filled ? version.after_asset : version.before_asset;
+        await client.query("UPDATE app_artworks SET image_url=$3,source_url=$4,image_width=$5,image_height=$6 WHERE email=$1 AND id=$2", [email,op.id,asset.image,asset.source,asset.width,asset.height]);
+        continue;
+      }
       if (op.type === "node-settings") {
         if (!text && row.deleted_at) throw new Error("节点已删除，请刷新画布");
         await client.query(`INSERT INTO app_canvas_node_settings(email,node_id,kind,settings) VALUES($1,$2,$3,$4::jsonb)
