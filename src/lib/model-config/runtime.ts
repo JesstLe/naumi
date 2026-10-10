@@ -78,6 +78,7 @@ export function simulateModel(snapshot: ModelSnapshot, billing: ConfigSnapshot, 
     }
     // An explicitly named display tier is not a promise that the model has a
     // corresponding intrinsic quality rank. Explicit route requirements still apply.
+    if(u.parameterMap.resolutionPolicy?.mode==="map"&&!u.parameterMap.resolutionPolicy.values[(facts.requestedResolution||facts.resolution) as "1K"|"2K"|"4K"])codes.push("RESOLUTION_MAPPING_MISSING");
     const rank = Math.max(u.parameterMap.qualityPolicy ? 1 : rankFor(nativeQuality), facts.task === "draft" ? 1 : 2, rule?.require.minQualityRank || 1);
     if (c.verified && c.qualityRank < rank) codes.push("QUALITY_RANK");
     if (!u.parameterMap.qualityPolicy && c.verified && c.qualities.length && !c.qualities.includes(facts.quality as any)) codes.push("QUALITY_UNSUPPORTED");

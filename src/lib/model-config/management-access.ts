@@ -1,3 +1,5 @@
+import {applyResolutionParameters,resolutionParametersSchema} from "./resolution-policy";
+import {readResolutionDefaults} from "../supplier-models/resolution-access";
 import {applyDisplayResolutions} from "./resolution-options";
 import "server-only";
 import {channelHealthSummary} from "./channel-scheduler";
@@ -33,7 +35,7 @@ const credits=z.number().int().min(0).max(2147483647);
 const creditPricing=z.discriminatedUnion("mode",[z.strictObject({mode:z.literal("matrix"),prices:z.record(z.enum(QUALITY_IDS),z.record(z.enum(RESOLUTION_IDS),credits.nullable()))}),z.strictObject({mode:z.literal("fixed"),credits}),z.strictObject({mode:z.literal("quality-resolution"),quality:z.record(z.enum(QUALITY_IDS),credits),resolutionExtra:z.record(z.enum(RESOLUTION_IDS),credits)})]);
 const input = z.discriminatedUnion("action", [
   z.strictObject({action:z.literal("channels"),...common,rowId:identifier,policy:channelPolicySchema.nullable()}),
-  z.strictObject({action:z.literal("resolutions"),...common,rowId:identifier,resolutions:z.array(z.enum(["1K","2K","4K"])).min(1).max(3).nullable()}),
+  z.strictObject({action:z.literal("resolutions"),...common,rowId:identifier,resolutions:z.array(z.enum(["1K","2K","4K"])).min(1).max(3).nullable(),parameters:resolutionParametersSchema.nullable().optional()}),
   z.strictObject({ action: z.literal("discover"), providerId: identifier, force: z.boolean().optional() }),
   z.strictObject({ action: z.literal("credential"), providerId: identifier, ciphertext: z.string().min(1).max(32768).optional(), keyPlain: z.string().min(1).max(16384).optional() }),
   z.strictObject({ action: z.literal("switch"), ...common, rowId: identifier, upstreamId: identifier }),
@@ -66,7 +68,8 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         const row=rows(snapshot).find(r=>r.id===rowId);if(!row || !row.features.some(f=>f.id===feature))throw new ModelConfigError("MODEL_UNAVAILABLE","该模型未应用到此工具",400);
         const billing=await admin.billing.current();return biJson({version:snapshot.version,billingVersion:billing.version,grid:modelCreditGrid(billing,snapshot,row,feature)});
       }
-      if (request.method === "GET") {const billing=await admin.billing.current(),defaults=await readQualityDefaults(admin.pool,snapshot.config),modelRows=rows(snapshot);
+      if (request.method === "GET") {const billing=await admin.billing.current(),defaults=await readQualityDefaults(admin.pool,snapshot.config),resolutionDefaults=await readResolutionDefaults(admin.pool,snapshot.config),modelRows=rows(snapshot);
+        for(const row of modelRows)for(const route of row.resolutionConfig?.routes||[]){const d=resolutionDefaults.get(route.upstreamId);route.metadataDefaults=d||null;if(d)route.nativeValues=d.nativeValues;if(route.editable&&!route.configured&&d?.available){route.mode=d.mode;route.field=d.field;route.values={...d.values};route.metadataRef={id:d.id,revision:d.revision};}}
         for(const row of modelRows)for(const route of row.qualityConfig?.routes || []){const d=defaults.get(route.upstreamId);route.metadataDefaults=d || null;if(!route.configured&&d?.available){route.mode=d.mode;route.values={...d.values};route.metadataRef={id:d.id,revision:d.revision};}else if(!route.configured){route.mode="omit";route.values={};}}
         return biJson({ version: snapshot.version,billingVersion:billing.version, managed: await deps.managed(), rows: modelRows.map(row=>({...row,pricing:managedModelPriceViews(billing,snapshot,row)})), candidates: managedModelCandidates(snapshot.config), channelHealth:await channelHealthSummary(admin.pool,snapshot.config),providerCapacity:await providerCapacitySummary(admin.pool,snapshot.config),providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, maxConcurrent:p.maxConcurrent, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs: await readProviderCatalog(admin.pool, snapshot.config.providers) });}
       const body = input.parse(JSON.parse(await readBounded(new Response(request.body), 48000)));
@@ -124,7 +127,12 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
               if(route.mode==="map")for(const choice of body.parameters.choices)if(!route.values[choice.id]?.trim() && route.metadataRef && d?.mode==="map")route.values[choice.id]=d.values[choice.id] || "";
             }
           }
+          if(body.action==="resolutions" && body.parameters){
+            const defaults=await readResolutionDefaults(admin.pool,config);
+            for(const route of body.parameters.routes){const d=defaults.get(route.upstreamId);if(route.metadataRef&&(!d||route.metadataRef.id!==d.id||route.metadataRef.revision!==d.revision))throw new ModelConfigError("METADATA_CHANGED","分辨率元数据已更新，请重新打开设置后核对",409);}
+          }
           config = body.action === "channels" ? applyChannelPolicy(config,row,body.policy) : body.action === "resolutions" ? applyDisplayResolutions(config,row,body.resolutions) : body.action === "parameters" ? applyModelQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyModelToolScope(config,row,body.features,body.canvas) : body.action === "rename" ? renameManagedModel(config, row, body.label) : switchManagedModel(config, row, body.upstreamId);
+          if(body.action==="resolutions" && body.parameters!==undefined)config=applyResolutionParameters(config,row,body.resolutions||["1K","2K","4K"],body.parameters);
         } else if (body.action === "connect") {
           const endpoint = validateModelEndpoint(body.protocol === "apimart-images" ? body.baseUrl.replace(/\/v1\/?$/, "") : body.baseUrl, { trustedOrigins: admin.trustedOrigins });
           const providerId = `mvp-${body.id}`;
