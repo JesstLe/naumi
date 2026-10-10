@@ -120,6 +120,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         } else if (body.action === "switch" || body.action === "rename" || body.action === "scope" || body.action === "parameters" || body.action === "resolutions" || body.action === "channels") {
           const row = rows(snapshot).find(r => r.id === body.rowId);
           if (!row) throw new ModelConfigError("MODEL_UNAVAILABLE", "前端当前没有展示该模型，请刷新", 409);
+          if(body.action==="channels"&&body.policy&&row.modality==="text"&&body.policy.channels.some(c=>c.enabled&&!row.candidateIds.includes(c.upstreamId)))throw new ModelConfigError("MODEL_INCOMPATIBLE","文字通道必须满足当前全部用途的文字及图片理解能力",400);
           if(body.action === "parameters" && body.parameters){
             const defaults=await readQualityDefaults(admin.pool,config);
             for(const route of body.parameters.routes){const d=defaults.get(route.upstreamId);
