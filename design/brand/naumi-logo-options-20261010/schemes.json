@@ -1,0 +1,56 @@
+[
+  {
+    "key": "a",
+    "name": "胶囊 N",
+    "en": "Capsule N",
+    "folder": "a-capsule-n",
+    "selectedDirection": true,
+    "font": "arialbd.ttf",
+    "format": "native SVG, outlined wordmark"
+  },
+  {
+    "key": "b",
+    "name": "折面 N",
+    "en": "Folded N",
+    "folder": "b-folded-n",
+    "selectedDirection": false,
+    "font": "Geist-Bold.ttf",
+    "format": "native SVG, outlined wordmark"
+  },
+  {
+    "key": "c",
+    "name": "轨道 n",
+    "en": "Orbital n",
+    "folder": "c-orbital-n",
+    "selectedDirection": false,
+    "font": "Geist-Medium.ttf",
+    "format": "native SVG, outlined wordmark"
+  },
+  {
+    "key": "d",
+    "name": "开放光圈",
+    "en": "Open Aperture",
+    "folder": "d-open-aperture",
+    "selectedDirection": false,
+    "font": "Geist-Medium.ttf",
+    "format": "native SVG, outlined wordmark"
+  },
+  {
+    "key": "e",
+    "name": "负形印章",
+    "en": "Negative N",
+    "folder": "e-negative-n",
+    "selectedDirection": false,
+    "font": "Geist-SemiBold.ttf",
+    "format": "native SVG, outlined wordmark"
+  },
+  {
+    "key": "f",
+    "name": "小球印记",
+    "en": "Orb Signature",
+    "folder": "f-orb-signature",
+    "selectedDirection": false,
+    "font": "Geist-SemiBold.ttf",
+    "format": "native SVG, outlined wordmark"
+  }
+]
