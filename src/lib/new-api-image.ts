@@ -22,10 +22,10 @@ function upstreamError(raw: string, status: number) {
       typeof body.error === "string"
         ? body.error
         : body.error?.message || body.message || raw.slice(0, 500);
-    return new Error(`${status} ${message}`);
+    return Object.assign(new Error(`${status} ${message}`), {status});
   } catch (error) {
     if(error instanceof ModelConfigError)throw error;
-    return new Error(`${status} ${raw.slice(0, 500)}`);
+    return Object.assign(new Error(`${status} ${raw.slice(0, 500)}`), {status});
   }
 }
 
@@ -157,7 +157,7 @@ export async function generateNewApiImage(input: {
     throw new Error(`New API 生图分组未返回图片：${streamContent.slice(-300)}`);
   }
   const imageResponse = await fetch(imageUrl, {
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.any([input.signal || new AbortController().signal, AbortSignal.timeout(60_000)]),
   });
   if (!imageResponse.ok) {
     throw new Error(`生成图片下载失败 ${imageResponse.status}`);
