@@ -24,6 +24,7 @@ export type MvpRow = {
   features: { id: string; label: string }[];
   routes: { upstreamId: string; model: string; providerId: string; provider: string; kind: string; enabled: boolean }[];
   preset: boolean; conditional: boolean; candidateIds: string[];
+  canvasUnified?:boolean;
   qualityConfig?: ReturnType<typeof qualityConfiguration>;
   scopeOptions: {id:string;label:string;selected:boolean;available:boolean;adminDefault:boolean;reason?:string}[];
   pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").MvpCreditPricing}[];
@@ -84,6 +85,7 @@ export function mvpRows(snapshot: ModelSnapshot, catalogs: { feature: string; de
       try { assertMvpTarget(config, row, c.id); return true; } catch { return false; }
     }).map(c => c.id);
     row.scopeOptions = mvpScopeOptions(row,eligibleCatalogs);
+    row.canvasUnified = row.publicIds.every(id=>config.publicModels.find(m=>m.id===id)?.toolScope?.systems?.includes("canvas"));
     if (row.modality === "image") row.qualityConfig = qualityConfiguration(config, [...new Set(row.routes.map(r => r.upstreamId))]);
   }
   return Array.from(rows.values());
@@ -112,10 +114,11 @@ function mvpScopeOptions(row:MvpRow,eligibleCatalogs:Map<string,Set<string>>) {
 }
 
 /** Scope is independent from prices, supplier targets and full configuration drafts. */
-export function applyMvpToolScope(source:ModelConfig,row:MvpRow,features:string[]):ModelConfig {
+export function applyMvpToolScope(source:ModelConfig,row:MvpRow,features:string[],canvas?:boolean):ModelConfig {
   const selected=new Set(features);
   if(selected.size!==features.length || features.some(id=>!row.scopeOptions.some(o=>o.id===id && o.available)))
     throw new ModelConfigError("MODEL_INCOMPATIBLE","请选择该模型支持且已在工具配置中开放的范围");
+  if(canvas!==undefined){for(const id of [...selected])if(id.startsWith("canvas."))selected.delete(id);if(canvas)for(const option of row.scopeOptions)if(option.id.startsWith("canvas.")&&option.available)selected.add(option.id);}
   const config=structuredClone(source);
   const family=(id:string)=>row.modality==="image" ? imageModelDisplayId(id)===row.id : id===row.id;
   const scopeFor=(id:string)=>{
@@ -128,7 +131,7 @@ export function applyMvpToolScope(source:ModelConfig,row:MvpRow,features:string[
   };
   const defaults=new Map(Object.entries(FEATURE_BINDINGS).filter(([,b])=>MODEL_BINDINGS[b!].modality===row.modality).map(([f,b])=>[f,publicModelCatalog({version:1,digest:"",config:source},row.modality,f as FeatureId,true).defaultModelId || featureDefaultModel(source,f,b)]));
   for(const model of config.publicModels.filter(m=>m.modality===row.modality && family(m.id)))
-    model.toolScope={features:[...selected] as FeatureId[],defaultFor:model.toolScope?.defaultFor.filter(f=>selected.has(f)) || []};
+    model.toolScope={...(canvas?{systems:["canvas"] as ["canvas"]}:{}),features:[...selected] as FeatureId[],defaultFor:model.toolScope?.defaultFor.filter(f=>selected.has(f)) || []};
   const assignDefault=(feature:string,id:string)=>{
     for(const m of config.publicModels) if(m.toolScope) m.toolScope.defaultFor=m.toolScope.defaultFor.filter(f=>f!==feature);
     scopeFor(id).defaultFor.push(feature as FeatureId);

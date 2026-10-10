@@ -18,7 +18,7 @@ type SavedConversation = { id: string; title: string; turns: CanvasAssistantTurn
 /** Presentation-only sidebar: the parent owns SSE, context, model routing and billing. */
 export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns, input, busy, error,
   costLabel, labels, tasks, onInputChange, onSend, onNewChat, onRestoreChat, onClose, onPreview,
-  onCopy, renderContent,
+  onCopy, renderContent, modelControl,
 }: {
   light: boolean;
   anchorTitle: string;
@@ -28,6 +28,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   busy: boolean;
   error: string | null;
   costLabel: string;
+  modelControl?: ReactNode;
   labels: CanvasAssistantLabels;
   tasks: CanvasAssistantTask[];
   onInputChange: (value: string) => void;
@@ -246,6 +247,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           </button>
         </div>
       </div>
+      {modelControl && <div className="mt-2" data-testid="canvas-assistant-model">{modelControl}</div>}
       <p className="canvas-ui-muted mt-2 text-center text-[10px] leading-4">{costLabel}</p>
     </footer>
   </aside>

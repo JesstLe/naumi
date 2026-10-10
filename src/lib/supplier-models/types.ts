@@ -1,3 +1,4 @@
+import {metadataQualitySchema} from "./quality-defaults";
 import {z} from "zod";
 export const CAPABILITY_STATES=["unknown","configured","documented","verified"] as const;
 export const PRICE_BASES=["request","image","token","second","frame"] as const;
@@ -35,6 +36,7 @@ export const supplierMetadataSchema=z.strictObject({
   checkedAt:date,
   prices:z.array(supplierPriceSchema).max(50),
 }).superRefine((m,ctx)=>{
+ if(m.parameterMetadata.qualityDefaults!==undefined && !metadataQualitySchema.safeParse(m.parameterMetadata.qualityDefaults).success)ctx.addIssue({code:"custom",message:"quality 默认映射格式无效，请逐档填写合法参数值"});
  if(["documented","verified"].includes(m.capabilityState)&&(!m.capabilitySource || !m.checkedAt))ctx.addIssue({code:"custom",message:"文档声明或已验证状态需要来源和核对日期"});
  if(new Set(m.prices.map(p=>p.id)).size!==m.prices.length)ctx.addIssue({code:"custom",message:"价格行编号重复"});
 });

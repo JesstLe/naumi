@@ -27,12 +27,20 @@ function loadCatalog(feature: FeatureId) {
   }
   return promise;
 }
-export function chosenFeatureModel(feature: FeatureId) { return adminConfiguredFeature(feature) ? undefined : selections.get(feature) || catalogs.get(feature)?.defaultModelId; }
+const canvasSelections=new Map<string,string>();
+function canvasKind(feature:FeatureId){return feature.startsWith("canvas.")?(["canvas.image","canvas.expand","canvas.text-edit","canvas.annotate"].includes(feature)?"image":"text"):undefined;}
+export function chosenFeatureModel(feature: FeatureId) {
+ if(adminConfiguredFeature(feature))return undefined;
+ const catalog=catalogs.get(feature),kind=canvasKind(feature),group=kind?canvasSelections.get(kind):undefined;
+ const shared=group&&catalog?.models.find(m=>imageModelDisplayId(m.id)===imageModelDisplayId(group));
+ return shared?shared.id:selections.get(feature) || catalog?.defaultModelId;
+}
 export function featureModelManaged(feature: FeatureId) { return catalogs.get(feature)?.managed === true; }
 export function selectFeatureModel(feature: FeatureId, id: string) {
   if (adminConfiguredFeature(feature)) return;
   if (!catalogs.get(feature)?.models.some(m => m.id === id)) return;
   selections.set(feature, id);
+  const kind=canvasKind(feature);if(kind){canvasSelections.set(kind,id);try{localStorage.setItem(`naumi:model:canvas:${kind}`,id);}catch{}}
   try { localStorage.setItem(`naumi:model:${feature}`, id); } catch {}
   window.dispatchEvent(new Event(EVENT));
 }
@@ -54,7 +62,8 @@ export function useFeatureModels(feature: FeatureId) {
           setSelected(data.defaultModelId || "");
           return;
         }
-        let saved = selections.get(feature); try { saved ||= localStorage.getItem(`naumi:model:${feature}`) || undefined; } catch {}
+        const kind=canvasKind(feature);if(kind)try{const group=localStorage.getItem(`naumi:model:canvas:${kind}`);if(group)canvasSelections.set(kind,group);}catch{}
+        let saved = (kind?canvasSelections.get(kind):undefined) || selections.get(feature); try { saved ||= localStorage.getItem(`naumi:model:${feature}`) || undefined; } catch {}
         const id = data.models.find(m => imageModelDisplayId(m.id) === imageModelDisplayId(saved || ""))?.id || data.defaultModelId || data.models[0]?.id;
         if (id) selections.set(feature, id); else selections.delete(feature);
         setSelected(id || "");

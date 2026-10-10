@@ -95,6 +95,12 @@ async function main(){
   assert.deepEqual(publicModelCatalog(withScope,"image","canvas.image").models.map(m=>m.id),[...row.publicIds,"image-a"]);
   assert.equal((await executor.resolve({feature:"canvas.image",binding:"image.edit",requestedModelId:row.publicIds[0],snapshot:withScope,billing})).publicModelId,row.publicIds[0]);
   assert.deepEqual(await f.repo.draft(actor),draft);
+  const groupVersion=(await f.repo.current()).version;
+  assert.equal((await handler(request({action:"scope",id:randomUUID(),expectedVersion:groupVersion,rowId:row.id,features:["image.generate"],canvas:true}))).status,200);
+  const grouped=await f.repo.current();for(const m of grouped.config.publicModels.filter(m=>row.publicIds.includes(m.id)))assert.deepEqual(m.toolScope?.systems,["canvas"]);
+  const compat={action:"scope-compat",id:randomUUID(),expectedVersion:grouped.version};assert.equal((await handler(request(compat))).status,200);
+  const compatible=await f.repo.current(),expectedCompatible=structuredClone(grouped.config);for(const m of expectedCompatible.publicModels)if(m.toolScope)delete m.toolScope.systems;
+  assert.deepEqual(compatible.config,expectedCompatible);assert.equal((await handler(request(compat))).status,200);assert.deepEqual(await f.repo.draft(actor),draft);
   console.log("MODEL_ORDER_NATIVE=PASS SCOPE_ORDER_PRESERVED=PASS USER_MODEL_SELECTION=PASS MVP_TOOL_SCOPE=PASS FAMILY=PASS SUBSET_ALL_NONE=PASS DEFAULT_FALLBACK=PASS RAW_REQUEST_REJECTED=PASS FROZEN_TASK=PASS DRAFT_PRICE_ROUTE_PRESERVED=PASS RETRY_CONFLICT=PASS LAST_MODEL_PROTECTED=PASS PAID_GENERATION=0");
  }finally{await f.cleanup();}
 }

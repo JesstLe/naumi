@@ -6,10 +6,10 @@ export function assertPlatformImageSelection(...ids: unknown[]) {
     throw new ModelConfigError("USER_IMAGE_PROVIDER_DISABLED", "用户自带接口已取消，请刷新并选择平台模型", 409);
 }
 
-/** Text/vision canvas operations without a model picker use the published default.
+/** All canvas modules select within their capability-filtered system pool.
  * Apply only to new request resolution. Frozen executions must retain their original model. */
 export const ADMIN_CONFIGURED_FEATURES: readonly FeatureId[] = [
-  "canvas.ocr", "canvas.assistant", "canvas.text-generate",
+
 ];
 export function adminConfiguredFeature(feature?: string): boolean {
   return ADMIN_CONFIGURED_FEATURES.includes(feature as FeatureId);

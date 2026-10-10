@@ -1,3 +1,4 @@
+import type {MetadataQualityDefaults} from "../supplier-models/quality-defaults";
 import { z } from "zod";
 import { ModelConfigError, type ModelConfig, type UpstreamModel } from "./types";
 
@@ -37,6 +38,6 @@ export function qualityConfiguration(config: ModelConfig, ids: string[]) {
       editable: ["openai-images", "new-api-flow"].includes(provider.protocol) && !config.publicModels.some(m=>m.enabled && m.target.type === "pool" && config.pools.find(p=>p.id===m.target.id)?.candidates.includes(u.id)),
       mode: policy?.mode || (Object.keys(u.parameterMap.quality || {}).length ? "map" : u.capabilities.qualities.length ? "passthrough" : "omit"),
       values: Object.fromEntries(DISPLAY_QUALITY_IDS.map(id => [id, policy?.choices.find(c => c.id === id)?.value || u.parameterMap.quality?.[id] || id])),
-      evidence: policy?.evidence || { status: "unverified", source: "", checkedAt: "" }, configured: Boolean(policy) };
+      evidence: policy?.evidence || { status: "unverified", source: "", checkedAt: "" }, configured: Boolean(policy), metadataDefaults:null as MetadataQualityDefaults|null, metadataRef:null as {id:string;revision:number}|null };
   }) };
 }
