@@ -859,3 +859,9 @@ TypeScript、隔离原生数据库发布/解析/报价/冻结和浏览器分组�
 旧函数复现、原生混合inventory/再次改名/前缀碰撞与完整Next+PG文字保存/标题/目录/刷新/再开编辑框及图片/价格/范围/排序/手机通过。线上所有非图片标题/编辑框与保存名称及前端文字目录一致，GPT-6Astra专门截图/刷新验证，真实hy4-preview保持；参数/库/画布用途、四家族顺序/选择/报价/手机通过。用户最新模型v76/价格v8、整个配置与所有草稿hash、元数据861条/修订863条/采购价格hash不变，收费生成0。
 
 全程deploy.lock、完整备份与固定6446fab回滚准备，最终健康/实际镜像/版本/浏览器验收通过、锁释放，临时会话helper清理。证据/备份 /opt/naumi-staging/evidence/management-text-name-20261010，详见docs/changes/2026-10-10-management-text-display-name.md。DB/媒体/Compose/其他env/公网代理保持，旧机不连接/回传，local媒体/视频OSS延期约定不变；文档跟进不另发镜像。
+
+## 39. 家族前端输出分辨率选项（2026-10-10）
+
+固定源码dc4c4e7de51ca422e59b117078935ad19b7d2381已发布120.27.162.85，APP/Worker Image ID sha256:aeac30a4fb4c8b7b44d8dbedfff7b8307a9ce3e7fd4c8b5b15e3b0246befb759，实际版号1791604344 / v2026.10.10-115224。“模型管理→分辨率设置”可多选1K/2K/4K、全选、恢复默认；按家族统一比例分支，生图、提取、服装/包装3D、画布及积分表同步。新增可选displayResolutions及标准草稿nullable jsonb列，不变更原生能力、参数映射、放大路径或售价。关闭档位请求/报价拒绝，已接受任务读取冻结版本。
+
+用户明确选“两款都开启”，Nano Banana Pro和Nano Banana 2已通过正常配置接口保存三档，模型v80->82、计费v8，完整配置只加授权展示字段，旧草稿与861条元数据/863修订/采购价格保留。原生发布/关闭/恢复/冻结/兼容、完整隔离管理和画布、线上两款刷新/生图/画布1/2/4K与实际4K报价、排序/选中/手机及参数范围文字名验收通过，收费生成0。持续锁、DB/env/Compose备份和证据在/opt/naumi-staging/evidence/model-display-resolutions-20261010，锁已释放；固定兼容回滚d1efcf8d69c753c48a19b0a83076d789c6875a1b支持新字段/API/冻结读写，禁止直接回滚原7099。详情见docs/changes/2026-10-10-model-display-resolutions.md。旧服务器未连接，OSS/视频仍延期。
