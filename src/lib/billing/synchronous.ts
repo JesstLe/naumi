@@ -94,6 +94,10 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
                 throw new BillingError("OPERATION_CONFLICT", "该操作编号已用于不同请求", 409);
             if (previous.result_response && previous.state === "settled") {
                 if (feature === "canvas.assistant") {
+                    if (Array.isArray(previous.result_response.agentFrames)) {
+                        const frames = previous.result_response.agentFrames.map((frame: {type:string;data:unknown}) => `event: ${frame.type}\ndata: ${JSON.stringify(frame.data)}\n\n`).join("");
+                        return new Response(frames + `event: done\ndata: ${JSON.stringify({ok:true,replayed:true})}\n\n`, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "private, no-store" } });
+                    }
                     const events = `event: delta\ndata: ${JSON.stringify({ text: previous.result_response.text || "" })}\n\nevent: done\ndata: ${JSON.stringify({ ok: true, replayed: true })}\n\n`;
                     return new Response(events, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "private, no-store" } });
                 }
@@ -198,7 +202,7 @@ export async function configuredToolCost(resolution = "1K") {
 }
 export function synchronousChargedCredits(fallback: number) { return storage.getStore()?.charge ?? fallback; }
 
-export async function completeSynchronousStream(payload: { text: string; model: string }) {
+export async function completeSynchronousStream(payload: { text: string; model: string; agentFrames?: {type:string;data:unknown}[] }) {
     const context = storage.getStore();
     if (!context?.operation) return;
     context.upstream = "succeeded";

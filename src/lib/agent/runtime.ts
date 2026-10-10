@@ -5,7 +5,7 @@ import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
 import { configuredPiModels } from "@/lib/model-config/pi";
 import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import { legacyAgentVision } from "@/lib/model-config/legacy-vision";
-import type { ImageContent, Model, createModels } from "@earendil-works/pi-ai";
+import type { ImageContent, AssistantMessage, Model, createModels } from "@earendil-works/pi-ai";
 import type { UserMessage } from "@earendil-works/pi-ai";
 import {
   dbEnabled,
@@ -20,6 +20,7 @@ import { recordBiModelCompletion, modelExecutionTelemetry } from "@/lib/bi/model
 import {agentBillingPrecheck} from "@/lib/billing/agent";
 import type {BillingQuote} from "@/lib/billing/types";
 import {fingerprint} from "@/lib/billing/fingerprint";
+import type { CanvasAgentContext } from "./canvas-context";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 运行时:常驻 Agent 会话管理器。
@@ -77,7 +78,13 @@ export type Session = {
   email: string;
   title: string;
   /** 凭证对(cookie+authorization),会话续期时刷新 */
-  cred: { cookie: string; authorization: string; imageQuality?: string };
+  cred: { cookie: string; authorization: string; imageQuality?: string; canvas?: CanvasAgentContext };
+  contextStamp?: string;
+  onToolResult?: (result: unknown, tool: string) => Promise<void>;
+  toolResultsPending?: Promise<void>;
+  persistPending?: Promise<void>;
+  turnId?: string;
+  pendingQuoteTurns?: Map<string,string>;
   createdAt: number;
   lastUsedAt: number;
   /** 运行状态快照,给前端轮询/SSE 用 */
@@ -87,6 +94,7 @@ export type Session = {
     data: Record<string, unknown>;
   }[];
   running: boolean;
+  canvasExecuting?: boolean;
   pendingQuotes?: Map<string,Pick<BillingQuote,"configVersion"|"requestedCredits">>;
   preparedBilling?: {billingVersion:number;billingCredits:number;billingOperationId:string};
   repeatSignature: string;
@@ -104,7 +112,7 @@ const providerModels = new Map<string, ReturnType<typeof createModels>>();
 function gcSessions() {
   const now = Date.now();
   SESSIONS.forEach((s, k) => {
-    if (!s.running && now - s.lastUsedAt > SESSION_TTL) SESSIONS.delete(k);
+    if (!s.running && !s.canvasExecuting && now - s.lastUsedAt > SESSION_TTL) SESSIONS.delete(k);
   });
 }
 
@@ -186,21 +194,31 @@ export function toUserMessages(
   );
 }
 
+function conversationMessages(history: {role:string;content:string}[], modelId:string): (UserMessage|AssistantMessage)[] {
+  return history.map(message => message.role === "assistant" ? {
+    role:"assistant",content:[{type:"text",text:message.content}],api:"openai-completions",provider:"naumi-relay",model:modelId,
+    usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}},stopReason:"stop",timestamp:Date.now(),
+  } : {role:"user",content:message.content,timestamp:Date.now()});
+}
+
 export async function getOrCreateSession(
   email: string,
   sessionId: string,
   history: { role: string; content: string }[],
   cred: { cookie: string; authorization: string; imageQuality?: string } = { cookie: "", authorization: "" },
-  modelId = MODEL_ID
+  modelId = MODEL_ID,
+  options?: { systemPrompt: string; canvas: CanvasAgentContext; onToolResult: (result: unknown, tool: string) => Promise<void> }
 ): Promise<Session> {
   gcSessions();
   const scope = currentModelExecution("text") || currentModelExecution("vision");
-  const managed = scope ? await configuredPiModels(scope,{userEmail:email,feature:'agent.text'}) : null;
+  const managed = scope ? await configuredPiModels(scope,{userEmail:email,feature:options ? 'canvas.assistant' : 'agent.text'}) : null;
+  const contextStamp = options ? JSON.stringify(options.canvas) : undefined;
   const existing = SESSIONS.get(key(email, sessionId));
-  if (existing && (existing.running || existing.modelId === modelId && existing.modelExecutionStamp === managed?.stamp)) {
+  if (existing && (existing.running || existing.canvasExecuting || existing.modelId === modelId && existing.modelExecutionStamp === managed?.stamp && existing.contextStamp === contextStamp)) {
     existing.lastUsedAt = Date.now();
     // 凭证刷新:token/会话可能已轮换,常驻实例必须用最新凭证
-    existing.cred = cred;
+    existing.cred = { ...cred, canvas: options?.canvas };
+    if (!existing.running && !existing.canvasExecuting) existing.onToolResult = options?.onToolResult;
     return existing;
   }
 
@@ -212,16 +230,19 @@ export async function getOrCreateSession(
   const persisted = dbEnabled
     ? await getAgentSession(email, sessionId).catch(() => null)
     : null;
+  const savedHistory = options && Array.isArray(persisted?.messages) ? persisted.messages.filter((turn:any)=>["user","assistant"].includes(turn?.role)&&typeof turn?.content==="string").map((turn:any)=>({role:String(turn.role),content:String(turn.content)})) : history;
   const session: Session = {
     id: sessionId,
     modelId,
     modelExecutionStamp: managed?.stamp,
     email,
     title: persisted?.title || history[0]?.content.slice(0, 120) || "Agent 任务",
-    cred,
+    cred: { ...cred, canvas: options?.canvas },
+    contextStamp,
+    onToolResult: options?.onToolResult,
     createdAt: Date.now(),
     lastUsedAt: Date.now(),
-    events: [],
+    events: options && Array.isArray(persisted?.steps) ? persisted.steps.map((step: any) => ({type:String(step.type),at:Date.now(),data:Object.fromEntries(Object.entries(step).filter(([key])=>key!=="type"))})) : [],
     running: false,
     repeatSignature: "",
     repeatCount: 0,
@@ -232,15 +253,16 @@ export async function getOrCreateSession(
   const acceptedBundle = currentExecutionBundle();
   const agent = new Agent({
     initialState: {
-      systemPrompt: AGENT_SYSTEM_PROMPT,
+      systemPrompt: options ? `${AGENT_SYSTEM_PROMPT}\n\n${options.systemPrompt}` : AGENT_SYSTEM_PROMPT,
       model: model as Model<"openai-completions">,
       tools: createNaumiTools(
         new Request(process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"),
         email,
         () => ({...session.cred,...session.preparedBilling}),
-        acceptedBundle ? () => signAcceptedModelContext(email, acceptedBundle) : undefined
+        acceptedBundle ? () => signAcceptedModelContext(email, acceptedBundle) : undefined,
+        options?.canvas
       ),
-      messages: toUserMessages(history),
+      messages: options ? conversationMessages(savedHistory,managed?.wireModel||modelId) : toUserMessages(history),
     },
     streamFn: (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 }),
     toolExecution: "sequential",
@@ -284,6 +306,13 @@ export async function getOrCreateSession(
       // 轨迹对外只暴露公开摘要:details.publicSummary 优先(不含内部全文)
       const details = (e.result as { details?: { publicSummary?: string } } | undefined)
         ?.details;
+      if (!e.result?.isError && session.onToolResult) {
+        const pending = session.onToolResult(e.result, e.toolName || "");
+        session.toolResultsPending = Promise.all([session.toolResultsPending || Promise.resolve(),pending]).then(()=>undefined);
+        void session.toolResultsPending.catch(()=>undefined);
+        try { await pending; }
+        catch { push("error", { message: "工具结果已生成，画布挂载需要恢复；请勿重新生成" }); }
+      }
       push("tool_end", {
         id: e.toolCallId,
         tool: e.toolName ?? "",
@@ -369,7 +398,7 @@ export function removeRuntimeSession(
   const sessionKey = key(email, sessionId);
   const session = SESSIONS.get(sessionKey);
   if (!session) return "missing";
-  if (session.running) return "running";
+  if (session.running || session.canvasExecuting) return "running";
   SESSIONS.delete(sessionKey);
   return "removed";
 }
@@ -396,6 +425,7 @@ export function appendSessionEvent(
 
 export async function persistAgentSession(session: Session): Promise<void> {
   if (!dbEnabled || session.id.startsWith("tmp-")) return;
+  session.persistPending = (session.persistPending || Promise.resolve()).catch(() => undefined).then(async () => {
   const messages = session.agent.state.messages.flatMap((message) => {
     if (message.role !== "user" && message.role !== "assistant") return [];
     const content = Array.isArray(message.content)
@@ -403,11 +433,11 @@ export async function persistAgentSession(session: Session): Promise<void> {
           .map((part) => (part.type === "text" ? part.text ?? "" : ""))
           .join("")
           .trim()
-      : "";
+      : typeof message.content === "string" ? message.content : "";
     return content ? [{ role: message.role, content }] : [];
   });
   const steps = session.events
-    .filter((event) => event.type === "plan" || event.type === "tool_end")
+    .filter((event) => ["plan","tool_start","tool_end","canvas_turn","artifacts","agent_start","agent_end","error"].includes(event.type))
     .map((event) => ({ type: event.type, ...event.data }));
   await saveAgentSession(
     session.email,
@@ -416,6 +446,8 @@ export async function persistAgentSession(session: Session): Promise<void> {
     messages,
     steps
   ).catch(() => undefined);
+  });
+  await session.persistPending;
 }
 
 // ── 视觉输入:用户随消息附带的图片 URL → 多模态 ImageContent ────────────────
