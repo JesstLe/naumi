@@ -103,7 +103,8 @@ function flowImageFetch(scope: ModelExecutionScope, options: ValidationOptions):
 }
 export function executionOpenAI(scope: ModelExecutionScope, options: ValidationOptions = {}) {
   const { connection } = scope;
-  return new OpenAI({ apiKey: connection.apiKey, baseURL: connection.baseUrl, timeout: connection.timeoutMs, maxRetries: 0, fetch: executionFetch(scope, options) });
+  const timeout = scope.supplierRouting ? Math.min(600000, scope.supplierRouting.targets.reduce((sum, t)=>sum+t.scope.connection.timeoutMs, 10000)) : connection.timeoutMs;
+  return new OpenAI({ apiKey: connection.apiKey, baseURL: connection.baseUrl, timeout, maxRetries: 0, fetch: executionFetch(scope, options) });
 }
 
 /** Some compatible suppliers require native multipart; it shares the SDK's frozen mapping and transport. */
