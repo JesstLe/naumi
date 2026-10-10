@@ -5,6 +5,7 @@ import {ensureSupplierModels} from "./schema";
 import {supplierMetadataSchema,unknownSupplierMetadata,type SupplierMetadata,type SupplierModelRecord} from "./types";
 import type {ModelConfig,ModelProvider} from "../model-config/types";
 import type {ProviderCatalogModel} from "../model-config/catalog";
+import {specificationResolution} from "./specifications";
 import {imageModelDisplayId} from "../image-model-routing";
 import { cleanSource, documentedMetadata, sourceHash, type PublicSupplierDirectory } from "./discovery";
 
@@ -42,6 +43,8 @@ export async function ingestSupplierSources(pool: Pool, provider: ModelProvider,
   const accessible = new Map(directory.models.map(m => [m.id, m]));
   const publishedRows = (published?.body.data || []).filter((m: any) => typeof m.model_name === "string" && !!m.model_name.trim() && m.model_name.length <= 160 && !/[\u0000-\u001f\u007f]/.test(m.model_name));
   const publicMap = new Map<string, any>(publishedRows.map((m: any) => [m.model_name, m]));
+  const specifications=published?.specifications;
+  const specificationMap=new Map<string,any>((specifications?.body.models||[]).filter((m:any)=>typeof m.id==="string"&&m.id.length<=160&&Array.isArray(m.parameters)&&JSON.stringify(m).length<=35000).map((m:any)=>[m.id,m]));
   const directoryUrl = provider.baseUrl.replace(/\/$/, "") + "/models";
   const snapshot = async (kind: string, url: string, data: unknown) => {
    const safe = cleanSource(data);
@@ -49,13 +52,19 @@ export async function ingestSupplierSources(pool: Pool, provider: ModelProvider,
   };
   if (["ok", "empty"].includes(directory.status)) await snapshot("authenticated-directory", directoryUrl, {provider: {id: provider.id,name:provider.name,baseUrl:provider.baseUrl,protocol:provider.protocol},models: directory.models, truncated:!!directory.truncated});
   if (published) await snapshot("public-pricing", published.url, published.body);
+  if(published?.specifications)await snapshot("public-parameters",published.specifications.url,published.specifications.body);
   const oldModels = (await tx.query("SELECT model_id FROM app_supplier_model_metadata WHERE provider_id=$1", [provider.id])).rows.map(r => r.model_id as string);
   let added = 0;
-  for (const id of new Set([...accessible.keys(), ...publicMap.keys(), ...oldModels])) {
-   const raw = publicMap.get(id), listed = accessible.get(id);
-   if (!raw && !listed && !["ok", "empty"].includes(directory.status)) continue;
+  for (const id of new Set([...accessible.keys(), ...publicMap.keys(), ...specificationMap.keys(), ...oldModels])) {
+   const raw = publicMap.get(id), listed = accessible.get(id),specification=specificationMap.get(id);
+   if (!raw && !listed && !specification && !["ok", "empty"].includes(directory.status)) continue;
    const initial = raw && published ? documentedMetadata(raw, published) : unknownSupplierMetadata();
-   if (await insert(tx, provider, listed || {id,label:id}, initial)) added++;
+   if(specification&&specifications){
+    if(initial.modality==="unknown"&&["image","video","text","audio"].includes(specification.modality))initial.modality=specification.modality;
+    const resolution=specificationResolution(specification);if(resolution&&!initial.capabilities.resolutions)initial.capabilities.resolutions=resolution.nativeValues;
+    if(initial.capabilityState==="unknown"){initial.capabilityState="documented";initial.capabilitySource="供应商正式参数文档（未逐项实测）";initial.capabilityUrl=specifications.url;initial.checkedAt=specifications.fetchedAt.slice(0,10);}
+   }
+   if (await insert(tx, provider, listed || {id,label:specification?.label||id}, initial)) added++;
    const row = (await tx.query("SELECT * FROM app_supplier_model_metadata WHERE provider_id=$1 AND model_id=$2 FOR UPDATE", [provider.id,id])).rows[0];
    const metadata = supplierMetadataSchema.parse(row.metadata);
    const prior = metadata.parameterMetadata.upstreamImport as any;
@@ -66,9 +75,11 @@ export async function ingestSupplierSources(pool: Pool, provider: ModelProvider,
     directoryUrl,
     ...(listed?.sourceMetadata ? {authenticatedModel:listed.sourceMetadata} : {}),
     ...(raw && published ? {publicUrl:published.url,publicHash:sourceHash(raw),publicModel:raw} : {}),
+    ...(specification&&specifications?{parameterUrl:specifications.url,parameterHash:sourceHash(specification),capabilityVersion:specifications.body.capability_version||""}:{}),
    };
    // Same source refresh updates lastSeen, without spamming revisions or replacing manual edits.
    if (serial(previousSource) === serial(source)) continue;
+   if(specification&&specifications)metadata.parameterMetadata.supplierSpecification={url:specifications.url,modelUrl:new URL("/docs/model/"+encodeURIComponent(id),specifications.url).toString(),version:specifications.body.version||"",capabilityVersion:specifications.body.capability_version||"",observedAt:specifications.fetchedAt,model:specification};
    metadata.parameterMetadata.upstreamImport = {...source,observedAt: directory.fetchedAt || published?.fetchedAt || new Date().toISOString()};
    const parsed = supplierMetadataSchema.parse(metadata), revision = Number(row.revision)+1;
    await tx.query("UPDATE app_supplier_model_metadata SET metadata=$2::jsonb,revision=$3,updated_by='system-discovery',updated_at=now() WHERE id=$1",[row.id,JSON.stringify(parsed),revision]);

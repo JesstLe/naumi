@@ -1,4 +1,5 @@
 import "server-only";
+import type {SupplierSpecificationCatalog} from "./specifications";
 import { createHash } from "node:crypto";
 import { modelEndpointFetch } from "../model-config/transport";
 import { validateModelEndpoint } from "../model-config/schema";
@@ -15,7 +16,7 @@ export function cleanSource(value: any): any {
   return value;
 }
 export const sourceHash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-export type PublicSupplierDirectory = { url: string; fetchedAt: string; hash: string; body: any };
+export type PublicSupplierDirectory = { url: string; fetchedAt: string; hash: string; body: any;specifications?:SupplierSpecificationCatalog };
 export async function discoverPublicSupplierDirectory(provider: ModelProvider, trustedOrigins: readonly string[], fetcher?: typeof fetch): Promise<PublicSupplierDirectory | null> {
   if (!["openai-images", "new-api-flow", "openai-chat", "openai-videos"].includes(provider.protocol)) return null;
   try {
@@ -25,7 +26,16 @@ export async function discoverPublicSupplierDirectory(provider: ModelProvider, t
     if (!response.ok) { await response.body?.cancel(); return null; }
     const body = cleanSource(JSON.parse(await readBounded(response)));
     if (body.success !== true || !Array.isArray(body.data) || body.data.length > 10000) return null;
-    return { url, fetchedAt: new Date().toISOString(), hash: sourceHash(body), body };
+    let specifications:SupplierSpecificationCatalog|undefined;
+    // This is a documented export endpoint of this supplier, not a guessed convention for every host.
+    if(new URL(endpoint).hostname==="newapi.prompt-hubs.com"||new URL(endpoint).hostname==="console.prompt-hubs.com"){
+      try{
+        const docsUrl="https://console.prompt-hubs.com/docs/catalog.json";
+        const docsResponse=await (fetcher||modelEndpointFetch(docsUrl,{trustedOrigins}))(docsUrl,{cache:"no-store",redirect:"error",signal:AbortSignal.timeout(8000)});
+        if(docsResponse.ok){const docs=cleanSource(JSON.parse(await readBounded(docsResponse)));if(docs.success===true&&Array.isArray(docs.models)&&docs.models.length<=10000){const stable={version:docs.version,capability_version:docs.capability_version,models:docs.models};specifications={url:docsUrl,fetchedAt:new Date().toISOString(),hash:sourceHash(stable),body:stable};}}else await docsResponse.body?.cancel();
+      }catch{/* A temporary missing spec export leaves recorded defaults and manual data intact. */}
+    }
+    return { url, fetchedAt: new Date().toISOString(), hash: sourceHash(body), body,...(specifications?{specifications}:{}) };
   } catch { return null; }
 }
 const priceId = (model: string, variant: string) => {
