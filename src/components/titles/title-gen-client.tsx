@@ -176,6 +176,9 @@ export function TitleGenClient() {
     setThumb(URL.createObjectURL(f));
   }
 
+  // A changed product or instruction must not label old copy as its result.
+  useEffect(() => { setTitles([]); setPoints([]); setCopied(null); }, [file, idea, platform, style, lang]);
+
   async function copy(text: string, key: string) {
     if (await copyText(text)) {
       setCopied(key);
@@ -195,6 +198,7 @@ export function TitleGenClient() {
     }
     setError(null);
     setLoading(true);
+    setTitles([]); setPoints([]); setCopied(null);
     try {
       let res: Response;
       const common = {
@@ -222,8 +226,10 @@ export function TitleGenClient() {
       }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? L("生成失败", "Failed"));
-      setTitles((data.titles ?? []) as string[]);
-      setPoints((data.sellingPoints ?? []) as string[]);
+      if (!Array.isArray(data.titles) || !data.titles.length || !data.titles.every((title: unknown) => typeof title === "string" && title.trim()))
+        throw new Error(L("生成结果异常，请重试", "Invalid title result; retry"));
+      setTitles(data.titles);
+      setPoints(Array.isArray(data.sellingPoints) ? data.sellingPoints.filter((point: unknown) => typeof point === "string" && point.trim()) : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : L("生成失败,请重试", "Failed, retry"));
     } finally {

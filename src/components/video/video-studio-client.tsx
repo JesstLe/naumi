@@ -198,8 +198,10 @@ export function VideoStudioClient() {
   // 中央任务轮询(5s);后台 worker 兜底,这里只为即时反馈
   useEffect(() => {
     if (!activeId || !user) return;
-    let stop = false;
+    let stop = false, terminal = false, inFlight = false;
     const poll = async () => {
+      if (stop || terminal || inFlight) return;
+      inFlight = true;
       try {
         const res = await fetch(`/api/video/tasks?id=${encodeURIComponent(activeId)}`, {
           headers: await authHeader(),
@@ -209,18 +211,16 @@ export function VideoStudioClient() {
           if (!stop && data.task) {
             setActiveTask(data.task as TaskView);
             if (data.task.status !== "processing" && data.task.status !== "queued") {
+              terminal = true;
+              clearInterval(timer);
               void loadHistory();
             }
           }
         }
-      } catch { /* keep */ }
+      } catch { /* keep */ } finally { inFlight = false; }
     };
+    const timer = setInterval(() => { void poll(); }, 5000);
     void poll();
-    const timer = setInterval(() => {
-      const t = activeTask;
-      if (t && t.status !== "processing" && t.status !== "queued") return;
-      void poll();
-    }, 5000);
     return () => {
       stop = true;
       clearInterval(timer);

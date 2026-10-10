@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {usePathname} from "next/navigation";
 import {TOOLS} from "@/lib/tool-meta";
 import {SelectMenu} from "./select-menu";
@@ -37,6 +37,22 @@ export function TextModelSelect({
   const [open, setOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
   const [custom, setCustom] = useState("");
+  const root = useRef<HTMLDivElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!customOpen) return;
+    const trigger = root.current?.querySelector<HTMLButtonElement>("button");
+    dialog.current?.querySelector<HTMLInputElement>("input")?.focus();
+    return () => { if (trigger?.isConnected) trigger.focus({preventScroll: true}); };
+  }, [customOpen]);
+  function dialogKeys(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setCustomOpen(false); }
+    if (event.key !== "Tab") return;
+    const elements = Array.from(dialog.current?.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled)") || []);
+    const first = elements[0], last = elements[elements.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }
 
   const menu = open ? (
     <>
@@ -85,7 +101,7 @@ export function TextModelSelect({
   ) : null;
 
   return (
-    <div className={cn("relative", className)}>
+    <div ref={root} className={cn("relative", className)}>
       {toolPage ? <SelectMenu label="文字模型" value={model} size={compact?"sm":"md"} className="max-w-full" onChange={id=>{
         if(id === "__custom_model__"){setCustom(model);setCustomOpen(true);}else setModel(id);
       }} options={[...models.map(id=>({value:id,label:<span className="flex items-center gap-2"><ModelIcon modelId={id} modelName={label(id)} size={14}/>{label(id)}</span>})),...(!managed?[{value:"__custom_model__",label:"自定义模型 ID"}]:[])]}/> : <button
@@ -108,7 +124,7 @@ export function TextModelSelect({
       {customOpen && typeof document !== "undefined" &&
         createPortal(
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 p-4" onClick={() => setCustomOpen(false)}>
-            <div role="dialog" aria-modal="true" aria-label="使用其他文本模型" onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setCustomOpen(false);}}} className="w-full max-w-md rounded-2xl border border-c-border bg-white p-5 shadow-pop tool-popover" onClick={(event) => event.stopPropagation()}>
+            <div ref={dialog} role="dialog" aria-modal="true" aria-label="使用其他文本模型" onKeyDown={dialogKeys} className="w-full max-w-md rounded-2xl border border-c-border bg-white p-5 shadow-pop tool-popover" onClick={(event) => event.stopPropagation()}>
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-base font-bold text-c-text">使用其他文本模型</h3>
                 <button type="button" aria-label="关闭自定义模型" onClick={() => setCustomOpen(false)} className="text-c-text3 hover:text-c-text">
@@ -122,7 +138,7 @@ export function TextModelSelect({
                 onChange={(event) => setCustom(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && custom.trim()) {
-                    setModel(custom);
+                    setModel(custom.trim());
                     setCustomOpen(false);
                   }
                 }}
@@ -135,7 +151,7 @@ export function TextModelSelect({
                   type="button"
                   disabled={!custom.trim()}
                   onClick={() => {
-                    setModel(custom);
+                    setModel(custom.trim());
                     setCustomOpen(false);
                   }}
                   className="h-9 bg-c-text px-4 text-sm font-semibold text-white disabled:opacity-40"

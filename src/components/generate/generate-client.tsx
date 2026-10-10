@@ -1,5 +1,5 @@
 "use client";
-import {toolSourceUrl} from "@/lib/tool-ui";
+import {toolSourceUrl, toolImageError} from "@/lib/tool-ui";
 import {useImageResolutions} from "@/lib/model-config/resolution-client";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
@@ -147,6 +147,28 @@ export function GenerateClient({
   // 已加载/在载的底图 URL(去重):防止 useSearchParams 水合后偶发返回新实例 →
   // effect 重跑把在途的大图下载误取消,导致产品图(底图)时灵时不灵。
   const baseLoadRef = useRef<string>("");
+  const baseController = useRef<AbortController | null>(null);
+  const sourceEpoch = useRef(0);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const previewUrls = useRef<string[]>([]);
+  previewUrls.current = filePreviews;
+  const baseNoticeTimer = useRef<ReturnType<typeof setTimeout>>();
+  function cancelBaseLoad() {
+    sourceEpoch.current++;
+    baseController.current?.abort();
+    baseController.current = null;
+    baseLoadRef.current = "";
+    setSourceLoading(false);
+    setBaseNotice(false);
+  }
+  useEffect(() => () => {
+    sourceEpoch.current++;
+    baseController.current?.abort();
+    baseController.current = null;
+    baseLoadRef.current = ""; // StrictMode effect replay must be able to restart the aborted load.
+    clearTimeout(baseNoticeTimer.current);
+    previewUrls.current.forEach(url => URL.revokeObjectURL(url));
+  }, []);
 
   useEffect(() => {
         const config = modelConfig;
@@ -175,25 +197,38 @@ export function GenerateClient({
   // 按 URL 去重:同 URL 只下载一次(重跑直接跳过,不会取消在途的大图);
   // 失败/出错把 ref 清空允许重试;下载完若已切到别的图则丢弃结果。
   const loadBaseImage = useCallback(async (url: string, name = "base.png") => {
-    if (!url || baseLoadRef.current === url) return;
+    if (!url || baseLoadRef.current === url) return false;
+    const epoch = ++sourceEpoch.current;
+    baseController.current?.abort();
+    const controller = new AbortController();
+    baseController.current = controller;
     baseLoadRef.current = url;
+    setSourceLoading(true);
+    setError(null);
     try {
       const res = await fetch(
-        `/api/download?u=${encodeURIComponent(url)}&n=${encodeURIComponent(name)}`
+        `/api/download?u=${encodeURIComponent(url)}&n=${encodeURIComponent(name)}`,
+        {headers: await authHeader(), signal: controller.signal}
       );
-      if (!res.ok) {
-        if (baseLoadRef.current === url) baseLoadRef.current = "";
-        return;
-      }
+      if (!res.ok) throw new Error("download failed");
       const blob = await res.blob();
-      if (baseLoadRef.current !== url) return; // 期间已切换到别的图
       const file = new File([blob], name, { type: blob.type || "image/png" });
+      if (toolImageError(file, MAX_UPLOAD)) throw new Error("invalid image");
+      if (sourceEpoch.current !== epoch || controller.signal.aborted) return false;
+      previewUrls.current.forEach(preview => URL.revokeObjectURL(preview));
       setFiles([file]);
       setFilePreviews([URL.createObjectURL(file)]);
+      return true;
     } catch {
-      if (baseLoadRef.current === url) baseLoadRef.current = "";
+      if (sourceEpoch.current === epoch && !controller.signal.aborted) {
+        baseLoadRef.current = "";
+        setError(locale === "en" ? "Could not load base image; retry" : "底图载入失败，请重试");
+      }
+      return false;
+    } finally {
+      if (sourceEpoch.current === epoch) { baseController.current = null; setSourceLoading(false); }
     }
-  }, []);
+  }, [locale]);
 
   // 工作台首页对话框带来的参考图:进页即取走进产品图槽(与 loadBaseImage 同款落地,
   // 首页侧已完成类型/大小/张数校验,这里直接接受)。
@@ -300,9 +335,6 @@ export function GenerateClient({
     void loadBaseImage(params.get("src") || gen || "");
   }, [params, loadBaseImage]);
 
-  const previewUrls = useRef<string[]>([]);
-  previewUrls.current = filePreviews;
-  useEffect(() => () => previewUrls.current.forEach(url=>URL.revokeObjectURL(url)), []);
 
   // 拉「本工具记录」:登录后取最近作品;每次生成完(images 变)刷新一次。
   useEffect(() => {
@@ -366,7 +398,7 @@ export function GenerateClient({
         setError("仅支持 PNG / JPG / WebP 图片");
         continue;
       }
-      if (f.size > MAX_UPLOAD) {
+      if (!f.size || f.size > MAX_UPLOAD) {
         setError("单张图片过大，请小于 12MB");
         continue;
       }
@@ -374,6 +406,7 @@ export function GenerateClient({
       if (accepted.length >= slotsLeft) break;
     }
     if (accepted.length === 0) return;
+    cancelBaseLoad();
     setError(null);
     setParentId(""); // 手动上传的底图是新根,没有血缘父节点
     setTpl(null); // 也不再算模板「做同款」
@@ -393,6 +426,8 @@ export function GenerateClient({
   });
 
   function removeFile(index: number) {
+    if (loading) return;
+    cancelBaseLoad();
     setFilePreviews((prev) => {
       const u = prev[index];
       if (u) URL.revokeObjectURL(u);
@@ -410,25 +445,16 @@ export function GenerateClient({
   // 同时解析这张图对应的作品 id 作为血缘父节点:gen-*=真·已生成作品;
   // prev-*=入口作品(用 from);tpl-*/其它=无对应用户作品,父为空。
   async function loadImageAsBase(image: GeneratedImage) {
+    if (loading || sourceLoading) return;
     let pid = "";
     if (image.id.startsWith("gen-")) pid = image.id;
     else if (image.id.startsWith("prev-")) pid = params.get("from") ?? "";
-    try {
-      const res = await fetch(
-        `/api/download?u=${encodeURIComponent(image.url)}&n=base.png`
-      );
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const f = new File([blob], "base.png", {
-        type: blob.type || "image/png",
-      });
-      setFiles([f]);
-      setFilePreviews([URL.createObjectURL(f)]);
+    if (await loadBaseImage(image.url)) {
       setParentId(pid);
+      setTpl(null);
       setBaseNotice(true);
-      window.setTimeout(() => setBaseNotice(false), 2600);
-    } catch {
-      /* ignore — 失败则底图不变 */
+      clearTimeout(baseNoticeTimer.current);
+      baseNoticeTimer.current = setTimeout(() => setBaseNotice(false), 2600);
     }
   }
 
@@ -500,7 +526,7 @@ export function GenerateClient({
   const insufficient = !!user && remaining < cost;
 
   async function generate() {
-    if (loading) return;
+    if (loading || sourceLoading) return;
     // 未登录:直接弹登录/注册窗(优先于提示词等校验),登录后再生成。
     if (!user) {
       if (ready) openAuth("sign-up");
@@ -929,7 +955,7 @@ export function GenerateClient({
                 <Button
                   onClick={generate}
                   data-testid="billing-estimate"
-                  disabled={loading || !!user&&!billing.quote}
+                  disabled={loading || sourceLoading || !!user&&!billing.quote}
                   variant="gradient"
                   size="lg"
                   className="w-full shadow-btn"
@@ -1001,6 +1027,7 @@ export function GenerateClient({
                           />
                           <button
                             type="button"
+                            disabled={loading || sourceLoading}
                             onClick={() => loadBaseImage(shownRec.source!, "source.png")}
                             className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-[rgba(22,24,29,.6)] px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur transition-colors hover:bg-[rgba(22,24,29,.8)]"
                           >
@@ -1038,6 +1065,7 @@ export function GenerateClient({
                       />
                       <button
                         type="button"
+                        disabled={loading || sourceLoading}
                         onClick={() =>
                           loadImageAsBase({
                             id: shownRec.id,
@@ -1119,11 +1147,12 @@ export function GenerateClient({
                   </p>
                   <div className="flex items-center gap-2">
                     <Segmented<"all" | "done">
+                      className="shrink-0"
                       value={resultFilter}
                       onChange={setResultFilter}
                       options={[
-                        { value: "all", label: "全部" },
-                        { value: "done", label: "已完成" },
+                        { value: "all", label: <span className="whitespace-nowrap">全部</span> },
+                        { value: "done", label: <span className="whitespace-nowrap">已完成</span> },
                       ]}
                     />
                     <button
@@ -1192,6 +1221,7 @@ export function GenerateClient({
                           <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/55 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
                             <button
                               type="button"
+                              disabled={loading || sourceLoading}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 loadImageAsBase(image);

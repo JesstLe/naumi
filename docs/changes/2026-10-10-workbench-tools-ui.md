@@ -86,3 +86,52 @@ node scripts/canvas-light-theme-smoke.mjs
 不要把fixture成功当作真实模型输出验收；不要改数据库/媒体/模型配置。是否发布遵守接手任务最新用户要求；禁止自动回传旧机。
 本分支交付未发布；回滚证据仅源码副本演练。
 ```
+
+
+## 第二轮继续排查（2026-10-10，基线39f6208）
+
+仍仅交付 `codex/workbench-tools-ui`，不合并、不发布。开工fetch确认 `origin/main=b20e148c257120cd85e33bf8b7999c5c42d192a7`；集中整合由接手agent进行。
+
+### 已复现与修复范围
+
+- 标题生成：更换商品图/文案/平台/语言/风格清除旧标题和卖点，生成失败不重新显示上一商品结果；异常返回不能直接进入 `.map`。
+- 包装3D：任务ID必须为非空字符串，缺失立即报错，不再轮询 `job=undefined`；拖入空文件与选择器使用同一校验。
+- 融图/裂变：完成状态必须有非空且合法的图片数组，异常结果展示可恢复错误，保留输入，拒绝在结果校验前走本地积分成功兜底；离开页面停止后续轮询。
+- 生图底图：下载失败有短提示，校验图片类型/大小/空内容；携带现有鉴权；手动选图/移除使迟到下载失效并中止请求；替换释放旧预览；生成与底图下载互斥，保留血缘语义。
+- 六类专用页：融图/裂变/局部改图/侵权检测/服装上身/印刷图的卸载清理读取最新预览，服装上身同时覆盖自定义模特。裂变移除在React updater内创建objectURL的副作用，保留多图中未替换的预览。
+- 文字自定义模型弹窗：焦点循环、Escape关闭与焦点返回，现有全局/管理模型策略不变。
+- 视频：终态停止中央轮询，同任务慢请求不会并发叠加；不改变延期的视频供应商配置。
+
+### 当前证据
+
+证据目录：`E:\Workspace\naumi\output\workbench-tools-ui-round2-20261010`。原始文件为本轮开工的真实工作副本字节hash，基线归档已留存。
+
+基线浏览器已实证6种症状（标题残留、缺ID轮询、融图/裂变客户端异常、底图静默失败、SPA卸载预览残留）；退出0表示确认缺陷，不表示功能通过。源代码契约发现13条检查点缺失，不能与6个浏览器症状简单相加。
+
+### 最终集中验收与交接
+
+- `BASELINE_ROUND2_BROWSER=PASS CASES=6 CONFIRMED_GAPS=6 REAL_UPSTREAM=0`，退出0；这是缺陷复现成功，原始客户端异常24条（同一崩溃的重复报告），不是24个独立bug。
+- `MODIFIED_ROUND2_BROWSER=PASS CASES=19 CONFIRMED_GAPS=0 REAL_UPSTREAM=0`，退出0；新回归客户端异常0。
+- `BASELINE_ROUND2_CONTRACT=PASS CONFIRMED_GAPS=13`；`MODIFIED_ROUND2_CONTRACT=PASS FIXED_GAPS=13 UNIT_CASES=13`，均退出0。
+- 最终26工具managed全量：`MODIFIED_BROWSER=PASS TOOLS=26 VIEWPORTS=3 OVERFLOW_CASES=0 CLIENT_ERRORS=0 FIXTURE_POSTS=34 INTERACTIONS=104 REAL_UPSTREAM=0 MODEL_MODE=MANAGED`，退出0。
+- 原45例工具契约、质量选择器12视口契约、画布浅色11项、TypeScript和lint通过；保留原annotate-editor图片lint警告。
+- 优化build编译成功并生成92/92页面，退出0。Windows依赖junction的standalone trace复制仍有一处EPERM，不作为Linux镜像运行验收。构建自动修改的tsconfig已恢复开工原字节。
+- 结果截图还发现生图筛选“已完成”挤成两行；仅在该处增加不换行和不收缩样式，未改变共享Segmented。
+- 交接前刷新main为 `6791c3eef7095e07af8ff37968434d37eea46cc7`；第一轮39f6208已是main祖先，本轮增量仍仅在当前任务分支，勿重复移植整轮目录。合并负责人刷新最新main并验证共享组件/模型管理整合。
+- 浏览器业务响应均为隔离fixture，真实上游调用0。成功结果fixture不等同供应商效果、真实视频生成或线上发布验收。旧服务器、新服务器运行状态和数据均未修改。
+
+```powershell
+node scripts/verify-workbench-tools-browser.mjs --round2
+node scripts/verify-workbench-tools-browser.mjs --managed-fixture
+node node_modules/tsx/dist/cli.mjs scripts/verify-workbench-tools-round2.ts
+```
+
+新增回滚证据在本轮独立目录，原hash来自开工归档的实际文件字节；只对标记源码副本演练，不回滚真实工作分支。四项证据保留修改包、完整diff、验证记录、可执行回滚。
+
+```text
+接手此分支的第二轮增量；先阅读本节与AGENT_COLLABORATION，再刷新main。
+不要替换目录、不要重复移植39f6208。重点验收底图取消/血缘、标题输入切换、
+异常异步结果、六类预览释放、视频终态轮询与文字弹窗焦点。
+保持后台模型范围/账务/媒体和数据库；统一合并后再执行Linux镜像与线上验收。
+本轮任务未发布，用户禁止自动回传旧机。
+```
