@@ -2,6 +2,7 @@
 import {useBilling} from "@/lib/billing/client";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
+import { createImageDownloadName } from "@/lib/download";
 
 
 import { useEffect, useRef, useState } from "react";
@@ -400,15 +401,16 @@ export function GenChatClient() {
 
   async function exportImg(img: GenImg) {
     try {
+      const filename = createImageDownloadName();
       const r = await fetch(
-        `/api/download?u=${encodeURIComponent(img.image)}&n=image.png`
+        `/api/download?u=${encodeURIComponent(img.image)}&n=${encodeURIComponent(filename)}`
       );
       if (!r.ok) return;
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "image.png";
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
