@@ -194,7 +194,7 @@ export function renameManagedModel(source: ModelConfig, row: ManagedModelRow, la
   for (const alias of config.defaultImagePreset?.aliases || []) if (ids.has(alias.id)) alias.label = name;
   return config;
 }
-function assertManagedTarget(config: ModelConfig, row: ManagedModelRow, upstreamId: string) {
+export function assertManagedTarget(config: ModelConfig, row: Pick<ManagedModelRow,"modality"|"publicIds"|"features"|"preset">, upstreamId: string) {
   const u = config.upstreamModels.find(u => u.id === upstreamId), p = config.providers.find(p => p.id === u?.providerId);
   if (!u?.enabled || !p?.enabled || !p.credentialRef || u.modality !== row.modality)
     throw new ModelConfigError("MODEL_INCOMPATIBLE", "请选择已启用、已接入且类型一致的上游模型");

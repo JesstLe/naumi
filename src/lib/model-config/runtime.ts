@@ -24,7 +24,7 @@ type Dependencies = ValidationOptions & { pool: Pool; repo: ModelConfigRepositor
 export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, feature?: FeatureId, includeAll = false) {
   const config = snapshot.config;
   const f = feature ? config.business?.[feature] : undefined;
-  const compatible = feature && FEATURE_BINDINGS[feature] ? compatiblePublicModels(config, FEATURE_BINDINGS[feature]!).filter(m=>feature!=="canvas.assistant" || m.target.type==="upstream" && config.upstreamModels.some(u=>u.id===m.target.id&&u.enabled&&u.capabilities.vision)).map(m => m.id) : undefined;
+  const compatible = feature && FEATURE_BINDINGS[feature] ? compatiblePublicModels(config, FEATURE_BINDINGS[feature]!).filter(m=>feature!=="canvas.assistant" || publicUpstreamIds(config,m).some(id=>config.upstreamModels.some(u=>u.id===id&&u.enabled&&u.capabilities.vision&&config.providers.some(p=>p.id===u.providerId&&p.enabled)))).map(m => m.id) : undefined;
   const preset = selectedImagePreset(config,feature,undefined,feature ? undefined : "image.generate");
   let defaultModelId = preset ? preset.aliases[0].id : featureDefaultModel(config,feature,feature ? FEATURE_BINDINGS[feature] : undefined);
   const configuredIds = f?.enabled===false ? [] : preset ? [...preset.aliases.map(a => a.id),...(f?.options.filter(o => o.enabled && !preset.defaultModelIds.includes(o.modelId)).map(o => o.modelId) || [])] : f ? [...f.options].filter(o => o.enabled).sort((a,b) => a.sort-b.sort).map(o => o.modelId) : undefined;

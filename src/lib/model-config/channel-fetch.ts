@@ -8,12 +8,15 @@ import { beginExecutionStage, finishExecutionStage } from "./execution-audit";
 import { ModelConfigError } from "./types";
 import { readBounded } from "../supplier-cost/io";
 import { completedChannelImage } from "./channel-image-response";
+import {prepareChannelText} from "./channel-text-response";
 
 export function channelRoutingFetch(scope: ModelExecutionScope, options: ValidationOptions): typeof fetch {
   return async (input, init) => {
     const request = new Request(input, init), path = new URL(request.url).pathname, base = new URL(scope.connection.baseUrl).pathname.replace(/\/$/, "");
-    if (request.method !== "POST" || !path.startsWith(base + "/") || !/^\/images\/(generations|edits)$/.test(path.slice(base.length))) throw new ModelConfigError("INVALID_REQUEST", "供应通道仅接受图片生成和编辑", 400);
+    const text=scope.frozen.modality==="text",suffix=path.slice(base.length);
+    if (request.method !== "POST" || !path.startsWith(base + "/") || !(text?suffix==="/chat/completions":/^\/images\/(generations|edits)$/.test(suffix))) throw new ModelConfigError("INVALID_REQUEST", "供应通道请求与模型用途不匹配", 400);
     const body = await request.arrayBuffer(), policy = scope.supplierRouting!, visited = new Set<string>(), pool = getPool();
+    if(text){const data=JSON.parse(new TextDecoder().decode(body));if(data.messages?.some((m:any)=>Array.isArray(m.content)&&m.content.some((p:any)=>["image_url","input_image"].includes(p.type))))for(const target of policy.targets)if(!target.scope.capabilities.vision)visited.add(target.upstreamId);}
     let attempted = false;
     for (let attempt = 1; attempt <= policy.targets.length; attempt++) {
       request.signal.throwIfAborted();
@@ -26,7 +29,7 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
       }
       const target = claim.target, active = { ...target.scope, capacityReserved: true, audited: true, supplierRouting: undefined }, conn = active.connection;
       visited.add(target.upstreamId); attempted = true;
-      let audit: string | undefined, status: number | undefined, finished = false, receivedImage = false;
+      let audit: string | undefined, status: number | undefined, finished = false, receivedImage = false,streaming=false;
       try {
         audit = await beginExecutionStage(active, attempt, `channel:${target.upstreamId}`);
         const headers = new Headers(request.headers); headers.set("authorization", `Bearer ${conn.apiKey}`); headers.delete("content-length");
@@ -34,6 +37,12 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
         const response = await executionFetch(active, options)(conn.baseUrl.replace(/\/$/, "") + path.slice(base.length), { method: "POST", headers, body, signal });
         status = response.status;
         if (response.ok) {
+          if(text){
+            const prepared=await prepareChannelText(response,async(success,usage,cancelled)=>{try{await finishExecutionStage(audit!,success?"stream-completed":"unknown",status,usage);if(!cancelled&&!request.signal.aborted)await recordChannelOutcome(pool,target,success,status);}finally{await claim.release();}},signal);
+            receivedImage=true;
+            if(prepared.streaming){streaming=true;return prepared.response;}
+            await finishExecutionStage(audit,"response-received",status,prepared.usage);finished=true;await recordChannelOutcome(pool,target,true,status);return prepared.response;
+          }
           const complete = await completedChannelImage(response, signal, options);
           receivedImage = true;
           await finishExecutionStage(audit, "response-received", status); finished = true;
@@ -53,9 +62,9 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
           await recordChannelOutcome(pool, target, false, status);
         } else throw error;
         request.signal.throwIfAborted();
-      } finally { await claim.release(); }
+      } finally { if(!streaming)await claim.release(); }
     }
     // Customer settlement is separate from supplier attempts whose cost remains unknown.
-    return Response.json({ error: { message: "所有可用供应通道均未取得图片，请稍后重试", code: "SUPPLIER_CHANNELS_EXHAUSTED", type: "naumi_channel_failure" } }, { status: 400 });
+    return Response.json({ error: { message: text?"所有可用供应通道均未取得文字结果，请稍后重试":"所有可用供应通道均未取得图片，请稍后重试", code: "SUPPLIER_CHANNELS_EXHAUSTED", type: "naumi_channel_failure" } }, { status: 400 });
   };
 }
