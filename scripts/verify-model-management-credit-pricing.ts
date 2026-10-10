@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import {randomUUID} from "node:crypto";
+import {randomUUID,createHash} from "node:crypto";
+import {canonicalConfig} from "../src/lib/model-config/repository";
+import {editManagedModelCredits} from "../src/lib/model-config/management-pricing";
 import {createModelFixture} from "./model-config-fixture";
 import {fixtureConfig,facts} from "./billing-unit-fixture";
 import {createConfigRuntime} from "../src/lib/billing/catalog";
@@ -24,6 +26,8 @@ async function main(){
   const state=await(await handler(req())).json(),row=state.rows.find((r:any)=>r.id===family);
   assert.equal(row.pricing.find((p:any)=>p.feature==="image.generate").credits,50);
   const body={action:"pricing",id:randomUUID(),expectedVersion:models.version,expectedBillingVersion:before.version,rowId:family,features:["image.generate","tool.style","canvas.image"],pricing:{mode:"fixed",credits:7}};
+  const historicalActor=`${actor.slice(0,180)}#mvp-price:${createHash("sha256").update(canonicalConfig(body)).digest("hex").slice(0,32)}`;
+  await billing.publish({id:body.id,expectedVersion:before.version,expectedModelVersion:models.version,config:editManagedModelCredits(before,models,row,body.features as never,{mode:"fixed",credits:7}),actor:historicalActor,reason:`MVP 积分售价 ${family}`});
   const publish=await handler(req(body));assert.equal(publish.status,200);const publication=await publish.json(),priced=await billing.current();
   assert.equal(publication.billingVersion,priced.version);assert.deepEqual(await f.repo.current(),models);assert.deepEqual(await f.repo.draft(actor),draft);
   assert.deepEqual(priced.config.costs,before.config.costs);assert.deepEqual(priced.config.features["tool.recolor"],before.config.features["tool.recolor"]);
