@@ -1,4 +1,5 @@
 "use client";
+import { SUITE_DEMO_SETS } from "@/lib/tool-demo-catalog";
 import { BRAND } from "@/lib/brand";
 import {toolImageError} from "@/lib/tool-ui";
 import {SelectMenu} from "@/components/ui/select-menu";
@@ -106,54 +107,39 @@ function makeCustomShot(
   };
 }
 
-/* ── 套图示例展示:真实商品「原图 → 带标签结果宫格」,双商品可切换 ──
-   对标竞品(product-set)的示例形态:黑底标签标注每张结果的商业用途,
-   让用户一眼看懂「我会得到什么」。素材在 public/demos/suite-demo/。 */
-const SUITE_DEMO_SETS = [
-  {
-    key: "thermos",
-    label: "保温杯",
-    src: "/demos/suite-demo/thermos-src.png",
-    shots: [
-      { tag: "主图", img: "/demos/suite-demo/thermos-main.png" },
-      { tag: "卖点展示", img: "/demos/suite-demo/thermos-selling.png" },
-      { tag: "细节特写", img: "/demos/suite-demo/thermos-detail.png" },
-      { tag: "规格参数", img: "/demos/suite-demo/thermos-spec.png" },
-    ],
-  },
-  {
-    key: "suppl",
-    label: "保健品",
-    src: "/demos/suite-demo/suppl-src.png",
-    shots: [
-      { tag: "主图", img: "/demos/suite-demo/suppl-main.png" },
-      { tag: "卖点展示", img: "/demos/suite-demo/suppl-selling.png" },
-      { tag: "细节特写", img: "/demos/suite-demo/suppl-detail.png" },
-      { tag: "规格参数", img: "/demos/suite-demo/suppl-spec.png" },
-    ],
-  },
-];
-
+// Versioned original demo assets; A+ showcase remains untouched.
 function SuiteDemoShowcase() {
   const [idx, setIdx] = useState(0);
   const [paused, setPaused] = useState(false); // 显式暂停按钮
   const [hovered, setHovered] = useState(false); // 悬停自动暂停
+  const [focused, setFocused] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
   const set = SUITE_DEMO_SETS[idx];
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(media.matches);
+    update(); media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   // 自动轮播:5s 切换下一个商品;悬停或手动暂停时停走。
   useEffect(() => {
-    if (paused || hovered || SUITE_DEMO_SETS.length < 2) return;
+    if (paused || hovered || focused || reducedMotion || SUITE_DEMO_SETS.length < 2) return;
     const t = setInterval(
       () => setIdx((i) => (i + 1) % SUITE_DEMO_SETS.length),
       5000
     );
     return () => clearInterval(t);
-  }, [paused, hovered]);
+  }, [paused, hovered, focused, reducedMotion]);
 
   return (
     <div
+      data-testid="suite-demo"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false); }}
     >
       <div className="rounded-2xl bg-secondary/50 p-4">
         {/* 商品切换 + 暂停/播放 */}
@@ -162,7 +148,8 @@ function SuiteDemoShowcase() {
             <button
               key={s.key}
               type="button"
-              onClick={() => setIdx(i)}
+              aria-pressed={i === idx}
+              onClick={() => { setIdx(i); setPaused(true); }}
               className={cn(
                 "rounded-full px-3 py-1 text-[12px] font-medium transition-colors",
                 i === idx
@@ -199,7 +186,10 @@ function SuiteDemoShowcase() {
               <img
                 src={set.src}
                 alt={`${set.label} 原图`}
-                className="h-full w-full object-cover"
+                width={640}
+                height={640}
+                decoding="async"
+                className="h-full w-full object-contain"
               />
             </div>
             <span className="absolute left-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
@@ -217,7 +207,10 @@ function SuiteDemoShowcase() {
                 <img
                   src={s.img}
                   alt={s.tag}
-                  className="h-full w-full object-cover"
+                  width={640}
+                  height={640}
+                  decoding="async"
+                  className="h-full w-full object-contain"
                 />
                 <span className="absolute left-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
                   {s.tag}
