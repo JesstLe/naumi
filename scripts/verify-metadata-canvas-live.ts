@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import {readFile,mkdir,writeFile} from "node:fs/promises";
+import {chromium,expect as baseExpect} from "@playwright/test";
+
+async function main(){
+ const cookieFile=process.env.MVP_BROWSER_COOKIE_FILE;if(!cookieFile)throw Error("Protected staging session required");
+ const origin="http://120.27.162.85",out="output/metadata-canvas-20261010/live";await mkdir(out,{recursive:true});
+ const browser=await chromium.launch({channel:process.platform==="win32"?"msedge":undefined,headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000}}),expect=baseExpect.configure({timeout:30000});
+ let attemptedWrites=0;const errors:string[]=[],blockedPaths:string[]=[];
+ try{
+  await context.addCookies(JSON.parse(await readFile(cookieFile,"utf8")));await context.addCookies([{name:"naumi_locale",value:"zh",url:origin}]);
+  const get=async(path:string)=>{const r=await context.request.get(origin+path);assert.equal(r.status(),200);return r.json();};
+  const before=await get("/api/admin/bi/model-config"),state=await get("/api/admin/mvp"),library=await get("/api/admin/mvp/library"),version=await get("/api/version");
+  const row=state.rows.find((r:any)=>r.modality==="image"&&!r.preset&&r.qualityConfig.routes.every((v:any)=>v.editable));assert.ok(row,"Editable production image model required");const upstream=row.qualityConfig.routes[0];
+  const page=await context.newPage();page.on("pageerror",e=>errors.push(e.message));await page.route("**/api/**",async route=>{if(route.request().method()!=="GET"){const path=new URL(route.request().url()).pathname,body=route.request().postDataJSON();blockedPaths.push(path);if(path==="/api/admin/mvp"&&body.action==="discover")return route.fulfill({json:state.catalogs.find((c:any)=>c.providerId===body.providerId)||{providerId:body.providerId,models:[],status:"empty",refreshing:false}});if(path.startsWith("/api/admin/"))attemptedWrites++;return route.fulfill({status:409,json:{error:"Read-only live acceptance"}});}return route.continue();});
+  await page.goto(origin+"/admin/mvp");const card=page.getByTestId("mvp-model-"+row.id);
+  await card.getByRole("button",{name:"参数设置",exact:true}).click();const params=page.getByRole("dialog",{name:"模型参数设置",exact:true});
+  const high=params.getByLabel(`high上游值 ${upstream.upstreamId}`,{exact:true});await expect(high).toBeEditable();await high.fill("medium");await expect(params.getByLabel(`核对状态 ${upstream.upstreamId}`,{exact:true})).toHaveValue("unverified");
+  const defaults=params.getByRole("button",{name:"使用元数据默认映射",exact:true});await expect(defaults).toBeVisible();if(upstream.metadataDefaults?.available){await defaults.click();for(const [id,value]of Object.entries(upstream.metadataDefaults.values))await expect(params.getByLabel(`${id}上游值 ${upstream.upstreamId}`,{exact:true})).toHaveValue(value as string);await high.fill("medium");}
+  await page.screenshot({path:out+"/defaults-editable.png"});await params.getByRole("button",{name:"取消",exact:true}).click();
+  await card.getByRole("button",{name:"编辑范围",exact:true}).click();const scope=page.getByRole("dialog",{name:"选择应用工具",exact:true});await expect(scope.getByRole("checkbox",{name:"画布",exact:true})).toHaveCount(1);assert.equal(await scope.getByRole("checkbox",{name:/画布生图|画布扩图|画布改字|画布标注/}).count(),0);
+  await scope.getByRole("checkbox",{name:"画布",exact:true}).check();await scope.getByText(/查看具体模块/).click();await expect(scope.getByText("生图、换背景、换视角、文案图、Agent 出图",{exact:true})).toBeVisible();await page.screenshot({path:out+"/canvas-one-checkbox.png"});
+  await page.setViewportSize({width:390,height:844});assert.ok(await scope.evaluate(e=>e.scrollWidth<=e.clientWidth+1));await page.screenshot({path:out+"/canvas-one-checkbox-mobile.png"});await scope.getByRole("button",{name:"取消",exact:true}).click();await page.setViewportSize({width:1440,height:1000});
+  const metaModel=library.models.find((m:any)=>m.modality==="image");assert.ok(metaModel,"Production image metadata required");await page.goto(origin+"/admin/mvp/library");await page.getByTestId("metadata-edit-"+metaModel.modelId).first().click();const meta=page.getByRole("dialog");await meta.getByLabel("元数据默认 quality 处理",{exact:true}).selectOption("map");await meta.getByLabel("元数据 max 默认值",{exact:true}).fill("high");await page.screenshot({path:out+"/library-defaults.png"});await meta.getByRole("button",{name:"取消",exact:true}).click();
+  const catalogs=[];for(const feature of ["canvas.image","canvas.expand","canvas.text-edit","canvas.annotate","canvas.ocr","canvas.assistant","canvas.text-generate"]){const c=await get("/api/models?feature="+feature);assert.equal(c.selectionMode,"user");assert.ok(c.models.length);catalogs.push({feature,count:c.models.length});}
+  await writeFile(out+"/diagnostics.json",JSON.stringify({attemptedWrites,blockedPaths,errors},null,2));assert.deepEqual(await get("/api/admin/bi/model-config"),before);assert.deepEqual(await get("/api/admin/mvp/library"),library);assert.equal(attemptedWrites,0,"No admin publish attempted");assert.equal(errors.length,0,"No page runtime errors");
+  await writeFile(out+"/result.json",JSON.stringify({pass:true,version,modelVersion:state.version,metadataDefault:upstream.metadataDefaults,catalogs,configUnchanged:true,metadataUnchanged:true,attemptedAdminWrites:attemptedWrites,blockedPaths,paidCalls:0},null,2));
+  console.log("LIVE_METADATA_CANVAS=PASS EDITABLE_MAPPING=PASS SINGLE_CANVAS_CHECKBOX=PASS MODULE_USAGE=PASS MOBILE=PASS LIBRARY_DEFAULT_EDITOR=PASS CAPABILITY_POOLS=PASS CONFIG_METADATA_UNCHANGED=1 PAID_CALLS=0");
+ }finally{await browser.close();}
+}
+main().catch(e=>{console.error(e instanceof Error?e.message:String(e));process.exitCode=1;});
