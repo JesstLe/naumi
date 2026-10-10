@@ -212,7 +212,7 @@ export async function getOrCreateSession(
   gcSessions();
   const scope = currentModelExecution("text") || currentModelExecution("vision");
   const managed = scope ? await configuredPiModels(scope,{userEmail:email,feature:options ? 'canvas.assistant' : 'agent.text'}) : null;
-  const contextStamp = options ? JSON.stringify(options.canvas) : undefined;
+  const contextStamp = options ? JSON.stringify({canvas:options.canvas,billingVersion:currentExecutionBundle()?.billingVersion}) : undefined;
   const existing = SESSIONS.get(key(email, sessionId));
   if (existing && (existing.running || existing.canvasExecuting || existing.modelId === modelId && existing.modelExecutionStamp === managed?.stamp && existing.contextStamp === contextStamp)) {
     existing.lastUsedAt = Date.now();
