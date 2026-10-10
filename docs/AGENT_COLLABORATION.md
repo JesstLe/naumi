@@ -2,6 +2,9 @@
 
 ## 当前固定版本（2026-10-10）
 
+- 最新新机运行源码6446fab68aaccc6cccdfa8217bbaebed95d27ac9，Image ID sha256:f1c5f505d129d38b08a1aabcfb9a4d1925efd0f22a28f94fbd0348fb8d5235ca，实际版号1791600281 / v2026.10.10-104441。按用户要求完整合入canvas-toolbar-copy、model-brand-icons、image25-output-price-table、pricing-page-preview；套餐预览遵守最新公开定价关闭规则，管理员价格表只读不改扣费。集中隔离DB/浏览器/生成参数与积分通过，线上品牌/稳定模型选择/参数范围/价格筛选下载和手机通过。模型v66、价格v8、完整配置/草稿与元数据库861条、修订863条及采购价格指纹保持，收费生成0。证据/备份 /opt/naumi-staging/evidence/colleague-integration-20261010，固定回滚5cb8600，最终健康/实际版本通过、deploy.lock已释放。详见docs/changes/2026-10-10-colleague-branches-integration.md。以下为历史版本；文档跟进不另发镜像。
+
+
 - 最新新机运行源码 `5cb8600f1cbe14be0dbd7fbbe4c705ce7e545f6a`，Image ID `sha256:07370677c52b6958af4ad7fc96d0e26462f9d41b97f0d2e151a4e6bf54045d75`，版本1791599031 / `v2026.10.10-102351`。正式模块命名model-management／management、导航“模型管理”，新页面/API保留原MVP入口兼容；历史ID／actor／reason指纹／锁／待处理key不迁移。原生历史模型和积分发布重试、冻结／参数／范围及浏览器旧地址查询跳转、跨路由重试、历史session恢复、接入／积分／手机通过；线上正式页面、旧API权限、参数／范围／选择／排序／报价通过。模型v66／价格v8／完整配置／草稿及元数据库861条、修订863条和采购价格完整指纹不变，收费生成0。证据 `/opt/naumi-staging/evidence/model-management-naming-20261010-r2`，锁释放；兼容回滚源码b73533d74a2b4c92761bd6d2ef5c2745668d9f64基于08e0354，仅加正式地址入口，使回滚后新书签和已加载前端可继续访问。详见 `docs/changes/2026-10-10-model-management-naming.md`；当前说明迁至 `docs/admin-model-management.md`。以下为历史版本，验收／文档跟进不另发镜像。
 
 - 最新新机运行源码 `08e0354f9d5910b67b174b609a004848d17cd73a`，Image ID `sha256:141f5a05cf11c31c919bffa2e2cc78e8be6f140d2622ca33e67b2fb46da45ca7`，版本1791597752 / `v2026.10.10-100232`。MVP质量映射读取精确供应商元数据默认，可恢复默认与手动编辑；画布单个系统勾选、模块用途、图片／文字能力池与共享选择、Agent文字选择已上线。原生和隔离浏览器发布／冲突／冻结／A+授权及同事节点编辑回归通过；线上只读弹窗、手机、选择／刷新／排序／报价通过，模型v66／价格v8／完整配置／草稿与采购价格、元数据内容和修订保留（目录发现仅更新last_seen_at）。证据 `/opt/naumi-staging/evidence/metadata-canvas-20261010`，全程发布锁已释放。固定兼容回滚镜像855762070fa0a973f83cb3f9611b1f933cea57e6可读当前和历史systems字段；正常回滚不改配置，不回灌DB／媒体。详见 `docs/changes/2026-10-10-metadata-defaults-canvas-system.md`。以下为历史版本，验收／文档跟进不另发镜像。

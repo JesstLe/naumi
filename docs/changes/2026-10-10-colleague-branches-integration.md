@@ -28,3 +28,14 @@
 ## 发布状态
 
 本提交为已验收候选；发布将在新机deploy.lock下完整备份、固定镜像构建、核对基线后进行。回滚到5cb8600固定镜像，保留数据库、配置、媒体和已有正式地址兼容。最终镜像、版号、线上验收及锁释放记录由发布后跟进追加，不能将候选提交当作已上线。
+
+
+## 最终发布与线上验收
+
+已发布新机120.27.162.85。固定源码6446fab68aaccc6cccdfa8217bbaebed95d27ac9，APP/Worker镜像ghcr.io/jesstle/naumi:6446fab68aaccc6cccdfa8217bbaebed95d27ac9，Image ID sha256:f1c5f505d129d38b08a1aabcfb9a4d1925efd0f22a28f94fbd0348fb8d5235ca，实际版号1791600281 / v2026.10.10-104441。四个分支对origin/main的独有提交均为0。
+
+生产构建、原生健康/权限/旧新入口/价格只读405与公开定价404、七项目录、五档参数通过。线上浏览器验证原生价格表筛选/人民币美元/刷新/下载/手机、四家族稳定顺序和选择刷新/真实报价、模型菜单品牌与SVG渐变ID唯一性、扩图/排序弹窗、元数据默认映射和单个画布勾选/用途/手机通过；配置不提交，供应商真实生成0。
+
+从备份读取基线到最终浏览器验收持续持deploy.lock，完整数据库、env、Compose备份与固定5cb8600回滚准备通过。最终APP/Worker同固定镜像且running，公网health db.ok=true，/api/version准确，COMBINED_RELEASE=PASS，锁确认释放。模型v66、价格v8、整个配置696ee8840093f6e3dbf1d5317b6529d1、草稿d34b6d55ce1f19a053733efa25f5c08b保持；元数据861条/8b408426b95e7b5fd48e05fcb468c63f、修订863条/593f44ae5f54ca1f021109b792cf08df、采购价格0条完整指纹前后相同。DB容器、媒体、Compose、其他env与公网代理保留；旧机未连接，local媒体、视频/OSS延期规则保留。
+
+证据及备份 /opt/naumi-staging/evidence/colleague-integration-20261010，发布记录release.log、deploy.log；实际浏览器live/、canvas-live/、management-live/。ROLLBACK.sh --apply自行取锁、校验当前候选并退回固定5cb8600，保持现有正式路由和数据，无迁移回灌。临时浏览器会话文件与容器测试helper已清理，隔离PG已停止。本文和协作说明跟进仅为文档，不另发业务镜像。
