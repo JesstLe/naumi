@@ -1,4 +1,5 @@
 "use client";
+import {useImageResolutions} from "@/lib/model-config/resolution-client";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -11,7 +12,6 @@ import { SelectMenu } from "@/components/ui/select-menu";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
-import { GENERATION_RESOLUTIONS } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
 const ACCENT = "#C2882E"; // 印花提取(琥珀)
@@ -58,6 +58,7 @@ export function ExtractClient() {
   const [ratio, setRatio] = React.useState("自动");
   const [complete, setComplete] = React.useState("0");
   const [resolution, setResolution] = React.useState("1K");
+  const displayResolutions=useImageResolutions("tool.extract",resolution,setResolution);
   const billing=useFeatureBilling("tool.extract",{resolution});
   const [output, setOutput] = React.useState("透明底");
   // 补充描述(选填,拼进提取提示词)+ AI帮写/智能优化(必传图)
@@ -161,7 +162,7 @@ export function ExtractClient() {
       {/* 分辨率按统一档位计费，最高支持 5K。 */}
       <ToolChips
         label={L("分辨率", "Resolution")}
-        options={GENERATION_RESOLUTIONS.map(({ id }) => ({ value: id, label: id }))}
+        options={displayResolutions.map((id) => ({ value: id, label: id }))}
         value={resolution}
         onChange={setResolution}
         accent={ACCENT}

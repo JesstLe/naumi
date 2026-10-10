@@ -1,4 +1,5 @@
 "use client";
+import {useImageResolutions} from "@/lib/model-config/resolution-client";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 
@@ -102,6 +103,7 @@ export function GenerateClient({
   const [imageModels, setImageModels] = useState<ImageModelOption[]>([]);
   const [ratio, setRatio] = useState("auto");
   const [resolution, setResolution] = useState("1K");
+  const displayResolutions=useImageResolutions("image.generate",resolution,setResolution,model);
   // 出图质量:通道接入质量参数(NAUMI_IMAGE_QUALITY_SUPPORTED=1)前,
   // 非标准档置灰、统一按标准档执行与计费;选择仍随请求上行,由服务端
   // 在提交前回退并写任务审计(请求档/执行档/回退原因)。
@@ -841,9 +843,9 @@ export function GenerateClient({
                   <Segmented
                     value={resolution}
                     onChange={setResolution}
-                    options={GENERATION_RESOLUTIONS.map((r) => ({
-                      value: r.id,
-                      label: r.id,
+                    options={displayResolutions.map((id) => ({
+                      value: id,
+                      label: id,
                     }))}
                   />
                 </div>

@@ -25,6 +25,8 @@ async function main(){
  const db=await import("../src/lib/db");
  try{
   f.config.upstreamModels[0].capabilities.preserveIdentity=true;
+  f.config.upstreamModels[0].capabilities.nativeResolutions=["1K","2K","4K"];
+  f.config.upstreamModels[0].parameterMap.resolution={"1K":"1024x1024","2K":"2048x2048","4K":"4096x4096"};
   const original=await f.repo.current();await db.ensureSchema();await db.setSetting("multi_user_enabled","1");const email="quality-policy@example.test";await db.getOrCreateUser(email);await db.addCreditBatch(email,10000,{source:"admin",reason:"isolated fixture"});
   const admin=await(await import("../src/lib/model-config/server")).getModelAdministration(),b0=await admin.billing.current(),billing=fixtureConfig();billing.switches.metering="on";await admin.billing.publish({id:randomUUID(),expectedVersion:b0.version,config:billing,actor:"fixture",reason:"fixture"});
   const priceBefore=await admin.billing.current(),draft=await admin.repo.draft("fixture-admin");
@@ -47,6 +49,32 @@ async function main(){
   const audits=(await db.getPool().query("SELECT requested_quality,executed_quality FROM app_image_cost_audit WHERE job_id=$1",[id])).rows;assert.equal(audits[0].requested_quality,"max");assert.equal(audits[0].executed_quality,"high");
   const executor=(await import("../src/lib/model-config/execution")).createModelExecutor({runtime:admin.runtime,credentials:admin.credentials,trustedOrigins:[f.origin],gateway:()=>({baseUrl:f.origin,apiKey:"fixture"})});
   const frozen=await executor.resolve({feature:"image.generate",binding:"image.generate",requestedModelId:"image-a",snapshot:mapped,billing:priceBefore,facts:{task:"product",quality:"max",resolution:"1K",ratio:"1:1",needsEdit:false,preserveIdentity:false,needsText:false,nativeResolution:false,references:0}});
+  const resolutionBody={action:"resolutions",id:randomUUID(),expectedVersion:(await admin.repo.current()).version,rowId:row.id,resolutions:["1K","2K","4K"]};
+  assert.equal((await handler(request({...resolutionBody,resolutions:[]}))).status,400);
+  assert.equal((await handler(request({...resolutionBody,resolutions:["1K","1K"]}))).status,400);
+  assert.equal((await handler(request(resolutionBody))).status,200);
+  const opened=await admin.repo.current();assert.equal((await handler(request(resolutionBody))).status,200);assert.equal((await admin.repo.current()).version,opened.version);
+  assert.deepEqual(opened.config.upstreamModels,mapped.config.upstreamModels,"Opening display resolutions must preserve capabilities and mappings");
+  assert.deepEqual((await import("../src/lib/model-config/runtime")).publicModelCatalog(opened,"image","image.generate").models.find(m=>m.id===row.id)!.generationParameters?.resolutions,["1K","2K","4K"]);
+  const rr=await executor.resolve({feature:"image.generate",binding:"image.generate",requestedModelId:"image-a",snapshot:opened,billing:priceBefore,facts:{task:"product",quality:"max",resolution:"4K",ratio:"1:1",needsEdit:false,preserveIdentity:false,needsText:false,nativeResolution:true,references:0}});
+  await(await executor.clientFor(rr)).client.images.generate({model:"image-a",prompt:"native resolution fixture",quality:"max" as never,n:1});assert.equal(wire.at(-1).size,"4096x4096");
+  const grid=(await import("../src/lib/model-config/management-pricing")).modelCreditGrid(priceBefore,opened,(await(await handler(request())).json()).rows[0],"image.generate");assert.ok(grid.find(c=>c.quality==="max"&&c.resolution==="4K")?.available);
+  const closedBody={...resolutionBody,id:randomUUID(),expectedVersion:opened.version,resolutions:["1K","2K"]};assert.equal((await handler(request(closedBody))).status,200);
+  const closed=await admin.repo.current();
+  const {withModelRequest}=await import("../src/lib/model-config/requests");
+  await assert.rejects(()=>withModelRequest(new Request(f.origin+"/api/generate-image",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"image-a",resolution:"4K",quality:"max",ratio:"1:1"})}),async()=>null),/未开放此分辨率/);
+
+  const {assertDisplayResolution,applyDisplayResolutions}=await import("../src/lib/model-config/resolution-options");
+  assert.throws(()=>assertDisplayResolution(closed.config.publicModels[0],"4K"));
+  const {businessBillingSnapshot}=await import("../src/lib/model-config/business-billing");
+  assert.throws(()=>businessBillingSnapshot(priceBefore,closed,{feature:"image.generate",modelId:"image-a",quality:"max",resolution:"4K",quantity:1,byok:false,metered:true,paidFen:0,userGroup:"default"}));
+  await(await executor.clientFor(rr)).client.images.generate({model:"image-a",prompt:"frozen resolution fixture",quality:"max" as never,n:1});assert.equal(wire.at(-1).size,"4096x4096");
+  const family=structuredClone(closed.config);family.publicModels=["square","portrait","landscape"].map((suffix,i)=>({...family.publicModels[0],id:"family-image-"+suffix,visible:i!==2}));
+  const familyChanged=applyDisplayResolutions(family,{id:"family-image",modality:"image"},["4K","1K","2K"]);assert.ok(familyChanged.publicModels.every(m=>JSON.stringify(m.displayResolutions)===JSON.stringify(["1K","2K","4K"])));
+  assert.equal((await handler(request({...resolutionBody,id:randomUUID(),expectedVersion:closed.version,resolutions:null}))).status,200);
+  assert.equal((await admin.repo.current()).config.publicModels[0].displayResolutions,undefined);
+  assert.deepEqual(await admin.billing.current(),priceBefore);assert.deepEqual(await admin.repo.draft("fixture-admin"),draft);
+  console.log("DISPLAY_RESOLUTIONS_NATIVE=PASS OPEN_CLOSE_RESTORE_REPLAY=PASS FAMILY_HIDDEN_BRANCHES=PASS MATRIX=PASS FROZEN_NATIVE_4K_SIZE=4096x4096 CAPABILITIES_MAPS_BILLING_DRAFT_PRESERVED=1");
   const {executionFetch}=await import("../src/lib/model-config/clients"),scope=await executor.describe(frozen);
   const form=new FormData();form.set("model","image-a");form.set("quality","high");form.set("prompt","multipart mapping");form.set("image",new Blob([new Uint8Array(png)],{type:"image/png"}),"mock.png");assert.equal((await executionFetch(scope,{trustedOrigins:[f.origin]})(f.origin+"/v1/images/edits",{method:"POST",body:form})).status,200);assert.equal(wire.at(-1).quality,"high");assert.equal(wire.at(-1).imageFiles,1);
   const update=async(mode:string,values=parameters.routes[0].values)=>{const current=await admin.repo.current();const r=await handler(request({...body,id:randomUUID(),expectedVersion:current.version,parameters:{choices,routes:[{...parameters.routes[0],mode,values}]}}));assert.equal(r.status,200,await r.clone().text());return admin.repo.current();};

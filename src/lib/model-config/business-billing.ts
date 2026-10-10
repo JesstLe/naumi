@@ -1,3 +1,4 @@
+import {assertDisplayResolution} from "./resolution-options";
 import "server-only";
 import { currentExecutionBundle, currentModelExecution } from "./context";
 import { getModelAdministration } from "./server";
@@ -12,6 +13,7 @@ import {managedModelCreditRule,applyCreditOverride} from "./credit-overrides";
 import {policyQuality} from "./quality-policy";
 
 export function freezeImagePresetQuote(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts, create: (s:ConfigSnapshot,f:BillingFacts)=>BillingQuote): BillingQuote | null {
+  assertDisplayResolution(models.config.publicModels.find(m=>m.id===facts.modelId),facts.resolution);
   const preset = facts.byok ? undefined : selectedImagePreset(models.config,facts.feature,facts.modelId);
   if (!preset) return null;
   if (models.config.business?.[facts.feature]?.enabled === false) throw new ModelConfigError("FEATURE_DISABLED","该功能已停用",409);
@@ -38,6 +40,7 @@ export function freezeImagePresetQuote(snapshot: ConfigSnapshot, models: ModelSn
 }
 
 function originalBusinessBillingSnapshot(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts): ConfigSnapshot {
+  assertDisplayResolution(models.config.publicModels.find(m=>m.id===facts.modelId),facts.resolution);
   const preset = selectedImagePreset(models.config, facts.feature, facts.modelId);
   if (preset) {
     const config = structuredClone(snapshot.config), tariff = config.features[facts.feature], params = effectiveImageParameters(preset, { quality:facts.quality, resolution:facts.resolution, ratio:facts.ratio || "1:1" });

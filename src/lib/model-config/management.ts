@@ -20,7 +20,7 @@ export const featureNames: Record<string, string> = {
   "tool.inpaint": "局部重绘", "tool.extract": "提取", "tool.garment3d": "服装 3D", "tool.packaging3d": "包装 3D",
 };
 export type ManagedModelRow = {
-  id: string; label: string; alias: string; modality: Modality; publicIds: string[];
+  id: string; label: string; alias: string; modality: Modality; displayResolutions?: string[]; publicIds: string[];
   features: { id: string; label: string }[];
   routes: { upstreamId: string; model: string; providerId: string; provider: string; kind: string; enabled: boolean }[];
   preset: boolean; conditional: boolean; candidateIds: string[];
@@ -69,6 +69,7 @@ export function managedModelRows(snapshot: ModelSnapshot, catalogs: { feature: s
       const u = config.upstreamModels.find(u => u.id === id), p = config.providers.find(p => p.id === u?.providerId);
       if (u && p && !row.routes.some(r => r.upstreamId === id && r.kind === kind)) row.routes.push({ upstreamId: id, model: u.model, providerId: p.id, provider: p.name, kind, enabled: u.enabled && p.enabled });
     };
+    row.displayResolutions = config.publicModels.find(m => m.id === row.publicIds[0])?.displayResolutions;
     row.preset = !!config.defaultImagePreset?.enabled && row.publicIds.some(id => config.defaultImagePreset!.aliases.some(a => a.id === id));
     for (const id of row.publicIds) {
       const m = config.publicModels.find(m => m.id === id)!;

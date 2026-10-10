@@ -1,4 +1,5 @@
 "use client";
+import {useImageResolutions} from "@/lib/model-config/resolution-client";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -10,7 +11,6 @@ import { ToolDemo, getDemo } from "@/components/tools/tool-demo";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { authHeader } from "@/lib/supabase";
-import { GENERATION_RESOLUTIONS } from "@/lib/mock-data";
 import { downloadImage } from "@/lib/download";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +30,7 @@ export function Packaging3dClient() {
   const [material, setMaterial] = React.useState("matte");
   const [background, setBackground] = React.useState("gray");
   const [resolution, setResolution] = React.useState("1K");
+  const displayResolutions=useImageResolutions("tool.packaging3d",resolution,setResolution);
   const billing=useFeatureBilling("tool.packaging3d",{resolution});
   const [prompt, setPrompt] = React.useState("");
   const [processing, setProcessing] = React.useState(false);
@@ -212,7 +213,7 @@ export function Packaging3dClient() {
       />
       <ShellChips
         label={L("分辨率", "Resolution")}
-        options={GENERATION_RESOLUTIONS.map(({ id }) => ({ key: id, label: id }))}
+        options={displayResolutions.map((id) => ({ key: id, label: id }))}
         value={resolution}
         onChange={setResolution}
         accent={ACCENT}

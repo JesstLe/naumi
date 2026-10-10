@@ -50,6 +50,7 @@ export function ModelManagement() {
   const [rename, setRename] = useState<ManagedModelRow | null>(null);
   const [sorting,setSorting]=useState(false);
   const [scope,setScope]=useState<ManagedModelRow|null>(null);
+  const [resolutionRow,setResolutionRow]=useState<ManagedModelRow|null>(null);
   const [parameters,setParameters]=useState<ManagedModelRow|null>(null);
   const [price,setPrice]=useState<ManagedModelRow|null>(null);
   const [register, setRegister] = useState<{ providerId: string; model: string } | null>(null), [refreshing, setRefreshing] = useState<string[]>([]);
@@ -101,15 +102,15 @@ export function ModelManagement() {
     try { sessionStorage.setItem(pendingKey, JSON.stringify(operation)); } catch {}
     try {
       const result = await api(operation);
-      if (result.publication.phase !== "applied") { setScope(null);setPrice(null);setParameters(null);setSorting(false); setNotice("发布结果待核对。请点击“核对并继续”，系统会沿用同一操作，不重复创建发布。"); return; }
-      clearPending(); setRow(null); setScope(null);setPrice(null);setParameters(null);setSorting(false); setConnect(false); setRegister(null);
+      if (result.publication.phase !== "applied") { setScope(null);setPrice(null);setParameters(null);setResolutionRow(null);setSorting(false); setNotice("发布结果待核对。请点击“核对并继续”，系统会沿用同一操作，不重复创建发布。"); return; }
+      clearPending(); setRow(null); setScope(null);setPrice(null);setParameters(null);setResolutionRow(null);setSorting(false); setConnect(false); setRegister(null);
       if(["pricing","parameters","order","scope"].includes(operation.action))window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
       setNotice(operation.action === "order" ? "模型排序已生效，前端各工具按此顺序展示可用模型。" : operation.action === "parameters" ? "显示档位与上游映射已生效。新请求使用新参数，已接受的任务保留原映射。" : operation.action === "pricing" ? "积分售价已生效。前端报价与实际扣费使用同一配置，已开始的任务保留原报价。" : operation.action === "scope" ? "工具范围已生效。新请求使用新范围，已经开始的任务保留原配置。" : operation.action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : operation.action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : operation.action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。");
       await load(true);
     } catch (e) {
       const failure = e as Error & { code?:string; operationNotStaged?: boolean; publication?: { phase: string } };
       if (failure.operationNotStaged || failure.publication?.phase === "failed") clearPending();
-      else {setScope(null);setPrice(null);setParameters(null);setSorting(false);}
+      else {setScope(null);setPrice(null);setParameters(null);setResolutionRow(null);setSorting(false);}
       setError(failure.message || "操作失败，请重试");
       if(failure.code==="METADATA_CHANGED")await load(false);
     } finally { setBusy(false); mutationGuard.current = false; }
@@ -133,7 +134,7 @@ export function ModelManagement() {
       <div className={styles.mapping}><div className={styles.tableHead}><span>前端名称</span><span>实际调用模型 / 上游来源</span><span>操作</span></div>{rows.map(r => <article className={styles.modelRow} key={r.id} data-testid={`managed-model-${r.id}`}>
         <div className={styles.modelName}><span className={styles.modality}>{types[r.modality]}</span><h2>{r.label}</h2>{r.publicIds.length > 1 && <p>模型家族 · {r.publicIds.length} 个比例分支，统一管理</p>}<div className={styles.scopeSummary}><span>应用工具 {r.features.length} 项</span><button disabled={locked || !state.managed} onClick={()=>setScope(r)}>编辑范围</button></div><div className={styles.featureTags}>{r.features.map(f => <span key={f.id}>{f.label}</span>)}</div>{!r.features.length && <p>尚未应用到工具，可随时重新选择范围。</p>}</div>
         <div className={styles.routes}>{r.routes.map((route, index) => <div key={`${route.upstreamId}-${route.kind}`} className={styles.route}><span className={styles.routeDot} data-enabled={route.enabled} /><div><code>{route.model}</code><p>{route.provider}<span>{r.conditional || r.preset || r.publicIds.length > 1 ? route.kind : "已配置"}</span></p></div></div>)}{r.conditional && <p className={styles.ruleNote}>具体调用由条件或回退规则决定</p>}</div>
-        <div className={styles.rowActions}><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRename(r)}>修改显示名称</button>{r.modality === "image" && <button className={styles.switchButton} disabled={locked || r.preset || !r.qualityConfig?.routes.every(v=>v.editable)} title={r.preset || !r.qualityConfig?.routes.every(v=>v.editable)?"此路径由外部路由或成本预设管理参数":"配置显示档位与实际传参"} onClick={()=>{setError("");setParameters(r);}}>参数设置</button>}<button className={styles.switchButton} disabled={locked || !state.managed || !r.features.length} onClick={() => {setError("");setPrice(r);}}>设置积分</button><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRow(r)}>更换模型 <ChevronRight size={15} /></button><small className={styles.priceCaption}>{r.pricing?.[0]?.credits!==null && r.pricing?.[0] ? `${r.pricing[0].estimated?"预估":"参考"} ${r.pricing[0].credits} 积分/${r.pricing[0].unit==="image"?"张":r.pricing[0].unit==="item"?"项":"次"}` : "按工具配置售价"}</small></div>
+        <div className={styles.rowActions}><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRename(r)}>修改显示名称</button>{r.modality === "image" && <button className={styles.switchButton} disabled={locked || r.preset || !r.qualityConfig?.routes.every(v=>v.editable)} title={r.preset || !r.qualityConfig?.routes.every(v=>v.editable)?"此路径由外部路由或成本预设管理参数":"配置显示档位与实际传参"} onClick={()=>{setError("");setParameters(r);}}>参数设置</button>}{r.modality === "image" && <button className={styles.switchButton} disabled={locked || !state.managed} onClick={()=>{setError("");setResolutionRow(r);}}>分辨率设置</button>}<button className={styles.switchButton} disabled={locked || !state.managed || !r.features.length} onClick={() => {setError("");setPrice(r);}}>设置积分</button><button className={styles.switchButton} disabled={locked || !state.managed} onClick={() => setRow(r)}>更换模型 <ChevronRight size={15} /></button><small className={styles.priceCaption}>{r.pricing?.[0]?.credits!==null && r.pricing?.[0] ? `${r.pricing[0].estimated?"预估":"参考"} ${r.pricing[0].credits} 积分/${r.pricing[0].unit==="image"?"张":r.pricing[0].unit==="item"?"项":"次"}` : "按工具配置售价"}</small></div>
       </article>)}</div>
       {!rows.length && <div className={styles.empty}><Search /><h2>{state.rows.length ? "没有匹配的模型" : "前端暂无可见模型"}</h2><p>{state.rows.length ? "尝试其他名称、功能或类型。" : "这里只显示前端当前已启用、可展示的模型。"}</p></div>}
       <p className={styles.footerNote}><CircleHelp size={15} />同一前端模型用于多个功能时，更换会对这些功能一起生效。模型来源与积分价格由管理后台统一配置。</p>
@@ -143,6 +144,7 @@ export function ModelManagement() {
     })}</div>{!state.providers.length && <div className={styles.empty}><Unplug /><h2>接入第一个上游来源</h2><p>输入接口地址与 API Key，系统会自动发现模型 ID。</p></div>}</section>}
     {row && state && <SwitchDialog row={row} state={state} locked={locked} busy={busy} onClose={() => setRow(null)} onSave={upstreamId => void run(operation("switch", { rowId: row.id, upstreamId }))} />}
     {rename && <RenameDialog row={rename} locked={locked} onClose={() => setRename(null)} onSave={label => void run(operation("rename", { rowId: rename.id, label }))} />}
+    {resolutionRow && <ResolutionsDialog row={resolutionRow} locked={locked} error={error} onClose={()=>setResolutionRow(null)} onSave={resolutions=>void run(operation("resolutions",{rowId:resolutionRow.id,resolutions}))}/>}
     {parameters && <ParametersDialog row={state?.rows.find(r=>r.id===parameters.id) || parameters} locked={locked} error={error} onClose={()=>setParameters(null)} onSave={value=>void run(operation("parameters",{rowId:parameters.id,parameters:value}))}/>}
     {sorting && state && <OrderDialog rows={state.rows} locked={locked} error={error} onClose={()=>setSorting(false)} onSave={rowIds=>void run(operation("order",{rowIds}))} />}
     {scope && <ScopeDialog row={scope} locked={locked} error={error} onClose={()=>setScope(null)} onSave={(features,canvas)=>void run(operation("scope",{rowId:scope.id,features,...(canvas!==undefined?{canvas}:{})}))}/>}
@@ -299,4 +301,17 @@ function RegisterDialog({ model, protocol, locked, onClose, onSave }: { model: s
   const [qualityRank, setQualityRank] = useState(2);
   const [qualities, toggleQuality] = useArray(), [resolutions, toggleResolution] = useArray();
   return <Dialog title="添加实际模型" onClose={onClose} locked={locked}><div className={styles.dialogBody}><div className={styles.actualModel}><code>{model}</code><span>来自上游模型目录</span></div><p className={styles.ruleNote}>目录仅提供模型 ID。请按供应商文档或已有测试结果确认能力，系统不会从名称猜测能力或成本。</p><fieldset className={styles.capabilities} disabled={locked}>{image && <><label><input type="checkbox" checked={edit} onChange={e => setEdit(e.target.checked)} />支持图片编辑 / 参考图输入</label><label className={styles.field}>可用于的质量档<select value={qualityRank} onChange={e => setQualityRank(Number(e.target.value))}>{[[1,"仅草稿"],[2,"标准"],[3,"高质量"],[4,"精细"],[5,"最高"]].map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label><p>支持的质量参数（不支持可留空）</p><div>{["low", "medium", "high", "xhigh", "max", "auto"].map(q => <label key={q}><input type="checkbox" checked={qualities.includes(q)} onChange={() => toggleQuality(q)} />{q}</label>)}</div><p>已确认的原生尺寸</p><div>{["1K", "2K", "4K"].map(r => <label key={r}><input type="checkbox" checked={resolutions.includes(r)} onChange={() => toggleResolution(r)} />{r}</label>)}</div></>}{text && <label><input type="checkbox" checked={vision} onChange={e => setVision(e.target.checked)} />支持图片理解</label>}{(image || text) && <label className={styles.field}>最大参考图数量<input type="number" min={0} max={32} value={references} onChange={e => setReferences(Number(e.target.value))} /></label>}<label className={styles.confirmation}><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />我已确认该模型支持{image ? "图片生成" : text ? "文字生成" : "视频生成"}及上述能力，并可使用当前协议调用。</label></fieldset><p className={styles.ruleNote}>添加不会改变前端名称或当前路由。需要蒙版、保留主体等高级能力时，请使用完整配置中心。</p></div><footer className={styles.dialogFooter}><button className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button className={styles.primary} disabled={locked || !confirmed} onClick={() => onSave({ confirmed: true, edit, vision, qualityRank, qualities, resolutions, maxReferenceImages: references })}>添加到可切换列表</button></footer></Dialog>;
+}
+
+function ResolutionsDialog({row,locked,error,onClose,onSave}:{row:ManagedModelRow;locked:boolean;error:string;onClose:()=>void;onSave:(resolutions:string[]|null)=>void}) {
+  const [selected,setSelected]=useState(row.displayResolutions || ["1K","2K","4K"]);
+  return <Dialog title="前端分辨率选项" locked={locked} onClose={onClose}><form onSubmit={e=>{e.preventDefault();if(selected.length)onSave(selected);}}><div className={styles.dialogBody}>
+    <div className={styles.scopeHeading}><b>{row.label}</b><span>按模型家族统一设置</span></div>
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+    {!row.displayResolutions && <p className={styles.ruleNote}>当前沿用各工具默认配置；保存后统一使用下面勾选的档位。</p>}
+    <p className={styles.ruleNote}>勾选用户可以选择的输出档位。已有的原生生成或放大流程继续使用；勾选不会改变供应商原生能力和实际参数映射。</p>
+    <div className={styles.scopeControls}><b>前端显示分辨率</b><button type="button" disabled={locked} onClick={()=>setSelected(["1K","2K","4K"])}>全选</button></div>
+    <div className={styles.parameterChoices}>{["1K","2K","4K"].map(id=><label key={id} className={styles.parameterChoice}><input type="checkbox" aria-label={`显示 ${id}`} disabled={locked} checked={selected.includes(id)} onChange={e=>setSelected(old=>e.target.checked?[...old,id]:old.filter(v=>v!==id))}/><b>{id}</b></label>)}</div>
+    <p className={styles.scopeNote}>至少选择一档，家族所有比例分支同步。关闭档位后，前端与新增报价均不再提供该规格；新增档位的积分在“设置积分”中维护。已接受任务继续使用提交时的配置。</p>
+  </div><footer className={styles.dialogFooter}><button type="button" className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button type="button" className={styles.secondary} disabled={locked || !row.displayResolutions} onClick={()=>onSave(null)}>恢复默认分辨率</button><button type="submit" className={styles.primary} disabled={locked || !selected.length}>保存分辨率并生效</button></footer></form></Dialog>;
 }

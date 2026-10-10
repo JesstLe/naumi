@@ -1,3 +1,4 @@
+import {assertDisplayResolution} from "./resolution-options";
 import { featureForRequest } from "./feature-path";
 import { requestedFeatureModel, assertPlatformImageSelection } from "./selection-policy";
 import {qualityPresentation} from "./quality-policy";
@@ -93,6 +94,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const option = selectedBusinessOption(snapshot.config, mainFeature, requestedModelId);
     if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);
     const model = snapshot.config.publicModels.find(m => m.id === (preset ? presetPublicId(preset,requestedModelId) : option?.modelId || requestedModelId || featureDefaultModel(snapshot.config,mainFeature,purpose.image)));
+    assertDisplayResolution(model,outputResolution);
     const upstreams = model?.target.type === "pool" ? snapshot.config.upstreamModels.filter(u => snapshot.config.pools.find(p => p.id === model.target.id)?.candidates.includes(u.id)) : snapshot.config.upstreamModels.filter(u => u.id === model?.target.id);
     const presentation = qualityPresentation(upstreams);
     const qualities = presentation?.qualities || option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
@@ -104,7 +106,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const effectiveQuality = presetParams?.effective.quality || requestedQuality;
     if ((option || presentation) && (parsed.body.quality || request.headers.get("x-naumi-image-quality")) && qualities.length && !qualities.includes(requestedQuality as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持该质量，不会静默退档", 400);
     const defaultQuality = qualities.some(q => q === (process.env.OPENAI_IMAGE_QUALITY || "medium")) ? process.env.OPENAI_IMAGE_QUALITY || "medium" : qualities[0] || process.env.OPENAI_IMAGE_QUALITY || "medium";
-    if (option?.parameters?.resolutions?.length && !option.parameters.resolutions.includes(outputResolution as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该尺寸", 400);
+    if (!model?.displayResolutions && option?.parameters?.resolutions?.length && !option.parameters.resolutions.includes(outputResolution as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该尺寸", 400);
     const native = presetParams ? presetParams.nativeResolution : ["1K", "2K", "4K"].includes(outputResolution) && upstreams.some(u => u.capabilities.nativeResolutions.includes(outputResolution as "1K" | "2K" | "4K"));
     const needsEdit = purpose.image === "image.edit" || purpose.image === "image.cutout" || parsed.references > 0;
     const needsText = new URL(request.url).pathname.includes("/canvas/image-tasks");
