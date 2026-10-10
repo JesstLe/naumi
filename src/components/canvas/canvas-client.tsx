@@ -17,6 +17,9 @@ import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { GenerationPlaceholder } from "./generation-placeholder";
 import { generationPlaceholderSize, placeGenerationPreview, type GenerationStage } from "@/lib/canvas/generation-feedback";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
+import { useWorkflowPaste } from "./use-workflow-paste";
+import { WorkflowDecorationNode, WorkflowGroupNode } from "./workflow-import-nodes";
+import type { ImportedManifest } from "@/lib/canvas/workflow-clipboard";
 import { CanvasAgentToggle } from "./canvas-agent-toggle";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
 import { NodePropertiesPanel } from "./node-properties-panel";
@@ -743,18 +746,19 @@ function TextCanvasNode({ data, selected }: NodeProps) {
     expanded?: boolean;
     settings?: CanvasNodeSettings;
     readOnly?: boolean;
+    workflowPresentation?: { rotation: number; flipX: boolean; opacity: number };
   };
   const active = selected || d.selected;
   const body = d.content || d.prompt;
   const editableBody = d.status === "completed" || Boolean(d.content);
   return (
-    <div className="group relative flex h-full w-full flex-col">
+    <div className="group relative flex h-full w-full flex-col" style={d.workflowPresentation ? { transform: `rotate(${d.workflowPresentation.rotation}deg) scaleX(${d.workflowPresentation.flipX ? -1 : 1})`, opacity: d.workflowPresentation.opacity } : undefined}>
       <NodeResizer
         isVisible={active && !d.expanded && !d.readOnly && !d.settings?.locked}
         minWidth={TEXT_NODE_MIN_W}
         minHeight={TEXT_NODE_MIN_H}
         maxWidth={TEXT_NODE_MAX_W}
-        maxHeight={TEXT_NODE_MAX_H}
+        maxHeight={String(data.__id || "").startsWith("text-import-") ? 100000 : TEXT_NODE_MAX_H}
         color="#315fc8"
         handleClassName="!h-2.5 !w-2.5 !border-2 !border-white !bg-[#315fc8]"
         lineClassName="!border-[#315fc8]"
@@ -1218,6 +1222,9 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
     intrinsicHeight?: number | null;
     lightCanvas?: boolean;
     onDimensions?: (id: string, width: number, height: number) => void;
+    workflowPresentation?: { rotation: number; flipX: boolean; opacity: number };
+    missingAsset?: boolean;
+    onFill?: () => void;
     onCanvasResize?: (
       id: string,
       bounds: { x: number; y: number; width: number; height: number }
@@ -1240,7 +1247,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
   // 可能过期的数据库尺寸。这里只静默修复显示高度，不写坐标、不污染用户撤销栈。
   const aspectFixedRef = useRef(false);
   useEffect(() => {
-    if (aspectFixedRef.current || d.pending || d.videoUrl || !naturalSize) return;
+    if (aspectFixedRef.current || nodeId.startsWith("art-import-") || d.pending || d.videoUrl || !naturalSize) return;
     const iw = naturalSize.width;
     const ih = naturalSize.height;
     const cw = d.width;
@@ -1351,7 +1358,14 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
                 ) d.onDimensions?.(d.id, image.naturalWidth, image.naturalHeight);
               }}
               className="block h-full w-full object-contain"
+              style={d.workflowPresentation ? { transform: `rotate(${d.workflowPresentation.rotation}deg) scaleX(${d.workflowPresentation.flipX ? -1 : 1})`, opacity: d.workflowPresentation.opacity } : undefined}
             />
+            {d.missingAsset && <div data-testid="workflow-missing-asset" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-50/80 text-slate-500">
+              <ImagePlus className="h-8 w-8 text-slate-400" />
+              <span className="text-sm font-medium">待补图片</span>
+              {!d.readOnly && <button type="button" className="nodrag nopan rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                disabled={d.settings?.locked} onClick={event=>{event.stopPropagation();d.onFill?.();}}>补充图片</button>}
+            </div>}
             {selected && d.rootLabel && (
               <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
                 {d.rootLabel}
@@ -2272,6 +2286,8 @@ export function CanvasClient() {
     height: node.height,
   });
   type UndoAct =
+    | { kind: "workflow-add"; artworks: Artwork[]; textNodes: CanvasTextNode[] }
+    | { kind: "workflow-fill"; id: string; assetOperationId: string; from: Artwork; to: Artwork }
     | { kind: "node-settings"; id: string; text: boolean; from: CanvasNodeSettings; to: CanvasNodeSettings }
     | { kind: "move"; id: string; from: { x: number; y: number }; to: { x: number; y: number } }
     | {
@@ -2321,6 +2337,34 @@ export function CanvasClient() {
     setUndoStack((stack) => [...stack.slice(-50), action]);
     setRedoStack([]);
   }, []);
+  const [workflowManifests, setWorkflowManifests] = useState<ImportedManifest[]>([]);
+  const workflowCallbacksRef = useRef({ replace: requestReplace, select: selectWorkflowGroup });
+  workflowCallbacksRef.current = { replace: requestReplace, select: selectWorkflowGroup };
+  useEffect(() => {
+    const email = targetEmail || user?.email;
+    setWorkflowManifests([]);
+    if (!email) return;
+    let cancelled = false;
+    void privateFetchRaw(`/api/canvas/workflow-import?email=${encodeURIComponent(email)}`).then(response => response.json()).then(data => {
+      if (!cancelled && Array.isArray(data.manifests)) setWorkflowManifests(current => Array.from(new Map([...data.manifests, ...current].map(m => [m.operationId, m])).values()));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [targetEmail, user?.email]);
+  const workflowPaste = useWorkflowPaste({ email: user?.email, projectKey: creatingNew ? null : activeKey, browsing, readOnly,
+    onCommitted: result => {
+      const artworks = result.artworks as Artwork[], importedIds = new Set(artworks.map(n => n.id));
+      setWorks(current => [...(current || []).filter(n => !importedIds.has(n.id)), ...artworks]);
+      const textIds = new Set(result.textNodes.map(n => n.id));
+      setTextNodes(current => [...current.filter(n => !textIds.has(n.id)), ...result.textNodes]);
+      setWorkflowManifests(current => [...current.filter(m => m.operationId !== result.operationId), result.manifest]);
+      const settings = { ...nodeSettingsRef.current, ...result.settings }; nodeSettingsRef.current = settings; setNodeSettings(settings);
+      pushUndo({ kind: "workflow-add", artworks, textNodes: result.textNodes });
+      setCreatingNew(false); setActiveKey(result.projectKey); setSelectedId(null); setSelectedTextId(null);
+      const missingAssets = artworks.filter(n => n.source === "workflow-placeholder").length;
+      flashTip(missingAssets ? `工作流已导入，${missingAssets} 张图片待补齐` : result.missingReferences ? `工作流已导入，${result.missingReferences} 个外部引用未包含在选择中` : "工作流已导入");
+      const ids = [...artworks.map(n => n.id), ...result.textNodes.map(n => n.id)];
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => void rfRef.current?.fitView({ nodes: ids.map(id => ({ id })), padding: 0.2, duration: 240, maxZoom: 1 })));
+    } });
   const dragStartRef = useRef<{ id: string; x: number; y: number } | null>(null);
   const selectionDragStartRef = useRef<
     Record<string, { x: number; y: number }>
@@ -2519,6 +2563,9 @@ export function CanvasClient() {
     if (!textNodesReady || readOnly) return;
     const updates: CanvasTextNode[] = [];
     for (const node of textNodes) {
+      // A pasted frame has an intentional layout. Text scrolls inside it until
+      // the user explicitly resizes it; never auto-fit an imported frame.
+      if (node.id.startsWith("text-import-")) continue;
       if (nodeSettingsRef.current[node.id]?.locked) continue;
       const sig = `${node.content.length}|${node.prompt.length}|${node.sourceIds?.length ?? 0}|${node.productIds?.length ?? 0}|${node.width}`;
       if (fittedTextNodesRef.current.get(node.id) === sig) continue;
@@ -3001,7 +3048,7 @@ export function CanvasClient() {
   }, [active, t, onNodeDimensions, onArtworkCanvasResize, onArtworkCanvasRatioRepair, requestNodeRename, extractVideoToCanvas]);
 
   const nodeTypes = useMemo(
-    () => ({ art: ArtNode, pend: PendNode, text: TextCanvasNode }),
+    () => ({ art: ArtNode, pend: PendNode, text: TextCanvasNode, workflowDecoration: WorkflowDecorationNode, workflowGroup: WorkflowGroupNode }),
     []
   );
   const edgeTypes = useMemo(() => ({ comet: CometEdge }), []);
@@ -3295,7 +3342,7 @@ export function CanvasClient() {
     );
     return multiSel
       .map((id) => byId.get(id))
-      .filter((art): art is Artwork => !!art && hasRenderableImage(art.image))
+      .filter((art): art is Artwork => !!art && !["workflow-decoration","workflow-placeholder"].includes(art.source || "") && hasRenderableImage(art.image))
       .sort((a, b) => {
         const ap = positions.get(a.id) ?? { x: a.canvasX ?? 0, y: a.canvasY ?? 0 };
         const bp = positions.get(b.id) ?? { x: b.canvasX ?? 0, y: b.canvasY ?? 0 };
@@ -3583,7 +3630,7 @@ export function CanvasClient() {
         style: { width: displayWidth, height: displayHeight },
       } as Node);
       for (const sourceId of Array.from(new Set([...(textNode.sourceIds ?? []), ...(textNode.productIds ?? [])]))) {
-        if (!active?.members.some((member) => member.id === sourceId)) continue;
+        if (!active?.members.some((member) => member.id === sourceId) && !textNodes.some(node => node.id === sourceId && node.projectKey === activeKey)) continue;
         displayEdges.push({
           id: `e-image-text-${sourceId}-${textNode.id}`,
           source: sourceId,
@@ -3614,6 +3661,28 @@ export function CanvasClient() {
       const settings=nodeSettings[node.id] || DEFAULT_CANVAS_SETTINGS;
       displayNodes[index]={...node,zIndex:settings.order,draggable:nodeSettingsReady && !readOnly && !settings.locked,
         data:{...node.data,settings,readOnly:readOnly || !nodeSettingsReady}};
+    }
+    for (const manifest of workflowManifests.filter(m => m.projectKey === activeKey)) {
+      const origins = new Map(manifest.origins.map(o => [o.id, o]));
+      const decorations = new Map(manifest.decorations.map(d => [d.id, d]));
+      for (let i = 0; i < displayNodes.length; i++) {
+        const node = displayNodes[i], origin = origins.get(node.id), decoration = decorations.get(node.id);
+        const artwork = active?.members.find(m => m.id === node.id);
+        if (decoration) displayNodes[i] = { ...node, type: "workflowDecoration", zIndex: -50000 + i, connectable: false,
+          data: { ...node.data, image: artwork?.image || decoration.image, rotation: decoration.rotation, flipX: decoration.flipX, opacity: decoration.opacity,
+            missingAsset: artwork?.source === "workflow-placeholder", onFill: () => artwork && workflowCallbacksRef.current.replace(artwork) } };
+        else if (origin) displayNodes[i] = { ...node, data: { ...node.data, workflowPresentation: origin,
+          missingAsset: artwork?.source === "workflow-placeholder", onFill: () => artwork && workflowCallbacksRef.current.replace(artwork) } };
+      }
+      for (const group of manifest.groups) {
+        const children = displayNodes.filter(n => group.members.includes(n.id));
+        if (!children.length) continue;
+        const left = Math.min(...children.map(n => n.position.x)), top = Math.min(...children.map(n => n.position.y));
+        const right = Math.max(...children.map(n => n.position.x + Number(n.style?.width || 320))), bottom = Math.max(...children.map(n => n.position.y + Number(n.style?.height || 180)));
+        displayNodes.push({ id: group.id, type: "workflowGroup", position: { x: left - 12, y: top - 58 }, style: { width: right - left + 24, height: bottom - top + 70, pointerEvents: "none" },
+          draggable: false, selectable: false, connectable: false, focusable: false, zIndex: -60000,
+          data: { title: group.title, onSelect: () => workflowCallbacksRef.current.select(children.map(n => n.id)) } });
+      }
     }
     // (React Flow 遇到重复 key 或悬空边会抛出 client-side exception → 白屏)
     const nSeen = new Set<string>();
@@ -3649,11 +3718,17 @@ export function CanvasClient() {
     nodeSettings,
     nodeSettingsReady,
     readOnly,
+    workflowManifests,
   ]);
 
   // 受控节点状态(支持拖拽);仅当底层数据/位置真正变化时重新灌入,拖拽过程中不重置。
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  function selectWorkflowGroup(ids: string[]) {
+    setSelectedId(null); setSelectedTextId(null); setSelectedPendId(null);
+    setRfNodes(current => current.map(node => ({ ...node, selected: ids.includes(node.id) })));
+    setMultiSel(ids);
+  }
   const previewRevealedRef = useRef(new Set<string>());
   useEffect(() => {
     const previews = rfNodes.filter(node => node.data.pending || node.data.generating);
@@ -3669,7 +3744,7 @@ export function CanvasClient() {
   const nodesSig = displayNodes
     .map(
       (n) =>
-        `${JSON.stringify([n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
+        `${JSON.stringify([n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content])}:${JSON.stringify([n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
           (n.data as { pending?: boolean }).pending ? 1 : 0
         }:${(n.data as { inChain?: boolean }).inChain ? 1 : 0}:${n.className ?? ""}:${
           Math.round((n.data as { progress?: number }).progress ?? -1)
@@ -5850,7 +5925,7 @@ export function CanvasClient() {
     if (act.kind === "move" || act.kind === "text-move") position(act.id,act[side],act.kind === "text-move");
     else if (act.kind === "move-many") act.moves.forEach(move => position(move.id,move[side]));
     else if (act.kind === "canvas-group") act.changes.forEach(change => operations.push({type:"group",id:change.id,value:change[side]}));
-    else if (act.kind === "mixed-delete") { visibility(act.artworks,undo); texts(act.textNodes,undo); }
+    else if (act.kind === "mixed-delete" || act.kind === "workflow-add") { const visible = act.kind === "mixed-delete" ? undo : !undo; visibility(act.artworks,visible); texts(act.textNodes,visible); }
     else if (act.kind === "delete" || act.kind === "add") visibility(act.records,act.kind === "delete" ? undo : !undo);
     else if (act.kind === "text-delete" || act.kind === "text-add") texts(act.records,act.kind === "text-delete" ? undo : !undo);
     else if (act.kind === "parent") operations.push({type:"parent",id:act.targetId,parentId:act.parentId,add:undo ? !act.added : act.added});
@@ -5859,6 +5934,7 @@ export function CanvasClient() {
     else if (act.kind === "art-size") operations.push({type:"size",id:act.id,...act[side]});
     else if (act.kind === "mark") act.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side]}));
     else if (act.kind === "node-settings") operations.push({type:"node-settings",id:act.id,text:act.text,settings:act[side]});
+    else if (act.kind === "workflow-fill") operations.push({type:"workflow-asset",id:act.id,assetOperationId:act.assetOperationId,filled:!undo});
     let operationId = historyAttemptsRef.current.get(act);
     if (!operationId) { operationId=browserRandomUUID(); historyAttemptsRef.current.set(act,operationId); }
     const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
@@ -5868,9 +5944,10 @@ export function CanvasClient() {
       const id=op.id as string;
       if (op.type === "visibility") {
         if (op.visible) {
-          const records = act.kind === "mixed-delete" ? act.artworks : (act as {records:Artwork[]}).records;
-          restoreWorksLocal(records.filter(record=>record.id===id));
-        } else removeWorksLocal([id]);
+          const records = act.kind === "mixed-delete" || act.kind === "workflow-add" ? act.artworks : (act as {records:Artwork[]}).records;
+          const record = records.find(record=>record.id===id);
+          if (record) setWorks(current=>[...(current || []).filter(node=>node.id!==id),record]);
+        } else setWorks(current=>current?.filter(node=>node.id!==id) ?? current);
       } else if (op.type === "text-restore") {
         const node=op.node as CanvasTextNode;
         setTextNodes(current=>[...current.filter(item=>item.id!==node.id),node]);
@@ -5882,6 +5959,7 @@ export function CanvasClient() {
         nodeSettingsRef.current=next;setNodeSettings(next);
       } else if (op.type === "position" && op.text) setTextNodes(current=>current.map(node=>node.id===id ? {...node,canvasX:op.x as number,canvasY:op.y as number} : node));
       else if (op.type === "text-patch") setTextNodes(current=>current.map(node=>node.id===id ? {...node,...op.fields as TextPatchFields} : node));
+      else if (op.type === "workflow-asset" && act.kind === "workflow-fill") setWorks(current=>current?.map(node=>node.id===id ? act[side] : node) ?? current);
       else setWorks(current=>current?.map(node=> {
         if (node.id!==id) return node;
         if (op.type === "position") return {...node,canvasX:op.x as number,canvasY:op.y as number};
@@ -5903,6 +5981,13 @@ export function CanvasClient() {
     for(const op of operations) {const id=(op.id || (op.node as CanvasTextNode|undefined)?.id) as string; unsavedTextRef.current.delete(id);}
     setUnsavedTextCount(unsavedTextRef.current.size);
     historyAttemptsRef.current.delete(act);
+    if (act.kind === "workflow-add") {
+      // Undoing the first import leaves an editable empty project, so redo stays
+      // reachable instead of the project-disappearance effect sending it to the grid.
+      if (undo && act.artworks.every(n=>active?.members.some(m=>m.id===n.id)) && (active?.members.length || 0) === act.artworks.length
+        && (active?.textNodes.length || 0) === act.textNodes.length) setCreatingNew(true);
+      if (!undo) { setCreatingNew(false); setActiveKey(act.textNodes[0]?.projectKey || `tree:${act.artworks[0]?.groupId || act.artworks[0]?.id}`); setBrowsing(false); }
+    }
   }
   async function doUndo() {
     if (!undoStack.length || historyBusyRef.current || readOnly) return;
@@ -5975,8 +6060,15 @@ export function CanvasClient() {
       let body:BodyInit;let headers:Record<string,string>|undefined;
       if(file){const fd=new FormData();fd.set("image",file);fd.set("id",artwork.id);fd.set("operationId",operationId);body=fd;}
       else{headers={"content-type":"application/json"};body=JSON.stringify({mode:"crop",id:artwork.id,operationId,crop});}
-      const response=await privateFetchRaw("/api/canvas/local-image-edit",{method:"POST",headers,body,signal:AbortSignal.timeout(60000)});
+      const filling = artwork.source === "workflow-placeholder" && Boolean(file);
+      const response=await privateFetchRaw(filling ? "/api/canvas/workflow-import/asset" : "/api/canvas/local-image-edit",{method:"POST",headers,body,signal:AbortSignal.timeout(60000)});
       const data=await expectJsonOk(response,L("图片编辑失败","Image edit failed"));
+      if (filling) {
+        const node = data.node as Artwork;
+        setWorks(current=>current?.map(item=>item.id===node.id ? node : item) ?? current);
+        pushUndo({kind:"workflow-fill",id:node.id,assetOperationId:data.assetOperationId,from:artwork,to:node});
+        localEditAttempt.current=null; flashTip("图片已补齐"); return;
+      }
       if(!data.id)throw new Error(t("canvas.genFail"));
       const fresh=await mergeWorks([data.id]);pushAddUndo(data.id,fresh);
       pendingNodeRef.current=data.id;setSelectedId(data.id);setSelectedTextId(null);setCropArtwork(null);localEditAttempt.current=null;
@@ -6319,7 +6411,7 @@ export function CanvasClient() {
     }
     if (source.startsWith("pend-") || target.startsWith("pend-")) return;
     if (target.startsWith("text-")) {
-      if (source.startsWith("text-")) return;
+      if (source.startsWith("text-")) { await updateTextReference(target, source, true); return; }
       const art = active?.members.find((member) => member.id === source);
       const textNode = textNodes.find((node) => node.id === target);
       if (!art || !textNode) return;
@@ -6416,6 +6508,7 @@ export function CanvasClient() {
     setEdgeCut(null);
     // 乐观:本地先去掉这条线,点击即刻有反馈
     setRfEdges((eds) => eds.filter((e) => e.id !== edge.id));
+    if (edge.source.startsWith("text-") && edge.target.startsWith("text-")) { await updateTextReference(edge.target, edge.source, false); return; }
     if (edge.source.startsWith("text-")) {
       const textNode = textNodes.find((node) => node.id === edge.source);
       if (!textNode) return;
@@ -6556,7 +6649,7 @@ export function CanvasClient() {
     try {
       await Promise.all(Array.from(textSaveQueuesRef.current.values()));
       if (unsavedTextRef.current.size) throw new Error(L("请先保存未保存的文字节点", "Save pending text changes first"));
-      const currentNodes = rfRef.current?.getNodes() ?? rfNodes;
+      const currentNodes = (rfRef.current?.getNodes() ?? rfNodes).filter(node => node.type !== "workflowGroup");
       const currentEdges = rfRef.current?.getEdges() ?? rfEdges;
       const artworkIds = new Set(active.members.map(member => member.id));
       const textIds = new Set(active.textNodes.map(node => node.id));
@@ -6695,6 +6788,11 @@ export function CanvasClient() {
     }
     const data = event.clipboardData;
     if (!data) return;
+    if (!isEditableClipboardTarget(event.target)) {
+      const box = canvasAreaRef.current?.getBoundingClientRect();
+      const point = rfRef.current?.screenToFlowPosition({ x: (box?.left ?? 0) + (box?.width ?? 0) / 2, y: (box?.top ?? 0) + (box?.height ?? 0) / 2 }, { snapToGrid: false }) || { x: 0, y: 0 };
+      if (workflowPaste.paste(data.getData("text/html"), point)) { event.preventDefault(); return; }
+    }
     const files = clipboardImageFiles(data);
     if (files.length) {
       event.preventDefault();
@@ -7128,14 +7226,19 @@ export function CanvasClient() {
     add: boolean
   ) {
     const textNode = textNodes.find((node) => node.id === textNodeId);
-    if (!textNode || !active?.members.some((member) => member.id === sourceId)) return;
+    if (!textNode || sourceId === textNodeId || (!active?.members.some((member) => member.id === sourceId) && !textNodes.some(node => node.id === sourceId && node.projectKey === textNode.projectKey))) return;
+    if (add) {
+      const todo = [textNodeId], visited = new Set<string>();
+      while (todo.length) { const id = todo.pop()!; if (id === sourceId) { flashTip("不能形成循环连线"); return; }
+        if (visited.has(id)) continue; visited.add(id); todo.push(...rfEdges.filter(edge=>edge.source===id).map(edge=>edge.target)); }
+    }
     const current = textNode.sourceIds ?? [];
-    if (add && !current.includes(sourceId) && current.length >= 5) {
+    if (add && !current.includes(sourceId) && ((sourceId.startsWith("text-") ? current.length >= 200 : current.filter(id => !id.startsWith("text-")).length >= 5))) {
       flashTip(t("canvas.textReferenceLimit"));
       return;
     }
     const sourceIds = add
-      ? Array.from(new Set([...current, sourceId])).slice(0, 5)
+      ? Array.from(new Set([...current, sourceId]))
       : current.filter((id) => id !== sourceId);
     const updated: CanvasTextNode = {
       ...textNode,
@@ -7170,7 +7273,7 @@ export function CanvasClient() {
         Math.min(TEXT_NODE_MAX_W, Math.max(TEXT_NODE_MIN_W, bounds.width))
       ),
       height: Math.round(
-        Math.min(TEXT_NODE_MAX_H, Math.max(TEXT_NODE_MIN_H, bounds.height))
+        Math.min(id.startsWith("text-import-") ? 100000 : TEXT_NODE_MAX_H, Math.max(TEXT_NODE_MIN_H, bounds.height))
       ),
       updatedAt: new Date().toISOString(),
     };
@@ -8784,6 +8887,7 @@ export function CanvasClient() {
             backgroundSize: "26px 26px",
           }}
         >
+          {!browsing && workflowPaste.status}
           {loading ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               {t("canvas.loading")}
@@ -9143,7 +9247,7 @@ export function CanvasClient() {
               onNodeContextMenu={onNodeContextMenu}
               onPaneContextMenu={onPaneContextMenu}
               onSelectionChange={({ nodes: sel, edges: selEdges }) => {
-                const ids = sel.map((n) => n.id).sort();
+                const ids = sel.filter(n => n.type !== "workflowGroup").map((n) => n.id).sort();
                 // 只在选中集合"真的变化"时才更新,否则会和受控选中态形成无限 setState 循环(React #185)
                 setMultiSel((prev) => {
                   const sortedPrev = [...prev].sort();
