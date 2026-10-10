@@ -62,6 +62,7 @@ export function isNewApiFlowImageModel(model: string) {
       model
     ) ||
     /^imagen-\d+(?:\.\d+)?-generate-preview-(?:landscape|portrait)$/i.test(model) ||
+    /^nano-banana-(?:pro|2(?:\.1)?)$/i.test(model) ||
     // 即梦 jimeng-free-api:chat/completions 流式生图协议与 new-api-flow 兼容
     /^jimeng-image-[a-z0-9][a-z0-9.-]*$/i.test(model)
   );
@@ -189,7 +190,7 @@ export async function getImageModelCatalog(email?: string | null, supplied?: Mod
     const model = snapshot.config.publicModels.find(p => p.id === m.id)!;
     const upstream = model.target.type === "upstream" ? snapshot.config.upstreamModels.find(u => u.id === model.target.id) : undefined;
     const protocol = upstream ? snapshot.config.providers.find(p => p.id === upstream.providerId)?.protocol : undefined;
-    return { ...m, provider: protocol === "new-api-flow" ? "new-api-flow" : "openai-images" };
+    return { ...m, provider: !model.supplierRouting && protocol === "new-api-flow" ? "new-api-flow" : "openai-images" };
   });
   const custom = email ? await getUserImageProvider(email) : null;
   if (custom?.baseUrl && custom.apiKey) for (const id of custom.models) managed.unshift({ id: userImageModelId(id), label: `自定义 · ${id}`, supportsEdit: custom.protocol === "chat-completions" || id.startsWith("gpt-image"), provider: custom.protocol === "chat-completions" ? "user-chat-completions" : "user-openai-images" });

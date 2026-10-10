@@ -16,7 +16,7 @@ import { assertToolScope, featureDefaultModel } from "./tool-scope";
 
 export type ExecutionModel = { requestedParameters?: import("./image-preset").ImageParameters; feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
 export type ExecutionConnection = { providerId: string; protocol: string; baseUrl: string; apiKey: string; wireModel: string; timeoutMs: number; credentialRef?: string; maxConcurrent?: number; options?: ModelProvider["options"] };
-type Dependencies = ValidationOptions & { runtime: Pick<ModelRuntime, "byVersion" | "prepareExecution"> & Partial<Pick<ModelRuntime, "validateExecutionProjection">>; credentials: ReturnType<typeof createCredentialStore>; gateway: () => { baseUrl: string; apiKey: string } };
+type Dependencies = ValidationOptions & { runtime: Pick<ModelRuntime, "byVersion" | "prepareExecution"> & Partial<Pick<ModelRuntime, "validateExecutionProjection">>; credentials: ReturnType<typeof createCredentialStore>; billingByVersion?:(version:number)=>Promise<ConfigSnapshot>; gateway: () => { baseUrl: string; apiKey: string } };
 const factsSchema = z.strictObject({ task: z.enum(["draft", "product", "detail", "layout"]), quality: z.string().max(10), resolution: z.enum(["1K", "2K", "4K"]), ratio: z.string().max(20).optional(), needsEdit: z.boolean(), needsMask: z.boolean().optional(), preserveIdentity: z.boolean(), needsText: z.boolean(), nativeResolution: z.boolean(), references: z.number().int().min(0).max(32), quantity: z.number().int().min(1).max(4).optional(), inputLength: z.number().int().min(0).max(1000000).optional() });
 const executionSchema = z.strictObject({ requestedParameters: z.strictObject({quality:z.string().max(20),resolution:z.string().max(20),ratio:z.string().max(20)}).optional(), feature: z.string().max(100).optional(), modelVersion: z.number().int().positive(), billingVersion: z.number().int().positive(), modelDigest: z.string().regex(/^[a-f0-9]{64}$/), publicModelId: z.string().max(100), binding: z.string().max(100), modality: z.enum(["image", "text", "video"]), target: z.strictObject({ type: z.enum(["upstream", "pool"]), id: z.string().max(100) }), credentialRef: z.uuid().optional(), routerDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), facts: factsSchema.optional() });
 export function createModelExecutor(deps: Dependencies) {
@@ -49,7 +49,15 @@ export function createModelExecutor(deps: Dependencies) {
       const u = snapshot.config.upstreamModels.find(u => u.id === id)!, p = snapshot.config.providers.find(p => p.id === u.providerId)!;
       return { providerId: p.id, protocol: p.protocol, baseUrl: p.baseUrl, apiKey: await deps.credentials.read(p.credentialRef!, p.id), credentialRef: p.credentialRef, wireModel: u.model, timeoutMs: p.timeoutMs, maxConcurrent: p.maxConcurrent, options: p.options };
     };
-    const scope: ModelExecutionScope = { frozen, connection: await connectionFor(upstream!.id), capabilities: upstream!.capabilities, parameterMap: upstream!.parameterMap, businessOption, procurement: upstream!.procurement };
+    const scope: ModelExecutionScope = { frozen, connection: await connectionFor(publicModel.supplierRouting?.channels.find(c=>c.enabled)?.upstreamId || upstream!.id), capabilities: upstream!.capabilities, parameterMap: upstream!.parameterMap, businessOption, procurement: upstream!.procurement };
+    if(publicModel.supplierRouting){
+      if(!deps.billingByVersion)throw new ModelConfigError("CONFIG_UNAVAILABLE","供应通道无法读取冻结计费版本",503);
+      const eligible=frozen.facts?new Set(simulateModel(snapshot,await deps.billingByVersion(frozen.billingVersion),publicModel.id,frozen.facts,deps).eligible.map(u=>u.upstreamId)):new Set(publicModel.supplierRouting.channels.filter(c=>c.enabled).map(c=>c.upstreamId));
+      const targets=await Promise.all(publicModel.supplierRouting.channels.filter(c=>c.enabled&&eligible.has(c.upstreamId)).map(async c=>{const u=snapshot.config.upstreamModels.find(u=>u.id===c.upstreamId)!;return {...c,scope:{frozen,connection:await connectionFor(u.id),capabilities:u.capabilities,parameterMap:u.parameterMap,procurement:u.procurement,audited:true}};}));
+      if(!targets.length)throw new ModelConfigError("MODEL_INCOMPATIBLE","没有符合本次参数的供应通道",400);
+      scope.supplierRouting={policy:publicModel.supplierRouting,targets};scope.connection={...scope.connection,protocol:"supplier-channels",wireModel:frozen.publicModelId};
+      scope.capabilities={...targets[0].scope.capabilities,edit:targets.some(c=>c.scope.capabilities.edit),generate:targets.some(c=>c.scope.capabilities.generate),maxReferenceImages:Math.max(...targets.map(c=>c.scope.capabilities.maxReferenceImages))};
+    }
     if (preset) Object.assign(scope,{ imagePreset: structuredClone(preset), audited:true });
     if (plan) {
       const targets = Object.fromEntries(await Promise.all(plan.targets.map(async id => {
@@ -81,7 +89,7 @@ export function createModelExecutor(deps: Dependencies) {
       const target = plan ? { type: "upstream" as const, id: plan.initialId } : model.target;
       const upstream = target.type === "upstream" ? config.upstreamModels.find(u => u.id === target.id)! : undefined;
       const provider = upstream ? config.providers.find(p => p.id === upstream.providerId)! : undefined;
-      if (upstream && !upstream.capabilities[input.feature==="canvas.assistant"?"vision":purpose.capability]) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
+      if (upstream && !model.supplierRouting && !upstream.capabilities[input.feature==="canvas.assistant"?"vision":purpose.capability]) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
       if (purpose.modality === "image" && input.facts) {
         const result = simulateModel(input.snapshot, input.billing, model.id, input.facts, deps);
         if (!result.eligible.length) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不满足图片质量、尺寸或参考要求", 400);
@@ -117,7 +125,7 @@ export function createModelExecutor(deps: Dependencies) {
 export async function getModelExecutor() {
   const { getModelAdministration } = await import("./server");
   const admin = await getModelAdministration();
-  return createModelExecutor({ runtime: admin.runtime, credentials: admin.credentials, trustedOrigins: admin.trustedOrigins,
+  return createModelExecutor({ runtime: admin.runtime,billingByVersion:version=>admin.billing.byVersion(version), credentials: admin.credentials, trustedOrigins: admin.trustedOrigins,
     gateway: () => ({ baseUrl: process.env.NAUMI_ROUTER_GENERATION_URL || "", apiKey: process.env.NAUMI_ROUTER_GENERATION_TOKEN || "" }) });
 }
 export async function withExecutionModel<T>(model: ExecutionModel, run: () => Promise<T>) { return (await getModelExecutor()).run(model, run); }

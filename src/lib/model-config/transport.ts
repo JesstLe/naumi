@@ -64,5 +64,5 @@ export function modelEndpointFetch(baseUrl: string, options: ValidationOptions =
   };
   // Acquire the local capacity gate FIRST: a locally rejected request is not a supplier attempt.
   const observed = provider && !provider.costDisabled ? supplierCostFetch(transport, { ...provider, baseUrl }) : transport;
-  return provider?.maxConcurrent && dbEnabled && process.env.NAUMI_ROUTER_MANAGEMENT_URL ? capacityFetch(observed, getPool(), { ...provider, baseUrl, maxConcurrent: provider.maxConcurrent }) : observed;
+  return !provider?.costScope?.capacityReserved && provider?.maxConcurrent && dbEnabled && process.env.NAUMI_ROUTER_MANAGEMENT_URL ? capacityFetch(observed, getPool(), { ...provider, baseUrl, maxConcurrent: provider.maxConcurrent }) : observed;
 }

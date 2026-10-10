@@ -1,6 +1,7 @@
 import { stageRoutingFetch } from "./stage-routing";
 import { apimartPresetFetch } from "./apimart-preset";
 import "server-only";
+import {channelRoutingFetch} from "./channel-fetch";
 import OpenAI from "openai";
 import { currentExecutionBundle, currentModelExecution, type ModelExecutionScope } from "./context";
 import { modelEndpointFetch } from "./transport";
@@ -13,6 +14,7 @@ const managedClients = new WeakSet<OpenAI>();
 export const isManagedModelClient = (client: OpenAI) => managedClients.has(client);
 
 export function executionFetch(scope: ModelExecutionScope, options: ValidationOptions = {}): typeof fetch {
+  if(scope.supplierRouting)return channelRoutingFetch(scope,options);
   if (scope.businessOption && !scope.audited) return stageRoutingFetch(scope, options);
   const { connection, frozen, parameterMap } = scope;
   if (scope.imagePreset && connection.protocol === "apimart-images") {
@@ -94,7 +96,7 @@ function flowImageFetch(scope: ModelExecutionScope, options: ValidationOptions):
   return async (input, init) => {
     try { return await submit(input, init); }
     catch (error) {
-      if (error instanceof ModelConfigError && ["MODEL_INCOMPATIBLE", "INVALID_REQUEST", "PROVIDER_BUSY"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_pre_submission", billing_status: "not_charged", code: error.code } }, { status: error.status });
+      if (error instanceof ModelConfigError && ["MODEL_INCOMPATIBLE", "INVALID_REQUEST", "PROVIDER_BUSY", "UPSTREAM_REJECTED_NOT_CHARGED"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_pre_submission", billing_status: "not_charged", code: error.code } }, { status: error.status });
       throw error;
     }
   };
