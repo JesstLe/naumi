@@ -4,6 +4,7 @@ import { currentModelExecution, type ModelExecutionScope } from "./model-config/
 import { ModelConfigError } from "./model-config/types";
 import { modelEndpointFetch } from "./model-config/transport";
 import { supplierCostFetch } from "./supplier-cost/collect";
+import {mapResolution} from "./model-config/resolution-policy";
 import {policyQuality} from "./model-config/quality-policy";
 
 export type NewApiReferenceImage = {
@@ -98,6 +99,7 @@ export async function generateNewApiImage(input: {
   const managed = scope?.connection.protocol === "new-api-flow" && (!input.settings || input.settings.baseUrl === scope.connection.baseUrl && input.settings.apiKey === scope.connection.apiKey);
   const wireModel = managed ? scope.connection.wireModel : input.model;
   const quality = managed && scope.parameterMap.qualityPolicy ? policyQuality(scope.parameterMap.qualityPolicy, scope.frozen.facts?.quality || input.quality) : undefined;
+  const mapSize=(body:Record<string,any>)=>mapResolution(body,managed?scope.parameterMap.resolutionPolicy:undefined,scope?.frozen.facts?.requestedResolution||scope?.frozen.facts?.resolution);
   const submit = managed ? modelEndpointFetch(settings.baseUrl, { trustedOrigins: input.trustedOrigins || (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, {...scope.connection,costScope:scope}) : supplierCostFetch(fetch,{providerId:"legacy-flow",apiKey:settings.apiKey,baseUrl:settings.baseUrl,wireModel,protocol:"new-api-flow"});
   if (!settings.baseUrl || !settings.apiKey) {
     throw new Error("New API 生图分组尚未配置");
@@ -110,7 +112,7 @@ export async function generateNewApiImage(input: {
     if (!["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9"].includes(ratio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "即梦接口未开放该比例", 400);
     const response = await observeModelCall(wireModel, () => submit(`${settings.baseUrl}/images/generations`, {
       method: "POST", headers: { Authorization: `Bearer ${settings.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: wireModel, prompt: input.prompt, ...(quality ? {quality} : {}), ratio, resolution: (scope?.frozen.facts?.resolution || "1K").toLowerCase(), n: 1, response_format: "b64_json", filePaths: references.map(image => `data:${image.mimeType};base64,${image.buffer.toString("base64")}`) }),
+      body: JSON.stringify(mapSize({ model: wireModel, prompt: input.prompt, ...(quality ? {quality} : {}), ratio, resolution: (scope?.frozen.facts?.resolution || "1K").toLowerCase(), n: 1, response_format: "b64_json", filePaths: references.map(image => `data:${image.mimeType};base64,${image.buffer.toString("base64")}`) })),
       signal: AbortSignal.any([input.signal || new AbortController().signal, AbortSignal.timeout(managed ? scope.connection.timeoutMs : 300_000)]),
     }), managed ? modelExecutionTelemetry(scope) : null);
     const raw = await response.text();
@@ -139,12 +141,12 @@ export async function generateNewApiImage(input: {
       Authorization: `Bearer ${settings.apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
+    body: JSON.stringify(mapSize({
       model: wireModel,
       ...(quality ? {quality} : {}),
       messages: [{ role: "user", content }],
       stream: true,
-    }),
+    })),
     signal: AbortSignal.any([input.signal || new AbortController().signal, AbortSignal.timeout(managed ? scope.connection.timeoutMs : 300_000)]),
   }), managed ? modelExecutionTelemetry(scope) : null);
   const raw = await response.text();

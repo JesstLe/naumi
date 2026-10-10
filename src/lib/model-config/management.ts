@@ -8,6 +8,7 @@ import { publicModelCatalog } from "./runtime";
 import { adminConfiguredFeature } from "./selection-policy";
 import { featureDefaultModel } from "./tool-scope";
 import type { FeatureId } from "../billing/rules/registry";
+import {resolutionConfiguration} from "./resolution-policy";
 import { qualityConfiguration, qualityPolicySchema } from "./quality-policy";
 
 export const MODEL_MANAGEMENT_PROTOCOLS = ["openai-images", "new-api-flow", "apimart-images", "openai-chat", "openai-videos"] as const;
@@ -26,6 +27,7 @@ export type ManagedModelRow = {
   routes: { upstreamId: string; model: string; providerId: string; provider: string; kind: string; enabled: boolean }[];
   preset: boolean; conditional: boolean; candidateIds: string[];
   canvasUnified?:boolean;
+  resolutionConfig?:ReturnType<typeof resolutionConfiguration>;
   qualityConfig?: ReturnType<typeof qualityConfiguration>;
   scopeOptions: {id:string;label:string;selected:boolean;available:boolean;adminDefault:boolean;reason?:string}[];
   pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").ManagedModelCreditPricing}[];
@@ -90,7 +92,7 @@ export function managedModelRows(snapshot: ModelSnapshot, catalogs: { feature: s
     }).map(c => c.id);
     row.scopeOptions = managedModelScopeOptions(row,eligibleCatalogs);
     row.canvasUnified = row.publicIds.every(id=>config.publicModels.find(m=>m.id===id)?.toolScope?.systems?.includes("canvas"));
-    if (row.modality === "image") row.qualityConfig = qualityConfiguration(config, [...new Set(row.routes.map(r => r.upstreamId))]);
+    if (row.modality === "image") {const ids=[...new Set(row.routes.map(r=>r.upstreamId))];row.qualityConfig=qualityConfiguration(config,ids);row.resolutionConfig=resolutionConfiguration(config,ids);}
   }
   return Array.from(rows.values());
 }

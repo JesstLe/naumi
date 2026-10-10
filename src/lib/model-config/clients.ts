@@ -9,6 +9,7 @@ import type { ValidationOptions } from "./schema";
 import { ModelConfigError } from "./types";
 import { appendImageGatewayFields } from "../image-gateway";
 import { supplierCostFetch } from "../supplier-cost/collect";
+import {mapResolution,RESOLUTION_FIELDS} from "./resolution-policy";
 import {policyQuality} from "./quality-policy";
 const managedClients = new WeakSet<OpenAI>();
 export const isManagedModelClient = (client: OpenAI) => managedClients.has(client);
@@ -41,12 +42,14 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
           if (wire === undefined) delete body.quality; else body.quality = wire;
         } else if (typeof body.quality === "string" && parameterMap.quality?.[body.quality as keyof typeof parameterMap.quality]) body.quality = parameterMap.quality[body.quality as keyof typeof parameterMap.quality];
         const resolution = frozen.facts?.resolution as keyof NonNullable<typeof parameterMap.resolution>;
-        if (resolution && parameterMap.resolution?.[resolution]) body.size = parameterMap.resolution[resolution];
+        if(parameterMap.resolutionPolicy)mapResolution(body,parameterMap.resolutionPolicy,frozen.facts?.requestedResolution||resolution);
+        else if (resolution && parameterMap.resolution?.[resolution]) body.size = parameterMap.resolution[resolution];
       }
       return body;
     };
     if (request.headers.get("content-type")?.includes("multipart/form-data")) {
       const form = await request.formData(); const fields = map(Object.fromEntries(Array.from(form.entries()).filter(([, value]) => typeof value === "string")));
+      if(parameterMap.resolutionPolicy)for(const field of RESOLUTION_FIELDS)if(!Object.prototype.hasOwnProperty.call(fields,field))form.delete(field);
       if (parameterMap.qualityPolicy?.mode === "omit") form.delete("quality");
       for (const [key, value] of Object.entries(fields)) if (typeof value === "string") form.set(key, value);
       const headers = new Headers(request.headers); headers.delete("content-type"); headers.delete("content-length");
