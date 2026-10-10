@@ -1,6 +1,8 @@
 # Naumi 多 Agent Git 与新机发布协作
 
 ## 当前固定版本（2026-10-10）
+- 最新新机业务源码82ec57084f9d7e8d05d242b4c9902ce7e55988b2，Image ID sha256:417f2b5b9bba2c80128bd9190b7a3ecf4d6650d545cadb5bc32459e8f7b27cf1，版号1791613905 / v2026.10.10-143145。分辨率显示/实际传参按供应通道映射，元数据默认与修订保护、冻结用户原始分辨率、真实JSON/multipart/Flow回退通过；合入同事9b80782工作台第二轮。用户要求沿用同事验收，仅必要构建/线上检查，付费0。模型v98/计费v8/完整配置/元数据和采购价指纹保持，锁释放、临时会话清理；证据/opt/naumi-staging/evidence/resolution-parameter-mapping-20261010。固定兼容回滚d777bf3 / sha256:c74040b5ac44b2799950441816b4c0c1a936aca3a29d45dfc6e42853d5bc9b3e，不能直接退到8cb严格旧schema。详见docs/changes/2026-10-10-resolution-parameter-mapping.md。用户随后要求自动判断接口参数名，该后续改进尚待完成。
+
 - 最新新机业务源码8cb835fe90f170b139918ebc3000bb13ec8f9f26，APP/Worker Image ID sha256:54c1fade2b5a89bc7f6453b02b5906722bcfe677f53facd7ac22dc3017af423c，版号1791612015 / v2026.10.10-140015。合入同事workbench-tools-ui、canvas-theme-toggle、canvas-smart-layout，保留隐藏质量档位及供应商fallback。26工具普通/受管三视口、明暗键盘/偏好/手机、复杂画布真实隔离DB事务/撤销/失败回滚及供应回归通过；额外质量全链模拟提交等待未完成，不记通过。用户最新要求沿用分支验收，后续仅必要兼容与发布健康/版本/页面冒烟。模型v98、计费v8、配置/草稿和切换前最新元数据库/价格指纹保持；完整备份/固定ba84回滚/证据 /opt/naumi-staging/evidence/colleague-updates-integration-20261010，最终健康/镜像/版号/冒烟通过、锁释放、临时会话清理。80e5b87为测试定位后续，业务源码不变；详见docs/changes/2026-10-10-colleague-updates-integration.md。
 
 - 最新新机业务源码ba84ea3e7c6d05b797338cc0de55427df8aeaaca，APP/Worker Image ID sha256:152de000953f139c39808182d41a966ecd656f33cbf42f9ab1f8c4612831ff8b，实际版号1791610783 / v2026.10.10-133943。共享质量菜单及独立生图页仅显示后台开放档位，关闭项隐藏，五档/三档/自定义名称/缓存关闭档回退与报价拒绝已验收；线上GPT五档、两款香蕉三档、画布/生图/手机通过，付费调用0。模型v98、计费v8、完整配置/草稿/元数据库和采购价格指纹保持；备份/固定95ac930回滚/证据 /opt/naumi-staging/evidence/quality-options-visibility-20261010，健康/镜像/版号核验、锁释放、临时会话清理。详见docs/changes/2026-10-10-quality-options-visibility.md；以下为历史版本，文档跟进不另发镜像。
