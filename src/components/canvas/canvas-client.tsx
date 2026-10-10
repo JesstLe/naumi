@@ -5,6 +5,7 @@ import type {FeatureId} from "@/lib/billing/types";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 import { copyText } from "@/lib/clipboard";
+import { createImageDownloadName } from "@/lib/download";
 import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters, canvasCombinationSupported } from "@/lib/canvas/generation-parameters";
 import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
@@ -6500,19 +6501,18 @@ export function CanvasClient() {
   }
 
   // 下载单张图
-  async function downloadOne(image: string, name: string) {
+  async function downloadOne(image: string) {
     try {
+      const filename = createImageDownloadName();
       const r = await fetch(
-        `/api/download?u=${encodeURIComponent(image)}&n=${encodeURIComponent(
-          (name || "image").replace(/[^\w.-]+/g, "_") + ".png"
-        )}`
+        `/api/download?u=${encodeURIComponent(image)}&n=${encodeURIComponent(filename)}`
       );
       if (!r.ok) throw new Error();
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(name || "image").replace(/[^\w.-]+/g, "_")}.png`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -10132,7 +10132,7 @@ export function CanvasClient() {
                         <Item
                           label={t("canvas.ctxDownload")}
                           onClick={() =>
-                            void downloadOne(node.image, node.title)
+                            void downloadOne(node.image)
                           }
                         />
                         {!readOnly && (
@@ -10586,7 +10586,7 @@ export function CanvasClient() {
                 aria-label={t("canvas.toolbar.downloadImage")}
                 disabled={!selected}
                 onClick={() =>
-                  selected && void downloadOne(selected.image, selected.title)
+                  selected && void downloadOne(selected.image)
                 }
                 className="canvas-ui-action flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[16px] leading-none transition-colors disabled:opacity-40"
               >
