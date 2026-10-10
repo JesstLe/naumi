@@ -18,8 +18,11 @@ type SavedConversation = { id: string; title: string; turns: CanvasAssistantTurn
 /** Presentation-only sidebar: the parent owns SSE, context, model routing and billing. */
 export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns, input, busy, error,
   costLabel, labels, tasks, onInputChange, onSend, onNewChat, onRestoreChat, onClose, onPreview,
-  onCopy, renderContent, modelControl,
+  onCopy, renderContent, modelControl, open = true, focusInput = true, contextReady = true,
 }: {
+  open?: boolean;
+  focusInput?: boolean;
+  contextReady?: boolean;
   light: boolean;
   anchorTitle: string;
   contextImages: { id: string; title: string; image: string }[];
@@ -74,10 +77,11 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
     return () => media.removeEventListener("change", update);
   }, []);
   useEffect(() => {
+    if (!open || !focusInput) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     composer.current?.focus({ preventScroll: true });
     return () => { if (previous?.isConnected) previous.focus({ preventScroll: true }); };
-  }, []);
+  }, [open, focusInput]);
   useEffect(() => {
     const field = composer.current;
     if (!field) return;
@@ -92,7 +96,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
     const observer = new ResizeObserver(resize);
     if (host) observer.observe(host);
     return () => observer.disconnect();
-  }, [input, historyOpen]);
+  }, [input, historyOpen, open]);
   useEffect(() => {
     if (keepAtBottom.current && scrollArea.current) {
       scrollArea.current.scrollTop = scrollArea.current.scrollHeight;
@@ -123,11 +127,12 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
     composer.current?.focus({ preventScroll: true });
   }
 
+  if (!open) return null;
   return <>
   {overlay && <div data-testid="canvas-assistant-backdrop" aria-hidden="true" className="absolute inset-0 z-30 bg-[var(--canvas-ui-mask)]" onPointerDown={onClose} />}
-  <aside data-testid="canvas-assistant-panel" aria-label={labels.title} role={overlay ? "dialog" : "complementary"} aria-modal={overlay || undefined} data-canvas-hotkeys-blocked="true"
+  <aside id="canvas-agent-panel" data-testid="canvas-assistant-panel" aria-label={labels.title} role={overlay ? "dialog" : "complementary"} aria-modal={overlay || undefined} data-canvas-hotkeys-blocked={overlay ? "true" : "false"} data-canvas-hotkeys-scope="assistant"
     className={cn("canvas-ui-surface canvas-ui-surface-solid canvas-ui-side-panel z-40 flex min-h-0 flex-col overflow-hidden rounded-[24px] border shadow-[0_4px_24px_rgba(15,23,42,0.05)]",
-      "absolute bottom-2 right-2 top-2 w-[min(400px,calc(100%-1rem))] !rounded-[24px] min-[1024px]:relative min-[1024px]:inset-auto min-[1024px]:my-2 min-[1024px]:mr-2 min-[1024px]:w-[400px] min-[1024px]:shrink-0",
+      "absolute bottom-2 right-2 top-2 w-[min(360px,calc(100%-1rem))] !rounded-[24px] min-[1024px]:relative min-[1024px]:inset-auto min-[1024px]:my-2 min-[1024px]:mr-2 min-[1024px]:w-[360px] min-[1024px]:shrink-0",
       light ? "canvas-ui-light" : "canvas-ui-dark")}
     onKeyDown={event => {
       if (overlay && event.key === "Tab") {
@@ -211,12 +216,12 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
       <div ref={referenceArea} data-testid="canvas-assistant-composer" className="relative rounded-[20px] border border-[var(--canvas-ui-border)] p-3 shadow-[0_2px_12px_rgba(15,23,42,0.02)] transition-[border-color,box-shadow] focus-within:border-[var(--canvas-ui-border-strong)] focus-within:shadow-[0_0_0_3px_var(--canvas-ui-soft)]">
         <div className="mb-2 flex min-w-0 items-center justify-between gap-2">
           <span className="canvas-ui-muted inline-flex items-center gap-1.5 px-0.5 text-[11px] font-medium"><ImageIcon className="h-3 w-3" aria-hidden="true" />{labels.mode}</span>
-          <button type="button" title={anchorTitle} aria-label={labels.references} aria-expanded={referencesOpen}
+          {contextReady && <button type="button" title={anchorTitle} aria-label={labels.references} aria-expanded={referencesOpen}
             className="canvas-ui-action flex min-w-0 max-w-[160px] items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px]" onClick={() => setReferencesOpen(open => !open)}>
             <span className="flex shrink-0 -space-x-2" aria-hidden="true">{contextImages.slice(0, 2).map(image => <span key={image.id} className="canvas-ui-surface-solid h-5 w-5 overflow-hidden rounded border border-[var(--canvas-ui-border)]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={image.image} alt="" className="h-full w-full object-cover" /></span>)}</span><span className="truncate">{anchorTitle}</span><span className="canvas-ui-section shrink-0 rounded px-1 text-[10px] tabular-nums">{contextImages.length}</span>
-          </button>
+          </button>}
         </div>
         {referencesOpen && <div data-testid="canvas-assistant-references" className="canvas-ui-surface canvas-ui-surface-solid absolute bottom-[calc(100%+8px)] left-0 right-0 rounded-[16px] border p-3 shadow-lg">
           <div className="mb-2 flex items-center justify-between text-[12px] font-semibold"><span>{labels.references}</span><button type="button" aria-label={labels.closeReferences} className={iconButton} onClick={() => setReferencesOpen(false)}><X className="h-3.5 w-3.5" /></button></div>
@@ -232,22 +237,21 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           placeholder={labels.placeholder} onChange={event => onInputChange(event.target.value)}
           onKeyDown={event => {
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault(); event.stopPropagation(); if (!busy && input.trim()) onSend();
+              event.preventDefault(); event.stopPropagation(); if (!busy && contextReady && input.trim()) onSend();
             }
           }}
           className="canvas-ui-text block min-h-[64px] max-h-36 w-full resize-none border-0 bg-transparent p-0 text-[13px] leading-6 outline-none placeholder:text-[var(--canvas-ui-muted)] disabled:opacity-60" />
         <div className="mt-2 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <button ref={referenceTrigger} type="button" aria-label={labels.references} title={labels.references} aria-expanded={referencesOpen} className={cn(iconButton, "canvas-ui-control rounded-full")} onClick={() => setReferencesOpen(open => !open)}><Plus className="h-4 w-4" aria-hidden="true" /></button>
-            <span className="canvas-ui-muted inline-flex items-center gap-1.5 text-[12px] font-semibold"><InfinityIcon className="h-4 w-4" aria-hidden="true" />{labels.agent}</span>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <button ref={referenceTrigger} type="button" disabled={!contextReady} aria-label={labels.references} title={labels.references} aria-expanded={referencesOpen} className={cn(iconButton, "canvas-ui-control rounded-full")} onClick={() => setReferencesOpen(open => !open)}><Plus className="h-4 w-4" aria-hidden="true" /></button>
+            {modelControl ? <div className="min-w-0 flex-1" data-testid="canvas-assistant-model">{modelControl}</div> : <span className="canvas-ui-muted inline-flex items-center gap-1.5 text-[12px] font-semibold"><InfinityIcon className="h-4 w-4" aria-hidden="true" />{labels.agent}</span>}
           </div>
-          <button type="button" aria-label={labels.send} title={labels.send} disabled={busy || !input.trim()} onClick={onSend}
+          <button type="button" aria-label={labels.send} title={labels.send} disabled={busy || !contextReady || !input.trim()} onClick={onSend}
             className="canvas-ui-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-85 disabled:opacity-35">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ArrowUp className="h-[18px] w-[18px]" aria-hidden="true" />}
           </button>
         </div>
       </div>
-      {modelControl && <div className="mt-2" data-testid="canvas-assistant-model">{modelControl}</div>}
       <p className="canvas-ui-muted mt-2 text-center text-[10px] leading-4">{costLabel}</p>
     </footer>
   </aside>
