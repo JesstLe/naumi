@@ -4,7 +4,8 @@ import type { Pool } from "pg";
 import { discoverProviderCatalog, type ProviderCatalogResult } from "./catalog";
 import type { ModelProvider } from "./types";
 import type { createCredentialStore } from "./credentials";
-import {ingestSupplierDirectory} from "../supplier-models/repository";
+import {ingestSupplierSources} from "../supplier-models/repository";
+import {discoverPublicSupplierDirectory} from "../supplier-models/discovery";
 
 export const PROVIDER_CATALOG_SQL = `CREATE TABLE IF NOT EXISTS app_model_provider_catalog(
  fingerprint text PRIMARY KEY,provider_id text NOT NULL,result jsonb NOT NULL,last_success_at timestamptz,
@@ -16,8 +17,9 @@ async function ensure(pool:Pool){let p=ready.get(pool);if(!p){p=(async()=>{const
 const fingerprint=(p:ModelProvider)=>createHash('sha256').update(JSON.stringify([p.id,p.baseUrl,p.protocol,p.credentialRef||null])).digest('hex');
 function entry(row:any,p:ModelProvider):CatalogEntry{
   const result=row?.result as ProviderCatalogResult|undefined;
+  const {sourceModels: _internalSource, ...publicResult} = result || {status:'empty' as const,models:[],fetchedAt:''};
   const stale=!row||Date.now()-new Date(row.updated_at).getTime()>=(result?.status==='ok'||result?.status==='empty'?300000:60000);
-  return {...(result||{status:'empty',models:[],fetchedAt:''}),providerId:p.id,name:p.name,protocol:p.protocol,cached:!!row,stale,...(row?.last_success_at?{lastSuccessAt:new Date(row.last_success_at).toISOString()}:{})};
+  return {...publicResult,providerId:p.id,name:p.name,protocol:p.protocol,cached:!!row,stale,...(row?.last_success_at?{lastSuccessAt:new Date(row.last_success_at).toISOString()}:{})};
 }
 export async function readProviderCatalog(pool:Pool,providers:ModelProvider[]){
   await ensure(pool);
@@ -38,10 +40,15 @@ export async function refreshProviderCatalog(pool:Pool,p:ModelProvider,credentia
       const success=['ok','empty'].includes(result.status),saved={...result,models:success?result.models:old?.result.models||[]};
       const row=(await tx.query(`INSERT INTO app_model_provider_catalog(fingerprint,provider_id,result,last_success_at) VALUES($1,$2,$3::jsonb,CASE WHEN $4 THEN now() ELSE NULL END)
         ON CONFLICT(fingerprint) DO UPDATE SET result=EXCLUDED.result,last_success_at=COALESCE(EXCLUDED.last_success_at,app_model_provider_catalog.last_success_at),updated_at=now() RETURNING *`,[fingerprint(p),p.id,JSON.stringify(saved),success])).rows[0];
-      await tx.query('COMMIT');return {...entry(row,p),cached:false};
+      await tx.query('COMMIT');return {...entry(row,p),cached:false,sourceModels:result.sourceModels};
     }catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
   })();
   // Release discovery's connection before advisory metadata writes: parallel refreshes must not exhaust the pool.
-  if(discovered.models.length){const metadataSaved=await ingestSupplierDirectory(pool,p,discovered.models).then(()=>true,()=>false);return {...discovered,metadataSaved};}
+  if(!discovered.cached && !discovered.refreshing && ["ok","empty"].includes(discovered.status)){
+    const published = await discoverPublicSupplierDirectory(p,trustedOrigins,fetcher);
+    const metadataSaved=await ingestSupplierSources(pool,p,{...discovered,models:discovered.sourceModels || discovered.models},published).then(()=>true,()=>false);
+    const {sourceModels: _internalSource, ...result} = discovered;
+    return {...result,metadataSaved};
+  }
   return discovered;
 }

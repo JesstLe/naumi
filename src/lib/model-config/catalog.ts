@@ -4,8 +4,9 @@ import { validateModelEndpoint } from "./schema";
 import type { createCredentialStore } from "./credentials";
 import type { ModelProvider } from "./types";
 import { readBounded } from "../supplier-cost/io";
+import { cleanSource } from "../supplier-models/discovery";
 
-export type ProviderCatalogModel = { id: string; label: string; ownedBy?: string };
+export type ProviderCatalogModel = { id: string; label: string; ownedBy?: string; sourceMetadata?: Record<string, any> };
 export type ProviderCatalogResult = {
   providerId: string;
   name: string;
@@ -15,6 +16,7 @@ export type ProviderCatalogResult = {
   fetchedAt: string;
   error?: string;
   truncated?: boolean;
+  sourceModels?: ProviderCatalogModel[];
 };
 
 const catalogProtocols = new Set(["openai-images", "new-api-flow", "openai-chat", "apimart-images", "apimart", "openai-videos"]);
@@ -27,7 +29,7 @@ function catalogUrl(baseUrl: string, protocol: string) {
   return base.toString();
 }
 
-function parseModels(body: any): { models: ProviderCatalogModel[]; truncated: boolean } {
+function parseModels(body: any): { models: ProviderCatalogModel[]; sourceModels: ProviderCatalogModel[]; truncated: boolean } {
   const rows = Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : null;
   if (!rows) throw new Error("catalog-invalid-schema");
   if(rows.length>10000)throw new Error("catalog-too-many-models");
@@ -37,9 +39,10 @@ function parseModels(body: any): { models: ProviderCatalogModel[]; truncated: bo
     const ownedBy = typeof row?.owned_by === "string" ? row.owned_by.slice(0, 100) : undefined;
     if (!identifier(id) || seen.has(id)) return null;
     seen.add(id);
-    return { id, label: typeof row?.name === "string" && row.name.trim() ? row.name.trim().slice(0, 160) : id, ...(ownedBy ? { ownedBy } : {}) };
+    const raw = typeof row === "object" && row ? cleanSource(row) : undefined;
+    return { id, label: typeof row?.name === "string" && row.name.trim() ? row.name.trim().slice(0, 160) : id, ...(ownedBy ? { ownedBy } : {}), ...(raw && JSON.stringify(raw).length <= 30000 ? {sourceMetadata: raw} : {}) };
   }).filter(Boolean) as ProviderCatalogModel[];
-  return { models: models.slice(0,600), truncated: models.length>600 || !!body.has_more || !!body.next_page };
+  return { models: models.slice(0,600), sourceModels: models, truncated: !!body.has_more || !!body.next_page };
 }
 
 export async function discoverProviderCatalog(
@@ -61,8 +64,8 @@ export async function discoverProviderCatalog(
     const text = await readBounded(response);
     let body: unknown;
     try { body = JSON.parse(text); } catch { return { ...base, status: "error", models: [], error: "供应商目录不是有效 JSON" }; }
-    const {models,truncated} = parseModels(body);
-    return { ...base, status: models.length ? "ok" : "empty", models, truncated };
+    const {models,sourceModels,truncated} = parseModels(body);
+    return { ...base, status: models.length ? "ok" : "empty", models, sourceModels, truncated };
   } catch (error) {
     const code = error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name) ? "目录连接超时，请检查上游网络或服务端代理配置" : error instanceof Error && /^supplier-query-http-\d+$/.test(error.message) ? error.message : "目录暂时不可用，请检查接口协议、地址或网络连接";
     return { ...base, status: "error", models: [], error: code };

@@ -147,7 +147,12 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       }
       staged = true;
       const publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "channels" ? `供应通道 ${body.rowId}` : body.action === "resolutions" ? `分辨率选项 ${body.rowId}` : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
-      return biJson({ publication }, publication.phase === "applied" ? 200 : publication.phase === "failed" ? 422 : 202);
+      let discovery;
+      if (body.action === "connect" && publication.phase === "applied") {
+        const provider = (await admin.repo.current()).config.providers.find(p=>p.id===`mvp-${body.id}`);
+        if(provider) discovery = await refreshProviderCatalog(admin.pool,provider,admin.credentials,admin.trustedOrigins,deps.fetcher).then(r=>({status:r.status,metadataSaved:r.metadataSaved===true}),()=>({status:"error",metadataSaved:false}));
+      }
+      return biJson({ publication, ...(discovery?{discovery}:{}) }, publication.phase === "applied" ? 200 : publication.phase === "failed" ? 422 : 202);
     } catch (e) {
       if(e instanceof BillingError)return biJson({error:e.message,code:e.code,operationNotStaged:["CONFIG_CONFLICT","INVALID_CONFIG","OPERATION_CONFLICT"].includes(e.code)},e.status);
       if (e instanceof ModelConfigError) return biJson({ error: e.message, code: e.code, operationNotStaged: !staged || ["CONFIG_CONFLICT", "DRAFT_CONFLICT", "PUBLICATION_PENDING"].includes(e.code) }, e.status);

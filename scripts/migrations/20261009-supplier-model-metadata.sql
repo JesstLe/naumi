@@ -1,3 +1,8 @@
+CREATE TABLE IF NOT EXISTS app_supplier_source_snapshots(
+ provider_id text NOT NULL,kind text NOT NULL,source_url text NOT NULL,content_hash text NOT NULL,
+ source_data jsonb NOT NULL,first_seen_at timestamptz NOT NULL DEFAULT now(),last_seen_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(provider_id,kind,content_hash)
+);
 CREATE TABLE IF NOT EXISTS app_supplier_model_metadata(
  id uuid PRIMARY KEY,provider_id text NOT NULL,provider_name text NOT NULL,model_id text NOT NULL,label text NOT NULL,catalog_owner text NOT NULL DEFAULT '',
  family text NOT NULL DEFAULT '',brand text NOT NULL DEFAULT '',modality text NOT NULL DEFAULT 'unknown',capability_state text NOT NULL DEFAULT 'unknown',
