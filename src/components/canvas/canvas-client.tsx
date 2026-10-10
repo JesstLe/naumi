@@ -8298,7 +8298,7 @@ export function CanvasClient() {
         label: (
           <span className="flex min-w-0 items-center justify-between gap-3">
             <span className="flex min-w-0 items-center gap-2">
-              <ModelIcon modelId={item.id} size={16} />
+              <ModelIcon modelId={item.id} modelName={item.label} size={16} />
               <span className="truncate">{item.label}</span>
             </span>
             {!item.supportsEdit && (
@@ -8311,7 +8311,7 @@ export function CanvasClient() {
       triggerClass="canvas-ui-control flex h-8 max-w-[190px] cursor-pointer items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold disabled:cursor-default disabled:opacity-70"
       trigger={
         <>
-          <ModelIcon modelId={genModel} size={15} />
+          <ModelIcon modelId={genModel} modelName={activeImageModelLabel} size={15} />
           <span data-testid="canvas-generation-model" className="truncate" title={t("canvas.dockModelHint")}>
             {activeImageModelLabel || t("canvas.dockModel")}
           </span>

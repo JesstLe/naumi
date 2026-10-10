@@ -1,0 +1,113 @@
+{
+  "package": "@lobehub/icons",
+  "version": "5.23.0",
+  "license": "MIT",
+  "website": "https://lobehub.com/zh/icons",
+  "repository": "https://github.com/lobehub/lobe-icons",
+  "tarball": "https://registry.npmjs.org/@lobehub/icons/-/icons-5.23.0.tgz",
+  "tarballSha256": "3f5229535025b6fc0669424361d97076b206bde0fd63b9659ec256a75fc469d6",
+  "assets": {
+    "NanoBananaColor": {
+      "file": "package/es/NanoBanana/components/Color.js",
+      "sha256": "b2d126a1282fca9f1a0cbe17637874942045e61c7c13469dd77aa75d25bec371",
+      "paths": 6,
+      "svgPathsSha256": "46e4fb7168a66333531d920cf395537dd314085a426b34455e8d01223529050f"
+    },
+    "GoogleColor": {
+      "file": "package/es/Google/components/Color.js",
+      "sha256": "1748bc360465cf24eccd08687e0882fe400a49366dc9873435de9b25e04ce176",
+      "paths": 4,
+      "svgPathsSha256": "95fdb21889b129394a85ed24b175722e57845e6e227f37b10ad5ef4797f6129b"
+    },
+    "OpenAIMono": {
+      "file": "package/es/OpenAI/components/Mono.js",
+      "sha256": "8d1436c79980dc19058f50b21139dde6b16165bbcb0acfd7b997b40bd34050f7",
+      "paths": 1,
+      "svgPathsSha256": "417519aa39cd4e2360a6c20e5ba802c1e3ee6a38eb8220b02ae8523e1897b21f"
+    },
+    "ClaudeColor": {
+      "file": "package/es/Claude/components/Color.js",
+      "sha256": "03a109147e3bb4ab8c38cc97bdd3e88776a363fb7e16d2925930b27e62644a93",
+      "paths": 1,
+      "svgPathsSha256": "7c9c195500ec3caed3a183d8f8758a2252955ee76af691b3fc5c20b3cd8caa58"
+    },
+    "DeepSeekColor": {
+      "file": "package/es/DeepSeek/components/Color.js",
+      "sha256": "9a5970d0bd2f03e7bad527c79ce4e123c512880c1618134203e661fbd7bed14f",
+      "paths": 1,
+      "svgPathsSha256": "bd44b1c84829f788c23af49103c012d4dad2cc9a424fedfb6db8a580d9545acd"
+    },
+    "QwenColor": {
+      "file": "package/es/Qwen/components/Color.js",
+      "sha256": "fc6cb50ed89a8d615f966425933cc8f242931241818d69de4995f934957b85e4",
+      "paths": 1,
+      "svgPathsSha256": "d3955dd900dfc7b9ed9cc091499997871cd29aa3b837e1823a20fe07301f0ee5"
+    },
+    "GrokMono": {
+      "file": "package/es/Grok/components/Mono.js",
+      "sha256": "a6c6ef35668e728cb6719f9fb3509db873d193c295a673008eca2cc6045fcfb0",
+      "paths": 1,
+      "svgPathsSha256": "b1c7535771ab4ca56c3678ac60cdbaccbcf7f7e53c6343717332e20bbb0c546b"
+    },
+    "KimiMono": {
+      "file": "package/es/Kimi/components/Mono.js",
+      "sha256": "0f210bff499774a3e3dba2a27725db803022a17c6fbc30292822063606bcce19",
+      "paths": 2,
+      "svgPathsSha256": "d0f62b661c08ea23f6b5659205d665509f92dce9d9cf9ff95a7173a7a12be7d6"
+    },
+    "DoubaoColor": {
+      "file": "package/es/Doubao/components/Color.js",
+      "sha256": "3dc1070361a28c2e4533092bdedbad6c187f9f5505973a228fafd6799a0342a2",
+      "paths": 4,
+      "svgPathsSha256": "91199983096f5f7097dfc89f509083c79bf4ae0b38e7fa78fd45428213548147"
+    },
+    "JimengColor": {
+      "file": "package/es/Jimeng/components/Color.js",
+      "sha256": "d5899bef6ff39c90a0c70cbb499657791403b5ebed93d512121348b6b3da0cac",
+      "paths": 2,
+      "svgPathsSha256": "8156babe6f9223a228933252098ac8aa0dedbdab617cf054580bf3e2a5b68c95"
+    },
+    "MinimaxMono": {
+      "file": "package/es/Minimax/components/Mono.js",
+      "sha256": "fb345242dcc5b0605c79cf4295470f7be650bc40356ba1fb81bba35f467d031a",
+      "paths": 1,
+      "svgPathsSha256": "feb4b3e101899b47720e511179ea5d64cb28c9eb82d6259b688c45288f8a55af"
+    },
+    "MistralMono": {
+      "file": "package/es/Mistral/components/Mono.js",
+      "sha256": "a96bce5c9122c4bddfae23642fdee4e800a2edca63372e2828756bfc06a69a9d",
+      "paths": 1,
+      "svgPathsSha256": "49383b76763f4b4fc2879b68b946e3912b2cdeb6fefceacac9a8f46043e4980a"
+    },
+    "ZhipuMono": {
+      "file": "package/es/Zhipu/components/Mono.js",
+      "sha256": "c6626fac1909101c49c5ddb8c6de91391ae4130d68040402bdddee0bb6da3e8d",
+      "paths": 1,
+      "svgPathsSha256": "b01bcdadb70a10bae9119b4847302691f3c10be99ee77652df81634bb207b318"
+    },
+    "MetaMono": {
+      "file": "package/es/Meta/components/Mono.js",
+      "sha256": "68717b5a42833e9fd4caf50730279f670f8bcc7da9e3a826a41b3b2ffdbb5cc5",
+      "paths": 1,
+      "svgPathsSha256": "03e50d8e230c5499ba3d3e8acc8eb2f186aff63516509e3df78a2509bc5db861"
+    },
+    "GeminiMono": {
+      "file": "package/es/Gemini/components/Mono.js",
+      "sha256": "ba273c8532310e85c90aaaf0311de23d92e5c7abe3eca069e7d7f41962e3f438",
+      "paths": 1,
+      "svgPathsSha256": "3cdeb9521c4294cbcba96aa138286847561b2d87231b4d4f3fb836795ecdeed9"
+    },
+    "WenxinMono": {
+      "file": "package/es/Wenxin/components/Mono.js",
+      "sha256": "346179146c034e636851e22ce390a50b4b25b59dc3aa8d341c820e0028339950",
+      "paths": 1,
+      "svgPathsSha256": "841bdb5b66bbe22cc19498bf13ccd96d27880359e5778a12e8f1491c61543867"
+    },
+    "HunyuanMono": {
+      "file": "package/es/Hunyuan/components/Mono.js",
+      "sha256": "147aaacc8923dc2b867e1eeeaeb659728ecf7283f73145934d94d458f512cc3d",
+      "paths": 1,
+      "svgPathsSha256": "47918685199cb283a18833766832dede24d3737dac9bcc82182dfba5235d64c6"
+    }
+  }
+}
