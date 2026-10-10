@@ -70,6 +70,7 @@ for (const [name, asset] of Object.entries(provenance.assets)) {
   const paths = [...fn.getText(svgAst).matchAll(/\bd="([^"]+)"/g)].map(m => m[1]);
   assert.equal(paths.length, asset.paths);
   assert.equal(createHash("sha256").update(paths.join("\n")).digest("hex"), asset.svgPathsSha256);
+  for (const color of asset.colors || []) assert.ok(fn.getText(svgAst).includes(color), `${name}: source color ${color}`);
 }
 assert.match(fs.readFileSync(path.join(root, "docs/licenses/lobehub-icons/LICENSE"), "utf8"), /MIT License/);
 console.log("ASSETS=PASS LOBEHUB_VERSION=5.23.0 LOCAL_SVG_GEOMETRY_HASHES=17 LICENSE=MIT");
