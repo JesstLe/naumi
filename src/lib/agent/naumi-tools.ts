@@ -1,5 +1,7 @@
 import { Type, type TSchema } from "typebox";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { createCreativeTools } from "./creative-tools";
+import { CREATIVE_AGENT_TOOLS, CREATIVE_TOOL_FEATURES } from "./creative-tool-catalog";
 import type { CanvasAgentContext } from "./canvas-context";
 import {dataUrlToBytes,isManagedImageUrl,readManagedObject} from "../storage";
 
@@ -34,6 +36,7 @@ const TOOL_TIMEOUT_MS = {
   plan_video_storyboard: 15_000,
   extend_video: 300_000,
   edit_video: 300_000,
+  creative_tool: 300_000,
   read_only: 15_000,
 } as const;
 
@@ -79,6 +82,15 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 - scm_preflight:只读。校验商品资料 JSON 是否齐备可上架(供应商/品牌/条码/图片槽位/类目),输出大白话缺件清单。用户要上架时先跑这个。
 - scm_doctor:只读。SCM 环境体检(专用浏览器/登录状态)。
 ⚠️ 自动填表与提交发布不开放给 Agent——按 skill 两道闸门,需人工在浏览器核对后执行。
+
+## 创作中心完整工具
+- 抠图/抠头像：cutout_image / cutout_avatar；高清修复：upscale_image；局部改图：inpaint_image（必须用户提供遮罩）。
+- 风格/融合/裂变：transfer_style / fuse_images / generate_variations；去水印：remove_watermark。
+- 服装：try_on_clothing / extract_garment / generate_garment_3d / dewrinkle_clothing；印花：extract_print。
+- 标题/侵权/印刷：generate_titles / check_image_ip / prepare_print_file。
+- 竞品：list_competitor_items → import_competitor_image（有需要时）→ analyze_competitor / replicate_competitor / edit_competitor；使用真实revision与用户选区，不猜测。
+- list_agent_tools 可查询各工具入口与schema。Agent任务是编排入口，不递归调用自己。
+- 所有工具复用各自现有配置。返回未配置/失败时如实反馈，不把静态产物或示例当完成。
 
 ## 工作规则
 0. 鱼塘工具的修改类操作(create/update)会直接改动真实业务数据——执行前必须向用户复述将要做出的改动并获得确认;用户已明确指令时可直接执行并汇报结果。
@@ -241,7 +253,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       await sleep(5000, signal);
       const d = await internal(`${path}?job=${encodeURIComponent(jobId)}`, signal);
       if (d.status === "done") return d;
-      if (d.status === "error") throw new Error(d.error || "任务失败");
+      if (["error","failed","cancelled"].includes(d.status)) throw new Error(d.error || "任务失败");
     }
     throw new Error("任务超时");
   }
@@ -776,6 +788,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         "文生图/图生图:按提示词生成电商商品图。计费由后台当前规则报价，包含数量、模型、质量和尺寸。",
       parameters: Type.Object({
         quality: Type.Optional(Type.Union(["low","medium","high","xhigh","max"].map(value => Type.Literal(value)), { description: "图像质量；省略时使用用户当前所选档位" })),
+        image_urls: Type.Optional(Type.Array(Type.String(), {maxItems:5,description:"用户明确提供的参考图URL；画布省略时引用当前图及上游"})),
         prompt: Type.String({ description: "画面描述,越具体越好" }),
         ratio: Type.Union(
           [
@@ -814,24 +827,29 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           model?: string;
           quality?: string;
         };
+        const options=params as Record<string,any>;
+        const nativeFeature=!!options._category;
         const fd = new FormData();
+        if (options._category)fd.append("category",options._category);
         if (p.quality) fd.append("quality", p.quality);
         fd.append("prompt", p.prompt);
         fd.append("entry", "agent");
         fd.append("ratio", p.ratio || canvas?.ratio || "1:1");
         fd.append("resolution", p.resolution || canvas?.resolution || "1K");
         fd.append("count", String(Math.min(Math.max(p.count || 1, 1), 4)));
-        if (p.model || canvas?.imageModelId) fd.append("model", p.model || canvas!.imageModelId!);
+        if (p.model || (!nativeFeature&&canvas?.imageModelId)) fd.append("model", p.model || canvas!.imageModelId!);
         if (canvas) {
-          fd.append("origin", "canvas");
-          fd.append("parentId", canvas.anchorId);
+          if(!nativeFeature)fd.append("origin", "canvas");
+          if(canvas.anchorId)fd.append("parentId", canvas.anchorId);
           fd.append("userPrompt", p.prompt);
-          for (const url of canvas.imageUrls) fd.append("image", await urlToFile(url, signal));
+
         }
+        const refs=Array.isArray(options.image_urls)?options.image_urls:canvas?.imageUrls||[];
         const d = await withToolTimeout(
           "generate_image",
-          async () => {
-            const created = await internal("/api/generate-image", signal, {
+          async scoped => {
+            for(const url of refs)fd.append("image",await urlToFile(url,scoped));
+            const created = await internal("/api/generate-image", scoped, {
               method: "POST",
               body: fd,
             });
@@ -839,12 +857,13 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
               "/api/generate-image",
               created.jobId,
               TOOL_TIMEOUT_MS.generate_image,
-              signal
+              scoped
             );
           },
           signal
         );
         const urls: string[] = (d.images ?? []).map((im: { url: string }) => im.url);
+        if(!urls.length||urls.some(url=>typeof url!=="string"||!url))throw new Error("生图任务未返回有效图片，请检查作品库");
         return {
           content: [
             { type: "text", text: `生成 ${urls.length} 张:\n${fmtImages(urls)}` },
@@ -1716,18 +1735,28 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     for (const tool of tools.filter(tool => ["recolor_product", "retouch_product", "replicate_hot"].includes(tool.name))) {
       tool.execute = (id, params, signal, onUpdate) => {
         const p = params as Record<string, unknown>;
+        const refs=canvas.imageUrls.length?canvas.imageUrls:typeof p.image_url==="string"&&p.image_url?[p.image_url]:[];
+        if(!refs.length)throw new Error("请先提供需要处理的图片");
         const prompt = tool.name === "recolor_product"
           ? `将当前参考图的商品颜色替换为 ${String(p.color || "目标颜色")}，强度 ${Number(p.strength) || 100}。保持商品形态、纹理、文字、光影及背景不变。`
           : tool.name === "retouch_product"
             ? `精修当前参考图：${Array.isArray(p.options) ? p.options.join("、") : "增强质感、修复瑕疵"}。${String(p.text || "")}。保留商品主体和原有构图。`
             : `参考当前图和上游参考图，复刻构图风格，保留当前商品身份。${String(p.text || "")}`;
-        return generation.execute(id, { prompt, ratio: canvas.ratio, resolution: canvas.resolution, quality: canvas.quality, count: 1 }, signal, onUpdate);
+        return generation.execute(id, { prompt, image_urls:refs, ratio: canvas.ratio, resolution: canvas.resolution, quality: canvas.quality, count: 1 }, signal, onUpdate);
       };
       // Canvas edits share the selected canvas.image model and its quote.
       tool.parameters = Type.Object({ ...(tool.parameters as unknown as {properties:Record<string,TSchema>}).properties, confirm: Type.Optional(Type.Boolean({ description: "仅在用户明确确认本次系统报价后设为true" })) });
     }
   }
-  return [...tools, ...yutangTools, ...reviewTools, ...scmTools];
+  const creative=createCreativeTools({internal,file:urlToFile,timeout:(fn,signal)=>withToolTimeout("creative_tool",fn,signal),generation:tools.find(tool=>tool.name==="generate_image")!,canvas});
+  const all=[...tools,...creative,...yutangTools,...reviewTools,...scmTools];
+  // Every billed tool can accept the same explicit confirmation field, including legacy adapters.
+  for(const tool of all){
+    const schema=tool.parameters as unknown as {properties?:Record<string,TSchema>};
+    if(schema.properties&&!schema.properties.confirm)tool.parameters=Type.Object({...schema.properties,confirm:Type.Optional(Type.Boolean({description:"仅用户明确确认本次报价后设为true"}))});
+  }
+  all.push({name:"list_agent_tools",label:"创作工具目录",description:"只读查询创作中心可调用的工具、参数与入口；不创建收费任务。",parameters:Type.Object({}),execute:async()=>({content:[{type:"text",text:JSON.stringify({entries:CREATIVE_AGENT_TOOLS,tools:describeNaumiTools(all)})}],details:{publicSummary:"创作工具目录已读取"}})});
+  return all;
 }
 
 /** 底座无关视图:供未来非 pi 底座桥接器复用(当前 PiBridge 直接消费 AgentTool)。 */
@@ -1740,12 +1769,12 @@ export type NaumiToolView = {
   timeoutMs: number;
 };
 
-export function describeNaumiTools(tools: { name: string; description: string }[]): NaumiToolView[] {
+export function describeNaumiTools(tools: { name: string; description: string; parameters?: TSchema }[]): NaumiToolView[] {
   return tools.map((t) => ({
     name: t.name,
     description: t.description,
-    parameters: {},
-    write: false,
-    timeoutMs: 0,
+    parameters: (t.parameters || {}) as Record<string,unknown>,
+    write: !!CREATIVE_TOOL_FEATURES[t.name] || !/^(search_|list_|get_|plan_|verify_|check_|review_history$|review_demo$|scm_)/.test(t.name),
+    timeoutMs: (TOOL_TIMEOUT_MS as Record<string,number>)[t.name] || (/^(search_|list_|get_|plan_)/.test(t.name) ? TOOL_TIMEOUT_MS.read_only : TOOL_TIMEOUT_MS.creative_tool),
   }));
 }

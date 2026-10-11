@@ -4178,15 +4178,16 @@ export async function getAgentSession(
 
 export async function listAgentSessions(
   email: string,
-  limit = 20
+  limit = 20,
+  excludeCanvas = false
 ): Promise<AgentSessionRow[]> {
   await ensureSchema();
   await migrateAgentSessions();
   const { rows } = await getPool().query(
     `SELECT id, email, title, messages, steps, created_at, updated_at
-       FROM app_agent_sessions WHERE email = $1
+       FROM app_agent_sessions WHERE email = $1 AND ($3::boolean=false OR id NOT LIKE 'cv-%')
       ORDER BY updated_at DESC LIMIT $2`,
-    [email.toLowerCase(), limit]
+    [email.toLowerCase(), limit, excludeCanvas]
   );
   return rows as AgentSessionRow[];
 }

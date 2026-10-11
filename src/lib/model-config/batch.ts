@@ -21,7 +21,6 @@ export function batchFeatureAvailability(config: ModelConfig, upstreamId: string
     else if (!u?.enabled || !config.providers.some(p => p.id === u.providerId && p.enabled)) reason = "上游或供应商未启用";
     else if (!u.capabilities.verified) reason = "上游能力尚未核验";
     else if (u.modality !== MODEL_BINDINGS[binding].modality || !u.capabilities[MODEL_BINDINGS[binding].capability]) reason = "模型能力不兼容";
-    else if (feature === "canvas.assistant" && !u.capabilities.vision) reason = "画布助手需要图片输入能力";
     else if (config.business?.[feature]?.enabled === false) reason = "功能已停用，请先在单功能配置中启用";
     return { feature, compatible: !reason, reason };
   });

@@ -2,20 +2,35 @@ import "server-only";
 import {createHash} from "node:crypto";
 import {NextResponse} from "next/server";
 import {authenticatedEmail} from "../request-auth";
-import {getPool,listArtworksByIds,listAgentSessions,getAgentSession,renameAgentSession,deleteAgentSession} from "../db";
+import {getPool,listArtworks,listArtworksByIds,listAgentSessions,getAgentSession,renameAgentSession,deleteAgentSession} from "../db";
 import {getSession,removeRuntimeSession,renameRuntimeSession} from "./runtime";
 
+export const canvasProjectSessionPrefix=(projectKey:string)=>canvasSessionPrefix("project:"+projectKey);
 export const canvasSessionPrefix=(anchorId:string)=>"cv-"+createHash("sha256").update(anchorId).digest("hex").slice(0,12)+"-";
 /** Server-scoped history, independent from the sidebar's mounting lifetime. */
 export async function canvasAgentHistory(request:Request){
  const email=await authenticatedEmail(request);if(!email)return NextResponse.json({error:"请先登录"},{status:401});
- const url=new URL(request.url),anchorId=url.searchParams.get("anchorId")||"",id=url.searchParams.get("id")||"";
- if(!(await listArtworksByIds(email,[anchorId])).length)return NextResponse.json({error:"图片不存在或无权访问"},{status:404});
- const prefix=canvasSessionPrefix(anchorId);if(id&&(!id.startsWith(prefix)||id.length>64))return NextResponse.json({error:"该会话不属于当前图片"},{status:404});
+ const url=new URL(request.url),requestedAnchor=url.searchParams.get("anchorId")||"",id=url.searchParams.get("id")||"",projectKey=url.searchParams.get("projectKey")||"";
+ const owned = projectKey ? await listArtworks(email) : requestedAnchor ? await listArtworksByIds(email,[requestedAnchor]) : [];
+ const byId=new Map(owned.map(art=>[art.id,art]));
+ const projectOf=(art:typeof owned[number])=>{
+  let root=art;const seen=new Set<string>();
+  while(root.parentId&&byId.has(root.parentId)&&!seen.has(root.id)){seen.add(root.id);root=byId.get(root.parentId)!;}
+  return root.batchId?.startsWith("suite-") ? `batch:${root.batchId}` : `tree:${art.groupId||root.id}`;
+ };
+ const anchors=projectKey?owned.filter(art=>projectOf(art)===projectKey):owned;
+ if(!projectKey&&!requestedAnchor)return NextResponse.json({error:"缺少画布项目"},{status:400});
+ if(!anchors.length&&!projectKey)return NextResponse.json({error:"图片不存在或无权访问"},{status:404});
+ const prefixes=[...anchors.map(art=>canvasSessionPrefix(art.id)),...(projectKey?[canvasProjectSessionPrefix(projectKey)]:[])];
+ if(id&&(!prefixes.some(prefix=>id.startsWith(prefix))||id.length>64))return NextResponse.json({error:"该会话不属于当前项目"},{status:404});
+ let anchorId=id?anchors.find(art=>id.startsWith(canvasSessionPrefix(art.id)))?.id||"":requestedAnchor;
  if(request.method==="GET"){
-  if(!id){await listAgentSessions(email,1);const rows=await getPool().query("SELECT id,title,updated_at FROM app_agent_sessions WHERE email=$1 AND id LIKE $2 ORDER BY updated_at DESC LIMIT 50",[email.toLowerCase(),prefix+"%"]);return NextResponse.json({sessions:rows.rows.map(row=>({id:row.id,title:row.title,updatedAt:row.updated_at}))});}
+  if(!id){await listAgentSessions(email,1);const rows=await getPool().query("SELECT id,title,updated_at FROM app_agent_sessions WHERE email=$1 AND id LIKE ANY($2::text[]) ORDER BY updated_at DESC LIMIT 50",[email.toLowerCase(),prefixes.map(prefix=>prefix+"%")]);return NextResponse.json({sessions:rows.rows.map(row=>({id:row.id,title:row.title,updatedAt:row.updated_at,anchorId:anchors.find(art=>row.id.startsWith(canvasSessionPrefix(art.id)))?.id}))});}
+  await getSession(email,id)?.persistPending;
   const saved=await getAgentSession(email,id);if(!saved)return NextResponse.json({error:"会话不存在"},{status:404});
   const steps=Array.isArray(saved.steps)?saved.steps:[];
+  const latest=(steps as any[]).findLast(step=>step.type==="canvas_turn");
+  if(latest&&"anchorId" in latest)anchorId=anchors.some(art=>art.id===latest.anchorId)?latest.anchorId:"";
   const messages: {role:string;content:string}[]=Array.isArray(saved.messages)?saved.messages.filter((message:any)=>["user","assistant"].includes(message?.role)&&typeof message?.content==="string"):[];
   const artifactIds:string[]=Array.from(new Set<string>(steps.flatMap((step:any)=>step.type==="artifacts"?(step.artifacts||[]).map((art:any)=>String(art.id)):[])));
   const owned=await listArtworksByIds(email,artifactIds),byId=new Map(owned.map(art=>[art.id,art]));
@@ -30,8 +45,10 @@ export async function canvasAgentHistory(request:Request){
   }
   const currentTurn=steps.findLastIndex((step:any)=>step.type==="canvas_turn"),error=(steps.slice(Math.max(0,currentTurn)) as any[]).findLast(step=>step.type==="error"),running=!!(getSession(email,id)?.running || getSession(email,id)?.canvasExecuting);
   const interrupted=!running&&currentTurn>=0&&!steps.slice(currentTurn).some((step:any)=>step.type==="agent_end");
-  const pending=(steps as any[])[currentTurn];if(running&&pending&&pending.messageIndex>=turns.length)turns.push({id:id+"-pending",role:"user",content:String(pending.message),artifacts:[]});
-  return NextResponse.json({session:{id:saved.id,title:saved.title,turns,steps:saved.steps,running,status:running?"running":error||interrupted?"failed":"completed",error:error?.message||(interrupted?"任务因服务中断而停止，请核对已有结果，避免重复生图":undefined)}});
+  const pending=(steps as any[])[currentTurn];if(pending&&pending.messageIndex>=turns.length)turns.push({id:id+"-pending",role:"user",content:String(pending.message),artifacts:[]});
+  const terminal=steps.slice(Math.max(0,currentTurn)).findLast((step:any)=>step.type==="canvas_terminal") as any;
+  const status=running?"running":terminal?.status||(error||interrupted?"failed":"completed");
+  return NextResponse.json({session:{id:saved.id,title:saved.title,anchorId,projectKey,turns,steps:saved.steps,running,status,error:error?.message||(interrupted&&!terminal?"任务因服务中断而停止，请核对已有结果，避免重复生图":undefined)}});
  }
  if(!id)return NextResponse.json({error:"缺少会话编号"},{status:400});
  if(getSession(email,id)?.running || getSession(email,id)?.canvasExecuting)return NextResponse.json({error:"任务仍在执行，请先停止"},{status:409});

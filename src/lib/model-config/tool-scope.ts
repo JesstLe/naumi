@@ -2,7 +2,6 @@ import type { ModelConfig, PublicModel } from "./types";
 import { ModelConfigError } from "./types";
 import { FEATURE_BINDINGS, compatiblePublicModels } from "./business";
 import { MODEL_BINDINGS, type ModelBinding } from "./bindings";
-import {publicUpstreamIds} from "./channel-policy";
 
 export function modelAllowedForFeature(model: PublicModel, feature?: string) {
   return !feature || !model.toolScope || feature.startsWith("canvas.") && model.toolScope.systems?.includes("canvas") || model.toolScope.features.includes(feature as never);
@@ -26,8 +25,6 @@ export function validateToolScopes(config: ModelConfig) {
       const binding = FEATURE_BINDINGS[feature];
       if (!binding || model.modality !== MODEL_BINDINGS[binding].modality || model.enabled && model.visible && !compatiblePublicModels(config, binding).some(m => m.id === model.id))
         throw new ModelConfigError("INVALID_CONFIG", "模型能力不满足所选工具范围");
-      if (feature === "canvas.assistant" && model.enabled && !publicUpstreamIds(config,model).some(id=>config.upstreamModels.some(u=>u.id===id&&u.enabled&&u.capabilities.vision&&config.providers.some(p=>p.id===u.providerId&&p.enabled))))
-        throw new ModelConfigError("INVALID_CONFIG", "画布助手需要支持图片理解的文字模型");
     }
     for (const feature of scope.defaultFor) {
       if (!model.enabled || !model.visible || !scope.features.includes(feature) || defaults.has(feature))

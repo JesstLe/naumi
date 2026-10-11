@@ -9,6 +9,7 @@ export function agentOrbState(busy: boolean, outcome: AgentOrbOutcome, steps: Ag
 }
 export function restoredOrbOutcome(session: { running?: boolean; status?: string; error?: unknown }): AgentOrbOutcome {
   if (session.running) return "running";
+  if (session.status === "stopped") return "stopped";
   if (session.error || session.status === "failed") return "error";
   return session.status === "completed" ? "done" : "idle";
 }

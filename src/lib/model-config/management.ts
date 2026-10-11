@@ -204,7 +204,6 @@ export function assertManagedTarget(config: ModelConfig, row: Pick<ManagedModelR
   for (const feature of row.features) {
     const binding = FEATURE_BINDINGS[feature.id as keyof typeof FEATURE_BINDINGS];
     if (binding && !u.capabilities[MODEL_BINDINGS[binding].capability]) throw new ModelConfigError("MODEL_INCOMPATIBLE", "新模型不支持当前使用功能的输入或输出");
-    if (feature.id === "canvas.assistant" && !u.capabilities.vision) throw new ModelConfigError("MODEL_INCOMPATIBLE", "画布助手需要支持图片理解的文字模型");
   }
   for (const old of row.publicIds) {
     for (const [binding, modelId] of Object.entries(config.bindings)) if (modelId === old && !u.capabilities[MODEL_BINDINGS[binding as keyof typeof MODEL_BINDINGS].capability]) throw new ModelConfigError("MODEL_INCOMPATIBLE", "新模型不满足用途绑定的能力");
