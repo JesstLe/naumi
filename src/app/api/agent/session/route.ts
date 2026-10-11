@@ -122,6 +122,8 @@ export async function DELETE(request: Request) {
   if (!id) {
     return NextResponse.json({ error: "缺少会话 id" }, { status: 400 });
   }
+  // The workbench owns only its history; canvas sessions use the project-scoped route.
+  if(id.startsWith("cv-"))return NextResponse.json({error:"请从画布管理此会话"},{status:400});
   if (getSession(email, id)?.running || getSession(email, id)?.canvasExecuting) {
     return NextResponse.json(
       { error: "会话正在执行任务，请先停止后再删除" },
