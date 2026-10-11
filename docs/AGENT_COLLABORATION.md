@@ -1,5 +1,9 @@
 # Naumi 多 Agent Git 与新机发布协作
 
+## 最新运行版本：Agent富文本与小球主题（2026-10-11）
+
+新机业务源码0cf5e635b13cc24156dbce9ab5dfe51f499e8811，APP/Worker Image ID sha256:6cbbe899b7563cb0cb86f023978614a28018b4a12110e984709d0a35b20d0a8d，实际1791692065 / v2026.10.11-121425。Markdown回复与小球明暗已验收；真实只读对话/历史/HTTP复制粘贴通过，工具0/新生图0/对话扣0。配置/数据库/媒体/元数据/价格保持，备份及5e4851回滚在/opt/naumi-staging/evidence/canvas-agent-richtext-20261011；锁已释放。第3次发布持锁清本任务两次.next/cache释放1,089,932,750字节，计数归零，当前/最近两镜像和runtime/回滚保留。旧机不连接/回传。详见docs/changes/2026-10-11-canvas-agent-richtext.md；文档提交不另发镜像。
+
 ## 最新运行版本：画布悬浮 Agent 小球（2026-10-11验收）
 
 固定业务源码5e4851fac70e9260a0cec800e101dc6a7c51ca68已发布新机120.27.162.85；APP/Worker Image ID sha256:322847ab7f484c7c42f5b2fb151e7cc74372e12f3e26a6fa5ee68bebffca5078，实际1791647970 / v2026.10.10-235930。画布加入石墨/柔白可拖动小球、账号位置记忆与键盘操作，点击复用现有Agent侧栏，表情跟随真实SSE及历史终态；没有新增调度器、计费路径或Schema。
