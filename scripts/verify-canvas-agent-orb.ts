@@ -30,6 +30,12 @@ for (const [width, height] of [[1440, 900], [1024, 640], [390, 720], [320, 568],
   }
   check(JSON.stringify(clampOrb({ x: -1000, y: -1000 }, bounds)) === JSON.stringify({ x: bounds.left, y: bounds.top }));
   check(JSON.stringify(clampOrb({ x: 10000, y: 10000 }, bounds)) === JSON.stringify({ x: bounds.right, y: bounds.bottom }));
+  if (width >= 104 && height >= 128) {
+    check(bounds.left === 8 && bounds.top === 8);
+    check(bounds.right === width - 88 - 8 && bounds.bottom === height - 112 - 8);
+    const oldVertical = Math.max(0, height - 112 - Math.min(136, height * .25)) - 76;
+    check(bounds.bottom - bounds.top > oldVertical + 100);
+  }
 }
 for (const raw of [null, "broken", "null", "{}", '{"x":-1,"y":0}', '{"x":0,"y":2}', '{"x":"0.5","y":0.5}']) check(readOrbPosition(raw).x === 1);
 check(readOrbPosition('{"x":0.3,"y":0.6}').y === .6);

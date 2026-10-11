@@ -1,4 +1,4 @@
-.layer { position: absolute; inset: 0; z-index: 24; pointer-events: none; }
+.layer { position: absolute; inset: 0; z-index: 32; pointer-events: none; }
 .floating { position: absolute; width: 88px; height: 112px; display: flex; flex-direction: column; align-items: center; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
 .ball { width: 80px; height: 80px; filter: drop-shadow(0 8px 8px rgb(25 30 42 / .16)); }
 .floating button { cursor: grab; touch-action: none; }
