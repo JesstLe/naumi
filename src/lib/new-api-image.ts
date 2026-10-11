@@ -1,5 +1,8 @@
 import { getNewApiImageSettings } from "@/lib/image-model-catalog";
-import { observeModelCall } from "@/lib/bi/model-observer";
+import { observeModelCall, modelExecutionTelemetry } from "@/lib/bi/model-observer";
+import { currentModelExecution, type ModelExecutionScope } from "./model-config/context";
+import { ModelConfigError } from "./model-config/types";
+import { modelEndpointFetch } from "./model-config/transport";
 
 export type NewApiReferenceImage = {
   buffer: Buffer;
@@ -81,12 +84,20 @@ export async function generateNewApiImage(input: {
   prompt: string;
   images?: NewApiReferenceImage[];
   settings?: { baseUrl: string; apiKey: string };
+  execution?: ModelExecutionScope;
+  signal?: AbortSignal;
+  trustedOrigins?: readonly string[];
 }): Promise<{ buffer: Buffer; contentType: string }> {
   const settings = input.settings || getNewApiImageSettings();
+  const scope = input.execution || currentModelExecution("image");
+  const managed = scope?.connection.protocol === "new-api-flow" && (!input.settings || input.settings.baseUrl === scope.connection.baseUrl && input.settings.apiKey === scope.connection.apiKey);
+  const wireModel = managed ? scope.connection.wireModel : input.model;
+  const submit = managed ? modelEndpointFetch(settings.baseUrl, { trustedOrigins: input.trustedOrigins || (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, scope.connection) : fetch;
   if (!settings.baseUrl || !settings.apiKey) {
     throw new Error("New API 生图分组尚未配置");
   }
-  const references = (input.images || []).slice(0, 6);
+  const references = managed ? input.images || [] : (input.images || []).slice(0, 6);
+  if (managed && references.length > scope.capabilities.maxReferenceImages) throw new ModelConfigError("MODEL_INCOMPATIBLE", "参考图片超过当前模型上限", 400);
   const content = references.length
     ? [
         { type: "text", text: input.prompt },
@@ -98,19 +109,19 @@ export async function generateNewApiImage(input: {
         })),
       ]
     : input.prompt;
-  const response = await observeModelCall(input.model,()=>fetch(`${settings.baseUrl}/chat/completions`, {
+  const response = await observeModelCall(wireModel,()=>submit(`${settings.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${settings.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: input.model,
+      model: wireModel,
       messages: [{ role: "user", content }],
       stream: true,
     }),
-    signal: AbortSignal.timeout(300_000),
-  }));
+    signal: AbortSignal.any([input.signal || new AbortController().signal, AbortSignal.timeout(managed ? scope.connection.timeoutMs : 300_000)]),
+  }), managed ? modelExecutionTelemetry(scope) : null);
   const raw = await response.text();
   if (!response.ok) throw upstreamError(raw, response.status);
   const streamContent = collectStreamContent(raw);

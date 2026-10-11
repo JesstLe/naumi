@@ -1,10 +1,6 @@
-import { Agent } from "@earendil-works/pi-agent-core";
-import {
-  createModels,
-  createProvider,
-  type Model,
-} from "@earendil-works/pi-ai";
-import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { currentModelExecution } from "@/lib/model-config/context";
+import { configuredPiModels } from "@/lib/model-config/pi";
+import type { createModels, Model } from "@earendil-works/pi-ai";
 import type { UserMessage } from "@earendil-works/pi-ai";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
@@ -51,6 +47,7 @@ export class PiBridge implements AgentBridge {
 
   private async ensureModels() {
     if (this.models) return this.models;
+    const [{ createModels, createProvider }, { openAICompletionsApi }] = await Promise.all([import("@earendil-works/pi-ai"), import("@earendil-works/pi-ai/api/openai-completions.lazy")]);
     const baseUrl = (await getOpenAIBaseUrl()) || "https://api.openai.com/v1";
     const provider = createProvider({
       id: "naumi-relay",
@@ -101,9 +98,12 @@ export class PiBridge implements AgentBridge {
     email: string;
     getCred: () => { cookie: string; authorization: string };
   }): Promise<AgentSession> {
-    const models = await this.ensureModels();
-    const model = models.getModel("naumi-relay", MODEL_ID) as Model<typeof MODEL_API>;
+    const scope = currentModelExecution("text") || currentModelExecution("vision");
+    const managed = scope ? await configuredPiModels(scope) : null;
+    const models = managed?.models || await this.ensureModels();
+    const model = models.getModel("naumi-relay", managed?.wireModel || MODEL_ID) as Model<typeof MODEL_API>;
 
+    const { Agent } = await import("@earendil-works/pi-agent-core");
     const agent = new Agent({
       initialState: {
         systemPrompt: opts.systemPrompt,
@@ -121,7 +121,7 @@ export class PiBridge implements AgentBridge {
           })
         ),
       },
-      streamFn: models.streamSimple.bind(models),
+      streamFn: managed ? (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed.fetch, maxRetries: 0 }) : models.streamSimple.bind(models),
       toolExecution: "sequential",
       beforeToolCall: async (context: unknown) => {
         if (!opts.beforeToolCall) return undefined;

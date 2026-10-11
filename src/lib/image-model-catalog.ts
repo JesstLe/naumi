@@ -1,4 +1,9 @@
-import { getOpenAISettings } from "@/lib/settings";
+import { getLegacyOpenAISettings } from "@/lib/settings";
+import { currentModelExecution } from "./model-config/context";
+import { modelConfigurationEnabled } from "./model-config/requests";
+import { getModelRuntime } from "./model-config/server";
+import { publicModelCatalog } from "./model-config/runtime";
+import type { ModelSnapshot } from "./model-config/types";
 import {
   getUserImageProvider,
   userImageModelId,
@@ -6,6 +11,7 @@ import {
 import { imageModelFamily } from "@/lib/image-model-routing";
 
 export type ImageModelProvider =
+  | "managed"
   | "openai-images"
   | "new-api-flow"
   | "user-openai-images"
@@ -16,6 +22,9 @@ export type ImageModelDescriptor = {
   label: string;
   supportsEdit: boolean;
   provider: ImageModelProvider;
+  qualities?: string[];
+  nativeResolutions?: string[];
+  qualitySupported?: boolean;
 };
 
 type CachedCatalog = {
@@ -55,6 +64,8 @@ export function isNewApiFlowImageModel(model: string) {
 }
 
 export function isOpenAIImagesEditModel(model: string) {
+  const scope = currentModelExecution("image");
+  if (scope && [scope.frozen.publicModelId,scope.connection.wireModel].includes(model)) return scope.capabilities.edit;
   return (
     model.startsWith("gpt-image") ||
     /^naumi-image-(?:auto|economy|standard|premium)$/i.test(model)
@@ -78,16 +89,21 @@ function flowModelLabel(model: string) {
   return model;
 }
 
-export function getNewApiImageSettings() {
+export function getLegacyNewApiImageSettings() {
   return {
     baseUrl: normalizeBaseUrl(process.env.NEW_API_IMAGE_BASE_URL || ""),
     apiKey: (process.env.NEW_API_IMAGE_API_KEY || "").trim(),
     configuredModels: normalizeModels(process.env.NEW_API_IMAGE_MODELS || ""),
   };
 }
+export function getNewApiImageSettings() {
+  const scope = currentModelExecution("image");
+  if (scope?.connection.protocol === "new-api-flow") return { baseUrl: scope.connection.baseUrl, apiKey: scope.connection.apiKey, configuredModels: [scope.connection.wireModel] };
+  return getLegacyNewApiImageSettings();
+}
 
 async function discoverNewApiModels(): Promise<string[]> {
-  const settings = getNewApiImageSettings();
+  const settings = getLegacyNewApiImageSettings();
   if (!settings.baseUrl || !settings.apiKey) return [];
   if (newApiCatalogCache && newApiCatalogCache.expiresAt > Date.now()) {
     return newApiCatalogCache.models;
@@ -120,10 +136,10 @@ async function discoverNewApiModels(): Promise<string[]> {
   }
 }
 
-export async function getImageModelCatalog(
+export async function getLegacyImageModelCatalog(
   email?: string | null
 ): Promise<ImageModelDescriptor[]> {
-  const primary = await getOpenAISettings();
+  const primary = await getLegacyOpenAISettings();
   const openaiModels = primary.models.map((id) => ({
     id,
     label: id,
@@ -158,6 +174,22 @@ export async function getImageModelCatalog(
     if (!merged.has(model.id)) merged.set(model.id, model);
   }
   return Array.from(merged.values());
+}
+
+export async function getImageModelCatalog(email?: string | null, supplied?: ModelSnapshot): Promise<ImageModelDescriptor[]> {
+  const scope = currentModelExecution("image");
+  if (!supplied && !scope && !await modelConfigurationEnabled()) return getLegacyImageModelCatalog(email);
+  const runtime = await getModelRuntime();
+  const snapshot = supplied || (scope ? await runtime.byVersion(scope.frozen.modelVersion) : await runtime.current());
+  const managed: ImageModelDescriptor[] = publicModelCatalog(snapshot, "image").models.map(m => {
+    const model = snapshot.config.publicModels.find(p => p.id === m.id)!;
+    const upstream = model.target.type === "upstream" ? snapshot.config.upstreamModels.find(u => u.id === model.target.id) : undefined;
+    const protocol = upstream ? snapshot.config.providers.find(p => p.id === upstream.providerId)?.protocol : undefined;
+    return { ...m, provider: protocol === "new-api-flow" ? "new-api-flow" : "openai-images" };
+  });
+  const custom = email ? await getUserImageProvider(email) : null;
+  if (custom?.baseUrl && custom.apiKey) for (const id of custom.models) managed.unshift({ id: userImageModelId(id), label: `自定义 · ${id}`, supportsEdit: custom.protocol === "chat-completions" || id.startsWith("gpt-image"), provider: custom.protocol === "chat-completions" ? "user-chat-completions" : "user-openai-images" });
+  return managed;
 }
 
 export async function getUserDefaultImageModel(email?: string | null) {

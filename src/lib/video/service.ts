@@ -1,4 +1,13 @@
 import "server-only";
+import { createHash } from "node:crypto";
+import { canonicalConfig } from "@/lib/model-config/repository";
+import { BillingError } from "@/lib/billing/types";
+import { currentModelExecution, currentExecutionBundle, runLegacyModelExecution } from "@/lib/model-config/context";
+import type { ExecutionBundle } from "@/lib/model-config/context";
+import { getModelExecutor, withFrozenExecutionBundle } from "@/lib/model-config/execution";
+import { modelConfigurationEnabled } from "@/lib/model-config/requests";
+import { getModelAdministration } from "@/lib/model-config/server";
+import { ModelConfigError } from "@/lib/model-config/types";
 import {quoteForActor,getBillingRuntime,meteringFor} from "@/lib/billing/server";
 import {quote} from "@/lib/billing/quote";
 import {assertQuotedVersion,requestQuoteConfirmation} from "@/lib/billing/request";
@@ -9,6 +18,7 @@ import {
   createVideoTaskWithReservation,
   failVideoTask,
   getVideoTask,
+  getVideoTaskByIdempotencyKey,
   listArtworksByIds,
   listDueVideoTaskRefs,
   listVideoTasks,
@@ -26,7 +36,7 @@ import { PermanentVideoCreateError, TransientPollError } from "@/lib/video/types
 import { getVideoProvider } from "@/lib/video/providers/adapter";
 import { readLimitedVideoResponse } from "@/lib/video/result-download";
 import {
-  getVideoModelCapability,
+  configuredVideoCapability,
   validateAgainstCapability,
 } from "@/lib/video/capabilities";
 import { resolveOpenAiVideosConfig } from "@/lib/video/providers/openai-videos";
@@ -137,9 +147,10 @@ export type PublicVideoTaskView = Pick<
 
 /** Public API projection. Durable provider snapshots and raw responses stay server-only. */
 export function publicVideoTaskView(task: VideoTaskRow): PublicVideoTaskView {
+  const managed = (task.parameters.modelExecutions as ExecutionBundle | undefined)?.video;
   return {
     id: task.id,
-    model: task.model,
+    model: managed?.publicModelId || task.model,
     prompt: task.prompt,
     status: task.status,
     progress: task.progress,
@@ -147,7 +158,7 @@ export function publicVideoTaskView(task: VideoTaskRow): PublicVideoTaskView {
     artworkId: task.artworkId,
     videoUrl: task.videoUrl,
     error: task.error,
-    providerId: task.providerId,
+    providerId: managed ? "managed-video" : task.providerId,
     source: task.source,
     sourceId: task.sourceId,
     seconds: task.seconds,
@@ -194,26 +205,46 @@ export async function createVideoGeneration(
   input: CreateVideoInput
 ): Promise<{ taskId: string; cost: number }> {
   const key = String(input.idempotencyKey || "").trim().slice(0, 100);
+  if (key) {
+    const existing = await getVideoTaskByIdempotencyKey(email, key);
+    if (existing?.parameters?.creationInputDigest) {
+      if (existing.parameters.creationInputDigest !== videoInputDigest(input)) throw new BillingError("OPERATION_CONFLICT", "操作编号已用于不同视频任务", 409);
+      return { taskId: existing.id, cost: existing.cost };
+    }
+  }
+  if (!currentModelExecution("video") && await modelConfigurationEnabled()) {
+    const admin = await getModelAdministration();
+    const [snapshot, billing] = await Promise.all([admin.repo.current(), admin.billing.current()]);
+    const executor = await getModelExecutor();
+    const video = await executor.resolve({ binding: "video.generate", requestedModelId: input.modelId || undefined, snapshot, billing });
+    return executor.runBundle({ modelVersion: snapshot.version, billingVersion: billing.version, primary: "video", video }, billing, () => createVideoGeneration(email, input));
+  }
   return createVideoGenerationUnlocked(email, {
     ...input,
     idempotencyKey: key || crypto.randomUUID(),
   });
 }
 
+function videoInputDigest(input: CreateVideoInput) {
+  const { billingConfirmation: _confirmation, idempotencyKey: _key, ...intent } = input;
+  return createHash("sha256").update(canonicalConfig(intent)).digest("hex");
+}
+
 async function createVideoGenerationUnlocked(
   email: string,
   input: CreateVideoInput
 ): Promise<{ taskId: string; cost: number }> {
-  const requestedProviderId = String(input.providerId || configuredVideoProviders()[0]?.id || VIDEO_PROVIDER_ID);
+  const execution = currentModelExecution("video");
+  const requestedProviderId = execution?.connection.providerId || String(input.providerId || configuredVideoProviders()[0]?.id || VIDEO_PROVIDER_ID);
   const providerConfig = getVideoProviderConfig(requestedProviderId);
   if (!providerConfig) {
     throw new Error("视频服务未配置或供应商不存在");
   }
   const providerId = providerConfig.id;
-  const modelId = String(input.modelId || providerConfig.defaultModel);
+  const modelId = execution?.connection.wireModel || String(input.modelId || providerConfig.defaultModel);
   const cfg = providerId === VIDEO_PROVIDER_ID ? resolveVideoServiceConfig() : providerConfig;
   if (!cfg) throw new Error("视频服务未配置(需在服务器设置 VIDEO_API_BASE_URL/KEY/MODEL)");
-  const cap = getVideoModelCapability(providerId, modelId);
+  const cap = configuredVideoCapability(providerConfig.protocol, providerId, modelId, execution?.capabilities);
   const durationSeconds = Number(input.durationSeconds ?? input.seconds) || cap.defaultDuration || 4;
 
   // 素材:画布图或 agent URL → 唯一 first_frame 参考(能力声明上限内)
@@ -241,7 +272,7 @@ async function createVideoGenerationUnlocked(
 
   // 远程供应商必须能访问引用素材。本地 /media 地址仅本站可见；部署时可通过
   // VIDEO_REFERENCE_PUBLIC_BASE_URL 指向对外可访问的 Naumi 站点，或直接使用 R2。
-  if (providerId !== VIDEO_PROVIDER_ID) {
+  if (providerConfig.protocol !== "openai-videos") {
     const publicBase = String(process.env.VIDEO_REFERENCE_PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
     for (const reference of references) {
       if (!reference.url?.startsWith("/media/")) continue;
@@ -281,7 +312,7 @@ async function createVideoGenerationUnlocked(
 
   // 读取参考图字节(multipart 上传用);失败在扣费前抛出
   let imageForUpload: { bytes: Buffer; mime: string; filename: string } | undefined;
-  const uploadReference = providerId === VIDEO_PROVIDER_ID
+  const uploadReference = providerConfig.protocol === "openai-videos"
     ? references.find((ref) => ref.kind === "image" && (ref.artworkId || ref.url))
     : undefined;
   if (uploadReference) {
@@ -320,6 +351,8 @@ async function createVideoGenerationUnlocked(
   };
   if (!getVideoProvider(providerId)) throw new Error(`视频适配器 ${providerId} 未注册`);
   const parameters = {
+    creationInputDigest: videoInputDigest(input),
+    ...(currentExecutionBundle() ? { modelExecutions: structuredClone(currentExecutionBundle()) } : {}),
     prompt: input.prompt,
     seconds: durationSeconds,
     durationSeconds,
@@ -413,6 +446,9 @@ function requestFromQueuedTask(task: VideoTaskRow): VideoGenerationRequest {
 }
 
 function videoCreationRetryConfigMatches(task: VideoTaskRow): boolean {
+  // A declared idempotency header is not proof that a paid POST was deduplicated.
+  // Versioned tasks without an accepted upstream ID require reconciliation before resubmission.
+  if (task.parameters?.modelExecutions) return false;
   const snapshotStrategy = String(task.providerSnapshot?.idempotencyStrategy || "");
   if (!["header", "body"].includes(snapshotStrategy)) return false;
   const current = getVideoProviderConfig(task.providerId || VIDEO_PROVIDER_ID);
@@ -439,7 +475,7 @@ async function imageForQueuedTask(
   task: VideoTaskRow,
   request: VideoGenerationRequest
 ): Promise<{ bytes: Buffer; mime: string; filename: string } | undefined> {
-  if (task.providerId !== VIDEO_PROVIDER_ID) return undefined;
+  if (getVideoProviderConfig(task.providerId)?.protocol !== "openai-videos") return undefined;
   const reference = request.references.find((item) => item.kind === "image" && (item.url || item.artworkId));
   if (!reference) return undefined;
   const { readCanvasImage } = await import("@/lib/canvas-image-input");
@@ -475,7 +511,7 @@ async function scheduleCreationRetry(
 ): Promise<void> {
   const nextAttempt = Number(task.pollAttempts ?? 0) + 1;
   const message = error instanceof Error ? error.message : "视频上游创建暂时失败";
-  if (error instanceof PermanentVideoCreateError) {
+  if (error instanceof PermanentVideoCreateError || error instanceof ModelConfigError && error.code === "PROVIDER_BUSY") {
     await failVideoTask({ email, id: task.id, error: message });
     return;
   }
@@ -541,6 +577,10 @@ export async function pollAndSettle(
 ): Promise<VideoTaskRow | null> {
   const task = await getVideoTask(email, id);
   if (!task) return null;
+  if (task.parameters?.modelExecutions) return withFrozenExecutionBundle(task.parameters.modelExecutions as import("@/lib/model-config/context").ExecutionBundle, () => pollAndSettleTask(email, id, task));
+  return runLegacyModelExecution(() => pollAndSettleTask(email, id, task));
+}
+async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow): Promise<VideoTaskRow | null> {
   if (task.status !== "queued" && task.status !== "processing") return task;
 
   const claimed = await claimVideoTaskPoll(email, id);

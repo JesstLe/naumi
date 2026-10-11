@@ -90,7 +90,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
  7. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
  8. 与图片生成无关的问题直接回答,不要调用工具。`;
 
-export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string }): AgentTool[] {
+export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string }, acceptedModelContext?: string | (() => string)): AgentTool[] {
   // 双凭证:可变 getter —— 每次工具执行时读取最新 cookie/authorization,
   // 常驻会话的凭证刷新(runtime 层 existing.cred = cred)即刻生效,无需重建 Agent。
   const credGetter =
@@ -107,11 +107,13 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
 
   const authHeaders = (): Record<string, string> => {
     const cred = credGetter();
+    const accepted = typeof acceptedModelContext === "function" ? acceptedModelContext() : acceptedModelContext;
     return {
       cookie: cred.cookie,
       ...("billingVersion" in cred&&cred.billingVersion!==undefined?{"x-naumi-billing-version":String(cred.billingVersion),"x-naumi-billing-credits":String(cred.billingCredits),"x-naumi-billing-operation-id":String(cred.billingOperationId)}:{}),
       "x-naumi-image-quality": cred.imageQuality || "medium",
       ...(cred.authorization ? { authorization: cred.authorization } : {}),
+      ...(accepted ? { "x-naumi-accepted-model-context": accepted } : {}),
     };
   };
 

@@ -17,6 +17,8 @@ import {routeImageModel} from "@/lib/image-model-routing";
 import {configuredVideoProviders,getVideoProviderConfig} from "@/lib/video/providers/config";
 import { requestedTextModel } from "@/lib/text-models";
 import { CANVAS_FREE_DEFAULTS } from "./canvas-defaults";
+import { currentModelBillingSnapshot } from "../model-config/context";
+import { managedBillingModel } from "../model-config/billing-model";
 let runtime: ReturnType<typeof assemble> | undefined;
 function assemble() {
     return { service: createBillingService(), config: createConfigRuntime({ pool: getPool(), ensureSchema, initialize: async (tx) => {
@@ -78,7 +80,14 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
         throw new BillingError("INVALID_RESULT", "请先登录", 401);
     let model = typeof input.modelId === "string" ? input.modelId : undefined;
     let providerId:string|undefined;
-    if(input.feature==="video.generate"){
+    const provider = input.feature === "image.generate" ? await getUserImageProvider(email) : null;
+    const byok = !!provider && !!model?.startsWith("byok:") && provider.models.includes(upstreamUserImageModel(model));
+    const cutout = input.feature === "tool.cutout" ? await getCutoutSettings() : null;
+    const replicateCutout = cutout && cutout.backend !== "openai" && !!cutout.replicateToken;
+    const managed = !byok && !replicateCutout ? await managedBillingModel(request, input.feature, model) : null;
+    if (managed) {
+        model = managed.modelId; providerId = managed.providerId;
+    }else if(input.feature==="video.generate"){
         const config=getVideoProviderConfig(input.providerId||configuredVideoProviders()[0]?.id||"openai-videos");
         if(!config)throw new BillingError("INVALID_RESULT","视频供应商未配置",400);
         providerId=config.id;model=model||config.defaultModel;
@@ -97,21 +106,20 @@ export async function resolveBillingFacts(request: Request, input: Partial<Billi
         if(input.feature==="image.generate"&&input.ratio&&isNewApiFlowImageModel(model))model=routeImageModel(model,input.ratio,await getImageModelCatalog(email));
         providerId=isNewApiFlowImageModel(model)?"new-api-flow":"openai-images";
     }
-    const provider = input.feature === "image.generate" ? await getUserImageProvider(email) : null;
-    const byok = !!provider && !!model?.startsWith("byok:") && provider.models.includes(upstreamUserImageModel(model));
-    return { feature: input.feature, quantity: input.quantity, quality: input.feature==="video.generate"||input.feature in CANVAS_FREE_DEFAULTS?"medium":input.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium", resolution: input.feature in CANVAS_FREE_DEFAULTS?"1K":input.resolution ?? "1K", modelId: model, providerId: byok ? `byok:${provider!.id}` : providerId,...(byok?{fallbackProviderId:"openai-images",fallbackModelId:(await getOpenAISettings()).model}:{}), byok, metered: await meteringFor(current), paidFen: await totalPaidCents(email), userGroup: "default" };
+    const fallback = byok ? await managedBillingModel(request, "image.generate") : null;
+    return { feature: input.feature, quantity: input.quantity, quality: input.feature==="video.generate"||input.feature in CANVAS_FREE_DEFAULTS?"medium":input.quality ?? request.headers.get("x-naumi-image-quality") ?? "medium", resolution: input.feature in CANVAS_FREE_DEFAULTS?"1K":input.resolution ?? "1K", modelId: model, providerId: byok ? `byok:${provider!.id}` : providerId,...(byok?{fallbackProviderId:fallback?.providerId || "openai-images",fallbackModelId:fallback?.modelId || (await getOpenAISettings()).model}:{}), byok, metered: await meteringFor(current), paidFen: await totalPaidCents(email), userGroup: "default" };
 }
 export async function quoteForRequest(request: Request, input: Partial<BillingFacts> & {
     feature: BillingFacts["feature"];
     quantity: number;
     ratio?: string;
 },frozenSnapshot?:ConfigSnapshot) {
-    const snapshot = frozenSnapshot??await billingSnapshot();
+    const snapshot = frozenSnapshot??currentModelBillingSnapshot()??await billingSnapshot();
     return compatibleQuote(snapshot, await resolveBillingFacts(request, input, snapshot));
 }
 /** Trusted domain services have already authenticated and owner-checked this actor. */
 export async function quoteForActor(email:string,input:Partial<BillingFacts>&{feature:BillingFacts["feature"];quantity:number}){
-    const snapshot=await(await getBillingRuntime()).config.current();
+    const snapshot=currentModelBillingSnapshot()??await(await getBillingRuntime()).config.current();
     return compatibleQuote(snapshot,await resolveBillingFacts(new Request("http://internal/api/billing/quote"),input,snapshot,email));
 }
 export async function updateBillingCompatibility(actor: string, reason: string, change: (config: BillingConfig) => void) {

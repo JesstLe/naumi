@@ -105,7 +105,7 @@ export function GenerateClient({
   // 出图质量:通道接入质量参数(NAUMI_IMAGE_QUALITY_SUPPORTED=1)前,
   // 非标准档置灰、统一按标准档执行与计费;选择仍随请求上行,由服务端
   // 在提交前回退并写任务审计(请求档/执行档/回退原因)。
-  const { quality, setQuality, capable: qualityCapable, experimental: qualityExperimental, imageCost } = useImageQuality();
+  const { quality, setQuality, capable: qualityCapable, experimental: qualityExperimental, imageCost, modelConfig, allowedQualities } = useImageQuality(undefined, model);
   const [style, setStyle] = useState(GENERATION_STYLES[0]);
   const [count, setCount] = useState(1);
   const [files, setFiles] = useState<File[]>([]);
@@ -145,12 +145,8 @@ export function GenerateClient({
   const baseLoadRef = useRef<string>("");
 
   useEffect(() => {
-    let cancelled = false;
-    void authHeader()
-      .then((headers) => fetch("/api/config", { cache: "no-store", headers }))
-      .then((response) => response.json())
-      .then((config: { defaultImageModel?: string; imageModels?: ImageModelOption[]; imageQualityCapable?: boolean; imageQualityExperimental?: boolean }) => {
-        if (cancelled) return;
+        const config = modelConfig;
+        if (!config) return;
         const options = Array.isArray(config.imageModels)
           ? config.imageModels.filter((item) => item?.id && item?.label)
           : [];
@@ -163,12 +159,8 @@ export function GenerateClient({
           if (normalized.some((item) => item.id === saved)) return saved;
           return normalized.find((item) => item.id === fallback)?.id || normalized[0]?.id || fallback;
         });
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [modelConfig]);
+  useEffect(() => { if (!allowedQualities.includes(quality)) setQuality(allowedQualities[0]); }, [model, quality, allowedQualities, setQuality]);
 
   function pickModel(value: string) {
     setModel(value);
@@ -870,11 +862,11 @@ export function GenerateClient({
                   value={quality}
                   onChange={setQuality}
                   options={[
-                    { value: "low", label: t("gen.qLow"), disabled: !qualityCapable },
-                    { value: "medium", label: t("gen.qMedium") },
-                    { value: "high", label: t("gen.qHigh"), disabled: !qualityCapable },
-                    { value: "xhigh", label: t("gen.qXhigh"), disabled: !qualityCapable },
-                    { value: "max", label: t("gen.qMax"), disabled: !qualityCapable },
+                    { value: "low", label: t("gen.qLow"), disabled: !allowedQualities.includes("low") },
+                    { value: "medium", label: t("gen.qMedium"), disabled: !allowedQualities.includes("medium") },
+                    { value: "high", label: t("gen.qHigh"), disabled: !allowedQualities.includes("high") },
+                    { value: "xhigh", label: t("gen.qXhigh"), disabled: !allowedQualities.includes("xhigh") },
+                    { value: "max", label: t("gen.qMax"), disabled: !allowedQualities.includes("max") },
                   ]}
                 />
                 {!qualityCapable && (

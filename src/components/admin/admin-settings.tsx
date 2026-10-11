@@ -156,6 +156,7 @@ type MemberDetail = {
 };
 
 type View = {
+  modelConfigurationActive?: boolean;
   model: string;
   models?: string[];
   cutoutModel: string;
@@ -1699,7 +1700,25 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
       {section === "prompts" && <AdminPrompts />}
 
       {/* 管理员 · OpenAI 接口设置 */}
-      {section === "api" && (
+      {section === "api" && view?.modelConfigurationActive && (
+        <div className="rounded-xl border border-c-border2 bg-c-card p-6">
+          <h2 className="text-lg font-semibold">模型与供应商管理</h2>
+          <p className="my-3 text-sm text-c-text3">接口、密钥、模型能力、默认用途与混合路由统一在模型配置中心维护。修改先保存为草稿，再核对差异发布。</p>
+          <a href="/admin/bi/models" className="inline-block rounded-lg bg-primary px-4 py-2 text-sm text-white">进入模型配置中心</a>
+          <div className="mt-6 space-y-3 border-t border-border pt-5">
+            <h3 className="font-semibold">Replicate 商品抠图服务</h3>
+            <p className="text-sm text-c-text3">独立的商品分割服务保留原配置；生成式图片模型与兜底通道在模型配置中心维护。当前 Token：{view.cutoutReplicateTokenMasked || "未配置"}。</p>
+            <label className="block text-xs">Replicate 模型 slug
+              <Input value={replicateModel} onChange={event => setReplicateModel(event.target.value)} placeholder="men1scus/birefnet" />
+            </label>
+            <label className="block text-xs">更新 Replicate API Token
+              <Input type="password" value={replicateTokenInput} onChange={event => setReplicateTokenInput(event.target.value)} autoComplete="new-password" placeholder="提交前浏览器内 RSA 加密" />
+            </label>
+            <Button onClick={() => void saveReplicate()} disabled={busy || !replicateTokenInput.trim()}>加密保存 Replicate 配置</Button>
+          </div>
+        </div>
+      )}
+      {section === "api" && !view?.modelConfigurationActive && (
       <div>
         <div className="mb-3 flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-primary" />

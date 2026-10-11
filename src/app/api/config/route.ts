@@ -12,6 +12,8 @@ import {
 import { imageQualityCapable } from "@/lib/image-quality";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { betaPreviewEnabled } from "@/lib/commerce";
+import { modelConfigurationEnabled } from "@/lib/model-config/requests";
+import { getModelRuntime } from "@/lib/model-config/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +25,8 @@ export async function GET(request: Request) {
   const imageSettings = await getOpenAISettings();
   const email = dbEnabled ? await authenticatedEmail(request) : null;
   const imageModels = await getImageModelCatalog(email);
+  const managed = await modelConfigurationEnabled() ? await (await getModelRuntime()).publicCatalog("image") : null;
+  const defaultModel = managed?.bindings["image.generate"] || managed?.models[0]?.id || imageSettings.model;
   const userDefaultModel = await getUserDefaultImageModel(email);
   return NextResponse.json({
     db: dbEnabled,
@@ -33,12 +37,15 @@ export async function GET(request: Request) {
     multiUser,
     // 注册是否需要邮箱验证码(= 多用户 且 站长已配 SMTP);前端据此显示验证码栏。
     emailCode: multiUser && (await smtpConfigured()),
-    openai: (process.env.OPENAI_API_KEY ?? "").length > 0,
-    defaultImageModel: userDefaultModel || imageSettings.model,
-    imageModels,
+    openai: managed ? !!managed.models.length : (process.env.OPENAI_API_KEY ?? "").length > 0,
+    defaultImageModel: userDefaultModel || defaultModel,
+    modelVersion: managed?.version,
+    imageModelBindings: managed?.bindings,
+    imageBindingCapabilities: managed?.bindingCapabilities,
+    imageModels: managed ? imageModels.map(m => ({ ...m, provider: m.id.startsWith("byok:") ? m.provider : "managed" })) : imageModels,
     // 出图质量通道能力:上游真实处理 quality 字段时为 true,前端才放开
     // 高档选择;false 时统一按默认档执行(提交前回退,见 src/lib/image-quality.ts)。
-    imageQualityCapable: imageQualityCapable(),
+    imageQualityCapable: managed ? !!managed.models.find(m => m.id === defaultModel)?.qualitySupported : imageQualityCapable(),
     imageQualityExperimental: betaPreviewEnabled,
   });
 }

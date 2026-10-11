@@ -5,6 +5,10 @@ on:
   pull_request:
     paths:
       - 'src/lib/billing/**'
+      - 'src/lib/model-config/**'
+      - 'src/app/admin/bi/models/**'
+      - 'scripts/*model*'
+      - 'docs/model-configuration-maintenance.md'
       - 'src/components/admin/billing/**'
       - 'src/components/**'
       - 'src/app/admin/billing/**'
@@ -65,8 +69,16 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Verify and unpack pinned Router test source
+        run: |
+          python3 scripts/verify-router-fixture.py
+          python3 scripts/prepare-router-fixture.py --destination output/model-config-20261004/router-source
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: output/model-config-20261004/router-source/go.mod
       - name: Verify coordinated release and failure rollback
         run: |
+          python3 scripts/verify-model-deploy.py
           for failure in 0 1; do
             docker run --rm --network none -e NAUMI_VERIFY_RELEASE_FIXTURE=1 -e FAIL_HEALTH=$failure -v "$PWD/scripts/deploy-release.sh:/deploy.sh:ro" -v "$PWD/scripts/verify-coordinated-release.sh:/verify.sh:ro" --entrypoint bash node:24-bookworm-slim /verify.sh
           done
@@ -76,6 +88,15 @@ jobs:
         env:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
           NAUMI_VERIFY_ISOLATED_DB: '1'
+      - name: Registered model execution and private control-plane regressions
+        run: |
+          for check in coverage config publication admin execution tools router-contract performance review flow shared-capacity; do
+            npm run verify:model-$check
+          done
+        env:
+          DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
+          NAUMI_VERIFY_ISOLATED_DB: '1'
+          NAUMI_VERIFY_ROUTER_SOURCE: output/model-config-20261004/router-source
       - name: Billing admin browser acceptance
         run: |
           npx playwright install --with-deps chromium

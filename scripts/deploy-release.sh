@@ -99,6 +99,12 @@ upgrade_release_compose() {
   ensure_app_env "$compose" VIDEO_WORKER_SECRET '${VIDEO_WORKER_SECRET:?VIDEO_WORKER_SECRET required}'
   ensure_app_env "$compose" VIDEO_API_MODELS '${VIDEO_API_MODELS:-}'
   ensure_app_env "$compose" VIDEO_PROVIDERS_JSON '${VIDEO_PROVIDERS_JSON:-}'
+  ensure_app_env "$compose" NAUMI_ROUTER_MANAGEMENT_URL '${NAUMI_ROUTER_MANAGEMENT_URL:-}'
+  ensure_app_env "$compose" NAUMI_ROUTER_MANAGEMENT_TOKEN '${NAUMI_ROUTER_MANAGEMENT_TOKEN:-}'
+  ensure_app_env "$compose" NAUMI_ROUTER_GENERATION_URL '${NAUMI_ROUTER_GENERATION_URL:-}'
+  ensure_app_env "$compose" NAUMI_ROUTER_GENERATION_TOKEN '${NAUMI_ROUTER_GENERATION_TOKEN:-}'
+  ensure_app_env "$compose" MODEL_CONFIG_ENVELOPE_SECRET '${MODEL_CONFIG_ENVELOPE_SECRET:-}'
+  ensure_app_env "$compose" MODEL_CONFIG_TRUSTED_ORIGINS '${MODEL_CONFIG_TRUSTED_ORIGINS:-}'
   ensure_app_env "$compose" STORAGE_DRIVER '${STORAGE_DRIVER:-local}'
   ensure_app_env "$compose" NAUMI_IMAGE_QUALITY_SUPPORTED '${NAUMI_IMAGE_QUALITY_SUPPORTED:-0}'
   ensure_app_env "$compose" OPENAI_IMAGE_QUALITY '${OPENAI_IMAGE_QUALITY:-medium}'
@@ -267,7 +273,7 @@ docker compose -p naumi -f "$RELEASE/docker-compose.yml" config --quiet
 docker exec naumi-db-1 pg_dump -U "$DB_USER" -d "$DB_NAME" --format=custom > "$RELEASE/backups/database.dump"
 # appdata 媒体卷备份已停用(2026-09-28):40G 盘装不下"每次部署 ~4G 全量备份"
 # (媒体不可压缩,输出≈卷大小,曾三次写满磁盘中断部署)。回滚语义上也不需要:
-# 本脚本从不恢复/重建媒体卷,ROLLBACK 只回代码+配置+数据库(pg_dump 已备)。
+# 本脚本从不恢复数据库或媒体卷；回滚只切换代码和配置，保留新任务和账务。
 # 媒体卷冷备改为低频手动:bash /root/backup-appdata.sh(如需)。
 echo "APPDATA_BACKUP_DISABLED: media volume not backed up per-deploy (by design)"
 touch "$RELEASE/backups/appdata.tar.gz.skipped"
@@ -282,6 +288,11 @@ PREVIOUS='$PREVIOUS'
 RELEASE='$RELEASE'
 NGINX='$NGINX'
 COORDINATED='$COORDINATED'
+MODEL_RELEASE=0
+if grep -Eq '^NAUMI_ROUTER_MANAGEMENT_URL=.+[^[:space:]]' "\$RELEASE/.env"; then
+  MODEL_RELEASE=1
+  COORDINATED=1
+fi
 if [ "\${1:-}" = --check ]; then
   test -r "\$PREVIOUS/.env"
   test -r "\$RELEASE/backups/nginx.before.conf"
@@ -295,7 +306,21 @@ if [ "\${1:-}" = --check ]; then
   exit 0
 fi
 if [ "\$COORDINATED" = 1 ]; then
+  # A manual rollback can happen after ingress resumed. Close it again before
+  # restoring an older app that cannot interpret accepted model snapshots.
+  awk '/server[[:space:]]*\\{/ {print; print "    add_header Retry-After 60 always;"; print "    return 503;"; next} {print}' "\$RELEASE/backups/nginx.before.conf" > "\$NGINX"
+  nginx -t
+  systemctl reload nginx
   docker compose -p naumi -f "\$RELEASE/docker-compose.yml" stop -t 30 video-worker
+  if [ "\$MODEL_RELEASE" = 1 ]; then
+    dbu=\$(docker exec naumi-db-1 printenv POSTGRES_USER)
+    dbn=\$(docker exec naumi-db-1 printenv POSTGRES_DB)
+    pending=\$(docker exec naumi-db-1 psql -U "\$dbu" -d "\$dbn" -Atc "SELECT (SELECT count(*) FROM app_image_jobs WHERE payload ? 'modelExecutions' AND billing_settled=false)+(SELECT count(*) FROM app_canvas_image_tasks WHERE parameters ? 'modelExecutions' AND status IN ('queued','processing','needs_attention'))+(SELECT count(*) FROM app_video_tasks WHERE parameters ? 'modelExecutions' AND status IN ('queued','processing','needs_attention'));" )
+    if [ "\$pending" != 0 ]; then
+      echo ROLLBACK_BLOCKED_PENDING_MODEL_TASKS WORKERS_PAUSED INGRESS_MAINTENANCE >&2
+      exit 1
+    fi
+  fi
   docker compose -p naumi -f "\$PREVIOUS/docker-compose.yml" up -d --no-deps --no-build app
   ln -sfn "\$PREVIOUS" /opt/naumi/current
   echo ROLLBACK_RESULT=APP_RESTORED_WORKERS_PAUSED_MAINTENANCE_RETAINED

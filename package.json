@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "verify:video-reliability": "node scripts/verify-video-reliability.mjs",
+    "verify:video-reliability": "tsx --conditions react-server scripts/verify-video-reliability.mjs",
     "verify:video-memory": "node --expose-gc scripts/verify-video-memory.mjs",
     "audit:video-intents": "tsx scripts/audit-video-creation-intents.ts",
     "verify:video-providers": "tsx --conditions react-server scripts/verify-video-providers.ts",
@@ -43,7 +43,18 @@
     "verify:billing-performance": "tsx --conditions react-server scripts/verify-billing-performance.ts",
     "verify:billing-review": "tsx --conditions react-server scripts/verify-billing-review.ts",
     "verify:billing-all": "node scripts/verify-billing-all.mjs",
-    "verify:billing-ui": "node scripts/verify-billing-ui.mjs"
+    "verify:billing-ui": "node scripts/verify-billing-ui.mjs",
+    "verify:model-config": "tsx --conditions react-server scripts/verify-model-config.ts",
+    "verify:model-publication": "tsx --conditions react-server scripts/verify-model-publication.ts",
+    "verify:model-router-contract": "tsx --conditions react-server scripts/verify-model-router-contract.ts",
+    "verify:model-admin": "tsx --conditions react-server scripts/verify-model-admin.ts",
+    "verify:model-execution": "tsx --conditions react-server scripts/verify-model-execution.ts",
+    "verify:model-tools": "tsx --conditions react-server scripts/verify-global-image-quality.ts --managed",
+    "verify:model-performance": "tsx --conditions react-server scripts/verify-model-performance.ts",
+    "verify:model-coverage": "tsx --conditions react-server scripts/verify-model-config-coverage.ts",
+    "verify:model-review": "tsx --conditions react-server scripts/verify-model-review.ts",
+    "verify:model-flow": "tsx --conditions react-server scripts/verify-model-flow.ts",
+    "verify:model-shared-capacity": "tsx --conditions react-server scripts/verify-model-shared-capacity.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",

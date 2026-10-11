@@ -135,9 +135,23 @@ assert.match(tasksRoute, /VALID_STATUS[\s\S]*needs_attention/);
 assert.match(tasksRoute, /tasks: tasks\.map\(publicVideoTaskView\)/);
 assert.match(tasksRoute, /task: publicVideoTaskView\(task\)/);
 assert.match(taskByIdRoute, /task: publicVideoTaskView\(task\)/);
-const publicDtoStart = service.indexOf("export function publicVideoTaskView");
-const publicDtoEnd = service.indexOf("\n}\n", publicDtoStart) + 3;
-const publicDto = service.slice(publicDtoStart, publicDtoEnd);
+// Check the actual public payload: reading a private snapshot to obtain its
+// public alias is allowed, returning the private snapshot itself is not.
+const { publicVideoTaskView } = await import("../src/lib/video/service.ts");
+const privateFields = {
+  upstreamId: "private-task-id", videoReferences: ["private-reference"],
+  capabilitySnapshot: { raw: "private-capability" }, providerSnapshot: { apiKey: "private-secret" },
+  responseBody: "private-response", lastResponse: "private-last-response", errorDetail: "private-error-detail",
+  resultStorageKey: "private-storage-key", idempotencyKey: "private-intent",
+};
+const publicDto = publicVideoTaskView({
+  id: "public-task", model: "private-wire-model", providerId: "private-provider", prompt: "fixture prompt",
+  status: "processing", progress: 50, cost: 12, source: "workbench", seconds: "4",
+  parameters: { ...privateFields, modelExecutions: { video: { publicModelId: "public-video-alias", credentialRef: "private-credential-ref" } } },
+  ...privateFields,
+});
+assert.equal(publicDto.model, "public-video-alias");
+assert.equal(publicDto.providerId, "managed-video");
 for (const privateField of [
   "upstreamId",
   "parameters",
@@ -150,8 +164,9 @@ for (const privateField of [
   "resultStorageKey",
   "idempotencyKey",
 ]) {
-  assert.ok(!publicDto.includes(privateField), `public task DTO leaks ${privateField}`);
+  assert.ok(!(privateField in publicDto), `public task DTO leaks ${privateField}`);
 }
+for (const privateValue of ["private-wire-model", "private-provider", "private-credential-ref", "private-secret", "private-reference", "private-response"]) assert.ok(!JSON.stringify(publicDto).includes(privateValue), `public task DTO leaks ${privateValue}`);
 
 console.log(
   "PASS video reliability fault injection: progress_reset=0 first_completion_failure=1 consecutive_retry=2 " +

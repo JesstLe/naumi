@@ -45,10 +45,16 @@ function normalizeQuality(value: unknown): string {
  * - 通道支持:按请求执行(auto/空串回退到环境默认)。
  * - 通道不支持:一律按默认档执行,并标记回退原因;请求值仅入审计。
  */
-export function resolveImageQuality(requested: unknown): ResolvedImageQuality {
+export function resolveImageQuality(requested: unknown, supportedQualities?: readonly string[]): ResolvedImageQuality {
   const req = normalizeQuality(requested);
   const fallback =
     normalizeQuality(process.env.OPENAI_IMAGE_QUALITY) || "medium";
+  if (supportedQualities !== undefined) {
+    const available = supportedQualities.map(normalizeQuality).filter(Boolean);
+    const channelDefault = available.includes(fallback) ? fallback : available[0] || fallback;
+    const executed = available.includes(req) ? req : channelDefault;
+    return { requested: req, executed: executed as ExecutedQuality, fallbackReason: req && req !== executed ? "channel-unsupported" : null };
+  }
   if (imageQualityCapable()) {
     return {
       requested: req,
