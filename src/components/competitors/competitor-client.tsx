@@ -1,13 +1,12 @@
 "use client";
 import {SelectMenu} from "@/components/ui/select-menu";
 import {useFeatureBilling} from "@/lib/billing/preview";
-import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { FolderUp, Download, ScanLine, SquareDashedMousePointer, RotateCcw, Plus, Minus, RefreshCw, Trash2, ImagePlus, Layers, Check } from "lucide-react";
+import { FolderUp, Download, ScanLine, SquareDashedMousePointer, RotateCcw, Plus, Minus, RefreshCw, Trash2, ImagePlus, Layers, Check, ChevronRight, SlidersHorizontal, ImageIcon, ExternalLink, Sparkles } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { authHeader } from "@/lib/supabase";
@@ -213,17 +212,17 @@ export function CompetitorClient() {
   }
   const folders = Array.from(new Set(items.map(i => i.path.includes("/") ? i.path.slice(0,i.path.lastIndexOf("/")) : "未分组"))).sort();
   const visible = items.filter(i => folder === "all" || (i.path.includes("/") ? i.path.slice(0,i.path.lastIndexOf("/")) : "未分组") === folder).sort((a,b) => a.path.localeCompare(b.path,"zh-CN",{numeric:true}));
-  return <div className="cmp-workspace">
-    <header className="cmp-header"><div className="cmp-title"><Layers size={20}/><h1>竞品工作台</h1><span>{items.length} 张</span></div>
-      <div className="cmp-actions"><button disabled={uploading || !ready} onClick={() => folderInput.current?.click()}><FolderUp size={16}/>导入文件夹</button><button disabled={uploading || !ready} onClick={() => fileInput.current?.click()}><ImagePlus size={16}/>添加图片</button><button onClick={() => { if (Object.keys(drafts).length && !confirm("重新加载会丢弃未保存的修改，继续？")) return; setDrafts({}); void load(); }} aria-label="刷新素材"><RefreshCw size={16}/></button></div>
+  return <div data-tool-workspace="competitors" className="cmp-workspace">
+    <header className="cmp-header"><nav aria-label="面包屑" className="cmp-breadcrumb"><Link href="/tools">创作工具</Link><ChevronRight size={14}/><span>竞品工作台</span></nav>
+      <div className="cmp-actions"><button className="cmp-button" disabled={uploading || !ready} onClick={() => folderInput.current?.click()}><FolderUp size={16}/>导入文件夹</button><button className="cmp-button" disabled={uploading || !ready} onClick={() => fileInput.current?.click()}><ImagePlus size={16}/>添加图片</button><button className="cmp-button" onClick={() => { if (Object.keys(drafts).length && !confirm("重新加载会丢弃未保存的修改，继续？")) return; setDrafts({}); void load(); }} aria-label="刷新素材"><RefreshCw size={16}/></button></div>
     </header>
     <input ref={folderInput} data-testid="folder-input" type="file" multiple hidden onChange={e => { pick(e.target.files); e.target.value=""; }}/>
     <input ref={fileInput} data-testid="image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={e => { pick(e.target.files); e.target.value=""; }}/>
     <input ref={productInput} data-testid="product-input" type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => { pick(e.target.files,true); e.target.value=""; }}/>
-    {!user && ready && <div className="cmp-notice"><button onClick={() => openAuth("sign-in")}>登录后导入并保存竞品图片</button></div>}
-    {error && <div className="cmp-error" role="alert">{error}<button onClick={() => setError("")}>关闭</button></div>}
+    {!user && ready && <div className="cmp-notice"><button className="cmp-button" onClick={() => openAuth("sign-in")}>登录后导入并保存竞品图片</button></div>}
+    {error && <div className="cmp-error" role="alert">{error}<button className="cmp-button" onClick={() => setError("")}>关闭</button></div>}
     {notice && <div className="cmp-notice" role="status">{notice}</div>}
-    {(batchBusy || batchResults.length > 0) && <details className="cmp-uploads" open={batchResults.some(r => !r.ok)}><summary>批处理：{batchResults.filter(r => r.ok).length} 成功 / {batchResults.filter(r => !r.ok).length} 失败{batchBusy ? " · 处理中" : " · 已结束"}</summary>{batchResults.map((r,i)=><div key={i}><span>{r.path}</span><span>{r.ok?"完成":"失败，可选中该图重试"}</span></div>)}{batchBusy && <button onClick={()=>{batchStop.current=true;}}>完成当前图片后停止</button>}</details>}
+    {(batchBusy || batchResults.length > 0) && <details className="cmp-uploads" open={batchResults.some(r => !r.ok)}><summary>批处理：{batchResults.filter(r => r.ok).length} 成功 / {batchResults.filter(r => !r.ok).length} 失败{batchBusy ? " · 处理中" : " · 已结束"}</summary>{batchResults.map((r,i)=><div key={i}><span>{r.path}</span><span>{r.ok?"完成":"失败，可选中该图重试"}</span></div>)}{batchBusy && <button className="cmp-button" onClick={()=>{batchStop.current=true;}}>完成当前图片后停止</button>}</details>}
     {queue.length > 0 && <details className="cmp-uploads" open={uploading || queue.some(t => t.status === "error")}><summary>导入进度 {queue.filter(t => t.status === "done").length} / {queue.length}{uploading ? " · 处理中" : ""}</summary>
       {queue.map(t => <div className="cmp-upload-row" key={t.id}>
         <span className="cmp-upload-name" title={t.path}>{t.path}</span>
@@ -233,45 +232,49 @@ export function CompetitorClient() {
           {t.status === "uploading" && <span className="cmp-upload-progress" aria-label={`上传进度 ${t.progress || 0}%`}><i style={{ width: `${t.progress || 0}%` }}/></span>}
           {t.error && <small className="cmp-upload-error">{t.error}</small>}
         </span>
-        {t.status === "error" && <button disabled={uploading} onClick={() => void upload([t])}>重试</button>}
+        {t.status === "error" && <button className="cmp-button" disabled={uploading} onClick={() => void upload([t])}>重试</button>}
       </div>)}
     </details>}
     <div className="cmp-layout">
-      <aside className="cmp-library"><div className="cmp-panel-heading">参考素材</div>
+      <aside className="cmp-library" aria-label="参考素材">
+        <div className="cmp-tool-heading"><span className="cmp-tool-icon"><Layers size={21} strokeWidth={1.9}/></span><div><h1>竞品工作台</h1><p>参考素材 <span className="cmp-count">{items.length}</span></p></div></div>
         <SelectMenu label="文件夹筛选" value={folder} onChange={setFolder} className="w-full" options={[{value:"all",label:"全部文件夹"},...folders.map(value=>({value,label:value}))]} />
-        <div className="cmp-library-tools"><button disabled={!visible.length} onClick={() => setSelected(visible.every(i => selected.includes(i.id)) ? [] : visible.map(i => i.id))}>全选 / 清空</button><button disabled={!selected.length || batchBusy} onClick={() => void runBatch("analyze")}>批量反推 ({selected.length})</button><button disabled={!selected.length || batchBusy} onClick={() => void runBatch("replicate")}>批量生成</button><button disabled={!selected.length} onClick={exportPrompts}>导出提示词</button></div>
+        <div className="cmp-library-tools"><button className="cmp-button" disabled={!visible.length} onClick={() => setSelected(visible.every(i => selected.includes(i.id)) ? [] : visible.map(i => i.id))}>{visible.length > 0 && visible.every(i => selected.includes(i.id)) ? "取消全选" : "全选素材"}</button><button className="cmp-button" disabled={!selected.length || batchBusy} onClick={() => void runBatch("analyze")}><ScanLine size={14}/>批量反推 ({selected.length})</button><button className="cmp-button" disabled={!selected.length || batchBusy} onClick={() => void runBatch("replicate")}><Sparkles size={14}/>批量生成</button><button className="cmp-button" disabled={!selected.length} onClick={exportPrompts}><Download size={14}/>导出提示词</button></div>
         <div className="cmp-file-list">{visible.map(i => <div key={i.id} className={`cmp-file ${activeId===i.id ? "active" : ""}`}>
           <input type="checkbox" aria-label={`选择 ${i.path}`} checked={selected.includes(i.id)} onChange={e => setSelected(all => e.target.checked ? [...all,i.id] : all.filter(id=>id!==i.id))}/>
-          <button onClick={() => { setActiveId(i.id); setRegionId(""); setCompare(false); setZoom(1); }} title={i.path}>
+          <button className="cmp-button" onClick={() => { setActiveId(i.id); setRegionId(""); setCompare(false); setZoom(1); }} title={i.path}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img alt="" src={i.image}/><span><strong>{i.path.split("/").pop()}</strong><small>{i.path}</small><small>{running[i.id] || i.busy ? "处理中…" : `${i.versions.length} 个版本`}{drafts[i.id] ? " · 未保存" : ""}</small></span>
           </button>
         </div>)}</div>
-        {!items.length && <p className="cmp-empty-small">支持 JPG / PNG / WebP，保留子目录与文件顺序。</p>}
+        {!visible.length && <div className="cmp-library-empty"><ImageIcon size={24}/><p>{items.length ? "此文件夹暂无素材" : "暂无参考素材"}</p><span>JPG / PNG / WebP</span></div>}
       </aside>
-      <section className="cmp-center">
-        <div className="cmp-toolbar"><button className={drawing?"selected":""} disabled={!item||busy||compare} onClick={() => setDrawing(!drawing)}><SquareDashedMousePointer size={15}/>框选元素</button>
-          <button onClick={()=>setZoom(z=>Math.max(.25,z-.25))} aria-label="缩小"><Minus size={15}/></button><button onClick={()=>setZoom(1)}>{Math.round(zoom*100)}%</button><button onClick={()=>setZoom(z=>Math.min(4,z+.25))} aria-label="放大"><Plus size={15}/></button>
-          <label className="cmp-inline"><input type="checkbox" checked={compare} onChange={e=>setCompare(e.target.checked)}/>查看原图</label>
-          <button disabled={!item||busy} onClick={()=>void download()}><Download size={15}/>下载</button>
+      <section className="cmp-center" aria-label="图片预览">
+        <div className="cmp-panel-heading"><h2>图片预览</h2><span className="cmp-preview-name" title={item?.path}>{item?.path.split("/").pop() || "未选择素材"}</span></div>
+        <div className="cmp-toolbar"><button className={`cmp-button ${drawing?"selected":""}`} aria-pressed={drawing} disabled={!item||busy||compare} onClick={() => setDrawing(!drawing)}><SquareDashedMousePointer size={15}/>框选元素</button>
+          <button className="cmp-button" onClick={()=>setZoom(z=>Math.max(.25,z-.25))} aria-label="缩小"><Minus size={15}/></button><button className="cmp-button" onClick={()=>setZoom(1)}>{Math.round(zoom*100)}%</button><button className="cmp-button" onClick={()=>setZoom(z=>Math.min(4,z+.25))} aria-label="放大"><Plus size={15}/></button>
+          <label className="cmp-inline"><input type="checkbox" checked={compare} disabled={!item} onChange={e=>setCompare(e.target.checked)}/>查看原图</label>
+          <button className="cmp-button" disabled={!item||busy} onClick={()=>void download()}><Download size={15}/>下载</button>
         </div>
-        {item ? <RegionEditor image={compare?item.image:currentImage(item)} width={item.width} height={item.height} regions={compare?[]:item.regions} selected={regionId} onSelect={setRegionId} onAdd={r=>{ if(item.regions.length>=20){setError("最多创建 20 个选区");return;} change({regions:[...item.regions,r]});setRegionId(r.id); }} disabled={busy||compare} zoom={zoom} draw={drawing}/> : <div className="cmp-stage cmp-empty"><FolderUp size={34}/><h2>导入竞品图片</h2><p>选择文件夹，或添加图片开始分析。</p><button onClick={()=>folderInput.current?.click()}>选择文件夹</button></div>}
-        {item && <div className="cmp-history"><span>版本</span><button className={!item.activeVersion?"selected":""} disabled={busy} onClick={()=>change({activeVersion:"",regions:[],prompt:item.prompt})}>原图</button>
-          {item.versions.map((v,i)=><button key={v.id} className={item.activeVersion===v.id?"selected":""} disabled={busy} onClick={()=>change({activeVersion:v.id,prompt:v.prompt,regions:v.regions})} title={v.createdAt}>V{i+1} · {v.kind==="edit"?"局部修改":"参考生成"}</button>)}
+        {item ? <RegionEditor image={compare?item.image:currentImage(item)} width={item.width} height={item.height} regions={compare?[]:item.regions} selected={regionId} onSelect={setRegionId} onAdd={r=>{ if(item.regions.length>=20){setError("最多创建 20 个选区");return;} change({regions:[...item.regions,r]});setRegionId(r.id); }} disabled={busy||compare} zoom={zoom} draw={drawing}/> : <div className="cmp-stage cmp-empty"><span className="cmp-empty-icon"><FolderUp size={28} strokeWidth={1.6}/></span><h2>导入参考图片</h2><p>选择文件夹或添加图片</p><button className="cmp-button cmp-primary" disabled={uploading || !ready} onClick={()=>folderInput.current?.click()}><FolderUp size={16}/>选择文件夹</button></div>}
+        {item && <div className="cmp-history"><span>版本</span><button className={`cmp-button ${!item.activeVersion?"selected":""}`} aria-pressed={!item.activeVersion} disabled={busy} onClick={()=>change({activeVersion:"",regions:[],prompt:item.prompt})}>原图</button>
+          {item.versions.map((v,i)=><button key={v.id} className={`cmp-button ${item.activeVersion===v.id?"selected":""}`} aria-pressed={item.activeVersion===v.id} disabled={busy} onClick={()=>change({activeVersion:v.id,prompt:v.prompt,regions:v.regions})} title={v.createdAt}>V{i+1} · {v.kind==="edit"?"局部修改":"参考生成"}</button>)}
         </div>}
       </section>
-      <aside className="cmp-properties">
+      <aside className="cmp-properties" aria-label="创作设置">
+        <div className="cmp-panel-heading"><h2><SlidersHorizontal size={17}/>创作设置</h2></div>
+        <div className={`cmp-properties-scroll nv-panel-scroll ${!item ? "cmp-empty-settings" : ""}`}>
         {item ? <>
-<ImageQualityControl disabled={busy || batchBusy} /><p className="text-xs text-c-text3">每张 {costPerImage} 积分；仅成功出图计费</p>
-<div className="cmp-panel-heading"><span>提示词</span><button disabled={busy} onClick={()=>void action("analyze")}><ScanLine size={15}/>反推提示词</button></div>
-<TextModelSelect compact />
+<ImageQualityControl disabled={busy || batchBusy} /><div className="cmp-cost"><span>生成费用</span><strong>{costPerImage} 积分 / 张</strong></div>
+<div className="cmp-panel-heading"><span>提示词</span><button className="cmp-button" disabled={busy} onClick={()=>void action("analyze")}><ScanLine size={15}/>反推提示词</button></div>
+<div className="cmp-text-model"><TextModelSelect compact /></div>
           <textarea aria-label="反推提示词" rows={7} maxLength={8000} value={item.prompt} disabled={busy} placeholder="反推参考图，或直接填写生成要求" onChange={e=>change({prompt:e.target.value})}/>
           <div className="cmp-field"><label htmlFor="cmp-degree">参考方式</label><SelectMenu id="cmp-degree" label="参考方式" value={degree} onChange={setDegree} className="w-full" disabled={busy} options={[{value:"layout",label:"构图与排版"},{value:"style",label:"仅参考风格"}]} /></div>
-          <div className="cmp-field"><label htmlFor="cmp-product">替换为我的产品</label><SelectMenu id="cmp-product" label="替换为我的产品" value={productId} onChange={setProductId} className="w-full" disabled={busy} options={[{value:"",label:"不替换产品"},...items.map(i=>({value:i.id,label:i.path}))]} /><button disabled={uploading} onClick={()=>productInput.current?.click()}>上传产品图</button></div>
-          <button className="cmp-primary cmp-full" disabled={busy||!item.prompt.trim()} onClick={()=>void action("replicate")}>{running[item.id]==="replicate"?"生成中…":"生成类似图片 / 重做"}</button>
+          <div className="cmp-field"><label htmlFor="cmp-product">替换为我的产品</label><SelectMenu id="cmp-product" label="替换为我的产品" value={productId} onChange={setProductId} className="w-full" disabled={busy} options={[{value:"",label:"不替换产品"},...items.map(i=>({value:i.id,label:i.path}))]} /><button className="cmp-button" disabled={uploading} onClick={()=>productInput.current?.click()}>上传产品图</button></div>
+          <button className="cmp-button cmp-primary cmp-full" disabled={busy||!item.prompt.trim()} onClick={()=>void action("replicate")}><Sparkles size={16}/>{running[item.id]==="replicate"?"生成中…":"参考生成"}</button>
           <div className="cmp-section-title">元素 / 选区 <span>{item.regions.length}/20</span></div>
-          <div className="cmp-regions-list">{item.regions.map((r,i)=><div key={r.id} className={r.id===regionId?"selected":""}><input aria-label={`启用 ${r.label}`} type="checkbox" checked={r.enabled} disabled={busy} onChange={e=>change({regions:item.regions.map(a=>a.id===r.id?{...a,enabled:e.target.checked}:a)})}/><button onClick={()=>{setRegionId(r.id);setDrawing(false);}}>{i+1}. {r.label}</button><span>{REGION_LABELS[r.kind]}</span></div>)}</div>
-          {!item.regions.length&&<p className="cmp-empty-small">点击“框选元素”，拖动创建选区；或反推提示词获取建议选区。</p>}
+          <div className="cmp-regions-list">{item.regions.map((r,i)=><div key={r.id} className={r.id===regionId?"selected":""}><input aria-label={`启用 ${r.label}`} type="checkbox" checked={r.enabled} disabled={busy} onChange={e=>change({regions:item.regions.map(a=>a.id===r.id?{...a,enabled:e.target.checked}:a)})}/><button className="cmp-button" onClick={()=>{setRegionId(r.id);setDrawing(false);}}>{i+1}. {r.label}</button><span>{REGION_LABELS[r.kind]}</span></div>)}</div>
+          {!item.regions.length&&<p className="cmp-empty-small">框选图片或反推提示词添加选区</p>}
           {current && <fieldset className="cmp-region-form" disabled={busy}>
             <label>元素名称<input aria-label="元素名称" value={current.label} onChange={e=>regionChange({label:e.target.value})}/></label>
             <label>修改类型<SelectMenu label="修改类型" value={current.kind} onChange={kind=>regionChange({kind:kind as CompetitorRegion["kind"]})} className="w-full" disabled={busy} options={Object.entries(REGION_LABELS).map(([value,label])=>({value,label}))} /></label>
@@ -281,14 +284,15 @@ export function CompetitorClient() {
               const value=Math.max((k === "width" || k === "height") ? 0.002 : 0,Math.min(1,Number(e.target.value)/100));
               const r={...current,[k]:value}; r.x=Math.min(r.x,1-r.width);r.y=Math.min(r.y,1-r.height);regionChange(r);
             }}/></label>)}</div>
-            <div className="cmp-actions"><button onClick={()=>void download(current.id)}>导出元素裁片</button><button onClick={()=>{change({regions:item.regions.filter(r=>r.id!==current.id)});setRegionId("");}}><Trash2 size={14}/>移除选区</button></div>
+            <div className="cmp-actions"><button className="cmp-button" onClick={()=>void download(current.id)}>导出元素裁片</button><button className="cmp-button" onClick={()=>{change({regions:item.regions.filter(r=>r.id!==current.id)});setRegionId("");}}><Trash2 size={14}/>移除选区</button></div>
           </fieldset>}
-          <button className="cmp-primary cmp-full" disabled={busy||!item.regions.some(r=>r.enabled)} onClick={()=>void action("edit")}>{running[item.id]==="edit"?"修改中…":`仅修改启用选区 (${item.regions.filter(r=>r.enabled).length})`}</button>
-          <p className="cmp-empty-small">未勾选的选区不提交；仅启用选区内替换像素，外部保持原图。选区裁片保留框内背景，不等同于自动抠图。</p>
-          <div className="cmp-actions cmp-bottom"><button disabled={busy} onClick={()=>void save().then(()=>setNotice("提示词与选区已保存")).catch(e=>setError(e.message))}><Check size={14}/>{drafts[item.id]?"保存修改":"已保存"}</button><button disabled={busy||!drafts[item.id]} onClick={()=>accept(items.find(i=>i.id===item.id)!)}><RotateCcw size={14}/>撤销未保存</button></div>
-          <div className="cmp-actions"><button disabled={busy} onClick={()=>void toCanvas()}>存入作品库</button><Link href="/canvas">打开画布</Link><button disabled={busy} onClick={()=>void remove()} aria-label="删除当前素材"><Trash2 size={15}/></button></div>
+          <button className="cmp-button cmp-primary cmp-full" disabled={busy||!item.regions.some(r=>r.enabled)} onClick={()=>void action("edit")}>{running[item.id]==="edit"?"修改中…":`仅修改启用选区 (${item.regions.filter(r=>r.enabled).length})`}</button>
+          <p className="cmp-empty-small">仅修改已勾选的选区</p>
+          <div className="cmp-actions cmp-bottom"><button className="cmp-button" disabled={busy} onClick={()=>void save().then(()=>setNotice("提示词与选区已保存")).catch(e=>setError(e.message))}><Check size={14}/>{drafts[item.id]?"保存修改":"已保存"}</button><button className="cmp-button" disabled={busy||!drafts[item.id]} onClick={()=>accept(items.find(i=>i.id===item.id)!)}><RotateCcw size={14}/>撤销未保存</button></div>
+          <div className="cmp-actions"><button className="cmp-button" disabled={busy} onClick={()=>void toCanvas()}><ImagePlus size={14}/>存入作品库</button><Link className="cmp-link-button" href="/canvas"><ExternalLink size={14}/>打开画布</Link><button className="cmp-button" disabled={busy} onClick={()=>void remove()} aria-label="删除当前素材" title="删除当前素材"><Trash2 size={15}/></button></div>
           {busy&&<p role="status">{running[item.id]==="analyze"?"正在分析图像…":"此图任务处理中，其他图片可继续操作。"}</p>}
-        </>:<div className="cmp-empty-small">选择左侧图片后查看提示词、元素和历史版本。</div>}
+        </>:<div className="cmp-properties-empty"><SlidersHorizontal size={25} strokeWidth={1.6}/><p>选择素材开始编辑</p></div>}
+        </div>
       </aside>
     </div>
   </div>;
