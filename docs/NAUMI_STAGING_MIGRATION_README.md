@@ -1019,3 +1019,7 @@ GPT-6 Astra仍为显示名，真实主模型glm-5.3-flash，备用hy4-preview与
 E:/workspace/naumi从4f251af安全快进到e04ce4b，并跟进最终交接文档主线；保留codex/admin-model-mvp分支名及未跟踪outputs/。本任务独立codex/agent-progress-release-20261011工作副本合并、普通推送main，不切换共享checkout分支、不重置、不覆盖他人未提交内容。
 
 备份、固定ROLLBACK.sh（仅切镜像，不回灌数据库）、构建/发布日志及浏览器证据：/opt/naumi-staging/evidence/agent-progress-release-20261011。构建前80%/20,733,960,192字节可用，达到约定条件后才构建；发布后81%触发提前维护，重新持同一锁且确认新运行版本/可读备份/固定回滚，只删除本任务a292138来源目录的.next/cache，释放568,291,328字节（约542MiB），最终80%/20,278,427,648字节可用。当前与最近两个成功版本的runtime/镜像、全部7天备份/回滚和其他同事目录保留，未prune/删除volume。维护前累计成功发布2次，提前清理后归零；文档提交不另发镜像。本机C/E超过190GiB可用，未删除用户文件。
+
+## 2026-10-12 最新分支合入与源码同步
+
+codex/staging-data-sync-20261012（a8e0844）已合入main，固定源码同步到120.27.162.85。仅新增9个运维脚本/文档文件，APP/Worker业务代码无变化，保持e04ce4b镜像及v2026.10.11-172206，不重复构建、重启或执行已完成数据迁移。全程deploy.lock、可读DB/配置备份与源码指针回滚，语法/7脚本哈希/健康/实际版号/容器及配置保持通过。未连接旧机，华纳云未迁移。证据/opt/naumi-staging/evidence/branch-release-20261012，详见docs/changes/2026-10-12-branch-source-sync.md。磁盘84%/约15GiB可用，下次构建前须维护；本次源码同步不计业务发布，累计仍0；视频/OSS延期保持。

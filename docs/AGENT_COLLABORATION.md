@@ -1,5 +1,11 @@
 # Naumi 多 Agent Git 与新机发布协作
 
+## 2026-10-12 最新分支合入与源码同步
+
+codex/staging-data-sync-20261012（a8e0844）已普通快进合入main，新增9个运维脚本/文档文件；其余四条未合入引用为专用历史回滚分支。固定源码已同步120.27.162.85，全程deploy.lock、可读DB/配置备份及源码指针回滚，语法/文件哈希/健康/实际版号通过。没有重复执行数据迁移、连接旧机或覆盖数据。
+
+业务代码无变化，APP/Worker仍为e04ce4b，v2026.10.11-172206；没有重复构建或重启，不计新网站发布。磁盘84%/约15GiB可用，下次构建前须维护，累计发布仍0。独立branch-release-20261012工作副本从重写后的origin/main开始，未重新合入旧历史、未重置共享E盘checkout。详情docs/changes/2026-10-12-branch-source-sync.md；证据/opt/naumi-staging/evidence/branch-release-20261012。华纳云未迁移，视频/OSS延期保持。
+
 ## 发布完成：最新 Agent 生命周期、创作工具及会话隔离分支（2026-10-11）
 
 固定业务源码e04ce4bcd218bc464889bb64dea61071d1c67b3d已发布新机120.27.162.85，APP/Worker Image ID sha256:91b7e82abc9c5109a5a28fce66bc76ea57c89ba3143f9ca0f9becbc60e8d3e08，实际版号1791710526 / v2026.10.11-172206。基于main 4f251af，合入agent-lifecycle-tool-coverage 0628b11、agent-entry-parity-audit b088099、agent-session-isolation f5ca6b1；包括纯文本/可选图片参考、项目历史、恢复/终态、创作工具覆盖和工作台禁止删除画布会话。保留现有Logo、小球/富文本/拖动范围及竞品工作台样式。四条专用历史回滚分支未混入业务。
