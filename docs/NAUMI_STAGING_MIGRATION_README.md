@@ -1,5 +1,9 @@
 # Naumi 新服务器预发布与晚间回传方案
 
+## 2026-10-11 画布富文本与小球主题发布准备
+
+独立codex/canvas-agent-richtext已完成只读Markdown回复展示和小球明暗适配；247项富文本/主题检查、TypeScript与隔离桌面/390px浏览器通过。当前实际运行仍为下方5e4851版本，本轮尚未切换镜像。依赖lock更新需在新机npm ci后正式构建，发布全程持deploy.lock；仅新机，旧机不回传，配置/数据库/媒体不覆盖。详细进度见docs/changes/2026-10-11-canvas-agent-richtext.md。
+
 ## 最新运行版本：画布悬浮 Agent 小球（2026-10-11验收）
 
 固定业务源码5e4851fac70e9260a0cec800e101dc6a7c51ca68已发布新机120.27.162.85；APP/Worker Image ID sha256:322847ab7f484c7c42f5b2fb151e7cc74372e12f3e26a6fa5ee68bebffca5078，实际1791647970 / v2026.10.10-235930。画布加入石墨/柔白可拖动小球、账号位置记忆与键盘操作，点击复用现有Agent侧栏，表情跟随真实SSE及历史终态；没有新增调度器、计费路径或Schema。

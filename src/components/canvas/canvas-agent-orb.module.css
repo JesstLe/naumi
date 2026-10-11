@@ -8,3 +8,8 @@
 .status[data-state="thinking"] i, .status[data-state="searching"] i, .status[data-state="working"] i { background: #6763d8; }
 .status[data-state="done"] i { background: #339273; }
 .status[data-state="error"] i { background: #bd5656; }
+.floating[data-theme="dark"] .ball { filter: drop-shadow(0 8px 10px rgb(0 0 0 / .3)); }
+.floating[data-theme="dark"] .status { background: rgb(35 39 48 / .95); border-color: rgb(94 102 118 / .65); color: #e5e7ed; box-shadow: 0 2px 8px rgb(0 0 0 / .18); }
+.floating[data-theme="dark"] .status[data-state="thinking"] i, .floating[data-theme="dark"] .status[data-state="searching"] i, .floating[data-theme="dark"] .status[data-state="working"] i { background: #aaa6f3; }
+.floating[data-theme="dark"] .status[data-state="done"] i { background: #7cc8a9; }
+.floating[data-theme="dark"] .status[data-state="error"] i { background: #ec9999; }

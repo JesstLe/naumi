@@ -22,6 +22,7 @@ import { WorkflowDecorationNode, WorkflowGroupNode } from "./workflow-import-nod
 import type { ImportedManifest } from "@/lib/canvas/workflow-clipboard";
 import { CanvasAgentToggle } from "./canvas-agent-toggle";
 import { CanvasAgentOrb } from "./canvas-agent-orb";
+import { AssistantRichText } from "./assistant-richtext";
 import { restoredOrbOutcome, type AgentOrbOutcome, type AgentOrbStep } from "@/lib/canvas/agent-orb";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
 import { NodePropertiesPanel } from "./node-properties-panel";
@@ -5453,40 +5454,9 @@ export function CanvasClient() {
     });
   }
 
-  // 助手消息渲染:普通文本 + [[GEN]]…[[/GEN]] 生图块(按钮显示提示词摘要,点击生图)
+  // 展示层保留原始 Markdown 和已有生图入口，不修改 Agent 执行或历史数据。
   function renderAssistantContent(content: string) {
-    const regex = /\[\[GEN\]\]([\s\S]*?)\[\[\/GEN\]\]/g;
-    const parts: ReactNode[] = [];
-    let cursor = 0;
-    let key = 0;
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(content))) {
-      if (match.index > cursor) {
-        parts.push(
-          <p key={key++} className="whitespace-pre-wrap">{content.slice(cursor, match.index)}</p>
-        );
-      }
-      const genPrompt = match[1].trim();
-      if (genPrompt) {
-        parts.push(
-          <button
-            key={key++}
-            type="button"
-            onClick={() => genFromAssistant(genPrompt)}
-            className="mt-1.5 flex w-full items-center gap-1.5 rounded-lg border border-[#9fd8e3] bg-[#eaf7f9] px-3 py-2 text-left text-[12px] font-semibold text-[#18747f] transition-colors hover:bg-[#dcf0f4]"
-          >
-            <Zap className="h-3.5 w-3.5 flex-none" />
-            <span className="min-w-0 flex-1 truncate" title={genPrompt}>{genPrompt}</span>
-            <span className="flex-none text-[11px] opacity-70">生成 6 分</span>
-          </button>
-        );
-      }
-      cursor = match.index + match[0].length;
-    }
-    if (cursor < content.length) {
-      parts.push(<p key={key++} className="whitespace-pre-wrap">{content.slice(cursor)}</p>);
-    }
-    return parts;
+    return <AssistantRichText content={content} light={lightCanvas} english={locale === "en"} onCopy={copyText} onGenerate={genFromAssistant} />;
   }
 
   async function generateSplitViews(source: Artwork, feedback: string) {
@@ -11873,7 +11843,7 @@ export function CanvasClient() {
           )}
           {!browsing && !readOnly && user && <CanvasAgentOrb key={user.email} email={user.email}
             busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps} open={assistantVisible}
-            english={locale === "en"} onActivate={toggleAssistant} />}
+            english={locale === "en"} onActivate={toggleAssistant} light={lightCanvas} />}
         </div>
         {propertiesOpen && !browsing && (selectedText || selected) && <NodePropertiesPanel
           key={(selectedText || selected)!.id} title={(selectedText || selected)!.title} kind={selectedText ? "text" : "image"}

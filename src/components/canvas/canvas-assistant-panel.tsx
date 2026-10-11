@@ -145,7 +145,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
       light ? "canvas-ui-light" : "canvas-ui-dark")}
     onKeyDown={event => {
       if (overlay && event.key === "Tab") {
-        const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), textarea:not(:disabled)'));
+        const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]'));
         const first = focusable[0], last = focusable[focusable.length - 1];
         if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
@@ -205,7 +205,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
         {turns.map(turn => turn.role === "user" ? <div key={turn.id} className="flex justify-end">
           <div className="canvas-ui-message max-w-[90%] whitespace-pre-wrap break-words rounded-[16px] rounded-br-[5px] px-3.5 py-2.5 text-[13px] leading-6">{turn.content}</div>
         </div> : <article key={turn.id} className="min-w-0 text-[13px] leading-6">
-          <div className="space-y-2 whitespace-pre-wrap break-words canvas-ui-text">{renderContent(turn.content)}</div>
+          <div className="min-w-0 break-words canvas-ui-text">{renderContent(turn.content)}</div>
           {!!turn.artifacts?.length && <div className="mt-3 grid grid-cols-2 gap-2" data-testid="canvas-assistant-results">{turn.artifacts.map(art => <button type="button" key={art.id} onClick={() => onPreview(art)} className="overflow-hidden rounded-xl border border-[var(--canvas-ui-border)] text-left">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={art.image} alt={art.title} className="aspect-square w-full object-contain" /><span className="block truncate px-2 py-1 text-[11px]">{art.title}</span>
