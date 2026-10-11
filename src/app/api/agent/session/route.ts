@@ -12,6 +12,7 @@ import {
   getSession,
   removeRuntimeSession,
   renameRuntimeSession,
+  persistAgentSession,
 } from "@/lib/agent/runtime";
 
 // ---------------------------------------------------------------------------
@@ -39,13 +40,15 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const id = (url.searchParams.get("id") ?? "").trim();
   if (id) {
-    const s = await getAgentSession(email, id).catch(() => null);
+    if(id.startsWith("cv-"))return NextResponse.json({error:"请从画布查看此会话"},{status:400});
+    await getSession(email,id)?.persistPending;
+    const s = await getAgentSession(email, id);
     if (!s) return NextResponse.json({ error: "会话不存在" }, { status: 404 });
     return NextResponse.json({ session: s });
   }
-  const sessions = await listAgentSessions(email, 50).catch(() => []);
+  const sessions = await listAgentSessions(email, 50, true);
   return NextResponse.json({
-    sessions: sessions.map((session) => ({
+    sessions: sessions.filter(session=>!session.id.startsWith("cv-")).map((session) => ({
       id: session.id,
       title: session.title || "未命名会话",
       createdAt: session.created_at,
@@ -70,6 +73,10 @@ export async function POST(request: Request) {
   if (!id) {
     return NextResponse.json({ error: "缺少会话 id" }, { status: 400 });
   }
+  if(id.startsWith("cv-"))return NextResponse.json({error:"请从画布管理此会话"},{status:400});
+  const live=getSession(email,id);
+  if(live){await persistAgentSession(live);return NextResponse.json({ok:true,serverOwned:true});}
+  if(await getAgentSession(email,id))return NextResponse.json({ok:true,serverOwned:true});
   const title = (body?.title ?? "").trim().slice(0, 120);
   const messages = Array.isArray(body?.messages) ? body!.messages.slice(-100) : [];
   const steps = Array.isArray(body?.steps) ? body!.steps.slice(-200) : [];
@@ -94,6 +101,9 @@ export async function PATCH(request: Request) {
   if (!title) {
     return NextResponse.json({ error: "会话名称不能为空" }, { status: 400 });
   }
+  if(id.startsWith("cv-"))return NextResponse.json({error:"请从画布管理此会话"},{status:400});
+  if(getSession(email,id)?.running)return NextResponse.json({error:"请先停止任务"},{status:409});
+  await getSession(email,id)?.persistPending;
   const renamed = await renameAgentSession(email, id, title);
   if (!renamed) {
     return NextResponse.json({ error: "会话不存在" }, { status: 404 });
@@ -112,12 +122,13 @@ export async function DELETE(request: Request) {
   if (!id) {
     return NextResponse.json({ error: "缺少会话 id" }, { status: 400 });
   }
-  if (getSession(email, id)?.running) {
+  if (getSession(email, id)?.running || getSession(email, id)?.canvasExecuting) {
     return NextResponse.json(
       { error: "会话正在执行任务，请先停止后再删除" },
       { status: 409 }
     );
   }
+  await getSession(email, id)?.persistPending;
   await deleteAgentSession(email, id);
   removeRuntimeSession(email, id);
   return NextResponse.json({ ok: true });

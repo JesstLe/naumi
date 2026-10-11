@@ -1,3 +1,4 @@
+import {randomUUID} from "node:crypto";
 import { NextResponse } from "next/server";
 import { withBiRequest } from "@/lib/bi/model-observer";
 import { resolveUserEmail } from "@/lib/admin-auth";
@@ -57,6 +58,7 @@ async function handlePut(request: Request) {
   const sessionId =
     (body?.sessionId ?? "").trim().slice(0, 64) ||
     `ag-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
+  if(sessionId.startsWith("cv-"))return NextResponse.json({error:"请从画布继续此会话"},{status:400});
   if (!message) {
     return NextResponse.json({ error: "请输入任务内容" }, { status: 400 });
   }
@@ -107,13 +109,14 @@ async function handlePut(request: Request) {
       { status: 409 }
     );
   }
+  session.turnId=randomUUID();
   const eventCursor = session.events.length;
   if (session.agent.state.messages.length === 0) {
     session.title = message.slice(0, 120) || session.title;
   }
   appendSessionEvent(session, "plan", { items: buildTaskPlan(message) });
   session.running = true;
-  void persistAgentSession(session);
+  await persistAgentSession(session);
 
   const encoder = new TextEncoder();
   let cancelStream = () => {
@@ -172,7 +175,7 @@ async function handlePut(request: Request) {
             reply,
             turns: session.agent.state.messages.length,
           });
-          void persistAgentSession(session);
+          void persistAgentSession(session).catch(()=>undefined);
           cleanup();
           closed = true;
           try {
@@ -186,8 +189,10 @@ async function handlePut(request: Request) {
       const timeout = setTimeout(() => session.agent.abort(), 780_000);
       cancelStream = () => {
         if (closed) return;
+        appendSessionEvent(session,"error",{code:"ABORTED",message:"任务已停止，可从历史继续"});
         session.agent.abort();
         session.running = false;
+        void persistAgentSession(session).catch(()=>undefined);
         cleanup();
         closed = true;
         try {
@@ -207,12 +212,13 @@ async function handlePut(request: Request) {
             });
             return;
           }
-          send("error", classifyAgentFailure(e));
+          const failure=classifyAgentFailure(e);appendSessionEvent(session,"error",failure);
+          send("error", failure);
         })
         .finally(() => {
           clearTimeout(timeout);
           session.running = false;
-          void persistAgentSession(session);
+          void persistAgentSession(session).catch(()=>undefined);
         });
     },
     cancel() {

@@ -32,7 +32,6 @@ export function validateBusinessConfig(config: ModelConfig) {
         try { for (const amount of p.mode === "usage" ? [p.authorizationCnyMicros] : [p.amountMicros,...(p.variants || []).map(v=>v.amountMicros)]) cnyCredits(amount,p); } catch { fail("价格与兑换率对应的积分金额超出范围",field); }
       }
       if (p?.mode === "cny-fixed" && new Set(p.variants?.map(v=>`${v.quality||"*"}:${v.resolution||"*"}`)).size !== (p.variants?.length || 0)) fail("相同规格的价格重复",field);
-      if (o.enabled && feature === "canvas.assistant" && !(model!.target.type === "upstream" && config.upstreamModels.find(u => u.id === model!.target.id)?.capabilities.vision)) fail("画布助手必须选用已声明图片输入能力的模型", field);
       const targetIds = model!.target.type === "upstream" ? [model!.target.id] : config.pools.find(p => p.id === model!.target.id)!.candidates;
       for (const id of targetIds) {
         const u = config.upstreamModels.find(u => u.id === id)!;

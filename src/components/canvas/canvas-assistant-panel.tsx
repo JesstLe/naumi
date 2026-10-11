@@ -18,7 +18,7 @@ export type SavedConversation = { id: string; title: string; turns: CanvasAssist
 /** Presentation-only sidebar: the parent owns SSE, context, model routing and billing. */
 export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns, input, busy, error,
   costLabel, labels, tasks, onInputChange, onSend, onNewChat, onRestoreChat, onClose, onPreview,
-  onCopy, renderContent, modelControl, steps = [], onStop, historyLoader, onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true,
+  onCopy, renderContent, modelControl, steps = [], onStop, onClearReference, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true,
 }: {
   open?: boolean;
   focusInput?: boolean;
@@ -34,7 +34,9 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   modelControl?: ReactNode;
   steps?: {id:string;label:string;status:"running"|"done"|"error"}[];
   onStop?: () => void;
+  onClearReference?: () => void;
   historyLoader?: () => Promise<SavedConversation[]>;
+  historyScopeKey?: string;
   onRenameHistory?: (id:string,title:string) => Promise<void>;
   onDeleteHistory?: (id:string) => Promise<void>;
   labels: CanvasAssistantLabels;
@@ -60,8 +62,17 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   const [overlay, setOverlay] = useState(false);
   const [saved, setSaved] = useState<SavedConversation[]>([]);
   const [historyLoading,setHistoryLoading]=useState(false),[historyError,setHistoryError]=useState("");
+  const [editingHistory,setEditingHistory]=useState<string|null>(null),[historyTitle,setHistoryTitle]=useState(""),[deletingHistory,setDeletingHistory]=useState<string|null>(null),[historyMutating,setHistoryMutating]=useState(false);
+  async function mutateHistory(id:string,remove=false){
+    if(historyMutating||busy||(!remove&&!historyTitle.trim()))return;
+    setHistoryMutating(true);setHistoryError("");
+    try{if(remove){await onDeleteHistory?.(id);setSaved(items=>items.filter(item=>item.id!==id));setDeletingHistory(null);}
+    else{const title=historyTitle.trim();await onRenameHistory?.(id,title);setSaved(items=>items.map(item=>item.id===id?{...item,title}:item));setEditingHistory(null);}}
+    catch(error){setHistoryError(error instanceof Error?error.message:"历史操作失败");}
+    finally{setHistoryMutating(false);}
+  }
   const loader=useRef(historyLoader);loader.current=historyLoader;
-  useEffect(()=>{if(!historyOpen||!loader.current)return;let active=true;setHistoryLoading(true);setHistoryError("");void loader.current().then(items=>{if(active)setSaved(items);}).catch(()=>{if(active)setHistoryError("历史记录读取失败，请重新打开重试");}).finally(()=>{if(active)setHistoryLoading(false);});return()=>{active=false;};},[historyOpen]);
+  useEffect(()=>{if(!historyOpen||!loader.current)return;let active=true;setHistoryLoading(true);setHistoryError("");void loader.current().then(items=>{if(active)setSaved(items);}).catch(()=>{if(active)setHistoryError("历史记录读取失败，请重新打开重试");}).finally(()=>{if(active)setHistoryLoading(false);});return()=>{active=false;};},[historyOpen,historyScopeKey]);
   const [copied, setCopied] = useState<string | null>(null);
   const [hour] = useState(() => new Date().getHours());
   const greeting = hour < 12 ? labels.morning : hour < 18 ? labels.afternoon : labels.evening;
@@ -183,12 +194,20 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           onClick={() => { setHistoryOpen(false); composer.current?.focus({ preventScroll: true }); }}>
           <MessageSquarePlus className="h-4 w-4 shrink-0" />{labels.currentChat}
         </button>}
-        {!saved.length && <p className="canvas-ui-muted py-10 text-center text-[13px]">{labels.emptyHistory}</p>}
+        {!saved.length && !historyLoading && !historyError && <p className="canvas-ui-muted py-10 text-center text-[13px]">{labels.emptyHistory}</p>}
         {saved.map(item => <div key={item.id} className="rounded-xl border border-[var(--canvas-ui-border)]"><button type="button" data-testid="canvas-assistant-history-item" disabled={busy}
           className="canvas-ui-action flex w-full items-start gap-2 rounded-xl border border-[var(--canvas-ui-border)] px-3 py-3 text-left text-[13px]"
           onClick={() => { rememberCurrent(); onRestoreChat(item.turns.map(turn => ({ ...turn })), historyLoader ? item.id : undefined); keepAtBottom.current = true; setHistoryOpen(false); composer.current?.focus({ preventScroll: true }); }}>
           <History className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span className="min-w-0 break-words">{item.title}</span>
-        </button>{(onRenameHistory||onDeleteHistory)&&<div className="flex justify-end gap-3 px-3 pb-2 text-[11px]">{onRenameHistory&&<button type="button" onClick={()=>{const title=window.prompt("修改会话名称",item.title);if(title?.trim())void onRenameHistory(item.id,title).then(()=>setSaved(items=>items.map(entry=>entry.id===item.id?{...entry,title}:entry))).catch(()=>setHistoryError("改名失败，请重试"));}}>改名</button>}{onDeleteHistory&&<button type="button" onClick={()=>{if(window.confirm("删除此对话记录？生成的图片会保留。"))void onDeleteHistory(item.id).then(()=>setSaved(items=>items.filter(entry=>entry.id!==item.id))).catch(()=>setHistoryError("删除失败，运行中的任务需先停止"));}}>删除</button>}</div>}</div>)}
+        </button>{(onRenameHistory||onDeleteHistory)&&<div className="px-3 pb-2 text-[11px]">
+          {editingHistory===item.id?<form className="flex items-center gap-2 pt-2" onSubmit={event=>{event.preventDefault();void mutateHistory(item.id);}}>
+            <input autoFocus aria-label="会话名称" value={historyTitle} maxLength={120} disabled={historyMutating} onChange={event=>setHistoryTitle(event.target.value)} onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setEditingHistory(null);}}} className="canvas-ui-control min-w-0 flex-1 rounded-lg border px-2 py-1.5" />
+            <button type="submit" disabled={historyMutating||!historyTitle.trim()} className={iconButton}>保存</button><button type="button" disabled={historyMutating} onClick={()=>setEditingHistory(null)} className={iconButton}>取消</button>
+          </form>:deletingHistory===item.id?<div className="flex items-center justify-end gap-3 pt-2" role="group" aria-label="确认删除会话"><span className="mr-auto">删除此会话？</span><button type="button" disabled={historyMutating} onClick={()=>void mutateHistory(item.id,true)} className="text-red-600">确认删除</button><button type="button" disabled={historyMutating} onClick={()=>setDeletingHistory(null)}>取消</button></div>:<div className="flex justify-end gap-3 pt-1">
+            {onRenameHistory&&<button type="button" disabled={busy||historyMutating} onClick={()=>{setEditingHistory(item.id);setHistoryTitle(item.title);setDeletingHistory(null);}}>改名</button>}
+            {onDeleteHistory&&<button type="button" disabled={busy||historyMutating} onClick={()=>{setDeletingHistory(item.id);setEditingHistory(null);}}>删除</button>}
+          </div>}
+        </div>}</div>)}
       </section> : <div className={cn("flex min-h-full flex-col", !turns.length && !busy ? "justify-center px-6 py-8 max-[480px]:px-5" : "gap-5 px-5 py-5")}>
         {!turns.length && !busy && <section data-testid="canvas-assistant-welcome">
           <h3 className="text-[22px] font-semibold leading-[1.45] tracking-tight">{greeting}<br /><span className="canvas-ui-muted text-[18px] font-normal">{labels.question}</span></h3>
@@ -232,7 +251,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
       <div ref={referenceArea} data-testid="canvas-assistant-composer" className="relative rounded-[20px] border border-[var(--canvas-ui-border)] p-3 shadow-[0_2px_12px_rgba(15,23,42,0.02)] transition-[border-color,box-shadow] focus-within:border-[var(--canvas-ui-border-strong)] focus-within:shadow-[0_0_0_3px_var(--canvas-ui-soft)]">
         <div className="mb-2 flex min-w-0 items-center justify-between gap-2">
           <span className="canvas-ui-muted inline-flex items-center gap-1.5 px-0.5 text-[11px] font-medium"><ImageIcon className="h-3 w-3" aria-hidden="true" />{labels.mode}</span>
-          {contextReady && <button type="button" title={anchorTitle} aria-label={labels.references} aria-expanded={referencesOpen}
+          {contextImages.length > 0 && <button type="button" title={anchorTitle} aria-label={labels.references} aria-expanded={referencesOpen}
             className="canvas-ui-action flex min-w-0 max-w-[160px] items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px]" onClick={() => setReferencesOpen(open => !open)}>
             <span className="flex shrink-0 -space-x-2" aria-hidden="true">{contextImages.slice(0, 2).map(image => <span key={image.id} className="canvas-ui-surface-solid h-5 w-5 overflow-hidden rounded border border-[var(--canvas-ui-border)]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -240,7 +259,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           </button>}
         </div>
         {referencesOpen && <div data-testid="canvas-assistant-references" className="canvas-ui-surface canvas-ui-surface-solid absolute bottom-[calc(100%+8px)] left-0 right-0 rounded-[16px] border p-3 shadow-lg">
-          <div className="mb-2 flex items-center justify-between text-[12px] font-semibold"><span>{labels.references}</span><button type="button" aria-label={labels.closeReferences} className={iconButton} onClick={() => setReferencesOpen(false)}><X className="h-3.5 w-3.5" /></button></div>
+          <div className="mb-2 flex items-center justify-between text-[12px] font-semibold"><span>{labels.references}</span>{onClearReference && <button type="button" disabled={busy} className={iconButton} onClick={()=>{onClearReference();setReferencesOpen(false);}} aria-label="移除图片参考" title="移除图片参考"><X className="h-3.5 w-3.5" /></button>}<button type="button" aria-label={labels.closeReferences} className={iconButton} onClick={() => setReferencesOpen(false)}><X className="h-3.5 w-3.5" /></button></div>
           <div className="flex gap-2 overflow-x-auto">
             {contextImages.map((image, index) => <button key={image.id} type="button" onClick={() => onPreview(image)} title={`${index === 0 ? labels.currentImage : labels.upstreamImage}: ${image.title}`}
               className={cn("h-12 w-12 shrink-0 overflow-hidden rounded-lg border", index === 0 ? "border-[#16849a]" : "border-[var(--canvas-ui-border)]")}>
@@ -253,16 +272,16 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           placeholder={labels.placeholder} onChange={event => onInputChange(event.target.value)}
           onKeyDown={event => {
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault(); event.stopPropagation(); if (!busy && contextReady && input.trim()) onSend();
+              event.preventDefault(); event.stopPropagation(); if (!busy && input.trim()) onSend();
             }
           }}
           className="canvas-ui-text block min-h-[64px] max-h-36 w-full resize-none border-0 bg-transparent p-0 text-[13px] leading-6 outline-none placeholder:text-[var(--canvas-ui-muted)] disabled:opacity-60" />
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <button ref={referenceTrigger} type="button" disabled={!contextReady} aria-label={labels.references} title={labels.references} aria-expanded={referencesOpen} className={cn(iconButton, "canvas-ui-control rounded-full")} onClick={() => setReferencesOpen(open => !open)}><Plus className="h-4 w-4" aria-hidden="true" /></button>
+            <button ref={referenceTrigger} type="button" disabled={!contextImages.length} aria-label={labels.references} title={labels.references} aria-expanded={referencesOpen} className={cn(iconButton, "canvas-ui-control rounded-full")} onClick={() => setReferencesOpen(open => !open)}><Plus className="h-4 w-4" aria-hidden="true" /></button>
             {modelControl ? <div className="min-w-0 flex-1" data-testid="canvas-assistant-model">{modelControl}</div> : <span className="canvas-ui-muted inline-flex items-center gap-1.5 text-[12px] font-semibold"><InfinityIcon className="h-4 w-4" aria-hidden="true" />{labels.agent}</span>}
           </div>
-          <button type="button" aria-label={busy && onStop ? "停止任务" : labels.send} title={busy && onStop ? "停止任务" : labels.send} disabled={busy ? !onStop : !contextReady || !input.trim()} onClick={busy && onStop ? onStop : onSend}
+          <button type="button" aria-label={busy && onStop ? "停止任务" : labels.send} title={busy && onStop ? "停止任务" : labels.send} disabled={busy ? !onStop : !input.trim()} onClick={busy && onStop ? onStop : onSend}
             className="canvas-ui-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-85 disabled:opacity-35">
             {busy ? <span className="h-3 w-3 rounded-sm bg-current" aria-hidden="true" /> : <ArrowUp className="h-[18px] w-[18px]" aria-hidden="true" />}
           </button>

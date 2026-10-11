@@ -36,7 +36,7 @@ export async function managedBillingModel(request: Request, feature: FeatureId, 
   if (model.target.type === "pool") return { modelId: model.id, providerId: "managed-router" };
   const upstream = snapshot.config.upstreamModels.find(u => u.id === model.target.id);
   const provider = snapshot.config.providers.find(p => p.id === upstream?.providerId);
-  if (!upstream?.enabled || !provider?.enabled || !upstream.capabilities[feature==="canvas.assistant"?"vision":MODEL_BINDINGS[binding].capability])
+  if (!upstream?.enabled || !provider?.enabled || !upstream.capabilities[MODEL_BINDINGS[binding].capability])
     throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
   return { modelId: model.id, providerId: ["apimart-images", "fal-images"].includes(provider.protocol) ? "managed-router" : provider.id };
 }

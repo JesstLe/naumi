@@ -228,9 +228,9 @@ export async function getOrCreateSession(
   if (!model) throw new Error("模型不可用");
 
   const persisted = dbEnabled
-    ? await getAgentSession(email, sessionId).catch(() => null)
+    ? await getAgentSession(email, sessionId)
     : null;
-  const savedHistory = options && Array.isArray(persisted?.messages) ? persisted.messages.filter((turn:any)=>["user","assistant"].includes(turn?.role)&&typeof turn?.content==="string").map((turn:any)=>({role:String(turn.role),content:String(turn.content)})) : history;
+  const savedHistory = Array.isArray(persisted?.messages) ? persisted.messages.filter((turn:any)=>["user","assistant"].includes(turn?.role)&&typeof turn?.content==="string").map((turn:any)=>({role:String(turn.role),content:String(turn.content)})) : history;
   const session: Session = {
     id: sessionId,
     modelId,
@@ -242,7 +242,7 @@ export async function getOrCreateSession(
     onToolResult: options?.onToolResult,
     createdAt: Date.now(),
     lastUsedAt: Date.now(),
-    events: options && Array.isArray(persisted?.steps) ? persisted.steps.map((step: any) => ({type:String(step.type),at:Date.now(),data:Object.fromEntries(Object.entries(step).filter(([key])=>key!=="type"))})) : [],
+    events: Array.isArray(persisted?.steps) ? persisted.steps.map((step: any) => ({type:String(step.type),at:Date.now(),data:Object.fromEntries(Object.entries(step).filter(([key])=>key!=="type"))})) : [],
     running: false,
     repeatSignature: "",
     repeatCount: 0,
@@ -262,7 +262,7 @@ export async function getOrCreateSession(
         acceptedBundle ? () => signAcceptedModelContext(email, acceptedBundle) : undefined,
         options?.canvas
       ),
-      messages: options ? conversationMessages(savedHistory,managed?.wireModel||modelId) : toUserMessages(history),
+      messages: conversationMessages(savedHistory,managed?.wireModel||modelId),
     },
     streamFn: (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 }),
     toolExecution: "sequential",
@@ -324,7 +324,7 @@ export async function getOrCreateSession(
             : "工具执行完成"),
         isError: !!(e.isError || e.result?.isError),
       });
-      void persistAgentSession(session);
+      void persistAgentSession(session).catch(()=>undefined);
     } else if (event.type === "message_update") {
       // 流式:text_delta 实时推给订阅了 onDelta 的路由(无订阅者时忽略)
       const e = event as unknown as {
@@ -357,7 +357,7 @@ export async function getOrCreateSession(
           .join("")
           .trim();
         if (text) push("assistant", { text });
-        void persistAgentSession(session);
+        void persistAgentSession(session).catch(()=>undefined);
       }
     } else if (event.type === "agent_start") {
       session.running = true;
@@ -366,7 +366,7 @@ export async function getOrCreateSession(
       session.running = false;
       session.lastUsedAt = Date.now();
       push("agent_end", {});
-      void persistAgentSession(session);
+      void persistAgentSession(session).catch(()=>undefined);
     }
   });
 
@@ -438,7 +438,7 @@ export async function persistAgentSession(session: Session): Promise<void> {
     return content ? [{ role: message.role, content }] : [];
   });
   const steps = session.events
-    .filter((event) => ["plan","tool_start","tool_end","canvas_turn","artifacts","agent_start","agent_end","error"].includes(event.type))
+    .filter((event) => ["plan","tool_start","tool_end","canvas_turn","artifacts","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
     .map((event) => ({ type: event.type, ...event.data }));
   await saveAgentSession(
     session.email,
@@ -446,7 +446,7 @@ export async function persistAgentSession(session: Session): Promise<void> {
     session.title,
     messages,
     steps
-  ).catch(() => undefined);
+  );
   });
   await session.persistPending;
 }
