@@ -17,11 +17,12 @@ export interface OrbPoint { x: number; y: number }
 export interface OrbBounds { left: number; top: number; right: number; bottom: number }
 export const ORB_WIDTH = 88;
 export const ORB_HEIGHT = 112;
-// Keep the header and bottom generation dock clear, including small viewports.
+export const ORB_EDGE_GAP = 8;
+// Use the whole canvas viewport. Keep only a small edge gap and the full status label visible.
 export function orbBounds(width: number, height: number): OrbBounds {
-  const right = Math.max(0, width - ORB_WIDTH - 12), left = Math.min(12, right);
-  const bottom = Math.max(0, height - ORB_HEIGHT - Math.min(136, height * .25));
-  return { left, right, top: Math.min(76, bottom), bottom };
+  const right = Math.max(0, width - ORB_WIDTH - ORB_EDGE_GAP), left = Math.min(ORB_EDGE_GAP, right);
+  const bottom = Math.max(0, height - ORB_HEIGHT - ORB_EDGE_GAP);
+  return { left, right, top: Math.min(ORB_EDGE_GAP, bottom), bottom };
 }
 export function clampOrb(point: OrbPoint, bounds: OrbBounds): OrbPoint {
   return { x: Math.max(bounds.left, Math.min(bounds.right, point.x)), y: Math.max(bounds.top, Math.min(bounds.bottom, point.y)) };
