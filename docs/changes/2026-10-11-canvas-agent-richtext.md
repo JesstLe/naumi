@@ -32,6 +32,6 @@
 - 固定业务源码0cf5e635b13cc24156dbce9ab5dfe51f499e8811，APP/Worker镜像同SHA，Image ID sha256:6cbbe899b7563cb0cb86f023978614a28018b4a12110e984709d0a35b20d0a8d；实际版号1791692065 / v2026.10.11-121425。已推送main与任务分支。
 - 真实只读会话cv-7afed3270ac4-a1d5689a9fa22d2e05facdbc04281ae2，2条持久消息，工具调用0、agent_end已持久化，正常SSE完成，小球done；canvas.assistant settled/扣0/预留0，新生图0。原换色图片操作仍唯一1次/6积分/预留0，历史恢复未重复执行。
 - 完整DB可读备份、切换前最新DB快照、env/Compose和配置/元数据库/采购价指纹保持；只切NAUMI_IMAGE。全程deploy.lock至浏览器验收和维护，最终健康/镜像/版号通过、锁释放；临时私钥副本清理，原hash不变，旧机未连接。
-- 本次是维护周期第3次成功发布，持锁只删除本任务当前/上轮成功源码的可重建.next/cache，确认未被运行容器挂载，释放1,089,932,750字节，磁盘81%→80%/20GiB，计数归零。当前、5e4851和9ec5c1固定镜像/runtime及备份保持，本机C63GiB/E158GiB可用，仅清理本任务临时编译验收缓存。
+- 本次是维护周期第3次成功发布，持锁只删除本任务当前/上轮成功源码的可重建.next/cache，确认未被运行容器挂载，释放1,089,932,750字节，磁盘81%→80%/20GiB，计数归零。当前、5e4851和9ec5c1固定镜像/runtime及备份保持，本机C63GiB/E158GiB可用，后续小球范围验收结束后清理本任务临时编译验收缓存4,628,838字节，13476服务已停止；截图/源码/四件套保留。
 - 本地证据output/canvas-agent-richtext-20261011；服务器/opt/naumi-staging/evidence/canvas-agent-richtext-20261011。四件套含原始hash和独立副本回滚：restored=7 removed=6，原纯文本/石墨行为恢复，正式代码仍保留富文本/主题。固定5e4851回滚--check通过、未应用；不回灌数据库/媒体。
 - 桌面正式截图live-richtext-light.jpg与live-richtext-dark.jpg；视频/OSS/实体手机触摸继续延期，未计为完成。
