@@ -6,9 +6,9 @@ import { agentOrbState, clampOrb, orbBounds, orbFraction, orbPixels, orbPosition
   type AgentOrbOutcome, type AgentOrbStep, type OrbPoint } from "@/lib/canvas/agent-orb";
 import styles from "./canvas-agent-orb.module.css";
 
-export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, onActivate }: {
+export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, light = true, onActivate }: {
   email: string; busy: boolean; outcome: AgentOrbOutcome; steps: AgentOrbStep[];
-  open: boolean; english: boolean; onActivate: () => void;
+  open: boolean; english: boolean; light?: boolean; onActivate: () => void;
 }) {
   const layer = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -78,14 +78,14 @@ export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, onA
     save(orbFraction(clampOrb({ x: pixel.x + direction[0] * distance, y: pixel.y + direction[1] * distance }, bounds), bounds));
   }
   return <div ref={layer} className={styles.layer}>
-    <div data-testid="canvas-agent-orb" data-canvas-hotkeys-blocked="true" data-agent-outcome={outcome} data-dragging={dragging}
+    <div data-testid="canvas-agent-orb" data-theme={light ? "light" : "dark"} data-canvas-hotkeys-blocked="true" data-agent-outcome={outcome} data-dragging={dragging}
       className={`${styles.floating} nopan nodrag nowheel`} style={{ left: pixel.x, top: pixel.y, visibility: size.width ? "visible" : "hidden" }}
       onPointerDown={start} onPointerMove={move} onPointerUp={event => finish(event)} onPointerCancel={event => finish(event, true)}
       onLostPointerCapture={event => { if (drag.current) finish(event, true); }}
       onDoubleClick={event => event.stopPropagation()} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }}
       onClickCapture={event => { if (!(event.target as Element).closest('[data-orb-retry="true"]') && event.detail !== 0) { event.preventDefault(); event.stopPropagation(); if (!suppressClick.current) onActivate(); } }}
       onClick={event => event.stopPropagation()}>
-      <NaumiOrb state={state} label="Naumi Agent" className={styles.ball} onActivate={onActivate} onKeyDown={keyboard}
+      <NaumiOrb theme={light ? "naumi" : "pearl"} state={state} label="Naumi Agent" className={styles.ball} onActivate={onActivate} onKeyDown={keyboard}
         actionLabel={english ? `Agent: ${label}. Click to ${open ? "close" : "open"}; drag or use arrow keys to move.` : `Agent：${label}，点击${open ? "收起" : "打开"}，拖动或方向键移动`}
         expanded={open} controls="canvas-agent-panel" />
       <span role="status" aria-live="polite" className={styles.status} data-state={state}><i aria-hidden="true" />{label}</span>

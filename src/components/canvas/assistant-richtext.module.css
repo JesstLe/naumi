@@ -1,0 +1,33 @@
+.root { --rich-muted: #707987; --rich-border: #e2e6ec; --rich-panel: #f6f8fa; --rich-link: #4165a0; --rich-code: #36445a; --rich-keyword: #8256a6; --rich-string: #397c69; min-width: 0; max-width: 100%; font-size: 13px; line-height: 1.8; white-space: normal; overflow-wrap: anywhere; }
+.root[data-theme="dark"] { --rich-muted: #a5adba; --rich-border: #373c47; --rich-panel: #242832; --rich-link: #a8c5f6; --rich-code: #d5dfef; --rich-keyword: #c5a7ec; --rich-string: #9fd2bf; }
+.root > :first-child { margin-top: 0; }
+.root > :last-child { margin-bottom: 0; }
+.root p { margin: 0 0 12px; white-space: pre-line; }
+.root h1, .root h2, .root h3, .root h4, .root h5, .root h6 { margin: 20px 0 8px; font-weight: 650; line-height: 1.5; letter-spacing: -.015em; }
+.root h1 { font-size: 19px; } .root h2 { font-size: 17px; } .root h3 { font-size: 15px; } .root h4, .root h5, .root h6 { font-size: 13px; }
+.root ul, .root ol { margin: 8px 0 12px; padding-left: 22px; } .root ul { list-style: disc; } .root ol { list-style: decimal; }
+.root li { margin: 4px 0; padding-left: 2px; } .root li > p { margin: 0; } .root li > ul, .root li > ol { margin: 4px 0; }
+.root :global(.task-list-item) { list-style: none; } .root input[type="checkbox"] { margin-right: 7px; accent-color: #666883; }
+.root a { color: var(--rich-link); text-decoration: underline; text-underline-offset: 3px; }
+.root blockquote { margin: 12px 0; padding: 3px 0 3px 12px; border-left: 3px solid var(--rich-border); color: var(--rich-muted); } .root blockquote p:last-child { margin-bottom: 0; }
+.root hr { margin: 18px 0; border: 0; border-top: 1px solid var(--rich-border); }
+.root :not(pre) > code { border-radius: 4px; padding: 2px 4px; background: var(--rich-panel); color: var(--rich-code); font-size: .92em; }
+.root code { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
+.codeBlock { min-width: 0; overflow: hidden; margin: 12px 0; border: 1px solid var(--rich-border); border-radius: 10px; background: var(--rich-panel); }
+.codeHeader { display: flex; align-items: center; justify-content: space-between; padding: 7px 11px; border-bottom: 1px solid var(--rich-border); color: var(--rich-muted); font-size: 11px; }
+.codeHeader button { display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.codeHeader button:hover { color: var(--rich-code); }
+.root pre { max-width: 100%; margin: 0; padding: 12px; overflow-x: auto; font-size: 12px; line-height: 1.7; white-space: pre; overflow-wrap: normal; color: var(--rich-code); }
+.root pre code { background: none; padding: 0; }
+.root :global(.hljs-keyword), .root :global(.hljs-literal), .root :global(.hljs-selector-tag) { color: var(--rich-keyword); }
+.root :global(.hljs-string), .root :global(.hljs-attr), .root :global(.hljs-template-tag) { color: var(--rich-string); }
+.root :global(.hljs-comment), .root :global(.hljs-quote) { color: var(--rich-muted); }
+.root :global(.hljs-number), .root :global(.hljs-title), .root :global(.hljs-built_in) { color: var(--rich-link); }
+.tableScroll { max-width: 100%; overflow-x: auto; margin: 12px 0; border: 1px solid var(--rich-border); border-radius: 9px; }
+.root table { border-collapse: collapse; width: 100%; font-size: 12px; white-space: normal; }
+.root th, .root td { padding: 8px 10px; border-bottom: 1px solid var(--rich-border); min-width: 88px; text-align: left; }
+.root th { background: var(--rich-panel); font-weight: 600; } .root tr:last-child td { border-bottom: 0; }
+.root img { display: block; max-width: 100%; height: auto; border-radius: 8px; margin: 10px 0; }
+.generate { display: flex; width: 100%; align-items: center; gap: 7px; margin: 10px 0; padding: 9px 11px; border: 1px solid var(--rich-border); border-radius: 9px; background: var(--rich-panel); text-align: left; }
+.generate > svg, .generate strong { flex-shrink: 0; } .generate span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .generate strong { font-size: 11px; font-weight: 550; }
+.root :is(button, pre, [role="region"]):focus-visible { outline: 2px solid var(--rich-link); outline-offset: 2px; }
