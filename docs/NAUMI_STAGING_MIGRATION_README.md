@@ -1023,3 +1023,7 @@ E:/workspace/naumi从4f251af安全快进到e04ce4b，并跟进最终交接文档
 ## 2026-10-12 最新分支合入与源码同步
 
 codex/staging-data-sync-20261012（a8e0844）已合入main，固定源码同步到120.27.162.85。仅新增9个运维脚本/文档文件，APP/Worker业务代码无变化，保持e04ce4b镜像及v2026.10.11-172206，不重复构建、重启或执行已完成数据迁移。全程deploy.lock、可读DB/配置备份与源码指针回滚，语法/7脚本哈希/健康/实际版号/容器及配置保持通过。未连接旧机，华纳云未迁移。证据/opt/naumi-staging/evidence/branch-release-20261012，详见docs/changes/2026-10-12-branch-source-sync.md。磁盘84%/约15GiB可用，下次构建前须维护；本次源码同步不计业务发布，累计仍0；视频/OSS延期保持。
+
+## 2026-10-12 香港服务器迁移准备
+
+用户明确要求把120.27.162.85迁移到179.236.104.112，并确认当前还有反代聚合项目。范围包含Naumi、当前Reverse Hub/New API及配套PostgreSQL/Redis、Router/模型代理和本地媒体；先盘点后复制，源端保留回退，旧101机不操作。源端共用deploy.lock已持有，目标Docker/Compose安装中；尚未迁移完成或切流。目标只开放Web，内部端口不开放公网；OSS仍未配置，沿用local。详见后续香港迁移交接记录。
