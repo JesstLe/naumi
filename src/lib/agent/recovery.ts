@@ -17,7 +17,7 @@ export function classifyAgentFailure(error: unknown): AgentFailure {
   const raw = error instanceof Error ? error.message : String(error || "执行失败");
   const message = raw.slice(0, 500);
   const lower = message.toLowerCase();
-  if (/abort|中止|取消/.test(lower)) {
+  if (/abort|中止|取消|已停止/.test(lower)) {
     return { code: "ABORTED", message: "任务已停止", recoverable: true, action: "可调整要求后重新执行" };
   }
   if (/401|403|登录|鉴权|authorization|cookie|token/.test(lower)) {

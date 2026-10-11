@@ -1,4 +1,5 @@
 export type CanvasAgentContext = {
+  /** Optional reference; empty for text-only conversations. */
   anchorId: string;
   imageUrls: string[];
   imageModelId?: string;

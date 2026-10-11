@@ -52,7 +52,7 @@ export function createModelExecutor(deps: Dependencies) {
     const scope: ModelExecutionScope = { frozen, connection: await connectionFor(publicModel.supplierRouting?.channels.find(c=>c.enabled)?.upstreamId || upstream!.id), capabilities: upstream!.capabilities, parameterMap: upstream!.parameterMap, businessOption, procurement: upstream!.procurement };
     if(publicModel.supplierRouting){
       if(!deps.billingByVersion)throw new ModelConfigError("CONFIG_UNAVAILABLE","供应通道无法读取冻结计费版本",503);
-      const eligible=frozen.modality==="image"&&frozen.facts?new Set(simulateModel(snapshot,await deps.billingByVersion(frozen.billingVersion),publicModel.id,frozen.facts,deps).eligible.map(u=>u.upstreamId)):new Set(publicModel.supplierRouting.channels.filter(c=>c.enabled&&snapshot.config.upstreamModels.some(u=>u.id===c.upstreamId&&u.enabled&&u.capabilities[frozen.feature==="canvas.assistant"?"vision":purpose.capability]&&snapshot.config.providers.some(p=>p.id===u.providerId&&p.enabled))).map(c=>c.upstreamId));
+      const eligible=frozen.modality==="image"&&frozen.facts?new Set(simulateModel(snapshot,await deps.billingByVersion(frozen.billingVersion),publicModel.id,frozen.facts,deps).eligible.map(u=>u.upstreamId)):new Set(publicModel.supplierRouting.channels.filter(c=>c.enabled&&snapshot.config.upstreamModels.some(u=>u.id===c.upstreamId&&u.enabled&&u.capabilities[purpose.capability]&&(!(frozen.feature==="canvas.assistant"&&frozen.facts?.references)||u.capabilities.vision)&&snapshot.config.providers.some(p=>p.id===u.providerId&&p.enabled))).map(c=>c.upstreamId));
       const targets=await Promise.all(publicModel.supplierRouting.channels.filter(c=>c.enabled&&eligible.has(c.upstreamId)).map(async c=>{const u=snapshot.config.upstreamModels.find(u=>u.id===c.upstreamId)!;return {...c,scope:{frozen,connection:await connectionFor(u.id),capabilities:u.capabilities,parameterMap:u.parameterMap,procurement:u.procurement,businessOption,audited:true}};}));
       if(!targets.length)throw new ModelConfigError("MODEL_INCOMPATIBLE","没有符合本次参数的供应通道",400);
       scope.supplierRouting={policy:publicModel.supplierRouting,targets};scope.connection={...scope.connection,protocol:"supplier-channels",wireModel:frozen.publicModelId};
@@ -89,7 +89,7 @@ export function createModelExecutor(deps: Dependencies) {
       const target = plan ? { type: "upstream" as const, id: plan.initialId } : model.target;
       const upstream = target.type === "upstream" ? config.upstreamModels.find(u => u.id === target.id)! : undefined;
       const provider = upstream ? config.providers.find(p => p.id === upstream.providerId)! : undefined;
-      if (upstream && !model.supplierRouting && !upstream.capabilities[input.feature==="canvas.assistant"?"vision":purpose.capability]) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
+      if (upstream && !model.supplierRouting && (!upstream.capabilities[purpose.capability] || input.feature==="canvas.assistant"&&!!input.facts?.references&&!upstream.capabilities.vision)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
       if (purpose.modality === "image" && input.facts) {
         const result = simulateModel(input.snapshot, input.billing, model.id, input.facts, deps);
         if (!result.eligible.length) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不满足图片质量、尺寸或参考要求", 400);
