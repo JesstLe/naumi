@@ -46,7 +46,8 @@ check(canvas.includes('busy={assistantBusy} outcome={assistantOutcome} steps={as
 check(canvas.includes('english={locale === "en"} onActivate={toggleAssistant}'));
 check(canvas.indexOf('if (!completed) throw') < canvas.indexOf('setAssistantOutcome("done")'));
 check(canvas.includes('if(type==="done" && data.ok===true)completed=true;'));
-check(canvas.includes('setAssistantOutcome(controller.signal.aborted ? "stopped" : "error")'));
+check(canvas.includes('const aborted = controller.signal.aborted || failureCode === "ABORTED"'));
+check(canvas.includes('setAssistantOutcome(aborted ? "stopped" : "error")'));
 check(canvas.includes('setAssistantOutcome(restoredOrbOutcome(data.session))'));
 check(canvas.includes('tool:String(data.tool || "")'));
 const floating = readFileSync("src/components/canvas/canvas-agent-orb.tsx", "utf8");

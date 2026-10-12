@@ -52,6 +52,7 @@ export function reduceOrbCompanion(previous: OrbCompanion, cue: OrbCue, now: num
     const phase = cue.running ? cue.phase || "thinking" : cue.outcome === "done" ? "idle" : cue.outcome === "error" ? "error" : cue.outcome === "stopped" ? "stopped" : "idle";
     const attention = cue.outcome === "error" || cue.outcome === "stopped" ? undefined : cue.attention;
     const restored = { ...model, phase: attention || phase, busy: cue.running, attention,
+      failureCode: undefined, positiveAt: undefined, negativeCount: 0, artifactCount: 0,
       terminalAt: now - ORB_TIMING.terminal, startedAt: model.busy && cue.running ? model.startedAt : now, lastActivity: now, bootAt: now - 2000 };
     return cue.recall === false ? restored : react(restored, "remembering", now);
   }

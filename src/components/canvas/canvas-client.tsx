@@ -5447,8 +5447,10 @@ export function CanvasClient() {
       if(acceptedSession!==assistantSessionId.current)return;
       if (assistantRetry.current === attempt) setAssistantInput(text);
       assistantSessionId.current=serverSessionId;
-      setAssistantOutcome(controller.signal.aborted ? "stopped" : "error");
-      orbCue(controller.signal.aborted ? { type: "stop" } : { type: "failure", code: orbFailureCode || classifyAgentFailure(error).code });
+      const failureCode = orbFailureCode || classifyAgentFailure(error).code;
+      const aborted = controller.signal.aborted || failureCode === "ABORTED";
+      setAssistantOutcome(aborted ? "stopped" : "error");
+      orbCue(aborted ? { type: "stop" } : { type: "failure", code: failureCode });
       setAssistantError(controller.signal.aborted ? "任务已停止，可从历史继续。已生成的结果会保留。" : error instanceof Error ? error.message : "画布助手暂时不可用");
     } finally {
       if (artifactIds.size) { const ids = [...artifactIds]; const fresh = await mergeWorks(ids); pushAddUndoMany(ids,fresh); }
