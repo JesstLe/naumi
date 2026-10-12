@@ -2,14 +2,17 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { NaumiOrb } from "../naumi-orb/naumi-orb";
+import type { OrbState } from "../naumi-orb/orb-model";
+import type { OrbCue, OrbCompanion } from "../naumi-orb/orb-companion";
 import { agentOrbState, clampOrb, orbBounds, orbFraction, orbPixels, orbPositionKey, readOrbPosition,
   type AgentOrbOutcome, type AgentOrbStep, type OrbPoint } from "@/lib/canvas/agent-orb";
 import styles from "./canvas-agent-orb.module.css";
 import { agentActivityLabel } from "@/lib/canvas/agent-activity";
 
-export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, responding = false, light = true, onActivate }: {
+export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, responding = false, light = true, onActivate, companion, onCue }: {
   email: string; busy: boolean; outcome: AgentOrbOutcome; steps: AgentOrbStep[];
   open: boolean; english: boolean; light?: boolean; onActivate: () => void;
+  companion?: { face: OrbState; model: OrbCompanion }; onCue?: (cue: OrbCue) => void;
   responding?: boolean;
 }) {
   const layer = useRef<HTMLDivElement>(null);
@@ -21,8 +24,12 @@ export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, res
   const suppressClick = useRef(false);
   const bounds = orbBounds(size.width, size.height);
   const pixel = orbPixels(position, bounds);
-  const state = agentOrbState(busy, outcome, steps);
-  const label = agentActivityLabel(busy, outcome, steps, english, responding);
+  const fallback = agentOrbState(busy, outcome, steps);
+  // Status text describes the real task; expressive eyes never claim completion.
+  const phase = companion?.model.attention || (busy ? companion?.model.phase || fallback : fallback);
+  const state = !busy && outcome === "stopped" ? "stopped" : !busy && outcome === "error" && companion?.model.phase !== "error" && companion?.model.phase !== "restricted" ? "error" : companion?.face || fallback;
+  const label = phase === "stopped" ? english ? "Stopped" : "已停止" : agentActivityLabel(busy, outcome, steps, english, responding, companion?.model.attention);
+  function activate() { onCue?.({ type: "activate" }); onActivate(); }
 
   useEffect(() => {
     try { setPosition(readOrbPosition(localStorage.getItem(orbPositionKey(email)))); }
@@ -55,6 +62,7 @@ export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, res
     if (!gesture || gesture.id !== event.pointerId) return;
     const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
     if (!gesture.moved && Math.hypot(dx, dy) < 6) return;
+    if (!gesture.moved) onCue?.({ type: "drag" });
     gesture.moved = true; suppressClick.current = true; setDragging(true);
     event.preventDefault();
     const next = orbFraction({ x: gesture.origin.x + dx, y: gesture.origin.y + dy }, bounds);
@@ -75,6 +83,7 @@ export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, res
     if (!direction) return;
     event.preventDefault();
     const distance = event.shiftKey ? 40 : 12;
+    onCue?.({ type: "drag" });
     save(orbFraction(clampOrb({ x: pixel.x + direction[0] * distance, y: pixel.y + direction[1] * distance }, bounds), bounds));
   }
   return <div ref={layer} className={styles.layer}>
@@ -83,12 +92,13 @@ export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, res
       onPointerDown={start} onPointerMove={move} onPointerUp={event => finish(event)} onPointerCancel={event => finish(event, true)}
       onLostPointerCapture={event => { if (drag.current) finish(event, true); }}
       onDoubleClick={event => event.stopPropagation()} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }}
-      onClickCapture={event => { if (!(event.target as Element).closest('[data-orb-retry="true"]') && event.detail !== 0) { event.preventDefault(); event.stopPropagation(); if (!suppressClick.current) onActivate(); } }}
+      onPointerEnter={() => onCue?.({ type: "hover" })} onFocus={() => onCue?.({ type: "hover" })}
+      onClickCapture={event => { if (!(event.target as Element).closest('[data-orb-retry="true"]') && event.detail !== 0) { event.preventDefault(); event.stopPropagation(); if (!suppressClick.current) activate(); } }}
       onClick={event => event.stopPropagation()}>
-      <NaumiOrb theme={light ? "naumi" : "pearl"} state={state} label="Naumi Agent" className={styles.ball} onActivate={onActivate} onKeyDown={keyboard}
+      <NaumiOrb theme={light ? "naumi" : "pearl"} state={state} label="Naumi Agent" className={styles.ball} onActivate={activate} onKeyDown={keyboard}
         actionLabel={english ? `Agent: ${label}. Click to ${open ? "close" : "open"}; drag or use arrow keys to move.` : `Agent：${label}，点击${open ? "收起" : "打开"}，拖动或方向键移动`}
         expanded={open} controls="canvas-agent-panel" />
-      <span role="status" aria-live="polite" className={styles.status} data-state={state} title={label}><i aria-hidden="true" /><span>{label}</span></span>
+      <span role="status" aria-live="polite" className={styles.status} data-state={phase} title={label}><i aria-hidden="true" /><span>{label}</span></span>
     </div>
   </div>;
 }

@@ -24,4 +24,7 @@ assert.equal(agentToolSummary("已生成 1 张图片"), "已生成 1 张图片")
 assert.equal(agentElapsedLabel(300000), "已等待 5:00");
 assert.equal(agentElapsedLabel(-1000), "已等待 0:00");
 assert.equal(agentElapsedLabel(61000, true), "Waiting 1:01");
+assert.equal(agentActivityLabel(false, "done", [], false, false, "waiting"), "等待输入");
+assert.equal(agentActivityLabel(true, "running", [generation], true, false, "restricted"), "Restricted");
+assert.equal(agentActivityLabel(false, "stopped", [], false, false, "waiting"), "已停止");
 console.log("AGENT_ACTIVITY=PASS generation->verification->follow-up, retry, search, terminal, public labels, elapsed time; provider calls=0");

@@ -38,7 +38,7 @@
 .themes i { display: flex; align-items: center; justify-content: center; gap: 3px; width: 23px; height: 23px; border-radius: 50%; box-shadow: inset 2px 2px 5px #ffffff25; }
 .themes b { width: 3px; height: 6px; border-radius: 2px; transform: rotate(-14deg); }
 .themes .selectedTheme { border-color: #b6b3d6; background: #f1f0f9; }
-.states { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; }
+.states { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; max-height: 370px; overflow-y: auto; padding: 2px; scrollbar-width: thin; }
 .states > button { display: flex; flex-direction: column; align-items: center; padding: 7px 4px 10px; gap: 2px; background: #fff; border: 1px solid #e5e6ed; border-radius: 13px; transition: border-color .15s, background .15s; }
 .miniOrb { width: 47px; pointer-events: none; }
 .states > button > span { font-size: 10px; color: #797d8b; }
