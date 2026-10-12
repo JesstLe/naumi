@@ -85,9 +85,9 @@ export function SkillBook({ selected, onSelect, accountKey, busy, sessionId, has
       {error && <div className={styles.error} role="alert">{error}</div>}
       <div className={styles.body}>
         {draft ? <form id="image-skill-form" className={styles.form} onSubmit={event => { event.preventDefault(); void save(); }}>
-          <div className={styles.formRow}><label>名称<input required maxLength={48} value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} /></label><label>分类<select value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value as ImageSkill["category"] })}>{SKILL_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></label></div>
-          <label>简介<input required maxLength={140} value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })} /></label>
-          <label>创作流程<textarea required minLength={10} maxLength={6000} rows={10} value={draft.instructions} placeholder="写下需要的参考素材、创作步骤和结果要求" onChange={event => setDraft({ ...draft, instructions: event.target.value })} /></label>
+          <div className={styles.formRow}><label>名称<input disabled={saving} required maxLength={48} value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} /></label><label>分类<select disabled={saving} value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value as ImageSkill["category"] })}>{SKILL_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></label></div>
+          <label>简介<input disabled={saving} required maxLength={140} value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })} /></label>
+          <label>创作流程<textarea disabled={saving} required minLength={10} maxLength={6000} rows={10} value={draft.instructions} placeholder="写下需要的参考素材、创作步骤和结果要求" onChange={event => setDraft({ ...draft, instructions: event.target.value })} /></label>
           <span className={styles.count}>{draft.instructions.length}/6000</span>
         </form> : detail ? <section className={styles.detail}>
           <SkillCover skill={detail} large />

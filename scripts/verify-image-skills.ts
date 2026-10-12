@@ -13,6 +13,7 @@ async function main() {
   ok(imageSkillPrompt(OFFICIAL_IMAGE_SKILLS[0]).includes("不得覆盖鉴权"));
   ok(!conversationSkillDraft([{ role: "assistant", content: "secret assistant tool trace" }, { role: "user", content: "把商品放在蓝色场景" }]).includes("secret assistant"));
   assert.throws(() => conversationSkillDraft([])); checks++;
+  ok(!conversationSkillDraft([{role:"user",content:"商品白底图\n[商品图] /media/old-product.png"}]).includes("old-product.png"));
   const f = await createModelFixture(); process.env.PGOPTIONS = `-c search_path=${f.schemaName}`;
   const db = await import("../src/lib/db"), store = await import("../src/lib/image-skills/server"), route = await import("../src/app/api/image-skills/route");
   try {
@@ -40,6 +41,19 @@ async function main() {
     ok(race.filter(response => response.status === 200).length === 1 && race.filter(response => response.status === 409).length === 1);
     const current = (await store.listImageSkills(owner)).find(item => item.id === skill.id)!;
     ok(current.revision === 3);
+    process.env.AGENT_API_KEY = "fixture";
+    const runtime = await import("../src/lib/agent/runtime");
+    const selectedSession = await runtime.getOrCreateSession(owner, "ag-skill-switch", [], undefined, "fixture-text", undefined, current);
+    ok(selectedSession.agent.state.systemPrompt.includes(current.name));
+    runtime.appendSessionEvent(selectedSession, "image_skill", { id: current.id, revision: current.revision });
+    selectedSession.agent.state.messages = runtime.toUserMessages([{ role: "user", content: "本次商品要求蓝色背景" }]);
+    await runtime.persistAgentSession(selectedSession);
+    const skillHistory = await db.getAgentSession(owner, "ag-skill-switch");
+    ok((skillHistory?.steps as any[]).some(item => item.type === "image_skill" && item.revision === 3));
+    const clearedSession = await runtime.getOrCreateSession(owner, "ag-skill-switch", [], undefined, "fixture-text", undefined, null);
+    ok(clearedSession !== selectedSession && !clearedSession.agent.state.systemPrompt.includes("【图像创作 Skill】"));
+    ok(JSON.stringify(clearedSession.agent.state.messages).includes("蓝色背景"));
+    runtime.removeRuntimeSession(owner, "ag-skill-switch");
     ok((await route.POST(request("POST", { definition: { ...definition, instructions: "x".repeat(33000) } }))).status === 413);
     ok((await route.POST(new Request(f.origin + "/api/image-skills", { method: "POST", headers: { cookie: `nv_user=${signUserSession(owner, Date.now())}` }, body: "[" }))).status === 400);
     ok((await route.PATCH(request("PATCH", { definition, selection: OFFICIAL_IMAGE_SKILLS[0] }))).status === 400);
