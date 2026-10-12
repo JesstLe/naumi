@@ -26,6 +26,13 @@
 - 全项目类型检查与Windows本地正式构建通过；不是线上或Linux镜像验收。初次类型检查发现测试类型约束，已修复；首次浏览器定位status与output重复，已改为#status，不改原动画。
 - 基线/源码回滚：独立副本恢复runtime/canvas原哈希，旧行为将特殊场景委派fixture模型；新版分支仍保持本地成品分支。无数据库回灌。
 
+## 主线整合与最终交付
+- 交接前通过本机现有代理刷新远端：`47c697d8e9aec454956c04c280b07cb5ca31dd1e` → `b1760d06746d39cabf3151ab05eee557bc18254d`。先选择性提交本任务，再普通merge最新main，无冲突；保留废弃业务工具清理和顶部导航调整，没有恢复被删除的业务适配器。
+- 功能提交 `f96a08e`，整合提交 `2612d4e`；文档交接提交另行记录于证据。相对当前main只有本任务11个文件的差异。共享主目录不切分支、不重置，未合入main、未发布。
+- 整合后真实Agent核心隔离回归及类型检查通过；公开成品零供应商请求、零工具调用，普通委派为fixture。浏览器测试内容及动画文件未因整合变化。最终本地正式构建通过，已有项目lint warnings保留，不称为零警告。
+- 最终回滚包使用最新main源码，runtime/canvas保持开工原哈希；在`E:/Workspace/naumi/output/agent-guardrails-20261012/rollback-copy`实际恢复原哈希并测试旧委派行为通过，任务分支保持修改后行为。
+- 原文件字节与仓库素材一致；四件证据为`MODIFIED_FILE.zip`、`DIFF_FILE.patch`、`VERIFICATION.txt`、`ROLLBACK.sh`。完整精确命令、输入、字面输出和退出状态见VERIFICATION。源码包是任务文件，不是Linux镜像或线上发布包。
+
 ## 交接
 证据目录 `E:/Workspace/naumi/output/agent-guardrails-20261012/`，包含源码包、diff、VERIFICATION.txt、可执行ROLLBACK.sh、原文件哈希、测试日志及截图。回滚脚本只用于带标记的本地副本；上线者审查普通merge后用固定发布流程，保留配置/数据/媒体，发布回滚使用对应固定镜像。
 
