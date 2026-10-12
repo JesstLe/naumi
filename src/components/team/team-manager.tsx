@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Building2, Clock3, Eye, KeyRound, Plus, RefreshCw, ShieldCheck, Users, X } from "lucide-react";
 import { useAuthModal } from "@/lib/auth-modal-context";
+import { useAuth } from "@/lib/auth-context";
 import { loginIdentifierToEmail, USERNAME_DOMAIN } from "@/lib/account-identity";
 import type { ContentPage, ContentRow, ContentSection, Team, TeamMember, TeamSnapshot } from "@/lib/teams/contracts";
 import styles from "./team-manager.module.css";
@@ -22,6 +23,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 type Editor = { kind: "expiry" | "password" | "create" | "attach" | "team"; member?: TeamMember } | null;
 export function TeamManager({ admin = false }: { admin?: boolean }) {
   const { openAuth } = useAuthModal();
+  const { user } = useAuth();
   const [data, setData] = useState<TeamSnapshot>({ team: null, members: [] });
   const [teams, setTeams] = useState<Team[]>([]), [teamId, setTeamId] = useState("");
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [loading, setLoading] = useState(true), [pending, setPending] = useState(false);
@@ -33,6 +35,8 @@ export function TeamManager({ admin = false }: { admin?: boolean }) {
   const [messages, setMessages] = useState<{ total: number; messages: { role: string; text: string; truncated: boolean }[]; page: number; size: number } | null>(null);
   const command = useRef<{ payload: string; id: string } | null>(null), loadSeq = useRef(0);
   const createTeamId = useRef("");
+  const selectedEmail = selected?.email, scopeId = data.team?.id;
+  const invalidateLoads = useCallback(() => { ++loadSeq.current; }, []);
   const load = useCallback(async (id = teamId) => {
     const seq = ++loadSeq.current; setLoading(true); setError("");
     try {
@@ -48,21 +52,21 @@ export function TeamManager({ admin = false }: { admin?: boolean }) {
     } catch (e) { if (seq === loadSeq.current) setError((e as Error).message); }
     finally { if (seq === loadSeq.current) setLoading(false); }
   }, [admin, teamId]);
-  useEffect(() => { void load(); return () => { ++loadSeq.current; }; }, [load]);
+  useEffect(() => { void load(); return invalidateLoads; }, [load, invalidateLoads, user?.email]);
   useEffect(() => {
-    if (!selected || !data.team) { setContent(null); return; }
+    if (!selectedEmail || !scopeId) { setContent(null); return; }
     const controller = new AbortController(); setContentLoading(true); setContentError(""); setContent(null); setConversation(null); setMessages(null);
-    const q = new URLSearchParams({ teamId: data.team.id, email: selected.email, section, page: String(page) });
+    const q = new URLSearchParams({ teamId: scopeId, email: selectedEmail, section, page: String(page) });
     json<ContentPage>(`/api/team/users?${q}`, { signal: controller.signal }).then(r => { if (!controller.signal.aborted) setContent(r); }).catch(e => { if (!controller.signal.aborted) setContentError(e.message); }).finally(() => { if (!controller.signal.aborted) setContentLoading(false); });
     return () => controller.abort();
-  }, [selected?.email, data.team?.id, section, page]);
+  }, [selectedEmail, scopeId, section, page]);
   useEffect(() => {
-    if (!conversation || !selected || !data.team) return;
+    if (!conversation || !selectedEmail || !scopeId) return;
     const controller = new AbortController(); setMessages(null); setContentError("");
-    const q = new URLSearchParams({ teamId: data.team.id, email: selected.email, id: String(conversation.row.id), kind: String(conversation.row.source), page: String(conversation.page) });
+    const q = new URLSearchParams({ teamId: scopeId, email: selectedEmail, id: String(conversation.row.id), kind: String(conversation.row.source), page: String(conversation.page) });
     json<NonNullable<typeof messages>>(`/api/team/conversation?${q}`, { signal: controller.signal }).then(r => { if (!controller.signal.aborted) setMessages(r); }).catch(e => { if (!controller.signal.aborted) setContentError(e.message); });
     return () => controller.abort();
-  }, [conversation, selected?.email, data.team?.id]);
+  }, [conversation, selectedEmail, scopeId]);
   async function mutate(body: Record<string, unknown>, endpoint = "/api/team/users") {
     if (pending) return;
     const payload = JSON.stringify(body);
@@ -96,7 +100,7 @@ export function TeamManager({ admin = false }: { admin?: boolean }) {
       {selected && <section className={styles.content}><div className={styles.contentHead}><h2>{selected.name} · 内容记录</h2><button aria-label="关闭内容" onClick={() => setSelected(null)}><X size={18} /></button></div><nav className={styles.tabs}>{sections.map(s => <button key={s.id} aria-pressed={section === s.id} className={section === s.id ? styles.active : ""} onClick={() => { setSection(s.id); setPage(1); }}>{s.name}</button>)}</nav>
         {contentError && <p role="alert" className={styles.error}>{contentError}</p>}
         {contentLoading ? <div className={styles.empty}>加载中…</div> : content && <><div className={section === "artworks" ? styles.gallery : styles.records}>{content.rows.map(row => <article key={String(row.id)} className={styles.record}>
-          {section === "artworks" && (media(row.video_url) ? <video src={media(row.video_url)} controls preload="metadata" /> : media(row.image_url) ? <img src={`/api/team/media?${new URLSearchParams({teamId: data.team!.id, email: selected.email, id: String(row.id)})}`} alt={String(row.title || "作品")} loading="lazy" /> : <div className={styles.empty}>无媒体</div>)}
+          {section === "artworks" && (media(row.video_url) ? <video src={media(row.video_url)} controls preload="metadata" /> : row.image_url ? <img src={`/api/team/media?${new URLSearchParams({teamId: data.team!.id, email: selected.email, id: String(row.id)})}`} alt={String(row.title || "作品")} loading="lazy" /> : <div className={styles.empty}>无媒体</div>)}
           <h3>{String(row.title || row.reason || row.action || row.kind || row.id)}</h3><small>{datetime(String(row.created_at))}{row.status ? ` · ${row.status}` : ""}</small>
           {row.prompt && <p>{String(row.prompt)}</p>}
           {section === "tasks" && <p>预估积分：{row.cost}</p>}
