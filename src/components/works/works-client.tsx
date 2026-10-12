@@ -1,4 +1,5 @@
 "use client";
+import { loadAccountSnapshot } from "@/lib/browser-data-cache";
 import { BRAND } from "@/lib/brand";
 
 import { cdnUrl } from "@/lib/cdn";
@@ -112,34 +113,19 @@ export function WorksClient() {
   const [active, setActive] = useState<LightboxWork | null>(null);
   const favoriteBusyRef = useRef(new Set<string>());
 
-  // 拉作品(与首页同源)。
+  // Private browser snapshot; authorization and favorites stay live.
   useEffect(() => {
-    if (!user?.email) {
-      setWorks(ready ? [] : null);
-      return;
-    }
+    setWorks(ready ? [] : null);
+    setSelected(new Set()); setActive(null);
+    if (!ready || !user?.email) return;
     let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch(
-          `/api/account?email=${encodeURIComponent(user.email)}`,
-          { headers: await authHeader() }
-        );
-        if (!r.ok || cancelled) {
-          if (!cancelled) setWorks([]);
-          return;
-        }
-        const d = await r.json();
-        const arts = (d.artworks ?? []) as Artwork[];
-        if (cancelled) return;
-        setWorks(arts.filter((a) => a.image && a.status !== "failed"));
-      } catch {
-        if (!cancelled) setWorks([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
+    const apply = (d: { artworks: Artwork[] }) => {
+      if (!cancelled) setWorks(d.artworks.filter(a => a.image && a.status !== "failed"));
     };
+    loadAccountSnapshot<Artwork>(user.email, "", apply).then(apply).catch(() => {
+      if (!cancelled) setWorks([]);
+    });
+    return () => { cancelled = true; };
   }, [user?.email, ready]);
 
   // 加载收藏(持久化,跨设备/刷新保留):复用 /api/favorites,artwork id 当收藏 id 存。

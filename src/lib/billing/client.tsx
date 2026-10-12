@@ -1,4 +1,5 @@
 "use client";
+import { invalidateBrowserData } from "@/lib/browser-data-cache";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { authHeader } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
@@ -137,7 +138,7 @@ export function BillingProvider({ children }: {
                 const events=buffer.split("\n\n"); buffer=events.pop()||"";
                 for(const event of events) if(event.split("\n").includes("event: done")) {
                     const data=event.split("\n").find(line=>line.startsWith("data: "));
-                    try { if(data&&JSON.parse(data.slice(6)).ok===true){ intents.current.delete(key); try{localStorage.removeItem(key);}catch{} } } catch {}
+                    try { if(data&&JSON.parse(data.slice(6)).ok===true){ invalidateBrowserData(user?.email); intents.current.delete(key); try{localStorage.removeItem(key);}catch{} } } catch {}
                 }
             } }));
             return new Response(body,{status:response.status,headers:response.headers});

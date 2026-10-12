@@ -1,5 +1,6 @@
 "use client";
 
+import { loadAccountSnapshot, invalidateBrowserData } from "@/lib/browser-data-cache";
 import { isHostedImageUrl as hasRenderableImage } from "@/lib/media-url";
 import {useBilling} from "@/lib/billing/client";
 import { browserRandomUUID } from "@/lib/browser-crypto";
@@ -2495,6 +2496,8 @@ export function CanvasClient() {
   // 余额轮询会回写新的 user 对象；仅账号变化才重载画布，避免覆盖正在编辑的内容。
   const authenticatedEmail = user?.email;
   useEffect(() => {
+    setCredits(null);
+    setWorks(null); setNames({}); setTextNodes([]); setTextNodesReady(false);
     if (!ready || !authenticatedEmail) return;
     let cancelled = false;
     const sp = new URLSearchParams(window.location.search);
@@ -2523,12 +2526,8 @@ export function CanvasClient() {
     setTargetEmail(target);
     setReadOnly(ro);
     Promise.all([
-      (async () =>
-        (
-          await fetch(`/api/account?email=${encodeURIComponent(target)}`, {
-            headers: await authHeader(),
-          })
-        ).json())(),
+      // Cross-account requests bypass the browser cache; canvas never applies stale revalidation over edits.
+      loadAccountSnapshot<Artwork>(target),
       privateFetchRaw(`/api/projects?email=${encodeURIComponent(target)}`)
         .then((r) => r.json())
         .catch(() => ({ names: {} })),
@@ -2571,12 +2570,7 @@ export function CanvasClient() {
           }
         }
         setTextNodesReady(true);
-        const u = acc?.user as
-          | { creditsTotal?: number; creditsUsed?: number }
-          | undefined;
-        if (u && typeof u.creditsTotal === "number") {
-          setCredits(Math.max(0, u.creditsTotal - (u.creditsUsed ?? 0)));
-        }
+
       })
       .catch(() => {
         if (!cancelled) {
@@ -4326,6 +4320,7 @@ export function CanvasClient() {
     const em = targetEmail || user?.email;
     const valid = ids.filter(Boolean);
     if (!em || valid.length === 0) return works ?? [];
+    invalidateBrowserData(em);
     try {
       const r = await privateFetchRaw(
         `/api/artworks/get?email=${encodeURIComponent(em)}&ids=${valid

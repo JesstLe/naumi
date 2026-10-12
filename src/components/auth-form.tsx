@@ -313,7 +313,7 @@ export function AuthForm({
           setLoading(false);
           return;
         }
-        applyServerUser(d.user);
+        applyServerUser(d.user, true);
         setTimeout(() => {
           if (!noRedirect) router.push(nextUrl);
         }, 400);
