@@ -4,8 +4,11 @@ import {createServer} from 'node:net';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {chromium,expect as rawExpect} from '@playwright/test';
+import {chromium,webkit,expect as rawExpect} from '@playwright/test';
 const expect=rawExpect.configure({timeout:45000});
+const engine=process.env.WORKFLOW_BROWSER || 'edge',platform=process.env.WORKFLOW_PLATFORM || 'windows';
+assert.ok(['edge','webkit'].includes(engine));assert.ok(['windows','mac'].includes(platform));
+const modifier=platform==='mac'?'Meta':'Control';
 const out=path.resolve(process.env.WORKFLOW_EVIDENCE_DIR || 'E:/Workspace/naumi/output/canvas-workflow-paste-20261010');
 const seed=JSON.parse(await readFile(path.join(out,'browser-seed.json'),'utf8'));
 const db='postgresql://naumi_fixture:fixture_local_only@127.0.0.1:13049/naumi_workflow_paste_acceptance';
@@ -20,10 +23,11 @@ try{
  app=spawn(process.execPath,['node_modules/next/dist/bin/next','dev','-p',String(port)],{env:{...process.env,DATABASE_URL:db,STORAGE_DRIVER:'local',MEDIA_DIR:path.join(out,'media'),SETTINGS_SECRET:'workflow-fixture-local-only-secret-20261010',NAUMI_MULTI_USER:'1',NAUMI_VIDEO_WORKER:'0',VIDEO_WORKER_SECRET:randomUUID(),OPENAI_API_KEY:'fixture-local-never-call',OPENAI_BASE_URL:'http://127.0.0.1:1/v1',NEXT_PUBLIC_SUPABASE_URL:'',NEXT_PUBLIC_SUPABASE_ANON_KEY:'',NEXT_DIST_DIR:dist,NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
  app.stdout.on('data',c=>logs.push(c.toString()));app.stderr.on('data',c=>logs.push(c.toString()));
  let ready=false;for(let i=0;i<150;i++){try{if((await fetch(base+'/api/health')).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,500));}assert.ok(ready);
- browser=await chromium.launch({channel:process.platform==='win32'?'msedge':undefined,headless:true});
+ browser=await (engine==='webkit'?webkit:chromium).launch({...(engine==='edge'&&process.platform==='win32'?{channel:'msedge'}:{}),headless:true});
  async function boot({width=1440,real=false,empty=false}={}){
   const email=real?seed.realEmail:seed.email,cookie=real?seed.realCookie:seed.cookie,user={...seed.user,email,creditsTotal:99999,creditsUsed:0};
-  const context=await browser.newContext({viewport:{width,height:960},reducedMotion:'reduce'});await context.addCookies([{name:'nv_user',value:cookie.slice(8),url:base},{name:'naumi_locale',value:'zh',url:base}]);
+  const context=await browser.newContext({viewport:{width,height:960},reducedMotion:'reduce',...(platform==='mac'?{userAgent:'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15'}:{})});await context.addCookies([{name:'nv_user',value:cookie.slice(8),url:base},{name:'naumi_locale',value:'zh',url:base}]);
+  await context.addInitScript(platform=>{Object.defineProperty(navigator,'platform',{get:()=>platform==='mac'?'MacIntel':'Win32'});Object.defineProperty(navigator,'userAgentData',{get:()=>undefined});},platform);
   await context.addInitScript(({email,user,key})=>{localStorage.setItem('theme','light');localStorage.setItem('naumi:last-email',email);localStorage.setItem('naumi:user:'+email,JSON.stringify(user));localStorage.setItem('nv:canvas:bg','light');localStorage.setItem('nv:canvas:agent:disclosure:'+email,'closed');if(key)localStorage.setItem('nv:canvas:last',key);},{email,user,key:empty?null:(real?seed.real.projectKey:seed.result.projectKey)});
   await context.addInitScript(()=>{window.__workflowStreams=[];const original=window.fetch;window.fetch=async(...args)=>{const res=await original(...args);if(String(args[0]).endsWith('/api/canvas/workflow-import')&&args[1]?.method==='POST')void res.clone().text().then(body=>window.__workflowStreams.push(body.trim().split('\n').map(line=>JSON.parse(line)))).catch(()=>{});return res;};});
   // Isolate copy regression from the user's real OS clipboard.
@@ -47,6 +51,7 @@ try{
   await p.goto(base+'/canvas',{timeout:120000});
   if(empty)await p.getByTestId('canvas-project-browser').getByRole('button',{name:'创建新项目',exact:true}).click();
   await expect(p.getByTestId('canvas-drop-zone')).toBeVisible();
+ await expect(p.getByTestId('canvas-agent-orb')).toBeVisible();
   return{p,context};
  }
  async function paste(p,html,target='[data-testid="canvas-drop-zone"]'){
@@ -72,8 +77,8 @@ try{
  for(const img of await p.locator('.react-flow__node img').evaluateAll(xs=>xs.map(x=>x.getAttribute('src'))))assert.ok(!/dancf|gaoding/.test(img));
  await p.screenshot({path:path.join(out,'browser','compact-import.png')});
  pass('user paste -> actual route, public PNG/SVG/path persisted; 6 editable leaves + 2 groups + 4 links; actual 0/4..4/4 stream');
- await p.keyboard.press('Control+z');await expect(p.locator('.react-flow__node')).toHaveCount(0);
- await p.keyboard.press('Control+Shift+z');await expect(p.locator('.react-flow__node')).toHaveCount(8);await expect(p.locator('.react-flow__edge')).toHaveCount(4);
+ await p.keyboard.press(`${modifier}+z`);await expect(p.locator('.react-flow__node')).toHaveCount(0);
+ await p.keyboard.press(`${modifier}+Shift+z`);await expect(p.locator('.react-flow__node')).toHaveCount(8);await expect(p.locator('.react-flow__edge')).toHaveCount(4);
  pass('one-step mixed undo/redo restores images, text, decoration and groups via actual PostgreSQL history');
  // Group label is a real clickable control, not a decorative/inert frame.
  await p.getByTestId('workflow-group').getByRole('button',{name:'商品工作流',exact:true}).click();
@@ -136,15 +141,36 @@ try{
  await real.locator(`.react-flow__node[data-id="${missing.id}"]`).getByRole('button',{name:'补充图片',exact:true}).evaluate(el=>el.click());
  await real.getByTestId('canvas-replace-image-input').setInputFiles({name:'fixture.png',mimeType:'image/png',buffer:await readFile(path.join(out,'media',seed.result.artworks[0].image.slice(7)))});
  await expect(real.getByTestId('workflow-missing-asset')).toHaveCount(8);await expect(real.locator('.react-flow__node')).toHaveCount(38);await expect(real.locator('.react-flow__edge')).toHaveCount(19);
- await real.keyboard.press('Control+z');await expect(real.getByTestId('workflow-missing-asset')).toHaveCount(9);
- await real.keyboard.press('Control+Shift+z');await expect(real.getByTestId('workflow-missing-asset')).toHaveCount(8);
+ await real.keyboard.press(`${modifier}+z`);await expect(real.getByTestId('workflow-missing-asset')).toHaveCount(9);
+ await real.keyboard.press(`${modifier}+Shift+z`);await expect(real.getByTestId('workflow-missing-asset')).toHaveCount(8);
  await real.reload();await expect(real.getByTestId('workflow-missing-asset')).toHaveCount(8);
  pass('placeholder fill goes through actual multipart API; same node/links/layout; pixel-version undo/redo and refresh survive');
  await real.setViewportSize({width:390,height:844});await real.screenshot({path:path.join(out,'browser','mobile.png')});
  assert.equal(await real.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await realContext.close();pass('390px light canvas has no horizontal page overflow');
+ // A text-only clipboard needs no assets but must still create a persistent project.
+ const textA=structuredClone(data.elements[0].elements[1]),textB=structuredClone(data.elements[0].elements[2].elements[0]);
+ textA.metaInfo.workflow.previous=[];textB.metaInfo.workflow.previous=['text-a','outside-copy'];textB.height=1600;textB.left=2400;
+ const textData={version:'10.0.0',elements:[{...data.elements[0],elements:[textA,textB]}]};
+ const textHtml='<span data-app="editor-next" data-clipboard="'+Buffer.from(encodeURIComponent(JSON.stringify(textData))).toString('base64')+'"></span>';
+ const {p:textPage,context:textContext}=await boot({empty:true});
+ await expect(textPage.locator('.react-flow__node')).toHaveCount(0);
+ assert.equal(await paste(textPage,textHtml),true);await expect(textPage.locator('.react-flow__node')).toHaveCount(3);await expect(textPage.locator('.react-flow__edge')).toHaveCount(1);
+ await expect(textPage.getByTestId('workflow-import-status')).toHaveCount(0);
+ const firstText=(await textPage.evaluate(()=>window.__workflowStreams))[0].find(e=>e.type==='complete').result;
+ assert.equal(firstText.artworks.length,0);assert.equal(firstText.missingReferences,1);assert.equal(firstText.textNodes.length,2);
+ await textPage.keyboard.press(`${modifier}+z`);await expect(textPage.locator('.react-flow__node')).toHaveCount(0);
+ await textPage.keyboard.press(`${modifier}+Shift+z`);await expect(textPage.locator('.react-flow__node')).toHaveCount(3);
+ assert.equal(await paste(textPage,textHtml),true);await expect(textPage.locator('.react-flow__node')).toHaveCount(6);await expect(textPage.locator('.react-flow__edge')).toHaveCount(2);
+ const repeated=(await textPage.evaluate(()=>window.__workflowStreams))[1].find(e=>e.type==='complete').result;
+ assert.equal(repeated.projectKey,firstText.projectKey);assert.notEqual(repeated.operationId,firstText.operationId);
+ assert.equal(new Set([...firstText.textNodes,...repeated.textNodes].map(n=>n.id)).size,4);
+ await textPage.reload();await expect(textPage.locator('.react-flow__node')).toHaveCount(6);await expect(textPage.locator('.react-flow__edge')).toHaveCount(2);
+ assert.equal(await paste(textPage,'<span data-app="editor-next" data-clipboard="bad"></span>'),true);
+ await expect(textPage.getByTestId('workflow-import-status')).toContainText('格式不正确');await expect(textPage.locator('.react-flow__node')).toHaveCount(6);
+ await textContext.close();pass('text-only project persists; repeated paste remaps IDs/links; undo/redo and reload survive; malformed clipboard creates no nodes');
  assert.deepEqual(errors,[]);
- await writeFile(path.join(out,'browser','result.json'),JSON.stringify({checks,errors,operations:imports.map(i=>i.operationId),streamProgress:streams.map(s=>s.filter(e=>e.type==='progress')),writes,providerCalls:0},null,2));
- console.log('BROWSER=PASS ACTUAL_IMPORT_HISTORY_FILL=PASS GROUP_DRAG=PASS REAL_LAYOUT=38_NODES_19_LINKS PLACEHOLDERS=9 LONG_TEXT=RETAINED RETRY=IDEMPOTENT INPUT=NOT_HIJACKED MOBILE=390PX PROVIDER_CALLS=0');
+ await writeFile(path.join(out,'browser','result.json'),JSON.stringify({engine,platform,checks,errors,operations:imports.map(i=>i.operationId),streamProgress:streams.map(s=>s.filter(e=>e.type==='progress')),writes,providerCalls:0},null,2));
+ console.log(`BROWSER=PASS ENGINE=${engine} PLATFORM=${platform} ACTUAL_IMPORT_HISTORY_FILL=PASS GROUP_DRAG=PASS REAL_LAYOUT=38_NODES_19_LINKS PLACEHOLDERS=9 LONG_TEXT=RETAINED TEXT_ONLY=PASS REPEATED_PASTE=UNIQUE_IDS RETRY=IDEMPOTENT INPUT=NOT_HIJACKED MOBILE=390PX PROVIDER_CALLS=0`);
 }catch(error){await page?.screenshot({path:path.join(out,'browser','failure.png')}).catch(()=>{});await writeFile(path.join(out,'browser','failure.json'),JSON.stringify({checks,errors,body:await page?.locator('body').innerText().catch(()=>null)},null,2));throw error;}
 finally{await browser?.close();if(app?.pid){if(process.platform==='win32'){try{execFileSync('taskkill',['/PID',String(app.pid),'/T','/F'],{stdio:'pipe'});}catch{}}else app.kill('SIGTERM');}await writeFile('tsconfig.json',originalConfig);await writeFile(path.join(out,'browser','next.log'),logs.join(''));}
