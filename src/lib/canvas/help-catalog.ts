@@ -35,7 +35,7 @@ export function canvasHelpSections(platform: HelpPlatform): HelpSection[] {
         { id: "multi-select", label: text("增选 / 取消选择", "Add / remove selection"), keys: [["Shift", "Click"]] },
         { id: "undo", label: text("撤销", "Undo"), keys: [[mod, "Z"]] },
         { id: "redo", label: text("重做", "Redo"), keys: platform === "mac" ? [["Shift", mod, "Z"]] : [[mod, "Y"]] },
-        { id: "delete", label: text("删除选中节点或连线", "Delete selected nodes or edge"), keys: [["Delete"], ["Backspace"]] },
+        { id: "delete", label: text("删除选中节点或连线", "Delete selected nodes or edge"), keys: platform === "mac" ? [["⌫"], ["Fn", "⌫"]] : [["Delete"], ["Backspace"]] },
         { id: "exit-tool", label: text("退出框选 / 手型", "Exit box select / hand tool"), keys: [["Esc"]] },
       ],
     },

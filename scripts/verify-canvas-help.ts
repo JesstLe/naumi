@@ -19,6 +19,7 @@ for (const platform of ["windows", "mac"] as const) {
   }
   check(items.find(item => item.id === "redo")?.keys[0].join(" ") === (platform === "mac" ? "Shift ⌘ Z" : "Ctrl Y"));
   check(items.find(item => item.id === "add-text")?.keys[0].join(" ") === "Shift T");
+  check(items.find(item => item.id === "delete")?.keys[0].join(" ") === (platform === "mac" ? "⌫" : "Delete"));
 }
 for (const guide of canvasHelpGuides) {
   check(Boolean(helpText(guide.description, true) && helpText(guide.description, false)));
