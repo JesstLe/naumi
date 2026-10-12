@@ -9,6 +9,7 @@ import { ModelConfigError } from "./types";
 import { readBounded } from "../supplier-cost/io";
 import { completedChannelImage } from "./channel-image-response";
 import {prepareChannelText} from "./channel-text-response";
+import { ImageOperationPending } from "../image-gateway";
 
 export function channelRoutingFetch(scope: ModelExecutionScope, options: ValidationOptions): typeof fetch {
   return async (input, init) => {
@@ -55,6 +56,9 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
         await finishExecutionStage(audit, definite ? "rejected-not-charged" : "failed-response", status); finished = true;
         if (!["INVALID_REQUEST", "MODEL_INCOMPATIBLE", "PROVIDER_BUSY"].includes(receipt?.error?.code)) await recordChannelOutcome(pool, target, false, status);
       } catch (error) {
+        // An accepted durable task must finish/query its original supplier;
+        // moving to another channel could create a second paid generation.
+        if (error instanceof ImageOperationPending) { if (audit) await finishExecutionStage(audit, "unknown", status); throw error; }
         if (!audit || receivedImage) throw error;
         if (!finished) {
           const errorStatus = (error as {status?:number})?.status;
