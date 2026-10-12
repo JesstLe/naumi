@@ -20,7 +20,8 @@
 - 原始基线：空JSON返回200并判failed；真实16秒视觉HTTP在15秒工具超时报错。
 - 修改后：16秒检查成功，空/异常结果保持未验收，真实quality失败保留具体issues，供应商400仅调用一次/公开信息无secret-provider-detail，无效图片400、匿名401、用户abort传播。
 - app_ledger计数保持、generate-image调用0、真实模型消费0。
-- 证据output/agent-visual-review-20261012/baseline.log和modified-2.log；类型、定向lint、分支同步与回滚证据最终补录。
+- 证据output/agent-visual-review-20261012/baseline.log和modified-2.log；类型与定向lint退出0；runtime/PiBridge原生事件分支测试一致，unavailable错误轨迹只暴露publicSummary、不触发图片挂载回调。提交前再次fetch origin/main确认b1d10c21未变化。真实源码副本回滚（另一个SOURCE-ONLY目录）恢复原hash及15秒基线行为，修改分支保持新实现。完整命令、输入、逐字输出与退出码、四个重新打开验证的artifact见C:/Users/13357/.codex/worktrees/canvas-generation-concurrency-20261012/naumi/output/canvas-generation-concurrency-20261012/delivery/VERIFICATION.txt。原生回滚与修改检查退出均0；本任务fixture数据库容器已停止并删除其专属测试volume，不操作其他容器。
+- 核心修复提交0b65885已推送origin/codex/agent-visual-review-20261012；画布分支d702783已推送，两个工作树干净。
 
 ## 交接
 独立codex/agent-visual-review-20261012分支；仅本任务文件选择性提交，供发布Agent整合，不合main、不发布。画布并行交互在独立codex/canvas-generation-concurrency-20261012分支，两个提交均应纳入后续兼容候选。
