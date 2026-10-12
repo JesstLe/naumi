@@ -46,7 +46,7 @@ export function compileRouterProjection(snapshot: ModelSnapshot, billing: Config
     const candidates = pool.candidates.filter(id => { const u = upstreams.get(id)!; return u.enabled && providers.get(u.providerId)!.enabled; });
     for (const id of candidates) {
       const u = upstreams.get(id)!;
-      if (!["openai-images", "apimart-images", "fal-images"].includes(providers.get(u.providerId)!.protocol)) throw new ModelConfigError("UNSUPPORTED_POOL_PROTOCOL", "该协议目前只支持直连，不能加入图片混合路由", 400, [`pools.${pool.id}`]);
+      if (providers.get(u.providerId)!.options?.imageAdapter || !["openai-images", "apimart-images", "fal-images"].includes(providers.get(u.providerId)!.protocol)) throw new ModelConfigError("UNSUPPORTED_POOL_PROTOCOL", "该协议目前只支持直连，不能加入图片混合路由", 400, [`pools.${pool.id}`]);
       selected.add(id);
     }
     aliases.push({ id: model.id, candidates, strategy: pool.strategy, ...(pool.rules.length ? { rules: pool.rules.map(r => ({ id: r.id, priority: r.priority, when: r.when, require: Object.fromEntries(Object.entries(r.require).filter(([, v]) => v !== false && v !== undefined)) })) } : {}) });

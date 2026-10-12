@@ -9,6 +9,7 @@ export type FeatureCatalog = { managed: boolean; supported?: boolean; feature: F
 const catalogs = new Map<FeatureId, FeatureCatalog>(), selections = new Map<FeatureId, string>();
 export const FEATURE_MODEL_SELECTION = "naumi:feature-model-selected";
 const EVENT = FEATURE_MODEL_SELECTION;
+const RELOAD = "naumi:feature-model-reload";
 const inflight = new Map<FeatureId, Promise<FeatureCatalog>>();
 function loadCatalog(feature: FeatureId) {
   let promise = inflight.get(feature);
@@ -49,6 +50,7 @@ export function useFeatureModels(feature: FeatureId) {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      setError(null);
       try {
         const data = await loadCatalog(feature);
         if (cancelled) return;
@@ -70,10 +72,11 @@ export function useFeatureModels(feature: FeatureId) {
       } catch (e) { if (!cancelled) { setError(e instanceof Error ? e.message : "读取失败"); setCatalog(null); catalogs.delete(feature); } }
     };
     const changed = () => setSelected((adminConfiguredFeature(feature) ? catalogs.get(feature)?.defaultModelId : chosenFeatureModel(feature)) || "");
+    const retry = (event: Event) => { if ((event as CustomEvent<FeatureId>).detail === feature) void load(); };
     const visible = () => { if (document.visibilityState === "visible") void load(); };
-    void load(); window.addEventListener(MODEL_CATALOG_REFRESH, load); window.addEventListener(EVENT, changed);
+    void load(); window.addEventListener(MODEL_CATALOG_REFRESH, load); window.addEventListener(EVENT, changed); window.addEventListener(RELOAD, retry);
     window.addEventListener("focus", load); document.addEventListener("visibilitychange", visible);
-    return () => { cancelled = true; window.removeEventListener(MODEL_CATALOG_REFRESH, load); window.removeEventListener(EVENT, changed); window.removeEventListener("focus", load); document.removeEventListener("visibilitychange", visible); };
+    return () => { cancelled = true; window.removeEventListener(MODEL_CATALOG_REFRESH, load); window.removeEventListener(EVENT, changed); window.removeEventListener(RELOAD, retry); window.removeEventListener("focus", load); document.removeEventListener("visibilitychange", visible); };
   }, [feature]);
-  return { catalog, selected, error, setSelected: useCallback((id: string) => selectFeatureModel(feature, id), [feature]) };
+  return { catalog, selected, error, reload: useCallback(() => window.dispatchEvent(new CustomEvent(RELOAD, { detail: feature })), [feature]), setSelected: useCallback((id: string) => selectFeatureModel(feature, id), [feature]) };
 }

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {usePathname} from "next/navigation";
 import {TOOLS} from "@/lib/tool-meta";
 import {SelectMenu} from "./select-menu";
-import { Check, ChevronDown, Plus, X } from "lucide-react";
+import { Check, ChevronDown, Loader2, Plus, RefreshCw, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useTextModel } from "@/lib/text-model-context";
@@ -35,7 +35,7 @@ export function TextModelSelect({
   const model = managed ? featureState.selected : global.model;
   const models = managed ? featureState.catalog!.models.map(m => m.id) : global.models;
   const setModel = (id: string) => { if (managed) featureState.setSelected(id); global.setModel(id); };
-  const label = (id: string) => featureState.catalog?.models.find(m => m.id === id)?.label || id;
+  const label = (id: string) => managed ? featureState.catalog!.models.find(m => m.id === id)?.label || "模型名称未配置" : id;
   const [open, setOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
   const [custom, setCustom] = useState("");
@@ -55,6 +55,16 @@ export function TextModelSelect({
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   }
+
+  // Unknown/failed managed state must never expose the legacy model IDs or
+  // custom-model entry. Only an explicit unmanaged response enables that path.
+  const unavailable = featureState.error ? "模型加载失败" : !featureState.catalog || (!managed && !global.loaded) ? "模型加载中" : !models.length ? "当前功能没有启用模型" : null;
+  if (unavailable) return <div className={cn("flex min-w-0 items-center gap-1.5 text-xs", dark ? "text-[#e7e9ee]" : "text-c-text2", className)} data-testid="text-model-status">
+    <span role={featureState.error ? "alert" : "status"} className="inline-flex min-w-0 items-center gap-1.5" aria-busy={unavailable === "模型加载中"}>
+      {unavailable === "模型加载中" && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />}{unavailable}
+    </span>
+    {featureState.error && <button type="button" onClick={featureState.reload} aria-label="重新加载文字模型" title="重新加载文字模型" className="inline-flex shrink-0 items-center gap-1 rounded px-1 py-1 hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />重试</button>}
+  </div>;
 
   const menu = open ? (
     <>
@@ -116,7 +126,7 @@ export function TextModelSelect({
             ? "border-[#343842] bg-[#1f2229] text-[#e7e9ee] hover:border-[#596170]"
             : "border-c-border bg-white text-c-text2 hover:border-c-border2 hover:text-c-text"
         )}
-        title={`文字模型：${model}`}
+        title={`文字模型：${label(model)}`}
       >
         <ModelIcon modelId={model} modelName={label(model)} size={14} />
         <span className="min-w-0 truncate">{label(model)}</span>

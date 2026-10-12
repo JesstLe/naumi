@@ -16,6 +16,28 @@ export function cleanSource(value: any): any {
   return value;
 }
 export const sourceHash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+
+/** Explicit native catalog fields only; directory membership is not a live test.
+ * Used to initialize new records. Refreshes retain separately sourced raw data,
+ * and cannot replace administrator capabilities, prices or execution mappings. */
+export function reverseHubCatalogMetadata(row: any, url: string, observedAt: string): SupplierMetadata | undefined {
+  if (row?.provider !== "jimeng" || row.evidence !== "catalog") return undefined;
+  const image = row.image_capabilities, video = row.video_capabilities;
+  const caps = image || video;
+  if (!caps || caps.source !== "native_catalog" || !Array.isArray(row.operations)) return undefined;
+  const metadata = unknownSupplierMetadata();
+  metadata.family = image ? "即梦图片" : "即梦视频"; metadata.brand = "即梦";
+  metadata.modality = image ? "image" : "video";
+  metadata.capabilityState = "documented"; metadata.capabilitySource = "Reverse Hub 原生执行器模型目录（未逐项实测）";
+  metadata.capabilityUrl = url; metadata.checkedAt = observedAt.slice(0, 10);
+  metadata.capabilities.generate = row.operations.includes(image ? "image.generate" : "video.generate");
+  metadata.capabilities.edit = row.operations.includes("image.edit");
+  for (const name of ["resolutions", "ratios"] as const) if (Array.isArray(caps[name]) && caps[name].length <= 50 && caps[name].every((v: any) => typeof v === "string" && v.length <= 100)) metadata.capabilities[name] = caps[name];
+  if (Number.isInteger(caps.max_reference_images) && caps.max_reference_images >= 0 && caps.max_reference_images <= 32) metadata.capabilities.maxReferences = caps.max_reference_images;
+  metadata.parameterMetadata.nativeCatalog = { defaultResolution: caps.default_resolution || null, ...(video ? { durations: video.durations || null, defaultDuration: video.default_duration || null } : {}) };
+  metadata.notes = "目录声明与实测证据分开保存；未提供采购报价，成本未知。";
+  return metadata;
+}
 export type PublicSupplierDirectory = { url: string; fetchedAt: string; hash: string; body: any;specifications?:SupplierSpecificationCatalog };
 export async function discoverPublicSupplierDirectory(provider: ModelProvider, trustedOrigins: readonly string[], fetcher?: typeof fetch): Promise<PublicSupplierDirectory | null> {
   if (!["openai-images", "new-api-flow", "openai-chat", "openai-videos"].includes(provider.protocol)) return null;
