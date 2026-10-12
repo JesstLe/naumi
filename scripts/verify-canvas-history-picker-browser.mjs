@@ -31,7 +31,7 @@ try {
  const historyPending={...historyLocal,id:'history-pending',status:'pending'},historyPlaceholder={...historyLocal,id:'history-placeholder',source:'workflow-placeholder'};
  const gallery={...historyLocal,id:'gallery-local',origin:'workbench',source:'generate',groupId:'gallery-local',batchId:null};
  const suite=[{...gallery,id:'suite-local-1',category:'suite',batchId:'suite-fixture'},{...gallery,id:'suite-local-2',category:'suite',batchId:'suite-fixture'}];
- let settings={},results=[],copyFails=true,releaseCopy;const copies=[],favoriteRequests=[];let favoritesFail=true;
+ let settings={},results=[],copyFails=true,releaseCopy;const copies=[],favoriteRequests=[],favoriteFailedIds=new Set(['suite-local-2']);let favoritesFail=true;
  const older=Array.from({length:62},(_,i)=>({...historyLocal,id:'older-'+i,title:'旧作品 '+i,groupId:'older-'+i}));
  const jobs=new Map();
  const model={id:'gpt-image-2',label:'GPT Image 2',modality:'image',supportsEdit:true,qualities:['low','medium','high'],qualitySupported:true,nativeResolutions:['1K','2K'],generationParameters:{ratios:['1:1','3:4','4:3','16:9','9:16'],resolutions:['1K','2K']}};
@@ -47,8 +47,8 @@ try {
   if(p==='/api/account')return route.fulfill({json:{persisted:true,user,artworks:page.url().includes('/works')?[gallery,...suite]:[art,historyLocal,historyHttp,historyPending,historyPlaceholder,...older,...results]}});
   if(p==='/api/favorites'){
    if(req.method()==='GET')return route.fulfill({json:{favs:[]}});
-   favoriteRequests.push(req.postDataJSON()?.templateId || url.searchParams.get('templateId'));
-   return route.fulfill({status:favoritesFail?500:200,json:{ok:!favoritesFail}});
+   const id=req.postDataJSON()?.templateId || url.searchParams.get('templateId');favoriteRequests.push(id);
+   const failed=favoritesFail||favoriteFailedIds.has(id);return route.fulfill({status:failed?500:200,json:{ok:!failed}});
   }
   if(p==='/api/templates')return route.fulfill({json:{templates:[{id:'local-template',title:'本地模板',image:'/media/fixture-local.png',sourceImage:'/media/fixture-local.png',prompt:'模板参考图验收',category:'主图'}]}});
   if(p==='/api/projects')return route.fulfill({json:{names:{'tree:feedback-root':'体验验收'}}});
@@ -122,8 +122,9 @@ try {
   await toolbar.locator('[data-tool="history"]').click();await expect(dialog).toBeVisible();await dialog.getByRole('button',{name:'关闭',exact:true}).click();await expect(dialog).toHaveCount(0);
   pass('Escape and labeled close button dismiss the dialog without canvas actions');
   await page.screenshot({path:path.join(out,'history-result.png')});
-  await page.evaluate(()=>localStorage.removeItem('nv:canvas:last'));await page.reload();
-  await page.getByRole('button',{name:'新建项目',exact:true}).filter({visible:true}).first().click();
+  await page.getByTestId('canvas-project-chrome').getByRole('button').first().click();
+  await page.locator('aside').getByRole('button',{name:'创建新项目',exact:true}).click();
+  await page.getByTestId('canvas-project-chrome').getByRole('button').first().click();
   await expect(toolbar).toBeVisible();await toolbar.locator('[data-tool="history"]').click();await expect(dialog).toBeVisible();
   await dialog.locator('[data-history-artwork-id="history-local"]').click();await expect.poll(()=>copies.length).toBe(3);releaseCopy();
   await expect(page.locator('.react-flow__node[data-id="history-copy-3"]')).toBeVisible();assert.equal(copies[2].parentId,null);
@@ -132,12 +133,12 @@ try {
   await page.goto(base+'/works');
   await page.getByRole('button',{name:'收藏',exact:true}).first().click();await expect(page.getByText('收藏更新失败，请重试',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'已收藏',exact:true}).click();await expect(page.getByText('还没有作品,去创作第一张吧',{exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'全部',exact:true}).click();await page.getByRole('button',{name:'多选',exact:true}).click();await page.getByRole('button',{name:'本地历史作品',exact:false}).first().click();
+  favoritesFail=false;await page.getByRole('button',{name:'全部',exact:true}).click();await page.getByRole('button',{name:'多选',exact:true}).click();await page.getByRole('button',{name:'本地历史作品',exact:false}).first().click();
   await page.getByRole('button',{name:'全选',exact:true}).click();await page.getByRole('button',{name:'收藏',exact:true}).click();await expect(page.getByText('部分收藏失败，请重试',{exact:true})).toBeVisible();
-  favoritesFail=false;await page.getByRole('button',{name:'收藏',exact:true}).click();await expect(page.getByText('已收藏 3 张',{exact:true})).toBeVisible();
+  favoriteFailedIds.clear();await page.getByRole('button',{name:'收藏',exact:true}).click();await expect(page.getByText('已收藏 1 张',{exact:true})).toBeVisible();assert.deepEqual(favoriteRequests.slice(-1),['suite-local-2']);assert.equal(favoriteRequests.length,5);
   pass('real works page rolls back failed single favorites and never reports failed batch favorites as success');
   await page.screenshot({path:path.join(out,'works-favorites.png')});
-  await page.goto(base+'/generate?tpl=local-template');await expect(page.locator('img[src^="blob:"]')).toBeVisible();
+  await page.goto(base+'/generate?template=local-template');await expect(page.locator('img[src^="blob:"]')).toBeVisible();
   pass('local template source image actually loads into the generation reference slot');
   assert.deepEqual(errors,[]);assert.equal(submissions.length,0);assert.equal(copies.length,3);
   console.log('HISTORY_BROWSER=PASS LOCAL_AND_REMOTE=VISIBLE COPY=LANDED FAILURE=RETRYABLE DUPLICATE=BLOCKED CLOSE=PASS PROVIDER_CALLS=0');

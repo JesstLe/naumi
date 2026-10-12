@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { pathToFileURL } from "node:url";
 import {createModelFixture} from "./model-config-fixture";
 async function main(){
  let providerCalls=0;const baseline=process.argv.includes("--baseline");
@@ -15,7 +16,10 @@ async function main(){
   const {setAdminPassword,authenticateAdminPassword}=await import("../src/lib/admin-auth");await setAdminPassword("FixtureHistoryMedia2026!");
   const cookie=`nv_user=${signUserSession(email,Date.now())}`,otherCookie=`nv_user=${signUserSession(other,Date.now())}`;
   const adminCookie=`${cookie}; nv_admin=${await authenticateAdminPassword("FixtureHistoryMedia2026!")}`;
-  const {POST:add}=await import("../src/app/api/artworks/add/route"),{POST:importTemplate}=await import("../src/app/api/admin/artworks/route");
+  const {POST:add}=await import("../src/app/api/artworks/add/route");
+  const {POST:importTemplate}=process.env.NAUMI_VERIFY_ADMIN_ROUTE
+    ? await import(pathToFileURL(process.env.NAUMI_VERIFY_ADMIN_ROUTE).href)
+    : await import("../src/app/api/admin/artworks/route");
   const request=(path:string,body:unknown,auth=cookie)=>new Request("http://fixture.test"+path,{method:"POST",headers:{cookie:auth,"content-type":"application/json"},body:JSON.stringify(body)});
   const ledgerBefore=Number((await f.sql.query("SELECT count(*) FROM app_ledger")).rows[0].count);
   const copied=await add(request("/api/artworks/add",{src:original,parentId:original.id,x:300,y:400}));assert.equal(copied.status,200);const copy=await copied.json();assert.notEqual(copy.id,original.id);

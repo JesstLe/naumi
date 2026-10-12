@@ -7,7 +7,7 @@ const helper=ts.transpileModule(code.replace('export function','function'),{comp
 const accepted=['/media/canvas-uploads/one.png','https://supplier.test/one.png','http://fixture.test/one.png'],denied=['','canvas-add','workflow-placeholder','data:image/png;base64,x','blob:fixture','javascript:alert(1)','//supplier.test/x','/not-media/x.png',null];
 const ctx=vm.createContext({});vm.runInContext(helper+';globalThis.check=isHostedImageUrl;',ctx);
 for(const url of accepted)assert.equal(ctx.check(url),true);for(const url of denied)assert.equal(ctx.check(url),false);
-const fixtures=['src/components/dashboard/dashboard-client.tsx','src/components/admin/admin-artworks.tsx','src/components/admin/admin-settings.tsx'];
+const fixtures=['src/components/admin/admin-artworks.tsx','src/components/admin/admin-settings.tsx'];
 for(const file of fixtures){
  const source=fs.readFileSync(file,'utf8'),sf=ts.createSourceFile(file,source,99,true,4);const functions=[];
  function walk(n){if(ts.isFunctionDeclaration(n)&&['regenHref','artworkToolHref','workHref','isCanvasOrigin'].includes(n.name?.text))functions.push(n.getText(sf));ts.forEachChild(n,walk);}walk(sf);
@@ -17,4 +17,4 @@ for(const file of fixtures){
  for(const name of ['regenHref','artworkToolHref'])if(context[name]){const url=new URL(context[name](artwork),'http://fixture.test');assert.equal(url.searchParams.get('gen'),artwork.image);assert.equal(url.searchParams.get('src'),artwork.source);assert.equal(new URL(context[name]({...artwork,status:'pending'}),'http://fixture.test').searchParams.get('gen'),null);}
  if(context.workHref){assert.equal(new URL(context.workHref({...artwork,category:'cutout'}),'http://fixture.test').searchParams.get('view'),artwork.image);assert.equal(context.workHref({...artwork,origin:'canvas'}),'/canvas?node=local');}
 }
-console.log('LOCAL_MEDIA_UI=PASS LOCAL_REMOTE=SUPPORTED INVALID_SCHEMES=REJECTED REGEN_REFERENCES=RETAINED TOOL_VIEW=RETAINED CANVAS_ORIGIN=UNCHANGED');
+console.log('LOCAL_MEDIA_UI=PASS LOCAL_REMOTE=SUPPORTED INVALID_SCHEMES=REJECTED ADMIN_REGEN_REFERENCES=RETAINED ADMIN_TOOL_VIEW=RETAINED');

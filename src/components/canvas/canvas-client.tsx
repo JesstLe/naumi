@@ -6780,7 +6780,6 @@ export function CanvasClient() {
       });
       const d = await readJsonSafe(r);
       if (!r.ok || !d?.id) throw new Error(d?.error || t("canvas.genFail"));
-      if (!active && contextEpoch === canvasContextEpochRef.current && !activeProjectRef.current) pendingNodeRef.current = d.id;
       const fresh = await mergeWorks(d?.id ? [d.id] : []);
       if (!fresh.some(artwork => artwork.id === d.id)) {
         if (pendingNodeRef.current === d.id) pendingNodeRef.current = null;
@@ -6789,6 +6788,10 @@ export function CanvasClient() {
       }
       if (contextEpoch === canvasContextEpochRef.current && (activeProjectRef.current?.key || null) === contextProjectKey) {
         if (active) setSelectedId(d.id);
+        else {
+          pendingNodeRef.current = d.id;
+          setWorks(current => current ? [...current] : fresh);
+        }
         pushAddUndo(d.id, fresh);
       }
     } catch {
@@ -7100,7 +7103,6 @@ export function CanvasClient() {
       });
       const d = await readJsonSafe(r);
       if (!r.ok || !d?.id) throw new Error(d?.error || t("canvas.genFail"));
-      if (!active && contextEpoch === canvasContextEpochRef.current && !activeProjectRef.current) pendingNodeRef.current = d.id;
       const fresh = await mergeWorks(d?.id ? [d.id] : []);
       if (!fresh.some(artwork => artwork.id === d.id)) {
         if (pendingNodeRef.current === d.id) pendingNodeRef.current = null;
@@ -7110,6 +7112,10 @@ export function CanvasClient() {
       }
       if (contextEpoch === canvasContextEpochRef.current && (activeProjectRef.current?.key || null) === contextProjectKey) {
         if (active) setSelectedId(d.id);
+        else {
+          pendingNodeRef.current = d.id;
+          setWorks(current => current ? [...current] : fresh);
+        }
         pushAddUndo(d.id, fresh);
       }
       setHistoryPicker(null);

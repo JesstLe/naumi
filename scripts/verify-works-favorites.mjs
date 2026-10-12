@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import ts from 'typescript';
+const root=path.resolve(process.argv[2]||'.'),baseline=process.argv.includes('--baseline');
+const source=fs.readFileSync(path.join(root,'src/components/works/works-client.tsx'),'utf8'),sf=ts.createSourceFile('works.tsx',source,99,true,4),functions=[];
+function walk(node){if(ts.isVariableDeclaration(node)&&['toggleFav','favoriteSelected'].includes(node.name.getText(sf)))functions.push(`const ${node.getText(sf)};`);ts.forEachChild(node,walk);}walk(sf);
+let requests=[],messages=[],release;const pending=new Promise(resolve=>release=resolve);
+const context=vm.createContext({favs:new Set(),selected:new Set(['one','two','three']),favoriteBusyRef:{current:new Set()},authHeader:async()=>({}),fetch:async(_url,options)=>{requests.push(JSON.parse(options.body).templateId);return pending;},toast:(message,type)=>messages.push({message,type})});
+context.setFavs=update=>context.favs=update(context.favs);
+vm.runInContext(ts.transpileModule(functions.join('\n')+'\nglobalThis.toggleFav=toggleFav;'+(baseline?'':'globalThis.favoriteSelected=favoriteSelected;'),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+const first=context.toggleFav('one');await Promise.resolve();release({ok:false});await first;
+if(baseline){assert.equal(context.favs.has('one'),true);assert.equal(messages.length,0);console.log('BASELINE_FAVORITES=CONFIRMED HTTP_FAILURE=FALSE_SUCCESS NO_FEEDBACK');process.exit(0);}
+assert.equal(context.favs.has('one'),false);assert.equal(messages[0].type,'error');assert.equal(context.favoriteBusyRef.current.size,0);
+requests=[];context.fetch=async(_url,options)=>{const id=JSON.parse(options.body).templateId;requests.push(id);return {ok:id!=='two'};};
+await context.favoriteSelected();assert.deepEqual([...context.favs].sort(),['one','three']);assert.equal(messages.at(-1).type,'error');
+requests=[];context.fetch=async(_url,options)=>{requests.push(JSON.parse(options.body).templateId);return {ok:true};};await context.favoriteSelected();assert.deepEqual(requests,['two']);assert.equal(context.favs.size,3);assert.equal(messages.at(-1).message,'已收藏 1 张');
+requests=[];context.favs=new Set();let finish;const blocked=new Promise(resolve=>finish=resolve);context.fetch=async()=>{requests.push('one');return blocked;};
+const a=context.toggleFav('one'),b=context.toggleFav('one');await new Promise(resolve=>setTimeout(resolve,0));assert.equal(requests.length,1);finish({ok:true});await Promise.all([a,b]);assert.equal(context.favoriteBusyRef.current.size,0);
+console.log('WORKS_FAVORITES=PASS SINGLE_FAILURE=ROLLED_BACK PARTIAL_BATCH=HONEST RETRY=FAILED_ONLY DUPLICATE=BLOCKED');
