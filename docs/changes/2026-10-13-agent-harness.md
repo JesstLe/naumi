@@ -68,3 +68,22 @@ Next生产构建、类型与富文本渲染已通过；最终打包前再次复�
 先fetch最新main、普通合并此分支并集中跑上述脚本；已有服务端账号、图片所有权、计费冻结和项目隔离不得删去。新增写工具必须在能力字典中显式定义，并更新集中用例/覆盖矩阵；不要仅加入提示词或仅凭工具名称前缀判断权限。不要在已有运行中更换模型/Skill/参考上下文。
 
 复核多进程/多实例部署时，数据库计费幂等仍有效，但本次内存并发/预算不等于跨进程分布式配额。语义改写/编码混淆的系统提示泄露未承诺全面检测。未来需单独设计持久审批卡片/结构化请求范围及跨进程执行租约，不用额外提示词替代这些工程。
+
+## 最终分支验收与交接
+
+首要目标明确为：**防止渗透注入导致越权执行、伪造授权、跨账号/项目/会话操作与凭据外泄**。低可信内容不能扩大能力；实际执行必须经服务端授权和资源归属校验。该目标不仅是提示词要求。
+
+- 源码候选 `e89a1daa2ec3fc26dcf98f85d1ccbcbf00151b87`：最终14模块集中套件退出0，单元104项、runtime44项、网络15项；恶意模型未授权写0，合法内部写2。真实供应商调用0。
+- 同一源码完成 Next 生产构建，退出0，standalone/server.js已重开确认；已有hook/img lint警告保留。独立standalone实际HTTP验收14项，未登录Agent/历史/画布控制返回401。
+- 完整原始源码ZIP的SHA256为 `d6495c9998cbfb82cb478602fa2579d5428306741c1a09fdb9d0762ebdf9ca43`；基线10项复现伪造确认、跨入口控制、流式秘密。
+- 回滚仅在 `E:/Workspace/naumi/output/agent-harness-20261013/rollback-copy` 演练；24个原文件哈希精确恢复，11个新增文件移除，再跑基线10项通过。演练时额外复制的测试脚本只用于验证，不是产品恢复文件。
+- 任务分支保留修改，共享checkout未动；main、服务器、账号、价格配置、生产数据库和媒体未改。交接只涉及代码，不等于线上验收。远端main仍为开工基线；三模块同步计数已归零。
+
+交接材料（修改包仅含35个本任务文件；不含依赖、私钥或环境配置）：
+
+- `E:/Workspace/naumi/output/agent-harness-20261013/MODIFIED_FILE.zip`
+- `E:/Workspace/naumi/output/agent-harness-20261013/DIFF_FILE.diff`
+- `E:/Workspace/naumi/output/agent-harness-20261013/VERIFICATION.txt`
+- `E:/Workspace/naumi/output/agent-harness-20261013/ROLLBACK.sh`
+
+以VERIFICATION.txt与suite.json记录的实际命令、输入、输出、退出状态、远端提交和逐文件SHA为最终证据。ROLLBACK.sh依赖同目录modified.sha256、original.sha256、added.paths及DIFF_FILE.diff；先验证候选哈希，再逆补丁和验证原始哈希，有其他修改时停止。不要在当前业务工作树执行演练。
