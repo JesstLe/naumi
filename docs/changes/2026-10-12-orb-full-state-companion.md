@@ -50,7 +50,7 @@
 |35|等待输入|后台报价/价格变更确认门禁发出结构化waiting；历史或幂等回放保持|下一条提交或真实resolved，不猜模型文本|
 |36|联网加载|提交650ms后HTTP尚未建立；fetch/browse/web/download工具|连接/工具结束|
 |37|复述回忆|用户实际恢复历史会话|1.6秒，poll不重播庆祝；失败/停止/等待优先|
-|38|受限|账户/积分门禁、runtime策略或重复调用阻断；AUTH/CREDITS错误|用户下一条提交/新会话/真实resolved|
+|38|受限|账户/积分门禁、权限或重复调用阻断；AUTH/CREDITS错误|用户下一条提交/新会话/真实resolved|
 |39|输出回复|真实SSE delta，节流650ms更新表情|下一工具事件/终态|
 |40|检索资料|search/list/find/retrieve/get_history类真实工具|工具结束|
 |41|停止终止|用户点击停止、Abort、恢复历史stopped|下一提交/新会话；不使用02代替|
@@ -71,13 +71,13 @@
 
 集中验收记录将在提交前更新。单元/真实SVG fixture、独立浏览器React/SVG、隔离PostgreSQL实际handler/Agent/计费及整页画布验收分层记录；隔离供应商是fixture，不记真实收费模型或生产验收。
 
-开工基线`c107194677e3366424dfa9607b656a9851a6aa07`；共享main已由`b1760d0`快进至该基线。本轮1个功能模块，迭代计数0→1，合并前刷新origin/main；不自动合任务分支到main。
+开工基线`c107194677e3366424dfa9607b656a9851a6aa07`；共享main已由`b1760d0`快进至该基线。合并前刷新发现最新main为`b1d10c21bcfc36ecbbfcc0bda6200b890b4a2a2f`，已普通整合1318138真实进度及160bb54预置提示词等同事成果；保留工具阶段/名称/摘要/等待时长，删除同事已废弃的guarded-stream，不重引入正则拦截。小球与侧栏共用agentActivityLabel，包括等待/受限。四件套回滚目标为该最新main，保留同事成果，不退回开工旧业务版本。本轮1个功能模块，迭代计数0→1；普通整合后同步归零，不自动合任务分支到main。
 
 ## 交接复用提示
 
 ```text
 在codex/orb-full-state-companion检查本文件和output/orb-full-state-companion-20261012/VERIFICATION.txt。
-表情控制器只属于当前画布项目；工作台会话独立。保留同事最新guardrails。
+表情控制器只属于当前画布项目；工作台会话独立。保留同事最新预置提示词方案和真实工具进度/时长。
 32种触发按本表验收；waiting/restricted与done不能混淆，历史/幂等回放也要保持。
 本任务不发布。发布Agent先刷新main和同事已完成分支，普通整合候选、集中验证并按部署锁约定执行。
 不要把fixture、32状态浏览器覆盖或静态类型通过写成真实生产/供应商验收。

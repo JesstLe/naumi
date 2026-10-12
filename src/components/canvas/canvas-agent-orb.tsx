@@ -2,16 +2,18 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { NaumiOrb } from "../naumi-orb/naumi-orb";
-import { ORB_STATES, type OrbState } from "../naumi-orb/orb-model";
+import type { OrbState } from "../naumi-orb/orb-model";
 import type { OrbCue, OrbCompanion } from "../naumi-orb/orb-companion";
 import { agentOrbState, clampOrb, orbBounds, orbFraction, orbPixels, orbPositionKey, readOrbPosition,
   type AgentOrbOutcome, type AgentOrbStep, type OrbPoint } from "@/lib/canvas/agent-orb";
 import styles from "./canvas-agent-orb.module.css";
+import { agentActivityLabel } from "@/lib/canvas/agent-activity";
 
-export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, light = true, onActivate, companion, onCue }: {
+export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, responding = false, light = true, onActivate, companion, onCue }: {
   email: string; busy: boolean; outcome: AgentOrbOutcome; steps: AgentOrbStep[];
   open: boolean; english: boolean; light?: boolean; onActivate: () => void;
   companion?: { face: OrbState; model: OrbCompanion }; onCue?: (cue: OrbCue) => void;
+  responding?: boolean;
 }) {
   const layer = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -26,8 +28,7 @@ export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, lig
   // Status text describes the real task; expressive eyes never claim completion.
   const phase = companion?.model.attention || (busy ? companion?.model.phase || fallback : fallback);
   const state = !busy && outcome === "stopped" ? "stopped" : !busy && outcome === "error" && companion?.model.phase !== "error" && companion?.model.phase !== "restricted" ? "error" : companion?.face || fallback;
-  const item = ORB_STATES.find(item => item.key === phase)!;
-  const label = phase === "idle" ? "Agent" : english ? item.en : item.label;
+  const label = phase === "stopped" ? english ? "Stopped" : "已停止" : agentActivityLabel(busy, outcome, steps, english, responding, companion?.model.attention);
   function activate() { onCue?.({ type: "activate" }); onActivate(); }
 
   useEffect(() => {
@@ -97,7 +98,7 @@ export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, lig
       <NaumiOrb theme={light ? "naumi" : "pearl"} state={state} label="Naumi Agent" className={styles.ball} onActivate={activate} onKeyDown={keyboard}
         actionLabel={english ? `Agent: ${label}. Click to ${open ? "close" : "open"}; drag or use arrow keys to move.` : `Agent：${label}，点击${open ? "收起" : "打开"}，拖动或方向键移动`}
         expanded={open} controls="canvas-agent-panel" />
-      <span role="status" aria-live="polite" className={styles.status} data-state={phase}><i aria-hidden="true" />{label}</span>
+      <span role="status" aria-live="polite" className={styles.status} data-state={phase} title={label}><i aria-hidden="true" /><span>{label}</span></span>
     </div>
   </div>;
 }

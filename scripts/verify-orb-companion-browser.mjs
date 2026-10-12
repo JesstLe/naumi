@@ -52,7 +52,7 @@ try{
   await cue({type:'submit'});await cue({type:'attention',kind:'restricted'});await cue({type:'done'});await face('restricted');
   await cue({type:'stop'});await face('stopped');await cue({type:'hover'});await face('stopped');
   await cue({type:'reset'});await cue({type:'submit'});await cue({type:'artifacts',count:2});await cue({type:'done'});await face('done');
-  await advance(2500);await face('surprised');await expect(page.locator('[role="status"]')).toHaveText('完成');checks++;
+  await advance(2500);await face('surprised');await expect(page.locator('[role="status"]')).toHaveText('已完成');checks++;
   await advance(1600);await cue({type:'restore',running:false,outcome:'done'});await face('remembering');
   await cue({type:'failure',code:'NETWORK'});await face('error');await advance(2500);await face('sad');
   await cue({type:'failure',code:'VALIDATION'});await advance(2500);await face('confused');

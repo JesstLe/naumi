@@ -28,6 +28,7 @@ import { restoredOrbOutcome, type AgentOrbOutcome, type AgentOrbStep } from "@/l
 import { useOrbCompanion } from "../naumi-orb/use-orb-companion";
 import { classifyAgentFailure } from "@/lib/agent/recovery";
 import { agentOrbState } from "@/lib/canvas/agent-orb";
+import { agentToolLabel, agentToolSummary } from "@/lib/canvas/agent-activity";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
 import { NodePropertiesPanel } from "./node-properties-panel";
 import { ImageCropDialog } from "./image-crop-dialog";
@@ -2049,6 +2050,7 @@ export function CanvasClient() {
   const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantResponding, setAssistantResponding] = useState(false);
   const [assistantSteps, setAssistantSteps] = useState<AgentOrbStep[]>([]);
   const [assistantOutcome, setAssistantOutcome] = useState<AgentOrbOutcome>("idle");
   const orbCompanion = useOrbCompanion(`${user?.email || ""}:${activeKey || "workspace"}`);
@@ -5284,7 +5286,7 @@ export function CanvasClient() {
   async function restoreAssistantConversation(_anchorId:string,id:string) {
     const controller=new AbortController();assistantController.current?.abort();assistantController.current=controller;
     assistantLiveSessionId.current=id;
-    assistantSessionId.current=id;setAssistantSteps([]);setAssistantOutcome("running");setAssistantBusy(true);setAssistantInput("");setAssistantError(null);assistantRetry.current=null;
+    assistantSessionId.current=id;setAssistantSteps([]);setAssistantOutcome("running");setAssistantBusy(true);setAssistantResponding(false);setAssistantInput("");setAssistantError(null);assistantRetry.current=null;
     let recalled = false;
     try{
       for(;;){
@@ -5295,7 +5297,7 @@ export function CanvasClient() {
         setAssistantTurns(data.session.turns);
         const steps=new Map<string,AgentOrbStep>();
         const historySteps=data.session.steps||[], currentTurn=historySteps.findLastIndex((step:{type:string})=>step.type==="canvas_turn");
-        for(const step of historySteps.slice(Math.max(0,currentTurn)))if(["tool_start","tool_end"].includes(step.type))steps.set(step.id,{id:step.id,tool:step.tool,label:step.summary||step.tool,status:step.type==="tool_start"?(data.session.running?"running":"error"):step.isError?"error":"done"});
+        for(const step of historySteps.slice(Math.max(0,currentTurn)))if(["tool_start","tool_end"].includes(step.type))steps.set(step.id,{id:step.id,tool:step.tool,label:agentToolLabel(step.tool, locale === "en"),summary:agentToolSummary(step.summary),status:step.type==="tool_start"?(data.session.running?"running":"error"):step.isError?"error":"done"});
         setAssistantSteps([...steps.values()].slice(-10));
         setAssistantOutcome(restoredOrbOutcome(data.session));
         {
@@ -5350,6 +5352,7 @@ export function CanvasClient() {
     const epoch = ++assistantRequestEpoch.current;
     setAssistantError(null);
     setAssistantBusy(true);
+    setAssistantResponding(false);
     setAssistantSteps([]); setAssistantOutcome("running");
     orbCue({ type: "submit" });
     const controller = new AbortController();
@@ -5411,6 +5414,7 @@ export function CanvasClient() {
           }
           if (type === "delta") {
             if (Date.now() - lastOrbDelta > 650) { lastOrbDelta = Date.now(); orbCue({ type: "delta" }); }
+            setAssistantResponding(true);
             text += (data.text as string) || "";
             setAssistantTurns((current) => {
               const copy = [...current];
@@ -5422,8 +5426,12 @@ export function CanvasClient() {
             streamError = (data.error as string) || (data.message as string) || "画布助手暂时不可用";
           } else if (type === "tool_start" || type === "tool_end") {
             orbCue(type === "tool_start" ? { type: "tool-start", tool: String(data.tool || "") } : { type: "tool-end", error: !!data.isError });
-            const id = String(data.id || data.tool), label = String(data.summary || ({generate_image:"生成图片",recolor_product:"替换颜色",retouch_product:"精修图片",replicate_hot:"复刻图片",verify_image_output:"检查生成结果",get_balance:"检查积分",search_templates:"查找模板"} as Record<string,string>)[String(data.tool)] || "执行工具");
-            setAssistantSteps(current => [...current.filter(step => step.id !== id), {id,label,tool:String(data.tool || ""),status:type === "tool_start" ? "running" : data.isError ? "error" : "done"}]);
+            setAssistantResponding(false);
+            const id = String(data.id || data.tool), label = agentToolLabel(String(data.tool || ""), locale === "en");
+            setAssistantSteps(current => {
+              const next: AgentOrbStep = {id,label,tool:String(data.tool || ""),summary:agentToolSummary(data.summary),status:type === "tool_start" ? "running" : data.isError ? "error" : "done"};
+              return current.some(step => step.id === id) ? current.map(step => step.id === id ? next : step) : [...current, next];
+            });
           } else if (type === "artifacts" && Array.isArray(data.artifacts)) {
             const artifacts = data.artifacts as {id:string;image:string;title:string}[];
             artifacts.forEach(art => artifactIds.add(art.id));
@@ -11871,7 +11879,7 @@ export function CanvasClient() {
             </div>
           )}
           {!browsing && !readOnly && user && <CanvasAgentOrb key={`${user.email}:${activeKey || "workspace"}`} email={user.email}
-            busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps} open={assistantVisible} companion={orbCompanion} onCue={orbCue}
+            busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps} responding={assistantResponding} open={assistantVisible} companion={orbCompanion} onCue={orbCue}
             english={locale === "en"} onActivate={toggleAssistant} light={lightCanvas} />}
         </div>
         {propertiesOpen && !browsing && (selectedText || selected) && <NodePropertiesPanel
@@ -11892,7 +11900,7 @@ export function CanvasClient() {
           const anchor = active?.members.find(artwork => artwork.id === assistantArtworkId);
           return <CanvasAssistantPanel open={assistantVisible} focusInput={assistantFocusInput} contextReady={true} modelControl={<TextModelSelect feature="canvas.assistant" compact composer dark={!lightCanvas} />} key={`assistant:${activeKey || "empty"}`} historyScopeKey={activeKey||"workspace"} light={lightCanvas} anchorTitle={anchor?.title || (locale==="en"?"Text conversation":"文本对话")}
             contextImages={anchor ? assistantContext(active?.members ?? [], anchor.id).map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) })) : []}
-            turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} steps={assistantSteps} onStop={() => void stopAssistantTask()}
+            turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} steps={assistantSteps} english={locale === "en"} responding={assistantResponding} attention={orbCompanion.model.attention} onStop={() => void stopAssistantTask()}
             labels={{title: t("canvas.assistant.title"),
               scrollToBottom: t("canvas.assistant.scrollToBottom"),
               newChat: t("canvas.assistant.newChat"),

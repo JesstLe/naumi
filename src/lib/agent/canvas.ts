@@ -9,7 +9,7 @@ import { getModelAdministration } from "../model-config/server";
 import { configuredToolCost, completeSynchronousStream, failSynchronousStream } from "../billing/synchronous";
 import { dataUrlToBytes, isManagedImageUrl, readManagedObject } from "../storage";
 import { toVisionDataUrl } from "../vision-image";
-import { getOrCreateSession, resolveVisionImages, persistAgentSession, appendSessionEvent, MODEL_ID, type Session } from "./runtime";
+import { getOrCreateSession, primeAgentSystemPrompt, resolveVisionImages, persistAgentSession, appendSessionEvent, MODEL_ID, type Session } from "./runtime";
 import { canvasSessionPrefix, canvasProjectSessionPrefix, canvasAgentHistory } from "./canvas-history";
 import { classifyAgentFailure } from "./recovery";
 import type { CanvasAgentContext } from "./canvas-context";
@@ -115,6 +115,7 @@ export async function runCanvasAgent(request: Request) {
       send("open", { sessionId });
       void (async () => {
         try {
+          primeAgentSystemPrompt(session, message);
           await session.agent.prompt(message, images.length?images:undefined);
           // Async tool subscribers may still be attaching persisted results.
           await session.toolResultsPending;

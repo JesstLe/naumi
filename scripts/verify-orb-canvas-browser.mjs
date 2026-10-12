@@ -89,13 +89,13 @@ try {
   await expect(orb.locator('svg')).toHaveCount(1);
   await input.fill('只分析商品图'); await panel.getByRole('button',{name:'发送消息',exact:true}).click();
   await expect(panel).toContainText('验收回复：保留商品主体。'); await expect(orb).toHaveAttribute('data-orb-state','done');
-  await expect(floating.getByRole('status')).toHaveText('完成');
+  await expect(floating.getByRole('status')).toHaveText('已完成');
   await panel.getByRole('button',{name:'有帮助',exact:true}).click();await expect(orb).toHaveAttribute('data-orb-state','happy');
   pass('real canvas SSE done + feedback drive companion with unchanged billing request');
   await panel.getByRole('button',{name:'新建对话',exact:true}).click();await expect(floating.getByRole('status')).toHaveText('Agent');
   responseMode='waiting';await input.fill('生成一组图片');await panel.getByRole('button',{name:'发送消息',exact:true}).click();
   await expect(panel).toContainText('本次需要确认报价。');await expect(orb).toHaveAttribute('data-orb-state','waiting');
-  await expect(floating.getByRole('status')).toHaveText('等待输入');await panel.getByRole('button',{name:'有帮助',exact:true}).click();await expect(orb).toHaveAttribute('data-orb-state','waiting');
+  await expect(floating.getByRole('status')).toHaveText('等待输入');await expect(panel.getByTestId('canvas-assistant-attention')).toHaveText('等待输入');await panel.getByRole('button',{name:'有帮助',exact:true}).click();await expect(orb).toHaveAttribute('data-orb-state','waiting');
   pass('structured attention survives delta, done and positive feedback; no false success');
   await p.screenshot({path:path.join(out,'waiting.png')});
   await panel.getByRole('button',{name:'新建对话',exact:true}).click();responseMode='eof';await input.fill('检查连接');await panel.getByRole('button',{name:'发送消息',exact:true}).click();

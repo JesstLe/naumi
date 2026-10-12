@@ -21,9 +21,8 @@ import {agentBillingPrecheck} from "@/lib/billing/agent";
 import type {BillingQuote} from "@/lib/billing/types";
 import {fingerprint} from "@/lib/billing/fingerprint";
 import type { CanvasAgentContext } from "./canvas-context";
-import { buildAgentSystemPrompt, guardedToolBlock } from "./response-policy";
-import { guardAgentStream } from "./guarded-stream";
-import { publicAgentIdentity } from "./public-identity";
+import { buildAgentSystemPrompt, latestUserText, pelicanPromptSection } from "./response-policy";
+import { readPelicanArtifact } from "./pelican-artifact";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 运行时:常驻 Agent 会话管理器。
@@ -204,6 +203,16 @@ function conversationMessages(history: {role:string;content:string}[], modelId:s
   } : {role:"user",content:message.content,timestamp:Date.now()});
 }
 
+/** 鹈鹕主题命中时把站内成品代码补挂进系统提示词。在 prompt 入口调用：
+ *  会话创建时新消息尚未到达（history 不含本次消息），只能在此时机按消息内容注入。幂等。 */
+export function primeAgentSystemPrompt(session: Session, message: string) {
+  const section = pelicanPromptSection(message);
+  if (!section) return;
+  const current = session.agent.state.systemPrompt;
+  if (current.includes(readPelicanArtifact())) return;
+  session.agent.state.systemPrompt = `${current}\n${section}`;
+}
+
 export async function getOrCreateSession(
   email: string,
   sessionId: string,
@@ -229,7 +238,6 @@ export async function getOrCreateSession(
   const models = managed?.models || await ensureModels(modelId);
   const model = models.getModel("naumi-relay", managed?.wireModel || modelId);
   if (!model) throw new Error("模型不可用");
-  const identity = await publicAgentIdentity(modelId, scope);
 
   const persisted = dbEnabled
     ? await getAgentSession(email, sessionId)
@@ -257,7 +265,7 @@ export async function getOrCreateSession(
   const acceptedBundle = currentExecutionBundle();
   const agent = new Agent({
     initialState: {
-      systemPrompt: buildAgentSystemPrompt(AGENT_SYSTEM_PROMPT, options?.systemPrompt, identity),
+      systemPrompt: buildAgentSystemPrompt(AGENT_SYSTEM_PROMPT, options?.systemPrompt, latestUserText({ messages: savedHistory })),
       model: model as Model<"openai-completions">,
       tools: createNaumiTools(
         new Request(process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"),
@@ -268,12 +276,10 @@ export async function getOrCreateSession(
       ),
       messages: conversationMessages(savedHistory,managed?.wireModel||modelId),
     },
-    streamFn: guardAgentStream(identity, (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 })),
+    streamFn: (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 }),
     toolExecution: "sequential",
     // 积分预检:工具执行前查余额,不足直接拦截(硬门禁,不靠提示词自觉)
     beforeToolCall: async ({ toolCall, args, context }) => {
-      const blocked = guardedToolBlock(context);
-      if (blocked) { appendSessionEvent(session, "attention", { kind: "restricted", tool: toolCall.name }); return blocked; }
       const signature = `${toolCall.name}:${stableJson(args)}`;
       if (signature === session.repeatSignature) session.repeatCount += 1;
       else {

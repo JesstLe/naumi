@@ -13,6 +13,7 @@ import {
   markVisionUnsupported,
   MODEL_ID,
   persistAgentSession,
+  primeAgentSystemPrompt,
   refreshSessionCredentials,
   resolveVisionImages,
 } from "@/lib/agent/runtime";
@@ -201,6 +202,7 @@ async function handlePut(request: Request) {
           /* already closed */
         }
       };
+      primeAgentSystemPrompt(session, message);
       session.agent
         .prompt(message, visionImages.length ? visionImages : undefined)
         .catch((e) => {
@@ -352,6 +354,7 @@ async function handlePost(request: Request) {
   }
   const timeout = setTimeout(() => session.agent.abort(), 780_000);
   try {
+    primeAgentSystemPrompt(session, message);
     await session.agent.prompt(
       message,
       visionImages.length ? visionImages : undefined
