@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const root = path.resolve(process.argv[2] || path.join(path.dirname(fileURLToPath(import.meta.url)), ".."));
 const client = await readFile(
   path.join(root, "src/components/canvas/canvas-client.tsx"),
   "utf8"
@@ -37,8 +37,10 @@ assert.match(client, /panOnScroll/);
 pass("space drag, mouse drag, middle-button drag, and two-finger pan are enabled");
 
 assert.match(client, /const canvasShortcutLayerOpen = Boolean\(/);
-assert.match(client, /'\[data-canvas-hotkeys-blocked="true"\], \.fixed\.inset-0'/);
-assert.match(client, /e\.defaultPrevented \|\|\s*e\.isComposing \|\|\s*canvasShortcutLayerOpen/);
+assert.match(client, /const CANVAS_MODAL_SELECTOR = '\.fixed\.inset-0, \[data-canvas-hotkeys-blocked="true"\]\[aria-modal="true"\]'/);
+assert.match(client, /document\.querySelector\(CANVAS_MODAL_SELECTOR\)/);
+assert.match(client, /e\.defaultPrevented \|\|\s*e\.isComposing \|\|/);
+assert.match(client, /el\?\.closest\('\[data-canvas-hotkeys-blocked="true"\], \[data-canvas-hotkeys-scope="assistant"\]'\)/);
 pass("canvas shortcuts yield to modal, overlay, menu, and editing layers");
 
 assert.match(client, /e\.shiftKey &&\s*!mod &&\s*!e\.altKey &&\s*e\.code === "KeyT"/);
@@ -60,7 +62,7 @@ pass("copy, paste, undo, redo, zoom, fit, and delete shortcuts cover both system
 
 assert.doesNotMatch(client, /key === "v" && hasClip/);
 assert.match(client, /window\.addEventListener\("paste", onPaste\)/);
-assert.match(client, /function handleCanvasPaste\(event: ClipboardEvent\) \{\s*if \(\s*!ready \|\|\s*!user \|\|/);
+assert.match(client, /function handleCanvasPaste\(event: ClipboardEvent\) \{[\s\S]*?!ready \|\|\s*!user \|\|/);
 assert.match(client, /const canvasCopyIntentRef = useRef<string \| null>\(null\)/);
 assert.match(client, /const intendedNodeId = canvasCopyIntentRef\.current;\s*canvasCopyIntentRef\.current = null;/);
 assert.match(client, /const nativeSelection = window\.getSelection\(\);\s*if \(!selected \|\| \(nativeSelection && !nativeSelection\.isCollapsed\)\) return;/);
@@ -68,20 +70,27 @@ assert.match(client, /import \{ clipboardImageFiles \} from "@\/lib\/canvas\/cli
 assert.match(client, /const files = clipboardImageFiles\(data\);\s*if \(files\.length\)/);
 assert.match(clipboardFiles, /item\.kind === "file"/);
 assert.match(clipboardFiles, /CANVAS_IMAGE_FILE_PATTERN\.test\(file\.name\)/);
-assert.match(client, /canvasShortcutLayerOpen \|\|\s*document\.querySelector\('\[data-canvas-hotkeys-blocked="true"\], \.fixed\.inset-0'\)/);
+assert.match(client, /canvasShortcutLayerOpen \|\|\s*document\.querySelector\(CANVAS_MODAL_SELECTOR\)/);
 assert.match(client, /if \(isEditableClipboardTarget\(event\.target\)\) return;/);
 assert.match(client, /const nodeId = canvasNodeIdFromClipboard\(data\);\s*if \(nodeId !== copied\.id\) return;/);
 pass("copy intent stays one-shot while paste routing yields to editors and portal layers");
 
 assert.match(dict, /\{mod\}C 复制节点/);
 assert.match(dict, /\{mod\}C copy/);
-assert.match(client, /fmt\(t\("canvas\.help1"\), \{ mod: modifierKey \}\)/);
-assert.match(client, /fmt\(t\("canvas\.help6"\), \{ mod: modifierKey \}\)/);
-pass("Chinese and English help text receives the detected modifier key");
+assert.match(client, /<CanvasHelpDialog isMac=\{isMac\} english=\{locale === "en"\}/);
+pass("Chinese and English help dialog receives the detected keyboard platform");
 
 assert.doesNotMatch(client, /hk="⌘[CVZ]/);
-assert.match(client, /hk=\{isMac \? "⌘⌫" : "Del"\}/);
+assert.match(client, /hk=\{isMac \? "⌫" : "Del"\}/);
 assert.match(client, /hk=\{isMac \? "⇧⌘Z" : "CtrlY"\}/);
 pass("menus no longer expose mac-only shortcut labels on Windows");
+
+assert.match(client, /onEdgeClick=\{/);
+assert.match(client, /const selected = new Set\(current\.filter\(edge => edge\.selected\)/);
+assert.match(client, /if \(!browsing\) e\.preventDefault\(\);\s*if \(readOnly \|\| e\.repeat\) return;\s*if \(selectedEdge\)/);
+assert.match(client, /productIds: from\.productIds\?\.filter/);
+assert.match(client, /cuttingEdgesRef\.current\.has\(edge\.id\)/);
+assert.match(client, /selectable: !p\.generating && !p\.uploading/);
+pass("edge selection persists, owns Delete, removes product bindings and protects active jobs");
 
 console.log(`CANVAS_DESKTOP_INPUT_RESULT=PASS checks=${checks.length}`);

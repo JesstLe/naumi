@@ -244,6 +244,8 @@ const CANVAS_MAX_ZOOM = Number.MAX_SAFE_INTEGER;
 type DesktopPlatform = "mac" | "windows" | "other";
 
 const CANVAS_NODE_CLIPBOARD_TYPE = "application/x-naumi-canvas-node";
+// Persistent controls block their own events; only modal layers block the canvas.
+const CANVAS_MODAL_SELECTOR = '.fixed.inset-0, [data-canvas-hotkeys-blocked="true"][aria-modal="true"]';
 
 function isEditableClipboardTarget(target: EventTarget | null): boolean {
   const element = target instanceof Element ? target : null;
@@ -1972,6 +1974,7 @@ export function CanvasClient() {
     source: string;
     target: string;
   } | null>(null);
+  const cuttingEdgesRef = useRef(new Set<string>());
   // 占位/空白节点(添加节点/拉线建节点 → 先出空白节点,里面上传带进度,完成后变真节点)
   type Pend = {
     id: string;
@@ -1999,6 +2002,7 @@ export function CanvasClient() {
     attentionHref?: string;
   };
   const [pendNodes, setPendNodes] = useState<Pend[]>([]);
+  const pendNodesRef = useRef(pendNodes); pendNodesRef.current = pendNodes;
   const [canvasImageTaskRefreshKey, setCanvasImageTaskRefreshKey] = useState(0);
   const settledCanvasVideoTaskRef = useRef(new Set<string>());
   const failedCanvasVideoTaskRef = useRef(new Set<string>());
@@ -2336,6 +2340,7 @@ export function CanvasClient() {
     height: node.height,
   });
   type UndoAct =
+    | { kind: "pending-link"; id: string; from: Pick<Pend, "inputs" | "parentId" | "linked">; to: Pick<Pend, "inputs" | "parentId" | "linked"> }
     | { kind: "workflow-add"; artworks: Artwork[]; textNodes: CanvasTextNode[] }
     | { kind: "workflow-fill"; id: string; assetOperationId: string; from: Artwork; to: Artwork }
     | { kind: "node-settings"; id: string; text: boolean; from: CanvasNodeSettings; to: CanvasNodeSettings }
@@ -3553,6 +3558,7 @@ export function CanvasClient() {
           targetHandle: "in",
           type: "default",
           animated: true,
+          selectable: false,
         },
       ];
     }
@@ -3623,6 +3629,7 @@ export function CanvasClient() {
         if (!src) continue;
         displayEdges.push({
           id: `e-pend-${src}-${p.id}`,
+          selectable: !p.generating && !p.uploading,
           source: src,
           sourceHandle: "out",
           target: p.id,
@@ -3816,19 +3823,31 @@ export function CanvasClient() {
         measured: currentById.get(node.id)?.measured,
       }));
     });
-    setRfEdges(displayEdges);
+    setRfEdges((current) => {
+      const selected = new Set(current.filter(edge => edge.selected).map(edge => edge.id));
+      return displayEdges.map(edge => ({ ...edge, selected: edge.selectable !== false && selected.has(edge.id) }));
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodesSig, edgesSig]);
 
   function clearCanvasSelection(exitBoxMode = false) {
     setMultiSel([]);
+    setSelectedEdge(null);
+    setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
     setRfNodes((current) =>
       current.map((node) => (node.selected ? { ...node, selected: false } : node))
     );
     if (exitBoxMode) setCanvasTool("move");
   }
 
+  useEffect(() => {
+    setSelectedEdge(null);
+    setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
+  }, [activeKey, user?.email, setRfEdges]);
+
   function applyArtworkSelection(ids: string[]) {
+    setSelectedEdge(null);
+    setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
     const valid = new Set(
       ids.filter((id) => active?.members.some((item) => item.id === id))
     );
@@ -5944,6 +5963,12 @@ export function CanvasClient() {
   const [historySaving,setHistorySaving] = useState(false);
   const historyAttemptsRef = useRef(new WeakMap<UndoAct, string>());
   async function applyHistory(act: UndoAct, undo: boolean) {
+    if (act.kind === "pending-link") {
+      const pending = pendNodesRef.current.find(node => node.id === act.id);
+      if (!pending || pending.generating || pending.uploading) throw new Error(L("节点已开始生成或已移除", "Node is generating or no longer exists"));
+      setPendNodes(current => current.map(node => node.id === act.id ? { ...node, ...act[undo ? "from" : "to"] } : node));
+      return;
+    }
     await Promise.all(Array.from(textSaveQueuesRef.current.values()));
     const side = undo ? "from" : "to";
     const operations: Array<Record<string, unknown>> = [];
@@ -6426,6 +6451,7 @@ export function CanvasClient() {
     if (source.startsWith("task-") || target.startsWith("task-")) return;
     // 连到空白占位节点 → 加为它的输入(客户端)
     if (target.startsWith("pend-")) {
+      if (pendNodesRef.current.some(node => node.id === target && (node.generating || node.uploading))) return;
       setPendNodes((prev) =>
         prev.map((p) =>
           p.id === target
@@ -6533,56 +6559,58 @@ export function CanvasClient() {
   }
   // 剪断连线:把 source 从 target 的父节点(primary / parent_ids)里移除
   async function cutEdge(edge: { id: string; source: string; target: string }) {
-    if (readOnly || !user) return;
+    if (readOnly || !user || historyBusyRef.current || cuttingEdgesRef.current.has(edge.id)) return;
+    const pending = pendNodesRef.current.find(node => node.id === edge.target);
+    if (edge.source.startsWith("task-") || edge.target.startsWith("task-") || pending?.generating || pending?.uploading) return;
+    if (!rfEdges.some(current => current.id === edge.id)) return;
+    cuttingEdgesRef.current.add(edge.id);
     setEdgeCut(null);
-    // 乐观:本地先去掉这条线,点击即刻有反馈
-    setRfEdges((eds) => eds.filter((e) => e.id !== edge.id));
-    if (edge.source.startsWith("text-") && edge.target.startsWith("text-")) { await updateTextReference(edge.target, edge.source, false); return; }
-    if (edge.source.startsWith("text-")) {
-      const textNode = textNodes.find((node) => node.id === edge.source);
-      if (!textNode) return;
-      const updated: CanvasTextNode = {
-        ...textNode,
-        targetIds: (textNode.targetIds ?? []).filter((id) => id !== edge.target),
-        updatedAt: new Date().toISOString(),
-      };
-      pushUndo({
-        kind: "text-patch",
-        id: textNode.id,
-        from: textPatchOf(textNode),
-        to: textPatchOf(updated),
-      });
-      setTextNodes((current) =>
-        current.map((node) => (node.id === updated.id ? updated : node))
-      );
-      await persistTextNode(updated);
-      return;
-    }
-    if (edge.target.startsWith("text-")) {
-      await updateTextReference(edge.target, edge.source, false);
-      return;
-    }
     try {
-      const res = await privateFetchRaw("/api/artworks/parents", {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: user.email,
-          id: edge.target,
-          parentId: edge.source,
-        }),
-      });
-      await expectJsonOk(res, t("canvas.genFail"));
-      pushUndo({
-        kind: "parent",
-        targetId: edge.target,
-        parentId: edge.source,
-        added: false,
-      }); // 剪线可撤销(undo=重新连回)
-      await mergeWorks([edge.target]); // 只补受影响的目标节点这一行
+      if (pending) {
+        const inputs = pending.inputs.filter(id => id !== edge.source);
+        const to = { inputs, parentId: pending.parentId === edge.source ? inputs[0] ?? null : pending.parentId, linked: inputs.length > 0 };
+        pushUndo({ kind: "pending-link", id: pending.id, from: { inputs: [...pending.inputs], parentId: pending.parentId, linked: pending.linked }, to });
+        setPendNodes(current => current.map(node => node.id === pending.id ? { ...node, ...to } : node));
+      } else if (edge.source.startsWith("text-") || edge.target.startsWith("text-")) {
+        // A product binding draws the same line as a reference: remove both fields.
+        // Complete queued text saves first so an older draft cannot recreate the edge.
+        await Promise.all(Array.from(textSaveQueuesRef.current.values()));
+        const inbound = edge.target.startsWith("text-");
+        const textNode = textNodesRef.current.find(node => node.id === (inbound ? edge.target : edge.source));
+        if (!textNode) return;
+        const from = textPatchOf(textNode);
+        const to = inbound ? { ...from, sourceIds: from.sourceIds?.filter(id => id !== edge.source), productIds: from.productIds?.filter(id => id !== edge.source) }
+          : { ...from, targetIds: from.targetIds?.filter(id => id !== edge.target) };
+        const response = await privateFetchRaw("/api/canvas/history", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ operationId: browserRandomUUID(), operations: [{ type: "text-patch", id: textNode.id, fields: to }] }),
+          signal: AbortSignal.timeout(20_000),
+        });
+        await expectJsonOk(response, t("canvas.genFail"));
+        pushUndo({ kind: "text-patch", id: textNode.id, from, to });
+        setTextNodes(current => current.map(node => node.id === textNode.id ? { ...node, sourceIds: to.sourceIds, productIds: to.productIds, targetIds: to.targetIds } : node));
+        const draft = unsavedTextRef.current.get(textNode.id);
+        if (draft?.updatedAt === textNode.updatedAt) {
+          unsavedTextRef.current.delete(textNode.id);
+          setUnsavedTextCount(unsavedTextRef.current.size);
+        }
+      } else {
+        const res = await privateFetchRaw("/api/artworks/parents", {
+          method: "DELETE", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: user.email, id: edge.target, parentId: edge.source }),
+          signal: AbortSignal.timeout(20_000),
+        });
+        await expectJsonOk(res, t("canvas.genFail"));
+        pushUndo({ kind: "parent", targetId: edge.target, parentId: edge.source, added: false });
+        await mergeWorks([edge.target]);
+      }
+      setRfEdges(current => current.filter(item => item.id !== edge.id));
+      setSelectedEdge(current => current?.id === edge.id ? null : current);
     } catch (e) {
-      await mergeWorks([edge.target]);
+      // Keep the persisted line and its selection on failure; retry remains available.
       flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
+    } finally {
+      cuttingEdgesRef.current.delete(edge.id);
     }
   }
   function onConnectEnd(
@@ -6643,6 +6671,8 @@ export function CanvasClient() {
     e.preventDefault();
     e.stopPropagation();
     if (node.id.startsWith("task-")) return;
+    setSelectedEdge(null);
+    setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
     setSpawnMenu(null);
     const p = relPoint(e);
     if (node.id.startsWith("text-") || node.id.startsWith("pend-")) {
@@ -6819,7 +6849,7 @@ export function CanvasClient() {
    * 其余场景只有确认是本画布节点格式时才执行内部节点粘贴。
    */
   function handleCanvasPaste(event: ClipboardEvent) {
-    if (event.target instanceof Element && event.target.closest('[data-canvas-hotkeys-scope="assistant"]')) return;
+    if (event.target instanceof Element && event.target.closest('[data-canvas-hotkeys-blocked="true"], [data-canvas-hotkeys-scope="assistant"]')) return;
     if (
       !ready ||
       !user ||
@@ -6827,7 +6857,7 @@ export function CanvasClient() {
       browsing ||
       loading ||
       canvasShortcutLayerOpen ||
-      document.querySelector('[data-canvas-hotkeys-blocked="true"]:not(button), .fixed.inset-0')
+      document.querySelector(CANVAS_MODAL_SELECTOR)
     ) {
       return;
     }
@@ -8379,11 +8409,10 @@ export function CanvasClient() {
   // macOS / Windows 共用键盘层：⌘ 或 Ctrl 作为主修饰键；输入框和上层界面不接管系统快捷键。
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (historyBusyRef.current) { e.preventDefault(); return; }
       const el =
-        e.target instanceof HTMLElement
+        e.target instanceof Element
           ? e.target
-          : (document.activeElement as HTMLElement | null);
+          : document.activeElement;
       const tag = el?.tagName;
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
@@ -8392,15 +8421,20 @@ export function CanvasClient() {
         e.isComposing ||
         el?.closest('[data-canvas-hotkeys-blocked="true"], [data-canvas-hotkeys-scope="assistant"]') ||
         canvasShortcutLayerOpen ||
-        document.querySelector(
-          '[data-canvas-hotkeys-blocked="true"]:not(button), .fixed.inset-0'
-        ) ||
+        document.querySelector(CANVAS_MODAL_SELECTOR) ||
         tag === "INPUT" ||
         tag === "TEXTAREA" ||
         tag === "SELECT" ||
-        el?.isContentEditable
+        isEditableClipboardTarget(el)
       ) {
+        // A focused modal/menu button is not an editor: Backspace must not invoke
+        // WebKit's history navigation even while canvas commands yield to it.
+        if (!browsing && key === "backspace" && !e.isComposing && tag !== "SELECT" && !isEditableClipboardTarget(el)) e.preventDefault();
         return;
+      }
+      if (historyBusyRef.current || cuttingEdgesRef.current.size > 0) {
+        // Let unrelated browser shortcuts and viewport actions pass through.
+        if ((mod && (key === "z" || key === "y")) || key === "delete" || key === "backspace") { e.preventDefault(); return; }
       }
       if (!mod && !e.altKey && !e.shiftKey && !readOnly && !browsing) {
         if (key === "v") {
@@ -8498,7 +8532,16 @@ export function CanvasClient() {
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
-        if (readOnly || selectedGenerating) return;
+        // Safari/WebKit can navigate back on Backspace when no editable field owns it.
+        // Empty canvas selection must be a no-op, not leave the current project.
+        if (!browsing) e.preventDefault();
+        if (readOnly || e.repeat) return;
+        if (selectedEdge) {
+          e.preventDefault();
+          void cutEdge(selectedEdge);
+          return;
+        }
+        if (selectedGenerating) return;
         const realSel = multiSel.filter(
           (id) => !id.startsWith("pend-") && !id.startsWith("task-")
         );
@@ -8511,11 +8554,6 @@ export function CanvasClient() {
         } else if (selectedTextId) {
           e.preventDefault();
           void removeTextNode(selectedTextId);
-        } else if (selectedEdge) {
-          // 选中连线 → Delete 剪断(替代原先"点线即删",防误触)
-          e.preventDefault();
-          void cutEdge(selectedEdge);
-          setSelectedEdge(null);
         }
         return;
       }
@@ -9251,6 +9289,8 @@ export function CanvasClient() {
               onNodeClick={(event, node) => {
                 if (canvasTool === "hand") return;
                 if (node.id.startsWith("task-")) return;
+                setSelectedEdge(null);
+                setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
                 if (node.id.startsWith("pend-")) {
                   // 选中空白节点 → 出文生图/合并 dock
                   setSelectedId(null);
@@ -9300,10 +9340,21 @@ export function CanvasClient() {
               }}
               // 连线交互:悬停出剪刀提示可剪断;点击=选中(RF 原生连线选择),
               // 选中后按 Delete/Backspace 才真正剪断,防止点一下误删。
+              onEdgeClick={(_, edge) => {
+                if (canvasTool === "hand" || edge.selectable === false) return;
+                setSelectedId(null);
+                setSelectedTextId(null);
+                setSelectedPendId(null);
+                setMultiSel([]);
+                setRfNodes(current => current.map(node => node.selected ? { ...node, selected: false } : node));
+                setSelectedEdge({ id: edge.id, source: edge.source, target: edge.target });
+                setRfEdges(current => current.map(item => ({ ...item, selected: item.id === edge.id })));
+              }}
               onEdgeMouseMove={
                 readOnly
                   ? undefined
                   : (ev, edge) => {
+                      if (edge.selectable === false) return;
                       const rect =
                         canvasAreaRef.current?.getBoundingClientRect();
                       if (!rect) return;
@@ -9343,6 +9394,11 @@ export function CanvasClient() {
                 });
                 // 连线选中态:同防抖处理,只有真的变化才更新
                 const edge = selEdges[0];
+                if (edge && ids.length === 0) {
+                  setSelectedId(null);
+                  setSelectedTextId(null);
+                  setSelectedPendId(null);
+                }
                 setSelectedEdge((prev) => {
                   const next = edge
                     ? { id: edge.id, source: edge.source, target: edge.target }
@@ -10477,7 +10533,7 @@ export function CanvasClient() {
                           <Item
                             label={t("canvas.delete")}
                             disabled={mutationDisabled}
-                            hk={isMac ? "⌘⌫" : "Del"}
+                            hk={isMac ? "⌫" : "Del"}
                             danger
                             onClick={() => void deleteTree(node.id)}
                           />
