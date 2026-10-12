@@ -8427,6 +8427,9 @@ export function CanvasClient() {
         tag === "SELECT" ||
         isEditableClipboardTarget(el)
       ) {
+        // A focused modal/menu button is not an editor: Backspace must not invoke
+        // WebKit's history navigation even while canvas commands yield to it.
+        if (!browsing && key === "backspace" && !e.isComposing && tag !== "SELECT" && !isEditableClipboardTarget(el)) e.preventDefault();
         return;
       }
       if (historyBusyRef.current || cuttingEdgesRef.current.size > 0) {

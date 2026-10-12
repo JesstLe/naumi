@@ -27,6 +27,7 @@ context.historyBusyRef.current=true;key('Delete');assert.equal(calls.length,0);a
 context.isEditableClipboardTarget=()=>true;key('Backspace');assert.equal(calls.length,0);context.isEditableClipboardTarget=()=>false;
 context.selectedGenerating=true;key('Delete');assert.deepEqual(calls,[['edge','edge']]);
 context.selectedEdge=null;context.selectedGenerating=false;context.selectedId=null;calls.length=0;assert.equal(key('Backspace'),true);assert.equal(calls.length,0);
+context.canvasShortcutLayerOpen=true;assert.equal(key('Backspace'),true);context.canvasShortcutLayerOpen=false;
 
 const edge={id:'edge',source:'image',target:'text-target'}, sent=[],undos=[];
 const node={id:'text-target',updatedAt:'fixture',title:'keep',content:'keep',width:300,height:240,sourceIds:['image','other'],productIds:['image'],targetIds:[]};
