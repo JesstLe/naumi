@@ -25,6 +25,7 @@ import { CanvasAgentToggle } from "./canvas-agent-toggle";
 import { CanvasAgentOrb } from "./canvas-agent-orb";
 import { AssistantRichText } from "./assistant-richtext";
 import { restoredOrbOutcome, type AgentOrbOutcome, type AgentOrbStep } from "@/lib/canvas/agent-orb";
+import { agentToolLabel, agentToolSummary } from "@/lib/canvas/agent-activity";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
 import { NodePropertiesPanel } from "./node-properties-panel";
 import { ImageCropDialog } from "./image-crop-dialog";
@@ -2048,6 +2049,7 @@ export function CanvasClient() {
   const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantResponding, setAssistantResponding] = useState(false);
   const [assistantSteps, setAssistantSteps] = useState<AgentOrbStep[]>([]);
   const [assistantOutcome, setAssistantOutcome] = useState<AgentOrbOutcome>("idle");
   const assistantController = useRef<AbortController | null>(null);
@@ -5265,7 +5267,7 @@ export function CanvasClient() {
   async function restoreAssistantConversation(_anchorId:string,id:string) {
     const controller=new AbortController();assistantController.current?.abort();assistantController.current=controller;
     assistantLiveSessionId.current=id;
-    assistantSessionId.current=id;setAssistantSteps([]);setAssistantOutcome("running");setAssistantBusy(true);setAssistantInput("");setAssistantError(null);assistantRetry.current=null;
+    assistantSessionId.current=id;setAssistantSteps([]);setAssistantOutcome("running");setAssistantBusy(true);setAssistantResponding(false);setAssistantInput("");setAssistantError(null);assistantRetry.current=null;
     try{
       for(;;){
         const response=await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey||"workspace")}&id=${encodeURIComponent(id)}`,{signal:controller.signal});
@@ -5275,7 +5277,7 @@ export function CanvasClient() {
         setAssistantTurns(data.session.turns);
         const steps=new Map<string,AgentOrbStep>();
         const historySteps=data.session.steps||[], currentTurn=historySteps.findLastIndex((step:{type:string})=>step.type==="canvas_turn");
-        for(const step of historySteps.slice(Math.max(0,currentTurn)))if(["tool_start","tool_end"].includes(step.type))steps.set(step.id,{id:step.id,tool:step.tool,label:step.summary||step.tool,status:step.type==="tool_start"?(data.session.running?"running":"error"):step.isError?"error":"done"});
+        for(const step of historySteps.slice(Math.max(0,currentTurn)))if(["tool_start","tool_end"].includes(step.type))steps.set(step.id,{id:step.id,tool:step.tool,label:agentToolLabel(step.tool, locale === "en"),summary:agentToolSummary(step.summary),status:step.type==="tool_start"?(data.session.running?"running":"error"):step.isError?"error":"done"});
         setAssistantSteps([...steps.values()].slice(-10));
         setAssistantOutcome(restoredOrbOutcome(data.session));
         if(!data.session.running){if(data.session.error)setAssistantError(data.session.error);const ids=data.session.turns.flatMap((turn:AssistantTurn)=>(turn.artifacts||[]).map(art=>art.id));if(ids.length)await mergeWorks(ids);break;}
@@ -5326,6 +5328,7 @@ export function CanvasClient() {
     const epoch = ++assistantRequestEpoch.current;
     setAssistantError(null);
     setAssistantBusy(true);
+    setAssistantResponding(false);
     setAssistantSteps([]); setAssistantOutcome("running");
     const controller = new AbortController();
     const acceptedSession = assistantSessionId.current;
@@ -5376,6 +5379,7 @@ export function CanvasClient() {
           if(type==="open"){serverSessionId=String(data.sessionId||acceptedSession);assistantLiveSessionId.current=serverSessionId;}
           if(type==="done" && data.ok===true)completed=true;
           if (type === "delta") {
+            setAssistantResponding(true);
             text += (data.text as string) || "";
             setAssistantTurns((current) => {
               const copy = [...current];
@@ -5385,8 +5389,12 @@ export function CanvasClient() {
           } else if (type === "error") {
             streamError = (data.error as string) || (data.message as string) || "画布助手暂时不可用";
           } else if (type === "tool_start" || type === "tool_end") {
-            const id = String(data.id || data.tool), label = String(data.summary || ({generate_image:"生成图片",recolor_product:"替换颜色",retouch_product:"精修图片",replicate_hot:"复刻图片",verify_image_output:"检查生成结果",get_balance:"检查积分",search_templates:"查找模板"} as Record<string,string>)[String(data.tool)] || "执行工具");
-            setAssistantSteps(current => [...current.filter(step => step.id !== id), {id,label,tool:String(data.tool || ""),status:type === "tool_start" ? "running" : data.isError ? "error" : "done"}]);
+            setAssistantResponding(false);
+            const id = String(data.id || data.tool), label = agentToolLabel(String(data.tool || ""), locale === "en");
+            setAssistantSteps(current => {
+              const next: AgentOrbStep = {id,label,tool:String(data.tool || ""),summary:agentToolSummary(data.summary),status:type === "tool_start" ? "running" : data.isError ? "error" : "done"};
+              return current.some(step => step.id === id) ? current.map(step => step.id === id ? next : step) : [...current, next];
+            });
           } else if (type === "artifacts" && Array.isArray(data.artifacts)) {
             const artifacts = data.artifacts as {id:string;image:string;title:string}[];
             artifacts.forEach(art => artifactIds.add(art.id));
@@ -11824,7 +11832,7 @@ export function CanvasClient() {
             </div>
           )}
           {!browsing && !readOnly && user && <CanvasAgentOrb key={user.email} email={user.email}
-            busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps} open={assistantVisible}
+            busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps} responding={assistantResponding} open={assistantVisible}
             english={locale === "en"} onActivate={toggleAssistant} light={lightCanvas} />}
         </div>
         {propertiesOpen && !browsing && (selectedText || selected) && <NodePropertiesPanel
@@ -11845,7 +11853,7 @@ export function CanvasClient() {
           const anchor = active?.members.find(artwork => artwork.id === assistantArtworkId);
           return <CanvasAssistantPanel open={assistantVisible} focusInput={assistantFocusInput} contextReady={true} modelControl={<TextModelSelect feature="canvas.assistant" compact composer dark={!lightCanvas} />} key={`assistant:${activeKey || "empty"}`} historyScopeKey={activeKey||"workspace"} light={lightCanvas} anchorTitle={anchor?.title || (locale==="en"?"Text conversation":"文本对话")}
             contextImages={anchor ? assistantContext(active?.members ?? [], anchor.id).map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) })) : []}
-            turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} steps={assistantSteps} onStop={() => void stopAssistantTask()}
+            turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} steps={assistantSteps} english={locale === "en"} responding={assistantResponding} onStop={() => void stopAssistantTask()}
             labels={{title: t("canvas.assistant.title"),
               scrollToBottom: t("canvas.assistant.scrollToBottom"),
               newChat: t("canvas.assistant.newChat"),
