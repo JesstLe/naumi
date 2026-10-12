@@ -1956,6 +1956,7 @@ export function CanvasClient() {
     generationSize?: { width: number; height: number };
     generationCount?: number;
     generating?: boolean; // 该空白节点正在文生图/合并生成中
+    operationKey?: string; // 编辑任务锁自己的源节点，普通空白节点仅锁自己
     taskId?: string; // 视频等后台任务 ID，刷新后可从任务表恢复占位节点
     taskKind?: "video" | "image-edit"; // 不同后台任务独立恢复，避免彼此清理占位节点
     needsAttention?: boolean;
@@ -1980,6 +1981,7 @@ export function CanvasClient() {
   }>());
   const pendSeqRef = useRef(1);
   const [textNodes, setTextNodes] = useState<CanvasTextNode[]>([]);
+  const textNodesRef = useRef(textNodes); textNodesRef.current = textNodes;
   const [textNodesReady, setTextNodesReady] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState("");
@@ -2006,8 +2008,8 @@ export function CanvasClient() {
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrImageSize, setOcrImageSize] = useState<{ width: number; height: number } | null>(null);
   const [ocrFocusedId, setOcrFocusedId] = useState<string | null>(null);
-  // 扩图/标注编辑:共用占位落地管线 landEditResult;单飞守卫防连点重复扣积分
-  const editTaskBusyRef = useRef(false);
+  // 扩图/标注编辑复用占位落地管线 landEditResult，重复提交仅锁对应源节点。
+  // 生图、扩图和标注共用按源节点的同步守卫，不阻塞其他节点。
   const [expandOpen, setExpandOpen] = useState(false);
   // ComfyUI 工作流面板(BYOC:算力在用户端点,不扣积分)
   const [comfyOpen, setComfyOpen] = useState(false);
@@ -2100,6 +2102,7 @@ export function CanvasClient() {
   const pendUploadTargetRef = useRef<string | null>(null);
   // 选中的空白节点(显示文生图/合并 dock)
   const [selectedPendId, setSelectedPendId] = useState<string | null>(null);
+  const selectedPendIdRef = useRef(selectedPendId); selectedPendIdRef.current = selectedPendId;
   // 新建项目:进入空白画布(无任何节点),右键添加节点/上传第一张图后即成新项目并切过去
   const [creatingNew, setCreatingNew] = useState(false);
   // 项目网格落地页(Figma 式):进画布先看项目卡片,点卡片才进入该项目的画布
@@ -2455,14 +2458,16 @@ export function CanvasClient() {
     if (ready && !user) openAuth("sign-in");
   }, [ready, user, openAuth]);
 
+  // 余额轮询会回写新的 user 对象；仅账号变化才重载画布，避免覆盖正在编辑的内容。
+  const authenticatedEmail = user?.email;
   useEffect(() => {
-    if (!ready || !user) return;
+    if (!ready || !authenticatedEmail) return;
     let cancelled = false;
     const sp = new URLSearchParams(window.location.search);
     const emailParam = sp.get("email");
-    const target = emailParam || user.email;
+    const target = emailParam || authenticatedEmail;
     const ro =
-      !!emailParam && emailParam.toLowerCase() !== user.email.toLowerCase();
+      !!emailParam && emailParam.toLowerCase() !== authenticatedEmail.toLowerCase();
     pendingNodeRef.current = sp.get("node");
     if (sp.get("node")) {
       setPinnedNode(sp.get("node")); // 让该节点所在项目即使单张也显示在列表/可直达
@@ -2548,7 +2553,7 @@ export function CanvasClient() {
     return () => {
       cancelled = true;
     };
-  }, [ready, user]);
+  }, [ready, authenticatedEmail]);
 
   useEffect(() => {
     const email = (targetEmail || user?.email || "").toLowerCase();
@@ -3385,9 +3390,7 @@ export function CanvasClient() {
           !!node && (!activeKey || node.projectKey === activeKey)
       );
   }, [multiSel, textNodes, activeKey]);
-  useEffect(() => {
-    selectedIdRef.current = selectedId;
-  }, [selectedId]);
+  selectedIdRef.current = selectedId;
 
   const selectedGenerating = !!selectedId &&
     generationTasks.some(
@@ -3395,7 +3398,7 @@ export function CanvasClient() {
         task.sourceId === selectedId ||
         task.operationKey === `node:${selectedId}` ||
         task.operationKey === `retry:${selectedId}`
-    );
+    ) || (!!selectedId && pendNodes.some(node => node.generating && node.operationKey === `node:${selectedId}`));
   // dock 的默认引用图就是当前节点本身：节点链表达真实执行顺序，下一节点应基于当前结果继续。
   // 若要否定当前结果并从原输入重做，使用显式“重做此图”动作生成同级新版本。
   const dockRefs = useMemo<Artwork[]>(() => {
@@ -3741,18 +3744,7 @@ export function CanvasClient() {
     setRfNodes(current => current.map(node => ({ ...node, selected: ids.includes(node.id) })));
     setMultiSel(ids);
   }
-  const previewRevealedRef = useRef(new Set<string>());
-  useEffect(() => {
-    const previews = rfNodes.filter(node => node.data.pending || node.data.generating);
-    const keys = previews.map(node => `${node.id}:${node.data.generationStartedAt ?? "restored"}`);
-    const unseen = previews.filter((_, index) => !previewRevealedRef.current.has(keys[index]));
-    previewRevealedRef.current = new Set(keys);
-    if (!unseen.length || !rfRef.current) return;
-    // Reveal once per submission. Polling and dragging must not keep moving the camera.
-    const sourceIds = generationTasks.filter(task => unseen.some(node => node.id === task.id)).map(task => task.sourceId);
-    void rfRef.current.fitView({ nodes: [...sourceIds, ...unseen.map(node => node.id)].map(id => ({ id })),
-      padding: 0.24, maxZoom: rfRef.current.getViewport().zoom, duration: 240 });
-  }, [rfNodes, generationTasks]);
+  // 后台占位出现不移动镜头；用户正在其他节点工作时仍保留当前视野。
   const nodesSig = displayNodes
     .map(
       (n) =>
@@ -3787,12 +3779,13 @@ export function CanvasClient() {
     // 数据刷新（如批量标记）时继承 React Flow 当前选择，不从 multiSel 反向灌入，
     // 避免 selected 与 onSelectionChange 互相触发造成 React #185 无限更新。
     setRfNodes((current) => {
-      const selectedById = new Map(
-        current.map((node) => [node.id, Boolean(node.selected)])
-      );
+      const currentById = new Map(current.map(node => [node.id, node]));
       return displayNodes.map((node) => ({
         ...node,
-        selected: selectedById.get(node.id) ?? false,
+        selected: currentById.get(node.id)?.selected ?? false,
+        // 同尺寸数据更新不会触发 ResizeObserver。保留已有测量，避免任务阶段刷新后
+        // React Flow 将其余节点永久设为 visibility:hidden，导致整张画布无法交互。
+        measured: currentById.get(node.id)?.measured,
       }));
     });
     setRfEdges(displayEdges);
@@ -4262,6 +4255,8 @@ export function CanvasClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
+  useEffect(() => { setGenError(null); }, [selectedPendId]);
+
   // 拉线「生成衍生图」建好空白节点后:把光标落进提示词框,引导用户写改动
   useEffect(() => {
     if (!wantFocusPendPrompt.current || !selectedPendId) return;
@@ -4406,7 +4401,6 @@ export function CanvasClient() {
       operationKey?: string;
       taskLabel?: string;
       taskOffset?: number;
-      selectOnComplete?: boolean;
       userPrompt?: string;
     }
   ): Promise<GeneratedResult[]> {
@@ -4536,10 +4530,7 @@ export function CanvasClient() {
           throw new Error(pj.error || t("canvas.genFail"));
         }
       }
-      if (selectedIdRef.current === source.id) {
-        setExtraFiles([]);
-        setExtraPreviews([]);
-      }
+      // 引用和提示词属于当前草稿，后台任务完成不清理它们。
       // 把新节点落到"生成中占位"所在的位置(源节点右侧,或用户拖动后的位置),
       // 这样生成完成后不会跳到自动布局的位置 —— 与图1的占位位置一致。
       const basePos = generationTaskPosRef.current[taskId] ?? taskPosition;
@@ -4567,14 +4558,7 @@ export function CanvasClient() {
       if (newIds.length > 0 && newIds.length < requestedCount) {
         flashTip(`请求 ${requestedCount} 张，成功 ${newIds.length} 张；未成功部分已退回积分`);
       }
-      const newId = newIds[0] ?? null;
-      if (
-        newId &&
-        opts?.selectOnComplete !== false &&
-        selectedIdRef.current === source.id
-      ) {
-        setSelectedId(newId); // 用户仍停在源节点时才选中新图，不打断其在别处继续工作
-      }
+      // 新结果保留在任务占位位置，用户主动点击才切换选中节点。
       return generated;
     } catch (e) {
       const message =
@@ -4654,7 +4638,7 @@ export function CanvasClient() {
       }
       const freshCut = await mergeWorks([newId]);
       pushAddUndo(newId, freshCut); // 抠图结果可撤销
-      if (selectedIdRef.current === source.id) setSelectedId(newId);
+      // 后台完成不改变用户当前选中节点。
     } catch (e) {
       const message =
         e instanceof Error && e.message ? e.message : t("canvas.genFail");
@@ -4883,19 +4867,19 @@ export function CanvasClient() {
     if (readOnly || !user) return;
     const contextEpoch = canvasContextEpochRef.current;
     const contextProjectKey = activeProjectRef.current?.key || null;
-    if (editTaskBusyRef.current) {
-      flashTip("上一个编辑任务还在进行，请稍候");
-      return;
-    }
+    const operationKey = `node:${source.id}`;
+    if (generationOperationRef.current.has(operationKey)) return;
+    generationOperationRef.current.add(operationKey);
     const sourceNode = rfRef.current?.getNode(source.id);
     const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
     const x = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
     const y = sourceNode?.position.y ?? source.canvasY ?? 0;
-    const pendingId = `pend-edit-${Date.now()}`;
+    const pendingId = `pend-edit-${browserRandomUUID()}`;
     setPendNodes((current) => [
       ...current,
       {
         id: pendingId,
+        operationKey,
         x,
         y,
         parentId: source.id,
@@ -4907,7 +4891,7 @@ export function CanvasClient() {
         generating: true,
       },
     ]);
-    editTaskBusyRef.current = true;
+
     const timer = window.setInterval(() => {
       setPendNodes((items) =>
         items.map((item) =>
@@ -4936,7 +4920,7 @@ export function CanvasClient() {
       ) return;
       pushAddUndo(String(data.id), fresh);
       if (data.user) applyServerUser(data.user);
-      setSelectedId(String(data.id));
+      // 不抢占用户当前编辑中的节点。
       flashTip(`${label}完成，结果已生成在原图右侧`);
     } catch (error) {
       if (
@@ -4948,7 +4932,7 @@ export function CanvasClient() {
     } finally {
       window.clearInterval(timer);
       setPendNodes((items) => items.filter((item) => item.id !== pendingId));
-      editTaskBusyRef.current = false;
+      generationOperationRef.current.delete(operationKey);
     }
   }
 
@@ -5171,16 +5155,19 @@ export function CanvasClient() {
     payload: ComfyRunPayload
   ): Promise<ComfyRunResult> {
     if (readOnly || !user) throw new Error("只读画布不能执行工作流");
-    if (editTaskBusyRef.current) throw new Error("上一个编辑任务还在进行，请稍候");
+    const operationKey = `node:${source.id}`;
+    if (generationOperationRef.current.has(operationKey)) throw new Error("当前节点已有任务在进行");
+    generationOperationRef.current.add(operationKey);
     const sourceNode = rfRef.current?.getNode(source.id);
     const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
     const baseX = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
     const baseY = sourceNode?.position.y ?? source.canvasY ?? 0;
-    const pendingId = `pend-comfy-${Date.now()}`;
+    const pendingId = `pend-comfy-${browserRandomUUID()}`;
     setPendNodes((current) => [
       ...current,
       {
         id: pendingId,
+        operationKey,
         x: baseX,
         y: baseY,
         parentId: source.id,
@@ -5192,7 +5179,7 @@ export function CanvasClient() {
         generating: true,
       },
     ]);
-    editTaskBusyRef.current = true;
+
     const timer = window.setInterval(() => {
       setPendNodes((items) =>
         items.map((item) =>
@@ -5221,7 +5208,7 @@ export function CanvasClient() {
         });
         const fresh = await mergeWorks([images[i].id]);
         pushAddUndo(images[i].id, fresh);
-        if (i === 0) setSelectedId(images[i].id);
+        // 多张结果独立落地，不自动切换选中节点。
       }
       // 视频产物已落成画布节点,同样 merge 挂树(与图片并列)
       const videoArtworkId = String(data.videoArtworkId || "");
@@ -5251,7 +5238,7 @@ export function CanvasClient() {
     } finally {
       window.clearInterval(timer);
       setPendNodes((items) => items.filter((item) => item.id !== pendingId));
-      editTaskBusyRef.current = false;
+      generationOperationRef.current.delete(operationKey);
     }
   }
 
@@ -5509,7 +5496,6 @@ export function CanvasClient() {
       taskLabel: "生成正面锚点…",
       userPrompt: feedback ? `正面视图：${feedback}` : "生成正面视图",
       taskOffset: 0,
-      selectOnComplete: false,
     });
     const anchor = front[0];
     if (!anchor) return;
@@ -5528,7 +5514,6 @@ export function CanvasClient() {
         taskLabel: "生成侧面视图…",
         userPrompt: feedback ? `侧面视图：${feedback}` : "生成侧面视图",
         taskOffset: 1,
-        selectOnComplete: false,
       }),
       runGen(source, viewPrompt("背面", feedback, true), {
         ratio: genRatio,
@@ -5542,12 +5527,11 @@ export function CanvasClient() {
         taskLabel: "生成背面视图…",
         userPrompt: feedback ? `背面视图：${feedback}` : "生成背面视图",
         taskOffset: 2,
-        selectOnComplete: false,
       }),
     ]);
     if (side[0]) await renameGeneratedArtwork(side[0].id, "侧面视图");
     if (back[0]) await renameGeneratedArtwork(back[0].id, "背面视图");
-    setSelectedId(anchor.id);
+    // 三视图完成后保留用户当前选择。
   }
 
   // 复用 A+ 的视觉规划与逐张串行生成管线：所选 N 张图直接作为已准备好的
@@ -5560,7 +5544,7 @@ export function CanvasClient() {
     pend?: Pend
   ) {
     if (!user || readOnly) return;
-    const operationKey = `details:${pend?.id ?? source.id}`;
+    const operationKey = pend ? `pend:${pend.id}` : `node:${source.id}`;
     if (generationOperationRef.current.has(operationKey)) return;
     generationOperationRef.current.add(operationKey);
     const count = Math.max(1, Math.min(MAX_GENERATION_COUNT, genCount || 1));
@@ -5699,10 +5683,11 @@ export function CanvasClient() {
         setSelectedPendId((current) => (current === pend.id ? null : current));
       }
       pushAddUndoMany(ids, fresh);
-      setSelectedId(ids[0]);
+      // 详情序列完成后保留用户当前选择。
     } catch (error) {
       const message = error instanceof Error ? error.message : t("canvas.genFail");
-      setGenError(message);
+      if (pend ? selectedPendIdRef.current === pend.id : selectedIdRef.current === source.id) setGenError(message);
+      else flashTip(`${source.title}：${message}`);
       if (pend) {
         setPendNodes((current) =>
           current.map((node) => (node.id === pend.id ? { ...node, generating: false } : node))
@@ -5738,11 +5723,10 @@ export function CanvasClient() {
       operationKey: `retry:${selected.id}`,
       taskLabel: "按要求重做中…",
       userPrompt: feedback || selected.prompt || "重做当前图片",
-      selectOnComplete: false,
     });
     if (retried[0]) {
       await renameGeneratedArtwork(retried[0].id, `${selected.title} · 重做`);
-      setSelectedId(retried[0].id);
+      // 重做完成不打断当前草稿。
     }
   }
 
@@ -7596,7 +7580,6 @@ export function CanvasClient() {
           refUrls: [art.image],
           operationKey: `batch-run:${art.id}:${Date.now()}`,
           taskLabel: "批量运行中…",
-          selectOnComplete: false,
           userPrompt: sharedPrompt,
         });
         if (result.length) done++;
@@ -7943,28 +7926,35 @@ export function CanvasClient() {
             }).catch(() => {});
           })
         );
-        pendingNodeRef.current = newIds[0];
+        // 已有项目不跳转；新画布仅在用户仍选中本占位时打开首个结果项目。
+        if (selectedPendIdRef.current === pend.id) {
+          if (!activeKey) pendingNodeRef.current = newIds[0];
+        }
       }
       const fresh = await mergeWorks(newIds);
       setPendNodes((prev) => prev.filter((p) => p.id !== pend.id));
       setSelectedPendId((current) => (current === pend.id ? null : current));
       pushAddUndo(newIds[0] ?? null, fresh);
       if (newIds.length && inputTextNodes.length) {
-        const updatedTextNodes = inputTextNodes.map((node) => ({
+        // 提交只冻结输入内容；完成时链接合并到实时节点，保留期间的编辑和其他任务链接。
+        const inputIds = new Set(inputTextNodes.map(node => node.id));
+        const updatedTextNodes = textNodesRef.current.filter(node => inputIds.has(node.id)).map(node => ({
           ...node,
           targetIds: Array.from(new Set([...(node.targetIds ?? []), ...newIds])),
           updatedAt: new Date().toISOString(),
         }));
-        const updatedById = new Map(updatedTextNodes.map((node) => [node.id, node]));
-        setTextNodes((current) =>
-          current.map((node) => updatedById.get(node.id) ?? node)
-        );
+        const linksById = new Map(updatedTextNodes.map(node => [node.id, node.targetIds]));
+        const mergeLinks = (current: CanvasTextNode[]) => current.map(node => linksById.has(node.id) ? {
+          ...node, targetIds: Array.from(new Set([...(node.targetIds ?? []), ...linksById.get(node.id)!])),
+        } : node);
+        textNodesRef.current = mergeLinks(textNodesRef.current);
+        setTextNodes(mergeLinks);
         await Promise.all(updatedTextNodes.map((node) => persistTextNode(node)));
       }
     } catch (e) {
-      setGenError(
-        e instanceof Error && e.message ? e.message : t("canvas.genFail")
-      );
+      const message = e instanceof Error && e.message ? e.message : t("canvas.genFail");
+      if (selectedPendIdRef.current === pend.id) setGenError(message);
+      else flashTip(`${pend.label}：${message}`);
       setPendNodes((prev) =>
         prev.map((p) => (p.id === pend.id ? { ...p, generating: false } : p))
       );
@@ -11159,7 +11149,7 @@ export function CanvasClient() {
               className="canvas-ui-surface canvas-dock-entry absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
             >
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
-              <div className={cn("min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5", selectedGenerating && "hidden")}>
+              <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   {!readOnly && (
                     <>
@@ -11328,12 +11318,11 @@ export function CanvasClient() {
               {/* dbar:模型 / 比例·清晰度 / 数量 + 积分 + 发送(对齐原型 .dbar) */}
               {!readOnly && (
                 <div className="canvas-ui-divider flex flex-none flex-wrap items-center gap-2 border-t bg-transparent px-3.5 py-2.5">
-                  {modelControl(selectedGenerating)}
+                  {modelControl(false)}
                   <DarkSelect
                     dir="up"
                     light={lightCanvas}
                     value={generationMode}
-                    disabled={selectedGenerating}
                     options={[
                       { value: "standard", label: t("canvas.modeStandard") },
                       { value: "detail", label: t("canvas.modeDetail") },
@@ -11360,12 +11349,11 @@ export function CanvasClient() {
                     }
                   />
                   {ratioControl}
-                  <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} disabled={selectedGenerating} />
+                  <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} />
                   {generationMode === "standard" || generationMode === "detail" ? (
                     <ImageCountControl
                       value={genCount}
                       onChange={setGenCount}
-                      disabled={selectedGenerating}
                       light={lightCanvas}
                     />
                   ) : (
@@ -11413,7 +11401,7 @@ export function CanvasClient() {
               style={dockStyle ?? { left: 12, bottom: 12 }}
               className="canvas-ui-surface canvas-dock-entry absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border"
             >
-              <div className={cn("min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5", selectedPendGenerating && "hidden")}>
+              <div className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   {pendInputArts.length > 0 ? (
                     pendInputArts.map((a) => (
@@ -11470,12 +11458,11 @@ export function CanvasClient() {
                 )}
               </div>
               <div className="canvas-ui-divider flex flex-none flex-wrap items-center gap-2 border-t bg-transparent px-3.5 py-2.5">
-                {modelControl(selectedPendGenerating)}
+                {modelControl(false)}
                 <DarkSelect
                   dir="up"
                   light={lightCanvas}
                   value={generationMode === "detail" ? "detail" : "standard"}
-                  disabled={selectedPendGenerating}
                   options={[
                     { value: "standard", label: t("canvas.modeStandard") },
                     { value: "detail", label: t("canvas.modeDetail") },
@@ -11496,11 +11483,10 @@ export function CanvasClient() {
                   }
                 />
                 {ratioControl}
-                <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} disabled={selectedPendGenerating} />
+                <ImageQualityControl compact feature="canvas.image" modelId={genModel} resolution={genResolution} />
                 <ImageCountControl
                   value={genCount}
                   onChange={setGenCount}
-                  disabled={selectedPendGenerating}
                   light={lightCanvas}
                 />
                 <span className="flex-1" />

@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import path from 'node:path';
+import ts from 'typescript';
+import {randomUUID} from 'node:crypto';
+const root=path.resolve(process.argv[2]||'.'),code=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8');
+const sf=ts.createSourceFile('canvas.tsx',code,99,true,4);let body;
+function walk(n){if(ts.isFunctionDeclaration(n)&&n.name?.text==='landEditResult')body=n.getText(sf);ts.forEachChild(n,walk);}walk(sf);assert.ok(body);
+const baseline=process.argv.includes('--baseline');
+const refs={generationOperationRef:{current:new Set()},editTaskBusyRef:{current:false}};
+let nodes=[],selections=0,events=[];const sourceA={id:'A'},sourceB={id:'B'};
+const ctx=vm.createContext({...refs,readOnly:false,user:{email:'fixture@example.test'},canvasContextEpochRef:{current:0},activeProjectRef:{current:{key:'project'}},rfRef:{current:{getNode:()=>({position:{x:100,y:100}})}},flowNodeSize:()=>({width:320}),artworkNodeSize:()=>({width:320}),X_GAP:40,browserRandomUUID:randomUUID,window:{setInterval:()=>1,clearInterval:()=>{}},setPendNodes:fn=>{nodes=fn(nodes);},privateFetchRaw:async()=>({ok:true}),readJsonSafe:async r=>r,mergeWorks:async ids=>ids.map(id=>({id})),pushAddUndo:(id)=>events.push(id),applyServerUser:()=>{},setSelectedId:()=>selections++,flashTip:s=>events.push(s)});
+vm.runInContext(ts.transpileModule(body,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText+';globalThis.run=landEditResult;',ctx);
+const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+const a=deferred(),b=deferred();let submittedA=0,submittedB=0;
+const first=ctx.run(sourceA,()=>{submittedA++;return a.promise;},'扩图');
+const second=ctx.run(sourceB,()=>{submittedB++;return b.promise;},'标注');
+if(baseline){assert.equal(submittedA,1);assert.equal(submittedB,0);a.resolve({ok:true,id:'result-A'});await Promise.all([first,second]);console.log('BASELINE_RUNTIME=CONFIRMED OTHER_NODE_EDIT=BLOCKED COMPLETION_SELECTION='+selections);process.exit(0);}
+assert.equal(submittedA,1);assert.equal(submittedB,1);assert.equal(nodes.length,2);assert.equal(new Set(nodes.map(n=>n.id)).size,2);
+await ctx.run(sourceA,()=>{submittedA++;return a.promise;},'扩图');assert.equal(submittedA,1,'duplicate source blocked synchronously');
+b.resolve({ok:true,id:'result-B'});await second;assert.ok(refs.generationOperationRef.current.has('node:A'));assert.ok(!refs.generationOperationRef.current.has('node:B'));assert.equal(nodes.length,1);
+a.resolve({ok:false,error:'fixture upstream failure'});await first;assert.equal(nodes.length,0);assert.equal(refs.generationOperationRef.current.size,0);assert.equal(selections,0);
+await ctx.run(sourceA,async()=>({ok:true,id:'result-A-retry'}),'扩图');assert.ok(events.includes('result-A-retry'));
+console.log('NODE_LOCK_RUNTIME=PASS DIFFERENT_NODE=CONCURRENT DUPLICATE_SOURCE=BLOCKED REVERSE_COMPLETION=ISOLATED FAILURE_RELEASE=PASS SELECTION=UNCHANGED RETRY=PASS');
