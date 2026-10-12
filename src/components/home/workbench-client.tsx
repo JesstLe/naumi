@@ -407,7 +407,7 @@ export function WorkbenchClient() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
-  // 从 /templates 重定向或导航「模板」进来时:等客户端内容挂载后滚到模板库锚点
+  // 从 /templates 旧链接重定向进来时:等客户端内容挂载后滚到模板库锚点
   useEffect(() => {
     if (window.location.hash !== "#templates") return;
     const timer = window.setTimeout(() => {
@@ -1493,7 +1493,7 @@ export function WorkbenchClient() {
         )}
       </section>
 
-      {/* 模板库:原 /templates 整页收编至此(导航「模板」与旧链接重定向/锚点到这里) */}
+      {/* 模板库:原 /templates 整页收编至此，旧链接重定向/锚点到这里 */}
       <section id="templates" className="mt-10 scroll-mt-20">
         <TemplatesClient />
       </section>

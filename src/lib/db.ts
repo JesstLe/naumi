@@ -19,6 +19,7 @@ import type { SessionUser, Invoice } from "@/lib/auth-context";
 import { remoteTemplateImageSource } from "@/lib/template-image-cache";
 import type { CompetitorItem } from "@/lib/competitor-types";
 import { OPERATOR_EMAIL } from "@/lib/operator";
+import { RETIRED_BUSINESS_PROJECTS, isRetiredBusinessProject } from "./retired-business-projects";
 
 // ---------------------------------------------------------------------------
 // Postgres persistence. Active only when DATABASE_URL is set; otherwise the
@@ -4004,9 +4005,6 @@ export type ProjectRow = {
 const DEFAULT_PROJECTS = [
   { slug: "naumi", name: "Naumi 工具台", description: "AI 生图/套图/A+/精修/换色 美工工作站", url: "/", icon: "Sparkles", color: "#4F46E5", category: "美工", agent_tool: true, sort_index: 1 },
   { slug: "sycm", name: "生意参谋助手", description: "品牌星图选词 → 生意参谋核对 → 淘宝前十比对", url: "", icon: "TrendingUp", color: "#2E7CF6", category: "运营", agent_tool: true, sort_index: 2 },
-  { slug: "review-monitor", name: "差评巡检", description: "淘宝商品评价采集与差词统计", url: "", icon: "ShieldAlert", color: "#C2882E", category: "运营", agent_tool: true, sort_index: 3 },
-  { slug: "scm", name: "SCM 上架", description: "阿里健康 SCM 新品/组套自动上架", url: "", icon: "PackagePlus", color: "#7C3AED", category: "运营", agent_tool: true, sort_index: 4 },
-  { slug: "yutang", name: "鱼塘任务 · 澜序协作", description: "营销单派发：A 端放单 → B 端手机回传订单 → 评价管理", url: "", icon: "Fish", color: "#0E9F8A", category: "营销", agent_tool: true, sort_index: 5 },
   { slug: "rag", name: "经营知识库", description: "高管/经理助理 RAG 问答(规划中)", url: "", icon: "BookOpen", color: "#6D5BF6", category: "管理", agent_tool: false, sort_index: 6 },
 ] as const;
 
@@ -4053,8 +4051,10 @@ export async function seedProjects(): Promise<void> {
 export async function listProjects(onlyVisible = true): Promise<ProjectRow[]> {
   await ensureSchema();
   const { rows } = await getPool().query(
-    `SELECT * FROM app_projects ${onlyVisible ? "WHERE visible = true" : ""}
+    `SELECT * FROM app_projects
+      WHERE NOT (lower(trim(slug)) = ANY($1::text[])) ${onlyVisible ? "AND visible = true" : ""}
       ORDER BY sort_index ASC, id ASC`,
+    [RETIRED_BUSINESS_PROJECTS],
   );
   return rows as ProjectRow[];
 }
@@ -4064,6 +4064,7 @@ export async function upsertProject(p: {
   icon?: string; color?: string; category?: string;
   agent_tool?: boolean; run_type?: string; visible?: boolean; sort_index?: number;
 }): Promise<void> {
+  if (isRetiredBusinessProject(p.slug)) throw new Error("该业务项目已废弃");
   await ensureSchema();
   await getPool().query(
     `INSERT INTO app_projects

@@ -20,7 +20,6 @@ const NAV = [
   { href: "/generate", key: "nav.generate" },
   // hot:展示 HOT 脉冲徽标 + 下方打字机气泡(新功能引导)
   { href: "/suite", key: "suite.navLabel", hot: true },
-  { href: "/templates", key: "nav.templates" },
   // 作品库需要登录:未登录点它不跳转,直接在当前页弹登录窗
   { href: "/dashboard", key: "nav.dashboard", auth: true },
   { href: "/canvas", key: "nav.canvas", auth: true },

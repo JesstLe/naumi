@@ -33,15 +33,14 @@ import {
 
 type Item = { href: string; label: { zh: string; en: string }; Icon: typeof Home };
 
-// 顶栏导航(桌面,设计稿顺序):首页 / 工作台 / 创作▾ / 模板 / 作品 / 画布。
-// 创作下拉插在「工作台」与「模板」之间。底部 Tab(移动):首页 / 画布 / 创作FAB / 作品 / 我的。
+// 顶栏导航(桌面):首页 / 工作台 / 创作▾ / 作品 / 画布。
+// 模板统一内联在工作台。底部 Tab(移动):首页 / 工作台 / 创作FAB / 作品 / 我的。
 // 智能体已收敛进工作台(/brain 302 → /dashboard),不再单列入口。
 const NAV_BEFORE: Item[] = [
   { href: "/", label: { zh: "首页", en: "Home" }, Icon: Home },
   { href: "/dashboard", label: { zh: "工作台", en: "Workspace" }, Icon: ImageIcon },
 ];
 const NAV_AFTER: Item[] = [
-  { href: "/templates", label: { zh: "模板", en: "Templates" }, Icon: LayoutGrid },
   { href: "/works", label: { zh: "作品", en: "Works" }, Icon: ImageIcon },
   { href: "/canvas", label: { zh: "画布", en: "Canvas" }, Icon: Workflow },
 ];
@@ -346,7 +345,7 @@ export function AppRail() {
         )}
       >
         <TabLink href="/" labelKey="nav.home" Icon={Home} />
-        <TabLink href="/templates" label={{ zh: "模板", en: "Templates" }} Icon={LayoutGrid} />
+        <TabLink href="/dashboard" label={{ zh: "工作台", en: "Workspace" }} Icon={LayoutGrid} />
         {/* 中间凸起「创作」FAB → 创作中心 /tools */}
         <Link
           href="/tools"
