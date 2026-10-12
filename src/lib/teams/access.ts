@@ -1,15 +1,18 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled, getUserRole } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
 import { TeamError } from "./server";
 export const PRIVATE_HEADERS = { "Cache-Control": "private, no-store, max-age=0", Vary: "Cookie, Authorization", "X-Content-Type-Options": "nosniff" };
 export function teamJson(body: unknown, status = 200) { return NextResponse.json(body, { status, headers: PRIVATE_HEADERS }); }
 export async function teamAuthorize(request: Request, adminOnly = false) {
-  const admin = await requireAdmin(request);
+  const consoleAdmin = await requireAdmin(request);
   const email = await resolveUserEmail(request);
+  // Verified account admins receive only team operations, never nv_admin or
+  // access to the password-protected global settings console.
+  const admin = consoleAdmin || !!(email && dbEnabled && await getUserRole(email) === "admin");
   if (adminOnly && !admin) return teamJson({ error: "需要站点管理员" }, 403);
   if (!email && !admin) return teamJson({ error: "请先登录" }, 401);
   if (!dbEnabled) return teamJson({ error: "数据库未配置" }, 503);

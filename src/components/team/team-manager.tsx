@@ -21,7 +21,21 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   if (!r.ok) throw new Error(body.error || "读取失败"); return body;
 }
 type Editor = { kind: "expiry" | "password" | "create" | "attach" | "team"; member?: TeamMember } | null;
-export function TeamManager({ admin = false }: { admin?: boolean }) {
+export function TeamEntry() {
+  const { user } = useAuth();
+  const [mode, setMode] = useState<{ email?: string; admin: boolean } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController(); setMode(null);
+    void json<TeamSnapshot>("/api/team", { signal: controller.signal })
+      .then(data => { if (!controller.signal.aborted) setMode({ email: user?.email, admin: !!data.canManageTeams }); })
+      .catch(() => { if (!controller.signal.aborted) setMode({ email: user?.email, admin: false }); });
+    return () => controller.abort();
+  }, [user?.email]);
+  if (!mode || mode.email !== user?.email) return <main className={styles.page}><div className={styles.empty}>加载中…</div></main>;
+  return <TeamManager key={`${mode.email || "anonymous"}:${mode.admin}`} admin={mode.admin} standalone />;
+}
+
+export function TeamManager({ admin = false, standalone = false }: { admin?: boolean; standalone?: boolean }) {
   const { openAuth } = useAuthModal();
   const { user } = useAuth();
   const [data, setData] = useState<TeamSnapshot>({ team: null, members: [] });
@@ -49,11 +63,11 @@ export function TeamManager({ admin = false }: { admin?: boolean }) {
       if (seq !== loadSeq.current) return;
       setData(result); setTeamId(result.team?.id || id);
       setSelected(old => old ? result.members.find(m => m.email === old.email) || null : null);
-    } catch (e) { if (seq === loadSeq.current) { setError((e as Error).message); setData({ team: null, members: [] }); setSelected(null); setContent(null); setConversation(null); setMessages(null); } }
+    } catch (e) { if (seq === loadSeq.current) { setError((e as Error).message); setTeams([]); setEditor(null); setPassword(""); setData({ team: null, members: [] }); setSelected(null); setContent(null); setConversation(null); setMessages(null); } }
     finally { if (seq === loadSeq.current) setLoading(false); }
   }, [admin, teamId]);
   useEffect(() => { void load(); return invalidateLoads; }, [load, invalidateLoads, user?.email]);
-  useEffect(() => { setData({ team: null, members: [] }); setSelected(null); setContent(null); setConversation(null); setMessages(null); setEditor(null); setPassword(""); }, [user?.email]);
+  useEffect(() => { setTeams([]); setTeamId(""); setData({ team: null, members: [] }); setSelected(null); setContent(null); setConversation(null); setMessages(null); setEditor(null); setPassword(""); }, [user?.email]);
   useEffect(() => {
     if (!selectedEmail || !scopeId) { setContent(null); return; }
     const controller = new AbortController(); setContentLoading(true); setContentError(""); setContent(null); setConversation(null); setMessages(null);
@@ -90,7 +104,7 @@ export function TeamManager({ admin = false }: { admin?: boolean }) {
   const memberBody = (m: TeamMember) => ({ teamId: data.team?.id, email: m.email, expectedVersion: m.management_version });
   const select = (m: TeamMember) => { setSelected(m); setSection("artworks"); setPage(1); setContent(null); setConversation(null); };
   return <main className={styles.page} data-testid="team-manager">
-    <header className={styles.header}><div>{!admin && <Link className={styles.back} href="/dashboard"><ArrowLeft size={16} />工作台</Link>}<h1><Building2 size={25} />{admin ? "团队与子账号" : data.team?.name || "团队管理"}</h1></div><div className={styles.actions}><button onClick={() => void load()} disabled={loading || pending}><RefreshCw size={16} />刷新</button>{admin && <button className={styles.primary} onClick={() => openEditor({ kind: "create" })}><Plus size={16} />新建团队</button>}</div></header>
+    <header className={styles.header}><div>{(!admin || standalone) && <Link className={styles.back} href="/dashboard"><ArrowLeft size={16} />工作台</Link>}<h1><Building2 size={25} />{admin ? "团队与子账号" : data.team?.name || "团队管理"}</h1></div><div className={styles.actions}><button onClick={() => void load()} disabled={loading || pending}><RefreshCw size={16} />刷新</button>{admin && <button className={styles.primary} onClick={() => openEditor({ kind: "create" })}><Plus size={16} />新建团队</button>}</div></header>
     {error && <div role="alert" className={styles.error}>{error}{error === "请先登录" && <button onClick={() => openAuth()}>登录</button>}</div>}
     {notice && <p role="status" className={styles.notice}>{notice}</p>}
     {admin && teams.length > 0 && <label className={styles.teamSelect}>团队<select aria-label="选择团队" value={teamId} disabled={pending} onChange={e => { setSelected(null); setData({ team: null, members: [] }); setTeamId(e.target.value); }}>{teams.map(t => <option key={t.id} value={t.id}>{t.name} · {identity(t.owner_email)}</option>)}</select></label>}
