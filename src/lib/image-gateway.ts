@@ -18,7 +18,8 @@ const operations = new AsyncLocalStorage<ImageOperation>();
 
 export function isImageGatewayModel(model: string) {
   const scope = currentModelExecution("image");
-  if ((scope?.connection.protocol === "router-images" || scope?.imagePreset) && [scope!.frozen.publicModelId, scope!.connection.wireModel].includes(model)) return true;
+  const hub = scope?.connection.options?.imageAdapter === "reverse-hub" || scope?.supplierRouting?.targets.every(t => t.scope.connection.options?.imageAdapter === "reverse-hub");
+  if ((scope?.connection.protocol === "router-images" || scope?.imagePreset || hub) && [scope!.frozen.publicModelId, scope!.connection.wireModel].includes(model)) return true;
   return /^naumi-image-(auto|economy|standard|premium)$/.test(model);
 }
 

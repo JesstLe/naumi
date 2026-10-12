@@ -11,6 +11,7 @@ import { appendImageGatewayFields } from "../image-gateway";
 import { supplierCostFetch } from "../supplier-cost/collect";
 import {mapResolution,RESOLUTION_FIELDS} from "./resolution-policy";
 import {policyQuality} from "./quality-policy";
+import { reverseHubImageFetch } from "./reverse-hub-images";
 const managedClients = new WeakSet<OpenAI>();
 export const isManagedModelClient = (client: OpenAI) => managedClients.has(client);
 
@@ -18,6 +19,16 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
   if(scope.supplierRouting)return channelRoutingFetch(scope,options);
   if (scope.businessOption && !scope.audited) return stageRoutingFetch(scope, options);
   const { connection, frozen, parameterMap } = scope;
+  if (connection.options?.imageAdapter === "reverse-hub") {
+    const adapter = reverseHubImageFetch(scope, options);
+    return async (input, init) => {
+      try { return await adapter(input, init); }
+      catch (error) {
+        if (error instanceof ModelConfigError) return Response.json({ error: { message: error.message, code: error.code, billing_status: "not_charged" } }, { status: error.status });
+        throw error;
+      }
+    };
+  }
   if (scope.imagePreset && connection.protocol === "apimart-images") {
     const adapter=apimartPresetFetch(scope,options);
     return async(input,init)=>{try{return await adapter(input,init);}catch(error){

@@ -17,8 +17,11 @@ const name = z.string().trim().min(1).max(100);
 const modality = z.enum(["image", "text", "video"]);
 const quality = z.enum(["low", "medium", "high", "xhigh", "max", "auto"]);
 const resolution = z.enum(["1K", "2K", "4K"]);
+const displayRatios = z.array(z.string().regex(/^[1-9]\d{0,2}:[1-9]\d{0,2}$/)).min(1).max(30).refine(v => new Set(v).size === v.length, "比例不能重复").optional();
 export const MODEL_PROTOCOLS = ["openai-images", "new-api-flow", "openai-chat", "apimart-images", "fal-images", "openai-videos", "ark", "kie", "apimart", "gemini", "minimax", "autodl", "runninghub"] as const;
 const videoOptions = z.strictObject({
+  imageAdapter: z.literal("reverse-hub").optional(),
+  imageRatios: displayRatios,
   createPath: z.string().regex(/^\/[A-Za-z0-9_./{}:-]*$/).max(200).optional(),
   pollPath: z.string().regex(/^\/[A-Za-z0-9_./{}:-]*$/).max(200).optional(),
   contentPath: z.string().regex(/^\/[A-Za-z0-9_./{}:-]*$/).max(200).optional(),
@@ -81,6 +84,7 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
   for (const p of config.providers) {
     validateModelEndpoint(p.baseUrl, options);
     if (p.enabled && !p.credentialRef) fail("启用的供应商缺少凭据", [`providers.${p.id}.credentialRef`]);
+    if (p.options?.imageAdapter && p.protocol !== "openai-images") fail("Reverse Hub 图片适配器需使用图片协议");
     if (p.options?.idempotencyStrategy === "body" && !p.options.idempotencyBodyField) fail("视频幂等参数缺少字段");
   }
   for (const m of config.upstreamModels) {
