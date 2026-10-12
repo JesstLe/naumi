@@ -13,7 +13,7 @@ async function main() {
         const session: import("../src/lib/billing/agent").AgentBillingSession = { email, id: randomUUID(), cred: { cookie: `nv_user=${signUserSession(email, Date.now())}`, authorization: "", imageQuality: "medium" } };
         const check = (args: Record<string, unknown>, call = randomUUID()) => agentBillingPrecheck(session, "generate_image", args, call);
         const args = { prompt: "fixture", count: 1 };
-        assert.equal((await check(args))?.block, true);
+        const waiting=await check(args); assert.equal(waiting?.block, true); assert.equal(waiting?.attention, "waiting");
         assert.equal(session.preparedBilling?.billingCredits, 8);
         assert.equal(await check({ ...args, confirm: true }), undefined);
         const changed = structuredClone(config);
@@ -22,12 +22,14 @@ async function main() {
         const outdated = await check({ ...args, confirm: true });
         assert.ok(outdated);
         assert.equal(outdated.block, true);
-        assert.match(outdated.reason, /价格已更新/);
+        assert.match(outdated.reason, /价格已更新/); assert.equal(outdated.attention, "waiting");
         assert.equal((await check({ ...args, prompt: "new fixture", confirm: false }))?.block, true);
         const latest = await runtime.config.current(), withoutConfirm = structuredClone(latest.config);
         withoutConfirm.thresholds.agentConfirmCredits = 70;
         await runtime.config.publish({ id: randomUUID(), expectedVersion: latest.version, config: withoutConfirm, actor: "fixture", reason: "Raise confirmation threshold" });
         assert.equal(await check({ ...args, prompt: "small below threshold" }), undefined);
+        const poor = { ...session, email: await f.user(0) };
+        assert.equal((await agentBillingPrecheck(poor, "generate_image", { prompt: "balance check" }, randomUUID()))?.attention, "restricted");
     }
     finally {
         const current = await runtime.config.current();

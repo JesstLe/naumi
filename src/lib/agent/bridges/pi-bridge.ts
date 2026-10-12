@@ -32,12 +32,13 @@ const MODEL_API = "openai-completions" as const;
 
 type PiAgentEvent = {
   type: string;
+  isError?: boolean;
   toolCallId?: string;
   toolName?: string;
   result?: {
     content?: unknown[];
     isError?: boolean;
-    details?: { publicSummary?: string };
+    details?: { publicSummary?: string; verificationStatus?: string };
   };
   message?: { role?: string; content?: unknown[] };
 };
@@ -158,9 +159,9 @@ export class PiBridge implements AgentBridge {
         });
       } else if (e.type === "tool_execution_end") {
         const details = e.result?.details as
-          | { publicSummary?: string }
+          | { publicSummary?: string; verificationStatus?: string }
           | undefined;
-        const ok = !e.result?.isError;
+        const ok = !e.isError && !e.result?.isError && details?.verificationStatus !== "unavailable";
         // 轨迹脱敏:只对外暴露公开摘要,严禁内部全文/提示词
         events.push({
           type: "tool_end",

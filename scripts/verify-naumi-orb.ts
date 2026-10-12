@@ -13,7 +13,7 @@ check(gazeFromPoint(0, 0, rect).x < 0 && gazeFromPoint(0, 0, rect).y < 0);
 check(gazeFromPoint(600, 600, rect).x > 0 && gazeFromPoint(600, 600, rect).y > 0);
 check(Number.isFinite(gazeFromPoint(NaN, Infinity, { left: 0, top: 0, width: 0, height: 0 }).x));
 check(gazeFromPoint(50, 32, { left: 0, top: 0, width: 64, height: 64 }).x < .1);
-check(ORB_STATES.length === 8 && new Set(ORB_STATES.map(x => x.id)).size === 8);
+check(ORB_STATES.length === 32 && new Set(ORB_STATES.map(x => x.id)).size === 32);
 check(ORB_THEMES.naumi.body === "#181b23" && ORB_THEMES.naumi.eyes === "#f5f5f7");
 check(ORB_THEMES.naumi.accent === "#d9dce5");
 const luminance = (hex: string) => {
@@ -90,7 +90,7 @@ engines.forEach(engine => engine.destroy());
 check(hosts.every(host => host.children.length === 0));
 check(raf.size === 0);
 
-// All three palettes retain their eye color in all eight actual SVG expressions.
+// All three palettes retain their eye color in all 32 actual SVG expressions.
 for (const palette of Object.values(ORB_THEMES)) {
   const host = new SvgNode("div");
   const instance = context.GrokBall.create(host, { ...options, color: palette.body, eyeColor: palette.eyes, lite: true });

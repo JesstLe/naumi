@@ -287,6 +287,7 @@ export async function getOrCreateSession(
         session.repeatCount = 1;
       }
       if (session.repeatCount >= 3) {
+        appendSessionEvent(session, "attention", { kind: "restricted", tool: toolCall.name });
         return {
           block: true,
           reason:
@@ -295,7 +296,14 @@ export async function getOrCreateSession(
         };
       }
       const precheck = () => agentBillingPrecheck(session,toolCall.name,args as Record<string,unknown>,toolCall.id);
-      return acceptedBundle ? withFrozenExecutionBundle(acceptedBundle, precheck) : precheck();
+      const result = await (acceptedBundle ? withFrozenExecutionBundle(acceptedBundle, precheck) : precheck());
+      // Typed presentation signal only; billing decisions and public reply stay intact.
+      if (result && "attention" in result && result.attention) appendSessionEvent(session, "attention", { kind: result.attention, tool: toolCall.name, message: result.reason });
+      else if (!result?.block) {
+        const pending = session.events.findLast(event => event.type === "attention");
+        if (pending?.data.tool === toolCall.name && pending.data.kind !== "resolved") appendSessionEvent(session, "attention", { kind: "resolved", tool: toolCall.name });
+      }
+      return result;
     },
   });
 
@@ -317,9 +325,10 @@ export async function getOrCreateSession(
         result?: { content?: unknown[]; isError?: boolean };
       };
       // 轨迹对外只暴露公开摘要:details.publicSummary 优先(不含内部全文)
-      const details = (e.result as { details?: { publicSummary?: string } } | undefined)
+      const details = (e.result as { details?: { publicSummary?: string; verificationStatus?: string } } | undefined)
         ?.details;
-      if (!e.isError && !e.result?.isError && session.onToolResult) {
+      const toolFailed = !!(e.isError || e.result?.isError || details?.verificationStatus === "unavailable");
+      if (!toolFailed && session.onToolResult) {
         const pending = session.onToolResult(e.result, e.toolName || "");
         session.toolResultsPending = Promise.all([session.toolResultsPending || Promise.resolve(),pending]).then(()=>undefined);
         void session.toolResultsPending.catch(()=>undefined);
@@ -331,10 +340,10 @@ export async function getOrCreateSession(
         tool: e.toolName ?? "",
         summary:
           details?.publicSummary ||
-          (e.isError || e.result?.isError
+          (toolFailed
             ? "工具执行失败，请查看安全错误提示"
             : "工具执行完成"),
-        isError: !!(e.isError || e.result?.isError),
+        isError: toolFailed,
       });
       void persistAgentSession(session).catch(()=>undefined);
     } else if (event.type === "message_update") {
@@ -450,7 +459,7 @@ export async function persistAgentSession(session: Session): Promise<void> {
     return content ? [{ role: message.role, content }] : [];
   });
   const steps = session.events
-    .filter((event) => ["plan","tool_start","tool_end","canvas_turn","artifacts","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
+    .filter((event) => ["plan","tool_start","tool_end","attention","canvas_turn","artifacts","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
     .map((event) => ({ type: event.type, ...event.data }));
   await saveAgentSession(
     session.email,

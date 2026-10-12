@@ -12,7 +12,7 @@ for (const outcome of ["idle", "running", "done", "error", "stopped"] as AgentOr
   check(agentOrbState(true, outcome, [step("generate_image")]) === "working");
   check(agentOrbState(true, outcome, [step("generate_image", "done")]) === "thinking");
   check(agentOrbState(true, outcome, [step("generate_image", "error")]) === "thinking");
-  check(agentOrbState(false, outcome, [step("generate_image")]) === (outcome === "done" ? "done" : outcome === "error" ? "error" : "idle"));
+  check(agentOrbState(false, outcome, [step("generate_image")]) === (outcome === "done" ? "done" : outcome === "error" ? "error" : outcome === "stopped" ? "stopped" : "idle"));
 }
 check(agentOrbState(true, "running", [step("generate_image"), step("search_templates")]) === "searching");
 check(restoredOrbOutcome({ running: true, status: "failed" }) === "running");
@@ -46,7 +46,8 @@ check(canvas.includes('busy={assistantBusy} outcome={assistantOutcome} steps={as
 check(canvas.includes('english={locale === "en"} onActivate={toggleAssistant}'));
 check(canvas.indexOf('if (!completed) throw') < canvas.indexOf('setAssistantOutcome("done")'));
 check(canvas.includes('if(type==="done" && data.ok===true)completed=true;'));
-check(canvas.includes('setAssistantOutcome(controller.signal.aborted ? "stopped" : "error")'));
+check(canvas.includes('const aborted = controller.signal.aborted || failureCode === "ABORTED"'));
+check(canvas.includes('setAssistantOutcome(aborted ? "stopped" : "error")'));
 check(canvas.includes('setAssistantOutcome(restoredOrbOutcome(data.session))'));
 check(canvas.includes('tool:String(data.tool || "")'));
 const floating = readFileSync("src/components/canvas/canvas-agent-orb.tsx", "utf8");

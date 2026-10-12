@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowRight, ArrowRightToLine, ArrowUp, Check, CircleHelp, Copy, Frame, History, Image as ImageIcon, Infinity as InfinityIcon, LayoutTemplate, Loader2, MessageSquarePlus, Palette, Plus, RefreshCw, ScanLine, SlidersHorizontal, Type, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowRightToLine, ArrowUp, Check, CircleHelp, Copy, Frame, History, Image as ImageIcon, Infinity as InfinityIcon, LayoutTemplate, Loader2, MessageSquarePlus, Palette, Plus, RefreshCw, ScanLine, SlidersHorizontal, ThumbsDown, ThumbsUp, Type, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { agentActivityLabel, agentElapsedLabel } from "@/lib/canvas/agent-activity";
 import type { AgentOrbStep } from "@/lib/canvas/agent-orb";
+import type { OrbAttention } from "../naumi-orb/orb-companion";
 
 export type CanvasAssistantTurn = { id: string; role: "user" | "assistant"; content: string; artifacts?: {id:string;image:string;title:string}[] };
 export type CanvasAssistantTask = { id: string; label: string; prompt: string };
@@ -20,13 +21,14 @@ export type SavedConversation = { id: string; title: string; turns: CanvasAssist
 /** Presentation-only sidebar: the parent owns SSE, context, model routing and billing. */
 export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns, input, busy, error,
   costLabel, labels, tasks, onInputChange, onSend, onNewChat, onRestoreChat, onClose, onPreview,
-  onCopy, renderContent, modelControl, steps = [], onStop, onClearReference, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true, english = false, responding = false,
+  onCopy, onFeedback, feedbackLabels = { positive: "有帮助", negative: "需要改进" }, renderContent, modelControl, steps = [], onStop, onClearReference, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true, english = false, responding = false, attention,
 }: {
   open?: boolean;
   focusInput?: boolean;
   contextReady?: boolean;
   english?: boolean;
   responding?: boolean;
+  attention?: OrbAttention;
   light: boolean;
   anchorTitle: string;
   contextImages: { id: string; title: string; image: string }[];
@@ -52,6 +54,8 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   onClose: () => void;
   onPreview: (image: { image: string; title: string }) => void;
   onCopy: (content: string) => Promise<boolean>;
+  onFeedback?: (positive: boolean) => void;
+  feedbackLabels?: { positive: string; negative: string };
   renderContent: (content: string) => ReactNode;
 }) {
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -78,6 +82,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   const loader=useRef(historyLoader);loader.current=historyLoader;
   useEffect(()=>{if(!historyOpen||!loader.current)return;let active=true;setHistoryLoading(true);setHistoryError("");void loader.current().then(items=>{if(active)setSaved(items);}).catch(()=>{if(active)setHistoryError("历史记录读取失败，请重新打开重试");}).finally(()=>{if(active)setHistoryLoading(false);});return()=>{active=false;};},[historyOpen,historyScopeKey]);
   const [copied, setCopied] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<Record<string, boolean>>({});
   const [hour] = useState(() => new Date().getHours());
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -86,7 +91,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
     const timer = window.setInterval(() => setElapsed(Date.now() - started), 1000);
     return () => window.clearInterval(timer);
   }, [busy]);
-  const activityLabel = agentActivityLabel(busy, "running", steps, english, responding);
+  const activityLabel = agentActivityLabel(busy, "running", steps, english, responding, attention);
   const greeting = hour < 12 ? labels.morning : hour < 18 ? labels.afternoon : labels.evening;
   const visibleTasks = tasks.slice((taskPage % Math.max(1, Math.ceil(tasks.length / 4))) * 4, (taskPage % Math.max(1, Math.ceil(tasks.length / 4))) * 4 + 4);
   const iconButton = "canvas-ui-action flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-35";
@@ -241,10 +246,14 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={art.image} alt={art.title} className="aspect-square w-full object-contain" /><span className="block truncate px-2 py-1 text-[11px]">{art.title}</span>
           </button>)}</div>}
-          {turn.content.trim() && !busy && <button type="button" aria-label={copied === turn.id ? labels.copied : labels.copy} title={copied === turn.id ? labels.copied : labels.copy}
+          {turn.content.trim() && !busy && <div className="mt-1 flex items-center gap-1"><button type="button" aria-label={copied === turn.id ? labels.copied : labels.copy} title={copied === turn.id ? labels.copied : labels.copy}
             className={cn(iconButton, "mt-1")} onClick={() => { void onCopy(turn.content).then(ok => { if (ok) setCopied(turn.id); }); }}>
             {copied === turn.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>}
+          </button>{onFeedback && [true, false].map(positive => <button type="button" key={String(positive)} className={cn(iconButton, feedback[turn.id] === positive && "bg-[var(--canvas-ui-border)]")}
+            aria-label={positive ? feedbackLabels.positive : feedbackLabels.negative} title={positive ? feedbackLabels.positive : feedbackLabels.negative} aria-pressed={feedback[turn.id] === positive}
+            onClick={() => { if (feedback[turn.id] === positive) return; setFeedback(current => ({ ...current, [turn.id]: positive })); onFeedback(positive); }}>
+            {positive ? <ThumbsUp className="h-3.5 w-3.5" /> : <ThumbsDown className="h-3.5 w-3.5" />}
+          </button>)}</div>}
         </article>)}
         {!!steps.length && <div data-testid="canvas-assistant-progress" className="space-y-2 rounded-xl border border-[var(--canvas-ui-border)] p-3 text-[12px]">{steps.map(step => {
           // A disconnected/stopped client cannot claim the supplier's task is still running or cancelled.
@@ -258,7 +267,8 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
             </div>
           </div>;
         })}</div>}
-        {busy && <div data-testid="canvas-assistant-activity" className="canvas-ui-muted flex flex-wrap items-center justify-between gap-2 text-[12px]"><span role="status" aria-live="polite" className="flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />{activityLabel}</span><span data-testid="canvas-assistant-elapsed" className="text-[11px] tabular-nums">{agentElapsedLabel(elapsed, english)}</span></div>}
+        {busy && <div data-testid="canvas-assistant-activity" className="canvas-ui-muted flex flex-wrap items-center justify-between gap-2 text-[12px]"><span role="status" aria-live="polite" className="flex items-center gap-2">{attention ? <CircleHelp className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />}{activityLabel}</span><span data-testid="canvas-assistant-elapsed" className="text-[11px] tabular-nums">{agentElapsedLabel(elapsed, english)}</span></div>}
+        {!busy && attention && <div role="status" data-testid="canvas-assistant-attention" className="canvas-ui-muted flex items-center gap-2 text-[12px]"><CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />{activityLabel}</div>}
       </div>}
     </div>
     {showScrollToBottom && !historyOpen && <button type="button" data-testid="canvas-assistant-scroll-bottom" aria-label={labels.scrollToBottom} title={labels.scrollToBottom}

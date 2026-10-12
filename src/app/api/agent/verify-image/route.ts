@@ -1,6 +1,5 @@
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
-import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/lib/db";
@@ -9,6 +8,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { getOpenAISettings } from "@/lib/settings";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
+import sharp from "sharp";
 
 export const runtime = "nodejs";
 export const maxDuration = 90;
@@ -40,10 +40,14 @@ async function handleObservedPost(request: Request) {
   if (!apiKey) {
     return NextResponse.json({ error: "模型接口未配置" }, { status: 503 });
   }
-  const dataUrl = await toVisionDataUrl(
-    Buffer.from(await image.arrayBuffer()),
-    image.type || "image/png"
-  );
+  let dataUrl: string;
+  try {
+    const bytes = Buffer.from(await image.arrayBuffer());
+    await sharp(bytes).metadata();
+    dataUrl = await toVisionDataUrl(bytes, image.type || "image/png");
+  } catch {
+    return NextResponse.json({ error: "图片格式无效，未完成视觉检查", code: "VISION_IMAGE_INVALID" }, { status: 400 });
+  }
   const client = observeOpenAI(modelAwareOpenAI({
     apiKey,
     baseURL:
@@ -67,9 +71,14 @@ async function handleObservedPost(request: Request) {
         },
       ],
       max_tokens: 900,
-    });
+    }, { signal: AbortSignal.any([request.signal, AbortSignal.timeout(80_000)]), timeout: 80_000 });
     const raw = response.choices[0]?.message?.content || "{}";
-    const parsed = parseJson(raw) as Partial<VisionResult>;
+    let parsed: VisionResult;
+    try {
+      parsed = validateVisionResult(parseJson(raw));
+    } catch {
+      return NextResponse.json({ error: "视觉检查返回格式异常，未完成验收", code: "VISION_RESPONSE_INVALID" }, { status: 502 });
+    }
     const result: VisionResult = {
       passed: parsed.passed === true,
       score: Math.max(0, Math.min(100, Math.round(Number(parsed.score) || 0))),
@@ -82,10 +91,20 @@ async function handleObservedPost(request: Request) {
     return NextResponse.json(result);
   } catch {
     return NextResponse.json(
-      { error: "视觉模型暂时不可用，未将本次图片标记为已验收" },
+      { error: "视觉模型暂时不可用，未将本次图片标记为已验收", code: "VISION_UPSTREAM_UNAVAILABLE" },
       { status: 502 }
     );
   }
+}
+
+function validateVisionResult(value: unknown): VisionResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid vision result");
+  const result = value as Record<string, unknown>;
+  if (typeof result.passed !== "boolean" || typeof result.score !== "number" || !Number.isFinite(result.score) ||
+      typeof result.summary !== "string" || !result.summary.trim() || !Array.isArray(result.issues) ||
+      !result.issues.every(issue => typeof issue === "string") || typeof result.retryAdvice !== "string" ||
+      (!result.passed && !result.issues.length)) throw new Error("Invalid vision result");
+  return result as VisionResult;
 }
 
 function parseJson(raw: string): unknown {
