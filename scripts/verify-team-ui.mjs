@@ -11,6 +11,7 @@ const base='http://127.0.0.1:33039';
 const sign=email=>{const e=Buffer.from(email).toString('base64url'),exp=Date.now()+30*86400000;return `${e}.${exp}.${createHmac('sha256',secret).update(`user:${e}.${exp}`).digest('hex')}`;};
 const teams=(await pool.query("UPDATE app_account_teams SET authorized_until=now()+interval '16 days',enabled=true RETURNING id,owner_email")).rows;
 const ownerTeam=teams.find(t=>t.owner_email==='owner@fixture.test');
+const newOwner="ui-newowner-"+Date.now()+"@fixture.test";await pool.query("INSERT INTO app_users(email,name,renews_at) VALUES($1,'New owner',now()+interval '30 days')",[newOwner]);
 await pool.query("UPDATE app_users SET name='孙疆1',account_expires_at=now()+interval '15 days' WHERE email='child@fixture.test'");
 for(let i=2;i<=5;i++) { const email=`team-ui-child${i}@fixture.test`; await pool.query("INSERT INTO app_users(email,name,renews_at,account_expires_at) VALUES($1,$2,now()+interval '15 days',now()+interval '15 days') ON CONFLICT(email) DO NOTHING",[email,`孙疆${i}`]);await pool.query("INSERT INTO app_account_team_members(email,team_id) VALUES($1,$2) ON CONFLICT(email) DO NOTHING",[email,ownerTeam.id]); }
 await pool.query("UPDATE app_account_teams SET name='孙疆团队' WHERE id=$1",[ownerTeam.id]);
@@ -41,7 +42,7 @@ try {
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1));
   const adminContext=await browser.newContext({viewport:{width:1440,height:960}});await adminContext.addCookies([{name:'nv_user',value:sign('admin@fixture.test'),url:base}]);
   const admin=await adminContext.newPage();admin.on('pageerror',e=>errors.push(e.message));await admin.goto(base+'/admin/teams');await expect(admin.getByRole('heading',{name:'团队与子账号',exact:true})).toBeVisible();await admin.getByLabel('选择团队').selectOption(ownerTeam.id);await expect(admin.locator('tbody tr')).toHaveCount(5);
-  await admin.getByRole('button',{name:'新建团队',exact:true}).click();await admin.getByLabel('团队名称',{exact:true}).fill('新团队验收');await admin.getByLabel('负责人账号',{exact:true}).fill('stranger@fixture.test');await admin.getByRole('button',{name:'保存',exact:true}).click();await expect(admin.getByRole('dialog')).toHaveCount(0);
+  await admin.getByRole('button',{name:'新建团队',exact:true}).click();await admin.getByLabel('团队名称',{exact:true}).fill('新团队验收');await admin.getByLabel('负责人账号',{exact:true}).fill(newOwner);await admin.getByRole('button',{name:'保存',exact:true}).click();await expect(admin.getByRole('dialog')).toHaveCount(0);
   await admin.screenshot({path:out+'/admin.png',fullPage:true});
   const unauthorized=await browser.newContext();await unauthorized.addCookies([{name:'nv_user',value:sign('child@fixture.test'),url:base}]);const childPage=await unauthorized.newPage();await childPage.goto(base+'/team');await expect(childPage.getByText('当前账号未关联团队')).toBeVisible();
   assert.deepEqual(errors,[]);
