@@ -58,7 +58,7 @@ export function OrbLab() {
             </div>
           </section>
           <section className={styles.controlSection} aria-labelledby="orb-expressions">
-            <div className={styles.sectionTitle}><h2 id="orb-expressions">表情</h2><span>02 / EXPRESSION</span></div>
+            <div className={styles.sectionTitle}><h2 id="orb-expressions">表情</h2><span>{ORB_STATES.length} / EXPRESSIONS</span></div>
             <div className={styles.states}>
               {ORB_STATES.map(item => <button type="button" key={item.key} onClick={() => setState(item.key)} aria-pressed={state === item.key} className={state === item.key ? styles.selectedState : ""}>
                 <div className={styles.miniOrb}><NaumiOrb state={item.key} theme={theme} thumbnail label={`${item.label}缩略图`} /></div>

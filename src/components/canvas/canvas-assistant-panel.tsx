@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowRight, ArrowRightToLine, ArrowUp, Check, Copy, Frame, History, Image as ImageIcon, Infinity as InfinityIcon, LayoutTemplate, Loader2, MessageSquarePlus, Palette, Plus, RefreshCw, ScanLine, SlidersHorizontal, Type, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowRightToLine, ArrowUp, Check, Copy, Frame, History, Image as ImageIcon, Infinity as InfinityIcon, LayoutTemplate, Loader2, MessageSquarePlus, Palette, Plus, RefreshCw, ScanLine, SlidersHorizontal, ThumbsDown, ThumbsUp, Type, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type CanvasAssistantTurn = { id: string; role: "user" | "assistant"; content: string; artifacts?: {id:string;image:string;title:string}[] };
@@ -18,7 +18,7 @@ export type SavedConversation = { id: string; title: string; turns: CanvasAssist
 /** Presentation-only sidebar: the parent owns SSE, context, model routing and billing. */
 export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns, input, busy, error,
   costLabel, labels, tasks, onInputChange, onSend, onNewChat, onRestoreChat, onClose, onPreview,
-  onCopy, renderContent, modelControl, steps = [], onStop, onClearReference, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true,
+  onCopy, onFeedback, feedbackLabels = { positive: "有帮助", negative: "需要改进" }, renderContent, modelControl, steps = [], onStop, onClearReference, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true,
 }: {
   open?: boolean;
   focusInput?: boolean;
@@ -48,6 +48,8 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   onClose: () => void;
   onPreview: (image: { image: string; title: string }) => void;
   onCopy: (content: string) => Promise<boolean>;
+  onFeedback?: (positive: boolean) => void;
+  feedbackLabels?: { positive: string; negative: string };
   renderContent: (content: string) => ReactNode;
 }) {
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -74,6 +76,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   const loader=useRef(historyLoader);loader.current=historyLoader;
   useEffect(()=>{if(!historyOpen||!loader.current)return;let active=true;setHistoryLoading(true);setHistoryError("");void loader.current().then(items=>{if(active)setSaved(items);}).catch(()=>{if(active)setHistoryError("历史记录读取失败，请重新打开重试");}).finally(()=>{if(active)setHistoryLoading(false);});return()=>{active=false;};},[historyOpen,historyScopeKey]);
   const [copied, setCopied] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<Record<string, boolean>>({});
   const [hour] = useState(() => new Date().getHours());
   const greeting = hour < 12 ? labels.morning : hour < 18 ? labels.afternoon : labels.evening;
   const visibleTasks = tasks.slice((taskPage % Math.max(1, Math.ceil(tasks.length / 4))) * 4, (taskPage % Math.max(1, Math.ceil(tasks.length / 4))) * 4 + 4);
@@ -229,10 +232,14 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={art.image} alt={art.title} className="aspect-square w-full object-contain" /><span className="block truncate px-2 py-1 text-[11px]">{art.title}</span>
           </button>)}</div>}
-          {turn.content.trim() && !busy && <button type="button" aria-label={copied === turn.id ? labels.copied : labels.copy} title={copied === turn.id ? labels.copied : labels.copy}
+          {turn.content.trim() && !busy && <div className="mt-1 flex items-center gap-1"><button type="button" aria-label={copied === turn.id ? labels.copied : labels.copy} title={copied === turn.id ? labels.copied : labels.copy}
             className={cn(iconButton, "mt-1")} onClick={() => { void onCopy(turn.content).then(ok => { if (ok) setCopied(turn.id); }); }}>
             {copied === turn.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>}
+          </button>{onFeedback && [true, false].map(positive => <button type="button" key={String(positive)} className={cn(iconButton, feedback[turn.id] === positive && "bg-[var(--canvas-ui-border)]")}
+            aria-label={positive ? feedbackLabels.positive : feedbackLabels.negative} title={positive ? feedbackLabels.positive : feedbackLabels.negative} aria-pressed={feedback[turn.id] === positive}
+            onClick={() => { if (feedback[turn.id] === positive) return; setFeedback(current => ({ ...current, [turn.id]: positive })); onFeedback(positive); }}>
+            {positive ? <ThumbsUp className="h-3.5 w-3.5" /> : <ThumbsDown className="h-3.5 w-3.5" />}
+          </button>)}</div>}
         </article>)}
         {!!steps.length && <div data-testid="canvas-assistant-progress" className="space-y-2 rounded-xl border border-[var(--canvas-ui-border)] p-3 text-[12px]">{steps.map(step => <div key={step.id} className="flex items-center gap-2">{step.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : step.status === "error" ? <X className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}<span>{step.label}</span></div>)}</div>}
         {busy && <div role="status" className="canvas-ui-muted flex items-center gap-2 text-[12px]"><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />{labels.thinking}</div>}

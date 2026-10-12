@@ -273,7 +273,7 @@ export async function getOrCreateSession(
     // 积分预检:工具执行前查余额,不足直接拦截(硬门禁,不靠提示词自觉)
     beforeToolCall: async ({ toolCall, args, context }) => {
       const blocked = guardedToolBlock(context);
-      if (blocked) return blocked;
+      if (blocked) { appendSessionEvent(session, "attention", { kind: "restricted", tool: toolCall.name }); return blocked; }
       const signature = `${toolCall.name}:${stableJson(args)}`;
       if (signature === session.repeatSignature) session.repeatCount += 1;
       else {
@@ -281,6 +281,7 @@ export async function getOrCreateSession(
         session.repeatCount = 1;
       }
       if (session.repeatCount >= 3) {
+        appendSessionEvent(session, "attention", { kind: "restricted", tool: toolCall.name });
         return {
           block: true,
           reason:
@@ -289,7 +290,14 @@ export async function getOrCreateSession(
         };
       }
       const precheck = () => agentBillingPrecheck(session,toolCall.name,args as Record<string,unknown>,toolCall.id);
-      return acceptedBundle ? withFrozenExecutionBundle(acceptedBundle, precheck) : precheck();
+      const result = await (acceptedBundle ? withFrozenExecutionBundle(acceptedBundle, precheck) : precheck());
+      // Typed presentation signal only; billing decisions and public reply stay intact.
+      if (result && "attention" in result && result.attention) appendSessionEvent(session, "attention", { kind: result.attention, tool: toolCall.name, message: result.reason });
+      else if (!result?.block) {
+        const pending = session.events.findLast(event => event.type === "attention");
+        if (pending?.data.tool === toolCall.name && pending.data.kind !== "resolved") appendSessionEvent(session, "attention", { kind: "resolved", tool: toolCall.name });
+      }
+      return result;
     },
   });
 
@@ -444,7 +452,7 @@ export async function persistAgentSession(session: Session): Promise<void> {
     return content ? [{ role: message.role, content }] : [];
   });
   const steps = session.events
-    .filter((event) => ["plan","tool_start","tool_end","canvas_turn","artifacts","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
+    .filter((event) => ["plan","tool_start","tool_end","attention","canvas_turn","artifacts","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
     .map((event) => ({ type: event.type, ...event.data }));
   await saveAgentSession(
     session.email,

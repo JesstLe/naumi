@@ -84,22 +84,23 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
         const promptedTurn=session.pendingQuoteTurns.get(quoteKey);
         if(args.confirm!==true || !previous || promptedTurn===session.turnId){
             session.pendingQuoteTurns.set(quoteKey,session.turnId);
-            return {block:true,terminate:true,reason:`本次「${meta.label}」预计 ${meta.cost} 积分，最高授权 ${cap} 积分。请向用户展示报价并等待下一条消息明确同意后再执行；本轮不能自行确认。`};
+            return {block:true,terminate:true,attention:"waiting" as const,reason:`本次「${meta.label}」预计 ${meta.cost} 积分，最高授权 ${cap} 积分。请向用户展示报价并等待下一条消息明确同意后再执行；本轮不能自行确认。`};
         }
     }
-    if(costPlus && args.confirm===true && !previous)return {block:true,reason:`请先向用户展示估算 ${meta.cost} 积分与最高授权 ${cap} 积分，等待明确同意后再提交。`};
+    if(costPlus && args.confirm===true && !previous)return {block:true,attention:"waiting" as const,reason:`请先向用户展示估算 ${meta.cost} 积分与最高授权 ${cap} 积分，等待明确同意后再提交。`};
     if ((args as {
         confirm?: unknown;
     }).confirm === true && previous && (previous.configVersion !== quoted.quote.configVersion || previous.requestedCredits !== quoted.quote.requestedCredits || previous.authorizedCredits !== quoted.quote.authorizedCredits || previous.modelVersion !== quoted.quote.modelVersion))
-        return { block: true, reason: `价格已更新，本次需要 ${meta.cost} 积分。请重新向用户报价并等待明确同意。` };
+        return { block: true, attention: "waiting" as const, reason: `价格已更新，本次需要 ${meta.cost} 积分。请重新向用户报价并等待明确同意。` };
     session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: costPlus?cap:quoted.quote.requestedCredits, billingOperationId: fingerprint({ session: session.id, call: callId }) };
     const u = await getUser(session.email);
     if (!u)
-        return { block: true, reason: "积分账户不可用，请先登录后重试" };
+        return { block: true, attention: "restricted" as const, reason: "积分账户不可用，请先登录后重试" };
     const balance = u.creditsTotal - u.creditsUsed;
     if (balance < (costPlus?cap:meta.cost)) {
         return {
             block: true,
+            attention: "restricted" as const,
             reason: `余额不足:「${meta.label}」需要约 ${meta.cost} 积分,当前余额 ${balance}。请先充值或减少任务规模。`,
             terminate: true,
         };
@@ -112,6 +113,7 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
         }).confirm !== true) {
         return {
             block: true,
+            attention: "waiting" as const,
             reason: `本次「${meta.label}」预计消耗约 ${meta.cost} 积分${costPlus?`，按实际API成本结算，最多授权 ${cap} 积分`:""}(当前余额 ${balance})。请先用一句话向用户报出这笔花费并等待明确同意;用户同意后,携带参数 confirm=true 重新调用本工具;用户拒绝或未回复就不要执行,可给出更小规模的替代方案。不要在未获得用户同意的情况下自行携带 confirm=true。`,
         };
     }

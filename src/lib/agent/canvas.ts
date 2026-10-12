@@ -123,11 +123,23 @@ export async function runCanvasAgent(request: Request) {
           const last = [...session.agent.state.messages].reverse().find(turn => turn.role === "assistant");
           if(last&&"stopReason" in last&&last.stopReason==="aborted")throw new DOMException("任务已停止","AbortError");
           if (last && "stopReason" in last && last.stopReason==="error") throw new Error("模型未完成任务，已产出的图片保留；请勿重复提交");
-          const reply = Array.isArray(last?.content) ? last.content.filter(part => part.type === "text").map(part => part.type === "text" ? part.text : "").join("").trim() : output.trim();
+          const attention = session.events.slice(cursorStart).findLast(event => event.type === "attention");
+          const pendingAttention = attention?.data.kind === "waiting" || attention?.data.kind === "restricted";
+          const modelReply = Array.isArray(last?.content) ? last.content.filter(part => part.type === "text").map(part => part.type === "text" ? part.text : "").join("").trim() : output.trim();
+          // A terminated confirmation gate may have no final model text. Surface its
+          // existing public quote rather than label the blocked tool as completed.
+          const reply = modelReply || (pendingAttention ? String(attention?.data.message || (attention?.data.kind === "waiting" ? "请明确确认报价后继续。" : "当前操作受限，请调整任务后继续。")) : "");
           if (!reply || failed) throw new Error("Agent 执行未完成，已产出的结果保留，请勿重复提交收费任务");
-          const frames = [{ type: "final", data: { reply, sessionId } }, ...(artifacts.length ? [{ type: "artifacts", data: { artifacts, anchorId } }] : [])];
+          if (!modelReply && pendingAttention) {
+            session.agent.state.messages = [...session.agent.state.messages, {
+              role: "assistant", api: session.agent.state.model?.api || "openai-completions", provider: "naumi-local", model: "naumi-local-reply",
+              content: [{ type: "text", text: reply }], stopReason: "stop", timestamp: Date.now(),
+              usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+            }];
+          }
+          const frames = [...(attention ? [{ type: "attention", data: attention.data }] : []), { type: "final", data: { reply, sessionId } }, ...(artifacts.length ? [{ type: "artifacts", data: { artifacts, anchorId } }] : [])];
           await completeSynchronousStream({ text: reply, model: modelId, agentFrames: frames });
-          appendSessionEvent(session,"canvas_terminal",{status:"completed",turnId:session.turnId});
+          appendSessionEvent(session,"canvas_terminal",{status:pendingAttention?String(attention?.data.kind):"completed",turnId:session.turnId});
           await persistAgentSession(session);
           send("final", { reply, sessionId }); send("done", { ok: true });
         } catch (error) { if (!closed) { const failure=classifyAgentFailure(error); appendSessionEvent(session,"error",failure); appendSessionEvent(session,"canvas_terminal",{status:failure.code==="ABORTED"?"stopped":"failed",turnId:session.turnId}); flush(); send("error", failure); } await failSynchronousStream(); }

@@ -1,11 +1,12 @@
 import type { OrbState } from "../../components/naumi-orb/orb-model";
+import { orbToolFace } from "../../components/naumi-orb/orb-companion";
 
 export type AgentOrbOutcome = "idle" | "running" | "done" | "error" | "stopped";
 export interface AgentOrbStep { id: string; tool?: string; label: string; status: "running" | "done" | "error" }
 export function agentOrbState(busy: boolean, outcome: AgentOrbOutcome, steps: AgentOrbStep[]): OrbState {
-  if (!busy) return outcome === "done" ? "done" : outcome === "error" ? "error" : "idle";
+  if (!busy) return outcome === "done" ? "done" : outcome === "error" ? "error" : outcome === "stopped" ? "stopped" : "idle";
   const running = [...steps].reverse().find(step => step.status === "running");
-  return running ? running.tool === "search_templates" ? "searching" : "working" : "thinking";
+  return running ? orbToolFace(running.tool || "") : "thinking";
 }
 export function restoredOrbOutcome(session: { running?: boolean; status?: string; error?: unknown }): AgentOrbOutcome {
   if (session.running) return "running";

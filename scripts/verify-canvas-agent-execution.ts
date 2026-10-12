@@ -132,6 +132,21 @@ async function main(){
   const canvasSession={...session,turnId:"turn-one"};
   const expensive=structuredClone(config);expensive.thresholds.agentConfirmCredits=3;await billing.config.publish({id:randomUUID(),expectedVersion:price.version,config:expensive,actor:"fixture",reason:"confirmation fixture"});assert.equal((await agentBillingPrecheck(session,"recolor_product",{color:"#0000FF"},randomUUID()))?.block,true);
   assert.equal((await agentBillingPrecheck(canvasSession,"recolor_product",{color:"#0000FF",confirm:true},randomUUID()))?.block,true);assert.equal((await agentBillingPrecheck(canvasSession,"recolor_product",{color:"#0000FF",confirm:true},randomUUID()))?.block,true);canvasSession.turnId="turn-two";assert.equal(await agentBillingPrecheck(canvasSession,"recolor_product",{color:"#0000FF",confirm:true},randomUUID()),undefined);
+  analysis=false; textOnly=false;
+  const latestBilling=await billing.config.current(), confirmConfig=structuredClone(latestBilling.config);
+  confirmConfig.thresholds.agentConfirmCredits=1;
+  const confirmPrice=await billing.config.publish({id:randomUUID(),expectedVersion:latestBilling.version,config:confirmConfig,actor:"fixture",reason:"Orb confirmation lifecycle"});
+  const confirmPayload={...task,sessionId:randomUUID(),turnId:randomUUID()}, confirmOperation=randomUUID();
+  const confirmRequest=()=>{const req=request(confirmPayload,confirmOperation);const headers=new Headers(req.headers);headers.set("x-naumi-billing-version",String(confirmPrice.version));return new Request(req,{headers});};
+  const writesBeforeConfirm=childWrites, confirmStream=await(await handler(confirmRequest())).text();
+  assert.match(confirmStream,/event: attention\ndata: .*"kind":"waiting"/);assert.match(confirmStream,/等待下一条消息明确同意/);assert.match(confirmStream,/event: done/);assert.equal(childWrites,writesBeforeConfirm);
+  const confirmId=JSON.parse(confirmStream.match(/event: open\ndata: ([^\n]+)/)![1]).sessionId;
+  const confirmHistory=await(await lifecycle.GET(projectRequest("GET",confirmId))).json();assert.equal(confirmHistory.session.attention,"waiting");assert.equal(confirmHistory.session.status,"waiting");
+  assert.ok(confirmHistory.session.turns.some((turn:any)=>turn.role==="assistant"&&turn.content.includes("等待下一条消息明确同意")));
+  assert.equal(removeRuntimeSession(email,confirmId),"removed");
+  const restartedConfirmHistory=await(await lifecycle.GET(projectRequest("GET",confirmId))).json();assert.equal(restartedConfirmHistory.session.attention,"waiting");assert.equal(restartedConfirmHistory.session.status,"waiting");assert.deepEqual(restartedConfirmHistory.session.turns,confirmHistory.session.turns);
+  const callsBeforeReplay=modelCalls,confirmReplay=await(await handler(confirmRequest())).text();assert.match(confirmReplay,/event: attention/);assert.match(confirmReplay, /"kind":"waiting"/);assert.equal(modelCalls,callsBeforeReplay);assert.equal(childWrites,writesBeforeConfirm);
+  console.log("ORB_ATTENTION_LIFECYCLE=PASS REAL_BILLING_GATE=WAITING EMPTY_FINAL_QUOTE=VISIBLE HISTORY=WAITING REPLAY=WAITING BLOCKED_TOOL_WRITES=0 PAID_UPSTREAM_CALLS=0");
   console.log("PROJECT_HISTORY_WITHOUT_SELECTION=PASS PENDING_USER_RECOVERY=PASS WORKBENCH_HISTORY_ISOLATION=PASS CANVAS_TERMINAL_STATUS=PASS MULTI_NODE_PROJECT_HISTORY=PASS SERVER_OWNED_HISTORY=PASS WORKBENCH_RESTART_RESTORE=PASS");
   console.log("CANVAS_AGENT_EXECUTION=PASS REAL_RUNTIME_TOOLS=PASS OWNED_REFERENCES=PASS CANVAS_MODEL_SCOPE=PASS OUTPUT_PARENT_PROJECT_POSITION=PASS REPLAY_NO_DUPLICATE=PASS ANALYSIS_NO_IMAGE=PASS MODALITY_GUARD=PASS BILLING_ONCE_4=PASS CONFIRMATION=PASS PERSISTED_HISTORY_RESTART_RESUME_RENAME_DELETE=PASS CANCEL_PERSISTENCE=PASS ACTIVE_HISTORY_GUARD=PASS SAME_TURN_SELF_CONFIRM_BLOCKED=PASS PAID_UPSTREAM_CALLS=0");
  }finally{await db.getPool().end();await f.cleanup();}

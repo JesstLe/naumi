@@ -12,7 +12,7 @@ for (const outcome of ["idle", "running", "done", "error", "stopped"] as AgentOr
   check(agentOrbState(true, outcome, [step("generate_image")]) === "working");
   check(agentOrbState(true, outcome, [step("generate_image", "done")]) === "thinking");
   check(agentOrbState(true, outcome, [step("generate_image", "error")]) === "thinking");
-  check(agentOrbState(false, outcome, [step("generate_image")]) === (outcome === "done" ? "done" : outcome === "error" ? "error" : "idle"));
+  check(agentOrbState(false, outcome, [step("generate_image")]) === (outcome === "done" ? "done" : outcome === "error" ? "error" : outcome === "stopped" ? "stopped" : "idle"));
 }
 check(agentOrbState(true, "running", [step("generate_image"), step("search_templates")]) === "searching");
 check(restoredOrbOutcome({ running: true, status: "failed" }) === "running");

@@ -25,6 +25,9 @@ import { CanvasAgentToggle } from "./canvas-agent-toggle";
 import { CanvasAgentOrb } from "./canvas-agent-orb";
 import { AssistantRichText } from "./assistant-richtext";
 import { restoredOrbOutcome, type AgentOrbOutcome, type AgentOrbStep } from "@/lib/canvas/agent-orb";
+import { useOrbCompanion } from "../naumi-orb/use-orb-companion";
+import { classifyAgentFailure } from "@/lib/agent/recovery";
+import { agentOrbState } from "@/lib/canvas/agent-orb";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
 import { NodePropertiesPanel } from "./node-properties-panel";
 import { ImageCropDialog } from "./image-crop-dialog";
@@ -2048,6 +2051,8 @@ export function CanvasClient() {
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantSteps, setAssistantSteps] = useState<AgentOrbStep[]>([]);
   const [assistantOutcome, setAssistantOutcome] = useState<AgentOrbOutcome>("idle");
+  const orbCompanion = useOrbCompanion(`${user?.email || ""}:${activeKey || "workspace"}`);
+  const orbCue = orbCompanion.emit;
   const assistantController = useRef<AbortController | null>(null);
   const assistantSessionId = useRef(browserRandomUUID());
   const assistantLiveSessionId = useRef("");
@@ -5270,6 +5275,7 @@ export function CanvasClient() {
   }
 
   async function stopAssistantTask() {
+    orbCue({ type: "stop" });
     assistantController.current?.abort();
     const sessionId=assistantLiveSessionId.current||assistantSessionId.current;
     if(sessionId.startsWith("cv-"))await privateFetchRaw(`/api/agent?sessionId=${encodeURIComponent(sessionId)}`,{method:"DELETE"}).catch(()=>null);
@@ -5279,6 +5285,7 @@ export function CanvasClient() {
     const controller=new AbortController();assistantController.current?.abort();assistantController.current=controller;
     assistantLiveSessionId.current=id;
     assistantSessionId.current=id;setAssistantSteps([]);setAssistantOutcome("running");setAssistantBusy(true);setAssistantInput("");setAssistantError(null);assistantRetry.current=null;
+    let recalled = false;
     try{
       for(;;){
         const response=await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey||"workspace")}&id=${encodeURIComponent(id)}`,{signal:controller.signal});
@@ -5291,10 +5298,14 @@ export function CanvasClient() {
         for(const step of historySteps.slice(Math.max(0,currentTurn)))if(["tool_start","tool_end"].includes(step.type))steps.set(step.id,{id:step.id,tool:step.tool,label:step.summary||step.tool,status:step.type==="tool_start"?(data.session.running?"running":"error"):step.isError?"error":"done"});
         setAssistantSteps([...steps.values()].slice(-10));
         setAssistantOutcome(restoredOrbOutcome(data.session));
+        {
+          orbCue({ type: "restore", recall: !recalled, running: !!data.session.running, outcome: restoredOrbOutcome(data.session), attention: data.session.attention, phase: agentOrbState(!!data.session.running, restoredOrbOutcome(data.session), [...steps.values()]) });
+          recalled = true;
+        }
         if(!data.session.running){if(data.session.error)setAssistantError(data.session.error);const ids=data.session.turns.flatMap((turn:AssistantTurn)=>(turn.artifacts||[]).map(art=>art.id));if(ids.length)await mergeWorks(ids);break;}
         await new Promise(resolve=>window.setTimeout(resolve,1000));
       }
-    }catch(error){if(assistantController.current===controller){setAssistantOutcome(controller.signal.aborted?"stopped":"error");setAssistantError(controller.signal.aborted?"已停止跟随任务，请在历史中核对已有结果":error instanceof Error?error.message:"历史对话读取失败");}}
+    }catch(error){if(assistantController.current===controller){orbCue(controller.signal.aborted?{type:"stop"}:{type:"failure",code:classifyAgentFailure(error).code});setAssistantOutcome(controller.signal.aborted?"stopped":"error");setAssistantError(controller.signal.aborted?"已停止跟随任务，请在历史中核对已有结果":error instanceof Error?error.message:"历史对话读取失败");}}
     finally{if(assistantController.current===controller){assistantController.current=null;setAssistantBusy(false);}}
   }
 
@@ -5340,12 +5351,14 @@ export function CanvasClient() {
     setAssistantError(null);
     setAssistantBusy(true);
     setAssistantSteps([]); setAssistantOutcome("running");
+    orbCue({ type: "submit" });
     const controller = new AbortController();
     const acceptedSession = assistantSessionId.current;
     assistantLiveSessionId.current=acceptedSession;
     let serverSessionId = acceptedSession;
     assistantController.current = controller;
     const artifactIds = new Set<string>();
+    let orbFailureCode: string | undefined;
     try {
       const response = await privateFetch("/api/canvas/assistant", {
         method: "POST",
@@ -5357,8 +5370,10 @@ export function CanvasClient() {
       if(acceptedSession!==assistantSessionId.current||controller.signal.aborted)throw new Error("任务上下文已切换");
       if (!response.ok || !response.body) {
         const data = await readJsonSafe(response);
+        orbFailureCode = response.status === 401 || response.status === 403 ? "AUTH" : response.status === 402 ? "CREDITS" : response.status === 400 ? "VALIDATION" : undefined;
         throw new Error(data?.error || "画布助手暂时不可用");
       }
+      orbCue({ type: "connected" });
       setAssistantTurns(history);
       setAssistantInput("");
       // SSE 流式:追加一条空助手消息,随 delta 逐段填充
@@ -5372,6 +5387,7 @@ export function CanvasClient() {
       let text = "";
       let streamError: string | null = null;
       let completed = false;
+      let lastOrbDelta = 0;
       for (;;) {
         const { done, value } = await reader.read();
         if (epoch !== assistantRequestEpoch.current) { await reader.cancel(); return; }
@@ -5388,7 +5404,13 @@ export function CanvasClient() {
           const data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
           if(type==="open"){serverSessionId=String(data.sessionId||acceptedSession);assistantLiveSessionId.current=serverSessionId;}
           if(type==="done" && data.ok===true)completed=true;
+          if (type === "attention") {
+            const attention = data.kind === "waiting" || data.kind === "restricted" ? data.kind : undefined;
+            if (attention) orbCue({ type: "attention", kind: attention });
+            else if (data.kind === "resolved") orbCue({ type: "attention-resolved", tool: String(data.tool || "") });
+          }
           if (type === "delta") {
+            if (Date.now() - lastOrbDelta > 650) { lastOrbDelta = Date.now(); orbCue({ type: "delta" }); }
             text += (data.text as string) || "";
             setAssistantTurns((current) => {
               const copy = [...current];
@@ -5396,13 +5418,16 @@ export function CanvasClient() {
               return copy;
             });
           } else if (type === "error") {
+            if (typeof data.code === "string") orbFailureCode = data.code;
             streamError = (data.error as string) || (data.message as string) || "画布助手暂时不可用";
           } else if (type === "tool_start" || type === "tool_end") {
+            orbCue(type === "tool_start" ? { type: "tool-start", tool: String(data.tool || "") } : { type: "tool-end", error: !!data.isError });
             const id = String(data.id || data.tool), label = String(data.summary || ({generate_image:"生成图片",recolor_product:"替换颜色",retouch_product:"精修图片",replicate_hot:"复刻图片",verify_image_output:"检查生成结果",get_balance:"检查积分",search_templates:"查找模板"} as Record<string,string>)[String(data.tool)] || "执行工具");
             setAssistantSteps(current => [...current.filter(step => step.id !== id), {id,label,tool:String(data.tool || ""),status:type === "tool_start" ? "running" : data.isError ? "error" : "done"}]);
           } else if (type === "artifacts" && Array.isArray(data.artifacts)) {
             const artifacts = data.artifacts as {id:string;image:string;title:string}[];
             artifacts.forEach(art => artifactIds.add(art.id));
+            orbCue({ type: "artifacts", count: artifactIds.size });
             setAssistantTurns(current => { const copy = [...current], last = copy[copy.length-1]; if(last) copy[copy.length-1] = {...last, artifacts:Array.from(new Map([...(last.artifacts || []),...artifacts].map(art=>[art.id,art])).values())}; return copy; });
           } else if (type === "final") {
             text = String(data.reply || text);
@@ -5421,12 +5446,14 @@ export function CanvasClient() {
       if (assistantRetry.current === attempt) assistantRetry.current = null;
       assistantSessionId.current = serverSessionId;
       setAssistantOutcome("done");
+      orbCue({ type: "done" });
     } catch (error) {
       if (epoch !== assistantRequestEpoch.current) return;
       if(acceptedSession!==assistantSessionId.current)return;
       if (assistantRetry.current === attempt) setAssistantInput(text);
       assistantSessionId.current=serverSessionId;
       setAssistantOutcome(controller.signal.aborted ? "stopped" : "error");
+      orbCue(controller.signal.aborted ? { type: "stop" } : { type: "failure", code: orbFailureCode || classifyAgentFailure(error).code });
       setAssistantError(controller.signal.aborted ? "任务已停止，可从历史继续。已生成的结果会保留。" : error instanceof Error ? error.message : "画布助手暂时不可用");
     } finally {
       if (artifactIds.size) { const ids = [...artifactIds]; const fresh = await mergeWorks(ids); pushAddUndoMany(ids,fresh); }
@@ -5451,8 +5478,14 @@ export function CanvasClient() {
   }
 
   // 展示层保留原始 Markdown 和已有生图入口，不修改 Agent 执行或历史数据。
+  async function copyAssistantText(content: string) {
+    const session = assistantSessionId.current, epoch = assistantRequestEpoch.current;
+    const ok = await copyText(content);
+    if (ok && session === assistantSessionId.current && epoch === assistantRequestEpoch.current) orbCue({ type: "copied" });
+    return ok;
+  }
   function renderAssistantContent(content: string) {
-    return <AssistantRichText content={content} light={lightCanvas} english={locale === "en"} onCopy={copyText} onGenerate={genFromAssistant} />;
+    return <AssistantRichText content={content} light={lightCanvas} english={locale === "en"} onCopy={copyAssistantText} onGenerate={genFromAssistant} />;
   }
 
   async function generateSplitViews(source: Artwork, feedback: string) {
@@ -11837,8 +11870,8 @@ export function CanvasClient() {
               </div>
             </div>
           )}
-          {!browsing && !readOnly && user && <CanvasAgentOrb key={user.email} email={user.email}
-            busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps} open={assistantVisible}
+          {!browsing && !readOnly && user && <CanvasAgentOrb key={`${user.email}:${activeKey || "workspace"}`} email={user.email}
+            busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps} open={assistantVisible} companion={orbCompanion} onCue={orbCue}
             english={locale === "en"} onActivate={toggleAssistant} light={lightCanvas} />}
         </div>
         {propertiesOpen && !browsing && (selectedText || selected) && <NodePropertiesPanel
@@ -11887,16 +11920,16 @@ export function CanvasClient() {
               retry: t("canvas.assistant.retry")}}
             tasks={["main", "detail", "scene", "retouch", "background", "copyLayout", "review", "prompt"].map(id => ({ id, label: t(`canvas.assistant.${id}`), prompt: t(`canvas.assistant.${id}Prompt`) }))}
             costLabel={billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] === 0 ? "对话免费 · 生图另行计费" : billing.catalog?.features["canvas.assistant"]?.prices.medium?.["1K"] != null ? `${billing.catalog.features["canvas.assistant"].prices.medium["1K"]} 积分 / 轮 · 生图另行计费` : "对话报价加载中 · 生图另行计费"}
-            onInputChange={setAssistantInput} onSend={() => void sendAssistantMessage()}
+            onInputChange={value => { setAssistantInput(value); orbCue({ type: "draft", text: value }); }} onSend={() => void sendAssistantMessage()}
             onClearReference={()=>{setAssistantArtworkId(null);setSelectedId(null);setSelectedTextId(null);assistantRetry.current=null;}}
-            onNewChat={() => { assistantSessionId.current = browserRandomUUID(); setAssistantSteps([]); setAssistantOutcome("idle"); setAssistantTurns([]); setAssistantInput(""); setAssistantError(null); assistantRetry.current = null; }}
+            onNewChat={() => { orbCue({ type: "reset" }); assistantSessionId.current = browserRandomUUID(); setAssistantSteps([]); setAssistantOutcome("idle"); setAssistantTurns([]); setAssistantInput(""); setAssistantError(null); assistantRetry.current = null; }}
             historyLoader={async () => { const response=await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey||"workspace")}`);const data=await expectJsonOk(response,"历史记录读取失败");return (data.sessions||[]).map((session:{id:string;title:string;updatedAt:string;anchorId:string})=>({...session,turns:[]})); }}
             onRenameHistory={async(id,title)=>{await expectJsonOk(await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey || "workspace")}&id=${encodeURIComponent(id)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({title})}),"会话改名失败");}}
-            onDeleteHistory={async(id)=>{await expectJsonOk(await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey || "workspace")}&id=${encodeURIComponent(id)}`,{method:"DELETE"}),"删除会话失败");if(assistantSessionId.current===id){assistantSessionId.current=browserRandomUUID();setAssistantTurns([]);setAssistantSteps([]); setAssistantOutcome("idle");}}}
-            onRestoreChat={(turns,id) => { if(id){void restoreAssistantConversation(anchor?.id||"",id);return;}assistantSessionId.current=browserRandomUUID();setAssistantSteps([]); setAssistantOutcome("idle");setAssistantTurns(turns);setAssistantInput("");setAssistantError(null);assistantRetry.current=null; }}
+            onDeleteHistory={async(id)=>{await expectJsonOk(await privateFetchRaw(`/api/canvas/assistant?projectKey=${encodeURIComponent(activeKey || "workspace")}&id=${encodeURIComponent(id)}`,{method:"DELETE"}),"删除会话失败");if(assistantSessionId.current===id){orbCue({ type: "reset" }); assistantSessionId.current=browserRandomUUID();setAssistantTurns([]);setAssistantSteps([]); setAssistantOutcome("idle");}}}
+            onRestoreChat={(turns,id) => { if(id){void restoreAssistantConversation(anchor?.id||"",id);return;}orbCue({ type: "reset" }); assistantSessionId.current=browserRandomUUID();setAssistantSteps([]); setAssistantOutcome("idle");setAssistantTurns(turns);setAssistantInput("");setAssistantError(null);assistantRetry.current=null; }}
             onClose={closeAssistant}
             onPreview={image => setLightbox({ src: image.image, alt: image.title })}
-            onCopy={copyText} renderContent={renderAssistantContent}
+            onCopy={copyAssistantText} feedbackLabels={locale === "en" ? { positive: "Helpful", negative: "Needs improvement" } : { positive: "有帮助", negative: "需要改进" }} onFeedback={positive => orbCue({ type: "feedback", positive })} renderContent={renderAssistantContent}
           />;
         })()}
 

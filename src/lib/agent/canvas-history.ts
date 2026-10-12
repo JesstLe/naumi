@@ -48,7 +48,9 @@ export async function canvasAgentHistory(request:Request){
   const pending=(steps as any[])[currentTurn];if(pending&&pending.messageIndex>=turns.length)turns.push({id:id+"-pending",role:"user",content:String(pending.message),artifacts:[]});
   const terminal=steps.slice(Math.max(0,currentTurn)).findLast((step:any)=>step.type==="canvas_terminal") as any;
   const status=running?"running":terminal?.status||(error||interrupted?"failed":"completed");
-  return NextResponse.json({session:{id:saved.id,title:saved.title,anchorId,projectKey,turns,steps:saved.steps,running,status,error:error?.message||(interrupted&&!terminal?"任务因服务中断而停止，请核对已有结果，避免重复生图":undefined)}});
+  const attentionEvent=steps.slice(Math.max(0,currentTurn)).findLast((step:any)=>step.type==="attention") as any;
+  const attention=["waiting","restricted"].includes(attentionEvent?.kind)?attentionEvent.kind:undefined;
+  return NextResponse.json({session:{id:saved.id,title:saved.title,anchorId,projectKey,turns,steps:saved.steps,running,status,attention,error:error?.message||(interrupted&&!terminal?"任务因服务中断而停止，请核对已有结果，避免重复生图":undefined)}});
  }
  if(!id)return NextResponse.json({error:"缺少会话编号"},{status:400});
  if(getSession(email,id)?.running || getSession(email,id)?.canvasExecuting)return NextResponse.json({error:"任务仍在执行，请先停止"},{status:409});
