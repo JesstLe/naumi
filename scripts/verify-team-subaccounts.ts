@@ -77,6 +77,31 @@ async function main() {
   await team.mutateTeam(siteAdmin, { id: randomUUID(), teamId: id, action: "attach", email: child, expiresAt: cutoff }, true);
   await pool.query("UPDATE app_account_teams SET authorized_until=now()-interval '1 second' WHERE id=$1", [id]);
   await assert.rejects(team.teamContent(actor, id, child, "ledger", 1), /管理权限/);
+  // Team-only access does not satisfy the configured global admin password gate.
+  const adminAuth = await import("../src/lib/admin-auth");
+  await adminAuth.setAdminPassword("fixture-console-password");
+  assert.equal(await adminAuth.requireAdmin(req(admin)), false);
+  const adminTeam = await snapshotApi.GET(req(admin));
+  assert.equal(adminTeam.status, 200);
+  assert.equal((await adminTeam.json()).canManageTeams, true);
+  assert.equal((await snapshotApi.GET(req(owner))).status, 403);
+  assert.equal((await (await snapshotApi.GET(req(stranger))).json()).canManageTeams, false);
+  assert.equal((await adminApi.GET(req(admin))).status, 200);
+  assert.equal((await adminApi.GET(req(owner))).status, 403);
+  const adminLogin = await import("../src/app/api/admin/login/route");
+  const passwordState = await (await adminLogin.GET(req(admin))).json();
+  assert.equal(passwordState.passwordRequired, true);
+  assert.equal(passwordState.localAuthed, false);
+  assert.equal(passwordState.nativeAdmin, false);
+  const session = await adminAuth.authenticateAdminPassword("fixture-console-password");
+  assert.ok(session);
+  assert.equal(await adminAuth.requireAdmin(new Request("http://fixture.test/admin", { headers: { cookie: `nv_admin=${session}` } })), true);
+  // Banned admins do not inherit the team privilege from a claimed email.
+  await pool.query("UPDATE app_users SET banned=true WHERE email=$1", [admin]);
+  assert.equal((await adminApi.GET(req(admin))).status, 403);
+  await pool.query("UPDATE app_users SET banned=false WHERE email=$1", [admin]);
+  await pool.query("DELETE FROM app_settings WHERE k='admin_password_hash'");
+  console.log("TEAM_ENTRY_ACCESS=PASS ACCOUNT_ADMIN=200 OWNER_ADMIN=403 GLOBAL_ADMIN_PASSWORD=REQUIRED SECOND_PASSWORD=PASS BANNED_ADMIN=403");
   await pool.end();
   console.log("TEAM_SUBACCOUNTS=PASS OWNERSHIP=ISOLATED CONTENT=SCOPED PASSWORD_RESET=REVOKED EXPIRY=ENFORCED CAP=ENFORCED CSRF=BLOCKED AUDIT=REDACTED REPLAY=IDEMPOTENT CONFLICT=409 CREDITS=UNCHANGED PROVIDER_CALLS=0");
 }

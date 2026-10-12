@@ -9,7 +9,6 @@ import {
   LogOut,
   Moon,
   Settings,
-  ShieldCheck,
   Sun,
   Users,
 } from "lucide-react";
@@ -99,11 +98,30 @@ export function useAccountAdminStatus(user: SessionUser | null) {
   return isAdmin;
 }
 
+/** Team visibility is independent of the password-protected global admin console. */
+export function useTeamEntryAccess(user: SessionUser | null) {
+  const [access, setAccess] = useState<{ email: string; allowed: boolean } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setAccess(null);
+    if (!user) return;
+    void (async () => {
+      try {
+        const { authHeader } = await import("@/lib/supabase");
+        const response = await fetch("/api/team", { cache: "no-store", headers: await authHeader(), signal: controller.signal });
+        const data = response.ok ? await response.json() : null;
+        if (!controller.signal.aborted) setAccess({ email: user.email, allowed: !!(data?.team || data?.canManageTeams) });
+      } catch { if (!controller.signal.aborted) setAccess(null); }
+    })();
+    return () => controller.abort();
+  }, [user?.email]);
+  return access?.email === user?.email && !!access?.allowed;
+}
+
 export function AccountDockMenu({
   user,
   remaining,
   dark,
-  isAdmin,
   className,
   onClose,
   onToggleTheme,
@@ -123,15 +141,7 @@ export function AccountDockMenu({
   const { t, locale } = useI18n();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
   const initial = user.name.trim().charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase() || "U";
-  const [hasTeam, setHasTeam] = useState(false);
-  useEffect(() => {
-    let cancelled = false; setHasTeam(false);
-    fetch("/api/team", { cache: "no-store" }).then(async response => {
-      const data = response.ok ? await response.json() : null;
-      if (!cancelled) setHasTeam(!!data?.team);
-    }).catch(() => { if (!cancelled) setHasTeam(false); });
-    return () => { cancelled = true; };
-  }, [user.email]);
+  const hasTeam = useTeamEntryAccess(user);
 
   return (
     <div
@@ -200,16 +210,6 @@ export function AccountDockMenu({
         <Settings className="h-4 w-4" />
         {t("menu.security")}
       </Link>
-      {isAdmin && (
-        <Link
-          href="/admin"
-          onClick={onClose}
-          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"
-        >
-          <ShieldCheck className="h-4 w-4" />
-          {t("menu.admin")}
-        </Link>
-      )}
       {hasTeam && <Link role="menuitem" href="/team" onClick={onClose} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"><Users className="h-4 w-4" />{L("团队管理", "Team management")}</Link>}
       <div className="my-1 h-px bg-border" />
       <button

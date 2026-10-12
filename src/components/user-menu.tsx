@@ -8,13 +8,12 @@ import {
   CreditCard,
   LogOut,
   Sparkles,
-  ShieldCheck,
+  Users,
   Lock,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
-import { browserSupabase } from "@/lib/supabase";
-import { supabaseEnabled } from "@/lib/auth-mode";
+import { useTeamEntryAccess } from "@/components/account/account-dock-menu";
 import { displayEmail } from "@/lib/account-identity";
 
 function fmt(s: string, vars: Record<string, string | number>): string {
@@ -26,10 +25,10 @@ function fmt(s: string, vars: Record<string, string | number>): string {
 
 export function UserMenu() {
   const { user, remaining, signOut } = useAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const hasTeam = useTeamEntryAccess(user);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,62 +40,6 @@ export function UserMenu() {
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
-
-  // Detect admin to conditionally surface the 管理后台 entry.
-  // 同 admin-client.tsx,共用 sessionStorage 缓存(5min TTL),避免每个页面都
-  // 跑一遍 ~500ms-1.5s 的 supabase + /api/admin/settings 校验链。
-  useEffect(() => {
-    if (!user) {
-      setIsAdmin(false);
-      return;
-    }
-    // 先吃缓存:命中 → 立即显示 admin 菜单,后台静默 re-verify
-    try {
-      const raw = sessionStorage.getItem("naumi:adminVerifiedV1");
-      if (raw) {
-        const c = JSON.parse(raw) as { email: string; ts: number };
-        if (c.email === user.email && Date.now() - c.ts <= 5 * 60 * 1000) {
-          setIsAdmin(true);
-        }
-      }
-    } catch { /* ignore */ }
-    let cancelled = false;
-    (async () => {
-      try {
-        // Supabase(官方云)拿 token;本地管理员(开源版)没有 token,靠 cookie 鉴权,
-        // 所以无 token 也要探一次 /api/admin/settings(同源请求自动带 cookie)。
-        let tok: string | undefined;
-        if (supabaseEnabled) {
-          try {
-            const { data } = await browserSupabase().auth.getSession();
-            tok = data.session?.access_token;
-          } catch {
-            /* ignore */
-          }
-        }
-        const res = await fetch("/api/admin/settings", {
-          headers: tok ? { Authorization: `Bearer ${tok}` } : {},
-        });
-        if (cancelled) return;
-        setIsAdmin(res.ok);
-        try {
-          if (res.ok) {
-            sessionStorage.setItem(
-              "naumi:adminVerifiedV1",
-              JSON.stringify({ email: user.email, ts: Date.now() })
-            );
-          } else {
-            sessionStorage.removeItem("naumi:adminVerifiedV1");
-          }
-        } catch { /* ignore */ }
-      } catch {
-        /* not admin / no session — leave hidden */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
 
   if (!user) return null;
   const initial = user.name.trim().charAt(0).toUpperCase() || "N";
@@ -151,11 +94,11 @@ export function UserMenu() {
               label={t("menu.security")}
               onNavigate={() => setOpen(false)}
             />
-            {isAdmin && (
+            {hasTeam && (
               <MenuLink
-                href="/admin"
-                icon={<ShieldCheck className="h-4 w-4" />}
-                label={t("menu.admin")}
+                href="/team"
+                icon={<Users className="h-4 w-4" />}
+                label={locale === "en" ? "Team management" : "团队管理"}
                 onNavigate={() => setOpen(false)}
               />
             )}
