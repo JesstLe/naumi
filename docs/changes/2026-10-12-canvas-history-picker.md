@@ -28,7 +28,9 @@
 4. `node scripts/verify-local-media-ui.mjs`：local/HTTP/HTTPS支持；拒绝javascript/data/blob/非media路径作为持久化图片；实际后台跳转函数保留gen/src/view。
 5. `node scripts/verify-works-favorites.mjs`：实际收藏处理函数检查单张失败回滚、批量部分成功、重试仅失败项、防重复提交。对原始源码单独验证HTTP失败仍假成功，回滚副本恢复同一原行为。
 6. `NAUMI_VERIFY_ISOLATED_DB=1`及本机专有PostgreSQL fixture运行 `node node_modules/tsx/dist/cli.mjs --conditions react-server scripts/verify-local-media-api.ts`：真实add/import路由与数据库持久化，复制为新节点且保留parent/x/y/原图，跨账号404，管理员导入local模板，非管理员403、非法URL400、账本不变、上游调用0。原始API副本验证local模板导入400。
-7. 类型检查、改动文件lint、diff检查，以及继承的生成并发合约/节点锁回归集中运行；正式构建与回滚结果见同目录 `delivery/VERIFICATION.txt`。
+7. 类型检查、7个改动文件lint、diff检查，以及继承的生成并发合约/节点锁回归均通过；隔离 `.next-history-build` 正式构建exit0。源代码回滚副本恢复原始SHA256和原来历史/收藏/复制/模板行为，实际任务分支保持修改；命令与字面输出见同目录 `delivery/VERIFICATION.txt`。
+
+初次扩展浏览器脚本误访问旧组件所在的历史路由、随后选择未展开的菜单按钮及错误模板参数；已按现行路由/真实点击/`template`参数纠正，未用强制点击绕过遮挡。首次回滚脚本从嵌套目录被Git父仓库识别而没有应用；改为显式独立Git副本，并用逐文件哈希与原始行为验证，原失败日志保留。
 
 浏览器API被受控fixture替代；数据库为独立本机容器和随机schema。这些是开发回归证据，不等于线上账号/真实付费供应商或服务器发布验收。
 
