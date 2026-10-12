@@ -37,6 +37,7 @@ const TOOL_TIMEOUT_MS = {
   extend_video: 300_000,
   edit_video: 300_000,
   creative_tool: 300_000,
+  verify_image_output: 100_000,
   read_only: 15_000,
 } as const;
 
@@ -83,7 +84,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 3. 工具返回的图片 URL 用 Markdown 图片语法展示:![描述](url)。
 4. 长耗时工具(套图/A+)先告知用户等待时间。
  5. A+ 必须分两步：先调用 generate_aplus 展示每张白底母图，等待用户逐张确认；用户说某张不合格时调用 review_aplus_source(action=redo)并原样带上修改要求；只有全部通过后才调用 continue_aplus_generation。不得替用户默认通过母图。
- 6. 每个生成/精修/换色/复刻/套图/A+ 任务产出后，必须调用 verify_image_output 检查至少一张代表图；套图/A+ 优先检查首图和最后一图。未通过时明确列出问题，最多只允许在结果明确失败且不会重复扣费不明时重做一次。
+ 6. 每个生成/精修/换色/复刻/套图/A+ 任务产出后，必须调用 verify_image_output 检查至少一张代表图；套图/A+ 优先检查首图和最后一图。未通过时明确列出问题，最多只允许在结果明确失败且不会重复扣费不明时重做一次。检查返回 verificationStatus=unavailable 表示检查未完成，不代表图片生成失败或图片不合格；保留并交付已生成图片，说明未自动验收，不因此重生成、重复扣费或宣称检查通过。
  7. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
  8. 与图片生成无关的问题直接回答,不要调用工具。`;
 
@@ -1343,18 +1344,24 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       executionMode: "sequential",
       execute: async (_id, params, signal) => {
         const p = params as { image_url: string; goal: string };
-        const fd = new FormData();
-        fd.append("image", await urlToFile(p.image_url, signal));
-        fd.append("goal", p.goal.slice(0, 1200));
-        const result = await withToolTimeout(
-          "read_only",
-          () =>
-            internal("/api/agent/verify-image", signal, {
-              method: "POST",
-              body: fd,
-            }),
-          signal
-        );
+        let result: any;
+        try {
+          // Vision inference is not a quick GET. Bound download + inference together,
+          // and propagate the owned timeout signal into both network operations.
+          result = await withToolTimeout("verify_image_output", async ownedSignal => {
+            const fd = new FormData();
+            fd.append("image", await urlToFile(p.image_url, ownedSignal));
+            fd.append("goal", p.goal.slice(0, 1200));
+            return internal("/api/agent/verify-image", ownedSignal, { method: "POST", body: fd });
+          }, signal);
+          if (typeof result.passed !== "boolean" || typeof result.score !== "number" || !Number.isFinite(result.score)) throw new Error("Invalid inspection result");
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          return {
+            content: [{ type: "text", text: "视觉检查暂未完成，已生成图片保留，本次没有自动验收结果。不要因此重新生成、重复扣费或将图片判为不合格。" }],
+            details: { verificationStatus: "unavailable", imageUrl: p.image_url, publicSummary: "视觉检查暂未完成，图片已保留" },
+          };
+        }
         const issues = Array.isArray(result.issues)
           ? result.issues.map(String).slice(0, 8)
           : [];
@@ -1365,6 +1372,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         return {
           content: [{ type: "text", text }],
           details: {
+            verificationStatus: passed ? "passed" : "failed",
             passed,
             score: Number(result.score) || 0,
             issues,
