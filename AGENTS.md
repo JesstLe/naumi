@@ -12,7 +12,7 @@
 
 用户明确要求120恢复本机服务、香港尚未投入使用，两台暂且独立运行。`120.27.162.85` 的App/Worker、数据库、Hub/New API、Redis、Router/模型代理/Mihomo已恢复，Nginx指向本机127.0.0.1:13012；`179.236.104.112`保持自己的独立服务及数据副本。两边后续新增数据不自动互通，不因旧迁移文档停用120或改为跨机转发，不反向同步或以一端旧库覆盖另一端。后续发布按照任务明确目标，保留各自配置/数据库/媒体并持各自部署锁。详见docs/changes/2026-10-12-restore-120-independent.md。
 
-两台受保护连接元数据仍在E:/workspace/naumi/output/hongkong-migration-20261012，source-connection.json对应120、deploy-connection.json对应香港；不得输出或提交凭据。原固定版本与鉴权/私有端口保持。旧101不连接，域名未改，两台媒体local，OSS/NAS不接；迁移heartbeat保持PAUSED。2026-10-12即梦接入发布后维护计数：120为2，香港第三次发布已维护归零；详见docs/changes/2026-10-12-jimeng-provider-onboarding.md，分别按每3次发布或构建前门槛维护。
+两台受保护连接元数据仍在E:/workspace/naumi/output/hongkong-migration-20261012，source-connection.json对应120、deploy-connection.json对应香港；不得输出或提交凭据。鉴权/私有端口保持。120入口现为`https://120.27.162.85/`，正式IP证书由独立naumi-ip-certbot-renew.timer续期，保留HTTPS网关及回环HTTP运维入口；香港仍独立HTTP。旧101不连接，域名未改，两台媒体local，OSS/NAS不接；迁移heartbeat保持PAUSED。2026-10-12顶部模板/Agent整合及HTTPS发布后维护计数：120持锁清本任务构建缓存后为0，香港为2；详见docs/changes/2026-10-12-template-nav.md，分别按每3次发布或构建前门槛维护。
 
 
 ## 当前服务器覆盖约定（2026-10-12，优先于下文历史地址）
