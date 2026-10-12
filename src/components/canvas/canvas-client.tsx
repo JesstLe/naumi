@@ -8529,6 +8529,9 @@ export function CanvasClient() {
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
+        // Safari/WebKit can navigate back on Backspace when no editable field owns it.
+        // Empty canvas selection must be a no-op, not leave the current project.
+        if (!browsing) e.preventDefault();
         if (readOnly || e.repeat) return;
         if (selectedEdge) {
           e.preventDefault();

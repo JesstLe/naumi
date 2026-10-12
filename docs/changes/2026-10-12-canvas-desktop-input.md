@@ -22,6 +22,7 @@
 4. 文字连线统一现有 `/api/canvas/history` 原子字段更新。图片到文字同时移除 sourceIds/productIds；文字到图片移除 targetIds；文字间移除 sourceIds。等待在途文字保存，清理对应已提交旧草稿。沿用现有认证和服务端事务，不改数据库结构。
 5. 空白占位线只更新当前输入、parentId、linked，支持局部 undo/redo；生成/上传中和 task 所属线不可选择或剪断，不取消已开始生成，不影响原扣费机制。向生成中空白节点新增输入同样被拦截。
 6. macOS 删除标签改为 `⌫` / `Fn+⌫`，与实际 Backspace/Delete 事件一致；Windows 保持 Del/Backspace。修复陈旧静态验收规则，增加实际浏览器回归脚本。
+7. WebKit 实测发现空白画布 Backspace 默认触发浏览器后退，退出项目；画布非输入状态现在显式 preventDefault，即使无选择或只读也不后退。输入框/IME 仍交给原生行为。
 
 ## 验收记录（完成后更新）
 

@@ -87,7 +87,7 @@ pass("menus no longer expose mac-only shortcut labels on Windows");
 
 assert.match(client, /onEdgeClick=\{/);
 assert.match(client, /const selected = new Set\(current\.filter\(edge => edge\.selected\)/);
-assert.match(client, /if \(readOnly \|\| e\.repeat\) return;\s*if \(selectedEdge\)/);
+assert.match(client, /if \(!browsing\) e\.preventDefault\(\);\s*if \(readOnly \|\| e\.repeat\) return;\s*if \(selectedEdge\)/);
 assert.match(client, /productIds: from\.productIds\?\.filter/);
 assert.match(client, /cuttingEdgesRef\.current\.has\(edge\.id\)/);
 assert.match(client, /selectable: !p\.generating && !p\.uploading/);
