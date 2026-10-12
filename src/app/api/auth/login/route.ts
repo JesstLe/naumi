@@ -5,7 +5,7 @@ import {
   USER_COOKIE,
   USER_TTL_MS,
 } from "@/lib/native-auth";
-import { getUser, getUserPasswordHash } from "@/lib/db";
+import { getUser, getPool, ensureSchema } from "@/lib/db";
 import { verifyPassword } from "@/lib/pw";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
@@ -31,17 +31,29 @@ export async function POST(req: Request) {
   }
   const email = loginIdentifierToEmail(String(body.email ?? ""));
   const password = String(body.password ?? "");
-  const hash = await getUserPasswordHash(email);
-  if (!hash || !verifyPassword(password, hash)) {
-    return NextResponse.json({ error: "用户名、邮箱或密码错误" }, { status: 401 });
-  }
+  await ensureSchema();
+  const tx = await getPool().connect();
+  let token = "";
+  try {
+    await tx.query("BEGIN");
+    // Lock credentials through token issuance: a concurrent password reset or
+    // ban must either precede verification or revoke the issued old session.
+    const state = (await tx.query("SELECT password_hash,banned,account_expires_at FROM app_users WHERE email=$1 FOR SHARE", [email])).rows[0];
+    if (!state?.password_hash || !verifyPassword(password, state.password_hash)) {
+      await tx.query("ROLLBACK");
+      return NextResponse.json({ error: "用户名、邮箱或密码错误" }, { status: 401 });
+    }
+    if (state.banned || (state.account_expires_at && new Date(state.account_expires_at).getTime() <= Date.now())) {
+      await tx.query("ROLLBACK");
+      return NextResponse.json({ error: "账号已停用或已到期，请联系管理员" }, { status: 403 });
+    }
+    const issuedAt = Date.now();
+    token = signUserSession(email, issuedAt);
+    await tx.query("COMMIT");
+  } catch (error) { await tx.query("ROLLBACK"); throw error; }
+  finally { tx.release(); }
   const user = await getUser(email);
   const res = NextResponse.json({ ok: true, user });
-  res.cookies.set(USER_COOKIE, signUserSession(email, Date.now()), {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: Math.floor(USER_TTL_MS / 1000),
-  });
+  res.cookies.set(USER_COOKIE, token, { httpOnly: true, sameSite: "lax", path: "/", maxAge: Math.floor(USER_TTL_MS / 1000) });
   return res;
 }

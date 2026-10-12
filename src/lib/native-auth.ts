@@ -123,9 +123,9 @@ export async function activeNativeUserEmail(request: Request): Promise<string | 
   const email = nativeUserEmail(request);
   if (!email) return null;
   await ensureSchema();
-  const { rows } = await getPool().query("SELECT banned,auth_revoked_before FROM app_users WHERE email=$1", [email]);
+  const { rows } = await getPool().query("SELECT banned,auth_revoked_before,account_expires_at FROM app_users WHERE email=$1", [email]);
   const user = rows[0];
-  if (!user || user.banned) return null;
+  if (!user || user.banned || (user.account_expires_at && new Date(user.account_expires_at).getTime() <= Date.now())) return null;
   const issuedAt = Number(readCookie(request, USER_COOKIE)?.split(".")[1]) - USER_TTL_MS;
   if (user.auth_revoked_before && issuedAt <= new Date(user.auth_revoked_before).getTime()) return null;
   return email;
