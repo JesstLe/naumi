@@ -21,6 +21,9 @@ import {agentBillingPrecheck} from "@/lib/billing/agent";
 import type {BillingQuote} from "@/lib/billing/types";
 import {fingerprint} from "@/lib/billing/fingerprint";
 import type { CanvasAgentContext } from "./canvas-context";
+import { buildAgentSystemPrompt, guardedToolBlock } from "./response-policy";
+import { guardAgentStream } from "./guarded-stream";
+import { publicAgentIdentity } from "./public-identity";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 运行时:常驻 Agent 会话管理器。
@@ -226,6 +229,7 @@ export async function getOrCreateSession(
   const models = managed?.models || await ensureModels(modelId);
   const model = models.getModel("naumi-relay", managed?.wireModel || modelId);
   if (!model) throw new Error("模型不可用");
+  const identity = await publicAgentIdentity(modelId, scope);
 
   const persisted = dbEnabled
     ? await getAgentSession(email, sessionId)
@@ -253,7 +257,7 @@ export async function getOrCreateSession(
   const acceptedBundle = currentExecutionBundle();
   const agent = new Agent({
     initialState: {
-      systemPrompt: options ? `${AGENT_SYSTEM_PROMPT}\n\n${options.systemPrompt}` : AGENT_SYSTEM_PROMPT,
+      systemPrompt: buildAgentSystemPrompt(AGENT_SYSTEM_PROMPT, options?.systemPrompt, identity),
       model: model as Model<"openai-completions">,
       tools: createNaumiTools(
         new Request(process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"),
@@ -264,10 +268,12 @@ export async function getOrCreateSession(
       ),
       messages: conversationMessages(savedHistory,managed?.wireModel||modelId),
     },
-    streamFn: (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 }),
+    streamFn: guardAgentStream(identity, (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 })),
     toolExecution: "sequential",
     // 积分预检:工具执行前查余额,不足直接拦截(硬门禁,不靠提示词自觉)
-    beforeToolCall: async ({ toolCall, args }) => {
+    beforeToolCall: async ({ toolCall, args, context }) => {
+      const blocked = guardedToolBlock(context);
+      if (blocked) return blocked;
       const signature = `${toolCall.name}:${stableJson(args)}`;
       if (signature === session.repeatSignature) session.repeatCount += 1;
       else {
@@ -337,8 +343,8 @@ export async function getOrCreateSession(
     } else if (event.type === "message_end") {
       const e = event as unknown as { message: { role: string; content: unknown[] } };
       if (e.message?.role === "assistant") {
-        const message = event.message as {model?: string; responseModel?: string; stopReason?: string; usage?: {input?: number; output?: number}};
-        if (message.model) void recordBiModelCompletion({
+        const message = event.message as {model?: string; provider?: string; responseModel?: string; stopReason?: string; usage?: {input?: number; output?: number}};
+        if (message.model && message.provider !== "naumi-local") void recordBiModelCompletion({
           email, operation: "agent", operationId: sessionId,
           model: message.model, responseModel: message.responseModel,
           state: message.stopReason === "error" ? "agent-error" : message.stopReason === "aborted" ? "agent-aborted" : message.stopReason === "deferred" ? "agent-deferred" : "agent-completed",
