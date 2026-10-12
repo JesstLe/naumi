@@ -92,6 +92,11 @@ export const TOOLS: ToolMeta[] = [
     action: "生成套图", cost: 78, ctrls: [], workspace: true, live: true, inMenu: true,
   },
   {
+    key: "批量出图", en: "Batch studio", slug: "batchshot", href: "/batchshot", category: "生成创作",
+    Icon: Box, desc: "批量上传产品图+风格参考图,按主图、详情图、SKU 一次出整套任务",
+    action: "开始批量出图", cost: 0, ctrls: [], workspace: true, live: true, inMenu: true,
+  },
+  {
     key: "Agent 任务", en: "Agent tasks", slug: "agent", href: "/agent", category: "生成创作",
     Icon: Bot, desc: "一句话下达任务,AI 编排套图/精修/换色/A+ 等工具自动完成",
     action: "开始任务", cost: 0, ctrls: [], workspace: true, live: true, inMenu: true,
