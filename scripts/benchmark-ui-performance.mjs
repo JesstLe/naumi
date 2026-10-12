@@ -58,11 +58,13 @@ try{
    if(routeName==='/canvas'){
     const close=page.getByRole('button',{name:'收起助手',exact:true});if(await close.isVisible())await close.click();
     await page.mouse.click(700,870);
+    const transformBefore=await page.locator('.react-flow__viewport').getAttribute('style');
     await cdp.send('Performance.enable');const before=await cdp.send('Performance.getMetrics');
     if(process.env.PERF_PROFILE){await cdp.send('Profiler.enable');await cdp.send('Profiler.start');}
     await page.evaluate(()=>{window.__panFrames=[];window.__panActive=true;let last=performance.now();const tick=now=>{window.__panFrames.push(now-last);last=now;if(window.__panActive)requestAnimationFrame(tick);};requestAnimationFrame(tick);});
     await page.mouse.move(1000,870);await page.mouse.down();await page.mouse.move(600,870,{steps:60});await page.mouse.up();
     const after=await cdp.send('Performance.getMetrics');pan=await page.evaluate(()=>{window.__panActive=false;return {frames:window.__panFrames,selected:document.querySelectorAll('.react-flow__node.selected').length};});
+    assert.notEqual(await page.locator('.react-flow__viewport').getAttribute('style'),transformBefore,'gesture really pans, not node drag');
     if(process.env.PERF_PROFILE)await writeFile(path.join(out,mode+'-pan-profile.json'),JSON.stringify((await cdp.send('Profiler.stop')).profile));
     pan.taskDurationMs=Math.round(1000*(after.metrics.find(m=>m.name==='TaskDuration').value-before.metrics.find(m=>m.name==='TaskDuration').value));
    }
@@ -71,6 +73,6 @@ try{
    await context.close();
   }
  }
- assert.deepEqual(errors,[]);await writeFile(path.join(out,mode+'.json'),JSON.stringify({mode,fixture:'300 nodes / 12 local 1024px images, controlled API, real production build and optimizer',conditions:{downloadMbps:5,latencyMs:80,cpuRate:4,cache:'disabled',repeats:3},samples,errors},null,2));console.log(`PERFORMANCE_${mode.toUpperCase()}=MEASURED PROVIDER_CALLS=0`);
+ assert.deepEqual(errors,[]);await writeFile(path.join(out,mode+'.json'),JSON.stringify({mode,fixture:'300 nodes / 12 local 1024px images, controlled API, real production build and optimizer',conditions:{downloadMbps:5,latencyMs:80,cpuRate:4,cache:'browser disabled; server cache state documented separately',repeats:Number(process.env.PERF_REPEATS||3)},samples,errors},null,2));console.log(`PERFORMANCE_${mode.toUpperCase()}=MEASURED PROVIDER_CALLS=0`);
 }finally{await browser?.close();if(app?.pid){if(process.platform==='win32'){try{execFileSync('taskkill',['/PID',String(app.pid),'/T','/F'],{stdio:'pipe'});}catch{}}else app.kill('SIGTERM');}await writeFile(path.join(out,mode+'-server.log'),logs.join(''));}
 
