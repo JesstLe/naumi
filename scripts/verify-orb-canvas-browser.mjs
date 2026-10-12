@@ -68,6 +68,7 @@ try {
         submissions.push({body:req.postDataJSON(),headers:req.headers()});
         if(responseMode==='waiting') return route.fulfill({contentType:'text/event-stream',body:'event: attention\ndata: {"kind":"waiting"}\n\nevent: delta\ndata: {"text":"本次需要确认报价。"}\n\nevent: done\ndata: {"ok":true}\n\n'});
         if(responseMode==='eof') return route.fulfill({contentType:'text/event-stream',body:'event: delta\ndata: {"text":"连接尚未完成"}\n\n'});
+        if(responseMode==='stopped') return route.fulfill({contentType:'text/event-stream',body:'event: error\ndata: {"code":"ABORTED","message":"任务已停止"}\n\n'});
         return route.fulfill({ contentType:'text/event-stream', body:'event: delta\ndata: {"text":"验收回复：保留商品主体。"}\n\nevent: tool_start\ndata: {"id":"recolor","tool":"recolor_product","summary":"正在换色"}\n\nevent: tool_end\ndata: {"id":"recolor","summary":"换色完成"}\n\nevent: artifacts\ndata: '+JSON.stringify({artifacts:[{id:'agent-output',image:art.image,title:'换色结果'}]})+'\n\nevent: done\ndata: {"ok":true}\n\n' });
       }
       if (req.method() === 'POST' && /generate|image-tasks/.test(endpoint)) throw new Error('Unexpected paid generation');
@@ -101,12 +102,14 @@ try {
   await panel.getByRole('button',{name:'新建对话',exact:true}).click();responseMode='eof';await input.fill('检查连接');await panel.getByRole('button',{name:'发送消息',exact:true}).click();
   await expect(orb).toHaveAttribute('data-orb-state','error');await expect(panel.getByRole('alert')).toContainText('任务连接已中断');
   pass('EOF without done remains failed');
+  await panel.getByRole('button',{name:'新建对话',exact:true}).click();responseMode='stopped';await input.fill('停止状态验证');await panel.getByRole('button',{name:'发送消息',exact:true}).click();
+  await expect(orb).toHaveAttribute('data-orb-state','stopped');await expect(floating.getByRole('status')).toHaveText('已停止');pass('server ABORTED drives stopped expression rather than failed');
   await panel.getByRole('button',{name:'新建对话',exact:true}).click();
   const point=await floating.boundingBox();await p.mouse.move(point.x+40,point.y+40);await p.mouse.down();await p.mouse.move(point.x-260,point.y+190,{steps:5});await p.mouse.up();
   const moved=await floating.boundingBox();assert.ok(Math.abs(point.x-moved.x)>200);await expect(panel).toBeVisible();pass('full canvas drag expands across viewport and does not toggle sidebar');
   await p.setViewportSize({width:390,height:844});await p.getByTestId('canvas-agent-toggle').click();await expect(panel).toBeVisible();
   const mob=await floating.boundingBox();assert.ok(mob.x>=0&&mob.x+mob.width<=390);await p.screenshot({path:path.join(out,'mobile.png')});pass('mobile orb bounds and sidebar remain accessible');
-  assert.equal(submissions.length,3);assert.deepEqual(errors,[]);
+  assert.equal(submissions.length,4);assert.deepEqual(errors,[]);
   console.log('ORB_CANVAS_BROWSER=PASS checks='+checks.length+' ACTUAL_CANVAS=PASS SSE_FIXTURE=PASS PROVIDER_CALLS=0');
   await context.close();
 } finally {
