@@ -6,7 +6,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import pg from 'pg';
 const out='../ui'; await mkdir(out,{recursive:true});
 const secret='team-fixture-secret-012345678901234567890123456789';
-const url='postgres://fixture:fixture@127.0.0.1:55439/fixture',pool=new pg.Pool({connectionString:url});
+const url=process.env.TEAM_UI_DATABASE_URL||'postgres://fixture:fixture@127.0.0.1:55439/fixture',pool=new pg.Pool({connectionString:url});
 const base='http://127.0.0.1:33039';
 await pool.query("DELETE FROM app_settings WHERE k='admin_password_hash'");
 const sign=email=>{const e=Buffer.from(email).toString('base64url'),exp=Date.now()+30*86400000;return `${e}.${exp}.${createHmac('sha256',secret).update(`user:${e}.${exp}`).digest('hex')}`;};
@@ -65,7 +65,7 @@ try {
   const unlocked=await adminContext.request.post(base+'/api/admin/login',{data:{password:'fixture-console-password'}});assert.equal(unlocked.status(),200);
   await admin.goto(base+'/admin/teams');await expect(admin.getByRole('heading',{name:'团队与子账号',exact:true})).toBeVisible();
   console.log('TEAM_ENTRY_UI=PASS ADMIN_MENU=TEAM_ONLY ADMIN_TEAM=PASS GLOBAL_SETTINGS=403 MANUAL_ADMIN=PASSWORD_GATE SECOND_PASSWORD=PASS');
-  const unauthorized=await browser.newContext();await unauthorized.addCookies([{name:'nv_user',value:sign('child@fixture.test'),url:base}]);const childPage=await unauthorized.newPage();await childPage.goto(base+'/team');await expect(childPage.getByText('当前账号未关联团队')).toBeVisible();
+  const unauthorized=await browser.newContext();await unauthorized.addCookies([{name:'nv_user',value:sign('child@fixture.test'),url:base}]);const childPage=await unauthorized.newPage();await childPage.goto(base+'/team');await expect(childPage.getByText('团队入口授权未生效、已到期或已关闭')).toBeVisible();
   assert.deepEqual(errors,[]);
   console.log('TEAM_UI=PASS DESKTOP=1440 MOBILE=390 REAL_API=1 MEMBERS=5 CONTENT=PASS PASSWORD=PASS EXPIRY=PASS STATUS=PASS ADMIN_CREATE=PASS ERRORS=0 PROVIDER_CALLS=0');
 }finally{if(browser)await browser.close();server.kill();await pool.end();await writeFile(out+'/server.log',serverLog);}

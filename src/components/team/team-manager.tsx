@@ -23,23 +23,24 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 type Editor = { kind: "expiry" | "password" | "create" | "attach" | "team"; member?: TeamMember } | null;
 export function TeamEntry() {
   const { user } = useAuth();
-  const [mode, setMode] = useState<{ email?: string; admin: boolean } | null>(null);
+  const [mode, setMode] = useState<{ email?: string; admin: boolean; generation?:number } | null>(null);
   useEffect(() => {
     const controller = new AbortController(); setMode(null);
-    void json<TeamSnapshot>("/api/team", { signal: controller.signal })
-      .then(data => { if (!controller.signal.aborted) setMode({ email: user?.email, admin: !!data.canManageTeams }); })
-      .catch(() => { if (!controller.signal.aborted) setMode({ email: user?.email, admin: false }); });
-    return () => controller.abort();
+    const check = () => void json<{ allowed:boolean; canManageTeams:boolean }>("/api/team/access", { signal: controller.signal })
+      .then(data => { if (!data.allowed) throw new Error("团队入口授权已关闭"); if (!controller.signal.aborted) setMode(old => old && old.email === user?.email && old.admin === !!data.canManageTeams ? old : { email:user?.email,admin:!!data.canManageTeams }); })
+      .catch(() => { if (!controller.signal.aborted) setMode({ email:user?.email,admin:false,generation:Date.now() }); });
+    check(); const timer=window.setInterval(check,30_000);window.addEventListener("focus",check);
+    return () => { controller.abort();window.clearInterval(timer);window.removeEventListener("focus",check); };
   }, [user?.email]);
   if (!mode || mode.email !== user?.email) return <main className={styles.page}><div className={styles.empty}>加载中…</div></main>;
-  return <TeamManager key={`${mode.email || "anonymous"}:${mode.admin}`} admin={mode.admin} standalone />;
+  return <TeamManager key={`${mode.email || "anonymous"}:${mode.admin}:${mode.generation || 0}`} admin={mode.admin} standalone />;
 }
 
-export function TeamManager({ admin = false, standalone = false }: { admin?: boolean; standalone?: boolean }) {
+export function TeamManager({ admin = false, standalone = false, initialTeamId = "" }: { admin?: boolean; standalone?: boolean; initialTeamId?: string }) {
   const { openAuth } = useAuthModal();
   const { user } = useAuth();
   const [data, setData] = useState<TeamSnapshot>({ team: null, members: [] });
-  const [teams, setTeams] = useState<Team[]>([]), [teamId, setTeamId] = useState("");
+  const [teams, setTeams] = useState<Team[]>([]), [teamId, setTeamId] = useState(initialTeamId);
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [loading, setLoading] = useState(true), [pending, setPending] = useState(false);
   const [editor, setEditor] = useState<Editor>(null), [password, setPassword] = useState(""), [expiry, setExpiry] = useState("");
   const [name, setName] = useState(""), [account, setAccount] = useState(""), [enabled, setEnabled] = useState(true);
@@ -67,7 +68,7 @@ export function TeamManager({ admin = false, standalone = false }: { admin?: boo
     finally { if (seq === loadSeq.current) setLoading(false); }
   }, [admin, teamId]);
   useEffect(() => { void load(); return invalidateLoads; }, [load, invalidateLoads, user?.email]);
-  useEffect(() => { setTeams([]); setTeamId(""); setData({ team: null, members: [] }); setSelected(null); setContent(null); setConversation(null); setMessages(null); setEditor(null); setPassword(""); }, [user?.email]);
+  useEffect(() => { setTeams([]); setData({ team: null, members: [] }); setSelected(null); setContent(null); setConversation(null); setMessages(null); setEditor(null); setPassword(""); }, [user?.email, initialTeamId]);
   useEffect(() => {
     if (!selectedEmail || !scopeId) { setContent(null); return; }
     const controller = new AbortController(); setContentLoading(true); setContentError(""); setContent(null); setConversation(null); setMessages(null);

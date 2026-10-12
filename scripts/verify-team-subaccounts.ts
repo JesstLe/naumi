@@ -11,7 +11,8 @@ async function main() {
   const owner = "owner@fixture.test", owner2 = "owner2@fixture.test", child = "child@fixture.test", child2 = "child2@fixture.test", admin = "admin@fixture.test", stranger = "stranger@fixture.test";
   for (const email of [owner, owner2, child, child2, admin, stranger]) { await db.getOrCreateUser(email, email); await db.setUserPassword(email, pw.hashPassword("fixture-password")); }
   await db.setUserRole(admin, "admin");
-  const actor = { email: owner, admin: false }, siteAdmin = { email: admin, admin: true }, actor2 = { email: owner2, admin: false };
+  for(const e of [owner,owner2,admin]) await pool.query("INSERT INTO app_team_access_grants(email,scope,created_by,updated_by) VALUES($1,$2,'fixture','fixture')",[e,e===admin?"all":"owned"]);
+  const actor = { email: owner, admin: false }, siteAdmin = { email: admin, admin: true, consoleAdmin: true }, actor2 = { email: owner2, admin: false };
   const id = randomUUID(), id2 = randomUUID(), cutoff = new Date(Date.now() + 15 * 86400000).toISOString();
   const cookie = (email: string, now = Date.now()) => `nv_user=${native.signUserSession(email, now)}`;
   const req = (email: string, body?: unknown, endpoint = "/api/team/users", origin?: string) => new Request(`http://fixture.test${endpoint}`, { method: body ? "POST" : "GET", headers: { ...(email ? { cookie: cookie(email) } : {}), "Content-Type": "application/json", ...(origin ? { origin } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
@@ -30,8 +31,8 @@ async function main() {
   assert.equal((await api.GET(req("", undefined, `/api/team/users?teamId=${id}&email=${child}`))).status, 401);
   assert.equal((await api.GET(req(owner2, undefined, `/api/team/users?teamId=${id}&email=${child}`))).status, 403);
   assert.equal((await api.GET(req(owner, undefined, `/api/team/users?teamId=${id}&email=${child2}`))).status, 403);
-  assert.equal((await snapshotApi.GET(req(stranger))).status, 200);
-  assert.equal((await (await snapshotApi.GET(req(stranger))).json()).team, null);
+  assert.equal((await snapshotApi.GET(req(stranger))).status, 403);
+
   const old = new Request("http://fixture.test", { headers: { cookie: cookie(child, Date.now() - 10000) } });
   assert.equal(await native.activeNativeUserEmail(old), child);
   const reset = { id: randomUUID(), teamId: id, email: child, expectedVersion: 1, action: "reset-password" as const, password: "new-fixture-password" };
@@ -85,7 +86,7 @@ async function main() {
   assert.equal(adminTeam.status, 200);
   assert.equal((await adminTeam.json()).canManageTeams, true);
   assert.equal((await snapshotApi.GET(req(owner))).status, 403);
-  assert.equal((await (await snapshotApi.GET(req(stranger))).json()).canManageTeams, false);
+
   assert.equal((await adminApi.GET(req(admin))).status, 200);
   assert.equal((await adminApi.GET(req(owner))).status, 403);
   const adminLogin = await import("../src/app/api/admin/login/route");
@@ -98,10 +99,10 @@ async function main() {
   assert.equal(await adminAuth.requireAdmin(new Request("http://fixture.test/admin", { headers: { cookie: `nv_admin=${session}` } })), true);
   // Banned admins do not inherit the team privilege from a claimed email.
   await pool.query("UPDATE app_users SET banned=true WHERE email=$1", [admin]);
-  assert.equal((await adminApi.GET(req(admin))).status, 403);
+  assert.equal((await adminApi.GET(req(admin))).status, 401);
   await pool.query("UPDATE app_users SET banned=false WHERE email=$1", [admin]);
   await pool.query("DELETE FROM app_settings WHERE k='admin_password_hash'");
-  console.log("TEAM_ENTRY_ACCESS=PASS ACCOUNT_ADMIN=200 OWNER_ADMIN=403 GLOBAL_ADMIN_PASSWORD=REQUIRED SECOND_PASSWORD=PASS BANNED_ADMIN=403");
+  console.log("TEAM_ENTRY_ACCESS=PASS ACCOUNT_ADMIN=200 OWNER_ADMIN=403 GLOBAL_ADMIN_PASSWORD=REQUIRED SECOND_PASSWORD=PASS BANNED_ADMIN=401");
   await pool.end();
   console.log("TEAM_SUBACCOUNTS=PASS OWNERSHIP=ISOLATED CONTENT=SCOPED PASSWORD_RESET=REVOKED EXPIRY=ENFORCED CAP=ENFORCED CSRF=BLOCKED AUDIT=REDACTED REPLAY=IDEMPOTENT CONFLICT=409 CREDITS=UNCHANGED PROVIDER_CALLS=0");
 }

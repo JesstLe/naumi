@@ -5,6 +5,7 @@ import { z } from "zod";
 import { ensureSchema, getPool } from "@/lib/db";
 import { hashPassword } from "@/lib/pw";
 import { settingsSecret } from "@/lib/settings-secret";
+import { requireTeamGrant, type TeamActor } from "./grants";
 import type { ContentSection, TeamSnapshot } from "./contracts";
 
 let ready: Promise<void> | null = null;
@@ -24,6 +25,28 @@ export async function ensureTeamSchema() {
       action text NOT NULL, fingerprint text NOT NULL DEFAULT '', changes jsonb NOT NULL DEFAULT '{}',
       created_at timestamptz NOT NULL DEFAULT now());
     CREATE INDEX IF NOT EXISTS app_account_team_audit_team ON app_account_team_audit(team_id,created_at);
+
+    CREATE TABLE IF NOT EXISTS app_team_access_grants (
+      email text PRIMARY KEY REFERENCES app_users(email),scope text NOT NULL CHECK(scope IN ('owned','all')),
+      starts_at timestamptz NOT NULL DEFAULT now(),expires_at timestamptz,
+      enabled boolean NOT NULL DEFAULT true,revoked_at timestamptz,version integer NOT NULL DEFAULT 0,
+      created_by text NOT NULL,updated_by text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),
+      CHECK(expires_at IS NULL OR expires_at>starts_at));
+    CREATE TABLE IF NOT EXISTS app_team_access_audit (
+      id uuid PRIMARY KEY,actor text NOT NULL,target_email text NOT NULL,action text NOT NULL,
+      changes jsonb NOT NULL DEFAULT '{}',fingerprint text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+    CREATE INDEX IF NOT EXISTS app_team_access_audit_target ON app_team_access_audit(target_email,created_at);
+    CREATE TABLE IF NOT EXISTS app_team_access_migrations(id text PRIMARY KEY);
+    WITH initial AS (INSERT INTO app_team_access_migrations(id) VALUES('entry-grants-v1') ON CONFLICT DO NOTHING RETURNING id)
+    , seeded AS (INSERT INTO app_team_access_grants(email,scope,expires_at,created_by,updated_by)
+    SELECT u.email,CASE WHEN u.role='admin' THEN 'all' ELSE 'owned' END,
+      CASE WHEN u.role='admin' THEN NULL ELSE t.authorized_until END,'system-migration','system-migration'
+    FROM app_users u LEFT JOIN app_account_teams t ON t.owner_email=u.email
+    WHERE EXISTS(SELECT 1 FROM initial) AND (u.role='admin' OR t.owner_email IS NOT NULL)
+      AND NOT u.banned AND (u.role='admin' OR t.authorized_until>now())
+    ON CONFLICT DO NOTHING RETURNING *)
+    INSERT INTO app_team_access_audit(id,actor,target_email,action,changes,fingerprint)
+    SELECT gen_random_uuid(),'system-migration',email,'migration',jsonb_build_object('before',NULL,'after',jsonb_build_object('scope',scope,'starts_at',starts_at,'expires_at',expires_at,'enabled',enabled,'revoked_at',revoked_at,'version',version)),'' FROM seeded;
   `).then(() => {}).catch(error => { ready = null; throw error; });
   await ready;
 }
@@ -42,13 +65,14 @@ export const adminCommandSchema = z.discriminatedUnion("action", [
   z.object({ ...base, action: z.literal("attach"), email, expiresAt: instant }).strict(),
   z.object({ ...base, action: z.literal("detach"), email, expectedVersion: z.number().int().nonnegative() }).strict(),
 ]);
-type Actor = { email: string; admin: boolean };
+type Actor = TeamActor;
 async function transaction<T>(run: (tx: PoolClient) => Promise<T>) {
   await ensureTeamSchema(); const tx = await getPool().connect();
   try { await tx.query("BEGIN"); const out = await run(tx); await tx.query("COMMIT"); return out; }
   catch (error) { await tx.query("ROLLBACK"); throw error; } finally { tx.release(); }
 }
 async function scopedTeam(tx: PoolClient, actor: Actor, id?: string) {
+  await requireTeamGrant(tx, actor);
   const row = (await tx.query(`SELECT * FROM app_account_teams WHERE ${id ? "id=$1" : "owner_email=$1"} FOR SHARE`, [id || actor.email])).rows[0];
   if (!row || (!actor.admin && (row.owner_email !== actor.email || !row.enabled || new Date(row.authorized_until).getTime() <= Date.now()))) throw new TeamError("没有团队管理权限");
   return row;
@@ -62,6 +86,7 @@ async function audit(tx: PoolClient, actor: Actor, teamId: string, target: strin
 }
 export async function teamSnapshot(actor: Actor, id?: string): Promise<TeamSnapshot> {
   return transaction(async tx => {
+    await requireTeamGrant(tx, actor);
     if (actor.admin && !id) return { team: null, members: [], teams: (await tx.query("SELECT id,name,owner_email,authorized_until,enabled,version FROM app_account_teams ORDER BY created_at DESC")).rows };
     if (!id && !(await tx.query("SELECT 1 FROM app_account_teams WHERE owner_email=$1", [actor.email])).rowCount) return { team: null, members: [] };
     const team = await scopedTeam(tx, actor, id);
@@ -83,6 +108,7 @@ export async function mutateTeam(actor: Actor, command: z.infer<typeof memberCom
   const fingerprint = createHmac("sha256", settingsSecret()).update(JSON.stringify(command)).digest("hex");
   return transaction(async tx => {
     await tx.query("SELECT pg_advisory_xact_lock(hashtext('naumi-team-management'))");
+    await requireTeamGrant(tx, actor);
     const previous = (await tx.query("SELECT actor,fingerprint FROM app_account_team_audit WHERE id=$1", [command.id])).rows[0];
     // Always reauthorize before acknowledging replay; detached/disabled scopes must not succeed.
     const team = command.action === "create" ? null : await scopedTeam(tx, actor, command.teamId);
@@ -110,6 +136,7 @@ export async function mutateTeam(actor: Actor, command: z.infer<typeof memberCom
       if (!user || user.role !== "user" || command.email === team.owner_email) throw new TeamError("目标须为普通子账号", 409);
       if (command.action === "attach") {
         if ((await tx.query("SELECT 1 FROM app_account_teams WHERE owner_email=$1", [command.email])).rowCount) throw new TeamError("团队负责人不能作为子账号", 409);
+        if ((await tx.query("SELECT 1 FROM app_team_access_grants WHERE email=$1 AND revoked_at IS NULL", [command.email])).rowCount) throw new TeamError("请先撤销目标账号的团队入口授权", 409);
         if ((await tx.query("SELECT 1 FROM app_account_team_members WHERE email=$1", [command.email])).rowCount) throw new TeamError("账号已有归属，请先移除旧归属", 409);
         validateExpiry(command.expiresAt, team.authorized_until);
         await tx.query("INSERT INTO app_account_team_members(email,team_id) VALUES($1,$2)", [command.email, team.id]);

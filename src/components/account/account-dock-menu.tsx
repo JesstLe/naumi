@@ -105,15 +105,17 @@ export function useTeamEntryAccess(user: SessionUser | null) {
     const controller = new AbortController();
     setAccess(null);
     if (!user) return;
-    void (async () => {
+    const check = async () => {
       try {
         const { authHeader } = await import("@/lib/supabase");
-        const response = await fetch("/api/team", { cache: "no-store", headers: await authHeader(), signal: controller.signal });
+        const response = await fetch("/api/team/access", { cache: "no-store", headers: await authHeader(), signal: controller.signal });
         const data = response.ok ? await response.json() : null;
-        if (!controller.signal.aborted) setAccess({ email: user.email, allowed: !!(data?.team || data?.canManageTeams) });
+        if (!controller.signal.aborted) setAccess({ email: user.email, allowed: !!data?.allowed });
       } catch { if (!controller.signal.aborted) setAccess(null); }
-    })();
-    return () => controller.abort();
+    };
+    void check(); const timer = window.setInterval(check, 30_000);
+    window.addEventListener("focus", check);
+    return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener("focus", check); };
   }, [user?.email]);
   return access?.email === user?.email && !!access?.allowed;
 }

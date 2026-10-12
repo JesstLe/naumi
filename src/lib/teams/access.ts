@@ -1,22 +1,24 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
-import { dbEnabled, getUserRole } from "@/lib/db";
+import { requireAdmin, resolveUserEmail, adminPasswordState } from "@/lib/admin-auth";
+import { dbEnabled } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/ip";
+import { teamEntryAccess } from "./grants";
 import { TeamError } from "./server";
 export const PRIVATE_HEADERS = { "Cache-Control": "private, no-store, max-age=0", Vary: "Cookie, Authorization", "X-Content-Type-Options": "nosniff" };
 export function teamJson(body: unknown, status = 200) { return NextResponse.json(body, { status, headers: PRIVATE_HEADERS }); }
 export async function teamAuthorize(request: Request, adminOnly = false) {
   const consoleAdmin = await requireAdmin(request);
   const email = await resolveUserEmail(request);
-  // Verified account admins receive only team operations, never nv_admin or
-  // access to the password-protected global settings console.
-  const admin = consoleAdmin || !!(email && dbEnabled && await getUserRole(email) === "admin");
-  if (adminOnly && !admin) return teamJson({ error: "需要站点管理员" }, 403);
-  if (!email && !admin) return teamJson({ error: "请先登录" }, 401);
+  if (!email && !consoleAdmin) return teamJson({ error: "请先登录" }, 401);
   if (!dbEnabled) return teamJson({ error: "数据库未配置" }, 503);
-  const actor = { email: email || "local-admin", admin };
+  const consoleVerified = consoleAdmin && (await adminPasswordState(request)).authenticated;
+  const access = email ? await teamEntryAccess(email) : null;
+  if (!consoleVerified && !access?.allowed) return teamJson({ error: "团队入口授权未生效、已到期或已关闭" }, 403);
+  const admin = consoleVerified || !!access?.admin;
+  if (adminOnly && !admin) return teamJson({ error: "需要站点管理员" }, 403);
+  const actor = { email: email || "local-admin", admin, consoleAdmin: consoleVerified };
   if (!rateLimit(`team:${actor.email}:${clientIp(request)}`, 120, 60_000)) return teamJson({ error: "操作过于频繁" }, 429);
   return actor;
 }

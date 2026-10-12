@@ -7,11 +7,11 @@ import { Activity, ArrowLeft, BarChart3, Building2, ImageIcon, Layers, LogOut, M
 import type { BiSection } from "@/lib/bi/contracts";
 import styles from "./center-shell.module.css";
 
-type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-management" | "teams";
+type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-management" | "teams" | "team-access";
 type Entry = { id: Section; label: string; icon: typeof Users; href?: string };
 const groups: { label: string; entries: Entry[] }[] = [
   { label: "运营概览", entries: [{ id: "overview", label: "数据概览", icon: BarChart3 }] },
-  { label: "用户管理", entries: [{ id: "users", label: "用户与企业", icon: Users }, { id: "teams", label: "团队与子账号", icon: Building2, href: "/admin/teams" }] },
+  { label: "用户管理", entries: [{ id: "users", label: "用户与企业", icon: Users }, { id: "teams", label: "团队与子账号", icon: Building2, href: "/admin/teams" }, { id: "team-access", label: "团队入口授权", icon: ShieldCheck, href: "/admin/team-access" }] },
   { label: "计费管理", entries: [
     { id: "billing", label: "模型价格表", icon: Wallet, href: "/admin/billing/price-table" },
     { id: "pricing", label: "内部定价测算", icon: BarChart3, href: "/admin/pricing" },
