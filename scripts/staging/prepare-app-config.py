@@ -47,7 +47,6 @@ values.update({
     'NAUMI_VIDEO_WORKER': '0', 'NAUMI_PUBLIC_COMMERCE': '0',
     'NEXT_PUBLIC_RECHARGE_ENABLED': 'false',
     # The source-only NAS credentials, notifications and old internal dependencies are excluded.
-    'YUTANG_API_BASE': '', 'YUTANG_USER': '', 'YUTANG_PASS': '',
     'PADDLE_OCR_BASE_URL': '', 'PADDLE_OCR_API_KEY': '',
 })
 for k,v in values.items():
