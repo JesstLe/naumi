@@ -8,6 +8,7 @@ const out='../ui'; await mkdir(out,{recursive:true});
 const secret='team-fixture-secret-012345678901234567890123456789';
 const url='postgres://fixture:fixture@127.0.0.1:55439/fixture',pool=new pg.Pool({connectionString:url});
 const base='http://127.0.0.1:33039';
+await pool.query("DELETE FROM app_settings WHERE k='admin_password_hash'");
 const sign=email=>{const e=Buffer.from(email).toString('base64url'),exp=Date.now()+30*86400000;return `${e}.${exp}.${createHmac('sha256',secret).update(`user:${e}.${exp}`).digest('hex')}`;};
 const teams=(await pool.query("UPDATE app_account_teams SET authorized_until=now()+interval '16 days',enabled=true RETURNING id,owner_email")).rows;
 const ownerTeam=teams.find(t=>t.owner_email==='owner@fixture.test');
@@ -52,7 +53,7 @@ try {
   await pool.query("INSERT INTO app_settings(k,v) VALUES('admin_password_hash',$1) ON CONFLICT(k) DO UPDATE SET v=excluded.v",[hash]);
   await admin.goto(base+'/team');await expect(admin.getByRole('heading',{name:'团队与子账号',exact:true})).toBeVisible();
   await admin.getByLabel('选择团队').selectOption(ownerTeam.id);await expect(admin.locator('tbody tr')).toHaveCount(5);
-  const menuTrigger=admin.getByTestId('app-account-dock-trigger').first();await menuTrigger.click();
+  const menuTrigger=admin.getByTestId('app-account-dock-trigger').first();await menuTrigger.hover();
   await expect(admin.getByTestId('account-dock').getByRole('menuitem',{name:'团队管理',exact:true})).toBeVisible();
   await expect(admin.getByTestId('account-dock').locator('a[href^="/admin"]')).toHaveCount(0);
   await admin.getByTestId('account-dock').getByRole('menuitem',{name:'团队管理',exact:true}).click();
