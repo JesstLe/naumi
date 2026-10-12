@@ -1,7 +1,7 @@
 import type { OrbState } from "../../components/naumi-orb/orb-model";
 
 export type AgentOrbOutcome = "idle" | "running" | "done" | "error" | "stopped";
-export interface AgentOrbStep { id: string; tool?: string; label: string; status: "running" | "done" | "error" }
+export interface AgentOrbStep { id: string; tool?: string; label: string; summary?: string; status: "running" | "done" | "error" }
 export function agentOrbState(busy: boolean, outcome: AgentOrbOutcome, steps: AgentOrbStep[]): OrbState {
   if (!busy) return outcome === "done" ? "done" : outcome === "error" ? "error" : "idle";
   const running = [...steps].reverse().find(step => step.status === "running");

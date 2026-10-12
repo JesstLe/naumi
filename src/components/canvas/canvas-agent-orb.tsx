@@ -5,10 +5,12 @@ import { NaumiOrb } from "../naumi-orb/naumi-orb";
 import { agentOrbState, clampOrb, orbBounds, orbFraction, orbPixels, orbPositionKey, readOrbPosition,
   type AgentOrbOutcome, type AgentOrbStep, type OrbPoint } from "@/lib/canvas/agent-orb";
 import styles from "./canvas-agent-orb.module.css";
+import { agentActivityLabel } from "@/lib/canvas/agent-activity";
 
-export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, light = true, onActivate }: {
+export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, responding = false, light = true, onActivate }: {
   email: string; busy: boolean; outcome: AgentOrbOutcome; steps: AgentOrbStep[];
   open: boolean; english: boolean; light?: boolean; onActivate: () => void;
+  responding?: boolean;
 }) {
   const layer = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -20,9 +22,7 @@ export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, lig
   const bounds = orbBounds(size.width, size.height);
   const pixel = orbPixels(position, bounds);
   const state = agentOrbState(busy, outcome, steps);
-  const status = english ? ({ idle: "Agent", thinking: "Thinking", searching: "Searching", working: "Working", done: "Done", error: "Failed", curious: "Agent", happy: "Agent" })[state]
-    : ({ idle: "Agent", thinking: "思考中", searching: "检索中", working: "执行中", done: "已完成", error: "未完成", curious: "Agent", happy: "Agent" })[state];
-  const label = !busy && outcome === "stopped" ? english ? "Stopped" : "已停止" : status;
+  const label = agentActivityLabel(busy, outcome, steps, english, responding);
 
   useEffect(() => {
     try { setPosition(readOrbPosition(localStorage.getItem(orbPositionKey(email)))); }
@@ -88,7 +88,7 @@ export function CanvasAgentOrb({ email, busy, outcome, steps, open, english, lig
       <NaumiOrb theme={light ? "naumi" : "pearl"} state={state} label="Naumi Agent" className={styles.ball} onActivate={onActivate} onKeyDown={keyboard}
         actionLabel={english ? `Agent: ${label}. Click to ${open ? "close" : "open"}; drag or use arrow keys to move.` : `Agent：${label}，点击${open ? "收起" : "打开"}，拖动或方向键移动`}
         expanded={open} controls="canvas-agent-panel" />
-      <span role="status" aria-live="polite" className={styles.status} data-state={state}><i aria-hidden="true" />{label}</span>
+      <span role="status" aria-live="polite" className={styles.status} data-state={state} title={label}><i aria-hidden="true" /><span>{label}</span></span>
     </div>
   </div>;
 }

@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowRight, ArrowRightToLine, ArrowUp, Check, Copy, Frame, History, Image as ImageIcon, Infinity as InfinityIcon, LayoutTemplate, Loader2, MessageSquarePlus, Palette, Plus, RefreshCw, ScanLine, SlidersHorizontal, Type, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowRightToLine, ArrowUp, Check, CircleHelp, Copy, Frame, History, Image as ImageIcon, Infinity as InfinityIcon, LayoutTemplate, Loader2, MessageSquarePlus, Palette, Plus, RefreshCw, ScanLine, SlidersHorizontal, Type, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { agentActivityLabel, agentElapsedLabel } from "@/lib/canvas/agent-activity";
+import type { AgentOrbStep } from "@/lib/canvas/agent-orb";
 
 export type CanvasAssistantTurn = { id: string; role: "user" | "assistant"; content: string; artifacts?: {id:string;image:string;title:string}[] };
 export type CanvasAssistantTask = { id: string; label: string; prompt: string };
@@ -18,11 +20,13 @@ export type SavedConversation = { id: string; title: string; turns: CanvasAssist
 /** Presentation-only sidebar: the parent owns SSE, context, model routing and billing. */
 export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns, input, busy, error,
   costLabel, labels, tasks, onInputChange, onSend, onNewChat, onRestoreChat, onClose, onPreview,
-  onCopy, renderContent, modelControl, steps = [], onStop, onClearReference, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true,
+  onCopy, renderContent, modelControl, steps = [], onStop, onClearReference, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true, english = false, responding = false,
 }: {
   open?: boolean;
   focusInput?: boolean;
   contextReady?: boolean;
+  english?: boolean;
+  responding?: boolean;
   light: boolean;
   anchorTitle: string;
   contextImages: { id: string; title: string; image: string }[];
@@ -32,7 +36,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   error: string | null;
   costLabel: string;
   modelControl?: ReactNode;
-  steps?: {id:string;label:string;status:"running"|"done"|"error"}[];
+  steps?: AgentOrbStep[];
   onStop?: () => void;
   onClearReference?: () => void;
   historyLoader?: () => Promise<SavedConversation[]>;
@@ -75,6 +79,14 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
   useEffect(()=>{if(!historyOpen||!loader.current)return;let active=true;setHistoryLoading(true);setHistoryError("");void loader.current().then(items=>{if(active)setSaved(items);}).catch(()=>{if(active)setHistoryError("历史记录读取失败，请重新打开重试");}).finally(()=>{if(active)setHistoryLoading(false);});return()=>{active=false;};},[historyOpen,historyScopeKey]);
   const [copied, setCopied] = useState<string | null>(null);
   const [hour] = useState(() => new Date().getHours());
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!busy) { setElapsed(0); return; }
+    const started = Date.now();
+    const timer = window.setInterval(() => setElapsed(Date.now() - started), 1000);
+    return () => window.clearInterval(timer);
+  }, [busy]);
+  const activityLabel = agentActivityLabel(busy, "running", steps, english, responding);
   const greeting = hour < 12 ? labels.morning : hour < 18 ? labels.afternoon : labels.evening;
   const visibleTasks = tasks.slice((taskPage % Math.max(1, Math.ceil(tasks.length / 4))) * 4, (taskPage % Math.max(1, Math.ceil(tasks.length / 4))) * 4 + 4);
   const iconButton = "canvas-ui-action flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-35";
@@ -121,7 +133,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
       scrollArea.current.scrollTop = scrollArea.current.scrollHeight;
       setShowScrollToBottom(false);
     }
-  }, [turns, busy, historyOpen]);
+  }, [turns, busy, steps, historyOpen]);
   useEffect(() => {
     if (!copied) return;
     const timeout = window.setTimeout(() => setCopied(null), 1800);
@@ -234,8 +246,19 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
             {copied === turn.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           </button>}
         </article>)}
-        {!!steps.length && <div data-testid="canvas-assistant-progress" className="space-y-2 rounded-xl border border-[var(--canvas-ui-border)] p-3 text-[12px]">{steps.map(step => <div key={step.id} className="flex items-center gap-2">{step.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : step.status === "error" ? <X className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}<span>{step.label}</span></div>)}</div>}
-        {busy && <div role="status" className="canvas-ui-muted flex items-center gap-2 text-[12px]"><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />{labels.thinking}</div>}
+        {!!steps.length && <div data-testid="canvas-assistant-progress" className="space-y-2 rounded-xl border border-[var(--canvas-ui-border)] p-3 text-[12px]">{steps.map(step => {
+          // A disconnected/stopped client cannot claim the supplier's task is still running or cancelled.
+          const unconfirmed = step.status === "running" && !busy;
+          const Icon = unconfirmed ? CircleHelp : step.status === "running" ? Loader2 : step.status === "error" ? X : Check;
+          const statusLabel = unconfirmed ? english ? "Check history" : "待核对" : step.status === "running" ? english ? "Running" : "执行中" : step.status === "error" ? english ? "Failed" : "失败" : english ? "Done" : "已完成";
+          return <div key={step.id} data-tool-status={unconfirmed ? "unconfirmed" : step.status} className="flex items-start gap-2">
+            <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", busy && step.status === "running" && "animate-spin")} />
+            <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><span>{step.label}</span><span className="canvas-ui-muted shrink-0 text-[10px]">{statusLabel}</span></div>
+              {step.summary && <p className="canvas-ui-muted mt-0.5 break-words text-[11px]">{step.summary}</p>}
+            </div>
+          </div>;
+        })}</div>}
+        {busy && <div data-testid="canvas-assistant-activity" className="canvas-ui-muted flex flex-wrap items-center justify-between gap-2 text-[12px]"><span role="status" aria-live="polite" className="flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />{activityLabel}</span><span data-testid="canvas-assistant-elapsed" className="text-[11px] tabular-nums">{agentElapsedLabel(elapsed, english)}</span></div>}
       </div>}
     </div>
     {showScrollToBottom && !historyOpen && <button type="button" data-testid="canvas-assistant-scroll-bottom" aria-label={labels.scrollToBottom} title={labels.scrollToBottom}
