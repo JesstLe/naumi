@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { cdnUrl, cdnThumb, onImgError, probeCdnHealth } from "@/lib/cdn";
@@ -35,7 +35,7 @@ export function Media({
   children?: React.ReactNode;
   // true = 首屏关键图(eager + high fetch priority),false = 默认 lazy
   priority?: boolean;
-  // 列表缩略:设了宽度则在国内 CDN 上实时缩放压缩(海外站自动忽略,原图直出)
+  // 列表预览:本地缓存压缩/国内 CDN 缩放，原图地址不变。
   thumbWidth?: number;
 }) {
   const [state, setState] = useState<"loading" | "ready" | "error">(
@@ -43,11 +43,17 @@ export function Media({
   );
   // CDN 改写源不可达(开代理用户请求被挂起,不触发 onError)→ 探测后改用原始源。
   const [useOrig, setUseOrig] = useState(false);
+  const imageRef = useRef<HTMLImageElement>(null);
   const video = isVideoUrl(src);
   // 视频不做 CDN 缩放(缩放管线只认图片),直接原地址。
   const rewritten = !video && thumbWidth ? cdnThumb(src, thumbWidth) : cdnUrl(src);
   useEffect(() => {
-    if (rewritten === src) return; // 未配 CDN(海外/自托管),无需探测
+    const image = imageRef.current;
+    setState(image?.complete && image.naturalWidth > 0 ? "ready" : "loading");
+    setUseOrig(false);
+  }, [src, rewritten]);
+  useEffect(() => {
+    if (cdnUrl(src) === src) return; // Local optimizer is not an external CDN.
     if (video) return; // 视频直连,不探测图片 CDN
     let on = true;
     void probeCdnHealth(rewritten).then((ok) => {
@@ -98,9 +104,12 @@ export function Media({
       ) : state !== "error" ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
+          key={src}
+          ref={imageRef}
           src={useOrig ? src : rewritten}
           alt={alt}
           loading={priority ? "eager" : "lazy"}
+          decoding="async"
           // @ts-expect-error React 18 typings 不识别 fetchpriority,但 HTML 已支持
           fetchpriority={priority ? "high" : undefined}
           onLoad={() => setState("ready")}

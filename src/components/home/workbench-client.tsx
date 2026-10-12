@@ -371,8 +371,14 @@ export function WorkbenchClient() {
     let cancelled = false;
     (async () => {
       try {
+        const dayStart = new Date();
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(dayStart);
+        dayEnd.setDate(dayEnd.getDate() + 1);
+        const query = new URLSearchParams({email:user.email, view:"workbench",
+          dayStart:dayStart.toISOString(), dayEnd:dayEnd.toISOString()});
         const r = await fetch(
-          `/api/account?email=${encodeURIComponent(user.email)}`,
+          `/api/account?${query}`,
           { headers: await authHeader() }
         );
         if (!r.ok || cancelled) return;
@@ -384,7 +390,7 @@ export function WorkbenchClient() {
         const today = done.filter(
           (a) => a.createdAt && new Date(a.createdAt).toDateString() === todayStr
         ).length;
-        setStats({ today, total: done.length });
+        setStats(d.stats ?? { today, total: done.length });
         setRecent(done.slice(0, 8));
       } catch {
         if (!cancelled) setRecent([]);

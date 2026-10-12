@@ -79,8 +79,14 @@ export function onImgError(
 ): boolean {
   const img = e.currentTarget as HTMLImageElement | null;
   const orig = original ?? "";
-  if (!img || !orig || !/^https?:/.test(orig)) return false;
+  if (!img || !orig) return false;
   if (img.dataset.nvFallback) return false; // 已回退过一次,放弃
+  if (/^\/(media|demos)\//.test(orig) && img.getAttribute("src") !== orig) {
+    img.dataset.nvFallback = "1";
+    img.src = orig;
+    return true;
+  }
+  if (!/^https?:/.test(orig)) return false;
   const rewritten = cdnUrl(orig);
   if (rewritten === orig) return false; // 没配 CDN(海外/自托管),无源可换
   // 当前 src 若是原始地址 → 换改写;否则(改写/缩略地址)→ 换回原始
@@ -93,13 +99,20 @@ export function onImgError(
 
 // 列表缩略图:在 CDN(阿里 OSS 镜像)上按宽度实时缩放 + 压缩 + 转 WebP。
 // 实测 390KB → 84KB(4.6×),列表场景(首页/模板库/作品库)提速数倍。
-// 仅当 URL 已被重写到国内 CDN 域时才追加参数;海外站(无 IMG_BASE,直连 r2.dev)
-// 原样返回 —— r2.dev 不认这些参数。点开大图的场景请继续用 cdnUrl(原图)。
+// 本地 media/demos 使用 Next 缓存缩略图；国内 CDN 使用 OSS 缩放。
+// 其他远端源保持原样。下载/模型输入/点开原图继续使用原始地址。
 export function cdnThumb(
   src: string | null | undefined,
   width = 640
 ): string {
   const out = cdnUrl(src);
+  // Local previews use Next's bounded, cached image optimizer. Canonical URLs
+  // in database/model inputs/downloads remain unchanged. Do not proxy remote URLs.
+  if (/^\/(media|demos)\/[a-zA-Z0-9_./-]+\.(png|jpe?g|webp|avif)$/i.test(out) && !out.split("/").includes("..")) {
+    const widths = [256, 384, 640, 1080, 1920];
+    const size = widths.find(value => value >= width) || 1920;
+    return `/_next/image?url=${encodeURIComponent(out)}&w=${size}&q=75`;
+  }
   if (!IMG_BASE || !out.startsWith(IMG_BASE)) return out;
   if (out.includes("?")) return out; // 已带查询参数的不叠加
   return `${out}?x-oss-process=image/resize,w_${width}/quality,q_82/format,webp`;
