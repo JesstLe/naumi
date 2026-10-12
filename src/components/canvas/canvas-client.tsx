@@ -12,6 +12,7 @@ import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasParameterPopover } from "./parameter-popover";
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
+import { CanvasHelpDialog } from "./canvas-help-dialog";
 import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surface";
 import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { GenerationPlaceholder } from "./generation-placeholder";
@@ -12179,46 +12180,7 @@ export function CanvasClient() {
         </div>
       )}
       {/* 快捷键 / 帮助弹框 */}
-      {helpOpen && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={() => setHelpOpen(false)}
-        >
-          <div
-            className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-bold text-foreground">
-                {t("canvas.shortcuts")}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setHelpOpen(false)}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              {[
-                fmt(t("canvas.help1"), { mod: modifierKey }),
-                t("canvas.help2"),
-                t("canvas.help3"),
-                t("canvas.help4"),
-                t("canvas.help5"),
-                fmt(t("canvas.help6"), { mod: modifierKey }),
-                t("canvas.help7"),
-              ].map((line, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="text-primary">·</span>
-                  <span>{line}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
+      {helpOpen && <CanvasHelpDialog isMac={isMac} english={locale === "en"} onClose={() => setHelpOpen(false)} />}
       {/* 居中确认弹框(删除等),贴合站点暗色配色 */}
       {confirmModal && (
         <div
