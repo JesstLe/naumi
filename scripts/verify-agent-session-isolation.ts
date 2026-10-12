@@ -16,6 +16,7 @@ async function main() {
   const runtime = await import("../src/lib/agent/runtime");
   const workbench = await import("../src/app/api/agent/session/route");
   const control = await import("../src/app/api/agent/route");
+  const canvasControl = await import("../src/app/api/canvas/assistant/control/route");
   const { canvasAgentHistory, canvasProjectSessionPrefix } = await import("../src/lib/agent/canvas-history");
   const { signUserSession } = await import("../src/lib/native-auth");
   const email = `session-isolation-${randomUUID()}@example.test`, other = `other-${randomUUID()}@example.test`;
@@ -61,7 +62,8 @@ async function main() {
     assert.equal((await control.PATCH(request("/api/agent", "PATCH", { sessionId: wbId, message: "只调整工作台" }))).status, 200);
     assert.equal(wb.agent.hasQueuedMessages(), true); assert.equal(cv.agent.hasQueuedMessages(), false);
     wb.agent.clearAllQueues();
-    assert.equal((await control.PATCH(request("/api/agent", "PATCH", { sessionId: cvId, message: "只调整画布" }))).status, 200);
+    assert.equal((await control.PATCH(request("/api/agent", "PATCH", { sessionId: cvId, message: "只调整画布" }))).status, 400);
+    assert.equal((await canvasControl.POST(request("/api/canvas/assistant/control", "POST", { sessionId: cvId, projectKey:project, action:"steer", message: "只调整画布" }))).status, 200);
     assert.equal(cv.agent.hasQueuedMessages(), true); assert.equal(wb.agent.hasQueuedMessages(), false);
     cv.agent.clearAllQueues();
     let wbAborts = 0, cvAborts = 0;
@@ -71,7 +73,8 @@ async function main() {
     assert.equal((await control.DELETE(request("/api/agent?sessionId=" + wbId, "DELETE", undefined, otherCookie))).status, 404);
     assert.equal((await control.DELETE(request("/api/agent?sessionId=" + wbId, "DELETE"))).status, 200);
     assert.equal(wbAborts, 1); assert.equal(cvAborts, 0); assert.equal(cv.running, true);
-    assert.equal((await control.DELETE(request("/api/agent?sessionId=" + cvId, "DELETE"))).status, 200);
+    assert.equal((await control.DELETE(request("/api/agent?sessionId=" + cvId, "DELETE"))).status, 400);
+    assert.equal((await canvasControl.POST(request("/api/canvas/assistant/control", "POST", {sessionId:cvId,projectKey:project,action:"stop"}))).status,200);
     assert.equal(wbAborts, 1); assert.equal(cvAborts, 1);
     assert.equal((await workbench.PATCH(request("/api/agent/session", "PATCH", { id: wbId, title: "工作台改名" }))).status, 200);
     assert.equal((await db.getAgentSession(email, cvId))?.title, "画布独立历史");

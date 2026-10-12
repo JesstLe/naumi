@@ -5,6 +5,7 @@ import type { createModels, Model } from "@earendil-works/pi-ai";
 import type { UserMessage } from "@earendil-works/pi-ai";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
+import { AgentHarness, HarnessError, untrustedAgentData, validateHarnessHistory } from "../harness";
 import {
   NotSupportedError,
   type AgentBridge,
@@ -100,7 +101,14 @@ export class PiBridge implements AgentBridge {
     email: string;
     getCred: () => { cookie: string; authorization: string };
   }): Promise<AgentSession> {
+    validateHarnessHistory(opts.history);
+    const harness = new AgentHarness(opts.email, opts.sessionId);
+    harness.configure(opts.tools.map(t => ({...t, write:t.write !== false})));
+    harness.protectPrompt(opts.systemPrompt);
+    const credentials = opts.getCred(); harness.registerSecret(credentials.cookie); harness.registerSecret(credentials.authorization);
+    harness.registerSecret((await getOpenAISettings()).apiKey);
     const scope = currentModelExecution("text") || currentModelExecution("vision");
+    harness.registerSecret(scope?.connection.apiKey);
     const managed = scope ? await configuredPiModels(scope,{userEmail:opts.email,feature:'agent.text'}) : null;
     const models = managed?.models || await this.ensureModels();
     const model = models.getModel("naumi-relay", managed?.wireModel || MODEL_ID) as Model<typeof MODEL_API>;
@@ -110,8 +118,14 @@ export class PiBridge implements AgentBridge {
       initialState: {
         systemPrompt: opts.systemPrompt,
         model,
-        // 业务工具经 naumi-tools 工厂产出,已是 pi-agent AgentTool 形态
-        tools: opts.tools as never,
+        // Bridge definitions are adapted into the same enforced execution boundary.
+        tools: opts.tools.map(tool => ({
+          name:tool.name,label:tool.name,description:tool.description,parameters:tool.parameters,
+          execute:async (id:string,args:Record<string,unknown>,signal?:AbortSignal) => harness.execute(tool.name,args,id,signal,async owned => {
+            const result = harness.sanitize(await tool.execute(args,{signal:owned}));
+            return {content:[{type:"text" as const,text:untrustedAgentData("tool-result",result.text)}],details:{...result.data,publicSummary:result.publicSummary}};
+          }),
+        })) as never,
         messages: opts.history.map(
           (m): UserMessage => ({
             role: "user",
@@ -123,21 +137,26 @@ export class PiBridge implements AgentBridge {
           })
         ),
       },
-      streamFn: (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:opts.email,feature:'agent.text'}}), maxRetries: 0 }),
+      streamFn: (model, context, options) => { harness.requireActive(); return models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:opts.email,feature:'agent.text'}}), maxRetries: 0 }); },
       toolExecution: "sequential",
+      prepareNextTurn: () => { harness.modelStep(); return undefined; },
       beforeToolCall: async (context: unknown) => {
-        if (!opts.beforeToolCall) return undefined;
         const tc = (
           context as {
             toolCall?: { name?: string; arguments?: Record<string, unknown> };
           }
         ).toolCall;
-        if (!tc) return undefined;
-        const reason = await opts.beforeToolCall(
+        if (!tc) return {block:true,terminate:true,reason:"工具请求无效"};
+        const actual = context as {toolCall:{id:string;name:string};args:Record<string,unknown>};
+        try { harness.check(actual.toolCall.name, actual.args); }
+        catch(error) { return {block:true,terminate:true,reason:error instanceof HarnessError ? error.message : "工具校验失败"}; }
+        if (!opts.beforeToolCall && opts.tools.find(t => t.name === tc.name)?.write !== false) return {block:true,terminate:true,reason:"写工具缺少计费授权检查"};
+        const reason = await opts.beforeToolCall?.(
           tc.name || "",
-          tc.arguments ?? {}
+          actual.args
         );
         if (reason) return { block: true, reason, terminate: true };
+        harness.permit(actual.toolCall.name,actual.args,actual.toolCall.id);
         return undefined;
       },
     });
@@ -169,7 +188,7 @@ export class PiBridge implements AgentBridge {
             id: e.toolCallId,
             tool: e.toolName ?? "",
             summary:
-              details?.publicSummary ||
+              (details?.publicSummary ? harness.publicText(details.publicSummary) : "") ||
               (ok ? "工具执行完成" : "工具执行失败，请查看安全错误提示"),
             isError: !ok,
           },
@@ -178,7 +197,7 @@ export class PiBridge implements AgentBridge {
         const text = (e.message.content || [])
           .map((c) => {
             const rec = c as Record<string, unknown>;
-            return rec.type === "text" ? String(rec.text ?? "") : "";
+            return rec.type === "text" ? harness.publicText(String(rec.text ?? "")) : "";
           })
           .join("")
           .trim();
@@ -196,8 +215,12 @@ export class PiBridge implements AgentBridge {
       sessionId: opts.sessionId,
       isRunning: () => running,
       async run(message: string, onEvent: (e: HubAgentEvent) => void) {
+        if (running) throw new HarnessError("RUN_INACTIVE",409);
+        harness.begin(message,()=>agent.abort());
+        harness.modelStep();
+        lastReplyText="";
         running = true;
-        cursor = 0;
+        cursor = events.length;
         const forward = setInterval(() => {
           for (; cursor < events.length; cursor++) {
             const e = events[cursor];
@@ -209,6 +232,7 @@ export class PiBridge implements AgentBridge {
         } finally {
           clearInterval(forward);
           running = false;
+          harness.finish();
         }
         for (; cursor < events.length; cursor++) {
           const e = events[cursor];
@@ -226,6 +250,7 @@ export class PiBridge implements AgentBridge {
         });
       },
       async abort() {
+        harness.stop();
         agent.abort();
         running = false;
       },

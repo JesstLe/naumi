@@ -1,7 +1,7 @@
 import { resolveImageSkill } from "@/lib/image-skills/server";
 import { SkillError } from "@/lib/image-skills/catalog";
 import "server-only";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { authenticatedEmail } from "../request-auth";
 import { dbEnabled, getPool, listArtworksByIds, type ArtworkRecord } from "../db";
@@ -15,6 +15,7 @@ import { getOrCreateSession, primeAgentSystemPrompt, resolveVisionImages, persis
 import { canvasSessionPrefix, canvasProjectSessionPrefix, canvasAgentHistory } from "./canvas-history";
 import { classifyAgentFailure } from "./recovery";
 import type { CanvasAgentContext } from "./canvas-context";
+import { readHarnessBody } from "./harness";
 
 type Artifact = { id: string; image: string; title: string };
 const record = (value: unknown): Record<string, any> => value && typeof value === "object" ? value as Record<string, any> : {};
@@ -38,7 +39,7 @@ export async function runCanvasAgent(request: Request) {
   const email = await authenticatedEmail(request);
   if (!dbEnabled || !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if (!rateLimit(`canvas-agent:${email}`, 40, 600000)) return NextResponse.json({ error: "请求过于频繁，请稍后重试" }, { status: 429 });
-  const body = record(await request.json().catch(() => null));
+  const body = record(await readHarnessBody(request));
   const anchorId = String(body.anchorId || "").trim();
   const history = (Array.isArray(body.messages) ? body.messages : []).map(record).filter(turn => ["user", "assistant"].includes(turn.role) && typeof turn.content === "string").slice(-12).map(turn => ({role:String(turn.role),content:String(turn.content).slice(0,4000)}));
   const message = String(history.at(-1)?.role === "user" ? history.at(-1)?.content : "").trim().slice(0, 4000);
@@ -93,7 +94,7 @@ export async function runCanvasAgent(request: Request) {
   }, imageSkill);
   if (session.running || session.canvasExecuting) return NextResponse.json({ error: "当前任务仍在执行，请勿重复提交" }, { status: 409 });
   liveSession=session;session.toolResultsPending=undefined;
-  session.turnId = String(body.turnId || body.sessionId);
+  session.turnId = randomUUID();
   if (!session.agent.state.messages.length) session.title = message.slice(0,120);
   const messageIndex=session.agent.state.messages.filter(turn=> { if(turn.role!=="user"&&turn.role!=="assistant")return false; return typeof turn.content==="string" ? !!turn.content.trim() : turn.content.some(part=>part.type==="text"&&!!part.text.trim()); }).length;
   appendSessionEvent(session,"canvas_turn",{turnId:session.turnId,anchorId,projectKey,message,messageIndex,skill:imageSkill ? {id:imageSkill.id,revision:imageSkill.revision,name:imageSkill.name} : null});

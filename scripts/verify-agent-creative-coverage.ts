@@ -60,14 +60,14 @@ async function main(){
   await invoke("generate_variations",{image_urls:[image_url],count:2});await invoke("fuse_images",{image_urls:[image_url,image_url],count:2},true);
   const gen=calls.filter(c=>c.path==="/api/generate-image"&&c.method==="POST");assert.equal(gen.length,2);assert.equal(gen[0].form.category[0],"variation");assert.equal(gen[1].form.category[0],"fusion");assert.equal(gen[1].form.image.length,2);assert.equal(gen[1].form.origin,undefined);assert.equal(gen[1].form.model,undefined);
   assert.ok(calls.every(c=>c.cookie==="fixture-cookie"&&c.authorization==="Bearer fixture-token"));
-  status=503;const before=calls.length;await assert.rejects(()=>invoke("upscale_image",{image_url}),/fixture upstream/);assert.equal(calls.length-before,1,"charged POST is not retried");status=200;
+  status=503;const before=calls.length;await assert.rejects(()=>invoke("upscale_image",{image_url}),/工具接口调用失败/);assert.equal(calls.length-before,1,"charged POST is not retried");status=200;
   empty=true;await assert.rejects(()=>invoke("cutout_image",{image_url}),/有效产物/);empty=false;
   const aborted=new AbortController();aborted.abort();const count=calls.length;await assert.rejects(()=>standalone.find(t=>t.name==="cutout_image")!.execute("aborted",{image_url},aborted.signal));assert.equal(calls.length,count);
   const catalog=await invoke("list_agent_tools",{});assert.ok(JSON.stringify(catalog).includes("mask_url"));
   await mkdir("output/agent-lifecycle-tool-coverage-20261011",{recursive:true});await writeFile("output/agent-lifecycle-tool-coverage-20261011/tool-coverage.json",JSON.stringify({source:"isolated adapter API fixture, not live provider validation",entries:rows,calls,totalAgentTools:standalone.length},null,2));
   const beforeInvalid=calls.length;await assert.rejects(invoke("edit_competitor",{item_id:fixtureId,revision:0,active_version:"",regions:[]},true),/编辑区域/);assert.equal(calls.length,beforeInvalid);
   const textCanvas=createNaumiTools(new Request(origin),"fixture@example.test",()=>({cookie:"fixture",authorization:""}),undefined,{anchorId:"",imageUrls:[],imageModelId:"image-a",ratio:"1:1",resolution:"1K",quality:"medium"});
-  await assert.rejects(async()=>textCanvas.find(t=>t.name==="recolor_product")!.execute("no-ref",{color:"blue"},undefined),/提供.*图片/);assert.equal(calls.length,beforeInvalid);
+  await assert.rejects(async()=>textCanvas.find(t=>t.name==="recolor_product")!.execute("no-ref",{image_url:"",color:"blue",strength:100},undefined),/提供.*图片/);assert.equal(calls.length,beforeInvalid);
   assert.equal(describeNaumiTools(standalone).find(t=>t.name==="check_image_ip")!.write,true);
   console.log(`CREATIVE_AGENT_COVERAGE=PASS ENTRIES=26 EXECUTABLE_ENTRIES=25 AGENT_ENTRY=1 SAME_TOOLSET=WORKBENCH_CANVAS_ORB ADAPTER_CALLS=${calls.length} POST_RETRY=0 CANCEL=PASS EMPTY_OUTPUT=REJECTED PAID_UPSTREAM_CALLS=0`);
  }finally{await new Promise<void>(r=>server.close(()=>r()));}

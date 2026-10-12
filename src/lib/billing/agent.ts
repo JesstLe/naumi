@@ -53,6 +53,10 @@ export type AgentBillingSession = {
     pendingQuotes?: Map<string, Pick<BillingQuote, "configVersion" | "requestedCredits"> & Partial<Pick<BillingQuote,"modelVersion" | "authorizedCredits" | "imagePreset">>>;
     turnId?: string;
     pendingQuoteTurns?: Map<string,string>;
+    pendingQuoteExpires?: Map<string,number>;
+    /** Set only at the server's authenticated prompt ingress, never from tool args/history. */
+    userConfirmedQuote?: boolean;
+    lastPendingQuoteKey?: string;
     preparedBilling?: {
         billingVersion: number;
         billingCredits: number;
@@ -78,12 +82,16 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
     delete pricingArgs.confirm;
     const quoteKey = name + ":" + stableJson(pricingArgs), previous = session.pendingQuotes?.get(quoteKey);
     session.pendingQuotes ??= new Map();
+    if (session.pendingQuotes.size >= 32 && !session.pendingQuotes.has(quoteKey)) return { block:true, terminate:true, reason:"待确认报价过多，请缩小任务范围" };
     session.pendingQuotes.set(quoteKey, quoted.quote);
-    if(session.turnId && (meta.cost>=quoted.threshold || costPlus)) {
+    if(meta.cost>=quoted.threshold || costPlus) {
         session.pendingQuoteTurns ??= new Map();
+        session.pendingQuoteExpires ??= new Map();
         const promptedTurn=session.pendingQuoteTurns.get(quoteKey);
-        if(args.confirm!==true || !previous || promptedTurn===session.turnId){
-            session.pendingQuoteTurns.set(quoteKey,session.turnId);
+        if(args.confirm!==true || !previous || !session.userConfirmedQuote || !session.turnId || promptedTurn===session.turnId || (session.pendingQuoteExpires.get(quoteKey)||0)<Date.now()){
+            session.pendingQuoteTurns.set(quoteKey,session.turnId||"untrusted");
+            session.pendingQuoteExpires.set(quoteKey,Date.now()+10*60_000);
+            session.lastPendingQuoteKey=quoteKey;
             return {block:true,terminate:true,attention:"waiting" as const,reason:`本次「${meta.label}」预计 ${meta.cost} 积分，最高授权 ${cap} 积分。请向用户展示报价并等待下一条消息明确同意后再执行；本轮不能自行确认。`};
         }
     }
@@ -91,8 +99,14 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
     if ((args as {
         confirm?: unknown;
     }).confirm === true && previous && (previous.configVersion !== quoted.quote.configVersion || previous.requestedCredits !== quoted.quote.requestedCredits || previous.authorizedCredits !== quoted.quote.authorizedCredits || previous.modelVersion !== quoted.quote.modelVersion))
-        return { block: true, attention: "waiting" as const, reason: `价格已更新，本次需要 ${meta.cost} 积分。请重新向用户报价并等待明确同意。` };
-    session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: costPlus?cap:quoted.quote.requestedCredits, billingOperationId: fingerprint({ session: session.id, call: callId }) };
+        {
+            session.userConfirmedQuote=false;
+            session.pendingQuoteTurns?.set(quoteKey,session.turnId||"untrusted");
+            session.pendingQuoteExpires?.set(quoteKey,Date.now()+10*60_000);
+            session.lastPendingQuoteKey=quoteKey;
+            return { block: true, terminate:true, attention: "waiting" as const, reason: `价格已更新，本次需要 ${meta.cost} 积分。请重新向用户报价并等待明确同意。` };
+        }
+    session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: costPlus?cap:quoted.quote.requestedCredits, billingOperationId: fingerprint({ session: session.id, turn: session.turnId, call: callId }) };
     const u = await getUser(session.email);
     if (!u)
         return { block: true, attention: "restricted" as const, reason: "积分账户不可用，请先登录后重试" };
@@ -116,6 +130,12 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
             attention: "waiting" as const,
             reason: `本次「${meta.label}」预计消耗约 ${meta.cost} 积分${costPlus?`，按实际API成本结算，最多授权 ${cap} 积分`:""}(当前余额 ${balance})。请先用一句话向用户报出这笔花费并等待明确同意;用户同意后,携带参数 confirm=true 重新调用本工具;用户拒绝或未回复就不要执行,可给出更小规模的替代方案。不要在未获得用户同意的情况下自行携带 confirm=true。`,
         };
+    }
+    if (meta.cost >= quoted.threshold || costPlus) {
+        // One server quote, one authentic confirmation, one submission. Never reusable by the model.
+        session.userConfirmedQuote = false;
+        session.pendingQuotes.delete(quoteKey); session.pendingQuoteTurns?.delete(quoteKey); session.pendingQuoteExpires?.delete(quoteKey);
+        if(session.lastPendingQuoteKey===quoteKey)session.lastPendingQuoteKey=undefined;
     }
     return undefined;
 }

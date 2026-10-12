@@ -129,9 +129,9 @@ async function main(){
   const imageAsText=new Request(f.origin+"/api/canvas/assistant",{method:"POST",headers:{cookie,"content-type":"application/json","x-naumi-feature-model":"image-a"},body:JSON.stringify(task)});assert.ok([400,409].includes((await handler(imageAsText)).status));
   const charges=await db.getPool().query("SELECT quote,charged_credits FROM app_billing_operations WHERE email=$1 AND feature='canvas.image'",[email]);assert.equal(charges.rows.length,1);assert.equal(Number(charges.rows[0].charged_credits),4);
   const {agentBillingPrecheck}=await import("../src/lib/billing/agent"),session={email,id:randomUUID(),cred:{cookie,authorization:"",canvas:{anchorId:"anchor",imageUrls:[],imageModelId:"image-a",quality:"medium",ratio:"1:1",resolution:"1K"}}};
-  const canvasSession={...session,turnId:"turn-one"};
+  const canvasSession={...session,turnId:"turn-one",userConfirmedQuote:false};
   const expensive=structuredClone(config);expensive.thresholds.agentConfirmCredits=3;await billing.config.publish({id:randomUUID(),expectedVersion:price.version,config:expensive,actor:"fixture",reason:"confirmation fixture"});assert.equal((await agentBillingPrecheck(session,"recolor_product",{color:"#0000FF"},randomUUID()))?.block,true);
-  assert.equal((await agentBillingPrecheck(canvasSession,"recolor_product",{color:"#0000FF",confirm:true},randomUUID()))?.block,true);assert.equal((await agentBillingPrecheck(canvasSession,"recolor_product",{color:"#0000FF",confirm:true},randomUUID()))?.block,true);canvasSession.turnId="turn-two";assert.equal(await agentBillingPrecheck(canvasSession,"recolor_product",{color:"#0000FF",confirm:true},randomUUID()),undefined);
+  assert.equal((await agentBillingPrecheck(canvasSession,"recolor_product",{color:"#0000FF",confirm:true},randomUUID()))?.block,true);assert.equal((await agentBillingPrecheck(canvasSession,"recolor_product",{color:"#0000FF",confirm:true},randomUUID()))?.block,true);canvasSession.turnId="turn-two";canvasSession.userConfirmedQuote=true;assert.equal(await agentBillingPrecheck(canvasSession,"recolor_product",{color:"#0000FF",confirm:true},randomUUID()),undefined);
   analysis=false; textOnly=false;
   const latestBilling=await billing.config.current(), confirmConfig=structuredClone(latestBilling.config);
   confirmConfig.thresholds.agentConfirmCredits=1;

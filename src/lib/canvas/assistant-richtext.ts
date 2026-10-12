@@ -1,5 +1,6 @@
 import { unified } from "unified";
 import remarkParse from "remark-parse";
+import { agentMediaUrl } from "../agent/media-policy";
 
 export type AssistantContentPart = { kind: "markdown" | "generate"; content: string };
 type PositionedNode = { type: string; children?: PositionedNode[]; position?: { start: { offset?: number }; end: { offset?: number } } };
@@ -37,6 +38,6 @@ export function splitAssistantContent(content: string): AssistantContentPart[] {
 export function assistantUrl(value: string, key = "href") {
   const url = value.trim();
   if (!url || /[\u0000-\u0020\\]/.test(url)) return "";
-  if (key === "src") return /^\/(?:media|api\/media|uploads)\//.test(url) ? url : "";
+  if (key === "src") return agentMediaUrl(url);
   return /^(https?:\/\/|mailto:)/i.test(url) || /^\/(?!\/)/.test(url) || url.startsWith("#") ? url : "";
 }

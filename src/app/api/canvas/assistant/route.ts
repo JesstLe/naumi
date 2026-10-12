@@ -21,6 +21,8 @@ import { CANVAS_TEXT_OUTPUT_INSTRUCTION, canvasTextInput, canvasAnswerText, canv
 import { withBillingRequest, configuredToolCost, completeSynchronousStream, failSynchronousStream } from "@/lib/billing/synchronous";
 import { runCanvasAgent } from "@/lib/agent/canvas";
 import { canvasAgentHistory } from "@/lib/agent/canvas-history";
+import { readHarnessBody, harnessErrorResponse, HarnessError, AgentHarness, PublicOutputBuffer, untrustedAgentData } from "@/lib/agent/harness";
+import { assertMediaUrl, publicImageBytes, readBoundedBytes } from "@/lib/agent/harness-network";
 
 // ---------------------------------------------------------------------------
 // 画布助手:围绕选中节点 + 其上游生成链的多轮对话(后台可配置,默认免费)。
@@ -98,15 +100,21 @@ async function readReferenceImage(source: string, requestUrl: string): Promise<s
 
   const sameOrigin = source.startsWith("/") && !source.startsWith("//");
   const target = sameOrigin ? new URL(source, requestUrl) : new URL(source);
+  assertMediaUrl(source, new URL(requestUrl).origin);
   if (!sameOrigin && !allowedRemoteImage(target)) throw new Error("参考图片来源不受支持");
+  if (!sameOrigin) {
+    const remote = await publicImageBytes(target, new RegExp(`^${target.hostname.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}$`, "i"), MAX_REFERENCE_BYTES, AbortSignal.timeout(30_000));
+    return toVisionDataUrl(remote.bytes, remote.contentType);
+  }
   const response = await fetch(target, {
+    redirect:"error",
     cache: "no-store",
     signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok) throw new Error(`读取参考图片失败 (${response.status})`);
   const declaredSize = Number(response.headers.get("content-length") || 0);
   if (declaredSize > MAX_REFERENCE_BYTES) throw new Error("参考图片超过 12MB");
-  const raw = Buffer.from(await response.arrayBuffer());
+  const raw = await readBoundedBytes(response, MAX_REFERENCE_BYTES);
   if (raw.byteLength > MAX_REFERENCE_BYTES) throw new Error("参考图片超过 12MB");
   return toVisionDataUrl(raw, response.headers.get("content-type") || mediaTypeFromPath(source));
 }
@@ -202,7 +210,7 @@ async function handleObservedPost(request: Request) {
     > = [
       {
         type: "text",
-        text: `以下是画布上下文（第一张是当前图，其余是它的上游生成链，按从近到远排列）：\n\n${contextMetadata(ordered[0], ordered.slice(1))}`,
+        text: untrustedAgentData("artwork-metadata", contextMetadata(ordered[0], ordered.slice(1))),
       },
       ...contextImages.map((url) => ({
         type: "image_url" as const,
@@ -227,7 +235,7 @@ async function handleObservedPost(request: Request) {
         max_tokens: 1800,
         modalities: ["text"],
         stream: true,
-      });
+      }, { signal: AbortSignal.any([request.signal, AbortSignal.timeout(120_000)]) });
     } catch (error) {
       return NextResponse.json(
         { error: safeError(error, "画布助手暂时不可用，请稍后重试") },
@@ -246,7 +254,12 @@ async function handleObservedPost(request: Request) {
             /* 连接已断开,迭代结束由 close 兜底 */
           }
         };
+        const harness = new AgentHarness(email, "legacy-canvas-assistant");
+        harness.registerSecret(apiKey); harness.registerSecret(request.headers.get("cookie") || ""); harness.registerSecret(request.headers.get("authorization") || "");
+        harness.registerSecret((await import("@/lib/model-config/context")).currentModelExecution("text")?.connection.apiKey);
+        harness.protectPrompt(SYSTEM_PROMPT);
         let text = "";
+        const output = new PublicOutputBuffer(harness, delta => { text += delta; send("delta", { text:delta }); });
         let lastChoice: unknown;
         let imageChoice: unknown;
         try {
@@ -258,8 +271,9 @@ async function handleObservedPost(request: Request) {
               if (code === "TEXT_OUTPUT_IMAGE" || code === "TEXT_OUTPUT_REFUSED") imageChoice = choice;
             }
             const delta = canvasAnswerText(choice?.delta?.content);
-            if (delta) { text += delta; send("delta", { text: delta }); }
+            if (delta) output.push(delta);
           }
+          output.finish();
           if (!text.trim() || imageChoice) {
             const failure = canvasTextFailure(imageChoice || lastChoice);
             reportCanvasTextFailure("assistant", failure.code);
@@ -296,8 +310,11 @@ async function handleObservedPost(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const agentMode = (await request.clone().json().catch(() => null))?.mode === "agent";
-  return withBillingRequest(request, "canvas.assistant", () => withBiRequest(request, () => agentMode ? runCanvasAgent(request) : handleObservedPost(request)));
+  try {
+    const body = await readHarnessBody(request);
+    const validated = new Request(request.url, {method:request.method, headers:request.headers, signal:request.signal, body:JSON.stringify(body)});
+    return await withBillingRequest(validated, "canvas.assistant", () => withBiRequest(validated, () => body.mode === "agent" ? runCanvasAgent(validated) : handleObservedPost(validated)));
+  } catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }
 export const GET = canvasAgentHistory;
 export const PATCH = canvasAgentHistory;

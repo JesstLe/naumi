@@ -44,7 +44,8 @@ async function main() {
     process.env.AGENT_API_KEY = "fixture";
     const runtime = await import("../src/lib/agent/runtime");
     const selectedSession = await runtime.getOrCreateSession(owner, "ag-skill-switch", [], undefined, "fixture-text", undefined, current);
-    ok(selectedSession.agent.state.systemPrompt.includes(current.name));
+    ok(!selectedSession.agent.state.systemPrompt.includes(current.name));
+    ok(JSON.stringify(await selectedSession.agent.transformContext!(selectedSession.agent.state.messages)).includes(current.name));
     runtime.appendSessionEvent(selectedSession, "image_skill", { id: current.id, revision: current.revision });
     selectedSession.agent.state.messages = runtime.toUserMessages([{ role: "user", content: "本次商品要求蓝色背景" }]);
     await runtime.persistAgentSession(selectedSession);

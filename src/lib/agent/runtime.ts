@@ -24,6 +24,9 @@ import type { CanvasAgentContext } from "./canvas-context";
 import { buildAgentSystemPrompt, latestUserText, pelicanPromptSection } from "./response-policy";
 import { imageSkillPrompt, type ImageSkill } from "@/lib/image-skills/catalog";
 import { readPelicanArtifact } from "./pelican-artifact";
+import { AgentHarness, HarnessError, PublicOutputBuffer, explicitQuoteConsent, untrustedAgentData, validateHarnessHistory } from "./harness";
+import { assertMediaUrl, publicImageBytes, readBoundedBytes } from "./harness-network";
+import { describeNaumiTools } from "./naumi-tools";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 运行时:常驻 Agent 会话管理器。
@@ -74,6 +77,10 @@ export function markVisionUnsupported(
 
 // 各工具的预估单价(积分),与站内 API 实际扣费保持一致(粗粒度预检用)。
 export type Session = {
+  harness: AgentHarness;
+  userConfirmedQuote?: boolean;
+  lastPendingQuoteKey?: string;
+  pendingQuoteExpires?: Map<string,number>;
   modelExecutionStamp?: string;
   agent: Agent;
   modelId: string;
@@ -110,6 +117,7 @@ export type Session = {
 };
 
 const SESSIONS = new Map<string, Session>();
+const CREATING = new Map<string, Promise<Session>>();
 const providerModels = new Map<string, ReturnType<typeof createModels>>();
 
 function gcSessions() {
@@ -215,6 +223,15 @@ export function primeAgentSystemPrompt(session: Session, message: string) {
 }
 
 export async function getOrCreateSession(
+  ...args: Parameters<typeof createRuntimeSession>
+): Promise<Session> {
+  const sessionKey=key(args[0].trim().toLowerCase(),args[1]);
+  const pending=CREATING.get(sessionKey);if(pending)return pending;
+  const promise=createRuntimeSession(...args);CREATING.set(sessionKey,promise);
+  try{return await promise;}finally{if(CREATING.get(sessionKey)===promise)CREATING.delete(sessionKey);}
+}
+
+async function createRuntimeSession(
   email: string,
   sessionId: string,
   history: { role: string; content: string }[],
@@ -223,6 +240,8 @@ export async function getOrCreateSession(
   options?: { systemPrompt: string; canvas: CanvasAgentContext; onToolResult: (result: unknown, tool: string) => Promise<void> },
   imageSkill?: ImageSkill | null
 ): Promise<Session> {
+  email = email.trim().toLowerCase();
+  validateHarnessHistory(history);
   gcSessions();
   const scope = currentModelExecution("text") || currentModelExecution("vision");
   const managed = scope ? await configuredPiModels(scope,{userEmail:email,feature:options ? 'canvas.assistant' : 'agent.text'}) : null;
@@ -231,7 +250,7 @@ export async function getOrCreateSession(
   if (existing && (existing.running || existing.canvasExecuting || existing.modelId === modelId && existing.modelExecutionStamp === managed?.stamp && existing.contextStamp === contextStamp)) {
     existing.lastUsedAt = Date.now();
     // 凭证刷新:token/会话可能已轮换,常驻实例必须用最新凭证
-    existing.cred = { ...cred, canvas: options?.canvas };
+    if (!existing.running && !existing.canvasExecuting) existing.cred = { ...cred, canvas: options?.canvas };
     if (!existing.running && !existing.canvasExecuting) existing.onToolResult = options?.onToolResult;
     return existing;
   }
@@ -248,6 +267,7 @@ export async function getOrCreateSession(
     : null;
   const savedHistory = Array.isArray(persisted?.messages) ? persisted.messages.filter((turn:any)=>["user","assistant"].includes(turn?.role)&&typeof turn?.content==="string").map((turn:any)=>({role:String(turn.role),content:String(turn.content)})) : history;
   const session: Session = {
+    harness: new AgentHarness(email, sessionId, event => appendSessionEvent(session, "harness", event)),
     id: sessionId,
     modelId,
     modelExecutionStamp: managed?.stamp,
@@ -267,23 +287,39 @@ export async function getOrCreateSession(
   const { Agent } = await import("@earendil-works/pi-agent-core");
   // Renew only the signature lifetime: every child call retains this session's accepted versions.
   const acceptedBundle = currentExecutionBundle();
+  session.harness.registerSecret(cred.cookie); session.harness.registerSecret(cred.authorization);
+  session.harness.registerSecret(scope?.connection.apiKey);
+  const settings = await import("@/lib/settings").then(m => m.getOpenAISettings());
+  session.harness.registerSecret(settings.apiKey);
+  const tools = createNaumiTools(
+    new Request(process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"), email,
+    () => ({...session.cred,...session.preparedBilling}),
+    acceptedBundle ? () => signAcceptedModelContext(email, acceptedBundle) : undefined,
+    options?.canvas, session.harness,
+  );
+  session.harness.configure(describeNaumiTools(tools));
   const agent = new Agent({
     initialState: {
-      systemPrompt: buildAgentSystemPrompt(AGENT_SYSTEM_PROMPT, (options?.systemPrompt || "") + imageSkillPrompt(imageSkill || null), latestUserText({ messages: savedHistory })),
+      systemPrompt: buildAgentSystemPrompt(AGENT_SYSTEM_PROMPT, "", latestUserText({ messages: savedHistory })),
       model: model as Model<"openai-completions">,
-      tools: createNaumiTools(
-        new Request(process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"),
-        email,
-        () => ({...session.cred,...session.preparedBilling}),
-        acceptedBundle ? () => signAcceptedModelContext(email, acceptedBundle) : undefined,
-        options?.canvas
-      ),
+      tools,
       messages: conversationMessages(savedHistory,managed?.wireModel||modelId),
     },
-    streamFn: (model, context, options) => models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 }),
+    streamFn: (model, context, options) => { session.harness.requireActive(); return models.streamSimple(model, context, { ...options, fetch: managed?.fetch || supplierCostFetch(fetch,{providerId:'legacy-agent',baseUrl:model.baseUrl,protocol:'openai-chat',wireModel:model.id,actor:{userEmail:email,feature:'agent.text'}}), maxRetries: 0 }); },
     toolExecution: "sequential",
+    transformContext: async messages => {
+      // Personal workflows and artwork metadata stay outside the system role.
+      const data = (options?.systemPrompt || "") + imageSkillPrompt(imageSkill || null);
+      return data ? [{role:"user" as const,content:untrustedAgentData("canvas-and-skill",data),timestamp:Date.now()}, ...messages] : messages;
+    },
     // 积分预检:工具执行前查余额,不足直接拦截(硬门禁,不靠提示词自觉)
     beforeToolCall: async ({ toolCall, args, context }) => {
+      try { session.harness.check(toolCall.name, args); }
+      catch (error) {
+        const failure = error instanceof HarnessError ? error : new HarnessError("ARGUMENT_INVALID");
+        appendSessionEvent(session, "attention", {kind:"restricted",tool:toolCall.name,message:failure.message,code:failure.code});
+        return {block:true,terminate:true,reason:failure.message};
+      }
       const signature = `${toolCall.name}:${stableJson(args)}`;
       if (signature === session.repeatSignature) session.repeatCount += 1;
       else {
@@ -300,22 +336,30 @@ export async function getOrCreateSession(
         };
       }
       const precheck = () => agentBillingPrecheck(session,toolCall.name,args as Record<string,unknown>,toolCall.id);
-      const result = await (acceptedBundle ? withFrozenExecutionBundle(acceptedBundle, precheck) : precheck());
+      const result = session.harness.sanitize(await (acceptedBundle ? withFrozenExecutionBundle(acceptedBundle, precheck) : precheck()));
       // Typed presentation signal only; billing decisions and public reply stay intact.
       if (result && "attention" in result && result.attention) appendSessionEvent(session, "attention", { kind: result.attention, tool: toolCall.name, message: result.reason });
       else if (!result?.block) {
         const pending = session.events.findLast(event => event.type === "attention");
         if (pending?.data.tool === toolCall.name && pending.data.kind !== "resolved") appendSessionEvent(session, "attention", { kind: "resolved", tool: toolCall.name });
       }
+      if (!result?.block) {
+        try { session.harness.permit(toolCall.name, args, toolCall.id); }
+        catch (error) { return {block:true,terminate:true,reason:error instanceof HarnessError ? error.message : "工具授权失败"}; }
+      }
       return result;
     },
   });
 
   let modelStartedAt = 0;
+  let publicOutput: PublicOutputBuffer | undefined;
   agent.subscribe(async (event) => {
-    if (event.type === "message_start" && event.message.role === "assistant") modelStartedAt = Date.now();
+    if (event.type === "message_start" && event.message.role === "assistant") {
+      modelStartedAt = Date.now();
+      publicOutput = new PublicOutputBuffer(session.harness, text => session.onDelta?.(text));
+    }
     const push = (type: string, data: Record<string, unknown>) => {
-      session.events.push({ type, at: Date.now(), data });
+      session.events.push({ type, at: Date.now(), data: session.harness.sanitize(data) });
       if (session.events.length > 400) session.events.splice(0, 200);
     };
     if (event.type === "tool_execution_start") {
@@ -357,11 +401,15 @@ export async function getOrCreateSession(
       };
       const delta = e.assistantMessageEvent;
       if (delta?.type === "text_delta" && delta.delta && session.onDelta) {
-        session.onDelta(delta.delta);
+        publicOutput?.push(delta.delta);
       }
     } else if (event.type === "message_end") {
       const e = event as unknown as { message: { role: string; content: unknown[] } };
       if (e.message?.role === "assistant") {
+        publicOutput?.finish(); publicOutput = undefined;
+        for (const part of e.message.content || []) {
+          if (part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part) part.text = session.harness.publicText(String(part.text));
+        }
         const message = event.message as {model?: string; provider?: string; responseModel?: string; stopReason?: string; usage?: {input?: number; output?: number}};
         if (message.model && message.provider !== "naumi-local") void recordBiModelCompletion({
           email, operation: "agent", operationId: sessionId,
@@ -396,12 +444,28 @@ export async function getOrCreateSession(
   });
 
   session.agent = agent;
+  session.harness.protectPrompt(agent.state.systemPrompt);
+  const originalPrompt = agent.prompt.bind(agent);
+  const originalAbort = agent.abort.bind(agent);
+  agent.abort = () => { session.harness.stop(); originalAbort(); };
+  let lastPromptTurn = "";
+  agent.prompt = (async (input: unknown, images?: ImageContent[]) => {
+    if (typeof input !== "string") throw new HarnessError("INPUT_INVALID");
+    session.userConfirmedQuote = explicitQuoteConsent(input) && !!session.lastPendingQuoteKey && !!session.pendingQuotes?.has(session.lastPendingQuoteKey);
+    if (!session.turnId || session.turnId === lastPromptTurn) session.turnId = crypto.randomUUID();
+    lastPromptTurn = session.turnId;
+    session.harness.begin(input, originalAbort, session.userConfirmedQuote ? [session.lastPendingQuoteKey!] : []);
+    session.harness.modelStep();
+    agent.prepareNextTurn=()=>{session.harness.modelStep();return undefined;};
+    try { return await originalPrompt(session.harness.publicText(input,false), images); }
+    finally { session.userConfirmedQuote = false; session.harness.finish(); }
+  }) as typeof agent.prompt;
   SESSIONS.set(key(email, sessionId), session);
   return session;
 }
 
 export function key(email: string, sessionId: string) {
-  return `${email}::${sessionId}`;
+  return `${email.trim().toLowerCase()}::${sessionId}`;
 }
 
 export function getSession(email: string, sessionId: string): Session | null {
@@ -434,9 +498,11 @@ export function refreshSessionCredentials(
   request: Request
 ): void {
   session.cred = {
+    ...session.cred,
     cookie: request.headers.get("cookie") ?? "",
     authorization: request.headers.get("authorization") ?? "",
   };
+  session.harness.registerSecret(session.cred.cookie); session.harness.registerSecret(session.cred.authorization);
   session.lastUsedAt = Date.now();
 }
 
@@ -445,7 +511,7 @@ export function appendSessionEvent(
   type: string,
   data: Record<string, unknown>
 ) {
-  session.events.push({ type, at: Date.now(), data });
+  session.events.push({ type, at: Date.now(), data: session.harness.sanitize(data) });
   if (session.events.length > 400) session.events.splice(0, 200);
 }
 
@@ -460,15 +526,15 @@ export async function persistAgentSession(session: Session): Promise<void> {
           .join("")
           .trim()
       : typeof message.content === "string" ? message.content : "";
-    return content ? [{ role: message.role, content }] : [];
+    return content ? [{ role: message.role, content: session.harness.publicText(content, message.role === "assistant") }] : [];
   });
   const steps = session.events
-    .filter((event) => ["plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
+    .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
     .map((event) => ({ type: event.type, ...event.data }));
   await saveAgentSession(
     session.email,
     session.id,
-    session.title,
+    session.harness.publicText(session.title,false),
     messages,
     steps
   );
@@ -512,6 +578,11 @@ export async function resolveVisionImages(
       if (!sameOrigin && (isPrivate || !VISION_ALLOWED_HOST_RE.test(host))) {
         continue;
       }
+      assertMediaUrl(raw, internal.origin);
+      if (!sameOrigin) {
+        const remote = await publicImageBytes(u, VISION_ALLOWED_HOST_RE, VISION_MAX_BYTES, AbortSignal.timeout(15_000));
+        out.push({ type:"image", data:remote.bytes.toString("base64"), mimeType:remote.contentType }); continue;
+      }
       const res = await fetch(u.toString(), {
         redirect: "error",
         headers: sameOrigin && cookie ? { cookie } : {},
@@ -520,7 +591,7 @@ export async function resolveVisionImages(
       if (!res.ok) continue;
       const mime = (res.headers.get("content-type") || "").split(";")[0];
       if (!/^image\/(png|jpe?g|webp)$/i.test(mime)) continue;
-      const buf = Buffer.from(await res.arrayBuffer());
+      const buf = await readBoundedBytes(res, VISION_MAX_BYTES);
       if (!buf.length || buf.length > VISION_MAX_BYTES) continue;
       out.push({ type: "image", data: buf.toString("base64"), mimeType: mime });
     } catch {

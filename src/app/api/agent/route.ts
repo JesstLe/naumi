@@ -21,6 +21,7 @@ import {
 } from "@/lib/agent/runtime";
 import { buildTaskPlan, classifyAgentFailure } from "@/lib/agent/recovery";
 import { requestedTextModel } from "@/lib/text-models";
+import { readHarnessBody, assertHarnessSessionId, harnessErrorResponse, HarnessError } from "@/lib/agent/harness";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent API(常驻会话版):
@@ -44,14 +45,15 @@ async function authedEmail(request: Request): Promise<string | null> {
 
 // ── SSE 流式执行 ───────────────────────────────────────────────────────────
 export async function PUT(request: Request) {
-  return withBiRequest(request, () => handlePut(request));
+  try { return await withBiRequest(request, () => handlePut(request)); }
+  catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }
 async function handlePut(request: Request) {
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录后再使用 Agent" }, { status: 401 });
   }
-  const body = (await request.json().catch(() => null)) as {
+  const body = (await readHarnessBody(request)) as {
     message?: string;
     sessionId?: string;
     history?: ChatMsg[];
@@ -63,6 +65,7 @@ async function handlePut(request: Request) {
     (body?.sessionId ?? "").trim().slice(0, 64) ||
     `ag-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
   if(sessionId.startsWith("cv-"))return NextResponse.json({error:"请从画布继续此会话"},{status:400});
+  assertHarnessSessionId(sessionId, "workbench");
   if (!message) {
     return NextResponse.json({ error: "请输入任务内容" }, { status: 400 });
   }
@@ -109,7 +112,7 @@ async function handlePut(request: Request) {
     },
     modelId, undefined, imageSkill
   );
-  if (session.running) {
+  if (session.running || session.canvasExecuting) {
     return NextResponse.json(
       { error: "当前会话有任务正在执行,请等待完成或插话修正" },
       { status: 409 }
@@ -249,11 +252,14 @@ export async function PATCH(request: Request) {
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
-  const body = (await request.json().catch(() => null)) as {
+  let validatedBody;
+  try { validatedBody = await readHarnessBody(request); } catch(error) { return harnessErrorResponse(error); }
+  const body = validatedBody as {
     sessionId?: string;
     message?: string;
   } | null;
   const sessionId = (body?.sessionId ?? "").trim();
+  try { assertHarnessSessionId(sessionId, "workbench"); } catch(error) { return harnessErrorResponse(error); }
   const message = (body?.message ?? "").trim().slice(0, 2000);
   if (!sessionId || !message) {
     return NextResponse.json({ error: "参数不完整" }, { status: 400 });
@@ -282,6 +288,7 @@ export async function DELETE(request: Request) {
   }
   const url = new URL(request.url);
   const sessionId = (url.searchParams.get("sessionId") ?? "").trim();
+  try { assertHarnessSessionId(sessionId, "workbench"); } catch(error) { return harnessErrorResponse(error); }
   const session = getSession(email, sessionId);
   if (!session) {
     return NextResponse.json({ error: "会话不存在或已过期" }, { status: 404 });
@@ -299,6 +306,7 @@ export async function GET(request: Request) {
   }
   const url = new URL(request.url);
   const sessionId = (url.searchParams.get("sessionId") ?? "").trim();
+  try { assertHarnessSessionId(sessionId, "workbench"); } catch(error) { return harnessErrorResponse(error); }
   const since = Number(url.searchParams.get("since") || "0");
   const session = getSession(email, sessionId);
   if (!session) {
@@ -306,7 +314,7 @@ export async function GET(request: Request) {
   }
   refreshSessionCredentials(session, request);
   return NextResponse.json({
-    events: session.events.slice(since),
+    events: session.harness.sanitize(session.events.slice(Number.isInteger(since) && since >= 0 ? since : 0)),
     running: session.running,
     total: session.events.length,
   });
@@ -314,15 +322,17 @@ export async function GET(request: Request) {
 
 // ── 一次性执行(向后兼容) ─────────────────────────────────────────────────────
 export async function POST(request: Request) {
-  return withBiRequest(request, () => handlePost(request));
+  try { return await withBiRequest(request, () => handlePost(request)); }
+  catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }
 async function handlePost(request: Request) {
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录后再使用 Agent" }, { status: 401 });
   }
-  const body = (await request.json().catch(() => null)) as {
+  const body = (await readHarnessBody(request)) as {
     message?: string;
+    sessionId?: string;
     history?: ChatMsg[];
     images?: string[];
     skill?: unknown;
@@ -336,7 +346,8 @@ async function handlePost(request: Request) {
   }
   let imageSkill;
   try { imageSkill = await resolveImageSkill(email, body?.skill); } catch (error) { if (error instanceof SkillError) return NextResponse.json({ error: error.message }, { status: error.status }); throw error; }
-  const tempId = `tmp-${Date.now()}`;
+  const tempId = body?.sessionId?.trim() || `ag-once-${randomUUID()}`;
+  assertHarnessSessionId(tempId,"workbench");
   const postModelId = requestedTextModel(request, MODEL_ID);
   const imageUrls = Array.isArray(body?.images)
     ? body!.images
@@ -361,6 +372,9 @@ async function handlePost(request: Request) {
   if (session.running) {
     return NextResponse.json({ error: "任务正在执行中" }, { status: 409 });
   }
+  if(request.signal.aborted) return harnessErrorResponse(new HarnessError("RUN_INACTIVE",409));
+  session.running=true; session.turnId=randomUUID();
+  const onAbort=()=>session.agent.abort();request.signal.addEventListener("abort",onAbort,{once:true});
   const timeout = setTimeout(() => session.agent.abort(), 780_000);
   try {
     primeAgentSystemPrompt(session, message);
@@ -377,7 +391,7 @@ async function handlePost(request: Request) {
         error: "vision_unsupported",
       });
     }
-    const msg = e instanceof Error ? e.message : "Agent 执行失败";
+    const msg = session.harness.publicText(e instanceof HarnessError ? e.message : "Agent 执行失败，请检查任务轨迹");
     return NextResponse.json({
       reply: `任务中断:${msg}`,
       steps: session.events
@@ -387,17 +401,23 @@ async function handlePost(request: Request) {
     });
   } finally {
     clearTimeout(timeout);
+    request.signal.removeEventListener("abort",onAbort);
+    session.running=false;
+    await persistAgentSession(session);
   }
   const lastAssistant = [...session.agent.state.messages]
     .reverse()
     .find((m) => m.role === "assistant");
-  const reply = Array.isArray(lastAssistant?.content)
+  const modelReply = Array.isArray(lastAssistant?.content)
     ? (lastAssistant!.content as { type?: string; text?: string }[])
         .map((c) => (c.type === "text" ? c.text ?? "" : ""))
         .join("")
         .trim()
     : "";
+  const attention=session.events.findLast(event=>event.type==="attention");
+  const reply=modelReply || (attention?.data.kind==="waiting"||attention?.data.kind==="restricted" ? String(attention.data.message||"请确认报价后继续") : "");
   return NextResponse.json({
+    sessionId:tempId,
     reply,
     steps: session.events
       .filter((e) => e.type === "tool_end")

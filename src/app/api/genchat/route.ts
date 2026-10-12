@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { authenticatedEmail } from "@/lib/request-auth";
 import {
   dbEnabled,
   listGenchatSessions,
@@ -7,13 +8,14 @@ import {
   deleteGenchatSession,
 } from "@/lib/db";
 
-// 沿用本站「按 email 信任」模式(同 /api/account、/api/projects)。
-// 会话内容只是提示词+生成图 URL,无敏感数据。
+// History belongs to the authenticated account, never an email from query/body.
 
 export async function GET(request: Request) {
   if (!dbEnabled) return NextResponse.json({ sessions: [] });
   const url = new URL(request.url);
-  const email = (url.searchParams.get("email") ?? "").trim();
+  const email = await authenticatedEmail(request);
+  if (!email) return NextResponse.json({error:"请先登录"},{status:401});
+  if (url.searchParams.get("email") && url.searchParams.get("email")!.trim().toLowerCase() !== email) return NextResponse.json({error:"无权访问"},{status:403});
   const session = (url.searchParams.get("session") ?? "").trim();
   if (!email) return NextResponse.json({ sessions: [] });
   if (session) {
@@ -37,7 +39,9 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "bad json" }, { status: 400 });
   }
-  const email = (body.email ?? "").trim();
+  const email = await authenticatedEmail(request);
+  if (!email) return NextResponse.json({error:"请先登录"},{status:401});
+  if (body.email && (typeof body.email !== "string" || body.email.trim().toLowerCase() !== email)) return NextResponse.json({error:"无权访问"},{status:403});
   const id = (body.id ?? "").trim();
   if (!email || !id) {
     return NextResponse.json({ error: "missing email/id" }, { status: 400 });
@@ -51,7 +55,9 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   if (!dbEnabled) return NextResponse.json({ ok: true });
   const url = new URL(request.url);
-  const email = (url.searchParams.get("email") ?? "").trim();
+  const email = await authenticatedEmail(request);
+  if (!email) return NextResponse.json({error:"请先登录"},{status:401});
+  if (url.searchParams.get("email") && url.searchParams.get("email")!.trim().toLowerCase() !== email) return NextResponse.json({error:"无权访问"},{status:403});
   const session = (url.searchParams.get("session") ?? "").trim();
   if (!email || !session) {
     return NextResponse.json({ error: "missing" }, { status: 400 });

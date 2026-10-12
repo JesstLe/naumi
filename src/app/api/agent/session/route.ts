@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/lib/db";
+import { readHarnessBody, harnessErrorResponse, validateHarnessHistory, AgentHarness } from "@/lib/agent/harness";
 import {
   saveAgentSession,
   getAgentSession,
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
     await getSession(email,id)?.persistPending;
     const s = await getAgentSession(email, id);
     if (!s) return NextResponse.json({ error: "会话不存在" }, { status: 404 });
-    return NextResponse.json({ session: s });
+    return NextResponse.json({ session: new AgentHarness(email, id).sanitize(s) });
   }
   const sessions = await listAgentSessions(email, 50, true);
   return NextResponse.json({
@@ -63,7 +64,9 @@ export async function POST(request: Request) {
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
-  const body = (await request.json().catch(() => null)) as {
+  let input;
+  try { input = await readHarnessBody(request); } catch (error) { return harnessErrorResponse(error); }
+  const body = input as {
     id?: string;
     title?: string;
     messages?: unknown[];
@@ -79,8 +82,9 @@ export async function POST(request: Request) {
   if(await getAgentSession(email,id))return NextResponse.json({ok:true,serverOwned:true});
   const title = (body?.title ?? "").trim().slice(0, 120);
   const messages = Array.isArray(body?.messages) ? body!.messages.slice(-100) : [];
-  const steps = Array.isArray(body?.steps) ? body!.steps.slice(-200) : [];
-  await saveAgentSession(email, id, title, messages, steps);
+  try { validateHarnessHistory(messages); } catch(error) { return harnessErrorResponse(error); }
+  // Imported history cannot manufacture approval or tool execution evidence.
+  await saveAgentSession(email, id, title, new AgentHarness(email, id).sanitize(messages), []);
   return NextResponse.json({ ok: true });
 }
 
@@ -89,7 +93,9 @@ export async function PATCH(request: Request) {
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
-  const body = (await request.json().catch(() => null)) as {
+  let input;
+  try { input=await readHarnessBody(request); } catch(error) { return harnessErrorResponse(error); }
+  const body = input as {
     id?: string;
     title?: string;
   } | null;

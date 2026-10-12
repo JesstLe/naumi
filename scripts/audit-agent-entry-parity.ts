@@ -48,7 +48,7 @@ async function main() {
     return { path, line: files[path].source.slice(0, index).split("\n").length, needle };
   };
   assert.ok(route.includes("getOrCreateSession(") && canvasServer.includes("getOrCreateSession("));
-  assert.equal((runtime.match(/tools: createNaumiTools\(/g) || []).length, 1);
+  assert.equal((runtime.match(/(?:tools: |const tools = )createNaumiTools\(/g) || []).length, 1);
   assert.ok(!/\bfetch\s*\(|\/api\//.test(orb));
   assert.ok(cv.includes("busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps}"));
   assert.ok(cv.includes('mode: "agent"'));

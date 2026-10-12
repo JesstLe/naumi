@@ -4,6 +4,7 @@ import {NextResponse} from "next/server";
 import {authenticatedEmail} from "../request-auth";
 import {getPool,listArtworks,listArtworksByIds,listAgentSessions,getAgentSession,renameAgentSession,deleteAgentSession} from "../db";
 import {getSession,removeRuntimeSession,renameRuntimeSession} from "./runtime";
+import {AgentHarness} from "./harness";
 
 export const canvasProjectSessionPrefix=(projectKey:string)=>canvasSessionPrefix("project:"+projectKey);
 export const canvasSessionPrefix=(anchorId:string)=>"cv-"+createHash("sha256").update(anchorId).digest("hex").slice(0,12)+"-";
@@ -27,7 +28,8 @@ export async function canvasAgentHistory(request:Request){
  if(request.method==="GET"){
   if(!id){await listAgentSessions(email,1);const rows=await getPool().query("SELECT id,title,updated_at FROM app_agent_sessions WHERE email=$1 AND id LIKE ANY($2::text[]) ORDER BY updated_at DESC LIMIT 50",[email.toLowerCase(),prefixes.map(prefix=>prefix+"%")]);return NextResponse.json({sessions:rows.rows.map(row=>({id:row.id,title:row.title,updatedAt:row.updated_at,anchorId:anchors.find(art=>row.id.startsWith(canvasSessionPrefix(art.id)))?.id}))});}
   await getSession(email,id)?.persistPending;
-  const saved=await getAgentSession(email,id);if(!saved)return NextResponse.json({error:"会话不存在"},{status:404});
+  const rawSaved=await getAgentSession(email,id);if(!rawSaved)return NextResponse.json({error:"会话不存在"},{status:404});
+  const saved=(getSession(email,id)?.harness || new AgentHarness(email,id)).sanitize(rawSaved);
   const steps=Array.isArray(saved.steps)?saved.steps:[];
   const latest=(steps as any[]).findLast(step=>step.type==="canvas_turn");
   if(latest&&"anchorId" in latest)anchorId=anchors.some(art=>art.id===latest.anchorId)?latest.anchorId:"";

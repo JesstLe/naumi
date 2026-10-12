@@ -70,7 +70,10 @@ async function main() {
       const id = `${entry === "canvas" ? "cv" : "ag"}-${randomUUID()}`; sessions.push(id);
       const session = await runtime.getOrCreateSession(email,id,[],{cookie:"",authorization:""},"fixture-text",entry === "canvas" ? { canvas:{anchorId:"",imageUrls:[],ratio:"1:1",resolution:"1K",quality:"medium"},systemPrompt:"画布场景资料",onToolResult:async()=>{throw new Error("No tools allowed");} } : undefined);
       assert(session.agent.state.systemPrompt.includes("GPT-6 Astra"));
-      if (entry === "canvas") assert(session.agent.state.systemPrompt.includes("画布场景资料"));
+      if (entry === "canvas") {
+        assert(!session.agent.state.systemPrompt.includes("画布场景资料"));
+        assert(JSON.stringify(await session.agent.transformContext!(session.agent.state.messages)).includes("画布场景资料"));
+      }
       assert(!session.agent.state.systemPrompt.includes(html), "artifact must not be injected before a pelican prompt");
       // 非鹈鹕消息不注入
       policyRuntime.primeAgentSystemPrompt(session, "给商品生成主图");

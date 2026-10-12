@@ -5317,7 +5317,7 @@ export function CanvasClient() {
     orbCue({ type: "stop" });
     assistantController.current?.abort();
     const sessionId=assistantLiveSessionId.current||assistantSessionId.current;
-    if(sessionId.startsWith("cv-"))await privateFetchRaw(`/api/agent?sessionId=${encodeURIComponent(sessionId)}`,{method:"DELETE"}).catch(()=>null);
+    if(sessionId.startsWith("cv-"))await privateFetchRaw("/api/canvas/assistant/control",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"stop",sessionId,projectKey:activeKey||"workspace"})}).catch(()=>null);
   }
 
   async function restoreAssistantConversation(_anchorId:string,id:string) {

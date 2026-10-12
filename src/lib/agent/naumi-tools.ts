@@ -4,6 +4,8 @@ import { createCreativeTools } from "./creative-tools";
 import { CREATIVE_AGENT_TOOLS, CREATIVE_TOOL_FEATURES } from "./creative-tool-catalog";
 import type { CanvasAgentContext } from "./canvas-context";
 import {dataUrlToBytes,isManagedImageUrl,readManagedObject} from "../storage";
+import { AgentHarness, validateToolArguments, HarnessError } from "./harness";
+import { assertInternalAgentPath, assertMediaUrl, publicImageBytes, readBoundedBytes } from "./harness-network";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 工具集:站内生成能力的 AgentTool 包装,由 pi-agent 编排调用。
@@ -88,7 +90,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
  7. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
  8. 与图片生成无关的问题直接回答,不要调用工具。`;
 
-export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext): AgentTool[] {
+export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext, harness?: AgentHarness): AgentTool[] {
   // 双凭证:可变 getter —— 每次工具执行时读取最新 cookie/authorization,
   // 常驻会话的凭证刷新(runtime 层 existing.cred = cred)即刻生效,无需重建 Agent。
   const credGetter =
@@ -135,6 +137,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     signal: AbortSignal | undefined,
     init?: RequestInit
   ): Promise<any> {
+    assertInternalAgentPath(path, init?.method || "GET");
     // 安全规则:只读 GET 指数退避重试(≤3);收费/写请求严禁自动重试
     // (防重复扣费);HTTP 错误属确定性失败,一律不重试。
     const isRead = !init?.method || init.method === "GET";
@@ -146,16 +149,18 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         const res = await fetch(base + path, {
           ...init,
           signal,
+          redirect: "error",
           headers: { ...(init?.headers ?? {}), ...authHeaders(), "x-naumi-client-entry": "agent" },
         });
-        const data = await res.json().catch(() => ({}));
+        const bytes = await readBoundedBytes(res, 2 * 1024 * 1024);
+        const data = JSON.parse(bytes.toString("utf8") || "{}");
         if (!res.ok) {
           throw Object.assign(
-            new Error(data?.error || `内部接口 ${path} 返回 ${res.status}`),
+            new Error(harness?.publicText(String(data?.error || `工具接口返回 ${res.status}`)) || "工具接口调用失败"),
             { deterministic: true }
           );
         }
-        return data;
+        return harness ? harness.sanitize(data) : data;
       } catch (e) {
         if (signal?.aborted) throw new Error("aborted");
         lastErr = e;
@@ -210,17 +215,22 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       if(object){if(signal?.aborted)throw new Error("aborted");if(!/^image\/(png|jpeg|webp)$/i.test(object.contentType)||object.bytes.length>MAX_IMAGE_BYTES)throw new Error("参考图片格式或大小不支持");return new File([Buffer.from(object.bytes)],"reference.png",{type:object.contentType});}
     }
     const u = assertSafeImageUrl(raw);
+    assertMediaUrl(raw, base);
+    if (u.origin !== base) {
+      const remote = await publicImageBytes(u, ALLOWED_IMG_HOST_RE, MAX_IMAGE_BYTES, signal);
+      return new File([remote.bytes], "reference.png", { type: remote.contentType });
+    }
     const res = await fetch(u.toString(), {
       signal,
       redirect: "error", // 禁跨重定向(防绕过白名单)
       headers: u.origin === base ? authHeaders() : {},
     });
     if (!res.ok) throw new Error(`图片拉取失败(${res.status})`);
-    const type = res.headers.get("content-type") || "";
+    const type = (res.headers.get("content-type") || "").split(";")[0];
     if (!/^image\/(png|jpeg|webp)$/i.test(type)) {
       throw new Error(`不支持的图片类型: ${type || "未知"}`);
     }
-    const buf = Buffer.from(await res.arrayBuffer());
+    const buf = await readBoundedBytes(res, MAX_IMAGE_BYTES);
     if (buf.length > MAX_IMAGE_BYTES) throw new Error("图片超过 12MB 上限");
     return new File([buf], "image.png", { type: type || "image/png" });
   }
@@ -452,7 +462,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         resolution: Type.Union([Type.Literal("1K"), Type.Literal("2K"), Type.Literal("4K")], {
           description: "分辨率,默认 1K",
         }),
-        count: Type.Number({ description: "生成张数 1-4,默认 1" }),
+        count: Type.Integer({minimum:1,maximum:4, description: "生成张数 1-4,默认 1" }),
         model: Type.Optional(
           Type.String({
             description:
@@ -1412,7 +1422,19 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     if(schema.properties&&!schema.properties.confirm)tool.parameters=Type.Object({...schema.properties,confirm:Type.Optional(Type.Boolean({description:"仅用户明确确认本次报价后设为true"}))});
   }
   all.push({name:"list_agent_tools",label:"创作工具目录",description:"只读查询创作中心可调用的工具、参数与入口；不创建收费任务。",parameters:Type.Object({}),execute:async()=>({content:[{type:"text",text:JSON.stringify({entries:CREATIVE_AGENT_TOOLS,tools:describeNaumiTools(all)})}],details:{publicSummary:"创作工具目录已读取"}})});
-  return all;
+  return all.map(tool => {
+    const execute = tool.execute;
+    return { ...tool, execute: async (id, args, signal, onUpdate) => {
+      validateToolArguments(tool.parameters, args);
+      if (signal?.aborted) throw new HarnessError("RUN_INACTIVE", 409);
+      if (!harness) return execute(id, args, signal, onUpdate);
+      return harness.execute(tool.name, args, id, signal, async owned => {
+        const result = harness.sanitize(await execute(id, args, owned, onUpdate ? result => onUpdate(harness.sanitize(result)) : undefined));
+        // Keep raw details for owned output mounting; only text goes back to the model.
+        return {...result, content:result.content.map(part => part.type === "text" ? {...part,text:`[UNTRUSTED_TOOL_RESULT]\n${JSON.stringify(part.text)}\n[/UNTRUSTED_TOOL_RESULT]`} : part)};
+      });
+    } };
+  });
 }
 
 /** 底座无关视图:供未来非 pi 底座桥接器复用(当前 PiBridge 直接消费 AgentTool)。 */

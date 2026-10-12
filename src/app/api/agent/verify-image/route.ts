@@ -9,6 +9,7 @@ import { getOpenAISettings } from "@/lib/settings";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
 import sharp from "sharp";
+import { AgentHarness, untrustedAgentData } from "@/lib/agent/harness";
 
 export const runtime = "nodejs";
 export const maxDuration = 90;
@@ -40,6 +41,9 @@ async function handleObservedPost(request: Request) {
   if (!apiKey) {
     return NextResponse.json({ error: "模型接口未配置" }, { status: 503 });
   }
+  const harness = new AgentHarness(email, "agent-vision-check");
+  harness.registerSecret(apiKey); harness.registerSecret(request.headers.get("cookie") || ""); harness.registerSecret(request.headers.get("authorization") || "");
+  harness.registerSecret((await import("@/lib/model-config/context")).currentModelExecution("vision")?.connection.apiKey);
   let dataUrl: string;
   try {
     const bytes = Buffer.from(await image.arrayBuffer());
@@ -65,7 +69,7 @@ async function handleObservedPost(request: Request) {
         {
           role: "user",
           content: [
-            { type: "text", text: `用户目标：${goal}` },
+            { type: "text", text: untrustedAgentData("visual-inspection-goal", goal) },
             { type: "image_url", image_url: { url: dataUrl } },
           ],
         },
@@ -88,7 +92,7 @@ async function handleObservedPost(request: Request) {
         : [],
       retryAdvice: String(parsed.retryAdvice || "").slice(0, 500),
     };
-    return NextResponse.json(result);
+    return NextResponse.json(harness.sanitize(result));
   } catch {
     return NextResponse.json(
       { error: "视觉模型暂时不可用，未将本次图片标记为已验收", code: "VISION_UPSTREAM_UNAVAILABLE" },

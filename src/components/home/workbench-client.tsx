@@ -1,4 +1,5 @@
 "use client";
+import { agentMediaUrl } from "@/lib/agent/media-policy";
 import { loadAccountSnapshot, invalidateBrowserData } from "@/lib/browser-data-cache";
 import {toolImageError} from "@/lib/tool-ui";
 
@@ -213,7 +214,7 @@ function renderContent(
 ) {
   return content.split("\n").map((line, i) => {
     const m = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
-    if (m) {
+    if (m && agentMediaUrl(m[2])) {
       // 视频扩展名的 markdown "图"按视频渲染
       if (/\.(mp4|webm|mov|m4v)(\?|$)/i.test(m[2])) {
         return (
@@ -237,7 +238,7 @@ function renderContent(
       );
     }
     const vlink = line.match(/^视频链接\s*[:：]\s*(\S+)$/);
-    if (vlink && /\.(mp4|webm|mov|m4v)(\?|$)/i.test(vlink[1])) {
+    if (vlink && agentMediaUrl(vlink[1]) && /\.(mp4|webm|mov|m4v)(\?|$)/i.test(vlink[1])) {
       return (
         <span key={i} className="my-1 block w-fit space-y-1">
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
@@ -255,7 +256,7 @@ function renderContent(
       );
     }
     const ref = line.match(/^\[商品图\]\s*(\S+)$/);
-    if (ref) {
+    if (ref && agentMediaUrl(ref[1])) {
       return (
         // eslint-disable-next-line @next/next/no-img-element
         <img
