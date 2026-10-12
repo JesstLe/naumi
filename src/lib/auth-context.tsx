@@ -11,6 +11,7 @@ import {
 import { type PlanKey } from "@/lib/mock-data";
 import { BRAND } from "@/lib/brand";
 import { supabaseEnabled } from "@/lib/auth-mode";
+import { activateBrowserData, invalidateBrowserData, installBrowserDataObserver } from "@/lib/browser-data-cache";
 import { authHeader } from "@/lib/supabase";
 
 // ---------------------------------------------------------------------------
@@ -60,7 +61,7 @@ type AuthContextValue = {
   changePlan: (plan: PlanKey) => Promise<Invoice | null>;
   consumeCredits: (n: number) => boolean;
   /** Replace the session with an authoritative server copy. */
-  applyServerUser: (user: SessionUser | null) => void;
+  applyServerUser: (user: SessionUser | null, establishSession?: boolean) => void;
   syncIdentity: (identity: Identity | null) => void;
   bindSignOut: (fn: (() => void) | null) => void;
 };
@@ -111,9 +112,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [multiUser, setMultiUser] = useState(false);
   const multiUserRef = useRef(false);
   const serverRef = useRef(false);
+  const identityEpoch = useRef(0);
+  const currentEmail = useRef<string | null>(null);
   const externalSignOut = useRef<(() => void) | null>(null);
 
   const persist = useCallback((next: SessionUser | null) => {
+    currentEmail.current = next?.email.toLowerCase() || null;
     setUser(next);
     try {
       if (next) {
@@ -127,6 +131,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const verifiedPersist = useCallback((next: SessionUser) => {
+    activateBrowserData(next.email);
+    persist(next);
+  }, [persist]);
+
+  useEffect(() => {
+    const clear = () => { identityEpoch.current++; persist(null); };
+    window.addEventListener("naumi:cache-session-ended", clear);
+    return () => window.removeEventListener("naumi:cache-session-ended", clear);
+  }, [persist]);
+
   // Server helper: POST /api/account. Returns the user or null on any failure
   // (the caller then keeps the optimistic local copy).
   const serverPost = useCallback(
@@ -138,7 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify(payload),
         });
         const data = await res.json();
-        if (data?.persisted && data.user) {
+        if (res.ok && data?.persisted && data.user) {
           return data as { user: SessionUser; invoice?: Invoice };
         }
       } catch {
@@ -151,14 +166,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Detect persistence mode, then hydrate the last session.
   useEffect(() => {
+    installBrowserDataObserver();
     let cancelled = false;
+    const bootstrapEpoch = identityEpoch.current;
+    const current = () => !cancelled && bootstrapEpoch === identityEpoch.current;
     (async () => {
       let lastEmail: string | null = null;
       try {
         lastEmail = localStorage.getItem(LAST_KEY);
         if (lastEmail) {
           const cached = loadUser(lastEmail);
-          if (cached && !cancelled) setUser(cached);
+          if (cached && current()) setUser(cached);
         }
       } catch {
         /* ignore */
@@ -166,20 +184,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const cfg = await fetch("/api/config").then((r) => r.json());
-        if (!cancelled && cfg?.db) {
+        if (current() && cfg?.db) {
           serverRef.current = true;
           setPersistMode("server");
         }
         // 原生多用户:身份来自服务端会话 cookie(权威),不用 localStorage lastEmail。
-        if (!cancelled && cfg?.multiUser) {
+        if (current() && cfg?.multiUser) {
           multiUserRef.current = true;
           setMultiUser(true);
           try {
-            const s = await fetch("/api/auth/session").then((r) => r.json());
-            if (!cancelled) {
-              if (s?.user) persist(s.user as SessionUser);
+            const s = await fetch("/api/auth/session", { cache: "no-store" }).then((r) => r.ok ? r.json() : { user: null });
+            if (current()) {
+              if (s?.user) verifiedPersist(s.user as SessionUser);
               else {
                 // 会话无效 → 清掉可能残留的本地态
+                activateBrowserData(null);
                 setUser(null);
                 try {
                   localStorage.removeItem(LAST_KEY);
@@ -191,50 +210,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           } catch {
             /* session unreachable — leave as-is */
           }
-        } else if (!cancelled && cfg?.db && cfg?.authMode === "mock") {
+        } else if (current() && cfg?.db && cfg?.authMode === "mock") {
           // 开源版单用户:身份以本地管理员会话(服务端 nv_admin cookie)为权威,
           // 不依赖 localStorage —— 覆盖「只从 /admin 登录、主站 auth-context 未 signIn」
           // 的情况(否则主站 user=null,作品/历史全拉不出)。
           try {
-            const s = await fetch("/api/auth/session").then((r) => r.json());
-            if (!cancelled) {
+            const s = await fetch("/api/auth/session", { cache: "no-store" }).then((r) => r.ok ? r.json() : { user: null });
+            if (current()) {
               if (s?.user) {
-                persist(s.user as SessionUser);
+                verifiedPersist(s.user as SessionUser);
               } else if (lastEmail) {
                 const res = await fetch(
                   `/api/account?email=${encodeURIComponent(lastEmail)}`,
                   { headers: await authHeader() }
-                ).then((r) => r.json());
-                if (!cancelled && res?.persisted && res.user) {
-                  persist(res.user as SessionUser);
+                ).then((r) => r.ok ? r.json() : null);
+                if (current() && res?.persisted && res.user) {
+                  verifiedPersist(res.user as SessionUser);
                 }
               }
             }
           } catch {
             /* session unreachable — leave as-is */
           }
-        } else if (!cancelled && cfg?.db && lastEmail) {
+        } else if (current() && cfg?.db && lastEmail) {
           const res = await fetch(
             `/api/account?email=${encodeURIComponent(lastEmail)}`,
             { headers: await authHeader() }
-          ).then((r) => r.json());
-          if (!cancelled && res?.persisted && res.user) {
-            persist(res.user as SessionUser);
+          ).then((r) => r.ok ? r.json() : null);
+          if (current() && res?.persisted && res.user) {
+            verifiedPersist(res.user as SessionUser);
           }
         }
       } catch {
         /* config unreachable — stay in local mode */
       }
 
-      if (!cancelled) setReady(true);
+      if (current()) setReady(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [persist]);
+  }, [persist, verifiedPersist]);
 
   const startSession = useCallback(
     (name: string, email: string) => {
+      const requestEpoch = ++identityEpoch.current;
+      activateBrowserData(null);
+      setReady(true);
       // Optimistic local session for instant UI.
       const existing = loadUser(email);
       persist(
@@ -245,11 +267,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Authoritative server copy when the DB is live.
       if (serverRef.current) {
         serverPost({ action: "sync", email, name }).then((r) => {
-          if (r) persist(r.user);
+          if (r && requestEpoch === identityEpoch.current) verifiedPersist(r.user);
         });
       }
     },
-    [persist, serverPost]
+    [persist, verifiedPersist, serverPost]
   );
 
   const signUp = useCallback(
@@ -265,7 +287,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const syncIdentity = useCallback(
     (identity: Identity | null) => {
       if (!identity || !identity.email) {
+        identityEpoch.current++;
+        activateBrowserData(null);
         setUser(null);
+        currentEmail.current = null;
         try {
           localStorage.removeItem(LAST_KEY);
         } catch {
@@ -279,6 +304,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(() => {
+    identityEpoch.current++;
+    invalidateBrowserData(undefined, true);
+    activateBrowserData(null);
     if (externalSignOut.current) externalSignOut.current();
     // 原生多用户:清服务端会话 cookie。
     if (multiUserRef.current) {
@@ -290,6 +318,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/admin/login", { method: "DELETE" }).catch(() => {});
     }
     setUser(null);
+    currentEmail.current = null;
     try {
       localStorage.removeItem(LAST_KEY);
     } catch {
@@ -301,11 +330,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     externalSignOut.current = fn;
   }, []);
 
+  const renderedIdentityEpoch = identityEpoch.current;
   const applyServerUser = useCallback(
-    (next: SessionUser | null) => {
-      if (next) persist(next);
+    (next: SessionUser | null, establishSession = false) => {
+      if (!next) return;
+      if (renderedIdentityEpoch !== identityEpoch.current) return;
+      // Only the login form may establish a new identity. A late generation or
+      // balance response after logout/switch must not resurrect the old account.
+      if (!establishSession && next.email.toLowerCase() !== currentEmail.current) return;
+      if (establishSession) { identityEpoch.current++; setReady(true); }
+      invalidateBrowserData(next.email);
+      verifiedPersist(next);
     },
-    [persist]
+    [verifiedPersist, renderedIdentityEpoch]
   );
 
   const changePlan = useCallback(
@@ -313,12 +350,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!user) return null;
 
       if (serverRef.current) {
+        const requestEpoch = identityEpoch.current;
         const r = await serverPost({
           action: "plan",
           email: user.email,
           plan: planKey,
         });
-        if (r) {
+        if (r && requestEpoch === identityEpoch.current && currentEmail.current === r.user.email.toLowerCase()) {
           persist(r.user);
           return r.invoice ?? null;
         }
@@ -331,7 +369,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const consumeCredits = useCallback(
     (n: number): boolean => {
-      if (!user) return false;
+      if (!user || renderedIdentityEpoch !== identityEpoch.current || currentEmail.current !== user.email.toLowerCase()) return false;
       if (user.creditsUsed + n > user.creditsTotal) return false;
       // In server mode the generate route reserves credits and returns the
       // authoritative user (applied via applyServerUser); this optimistic
@@ -339,7 +377,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       persist({ ...user, creditsUsed: user.creditsUsed + n });
       return true;
     },
-    [user, persist]
+    [user, persist, renderedIdentityEpoch]
   );
 
   const remaining = user ? user.creditsTotal - user.creditsUsed : 0;

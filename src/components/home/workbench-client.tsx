@@ -1,4 +1,5 @@
 "use client";
+import { loadAccountSnapshot, invalidateBrowserData } from "@/lib/browser-data-cache";
 import {toolImageError} from "@/lib/tool-ui";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -361,45 +362,25 @@ export function WorkbenchClient() {
     );
   }, [locale]);
 
-  // 拉作品:最近 8 张 + 统计(今日生成 / 累计作品)
+  // Summary key contains day bounds, so yesterday's counts cannot be reused.
   useEffect(() => {
-    if (!user?.email) {
-      setRecent(null);
-      setStats({ today: 0, total: 0 });
-      return;
-    }
+    setRecent(null); setStats({ today: 0, total: 0 }); artworkIdRef.current = {};
+    if (!ready || !user?.email) return;
     let cancelled = false;
-    (async () => {
-      try {
-        const dayStart = new Date();
-        dayStart.setHours(0, 0, 0, 0);
-        const dayEnd = new Date(dayStart);
-        dayEnd.setDate(dayEnd.getDate() + 1);
-        const query = new URLSearchParams({email:user.email, view:"workbench",
-          dayStart:dayStart.toISOString(), dayEnd:dayEnd.toISOString()});
-        const r = await fetch(
-          `/api/account?${query}`,
-          { headers: await authHeader() }
-        );
-        if (!r.ok || cancelled) return;
-        const d = await r.json();
-        const arts = (d.artworks ?? []) as RecentWork[];
-        if (cancelled) return;
-        const done = arts.filter((a) => a.image && a.status !== "failed");
-        const todayStr = new Date().toDateString();
-        const today = done.filter(
-          (a) => a.createdAt && new Date(a.createdAt).toDateString() === todayStr
-        ).length;
-        setStats(d.stats ?? { today, total: done.length });
-        setRecent(done.slice(0, 8));
-      } catch {
-        if (!cancelled) setRecent([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
+    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
+    const query = new URLSearchParams({ view: "workbench", dayStart: dayStart.toISOString(), dayEnd: dayEnd.toISOString() });
+    const apply = (d: { artworks: RecentWork[]; stats?: { today: number; total: number } }) => {
+      if (cancelled) return;
+      const done = d.artworks.filter(a => a.image && a.status !== "failed");
+      setStats(d.stats ?? { today: done.filter(a => a.createdAt && new Date(a.createdAt).toDateString() === dayStart.toDateString()).length, total: done.length });
+      setRecent(done.slice(0, 8));
     };
-  }, [user?.email]);
+    loadAccountSnapshot<RecentWork>(user.email, query.toString(), apply).then(apply).catch(() => {
+      if (!cancelled) { setRecent([]); setStats({ today: 0, total: 0 }); }
+    });
+    return () => { cancelled = true; };
+  }, [user?.email, ready]);
 
   // 参考图预览的对象 URL:卸载时回收
   useEffect(() => {
@@ -769,6 +750,7 @@ export function WorkbenchClient() {
               return copy;
             });
           } else if (type === "tool_end") {
+            invalidateBrowserData(user?.email);
             const step = {
               tool: (data.tool as string) || "",
               summary: (data.summary as string) || "执行完成",

@@ -143,20 +143,18 @@ export function TemplatesClient({
   // 初次 mount 时尝试用「全部 / 空查询 / 空 fav」这个最常见组合的缓存命中,
   // 命中则 templates 直接有值、loading=false → 瞬时显示上次内容,后续 fetch
   // 在后台 swap;未命中则正常走骨架屏 loading 路径。
-  const initialCache =
-    typeof window !== "undefined" ? loadCache(cacheKeyOf("all", "", "")) : null;
-  const [templates, setTemplates] = useState<PromptTemplate[]>(
-    initialCache?.templates ?? []
-  );
+  // Hydration must start with the same state as SSR. The effect below reads
+  // the browser cache before requesting the current filter's first page.
+  const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [categories, setCategories] = useState<{ name: string; count: number }[]>(
     []
   );
-  const [total, setTotal] = useState(initialCache?.total ?? 0);
+  const [total, setTotal] = useState(0);
   // 全库总数(大字横幅用):只在「全部 + 无搜索」的结果里更新,不随筛选缩水。
-  // initialCache 恰好就是「全部+空查询」的缓存,可直接当种子。
-  const [libTotal, setLibTotal] = useState(initialCache?.total ?? initialTotal);
+  // 缓存种子在挂载后的 effect 中应用，SSR/客户端初始状态一致。
+  const [libTotal, setLibTotal] = useState(initialTotal);
   const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(!initialCache);
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
