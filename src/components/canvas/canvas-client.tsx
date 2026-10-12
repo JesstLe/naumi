@@ -1,4 +1,6 @@
 "use client";
+
+import { isHostedImageUrl as hasRenderableImage } from "@/lib/media-url";
 import {useBilling} from "@/lib/billing/client";
 import { browserRandomUUID } from "@/lib/browser-crypto";
 import type {FeatureId} from "@/lib/billing/types";
@@ -345,9 +347,6 @@ function fmt(s: string, vars: Record<string, string | number>): string {
   );
 }
 
-function hasRenderableImage(image: string): boolean {
-  return /^https?:\/\//.test(image) || image.startsWith("/media/");
-}
 
 type Project = {
   key: string;
@@ -1916,6 +1915,22 @@ export function CanvasClient() {
   const [historyPicker, setHistoryPicker] = useState<{ x: number; y: number } | null>(
     null
   );
+  const historyAddingRef = useRef(false);
+  const [historyAddingId, setHistoryAddingId] = useState<string | null>(null);
+  const [historyPickerError, setHistoryPickerError] = useState<string | null>(null);
+  const [historyVisibleCount, setHistoryVisibleCount] = useState(60);
+  const duplicateBusyRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!historyPicker) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !historyAddingRef.current) {
+        event.preventDefault();
+        setHistoryPicker(null);
+      }
+    };
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, [historyPicker]);
   // 「全部项目」网格里每张卡片的「...」菜单(重命名/删除)当前展开的是哪个项目
   const [projMenuKey, setProjMenuKey] = useState<string | null>(null);
   // 回收站(软删除的作品):打开状态 + 列表 + 操作中
@@ -6170,7 +6185,7 @@ export function CanvasClient() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      /* ignore */
+      flashTip(locale === "en" ? "Download failed. Please try again." : "打包下载失败，请重试");
     } finally {
       setZipping(false);
     }
@@ -6694,7 +6709,7 @@ export function CanvasClient() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      /* ignore */
+      flashTip(locale === "en" ? "Download failed. Please try again." : "下载失败，请重试");
     }
   }
 
@@ -6710,7 +6725,10 @@ export function CanvasClient() {
   // ── 节点操作(真功能,对齐原型右键菜单)──
   // 创建副本 / 粘贴:复制成一个独立节点(无连线),落在源节点旁边
   async function duplicateArt(a: Artwork) {
-    if (readOnly || !user) return;
+    if (readOnly || !user || duplicateBusyRef.current.has(a.id)) return;
+    duplicateBusyRef.current.add(a.id);
+    const contextEpoch = canvasContextEpochRef.current;
+    const contextProjectKey = activeProjectRef.current?.key || null;
     // 落点:源节点当前位置右下偏移
     const sn = rfNodes.find((n) => n.id === a.id);
     const sx = sn?.position.x ?? a.canvasX ?? 0;
@@ -6743,11 +6761,21 @@ export function CanvasClient() {
       });
       const d = await readJsonSafe(r);
       if (!r.ok || !d?.id) throw new Error(d?.error || t("canvas.genFail"));
-      if (d?.id) pendingNodeRef.current = d.id; // 选中新节点
+      if (!active && contextEpoch === canvasContextEpochRef.current && !activeProjectRef.current) pendingNodeRef.current = d.id;
       const fresh = await mergeWorks(d?.id ? [d.id] : []);
-      pushAddUndo(d?.id ?? null, fresh);
+      if (!fresh.some(artwork => artwork.id === d.id)) {
+        if (pendingNodeRef.current === d.id) pendingNodeRef.current = null;
+        flashTip(locale === "en" ? "Node copied. Refresh the canvas to view it." : "节点已复制，请刷新画布查看");
+        return;
+      }
+      if (contextEpoch === canvasContextEpochRef.current && (activeProjectRef.current?.key || null) === contextProjectKey) {
+        if (active) setSelectedId(d.id);
+        pushAddUndo(d.id, fresh);
+      }
     } catch {
-      /* ignore */
+      flashTip(locale === "en" ? "Could not duplicate this node. Please try again." : "复制节点失败，请重试");
+    } finally {
+      duplicateBusyRef.current.delete(a.id);
     }
   }
   /**
@@ -7000,14 +7028,22 @@ export function CanvasClient() {
   }
   // 从生成历史选择:在画布某点打开作品选择器
   function openHistoryPicker(screenX: number, screenY: number) {
+    if (readOnly || historyAddingRef.current) return;
     const z = viewport.zoom || 1;
     const wx = (screenX - viewport.x) / z - NODE_W / 2;
     const wy = (screenY - viewport.y) / z - NODE_H / 2;
+    setHistoryPickerError(null);
+    setHistoryVisibleCount(60);
     setHistoryPicker({ x: wx, y: wy });
   }
   // 选中历史作品 → 作为节点加入当前项目(落在记下的点)
   async function addFromHistory(a: Artwork) {
-    if (readOnly || !user || !historyPicker) return;
+    if (readOnly || !user || !historyPicker || historyAddingRef.current) return;
+    historyAddingRef.current = true;
+    setHistoryAddingId(a.id);
+    setHistoryPickerError(null);
+    const contextEpoch = canvasContextEpochRef.current;
+    const contextProjectKey = activeProjectRef.current?.key || null;
     let parentId: string | null = null;
     if (active) {
       const ids = new Set(active.members.map((m) => m.id));
@@ -7017,7 +7053,6 @@ export function CanvasClient() {
       parentId = root?.id ?? active.members[0]?.id ?? null;
     }
     const pos = historyPicker;
-    setHistoryPicker(null);
     try {
       const r = await privateFetchRaw("/api/artworks/add", {
         method: "POST",
@@ -7046,11 +7081,24 @@ export function CanvasClient() {
       });
       const d = await readJsonSafe(r);
       if (!r.ok || !d?.id) throw new Error(d?.error || t("canvas.genFail"));
-      if (d?.id) pendingNodeRef.current = d.id;
+      if (!active && contextEpoch === canvasContextEpochRef.current && !activeProjectRef.current) pendingNodeRef.current = d.id;
       const fresh = await mergeWorks(d?.id ? [d.id] : []);
-      pushAddUndo(d?.id ?? null, fresh);
+      if (!fresh.some(artwork => artwork.id === d.id)) {
+        if (pendingNodeRef.current === d.id) pendingNodeRef.current = null;
+        setHistoryPicker(null);
+        flashTip(locale === "en" ? "Artwork added. Refresh the canvas to view it." : "作品已添加，请刷新画布查看");
+        return;
+      }
+      if (contextEpoch === canvasContextEpochRef.current && (activeProjectRef.current?.key || null) === contextProjectKey) {
+        if (active) setSelectedId(d.id);
+        pushAddUndo(d.id, fresh);
+      }
+      setHistoryPicker(null);
     } catch {
-      /* ignore */
+      setHistoryPickerError(locale === "en" ? "Could not add this artwork. Please try again." : "添加失败，请重试");
+    } finally {
+      historyAddingRef.current = false;
+      setHistoryAddingId(null);
     }
   }
   // 在画布某屏幕点新建一个空白占位节点(linked=拉线建的,连源节点)
@@ -12114,33 +12162,42 @@ export function CanvasClient() {
       {/* 从生成历史选择:作品选择器 */}
       {historyPicker && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onClick={() => setHistoryPicker(null)}
+          data-testid="canvas-history-picker"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4"
+          onClick={() => { if (!historyAddingRef.current) setHistoryPicker(null); }}
         >
           <div
-            className="flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="canvas-history-picker-title"
+            aria-busy={Boolean(historyAddingId)}
+            className="canvas-ui-light flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-none items-center justify-between border-b border-border px-4 py-3">
-              <span className="text-sm font-semibold">
+              <span id="canvas-history-picker-title" className="text-sm font-semibold">
                 {t("canvas.fromHistory")}
               </span>
               <button
                 type="button"
+                aria-label={t("canvas.close")}
+                disabled={Boolean(historyAddingId)}
                 onClick={() => setHistoryPicker(null)}
                 className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
+            {historyPickerError && <p role="alert" className="mx-4 mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{historyPickerError}</p>}
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               {(() => {
-                const items = (works ?? [])
+                const available = (works ?? [])
                   .filter(
                     (w) =>
-                      w.status === "completed" && /^https?:\/\//.test(w.image)
-                  )
-                  .slice(0, 60);
+                      w.status === "completed" && hasRenderableImage(w.image) &&
+                      !["workflow-decoration", "workflow-placeholder"].includes(w.source || "")
+                  );
+                const items = available.slice(0, historyVisibleCount);
                 if (items.length === 0)
                   return (
                     <p className="py-10 text-center text-sm text-muted-foreground">
@@ -12149,14 +12206,16 @@ export function CanvasClient() {
                   );
                 // 瀑布流:每张图按原始比例排列,不裁切、不变形,高低错落
                 return (
-                  <div className="columns-3 gap-3 [column-fill:_balance] sm:columns-5">
+                  <><div className="columns-3 gap-3 [column-fill:_balance] sm:columns-5">
                     {items.map((w) => (
                       <button
                         key={w.id}
                         type="button"
+                        data-history-artwork-id={w.id}
+                        disabled={Boolean(historyAddingId)}
                         onClick={() => void addFromHistory(w)}
                         title={w.title}
-                        className="group mb-3 block w-full break-inside-avoid overflow-hidden rounded-xl border border-border bg-secondary transition-all hover:-translate-y-0.5 hover:border-primary/50"
+                        className="group relative mb-3 block w-full break-inside-avoid overflow-hidden rounded-xl border border-slate-200 bg-slate-50 transition-all hover:-translate-y-0.5 hover:border-primary/50 disabled:cursor-wait disabled:opacity-60"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -12165,9 +12224,12 @@ export function CanvasClient() {
                           loading="lazy"
                           className="block w-full"
                         />
+                        {historyAddingId === w.id && <span className="absolute inset-0 flex items-center justify-center bg-white/60"><Loader2 aria-label={locale === "en" ? "Adding artwork" : "正在添加"} className="h-5 w-5 animate-spin text-primary" /></span>}
                       </button>
                     ))}
                   </div>
+                    {available.length > historyVisibleCount && <button type="button" disabled={Boolean(historyAddingId)} onClick={() => setHistoryVisibleCount(count => count + 60)} className="mx-auto mt-3 block rounded-lg border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50">{locale === "en" ? "Load more" : "加载更多"}</button>}
+                  </>
                 );
               })()}
             </div>

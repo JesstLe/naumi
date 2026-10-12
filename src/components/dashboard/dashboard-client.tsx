@@ -1,5 +1,7 @@
 "use client";
 
+import { isHostedImageUrl } from "@/lib/media-url";
+
 import { cdnUrl } from "@/lib/cdn";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -60,8 +62,8 @@ function regenHref(a: Artwork): string {
   if (a.style) q.set("style", a.style);
   if (a.ratio) q.set("ratio", a.ratio);
   if (a.resolution) q.set("resolution", a.resolution);
-  if (a.source && /^https?:\/\//.test(a.source)) q.set("src", a.source);
-  if (a.status === "completed" && /^https?:\/\//.test(a.image)) {
+  if (a.source && isHostedImageUrl(a.source)) q.set("src", a.source);
+  if (a.status === "completed" && isHostedImageUrl(a.image)) {
     q.set("gen", a.image);
   }
   // 血缘:把这张作品的 id 作为父节点带过去,新生成的图会记 parent_id=它
@@ -110,7 +112,7 @@ function isCanvasOrigin(a: Artwork): boolean {
 
 function workHref(a: Artwork): string {
   const view =
-    a.image && /^https?:\/\//.test(a.image)
+    a.image && isHostedImageUrl(a.image)
       ? `?view=${encodeURIComponent(a.image)}`
       : "";
   // 画布里产出的作品 → 在画布打开(option A:画布只管画布、生图只管生图)
@@ -829,9 +831,10 @@ function SingleCard({ a }: { a: Artwork }) {
 // 一键套图批次卡:同一次生成的全部图片 + 提示词聚合,支持整批一键下载 ZIP。
 // 横跨整行(sm:col-span-2 lg:col-span-3)。
 function SuiteBatchCard({ items }: { items: Artwork[] }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [showPrompts, setShowPrompts] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   // 按 主图 → 副图 → 详情页 排序;同类内按电商标准叙事顺序,命中不了再按生成次序。
   const ordered = [...items].sort((x, y) => {
@@ -864,12 +867,13 @@ function SuiteBatchCard({ items }: { items: Artwork[] }) {
   };
 
   const completed = ordered.filter(
-    (it) => it.status === "completed" && /^https?:\/\//.test(it.image)
+    (it) => it.status === "completed" && isHostedImageUrl(it.image)
   );
 
   async function downloadAll() {
     if (downloading || completed.length === 0) return;
     setDownloading(true);
+    setDownloadError(null);
     try {
       const res = await fetch("/api/suite/download", {
         method: "POST",
@@ -889,7 +893,7 @@ function SuiteBatchCard({ items }: { items: Artwork[] }) {
       link.remove();
       URL.revokeObjectURL(url);
     } catch {
-      /* swallow; user can retry */
+      setDownloadError(locale === "en" ? "Download failed. Please try again." : "打包下载失败，请重试");
     } finally {
       setDownloading(false);
     }
@@ -931,6 +935,7 @@ function SuiteBatchCard({ items }: { items: Artwork[] }) {
       </div>
 
       {/* 全部图片缩略图网格(主图→副图→详情页) */}
+      {downloadError && <p role="alert" className="mx-5 mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{downloadError}</p>}
       <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
         {ordered.map((it) => (
           <div

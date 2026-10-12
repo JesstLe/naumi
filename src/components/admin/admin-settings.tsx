@@ -1,5 +1,7 @@
 "use client";
 
+import { isHostedImageUrl } from "@/lib/media-url";
+
 import { cdnUrl } from "@/lib/cdn";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -123,7 +125,7 @@ const artIsCutout = (a: MemberArtwork) =>
 const artIsFusion = (a: MemberArtwork) => a.category === "fusion";
 function artworkToolHref(a: MemberArtwork): string {
   const view =
-    a.image && /^https?:\/\//.test(a.image)
+    a.image && isHostedImageUrl(a.image)
       ? `?view=${encodeURIComponent(a.image)}`
       : "";
   if (artIsCutout(a)) return `/cutout${view}`;
@@ -134,8 +136,8 @@ function artworkToolHref(a: MemberArtwork): string {
   if (a.style) q.set("style", a.style);
   if (a.ratio) q.set("ratio", a.ratio);
   if (a.resolution) q.set("resolution", a.resolution);
-  if (a.source && /^https?:\/\//.test(a.source)) q.set("src", a.source);
-  if (a.status === "completed" && /^https?:\/\//.test(a.image)) {
+  if (a.source && isHostedImageUrl(a.source)) q.set("src", a.source);
+  if (a.status === "completed" && isHostedImageUrl(a.image)) {
     q.set("gen", a.image);
   }
   q.set("from", a.id);

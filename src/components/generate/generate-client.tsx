@@ -1,4 +1,6 @@
 "use client";
+
+import { isHostedImageUrl } from "@/lib/media-url";
 import {toolSourceUrl, toolImageError} from "@/lib/tool-ui";
 import {useImageResolutions} from "@/lib/model-config/resolution-client";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -278,7 +280,7 @@ export function GenerateClient({
         ]);
         // 做同款:若模板带了白底原图(作品转模板时存的 sourceImage)→ 载入左侧产品图,
         // 让用户在白底原图上直接做同款;库模板没有 sourceImage 则产品图留空、自行上传。
-        if (tpl.sourceImage && /^https?:\/\//.test(tpl.sourceImage)) {
+        if (tpl.sourceImage && isHostedImageUrl(tpl.sourceImage)) {
           setParentId(""); // 模板原图是血缘根
           void loadBaseImage(tpl.sourceImage, "template.png");
         }

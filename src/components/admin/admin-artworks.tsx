@@ -1,5 +1,7 @@
 "use client";
 
+import { isHostedImageUrl } from "@/lib/media-url";
+
 import { cdnUrl } from "@/lib/cdn";
 import { useEffect, useState } from "react";
 import {
@@ -75,8 +77,8 @@ function regenHref(a: AdminArtwork): string {
   if (a.style) q.set("style", a.style);
   if (a.ratio) q.set("ratio", a.ratio);
   if (a.resolution) q.set("resolution", a.resolution);
-  if (a.source && /^https?:\/\//.test(a.source)) q.set("src", a.source);
-  if (a.status === "completed" && /^https?:\/\//.test(a.image)) {
+  if (a.source && isHostedImageUrl(a.source)) q.set("src", a.source);
+  if (a.status === "completed" && isHostedImageUrl(a.image)) {
     q.set("gen", a.image);
   }
   return `/generate?${q.toString()}`;
@@ -512,7 +514,7 @@ function ImageViewer({
   artwork: AdminArtwork;
   onClose: () => void;
 }) {
-  const hasSource = !!artwork.source && /^https?:\/\//.test(artwork.source);
+  const hasSource = isHostedImageUrl(artwork.source);
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/70 p-4"

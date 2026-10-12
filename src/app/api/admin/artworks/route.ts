@@ -1,3 +1,4 @@
+import { isHostedImageUrl } from "@/lib/media-url";
 import { NextResponse } from "next/server";
 import {
   dbEnabled,
@@ -110,8 +111,8 @@ export async function POST(req: Request) {
       if (!art) {
         return NextResponse.json({ error: "作品不存在" }, { status: 404 });
       }
-      // Template covers must be real hosted URLs (artwork images live on R2).
-      if (!/^https?:\/\//.test(art.image)) {
+      // Template covers accept persisted local media and remote hosted images.
+      if (!isHostedImageUrl(art.image)) {
         return NextResponse.json(
           { error: "该作品没有可用的图片地址，无法导入" },
           { status: 400 }
@@ -120,7 +121,7 @@ export async function POST(req: Request) {
       // 白底原图:把原作品当初上传的产品图(source_url)带进模板,做同款时载入产品图。
       // 只接受真实图片 URL;类型标记(upload/derived 等)或空则不带。
       const sourceImage =
-        art.source && /^https?:\/\//.test(art.source) ? art.source : "";
+        art.source && isHostedImageUrl(art.source) ? art.source : "";
       const { template, created } = await createTemplate({
         id: `tpl-art-${artworkId}`, // deterministic -> re-import 刷新而非重复
         title: (body.title ?? "").trim() || art.title || "用户作品",

@@ -2,7 +2,7 @@
 import { BRAND } from "@/lib/brand";
 
 import { cdnUrl } from "@/lib/cdn";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Search,
@@ -110,6 +110,7 @@ export function WorksClient() {
   const [favs, setFavs] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [active, setActive] = useState<LightboxWork | null>(null);
+  const favoriteBusyRef = useRef(new Set<string>());
 
   // 拉作品(与首页同源)。
   useEffect(() => {
@@ -222,6 +223,8 @@ export function WorksClient() {
   };
 
   const toggleFav = async (id: string) => {
+    if (favoriteBusyRef.current.has(id)) return;
+    favoriteBusyRef.current.add(id);
     const isFav = favs.has(id);
     // 乐观更新,失败回滚。
     setFavs((s) => {
@@ -232,18 +235,20 @@ export function WorksClient() {
     });
     try {
       const h = await authHeader();
+      let response: Response;
       if (isFav) {
-        await fetch(`/api/favorites?templateId=${encodeURIComponent(id)}`, {
+        response = await fetch(`/api/favorites?templateId=${encodeURIComponent(id)}`, {
           method: "DELETE",
           headers: h,
         });
       } else {
-        await fetch("/api/favorites", {
+        response = await fetch("/api/favorites", {
           method: "POST",
           headers: { ...h, "Content-Type": "application/json" },
           body: JSON.stringify({ templateId: id }),
         });
       }
+      if (!response.ok) throw new Error("favorite failed");
     } catch {
       setFavs((s) => {
         const next = new Set(s);
@@ -251,6 +256,38 @@ export function WorksClient() {
         else next.delete(id);
         return next;
       });
+      toast("收藏更新失败，请重试", "error");
+    } finally {
+      favoriteBusyRef.current.delete(id);
+    }
+  };
+
+  const favoriteSelected = async () => {
+    const ids = Array.from(selected).filter(id => !favs.has(id) && !favoriteBusyRef.current.has(id));
+    if (!ids.length) return;
+    ids.forEach(id => favoriteBusyRef.current.add(id));
+    try {
+      const h = await authHeader();
+      const results = await Promise.all(ids.map(async id => {
+        try {
+          const response = await fetch("/api/favorites", {
+            method: "POST",
+            headers: { ...h, "Content-Type": "application/json" },
+            body: JSON.stringify({ templateId: id }),
+          });
+          return { id, ok: response.ok };
+        } catch {
+          return { id, ok: false };
+        }
+      }));
+      const saved = results.filter(result => result.ok).map(result => result.id);
+      setFavs(current => new Set([...current, ...saved]));
+      if (saved.length !== ids.length) toast("部分收藏失败，请重试", "error");
+      else toast(`已收藏 ${saved.length} 张`, "success");
+    } catch {
+      toast("收藏更新失败，请重试", "error");
+    } finally {
+      ids.forEach(id => favoriteBusyRef.current.delete(id));
     }
   };
 
@@ -482,25 +519,7 @@ export function WorksClient() {
           </button>
           <button
             type="button"
-            onClick={async () => {
-              const ids = Array.from(selected);
-              const h = await authHeader();
-              setFavs((s) => {
-                const next = new Set(s);
-                ids.forEach((id) => next.add(id));
-                return next;
-              });
-              await Promise.all(
-                ids.map((id) =>
-                  fetch("/api/favorites", {
-                    method: "POST",
-                    headers: { ...h, "Content-Type": "application/json" },
-                    body: JSON.stringify({ templateId: id }),
-                  }).catch(() => {})
-                )
-              );
-              toast(`已收藏 ${ids.length} 张`, "success");
-            }}
+            onClick={() => void favoriteSelected()}
             className="flex items-center gap-1.5 whitespace-nowrap rounded-[8px] px-2.5 py-[7px] text-[12.5px] font-medium text-c-text2 transition-colors hover:bg-c-subtle"
           >
             <Heart size={15} strokeWidth={1.8} />
