@@ -20,6 +20,8 @@
 
 两机证据目录`/opt/naumi-staging/evidence/remove-template-nav-20261012`。各自Naumi/Hub部署锁覆盖读取基线、最新可读pg_dump/toc、env/Compose/业务配置指纹备份及固定镜像回滚、构建/切换至最终验收。沿用现有staging固定镜像deploy-release.sh流程，只切App/Worker。source固定回退为994c943，香港回退为7c84453，`ROLLBACK.sh --check`通过；不回灌数据库或媒体，未执行正式回退。
 
+最终两机FINAL_ACCEPTANCE及LOCKS_RELEASED已确认，各自Naumi/Hub两把flock再次非阻塞取得成功；受保护部署凭据保留，本轮无持久登录Cookie或新私钥副本。main与任务分支普通推送完成，文档跟进不改固定运行b64镜像。
+
 上一轮功能迭代计数2，本轮顶栏模块达到3，已fetch整合main47c697d并审查分支，同步计数归零；随后新合入Agent模块计数1。文档跟进不另发镜像。120本轮三次应用镜像切换（b530/c748/b64）加一次HTTPS网关发布累计4，达到维护条件后持锁盘点，仅清本任务三个已完成固定源码目录.next/cache，释放1,711,542,170字节（约1.59GiB），计数归零，最终65%/34GiB可用。香港两次应用发布计数2，43%/28GiB可用；本机C/E约217/193GiB可用。当前、至少最近两个成功镜像/runtime、完整7天备份、原始私钥、媒体与其他任务目录均保留。
 
 ## 切换前新完成的Agent分支与差异传输
