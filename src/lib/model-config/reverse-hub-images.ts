@@ -49,7 +49,12 @@ export async function reverseHubImageRequest(request: Request, scope: ModelExecu
   const operation = currentImageOperationParameters();
   const resolution = operation?.resolution || selected?.resolution || scope.frozen.facts?.requestedResolution || scope.frozen.facts?.resolution;
   const size = String(body.size || "1024x1024").split("x").map(Number);
-  const ratio = operation?.ratio || selected?.ratio || scope.frozen.facts?.ratio || (size[0] > size[1] ? "3:2" : size[0] < size[1] ? "2:3" : "1:1");
+  let ratio = operation?.ratio || selected?.ratio || scope.frozen.facts?.ratio;
+  if (!ratio || ratio === "auto") {
+    const meta = files[0] ? await sharp(files[0]).metadata() : undefined;
+    const aspect = meta?.width && meta.height ? meta.width / meta.height : size[0] && size[1] ? size[0] / size[1] : 1;
+    ratio = [...RATIOS].sort((a, b) => { const value = (r: string) => { const [w, h] = r.split(":").map(Number); return Math.abs(Math.log(w / h / aspect)); }; return value(a) - value(b); })[0];
+  }
   if (!RATIOS.has(ratio)) reject("即梦不支持该比例，请选择已开放的比例");
   mapResolution(parameters, scope.parameterMap.resolutionPolicy, resolution, ratio);
   if (parameters.resolution && !["1k", "1.5k", "2k", "4k"].includes(parameters.resolution) || Object.keys(parameters).some(k => !["prompt", "n", "response_format", "resolution", "ratio"].includes(k))) reject("即梦分辨率映射字段或实际值无效");

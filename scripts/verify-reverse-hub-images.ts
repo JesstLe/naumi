@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import sharp from "sharp";
 import { randomUUID } from "node:crypto";
-import { reverseHubImageFetch } from "../src/lib/model-config/reverse-hub-images";
+import { reverseHubImageFetch, reverseHubImageRequest } from "../src/lib/model-config/reverse-hub-images";
 import { withImageOperation, ImageOperationPending, isImageGatewayModel } from "../src/lib/image-gateway";
 import { runModelExecution, type ModelExecutionScope } from "../src/lib/model-config/context";
 import { reverseHubCatalogMetadata } from "../src/lib/supplier-models/discovery";
@@ -45,6 +45,8 @@ async function main() {
   const make = () => new Request("http://hub.test/v1/images/generations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "alias", prompt: "fixture", n: 1, size: "1024x1024", quality: "max" }) });
   await runModelExecution(scope, async () => {
     assert.equal(isImageGatewayModel(scope.frozen.publicModelId), true);
+    const auto = await withImageOperation(scope.frozen.publicModelId, { id: "auto-1", ratio: "auto" }, () => reverseHubImageRequest(make(), scope));
+    assert.equal(auto.payload.parameters.ratio, "1:1", "Canvas auto resolves to a supported native ratio");
     await assert.rejects(withImageOperation(scope.frozen.publicModelId, { id: "durable-1" }, () => adapter(make())), ImageOperationPending);
     const result = await withImageOperation(scope.frozen.publicModelId, { id: "durable-1" }, () => adapter(make()));
     assert.equal(result.status, 200); assert.equal(paid, 1); assert.equal(posts, 2, "Lost submit is a Hub idempotent replay, not another native generation");
