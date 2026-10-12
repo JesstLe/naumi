@@ -4,7 +4,7 @@
 
 用户明确要求120恢复本机服务、香港尚未投入使用，两台暂且独立运行。`120.27.162.85` 的App/Worker、数据库、Hub/New API、Redis、Router/模型代理/Mihomo已恢复，Nginx指向本机127.0.0.1:13012；`179.236.104.112`保持自己的独立服务及数据副本。两边后续新增数据不自动互通，不因旧迁移文档停用120或改为跨机转发，不反向同步或以一端旧库覆盖另一端。后续发布按照任务明确目标，保留各自配置/数据库/媒体并持各自部署锁。详见docs/changes/2026-10-12-restore-120-independent.md。
 
-两台受保护连接元数据仍在E:/workspace/naumi/output/hongkong-migration-20261012，source-connection.json对应120、deploy-connection.json对应香港；不得输出或提交凭据。原固定版本与鉴权/私有端口保持。旧101不连接，域名未改，两台媒体local，OSS/NAS不接；迁移heartbeat保持PAUSED。空间维护计数当前香港1、120恢复1，分别按每3次发布或构建前门槛维护。
+两台受保护连接元数据仍在E:/workspace/naumi/output/hongkong-migration-20261012，source-connection.json对应120、deploy-connection.json对应香港；不得输出或提交凭据。原固定版本与鉴权/私有端口保持。旧101不连接，域名未改，两台媒体local，OSS/NAS不接；迁移heartbeat保持PAUSED。空间维护计数当前香港2、120恢复1，分别按每3次发布或构建前门槛维护。
 
 
 ## 当前服务器覆盖约定（2026-10-12，优先于下文历史地址）
