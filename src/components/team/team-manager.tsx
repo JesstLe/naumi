@@ -49,10 +49,11 @@ export function TeamManager({ admin = false }: { admin?: boolean }) {
       if (seq !== loadSeq.current) return;
       setData(result); setTeamId(result.team?.id || id);
       setSelected(old => old ? result.members.find(m => m.email === old.email) || null : null);
-    } catch (e) { if (seq === loadSeq.current) setError((e as Error).message); }
+    } catch (e) { if (seq === loadSeq.current) { setError((e as Error).message); setData({ team: null, members: [] }); setSelected(null); setContent(null); setConversation(null); setMessages(null); } }
     finally { if (seq === loadSeq.current) setLoading(false); }
   }, [admin, teamId]);
   useEffect(() => { void load(); return invalidateLoads; }, [load, invalidateLoads, user?.email]);
+  useEffect(() => { setData({ team: null, members: [] }); setSelected(null); setContent(null); setConversation(null); setMessages(null); setEditor(null); setPassword(""); }, [user?.email]);
   useEffect(() => {
     if (!selectedEmail || !scopeId) { setContent(null); return; }
     const controller = new AbortController(); setContentLoading(true); setContentError(""); setContent(null); setConversation(null); setMessages(null);
