@@ -2562,6 +2562,25 @@ export async function addArtworks(
   }
 }
 
+/** Workbench needs eight previews and counts, not prompts/source/canvas metadata. */
+export async function getWorkbenchArtworks(emailRaw: string, dayStart: Date, dayEnd: Date) {
+  await ensureSchema();
+  const email = emailRaw.toLowerCase();
+  const filter = "email = $1 AND deleted_at IS NULL AND image_url <> '' AND status <> 'failed'";
+  const [recent, counts] = await Promise.all([
+    getPool().query(`SELECT id, title, image_url, status, gradient, created_at FROM app_artworks
+      WHERE ${filter} ORDER BY created_at DESC, id DESC LIMIT 8`, [email]),
+    getPool().query(`SELECT count(*)::int AS total,
+      count(*) FILTER (WHERE created_at >= $2 AND created_at < $3)::int AS today
+      FROM app_artworks WHERE ${filter}`, [email, dayStart, dayEnd]),
+  ]);
+  return {
+    artworks: recent.rows.map(r => ({id:r.id, title:r.title, image:r.image_url, status:r.status,
+      gradient:r.gradient, createdAt:new Date(r.created_at).toISOString()})),
+    stats: counts.rows[0] as {total:number; today:number},
+  };
+}
+
 export async function listArtworks(
   emailRaw: string
 ): Promise<ArtworkRecord[]> {

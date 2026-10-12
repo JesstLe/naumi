@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { cdnUrl } from "@/lib/cdn";
+import { useEffect, useRef, type CSSProperties } from "react";
+import { cdnThumb, onImgError } from "@/lib/cdn";
 
 /**
  * 落地页 hero「随手拍 → AI 成片」对比:两图叠放,中间分隔条可拖动(clip-path 擦除);
@@ -20,38 +20,46 @@ export function HeroCompare({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
-  const [pos, setPos] = useState(58); // 分隔条位置(% from left)
+  const pos = useRef(58);
+  const updateSplit = (value: number) => {
+    pos.current = value;
+    ref.current?.style.setProperty("--hero-split", `${value}%`);
+  };
 
   // 持续自动来回擦,循环演示原图↔成片对比;拖动时暂停,松手后平滑回归自动。
   useEffect(() => {
     // 尊重「减少动态效果」:停在 52%,不自动播放。
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      setPos(52);
+      updateSplit(52);
       return;
     }
     let raf = 0;
+    let visible = true;
+    const observer = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
+    if (ref.current) observer.observe(ref.current);
     const start = performance.now();
     const loop = (now: number) => {
       const e = (now - start) / 1000;
       const target = 50 + Math.sin(e * 0.8) * 26; // ~24%–76%,约 8s 一个来回
-      if (!dragging.current) {
-        setPos((p) => p + (target - p) * 0.06); // lerp 平滑(松手后也平滑回归)
+      if (visible && !document.hidden && !dragging.current) {
+        updateSplit(pos.current + (target - pos.current) * 0.06);
       }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return () => { cancelAnimationFrame(raf); observer.disconnect(); };
   }, []);
 
   const fromX = (clientX: number) => {
     const r = ref.current?.getBoundingClientRect();
     if (!r) return;
-    setPos(Math.max(2, Math.min(98, ((clientX - r.left) / r.width) * 100)));
+    updateSplit(Math.max(2, Math.min(98, ((clientX - r.left) / r.width) * 100)));
   };
 
   return (
     <div
       ref={ref}
+      style={{ "--hero-split": "58%" } as CSSProperties}
       className="group relative aspect-square w-full cursor-ew-resize select-none overflow-hidden rounded-[18px] border border-border bg-white shadow-2xl"
       onPointerDown={(e) => {
         dragging.current = true;
@@ -62,11 +70,15 @@ export function HeroCompare({
       onPointerUp={() => {
         dragging.current = false;
       }}
+      onPointerCancel={() => { dragging.current = false; }}
+      onLostPointerCapture={() => { dragging.current = false; }}
     >
       {/* AI 成片(底,全幅) */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={cdnUrl(after)}
+        src={cdnThumb(after, 1080)}
+        decoding="async"
+        onError={event => onImgError(event, after)}
         alt={afterLabel}
         draggable={false}
         className="absolute inset-0 h-full w-full object-contain"
@@ -74,10 +86,12 @@ export function HeroCompare({
       {/* 随手拍原图(上,clip 到分隔条左侧) */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={cdnUrl(before)}
+        src={cdnThumb(before, 1080)}
+        decoding="async"
+        onError={event => onImgError(event, before)}
         alt={beforeLabel}
         draggable={false}
-        style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }}
+        style={{ clipPath: "inset(0 calc(100% - var(--hero-split)) 0 0)" }}
         className="absolute inset-0 h-full w-full object-contain"
       />
       {/* 标签 */}
@@ -90,7 +104,7 @@ export function HeroCompare({
       {/* 分隔条 + 手柄 */}
       <div
         className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.15)]"
-        style={{ left: `${pos}%` }}
+        style={{ left: "var(--hero-split)" }}
       >
         <span className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-white text-[#16181D] shadow-lg">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">

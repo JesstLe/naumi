@@ -51,6 +51,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import NextImage from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -134,22 +135,20 @@ import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { cdnUrl } from "@/lib/cdn";
+import { cdnUrl, cdnThumb, onImgError } from "@/lib/cdn";
 import { ImageLightbox } from "@/components/image-lightbox";
-import { AnnotateEditorModal } from "@/components/canvas/annotate-editor";
-import {
-  CanvasComfyDialog,
-  type ComfyRunPayload,
-  type ComfyRunResult,
-} from "@/components/canvas/canvas-comfy-dialog";
+import type { ComfyRunPayload, ComfyRunResult } from "@/components/canvas/canvas-comfy-dialog";
 import { BRAND, BRAND_CANVAS_LOGO } from "@/lib/brand";
-import { TemplatesClient } from "@/components/templates/templates-client";
-import { CreditPacks } from "@/components/credits/credit-packs";
-import { PayQrModal } from "@/components/credits/pay-qr-modal";
-import { AccountClient } from "@/components/account/account-client";
-import { SecurityClient } from "@/components/account/security-client";
-import { GenerateClient } from "@/components/generate/generate-client";
-import { CheckoutClient } from "@/components/checkout/checkout-client";
+const panelLoading = () => <div role="status" className="p-4 text-sm text-slate-500">加载中…</div>;
+const AnnotateEditorModal = dynamic(() => import("./annotate-editor").then(module => module.AnnotateEditorModal), { ssr: false, loading: panelLoading });
+const CanvasComfyDialog = dynamic(() => import("./canvas-comfy-dialog").then(module => module.CanvasComfyDialog), { ssr: false, loading: panelLoading });
+const TemplatesClient = dynamic(() => import("@/components/templates/templates-client").then(module => module.TemplatesClient), { ssr: false, loading: panelLoading });
+const CreditPacks = dynamic(() => import("@/components/credits/credit-packs").then(module => module.CreditPacks), { ssr: false, loading: panelLoading });
+const PayQrModal = dynamic(() => import("@/components/credits/pay-qr-modal").then(module => module.PayQrModal), { ssr: false, loading: panelLoading });
+const AccountClient = dynamic(() => import("@/components/account/account-client").then(module => module.AccountClient), { ssr: false, loading: panelLoading });
+const SecurityClient = dynamic(() => import("@/components/account/security-client").then(module => module.SecurityClient), { ssr: false, loading: panelLoading });
+const GenerateClient = dynamic(() => import("@/components/generate/generate-client").then(module => module.GenerateClient), { ssr: false, loading: panelLoading });
+const CheckoutClient = dynamic(() => import("@/components/checkout/checkout-client").then(module => module.CheckoutClient), { ssr: false, loading: panelLoading });
 import { usePaymentConfig } from "@/lib/payment-context";
 import { useRecharge } from "@/lib/recharge-modal-context";
 import {
@@ -1247,11 +1246,20 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
   // 节点边界=图片区域(标题绝对定位悬在图上方,不占边界),端口对齐图片竖直中点
   const portY = (imageHeight ?? 110) / 2;
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [forceOriginal, setForceOriginal] = useState(false);
+  const preview = !selected && !forceOriginal && !!d.intrinsicWidth && !!d.intrinsicHeight;
+  const imageSrc = preview ? cdnThumb(d.image as string, Math.max(640, imageWidth || 0)) : cdnUrl(d.image as string);
+  const previousImage = useRef(d.image);
+  useEffect(() => {
+    if (previousImage.current === d.image) return;
+    previousImage.current = d.image;
+    setForceOriginal(false); setNaturalSize(null); aspectFixedRef.current = false;
+  }, [d.image]);
   const title = d.pending
     ? d.label
     : `${d.version ? `v${d.version}` : ""}${d.date ? ` · ${formatDate(d.date)}` : ""}${d.prompt ? `\n${d.prompt}` : ""}`;
-  // 白边自愈必须以浏览器实际解码出的 naturalWidth/naturalHeight 为准，不能信任
-  // 可能过期的数据库尺寸。这里只静默修复显示高度，不写坐标、不污染用户撤销栈。
+  // 缺尺寸/预览宽高比与元数据不符时回源解码；缩略图像素绝不回写为原图尺寸。
+  // 这里只静默修复显示高度，不写坐标、不污染用户撤销栈。
   const aspectFixedRef = useRef(false);
   useEffect(() => {
     if (aspectFixedRef.current || nodeId.startsWith("art-import-") || d.pending || d.videoUrl || !naturalSize) return;
@@ -1346,7 +1354,10 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={cdnUrl(d.image as string)}
+              key={d.image as string}
+              src={imageSrc}
+              decoding="async"
+              onError={event => { if (onImgError(event, d.image as string)) setForceOriginal(true); }}
               alt={d.label}
               draggable={false}
               width={imageWidth}
@@ -1354,15 +1365,20 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
               onLoad={(event) => {
                 const image = event.currentTarget;
                 if (!(image.naturalWidth > 0) || !(image.naturalHeight > 0)) return;
+                const optimized = preview && image.getAttribute("src") === imageSrc && imageSrc !== cdnUrl(d.image as string);
+                if (optimized && Math.abs(image.naturalWidth / image.naturalHeight - d.intrinsicWidth! / d.intrinsicHeight!) > 0.02) {
+                  setForceOriginal(true); return;
+                }
+                const width = optimized ? d.intrinsicWidth! : image.naturalWidth;
+                const height = optimized ? d.intrinsicHeight! : image.naturalHeight;
                 setNaturalSize((current) =>
-                  current?.width === image.naturalWidth && current.height === image.naturalHeight
+                  current?.width === width && current.height === height
                     ? current
-                    : { width: image.naturalWidth, height: image.naturalHeight }
+                    : { width, height }
                 );
                 if (
-                  d.intrinsicWidth !== image.naturalWidth ||
-                  d.intrinsicHeight !== image.naturalHeight
-                ) d.onDimensions?.(d.id, image.naturalWidth, image.naturalHeight);
+                  d.intrinsicWidth !== width || d.intrinsicHeight !== height
+                ) d.onDimensions?.(d.id, width, height);
               }}
               className="block h-full w-full object-contain"
               style={d.workflowPresentation ? { transform: `rotate(${d.workflowPresentation.rotation}deg) scaleX(${d.workflowPresentation.flipX ? -1 : 1})`, opacity: d.workflowPresentation.opacity } : undefined}
@@ -1783,6 +1799,7 @@ export function CanvasClient() {
   const canvasAreaRef = useRef<HTMLDivElement | null>(null);
   // 视口变换(平移/缩放),用于把生成器面板停靠到选中节点正下方并跟随
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
+  const viewportRef = useRef(viewport);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const previousCanvasSizeRef = useRef({ width: 0, height: 0 });
   const previousViewportAnchorRef = useRef<string | null>(null);
@@ -2028,6 +2045,8 @@ export function CanvasClient() {
   const [expandOpen, setExpandOpen] = useState(false);
   // ComfyUI 工作流面板(BYOC:算力在用户端点,不扣积分)
   const [comfyOpen, setComfyOpen] = useState(false);
+  const [comfyMounted, setComfyMounted] = useState(false);
+  useEffect(() => { if (comfyOpen) setComfyMounted(true); }, [comfyOpen]);
   const [expandRatio, setExpandRatio] = useState<string | null>(null);
   const [expandAnchor, setExpandAnchor] = useState("center");
   // 视频生成(OpenAI videos 协议,站内计费):面板状态 + 轮询句柄
@@ -3760,7 +3779,7 @@ export function CanvasClient() {
     setMultiSel(ids);
   }
   // 后台占位出现不移动镜头；用户正在其他节点工作时仍保留当前视野。
-  const nodesSig = displayNodes
+  const nodesSig = useMemo(() => displayNodes
     .map(
       (n) =>
         `${JSON.stringify([n.data.image,n.data.videoUrl,n.data.missingAsset,n.data.workflowPresentation,n.data.title,n.data.prompt,n.data.content])}:${JSON.stringify([n.data.generationStage, n.data.generationStartedAt, n.data.generationCount, n.data.generationCompleted, n.data.generationSize, n.data.generationKind])}:${JSON.stringify((n.data as {settings?:CanvasNodeSettings}).settings)}:${n.draggable}:${n.zIndex}:${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${
@@ -3781,15 +3800,15 @@ export function CanvasClient() {
           .map((reference) => reference.id)
           .join(",")}`
     )
-    .join("|");
-  const edgesSig = displayEdges
+    .join("|"), [displayNodes]);
+  const edgesSig = useMemo(() => displayEdges
     .map(
       (e) =>
         `${e.id}:${(e.data as { lit?: boolean })?.lit ? 1 : 0}:${
           (e.data as { dim?: boolean })?.dim ? 1 : 0
         }`
     )
-    .join("|");
+    .join("|"), [displayEdges]);
   useEffect(() => {
     // 数据刷新（如批量标记）时继承 React Flow 当前选择，不从 multiSel 反向灌入，
     // 避免 selected 与 onSelectionChange 互相触发造成 React #185 无限更新。
@@ -7034,6 +7053,7 @@ export function CanvasClient() {
   }
   // 在画布某屏幕点(相对画布区)上传图片:落在当前项目、该点的画布坐标
   function triggerUpload(screenX: number, screenY: number) {
+    const viewport = rfRef.current?.getViewport() ?? viewportRef.current;
     const z = viewport.zoom || 1;
     const wx = (screenX - viewport.x) / z - NODE_W / 2;
     const wy = (screenY - viewport.y) / z - NODE_H / 2;
@@ -7051,6 +7071,7 @@ export function CanvasClient() {
   // 从生成历史选择:在画布某点打开作品选择器
   function openHistoryPicker(screenX: number, screenY: number) {
     if (readOnly || historyAddingRef.current) return;
+    const viewport = rfRef.current?.getViewport() ?? viewportRef.current;
     const z = viewport.zoom || 1;
     const wx = (screenX - viewport.x) / z - NODE_W / 2;
     const wy = (screenY - viewport.y) / z - NODE_H / 2;
@@ -7133,6 +7154,7 @@ export function CanvasClient() {
     parentId: string | null,
     linked: boolean
   ): Pend {
+    const viewport = rfRef.current?.getViewport() ?? viewportRef.current;
     const z = viewport.zoom || 1;
     const wx = (screenX - viewport.x) / z - NODE_W / 2;
     const wy = (screenY - viewport.y) / z - NODE_H / 2;
@@ -7365,6 +7387,7 @@ export function CanvasClient() {
     }
   ) {
     if (readOnly || !user) return;
+    const viewport = rfRef.current?.getViewport() ?? viewportRef.current;
     const z = viewport.zoom || 1;
     const id = `text-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const projectKey = options?.forceNewProject
@@ -9220,9 +9243,16 @@ export function CanvasClient() {
               edgeTypes={edgeTypes}
               onInit={(inst) => {
                 rfRef.current = inst;
-                setViewport(inst.getViewport());
+                viewportRef.current = inst.getViewport();
+                setViewport(viewportRef.current);
               }}
-              onMove={(_, vp) => setViewport(vp)}
+              onMove={(_, vp) => {
+                viewportRef.current = vp;
+                // React Flow already moves its viewport. Only anchored docks/zoom
+                // need React updates during a gesture, not the whole empty-selection page.
+                if (selectedId || selectedPendId || selectedTextId || viewport.zoom !== vp.zoom) setViewport(vp);
+              }}
+              onMoveEnd={(_, vp) => { viewportRef.current = vp; setViewport(vp); }}
               onNodeClick={(event, node) => {
                 if (canvasTool === "hand") return;
                 if (node.id.startsWith("task-")) return;
@@ -10966,7 +10996,7 @@ export function CanvasClient() {
           )}
 
           {/* ComfyUI 工作流面板(BYOC):端点/导入/运行,图片产物按血缘挂树 */}
-          <CanvasComfyDialog
+          {(comfyOpen || comfyMounted) && <CanvasComfyDialog
             open={comfyOpen}
             onClose={() => setComfyOpen(false)}
             source={selected}
@@ -10974,7 +11004,7 @@ export function CanvasClient() {
               if (!selected) return Promise.reject(new Error("请先选择一张图"));
               return runComfyWorkflow(selected, payload);
             }}
-          />
+          />}
 
           {ocrArtworkId && (
             <aside
