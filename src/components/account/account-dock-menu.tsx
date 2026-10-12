@@ -11,6 +11,7 @@ import {
   Settings,
   ShieldCheck,
   Sun,
+  Users,
 } from "lucide-react";
 import type { SessionUser } from "@/lib/auth-context";
 import { supabaseEnabled } from "@/lib/auth-mode";
@@ -122,6 +123,15 @@ export function AccountDockMenu({
   const { t, locale } = useI18n();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
   const initial = user.name.trim().charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase() || "U";
+  const [hasTeam, setHasTeam] = useState(false);
+  useEffect(() => {
+    let cancelled = false; setHasTeam(false);
+    fetch("/api/team", { cache: "no-store" }).then(async response => {
+      const data = response.ok ? await response.json() : null;
+      if (!cancelled) setHasTeam(!!data?.team);
+    }).catch(() => { if (!cancelled) setHasTeam(false); });
+    return () => { cancelled = true; };
+  }, [user.email]);
 
   return (
     <div
@@ -200,6 +210,7 @@ export function AccountDockMenu({
           {t("menu.admin")}
         </Link>
       )}
+      {hasTeam && <Link role="menuitem" href="/team" onClick={onClose} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"><Users className="h-4 w-4" />{L("团队管理", "Team management")}</Link>}
       <div className="my-1 h-px bg-border" />
       <button
         type="button"
