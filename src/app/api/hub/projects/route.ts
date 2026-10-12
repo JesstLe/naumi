@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
+import { isRetiredBusinessProject } from "@/lib/retired-business-projects";
 import {
   dbEnabled,
   listProjects,
@@ -55,6 +56,9 @@ export async function POST(request: Request) {
   const name = (body?.name ?? "").trim().slice(0, 60);
   if (!slug || !name) {
     return NextResponse.json({ error: "slug 和 name 必填" }, { status: 400 });
+  }
+  if (isRetiredBusinessProject(slug)) {
+    return NextResponse.json({ error: "该业务项目已废弃" }, { status: 410 });
   }
   await upsertProject({
     slug,

@@ -65,9 +65,6 @@ services:
       PADDLE_OCR_TIMEOUT_MS: ${PADDLE_OCR_TIMEOUT_MS:-35000}
       PADDLE_OCR_MAX_ATTEMPTS: ${PADDLE_OCR_MAX_ATTEMPTS:-2}
       PADDLE_OCR_MIN_CONFIDENCE: ${PADDLE_OCR_MIN_CONFIDENCE:-0.12}
-      YUTANG_API_BASE: ${YUTANG_API_BASE:-http://host.docker.internal:8766}
-      YUTANG_USER: ${YUTANG_USER:-h13365319844}
-      YUTANG_PASS: ${YUTANG_PASS:-renda2026}
       AGENT_VISION_MODEL: ${AGENT_VISION_MODEL:-qwen3.8-flash}
       # 只影响竞品/爆款参考图反推；image 复用生图通道，不改全局 Agent。
       REFERENCE_VISION_SOURCE: ${REFERENCE_VISION_SOURCE:-agent}
@@ -108,7 +105,7 @@ services:
       VIDEO_PROVIDERS_JSON: ${VIDEO_PROVIDERS_JSON:-}
       # Optional: Pro license (or enter it in the first-run wizard instead)
     extra_hosts:
-      # 宿主机服务(鱼塘 8766)从容器内访问走 host.docker.internal
+      # 保留其他应用服务所需的宿主机网关别名
       - "host.docker.internal:host-gateway"
     volumes:
       - appdata:/data

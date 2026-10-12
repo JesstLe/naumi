@@ -166,7 +166,7 @@ api/agent/route.ts ──► lib/agent/runtime.ts(常驻会话管理)
   (thread.started/turn.started/item.completed/turn.completed),事件粒度足够桥接
 - **会话续接**:`codex exec resume <session_id>`(桥接 AgentSession 上下文恢复)
 - **自定义工具**:`codex mcp add <name> -- <command>` 注册 MCP server(stdio),
-  工具经 MCP 协议暴露;**实测**:注入 yutang_ping 工具 → exec 自动调用 → 返回业务数据
+  工具经 MCP 协议暴露;历史工具注入测试已验证自动调用与数据返回（当时的业务适配器现已废弃）。
 - **审批**:`--approve-for-me`(自动审批,配 workspace-write 沙箱;read-only 与其互斥)
 - **steering** ❌:exec 模式无插话队列。桥接层 steer() 需降级为"abort+新会话带上下文"
 - **桥接成本**:写 CodexBridge ~200 行(spawn 进程 + JSONL 解析 + MCP server 包装业务工具)
@@ -177,7 +177,7 @@ api/agent/route.ts ──► lib/agent/runtime.ts(常驻会话管理)
   (session/agent_start/turn_start/message_*/text_delta/agent_end),粒度与 pi 相当
 - **模型已通**:实测走 tdh 中转站 gpt-5.6-luna(与 Naumi 同一通道)
 - **会话**:`--resume <id>` / `-c` 续接;ACP 模式(`omp acp`)可做常驻 stdio 服务
-- **工具面**:skills 目录(~/.agents/skills 已有 scm/差评巡检 skill 可直接复用);
+- **工具面**:可加载skills目录；2026-10-12起不再接入已废弃的运营业务适配器。
   `--no-tools` 可关内置编程工具只留业务
 - **steering** ❌:-p 模式无插话;ACP 模式待验证
 - **桥接成本**:与 codex 同级;优势是与现有 skills 生态同源
