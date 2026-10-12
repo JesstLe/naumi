@@ -27,6 +27,7 @@ async function main(){
   assert.equal((await (await entry.GET(request(nativeCookie(fresh),undefined,"/api/team/access"))).json()).allowed,true);
   assert.equal((await snap.GET(request(nativeCookie(fresh),undefined,"/api/team"))).status,200);
   assert.equal((await snap.GET(request(nativeCookie(fresh),undefined,`/api/team?teamId=${id}`))).status,403);
+  await assert.rejects(team.mutateTeam(actor,{id:randomUUID(),teamId:id,action:"attach",email:fresh,expiresAt:cap},true),/先撤销/);
   await team.mutateTeam(actor,{id:randomUUID(),teamId:id,action:"attach",email:child,expiresAt:cap},true);
   assert.equal((await api.POST(request(consoleCookie,{...grant,id:randomUUID(),email:child}))).status,409);
   const credits=(await pool.query("SELECT credits_total,credits_used,password_hash,account_expires_at FROM app_users WHERE email=$1",[owner])).rows;
@@ -43,6 +44,8 @@ async function main(){
   await assert.rejects(grants.mutateGrant(actor,{...pause,id:randomUUID(),expectedVersion:4,action:"resume"}),/到期/);
   await grants.mutateGrant(actor,{...grant,id:randomUUID(),email:owner,expectedVersion:4});assert.equal((await snap.GET(request(nativeCookie(owner)))).status,200);
   await grants.mutateGrant(actor,{...pause,id:randomUUID(),expectedVersion:5,action:"revoke"});assert.equal(grants.grantStatus(await row(owner)),"revoked");
+  const {spawnSync}=await import("node:child_process");
+  const restart=spawnSync(process.execPath,["--conditions=react-server","--import","tsx","--input-type=module","-e","const t=await import('./src/lib/teams/server.ts');await t.ensureTeamSchema();const d=await import('./src/lib/db.ts');await d.getPool().end();"],{env:process.env,encoding:"utf8"});assert.equal(restart.status,0,restart.stderr);
   await team.ensureTeamSchema();assert.equal(grants.grantStatus(await row(owner)),"revoked");await assert.rejects(grants.mutateGrant(actor,{...pause,id:randomUUID(),expectedVersion:6,action:"resume"}),/重新授权/);
   await grants.mutateGrant(actor,{...grant,id:randomUUID(),email:owner,expectedVersion:6});assert.equal((await row(owner)).version,7);
   assert.deepEqual((await pool.query("SELECT credits_total,credits_used,password_hash,account_expires_at FROM app_users WHERE email=$1",[owner])).rows,credits);
