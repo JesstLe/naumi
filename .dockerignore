@@ -3,7 +3,9 @@ node_modules
 .git
 .github
 data
-docs
+docs/*
+# Runtime pricing imports this source-locked data file during next build.
+!docs/apimart-image25-pricing-20261008.json
 *.log
 .env
 .env.*
