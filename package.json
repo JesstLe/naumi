@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "verify:image-skills": "tsx --conditions react-server scripts/verify-image-skills.ts",
+    "verify:image-skills-execution": "tsx --conditions react-server scripts/verify-image-skills-execution.ts",
     "verify:model-management": "tsx --conditions react-server scripts/verify-model-management.ts",
     "verify:model-management-ui": "node scripts/verify-model-management-ui.mjs",
     "verify:admin-mvp": "npm run verify:model-management",

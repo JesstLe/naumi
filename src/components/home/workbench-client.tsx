@@ -24,6 +24,8 @@ import {
 import { cdnUrl } from "@/lib/cdn";
 import { toolBySlug, type ToolMeta } from "@/lib/tool-meta";
 import { Media } from "@/components/media";
+import { SkillBook } from "@/components/image-skills/skill-book";
+import type { ImageSkill } from "@/lib/image-skills/catalog";
 import { TextModelSelect } from "@/components/ui/text-model-select";
 import {
   WorkbenchSessions,
@@ -299,6 +301,7 @@ export function WorkbenchClient() {
   // ── 对话状态 ──
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
+  const [imageSkill, setImageSkill] = useState<ImageSkill | null>(null);
   const [busy, setBusy] = useState(false);
   const [running, setRunning] = useState(false);
   const [interject, setInterject] = useState("");
@@ -685,6 +688,7 @@ export function WorkbenchClient() {
         },
         body: JSON.stringify({
           message: userMsg.content,
+          skill: imageSkill ? { id: imageSkill.id, revision: imageSkill.revision } : null,
           sessionId: sessionIdRef.current || undefined,
           history,
           // 视觉输入:服务端按模型自动判定,支持时随消息直喂模型
@@ -1119,6 +1123,7 @@ export function WorkbenchClient() {
               </div>
             )}
             <div className="rounded-[20px] border border-c-border bg-c-card p-2.5 shadow-pop transition-colors focus-within:border-c-border2">
+              <div className="mb-2 px-1"><SkillBook selected={imageSkill} onSelect={setImageSkill} accountKey={user?.email || ""} busy={busy} sessionId={sessionIdRef.current} hasConversation={messages.some(m => m.role === "assistant" && !m.pending && !!m.content)} onUse={prompt => { if (!input.trim()) setInput(prompt); }} /></div>
               <textarea
                 value={input}
                 onPaste={onChatPaste}
@@ -1271,6 +1276,7 @@ export function WorkbenchClient() {
 
         {/* 大输入框 = Agent 入口:提交后同页进入对话。单行紧凑布局:加号/输入/发送同行,参考图有内容才出附加行 */}
         <div className="mt-7 rounded-[20px] border border-c-border bg-c-card p-3.5 shadow-pop transition-colors focus-within:border-c-border2">
+          <div className="mb-2"><SkillBook compact selected={imageSkill} onSelect={setImageSkill} accountKey={user?.email || ""} busy={composerSubmitting} onUse={prompt => { if (!composerText.trim()) setComposerText(prompt); composerTextRef.current?.focus(); }} /></div>
           {(composerPreviews.length > 0 || composerError) && (
             <div className="mb-2.5 flex flex-wrap items-center gap-2">
               {composerPreviews.map((url, index) => (

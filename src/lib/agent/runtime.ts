@@ -22,6 +22,7 @@ import type {BillingQuote} from "@/lib/billing/types";
 import {fingerprint} from "@/lib/billing/fingerprint";
 import type { CanvasAgentContext } from "./canvas-context";
 import { buildAgentSystemPrompt, latestUserText, pelicanPromptSection } from "./response-policy";
+import { imageSkillPrompt, type ImageSkill } from "@/lib/image-skills/catalog";
 import { readPelicanArtifact } from "./pelican-artifact";
 
 // ---------------------------------------------------------------------------
@@ -219,12 +220,13 @@ export async function getOrCreateSession(
   history: { role: string; content: string }[],
   cred: { cookie: string; authorization: string; imageQuality?: string } = { cookie: "", authorization: "" },
   modelId = MODEL_ID,
-  options?: { systemPrompt: string; canvas: CanvasAgentContext; onToolResult: (result: unknown, tool: string) => Promise<void> }
+  options?: { systemPrompt: string; canvas: CanvasAgentContext; onToolResult: (result: unknown, tool: string) => Promise<void> },
+  imageSkill?: ImageSkill | null
 ): Promise<Session> {
   gcSessions();
   const scope = currentModelExecution("text") || currentModelExecution("vision");
   const managed = scope ? await configuredPiModels(scope,{userEmail:email,feature:options ? 'canvas.assistant' : 'agent.text'}) : null;
-  const contextStamp = options ? JSON.stringify({canvas:options.canvas,billingVersion:currentExecutionBundle()?.billingVersion}) : undefined;
+  const contextStamp = JSON.stringify({ canvas: options?.canvas, billingVersion: currentExecutionBundle()?.billingVersion, imageSkill: imageSkill ? { id: imageSkill.id, revision: imageSkill.revision } : null });
   const existing = SESSIONS.get(key(email, sessionId));
   if (existing && (existing.running || existing.canvasExecuting || existing.modelId === modelId && existing.modelExecutionStamp === managed?.stamp && existing.contextStamp === contextStamp)) {
     existing.lastUsedAt = Date.now();
@@ -234,6 +236,8 @@ export async function getOrCreateSession(
     return existing;
   }
 
+  // A skill/context switch must rebuild the prompt from the latest persisted history.
+  await existing?.persistPending;
   if (existing) SESSIONS.delete(key(email, sessionId));
   const models = managed?.models || await ensureModels(modelId);
   const model = models.getModel("naumi-relay", managed?.wireModel || modelId);
@@ -265,7 +269,7 @@ export async function getOrCreateSession(
   const acceptedBundle = currentExecutionBundle();
   const agent = new Agent({
     initialState: {
-      systemPrompt: buildAgentSystemPrompt(AGENT_SYSTEM_PROMPT, options?.systemPrompt, latestUserText({ messages: savedHistory })),
+      systemPrompt: buildAgentSystemPrompt(AGENT_SYSTEM_PROMPT, (options?.systemPrompt || "") + imageSkillPrompt(imageSkill || null), latestUserText({ messages: savedHistory })),
       model: model as Model<"openai-completions">,
       tools: createNaumiTools(
         new Request(process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"),

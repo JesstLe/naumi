@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowRight, ArrowRightToLine, ArrowUp, Check, CircleHelp, Copy, Frame, History, Image as ImageIcon, Infinity as InfinityIcon, LayoutTemplate, Loader2, MessageSquarePlus, Palette, Plus, RefreshCw, ScanLine, SlidersHorizontal, ThumbsDown, ThumbsUp, Type, X } from "lucide-react";
+import { SkillBook } from "@/components/image-skills/skill-book";
+import type { ImageSkill } from "@/lib/image-skills/catalog";
 import { cn } from "@/lib/utils";
 import { agentActivityLabel, agentElapsedLabel } from "@/lib/canvas/agent-activity";
 import type { AgentOrbStep } from "@/lib/canvas/agent-orb";
@@ -20,9 +22,13 @@ export type SavedConversation = { id: string; title: string; turns: CanvasAssist
 
 /** Presentation-only sidebar: the parent owns SSE, context, model routing and billing. */
 export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns, input, busy, error,
-  costLabel, labels, tasks, onInputChange, onSend, onNewChat, onRestoreChat, onClose, onPreview,
+  selectedSkill, onSkillSelect, skillAccountKey, skillSessionId, costLabel, labels, tasks, onInputChange, onSend, onNewChat, onRestoreChat, onClose, onPreview,
   onCopy, onFeedback, feedbackLabels = { positive: "有帮助", negative: "需要改进" }, renderContent, modelControl, steps = [], onStop, onClearReference, historyLoader, historyScopeKey = "", onRenameHistory, onDeleteHistory, open = true, focusInput = true, contextReady = true, english = false, responding = false, attention,
 }: {
+  selectedSkill?: ImageSkill | null;
+  onSkillSelect?: (skill: ImageSkill | null) => void;
+  skillAccountKey?: string;
+  skillSessionId?: string;
   open?: boolean;
   focusInput?: boolean;
   contextReady?: boolean;
@@ -301,6 +307,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
             </button>)}
           </div>
         </div>}
+        {onSkillSelect && <div className="mb-2"><SkillBook compact selected={selectedSkill || null} onSelect={onSkillSelect} accountKey={skillAccountKey || ""} busy={busy} sessionId={skillSessionId} hasConversation={turns.some(turn => turn.role === "assistant" && !!turn.content.trim())} onUse={prompt => { if (!input.trim()) onInputChange(prompt); composer.current?.focus(); }} /></div>}
         <textarea ref={composer} data-testid="canvas-assistant-input" aria-label={labels.placeholder} rows={2} value={input} disabled={busy}
           placeholder={labels.placeholder} onChange={event => onInputChange(event.target.value)}
           onKeyDown={event => {

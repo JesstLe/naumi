@@ -1,3 +1,5 @@
+import { resolveImageSkill } from "@/lib/image-skills/server";
+import { SkillError } from "@/lib/image-skills/catalog";
 import "server-only";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
@@ -42,6 +44,8 @@ export async function runCanvasAgent(request: Request) {
   const message = String(history.at(-1)?.role === "user" ? history.at(-1)?.content : "").trim().slice(0, 4000);
   const projectKey=String(body.projectKey||"").trim().slice(0,200);
   if ((!anchorId&&!projectKey) || !message || !/^[\w-]{8,80}$/.test(String(body.sessionId || ""))) return NextResponse.json({ error: "请输入对话内容与画布项目" }, { status: 400 });
+  let imageSkill;
+  try { imageSkill = await resolveImageSkill(email, body.skill); } catch (error) { if (error instanceof SkillError) return NextResponse.json({ error: error.message }, { status: error.status }); throw error; }
   const ids = Array.from(new Set([...(anchorId?[anchorId]:[]), ...(Array.isArray(body.contextIds) ? body.contextIds.map(String) : [])])).slice(0, 5);
   const found = await listArtworksByIds(email, ids);
   const ordered = ids.map(id => found.find(art => art.id === id));
@@ -86,13 +90,13 @@ export async function runCanvasAgent(request: Request) {
   const session = await getOrCreateSession(email, sessionId, history.slice(0, -1), { cookie, authorization: request.headers.get("authorization") || "", imageQuality: canvas.quality }, modelId, {
     canvas, onToolResult: attach,
     systemPrompt: `你正在画布侧边栏执行任务，当前显示模型为「${label}」。\n当前图：${canvas.imageUrls[0]||"未选择图片，可直接文本对话；图片处理先向用户索取参考图，不猜测图片"}\n上游参考图：${canvas.imageUrls.slice(1).join("\n")}\n当前图标题：${anchor?.title||"无"}\n当前图提示词：${anchor?.prompt || "无"}\n默认生图参数：${canvas.ratio}、${canvas.resolution}、${canvas.quality}。\n用户要求换色、精修或生图时实际调用工具，不只改写提示词；站内成品动画和仅分析、讨论或编写提示词时不调用收费工具。生图工具自动引用当前图与上游参考。文字模型只负责理解和编排，图片工具使用独立的后台画布生图模型。禁止将文字模型ID作为生图模型。`,
-  });
+  }, imageSkill);
   if (session.running || session.canvasExecuting) return NextResponse.json({ error: "当前任务仍在执行，请勿重复提交" }, { status: 409 });
   liveSession=session;session.toolResultsPending=undefined;
   session.turnId = String(body.turnId || body.sessionId);
   if (!session.agent.state.messages.length) session.title = message.slice(0,120);
   const messageIndex=session.agent.state.messages.filter(turn=> { if(turn.role!=="user"&&turn.role!=="assistant")return false; return typeof turn.content==="string" ? !!turn.content.trim() : turn.content.some(part=>part.type==="text"&&!!part.text.trim()); }).length;
-  appendSessionEvent(session,"canvas_turn",{turnId:session.turnId,anchorId,projectKey,message,messageIndex});
+  appendSessionEvent(session,"canvas_turn",{turnId:session.turnId,anchorId,projectKey,message,messageIndex,skill:imageSkill ? {id:imageSkill.id,revision:imageSkill.revision,name:imageSkill.name} : null});
   session.running = true; session.canvasExecuting = true;
   await persistAgentSession(session);
   const cursorStart = session.events.length;

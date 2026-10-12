@@ -20,6 +20,7 @@ import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surf
 import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { GenerationPlaceholder } from "./generation-placeholder";
 import { generationPlaceholderSize, placeGenerationPreview, type GenerationStage } from "@/lib/canvas/generation-feedback";
+import type { ImageSkill } from "@/lib/image-skills/catalog";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
 import { useWorkflowPaste } from "./use-workflow-paste";
 import { WorkflowDecorationNode, WorkflowGroupNode } from "./workflow-import-nodes";
@@ -2090,6 +2091,7 @@ export function CanvasClient() {
   const [assistantArtworkId, setAssistantArtworkId] = useState<string | null>(null);
   const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
   const [assistantInput, setAssistantInput] = useState("");
+  const [assistantSkill, setAssistantSkill] = useState<ImageSkill | null>(null);
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantResponding, setAssistantResponding] = useState(false);
   const [assistantSteps, setAssistantSteps] = useState<AgentOrbStep[]>([]);
@@ -5381,7 +5383,7 @@ export function CanvasClient() {
     ];
     const attempt = previousAttempt?.input === text && previousAttempt.anchorId === anchorId ? previousAttempt : {
       input: text, anchorId, history,
-      body: JSON.stringify({ mode: "agent", sessionId: assistantSessionId.current, turnId: browserRandomUUID(), anchorId, projectKey: activeKey||"workspace", contextIds: source?assistantContext(members, source.id).map((artwork) => artwork.id):[], messages: history.map(({ role, content }) => ({ role, content })), imageModelId: chosenFeatureModel("canvas.image") || genModel, ratio: genRatio === "auto" ? source?.ratio || "1:1" : genRatio, resolution: genResolution, quality: genQuality }),
+      body: JSON.stringify({ mode: "agent", skill: assistantSkill ? { id: assistantSkill.id, revision: assistantSkill.revision } : null, sessionId: assistantSessionId.current, turnId: browserRandomUUID(), anchorId, projectKey: activeKey||"workspace", contextIds: source?assistantContext(members, source.id).map((artwork) => artwork.id):[], messages: history.map(({ role, content }) => ({ role, content })), imageModelId: chosenFeatureModel("canvas.image") || genModel, ratio: genRatio === "auto" ? source?.ratio || "1:1" : genRatio, resolution: genResolution, quality: genQuality }),
     };
     assistantRetry.current = attempt;
     const epoch = ++assistantRequestEpoch.current;
@@ -12023,7 +12025,7 @@ export function CanvasClient() {
           const anchor = active?.members.find(artwork => artwork.id === assistantArtworkId);
           return <CanvasAssistantPanel open={assistantVisible} focusInput={assistantFocusInput} contextReady={true} modelControl={<TextModelSelect feature="canvas.assistant" compact composer dark={!lightCanvas} />} key={`assistant:${activeKey || "empty"}`} historyScopeKey={activeKey||"workspace"} light={lightCanvas} anchorTitle={anchor?.title || (locale==="en"?"Text conversation":"文本对话")}
             contextImages={anchor ? assistantContext(active?.members ?? [], anchor.id).map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) })) : []}
-            turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} steps={assistantSteps} english={locale === "en"} responding={assistantResponding} attention={orbCompanion.model.attention} onStop={() => void stopAssistantTask()}
+            selectedSkill={assistantSkill} onSkillSelect={skill => { setAssistantSkill(skill); assistantRetry.current = null; }} skillAccountKey={user?.email || ""} skillSessionId={assistantSessionId.current} turns={assistantTurns} input={assistantInput} busy={assistantBusy} error={assistantError} steps={assistantSteps} english={locale === "en"} responding={assistantResponding} attention={orbCompanion.model.attention} onStop={() => void stopAssistantTask()}
             labels={{title: t("canvas.assistant.title"),
               scrollToBottom: t("canvas.assistant.scrollToBottom"),
               newChat: t("canvas.assistant.newChat"),

@@ -1,3 +1,5 @@
+import { resolveImageSkill } from "@/lib/image-skills/server";
+import { SkillError } from "@/lib/image-skills/catalog";
 import {randomUUID} from "node:crypto";
 import { NextResponse } from "next/server";
 import { withBiRequest } from "@/lib/bi/model-observer";
@@ -54,6 +56,7 @@ async function handlePut(request: Request) {
     sessionId?: string;
     history?: ChatMsg[];
     images?: string[];
+    skill?: unknown;
   } | null;
   const message = (body?.message ?? "").trim().slice(0, 4000);
   const sessionId =
@@ -66,6 +69,8 @@ async function handlePut(request: Request) {
   if (!rateLimit(`agent:${email}`, 20, 600_000)) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
   }
+  let imageSkill;
+  try { imageSkill = await resolveImageSkill(email, body?.skill); } catch (error) { if (error instanceof SkillError) return NextResponse.json({ error: error.message }, { status: error.status }); throw error; }
   const settings = await getOpenAISettings();
   if (!process.env.AGENT_API_KEY && !settings.apiKey) {
     return NextResponse.json({ error: "模型接口未配置" }, { status: 503 });
@@ -102,7 +107,7 @@ async function handlePut(request: Request) {
       authorization: request.headers.get("authorization") ?? "",
       imageQuality: request.headers.get("x-naumi-image-quality") || "medium",
     },
-    modelId
+    modelId, undefined, imageSkill
   );
   if (session.running) {
     return NextResponse.json(
@@ -111,6 +116,7 @@ async function handlePut(request: Request) {
     );
   }
   session.turnId=randomUUID();
+  if (imageSkill) appendSessionEvent(session, "image_skill", { id:imageSkill.id, revision:imageSkill.revision, name:imageSkill.name, turnId:session.turnId });
   const eventCursor = session.events.length;
   if (session.agent.state.messages.length === 0) {
     session.title = message.slice(0, 120) || session.title;
@@ -319,6 +325,7 @@ async function handlePost(request: Request) {
     message?: string;
     history?: ChatMsg[];
     images?: string[];
+    skill?: unknown;
   } | null;
   const message = (body?.message ?? "").trim().slice(0, 4000);
   if (!message) {
@@ -327,6 +334,8 @@ async function handlePost(request: Request) {
   if (!rateLimit(`agent:${email}`, 20, 600_000)) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
   }
+  let imageSkill;
+  try { imageSkill = await resolveImageSkill(email, body?.skill); } catch (error) { if (error instanceof SkillError) return NextResponse.json({ error: error.message }, { status: error.status }); throw error; }
   const tempId = `tmp-${Date.now()}`;
   const postModelId = requestedTextModel(request, MODEL_ID);
   const imageUrls = Array.isArray(body?.images)
@@ -348,7 +357,7 @@ async function handlePost(request: Request) {
     cookie: request.headers.get("cookie") ?? "",
     authorization: request.headers.get("authorization") ?? "",
       imageQuality: request.headers.get("x-naumi-image-quality") || "medium",
-  }, postModelId);
+  }, postModelId, undefined, imageSkill);
   if (session.running) {
     return NextResponse.json({ error: "任务正在执行中" }, { status: 409 });
   }
