@@ -1,6 +1,6 @@
 # 画布视频完整融合进度
 
-更新：2026-10-14。当前会话 Native 顺序实施，后台检查点 A 已合主线，媒体检查点 B 的真实应用组合/多产物/原生格式/内存与真实 Linux 组件沙箱通过，正做第二次阶段合并。下一模块是画布与 Agent（Task11—13），完整34项 E2E、上游实操、完整 App 固定镜像、生产候选/切流/回滚和103视频融合发布仍未完成，目标 active。
+更新：2026-10-14。当前会话 Native 顺序实施，后台检查点 A 已合主线，媒体检查点 B 的真实应用组合/多产物/原生格式/内存与真实 Linux 组件沙箱通过，第二次阶段合并已完成。下一模块是画布与 Agent（Task11—13），完整34项 E2E、上游实操、完整 App 固定镜像、生产候选/切流/回滚和103视频融合发布仍未完成，目标 active。
 
 设计：[完整范围及34项矩阵](../superpowers/specs/2026-10-13-canvas-video-fusion-design.md)。计划：[18项实施任务与A/B/C/D验收](../superpowers/plans/2026-10-13-canvas-video-fusion.md)。源审计：[当前缺口与签名事实修订](2026-10-13-canvas-video-source-audit.md)。独立分支 codex/canvas-video-fusion-20261013；A 已普通合入 main `65db84d`。B 实现至 `a73b4c3`，阶段整合保留 main `0cc86c0`，原始与失败记录留在下文，最新实际证据见媒体模块文档。
 
@@ -116,3 +116,5 @@ Task10第三批（2026-10-14）写入辅助文件加密冻结/序列/分片模�
 Task10第四批（2026-10-14）已集中运行实际App/DB/媒体Worker：基础处理、HLS/DASH/序列/滤镜/复用走完后，整次media测试在错误的即时processing断言失败，未标全模块PASS；改为等待真实处理进度，controls/billing专项通过实际取消/跨重启退休/回收、3→7改价+App重启仍冻结3积分并一次结算、取消释放、显式0/false及停止接单/恢复。多产物AutoDL/RunningHub/ModelVerse/TFRouter inline通过；AutoDL中途落盘失败保持预扣并重启恢复缺项通过。首次BYOC ComfyUI暴露供应商ledger表初始化依赖，已修复并仅复测视频/音频/图片三产物与0积分，通过。150MiB真实下载器内存/偏小Content-Length/越界取消通过（ArrayBuffer约300MiB、heap约2.1MiB）。候选媒体服务生命周期已通过Bash语法，Linux launcher独立真实验收脚本已写但尚未运行；不能宣称B完整通过/已合main/已发布。Linux、最终组合及相关合并回归仍待完成；C/D保留完整范围，详见媒体模块记录。103仅只读核查锁/容量，本任务未持锁或改正式业务状态。
 
 Task10 B最终组合与Linux实测完成（2026-10-14）：整次media basic/controls/billing PASS、五组供应商全部产物/AutoDL中断落存储恢复/ComfyUI首次三类0积分 PASS；原生格式MKV复用/仅音轨MP4/BMP专项PASS。正式镜像补media-bundle文件；Linux实际构建修正ldd标题采集，ELF加载器权限与沙箱独立exec tmpfs落实，保持普通tmp noexec。固定8be45e3派生组件镜像76ca4508…真实launcher/流/取消/网络内核拒绝/宿主及跨job拒绝/原SHA通过，HTTP Worker生产启动自检/鉴权/drain-resume/撤回通过。组件镜像fullAppImage=false，不能冒充完整发布或生产回滚；正式配置/业务DB媒体未改，无本任务持发布锁。最新main43cccd5的生图/元数据/企业入口/标题即将保留整合并做必要回归，再阶段推main。C/D、全34矩阵/演示、完整固定App构建与103实际发布保持待完成；真实供应商视频质量/额度未验收，详见媒体模块文档。
+
+第二次阶段合并完成：`bb0286bea5db8c92380dd42f1c3a043af4c530b3` 已通过普通原子推送同时进入 main 与本任务分支，最新同事 main `0cc86c0` 保留。此次仅合代码，没有正式103部署，也没有取得或占用发布锁。下一步顺序实施 Task11—13，完整 D 与发布仍未完成。
