@@ -1,7 +1,7 @@
 "use client";
 import {useState} from "react";
 import type {OrderedInput} from "@/lib/video/references";
-import {catalogCapability,videoModeRoles,inputReference,type VideoCatalogModel,type VideoNodeConfig,type VideoInputChoice} from "@/lib/video/client-settings";
+import {catalogCapability,videoModeRoles,type VideoCatalogModel,type VideoNodeConfig,type VideoInputChoice} from "@/lib/video/client-settings";
 import {compileVideoPrompt} from "@/lib/video/prompt";
 import {compileVideoCamera} from "@/lib/video/camera";
 import {useVideoByocCatalog} from "./use-byoc-catalog";
@@ -19,9 +19,9 @@ export function VideoSettingsFields({config,inputs,models,choices,nodeId,readOnl
   const byoc=useVideoByocCatalog(),workflow=byoc.catalog?.workflows.find(item=>item.id===config.comfyWorkflowId);
   const cap=catalogCapability(models.find(model=>model.modelId===config.modelId&&model.providerId===config.providerId));
   const preview=(()=>{try{return compileVideoPrompt(config.prompt||"",inputs,compileVideoCamera(config.camera)).prompt;}catch(cause){return cause instanceof Error?cause.message:"引用无效";}})();
-  function references(next:OrderedInput[]){return next.flatMap(input=>{const ref=inputReference(input);if(!ref)return [];const old=config.references?.find(item=>item.id===ref.id);return [{...old,...ref}];});}
-  function changeConfig(next:VideoNodeConfig){if(!next.comfyWorkflowId&&next.mode!==config.mode){const ordered=videoModeRoles(inputs,next.mode);onInputs(ordered);next={...next,references:references(ordered)};}onConfig(next);setError("");}
-  function changeInputs(next:OrderedInput[]){const ordered=config.comfyWorkflowId?next:videoModeRoles(next,config.mode);onInputs(ordered);onConfig({...config,references:references(ordered)});setError("");}
+
+  function changeConfig(next:VideoNodeConfig){if(!next.comfyWorkflowId&&next.mode!==config.mode){const ordered=videoModeRoles(inputs,next.mode);onInputs(ordered);next={...next,references:[]};}onConfig(next);setError("");}
+  function changeInputs(next:OrderedInput[]){const ordered=config.comfyWorkflowId?next:videoModeRoles(next,config.mode);onInputs(ordered);onConfig({...config,references:[]});setError("");}
   function appendImports(uploaded:VideoInputChoice[]){changeInputs([...inputs,...uploaded.filter(choice=>!inputs.some(input=>input.nodeId===choice.nodeId)).map(choice=>({id:`ref-${choice.id}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==="video"?"source_video" as const:choice.kind==="audio"?"source_audio" as const:"reference" as const,value:choice.value}))]);}
   async function importFiles(files:File[]){if(!onImport||busy||uploading||readOnly||!files.length)return;setUploading(true);onImportBusyChange?.(true);setError("");try{appendImports(await onImport(files));}catch(cause){if(cause instanceof VideoAssetImportError)appendImports(cause.choices);setError(cause instanceof Error?cause.message:"素材导入失败");}finally{setUploading(false);onImportBusyChange?.(false);}}
   return <fieldset disabled={busy||uploading||readOnly} className="min-w-0 space-y-3">

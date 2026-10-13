@@ -5227,7 +5227,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ];
     const attempt = previousAttempt?.input === text && previousAttempt.anchorId === anchorId ? previousAttempt : {
       input: text, anchorId, history,
-      body: JSON.stringify({ mode: "agent", skill: assistantSkill ? { id: assistantSkill.id, revision: assistantSkill.revision } : null, sessionId: assistantSessionId.current, turnId: browserRandomUUID(), anchorId, projectKey: activeKey||"workspace", contextIds: source?assistantContext(members, source.id).map((artwork) => artwork.id):[], messages: history.map(({ role, content }) => ({ role, content })), imageModelId: chosenFeatureModel("canvas.image") || genModel, ratio: genRatio === "auto" ? source?.ratio || "1:1" : genRatio, resolution: genResolution, quality: genQuality }),
+      body: JSON.stringify({ mode: "agent", skill: assistantSkill ? { id: assistantSkill.id, revision: assistantSkill.revision } : null, sessionId: assistantSessionId.current, turnId: browserRandomUUID(), anchorId, videoNodeId:videoNodesStore.getNode(assistantArtworkId||selectedId||"")?.id,textNodeId:textNodes.find(node=>node.id===(assistantArtworkId||selectedId))?.id, projectKey: activeKey||"workspace", contextIds: source?assistantContext(members, source.id).map((artwork) => artwork.id):[], messages: history.map(({ role, content }) => ({ role, content })), imageModelId: chosenFeatureModel("canvas.image") || genModel, ratio: genRatio === "auto" ? source?.ratio || "1:1" : genRatio, resolution: genResolution, quality: genQuality }),
     };
     assistantRetry.current = attempt;
     const epoch = ++assistantRequestEpoch.current;
@@ -5242,6 +5242,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     let serverSessionId = acceptedSession;
     assistantController.current = controller;
     const artifactIds = new Set<string>();
+    let videoProjectResult:{key:string;nodeId:string}|undefined;
+    const acceptedVideoProject=activeKey;
     let orbFailureCode: string | undefined;
     try {
       const response = await privateFetch("/api/canvas/assistant", {
@@ -5313,6 +5315,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               const next: AgentOrbStep = {id,label,tool:String(data.tool || ""),summary:agentToolSummary(data.summary),status:type === "tool_start" ? "running" : data.isError ? "error" : "done"};
               return current.some(step => step.id === id) ? current.map(step => step.id === id ? next : step) : [...current, next];
             });
+          } else if(type==="video_nodes"&&Array.isArray(data.nodes)){
+            const nodes=data.nodes as {id:string;projectKey:string}[];
+            if(acceptedVideoProject){if(nodes.some(node=>node.projectKey===acceptedVideoProject))await videoNodesStore.refresh();}
+            else if(nodes[0])videoProjectResult={key:nodes[0].projectKey,nodeId:nodes[0].id};
           } else if (type === "artifacts" && Array.isArray(data.artifacts)) {
             const artifacts = data.artifacts as {id:string;image:string;title:string}[];
             artifacts.forEach(art => artifactIds.add(art.id));
@@ -5336,6 +5342,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       assistantSessionId.current = serverSessionId;
       setAssistantOutcome("done");
       orbCue({ type: "done" });
+      if(videoProjectResult&&!activeProjectRef.current?.key){await videoNodesStore.refresh();if(epoch===assistantRequestEpoch.current){setCreatingNew(false);setBrowsing(false);setActiveKey(videoProjectResult.key);setSelectedId(videoProjectResult.nodeId);}}
     } catch (error) {
       if (epoch !== assistantRequestEpoch.current) return;
       if(acceptedSession!==assistantSessionId.current)return;

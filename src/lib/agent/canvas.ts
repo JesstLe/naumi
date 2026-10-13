@@ -14,6 +14,8 @@ import { toVisionDataUrl } from "../vision-image";
 import { getOrCreateSession, primeAgentSystemPrompt, resolveVisionImages, persistAgentSession, appendSessionEvent, MODEL_ID, type Session } from "./runtime";
 import { canvasSessionPrefix, canvasProjectSessionPrefix, canvasAgentHistory } from "./canvas-history";
 import { classifyAgentFailure } from "./recovery";
+import {authorizeVideoProject} from "../canvas/video-node-service";
+import {getVideoNode} from "../canvas/video-node-repository";
 import type { CanvasAgentContext } from "./canvas-context";
 import { readHarnessBody } from "./harness";
 
@@ -51,14 +53,18 @@ export async function runCanvasAgent(request: Request) {
   const found = await listArtworksByIds(email, ids);
   const ordered = ids.map(id => found.find(art => art.id === id));
   if (ordered.some(art => !art)) return NextResponse.json({ error: "图片不存在或无权访问" }, { status: 404 });
-  const artworks = ordered as ArtworkRecord[], anchor = artworks[0];
+  const artworks = ordered as ArtworkRecord[],imageArtworks=artworks.filter(art=>!art.videoUrl&&!["audio","media"].includes(art.category||"")), anchor = imageArtworks[0];
+  let video:CanvasAgentContext["video"];
+  if(projectKey&&projectKey!=="workspace"){
+    try{await authorizeVideoProject(email,projectKey);const videoId=typeof body.videoNodeId==="string"?body.videoNodeId:"",node=videoId?await getVideoNode(email,videoId):null;if(videoId&&(!node||node.projectKey!==projectKey))return NextResponse.json({error:"视频节点不存在或不属于当前项目"},{status:404});const textId=typeof body.textNodeId==="string"?body.textNodeId:"";if(textId&&!(await getPool().query("SELECT 1 FROM app_canvas_text_nodes WHERE email=$1 AND id=$2 AND project_key=$3",[email,textId,projectKey])).rowCount)return NextResponse.json({error:"文字节点不存在或不属于当前项目"},{status:404});video={projectKey,...(textId?{textNodeId:textId}:{}),...(node?{nodeId:node.id,revision:node.revision}:{})};}catch{return NextResponse.json({error:"画布项目不存在或无权访问"},{status:404});}
+  }
   const scope = currentModelExecution("text");
-  if (artworks.length && scope && !scope.capabilities.vision) return NextResponse.json({ error: "当前模型不支持图片理解，请选择兼容模型" }, { status: 400 });
+  if (imageArtworks.length && scope && !scope.capabilities.vision) return NextResponse.json({ error: "当前模型不支持图片理解，请选择兼容模型" }, { status: 400 });
   const origin = (process.env.INTERNAL_APP_ORIGIN || new URL(request.url).origin).replace(/\/$/, "") + "/";
   const cookie = request.headers.get("cookie") || "";
-  const images = await Promise.all(artworks.map(art => vision(art, origin, cookie)));
+  const images = await Promise.all(imageArtworks.map(art => vision(art, origin, cookie)));
   const canvas: CanvasAgentContext = {
-    anchorId, imageUrls: artworks.map(art => new URL(art.image, origin).toString()),
+    video,anchorId:anchor?.id||"", imageUrls: imageArtworks.map(art => new URL(art.image, origin).toString()),
     imageModelId: typeof body.imageModelId === "string" ? body.imageModelId : undefined,
     ratio: /^\d+:\d+$/.test(String(body.ratio)) ? body.ratio : anchor?.ratio || "1:1",
     resolution: ["1K", "2K", "4K"].includes(body.resolution) ? body.resolution : "1K",
@@ -79,8 +85,14 @@ export async function runCanvasAgent(request: Request) {
   const sessionId = authorizedLegacy?String(body.sessionId): String(body.sessionId).startsWith(prefix) ? String(body.sessionId) : prefix + createHash("sha256").update(String(body.sessionId)).digest("hex").slice(0,32);
   const started = new Date(), artifacts: Artifact[] = [], delivered = new Set<string>();
   let liveSession: Session | undefined;
-  const attach = async (result: unknown) => {
+  const attach = async (result: unknown,tool:string) => {
     const details = record(record(result).details);
+    if(["create_video_node","plan_video_shot","plan_video_storyboard"].includes(tool)&&liveSession){
+      const nodeIds=Array.from(new Set([details.nodeId,record(details.node).id,...(Array.isArray(details.nodeIds)?details.nodeIds:[])].filter((id):id is string=>typeof id==="string")));
+      const owned=[];for(const id of nodeIds){const node=await getVideoNode(email,id);if(node&&(!video?.projectKey||node.projectKey===video.projectKey))owned.push({id:node.id,projectKey:node.projectKey});}
+      if(owned.length){appendSessionEvent(liveSession,"video_nodes",{nodes:owned,turnId:liveSession.turnId});await persistAgentSession(liveSession);}return;
+    }
+    if(details.taskId||details.jobId||details.nodeId||details.runId)return;
     const urls = [details.url, ...(Array.isArray(details.urls) ? details.urls : []), ...(Array.isArray(details.images) ? details.images : [])].filter(url => typeof url === "string");
     const output = await getPool().query("UPDATE app_artworks SET parent_id=COALESCE(parent_id,$3),group_id=COALESCE($4,group_id),origin='canvas',source_url='agent',canvas_x=COALESCE(canvas_x,$5),canvas_y=COALESCE(canvas_y,$6),batch_id=COALESCE(batch_id,$10) WHERE email=$1 AND deleted_at IS NULL AND created_at >= $7 AND id<>ALL($8::text[]) AND (image_url=ANY($2::text[]) OR id=$9) RETURNING id,title,image_url", [email.toLowerCase(), urls, anchor?.id||null, anchor?.groupId || (projectKey.startsWith("tree:")?projectKey.slice(5):null), (anchor?.canvasX || 0) + (anchor?.canvasWidth || 320) + 80 + delivered.size * 40, (anchor?.canvasY || 0) + delivered.size * 40, started, ids, typeof details.artworkId === "string" ? details.artworkId : "", !anchor&&projectKey.startsWith("batch:")?projectKey.slice(6):null]);
     const added:Artifact[]=[];
@@ -90,7 +102,7 @@ export async function runCanvasAgent(request: Request) {
   await configuredToolCost();
   const session = await getOrCreateSession(email, sessionId, history.slice(0, -1), { cookie, authorization: request.headers.get("authorization") || "", imageQuality: canvas.quality }, modelId, {
     canvas, onToolResult: attach,
-    systemPrompt: `你正在画布侧边栏执行任务，当前显示模型为「${label}」。\n当前图：${canvas.imageUrls[0]||"未选择图片，可直接文本对话；图片处理先向用户索取参考图，不猜测图片"}\n上游参考图：${canvas.imageUrls.slice(1).join("\n")}\n当前图标题：${anchor?.title||"无"}\n当前图提示词：${anchor?.prompt || "无"}\n默认生图参数：${canvas.ratio}、${canvas.resolution}、${canvas.quality}。\n用户要求换色、精修或生图时实际调用工具，不只改写提示词；站内成品动画和仅分析、讨论或编写提示词时不调用收费工具。生图工具自动引用当前图与上游参考。文字模型只负责理解和编排，图片工具使用独立的后台画布生图模型。禁止将文字模型ID作为生图模型。`,
+    systemPrompt: `你正在画布侧边栏执行任务，当前显示模型为「${label}」。\n当前图：${canvas.imageUrls[0]||"未选择图片，可直接文本对话；图片处理先向用户索取参考图，不猜测图片"}\n上游参考图：${canvas.imageUrls.slice(1).join("\n")}\n当前图片节点身份：${canvas.anchorId||"无"}\n当前图标题：${anchor?.title||"无"}\n当前图提示词：${anchor?.prompt || "无"}\n当前视频项目/节点：${JSON.stringify(canvas.video||null)}。视频节点通过工具查询和修改，持久任务由Worker恢复，不通过图片URL挂载。\n默认生图参数：${canvas.ratio}、${canvas.resolution}、${canvas.quality}。\n用户要求换色、精修或生图时实际调用工具，不只改写提示词；站内成品动画和仅分析、讨论或编写提示词时不调用收费工具。生图工具自动引用当前图与上游参考。文字模型只负责理解和编排，图片工具使用独立的后台画布生图模型。禁止将文字模型ID作为生图模型。`,
   }, imageSkill);
   if (session.running || session.canvasExecuting) return NextResponse.json({ error: "当前任务仍在执行，请勿重复提交" }, { status: 409 });
   liveSession=session;session.toolResultsPending=undefined;

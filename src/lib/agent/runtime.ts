@@ -540,7 +540,7 @@ export async function persistAgentSession(session: Session): Promise<void> {
     return content ? [{ role: message.role, content: session.harness.publicText(content, message.role === "assistant") }] : [];
   });
   const steps = session.events
-    .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
+    .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","video_nodes","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
     .map((event) => ({ type: event.type, ...event.data }));
   await saveAgentSession(
     session.email,
