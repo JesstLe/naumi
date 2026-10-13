@@ -21,6 +21,7 @@
 - 集中回归发现增加异步授权后中止窗口可能重启待执行回合；用promptGeneration封闭取消竞态，原画布Agent取消/恢复/计费回归通过。ACL扩展DDL放入核心schema初始化，避免工具执行事务内延迟创建外键。
 - 旧网络/工具覆盖fixture原来透传假Cookie，本轮改为隔离DB真实签名身份；素材fixture提供独立本地媒体，继续验证重定向、SSRF、参数与适配器，无线上供应商调用。
 - 最终正式构建通过（Next15.5.27/React19.3.0）；Node middleware的functions配置确认runtime为nodejs，原有lint警告保持。正式构建运行13080，真实浏览器1440/390px后台保存、菜单过滤、接口403、直接页面307、聚焦撤权及独立Agent/模板/单工具权限验收通过，客户端异常与横向溢出均为0。截图已重新检查为浅色布局。
+- 按Docker生产入口使用`node .next-feature-build/standalone/server.js`独立运行13081，复制该构建静态资源后重复真实HTTP/桌面与390px浏览器验收，全部通过；不是仅依赖带警告的`next start`验收。
 - 完整Agent Harness 14模块全部exit0，包含画布取消/恢复、技能、工具覆盖、计费、SSRF与会话隔离；管理员与团队生命周期回归exit0。使用独立本地Postgres和fixture供应商，真实供应商消费0。
 - 最终复核补齐画布text-edit服务端生图权限，以及无权限时隐藏图片/空节点生成Dock、文字转图片弹层、在线改字/扩图/标注入口、右键生成入口及Agent小球。OCR识别、文字生成与本地编辑属于画布现有能力；此轮不单独拆分这些画布子权限。
 - 当前尚未发布103，不连接废弃120/旧101/香港。原有自动发布授权不覆盖最新连续可用门槛；React19任务的“当前无人使用、直接上线”仅该轮例外。本轮完成代码与本地正式构建验收，交由符合发布手册的候选流程上线，不使用旧直接停App流程。
@@ -29,6 +30,7 @@
 ## Git与独立副本回滚证据
 
 - 开工基线 `ee351d92598c03facc18f2145adde015d602217b`，合并前刷新远端main到 `3f1aa4a158cfbf47cdfef5e663bc2200ce6fa61e`（React19实际发布交接）。任务选择性提交后普通合并，无共享checkout切分支或覆盖。其他尚未合入分支为视频/生图设计、独立UI预览及四条历史回滚，本轮不混入权限实现，不执行main/服务器整合发布。
+- 功能提交`982e25a`，整合main后`9bfae9e2034517f7b34d7406cc23fde68cb0b4ee`；仅三份同事发布文档变化，无代码冲突。合并后权限模块与非增量TypeScript再次exit0。迭代同步计数0/3；发布计数不增加。最终交接文档提交不冒充运行镜像版本。
 - 证据目录：`C:/Users/13357/.codex/worktrees/user-feature-access-20261013/naumi/output/user-feature-access`。
 - 四件套：`MODIFIED_FILE.ts`（已修改middleware副本）、`DIFF_FILE.patch`（完整任务差异）、`VERIFICATION.txt`、可执行`ROLLBACK.sh`。manifest记录36个源码/测试文件前后SHA256，`originals`和`BASELINE_SOURCE.zip`保存原始字节。
 - `python output/user-feature-access/verify-phase.py BASELINE`，输入独立旧代码副本与本地feature_rollback库、签名用户POST /api/retouch：`BASELINE=PASS ADMIN_ACCESS=PASS MIDDLEWARE=200`，exit0。
