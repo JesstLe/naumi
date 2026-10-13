@@ -35,6 +35,8 @@ export async function GET(request: Request) {
       status: VALID_STATUS.has(status) ? status : undefined,
       source: ["canvas", "workbench", "agent", "workflow"].includes(source) ? source : undefined,
       sourceIds,
+      projectKey: url.searchParams.get("projectKey") || undefined,
+      nodeId: url.searchParams.get("nodeId") || undefined,
       limit: Number.isFinite(limit) ? limit : 30,
     });
     return NextResponse.json({ ok: true, tasks: tasks.map(publicVideoTaskView) });

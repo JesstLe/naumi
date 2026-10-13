@@ -19,7 +19,7 @@
 | IC协议分支 | 初版已写入，尚未验收 | 24个HTTP分支用例已写；未执行 | Task5；OpenAI/Grok/Cog/Agnes两版/Ark/Kling2.6及3/Omni四分支/运动/Gemini/MiniMax；共享适配器已接线，边界和Task9/10完整恢复仍待A/B |
 | TokenDance/TF/Compshare | 初版已写入，尚未验收 | 27个HTTP组合已写；未执行 | Task6；8种TokenDance路由/协议前缀、4种TF元数据、7种Compshare Profile；输出列表与口型/续写参数保留，任务恢复/多产物保存待Task9/10 |
 | 视频工作流 | 实现中 | 未执行 | Task7；plan/manifest、依赖校验、持久调度与3个工作流wire初版已写；项目授权依赖Task8，HTTP/Worker已接线；验证脚本已写；BYOC兼容与报价重确认尚未完成 |
-| 节点/项目 | 未实现 | 未执行 | Task8；无图节点、revision、事务和稳定归属 |
+| 节点/项目 | 初版已写入，尚未验收 | 脚本已写；未执行 | Task8；独立视频节点、revision、软删除/恢复、复制、预扣事务回调与目标项目发送；统一生成入口在Task9接线 |
 | 持久任务/取消/计费 | 未实现 | 未执行 | Task9；完成后检查点A集中测试 |
 | 真实媒体与工具 | 未实现 | 未执行 | Task10；隔离处理worker、原生多输出与检查点B |
 | 参数/高级画布UI | 未实现 | 未执行 | Task11；沿Naumi交互体系，不加入无用文字 |
@@ -76,3 +76,5 @@ Task7进行中记录：已写plan/manifest schema、变量/环/重复/缺依赖�
 Task7追加：HTTP工作流创建/查询/恢复/停止和Worker扫描已写；调度根节点最多同时提交3个，变量展开后重新执行长度/类型校验，避免模板放大。供应商fixture加入实际Comfy object_info/upload/prompt/history/view与RunningHub上传/状态、AutoDL原生结果格式；只模拟供应商，不替换本站内部API。报价重确认、Task8项目授权、Task9统一提交/取消和原BYOC视频持久化仍待完成；没有运行测试。
 
 Task7脚本已补：纯函数环/变量展开边界、原生状态/映射，以及真实App A→B/C独立分支、跨账号404、重复resume创建次数及真实产物依赖；未运行。现有BYOC ComfyUI图片接口保持，视频持久任务接入与0积分例外将在Task9统一服务改造时落实；不要将当前有结果直链的旧BYOC接口视为本轮已通过。工作流停止依赖Task9 cancellation，项目授权依赖Task8；这些依赖尚未写入。原生工作流结果还需要Task10检查全部产物并保存，当前wire只保留完整列表。
+
+Task8初版记录：独立账号+节点ID表、项目索引和operation幂等记录已写；位置修改保留配置，过期revision返回409，软删除可以按新revision恢复。整批复制使用单事务/整批重放缓存，并重映射内部视频节点ID，生成记录不随复制重放。createVideoTaskWithReservation新增可选onReserved，创建和预扣同事务关联节点；完成时只更新仍指向该任务的节点，不由旧任务覆盖新结果。工作台发送改为授权实际目标项目，跨项目创建确定性媒体引用，重复发送幂等；已删除结果明确不可用，不补建未经核实的失效媒体。任务列表增加本账号projectKey/nodeId筛选。节点脚本含持久空白节点、跨账号404、revision409、回滚积分/任务、复制/恢复及生成关联，登记检查点A未运行；/generate接线和结果真实媒体/多输出仍待Task9/10。未合入main、未发布。

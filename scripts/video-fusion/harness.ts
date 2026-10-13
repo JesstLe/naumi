@@ -95,6 +95,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
         return Number((await sql.query(`SELECT count(*) AS n FROM ${table} WHERE ${clauses.join(" AND ")}`,values)).rows[0].n);
       },
       async balance(account:Account){return Number((await sql.query("SELECT credits_total AS n FROM app_users WHERE email=$1",[seed.accounts[account]])).rows[0].n);},
+      async creditState(account:Account){return (await sql.query("SELECT credits_total,credits_used FROM app_users WHERE email=$1",[seed.accounts[account]])).rows[0];},
       async tick(){const r=await fetch(baseUrl+"/api/video/worker/tick",{method:"POST",headers:{"x-video-worker-secret":workerSecret},signal:AbortSignal.timeout(90_000)});if(!r.ok)throw new Error(`Fixture tick failed ${r.status}`);return r.json();},
       async stop(){await stopChild(worker);await stopChild(app);await supplier.close();await sql.end();},
     };

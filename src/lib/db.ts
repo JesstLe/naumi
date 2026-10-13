@@ -4772,6 +4772,7 @@ export async function createVideoTask(input: {
  * repeat adapter.create with the same idempotency key.
  */
 export async function createVideoTaskWithReservation(input: {
+  onReserved?: (client: PoolClient, task: VideoTaskRow) => Promise<void>;
   billingQuote?:import("@/lib/billing/types").BillingQuote;
   id: string;
   email: string;
@@ -4861,8 +4862,10 @@ export async function createVideoTaskWithReservation(input: {
         input.billingQuote?JSON.stringify(input.billingQuote):null,requestHash,
       ]
     );
+    const task = mapVideoTask(created.rows[0] as Record<string, unknown>);
+    if (input.onReserved) await input.onReserved(client, task);
     await client.query("COMMIT");
-    return { task: mapVideoTask(created.rows[0] as Record<string, unknown>), created: true };
+    return { task, created: true };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
     throw error;
@@ -5074,6 +5077,10 @@ export async function completeVideoTask(input: {
       [email, input.id, `vid-result-${input.id}`, input.artworkId, input.videoUrl, input.resultStorageKey || ""]
     );
     await client.query(`DELETE FROM app_gen_reservations WHERE job_id = $1`, [input.id]);
+    if (typeof task.parameters?.nodeId === "string") {
+      const { completeVideoNodeTx } = await import("@/lib/canvas/video-node-repository");
+      await completeVideoNodeTx(client, email, task.parameters.nodeId, input.id, input.artworkId);
+    }
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -5163,7 +5170,7 @@ export async function updateVideoTask(
 /** 任务列表(工作台/恢复用):按创建时间倒序。 */
 export async function listVideoTasks(
   email: string,
-  opts: { status?: string; source?: string; sourceIds?: string[]; limit?: number } = {}
+  opts: { status?: string; source?: string; sourceIds?: string[]; projectKey?: string; nodeId?: string; limit?: number } = {}
 ): Promise<VideoTaskRow[]> {
   await ensureSchema();
   const limit = Math.min(Math.max(opts.limit ?? 30, 1), 500);
@@ -5180,6 +5187,9 @@ export async function listVideoTasks(
   if (opts.sourceIds?.length) {
     params.push(Array.from(new Set(opts.sourceIds.filter(Boolean))).slice(0, 500));
     where += ` AND source_id = ANY($${params.length}::text[])`;
+  }
+  for (const [field, value] of [["projectKey", opts.projectKey], ["nodeId", opts.nodeId]]) {
+    if (value) { params.push(value); where += ` AND parameters->>'${field}' = $${params.length}`; }
   }
   const { rows } = await getPool().query(
     `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,

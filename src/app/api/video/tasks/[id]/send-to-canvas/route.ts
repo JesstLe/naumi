@@ -1,66 +1,17 @@
-import { NextResponse } from "next/server";
-
-import { addArtworks, dbEnabled, getVideoTask, listArtworksByIds, setArtworkOrigin } from "@/lib/db";
-import { authenticatedEmail } from "@/lib/request-auth";
-import { safeError } from "@/lib/api-error";
-
-// ---------------------------------------------------------------------------
-// 发送到画布(§6):completed 任务把结果定位/补建为画布视频作品,返回 artworkId。
-// 常规完成时作品已存在(vid-art-<taskId>)——校验仍在则直接返回;
-// 作品被删过则从 videoUrl 补建一条(无血缘,独立根节点)。
-// ---------------------------------------------------------------------------
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
-  const email = await authenticatedEmail(request);
-  if (dbEnabled && !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  const { id } = await context.params;
-  if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  const task = await getVideoTask(email, id);
-  if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
-  if (task.status !== "completed" || !task.videoUrl) {
-    return NextResponse.json({ error: "任务尚未成功完成" }, { status: 400 });
-  }
-
-  try {
-    if (task.artworkId) {
-      const existing = await listArtworksByIds(email, [task.artworkId]);
-      if (existing.length) {
-        await setArtworkOrigin(email, task.artworkId, "canvas");
-        return NextResponse.json({ ok: true, artworkId: task.artworkId, reused: true });
-      }
-    }
-    const artworkId = task.artworkId || `vid-art-${id}`;
-    await addArtworks(email, [{
-      id: artworkId,
-      title: `视频 · ${task.prompt.slice(0, 24)}`,
-      category: "video",
-      creationProvenance: { version: 1, operation: "video", entry: "canvas", ref: task.id, evidence: "server-route" },
-      prompt: task.prompt,
-      status: "completed",
-      image: task.videoUrl,
-      gradient: "from-slate-100 to-zinc-100",
-      style: null,
-      ratio: null,
-      resolution: "1K",
-      source: null,
-      parentId: null,
-      parentIds: [],
-      origin: "canvas",
-      width: 0,
-      height: 0,
-      videoUrl: task.videoUrl,
-    }], `vid-${Date.now()}`);
-    return NextResponse.json({ ok: true, artworkId });
-  } catch (error) {
-    return NextResponse.json(
-      { error: safeError(error, "发送到画布失败") },
-      { status: 502 }
-    );
-  }
+import {NextResponse} from "next/server";
+import {z} from "zod";
+import {authenticatedEmail} from "@/lib/request-auth";
+import {sameSiteBiMutation} from "@/lib/bi/access";
+import {readBounded} from "@/lib/supplier-cost/io";
+import {sendVideoTaskToCanvas} from "@/lib/canvas/video-node-service";
+import {videoProjectKeySchema} from "@/lib/canvas/video-node-schema";
+import {ModelConfigError} from "@/lib/model-config/types";
+export const runtime="nodejs",dynamic="force-dynamic";
+export async function POST(request:Request,context:{params:Promise<{id:string}>}){
+  const email=await authenticatedEmail(request);if(!email)return NextResponse.json({error:"请先登录"},{status:401});
+  if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站修改"},{status:403});
+  try{const text=await readBounded(new Response(request.body),8192),parsed=z.strictObject({projectKey:videoProjectKeySchema.optional()}).safeParse(text?JSON.parse(text):{});
+    if(!parsed.success)return NextResponse.json({error:"目标项目无效"},{status:422});
+    return NextResponse.json({ok:true,...await sendVideoTaskToCanvas(email,(await context.params).id,parsed.data.projectKey)});
+  }catch(error){return error instanceof ModelConfigError?NextResponse.json({error:error.message,code:error.code},{status:error.status}):NextResponse.json({error:"发送到画布失败"},{status:503});}
 }

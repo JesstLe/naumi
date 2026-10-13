@@ -767,7 +767,7 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
 /** 任务列表(工作台/恢复)。 */
 export async function listVideoTaskViews(
   email: string,
-  opts: { status?: string; source?: string; sourceIds?: string[]; limit?: number } = {}
+  opts: { status?: string; source?: string; sourceIds?: string[]; projectKey?: string; nodeId?: string; limit?: number } = {}
 ): Promise<VideoTaskRow[]> {
   return listVideoTasks(email, opts);
 }
