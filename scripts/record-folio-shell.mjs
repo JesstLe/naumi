@@ -1,0 +1,24 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import {spawnSync} from 'node:child_process';
+const root=process.cwd(),out=path.join(root,'output/folio-shell-20261013'),original=path.join(out,'original'),modified=path.join(root,'design/folio-preview'),fixture=path.join(out,'rollback-copy');
+const slash=x=>x.replaceAll('\\','/'),hash=f=>crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
+const originalHash=hash(path.join(original,'index.html')),modifiedHash=hash(path.join(modified,'index.html'));
+fs.mkdirSync(fixture,{recursive:true});fs.cpSync(modified,fixture,{recursive:true});
+const added=[];for(const dir of ['shell','workbench-v2'])for(const file of fs.readdirSync(path.join(modified,'assets',dir)))added.push(`assets/${dir}/${file}`);
+const rollback=path.join(out,'ROLLBACK.sh');
+fs.writeFileSync(rollback,`#!/usr/bin/env bash\nset -euo pipefail\nsource_dir="$(cd -- "\${1:?original preview}" && pwd -P)"\ntarget_dir="$(cd -- "\${2:?target preview copy}" && pwd -P)"\n[[ "$source_dir" != "$target_dir" ]]\n[[ "$(sha256sum "$source_dir/index.html" | cut -d' ' -f1)" == "${originalHash}" ]]\n[[ "$(sha256sum "$target_dir/index.html" | cut -d' ' -f1)" == "${modifiedHash}" ]]\n${added.map(f=>`rm -- "$target_dir/${f}"`).join('\n')}\nrmdir -- "$target_dir/assets/shell" "$target_dir/assets/workbench-v2"\ncp -- "$source_dir/index.html" "$target_dir/index.html"\ncp -- "$source_dir/assets/logo.svg" "$target_dir/assets/logo.svg"\nprintf '%s\\n' 'ROLLBACK_ACTION=PASS; previous_empty_preview=restored; added_assets=removed'\n`);fs.chmodSync(rollback,0o755);
+const records=[];
+function run(label,exe,args,input){const r=spawnSync(exe,args,{cwd:root,encoding:'utf8'});if(r.status!==0)throw new Error(r.stdout+r.stderr);records.push(`${label}\nCOMMAND: ${[exe,...args].join(' ')}\nINPUT: ${input}\nSTDOUT: ${r.stdout.trim()}\nSTDERR: ${r.stderr.trim()||'(empty)'}\nEXIT: ${r.status}`)}
+const verify=slash(path.join(root,'scripts/verify-folio-shell.mjs'));
+run('BASELINE','node',[verify,'baseline',slash(original)],'preserved empty preview before shell/middle revision');
+run('MODIFIED','node',[verify,'modified',slash(modified)],'actual 103 header/footer snapshot and workbench-v2 assets');
+run('ROLLBACK ACTION','D:/DEV/Git/bin/bash.exe',[slash(rollback),slash(original),slash(fixture)],'restore a separate preview copy only');
+run('ROLLBACK','node',[verify,'rollback',slash(fixture)],'restored original index hash; new assets removed');
+const diff=spawnSync('git',['diff','f30ffdb','--','design/folio-preview','scripts/verify-folio-preview.mjs','scripts/folio-preview-server.mjs'],{cwd:root,encoding:'utf8'});if(diff.status!==0)throw new Error(diff.stderr);
+const diffFile=path.join(out,'DIFF_FILE.patch');fs.writeFileSync(diffFile,diff.stdout);
+const verification=path.join(out,'VERIFICATION.txt');
+fs.writeFileSync(verification,`BRANCH: codex/folio-preview-20261013\nCHANGED FIELD: header/footer=103 live snapshot; middle=Folio light; imagery=Naumi workbench-v2\nMODIFIED_FILE: ${slash(path.join(modified,'index.html'))}\nDIFF_FILE: ${slash(diffFile)}\nVERIFICATION: ${slash(verification)}\nROLLBACK: ${slash(rollback)}\nORIGINAL_SHA256: ${originalHash}\nMODIFIED_SHA256: ${modifiedHash}\n\n${records.join('\n\n')}\n\nLIVE_REFERENCE: http://103.30.76.93/ ; /retouch ; /suite ; v2026.10.13-144426; browser read-only.\nBROWSER: header height=60; desktop original navigation/account placement; footer Product/Resources/About plus copyright/privacy/terms/language; all loaded demo images valid; old image references=0.\nINTERACTION: gallery/canvas(3 nodes)/suite(4 loaded 640px images), details(640px), comparison 0%/100%, local shell links/modal, duplicate IDs=0; console error/warn=[]\nRESPONSIVE: viewport390, confirmed clientWidth375; no horizontal overflow. Phone screenshot unavailable; desktop screenshots saved.\nSNAPSHOT: credit/avatar are static screenshot display fixtures; local links lead to preview panels, not production writes.\nRESTORED: separate copy matches previous cleared preview; active preview keeps the revised middle and preserved shell.\nPRODUCT_SOURCE: site-header.tsx SHA256 742ca8aa7fdf5c17e276979b93a4ca40c5b724f5667371a74f9a24ff5bb7b741; site-footer.tsx SHA256 3b034c7a957bf826e45fb58243fefba987ea001671a08df54bfe28530452f123; both unchanged.\nNo production deployment or submitted provider requests.\n`);
+for(const file of [path.join(modified,'index.html'),diffFile,verification,rollback])console.log(`REOPENED=${slash(file)}; bytes=${fs.readFileSync(file).length}`);
+console.log(records.join('\n\n'));

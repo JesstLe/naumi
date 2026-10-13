@@ -66,7 +66,7 @@ export function explicitQuoteConsent(message: string) {
 }
 export function creativeIntent(message: string) {
   if (/只(?:分析|总结|解释|讨论)|^(?:请|帮我)?(?:分析|总结|解释|讨论)|(?:不要|不需要|别|不必)(?:再)?(?:生成|生图|调用|执行)|如何|怎么|how (?:to|does)/i.test(message)) return false;
-  return /生成|生图|出图|画(?:图|一|个|张)|做(?:一|个|张|套)|来(?:一|个|张|套)|绘制|创作|精修|换色|替换|修改|调整|换.{0,4}视角|改(?:图|色|成|为)|变成|抠图|清晰|去水印|去皱|复刻|裂变|融图|试穿|服装上身|详情页|包装|印刷|导入|风格(?:转换|迁移)|(?:写|拟|起|优化|想).{0,12}(?:标题|卖点)|执行工作流|运行工作流|generate|create|draw|render|retouch|recolor|upscale|inpaint|remove.*(?:background|watermark)|try.?on|replicate|import|run.*workflow/i.test(message);
+  return /转换(?:图片|图像)?格式|压缩图片|缩小图片|去底色|chroma.?key|resize.*image|convert.*(?:png|webp|jpeg)|生成|生图|出图|画(?:图|一|个|张)|做(?:一|个|张|套)|来(?:一|个|张|套)|绘制|创作|精修|换色|替换|修改|调整|换.{0,4}视角|改(?:图|色|成|为)|变成|抠图|清晰|去水印|去皱|复刻|裂变|融图|试穿|服装上身|详情页|包装|印刷|导入|风格(?:转换|迁移)|(?:写|拟|起|优化|想).{0,12}(?:标题|卖点)|执行工作流|运行工作流|generate|create|draw|render|retouch|recolor|upscale|inpaint|remove.*(?:background|watermark)|try.?on|replicate|import|run.*workflow/i.test(message);
 }
 export function untrustedAgentData(source: string, value: unknown) {
   return `\n[UNTRUSTED_DATA ${source}]\n${JSON.stringify(value)}\n[/UNTRUSTED_DATA]\n`;

@@ -9,7 +9,7 @@ import styles from "./skill-book.module.css";
 
 type Props = { selected: ImageSkill | null; onSelect: (skill: ImageSkill | null) => void; accountKey: string; busy?: boolean; sessionId?: string; hasConversation?: boolean; onUse?: (prompt: string) => void; compact?: boolean };
 const empty = () => ({ name: "", description: "", category: "电商" as ImageSkill["category"], instructions: "" });
-const categoryIcon = { "电商": Image, "营销": Sparkles, "品牌": Paintbrush, "社媒": Layers };
+const categoryIcon = { "电商": Image, "营销": Sparkles, "品牌": Paintbrush, "社媒": Layers, "创作": Sparkles, "编辑": Paintbrush, "图解": Layers };
 async function api(method: string, body?: unknown) {
   const response = await fetch("/api/image-skills", { method, headers: { "content-type": "application/json", ...await authHeader() }, body: body ? JSON.stringify(body) : undefined, cache: "no-store" });
   const data = await response.json();

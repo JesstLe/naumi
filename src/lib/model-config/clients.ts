@@ -1,3 +1,6 @@
+import {currentImagegenStep} from "../imagegen/context";
+import {mapImagegenParameters,imagegenWireRequest} from "../imagegen/parameters";
+import {publishedImagegenCapabilities,IMAGEGEN_FIELDS_BY_CAPABILITY} from "../imagegen/capabilities";
 import { stageRoutingFetch } from "./stage-routing";
 import { apimartPresetFetch } from "./apimart-preset";
 import "server-only";
@@ -57,13 +60,21 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
         if(parameterMap.resolutionPolicy)mapResolution(body,parameterMap.resolutionPolicy,frozen.facts?.requestedResolution||resolution,frozen.facts?.ratio);
         else if (resolution && parameterMap.resolution?.[resolution]) body.size = parameterMap.resolution[resolution];
       }
+      const advanced=currentImagegenStep();
+      if(advanced&&frozen.modality==="image"){
+        const pixelOverride=advanced.request.parameters.width!==undefined&&advanced.request.parameters.height!==undefined;
+        for(const [key,fields] of Object.entries(IMAGEGEN_FIELDS_BY_CAPABILITY))if(key!=="pixelSize"||pixelOverride)for(const field of fields)if(field!=="omit")delete body[field];
+        const extra=mapImagegenParameters(imagegenWireRequest(advanced.request),publishedImagegenCapabilities(scope.capabilities),parameterMap.imagegen||{});Object.assign(body,extra);
+        if(advanced.intent.background==="transparent"&&parameterMap.imagegen?.transparent!=="omit"&&!parameterMap.imagegen?.transparent)body.background="transparent";
+      }
       return body;
     };
     if (request.headers.get("content-type")?.includes("multipart/form-data")) {
       const form = await request.formData(); const fields = map(Object.fromEntries(Array.from(form.entries()).filter(([, value]) => typeof value === "string")));
       if(parameterMap.resolutionPolicy)for(const field of RESOLUTION_FIELDS)if(!Object.prototype.hasOwnProperty.call(fields,field))form.delete(field);
       if (parameterMap.qualityPolicy?.mode === "omit") form.delete("quality");
-      for (const [key, value] of Object.entries(fields)) if (typeof value === "string") form.set(key, value);
+      for (const [key, value] of Object.entries(fields)) if (["string","number","boolean"].includes(typeof value)) form.set(key, String(value));
+      const advanced=currentImagegenStep();if(advanced)for(const [key,names] of Object.entries(IMAGEGEN_FIELDS_BY_CAPABILITY))if(key!=="pixelSize"||advanced.request.parameters.width!==undefined)for(const field of names)if(field!=="omit"&&!Object.hasOwn(fields,field))form.delete(field);
       const headers = new Headers(request.headers); headers.delete("content-type"); headers.delete("content-length");
       return transport(request.url, { method: request.method, headers, body: form, signal: request.signal });
     }

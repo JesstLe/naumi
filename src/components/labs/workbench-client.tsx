@@ -10,10 +10,12 @@ import JSZip from "jszip";
 import { ChevronRight, Download, Loader2, Plus, RefreshCw, Upload } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import {useFeatureAccess} from "@/lib/feature-access/client";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useFeatureBilling } from "@/lib/billing/preview";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import {ImagegenPanel} from "@/components/imagegen/imagegen-panel";
 
 type ProductImage = {
   id: string;
@@ -91,7 +93,9 @@ function uid() {
 }
 
 export function WorkbenchClient() {
+  const [imagegenOpen,setImagegenOpen]=useState(false);
   const { user, ready } = useAuth();
+  const {ready:featureReady,can}=useFeatureAccess();
   const { openAuth } = useAuthModal();
 
   const [products, setProducts] = useState<ProductImage[]>([]);
@@ -370,6 +374,7 @@ export function WorkbenchClient() {
             )}
             <Link href="/genchat" className="rounded-md border border-c-line px-2.5 py-1.5 hover:bg-c-track">聊天生图</Link>
             <Link href="/generate" className="rounded-md border border-c-line px-2.5 py-1.5 hover:bg-c-track">单图生成</Link>
+            <button disabled={!ready||!user||!featureReady||!can("batchshot")} className="rounded-md border border-c-line px-2.5 py-1.5 hover:bg-c-track disabled:opacity-40" onClick={()=>setImagegenOpen(true)}>图像创作 / 提示词批次</button>
           </div>
         </div>
       </div>
@@ -686,6 +691,7 @@ export function WorkbenchClient() {
             </section>
           )}
 
+          {imagegenOpen&&<ImagegenPanel entry="workbench" inputs={[]} onClose={()=>setImagegenOpen(false)} onResult={()=>{}}/>}
           <p className="pb-6 pt-2 text-center text-[11.5px] text-c-text4">
             生成走主站模型通道并正常计积分;任务提交后可关闭页面,后台继续。
           </p>

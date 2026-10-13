@@ -195,6 +195,7 @@ export class DurableImageJobs<T extends { status: string }> {
         const payload = await decode(row.payload) as Record<string, unknown>, snapshot = await decode(row.snapshot) as T;
         const resume = () => withBiModelContext(row.email,this.kind,id,async()=>run(payload,snapshot));
         if (payload.modelExecutions) await withFrozenExecutionBundle(payload.modelExecutions as ExecutionBundle, resume);
+        else if(this.kind==="imagegen") await resume();
         else await runLegacyModelExecution(resume);
       }
       catch (error) {
@@ -227,5 +228,6 @@ export async function recoverDurableImageJobs(): Promise<number> {
     }, body: JSON.stringify({ workerJobId: job.id }), signal: AbortSignal.timeout(10_000) });
     if (result.ok) count++;
   }
-  return count;
+  const {recoverImagegenBatches}=await import("./imagegen/batch");
+  return count+await recoverImagegenBatches();
 }

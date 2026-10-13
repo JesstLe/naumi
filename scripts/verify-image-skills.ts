@@ -4,8 +4,9 @@ import { createModelFixture } from "./model-config-fixture";
 import { OFFICIAL_IMAGE_SKILLS, validateSkillDraft, validateSkillSelection, imageSkillPrompt, conversationSkillDraft } from "../src/lib/image-skills/catalog";
 async function main() {
   let checks = 0; const ok = (value: unknown) => { assert.ok(value); checks++; };
-  ok(OFFICIAL_IMAGE_SKILLS.length === 12);
-  ok(new Set(OFFICIAL_IMAGE_SKILLS.map(skill => skill.id)).size === 12);
+  const baseline=27;
+  ok(OFFICIAL_IMAGE_SKILLS.length === baseline);
+  ok(new Set(OFFICIAL_IMAGE_SKILLS.map(skill => skill.id)).size === baseline);
   for (const skill of OFFICIAL_IMAGE_SKILLS) { ok(validateSkillDraft(skill).instructions.length > 10); ok(validateSkillSelection(skill)?.id === skill.id); }
   for (const input of [null, {}, { ...OFFICIAL_IMAGE_SKILLS[0], category: "其他" }, { ...OFFICIAL_IMAGE_SKILLS[0], instructions: "短" }, { ...OFFICIAL_IMAGE_SKILLS[0], name: "n".repeat(49) }]) { assert.throws(() => validateSkillDraft(input)); checks++; }
   for (const input of [{ id: "../../", revision: 1 }, { id: "official:product-white", revision: 0 }, { id: "official:product-white", revision: 1.1 }]) { assert.throws(() => validateSkillSelection(input)); checks++; }
@@ -22,12 +23,12 @@ async function main() {
     const { signUserSession } = await import("../src/lib/native-auth");
     const request = (method: string, body?: unknown, email = owner) => new Request(f.origin + "/api/image-skills", { method, headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
     ok((await route.GET(new Request(f.origin + "/api/image-skills"))).status === 401);
-    ok((await (await route.GET(request("GET"))).json()).skills.length === 12);
+    ok((await (await route.GET(request("GET"))).json()).skills.length === baseline);
     const definition = { ...validateSkillDraft(OFFICIAL_IMAGE_SKILLS[1]), name: "蓝色商品场景" };
     const created = await route.POST(request("POST", { definition, email: other })); ok(created.status === 201);
     const skill = (await created.json()).skill; ok(skill.source === "personal" && skill.revision === 1);
-    const list = await store.listImageSkills(owner); ok(list.length === 13);
-    ok((await store.listImageSkills(other)).length === 12);
+    const list = await store.listImageSkills(owner); ok(list.length === baseline+1);
+    ok((await store.listImageSkills(other)).length === baseline);
     await assert.rejects(store.resolveImageSkill(other, skill), /不存在/); checks++;
     ok((await route.PATCH(request("PATCH", { definition, selection: skill }, other))).status === 409);
     ok((await route.DELETE(request("DELETE", { selection: skill }, other))).status === 409);
@@ -63,7 +64,7 @@ async function main() {
     const content = (await draft.json()).instructions; ok(content.includes("自然光") && !content.includes("hidden provider"));
     ok((await route.POST(request("POST", { action: "conversation-draft", sessionId: "skills-conversation" }, other))).status === 404);
     ok((await route.DELETE(request("DELETE", { selection: current }))).status === 200);
-    ok((await store.listImageSkills(owner)).length === 12);
+    ok((await store.listImageSkills(owner)).length === baseline);
     await assert.rejects(store.resolveImageSkill(owner, current), /不存在/); checks++;
     const archived = await db.getPool().query("SELECT deleted_at FROM app_image_skills WHERE id=$1", [skill.id]); ok(archived.rows[0].deleted_at);
     console.log(`IMAGE_SKILLS=PASS CHECKS=${checks} STORAGE=POSTGRES API=AUTHENTICATED PROVIDER_CALLS=0`);
