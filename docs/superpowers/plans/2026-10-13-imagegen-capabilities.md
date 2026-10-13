@@ -319,7 +319,7 @@ JSONL解析只接受key/name/prompt和已允许参数；导入先预览，不执
 
 **Interfaces:** 浏览器 `previewImagegen(request:ImagegenRequest):Promise<ImagegenPlan>`、`startImagegen(request:ImagegenRequest,confirmation?:{billingVersion:number;credits:number;confirmed:boolean}):Promise<ImagegenResult>`、`pollImagegen(operationId:string):Promise<ImagegenResult>`；`ImagegenPanel` props为 `{entry:ImagegenRequest["entry"];inputs:ImagegenRequest["inputs"];modelId?:string;sourceNodeId?:string;onResult:(result:ImagegenResult)=>void;onClose:()=>void}`。Agent工具适配调用任务5服务，不把owner暴露给模型。
 
-- [ ] **Step 1: 写真实handler与浏览器断言。** `verify-imagegen-ui.mjs`沿项目现有UI fixture/浏览器连接方式，启动隔离测试站，确认空白画布创作、多选角色、蒙版、批次和当前节点提示词路径；不只检查卡片HTML。
+- [x] **Step 1: 写真实handler与浏览器断言。** `verify-imagegen-ui.mjs`沿项目现有UI fixture/浏览器连接方式，启动隔离测试站，确认空白画布创作、多选角色、蒙版、批次和当前节点提示词路径；不只检查卡片HTML。
 
 ```js
 await page.getByLabel('节点提示词').fill('画一只透明底鹈鹕');
@@ -332,8 +332,8 @@ assert.equal(await fixture.supplierSubmissionCount(),1);
 ```
 
 新增UI组件的真实标签与上述选择器对齐；现有节点prompt/生成控件补可访问名称。fixture定义这两个计数方法并从测试HTTP回执/作品字节统计，不借DOM状态当alpha证据。
-- [ ] **Step 2: 运行 `node scripts/verify-imagegen-ui.mjs`。** 预期新面板/自动执行流程不存在失败。
-- [ ] **Step 3: 实现共用控件和服务client。** 入口默认显示用途、提示词、模型、比例、分辨率、质量；高级显示适用的透明/蒙版/格式/压缩/尺寸，未知放说明；后台未开放档位直接不呈现。输入角色列表数字对应实际wire顺序；mask用既有画笔/选区，并展示“透明区域重绘”。Skill选择填流程不直接submit。
+- [x] **Step 2: 运行 `node scripts/verify-imagegen-ui.mjs`。** 预期新面板/自动执行流程不存在失败。
+- [x] **Step 3: 实现共用控件和服务client。** 入口默认显示用途、提示词、模型、比例、分辨率、质量；高级显示适用的透明/蒙版/格式/压缩/尺寸，未知放说明；后台未开放档位直接不呈现。输入角色列表数字对应实际wire顺序；mask用既有画笔/选区，并展示“透明区域重绘”。Skill选择填流程不直接submit。
 
 ```tsx
 // ImagegenPanel中的计划提示使用服务器返回数据，不在浏览器猜供应商能力。
@@ -348,8 +348,8 @@ assert.equal(await fixture.supplierSubmissionCount(),1);
 Agent generate_image/inpaint/cutout/融合等复用共用适配；扩展schema暴露角色、mask、格式等合法选项，保持工具权限、提示词防注入、模型范围/大额确认。工具result区分文本/图片；真实stage驱动整理/生成/后处理/保存和Agent orb，不一直显示思考。直接节点普通提交经过相同计划；预览按可见交互触发并去抖，不每次键入执行收费模型。
 
 作业持久ID用于刷新恢复/停止；完成作品按已有parent/sourceNode关联落画布，不抢焦点，多个输出可批次下载。原图/透明变体保留媒体按需加载。浮层沿已有dock锚点，max-height受viewport、overflow-y auto，wheel在面板不传画布缩放；390px以抽屉呈现，可键盘关闭/回焦点。可显示实际参数和原生/后处理区别，不暴露凭据。
-- [ ] **Step 4: 跑桌面及390px一次UI集成。** 验证输入透明自动执行、否定不误触发、冲突提示、模型切换隐藏不支持参数、角色/mask、报价/确认、双击、刷新、取消/部分失败、不可变版本/原图ZIP、面板滚动与老画布保存。Agent测试真实工具handler到假HTTP上游；保留原Skills选择历史断言。
-- [ ] **Step 5: 提交。** `git commit -m "feat: expose shared image workflows in canvas agent and workbench"`。
+- [x] **Step 4: 跑桌面及390px一次UI集成。** 验证输入透明自动执行、否定不误触发、冲突提示、模型切换隐藏不支持参数、角色/mask、报价/确认、双击、刷新、取消/部分失败、不可变版本/原图ZIP、面板滚动与老画布保存。Agent测试真实工具handler到假HTTP上游；保留原Skills选择历史断言。
+- [x] **Step 5: 提交。** `git commit -m "feat: expose shared image workflows in canvas agent and workbench"`。
 
 ## Task 8: 一次集中验收、分支整合与103发布交接
 
