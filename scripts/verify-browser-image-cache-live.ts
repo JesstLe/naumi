@@ -9,6 +9,7 @@ import{createHash}from'node:crypto';
 import{chromium}from'@playwright/test';
 import{build}from'esbuild';
 import JSZip from'jszip';
+async function main(){
 const out=path.resolve('output/browser-image-cache'),base='http://103.30.76.93';
 const session=JSON.parse(await readFile(path.join(out,'live-session.json'),'utf8'));
 const side=process.env.NAUMI_CACHE_SIDE==='1';
@@ -31,7 +32,7 @@ async function setup(){
  context.on('request',r=>{const u=new URL(r.url());if(u.pathname.startsWith('/media/')||u.hostname.endsWith('.r2.cloudflarestorage.com')||u.hostname.endsWith('.r2.dev'))bytesRequests++;});
  context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)));
 }
-async function visibleImages(page:any){await page.waitForFunction(()=>[...document.querySelectorAll('img[data-browser-image-cache="local"]')].some(i=>(i as HTMLImageElement).naturalWidth>0),{timeout:120000});await page.waitForTimeout(1000);}
+async function visibleImages(page:any){await page.waitForFunction(()=>[...document.querySelectorAll('img[data-browser-image-cache="local"]')].some(i=>(i as HTMLImageElement).naturalWidth>0)&&![...document.querySelectorAll('img[data-browser-image-cache="pending"]')].some(i=>{const b=i.getBoundingClientRect();return (i as HTMLElement).dataset.browserImageDenied!=='true'&&b.top<innerHeight+180&&b.bottom>-180&&b.width>0;}),undefined,{timeout:120000});await page.waitForTimeout(1300);}
 try{
  await setup();let page=await context.newPage();
  await page.goto(base+'/works',{waitUntil:'domcontentloaded',timeout:120000});await visibleImages(page);
@@ -59,3 +60,6 @@ try{
  await writeFile(path.join(out,side?'103-side-metrics.json':'103-live-metrics.json'),JSON.stringify(results,null,2));
  console.log('LIVE_IMAGE_CACHE=PASS MODE='+results.mode+' WORKS_REFRESH=0 BROWSER_RESTART=0 DESKTOP_REFRESH=0 ORIGINAL_REOPEN=0 ZIP_LOCAL=EXACT R2_VARIANTS=REUSED PAGE_ERRORS=0 PROVIDER_CALLS=0');
 }finally{await context.close();}
+
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});
