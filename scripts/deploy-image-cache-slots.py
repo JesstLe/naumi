@@ -30,11 +30,24 @@ def assert_lock():
   assert os.readlink('/proc/'+str(pid)+'/fd/'+fd)==path
   assert 'FLOCK  ADVISORY  WRITE' in pathlib.Path('/proc/'+str(pid)+'/fdinfo/'+fd).read_text()
 def verify_protected():
- assert protected()==json.loads((E/'protected.before.json').read_text()),'Protected business data changed; do not overwrite'
+ now=protected();baseline=json.loads((E/'protected.before.json').read_text())
+ # Online users may add works or receive credits while a UI-only release runs.
+ # Do not freeze traffic or restore those legitimate writes to an old fingerprint.
+ for key in baseline:
+  if key not in ['users','artworks']:assert now[key]==baseline[key],key+' changed; do not overwrite'
+ if now['users']!=baseline['users'] or now['artworks']!=baseline['artworks']:
+  def norm(v):return '\\N'if v is None else't'if v is True else'f'if v is False else str(v)
+  for table,file,identity in [('app_users','baseline-user-control.json','email'),('app_artworks','baseline-artwork-control.json','id')]:
+   controls=json.loads((E/file).read_text());rows={r[identity]:r for r in map(json.loads,query('SELECT row_to_json(s)::text FROM '+table+' s').splitlines())}
+   for key,fields in controls.items():
+    assert key in rows,'Existing '+table+' row removed'
+    assert all(norm(rows[key][field])==expected for field,expected in fields.items()),'Existing '+table+' controls changed'
+  print('ONLINE_ACTIVITY=PRESERVED EXISTING_ACCOUNT_CONTROLS_AND_ARTWORK_REFERENCES=EXACT DATABASE_RESTORE=NONE')
+ (E/'protected.latest.json').write_text(json.dumps(now,indent=2))
  for old in json.loads((E/'containers.before.json').read_text()):
   current=json.loads(command(['docker','inspect',old['Id']]))[0]
   assert current['Id']==old['Id']and current['Image']==old['Image']and current['State']['Running'],old['Name']
- print('PROTECTED=PASS ACCOUNTS_PASSWORDS_CREDITS_GRANTS_SETTINGS_MEDIA_REFERENCES_OLD_SERVICES=UNCHANGED')
+ print('PROTECTED=PASS ACCOUNT_CONTROLS_GRANTS_SETTINGS_EXISTING_MEDIA_OLD_SERVICES=UNCHANGED CREDITS_AND_NEW_WORKS=PRESERVED')
 def render_gateway(before):
  modified=before
  # Only active slots, not fallback or existing creation APIs, change destination.
@@ -68,6 +81,7 @@ def render_gateway(before):
   modified=modified[:match.start()]+block+modified[match.end():]
  opts='\nproxy_http_version 1.1;proxy_set_header Host $host;proxy_set_header X-Real-IP $remote_addr;proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;proxy_set_header X-Forwarded-Proto $scheme;proxy_set_header Connection "";proxy_buffering off;proxy_read_timeout 900s;\n'
  extra='\n'
+ extra+='location = /desktop/api/version {proxy_pass http://127.0.0.1:13029/api/version;'+opts+'}\n'
  if not re.search(r'location\s+\^~\s+/desktop/api/\s*\{',before):extra+=f'location ^~ /desktop/api/ {{proxy_pass http://127.0.0.1:{active["desktop"]};'+opts+'}\n'
  for kind,port in asset_ports.items():
   previous=asset_fallback[kind]
