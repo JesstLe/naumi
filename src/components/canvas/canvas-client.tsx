@@ -14,6 +14,7 @@ import { createImageDownloadName } from "@/lib/download";
 import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters, canvasCombinationSupported } from "@/lib/canvas/generation-parameters";
 import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
+import { createProjectRootResolver } from "@/lib/canvas/project-roots";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasParameterPopover } from "./parameter-popover";
 import {ImagegenPanel,type ImagegenPanelInput} from "@/components/imagegen/imagegen-panel";
@@ -21,6 +22,7 @@ import type {ImagegenResult} from "@/lib/imagegen/types";
 import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
 import {canvasReceipts,clearCanvasReceipt} from "@/lib/imagegen/canvas-receipts";
 import {pollImagegen} from "@/lib/imagegen/client";
+import { CanvasPerformanceProbe } from "./canvas-performance-probe";
 import {CanvasImage} from './canvas-image';
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
@@ -35,15 +37,12 @@ import { WorkflowDecorationNode, WorkflowGroupNode } from "./workflow-import-nod
 import type { ImportedManifest } from "@/lib/canvas/workflow-clipboard";
 import { CanvasAgentToggle } from "./canvas-agent-toggle";
 import { CanvasAgentOrb } from "./canvas-agent-orb";
-import { AssistantRichText } from "./assistant-richtext";
 import { restoredOrbOutcome, type AgentOrbOutcome, type AgentOrbStep } from "@/lib/canvas/agent-orb";
 import { useOrbCompanion } from "../naumi-orb/use-orb-companion";
 import { classifyAgentFailure } from "@/lib/agent/recovery";
 import { agentOrbState } from "@/lib/canvas/agent-orb";
 import { agentToolLabel, agentToolSummary } from "@/lib/canvas/agent-activity";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
-import { NodePropertiesPanel } from "./node-properties-panel";
-import { ImageCropDialog } from "./image-crop-dialog";
 import { defaultNodeSettings, validNodeSettings, nodeTextStyle, type CanvasNodeSettings, type CanvasCrop } from "@/lib/canvas/node-settings";
 const DEFAULT_CANVAS_SETTINGS = defaultNodeSettings();
 
@@ -150,6 +149,9 @@ import { ImageLightbox } from "@/components/image-lightbox";
 import type { ComfyRunPayload, ComfyRunResult } from "@/components/canvas/canvas-comfy-dialog";
 import { BRAND, BRAND_CANVAS_LOGO } from "@/lib/brand";
 const panelLoading = () => <div role="status" className="p-4 text-sm text-slate-500">加载中…</div>;
+const AssistantRichText = dynamic(() => import("./assistant-richtext").then(module => module.AssistantRichText), { ssr: false, loading: panelLoading });
+const ImageCropDialog = dynamic(() => import("./image-crop-dialog").then(module => module.ImageCropDialog), { ssr: false, loading: panelLoading });
+const NodePropertiesPanel = dynamic(() => import("./node-properties-panel").then(module => module.NodePropertiesPanel), { ssr: false, loading: panelLoading });
 const AnnotateEditorModal = dynamic(() => import("./annotate-editor").then(module => module.AnnotateEditorModal), { ssr: false, loading: panelLoading });
 const CanvasComfyDialog = dynamic(() => import("./canvas-comfy-dialog").then(module => module.CanvasComfyDialog), { ssr: false, loading: panelLoading });
 const TemplatesClient = dynamic(() => import("@/components/templates/templates-client").then(module => module.TemplatesClient), { ssr: false, loading: panelLoading });
@@ -725,8 +727,8 @@ function ImageCountControl({
 function isSuiteBatch(id?: string | null): boolean {
   return !!id && id.startsWith("suite-");
 }
-function projectKey(a: Artwork, byId: Map<string, Artwork>): string {
-  const r = rootOf(a, byId);
+function projectKey(a: Artwork, byId: Map<string, Artwork>, resolveRoot = (art: Artwork) => rootOf(art, byId)): string {
+  const r = resolveRoot(a);
   if (isSuiteBatch(r.batchId)) return `batch:${r.batchId}`;
   // 稳定分组:优先用 group_id(删中间节点也不变,下游节点不会跑去别的项目);
   // 没有 group_id 的老数据回退到"血缘树根 id"。
@@ -1817,6 +1819,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 视口变换(平移/缩放),用于把生成器面板停靠到选中节点正下方并跟随
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const viewportRef = useRef(viewport);
+  const zoomLabelRef = useRef<HTMLSpanElement>(null);
+  const zoomButtonRef = useRef<HTMLButtonElement>(null);
+  const zoomInputRef = useRef<HTMLInputElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const previousCanvasSizeRef = useRef({ width: 0, height: 0 });
   const previousViewportAnchorRef = useRef<string | null>(null);
@@ -2678,8 +2683,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     );
     const byId = new Map(arts.map((a) => [a.id, a]));
     const groups = new Map<string, Artwork[]>();
+    const resolveRoot = createProjectRootResolver(byId);
     for (const a of arts) {
-      const k = projectKey(a, byId);
+      const k = projectKey(a, byId, resolveRoot);
       const arr = groups.get(k) ?? [];
       arr.push(a);
       groups.set(k, arr);
@@ -9321,7 +9327,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 viewportRef.current = vp;
                 // React Flow already moves its viewport. Only anchored docks/zoom
                 // need React updates during a gesture, not the whole empty-selection page.
-                if (selectedId || selectedPendId || selectedTextId || viewport.zoom !== vp.zoom) setViewport(vp);
+                if (selectedId || selectedPendId || selectedTextId) setViewport(vp);
+                else {
+                  const label = zoomPercentLabel(vp.zoom);
+                  if (zoomLabelRef.current) zoomLabelRef.current.textContent = label;
+                  zoomButtonRef.current?.setAttribute("aria-label", `${t("canvas.toolbar.zoom")} ${label}`);
+                  if (zoomInputRef.current && document.activeElement !== zoomInputRef.current) zoomInputRef.current.value = zoomPercentInput(vp.zoom);
+                }
               }}
               onMoveEnd={(_, vp) => { viewportRef.current = vp; setViewport(vp); }}
               onNodeClick={(event, node) => {
@@ -9639,6 +9651,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               snapGrid={[16, 16]}
               onlyRenderVisibleElements={rfNodes.length > 60}
             >
+              <CanvasPerformanceProbe />
               {showMinimap && (
                 <MiniMap
                   pannable
@@ -10226,11 +10239,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   type="button"
                   onClick={() => setZoomMenuOpen((v) => !v)}
                   title={t("canvas.toolbar.zoom")}
+                  ref={zoomButtonRef}
                   aria-label={`${t("canvas.toolbar.zoom")} ${zoomPercentLabel(viewport.zoom)}`}
                   aria-expanded={zoomMenuOpen}
                   className="rounded-lg px-1.5 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 >
-                  {zoomPercentLabel(viewport.zoom)}
+                  <span ref={zoomLabelRef}>{zoomPercentLabel(viewport.zoom)}</span>
                 </button>
                 {zoomMenuOpen && (
                   <>
@@ -10243,6 +10257,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       {/* 可输入的缩放值 */}
                       <div className="canvas-ui-control mx-1.5 mb-1 flex items-center justify-between rounded-lg px-3 py-2">
                         <input
+                          ref={zoomInputRef}
                           value={zoomInput}
                           onChange={(e) => {
                             const next = e.target.value.replace(",", ".");

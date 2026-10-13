@@ -3,28 +3,28 @@ import {useEffect,useRef,useState,type ImgHTMLAttributes} from 'react';
 import {useStore} from '@xyflow/react';
 import {cdnUrl,cdnThumb} from '@/lib/cdn';
 import {canvasMediaVariant,MediaLoadQueue} from '@/lib/canvas/media-loading';
+import {observeCanvasImageSize,observeCanvasImageVisibility} from '@/lib/canvas/image-observers';
 
 const queue=new MediaLoadQueue(6);
 export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<ImgHTMLAttributes<HTMLImageElement>,'src'> & {
   source:string;forceOriginal:boolean;hasDimensions:boolean;
 }) {
   const ref=useRef<HTMLImageElement>(null),release=useRef<(()=>void)|null>(null);
-  const [visible,setVisible]=useState(false),[screenWidth,setScreenWidth]=useState(0),[ready,setReady]=useState('');
-  const zoom=useStore(s=>s.transform[2]);
+  const [visible,setVisible]=useState(false),[localWidth,setLocalWidth]=useState(0),[ready,setReady]=useState('');
+  const pixelRatio=typeof window==='undefined'?1:window.devicePixelRatio;
+  // Subscribe to a discrete quality band, not every continuous transform.
+  // Downloads/model inputs still use the original source; selection still forces it.
+  const variant=useStore(s=>forceOriginal||!hasDimensions?'original':canvasMediaVariant(localWidth*s.transform[2],pixelRatio));
   useEffect(()=>{
     const element=ref.current;if(!element)return;
-    const observer=new IntersectionObserver(entries=>setVisible(entries.some(e=>e.isIntersecting)),{
-      root:element.closest('.react-flow'),rootMargin:'180px',threshold:0,
-    });observer.observe(element);return()=>observer.disconnect();
+    return observeCanvasImageVisibility(element,setVisible);
   },[]);
   useEffect(()=>{
     const element=ref.current;if(!element)return;
-    const measure=()=>{const bounds=element.getBoundingClientRect();setScreenWidth(Math.max(bounds.width,bounds.height));};
-    const observer=new ResizeObserver(measure);observer.observe(element);measure();return()=>observer.disconnect();
-  },[zoom,props.width,props.height]);
-  const variant=forceOriginal||!hasDimensions?'original':canvasMediaVariant(screenWidth,typeof window==='undefined'?1:window.devicePixelRatio);
+    return observeCanvasImageSize(element,(width,height)=>setLocalWidth(Math.max(width,height)));
+  },[]);
   const url=variant==='original'?cdnUrl(source):cdnThumb(source,variant==='thumbnail'?512:1600);
-  const canLoad=visible&&!!source&&screenWidth>0;
+  const canLoad=visible&&!!source&&localWidth>0;
   useEffect(()=>{
     setReady('');if(!canLoad)return;
     const finish=queue.enqueue(()=>setReady(url));release.current=finish;
