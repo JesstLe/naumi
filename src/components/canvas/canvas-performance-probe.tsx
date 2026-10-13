@@ -50,7 +50,7 @@ export function CanvasPerformanceProbe() {
         reading.nodes = nodes.length;
         reading.jsBytes = performance.getEntriesByType('resource').filter(e => e.name.includes('/_next/') && e.name.includes('.js'))
           .reduce((sum, e) => sum + (e as PerformanceResourceTiming).encodedBodySize, 0);
-        const images = [...document.querySelectorAll<HTMLImageElement>('.react-flow__node img[data-media-visible="true"]')];
+        const images = [...document.querySelectorAll<HTMLImageElement>('.react-flow__node img[data-media-visible="true"], .react-flow__node [data-testid="workflow-decoration"] img')];
         reading.loadedImages = images.filter(i => i.complete && i.naturalWidth > 0).length;
         if (images.length && reading.loadedImages === images.length && !reading.imagesMs) reading.imagesMs = performance.now();
         publish();

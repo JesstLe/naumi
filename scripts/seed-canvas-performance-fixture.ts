@@ -14,6 +14,11 @@ async function main(){
  const settingsStore=await import('../src/lib/canvas-node-settings-store');await settingsStore.ensureCanvasSettingsSchema();
  for(const [id,settings] of Object.entries(d['/api/canvas/node-settings'].settings)){const kind=arts.some((a:any)=>a.id===id)?'image':'text';await db.getPool().query('INSERT INTO app_canvas_node_settings(email,node_id,kind,settings)VALUES($1,$2,$3,$4::jsonb)ON CONFLICT(email,node_id)DO UPDATE SET settings=EXCLUDED.settings',[email,id,kind,JSON.stringify(settings)]);}
 
+ if(process.env.CANVAS_PERF_WORKFLOWS){const workflow=await import('../src/lib/canvas-workflow-import');await workflow.ensureWorkflowImportSchema();
+ const manifests=JSON.parse(readFileSync(process.env.CANVAS_PERF_WORKFLOWS,'utf8')).manifests;
+ for(const manifest of manifests)await db.getPool().query('INSERT INTO app_canvas_workflow_imports(email,operation_id,fingerprint,project_key,result)VALUES($1,$2,$3,$4,$5::jsonb)ON CONFLICT(email,operation_id)DO UPDATE SET result=EXCLUDED.result',[email,manifest.operationId,'perf-fixture-'+manifest.operationId,manifest.projectKey,JSON.stringify({manifest})]);
+ console.log('REAL_WORKFLOW_MANIFESTS='+manifests.length+' SAME_GROUPS_ORIGINS_DECORATIONS=RETAINED');
+ }
  const {existsSync}=await import('node:fs');let count=0;
  for(const a of arts){if(!a.image.startsWith('/media/'))continue;const key=a.image.slice(7),file=process.env.MEDIA_DIR+'/'+key;if(!existsSync(file))continue;
  const mime=/\.png$/.test(key)?'image/png':/\.webp$/.test(key)?'image/webp':'image/jpeg';await media.registerMediaAsset(key,readFileSync(file),mime,false,email);count++;}
