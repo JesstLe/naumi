@@ -354,7 +354,7 @@ async function handleObservedPost(request: Request) {
     }
 
     const transparency=await inspectImagegenPixels(out);
-    if(!transparency.transparentPixels||transparency.transparentPixels===transparency.totalPixels)throw new Error("抠图未返回有效透明主体，请核对供应商能力");
+    if(!transparency.transparentPixels||!transparency.visiblePixels)throw new Error("抠图未返回有效透明主体，请核对供应商能力");
     // 透明底必须是 PNG
     const id = `cut-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
     let url = `data:image/png;base64,${out.toString("base64")}`;

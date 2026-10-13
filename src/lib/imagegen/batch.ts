@@ -73,7 +73,7 @@ export async function runImagegenBatchTick(id:string){
   try{await tx.query("BEGIN");const current=(await tx.query("SELECT state FROM app_imagegen_batches WHERE id=$1 FOR UPDATE",[id])).rows[0];
    const locked=(await tx.query<ImagegenBatchItem>("SELECT * FROM app_imagegen_batch_items WHERE batch_id=$1 AND key=$2 FOR UPDATE",[id,item.key])).rows[0];
    if(!locked||locked.state!=="submitted"){await tx.query("COMMIT");continue;}
-   const retry=result.status==="failed"&&result.error?.code==="NOT_ACCEPTED"&&locked.attempts<batch.request.batch!.maxAttempts&&current.state==="running";
+   const retry=result.status==="failed"&&result.error?.code==="NOT_ACCEPTED"&&result.chargedCredits===0&&!result.artifacts.length&&locked.attempts<batch.request.batch!.maxAttempts&&current.state==="running";
    if(retry){const attempt=locked.attempts+1,request={...locked.plan.request,operationId:imagegenStepId(batch.id,`batch:${item.key}:${attempt}`)},plan={...locked.plan,request,fingerprint:imagegenFingerprint(request)};
     await tx.query("UPDATE app_imagegen_batch_items SET state='queued',attempts=$3,child_operation_id=$4,request=$5::jsonb,plan=$6::jsonb,result=$7::jsonb,lease_token=NULL,lease_until=NULL WHERE batch_id=$1 AND key=$2",[id,item.key,attempt,request.operationId,JSON.stringify(request),JSON.stringify(plan),JSON.stringify(result)]);
    }else{await tx.query("UPDATE app_imagegen_batch_items SET state=$3,result=$4::jsonb,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE batch_id=$1 AND key=$2",[id,item.key,terminals.has(result.status)?result.status:"submitted",JSON.stringify(result)]);

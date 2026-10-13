@@ -13,5 +13,5 @@ export type ImagegenPlan={request:ImagegenRequest;intent:Intent;fingerprint:stri
   totalCredits:number;confirmationRequired:boolean;warnings:string[];children?:{key:string;plan:ImagegenPlan}[]};
 export type ImagegenResult={operationId:string;jobId:string;status:"queued"|"running"|"pending"|"needs_attention"|"succeeded"|"partial"|"failed"|"cancelled";
   stage:"planning"|"generating"|"editing"|"postprocessing"|"saving"|"done";
-  artifacts:{artworkId:string;url:string;width:number;height:number;mime:string;transparentPixels:number;totalPixels:number}[];
+  artifacts:{artworkId:string;url:string;width:number;height:number;mime:string;transparentPixels:number;totalPixels:number;visiblePixels?:number;fullyTransparentPixels?:number}[];
   chargedCredits:number;progress?:{completed:number;total:number};error?:{code:string;message:string}};

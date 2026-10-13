@@ -19,6 +19,8 @@ import { CanvasParameterPopover } from "./parameter-popover";
 import {ImagegenPanel,type ImagegenPanelInput} from "@/components/imagegen/imagegen-panel";
 import type {ImagegenResult} from "@/lib/imagegen/types";
 import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
+import {canvasReceipts,clearCanvasReceipt} from "@/lib/imagegen/canvas-receipts";
+import {pollImagegen} from "@/lib/imagegen/client";
 import {CanvasImage} from './canvas-image';
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
@@ -1682,7 +1684,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
     const form=init.body instanceof FormData?init.body:null;
     const body=form?Object.fromEntries(Array.from(form.entries()).filter((entry)=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};
-    if(path==="/api/generate-image"&&form&&body.ratiogen!=="1"&&(!body.userPrompt||String(body.userPrompt).trim()===String(body.prompt).trim()))return submitCanvasImagegen(form,active?.members[0]?.id,message=>flashTip(message));
+    if(path==="/api/generate-image"&&form&&user&&body.ratiogen!=="1"&&(!body.userPrompt||String(body.userPrompt).trim()===String(body.prompt).trim()))return submitCanvasImagegen(form,active?.members[0]?.id,message=>flashTip(message),{owner:user.email,project:active?.key||"workspace"});
     if (path === "/api/generate-image") {
       body.ratio = normalizeCanvasRatio(body.ratio);
       body.resolution = normalizeCanvasResolution(body.resolution);
@@ -3131,6 +3133,28 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     [active, selectedId]
   );
 
+  // Restore only receipts present when this project opens; ordinary live submissions keep their existing placement flow.
+  useEffect(()=>{
+    if(!user||readOnly||works===null)return;
+    const owner=user.email,project=active?.key||"workspace",pending=canvasReceipts(sessionStorage,owner,project);
+    if(!pending.length)return;
+    let stopped=false,timer:ReturnType<typeof setTimeout>;
+    const sync=async()=>{for(const item of [...pending]){if(stopped)return;try{
+      if(generationOperationRef.current.has(item.receipt.nodeId))continue;
+      const result=await pollImagegen(item.receipt.id);if(stopped)return;
+      if(!["succeeded","failed","cancelled","needs_attention"].includes(result.status))continue;
+      let y=item.receipt.y;const fresh=result.artifacts.filter(a=>!worksRef.current?.some(w=>w.id===a.artworkId&&w.canvasX!=null&&w.canvasY!=null));
+      for(const a of fresh){const response=await privateFetchRaw("/api/artworks/position",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:a.artworkId,x:Math.round(item.receipt.x),y:Math.round(y)})});if(!response.ok)throw new Error("恢复结果位置保存失败");y+=a.height+NODE_LABEL_H+24;}
+      if(result.artifacts.length){const ids=result.artifacts.map(a=>a.artworkId),merged=await mergeWorks(ids);if(stopped)return;if(fresh.length)pushAddUndoMany(fresh.map(a=>a.artworkId),merged);}
+      if(result.error)flashTip(result.error.message);
+      if(result.status!=="needs_attention")clearCanvasReceipt(sessionStorage,item.key,item.receipt.id);
+      pending.splice(pending.indexOf(item),1);
+    }catch{/* Retain the ID across transient read failures; no POST is issued by recovery. */}}
+    if(!stopped&&pending.length)timer=setTimeout(sync,3000);};void sync();return()=>{stopped=true;clearTimeout(timer);};
+  },[user?.email,active?.key,readOnly,works===null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function completeCanvasReceipt(jobId:string){if(!user||!jobId.startsWith("imagegen-"))return;for(const item of canvasReceipts(sessionStorage,user.email,active?.key||"workspace"))if(`imagegen-${item.receipt.id}`===jobId)clearCanvasReceipt(sessionStorage,item.key,item.receipt.id);}
+
   // 页面刷新/关闭后恢复画布视频任务：运行中恢复占位节点，后台完成后自动并回作品树。
   useEffect(() => {
     if (!user || !active) return;
@@ -4538,6 +4562,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       const fd = new FormData();
       fd.append("prompt", text);
+      fd.set("imagegenNodeId",operationKey);fd.set("imagegenNodeX",String(taskPosition.x));fd.set("imagegenNodeY",String(taskPosition.y));
       if (opts?.userPrompt?.trim()) fd.append("userPrompt", opts.userPrompt.trim());
       fd.append("category", source.category || "main");
       const requestedRatio = normalizeCanvasRatio(opts?.ratio || source.ratio);
@@ -4599,6 +4624,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           break;
         }
         if (pj.status === "error") {
+          if(pj.operationStatus==="failed"||pj.operationStatus==="cancelled")completeCanvasReceipt(jobId);
           throw new Error(pj.error || t("canvas.genFail"));
         }
       }
@@ -4627,6 +4653,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       const fresh = await mergeWorks(newIds); // 补这次新生成的几张(已带上面保存的坐标),不整表重拉
       pushAddUndoMany(newIds, fresh); // 面板生成/三视图/改比例/重做/快捷动作可撤销
+      completeCanvasReceipt(jobId);
       if (newIds.length > 0 && newIds.length < requestedCount) {
         flashTip(`请求 ${requestedCount} 张，成功 ${newIds.length} 张；未成功部分已退回积分`);
       }
@@ -7963,6 +7990,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try {
       const fd = new FormData();
       fd.append("prompt", promptToUse);
+      fd.set("imagegenNodeId",operationKey);fd.set("imagegenNodeX",String(generationPosition.x));fd.set("imagegenNodeY",String(generationPosition.y));
       fd.append("category", "main");
       const requestedRatio = normalizeCanvasRatio(opts?.ratio || genRatio);
       fd.append("ratio", requestedRatio);
@@ -8031,8 +8059,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if (pj.user) applyServerUser(pj.user); // 即时回写余额积分
           break;
         }
-        if (pj.status === "error")
+        if (pj.status === "error") {
+          if(pj.operationStatus==="failed"||pj.operationStatus==="cancelled")completeCanvasReceipt(jobId);
           throw new Error(pj.error || t("canvas.genFail"));
+        }
       }
       // 把生成结果落到空白节点的位置
       if (newIds.length) {
@@ -8061,6 +8091,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       const fresh = await mergeWorks(newIds);
       setPendNodes((prev) => prev.filter((p) => p.id !== pend.id));
+      completeCanvasReceipt(jobId);
       setSelectedPendId((current) => (current === pend.id ? null : current));
       pushAddUndo(newIds[0] ?? null, fresh);
       if (newIds.length && inputTextNodes.length) {

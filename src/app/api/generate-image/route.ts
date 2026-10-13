@@ -950,7 +950,7 @@ async function runJob(
       } }));
     }
     const scope = currentModelExecution("image"), post = scope?.businessOption?.postprocess;
-    if(p.transparent){for(const image of images){const raw=dataUrlToBytes(image.url);const pixels=await inspectImagegenPixels(raw?Buffer.from(raw.bytes):(await readManagedObject(image.url,12*1024*1024)).bytes);if(!pixels.transparentPixels||pixels.transparentPixels===pixels.totalPixels)imagegenOutputError="模型未返回有效透明主体；已生成原图保留，实际生成积分已结算，请调整透明能力配置";}}
+    if(p.transparent){for(const image of images){const raw=dataUrlToBytes(image.url);const pixels=await inspectImagegenPixels(raw?Buffer.from(raw.bytes):(await readManagedObject(image.url,12*1024*1024)).bytes);if(!pixels.transparentPixels||!pixels.visiblePixels)imagegenOutputError="模型未返回有效透明主体；已生成原图保留，实际生成积分已结算，请调整透明能力配置";}}
     if(imagegenOutputError){await JOBS.patch(jobId,{imagegenOutputError});}
     else if (post?.enabled) {
       images = await Promise.all(images.map(async (image,index) => {
@@ -1296,7 +1296,7 @@ export async function GET(request: Request) {
   if(jobId?.startsWith("imagegen-")&&/^[a-f0-9-]{36}$/i.test(jobId.slice(9))){
     const owner=await resolveUserEmail(request);if(!owner)return NextResponse.json({error:"请先登录"},{status:401});
     const {getImagegenResult}=await import("@/lib/imagegen/dispatch"),result=await getImagegenResult(jobId.slice(9),owner);if(!result)return NextResponse.json({error:"任务不存在或无权访问"},{status:404});
-    return NextResponse.json({status:result.status==="succeeded"?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",stage:result.stage,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
+    return NextResponse.json({status:result.status==="succeeded"?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",operationStatus:result.status,stage:result.stage,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
   }
   if (jobId) {
     if (dbEnabled && (await resolveUserEmail(request))?.toLowerCase() !== await JOBS.owner(jobId)) {

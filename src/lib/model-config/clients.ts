@@ -62,7 +62,8 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
       }
       const advanced=currentImagegenStep();
       if(advanced&&frozen.modality==="image"){
-        for(const field of Object.values(IMAGEGEN_FIELDS_BY_CAPABILITY).flat().filter(f=>f!=="omit"&&f!=="size"))delete body[field];
+        const pixelOverride=advanced.request.parameters.width!==undefined&&advanced.request.parameters.height!==undefined;
+        for(const [key,fields] of Object.entries(IMAGEGEN_FIELDS_BY_CAPABILITY))if(key!=="pixelSize"||pixelOverride)for(const field of fields)if(field!=="omit")delete body[field];
         const extra=mapImagegenParameters(imagegenWireRequest(advanced.request),publishedImagegenCapabilities(scope.capabilities),parameterMap.imagegen||{});Object.assign(body,extra);
         if(advanced.intent.background==="transparent"&&parameterMap.imagegen?.transparent!=="omit"&&!parameterMap.imagegen?.transparent)body.background="transparent";
       }
@@ -73,7 +74,7 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
       if(parameterMap.resolutionPolicy)for(const field of RESOLUTION_FIELDS)if(!Object.prototype.hasOwnProperty.call(fields,field))form.delete(field);
       if (parameterMap.qualityPolicy?.mode === "omit") form.delete("quality");
       for (const [key, value] of Object.entries(fields)) if (["string","number","boolean"].includes(typeof value)) form.set(key, String(value));
-      if(currentImagegenStep())for(const field of Object.values(IMAGEGEN_FIELDS_BY_CAPABILITY).flat().filter(f=>f!=="omit"))if(!Object.hasOwn(fields,field))form.delete(field);
+      const advanced=currentImagegenStep();if(advanced)for(const [key,names] of Object.entries(IMAGEGEN_FIELDS_BY_CAPABILITY))if(key!=="pixelSize"||advanced.request.parameters.width!==undefined)for(const field of names)if(field!=="omit"&&!Object.hasOwn(fields,field))form.delete(field);
       const headers = new Headers(request.headers); headers.delete("content-type"); headers.delete("content-length");
       return transport(request.url, { method: request.method, headers, body: form, signal: request.signal });
     }

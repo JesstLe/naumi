@@ -78,15 +78,18 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
    ids=processed;
   }
   const result=await artifacts(ids,owner);
-  if(plan.intent.background==="transparent"&&result.some(a=>a.transparentPixels===0||a.transparentPixels===a.totalPixels))throw new Error("结果没有有效透明主体；原生成版本已保留，请调整模型能力或抠图设置");
+  if(plan.intent.background==="transparent"&&result.some(a=>a.transparentPixels===0||a.visiblePixels===0))throw new Error("结果没有有效透明主体；原生成版本已保留，请调整模型能力或抠图设置");
   const charge=(await getPool().query("SELECT COALESCE(sum(charged_credits),0)::int AS n FROM app_billing_operations WHERE email=$1 AND (id=ANY($2::text[]) OR id=ANY($3::text[]))",[owner,Object.values(state.children).map(c=>c.jobId).filter(Boolean),plan.steps.map(s=>`tool-${imagegenStepId(plan.request.operationId,s.key)}`)])).rows[0].n;
   await update({status:"done"},{status:"succeeded",stage:"done",artifacts:result,chargedCredits:charge,error:undefined});
  }catch(error){
   let kept:ImagegenResult["artifacts"]=[],charged=0;
   try{kept=await artifacts(baseIds.length?baseIds:ids,owner);charged=Number((await getPool().query("SELECT COALESCE(sum(charged_credits),0)::int AS n FROM app_billing_operations WHERE email=$1 AND (id=ANY($2::text[]) OR id=ANY($3::text[]))",[owner,Object.values(state.children).map(c=>c.jobId).filter(Boolean),plan.steps.map(s=>`tool-${imagegenStepId(plan.request.operationId,s.key)}`)])).rows[0].n);}catch{/* Historical task data remains recoverable by its child ID. */}
-  await update({status:error instanceof ImagegenStopped?"done":"error"},{status:error instanceof ImagegenStopped?"cancelled":"failed",artifacts:kept,chargedCredits:charged,error:error instanceof ImagegenStopped?undefined:{code:error instanceof NotAccepted?"NOT_ACCEPTED":"EXECUTION_FAILED",message:error instanceof Error?error.message:"图像处理失败"}});}
+  const safeToRestart=charged===0&&!kept.length&&!Object.values(state.children).some(c=>c.state==="done");
+  await update({status:error instanceof ImagegenStopped?"done":"error"},{status:error instanceof ImagegenStopped?"cancelled":"failed",artifacts:kept,chargedCredits:charged,error:error instanceof ImagegenStopped?undefined:{code:error instanceof NotAccepted?(safeToRestart?"NOT_ACCEPTED":"PARTIAL_EXECUTION_REJECTED"):"EXECUTION_FAILED",message:error instanceof Error?error.message:"图像处理失败"}});}
 }
 export async function resumeImagegen(id:string){await jobs.kick(id,(payload,snapshot)=>runParent(id,payload,snapshot));}
+/** Receipt lookup cannot claim work or depend on successful scheduling. */
+export async function readImagegenReceipt(operationId:string,owner:string):Promise<ImagegenResult|null>{const id=parentId(operationId);if(await jobs.owner(id)!==owner.toLowerCase())return null;return (await jobs.get(id,false))?.result||null;}
 export async function getImagegenResult(operationId:string,owner:string):Promise<ImagegenResult|null>{
  const id=parentId(operationId);if((await jobs.owner(id))!==owner.toLowerCase())return null;
  const saved=await jobs.get(id,false);if(!saved)return null;

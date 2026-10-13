@@ -11,6 +11,9 @@ for(const [prompt,background] of [
   ['写上 "transparent background"',null],["透明底是什么意思？",null],
   ["白底和透明底有什么区别",null],["主体是一只鹈鹕",null],
   ["不要去掉背景","opaque"],["保留背景，别抠图","opaque"],
+  ["禁止透明背景，只画普通商品图","opaque"],["不需要无背景图","opaque"],
+  ["支持透明背景吗？",null],["能不能输出透明背景？",null],
+  ["Can you support transparent background?",null],["不要没有背景的图","opaque"],
 ] as const)assert.equal(resolveImagegenIntent(parse(prompt)).background,background,prompt);
 assert.ok(resolveImagegenIntent(parse("透明底，同时白底")).conflicts.length);
 assert.ok(resolveImagegenIntent(parse("透明底",{output:{format:"png",background:"opaque",backgroundOrigin:"current-ui"}})).conflicts.length);

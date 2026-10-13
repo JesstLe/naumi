@@ -8,6 +8,9 @@ import {transformImage} from "../src/lib/media-postprocess";
 async function main(){
  assert.equal(localEditSchema.safeParse({mode:"process",id:"owned",operationId:"1472c152-3faa-4f06-a047-815e3f34848f",output:{format:"webp"}}).success,true,"Local immutable versions accept shared output controls");
  const raw=Buffer.alloc(16*16*4);
+ const translucent=await sharp({create:{width:64,height:64,channels:4,background:{r:50,g:140,b:230,alpha:0.5}}}).png().toBuffer();
+ const visible=await processImagegenPixels(translucent,{output:{format:"png",background:"transparent"}});assert.equal(visible.transparentPixels,4096,"Visible semi-transparent overlays are valid");
+ const sparse=Buffer.alloc(2048*2048*4);sparse[(1024*2048+1024)*4+3]=255;const sparsePng=await sharp(sparse,{raw:{width:2048,height:2048,channels:4}}).png().toBuffer();await assert.rejects(()=>processImagegenPixels(sparsePng,{output:{format:"png",downscaleMaxDim:64}}),/全部透明/,"Check encoded final pixels after resize");
  for(let y=0;y<16;y++)for(let x=0;x<16;x++){const i=(y*16+x)*4;raw[i]=x>=5&&x<11&&y>=5&&y<11?255:0;raw[i+1]=raw[i]?0:255;raw[i+2]=0;raw[i+3]=255;}
  const png=await sharp(raw,{raw:{width:16,height:16,channels:4}}).png().toBuffer(),sha=createHash("sha256").update(png).digest("hex");
  assert.equal((await inspectImagegenPixels(png)).transparentPixels,0,"An alpha channel with all255 is opaque");

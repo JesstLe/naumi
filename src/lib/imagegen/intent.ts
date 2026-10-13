@@ -5,7 +5,7 @@ import type { ImagegenRequest, Intent } from "./types";
 function instructions(prompt:string) {
   return prompt.replace(/```[\s\S]*?```/g," ").replace(/`[^`]*`|“[^”]*”|‘[^’]*’|「[^」]*」|『[^』]*』|"[^"\n]*"|'[^'\n]*'/g," ")
     .split(/[，,。.;；!！?？\n]+/).map(s=>s.trim()).filter(Boolean)
-    .filter(s=>!/(是什么意思|是什么|区别|如何理解|解释一下|what\s+(?:does|is)|difference\s+between|explain\b)/i.test(s));
+    .filter(s=>!/(是什么意思|是什么|区别|如何理解|解释一下|能不能|能否|是否支持|(?:支持|可以).{0,30}(?:吗|么)$|what\s+(?:does|is)|difference\s+between|explain\b|(?:can|do|does)\s+(?:you|it|this|the\s+model)\s+(?:support|produce|output))/i.test(s));
 }
 const aliases:readonly [ImagegenUseCase,RegExp][]=[
   ["photorealistic-natural",/写实摄影|真实摄影|photorealistic/i],
@@ -30,6 +30,8 @@ const aliases:readonly [ImagegenUseCase,RegExp][]=[
 ];
 const negative=/不要|无需|别|不需要|禁止|\b(?:don't|do not|no need|without)\b/i;
 function clauseBackground(clause:string):Intent["background"] {
+  if(/不要不透明|非不透明/i.test(clause))return "transparent";
+  if(/(?:不要|别|无需|不需要|禁止).{0,8}(?:透明|无背景|没有背景|抠图|(?:去掉|移除|去除).{0,8}背景)/i.test(clause))return "opaque";
   if(/不要不透明|非不透明|无背景|没有背景|\bno background\b/i.test(clause))return "transparent";
   if(/(?:不要|别|无需|不需要).{0,8}(?:透明|抠图|(?:去掉|移除|去除).{0,8}背景)|非透明|不透明|保留背景|白底|(?:纯)?白色背景|opaque|white background|(?:don't|do not).{0,12}(?:remove|transparent)/i.test(clause))return "opaque";
   if(/透明(?:底|背景)|背景(?:为|是|要)?透明|transparent\s+(?:background|png)|抠图|(?:移除|去掉|去除|删除).{0,10}背景|remove.{0,10}background/i.test(clause))return "transparent";
