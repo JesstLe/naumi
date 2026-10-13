@@ -25,7 +25,7 @@ import type {ImagegenResult} from "@/lib/imagegen/types";
 import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
 import {canvasReceipts,clearCanvasReceipt} from "@/lib/imagegen/canvas-receipts";
 import {pollImagegen} from "@/lib/imagegen/client";
-import { CanvasPerformanceProbe } from "./canvas-performance-probe";
+import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-performance-probe";
 import {CanvasImage} from './canvas-image';
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
@@ -9153,7 +9153,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 viewportRef.current = inst.getViewport();
                 setViewport(viewportRef.current);
               }}
-              onMove={(_, vp) => {
+              onMove={(event, vp) => {
+                recordCanvasNativeMove(event);
                 viewportRef.current = vp;
                 updateLiveViewport(vp);
               }}

@@ -3,7 +3,7 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { authenticatedEmail } from '@/lib/request-auth';
 import { sameSiteBillingMutation } from '@/lib/billing/access';
-import { canReadMedia, getMediaAsset, ensureMediaVariants, importLegacyMedia } from '@/lib/media-assets';
+import { canReadMedia, getMediaAsset, getMediaAssets, ensureMediaVariants, importLegacyMedia } from '@/lib/media-assets';
 import { MEDIA_DIR, privateMedia, storageDriver, presignStoredObject } from '@/lib/storage';
 import { managedImageSource, publicImageSource, type BrowserImageDescriptor } from '@/lib/browser-image-source';
 import { rateLimit } from '@/lib/rate-limit';
@@ -29,6 +29,12 @@ export async function imageCacheManifest(request:Request,publicOnly:boolean){
     if(!Array.isArray(body.sources)||!body.sources.length||body.sources.length>64||body.sources.some((s:unknown)=>typeof s!=='string'||s.length>2048)) return Response.json({error:'参数无效'},{status:400,headers});
     const origin=new URL(request.url).origin;
     const results: Record<string, BrowserImageDescriptor | null> = {};
+    // Request-local owned metadata is bulk-read; shared/legacy references retain
+    // their full authoritative per-resource authorization path.
+    const sources=new Map<string,string>();
+    for(const raw of new Set<string>(body.sources)){const source=managedImageSource(raw,origin);if(source&&!source.startsWith('/api/')&&(!publicOnly||publicImageSource(source)))sources.set(raw,source);}
+    const assets=await getMediaAssets([...sources.values()].map(s=>decodeURIComponent(new URL(s,origin).pathname.slice(7))));
+    const variants=await getMediaAssets([...assets.values()].flatMap(a=>[a.thumbnail_key,a.preview_key].filter((k):k is string=>!!k)));
     // Bounded batches, no unbounded parallel object reads or model calls.
     for(const raw of new Set<string>(body.sources)) {
       results[raw]=null;
@@ -48,14 +54,15 @@ export async function imageCacheManifest(request:Request,publicOnly:boolean){
         continue;
       }
       const url=new URL(source,origin),key=decodeURIComponent(url.pathname.slice(7));
-      if(privateMedia && !await canReadMedia(key,account)) continue;
-      let asset=await getMediaAsset(key), resolved=key;
+      const known=assets.get(key);
+      if(privateMedia && !(known?.public||known?.owner===account.toLowerCase()) && !await canReadMedia(key,account)) continue;
+      let asset=known||await getMediaAsset(key), resolved=key;
       const variant=url.searchParams.get('variant');
       if(variant==='thumbnail'||variant==='preview') {
         asset ||= await importLegacyMedia(key,account).catch(()=>null);
-        if(asset)asset=await ensureMediaVariants(key).catch(()=>asset);
+        if(asset&&!(asset.thumbnail_key&&asset.preview_key))asset=await ensureMediaVariants(key).catch(()=>asset);
         const variantKey=variant==='thumbnail'?asset?.thumbnail_key:asset?.preview_key;
-        if(variantKey){resolved=variantKey;asset=await getMediaAsset(resolved);}
+        if(variantKey){resolved=variantKey;asset=variants.get(resolved)||await getMediaAsset(resolved);}
       }
       const contentType=asset?.content_type||mime[resolved.split('.').pop()?.toLowerCase()||''];
       if(!contentType || !/^image\/(png|jpeg|webp|avif|gif)$/.test(contentType))continue;

@@ -2,6 +2,7 @@
 import { Profiler, useEffect, useRef, type ReactNode } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import { createPortal } from 'react-dom';
+import { browserImagePerformance } from '@/lib/browser-image-cache';
 
 /** Opt-in diagnostics, compiled off in ordinary builds. No account data or URLs
  * are emitted. Both baseline and candidate use this exact same probe. */
@@ -12,7 +13,15 @@ let reading: Reading = { readyMs: 0, nodes: 0, commits: 0, renderMs: 0, longTask
   label: 'idle', frames: 0, elapsedMs: 0, frameP95Ms: 0, gestureRenderMs: 0, gestureCommits: 0, jsBytes: 0, imagesMs: 0, loadedImages: 0 };
 function publish() {
   const output=document.querySelector<HTMLOutputElement>('[data-testid="canvas-perf-reading"]');
-  if(output){const value=JSON.stringify(reading);if(output.firstChild?.nodeType===Node.TEXT_NODE)output.firstChild.nodeValue=value;else output.textContent=value;}
+  if(output){const value=JSON.stringify({...reading,imageStages:browserImagePerformance(),nativeMoves:nativeFrames.length,nativeMoveP95Ms:[...nativeFrames].sort((a,b)=>a-b)[Math.min(nativeFrames.length-1,Math.floor(nativeFrames.length*.95))]||0});if(output.firstChild?.nodeType===Node.TEXT_NODE)output.firstChild.nodeValue=value;else output.textContent=value;}
+}
+const nativeFrames:number[]=[];
+export function recordCanvasNativeMove(event:MouseEvent|TouchEvent|WheelEvent|null){
+ if(!enabled||!event?.isTrusted||reading.label!=='running')return;
+ const at=event.timeStamp;
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{
+ nativeFrames.push(performance.now()-at);publish();
+ }));
 }
 export function CanvasPerformanceHarness({ children }: { children: ReactNode }) {
   if (!enabled) return <>{children}</>;
@@ -76,8 +85,15 @@ export function CanvasPerformanceProbe() {
     publish(); busy.current = false;
   }
   if (typeof document === "undefined") return null;
+  function nativeGestureStart(){
+    nativeFrames.length=0;reading={...reading,label:'running',gestureRenderMs:0,gestureCommits:0,frames:0,elapsedMs:0,frameP95Ms:0};publish();
+    const start=performance.now(),times:number[]=[];let prior=start,raf=0;
+    const tick=()=>{const now=performance.now();times.push(now-prior);prior=now;raf=requestAnimationFrame(tick);};raf=requestAnimationFrame(tick);
+    setTimeout(()=>{cancelAnimationFrame(raf);times.sort((a,b)=>a-b);reading={...reading,label:'native-complete',frames:times.length,elapsedMs:performance.now()-start,frameP95Ms:times[Math.min(times.length-1,Math.floor(times.length*.95))]||0};publish();},3000);
+  }
   return createPortal(<div style={{ position: "fixed", bottom: 8, left: 8, zIndex: 100000 }}>
     <div className="rounded-xl border bg-white p-3 text-xs text-slate-900">
+      <button data-testid="canvas-perf-native" onClick={nativeGestureStart}>记录原生操作3秒</button>
       <button data-testid="canvas-perf-reset" onClick={() => { reading = { ...reading, label: 'running', gestureRenderMs: 0, gestureCommits: 0 }; publish(); }}>记录真实操作</button>
       <button data-testid="canvas-perf-zoom" onClick={() => void measure('zoom')}>测缩放</button>
       <button data-testid="canvas-perf-pan" onClick={() => void measure('pan')}>测平移</button>
