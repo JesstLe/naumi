@@ -17,7 +17,7 @@ export function createFixtureObjects({ root, accessKeyId, secretAccessKey, bucke
     if(!signature||!credential?.startsWith(accessKeyId+"/")||!/^\d{8}T\d{6}Z$/.test(datetime))return json(403,"unsigned fixture object");
     const at=Date.parse(datetime.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/,"$1-$2-$3T$4:$5:$6Z"));
     const expires=signQuery?Number(url.searchParams.get("X-Amz-Expires")):300;
-    if(!Number.isFinite(expires)||expires<1||expires>900||Date.now()>at+expires*1000||at>Date.now()+60_000)return json(403,"expired fixture signature");
+    if(!Number.isFinite(at)||!Number.isFinite(expires)||expires<1||expires>900||Date.now()>at+expires*1000||at>Date.now()+60_000)return json(403,"expired fixture signature");
     const chunks=[];let total=0;
     for await(const chunk of req){total+=chunk.length;if(total>200*1024*1024)return json(413,"fixture object too large");chunks.push(chunk);}
     const bytes=Buffer.concat(chunks),headers=new Headers();

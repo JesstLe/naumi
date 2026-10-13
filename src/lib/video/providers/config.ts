@@ -27,6 +27,7 @@ export type VideoProviderRuntimeConfig = {
   workflowId?: string;
   idempotencyStrategy: "header" | "body" | "none";
   idempotencyBodyField?: string;
+  videoProfile?: import("../capability-schema").VideoWireProfile;
 };
 
 const BUILT_INS: Array<{ id: string; label: string; protocol: VideoProviderProtocol; prefix: string }> = [
@@ -76,6 +77,7 @@ function normalized(value: Partial<VideoProviderRuntimeConfig>): VideoProviderRu
     workflowId: value.workflowId,
     idempotencyStrategy,
     idempotencyBodyField,
+    videoProfile: value.videoProfile,
   };
 }
 

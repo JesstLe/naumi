@@ -29,9 +29,10 @@ const videoOptions = z.strictObject({
   rawAuthorization: z.boolean().optional(), workflowId: z.string().max(160).optional(),
   idempotencyStrategy: z.enum(["header", "body", "none"]).optional(),
   idempotencyBodyField: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,60}$/).optional(),
+  videoProfile: videoWireProfileSchema.optional(),
 });
 const providerSchema = z.strictObject({ id, name, protocol: z.enum(MODEL_PROTOCOLS), baseUrl: z.string().max(1024), credentialRef: z.uuid().optional(), enabled: z.boolean(), timeoutMs: z.number().int().min(1000).max(900000), maxConcurrent: z.number().int().min(1).max(256), options: videoOptions.optional() });
-const capabilities = z.strictObject({ verified: z.boolean(), generate: z.boolean(), edit: z.boolean(), vision: z.boolean(), transparent: z.boolean(), preserveIdentity: z.boolean(), textAccuracy: z.boolean(), qualityRank: z.number().int().min(1).max(5), qualities: z.array(quality).max(6), nativeResolutions: z.array(resolution).max(3), maxReferenceImages: z.number().int().min(0).max(32), expectedLatencyMs: z.number().int().min(0).max(900000), video: videoDefinitionSchema.optional() });
+const capabilities = z.strictObject({ verified: z.boolean(), generate: z.boolean(), edit: z.boolean(), vision: z.boolean(), transparent: z.boolean(), preserveIdentity: z.boolean(), textAccuracy: z.boolean(), qualityRank: z.number().int().min(1).max(5), qualities: z.array(quality).max(6), nativeResolutions: z.array(resolution).max(3), maxReferenceImages: z.number().int().min(0).max(128), expectedLatencyMs: z.number().int().min(0).max(900000), video: videoDefinitionSchema.optional() });
 const mappedValue = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const parameterMap = z.strictObject({ resolutionPolicy:resolutionPolicySchema.optional(), qualityPolicy: qualityPolicySchema.optional(), quality: z.partialRecord(quality, mappedValue).optional(), resolution: z.partialRecord(resolution, mappedValue).optional(), version: mappedValue.optional(), videoProfile: videoWireProfileSchema.optional() });
 const upstream = z.strictObject({ id, providerId: id, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), label: name, modality, enabled: z.boolean(), capabilities, parameterMap, costRef: z.string().min(1).max(200).optional(), procurement: procurementSchema.optional() });
@@ -77,6 +78,12 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
   installImagePresetAliases(config);
   if (!config.publicModels.some(m => m.enabled)) fail("至少需要一个有效默认模型");
   for (const group of ["providers", "upstreamModels", "publicModels", "pools"] as const) unique(config[group].map(x => x.id), group);
+  for(const upstream of config.upstreamModels){
+    if(upstream.modality!=="video"&&upstream.capabilities.maxReferenceImages>32)fail("图片参考上限不能超过32",[`upstreamModels.${upstream.id}.capabilities.maxReferenceImages`]);
+    const images=upstream.capabilities.video?.limits?.images;
+    if(upstream.modality==="video"&&typeof images==="number"&&images!==upstream.capabilities.maxReferenceImages)
+      throw new ModelConfigError("INVALID_CONFIG","视频参考图上限与通用参考图配置不一致",400,[`upstreamModels.${upstream.id}.capabilities.video.limits.images`]);
+  }
   if (config.pools.reduce((n, p) => n + p.rules.length, 0) > 1000) fail("规则超过数量限制");
   const providers = new Map(config.providers.map(p => [p.id, p]));
   const upstreams = new Map(config.upstreamModels.map(m => [m.id, m]));

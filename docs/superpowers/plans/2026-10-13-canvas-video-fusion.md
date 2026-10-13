@@ -8,7 +8,7 @@
 
 **Tech Stack:** React/react-dom19.3.0、Next15.5.27、TypeScript、Zod、PostgreSQL/pg、Node24、FFmpeg/FFprobe、Playwright、现有Docker固定镜像发布流程；不引入Vue或第二套账号/积分系统。
 
-**Spec:** [2026-10-13-canvas-video-fusion-design.md](../specs/2026-10-13-canvas-video-fusion-design.md)。用户2026-10-13已确认“按方案继续”；此计划未执行，须审阅计划并选择执行方式。
+**Spec:** [2026-10-13-canvas-video-fusion-design.md](../specs/2026-10-13-canvas-video-fusion-design.md)。用户2026-10-13已确认“按方案继续”；用户已确认计划并选择当前会话Native顺序实施；执行状态以进度记录为准。
 
 ## Global Constraints
 

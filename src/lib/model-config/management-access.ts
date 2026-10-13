@@ -1,6 +1,8 @@
 import {applyResolutionParameters,resolutionParametersSchema} from "./resolution-policy";
 import {readResolutionDefaults} from "../supplier-models/resolution-access";
 import {applyDisplayResolutions} from "./resolution-options";
+import {applyVideoParameters,videoParametersSchema} from "./video-policy";
+import {freezeManagedVideoCapability} from "../video/frozen-capability";
 import "server-only";
 import {channelHealthSummary} from "./channel-scheduler";
 import {providerCapacitySummary} from "./capacity";
@@ -34,6 +36,7 @@ const common = { id: z.uuid(), expectedVersion: z.number().int().positive() };
 const credits=z.number().int().min(0).max(2147483647);
 const creditPricing=z.discriminatedUnion("mode",[z.strictObject({mode:z.literal("matrix"),prices:z.record(z.enum(QUALITY_IDS),z.record(z.enum(RESOLUTION_IDS),credits.nullable()))}),z.strictObject({mode:z.literal("fixed"),credits}),z.strictObject({mode:z.literal("quality-resolution"),quality:z.record(z.enum(QUALITY_IDS),credits),resolutionExtra:z.record(z.enum(RESOLUTION_IDS),credits)})]);
 const input = z.discriminatedUnion("action", [
+  z.strictObject({action:z.literal("video-parameters"),...common,rowId:identifier,routes:videoParametersSchema}),
   z.strictObject({action:z.literal("channels"),...common,rowId:identifier,policy:channelPolicySchema.nullable()}),
   z.strictObject({action:z.literal("resolutions"),...common,rowId:identifier,resolutions:z.array(z.enum(["1K","2K","4K"])).min(1).max(3).nullable(),parameters:resolutionParametersSchema.nullable().optional()}),
   z.strictObject({ action: z.literal("discover"), providerId: identifier, force: z.boolean().optional() }),
@@ -69,6 +72,12 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         const billing=await admin.billing.current();return biJson({version:snapshot.version,billingVersion:billing.version,grid:modelCreditGrid(billing,snapshot,row,feature)});
       }
       if (request.method === "GET") {const billing=await admin.billing.current(),defaults=await readQualityDefaults(admin.pool,snapshot.config),resolutionDefaults=await readResolutionDefaults(admin.pool,snapshot.config),modelRows=rows(snapshot);
+        for(const row of modelRows)if(row.modality==="video")row.videoConfig={routes:await Promise.all([...new Set(row.routes.map(route=>route.upstreamId))].map(async id=>{
+          const upstream=snapshot.config.upstreamModels.find(model=>model.id===id)!,provider=snapshot.config.providers.find(item=>item.id===upstream.providerId)!;
+          const frozen=await freezeManagedVideoCapability(snapshot,upstream,provider);
+          return {upstreamId:id,model:upstream.model,provider:provider.name,definition:upstream.capabilities.video,profile:upstream.parameterMap.videoProfile,
+            effective:frozen.definition,sources:frozen.sources,sourceRevision:frozen.sourceRevision};
+        }))};
         for(const row of modelRows)for(const route of row.resolutionConfig?.routes||[]){const d=resolutionDefaults.get(route.upstreamId);route.metadataDefaults=d||null;if(d)route.nativeValues=d.nativeValues;if(route.editable&&!route.configured&&d?.available){route.mode=d.mode;route.field=d.field;route.ratioField=d.ratioField;route.fieldKnown=true;route.values={...d.values};route.metadataRef={id:d.id,revision:d.revision};}}
         for(const row of modelRows)for(const route of row.qualityConfig?.routes || []){const d=defaults.get(route.upstreamId);route.metadataDefaults=d || null;if(!route.configured&&d?.available){route.mode=d.mode;route.values={...d.values};route.metadataRef={id:d.id,revision:d.revision};}else if(!route.configured){route.mode="omit";route.values={};}}
         return biJson({ version: snapshot.version,billingVersion:billing.version, managed: await deps.managed(), rows: modelRows.map(row=>({...row,pricing:managedModelPriceViews(billing,snapshot,row)})), candidates: managedModelCandidates(snapshot.config), channelHealth:await channelHealthSummary(admin.pool,snapshot.config),providerCapacity:await providerCapacitySummary(admin.pool,snapshot.config),providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, maxConcurrent:p.maxConcurrent, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs: await readProviderCatalog(admin.pool, snapshot.config.providers) });}
@@ -117,7 +126,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
           }
         } else if(body.action === "order") {
           config=orderManagedModels(config,rows(snapshot),body.rowIds);
-        } else if (body.action === "switch" || body.action === "rename" || body.action === "scope" || body.action === "parameters" || body.action === "resolutions" || body.action === "channels") {
+        } else if (body.action === "switch" || body.action === "rename" || body.action === "scope" || body.action === "parameters" || body.action === "resolutions" || body.action === "channels" || body.action === "video-parameters") {
           const row = rows(snapshot).find(r => r.id === body.rowId);
           if (!row) throw new ModelConfigError("MODEL_UNAVAILABLE", "前端当前没有展示该模型，请刷新", 409);
           if(body.action==="channels"&&body.policy&&row.modality==="text"&&body.policy.channels.some(c=>c.enabled&&!row.candidateIds.includes(c.upstreamId)))throw new ModelConfigError("MODEL_INCOMPATIBLE","文字通道必须满足当前全部用途的文字及图片理解能力",400);
@@ -132,7 +141,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
             const defaults=await readResolutionDefaults(admin.pool,config);
             for(const route of body.parameters.routes){const d=defaults.get(route.upstreamId);if(route.ratioField===undefined && route.field===d?.field)route.ratioField=d.ratioField;if(route.metadataRef&&(!d||route.metadataRef.id!==d.id||route.metadataRef.revision!==d.revision))throw new ModelConfigError("METADATA_CHANGED","分辨率元数据已更新，请重新打开设置后核对",409);}
           }
-          config = body.action === "channels" ? applyChannelPolicy(config,row,body.policy) : body.action === "resolutions" ? applyDisplayResolutions(config,row,body.resolutions) : body.action === "parameters" ? applyModelQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyModelToolScope(config,row,body.features,body.canvas) : body.action === "rename" ? renameManagedModel(config, row, body.label) : switchManagedModel(config, row, body.upstreamId);
+          config = body.action === "video-parameters" ? applyVideoParameters(config,row,body.routes) : body.action === "channels" ? applyChannelPolicy(config,row,body.policy) : body.action === "resolutions" ? applyDisplayResolutions(config,row,body.resolutions) : body.action === "parameters" ? applyModelQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyModelToolScope(config,row,body.features,body.canvas) : body.action === "rename" ? renameManagedModel(config, row, body.label) : switchManagedModel(config, row, body.upstreamId);
           if(body.action==="resolutions" && body.parameters!==undefined)config=applyResolutionParameters(config,row,body.resolutions||["1K","2K","4K"],body.parameters);
         } else if (body.action === "connect") {
           const endpoint = validateModelEndpoint(body.protocol === "apimart-images" ? body.baseUrl.replace(/\/v1\/?$/, "") : body.baseUrl, { trustedOrigins: admin.trustedOrigins });

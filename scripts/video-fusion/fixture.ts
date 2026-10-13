@@ -13,7 +13,7 @@ export async function fixtureDatabase(url = process.env.DATABASE_URL || "") {
     if(current!==parsed.pathname.slice(1))throw new Error("Fixture database identity mismatch");
     const marked=(await sql.query("SELECT to_regclass('public.naumi_video_fixture_guard') AS name")).rows[0].name;
     if(!marked)throw new Error("Video fixture owner marker is required");
-    const marker=(await sql.query("SELECT owner FROM naumi_video_fixture_guard LIMIT 1")).rows[0];
+    const marker=(await sql.query("SELECT owner FROM public.naumi_video_fixture_guard LIMIT 1")).rows[0];
     if(marker?.owner!=="canvas-video-fusion-20261013")throw new Error("Database belongs to another task");
     return sql;
   } catch(error) {await sql.end();throw error;}
@@ -22,6 +22,23 @@ export async function seedVideoFixture() {
   const guard=await fixtureDatabase();await guard.end();
   const db=await import("../../src/lib/db");
   await db.ensureSchema();
+  await db.setSetting("credits_metering","1");
+  const {createCredentialStore}=await import("../../src/lib/model-config/credentials");
+  const {createModelRepository}=await import("../../src/lib/model-config/repository");
+  const {fixtureModelConfig}=await import("../model-config-unit-fixture");
+  const {CAP_RICH}=await import("./profiles");
+  const credentials=createCredentialStore(db.getPool());
+  const imageKey=await credentials.importPlain({providerId:"p1",plain:process.env.OPENAI_API_KEY!,actor:"fixture"});
+  const videoKey=await credentials.importPlain({providerId:"fixture-video-provider",plain:process.env.VIDEO_API_KEY!,actor:"fixture"});
+  const config=fixtureModelConfig(process.env.OPENAI_BASE_URL!,imageKey.id);
+  config.providers.push({id:"fixture-video-provider",name:"Fixture video supplier",protocol:"ark",baseUrl:process.env.VIDEO_FIXTURE_SUPPLIER_ORIGIN!+"/protocol/ark/api/v3",credentialRef:videoKey.id,enabled:true,timeoutMs:120000,maxConcurrent:4});
+  config.upstreamModels.push({id:"fixture-video-upstream",providerId:"fixture-video-provider",model:"wire-video",label:"Fixture upstream",modality:"video",enabled:true,
+    capabilities:{verified:true,generate:true,edit:true,vision:false,transparent:false,preserveIdentity:false,textAccuracy:false,qualityRank:3,qualities:[],nativeResolutions:[],maxReferenceImages:30,expectedLatencyMs:0,video:CAP_RICH},parameterMap:{videoProfile:"ark"}});
+  config.publicModels.push({id:"video-a",label:"Fixture video",modality:"video",enabled:true,visible:true,target:{type:"upstream",id:"fixture-video-upstream"}});
+  config.publicModels.push({id:"disabled-model",label:"Disabled fixture",modality:"video",enabled:false,visible:true,target:{type:"upstream",id:"fixture-video-upstream"}});
+  config.bindings["video.generate"]="video-a";
+  const repo=createModelRepository({pool:db.getPool(),trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(","),initialize:async()=>config});
+  await repo.current();
   const { uploadImage }=await import("../../src/lib/storage");
   const { signUserSession }=await import("../../src/lib/native-auth");
   const root=path.resolve(process.env.VIDEO_FIXTURE_ASSETS_ROOT || "");

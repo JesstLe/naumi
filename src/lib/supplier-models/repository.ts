@@ -8,6 +8,8 @@ import type {ProviderCatalogModel} from "../model-config/catalog";
 import {specificationResolution} from "./specifications";
 import {imageModelDisplayId} from "../image-model-routing";
 import { cleanSource, documentedMetadata, reverseHubCatalogMetadata, sourceHash, type PublicSupplierDirectory } from "./discovery";
+import {documentedVideoDefinition} from "./discovery";
+import {ensureSupplierVideoSchema,recordSupplierVideoDefinition} from "./video-access";
 
 export class SupplierMetadataError extends Error{constructor(public code:string,message:string,public status=400){super(message);}}
 const serial=(v:unknown):string=>JSON.stringify(v&&typeof v==="object"?Array.isArray(v)?v.map(x=>JSON.parse(serial(x))):Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>[k,JSON.parse(serial(x))])):v);
@@ -37,6 +39,7 @@ export async function ingestSupplierDirectory(pool:Pool,p:ModelProvider,models:P
 }
 export async function ingestSupplierSources(pool: Pool, provider: ModelProvider, directory: {models: ProviderCatalogModel[]; fetchedAt: string; truncated?: boolean; status: string}, published: PublicSupplierDirectory | null) {
  await ensureSupplierModels(pool);
+ await ensureSupplierVideoSchema(pool);
  const tx = await pool.connect();
  try {
   await tx.query("BEGIN");
@@ -58,6 +61,8 @@ export async function ingestSupplierSources(pool: Pool, provider: ModelProvider,
   for (const id of new Set([...accessible.keys(), ...publicMap.keys(), ...specificationMap.keys(), ...oldModels])) {
    const raw = publicMap.get(id), listed = accessible.get(id),specification=specificationMap.get(id);
    if (!raw && !listed && !specification && !["ok", "empty"].includes(directory.status)) continue;
+   const videoDefinition=documentedVideoDefinition(cleanSource(specification))||documentedVideoDefinition(cleanSource(raw))||documentedVideoDefinition(cleanSource(listed?.sourceMetadata));
+   if(videoDefinition)await recordSupplierVideoDefinition(pool,{providerId:provider.id,modelId:id,definition:videoDefinition,sourceUrl:specification&&specifications?specifications.url:raw&&published?published.url:directoryUrl},tx);
    const initial = raw && published ? documentedMetadata(raw, published) : (provider.options?.imageAdapter === "reverse-hub" ? reverseHubCatalogMetadata(listed?.sourceMetadata, directoryUrl, directory.fetchedAt) : undefined) || unknownSupplierMetadata();
    if(specification&&specifications){
     if(initial.modality==="unknown"&&["image","video","text","audio"].includes(specification.modality))initial.modality=specification.modality;

@@ -7,6 +7,29 @@ import { readBounded } from "../supplier-cost/io";
 import { decimalMicros } from "../supplier-cost/money";
 import { unknownSupplierMetadata, type SupplierMetadata, type SupplierPrice } from "./types";
 import type { ModelProvider } from "../model-config/types";
+import {videoDefinitionSchema,type VideoModelDefinition} from "../video/capability-schema";
+
+/** Only explicit supplier declarations are translated; names and independent size lists are not evidence of combinations. */
+export function documentedVideoDefinition(raw:any):VideoModelDefinition|undefined{
+  if(!raw||typeof raw!=="object")return undefined;
+  const direct=raw.videoDefinition||raw.capabilities?.video||raw.parameterMetadata?.video;
+  if(direct){const parsed=videoDefinitionSchema.safeParse(direct);return parsed.success?parsed.data:undefined;}
+  const source=raw.video_capabilities||raw;
+  if(!Array.isArray(source.mode)&&!Array.isArray(source.durationResolutionMap))return undefined;
+  const aliases:Record<string,string>={text:"text",singleImage:"single_image",startEndRequired:"frames_required",startFrameOptional:"first_optional",endFrameOptional:"last_optional"};
+  const modes:string[]=[],limits:Record<string,number>={};
+  for(const mode of source.mode||[]){
+    if(typeof mode==="string"&&aliases[mode])modes.push(aliases[mode]);
+    else if(Array.isArray(mode)){
+      modes.push("reference");for(const count of mode){const match=typeof count==="string"&&count.match(/^(image|video|audio)Reference:(\d+)$/);if(match)limits[`${match[1]}s`]=Number(match[2]);}
+    }
+  }
+  const definition={...(modes.length?{modes:[...new Set(modes)]}:{}),...(Object.keys(limits).length?{limits}:{}),
+    ...(Array.isArray(source.durationResolutionMap)?{durationResolutionMap:source.durationResolutionMap.map((m:any)=>({durations:m.durations||m.duration,resolutions:m.resolutions||m.resolution}))}:{}),
+    ...(source.audio!==undefined?{audio:source.audio===true?"required":source.audio===false?"disabled":source.audio}:{}),
+    ...(Array.isArray(source.aspectRatios)?{aspectRatios:source.aspectRatios}:{})};
+  const parsed=videoDefinitionSchema.safeParse(definition);return parsed.success?parsed.data:undefined;
+}
 
 // Source data is evidence, never credentials or executable configuration.
 export function cleanSource(value: any): any {
