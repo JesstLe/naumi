@@ -135,3 +135,6 @@ C第六批：BYOC公开工作流/输入路径目录、共用逐节点文本/seed
 
 
 Task13第一批：实际节点/完整参数/引用/生成与持久task/media恢复/停止、workbench与BYOC边界、真实视频/媒体报价、完整可编辑单镜头/分镜与依赖、production规则、owned video/text上下文和SSE节点事件、权限/路径/harness/活动标签已接。旧同名/硬编码视频工具移除；素材/文字/节点只读列表分页，剧本文字不截断。基础真实App Agent工具脚本写入未运行，TypeScript/diff结构检查通过。完整Task13仍缺节点DAG/全部pending阶段冻结/真实SSE供应商及Browser Agent，Task9默认4/720p和后续时点解析配置问题已明确纳入下一批，不能按旧A任务冻结证据冒充链冻结。摄影/i18n/只读、C/D/34项/演示/完整镜像/103发布继续；无本批main合并或103部署锁。
+
+
+Task13第二批：新持久制作链所有stage入队时冻结模型执行与计费/文字、AES-GCM私有capsule及公开报价摘要、raw intent replay先查旧链、移除4/720p默认、旧行明确兼容未补证已实现。真实App发布变更/改对白/重启/旧价旧版与原规格/一次提交/密文owner用例已写NOT RUN，TypeScript/diff结构检查通过。原节点DAG与BYOC混合链/Agent链报价/SSE模拟/Browser仍待实现，完整C/D未通过；未103发布/无锁。详情见界面Task13第二批。

@@ -9,6 +9,7 @@ const context = new AsyncLocalStorage<ModelExecutionScope | null>();
 export type ExecutionBundle = { modelVersion: number; billingVersion: number; primary?: "image" | "text" | "vision" | "video"; image?: ExecutionModel; text?: ExecutionModel; vision?: ExecutionModel; video?: ExecutionModel };
 export type ResolvedExecutionBundle = { frozen: ExecutionBundle; billing: ConfigSnapshot; image?: ModelExecutionScope; text?: ModelExecutionScope; vision?: ModelExecutionScope; video?: ModelExecutionScope };
 const bundles = new AsyncLocalStorage<ResolvedExecutionBundle | null>();
+const legacyBilling = new AsyncLocalStorage<ConfigSnapshot>();
 export function currentModelExecution(role?: "image" | "text" | "vision" | "video") {
   const current = context.getStore();
   if (current === null) return null;
@@ -20,8 +21,9 @@ export function currentModelExecution(role?: "image" | "text" | "vision" | "vide
   return (role ? bundle?.[role] : bundle?.image || bundle?.text || bundle?.vision || bundle?.video) || null;
 }
 export const currentExecutionBundle = () => bundles.getStore()?.frozen;
-export const currentModelBillingSnapshot = () => bundles.getStore()?.billing;
+export const currentModelBillingSnapshot = () => bundles.getStore()?.billing||legacyBilling.getStore();
 export const legacyModelExecutionActive = () => context.getStore() === null || bundles.getStore() === null;
 export function runModelExecution<T>(scope: ModelExecutionScope, run: () => Promise<T>) { return context.run(scope, run); }
 export function runExecutionBundle<T>(bundle: ResolvedExecutionBundle, run: () => Promise<T>) { return bundles.run(bundle, () => run()); }
 export function runLegacyModelExecution<T>(run: () => Promise<T>) { return bundles.run(null, () => context.run(null, run)); }
+export function runFrozenLegacyBilling<T>(billing:ConfigSnapshot,run:()=>Promise<T>){return legacyBilling.run(billing,()=>runLegacyModelExecution(run));}
