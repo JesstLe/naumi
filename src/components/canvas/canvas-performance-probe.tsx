@@ -1,6 +1,7 @@
 "use client";
 import { Profiler, useEffect, useRef, type ReactNode } from 'react';
-import { Panel, useReactFlow } from '@xyflow/react';
+import { useReactFlow } from '@xyflow/react';
+import { createPortal } from 'react-dom';
 
 /** Opt-in diagnostics, compiled off in ordinary builds. No account data or URLs
  * are emitted. Both baseline and candidate use this exact same probe. */
@@ -73,12 +74,13 @@ export function CanvasPerformanceProbe() {
       frameP95Ms: times[Math.min(times.length - 1, Math.floor(times.length * .95))] };
     publish(); busy.current = false;
   }
-  return <Panel position="top-right" style={{ top: 70, zIndex: 10000 }}>
+  if (typeof document === "undefined") return null;
+  return createPortal(<div style={{ position: "fixed", bottom: 8, left: 8, zIndex: 100000 }}>
     <div className="rounded-xl border bg-white p-3 text-xs text-slate-900">
       <button data-testid="canvas-perf-reset" onClick={() => { reading = { ...reading, label: 'running', gestureRenderMs: 0, gestureCommits: 0 }; publish(); }}>记录真实操作</button>
       <button data-testid="canvas-perf-zoom" onClick={() => void measure('zoom')}>测缩放</button>
       <button data-testid="canvas-perf-pan" onClick={() => void measure('pan')}>测平移</button>
       <output data-testid="canvas-perf-reading" className="block max-w-[360px] break-all">{JSON.stringify(reading)}</output>
     </div>
-  </Panel>;
+  </div>, document.body);
 }
