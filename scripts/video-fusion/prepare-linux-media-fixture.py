@@ -29,7 +29,7 @@ with tarfile.open(fileobj=io.BytesIO(archive)) as source:
         target = output / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(source.extractfile(member).read())
-production = (output / "Dockerfile").read_text()
+production = (output / "Dockerfile").read_text(encoding="utf-8")
 start = production.index("FROM node:24-bookworm-slim AS media-runtime")
 end = production.index("FROM node:24-bookworm-slim AS runner", start)
 stage = production[start:end]
@@ -43,8 +43,8 @@ COPY scripts/ ./scripts/
 USER root
 CMD ["node","scripts/verify-video-media-sandbox.mjs"]
 """
-(output / "Dockerfile.media-fixture").write_text(stage + runner)
-manifest = json.loads((assets / "manifest.json").read_text())
+(output / "Dockerfile.media-fixture").write_text(stage + runner, encoding="utf-8", newline="\n")
+manifest = json.loads((assets / "manifest.json").read_text(encoding="utf-8"))
 video = next(v for v in manifest["files"] if v["name"] == "landscape-4-audio.mp4")
 raw = (assets / video["name"]).read_bytes()
 if hashlib.sha256(raw).hexdigest() != video["sha256"]:
@@ -52,12 +52,12 @@ if hashlib.sha256(raw).hexdigest() != video["sha256"]:
 fixture = output / "fixture-assets"
 fixture.mkdir()
 (fixture / video["name"]).write_bytes(raw)
-(fixture / "manifest.json").write_text(json.dumps(manifest))
+(fixture / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 evidence = {"owner": "canvas-video-fusion-20261013", "sourceCommit": commit,
             "productionStageSha256": hashlib.sha256(stage.encode()).hexdigest(),
             "files": {name: hashlib.sha256((output / name).read_bytes()).hexdigest() for name in files},
             "originalFixtureSha256": video["sha256"], "fullAppImage": False}
-(output / "fixture-source.json").write_text(json.dumps(evidence))
+(output / "fixture-source.json").write_text(json.dumps(evidence), encoding="utf-8")
 with tarfile.open(str(output) + ".tar.gz", "w:gz") as packed:
     for file in sorted(output.rglob("*")):
         if file.is_file():
