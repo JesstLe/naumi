@@ -23,8 +23,8 @@ async function main(){
   const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const body=chunks.length?JSON.parse(Buffer.concat(chunks).toString()):{};res.setHeader("content-type","application/json");
   if(req.url?.startsWith("/internal/config")){if(req.url.endsWith("prepare"))return res.end(JSON.stringify({digest:body.digest,phase:"prepared"}));if(req.url.endsWith("activate")){digest=body.digest;return res.end(JSON.stringify({id:body.id,digest,phase:"applied"}));}return res.end(JSON.stringify({digest}));}
   if(req.url?.endsWith("/images/generations")){
-   const key=["白底产品","背面草图","拒绝样本","未提交样本","取消A","取消B"].find(k=>String(body.prompt).includes(k))||"other";calls.set(key,(calls.get(key)||0)+1);
-   if(key==="拒绝样本"){res.statusCode=400;return res.end(JSON.stringify({error:{message:"Fixture definite rejection"},billing_status:"not_charged"}));}
+   const key=["白底产品","背面草图","拒绝样本","未提交样本","取消A","取消B","重试样本","变体样本"].find(k=>String(body.prompt).includes(k))||"other";calls.set(key,(calls.get(key)||0)+1);
+   if(key==="拒绝样本"||key==="重试样本"&&calls.get(key)===1){res.statusCode=400;return res.end(JSON.stringify({error:{message:"Fixture definite rejection"},billing_status:"not_charged"}));}
    return res.end(JSON.stringify({data:[{b64_json:png.toString("base64")}]}));
   }res.statusCode=404;res.end(JSON.stringify({error:"Unknown fixture endpoint"}));
  });
@@ -32,6 +32,7 @@ async function main(){
  const db=await import("../src/lib/db");
  try{
   await f.repo.current();const owner=`batch-${randomUUID()}@example.test`;await db.getOrCreateUser(owner);
+  const {createBillingService,withBillingTransaction}=await import("../src/lib/billing/service");await withBillingTransaction(db.getPool(),tx=>createBillingService().grantTx(tx,{id:randomUUID(),email:owner,amount:500,source:"admin",reason:"isolated batch fixture",expiry:{unit:"years",value:1},ledgerId:randomUUID(),fingerprint:randomUUID(),actor:"fixture"}));
   const request=imagegenRequestSchema.parse({version:1,operationId:randomUUID(),entry:"workbench",mode:"batch",modelId:"image-a",prompt:"批次",parameters:{quality:"medium",resolution:"1K",ratio:"1:1"},batch:{items:["白底产品","背面草图","拒绝样本","未提交样本"].map((prompt,i)=>({key:`item-${i}`,name:i?prompt:"../原图",prompt})),concurrency:1,maxAttempts:1,failFast:true}});
   const preview=await planImagegenBatch(request,owner),confirmation={billingVersion:preview.billingVersion,modelVersion:preview.modelVersion,credits:preview.totalCredits,confirmed:true};
   const created=await submitImagegenBatch(request,owner,confirmation),again=await submitImagegenBatch(request,owner);assert.deepEqual(again,created);assert.equal(calls.size,0,"Submission persists a queue, without running suppliers first");
@@ -48,6 +49,11 @@ async function main(){
   assert.deepEqual(await images[0].async("nodebuffer"),(await readCanvasImage(works[0].image!,"http://internal",owner)).buffer,"Download contains full original bytes");assert.ok(zip.files["results.jsonl"]);
   const foreign=`other-${randomUUID()}@example.test`;await db.getOrCreateUser(foreign);const denied=await GET(new Request("http://internal",{headers:{cookie:cookie(foreign)}}),{params:Promise.resolve({id:created.id})});assert.equal(denied.status,404);
   const cancelReq=imagegenRequestSchema.parse({...request,operationId:randomUUID(),batch:{...request.batch!,items:[{key:"a",name:"a",prompt:"取消A"},{key:"b",name:"b",prompt:"取消B"}]}}),cancelPlan=await planImagegenBatch(cancelReq,owner);
+  for(const sample of [{prompt:"重试样本",variants:1,attempts:2},{prompt:"变体样本",variants:4,attempts:1}]){
+   const raw=imagegenRequestSchema.parse({...request,operationId:randomUUID(),variants:sample.variants,batch:{items:[{key:"sample",name:sample.prompt,prompt:sample.prompt}],concurrency:1,maxAttempts:sample.attempts,failFast:false}}),preview=await planImagegenBatch(raw,owner),accepted=await submitImagegenBatch(raw,owner,{billingVersion:preview.billingVersion,modelVersion:preview.modelVersion,credits:preview.totalCredits,confirmed:true});
+   let sampleResult;for(let n=0;n<400;n++){await runImagegenBatchTick(accepted.id);sampleResult=await readImagegenBatch(accepted.id,owner);if(sampleResult&&!['running','cancelling'].includes(sampleResult.status))break;await new Promise(r=>setTimeout(r,50));}
+   assert.equal(sampleResult?.status,"succeeded",JSON.stringify(sampleResult));assert.equal(sampleResult.items[0].attempts,sample.attempts);assert.equal(sampleResult.items[0].result.artifacts.length,sample.variants);assert.equal(calls.get(sample.prompt),sample.prompt==="重试样本"?2:4);assert.ok(sampleResult.chargedCredits>0);
+  }
   const cancellable=await submitImagegenBatch(cancelReq,owner,{billingVersion:cancelPlan.billingVersion,modelVersion:cancelPlan.modelVersion,credits:cancelPlan.totalCredits,confirmed:true});
   const barrier=await f.sql.connect();await barrier.query("BEGIN");await barrier.query("SELECT id FROM app_imagegen_batches WHERE id=$1 FOR UPDATE",[cancellable.id]);const pid=(await barrier.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
   const cancelling=cancelImagegenBatch(cancellable.id,owner);let blocked=false;

@@ -1,6 +1,6 @@
 import "server-only";
 import {DurableImageJobs} from "../durable-image-jobs";
-import {getPool,listArtworksByIds} from "../db";
+import {getPool,listArtworksByIds,addArtworks} from "../db";
 import {readCanvasImage} from "../canvas-image-input";
 import {inspectImagegenPixels} from "./postprocess";
 import {saveCanvasLocalEdit} from "../canvas-local-image-edit";
@@ -9,6 +9,7 @@ import {executeImagegenStep} from "./adapters";
 import {imagegenStepId} from "./generation-core";
 import {imagegenRequestSchema} from "./schema";
 import {imagegenSubmission,ImagegenStopped} from "./cancel";
+import {readImagegenInputAsset} from "./input-assets";
 import type {ImagegenPlan,ImagegenRequest,ImagegenResult} from "./types";
 type Parent={status:string;result:ImagegenResult;fingerprint:string;children:Record<string,{state:"starting"|"submitted"|"done";jobId?:string;ids?:string[]}>};
 const jobs=new DurableImageJobs<Parent>("imagegen");
@@ -26,7 +27,15 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
  const update=async(patch:Partial<Parent>,result:Partial<ImagegenResult>={})=>{state={...state,...patch,result:{...state.result,...result}};await jobs.set(id,state);};
  try{
   for(const step of plan.steps){
-   if(step.operation==="postprocess"){ids=plan.request.inputs.filter(i=>i.role==="edit-target").map(i=>i.artworkId);break;}
+   if(step.operation==="postprocess"){
+    await imagegenSubmission(id,async()=>{});
+    for(const input of plan.request.inputs.filter(i=>i.role==="edit-target")){
+     if(!input.artworkId.startsWith("asset-")){ids.push(input.artworkId);continue;}
+     const imported=`art-${imagegenStepId(plan.request.operationId,`import:${input.artworkId}`)}`;
+     if(!(await listArtworksByIds(owner,[imported])).length){const asset=await readImagegenInputAsset(input.artworkId,owner),pixels=await inspectImagegenPixels(asset.buffer);await addArtworks(owner,[{id:imported,title:"导入原图",category:"main",status:"completed",prompt:"",image:asset.url,gradient:"",origin:plan.request.entry==="canvas"?"canvas":"generate",width:pixels.width,height:pixels.height}]);}
+     ids.push(imported);
+    }baseIds=[...ids];break;
+   }
    let child=state.children[step.key];
    if(child?.state==="done"){ids=child.ids||[];if(step.operation==="cutout")cutoutIds.push(...ids);else baseIds=ids;continue;}
    if(!child||child.state==="starting"){
@@ -58,6 +67,7 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
    }
    ids=child!.ids||[];if(step.operation==="cutout")cutoutIds.push(...ids);else baseIds=ids;
    if(!ids.length)throw new Error("模型未返回有效图片");
+   if(child!.jobId){const row=(await getPool().query("SELECT snapshot->>'imagegenOutputError' AS error FROM app_image_jobs WHERE id=$1 AND email=$2",[child!.jobId,owner])).rows[0];if(row?.error)throw new Error(row.error);}
   }
   if(cutoutIds.length)ids=cutoutIds;
   await update({},{stage:"postprocessing"});

@@ -1,5 +1,5 @@
 import {z} from "zod";
-const row=z.strictObject({key:z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/).optional(),name:z.string().trim().min(1).max(100).optional(),prompt:z.string().trim().min(1).max(6000)});
+const row=z.strictObject({key:z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/).optional(),name:z.string().trim().min(1).max(100).optional(),prompt:z.string().trim().min(1).max(6000).refine(v=>!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v))});
 /** Import preview only: no file paths, network or execution options. */
 export function parseImagegenJsonl(text:string){
  if(new TextEncoder().encode(text).length>256*1024)throw new Error("JSONL不能超过256KiB");

@@ -20,5 +20,5 @@ export async function readImagegenInputAsset(id:string,owner:string){
  const row=(await getPool().query("SELECT key,content_type FROM app_media_assets WHERE owner=$1 AND key=ANY($2::text[])",[owner.toLowerCase(),["png","jpg","webp"].map(ext=>`imagegen-inputs/${id.slice(6)}.${ext}`)])).rows[0];
  if(!row)throw new Error("素材不存在或无权访问");
  const original=await readManagedObject(`/media/${row.key}`,12*1024*1024);
- return {buffer:Buffer.from(original.bytes),mimeType:row.content_type as string};
+ return {buffer:Buffer.from(original.bytes),mimeType:row.content_type as string,url:`/media/${row.key}`};
 }

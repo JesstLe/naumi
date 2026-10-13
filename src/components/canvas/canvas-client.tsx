@@ -18,6 +18,7 @@ import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasParameterPopover } from "./parameter-popover";
 import {ImagegenPanel,type ImagegenPanelInput} from "@/components/imagegen/imagegen-panel";
 import type {ImagegenResult} from "@/lib/imagegen/types";
+import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
 import {CanvasImage} from './canvas-image';
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
@@ -1681,6 +1682,7 @@ export function CanvasClient() {
     if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
     const form=init.body instanceof FormData?init.body:null;
     const body=form?Object.fromEntries(Array.from(form.entries()).filter((entry)=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};
+    if(path==="/api/generate-image"&&form&&body.ratiogen!=="1"&&(!body.userPrompt||String(body.userPrompt).trim()===String(body.prompt).trim()))return submitCanvasImagegen(form,active?.members[0]?.id,message=>flashTip(message));
     if (path === "/api/generate-image") {
       body.ratio = normalizeCanvasRatio(body.ratio);
       body.resolution = normalizeCanvasResolution(body.resolution);
@@ -8628,6 +8630,7 @@ export function CanvasClient() {
   };
   const generationParameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
   function openImagegenPanel(){
+    if(!canFeature("generate"))return;
     const images=active?.members.filter(a=>!a.videoUrl&&(selectedBatchIds.includes(a.id)||a.id===selected?.id))||[];
     const point=selected?rfRef.current?.getNode(selected.id)?.position:rfRef.current?.screenToFlowPosition({x:window.innerWidth/2,y:window.innerHeight/2});
     setImagegenPanel({inputs:images.map((a,i)=>({artworkId:a.id,role:i===0?"edit-target":"reference",url:cdnUrl(a.image),label:a.title})),sourceNodeId:selected?.id||active?.members[0]?.id,x:(point?.x||0)+(selected?.canvasWidth||selected?.width||300)+50,y:point?.y||0});

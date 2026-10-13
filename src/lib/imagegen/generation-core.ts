@@ -28,7 +28,7 @@ export async function submitGenerationCore(plan:ImagegenPlan,key:string,owner:st
  const form=new FormData();
  for(const [k,v] of Object.entries({prompt:compileImagegenPrompt(request,intent,plan.skillInstructions),userPrompt:request.prompt,model:step.modelId,origin:request.entry==="canvas"?"canvas":"",entry:"imagegen",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",count:String(request.variants),transparent:intent.background==="transparent"?"1":"0",parentId:inputs.find(i=>i.role==="edit-target")?.artworkId||"",targetWidth:request.parameters.width?String(request.parameters.width):undefined,targetHeight:request.parameters.height?String(request.parameters.height):undefined}))if(v!==undefined)form.set(k,v);
  for(const i of inputs)form.append(i.role==="mask"?"mask":"image",new File([new Uint8Array(i.buffer)],`${i.artworkId}.png`,{type:i.mimeType}));
- form.set("parentId",target?.artworkId||"");form.set("parentIds",JSON.stringify(artworkIds.filter(id=>id!==target?.artworkId)));if(source?.groupId)form.set("projectGroupId",source.groupId);
+ form.set("parentId",target?.artworkId||(plan.request.mode==="edit"?source?.id:undefined)||"");form.set("parentIds",JSON.stringify(artworkIds.filter(id=>id!==target?.artworkId)));if(source?.groupId)form.set("projectGroupId",source.groupId);
  const internal=await imagegenInternalRequest(plan,key,owner,form,"generate-image");
  const {POST}=await import("../../app/api/generate-image/route");
  return withImagegenStep(request,intent,()=>POST(internal));

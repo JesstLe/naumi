@@ -120,6 +120,7 @@ export function ModelManagement() {
       if(["pricing","parameters","resolutions","channels","order","scope","switch","rename"].includes(operation.action))window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));
       setNotice(operation.action === "channels" ? "供应通道已生效，新任务使用新策略，已接受任务保留原配置。" : operation.action === "resolutions" ? "分辨率显示与供应通道映射已生效。新任务使用新配置，已接受任务保留原参数。" : operation.action === "order" ? "模型排序已生效，前端各工具按此顺序展示可用模型。" : operation.action === "parameters" ? "显示档位与上游映射已生效。新请求使用新参数，已接受的任务保留原映射。" : operation.action === "pricing" ? "积分售价已生效。前端报价与实际扣费使用同一配置，已开始的任务保留原报价。" : operation.action === "scope" ? "工具范围已生效。新请求使用新范围，已经开始的任务保留原配置。" : operation.action === "rename" ? "显示名称已更新，前端刷新模型列表后生效。" : operation.action === "switch" ? "实际模型已切换。新请求使用新配置，已经开始的任务保留原模型。" : operation.action === "connect" ? "上游已接入，正在自动发现模型 ID。" : "模型已添加到可切换列表。");
       const refreshed = await load(true);
+      if(operation.action==="imagegen-parameters"){window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH));setNotice("图像高级能力与实际参数已发布，新任务使用新映射。");}
       if(returnRowId && refreshed) setRow(refreshed.rows.find(r=>r.id===returnRowId) || null);
       if(returnChannelRowId && refreshed) setChannelRow(refreshed.rows.find(r=>r.id===returnChannelRowId) || null);
     } catch (e) {

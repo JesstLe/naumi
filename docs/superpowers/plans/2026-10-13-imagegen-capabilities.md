@@ -284,7 +284,7 @@ if(intent.conflicts.length) throw new Error(intent.conflicts.join("；"));
 
 **Interfaces:** `submitImagegenBatch(request:ImagegenRequest,owner:string):Promise<{id:string;children:string[]}>`；`readImagegenBatch(id:string,owner:string):Promise<{id:string;status:string;items:ImagegenResult[]}|null>`；`cancelImagegenBatch(id:string,owner:string):Promise<void>`；`runImagegenBatchTick(id:string):Promise<void>`。子项稳定operationId由父UUID+key生成UUIDv5形式SHA256截取后设置version/variant位；variants与多prompt明确分开。
 
-- [ ] **Step 1: 写2成功/1拒绝/1未领取及取消竞态测试。** 同批次刷新、Worker重启、同key重复、原prompt变更拒绝；各子任务报价/账本和成功作品独立。
+- [x] **Step 1: 写2成功/1拒绝/1未领取及取消竞态测试。** 同批次刷新、Worker重启、同key重复、原prompt变更拒绝；各子任务报价/账本和成功作品独立。
 
 ```ts
 await fixture.startBatch(["商品白底","背面草图","拒绝样本","未提交样本"]);
@@ -297,8 +297,8 @@ assert.equal(await fixture.batchCredits(),await fixture.sumChildCredits());
 ```
 
 该脚本fixture提供上述函数，实际使用隔离PG、两个并发tick和HTTP假上游。`cancelDuringClaim`用事务屏障控制领取顺序，不能依赖sleep碰概率。
-- [ ] **Step 2: 运行 `npx tsx --conditions react-server scripts/verify-imagegen-batch.ts`。** 预期批次service缺失失败。
-- [ ] **Step 3: 实现仅关联与调度表。** 新建app_imagegen_batches和app_imagegen_batch_items，表扩展由ensureSchema兼容创建；不迁移旧账本。表字段至少owner/父ID/key/child_operation_id/请求hash/状态/lease及timestamps；unique(parent_id,key)、unique(child_operation_id)。
+- [x] **Step 2: 运行 `npx tsx --conditions react-server scripts/verify-imagegen-batch.ts`。** 预期批次service缺失失败。
+- [x] **Step 3: 实现仅关联与调度表。** 新建app_imagegen_batches和app_imagegen_batch_items，表扩展由ensureSchema兼容创建；不迁移旧账本。表字段至少owner/父ID/key/child_operation_id/请求hash/状态/lease及timestamps；unique(parent_id,key)、unique(child_operation_id)。
 
 ```sql
 SELECT i.child_operation_id
@@ -310,8 +310,8 @@ FOR UPDATE OF b,i SKIP LOCKED LIMIT 1;
 取消和领取共享父行锁，取到子项提交后只轮询，不重新submit；并发默认5且受管理员现有队列上限进一步约束，用户请求不能提高上限。maxAttempts只控制可确认未受理的失败次数，1—3；failFast阻止后续领取并保留成功/已受理项。已有任务Worker恢复同时处理batch，不启动无租约第二轮询器。
 
 JSONL解析只接受key/name/prompt和已允许参数；导入先预览，不执行代码/网络/收费。批次下载按owner校验每个作品，输出原图而非缩略，语义名去路径/控制字符，同名加序号；ZIP仍是鉴权API不能公开直链。失败明细/取消状态下载不伪造图片。
-- [ ] **Step 4: 跑批次测试。** 验证跨ownerZIP403、非法JSONL、100项边界、selected image不同prompt与同prompt4variants、两个tick、failFast、pending不重放、操作取消后重启仍停止。
-- [ ] **Step 5: 提交。** `git commit -m "feat: persist image batches with safe cancellation and downloads"`。
+- [x] **Step 4: 跑批次测试。** 验证跨ownerZIP403、非法JSONL、100项边界、selected image不同prompt与同prompt4variants、两个tick、failFast、pending不重放、操作取消后重启仍停止。
+- [x] **Step 5: 提交。** `git commit -m "feat: persist image batches with safe cancellation and downloads"`。
 
 ## Task 7: Agent、直接画布和工作台共用交互
 

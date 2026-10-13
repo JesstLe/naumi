@@ -90,7 +90,7 @@ export type Session = {
   email: string;
   title: string;
   /** 凭证对(cookie+authorization),会话续期时刷新 */
-  cred: { cookie: string; authorization: string; imageQuality?: string; canvas?: CanvasAgentContext };
+  cred: { cookie: string; authorization: string; imageQuality?: string; canvas?: CanvasAgentContext;imageSkill?:Pick<ImageSkill,"id"|"revision"> };
   contextStamp?: string;
   onToolResult?: (result: unknown, tool: string) => Promise<void>;
   toolResultsPending?: Promise<void>;
@@ -253,7 +253,7 @@ async function createRuntimeSession(
   if (existing && (existing.running || existing.canvasExecuting || existing.modelId === modelId && existing.modelExecutionStamp === managed?.stamp && existing.contextStamp === contextStamp)) {
     existing.lastUsedAt = Date.now();
     // 凭证刷新:token/会话可能已轮换,常驻实例必须用最新凭证
-    if (!existing.running && !existing.canvasExecuting) existing.cred = { ...cred, canvas: options?.canvas };
+    if (!existing.running && !existing.canvasExecuting) existing.cred = { ...cred, canvas: options?.canvas,imageSkill:imageSkill?{id:imageSkill.id,revision:imageSkill.revision}:undefined };
     if (!existing.running && !existing.canvasExecuting) existing.onToolResult = options?.onToolResult;
     return existing;
   }
@@ -276,7 +276,7 @@ async function createRuntimeSession(
     modelExecutionStamp: managed?.stamp,
     email,
     title: persisted?.title || history[0]?.content.slice(0, 120) || "Agent 任务",
-    cred: { ...cred, canvas: options?.canvas },
+    cred: { ...cred, canvas: options?.canvas,imageSkill:imageSkill?{id:imageSkill.id,revision:imageSkill.revision}:undefined },
     contextStamp,
     onToolResult: options?.onToolResult,
     createdAt: Date.now(),

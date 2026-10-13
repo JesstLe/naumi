@@ -7,6 +7,8 @@ import {submitAcceptedImagegen,getImagegenResult} from "./dispatch";
 import {imagegenStepId} from "./generation-core";
 import {ensureImagegenBatches,imagegenBatchRow,imagegenBatchItems,type ImagegenBatchItem} from "./batch-repository";
 import type {ImagegenRequest,ImagegenPlan,ImagegenResult} from "./types";
+import {userFeaturePolicy,FeatureAccessError} from "../feature-access/server";
+import {allows} from "../feature-access/catalog";
 const terminals=new Set(["succeeded","failed","cancelled","needs_attention"]);
 type Confirmation={billingVersion:number;credits:number;confirmed:boolean;modelVersion?:number};
 function childRequest(request:ImagegenRequest,key:string,prompt:string,attempt=1):ImagegenRequest{
@@ -14,6 +16,7 @@ function childRequest(request:ImagegenRequest,key:string,prompt:string,attempt=1
 }
 async function prepare(raw:ImagegenRequest,owner:string){
  const request=imagegenRequestSchema.parse(raw);if(request.mode!=="batch"||!request.batch)throw new Error("需要独立提示词批次");
+ if(!allows(await userFeaturePolicy(owner),"batchshot"))throw new FeatureAccessError("批次生图功能尚未授权");
  const children:{key:string;request:ImagegenRequest;plan:ImagegenPlan}[]=[];
  let versions:{modelVersion:number;billingVersion:number}|undefined;
  for(const item of request.batch.items){const child=childRequest(request,item.key,item.prompt),plan=await planImagegen(child,owner,versions);if(plan.modelVersion)versions={modelVersion:plan.modelVersion,billingVersion:plan.billingVersion};children.push({key:item.key,request:child,plan});}
@@ -64,7 +67,7 @@ export async function runImagegenBatchTick(id:string){
    const locked=(await tx.query<ImagegenBatchItem>("SELECT * FROM app_imagegen_batch_items WHERE batch_id=$1 AND key=$2 FOR UPDATE",[id,item.key])).rows[0];
    if(!locked||locked.state!=="submitted"){await tx.query("COMMIT");continue;}
    const retry=result.status==="failed"&&result.error?.code==="NOT_ACCEPTED"&&locked.attempts<batch.request.batch!.maxAttempts&&current.state==="running";
-   if(retry){const attempt=locked.attempts+1,request=childRequest(batch.request,item.key,item.request.prompt,attempt),plan={...item.plan,request, fingerprint:imagegenFingerprint(request)};
+   if(retry){const attempt=locked.attempts+1,request={...locked.plan.request,operationId:imagegenStepId(batch.id,`batch:${item.key}:${attempt}`)},plan={...locked.plan,request,fingerprint:imagegenFingerprint(request)};
     await tx.query("UPDATE app_imagegen_batch_items SET state='queued',attempts=$3,child_operation_id=$4,request=$5::jsonb,plan=$6::jsonb,result=$7::jsonb,lease_token=NULL,lease_until=NULL WHERE batch_id=$1 AND key=$2",[id,item.key,attempt,request.operationId,JSON.stringify(request),JSON.stringify(plan),JSON.stringify(result)]);
    }else{await tx.query("UPDATE app_imagegen_batch_items SET state=$3,result=$4::jsonb,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE batch_id=$1 AND key=$2",[id,item.key,terminals.has(result.status)?result.status:"submitted",JSON.stringify(result)]);
     if(result.status==="failed"&&batch.request.batch!.failFast&&current.state==="running"){

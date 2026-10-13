@@ -844,6 +844,7 @@ type Job = {
   mode?: string;
   persisted?: boolean;
   error?: string;
+  imagegenOutputError?:string;
   createdAt: number;
   sourceUrl?: string | null;
   /** 质量审计:请求档 vs 实际执行档与回退原因(通道不支持时回退默认档)。 */
@@ -892,6 +893,7 @@ async function runJob(
   let billingSettled = false;
   try {
     const saved = await JOBS.get(jobId);
+    let imagegenOutputError=saved?.imagegenOutputError;
     let images: GeneratedImage[];
     if (saved?.images?.length) images = saved.images;
     else {
@@ -948,7 +950,9 @@ async function runJob(
       } }));
     }
     const scope = currentModelExecution("image"), post = scope?.businessOption?.postprocess;
-    if (post?.enabled) {
+    if(p.transparent){for(const image of images){const raw=dataUrlToBytes(image.url);const pixels=await inspectImagegenPixels(raw?Buffer.from(raw.bytes):(await readManagedObject(image.url,12*1024*1024)).bytes);if(!pixels.transparentPixels||pixels.transparentPixels===pixels.totalPixels)imagegenOutputError="模型未返回有效透明主体；已生成原图保留，实际生成积分已结算，请调整透明能力配置";}}
+    if(imagegenOutputError){await JOBS.patch(jobId,{imagegenOutputError});}
+    else if (post?.enabled) {
       images = await Promise.all(images.map(async (image,index) => {
         const decoded = dataUrlToBytes(image.url);
         const bytes = decoded ? Buffer.from(decoded.bytes) : (await readManagedObject(image.url,64*1024*1024)).bytes;
@@ -956,7 +960,6 @@ async function runJob(
         return { ...image,url:result.url,width:result.width,height:result.height,processingKind:result.kind,postprocessStatus:result.status };
       }));
     } else {
-    if(p.transparent){for(const image of images){const raw=dataUrlToBytes(image.url);const pixels=await inspectImagegenPixels(raw?Buffer.from(raw.bytes):(await readManagedObject(image.url,12*1024*1024)).bytes);if(!pixels.transparentPixels||pixels.transparentPixels===pixels.totalPixels)throw new Error("模型未返回有效的透明主体，请管理员检查透明能力；不会丢弃透明要求重试");}}
     images = await enforceOutputShape(images, p);
     if (!scope?.imagePreset && !(p.targetWidth > 0 && p.targetHeight > 0)) {
       images = await upscaleImages(images, p.resolution);
@@ -1057,6 +1060,7 @@ async function runJob(
       persisted: useDb,
       createdAt: Date.now(),
       quality,
+      imagegenOutputError,
     });
   } catch (e) {
     if (e instanceof ImageOperationPending) { await JOBS.handlePending(jobId, e); return; }
@@ -1074,7 +1078,8 @@ async function runJob(
       e instanceof Error ? e.message : e
     );
     await JOBS.set(jobId, {
-      status: "error",
+      ...(await JOBS.get(jobId,false)),
+      status:"error",
       error: safeError(e, "图片生成失败,请稍后重试"),
       createdAt: Date.now(),
     });
@@ -1288,6 +1293,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ jobs: await JOBS.active(email) });
   }
   const jobId = new URL(request.url).searchParams.get("job");
+  if(jobId?.startsWith("imagegen-")&&/^[a-f0-9-]{36}$/i.test(jobId.slice(9))){
+    const owner=await resolveUserEmail(request);if(!owner)return NextResponse.json({error:"请先登录"},{status:401});
+    const {getImagegenResult}=await import("@/lib/imagegen/dispatch"),result=await getImagegenResult(jobId.slice(9),owner);if(!result)return NextResponse.json({error:"任务不存在或无权访问"},{status:404});
+    return NextResponse.json({status:result.status==="succeeded"?"done":["failed","cancelled","needs_attention"].includes(result.status)?"error":"pending",stage:result.stage,images:result.artifacts.map(a=>({id:a.artworkId,url:a.url,width:a.width,height:a.height})),error:result.error?.message,creditsUsed:result.chargedCredits,user:await getUser(owner)},{headers:{"cache-control":"private, no-store"}});
+  }
   if (jobId) {
     if (dbEnabled && (await resolveUserEmail(request))?.toLowerCase() !== await JOBS.owner(jobId)) {
       return NextResponse.json({ error: "无权查看此任务" }, { status: 403 });
@@ -1300,6 +1310,7 @@ export async function GET(request: Request) {
       });
     }
     if (job.status === "done") {
+      if(job.imagegenOutputError)return NextResponse.json({status:"error",error:job.imagegenOutputError,images:job.images,creditsUsed:job.creditsUsed,user:job.user});
       return NextResponse.json({
         status: "done",
         ok: true,

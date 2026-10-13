@@ -83,7 +83,9 @@
     "verify:apimart-preset-ui": "node scripts/verify-apimart-preset-ui.mjs",
     "verify:apimart-preset-entries": "tsx --conditions react-server scripts/verify-apimart-preset-entries.ts",
     "verify:react19-upgrade": "node scripts/verify-react19-upgrade.mjs",
-    "verify:imagegen-execution": "tsx --conditions react-server scripts/verify-imagegen-execution.ts"
+    "verify:imagegen-execution": "tsx --conditions react-server scripts/verify-imagegen-execution.ts",
+    "verify:imagegen-batch": "tsx --conditions react-server scripts/verify-imagegen-batch.ts",
+    "verify:imagegen-ui": "node scripts/verify-imagegen-ui.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",

@@ -21,6 +21,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     authorization: string;
     imageQuality?: string;
     canvas?: CanvasAgentContext;
+    imageSkill?:import("../imagegen/types").ImagegenRequest["skill"];
 }): Promise<{
     quote: Pick<BillingQuote, "configVersion" | "requestedCredits"> & Partial<Pick<BillingQuote,"modelVersion" | "authorizedCredits" | "imagePreset">>;
     label: string;
@@ -34,7 +35,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     if (!entry)
         return null;
     const runtime = await getBillingRuntime(), snapshot=currentModelBillingSnapshot()??await runtime.config.current(),threshold=snapshot.config.thresholds.agentConfirmCredits;
-    if((SHARED_IMAGEGEN_TOOLS.has(name)||canvas&&CANVAS_IMAGE_TOOLS.has(name))&&!args._category){const request=await agentImagegenRequest(name,args,email,canvas,cred.imageQuality),bundle=currentExecutionBundle(),plan=await planImagegen(request,email,bundle?{modelVersion:bundle.modelVersion,billingVersion:bundle.billingVersion}:undefined);return {quote:{configVersion:plan.billingVersion,modelVersion:plan.modelVersion,requestedCredits:plan.totalCredits,authorizedCredits:plan.totalCredits},label:entry.label,threshold:plan.confirmationRequired?0:threshold,imagegenPlan:plan};}
+    if((SHARED_IMAGEGEN_TOOLS.has(name)||canvas&&CANVAS_IMAGE_TOOLS.has(name))&&!args._category){const request=await agentImagegenRequest(name,args,email,canvas,cred.imageQuality,cred.imageSkill),bundle=currentExecutionBundle(),plan=await planImagegen(request,email,bundle?{modelVersion:bundle.modelVersion,billingVersion:bundle.billingVersion}:undefined);return {quote:{configVersion:plan.billingVersion,modelVersion:plan.modelVersion,requestedCredits:plan.totalCredits,authorizedCredits:plan.totalCredits},label:entry.label,threshold:plan.confirmationRequired?0:threshold,imagegenPlan:plan};}
     if (name === "continue_aplus_generation") {
         const job = await getImageJob(String(args.job_id || ""), "aplus");
         if (!job || job.email !== email.toLowerCase())

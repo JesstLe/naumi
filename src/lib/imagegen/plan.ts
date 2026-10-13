@@ -15,10 +15,15 @@ import {mapImagegenParameters,imagegenWireRequest} from "./parameters";
 import {publishedImagegenCapabilities} from "./capabilities";
 import type {ImagegenRequest,ImagegenPlan,Intent} from "./types";
 import type {ModelFacts} from "../model-config/types";
+import {userFeaturePolicy,FeatureAccessError} from "../feature-access/server";
+import {allows} from "../feature-access/catalog";
 export function imagegenFingerprint(request:ImagegenRequest){return createHash("sha256").update(JSON.stringify(imagegenRequestSchema.parse(request))).digest("hex");}
 export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{modelVersion:number;billingVersion:number}):Promise<ImagegenPlan>{
  const request=imagegenRequestSchema.parse(raw),skill=await resolveImageSkill(owner,request.skill),intent=resolveImagegenIntent({...request,useCase:request.useCase||skill?.useCase});
  if(intent.conflicts.length)throw new Error(intent.conflicts.join("；"));
+ const access=await userFeaturePolicy(owner),imageAllowed=["generate","batchshot","variations","fuse"].some(id=>allows(access,id));
+ if(request.entry==="canvas"&&!allows(access,"canvas")||request.entry==="agent"&&!allows(access,"agent")||intent.operation!=="postprocess"&&!imageAllowed||intent.operation==="postprocess"&&!["canvas","works","generate"].some(id=>allows(access,id)))throw new FeatureAccessError("此图像功能尚未授权");
+ if(intent.operation==="cutout"&&!allows(access,"cutout"))throw new FeatureAccessError("抠图功能尚未授权");
  if(request.output.format==="jpeg"&&(intent.background==="transparent"||!request.output.flattenColor))throw new Error("JPEG不保留透明度，请选择PNG/WebP，或明确不透明背景和扁平化颜色");
  await readImagegenInputs(request,owner);
  const fingerprint=imagegenFingerprint(request);
@@ -30,6 +35,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  }
  if(request.mode==="batch")throw new Error("批次请使用批次执行入口");
  if(intent.operation==="postprocess"&&request.output.compressionMode==="native")throw new Error("本地后处理不调用供应商，请选择本地压缩控制");
+ if(intent.operation==="postprocess"&&request.inputs.some(i=>i.role==="mask"))throw new Error("本地输出处理不使用蒙版，请移除蒙版或选择模型编辑");
  if(intent.operation==="postprocess")return {request,intent,fingerprint,modelVersion:0,billingVersion:0,steps:[{key:"process",operation:"postprocess",eligibleUpstreamIds:[],parameters:{},credits:0}],totalCredits:0,confirmationRequired:false,warnings:[]};
  const admin=await getModelAdministration();
  const [models,billing]=await Promise.all([versions?admin.repo.byVersion(versions.modelVersion):admin.repo.current(),versions?admin.billing.byVersion(versions.billingVersion):admin.billing.current()]);
@@ -58,6 +64,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   const cutout=models.config.bindings["image.cutout"];if(!cutout)throw new Error("透明抠图模型尚未配置，请管理员维护");
   await append("cutout","cutout",cutout,intent,"tool.cutout");
  }else if(intent.background==="transparent"&&!simulate(id,intent).eligible.length){
+  if(!allows(access,"cutout"))throw new FeatureAccessError("所选模型需使用抠图步骤，但抠图功能尚未授权");
   const cutout=models.config.bindings["image.cutout"];if(!cutout)throw new Error("所选模型不支持原生透明，且未配置已核实的AI抠图路径；不会静默更换模型");
   const first={...intent,background:null,requirements:intent.requirements.filter(r=>r.name!=="background")};
   await append("generate",intent.operation,id,first,feature);

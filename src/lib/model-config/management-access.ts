@@ -139,6 +139,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
           if(body.action==="imagegen-parameters"){
             if(row.modality!=="image")throw new ModelConfigError("MODEL_INCOMPATIBLE","文字模型不能配置生图能力",400);
             const defaults=await readImagegenDefaults(admin.pool,config);
+            if(body.routes===null)body.routes=[...new Set(row.routes.map(r=>r.upstreamId))].map(upstreamId=>{const d=defaults.get(upstreamId);return {upstreamId,capabilities:d?.capabilities||{},wireMap:d?.wireMap||{},metadataRef:d?.metadataRef||null};});
             for(const r of body.routes??[]){const d=defaults.get(r.upstreamId);if(r.metadataRef&&(!d||d.metadataRef.id!==r.metadataRef.id||d.metadataRef.revision!==r.metadataRef.revision))throw new ModelConfigError("METADATA_CHANGED","图像能力资料已更新，请重新打开设置核对",409);}
           }
           config = body.action === "imagegen-parameters" ? applyImagegenModelParameters(config,[...new Set(row.routes.map(r=>r.upstreamId))],body.routes) : body.action === "channels" ? applyChannelPolicy(config,row,body.policy) : body.action === "resolutions" ? applyDisplayResolutions(config,row,body.resolutions) : body.action === "parameters" ? applyModelQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyModelToolScope(config,row,body.features,body.canvas) : body.action === "rename" ? renameManagedModel(config, row, body.label) : switchManagedModel(config, row, body.upstreamId);
