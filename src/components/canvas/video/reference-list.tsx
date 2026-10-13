@@ -1,5 +1,6 @@
 "use client";
 import {browserRandomUUID} from "@/lib/browser-crypto";
+import {CachedImage} from "@/components/cached-image";
 import {ArrowDown,ArrowUp,X} from "lucide-react";
 import type {OrderedInput} from "@/lib/video/references";
 import {numberVideoInputs} from "@/lib/video/references";
@@ -11,7 +12,7 @@ export function ReferenceList({inputs,choices,onChange}:{inputs:OrderedInput[];c
   return <div className="space-y-2" data-testid="video-reference-list">
     {numbered.map((input,index)=>{const choice=choices.find(item=>item.nodeId===input.nodeId),roles=input.kind==="text"?["context","author"]:input.kind==="image"?["reference","first_frame","last_frame","element"]:input.kind==="video"?["source_video","reference","element"]:["source_audio","reference","element"];
       return <div key={input.id} className="flex items-center gap-2 rounded-lg border border-current/10 p-2" data-testid="video-reference-row">
-        <div className="flex h-10 w-12 shrink-0 items-center justify-center overflow-hidden rounded bg-current/5">{choice?.thumbnail?<img src={choice.thumbnail} alt="" className="h-full w-full object-cover"/>:<span className="text-[10px]">{VIDEO_KIND_LABELS[input.kind]}</span>}</div>
+        <div className="flex h-10 w-12 shrink-0 items-center justify-center overflow-hidden rounded bg-current/5">{choice?.thumbnail?<CachedImage src={choice.thumbnail} alt="" className="h-full w-full object-cover"/>:<span className="text-[10px]">{VIDEO_KIND_LABELS[input.kind]}</span>}</div>
         <div className="min-w-0 flex-1"><p className="truncate text-xs" title={choice?.title||input.value}>{choice?.title||(input.kind==="text"?input.value:input.nodeId)}</p><p className="text-[10px] opacity-60">ref {input.index} · {VIDEO_KIND_LABELS[input.kind]}{input.kindIndex}{choice?.available===false?" · 尚未完成":""}</p>
           <select aria-label={`引用${input.index}角色`} data-testid="video-reference-role" className="mt-1 max-w-full bg-transparent text-[11px]" value={input.role} onChange={event=>onChange(inputs.map((item,i)=>i===index?{...item,role:event.target.value as OrderedInput["role"]}:item))}>{roles.map(role=><option key={role} value={role}>{VIDEO_ROLE_LABELS[role as OrderedInput["role"]]}</option>)}</select>
         </div>
