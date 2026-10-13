@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import sharp from "sharp";
 import { createModelFixture } from "./model-config-fixture";
 import { fixtureConfig } from "./billing-unit-fixture";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 
 async function main() {
   const baseline = process.argv.includes("--baseline");
   let mode = "valid", delay = 0, inspect: ((request: Request) => Promise<Response>) | undefined;
   const png = await sharp({ create: { width: 16, height: 16, channels: 3, background: "#fff" } }).png().toBuffer();
+  process.env.MEDIA_DIR ||= "output/agent-visual-review-fixture/media";
+  const { MEDIA_DIR } = await import("../src/lib/storage");
+  await mkdir(MEDIA_DIR, { recursive: true }); await writeFile(MEDIA_DIR + "/fixture.png", png);
   const models: string[] = [], paths: string[] = [];
 
   const f = await createModelFixture(async (request, response) => {

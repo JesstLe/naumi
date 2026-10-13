@@ -1,4 +1,5 @@
 "use client";
+import { useFeatureAccess } from "@/lib/feature-access/client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -291,6 +292,7 @@ function SuiteNavItem({
 }
 
 export function SiteHeader() {
+  const { canPage } = useFeatureAccess();
   const pathname = usePathname();
   const { user, ready } = useAuth();
   const { t } = useI18n();
@@ -313,7 +315,7 @@ export function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
-          {navItems.map((item) =>
+          {navItems.filter(item => canPage(item.href)).map((item) =>
             item.hot ? (
               <SuiteNavItem
                 key={item.href}
@@ -413,7 +415,7 @@ export function SiteHeader() {
       {open && (
         <div className="border-t border-border/70 bg-white md:hidden">
           <nav className="container flex flex-col py-3">
-            {navItems.map((item) => (
+            {navItems.filter(item => canPage(item.href)).map((item) => (
               <Link
                 key={item.href}
                 href={item.href}

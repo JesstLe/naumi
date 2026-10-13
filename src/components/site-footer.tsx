@@ -1,4 +1,5 @@
 "use client";
+import { useFeatureAccess } from "@/lib/feature-access/client";
 
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
@@ -10,6 +11,7 @@ import { BRAND_PARENT_URL, BRAND_PARENT_LABEL } from "@/lib/brand";
 import { usePaymentConfig } from "@/lib/payment-context";
 
 export function SiteFooter() {
+  const { canPage } = useFeatureAccess();
   const { locale } = useI18n();
   const { name: brandName } = useBrand();
   const { pricingVisible } = usePaymentConfig();
@@ -52,7 +54,7 @@ export function SiteFooter() {
         { href: "/contact", label: L("联系我们", "Contact") },
       ],
     },
-  ].filter((c) => c.links.length > 0);
+  ].map(c => ({...c, links: c.links.filter(link => link.external || canPage(link.href))})).filter((c) => c.links.length > 0);
 
   return (
     <footer className="border-t border-border bg-secondary/50">

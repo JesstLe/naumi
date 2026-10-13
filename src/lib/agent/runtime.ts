@@ -1,3 +1,5 @@
+
+import { assertAgentToolAccess } from "@/lib/feature-access/server";
 import type { Agent } from "@earendil-works/pi-agent-core";
 import { currentModelExecution, currentExecutionBundle } from "@/lib/model-config/context";
 import { signAcceptedModelContext } from "@/lib/model-config/accepted-context";
@@ -315,7 +317,7 @@ async function createRuntimeSession(
     },
     // 积分预检:工具执行前查余额,不足直接拦截(硬门禁,不靠提示词自觉)
     beforeToolCall: async ({ toolCall, args, context }) => {
-      try { session.harness.check(toolCall.name, args); }
+      try { await assertAgentToolAccess(email, toolCall.name, options ? "canvas" : "workbench", new Request("http://internal", { headers: { cookie: session.cred.cookie, authorization: session.cred.authorization } })); session.harness.check(toolCall.name, args); }
       catch (error) {
         const failure = error instanceof HarnessError ? error : new HarnessError("ARGUMENT_INVALID");
         appendSessionEvent(session, "attention", {kind:"restricted",tool:toolCall.name,message:failure.message,code:failure.code});
@@ -451,10 +453,15 @@ async function createRuntimeSession(
   session.harness.protectPrompt(agent.state.systemPrompt);
   const originalPrompt = agent.prompt.bind(agent);
   const originalAbort = agent.abort.bind(agent);
-  agent.abort = () => { session.harness.stop(); originalAbort(); };
+  let promptGeneration = 0;
+  agent.abort = () => { promptGeneration++; session.harness.stop(); originalAbort(); };
   let lastPromptTurn = "";
   agent.prompt = (async (input: unknown, images?: ImageContent[]) => {
     if (typeof input !== "string") throw new HarnessError("INPUT_INVALID");
+    const pendingGeneration = promptGeneration;
+    await assertAgentToolAccess(email, "get_balance", options ? "canvas" : "workbench", new Request("http://internal", { headers: { cookie: session.cred.cookie, authorization: session.cred.authorization } }));
+    // Cancellation during async authorization must not restart an aborted turn.
+    if (pendingGeneration !== promptGeneration) throw new HarnessError("RUN_INACTIVE", 409);
     session.userConfirmedQuote = explicitQuoteConsent(input) && !!session.lastPendingQuoteKey && !!session.pendingQuotes?.has(session.lastPendingQuoteKey);
     if (!session.turnId || session.turnId === lastPromptTurn) session.turnId = crypto.randomUUID();
     lastPromptTurn = session.turnId;
