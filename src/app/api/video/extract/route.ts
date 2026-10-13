@@ -6,7 +6,8 @@ import { spawn } from "child_process";
 import { NextResponse } from "next/server";
 
 import { authenticatedEmail } from "@/lib/request-auth";
-import { isManagedImageUrl, readManagedObject, uploadImage } from "@/lib/storage";
+import { isManagedImageUrl, readManagedObject, uploadImage, privateMedia, storageKeyFromManagedUrl } from "@/lib/storage";
+import {canReadMedia} from '@/lib/media-assets';
 import { addArtworks, dbEnabled, listArtworksByIds } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -42,6 +43,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "视频地址无效" }, { status: 400 });
   }
   const id = crypto.randomUUID();
+  const key=storageKeyFromManagedUrl(videoUrl);
+  if(privateMedia&&key&&!await canReadMedia(key,email))return NextResponse.json({error:'素材不存在'},{status:404});
   const workDir = path.join(os.tmpdir(), `naumi-video-${id}`);
   const inputPath = path.join(workDir, "input.mp4");
   try {
@@ -59,7 +62,7 @@ export async function POST(request: Request) {
     const bytes = await runFfmpeg(inputPath, kind, timestamp);
     const mimeType = kind === "frame" ? "image/png" : "audio/mpeg";
     const storageKey = `videos/extracted/${id}.${kind === "frame" ? "png" : "mp3"}`;
-    const url = await uploadImage(bytes, mimeType, storageKey);
+    const url = await uploadImage(bytes, mimeType, storageKey,undefined,email);
     let artworkId = "";
     const parentArtworkId = String(body?.parentArtworkId || "").trim().slice(0, 160);
     if (dbEnabled && parentArtworkId) {

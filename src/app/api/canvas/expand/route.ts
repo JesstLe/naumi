@@ -85,7 +85,7 @@ async function handleObservedPost(request: Request) {
     if (!artwork) return NextResponse.json({ error: "图片不存在或无权访问" }, { status: 404 });
 
 
-    const image = await readCanvasImage(artwork.image, request.url);
+    const image = await readCanvasImage(artwork.image, request.url, email);
     let original = await sharp(image.buffer).rotate().png().toBuffer();
     const meta = await sharp(original).metadata();
     let width = meta.width || artwork.width || 0;

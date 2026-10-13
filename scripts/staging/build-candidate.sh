@@ -19,7 +19,7 @@ test "$expected" = "$(cat "$ROOT/evidence/npm-lock.sha256")"
 mkdir -p "$RELEASE"
 VERSION=$(date +%s)
 docker run --rm --name naumi-staging-next-build --network none \
- -e BUILD_VERSION="$VERSION" -e SOURCE_COMMIT="$COMMIT" \
+ -e MEDIA_PRIVATE="${NAUMI_BUILD_MEDIA_PRIVATE:-0}" -e BUILD_VERSION="$VERSION" -e SOURCE_COMMIT="$COMMIT" \
  -e NEXT_TELEMETRY_DISABLED=1 -e NODE_OPTIONS=--max-old-space-size=4096 \
  -v "$SOURCE:/app" -v naumi-staging-build-deps:/app/node_modules \
  -w /app node:24-bookworm-slim npm run build

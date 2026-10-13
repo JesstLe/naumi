@@ -9,6 +9,12 @@ async function main() {
  assert.equal(unauth.status,401,'direct upload must require real account before granting PUT');
  const download=await import('../src/app/api/download/route');
  assert.equal((await download.GET(new Request('http://localhost/api/download?u=%2Fmedia%2Fprivate%2Fa.png'))).status,401);
+ const zip=await import('../src/app/api/suite/download/route');
+ const originalFetch=globalThis.fetch;globalThis.fetch=async()=>new Response('private-fixture',{headers:{'content-type':'image/png'}});
+ const zipped=await zip.POST(new Request('http://localhost/api/suite/download',{method:'POST',headers:{'content-type':'application/json'},
+   body:JSON.stringify({items:[{url:'/media/private/a.png',name:'x'}]})}));
+ globalThis.fetch=originalFetch;
+ assert.equal(zipped.status,401,'ZIP must not bypass private media gate');
  console.log('PASS anonymous media/upload/download and traversal denied');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

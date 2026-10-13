@@ -102,7 +102,7 @@ export async function POST(request: Request) {
     // 输入图:有图片槽才上传源图(纯文生图工作流可无图直跑)
     let imageNames: string[] = [];
     if (inputs.images.length && sourceImage) {
-      const image = await readCanvasImage(sourceImage, request.url);
+      const image = await readCanvasImage(sourceImage, request.url, email);
       const uploaded = await comfyUploadImage(
         endpoint,
         image.buffer,

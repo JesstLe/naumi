@@ -30,7 +30,8 @@ import {
   stageVideoTaskResult,
   touchReservation,
 } from "@/lib/db";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled, uploadImage, privateMedia, storageKeyFromManagedUrl, readManagedObject, writeStoredObject, presignStoredObject } from "@/lib/storage";
+import {canReadMedia, getMediaAsset, importLegacyMedia} from "@/lib/media-assets";
 import { completeVideoTask } from "@/lib/db";
 import { getPool } from "@/lib/db";
 import { isImportedHistory } from "@/lib/staging-history";
@@ -274,7 +275,13 @@ async function createVideoGenerationUnlocked(
 
   // 远程供应商必须能访问引用素材。本地 /media 地址仅本站可见；部署时可通过
   // VIDEO_REFERENCE_PUBLIC_BASE_URL 指向对外可访问的 Naumi 站点，或直接使用 R2。
-  if (providerConfig.protocol !== "openai-videos") {
+  if(privateMedia) {
+    for(const reference of references) {
+      const key = reference.url && storageKeyFromManagedUrl(reference.url);
+      if(key && !await canReadMedia(key,email)) throw new Error("素材不存在或无权访问");
+    }
+  }
+  if (!privateMedia && providerConfig.protocol !== "openai-videos") {
     const publicBase = String(process.env.VIDEO_REFERENCE_PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
     for (const reference of references) {
       if (!reference.url?.startsWith("/media/")) continue;
@@ -320,7 +327,7 @@ async function createVideoGenerationUnlocked(
   if (uploadReference) {
     const ref = uploadReference;
     const { readCanvasImage } = await import("@/lib/canvas-image-input");
-    const img = await readCanvasImage(ref.url || ref.artworkId || "", "http://localhost/");
+    const img = await readCanvasImage(ref.url || ref.artworkId || "", "http://localhost/", email);
     imageBytes = img.buffer;
     imageMime = img.mimeType;
     imageForUpload = { bytes: img.buffer, mime: img.mimeType, filename: `naumi-ref-${Date.now()}.png` };
@@ -475,13 +482,14 @@ function videoCreationRetryConfigMatches(task: VideoTaskRow): boolean {
 
 async function imageForQueuedTask(
   task: VideoTaskRow,
-  request: VideoGenerationRequest
+  request: VideoGenerationRequest,
+  email: string
 ): Promise<{ bytes: Buffer; mime: string; filename: string } | undefined> {
   if (getVideoProviderConfig(task.providerId)?.protocol !== "openai-videos") return undefined;
   const reference = request.references.find((item) => item.kind === "image" && (item.url || item.artworkId));
   if (!reference) return undefined;
   const { readCanvasImage } = await import("@/lib/canvas-image-input");
-  const image = await readCanvasImage(reference.url || reference.artworkId || "", "http://localhost/");
+  const image = await readCanvasImage(reference.url || reference.artworkId || "", "http://localhost/", email);
   return { bytes: image.buffer, mime: image.mimeType, filename: `naumi-ref-${task.id}.png` };
 }
 
@@ -495,8 +503,23 @@ async function submitQueuedVideoTask(
   if (isRecoveryRetry && !videoCreationRetryConfigMatches(task)) throw new IdempotencyConfigDriftError();
   const adapter = getVideoProvider(task.providerId || VIDEO_PROVIDER_ID);
   if (!adapter) throw new Error(`视频适配器 ${task.providerId} 未注册`);
-  const request = preparedRequest ?? requestFromQueuedTask(task);
-  const image = preparedImage ?? await imageForQueuedTask(task, request);
+  const persistedRequest = preparedRequest ?? requestFromQueuedTask(task);
+  const request = {...persistedRequest,references:persistedRequest.references.map(reference=>({...reference}))};
+  const image = preparedImage ?? await imageForQueuedTask(task, request, email);
+  if(privateMedia && getVideoProviderConfig(task.providerId)?.protocol !== "openai-videos") {
+    for(const reference of request.references) {
+      const key=reference.url && storageKeyFromManagedUrl(reference.url);
+      if(!key)continue;
+      if(!await canReadMedia(key,email))throw new Error("素材不存在或无权访问");
+      const asset=await getMediaAsset(key)||await importLegacyMedia(key,email);
+      if(!asset?.remote_ready){
+        const original=await readManagedObject(`/media/${key}`,250*1024*1024);
+        const saved=await writeStoredObject(original.bytes,asset?.content_type||original.contentType,key);
+        if(!saved.remoteReady)throw new Error("素材暂时无法提供给视频供应商，请稍后重试");
+      }
+      reference.url=await presignStoredObject('GET',key,900);
+    }
+  }
   const {withBiModelContext}=await import("@/lib/bi/model-observer");
   const created = await withBiModelContext(email,'video.generate',task.id,()=>createWithLocalImage(adapter, request, image));
   const {videoSupplierReceipt}=await import("@/lib/supplier-cost/video");

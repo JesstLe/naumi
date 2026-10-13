@@ -101,7 +101,7 @@ async function handleObservedPost(request: Request) {
       if (!reserved) return NextResponse.json({ error: "积分不足，请联系管理员补充额度" }, { status: 402 });
     }
 
-    const image = await readCanvasImage(artwork.image, request.url);
+    const image = await readCanvasImage(artwork.image, request.url, email);
     const original = await sharp(image.buffer).rotate().png().toBuffer();
     const metadata = await sharp(original).metadata();
     const width = metadata.width || artwork.width || 0;

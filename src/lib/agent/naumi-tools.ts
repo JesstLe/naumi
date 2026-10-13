@@ -4,6 +4,7 @@ import { createCreativeTools } from "./creative-tools";
 import { CREATIVE_AGENT_TOOLS, CREATIVE_TOOL_FEATURES } from "./creative-tool-catalog";
 import type { CanvasAgentContext } from "./canvas-context";
 import {dataUrlToBytes,isManagedImageUrl,readManagedObject} from "../storage";
+import {managedAgentReference} from "./managed-reference";
 import { AgentHarness, validateToolArguments, HarnessError } from "./harness";
 import { assertInternalAgentPath, assertMediaUrl, publicImageBytes, readBoundedBytes } from "./harness-network";
 
@@ -210,6 +211,11 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
   }
 
   async function urlToFile(raw: string, signal?: AbortSignal): Promise<File> {
+    const managed = await managedAgentReference(raw, [base, new URL(req.url).origin], agentEmail);
+    if (managed) {
+      if (signal?.aborted) throw new Error("aborted");
+      return new File([managed.bytes], "reference.png", {type:managed.contentType});
+    }
     if(canvas?.imageUrls.includes(raw)){
       const inline=dataUrlToBytes(raw),object=inline?{bytes:inline.bytes,contentType:inline.contentType}:isManagedImageUrl(raw)?await readManagedObject(raw,MAX_IMAGE_BYTES):null;
       if(object){if(signal?.aborted)throw new Error("aborted");if(!/^image\/(png|jpeg|webp)$/i.test(object.contentType)||object.bytes.length>MAX_IMAGE_BYTES)throw new Error("参考图片格式或大小不支持");return new File([Buffer.from(object.bytes)],"reference.png",{type:object.contentType});}

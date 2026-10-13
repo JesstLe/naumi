@@ -6,7 +6,10 @@ import {
   dataUrlToBytes,
   isManagedImageUrl,
   readManagedObject,
+  privateMedia,
+  storageKeyFromManagedUrl,
 } from "@/lib/storage";
+import {canReadMedia} from '@/lib/media-assets';
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 
@@ -34,7 +37,7 @@ function allowedRemoteImage(url: URL, requestUrl: string) {
   return url.protocol === "https:" && url.host.endsWith(".r2.dev");
 }
 
-export async function readCanvasImage(source: string, requestUrl: string) {
+export async function readCanvasImage(source: string, requestUrl: string, owner?:string) {
   const inline = dataUrlToBytes(source);
   if (inline) {
     if (inline.bytes.byteLength > MAX_IMAGE_BYTES) throw new Error("图片超过 12MB");
@@ -44,7 +47,12 @@ export async function readCanvasImage(source: string, requestUrl: string) {
     };
   }
 
+  try {
+    const absolute = new URL(source);
+    if (absolute.origin === new URL(requestUrl).origin && absolute.pathname.startsWith("/media/")) source = absolute.pathname;
+  } catch { /* relative reference */ }
   if (isManagedImageUrl(source)) {
+    if(privateMedia&&!await canReadMedia(storageKeyFromManagedUrl(source)!,owner||null))throw new Error('素材不存在或无权访问');
     const object = await readManagedObject(source, MAX_IMAGE_BYTES);
     return {
       buffer: object.bytes,

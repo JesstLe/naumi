@@ -38,7 +38,7 @@ export async function saveCanvasLocalEdit(email: string, value: z.infer<typeof l
     if (prior.rows[0].fingerprint !== fingerprint) throw new Error("操作编号已使用");
     return { id: prior.rows[0].artwork_id as string };
   }
-  const bytes = input.mode === "replace" ? replacement! : (await readCanvasImage(source.image,requestUrl)).buffer;
+  const bytes = input.mode === "replace" ? replacement! : (await readCanvasImage(source.image,requestUrl,email)).buffer;
   const edited = await editCanvasPixels(bytes,input.mode === "crop" ? input.crop : undefined);
   if (edited.bytes.length > 12*1024*1024) throw new Error("编辑结果超过12MB，请缩小裁剪区域或上传更小图片");
   const id = `art-local-${input.operationId}`;

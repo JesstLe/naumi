@@ -1,6 +1,8 @@
 import JSZip from "jszip";
 import path from "path";
-import { isManagedImageUrl, readManagedObject } from "@/lib/storage";
+import { isManagedImageUrl, readManagedObject, privateMedia, storageKeyFromManagedUrl } from "@/lib/storage";
+import {authenticatedEmail} from '@/lib/request-auth';
+import {canReadMedia} from '@/lib/media-assets';
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -43,6 +45,8 @@ async function readItem(raw: string): Promise<{ buf: Buffer; ext: string } | nul
 }
 
 export async function POST(request: Request) {
+  const email=privateMedia?await authenticatedEmail(request):null;
+  if(privateMedia&&!email)return new Response(null,{status:401,headers:{'cache-control':'no-store'}});
   let items: Item[] = [];
   try {
     const body = (await request.json()) as { items?: Item[] };
@@ -61,6 +65,8 @@ export async function POST(request: Request) {
   }
 
   const zip = new JSZip();
+  if(privateMedia){for(const item of items){const key=storageKeyFromManagedUrl(item.url);
+    if(key&&!await canReadMedia(key,email))return new Response(null,{status:404,headers:{'cache-control':'no-store'}});}}
   let ok = 0;
   await Promise.all(
     items.map(async (it, i) => {
@@ -92,6 +98,7 @@ export async function POST(request: Request) {
       "content-type": "application/zip",
       "content-disposition": `attachment; filename="suite-${Date.now()}.zip"`,
       "content-length": String(blob.length),
+      "cache-control":"private, no-store",
     },
   });
 }

@@ -27,6 +27,6 @@ export async function POST(request: Request) {
   const id = crypto.randomUUID();
   const owner = crypto.createHash("sha256").update(email.toLowerCase()).digest("hex").slice(0, 16);
   const storageKey = `video-references/${owner}/${id}.${EXTENSIONS[file.type]}`;
-  const url = await uploadImage(new Uint8Array(await file.arrayBuffer()), file.type, storageKey);
+  const url = await uploadImage(new Uint8Array(await file.arrayBuffer()), file.type, storageKey,undefined,email);
   return NextResponse.json({ ok: true, reference: { id, kind, role: kind === "image" ? "reference" : kind === "video" ? "source_video" : "source_audio", url, mimeType: file.type, storageKey } });
 }

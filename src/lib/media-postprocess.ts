@@ -28,7 +28,7 @@ export async function transformImage(bytes: Buffer, policy: Postprocess) {
   return { bytes: raw, width:m.width, height:m.height, kind:policy.kind };
 }
 export async function runPostprocess(input: { id: string; parentId: string; email: string; modelVersion: number; bytes: Buffer; policy: Postprocess }): Promise<PostprocessResult> {
-  if (!dbEnabled) { const r=await transformImage(input.bytes,input.policy);return {url:await uploadImage(r.bytes,"image/png",`postprocess/${createHash("sha256").update(input.id).digest("hex")}.png`),width:r.width,height:r.height,kind:r.kind,status:"succeeded"}; }
+  if (!dbEnabled) { const r=await transformImage(input.bytes,input.policy);return {url:await uploadImage(r.bytes,"image/png",`postprocess/${createHash("sha256").update(input.id).digest("hex")}.png`,undefined,input.email),width:r.width,height:r.height,kind:r.kind,status:"succeeded"}; }
   const pool=getPool(); await ensurePostprocessSchema(pool);
   await assertMutableStagingTask(pool, "app_media_postprocess", input.id);
   await assertMutableStagingTask(pool, "app_billing_operations", input.parentId);
@@ -39,7 +39,7 @@ export async function runPostprocess(input: { id: string; parentId: string; emai
   if (exists && (exists.digest!==digest || exists.email!==input.email || Number(exists.model_version)!==input.modelVersion)) throw new Error("后处理任务与冻结配置不一致");
   if (!exists) {
     // Save the paid base before CPU work. A retry never calls the generation supplier.
-    const url=await uploadImage(input.bytes,"image/png",`postprocess/${key}-base.png`);
+    const url=await uploadImage(input.bytes,"image/png",`postprocess/${key}-base.png`,undefined,input.email);
     await pool.query("INSERT INTO app_media_postprocess(operation_id,parent_operation_id,email,model_version,digest,policy,base_url,state,processing_kind,cost_cny_micros) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,'pending',$8,0) ON CONFLICT(operation_id) DO NOTHING",[input.id,input.parentId,input.email,input.modelVersion,digest,JSON.stringify(input.policy),url,input.policy.kind]);
   }
   return resumePostprocess(input.id,input.email);
@@ -63,7 +63,7 @@ export async function resumePostprocess(id: string, email: string, explicitRetry
   row=claimed.rows[0];
   try {
     const base=await readManagedObject(row.base_url,64*1024*1024), result=await transformImage(base.bytes,row.policy);
-    const url=await uploadImage(result.bytes,"image/png",`postprocess/${createHash("sha256").update(id).digest("hex")}-result.png`);
+    const url=await uploadImage(result.bytes,"image/png",`postprocess/${createHash("sha256").update(id).digest("hex")}-result.png`,undefined,email);
     const changed=await pool.query("UPDATE app_media_postprocess SET state='succeeded',result_url=$3,width=$4,height=$5,error=NULL,lease_id=NULL,lease_until=NULL,updated_at=now() WHERE operation_id=$1 AND lease_id=$2 RETURNING operation_id",[id,lease,url,result.width,result.height]);
     if(!changed.rowCount)throw new PostprocessPending(id);
     return {url,width:result.width,height:result.height,kind:result.kind,status:"succeeded"};

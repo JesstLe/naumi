@@ -33,14 +33,19 @@ export async function getMediaAsset(key:string): Promise<MediaAsset|null> {
 }
 export async function canReadMedia(key:string, owner:string|null) {
   if(publicKey(key)) return true;
+  if(!dbEnabled) return false;
   const asset=await getMediaAsset(key);
   if(asset?.public) return true;
   if(!owner) return false;
   if(asset?.owner===owner.toLowerCase()) return true;
   // Legacy data and shared copies are authorized by actual DB references, never a client URL.
   await ensureSchema();
-  return !!(await getPool().query(`SELECT 1 FROM app_artworks WHERE email=$1
-    AND (image_url=$2 OR source_url=$2 OR video_url=$2) LIMIT 1`,[owner.toLowerCase(),`/media/${key}`])).rowCount;
+  const canonical=`/media/${key}`;
+  if((await getPool().query(`SELECT 1 FROM app_artworks WHERE email=$1
+    AND (image_url=$2 OR source_url=$2 OR video_url=$2) LIMIT 1`,[owner.toLowerCase(),canonical])).rowCount)return true;
+  const competitor=(await getPool().query("SELECT to_regclass('public.app_competitor_items') AS table_name")).rows[0].table_name;
+  return competitor?!!(await getPool().query(`SELECT 1 FROM app_competitor_items WHERE email=$1 AND
+    (state->>'image'=$2 OR jsonb_path_exists(state,'$.versions[*].image ? (@ == $url)',jsonb_build_object('url',$2::text))) LIMIT 1`,[owner.toLowerCase(),canonical])).rowCount:false;
 }
 
 export async function importLegacyMedia(key:string, email?:string) {

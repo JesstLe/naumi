@@ -19,7 +19,7 @@ export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<I
   },[]);
   useEffect(()=>{
     const element=ref.current;if(!element)return;
-    const measure=()=>setScreenWidth(element.getBoundingClientRect().width);
+    const measure=()=>{const bounds=element.getBoundingClientRect();setScreenWidth(Math.max(bounds.width,bounds.height));};
     const observer=new ResizeObserver(measure);observer.observe(element);measure();return()=>observer.disconnect();
   },[zoom,props.width,props.height]);
   const variant=forceOriginal||!hasDimensions?'original':canvasMediaVariant(screenWidth,typeof window==='undefined'?1:window.devicePixelRatio);

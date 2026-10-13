@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { dbEnabled, listTemplatesPaged, syncTemplatesFromCode } from "@/lib/db";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { TEMPLATES as SEED } from "@/lib/templates-data";
+import {publishTemplateMedia} from "@/lib/template-published-media";
 import { templateImageDeliveryUrl } from "@/lib/template-image-cache";
 
 export const runtime = "nodejs";
@@ -71,9 +72,9 @@ export async function GET(req: Request) {
         page,
         pageSize,
       });
-    const deliveredItems = items.map((t) => ({
-      ...t,
-      image: templateImageDeliveryUrl(t.id, t.image),
+    const deliveredItems = await Promise.all(items.map(async (row) => {
+      const t=await publishTemplateMedia(row);
+      return {...t,image:templateImageDeliveryUrl(t.id,t.image)};
     }));
     const safeItems = authed
       ? deliveredItems

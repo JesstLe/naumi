@@ -7,7 +7,7 @@ import {
   setArtworkPosition,
 } from "@/lib/db";
 import { authenticatedEmail } from "@/lib/request-auth";
-import { uploadImage } from "@/lib/storage";
+import { uploadImage,isManagedImageUrl,readManagedObject } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +34,7 @@ function allowedRemoteImage(url: URL): boolean {
 }
 
 async function readArtworkImage(source: string, requestUrl: string): Promise<Buffer> {
+  if(isManagedImageUrl(source))return (await readManagedObject(source,32*1024*1024)).bytes;
   const sameOrigin = source.startsWith("/") && !source.startsWith("//");
   const target = sameOrigin ? new URL(source, requestUrl) : new URL(source);
   if (!sameOrigin && !allowedRemoteImage(target)) {
@@ -124,7 +125,7 @@ export async function POST(request: Request) {
     const image = await uploadImage(
       new Uint8Array(longImage),
       "image/png",
-      `canvas-stitches/${id}.png`
+      `canvas-stitches/${id}.png`,undefined,email
     );
     const title = String(body?.title || `详情长图 · ${ids.length} 张`).trim().slice(0, 80);
     await addArtworks(email, [

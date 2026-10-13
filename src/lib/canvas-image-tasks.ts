@@ -137,7 +137,7 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
   const artwork = (await listArtworksByIds(task.email, [task.sourceArtworkId]))[0];
   if (!artwork) throw new Error("源图片已不存在");
   const requestOrigin = String(process.env.INTERNAL_APP_ORIGIN || process.env.NAUMI_APP_ORIGIN || "http://127.0.0.1:3000");
-  const image = await readCanvasImage(artwork.image, requestOrigin);
+  const image = await readCanvasImage(artwork.image, requestOrigin, task.email);
   const original = await sharp(image.buffer).rotate().png().toBuffer();
   const metadata = await sharp(original).metadata();
   const width = metadata.width || artwork.width || 0;
@@ -163,22 +163,22 @@ async function renderTextEdit(task: CanvasImageTaskRow): Promise<string> {
   const quality: ResolvedImageQuality = (task.parameters.qualityAudit as ResolvedImageQuality | undefined) ?? {requested: "high", executed: "high", fallbackReason: null};
   let editedRaw: Buffer;
   if (typeof task.parameters.upstreamResult === "string") {
-    editedRaw = (await readCanvasImage(task.parameters.upstreamResult, requestOrigin)).buffer;
+    editedRaw = (await readCanvasImage(task.parameters.upstreamResult, requestOrigin, task.email)).buffer;
   } else {
     if (!await beginCanvasImageTaskSubmission(task.id) && !currentModelExecution("image")?.imagePreset) throw new ImageOperationPending(task.id, new Error("上游提交需要核查"));
     editedRaw = await withBiModelContext(task.email,"canvas-text-edit",task.id,()=>editImage({ operationId: task.id, legacyOperationId: !task.parameters.qualityAudit, images: [original], mask, prompt, size: editSize(width, height), quality }));
     const checkpoint = storageEnabled
-      ? await uploadImage(new Uint8Array(editedRaw), "image/png", `canvas-text-edits/${task.id}-provider.png`)
+      ? await uploadImage(new Uint8Array(editedRaw), "image/png", `canvas-text-edits/${task.id}-provider.png`, undefined, task.email)
       : `data:image/png;base64,${editedRaw.toString("base64")}`;
     await saveCanvasImageTaskProviderResult(task.id, checkpoint, quality);
   }
   await updateCanvasImageTaskProgress(task.id, 82);
   const scope = currentModelExecution("image"), post = scope?.businessOption?.postprocess;
   const processed = post?.enabled ? await runPostprocess({ id: `${task.id}:postprocess`,parentId:task.id,email:task.email,modelVersion:scope!.frozen.modelVersion,bytes:editedRaw,policy:post }) : null;
-  const edited = processed ? (await readCanvasImage(processed.url, requestOrigin)).buffer : await sharp(editedRaw).resize(width, height, { fit: "fill" }).png().toBuffer();
+  const edited = processed ? (await readCanvasImage(processed.url, requestOrigin, task.email)).buffer : await sharp(editedRaw).resize(width, height, { fit: "fill" }).png().toBuffer();
   const artworkId = `txtedit-${task.id}`;
   let url = `data:image/png;base64,${edited.toString("base64")}`;
-  if (storageEnabled) url = await uploadImage(new Uint8Array(edited), "image/png", `canvas-text-edits/${artworkId}.png`);
+  if (storageEnabled) url = await uploadImage(new Uint8Array(edited), "image/png", `canvas-text-edits/${artworkId}.png`, undefined, task.email);
   await addArtworks(task.email, [{
     id: artworkId,
     title: `${artwork.title || "图片"} · 改字`,

@@ -141,6 +141,11 @@ upgrade_release_compose() {
   echo "COMPOSE_UPGRADE_RESULT=PASS VIDEO_WORKER=present COMMIT=$commit"
 }
 
+if [ "${1:-}" = --staging-fixed-image ]; then
+  shift
+  exec bash "$(dirname "$0")/staging/deploy-fixed-image.sh" "$@"
+fi
+
 if [ "${1:-}" = --upgrade-compose ]; then
   test "$#" -eq 3
   upgrade_release_compose "$2" "$3"
