@@ -1,4 +1,4 @@
 export type EnterpriseRole = { id: string; name: string; level: number; manage_members: boolean; view_records: boolean; version: number };
-export type EnterpriseIdentity = { id: string; name: string; owner_email: string; authorized_until: string; owner: boolean };
+export type EnterpriseIdentity = { id: string; name: string; owner_email: string; authorized_until: string|null; owner: boolean };
 export type EnterpriseMember = { email: string; name: string; supervisor_email: string; role_id: string | null; role_name: string; level: number; employment: 'permanent' | 'intern'; version: number; management_version: number; banned: boolean; account_expires_at: string | null; available: number; consumed: number; artworks: number; canManage: boolean };
 export type EnterpriseSnapshot = { enterprise: EnterpriseIdentity; members: EnterpriseMember[]; roles: EnterpriseRole[]; actor: { owner: boolean; manageMembers: boolean; viewRecords: boolean; level: number }; ownerAvailable: number | null };

@@ -66,12 +66,20 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string):Promise<Scope> {
   const team=(await tx.query(`SELECT t.id,t.name,t.owner_email,t.authorized_until,t.enabled,s.enabled AS enterprise_enabled
     FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id WHERE s.team_id=$1 FOR SHARE OF s,t`,[id])).rows[0];
   if(!team)throw new TeamError('企业不存在',404);
+  // Activated enterprises use the entry lifecycle grant as the single source of
+  // access expiry. The legacy team cap is only for legacy subaccount management.
+  // A null grant expiry is permanent, not an expired Unix epoch.
+  let accessExpiry:string|null=team.authorized_until;
   if(!actor.admin){
     const current=(await tx.query('SELECT banned,account_expires_at FROM app_users WHERE email=$1 FOR SHARE',[actor.email])).rows[0];
     if(!current||current.banned||current.account_expires_at&&new Date(current.account_expires_at).getTime()<=Date.now())throw new TeamError('账号已停用或到期');
-    if(!team.enabled||!team.enterprise_enabled||new Date(team.authorized_until).getTime()<=Date.now())throw new TeamError('企业授权已关闭或到期');
+    if(!team.enabled||!team.enterprise_enabled)throw new TeamError('企业授权已关闭或到期');
     // Every descendant uses the live sponsoring owner's entry grant, not a copied/evergreen capability.
-    await requireTeamGrant(tx,{email:team.owner_email,admin:false});
+    const grant=await requireTeamGrant(tx,{email:team.owner_email,admin:false});
+    accessExpiry=grant!.expires_at;
+  }else{
+    const grant=(await tx.query('SELECT expires_at FROM app_team_access_grants WHERE email=$1 FOR SHARE',[team.owner_email])).rows[0];
+    if(grant)accessExpiry=grant.expires_at;
   }
   const roles=(await tx.query('SELECT id,name,level,manage_members,view_records,version FROM app_enterprise_roles WHERE enterprise_id=$1 FOR SHARE',[id])).rows as EnterpriseRole[];
   const nodes=(await tx.query('SELECT email,supervisor_email,role_id,employment,version FROM app_enterprise_members WHERE enterprise_id=$1 FOR SHARE',[id])).rows as Node[];
@@ -81,7 +89,7 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string):Promise<Scope> {
   if(!owner&&(!node||!role||!role.manage_members&&!role.view_records))throw new TeamError('当前岗位没有企业管理权限');
   const visible=new Set<string>();if(owner)for(const m of nodes)visible.add(m.email);
   else {visible.add(actor.email);let changed=true;while(changed){changed=false;for(const m of nodes)if(visible.has(m.supervisor_email)&&!visible.has(m.email)){visible.add(m.email);changed=true}}}
-  return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:team.authorized_until,owner},owner,level:owner?0:role!.level,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible};
+  return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},owner,level:owner?0:role!.level,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible};
 }
 /** Analytics never trusts client member lists. Recheck the live hierarchy/grant in
  * the same consistent snapshot used for every aggregate and export. Shared
@@ -163,7 +171,7 @@ export async function mutateEnterprise(actor:TeamActor,command:z.infer<typeof en
       if(command.action==='organization'||command.action==='expiry'){
         const employment=command.action==='organization'?command.employment:m.employment;
         if(employment==='permanent'&&command.expiresAt!==null)throw new TeamError('正式员工不设置账号到期时间',400);
-        if(employment==='intern'&&(!command.expiresAt||new Date(command.expiresAt).getTime()>new Date(s.team.authorized_until).getTime()))throw new TeamError('实习生须设置企业授权范围内的有效期',400);
+        if(employment==='intern'&&(!command.expiresAt||s.team.authorized_until!==null&&new Date(command.expiresAt).getTime()>new Date(s.team.authorized_until).getTime()))throw new TeamError('实习生须设置企业授权范围内的有效期',400);
         if(command.action==='organization'){
           const updated={...m,supervisor_email:command.supervisorEmail,role_id:command.roleId,employment};
           validateHierarchy(s.team.owner_email,s.nodes.map(n=>n.email===m.email?updated:n),s.roles);
