@@ -17,8 +17,10 @@ export function mapImagegenParameters(request:ImagegenRequest,capabilities:Capab
   send("moderation",request.parameters.moderation,true);
   send("transparent",request.output.background,false);
   send("outputFormat",request.output.format,false);
-  send("outputCompression",request.output.compression,false);
+  send("outputCompression",request.output.compression,request.output.compressionMode==="native");
   if(request.parameters.width!==undefined&&request.parameters.height!==undefined)
     send("pixelSize",`${request.parameters.width}x${request.parameters.height}`,true);
   return result;
 }
+/** Local compression strength is an encoder control, not an assumed supplier percentage. */
+export function imagegenWireRequest(request:ImagegenRequest):ImagegenRequest{return {...request,output:{...request.output,compression:request.output.compressionMode==="native"?request.output.compression:undefined}};}

@@ -1,3 +1,7 @@
+import {currentImagegenStep,withImagegenStep} from "@/lib/imagegen/context";
+import {legacyImagegenIntent} from "@/lib/imagegen/legacy-intent";
+import {inspectImagegenPixels} from "@/lib/imagegen/postprocess";
+import type {ImagegenRequest,Intent} from "@/lib/imagegen/types";
 import { canvasParameterError } from "@/lib/canvas/generation-parameters";
 import { getPool } from "@/lib/db";
 import { readManagedObject } from "@/lib/storage";
@@ -113,6 +117,8 @@ type GenParams = {
   transparent: boolean; // 透明底(抠图):gpt-image background:transparent PNG
   ratiogen: boolean; // 改比例(ChatGPT 式重生成):用节点自身提示词+原图参考,按目标比例重画再裁切,无需额外提示词
   email: string;
+  imagegen?:{request:ImagegenRequest;intent:Intent};
+  mask?:GenImage;
   images: GenImage[];
   parentId: string; // 血缘:本次生成所基于的作品 id(图生图底图来源),无则空串
   parentIds: string[]; // 多输入:额外父节点 id(合并多张参考图时,除 primary 之外的)
@@ -320,7 +326,7 @@ async function openaiImages(
 ): Promise<GeneratedImage[]> {
   // 透明底只 gpt-image-1 支持(gpt-image-2 实测不支持 background:transparent),走抠图模型;
   // 其余生图走默认模型(gpt-image-2)。普通生图的兜底已统一 v2,不再落 v1。
-  const model = p.transparent ? cutoutModel || "gpt-image-1" : modelIn;
+  const model = modelIn;
   const client = observeOpenAI(modelAwareOpenAI({
     apiKey,
     baseURL: baseUrl || (await getOpenAIBaseUrl()) || undefined,
@@ -332,7 +338,7 @@ async function openaiImages(
   }, !opts?.auditUpstream?.startsWith("byok:")));
   const prompt = p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()));
   const size = sizeFor(p.ratio, model);
-  const canEdit = p.images.length > 0 && isOpenAIImagesEditModel(model);
+  const canEdit = p.images.length > 0 && (currentModelExecution("image")?.capabilities.edit || isOpenAIImagesEditModel(model));
   // 出图质量:解析结果=实际执行档。通道未接入质量参数时在提交前回退为默认档
   // (env OPENAI_IMAGE_QUALITY,缺省 medium);内测仍按请求档测试价计费。
   const q = (p.quality || p.qualityDefault || resolveConfiguredImageQuality("").executed) as
@@ -448,6 +454,7 @@ async function openaiImages(
         ...imageGatewayFields(model, true),
         model,
         image: files,
+        ...(p.mask ? {mask:await toFile(p.mask.buf,"mask.png",{type:p.mask.type})}:{}),
         prompt,
         n: 1,
         size: size as "1024x1024" | "1536x1024" | "1024x1536",
@@ -461,9 +468,7 @@ async function openaiImages(
       try {
         r = await editOnce(p.transparent, q);
       } catch (e) {
-        if (p.transparent && transparentUnsupported(e)) {
-          r = await editOnce(false, q); // 退回不透明底重试
-        } else if (q !== qDefault && isQualityUnsupportedError(e)) {
+        if (!p.imagegen && !p.transparent && q !== qDefault && isQualityUnsupportedError(e)) {
           // 上游不识别 quality 参数:同通道退回默认档重试,出图不受影响
           console.error(`[gen-quality-fallback] 同通道退默认档 model=${model} req=${q}`);
           r = await editOnce(p.transparent, qDefault);
@@ -495,9 +500,7 @@ async function openaiImages(
       try {
         r = await generateOnce(p.transparent, q);
       } catch (e) {
-        if (p.transparent && transparentUnsupported(e)) {
-          r = await generateOnce(false, q); // 退回不透明底重试
-        } else if (q !== qDefault && isQualityUnsupportedError(e)) {
+        if (!p.imagegen && !p.transparent && q !== qDefault && isQualityUnsupportedError(e)) {
           // 上游不识别 quality 参数:同通道退回默认档重试,出图不受影响
           console.error(`[gen-quality-fallback] 同通道退默认档 model=${model} req=${q}`);
           r = await generateOnce(p.transparent, qDefault);
@@ -771,7 +774,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
           type: file.type || "image/png",
         });
       }
-      if (images.length >= MAX_IMAGES) break;
+      if (images.length >= (currentImagegenStep()?32:MAX_IMAGES)) break;
     }
     return {
       prompt: s("prompt").trim(),
@@ -787,6 +790,7 @@ async function parseParams(request: Request): Promise<GenParams | null> {
       ratiogen: s("ratiogen") === "1",
       email: s("email").trim(),
       images,
+      ...(currentImagegenStep()&&f.get("mask") instanceof File?{mask:{buf:Buffer.from(await (f.get("mask") as File).arrayBuffer()),type:(f.get("mask") as File).type}}:{}),
       parentId: s("parentId").trim(),
       parentIds: parseIds(s("parentIds")),
       templateId: s("templateId").trim(),
@@ -927,7 +931,7 @@ async function runJob(
       images = await JOBS.paidOperation(jobId, "flow:" + imageModel.id, { id: jobId }, () => newApiFlowImages(p, imageModel.id));
     } else {
       images = apiKey
-        ? await JOBS.paidOperation(jobId, p.transparent ? cutoutModel || "gpt-image-1" : imageModel.id, {
+        ? await JOBS.paidOperation(jobId, imageModel.id, {
             id: jobId, resolution: p.resolution as "1K" | "2K" | "4K", quality: p.quality, ratio:p.ratio,
             task: p.category === "detail" ? "detail" : p.images.length ? "product" : "draft",
             preserveIdentity: p.images.length > 0,
@@ -952,6 +956,7 @@ async function runJob(
         return { ...image,url:result.url,width:result.width,height:result.height,processingKind:result.kind,postprocessStatus:result.status };
       }));
     } else {
+    if(p.transparent){for(const image of images){const raw=dataUrlToBytes(image.url);const pixels=await inspectImagegenPixels(raw?Buffer.from(raw.bytes):(await readManagedObject(image.url,12*1024*1024)).bytes);if(!pixels.transparentPixels||pixels.transparentPixels===pixels.totalPixels)throw new Error("模型未返回有效的透明主体，请管理员检查透明能力；不会丢弃透明要求重试");}}
     images = await enforceOutputShape(images, p);
     if (!scope?.imagePreset && !(p.targetWidth > 0 && p.targetHeight > 0)) {
       images = await upscaleImages(images, p.resolution);
@@ -1093,9 +1098,10 @@ async function kickGeneration(id: string) {
     if (!imageModel) throw new Error("任务模型暂时不可用");
     if (payload.byok && !provider) throw new Error("自定义图片接口暂时不可用");
     if (provider) await assertUserImageBaseUrlAllowed(provider.baseUrl);
-    await runJob(id, p, settings.apiKey, imageModel, settings.cutoutModel, settings.model,
+    const execute=()=>runJob(id, p, settings.apiKey, imageModel, settings.cutoutModel, settings.model,
       provider ? { ...provider, model: upstreamUserImageModel(p.model) } : null,
       dbEnabled && !!p.email, Number(payload.cost));
+    if(p.imagegen)await withImagegenStep(p.imagegen.request,p.imagegen.intent,execute);else await execute();
   });
 }
 
@@ -1118,6 +1124,11 @@ async function handleObservedPost(request: Request) {
   try { assertPlatformImageSelection(p.model, request.headers.get("x-naumi-feature-model")); }
   catch (error) { return billingErrorResponse(error); }
   // 改比例(ratiogen)用固定重构图指令,可以没有用户提示词;其余路径仍要求 prompt。
+  const advanced=currentImagegenStep();
+  const inferred=advanced?.intent||legacyImagegenIntent({prompt:p.userPrompt||p.prompt,transparent:p.transparent,origin:p.origin},p.images.length);
+  if(inferred?.conflicts.length)return NextResponse.json({error:inferred.conflicts.join("；")},{status:400});
+  if(inferred?.background!==null&&inferred?.background!==undefined)p.transparent=inferred.background==="transparent";
+  if(advanced)p.imagegen=structuredClone(advanced);
   if (!p.prompt && !p.ratiogen) {
     return NextResponse.json({ error: "prompt 不能为空" }, { status: 400 });
   }
@@ -1321,4 +1332,4 @@ async function createSubmission(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
 
-export async function POST(request:Request){const invalid = await canvasParameterError(request); if (invalid) return invalid; return withBillingIntent(request,()=>createSubmission(request));}
+export async function POST(request:Request){const invalid = currentImagegenStep()?null:await canvasParameterError(request); if (invalid) return invalid; return withBillingIntent(request,()=>createSubmission(request));}

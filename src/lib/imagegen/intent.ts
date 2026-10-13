@@ -50,7 +50,7 @@ export function resolveImagegenIntent(request:ImagegenRequest):Intent {
   const target=request.inputs.some(i=>i.role==="edit-target");
   let operation:Intent["operation"]=request.mode==="batch"?"generate":request.mode;
   const cutout=positiveClauses.some(s=>/抠图|(?:移除|去掉|去除|删除).{0,10}背景|remove.{0,10}background/i.test(s));
-  if(cutout)operation="cutout";
+  if(cutout&&request.mode!=="postprocess")operation="cutout";
   else if(imagegenUseCase(useCase)?.mode==="edit"&&target&&request.mode!=="postprocess")operation="edit";
   if((operation==="cutout"||imagegenUseCase(useCase)?.mode==="edit")&&!target)conflicts.push("该编辑要求需要一个编辑目标，请选择要修改的图片");
   const requirements:Intent["requirements"]=[];

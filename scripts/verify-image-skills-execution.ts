@@ -94,7 +94,7 @@ async function main(){
   holdModel=true;const abortController=new AbortController(),cancelTask={...discussion,sessionId:randomUUID(),turnId:randomUUID()},cancelRequest=new Request(request(cancelTask,randomUUID()),{signal:abortController.signal});
   const cancelResponse=await handler(cancelRequest),cancelReader=cancelResponse.body!.getReader(),openChunk=await cancelReader.read(),cancelId=JSON.parse(new TextDecoder().decode(openChunk.value).match(/data: ([^\n]+)/)![1]).sessionId;
   assert.equal((await(await lifecycle.GET(historyRequest("GET",cancelId))).json()).session.running,true);assert.equal((await lifecycle.DELETE(historyRequest("DELETE",cancelId))).status,409);
-  abortController.abort();while(!(await cancelReader.read()).done){};for(let i=0;i<30&&getSession(email,cancelId)?.canvasExecuting;i++)await new Promise(r=>setTimeout(r,100));
+  abortController.abort();while(!(await cancelReader.read()).done){};for(let i=0;i<Math.ceil(Math.min(200000,Math.max(3000,Number(process.env.NAUMI_VERIFY_TIMEOUT_MS)||3000))/100)&&getSession(email,cancelId)?.canvasExecuting;i++)await new Promise(r=>setTimeout(r,100));
   const canceled=await(await lifecycle.GET(historyRequest("GET",cancelId))).json();assert.equal(canceled.session.running,false);assert.equal(canceled.session.status,"stopped");assert.match(canceled.session.error,/停止/);assert.equal(childWrites,1);holdModel=false;
   textOnly=true;
   const plain={...discussion,anchorId:"",contextIds:[],projectKey:"tree:fixture-project",sessionId:randomUUID(),turnId:randomUUID(),messages:[{role:"user",content:"帮我规划创作流程，只进行文本对话"}]};
@@ -111,7 +111,7 @@ async function main(){
   assert.equal((await handler(request({...plain,anchorId:"anchor"},randomUUID()))).status,400);
   holdModel=true;const plainAbort=new AbortController(),plainCancel=await handler(new Request(request({...plain,sessionId:randomUUID()},randomUUID()),{signal:plainAbort.signal}));
   const plainReader=plainCancel.body!.getReader(),plainOpen=await plainReader.read(),plainCancelId=JSON.parse(new TextDecoder().decode(plainOpen.value).match(/data: ([^\n]+)/)![1]).sessionId;
-  plainAbort.abort();while(!(await plainReader.read()).done){};for(let i=0;i<30&&getSession(email,plainCancelId)?.canvasExecuting;i++)await new Promise(r=>setTimeout(r,100));
+  plainAbort.abort();while(!(await plainReader.read()).done){};for(let i=0;i<Math.ceil(Math.min(200000,Math.max(3000,Number(process.env.NAUMI_VERIFY_TIMEOUT_MS)||3000))/100)&&getSession(email,plainCancelId)?.canvasExecuting;i++)await new Promise(r=>setTimeout(r,100));
   assert.equal((await(await lifecycle.GET(projectRequest("GET",plainCancelId))).json()).session.status,"stopped");holdModel=false;
   assert.equal((await lifecycle.DELETE(projectRequest("DELETE",plainId))).status,200);assert.equal((await lifecycle.GET(projectRequest("GET",plainId))).status,404);
   const emptyProject="tree:empty-text-fixture";
@@ -151,6 +151,6 @@ async function main(){
   console.log("PROJECT_HISTORY_WITHOUT_SELECTION=PASS PENDING_USER_RECOVERY=PASS WORKBENCH_HISTORY_ISOLATION=PASS CANVAS_TERMINAL_STATUS=PASS MULTI_NODE_PROJECT_HISTORY=PASS SERVER_OWNED_HISTORY=PASS WORKBENCH_RESTART_RESTORE=PASS");
   console.log("IMAGE_SKILL_PROVIDER_REQUEST=PASS SKILL_CALLS="+skillCalls);
   console.log("CANVAS_AGENT_EXECUTION=PASS REAL_RUNTIME_TOOLS=PASS OWNED_REFERENCES=PASS CANVAS_MODEL_SCOPE=PASS OUTPUT_PARENT_PROJECT_POSITION=PASS REPLAY_NO_DUPLICATE=PASS ANALYSIS_NO_IMAGE=PASS MODALITY_GUARD=PASS BILLING_ONCE_4=PASS CONFIRMATION=PASS PERSISTED_HISTORY_RESTART_RESUME_RENAME_DELETE=PASS CANCEL_PERSISTENCE=PASS ACTIVE_HISTORY_GUARD=PASS SAME_TURN_SELF_CONFIRM_BLOCKED=PASS PAID_UPSTREAM_CALLS=0");
- }finally{await db.getPool().end();await f.cleanup();}
+ }catch(error){console.error("Skills execution fixture assertion:",error);throw error;}finally{await db.getPool().end();await f.cleanup();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

@@ -248,7 +248,7 @@ PNG/WebP保留alpha；JPEG仅在flattenColor显式有效时flatten。compression
 
 **Interfaces:** `planImagegen(request:ImagegenRequest,owner:string):Promise<ImagegenPlan>`；`submitImagegen(request:ImagegenRequest,owner:string,confirmation?:{billingVersion:number;credits:number;confirmed:boolean}):Promise<ImagegenResult>`；`getImagegenResult(operationId:string,owner:string):Promise<ImagegenResult|null>`。`executeImagegenStep(plan:ImagegenPlan,stepKey:string,owner:string):Promise<ImagegenResult>` 由adapters产出；dispatch仅调它，绝不再次预留。generation-core产出 `submitGenerationCore(plan:ImagegenPlan,stepKey:string,owner:string):Promise<ImagegenResult>`，新adapter和旧HTTP适配均调用该核心，原收费过程只发生一次。与HTTP对接：POST `/api/imagegen/plan`只读；POST `/api/imagegen`提交；GET同路径`?operationId=`查本人结果。
 
-- [ ] **Step 1: 写隔离执行fixture。** 沿用 `scripts/model-config-fixture.ts` 和原Skills-execution HTTP/provider spy。将真实原生generate/edit/mask payload与账本、任务、作品连起来，不能仅mock返回成功URL。断言普通旧画布prompt自动走透明方案、无候选收费0。
+- [x] **Step 1: 写隔离执行fixture。** 沿用 `scripts/model-config-fixture.ts` 和原Skills-execution HTTP/provider spy。将真实原生generate/edit/mask payload与账本、任务、作品连起来，不能仅mock返回成功URL。断言普通旧画布prompt自动走透明方案、无候选收费0。
 
 ```ts
 // fixture在本脚本定义：http调用新/旧route、隔离PG、fake供应商计数。
@@ -262,8 +262,8 @@ await assert.rejects(()=>fixture.readAsOtherOwner(first.operationId),/不存在|
 ```
 
 fixture定义实际提供 `submit(input:{prompt:string;operationId:string}):Promise<ImagegenResult>`、`id:string`、`supplierSubmissions:number`、`settledOperations():Promise<number>`、`readAsOtherOwner(id:string):Promise<ImagegenResult>`；输入有完整默认契约。用owner隔离真实DB/路由，执行计数来自供应商HTTP收到的请求，不由submit函数自行加一。
-- [ ] **Step 2: 运行 `npx tsx --conditions react-server scripts/verify-imagegen-execution.ts`。** 缺少新route/plan时失败。
-- [ ] **Step 3: 实现plan与submit顺序。** 鉴权/同源→schema→意图/冲突→素材归属和解码→候选/必要参数→报价→要求确认→冻结→任务/执行。dry-run仅读取配置和已授权素材，模型、写表、扣款0。透明原生无候选时可建立生成+已有AI抠图两步，必须所选家族生成、展示抠图模型/总价且工具范围允许；没有这条完整路径则提交前返回具体原因。纯底色已有图可走0积分chroma，不用AI虚构纯色判定。
+- [x] **Step 2: 运行 `npx tsx --conditions react-server scripts/verify-imagegen-execution.ts`。** 缺少新route/plan时失败。
+- [x] **Step 3: 实现plan与submit顺序。** 鉴权/同源→schema→意图/冲突→素材归属和解码→候选/必要参数→报价→要求确认→冻结→任务/执行。dry-run仅读取配置和已授权素材，模型、写表、扣款0。透明原生无候选时可建立生成+已有AI抠图两步，必须所选家族生成、展示抠图模型/总价且工具范围允许；没有这条完整路径则提交前返回具体原因。纯底色已有图可走0积分chroma，不用AI虚构纯色判定。
 
 ```ts
 const intent=resolveImagegenIntent(request);
@@ -275,8 +275,8 @@ if(intent.conflicts.length) throw new Error(intent.conflicts.join("；"));
 移除生成route中transparent静默换cutoutModel/gpt-image-1与失败后省略透明的分支；强制透明必须native或明确组合。新旧接口的原始userPrompt都进入resolver，内部组合步骤带冻结意图避免重复解析/二次套pipeline。复用 `withBillingIntent`、DurableImageJobs的create/paidOperation/settleResults及gateway安全回执；规划父操作自身不扣款，收费子步骤使用稳定ID和各自既有账本，总额确认覆盖所有子步骤。新增任务元数据保存plan/hash、Skill修订/用户原文/角色/实际字段/模型通道/实际输出，缺历史字段显示未记录。
 
 素材由owner受保护读取，不把预览缩略图作为模型输入；编辑按输入顺序传，mask透明重绘区核验同尺寸。上游确认未受理/终态失败才fallback；started/accepted回执丢失为pending/needs_attention，先查原任务，不触发第二付费调用。保持既有不可重放直连接口释放/人工核查政策，不把未知接受状态伪造为失败证据。原图成功而R2失败恢复相同本地字节；强制透明后处理失败保存base但整体不能标透明成功。
-- [ ] **Step 4: 跑执行fixture、`verify:billing-image-jobs`、`verify:image-gateway`和现有Skills execution。** 注入accepted timeout、终态失败、R2错误、双击、跨账号mask、引用超过通道上限、dry-run、价格版本变化。核对任务和ledger真实行，无收费供应商调用。
-- [ ] **Step 5: 提交。** `git commit -m "feat: execute shared image plans through existing billed jobs"`。
+- [x] **Step 4: 跑执行fixture、`verify:billing-image-jobs`、`verify:image-gateway`和现有Skills execution。** 注入accepted timeout、终态失败、R2错误、双击、跨账号mask、引用超过通道上限、dry-run、价格版本变化。核对任务和ledger真实行，无收费供应商调用。
+- [x] **Step 5: 提交。** `git commit -m "feat: execute shared image plans through existing billed jobs"`。
 
 ## Task 6: 独立提示词批次、恢复、取消与下载
 

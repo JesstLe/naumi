@@ -30,7 +30,7 @@ async function main() {
         const submit = await route.POST(request(initial.version, 20));
         assert.equal(submit.status, 200, await submit.clone().text());
         const { jobId } = await submit.json();
-        const deadline = Date.now() + 20000;
+        const deadline = Date.now() + Math.min(300000,Math.max(20000,Number(process.env.NAUMI_VERIFY_TIMEOUT_MS)||20000));
         while (calls < 2 && Date.now() < deadline)
             await new Promise(resolve => setTimeout(resolve, 25));
         assert.equal(calls, 2);

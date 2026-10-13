@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { resolveImagegenCapabilities,eligibleImagegenChannels,imagegenCapabilitySetSchema } from "../src/lib/imagegen/capabilities";
-import { mapImagegenParameters } from "../src/lib/imagegen/parameters";
+import { mapImagegenParameters,imagegenWireRequest } from "../src/lib/imagegen/parameters";
 import { imagegenRequestSchema } from "../src/lib/imagegen/schema";
 import type { Intent,CapabilityEvidence } from "../src/lib/imagegen/types";
 import { fixtureModelConfig } from "./model-config-unit-fixture";
@@ -40,3 +40,7 @@ assert.equal(changed.upstreamModels[0].capabilities.imagegen?.transparent?.state
 assert.equal(config.upstreamModels[0].capabilities.imagegen?.transparent?.state,"supported","Published original remains frozen");
 assert.throws(()=>applyImagegenModelParameters(config,["u1"],[{upstreamId:"u2",capabilities:{},wireMap:{}}]),/来源/);
 console.log("PASS imagegen capabilities: manual priority, frozen evidence, per-channel constraints and safe wire fields");
+
+const compression=imagegenRequestSchema.parse({version:1,operationId:"00000000-0000-4000-a000-000000000088",entry:"canvas",mode:"generate",prompt:"fixture",output:{format:"webp",compression:0}});
+assert.equal(imagegenWireRequest(compression).output.compression,undefined);
+assert.equal(imagegenWireRequest({...compression,output:{...compression.output,compressionMode:"native"}}).output.compression,0);

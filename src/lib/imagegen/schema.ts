@@ -11,6 +11,7 @@ export const imagegenChromaSchema=z.strictObject({
 }).refine(v=>v.transparentThreshold<v.opaqueThreshold,"不透明阈值必须高于透明阈值");
 export const imagegenOutputSchema=z.strictObject({
   format:z.enum(["png","jpeg","webp"]).default("png"),compression:z.number().int().min(0).max(100).optional(),
+  compressionMode:z.enum(["local","native"]).optional(),
   background:z.enum(["transparent","opaque"]).optional(),backgroundOrigin:z.enum(["current-ui","inherited","skill"]).optional(),
   flattenColor:hex.optional(),downscaleMaxDim:z.number().int().min(64).max(8192).optional(),
   name:z.string().trim().min(1).max(100).regex(/^[^/\\\u0000-\u001f]+$/).optional(),

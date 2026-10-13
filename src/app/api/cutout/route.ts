@@ -1,3 +1,7 @@
+import {currentImagegenStep} from "@/lib/imagegen/context";
+import {currentModelExecution} from "@/lib/model-config/context";
+import {inspectImagegenPixels} from "@/lib/imagegen/postprocess";
+import {currentSynchronousBilling} from "@/lib/billing/synchronous";
 import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import {withBillingRequest,configuredToolCost,synchronousChargedCredits,markBillingUpstream} from "@/lib/billing/synchronous";
@@ -324,7 +328,7 @@ async function handleObservedPost(request: Request) {
           cfg.openaiModel
         );
       };
-      if (cfg.backend === "openai" || !cfg.replicateToken) {
+      if (currentImagegenStep()&&currentModelExecution("image") || cfg.backend === "openai" || !cfg.replicateToken) {
         out = await fallback(); // 主用 gpt-image,或没配 Replicate token → 直接兜底
       } else {
         try {
@@ -335,6 +339,7 @@ async function handleObservedPost(request: Request) {
             cfg.replicateModel
           );
         } catch (e) {
+          if(currentImagegenStep()||currentSynchronousBilling()?.upstream!=="rejected")throw e;
           console.error(
             "[cutout] Replicate failed, falling back:",
             e instanceof Error ? e.message : e
@@ -348,6 +353,8 @@ async function handleObservedPost(request: Request) {
       throw e;
     }
 
+    const transparency=await inspectImagegenPixels(out);
+    if(!transparency.transparentPixels||transparency.transparentPixels===transparency.totalPixels)throw new Error("抠图未返回有效透明主体，请核对供应商能力");
     // 透明底必须是 PNG
     const id = `cut-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
     let url = `data:image/png;base64,${out.toString("base64")}`;
