@@ -45,6 +45,13 @@ export async function seedVideoFixture() {
     upstream.capabilities.video={...structuredClone(CAP_RICH),providerOptions:{seed:{type:"integer",minimum:0}}};
     upstream.parameterMap.videoWorkflow={version:1,kind:"autodl",workflowId:"full-native-workflow",inputs:[{name:"prompt",type:"prompt",path:["prompt"],required:true},{name:"image",type:"image",path:["image"],index:0,required:true},{name:"generateAudio",type:"generateAudio",path:["audio"]},{name:"duration",type:"duration",path:["duration"]},{name:"resolution",type:"resolution",path:["resolution"]},{name:"aspectRatio",type:"aspectRatio",path:["aspect_ratio"]},{name:"seed",type:"custom",path:["seed"]}]};
   }
+  if(process.env.VIDEO_FIXTURE_AGENT==="1"){
+    const key=await credentials.importPlain({providerId:"fixture-agent-provider",plain:process.env.VIDEO_API_KEY!,actor:"fixture"});
+    config.providers.push({id:"fixture-agent-provider",name:"Isolated scripted Agent",protocol:"openai-chat",baseUrl:process.env.VIDEO_FIXTURE_SUPPLIER_ORIGIN!+"/protocol/agent/v1",credentialRef:key.id,enabled:true,timeoutMs:120000,maxConcurrent:4});
+    config.upstreamModels.push({id:"fixture-agent-upstream",providerId:"fixture-agent-provider",model:"wire-agent",label:"Fixture Agent",modality:"text",enabled:true,capabilities:{...config.upstreamModels[0].capabilities,vision:false},parameterMap:{}});
+    config.publicModels.push({id:"fixture-agent",label:"Fixture Agent",modality:"text",enabled:true,visible:true,target:{type:"upstream",id:"fixture-agent-upstream"}});
+    config.bindings["agent.text"]="fixture-agent";config.bindings["text.generate"]="fixture-agent";
+  }
   const repo=createModelRepository({pool:db.getPool(),trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(","),initialize:async()=>config});
   await repo.current();
   const { uploadImage }=await import("../../src/lib/storage");

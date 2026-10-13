@@ -146,3 +146,14 @@
 保留固定infinite-canvas 68b37db04b9083c3ff0af67ffe362f85d04d1f9f的8种摄影机/8种镜头、11个焦距和10档光圈资料及光学描述，保存源码署名、AGPL许可与NOTICE。Naumi自有表单使用可编辑预设建议，已有自由文字继续保留；编译已知资料为实际光学方向，未选择的参数不自动补，禁用不追加摄影文本。运动模式中仅对真实声明的characterOrientation/character_orientation选项显示角色朝向及跟随图片/视频标签；不凭mode捏造可发送参数。
 
 本批摄影与运动界面仅类型验证，浏览器/i18n/管理员只读/390px、历史与媒体界面集中脚本、真实SSE/完整上游Skill行为与C仍待完成。D演示站/34项/分支复核/完整LinuxApp候选/蓝绿排空回滚/103发布及交接全部保持待做。103只读检查App/Worker仍c05a923，Naumi deploy.lock空闲，Hub对应锁路径不存在；没有占用发布锁或发布本轮代码，开发不持锁。
+
+## Task13 第四批：实际Agent SSE、确认与断流恢复
+
+- fixture增加独立openai-chat文字模型/加密凭据/本地HTTP SSE供应商，仅显式agentReply用例启用；通过真实统一配置解析、Router/执行传输、Pi streaming、Agent Harness和canvas/assistant入口，未向产品添加测试路由或绕过权限/计费。
+- scripted文字供应商读取实际UNTRUSTED_TOOL_RESULT封装的分镜工具返回，使用真实保存的节点ID/revision和规划run UUID。首轮模型故意携带confirm=true，服务器仍展示40积分整链报价并等待，实际任务和视频供应商创建均为0；下一轮本人明确“确认”才提交原链。
+- 原链受理后的tool_end触发真正关闭SSE/abort；随后实际重启App，通过真实Worker tick继续A→B，两个原节点获得实际结果。重放原制作链只有两个task/两次视频创建；本人历史恢复含video_nodes。未以SSE结束宣称视频完成。
+- 初次模拟响应解析忽略既有untrusted JSON字符串封装，修正fixture解析；确认回合INTENT_REQUIRED定位为Next开发按需编译节点路由导致运行模块重载/内存报价丢失。fixture在开启会话前预热节点路由以排除HMR干扰，没有开放所有写权限或削弱用户确认边界；临时诊断代码已移除。生产固定App会话/多槽恢复仍在D单独验收。
+
+实际verify-video-fusion-agent-sse.ts PASS：checkpoint-c/agent-sse-0d85f540-53e3-48b0-b6f0-03b64c9e2468/result.json，包含modelSelfConfirmationBlocked=true；此前正常未确认用例亦PASS f86a034c-d221-43d0-a298-0edb1e483c9e。原生App/PG/私有媒体/Worker/Pi/Harness真实，文字与视频供应商均为隔离模拟，不证明真实模型规划质量或付费视频质量，真实付费调用0。
+
+第三批已提交推送f43430e，33文件1292+/83-。第四批只新增fixture及SSE verifier；完整C的历史/媒体界面集中用例、浏览器390px/i18n/管理员只读和上游制作Skill行为仍待完成，不能凭SSE脚本宣称完整Task13/全C/全34项通过。D完整固定LinuxApp、演示比对、蓝绿排空/回滚/正式103上线保持待做，无本批main合并或服务器发布/持锁。

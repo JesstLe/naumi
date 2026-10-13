@@ -12,8 +12,8 @@ export function publicFixtureValue(value, key = "") {
   if(typeof value==="string"&&(value.startsWith("data:")||value.length>4000))return {materialString:true,length:value.length};
   return value;
 }
-/** @param {{assetsRoot:string,manifest:{files:any[]},token?:string,validateWire?:(call:any)=>void|Promise<void>,validatePoll?:(call:any)=>void,objectHandler?:(req:any,res:any,origin:string)=>Promise<any>}} options */
-export async function createVideoSupplier({ assetsRoot, manifest, token = randomUUID(), validateWire, validatePoll, objectHandler } = {}) {
+/** @param {{assetsRoot:string,manifest:{files:any[]},token?:string,validateWire?:(call:any)=>void|Promise<void>,validatePoll?:(call:any)=>void,objectHandler?:(req:any,res:any,origin:string)=>Promise<any>,agentReply?:(request:any)=>Promise<any>|any}} options */
+export async function createVideoSupplier({ assetsRoot, manifest, token = randomUUID(), validateWire, validatePoll, objectHandler, agentReply } = {}) {
   if (!assetsRoot || !manifest?.files?.length) throw new Error("A verified video manifest is required");
   const calls = [], tasks = new Map(), keys = new Map();
   let scenario = "success", origin = "";
@@ -59,6 +59,17 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
       const body = req.method === "POST" || req.method === "PUT" ? await getBody(req) : {};
       const protocol = url.pathname.match(/^\/protocol\/([^/]+)/)?.[1] || "openai-videos";
       const pathname = url.pathname.replace(/^\/protocol\/[^/]+/, "");
+      if(protocol==="agent"&&req.method==="POST"&&pathname==="/v1/chat/completions"){
+        if(!agentReply||body.stream!==true)return respond(res,{error:"Scripted streaming fixture required"},422);
+        calls.push({phase:"agent-chat",model:body.model,toolCount:body.tools?.length||0});
+        const reply=await agentReply(body),id=`chatcmpl-fixture-${randomUUID()}`,created=Math.floor(Date.now()/1000);
+        res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-store"});
+        const emit=(delta,finish_reason=null)=>res.write(`data: ${JSON.stringify({id,object:"chat.completion.chunk",created,model:body.model,choices:[{index:0,delta,finish_reason}]})}\n\n`);
+        emit({role:"assistant"});
+        if(reply.toolCalls?.length){emit({tool_calls:reply.toolCalls.map((tool,index)=>({index,id:tool.id||`fixture-tool-${randomUUID()}`,type:"function",function:{name:tool.name,arguments:JSON.stringify(tool.args)}}))});emit({},"tool_calls");}
+        else{emit({content:reply.text||""});emit({},"stop");}
+        res.write(`data: ${JSON.stringify({id,object:"chat.completion.chunk",created,model:body.model,choices:[],usage:{prompt_tokens:100,completion_tokens:10,total_tokens:110}})}\n\n`);return res.end("data: [DONE]\n\n");
+      }
       if(protocol==="comfyui"&&pathname==="/object_info")return respond(res,{LoadImage:{},VHS_LoadVideo:{},LoadAudio:{},CLIPTextEncode:{},SaveVideo:{},SaveImage:{},SaveAudio:{}});
       if((protocol==="comfyui"&&pathname==="/upload/image")||(protocol==="runninghub"&&pathname==="/task/openapi/upload")){
         const file=body.image||body.file;if(!file?.file||!file.bytes)return respond(res,{error:"missing uploaded media"},422);
