@@ -61,7 +61,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import NextImage from "next/image";
-import { useRouter } from "next/navigation";
+import { useWorkspaceRouter as useRouter } from "@/lib/desktop/navigation";
 import {
   ReactFlow,
   MiniMap,
@@ -1673,7 +1673,7 @@ function layoutGraph(
   return { nodes, edges };
 }
 
-export function CanvasClient() {
+export function CanvasClient({ initialProject, desktopAppearance = false }: { initialProject?: string; desktopAppearance?: boolean } = {}) {
   const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
   async function privateFetch(input:RequestInfo|URL,init:RequestInit={}){
@@ -2451,6 +2451,7 @@ export function CanvasClient() {
   const boxSelectMode = canvasTool === "marquee";
   // 画布底色:深色(默认) / 浅色白底,本地记忆
   const [lightCanvas, setLightCanvas] = useState(() => {
+    if (desktopAppearance) return true;
     try {
       return (
         typeof window !== "undefined" &&
@@ -2809,6 +2810,16 @@ export function CanvasClient() {
       setBrowsing(false); // 新建/上传/深链 → 直接进入该项目画布,不停在网格
     }
   }, [projects]);
+
+  // Optional desktop deep link; the original /canvas defaults are unchanged.
+  const desktopProjectOpened = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialProject || desktopProjectOpened.current === initialProject) return;
+    const project = projects.find(p => p.key === initialProject);
+    if (!project) return;
+    desktopProjectOpened.current = initialProject;
+    setCreatingNew(false); setActiveKey(project.key); setBrowsing(false);
+  }, [initialProject, projects]);
 
   // 同步当前打开的项目到本地(供刷新恢复);只写不清,清除交给返回/删除路径,
   // 避免初始挂载时(browsing=true)误清掉上次保存的项目。

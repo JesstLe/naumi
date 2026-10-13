@@ -23,7 +23,7 @@ export async function middleware(req: NextRequest) {
       }
       const blocked = worker ? null : await featureRequestGate(req);
       if (blocked) {
-        if (req.nextUrl.pathname.startsWith("/api/")) return blocked;
+        if (req.nextUrl.pathname.startsWith("/api/") || req.nextUrl.pathname.startsWith("/desktop/api/")) return blocked;
         const target = req.nextUrl.clone(); target.pathname = "/access-denied"; target.search = "";
         return NextResponse.redirect(target, { status: 307, headers: ACCESS_HEADERS });
       }

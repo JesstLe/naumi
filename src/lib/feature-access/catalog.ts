@@ -18,7 +18,10 @@ export function allows(policy: AccessPolicy, feature: string) {
   return ALL_FEATURE_IDS.includes(feature) && (policy.mode === "default" || policy.allowed.includes(feature));
 }
 export function pageFeature(raw: string): string | undefined {
-  const path = raw.split(/[?#]/)[0].replace(/\/+$/, "") || "/";
+  let path = raw.split(/[?#]/)[0].replace(/\/+$/, "") || "/";
+  if (path === "/desktop") path = "/dashboard";
+  else if (path === "/desktop/create") path = "/agent";
+  else if (path.startsWith("/desktop/")) path = path.slice("/desktop".length);
   if (path === "/brain" || path === "/genchat") return "agent";
   return ACCESS_FEATURES.find(feature => feature.href && (path === feature.href || path.startsWith(feature.href + "/")))?.id;
 }
@@ -29,6 +32,7 @@ export function meets(policy: AccessPolicy, requirement: AccessRequirement) {
 /** Shared data endpoints retain existing ownership checks. Entry headers/body never grant authority. */
 export function requestRequirement(path: string, method = "GET"): AccessRequirement | undefined {
   path = decodeURIComponent(path).replace(/\/+$/, "");
+  if(path.startsWith("/desktop/api/"))path=path.slice("/desktop".length);
   if (!path.startsWith("/api/")) { const id = pageFeature(path); return id ? { all: [id] } : undefined; }
   if (path.startsWith("/api/canvas/assistant")) return { all: ["canvas", "agent"] };
   if (/^\/api\/canvas\/(image-tasks|expand|annotate|text-edit)(\/|$)/.test(path)) return { all: ["canvas", "generate"] };

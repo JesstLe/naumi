@@ -32,6 +32,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // 沉浸全屏(无页脚):画布 / 对话生成。生图/套图/工作台改成和工具页一致的自然流(带页脚)。
   const isImmersive = isCanvas || path.startsWith("/genchat");
 
+  if (path === "/desktop" || path.startsWith("/desktop/")) return <>{children}</>;
+
   if (noShell) return <main className="min-h-screen">{children}</main>;
 
   return (
