@@ -3,17 +3,16 @@
 // 内部生图工作台:面向内部员工的批量电商出图工具。
 // 布局与交互流对齐团队此前使用的批量出图客户端(产品图+风格参考图 → 主图/详情图/SKU 批量任务),
 // 代码为本仓库原创实现,生成统一走 /api/generate-image 现有链路(billing + 任务轮询)。
-// 仅内部使用,界面文案固定中文,不接 i18n。
+// 界面文案固定中文,不接 i18n。
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
-import { ChevronDown, ChevronRight, Download, Loader2, Plus, RefreshCw, Upload } from "lucide-react";
+import { ChevronRight, Download, Loader2, Plus, RefreshCw, Upload } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useFeatureBilling } from "@/lib/billing/preview";
 import Link from "next/link";
-import { isLabsUnlocked } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 
 type ProductImage = {
@@ -92,8 +91,6 @@ function uid() {
 }
 
 export function WorkbenchClient() {
-  const [checked, setChecked] = useState(false);
-  const [unlocked, setUnlocked] = useState(false);
   const { user, ready } = useAuth();
   const { openAuth } = useAuthModal();
 
@@ -120,12 +117,6 @@ export function WorkbenchClient() {
     resolution,
     ratio,
   });
-
-  // 解锁校验:未解锁时渲染为普通 404,不暴露入口存在
-  useEffect(() => {
-    setUnlocked(isLabsUnlocked());
-    setChecked(true);
-  }, []);
 
   const pendingJobs = useMemo(() => {
     const list: { cardId: string; job: CardJob; name: string }[] = [];
@@ -357,49 +348,33 @@ export function WorkbenchClient() {
     }
   }
 
-  // ── 渲染:未通过解锁校验前不输出任何内容 ──
-  if (!checked) return null;
-  if (!unlocked) {
-    return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-2 text-c-text3">
-        <p className="text-4xl font-bold text-c-text2">404</p>
-        <p className="text-sm">页面不存在或已下线</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-c-bg text-c-text">
-      {/* 顶栏 */}
-      <header className="border-b border-c-line bg-c-card">
-        <div className="mx-auto flex h-12 max-w-[1400px] items-center gap-3 px-4">
-          <span className="text-[15px] font-bold">生图工作台</span>
-          <span className="rounded bg-c-track px-1.5 py-0.5 text-[11px] text-c-text3">内部版 v0.1</span>
-          <span className="text-[12px] text-c-text4">批量产品出图 · 主图 / 详情图 / SKU</span>
-          <div className="ml-auto flex items-center gap-2">
+    <div className="w-full px-5 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1400px]">
+      {/* 面包屑 + 快捷入口(对齐其它工具页) */}
+      <div className="relative mb-4">
+        <nav className="flex items-center gap-1.5 text-[13px]">
+          <Link href="/tools" className="text-c-text3 transition-colors hover:text-c-text">创作工具</Link>
+          <ChevronRight className="h-3.5 w-3.5 text-c-text4" />
+          <span className="font-semibold text-c-text">批量出图</span>
+        </nav>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <h1 className="text-[17px] font-bold leading-6">批量出图</h1>
+          <span className="text-[12px] text-c-text4">产品图 + 风格参考图 → 主图 / 详情图 / SKU 批量任务</span>
+          <div className="ml-auto flex items-center gap-2 text-[12.5px]">
             {queueRunning && (
-              <span className="flex items-center gap-1 text-[12px] text-c-text3">
+              <span className="flex items-center gap-1 text-c-text3">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 队列运行中(并发 {CONCURRENCY})
               </span>
             )}
-            <div className="relative">
-              <details className="group">
-                <summary className="flex cursor-pointer list-none items-center gap-1 rounded-md border border-c-line px-2.5 py-1.5 text-[12.5px] hover:bg-c-track">
-                  功能菜单 <ChevronDown className="h-3.5 w-3.5" />
-                </summary>
-                <div className="absolute right-0 top-full z-40 mt-1 w-44 rounded-lg border border-c-line bg-c-card py-1 shadow-lg">
-                  <Link href="/genchat" className="block px-3 py-2 text-[13px] hover:bg-c-track">聊天生图</Link>
-                  <Link href="/generate" className="block px-3 py-2 text-[13px] hover:bg-c-track">单图生成</Link>
-                  <span className="block bg-c-track px-3 py-2 text-[13px] font-medium">参考图工作台</span>
-                </div>
-              </details>
-            </div>
+            <Link href="/genchat" className="rounded-md border border-c-line px-2.5 py-1.5 hover:bg-c-track">聊天生图</Link>
+            <Link href="/generate" className="rounded-md border border-c-line px-2.5 py-1.5 hover:bg-c-track">单图生成</Link>
           </div>
         </div>
-      </header>
+      </div>
 
-      <div className="mx-auto flex max-w-[1400px] gap-4 px-4 py-4">
+      <div className="flex gap-4">
         {/* 侧栏:后台项目 */}
         <aside className="hidden w-60 shrink-0 lg:block">
           <div className="rounded-xl border border-c-line bg-c-card p-3">
@@ -711,11 +686,11 @@ export function WorkbenchClient() {
             </section>
           )}
 
-          <p className="pb-6 text-center text-[11.5px] text-c-text4">
-            内部工具 · 生成走主站模型通道并正常计积分 · <ChevronRight className="inline h-3 w-3" />
-            任务提交后可关闭页面,后台继续
+          <p className="pb-6 pt-2 text-center text-[11.5px] text-c-text4">
+            生成走主站模型通道并正常计积分;任务提交后可关闭页面,后台继续。
           </p>
         </main>
+      </div>
       </div>
     </div>
   );
