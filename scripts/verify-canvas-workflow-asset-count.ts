@@ -24,8 +24,9 @@ function input(count: number) {
   return { operationId: randomUUID(), html: clipboardHtml({ version: "10.0.0", elements }), projectKey: null, x: 0, y: 0 };
 }
 async function main() {
-  const { importCanvasWorkflow } = await import(process.env.WORKFLOW_IMPORT_SOURCE_PATH
+  const source: typeof import("../src/lib/canvas-workflow-import") = await import(process.env.WORKFLOW_IMPORT_SOURCE_PATH
     ? pathToFileURL(process.env.WORKFLOW_IMPORT_SOURCE_PATH).href : "../src/lib/canvas-workflow-import");
+  const { importCanvasWorkflow } = source;
   assert.equal(process.env.DATABASE_URL, "postgresql://count_fixture:count_fixture_only@127.0.0.1:55471/count_fixture");
   assert.match(MEDIA_DIR.replaceAll("\\", "/"), /canvas-workflow-asset-limit-20261013\/media$/);
   const png = await sharp({ create: { width: 8, height: 8, channels: 4, background: "#eef2ff" } }).png().toBuffer();
