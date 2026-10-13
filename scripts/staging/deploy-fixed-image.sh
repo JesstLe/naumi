@@ -17,7 +17,7 @@ test "$(readlink /proc/$PID/fd/8)" = /opt/naumi-reverse-hub/releases/deploy.lock
 ! flock -n /opt/naumi-reverse-hub/releases/deploy.lock true
 test ! -e "$E/TARGET_SWITCHED"
 test -r "$PRIVATE_ENV" && test -r "$IMAGE_ARCHIVE"
-ENV=$ROOT/config/staging.env
+ENV=$ROOT/config/.env
 COMPOSE=$ROOT/config/docker-compose.yml
 test -s "$ENV" && test -s "$COMPOSE"
 test "$(docker inspect naumi-staging-app-1 --format '{{.Image}}')" = "$BASELINE"
@@ -54,9 +54,9 @@ docker image inspect "$(cat "$E/backup/IMAGE_ID")" >/dev/null
 if [ "${1:-}" = --check ]; then echo ROLLBACK_MATERIAL=PASS; exit; fi
 PID=$(cat "$E/lock.pid");kill -0 "$PID"
 test "$(readlink /proc/$PID/fd/9)" = "$ROOT/releases/deploy.lock"
-cp -a "$E/backup/staging.env" "$ROOT/config/staging.env"
+cp -a "$E/backup/staging.env" "$ROOT/config/.env"
 cp -a "$E/backup/docker-compose.yml" "$ROOT/config/docker-compose.yml"
-docker compose --env-file "$ROOT/config/staging.env" -f "$ROOT/config/docker-compose.yml" --profile workers up -d --no-build --no-deps app video-worker
+docker compose --env-file "$ROOT/config/.env" -f "$ROOT/config/docker-compose.yml" --profile workers up -d --no-build --no-deps app video-worker
 date -u > "$E/ROLLED_BACK"
 ROLLBACK
 chmod 700 "$E/ROLLBACK.sh"

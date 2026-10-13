@@ -17,9 +17,11 @@ async function main() {
   assert.ok(signed.searchParams.has('X-Amz-Signature'));
   await assert.rejects(()=>storage.presignStoredObject('GET','../secret',60));
   const originalFetch=globalThis.fetch;
-  globalThis.fetch=async()=>new Response(null,{status:503});
   const content=Buffer.from('preserved result');
+  let uploadedLength:string|null=null;
+  globalThis.fetch=async(input,init)=>{const request=input instanceof Request?input:new Request(input,init);uploadedLength=request.headers.get('content-length');return new Response(null,{status:503});};
   const location=await storage.writeStoredObject(content,'application/octet-stream','results/one.bin');
+  assert.equal(uploadedLength,String(content.length),'S3 PUT must carry a length through Next fetch');
   assert.equal(location.remoteReady,false,'storage outage preserves model result locally');
   assert.deepEqual(await readFile(path.join(process.env.MEDIA_DIR,'results/one.bin')),content);
   assert.deepEqual((await storage.readManagedObject('/media/results/one.bin')).bytes,content);

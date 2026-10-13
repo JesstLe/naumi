@@ -158,7 +158,7 @@ export async function writeStoredObject(bytes: Uint8Array, contentType: string, 
   if (storageDriver === "local") return { remoteReady: false };
   try {
     const response = await remoteFetch(normalized, { method: "PUT", body: Buffer.from(bytes),
-      headers: { "content-type": contentType, "cache-control": "private, max-age=300" },
+      headers: { "content-type": contentType, "content-length": String(bytes.byteLength), "cache-control": "private, max-age=300" },
       signal: AbortSignal.timeout(30_000) });
     return { remoteReady: response.ok };
   } catch { return { remoteReady: false }; }
