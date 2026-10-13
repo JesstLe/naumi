@@ -79,7 +79,9 @@ async function main() {
     console.log('INITIAL_MEASUREMENT=FIXED_NUMERIC_ONLY OFFSCREEN_FULL_FIT=PASS OBSERVED_SIZE_PRECEDENCE=RETAINED AUTOSIZE=DOM_MEASURED');
     const css=readFileSync('src/app/globals.css','utf8');
     assert.match(client,/!selectedEdge && !linking && "canvas-render-layers"/);
-    assert.match(css,/\.canvas-render-layers \.react-flow__nodes,\s*\.canvas-render-layers \.react-flow__edges \{ will-change: transform; \}/);
+    assert.match(css,/data-canvas-layer-order="composite"/);
+    assert.match(css,/\.react-flow__edges \{ will-change: transform; \}/);
+    assert.match(client,/<CanvasRenderLayerGuard \/>/);
     assert.doesNotMatch(css,/\.react-flow__node[^s\n{]*\{[^}]*will-change/);
     const decorations=readFileSync('src/components/canvas/workflow-import-nodes.tsx','utf8');
     assert.match(decorations,/<CanvasImage/);assert.match(decorations,/forceOriginal=\{!!selected\|\|original\}/);
