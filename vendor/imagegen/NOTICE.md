@@ -1,0 +1,8 @@
+# Imagegen来源与修改说明
+
+来源：用户提供的imagegen-skill-20261012.zip，SHA256：3d1570ccef9e757dfaf19f3ecbfa2b32157827d51106a535beecd7a29c50931d。
+包内imagegen文件与2026-10-12本机Codex系统技能逐字节一致。Apache-2.0许可证见LICENSE.txt。
+
+Naumi于2026-10-13改编19类流程及提示词组织，并将remove_chroma_key.py像素算法移植到受控TypeScript/Sharp模块。本站鉴权、资源上限、不可变作品、参数来源、收费重试和执行器遵循Naumi业务规则；不执行原Python脚本、不调用Codex客户端内置工具、不安装用户可执行包。
+
+该文件只记录来源和改动范围，不代表所有能力或供应商已通过真实验收。功能和实际输出以本轮交接证据为准。
