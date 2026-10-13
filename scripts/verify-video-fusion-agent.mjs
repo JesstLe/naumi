@@ -37,7 +37,8 @@ export async function runVideoAgentBrowser(h,{anchorId,projectKey,evidence,getCh
     panel=page.getByTestId("canvas-assistant-panel");if(!await panel.isVisible())await page.getByTestId("canvas-agent-toggle").click();await panel.waitFor();
     await panel.getByRole("button",{name:"项目对话记录",exact:true}).click();await panel.getByTestId("canvas-assistant-history-item").first().click();await expect(panel).toContainText(request);
     await expect(page.getByTestId("canvas-video-node")).toHaveCount(3);
-    for(const [index,node] of run.nodes.entries()){
+    for(const node of run.nodes){
+      const index=chain.nodes.findIndex(planned=>planned.id===node.id);assert.ok(index>=0);
       const saved=await h.request("a","GET",`/api/canvas/video-nodes/${node.id}`);assert.equal(saved.body.node.lastTaskId,node.taskId);assert.ok(saved.body.node.lastResultId);
       const video=page.locator(`[data-id="${node.id}"] video`);await video.waitFor({state:"attached",timeout:60000});
       await page.waitForFunction(id=>{const video=document.querySelector(`[data-id="${id}"] video`);return video&&video.readyState>=1&&video.videoWidth>0;},node.id,{timeout:60000});

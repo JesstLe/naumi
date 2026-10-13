@@ -1778,6 +1778,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const canvasCopyHandlerRef = useRef<(event: ClipboardEvent) => void>(() => {});
   const canvasPasteHandlerRef = useRef<(event: ClipboardEvent) => void>(() => {});
   const [hasClip, setHasClip] = useState(false);
+  useEffect(() => {
+    // The portable clipboard already persists owned node identities. Restore its
+    // availability after a project navigation/reload, and never carry another
+    // account's in-memory clipboard into the next account.
+    nodeClipRef.current = null;
+    genericNodeClipRef.current = null;
+    canvasCopyIntentRef.current = null;
+    const clip = readGenericNodeClip();
+    if (clip) genericNodeClipRef.current = clip;
+    setHasClip(!!clip);
+  }, [user?.email]);
   const [copyTip, setCopyTip] = useState(false);
   const rootUploadRef = useRef<HTMLInputElement>(null);
   // 空白右键「上传图片/添加节点」时记下落点(画布坐标)与挂靠的当前项目根,供 uploadRoot 用

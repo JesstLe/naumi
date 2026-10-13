@@ -193,3 +193,17 @@ fixture扩展独立KIE motion模型，仅uiModels启用，单图/单视频/无�
 固定上游制作规则重新核对：IC video-single-shot/video-multi-shot/video-extension/video-editing/script/audio 中还有更细的单镜头职责、多镜头时间线/效果清单/密度与叙事弧、分镜拼图面板保留、逐字剧本切片/正式资产与持续性变体、默认硬切及同机位三类例外、前传语义、四种编辑变化/保持条款、音色样本与最终朗读的独立职责。当前 production-prompt.ts 只覆盖通用规则，完整规则融合与相应行为验收仍未完成，不能凭 scripted Agent 用例宣称 V12—V14 全部通过。
 
 完整 C 仍缺两窗口修改冲突、项目切换/复制/撤销/锁定/缩放/批量工作流、图片回归及上述规则；D 保持未完成。本批本机 fixture 都由 finally 停止，未连接103、持发布锁或发布。最新 fetch main 已从56e5480推进到3ab2418（新增画布性能/文字撤销/层级绘制等），准备在独立分支保存本批后整合，不覆盖共享checkout。
+
+## Task11—13 第七批：主线整合、制作规则与真实画布交互
+
+第六批测试已保存5ceb29f；将最新origin/main3ab2418整合到独立分支，合并SHA1eba865，只有canvas-client import区冲突，保留视频全部imports与CanvasPerformanceProbe，未切换/覆盖共享checkout。npm ci完成721包（新增主线fake-indexeddb）；合并后完整TypeScript、verify-canvas-render-layer-order和verify-canvas-text-edit-history均PASS。合并后原Chrome设置/视频生成/首帧/播放/真实下载/实际彩色预览/只读/390px/英文回归PASS：canvas-browser-2494ea71-055f-4698-92a8-45997fe13329/result.json，session9128 exit0。
+
+制作规则按固定IC的script/single-shot/multi-shot/extension/editing/audio细化，实际代码为src/lib/video/production-prompt.ts，范围及限制见[制作规则记录](2026-10-14-canvas-video-production-rules.md)。真实Agent供应商正常system消息已包含硬切、同机位例外、正式替换图片、拼图顺序及音色职责；更新后的完整Agent浏览器恢复用例PASS：agent-browser-bf739115-8044-48b0-bc9b-d6ddf5c03530/result.json，包含sourceAdaptedProductionRulesInActualModelSystem=true。首次合并回归把workflow查询返回数组顺序当镜头顺序导致对白断言错，改按规划的真实节点ID核对；未修改产品顺序或对白。
+
+新增verify-video-fusion-canvas-interactions.ts/.mjs：真实两窗口同时编辑，第二窗口409仍保留完整草稿且不覆盖已保存对白；真实右键复制节点→页面导航到另一项目→粘贴，配置与有序正式引用完整复制；实际GUI撤销/重做同一副本身份；源项目仍一节点，目标项目原节点内容保持。真实锁定后textarea只读、拖动坐标不变、设置/生成禁用；解锁后实际鼠标调整宽高，完整对白/引用不变且刷新保留。最后换原生Cookie到账号B并访问B本人项目，不能粘贴A节点，读取A节点404，UI只显示B节点；无生成任务/供应商创建/pageerror。
+
+浏览器发现产品问题：generic节点剪贴板已将owner和稳定ID写localStorage，但页面重载后hasClip未恢复，粘贴菜单禁用。canvas-client按真实当前user.email初始化：清空前账号内存引用，使用既有严格owner/marker/ID校验读取本人存储并恢复可用性；服务端复制鉴权继续保留，没有读取剪贴板完整媒体或自动粘贴。初次用例还需将带CtrlV提示的菜单accessible name按前缀匹配；截图已证明实际菜单禁用，不将选择器问题当产品通过。
+
+修复后集中用例先PASS ff176bff（不含新账号切换），最终完整PASS：canvas-interactions-2e53e077-b6e5-4ef6-8e14-f4a8382a1198/result.json，clipboardDoesNotCarryAcrossAccounts=true。两个最终脚本顺序执行session41923 exit0，finally均清理浏览器和fixture App/Worker。最终完整TypeScript session90341 exit0，diff结构检查通过。上述证据均在本worktree忽略output/canvas-video-fusion-20261013/checkpoint-c；没有付费视频调用。
+
+剩余C仍含批量工作流/更多图片保护回归及V12—V14完整行为验收，不能凭规则注入断言证明真实模型遵循规则或视频质量。新源码核查还需确认extend_video/edit_video当前只接受专用mode，而上游某些续写/编辑原本通过显式支持的视频reference完成；下一批应依据真实cap及正式source-video验证该差异，不用文生冒充、不静默改模式。D在线演示/固定本地上游实操、34项逐项证据、新分支复核、完整固定LinuxApp、蓝绿/排空/回滚、103上线及交接继续未完成。开发全程未持103部署锁，本批未发布。
