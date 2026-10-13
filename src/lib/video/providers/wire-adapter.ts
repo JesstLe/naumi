@@ -3,7 +3,7 @@ import {currentModelExecution} from "../../model-config/context";
 import {modelEndpointFetch} from "../../model-config/transport";
 import {supplierCostFetch} from "../../supplier-cost/collect";
 import {readBounded} from "../../supplier-cost/io";
-import {readLimitedVideoResponse} from "../result-download";
+import {downloadVideoResultAsset} from "./result-fetch";
 import {PermanentVideoCreateError,TransientPollError,UnsupportedVideoCancellationError,type VideoGenerationRequest,type VideoProviderAdapter,type VideoTaskSnapshot} from "../types";
 import type {VideoProviderRuntimeConfig} from "./config";
 import {buildVideoCreate,buildVideoPoll,buildVideoCancel,decodeVideoCreated,decodeVideoPolled,field,string,type VideoWireContext,type VideoWireRequest} from "./wire";
@@ -46,7 +46,8 @@ export function createWireVideoAdapter(config:VideoProviderRuntimeConfig):VideoP
     catch(error){if(creating)throw error;throw new TransientPollError("视频状态查询暂时不可用",error);}
     if(wire.method==="DELETE"&&response.ok){await response.body?.cancel();return {};}
     if(wire.method==="DELETE"&&[405,501].includes(response.status)){await response.body?.cancel();throw new UnsupportedVideoCancellationError();}
-    let payload:unknown;try{payload=JSON.parse(await readBounded(response,512*1024));}catch{if(creating)throw new Error("视频创建响应无法核对");throw new TransientPollError("视频状态响应不是有效JSON");}
+    const maxJson=!creating&&profile.startsWith("tfrouter-")?Math.ceil(200*1024*1024*4/3)+2*1024*1024:512*1024;
+    let payload:unknown;try{payload=JSON.parse(await readBounded(response,maxJson));}catch{if(creating)throw new Error("视频创建响应无法核对");throw new TransientPollError("视频状态响应不是有效JSON或超过限额");}
     if(!response.ok){const message=string(field(payload,"error.message"))||string(field(payload,"message"))||`视频接口HTTP ${response.status}`,text=config.apiKey?message.split(config.apiKey).join("[redacted]"):message;
       if(creating&&response.status>=400&&response.status<500&&response.status!==429)throw new PermanentVideoCreateError(text,response.status);
       throw new TransientPollError(text);
@@ -61,6 +62,7 @@ export function createWireVideoAdapter(config:VideoProviderRuntimeConfig):VideoP
       const resultAssets=decoded.outputFiles.map(file=>({kind:file.kind,url:videoWireEndpoint(config,"/view?"+new URLSearchParams({filename:file.filename,subfolder:file.subfolder,type:file.type}).toString())}));
       return {...decoded,resultAssets,resultUrl:resultAssets.find(asset=>asset.kind==="video")?.url};
     },
+    async fetchResultAsset(_task,asset){return downloadVideoResultAsset(config,asset);},
     async fetchResult(task,result){
       if(result.inlineResult){
         const source=result.inlineResult;
@@ -68,14 +70,7 @@ export function createWireVideoAdapter(config:VideoProviderRuntimeConfig):VideoP
         return {bytes:Uint8Array.from(Buffer.from(source.base64,"base64")),mimeType:source.mimeType};
       }
       const target=result.resultUrl||videoWireEndpoint(config,config.contentPath?.replaceAll("{id}",encodeURIComponent(task.upstreamTaskId))||`/v1/videos/${encodeURIComponent(task.upstreamTaskId)}/content`);
-      const sameOrigin=new URL(target).origin===new URL(config.baseUrl).origin;
-      // Credentials only go to the configured origin; redirects are rejected by the pinned transport.
-      const downloadBase=new URL(target);downloadBase.search="";downloadBase.hash="";
-      const download=modelEndpointFetch(downloadBase.href,{trustedOrigins});
-      const headers:Record<string,string>=sameOrigin&&(profile==="gemini"||profile==="comfyui"||!result.resultUrl)?profile==="gemini"?{"x-goog-api-key":config.apiKey}:{authorization:config.rawAuthorization?config.apiKey:`Bearer ${config.apiKey}`} : {};
-      if(!config.apiKey)delete headers.authorization;
-      const response=await download(target,{headers,signal:AbortSignal.timeout(180000)});
-      const value=await readLimitedVideoResponse(response);return {bytes:value.bytes,mimeType:value.mimeType};
+      return downloadVideoResultAsset(config,{kind:"video",url:target});
     }};
   if(profile==="ark"||profile==="openai-videos")adapter.cancel=async task=>{const wire=buildVideoCancel(restored(task),task.upstreamTaskId);if(!wire)throw new Error("该协议不支持取消");await send(wire);};
   return adapter;

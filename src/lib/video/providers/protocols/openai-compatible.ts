@@ -1,4 +1,5 @@
 import {createdResult,field,imageWireValue,polled,rejectAdvanced,selectWireOptions,unsupportedWire,wireReferences,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {mediaExtension} from "../../media-formats";
 // IC 68b37db web/src/services/api/video.ts: distinct Grok2API, CogVideoX3 and Agnes wire forms.
 function dimensions(context:VideoWireContext){
   const input=context.request;if(input.width&&input.height)return `${input.width}x${input.height}`;
@@ -37,7 +38,7 @@ export function buildOpenAICompatibleCreate(context:VideoWireContext):VideoWireR
   if(input.references.some(ref=>ref.kind!=="image")||images.length>1||refs.last)unsupportedWire(context,"OpenAI Videos仅支持一张输入图片");
   const body=new FormData();body.set("model",input.modelId);body.set("prompt",input.prompt);body.set("seconds",String(input.durationSeconds));body.set("size",dimensions(context));
   const image=input.references[0];if(image){if(!image.inlineData)unsupportedWire(context,"multipart图片须由服务端读取原始字节");
-    const bytes=Uint8Array.from(Buffer.from(image.inlineData.data,"base64"));body.set("input_reference",new Blob([bytes],{type:image.inlineData.mimeType}),"reference.png");}
+    const bytes=Uint8Array.from(Buffer.from(image.inlineData.data,"base64"));body.set("input_reference",new Blob([bytes],{type:image.inlineData.mimeType}),`reference.${mediaExtension(image.inlineData.mimeType)}`);}
   selectWireOptions(context,{});
   return {path:"/v1/videos",method:"POST",encoding:"multipart",body};
 }

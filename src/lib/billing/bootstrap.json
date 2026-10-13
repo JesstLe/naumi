@@ -724,6 +724,21 @@
       },
       "rules": []
     },
+    "video.process": {
+      "label": "视频媒体处理",
+      "enabled": false,
+      "unit": "task",
+      "pricing": { "mode": "fixed", "credits": 0 },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
     "video.generate": {
       "label": "video.generate",
       "enabled": true,

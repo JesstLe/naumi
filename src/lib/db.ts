@@ -5055,6 +5055,8 @@ export async function completeVideoTask(input: {
   resultStorageKey?: string;
   lastResponse?: unknown;
   artworks?:Omit<ArtworkRecord,"createdAt">[];
+  resultAssets?:import("./video/result-assets").SavedVideoResultAsset[];
+  resultMetadataWarnings?:Array<{artworkId:string;code:string;expected:unknown;actual:unknown}>;
 }): Promise<void> {
   await ensureSchema();
   const email = input.email.toLowerCase();
@@ -5090,12 +5092,18 @@ export async function completeVideoTask(input: {
       return;
     }
     if(task.status==="failed"||task.status==="cancelled")throw new Error("终止的视频任务不能再次结算完成");
+    if(input.resultAssets?.length){
+      const existing=(await client.query("SELECT id,email,image_url,video_url FROM app_artworks WHERE id=ANY($1::text[]) FOR SHARE",[input.resultAssets.map(asset=>asset.artworkId)])).rows;
+      for(const row of existing){const asset=input.resultAssets.find(item=>item.artworkId===row.id)!;
+        if(row.email!==email||(asset.kind==="image"?row.image_url:row.video_url||row.image_url)!==asset.url)throw new Error("视频产物作品身份冲突，不能完成结算");}
+    }
     if(input.artworks)await addArtworksTx(client,email,input.artworks);
+    if(input.resultAssets)for(const asset of input.resultAssets)await client.query("UPDATE app_artworks SET image_width=$3,image_height=$4 WHERE email=$1 AND id=$2",[email,asset.artworkId,asset.probe?.width||null,asset.probe?.height||null]);
     const projectKey=task.parameters?.projectKey;
     if(typeof projectKey==="string"&&/^(?:tree|batch):[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(projectKey)){
       const kind=projectKey.slice(0,projectKey.indexOf(":")),projectId=projectKey.slice(projectKey.indexOf(":")+1);
       const linked=await client.query(`UPDATE app_artworks SET group_id=CASE WHEN $3='tree' THEN $4 ELSE group_id END,
-        batch_id=CASE WHEN $3='batch' THEN $4 ELSE batch_id END WHERE email=$1 AND id=$2 AND deleted_at IS NULL`,[email,input.artworkId,kind,projectId]);
+        batch_id=CASE WHEN $3='batch' THEN $4 ELSE batch_id END WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL`,[email,input.artworks?.map(art=>art.id)||[input.artworkId],kind,projectId]);
       if(!linked.rowCount)throw new Error("视频产物不存在，不能完成项目关联");
     }
     if(task.billing_quote){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-video-${input.id}`,{state:"succeeded",items:[{id:input.id,state:"succeeded",executedQuality:task.parameters?.qualityAudit?.executed||task.billing_quote.facts.quality}]});}else if (meterOn && Number(task.cost) > 0) {
@@ -5120,9 +5128,11 @@ export async function completeVideoTask(input: {
       `UPDATE app_video_tasks SET
          status = 'completed', progress = 100, artwork_id = $3, video_url = $4,
          error = '', poll_lock_until = NULL, completed_at = now(), updated_at = now(),
-         result_storage_key = $5, last_response = $6::jsonb
+         result_storage_key = $5, last_response = $6::jsonb,
+         parameters=CASE WHEN $7::jsonb IS NULL THEN parameters ELSE parameters || jsonb_build_object('resultAssets',$7::jsonb,'resultArtworkIds',$8::jsonb,'resultMetadataWarnings',$9::jsonb) END
        WHERE email = $1 AND id = $2`,
-      [email, input.id, input.artworkId, input.videoUrl, input.resultStorageKey || "", JSON.stringify(input.lastResponse ?? {})]
+      [email, input.id, input.artworkId, input.videoUrl, input.resultStorageKey || "", JSON.stringify(input.lastResponse ?? {}),input.resultAssets?JSON.stringify(input.resultAssets):null,
+        JSON.stringify(input.resultAssets?.map(asset=>asset.artworkId)||[]),JSON.stringify(input.resultMetadataWarnings||[])]
     );
     await client.query(
       `INSERT INTO app_video_results

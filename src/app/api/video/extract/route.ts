@@ -1,99 +1,47 @@
-import crypto from "crypto";
-import { mkdir, rm, writeFile } from "fs/promises";
-import os from "os";
-import path from "path";
-import { spawn } from "child_process";
-import { NextResponse } from "next/server";
+import {randomUUID} from "node:crypto";
+import {z} from "zod";
+import {NextResponse} from "next/server";
+import {authenticatedEmail} from "@/lib/request-auth";
+import {listArtworksByIds} from "@/lib/db";
+import {storageKeyFromManagedUrl} from "@/lib/storage";
+import {ModelConfigError} from "@/lib/model-config/types";
+import {BillingError} from "@/lib/billing/types";
+import {MediaPriceChangedError} from "@/lib/video/media-billing";
+import {createMediaJob,getMediaJob} from "@/lib/video/media-jobs";
 
-import { authenticatedEmail } from "@/lib/request-auth";
-import { isManagedImageUrl, readManagedObject, uploadImage, privateMedia, storageKeyFromManagedUrl } from "@/lib/storage";
-import {canReadMedia} from '@/lib/media-assets';
-import { addArtworks, dbEnabled, listArtworksByIds } from "@/lib/db";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const maxDuration = 180;
-
-function runFfmpeg(input: string, kind: "frame" | "audio", timestamp: number): Promise<Uint8Array> {
-  const args = kind === "frame"
-    ? ["-hide_banner", "-loglevel", "error", "-ss", String(timestamp), "-i", input, "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "pipe:1"]
-    : ["-hide_banner", "-loglevel", "error", "-i", input, "-vn", "-acodec", "libmp3lame", "-f", "mp3", "pipe:1"];
-  return new Promise((resolve, reject) => {
-    const child = spawn("ffmpeg", args, { windowsHide: true });
-    const chunks: Buffer[] = [];
-    const errors: Buffer[] = [];
-    child.stdout.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-    child.stderr.on("data", (chunk) => errors.push(Buffer.from(chunk)));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code !== 0 || !chunks.length) reject(new Error(errors.join("").slice(0, 500) || "视频抽取失败"));
-      else resolve(new Uint8Array(Buffer.concat(chunks)));
-    });
-  });
-}
-
-export async function POST(request: Request) {
-  const email = await authenticatedEmail(request);
-  if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  const body = await request.json().catch(() => null) as { videoUrl?: string; kind?: string; timestamp?: number; parentArtworkId?: string } | null;
-  const videoUrl = String(body?.videoUrl || "").trim();
-  const kind = body?.kind === "audio" ? "audio" : "frame";
-  const timestamp = Math.max(0, Math.min(3600, Number(body?.timestamp || 0)));
-  if (!videoUrl || (!isManagedImageUrl(videoUrl) && !/^https?:\/\//i.test(videoUrl))) {
-    return NextResponse.json({ error: "视频地址无效" }, { status: 400 });
-  }
-  const id = crypto.randomUUID();
-  const key=storageKeyFromManagedUrl(videoUrl);
-  if(privateMedia&&key&&!await canReadMedia(key,email))return NextResponse.json({error:'素材不存在'},{status:404});
-  const workDir = path.join(os.tmpdir(), `naumi-video-${id}`);
-  const inputPath = path.join(workDir, "input.mp4");
-  try {
-    await mkdir(workDir, { recursive: true });
-    if (isManagedImageUrl(videoUrl)) {
-      const object = await readManagedObject(videoUrl, 200 * 1024 * 1024);
-      await writeFile(inputPath, object.bytes);
-    } else {
-      const response = await fetch(videoUrl, { signal: AbortSignal.timeout(60_000) });
-      if (!response.ok) throw new Error(`读取视频失败(${response.status})`);
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.byteLength > 200 * 1024 * 1024) throw new Error("视频超过 200MB 上限");
-      await writeFile(inputPath, bytes);
-    }
-    const bytes = await runFfmpeg(inputPath, kind, timestamp);
-    const mimeType = kind === "frame" ? "image/png" : "audio/mpeg";
-    const storageKey = `videos/extracted/${id}.${kind === "frame" ? "png" : "mp3"}`;
-    const url = await uploadImage(bytes, mimeType, storageKey,undefined,email);
-    let artworkId = "";
-    const parentArtworkId = String(body?.parentArtworkId || "").trim().slice(0, 160);
-    if (dbEnabled && parentArtworkId) {
-      const parent = (await listArtworksByIds(email, [parentArtworkId]))[0];
-      if (!parent) return NextResponse.json({ error: "父视频节点不存在或无权访问" }, { status: 404 });
-      artworkId = `vid-extract-${id}`;
-      await addArtworks(email, [{
-        id: artworkId,
-        title: kind === "frame" ? `视频帧 · ${Math.round(timestamp)}s` : "视频音轨",
-        category: kind === "frame" ? "main" : "audio",
-        creationProvenance: { version: 1, operation: "video-extract", entry: "canvas", ref: id, evidence: "server-route" },
-        prompt: "",
-        status: "completed",
-        image: kind === "frame" ? url : "",
-        gradient: "from-slate-100 to-zinc-100",
-        style: null,
-        ratio: null,
-        resolution: null,
-        source: "canvas",
-        parentId: parentArtworkId,
-        parentIds: [],
-        origin: "canvas",
-        width: kind === "frame" ? 0 : 0,
-        height: kind === "frame" ? 0 : 0,
-        videoUrl: kind === "audio" ? url : null,
-      }], `vid-extract-${id}`);
-    }
-    return NextResponse.json({ ok: true, kind, url, mimeType, storageKey, artworkId, timestamp: kind === "frame" ? timestamp : 0 });
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "视频抽取失败" }, { status: 502 });
-  } finally {
-    await rm(workDir, { recursive: true, force: true }).catch(() => {});
+export const runtime="nodejs";
+export const dynamic="force-dynamic";
+export const maxDuration=240;
+const inputSchema=z.object({videoUrl:z.string().min(1).max(3000),kind:z.enum(["frame","audio"]).default("frame"),
+  timestamp:z.union([z.number().finite().nonnegative(),z.literal("first"),z.literal("last")]).default(0),parentArtworkId:z.string().min(1).max(160).optional(),
+  operationId:z.string().uuid().optional(),billingConfirmation:z.object({version:z.number().int().positive(),credits:z.number().int().nonnegative()}).strict().optional()}).strict();
+/** Compatibility projection for existing canvas actions. All actual processing is
+ * owned, persistent and isolated; long operations return the durable job ID. */
+export async function POST(request:Request){
+  const actor=await authenticatedEmail(request);if(!actor)return NextResponse.json({error:"请先登录"},{status:401});
+  let jobId:string|undefined;
+  try{
+    const parsed=inputSchema.safeParse(await request.json());if(!parsed.success)throw new ModelConfigError("INVALID_EXTRACT_REQUEST","媒体抽取参数无效",422);
+    const input=parsed.data,key=storageKeyFromManagedUrl(input.videoUrl);if(!key)throw new ModelConfigError("MEDIA_INPUT_UNAVAILABLE","请先将外部视频上传到媒体库",422);
+    if(input.parentArtworkId){const parent=(await listArtworksByIds(actor,[input.parentArtworkId]))[0];
+      if(!parent||storageKeyFromManagedUrl(parent.videoUrl||parent.image)!==key)throw new ModelConfigError("MEDIA_INPUT_UNAVAILABLE","父视频不存在或与素材不一致",404);}
+    const header=request.headers.get("x-naumi-billing-operation-id"),operationId=input.operationId||(header&&z.string().uuid().safeParse(header).success?header:randomUUID());
+    const created=await createMediaJob(actor,{operationId,action:input.kind==="frame"?"frame":"extract_audio",inputs:[input.parentArtworkId||key],timestamp:input.timestamp,billingConfirmation:input.billingConfirmation});
+    jobId=created.id;
+    const deadline=Date.now()+180000;
+    do{
+      const job=await getMediaJob(actor,created.id);if(!job)throw new ModelConfigError("MEDIA_JOB_UNAVAILABLE","媒体任务不存在",404);
+      if(job.status==="completed"){
+        const output=job.outputs[0];if(!output)throw new Error("媒体抽取没有输出");
+        return NextResponse.json({ok:true,kind:input.kind,jobId:job.id,url:output.url,mimeType:output.mimeType,storageKey:output.storageKey,artworkId:output.artworkId,
+          timestamp:input.kind==="frame"?input.timestamp:0,metadata:output.probe,cost:job.cost});
+      }
+      if(job.status==="failed"||job.status==="cancelled")return NextResponse.json({error:job.error||"媒体处理已停止",jobId:job.id,status:job.status},{status:422});
+      await new Promise(resolve=>setTimeout(resolve,300));
+    }while(Date.now()<deadline&&!request.signal.aborted);
+    return NextResponse.json({ok:true,jobId:created.id,status:"processing"},{status:202});
+  }catch(error){
+    if(error instanceof ModelConfigError||error instanceof BillingError)return NextResponse.json({error:error.message,code:error.code,...(error instanceof MediaPriceChangedError?{quote:error.quote}:{})},{status:error.status});
+    return NextResponse.json({error:"媒体抽取暂不可用，请稍后重试",...(jobId?{jobId}:{})},{status:503});
   }
 }

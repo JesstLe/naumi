@@ -1,4 +1,5 @@
 import {materializeVideoReferences} from "./reference-materialization";
+import {createHash} from "node:crypto";
 import {createValidatedVideo,videoCreationInputDigest} from "./submission";
 import {videoSubmissionSchema} from "./submission-schema";
 import {VideoContractError} from "./contract";
@@ -31,18 +32,18 @@ import {
   noteVideoTaskResultObserved,
   recordVideoTaskPoll,
   scheduleVideoTaskRetry,
-  stageVideoTaskResult,
   touchReservation,
 } from "@/lib/db";
-import { storageEnabled, uploadImage,readManagedObject } from "@/lib/storage";
-import {probeVideo} from "./media";
-import type {MediaProbe} from "./media-job-schema";
-import { completeVideoTask } from "@/lib/db";
+
+import {completeVideoResultSet} from "./result-completion";
+import {mediaExtension} from "./media-formats";
+
+
 import { getPool } from "@/lib/db";
 import { isImportedHistory } from "@/lib/staging-history";
 import { PermanentVideoCreateError, TransientPollError } from "@/lib/video/types";
 import { getVideoProvider } from "@/lib/video/providers/adapter";
-import { readLimitedVideoResponse } from "@/lib/video/result-download";
+
 import { resolveOpenAiVideosConfig } from "@/lib/video/providers/openai-videos";
 import { configuredVideoProviders, getVideoProviderConfig, publicProviderSnapshot } from "@/lib/video/providers/config";
 import type { VideoTaskRow } from "@/lib/db";
@@ -92,17 +93,6 @@ function sanitizeVideoProviderPayload(value: unknown, depth = 0): unknown {
     ]));
   }
   return value;
-}
-
-function videoExtensionForMime(mimeType: string): string {
-  const mime = mimeType.toLowerCase().split(";")[0].trim();
-  if (mime === "video/webm") return "webm";
-  if (mime === "video/quicktime") return "mov";
-  if (mime === "video/x-matroska") return "mkv";
-  if (mime === "video/ogg") return "ogv";
-  if (mime === "video/mpeg") return "mpeg";
-  if (mime === "application/octet-stream" || mime === "video/mp4") return "mp4";
-  throw new Error(`视频结果 MIME 无效：${mime || "unknown"}`);
 }
 
 export type CreateVideoInput = {
@@ -161,7 +151,7 @@ export type PublicVideoTaskView = Pick<
   | "cancellationSentAt"
   | "supplierCancellationSupported"
   | "errorCode"
->;
+>&{resultAssets:import("./result-assets").SavedVideoResultAsset[];resultMetadataWarnings:Array<{artworkId:string;code:string;expected:unknown;actual:unknown}>};
 
 /** Public API projection. Durable provider snapshots and raw responses stay server-only. */
 export function publicVideoTaskView(task: VideoTaskRow): PublicVideoTaskView {
@@ -187,6 +177,8 @@ export function publicVideoTaskView(task: VideoTaskRow): PublicVideoTaskView {
     cancellationSentAt:task.cancellationSentAt,
     supplierCancellationSupported:task.supplierCancellationSupported,
     errorCode:task.errorCode,
+    resultAssets:task.status==="completed"&&Array.isArray(task.parameters.resultAssets)?task.parameters.resultAssets as import("./result-assets").SavedVideoResultAsset[]:[],
+    resultMetadataWarnings:task.status==="completed"&&Array.isArray(task.parameters.resultMetadataWarnings)?task.parameters.resultMetadataWarnings as Array<{artworkId:string;code:string;expected:unknown;actual:unknown}>:[],
   };
 }
 
@@ -320,7 +312,8 @@ async function imageForQueuedTask(
   if (!reference) return undefined;
   const { readCanvasImage } = await import("@/lib/canvas-image-input");
   const image = await readCanvasImage(reference.url || reference.artworkId || "", "http://localhost/", email);
-  return { bytes: image.buffer, mime: image.mimeType, filename: `naumi-ref-${task.id}.png` };
+  if(reference.sha256&&createHash("sha256").update(image.buffer).digest("hex")!==reference.sha256)throw new VideoContractError("REFERENCE_UNAVAILABLE","已冻结图片字节已改变",["references"]);
+  return { bytes: image.buffer, mime: image.mimeType, filename: `naumi-ref-${task.id}.${mediaExtension(image.mimeType)}` };
 }
 
 export async function submitQueuedVideoTask(
@@ -500,79 +493,8 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
       sanitizeVideoProviderPayload(result.errorDetail)
     );
     if (result.status === "completed") {
-      const artworkId = `vid-art-${id}`;
-      let url = task.videoUrl;
-      let resultStorageKey = task.resultStorageKey || "";
-      let inspected:MediaProbe;
-      if (!url) {
-        const file = await adapter.fetchResult(snapshot, result);
-        let bytes = file.bytes;
-        let mimeType = file.mimeType;
-        if ((!bytes || bytes.byteLength === 0) && file.url) {
-          const response = await fetch(file.url, { signal: AbortSignal.timeout(120_000) });
-          const downloaded = await readLimitedVideoResponse(response);
-          bytes = downloaded.bytes;
-          mimeType = downloaded.mimeType;
-        }
-        if (!bytes || bytes.byteLength === 0) throw new Error("视频供应商返回了空结果");
-        inspected=await probeVideo(bytes);
-        const extension = videoExtensionForMime(mimeType);
-        if (storageEnabled) {
-          // Never construct a base64 copy for persisted videos: a 150MiB file
-          // would otherwise allocate another ~200MiB string before upload.
-          url = await uploadImage(bytes, mimeType, `videos/${artworkId}.${extension}`,undefined,email);
-        } else {
-          if (bytes.byteLength > 8 * 1024 * 1024) {
-            throw new Error("视频结果超过 8MB，必须配置媒体存储后再落库");
-          }
-          url = `data:${mimeType};base64,${Buffer.from(bytes).toString("base64")}`;
-        }
-        resultStorageKey = url.startsWith("/media/") ? url.slice("/media/".length) : "";
-        await stageVideoTaskResult({ email, id, videoUrl: url, resultStorageKey });
-      }else inspected=await probeVideo((await readManagedObject(url,200*1024*1024)).bytes);
-      const referenceArtworkIds = (task.videoReferences ?? [])
-        .map((reference) => String((reference as { artworkId?: string }).artworkId || ""))
-        .filter(Boolean);
-      const candidateParentIds = Array.from(new Set([
-        ...(task.source === "canvas" && task.sourceId ? [task.sourceId] : []),
-        ...referenceArtworkIds,
-      ])).filter((parentId) => parentId !== artworkId);
-      const ownedParents = candidateParentIds.length
-        ? await listArtworksByIds(email, candidateParentIds)
-        : [];
-      const ownedParentIds = new Set(ownedParents.map((artwork) => artwork.id));
-      const parentIds = candidateParentIds.filter((parentId) => ownedParentIds.has(parentId));
-      const artworks:Omit<import("../db").ArtworkRecord,"createdAt">[]=[{
-        id: artworkId,
-        title: `视频 · ${task.prompt.slice(0, 24)}`,
-        category: "video",
-        creationProvenance: { version: 1, operation: "video", entry: "video", ref: task.id, evidence: "server-route" },
-        prompt: task.prompt,
-        status: "completed",
-        image: url,
-        gradient: "from-slate-100 to-zinc-100",
-        style: null,
-        ratio: null,
-        resolution: "1K",
-        source: null,
-        parentId: parentIds[0] || null,
-        parentIds: parentIds.slice(1),
-        origin: task.source === "canvas" ? "canvas" : null,
-        width: inspected.width,
-        height: inspected.height,
-        videoUrl: url,
-      }];
-      // Legacy contract marker: completeVideoTask({ email, id, artworkId, videoUrl: url })
-      await completeVideoTask({
-        email,
-        id,
-        artworkId,
-        videoUrl: url,
-        resultStorageKey,
-        lastResponse: sanitizedPollResponse,
-        artworks,
-      });
-      return getVideoTask(email, id);
+      await completeVideoResultSet(email,task,snapshot,adapter,result,sanitizedPollResponse);
+      return getVideoTask(email,id);
     }
     if (result.status === "cancelled") {
       await confirmVideoTaskCancelled(email,id);return getVideoTask(email,id);

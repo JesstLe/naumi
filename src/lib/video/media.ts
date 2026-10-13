@@ -44,7 +44,7 @@ export async function waitMediaWorker(id:string,timeoutMs=190000):Promise<Worker
 export async function probeMedia(bytes:Uint8Array,extension="mp4"):Promise<MediaProbe>{
   const id=randomUUID();try{
     const inputs=await prepareMediaInputs(id,[{bytes,extension}]);
-    await mediaWorkerRequest(id,"POST",{action:"ffprobe",inputs,outputs:[],args:["-v","error","-show_streams","-show_format","-of","json","asset:0"]});
+    await mediaWorkerRequest(id,"POST",{action:"ffprobe",inputs,outputs:[],verifyStreams:true,inspectOnly:true,args:["-v","error","-show_streams","-show_format","-of","json","asset:0"]});
     const view=await waitMediaWorker(id);const probe=view.result?.probes[0];if(!probe)throw new Error("媒体探测无结果");return probe;
   }finally{await mediaWorkerRequest(id,"PATCH").catch(()=>{});await rm(mediaJobDirectory(id),{recursive:true,force:true}).catch(()=>{});}
 }

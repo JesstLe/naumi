@@ -7,6 +7,7 @@ export const videoReferenceSchema=z.strictObject({
   artworkId:z.string().min(1).max(160).optional(),storageKey:z.string().min(1).max(1000).optional(),
   url:z.string().min(1).max(16384).optional(),mimeType:z.string().max(100).optional(),
   bytes:z.number().int().min(1).max(250*1024*1024).optional(),durationSeconds:z.number().finite().min(0).max(86400).optional(),
+  sha256:z.string().regex(/^[a-f0-9]{64}$/).optional(),
   width:z.number().int().min(1).max(16384).optional(),height:z.number().int().min(1).max(16384).optional(),
 }).superRefine((ref,ctx)=>{
   if(!ref.url&&!ref.storageKey&&!ref.artworkId)ctx.addIssue({code:"custom",message:"参考素材缺少身份或地址"});

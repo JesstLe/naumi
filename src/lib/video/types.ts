@@ -32,6 +32,7 @@ export type VideoReference = {
   url?: string;
   mimeType?: string;
   bytes?: number;
+  sha256?: string;
   durationSeconds?: number;
   width?: number;
   height?: number;
@@ -115,6 +116,7 @@ export interface VideoProviderAdapter {
     task: VideoTaskSnapshot,
     result: VideoProviderPollResult
   ): Promise<VideoProviderFetchResult>;
+  fetchResultAsset?(task:VideoTaskSnapshot,asset:{kind:"video"|"image"|"audio";url:string;mimeType?:string}):Promise<VideoProviderFetchResult>;
   cancel?(task: VideoTaskSnapshot): Promise<void>;
 }
 

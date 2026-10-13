@@ -145,10 +145,11 @@ export class MediaEngine{
         });
       };
       const probes=[];for(let i=0;i<inputs.length;i++)probes.push(parseProbe(await execute('ffprobe',['-v','error','-show_streams','-show_format','-of','json',`asset:${i}`])));
+      if(request.verifyStreams===true)for(let i=0;i<inputs.length;i++)await execute('ffmpeg',['-v','error','-xerror','-err_detect','explode','-i',`asset:${i}`,'-map','0:v?','-map','0:a?','-f','null','-']);
       const binary=request.action==='ffprobe'?'ffprobe':'ffmpeg';
       const args=presetMediaCommand(request,inputs,outputs,probes);
       const query=request.action==='ffprobe'||!outputs.length;
-      const stdout=await execute(binary,args.length?args:['-v','error','-show_streams','-show_format','-of','json','asset:0'],!query);
+      const stdout=request.inspectOnly===true?'':await execute(binary,args.length?args:['-v','error','-show_streams','-show_format','-of','json','asset:0'],!query);
       const collected=[];let totalOutput=0;
       const collect=async(directory,relative='')=>{
         for(const entry of await readdir(directory,{withFileTypes:true})){
