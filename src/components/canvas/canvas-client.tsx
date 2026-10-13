@@ -19,6 +19,7 @@ import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCa
 import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
 import { createProjectRootResolver } from "@/lib/canvas/project-roots";
 import { knownCanvasNodeMeasurement } from "@/lib/canvas/node-measurement";
+import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasParameterPopover } from "./parameter-popover";
 import {ImagegenPanel,type ImagegenPanelInput} from "@/components/imagegen/imagegen-panel";
@@ -751,7 +752,7 @@ type TextNodeCtx = {
   onRemove: (id: string) => void;
   onCopy: (text: string) => void;
   onContentChange: (id: string, content: string) => void;
-  onContentCommit: (id: string, content: string) => void;
+  onContentCommit: (id: string, content: string, initialContent?: string) => void;
   onResize: (id: string, bounds: { x: number; y: number; width: number; height: number }) => void;
   onToggleExpand: (id: string) => void;
 };
@@ -759,6 +760,7 @@ const TextNodeContext = createContext<TextNodeCtx | null>(null);
 
 function TextCanvasNode({ data, selected }: NodeProps) {
   const ctx = useContext(TextNodeContext);
+  const editInitialContent = useRef<string | undefined>(undefined);
   const d = data as {
     __id: string;
     title: string;
@@ -851,7 +853,11 @@ function TextCanvasNode({ data, selected }: NodeProps) {
             style={nodeTextStyle(d.settings || DEFAULT_CANVAS_SETTINGS)}
             value={d.content}
             onChange={(event) => ctx?.onContentChange(d.__id, event.target.value)}
-            onBlur={(event) => ctx?.onContentCommit(d.__id, event.currentTarget.value)}
+            onFocus={() => { editInitialContent.current = d.content; }}
+            onBlur={(event) => {
+              ctx?.onContentCommit(d.__id, event.currentTarget.value, editInitialContent.current);
+              editInitialContent.current = undefined;
+            }}
             onPointerDown={(event) => event.stopPropagation()}
             className={cn(!d.settings?.text.color && "canvas-ui-text", "nodrag nowheel h-full min-h-[96px] w-full resize-none overflow-auto border-0 bg-transparent p-0 text-[12px] leading-[1.65] outline-none")}
           />
@@ -7365,7 +7371,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     );
   }
 
-  function commitTextNodeContent(id: string, content: string) {
+  function commitTextNodeContent(id: string, content: string, initialContent?: string) {
     if(readOnly || isNodeLocked(id))return;
     const node = textNodes.find((item) => item.id === id);
     if (node) {
@@ -7374,13 +7380,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         content: content.slice(0, 12000),
         updatedAt: new Date().toISOString(),
       };
-      // 内容真的变了才记撤销(失焦不改动则不入栈)
-      if (node.content !== updated.content) {
+      // onChange already updates controlled state. Preserve the focus-time text
+      // instead of mistaking the latest draft for the undo baseline on blur.
+      const patch = canvasTextEditPatch(textPatchOf(node), updated.content, initialContent);
+      if (patch) {
         pushUndo({
           kind: "text-patch",
           id,
-          from: textPatchOf(node),
-          to: textPatchOf(updated),
+          from: patch.from,
+          to: patch.to,
         });
       }
       setTextNodes((current) => current.map((item) => (item.id === id ? updated : item)));
