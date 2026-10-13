@@ -1,4 +1,7 @@
 "use client";
+import { browserImageArchive } from "@/lib/browser-image-archive";
+import { readBrowserImage } from "@/lib/browser-image-cache";
+import { CachedImage } from "@/components/cached-image";
 import type { FeatureId } from "@/lib/billing/types";
 import {toolImageError, toolSourceUrl} from "@/lib/tool-ui";
 import { X } from "lucide-react";
@@ -299,7 +302,7 @@ export function ToolWorkspace({
       const blob =
         url.startsWith("blob:") || url.startsWith("data:")
           ? await (await fetch(url)).blob()
-          : await (async()=>{const response=await fetch(`/api/download?u=${encodeURIComponent(url)}&n=input.png`,{headers:await authHeader()});if(!response.ok)throw new Error("download failed");return response.blob();})();
+          : await readBrowserImage(url);
       const f = new File([blob], "input.png", { type: blob.type || "image/png" });
       if(toolImageError(f,maxUploadBytes,accept))throw new Error("invalid image");
       if (preview) URL.revokeObjectURL(preview);
@@ -336,13 +339,7 @@ export function ToolWorkspace({
     if (!items.length) return;
     setZipping(true);
     try {
-      const res = await fetch("/api/suite/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(await authHeader()) },
-        body: JSON.stringify({ items }),
-      });
-      if (!res.ok) throw new Error("zip failed");
-      const blob = await res.blob();
+      const blob = await browserImageArchive(items);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -417,7 +414,7 @@ export function ToolWorkspace({
                 style={checker ? CHECKER : undefined}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={preview} alt="" className="h-full w-full object-contain" />
+                <CachedImage src={preview} alt="" className="h-full w-full object-contain" />
                 <button
                   type="button"
                   onClick={() => fileRef.current?.click()}
@@ -503,7 +500,7 @@ export function ToolWorkspace({
                     {dispOriginal ? (
                       <>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <CachedImage
                           src={dispOriginal}
                           alt={L("原图", "Original")}
                           onClick={() => setViewing(dispOriginal)}
@@ -537,7 +534,7 @@ export function ToolWorkspace({
                     ) : dispResult ? (
                       <>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <CachedImage
                           src={dispResult}
                           alt={L("效果", "Result")}
                           onClick={() => setViewing(dispResult)}

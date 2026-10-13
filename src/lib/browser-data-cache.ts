@@ -107,7 +107,7 @@ export function installBrowserDataObserver() {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, window.location.href);
     const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
     const affectsData = url.origin === location.origin && url.pathname.startsWith("/api/") && !["GET", "HEAD", "OPTIONS"].includes(method)
-      && !/^\/api\/(auth(?:\/|$)|admin(?:\/|$)|account$|billing(?:\/|$)|favorites$|agent\/session(?:\/|$))/.test(url.pathname);
+      && !/^\/api\/(auth(?:\/|$)|admin(?:\/|$)|account$|billing(?:\/|$)|favorites$|agent\/session(?:\/|$)|media\/image-cache$)/.test(url.pathname);
     const account = active;
     // Invalidate before AND after mutation: reads during a long request cannot survive completion.
     if (affectsData) invalidateBrowserData(account);

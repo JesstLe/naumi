@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -334,7 +335,7 @@ export function InpaintClient() {
             {imgUrl ? (
               <div className="relative overflow-hidden rounded-field border border-c-border bg-c-subtle2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={imgUrl}
                   alt=""
                   className="max-h-[180px] w-full object-contain"
@@ -500,7 +501,7 @@ export function InpaintClient() {
                     />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <CachedImage
                       src={result}
                       alt="result"
                       onClick={() => zoom(result)}
@@ -553,7 +554,7 @@ export function InpaintClient() {
               {/* 原图 + 涂抹层叠加 */}
               <div className="relative mx-auto w-fit max-w-full overflow-hidden rounded-field border border-c-border">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={imgUrl}
                   alt="source"
                   className="block max-h-[64vh] max-w-full select-none object-contain"

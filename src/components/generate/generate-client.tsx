@@ -1,4 +1,6 @@
 "use client";
+import { browserImageArchive } from "@/lib/browser-image-archive";
+import { CachedImage } from "@/components/cached-image";
 
 import { isHostedImageUrl } from "@/lib/media-url";
 import {toolSourceUrl, toolImageError} from "@/lib/tool-ui";
@@ -478,13 +480,7 @@ export function GenerateClient({
     if (!items.length) return;
     setRecZipping(true);
     try {
-      const res = await fetch("/api/suite/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(await authHeader()) },
-        body: JSON.stringify({ items }),
-      });
-      if (!res.ok) throw new Error("zip failed");
-      const blob = await res.blob();
+      const blob = await browserImageArchive(items);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -714,7 +710,7 @@ export function GenerateClient({
                     className="relative h-16 w-16 overflow-hidden rounded-lg border border-border"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <CachedImage
                       src={src}
                       alt={`${t("gen.removeImage")} ${i + 1}`}
                       onClick={() =>
@@ -1012,7 +1008,7 @@ export function GenerateClient({
                       {shownRec.source ? (
                         <>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
+                          <CachedImage
                             src={shownRec.source}
                             alt={locale === "en" ? "Source" : "原图"}
                             onClick={() =>
@@ -1050,7 +1046,7 @@ export function GenerateClient({
                     </span>
                     <div className="relative flex flex-1 items-center justify-center overflow-hidden rounded-[13px] border border-c-border bg-c-subtle2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                      <CachedImage
                         src={cdnUrl(shownRec.url)}
                         alt={locale === "en" ? "Result" : "成品"}
                         onClick={() =>

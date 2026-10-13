@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import { useFeatureAccess } from "@/lib/feature-access/client";
 
 
@@ -190,7 +191,7 @@ export function AppRail() {
             )}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <CachedImage
               src={BRAND_SQUARE_LOGO}
               alt={BRAND}
               className="h-8 w-8 rounded-[9px] object-contain"

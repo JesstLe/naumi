@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Building2, Eye, ImageIcon, LayoutDashboard, Plus, RefreshCw, ShieldCheck, Users, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
@@ -24,7 +25,7 @@ function ArtworkImage({src,alt}:{src:string;alt:string}){
     void(async()=>{try{const r=await fetch(src,{cache:'no-store',headers:await authHeader(),signal:c.signal});if(!r.ok)throw new Error();const blob=await r.blob();if(c.signal.aborted)return;object=URL.createObjectURL(blob);setUrl(object)}catch{if(!c.signal.aborted)setFailed(true)}})();
     return()=>{c.abort();if(object)URL.revokeObjectURL(object)};
   },[src]);
-  return url?<img src={url} alt={alt} loading='lazy'/>:<div className={styles.empty}>{failed?'图片暂不可读取':'加载图片…'}</div>;
+  return url?<CachedImage src={url} alt={alt} loading='lazy'/>:<div className={styles.empty}>{failed?'图片暂不可读取':'加载图片…'}</div>;
 }
 export function EnterpriseConsole(){
   const {user,ready}=useAuth(),email=user?.email||'console';

@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import * as React from "react";
 import { X, Wand2, Sparkles, Loader2, Check, ArrowUp } from "lucide-react";
@@ -408,7 +409,7 @@ export function PromptAssistPopup({
         <div className="flex items-end gap-2 border-t border-c-border p-3">
           {imageThumb && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <CachedImage
               src={imageThumb}
               alt=""
               className="h-9 w-9 flex-none rounded-lg border border-c-border object-cover"

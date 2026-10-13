@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 // 内部生图工作台:面向内部员工的批量电商出图工具。
 // 布局与交互流对齐团队此前使用的批量出图客户端(产品图+风格参考图 → 主图/详情图/SKU 批量任务),
@@ -454,7 +455,7 @@ export function WorkbenchClient() {
                 {styleRef ? (
                   <div className="flex items-center gap-2 rounded-lg border border-c-line p-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={styleRef.previewUrl} alt="参考图" className="h-14 w-14 rounded object-cover" />
+                    <CachedImage src={styleRef.previewUrl} alt="参考图" className="h-14 w-14 rounded object-cover" />
                     <span className="min-w-0 flex-1 truncate text-[12px]">{styleRef.file.name}</span>
                     <button className="text-c-text4 hover:text-c-text" onClick={() => setStyleRef(null)}>×</button>
                   </div>
@@ -641,7 +642,7 @@ export function WorkbenchClient() {
                     </div>
                     <div className="p-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={p.previewUrl} alt={p.name} className="h-36 w-full rounded-lg bg-c-track object-contain" />
+                      <CachedImage src={p.previewUrl} alt={p.name} className="h-36 w-full rounded-lg bg-c-track object-contain" />
                       {card && card.jobs.some((j) => j.status === "error") && (
                         <p className="mt-2 line-clamp-2 text-[11.5px] text-red-600 dark:text-red-400">
                           {card.jobs.find((j) => j.error)?.error}
@@ -652,7 +653,7 @@ export function WorkbenchClient() {
                           {card.results.map((r) => (
                             <a key={r.id} href={r.url} target="_blank" rel="noreferrer" className="group relative">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
+                              <CachedImage
                                 src={r.url}
                                 alt={`${KIND_LABEL[r.kind]}结果`}
                                 className="aspect-square w-full rounded-md border border-c-line object-cover"

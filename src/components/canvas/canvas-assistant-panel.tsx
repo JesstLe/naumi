@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowRight, ArrowRightToLine, ArrowUp, Check, CircleHelp, Copy, Frame, History, Image as ImageIcon, Infinity as InfinityIcon, LayoutTemplate, Loader2, MessageSquarePlus, Palette, Plus, RefreshCw, ScanLine, SlidersHorizontal, ThumbsDown, ThumbsUp, Type, X } from "lucide-react";
@@ -250,7 +251,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           <div className="min-w-0 break-words canvas-ui-text">{renderContent(turn.content)}</div>
           {!!turn.artifacts?.length && <div className="mt-3 grid grid-cols-2 gap-2" data-testid="canvas-assistant-results">{turn.artifacts.map(art => <button type="button" key={art.id} onClick={() => onPreview(art)} className="overflow-hidden rounded-xl border border-[var(--canvas-ui-border)] text-left">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={art.image} alt={art.title} className="aspect-square w-full object-contain" /><span className="block truncate px-2 py-1 text-[11px]">{art.title}</span>
+            <CachedImage src={art.image} alt={art.title} className="aspect-square w-full object-contain" /><span className="block truncate px-2 py-1 text-[11px]">{art.title}</span>
           </button>)}</div>}
           {turn.content.trim() && !busy && <div className="mt-1 flex items-center gap-1"><button type="button" aria-label={copied === turn.id ? labels.copied : labels.copy} title={copied === turn.id ? labels.copied : labels.copy}
             className={cn(iconButton, "mt-1")} onClick={() => { void onCopy(turn.content).then(ok => { if (ok) setCopied(turn.id); }); }}>
@@ -294,7 +295,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
             className="canvas-ui-action flex min-w-0 max-w-[160px] items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px]" onClick={() => setReferencesOpen(open => !open)}>
             <span className="flex shrink-0 -space-x-2" aria-hidden="true">{contextImages.slice(0, 2).map(image => <span key={image.id} className="canvas-ui-surface-solid h-5 w-5 overflow-hidden rounded border border-[var(--canvas-ui-border)]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={image.image} alt="" className="h-full w-full object-cover" /></span>)}</span><span className="truncate">{anchorTitle}</span><span className="canvas-ui-section shrink-0 rounded px-1 text-[10px] tabular-nums">{contextImages.length}</span>
+              <CachedImage src={image.image} alt="" className="h-full w-full object-cover" /></span>)}</span><span className="truncate">{anchorTitle}</span><span className="canvas-ui-section shrink-0 rounded px-1 text-[10px] tabular-nums">{contextImages.length}</span>
           </button>}
         </div>
         {referencesOpen && <div data-testid="canvas-assistant-references" className="canvas-ui-surface canvas-ui-surface-solid absolute bottom-[calc(100%+8px)] left-0 right-0 rounded-[16px] border p-3 shadow-lg">
@@ -303,7 +304,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
             {contextImages.map((image, index) => <button key={image.id} type="button" onClick={() => onPreview(image)} title={`${index === 0 ? labels.currentImage : labels.upstreamImage}: ${image.title}`}
               className={cn("h-12 w-12 shrink-0 overflow-hidden rounded-lg border", index === 0 ? "border-[#16849a]" : "border-[var(--canvas-ui-border)]")}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={image.image} alt={image.title || (index === 0 ? labels.currentImage : labels.upstreamImage)} className="h-full w-full object-cover" />
+              <CachedImage src={image.image} alt={image.title || (index === 0 ? labels.currentImage : labels.upstreamImage)} className="h-full w-full object-cover" />
             </button>)}
           </div>
         </div>}

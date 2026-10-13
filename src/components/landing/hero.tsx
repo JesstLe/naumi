@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -132,7 +133,7 @@ function FloatyCard({
     >
       {items.map((tpl, i) => (
         // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <CachedImage
           key={tpl.id}
           src={cdnUrl(tpl.image)}
           alt={tpl.title}

@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -63,7 +64,7 @@ export function DesktopShell({children}: {children:React.ReactNode}) {
   return <div className="dt-shell" data-desktop><DesktopTransport/>
     {mobile && <button className="dt-backdrop" aria-label="关闭导航" onClick={()=>setMobile(false)}/>}
     <aside className={`dt-sidebar ${mobile ? "is-open" : ""}`} aria-label="工作空间导航">
-      <Link className="dt-brand" href="/desktop"><img src={brand.logo} alt=""/>{!brand.logoHasText && <b>{brand.name}</b>}<ChevronRight size={14}/></Link>
+      <Link className="dt-brand" href="/desktop"><CachedImage src={brand.logo} alt=""/>{!brand.logoHasText && <b>{brand.name}</b>}<ChevronRight size={14}/></Link>
       <button className="dt-mobile-close" aria-label="关闭导航" onClick={()=>setMobile(false)}><X size={18}/></button>
       <nav className="dt-nav">{NAV.filter(n=>canPage(n.href)).map(({href,label,Icon})=><Link key={href} href={href} className={path===href ? "active" : ""} aria-current={path===href ? "page" : undefined}><Icon size={16}/>{label}</Link>)}</nav>
       <div className="dt-projects"><h2>项目</h2>{Object.entries(names).slice(0,8).map(([key,name])=><Link key={key} href={`/desktop/canvas?project=${encodeURIComponent(key)}`} title={name}><Folder size={13}/><span>{name}</span></Link>)}{!Object.keys(names).length && <span className="dt-side-empty">暂无命名项目</span>}</div>

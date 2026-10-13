@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { cdnUrl } from "@/lib/cdn";
 import { useEffect, useMemo, useState } from "react";
@@ -288,7 +289,7 @@ export function AdminTemplates({ token }: Props) {
                   >
                     <td className="px-4 py-2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                      <CachedImage
                         src={cdnUrl(t.image)}
                         alt=""
                         loading="lazy"
@@ -452,7 +453,7 @@ function EditTemplateModal({
             <label className="text-sm font-medium">封面图</label>
             <div className="flex items-start gap-4">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <CachedImage
                 src={cdnUrl(filePreview ?? form.image)}
                 alt=""
                 className="h-28 w-40 shrink-0 rounded-lg border border-border bg-secondary object-cover"

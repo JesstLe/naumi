@@ -1,11 +1,12 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { useEffect, useRef, useState } from "react";
 import { Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { cdnUrl, cdnThumb, onImgError, probeCdnHealth } from "@/lib/cdn";
 
-/** 视频 URL 识别:按扩展名或上传目录判断,视频走 <video> 缩略而非 <img>。 */
+/** 视频 URL 识别:按扩展名或上传目录判断,视频走 <video> 缩略而非 <CachedImage>。 */
 function isVideoUrl(url: string): boolean {
   if (/\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)) return true;
   return url.includes("/media/videos/") || url.includes("/videos/");
@@ -103,7 +104,7 @@ export function Media({
         </>
       ) : state !== "error" ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <CachedImage
           key={src}
           ref={imageRef}
           src={useOrig ? src : rewritten}

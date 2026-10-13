@@ -1,4 +1,6 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
+import { downloadImage } from "@/lib/download";
 import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
 
 import { agentMediaUrl } from "@/lib/agent/media-policy";
@@ -132,7 +134,7 @@ function AssistantImage({
   return (
     <span className="group/img my-1 block w-fit">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <CachedImage
         src={url}
         alt={alt}
         onClick={() => onPreview(url)}
@@ -146,9 +148,9 @@ function AssistantImage({
         <FeatureVisible feature="generate"><button type="button" onClick={() => void go("iterate")} disabled={waiting} className={actionBtn}>
           再生成
         </button></FeatureVisible>
-        <a href={url} download target="_blank" rel="noreferrer" className={actionBtn}>
+        <button type="button" onClick={()=>void downloadImage(url)} className={actionBtn}>
           下载
-        </a>
+        </button>
       </span>
       {hint && (
         <span className="mt-1 block text-[11px] text-c-text3">{hint}</span>
@@ -170,7 +172,7 @@ function ImageLightbox({ url, onClose }: { url: string; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm nv-fade-in" onClick={onClose}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <CachedImage
         src={url}
         alt=""
         onClick={(e) => e.stopPropagation()}
@@ -182,9 +184,7 @@ function ImageLightbox({ url, onClose }: { url: string; onClose: () => void }) {
       >
         <a
           href={url}
-          download
-          target="_blank"
-          rel="noreferrer"
+          onClick={event=>{event.preventDefault();void downloadImage(url);}}
           className="rounded-full border border-white/25 bg-white/10 px-4 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-white/20"
         >
           下载原图
@@ -262,7 +262,7 @@ function renderContent(
     if (ref && agentMediaUrl(ref[1])) {
       return (
         // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <CachedImage
           key={i}
           src={ref[1]}
           alt="商品图"
@@ -1289,7 +1289,7 @@ export function WorkbenchClient() {
               {composerPreviews.map((url, index) => (
                 <span key={url} className="group relative">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <CachedImage
                     src={url}
                     alt=""
                     className="h-10 w-10 rounded-[10px] border border-c-border object-cover"

@@ -100,6 +100,8 @@ export async function GET(
   try {
     const info = await stat(full);
     if (!info.isFile()) return new Response("Not found", { status: 404 });
+    const expected=new URL(request.url).searchParams.get('cacheVersion');
+    if(expected && expected!==`local:${info.size}:${info.mtimeMs}`) return new Response('Media changed',{status:409,headers:{'cache-control':'no-store'}});
     const ext = (rel.split(".").pop() || "").toLowerCase();
     const commonHeaders = {
       "content-type": TYPES[ext] || "application/octet-stream",

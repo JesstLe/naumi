@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import {SelectMenu} from "@/components/ui/select-menu";
 import { browserRandomUUID } from "@/lib/browser-crypto";
 import {clientIntentKey} from "@/lib/billing/client-intent";
@@ -532,7 +533,7 @@ export function VideoStudioClient() {
                 {refPreview ? (
                   <div className="relative w-fit">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={refPreview} alt="参考图" className="h-20 w-20 rounded-xl border border-c-border object-cover" />
+                    <CachedImage src={refPreview} alt="参考图" className="h-20 w-20 rounded-xl border border-c-border object-cover" />
                     <button
                       type="button"
                       aria-label="移除参考图"

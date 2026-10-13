@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import {toolImageError} from "@/lib/tool-ui";
 import { copyText } from "@/lib/clipboard";
 
@@ -297,7 +298,7 @@ export function TitleGenClient() {
               {thumb ? (
                 <div className="relative inline-block">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <CachedImage
                     src={thumb}
                     alt="product"
                     className="h-16 w-16 rounded-field border border-c-border object-cover"
@@ -531,7 +532,7 @@ export function TitleGenClient() {
                 {thumb && (
                   <div className="flex justify-center pt-1">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <CachedImage
                       src={thumb}
                       alt={L("原图", "Original")}
                       className="max-h-[300px] max-w-full rounded-field border border-c-border object-contain"

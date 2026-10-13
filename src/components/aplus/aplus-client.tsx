@@ -1,4 +1,6 @@
 "use client";
+import { browserImageArchive } from "@/lib/browser-image-archive";
+import { CachedImage } from "@/components/cached-image";
 import {toolImageError} from "@/lib/tool-ui";
 import {SelectMenu} from "@/components/ui/select-menu";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -392,13 +394,7 @@ export function AplusClient() {
     if (!items.length) return;
     setZipping(true);
     try {
-      const res = await fetch("/api/suite/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
-      });
-      if (!res.ok) throw new Error("zip failed");
-      const blob = await res.blob();
+      const blob = await browserImageArchive(items);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -470,7 +466,7 @@ export function AplusClient() {
                   className="relative h-16 w-16 overflow-hidden rounded-lg border border-border"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <CachedImage
                     src={src}
                     alt={`product ${i + 1}`}
                     className="h-full w-full bg-secondary object-cover"
@@ -694,7 +690,7 @@ export function AplusClient() {
                     >
                       {source.url ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <CachedImage
                           src={source.url}
                           alt={source.label}
                           className="h-full w-full object-contain"
@@ -834,7 +830,7 @@ export function AplusClient() {
               </div>
               <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[14px] border border-c-border bg-c-subtle2 p-3 sm:p-5">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={
                     demoLayout === "two-column"
                       ? "/demos/aplus/showcase-two-column.png"
@@ -895,7 +891,7 @@ export function AplusClient() {
                         className="relative aspect-[2/3] overflow-hidden rounded-[10px] border border-border bg-white"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <CachedImage
                           src={source.url}
                           alt={source.label}
                           className="h-full w-full object-contain"
@@ -919,7 +915,7 @@ export function AplusClient() {
                     {s.status === "done" && s.url ? (
                       <>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <CachedImage
                           src={s.url}
                           alt={s.label}
                           className={cn(

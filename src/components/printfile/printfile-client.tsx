@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -527,7 +528,7 @@ export function PrintfileClient() {
                     className="group relative overflow-hidden rounded-[13px] border border-c-border bg-c-subtle2"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <CachedImage
                       src={cdnUrl(it.resultUrl || it.url)}
                       alt="item"
                       onClick={() =>
