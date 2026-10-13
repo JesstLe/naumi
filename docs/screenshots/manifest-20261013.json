@@ -1,0 +1,129 @@
+{
+  "source_commit": "47824d64731033c4ac77cf734d36fe0ffa34b854",
+  "provider_calls": 0,
+  "screenshots": [
+    {
+      "file": "batch-20261013.jpg",
+      "page": "/batchshot",
+      "source": "103 site screenshot",
+      "captured_date": "2026-10-13",
+      "runtime_version": "2026.10.13-110509",
+      "width": 1280,
+      "height": 720,
+      "crop": [
+        0,
+        60,
+        1280,
+        640
+      ],
+      "sha256": "9acedb9f5d20905b64534ce73c4818d7efae715205dd7d32467ec04c79d0df20",
+      "bytes": 55996,
+      "framing": "16:9 contain, no content redraw"
+    },
+    {
+      "file": "canvas-agent-20261013.jpg",
+      "page": "/canvas",
+      "source": "103 site screenshot",
+      "captured_date": "2026-10-13",
+      "runtime_version": "2026.10.13-110509",
+      "width": 1280,
+      "height": 720,
+      "crop": [
+        0,
+        0,
+        1280,
+        720
+      ],
+      "sha256": "4248ac2d9d3787baf6dfdf23199c4df86777a664db0395944eb451de84297af5",
+      "bytes": 82911
+    },
+    {
+      "file": "generate-20261013.jpg",
+      "page": "/generate",
+      "source": "103 site screenshot",
+      "captured_date": "2026-10-13",
+      "runtime_version": "2026.10.13-110509",
+      "width": 1280,
+      "height": 720,
+      "crop": [
+        0,
+        60,
+        952,
+        640
+      ],
+      "sha256": "8ac71a6fd5e397272c91034594cfcd42403a8a599a4e5d824ac64e7e1f46dc7b",
+      "bytes": 86146,
+      "framing": "16:9 contain, no content redraw"
+    },
+    {
+      "file": "home-20261013.jpg",
+      "page": "/",
+      "source": "103 site screenshot",
+      "captured_date": "2026-10-13",
+      "runtime_version": "2026.10.13-110509",
+      "width": 1270,
+      "height": 3139,
+      "crop": [
+        0,
+        60,
+        1270,
+        3199
+      ],
+      "sha256": "7f0015d9da62fdd740dfcbf260a2c369f6cc95d379d3cc6c15a70cdc9a938a92",
+      "bytes": 362177
+    },
+    {
+      "file": "skills-20261013.jpg",
+      "page": "/canvas Skills",
+      "source": "103 site screenshot",
+      "captured_date": "2026-10-13",
+      "runtime_version": "2026.10.13-110509",
+      "width": 1280,
+      "height": 720,
+      "crop": [
+        0,
+        0,
+        1280,
+        720
+      ],
+      "sha256": "6d77658e6f548fde13cfb784349af675ad992f2b4ede13478daf5e918941abc4",
+      "bytes": 56263,
+      "framing": "16:9 contain, no content redraw"
+    },
+    {
+      "file": "tools-20261013.jpg",
+      "page": "/tools",
+      "source": "103 site screenshot",
+      "captured_date": "2026-10-13",
+      "runtime_version": "2026.10.13-110509",
+      "width": 1270,
+      "height": 1818,
+      "crop": [
+        0,
+        0,
+        1270,
+        1818
+      ],
+      "sha256": "4ba3785f8f3fb4712999e222742f54db0bbf17e7a66cbe407e65dc4eaab568e4",
+      "bytes": 181530
+    },
+    {
+      "file": "tryon-20261013.jpg",
+      "page": "/tryon",
+      "source": "103 site screenshot",
+      "captured_date": "2026-10-13",
+      "runtime_version": "2026.10.13-110509",
+      "width": 1280,
+      "height": 720,
+      "crop": [
+        0,
+        60,
+        1280,
+        640
+      ],
+      "sha256": "34877d885835ba7210cc7e23c8a1b6c794a8a116d2707af8545643d2c0f53bdc",
+      "bytes": 70820,
+      "framing": "16:9 contain, no content redraw"
+    }
+  ]
+}
