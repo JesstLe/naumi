@@ -1,4 +1,5 @@
 import {NextResponse} from "next/server";
+import {createHash} from "node:crypto";
 import {z} from "zod";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";
@@ -27,7 +28,8 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     const old=requestFromQueuedTask(task),{canvasNodeId,nodeRevision:_revision,...intent}=old;
     const node=canvasNodeId?await getVideoNode(email,canvasNodeId):null;
     const execution=(task.parameters.modelExecutions as import("@/lib/model-config/context").ExecutionBundle|undefined)?.video;
-    const result=await createVideoGeneration(email,{...intent,modelId:execution?.publicModelId||String(task.parameters.publicModelId||task.model),
+    const frozenIntent={...intent,orderedInputs:intent.orderedInputs?.map(input=>input.kind==="text"?{...input,nodeId:`inline:retry-${createHash("sha256").update(`${task.id}:${input.id}`).digest("hex")}`}:input),shots:intent.shots?.map(shot=>({...shot,textNodeId:undefined}))};
+    const result=await createVideoGeneration(email,{...frozenIntent,modelId:execution?.publicModelId||String(task.parameters.publicModelId||task.model),
       prompt:typeof task.parameters.originalPrompt==="string"?task.parameters.originalPrompt:task.prompt,camera:task.parameters.camera as never,
       ...(node?{nodeId:node.id,nodeRevision:node.revision}:{}),retryOf:task.id,
       seconds:String(old.durationSeconds),size:old.resolution||"",idempotencyKey:parsed.data.idempotencyKey,billingConfirmation:requestQuoteConfirmation(request,parsed.data)});

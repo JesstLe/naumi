@@ -4656,6 +4656,8 @@ export async function copyComfyWorkflow(email: string, id: string): Promise<stri
 // ── 视频生成任务(OpenAI videos 协议,聚合商/官方端点通用) ──────────────────────
 
 export type VideoTaskRow = {
+  cursorCreatedAt?:string;
+  updatedAt?:string;
   errorCode?: string;
   cancellationRequestedAt?: string;
   cancellationSentAt?: string;
@@ -4706,6 +4708,8 @@ export type VideoResultRow = {
 
 function mapVideoTask(r: Record<string, unknown>): VideoTaskRow {
   return {
+    ...(typeof r.cursor_created_at==="string"?{cursorCreatedAt:r.cursor_created_at}:{}),
+    ...(r.updated_at?{updatedAt:new Date(r.updated_at as string).toISOString()}:{}),
     errorCode:String(r.error_code||""),
     cancellationRequestedAt:r.cancellation_requested_at?new Date(r.cancellation_requested_at as string).toISOString():undefined,
     cancellationSentAt:r.cancellation_sent_at?new Date(r.cancellation_sent_at as string).toISOString():undefined,
@@ -4998,7 +5002,7 @@ export async function getVideoTask(
   const { rows } = await getPool().query(
     `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
             provider_id, source, source_id, parameters, video_references, capability_snapshot,
-            next_poll_at, poll_attempts, seconds, created_at, completed_at,
+            next_poll_at, poll_attempts, seconds, created_at, updated_at, completed_at,
             provider_snapshot, response_body, last_response, error_detail, result_storage_key,
             idempotency_key,billing_quote
             , cancellation_requested_at,cancellation_sent_at,cancellation_supported,error_code
@@ -5264,10 +5268,10 @@ export async function updateVideoTask(
 /** 任务列表(工作台/恢复用):按创建时间倒序。 */
 export async function listVideoTasks(
   email: string,
-  opts: { status?: string; source?: string; sourceIds?: string[]; projectKey?: string; nodeId?: string; limit?: number } = {}
+  opts: { status?: string; source?: string; sourceIds?: string[]; projectKey?: string; nodeId?: string; limit?: number;cursor?:{createdAt:string;id:string};pendingOnly?:boolean } = {}
 ): Promise<VideoTaskRow[]> {
   await ensureSchema();
-  const limit = Math.min(Math.max(opts.limit ?? 30, 1), 500);
+  const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 30), 1), 501);
   const params: unknown[] = [email.toLowerCase()];
   let where = `email = $1`;
   if (opts.status) {
@@ -5285,16 +5289,18 @@ export async function listVideoTasks(
   for (const [field, value] of [["projectKey", opts.projectKey], ["nodeId", opts.nodeId]]) {
     if (value) { params.push(value); where += ` AND parameters->>'${field}' = $${params.length}`; }
   }
+  if(opts.pendingOnly)where += " AND status IN ('queued','processing','needs_attention')";
+  if(opts.cursor){params.push(opts.cursor.createdAt,opts.cursor.id);where += ` AND (created_at,id)<($${params.length-1}::timestamptz,$${params.length}::text)`;}
   const { rows } = await getPool().query(
-    `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
+    `SELECT to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at,id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
             provider_id, source, source_id, parameters, video_references, capability_snapshot,
-            next_poll_at, poll_attempts, seconds, created_at, completed_at,
+            next_poll_at, poll_attempts, seconds, created_at, updated_at, completed_at,
             provider_snapshot, response_body, last_response, error_detail, result_storage_key,
             idempotency_key,billing_quote,error_code,cancellation_requested_at,cancellation_sent_at,cancellation_supported
        FROM app_video_tasks
       WHERE ${where}
-      ORDER BY created_at DESC
-      LIMIT ${limit}`,
+      ORDER BY created_at DESC,id DESC
+      ${opts.pendingOnly?"":`LIMIT ${limit}`}`,
     params
   );
   return rows.map((row:Record<string,unknown>)=>mapVideoTask(row));

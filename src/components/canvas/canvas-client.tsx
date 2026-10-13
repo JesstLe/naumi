@@ -31,7 +31,9 @@ import {useVideoTasks} from "./video/use-video-tasks";
 import {VideoPlayer,mediaDownloadHref,type VideoPlayerAction} from "./video/player";
 import {MediaActionsDialog,type MediaInputChoice} from "./video/media-actions";
 import {useMediaJobs} from "./video/use-media-jobs";
+import {videoHistoryDraft} from "@/lib/video/client-history";
 import {useVideoAssets,VideoAssetImportError} from "./video/use-video-assets";
+import {VideoHistoryPicker} from "./video/history-picker";
 import type {CanvasVideoNode} from "@/lib/canvas/video-node-schema";
 import {catalogCapability,reconcileVideoSettings,videoModeRoles,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
 import {readVideoReceipt,prepareVideoReceipt,saveVideoReceipt,clearVideoReceipt} from "@/lib/video/canvas-receipts";
@@ -1968,6 +1970,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [expandAnchor, setExpandAnchor] = useState("center");
   // 持久视频节点与公开能力目录；规范请求经独立节点设置面板提交。
   const [videoEditId,setVideoEditId]=useState<string|null>(null);
+  const [videoHistoryId,setVideoHistoryId]=useState<string|null>(null);
+  const videoResultAttempts=useRef(new Map<string,{operationId:string;operations:Record<string,unknown>[];from:string|null;to:string|null}>());
   const [videoMedia,setVideoMedia]=useState<{id:string;projectKey:string;initial:VideoPlayerAction}|null>(null);
   const videoNodesStore=useVideoNodes({email:user?.email,readOnly,request:privateFetchRaw});
   const videoAssetStore=useVideoAssets({email:user?.email,readOnly,request:privateFetchRaw});
@@ -2238,6 +2242,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   type VideoPatchFields=Partial<Pick<CanvasVideoNode,"title"|"config"|"inputs"|"x"|"y"|"width"|"height">>;
   type UndoAct =
     | {kind:"video-patch";id:string;from:VideoPatchFields;to:VideoPatchFields}
+    | {kind:"video-result";id:string;from:string|null;to:string|null}
     | {kind:"video-add";records:CanvasVideoNode[]}
 
     | { kind: "pending-link"; id: string; from: Pick<Pend, "inputs" | "parentId" | "linked">; to: Pick<Pend, "inputs" | "parentId" | "linked"> }
@@ -2982,7 +2987,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const extractVideoToCanvas = useCallback((id:string,action:VideoPlayerAction)=>{
     if(readOnly||!user||nodeSettingsRef.current[id]?.locked)return;
     const source=worksRef.current?.find(item=>item.id===id),node=videoNodesStore.getNode(id),project=activeProjectRef.current?.key;
-    if(!project||!source?.videoUrl&&!node?.lastResultId)return;
+    if(!project||!source?.videoUrl&&!node?.displayResultId&&!node?.lastResultId)return;
     setVideoMedia({id,projectKey:project,initial:action});
   },[readOnly,user,videoNodesStore.getNode]);
 
@@ -3023,9 +3028,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const videoInputChoices:VideoInputChoice[]=useMemo(()=>Array.from(new Map([
     ...(active?.members||[]).filter(art=>art.category!=="media").map(art=>({id:art.id,nodeId:art.id,kind:art.category==="audio"?"audio" as const:art.videoUrl?"video" as const:"image" as const,title:art.title,value:art.videoUrl||art.image,thumbnail:!art.videoUrl?art.image:undefined,available:art.status==="completed"})),
     ...textNodes.filter(node=>node.projectKey===activeKey).map(node=>({id:node.id,nodeId:node.id,kind:"text" as const,title:node.title,value:node.content||node.prompt||" ",available:node.status!=="generating"})),
-    ...videoNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>{const task=videoTaskStore.tasks.find(task=>task.id===node.lastTaskId),art=(works||[]).find(art=>art.id===node.lastResultId);return {id:node.id,nodeId:node.id,kind:"video" as const,title:node.title,value:art?.videoUrl||task?.videoUrl||"/media/pending",available:!!node.lastResultId&&(art?.status==="completed"||task?.status==="completed")};}),
+    ...videoNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>{const task=videoTaskStore.tasks.find(task=>task.id===node.lastTaskId),art=(works||[]).find(art=>art.id===(node.displayResultId||node.lastResultId));return {id:node.id,nodeId:node.id,kind:"video" as const,title:node.title,value:art?.videoUrl||(!node.displayResultId?task?.videoUrl:undefined)||"/media/pending",available:!!(node.displayResultId||node.lastResultId)&&(art?.status==="completed"||!node.displayResultId&&task?.status==="completed")};}),
     ...videoAssetStore.choices,
   ].map(choice=>[choice.nodeId,choice])).values()),[active,activeKey,textNodes,videoNodesStore.nodes,videoTaskStore.tasks,works,videoAssetStore.choices]);
+  const videoResultLoads=useRef(new Map<string,number>());
+  useEffect(()=>{
+    if(!user?.email||!activeKey||readOnly)return;
+    const account=canvasAccountRef.current,epoch=canvasContextEpochRef.current,known=new Set((works||[]).map(art=>art.id)),now=Date.now();
+    const ids=Array.from(new Set(videoNodesStore.nodes.filter(node=>node.projectKey===activeKey&&!node.deletedAt).map(node=>node.displayResultId||node.lastResultId).filter((id):id is string=>!!id&&!known.has(id)))).filter(id=>{const key=JSON.stringify([account,activeKey,id]),last=videoResultLoads.current.get(key)||0;if(now-last<15000)return false;videoResultLoads.current.set(key,now);return true;});
+    if(!ids.length)return;
+    void (async()=>{for(let offset=0;offset<ids.length;offset+=100){if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;await mergeWorks(ids.slice(offset,offset+100));}})();
+  },[user?.email,targetEmail,activeKey,readOnly,works,videoNodesStore.nodes]);
   const selectedVideo=videoNodesStore.nodes.find(node=>node.id===selectedId)||null;
   const mixedNativeSelection=multiSel.length>1&&(multiSel.some(id=>videoNodesStore.getNode(id))||multiSel.some(id=>id.startsWith("text-"))&&multiSel.some(id=>!id.startsWith("text-")));
   const selected = useMemo(
@@ -3588,10 +3601,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
     }
     for(const videoNode of videoNodesStore.nodes.filter(node=>node.projectKey===activeKey)){
-      const task=videoTaskStore.tasks.find(task=>task.id===videoNode.lastTaskId),result=(works||[]).find(art=>art.id===videoNode.lastResultId),locked=isNodeLocked(videoNode.id);
+      const task=videoTaskStore.tasks.find(task=>task.id===videoNode.lastTaskId),result=(works||[]).find(art=>art.id===(videoNode.displayResultId||videoNode.lastResultId)),locked=isNodeLocked(videoNode.id);
       displayNodes.push({id:videoNode.id,type:"videoGeneration",position:{x:videoNode.x,y:videoNode.y},selected:videoNode.id===selectedId,draggable:!readOnly&&!locked,
-        style:{width:videoNode.width,height:videoNode.height},data:{node:videoNode,title:videoNode.title,prompt:videoNode.config.prompt,content:String(videoNode.revision),width:videoNode.width,height:videoNode.height,status:task?.status,progress:task?.progress,videoUrl:result?.videoUrl||task?.videoUrl,
-          task,settings:settingsFor(videoNode.id),selected:videoNode.id===selectedId,lightCanvas,locked,readOnly,resultUrl:result?.videoUrl||task?.videoUrl,onEdit:(id:string)=>setVideoEditId(id),onGenerate:(id:string)=>setVideoEditId(id),onCancel:(id:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current?.lastTaskId)void videoTaskStore.cancel(current.lastTaskId).catch(error=>flashTip(error.message));},
+        style:{width:videoNode.width,height:videoNode.height},data:{node:videoNode,title:videoNode.title,prompt:videoNode.config.prompt,content:String(videoNode.revision),width:videoNode.width,height:videoNode.height,status:task?.status,progress:task?.progress,videoUrl:result?.videoUrl||(!videoNode.displayResultId?task?.videoUrl:undefined),
+          task,settings:settingsFor(videoNode.id),selected:videoNode.id===selectedId,lightCanvas,locked,readOnly,resultUrl:result?.videoUrl||(!videoNode.displayResultId?task?.videoUrl:undefined),onEdit:(id:string)=>setVideoEditId(id),onHistory:(id:string)=>setVideoHistoryId(id),onGenerate:(id:string)=>setVideoEditId(id),onCancel:(id:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current?.lastTaskId)void videoTaskStore.cancel(current.lastTaskId).catch(error=>flashTip(error.message));},
           onProcess:extractVideoToCanvas,onPrompt:async(id:string,prompt:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current)await patchVideoNode(id,{config:{...current.config,prompt}});},
           onResize:(id:string,size:{x:number;y:number;width:number;height:number})=>{void patchVideoNode(id,size).catch(error=>flashTip(error.message));}}} as Node);
       for(const input of videoNode.inputs){const source=input.nodeId.replace(/^(?:text|image|video|audio):/,"");if(!displayNodes.some(node=>node.id===source)&&!textNodes.some(node=>node.id===source)&&!videoNodesStore.nodes.some(node=>node.id===source))continue;
@@ -4998,6 +5011,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     await videoNodesStore.refresh();await videoTaskStore.refresh();await refreshCredits();
   }
 
+  async function selectVideoResult(id:string,artworkId:string|null,expectedRevision:number){
+    if(!user||readOnly||isNodeLocked(id))throw new Error("无法替换视频结果");const account=canvasAccountRef.current,project=activeProjectRef.current?.key,key=JSON.stringify([account,id,artworkId]);await videoNodesStore.flush();if(account!==canvasAccountRef.current)throw new Error("账号已切换");
+    const current=videoNodesStore.getNode(id);if(!current||current.deletedAt||current.projectKey!==project)throw new Error("视频节点不存在或项目已切换");let attempt=videoResultAttempts.current.get(key);
+    if(!attempt){if(current.revision!==expectedRevision)throw new Error("视频节点已更新，请重新选择结果");attempt={operationId:browserRandomUUID(),from:current.displayResultId||null,to:artworkId,operations:[{type:"video-result",id,expectedRevision,expectedArtworkId:current.displayResultId||null,artworkId}]};videoResultAttempts.current.set(key,attempt);}
+    const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId:attempt.operationId,operations:attempt.operations})});const data=await readJsonSafe(response);
+    if(!response.ok){if(response.status<500)videoResultAttempts.current.delete(key);await videoNodesStore.refresh();throw new Error(data.error||"结果选择尚未核实，请重试");}videoResultAttempts.current.delete(key);
+    if(account!==canvasAccountRef.current||activeProjectRef.current?.key!==project)return;await videoNodesStore.refresh();if(account!==canvasAccountRef.current||activeProjectRef.current?.key!==project)return;
+    if(artworkId)await mergeWorks([artworkId]);if(account!==canvasAccountRef.current||activeProjectRef.current?.key!==project)return;pushUndo({kind:"video-result",id,from:attempt.from,to:attempt.to});
+  }
+
   async function onExpand(ratio: string) {
     const source = selected;
     setExpandOpen(false);
@@ -5801,6 +5824,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const texts = (records: CanvasTextNode[], visible: boolean) => records.forEach(node => operations.push(visible ? {type:"text-restore",node} : {type:"text-delete",id:node.id}));
     const videos=(records:CanvasVideoNode[],visible:boolean)=>records.forEach(node=>operations.push({type:"video-visibility",id:node.id,visible}));
     if(act.kind==="video-patch")videoPatch(act.id,act[side]);
+    else if(act.kind==="video-result"){const current=videoNodesStore.getNode(act.id);if(!current)throw new Error("视频节点不存在");operations.push({type:"video-result",id:act.id,expectedRevision:current.revision,expectedArtworkId:act[undo?"to":"from"],artworkId:act[side]});}
     else if(act.kind==="video-add")videos(act.records,!undo);
     else if (act.kind === "move" || act.kind === "text-move") position(act.id,act[side],act.kind === "text-move");
     else if (act.kind === "move-many") act.moves.forEach(move => position(move.id,move[side]));
@@ -5860,7 +5884,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         return node;
       }) ?? current);
     }
-    if(operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"))await videoNodesStore.refresh();
+    if(operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"||op.type==="video-result"))await videoNodesStore.refresh();
     for(const op of operations) {const id=(op.id || (op.node as CanvasTextNode|undefined)?.id) as string; unsavedTextRef.current.delete(id);}
     setUnsavedTextCount(unsavedTextRef.current.size);
     historyAttemptsRef.current.delete(act);
@@ -8152,6 +8176,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       ratioMenuOpen ||
       expandOpen ||
       !!videoEditId ||
+      !!videoHistoryId ||
       !!videoMedia ||
       spawnMenu ||
       ctxMenu ||
@@ -11995,6 +12020,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
       {videoEditId&&videoNodesStore.nodes.find(node=>node.id===videoEditId&&node.projectKey===activeKey)&&(()=>{const node=videoNodesStore.nodes.find(node=>node.id===videoEditId)!;return <VideoSettingsDialog key={node.id} node={node} models={videoCatalog} choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||isNodeLocked(node.id)} onClose={()=>setVideoEditId(null)} onSave={async draft=>{await saveVideoDraft(node.id,draft);}} onGenerate={(draft,quote)=>generateVideoDraft(node.id,draft,quote)} onImport={async files=>{try{const choices=await videoAssetStore.upload(files,node.projectKey);await mergeWorks(choices.map(choice=>choice.nodeId));return choices;}catch(cause){if(cause instanceof VideoAssetImportError&&cause.choices.length)await mergeWorks(cause.choices.map(choice=>choice.nodeId));throw cause;}}} onLoadMoreAssets={videoAssetStore.loadMore} canLoadMoreAssets={!!videoAssetStore.nextCursor}/>;})()}
       {videoMedia&&videoMedia.projectKey===activeKey&&<MediaActionsDialog key={`${user?.email}:${videoMedia.projectKey}:${videoMedia.id}`} initial={videoMedia.initial} sourceId={videoMedia.id} projectKey={videoMedia.projectKey} choices={videoInputChoices.filter(choice=>choice.available&&choice.kind!=="text").map(choice=>({id:choice.nodeId,title:choice.title,kind:choice.kind as MediaInputChoice["kind"],url:choice.value}))} light={lightCanvas} readOnly={readOnly||isNodeLocked(videoMedia.id)} jobs={mediaJobStore.jobs} historyError={mediaJobStore.error} canLoadMore={!!mediaJobStore.nextCursor} onLoadMore={mediaJobStore.loadMore} onQuote={mediaJobStore.estimate} onSubmit={mediaJobStore.submit} onCancel={mediaJobStore.cancel} onClose={()=>setVideoMedia(null)}/>}
+      {videoHistoryId&&videoNodesStore.nodes.find(node=>node.id===videoHistoryId&&node.projectKey===activeKey)&&<VideoHistoryPicker key={`${user?.email}:${activeKey}:${videoHistoryId}`} email={user?.email} projectKey={activeKey} node={videoNodesStore.getNode(videoHistoryId)} projects={projects.map(project=>({key:project.key,name:project.name}))} assets={videoAssetStore.assets} canLoadMoreAssets={!!videoAssetStore.nextCursor} onLoadMoreAssets={videoAssetStore.loadMore} request={privateFetchRaw} light={lightCanvas} readOnly={readOnly||isNodeLocked(videoHistoryId)} onClose={()=>setVideoHistoryId(null)} onSelectResult={(id,revision)=>selectVideoResult(videoHistoryId,id,revision)} onReuseSettings={async snapshot=>{const node=videoNodesStore.getNode(videoHistoryId),account=canvasAccountRef.current,epoch=canvasContextEpochRef.current;if(!node||readOnly||isNodeLocked(node.id))throw new Error("无法修改视频设置");const draft=videoHistoryDraft(snapshot);await mergeWorks(draft.choices.filter(choice=>choice.kind!=="text").map(choice=>choice.nodeId));if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)throw new Error("账号或项目已切换");await saveVideoDraft(node.id,{title:node.title,config:draft.config,inputs:draft.inputs,expectedRevision:node.revision});if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;setVideoHistoryId(null);setVideoEditId(node.id);}} onSent={async result=>{await mergeWorks([result.artworkId,...(result.artworkIds||[]),...(result.inputArtworkIds||[])]);await videoNodesStore.refresh();await videoAssetStore.refresh();}} onRetried={async()=>{await videoNodesStore.refresh();await videoTaskStore.refresh();await refreshCredits();}} onProcess={(id,action)=>{const account=canvasAccountRef.current;void mergeWorks([id]).then(()=>{if(account===canvasAccountRef.current)extractVideoToCanvas(id,action);}).catch(error=>flashTip(error instanceof Error?error.message:"媒体加载失败"));}}/>}
       {imagegenPanel&&<ImagegenPanel entry="canvas" inputs={imagegenPanel.inputs} modelId={genModel} sourceNodeId={imagegenPanel.sourceNodeId} onClose={()=>setImagegenPanel(null)} onResult={result=>{void mountImagegenResult(result).catch(e=>flashTip(e instanceof Error?e.message:"结果已保存，请刷新画布"));}}/>}
       {/* 从生成历史选择:作品选择器 */}
       {historyPicker && (

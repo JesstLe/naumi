@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import {z} from "zod";
 
 import { authenticatedEmail } from "@/lib/request-auth";
 import { safeError } from "@/lib/api-error";
@@ -23,32 +24,23 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const id = url.searchParams.get("id") || "";
   const operation=url.searchParams.get("idempotencyKey");
-  if(!id&&operation){const task=await getVideoTaskByIdempotencyKey(email,operation);return task?NextResponse.json({ok:true,task:publicVideoTaskView(task)}):NextResponse.json({error:"任务不存在"},{status:404});}
+  if(!id&&operation){const task=await getVideoTaskByIdempotencyKey(email,operation);return task?NextResponse.json({ok:true,task:publicVideoTaskView(task)},{headers:{"cache-control":"private, no-store"}}):NextResponse.json({error:"任务不存在"},{status:404});}
 
   if (!id) {
-    const status = url.searchParams.get("status") || "";
-    const source = url.searchParams.get("source") || "";
-    const sourceIds = (url.searchParams.get("sourceIds") || "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .slice(0, 500);
-    const limit = Number(url.searchParams.get("limit") || "30");
-    const tasks = await listVideoTaskViews(email, {
-      status: VALID_STATUS.has(status) ? status : undefined,
-      source: ["canvas", "workbench", "agent", "workflow"].includes(source) ? source : undefined,
-      sourceIds,
-      projectKey: url.searchParams.get("projectKey") || undefined,
-      nodeId: url.searchParams.get("nodeId") || undefined,
-      limit: Number.isFinite(limit) ? limit : 30,
-    });
-    return NextResponse.json({ ok: true, tasks: tasks.map(publicVideoTaskView) });
+    const status=url.searchParams.get("status")||undefined,source=url.searchParams.get("source")||undefined,sourceIds=(url.searchParams.get("sourceIds")||"").split(",").map(value=>value.trim()).filter(Boolean),limit=Number(url.searchParams.get("limit")??30);
+    let cursor:{createdAt:string;id:string}|undefined;try{if(url.searchParams.has("cursor"))cursor=z.strictObject({createdAt:z.iso.datetime(),id:z.string().min(1).max(160)}).parse(JSON.parse(url.searchParams.get("cursor")!));}catch{return NextResponse.json({error:"任务分页参数无效"},{status:422});}
+    if(status&&!VALID_STATUS.has(status)||source&&!['canvas','workbench','agent','workflow'].includes(source)||!Number.isInteger(limit)||limit<1||limit>500||sourceIds.length>500)return NextResponse.json({error:"任务查询参数无效"},{status:422});
+    try{const options={status,source,sourceIds,projectKey:url.searchParams.get("projectKey")||undefined,nodeId:url.searchParams.get("nodeId")||undefined};
+      const rows=await listVideoTaskViews(email,{...options,cursor,limit:limit+1}),page=rows.slice(0,limit),last=page[page.length-1],nextCursor=rows.length>limit&&last?{createdAt:last.cursorCreatedAt||last.createdAt,id:last.id}:null;
+      if(!cursor&&!status){const pending=await listVideoTaskViews(email,{...options,pendingOnly:true}),known=new Set(page.map(task=>task.id));page.push(...pending.filter(task=>!known.has(task.id)));}
+      return NextResponse.json({ok:true,tasks:page.map(publicVideoTaskView),nextCursor},{headers:{"cache-control":"private, no-store"}});
+    }catch{return NextResponse.json({error:"视频任务历史暂不可用"},{status:503});}
   }
 
   try {
     const task = await pollAndSettle(email, id);
     if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
-    return NextResponse.json({ ok: true, task: publicVideoTaskView(task) });
+    return NextResponse.json({ ok: true, task: publicVideoTaskView(task) },{headers:{"cache-control":"private, no-store"}});
   } catch (error) {
     return NextResponse.json(
       { error: safeError(error, "视频任务查询失败") },

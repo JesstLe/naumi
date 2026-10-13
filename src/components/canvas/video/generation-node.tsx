@@ -6,7 +6,7 @@ import type {CanvasVideoNode} from "@/lib/canvas/video-node-schema";
 import type {PublicVideoTaskView} from "@/lib/video/service";
 import {videoButtonClass} from "./form-controls";
 import {VideoPlayer,type VideoPlayerAction} from "./player";
-export type VideoGenerationNodeData={node:CanvasVideoNode;lightCanvas:boolean;locked:boolean;readOnly:boolean;task?:PublicVideoTaskView;onEdit:(id:string)=>void;onGenerate:(id:string)=>void;onCancel:(id:string)=>void;onProcess:(id:string,action:VideoPlayerAction)=>void;onPrompt:(id:string,prompt:string)=>Promise<void>;onResize:(id:string,size:{x:number;y:number;width:number;height:number})=>void;resultUrl?:string};
+export type VideoGenerationNodeData={node:CanvasVideoNode;lightCanvas:boolean;locked:boolean;readOnly:boolean;task?:PublicVideoTaskView;onEdit:(id:string)=>void;onHistory:(id:string)=>void;onGenerate:(id:string)=>void;onCancel:(id:string)=>void;onProcess:(id:string,action:VideoPlayerAction)=>void;onPrompt:(id:string,prompt:string)=>Promise<void>;onResize:(id:string,size:{x:number;y:number;width:number;height:number})=>void;resultUrl?:string};
 const statusLabels:Record<string,string>={queued:"排队中",processing:"生成中",creating:"提交中",submitted:"已提交",running:"生成中",creation_unknown:"等待核查",needs_attention:"等待核查",completed:"已完成",failed:"失败",cancelled:"已停止"};
 export function VideoGenerationNode({data,selected}:NodeProps){
   const d=data as unknown as VideoGenerationNodeData,{node,task}=d;
@@ -25,7 +25,7 @@ export function VideoGenerationNode({data,selected}:NodeProps){
       <div className="flex items-center gap-2 text-[10px] opacity-70"><span className="truncate">{node.config.modelId||"未选择模型"}</span>{node.config.durationSeconds!==undefined&&<span>{node.config.durationSeconds===-1?"自动":`${node.config.durationSeconds}s`}</span>}<span>{node.inputs.length} 引用</span></div>
       {task&&<div className="flex items-center gap-2 text-xs" data-testid="video-node-task-status">{active&&<Loader2 size={12} className="animate-spin"/>}<span>{statusLabels[task.status]||task.status}</span>{task.progress>0&&task.progress<100&&active&&<span>{task.progress}%</span>}</div>}
       {(error||task?.error)&&<p role="alert" className="line-clamp-2 text-[11px] text-red-500">{error||task?.error}</p>}
-      <div className="flex gap-2"><button type="button" className={videoButtonClass} disabled={blocked} onClick={()=>d.onEdit(node.id)}>参数与引用</button>{active?<button type="button" className={videoButtonClass} disabled={blocked||!!task?.cancellationRequestedAt} onClick={()=>d.onCancel(node.id)}>{task?.cancellationRequestedAt?"正在停止":"停止"}</button>:<button type="button" className="ml-auto rounded-lg bg-teal-500 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40" disabled={blocked||dirty} onClick={()=>d.onGenerate(node.id)}>生成视频</button>}</div>
+      <div className="flex gap-2"><button type="button" className={videoButtonClass} disabled={blocked} onClick={()=>d.onEdit(node.id)}>参数与引用</button><button type="button" className={videoButtonClass} onClick={()=>d.onHistory(node.id)}>历史</button>{active?<button type="button" className={videoButtonClass} disabled={blocked||!!task?.cancellationRequestedAt} onClick={()=>d.onCancel(node.id)}>{task?.cancellationRequestedAt?"正在停止":"停止"}</button>:<button type="button" className="ml-auto rounded-lg bg-teal-500 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40" disabled={blocked||dirty} onClick={()=>d.onGenerate(node.id)}>生成视频</button>}</div>
     </div>
   </div>;
 }

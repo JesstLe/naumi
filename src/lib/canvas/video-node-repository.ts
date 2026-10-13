@@ -15,6 +15,7 @@ export async function ensureVideoNodeSchema(){
       width double precision NOT NULL DEFAULT 384,height double precision NOT NULL DEFAULT 320,config jsonb NOT NULL DEFAULT '{}',inputs jsonb NOT NULL DEFAULT '[]',
       last_task_id text,last_result_id text,deleted_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,id));
     CREATE INDEX IF NOT EXISTS app_canvas_video_nodes_project_idx ON app_canvas_video_nodes(email,project_key,updated_at DESC);
+    ALTER TABLE app_canvas_video_nodes ADD COLUMN IF NOT EXISTS display_result_id text;
     CREATE TABLE IF NOT EXISTS app_canvas_video_task_sends(email text NOT NULL,task_id text NOT NULL,project_key text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,task_id,project_key));
     CREATE TABLE IF NOT EXISTS app_canvas_video_workflow_sources(email text NOT NULL,task_id text NOT NULL,public_model_id text NOT NULL,manifest_enc text NOT NULL,digest text,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,task_id));
     CREATE TABLE IF NOT EXISTS app_canvas_video_node_operations(email text NOT NULL,operation_id uuid NOT NULL,node_id text NOT NULL,
@@ -24,7 +25,7 @@ export async function ensureVideoNodeSchema(){
   `)).then(()=>undefined).catch(error=>{ready=undefined;throw error;});await ready;
 }
 function mapNode(row:Record<string,any>):CanvasVideoNode{return {id:String(row.id),projectKey:String(row.project_key),revision:Number(row.revision),title:String(row.title),x:Number(row.x),y:Number(row.y),width:Number(row.width),height:Number(row.height),
-  config:row.config,inputs:row.inputs,lastTaskId:row.last_task_id||null,lastResultId:row.last_result_id||null,deletedAt:row.deleted_at?new Date(row.deleted_at).toISOString():null,
+  config:row.config,inputs:row.inputs,lastTaskId:row.last_task_id||null,lastResultId:row.last_result_id||null,displayResultId:row.display_result_id||null,deletedAt:row.deleted_at?new Date(row.deleted_at).toISOString():null,
   createdAt:new Date(row.created_at).toISOString(),updatedAt:new Date(row.updated_at).toISOString()};}
 export async function getVideoNode(actor:string,id:string,includeDeleted=false){await ensureVideoNodeSchema();const row=(await getPool().query("SELECT * FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 AND ($3 OR deleted_at IS NULL)",[actor,id,includeDeleted])).rows[0];return row?mapNode(row):null;}
 export async function listVideoNodes(actor:string,projectKey?:string,includeDeleted=false){await ensureVideoNodeSchema();return (await getPool().query("SELECT * FROM app_canvas_video_nodes WHERE email=$1 AND ($2::text IS NULL OR project_key=$2) AND ($3 OR deleted_at IS NULL) ORDER BY created_at,id LIMIT 2000",[actor,projectKey||null,includeDeleted])).rows.map(mapNode);}
@@ -65,7 +66,7 @@ export async function associateVideoTaskTx(client:PoolClient,actor:string,nodeId
   if(Number(node.revision)!==revision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","视频节点已更新，生成没有提交",409);
   const ownTask=(await client.query("SELECT id FROM app_video_tasks WHERE email=$1 AND id=$2",[actor,taskId])).rows[0];
   if(!ownTask)throw new ModelConfigError("VIDEO_TASK_UNAVAILABLE","视频任务不存在",404);
-  await client.query("UPDATE app_canvas_video_nodes SET last_task_id=$3,revision=revision+1,updated_at=now() WHERE email=$1 AND id=$2",[actor,nodeId,taskId]);
+  await client.query("UPDATE app_canvas_video_nodes SET last_task_id=$3,display_result_id=NULL,revision=revision+1,updated_at=now() WHERE email=$1 AND id=$2",[actor,nodeId,taskId]);
 }
 /** Older tasks cannot replace the latest node result, and soft deletion remains reversible. */
 export async function completeVideoNodeTx(client:PoolClient,actor:string,nodeId:string,taskId:string,resultId:string){

@@ -54,7 +54,7 @@ async function resolveInput(actor:string,id:string):Promise<FrozenInput>{
     return {key:entry.storageKey,artworkId:entry.artworkId,sha256:entry.sha256,bytes:entry.bytes,mimeType:entry.mimeType,extension:entry.name.endsWith(".m3u8")?"m3u8":"mpd",probe:entry.probe,groupId:null,bundleEntry:entry.name,bundleFiles:files};
   }
   let art=(await listArtworksByIds(actor,[id]))[0];
-  if(!art){const node=await getVideoNode(actor,id.replace(/^video:/,""));if(node?.lastResultId)art=(await listArtworksByIds(actor,[node.lastResultId]))[0];}
+  if(!art){const node=await getVideoNode(actor,id.replace(/^video:/,""));const resultId=node?.displayResultId||node?.lastResultId;if(resultId)art=(await listArtworksByIds(actor,[resultId]))[0];}
   if(art&&art.status!=="completed")throw new ModelConfigError("MEDIA_INPUT_PENDING","前序媒体尚未完成",422);
   const key=art?storageKeyFromManagedUrl(art.videoUrl||art.image):storageKeyFromManagedUrl(id)||id;
   if(!key)unavailable();return verifiedOwnedMedia(actor,key,art?.id||null);

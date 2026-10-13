@@ -31,8 +31,8 @@ export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;exp
     let artworkId=sourceId;
     if(videoNode){
       const task=videoNode.lastTaskId?await getVideoTask(actor,videoNode.lastTaskId):null;
-      if(task&&task.status!=="completed"||!videoNode.lastResultId)throw new ModelConfigError("VIDEO_DEPENDENCY_PENDING","前序视频尚未完成",409);
-      artworkId=videoNode.lastResultId;
+      if(!videoNode.displayResultId&&task&&task.status!=="completed"||!videoNode.displayResultId&&!videoNode.lastResultId)throw new ModelConfigError("VIDEO_DEPENDENCY_PENDING","前序视频尚未完成",409);
+      artworkId=videoNode.displayResultId||videoNode.lastResultId!;
     }
     const artwork=(await listArtworksByIds(actor,[artworkId]))[0];
     if(!artwork||artwork.status!=="completed")throw new ModelConfigError("VIDEO_INPUT_UNAVAILABLE","引用媒体尚未完成或无权访问",404);

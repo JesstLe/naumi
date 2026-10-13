@@ -16,4 +16,4 @@ export const videoNodeWriteSchema=z.strictObject({id:videoNodeIdSchema,projectKe
   config:videoNodeConfigSchema.optional(),inputs:z.array(orderedInputSchema).max(256).optional(),deleted:z.boolean().optional()});
 export type VideoNodeWrite=z.infer<typeof videoNodeWriteSchema>;
 export type CanvasVideoNode={id:string;projectKey:string;revision:number;title:string;x:number;y:number;width:number;height:number;config:z.infer<typeof videoNodeConfigSchema>;
-  inputs:z.infer<typeof orderedInputSchema>[];lastTaskId:string|null;lastResultId:string|null;deletedAt:string|null;createdAt:string;updatedAt:string};
+  inputs:z.infer<typeof orderedInputSchema>[];lastTaskId:string|null;lastResultId:string|null;displayResultId?:string|null;deletedAt:string|null;createdAt:string;updatedAt:string};

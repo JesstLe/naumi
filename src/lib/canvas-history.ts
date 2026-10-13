@@ -1,7 +1,9 @@
 import "server-only";
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { getPool, ensureSchema } from "@/lib/db";
+import { getPool, ensureSchema,listArtworksByIds } from "@/lib/db";
+import {verifiedOwnedMedia} from "@/lib/video/media-inspection";
+import {storageKeyFromManagedUrl} from "@/lib/storage";
 import { nodeSettingsSchema } from "@/lib/canvas/node-settings";
 import { ensureCanvasSettingsSchema } from "@/lib/canvas-node-settings-store";
 import {videoNodeWriteSchema} from "@/lib/canvas/video-node-schema";
@@ -27,6 +29,7 @@ export const historyRequest = z.object({
     z.object({ type: z.literal("text-delete"), id }),
     z.object({ type: z.literal("video-visibility"), id, visible:z.boolean() }),
     z.object({ type: z.literal("video-patch"), id, expectedRevision:z.number().int().nonnegative(), fields:videoHistoryFields }),
+    z.object({ type: z.literal("video-result"),id,expectedRevision:z.number().int().nonnegative(),artworkId:id.nullable(),expectedArtworkId:id.nullable().optional() }),
     z.object({ type: z.literal("position"), id, text: z.boolean(), x: coordinate, y: coordinate }),
     z.object({ type: z.literal("group"), id, value: id.nullable() }),
     z.object({ type: z.literal("parent"), id, parentId: id, add: z.boolean() }),
@@ -43,12 +46,22 @@ export const historyRequest = z.object({
 export async function saveCanvasHistory(email: string, input: z.infer<typeof historyRequest>) {
   email=email.toLowerCase();
   await ensureSchema();
-  const hasVideo=input.operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"||op.type==="node-settings"&&op.video);
+  const hasVideo=input.operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"||op.type==="video-result"||op.type==="node-settings"&&op.video);
   if(hasVideo)await ensureVideoNodeSchema();
   if (input.operations.some(op => op.type === "node-settings")) await ensureCanvasSettingsSchema();
   if (input.operations.some(op => op.type === "workflow-asset")) await (await import("@/lib/canvas-workflow-import")).ensureWorkflowImportSchema();
-  const client = await getPool().connect();
   const fingerprint = createHash("sha256").update(JSON.stringify(input.operations)).digest("hex");
+  const verifiedResults=new Map<string,string>();
+  if(input.operations.some(op=>op.type==="video-result")){
+    // Replay first, even if a previously accepted input has since been removed. Media I/O never holds a transaction connection.
+    const previous=(await getPool().query("SELECT fingerprint FROM app_canvas_history_ops WHERE email=$1 AND id=$2",[email,input.operationId])).rows[0];
+    if(previous){if(previous.fingerprint!==fingerprint)throw new Error("操作编号已使用");return;}
+    for(const op of input.operations){if(op.type!=="video-result"||!op.artworkId||verifiedResults.has(op.artworkId))continue;
+      const art=(await listArtworksByIds(email,[op.artworkId]))[0],key=storageKeyFromManagedUrl(art?.videoUrl||"");if(!art||art.status!=="completed"||!key)throw new Error("视频素材不存在或无权访问");
+      const media=await verifiedOwnedMedia(email,key,art.id);if(!media.mimeType.startsWith("video/"))throw new Error("请选择真实视频素材");verifiedResults.set(art.id,art.videoUrl!);
+    }
+  }
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     // Serialize steps per owner, including concurrent retries of one request.
@@ -60,6 +73,11 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
     }
     if(hasVideo)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
     for (const [index,op] of input.operations.entries()) {
+      if(op.type==="video-result"){
+        const node=(await client.query("SELECT revision,display_result_id,deleted_at FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];if(!node||node.deleted_at)throw new Error("视频节点不存在或无权修改");if(Number(node.revision)!==op.expectedRevision||op.expectedArtworkId!==undefined&&(node.display_result_id||null)!==op.expectedArtworkId)throw new Error("视频节点已更新，请重新选择结果");
+        if(op.artworkId){const art=(await client.query("SELECT video_url,status,deleted_at FROM app_artworks WHERE email=$1 AND id=$2 FOR SHARE",[email,op.artworkId])).rows[0];if(!art||art.deleted_at||art.status!=="completed"||art.video_url!==verifiedResults.get(op.artworkId))throw new Error("视频素材已删除或改变");}
+        await client.query("UPDATE app_canvas_video_nodes SET display_result_id=$3,revision=revision+1,updated_at=now() WHERE email=$1 AND id=$2",[email,op.id,op.artworkId]);continue;
+      }
       if(op.type==="video-patch"||op.type==="video-visibility"){
         const row=(await client.query("SELECT revision,project_key FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
         if(!row)throw new Error("视频节点不存在或无权修改");
