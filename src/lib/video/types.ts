@@ -77,6 +77,8 @@ export type VideoProviderPollResult = {
   status: VideoTaskStatus;
   progress: number;
   resultUrl?: string;
+  resultAssets?:Array<{kind:"video"|"image"|"audio";url:string;mimeType?:string}>;
+  inlineResult?:{mimeType:string;base64:string};
   errorCode?: string;
   errorMessage?: string;
   errorDetail?: unknown;

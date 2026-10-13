@@ -35,7 +35,7 @@ export function buildKIECreate(context:VideoWireContext):VideoWireRequest{
     if(refs.videos.length||refs.audios.length||images.length>2)unsupportedWire(context,"Kling视频模式最多两张图片");
     values.mode=extra.mode??"std";delete values.resolution;
     if(input.generateAudio!==undefined)values.sound=input.generateAudio;
-    if(profile==="kie-kling-v26"){rejectAdvanced(context);if(input.negativePrompt)values.negative_prompt=input.negativePrompt;}
+    if(profile==="kie-kling-v26"){if(![5,10].includes(input.durationSeconds))unsupportedWire(context,"Kling2.6时长只能为5或10秒");rejectAdvanced(context);if(input.negativePrompt)values.negative_prompt=input.negativePrompt;}
     else{
       if(input.negativePrompt)unsupportedWire(context,"Kling3.0没有负面提示词字段");
       if(input.shots?.length){values.multi_shots=true;values.multi_prompt=input.shots.map(shot=>({prompt:shot.prompt,duration:shot.durationSeconds}));}

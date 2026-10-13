@@ -510,7 +510,7 @@ async function submitQueuedVideoTask(
   const persistedRequest = preparedRequest ?? requestFromQueuedTask(task);
   const cfg=getVideoProviderConfig(task.providerId);
   const multipart=cfg?.protocol==="openai-videos"&&!cfg.videoProfile||cfg?.videoProfile==="openai-videos";
-  const inlineImages=cfg?.videoProfile==="openai-videos"||cfg?.videoProfile==="gemini"||cfg?.videoProfile==="cogvideox3"||cfg?.videoProfile==="grok2api"||cfg?.videoProfile==="agnes";
+  const inlineImages=cfg?.videoProfile==="openai-videos"||cfg?.videoProfile==="gemini"||cfg?.videoProfile==="cogvideox3"||cfg?.videoProfile==="grok2api"||cfg?.videoProfile==="agnes"||cfg?.videoProfile==="compshare-hailuo";
   const request=await materializeVideoReferences(email,persistedRequest,{multipart,inlineImages});
   const image=preparedImage??await imageForQueuedTask(task,request,email);
   const {withBiModelContext}=await import("@/lib/bi/model-observer");

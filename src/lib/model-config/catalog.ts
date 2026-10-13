@@ -19,13 +19,14 @@ export type ProviderCatalogResult = {
   sourceModels?: ProviderCatalogModel[];
 };
 
-const catalogProtocols = new Set(["openai-images", "new-api-flow", "openai-chat", "apimart-images", "apimart", "openai-videos"]);
+const catalogProtocols = new Set(["openai-images", "new-api-flow", "openai-chat", "apimart-images", "apimart", "openai-videos", "tfrouter"]);
 const identifier = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/.test(value);
 
 function catalogUrl(baseUrl: string, protocol: string) {
   const base = new URL(baseUrl);
   const path = base.pathname.replace(/\/+$/, "");
-  base.pathname = ["apimart-images", "apimart"].includes(protocol) ? `${path.replace(/\/v1$/, "")}/v1/models` : `${path}/models`;
+  base.pathname = ["apimart-images", "apimart", "tfrouter"].includes(protocol) ? `${path.replace(/\/v1$/, "")}/v1/models` : `${path}/models`;
+  if(protocol==="tfrouter")base.searchParams.set("type","video");
   return base.toString();
 }
 

@@ -9,10 +9,12 @@ export function buildAPIMartCreate(context:VideoWireContext):VideoWireRequest{
   if(profile==="apimart-motion-control"){
     rejectAdvanced(context);if(images.length!==1||refs.videos.length!==1||refs.audios.length)unsupportedWire(context,"运动控制需要一张图片和一个运动视频");
     body.character_orientation=extra.character_orientation??"image";body.mode=extra.mode??"std";
+    body.image_url=images[0];body.video_url=refs.videos[0];delete body.image_urls;delete body.video_urls;
     delete body.duration;delete body.resolution;delete body.aspect_ratio;
   }else if(profile==="apimart-kling-omni"){
     if(refs.videos.length>1||images.length>7||refs.audios.length)unsupportedWire(context,"Omni最多7张图片、1个视频，不支持独立音频引用");
     if(input.shots?.length||input.elements?.length)unsupportedWire(context,"此API Mart Omni wire未声明结构化分镜或元素");
+    body.mode=extra.mode??(input.resolution?.toLowerCase()==="1080p"?"pro":"std");delete body.resolution;
     delete body.video_urls;if(refs.videos.length)body.video_list=refs.videos.map(video_url=>({video_url,refer_type:"base",keep_original_sound:"no"}));
     if(input.generateAudio!==undefined&&!refs.videos.length)body.audio=input.generateAudio;
     if(refs.videos.length&&input.generateAudio===true)unsupportedWire(context,"视频参考分支不生成音频");
@@ -20,7 +22,7 @@ export function buildAPIMartCreate(context:VideoWireContext):VideoWireRequest{
     if(images.length>2||refs.videos.length||refs.audios.length)unsupportedWire(context,"Kling最多两张图片");
     body.mode=extra.mode??"std";delete body.resolution;
     if(input.generateAudio!==undefined)body[profile==="apimart-kling-v26"?"sound":"audio"]=input.generateAudio;
-    if(profile==="apimart-kling-v26")rejectAdvanced(context);
+    if(profile==="apimart-kling-v26"){if(![5,10].includes(input.durationSeconds))unsupportedWire(context,"Kling2.6时长只能为5或10秒");rejectAdvanced(context);}
     if(input.shots?.length){body.multi_shot=true;body.shot_type="customize";body.multi_prompt=input.shots.map((shot,index)=>({index:index+1,prompt:shot.prompt,duration:shot.durationSeconds}));}
     else if(extra.multi_shot===true)body.shot_type="intelligence";
     if(input.elements?.length){if(input.elements.length>3||input.elements.some(element=>element.references.length>4||element.references.some(ref=>ref.kind!=="image")))unsupportedWire(context,"Kling最多3个元素，每个最多4张图片");

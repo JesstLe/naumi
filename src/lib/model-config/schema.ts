@@ -11,7 +11,7 @@ import { FEATURE_IDS } from "../billing/rules/registry";
 import { validateToolScopes } from "./tool-scope";
 import {resolutionPolicySchema} from "./resolution-policy";
 import { qualityPolicySchema } from "./quality-policy";
-import { videoDefinitionSchema, videoWireProfileSchema } from "../video/capability-schema";
+import { videoDefinitionSchema, videoWireProfileSchema,videoProfileProtocol } from "../video/capability-schema";
 
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const name = z.string().trim().min(1).max(100);
@@ -19,7 +19,7 @@ const modality = z.enum(["image", "text", "video"]);
 const quality = z.enum(["low", "medium", "high", "xhigh", "max", "auto"]);
 const resolution = z.enum(["1K", "2K", "4K"]);
 const displayRatios = z.array(z.string().regex(/^[1-9]\d{0,2}:[1-9]\d{0,2}$/)).min(1).max(30).refine(v => new Set(v).size === v.length, "比例不能重复").optional();
-export const MODEL_PROTOCOLS = ["openai-images", "new-api-flow", "openai-chat", "apimart-images", "fal-images", "openai-videos", "ark", "kie", "apimart", "gemini", "minimax", "autodl", "runninghub"] as const;
+export const MODEL_PROTOCOLS = ["openai-images", "new-api-flow", "openai-chat", "apimart-images", "fal-images", "openai-videos", "ark", "kie", "apimart", "gemini", "minimax", "metaso", "tokendance", "tfrouter", "compshare", "comfyui", "autodl", "runninghub"] as const;
 const videoOptions = z.strictObject({
   imageAdapter: z.literal("reverse-hub").optional(),
   imageRatios: displayRatios,
@@ -100,6 +100,8 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
     if (!p) fail("上游供应商不存在", [`upstreamModels.${m.id}.providerId`]);
     const expected = ["openai-images", "new-api-flow", "apimart-images", "fal-images"].includes(p.protocol) ? "image" : p.protocol === "openai-chat" ? "text" : "video";
     if (m.modality !== expected) fail("供应商协议与模态不匹配");
+    const profile=m.parameterMap.videoProfile??p.options?.videoProfile;
+    if(profile&&(m.modality!=="video"||videoProfileProtocol(profile)!==p.protocol))fail("视频wire profile与供应商协议不一致",[`upstreamModels.${m.id}.parameterMap.videoProfile`]);
     if(m.parameterMap.resolutionPolicy && p.protocol==="openai-images" && (m.parameterMap.resolutionPolicy.field.includes(".")||m.parameterMap.resolutionPolicy.ratioField?.includes(".")))fail("OpenAI 图片分辨率映射需使用平面参数字段");
     unique(m.capabilities.qualities, `upstreamModels.${m.id}.qualities`); unique(m.capabilities.nativeResolutions, `upstreamModels.${m.id}.nativeResolutions`);
     if ((m.parameterMap.qualityPolicy || m.parameterMap.resolutionPolicy) && (!["openai-images","new-api-flow"].includes(p.protocol) || config.defaultImagePreset?.enabled && config.defaultImagePreset.upstreamId === m.id || config.publicModels.some(v=>v.enabled && v.target.type === "pool" && pools.get(v.target.id)?.candidates.includes(m.id)))) fail("此路径的显示参数必须由外部路由或成本预设适配器管理", [`upstreamModels.${m.id}.parameterMap.qualityPolicy`]);

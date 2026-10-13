@@ -18,7 +18,9 @@ export function managedVideoDefinition(upstream:UpstreamModel,provider:ModelProv
   const manual:VideoModelDefinition={...upstream.capabilities.video,limits:limits===null?null:{...limits,
     images:limits?.images!==undefined?limits.images:upstream.capabilities.maxReferenceImages}};
   const capability=resolveVideoCapability({manual,vendor:vendor?.definition,adapter:adapterDefinition(provider.protocol,upstream.model)});
-  return {capability,profile:upstream.parameterMap.videoProfile??vendor?.profile,sourceRevision:vendor?.sourceRevision};
+  const manualProfile=upstream.parameterMap.videoProfile??provider.options?.videoProfile;
+  capability.sources.videoProfile=manualProfile!==undefined?"admin":vendor?.profile?"vendor":"unknown";
+  return {capability,profile:manualProfile??vendor?.profile,sourceRevision:vendor?.sourceRevision};
 }
 export function legacyVideoView(definition:ReturnType<typeof resolveVideoCapability>,identity:{providerId:string;modelId:string;label:string}):VideoModelCapability{
   const mappings:Record<VideoMode,VideoModelCapability["modes"][number]>={text:"text",single_image:"image",frames_required:"frames",first_optional:"frames",last_optional:"frames",reference:"reference",video_edit:"video_edit",extend:"video_edit",motion_control:"video_edit",lip_sync:"video_edit"};

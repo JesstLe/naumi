@@ -8,8 +8,9 @@ import {PermanentVideoCreateError,TransientPollError,type VideoGenerationRequest
 import type {VideoProviderRuntimeConfig} from "./config";
 import {buildVideoCreate,buildVideoPoll,buildVideoCancel,decodeVideoCreated,decodeVideoPolled,field,string,type VideoWireContext,type VideoWireRequest} from "./wire";
 
-export function videoWireEndpoint(config:Pick<VideoProviderRuntimeConfig,"baseUrl">,path:string){
-  const base=config.baseUrl.replace(/\/+$/,"");
+export function videoWireEndpoint(config:Pick<VideoProviderRuntimeConfig,"baseUrl"|"videoProfile">,path:string){
+  let base=config.baseUrl.replace(/\/+$/,"");
+  if((config.videoProfile?.startsWith("tokendance-")||config.videoProfile==="compshare-h3")&&base.endsWith("/v1"))base=base.slice(0,-3);
   const version=path.match(/^\/(?:api\/)?v\d+(?:beta)?(?=\/)/)?.[0];
   return base+(version&&base.endsWith(version)?path.slice(version.length):path);
 }
@@ -46,6 +47,11 @@ export function createWireVideoAdapter(config:VideoProviderRuntimeConfig):VideoP
     async create(input){const value=await send(buildVideoCreate(context(input)),true,input.idempotencyKey);return decodeVideoCreated(profile,value);},
     async poll(task){return decodeVideoPolled(profile,await send(buildVideoPoll(restored(task),task.upstreamTaskId)));},
     async fetchResult(task,result){
+      if(result.inlineResult){
+        const source=result.inlineResult;
+        if(!/^video\//.test(source.mimeType)||!/^[A-Za-z0-9+/]+={0,2}$/.test(source.base64)||source.base64.length>Math.ceil(200*1024*1024*4/3))throw new Error("内联视频结果无效或超限");
+        return {bytes:Uint8Array.from(Buffer.from(source.base64,"base64")),mimeType:source.mimeType};
+      }
       const target=result.resultUrl||videoWireEndpoint(config,config.contentPath?.replaceAll("{id}",encodeURIComponent(task.upstreamTaskId))||`/v1/videos/${encodeURIComponent(task.upstreamTaskId)}/content`);
       const sameOrigin=new URL(target).origin===new URL(config.baseUrl).origin;
       // Credentials only go to the configured origin; redirects are rejected by the pinned transport.

@@ -17,7 +17,7 @@
 | 后台/资料/公开目录 | 初版已写入，尚未验收 | 配置脚本已写；未执行 | Task3；独立供应商修订、管理员优先、目录/执行共享定义、发布事务内绑定默认能力；完整配置中心与常用模型管理均可编辑。协议和真实提交仍待Task4—9 |
 | wire/素材提交 | 共享层初版已写入 | 测试脚本已写；未执行 | Task4；统一普通/元素素材身份权限与临时签名、typed wire接口和严格响应工具；协议绑定在Task5—7、预扣前接线在Task9 |
 | IC协议分支 | 初版已写入，尚未验收 | 24个HTTP分支用例已写；未执行 | Task5；OpenAI/Grok/Cog/Agnes两版/Ark/Kling2.6及3/Omni四分支/运动/Gemini/MiniMax；共享适配器已接线，边界和Task9/10完整恢复仍待A/B |
-| TokenDance/TF/Compshare | 未实现 | 未执行 | Task6；实际源码全部路由分支与元数据 |
+| TokenDance/TF/Compshare | 初版已写入，尚未验收 | 27个HTTP组合已写；未执行 | Task6；8种TokenDance路由/协议前缀、4种TF元数据、7种Compshare Profile；输出列表与口型/续写参数保留，任务恢复/多产物保存待Task9/10 |
 | 视频工作流 | 未实现 | 未执行 | Task7；ComfyUI/AutoDL/RunningHub、串并行真实产物依赖 |
 | 节点/项目 | 未实现 | 未执行 | Task8；无图节点、revision、事务和稳定归属 |
 | 持久任务/取消/计费 | 未实现 | 未执行 | Task9；完成后检查点A集中测试 |
@@ -58,3 +58,14 @@ Task5初版实现记录（尚未运行验收）：
 - 请求沿用域名/DNS固定与凭据保护，只有创建计入供应商费用观察；响应有明确状态/产物字段，缺ID保留创建结果未知，未知轮询/缺视频继续重试。下载当前拒绝重定向且凭据仅给本来源；完整安全重定向和流式媒体核验在Task10落实。停止204空响应已处理。
 - API参数格式HTTP用例覆盖24种组合，模拟端校验独立预期endpoint/模型和轮询路径，下载真实可播放fixture；媒体multipart记录收到的字节SHA。错误、无产物和回显URL不当结果已写断言。以上用例未运行，不能视为供应商或应用E2E通过。
 - profile加入幂等配置指纹；管理版任务仍按已有规则不自动重提不确定付费创建。Task9将完整请求、元素/分镜、false/省略、预扣前wire校验与恢复接通；Task10将真实时长、安全媒体处理和失败保存恢复接通。共享层提交107ad33。
+
+
+Task6实现记录（尚未功能验收）：
+
+- TokenDance保留seedance:generations、Kling text/image/motion/omni、Wan3、HappyHorse、MiniMax八种gateway协议，创建ID带协议前缀，轮询只能使用冻结的同一分支；模型选择取实际本次wireModel，不取供应商默认模型。source原本按名称猜路由的部分改为显式wireProfile。
+- tfRouter保留原生video/generateVideo和POST video/getVideoStatus(taskICode)，普通、Kling、Omni、Grok各自元数据。规范角色中的last_frame不被一图索引改成first_frame。TF源码Grok分支没有媒体字段，新实现拒绝带媒体而不是静默丢掉；该源码限制需要在演示对比里记录。TF明确base64结果有独立类型，较大JSON安全上限仍待媒体模块。
+- Compshare H3与ModelVerse凭据/地址按独立供应商配置冻结；Hailuo原始字节首帧、Vidu文/图/首尾/参考、extend尾帧、lip-sync音频或文字、Wan、Seedance分别构造。ModelVerse所有输出URL保留在resultAssets，当前service完整保存/恢复仍待Task9/10，不以单URL下载初版声称多结果端到端完成。
+- 新协议进入配置schema/适配器注册与常用后台来源选择；注册模态按真实协议分类，视频可编辑专属定义与Profile。TF已声明的/v1/models?type=video目录进入真实采集。TokenDance/Compshare未确认标准目录端点，保留unsupported，不编造目录API；可在完整配置中心按已确认源码/供应商资料配置实际模型，独立资料来源记录继续保留。供应商刷新不覆盖手工配置。
+- 修正供应商级手工videoProfile也优先于vendor Profile，并计入来源；显式Profile与协议不匹配时发布拒绝。补API Mart运动控制单值image_url/video_url和Omni video_list原始音轨字段。Kling2.6限制5/10秒，测试请求不再沿用通用4秒，避免模拟接口掩盖实际字段限制。
+- 原始素材扩充到28份，新增5/6/10秒横/竖/方形，FFprobe/SHA清单及assets-expanded.log记录完成；这是素材准备，不是功能测试。27种新协议HTTP组合和多输出下载断言已写，仍在A集中运行。
+- 用户追加分阶段合并授权：A/B/C等大模块验收通过后先合入主线，持续刷新并解决冲突，不等整轮结束。未验收代码留任务分支；完整D交付和上线前全分支复核保持。再次fetch后origin/main仍3f1aa4a；Task5初版b669410已推送。本轮无新服务器连接或部署、无付费供应商调用。

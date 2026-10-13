@@ -61,7 +61,7 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
         calls.push({phase:"image-create",path:pathname,body:publicFixtureValue(body)});
         return respond(res,{created:Math.floor(Date.now()/1000),data:[{b64_json:(await readFile(path.join(assetsRoot,"first.png"))).toString("base64")}]});
       }
-      const pollId = String(body.taskId || body.taskICode || url.searchParams.get("taskId") || url.searchParams.get("video_id") || "");
+      const pollId = String(body.taskId || body.taskICode || url.searchParams.get("taskId") || url.searchParams.get("task_id") || url.searchParams.get("video_id") || "");
       const task = tasks.get(pollId) || [...tasks.values()].find(t=>pathname.endsWith(`/${t.id}`) || pathname.includes(`/operations/${t.id}`));
       if (task && (req.method === "DELETE" || pathname.endsWith("/cancel"))) {
         calls.push({phase:"cancel",taskId:task.id});
@@ -78,7 +78,12 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
         if (protocol==="gemini") return respond(res,done?{done:true,response:{generateVideoResponse:{generatedSamples:[{video:{uri:resultUrl}}]}}}:{done:false});
         if (protocol==="kie") return respond(res,{code:200,data:{taskId:task.id,state:state==="completed"?"success":state,resultJson:done?JSON.stringify({resultUrls:[resultUrl]}):"",failMsg:state==="failed"?"fixture rejected":""}});
         if (protocol==="apimart") return respond(res,{code:200,data:{id:task.id,status:state,progress:done?100:30,result:done?{videos:[{url:[resultUrl]}]}:{}}});
-        if (protocol==="tfrouter") return respond(res,{status:done?"success":"processing",data:{status:state,data:done?[{mediaType:"video",type:"url",url:resultUrl}]:[]}});
+        if (protocol==="tfrouter") return respond(res,{status:state==="completed"?"success":state,data:{status:state,data:state==="completed"?resultUrl:"",failReason:state==="failed"?"fixture rejected":undefined}});
+        if(protocol==="compshare"&&!pathname.includes("/minimax/"))return respond(res,{output:{task_id:task.id,task_status:state==="completed"?"Success":state==="failed"?"Failure":state,urls:state==="completed"?[resultUrl,...(scenario==="multi-output"?[origin+"/assets/portrait-4-audio.mp4"]:[])]:[],error_message:state==="failed"?"fixture rejected":undefined}});
+        if(protocol==="tokendance"){
+          if(pathname.startsWith("/kling/"))return respond(res,{data:[{id:task.id,status:state==="completed"?"succeed":state,outputs:state==="completed"?[{type:"video",url:resultUrl}]:[]}]});
+          if(pathname.startsWith("/alibaba/"))return respond(res,{output:{task_id:task.id,task_status:state,video_url:state==="completed"?resultUrl:undefined}});
+        }
         if (protocol==="runninghub" && done) return respond(res,{code:0,data:[{fileUrl:resultUrl,fileType:"mp4"}]});
         return respond(res,{id:task.id,status:state,progress:done?100:30,content:done?{video_url:resultUrl,url:resultUrl}:{},video_url:done?resultUrl:undefined,task:{id:task.id,status:state,content:done?{url:resultUrl}:{}}});
       }
@@ -97,8 +102,8 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
       let id=operationId&&keys.get(operationId);
       if (!id) {
         id=`fixture-${randomUUID()}`;
-        const seconds=Number(body.duration || body.seconds || body.input?.duration || 4);
-        const ratio=body.ratio || body.aspect_ratio || body.aspectRatio || "16:9";
+        const seconds=Number(body.duration || body.seconds || body.input?.duration || body.parameters?.duration || body.settings?.duration || (body.num_frames&&body.frame_rate?(body.num_frames-1)/body.frame_rate:4));
+        const ratio=body.ratio || body.aspect_ratio || body.aspectRatio || body.parameters?.ratio || body.parameters?.aspect_ratio || body.settings?.aspect_ratio || "16:9";
         const asset=manifest.files.find(f=>f.mimeType==="video/mp4"&&f.aspectRatio===ratio&&Math.abs(f.durationSeconds-seconds)<0.12&&f.audioCodecs.length)
           || manifest.files.find(f=>f.name==="landscape-4-audio.mp4");
         tasks.set(id,{id,asset,polls:0,cancelled:false}); if(operationId)keys.set(operationId,id);
@@ -108,6 +113,11 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
       if (protocol==="kie") return respond(res,{code:200,data:{taskId:id}});
       if (protocol==="apimart") return respond(res,{code:200,data:[{task_id:id}]});
       if (protocol==="tfrouter") return respond(res,{status:"success",data:id});
+      if(protocol==="compshare")return respond(res,pathname.includes("/minimax/")?{task_id:id}:{output:{task_id:id}});
+      if(protocol==="tokendance"){
+        if(pathname.startsWith("/kling/"))return respond(res,{data:[{id,status:"submitted"}]});
+        if(pathname.startsWith("/alibaba/"))return respond(res,{output:{task_id:id,task_status:"pending"}});
+      }
       if (protocol==="runninghub") return respond(res,{code:0,data:{taskId:id}});
       return respond(res,{id,task_id:id,status:"queued"});
     } catch (error) { if(!res.headersSent)respond(res,{error:{message:error.message}},422);else res.destroy(); }

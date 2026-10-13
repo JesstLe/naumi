@@ -9,6 +9,11 @@ export type VideoProviderProtocol =
   | "apimart"
   | "gemini"
   | "minimax"
+  | "metaso"
+  | "tokendance"
+  | "tfrouter"
+  | "compshare"
+  | "comfyui"
   | "autodl"
   | "runninghub";
 

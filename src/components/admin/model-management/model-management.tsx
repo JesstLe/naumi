@@ -14,6 +14,7 @@ import type {ManagedModelCreditPricing} from "@/lib/model-config/credit-override
 import {DISPLAY_QUALITY_IDS,DEFAULT_QUALITY_LABELS} from "@/lib/model-config/quality-policy";
 import {RESOLUTION_FIELDS,RATIO_FIELDS,type ResolutionParameters} from "@/lib/model-config/resolution-policy";
 import {MODEL_CATALOG_REFRESH} from "@/lib/model-config/public-client";
+import type {VideoModelDefinition,VideoWireProfile} from "@/lib/video/capability-schema";
 import {VideoCapabilityEditor} from "../model-config/video-capability-editor";
 import {videoParametersSchema,type VideoParameters} from "@/lib/model-config/video-policy";
 
@@ -28,6 +29,18 @@ const protocols = [
   ["apimart-images", "APIMart 图片", "https://api.apimart.ai"],
   ["openai-chat", "OpenAI 文字", "https://api.example.com/v1"],
   ["openai-videos", "OpenAI 视频", "https://api.example.com/v1"],
+  ["ark", "火山方舟视频", "https://ark.example.com/api/v3"],
+  ["kie", "KIE 视频", "https://api.example.com/api/v1"],
+  ["apimart", "API Mart 视频", "https://api.apimart.ai"],
+  ["gemini", "Gemini 视频", "https://generativelanguage.googleapis.com"],
+  ["minimax", "MiniMax H3", "https://api.example.com"],
+  ["metaso", "METASO H3", "https://api.example.com"],
+  ["tokendance", "TokenDance", "https://api.example.com"],
+  ["tfrouter", "TF-router 视频", "https://api.toonflow.net/v1"],
+  ["compshare", "Compshare 视频", "https://api.modelverse.cn"],
+  ["comfyui", "ComfyUI 工作流", "https://api.example.com"],
+  ["autodl", "AutoDL 工作流", "https://api.example.com"],
+  ["runninghub", "RunningHub 工作流", "https://api.example.com"],
 ];
 async function api(body?: unknown) {
   const response = await fetch(endpoint, { method: body ? "POST" : "GET", cache: "no-store", headers: { ...await authHeader(), ...(body ? { "content-type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
@@ -327,8 +340,10 @@ function RegisterDialog({ model, protocol, locked, onClose, onSave }: { model: s
   const image = ["openai-images", "apimart-images", "new-api-flow"].includes(protocol), text = protocol === "openai-chat";
   const [edit, setEdit] = useState(false), [vision, setVision] = useState(false), [confirmed, setConfirmed] = useState(false), [references, setReferences] = useState(0);
   const [qualityRank, setQualityRank] = useState(2);
+  const [videoDefinition,setVideoDefinition]=useState<VideoModelDefinition>();
+  const [videoProfile,setVideoProfile]=useState<VideoWireProfile>();
   const [qualities, toggleQuality] = useArray(), [resolutions, toggleResolution] = useArray();
-  return <Dialog title="添加实际模型" onClose={onClose} locked={locked}><div className={styles.dialogBody}><div className={styles.actualModel}><code>{model}</code><span>来自上游模型目录</span></div><p className={styles.ruleNote}>目录仅提供模型 ID。请按供应商文档或已有测试结果确认能力，系统不会从名称猜测能力或成本。</p><fieldset className={styles.capabilities} disabled={locked}>{image && <><label><input type="checkbox" checked={edit} onChange={e => setEdit(e.target.checked)} />支持图片编辑 / 参考图输入</label><label className={styles.field}>可用于的质量档<select value={qualityRank} onChange={e => setQualityRank(Number(e.target.value))}>{[[1,"仅草稿"],[2,"标准"],[3,"高质量"],[4,"精细"],[5,"最高"]].map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label><p>支持的质量参数（不支持可留空）</p><div>{["low", "medium", "high", "xhigh", "max", "auto"].map(q => <label key={q}><input type="checkbox" checked={qualities.includes(q)} onChange={() => toggleQuality(q)} />{q}</label>)}</div><p>已确认的原生尺寸</p><div>{["1K", "2K", "4K"].map(r => <label key={r}><input type="checkbox" checked={resolutions.includes(r)} onChange={() => toggleResolution(r)} />{r}</label>)}</div></>}{text && <label><input type="checkbox" checked={vision} onChange={e => setVision(e.target.checked)} />支持图片理解</label>}{(image || text) && <label className={styles.field}>最大参考图数量<input type="number" min={0} max={32} value={references} onChange={e => setReferences(Number(e.target.value))} /></label>}<label className={styles.confirmation}><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />我已确认该模型支持{image ? "图片生成" : text ? "文字生成" : "视频生成"}及上述能力，并可使用当前协议调用。</label></fieldset><p className={styles.ruleNote}>添加不会改变前端名称或当前路由。需要蒙版、保留主体等高级能力时，请使用完整配置中心。</p></div><footer className={styles.dialogFooter}><button className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button className={styles.primary} disabled={locked || !confirmed} onClick={() => onSave({ confirmed: true, edit, vision, qualityRank, qualities, resolutions, maxReferenceImages: references })}>添加到可切换列表</button></footer></Dialog>;
+  return <Dialog title="添加实际模型" onClose={onClose} locked={locked}><div className={styles.dialogBody}><div className={styles.actualModel}><code>{model}</code><span>来自上游模型目录</span></div><p className={styles.ruleNote}>目录仅提供模型 ID。请按供应商文档或已有测试结果确认能力，系统不会从名称猜测能力或成本。</p><fieldset className={styles.capabilities} disabled={locked}>{image && <><label><input type="checkbox" checked={edit} onChange={e => setEdit(e.target.checked)} />支持图片编辑 / 参考图输入</label><label className={styles.field}>可用于的质量档<select value={qualityRank} onChange={e => setQualityRank(Number(e.target.value))}>{[[1,"仅草稿"],[2,"标准"],[3,"高质量"],[4,"精细"],[5,"最高"]].map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label><p>支持的质量参数（不支持可留空）</p><div>{["low", "medium", "high", "xhigh", "max", "auto"].map(q => <label key={q}><input type="checkbox" checked={qualities.includes(q)} onChange={() => toggleQuality(q)} />{q}</label>)}</div><p>已确认的原生尺寸</p><div>{["1K", "2K", "4K"].map(r => <label key={r}><input type="checkbox" checked={resolutions.includes(r)} onChange={() => toggleResolution(r)} />{r}</label>)}</div></>}{text && <label><input type="checkbox" checked={vision} onChange={e => setVision(e.target.checked)} />支持图片理解</label>}{(image || text) && <label className={styles.field}>最大参考图数量<input type="number" min={0} max={32} value={references} onChange={e => setReferences(Number(e.target.value))} /></label>}{!image&&!text&&<VideoCapabilityEditor value={videoDefinition} profile={videoProfile} onChange={(definition,profile)=>{setVideoDefinition(definition);setVideoProfile(profile);if(typeof definition?.limits?.images==="number")setReferences(definition.limits.images);}}/>}<label className={styles.confirmation}><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />我已确认该模型支持{image ? "图片生成" : text ? "文字生成" : "视频生成"}及上述能力，并可使用当前协议调用。</label></fieldset><p className={styles.ruleNote}>添加不会改变前端名称或当前路由。需要蒙版、保留主体等高级能力时，请使用完整配置中心。</p></div><footer className={styles.dialogFooter}><button className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button className={styles.primary} disabled={locked || !confirmed} onClick={() => onSave({ confirmed: true, edit, vision, qualityRank, qualities, resolutions, maxReferenceImages: references,...(!image&&!text?{videoDefinition,videoProfile}:{}) })}>添加到可切换列表</button></footer></Dialog>;
 }
 
 function ResolutionsDialog({row,locked,error,onClose,onSave}:{row:ManagedModelRow;locked:boolean;error:string;onClose:()=>void;onSave:(resolutions:string[]|null,parameters?:ResolutionParameters|null)=>void}) {

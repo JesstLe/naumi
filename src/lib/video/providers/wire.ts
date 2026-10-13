@@ -35,8 +35,8 @@ export function mediaUrl(value:unknown):string|undefined{
 }
 export function wireStatus(raw:unknown):VideoTaskStatus{
   const value=string(raw).toLowerCase();
-  if(["success","succeeded","completed","complete","done"].includes(value))return "completed";
-  if(["failed","failure","error","expired"].includes(value))return "failed";
+  if(["success","succeeded","succeed","completed","complete","done"].includes(value))return "completed";
+  if(["failed","failure","error","expired","rejected","blocked","violation"].includes(value))return "failed";
   if(["cancelled","canceled"].includes(value))return "cancelled";
   if(["queued","queuing","waiting","pending","submitted"].includes(value))return "queued";
   if(["running","processing","in_progress","inprogress","starting","generating"].includes(value))return "processing";

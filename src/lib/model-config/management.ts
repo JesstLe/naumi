@@ -11,7 +11,7 @@ import type { FeatureId } from "../billing/rules/registry";
 import {resolutionConfiguration} from "./resolution-policy";
 import { qualityConfiguration, qualityPolicySchema } from "./quality-policy";
 
-export const MODEL_MANAGEMENT_PROTOCOLS = ["openai-images", "new-api-flow", "apimart-images", "openai-chat", "openai-videos"] as const;
+export const MODEL_MANAGEMENT_PROTOCOLS = ["openai-images", "new-api-flow", "apimart-images", "openai-chat", "openai-videos", "ark", "kie", "apimart", "gemini", "minimax", "metaso", "tokendance", "tfrouter", "compshare", "comfyui", "autodl", "runninghub"] as const;
 export const featureNames: Record<string, string> = {
   "image.generate": "自由生图", "image.suite": "组图", "image.aplus": "A+ 页面",
   "canvas.image": "画布生图", "canvas.expand": "画布扩图", "canvas.text-edit": "画布改字", "canvas.annotate": "画布标注",

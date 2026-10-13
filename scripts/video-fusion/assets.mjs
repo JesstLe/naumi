@@ -22,7 +22,7 @@ export async function probeAsset(filename) {
     videoCodec: video?.codec_name || null, audioCodecs: (raw.streams || []).filter(s => s.codec_type === "audio").map(s => s.codec_name),
     hasVideoStream: Boolean(video) };
 }
-export async function prepareVideoAssets(root = defaultAssetsRoot, durations = [4, 8, 12, 15, 30]) {
+export async function prepareVideoAssets(root = defaultAssetsRoot, durations = [4, 5, 6, 8, 10, 12, 15, 30]) {
   root = path.resolve(root);
   await mkdir(root, { recursive: true });
   const manifest = { version: 1, license: "Original test patterns and tones generated for this task; no third-party media.",

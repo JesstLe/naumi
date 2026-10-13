@@ -8,6 +8,7 @@ import { fixtureDatabase } from "./fixture";
 import { loadVideoAssets, defaultAssetsRoot } from "./assets.mjs";
 import { createVideoSupplier } from "./supplier.mjs";
 import { createFixtureObjects } from "./objects.mjs";
+import type {VideoWireProfile} from "../../src/lib/video/capability-schema";
 
 export {CAP_RICH} from "./profiles";
 type Account="a"|"b";
@@ -28,7 +29,7 @@ function privateChild(args:string[],env:NodeJS.ProcessEnv):Promise<string>{retur
 });}
 
 /** Uses real Naumi HTTP and Worker processes; only upstream services are simulated. */
-export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;validateWire?:(call:unknown)=>void|Promise<void>}={}) {
+export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;videoProfile?:VideoWireProfile;validateWire?:(call:unknown)=>void|Promise<void>}={}) {
   let databaseUrl=options.databaseUrl||process.env.VIDEO_FIXTURE_DATABASE_URL||process.env.DATABASE_URL||"";
   const routerUrl=options.routerUrl||process.env.VIDEO_FIXTURE_ROUTER_MANAGEMENT_URL||"";
   const router=new URL(routerUrl);
@@ -57,7 +58,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
     VIDEO_FIXTURE_PARENT_PIPE:"1",VIDEO_FIXTURE_ASSETS_ROOT:assetsRoot,MEDIA_DIR:path.join(output,"media"),STORAGE_DRIVER:"s3",MEDIA_PRIVATE:"1",
     S3_ENDPOINT:supplier.origin+"/objects",S3_REGION:"us-east-1",S3_BUCKET:bucket,S3_FORCE_PATH_STYLE:"1",S3_ACCESS_KEY_ID:accessKeyId,S3_SECRET_ACCESS_KEY:secretAccessKey,
     NAUMI_VIDEO_WORKER:"0",VIDEO_WORKER_SECRET:workerSecret,NAUMI_APP_ORIGIN:baseUrl,INTERNAL_APP_ORIGIN:baseUrl,VIDEO_WORKER_INTERVAL_MS:"5000",
-    MODEL_CONFIG_TRUSTED_ORIGINS:[supplier.origin,router.origin].join(","),VIDEO_FIXTURE_SUPPLIER_ORIGIN:supplier.origin,
+    MODEL_CONFIG_TRUSTED_ORIGINS:[supplier.origin,router.origin].join(","),VIDEO_FIXTURE_SUPPLIER_ORIGIN:supplier.origin,VIDEO_FIXTURE_VIDEO_PROFILE:options.videoProfile||"ark",
     NAUMI_ROUTER_MANAGEMENT_URL:routerUrl,NAUMI_ROUTER_MANAGEMENT_TOKEN:process.env.VIDEO_FIXTURE_ROUTER_TOKEN,
     MODEL_CONFIG_ENVELOPE_SECRET:process.env.VIDEO_FIXTURE_ROUTER_ENVELOPE_SECRET,VIDEO_API_BASE_URL:supplier.origin+"/protocol/openai-videos/v1",VIDEO_API_KEY:supplier.token,VIDEO_API_MODEL:"fixture-video",
     OPENAI_BASE_URL:supplier.origin+"/protocol/image/v1",OPENAI_API_KEY:supplier.token,OPENAI_IMAGE_MODEL:"fixture-image"};
