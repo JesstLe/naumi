@@ -14,7 +14,8 @@ import { executionOpenAI } from "./clients";
 import { businessRoutePlan, selectedBusinessOption } from "./business";
 import { selectedImagePreset, presetPublicId, effectiveImageParameters } from "./image-preset";
 import { assertToolScope, featureDefaultModel } from "./tool-scope";
-import { freezeManagedVideoCapability,frozenVideoSchema,type FrozenVideoCapability } from "../video/frozen-capability";
+import {freezeManagedVideoCapability} from "../video/frozen-capability";
+import {frozenVideoSchema,type FrozenVideoCapability} from "../video/frozen-capability-schema";
 
 export type ExecutionModel = { video?: FrozenVideoCapability; requestedParameters?: import("./image-preset").ImageParameters; feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
 export type ExecutionConnection = { providerId: string; protocol: string; baseUrl: string; apiKey: string; wireModel: string; timeoutMs: number; credentialRef?: string; maxConcurrent?: number; options?: ModelProvider["options"] };

@@ -1,17 +1,14 @@
 import "server-only";
 import type {Pool,PoolClient} from "pg";
-import { z } from "zod";
 import { dbEnabled,getPool } from "../db";
 import type { ModelSnapshot,UpstreamModel,ModelProvider } from "../model-config/types";
 import { ModelConfigError } from "../model-config/types";
 import { supplierVideoDefinition } from "../supplier-models/video-access";
 import { managedVideoDefinition } from "./model-definition";
-import { videoDefinitionSchema,videoWireProfileSchema,videoProfileProtocol } from "./capability-schema";
+import { videoProfileProtocol } from "./capability-schema";
 
-export const frozenVideoSchema=z.strictObject({definition:videoDefinitionSchema,
-  sources:z.record(z.string(),z.enum(["admin","vendor","adapter","unknown"])),profile:videoWireProfileSchema.optional(),
-  sourceRevision:z.strictObject({id:z.string().uuid(),revision:z.number().int().positive(),sourceUrl:z.string().max(1500),collectedAt:z.string().max(100)}).optional()});
-export type FrozenVideoCapability=z.infer<typeof frozenVideoSchema>;
+import {frozenVideoSchema,type FrozenVideoCapability} from './frozen-capability-schema';
+export {frozenVideoSchema,type FrozenVideoCapability} from './frozen-capability-schema';
 const schemas=new WeakMap<Pool,Promise<void>>();
 export async function ensureVideoDefaultsSchema(pool:Pool){
   let schema=schemas.get(pool);
