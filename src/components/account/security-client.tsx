@@ -1,4 +1,5 @@
 "use client";
+import { ManagementEntryCard } from "./management-entry-card";
 import { PHONE_DOMAIN } from "@/lib/account-identity";
 
 import { useEffect, useRef, useState } from "react";
@@ -255,6 +256,8 @@ export function SecurityClient() {
           </div>
         </div>
       </div>
+
+      <ManagementEntryCard />
 
       {/* 无 Supabase 时的说明:站长(operator)看运营向提示;普通注册用户看改密指引 */}
       {!supabaseEnabled && (
