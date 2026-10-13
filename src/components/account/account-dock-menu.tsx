@@ -1,6 +1,5 @@
 "use client";
 import { useManagementEntry } from "./use-management-entry";
-import { entryStatusLabel } from "@/lib/teams/entry-contract";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -129,8 +128,7 @@ export function AccountDockMenu({
   const { t, locale } = useI18n();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
   const initial = user.name.trim().charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase() || "U";
-  const { data: entry, state: entryState } = useManagementEntry(user);
-  const entryStatus = entryState === "ready" ? entry!.status : entryState;
+  const { data: entry } = useManagementEntry(user);
 
   return (
     <div
@@ -199,18 +197,16 @@ export function AccountDockMenu({
         <Settings className="h-4 w-4" />
         {t("menu.security")}
       </Link>
-      <Link
+      {entry?.allowed && <Link
         data-testid="account-management-entry"
         role="menuitem"
-        href={entry?.allowed ? entry.href : "/account/security"}
+        href={entry.href}
         onClick={onClose}
         className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"
       >
         <span className="flex items-center gap-2"><Users className="h-4 w-4" />{entry?.enterprise ? L("企业管理", "Enterprise") : L("团队入口", "Team access")}</span>
-        <span className={`text-[11px] ${entry?.allowed ? "text-emerald-700" : "text-muted-foreground"}`}>
-          {entryStatusLabel(entryStatus, locale === "en")}
-        </span>
-      </Link>
+        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+      </Link>}
       <div className="my-1 h-px bg-border" />
       <button
         type="button"
