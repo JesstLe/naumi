@@ -28,9 +28,11 @@ export async function POST(request:Request){
     const header=request.headers.get("x-naumi-billing-operation-id"),operationId=input.operationId||(header&&z.string().uuid().safeParse(header).success?header:randomUUID());
     const created=await createMediaJob(actor,{operationId,action:input.kind==="frame"?"frame":"extract_audio",inputs:[input.parentArtworkId||key],timestamp:input.timestamp,billingConfirmation:input.billingConfirmation});
     jobId=created.id;
+    let latestStatus=created.status;
     const deadline=Date.now()+180000;
     do{
       const job=await getMediaJob(actor,created.id);if(!job)throw new ModelConfigError("MEDIA_JOB_UNAVAILABLE","媒体任务不存在",404);
+      latestStatus=job.status;
       if(job.status==="completed"){
         const output=job.outputs[0];if(!output)throw new Error("媒体抽取没有输出");
         return NextResponse.json({ok:true,kind:input.kind,jobId:job.id,url:output.url,mimeType:output.mimeType,storageKey:output.storageKey,artworkId:output.artworkId,
@@ -39,7 +41,7 @@ export async function POST(request:Request){
       if(job.status==="failed"||job.status==="cancelled")return NextResponse.json({error:job.error||"媒体处理已停止",jobId:job.id,status:job.status},{status:422});
       await new Promise(resolve=>setTimeout(resolve,300));
     }while(Date.now()<deadline&&!request.signal.aborted);
-    return NextResponse.json({ok:true,jobId:created.id,status:"processing"},{status:202});
+    return NextResponse.json({ok:true,jobId:created.id,status:latestStatus},{status:202});
   }catch(error){
     if(error instanceof ModelConfigError||error instanceof BillingError)return NextResponse.json({error:error.message,code:error.code,...(error instanceof MediaPriceChangedError?{quote:error.quote}:{})},{status:error.status});
     return NextResponse.json({error:"媒体抽取暂不可用，请稍后重试",...(jobId?{jobId}:{})},{status:503});
