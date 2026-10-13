@@ -1,185 +1,209 @@
-## 当前服务器约定（2026-10-13，覆盖下文历史地址与自动发布约定）
-
-用户已明确：`120.27.162.85` **已废弃**，以后更新默认到 `103.30.76.93`。120 不再用于发布、构建、维护、探测、同步、备份任务或回滚；不因旧文档连接、重启或恢复120。此前120/香港独立运行、103验收后推广120等描述只保留为历史记录。
-
-后续发布目标默认103，沿用目标站部署锁、备份、固定版本、权限/媒体保护及连续可用发布验收；不自动推广香港或101。原有备份与凭据不因“废弃”而删除，本记录不代表已执行停机、销毁数据、注销资源或远程状态核验。本轮只更新文档，没有连接或发布服务器。
-
-企业版后续更新也以103为默认服务器方向，但企业版独立服务、数据库、媒体、镜像与凭据配置尚待安排；不得因此覆盖103现有Naumi实例或复用其数据/秘密，fork Actions 仍保持禁用。
-
 <div align="center">
 
-# Naumi
+<img src="public/brand/naumi/horizontal-black.svg" width="200" alt="Naumi" />
 
-**开源 AI 电商生图网站 — 生图 / 套图 / 抠图 / 试穿 / 画布,一站式出商业级商品图**
+# AI 电商视觉工作站
 
-Open-source AI e-commerce visual studio — generate, batch-suite, cut out, try on and canvas-compose production-ready product images.
+**商品生图 · 可视化画布 · 创作 Agent · 批量生产**
 
-[快速开始](#-快速开始--quick-start) · [功能](#-功能--features) · [技术栈](#-技术栈--stack) · [License](#-license)
+Self-hosted AI visual studio for e-commerce.
+
+[界面预览](#界面预览) · [功能](#功能) · [快速开始](#快速开始) · [配置](#配置) · [开发与发布](#开发与发布) · [文档](#文档)
 
 </div>
 
----
+![Naumi 浅色画布、节点工作流与侧边创作 Agent](docs/screenshots/canvas-agent-20261013.jpg)
 
-## 新服务器预发布与交接
+Naumi 把商品图片、提示词、生成结果和图像工具放在同一个创作流程中。你可以直接出图，也可以在画布上连接图片与文字节点，通过 Agent 或批量任务继续处理，最后保存、复用和导出素材。
 
-发布前阅读[发布手册：用户连续可用](docs/RELEASE_RUNBOOK.md)：用户已确认蓝绿切换、活动任务排空、旧前端资源保留及兼容数据库升级标准。当前为已确认待实现约定，不代表现有发布脚本已经无感；先在103验收，再按明确任务推广120。
+## 功能
 
-新服务器的验收、访问入口与后续迁移约定，统一记录在 [预发布交接 README](docs/NAUMI_STAGING_MIGRATION_README.md)，最新验收与回传约定见第 20 节，公网入口见第 21 节。新机继续用于构建和测试，媒体保持本地存储；只有用户明确要求回传时才操作旧机，不将预发布数据库回灌生产。多 Agent 协作遵循 [协作说明](docs/AGENT_COLLABORATION.md)。
+| 模块 | 你可以做什么 |
+|---|---|
+| **AI 生图** | 输入描述或商品参考图，选择管理员发布的模型及其支持的比例、分辨率与质量；支持多张生成和对话式迭代。 |
+| **创作画布** | 组织图片、文字和连线，使用节点操作、框选分组、历史选图、撤销重做与画布整理；生成过程中可继续编辑或在其他节点提交任务。 |
+| **创作 Agent** | 在独立任务页或画布侧栏对话，结合当前参考素材调用创作工具，显示过程与结果，保留会话历史。 |
+| **生图 Skills** | 选择商品白底、场景、套组、精修、换色、海报等精选技能；创建、导入和管理自己的创作技能。 |
+| **批量与套图** | 组合产品图与风格参考，生成主图、详情图、SKU 或模板套组；已提交的批量任务后台执行，可返回查看和下载。 |
+| **竞品工作台** | 导入参考图片或文件夹，管理素材、反推提示词、参考生图及选区编辑。 |
+| **作品与团队** | 保存作品与项目，查看任务历史、积分与用量；通过团队和子账号管理协作访问。 |
+| **管理后台** | 管理模型与供应商、参数和价格、模板与提示词、用户和积分，以及站点品牌与服务配置。 |
 
-## ✨ 功能 / Features
+当前创作工具中心提供 **27 个入口**，分为生成创作、图像处理、服装电商和营销工具四类：
 
-- **AI 生图** — 文生图 / 图生图，支持多比例与批量生成，分辨率和质量选项按模型能力提供
-- **一键套图** — 上传产品图，智能匹配或自定义主图、副图与详情页
-- **图像工具** — 抠图、高清放大、局部改图、产品精修与换色、服装提取、虚拟试穿、印花提取、标题生成等
-- **创作画布** — React Flow 血缘画布,每张图的来源与迭代一目了然
-- **对话生图** — 聊天式改图,一句话继续迭代
-- **管理后台** — 模板库、提示词、模型与供应商配置、用户及积分管理，敏感凭据加密存储
-- **国际化** — 中 / 英双语,按浏览器语言自动切换
+- **生成创作**：生图、视频、套图、批量、Agent、A+ 详情页、包装模切线转 3D、参考复刻与图裂变等。
+- **图像处理**：商品精修、抠图、抠头像、换色、高清放大、局部编辑、风格转换、融图和去水印。
+- **服装电商**：虚拟试穿、服装提取、立体展示和去皱。
+- **营销工具**：商品标题、印花提取、印刷文件与图像侵权风险辅助筛查。
 
-功能入口与可用模型以实例配置为准；生成和处理任务需要配置对应的模型或服务凭据。
+工具入口不等于供应商已经配置或每项效果都已验收。实际模型能力、可用参数、计费和视频可用性以实例配置为准；侵权筛查是辅助信息，不是法律结论。
 
-## 🖥 界面预览 / UI
+### 工作流与执行边界
 
-以下为界面与效果示例，实际界面以当前运行版本为准。
+- **跨画布迁移**：支持识别稿定剪贴板工作流中的兼容元素并导入；素材原链接失效时保留元数据占位，可后续补图。不是任意第三方格式的无损转换。
+- **任务与积分**：生成、批量和 Agent 工具接入任务及计费流程；离开页面不代表取消已提交任务，操作前应核对实际报价。
+- **服务端 Harness**：Agent 执行经过会话与资源归属、工具能力、输入参数、报价确认和出站网络边界检查；参考图、历史和技能文本不作为授权来源。它是分层防护，不是“绝对防注入”的保证。
+- **加载与缓存**：画布按需加载媒体，并使用账号隔离的浏览器元数据缓存；写入和权限仍由服务端处理，不把缓存当作永久离线副本。
 
-<p align="center">
-  <img src="docs/screenshots/home.png" width="840" alt="Naumi 首页" />
-</p>
+## 界面预览
+
+下图均为 **2026-10-13 实际界面截图**，不是概念效果图。拍摄实例版本为 `2026.10.13-110509`，源码说明按本次最新 main 核对。模型名称、价格和内容属于该实例配置，不代表默认值。图片来源和裁切记录见 [截图说明](docs/README_MEDIA.md)。
+
 <table>
   <tr>
-    <td align="center" width="50%">
-      <img src="docs/screenshots/generate.png" alt="AI 生图工作台" /><br /><b>AI 生图工作台</b>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/generate-20261013.jpg" alt="AI 生图工作台与当前场景示例" />
+      <br /><b>商品生图</b><br />参考图、描述与模型参数集中配置。
     </td>
-    <td align="center" width="50%">
-      <img src="docs/screenshots/tryon.png" alt="服装上身" /><br /><b>服装上身(虚拟试穿)</b>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/tryon-20261013.jpg" alt="服装上身工具与当前试穿示例" />
+      <br /><b>服装试穿</b><br />选择服装、模特和场景，查看处理结果。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/skills-20261013.jpg" alt="创作 Skills 库、分类与管理入口" />
+      <br /><b>创作 Skills</b><br />把常用创作方法保存为可复用技能。
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/batch-20261013.jpg" alt="批量出图的产品图、参考图与任务配置" />
+      <br /><b>批量工作台</b><br />用统一设置提交多个商品任务。
     </td>
   </tr>
 </table>
 
-## 📸 功能预览 / Screenshots
+<details>
+<summary><b>查看工具中心与首页</b></summary>
 
-<table>
-  <tr>
-    <td colspan="2" align="center">
-      <img src="public/demos/image-combo.webp" width="760" alt="AI 生图" /><br />
-      <b>AI 生图</b> — 一句话或产品图,生成电商大片
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="50%">
-      <img src="public/demos/suite-before.webp" width="170" alt="" /> ➜ <img src="public/demos/suite-after.webp" width="170" alt="" /><br />
-      <b>一键套图</b> — 主图、副图与详情页组合生成
-    </td>
-    <td align="center" width="50%">
-      <img src="public/demos/tryon-before.webp" width="170" alt="" /> ➜ <img src="public/demos/tryon-after.webp" width="170" alt="" /><br />
-      <b>服装上身</b> — 选模特与场景,一键虚拟试穿
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <img src="public/demos/cutout-combo.png" width="352" alt="" /><br />
-      <b>AI 抠图</b> — 发丝级透明底
-    </td>
-    <td align="center">
-      <img src="public/demos/upscale-before.webp" width="170" alt="" /> ➜ <img src="public/demos/upscale-after.webp" width="170" alt="" /><br />
-      <b>AI 变清晰</b> — 模糊图高清修复放大
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <img src="public/demos/dress3d-before.webp" width="170" alt="" /> ➜ <img src="public/demos/dress3d-after.webp" width="170" alt="" /><br />
-      <b>3D 服装图</b> — 幽灵模特立体展示
-    </td>
-    <td align="center">
-      <img src="public/demos/variation-before.webp" width="170" alt="" /> ➜ <img src="public/demos/variation-after.webp" width="170" alt="" /><br />
-      <b>图裂变</b> — 一张图裂变整组系列素材
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <img src="public/demos/fusion-before.webp" width="170" alt="" /> ➜ <img src="public/demos/fusion-after.webp" width="170" alt="" /><br />
-      <b>AI 融图</b> — 多图元素无缝合成
-    </td>
-    <td align="center">
-      <img src="public/demos/inpaint-before.webp" width="170" alt="" /> ➜ <img src="public/demos/inpaint-after.webp" width="170" alt="" /><br />
-      <b>局部改图</b> — 涂哪改哪,其余不动
-    </td>
-  </tr>
-</table>
+### 创作工具中心
 
-## 🚀 快速开始 / Quick start
+![27 个创作工具的分类入口](docs/screenshots/tools-20261013.jpg)
 
-### 安装
+### 站点首页
 
-准备 Linux 服务器以及 Git、Docker、Docker Compose v2、OpenSSL。可用以下命令检查 Docker：
+![Naumi 当前首页及商品图片对比](docs/screenshots/home-20261013.jpg)
+
+</details>
+
+截图中的工具效果是页面已有示例，画布采用已有验收项目；本次截图没有新提交付费生成，也不构成对全部供应商或工具效果的重新验收。
+
+## 快速开始
+
+### 新建自托管实例
+
+准备 Linux、Git、Docker、Docker Compose v2 和 OpenSSL。以下是**新实例安装**流程：
 
 ```bash
-docker --version
-docker compose version
-```
-
-新实例可使用安装脚本：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/JesstLe/naumi/main/install.sh | bash
-```
-
-也可以先拉取仓库再执行脚本：
-
-```bash
-git clone https://github.com/JesstLe/naumi
+git clone https://github.com/JesstLe/naumi.git
 cd naumi
+# 先阅读安装器，再执行。
+less install.sh
 bash install.sh
 ```
 
-安装器会准备 `.env`、生成独立加密密钥和 Worker 密钥，尝试拉取预构建镜像；拉取失败时回退到本地构建。执行时间取决于网络和服务器资源。已有实例会沿用保存的端口，脚本也可能更新已有安装；现有服务器发布应使用下方的固定版本发布流程。
+安装器会准备 `.env`、生成独立设置加密密钥与 Worker 密钥，尝试拉取预构建镜像，失败时回退到本地构建；也会按网络情况检查镜像源。它会识别既有安装并执行更新，**不要把它当作在线服务无中断发布工具**。
 
-首次安装默认使用 **80 端口**；如果 80 已被其他服务占用，安装器会改用 **8080**。按安装器输出的地址访问，并在防火墙或云安全组放行对应 Web 端口。直接使用仓库的 `docker-compose.yml` 时，默认端口是 **3012**，也可通过 `.env` 中的 `HTTP_PORT` 调整。
+| 启动方式 | Web 端口 |
+|---|---|
+| 安装器首次安装 | 默认 `80`，占用时采用 `8080`；已有实例沿用保存的端口。 |
+| 直接运行仓库 Compose | 默认 `3012`，通过 `HTTP_PORT` 调整。 |
 
-未配置实例的首启向导提供 OpenAI API Key、管理员密码、管理员邮箱和站点名称配置。完成后进入后台配置实际使用的模型和服务凭据。
+按安装输出访问 Web 入口，完成首启向导中的管理员账号、站点名称和模型连接配置，然后进入后台发布实际可用的模型。数据库、Worker 和模型管理接口不应开放为公共 Web 服务。
+
+### 本地开发
+
+项目 Docker 构建使用 Node.js 20；本地可使用相同主版本。准备独立 PostgreSQL 数据库：
+
+```bash
+npm ci
+cp .env.example .env.local
+# 编辑 .env.local，配置 DATABASE_URL、SETTINGS_SECRET、VIDEO_WORKER_SECRET。
+# 两个密钥分别使用独立的 openssl rand -hex 32 输出。
+npm run dev
+```
+
+默认访问 `http://localhost:3000`。Windows 可在 PowerShell 使用 `Copy-Item .env.example .env.local`。模型和专用处理服务另行配置；本地开发数据库与线上实例保持独立。
+
+## 配置
+
+完整字段见 [.env.example](.env.example)，容器注入项以 [docker-compose.yml](docker-compose.yml) 为准。单独在 `.env` 增加字段不意味着 Compose 已将其传入应用。
+
+| 配置项 | 用途 |
+|---|---|
+| `DATABASE_URL` | PostgreSQL 业务数据库；账号、作品、任务、积分和设置在服务端持久化。 |
+| `SETTINGS_SECRET` | 会话签名与敏感设置加密；既有实例保持原值，轮换必须迁移已有密文。 |
+| `VIDEO_WORKER_SECRET` | 应用与独立 Worker 的内部鉴权。 |
+| `OPENAI_BASE_URL` / `OPENAI_API_KEY` | 图片模型兼容通道；也可通过后台维护实际执行配置。 |
+| `AGENT_BASE_URL` / `AGENT_API_KEY` / `AGENT_MODEL` | 独立 Agent 文本通道，不自动覆盖图片通道。 |
+| `AGENT_BACKEND` | Agent 桥接实现，默认 `pi`；其他后端需各自接入与验收。 |
+| `STORAGE_DRIVER` | `local`、`r2` 或 `s3`；配套存储字段和权限须完整。 |
+| `MEDIA_PRIVATE` | 配合实例的私有媒体与签名访问设置，不能只改开关后假定权限已配置。 |
+| `HTTP_PORT` | Compose 对外应用端口；公网入口可由反向代理统一承接。 |
+| `NAUMI_PUBLIC_COMMERCE` | 公开购买、充值及价格入口，按实例运营需求设置。 |
+
+管理员维护的模型参数、能力和价格优先；上游资料用于有来源的兜底，不因目录刷新自动覆盖人工配置。详见 [模型配置](docs/model-configuration.md)、[画布管理员配置](docs/CANVAS_ADMIN_MODEL_CONFIGURATION.md) 和 [供应商元数据](docs/supplier-model-metadata.md)。
 
 ### 数据与媒体
 
-Compose 包含 PostgreSQL、应用和视频 Worker，数据库与媒体使用持久化数据卷。图片和视频默认存储在容器的 `/data/media`。
+- 默认 Compose 包含 PostgreSQL、App 和独立视频 Worker，使用 `pgdata`、`media` 持久化卷；应用媒体目录为 `/data/media`。
+- 默认 Compose 使用本地媒体。代码支持 R2 和 S3 兼容存储；切换时需要配置、访问权限和历史媒体迁移，不能只改驱动后丢掉旧路径。
+- 私有媒体的签名读取、直传和缩略能力取决于实际实例的网关与存储配置，不把某个测试站配置当作默认安装结果。
+- 备份需同时保留数据库、媒体、运行配置和加密密钥；更新代码不以旧数据库覆盖当前业务数据。
 
-当前 Compose 默认 `STORAGE_DRIVER=local`。切换对象存储需显式设置 `STORAGE_DRIVER=r2` 或 `STORAGE_DRIVER=s3`，并补齐对应存储配置；已有媒体的迁移另行处理。
+### 品牌与入口
 
-### 模型连接
+后台可配置运行时站点名称与 Logo；部分 favicon、画布标识及 `NEXT_PUBLIC_*` 变量在构建期生效。域名和 HTTPS 通过实际部署的反向代理配置，不在 README 固定第三方服务地址。
 
-服务器无法访问模型服务时，为对应通道配置可访问的服务地址。例如，图片生成通道可在 `.env` 中配置：
+## 开发与发布
 
-```dotenv
-OPENAI_BASE_URL=https://your-image-gateway.example.com/v1
+### 技术栈
+
+Next.js 14 App Router · React 18 · TypeScript · Tailwind CSS · React Flow · PostgreSQL · OpenAI 兼容接口 · Replicate · 本地 / R2 / S3 兼容存储
+
+```text
+src/app/                 页面与 API 路由
+src/components/          画布、工具工作台与后台组件
+src/lib/agent/           Agent 桥接、工具与 Harness
+src/lib/image-skills/    创作 Skills
+src/lib/model-config/    模型配置与执行映射
+src/lib/billing/         积分与计费
+src/lib/canvas/          画布数据与工作流支持
+scripts/                 Worker、验证与发布工具
+docs/                    实现、交接与验收记录
 ```
 
-Agent 文本 / 视觉通道使用独立的 `AGENT_BASE_URL`、`AGENT_API_KEY` 和 `AGENT_MODEL`。画布操作的管理员模型配置见 [配置说明](docs/CANVAS_ADMIN_MODEL_CONFIGURATION.md)。不同供应商和功能使用各自的配置，修改一个通道地址不会自动覆盖全部接口。
+### 协作与验证
 
-### 域名与 HTTPS
-
-将域名指向服务器，通过 Nginx、Caddy 或宝塔面板配置反向代理与 HTTPS，代理目标使用应用实际监听的端口。Web 入口与应用端口的关系以部署配置为准。
-
-### 源码构建与已有实例发布
-
-本地或独立开发实例修改源码后，可执行：
+从独立 `codex/` 分支/worktree 开工，刷新远端 main，保护他人未提交内容，选择性提交。按模块完成开发后集中测试；每累计三次功能迭代整合一次远端 main。详见 [协作说明](docs/AGENT_COLLABORATION.md) 与 [AGENTS.md](AGENTS.md)。
 
 ```bash
-docker compose up -d --build
+npm run build
+# 按本轮改动选择对应验证，不把下面列表当作全部功能验收。
+npm run verify:image-skills
+npm run verify:model-management
 ```
 
-运行前需要在 `.env` 配置独立的 `SETTINGS_SECRET` 和 `VIDEO_WORKER_SECRET`。已有实例须保留原加密密钥、生产配置、数据库和媒体。
+### 现有实例更新
 
-现有服务器使用固定提交镜像与 `scripts/deploy-release.sh` 发布，先备份并准备回滚，再核验健康、实际版本与受影响功能。新机发布须遵循 [协作说明](docs/AGENT_COLLABORATION.md) 的全程锁与基线检查；旧机回传须用户明确要求。文档修改不触发服务器发布。
+**当前默认更新目标是103；120已废弃。** 这只是项目维护约定，不是公开安装所需的服务器配置，也不授权自动更新其他站点。
 
-## 🧱 技术栈 / Stack
+发布前阅读 [连续可用发布手册](docs/RELEASE_RUNBOOK.md)：固定版本、整合同事已完成提交、目标站全程部署锁、备份与回滚、真实就绪和受影响功能验收。蓝绿切流、活动 Agent 会话归属、在途 Worker 排空和旧前端资源保留是已确认标准，**相关工程尚未完成，现有重建流程不等于无感发布**。
 
-Next.js 14 (App Router) · React · TypeScript · Tailwind CSS · React Flow · PostgreSQL · OpenAI 兼容模型接口 · Replicate · 本地 / R2 / S3 兼容存储
+已有服务不应先停旧 App 再等待构建；跨站数据合并、存储迁移和破坏性 DDL 分开安排。源代码更新不自动迁移数据库、媒体或秘密。
 
-## 📄 License
+## 文档
 
-许可条款见仓库的 [LICENSE](LICENSE) 文件。
+| 主题 | 入口 |
+|---|---|
+| 画布与工作流 | [画布状态](docs/CANVAS_STATUS.md) · [工作流集成](docs/CANVAS_WORKFLOW_INTEGRATION.md) |
+| Agent 与防护 | [Agent](docs/agent.md) · [Harness 交付记录](docs/changes/2026-10-13-agent-harness-release.md) |
+| 模型与供应商 | [模型管理](docs/admin-model-management.md) · [供应商模型资料](docs/supplier-model-metadata.md) |
+| 计费与积分 | [计费入口](docs/billing-entrypoints.md) · [计价服务](docs/pricing-service.md) |
+| 图片与展示 | [本次截图来源](docs/README_MEDIA.md) · [README 更新记录](docs/changes/2026-10-13-readme-refresh.md) |
+| 部署与接手 | [发布手册](docs/RELEASE_RUNBOOK.md) · [协作说明](docs/AGENT_COLLABORATION.md) · [103目标约定](docs/changes/2026-10-13-retire-120-default-103.md) |
 
----
+历史实现文档与运行环境可能不同；冲突时按最新用户指令、当前源码和实际配置核对，不用旧验收替代新版本验收。
 
-<div align="center">
-Made with ❤️ by the <b>Naumi</b> team
-</div>
+## License
+
+本仓库保留 **GNU AGPL-3.0**，完整条款见 [LICENSE](LICENSE)。模型、图片处理和存储服务的使用条件及费用由各自提供方决定。私有部署或企业定制不自动改变本仓库许可证。

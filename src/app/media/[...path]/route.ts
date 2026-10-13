@@ -29,9 +29,9 @@ const TYPES: Record<string, string> = {
 
 export async function GET(
   request: Request,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
-  const segs = params.path || [];
+  const segs = (await params).path || [];
   // 防目录穿越:段内不允许 .. / 空字节 / 分隔符
   if (
     !segs.length ||

@@ -5,8 +5,9 @@ import { BillingManager } from "@/components/admin/billing/billing-manager";
 import { AdminCenterShell } from "@/components/admin/center-shell";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "计费管理 — Naumi", robots: { index: false, follow: false } };
-export default async function BillingPage({ searchParams }: { searchParams?: { section?: string } }) {
+export default async function BillingPage({ searchParams }: { searchParams?: Promise<{ section?: string }> }) {
   await requireAdminPage("/admin/billing");
-  const legacy = searchParams?.section === "wallet";
+  const query = await searchParams;
+  const legacy = query?.section === "wallet";
   return <AdminCenterShell active="billing"><BillingNavigation active={legacy ? "wallet" : "config"} />{legacy ? <BillingManager /> : <ModelConfigurationManager billingMode />}</AdminCenterShell>;
 }

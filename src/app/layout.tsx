@@ -64,12 +64,12 @@ export default async function RootLayout({
   // Fail closed for configured deployments before serving authenticated pages.
   if (process.env.DATABASE_URL) { settingsSecret(); workerSecret(); }
   // Configured instances retain the setup lock regardless of hosting environment.
-  const pathname = headers().get("x-pathname") || "";
+  const pathname = (await headers()).get("x-pathname") || "";
   if (pathname !== "/setup" && !(await isConfigured())) {
     redirect("/setup");
   }
 
-  const locale = getServerLocale();
+  const locale = await getServerLocale();
 
   // 后台 DB(开关 + 已配收款)→ env 兜底,SSR 注入前端门控,两站一套代码。
   const rechargeEnabled =

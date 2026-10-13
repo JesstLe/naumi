@@ -9,9 +9,7 @@ const nextConfig = {
   output: "standalone",
   // 原生模块(含 .node 二进制)不能被 webpack 打包,标记为服务端外部依赖,
   // 运行时直接 require。sharp 是原生模块(图像缩放,generate-image 用)。
-  experimental: {
-    serverComponentsExternalPackages: ["sharp", "pg"],
-  },
+  serverExternalPackages: ["sharp", "pg"],
 };
 
 export default nextConfig;

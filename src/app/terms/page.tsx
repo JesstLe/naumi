@@ -10,8 +10,8 @@ const LAST_UPDATED = "2026-10-10";
 
 export const metadata = { title: `服务条款 — ${BRAND}` };
 
-export default function TermsPage() {
-  const locale = getServerLocale();
+export default async function TermsPage() {
+  const locale = await getServerLocale();
   return locale === "en" ? <TermsEn /> : <TermsZh />;
 }
 

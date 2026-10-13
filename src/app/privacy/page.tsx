@@ -10,8 +10,8 @@ const LAST_UPDATED = "2026-10-10";
 
 export const metadata = { title: `隐私政策 — ${BRAND}` };
 
-export default function PrivacyPage() {
-  const locale = getServerLocale();
+export default async function PrivacyPage() {
+  const locale = await getServerLocale();
   return locale === "en" ? <PrivacyEn /> : <PrivacyZh />;
 }
 

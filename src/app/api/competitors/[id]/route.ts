@@ -4,15 +4,15 @@ import { competitorActor, competitorError, ownedCompetitor, checkVersion, Worksp
 import { draftSchema } from "@/lib/competitor-types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-type Context = { params: { id: string } };
+type Context = { params: Promise<{ id: string }> };
 export async function GET(req: Request, { params }: Context) {
-  try { return NextResponse.json({ item: await ownedCompetitor(await competitorActor(req), params.id) }); }
+  try { return NextResponse.json({ item: await ownedCompetitor(await competitorActor(req), (await params).id) }); }
   catch(e) { return competitorError(e); }
 }
 export async function PATCH(req: Request, { params }: Context) {
   try {
     const email = await competitorActor(req);
-    const item = await ownedCompetitor(email, params.id);
+    const item = await ownedCompetitor(email, (await params).id);
     const draft = draftSchema.safeParse(await req.json());
     if (!draft.success) throw new WorkspaceError("提示词或选区格式不正确");
     checkVersion(item, draft.data.activeVersion);
@@ -24,8 +24,8 @@ export async function PATCH(req: Request, { params }: Context) {
 export async function DELETE(req: Request, { params }: Context) {
   try {
     const email = await competitorActor(req);
-    await ownedCompetitor(email, params.id);
-    if (!await deleteCompetitorItem(email, params.id)) throw new WorkspaceError("正在生成，请稍后删除", 409);
+    await ownedCompetitor(email, (await params).id);
+    if (!await deleteCompetitorItem(email, (await params).id)) throw new WorkspaceError("正在生成，请稍后删除", 409);
     // Keep media: it may already be referenced by an exported canvas artwork.
     return NextResponse.json({ ok: true });
   } catch(e) { return competitorError(e); }

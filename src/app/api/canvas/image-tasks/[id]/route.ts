@@ -8,11 +8,11 @@ import { safeError } from "@/lib/api-error";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request, context: { params: { id: string } }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   try {
-    const task = await getCanvasImageTask(email, String(context.params.id || ""));
+    const task = await getCanvasImageTask(email, String((await context.params).id || ""));
     if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
     const user = task.status === "completed" ? await getUser(email).catch(() => null) : undefined;
     return NextResponse.json({ ok: true, task: publicCanvasImageTask(task), user });

@@ -32,7 +32,7 @@ export default async function AdminPricingPage() {
   await requireAdminPage("/admin/pricing");
   const current=await billingSnapshot();
   const currentQualityPrices=Object.fromEntries(IMAGE_QUALITY_IDS.map(quality=>[quality,quote(current,{feature:"image.generate",quantity:1,quality,resolution:"1K",byok:false,metered:true,paidFen:0,userGroup:"default"}).requestedCredits]));
-  const english = getServerLocale() === "en";
+  const english = (await getServerLocale()) === "en";
   const t = (zh: string, en: string) => (english ? en : zh);
   const packageNames = [
     t("体验月包", "Trial monthly"),

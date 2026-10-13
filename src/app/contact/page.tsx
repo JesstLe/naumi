@@ -8,7 +8,7 @@ import { CustomPage } from "@/components/custom-page";
 export const metadata = { title: `联系我们 — ${BRAND}` };
 
 export default async function ContactPage() {
-  const locale = getServerLocale();
+  const locale = await getServerLocale();
   // 自部署实例:渲染站长后台自定义的「联系我们」(默认页含我们的邮箱,不给自部署者显示)。
   const custom = await getSitePage("contact");
   if (custom) {

@@ -4,9 +4,9 @@ import { competitorActor, competitorError, ownedCompetitor, readCompetitorImage,
 import { pixelRect } from "@/lib/competitor-image";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const item = await ownedCompetitor(await competitorActor(req), params.id);
+    const item = await ownedCompetitor(await competitorActor(req), (await params).id);
     const q = new URL(req.url).searchParams;
     const version = q.get("version") || "";
     checkVersion(item, version);
@@ -18,6 +18,6 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       const m = await sharp(image).metadata();
       image = await sharp(image).extract(pixelRect(region, m.width!, m.height!)).png().toBuffer();
     }
-    return new NextResponse(new Uint8Array(image), { headers: { "Content-Type": "image/png", "Cache-Control": "private, no-store", "Content-Disposition": `attachment; filename="${params.id}${regionId ? '-region' : ''}.png"` } });
+    return new NextResponse(new Uint8Array(image), { headers: { "Content-Type": "image/png", "Cache-Control": "private, no-store", "Content-Disposition": `attachment; filename="${(await params).id}${regionId ? '-region' : ''}.png"` } });
   } catch(e) { return competitorError(e); }
 }

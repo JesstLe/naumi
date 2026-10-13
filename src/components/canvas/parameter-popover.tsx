@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } fro
 import { createPortal } from "react-dom";
 import { canvasPopoverPlacement, type PopoverPlacement } from "@/lib/canvas/popover-placement";
 
-export function CanvasParameterPopover({ anchorRef, light, onClose, children }: { anchorRef: RefObject<HTMLButtonElement>; light: boolean; onClose: () => void; children: ReactNode }) {
+export function CanvasParameterPopover({ anchorRef, light, onClose, children }: { anchorRef: RefObject<HTMLButtonElement | null>; light: boolean; onClose: () => void; children: ReactNode }) {
   const panel = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState<PopoverPlacement | null>(null);
   const close = useRef(onClose); close.current = onClose;

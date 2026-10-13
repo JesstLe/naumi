@@ -33,8 +33,8 @@ async function main(){
   const art=await response.json(),key=art.image.slice('/media/'.length);assert.equal(art.width,2048);assert.equal(art.height,1024);
   assert.equal(await assets.canReadMedia(key,owner),true);assert.equal(await assets.canReadMedia(key,other),false);
   const view=(email:string)=>new Request('http://site.test'+art.image+'?variant=thumbnail',{headers:{cookie:'nv_user='+signUserSession(email,Date.now())}});
-  assert.equal((await media.GET(view(other),{params:{path:key.split('/')}})).status,404);
-  const delivered=await media.GET(view(owner),{params:{path:key.split('/')}});assert.equal(delivered.status,307);assert.ok(delivered.headers.get('location')?.includes('media-variants'));
+  assert.equal((await media.GET(view(other),{params:Promise.resolve({path:key.split('/')})})).status,404);
+  const delivered=await media.GET(view(owner),{params:Promise.resolve({path:key.split('/')})});assert.equal(delivered.status,307);assert.ok(delivered.headers.get('location')?.includes('media-variants'));
   const record=await assets.getMediaAsset(key);assert.ok(record?.thumbnail_key&&record.preview_key);assert.equal((await sharp(objects.get(record.thumbnail_key)!).metadata()).width,512);
   // The still-valid PUT can only rewrite staging, never the committed object.
   objects.set('pending-uploads/'+intent.id,Buffer.from('later overwrite'));
