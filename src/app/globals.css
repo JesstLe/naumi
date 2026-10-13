@@ -661,3 +661,14 @@
 @media (prefers-reduced-motion: reduce) {
   .nv-fade-in, .nv-msg-in { animation: none; }
 }
+
+/* Cards already clip/scroll their own content. Bound paint invalidation to each
+   card without changing node layout, ports, text or interaction sampling. */
+.canvas-ui-light .canvas-ui-node-card,
+.canvas-ui-dark .canvas-ui-node-card { contain: paint; }
+
+/* Preserve every node/path and the native hit areas. Two bounded compositor
+   surfaces avoid re-rasterizing the whole mixed SVG/HTML subtree on zoom.
+   CanvasClient disables this when an edge needs the original cross-layer z-order. */
+.canvas-render-layers[data-canvas-layer-order="composite"]:not(:has(.react-flow__edge:hover)) .react-flow__nodes,
+.canvas-render-layers[data-canvas-layer-order="composite"]:not(:has(.react-flow__edge:hover)) .react-flow__edges { will-change: transform; }

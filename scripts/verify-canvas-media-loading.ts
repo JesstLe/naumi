@@ -11,6 +11,13 @@ async function main() {
  assert.deepEqual(started,[0,1],'concurrency bounded');
  done[3]();done[0]();assert.deepEqual(started,[0,1,2],'cancelled pending image never starts');
  done[1]();done[2]();assert.equal(queue.active,0);
- console.log('PASS canvas thumbnail/preview/original selection, bounded concurrency and cancellation');
+ const slots=new media.MediaLoadQueue(2), controllers=Array.from({length:5},()=>new AbortController());
+ const active:Array<()=>void>=[];let startedSlots=0;
+ const tasks=controllers.map((c,i)=>media.acquireMediaSlot(slots,c.signal).then(release=>{startedSlots++;active[i]=release;return true;}).catch(()=>false));
+ await Promise.resolve();assert.equal(startedSlots,2);assert.equal(slots.active,2);
+ controllers[4].abort();controllers[0].abort();await Promise.resolve();assert.equal(startedSlots,3);assert.equal(slots.active,2);
+ active[1]();await Promise.resolve();assert.equal(startedSlots,4);active[2]();active[3]();assert.equal(slots.active,0);assert.deepEqual(await Promise.all(tasks),[true,true,true,true,false]);
+ const cancelled=new AbortController();cancelled.abort();await assert.rejects(media.acquireMediaSlot(slots,cancelled.signal),/Aborted/);assert.equal(slots.active,0);
+ console.log('PASS canvas thumbnail/preview/original selection, bounded concurrency, queued and running cancellation; cache bytes slot after metadata');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

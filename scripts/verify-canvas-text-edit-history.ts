@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { canvasTextEditPatch } from '../src/lib/canvas/text-edit-history';
+
+const current = { content: 'new draft', title: 'Retained title', sourceIds: ['a'], targetIds: ['b'], productIds: ['c'], width: 420, height: 320 };
+const patch = canvasTextEditPatch(current, current.content, 'original content');
+assert.equal(patch?.from.content, 'original content'); assert.equal(patch?.to.content, current.content);
+for (const fields of [patch?.from, patch?.to]) for (const key of ['title', 'sourceIds', 'targetIds', 'productIds', 'width', 'height'] as const) assert.deepEqual(fields?.[key], current[key]);
+assert.equal(canvasTextEditPatch(current, current.content, '')?.from.content, '', 'empty focus baseline is meaningful');
+assert.equal(canvasTextEditPatch(current, current.content, current.content), null, 'unchanged blur does not add history');
+assert.equal(canvasTextEditPatch(current, current.content), null, 'non-focus caller keeps prior behavior');
+assert.equal(canvasTextEditPatch(current, 'explicit change')?.from.content, current.content);
+const long = canvasTextEditPatch(current, 'a'.repeat(13000), 'old'); assert.equal(long?.to.content.length, 12000);
+assert.equal(current.content, 'new draft'); assert.equal(current.width, 420);
+const source = readFileSync('src/components/canvas/canvas-client.tsx', 'utf8');
+assert.match(source, /onFocus=\{\(\) => \{ editInitialContent.current = d.content; \}\}/);
+assert.match(source, /onContentCommit\(d.__id, event.currentTarget.value, editInitialContent.current\)/);
+assert.match(source, /editInitialContent.current = undefined/);
+assert.match(source, /canvasTextEditPatch\(textPatchOf\(node\), updated.content, initialContent\)/);
+assert.match(source, /void persistTextNode\(updated\)/);
+console.log('TEXT_EDIT_HISTORY=PASS CONTROLLED_DRAFT_UNDO=FOCUS_BASELINE EMPTY_BASELINE=RETAINED UNCHANGED_BLUR=NO_HISTORY CURRENT_NONCONTENT_FIELDS=RETAINED MAX12000=PASS ORIGINAL_PERSISTENCE=UNCHANGED');

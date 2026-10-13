@@ -20,3 +20,16 @@ export class MediaLoadQueue {
     }
   }
 }
+
+/** Reserve bandwidth only after authorization/cache lookup, not while awaiting
+ * metadata. Cancelled offscreen tickets never start a byte transfer. */
+export function acquireMediaSlot(queue: MediaLoadQueue, signal?: AbortSignal):Promise<()=>void> {
+  return new Promise((resolve,reject)=>{
+    if(signal?.aborted){reject(new DOMException('Aborted','AbortError'));return;}
+    let finish:()=>void=()=>{}; let settled=false;
+    const abort=()=>{finish();if(!settled){settled=true;reject(new DOMException('Aborted','AbortError'));}};
+    finish=queue.enqueue(()=>{settled=true;resolve(()=>{signal?.removeEventListener('abort',abort);finish();});});
+    signal?.addEventListener('abort',abort,{once:true});
+    if(signal?.aborted)abort();
+  });
+}

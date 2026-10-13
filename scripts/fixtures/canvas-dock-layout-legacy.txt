@@ -1,0 +1,144 @@
+  // 选中节点在画布坐标系里的屏幕位置；真实图片按原像素尺寸参与停靠计算。
+  const nodeScreen = useMemo<
+    { left: number; top: number; bottom: number; cx: number } | undefined
+  >(() => {
+    // 当前用于停靠上下面板的节点:真实选中节点优先,否则选中的空白节点
+    const anchorId = selectedId ?? selectedPendId ?? selectedTextId;
+    if (!anchorId) return undefined;
+    const selNode = rfNodes.find((n) => n.id === anchorId);
+    if (!selNode) return undefined;
+    const z = viewport.zoom || 1;
+    const left = selNode.position.x * z + viewport.x;
+    const top = selNode.position.y * z + viewport.y;
+    const size = flowNodeSize(selNode);
+    return { left, top, bottom: top + size.height * z, cx: left + (size.width * z) / 2 };
+  }, [selectedId, selectedPendId, selectedTextId, rfNodes, viewport]);
+
+  // 画布悬浮层需要避开左上项目 chrome、窄屏第二行右上操作区和左下视图工具条。
+  // 这里统一定义安全区，避免 Dock 在低高度窗口退化成 top:8 后盖住导航/账户操作。
+  const overlaySafeArea = useMemo(
+    () => ({
+      left: 8,
+      right: 8,
+      top: canvasSize.width > 0 && canvasSize.width < 768 ? 108 : 64,
+      // 窄屏主工具栏位于视图控制条上方，需要同时避开两层底部控件。
+      bottom: canvasSize.width > 0 && canvasSize.width < 1000 ? 128 : 84,
+    }),
+    [canvasSize.width]
+  );
+
+  // dock 宽度随可用画布收缩；高分屏、Windows 缩放和窄窗口都以真实 CSS 像素重新布局。
+  const preferredDockWidth = 820;
+  const dockWidth = canvasSize.width
+    ? Math.max(
+        1,
+        Math.min(
+          preferredDockWidth,
+          canvasSize.width - overlaySafeArea.left - overlaySafeArea.right
+        )
+      )
+    : preferredDockWidth;
+  // 节点中心 x(夹取到画布内,使最宽的 dock 不出界);工具条也用这个中心 → 上下对齐。
+  const anchorCenterX = useMemo<number | undefined>(() => {
+    if (!nodeScreen) return undefined;
+    const cw = canvasSize.width;
+    const HALF = dockWidth / 2;
+    let cx = nodeScreen.cx;
+    if (cw) {
+      cx = Math.max(
+        HALF + overlaySafeArea.left,
+        Math.min(cx, cw - HALF - overlaySafeArea.right)
+      );
+      // 低高度宽窗口中，尽量把 Dock 推到左下视图工具条右侧。这样可以安全使用
+      // 更低的 bottom inset，为 Dock + 节点工具条 + 节点主体腾出完整纵向空间。
+      const viewToolbarClearance = 232;
+      const maxDockLeft = cw - dockWidth - overlaySafeArea.right;
+      if (
+        canvasSize.height > 0 &&
+        canvasSize.height < 680 &&
+        maxDockLeft >= viewToolbarClearance
+      ) {
+        cx = Math.max(cx, viewToolbarClearance + HALF);
+      }
+    }
+    return cx;
+  }, [nodeScreen, canvasSize.width, canvasSize.height, dockWidth, overlaySafeArea]);
+
+  // 底部生成器:节点正下方,中心对齐 anchorCenterX
+  const preferredDockStyle = useMemo<
+    { left: number; top: number; width: number; maxHeight?: number } | undefined
+  >(() => {
+    if (!nodeScreen || anchorCenterX == null) return undefined;
+    const ch = canvasSize.height;
+    const left = anchorCenterX - dockWidth / 2;
+    if (!ch) return { left, top: nodeScreen.bottom + 14, width: dockWidth };
+    const safeTop = overlaySafeArea.top;
+    // 左下视图工具条只占约 216px 宽；Dock 与它横向不相交时保留普通 8px
+    // 即可，避免在宽屏无谓压缩用户手动扩展的提示词编辑区。
+    // 主工具栏常驻底部；所有生成 Dock 都要预留其高度，不能再依赖“选中时隐藏工具栏”。
+    const bottomInset = overlaySafeArea.bottom;
+    const safeBottom = Math.max(safeTop + 120, ch - bottomInset);
+    // The image action bar is 49.5px in Chromium. When it is clamped to the
+    // top safe area (notably 390px wide screens), the node itself can sit
+    // underneath it, so positioning the Dock from the node bottom alone lets
+    // the two overlays overlap. Reserve the rendered toolbar plus an 8px gap.
+    const topbarHeight = 50;
+    const topbarTop = Math.max(safeTop, nodeScreen.top - topbarHeight - 12);
+    const belowTop = Math.max(
+      nodeScreen.bottom + 14,
+      topbarTop + topbarHeight + 8
+    );
+    const belowSpace = Math.max(0, safeBottom - belowTop);
+    const nodeToolbarReserve = 70;
+    const aboveBottom = nodeScreen.top - nodeToolbarReserve;
+    const aboveSpace = Math.max(0, aboveBottom - safeTop);
+    const preferredHeight = selectedTextId ? 360 : 310;
+    const minimumComfort = selectedTextId
+      ? canvasSize.width < 480
+        ? 240
+        : 218
+      : 220;
+    // 优先选择能容纳完整自适应输入区的一侧；两侧都不足时选择空间更大的一侧。
+    const useBelow =
+      belowSpace >= preferredHeight ||
+      (belowSpace >= minimumComfort && belowSpace >= aboveSpace);
+    if (useBelow) {
+      return {
+        left,
+        top: Math.max(safeTop, belowTop),
+        width: dockWidth,
+        maxHeight: Math.max(120, belowSpace),
+      };
+    }
+    if (aboveSpace >= minimumComfort) {
+      // The top is computed from this height. Allowing the panel to grow beyond
+      // it puts a long prompt/footer inside the action bar above the node.
+      const maxHeight = Math.min(preferredHeight, aboveSpace);
+      return {
+        left,
+        top: Math.max(safeTop, aboveBottom - Math.min(preferredHeight, maxHeight)),
+        width: dockWidth,
+        maxHeight,
+      };
+    }
+
+    // 两侧都放不下时退化为画布内底部 sheet。它始终位于安全区内，
+    // 不再覆盖顶部项目 chrome，也不会压住左下视图工具条。
+    const availableHeight = Math.max(120, safeBottom - safeTop);
+    const sheetHeight = Math.min(preferredHeight, availableHeight);
+    return {
+      left,
+      top: Math.max(safeTop, safeBottom - sheetHeight),
+      width: dockWidth,
+      maxHeight: sheetHeight,
+    };
+  }, [
+    nodeScreen,
+    anchorCenterX,
+    canvasSize.width,
+    canvasSize.height,
+    dockWidth,
+    selectedTextId,
+    overlaySafeArea,
+  ]);
+
