@@ -35,7 +35,7 @@ async function main(){
  const TOOLS=[...toolSource.matchAll(/key: "([^"]+)", en: "[^"]+", slug: "([^"]+)"/g)].map(m=>({key:m[1],slug:m[2]}));
  const rows=TOOLS.map(meta=>({slug:meta.slug,label:meta.key,tools:CREATIVE_AGENT_TOOLS[meta.slug],entry:meta.slug==="agent",workbench:true,canvas:true,orb:"same-canvas-runtime"}));
  try{
-  assert.equal(rows.length,26);assert.equal(new Set(standalone.map(t=>t.name)).size,standalone.length);
+  assert.equal(rows.length,27);assert.deepEqual(CREATIVE_AGENT_TOOLS.batchshot,["generate_image"]);assert.equal(new Set(standalone.map(t=>t.name)).size,standalone.length);
   assert.deepEqual(standalone.map(t=>t.name),sidebar.map(t=>t.name));
   for(const row of rows){assert.ok(Array.isArray(row.tools),row.slug);if(!row.entry)assert.ok(row.tools.length,row.slug);for(const name of row.tools)assert.ok(standalone.find(t=>t.name===name)?.execute,name);}
   for(const [name] of Object.entries(CREATIVE_TOOL_FEATURES)){const t=standalone.find(t=>t.name===name)!;assert.ok((t.parameters as any).properties.confirm,name);}
@@ -69,7 +69,7 @@ async function main(){
   const textCanvas=createNaumiTools(new Request(origin),"fixture@example.test",()=>({cookie:"fixture",authorization:""}),undefined,{anchorId:"",imageUrls:[],imageModelId:"image-a",ratio:"1:1",resolution:"1K",quality:"medium"});
   await assert.rejects(async()=>textCanvas.find(t=>t.name==="recolor_product")!.execute("no-ref",{image_url:"",color:"blue",strength:100},undefined),/提供.*图片/);assert.equal(calls.length,beforeInvalid);
   assert.equal(describeNaumiTools(standalone).find(t=>t.name==="check_image_ip")!.write,true);
-  console.log(`CREATIVE_AGENT_COVERAGE=PASS ENTRIES=26 EXECUTABLE_ENTRIES=25 AGENT_ENTRY=1 SAME_TOOLSET=WORKBENCH_CANVAS_ORB ADAPTER_CALLS=${calls.length} POST_RETRY=0 CANCEL=PASS EMPTY_OUTPUT=REJECTED PAID_UPSTREAM_CALLS=0`);
+  console.log(`CREATIVE_AGENT_COVERAGE=PASS ENTRIES=27 EXECUTABLE_ENTRIES=26 AGENT_ENTRY=1 SAME_TOOLSET=WORKBENCH_CANVAS_ORB ADAPTER_CALLS=${calls.length} POST_RETRY=0 CANCEL=PASS EMPTY_OUTPUT=REJECTED PAID_UPSTREAM_CALLS=0`);
  }finally{await new Promise<void>(r=>server.close(()=>r()));}
 }
 main().catch(e=>{console.error(e);process.exitCode=1});
