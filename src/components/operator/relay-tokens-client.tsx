@@ -316,12 +316,12 @@ export function RelayTokensClient({ embedded = false }: { embedded?: boolean }) 
         <p className="text-[13.5px] text-c-text3">
           中转密钥管理是站长后台功能,当前账号无权访问。
         </p>
-        <a
+        <Link
           href="/"
           className="mt-1 rounded-[10px] border border-c-border2 bg-c-card px-4 py-2 text-[13px] font-medium text-c-text transition-colors hover:bg-c-subtle"
         >
           返回首页
-        </a>
+        </Link>
       </div>
     );
   }

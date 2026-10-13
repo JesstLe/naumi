@@ -33,7 +33,7 @@ export function CanvasActionMenu({ label, light, items, disabled = false,
   menuTestId?: string;
   dataTool?: string;
   iconOnly?: boolean;
-  triggerRef?: RefObject<HTMLButtonElement>;
+  triggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const id = useId();
   const internalAnchor = useRef<HTMLButtonElement>(null);
@@ -119,7 +119,7 @@ export function CanvasActionMenu({ label, light, items, disabled = false,
 
 /** Node editors use the same viewport fitting, without widening their toolbar. */
 export function CanvasActionPanel({ anchorRef, label, light, width, onClose, children }: {
-  anchorRef: RefObject<HTMLButtonElement>;
+  anchorRef: RefObject<HTMLButtonElement | null>;
   label: string;
   light: boolean;
   width: number;

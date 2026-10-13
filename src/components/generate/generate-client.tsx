@@ -154,7 +154,7 @@ export function GenerateClient({
   const [sourceLoading, setSourceLoading] = useState(false);
   const previewUrls = useRef<string[]>([]);
   previewUrls.current = filePreviews;
-  const baseNoticeTimer = useRef<ReturnType<typeof setTimeout>>();
+  const baseNoticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   function cancelBaseLoad() {
     sourceEpoch.current++;
     baseController.current?.abort();

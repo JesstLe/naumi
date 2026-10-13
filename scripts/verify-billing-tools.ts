@@ -91,11 +91,11 @@ async function main() {
         displayedVersion=(await config.publish({ id: randomUUID(), expectedVersion: beforeConfig.version, config: nextConfig, actor: "fixture", reason: "competitor fixture" })).version;
         const competitor = await import("../src/app/api/competitors/[id]/action/route"), competitorOp = randomUUID();
         const competitorRequest = () => new Request(`http://fixture.test/api/competitors/${itemId}/action`, { method: "POST", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}`, "content-type": "application/json", "x-naumi-billing-version":String(displayedVersion),"x-naumi-billing-credits":"3","x-naumi-billing-operation-id": competitorOp }, body: JSON.stringify({ action: "replicate", revision: 0, prompt: "fixture", regions: [], activeVersion: "" }) });
-        const completed = await competitor.POST(competitorRequest(), { params: { id: itemId } });
+        const completed = await competitor.POST(competitorRequest(), { params: Promise.resolve({ id: itemId }) });
         assert.equal(completed.status, 200, await completed.clone().text());
         assert.equal((await db.getCompetitorItem(email, itemId))?.versions.length, 1);
         const competitorCalls = calls;
-        assert.equal((await competitor.POST(competitorRequest(), { params: { id: itemId } })).status, 200);
+        assert.equal((await competitor.POST(competitorRequest(), { params: Promise.resolve({ id: itemId }) })).status, 200);
         assert.equal(calls, competitorCalls);
         assert.equal(Number((await db.getPool().query("SELECT charged_credits FROM app_billing_operations WHERE id=$1", [`tool-${competitorOp}`])).rows[0].charged_credits), 3);
         const ipcheck = await import("../src/app/api/ipcheck/route");

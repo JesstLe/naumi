@@ -17,7 +17,7 @@ import { requestedTextModel } from "@/lib/text-models";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-async function handleObservedPost(req: Request, { params }: { params: { id: string } }) {
+async function handleObservedPost(req: Request, { params }: { params: Promise<{ id: string }> }) {
   let email = ""; let lease = ""; let reserved = false;
   let cost = 0;
   try {
@@ -26,7 +26,7 @@ async function handleObservedPost(req: Request, { params }: { params: { id: stri
     if (!parsed.success) throw new WorkspaceError("操作、提示词或选区格式不正确");
     const body = parsed.data;
     if (!rateLimit(`competitor:${body.action}:${email}`, body.action === "analyze" ? 120 : 40, 600000)) throw new WorkspaceError("操作过于频繁，请稍后重试", 429);
-    const original = await ownedCompetitor(email, params.id);
+    const original = await ownedCompetitor(email, (await params).id);
     checkVersion(original, body.activeVersion);
     if (body.action !== "analyze" && original.versions.length >= 100) throw new WorkspaceError("该图已达到 100 个历史版本，请导入新副本继续");
     if (body.action === "replicate" && !body.prompt.trim()) throw new WorkspaceError("请先反推或填写提示词");
@@ -34,7 +34,7 @@ async function handleObservedPost(req: Request, { params }: { params: { id: stri
     if (body.action === "edit" && (!selected.length || selected.some(r => r.kind !== "color" && !r.instruction.trim()))) throw new WorkspaceError("请启用选区并填写每个选区的修改要求");
     const product = body.productId ? await ownedCompetitor(email, body.productId) : null;
     const jobId = randomUUID();
-    const item = await claimCompetitorItem(email, params.id, body.revision, jobId);
+    const item = await claimCompetitorItem(email, (await params).id, body.revision, jobId);
     if (!item) throw new WorkspaceError("图片正在处理或已更新，请重新加载", 409);
     lease = jobId;
     Object.assign(item, { prompt: body.prompt, regions: body.regions, activeVersion: body.activeVersion });
@@ -74,10 +74,10 @@ async function handleObservedPost(req: Request, { params }: { params: { id: stri
     if (reserved) { await refundCredits(email, cost); if (lease) await settleReservation(lease); }
     return competitorError(e);
   } finally {
-    if (lease) await releaseCompetitorItem(email, params.id, lease);
+    if (lease) await releaseCompetitorItem(email, (await params).id, lease);
   }
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   return withBillingRequest(req,"competitor.action",()=>withBiRequest(req, () => handleObservedPost(req, { params })));
 }

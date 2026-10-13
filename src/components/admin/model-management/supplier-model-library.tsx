@@ -59,7 +59,7 @@ export function SupplierModelLibrary(){
 }
 function MetadataDialog({model,onClose,onSave}:{model:SupplierModelRecord;onClose:()=>void;onSave:(metadata:SupplierMetadata,id:string)=>Promise<void>}){
  const specification=model.parameterMetadata.supplierSpecification as {modelUrl?:string;capabilityVersion?:string;observedAt?:string;model?:{parameters?:unknown[]}}|undefined;
- const ref=useRef<HTMLDialogElement>(null),operation=useRef<{body:string;id:string}>(),[busy,setBusy]=useState(false),[error,setError]=useState(""),[history,setHistory]=useState<{revision:number;actor:string;createdAt:string}[]|null>(null);
+ const ref=useRef<HTMLDialogElement>(null),operation=useRef<{body:string;id:string} | undefined>(undefined),[busy,setBusy]=useState(false),[error,setError]=useState(""),[history,setHistory]=useState<{revision:number;actor:string;createdAt:string}[]|null>(null);
  const [draft,setDraft]=useState<SupplierMetadata>(()=>{const base=unknownSupplierMetadata();return Object.fromEntries(Object.keys(base).map(k=>[k,model[k as keyof SupplierMetadata]])) as SupplierMetadata;});
  const [texts,setTexts]=useState<Record<string,Record<string,string>>>(()=>Object.fromEntries(model.prices.map(p=>[p.id,Object.fromEntries(moneyFields.map(k=>[k,p[k]===null?"":fixed(p[k])]))])));
  const [parameterText,setParameterText]=useState(JSON.stringify(Object.fromEntries(Object.entries(model.parameterMetadata).filter(([k])=>k!=="upstreamImport")),null,2));

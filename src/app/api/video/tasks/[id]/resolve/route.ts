@@ -7,10 +7,10 @@ import { safeError } from "@/lib/api-error";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request, context: { params: { id: string } }) {
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  const task = await getVideoTask(email, context.params.id);
+  const task = await getVideoTask(email, (await context.params).id);
   if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
   if (task.status !== "needs_attention") {
     return NextResponse.json({ error: "任务当前不需要人工核对" }, { status: 409 });

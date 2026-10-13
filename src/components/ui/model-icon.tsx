@@ -12,7 +12,7 @@ import {
 } from "./model-brand-icons";
 
 /** Exhaustive local registry. Unknown identities keep the neutral icon. */
-const BRAND_ICONS: Record<ModelBrand, (props: { size: number }) => JSX.Element> = {
+const BRAND_ICONS: Record<ModelBrand, (props: { size: number }) => React.JSX.Element> = {
   openai: OpenAIMono, google: GoogleColor, gemini: GeminiColor, "nano-banana": NanoBananaColor,
   claude: ClaudeColor, deepseek: DeepSeekColor, qwen: QwenColor, grok: GrokMono, kimi: KimiColor,
   doubao: DoubaoColor, jimeng: JimengColor, minimax: MinimaxColor, mistral: MistralColor,

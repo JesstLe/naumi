@@ -24,11 +24,11 @@ export function NaumiOrb({ state = "idle", theme = "naumi", followPointer = true
   motion = true, thumbnail = false, label = "Naumi 小球", className = "", onActivate,
   onKeyDown, actionLabel, expanded, controls }: NaumiOrbProps) {
   const host = useRef<HTMLDivElement>(null);
-  const engine = useRef<OrbEngine>();
+  const engine = useRef<OrbEngine | undefined>(undefined);
   const active = useRef(false);
   const latest = useRef({ state, motion, followPointer });
   latest.current = { state, motion, followPointer };
-  const syncActivity = useRef<() => void>();
+  const syncActivity = useRef<(() => void) | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
 

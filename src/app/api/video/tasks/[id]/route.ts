@@ -15,11 +15,11 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  const { id } = context.params;
+  const { id } = await context.params;
   if (!id) return NextResponse.json({ error: "缺少任务 id" }, { status: 400 });
   const task = await getVideoTask(email, id);
   if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
@@ -28,11 +28,11 @@ export async function GET(
 
 export async function DELETE(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-  const { id } = context.params;
+  const { id } = await context.params;
   if (!id) return NextResponse.json({ error: "缺少任务 id" }, { status: 400 });
   try {
     const deleted = await deleteFinishedVideoTask(email, id);

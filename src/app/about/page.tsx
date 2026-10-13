@@ -126,7 +126,7 @@ function AboutLayout({
 }
 
 export default async function AboutPage() {
-  const locale = getServerLocale();
+  const locale = await getServerLocale();
   // 自部署实例:渲染站长在后台自定义的「关于我们」;官方站保留默认设计页。
   const custom = await getSitePage("about");
   if (custom) {
