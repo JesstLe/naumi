@@ -14,6 +14,8 @@ Open-source AI e-commerce visual studio — generate, batch-suite, cut out, try 
 
 ## 新服务器预发布与交接
 
+发布前阅读[发布手册：用户连续可用](docs/RELEASE_RUNBOOK.md)：用户已确认蓝绿切换、活动任务排空、旧前端资源保留及兼容数据库升级标准。当前为已确认待实现约定，不代表现有发布脚本已经无感；先在103验收，再按明确任务推广120。
+
 新服务器的验收、访问入口与后续迁移约定，统一记录在 [预发布交接 README](docs/NAUMI_STAGING_MIGRATION_README.md)，最新验收与回传约定见第 20 节，公网入口见第 21 节。新机继续用于构建和测试，媒体保持本地存储；只有用户明确要求回传时才操作旧机，不将预发布数据库回灌生产。多 Agent 协作遵循 [协作说明](docs/AGENT_COLLABORATION.md)。
 
 ## ✨ 功能 / Features
