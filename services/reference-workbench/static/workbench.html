@@ -1,0 +1,973 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>参考图工作台</title>
+<style>
+:root{--card-min-height:640px;--card-prompt-height:220px;--card-image-height:175px}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f4f6f8;color:#1f2328}
+header{height:56px;background:#20242a;color:white;display:flex;align-items:center;padding:0 24px;gap:16px}
+header a{color:#cdd9e5;text-decoration:none}
+main{max-width:1820px;margin:18px auto;padding:0 300px 0 16px}
+section{background:white;border:1px solid #d8dee4;border-radius:8px;padding:16px;margin-bottom:16px}
+button{border:0;border-radius:6px;padding:10px 14px;font-weight:700;cursor:pointer;background:#0969da;color:white}
+button.secondary{background:#57606a}
+button.ghost{background:#eef1f4;color:#24292f}
+button.small{padding:7px 10px;font-size:13px}
+button.primaryAction{font-size:16px;padding:13px 22px;box-shadow:0 3px 10px rgba(9,105,218,.24)}
+button.cardGenerate{width:100%;margin:5px 0 0;padding:11px 10px;background:#1f883d;font-size:15px}
+input,select,textarea{box-sizing:border-box;padding:9px;border:1px solid #c9d1d9;border-radius:6px;font:inherit;background:white}
+textarea{width:100%;min-height:72px;resize:vertical}
+label{font-size:13px;font-weight:700;color:#24292f}
+.hint{color:#57606a;font-size:13px;line-height:1.5}
+.topgrid{display:grid;grid-template-columns:330px 1fr;gap:16px;align-items:start}
+.productPanel{border:1px solid #d8dee4;border-radius:8px;overflow:hidden;background:#fafbfc}
+.productGallery{height:310px;background:#fff;border-bottom:1px solid #d8dee4;display:grid;grid-template-columns:1fr;gap:0}
+.productGallery.multi{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:1fr;gap:6px;padding:6px;box-sizing:border-box}
+.productGallery img{width:100%;height:100%;object-fit:contain;background:#fff;cursor:pointer;border-radius:4px}
+.productGallery.multi img{background:#f6f8fa;border:1px solid #d8dee4}
+.productPanel .body{padding:12px}
+.productName{font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.settings{display:grid;grid-template-columns:1.3fr 1fr 1fr .7fr .7fr .7fr;gap:10px;align-items:end}
+.settings .wide{grid-column:1 / -1}
+.settings .providerPanel{grid-column:1 / -1;background:#f6f8fa;border:1px solid #d8dee4;border-radius:8px;padding:10px}
+.settings .compactRow{display:grid;grid-template-columns:1fr 1fr auto auto;gap:8px;align-items:end}
+.row{display:flex;gap:8px;align-items:center}
+.row input{flex:1;min-width:0}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.sizeControl{display:flex;align-items:center;gap:6px;color:#24292f;font-size:13px;font-weight:700;background:#f6f8fa;border:1px solid #d8dee4;border-radius:6px;padding:6px 8px}
+.sizeControl input{width:82px;padding:7px}
+.status{font-family:ui-monospace,Consolas,monospace;white-space:pre-wrap;background:#f6f8fa;border:1px solid #d8dee4;border-radius:6px;padding:10px}
+.workarea{position:relative;min-height:380px}
+.cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.card{border:2px solid #d8dee4;border-radius:8px;background:#fff;overflow:hidden;position:relative;min-height:var(--card-min-height)}
+.card.selected{border-color:#0969da;box-shadow:0 0 0 3px rgba(9,105,218,.16)}
+.selectZone{position:absolute;left:8px;top:8px;width:38px;height:38px;border-radius:8px;background:rgba(255,255,255,.92);border:2px solid #8c959f;display:flex;align-items:center;justify-content:center;z-index:2;cursor:pointer}
+.card.selected .selectZone{background:#0969da;border-color:#0969da}
+.selectZone input{width:18px;height:18px;pointer-events:none}
+.body{padding:7px 10px 12px}
+.name{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{font-size:12px;color:#57606a;margin:4px 0 8px}
+.badge{display:inline-block;padding:3px 7px;border-radius:999px;background:#eef1f4;color:#57606a;font-size:12px;font-weight:700}
+.badge.running,.badge.waiting,.badge.editing{background:#fff8c5;color:#7d4e00}
+.badge.done,.badge.skipped,.badge.infer_done{background:#dafbe1;color:#116329}
+.badge.failed{background:#ffebe9;color:#cf222e}
+.badge.maybe_submitted{background:#ddf4ff;color:#0969da}
+.cardActions{display:flex;gap:8px;align-items:center;margin:7px 0 4px}
+.cardActions select{flex:1}
+.card textarea.prompt{height:var(--card-prompt-height);font-size:15px;line-height:1.45;margin-top:4px}
+.result{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 10px 0}
+.resultPanel .meta{margin:0 0 5px}
+.result img{width:100%;height:var(--card-image-height);object-fit:contain;background:#f6f8fa;border:1px solid #d8dee4;border-radius:6px;cursor:pointer}
+.downloadableImage{position:relative}
+.imageDownloadBtn{position:absolute;left:7px;bottom:7px;display:none;border:0;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800;cursor:pointer;background:rgba(9,105,218,.94);color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:6}
+.downloadableImage:hover .imageDownloadBtn{display:block}
+.placeholder{height:var(--card-image-height);display:flex;align-items:center;justify-content:center;background:#f6f8fa;border:1px solid #d8dee4;border-radius:6px;color:#57606a}
+.promptLabel{margin-top:4px;margin-bottom:3px}
+.marquee{position:fixed;border:1px solid #0969da;background:rgba(9,105,218,.14);pointer-events:none;display:none;z-index:30}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.84);display:none;align-items:flex-start;justify-content:center;padding:12px;z-index:40;overflow:auto}
+.modal.open{display:flex}
+.modal.compareOpen{align-items:center;padding:8px;overflow:hidden}
+.modalBox{background:white;border-radius:8px;max-width:96vw;max-height:94vh;overflow:auto;padding:14px}
+.pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;width:calc(100vw - 16px);height:calc(100vh - 16px);max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:hidden}
+.pair img{width:100%;height:100%;min-width:0;min-height:0;object-fit:contain;background:#111;border-radius:6px}
+.editor{display:grid;grid-template-columns:minmax(360px,1fr) 360px;gap:14px;width:94vw;max-height:92vh}
+.canvasWrap{background:#111;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:auto;min-height:520px}
+#editCanvas{max-width:100%;max-height:82vh;background:white;cursor:crosshair}
+.canvasWrap{position:relative}
+.textEditInput{position:absolute;z-index:10;min-width:260px;border:2px solid #0969da;border-radius:4px;padding:6px 8px;font:18px system-ui;background:white;color:#cf222e;box-shadow:0 4px 16px rgba(0,0,0,.22)}
+.editPanel{display:flex;flex-direction:column;gap:10px}
+.toolrow{display:flex;gap:8px;flex-wrap:wrap}
+.toolrow button.active{background:#1f883d}
+.errorBox{margin-top:8px;color:#cf222e;background:#ffebe9;border:1px solid #ff8182;border-radius:6px;padding:8px;white-space:pre-wrap}
+.projectDock{position:fixed;right:14px;top:74px;width:260px;max-height:calc(100vh - 92px);overflow:auto;background:white;border:1px solid #d8dee4;border-radius:8px;padding:12px;box-shadow:0 8px 26px rgba(27,31,36,.12);z-index:12}
+.projectDock h3{margin:0 0 8px;font-size:15px}
+.projectItem{border:1px solid #d8dee4;border-radius:8px;padding:9px;margin-bottom:8px;background:#fafbfc}
+.projectItem strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.projectItem .path{font-size:12px;color:#57606a;word-break:break-all;margin:4px 0 8px}
+.projectItem .buttons{display:flex;gap:6px}
+.projectItem button{padding:6px 8px;font-size:12px}
+@media(max-width:1500px){.cards{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:1180px){main{padding:0 16px}.projectDock{position:static;width:auto;max-height:none;margin:0 16px 16px}.cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:980px){.topgrid{grid-template-columns:1fr}.settings{grid-template-columns:1fr 1fr}.settings .wide{grid-column:1 / -1}.editor{grid-template-columns:1fr}.pair{grid-template-columns:1fr;height:auto}.pair img{height:42vh}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:680px){.settings{grid-template-columns:1fr}.cards{grid-template-columns:1fr}}
+</style>
+<style id="commonHeaderStyle">
+.appHeader{height:56px;background:#20242a;color:#fff;display:flex;align-items:center;padding:0 18px;gap:12px;box-sizing:border-box;position:relative;z-index:100}
+.appHeader .brand{font-weight:800;white-space:nowrap}
+.appHeader .version{font-size:12px;color:#cdd9e5;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 8px}
+.appHeader .activePage{font-size:14px;color:#fff;background:rgba(255,255,255,.12);border-radius:6px;padding:6px 9px}
+.appHeader .lanLinkBox{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:8px;max-width:46vw;padding:5px 8px;border:1px solid rgba(255,255,255,.16);border-radius:8px;background:rgba(255,255,255,.08);color:#dbeafe;font-size:13px;white-space:nowrap}
+.appHeader .lanLinkText{overflow:hidden;text-overflow:ellipsis}
+.appHeader .copyLanBtn{border:0;border-radius:6px;padding:4px 8px;font-size:12px;font-weight:800;cursor:pointer;background:#eef6ff;color:#0969da;white-space:nowrap}
+.appHeader .spacer{flex:1}
+.appHeader .menuWrap{position:relative}
+.appHeader .menuBtn{border:0;border-radius:6px;padding:9px 13px;font-weight:800;cursor:pointer;background:#0969da;color:#fff}
+.appHeader .menuPanel{display:none;position:absolute;right:0;top:44px;min-width:190px;background:#fff;border:1px solid #d8dee4;border-radius:8px;box-shadow:0 12px 28px rgba(27,31,36,.18);padding:6px;z-index:110}
+.appHeader .menuPanel.open{display:block}
+.appHeader .menuPanel a{display:block;color:#24292f;text-decoration:none;padding:10px 12px;border-radius:6px;font-weight:650}
+.appHeader .menuPanel a:hover,.appHeader .menuPanel a.active{background:#eef6ff;color:#0969da}
+.appHeader .headerAction{border:0;border-radius:6px;padding:9px 13px;font-weight:800;cursor:pointer;background:#238636;color:#fff}
+.imageWrap,.downloadableImage{position:relative}
+.imageDownloadBtn{position:absolute;left:7px;bottom:7px;display:none;border:0;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800;cursor:pointer;background:rgba(9,105,218,.94);color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:6}
+.imageWrap:hover .imageDownloadBtn,.downloadableImage:hover .imageDownloadBtn{display:block}
+@media(max-width:1100px){.appHeader .lanLinkBox{position:static;transform:none;max-width:40vw}}
+@media(max-width:760px){.appHeader .lanLinkBox{display:none}}
+</style>
+
+</head><body><header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">参考图工作台</div><div class="lanLinkBox" title="局域网内其他电脑可打开这个地址"><span class="lanLinkText">局域网链接：https://47.105.59.142/workbench</span><button class="copyLanBtn" onclick="copyLanLink('https://47.105.59.142/workbench')">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a href="http://192.168.201.95:7880/chat-image">聊天生图</a><a href="http://192.168.201.95:7880/single">旧单图生成</a><a href="/admin" id="adminMenuLink" style="display:none">渠道管理</a><a class="active" href="/workbench">参考图工作台</a></div></div></header>
+<aside class="projectDock">
+  <h3>后台项目</h3>
+  <div class="hint">放到后台后，当前任务会继续运行。右侧恢复只是切回这个产品文件夹。</div>
+  <div id="projectList"><div class="hint">暂无后台项目</div></div>
+</aside>
+<main>
+  <section>
+    <div class="topgrid">
+      <div class="productPanel">
+        <div id="productGallery" class="productGallery" data-urls=""></div>
+        <div class="body"><div class="productName" id="productName">产品图</div><div class="meta" id="productPath">未加载，或者当前产品文件夹没有可用参考图</div></div>
+      </div>
+      <div>
+        <div class="settings">
+          <div><label>单个产品文件夹</label><div class="row"><input id="workbench_root" placeholder="例如 D:\产品批量\1"><button class="ghost" onclick="browseFolder()">选择本机文件夹</button><input id="clientFolderInput" type="file" accept="image/*" webkitdirectory="" multiple="" style="display:none" onchange="uploadLocalFolder(this.files)"></div></div>
+          <div><label>生图模型商</label><div class="row"><select id="active_provider_template" disabled=""><option value="">服务器自动分配</option></select></div></div>
+          <div><label>处理类型</label><select id="mode"><option value="all_sku">主图 + 详情图 + SKU</option><option value="all">主图 + 详情图</option><option value="main">只跑主图</option><option value="detail">只跑详情图</option><option value="sku">只跑 SKU</option></select></div>
+          <div><label>质量</label><select id="quality"><option>high</option><option>medium</option><option>low</option><option>auto</option></select></div>
+          <div><label>分辨率</label><select id="resolution"><option>2k</option><option>1k</option><option>4k</option></select></div>
+          <div><label>等待秒数</label><select id="timeout"><option>900</option><option>600</option><option>1200</option><option>1800</option></select></div>
+          <div><label>SKU文件夹名</label><input id="sku_refs_dir_name" placeholder="SKU"></div>
+          <div><label>覆盖已有结果</label><select id="force"><option value="false">否</option><option value="true">是</option></select></div>
+          <div class="wide"><label>批量提示词（图一 = 产品图，图二 = 风格参考图；修改后自动同步到全部卡片）</label><textarea id="prompt"></textarea><textarea id="prompt_infer_instruction" style="display:none"></textarea></div>
+        </div>
+        <div class="toolbar">
+          <button class="ghost" onclick="applyDefaultPrompt()">应用默认提示词</button>
+          <button class="ghost" onclick="inferSelectedPrompts()">推理选中提示词</button>
+          <button class="ghost" onclick="openInferInstructionSettings()">推理指令设置</button>
+          <button class="secondary" onclick="selectAll(true)">全选</button>
+          <button class="secondary" onclick="selectAll(false)">取消全选</button>
+          <button class="primaryAction" onclick="startSelected()">生成选中</button>
+          <button class="ghost" onclick="downloadWorkbenchZip('generated')">下载选中生成图</button>
+          <button class="ghost" onclick="downloadWorkbenchZip('original')">下载选中原图</button>
+          <button class="ghost" onclick="downloadWorkbenchZip('both')">下载选中原图+生成图</button>
+          <button class="secondary" onclick="sendToBackground()">转入后台等待</button>
+          <button class="ghost" onclick="refreshLoopOnce()">刷新结果</button>
+          <label class="sizeControl">卡片高度 <input id="card_height" type="number" min="560" max="1000" step="20" value="640" oninput="applyCardHeight(this.value,true)" onchange="saveCardHeight()"></label>
+          <span class="hint">工作台请选择单个产品文件夹；选中几张卡片，就同时发送几个任务。</span>
+        </div>
+        <div id="status" class="status">等待加载</div>
+      </div>
+    </div>
+  </section>
+  <section class="workarea" id="workarea"><div id="marquee" class="marquee"></div><div id="cards" class="cards"></div></section>
+</main>
+<div id="modal" class="modal" onclick="closeModal()"></div>
+
+<script id="commonHeaderScript">
+function toggleAppMenu(event){event.stopPropagation(); const menu=document.getElementById('appMenuPanel'); if(menu)menu.classList.toggle('open');}
+document.addEventListener('click',()=>{const menu=document.getElementById('appMenuPanel'); if(menu)menu.classList.remove('open');});
+async function copyLanLink(url){
+  try{
+    await navigator.clipboard.writeText(url);
+    alert("已复制局域网链接");
+  }catch(_e){
+    const input=document.createElement("input");
+    input.value=url;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+    alert("已复制局域网链接");
+  }
+}
+function imagePathFromUrl(url){
+  try{
+    const value=String(url||"");
+    if(!value||value.startsWith("data:"))return "";
+    const parsed=new URL(value,location.href);
+    if(parsed.pathname!=="/api/image")return "";
+    return parsed.searchParams.get("path")||"";
+  }catch(_e){return "";}
+}
+function downloadImageUrl(url){
+  const path=imagePathFromUrl(url);
+  if(path){
+    const a=document.createElement("a");
+    a.href="/api/image?download=1&path="+encodeURIComponent(path);
+    a.download="";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return;
+  }
+  if(String(url||"").startsWith("data:image/")){
+    const a=document.createElement("a");
+    a.href=url;
+    a.download="image.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+}
+function imageDownloadButton(url){
+  return `<button class="imageDownloadBtn" onclick="event.stopPropagation();downloadImageUrl(decodeURIComponent('${encodeURIComponent(url||"")}'))">下载</button>`;
+}
+function visibleImagePaths(){
+  const paths=[];
+  const seen=new Set();
+  document.querySelectorAll("img").forEach(img=>{
+    const rect=img.getBoundingClientRect();
+    if(rect.width<=0||rect.height<=0)return;
+    const path=imagePathFromUrl(img.dataset.src||img.currentSrc||img.src);
+    if(path&&!seen.has(path)){seen.add(path);paths.push(path);}
+  });
+  return paths;
+}
+async function downloadCurrentPageImages(){
+  const paths=visibleImagePaths();
+  if(!paths.length){alert("当前页面没有可下载的图片");return;}
+  const response=await fetch("/api/images-zip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths,filename:"当前页面图片包_"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".zip"})});
+  if(!response.ok){alert(await response.text()||"下载图片包失败");return;}
+  const blob=await response.blob();
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download="当前页面图片包.zip";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+</script>
+<script>
+let items=[]; let drag=null; let selectedVersions={}; let selectedRefs=null; let editState=null; let projects=[]; let providerTemplates=[]; let promptOverrides={};
+const projectStoreKey="gpt-image-pil-workbench-projects";
+const promptStoreKey="gpt-image-pil-workbench-prompts";
+const promptStoreVersionKey="gpt-image-pil-workbench-prompts-version";
+const promptStoreVersion="3";
+const cardHeightStoreKey="gpt-image-pil-card-height";
+const inferTaskStoreKey="gpt-image-pil-infer-tasks";
+const rootStoreKey="gpt-image-pil-workbench-root";
+const settingsStoreKey="gpt-image-pil-workbench-settings";
+const settingsStoreVersionKey="gpt-image-pil-workbench-settings-version";
+const settingsStoreVersion="2";
+const status=document.getElementById("status");
+const fields=["active_provider_template","mode","quality","resolution","timeout","sku_refs_dir_name","prompt","prompt_infer_instruction","force","card_height"];
+const statusText={idle:"待生成",waiting:"等待中",running:"生成中",inferring:"推理中",infer_done:"推理完成",editing:"二次修改中",done:"完成",skipped:"已存在",failed:"失败",maybe_submitted:"可能已提交"};
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+function valBool(v){return v===true||v==="true";}
+function clampNumber(value,min,max){const number=Number(value); if(!Number.isFinite(number))return min; return Math.max(min,Math.min(max,number));}
+function applyCardHeight(value,save=true){
+  const height=clampNumber(value||640,560,1000);
+  const delta=height-640;
+  const promptHeight=Math.max(170,Math.round(220+delta*0.7));
+  const imageHeight=Math.max(145,Math.round(175+delta*0.2));
+  document.documentElement.style.setProperty("--card-min-height",height+"px");
+  document.documentElement.style.setProperty("--card-prompt-height",promptHeight+"px");
+  document.documentElement.style.setProperty("--card-image-height",imageHeight+"px");
+  if(card_height)card_height.value=String(height);
+  if(save)localStorage.setItem(cardHeightStoreKey,String(height));
+}
+function loadCardHeight(value){applyCardHeight(value||localStorage.getItem(cardHeightStoreKey)||640,false);}
+function openInferInstructionSettings(){
+  const current=prompt_infer_instruction.value||"";
+  modal.classList.remove("compareOpen");
+  modal.innerHTML=`<div class="modalBox" onclick="event.stopPropagation()" style="width:min(760px,92vw)"><h3 style="margin-top:0">推理图片提示词指令</h3><p class="hint">这里不会显示或保存 API Key，只是告诉推理模型如何根据产品图和参考图总结提示词。</p><textarea id="inferInstructionEditor" style="width:100%;min-height:260px">${esc(current)}</textarea><div class="toolbar"><button onclick="saveInferInstructionFromModal()">保存指令</button><button class="ghost" onclick="closeModal()">取消</button></div></div>`;
+  modal.classList.add("open");
+}
+function saveInferInstructionFromModal(){
+  const editor=document.getElementById("inferInstructionEditor");
+  prompt_infer_instruction.value=editor?editor.value:"";
+  writeLocalWorkbenchSettings();
+  closeModal();
+  status.textContent="推理指令已保存到当前浏览器。";
+}
+function readPromptOverrides(){
+  if(localStorage.getItem(promptStoreVersionKey)!==promptStoreVersion){
+    localStorage.removeItem(promptStoreKey);
+    localStorage.setItem(promptStoreVersionKey,promptStoreVersion);
+    promptOverrides={};
+    return;
+  }
+  try{promptOverrides=JSON.parse(localStorage.getItem(promptStoreKey)||"{}"); if(!promptOverrides||typeof promptOverrides!=="object"||Array.isArray(promptOverrides))promptOverrides={};}catch(e){promptOverrides={};}
+}
+function writePromptOverrides(){localStorage.setItem(promptStoreKey,JSON.stringify(promptOverrides));}
+function promptForItem(item){const saved=promptOverrides[item.ref_path]; return saved!==undefined ? saved : cleanPrompt(item.prompt);}
+function setPromptOverride(refPath,text){promptOverrides[refPath]=String(text??""); writePromptOverrides();}
+function mergePromptOverrides(list){return list.map(item=>promptOverrides[item.ref_path]!==undefined ? {...item,prompt:promptOverrides[item.ref_path]} : item);}
+function rememberPrompt(el){const card=el.closest(".card"); if(card)setPromptOverride(card.dataset.ref,el.value);}
+function currentRoot(){return String(document.getElementById("workbench_root")?.value||"");}
+function values(){
+  const d={};
+  for(const id of fields){const el=document.getElementById(id); if(el)d[id]=el.value;}
+  d.timeout=Number(d.timeout||900);
+  d.force=valBool(d.force);
+  return d;
+}
+function readLocalWorkbenchSettings(){
+  let local={};
+  try{local=JSON.parse(localStorage.getItem(settingsStoreKey)||"{}")||{};}catch(e){local={};}
+  if(!local||typeof local!=="object"||Array.isArray(local))local={};
+  if(localStorage.getItem(settingsStoreVersionKey)!==settingsStoreVersion){
+    delete local.prompt;
+    localStorage.setItem(settingsStoreKey,JSON.stringify(local));
+    localStorage.setItem(settingsStoreVersionKey,settingsStoreVersion);
+  }
+  return local;
+}
+function writeLocalWorkbenchSettings(){localStorage.setItem(settingsStoreKey,JSON.stringify(values()));}
+function workbenchRequestConfig(){return values();}
+function workbenchItemsUrl(){
+  const params=new URLSearchParams({root:currentRoot(),...workbenchRequestConfig()});
+  return "/api/workbench/items?"+params.toString();
+}
+function fill(d){for(const id of fields){const el=document.getElementById(id); if(el&&d[id]!==undefined&&d[id]!==null) el.value=String(d[id]);}}
+function renderProviderTemplates(activeName=""){
+  const select=document.getElementById("active_provider_template");
+  if(!select)return;
+  select.innerHTML='<option value="">服务器自动分配</option>';
+  select.value="";
+  select.disabled=true;
+}
+async function loadSettings(){
+  const d=await(await fetch("/api/settings")).json();
+  const local=readLocalWorkbenchSettings();
+  Object.assign(d,local);
+  const storedCardHeight=localStorage.getItem(cardHeightStoreKey);
+  d.card_height=storedCardHeight||d.card_height||640;
+  providerTemplates=Array.isArray(d.provider_templates)?d.provider_templates:[];
+  fill(d);
+  loadCardHeight(d.card_height);
+  renderProviderTemplates(d.active_provider_template||"");
+  const adminLink=document.getElementById("adminMenuLink");if(adminLink)adminLink.style.display=d.settings_editable?"":"none";
+  if(window.modelSettingsBtn) modelSettingsBtn.style.display=d.settings_editable?"":"none";
+  const savedRoot=localStorage.getItem(rootStoreKey);
+  if(savedRoot) workbench_root.value=savedRoot;
+  else workbench_root.value="";
+}
+async function saveSettings(){writeLocalWorkbenchSettings();}
+async function applyProviderTemplate(){
+  const name=active_provider_template.value;
+  if(!name){alert("请先选择模板");return;}
+  await saveSettings();
+  status.textContent="已切换模型模板："+name;
+}
+let rootLoadTimer=null;
+function scheduleRootLoad(){
+  clearTimeout(rootLoadTimer);
+  rootLoadTimer=setTimeout(()=>saveAndLoad(),650);
+}
+let saveTimer=null;
+function scheduleSaveSettings(){
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>saveSettings(),500);
+}
+async function saveCardHeight(){
+  applyCardHeight(card_height.value,true);
+  await saveSettings();
+}
+async function browseFolder(){
+  const picker=document.getElementById("clientFolderInput");
+  if(picker){
+    picker.value="";
+    picker.click();
+    return;
+  }
+  alert("当前浏览器不支持文件夹选择，请使用新版 Chrome 或 Edge。");
+}
+async function uploadLocalFolder(files){
+  const imageFiles=[...files].filter(file=>String(file.type||"").startsWith("image/")||/\.(png|jpe?g|jfif|webp|bmp)$/i.test(file.name));
+  if(!imageFiles.length){
+    status.textContent="没有选择到可用图片。";
+    return;
+  }
+  status.textContent="正在上传本机产品文件夹，共 "+imageFiles.length+" 张图片...";
+  const form=new FormData();
+  form.append("manifest",JSON.stringify(imageFiles.map(file=>({name:file.name,path:file.webkitRelativePath||file.name,size:file.size,type:file.type||""}))));
+  for(const file of imageFiles){
+    form.append("files",file,file.name);
+  }
+  try{
+    const response=await fetch("/api/workbench/upload-folder",{method:"POST",body:form});
+    const data=await response.json();
+    if(!response.ok||!data.ok){
+      throw new Error(data.error||data.message||"上传失败");
+    }
+    workbench_root.value=data.product_dir;
+    localStorage.setItem(rootStoreKey,data.product_dir);
+    status.textContent="上传完成：保存 "+data.saved+" 张图片，跳过 "+(data.skipped||0)+" 个文件。正在加载参考图...";
+    await saveAndLoad();
+  }catch(e){
+    status.textContent="上传失败："+e.message;
+    alert("上传失败："+e.message);
+  }
+}
+async function saveAndLoad(){localStorage.setItem(rootStoreKey,currentRoot()); await saveSettings(); await loadRefs(true);}
+function readProjects(){try{projects=JSON.parse(localStorage.getItem(projectStoreKey)||"[]"); if(!Array.isArray(projects))projects=[];}catch(e){projects=[];} renderProjects();}
+function writeProjects(){localStorage.setItem(projectStoreKey,JSON.stringify(projects)); renderProjects();}
+function projectName(path){return String(path||"").split(/[\\/]/).filter(Boolean).pop()||"未命名项目";}
+function currentProjectSnapshot(state){
+  const config=values();
+  const root=currentRoot();
+  if(!root.trim()){alert("请先选择单个产品文件夹");return null;}
+  config.workbench_root=root;
+  return {id:root,name:projectName(root),root,config,state:state||"后台等待",savedAt:new Date().toLocaleString(),count:items.length};
+}
+function upsertProject(project){
+  const index=projects.findIndex(p=>p.root===project.root);
+  if(index>=0)projects[index]={...projects[index],...project}; else projects.unshift(project);
+  writeProjects();
+}
+function sendToBackground(){
+  const project=currentProjectSnapshot("后台等待");
+  if(!project)return;
+  upsertProject(project);
+  alert("已放到右侧后台项目列表，当前任务不会被停止。你可以选择另一个产品文件夹继续操作。");
+}
+async function restoreProject(index){
+  const project=projects[index]; if(!project)return;
+  const config={...(project.config||{}),workbench_root:(project.config&&project.config.workbench_root)||project.root};
+  config.card_height=config.card_height||card_height.value||localStorage.getItem(cardHeightStoreKey)||640;
+  fill(config);
+  workbench_root.value=config.workbench_root||project.root||"";
+  localStorage.setItem(rootStoreKey,workbench_root.value);
+  loadCardHeight(config.card_height);
+  await saveSettings();
+  await loadRefs();
+}
+function removeProject(index){projects.splice(index,1);writeProjects();}
+function renderProjects(){
+  if(!projectList)return;
+  if(!projects.length){projectList.innerHTML='<div class="hint">暂无后台项目</div>';return;}
+  projectList.innerHTML=projects.map((p,i)=>`<div class="projectItem"><strong>${esc(p.name)}</strong><div class="path">${esc(p.root)}</div><div class="meta">${esc(p.state||"后台等待")} / ${esc(p.savedAt||"")}</div><div class="buttons"><button onclick="restoreProject(${i})">恢复</button><button class="ghost" onclick="removeProject(${i})">移除</button></div></div>`).join("");
+}
+async function loadRefs(resetSelection=true){
+  try{
+    const root=currentRoot();
+    if(!root.trim()){items=[]; render(); status.textContent="请先选择本机产品文件夹。"; return;}
+    const data=await(await fetch(workbenchItemsUrl())).json();
+    items=mergePromptOverrides(data.items||[]);
+    if(resetSelection) selectedRefs=null;
+    render();
+    await refreshStatus();
+  }catch(e){
+    status.textContent="加载失败："+e;
+  }
+}
+function renderProduct(){
+  const first=items[0];
+  if(!first){
+    if(productGallery.dataset.urls!==""){
+      productGallery.innerHTML="";
+      productGallery.dataset.urls="";
+    }
+    productGallery.className="productGallery";
+    productName.textContent="产品图";
+    productPath.textContent="未加载，或者当前产品文件夹没有可用参考图";
+    return;
+  }
+  const productUrls=first.product_urls&&first.product_urls.length?first.product_urls:[first.product_url];
+  const productImages=first.product_images&&first.product_images.length?first.product_images:[first.product_image];
+  productGallery.className=`productGallery ${productUrls.length>1?"multi":""}`;
+  const urlsKey=productUrls.join("||");
+  if(productGallery.dataset.urls!==urlsKey){
+    productGallery.innerHTML=productUrls.map((url,index)=>`<img src="${url}" title="${esc(productImages[index]||"")}" onclick="openProductImage(${index})">`).join("");
+    productGallery.dataset.urls=urlsKey;
+  }
+  productName.textContent=first.product+(productImages.length>1?`（产品图 ${productImages.length} 张）`:"");
+  productPath.textContent=productImages.join(" | ");
+}
+function activeVersion(it){
+  const versions=it.versions||[];
+  if(!versions.length)return null;
+  const saved=selectedVersions[it.ref_path];
+  return versions.find(v=>v.path===saved)||versions[versions.length-1];
+}
+function versionUrl(v){return v ? `${v.url}&t=${encodeURIComponent(v.mtime||"0")}` : "";}
+function versionsKey(it){return (it.versions||[]).map(v=>`${v.path}|${v.mtime||""}|${v.label||""}`).join(";;");}
+function workbenchImage(url,onclick){
+  return `<div class="downloadableImage"><img src="${url}" onclick="${onclick}">${imageDownloadButton(url)}</div>`;
+}
+function resultHtml(it,i){
+  const v=activeVersion(it);
+  return `<div class="resultPanel"><div class="meta">参考图</div>${workbenchImage(it.ref_url,`openCompare(${i})`)}</div>
+        <div class="resultPanel"><div class="meta">生成结果</div>${v?workbenchImage(versionUrl(v),`openEditor(${i})`):`<div class="placeholder">暂无结果</div>`}</div>`;
+}
+function cardActionsHtml(it,i){
+  const v=activeVersion(it);
+  if(!v)return '<span class="hint">暂无版本</span>';
+  const options=(it.versions||[]).map(x=>`<option value="${esc(x.path)}" ${v&&v.path===x.path?"selected":""}>${esc(x.label)}</option>`).join("");
+  return `<select onchange="setVersion(${i},this.value)">${options}</select><button class="ghost small" onclick="openCompare(${i})">对比</button>`;
+}
+function cardMetaHtml(it){return `${esc(it.product)} / ${esc(it.task_label)} / ${esc(it.size)} <span class="badge ${esc(it.status)}">${statusText[it.status]||it.status}</span>`;}
+function errorHtml(it){return it.error?`<div class="errorBox">${esc(it.error)}</div>`:"";}
+function cleanPrompt(value){const text=String(value??""); return text==="undefined" ? document.getElementById("prompt").value : text;}
+function render(){
+  renderProduct();
+  if(selectedRefs===null) selectedRefs=new Set(items.map(it=>it.ref_path));
+  cards.innerHTML=items.map((it,i)=>{
+    const v=activeVersion(it);
+    return `<div class="card" data-ref="${esc(it.ref_path)}" data-index="${i}" data-versions-key="${esc(versionsKey(it))}" data-result-src="${esc(v?versionUrl(v):"")}">
+      <div class="selectZone" onclick="toggleCard(${i});event.stopPropagation()"><input type="checkbox" class="pick"></div>
+      <div class="result">
+        ${resultHtml(it,i)}
+      </div>
+      <div class="body">
+        <div class="name" title="${esc(it.ref_name)}">${esc(it.ref_name)}</div>
+        <div class="meta cardMeta">${cardMetaHtml(it)}</div>
+        <button class="cardGenerate" onclick="startSingle(${i})">生成此图</button>
+        <div class="cardActions">
+          ${cardActionsHtml(it,i)}
+        </div>
+        <div class="meta promptLabel">提示词</div>
+        <textarea class="prompt" oninput="rememberPrompt(this)">${esc(promptForItem(it))}</textarea>
+        ${errorHtml(it)}
+      </div>
+    </div>`;
+  }).join("");
+  document.querySelectorAll(".card").forEach(c=>setCardSelected(c,selectedRefs.has(c.dataset.ref),false));
+}
+function canPatchCards(nextItems){return items.length===nextItems.length&&items.every((it,i)=>it.ref_path===nextItems[i].ref_path);}
+function patchCards(nextItems){
+  renderProduct();
+  nextItems.forEach((it,i)=>{
+    const card=document.querySelector(`.card[data-ref="${CSS.escape(it.ref_path)}"]`);
+    if(!card)return;
+    card.dataset.index=String(i);
+    const meta=card.querySelector(".cardMeta");
+    if(meta)meta.innerHTML=cardMetaHtml(it);
+    const key=versionsKey(it);
+    const v=activeVersion(it);
+    const src=v?versionUrl(v):"";
+    if(card.dataset.versionsKey!==key||card.dataset.resultSrc!==src){
+      const result=card.querySelector(".result");
+      if(result)result.innerHTML=resultHtml(it,i);
+      const actions=card.querySelector(".cardActions");
+      if(actions)actions.innerHTML=cardActionsHtml(it,i);
+      card.dataset.versionsKey=key;
+      card.dataset.resultSrc=src;
+    }
+    const body=card.querySelector(".body");
+    const existingError=card.querySelector(".errorBox");
+    if(it.error){
+      if(existingError)existingError.textContent=it.error;
+      else if(body)body.insertAdjacentHTML("beforeend",errorHtml(it));
+    }else if(existingError){
+      existingError.remove();
+    }
+    setCardSelected(card,selectedRefs?selectedRefs.has(it.ref_path):true,false);
+  });
+}
+function setVersion(i,path){selectedVersions[items[i].ref_path]=path; render();}
+function setCardSelected(card,on,remember=true){card.classList.toggle("selected",on); const box=card.querySelector(".pick"); if(box) box.checked=on; if(remember&&selectedRefs){if(on)selectedRefs.add(card.dataset.ref);else selectedRefs.delete(card.dataset.ref);}}
+function toggleCard(i){const card=document.querySelector(`.card[data-index="${i}"]`); if(card) setCardSelected(card,!card.classList.contains("selected"));}
+function selectAll(v){if(!selectedRefs)selectedRefs=new Set(); if(v){items.forEach(it=>selectedRefs.add(it.ref_path));}else{selectedRefs.clear();} document.querySelectorAll(".card").forEach(c=>setCardSelected(c,v,false));}
+function selectedPayload(){return [...document.querySelectorAll(".card.selected")].map(card=>({ref_path:card.dataset.ref,prompt:card.querySelector(".prompt").value,selected:true}));}
+function selectedDownloadPayload(){
+  return [...document.querySelectorAll(".card.selected")].map(card=>{
+    const index=Number(card.dataset.index);
+    const item=items[index];
+    const version=item?activeVersion(item):null;
+    return {
+      ref_path:card.dataset.ref,
+      prompt:card.querySelector(".prompt")?.value||"",
+      version_path:version?version.path:"",
+      selected:true
+    };
+  });
+}
+async function downloadWorkbenchZip(kind){
+  const selected=selectedDownloadPayload();
+  if(!selected.length){alert("请先选择要下载的卡片");return;}
+  const includeOriginal=kind==="original"||kind==="both";
+  const includeGenerated=kind==="generated"||kind==="both";
+  if(includeGenerated&&!selected.some(x=>x.version_path)){
+    if(!confirm("选中的卡片里没有生成图，是否继续下载可用内容？"))return;
+  }
+  status.textContent="正在打包下载图片...";
+  const response=await fetch("/api/workbench/download-zip",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      items:selected,
+      workbench_root:currentRoot(),
+      config:workbenchRequestConfig(),
+      include_original:includeOriginal,
+      include_generated:includeGenerated
+    })
+  });
+  if(!response.ok){
+    const text=await response.text();
+    status.textContent="下载失败："+text;
+    alert(text||"下载失败");
+    return;
+  }
+  const blob=await response.blob();
+  let filename=(projectName(currentRoot())||"当前产品")+"_生成.zip";
+  const disposition=response.headers.get("Content-Disposition")||"";
+  const match=disposition.match(/filename\\*=UTF-8''([^;]+)/);
+  if(match)filename=decodeURIComponent(match[1]);
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  status.textContent="图片包已开始下载："+filename;
+}
+function cardPayload(i){
+  const card=document.querySelector(`.card[data-index="${i}"]`);
+  if(!card)return null;
+  return {ref_path:card.dataset.ref,prompt:card.querySelector(".prompt").value,selected:true};
+}
+async function applyDefaultPrompt(){
+  syncDefaultPromptToCards();
+  await saveSettings();
+}
+function syncDefaultPromptToCards(){
+  const text=document.getElementById("prompt").value;
+  document.querySelectorAll(".card textarea.prompt").forEach(el=>{
+    el.value=text;
+    const card=el.closest(".card");
+    if(card)promptOverrides[card.dataset.ref]=text;
+  });
+  items=items.map(it=>{promptOverrides[it.ref_path]=text; return {...it,prompt:text};});
+  writePromptOverrides();
+}
+async function inferSelectedPrompts(){
+  const selected=selectedPayload();
+  if(!selected.length){alert("请先选择要推理提示词的参考图");return;}
+  await saveSettings();
+  const taskRoot=currentRoot();
+  for(const selectedItem of selected){
+    const item=items.find(it=>it.ref_path===selectedItem.ref_path);
+    if(item){item.status="inferring";item.error="";}
+  }
+  render();
+  status.textContent="正在推理 "+selected.length+" 张图的提示词...";
+  runInferTask({root:taskRoot,selected});
+}
+async function runInferTask(task){
+  let r;
+  try{
+    r=await fetch("/api/workbench/infer-prompts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:task.selected,workbench_root:task.root,config:workbenchRequestConfig()})});
+  }catch(e){return;}
+  if(!r.ok){
+    const text=await r.text();
+    alert(text||"提示词推理启动失败");
+    return;
+  }
+  alert("已提交 "+task.selected.length+" 条提示词推理任务");
+  pollInferResults(task);
+}
+async function pollInferResults(task){
+  if(currentRoot()!==task.root){
+    status.textContent="提示词推理已在后台进行，切换回来即可看到结果。";
+    return;
+  }
+  let list=[];
+  try{
+    const data=await(await fetch(workbenchItemsUrl())).json();
+    list=data.items||[];
+  }catch(e){}
+  const byRef=new Map(list.map(x=>[x.ref_path,x]));
+  let pending=0;
+  for(const selectedItem of task.selected){
+    const it=byRef.get(selectedItem.ref_path);
+    if(!it)continue;
+    const infer=it.infer||{};
+    if(infer.status==="failed"||infer.status==="maybe_submitted"){status.textContent=infer.error||"推理失败";alert(status.textContent);return;}
+    if(infer.status==="inferring"){pending++;continue;}
+    if(infer.status==="done"&&infer.prompt){
+      setPromptOverride(selectedItem.ref_path,infer.prompt);
+    }
+  }
+  const nextItems=mergePromptOverrides(list);
+  if(canPatchCards(nextItems)){items=nextItems; patchCards(nextItems);}
+  else{items=nextItems; render();}
+  for(const selectedItem of task.selected){
+    const it=byRef.get(selectedItem.ref_path);
+    if(!it)continue;
+    const infer=it.infer||{};
+    if(infer.status==="done"&&infer.prompt){
+      const card=document.querySelector(`.card[data-ref="${CSS.escape(selectedItem.ref_path)}"]`);
+      const ta=card&&card.querySelector(".prompt");
+      if(ta)ta.value=infer.prompt;
+    }
+  }
+  if(pending>0){
+    status.textContent="正在推理 "+pending+" 条提示词...";
+    setTimeout(()=>pollInferResults(task),800);
+  }else{
+    status.textContent="提示词推理完成";
+    alert("所有提示词推理完成");
+  }
+}
+async function startSelected(){
+  const selected=selectedPayload();
+  if(!selected.length){alert("请先选择要生成的参考图");return;}
+  await submitWorkbenchJobs(selected);
+}
+async function startSingle(i){
+  const payload=cardPayload(i);
+  if(!payload){alert("没有找到这张卡片");return;}
+  await submitWorkbenchJobs([payload]);
+}
+async function submitWorkbenchJobs(selected){
+  await saveSettings();
+  const project=currentProjectSnapshot("运行中");
+  if(project) upsertProject(project);
+  const r=await fetch("/api/workbench/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:selected,workbench_root:currentRoot(),config:workbenchRequestConfig()})});
+  const t=await r.text();
+  if(!r.ok){alert(t);return;}
+  alert(t);
+  await refreshLoop();
+}
+async function fetchJsonChecked(url){
+  const response=await fetch(url,{cache:"no-store"});
+  if(!response.ok){
+    const text=await response.text();
+    throw new Error(text||("HTTP "+response.status));
+  }
+  return response.json();
+}
+async function refreshStatus(){
+  const s=await fetchJsonChecked("/api/status"); const p=s.progress||{};
+  const q=s.queue||{};
+  status.textContent=`状态：${p.current||"等待"}\n当前产品：${p.product||"-"}\n参考图：${p.ref||"-"}\n尺寸：${p.size||"-"}\n完成：${p.done||0}  异常：${p.failed||0}  跳过：${p.skipped||0}\n队列：运行中 ${q.running||0}/${q.global_limit||"-"}，等待 ${q.waiting||0}，单用户上限 ${q.user_limit||"-"}\n最近错误：${p.last_error||"-"}`;
+  return Boolean(s.running);
+}
+let workbenchRefreshPromise=null;
+async function refreshLoopOnce(){
+  if(workbenchRefreshPromise)return workbenchRefreshPromise;
+  workbenchRefreshPromise=(async()=>{
+    const data=await fetchJsonChecked(workbenchItemsUrl());
+    const nextItems=mergePromptOverrides(data.items||items);
+    if(canPatchCards(nextItems)){
+      items=nextItems;
+      patchCards(nextItems);
+    }else{
+      items=nextItems;
+      render();
+    }
+    return refreshStatus();
+  })();
+  try{return await workbenchRefreshPromise;}
+  finally{workbenchRefreshPromise=null;}
+}
+async function refreshLoop(){
+  try{await refreshLoopOnce();}
+  catch(error){console.warn("工作台刷新失败，将自动重试：",error);}
+}
+function openProduct(){openProductImage(0);}
+function openProductImage(index){if(items[0]){const urls=items[0].product_urls&&items[0].product_urls.length?items[0].product_urls:[items[0].product_url]; const url=urls[index]||urls[0]; modal.classList.remove("compareOpen"); modal.innerHTML=`<img style="max-width:96vw;max-height:92vh;object-fit:contain;background:#111" src="${url}">`; modal.classList.add("open");}}
+function openCompare(i){const it=items[i]; if(!it)return; const v=activeVersion(it); modal.innerHTML=v?`<div class="pair"><img src="${it.ref_url}"><img src="${versionUrl(v)}"></div>`:`<img style="max-width:96vw;max-height:92vh;object-fit:contain;background:#111" src="${it.ref_url}">`; modal.classList.add("open","compareOpen");}
+function openVersionInfo(i){
+  const it=items[i], v=activeVersion(it); if(!it||!v)return;
+  const m=v.meta||{};
+  const rows=[
+    ["版本",v.label||""],
+    ["状态",statusText[m.status]||m.status||""],
+    ["类型",m.kind==="edit"?"二次修改":"首次生成"],
+    ["提示词",m.prompt||""],
+    ["来源版本",m.source_version||""],
+    ["生成时间",m.created_at||""],
+    ["更新时间",m.updated_at||""],
+    ["标注图",m.annotated_path||""],
+    ["输出图",m.output_path||v.path||""],
+    ["错误",m.error||""],
+    ["备注",m.note||""],
+  ];
+  modal.classList.remove("compareOpen");
+  modal.innerHTML=`<div class="modalBox" onclick="event.stopPropagation()" style="width:min(820px,94vw)"><h3 style="margin-top:0">版本记录</h3>${rows.map(([k,val])=>val?`<div style="margin:10px 0"><strong>${esc(k)}</strong><div class="status">${esc(val)}</div></div>`:"").join("")}<button class="secondary" onclick="closeModal()">关闭</button></div>`;
+  modal.classList.add("open");
+}
+function openEditor(i){
+  const it=items[i], v=activeVersion(it); if(!it||!v)return;
+  modal.classList.remove("compareOpen");
+  editState={index:i, item:it, version:v, tool:"arrow", drawing:false, start:null, base:null, objects:[], history:[]};
+  const versionOptions=(it.versions||[]).map(x=>`<option value="${esc(x.path)}" ${x.path===v.path?"selected":""}>${esc(x.label)}</option>`).join("");
+  modal.innerHTML=`<div class="modalBox" onclick="event.stopPropagation()"><div class="editor"><div class="canvasWrap"><canvas id="editCanvas"></canvas></div><div class="editPanel">
+    <strong>结果标注后二次生成</strong>
+    <div class="hint">这次只发送“当前生成结果图 + 带标注的结果图 + 新提示词”，不会再发送产品图和同行参考图。</div>
+    <label>切换版本</label><select id="editVersionSelect" onchange="setEditorVersion(this.value)">${versionOptions}</select>
+    <div id="versionHint" class="hint"></div>
+    <div class="toolrow"><button id="toolArrow" class="active" onclick="setTool('arrow')">箭头</button><button id="toolRect" class="ghost" onclick="setTool('rect')">框选</button><button id="toolText" class="ghost" onclick="setTool('text')">文字</button><button class="ghost" onclick="undoCanvas()">撤销上一步</button><button class="ghost" onclick="resetCanvas()">清空标注</button></div>
+    <div class="hint">文字工具：点击图片位置后输入文字，按 Enter 确认；已有文字可以直接拖动位置。</div>
+    <label>二次生成提示词</label><textarea id="editPrompt" style="min-height:150px">根据标注修改这张图片，保持整体风格和排版质感，生成新的版本。</textarea>
+    <button onclick="submitEdit()">发送二次生成</button>
+    <button class="secondary" onclick="closeModal()">关闭</button>
+    <div id="editMsg" class="status">等待操作</div>
+  </div></div></div>`;
+  modal.classList.add("open");
+  loadEditorVersion(v);
+}
+function setEditorVersion(path){
+  if(!editState)return;
+  const found=(editState.item.versions||[]).find(v=>v.path===path);
+  if(!found)return;
+  editState.version=found;
+  selectedVersions[editState.item.ref_path]=path;
+  loadEditorVersion(found);
+}
+function outgoingEditForVersion(version){
+  if(!version||!editState)return null;
+  return (editState.item.versions||[]).find(next=>{
+    const meta=next.meta||{};
+    return meta.kind==="edit" && meta.source_path===version.path && meta.annotated_url;
+  }) || null;
+}
+function loadEditorVersion(v){
+  if(!editState||!v)return;
+  const outgoing=outgoingEditForVersion(v);
+  const m=outgoing ? (outgoing.meta||{}) : (v.meta||{});
+  const promptText=outgoing ? (m.prompt||"") : "根据标注修改这张图片，保持整体风格和排版质感，生成新的版本。";
+  if(editPrompt) editPrompt.value=promptText;
+  if(versionHint){
+    versionHint.textContent=outgoing
+      ? `当前：${v.label||""}，显示它当时生成 ${outgoing.label||"下一版"} 的标注和提示词`
+      : `当前：${v.label||""}，显示当前版本原图，可继续标注生成下一版`;
+  }
+  const annotatedUrl=outgoing&&m.annotated_url?`${m.annotated_url}&t=${encodeURIComponent(outgoing.mtime||"0")}`:"";
+  loadEditCanvas(annotatedUrl||versionUrl(v));
+}
+function closeModal(){modal.classList.remove("open","compareOpen"); modal.innerHTML="";}
+function setTool(tool){
+  if(!editState)return;
+  editState.tool=tool;
+  for(const [id,name] of [["toolArrow","arrow"],["toolRect","rect"],["toolText","text"]]){
+    const el=document.getElementById(id);
+    if(el){el.classList.toggle("active",tool===name);el.classList.toggle("ghost",tool!==name);}
+  }
+  if(editMsg)editMsg.textContent=tool==="text"?"点击图片添加文字，拖动已有文字可移动位置":tool==="rect"?"拖动鼠标框选需要修改的区域":"拖动鼠标绘制箭头";
+}
+function canvasPoint(e){const c=editCanvas,r=c.getBoundingClientRect(); return {x:(e.clientX-r.left)*c.width/r.width,y:(e.clientY-r.top)*c.height/r.height};}
+function canvasScreenPoint(p){const c=editCanvas,r=c.getBoundingClientRect(); return {x:r.left+p.x*r.width/c.width,y:r.top+p.y*r.height/c.height};}
+function canvasLocalPoint(p){const c=editCanvas,wrap=document.querySelector(".canvasWrap"),cr=c.getBoundingClientRect(),wr=wrap.getBoundingClientRect();return {x:cr.left-wr.left+p.x*cr.width/c.width,y:cr.top-wr.top+p.y*cr.height/c.height};}
+function annotationFontSize(){return Math.max(28,editCanvas.width/28);}
+function textMetrics(obj){const c=editCanvas,ctx=c.getContext("2d"),size=obj.size||annotationFontSize();ctx.save();ctx.font=size+"px sans-serif";const w=ctx.measureText(obj.text||"").width;ctx.restore();return {x:obj.x,y:obj.y,w,h:size*1.25};}
+function hitText(p){if(!editState||!editState.objects)return -1;for(let i=editState.objects.length-1;i>=0;i--){const obj=editState.objects[i];if(obj.kind!=="text")continue;const m=textMetrics(obj);if(p.x>=m.x&&p.x<=m.x+m.w&&p.y>=m.y&&p.y<=m.y+m.h)return i;}return -1;}
+function drawArrow(ctx,a,b){ctx.save();ctx.strokeStyle="#ff1f1f";ctx.fillStyle="#ff1f1f";ctx.lineWidth=Math.max(4,editCanvas.width/260);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();const ang=Math.atan2(b.y-a.y,b.x-a.x),len=Math.max(18,editCanvas.width/45);ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x-len*Math.cos(ang-Math.PI/6),b.y-len*Math.sin(ang-Math.PI/6));ctx.lineTo(b.x-len*Math.cos(ang+Math.PI/6),b.y-len*Math.sin(ang+Math.PI/6));ctx.closePath();ctx.fill();ctx.restore();}
+function drawRect(ctx,a,b){ctx.save();ctx.strokeStyle="#ff1f1f";ctx.lineWidth=Math.max(4,editCanvas.width/260);ctx.setLineDash([Math.max(12,editCanvas.width/80),Math.max(8,editCanvas.width/120)]);ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(b.x-a.x),Math.abs(b.y-a.y));ctx.restore();}
+function drawTextObject(ctx,obj,selected=false){ctx.save();const size=obj.size||annotationFontSize();ctx.font=size+"px sans-serif";ctx.textBaseline="top";ctx.fillStyle="#ff1f1f";ctx.strokeStyle="rgba(255,255,255,.92)";ctx.lineWidth=Math.max(3,size/10);ctx.strokeText(obj.text,obj.x,obj.y);ctx.fillText(obj.text,obj.x,obj.y);if(selected){const m=textMetrics(obj);ctx.strokeStyle="#0969da";ctx.setLineDash([8,6]);ctx.lineWidth=Math.max(2,editCanvas.width/500);ctx.strokeRect(m.x-4,m.y-4,m.w+8,m.h+8);}ctx.restore();}
+function drawObject(ctx,obj,selected=false){if(obj.kind==="arrow")drawArrow(ctx,obj.start,obj.end);else if(obj.kind==="rect")drawRect(ctx,obj.start,obj.end);else if(obj.kind==="text")drawTextObject(ctx,obj,selected);}
+function redrawEditCanvas(preview=null){const c=editCanvas,ctx=c.getContext("2d");if(!editState||!editState.image)return;ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(editState.image,0,0,c.width,c.height);(editState.objects||[]).forEach((obj,i)=>drawObject(ctx,obj,editState.selectedText===i));if(preview)drawObject(ctx,preview,true);}
+function cloneObjects(){return JSON.parse(JSON.stringify(editState.objects||[]));}
+function pushCanvasHistory(){if(editState)editState.history.push(cloneObjects());}
+function loadEditCanvas(src){const img=new Image();img.onload=()=>{const c=editCanvas;c.width=img.naturalWidth;c.height=img.naturalHeight;editState.image=img;editState.objects=[];editState.history=[];editState.drawing=null;editState.draggingText=null;editState.selectedText=-1;redrawEditCanvas();bindCanvas();};img.src=src;}
+function createTextInputAt(p){removeTextInput();const wrap=document.querySelector(".canvasWrap");const pos=canvasLocalPoint(p);const input=document.createElement("input");input.className="textEditInput";input.value="";input.placeholder="输入标注文字，按 Enter 确认";input.style.left=Math.max(6,pos.x)+"px";input.style.top=Math.max(6,pos.y)+"px";wrap.appendChild(input);let done=false;function commit(){if(done)return;done=true;const value=input.value.trim();removeTextInput();if(!value)return;pushCanvasHistory();editState.objects.push({kind:"text",x:p.x,y:p.y,text:value,size:annotationFontSize()});editState.selectedText=editState.objects.length-1;redrawEditCanvas();}input.addEventListener("mousedown",e=>e.stopPropagation());input.addEventListener("click",e=>e.stopPropagation());input.addEventListener("keydown",e=>{if(e.key==="Enter")commit();if(e.key==="Escape"){done=true;removeTextInput();}});input.addEventListener("blur",commit);requestAnimationFrame(()=>input.focus());}
+function removeTextInput(){document.querySelectorAll(".textEditInput").forEach(el=>el.remove());}
+function bindCanvas(){
+  const c=editCanvas;
+  c.onmousedown=e=>{
+    const p=canvasPoint(e);
+    removeTextInput();
+    if(editState.tool==="text"){
+      e.preventDefault();
+      e.stopPropagation();
+      const hit=hitText(p);
+      if(hit>=0){
+        pushCanvasHistory();
+        const obj=editState.objects[hit];
+        editState.selectedText=hit;
+        editState.draggingText={index:hit,dx:p.x-obj.x,dy:p.y-obj.y};
+        redrawEditCanvas();
+      }else{
+        editState.selectedText=-1;
+        redrawEditCanvas();
+        createTextInputAt(p);
+      }
+      return;
+    }
+    pushCanvasHistory();
+    editState.drawing={kind:editState.tool,start:p,end:p};
+  };
+  c.onmousemove=e=>{
+    const p=canvasPoint(e);
+    if(editState.draggingText){
+      const obj=editState.objects[editState.draggingText.index];
+      obj.x=p.x-editState.draggingText.dx;
+      obj.y=p.y-editState.draggingText.dy;
+      redrawEditCanvas();
+      return;
+    }
+    if(editState.drawing){
+      editState.drawing.end=p;
+      redrawEditCanvas(editState.drawing);
+    }
+  };
+  c.onmouseup=e=>{
+    const p=canvasPoint(e);
+    if(editState.draggingText){editState.draggingText=null;redrawEditCanvas();return;}
+    if(!editState.drawing)return;
+    const drawing=editState.drawing;
+    drawing.end=p;
+    editState.drawing=null;
+    if(Math.hypot(drawing.end.x-drawing.start.x,drawing.end.y-drawing.start.y)>6){
+      editState.objects.push(drawing);
+    }else{
+      editState.history.pop();
+    }
+    redrawEditCanvas();
+  };
+  c.onmouseleave=()=>{if(editState.draggingText){editState.draggingText=null;redrawEditCanvas();} if(editState.drawing){editState.drawing=null;redrawEditCanvas();}};
+}
+function undoCanvas(){if(editState&&editState.history&&editState.history.length){editState.objects=editState.history.pop();editState.selectedText=-1;redrawEditCanvas();}}
+function resetCanvas(){if(editState){pushCanvasHistory();editState.objects=[];editState.selectedText=-1;redrawEditCanvas();}}
+async function submitEdit(){
+  if(!editState)return;
+  removeTextInput();
+  redrawEditCanvas();
+  editMsg.textContent="正在提交二次生成...";
+  items[editState.index].status="editing";
+  render();
+  await saveSettings();
+  const body={ref_path:editState.item.ref_path,result_path:editState.version.path,annotated_data_url:editCanvas.toDataURL("image/png"),prompt:editPrompt.value,workbench_root:currentRoot(),config:workbenchRequestConfig()};
+  const r=await fetch("/api/workbench/edit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const text=await r.text();
+  if(!r.ok){editMsg.textContent=text;return;}
+  editMsg.textContent="二次生成已提交，等待返回结果";
+  await refreshLoopOnce();
+  refreshLoop();
+}
+function rectsOverlap(a,b){return !(a.right<b.left||a.left>b.right||a.bottom<b.top||a.top>b.bottom)}
+workarea.addEventListener("mousedown",e=>{if(e.target.closest("textarea")||e.target.closest("button")||e.target.closest("select")||e.target.closest(".selectZone"))return; drag={x:e.clientX,y:e.clientY}; marquee.style.display="block"; marquee.style.left=e.clientX+"px"; marquee.style.top=e.clientY+"px"; marquee.style.width="0px"; marquee.style.height="0px"; e.preventDefault();});
+window.addEventListener("mousemove",e=>{if(!drag)return; const x1=Math.min(drag.x,e.clientX),y1=Math.min(drag.y,e.clientY),x2=Math.max(drag.x,e.clientX),y2=Math.max(drag.y,e.clientY); marquee.style.left=x1+"px"; marquee.style.top=y1+"px"; marquee.style.width=(x2-x1)+"px"; marquee.style.height=(y2-y1)+"px"; const sel={left:x1,top:y1,right:x2,bottom:y2}; document.querySelectorAll(".card").forEach(c=>setCardSelected(c,rectsOverlap(sel,c.getBoundingClientRect())));});
+window.addEventListener("mouseup",()=>{if(drag){drag=null; marquee.style.display="none";}});
+(async()=>{
+  readProjects();
+  readPromptOverrides();
+  loadCardHeight();
+  await loadSettings();
+  await loadRefs();
+  setInterval(()=>{refreshLoop().catch(()=>{});},2500);
+})();
+workbench_root.addEventListener("change",()=>saveAndLoad());
+workbench_root.addEventListener("paste",()=>setTimeout(scheduleRootLoad,0));
+mode.addEventListener("change",()=>saveAndLoad());
+document.getElementById("prompt").addEventListener("input",()=>{syncDefaultPromptToCards();scheduleSaveSettings();});
+card_height.addEventListener("input",()=>applyCardHeight(card_height.value,true));
+card_height.addEventListener("change",()=>saveCardHeight());
+active_provider_template.addEventListener("change",()=>applyProviderTemplate());
+for(const id of ["quality","resolution","timeout","force"]){
+  const el=document.getElementById(id);
+  if(el)el.addEventListener("change",scheduleSaveSettings);
+}
+</script>
+
+<script>
+function appHeartbeat(){fetch('/api/heartbeat').catch(()=>{});}
+async function appAuthCheck(){
+  try{
+    const r=await fetch('/api/auth/status');
+    if(r.status===401||r.status===403){
+      if(location.pathname!='/login') location.href='/login';
+    }
+  }catch(e){}
+}
+appHeartbeat();
+setInterval(appHeartbeat, 3000);
+setInterval(appAuthCheck, 300000);
+</script>
+
+</body></html>
