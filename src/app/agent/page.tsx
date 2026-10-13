@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
+import { WorkbenchClient } from "@/components/home/workbench-client";
 
-// /agent 任务模式已收编进统一工作台 /dashboard:对话 + 历史会话抽屉全覆盖。
+// Keep a standalone entry when Agent is granted but the workspace is not.
 export default function AgentPage() {
-  redirect("/dashboard");
+  return <WorkbenchClient />;
 }

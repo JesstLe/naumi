@@ -1,4 +1,5 @@
 "use client";
+import { useFeatureAccess } from "@/lib/feature-access/client";
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type RefObject, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -35,6 +36,9 @@ export function CanvasActionMenu({ label, light, items, disabled = false,
   iconOnly?: boolean;
   triggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
+  const { can } = useFeatureAccess();
+  const requirements: Record<string, string> = { workflow: "comfyui", video: "video", assistant: "agent", relight: "generate" };
+  items = items.filter(item => !requirements[item.id] || can(requirements[item.id]));
   const id = useId();
   const internalAnchor = useRef<HTMLButtonElement>(null);
   const anchor = triggerRef ?? internalAnchor;

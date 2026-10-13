@@ -11,7 +11,8 @@ import { cdnUrl } from "@/lib/cdn";
 import { takePendingRefs } from "@/lib/pending-refs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useWorkspaceRouter as useRouter } from "@/lib/desktop/navigation";
 import {
   Loader2,
   Sparkles,

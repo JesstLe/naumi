@@ -72,6 +72,20 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS management_version integer NOT NULL DEFAULT 0;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS auth_revoked_before timestamptz;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS account_expires_at timestamptz;
+        -- Additive feature ACL schema must exist before any billed transaction.
+        -- Lazy FK DDL inside an Agent transaction can wait on that transaction's app_users lock.
+        CREATE TABLE IF NOT EXISTS app_feature_access (
+          email text PRIMARY KEY REFERENCES app_users(email) ON DELETE CASCADE,
+          mode text NOT NULL CHECK(mode IN ('default','custom')),
+          allowed jsonb NOT NULL DEFAULT '[]', version integer NOT NULL DEFAULT 0,
+          updated_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE TABLE IF NOT EXISTS app_feature_access_audit (
+          id uuid PRIMARY KEY, email text NOT NULL, actor text NOT NULL,
+          fingerprint text NOT NULL, before_policy jsonb NOT NULL, after_policy jsonb NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS app_feature_access_audit_email ON app_feature_access_audit(email,created_at DESC);
         CREATE TABLE IF NOT EXISTS app_user_image_providers (
           id             text PRIMARY KEY,
           email          text NOT NULL REFERENCES app_users(email) ON DELETE CASCADE,

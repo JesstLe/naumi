@@ -25,11 +25,13 @@ async function main() {
   };
   try {
     await db.getOrCreateUser(email, "Guardrail fixture");
+    const native = await import("../src/lib/native-auth");
+    const credentials = { cookie: `nv_user=${native.signUserSession(email, Date.now())}`, authorization: "" };
     globalThis.fetch = async () => { network++; throw new Error("Network forbidden by fixture"); };
     if (baseline) {
       assert(!readFileSync("src/lib/agent/runtime.ts", "utf8").includes("guardAgentStream"));
       const id = `ag-${randomUUID()}`; sessions.push(id);
-      const session = await runtime.getOrCreateSession(email, id, [], {cookie:"", authorization:""}, "fixture-text");
+      const session = await runtime.getOrCreateSession(email, id, [], credentials, "fixture-text");
       session.agent.streamFunction = (model) => { normalCalls++; return fakeStream(model as Model<"openai-completions">, "fixture upstream reply"); };
       await session.agent.prompt("生成鹈鹕骑自行车的动态HTML");
       assert.equal(normalCalls, 1); assert.equal(network, 0);
@@ -68,7 +70,7 @@ async function main() {
     const policyRuntime = await import("../src/lib/agent/runtime");
     for (const entry of ["workbench","canvas"]) {
       const id = `${entry === "canvas" ? "cv" : "ag"}-${randomUUID()}`; sessions.push(id);
-      const session = await runtime.getOrCreateSession(email,id,[],{cookie:"",authorization:""},"fixture-text",entry === "canvas" ? { canvas:{anchorId:"",imageUrls:[],ratio:"1:1",resolution:"1K",quality:"medium"},systemPrompt:"画布场景资料",onToolResult:async()=>{throw new Error("No tools allowed");} } : undefined);
+      const session = await runtime.getOrCreateSession(email,id,[],credentials,"fixture-text",entry === "canvas" ? { canvas:{anchorId:"",imageUrls:[],ratio:"1:1",resolution:"1K",quality:"medium"},systemPrompt:"画布场景资料",onToolResult:async()=>{throw new Error("No tools allowed");} } : undefined);
       assert(session.agent.state.systemPrompt.includes("GPT-6 Astra"));
       if (entry === "canvas") {
         assert(!session.agent.state.systemPrompt.includes("画布场景资料"));

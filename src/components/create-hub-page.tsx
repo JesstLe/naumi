@@ -1,4 +1,6 @@
 "use client";
+import { useFeatureAccess } from "@/lib/feature-access/client";
+
 
 import * as React from "react";
 import Link from "next/link";
@@ -15,6 +17,7 @@ import {
 
 /** ToolCard(spec B.10):白卡 + 左 44 色块图标 + 标题/描述 + 右 chevron。 */
 export function ToolCard({ tool }: { tool: ToolMeta }) {
+  const { canPage } = useFeatureAccess();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
   const cat = TOOL_CATEGORIES.find((c) => c.name === tool.category)!;
@@ -49,6 +52,7 @@ export function ToolCard({ tool }: { tool: ToolMeta }) {
   const cls =
     "group flex items-center gap-3 rounded-[14px] border border-c-border bg-c-card p-4 text-left transition-all hover:-translate-y-0.5 hover:border-c-border2 hover:shadow-card";
 
+  if (!canPage(tool.href)) return null;
   if (tool.live === false) {
     return (
       <div className={cn(cls, "cursor-default opacity-70 hover:translate-y-0 hover:shadow-none")}>
@@ -64,6 +68,7 @@ export function ToolCard({ tool }: { tool: ToolMeta }) {
 }
 
 export function CreateHubPage() {
+  const { canPage } = useFeatureAccess();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
   const [filter, setFilter] = React.useState<"全部" | ToolCategory>("全部");
@@ -82,7 +87,7 @@ export function CreateHubPage() {
       cat: c,
       tools: TOOLS.filter(
         (t) =>
-          t.category === c.name &&
+          canPage(t.href) && t.category === c.name &&
           (!query ||
             t.key.toLowerCase().includes(query) ||
             t.en.toLowerCase().includes(query) ||
@@ -98,7 +103,7 @@ export function CreateHubPage() {
         <div>
           <h1 className="text-[26px] font-bold text-c-text">{L("创作", "Create")}</h1>
           <p className="mt-1 text-[13.5px] text-c-text3">
-            {L(TOOL_COUNT_LABEL, `${TOOLS.length} creative tools`)}
+            {L(`${TOOLS.filter(tool => canPage(tool.href)).length} 个创作工具`, `${TOOLS.filter(tool => canPage(tool.href)).length} creative tools`)}
           </p>
         </div>
         <div className="relative w-full sm:w-[300px]">
