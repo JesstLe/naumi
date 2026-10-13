@@ -313,11 +313,13 @@ submit以同一本测试UUID调用真实POST，pollTwice驱动fixture独立Worke
 
 ## Task 10: 真实视频核验和安全媒体处理（V19—V23、S01）
 
+2026-10-14：Steps1—4与B媒体/多产物/内存/真实Linux组件通过，阶段整合 main 0cc86c0。Step5的候选帮助脚本已实现、组件启动/健康/drain/resume通过；使用完整正式App固定镜像的候选、切流和回滚明确留在D，故不勾选整项。证据见 docs/changes/2026-10-13-canvas-video-media.md。
+
 **Files:** Create `src/lib/video/{media,media-jobs}.ts`、`src/app/api/video/media-jobs/route.ts`、`src/app/api/video/media-jobs/[id]/route.ts`、`scripts/video-media-worker.mjs`、`scripts/verify-video-fusion-media.ts`；Modify `video/{service,result-download}.ts`、extract route、Dockerfile、docker-compose.yml、固定镜像发布/回滚脚本。
 
 **Interfaces:** `probeVideo(asset):Promise<{durationSeconds,width,height,videoCodec,audioCodecs}>`；`MediaJobRequest={action:'frame'|'extract_audio'|'separate'|'trim'|'concat'|'ffmpeg'|'ffprobe',inputs:string[],outputs:string[],timestamp?,start?,end?,args?:string[]}`；`createMediaJob(actor,request):{jobId}`、`getMediaJob(actor,id)`、`cancelMediaJob(actor,id)`。引用为已拥有node/artwork/storage身份，FFmpeg参数使用`asset:0`/`output:0`等虚拟路径，App解析后传工作目录文件。
 
-- [ ] Step 1：测试可播放视频流/精确duration、首/当前/尾帧、音轨/分离/裁剪/拼接/多输出；错误MIME/损坏/Content-Length偏小/断流、越界时间/无音轨/其他账号及取消；归入本任务所属大模块检查点集中执行。
+- [x] Step 1：测试可播放视频流/精确duration、首/当前/尾帧、音轨/分离/裁剪/拼接/多输出；错误MIME/损坏/Content-Length偏小/断流、越界时间/无音轨/其他账号及取消；归入本任务所属大模块检查点集中执行。
 
 ```ts
 assert.equal(probe.videoCodec,"h264"); assert.equal(probe.width,1280);
@@ -329,9 +331,9 @@ assert.equal((await h.request("b","GET",`/api/video/media-jobs/${jobId}`)).statu
 
 probe/trimmed/separated由本测试实际媒体输出FFprobe取得；Run `npx tsx --conditions react-server scripts/verify-video-fusion-media.ts`。
 
-- [ ] Step 2：结果读取器按实际流长度限额，声明长度只辅助，异常释放reader；FFprobe确认真实video流后成功结算，尺寸/时长入作品/结果元数据。上游已成功但落存储失败保持可恢复证据/needs_attention，不盲退款；owner在私有媒体写入时显式绑定。
-- [ ] Step 3：实现受控内部media-worker服务：固定同源码镜像、独立执行进程、只挂本任务媒体处理临时目录，不挂DB/供应商/R2/正式媒体/配置。父进程认证内网job请求；FFmpeg子进程使用清理后的环境及每job独立非root UID，目录0700、只读输入/唯一输出，readonly根FS及无外部网络读取协议，阻断/proc其他进程/跨job文件。App保有账号鉴权、正式存储及DB，worker只处理复制进去的授权字节。新服务仅内部端口，不开放公网，不挂Docker socket。
-- [ ] Step 4：媒体job支持取消/真实进度/错误，参数数组不经过shell。裁剪验证`0<=start<end<=duration`，重新编码H.264/AAC+faststart；分离保留原视频并输出音轨和静音视频。原生FFmpeg支持多输入/多输出、滤镜/图片序列/HLS/DASH/拼接及FFprobe/编码器查询，App对所有输出校验并转存，不给Agent直接访问服务器文件或执行shell。输出已拥有作品和原视频血缘。
+- [x] Step 2：结果读取器按实际流长度限额，声明长度只辅助，异常释放reader；FFprobe确认真实video流后成功结算，尺寸/时长入作品/结果元数据。上游已成功但落存储失败保持可恢复证据/needs_attention，不盲退款；owner在私有媒体写入时显式绑定。
+- [x] Step 3：实现受控内部media-worker服务：固定同源码镜像、独立执行进程、只挂本任务媒体处理临时目录，不挂DB/供应商/R2/正式媒体/配置。父进程认证内网job请求；FFmpeg子进程使用清理后的环境及每job独立非root UID，目录0700、只读输入/唯一输出，readonly根FS及无外部网络读取协议，阻断/proc其他进程/跨job文件。App保有账号鉴权、正式存储及DB，worker只处理复制进去的授权字节。新服务仅内部端口，不开放公网，不挂Docker socket。
+- [x] Step 4：媒体job支持取消/真实进度/错误，参数数组不经过shell。裁剪验证`0<=start<end<=duration`，重新编码H.264/AAC+faststart；分离保留原视频并输出音轨和静音视频。原生FFmpeg支持多输入/多输出、滤镜/图片序列/HLS/DASH/拼接及FFprobe/编码器查询，App对所有输出校验并转存，不给Agent直接访问服务器文件或执行shell。输出已拥有作品和原视频血缘。
 - [ ] Step 5：媒体大模块完成，执行检查点B一次：媒体脚本/内存检查，并在fixture内验证job取消杀死处理进程、临时目录清理、跨job/服务器敏感路径拒绝、原视频SHA不变。发布脚本新增media-worker候选生命周期/健康/回滚，作为本轮明确Compose变更清单；不是只改NAUMI_IMAGE。选择性提交。
 
 ## Task 11: 画布视频设置、引用及高级节点UI（V01—V11、V16）

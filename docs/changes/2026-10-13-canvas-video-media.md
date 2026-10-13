@@ -1,6 +1,6 @@
 # 画布视频媒体模块（Task 10 / 检查点 B）
 
-状态：开发中，未完成集中验收，未合入 main，未发布。上阶段 A 的主线合并仍为 `65db84d`，记录提交为 `e72f8d8`。本文件记录本模块实际代码与剩余交付项，不作为通过证据。
+状态（2026-10-14）：媒体模块集中组合、多供应商结果、原生格式及真实 Linux 沙箱验收通过，准备第二次阶段合并，尚未正式发布。实现提交至 `a73b4c3`；最新 main 的生图/企业入口/浏览器标题和发布排空修复已整合。完整 App 固定镜像、正式候选/切流/回滚继续在检查点 D 验收。以下“初版”“第几批”是历史记录，当前证据见文末。
 
 ## 本批实现
 
@@ -78,4 +78,4 @@
 
 Linux证据目录：`/opt/naumi-video-fixture-20261013/media-sandbox-8be45e33ff6c`，含`fixture-source.json`（source子目录）、构建日志/Image ID、`scratch/linux-sandbox-evidence.json`、HTTP Worker证据及退出码。构建限1GiB/0.75CPU，运行限2GiB/1CPU，network=none且只挂本fixture。最初不必要的发布锁尝试返回75，未启动构建；复核发布约定后，完全独立测试没有读取发布基线/备份或执行切流，按隔离测试运行，不占Naumi/Hub部署锁。正式发布、回滚及镜像清理继续遵守全程锁。
 
-待阶段整合：刷新origin/main保留最新生图蒙版/元数据/企业入口/浏览器标题，再执行受影响合并回归并普通推main；完整App固定构建、发布候选/切流与生产回滚仍按D继续。来源机制依据：[Linux execve手册](https://man7.org/linux/man-pages/man2/execve.2.html)、[Docker tmpfs文档](https://docs.docker.com/engine/storage/tmpfs/)，实际通过以本次进程/产物证据为准。
+阶段整合：已合入最新 main `0cc86c0`，保留生图蒙版/元数据/企业入口/浏览器标题和 paused needs_attention 排空修复。合并回归 TypeScript、生图 contract/capability/mask、视频配置、持久任务及 AutoDL/RunningHub 原生工作流均通过。最后新增主线只改发布 SQL 与文档，不改变上述业务代码。普通推 main 后记录实际提交，不将 Git 合并记为服务器上线；完整 App 固定构建、发布候选/切流与生产回滚仍按 D 继续。来源机制依据：[Linux execve手册](https://man7.org/linux/man-pages/man2/execve.2.html)、[Docker tmpfs文档](https://docs.docker.com/engine/storage/tmpfs/)，实际通过以本次进程/产物证据为准。
