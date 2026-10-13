@@ -13,9 +13,11 @@ let reading: Reading = { readyMs: 0, nodes: 0, commits: 0, renderMs: 0, longTask
   label: 'idle', frames: 0, elapsedMs: 0, frameP95Ms: 0, gestureRenderMs: 0, gestureCommits: 0, jsBytes: 0, imagesMs: 0, loadedImages: 0 };
 function publish() {
   const output=document.querySelector<HTMLOutputElement>('[data-testid="canvas-perf-reading"]');
-  if(output){const value=JSON.stringify({...reading,imageStages:browserImagePerformance(),nativeMoves:nativeFrames.length,nativeMoveP95Ms:[...nativeFrames].sort((a,b)=>a-b)[Math.min(nativeFrames.length-1,Math.floor(nativeFrames.length*.95))]||0});if(output.firstChild?.nodeType===Node.TEXT_NODE)output.firstChild.nodeValue=value;else output.textContent=value;}
+  if(output){const value=JSON.stringify({...reading,imageStages:browserImagePerformance(),geometry:geometryReading,animationFrames:animationReading,nativeMoves:nativeFrames.length,nativeMoveP95Ms:[...nativeFrames].sort((a,b)=>a-b)[Math.min(nativeFrames.length-1,Math.floor(nativeFrames.length*.95))]||0});if(output.firstChild?.nodeType===Node.TEXT_NODE)output.firstChild.nodeValue=value;else output.textContent=value;}
 }
 const nativeFrames:number[]=[];
+const animationReading={count:0,durationMs:0,scriptMs:0,renderMs:0,layoutAndPaintMs:0};
+const geometryReading={rectCount:0,rectMs:0,styleCount:0,styleMs:0};
 export function recordCanvasNativeMove(event:MouseEvent|TouchEvent|WheelEvent|null){
  if(!enabled||!event?.isTrusted||reading.label!=='running')return;
  const at=event.timeStamp;
@@ -36,11 +38,28 @@ export function CanvasPerformanceProbe() {
   const flow = useReactFlow(), busy = useRef(false);
   useEffect(() => {
     if (!enabled) return;
+    const originalRect=Element.prototype.getBoundingClientRect;
+    const tracedRect:typeof originalRect=function(this:Element){if(reading.label!=='running')return originalRect.call(this);const at=performance.now();try{return originalRect.call(this);}finally{geometryReading.rectCount++;geometryReading.rectMs+=performance.now()-at;}};
+    Element.prototype.getBoundingClientRect=tracedRect;
+    const originalStyle=window.getComputedStyle;
+    const tracedStyle:typeof originalStyle=function(element,pseudo){if(reading.label!=='running')return originalStyle.call(window,element,pseudo);const at=performance.now();try{return originalStyle.call(window,element,pseudo);}finally{geometryReading.styleCount++;geometryReading.styleMs+=performance.now()-at;}};
+    window.getComputedStyle=tracedStyle;
     const observer = new PerformanceObserver(list => {
       for (const entry of list.getEntries()) { reading.longTasks++; reading.longTaskMs += entry.duration; }
       publish();
     });
     try { observer.observe({ type: 'longtask', buffered: true }); } catch { /* browser support varies */ }
+    const animationObserver=new PerformanceObserver(list=>{
+      if(reading.label!=='running')return;
+      for(const entry of list.getEntries()){
+        const frame=entry as PerformanceEntry & {renderStart:number;styleAndLayoutStart:number;scripts:Array<{duration:number}>};
+        animationReading.count++;animationReading.durationMs+=frame.duration;
+        animationReading.scriptMs+=frame.scripts?.reduce((sum,s)=>sum+s.duration,0)||0;
+        if(frame.renderStart)animationReading.renderMs+=Math.max(0,frame.startTime+frame.duration-frame.renderStart);
+        if(frame.styleAndLayoutStart)animationReading.layoutAndPaintMs+=Math.max(0,frame.startTime+frame.duration-frame.styleAndLayoutStart);
+      }
+    });
+    try{animationObserver.observe({type:'long-animation-frame',buffered:false});}catch{/* Optional Chrome diagnostics. */}
     let cancelled = false, raf = 0;
     const ready = () => {
       if (cancelled) return;
@@ -58,12 +77,14 @@ export function CanvasPerformanceProbe() {
       if (!reading.imagesMs) raf = requestAnimationFrame(ready);
     };
     raf = requestAnimationFrame(ready);
-    return () => { cancelled = true; cancelAnimationFrame(raf); observer.disconnect(); };
+    return () => { cancelled = true; cancelAnimationFrame(raf); observer.disconnect();animationObserver.disconnect();if(Element.prototype.getBoundingClientRect===tracedRect)Element.prototype.getBoundingClientRect=originalRect;if(window.getComputedStyle===tracedStyle)window.getComputedStyle=originalStyle; };
   }, [flow]);
   if (!enabled) return null;
   async function measure(kind: 'zoom' | 'pan') {
     if (busy.current) return;
     busy.current = true;
+    Object.assign(animationReading,{count:0,durationMs:0,scriptMs:0,renderMs:0,layoutAndPaintMs:0});
+    Object.assign(geometryReading,{rectCount:0,rectMs:0,styleCount:0,styleMs:0});
     const start = flow.getViewport(), times: number[] = [];
     reading = { ...reading, label: 'running', frames: 0, elapsedMs: 0, gestureRenderMs: 0, gestureCommits: 0 };
     publish();

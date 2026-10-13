@@ -67,6 +67,14 @@ async function main() {
     assert.doesNotMatch(client, /selectedTextId \|\| viewport.zoom !== vp.zoom/);
     assert.match(client, /zoomLabelRef.current.textContent\s*=\s*label/);
     assert.match(client, /updateLiveViewport\(vp\)/);assert.doesNotMatch(client, /selectedTextId\) setViewport\(vp\)/);
+    const css=readFileSync('src/app/globals.css','utf8');
+    assert.match(client,/!selectedEdge && !linking && "canvas-render-layers"/);
+    assert.match(css,/\.canvas-render-layers \.react-flow__nodes,\s*\.canvas-render-layers \.react-flow__edges \{ will-change: transform; \}/);
+    assert.doesNotMatch(css,/\.react-flow__node[^s\n{]*\{[^}]*will-change/);
+    const decorations=readFileSync('src/components/canvas/workflow-import-nodes.tsx','utf8');
+    assert.match(decorations,/<CanvasImage/);assert.match(decorations,/forceOriginal=\{!!selected\|\|original\}/);
+    assert.match(decorations,/data\.rotation/);assert.match(decorations,/data\.flipX/);assert.match(decorations,/data\.opacity/);
+    console.log('RENDER_SURFACES=2 ALL_NODES_PATHS_RETAINED EDGE_SELECTED_LINKING_NATIVE_ZORDER=PASS DECORATION_VARIANTS_ORIGINAL_FALLBACK=PASS');
     console.log('CORRECTNESS=PASS FOREST_CYCLE_LONG_HISTORY=LEGACY_EXACT OBSERVERS_200_IMAGES=1_VISIBILITY_1_SIZE UNMOUNT=RELEASED');
     console.log('INTERACTION=PASS EMPTY_SELECTION_ZOOM_NO_PAGE_STATE_UPDATE SELECTED_DOCKS_LIVE_GEOMETRY_FOLLOW LIVE_ZOOM_HUD=RETAINED ORIGINAL_MEDIA_PATHS=UNCHANGED');
   }

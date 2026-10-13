@@ -3777,7 +3777,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         const node = displayNodes[i], origin = origins.get(node.id), decoration = decorations.get(node.id);
         const artwork = active?.members.find(m => m.id === node.id);
         if (decoration) displayNodes[i] = { ...node, type: "workflowDecoration", zIndex: -50000 + i, connectable: false,
-          data: { ...node.data, image: artwork?.image || decoration.image, rotation: decoration.rotation, flipX: decoration.flipX, opacity: decoration.opacity,
+          data: { ...node.data, image: artwork?.image || decoration.image, intrinsicWidth: artwork?.width, intrinsicHeight: artwork?.height, rotation: decoration.rotation, flipX: decoration.flipX, opacity: decoration.opacity,
             missingAsset: artwork?.source === "workflow-placeholder", onFill: () => artwork && workflowCallbacksRef.current.replace(artwork) } };
         else if (origin) displayNodes[i] = { ...node, data: { ...node.data, workflowPresentation: origin,
           missingAsset: artwork?.source === "workflow-placeholder", onFill: () => artwork && workflowCallbacksRef.current.replace(artwork) } };
@@ -9136,6 +9136,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               colorMode="dark"
               style={{ background: "transparent" }}
               className={cn(
+                // Promote two render surfaces, not hundreds of individual cards.
+                // Selected/linking edges retain React Flow's original z-index plane.
+                !selectedEdge && !linking && "canvas-render-layers",
                 boxSelectMode && "canvas-box-select",
                 canvasTool === "hand" && "canvas-hand-tool",
                 linking && "canvas-linking"
