@@ -31,6 +31,7 @@ import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-perform
 import {CanvasImage} from './canvas-image';
 import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
 import { canvasZoomState } from '@/lib/canvas/viewport-state';
+import { shouldVirtualizeCanvas } from '@/lib/canvas/virtualization';
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
 import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surface";
@@ -9492,7 +9493,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               zoomActivationKeyCode={["Control", "Meta"]}
               snapToGrid={snapGrid}
               snapGrid={[16, 16]}
-              onlyRenderVisibleElements={rfNodes.length > 60}
+              onlyRenderVisibleElements={shouldVirtualizeCanvas(rfNodes.length, rfEdges.length)}
             >
               <CanvasPerformanceProbe />
               <CanvasRenderLayerGuard />

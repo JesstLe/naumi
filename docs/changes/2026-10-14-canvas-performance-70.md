@@ -135,3 +135,7 @@ Node容器合成会创建新的stacking context，不能不加条件用于所有
 新增32MiB/400项有界VerifiedImageContentPool，只在每个source先经本次fresh descriptor授权后，按account+epoch+SHA256+长度+MIME分享已验证像素或在途下载。非SHA本地mtime版本及团队动态preview不跨source合并；IDB命中在作为共享字节前重新校验真实digest/长度。source-keyed磁盘LRU/原图download保持，最多6个字节传输不增加，所有153个引用仍分别授权。切账号/focus/撤权清共享池；独立节点取消不影响其他等待者；某签名URL403不得把另一已授权同像素source当作拒绝，该source沿自己的URL重试。分享不是权限缓存。
 平移结束总坐标ref和Dock仍同步；只在zoom真正变化时更新根组件React viewport状态，避免同zoom x/y结束引发整个大编辑器重渲染。手形工具或按键拖动期间不生成无用连线剪刀hover状态，正常无按键hover及选择/删除保持。
 集中内容池/完整IDB流水线/Dock1920/测量与分组/堆叠/文字检查通过，24个不同已授权ref同hash仅1字节下载；撤权alias无像素复用、切账号无共享私图、取消单个保留其他、broken resource scopedURL重试/clear无旧flight回填/LRU限制通过。源签名和权限未输出；真实项目/密码/积分未修改。TypeScript/普通固定Linux/真实103再次对照及发布门槛继续，未用77唯一hash直接宣称实测下载或性能70%。当前源码模块计数2/3，开工main刷新3ab2418，功能候选尚未合入main。
+
+
+## 模块14：有界场景稳定渲染成员试验（待真实验收）
+React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判成员；原阈值60使完整213场景平移时反复检查及出入DOM。新增node<=300且edge<=1000的有界场景保持稳定成员，超过门槛仍native virtualized。图片root-scoped IntersectionObserver仍独立控制src及按需授权/原图字节，DOM保留不等于屏外下载。原节点/边数据和命中区不改、不减少视觉元素。该门槛试验尚需高缩放屏外0额外请求、文本/边/选中/框选、最大全景原生平移的普通构建验收；不能用selector源码直接宣称70%。模块13实际103冷候选8066.1/7979.6/7935.3ms、77字节请求对应154图已观测，原当前配对两轮40927.8/39310ms；三轮总结待原最后轮。新实际原生平移仍未70（基线104.5ms P95、新78.9ms），如实保留。
