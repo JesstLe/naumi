@@ -1,4 +1,6 @@
 "use client";
+import { readBrowserImage } from "@/lib/browser-image-cache";
+import { CachedImage } from "@/components/cached-image";
 import { BRAND } from "@/lib/brand";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError} from "@/lib/tool-ui";
@@ -162,7 +164,7 @@ export function TryonClient() {
       const blob =
         url.startsWith("blob:") || url.startsWith("data:")
           ? await (await fetch(url)).blob()
-          : await (async()=>{const response=await fetch(`/api/download?u=${encodeURIComponent(url)}&n=input.png`,{headers:await authHeader()});if(!response.ok)throw new Error("download failed");return response.blob();})();
+          : await readBrowserImage(url);
       if(toolImageError({name:"input.png",type:blob.type,size:blob.size},MAX_UPLOAD))throw new Error("invalid image");
       const previewUrl = URL.createObjectURL(blob);
       // 后端实际取图用的 url:远程原 url 直接复用(已托管);本地 blob:/data: 把 blob 重新转 object URL 不行,
@@ -291,7 +293,7 @@ export function TryonClient() {
     >
       {picked ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <CachedImage
           src={cdnDown ? picked.url : cdnThumb(picked.url, 160)}
           alt={picked.name}
           onError={(e) => void onImgError(e, picked.url)}
@@ -391,7 +393,7 @@ export function TryonClient() {
                     {val ? (
                       <div className="relative">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <CachedImage
                           src={cdnUrl(val.url)}
                           alt={label}
                           className="aspect-square w-full rounded-field border border-c-border bg-c-subtle2 object-contain"
@@ -507,7 +509,7 @@ export function TryonClient() {
             ) : result ? (
               <div className="group relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={cdnUrl(result)}
                   alt="result"
                   onClick={() => zoom(result)}
@@ -656,7 +658,7 @@ export function TryonClient() {
                   >
                     {/* 弹窗显示用缩略图(小而快);生成时后端仍用原图 url */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <CachedImage
                       src={cdnDown ? (it.thumb || it.url) : cdnThumb(it.thumb || it.url, 320)}
                       alt={it.name}
                       loading="lazy"

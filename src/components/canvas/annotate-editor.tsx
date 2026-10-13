@@ -1,4 +1,6 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
+import { readBrowserImage } from '@/lib/browser-image-cache';
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
 import { FeatureModelSelect } from "@/components/tools/feature-model-select";
@@ -93,11 +95,7 @@ export function AnnotateEditorModal({
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch(
-          `/api/download?u=${encodeURIComponent(artwork.image)}&n=annotate.png`
-        );
-        if (!response.ok) throw new Error("download failed");
-        const blob = await response.blob();
+        const blob = await readBrowserImage(artwork.image);
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
         const img = new Image();
@@ -363,7 +361,7 @@ export function AnnotateEditorModal({
             </div>
           ) : (
             <div className="relative inline-flex max-h-full max-w-full">
-              <img
+              <CachedImage
                 ref={imgRef}
                 src={imgUrl}
                 alt={artwork.title}

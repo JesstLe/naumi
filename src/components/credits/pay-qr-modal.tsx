@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import * as React from "react";
 import { createPortal } from "react-dom";
@@ -259,7 +260,7 @@ export function PayQrModal({
                   </button>
                 ) : qrImg ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
+                  <CachedImage
                     src={qrImg}
                     alt={L("支付二维码", "Payment QR code")}
                     width={176}

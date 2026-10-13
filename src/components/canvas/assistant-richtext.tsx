@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { Children, isValidElement, memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
@@ -39,7 +40,7 @@ export const AssistantRichText = memo(function AssistantRichText({ content, ligh
     pre: ({ children }) => <CodeBlock english={english} onCopy={onCopy}>{children}</CodeBlock>,
     table: ({ children }) => <div className={styles.tableScroll} tabIndex={0} role="region" aria-label={english ? "Table" : "表格"}><table>{children}</table></div>,
     a: ({ href, children }) => href ? <a href={href} target={href.startsWith("#") ? undefined : "_blank"} rel="noopener noreferrer">{children}</a> : <span>{children}</span>,
-    img: ({ src, alt }) => src ? <img src={src} alt={alt || ""} loading="lazy" /> : <span>{alt || (english ? "Image" : "图片")}</span>,
+    img: ({ src, alt }) => src ? <CachedImage src={src} alt={alt || ""} loading="lazy" /> : <span>{alt || (english ? "Image" : "图片")}</span>,
   }), [english, onCopy]);
   return <div data-testid="assistant-richtext" data-theme={light ? "light" : "dark"} className={styles.root}>
     {parts.map((part, index) => part.kind === "generate" ? onGenerate && <button key={index} type="button" className={styles.generate}

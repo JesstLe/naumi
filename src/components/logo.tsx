@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { cn } from "@/lib/utils";
 import { useBrand } from "@/lib/brand-context";
@@ -9,7 +10,7 @@ export function Logo({ className }: { className?: string }) {
   return (
     <div className={cn("flex items-center gap-2", className)}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <CachedImage
         src={logo}
         alt={name}
         className={cn(

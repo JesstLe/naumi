@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { cn } from "@/lib/utils";
 
@@ -34,7 +35,7 @@ export function BeforeAfter({
       <div className="relative overflow-hidden rounded-lg border border-border bg-secondary/20">
         <Tag>{beforeLabel}</Tag>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <CachedImage
           src={before}
           alt={beforeLabel}
           className="h-full w-full object-contain"
@@ -43,7 +44,7 @@ export function BeforeAfter({
       <div className="relative overflow-hidden rounded-lg border border-border bg-secondary/20">
         <Tag>{afterLabel}</Tag>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={after} alt={afterLabel} className="h-full w-full object-contain" />
+        <CachedImage src={after} alt={afterLabel} className="h-full w-full object-contain" />
       </div>
     </div>
   );

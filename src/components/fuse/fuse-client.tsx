@@ -1,4 +1,6 @@
 "use client";
+import { readBrowserImage } from "@/lib/browser-image-cache";
+import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError, validToolImages} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -146,13 +148,7 @@ export function FuseClient() {
     }
     setError(null);
     try {
-      const isLocal = url.startsWith("blob:") || url.startsWith("data:");
-      const fetchUrl = isLocal
-        ? url
-        : `/api/download?u=${encodeURIComponent(url)}&n=input.png`;
-      const res = await fetch(fetchUrl, {headers:await authHeader()});
-      if (!res.ok) throw new Error("download failed");
-      const blob = await res.blob();
+      const blob = await readBrowserImage(url);
       const file = new File([blob], "fusion.png", {
         type: blob.type || "image/png",
       });
@@ -318,7 +314,7 @@ export function FuseClient() {
                   className="group relative aspect-square overflow-hidden rounded-field border border-c-border bg-c-subtle2"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <CachedImage
                     src={cdnUrl(s.url)}
                     alt={`ref-${i + 1}`}
                     className="h-full w-full object-cover"
@@ -480,7 +476,7 @@ export function FuseClient() {
                 <div key={im.id} className="flex items-center justify-center">
                   <div className="group relative inline-block overflow-hidden rounded-[13px] border border-c-border">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <CachedImage
                       src={cdnUrl(im.url)}
                       alt="fused"
                       onClick={() => zoom(im.url)}

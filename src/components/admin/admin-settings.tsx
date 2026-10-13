@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { isHostedImageUrl } from "@/lib/media-url";
 
@@ -2779,7 +2780,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
             {brandLogo.trim() && (
               <div className="flex items-center gap-2 rounded-xl border border-border bg-secondary/40 p-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={brandLogo.trim()}
                   alt="Logo 预览"
                   className="h-8 w-auto rounded-lg"
@@ -3217,7 +3218,7 @@ export function AdminSettings({ localAdmin = false }: { localAdmin?: boolean }) 
                                 title="点击查看大图"
                               >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
+                                <CachedImage
                                   src={cdnUrl(a.image)}
                                   alt={a.title}
                                   loading="lazy"

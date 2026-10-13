@@ -1,4 +1,6 @@
 "use client";
+import { browserImageArchive } from "@/lib/browser-image-archive";
+import { CachedImage } from "@/components/cached-image";
 import { SUITE_DEMO_SETS } from "@/lib/tool-demo-catalog";
 import { BRAND } from "@/lib/brand";
 import {toolImageError} from "@/lib/tool-ui";
@@ -183,7 +185,7 @@ function SuiteDemoShowcase() {
           <div className="relative sm:w-[38%] sm:self-start">
             <div className="aspect-square overflow-hidden rounded-xl border border-border bg-card">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <CachedImage
                 src={set.src}
                 alt={`${set.label} 原图`}
                 width={640}
@@ -204,7 +206,7 @@ function SuiteDemoShowcase() {
                 className="relative aspect-square overflow-hidden rounded-xl border border-border bg-card"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={s.img}
                   alt={s.tag}
                   width={640}
@@ -463,13 +465,7 @@ export function SuiteClient() {
     if (items.length === 0) return;
     setZipping(true);
     try {
-      const res = await fetch("/api/suite/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(await authHeader()) },
-        body: JSON.stringify({ items }),
-      });
-      if (!res.ok) throw new Error("zip failed");
-      const blob = await res.blob();
+      const blob = await browserImageArchive(items);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -563,13 +559,7 @@ export function SuiteClient() {
     if (!items.length) return;
     setRecZip(true);
     try {
-      const res = await fetch("/api/suite/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(await authHeader()) },
-        body: JSON.stringify({ items }),
-      });
-      if (!res.ok) throw new Error("zip failed");
-      const blob = await res.blob();
+      const blob = await browserImageArchive(items);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -644,7 +634,7 @@ export function SuiteClient() {
                 className="relative h-16 w-16 overflow-hidden rounded-lg border border-border"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={src}
                   alt={`product ${i + 1}`}
                   className="h-full w-full bg-secondary object-cover"
@@ -999,7 +989,7 @@ export function SuiteClient() {
             </div>
             <div className="flex flex-1 items-center justify-center overflow-hidden rounded-[13px] border border-c-border bg-c-subtle2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <CachedImage
                 src={cdnUrl(shownRec.url)}
                 alt=""
                 onClick={() => setRecView(shownRec.url)}
@@ -1262,7 +1252,7 @@ function ShotCard({
         {shot.status === "done" && shot.url ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <CachedImage
               src={cdnUrl(shot.url)}
               alt={shot.label}
               className="absolute inset-0 h-full w-full object-cover"

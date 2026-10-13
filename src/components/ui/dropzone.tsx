@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import * as React from "react";
 import {toolImageError} from "@/lib/tool-ui";
@@ -95,7 +96,7 @@ export function UploadedThumb({
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <CachedImage
         src={src}
         alt=""
         className="h-full w-full rounded-[10px] border border-c-border object-cover"

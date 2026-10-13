@@ -1,4 +1,6 @@
 "use client";
+import { readBrowserImage } from "@/lib/browser-image-cache";
+import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError, validToolImages} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -178,7 +180,7 @@ export function VariationsClient() {
       const blob =
         url.startsWith("blob:") || url.startsWith("data:")
           ? await (await fetch(url)).blob()
-          : await (async()=>{const response=await fetch(`/api/download?u=${encodeURIComponent(url)}&n=input.png`,{headers:await authHeader()});if(!response.ok)throw new Error("download failed");return response.blob();})();
+          : await readBrowserImage(url);
       const f = new File([blob], "input.png", { type: blob.type || "image/png" });
       if(toolImageError(f,MAX_UPLOAD))throw new Error("invalid image");
       const next = { id: `s-${Date.now()}`, file: f, url: URL.createObjectURL(f) };
@@ -344,7 +346,7 @@ export function VariationsClient() {
             {slot ? (
               <div className="group relative h-16 w-16 overflow-hidden rounded-field border border-c-border bg-c-subtle2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={cdnUrl(slot.url)}
                   alt="source"
                   className="h-full w-full object-cover"
@@ -521,7 +523,7 @@ export function VariationsClient() {
                 <div key={im.id} className="flex items-center justify-center">
                   <div className="group relative inline-block overflow-hidden rounded-[13px] border border-c-border">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <CachedImage
                       src={cdnUrl(im.url)}
                       alt="variation"
                       onClick={() => zoom(im.url)}

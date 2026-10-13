@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { AdminCenterShell } from "@/components/admin/center-shell";
 import {microsToDecimal} from "@/lib/billing/decimal";
-import Image from "next/image";
+import Image from "@/components/cached-next-image";
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,

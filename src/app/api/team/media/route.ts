@@ -5,6 +5,7 @@ import { teamAuthorize, teamJson, teamFailure, PRIVATE_HEADERS } from "@/lib/tea
 import { teamArtwork } from "@/lib/teams/server";
 import { dataUrlToBytes, isManagedImageUrl, readManagedObject } from "@/lib/storage";
 import { parseDownloadSource, fetchDownloadSource } from "@/lib/download-source";
+import {mediaCacheVersion} from '@/lib/media-cache-version';
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const query = z.object({ teamId: z.string().uuid(), email: z.string().min(1).max(254), id: z.string().min(1).max(200) });
@@ -17,6 +18,8 @@ export async function GET(request: Request) {
   catch (error) { return teamFailure(error); }
   try {
     const max = 32 * 1024 * 1024, url = String(row.image_url); let bytes: Buffer;
+    const expected=new URL(request.url).searchParams.get('cacheVersion');
+    if(expected && expected!==await mediaCacheVersion(url))return teamJson({error:'素材版本已改变'},409);
     if (url.length > max * 1.4) throw new Error();
     const inline = dataUrlToBytes(url);
     if (inline) { if (!/^image\/(png|jpeg|webp|gif|avif)$/.test(inline.contentType)) throw new Error(); bytes = Buffer.from(inline.bytes); }

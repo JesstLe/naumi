@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import { copyText } from "@/lib/clipboard";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -25,7 +26,7 @@ import { useAuth } from "@/lib/auth-context";
 import { browserSupabase } from "@/lib/supabase";
 import { useAuthModal } from "@/lib/auth-modal-context";
 // Pre-probed natural dimensions {id: [w, h]} for every bundled template image.
-// Passing width/height to <img> lets the browser reserve the exact slot before
+// Passing width/height to <CachedImage> lets the browser reserve the exact slot before
 // the image bytes arrive → no layout shift in the masonry grid.
 import templateDims from "@/lib/template-dims.json";
 
@@ -614,7 +615,7 @@ export function TemplatesClient({
                           >
                             {/* 自然宽高比;预存尺寸 → 浏览器加载前就锁住位,无抖动 */}
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
+                            <CachedImage
                               src={cdnThumb(t.image, 640)}
                               alt={t.title}
                               loading="lazy"
@@ -799,7 +800,7 @@ export function TemplatesClient({
                 )}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={cdnUrl(preview.image)}
                   alt={preview.title}
                   className="block h-full w-full object-cover"

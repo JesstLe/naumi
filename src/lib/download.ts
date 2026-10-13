@@ -24,13 +24,19 @@ export function createImageDownloadName(now = new Date()): string {
   return `${host}_${y}_${md}_${rand}.png`;
 }
 
-export function downloadImage(url: string, _baseName?: string) {
+import { cachedImageBlob, imageCacheSource, ImageCacheDenied } from './browser-image-cache';
+export async function downloadImage(url: string, _baseName?: string) {
   const name = createImageDownloadName();
   const a = document.createElement("a");
+  let objectUrl: string | undefined;
+  if (imageCacheSource(url)) {
+    try { objectUrl = URL.createObjectURL(await cachedImageBlob(url)); }
+    catch(error) { if(error instanceof ImageCacheDenied) return; }
+  }
   if (url.startsWith("data:")) {
     a.href = url;
   } else {
-    a.href = `/api/download?u=${encodeURIComponent(
+    a.href = objectUrl || `/api/download?u=${encodeURIComponent(
       url
     )}&n=${encodeURIComponent(name)}`;
   }
@@ -38,4 +44,5 @@ export function downloadImage(url: string, _baseName?: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
+  if(objectUrl)setTimeout(()=>URL.revokeObjectURL(objectUrl!),60000);
 }

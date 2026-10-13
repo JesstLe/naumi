@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -22,7 +23,7 @@ export function OrbLab() {
       <header className={styles.header}>
         <Link href="/" className={styles.brand} aria-label={`${brand.name} 首页`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={brand.logo} width={34} height={34} alt="" />
+          <CachedImage src={brand.logo} width={34} height={34} alt="" />
           {!brand.logoHasText && <span>{brand.name}</span>}
         </Link>
         <span className={styles.headerTag}>DESIGN LAB <span>/</span> 01</span>

@@ -1,4 +1,6 @@
 "use client";
+import {readBrowserImage} from '@/lib/browser-image-cache';
+import { CachedImage } from "@/components/cached-image";
 import {SelectMenu} from "@/components/ui/select-menu";
 import {useFeatureBilling} from "@/lib/billing/preview";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -192,9 +194,10 @@ export function CompetitorClient() {
       const saved = drafts[item.id] ? await save(item) : item;
       if (!saved) return;
       const q = new URLSearchParams({ version: saved.activeVersion }); if (region) q.set("region",region);
-      const res = await fetch(`/api/competitors/${saved.id}/image?${q}`, { headers: await authHeader() });
-      if (!res.ok) throw new Error("下载失败，请重试");
-      const url = URL.createObjectURL(await res.blob()); const a = document.createElement("a");
+      let blob:Blob;
+      if(!region)blob=await readBrowserImage(currentImage(saved));
+      else{const res=await fetch(`/api/competitors/${saved.id}/image?${q}`,{headers:await authHeader()});if(!res.ok)throw new Error("下载失败，请重试");blob=await res.blob();}
+      const url = URL.createObjectURL(blob); const a = document.createElement("a");
       a.href = url; a.download = createImageDownloadName(); a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch(e) { setError((e as Error).message); }
   }
@@ -244,7 +247,7 @@ export function CompetitorClient() {
           <input type="checkbox" aria-label={`选择 ${i.path}`} checked={selected.includes(i.id)} onChange={e => setSelected(all => e.target.checked ? [...all,i.id] : all.filter(id=>id!==i.id))}/>
           <button className="cmp-button" onClick={() => { setActiveId(i.id); setRegionId(""); setCompare(false); setZoom(1); }} title={i.path}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="" src={i.image}/><span><strong>{i.path.split("/").pop()}</strong><small>{i.path}</small><small>{running[i.id] || i.busy ? "处理中…" : `${i.versions.length} 个版本`}{drafts[i.id] ? " · 未保存" : ""}</small></span>
+            <CachedImage alt="" src={i.image}/><span><strong>{i.path.split("/").pop()}</strong><small>{i.path}</small><small>{running[i.id] || i.busy ? "处理中…" : `${i.versions.length} 个版本`}{drafts[i.id] ? " · 未保存" : ""}</small></span>
           </button>
         </div>)}</div>
         {!visible.length && <div className="cmp-library-empty"><ImageIcon size={24}/><p>{items.length ? "此文件夹暂无素材" : "暂无参考素材"}</p><span>JPG / PNG / WebP</span></div>}

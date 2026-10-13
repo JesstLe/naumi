@@ -12,6 +12,7 @@ import { type PlanKey } from "@/lib/mock-data";
 import { BRAND } from "@/lib/brand";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { activateBrowserData, invalidateBrowserData, installBrowserDataObserver } from "@/lib/browser-data-cache";
+import { activateBrowserImages, clearBrowserImages, configureBrowserImageCache } from "@/lib/browser-image-cache";
 import { authHeader } from "@/lib/supabase";
 
 // ---------------------------------------------------------------------------
@@ -132,12 +133,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const verifiedPersist = useCallback((next: SessionUser) => {
+    activateBrowserImages(next.email);
     activateBrowserData(next.email);
     persist(next);
   }, [persist]);
 
   useEffect(() => {
-    const clear = () => { identityEpoch.current++; persist(null); };
+    const clear = () => { identityEpoch.current++; clearBrowserImages(); persist(null); };
     window.addEventListener("naumi:cache-session-ended", clear);
     return () => window.removeEventListener("naumi:cache-session-ended", clear);
   }, [persist]);
@@ -184,6 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const cfg = await fetch("/api/config").then((r) => r.json());
+        if(current() && typeof cfg?.db==='boolean')configureBrowserImageCache(cfg.db);
         if (current() && cfg?.db) {
           serverRef.current = true;
           setPersistMode("server");
@@ -198,7 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               if (s?.user) verifiedPersist(s.user as SessionUser);
               else {
                 // 会话无效 → 清掉可能残留的本地态
-                activateBrowserData(null);
+                activateBrowserData(null); activateBrowserImages(null);
                 setUser(null);
                 try {
                   localStorage.removeItem(LAST_KEY);
@@ -255,7 +258,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const startSession = useCallback(
     (name: string, email: string) => {
       const requestEpoch = ++identityEpoch.current;
-      activateBrowserData(null);
+      activateBrowserData(null); activateBrowserImages(null);
       setReady(true);
       // Optimistic local session for instant UI.
       const existing = loadUser(email);
@@ -288,7 +291,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (identity: Identity | null) => {
       if (!identity || !identity.email) {
         identityEpoch.current++;
-        activateBrowserData(null);
+        activateBrowserData(null); activateBrowserImages(null);
         setUser(null);
         currentEmail.current = null;
         try {
@@ -304,9 +307,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(() => {
+    clearBrowserImages();
     identityEpoch.current++;
     invalidateBrowserData(undefined, true);
-    activateBrowserData(null);
+    activateBrowserData(null); activateBrowserImages(null);
     if (externalSignOut.current) externalSignOut.current();
     // 原生多用户:清服务端会话 cookie。
     if (multiUserRef.current) {

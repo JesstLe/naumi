@@ -1,4 +1,5 @@
 "use client";
+import { readBrowserImage } from '@/lib/browser-image-cache';
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { FolderOpen, Layers, Plus, RefreshCw, X, Download, ArrowUpRight } from "lucide-react";
@@ -39,7 +40,7 @@ export function DesktopHome(){
  useEffect(()=>{if(!active)return;const prev=document.body.style.overflow;document.body.style.overflow="hidden";const key=(e:KeyboardEvent)=>{if(e.key==="Escape")setActive(null);};window.addEventListener("keydown",key);return()=>{document.body.style.overflow=prev;window.removeEventListener("keydown",key);};},[active]);
  async function downloadWork(work:DesktopArtwork){
   setDownloadError("");
-  try{const url=work.videoUrl || work.image;const name=createImageDownloadName().replace(/\.png$/,work.videoUrl?".mp4":".png");const response=await fetch(`/api/download?u=${encodeURIComponent(url)}&n=${encodeURIComponent(name)}`,{headers:await authHeader()});if(!response.ok)throw Error("download");const blob=await response.blob(),objectUrl=URL.createObjectURL(blob);const a=document.createElement("a");a.href=objectUrl;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(objectUrl),60000);}catch{setDownloadError("下载失败，请重试");}
+  try{const url=work.videoUrl || work.image;const name=createImageDownloadName().replace(/\.png$/,work.videoUrl?".mp4":".png");let blob:Blob;if(!work.videoUrl)blob=await readBrowserImage(url);else{const response=await fetch(`/api/download?u=${encodeURIComponent(url)}&n=${encodeURIComponent(name)}`,{headers:await authHeader()});if(!response.ok)throw Error("download");blob=await response.blob();}const objectUrl=URL.createObjectURL(blob);const a=document.createElement("a");a.href=objectUrl;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(objectUrl),60000);}catch{setDownloadError("下载失败，请重试");}
  }
  const projects=useMemo(()=>desktopProjects(works,texts,names),[works,texts,names]);
  const recent=useMemo(()=>[...works].filter(a=>a.image || a.videoUrl).sort((a,b)=>(b.createdAt || "").localeCompare(a.createdAt || "")).slice(0,12),[works]);

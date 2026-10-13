@@ -1,4 +1,5 @@
 'use client';
+import { CachedImage } from "@/components/cached-image";
 import {useEffect,useRef,useState,type ImgHTMLAttributes} from 'react';
 import {useStore} from '@xyflow/react';
 import {cdnUrl,cdnThumb} from '@/lib/cdn';
@@ -30,7 +31,8 @@ export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<I
     const finish=queue.enqueue(()=>setReady(url));release.current=finish;
     return()=>{finish();if(release.current===finish)release.current=null;};
   },[canLoad,url]);
-  return <img crossOrigin="anonymous" {...props} ref={ref} src={visible&&ready===url?ready:undefined} decoding="async"
+  return <CachedImage crossOrigin="anonymous" {...props} ref={ref} src={visible&&ready===url?ready:undefined} decoding="async"
+    onCacheSettled={()=>{release.current?.();release.current=null;}}
     data-media-variant={variant} data-media-visible={visible?'true':'false'}
     onLoad={event=>{release.current?.();release.current=null;props.onLoad?.(event);}}
     onError={event=>{release.current?.();release.current=null;props.onError?.(event);}} />;

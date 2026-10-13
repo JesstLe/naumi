@@ -78,6 +78,7 @@ export function onImgError(
   original: string | null | undefined
 ): boolean {
   const img = e.currentTarget as HTMLImageElement | null;
+  if(img?.dataset.browserImageDenied==='true')return false;
   const orig = original ?? "";
   if (!img || !orig) return false;
   if (img.dataset.nvFallback) return false; // 已回退过一次,放弃

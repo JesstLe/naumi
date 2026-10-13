@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -175,7 +176,7 @@ export function AdminTryon({ token }: { token: string | null }) {
             >
               {file ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <CachedImage
                   src={URL.createObjectURL(file)}
                   alt="preview"
                   className="h-full w-full object-cover"
@@ -271,7 +272,7 @@ export function AdminTryon({ token }: { token: string | null }) {
               className="group relative overflow-hidden rounded-xl border border-border bg-card"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <CachedImage
                 src={cdnThumb(it.thumb || it.url, 320)}
                 alt={it.name}
                 loading="lazy"
