@@ -661,3 +661,8 @@
 @media (prefers-reduced-motion: reduce) {
   .nv-fade-in, .nv-msg-in { animation: none; }
 }
+
+/* Cards already clip/scroll their own content. Bound paint invalidation to each
+   card without changing node layout, ports, text or interaction sampling. */
+.canvas-ui-light .canvas-ui-node-card,
+.canvas-ui-dark .canvas-ui-node-card { contain: paint; }

@@ -11,7 +11,8 @@ type Reading = { readyMs: number; nodes: number; commits: number; renderMs: numb
 let reading: Reading = { readyMs: 0, nodes: 0, commits: 0, renderMs: 0, longTasks: 0, longTaskMs: 0,
   label: 'idle', frames: 0, elapsedMs: 0, frameP95Ms: 0, gestureRenderMs: 0, gestureCommits: 0, jsBytes: 0, imagesMs: 0, loadedImages: 0 };
 function publish() {
-  document.querySelector<HTMLOutputElement>('[data-testid="canvas-perf-reading"]')?.replaceChildren(JSON.stringify(reading));
+  const output=document.querySelector<HTMLOutputElement>('[data-testid="canvas-perf-reading"]');
+  if(output){const value=JSON.stringify(reading);if(output.firstChild?.nodeType===Node.TEXT_NODE)output.firstChild.nodeValue=value;else output.textContent=value;}
 }
 export function CanvasPerformanceHarness({ children }: { children: ReactNode }) {
   if (!enabled) return <>{children}</>;
@@ -45,7 +46,7 @@ export function CanvasPerformanceProbe() {
         if (images.length && reading.loadedImages === images.length && !reading.imagesMs) reading.imagesMs = performance.now();
         publish();
       }
-      raf = requestAnimationFrame(ready);
+      if (!reading.imagesMs) raf = requestAnimationFrame(ready);
     };
     raf = requestAnimationFrame(ready);
     return () => { cancelled = true; cancelAnimationFrame(raf); observer.disconnect(); };
