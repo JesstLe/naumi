@@ -94,10 +94,12 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
         if(ready)break;await new Promise(resolve=>setTimeout(resolve,300));}
       if(!ready)throw new Error("Real fixture Router readiness failed");
     }
+    const startMediaWorker=async()=>{
     mediaWorker=spawn(process.execPath,["scripts/video-media-worker.mjs"],{cwd:root,env:{...cleanEnv(),MEDIA_WORKER_FIXTURE_OWNER:"canvas-video-fusion-20261013",MEDIA_WORKER_HOST:"127.0.0.1",MEDIA_WORKER_PORT:String(mediaPort),MEDIA_WORKER_SECRET:mediaSecret,MEDIA_JOB_DIR:env.MEDIA_JOB_DIR},windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("media-worker",mediaWorker);
     const mediaDeadline=Date.now()+15000;let mediaReady=false;
     while(Date.now()<mediaDeadline){if(mediaWorker.exitCode!==null)throw new Error("Fixture media worker exited");mediaReady=await fetch(mediaOrigin+"/health",{headers:{authorization:`Bearer ${mediaSecret}`},signal:AbortSignal.timeout(1000)}).then(r=>r.ok).catch(()=>false);if(mediaReady)break;await new Promise(resolve=>setTimeout(resolve,100));}
     if(!mediaReady)throw new Error("Fixture media worker readiness failed");
+    };await startMediaWorker();
     const seed=JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/video-fusion/fixture.ts","--seed-private"],env)) as Seed;
     const startApp=async()=>{
       app=spawn(process.execPath,["node_modules/next/dist/bin/next","dev","--hostname","127.0.0.1","--port",String(appPort)],{cwd:root,env,windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("app",app);
@@ -115,6 +117,13 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
     const countTables=new Set(["app_video_tasks","app_video_results","app_artworks","app_canvas_video_nodes","app_video_media_jobs","app_billing_operations","app_ledger"]);
     return {baseUrl,refs:seed.refs,accounts:seed.accounts,cookies:seed.cookies,logs,manifest,byocWorkflowId:seed.byocWorkflowId,
       async restartApp(){await stopChild(worker);await stopChild(app);await startApp();startWorker();},
+      async restartMediaWorker(){await stopChild(mediaWorker);await startMediaWorker();},
+      async mediaWorkerRequest(id:string,method:string,body?:unknown){
+        if(!/^[0-9a-f-]{36}$/.test(id))throw new Error("Invalid fixture media job ID");
+        const response=await fetch(`${mediaOrigin}/jobs/${id}`,{method,headers:{authorization:`Bearer ${mediaSecret}`,"content-type":"application/json"},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(15000)});
+        return {status:response.status,body:await response.json()};
+      },
+      async mediaTemporaryExists(id:string){if(!/^[0-9a-f-]{36}$/.test(id))throw new Error("Invalid fixture media job ID");return stat(path.join(env.MEDIA_JOB_DIR!,id)).then(()=>true).catch(()=>false);},
       supplierCalls:()=>[...supplier.calls,...objectCalls],setScenario:(name:string)=>supplier.setScenario(name),
       async request<T=unknown>(account:Account,method:string,url:string,body?:unknown){
         if(!url.startsWith("/")||url.startsWith("//"))throw new Error("Fixture requests must stay in the fixture app");

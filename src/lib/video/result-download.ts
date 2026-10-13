@@ -11,7 +11,7 @@ export async function readLimitedMediaResponse(
   };
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) return abort("媒体字节上限无效");
   if (!response.ok) return abort(`取回媒体失败(${response.status})`);
-  const mimeType = String(response.headers.get("content-type") || "video/mp4").split(";")[0].trim().toLowerCase();
+  const mimeType = String(response.headers.get("content-type") || "application/octet-stream").split(";")[0].trim().toLowerCase();
   if (!mimeType.startsWith(`${expectedKind}/`) && mimeType !== "application/octet-stream") {
     return abort(`媒体结果 MIME 无效：${mimeType || "unknown"}`);
   }

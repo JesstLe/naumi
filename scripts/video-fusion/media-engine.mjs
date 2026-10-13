@@ -1,11 +1,12 @@
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdir,lstat,readdir,link,copyFile,chown,chmod,readFile,rm} from 'node:fs/promises';
+import {mkdir,lstat,readdir,link,copyFile,chown,chmod,readFile,writeFile,rm} from 'node:fs/promises';
 import path from 'node:path';
+import {inspectMediaBundle} from './media-bundle.mjs';
 
-export const MEDIA_LIMITS=Object.freeze({inputBytes:250*1024*1024,outputBytes:500*1024*1024,outputs:1000,timeoutMs:180000,concurrency:2,logBytes:1024*1024});
+export const MEDIA_LIMITS=Object.freeze({inputBytes:250*1024*1024,outputBytes:500*1024*1024,outputs:1000,timeoutMs:180000,concurrency:2,logBytes:1024*1024,queue:8,terminalJobs:128,requestBytes:2*1024*1024,auxiliaryBytes:512*1024});
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const namePattern=/^[a-zA-Z0-9_%.-]+(?:\/[a-zA-Z0-9_%.-]+)*$/;
+const namePattern=/^[a-zA-Z0-9_%.$-]+(?:\/[a-zA-Z0-9_%.$-]+)*$/;
 export function safeMediaName(name){
   if(typeof name!=='string'||name.length>160||!namePattern.test(name)||name.split('/').some(p=>p==='.'||p==='..'))throw new Error('INVALID_MEDIA_NAME');
   return name;
@@ -32,18 +33,24 @@ async function cloneRuntime(source,destination){
     else throw new Error('MEDIA_RUNTIME_MUST_NOT_CONTAIN_SYMLINKS');
   }
 }
-function replaceVirtual(value,inputs,outputs){
-  return value.replace(/\b(asset|output):(\d+)/g,(_match,type,index)=>{
-    const item=(type==='asset'?inputs:outputs)[Number(index)];
-    if(!item)throw new Error('UNKNOWN_VIRTUAL_MEDIA_PATH');return item;
+export function replaceVirtual(value,inputs,outputs,auxiliary=[]){
+  return value.replace(/\bassets:([a-z0-9]{1,8})\b/g,(_match,extension)=>{
+    if(!inputs.length||inputs.some((file,index)=>path.basename(file)!==`input-${index}.${extension}`))throw new Error('IMAGE_SEQUENCE_INPUTS_MUST_MATCH');
+    return path.join(path.dirname(inputs[0]),`input-%d.${extension}`).replaceAll('\\','/');
+  }).replace(/\b(asset|output|aux):(\d+)/g,(_match,type,index)=>{
+    const item=(type==='asset'?inputs:type==='output'?outputs:auxiliary)[Number(index)];
+    if(!item)throw new Error('UNKNOWN_VIRTUAL_MEDIA_PATH');return item.replaceAll('\\','/');
   });
 }
 /** Native expressions remain available inside the chroot; explicit file arguments
  * must name owned virtual inputs or job outputs. Network syscalls are denied too. */
-export function nativeMediaArgs(args,inputs,outputs,binary){
+export function validateMediaAuxiliaryText(value){
+  if(typeof value!=='string'||value.includes('\0')||/(?:^|[\s=,:"'])\/(?:[A-Za-z_.])|[A-Za-z]:[\\/]|\.\.[\\/]|(?:https?|tcp|udp|rtmp|rtsp|srt|ftp|unix|file|crypto):/im.test(value))throw new Error('AUXILIARY_MEDIA_PATH_FORBIDDEN');
+}
+export function nativeMediaArgs(args,inputs,outputs,binary,auxiliary=[],localProtocols='file,pipe'){
   if(!Array.isArray(args)||args.length>512||args.some(v=>typeof v!=='string'||v.length>16384||v.includes('\0')))throw new Error('INVALID_MEDIA_ARGS');
   const forbidden=new Set(['-protocol_whitelist','-protocol_blacklist','-progress','-report','-stdin','-y','-n']);
-  const fileOptions=new Set(['-i','-filter_script','-filter_complex_script','-vstats_file','-passlogfile','-attach','-dump_attachment','-segment_list','-hls_segment_filename','-hls_key_info_file','-init_seg_name','-media_seg_name']);
+  const fileOptions=new Set(['-i','-filter_script','-filter_complex_script','-vstats_file','-passlogfile','-attach','-dump_attachment','-segment_list','-hls_segment_filename','-hls_key_info_file']);
   const result=[];let inputFormat=null;
   for(let i=0;i<args.length;i++){
     const value=args[i];if(forbidden.has(value)||/^-dump_attachment(?::|$)/.test(value))throw new Error('CONTROLLED_MEDIA_OPTION');
@@ -51,15 +58,16 @@ export function nativeMediaArgs(args,inputs,outputs,binary){
     if(/^(?:https?|tcp|udp|rtmp|rtsp|srt|ftp|crypto|subfile|concat|file|pipe|unix):/i.test(value))throw new Error('MEDIA_PROTOCOL_FORBIDDEN');
     if(value==='-f'){inputFormat=args[i+1];}
     if(value==='-i'||fileOptions.has(value)){
-      const next=args[++i];if(!next||(!(/^(?:asset|output):\d+(?:\/[\w%.-]+)*$/.test(next))&&!(value==='-i'&&inputFormat==='lavfi')))throw new Error('VIRTUAL_MEDIA_PATH_REQUIRED');
+      const next=args[++i];if(!next||(!(/^(?:asset|output|aux):\d+(?:\/[\w%.$-]+)*$|^assets:[a-z0-9]{1,8}$/.test(next))&&!(value==='-i'&&inputFormat==='lavfi')))throw new Error('VIRTUAL_MEDIA_PATH_REQUIRED');
       inputFormat=null;
-      result.push(value,replaceVirtual(next,inputs,outputs));continue;
+      result.push(value,replaceVirtual(next,inputs,outputs,auxiliary));continue;
     }
-    if((value.startsWith('/')||/^[a-z]:[\\/]/i.test(value)||value.includes('../')||value.includes('..\\'))&&!value.includes('asset:')&&!value.includes('output:'))throw new Error('MEDIA_PATH_FORBIDDEN');
-    if(/^(asset|output):/.test(value)&&!/^((asset|output):\d+)(?:\/[\w%.-]+)*$/.test(value))throw new Error('INVALID_VIRTUAL_MEDIA_PATH');
-    result.push(replaceVirtual(value,inputs,outputs));
+    if((value.startsWith('/')||/^[a-z]:[\\/]/i.test(value)||value.includes('../')||value.includes('..\\'))&&!value.includes('asset:')&&!value.includes('output:')&&!value.includes('aux:'))throw new Error('MEDIA_PATH_FORBIDDEN');
+    if(/^(asset|output|aux):/.test(value)&&!/^((asset|output|aux):\d+)(?:\/[\w%.$-]+)*$/.test(value))throw new Error('INVALID_VIRTUAL_MEDIA_PATH');
+    if((value==='-init_seg_name'||value==='-media_seg_name')&&(!args[i+1]||!/^[\w%.$-]+$/.test(args[i+1])))throw new Error('SEGMENT_NAME_MUST_BE_LOCAL');
+    result.push(replaceVirtual(value,inputs,outputs,auxiliary));
   }
-  const restricted=['-protocol_whitelist','file,pipe'];
+  const restricted=['-protocol_whitelist',localProtocols];
   return binary==='ffmpeg'?['-hide_banner','-nostdin','-y',...restricted,'-threads','2','-filter_threads','2','-filter_complex_threads','2',...result]:[...restricted,...result];
 }
 export function presetMediaCommand(request,inputs,outputs,probes){
@@ -115,24 +123,47 @@ export class MediaEngine{
       const work=path.join(sandbox,'work'),source=path.join(sandbox,'inputs'),out=path.join(work,'out');
       await mkdir(source,{recursive:true,mode:0o755});await mkdir(out,{recursive:true,mode:0o700});
       if(!this.fixture){await chown(work,uid,uid);await chmod(work,0o700);await chown(out,uid,uid);}
-      if(!Array.isArray(request.inputs)||request.inputs.length>32||!Array.isArray(request.outputs)||request.outputs.length>32)throw new Error('INVALID_MEDIA_MANIFEST');
-      let totalInput=0;const inputs=[];
-      for(let i=0;i<request.inputs.length;i++){
-        const input=request.inputs[i];safeMediaName(input.name);
-        if(input.name.includes('/'))throw new Error('INPUT_MUST_BE_FLAT');
+      if(!Array.isArray(request.inputs)||request.inputs.length>1000||!Array.isArray(request.outputs)||request.outputs.length>32)throw new Error('INVALID_MEDIA_MANIFEST');
+      let totalInput=0;const inputs=[],allInputs=[...request.inputs,...(request.bundleFiles||[])];
+      if(allInputs.length>1000||new Set(allInputs.map(item=>item.name)).size!==allInputs.length)throw new Error('INVALID_MEDIA_INPUT_INVENTORY');
+      for(let i=0;i<allInputs.length;i++){
+        const input=allInputs[i];safeMediaName(input.name);
+        if(input.name.includes('/')&&!/^bundle-\d+\//.test(input.name))throw new Error('INPUT_BUNDLE_REQUIRED');
         const file=path.join(shared,'inputs',input.name),info=await lstat(file);
         if(!info.isFile()||info.isSymbolicLink()||info.size!==input.bytes||!Number.isSafeInteger(input.bytes)||input.bytes<1)throw new Error('MEDIA_INPUT_CHANGED');
         totalInput+=info.size;if(totalInput>MEDIA_LIMITS.inputBytes)throw new Error('MEDIA_INPUT_TOO_LARGE');
         const bytes=await readFile(file);if(createHash('sha256').update(bytes).digest('hex')!==input.sha256)throw new Error('MEDIA_INPUT_CHANGED');
-        const copy=path.join(source,input.name);await copyFile(file,copy);await chmod(copy,0o444);
-        inputs.push(this.fixture?copy:`/inputs/${input.name}`);
+        const copy=path.join(source,input.name);await mkdir(path.dirname(copy),{recursive:true,mode:0o755});await copyFile(file,copy);await chmod(copy,0o444);
+        if(i<request.inputs.length)inputs.push(this.fixture?copy:`/inputs/${input.name}`);
       }
+      for(const input of allInputs)if(/\.(m3u8|mpd)$/i.test(input.name))inspectMediaBundle(input.name,await readFile(path.join(source,input.name),'utf8'),allInputs.map(item=>item.name));
       const outputs=[];
-      for(const name of request.outputs){safeMediaName(name);const file=path.join(out,name);await mkdir(path.dirname(file),{recursive:true,mode:0o700});
-        if(!this.fixture)await chown(path.dirname(file),uid,uid);outputs.push(this.fixture?file:`/work/out/${name}`);}
-      const execute=async(binary,args,progress=false)=>{
+      for(const name of request.outputs){safeMediaName(name.replace(/\/$/,''));const file=path.join(out,name.replace(/\/$/,'')),directory=name.endsWith('/')?file:path.dirname(file);await mkdir(directory,{recursive:true,mode:0o700});
+        if(!this.fixture){let owned=directory;for(;;){await chown(owned,uid,uid);if(owned===out)break;owned=path.dirname(owned);}}
+        outputs.push(this.fixture?file.replaceAll('\\','/'):`/work/out/${name.replace(/\/$/,'')}`);}
+      const auxiliary=[];let auxiliaryBytes=0;
+      if((request.auxiliaryInputs||[]).length>16)throw new Error('TOO_MANY_AUXILIARY_FILES');
+      for(const item of request.auxiliaryInputs||[]){
+        safeMediaName(item.name);if(item.name.includes('/'))throw new Error('AUXILIARY_NAME_MUST_BE_FLAT');
+        const file=path.join(shared,'inputs',item.name),info=await lstat(file);auxiliaryBytes+=info.size;
+        if(!info.isFile()||info.isSymbolicLink()||info.size!==item.bytes||auxiliaryBytes>MEDIA_LIMITS.auxiliaryBytes)throw new Error('INVALID_AUXILIARY_MEDIA_BYTES');
+        const bytes=await readFile(file);if(createHash('sha256').update(bytes).digest('hex')!==item.sha256)throw new Error('AUXILIARY_MEDIA_CHANGED');
+        const copied=path.join(source,item.name);await copyFile(file,copied);auxiliary.push(this.fixture?copied.replaceAll('\\','/'):`/inputs/${item.name}`);
+      }
+      for(let i=0;i<(request.auxiliaryInputs||[]).length;i++){
+        const item=request.auxiliaryInputs[i],file=path.join(source,item.name);
+        if(item.text){const content=await readFile(file,'utf8');validateMediaAuxiliaryText(content);await writeFile(file,replaceVirtual(content,inputs,outputs,auxiliary));}
+        await chmod(file,0o444);
+      }
+      for(const item of request.auxiliaryOutputs||[]){
+        if(!Number.isSafeInteger(item.index)||!auxiliary[item.index])throw new Error('AUXILIARY_OUTPUT_UNAVAILABLE');safeMediaName(item.name);
+        const dest=path.join(out,item.name);await mkdir(path.dirname(dest),{recursive:true,mode:0o700});
+        if(!this.fixture){let directory=path.dirname(dest);for(;;){await chown(directory,uid,uid);if(directory===out)break;directory=path.dirname(directory);}}
+        await copyFile(path.join(source,request.auxiliaryInputs[item.index].name),dest);if(!this.fixture)await chown(dest,uid,uid);await chmod(dest,0o600);
+      }
+      const execute=async(binary,args,progress=false,bundle=allInputs.some(item=>/\.(m3u8|mpd)$/i.test(item.name)))=>{
         if(control.cancelled)throw new Error('MEDIA_JOB_CANCELLED');
-        const argv=nativeMediaArgs(args,inputs,outputs,binary);
+        const argv=nativeMediaArgs(args,inputs,outputs,binary,auxiliary,bundle?'file,pipe,crypto':'file,pipe');
         if(progress)argv.splice(0,0,'-progress','pipe:1','-loglevel','error');
         return new Promise((resolve,reject)=>{
           const child=spawn(this.fixture?binary:this.sandboxBinary,this.fixture?argv:[sandbox,String(uid),binary,...argv],{
@@ -161,13 +192,21 @@ export class MediaEngine{
         }
       };
       await collect(out);if(outputs.length&&!collected.length)throw new Error('MEDIA_OUTPUT_MISSING');
-      // Probe each actual media file before exporting it. Playlists are data, never probe URLs.
+      collected.sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0);
+      const fragments=new Set(),manifests=new Set();
+      for(const item of collected)if(/\.(m3u8|mpd)$/i.test(item.name)){
+        const bundle=inspectMediaBundle(item.name,await readFile(item.file,'utf8'),collected.map(file=>file.name));
+        manifests.add(item.name);for(const file of bundle.fragments)fragments.add(file);
+      }
+      // A fragment (including an encrypted HLS segment) is validated by decoding
+      // its local manifest. Standalone output files are also completely decoded.
       const outputMetadata=[];
       for(const item of collected){
         const probeFile=this.fixture?item.file:`/work/out/${item.name}`;
-        let probe=null;if(!/\.(m3u8|mpd|txt|json)$/i.test(item.name)){
+        let probe=null;if(manifests.has(item.name)||!fragments.has(item.name)&&!/\.(txt|json|srt|ass|vtt|csv|log|key|bin|md5|ffconcat|fffilter)$/i.test(item.name)){
           const original=inputs.length;inputs.push(probeFile);
-          try{probe=parseProbe(await execute('ffprobe',['-v','error','-show_streams','-show_format','-of','json',`asset:${original}`]));}
+          try{probe=parseProbe(await execute('ffprobe',['-v','error','-show_streams','-show_format','-of','json',`asset:${original}`],false,manifests.has(item.name)));
+            await execute('ffmpeg',['-v','error','-xerror','-err_detect','explode','-i',`asset:${original}`,'-map','0:v?','-map','0:a?','-f','null','-'],false,manifests.has(item.name));}
           finally{inputs.pop();}
           if(!probe.videoCodec&&!probe.audioCodecs.length)throw new Error('MEDIA_OUTPUT_STREAM_MISSING');
         }
@@ -177,7 +216,7 @@ export class MediaEngine{
           for(;;){await chown(directory,1001,1001);if(directory===boundary)break;directory=path.dirname(directory);}
           await chown(dest,1001,1001);
         }await chmod(dest,0o600);
-        outputMetadata.push({name:item.name,bytes:item.bytes,sha256:item.sha256,probe});
+        outputMetadata.push({name:item.name,bytes:item.bytes,sha256:item.sha256,probe,fragment:fragments.has(item.name)});
       }
       if(!this.fixture)await chown(path.join(shared,'results'),1001,1001).catch(()=>{});
       if(control.cancelled)throw new Error('MEDIA_JOB_CANCELLED');
