@@ -83,6 +83,19 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string):Promise<Scope> {
   else {visible.add(actor.email);let changed=true;while(changed){changed=false;for(const m of nodes)if(visible.has(m.supervisor_email)&&!visible.has(m.email)){visible.add(m.email);changed=true}}}
   return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:team.authorized_until,owner},owner,level:owner?0:role!.level,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible};
 }
+/** Analytics never trusts client member lists. Recheck the live hierarchy/grant in
+ * the same consistent snapshot used for every aggregate and export. Shared
+ * authorization locks require a read-write transaction; analytics only SELECTs. */
+export async function enterpriseRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>) {
+  await ensureEnterpriseSchema();const tx=await getPool().connect();
+  try {
+    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+    await tx.query("SET LOCAL statement_timeout='20s'");
+    const s=await scope(tx,actor,id);
+    if(!s.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
+    const result=await run(tx,s);await tx.query('COMMIT');return result;
+  }catch(e){await tx.query('ROLLBACK');throw e}finally{tx.release()}
+}
 export async function enterpriseList(actor:TeamActor):Promise<EnterpriseIdentity[]> {
   return transaction(async tx=>{
     const rows=(await tx.query(`SELECT t.id,t.name,t.owner_email,t.authorized_until FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id
