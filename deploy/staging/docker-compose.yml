@@ -70,7 +70,8 @@ services:
     volumes:
       - /opt/naumi-staging/data/media-jobs:/scratch
     tmpfs:
-      - /tmp:size=2g,mode=755
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+      - /tmp/naumi-media-sandbox:rw,exec,nosuid,nodev,size=2g,mode=755
       - /data:size=1m,mode=755
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3001/health',{headers:{authorization:'Bearer '+process.env.MEDIA_WORKER_SECRET}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

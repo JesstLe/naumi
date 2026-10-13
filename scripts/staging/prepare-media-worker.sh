@@ -43,7 +43,7 @@ validate() {
 import json,sys
 h=json.load(open(sys.argv[1]));assert h['ok'] is True and h['sandbox'] is True and h['version']==sys.argv[2]
 PY
-  docker inspect "$NAME" | python3 -c 'import json,sys; c=json.load(sys.stdin)[0];h=c["HostConfig"];assert h["ReadonlyRootfs"] and not h["PortBindings"] and h["Privileged"] is False;assert set(h["CapDrop"])=={"ALL"};assert set(h["CapAdd"])=={"SYS_CHROOT","SETUID","SETGID","CHOWN","DAC_OVERRIDE","FOWNER"};binds=[m for m in c["Mounts"] if m["Type"]=="bind"];assert len(binds)==1 and binds[0]["Destination"]=="/scratch" and binds[0]["Source"]==sys.argv[1];assert all(m["Destination"] in {"/scratch","/data","/tmp"} for m in c["Mounts"]);assert "/data" in h["Tmpfs"] and "/tmp" in h["Tmpfs"];assert not any(v.split("=",1)[0] in {"DATABASE_URL","SETTINGS_SECRET","R2_SECRET_ACCESS_KEY","S3_SECRET_ACCESS_KEY","VIDEO_WORKER_SECRET"} for v in c["Config"]["Env"])' "$SCRATCH"
+  docker inspect "$NAME" | python3 -c 'import json,sys; c=json.load(sys.stdin)[0];h=c["HostConfig"];assert h["ReadonlyRootfs"] and not h["PortBindings"] and h["Privileged"] is False;assert set(h["CapDrop"])=={"ALL"};assert set(h["CapAdd"])=={"SYS_CHROOT","SETUID","SETGID","CHOWN","DAC_OVERRIDE","FOWNER"};binds=[m for m in c["Mounts"] if m["Type"]=="bind"];assert len(binds)==1 and binds[0]["Destination"]=="/scratch" and binds[0]["Source"]==sys.argv[1];assert all(m["Destination"] in {"/scratch","/data","/tmp","/tmp/naumi-media-sandbox"} for m in c["Mounts"]);assert "/data" in h["Tmpfs"] and "noexec" in h["Tmpfs"]["/tmp"].split(",") and "exec" in h["Tmpfs"]["/tmp/naumi-media-sandbox"].split(",");assert not any(v.split("=",1)[0] in {"DATABASE_URL","SETTINGS_SECRET","R2_SECRET_ACCESS_KEY","S3_SECRET_ACCESS_KEY","VIDEO_WORKER_SECRET"} for v in c["Config"]["Env"])' "$SCRATCH"
 }
 if [ "$MODE" = prepare ]; then
   if docker inspect "$NAME" >/dev/null 2>&1; then owned;validate;echo MEDIA_CANDIDATE=READY;exit;fi
@@ -61,7 +61,8 @@ PY
     --restart unless-stopped --user 0:0 --read-only --cap-drop ALL \
     --cap-add SYS_CHROOT --cap-add SETUID --cap-add SETGID --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
     --security-opt no-new-privileges --pids-limit 160 --memory 3g --cpus 2 \
-    --tmpfs /tmp:rw,size=2g,mode=1777 --tmpfs /data:rw,size=1m,mode=755 \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777 \
+    --tmpfs /tmp/naumi-media-sandbox:rw,exec,nosuid,nodev,size=2g,mode=755 --tmpfs /data:rw,size=1m,mode=755 \
     --mount "type=bind,src=$SCRATCH,dst=/scratch" --env-file "$ENV_FILE" \
     --entrypoint node "$ID" scripts/video-media-worker.mjs > "$E/media-container.id"
   python3 - "$STATE" "$NAME" "$ID" "$E" <<'PY'
