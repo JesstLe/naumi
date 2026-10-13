@@ -22,7 +22,17 @@ if (mode === 'baseline' || mode === 'rollback') {
   for (const [,script] of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Function(script);
   const assets = [...html.matchAll(/(?:src|data-before|data-after)="(assets\/[^"]+)"/g)].map(m => m[1]);
   for (const asset of assets) assert.ok(fs.existsSync(path.join(path.dirname(file), asset)), asset);
-  assert.ok(assets.length >= 10);
+  assert.ok(assets.length >= 20);
+  assert.ok(assets.every(asset => asset === 'assets/logo.svg' || asset.startsWith('assets/workbench-v2/') || asset.startsWith('assets/shell/')));
+  assert.equal(/香水|抱枕|紫色衬衫|风扇|春日品牌企划/.test(html), false, 'Old samples must be cleared');
+  assert.match(html, /id="live-header"/);
+  assert.match(html, /id="live-footer"/);
+  const manifest=JSON.parse(fs.readFileSync(path.join(path.dirname(file),'assets/workbench-v2/manifest.json'),'utf8'));
+  assert.equal(manifest.assets.length,10);
+  for(const asset of manifest.assets){assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(path.dirname(file),asset.file))).digest('hex'),asset.sha256);assert.equal(asset.sourceMethod,'naumi-native-generation')}
+  assert.deepEqual(fs.readdirSync(path.join(path.dirname(file),'assets')).sort(),['logo.svg','shell','workbench-v2']);
+  const shell=fs.readFileSync(path.join(path.dirname(file),'assets/shell/live-shell.js'),'utf8');new Function(shell);
+  for(const text of ['首页','工作台','创作','作品','画布','兑换码','产品','资源','关于','隐私政策','服务条款'])assert.ok(shell.includes(text));
   assert.equal(/fetch\(|XMLHttpRequest|https?:\/\//.test(html), false, 'Preview must not make provider/network calls');
-  console.log(`MODIFIED=PASS; preview=present; local_assets=${assets.length}; scripts=valid; light=only; existing_home=unchanged`);
+  console.log('MODIFIED=PASS; header=103_snapshot; footer=103_snapshot; middle=folio_light; new_assets=10; source_hashes=PASS; old_images=0; existing_home=unchanged');
 } else throw new Error('Usage: node scripts/verify-folio-preview.mjs baseline|modified|rollback [root]');

@@ -1,0 +1,65 @@
+{
+  "version": "workbench-v2",
+  "assets": [
+    {
+      "file": "assets/workbench-v2/retouch-before.webp",
+      "sha256": "86a1235551046fbdca648646be704de59611a512dcd37746f0a46153e64c232d",
+      "source": "/demos/workbench-v2/retouch-before.webp",
+      "sourceMethod": "naumi-native-generation"
+    },
+    {
+      "file": "assets/workbench-v2/retouch-after.webp",
+      "sha256": "40d719a7100850b92b878d49632988711f7ede881c17d629aca69a48a3f0b2b4",
+      "source": "/demos/workbench-v2/retouch-after.webp",
+      "sourceMethod": "naumi-native-generation"
+    },
+    {
+      "file": "assets/workbench-v2/image-after.webp",
+      "sha256": "859a4b0a4f3b82b5347134e1fc10820ec4e4de4b28c227c7be2f98b95a2af55a",
+      "source": "/demos/workbench-v2/image-after.webp",
+      "sourceMethod": "naumi-native-generation"
+    },
+    {
+      "file": "assets/workbench-v2/recolor-after.webp",
+      "sha256": "b110dc8e1de3416dc7e4dff20ac2c92687c624610e87cc62ac2dd4052320f4df",
+      "source": "/demos/workbench-v2/recolor-after.webp",
+      "sourceMethod": "naumi-native-generation"
+    },
+    {
+      "file": "assets/workbench-v2/suite-coffee-src.webp",
+      "sha256": "a1263794082ed9edc9849617ca30fb86d2af8a4f119eb5bb3642d57f3692f231",
+      "source": "/demos/workbench-v2/suite-coffee-src.webp",
+      "sourceMethod": "naumi-native-generation"
+    },
+    {
+      "file": "assets/workbench-v2/suite-coffee-main.webp",
+      "sha256": "bc16e7c45d4d82153ec9ba5a953c104e7796b00fe1538355635b72fad58ed937",
+      "source": "/demos/workbench-v2/suite-coffee-main.webp",
+      "sourceMethod": "naumi-native-generation"
+    },
+    {
+      "file": "assets/workbench-v2/suite-coffee-scene.webp",
+      "sha256": "e41212b33606344ed826112845e7a39dde8f97ebcb0280b7362ff048d80170b7",
+      "source": "/demos/workbench-v2/suite-coffee-scene.webp",
+      "sourceMethod": "naumi-native-generation"
+    },
+    {
+      "file": "assets/workbench-v2/suite-coffee-detail.webp",
+      "sha256": "aba3a0deb22f45491a140aa50b58f30449b1393d44fc977002f808c31b7b3b5c",
+      "source": "/demos/workbench-v2/suite-coffee-detail.webp",
+      "sourceMethod": "naumi-native-generation"
+    },
+    {
+      "file": "assets/workbench-v2/suite-coffee-structure.webp",
+      "sha256": "62dc4b1623352a6b8321fc414ecbc8fc03421f5fb476fbad6ca6f3ca73f4573b",
+      "source": "/demos/workbench-v2/suite-coffee-structure.webp",
+      "sourceMethod": "naumi-native-generation"
+    },
+    {
+      "file": "assets/workbench-v2/suite-speaker-main.webp",
+      "sha256": "34503bd71b910ac0931a7c32fa84785e3347df093d41d5274d726736b66bd2ed",
+      "source": "/demos/workbench-v2/suite-speaker-main.webp",
+      "sourceMethod": "naumi-native-generation"
+    }
+  ]
+}
