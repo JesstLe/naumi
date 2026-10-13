@@ -208,7 +208,7 @@ export function AccountDockMenu({
       >
         <span className="flex items-center gap-2"><Users className="h-4 w-4" />{entry?.enterprise ? L("企业管理", "Enterprise") : L("团队入口", "Team access")}</span>
         <span className={`text-[11px] ${entry?.allowed ? "text-emerald-700" : "text-muted-foreground"}`}>
-          {entry?.allowed && entry.expiresAt === null ? L("永久有效", "Permanent") : entryStatusLabel(entryStatus, locale === "en")}
+          {entryStatusLabel(entryStatus, locale === "en")}
         </span>
       </Link>
       <div className="my-1 h-px bg-border" />

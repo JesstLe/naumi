@@ -98,7 +98,7 @@ export function UserMenu() {
             <MenuLink
               href={entry?.allowed ? entry.href : "/account/security"}
               icon={<Users className="h-4 w-4" />}
-              label={`${entry?.enterprise ? (locale === "en" ? "Enterprise" : "企业管理") : (locale === "en" ? "Team access" : "团队入口")} · ${entry?.allowed && entry.expiresAt === null ? (locale === "en" ? "Permanent" : "永久有效") : entryStatusLabel(entryState === "ready" ? entry!.status : entryState, locale === "en")}`}
+              label={`${entry?.enterprise ? (locale === "en" ? "Enterprise" : "企业管理") : (locale === "en" ? "Team access" : "团队入口")} · ${entryStatusLabel(entryState === "ready" ? entry!.status : entryState, locale === "en")}`}
               onNavigate={() => setOpen(false)}
             />
             <button
