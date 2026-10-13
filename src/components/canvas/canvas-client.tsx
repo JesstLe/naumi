@@ -13,7 +13,7 @@ import { copyText } from "@/lib/clipboard";
 import { createImageDownloadName } from "@/lib/download";
 import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters, canvasCombinationSupported } from "@/lib/canvas/generation-parameters";
-import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
+import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
 import { createProjectRootResolver } from "@/lib/canvas/project-roots";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasParameterPopover } from "./parameter-popover";
@@ -1844,6 +1844,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 生成器面板停靠在选中节点正下方(不再可拖);panelRef 仍用于测量
   const panelRef = useRef<HTMLDivElement | null>(null);
   const nodeToolbarRef = useRef<HTMLDivElement | null>(null);
+  const nodeRenamePositionRef = useRef<HTMLDivElement | null>(null);
   const [dockMetrics, setDockMetrics] = useState({ dockHeight: 0, toolbarHeight: 50, toolbarWidth: 0 });
   // 底部 dock 提示词框:随内容自适应长高。显式写入最小高度，避免 macOS
   // Chromium/Safari 在 flex + max-height 组合下把 textarea 压缩成约两行。
@@ -3922,149 +3923,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     applyArtworkSelection(Array.from(next));
   }
 
-  // 选中节点在画布坐标系里的屏幕位置；真实图片按原像素尺寸参与停靠计算。
-  const nodeScreen = useMemo<
-    { left: number; top: number; bottom: number; cx: number } | undefined
-  >(() => {
-    // 当前用于停靠上下面板的节点:真实选中节点优先,否则选中的空白节点
-    const anchorId = selectedId ?? selectedPendId ?? selectedTextId;
-    if (!anchorId) return undefined;
-    const selNode = rfNodes.find((n) => n.id === anchorId);
-    if (!selNode) return undefined;
-    const z = viewport.zoom || 1;
-    const left = selNode.position.x * z + viewport.x;
-    const top = selNode.position.y * z + viewport.y;
-    const size = flowNodeSize(selNode);
-    return { left, top, bottom: top + size.height * z, cx: left + (size.width * z) / 2 };
-  }, [selectedId, selectedPendId, selectedTextId, rfNodes, viewport]);
-
-  // 画布悬浮层需要避开左上项目 chrome、窄屏第二行右上操作区和左下视图工具条。
-  // 这里统一定义安全区，避免 Dock 在低高度窗口退化成 top:8 后盖住导航/账户操作。
-  const overlaySafeArea = useMemo(
-    () => ({
-      left: 8,
-      right: 8,
-      top: canvasSize.width > 0 && canvasSize.width < 768 ? 108 : 64,
-      // 窄屏主工具栏位于视图控制条上方，需要同时避开两层底部控件。
-      bottom: canvasSize.width > 0 && canvasSize.width < 1000 ? 128 : 84,
-    }),
-    [canvasSize.width]
-  );
-
-  // dock 宽度随可用画布收缩；高分屏、Windows 缩放和窄窗口都以真实 CSS 像素重新布局。
-  const preferredDockWidth = 820;
-  const dockWidth = canvasSize.width
-    ? Math.max(
-        1,
-        Math.min(
-          preferredDockWidth,
-          canvasSize.width - overlaySafeArea.left - overlaySafeArea.right
-        )
-      )
-    : preferredDockWidth;
-  // 节点中心 x(夹取到画布内,使最宽的 dock 不出界);工具条也用这个中心 → 上下对齐。
-  const anchorCenterX = useMemo<number | undefined>(() => {
-    if (!nodeScreen) return undefined;
-    const cw = canvasSize.width;
-    const HALF = dockWidth / 2;
-    let cx = nodeScreen.cx;
-    if (cw) {
-      cx = Math.max(
-        HALF + overlaySafeArea.left,
-        Math.min(cx, cw - HALF - overlaySafeArea.right)
-      );
-      // 低高度宽窗口中，尽量把 Dock 推到左下视图工具条右侧。这样可以安全使用
-      // 更低的 bottom inset，为 Dock + 节点工具条 + 节点主体腾出完整纵向空间。
-      const viewToolbarClearance = 232;
-      const maxDockLeft = cw - dockWidth - overlaySafeArea.right;
-      if (
-        canvasSize.height > 0 &&
-        canvasSize.height < 680 &&
-        maxDockLeft >= viewToolbarClearance
-      ) {
-        cx = Math.max(cx, viewToolbarClearance + HALF);
-      }
-    }
-    return cx;
-  }, [nodeScreen, canvasSize.width, canvasSize.height, dockWidth, overlaySafeArea]);
-
-  // 底部生成器:节点正下方,中心对齐 anchorCenterX
-  const preferredDockStyle = useMemo<
-    { left: number; top: number; width: number; maxHeight?: number } | undefined
-  >(() => {
-    if (!nodeScreen || anchorCenterX == null) return undefined;
-    const ch = canvasSize.height;
-    const left = anchorCenterX - dockWidth / 2;
-    if (!ch) return { left, top: nodeScreen.bottom + 14, width: dockWidth };
-    const safeTop = overlaySafeArea.top;
-    // 左下视图工具条只占约 216px 宽；Dock 与它横向不相交时保留普通 8px
-    // 即可，避免在宽屏无谓压缩用户手动扩展的提示词编辑区。
-    // 主工具栏常驻底部；所有生成 Dock 都要预留其高度，不能再依赖“选中时隐藏工具栏”。
-    const bottomInset = overlaySafeArea.bottom;
-    const safeBottom = Math.max(safeTop + 120, ch - bottomInset);
-    // The image action bar is 49.5px in Chromium. When it is clamped to the
-    // top safe area (notably 390px wide screens), the node itself can sit
-    // underneath it, so positioning the Dock from the node bottom alone lets
-    // the two overlays overlap. Reserve the rendered toolbar plus an 8px gap.
-    const topbarHeight = 50;
-    const topbarTop = Math.max(safeTop, nodeScreen.top - topbarHeight - 12);
-    const belowTop = Math.max(
-      nodeScreen.bottom + 14,
-      topbarTop + topbarHeight + 8
-    );
-    const belowSpace = Math.max(0, safeBottom - belowTop);
-    const nodeToolbarReserve = 70;
-    const aboveBottom = nodeScreen.top - nodeToolbarReserve;
-    const aboveSpace = Math.max(0, aboveBottom - safeTop);
-    const preferredHeight = selectedTextId ? 360 : 310;
-    const minimumComfort = selectedTextId
-      ? canvasSize.width < 480
-        ? 240
-        : 218
-      : 220;
-    // 优先选择能容纳完整自适应输入区的一侧；两侧都不足时选择空间更大的一侧。
-    const useBelow =
-      belowSpace >= preferredHeight ||
-      (belowSpace >= minimumComfort && belowSpace >= aboveSpace);
-    if (useBelow) {
-      return {
-        left,
-        top: Math.max(safeTop, belowTop),
-        width: dockWidth,
-        maxHeight: Math.max(120, belowSpace),
-      };
-    }
-    if (aboveSpace >= minimumComfort) {
-      // The top is computed from this height. Allowing the panel to grow beyond
-      // it puts a long prompt/footer inside the action bar above the node.
-      const maxHeight = Math.min(preferredHeight, aboveSpace);
-      return {
-        left,
-        top: Math.max(safeTop, aboveBottom - Math.min(preferredHeight, maxHeight)),
-        width: dockWidth,
-        maxHeight,
-      };
-    }
-
-    // 两侧都放不下时退化为画布内底部 sheet。它始终位于安全区内，
-    // 不再覆盖顶部项目 chrome，也不会压住左下视图工具条。
-    const availableHeight = Math.max(120, safeBottom - safeTop);
-    const sheetHeight = Math.min(preferredHeight, availableHeight);
-    return {
-      left,
-      top: Math.max(safeTop, safeBottom - sheetHeight),
-      width: dockWidth,
-      maxHeight: sheetHeight,
-    };
-  }, [
-    nodeScreen,
-    anchorCenterX,
-    canvasSize.width,
-    canvasSize.height,
-    dockWidth,
-    selectedTextId,
-    overlaySafeArea,
-  ]);
+  // Geometry is shared by render and live gestures; docks follow every transform without rerendering the editor.
+  function selectedNodeScreen(vp: {x:number;y:number;zoom:number}):NodeScreen|undefined {
+    const anchorId=selectedId??selectedPendId??selectedTextId;
+    const node=anchorId?rfNodes.find(n=>n.id===anchorId):undefined;
+    if(!node)return undefined;
+    const z=vp.zoom||1,size=flowNodeSize(node),left=node.position.x*z+vp.x,top=node.position.y*z+vp.y;
+    return {left,top,bottom:top+size.height*z,cx:left+size.width*z/2};
+  }
+  const nodeScreen=selectedNodeScreen(viewportRef.current);
+  const overlaySafeArea=useMemo(()=>canvasOverlaySafeArea(canvasSize),[canvasSize.width]);
+  const {dock:dockStyle,toolbar:topbarStyle}=canvasDockLayout({nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly});
 
   // 窗口缩放、分屏、旋转或切换选中节点时，React Flow 会保留旧 viewport，可能让
   // 新锚点留在安全区外。尺寸或锚点变化时做最小平移；拖动同一节点不会触发，
@@ -4151,35 +4020,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ctxMenu,
   ]);
 
-  // 顶部图像工具条:尽量锚定节点中心，但按自身宽度独立夹取。
-  // Dock 在低高度宽屏会为左下视图工具条向右平移；若工具条复用 Dock 中心，
-  // 1093×614 下 1077px 宽的操作条会被推到 x=103.5..1180.5 而越出视口。
-  const preferredTopbarStyle = useMemo<{ left: number; top: number } | undefined>(() => {
-    if (!nodeScreen) return undefined;
-    const TBAR_H = 46;
-    const cw = canvasSize.width;
-    const availableWidth = Math.max(
-      1,
-      cw - overlaySafeArea.left - overlaySafeArea.right
-    );
-    const renderedWidth = Math.min(dockMetrics.toolbarWidth || 1088, availableWidth);
-    const half = renderedWidth / 2;
-    const left = cw
-      ? Math.max(
-          overlaySafeArea.left + half,
-          Math.min(
-            nodeScreen.cx,
-            cw - overlaySafeArea.right - half
-          )
-        )
-      : nodeScreen.cx;
-    const top = Math.max(overlaySafeArea.top, nodeScreen.top - TBAR_H - 12);
-    return { left, top };
-  }, [nodeScreen, canvasSize.width, overlaySafeArea, dockMetrics.toolbarWidth]);
-
-  // Measure border boxes, not animated transforms. Prompt growth, wrapped chips,
   // scrollbars, zoom and selection changes all share the same collision resolver.
-  const docksReady = !!preferredDockStyle && !!preferredTopbarStyle;
+  const docksReady = !!dockStyle && !!topbarStyle;
   useLayoutEffect(() => {
     if (!docksReady) return;
     const dock = selectedTextId ? textComposerDockRef.current : panelRef.current;
@@ -4196,23 +4038,24 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return () => observer.disconnect();
   }, [docksReady, canvasSize.width, canvasSize.height, selectedId, selectedPendId, selectedTextId, selectedBatchArts.length, selectedTextBatchNodes.length, readOnly, browsing, textComposerExpanded]);
 
-  const { dock: dockStyle, toolbar: topbarStyle } = useMemo(() => {
-    if (!preferredDockStyle || !preferredTopbarStyle || !canvasSize.height || readOnly) {
-      return { dock: preferredDockStyle, toolbar: preferredTopbarStyle };
+  function updateLiveViewport(vp:{x:number;y:number;zoom:number}) {
+    const label=zoomPercentLabel(vp.zoom);
+    if(zoomLabelRef.current)zoomLabelRef.current.textContent=label;
+    zoomButtonRef.current?.setAttribute("aria-label",`${t("canvas.toolbar.zoom")} ${label}`);
+    if(zoomInputRef.current&&document.activeElement!==zoomInputRef.current)zoomInputRef.current.value=zoomPercentInput(vp.zoom);
+    const screen=selectedNodeScreen(vp);
+    if(!screen)return;
+    const layout=canvasDockLayout({nodeScreen:screen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly});
+    const dock=selectedTextId?textComposerDockRef.current:panelRef.current;
+    if(dock&&layout.dock){
+      if(!(textComposerExpanded&&selectedTextId))dock.style.left=layout.dock.left+'px';
+      dock.style.top=layout.dock.top+'px';
+      dock.style.maxHeight=layout.dock.maxHeight==null?'':layout.dock.maxHeight+'px';
+      if(selectedTextId)dock.style.minHeight=Math.min(218,layout.dock.maxHeight??218)+'px';
     }
-    return separateCanvasDocks({
-      dock: textComposerExpanded && selectedTextId
-        ? { ...preferredDockStyle, top: overlaySafeArea.top, maxHeight: canvasSize.height - overlaySafeArea.bottom - overlaySafeArea.top }
-        : preferredDockStyle,
-      toolbar: preferredTopbarStyle,
-      dockHeight: textComposerExpanded && selectedTextId
-        ? canvasSize.height - overlaySafeArea.bottom - overlaySafeArea.top
-        : dockMetrics.dockHeight || (selectedTextId ? 360 : 310),
-      toolbarHeight: dockMetrics.toolbarHeight,
-      safeTop: overlaySafeArea.top,
-      safeBottom: canvasSize.height - overlaySafeArea.bottom,
-    });
-  }, [preferredDockStyle, preferredTopbarStyle, canvasSize.height, readOnly, dockMetrics, selectedTextId, textComposerExpanded, overlaySafeArea]);
+    if(nodeToolbarRef.current&&layout.toolbar){nodeToolbarRef.current.style.left=layout.toolbar.left+'px';nodeToolbarRef.current.style.top=layout.toolbar.top+'px';}
+    if(nodeRenamePositionRef.current){nodeRenamePositionRef.current.style.left=screen.cx+'px';nodeRenamePositionRef.current.style.top=Math.max(8,screen.top-40)+'px';}
+  }
 
   // 重命名节点:本地改标题 + 落库(节点标签 = 作品 title)
   async function saveNodeRename() {
@@ -9325,15 +9168,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               }}
               onMove={(_, vp) => {
                 viewportRef.current = vp;
-                // React Flow already moves its viewport. Only anchored docks/zoom
-                // need React updates during a gesture, not the whole empty-selection page.
-                if (selectedId || selectedPendId || selectedTextId) setViewport(vp);
-                else {
-                  const label = zoomPercentLabel(vp.zoom);
-                  if (zoomLabelRef.current) zoomLabelRef.current.textContent = label;
-                  zoomButtonRef.current?.setAttribute("aria-label", `${t("canvas.toolbar.zoom")} ${label}`);
-                  if (zoomInputRef.current && document.activeElement !== zoomInputRef.current) zoomInputRef.current.value = zoomPercentInput(vp.zoom);
-                }
+                updateLiveViewport(vp);
               }}
               onMoveEnd={(_, vp) => { viewportRef.current = vp; setViewport(vp); }}
               onNodeClick={(event, node) => {
@@ -11299,6 +11134,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             renamingNodeId === (selected?.id ?? selectedText?.id) &&
             nodeScreen && (
               <div
+                ref={nodeRenamePositionRef}
                 className="absolute z-30 -translate-x-1/2"
                 style={{
                   left: nodeScreen.cx,

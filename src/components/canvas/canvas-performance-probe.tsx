@@ -6,9 +6,9 @@ import { Panel, useReactFlow } from '@xyflow/react';
  * are emitted. Both baseline and candidate use this exact same probe. */
 const enabled = process.env.NEXT_PUBLIC_CANVAS_PERF_PROBE === '1';
 type Reading = { readyMs: number; nodes: number; commits: number; renderMs: number; longTasks: number; longTaskMs: number;
-  label: string; frames: number; elapsedMs: number; frameP95Ms: number; gestureRenderMs: number; gestureCommits: number; jsBytes: number };
+  label: string; frames: number; elapsedMs: number; frameP95Ms: number; gestureRenderMs: number; gestureCommits: number; jsBytes: number; imagesMs: number; loadedImages: number };
 let reading: Reading = { readyMs: 0, nodes: 0, commits: 0, renderMs: 0, longTasks: 0, longTaskMs: 0,
-  label: 'idle', frames: 0, elapsedMs: 0, frameP95Ms: 0, gestureRenderMs: 0, gestureCommits: 0, jsBytes: 0 };
+  label: 'idle', frames: 0, elapsedMs: 0, frameP95Ms: 0, gestureRenderMs: 0, gestureCommits: 0, jsBytes: 0, imagesMs: 0, loadedImages: 0 };
 function publish() {
   document.querySelector<HTMLOutputElement>('[data-testid="canvas-perf-reading"]')?.replaceChildren(JSON.stringify(reading));
 }
@@ -39,8 +39,12 @@ export function CanvasPerformanceProbe() {
         reading.nodes = nodes.length;
         reading.jsBytes = performance.getEntriesByType('resource').filter(e => e.name.includes('/_next/') && e.name.includes('.js'))
           .reduce((sum, e) => sum + (e as PerformanceResourceTiming).encodedBodySize, 0);
+        const images = [...document.querySelectorAll<HTMLImageElement>('.react-flow__node img[data-media-visible="true"]')];
+        reading.loadedImages = images.filter(i => i.complete && i.naturalWidth > 0).length;
+        if (images.length && reading.loadedImages === images.length && !reading.imagesMs) reading.imagesMs = performance.now();
         publish();
-      } else raf = requestAnimationFrame(ready);
+      }
+      raf = requestAnimationFrame(ready);
     };
     raf = requestAnimationFrame(ready);
     return () => { cancelled = true; cancelAnimationFrame(raf); observer.disconnect(); };
@@ -69,8 +73,9 @@ export function CanvasPerformanceProbe() {
       frameP95Ms: times[Math.min(times.length - 1, Math.floor(times.length * .95))] };
     publish(); busy.current = false;
   }
-  return <Panel position="top-right" style={{ top: 70 }}>
+  return <Panel position="top-right" style={{ top: 70, zIndex: 10000 }}>
     <div className="rounded-xl border bg-white p-3 text-xs text-slate-900">
+      <button data-testid="canvas-perf-reset" onClick={() => { reading = { ...reading, label: 'running', gestureRenderMs: 0, gestureCommits: 0 }; publish(); }}>记录真实操作</button>
       <button data-testid="canvas-perf-zoom" onClick={() => void measure('zoom')}>测缩放</button>
       <button data-testid="canvas-perf-pan" onClick={() => void measure('pan')}>测平移</button>
       <output data-testid="canvas-perf-reading" className="block max-w-[360px] break-all">{JSON.stringify(reading)}</output>

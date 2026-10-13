@@ -661,3 +661,8 @@
 @media (prefers-reduced-motion: reduce) {
   .nv-fade-in, .nv-msg-in { animation: none; }
 }
+
+/* One compositor hint for the moving surface, not hundreds of per-image layers.
+   Node geometry, image quality and hit targets are unchanged. */
+.canvas-ui-light .react-flow__viewport,
+.canvas-ui-dark .react-flow__viewport { will-change: transform; }

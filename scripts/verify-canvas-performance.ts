@@ -65,10 +65,10 @@ async function main() {
     assert.doesNotMatch(source, /getBoundingClientRect/); assert.doesNotMatch(source, /\[zoom,/);
     const client = readFileSync('src/components/canvas/canvas-client.tsx', 'utf8');
     assert.doesNotMatch(client, /selectedTextId \|\| viewport.zoom !== vp.zoom/);
-    assert.match(client, /zoomLabelRef.current.textContent = label/);
-    assert.match(client, /selectedId \|\| selectedPendId \|\| selectedTextId\) setViewport/);
+    assert.match(client, /zoomLabelRef.current.textContent\s*=\s*label/);
+    assert.match(client, /updateLiveViewport\(vp\)/);assert.doesNotMatch(client, /selectedTextId\) setViewport\(vp\)/);
     console.log('CORRECTNESS=PASS FOREST_CYCLE_LONG_HISTORY=LEGACY_EXACT OBSERVERS_200_IMAGES=1_VISIBILITY_1_SIZE UNMOUNT=RELEASED');
-    console.log('INTERACTION=PASS EMPTY_SELECTION_ZOOM_NO_PAGE_STATE_UPDATE SELECTED_DOCKS_STILL_FOLLOW LIVE_ZOOM_HUD=RETAINED ORIGINAL_MEDIA_PATHS=UNCHANGED');
+    console.log('INTERACTION=PASS EMPTY_SELECTION_ZOOM_NO_PAGE_STATE_UPDATE SELECTED_DOCKS_LIVE_GEOMETRY_FOLLOW LIVE_ZOOM_HUD=RETAINED ORIGINAL_MEDIA_PATHS=UNCHANGED');
   }
   const runs: number[] = [];
   for (let i = 0; i < 10; i++) {

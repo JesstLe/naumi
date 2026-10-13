@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  reactProductionProfiling: process.env.NEXT_PUBLIC_CANVAS_PERF_PROBE === "1",
   // Dedicated parallel deployment; ordinary builds retain their existing URLs.
   ...(process.env.DESKTOP_UI_BUILD === "1" ? { assetPrefix: "/desktop" } : {}),
   ...(process.env.ENTERPRISE_UI_BUILD === '1' ? { assetPrefix: '/enterprise' } : {}),
