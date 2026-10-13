@@ -409,7 +409,7 @@ function currentProjectSnapshot(state){
   const root=currentRoot();
   if(!root.trim()){alert("请先选择单个产品文件夹");return null;}
   config.workbench_root=root;
-  return {id:root,name:projectName(root),root,config,state:state||"后台等待",savedAt:new Date().toLocaleString(),count:items.length};
+  return {id:root,name:(items[0]&&items[0].product)||projectName(root),root,config,state:state||"后台等待",savedAt:new Date().toLocaleString(),count:items.length};
 }
 function upsertProject(project){
   const index=projects.findIndex(p=>p.root===project.root);

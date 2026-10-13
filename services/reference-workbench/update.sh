@@ -53,6 +53,10 @@ curl -fsS "http://127.0.0.1:$PORT/health" | grep -F "$VERSION"
 OLD_PORT=17847; [[ "$PORT" == 17847 ]] && OLD_PORT=17848
 sed -i "s/127.0.0.1:$OLD_PORT/127.0.0.1:$PORT/g" /etc/nginx/sites-available/reference-workbench
 nginx -t; systemctl reload nginx
+for _ in $(seq 1 20); do
+  if curl -fsS https://47.105.59.142/health | grep -F "$VERSION"; then break; fi
+  sleep 1
+done
 curl -fsS https://47.105.59.142/health | grep -F "$VERSION"
 # 流量已到就绪的新API；队列为空才停旧服务，不重启候选。
 python3 - "$BASE/data/workbench.sqlite" <<'PY'
