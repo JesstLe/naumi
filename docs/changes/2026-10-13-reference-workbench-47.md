@@ -39,3 +39,11 @@ BASELINE/MODIFIED/ROLLBACK三阶段UI契约通过，执行ROLLBACK.sh仅恢复�
 功能迭代计数：1/3；开工、固定构建与切换前已fetch，主线520ba89，无共享checkout切分支/重置，独立codex/workbench-47-20261013。只发布47，103/120/香港维护计数保持。47累计初始/e76d328/f6b4390三次发布，触发维护后只清本任务两份不再使用的传输压缩包71975字节，保留当前+两旧版及完整备份/素材/密钥；维护计数归零，磁盘5%/63GiB可用。本机只盘点本任务目录，无删除其他同事/用户文件。
 
 证据在`E:/Workspace/naumi/output/workbench-47-20261013/`；登录资料仅受保护本机文件，不入仓库。阶段完成与未验收边界逐项更新，不用HTTP200或目录返回冒充真实出图。
+
+## 2026-10-14 用户要求服务器验证与免费HTTPS复核
+
+再次SSH进入47，在部署锁内核对Nginx配置、运行版本f6b4390、应用/网关/证书timer active及开机enabled；SQLite integrity_check通过，先前真实infer/generate/edit均done，两张1254×1254 PNG从服务器文件实际解码通过，TDH当前密钥可见模型仍11个。本次不再提交收费任务。
+
+免费Let's Encrypt正式IP证书，颁发者YE2，SAN=47.105.59.142，TLSv1.3系统信任/主机校验通过，当前到期2026-10-20 14:43:25北京时间。timer每6小时、开机补跑，重新执行certbot模拟续期成功；短期证书由定时续期维护。公网独立核对HTTPS200/版号、HTTP308到HTTPS、匿名管理API401。应用仍仅回环17847，未改103或其他服务器，未重复申请证书或改动服务配置。
+
+检查日志`E:/Workspace/naumi/output/workbench-47-20261013/https-server-reverify.log`，终态`FREE_HTTPS_AND_SERVER_ACCEPTANCE=PASS`、退出0。补充本机验证记录及独立报告副本回滚通过，线上HTTPS保持；文档提交不触发发布或增加维护计数。
