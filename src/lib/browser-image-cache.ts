@@ -16,6 +16,7 @@ const batches=new Map<string, {resolve:(value:BrowserImageDescriptor|null)=>void
 let batchTimer:ReturnType<typeof setTimeout>|undefined;
 let channel:BroadcastChannel|undefined;
 export class ImageCacheDenied extends Error {}
+class ImageNotCacheable extends Error {constructor(readonly freshUrl:string){super('图片超过本地缓存上限');}}
 const valid=(owner:string,generation:number)=>owner===account && generation===epoch && !!owner;
 export function imageCacheAccount(){return account;}
 export function imageCacheSource(raw:string){
@@ -96,7 +97,7 @@ async function imageBlob(source:string,signal?:AbortSignal):Promise<{blob:Blob;o
   const owner=account,generation=epoch;if(!owner)throw new ImageCacheDenied('登录状态尚未验证');
   const info=await descriptor(source,owner,generation);if(signal?.aborted||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
   if(!info)throw new ImageCacheDenied('素材尚未授权或不支持缓存');
-  if(info.bytes>MAX_IMAGE)throw new Error('素材超过缓存上限');
+  if(info.bytes>MAX_IMAGE)throw new ImageNotCacheable(info.fetchUrl);
   const id=JSON.stringify([owner,info.source,info.version]);
   let task=pending.get(id);if(!task){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),60000);const promise=(async()=>{
     const cached=await read(id);
@@ -127,6 +128,7 @@ export async function acquireBrowserImage(raw:string,signal?:AbortSignal):Promis
   let result:{blob:Blob;owner:string;generation:number};
   try{result=await imageBlob(source,signal);}catch(error){
     if(error instanceof ImageCacheDenied||signal?.aborted||!valid(owner,generation))throw error;
+    if(error instanceof ImageNotCacheable)return{url:error.freshUrl,release:()=>{}};
     // Descriptor/storage outages fall back to the authenticated media endpoint,
     // explicitly bypassing HTTP cache. Never reuse a previous account's pixels.
     const response=await fetch(source,{cache:'no-store',headers:await authHeader(),credentials:'same-origin',signal});
