@@ -104,3 +104,7 @@ A最新通过项：任务脚本已实际验证同operation并发只创建一次�
 阶段合并验收通过：最新main7b4c970的生图/企业/folio改动完整保留，7处冲突按双方字段合并（schema同时保留imagegen/video、模型执行同时保留图像需求和视频冻结、后台同时保留两组编辑/发布/审计、供应商资料同时验证两类、协作记录保留双方阶段）。合并后的TypeScript、imagegen contract/capabilities、视频配置冻结、完整任务并发/重启/取消/结算/BYOC，以及AutoDL默认映射+RunningHub显式映射真实App/Worker均通过；日志在本任务checkpoint-a目录。未重复不受影响51协议或其他已通过项。准备普通快进main，不操作共享checkout、不强推；本次仅代码阶段合并，不发布103。
 
 首批阶段合并已完成：git普通原子推送成功，origin/main与origin/codex/canvas-video-fusion-20261013均为65db84d0fdc5c2f02e8a338d7b96074e8dac811f（7b4c970→65db84d），无强推、无共享checkout操作。这次是检查点A代码整合，非发布；服务器配置/数据库/媒体未修改，维护次数不因Git合并增加。下一步Task10真实视频核验/全产物/隔离媒体worker与大模块B；任务目标active，C/D、演示站操作、固定镜像与103最终上线仍未完成。
+
+Task10 第一批媒体基础已实现：新增真实媒体任务/账号隔离 API、实际 FFprobe 缓存、首当前尾帧/音轨/分离/裁剪/拼接/原生命令和多输出 Worker 框架，逐任务 Linux chroot/独立UID/干净环境/seccomp网络禁止的 launcher，以及固定源码镜像/Compose内部服务声明。结果下载按实际字节限额，主视频开始用真实探测尺寸且显式owner上传；通用作品事务接口使主视频与媒体产物可同任务状态/计费事务提交。fixture新增独立真实媒体Worker/原创静音素材；媒体集中验收脚本已写入但尚未运行。Node语法和本批TypeScript检查通过，B尚未通过：全供应商产物/输入SHA时长冻结/旧抽帧迁移/手工媒体费用/磁盘并发与回收/完整分片/实际取消/发布回滚接线及Linux执行验证仍待补齐，详见 `docs/changes/2026-10-13-canvas-video-media.md`。
+
+继续遵守分批整合：本批仅保存任务分支，未把未验收的B代码合回main；刷新发现主线已到b42a8cb（含企业分析移动端/数值积分CSV修复），下一次阶段合并前保留这些改动并集中做相关合并回归。此阶段没有业务发布，也没有连接旧服务器。

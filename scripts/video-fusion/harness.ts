@@ -12,7 +12,7 @@ import type {VideoWireProfile} from "../../src/lib/video/capability-schema";
 export {CAP_RICH} from "./profiles";
 type Account="a"|"b";
 type FixtureRef={id:string;url:string;storageKey:string;durationSeconds:number;hasVideoStream:boolean;mimeType:string;sha256:string};
-type Seed={accounts:Record<Account,string>;cookies:Record<Account,string>;refs:Record<"image"|"lastImage"|"video"|"audio",FixtureRef>;byocWorkflowId:string};
+type Seed={accounts:Record<Account,string>;cookies:Record<Account,string>;refs:Record<"image"|"lastImage"|"video"|"silentVideo"|"audio",FixtureRef>;byocWorkflowId:string};
 const root=path.resolve(__dirname,"../..");
 async function freePort(){const server=createServer();await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));const port=(server.address() as {port:number}).port;await new Promise<void>(resolve=>server.close(()=>resolve()));return port;}
 async function stopChild(child:ChildProcess|undefined){
@@ -52,7 +52,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
   // Next loads dotenv files before the application. Reject them rather than inherit any formal credentials.
   for(const name of [".env",".env.local",".env.development",".env.development.local"]){if(await stat(path.join(root,name)).catch(()=>null)){await sql.end();throw new Error("Fixture requires a worktree without dotenv files");}}
   const assetsRoot=path.resolve(options.assetsRoot||process.env.VIDEO_FIXTURE_ASSETS_ROOT||defaultAssetsRoot);
-  let app:ChildProcess|undefined,worker:ChildProcess|undefined,routerProcess:ChildProcess|undefined;
+  let app:ChildProcess|undefined,worker:ChildProcess|undefined,routerProcess:ChildProcess|undefined,mediaWorker:ChildProcess|undefined;
   const manifest=await loadVideoAssets(assetsRoot).catch(async error=>{await sql.end();throw error;});
   const output=path.join(root,"output/canvas-video-fusion-20261013/runs",namespace);
   await mkdir(output,{recursive:true});
@@ -61,18 +61,20 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
   const objects=createFixtureObjects({root:path.join(output,"objects"),accessKeyId,secretAccessKey,bucket,calls:objectCalls});
   const supplier=await createVideoSupplier({assetsRoot,manifest,objectHandler:objects,validateWire:options.validateWire});
   const appPort=await freePort(),baseUrl=`http://127.0.0.1:${appPort}`,workerSecret=randomUUID()+randomUUID();
+  const mediaPort=await freePort(),mediaSecret=randomUUID()+randomUUID(),mediaOrigin=`http://127.0.0.1:${mediaPort}`;
   const env:NodeJS.ProcessEnv={...cleanEnv(),NODE_ENV:"development",NEXT_TELEMETRY_DISABLED:"1",DATABASE_URL:databaseUrl,NAUMI_VERIFY_ISOLATED_DB:"1",
     NAUMI_MULTI_USER:"1",NAUMI_EDITION:"pro",PRO_LICENSE_KEY:"LOCAL-OFFLINE",SETTINGS_SECRET:randomUUID()+randomUUID(),
     VIDEO_FIXTURE_PARENT_PIPE:"1",VIDEO_FIXTURE_ASSETS_ROOT:assetsRoot,MEDIA_DIR:path.join(output,"media"),STORAGE_DRIVER:"s3",MEDIA_PRIVATE:"1",
     S3_ENDPOINT:supplier.origin+"/objects",S3_REGION:"us-east-1",S3_BUCKET:bucket,S3_FORCE_PATH_STYLE:"1",S3_ACCESS_KEY_ID:accessKeyId,S3_SECRET_ACCESS_KEY:secretAccessKey,
     NAUMI_VIDEO_WORKER:"0",VIDEO_WORKER_SECRET:workerSecret,NAUMI_APP_ORIGIN:baseUrl,INTERNAL_APP_ORIGIN:baseUrl,VIDEO_WORKER_INTERVAL_MS:"5000",
+    MEDIA_WORKER_ORIGIN:mediaOrigin,MEDIA_WORKER_SECRET:mediaSecret,MEDIA_JOB_DIR:path.join(output,"media-jobs"),
     MODEL_CONFIG_TRUSTED_ORIGINS:[supplier.origin,router.origin].join(","),VIDEO_FIXTURE_SUPPLIER_ORIGIN:supplier.origin,VIDEO_FIXTURE_VIDEO_PROFILE:options.videoProfile||"ark",
     NAUMI_ROUTER_MANAGEMENT_URL:routerUrl,NAUMI_ROUTER_MANAGEMENT_TOKEN:routerToken,
     MODEL_CONFIG_ENVELOPE_SECRET:routerEnvelope,VIDEO_API_BASE_URL:supplier.origin+"/protocol/openai-videos/v1",VIDEO_API_KEY:supplier.token,VIDEO_API_MODEL:"fixture-video",
     OPENAI_BASE_URL:supplier.origin+"/protocol/image/v1",OPENAI_API_KEY:supplier.token,OPENAI_IMAGE_MODEL:"fixture-image"};
   const logs:string[]=[];
   const capture=(name:string,child:ChildProcess)=>{
-    const handle=(data:Buffer)=>{let line=data.toString();for(const value of [databaseUrl,supplier.token,env.SETTINGS_SECRET!,workerSecret,secretAccessKey,env.NAUMI_ROUTER_MANAGEMENT_TOKEN!,env.MODEL_CONFIG_ENVELOPE_SECRET!])line=line.split(value).join("[fixture-secret]");
+    const handle=(data:Buffer)=>{let line=data.toString();for(const value of [databaseUrl,supplier.token,env.SETTINGS_SECRET!,workerSecret,mediaSecret,secretAccessKey,env.NAUMI_ROUTER_MANAGEMENT_TOKEN!,env.MODEL_CONFIG_ENVELOPE_SECRET!])line=line.split(value).join("[fixture-secret]");
       line=line.replace(/https?:\/\/[^\s"'<>]+/g,value=>{try{const url=new URL(value);url.search="";url.hash="";url.username="";url.password="";return url.href;}catch{return "[fixture-url]";}});
       logs.push(`${name}: ${line.slice(-3000)}`);if(logs.length>100)logs.shift();void appendFile(path.join(output,"runtime.log"),`${name}: ${line.slice(-3000)}`).catch(()=>{});};
     child.stdout?.on("data",handle);child.stderr?.on("data",handle);
@@ -92,6 +94,10 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
         if(ready)break;await new Promise(resolve=>setTimeout(resolve,300));}
       if(!ready)throw new Error("Real fixture Router readiness failed");
     }
+    mediaWorker=spawn(process.execPath,["scripts/video-media-worker.mjs"],{cwd:root,env:{...cleanEnv(),MEDIA_WORKER_FIXTURE_OWNER:"canvas-video-fusion-20261013",MEDIA_WORKER_HOST:"127.0.0.1",MEDIA_WORKER_PORT:String(mediaPort),MEDIA_WORKER_SECRET:mediaSecret,MEDIA_JOB_DIR:env.MEDIA_JOB_DIR},windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("media-worker",mediaWorker);
+    const mediaDeadline=Date.now()+15000;let mediaReady=false;
+    while(Date.now()<mediaDeadline){if(mediaWorker.exitCode!==null)throw new Error("Fixture media worker exited");mediaReady=await fetch(mediaOrigin+"/health",{headers:{authorization:`Bearer ${mediaSecret}`},signal:AbortSignal.timeout(1000)}).then(r=>r.ok).catch(()=>false);if(mediaReady)break;await new Promise(resolve=>setTimeout(resolve,100));}
+    if(!mediaReady)throw new Error("Fixture media worker readiness failed");
     const seed=JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/video-fusion/fixture.ts","--seed-private"],env)) as Seed;
     const startApp=async()=>{
       app=spawn(process.execPath,["node_modules/next/dist/bin/next","dev","--hostname","127.0.0.1","--port",String(appPort)],{cwd:root,env,windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("app",app);
@@ -106,7 +112,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
     const startWorker=()=>{if(options.startWorker!==false){worker=spawn(process.execPath,["scripts/video-worker.mjs"],{cwd:root,env,windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("worker",worker);}};
     await startApp();startWorker();
     await writeFile(path.join(output,"public-run.json"),JSON.stringify({namespace,baseUrl,supplierOrigin:supplier.origin,schemaName,owner:"canvas-video-fusion-20261013"}));
-    const countTables=new Set(["app_video_tasks","app_video_results","app_artworks","app_canvas_video_nodes","app_billing_operations","app_ledger"]);
+    const countTables=new Set(["app_video_tasks","app_video_results","app_artworks","app_canvas_video_nodes","app_video_media_jobs","app_billing_operations","app_ledger"]);
     return {baseUrl,refs:seed.refs,accounts:seed.accounts,cookies:seed.cookies,logs,manifest,byocWorkflowId:seed.byocWorkflowId,
       async restartApp(){await stopChild(worker);await stopChild(app);await startApp();startWorker();},
       supplierCalls:()=>[...supplier.calls,...objectCalls],setScenario:(name:string)=>supplier.setScenario(name),
@@ -129,7 +135,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
       async checkNodeReservationRollback(account:Account,sourceTask:string){return JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/video-fusion/fixture-actions.ts","--node-reservation-failure"],{...env,VIDEO_FIXTURE_ACTION_ACTOR:seed.accounts[account],VIDEO_FIXTURE_ACTION_SOURCE:sourceTask})) as {rolledBack:boolean;attemptedTaskId:string};},
       async taskPersistence(account:Account,id:string){return (await sql.query("SELECT status,parameters,video_references,capability_snapshot,cancellation_requested_at FROM app_video_tasks WHERE email=$1 AND id=$2",[seed.accounts[account],id])).rows[0];},
       async tick(){const r=await fetch(baseUrl+"/api/video/worker/tick",{method:"POST",headers:{"x-video-worker-secret":workerSecret},signal:AbortSignal.timeout(300_000)});if(!r.ok)throw new Error(`Fixture tick failed ${r.status}`);return r.json();},
-      async stop(){await stopChild(worker);await stopChild(app);await stopChild(routerProcess);await supplier.close();await sql.end();},
+      async stop(){await stopChild(worker);await stopChild(app);await stopChild(mediaWorker);await stopChild(routerProcess);await supplier.close();await sql.end();},
     };
-  } catch(error){await stopChild(worker);await stopChild(app);await stopChild(routerProcess);await supplier.close();await sql.end();throw error;}
+  } catch(error){await stopChild(worker);await stopChild(app);await stopChild(mediaWorker);await stopChild(routerProcess);await supplier.close();await sql.end();throw error;}
 }

@@ -18,7 +18,6 @@ import {getBillingRuntime,meteringFor} from "@/lib/billing/server";
 import {quote} from "@/lib/billing/quote";
 
 import {
-  addArtworks,
   claimVideoTaskPoll,
   failVideoTask,
   getVideoTask,
@@ -35,7 +34,9 @@ import {
   stageVideoTaskResult,
   touchReservation,
 } from "@/lib/db";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled, uploadImage,readManagedObject } from "@/lib/storage";
+import {probeVideo} from "./media";
+import type {MediaProbe} from "./media-job-schema";
 import { completeVideoTask } from "@/lib/db";
 import { getPool } from "@/lib/db";
 import { isImportedHistory } from "@/lib/staging-history";
@@ -502,6 +503,7 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
       const artworkId = `vid-art-${id}`;
       let url = task.videoUrl;
       let resultStorageKey = task.resultStorageKey || "";
+      let inspected:MediaProbe;
       if (!url) {
         const file = await adapter.fetchResult(snapshot, result);
         let bytes = file.bytes;
@@ -513,11 +515,12 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
           mimeType = downloaded.mimeType;
         }
         if (!bytes || bytes.byteLength === 0) throw new Error("视频供应商返回了空结果");
+        inspected=await probeVideo(bytes);
         const extension = videoExtensionForMime(mimeType);
         if (storageEnabled) {
           // Never construct a base64 copy for persisted videos: a 150MiB file
           // would otherwise allocate another ~200MiB string before upload.
-          url = await uploadImage(bytes, mimeType, `videos/${artworkId}.${extension}`);
+          url = await uploadImage(bytes, mimeType, `videos/${artworkId}.${extension}`,undefined,email);
         } else {
           if (bytes.byteLength > 8 * 1024 * 1024) {
             throw new Error("视频结果超过 8MB，必须配置媒体存储后再落库");
@@ -526,7 +529,7 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
         }
         resultStorageKey = url.startsWith("/media/") ? url.slice("/media/".length) : "";
         await stageVideoTaskResult({ email, id, videoUrl: url, resultStorageKey });
-      }
+      }else inspected=await probeVideo((await readManagedObject(url,200*1024*1024)).bytes);
       const referenceArtworkIds = (task.videoReferences ?? [])
         .map((reference) => String((reference as { artworkId?: string }).artworkId || ""))
         .filter(Boolean);
@@ -539,7 +542,7 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
         : [];
       const ownedParentIds = new Set(ownedParents.map((artwork) => artwork.id));
       const parentIds = candidateParentIds.filter((parentId) => ownedParentIds.has(parentId));
-      await addArtworks(email, [{
+      const artworks:Omit<import("../db").ArtworkRecord,"createdAt">[]=[{
         id: artworkId,
         title: `视频 · ${task.prompt.slice(0, 24)}`,
         category: "video",
@@ -555,10 +558,10 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
         parentId: parentIds[0] || null,
         parentIds: parentIds.slice(1),
         origin: task.source === "canvas" ? "canvas" : null,
-        width: 0,
-        height: 0,
+        width: inspected.width,
+        height: inspected.height,
         videoUrl: url,
-      }], `vid-${Date.now()}`);
+      }];
       // Legacy contract marker: completeVideoTask({ email, id, artworkId, videoUrl: url })
       await completeVideoTask({
         email,
@@ -567,6 +570,7 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
         videoUrl: url,
         resultStorageKey,
         lastResponse: sanitizedPollResponse,
+        artworks,
       });
       return getVideoTask(email, id);
     }

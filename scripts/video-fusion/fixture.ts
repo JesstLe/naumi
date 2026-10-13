@@ -53,12 +53,12 @@ export async function seedVideoFixture() {
   }
   await db.setUserRole(accounts.a,"admin");
   const refs:Record<string,unknown>={};
-  for(const [kind,name] of [["image","first.png"],["lastImage","last.png"],["video","landscape-4-audio.mp4"],["audio","tone-8.wav"]]) {
+  for(const [kind,name] of [["image","first.png"],["lastImage","last.png"],["video","landscape-4-audio.mp4"],["silentVideo","landscape-4-silent.mp4"],["audio","tone-8.wav"]]) {
     const info=manifest.files.find((entry:{name:string})=>entry.name===name);
     if(!info)throw new Error(`Fixture asset missing ${name}`);
     const storageKey=`video-fixture/${randomUUID()}/${name}`;
     const url=await uploadImage(await readFile(path.join(root,name)),info.mimeType,storageKey,undefined,accounts.a);
-    const id=`fixture-art-${randomUUID()}`,category=kind==="video"?"video":kind==="audio"?"audio":"main";
+    const id=`fixture-art-${randomUUID()}`,category=info.mimeType.startsWith("video/")?"video":info.mimeType.startsWith("audio/")?"audio":"main";
     await db.addArtworks(accounts.a,[{id,title:`Fixture ${kind}`,category,prompt:"original test media",status:"completed",image:url,videoUrl:category==="main"?null:url,
       gradient:"from-slate-100 to-zinc-100",style:null,ratio:info.aspectRatio||"16:9",resolution:"1K",source:"upload",origin:"canvas",parentId:null,
       width:info.width,height:info.height}],`fixture-${randomUUID()}`);

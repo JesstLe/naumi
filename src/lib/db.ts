@@ -2522,6 +2522,24 @@ export async function addArtworks(
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    await addArtworksTx(client,email,items,batchId);
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** Use an existing transaction when artifacts and their durable task settle together. */
+export async function addArtworksTx(
+  client: PoolClient,
+  emailRaw: string,
+  items: Omit<ArtworkRecord,"createdAt">[],
+  batchId?: string
+): Promise<void> {
+    const email=emailRaw.toLowerCase();
     for (const a of items) {
       // 稳定分组:有父节点 → 继承父节点的 group_id(同一项目);无父(新根)→ 用自己的 id。
       let groupId: string = a.groupId ?? a.id;
@@ -2571,13 +2589,6 @@ export async function addArtworks(
         ]
       );
     }
-    await client.query("COMMIT");
-  } catch (e) {
-    await client.query("ROLLBACK");
-    throw e;
-  } finally {
-    client.release();
-  }
 }
 
 /** Workbench needs eight previews and counts, not prompts/source/canvas metadata. */
@@ -5043,6 +5054,7 @@ export async function completeVideoTask(input: {
   videoUrl: string;
   resultStorageKey?: string;
   lastResponse?: unknown;
+  artworks?:Omit<ArtworkRecord,"createdAt">[];
 }): Promise<void> {
   await ensureSchema();
   const email = input.email.toLowerCase();
@@ -5078,6 +5090,7 @@ export async function completeVideoTask(input: {
       return;
     }
     if(task.status==="failed"||task.status==="cancelled")throw new Error("终止的视频任务不能再次结算完成");
+    if(input.artworks)await addArtworksTx(client,email,input.artworks);
     const projectKey=task.parameters?.projectKey;
     if(typeof projectKey==="string"&&/^(?:tree|batch):[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(projectKey)){
       const kind=projectKey.slice(0,projectKey.indexOf(":")),projectId=projectKey.slice(projectKey.indexOf(":")+1);
