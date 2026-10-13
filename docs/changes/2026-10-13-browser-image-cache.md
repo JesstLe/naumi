@@ -72,3 +72,9 @@
 - 网关纯fixture验证主站/桌面/企业新UI和缓存读取，创作/Agent API保持原端，旧静态资产fallback端口与真实基线一致。/media私有版本读取明确指向新只读槽，缓存版本变化不能落到旧实现。
 - 两把部署锁的继承FD与/proc/fdinfo真实FLOCK已核对；未重复prepare。数据库pg_dump/pg_restore --list、73个旧JS/CSS hash与原网关保留。
 - 当前回滚清单81个源码文件，独立main副本已完成BASELINE/MODIFIED/ROLLBACK，81个原始hash恢复，任务工作树仍为缓存实现，不恢复DB/积分/媒体。
+
+### 切流前补充事实
+
+切流前刷新发现视频分支 c2c7582 新增尚未集中验收的 C 第一批界面，原分支文档明确 Task11/12/13 未完成、未合 main。此次保留其独立分支，不将未完成的混合节点/撤销/播放器/Agent接线加入缓存上线；最新已合main a6f58f0及全部已完成同事变更保持。固定缓存候选包括视频B服务端实现，但本次创作/Agent/媒体Worker API仍运行原槽，不冒充视频C/D上线。
+
+旁路start第一尝试主动检测业务fingerprint变化，尚未创建任何新槽。只读比较可读基线dump与当前库：一个既有账号 credits_total 变化、新增两条作品，原密码/角色/停用/既有作品引用不变，网关/授权/配置不变。不是发布脚本写库；改为保护既有账号控制与素材引用、容许正常新增作品/积分活动并保存最新fingerprint，不冻结用户、不回灌旧库。下一次三槽start成功，旧容器ID/Image/Running保持；每槽Worker0，真实DB与固定version就绪。
