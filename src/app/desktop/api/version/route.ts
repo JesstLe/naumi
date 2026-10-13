@@ -1,1 +1,3 @@
-export { GET, runtime, dynamic } from "@/app/api/version/route";
+export { GET } from "@/app/api/version/route";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";

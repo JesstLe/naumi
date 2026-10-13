@@ -24,3 +24,8 @@
 先读本记录与RELEASE_RUNBOOK，再完成验收、固定候选和部署锁。
 部署只路由/desktop到隔离槽位，旧App/Worker与全部旧资源保持。
 ```
+
+## 同事分支整合与并行部署
+完成的普通用户功能权限分支07248c8已普通合入；解决CanvasClient可选props与canFeature入口的单处冲突，保留两边。视频分支只有设计/计划；imagegen仍待模块6-8，未将其部分执行功能发布；四条历史回滚和静态预览不合入。
+部署只发布desktop伴随槽位，原版App/Worker不重建。desktop编译标志提供独立/desktop/_next静态资源；desktop的浏览器传输适配器把同源/api请求映射到/desktop/api，再由固定loopback转交同一新版API实现。原版的API/Agent进程/静态资源仍在原槽，不使用用户可伪造的版本cookie或Referer选路，不中断旧活动会话。普通功能权限只随新版desktop范围上线；其全站管理UI与原版接口升级仍需独立连续发布，不称已在原版上线。desktop页面与API别名都匹配原权限目录，账号/积分基础请求不受功能禁用影响。
+新增仅兼容ACL表，不改变原数据/配置；切回隐藏路径不回灌DB。后续更新此槽位仍须排空它自己的Agent会话，不能以本次首建旁路声称完整蓝绿已实现。

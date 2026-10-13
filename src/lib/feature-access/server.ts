@@ -33,9 +33,10 @@ export async function featureRequestGate(request: Request): Promise<Response | n
   if (!requirement || !dbEnabled) return null;
   const { email, admin, policy } = await requestFeaturePolicy(request);
   if (admin) return null;
-  const api = url.pathname.startsWith("/api/");
+  const canonicalPath = url.pathname.startsWith("/desktop/api/") ? url.pathname.slice("/desktop".length) : url.pathname;
+  const api = canonicalPath.startsWith("/api/");
   // Public previews remain public. Existing APIs still enforce their authentication.
-  if (!email) return api && !["templates", "tpl-image"].includes(url.pathname.split("/")[2]) ? accessJson({ error: "请先登录" }, 401) : null;
+  if (!email) return api && !["templates", "tpl-image"].includes(canonicalPath.split("/")[2]) ? accessJson({ error: "请先登录" }, 401) : null;
   return policy && meets(policy, requirement) ? null : accessJson({ error: "此功能尚未授权", code: "FEATURE_DENIED" }, 403);
 }
 export const ACCESS_HEADERS = { "Cache-Control": "private, no-store, max-age=0", Vary: "Cookie, Authorization", "X-Content-Type-Options": "nosniff" };
