@@ -60,6 +60,8 @@ docker compose --env-file "$ROOT/config/.env" -f "$ROOT/config/docker-compose.ym
 date -u > "$E/ROLLED_BACK"
 ROLLBACK
 chmod 700 "$E/ROLLBACK.sh"
+GATEWAY=${NAUMI_STAGING_PUBLIC_GATEWAY:-$(cat "$E/gateway.path")}
+bash "$(dirname "$0")/prepare-private-media-rollback.sh" "$E" "$GATEWAY"
 bash "$E/ROLLBACK.sh" --check
 rollback_on_failure() { status=$?; if [ "$status" != 0 ] && test -e "$E/CONFIG_SWITCHED"; then bash "$E/ROLLBACK.sh" > "$E/rollback.log" 2>&1 || true; fi; exit "$status"; }
 trap rollback_on_failure EXIT
