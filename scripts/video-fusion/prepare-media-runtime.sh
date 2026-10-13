@@ -4,7 +4,7 @@ target=/opt/naumi-media-runtime
 mkdir -p "$target/usr/bin" "$target/work" "$target/inputs"
 cp -L /usr/bin/ffmpeg /usr/bin/ffprobe "$target/usr/bin/"
 # Preserve loader paths; dereference links so per-job hardlinks cannot escape.
-ldd /usr/bin/ffmpeg /usr/bin/ffprobe | awk '{ for(i=1;i<=NF;i++) if($i ~ /^\//) print $i }' | sort -u | while IFS= read -r file; do
+{ ldd /usr/bin/ffmpeg; ldd /usr/bin/ffprobe; } | awk '{ for(i=1;i<=NF;i++) if($i ~ /^\//) print $i }' | sort -u | while IFS= read -r file; do
   mkdir -p "$target$(dirname "$file")"
   cp -L "$file" "$target$file"
 done
