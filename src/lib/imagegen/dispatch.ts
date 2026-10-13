@@ -10,6 +10,8 @@ import {imagegenStepId} from "./generation-core";
 import {imagegenRequestSchema} from "./schema";
 import {imagegenSubmission,ImagegenStopped} from "./cancel";
 import {readImagegenInputAsset} from "./input-assets";
+import {readImagegenInputs} from "./inputs";
+import {preserveMaskedOutside} from "./mask";
 import type {ImagegenPlan,ImagegenRequest,ImagegenResult} from "./types";
 type Parent={status:string;result:ImagegenResult;fingerprint:string;children:Record<string,{state:"starting"|"submitted"|"done";jobId?:string;ids?:string[]}>};
 const jobs=new DurableImageJobs<Parent>("imagegen");
@@ -71,6 +73,18 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
   }
   if(cutoutIds.length)ids=cutoutIds;
   await update({},{stage:"postprocessing"});
+  if(plan.request.inputs.some(input=>input.role==="mask")){
+   const inputs=await readImagegenInputs(plan.request,owner),target=inputs.find(input=>input.role==="edit-target")!,mask=inputs.find(input=>input.role==="mask")!;
+   const sources=await listArtworksByIds(owner,ids),constrained:string[]=[];
+   for(const [i,source] of ids.entries()){
+    const work=sources.find(work=>work.id===source);if(!work?.image)throw new Error("蒙版结果不存在或无权访问");
+    const generated=await readCanvasImage(work.image,"http://internal",owner);
+    const replacement=await preserveMaskedOutside(target.buffer,mask.buffer,generated.buffer,plan.intent.background==="transparent");
+    const saved=await saveCanvasLocalEdit(owner,{mode:"replace",id:source,operationId:imagegenStepId(plan.request.operationId,`mask-${i}`)},"http://internal",replacement);
+    constrained.push(saved.id);
+   }
+   ids=constrained;
+  }
   const output={...plan.request.output,compression:plan.request.output.compressionMode==="native"?undefined:plan.request.output.compression,background:plan.intent.background||undefined};
   if(plan.request.mode==="postprocess"||plan.request.chroma||output.format!=="png"||output.compression!==undefined||output.downscaleMaxDim||output.flattenColor){
    const processed:string[]=[];

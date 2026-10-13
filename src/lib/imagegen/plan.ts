@@ -25,7 +25,12 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  if(request.entry==="canvas"&&!allows(access,"canvas")||request.entry==="agent"&&!allows(access,"agent")||intent.operation!=="postprocess"&&!imageAllowed||intent.operation==="postprocess"&&!["canvas","works","generate"].some(id=>allows(access,id)))throw new FeatureAccessError("此图像功能尚未授权");
  if(intent.operation==="cutout"&&!allows(access,"cutout"))throw new FeatureAccessError("抠图功能尚未授权");
  if(request.output.format==="jpeg"&&(intent.background==="transparent"||!request.output.flattenColor))throw new Error("JPEG不保留透明度，请选择PNG/WebP，或明确不透明背景和扁平化颜色");
- await readImagegenInputs(request,owner);
+ const inputs=await readImagegenInputs(request,owner);
+ const maskedTarget=inputs.some(input=>input.role==="mask")&&inputs.find(input=>input.role==="edit-target");
+ if(maskedTarget&&request.parameters.ratio&&request.parameters.ratio!=="auto"){
+  const [width,height]=request.parameters.ratio.split(":").map(Number);
+  if(Math.abs(width/height-maskedTarget.width/maskedTarget.height)>0.01)throw new Error("蒙版局部编辑需保留目标画面比例，请选择自适应或原图比例");
+ }
  const fingerprint=imagegenFingerprint(request);
  if(request.parameters.width&&request.parameters.height){
   if(Math.max(request.parameters.width,request.parameters.height)>MAX_GENERATION_DIMENSION)throw new Error(`当前生成路径的实际尺寸上限为${MAX_GENERATION_DIMENSION}，请按已发布规格选择`);
@@ -47,7 +52,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  assertToolScope(models.config,feature,id);
  const facts=(requirements:Intent):ModelFacts=>({task:"product",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",requestedResolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",needsEdit:request.inputs.some(i=>i.role!=="mask"),needsMask:request.inputs.some(i=>i.role==="mask"),preserveIdentity:request.inputs.length>0,needsText:false,nativeResolution:false,references:request.inputs.filter(i=>i.role!=="mask").length,quantity:request.variants,inputLength:request.prompt.length,imagegenRequirements:requirements});
  const simulate=(modelId:string,requirements:Intent)=>simulateModel(models,billing,modelId,requirements.operation==="cutout"?{...facts(requirements),needsEdit:true,references:1,quantity:1}:facts(requirements),{trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(/[\s,]+/).filter(Boolean)});
- const steps:ImagegenPlan["steps"]=[],warnings:string[]=[];
+ const steps:ImagegenPlan["steps"]=[],warnings:string[]=maskedTarget?["模型编辑后按蒙版合成，未选区保留原图；原生成版本也会保留。"]:[];
  const append=async(key:string,operation:Intent["operation"],modelId:string,requirements:Intent,featureId:"image.generate"|"canvas.image"|"tool.cutout")=>{
   const candidates=simulate(modelId,requirements);if(!candidates.eligible.length)throw new Error("所选模型没有已核实支持本次参数的通道；请管理员维护能力，或选择其他模型");
   if(operation==="cutout"&&candidates.eligible.some(c=>publishedImagegenCapabilities(models.config.upstreamModels.find(u=>u.id===c.upstreamId)!.capabilities).transparent?.state!=="supported"))throw new Error("抠图通道尚未核实透明输出能力");
