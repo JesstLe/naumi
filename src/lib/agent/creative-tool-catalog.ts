@@ -3,7 +3,7 @@ import type { FeatureId } from "../billing/types";
 /** Executable coverage of the creation hub; Agent is an entry, not a recursive tool. */
 export const CREATIVE_AGENT_TOOLS: Record<string, string[]> = {
   competitors: ["list_competitor_items", "import_competitor_image", "analyze_competitor", "replicate_competitor", "edit_competitor"],
-  generate: ["generate_image"], video: ["generate_video", "get_video_task", "list_video_models", "extend_video", "edit_video"],
+  generate: ["generate_image"], batchshot: ["generate_image"], video: ["generate_video", "get_video_task", "list_video_models", "extend_video", "edit_video"],
   suite: ["generate_suite"], agent: [], aplus: ["generate_aplus", "review_aplus_source", "continue_aplus_generation"],
   packaging3d: ["generate_packaging_3d"], replicate: ["replicate_hot"], variations: ["generate_variations"],
   retouch: ["retouch_product"], cutout: ["cutout_image"], avatar: ["cutout_avatar"], recolor: ["recolor_product"],
