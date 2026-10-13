@@ -64,9 +64,12 @@ export async function seedVideoFixture() {
     refs[kind]={...info,id,url,storageKey};
   }
   // Cookie data is emitted only over the parent fixture's private pipe, never as test evidence.
+  await db.saveComfyEndpoint(accounts.a,{name:"Fixture ComfyUI",baseUrl:process.env.VIDEO_FIXTURE_SUPPLIER_ORIGIN!+"/protocol/comfyui",apiKey:process.env.VIDEO_API_KEY!,activate:true});
+  const workflows=await db.saveComfyWorkflow(accounts.a,{name:"Fixture durable video",apiJson:{"load-image":{class_type:"LoadImage",inputs:{image:"old.png"}},"encode":{class_type:"CLIPTextEncode",inputs:{text:"fixture video"}},"save-video":{class_type:"SaveVideo",inputs:{frames:["load-image",0]}}},inputs:{},required:["LoadImage","CLIPTextEncode","SaveVideo"]});
+  const byocWorkflowId=workflows.find(workflow=>workflow.name==="Fixture durable video")!.id;
   const cookies=Object.fromEntries(Object.entries(accounts).map(([id,email])=>[id,`nv_user=${signUserSession(email,Date.now())}`]));
   await db.getPool().end();
-  return {accounts,cookies,refs};
+  return {accounts,cookies,refs,byocWorkflowId};
 }
 if(process.argv.includes("--seed-private")) {
   if(process.env.VIDEO_FIXTURE_PARENT_PIPE!=="1")throw new Error("Private fixture seed must be started by its parent harness");

@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { currentModelExecution } from "@/lib/model-config/context";
+import {currentPrivateVideoContext} from "./private-context";
 
 export type VideoProviderProtocol =
   | "openai-videos"
@@ -140,6 +141,7 @@ export function configuredVideoProviders(): VideoProviderRuntimeConfig[] {
 }
 
 export function getVideoProviderConfig(providerId: string): VideoProviderRuntimeConfig | null {
+  const privateConfig=currentPrivateVideoContext()?.config;if(privateConfig?.id===providerId)return privateConfig;
   const scope = currentModelExecution("video");
   if (scope?.connection.providerId === providerId) {
     const c = scope.connection;

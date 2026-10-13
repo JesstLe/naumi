@@ -4,7 +4,7 @@ import { resolveVideoCapability } from "./contract";
 import { documentedVideoCapability, type VideoModelCapability } from "./capabilities";
 import type { VideoMode, VideoModelDefinition } from "./capability-schema";
 
-function adapterDefinition(protocol:string,modelId:string):VideoModelDefinition|undefined{
+export function adapterDefinition(protocol:string,modelId:string):VideoModelDefinition|undefined{
   const legacy=documentedVideoCapability(protocol,modelId);if(!legacy)return undefined;
   const modes:VideoMode[]=legacy.modes.flatMap(mode=>mode==="image"?["single_image" as const]:mode==="frames"?["frames_required" as const,"last_optional" as const,"first_optional" as const]:[mode]);
   return {modes,durationResolutionMap:[{durations:legacy.durations,resolutions:legacy.resolutions}],aspectRatios:legacy.aspectRatios,

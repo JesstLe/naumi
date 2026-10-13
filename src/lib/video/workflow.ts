@@ -2,6 +2,7 @@ import "server-only";
 import {createHash} from "node:crypto";
 import {getPool,getVideoTask,getVideoTaskByIdempotencyKey,listArtworksByIds} from "../db";
 import {ModelConfigError} from "../model-config/types";
+import {BillingError} from "../billing/types";
 import {createVideoGeneration,type CreateVideoInput} from "./service";
 import {authorizeVideoReferences} from "./reference-materialization";
 import {videoWorkflowPlanSchema,workflowVideoRequestSchema,type VideoWorkflowPlan,type WorkflowVideoRequest} from "./workflow-schema";
@@ -14,6 +15,7 @@ async function ensureWorkflowSchema(){if(!ready)ready=getPool().query(`
  CREATE TABLE IF NOT EXISTS app_video_workflow_runs(id uuid PRIMARY KEY,email text NOT NULL,project_key text NOT NULL,plan jsonb NOT NULL,plan_digest text NOT NULL,
    cancellation_requested_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
  CREATE INDEX IF NOT EXISTS app_video_workflow_runs_owner_idx ON app_video_workflow_runs(email,project_key,created_at DESC);
+ ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS confirmations jsonb NOT NULL DEFAULT '{}'::jsonb;
  CREATE TABLE IF NOT EXISTS app_video_workflow_run_nodes(run_id uuid NOT NULL REFERENCES app_video_workflow_runs(id),node_id text NOT NULL,status text NOT NULL DEFAULT 'pending',
    task_id text,error text,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(run_id,node_id));
 `).then(()=>undefined).catch(error=>{ready=undefined;throw error;});await ready;}
@@ -110,12 +112,12 @@ export async function resumeVideoWorkflow(runId:string,actor?:string){
           if(request.orderedInputs)request.orderedInputs.push({id:reference.id,nodeId:binding.fromNodeId,kind:binding.kind,role:binding.role,value:reference.url!});
         }
         const requestInput:CreateVideoInput={...request,source:"workflow",sourceId:runId,projectKey:plan.projectKey,seconds:request.seconds||String(request.durationSeconds??4),
-          size:request.size||request.resolution||"720p",references,idempotencyKey:operationId(runId,node.id)};
+          size:request.size||request.resolution||"720p",references,idempotencyKey:operationId(runId,node.id),billingConfirmation:run.confirmations?.[node.id]||request.billingConfirmation};
         const created=await createVideoGeneration(run.email,requestInput);await update(state,"processing",undefined,created.taskId);
       }catch(error){
         const recovered=await getVideoTaskByIdempotencyKey(run.email,operationId(runId,node.id));
         if(recovered)await update(state,recovered.status==="failed"?"blocked":"needs_attention","提交结果已保留，等待核对",recovered.id);
-        else await update(state,error instanceof ModelConfigError&&error.status===409?"needs_confirmation":"blocked",error instanceof Error?error.message:"工作流提交失败");
+        else await update(state,error instanceof BillingError&&error.code==="PRICE_CHANGED"?"needs_confirmation":"blocked",error instanceof Error?error.message:"工作流提交失败");
       }
     };
     if(!run.cancellation_requested_at)for(let offset=0;offset<readyNodes.length;offset+=3)await Promise.allSettled(readyNodes.slice(offset,offset+3).map(submitNode));
@@ -126,6 +128,22 @@ export async function recoverVideoWorkflows(limit=2){
   await ensureWorkflowSchema();const runs=(await getPool().query(`SELECT r.id FROM app_video_workflow_runs r WHERE EXISTS (
     SELECT 1 FROM app_video_workflow_run_nodes n WHERE n.run_id=r.id AND n.status IN ('pending','processing')) ORDER BY r.updated_at LIMIT $1`,[Math.max(1,Math.min(10,limit))])).rows;
   for(const run of runs)await resumeVideoWorkflow(run.id);return runs.length;
+}
+
+export async function confirmVideoWorkflowNode(actor:string,runId:string,nodeId:string,confirmation:{version:number;credits:number}){
+  if(!Number.isSafeInteger(confirmation.version)||confirmation.version<1||!Number.isFinite(confirmation.credits)||confirmation.credits<0)throw new ModelConfigError("INVALID_WORKFLOW_CONFIRMATION","报价确认无效",422);
+  await ensureWorkflowSchema();const client=await getPool().connect();
+  try{await client.query("BEGIN");await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-workflow:${runId}`]);
+    const run=(await client.query("SELECT * FROM app_video_workflow_runs WHERE id=$1 AND email=$2 FOR UPDATE",[runId,actor])).rows[0];
+    if(!run)throw new ModelConfigError("WORKFLOW_UNAVAILABLE","工作流不存在",404);
+    if(run.cancellation_requested_at)throw new ModelConfigError("WORKFLOW_STOPPED","工作流已经停止",409);
+    const node=(await client.query("SELECT * FROM app_video_workflow_run_nodes WHERE run_id=$1 AND node_id=$2 FOR UPDATE",[runId,nodeId])).rows[0];
+    if(!node||node.status!=="needs_confirmation")throw new ModelConfigError("WORKFLOW_CONFIRMATION_UNAVAILABLE","此节点无需确认报价",409);
+    await client.query("UPDATE app_video_workflow_runs SET confirmations=jsonb_set(confirmations,$2::text[],$3::jsonb),updated_at=now() WHERE id=$1",[runId,[nodeId],JSON.stringify(confirmation)]);
+    await client.query("UPDATE app_video_workflow_run_nodes SET status='pending',error=NULL,updated_at=now() WHERE run_id=$1 AND node_id=$2",[runId,nodeId]);
+    await client.query("COMMIT");
+  }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
+  return resumeVideoWorkflow(runId,actor);
 }
 export async function listVideoWorkflows(actor:string,projectKey?:string){
   await ensureWorkflowSchema();const rows=(await getPool().query("SELECT id FROM app_video_workflow_runs WHERE email=$1 AND ($2::text IS NULL OR project_key=$2) ORDER BY created_at DESC LIMIT 50",[actor,projectKey||null])).rows;

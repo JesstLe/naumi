@@ -339,6 +339,9 @@ async function ensureSchema(): Promise<void> {
         CREATE INDEX IF NOT EXISTS app_video_tasks_artwork_idx ON app_video_tasks(email, artwork_id);
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS poll_lock_until timestamptz;
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS credits_refunded boolean NOT NULL DEFAULT false;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS cancellation_requested_at timestamptz;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS cancellation_sent_at timestamptz;
+        ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS cancellation_supported boolean;
         -- 视频子系统重写(Phase 1):规范化参数、来源、能力快照与后台恢复调度。
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS provider_id text NOT NULL DEFAULT 'openai-videos';
         ALTER TABLE app_video_tasks ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'canvas';
@@ -4626,6 +4629,10 @@ export async function copyComfyWorkflow(email: string, id: string): Promise<stri
 // ── 视频生成任务(OpenAI videos 协议,聚合商/官方端点通用) ──────────────────────
 
 export type VideoTaskRow = {
+  errorCode?: string;
+  cancellationRequestedAt?: string;
+  cancellationSentAt?: string;
+  supplierCancellationSupported?: boolean;
   billingQuote?:import("@/lib/billing/types").BillingQuote;
   id: string;
   upstreamId: string;
@@ -4672,6 +4679,10 @@ export type VideoResultRow = {
 
 function mapVideoTask(r: Record<string, unknown>): VideoTaskRow {
   return {
+    errorCode:String(r.error_code||""),
+    cancellationRequestedAt:r.cancellation_requested_at?new Date(r.cancellation_requested_at as string).toISOString():undefined,
+    cancellationSentAt:r.cancellation_sent_at?new Date(r.cancellation_sent_at as string).toISOString():undefined,
+    supplierCancellationSupported:typeof r.cancellation_supported==="boolean"?r.cancellation_supported:undefined,
     billingQuote:r.billing_quote as import("@/lib/billing/types").BillingQuote|undefined,
     id: String(r.id),
     upstreamId: String(r.upstream_id ?? ""),
@@ -4736,7 +4747,7 @@ export async function createVideoTask(input: {
       input.email.toLowerCase(),
       input.upstreamId,
       input.model,
-      input.prompt.slice(0, 1000),
+      input.prompt,
       input.size,
       input.seconds,
       input.cost,
@@ -4824,6 +4835,8 @@ export async function createVideoTaskWithReservation(input: {
       [email, idempotencyKey]
     );
     if (existing.rows[0]) {
+      const oldDigest=existing.rows[0].parameters?.creationInputDigest,newDigest=(input.parameters as Record<string,unknown>|undefined)?.creationInputDigest;
+      if(oldDigest&&newDigest&&oldDigest!==newDigest)throw new BillingError("OPERATION_CONFLICT","操作编号已用于不同视频任务",409);
       if(input.billingQuote&&existing.rows[0].billing_request_fingerprint&&existing.rows[0].billing_request_fingerprint!==requestHash)throw new BillingError("OPERATION_CONFLICT","操作编号已用于不同任务",409);
       await client.query("COMMIT");
       return { task: mapVideoTask(existing.rows[0] as Record<string, unknown>), created: false };
@@ -4858,7 +4871,7 @@ export async function createVideoTaskWithReservation(input: {
         input.id,
         email,
         input.model,
-        input.prompt.slice(0, 1000),
+        input.prompt,
         input.size,
         input.seconds,
         input.cost,
@@ -4923,6 +4936,15 @@ export async function markVideoTaskCreationUnknown(input: {
   );
 }
 
+export async function markVideoTaskAttention(email:string,id:string,code:string,message:string){
+  await ensureSchema();await getPool().query(`UPDATE app_video_tasks SET status='needs_attention',error_code=$3,error=$4,
+    next_poll_at=NULL,poll_lock_until=NULL,updated_at=now() WHERE email=$1 AND id=$2 AND status IN ('queued','processing')`,[email.toLowerCase(),id,code,message.slice(0,500)]);
+}
+export async function resumeVideoTaskPolling(email:string,id:string){
+  await ensureSchema();const result=await getPool().query(`UPDATE app_video_tasks SET status='processing',error_code='',error='',poll_attempts=0,next_poll_at=now(),updated_at=now()
+    WHERE email=$1 AND id=$2 AND status='needs_attention' AND error_code='poll_unknown' AND upstream_id<>''`,[email.toLowerCase(),id]);return !!result.rowCount;
+}
+
 export async function bindUnknownVideoTaskUpstream(input: {
   email: string;
   id: string;
@@ -4952,6 +4974,7 @@ export async function getVideoTask(
             next_poll_at, poll_attempts, seconds, created_at, completed_at,
             provider_snapshot, response_body, last_response, error_detail, result_storage_key,
             idempotency_key,billing_quote
+            , cancellation_requested_at,cancellation_sent_at,cancellation_supported,error_code
        FROM app_video_tasks
       WHERE email = $1 AND id = $2`,
     [email.toLowerCase(), id]
@@ -5053,6 +5076,7 @@ export async function completeVideoTask(input: {
       await client.query("COMMIT");
       return;
     }
+    if(task.status==="failed"||task.status==="cancelled")throw new Error("终止的视频任务不能再次结算完成");
     if(task.billing_quote){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-video-${input.id}`,{state:"succeeded",items:[{id:input.id,state:"succeeded",executedQuality:task.parameters?.qualityAudit?.executed||task.billing_quote.facts.quality}]});}else if (meterOn && Number(task.cost) > 0) {
       const ledgerId = `led-video-${input.id}`;
       const seen = await client.query(`SELECT 1 FROM app_ledger WHERE id = $1`, [ledgerId]);
@@ -5125,6 +5149,7 @@ export async function failVideoTask(input: {
     const task = locked.rows[0];
     meterOn=task?.billing_quote?.facts.metered??await creditMeteringEnabled();
     if (!task) throw new Error("视频任务不存在");
+    if(["completed","failed","cancelled"].includes(task.status)){await client.query("COMMIT");return;}
     if(task.billing_quote&&task.status!=="completed"){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-video-${input.id}`,{state:"failed",items:[]});}else if (!task.billing_quote&&task.status !== "completed" && !task.credits_refunded && meterOn && Number(task.cost) > 0) {
       await client.query(
         `UPDATE app_users SET credits_used = GREATEST(credits_used - $2, 0)
@@ -5209,41 +5234,15 @@ export async function listVideoTasks(
     `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
             provider_id, source, source_id, parameters, video_references, capability_snapshot,
             next_poll_at, poll_attempts, seconds, created_at, completed_at,
-            provider_snapshot, response_body, last_response, error_detail, result_storage_key
+            provider_snapshot, response_body, last_response, error_detail, result_storage_key,
+            idempotency_key,billing_quote,error_code,cancellation_requested_at,cancellation_sent_at,cancellation_supported
        FROM app_video_tasks
       WHERE ${where}
       ORDER BY created_at DESC
       LIMIT ${limit}`,
     params
   );
-  return rows.map((r: Record<string, unknown>) => ({
-    id: String(r.id),
-    upstreamId: String(r.upstream_id ?? ""),
-    model: String(r.model ?? ""),
-    prompt: String(r.prompt ?? ""),
-    status: (r.status as VideoTaskRow["status"]) ?? "processing",
-    progress: Number(r.progress ?? 0),
-    cost: Number(r.cost ?? 0),
-    artworkId: String(r.artwork_id ?? ""),
-    videoUrl: String(r.video_url ?? ""),
-    error: String(r.error ?? ""),
-    providerId: String(r.provider_id ?? "openai-videos"),
-    source: String(r.source ?? "canvas"),
-    sourceId: String(r.source_id ?? ""),
-    parameters: (r.parameters ?? {}) as Record<string, unknown>,
-    videoReferences: (r.video_references ?? []) as unknown[],
-    capabilitySnapshot: (r.capability_snapshot ?? {}) as Record<string, unknown>,
-    seconds: String(r.seconds ?? ""),
-    pollAttempts: Number(r.poll_attempts ?? 0),
-    nextPollAt: r.next_poll_at ? new Date(r.next_poll_at as string).toISOString() : undefined,
-    createdAt: r.created_at ? new Date(r.created_at as string).toISOString() : "",
-    completedAt: r.completed_at ? new Date(r.completed_at as string).toISOString() : undefined,
-    providerSnapshot: (r.provider_snapshot ?? {}) as Record<string, unknown>,
-    responseBody: String(r.response_body ?? ""),
-    lastResponse: (r.last_response ?? {}) as Record<string, unknown>,
-    errorDetail: (r.error_detail ?? {}) as Record<string, unknown>,
-    resultStorageKey: String(r.result_storage_key ?? ""),
-  }));
+  return rows.map((row:Record<string,unknown>)=>mapVideoTask(row));
 }
 
 /** 删除已结束的视频任务历史。作品与媒体可能仍被画布引用，因此只删任务/结果记录。 */
@@ -5417,7 +5416,7 @@ export async function scheduleVideoTaskRetry(
             error_code = CASE WHEN $6 THEN 'result_settlement_retry' ELSE error_code END,
             poll_lock_until = NULL,
             updated_at = now()
-      WHERE email = $1 AND id = $2
+      WHERE email = $1 AND id = $2 AND status IN ('queued','processing')
       RETURNING poll_attempts`,
     [
       email.toLowerCase(),

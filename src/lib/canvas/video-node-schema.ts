@@ -1,10 +1,12 @@
 import {z} from "zod";
 import {videoInputSchema} from "../video/contract";
 import {orderedInputSchema} from "../video/references";
+import {videoWorkflowManifestSchema} from "../video/workflow-schema";
 export const videoNodeIdSchema=z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/);
 export const videoProjectKeySchema=z.string().regex(/^(?:tree|batch):[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/);
 export const videoNodeConfigSchema=videoInputSchema.omit({orderedInputs:true}).partial().extend({
   modelId:videoNodeIdSchema.optional(),providerId:videoNodeIdSchema.optional(),comfyWorkflowId:videoNodeIdSchema.optional(),
+  comfyInputs:videoWorkflowManifestSchema.shape.inputs.optional(),
   prompt:z.string().max(16384).optional(),camera:z.strictObject({camera:z.string().max(100).optional(),lens:z.string().max(100).optional(),focalLength:z.string().max(100).optional(),aperture:z.string().max(100).optional(),movement:z.string().max(200).optional()}).optional()});
 const position=z.number().finite().min(-1e8).max(1e8),size=z.number().finite().min(64).max(32768);
 export const videoNodeWriteSchema=z.strictObject({id:videoNodeIdSchema,projectKey:videoProjectKeySchema.optional(),expectedRevision:z.number().int().nonnegative(),operationId:z.uuid(),

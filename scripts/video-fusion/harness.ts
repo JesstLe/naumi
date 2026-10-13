@@ -13,7 +13,7 @@ import type {VideoWireProfile} from "../../src/lib/video/capability-schema";
 export {CAP_RICH} from "./profiles";
 type Account="a"|"b";
 type FixtureRef={id:string;url:string;storageKey:string;durationSeconds:number;hasVideoStream:boolean;mimeType:string;sha256:string};
-type Seed={accounts:Record<Account,string>;cookies:Record<Account,string>;refs:Record<"image"|"lastImage"|"video"|"audio",FixtureRef>};
+type Seed={accounts:Record<Account,string>;cookies:Record<Account,string>;refs:Record<"image"|"lastImage"|"video"|"audio",FixtureRef>;byocWorkflowId:string};
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"../..");
 async function freePort(){const server=createServer();await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));const port=(server.address() as {port:number}).port;await new Promise<void>(resolve=>server.close(()=>resolve()));return port;}
 async function stopChild(child:ChildProcess|undefined){
@@ -79,7 +79,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
     if(!(await fetch(baseUrl+"/api/health",{signal:AbortSignal.timeout(5000)})).ok)throw new Error("Fixture app readiness failed");
     if(options.startWorker!==false){worker=spawn(process.execPath,["scripts/video-worker.mjs"],{cwd:root,env,windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("worker",worker);}
     const countTables=new Set(["app_video_tasks","app_video_results","app_artworks","app_canvas_video_nodes","app_billing_operations","app_ledger"]);
-    return {baseUrl,refs:seed.refs,accounts:seed.accounts,cookies:seed.cookies,logs,manifest,
+    return {baseUrl,refs:seed.refs,accounts:seed.accounts,cookies:seed.cookies,logs,manifest,byocWorkflowId:seed.byocWorkflowId,
       supplierCalls:()=>[...supplier.calls,...objectCalls],setScenario:(name:string)=>supplier.setScenario(name),
       async request<T=unknown>(account:Account,method:string,url:string,body?:unknown){
         if(!url.startsWith("/")||url.startsWith("//"))throw new Error("Fixture requests must stay in the fixture app");
@@ -96,6 +96,8 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
       },
       async balance(account:Account){return Number((await sql.query("SELECT credits_total AS n FROM app_users WHERE email=$1",[seed.accounts[account]])).rows[0].n);},
       async creditState(account:Account){return (await sql.query("SELECT credits_total,credits_used FROM app_users WHERE email=$1",[seed.accounts[account]])).rows[0];},
+      async prepareQueued(account:Account,sourceTask:string){return JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/video-fusion/fixture-actions.ts","--prepare-queued"],{...env,VIDEO_FIXTURE_ACTION_ACTOR:seed.accounts[account],VIDEO_FIXTURE_ACTION_SOURCE:sourceTask})) as {taskId:string};},
+      async taskPersistence(account:Account,id:string){return (await sql.query("SELECT status,parameters,video_references,capability_snapshot,cancellation_requested_at FROM app_video_tasks WHERE email=$1 AND id=$2",[seed.accounts[account],id])).rows[0];},
       async tick(){const r=await fetch(baseUrl+"/api/video/worker/tick",{method:"POST",headers:{"x-video-worker-secret":workerSecret},signal:AbortSignal.timeout(90_000)});if(!r.ok)throw new Error(`Fixture tick failed ${r.status}`);return r.json();},
       async stop(){await stopChild(worker);await stopChild(app);await supplier.close();await sql.end();},
     };

@@ -4,6 +4,7 @@ import { currentModelExecution } from "@/lib/model-config/context";
 import { createDirectVideoAdapter } from "@/lib/video/providers/direct";
 import { openAiVideosAdapter } from "@/lib/video/providers/openai-videos";
 import {createWireVideoAdapter} from "./wire-adapter";
+import {currentPrivateVideoContext} from "./private-context";
 
 // 适配器注册表(§4.2):按 providerId 取适配器。Phase 3 逐个补录
 // Ark/Kling/Gemini/MiniMax/Workflow 适配器,这里保持单一事实源。
@@ -28,6 +29,7 @@ export function registerVideoProvider(adapter: VideoProviderAdapter): void {
 }
 
 export function getVideoProvider(providerId: string): VideoProviderAdapter | null {
+  const privateConfig=currentPrivateVideoContext()?.config;if(privateConfig?.id===providerId)return createWireVideoAdapter(privateConfig);
   if (currentModelExecution("video")?.connection.providerId === providerId) {
     const cfg = getVideoProviderConfig(providerId);
     return cfg?.videoProfile ? createWireVideoAdapter(cfg) : cfg?.protocol === "openai-videos" ? openAiVideosAdapter : createDirectVideoAdapter(providerId);

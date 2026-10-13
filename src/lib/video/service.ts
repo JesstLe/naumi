@@ -1,22 +1,23 @@
 import {materializeVideoReferences} from "./reference-materialization";
+import {createValidatedVideo,videoCreationInputDigest} from "./submission";
+import {videoSubmissionSchema} from "./submission-schema";
+import {VideoContractError} from "./contract";
+import {beginVideoTaskSubmission,confirmVideoTaskCancelled,sendPendingVideoCancellation} from "./cancellation";
+import {currentPrivateVideoContext} from "./providers/private-context";
 import "server-only";
-import { createHash } from "node:crypto";
-import { canonicalConfig } from "@/lib/model-config/repository";
 import { BillingError } from "@/lib/billing/types";
-import { currentModelExecution, currentExecutionBundle, runLegacyModelExecution } from "@/lib/model-config/context";
+import { currentModelExecution, runLegacyModelExecution } from "@/lib/model-config/context";
 import type { ExecutionBundle } from "@/lib/model-config/context";
 import { getModelExecutor, withFrozenExecutionBundle } from "@/lib/model-config/execution";
 import { modelConfigurationEnabled } from "@/lib/model-config/requests";
 import { getModelAdministration } from "@/lib/model-config/server";
 import { ModelConfigError } from "@/lib/model-config/types";
-import {quoteForActor,getBillingRuntime,meteringFor} from "@/lib/billing/server";
+import {getBillingRuntime,meteringFor} from "@/lib/billing/server";
 import {quote} from "@/lib/billing/quote";
-import {assertQuotedVersion,requestQuoteConfirmation} from "@/lib/billing/request";
 
 import {
   addArtworks,
   claimVideoTaskPoll,
-  createVideoTaskWithReservation,
   failVideoTask,
   getVideoTask,
   getVideoTaskByIdempotencyKey,
@@ -25,24 +26,20 @@ import {
   listVideoTasks,
   markVideoTaskCreated,
   markVideoTaskCreationUnknown,
+  markVideoTaskAttention,
   noteVideoTaskResultObserved,
   recordVideoTaskPoll,
   scheduleVideoTaskRetry,
   stageVideoTaskResult,
   touchReservation,
 } from "@/lib/db";
-import { storageEnabled, uploadImage, privateMedia, storageKeyFromManagedUrl, readManagedObject, writeStoredObject, presignStoredObject } from "@/lib/storage";
-import {canReadMedia, getMediaAsset, importLegacyMedia} from "@/lib/media-assets";
+import { storageEnabled, uploadImage } from "@/lib/storage";
 import { completeVideoTask } from "@/lib/db";
 import { getPool } from "@/lib/db";
 import { isImportedHistory } from "@/lib/staging-history";
 import { PermanentVideoCreateError, TransientPollError } from "@/lib/video/types";
 import { getVideoProvider } from "@/lib/video/providers/adapter";
 import { readLimitedVideoResponse } from "@/lib/video/result-download";
-import {
-  configuredVideoCapability,
-  validateAgainstCapability,
-} from "@/lib/video/capabilities";
 import { resolveOpenAiVideosConfig } from "@/lib/video/providers/openai-videos";
 import { configuredVideoProviders, getVideoProviderConfig, publicProviderSnapshot } from "@/lib/video/providers/config";
 import type { VideoTaskRow } from "@/lib/db";
@@ -110,6 +107,15 @@ export type CreateVideoInput = {
   source: VideoTaskSource;
   sourceId?: string;
   projectKey?:string;
+  nodeId?:string;
+  nodeRevision?:number;
+  mode?:VideoGenerationRequest["mode"];
+  orderedInputs?:VideoGenerationRequest["orderedInputs"];
+  shots?:VideoGenerationRequest["shots"];
+  elements?:VideoGenerationRequest["elements"];
+  camera?:import("zod").infer<typeof import("./submission-schema").videoCameraSchema>;
+  workflowManifest?:VideoGenerationRequest["workflowManifest"];
+  retryOf?:string;
   prompt: string;
   seconds: string;
   size: string;
@@ -148,6 +154,10 @@ export type PublicVideoTaskView = Pick<
   | "nextPollAt"
   | "createdAt"
   | "completedAt"
+  | "cancellationRequestedAt"
+  | "cancellationSentAt"
+  | "supplierCancellationSupported"
+  | "errorCode"
 >;
 
 /** Public API projection. Durable provider snapshots and raw responses stay server-only. */
@@ -170,6 +180,10 @@ export function publicVideoTaskView(task: VideoTaskRow): PublicVideoTaskView {
     nextPollAt: task.nextPollAt,
     createdAt: task.createdAt,
     completedAt: task.completedAt,
+    cancellationRequestedAt:task.cancellationRequestedAt,
+    cancellationSentAt:task.cancellationSentAt,
+    supplierCancellationSupported:task.supplierCancellationSupported,
+    errorCode:task.errorCode,
   };
 }
 
@@ -177,39 +191,15 @@ export function resolveVideoServiceConfig() {
   return resolveOpenAiVideosConfig();
 }
 
-const VIDEO_REFERENCE_ROLES = new Set(["first_frame", "last_frame", "reference", "element", "source_video", "source_audio"]);
-const VIDEO_REFERENCE_KINDS = new Set(["image", "video", "audio"]);
-
-function normalizeVideoReferences(value: VideoReference[] | undefined): VideoReference[] {
-  if (!Array.isArray(value)) return [];
-  return value.slice(0, 20).map((raw, index) => {
-    const kind = String(raw?.kind || "");
-    const role = String(raw?.role || "");
-    if (!VIDEO_REFERENCE_KINDS.has(kind) || !VIDEO_REFERENCE_ROLES.has(role)) {
-      throw new Error(`第 ${index + 1} 个视频素材类型无效`);
-    }
-    const url = String(raw.url || "").trim().slice(0, 2000);
-    const artworkId = String(raw.artworkId || "").trim().slice(0, 160);
-    if (!url && !artworkId) throw new Error(`第 ${index + 1} 个视频素材缺少地址`);
-    if (url && !/^(https?:\/\/|\/media\/|data:)/i.test(url)) throw new Error(`第 ${index + 1} 个视频素材地址无效`);
-    return {
-      id: String(raw.id || `ref-${index + 1}`).slice(0, 160),
-      kind: kind as VideoReference["kind"],
-      role: role as VideoReference["role"],
-      url: url || undefined,
-      artworkId: artworkId || undefined,
-      storageKey: String(raw.storageKey || "").slice(0, 500) || undefined,
-      mimeType: String(raw.mimeType || "").slice(0, 100) || undefined,
-    };
-  });
-}
-
 /** 创建视频任务:规范化 → 能力校验 → 预扣 → 上游创建 → 落库。 */
 export async function createVideoGeneration(
   email: string,
   input: CreateVideoInput
 ): Promise<{ taskId: string; cost: number }> {
-  const key = String(input.idempotencyKey || "").trim().slice(0, 100);
+  email=email.toLowerCase();
+  const parsed=videoSubmissionSchema.safeParse(input);
+  if(!parsed.success)throw new VideoContractError("INVALID_VIDEO_SUBMISSION","视频提交字段无效",parsed.error.issues.map(issue=>issue.path.join(".")));
+  const key = String(input.idempotencyKey || "").trim();
   if (key) {
     const existing = await getVideoTaskByIdempotencyKey(email, key);
     if (existing?.parameters?.creationInputDigest) {
@@ -230,185 +220,9 @@ export async function createVideoGeneration(
   });
 }
 
-function videoInputDigest(input: CreateVideoInput) {
-  const { billingConfirmation: _confirmation, idempotencyKey: _key, ...intent } = input;
-  return createHash("sha256").update(canonicalConfig(intent)).digest("hex");
-}
-
-async function createVideoGenerationUnlocked(
-  email: string,
-  input: CreateVideoInput
-): Promise<{ taskId: string; cost: number }> {
-  const execution = currentModelExecution("video");
-  const requestedProviderId = execution?.connection.providerId || String(input.providerId || configuredVideoProviders()[0]?.id || VIDEO_PROVIDER_ID);
-  const providerConfig = getVideoProviderConfig(requestedProviderId);
-  if (!providerConfig) {
-    throw new Error("视频服务未配置或供应商不存在");
-  }
-  const providerId = providerConfig.id;
-  const modelId = execution?.connection.wireModel || String(input.modelId || providerConfig.defaultModel);
-  const cfg = providerId === VIDEO_PROVIDER_ID ? resolveVideoServiceConfig() : providerConfig;
-  if (!cfg) throw new Error("视频服务未配置(需在服务器设置 VIDEO_API_BASE_URL/KEY/MODEL)");
-  const cap = configuredVideoCapability(providerConfig.protocol, providerId, modelId, execution?.capabilities);
-  const durationSeconds = Number(input.durationSeconds ?? input.seconds) || cap.defaultDuration || 4;
-
-  // 素材:画布图或 agent URL → 唯一 first_frame 参考(能力声明上限内)
-  let imageBytes: Buffer | null = null;
-  let imageMime = "image/png";
-  const references: VideoReference[] = normalizeVideoReferences(input.references);
-  if (input.artworkId) {
-    const source = (await listArtworksByIds(email, [input.artworkId]))[0];
-    if (!source) throw new Error("图片不存在或无权访问");
-    references.unshift({
-      id: input.artworkId,
-      kind: "image",
-      role: "first_frame",
-      artworkId: source.id,
-      url: source.image,
-    });
-  } else if (input.imageUrl) {
-    references.unshift({
-      id: input.imageUrl,
-      kind: "image",
-      role: "first_frame",
-      url: input.imageUrl,
-    });
-  }
-
-  // 远程供应商必须能访问引用素材。本地 /media 地址仅本站可见；部署时可通过
-  // VIDEO_REFERENCE_PUBLIC_BASE_URL 指向对外可访问的 Naumi 站点，或直接使用 R2。
-  if(privateMedia) {
-    for(const reference of references) {
-      const key = reference.url && storageKeyFromManagedUrl(reference.url);
-      if(key && !await canReadMedia(key,email)) throw new Error("素材不存在或无权访问");
-    }
-  }
-  if (!privateMedia && providerConfig.protocol !== "openai-videos") {
-    const publicBase = String(process.env.VIDEO_REFERENCE_PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
-    for (const reference of references) {
-      if (!reference.url?.startsWith("/media/")) continue;
-      if (!publicBase) {
-        throw new Error("远程视频供应商无法读取本地素材，请配置 R2 或 VIDEO_REFERENCE_PUBLIC_BASE_URL");
-      }
-      reference.url = `${publicBase}${reference.url}`;
-    }
-  }
-
-  const hasVideoRef = references.some((ref) => ref.kind === "video");
-  const hasLastFrame = references.some((ref) => ref.role === "last_frame");
-  const hasReference = references.some((ref) => ref.role === "reference" || ref.role === "element");
-  const mode: "text" | "image" | "frames" | "reference" | "video_edit" = hasVideoRef
-    ? "video_edit"
-    : hasLastFrame
-      ? "frames"
-      : hasReference
-        ? "reference"
-        : references.length ? "image" : "text";
-  const size = input.resolution || input.size || "1280x720";
-  const check = validateAgainstCapability(cap, {
-    durationSeconds,
-    size,
-    referenceImageCount: references.filter((ref) => ref.kind === "image").length,
-    referenceVideoCount: references.filter((ref) => ref.kind === "video").length,
-    referenceAudioCount: references.filter((ref) => ref.kind === "audio").length,
-    hasFirstFrame: references.some((ref) => ref.role === "first_frame"),
-    hasLastFrame,
-    negativePrompt: input.negativePrompt,
-    generateAudio: input.generateAudio,
-    watermark: input.watermark,
-    providerOptions: input.providerOptions,
-    mode,
-  });
-  if (!check.ok) throw new Error(check.error);
-
-  // 读取参考图字节(multipart 上传用);失败在扣费前抛出
-  let imageForUpload: { bytes: Buffer; mime: string; filename: string } | undefined;
-  const uploadReference = providerConfig.protocol === "openai-videos"
-    ? references.find((ref) => ref.kind === "image" && (ref.artworkId || ref.url))
-    : undefined;
-  if (uploadReference) {
-    const ref = uploadReference;
-    const { readCanvasImage } = await import("@/lib/canvas-image-input");
-    const img = await readCanvasImage(ref.url || ref.artworkId || "", "http://localhost/", email);
-    imageBytes = img.buffer;
-    imageMime = img.mimeType;
-    imageForUpload = { bytes: img.buffer, mime: img.mimeType, filename: `naumi-ref-${Date.now()}.png` };
-  }
-
-  const billingQuote=await quoteForActor(email,{feature:"video.generate",quantity:1,modelId,providerId,resolution:input.resolution||size});
-  if(input.billingConfirmation)assertQuotedVersion(input.billingConfirmation,billingQuote);
-  const cost = billingQuote.requestedCredits;
-  const taskId = `vid-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-  const idempotencyKey = input.idempotencyKey || taskId;
-  const request: VideoGenerationRequest = {
-      source: input.source,
-      sourceId: input.sourceId,
-      providerId,
-      modelId,
-      prompt: input.prompt,
-      negativePrompt: input.negativePrompt,
-      durationSeconds,
-      aspectRatio: input.aspectRatio,
-      resolution: input.resolution || size,
-      width: input.width,
-      height: input.height,
-      generateAudio: input.generateAudio,
-      watermark: input.watermark,
-      references: imageForUpload
-        ? references.map((ref) => ref.id === uploadReference?.id ? { ...ref, mimeType: imageMime } : ref)
-        : references,
-      providerOptions: input.providerOptions,
-      idempotencyKey,
-  };
-  if (!getVideoProvider(providerId)) throw new Error(`视频适配器 ${providerId} 未注册`);
-  const parameters = {
-    creationInputDigest: videoInputDigest(input),
-    ...(currentExecutionBundle() ? { modelExecutions: structuredClone(currentExecutionBundle()) } : {}),
-    prompt: input.prompt,
-    seconds: durationSeconds,
-    durationSeconds,
-    size,
-    providerId,
-    modelId,
-    negativePrompt: input.negativePrompt || "",
-    aspectRatio: input.aspectRatio || "",
-    resolution: input.resolution || size,
-    width: input.width || null,
-    height: input.height || null,
-    generateAudio: Boolean(input.generateAudio),
-    watermark: Boolean(input.watermark),
-    references,
-    providerOptions: input.providerOptions || {},
-    providerSnapshot: publicProviderSnapshot(providerConfig),
-    idempotencyKey,
-  };
-  const claimed = await createVideoTaskWithReservation({
-      billingQuote,
-      id: taskId,
-      email,
-      model: modelId,
-      prompt: input.prompt,
-      size,
-      seconds: input.seconds,
-      cost,
-      requestBody: JSON.stringify(parameters),
-      providerId,
-      source: input.source,
-      sourceId: input.sourceId,
-      parameters,
-      videoReferences: references,
-      capabilitySnapshot: { ...cap },
-      idempotencyKey,
-      channelId: providerId,
-      providerSnapshot: publicProviderSnapshot(providerConfig),
-  });
-  if (!claimed.created) return { taskId: claimed.task.id, cost: claimed.task.cost };
-  try {
-    await submitQueuedVideoTask(email, claimed.task, request, imageForUpload, false);
-  } catch (error) {
-    await scheduleCreationRetry(email, claimed.task, error);
-  }
-  return { taskId: claimed.task.id, cost: claimed.task.cost };
+const videoInputDigest=videoCreationInputDigest;
+async function createVideoGenerationUnlocked(email:string,input:CreateVideoInput):Promise<{taskId:string;cost:number}>{
+  return createValidatedVideo(email,input,{submit:(actor,task,request)=>submitQueuedVideoTask(actor,task,request,undefined,false),creationError:scheduleCreationRetry});
 }
 
 /** 临时桥:adapter.create 需要 url,而本地文件场景直接喂字节;保持一期等价行为。 */
@@ -434,8 +248,9 @@ async function createWithLocalImage(
   return (await adapter.create(withDataUrl)) as VideoProviderCreateResult;
 }
 
-function requestFromQueuedTask(task: VideoTaskRow): VideoGenerationRequest {
+export function requestFromQueuedTask(task: VideoTaskRow): VideoGenerationRequest {
   const parameters = task.parameters ?? {};
+  if(parameters.version===2&&parameters.request)return structuredClone(parameters.request) as VideoGenerationRequest;
   return {
     source: task.source as VideoTaskSource,
     sourceId: task.sourceId || undefined,
@@ -448,8 +263,8 @@ function requestFromQueuedTask(task: VideoTaskRow): VideoGenerationRequest {
     resolution: String(parameters.resolution || parameters.size || "") || undefined,
     width: Number(parameters.width) || undefined,
     height: Number(parameters.height) || undefined,
-    generateAudio: parameters.generateAudio === true,
-    watermark: parameters.watermark === true,
+    generateAudio: typeof parameters.generateAudio==="boolean"?parameters.generateAudio:undefined,
+    watermark: typeof parameters.watermark==="boolean"?parameters.watermark:undefined,
     references: (task.videoReferences ?? []) as VideoReference[],
     providerOptions: (parameters.providerOptions ?? {}) as Record<string, unknown>,
     idempotencyKey: task.idempotencyKey || String(parameters.idempotencyKey || "") || task.id,
@@ -457,6 +272,7 @@ function requestFromQueuedTask(task: VideoTaskRow): VideoGenerationRequest {
 }
 
 function videoCreationRetryConfigMatches(task: VideoTaskRow): boolean {
+  if(task.parameters?.version===2)return task.parameters.submissionState==="prepared";
   // A declared idempotency header is not proof that a paid POST was deduplicated.
   // Versioned tasks without an accepted upstream ID require reconciliation before resubmission.
   if (task.parameters?.modelExecutions) return false;
@@ -498,7 +314,7 @@ async function imageForQueuedTask(
   return { bytes: image.buffer, mime: image.mimeType, filename: `naumi-ref-${task.id}.png` };
 }
 
-async function submitQueuedVideoTask(
+export async function submitQueuedVideoTask(
   email: string,
   task: VideoTaskRow,
   preparedRequest?: VideoGenerationRequest,
@@ -509,21 +325,25 @@ async function submitQueuedVideoTask(
   const adapter = getVideoProvider(task.providerId || VIDEO_PROVIDER_ID);
   if (!adapter) throw new Error(`视频适配器 ${task.providerId} 未注册`);
   const persistedRequest = preparedRequest ?? requestFromQueuedTask(task);
+  if(task.parameters.byocSnapshot){const context=currentPrivateVideoContext();if(!context)throw new Error("自备视频执行配置缺失");persistedRequest.workflowManifest=context.manifest;}
   const cfg=getVideoProviderConfig(task.providerId);
   const multipart=cfg?.protocol==="openai-videos"&&!cfg.videoProfile||["openai-videos","comfyui","runninghub"].includes(cfg?.videoProfile||"");
   const inlineImages=cfg?.videoProfile==="openai-videos"||cfg?.videoProfile==="gemini"||cfg?.videoProfile==="cogvideox3"||cfg?.videoProfile==="grok2api"||cfg?.videoProfile==="agnes"||cfg?.videoProfile==="compshare-hailuo";
   const request=await materializeVideoReferences(email,persistedRequest,{multipart,inlineImages});
   const image=preparedImage??await imageForQueuedTask(task,request,email);
+  const submission=await beginVideoTaskSubmission(email,task.id);
+  if(submission==="cancelled")return;
+  if(submission!=="started")throw new IdempotencyConfigDriftError();
   const {withBiModelContext}=await import("@/lib/bi/model-observer");
   const created = await withBiModelContext(email,'video.generate',task.id,()=>createWithLocalImage(adapter, request, image));
-  const {videoSupplierReceipt}=await import("@/lib/supplier-cost/video");
-  await videoSupplierReceipt(task.id,created.upstreamTaskId,created.status,created.rawResponse);
   await markVideoTaskCreated({
     email,
     id: task.id,
     upstreamId: created.upstreamTaskId,
     responseBody: JSON.stringify(sanitizeVideoProviderPayload(created.rawResponse ?? {})),
   });
+  const {videoSupplierReceipt}=await import("@/lib/supplier-cost/video");
+  await videoSupplierReceipt(task.id,created.upstreamTaskId,created.status,created.rawResponse).catch(()=>{});
 }
 
 async function scheduleCreationRetry(
@@ -531,9 +351,11 @@ async function scheduleCreationRetry(
   task: VideoTaskRow,
   error: unknown
 ): Promise<void> {
+  task=await getVideoTask(email,task.id)||task;
+  if(["completed","failed","cancelled"].includes(task.status)||task.upstreamId)return;
   const nextAttempt = Number(task.pollAttempts ?? 0) + 1;
   const message = error instanceof Error ? error.message : "视频上游创建暂时失败";
-  if (error instanceof PermanentVideoCreateError || error instanceof ModelConfigError && error.code === "PROVIDER_BUSY") {
+  if (error instanceof PermanentVideoCreateError || error instanceof ModelConfigError && error.code === "PROVIDER_BUSY" || error instanceof VideoContractError&&task.parameters?.submissionState==="prepared") {
     await failVideoTask({ email, id: task.id, error: message });
     return;
   }
@@ -556,6 +378,7 @@ async function scheduleCreationRetry(
     await failVideoTask({ email, id: task.id, error: "视频上游创建连续失败，任务已终止并退款" });
   }
 }
+export const handleVideoCreationError=scheduleCreationRetry;
 
 async function scheduleTransientTaskRetry(
   email: string,
@@ -581,8 +404,8 @@ async function scheduleTransientTaskRetry(
     if (completionPhase) {
       return { ...task, error: `${terminalMessage}；系统将低频持续重试`, pollAttempts: attempts };
     }
-    await failVideoTask({ email, id: task.id, error: terminalMessage });
-    return { ...task, status: "failed", error: terminalMessage };
+    await markVideoTaskAttention(email,task.id,"poll_unknown","上游结果长时间无法核对，预扣保持，等待人工核查");
+    return (await getVideoTask(email,task.id))||task;
   }
   return { ...task, error: message, pollAttempts: attempts };
 }
@@ -600,6 +423,7 @@ export async function pollAndSettle(
   const task = await getVideoTask(email, id);
   if (!task) return null;
   if (await isImportedHistory(getPool(), "app_video_tasks", id)) return task;
+  if(task.parameters.byocSnapshot){const {withByocVideoTask}=await import("./byoc");return withByocVideoTask(email,task,()=>pollAndSettleTask(email,id,task));}
   if (task.parameters?.modelExecutions) return withFrozenExecutionBundle(task.parameters.modelExecutions as import("@/lib/model-config/context").ExecutionBundle, () => pollAndSettleTask(email, id, task));
   return runLegacyModelExecution(() => pollAndSettleTask(email, id, task));
 }
@@ -646,6 +470,7 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
     parameters: task.parameters,
     references: (task.videoReferences ?? []) as never[],
   };
+  await sendPendingVideoCancellation(email,task,snapshot);
   let pollSucceeded = false;
   let completionObserved = false;
   try {
@@ -737,8 +562,11 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
       });
       return getVideoTask(email, id);
     }
-    if (result.status === "failed" || result.status === "cancelled") {
-      const message = result.errorMessage || (result.status === "cancelled" ? "上游任务已取消" : "上游生成失败");
+    if (result.status === "cancelled") {
+      await confirmVideoTaskCancelled(email,id);return getVideoTask(email,id);
+    }
+    if (result.status === "failed") {
+      const message = result.errorMessage || "上游生成失败";
       await failVideoTask({ email, id, error: message });
       return { ...task, status: "failed", error: message };
     }
@@ -752,15 +580,15 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
         task,
         error,
         completionObserved
-          ? "视频结果连续落地失败，任务已终止并退款"
-          : "上游长时间无响应,任务已终止并退款",
+          ? "视频结果落地暂时失败，预扣保持"
+          : "上游结果暂时无法核对，预扣保持",
         completionObserved,
         pollSucceeded && !completionObserved
       );
     }
     const message = error instanceof Error ? error.message : "视频任务处理失败";
-    await failVideoTask({ email, id, error: message });
-    return { ...task, status: "failed", error: message };
+    await markVideoTaskAttention(email,id,"poll_unknown",message);
+    return getVideoTask(email,id);
   }
 }
 
