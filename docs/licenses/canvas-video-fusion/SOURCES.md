@@ -15,3 +15,6 @@ The current capability schema, request validation and fixture code are written f
 | First/last, structured shot and element context | infinite-canvas web/src/app/(user)/canvas/components/canvas-node-generation.ts |
 
 Actual later source/Skill adaptations must add their paths and attribution here when implemented. This record does not claim that those later modules have already been copied or verified.
+
+
+Implemented wire behavior adaptations at IC SHA68b37db04b9083c3ff0af67ffe362f85d04d1f9f (AGPL-3.0): web/src/services/api/video.ts (Grok/Cog/Agnes/Gemini/MiniMax requests), web/src/lib/gemini.ts (inline image wrapper), web/src/services/api/protocols/{ark,kie,apimart}.ts (poll response shapes), handler/kie_video.go (Kling3 and Omni translations), handler/apimart_video.go (Kling multi-shot/elements/video-list). Naumi implementations are src/lib/video/providers/protocols/*.ts with owned-media authorization and task/billing infrastructure retained. Upstream truncation and model-name capability inference were replaced by explicit profile/definition checks. These modules have not yet passed checkpoint A or paid-supplier acceptance.

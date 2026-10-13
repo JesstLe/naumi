@@ -35,6 +35,8 @@ export type VideoReference = {
   durationSeconds?: number;
   width?: number;
   height?: number;
+  /** Submission-only server materialization; never accepted from a client or persisted. */
+  inlineData?:{mimeType:string;data:string};
 };
 
 export type VideoGenerationRequest = {

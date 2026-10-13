@@ -35,8 +35,8 @@ export type VideoModelDefinition=z.infer<typeof videoDefinitionSchema>;
 export type VideoOptionDefinition=z.infer<typeof videoOptionSchema>;
 export type CapabilitySource="admin"|"vendor"|"adapter"|"unknown";
 export type ResolvedVideoCapability=VideoModelDefinition&{sources:Record<string,CapabilitySource>};
-export const VIDEO_WIRE_PROFILES=["openai-videos","grok2api","cogvideox3","agnes","ark","kie-generic","kie-kling","kie-kling-omni-text","kie-kling-omni-image","kie-kling-omni-reference","kie-kling-omni-transform","kie-motion-control",
-  "apimart-generic","apimart-kling","apimart-kling-omni","apimart-motion-control","gemini","minimax","metaso","autodl","runninghub","comfyui",
+export const VIDEO_WIRE_PROFILES=["openai-videos","grok2api","cogvideox3","agnes","agnes-v25","ark","kie-generic","kie-kling","kie-kling-v26","kie-kling-omni-text","kie-kling-omni-image","kie-kling-omni-reference","kie-kling-omni-transform","kie-motion-control",
+  "apimart-generic","apimart-kling","apimart-kling-v26","apimart-kling-omni","apimart-motion-control","gemini","minimax","metaso","autodl","runninghub","comfyui",
   "tokendance-seedance","tokendance-kling-text","tokendance-kling-image","tokendance-kling-motion","tokendance-kling-omni","tokendance-wan3","tokendance-happyhorse","tokendance-minimax",
   "tfrouter-generic","tfrouter-kling","tfrouter-kling-omni","tfrouter-grok","compshare-h3","compshare-hailuo","compshare-vidu","compshare-vidu-extend","compshare-vidu-lip-sync","compshare-wan","compshare-seedance"] as const;
 export const videoWireProfileSchema=z.enum(VIDEO_WIRE_PROFILES);

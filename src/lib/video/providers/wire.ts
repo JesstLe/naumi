@@ -2,6 +2,7 @@ import {VideoContractError} from "../contract";
 import {TransientPollError,type VideoGenerationRequest,type VideoProviderCreateResult,type VideoProviderPollResult,type VideoTaskStatus} from "../types";
 import type {VideoProviderRuntimeConfig} from "./config";
 import type {VideoWireProfile} from "../capability-schema";
+import {installVideoWireCodecs} from "./protocols";
 
 export type VideoWireContext={provider:VideoProviderRuntimeConfig;profile:VideoWireProfile;request:VideoGenerationRequest};
 export type VideoWireRequest={path:string;method:"POST"|"GET"|"DELETE";body?:unknown;encoding:"json"|"multipart"|"none"};
@@ -11,7 +12,7 @@ const codecs=new Map<VideoWireProfile,VideoWireCodec>();
 export function registerVideoWireProfile(profile:VideoWireProfile,codec:VideoWireCodec){
   if(codecs.has(profile))throw new Error(`Duplicate video wire profile ${profile}`);codecs.set(profile,codec);
 }
-function codec(profile:VideoWireProfile){const value=codecs.get(profile);if(!value)throw new VideoContractError("VIDEO_PROFILE_UNAVAILABLE",`视频协议${profile}尚未配置`,["videoProfile"]);return value;}
+function codec(profile:VideoWireProfile){installVideoWireCodecs();const value=codecs.get(profile);if(!value)throw new VideoContractError("VIDEO_PROFILE_UNAVAILABLE",`视频协议${profile}尚未配置`,["videoProfile"]);return value;}
 export function buildVideoCreate(context:VideoWireContext):VideoWireRequest{
   const wire=codec(context.profile).create(context);
   return {...wire,path:context.provider.createPath||wire.path};
@@ -68,6 +69,12 @@ export function wireReferences(context:VideoWireContext){
     videos:refs.filter(ref=>ref.kind==="video").map(ref=>ref.url!),audios:refs.filter(ref=>ref.kind==="audio").map(ref=>ref.url!),
     first:refs.find(ref=>ref.role==="first_frame")?.url,last:refs.find(ref=>ref.role==="last_frame")?.url};
 }
+export function unsupportedWire(context:VideoWireContext,message:string):never{throw new VideoContractError("VIDEO_PROFILE_INPUT_UNSUPPORTED",`${context.profile}: ${message}`,["references"]);}
+export function rejectAdvanced(context:VideoWireContext){if(context.request.shots?.length||context.request.elements?.length)unsupportedWire(context,"当前协议没有结构化分镜或元素字段");}
+export function createdResult(payload:unknown,id:unknown,status?:unknown):VideoProviderCreateResult{
+  return {upstreamTaskId:requiredTaskId(id),status:status===undefined||status===""?"processing":wireStatus(status),rawResponse:sanitizeWirePayload(payload)};
+}
+export function imageWireValue(ref:VideoGenerationRequest["references"][number]){return ref.inlineData?`data:${ref.inlineData.mimeType};base64,${ref.inlineData.data}`:ref.url;}
 /** Profiles opt in to typed field names. Options cannot replace model, prompt, references, task IDs or authentication. */
 export function selectWireOptions(context:VideoWireContext,mapping:Record<string,string>):Record<string,unknown>{
   const result:Record<string,unknown>={};

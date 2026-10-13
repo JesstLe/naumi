@@ -20,6 +20,7 @@ export type VideoProviderRuntimeConfig = {
   apiKey: string;
   models: string[];
   defaultModel: string;
+  timeoutMs?:number;
   createPath?: string;
   pollPath?: string;
   contentPath?: string;
@@ -70,6 +71,7 @@ function normalized(value: Partial<VideoProviderRuntimeConfig>): VideoProviderRu
     apiKey,
     models: models.length ? models : [defaultModel],
     defaultModel,
+    timeoutMs:value.timeoutMs,
     createPath: value.createPath,
     pollPath: value.pollPath,
     contentPath: value.contentPath,
@@ -134,7 +136,7 @@ export function getVideoProviderConfig(providerId: string): VideoProviderRuntime
   const scope = currentModelExecution("video");
   if (scope?.connection.providerId === providerId) {
     const c = scope.connection;
-    return { id: c.providerId, label: scope.frozen.publicModelId, protocol: c.protocol as VideoProviderProtocol, baseUrl: c.baseUrl.replace(/\/+$/, ""), apiKey: c.apiKey, models: [c.wireModel], defaultModel: c.wireModel, ...c.options, idempotencyStrategy: c.options?.idempotencyStrategy || "none" };
+    return { id: c.providerId, label: scope.frozen.publicModelId, protocol: c.protocol as VideoProviderProtocol, baseUrl: c.baseUrl.replace(/\/+$/, ""), apiKey: c.apiKey, models: [c.wireModel], defaultModel: c.wireModel, timeoutMs:c.timeoutMs, ...c.options, idempotencyStrategy: c.options?.idempotencyStrategy || "none" };
   }
   return configuredVideoProviders().find((p) => p.id === providerId) ?? null;
 }

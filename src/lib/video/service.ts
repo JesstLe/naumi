@@ -468,6 +468,9 @@ function videoCreationRetryConfigMatches(task: VideoTaskRow): boolean {
     "protocol",
     "baseUrl",
     "createPath",
+    "videoProfile",
+    "pollPath",
+    "contentPath",
     "workflowId",
     "defaultModel",
     "credentialFingerprint",
@@ -505,8 +508,10 @@ async function submitQueuedVideoTask(
   const adapter = getVideoProvider(task.providerId || VIDEO_PROVIDER_ID);
   if (!adapter) throw new Error(`视频适配器 ${task.providerId} 未注册`);
   const persistedRequest = preparedRequest ?? requestFromQueuedTask(task);
-  const multipart=getVideoProviderConfig(task.providerId)?.protocol==="openai-videos";
-  const request=await materializeVideoReferences(email,persistedRequest,{multipart});
+  const cfg=getVideoProviderConfig(task.providerId);
+  const multipart=cfg?.protocol==="openai-videos"&&!cfg.videoProfile||cfg?.videoProfile==="openai-videos";
+  const inlineImages=cfg?.videoProfile==="openai-videos"||cfg?.videoProfile==="gemini"||cfg?.videoProfile==="cogvideox3"||cfg?.videoProfile==="grok2api"||cfg?.videoProfile==="agnes";
+  const request=await materializeVideoReferences(email,persistedRequest,{multipart,inlineImages});
   const image=preparedImage??await imageForQueuedTask(task,request,email);
   const {withBiModelContext}=await import("@/lib/bi/model-observer");
   const created = await withBiModelContext(email,'video.generate',task.id,()=>createWithLocalImage(adapter, request, image));

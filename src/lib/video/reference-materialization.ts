@@ -38,10 +38,14 @@ export async function authorizeVideoReferences(actor:string,request:VideoGenerat
 }
 
 /** Signed addresses exist only in this submission copy; stable owned keys remain in the persisted request. */
-export async function materializeVideoReferences(actor:string,request:VideoGenerationRequest,options:{multipart?:boolean}={}):Promise<VideoGenerationRequest>{
+export async function materializeVideoReferences(actor:string,request:VideoGenerationRequest,options:{multipart?:boolean;inlineImages?:boolean}={}):Promise<VideoGenerationRequest>{
   const authorized=await authorizeVideoReferences(actor,request),urls=new Map<string,string>();
   const materialize=async(ref:VideoReference)=>{
     const key=ref.storageKey!;
+    if(options.inlineImages&&ref.kind==="image"){
+      const input=await readManagedObject(`/media/${key}`,12*1024*1024);
+      return {...ref,inlineData:{mimeType:ref.mimeType!,data:Buffer.from(input.bytes).toString("base64")}};
+    }
     if(options.multipart)return {...ref};
     let url=urls.get(key);
     if(!url){

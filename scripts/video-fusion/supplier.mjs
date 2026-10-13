@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { randomUUID,createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -12,7 +12,7 @@ export function publicFixtureValue(value, key = "") {
   if(typeof value==="string"&&(value.startsWith("data:")||value.length>4000))return {materialString:true,length:value.length};
   return value;
 }
-export async function createVideoSupplier({ assetsRoot, manifest, token = randomUUID(), validateWire, objectHandler } = {}) {
+export async function createVideoSupplier({ assetsRoot, manifest, token = randomUUID(), validateWire, validatePoll, objectHandler } = {}) {
   if (!assetsRoot || !manifest?.files?.length) throw new Error("A verified video manifest is required");
   const calls = [], tasks = new Map(), keys = new Map();
   let scenario = "success", origin = "";
@@ -24,7 +24,11 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
     if (String(req.headers["content-type"]).includes("multipart/form-data")) {
       const request = new Request(origin+req.url, {method:"POST",headers: req.headers,body:bytes});
       const data = await request.formData(), out = {};
-      for (const [key,value] of data) out[key] = typeof value === "string" ? value : {file:value.name,mimeType:value.type,bytes:value.size};
+      for (const [key,value] of data){
+        if(typeof value==="string")out[key]=value;
+        else{const raw=Buffer.from(await value.arrayBuffer()),sha256=createHash("sha256").update(raw).digest("hex");
+          out[key]={file:value.name,mimeType:value.type,bytes:value.size,sha256};calls.push({phase:"reference-read",encoding:"multipart",bytes:raw.length,sha256});}
+      }
       return out;
     }
     return bytes.length ? JSON.parse(bytes.toString()) : {};
@@ -57,7 +61,7 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
         calls.push({phase:"image-create",path:pathname,body:publicFixtureValue(body)});
         return respond(res,{created:Math.floor(Date.now()/1000),data:[{b64_json:(await readFile(path.join(assetsRoot,"first.png"))).toString("base64")}]});
       }
-      const pollId = String(body.taskId || body.taskICode || url.searchParams.get("taskId") || "");
+      const pollId = String(body.taskId || body.taskICode || url.searchParams.get("taskId") || url.searchParams.get("video_id") || "");
       const task = tasks.get(pollId) || [...tasks.values()].find(t=>pathname.endsWith(`/${t.id}`) || pathname.includes(`/operations/${t.id}`));
       if (task && (req.method === "DELETE" || pathname.endsWith("/cancel"))) {
         calls.push({phase:"cancel",taskId:task.id});
@@ -65,6 +69,7 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
         task.cancelled=true; return respond(res,{id:task.id,status:"cancelled"});
       }
       if (task) {
+        await validatePoll?.({protocol,path:pathname+url.search,taskId:task.id,body,method:req.method});
         calls.push({phase:"poll",taskId:task.id,path:pathname,protocol}); task.polls++;
         if (scenario === "poll-503" && task.polls===1) return respond(res,{error:"temporarily busy"},503);
         if (scenario === "malformed-poll") return respond(res,{unrecognized:"state"});

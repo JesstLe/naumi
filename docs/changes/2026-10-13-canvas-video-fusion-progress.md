@@ -16,7 +16,7 @@
 | 规范能力/引用 | 初版已写入，尚未验收 | 测试脚本已写；未执行 | Task2；10模式、nullable未知/false/0/omit、组合规格、数量/角色/大小时长/分镜元素校验及双编号；接线到真实提交尚未完成 |
 | 后台/资料/公开目录 | 初版已写入，尚未验收 | 配置脚本已写；未执行 | Task3；独立供应商修订、管理员优先、目录/执行共享定义、发布事务内绑定默认能力；完整配置中心与常用模型管理均可编辑。协议和真实提交仍待Task4—9 |
 | wire/素材提交 | 共享层初版已写入 | 测试脚本已写；未执行 | Task4；统一普通/元素素材身份权限与临时签名、typed wire接口和严格响应工具；协议绑定在Task5—7、预扣前接线在Task9 |
-| IC协议分支 | 未实现 | 未执行 | Task5；OpenAI/Grok/Cog/Agnes/Ark/Kling/Gemini/MiniMax |
+| IC协议分支 | 初版已写入，尚未验收 | 24个HTTP分支用例已写；未执行 | Task5；OpenAI/Grok/Cog/Agnes两版/Ark/Kling2.6及3/Omni四分支/运动/Gemini/MiniMax；共享适配器已接线，边界和Task9/10完整恢复仍待A/B |
 | TokenDance/TF/Compshare | 未实现 | 未执行 | Task6；实际源码全部路由分支与元数据 |
 | 视频工作流 | 未实现 | 未执行 | Task7；ComfyUI/AutoDL/RunningHub、串并行真实产物依赖 |
 | 节点/项目 | 未实现 | 未执行 | Task8；无图节点、revision、事务和稳定归属 |
@@ -49,3 +49,12 @@ Task3实现记录（尚未功能验收）：
 
 
 Task4共享层记录（尚未功能验收）：引用解析核对artworkId、storageKey、URL的一致性与作品完成状态，真实MIME/大小取服务端媒体记录。普通和嵌套元素在提交副本统一授权、签名900秒，存储身份继续保留；不以不相关作品ID授权外部URL。外部素材先走媒体上传，媒体真实时长核验在Task10补齐。新增typed wire注册/构造/解析接口、有限明确字段、未知状态和无结果完成响应的暂态分类；额外参数只有显式映射才发送，保留false/0，禁止覆盖model/prompt/auth。旧适配器仍保留兼容分支，新profile绑定和实际transport在Task5—7接入，创建前权限/校验在Task9接线。8引用真实读取、跨用户预扣前拒绝、未知响应和脱敏断言已编写，统一A运行。Task3源码提交d1b9116；再次fetch后origin/main仍3f1aa4a，其他同事新分支未作为本轮代码整合。
+
+
+Task5初版实现记录（尚未运行验收）：
+
+- 新增6个协议模块与统一wire适配器；显式videoProfile才使用新分支，旧无profile任务继续原适配器。Grok2API、CogVideoX3、Agnes帧数与Agnes2.5独立配置，Kling2.6与3.0分开；Omni text/image/reference/transformation使用各自字段与数量限制，超量明确拒绝，未沿用上游slice截断。
+- Ark content角色、generate_audio、水印、seed=0/camera_fixed=false保留；Gemini依据固定IC源码使用inlineData原始图片字节和operation路径；MiniMax/METASO使用H3的content和v2创建/查询，不混用Hailuo v1。KIE3/Omni按固定Go翻译器对应multi_shots/kling_elements/elements及定制/智能分镜字段；API Mart分镜index与元素字段、Omni video_list和运动orientation分开。
+- 请求沿用域名/DNS固定与凭据保护，只有创建计入供应商费用观察；响应有明确状态/产物字段，缺ID保留创建结果未知，未知轮询/缺视频继续重试。下载当前拒绝重定向且凭据仅给本来源；完整安全重定向和流式媒体核验在Task10落实。停止204空响应已处理。
+- API参数格式HTTP用例覆盖24种组合，模拟端校验独立预期endpoint/模型和轮询路径，下载真实可播放fixture；媒体multipart记录收到的字节SHA。错误、无产物和回显URL不当结果已写断言。以上用例未运行，不能视为供应商或应用E2E通过。
+- profile加入幂等配置指纹；管理版任务仍按已有规则不自动重提不确定付费创建。Task9将完整请求、元素/分镜、false/省略、预扣前wire校验与恢复接通；Task10将真实时长、安全媒体处理和失败保存恢复接通。共享层提交107ad33。

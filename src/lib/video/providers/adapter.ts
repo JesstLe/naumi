@@ -3,6 +3,7 @@ import { configuredVideoProviders, getVideoProviderConfig } from "@/lib/video/pr
 import { currentModelExecution } from "@/lib/model-config/context";
 import { createDirectVideoAdapter } from "@/lib/video/providers/direct";
 import { openAiVideosAdapter } from "@/lib/video/providers/openai-videos";
+import {createWireVideoAdapter} from "./wire-adapter";
 
 // 适配器注册表(§4.2):按 providerId 取适配器。Phase 3 逐个补录
 // Ark/Kling/Gemini/MiniMax/Workflow 适配器,这里保持单一事实源。
@@ -14,7 +15,7 @@ function ensureProviders(): void {
   if (initialized) return;
   initialized = true;
   for (const cfg of configuredVideoProviders()) {
-    const adapter = cfg.protocol === "openai-videos"
+    const adapter = cfg.videoProfile ? createWireVideoAdapter(cfg) : cfg.protocol === "openai-videos"
       ? openAiVideosAdapter
       : createDirectVideoAdapter(cfg.id);
     if (adapter) REGISTRY.set(cfg.id, adapter);
@@ -29,7 +30,7 @@ export function registerVideoProvider(adapter: VideoProviderAdapter): void {
 export function getVideoProvider(providerId: string): VideoProviderAdapter | null {
   if (currentModelExecution("video")?.connection.providerId === providerId) {
     const cfg = getVideoProviderConfig(providerId);
-    return cfg?.protocol === "openai-videos" ? openAiVideosAdapter : createDirectVideoAdapter(providerId);
+    return cfg?.videoProfile ? createWireVideoAdapter(cfg) : cfg?.protocol === "openai-videos" ? openAiVideosAdapter : createDirectVideoAdapter(providerId);
   }
   ensureProviders();
   return REGISTRY.get(providerId) ?? null;
