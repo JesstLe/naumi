@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "verify:imagegen-contract": "tsx --conditions react-server scripts/verify-imagegen-contract.ts",
+    "verify:imagegen-intent": "tsx --conditions react-server scripts/verify-imagegen-intent.ts",
     "verify:image-skills": "tsx --conditions react-server scripts/verify-image-skills.ts",
     "verify:image-skills-execution": "tsx --conditions react-server scripts/verify-image-skills-execution.ts",
     "verify:model-management": "tsx --conditions react-server scripts/verify-model-management.ts",
