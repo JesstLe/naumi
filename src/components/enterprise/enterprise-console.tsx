@@ -1,5 +1,6 @@
 "use client";
 import { CachedImage } from "@/components/cached-image";
+import {readBrowserImage} from '@/lib/browser-image-cache';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Building2, Eye, ImageIcon, LayoutDashboard, Plus, RefreshCw, ShieldCheck, Users, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
@@ -22,7 +23,7 @@ async function json<T>(url:string,init?:RequestInit):Promise<T>{
 function ArtworkImage({src,alt}:{src:string;alt:string}){
   const [url,setUrl]=useState(''),[failed,setFailed]=useState(false);
   useEffect(()=>{const c=new AbortController();let object='';setUrl('');setFailed(false);
-    void(async()=>{try{const r=await fetch(src,{cache:'no-store',headers:await authHeader(),signal:c.signal});if(!r.ok)throw new Error();const blob=await r.blob();if(c.signal.aborted)return;object=URL.createObjectURL(blob);setUrl(object)}catch{if(!c.signal.aborted)setFailed(true)}})();
+      void(async()=>{try{const blob=await readBrowserImage(src,c.signal);if(c.signal.aborted)return;object=URL.createObjectURL(blob);setUrl(object)}catch{if(!c.signal.aborted)setFailed(true)}})();
     return()=>{c.abort();if(object)URL.revokeObjectURL(object)};
   },[src]);
   return url?<CachedImage src={url} alt={alt} loading='lazy'/>:<div className={styles.empty}>{failed?'图片暂不可读取':'加载图片…'}</div>;
