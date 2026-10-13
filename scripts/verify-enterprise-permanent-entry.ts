@@ -15,7 +15,7 @@ async function main(){
  const actor={email:owner,admin:false},currentVersion=async()=>(await p.query('SELECT version FROM app_team_access_grants WHERE email=$1',[owner])).rows[0].version;
  const cookie=(email:string)=>'nv_user='+native.signUserSession(email,Date.now()),adminCookie=cookie(admin)+'; nv_admin='+session;
  const req=(body:unknown,c=adminCookie,origin='http://fixture.test')=>new Request('http://fixture.test/api/admin/team-access',{method:'POST',headers:{cookie:c,origin,'content-type':'application/json'},body:JSON.stringify(body)});
- const command={id:randomUUID(),email:owner,action:'grant',scope:'owned',startsAt:new Date(Date.now()-60_000).toISOString(),expiresAt:null,expectedVersion:await currentVersion()};
+ const command={id:randomUUID(),email:owner,action:'grant' as const,scope:'owned' as const,startsAt:new Date(Date.now()-60_000).toISOString(),expiresAt:null,expectedVersion:await currentVersion()};
  assert.equal((await api.POST(req(command,cookie(admin)))).status,403);assert.equal((await api.POST(req(command,adminCookie,'https://evil.test'))).status,403);
  assert.equal((await api.POST(req(command))).status,200);assert.equal((await api.POST(req(command))).status,200);assert.equal(await currentVersion(),1);
  assert.equal((await grants.teamEntryAccess(owner)).expiresAt,null);assert.equal((await server.enterpriseSnapshot(actor,root)).enterprise.authorized_until,null);
