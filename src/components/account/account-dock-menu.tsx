@@ -1,4 +1,5 @@
 "use client";
+import { useFeatureAccess } from "@/lib/feature-access/client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -144,6 +145,7 @@ export function AccountDockMenu({
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
   const initial = user.name.trim().charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase() || "U";
   const hasTeam = useTeamEntryAccess(user);
+  const { can } = useFeatureAccess();
 
   return (
     <div
@@ -212,7 +214,7 @@ export function AccountDockMenu({
         <Settings className="h-4 w-4" />
         {t("menu.security")}
       </Link>
-      {hasTeam && <Link role="menuitem" href="/team" onClick={onClose} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"><Users className="h-4 w-4" />{L("团队管理", "Team management")}</Link>}
+      {hasTeam && can("team") && <Link role="menuitem" href="/team" onClick={onClose} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"><Users className="h-4 w-4" />{L("团队管理", "Team management")}</Link>}
       <div className="my-1 h-px bg-border" />
       <button
         type="button"

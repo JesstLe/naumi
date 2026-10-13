@@ -1,4 +1,6 @@
 "use client";
+import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
+
 
 import { loadAccountSnapshot, invalidateBrowserData } from "@/lib/browser-data-cache";
 import { isHostedImageUrl as hasRenderableImage } from "@/lib/media-url";
@@ -1669,6 +1671,7 @@ function layoutGraph(
 }
 
 export function CanvasClient({ initialProject, desktopAppearance = false }: { initialProject?: string; desktopAppearance?: boolean } = {}) {
+  const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
   async function privateFetch(input:RequestInfo|URL,init:RequestInit={}){
     const path=String(input).split('?')[0];
@@ -2107,7 +2110,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const assistantRetry = useRef<{ input: string; anchorId: string; history: AssistantTurn[]; body: string } | null>(null);
   const assistantRequestEpoch = useRef(0);
   const { open: assistantOpen, focusInput: assistantFocusInput, disclose: discloseAssistant, suspend: suspendAssistant } = useCanvasAssistantDisclosure(user?.email);
-  const assistantVisible = assistantOpen && !propertiesOpen && !ocrArtworkId;
+  const assistantVisible = canFeature("agent") && assistantOpen && !propertiesOpen && !ocrArtworkId;
   const assistantProject = useRef({ key: activeKey, email: user?.email });
   useEffect(() => {
     if (assistantProject.current.key === activeKey && assistantProject.current.email === user?.email) return;
@@ -9695,7 +9698,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
               {/* 右上:分享(下载)/ 模板库 / 会员特惠+积分 / 头像 */}
               <div data-testid="canvas-top-actions" style={{ top: canvasSize.width > 0 && canvasSize.width < 768 ? 60 : 12 }} className="absolute right-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 overflow-visible">
-                {!readOnly && <CanvasAgentToggle open={assistantVisible} label={t("canvas.assistant.entry")} onClick={toggleAssistant} />}
+                {!readOnly && canFeature("agent") && <CanvasAgentToggle open={assistantVisible} label={t("canvas.assistant.entry")} onClick={toggleAssistant} />}
                 {active && (
                   <button
                     type="button"
@@ -10375,11 +10378,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                           onClick={createMergeNodeFromSelection}
                         />
                         <Sep />
-                        <Item
+                        <FeatureVisible feature="generate"><Item
                           label={t("canvas.batchRunImages")}
                           disabled={batchRunBusy || readOnly}
                           onClick={() => void batchRunImages(selectedBatchArts)}
-                        />
+                        /></FeatureVisible>
                         <Item
                           label={t("canvas.batchRunText")}
                           disabled={promptMining || readOnly}
@@ -10418,7 +10421,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       <>
                         <Item label={t("canvas.editName")} disabled={mutationDisabled} onClick={() => { setNodeRenameValue(textNode.title); setRenamingNodeId(textNode.id); }} />
                         <Item label={t("canvas.toolbar.productCopy")} disabled={mutationDisabled || assistBusy} onClick={() => setProductPicker({ textNodeIds: [textNode.id] })} />
-                        <Item label={t("canvas.toolbar.textToImages")} disabled={mutationDisabled || textNode.status === "generating"} onClick={() => setGenImageMenu({ textNodeIds: [textNode.id] })} />
+                        <FeatureVisible feature="generate"><Item label={t("canvas.toolbar.textToImages")} disabled={mutationDisabled || textNode.status === "generating"} onClick={() => setGenImageMenu({ textNodeIds: [textNode.id] })} /></FeatureVisible>
                         <Sep />
                         <Item label={t("canvas.copyToClipboard")} disabled={!textNode.content} onClick={() => void copyText(textNode.content).then(ok => ok && showCopyTip())} />
                         <Item label={L("文字样式", "Text style")} disabled={readOnly} onClick={openProperties} />
@@ -10428,7 +10431,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       </>
                     ) : pendNode ? (
                       <>
-                        <Item label={t("canvas.ctxGenerate")} disabled={readOnly || pendNode.generating || pendNode.uploading || pendNode.needsAttention} onClick={() => setSelectedPendId(pendNode.id)} />
+                        <FeatureVisible feature="generate"><Item label={t("canvas.ctxGenerate")} disabled={readOnly || pendNode.generating || pendNode.uploading || pendNode.needsAttention} onClick={() => setSelectedPendId(pendNode.id)} /></FeatureVisible>
                         <Item label={t("canvas.uploadImage")} disabled={readOnly || pendNode.generating || pendNode.uploading || pendNode.needsAttention} onClick={() => onPendUpload(pendNode.id)} />
                         <Item label={t("canvas.delete")} danger disabled={readOnly || pendNode.generating || pendNode.uploading || pendNode.needsAttention} onClick={() => onPendRemove(pendNode.id)} />
                       </>
@@ -10445,7 +10448,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                             void downloadOne(node.image)
                           }
                         />
-                        {!readOnly && (
+                        {!readOnly && canFeature("generate") && (
                           <Item
                             label={t("canvas.ctxGenerate")}
                             onClick={() => {
@@ -10461,7 +10464,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                             onClick={() => void reversePromptsForSelection([node])}
                           />
                         )}
-                        {!readOnly && (
+                        {!readOnly && canFeature("agent") && (
                           <Item
                             label={t("canvas.assistant.entry")}
                             onClick={() => {
@@ -10598,13 +10601,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40">
                 <Pencil className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.editName")}
               </button>
-              <button type="button" data-action="assistant" aria-label={t("canvas.toolbar.assistant")} title={t("canvas.toolbar.assistantHint")}
+              <FeatureVisible feature="agent"><button type="button" data-action="assistant" aria-label={t("canvas.toolbar.assistant")} title={t("canvas.toolbar.assistantHint")}
                 disabled={!selected || readOnly} onClick={() => selected && openAssistant(selected)}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40">
                 <MessageSquareText className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.assistant")}
-              </button>
+              </button></FeatureVisible>
               {QUICK_ACTIONS.filter(
-                (a) => ["bg", "angle", "caption"].includes(a.key)
+                (a) => canFeature("generate") && ["bg", "angle", "caption"].includes(a.key)
               ).map((a) => (
                 <button
                   key={a.key}
@@ -10620,7 +10623,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 </button>
               ))}
               {/* 抠图:发丝级,扣 1 积分/张(已去掉免费极速档) */}
-              <button
+              <FeatureVisible feature="cutout"><button
                 type="button"
                 disabled={selectedGenerating || !selected}
                 title={!selected ? t("canvas.toolNeedImage") : t("canvas.toolbar.cutoutHint")}
@@ -10629,9 +10632,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               >
                 <Scissors className="h-4 w-4 shrink-0" aria-hidden="true" />
                 {t("canvas.qa.cutout")}
-              </button>
+              </button></FeatureVisible>
               {/* 高清:下拉选分辨率(深色弹出,向下) */}
-              <DarkSelect
+              <FeatureVisible feature="generate"><DarkSelect
                 hint={t("canvas.toolbar.hdHint")}
                 dir="down"
                 light={lightCanvas}
@@ -10654,9 +10657,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     {t("canvas.qa.hd")}
                   </>
                 }
-              />
+              /></FeatureVisible>
               {/* 改比例(ChatGPT 式重生成):选目标比例,按原图重画再裁切,无需提示词 */}
-              <DarkSelect
+              <FeatureVisible feature="generate"><DarkSelect
                 hint={t("canvas.toolbar.ratioHint")}
                 dir="down"
                 light={lightCanvas}
@@ -10682,10 +10685,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     {t("canvas.qa.ratio")}
                   </>
                 }
-              />
+              /></FeatureVisible>
               <span className="canvas-ui-divider mx-1.5 h-5 w-px flex-none" />
               {/* 内容编辑与生成变换使用不同名称，避免暗示只是修改参数。 */}
-              <button
+              <FeatureVisible feature="generate"><button
                 type="button"
                 title={t("canvas.toolbar.editTextHint")}
                 disabled={!selected || selectedGenerating || readOnly}
@@ -10693,9 +10696,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
               >
                 <Type className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.editText")}
-              </button>
+              </button></FeatureVisible>
               {/* 扩图:选目标比例 + 原图锚点,outpaint 保原图内容补全四周 */}
-              <div className="relative flex items-center">
+              <FeatureVisible feature="generate"><div className="relative flex items-center">
                 <button
                   type="button"
                   ref={expandButtonRef}
@@ -10710,7 +10713,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 >
                   <Maximize2 className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.expand")}
                 </button>
-                {expandOpen && selected && (
+                {canFeature("generate") && expandOpen && selected && (
                     <CanvasActionPanel anchorRef={expandButtonRef} label={t("canvas.toolbar.expand")} light={lightCanvas} width={256} onClose={() => setExpandOpen(false)}>
                       <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider opacity-70">
                         目标比例
@@ -10776,9 +10779,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       </p>
                     </CanvasActionPanel>
                 )}
-              </div>
+              </div></FeatureVisible>
               {/* 标注编辑:箭头/涂抹/编号标注 + 逐条指令改图 */}
-              <button
+              <FeatureVisible feature="generate"><button
                 type="button"
                 title={t("canvas.toolbar.annotateHint")}
                 disabled={!selected || selectedGenerating || readOnly}
@@ -10786,13 +10789,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40"
               >
                 <PenLine className="h-4 w-4 shrink-0" aria-hidden="true" /> {t("canvas.toolbar.annotate")}
-              </button>
+              </button></FeatureVisible>
               {/* 低频处理与节点管理使用一个可访问的Portal菜单。 */}
 
               </>}
               <CanvasActionMenu triggerRef={imageMoreRef} label={t("canvas.toolbar.imageMore")} light={lightCanvas}
                 items={[
-                  ...QUICK_ACTIONS.filter(a => a.key === "relight").map(a => ({
+                  ...QUICK_ACTIONS.filter(a => canFeature("generate") && a.key === "relight").map(a => ({
                     id: a.key, icon: a.icon, label: t(`canvas.qa.${a.key}`), hint: t(`canvas.toolbar.${a.key}Hint`),
                     disabled: selectedGenerating || !selected, onSelect: () => onQuickAction(a.key),
                   })),
@@ -10813,7 +10816,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               {/* 视频:OpenAI videos 协议,图生视频/文生视频,产物为画布视频节点 */}
               <div className="relative flex items-center">
 
-                {videoOpen && (
+                {canFeature("video") && videoOpen && (
                     <CanvasActionPanel anchorRef={imageMoreRef} label={t("canvas.toolbar.video")} light={lightCanvas} width={280} onClose={() => setVideoOpen(false)}>
                       <textarea
                         value={videoPrompt}
@@ -10954,7 +10957,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 )}
                 {t("canvas.toolbar.productCopy")}
               </button>
-              <button
+              <FeatureVisible feature="generate"><button
                 type="button"
                 onClick={() => setGenImageMenu({ textNodeIds: [selectedText.id] })}
                 aria-label={t("canvas.toolbar.textToImages")}
@@ -10963,7 +10966,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               >
                 <ImageIcon className="h-4 w-4" />
                 {t("canvas.toolbar.textToImages")}
-              </button>
+              </button></FeatureVisible>
 
               <span className="canvas-ui-divider mx-1.5 h-5 w-px flex-none" />
               <button type="button" aria-label={L("文字样式","Text style")} title={L("文字样式","Text style")} onClick={openProperties}
@@ -11030,7 +11033,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           )}
 
           {/* ComfyUI 工作流面板(BYOC):端点/导入/运行,图片产物按血缘挂树 */}
-          {(comfyOpen || comfyMounted) && <CanvasComfyDialog
+          {canFeature("comfyui") && (comfyOpen || comfyMounted) && <CanvasComfyDialog
             open={comfyOpen}
             onClose={() => setComfyOpen(false)}
             source={selected}
@@ -11260,7 +11263,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             )}
 
           {/* 底部生成器(配方):选中节点正下方居中,横向 dock(原型 dock) */}
-          {selected && selectedBatchArts.length <= 1 && !propertiesOpen && (
+          {canFeature("generate") && selected && selectedBatchArts.length <= 1 && !propertiesOpen && (
             <div
               data-testid="image-node-dock"
               key={`dock-${selected.id}`}
@@ -11513,7 +11516,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           )}
 
           {/* 空白节点生成 dock(文生图 / 合并多输入):选中空白节点时出现(图3 旁支节点) */}
-          {selectedPend && !readOnly && (
+          {canFeature("generate") && selectedPend && !readOnly && (
             <div
               data-testid="pending-node-dock"
               ref={panelRef}
@@ -11943,7 +11946,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   )}
                   {t("canvas.assistWrite")}
                 </button>
-                <button
+                <FeatureVisible feature="generate"><button
                   type="button"
                   onClick={() => setGenImageMenu({ textNodeIds: [selectedText.id] })}
                   title={t("canvas.genImagesHint")}
@@ -11956,7 +11959,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 >
                   <ImageIcon className="h-3.5 w-3.5" />
                   {t("canvas.genImages")}
-                </button>
+                </button></FeatureVisible>
                 <span
                   className={cn(
                     "text-[11px] font-semibold",
@@ -11984,7 +11987,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               </div>
             </div>
           )}
-          {!browsing && !readOnly && user && <CanvasAgentOrb key={`${user.email}:${activeKey || "workspace"}`} email={user.email}
+          {!browsing && !readOnly && canFeature("agent") && user && <CanvasAgentOrb key={`${user.email}:${activeKey || "workspace"}`} email={user.email}
             busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps} responding={assistantResponding} open={assistantVisible} companion={orbCompanion} onCue={orbCue}
             english={locale === "en"} onActivate={toggleAssistant} light={lightCanvas} />}
         </div>
@@ -12002,7 +12005,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         <input ref={replaceInputRef} data-testid="canvas-replace-image-input" type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
           onChange={event=>{const file=event.target.files?.[0],target=replaceTargetRef.current;if(file && target)void saveLocalImageEdit(target,undefined,file);}} />
         {/* 助手作为画布的并列侧栏：桌面让出空间，窄屏浮层；OCR仍互斥。 */}
-        {!browsing && !readOnly && (() => {
+        {!browsing && !readOnly && canFeature("agent") && (() => {
           const anchor = active?.members.find(artwork => artwork.id === assistantArtworkId);
           return <CanvasAssistantPanel open={assistantVisible} focusInput={assistantFocusInput} contextReady={true} modelControl={<TextModelSelect feature="canvas.assistant" compact composer dark={!lightCanvas} />} key={`assistant:${activeKey || "empty"}`} historyScopeKey={activeKey||"workspace"} light={lightCanvas} anchorTitle={anchor?.title || (locale==="en"?"Text conversation":"文本对话")}
             contextImages={anchor ? assistantContext(active?.members ?? [], anchor.id).map(artwork => ({ id: artwork.id, title: artwork.title, image: cdnUrl(artwork.image) })) : []}
@@ -12107,7 +12110,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         </div>
       )}
       {/* 生成图片:纯产品 / 复刻竞品构图 两种模式 */}
-      {genImageMenu && (
+      {canFeature("generate") && genImageMenu && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
           onClick={() => setGenImageMenu(null)}

@@ -1,3 +1,5 @@
+
+import { assertAgentToolAccess } from "@/lib/feature-access/server";
 import { Type, type TSchema } from "typebox";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { createCreativeTools } from "./creative-tools";
@@ -1431,6 +1433,8 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
   return all.map(tool => {
     const execute = tool.execute;
     return { ...tool, execute: async (id, args, signal, onUpdate) => {
+      const credentials = credGetter();
+      await assertAgentToolAccess(agentEmail, tool.name, canvas ? "canvas" : "workbench", new Request(req.url, { headers: { cookie: credentials.cookie, authorization: credentials.authorization } }));
       validateToolArguments(tool.parameters, args);
       if (signal?.aborted) throw new HarnessError("RUN_INACTIVE", 409);
       if (!harness) return execute(id, args, signal, onUpdate);

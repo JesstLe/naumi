@@ -1,4 +1,5 @@
 "use client";
+import { useFeatureAccess } from "@/lib/feature-access/client";
 
 import Link from "next/link";
 import { X, Sparkles, ArrowRight, type LucideIcon } from "lucide-react";
@@ -35,6 +36,7 @@ export function CreateHub({
   onClose: () => void;
 }) {
   const { locale } = useI18n();
+  const { canPage } = useFeatureAccess();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
 
   return (
@@ -78,7 +80,7 @@ export function CreateHub({
                 {L(g.zh, g.en)}
               </p>
               <div className="grid grid-cols-2 gap-2.5">
-                {g.tools.map((t) => {
+                {g.tools.filter(tool => !tool.href || canPage(tool.href)).map((t) => {
                   const live = !!t.href;
                   const cls = cn(
                     "group flex items-center gap-2.5 rounded-xl border p-3 text-left transition-colors",
