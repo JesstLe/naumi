@@ -58,7 +58,7 @@ export async function GET(
       if(asset?.remote_ready && storageDriver!=='local') {
         const filename=new URL(request.url).searchParams.get('download') || undefined;
         return new Response(null,{status:307,headers:{location:await presignStoredObject('GET',rel,300,undefined,filename),
-          'cache-control':'private, no-store','vary':'Cookie, Authorization','referrer-policy':'no-referrer'}});
+          'cache-control':filename?'private, no-store':'private, max-age=240','vary':'Cookie, Authorization','referrer-policy':'no-referrer'}});
       }
     } catch {return new Response('Storage unavailable',{status:503,headers:{'cache-control':'no-store'}});}
   }

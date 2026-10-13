@@ -4,7 +4,7 @@ import {useStore} from '@xyflow/react';
 import {cdnUrl,cdnThumb} from '@/lib/cdn';
 import {canvasMediaVariant,MediaLoadQueue} from '@/lib/canvas/media-loading';
 
-const queue=new MediaLoadQueue(6),loaded=new Set<string>();
+const queue=new MediaLoadQueue(6);
 export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<ImgHTMLAttributes<HTMLImageElement>,'src'> & {
   source:string;forceOriginal:boolean;hasDimensions:boolean;
 }) {
@@ -27,12 +27,11 @@ export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<I
   const canLoad=visible&&!!source&&screenWidth>0;
   useEffect(()=>{
     setReady('');if(!canLoad)return;
-    if(loaded.has(url)){setReady(url);return;}
     const finish=queue.enqueue(()=>setReady(url));release.current=finish;
     return()=>{finish();if(release.current===finish)release.current=null;};
   },[canLoad,url]);
   return <img crossOrigin="anonymous" {...props} ref={ref} src={visible&&ready===url?ready:undefined} decoding="async"
     data-media-variant={variant} data-media-visible={visible?'true':'false'}
-    onLoad={event=>{loaded.add(url);if(loaded.size>512)loaded.delete(loaded.values().next().value!);release.current?.();release.current=null;props.onLoad?.(event);}}
+    onLoad={event=>{release.current?.();release.current=null;props.onLoad?.(event);}}
     onError={event=>{release.current?.();release.current=null;props.onError?.(event);}} />;
 }
