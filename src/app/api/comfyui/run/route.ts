@@ -65,7 +65,7 @@ export async function POST(request: Request) {
         numericDefaults?: Record<string, number>;
         seeds?: Record<string, number>;
         numerics?: Record<string, Record<string, number>>;
-        mediaType?:"video";idempotencyKey?:string;nodeId?:string;expectedRevision?:number;projectKey?:string;
+        source?:"canvas"|"workbench"|"agent"|"workflow";mediaType?:"video";idempotencyKey?:string;nodeId?:string;expectedRevision?:number;projectKey?:string;
         durationSeconds?:number;references?:unknown[];inputMappings?:unknown[];
       }
     | null;
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
     const workflow = await getComfyWorkflow(email, workflowId);
     if (!workflow) return NextResponse.json({ error: "工作流不存在" }, { status: 404 });
     if(body?.mediaType==="video"||knownComfyVideoOutput(workflow.apiJson as ApiWorkflow)){
-      const result=await submitByocComfyVideo(email,{...body,idempotencyKey:body?.idempotencyKey||request.headers.get("x-naumi-billing-operation-id")||crypto.randomUUID()});
+      const result=await submitByocComfyVideo(email,{...body,source:body?.source|| (request.headers.get("x-naumi-canvas")==="1"?"canvas":"workflow"),idempotencyKey:body?.idempotencyKey||request.headers.get("x-naumi-billing-operation-id")||crypto.randomUUID()});
       return NextResponse.json({ok:true,...result,images:[],videos:[]},{status:202});
     }
     if(!artworkId&&!imageUrl)return NextResponse.json({error:"请选择工作流输入图片"},{status:400});

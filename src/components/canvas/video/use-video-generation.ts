@@ -11,12 +11,13 @@ export class VideoGenerationPriceChanged extends Error{constructor(){super("价�
 async function json(response:Response){try{return await response.json();}catch{throw new Error("创建响应尚未核实，操作编号已保留");}}
 export function useVideoGeneration({email,request}:{email?:string;request:VideoPrivateFetch}){
   const actor=useRef({email,revision:0}),busy=useRef(false);if(actor.current.email!==email)actor.current={email,revision:actor.current.revision+1};
-  async function submit(config:VideoNodeConfig,inputs:OrderedInput[],count:number,quote:PublicQuote){
+  async function submit(config:VideoNodeConfig,inputs:OrderedInput[],count:number,quote:PublicQuote|null){
     if(!email||busy.current)throw new Error("无法提交视频任务");if(!Number.isInteger(count)||count<1||count>8)throw new Error("批量任务数需为1至8");
-    if(config.comfyWorkflowId)throw new Error("请在自备工作流入口提交此任务");
+    if(!config.comfyWorkflowId&&!quote)throw new Error("请先确认视频报价");
     const expected=actor.current.revision,current=()=>actor.current.revision===expected&&actor.current.email===email;
     const {comfyWorkflowId:_workflow,comfyInputs:_inputs,...settings}=config;
-    const body={...settings,source:"workbench",orderedInputs:inputs.length?inputs:undefined,references:inputs.length?inputs.flatMap(input=>{const ref=inputReference(input);return ref?[ref]:[];}):config.references};
+    const references=inputs.length?inputs.flatMap(input=>{const ref=inputReference(input);return ref?[ref]:[];}):config.references;
+    const body=config.comfyWorkflowId?{mediaType:"video",workflowId:config.comfyWorkflowId,source:"workbench",prompt:config.prompt||"",negativePrompt:config.negativePrompt,resolution:config.resolution,aspectRatio:config.aspectRatio,generateAudio:config.generateAudio,watermark:config.watermark,durationSeconds:config.durationSeconds&&config.durationSeconds>0?config.durationSeconds:undefined,references,orderedInputs:inputs.length?inputs:undefined,inputMappings:config.comfyInputs,...config.comfyOverrides}:{...settings,source:"workbench",orderedInputs:inputs.length?inputs:undefined,references};
     busy.current=true;
     try{
       const key=(await clientIntentKey(email,"/video/generation-batch",{body:JSON.stringify({body,count})})).replace("naumi:billing-intent:","naumi:video-generation:");if(!current())throw new Error("账号已切换");
@@ -31,7 +32,7 @@ export function useVideoGeneration({email,request}:{email?:string;request:VideoP
         if(!current())throw new Error("账号已切换");
         if(lookup.ok&&known.task){receipt.completed[id]={taskId:known.task.id,cost:Number(known.task.cost)};save();result.push(receipt.completed[id]);continue;}
         if(lookup.status!==404)throw new Error(known.error||"上次提交尚未核实，操作编号已保留");
-        const response=await request("/api/video/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...body,idempotencyKey:id,billingVersion:quote.version,billingCredits:quote.mode==="api-cost-plus"?quote.authorizedCredits??quote.reserveCredits:quote.credits})}),data=await json(response);
+        const response=await request(config.comfyWorkflowId?"/api/comfyui/run":"/api/video/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...body,idempotencyKey:id,...(quote&&!config.comfyWorkflowId?{billingVersion:quote.version,billingCredits:quote.mode==="api-cost-plus"?quote.authorizedCredits??quote.reserveCredits:quote.credits}:{})})}),data=await json(response);
         if(!response.ok){if(response.status===409&&data.code==="PRICE_CHANGED")throw new VideoGenerationPriceChanged();throw new Error(data.error||"创建尚未核实，操作编号已保留");}
         if(typeof data.taskId!=="string"||!data.taskId||!Number.isFinite(Number(data.cost)))throw new Error("创建响应尚未核实，操作编号已保留");
         receipt.completed[id]={taskId:data.taskId,cost:Number(data.cost)};save();result.push(receipt.completed[id]);

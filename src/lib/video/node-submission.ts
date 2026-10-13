@@ -17,7 +17,7 @@ export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;exp
   const node=await getVideoNode(actor,input.nodeId);
   if(!node)throw new ModelConfigError("VIDEO_NODE_UNAVAILABLE","视频节点不存在",404);
   if(node.revision!==input.expectedRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","视频节点已更新，请重新读取后生成",409);
-  const {comfyWorkflowId,comfyInputs,workflowTaskId,camera,...config}=node.config;
+  const {comfyWorkflowId,comfyInputs,comfyOverrides,workflowTaskId,camera,...config}=node.config;
   let workflowManifest=config.workflowManifest;
   if(workflowTaskId&&!workflowManifest){const old=await readOwnedVideoWorkflow(actor,workflowTaskId);
     if(old.publicModelId!==config.modelId)throw new ModelConfigError("VIDEO_WORKFLOW_MODEL_CONFLICT","历史工作流与当前模型不一致，请重新选择模型",409);workflowManifest=old.manifest;
@@ -42,7 +42,8 @@ export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;exp
     orderedInputs.push({...source,value:url});
   }
   if(comfyWorkflowId){const {submitByocComfyVideo}=await import("./byoc");return submitByocComfyVideo(actor,{workflowId:comfyWorkflowId,nodeId:node.id,expectedRevision:input.expectedRevision,projectKey:node.projectKey,
-    idempotencyKey:input.idempotencyKey,prompt:config.prompt||"",references:node.inputs.length?references:config.references,inputMappings:comfyInputs,
+    idempotencyKey:input.idempotencyKey,prompt:config.prompt||"",references:node.inputs.length?references:config.references,orderedInputs:node.inputs.length?orderedInputs:undefined,inputMappings:comfyInputs,...comfyOverrides,
+    negativePrompt:config.negativePrompt,resolution:config.resolution,aspectRatio:config.aspectRatio,generateAudio:config.generateAudio,watermark:config.watermark,
     ...(config.durationSeconds&&config.durationSeconds>0?{durationSeconds:config.durationSeconds}:{})});}
   return createVideoGeneration(actor,{...config,workflowManifest,camera,source:"canvas",sourceId:node.id,nodeId:node.id,nodeRevision:input.expectedRevision,projectKey:node.projectKey,
     prompt:config.prompt||"",seconds:String(config.durationSeconds??""),size:config.resolution||"",references:node.inputs.length?references:config.references,

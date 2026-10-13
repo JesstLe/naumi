@@ -14,7 +14,8 @@ import {runLegacyModelExecution} from "../model-config/context";
 import {getVideoNode,associateVideoTaskTx,ensureVideoNodeSchema} from "../canvas/video-node-repository";
 import {authorizeVideoProject} from "../canvas/video-node-service";
 import {videoWorkflowManifestSchema,type VideoWorkflowManifest} from "./workflow-schema";
-import {videoReferenceSchema} from "./references";
+import {compileVideoPrompt} from "./prompt";
+import {videoReferenceSchema,orderedInputSchema} from "./references";
 import {authorizeVideoReferences,materializeVideoReferences} from "./reference-materialization";
 import {buildVideoCreate} from "./providers/wire";
 import {publicProviderSnapshot,type VideoProviderRuntimeConfig} from "./providers/config";
@@ -23,9 +24,11 @@ import {submitQueuedVideoTask,handleVideoCreationError} from "./service";
 import type {VideoGenerationRequest} from "./types";
 const num=z.number().finite().min(0).max(Number.MAX_SAFE_INTEGER),name=z.string().min(1).max(160);
 export const byocVideoInputSchema=z.strictObject({workflowId:name,idempotencyKey:z.string().min(1).max(100),mediaType:z.literal("video").optional(),artworkId:name.optional(),imageUrl:z.string().max(16384).optional(),
+  source:z.enum(["canvas","workbench","agent","workflow"]).optional(),orderedInputs:z.array(orderedInputSchema).max(256).optional(),
   nodeId:name.optional(),expectedRevision:z.number().int().nonnegative().optional(),projectKey:z.string().max(166).optional(),
-  prompt:z.string().max(16384).optional(),texts:z.record(name,z.string().max(16384)).optional(),seed:num.optional(),seeds:z.record(name,num).optional(),
+  prompt:z.string().max(16384).optional(),texts:z.record(name,z.string().max(16384)).optional(),seed:num.int().optional(),seeds:z.record(name,num.int()).optional(),
   numericDefaults:z.record(name,num).optional(),numerics:z.record(name,z.record(name,num)).optional(),durationSeconds:z.number().int().positive().max(3600).optional(),
+  negativePrompt:z.string().max(8192).optional(),resolution:z.string().max(100).optional(),aspectRatio:z.string().max(20).optional(),generateAudio:z.boolean().optional(),watermark:z.boolean().optional(),
   references:z.array(videoReferenceSchema).max(128).optional(),inputMappings:videoWorkflowManifestSchema.shape.inputs.optional()});
 const snapshotSchema=z.strictObject({actor:z.string(),providerId:name,endpointId:name,baseUrl:z.url(),credentialRef:z.uuid().optional(),manifest:videoWorkflowManifestSchema});
 export function knownComfyVideoOutput(api:ApiWorkflow){return Object.values(api).some(node=>["SaveVideo","VHS_VideoCombine","VideoCombine"].includes(node.class_type));}
@@ -60,20 +63,30 @@ export async function submitByocComfyVideo(actorRaw:string,raw:unknown){
   const references=[...(input.references||[])];
   if(input.artworkId){const art=(await listArtworksByIds(actor,[input.artworkId]))[0];if(!art)throw new ModelConfigError("VIDEO_REFERENCE_UNAVAILABLE","素材不存在",404);references.unshift({id:art.id,artworkId:art.id,kind:"image" as const,role:"reference" as const,url:art.image});}
   else if(input.imageUrl)references.unshift({id:"byoc-image",kind:"image",role:"reference",url:input.imageUrl});
-  const projectKey=node?.projectKey||input.projectKey|| (input.artworkId?`tree:${(await listArtworksByIds(actor,[input.artworkId]))[0]?.groupId||input.artworkId}`:undefined);
+  const source=node?"canvas":input.source||"workflow";
+  const projectKey=node?.projectKey||input.projectKey|| (source!=="workbench"&&input.artworkId?`tree:${(await listArtworksByIds(actor,[input.artworkId]))[0]?.groupId||input.artworkId}`:undefined);
   if(input.projectKey&&node&&input.projectKey!==node.projectKey)throw new ModelConfigError("VIDEO_NODE_PROJECT_CONFLICT","视频节点项目不一致",409);
   if(projectKey)await authorizeVideoProject(actor,projectKey);
+  const orderedInputs=input.orderedInputs||[];
+  const {requireOwnedVideoText}=await import("./submission");
+  for(const item of orderedInputs)if(item.kind==="text"&&!item.nodeId.startsWith("inline:"))item.value=await requireOwnedVideoText(actor,item.nodeId);
+  const prompt=compileVideoPrompt(input.prompt||"",orderedInputs).prompt;
   let texts=input.texts;
-  if(!texts&&input.prompt){const positive=slots.texts.filter(slot=>slot.role==="positive"),targets=positive.length?positive:slots.texts.length===1?slots.texts:[];texts=Object.fromEntries(targets.map(slot=>[slot.nodeId,input.prompt!]));}
+  if(prompt){const positive=slots.texts.filter(slot=>slot.role==="positive"),targets=positive.length?positive:slots.texts.length===1?slots.texts:[];texts={...Object.fromEntries(targets.map(slot=>[slot.nodeId,prompt])),...input.texts};}
   const seeds:Record<string,number>={};for(const slot of slots.seeds)seeds[slot.nodeId]=input.seeds?.[slot.nodeId]??input.seed??randomInt(0,2**48-1);
   const numerics:Record<string,Record<string,number>>={};for(const slot of slots.numerics){const value=input.numerics?.[slot.nodeId]?.[slot.field]??input.numericDefaults?.[slot.field];if(value!==undefined)numerics[slot.nodeId]={...numerics[slot.nodeId],[slot.field]:value};}
+  for(const key of Object.keys(input.texts||{}))if(!slots.texts.some(slot=>slot.nodeId===key))throw new ModelConfigError("INVALID_BYOC_TEXT","工作流文本节点不存在",422);
+  for(const key of Object.keys(input.seeds||{}))if(!slots.seeds.some(slot=>slot.nodeId===key))throw new ModelConfigError("INVALID_BYOC_SEED","工作流种子节点不存在",422);
+  for(const [nodeId,fields] of Object.entries(input.numerics||{}))for(const [field,value] of Object.entries(fields))if(!slots.numerics.some(slot=>slot.nodeId===nodeId&&slot.field===field)||!Number.isInteger(value)||value<=0)throw new ModelConfigError("INVALID_BYOC_NUMERIC","工作流数值节点或数值无效",422);
+  for(const [field,value] of Object.entries(input.numericDefaults||{}))if(!slots.numerics.some(slot=>slot.field===field)||!Number.isInteger(value)||value<=0)throw new ModelConfigError("INVALID_BYOC_NUMERIC","工作流默认数值无效",422);
   const template=applyWorkflowOverrides(api,{texts,seeds,numerics});
+  for(const slot of slots.texts)if(texts?.[slot.nodeId]!==undefined)template[slot.nodeId].inputs.text=texts[slot.nodeId];
   const inputs=input.inputMappings||slots.images.map((slot,index)=>({name:`image-${slot.nodeId}`,type:"image" as const,path:[slot.nodeId,"inputs","image"],index:references.filter(ref=>ref.kind==="image").length===1?0:index,required:true}));
   const manifest:VideoWorkflowManifest=videoWorkflowManifestSchema.parse({version:1,kind:"comfyui",workflowId:workflow.id,template,inputs});
   const providerId=`byoc-video:${createHash("sha256").update(`${actor}:${endpoint.id}`).digest("hex").slice(0,40)}`;
   const config:VideoProviderRuntimeConfig={id:providerId,label:"自备 ComfyUI",protocol:"comfyui",videoProfile:"comfyui",baseUrl,apiKey:endpoint.apiKey,models:[workflow.id],defaultModel:workflow.id,idempotencyStrategy:"none"};
-  let request:VideoGenerationRequest={source:node?"canvas":"workflow",sourceId:node?.id||workflow.id,canvasNodeId:node?.id,nodeRevision:node?.revision,projectKey,
-    providerId,modelId:workflow.id,prompt:input.prompt||"",durationSeconds:input.durationSeconds??-1,references,idempotencyKey:input.idempotencyKey};
+  let request:VideoGenerationRequest={source,sourceId:node?.id||workflow.id,canvasNodeId:node?.id,nodeRevision:node?.revision,projectKey,
+    providerId,modelId:workflow.id,prompt,negativePrompt:input.negativePrompt,resolution:input.resolution,aspectRatio:input.aspectRatio,generateAudio:input.generateAudio,watermark:input.watermark,orderedInputs:orderedInputs.length?orderedInputs:undefined,durationSeconds:input.durationSeconds??-1,references,idempotencyKey:input.idempotencyKey};
   request=await authorizeVideoReferences(actor,request);
   const prepared=await materializeVideoReferences(actor,request,{multipart:true});
   buildVideoCreate({provider:config,profile:"comfyui",request:{...prepared,workflowManifest:manifest,references:prepared.references.map(ref=>({...ref,submissionName:ref.storageKey}))}});
@@ -83,7 +96,7 @@ export async function submitByocComfyVideo(actorRaw:string,raw:unknown){
   const created=await createVideoTaskWithReservation({id,email:actor,model:workflow.id,prompt:request.prompt,size:"workflow",seconds:String(request.durationSeconds),cost:0,requestBody:JSON.stringify({workflowId:workflow.id,referenceIds:references.map(ref=>ref.id)}),
     providerId,source:request.source,sourceId:request.sourceId,idempotencyKey:input.idempotencyKey,providerSnapshot:publicProviderSnapshot(config),videoReferences:request.references,
     capabilitySnapshot:{workflowOnly:true,durationUnknown:input.durationSeconds===undefined},parameters:{version:2,submissionState:"prepared",billingException:"comfyui-byoc-zero",byocSnapshot,request,
-      creationInputDigest:digest,nodeId:node?.id,nodeRevision:node?.revision,projectKey,originalPrompt:input.prompt||""},
+      byocSettings:{workflowId:workflow.id,inputMappings:inputs,texts,seeds,numerics},creationInputDigest:digest,nodeId:node?.id,nodeRevision:node?.revision,projectKey,originalPrompt:input.prompt||""},
     ...(node?{onReserved:async(client,task)=>associateVideoTaskTx(client,actor,node.id,node.revision,task.id)}:{})});
   if(created.created)await withByocVideoTask(actor,created.task,async()=>{try{await submitQueuedVideoTask(actor,created.task,undefined,undefined,false);}catch(error){await handleVideoCreationError(actor,created.task,error);}});
   return {taskId:created.task.id,cost:0};
@@ -102,7 +115,7 @@ export async function retryByocVideoTask(actor:string,old:VideoTaskRow,idempoten
     buildVideoCreate({provider:context.config,profile:"comfyui",request:{...material,workflowManifest:context.manifest,references:material.references.map(ref=>({...ref,submissionName:ref.storageKey}))}});
     if(node)await ensureVideoNodeSchema();
     const parameters={version:2,submissionState:"prepared",request,byocSnapshot:old.parameters.byocSnapshot,billingException:"comfyui-byoc-zero",retryOf:old.id,creationInputDigest:digest,
-      nodeId:node?.id,nodeRevision:node?.revision,projectKey:request.projectKey,originalPrompt:old.parameters.originalPrompt};
+      byocSettings:old.parameters.byocSettings,nodeId:node?.id,nodeRevision:node?.revision,projectKey:request.projectKey,originalPrompt:old.parameters.originalPrompt};
     const created=await createVideoTaskWithReservation({id,email:actor,model:old.model,prompt:request.prompt,size:old.parameters.size as string||"workflow",seconds:String(request.durationSeconds),cost:0,
       requestBody:JSON.stringify({retryOf:old.id}),providerId:old.providerId,source:old.source,sourceId:old.sourceId,parameters,videoReferences:request.references,capabilitySnapshot:old.capabilitySnapshot,
       idempotencyKey,providerSnapshot:old.providerSnapshot,...(node?{onReserved:async(client,task)=>associateVideoTaskTx(client,actor,node.id,node.revision,task.id)}:{})});

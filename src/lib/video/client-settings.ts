@@ -5,6 +5,8 @@ import type {OrderedInput} from "./references";
 import type {VideoReference} from "./types";
 import {normalizeVideoInput} from "./contract";
 import {compileVideoPrompt} from "./prompt";
+import {videoByocOverridesSchema} from "./byoc-settings";
+import {videoWorkflowManifestSchema} from "./workflow-schema";
 import {compileVideoCamera} from "./camera";
 
 export type VideoNodeConfig=CanvasVideoNode["config"];
@@ -57,6 +59,13 @@ export function inputReference(input:OrderedInput):VideoReference|null{
 }
 export function validateVideoSettings(config:VideoNodeConfig,inputs:OrderedInput[],cap:ResolvedVideoCapability,choices:readonly VideoInputChoice[]=[]){
   try{
+    if(config.comfyWorkflowId){
+      videoByocOverridesSchema.parse(config.comfyOverrides||{});
+      if(config.comfyInputs)videoWorkflowManifestSchema.shape.inputs.parse(config.comfyInputs);
+      for(const fields of Object.values(config.comfyOverrides?.numerics||{}))for(const value of Object.values(fields))if(!Number.isInteger(value)||value<=0)throw new Error("工作流数值需为正整数");
+      if(inputs.some(input=>choices.find(choice=>choice.nodeId===input.nodeId)?.available===false))throw new Error("前序素材尚未完成");
+      compileVideoPrompt(config.prompt||"",inputs);return null;
+    }
     if(!config.modelId)throw new Error("请选择视频模型");
     if(inputs.some(input=>{const choice=choices.find(item=>item.nodeId===input.nodeId);return choice&& !choice.available;}))throw new Error("前序素材尚未完成");
     if(config.camera&&cap.supportsCamera!==true)throw new Error("摄影设置能力未配置或已禁用");
