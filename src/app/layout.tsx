@@ -40,7 +40,7 @@ import { SiteVersion } from "@/components/site-version";
 const THEME_INIT = `(function(){try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`;
 
 export const metadata: Metadata = {
-  title: `${BRAND} — 面向电商卖家的商业视觉生产力工具`,
+  title: `${BRAND}- AI创作平台`,
   description:
     `${BRAND} 是一款面向电商营销的 B2B 生产力工具，帮品牌与卖家高效产出电商主图、Banner、场景图与详情页视觉。`,
   keywords: [
