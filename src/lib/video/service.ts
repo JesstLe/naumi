@@ -1,3 +1,4 @@
+import {materializeVideoReferences} from "./reference-materialization";
 import "server-only";
 import { createHash } from "node:crypto";
 import { canonicalConfig } from "@/lib/model-config/repository";
@@ -504,22 +505,9 @@ async function submitQueuedVideoTask(
   const adapter = getVideoProvider(task.providerId || VIDEO_PROVIDER_ID);
   if (!adapter) throw new Error(`视频适配器 ${task.providerId} 未注册`);
   const persistedRequest = preparedRequest ?? requestFromQueuedTask(task);
-  const request = {...persistedRequest,references:persistedRequest.references.map(reference=>({...reference}))};
-  const image = preparedImage ?? await imageForQueuedTask(task, request, email);
-  if(privateMedia && getVideoProviderConfig(task.providerId)?.protocol !== "openai-videos") {
-    for(const reference of request.references) {
-      const key=reference.url && storageKeyFromManagedUrl(reference.url);
-      if(!key)continue;
-      if(!await canReadMedia(key,email))throw new Error("素材不存在或无权访问");
-      const asset=await getMediaAsset(key)||await importLegacyMedia(key,email);
-      if(!asset?.remote_ready){
-        const original=await readManagedObject(`/media/${key}`,250*1024*1024);
-        const saved=await writeStoredObject(original.bytes,asset?.content_type||original.contentType,key);
-        if(!saved.remoteReady)throw new Error("素材暂时无法提供给视频供应商，请稍后重试");
-      }
-      reference.url=await presignStoredObject('GET',key,900);
-    }
-  }
+  const multipart=getVideoProviderConfig(task.providerId)?.protocol==="openai-videos";
+  const request=await materializeVideoReferences(email,persistedRequest,{multipart});
+  const image=preparedImage??await imageForQueuedTask(task,request,email);
   const {withBiModelContext}=await import("@/lib/bi/model-observer");
   const created = await withBiModelContext(email,'video.generate',task.id,()=>createWithLocalImage(adapter, request, image));
   const {videoSupplierReceipt}=await import("@/lib/supplier-cost/video");

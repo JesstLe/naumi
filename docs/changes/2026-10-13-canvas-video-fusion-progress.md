@@ -15,7 +15,7 @@
 | 素材/隔离fixture | 初版已写入，尚未验收 | 素材生成完成；功能未执行 | Task1；19份原始素材与SHA/FFprobe清单，真实App/独立Worker/two users/私有签名校验store及HTTP供应商；已补管理配置seed；尚需准备独立PG与真实隔离Router |
 | 规范能力/引用 | 初版已写入，尚未验收 | 测试脚本已写；未执行 | Task2；10模式、nullable未知/false/0/omit、组合规格、数量/角色/大小时长/分镜元素校验及双编号；接线到真实提交尚未完成 |
 | 后台/资料/公开目录 | 初版已写入，尚未验收 | 配置脚本已写；未执行 | Task3；独立供应商修订、管理员优先、目录/执行共享定义、发布事务内绑定默认能力；完整配置中心与常用模型管理均可编辑。协议和真实提交仍待Task4—9 |
-| wire/素材提交 | 未实现 | 未执行 | Task4；复用现有签名，补嵌套素材和响应分类 |
+| wire/素材提交 | 共享层初版已写入 | 测试脚本已写；未执行 | Task4；统一普通/元素素材身份权限与临时签名、typed wire接口和严格响应工具；协议绑定在Task5—7、预扣前接线在Task9 |
 | IC协议分支 | 未实现 | 未执行 | Task5；OpenAI/Grok/Cog/Agnes/Ark/Kling/Gemini/MiniMax |
 | TokenDance/TF/Compshare | 未实现 | 未执行 | Task6；实际源码全部路由分支与元数据 |
 | 视频工作流 | 未实现 | 未执行 | Task7；ComfyUI/AutoDL/RunningHub、串并行真实产物依赖 |
@@ -46,3 +46,6 @@ Task3实现记录（尚未功能验收）：
 - fixture seed加入真实加密凭据、公开/禁用视频模型和积分计费开关；每次App/Worker验收使用独立DB schema，避免沿用上次供应商URL。严格要求另外提供loopback的隔离Router管理地址和fixture凭据，不用正式Router，也不模拟Naumi内部API。该测试基础设施尚未启动。
 - 修正fixture余额读取为既有余额镜像credits_total、流水表名app_ledger及无效签名日期拒绝。配置、发布冻结、非法通道测试已编写但没有运行；git diff检查仅检查补丁格式，不作为功能通过证据。
 - 本模块仍需在A验证实际目录/鉴权/执行冻结与配置保存，在C进行后台浏览器保存、重载和窄屏验收。Task4继续协议wire/私有素材提交，不以初版代码作为本模块验收完成。
+
+
+Task4共享层记录（尚未功能验收）：引用解析核对artworkId、storageKey、URL的一致性与作品完成状态，真实MIME/大小取服务端媒体记录。普通和嵌套元素在提交副本统一授权、签名900秒，存储身份继续保留；不以不相关作品ID授权外部URL。外部素材先走媒体上传，媒体真实时长核验在Task10补齐。新增typed wire注册/构造/解析接口、有限明确字段、未知状态和无结果完成响应的暂态分类；额外参数只有显式映射才发送，保留false/0，禁止覆盖model/prompt/auth。旧适配器仍保留兼容分支，新profile绑定和实际transport在Task5—7接入，创建前权限/校验在Task9接线。8引用真实读取、跨用户预扣前拒绝、未知响应和脱敏断言已编写，统一A运行。Task3源码提交d1b9116；再次fetch后origin/main仍3f1aa4a，其他同事新分支未作为本轮代码整合。
