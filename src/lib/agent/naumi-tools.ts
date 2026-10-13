@@ -16,6 +16,7 @@ import {SHARED_IMAGEGEN_TOOLS,agentImagegenRequest} from "../imagegen/agent-requ
 import {executeAgentImagegen,imagegenAgentStage} from "../imagegen/agent-executor";
 import {planImagegen} from "../imagegen/plan";
 import {planImagegenBatch} from "../imagegen/batch";
+import type {PreparedCanvasVideoWorkflow} from "../video/canvas-workflow";
 import type {ImagegenPlan} from "../imagegen/types";
 
 // ---------------------------------------------------------------------------
@@ -101,7 +102,7 @@ ${VIDEO_PRODUCTION_PROMPT}
  7. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
  8. 与图片生成无关的问题直接回答,不要调用工具。`;
 
-export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string;imagegenPlan?:ImagegenPlan;imageSkill?:ImagegenPlan["request"]["skill"] }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext, harness?: AgentHarness): AgentTool[] {
+export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string;imagegenPlan?:ImagegenPlan;videoWorkflow?:PreparedCanvasVideoWorkflow;imageSkill?:ImagegenPlan["request"]["skill"] }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext, harness?: AgentHarness): AgentTool[] {
   // 双凭证:可变 getter —— 每次工具执行时读取最新 cookie/authorization,
   // 常驻会话的凭证刷新(runtime 层 existing.cred = cred)即刻生效,无需重建 Agent。
   const credGetter =
@@ -1269,7 +1270,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     }
   }
   const creative=createCreativeTools({internal,file:urlToFile,timeout:(fn,signal)=>withToolTimeout("creative_tool",fn,signal),generation:tools.find(tool=>tool.name==="generate_image")!,canvas});
-  const videoTools=createCanvasVideoTools({actor:agentEmail,canvas,internal,confirmation:()=>{const cred=credGetter();return "billingVersion" in cred&&typeof cred.billingVersion==="number"&&"billingCredits" in cred&&typeof cred.billingCredits==="number"?{version:cred.billingVersion,credits:cred.billingCredits}:undefined;}});
+  const videoTools=createCanvasVideoTools({actor:agentEmail,canvas,internal,preparedWorkflow:()=>{const cred=credGetter();return "videoWorkflow" in cred?cred.videoWorkflow:undefined;},confirmation:()=>{const cred=credGetter();return "billingVersion" in cred&&typeof cred.billingVersion==="number"&&"billingCredits" in cred&&typeof cred.billingCredits==="number"?{version:cred.billingVersion,credits:cred.billingCredits}:undefined;}});
   const all=[...tools,...creative,...videoTools];
   for(const tool of all)if(SHARED_IMAGEGEN_TOOLS.has(tool.name)){
     const legacyExecute=tool.execute,existing=(tool.parameters as unknown as {properties:Record<string,TSchema>}).properties;

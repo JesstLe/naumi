@@ -85,7 +85,7 @@ function requestedWriteCapabilities(message: string): Set<string> {
     grant(/重做.*母图|母图.*重做|redo.*source/i,["review_aplus_source"]);
     grant(/包装|刀版|模切|packaging/i,["generate_packaging_3d"]);
     grant(/(?:执行|运行|run).*(?:comfy|工作流|workflow)/i,["run_comfy_workflow"]);
-    grant(/视频|video/i,["generate_video","create_video_node","set_video_config","set_video_prompt","set_video_references","plan_video_shot","plan_video_storyboard","run_video_workflow","resume_video_workflow"]);
+    grant(/视频|video/i,["generate_video","create_video_node","set_video_config","set_video_prompt","set_video_references","plan_video_shot","plan_video_storyboard","run_video_workflow","resume_video_workflow","confirm_video_workflow_stage"]);
     grant(/视频.*(?:续|延长)|(?:续|延长).*视频|extend.*video/i,["extend_video"]);
     grant(/(?:改|编辑|修改).*视频|视频.*(?:改|编辑|修改)|edit.*video/i,["edit_video"]);
     grant(/抠图|去背景|remove.*background|cutout/i,["cutout_image"]);
@@ -109,6 +109,7 @@ function requestedWriteCapabilities(message: string): Set<string> {
   grant(/侵权|版权.*(?:检测|检查)|copyright.*check/i,["check_image_ip"]);
   grant(/(?:分析|反推).*竞品|竞品.*(?:分析|反推)|analy[sz]e.*competitor/i,["analyze_competitor"]);
   if(/视频|video/i.test(message)&&!/只(?:分析|总结|解释|讨论)|(?:不要|不需要|别|不必).*(?:生成|执行|修改)|how (?:to|does)/i.test(message)){
+    grant(/(?:生成|制作|拍摄|produce|make).*(?:视频|影片|短片|video)|(?:视频|影片|短片|video).*(?:生成|制作)/i,["generate_video","create_video_node","set_video_config","set_video_prompt","set_video_references","plan_video_shot","plan_video_storyboard","run_video_workflow","resume_video_workflow"]);
     grant(/(?:规划|策划|编写|编辑|修改|设置|保存|分镜|镜头|plan|storyboard|configure|save)/i,["create_video_node","set_video_config","set_video_prompt","set_video_references","plan_video_shot","plan_video_storyboard"]);
     grant(/(?:停止|取消|stop|cancel)/i,["cancel_video_task","cancel_video_workflow","cancel_video_media_task"]);
     grant(/(?:抽帧|音轨|分离|裁剪|剪辑|拼接|合成|处理|ffmpeg|ffprobe|extract|trim|concat|process)/i,["process_video"]);

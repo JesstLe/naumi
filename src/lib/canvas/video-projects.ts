@@ -4,7 +4,7 @@ import {ensureVideoNodeSchema} from "./video-node-repository";
 export async function ownedCanvasVideoProjects(actorRaw:string){
   const actor=actorRaw.toLowerCase();await ensureVideoNodeSchema();
   const [artRows,textRows,videoRows,deletedRows,names]=await Promise.all([
-    getPool().query("SELECT id,title,parent_id,group_id,batch_id,origin,source,created_at FROM app_artworks WHERE email=$1 AND deleted_at IS NULL AND status='completed' AND COALESCE(origin,'')<>'workbench' AND (COALESCE(image_url,'')<>'' OR COALESCE(video_url,'')<>'') ORDER BY created_at,id",[actor]),
+    getPool().query("SELECT id,title,parent_id,group_id,batch_id,origin,source_url AS source,created_at FROM app_artworks WHERE email=$1 AND deleted_at IS NULL AND status='completed' AND COALESCE(origin,'')<>'workbench' AND (COALESCE(image_url,'')<>'' OR COALESCE(video_url,'')<>'') ORDER BY created_at,id",[actor]),
     getPool().query("SELECT project_key,title FROM app_canvas_text_nodes WHERE email=$1 ORDER BY created_at,id",[actor]),
     getPool().query("SELECT project_key,title FROM app_canvas_video_nodes WHERE email=$1 AND deleted_at IS NULL ORDER BY created_at,id",[actor]),
     getPool().query("SELECT project_key FROM app_canvas_video_projects WHERE email=$1 AND deleted_at IS NOT NULL",[actor]),getProjectNames(actor)]);

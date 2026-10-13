@@ -101,7 +101,7 @@ export type CreateVideoInput = {
   sourceId?: string;
   projectKey?:string;
   nodeId?:string;
-  nodeRevision?:number;
+  nodeRevision?:number;workflowRunId?:string;workflowNodeId?:string;
   mode?:VideoGenerationRequest["mode"];
   orderedInputs?:VideoGenerationRequest["orderedInputs"];
   shots?:VideoGenerationRequest["shots"];
@@ -196,7 +196,10 @@ export async function createVideoGeneration(
   input: CreateVideoInput
 ): Promise<{ taskId: string; cost: number }> {
   email=email.toLowerCase();
-  const parsed=videoSubmissionSchema.safeParse(input);
+  // Internal workflow linkage is never part of the public submission schema.
+  // Its owned run/stage is checked atomically when the task is reserved.
+  const {workflowRunId:_workflowRunId,workflowNodeId:_workflowNodeId,...publicInput}=input;
+  const parsed=videoSubmissionSchema.safeParse(publicInput);
   if(!parsed.success)throw new VideoContractError("INVALID_VIDEO_SUBMISSION","视频提交字段无效",parsed.error.issues.map(issue=>issue.path.join(".")));
   if(input.workflowTaskId){
     if(input.workflowManifest)throw new VideoContractError("WORKFLOW_SOURCE_CONFLICT","请选择一个工作流来源");

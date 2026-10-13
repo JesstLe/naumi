@@ -121,3 +121,28 @@
 - verify-video-fusion-workflow-freeze.ts已编写，真实App/DB/Worker链A→B，原生发布新模型/wire/合法默认值与新计费、修改完整对白、App重启后仍同旧链/旧模型版本/旧费/旧对白/旧规格、同UUID不重复、密文结构与owner隔离用例。harness仅新增owned fixture密文结构/意图指纹布尔检查，不输出密文或秘密。脚本NOT RUN；完整TypeScript/diff结构检查通过，不能写成实测链冻结PASS。
 
 继续：原计划节点→制作链DAG→原节点最新结果指针接线、BYOC节点在混合链内完整冻结/执行、Agent链工具与完整报价授权、SSE文本供应商模拟/真实Browser Agent仍须实现。当前只是补强Task9持久链的排队冻结，不能当作完整Task13或C通过；摄影/i18n/只读及C/D/34项/演示/整分支复核/完整固定App/103发布保持待完成。无本批main合并、103连接或部署锁。
+
+## Task13 第三批：保存节点混合制作链与真实应用验收
+
+- 新 `/api/canvas/video-workflows` 只接收本人当前项目实际节点ID/revision及原操作UUID；从持久节点读取配置和有序引用，构造依赖DAG。前序待定身份保留原序号，提交时换成本人实际completed产物，不以占位URL调用供应商。同原UUID先查持久意图指纹，节点之后有revision变化仍恢复原链，异意图/跨账号拒绝。
+- 每个BYOC阶段在入队时冻结端点/凭据引用、工作流模板、完整文字、映射及种子/数值；保存到AES-GCM阶段胶囊。queued链不读取后来更新的库配方。普通BYOC原生入口复用同一recipe模块，种子0、generateAudio=false、数值/完整文字和全部素材保持。
+- Task预扣事务同时关联原canvas节点与run阶段；结果/媒体/结算事务同时缓存所有阶段产物。缓存允许删除完成任务历史后继续依赖，保留实际媒体及计费。run共享行锁拒绝停止后新任务插入。晚返回create不能把已完成状态降回processing。移动/尺寸等不改内容的编辑保留；配置/引用、删除或新任务变化阻止覆盖。
+- Agent新增run/get/resume/cancel/confirm-stage五工具，当前共26个视频工具；完整链预算读取真实阶段冻结报价，charged链先展示整体费用及授权上限再等下一条明确确认，BYOC0费用不制造收费确认。执行沿服务器private prepared plan，不把模板或凭据送模型；阶段继续使用原报价。取消/中断前提交检查AbortSignal，已持久受理阶段由Worker恢复。真实SSE确认/断开/恢复仍待验证，不以基础工具验收替代。
+- 增补制作链production-prompt。补全Session私有preparedVideoWorkflow；修复internal run/node字段误入严格public submission schema导致首阶段blocked。实际BYOC回归定位项目目录SQL的source列错误，改为真实source_url AS source，未改媒体/项目所有权规则。
+
+实际验证：
+
+| 脚本 | 结果 | 证据 |
+|---|---|---|
+| verify-video-fusion-canvas-workflow.ts | PASS | checkpoint-c/canvas-workflow-f561f013-29fe-4d49-b700-6a2d2711c9b8/result.json |
+| verify-video-fusion-workflow-freeze.ts | PASS | checkpoint-c/workflow-freeze-234bee75-f176-4889-8407-d0b3af45ec92/result.json |
+| verify-video-fusion-agent.ts | PASS，基础工具范围 | checkpoint-c/agent-tools-94820096-5acb-4937-855a-9417289ebfb8/result.json |
+| verify-video-fusion-byoc-interface.ts | PASS | checkpoint-c/byoc-interface-c5fc4806-dd8c-4e66-8404-d473b545a333/result.json |
+
+所有上述证据来自隔离本机真实App/PG/Router/私有媒体/Worker及HTTP素材模拟供应商，付费视频调用0；不能证明供应商真实视频质量或额度。失败记录保留：canvas首阶段invalid submission、BYOC项目目录503已修复；两处断言修正分别为直接比较真实对白字段（JSON字符串会转义换行）、规划只检查生成请求而非fixture建材存储请求。最终tsc --noEmit --incremental false及diff结构检查通过。远端main已刷新，仍56e5480，本批未合main。
+
+## Task11 补全摄影预设（界面验收待完成）
+
+保留固定infinite-canvas 68b37db04b9083c3ff0af67ffe362f85d04d1f9f的8种摄影机/8种镜头、11个焦距和10档光圈资料及光学描述，保存源码署名、AGPL许可与NOTICE。Naumi自有表单使用可编辑预设建议，已有自由文字继续保留；编译已知资料为实际光学方向，未选择的参数不自动补，禁用不追加摄影文本。运动模式中仅对真实声明的characterOrientation/character_orientation选项显示角色朝向及跟随图片/视频标签；不凭mode捏造可发送参数。
+
+本批摄影与运动界面仅类型验证，浏览器/i18n/管理员只读/390px、历史与媒体界面集中脚本、真实SSE/完整上游Skill行为与C仍待完成。D演示站/34项/分支复核/完整LinuxApp候选/蓝绿排空回滚/103发布及交接全部保持待做。103只读检查App/Worker仍c05a923，Naumi deploy.lock空闲，Hub对应锁路径不存在；没有占用发布锁或发布本轮代码，开发不持锁。

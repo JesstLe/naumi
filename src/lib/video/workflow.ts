@@ -8,6 +8,7 @@ import {BillingError} from "../billing/types";
 import {createVideoGeneration,type CreateVideoInput} from "./service";
 import {authorizeVideoReferences} from "./reference-materialization";
 import {videoWorkflowPlanSchema,workflowVideoRequestSchema,type VideoWorkflowPlan,type WorkflowVideoRequest} from "./workflow-schema";
+import {getVideoNode} from "../canvas/video-node-repository";
 import {canonicalConfig} from "../model-config/repository";
 import type {VideoGenerationRequest,VideoReference} from "./types";
 
@@ -19,10 +20,12 @@ async function ensureWorkflowSchema(){if(!ready)ready=getPool().query(`
  CREATE INDEX IF NOT EXISTS app_video_workflow_runs_owner_idx ON app_video_workflow_runs(email,project_key,created_at DESC);
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS confirmations jsonb NOT NULL DEFAULT '{}'::jsonb;
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS input_digest text;
+ ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS canvas_intent_digest text;
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS frozen_nodes_enc text;
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS public_frozen_nodes jsonb NOT NULL DEFAULT '{}'::jsonb;
  CREATE TABLE IF NOT EXISTS app_video_workflow_run_nodes(run_id uuid NOT NULL REFERENCES app_video_workflow_runs(id),node_id text NOT NULL,status text NOT NULL DEFAULT 'pending',
    task_id text,error text,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(run_id,node_id));
+ ALTER TABLE app_video_workflow_run_nodes ADD COLUMN IF NOT EXISTS result_assets jsonb NOT NULL DEFAULT '[]'::jsonb;
 `).then(()=>undefined).catch(error=>{ready=undefined;throw error;});await ready;}
 
 function substitute(template:string,variables:NonNullable<VideoWorkflowPlan["variables"]>){
@@ -54,21 +57,23 @@ export function validateVideoWorkflow(raw:unknown):VideoWorkflowPlan{
 }
 function operationId(runId:string,nodeId:string){return `video-wf-${createHash("sha256").update(`${runId}\0${nodeId}`).digest("hex")}`;}
 async function authorizeProject(actor:string,key:string){const {authorizeVideoProject}=await import("../canvas/video-node-service");await authorizeVideoProject(actor,key);}
-async function authorizeStaticInputs(actor:string,plan:VideoWorkflowPlan){
+export async function authorizeWorkflowInputs(actor:string,plan:VideoWorkflowPlan){
   for(const node of plan.nodes){
+    if(node.canvasNodeId){const current=await getVideoNode(actor,node.canvasNodeId);if(!current||current.projectKey!==plan.projectKey||current.revision!==node.canvasNodeRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","制作链节点不存在或已更新",409);node.canvasContentDigest=createHash("sha256").update(canonicalConfig({config:current.config,inputs:current.inputs})).digest("hex");node.canvasLastTaskId=current.lastTaskId;}
     const input=node.request,request:VideoGenerationRequest={...input,source:"workflow",providerId:input.providerId||"managed-video",modelId:input.modelId||"",prompt:input.prompt,
       durationSeconds:input.durationSeconds??(input.seconds?Number(input.seconds):-1),resolution:input.resolution||input.size,references:input.references||[],idempotencyKey:operationId(plan.id,node.id)};
     const owned=await authorizeVideoReferences(actor,request);node.request={...input,references:owned.references,...(input.elements?{elements:owned.elements}:{})};
   }
 }
-export async function scheduleVideoWorkflow(actor:string,raw:unknown):Promise<{runId:string;taskIds:string[]}>{
+export async function scheduleVideoWorkflow(actor:string,raw:unknown,canvasIntent?:unknown,preparedFrozen?:Record<string,FrozenWorkflowStage>,signal?:AbortSignal):Promise<{runId:string;taskIds:string[]}>{
   actor=actor.toLowerCase();const plan=validateVideoWorkflow(raw);await ensureWorkflowSchema();const inputDigest=createHash("sha256").update(canonicalConfig(plan)).digest("hex"),known=(await getPool().query("SELECT email,input_digest FROM app_video_workflow_runs WHERE id=$1",[plan.id])).rows[0];
   if(known?.input_digest){if(known.email!==actor||known.input_digest!==inputDigest)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);const resumed=await resumeVideoWorkflow(plan.id,actor);return {runId:plan.id,taskIds:resumed.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};}
   if(known&&known.email!==actor)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);
-  await authorizeProject(actor,plan.projectKey);await authorizeStaticInputs(actor,plan);const frozen=known?null:await freezeVideoWorkflow(actor,plan),frozenEnc=frozen?encryptAtRest(JSON.stringify(frozen)):null,publicFrozen=frozen?Object.fromEntries(Object.entries(frozen).map(([id,stage])=>[id,stage.quote])):{};
+  await authorizeProject(actor,plan.projectKey);await authorizeWorkflowInputs(actor,plan);const frozen=known?null:preparedFrozen||await freezeVideoWorkflow(actor,plan),frozenEnc=frozen?encryptAtRest(JSON.stringify(frozen)):null,publicFrozen=frozen?Object.fromEntries(Object.entries(frozen).map(([id,stage])=>[id,stage.quote])):{};
   const digest=createHash("sha256").update(canonicalConfig(plan)).digest("hex"),pool=getPool(),tx=await pool.connect();
+  if(signal?.aborted){tx.release();throw new DOMException("制作链提交已停止","AbortError");}
   try{await tx.query("BEGIN");
-    await tx.query("INSERT INTO app_video_workflow_runs(id,email,project_key,plan,plan_digest,input_digest,frozen_nodes_enc,public_frozen_nodes) VALUES($1,$2,$3,$4::jsonb,$5,$6,$7,$8::jsonb) ON CONFLICT(id) DO NOTHING",[plan.id,actor,plan.projectKey,JSON.stringify(plan),digest,inputDigest,frozenEnc,JSON.stringify(publicFrozen)]);
+    await tx.query("INSERT INTO app_video_workflow_runs(id,email,project_key,plan,plan_digest,input_digest,frozen_nodes_enc,public_frozen_nodes,canvas_intent_digest) VALUES($1,$2,$3,$4::jsonb,$5,$6,$7,$8::jsonb,$9) ON CONFLICT(id) DO NOTHING",[plan.id,actor,plan.projectKey,JSON.stringify(plan),digest,inputDigest,frozenEnc,JSON.stringify(publicFrozen),canvasIntent?createHash("sha256").update(canonicalConfig(canvasIntent)).digest("hex"):null]);
     const row=(await tx.query("SELECT email,plan_digest,input_digest FROM app_video_workflow_runs WHERE id=$1 FOR UPDATE",[plan.id])).rows[0];
     if(row?.email!==actor||(row.input_digest?row.input_digest!==inputDigest:row.plan_digest!==digest))throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);
     for(const node of plan.nodes)await tx.query("INSERT INTO app_video_workflow_run_nodes(run_id,node_id) VALUES($1,$2) ON CONFLICT DO NOTHING",[plan.id,node.id]);
@@ -76,7 +81,7 @@ export async function scheduleVideoWorkflow(actor:string,raw:unknown):Promise<{r
   }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
   const result=await resumeVideoWorkflow(plan.id,actor);return {runId:plan.id,taskIds:result.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};
 }
-type StoredNode={node_id:string;status:VideoWorkflowNodeStatus;task_id:string|null;error:string|null};
+type StoredNode={node_id:string;status:VideoWorkflowNodeStatus;task_id:string|null;error:string|null;result_assets?:import("./result-assets").SavedVideoResultAsset[]};
 export async function getVideoWorkflow(actor:string,runId:string){
   await ensureWorkflowSchema();const pool=getPool(),run=(await pool.query("SELECT * FROM app_video_workflow_runs WHERE id=$1 AND email=$2",[runId,actor])).rows[0];
   if(!run)throw new ModelConfigError("WORKFLOW_UNAVAILABLE","工作流不存在",404);
@@ -86,6 +91,7 @@ export async function getVideoWorkflow(actor:string,runId:string){
     progress:Math.round(nodes.filter(node=>node.status==="completed").length/Math.max(1,nodes.length)*100),nodes};
 }
 async function dependencyReference(actor:string,runId:string,binding:NonNullable<VideoWorkflowPlan["nodes"][number]["mediaBindings"]>[number],states:Map<string,StoredNode>):Promise<VideoReference>{
+  const cached=states.get(binding.fromNodeId);if(cached?.status==="completed"&&cached.result_assets?.length){const asset=cached.result_assets[binding.outputIndex||0];if(!asset||asset.kind!==binding.kind)throw new ModelConfigError("WORKFLOW_OUTPUT_UNAVAILABLE","前序产物类型或序号不符",422);const art=(await listArtworksByIds(actor,[asset.artworkId]))[0];if(!art||art.status!=="completed")throw new ModelConfigError("WORKFLOW_OUTPUT_UNAVAILABLE","前序产物已删除",422);return {id:workflowBindingId(runId,binding),kind:binding.kind,role:binding.role,artworkId:art.id,url:asset.url,sha256:asset.sha256};}
   const previous=states.get(binding.fromNodeId),task=previous?.task_id?await getVideoTask(actor,previous.task_id):null;
   if(task?.status!=="completed"||!task.artworkId)throw new ModelConfigError("WORKFLOW_OUTPUT_PENDING","前序视频尚未完成",409);
   const produced=Array.isArray(task.parameters.resultArtworkIds)?task.parameters.resultArtworkIds as string[]:[task.artworkId];
@@ -105,7 +111,16 @@ export async function resumeVideoWorkflow(runId:string,actor?:string){
     if(run.frozen_nodes_enc&&!decrypted)throw new ModelConfigError("WORKFLOW_SNAPSHOT_UNAVAILABLE","制作链冻结记录不可用，未继续提交",503);
     const frozen:Record<string,FrozenWorkflowStage>|null=decrypted?JSON.parse(decrypted):null;
     const plan=run.plan as VideoWorkflowPlan,rows=(await pool.query<StoredNode>("SELECT * FROM app_video_workflow_run_nodes WHERE run_id=$1",[runId])).rows,states=new Map(rows.map(node=>[node.node_id,node]));
-    const update=async(node:StoredNode,status:VideoWorkflowNodeStatus,error?:string,taskId?:string)=>{await pool.query("UPDATE app_video_workflow_run_nodes SET status=$3,error=$4,task_id=COALESCE($5,task_id),updated_at=now() WHERE run_id=$1 AND node_id=$2",[runId,node.node_id,status,error||null,taskId||null]);Object.assign(node,{status,error:error||null,...(taskId?{task_id:taskId}:{})});};
+    const update=async(node:StoredNode,status:VideoWorkflowNodeStatus,error?:string,taskId?:string)=>{
+      // Worker completion and result caching share one transaction. A late create response
+      // must not demote that terminal state or lose its durable dependency outputs.
+      const saved=(await pool.query<StoredNode>(`UPDATE app_video_workflow_run_nodes
+        SET status=CASE WHEN status='completed' THEN status ELSE $3 END,
+          error=CASE WHEN status='completed' THEN NULL ELSE $4 END,
+          task_id=COALESCE($5,task_id),updated_at=now()
+        WHERE run_id=$1 AND node_id=$2 RETURNING *`,[runId,node.node_id,status,error||null,taskId||null])).rows[0];
+      if(saved)Object.assign(node,saved);
+    };
     for(const node of rows){
       const task=node.task_id?await getVideoTask(run.email,node.task_id):await getVideoTaskByIdempotencyKey(run.email,operationId(runId,node.node_id));
       if(task){const status:VideoWorkflowNodeStatus=task.status==="completed"?"completed":["failed","cancelled"].includes(task.status)?"blocked":task.status==="needs_attention"?"needs_attention":"processing";
@@ -120,14 +135,17 @@ export async function resumeVideoWorkflow(runId:string,actor?:string){
       try{
         for(const binding of node.mediaBindings||[]){
           const reference=await dependencyReference(run.email,runId,binding,states);references.push(reference);
-          if(request.orderedInputs)request.orderedInputs.push({id:reference.id,nodeId:binding.fromNodeId,kind:binding.kind,role:binding.role,value:reference.url!});
+          if(request.orderedInputs){const entry={id:reference.id,nodeId:reference.artworkId!,kind:binding.kind,role:binding.role,value:reference.url!},index=request.orderedInputs.findIndex(input=>input.id===reference.id);if(index>=0)request.orderedInputs[index]=entry;else request.orderedInputs.push(entry);}
         }
-        const requestInput:CreateVideoInput={...request,source:"workflow",sourceId:runId,projectKey:plan.projectKey,seconds:request.seconds||String(request.durationSeconds??""),
+        let nodeRevision=node.canvasNodeRevision;
+        if(node.canvasNodeId&&node.canvasContentDigest){const current=await getVideoNode(run.email,node.canvasNodeId);if(!current||current.projectKey!==plan.projectKey||current.lastTaskId!==(node.canvasLastTaskId??null)||createHash("sha256").update(canonicalConfig({config:current.config,inputs:current.inputs})).digest("hex")!==node.canvasContentDigest)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","制作链节点内容已变更或有新任务，未覆盖新编辑",409);nodeRevision=current.revision;}
+        const {comfyWorkflowId,comfyInputs,comfyOverrides,...managedRequest}=request;
+        const requestInput:CreateVideoInput={...managedRequest,nodeId:node.canvasNodeId,nodeRevision,workflowRunId:runId,workflowNodeId:node.id,source:"workflow",sourceId:runId,projectKey:plan.projectKey,seconds:request.seconds||String(request.durationSeconds??""),
           size:request.size||request.resolution||"",references,idempotencyKey:operationId(runId,node.id),billingConfirmation:run.confirmations?.[node.id]||request.billingConfirmation};
-        const create=()=>createVideoGeneration(run.email,requestInput);if(frozen&&!frozen[node.id])throw new ModelConfigError("WORKFLOW_SNAPSHOT_UNAVAILABLE","阶段冻结记录缺失",503);const created=frozen?await withFrozenWorkflowStage(run.email,frozen[node.id],create):await create();await update(state,"processing",undefined,created.taskId);
+        const create=async()=>{if(comfyWorkflowId){const {submitByocComfyVideo}=await import("./byoc");return submitByocComfyVideo(run.email,{workflowId:comfyWorkflowId,idempotencyKey:requestInput.idempotencyKey,source:"workflow",nodeId:node.canvasNodeId,expectedRevision:nodeRevision,projectKey:plan.projectKey,prompt:request.prompt,references,orderedInputs:request.orderedInputs,inputMappings:comfyInputs,...comfyOverrides,negativePrompt:request.negativePrompt,resolution:request.resolution,aspectRatio:request.aspectRatio,generateAudio:request.generateAudio,watermark:request.watermark,...(request.durationSeconds&&request.durationSeconds>0?{durationSeconds:request.durationSeconds}:{})},{runId,nodeId:node.id});}return createVideoGeneration(run.email,requestInput);};if(frozen&&!frozen[node.id])throw new ModelConfigError("WORKFLOW_SNAPSHOT_UNAVAILABLE","阶段冻结记录缺失",503);const created=frozen?await withFrozenWorkflowStage(run.email,frozen[node.id],create):await create();await update(state,"processing",undefined,created.taskId);
       }catch(error){
         const recovered=await getVideoTaskByIdempotencyKey(run.email,operationId(runId,node.id));
-        if(recovered)await update(state,recovered.status==="failed"?"blocked":"needs_attention","提交结果已保留，等待核对",recovered.id);
+        if(recovered)await update(state,recovered.status==="completed"?"completed":["failed","cancelled"].includes(recovered.status)?"blocked":"needs_attention","提交结果已保留，等待核对",recovered.id);
         else await update(state,error instanceof BillingError&&error.code==="PRICE_CHANGED"?"needs_confirmation":"blocked",error instanceof Error?error.message:"工作流提交失败");
       }
     };
@@ -168,3 +186,5 @@ export async function cancelVideoWorkflow(actor:string,runId:string){
   await getPool().query("UPDATE app_video_workflow_run_nodes SET status='cancelled',error='已停止，未提交' WHERE run_id=$1 AND task_id IS NULL AND status IN ('pending','needs_confirmation')",[runId]);
   return getVideoWorkflow(actor,runId);
 }
+
+export {ensureWorkflowSchema as ensureVideoWorkflowSchema};

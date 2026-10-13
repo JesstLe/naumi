@@ -21,6 +21,7 @@ import {buildVideoCreate} from "./providers/wire";
 import {encryptAtRest} from "../settings";
 import type {VideoGenerationRequest} from "./types";
 import type {CreateVideoInput} from "./service";
+import {associateWorkflowTaskTx} from "./workflow-links";
 import {frozenWorkflowText} from "./workflow-text-context";
 
 export async function requireOwnedVideoText(email:string,id:string){
@@ -85,12 +86,12 @@ export async function createValidatedVideo(email:string,input:CreateVideoInput,h
   const parameters={version:2,submissionState:"prepared",request:stableRequest,workflowManifestEnc,workflowManifestDigest,creationInputDigest:videoCreationInputDigest(input),
     ...(currentExecutionBundle()?{modelExecutions:structuredClone(currentExecutionBundle())}:{}),
     publicModelId:execution?.frozen.publicModelId||input.modelId||modelId,projectKey:input.projectKey,nodeId:input.nodeId,nodeRevision:input.nodeRevision,
-    originalPrompt:input.prompt,camera:input.camera,authorNodeIds:compiled.authorNodeIds,retryOf:input.retryOf,...normalized,
+    workflowRunId:input.workflowRunId,workflowNodeId:input.workflowNodeId,originalPrompt:input.prompt,camera:input.camera,authorNodeIds:compiled.authorNodeIds,retryOf:input.retryOf,...normalized,
     seconds:request.durationSeconds,size:request.resolution,providerId,modelId,providerSnapshot:publicProviderSnapshot(providerConfig),idempotencyKey};
   const claimed=await createVideoTaskWithReservation({billingQuote,id:taskId,email,model:modelId,prompt:request.prompt,size:request.resolution||"",seconds:String(request.durationSeconds),cost,
     requestBody:JSON.stringify({version:2,modelId,mode:request.mode,durationSeconds:request.durationSeconds,resolution:request.resolution,referenceIds:request.references.map(ref=>ref.id)}),
     providerId,source:input.source,sourceId:input.sourceId,parameters,videoReferences:request.references,capabilitySnapshot:capability,idempotencyKey,channelId:providerId,
-    providerSnapshot:publicProviderSnapshot(providerConfig),...(input.nodeId?{onReserved:async(client,task)=>associateVideoTaskTx(client,email,input.nodeId!,input.nodeRevision!,task.id)}:{})});
+    providerSnapshot:publicProviderSnapshot(providerConfig),...((input.nodeId||input.workflowRunId)?{onReserved:async(client,task)=>{if(input.nodeId)await associateVideoTaskTx(client,email,input.nodeId,input.nodeRevision!,task.id);if(input.workflowRunId&&input.workflowNodeId)await associateWorkflowTaskTx(client,email,input.workflowRunId,input.workflowNodeId,task.id);}}:{})});
   if(!claimed.created)return {taskId:claimed.task.id,cost:claimed.task.cost};
   try{await hooks.submit(email,claimed.task,request);}catch(error){await hooks.creationError(email,claimed.task,error);}
   return {taskId:claimed.task.id,cost:claimed.task.cost};

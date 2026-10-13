@@ -5134,6 +5134,7 @@ export async function completeVideoTask(input: {
         batch_id=CASE WHEN $3='batch' THEN $4 ELSE batch_id END WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL`,[email,input.artworks?.map(art=>art.id)||[input.artworkId],kind,projectId]);
       if(!linked.rowCount)throw new Error("视频产物不存在，不能完成项目关联");
     }
+    if(task.parameters?.workflowRunId&&task.parameters?.workflowNodeId){const {completeWorkflowTaskTx}=await import("./video/workflow-links");await completeWorkflowTaskTx(client,email,task.parameters.workflowRunId,task.parameters.workflowNodeId,input.id,input.resultAssets);}
     if(task.billing_quote){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-video-${input.id}`,{state:"succeeded",items:[{id:input.id,state:"succeeded",executedQuality:task.parameters?.qualityAudit?.executed||task.billing_quote.facts.quality}]});}else if (meterOn && Number(task.cost) > 0) {
       const ledgerId = `led-video-${input.id}`;
       const seen = await client.query(`SELECT 1 FROM app_ledger WHERE id = $1`, [ledgerId]);
