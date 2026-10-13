@@ -90,3 +90,9 @@ Node容器合成会创建新的stacking context，不能不加条件用于所有
 单元/DOM组件集成120次viewport变换0新增读取，100次几何更新1次批量，opaque/border/title/非零edge层与不合法尺寸原顺序，group interior允许、卸载清理通过。真实内置浏览器临时3节点1边夹具（仅probe、只本机副本无保存）四场景分别original/composite/original/original，随后恢复完整213节点191边；临时控件已删除。最大项目原有12负层装饰与11组实际检测可保持composite，不以group内部bbox包含关系误降级。真实3轮完整缩放1632.4/1528.7/1532.1ms，几何读取仅几次场景节点进出触发（691/466/466次，不是每帧），旧三轮中位7125.9ms对1532.1ms降78.50%；不冒充线上。
 103只读再确认：公网UI/media/cache为b243f5e/1791913676，13028/29/30；创作API与Workerc05a923/1791911575，企业API13027保持43cccd5。无部署锁持有人，磁盘65%/41GiB，可用RAM3.8GiB但Swap1.4GiB已用；未改网关/生产。main56e5480未变，同事视频分支已增至cc52de4仍进行中，未直接合入未验收模块。发布前继续复核三槽与fallback，不停止core/Worker在途创作。
 功能计数1/3，最新普通镜像与严格冷测/真实操作/线上70%及发布尚需继续；原项目/账号/积分/配置保持。
+
+
+## 模块8：103新槽位切流准备（未切流）
+基于当前真实Nginx配置新增deploy-canvas-performance-slots.py，候选UI/desktop/enterprise为13031/13032/13033，不复用占用中的13028/29/30。限定20项UI/静态/只读media/cache/version route，其他所有块逐字节不变，旧三槽加入独立命名fallback后连接原fallback链；创作API/Agent/Worker与企业/团队写API原端口保持。不停止旧容器或恢复数据库，旁路禁用两类Worker，新旧控制指纹/旧资源/备份/版本/连续请求门槛沿用。
+真实103网关fixture本地渲染回归20项目标一致，其他route及全部历史fallback完全一致，通过；独立候选及原配置Nginx语法还需实际检验。新增baseline-user-control/artwork-control快照排除正常信用额度计数与新增作品，仍保护密码/角色/有效期/停用/原素材引用；不把正常用户活动当成恢复旧DB的理由。启动前要求可用内存>2.5GiB、可用磁盘>10GiB，当前只读约3.8GiB/41GiB，不声称正式启动通过。
+最新8920117普通Linux PROBE0镜像成功，local4330版本1791927326/commit8920117、健康/原账号作品/文字/属性API通过；新版浏览器集中回归继续。当前模块同步计数2/3，未合main/未生产发布，供应商调用0。
