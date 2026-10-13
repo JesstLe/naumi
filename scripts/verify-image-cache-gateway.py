@@ -11,6 +11,7 @@ def port(body,location):
  return int(re.search(r'127\.0\.0\.1:(\d+)',block.group()).group(1))
 for route,new in [('/',13028),('= /desktop',13029),('^~ /desktop/',13029),('= /enterprise',13030),('= /team',13030),('^~ /_next/',13028),('^~ /desktop/_next/',13029),('^~ /enterprise/_next/',13030),('= /api/version',13028)]:assert port(after,route)==new,route
 for route in ['^~ /api/','= /api/team','^~ /api/team/','= /api/enterprise','^~ /api/enterprise/','= /api/feature-access','= /desktop/api/team','^~ /desktop/api/team/','= /desktop/api/feature-access']:assert port(before,route)==port(after,route),route
+assert port(after,'^~ /media/')==13028
 assert port(after,'^~ /desktop/api/')==port(before,'= /desktop')
 for route in ['= /api/media/image-cache','= /api/public-image-cache','= /api/team/media','= /api/enterprise/media']:assert port(after,route)==13028
 for route in ['@imagegen_previous_primary_ui','@enterprise_previous_assets','@entry_previous_ui_assets']:assert port(after,route)==port(before,route)

@@ -4,7 +4,7 @@
 Run under the existing Naumi/Hub lock keeper after backups. No DB restore,
 old-container stop or configuration-secret printing is performed by this tool.
 """
-import json,pathlib,sys,subprocess,hashlib,time,urllib.request,http.client,socket,re,threading,os,html
+import json,pathlib,sys,subprocess,hashlib,time,urllib.request,http.client,socket,re,threading,os
 
 E=pathlib.Path(sys.argv[1]).resolve();PHASE=sys.argv[2]
 GATEWAY=pathlib.Path('/etc/nginx/sites-available/default')
@@ -70,6 +70,7 @@ def render_gateway(before):
  for kind,port in asset_ports.items():
   previous=asset_fallback[kind]
   extra+=f'location @image_cache_old_{kind} {{proxy_pass http://127.0.0.1:{port};proxy_intercept_errors on;error_page 404 = {previous};'+opts+'}\n'
+ extra+='location ^~ /media/ {proxy_pass http://127.0.0.1:13028;'+opts+'}\n'
  for route in ['/api/media/image-cache','/api/public-image-cache','/api/team/media','/api/enterprise/media']:
   extra+=f'location = {route} {{proxy_pass http://127.0.0.1:13028;'+opts+'}\n'
  for route in ['/desktop/api/media/image-cache','/desktop/api/public-image-cache','/desktop/api/team/media','/desktop/api/enterprise/media']:

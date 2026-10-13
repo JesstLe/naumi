@@ -3,6 +3,8 @@ import {randomUUID} from 'node:crypto';
 import {mkdir,writeFile}from'node:fs/promises';
 import path from'node:path';
 import sharp from'sharp';
+import{chromium}from'@playwright/test';
+import{build}from'esbuild';
 async function main(){
  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.equal(new URL(process.env.DATABASE_URL!).hostname,'127.0.0.1');
  const db=await import('../src/lib/db'),native=await import('../src/lib/native-auth'),admin=await import('../src/lib/admin-auth'),team=await import('../src/lib/teams/server'),grants=await import('../src/lib/teams/grants'),enterprise=await import('../src/lib/enterprise/server'),assets=await import('../src/lib/media-assets'),cache=await import('../src/app/api/media/image-cache/route');
@@ -32,7 +34,21 @@ async function main(){
   const enterpriseUrl='/api/enterprise/media?'+new URLSearchParams({enterpriseId:id,email:child,id:artId});
   // Admin preview still requires an activated enterprise and a real scoped member.
   assert.equal((await(await cache.POST(request(owner,enterpriseUrl,true))).json()).results[enterpriseUrl],null);
-  console.log('SCOPED_IMAGE_CACHE=PASS TEAM_OWNER=AUTHORIZED FOREIGN=DENIED RAW_URL=NOT_LEAKED WEBP=REAL VERSION_RACE=409 GRANT_REVOKE=DENIED ENTERPRISE_SCOPE=REQUIRED PROVIDER_CALLS=0');
+  await enterprise.activateEnterprise(actor,id,child,[]);
+  const activated=await(await cache.POST(request(owner,enterpriseUrl))).json();assert.ok(activated.results[enterpriseUrl]);
+  const eroute=await import('../src/app/api/enterprise/media/route');assert.equal((await eroute.GET(new Request('http://scope.test'+activated.results[enterpriseUrl].fetchUrl,{headers:{cookie:cookie(owner)}}))).status,200);
+  assert.equal((await(await cache.POST(request(foreign,enterpriseUrl))).json()).results[enterpriseUrl],null);
+  const entry=path.resolve('output/browser-image-cache/fixture-entry.tsx');
+  const bundle=await build({entryPoints:[entry],bundle:true,write:false,jsx:'automatic',platform:'browser',format:'iife',define:{'process.env':'{}','process.env.NODE_ENV':'"production"'},tsconfig:path.resolve('tsconfig.json')});
+  const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH});
+  try{const context=await browser.newContext();const base=process.env.NAUMI_VERIFY_URL||'http://127.0.0.1:13086';await context.addCookies([{name:'nv_user',value:native.signUserSession(owner,Date.now()),url:base}]);
+   const page=await context.newPage();await page.route('**/scoped-fixture',r=>r.fulfill({contentType:'text/html',body:'<div id="app"></div><script src="/scoped-entry.js"></script>'}));await page.route('**/scoped-entry.js',r=>r.fulfill({contentType:'application/javascript',body:bundle.outputFiles[0].text}));
+   let reads=0;page.on('request',r=>{if(/\/api\/(team|enterprise)\/media/.test(r.url()))reads++;});await page.goto(base+'/scoped-fixture');await page.evaluate(email=>(window as any).cacheActivate(email),owner);
+   await page.evaluate(async src=>{const a=await(window as any).cacheBlob(src);if(!a.size)throw Error('empty');await(window as any).cacheBlob(src);},enterpriseUrl);assert.equal(reads,1);
+   await page.reload();await page.evaluate(email=>(window as any).cacheActivate(email),owner);await page.evaluate(async src=>{await(window as any).cacheBlob(src);},enterpriseUrl);assert.equal(reads,1);
+   await context.close();
+  }finally{await browser.close();}
+  console.log('SCOPED_IMAGE_CACHE=PASS TEAM_OWNER=AUTHORIZED FOREIGN=DENIED RAW_URL=NOT_LEAKED WEBP=REAL VERSION_RACE=409 GRANT_REVOKE=DENIED ENTERPRISE_SCOPE=REQUIRED ENTERPRISE_ACTIVE=AUTHORIZED ENTERPRISE_REOPEN=LOCAL ENTERPRISE_REFRESH=LOCAL PROVIDER_CALLS=0');
  }finally{await pool.end();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
