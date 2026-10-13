@@ -54,7 +54,7 @@ try{
  const variants=[];
  for(const variant of['thumbnail','preview']){const src=source+'?variant='+variant;const first=await page.evaluate(s=>(window as any).cacheDigest(s),src);const n=bytesRequests;assert.deepEqual(await page.evaluate(s=>(window as any).cacheDigest(s),src),first);assert.equal(bytesRequests,n);variants.push({variant,bytes:first.size});}
  results.actualMedia={driver:asset.remote_ready?'R2':'local',originalBytes:original.size,hash:original.hash,reopenImageRequests:0,zipImageRequests:0,variants};
- await context.close();context=await chromium.launchPersistentContext(profile,{headless:true,executablePath:exe,viewport:{width:1440,height:1000}});await setup();page=await context.newPage();const beforeRestart=bytesRequests;await page.goto(base+'/works',{waitUntil:'domcontentloaded',timeout:120000});await visibleImages(page);assert.equal(bytesRequests,beforeRestart,'full browser restart must restore native image cache');results.browserRestartImageRequests=0;
+ await context.unrouteAll({behavior:'ignoreErrors'});await context.close();context=await chromium.launchPersistentContext(profile,{headless:true,executablePath:exe,viewport:{width:1440,height:1000}});await setup();page=await context.newPage();const beforeRestart=bytesRequests;await page.goto(base+'/works',{waitUntil:'domcontentloaded',timeout:120000});await visibleImages(page);assert.equal(bytesRequests,beforeRestart,'full browser restart must restore native image cache');results.browserRestartImageRequests=0;
  for(const route of['/desktop/works','/canvas','/tools','/genchat','/suite','/aplus','/templates','/enterprise','/team']){
   const r=await page.goto(base+route,{waitUntil:'domcontentloaded',timeout:120000});assert.equal(r?.status(),200,route);await page.waitForTimeout(1700);
   assert.equal(await page.locator('body').innerText().then(t=>/Application error: a client-side exception/.test(t)),false,route);
@@ -64,7 +64,7 @@ try{
  assert.deepEqual(errors,[]);results.pageErrors=errors;results.providerCalls=0;results.mode=side?'103-side-real-data':'103-public-real-data';
  await writeFile(path.join(out,side?'103-side-metrics.json':'103-live-metrics.json'),JSON.stringify(results,null,2));
  console.log('LIVE_IMAGE_CACHE=PASS MODE='+results.mode+' WORKS_REFRESH=0 BROWSER_RESTART=0 DESKTOP_REFRESH=0 ORIGINAL_REOPEN=0 ZIP_LOCAL=EXACT R2_VARIANTS=REUSED PAGE_ERRORS=0 PROVIDER_CALLS=0');
-}catch(error){await writeFile(path.join(out,'103-partial-metrics.json'),JSON.stringify(results,null,2));for(const page of context.pages())await page.screenshot({path:path.join(out,'103-debug.png')}).catch(()=>{});throw error;}finally{await context.close();}
+}catch(error){await writeFile(path.join(out,'103-partial-metrics.json'),JSON.stringify(results,null,2));for(const page of context.pages())await page.screenshot({path:path.join(out,'103-debug.png')}).catch(()=>{});throw error;}finally{await context.unrouteAll({behavior:'ignoreErrors'});await context.close();}
 
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
