@@ -10,8 +10,8 @@ export type CapabilityEvidence={state:"supported"|"unsupported"|"unknown";values
 export type CapabilitySet=Partial<Record<CapabilityKey,CapabilityEvidence>>;
 export type ImagegenPlan={request:ImagegenRequest;intent:Intent;fingerprint:string;modelVersion:number;billingVersion:number;skillInstructions?:string;
   steps:{key:string;operation:Intent["operation"];modelId?:string;eligibleUpstreamIds:string[];parameters:Record<string,string|number|boolean>;credits:number}[];
-  totalCredits:number;confirmationRequired:boolean;warnings:string[]};
-export type ImagegenResult={operationId:string;jobId:string;status:"queued"|"running"|"pending"|"needs_attention"|"succeeded"|"failed"|"cancelled";
+  totalCredits:number;confirmationRequired:boolean;warnings:string[];children?:{key:string;plan:ImagegenPlan}[]};
+export type ImagegenResult={operationId:string;jobId:string;status:"queued"|"running"|"pending"|"needs_attention"|"succeeded"|"partial"|"failed"|"cancelled";
   stage:"planning"|"generating"|"editing"|"postprocessing"|"saving"|"done";
   artifacts:{artworkId:string;url:string;width:number;height:number;mime:string;transparentPixels:number;totalPixels:number}[];
-  chargedCredits:number;error?:{code:string;message:string}};
+  chargedCredits:number;progress?:{completed:number;total:number};error?:{code:string;message:string}};
