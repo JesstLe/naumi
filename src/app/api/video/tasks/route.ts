@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import {z} from "zod";
 
-import { authenticatedEmail } from "@/lib/request-auth";
+import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 import { safeError } from "@/lib/api-error";
-import {getVideoTaskByIdempotencyKey} from "@/lib/db";
+import {getVideoTask,getVideoTaskByIdempotencyKey} from "@/lib/db";
 import { listVideoTaskViews, pollAndSettle, publicVideoTaskView } from "@/lib/video/service";
 
 // ---------------------------------------------------------------------------
@@ -19,9 +19,11 @@ export const maxDuration = 240;
 const VALID_STATUS = new Set(["processing", "queued", "needs_attention", "completed", "failed", "cancelled"]);
 
 export async function GET(request: Request) {
-  const email = await authenticatedEmail(request);
-  if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  const actor = await authenticatedEmail(request);
+  if (!actor) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   const url = new URL(request.url);
+  const email=await authorizedTargetEmail(request,url.searchParams.get("email"),true);
+  if(!email)return NextResponse.json({error:"无权访问目标账号"},{status:403});
   const id = url.searchParams.get("id") || "";
   const operation=url.searchParams.get("idempotencyKey");
   if(!id&&operation){const task=await getVideoTaskByIdempotencyKey(email,operation);return task?NextResponse.json({ok:true,task:publicVideoTaskView(task)},{headers:{"cache-control":"private, no-store"}}):NextResponse.json({error:"任务不存在"},{status:404});}
@@ -38,7 +40,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const task = await pollAndSettle(email, id);
+    const task = email===actor?await pollAndSettle(email,id):await getVideoTask(email,id);
     if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
     return NextResponse.json({ ok: true, task: publicVideoTaskView(task) },{headers:{"cache-control":"private, no-store"}});
   } catch (error) {

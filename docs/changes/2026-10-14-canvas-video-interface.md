@@ -157,3 +157,27 @@
 实际verify-video-fusion-agent-sse.ts PASS：checkpoint-c/agent-sse-0d85f540-53e3-48b0-b6f0-03b64c9e2468/result.json，包含modelSelfConfirmationBlocked=true；此前正常未确认用例亦PASS f86a034c-d221-43d0-a298-0edb1e483c9e。原生App/PG/私有媒体/Worker/Pi/Harness真实，文字与视频供应商均为隔离模拟，不证明真实模型规划质量或付费视频质量，真实付费调用0。
 
 第三批已提交推送f43430e，33文件1292+/83-。第四批只新增fixture及SSE verifier；完整C的历史/媒体界面集中用例、浏览器390px/i18n/管理员只读和上游制作Skill行为仍待完成，不能凭SSE脚本宣称完整Task13/全C/全34项通过。D完整固定LinuxApp、演示比对、蓝绿排空/回滚/正式103上线保持待做，无本批main合并或服务器发布/持锁。
+
+## Task11/12 第五批：真实Chrome设置/生成/播放与管理员只读
+
+本批新增管理员只读读取目标账号的video-node列表/详情、asset/BYOC公开目录与task列表/快照，沿用authorizedTargetEmail及requireAdmin。任务目标GET仅读DB，不惰性轮询/结算；所有POST/PATCH/DELETE继续真实authenticatedEmail，不能借email查询参数代写。前端hook在只读模式仍恢复目标节点/任务/素材与历史，跳过完成回写和上游轮询；上传/保存/生成/停止/删除持续禁用。旧modelId-only或真实providerId节点只按唯一相同public model ID匹配managed-video目录，不猜wire名或参数，不自动修改原配置。视频/文字节点加入实际?node深链，等待节点来源加载完成再定位。
+
+视频组件接入现有zh/en字典；按钮、字段、角色、状态、媒体/历史/高级设置与动态标签翻译，用户完整对白、素材标题和工作流JSON保持。摄影/元素/角色等元数据不换成图片模型规格。共用useBillingEstimate增加默认true的enabled参数，视频只读和BYOC不请求托管报价，原图片调用默认行为保留。
+
+实际浏览器发现并修复：portal丢画布主题变量导致暗色输入白底浅字，三个视频弹层使用canvas-ui-dark/light及canvas-ui-input；长fieldset内容压住固定页脚，独立div承载滚动；手动首尾角色被自动推断覆盖，显式角色修改保留并由合法性校验拒绝非法组合；增加交换首尾帧，交换真实素材身份并重建顺序角色。模型更换明确去除不支持的分镜/元素/摄影/参数；完整提示词不变。参考数量错误改为图片/视频/音频用户语言并覆盖英文。
+
+fixture扩展独立KIE motion模型，仅uiModels启用，单图/单视频/无音频、明确朝向枚举，真实库/通用参考图上限一致。种子初始PNG/MP4上传后登记sha/bytes/owner/remote_ready，避免远端已有文件误走本地历史兜底。模拟S3补签名校验后的response-content-disposition和仅fixture App origin的CORS；上传/读取仍验证SigV4/有效期/路径/不可覆盖规则，没有改生产下载或图片缓存鉴权。
+
+| 验证 | 状态与证据 |
+|---|---|
+| verify-video-fusion-readonly.ts | PASS：readonly-369640de-2582-48b6-a1c7-6e15c6d96612/result.json。真实两账号/管理员显式目标、非管理员拒绝、默认owner隔离、无上游轮询/费用变化，代写/生成/取消/删除全部拒绝 |
+| verify-video-fusion-canvas.ts + settings.mjs/canvas.mjs/canvas-jobs.mjs | PASS：canvas-browser-62cc28eb-c5cb-4380-9625-d1317ce11271/result.json。真实Chrome/原生Cookie/App/PG/Router/私有媒体；完整对白、真实首尾身份交换、手动非法角色阻止生成、8/8/11/10摄影选项及禁用编译、有序多类型引用/分镜/元素、合法朝向/换模型归一、刷新、英文、390px及目标只读。真实UI提交KIE motion task→Worker completed→原节点播放/暂停/静音/时间轴/真正下载/放大→真实首帧media job→重载仍同task。仅一次视频创建，原视频SHA保持 |
+| verify-video-fusion-history-assets.ts | PASS：history-assets-648535a2-25b2-4c26-a21f-8035ee16f014/result.json。实际上传/并发原身份、登记幂等、完整历史/结果选择与撤销、发送全部产物与原项目关联不收费、App重启、删除旧历史后仍用冻结完整配方实际生成、Workbench不挂Canvas |
+
+证据均位于本worktree忽略output/canvas-video-fusion-20261013/checkpoint-c。历史脚本初次把fixture对象读写也计为生成调用，断言改成create/image-create，不删除失败记录。其他失败与修正：uiModels通用参考图上限不一致；fixture用内部providerId而公开目录为managed-video；下载最初模拟S3未执行已签响应头导致打开视频；关闭媒体测试点了遮罩中心，改实际关闭按钮。最后tsc session70081 exit0。补充参考缩略图实际decode/放大画面loadeddata断言正在复核；未据截图空框声明图片验证已通过。
+
+完整C尚未完成：Browser Agent、两窗口/项目切换/复制/撤销/批量工作流与图片回归、media-interface集中脚本、上游全部制作Skill行为仍待覆盖；Task11/12/13和34项不可凭本用例整体打勾。D演示站实操/固定上游对照、34项矩阵、整分支新审阅、完整固定LinuxApp/蓝绿排空/回滚/103发布及交接全保持待做。当前未提交本批；已fetch main，仍56e5480。C盘181.2GiB/63.7%、E盘190.7GiB/72.9%，无需清理。没有连接103、持发布锁或发布。目标active。
+
+第五批补充实测已PASS：canvas-browser-e19c7f60-5397-4398-b9eb-7b79ae7837ca/result.json，包含actualOwnedReferenceImageDecode=true，放大video.loadeddata/videoWidth>0及所有前述设置/生成/播放器/真实下载/首帧/刷新/只读/英文/390px断言。替代只依赖截图空框的弱证据；图片缓存实现与生产下载鉴权未改。
+
+第五批媒体恢复集中用例最终PASS：media-interface-0091c0ff-c88e-4a27-8e48-615c49b5bd3a/result.json，真实App/DB/Worker drain/resume、最小UUID回执、参数/辅助文件指纹、跨账号隔离、分页之外pending恢复、同操作重放、App重启和删除项目后的迟到结果仅留Workbench、原SHA保持。首测502是fixture在helper drain之前未登记真实探测缓存；现在每份种子素材由真实FFprobe探测并以实际SHA记录，生产Worker排空限制未改。本批功能与补充证据区分明确，完整Browser Agent/其它画布交互和D仍待完成。

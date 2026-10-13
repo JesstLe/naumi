@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deleteFinishedVideoTask, getVideoTask } from "@/lib/db";
-import { authenticatedEmail } from "@/lib/request-auth";
+import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 import { safeError } from "@/lib/api-error";
 import { publicVideoTaskView } from "@/lib/video/service";
 import {publicVideoTaskSnapshot} from "@/lib/video/task-snapshot";
@@ -19,7 +19,7 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const email = await authenticatedEmail(request);
+  const email = await authorizedTargetEmail(request,new URL(request.url).searchParams.get("email"),true);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   const { id } = await context.params;
   if (!id) return NextResponse.json({ error: "缺少任务 id" }, { status: 400 });

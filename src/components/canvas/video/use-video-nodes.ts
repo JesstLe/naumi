@@ -14,11 +14,11 @@ export function useVideoNodes({email,readOnly,request}:{email?:string;readOnly:b
     if(actorRef.current!==actor||epochRef.current!==epoch)return;
     const byId=new Map(nodesRef.current.map(node=>[node.id,node]));for(const node of incoming){const old=byId.get(node.id);if(!old||node.revision>=old.revision)byId.set(node.id,node);}const next=[...byId.values()];nodesRef.current=next;setNodes(next);
   },[]);
-  const refresh=useCallback(async()=>{const actor=email,epoch=epochRef.current;if(!actor||readOnly)return;
-    const response=await request("/api/canvas/video-nodes?includeDeleted=1",{cache:"no-store"});const data=await response.json();if(!response.ok)throw new VideoNodeClientError(data.error||"视频节点加载失败",response.status,data.code);
+  const refresh=useCallback(async()=>{const actor=email,epoch=epochRef.current;if(!actor)return;
+    const response=await request(`/api/canvas/video-nodes?includeDeleted=1&email=${encodeURIComponent(actor)}`,{cache:"no-store"});const data=await response.json();if(!response.ok)throw new VideoNodeClientError(data.error||"视频节点加载失败",response.status,data.code);
     merge(Array.isArray(data.nodes)?data.nodes:[],actor,epoch);if(actorRef.current===actor&&epochRef.current===epoch){setReady(true);setError("");}
   },[email,readOnly,request,merge]);
-  useEffect(()=>{epochRef.current++;nodesRef.current=[];setNodes([]);setReady(false);setError("");queues.current.clear();if(!email||readOnly){setReady(true);return;}
+  useEffect(()=>{epochRef.current++;nodesRef.current=[];setNodes([]);setReady(false);setError("");queues.current.clear();if(!email){setReady(true);return;}
     let stopped=false,timer:ReturnType<typeof setTimeout>;const run=async()=>{try{await refresh();}catch(cause){if(!stopped){setReady(true);setError(cause instanceof Error?cause.message:"视频节点加载失败");}}if(!stopped)timer=setTimeout(run,6000);};void run();return()=>{stopped=true;clearTimeout(timer);};
   },[email,readOnly,refresh]);
   const save=useCallback((id:string,patch:Partial<Omit<VideoNodeWrite,"id"|"operationId">>):Promise<CanvasVideoNode>=>{

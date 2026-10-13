@@ -111,7 +111,7 @@ export function normalizeVideoInput(raw:Record<string,unknown>,cap:ResolvedVideo
   const allRefs=[...refs,...(input.elements||[]).flatMap(element=>element.references)];
   for(const [kind,key] of [["image","images"],["video","videos"],["audio","audios"]] as const){
     const items=allRefs.filter(ref=>ref.kind===kind),count=new Set(items.map(ref=>ref.id)).size,limit=cap.limits?.[key];
-    if(count&&(limit==null||count>limit))reject("REFERENCE_LIMIT_EXCEEDED",`${kind}参考素材数量超过或缺少已配置上限`,"references");
+    if(count&&(limit==null||count>limit))reject("REFERENCE_LIMIT_EXCEEDED",`${{image:"图片",video:"视频",audio:"音频"}[kind]}参考素材数量超过或缺少已配置上限`,"references");
     const byteLimit=cap.limits?.[`${kind}MaxBytes`],durationLimit=cap.limits?.[`${kind}MaxDurationSeconds`];
     if(items.some(ref=>ref.bytes!==undefined&&byteLimit!=null&&ref.bytes>byteLimit))reject("REFERENCE_BYTES_EXCEEDED","参考素材超过模型大小限制","references");
     if(items.some(ref=>ref.durationSeconds!==undefined&&durationLimit!=null&&ref.durationSeconds>durationLimit))reject("REFERENCE_DURATION_EXCEEDED","参考素材超过模型时长限制","references");

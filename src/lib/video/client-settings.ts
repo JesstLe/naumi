@@ -15,6 +15,13 @@ export type VideoInputChoice={id:string;nodeId:string;kind:OrderedInput["kind"];
 export const VIDEO_MODE_LABELS:Record<VideoMode,string>={text:"文生视频",single_image:"单图生视频",frames_required:"首尾帧必填",first_optional:"首帧可选",last_optional:"尾帧可选",reference:"混合参考",video_edit:"编辑视频",extend:"续写视频",motion_control:"运动控制",lip_sync:"口型同步"};
 export const VIDEO_ROLE_LABELS:Record<OrderedInput["role"],string>={context:"参考文字",author:"描述来源",first_frame:"首帧",last_frame:"尾帧",reference:"参考",element:"元素",source_video:"来源视频",source_audio:"来源音频"};
 export const VIDEO_KIND_LABELS={text:"文字",image:"图片",video:"视频",audio:"音频"};
+export function selectedVideoCatalogModel(models:VideoCatalogModel[],config:VideoNodeConfig){
+  const exact=models.find(model=>model.modelId===config.modelId&&model.providerId===config.providerId);
+  if(exact)return exact;
+  // A public managed model has a stable ID; older nodes may omit its UI provider alias.
+  const managed=models.filter(model=>model.providerId==="managed-video"&&model.modelId===config.modelId);
+  return managed.length===1?managed[0]:undefined;
+}
 export function catalogCapability(model?:VideoCatalogModel):ResolvedVideoCapability{return model?.definition||{sources:{}};}
 export function videoDurations(cap:ResolvedVideoCapability){return Array.from(new Set((cap.durationResolutionMap||[]).flatMap(map=>map.durations)));}
 export function videoResolutions(cap:ResolvedVideoCapability,duration?:number){return Array.from(new Set((cap.durationResolutionMap||[]).filter(map=>duration!==undefined&&map.durations.includes(duration)).flatMap(map=>map.resolutions)));}
