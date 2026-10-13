@@ -6,8 +6,9 @@ import {join} from "node:path";
 import sharp from "sharp";
 import {createModelFixture} from "./model-config-fixture";
 async function main(){
+ Object.assign(process.env,{STORAGE_DRIVER:"r2",MEDIA_PRIVATE:"1",MEDIA_DIR:await mkdtemp(join(tmpdir(),"naumi-imagegen-pixels-")),R2_ACCOUNT_ID:"imagegen-fixture",R2_BUCKET:"private-fixture",R2_ACCESS_KEY_ID:"fixture-only",R2_SECRET_ACCESS_KEY:"fixture-only"});
  const f=await createModelFixture();process.env.PGOPTIONS=`-c search_path=${f.schemaName}`;
- process.env.STORAGE_DRIVER="local";process.env.MEDIA_PRIVATE="1";process.env.MEDIA_DIR=await mkdtemp(join(tmpdir(),"naumi-imagegen-pixels-"));
+ const realFetch=globalThis.fetch;let storageRequests=0;globalThis.fetch=async(input,init)=>{const url=new URL(input instanceof Request?input.url:String(input));if(url.hostname==="imagegen-fixture.r2.cloudflarestorage.com"){storageRequests++;return new Response("fixture storage outage",{status:503});}throw new Error("Unexpected network request in isolated storage fixture");};
  const db=await import("../src/lib/db"),post=await import("../src/lib/media-postprocess"),storage=await import("../src/lib/storage");
  try{
   await db.ensureSchema();const owner=`imagegen-${randomUUID()}@example.test`;await db.getOrCreateUser(owner,"Fixture");
@@ -35,7 +36,8 @@ async function main(){
   assert.equal((await local.saveCanvasLocalEdit(owner,operation,f.origin)).id,version.id);
   await assert.rejects(()=>local.saveCanvasLocalEdit("another@example.test",{...operation,operationId:randomUUID()},f.origin),/无权|不存在/);
   const created=(await db.getPool().query("SELECT parent_id,image_url FROM app_artworks WHERE id=$1 AND email=$2",[version.id,owner])).rows[0];assert.equal(created.parent_id,sourceId);
-  console.log("PASS imagegen postprocess persistence: immutable base, frozen policy, private owner, MIME and idempotency");
- }finally{await db.getPool().end();await f.cleanup();}
+  assert.ok(storageRequests>0,"R2 outage was actually injected");assert.equal((await db.getPool().query("SELECT remote_ready FROM app_media_assets WHERE key=$1",[row.base_url.slice(7)])).rows[0].remote_ready,false);
+  console.log("PASS R2 outage imagegen postprocess persistence: immutable base, frozen policy, private owner, MIME and idempotency");
+ }finally{globalThis.fetch=realFetch;await db.getPool().end();await f.cleanup();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

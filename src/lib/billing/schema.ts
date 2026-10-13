@@ -1,11 +1,19 @@
 import "server-only";
-import type { Pool } from "pg";
+import type { Pool,PoolClient } from "pg";
+import {withSchemaInitialization} from "../schema-initialization";
 const ready = new WeakMap<Pool, Promise<void>>();
+export function markBillingSchemaReady(pool:Pool){ready.set(pool,Promise.resolve());}
 export function ensureBillingSchema(pool: Pool): Promise<void> {
     let pending = ready.get(pool);
     if (pending)
         return pending;
-    pending = pool.query(`
+    pending = withSchemaInitialization(pool,applyBillingSchema).catch(error => { ready.delete(pool); throw error; });
+    ready.set(pool, pending);
+    return pending;
+}
+
+/** The caller owns the namespace initialization transaction. */
+export async function applyBillingSchema(client:PoolClient){await client.query(`
   CREATE TABLE IF NOT EXISTS app_billing_config_versions (
    version bigserial PRIMARY KEY, operation_id text NOT NULL UNIQUE,
    request_fingerprint text NOT NULL,actor text NOT NULL,reason text NOT NULL,
@@ -45,7 +53,4 @@ export function ensureBillingSchema(pool: Pool): Promise<void> {
   ALTER TABLE app_image_cost_audit ADD COLUMN IF NOT EXISTS cost_actual boolean;
   ALTER TABLE app_image_cost_audit ALTER COLUMN cost_credits DROP NOT NULL;
   ALTER TABLE app_image_cost_audit ALTER COLUMN margin_credits DROP NOT NULL;
- `).then(() => { }).catch(error => { ready.delete(pool); throw error; });
-    ready.set(pool, pending);
-    return pending;
-}
+ `);}

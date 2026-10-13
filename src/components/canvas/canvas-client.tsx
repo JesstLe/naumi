@@ -8648,10 +8648,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   async function mountImagegenResult(result:ImagegenResult){
     if(!imagegenPanel||!result.artifacts.length)return;
+    const artifacts=result.artifacts.filter(a=>!works?.some(w=>w.id===a.artworkId&&w.canvasX!=null&&w.canvasY!=null));
+    if(!artifacts.length)return;
     let y=imagegenPlacement.current.get(result.operationId)??imagegenPanel.y;
-    for(const artifact of result.artifacts){const response=await privateFetchRaw("/api/artworks/position",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:artifact.artworkId,x:Math.round(imagegenPanel.x),y:Math.round(y)})});if(!response.ok)throw new Error("结果已保存，画布位置保存失败");y+=artifact.height+NODE_LABEL_H+24;}
+    for(const artifact of artifacts){const response=await privateFetchRaw("/api/artworks/position",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:artifact.artworkId,x:Math.round(imagegenPanel.x),y:Math.round(y)})});if(!response.ok)throw new Error("结果已保存，画布位置保存失败");y+=artifact.height+NODE_LABEL_H+24;}
     imagegenPlacement.current.set(result.operationId,y);
-    const ids=result.artifacts.map(a=>a.artworkId),fresh=await mergeWorks(ids);pushAddUndoMany(ids,fresh);
+    const ids=artifacts.map(a=>a.artworkId),fresh=await mergeWorks(ids);pushAddUndoMany(ids,fresh);
   }
   const activeImageModelLabel =
     imageModels.find((item) => item.id === genModel)?.label || (canvasImageCatalogError ? "模型加载失败" : "模型加载中");
@@ -9854,7 +9856,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
                   <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
 
-                  <button type="button" aria-label="图像创作" disabled={readOnly} onClick={openImagegenPanel} className="canvas-ui-action flex h-8 items-center rounded-md px-2 text-xs">图像创作</button>
+                  {canFeature("generate")&&<button type="button" aria-label="图像创作" disabled={readOnly} onClick={openImagegenPanel} className="canvas-ui-action flex h-8 items-center rounded-md px-2 text-xs">图像创作</button>}
                   <CanvasActionMenu label={t("canvas.toolbar.addToCanvas")} light={lightCanvas}
                     open={addMenuOpen} onOpenChange={open => { setMoreToolsOpen(false); setAddMenuOpen(open); }}
                     triggerIcon={Plus} iconOnly triggerTestId="canvas-add-node-button" menuTestId="canvas-create-menu"
@@ -10615,7 +10617,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 "overflow-x-auto"
               )}
             >
-              <button type="button" disabled={readOnly} onClick={openImagegenPanel} className="canvas-ui-action flex h-[34px] items-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold">图像创作</button>
+              {canFeature("generate")&&<button type="button" disabled={readOnly} onClick={openImagegenPanel} className="canvas-ui-action flex h-[34px] items-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold">图像创作</button>}
               {selected && <>
               <button type="button" data-action="rename" aria-label={t("canvas.editName")} title={t("canvas.toolbar.renameHint")}
                 disabled={!selected || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={() => { if (selected) { setNodeRenameValue(selected.title); setRenamingNodeId(selected.id); } }}
@@ -11446,6 +11448,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 {/* 提示词:短内容至少约 5 行，长内容自适应增长，超过上限后内部滚动。 */}
                 <Textarea
                   ref={promptAreaRef}
+                  aria-label="节点提示词"
                   value={editPrompt}
                   readOnly={readOnly}
                   placeholder={readOnly ? "" : t("canvas.promptPlaceholder")}
@@ -11523,6 +11526,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     onClick={generateChild}
                     disabled={selectedGenerating}
                     title={t("canvas.generate")}
+                    aria-label="生成"
                     className="canvas-ui-primary flex h-10 w-10 flex-none items-center justify-center rounded-[11px] text-[18px] font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
                     {selectedGenerating ? (
@@ -11590,6 +11594,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 </div>
                 <Textarea
                   ref={pendPromptRef}
+                  aria-label="节点提示词"
                   value={editPrompt}
                   placeholder={t("canvas.pendPromptPlaceholder")}
                   onChange={(e) => setEditPrompt(e.target.value)}
@@ -11639,6 +11644,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   onClick={() => void generatePend()}
                   disabled={selectedPendGenerating}
                   title={t("canvas.generate")}
+                    aria-label="生成"
                   className="canvas-ui-primary flex h-10 w-10 flex-none items-center justify-center rounded-[11px] text-[18px] font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   {selectedPendGenerating ? (

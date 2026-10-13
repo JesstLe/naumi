@@ -13,6 +13,7 @@ async function main(){
  let calls=0,digest="";const bodies:Record<string,unknown>[]=[];
  const raw=Buffer.alloc(1024*1024*4);for(let y=0;y<1024;y++)for(let x=0;x<1024;x++){const i=(y*1024+x)*4;raw[i]=255;raw[i+1]=80;raw[i+2]=20;raw[i+3]=x>100&&x<924&&y>100&&y<924?255:0;}
  const png=await sharp(raw,{raw:{width:1024,height:1024,channels:4}}).png().toBuffer();
+ const opaque=await sharp(png).flatten({background:"#fff"}).png().toBuffer();
  const f=await createModelFixture(async(req,res)=>{
    const pieces:Buffer[]=[];for await(const c of req)pieces.push(Buffer.from(c));const bytes=Buffer.concat(pieces);
    const body=bytes.length&&req.headers["content-type"]?.includes("json")?JSON.parse(bytes.toString()):{};
@@ -26,7 +27,7 @@ async function main(){
      if(req.headers["content-type"]?.includes("multipart")){const form=await new Request(f.origin+req.url,{method:"POST",headers:{"content-type":req.headers["content-type"]},body:bytes}).formData();Object.assign(body,Object.fromEntries([...form.entries()].filter(([,v])=>typeof v==="string")));body.hasMask=form.get("mask") instanceof File;body.inputCount=form.getAll("image[]").length||form.getAll("image").length;}
      calls++;bodies.push(body);
      if(String(body.prompt).includes("UNCERTAIN_FIXTURE")){res.destroy();return;}
-     return res.end(JSON.stringify({created:1,data:[{b64_json:png.toString("base64")}]}));
+     return res.end(JSON.stringify({created:1,data:[{b64_json:(String(body.prompt).includes("INVALID_ALPHA_FIXTURE")?opaque:png).toString("base64")}]}));
    }
    res.statusCode=404;res.end(JSON.stringify({error:"Fixture route does not exist"}));
  });
@@ -40,6 +41,7 @@ async function main(){
  const db=await import("../src/lib/db");
  try{
    const owner=`imagegen-exec-${randomUUID()}@example.test`;await db.getOrCreateUser(owner,"Fixture");
+   const {createBillingService,withBillingTransaction}=await import("../src/lib/billing/service");await withBillingTransaction(db.getPool(),tx=>createBillingService().grantTx(tx,{id:randomUUID(),email:owner,amount:500,source:"admin",reason:"isolated imagegen fixture",expiry:{unit:"years",value:1},ledgerId:randomUUID(),fingerprint:randomUUID(),actor:"fixture"}));
    const req=imagegenRequestSchema.parse({version:1,operationId:randomUUID(),entry:"canvas",mode:"generate",prompt:"画一只透明底鹈鹕",modelId:"image-a",parameters:{quality:"medium",resolution:"1K",ratio:"1:1"}});
    const before=(await db.getPool().query("SELECT count(*)::int AS n FROM app_image_jobs")).rows[0].n;
    const plan=await planImagegen(req,owner);assert.equal(plan.intent.background,"transparent");assert.equal(plan.steps[0].modelId,"image-a");assert.equal(calls,0);
@@ -72,6 +74,8 @@ async function main(){
    const legacyBody=await legacy.json();assert.equal(legacy.ok,true,JSON.stringify(legacyBody));
    for(let i=0;i<600;i++){const state=(await db.getPool().query("SELECT snapshot FROM app_image_jobs WHERE id=$1",[legacyBody.jobId])).rows[0]?.snapshot;if(state?.status==="done"){assert.ok(state.images.length);break;}assert.notEqual(state?.status,"error",state?.error);await new Promise(r=>setTimeout(r,100));}
    assert.equal(calls,4);assert.equal(bodies[3].background,"transparent","Legacy node prompts require no capability button");
+   const wrong=imagegenRequestSchema.parse({...req,operationId:randomUUID(),prompt:"INVALID_ALPHA_FIXTURE: 画一只透明底鸟"}),wrongPlan=await planImagegen(wrong,owner);await submitImagegen(wrong,owner,{billingVersion:wrongPlan.billingVersion,modelVersion:wrongPlan.modelVersion,credits:wrongPlan.totalCredits,confirmed:true});let wrongResult;for(let i=0;i<600;i++){wrongResult=await getImagegenResult(wrong.operationId,owner);if(wrongResult?.status==="failed")break;await new Promise(r=>setTimeout(r,100));}assert.equal(wrongResult?.status,"failed",JSON.stringify(wrongResult));assert.equal(wrongResult?.artifacts.length,1,"An opaque supplier result remains recoverable");assert.equal(wrongResult?.artifacts[0].transparentPixels,0);assert.equal(wrongResult?.chargedCredits,wrongPlan.totalCredits,"Actual generation charge is reported even when transparency fails");assert.equal(calls,5);
+   const {agentImagegenRequest}=await import("../src/lib/imagegen/agent-request"),localRequest=await agentImagegenRequest("generate_image",{local_process:true,image_url:`data:image/png;base64,${png.toString("base64")}`,output_format:"webp",downscale_max_dim:256},owner);assert.equal(localRequest.mode,"postprocess");const localPlan=await planImagegen(localRequest,owner);assert.equal(localPlan.totalCredits,0);const {executeAgentImagegen}=await import("../src/lib/imagegen/agent-executor");const localResult=await executeAgentImagegen(localPlan,owner);assert.equal(localResult.details.chargedCredits,0);assert.equal(calls,5);assert.ok(localResult.details.urls[0].endsWith(".webp"));
    console.log("PASS imagegen execution: readonly plan, native prompt trigger, frozen wire fields, owned results and one billed child");
  }finally{await db.getPool().end();await f.cleanup();}
 }

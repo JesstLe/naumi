@@ -10,6 +10,7 @@ import JSZip from "jszip";
 import { ChevronRight, Download, Loader2, Plus, RefreshCw, Upload } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import {useFeatureAccess} from "@/lib/feature-access/client";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useFeatureBilling } from "@/lib/billing/preview";
 import Link from "next/link";
@@ -94,6 +95,7 @@ function uid() {
 export function WorkbenchClient() {
   const [imagegenOpen,setImagegenOpen]=useState(false);
   const { user, ready } = useAuth();
+  const {ready:featureReady,can}=useFeatureAccess();
   const { openAuth } = useAuthModal();
 
   const [products, setProducts] = useState<ProductImage[]>([]);
@@ -372,7 +374,7 @@ export function WorkbenchClient() {
             )}
             <Link href="/genchat" className="rounded-md border border-c-line px-2.5 py-1.5 hover:bg-c-track">聊天生图</Link>
             <Link href="/generate" className="rounded-md border border-c-line px-2.5 py-1.5 hover:bg-c-track">单图生成</Link>
-            <button className="rounded-md border border-c-line px-2.5 py-1.5 hover:bg-c-track" onClick={()=>setImagegenOpen(true)}>图像创作 / 提示词批次</button>
+            <button disabled={!ready||!user||!featureReady||!can("batchshot")} className="rounded-md border border-c-line px-2.5 py-1.5 hover:bg-c-track disabled:opacity-40" onClick={()=>setImagegenOpen(true)}>图像创作 / 提示词批次</button>
           </div>
         </div>
       </div>
