@@ -1,4 +1,6 @@
 "use client";
+import { useManagementEntry } from "./use-management-entry";
+import { entryStatusLabel } from "@/lib/teams/entry-contract";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -98,26 +100,10 @@ export function useAccountAdminStatus(user: SessionUser | null) {
   return isAdmin;
 }
 
-/** Team visibility is independent of the password-protected global admin console. */
+/** Legacy consumers use the same canonical discovery as account settings. */
 export function useTeamEntryAccess(user: SessionUser | null) {
-  const [access, setAccess] = useState<{ email: string; allowed: boolean } | null>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    setAccess(null);
-    if (!user) return;
-    const check = async () => {
-      try {
-        const { authHeader } = await import("@/lib/supabase");
-        const response = await fetch("/api/team/access", { cache: "no-store", headers: await authHeader(), signal: controller.signal });
-        const data = response.ok ? await response.json() : null;
-        if (!controller.signal.aborted) setAccess({ email: user.email, allowed: !!data?.allowed });
-      } catch { if (!controller.signal.aborted) setAccess(null); }
-    };
-    void check(); const timer = window.setInterval(check, 30_000);
-    window.addEventListener("focus", check);
-    return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener("focus", check); };
-  }, [user?.email]);
-  return access?.email === user?.email && !!access?.allowed;
+  const { data } = useManagementEntry(user);
+  return !!data?.allowed && data.href === '/team';
 }
 
 export function AccountDockMenu({
@@ -143,7 +129,8 @@ export function AccountDockMenu({
   const { t, locale } = useI18n();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
   const initial = user.name.trim().charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase() || "U";
-  const hasTeam = useTeamEntryAccess(user);
+  const { data: entry, state: entryState } = useManagementEntry(user);
+  const entryStatus = entryState === "ready" ? entry!.status : entryState;
 
   return (
     <div
@@ -212,7 +199,18 @@ export function AccountDockMenu({
         <Settings className="h-4 w-4" />
         {t("menu.security")}
       </Link>
-      {hasTeam && <Link role="menuitem" href="/team" onClick={onClose} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"><Users className="h-4 w-4" />{L("团队管理", "Team management")}</Link>}
+      <Link
+        data-testid="account-management-entry"
+        role="menuitem"
+        href={entry?.allowed ? entry.href : "/account/security"}
+        onClick={onClose}
+        className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"
+      >
+        <span className="flex items-center gap-2"><Users className="h-4 w-4" />{entry?.enterprise ? L("企业管理", "Enterprise") : L("团队入口", "Team access")}</span>
+        <span className={`text-[11px] ${entry?.allowed ? "text-emerald-700" : "text-muted-foreground"}`}>
+          {entry?.allowed && entry.expiresAt === null ? L("永久有效", "Permanent") : entryStatusLabel(entryStatus, locale === "en")}
+        </span>
+      </Link>
       <div className="my-1 h-px bg-border" />
       <button
         type="button"
