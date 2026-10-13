@@ -65,3 +65,17 @@
 - 已编写`verify-video-media-sandbox.mjs`，用于独立固定源码Linux容器中的真实launcher/FFmpeg/FFprobe：正向抽帧/裁剪、实际进度后取消；绕过JS参数校验直接验证C launcher拒绝可达本地HTTP及确实存在的宿主/跨job文件，核对原SHA及隔离环境。尚未执行，不能以Windows fixture的sandbox=false或语法检查证明Linux chroot/seccomp通过。
 
 证据：本机忽略目录`output/canvas-video-fusion-20261013/checkpoint-a/{media,results}-app.log`及按UUID生成的`checkpoint-b`实际产物/独立FFprobe文件、controls/billing证据；后续结果脚本按运行UUID另存进度证据，保留已通过来源，不以最后一个PASS覆盖全部范围。当前B仍待完整最终组合、实际Linux沙箱/候选生命周期、受影响合并回归与阶段main整合；C/D和103最终上线未完成。仅模拟供应商调用，真实视频API额度/质量未验证。此次未发布、未修改正式服务器业务数据、未持103部署锁。
+
+## B 最终组合与 Linux 实测（2026-10-14）
+
+本机整次`verify-video-fusion-media.ts`现已实际输出`VIDEO_MEDIA=PASS`，包含basic/controls/billing完整组合；五组`verify-video-fusion-results.ts`也整次通过AutoDL（缺项故障/预扣保持/App重启恢复）、RunningHub、ModelVerse双视频、TFRouter真实30秒大inline与差异元数据、首次BYOC ComfyUI视频/音频/图片与0积分。此前失败仍保留历史，不能用这次通过抹去当时失败原因。150MiB真实下载器内存证据沿用上次通过值，无新下载器改动，不无理由重复执行。
+
+- 固定源码派生Linux fixture仅提取正式Dockerfile中的media-runtime层及同提交launcher/engine/Worker，使用原创4秒素材。它不含完整App、DB、供应商/R2密钥或正式媒体，不作为发布镜像。镜像明确标记`fullAppImage:false`。上下文初次生成发现Windows默认GBK读取中文Dockerfile失败，已明确UTF8；未把失败目录当可用上下文。
+- 核对运行层时补齐正式Dockerfile显式复制`media-bundle.mjs`，并保留ELF动态加载器执行权限。实际Linux构建又发现`ldd`多二进制标题被误当路径复制，已改为分别调用。下一次镜像构建成功后真实运行暴露Docker默认`/tmp`的noexec；`/proc/mounts`与二进制/加载器555权限同时核对确认根因。正式Compose及候选帮助脚本现将普通`/tmp`保持noexec/nosuid/nodev、16MiB，只给`/tmp/naumi-media-sandbox`独立exec/nosuid/nodev、2GiB挂载；仍保持只读根FS、六个必要能力、子进程独立UID/chroot/no-new-privileges/seccomp，未启用privileged或SYS_ADMIN。
+- 修复后的实际Linux镜像源码`8be45e33ff6cede972b468e57b0c5b6a2cee43a8`，Image ID `sha256:76ca4508736a3641f5c91b75546f9abf0f2b91d2cd694fb20041c288de39803f`。真实C launcher、FFprobe/FFmpeg抽帧/两秒裁剪、实际进度后取消、原素材SHA、内核拒绝可达本地HTTP与确实存在的宿主/跨任务文件均通过，退出0、任务副本回收；网络检查绕过JS参数过滤直接调用launcher，不以仅前置校验当内核证明。
+- 同一派生镜像实际启动生产模式HTTP媒体Worker，启动自检执行真实sandbox `ffmpeg -version`后health才可用；源码版本、sandbox=true、401鉴权、drain/resume、无业务凭据/公网端口/正式挂载通过。独立测试服务已停止并删除本测试容器，临时随机Worker秘钥文件已清除；不删除其他容器、镜像或数据库。此证据证明组件启动/排空恢复机制，不证明完整App蓝绿切流、生产Compose应用或正式回滚，后者仍在D。
+- 原生格式收尾发现仅固定扩展名会拒绝合法Matroska/BMP、并误判仅音轨MP4。已补实际容器/编码约束下的原生格式及已验证流的MIME兜底，区分Matroska中H.264/AAC与WebM，不将仅音轨MP4标成视频；授权输入保留经过格式确认的Matroska类型，私有本地响应采用登记的真实MIME。集中`verify-video-fusion-media-formats.ts`实际通过MKV→已拥有作品→MP4复用、仅音轨MP4、BMP和逐项SHA/其他账号404；未知真实格式仍不能伪报可播放视频。
+
+Linux证据目录：`/opt/naumi-video-fixture-20261013/media-sandbox-8be45e33ff6c`，含`fixture-source.json`（source子目录）、构建日志/Image ID、`scratch/linux-sandbox-evidence.json`、HTTP Worker证据及退出码。构建限1GiB/0.75CPU，运行限2GiB/1CPU，network=none且只挂本fixture。最初不必要的发布锁尝试返回75，未启动构建；复核发布约定后，完全独立测试没有读取发布基线/备份或执行切流，按隔离测试运行，不占Naumi/Hub部署锁。正式发布、回滚及镜像清理继续遵守全程锁。
+
+待阶段整合：刷新origin/main保留最新生图蒙版/元数据/企业入口/浏览器标题，再执行受影响合并回归并普通推main；完整App固定构建、发布候选/切流与生产回滚仍按D继续。来源机制依据：[Linux execve手册](https://man7.org/linux/man-pages/man2/execve.2.html)、[Docker tmpfs文档](https://docs.docker.com/engine/storage/tmpfs/)，实际通过以本次进程/产物证据为准。

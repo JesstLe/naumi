@@ -53,7 +53,7 @@ export async function GET(
     return new Response("Bad request", { status: 400 });
   }
 
-  let rel = segs.join("/");
+  let rel = segs.join("/"),registeredContentType:string|undefined;
   if (privateMedia) {
     try {
       const owner=await authenticatedEmail(request);
@@ -66,6 +66,7 @@ export async function GET(
         const key=variant==='thumbnail'?asset?.thumbnail_key:asset?.preview_key;
         if(key) {rel=key;asset=await getMediaAsset(key);}
       }
+      registeredContentType=asset?.content_type;
       // Keep manifest URLs on the authenticated App origin so their relative
       // segment/key references resolve through the same per-file authorization.
       if(asset?.remote_ready && storageDriver!=='local'&&!/\.(m3u8|mpd)$/i.test(rel)) {
@@ -116,7 +117,7 @@ export async function GET(
     if (!info.isFile()) return new Response("Not found", { status: 404 });
     const ext = (rel.split(".").pop() || "").toLowerCase();
     const commonHeaders = {
-      "content-type": TYPES[ext] || "application/octet-stream",
+      "content-type": registeredContentType || TYPES[ext] || "application/octet-stream",
       "cache-control": privateMedia ? "private, max-age=300" : "public, max-age=31536000, immutable",
       ...(privateMedia?{"vary":"Cookie, Authorization","x-content-type-options":"nosniff"}:{}),
       "accept-ranges": "bytes",

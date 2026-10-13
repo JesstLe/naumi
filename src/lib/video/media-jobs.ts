@@ -14,6 +14,7 @@ import {prepareMediaInputs,prepareMediaAuxiliary,auxiliaryMediaBytes,mediaWorker
 import {encryptAtRest,decryptAtRest} from "../settings";
 import {nativeMediaArgs,presetMediaCommand,replaceVirtual} from "../../../scripts/video-fusion/media-engine.mjs";
 import {inspectMediaBundle} from "../../../scripts/video-fusion/media-bundle.mjs";
+import {inspectedMediaMime} from "./media-formats";
 import {mediaBillingQuote,confirmMediaQuote} from "./media-billing";
 import {reserveTaskBillingTx,settleTaskBillingTx} from "../billing/task-operation";
 import type {BillingQuote} from "../billing/types";
@@ -107,11 +108,17 @@ export async function createMediaJob(actorRaw:string,raw:unknown){
 function outputMime(name:string,probe:MediaProbe|null,fragment=false){
   const extension=name.split(".").pop()?.toLowerCase();
   const types:Record<string,string>={png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",webp:"image/webp",gif:"image/gif",mp4:"video/mp4",webm:"video/webm",mov:"video/quicktime",ts:"video/mp2t",m4s:"video/iso.segment",wav:"audio/wav",mp3:"audio/mpeg",m4a:"audio/mp4",ogg:"audio/ogg",flac:"audio/flac",m3u8:"application/vnd.apple.mpegurl",mpd:"application/dash+xml",json:"application/json",txt:"text/plain",srt:"application/x-subrip",ass:"text/plain",vtt:"text/vtt",csv:"text/csv",log:"text/plain",md5:"text/plain",ffconcat:"text/plain",fffilter:"text/plain",key:"application/octet-stream",bin:"application/octet-stream"};
-  const mime=types[extension||""];if(!mime)throw new Error("媒体输出格式无法确认");
+  Object.assign(types,{mkv:"video/x-matroska",avi:"video/x-msvideo",flv:"video/x-flv",ogv:"video/ogg",mpg:"video/mpeg",mpeg:"video/mpeg",asf:"video/x-ms-asf",wmv:"video/x-ms-asf",mka:"audio/x-matroska",opus:"audio/ogg",aac:"audio/aac",aiff:"audio/aiff",aif:"audio/aiff",wma:"audio/x-ms-wma",bmp:"image/bmp",tif:"image/tiff",tiff:"image/tiff",apng:"image/apng"});
+  let mime=types[extension||""];
+  if(probe&&!fragment&&!probe.videoCodec&&probe.audioCodecs.length&&["mp4","mov","webm","mkv","ogg","asf"].includes(extension||""))mime=inspectedMediaMime(probe,"audio");
+  if(probe&&!fragment&&["video/webm","audio/webm"].includes(mime))mime=inspectedMediaMime(probe,probe.videoCodec?"video":"audio",mime);
+  if(probe?.videoCodec&&extension==="ogg")mime="video/ogg";
+  if(!mime&&probe){try{mime=inspectedMediaMime(probe,"image");}catch{mime=inspectedMediaMime(probe,probe.videoCodec?"video":"audio");}}
+  if(!mime)throw new Error("媒体输出格式无法确认");
   if(!fragment&&(mime.startsWith("video/")&&!probe?.videoCodec||mime.startsWith("audio/")&&!probe?.audioCodecs.length||mime.startsWith("image/")&&!probe?.width))throw new Error("媒体输出格式与实际流不一致");
-  const formats:Record<string,string[]>={mp4:["mov","mp4"],mov:["mov"],m4a:["mov","mp4"],webm:["webm","matroska"],ts:["mpegts"],wav:["wav"],mp3:["mp3"],ogg:["ogg"],flac:["flac"]};
+  const formats:Record<string,string[]>={mp4:["mov","mp4"],mov:["mov"],m4a:["mov","mp4"],webm:["webm","matroska"],mkv:["matroska"],mka:["matroska"],avi:["avi"],flv:["flv"],ogv:["ogg"],opus:["ogg"],mpg:["mpeg"],mpeg:["mpeg"],asf:["asf"],wmv:["asf"],wma:["asf"],aac:["aac"],aif:["aiff"],aiff:["aiff"],ts:["mpegts"],wav:["wav"],mp3:["mp3"],ogg:["ogg"],flac:["flac"]};
   if(probe&&formats[extension||""]&&!formats[extension!].some(format=>probe.formatName.split(",").includes(format)))throw new Error("媒体输出容器与扩展名不一致");
-  const images:Record<string,string>={png:"png",jpg:"mjpeg",jpeg:"mjpeg",webp:"webp",gif:"gif"};
+  const images:Record<string,string>={png:"png",jpg:"mjpeg",jpeg:"mjpeg",webp:"webp",gif:"gif",bmp:"bmp",tif:"tiff",tiff:"tiff",apng:"apng"};
   if(probe&&images[extension||""]&&probe.videoCodec!==images[extension!])throw new Error("图片输出编码与扩展名不一致");return mime;
 }
 async function dispatch(row:JobRow):Promise<WorkerJobView>{
