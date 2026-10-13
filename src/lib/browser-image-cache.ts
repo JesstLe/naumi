@@ -2,6 +2,7 @@
 import { authHeader } from './supabase';
 import { MediaLoadQueue, acquireMediaSlot } from './canvas/media-loading';
 import { managedImageSource, publicImageSource, type BrowserImageDescriptor } from './browser-image-source';
+import { VerifiedImageContentPool, verifiedImageContentKey } from './browser-image-content';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 
@@ -16,6 +17,7 @@ const byteSlot=(options?:BrowserImageReadOptions,signal?:AbortSignal)=>options?.
 let account='',epoch=0,installed=false,localOnly=false;
 let database:Promise<IDBDatabase|null>|undefined;
 const pending=new Map<string,{promise:Promise<Blob>;controller:AbortController;users:number}>();
+const verifiedContent=new VerifiedImageContentPool();
 const objects=new Set<string>();
 const batches=new Map<string, {resolve:(value:BrowserImageDescriptor|null)=>void;reject:(error:Error)=>void}[]>();
 let batchTimer:ReturnType<typeof setTimeout>|undefined;
@@ -116,7 +118,7 @@ async function flushImageTouches(){
 async function purge(owner:string){const db=await openDB();if(!db)return;
   await new Promise<void>(resolve=>{try{const tx=db.transaction([STORE,META],'readwrite'),s=tx.objectStore(STORE),meta=tx.objectStore(META),r=meta.getAll();r.onsuccess=()=>{for(const row of r.result as Row[])if(row.account===owner){s.delete(row.id);meta.delete(row.id);}};tx.oncomplete=tx.onerror=tx.onabort=()=>resolve();}catch{resolve();}});
 }
-function reset(){epoch++;for(const request of pending.values())request.controller.abort();pending.clear();for(const url of objects)URL.revokeObjectURL(url);objects.clear();window.dispatchEvent(new Event('naumi:image-cache-session'));}
+function reset(){epoch++;verifiedContent.clear();for(const request of pending.values())request.controller.abort();pending.clear();for(const url of objects)URL.revokeObjectURL(url);objects.clear();window.dispatchEvent(new Event('naumi:image-cache-session'));}
 export function activateBrowserImages(email:string|null){
   installImageObserver();const next=(email||'').trim().toLowerCase();if(next===account&&next)return;
   const previous=account;account=next;reset();
@@ -161,27 +163,37 @@ async function imageBlob(source:string,signal?:AbortSignal,options?:BrowserImage
   if(!info)throw new ImageCacheDenied('素材尚未授权或不支持缓存');
   if(info.bytes>MAX_IMAGE)throw new ImageNotCacheable(info.fetchUrl);
   const id=JSON.stringify([owner,info.source,info.version]);
+  const contentKey=verifiedImageContentKey(info,owner,generation);
   let task=pending.get(id);if(!task){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),60000);const promise=(async()=>{
     const cached=await timedImageStage("idbRead",()=>read(id));
-    if(cached&&cached.account===owner&&cached.blob instanceof Blob&&cached.bytes===cached.blob.size&&Date.now()-cached.created<MAX_AGE){void touch(cached,generation);return cached.blob;}
+    if(cached&&cached.account===owner&&cached.blob instanceof Blob&&cached.bytes===cached.blob.size&&Date.now()-cached.created<MAX_AGE){
+      // A source-keyed disk hit may be shared only after its actual digest and
+      // length match this freshly authorized descriptor. Never trust IDB alone.
+      const verified=!contentKey||cached.blob.size===info.bytes&&bytesToHex(sha256(new Uint8Array(await cached.blob.arrayBuffer())))===info.version;
+      if(verified){void touch(cached,generation);if(contentKey&&valid(owner,generation)&&!controller.signal.aborted)verifiedContent.remember(contentKey,cached.blob);return cached.blob;}
+    }
     if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
+    const download=async(downloadSignal:AbortSignal)=>{
     const target=new URL(info.fetchUrl,location.origin);
     if(!['http:','https:'].includes(target.protocol)||target.username||target.password)throw new Error('素材地址无效');
-    const releaseSlot=await timedImageStage("slotWait",()=>byteSlot(options,controller.signal));
+    const releaseSlot=await timedImageStage("slotWait",()=>byteSlot(options,downloadSignal));
     try {
     if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
-    const response=await fetch(target.href,{credentials:target.origin===location.origin?'same-origin':'omit',headers:target.origin===location.origin?await authHeader():{},cache:'no-store',signal:controller.signal});
+    const response=await fetch(target.href,{credentials:target.origin===location.origin?'same-origin':'omit',headers:target.origin===location.origin?await authHeader():{},cache:'no-store',signal:downloadSignal});
     if([401,403,404].includes(response.status))throw new ImageCacheDenied('素材已不可用');
     if(!response.ok||response.type==='opaque'||!/^image\/(png|jpeg|webp|avif|gif)(;|$)/.test(response.headers.get('content-type')||''))throw new Error('素材响应无效');
     const reader=response.body?.getReader();if(!reader)throw new Error('素材响应为空');const parts:Uint8Array[]=[];let total=0;
     for(;;){const chunk=await reader.read();if(chunk.done)break;total+=chunk.value.length;if(total>MAX_IMAGE){await reader.cancel();throw new Error('素材超过缓存上限');}parts.push(new Uint8Array(chunk.value));}
     const blob=new Blob(parts,{type:info.contentType});if(!blob.size||(info.bytes>0&&blob.size!==info.bytes))throw new Error('素材版本已改变');
     if(/^[a-f0-9]{64}$/.test(info.version) && bytesToHex(sha256(new Uint8Array(await blob.arrayBuffer())))!==info.version)throw new Error('素材版本校验失败');
-    if(controller.signal.aborted||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
-    releaseSlot(); // The byte transfer is complete; persistence has its own bounded batch.
-    await timedImageStage("idbStore",()=>store({id,account:owner,source:info.source,version:info.version,blob,bytes:blob.size,at:Date.now(),created:Date.now()},generation));
+    if(downloadSignal.aborted||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
     return blob;
     }finally{releaseSlot();}
+    };
+    const blob=contentKey?await verifiedContent.acquire(contentKey,source,download,controller.signal):await download(controller.signal);
+    if(controller.signal.aborted||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
+    await timedImageStage("idbStore",()=>store({id,account:owner,source:info.source,version:info.version,blob,bytes:blob.size,at:Date.now(),created:Date.now()},generation));
+    return blob;
   })();task={promise,controller,users:0};pending.set(id,task);const captured=task;void promise.finally(()=>{clearTimeout(timeout);if(pending.get(id)===captured)pending.delete(id);}).catch(()=>{});}
   const current=task;current.users++;let released=false;
   const leave=()=>{if(released)return;released=true;current.users--;if(!current.users&&pending.get(id)===current)current.controller.abort();};

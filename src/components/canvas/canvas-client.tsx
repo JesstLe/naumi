@@ -30,6 +30,7 @@ import {pollImagegen} from "@/lib/imagegen/client";
 import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-performance-probe";
 import {CanvasImage} from './canvas-image';
 import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
+import { canvasZoomState } from '@/lib/canvas/viewport-state';
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
 import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surface";
@@ -9173,7 +9174,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 viewportRef.current = vp;
                 updateLiveViewport(vp);
               }}
-              onMoveEnd={(_, vp) => { viewportRef.current = vp; setViewport(vp); }}
+              onMoveEnd={(_, vp) => {
+                viewportRef.current = vp;
+                updateLiveViewport(vp);
+                setViewport(previous => canvasZoomState(previous, vp));
+              }}
               onNodeClick={(event, node) => {
                 if (canvasTool === "hand") return;
                 if (node.id.startsWith("task-")) return;
@@ -9242,7 +9247,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 readOnly
                   ? undefined
                   : (ev, edge) => {
-                      if (edge.selectable === false) return;
+                      if (canvasTool === "hand" || ev.buttons || edge.selectable === false) return;
                       const rect =
                         canvasAreaRef.current?.getBoundingClientRect();
                       if (!rect) return;

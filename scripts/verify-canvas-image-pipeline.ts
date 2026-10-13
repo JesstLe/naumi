@@ -3,9 +3,11 @@ import {readFileSync} from 'node:fs';
 import {build} from 'esbuild';
 import vm from 'node:vm';
 import {createRequire} from 'node:module';
+import {createHash} from 'node:crypto';
 async function main(){
  const require=createRequire(import.meta.url),{indexedDB,IDBObjectStore}=require(process.env.NAUMI_TEST_IDB||'fake-indexeddb');
- const events=new EventTarget(),storage=new Map<string,string>();let mode='allow',network=0,active=0,maxActive=0,blobWrites=0,manifests=0;const starts:string[]=[],ends:string[]=[];
+ const events=new EventTarget(),storage=new Map<string,string>();let mode='allow',actor='owner@fixture.test',network=0,active=0,maxActive=0,blobWrites=0,manifests=0;const starts:string[]=[],ends:string[]=[];
+ const denied=new Set<string>(),digest=createHash('sha256').update(new Uint8Array([1,2,3,4])).digest('hex');
  const origPut=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(...args:any[]){if(this.name==='images')blobWrites++;return origPut.apply(this,args)};
  const ctx=vm.createContext({Blob,URL,DOMException,AbortController,Event,EventTarget,TextEncoder,TextDecoder,Uint8Array,ArrayBuffer,Buffer,Date,Map,Set,Promise,JSON,indexedDB,setTimeout,clearTimeout,console,
  location:{origin:'http://fixture.test'},BroadcastChannel:undefined,
@@ -13,7 +15,7 @@ async function main(){
  window:{addEventListener:events.addEventListener.bind(events),dispatchEvent:events.dispatchEvent.bind(events)},
  fetch:async(raw:string|URL,opts:any)=>{
   const url=String(raw);
-  if(url.includes('image-cache')){manifests++;const sources=JSON.parse(opts.body).sources;return{ok:mode!=='outage',status:mode==='outage'?503:200,json:async()=>({account:'owner@fixture.test',results:Object.fromEntries(sources.map((s:string)=>[s,mode==='deny'?null:{account:'owner@fixture.test',source:s,version:'local:v1',fetchUrl:s,bytes:4,contentType:'image/png'}]))})};}
+  if(url.includes('image-cache')){manifests++;const sources=JSON.parse(opts.body).sources;return{ok:mode!=='outage',status:mode==='outage'?503:200,json:async()=>({account:actor,results:Object.fromEntries(sources.map((s:string)=>[s,mode==='deny'||denied.has(s)?null:{account:actor,source:s,version:mode==='hashed'?digest:'local:v1',fetchUrl:s,bytes:4,contentType:'image/png'}]))})};}
   network++;active++;maxActive=Math.max(active,maxActive);starts.push(url);
   try{await new Promise<void>((resolve,reject)=>{const t=setTimeout(resolve,20);opts.signal?.addEventListener('abort',()=>{clearTimeout(t);reject(new DOMException('Aborted','AbortError'));},{once:true});});return{ok:true,status:200,type:'basic',headers:new Headers({'content-type':'image/png'}),body:new ReadableStream({start(c){c.enqueue(new Uint8Array([1,2,3,4]));c.close();}})};}
   finally{active--;ends.push(url);}
@@ -32,6 +34,19 @@ async function main(){
  const count=await new Promise<number>(resolve=>{const tx=idb.transaction('metadata'),r=tx.objectStore('metadata').count();tx.oncomplete=()=>resolve(r.result);});assert.ok(count<=400,'LRU item capacity');
  const tx=idb.transaction('metadata'),all=tx.objectStore('metadata').getAll();await new Promise<void>(resolve=>{tx.oncomplete=()=>resolve();});assert.ok(all.result.reduce((s:number,r:any)=>s+r.bytes,0)<=128*1024*1024,'byte capacity');idb.close();
  const switchWork=m.acquireBrowserImage('/media/switch.png',undefined,{networkQueue:'canvas'});m.clearBrowserImages();await assert.rejects(switchWork);assert.equal(m.imageCacheAccount(),'');
+ mode='hashed';m.activateBrowserImages(actor);
+ const beforeDedupe=network,beforeAuth=manifests;
+ const shared=await Promise.all(Array.from({length:24},(_,i)=>m.acquireBrowserImage('/media/shared-'+i+'.png',undefined,{networkQueue:'canvas'})));shared.forEach((l:any)=>l.release());
+ assert.equal(network-beforeDedupe,1,'24 separately authorized refs with verified same SHA transfer bytes once');assert.equal(manifests-beforeAuth,1);
+ denied.add('/media/shared-23.png');const beforeDenied=network;
+ await assert.rejects(m.acquireBrowserImage('/media/shared-23.png',undefined,{networkQueue:'canvas'}));assert.equal(network,beforeDenied,'ready shared bytes cannot bypass revoked source authorization');
+ const alias=await m.acquireBrowserImage('/media/new-alias.png',undefined,{networkQueue:'canvas'});alias.release();assert.equal(network,beforeDenied,'newly authorized alias reuses verified bounded bytes');
+ actor='other@fixture.test';m.activateBrowserImages(actor);const beforeOther=network;
+ const foreign=await m.acquireBrowserImage('/media/new-alias.png',undefined,{networkQueue:'canvas'});foreign.release();assert.equal(network,beforeOther+1,'account switch cannot reuse private content pool');
+ events.dispatchEvent(new Event('focus'));const beforeFocusAuth=manifests;
+ const afterFocus=await m.acquireBrowserImage('/media/new-alias.png',undefined,{networkQueue:'canvas'});afterFocus.release();assert.equal(manifests,beforeFocusAuth+1,'focus invalidation still freshly authorizes');
+ m.clearBrowserImages();
+ console.log('CACHE_CONTENT_DEDUPE=PASS AUTHORIZED_REFS24_BYTE_DOWNLOADS1 REVOKED_ALIAS_NO_PIXEL_READ NEW_ALIAS_FRESH_AUTH_BEFORE_REUSE ACCOUNT_SWITCH_NO_SHARED_PRIVATE_BYTES FOCUS_REVALIDATED');
  console.log('CACHE_PIPELINE=PASS METADATA24_BATCHES=1 MISS_MAX_BYTES_CONCURRENCY=6 HOT_IMAGE_REQUESTS=0 HOT_BLOB_WRITES=0 FRESH_AUTH_EACH_DISPLAY=YES REVOKE=DENIED OUTAGE=FRESH_MEDIA CANCEL_SWITCH=NO_OLD_PIXELS LRU_400_AND_128MIB=PASS PROVIDER_CALLS=0');
 }
 main().catch(e=>{console.error(e);process.exitCode=1});
