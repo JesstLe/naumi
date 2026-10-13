@@ -33,6 +33,50 @@ def verify_protected():
   current=json.loads(command(['docker','inspect',old['Id']]))[0]
   assert current['Id']==old['Id']and current['Image']==old['Image']and current['State']['Running'],old['Name']
  print('PROTECTED=PASS ACCOUNTS_PASSWORDS_CREDITS_GRANTS_SETTINGS_MEDIA_REFERENCES_OLD_SERVICES=UNCHANGED')
+def render_gateway(before):
+ modified=before
+ # Only active slots, not fallback or existing creation APIs, change destination.
+ def current_port(expression):
+  block=re.search(expression,before,re.S);assert block,expression;return int(re.search(r'proxy_pass http://127\.0\.0\.1:(\d+)',block.group(0)).group(1))
+ active={'ui':current_port(r'location / \{[^{}]*\}'),'desktop':current_port(r'location = /desktop \{[^{}]*\}'),'enterprise':current_port(r'location = /enterprise \{[^{}]*\}')};new={'ui':13028,'desktop':13029,'enterprise':13030}
+ asset_ports={};asset_fallback={}
+ for kind,prefix in [('ui','/_next/'),('desktop','/desktop/_next/'),('enterprise','/enterprise/_next/')]:
+  asset=re.search(r'location\s+\^~\s+'+re.escape(prefix)+r'\s*\{[^{}]*\}',before,re.S)
+  asset_ports[kind]=int(re.search(r'127\.0\.0\.1:(\d+)',asset.group(0)).group(1))if asset else active[kind]
+  fallback=re.search(r'error_page 404 = (@[\w]+);',asset.group(0))if asset else None
+  asset_fallback[kind]=fallback.group(1)if fallback else '@entry_original_ui_assets'
+ blocks=list(re.finditer(r'location\s+([^\n{]+)\s*\{[^{}]*\}',before,re.S))
+ for match in reversed(blocks):
+  block=match.group(0);location=match.group(1).strip()
+  if location.startswith('@'):continue
+  if location=='= /api/version':
+   block=re.sub(r'proxy_pass http://127\.0\.0\.1:\d+;', 'proxy_pass http://127.0.0.1:13028;',block)
+   modified=modified[:match.start()]+block+modified[match.end():]
+   continue
+  kind='desktop'if'/desktop'in location else'enterprise'if'/enterprise'in location or location=='= /team'else'ui'
+  port=active[kind]
+  static='/_next/'in location
+  if static or '127.0.0.1:'+str(port)in block:
+    # Existing enterprise/team APIs stay on their original instance except read-only image bytes.
+    if location.startswith(('= /api/','^~ /api/','= /desktop/api/','^~ /desktop/api/')):continue
+    if static:block=re.sub(r'proxy_pass http://127\.0\.0\.1:\d+', 'proxy_pass http://127.0.0.1:'+str(new[kind]),block)
+    else:block=block.replace('127.0.0.1:'+str(port),'127.0.0.1:'+str(new[kind]))
+    if 'error_page 404 ='in block:block=re.sub(r'error_page 404 = @[\w]+;',f'error_page 404 = @image_cache_old_{kind};',block)
+    elif not location.startswith('= /api/version'):block=block[:-1]+f'proxy_intercept_errors on;error_page 404 = @image_cache_old_{kind};'+'}'
+  modified=modified[:match.start()]+block+modified[match.end():]
+ opts='\nproxy_http_version 1.1;proxy_set_header Host $host;proxy_set_header X-Real-IP $remote_addr;proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;proxy_set_header X-Forwarded-Proto $scheme;proxy_set_header Connection "";proxy_buffering off;proxy_read_timeout 900s;\n'
+ extra='\n'
+ if not re.search(r'location\s+\^~\s+/desktop/api/\s*\{',before):extra+=f'location ^~ /desktop/api/ {{proxy_pass http://127.0.0.1:{active["desktop"]};'+opts+'}\n'
+ for kind,port in asset_ports.items():
+  previous=asset_fallback[kind]
+  extra+=f'location @image_cache_old_{kind} {{proxy_pass http://127.0.0.1:{port};proxy_intercept_errors on;error_page 404 = {previous};'+opts+'}\n'
+ for route in ['/api/media/image-cache','/api/public-image-cache','/api/team/media','/api/enterprise/media']:
+  extra+=f'location = {route} {{proxy_pass http://127.0.0.1:13028;'+opts+'}\n'
+ for route in ['/desktop/api/media/image-cache','/desktop/api/public-image-cache','/desktop/api/team/media','/desktop/api/enterprise/media']:
+  extra+=f'location = {route} {{proxy_pass http://127.0.0.1:13028{route[8:]};'+opts+'}\n'
+ modified=modified.replace('location / {',extra+'location / {')
+ return modified
+
 if PHASE=='baseline':
  assert_lock();E.mkdir(parents=True,exist_ok=True);os.chmod(E,0o700)
  before=GATEWAY.read_bytes();(E/'nginx.before').write_bytes(before)
@@ -76,43 +120,7 @@ elif PHASE=='start':
  (E/'slots.json').write_text(json.dumps(slots,indent=2));verify_protected()
 elif PHASE=='cutover':
  assert_lock();assert GATEWAY.read_bytes()==(E/'nginx.before').read_bytes();verify_protected();before=(E/'nginx.before').read_text();modified=before
- # Only active slots, not fallback or existing creation APIs, change destination.
- def current_port(expression):
-  block=re.search(expression,before,re.S);assert block,expression;return int(re.search(r'proxy_pass http://127\.0\.0\.1:(\d+)',block.group(0)).group(1))
- active={'ui':current_port(r'location / \{[^{}]*\}'),'desktop':current_port(r'location = /desktop \{[^{}]*\}'),'enterprise':current_port(r'location = /enterprise \{[^{}]*\}')};new={'ui':13028,'desktop':13029,'enterprise':13030}
- asset_ports={};asset_fallback={}
- for kind,prefix in [('ui','/_next/'),('desktop','/desktop/_next/'),('enterprise','/enterprise/_next/')]:
-  asset=re.search(r'location\s+\^~\s+'+re.escape(prefix)+r'\s*\{[^{}]*\}',before,re.S)
-  asset_ports[kind]=int(re.search(r'127\.0\.0\.1:(\d+)',asset.group(0)).group(1))if asset else active[kind]
-  fallback=re.search(r'error_page 404 = (@[\w]+);',asset.group(0))if asset else None
-  asset_fallback[kind]=fallback.group(1)if fallback else '@entry_original_ui_assets'
- blocks=list(re.finditer(r'location\s+([^\n{]+)\s*\{[^{}]*\}',before,re.S))
- for match in reversed(blocks):
-  block=match.group(0);location=match.group(1).strip()
-  if location.startswith('@'):continue
-  if location=='= /api/version':block=re.sub(r'proxy_pass http://127\.0\.0\.1:\d+;', 'proxy_pass http://127.0.0.1:13028;',block)
-  kind='desktop'if'/desktop'in location else'enterprise'if'/enterprise'in location or location=='= /team'else'ui'
-  port=active[kind]
-  static='/_next/'in location
-  if static or '127.0.0.1:'+str(port)in block:
-    # Existing enterprise/team APIs stay on their original instance except read-only image bytes.
-    if location.startswith(('= /api/','^~ /api/','= /desktop/api/','^~ /desktop/api/')):continue
-    if static:block=re.sub(r'proxy_pass http://127\.0\.0\.1:\d+', 'proxy_pass http://127.0.0.1:'+str(new[kind]),block)
-    else:block=block.replace('127.0.0.1:'+str(port),'127.0.0.1:'+str(new[kind]))
-    if 'error_page 404 ='in block:block=re.sub(r'error_page 404 = @[\w]+;',f'error_page 404 = @image_cache_old_{kind};',block)
-    elif not location.startswith('= /api/version'):block=block[:-1]+f'proxy_intercept_errors on;error_page 404 = @image_cache_old_{kind};'+'}'
-  modified=modified[:match.start()]+block+modified[match.end():]
- opts='\nproxy_http_version 1.1;proxy_set_header Host $host;proxy_set_header X-Real-IP $remote_addr;proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;proxy_set_header X-Forwarded-Proto $scheme;proxy_set_header Connection "";proxy_buffering off;proxy_read_timeout 900s;\n'
- extra='\n'
- if not re.search(r'location\s+\^~\s+/desktop/api/\s*\{',before):extra+=f'location ^~ /desktop/api/ {{proxy_pass http://127.0.0.1:{active["desktop"]};'+opts+'}\n'
- for kind,port in asset_ports.items():
-  previous=asset_fallback[kind]
-  extra+=f'location @image_cache_old_{kind} {{proxy_pass http://127.0.0.1:{port};proxy_intercept_errors on;error_page 404 = {previous};'+opts+'}\n'
- for route in ['/api/media/image-cache','/api/public-image-cache','/api/team/media','/api/enterprise/media']:
-  extra+=f'location = {route} {{proxy_pass http://127.0.0.1:13028;'+opts+'}\n'
- for route in ['/desktop/api/media/image-cache','/desktop/api/public-image-cache','/desktop/api/team/media','/desktop/api/enterprise/media']:
-  extra+=f'location = {route} {{proxy_pass http://127.0.0.1:13028{route[8:]};'+opts+'}\n'
- modified=modified.replace('location / {',extra+'location / {');(E/'nginx.modified').write_text(modified)
+ modified=render_gateway(before);(E/'nginx.modified').write_text(modified)
  for label,body in [('modified',modified),('rollback',before)]:
   file=E/('nginx-test-'+label+'.conf');file.write_text('events {}\nhttp {\n'+body+'\n}\n');subprocess.run(['nginx','-t','-c',str(file),'-p',str(E)],check=True)
  rows=[];done=threading.Event()
