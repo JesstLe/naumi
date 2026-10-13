@@ -4,6 +4,8 @@
 // 不感知 HTTP 路由与积分语义。
 // ---------------------------------------------------------------------------
 
+import type { VideoMode } from "./capability-schema";
+import type { OrderedInput } from "./references";
 export type VideoTaskSource = "canvas" | "workbench" | "agent" | "workflow";
 
 export type VideoTaskStatus =
@@ -29,11 +31,25 @@ export type VideoReference = {
   storageKey?: string;
   url?: string;
   mimeType?: string;
+  bytes?: number;
+  durationSeconds?: number;
+  width?: number;
+  height?: number;
+  /** Submission-only server materialization; never accepted from a client or persisted. */
+  inlineData?:{mimeType:string;data:string};
+  submissionName?:string;
 };
 
 export type VideoGenerationRequest = {
   source: VideoTaskSource;
   sourceId?: string;
+  canvasNodeId?: string;
+  projectKey?: string;
+  nodeRevision?: number;
+  mode?: VideoMode;
+  orderedInputs?: OrderedInput[];
+  shots?: Array<{ id?: string; textNodeId?: string; prompt: string; durationSeconds: number }>;
+  elements?: Array<{ id?: string; name: string; description?: string; references: VideoReference[] }>;
   providerId: string;
   modelId: string;
   prompt: string;
@@ -47,6 +63,7 @@ export type VideoGenerationRequest = {
   watermark?: boolean;
   references: VideoReference[];
   providerOptions?: Record<string, unknown>;
+  workflowManifest?:import("./workflow-schema").VideoWorkflowManifest;
   idempotencyKey: string;
 };
 
@@ -62,6 +79,9 @@ export type VideoProviderPollResult = {
   status: VideoTaskStatus;
   progress: number;
   resultUrl?: string;
+  resultAssets?:Array<{kind:"video"|"image"|"audio";url:string;mimeType?:string}>;
+  inlineResult?:{mimeType:string;base64:string};
+  outputFiles?:Array<{kind:"video"|"image"|"audio";filename:string;subfolder:string;type:string}>;
   errorCode?: string;
   errorMessage?: string;
   errorDetail?: unknown;
@@ -111,4 +131,7 @@ export class PermanentVideoCreateError extends Error {
     super(message);
     this.name = "PermanentVideoCreateError";
   }
+}
+export class UnsupportedVideoCancellationError extends Error {
+  constructor(){super("当前上游不支持取消任务");this.name="UnsupportedVideoCancellationError";}
 }

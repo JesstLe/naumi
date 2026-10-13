@@ -1,6 +1,7 @@
 "use client";
 import type { ModelProvider, UpstreamModel } from "@/lib/model-config/types";
 import { Choice, NumberField, Panel, TextField, Toggle, Chips } from "./fields";
+import {VideoCapabilityEditor} from "./video-capability-editor";
 const qualities = ["low", "medium", "high", "xhigh", "max", "auto"];
 const resolutions = ["1K", "2K", "4K"];
 export function UpstreamEditor({
@@ -196,10 +197,11 @@ export function UpstreamEditor({
           />
         </div>
       </details>
-      <p className="text-xs text-c-text3">
+      {m.modality==="video"&&<VideoCapabilityEditor value={m.capabilities.video} profile={m.parameterMap.videoProfile} onChange={(video,videoProfile)=>edit({capabilities:{...c,video,...(typeof video?.limits?.images==="number"?{maxReferenceImages:video.limits.images}:{})},parameterMap:{...m.parameterMap,videoProfile}})}/>}
+      {m.modality==="image"&&<p className="text-xs text-c-text3">
         质量档位与原生尺寸需要真实核验。OpenAI 图片协议的原生 2K / 4K
         必须填写尺寸映射。成本金额统一在计费管理维护，此处只引用。
-      </p>
+      </p>}
     </Panel>
   );
 }

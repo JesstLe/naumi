@@ -13,6 +13,9 @@ import { storageEnabled, uploadImage } from "@/lib/storage";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { safeError } from "@/lib/api-error";
+import {sameSiteBiMutation} from "@/lib/bi/access";
+import {submitByocComfyVideo,knownComfyVideoOutput} from "@/lib/video/byoc";
+import {ModelConfigError} from "@/lib/model-config/types";
 import {
   applyWorkflowOverrides,
   extractWorkflowInputs,
@@ -30,8 +33,7 @@ import {
 // ---------------------------------------------------------------------------
 // 画布工作流执行(BYOC,不扣站内积分):
 // 选中的画布图 → 上传端点 → 参数覆盖(文本/种子/尺寸) → /prompt 排队 →
-// 轮询 /history → /view 拉回产物。图片产物入库并按血缘挂回源图(客户端定位),
-// 视频产物落 /media 返回直链(画布视频节点属后续里程碑)。
+// 图片沿用既有执行与血缘；视频进入独立持久任务，由后台恢复、落媒体与关联节点。
 // ---------------------------------------------------------------------------
 
 export const runtime = "nodejs";
@@ -43,6 +45,7 @@ const MAX_IMAGES_PER_RUN = 8;
 export async function POST(request: Request) {
   const email = await authenticatedEmail(request);
   if (dbEnabled && !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站执行"},{status:403});
   if (!rateLimit(`comfyui-run:${clientIp(request) || "0.0.0.0"}`, 10, 10 * 60 * 1000)) {
     return NextResponse.json({ error: "工作流执行过于频繁，请稍后再试" }, { status: 429 });
   }
@@ -62,13 +65,15 @@ export async function POST(request: Request) {
         numericDefaults?: Record<string, number>;
         seeds?: Record<string, number>;
         numerics?: Record<string, Record<string, number>>;
+        mediaType?:"video";idempotencyKey?:string;nodeId?:string;expectedRevision?:number;projectKey?:string;
+        durationSeconds?:number;references?:unknown[];inputMappings?:unknown[];
       }
     | null;
   const artworkId = String(body?.artworkId || "").trim();
   const imageUrl = String(body?.imageUrl || "").trim().slice(0, 600);
   const workflowId = String(body?.workflowId || "").trim();
-  if (!email || !workflowId || (!artworkId && !imageUrl)) {
-    return NextResponse.json({ error: "请选择图片与工作流" }, { status: 400 });
+  if (!email || !workflowId) {
+    return NextResponse.json({ error: "请选择工作流" }, { status: 400 });
   }
 
   try {
@@ -78,6 +83,11 @@ export async function POST(request: Request) {
     }
     const workflow = await getComfyWorkflow(email, workflowId);
     if (!workflow) return NextResponse.json({ error: "工作流不存在" }, { status: 404 });
+    if(body?.mediaType==="video"||knownComfyVideoOutput(workflow.apiJson as ApiWorkflow)){
+      const result=await submitByocComfyVideo(email,{...body,idempotencyKey:body?.idempotencyKey||request.headers.get("x-naumi-billing-operation-id")||crypto.randomUUID()});
+      return NextResponse.json({ok:true,...result,images:[],videos:[]},{status:202});
+    }
+    if(!artworkId&&!imageUrl)return NextResponse.json({error:"请选择工作流输入图片"},{status:400});
     const source = artworkId
       ? (await listArtworksByIds(email, [artworkId]))[0] ?? null
       : null;
@@ -227,6 +237,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ ok: true, images, videos, videoArtworkId, promptId });
   } catch (error) {
+    if(error instanceof ModelConfigError)return NextResponse.json({error:error.message,code:error.code},{status:error.status});
     return NextResponse.json(
       { error: safeError(error, "工作流执行失败") },
       { status: 502 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { authenticatedEmail } from "@/lib/request-auth";
 import { safeError } from "@/lib/api-error";
+import {getVideoTaskByIdempotencyKey} from "@/lib/db";
 import { listVideoTaskViews, pollAndSettle, publicVideoTaskView } from "@/lib/video/service";
 
 // ---------------------------------------------------------------------------
@@ -21,6 +22,8 @@ export async function GET(request: Request) {
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   const url = new URL(request.url);
   const id = url.searchParams.get("id") || "";
+  const operation=url.searchParams.get("idempotencyKey");
+  if(!id&&operation){const task=await getVideoTaskByIdempotencyKey(email,operation);return task?NextResponse.json({ok:true,task:publicVideoTaskView(task)}):NextResponse.json({error:"任务不存在"},{status:404});}
 
   if (!id) {
     const status = url.searchParams.get("status") || "";
@@ -35,6 +38,8 @@ export async function GET(request: Request) {
       status: VALID_STATUS.has(status) ? status : undefined,
       source: ["canvas", "workbench", "agent", "workflow"].includes(source) ? source : undefined,
       sourceIds,
+      projectKey: url.searchParams.get("projectKey") || undefined,
+      nodeId: url.searchParams.get("nodeId") || undefined,
       limit: Number.isFinite(limit) ? limit : 30,
     });
     return NextResponse.json({ ok: true, tasks: tasks.map(publicVideoTaskView) });

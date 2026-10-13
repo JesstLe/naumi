@@ -9,6 +9,7 @@ import { configuredVideoProviders } from "@/lib/video/providers/config";
 // ---------------------------------------------------------------------------
 
 export type VideoModelCapability = {
+  definition?: import("./capability-schema").ResolvedVideoCapability;
   providerId: string;
   modelId: string;
   label: string;
@@ -108,6 +109,11 @@ const CATALOG: VideoModelCapability[] = [
     note: "仅 15 秒档,成本高",
   },
 ];
+
+/** Returns only the existing documented entries, never the permissive legacy fallback. */
+export function documentedVideoCapability(protocol:string,modelId:string):VideoModelCapability|undefined{
+  return CATALOG.find(cap=>cap.providerId===protocol&&cap.modelId===modelId);
+}
 
 /** 兜底声明:目录未收录的模型按通用能力对待(4-12 秒、单图参考)。 */
 export function fallbackCapability(providerId: string, modelId: string): VideoModelCapability {

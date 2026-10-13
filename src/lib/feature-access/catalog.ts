@@ -36,6 +36,7 @@ export function requestRequirement(path: string, method = "GET"): AccessRequirem
   if(path.startsWith("/desktop/api/"))path=path.slice("/desktop".length);
   if (!path.startsWith("/api/")) { const id = pageFeature(path); return id ? { all: [id] } : undefined; }
   if (path.startsWith("/api/canvas/assistant")) return { all: ["canvas", "agent"] };
+  if (/^\/api\/canvas\/video-nodes(?:\/[^/]+\/generate)?\/?$/.test(path) && method === "POST" && path.endsWith("/generate")) return { all: ["canvas", "video"] };
   if (/^\/api\/canvas\/(image-tasks|expand|annotate|text-edit)(\/|$)/.test(path)) return { all: ["canvas", "generate"] };
   if (path.startsWith("/api/canvas/")) return { all: ["canvas"] };
   const root = path.split("/")[2];

@@ -3,6 +3,8 @@ import { createHash, createHmac, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { settingsSecret } from "../settings-secret";
 import { registerProviderCapacities } from "./capacity";
+import {ensureVideoDefaultsSchema,freezeManagedVideoCapability} from "../video/frozen-capability";
+import {ensureSupplierVideoSchema} from "../supplier-models/video-access";
 import { ensureModelSchema, validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelConfig, type ModelConfigRepository, type ModelDraft, type ModelPublication, type ModelSnapshot, type PublicationPhase } from "./types";
 
@@ -60,7 +62,13 @@ async function readDraft(tx: PoolClient, row: any): Promise<ModelDraft> {
 
 export function createModelRepository(deps: ValidationOptions & { pool: Pool; initialize: (tx: PoolClient) => Promise<ModelConfig>; ensureSchema?: () => Promise<void> }): ModelConfigRepository {
   const immutableVersions = new Map<number, Promise<ModelSnapshot>>();
-  const ensure = async () => { await deps.ensureSchema?.(); await ensureModelSchema(deps.pool); };
+  const ensure = async () => { await deps.ensureSchema?.(); await ensureModelSchema(deps.pool);await ensureVideoDefaultsSchema(deps.pool);await ensureSupplierVideoSchema(deps.pool); };
+  const freezeVideo=async(tx:PoolClient,value:ModelSnapshot)=>{
+    for(const upstream of value.config.upstreamModels.filter(model=>model.modality==="video")){
+      const provider=value.config.providers.find(item=>item.id===upstream.providerId)!;
+      await freezeManagedVideoCapability(value,upstream,provider,tx);
+    }
+  };
   const transaction = async <T>(run: (tx: PoolClient) => Promise<T>, global = false) => {
     const tx = await deps.pool.connect();
     try { await tx.query("BEGIN"); if (global) await tx.query("SELECT pg_advisory_xact_lock(hashtext('naumi-model-config'))"); const result = await run(tx); await tx.query("COMMIT"); return result; }
@@ -87,6 +95,7 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
           await tx.query("INSERT INTO app_model_publications(id,version,expected_version,request_fingerprint,phase) VALUES($1,$2,0,'bootstrap','applied')", [id,row.version]);
           await tx.query("INSERT INTO app_model_config_state(singleton,active_version) VALUES(true,$1)", [row.version]);
           await registerProviderCapacities(tx, config);
+          await freezeVideo(tx,snapshot(row));
           return snapshot(row);
         }, true);
       } catch (error) {
@@ -182,6 +191,7 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
         await tx.query("UPDATE app_model_publications SET phase='applied',error_code=NULL,updated_at=now() WHERE id=$1", [id]);
         const versionRow = (await tx.query("SELECT * FROM app_model_config_versions WHERE version=$1", [row.version])).rows[0];
         await registerProviderCapacities(tx, versionRow.config);
+        await freezeVideo(tx,snapshot(versionRow));
         await tx.query("INSERT INTO app_bi_access_log(id,actor,action,target_email,section) VALUES($1,$2,'model-config-publish','','models')", [`model-publication:${id}`,versionRow.actor]);
         return snapshot(versionRow);
       }, true);

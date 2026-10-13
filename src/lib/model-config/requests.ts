@@ -58,6 +58,9 @@ function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; 
   return { image: path.includes("cutout") ? "image.cutout" : path.includes("generate-image") ? "image.generate" : "image.edit", primary: "image" };
 }
 export async function withModelRequest<T>(request: Request, run: () => Promise<T>): Promise<T> {
+  const domainPath=new URL(request.url).pathname;
+  // The owned node or previous task supplies its model after domain authorization.
+  if(/^\/api\/canvas\/video-nodes\/[^/]+\/generate$/.test(domainPath)||/^\/api\/video\/tasks\/[^/]+\/retry$/.test(domainPath))return run();
   const [managed, parsed] = await Promise.all([modelConfigurationEnabled(), requestFacts(request)]);
   assertPlatformImageSelection(parsed.body.model, parsed.body.modelId, request.headers.get("x-naumi-feature-model"));
   if (!managed) return run();

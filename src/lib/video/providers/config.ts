@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { currentModelExecution } from "@/lib/model-config/context";
+import {currentPrivateVideoContext} from "./private-context";
 
 export type VideoProviderProtocol =
   | "openai-videos"
@@ -9,6 +10,11 @@ export type VideoProviderProtocol =
   | "apimart"
   | "gemini"
   | "minimax"
+  | "metaso"
+  | "tokendance"
+  | "tfrouter"
+  | "compshare"
+  | "comfyui"
   | "autodl"
   | "runninghub";
 
@@ -20,6 +26,8 @@ export type VideoProviderRuntimeConfig = {
   apiKey: string;
   models: string[];
   defaultModel: string;
+  timeoutMs?:number;
+  appUrl?:string;
   createPath?: string;
   pollPath?: string;
   contentPath?: string;
@@ -27,6 +35,7 @@ export type VideoProviderRuntimeConfig = {
   workflowId?: string;
   idempotencyStrategy: "header" | "body" | "none";
   idempotencyBodyField?: string;
+  videoProfile?: import("../capability-schema").VideoWireProfile;
 };
 
 const BUILT_INS: Array<{ id: string; label: string; protocol: VideoProviderProtocol; prefix: string }> = [
@@ -69,6 +78,8 @@ function normalized(value: Partial<VideoProviderRuntimeConfig>): VideoProviderRu
     apiKey,
     models: models.length ? models : [defaultModel],
     defaultModel,
+    timeoutMs:value.timeoutMs,
+    appUrl:value.appUrl,
     createPath: value.createPath,
     pollPath: value.pollPath,
     contentPath: value.contentPath,
@@ -76,6 +87,7 @@ function normalized(value: Partial<VideoProviderRuntimeConfig>): VideoProviderRu
     workflowId: value.workflowId,
     idempotencyStrategy,
     idempotencyBodyField,
+    videoProfile: value.videoProfile,
   };
 }
 
@@ -129,10 +141,11 @@ export function configuredVideoProviders(): VideoProviderRuntimeConfig[] {
 }
 
 export function getVideoProviderConfig(providerId: string): VideoProviderRuntimeConfig | null {
+  const privateConfig=currentPrivateVideoContext()?.config;if(privateConfig?.id===providerId)return privateConfig;
   const scope = currentModelExecution("video");
   if (scope?.connection.providerId === providerId) {
     const c = scope.connection;
-    return { id: c.providerId, label: scope.frozen.publicModelId, protocol: c.protocol as VideoProviderProtocol, baseUrl: c.baseUrl.replace(/\/+$/, ""), apiKey: c.apiKey, models: [c.wireModel], defaultModel: c.wireModel, ...c.options, idempotencyStrategy: c.options?.idempotencyStrategy || "none" };
+    return { id: c.providerId, label: scope.frozen.publicModelId, protocol: c.protocol as VideoProviderProtocol, baseUrl: c.baseUrl.replace(/\/+$/, ""), apiKey: c.apiKey, models: [c.wireModel], defaultModel: c.wireModel, timeoutMs:c.timeoutMs, ...c.options, idempotencyStrategy: c.options?.idempotencyStrategy || "none" };
   }
   return configuredVideoProviders().find((p) => p.id === providerId) ?? null;
 }
@@ -148,6 +161,9 @@ export function publicProviderSnapshot(cfg: VideoProviderRuntimeConfig) {
     endpoint,
     createPath: cfg.createPath || "",
     workflowId: cfg.workflowId || "",
+    videoProfile: cfg.videoProfile || "",
+    pollPath: cfg.pollPath || "",
+    contentPath: cfg.contentPath || "",
     defaultModel: cfg.defaultModel,
     credentialFingerprint: createHash("sha256").update(cfg.apiKey).digest("hex").slice(0, 16),
     idempotencyStrategy: cfg.idempotencyStrategy,
