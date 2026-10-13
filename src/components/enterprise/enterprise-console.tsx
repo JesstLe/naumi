@@ -1,12 +1,13 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Building2, Eye, ImageIcon, LayoutDashboard, Network, Plus, RefreshCw, ShieldCheck, Users, X } from 'lucide-react';
+import { ArrowLeft, Building2, Eye, ImageIcon, LayoutDashboard, Plus, RefreshCw, ShieldCheck, Users, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { authHeader } from '@/lib/supabase';
 import { USERNAME_DOMAIN } from '@/lib/account-identity';
 import type { ContentPage } from '@/lib/teams/contracts';
 import type { EnterpriseIdentity, EnterpriseMember, EnterpriseRole, EnterpriseSnapshot } from '@/lib/enterprise/contracts';
 import styles from './enterprise.module.css';
+import { EnterpriseAnalyticsPanel } from './enterprise-analytics';
 type View='overview'|'members'|'roles'|'records';
 type Section='artworks'|'tasks';
 type Editor={kind:'organization'|'expiry'|'password';member:EnterpriseMember}|{kind:'role';role:EnterpriseRole|null}|null;
@@ -75,18 +76,15 @@ function Workspace({enterprises}:{enterprises:EnterpriseIdentity[]}){
   const body=(m:EnterpriseMember)=>({enterpriseId,email:m.email,expectedVersion:m.version,expectedUserVersion:m.management_version});
   const edit=(kind:'organization'|'expiry'|'password',member:EnterpriseMember)=>{setEditor({kind,member});setPassword('');setExpiry(inputDate(member.account_expires_at));setEmployment(member.employment);setRoleId(member.role_id||'');setSupervisor(member.supervisor_email)};
   const editRole=(role:EnterpriseRole|null)=>{newRoleId.current=role?.id||crypto.randomUUID();setEditor({kind:'role',role});setRoleName(role?.name||'');setLevel(role?.level||100);setManageMembers(role?.manage_members||false);setViewRecords(role?.view_records||false)};
-  const totals=(data?.members||[]).reduce((s,m)=>({available:s.available+m.available,consumed:s.consumed+m.consumed,artworks:s.artworks+m.artworks}),{available:0,consumed:0,artworks:0});
   const label=(e:string)=>data?.members.find(m=>m.email===e)?.name||identity(e);
   const status=(m:EnterpriseMember)=>m.banned?'已停用':m.account_expires_at&&new Date(m.account_expires_at).getTime()<=Date.now()?'已到期':'正常';
-  const nav=[{id:'overview' as View,label:'数据概览',icon:LayoutDashboard},{id:'members' as View,label:'组织与成员',icon:Users},...(data?.actor.owner?[{id:'roles' as View,label:'岗位与权限',icon:ShieldCheck}]:[]),...(data?.actor.viewRecords?[{id:'records' as View,label:'图片与操作内容',icon:ImageIcon}]:[])];
+  const nav=[{id:'overview' as View,label:'经营概览',icon:LayoutDashboard},{id:'members' as View,label:'组织与成员',icon:Users},...(data?.actor.owner?[{id:'roles' as View,label:'岗位与权限',icon:ShieldCheck}]:[]),...(data?.actor.viewRecords?[{id:'records' as View,label:'图片与操作内容',icon:ImageIcon}]:[])];
   return <main className={styles.page} data-testid='enterprise-console'>
     <aside className={styles.sidebar}><div className={styles.brand}><Building2 size={24}/><span>Naumi<small>企业管理中心</small></span></div><nav>{nav.map(item=>{const Icon=item.icon;return <button key={item.id} className={view===item.id?styles.active:''} aria-pressed={view===item.id} onClick={()=>setView(item.id)}><Icon size={17}/>{item.label}</button>})}</nav><div className={styles.sideFoot}><a href='/dashboard'><ArrowLeft size={15}/>返回工作台</a></div></aside>
     <section className={styles.main}><header className={styles.header}><div><h1>{data?.enterprise.name||'企业管理中心'}</h1><span className={styles.context}>{data?.actor.owner?'全企业':'直属组织范围'}</span></div><div className={styles.actions}>{enterprises.length>1&&<select aria-label='选择企业' value={enterpriseId} onChange={e=>setEnterpriseId(e.target.value)}>{enterprises.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select>}<button disabled={loading||pending} onClick={()=>void load()}><RefreshCw size={15}/>刷新</button></div></header>
       {error&&<p className={styles.error} role='alert'>{error}</p>}{notice&&<p className={styles.notice} role='status'>{notice}</p>}
-      {loading?<div className={styles.empty}>加载中…</div>:!data?<div className={styles.empty}>暂无可管理的企业数据</div>:<>
-        {view==='overview'&&<div className={styles.pane}><div className={styles.cards}><div><Users size={20}/><span>管理范围成员<strong>{data.members.length}</strong></span></div><div><ShieldCheck size={20}/><span>成员可用积分<strong>{totals.available.toLocaleString()}</strong></span></div><div><Network size={20}/><span>累计消耗积分<strong>{totals.consumed.toLocaleString()}</strong></span></div><div><ImageIcon size={20}/><span>作品<strong>{totals.artworks.toLocaleString()}</strong></span></div></div>
-          {data.ownerAvailable!==null&&<div className={styles.ownerBalance}><Building2 size={18}/><span>{identity(data.enterprise.owner_email)}的可用积分</span><strong>{data.ownerAvailable.toLocaleString()}</strong></div>}<h2>组织成员</h2>
-          <div className={styles.tableWrap}><table><thead><tr><th>成员</th><th>岗位</th><th>直属上级</th><th>用工类型</th><th>状态</th><th>可用积分</th><th>作品</th></tr></thead><tbody>{data.members.map(m=><tr key={m.email}><td><strong>{m.name||identity(m.email)}</strong></td><td>{m.role_name}</td><td>{label(m.supervisor_email)}</td><td>{m.employment==='permanent'?'正式员工':'实习生'}</td><td><span className={styles.badge}>{status(m)}</span></td><td>{m.available.toLocaleString()}</td><td>{m.artworks}</td></tr>)}</tbody></table></div></div>}
+      {loading&&!data?<div className={styles.empty}>加载中…</div>:!data?<div className={styles.empty}>暂无可管理的企业数据</div>:<>
+        {view==='overview'&&(data.actor.viewRecords?<EnterpriseAnalyticsPanel key={enterpriseId} snapshot={data} onMember={email=>{setSelected(email);setSection('artworks');setPage(1);setView('records')}}/>:<div className={styles.empty}>当前岗位未开放经营数据查看权限</div>)}
         {view==='members'&&<div className={styles.pane}><div className={styles.tableWrap}><table><thead><tr><th>成员</th><th>岗位 / 级别</th><th>直属上级</th><th>用工 / 有效期</th><th>状态</th><th>操作</th></tr></thead><tbody>{data.members.map(m=><tr key={m.email}><td><strong>{m.name||identity(m.email)}</strong></td><td>{m.role_name}<small>{m.level===999?'基础成员':`L${m.level}`}</small></td><td>{label(m.supervisor_email)}</td><td>{m.employment==='permanent'?'正式员工':'实习生'}<small>{datetime(m.account_expires_at)}</small></td><td><span className={`${styles.badge} ${status(m)!=='正常'?styles.inactive:''}`}>{status(m)}</span></td><td><div className={styles.rowActions}>
           {data.actor.viewRecords&&<button onClick={()=>{setSelected(m.email);setPage(1);setView('records')}}><Eye size={14}/>内容</button>}{m.canManage&&<>{data.actor.owner&&<button disabled={pending} onClick={()=>edit('organization',m)}>岗位与上级</button>}{m.employment==='intern'&&<button disabled={pending} onClick={()=>edit('expiry',m)}>有效期</button>}<button disabled={pending} onClick={()=>edit('password',m)}>密码</button><button disabled={pending} onClick={()=>{if(window.confirm(`${m.banned?'启用':'停用'}${m.name}？`))void mutate({...body(m),action:'status',banned:!m.banned})}}>{m.banned?'启用':'停用'}</button></>}
         </div></td></tr>)}</tbody></table></div></div>}
