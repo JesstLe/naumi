@@ -17,6 +17,10 @@ export async function teamAuthorize(request: Request, adminOnly = false) {
   const access = email ? await teamEntryAccess(email) : null;
   if (!consoleVerified && !access?.allowed) return teamJson({ error: "团队入口授权未生效、已到期或已关闭" }, 403);
   const admin = consoleVerified || !!access?.admin;
+  if (!admin) {
+    const { enterpriseManaged } = await import('@/lib/enterprise/server');
+    if (await enterpriseManaged(email!)) return teamJson({ error: '请使用企业管理中心', code: 'ENTERPRISE_MANAGED' }, 403);
+  }
   if (adminOnly && !admin) return teamJson({ error: "需要站点管理员" }, 403);
   const actor = { email: email || "local-admin", admin, consoleAdmin: consoleVerified };
   if (!rateLimit(`team:${actor.email}:${clientIp(request)}`, 120, 60_000)) return teamJson({ error: "操作过于频繁" }, 429);

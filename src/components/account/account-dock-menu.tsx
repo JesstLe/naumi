@@ -111,7 +111,7 @@ export function useTeamEntryAccess(user: SessionUser | null) {
         const { authHeader } = await import("@/lib/supabase");
         const response = await fetch("/api/team/access", { cache: "no-store", headers: await authHeader(), signal: controller.signal });
         const data = response.ok ? await response.json() : null;
-        if (!controller.signal.aborted) setAccess({ email: user.email, allowed: !!data?.allowed });
+          if (!controller.signal.aborted) setAccess({ email: user.email, allowed: !!data?.allowed && !data?.enterprise });
       } catch { if (!controller.signal.aborted) setAccess(null); }
     };
     void check(); const timer = window.setInterval(check, 30_000);
@@ -121,6 +121,17 @@ export function useTeamEntryAccess(user: SessionUser | null) {
   return access?.email === user?.email && !!access?.allowed;
 }
 
+function useEnterpriseEntryAccess(user: SessionUser | null) {
+  const [access,setAccess]=useState<{email:string;allowed:boolean}|null>(null);
+  useEffect(()=>{
+    setAccess(null);if(!user)return;
+    const c=new AbortController();let sequence=0;
+    const check=async()=>{const n=++sequence;try{const {authHeader}=await import('@/lib/supabase');const r=await fetch('/api/enterprise',{cache:'no-store',headers:await authHeader(),signal:c.signal});const b=r.ok?await r.json():null;if(!c.signal.aborted&&n===sequence)setAccess({email:user.email,allowed:!!b?.enterprises?.length})}catch{if(!c.signal.aborted&&n===sequence)setAccess(null)}};
+    void check();const t=window.setInterval(check,30_000);window.addEventListener('focus',check);
+    return()=>{c.abort();window.clearInterval(t);window.removeEventListener('focus',check)};
+  },[user?.email]);
+  return access?.email===user?.email&&!!access?.allowed;
+}
 export function AccountDockMenu({
   user,
   remaining,
@@ -145,6 +156,7 @@ export function AccountDockMenu({
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
   const initial = user.name.trim().charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase() || "U";
   const hasTeam = useTeamEntryAccess(user);
+  const hasEnterprise = useEnterpriseEntryAccess(user);
   const { can } = useFeatureAccess();
 
   return (
@@ -214,6 +226,7 @@ export function AccountDockMenu({
         <Settings className="h-4 w-4" />
         {t("menu.security")}
       </Link>
+      {hasEnterprise && can("team") && <Link role="menuitem" href="/enterprise" onClick={onClose} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"><Users className="h-4 w-4" />{L("企业管理", "Enterprise")}</Link>}
       {hasTeam && can("team") && <Link role="menuitem" href="/team" onClick={onClose} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"><Users className="h-4 w-4" />{L("团队管理", "Team management")}</Link>}
       <div className="my-1 h-px bg-border" />
       <button

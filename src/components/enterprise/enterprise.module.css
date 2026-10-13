@@ -1,20 +1,20 @@
-/* 企业管理中心：深色侧边栏 + 浅色内容区，视觉对齐 admin center shell。 */
+/* 企业管理中心：独立浅色 ERP 布局。 */
 .page { display: flex; min-height: 100vh; background: #f2f4f8; color: #1c2333; }
 
 /* ---- 侧边栏 ---- */
-.sidebar { width: 232px; flex: none; display: flex; flex-direction: column; gap: 4px; padding: 18px 14px; background: #1d2740; color: #e8ecf6; }
+.sidebar { width: 232px; flex: none; display: flex; flex-direction: column; gap: 4px; padding: 24px 14px; background: #fff; color: #25314b; border-right: 1px solid #e3e8f0; }
 .brand { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 600; padding: 4px 8px 2px; }
-.brand small { display: block; font-size: 11px; font-weight: 400; color: #9aa8c7; }
+.brand small { display: block; font-size: 11px; font-weight: 400; color: #7b8498; margin-top: 3px; }
 .private { display: flex; align-items: center; gap: 5px; margin: 0 0 10px; padding: 0 8px; font-size: 11px; color: #8fa0c4; }
-.sidebar nav { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+.sidebar nav { flex: 1; display: flex; flex-direction: column; gap: 6px; margin-top: 34px; }
 .sidebar nav section { display: flex; flex-direction: column; gap: 3px; }
 .groupLabel { margin: 0 0 2px; padding: 0 10px; font-size: 11px; letter-spacing: .08em; color: #7d8db0; }
-.sidebar nav button { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; border-radius: 9px; background: transparent; color: #cfd8ec; font: inherit; font-size: 13.5px; padding: 9px 10px; text-align: left; cursor: pointer; }
-.sidebar nav button:hover { background: #27334f; color: #fff; }
-.sidebar nav button.active { background: #31406a; color: #fff; }
-.sideFoot { border-top: 1px solid #2c3854; padding-top: 10px; }
-.sideFoot a { display: flex; align-items: center; gap: 8px; color: #aeb9d4; font-size: 13px; text-decoration: none; padding: 7px 10px; border-radius: 8px; }
-.sideFoot a:hover { background: #27334f; color: #fff; }
+.sidebar nav button { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; border-radius: 9px; background: transparent; color: #667087; font: inherit; font-size: 13.5px; padding: 11px 10px; text-align: left; cursor: pointer; }
+.sidebar nav button:hover { background: #f5f7fb; color: #25314b; }
+.sidebar nav button.active { background: #eaf1ff; color: #2854a3; font-weight: 600; }
+.sideFoot { border-top: 1px solid #e3e8f0; padding-top: 10px; }
+.sideFoot a { display: flex; align-items: center; gap: 8px; color: #667087; font-size: 13px; text-decoration: none; padding: 7px 10px; border-radius: 8px; }
+.sideFoot a:hover { background: #f5f7fb; color: #25314b; }
 
 /* ---- 主区 ---- */
 .main { flex: 1; min-width: 0; padding: 20px 26px 40px; overflow-x: hidden; }
@@ -59,7 +59,7 @@
 .tabs button.active { background: #2c3a63; border-color: #2c3a63; color: #fff; }
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
 .gallery .record { background: #fff; border: 1px solid #e3e8f0; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
-.gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: #eef1f6; }
+.gallery img { width: 100%; aspect-ratio: 1; object-fit: contain; display: block; background: #eef1f6; }
 .records { display: flex; flex-direction: column; gap: 10px; }
 .records .record { background: #fff; border: 1px solid #e3e8f0; border-radius: 12px; padding: 13px 16px; }
 .record h3 { margin: 8px 0 2px; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -84,11 +84,28 @@
 .dialog small { color: #8a93aa; font-size: 11.5px; }
 .dialogActions { display: flex; justify-content: flex-end; gap: 8px; }
 .primary { background: #2c3a63 !important; border-color: #2c3a63 !important; color: #fff !important; }
+.context { display: inline-block; color: #7c859d; font-size: 12px; margin-top: 5px; }
+.ownerBalance { display: flex; gap: 10px; align-items: center; padding: 14px 18px; border: 1px solid #dce6f5; border-radius: 12px; background: #edf4ff; color: #38527d; font-size: 13px; }
+.ownerBalance strong { margin-left: auto; font-size: 20px; }
+.sectionHead { display: flex; align-items: center; justify-content: space-between; }
+.roleGrid { display: grid; grid-template-columns: repeat(auto-fill,minmax(250px,1fr)); gap: 16px; }
+.roleCard { background: #fff; border: 1px solid #e3e8f0; border-radius: 14px; padding: 20px; }
+.roleCard header { display: flex; align-items: center; gap: 8px; color: #38527d; }
+.roleCard h3 { flex: 1; margin: 0; font-size: 15px; }
+.roleCard header span { font-size: 12px; background: #edf4ff; padding: 4px 8px; border-radius: 6px; }
+.roleCard footer { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #7c859d; margin-top: 22px; }
+.capabilities { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: #667087; margin-top: 18px; }
+.dialog select,.actions select { border: 1px solid #d7dde9; border-radius: 9px; background: #fff; font: inherit; font-size: 13px; padding: 9px 10px; }
+.dialog .check { flex-direction: row; align-items: center; gap: 8px; }
+.dialog .check input { width: 16px; height: 16px; }
+.dialog button { border: 1px solid #d7dde9; border-radius: 8px; background: #fff; padding: 7px 12px; font-size: 13px; cursor: pointer; }
+.dialog button:disabled { opacity: .55; }
 
 @media (max-width: 760px) {
   .page { flex-direction: column; }
   .sidebar { width: 100%; flex-direction: row; align-items: center; flex-wrap: wrap; }
   .sidebar nav { flex-direction: row; flex-wrap: wrap; gap: 8px; }
+  .sidebar nav { margin-top: 6px; }
   .sidebar nav section { flex-direction: row; flex-wrap: wrap; }
   .groupLabel { display: none; }
   .sideFoot { border: 0; padding: 0; }
