@@ -97,7 +97,7 @@ renderCache:(urls:string[],baseline=false)=>root.render(<div style={{display:'fl
     const p1=await page.evaluate(async()=>{const lease=await(window as any).cacheAcquire('/media/templates/public.png');const result=lease.url.startsWith('blob:');lease.release();return result;});assert.ok(p1);const publicRequests=requests;
     await page.evaluate(async()=>{const lease=await(window as any).cacheAcquire('/media/templates/public.png');lease.release();});assert.equal(requests,publicRequests,'published public picture reused while logged out');
     assert.deepEqual(errors,[]);
-    const result={baselineRepeat,coldImageRequests:1,warmImageRequests:0,coldBytes,coverage:'52 client components',auth:'owner isolated',quota:'fallback',download:'original bytes equal',errors};await writeFile(path.join(out,'metrics.json'),JSON.stringify(result,null,2));
+    const result={baselineRepeat,coldImageRequests:1,warmImageRequests:0,coldBytes,coverage:'53 client components',auth:'owner isolated',quota:'fallback',download:'original bytes equal',errors};await writeFile(path.join(out,'metrics.json'),JSON.stringify(result,null,2));
     console.log('BROWSER_IMAGE_CACHE=PASS BASELINE_REPEAT=1 COLD=1 REOPEN=0 RELOAD=0 BROWSER_RESTART=0 DUPLICATE=DEDUP VARIANTS=ISOLATED DOWNLOAD=LOCAL ZIP=LOCAL ORIGINAL_BYTES=EQUAL VERSION_CHANGE=REFETCH FOREIGN=DENIED LOGOUT=CLEARED MULTITAB=CLEARED LATE_WRITE=BLOCKED LRU=BOUNDED QUOTA=FALLBACK OUTAGE=AUTHENTICATED PAGE_ERRORS=0 PROVIDER_CALLS=0');
   }catch(error){console.error('BROWSER_ERRORS='+JSON.stringify(errors));console.error('DOM='+await page.locator('#app').innerHTML());throw error;}finally{await context.close();await db.getPool().end();}
 }
