@@ -1,5 +1,6 @@
 "use client";
 import { CachedImage } from "@/components/cached-image";
+import { readBrowserImage } from '@/lib/browser-image-cache';
 import {useBilling} from "@/lib/billing/client";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -323,16 +324,13 @@ export function GenChatClient() {
       fd.append("email", user.email);
       if (curBase) {
         fd.append("parentId", curBase.id);
-        const dl = await fetch(
-          `/api/download?u=${encodeURIComponent(curBase.image)}&n=base.png`
-        );
-        if (dl.ok) {
-          const blob = await dl.blob();
+        try {
+          const blob = await readBrowserImage(curBase.image);
           fd.append(
             "image",
             new File([blob], "base.png", { type: blob.type || "image/png" })
           );
-        }
+        }catch{/* Optional reference failure retains the existing behavior. */}
       }
       // 首页带来的参考图(图生图)
       (override?.refs ?? []).forEach((f) => fd.append("image", f));
@@ -403,11 +401,7 @@ export function GenChatClient() {
   async function exportImg(img: GenImg) {
     try {
       const filename = createImageDownloadName();
-      const r = await fetch(
-        `/api/download?u=${encodeURIComponent(img.image)}&n=${encodeURIComponent(filename)}`
-      );
-      if (!r.ok) return;
-      const blob = await r.blob();
+      const blob = await readBrowserImage(img.image);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

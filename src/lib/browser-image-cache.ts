@@ -1,11 +1,11 @@
 'use client';
 import { authHeader } from './supabase';
-import { managedImageSource, type BrowserImageDescriptor } from './browser-image-source';
+import { managedImageSource, publicImageSource, type BrowserImageDescriptor } from './browser-image-source';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 
 const NAME='naumi-image-bytes-v1', STORE='images', META='metadata';
-const MAX_BYTES=128*1024*1024, MAX_IMAGE=32*1024*1024, MAX_ITEMS=400, MAX_AGE=7*86400000;
+const MAX_BYTES=128*1024*1024, MAX_IMAGE=MAX_BYTES, MAX_ITEMS=400, MAX_AGE=7*86400000;
 type Row={id:string;account:string;source:string;version:string;blob:Blob;at:number;created:number;bytes:number};
 type Lease={url:string;release:()=>void};
 let account='',epoch=0,installed=false,localOnly=false;
@@ -17,14 +17,14 @@ let batchTimer:ReturnType<typeof setTimeout>|undefined;
 let channel:BroadcastChannel|undefined;
 export class ImageCacheDenied extends Error {}
 class ImageNotCacheable extends Error {constructor(readonly freshUrl:string){super('图片超过本地缓存上限');}}
-const valid=(owner:string,generation:number)=>owner===account && generation===epoch && !!owner;
+const valid=(owner:string,generation:number)=>(owner==='public'||owner===account) && generation===epoch && !!owner;
 export function imageCacheAccount(){return account;}
 export function imageCacheSource(raw:string){
   if(localOnly)return null;
   const source=managedImageSource(raw,typeof location==='undefined'?'http://naumi.invalid':location.origin);
-  // Published branding/templates remain public and use their native immutable cache.
-  return source&& !/^\/media\/(brand|library|templates|template-cache)\//.test(source)?source:null;
+  return source;
 }
+export function publicCachedImage(raw:string){const source=imageCacheSource(raw);return !!source&&publicImageSource(source);}
 // Only an explicit successful /api/config response may opt the DB-less demo out.
 export function configureBrowserImageCache(hasDatabase:boolean){if(localOnly===!hasDatabase)return;localOnly=!hasDatabase;reset();}
 function openDB():Promise<IDBDatabase|null>{
@@ -80,21 +80,28 @@ function descriptor(source:string,owner:string,generation:number):Promise<Browse
   });
 }
 async function flushDescriptors(){
-  const queued=[...batches.entries()];batches.clear();
-  for(let offset=0;offset<queued.length;offset+=64){const group=queued.slice(offset,offset+64),owner=account,generation=epoch;
+  const all=[...batches.entries()];batches.clear();
+  const partitions=new Map<string,typeof all>();for(const entry of all){const owner=entry[0].split('\n')[0];const group=partitions.get(owner)||[];group.push(entry);partitions.set(owner,group);}
+  for(const [partition,queued]of partitions){
+  for(let offset=0;offset<queued.length;){
+    const group:typeof queued=[];let bodyBytes=32;
+    while(offset<queued.length&&group.length<64){const next=queued[offset];const bytes=new TextEncoder().encode(JSON.stringify(next[0].split('\n')[2])).length+1;if(group.length&&bodyBytes+bytes>12000)break;group.push(next);offset++;bodyBytes+=bytes;}
+    const generation=epoch;
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
     try{
       const sources=group.map(([key])=>key.split('\n')[2]);
-      const response=await fetch('/api/media/image-cache',{method:'POST',cache:'no-store',headers:{'content-type':'application/json',...await authHeader()},body:JSON.stringify({sources}),signal:controller.signal});
+      const publicOnly=partition==='public';
+      const response=await fetch(publicOnly?'/api/public-image-cache':'/api/media/image-cache',{method:'POST',cache:'no-store',credentials:publicOnly?'omit':'same-origin',headers:{'content-type':'application/json',...(publicOnly?{}:await authHeader())},body:JSON.stringify({sources}),signal:controller.signal});
       if(response.status===401||response.status===403)throw new ImageCacheDenied('素材尚未授权');
       if(!response.ok)throw new Error('素材缓存暂时不可用');
-      const data=await response.json();if(data.account!==owner||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
-      for(const [key,waiters]of group){const [captured,capturedEpoch,source]=key.split('\n');const value=captured===owner&&Number(capturedEpoch)===generation?data.results?.[source]:null;for(const w of waiters)w.resolve(value||null);}
+      const data=await response.json();if(data.account!==partition||!valid(partition,generation))throw new ImageCacheDenied('登录状态已改变');
+      for(const [key,waiters]of group){const [captured,capturedEpoch,source]=key.split('\n');const value=captured===partition&&Number(capturedEpoch)===generation?data.results?.[source]:null;for(const w of waiters)w.resolve(value||null);}
     }catch(error){for(const [,waiters]of group)for(const w of waiters)w.reject(error instanceof Error?error:new Error('缓存校验失败'));}finally{clearTimeout(timer);}
+  }
   }
 }
 async function imageBlob(source:string,signal?:AbortSignal):Promise<{blob:Blob;owner:string;generation:number}>{
-  const owner=account,generation=epoch;if(!owner)throw new ImageCacheDenied('登录状态尚未验证');
+  const owner=publicImageSource(source)?'public':account,generation=epoch;if(!owner)throw new ImageCacheDenied('登录状态尚未验证');
   const info=await descriptor(source,owner,generation);if(signal?.aborted||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
   if(!info)throw new ImageCacheDenied('素材尚未授权或不支持缓存');
   if(info.bytes>MAX_IMAGE)throw new ImageNotCacheable(info.fetchUrl);
@@ -110,7 +117,7 @@ async function imageBlob(source:string,signal?:AbortSignal):Promise<{blob:Blob;o
     if(!response.ok||response.type==='opaque'||!/^image\/(png|jpeg|webp|avif|gif)(;|$)/.test(response.headers.get('content-type')||''))throw new Error('素材响应无效');
     const reader=response.body?.getReader();if(!reader)throw new Error('素材响应为空');const parts:Uint8Array[]=[];let total=0;
     for(;;){const chunk=await reader.read();if(chunk.done)break;total+=chunk.value.length;if(total>MAX_IMAGE){await reader.cancel();throw new Error('素材超过缓存上限');}parts.push(new Uint8Array(chunk.value));}
-    const blob=new Blob(parts,{type:info.contentType});if(!blob.size||blob.size!==info.bytes)throw new Error('素材版本已改变');
+    const blob=new Blob(parts,{type:info.contentType});if(!blob.size||(info.bytes>0&&blob.size!==info.bytes))throw new Error('素材版本已改变');
     if(/^[a-f0-9]{64}$/.test(info.version) && bytesToHex(sha256(new Uint8Array(await blob.arrayBuffer())))!==info.version)throw new Error('素材版本校验失败');
     if(controller.signal.aborted||!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
     await store({id,account:owner,source:info.source,version:info.version,blob,bytes:blob.size,at:Date.now(),created:Date.now()},generation);
@@ -124,7 +131,7 @@ async function imageBlob(source:string,signal?:AbortSignal):Promise<{blob:Blob;o
 }
 export async function acquireBrowserImage(raw:string,signal?:AbortSignal):Promise<Lease>{
   const source=imageCacheSource(raw);if(!source)return{url:raw,release:()=>{}};
-  const owner=account,generation=epoch;
+  const owner=publicImageSource(source)?'public':account,generation=epoch;
   let result:{blob:Blob;owner:string;generation:number};
   try{result=await imageBlob(source,signal);}catch(error){
     if(error instanceof ImageCacheDenied||signal?.aborted||!valid(owner,generation))throw error;

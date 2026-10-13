@@ -1,4 +1,5 @@
 "use client";
+import { readBrowserImage } from "@/lib/browser-image-cache";
 import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError, validToolImages} from "@/lib/tool-ui";
@@ -147,13 +148,7 @@ export function FuseClient() {
     }
     setError(null);
     try {
-      const isLocal = url.startsWith("blob:") || url.startsWith("data:");
-      const fetchUrl = isLocal
-        ? url
-        : `/api/download?u=${encodeURIComponent(url)}&n=input.png`;
-      const res = await fetch(fetchUrl, {headers:await authHeader()});
-      if (!res.ok) throw new Error("download failed");
-      const blob = await res.blob();
+      const blob = await readBrowserImage(url);
       const file = new File([blob], "fusion.png", {
         type: blob.type || "image/png",
       });

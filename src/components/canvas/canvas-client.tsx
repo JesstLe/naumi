@@ -1,7 +1,7 @@
 "use client";
 import { CachedImage } from "@/components/cached-image";
 import { browserImageArchive } from '@/lib/browser-image-archive';
-import { cachedImageBlob, imageCacheSource, ImageCacheDenied } from '@/lib/browser-image-cache';
+import { cachedImageBlob, imageCacheSource, ImageCacheDenied, readBrowserImage } from '@/lib/browser-image-cache';
 import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
 
 
@@ -4542,11 +4542,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try {
       // 下载一张图为 File(底图/参考图统一走 /api/download 代理)
       const dlFile = async (url: string, name: string): Promise<File> => {
-        const dl = await fetch(
-          `/api/download?u=${encodeURIComponent(url)}&n=${name}`
-        );
-        if (!dl.ok) throw new Error(t("canvas.genFail"));
-        const blob = await dl.blob();
+        const blob = await readBrowserImage(url);
         return new File([blob], name, { type: blob.type || "image/png" });
       };
       // 参考图集合(第一张=主底图,其余=附加参考图一起送给模型):
@@ -5684,11 +5680,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const arts = referenceArts.slice(0, maxArtworkRefs);
       for (let index = 0; index < arts.length; index++) {
         const artwork = arts[index];
-        const response = await fetch(
-          `/api/download?u=${encodeURIComponent(artwork.image)}&n=detail-ref-${index + 1}.png`
-        );
-        if (!response.ok) throw new Error(t("canvas.genFail"));
-        const blob = await response.blob();
+        const blob = await readBrowserImage(artwork.image);
         form.append(
           "image",
           new File([blob], `detail-ref-${index + 1}.png`, {
@@ -8016,16 +8008,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       // 把每个输入图下载后作为参考图一起送(图生图/合并);无输入=纯文生图
       for (const a of inputArts) {
-        const dl = await fetch(
-          `/api/download?u=${encodeURIComponent(a.image)}&n=ref.png`
-        );
-        if (dl.ok) {
-          const blob = await dl.blob();
+        try {
+          const blob = await readBrowserImage(a.image);
           fd.append(
             "image",
             new File([blob], "ref.png", { type: blob.type || "image/png" })
           );
-        }
+        } catch { /* Existing optional reference behavior is retained. */ }
       }
       const startRes = await privateFetch("/api/generate-image", {
         method: "POST",
@@ -8174,10 +8163,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 复制图片到系统剪贴板(剪贴板只可靠支持 PNG,非 PNG 先转码;失败退回复制图片链接)
   async function copyImageToClipboard(image: string) {
     try {
-      const res = await fetch(
-        `/api/download?u=${encodeURIComponent(image)}&n=img.png`
-      );
-      let blob = await res.blob();
+      let blob = await readBrowserImage(image);
       if (blob.type !== "image/png") {
         const bmp = await createImageBitmap(blob);
         const c = document.createElement("canvas");

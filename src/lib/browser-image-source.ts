@@ -1,7 +1,13 @@
-/** Only stable managed images, never arbitrary URLs, signed queries or video. */
+/** Stable managed images and resource-scoped team previews, not signed links. */
 export function managedImageSource(raw: string, origin: string): string | null {
   try {
     let url = new URL(raw, origin);
+    if(url.origin===origin && /^\/api\/(team|enterprise)\/media$/.test(url.pathname)){
+      const group=url.pathname.includes('/enterprise/')?'enterpriseId':'teamId';
+      const id=url.searchParams.get('id'),email=url.searchParams.get('email'),owner=url.searchParams.get(group);
+      if(!id||id.length>200||!email||email.length>254||!owner||!/^[0-9a-f-]{36}$/i.test(owner))return null;
+      return url.pathname+'?'+new URLSearchParams({[group]:owner,email:email.toLowerCase(),id});
+    }
     if (url.origin === origin && url.pathname === '/_next/image') {
       const inner = new URL(url.searchParams.get('url') || '', origin);
       if (inner.origin !== origin || !inner.pathname.startsWith('/media/')) return null;
@@ -17,3 +23,6 @@ export function managedImageSource(raw: string, origin: string): string | null {
   } catch { return null; }
 }
 export type BrowserImageDescriptor = { account: string; source: string; version: string; fetchUrl: string; bytes: number; contentType: string };
+export function publicImageSource(source:string){
+  try{return /^\/media\/(brand|library|templates|template-cache)\//.test(decodeURIComponent(source.split('?')[0]));}catch{return false;}
+}

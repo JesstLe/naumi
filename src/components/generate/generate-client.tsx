@@ -1,4 +1,5 @@
 "use client";
+import { readBrowserImage } from "@/lib/browser-image-cache";
 import { browserImageArchive } from "@/lib/browser-image-archive";
 import { CachedImage } from "@/components/cached-image";
 
@@ -211,12 +212,7 @@ export function GenerateClient({
     setSourceLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/download?u=${encodeURIComponent(url)}&n=${encodeURIComponent(name)}`,
-        {headers: await authHeader(), signal: controller.signal}
-      );
-      if (!res.ok) throw new Error("download failed");
-      const blob = await res.blob();
+      const blob = await readBrowserImage(url,controller.signal);
       const file = new File([blob], name, { type: blob.type || "image/png" });
       if (toolImageError(file, MAX_UPLOAD)) throw new Error("invalid image");
       if (sourceEpoch.current !== epoch || controller.signal.aborted) return false;

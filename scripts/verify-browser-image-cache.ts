@@ -15,17 +15,22 @@ async function main(){
   await writeFile(path.join(media,'cache-test.png'),bytes);await assets.registerMediaAsset('cache-test.png',bytes,'image/png',false,owner);
   await writeFile(path.join(media,'foreign.png'),bytes);await assets.registerMediaAsset('foreign.png',bytes,'image/png',false,other);
   await writeFile(path.join(media,'late.png'),bytes);await assets.registerMediaAsset('late.png',bytes,'image/png',false,owner);
+  await writeFile(path.join(media,'legacy.png'),bytes);await db.addArtworks(owner,[{id:'cache-legacy-fixture',title:'legacy',category:'main',prompt:'fixture',status:'completed',image:'/media/legacy.png',source:'',gradient:''}]);
+  await mkdir(path.join(media,'templates'),{recursive:true});await writeFile(path.join(media,'templates/public.png'),bytes);await assets.registerMediaAsset('templates/public.png',bytes,'image/png',false);
   const api=await import('../src/app/api/media/image-cache/route');
   const body={sources:['/media/cache-test.png','/media/cache-test.png?variant=thumbnail','/media/foreign.png','/media/%2e%2e/private.png','https://evil.test/a.png']};
   const req=(email:string,origin='http://cache.test')=>new Request('http://cache.test/api/media/image-cache',{method:'POST',headers:{'content-type':'application/json',cookie:email?'nv_user='+native.signUserSession(email,Date.now()):'',origin},body:JSON.stringify(body)});
   assert.equal((await api.POST(req(''))).status,401);assert.equal((await api.POST(req(owner,'https://evil.test'))).status,403);
   const meta=await(await api.POST(req(owner))).json();assert.ok(meta.results['/media/cache-test.png']);assert.ok(meta.results['/media/cache-test.png?variant=thumbnail']);assert.equal(meta.results['/media/foreign.png'],null);assert.equal(meta.results['https://evil.test/a.png'],null);assert.equal(meta.results['/media/%2e%2e/private.png'],null);
+  const requestSources=(sources:string[],email=owner)=>new Request('http://cache.test/api/media/image-cache',{method:'POST',headers:{'content-type':'application/json',...(email?{cookie:'nv_user='+native.signUserSession(email,Date.now())}:{})},body:JSON.stringify({sources})});
+  const legacy=await(await api.POST(requestSources(['/media/legacy.png?variant=thumbnail']))).json();assert.equal(legacy.results['/media/legacy.png?variant=thumbnail'].contentType,'image/webp');assert.ok(legacy.results['/media/legacy.png?variant=thumbnail'].bytes<bytes.length);
+  const publicApi=await import('../src/app/api/public-image-cache/route');const pub=await(await publicApi.POST(requestSources(['/media/templates/public.png','/media/cache-test.png'],''))).json();assert.equal(pub.account,'public');assert.ok(pub.results['/media/templates/public.png']);assert.equal(pub.results['/media/cache-test.png'],null);
   const entry=path.join(out,'fixture-entry.tsx');await writeFile(entry,`
 import React from 'react';import{createRoot}from'react-dom/client';
 import{CachedImage}from'../../src/components/cached-image';import CachedNextImage from'../../src/components/cached-next-image';
-import{activateBrowserImages,clearBrowserImages,configureBrowserImageCache,cachedImageBlob,acquireBrowserImage}from'../../src/lib/browser-image-cache';import{downloadImage}from'../../src/lib/download';import{browserImageArchive}from'../../src/lib/browser-image-archive';
+import{activateBrowserImages,clearBrowserImages,configureBrowserImageCache,cachedImageBlob,acquireBrowserImage}from'../../src/lib/browser-image-cache';import{downloadImage}from'../../src/lib/download';import{browserImageArchive,browserImagegenBatchArchive}from'../../src/lib/browser-image-archive';
 const root=createRoot(document.getElementById('app')!);
-Object.assign(window,{cacheActivate:activateBrowserImages,cacheLogout:clearBrowserImages,cacheConfigure:configureBrowserImageCache,cacheBlob:cachedImageBlob,cacheAcquire:acquireBrowserImage,cacheDownload:downloadImage,cacheZip:browserImageArchive,
+Object.assign(window,{cacheActivate:activateBrowserImages,cacheLogout:clearBrowserImages,cacheConfigure:configureBrowserImageCache,cacheBlob:cachedImageBlob,cacheAcquire:acquireBrowserImage,cacheDownload:downloadImage,cacheZip:browserImageArchive,cacheBatchZip:browserImagegenBatchArchive,
 renderCache:(urls:string[],baseline=false)=>root.render(<div style={{display:'flex',gap:16}}>{urls.map((src,i)=>baseline?<img key={src+i} src={src} width="180"/>:i%2?<CachedNextImage key={src+i} src={src} width={180} height={120} alt="图片预览"/>:<CachedImage key={src+i} src={src} width={180} height={120} alt="图片预览"/>)}</div>)});
 `);
   const bundle=await build({entryPoints:[entry],bundle:true,write:false,jsx:'automatic',platform:'browser',format:'iife',define:{'process.env':'{}','process.env.NODE_ENV':'"production"'},tsconfig:path.resolve('tsconfig.json')});const js=bundle.outputFiles[0].text;
@@ -51,6 +56,8 @@ renderCache:(urls:string[],baseline=false)=>root.render(<div style={{display:'fl
     const download=page.waitForEvent('download');await page.evaluate(()=>(window as any).cacheDownload('/media/cache-test.png'));const saved=await download;await saved.saveAs(path.join(out,'download.png'));assert.deepEqual(await readFile(path.join(out,'download.png')),bytes);assert.equal(requests,1);
     const zipBytes=await page.evaluate(async()=>Array.from(new Uint8Array(await(await(window as any).cacheZip([{url:'/media/cache-test.png',name:'sample'}])).arrayBuffer())));
     const zip=await JSZip.loadAsync(Buffer.from(zipBytes));assert.deepEqual(await zip.file('01-sample.png')!.async('nodebuffer'),bytes);assert.equal(requests,1,'ZIP reuses cached original');
+    const batchZip=await page.evaluate(async()=>Array.from(new Uint8Array(await(await(window as any).cacheBatchZip({id:'test-batch',items:[{key:'1',name:'sample',state:'succeeded',result:{status:'succeeded',chargedCredits:2,artifacts:[{artworkId:'owned',url:'/media/cache-test.png',mime:'image/png'}]}}]})).arrayBuffer())));
+    const bzip=await JSZip.loadAsync(Buffer.from(batchZip));assert.deepEqual(await bzip.file('sample-1.png')!.async('nodebuffer'),bytes);assert.match(await bzip.file('results.jsonl')!.async('string'),/owned/);assert.equal(requests,1);
     await page.evaluate(()=>(window as any).renderCache(['/media/cache-test.png?variant=thumbnail','/media/cache-test.png?variant=preview']));await ready();assert.equal(requests,3);await page.reload();await page.evaluate(email=>(window as any).cacheActivate(email),owner);await page.evaluate(()=>(window as any).renderCache(['/media/cache-test.png?variant=thumbnail','/media/cache-test.png?variant=preview']));await ready();assert.equal(requests,3,'variants persisted');
     await page.evaluate(()=>(window as any).renderCache([]));await page.locator('#app img').waitFor({state:'detached'});
     // Permission revocation is checked before a cached blob can be restored.
@@ -75,7 +82,7 @@ renderCache:(urls:string[],baseline=false)=>root.render(<div style={{display:'fl
     await page.evaluate(async()=>{const lease=await(window as any).cacheAcquire('/media/late.png');lease.release();});
     const rows=await page.evaluate(async()=>{const database=await new Promise<IDBDatabase>(resolve=>{const r=indexedDB.open('naumi-image-bytes-v1',2);r.onsuccess=()=>resolve(r.result);});const count=await new Promise<number>(resolve=>{const r=database.transaction('metadata').objectStore('metadata').count();r.onsuccess=()=>resolve(r.result);});database.close();return count;});assert.ok(rows<=400);
     // A verified oversized image still displays natively; it never becomes a giant Blob.
-    await page.route('**/api/media/image-cache',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({account:owner,results:{'/media/late.png':{account:owner,source:'/media/late.png',version:'large-fixture',fetchUrl:'/media/late.png?authorized-large=1',bytes:40*1024*1024,contentType:'image/png'}}})}));
+    await page.route('**/api/media/image-cache',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({account:owner,results:{'/media/late.png':{account:owner,source:'/media/late.png',version:'large-fixture',fetchUrl:'/media/late.png?authorized-large=1',bytes:256*1024*1024,contentType:'image/png'}}})}));
     const large=await page.evaluate(async()=>{const lease=await(window as any).cacheAcquire('/media/late.png');const result=lease.url;lease.release();return result;});assert.equal(large,'/media/late.png?authorized-large=1');await page.unroute('**/api/media/image-cache');
     await page.evaluate(()=>(window as any).renderCache(['/media/cache-test.png']));await ready();const beforeRestart=requests;
     await context.close();context=await chromium.launchPersistentContext(profile,launchOptions);
@@ -87,6 +94,8 @@ renderCache:(urls:string[],baseline=false)=>root.render(<div style={{display:'fl
     await page.screenshot({path:path.join(out,'cache-acceptance.png')});
     await page.evaluate(()=>(window as any).cacheLogout());await page.waitForFunction(()=>![...document.querySelectorAll('#app img')].some(x=>(x as HTMLImageElement).getAttribute('src')));
     await second.waitForFunction(()=>!document.querySelector('#app img')?.getAttribute('src'));
+    const p1=await page.evaluate(async()=>{const lease=await(window as any).cacheAcquire('/media/templates/public.png');const result=lease.url.startsWith('blob:');lease.release();return result;});assert.ok(p1);const publicRequests=requests;
+    await page.evaluate(async()=>{const lease=await(window as any).cacheAcquire('/media/templates/public.png');lease.release();});assert.equal(requests,publicRequests,'published public picture reused while logged out');
     assert.deepEqual(errors,[]);
     const result={baselineRepeat,coldImageRequests:1,warmImageRequests:0,coldBytes,coverage:'52 client components',auth:'owner isolated',quota:'fallback',download:'original bytes equal',errors};await writeFile(path.join(out,'metrics.json'),JSON.stringify(result,null,2));
     console.log('BROWSER_IMAGE_CACHE=PASS BASELINE_REPEAT=1 COLD=1 REOPEN=0 RELOAD=0 BROWSER_RESTART=0 DUPLICATE=DEDUP VARIANTS=ISOLATED DOWNLOAD=LOCAL ZIP=LOCAL ORIGINAL_BYTES=EQUAL VERSION_CHANGE=REFETCH FOREIGN=DENIED LOGOUT=CLEARED MULTITAB=CLEARED LATE_WRITE=BLOCKED LRU=BOUNDED QUOTA=FALLBACK OUTAGE=AUTHENTICATED PAGE_ERRORS=0 PROVIDER_CALLS=0');

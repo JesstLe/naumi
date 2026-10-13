@@ -1,4 +1,5 @@
 "use client";
+import { readBrowserImage } from "@/lib/browser-image-cache";
 import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError} from "@/lib/tool-ui";
@@ -163,16 +164,7 @@ export function InpaintClient() {
     }
     setError(null);
     try {
-      let blob: Blob;
-      if (url.startsWith("blob:") || url.startsWith("data:")) {
-        blob = await (await fetch(url)).blob();
-      } else {
-        const res = await fetch(
-          `/api/download?u=${encodeURIComponent(url)}&n=input.png`, {headers:await authHeader()}
-        );
-        if (!res.ok) throw new Error();
-        blob = await res.blob();
-      }
+      const blob = await readBrowserImage(url);
       const f = new File([blob], "input.png", {
         type: blob.type || "image/png",
       });
