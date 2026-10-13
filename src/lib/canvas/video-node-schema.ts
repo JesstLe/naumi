@@ -6,7 +6,7 @@ import {videoCameraSchema} from "../video/camera";
 export const videoNodeIdSchema=z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/);
 export const videoProjectKeySchema=z.string().regex(/^(?:tree|batch):[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/);
 export const videoNodeConfigSchema=videoInputSchema.omit({orderedInputs:true}).partial().extend({
-  modelId:videoNodeIdSchema.optional(),providerId:videoNodeIdSchema.optional(),comfyWorkflowId:videoNodeIdSchema.optional(),
+  modelId:videoNodeIdSchema.optional(),providerId:videoNodeIdSchema.optional(),comfyWorkflowId:videoNodeIdSchema.optional(),workflowTaskId:videoNodeIdSchema.optional(),
   comfyInputs:videoWorkflowManifestSchema.shape.inputs.optional(),
   workflowManifest:videoWorkflowManifestSchema.optional(),
   prompt:z.string().max(16384).optional(),camera:videoCameraSchema.optional()});

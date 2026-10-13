@@ -4,6 +4,7 @@ import {getVideoNode} from "../canvas/video-node-repository";
 import {ModelConfigError} from "../model-config/types";
 import {BillingError} from "../billing/types";
 import {createVideoGeneration} from "./service";
+import {readOwnedVideoWorkflow} from "./workflow-source";
 import {requireOwnedVideoText} from "./submission";
 import type {VideoReference} from "./types";
 import type {OrderedInput} from "./references";
@@ -16,7 +17,11 @@ export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;exp
   const node=await getVideoNode(actor,input.nodeId);
   if(!node)throw new ModelConfigError("VIDEO_NODE_UNAVAILABLE","视频节点不存在",404);
   if(node.revision!==input.expectedRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","视频节点已更新，请重新读取后生成",409);
-  const {comfyWorkflowId,comfyInputs,camera,...config}=node.config;
+  const {comfyWorkflowId,comfyInputs,workflowTaskId,camera,...config}=node.config;
+  let workflowManifest=config.workflowManifest;
+  if(workflowTaskId&&!workflowManifest){const old=await readOwnedVideoWorkflow(actor,workflowTaskId);
+    if(old.publicModelId!==config.modelId)throw new ModelConfigError("VIDEO_WORKFLOW_MODEL_CONFLICT","历史工作流与当前模型不一致，请重新选择模型",409);workflowManifest=old.manifest;
+  }
   const references:VideoReference[]=[],orderedInputs:OrderedInput[]=[];
   for(const source of node.inputs){
     if(source.kind==="text"){
@@ -26,7 +31,7 @@ export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;exp
     let artworkId=sourceId;
     if(videoNode){
       const task=videoNode.lastTaskId?await getVideoTask(actor,videoNode.lastTaskId):null;
-      if(!task||task.status!=="completed"||!videoNode.lastResultId)throw new ModelConfigError("VIDEO_DEPENDENCY_PENDING","前序视频尚未完成",409);
+      if(task&&task.status!=="completed"||!videoNode.lastResultId)throw new ModelConfigError("VIDEO_DEPENDENCY_PENDING","前序视频尚未完成",409);
       artworkId=videoNode.lastResultId;
     }
     const artwork=(await listArtworksByIds(actor,[artworkId]))[0];
@@ -39,7 +44,7 @@ export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;exp
   if(comfyWorkflowId){const {submitByocComfyVideo}=await import("./byoc");return submitByocComfyVideo(actor,{workflowId:comfyWorkflowId,nodeId:node.id,expectedRevision:input.expectedRevision,projectKey:node.projectKey,
     idempotencyKey:input.idempotencyKey,prompt:config.prompt||"",references:node.inputs.length?references:config.references,inputMappings:comfyInputs,
     ...(config.durationSeconds&&config.durationSeconds>0?{durationSeconds:config.durationSeconds}:{})});}
-  return createVideoGeneration(actor,{...config,camera,source:"canvas",sourceId:node.id,nodeId:node.id,nodeRevision:input.expectedRevision,projectKey:node.projectKey,
+  return createVideoGeneration(actor,{...config,workflowManifest,camera,source:"canvas",sourceId:node.id,nodeId:node.id,nodeRevision:input.expectedRevision,projectKey:node.projectKey,
     prompt:config.prompt||"",seconds:String(config.durationSeconds??""),size:config.resolution||"",references:node.inputs.length?references:config.references,
     orderedInputs:node.inputs.length?orderedInputs:undefined,idempotencyKey:input.idempotencyKey,billingConfirmation:input.billingConfirmation});
 }

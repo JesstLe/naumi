@@ -15,6 +15,8 @@ export async function ensureVideoNodeSchema(){
       width double precision NOT NULL DEFAULT 384,height double precision NOT NULL DEFAULT 320,config jsonb NOT NULL DEFAULT '{}',inputs jsonb NOT NULL DEFAULT '[]',
       last_task_id text,last_result_id text,deleted_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,id));
     CREATE INDEX IF NOT EXISTS app_canvas_video_nodes_project_idx ON app_canvas_video_nodes(email,project_key,updated_at DESC);
+    CREATE TABLE IF NOT EXISTS app_canvas_video_task_sends(email text NOT NULL,task_id text NOT NULL,project_key text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,task_id,project_key));
+    CREATE TABLE IF NOT EXISTS app_canvas_video_workflow_sources(email text NOT NULL,task_id text NOT NULL,public_model_id text NOT NULL,manifest_enc text NOT NULL,digest text,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,task_id));
     CREATE TABLE IF NOT EXISTS app_canvas_video_node_operations(email text NOT NULL,operation_id uuid NOT NULL,node_id text NOT NULL,
       input_digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id));
     CREATE TABLE IF NOT EXISTS app_canvas_video_node_copies(email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,

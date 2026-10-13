@@ -9,7 +9,7 @@ export function VideoSettingsPanel({config,models,onChange,onNotice}:{config:Vid
   const field=(name:string,value:unknown)=><input aria-label={name} value={String(value??"")} className={videoFieldClass} readOnly />;
   return <div className="space-y-3" data-testid="video-settings-panel">
     <VideoField label="视频模型"><select aria-label="视频模型" className={videoFieldClass} value={model?`${model.providerId}/${model.modelId}`:""} onChange={event=>{
-      const selected=models.find(item=>`${item.providerId}/${item.modelId}`===event.target.value);if(selected)reconcile({...config,providerId:selected.providerId,modelId:selected.modelId},catalogCapability(selected));
+      const selected=models.find(item=>`${item.providerId}/${item.modelId}`===event.target.value);if(selected)reconcile({...config,workflowTaskId:undefined,providerId:selected.providerId,modelId:selected.modelId},catalogCapability(selected));
     }}><option value="" disabled>选择模型</option>{models.map(item=><option key={`${item.providerId}/${item.modelId}`} value={`${item.providerId}/${item.modelId}`}>{item.label}</option>)}</select></VideoField>
     <VideoField label="视频生成模式"><select aria-label="视频生成模式" value={config.mode||""} className={videoFieldClass} onChange={event=>onChange({...config,mode:event.target.value as VideoNodeConfig["mode"]})}>
       <option value="" disabled>{cap.modes?.length?"选择模式":"能力未配置"}</option>{(cap.modes||[]).map(mode=><option key={mode} value={mode}>{VIDEO_MODE_LABELS[mode]}</option>)}

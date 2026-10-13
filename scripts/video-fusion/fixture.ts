@@ -40,6 +40,11 @@ export async function seedVideoFixture() {
   config.publicModels.push({id:"disabled-model",label:"Disabled fixture",modality:"video",enabled:false,visible:true,target:{type:"upstream",id:"fixture-video-upstream"}});
   config.bindings["video.generate"]="video-a";
   if(profile==="autodl"||profile==="runninghub")config.upstreamModels.find(model=>model.id==="fixture-video-upstream")!.parameterMap.videoWorkflow={version:1,kind:profile,workflowId:"selected-native-workflow",inputs:[{name:"prompt",type:"prompt",path:profile==="autodl"?["prompt"]:["3","inputs","text"],required:true}]};
+  if(process.env.VIDEO_FIXTURE_FULL_WORKFLOW==="1"){
+    if(profile!=="autodl")throw new Error("Full workflow fixture requires AutoDL");const upstream=config.upstreamModels.find(model=>model.id==="fixture-video-upstream")!;
+    upstream.capabilities.video={...structuredClone(CAP_RICH),providerOptions:{seed:{type:"integer",minimum:0}}};
+    upstream.parameterMap.videoWorkflow={version:1,kind:"autodl",workflowId:"full-native-workflow",inputs:[{name:"prompt",type:"prompt",path:["prompt"],required:true},{name:"image",type:"image",path:["image"],index:0,required:true},{name:"generateAudio",type:"generateAudio",path:["audio"]},{name:"duration",type:"duration",path:["duration"]},{name:"resolution",type:"resolution",path:["resolution"]},{name:"aspectRatio",type:"aspectRatio",path:["aspect_ratio"]},{name:"seed",type:"custom",path:["seed"]}]};
+  }
   const repo=createModelRepository({pool:db.getPool(),trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(","),initialize:async()=>config});
   await repo.current();
   const { uploadImage }=await import("../../src/lib/storage");

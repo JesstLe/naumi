@@ -27,7 +27,8 @@ export async function verifiedOwnedMedia(actor:string,key:string,artworkId:strin
   const extension=mediaExtension(declaredMime);await ensureMediaInspectionSchema();
   let probe=(await getPool().query("SELECT probe FROM app_video_media_probes WHERE storage_key=$1 AND sha256=$2 AND decoder_version=1",[key,sha256])).rows[0]?.probe as MediaProbe|undefined;
   if(!probe){probe=await probeMedia(object.bytes,extension);await recordMediaProbe(key,sha256,probe);}
-  const mimeType=inspectedMediaMime(probe,declaredMime.split("/",1)[0] as "video"|"audio"|"image",declaredMime);
+  const declaredKind=declaredMime.split("/",1)[0] as "video"|"audio"|"image";
+  const mimeType=inspectedMediaMime(probe,declaredKind==="video"&&!probe.videoCodec&&probe.audioCodecs.length?"audio":declaredKind,declaredMime);
   const art=artworkId?(await listArtworksByIds(actor,[artworkId]))[0]:undefined;
   return {key,artworkId,sha256,bytes:object.bytes.byteLength,mimeType,extension:mediaExtension(mimeType),probe,groupId:art?.groupId||null};
 }

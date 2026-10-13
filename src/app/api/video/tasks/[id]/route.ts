@@ -4,6 +4,8 @@ import { deleteFinishedVideoTask, getVideoTask } from "@/lib/db";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { safeError } from "@/lib/api-error";
 import { publicVideoTaskView } from "@/lib/video/service";
+import {publicVideoTaskSnapshot} from "@/lib/video/task-snapshot";
+import {sameSiteBiMutation} from "@/lib/bi/access";
 
 // ---------------------------------------------------------------------------
 // 单任务只读查询(§6):纯 DB 读,不触发上游轮询。
@@ -23,7 +25,7 @@ export async function GET(
   if (!id) return NextResponse.json({ error: "缺少任务 id" }, { status: 400 });
   const task = await getVideoTask(email, id);
   if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
-  return NextResponse.json({ ok: true, task: publicVideoTaskView(task) });
+  return NextResponse.json({ ok: true, task: publicVideoTaskView(task),snapshot:publicVideoTaskSnapshot(task) },{headers:{"cache-control":"private, no-store"}});
 }
 
 export async function DELETE(
@@ -32,6 +34,7 @@ export async function DELETE(
 ) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站删除"},{status:403});
   const { id } = await context.params;
   if (!id) return NextResponse.json({ error: "缺少任务 id" }, { status: 400 });
   try {

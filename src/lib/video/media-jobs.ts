@@ -65,9 +65,9 @@ export function publicMediaJob(row:JobRow):PublicMediaJob{return {id:row.id,jobI
 export async function listMediaJobs(actorRaw:string,options:{projectKey?:string;source?:MediaJobRequest["source"];operationId?:string;cursor?:{createdAt:string;id:string};limit?:number}={}){
   const actor=actorRaw.toLowerCase();await ensureMediaJobSchema();const limit=options.limit??30;
   if(!Number.isInteger(limit)||limit<1||limit>100)throw new ModelConfigError("INVALID_MEDIA_PAGE","媒体任务分页数量无效",422);
-  const rows=(await getPool().query(`SELECT * FROM app_video_media_jobs WHERE email=$1 AND ($2::text IS NULL OR request->>'projectKey'=$2) AND ($3::text IS NULL OR request->>'source'=$3)
-    AND ($4::uuid IS NULL OR operation_id=$4) AND ($5::timestamptz IS NULL OR (created_at,id)<($5::timestamptz,$6::uuid)) ORDER BY created_at DESC,id DESC LIMIT $7`,[actor,options.projectKey||null,options.source||null,options.operationId||null,options.cursor?.createdAt||null,options.cursor?.id||null,limit+1])).rows as JobRow[];
-  const page=rows.slice(0,limit),last=page[page.length-1],nextCursor=rows.length>limit&&last?{createdAt:last.created_at.toISOString(),id:last.id}:null;
+  const rows=(await getPool().query(`SELECT *,to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at FROM app_video_media_jobs WHERE email=$1 AND ($2::text IS NULL OR request->>'projectKey'=$2) AND ($3::text IS NULL OR request->>'source'=$3)
+    AND ($4::uuid IS NULL OR operation_id=$4) AND ($5::timestamptz IS NULL OR (created_at,id)<($5::timestamptz,$6::uuid)) ORDER BY created_at DESC,id DESC LIMIT $7`,[actor,options.projectKey||null,options.source||null,options.operationId||null,options.cursor?.createdAt||null,options.cursor?.id||null,limit+1])).rows as Array<JobRow&{cursor_created_at:string}>;
+  const page:JobRow[]=rows.slice(0,limit),last=rows[Math.min(rows.length,limit)-1],nextCursor=rows.length>limit&&last?{createdAt:last.cursor_created_at,id:last.id}:null;
   if(!options.cursor&&!options.operationId){const pending=(await getPool().query("SELECT * FROM app_video_media_jobs WHERE email=$1 AND status IN ('queued','processing') AND ($2::text IS NULL OR request->>'projectKey'=$2) AND ($3::text IS NULL OR request->>'source'=$3)",[actor,options.projectKey||null,options.source||null])).rows as JobRow[];const known=new Set(page.map(row=>row.id));page.push(...pending.filter(row=>!known.has(row.id)));}
   return {jobs:page.map(publicMediaJob),nextCursor};
 }
