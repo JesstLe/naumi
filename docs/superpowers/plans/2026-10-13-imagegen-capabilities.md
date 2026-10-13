@@ -6,7 +6,7 @@
 
 **Architecture:** 在 `src/lib/imagegen/` 提供共享目录、输入契约、意图、能力解析及执行适配器。收费生成继续使用既有生成/编辑任务、冻结模型通道和账本，确定性像素处理复用现有媒体后处理记录。各入口仅提供素材和要求，读取同一计划、进度与不可变产物。
 
-**Tech Stack:** Next.js 14、React 18、TypeScript、Zod、PostgreSQL、Sharp、现有OpenAI/Router适配器、私有R2和local镜像；不升级React或引入另一套任务/计费框架。
+**Tech Stack:** Next.js 15.5.27、React 19.3.0、TypeScript、Zod、PostgreSQL、Sharp、现有OpenAI/Router适配器、私有R2和local镜像；沿用同事已完成的React19升级，不引入另一套任务/计费框架。
 
 **Spec:** [已批准设计](../specs/2026-10-13-imagegen-capabilities-design.md)，包含用户审阅后明确补充的提示词自动触发。
 
@@ -21,7 +21,7 @@
 - 透明格式为PNG/WebP；JPEG需明确背景色并确认扁平化。缩小不能冒充原生高分辨率或AI高清放大。
 - 不执行用户Python、不恢复自带图片API、不写凭据/签名链接到仓库或日志；保留Apache-2.0来源及改动说明。
 - 集中验收一次，发现问题后仅复测受影响项；不对每张Skill卡重复收费生图。
-- 本功能先完成103工程及验收；后续推广120须按明确任务目标进行，香港/101不自动操作。
+- 后续默认103工程及验收；120已废弃，不再连接或推广，香港/101不自动操作。
 - 发布先读 `docs/RELEASE_RUNBOOK.md`，连续可用蓝绿工程为独立发布依赖，未满足时交付代码/验收证据并如实报告未上线；不以当前重建流程绕过门槛。
 
 ## Review Focus
@@ -55,7 +55,7 @@
 
 **Interfaces:** 产出 `IMAGEGEN_USE_CASES`、`imagegenRequestSchema`、`ImagegenRequest`、`Intent`、`CapabilitySet`、`ImagegenPlan`、`ImagegenResult`；后续签名中的这些类型均从 `src/lib/imagegen/types.ts` 导出。ID采用UUID；请求不包含email、API密钥或供应商地址，owner由服务端鉴权得到。
 
-- [ ] **Step 1: 写失败断言。** 测19个精确slug而不是只检查数组长度；旧12个ID仍可解析，旧个人Skill无新字段可读取，错误模式/引用角色拒绝。
+- [x] **Step 1: 写失败断言。** 测19个精确slug而不是只检查数组长度；旧12个ID仍可解析，旧个人Skill无新字段可读取，错误模式/引用角色拒绝。
 
 ```ts
 import assert from "node:assert/strict";
@@ -66,8 +66,8 @@ assert.ok(IMAGEGEN_USE_CASES.some(x => x.id === "background-extraction"));
 assert.equal(imagegenRequestSchema.safeParse({version:1,mode:"exec-python"}).success,false);
 ```
 
-- [ ] **Step 2: 运行失败测试。** `npx tsx --conditions react-server scripts/verify-imagegen-contract.ts`；预期缺少新模块失败。
-- [ ] **Step 3: 实现类型、Zod契约和目录。** 以下为共享核心定义；Zod用strictObject逐字段验证并导出对应类型，不接受未知服务器控制字段。批次上限100子项、每项variants1—4；JSONL导入最多256KiB、单行prompt最多6000字。无外部路径和命令。
+- [x] **Step 2: 运行失败测试。** `npx tsx --conditions react-server scripts/verify-imagegen-contract.ts`；预期缺少新模块失败。
+- [x] **Step 3: 实现类型、Zod契约和目录。** 以下为共享核心定义；Zod用strictObject逐字段验证并导出对应类型，不接受未知服务器控制字段。批次上限100子项、每项variants1—4；JSONL导入最多256KiB、单行prompt最多6000字。无外部路径和命令。
 
 ```ts
 export type InputRole = "edit-target"|"reference"|"insert"|"style"|"mask";
@@ -118,8 +118,8 @@ export type ImagegenResult = {
 ```
 
 目录逐行落实设计19项；generate11/edit8全部有 `id,label,mode,existingSkillIds,tool`，tool只填已接通动作或新共用动作。旧12项增加可选useCase而不改ID；新增缺项Skill类别有对应中文标签。复制许可并记录原包SHA、文件来源、移植范围；源包脚本不纳入执行路径。ZIP参考资料只在开发时读取，网站导入采用本站结构化数据。
-- [ ] **Step 4: 运行contract及现有Skills测试。** 更新原测试硬编码12/13为明确的旧ID兼容断言和完整新目录期望，保留归属、修订、历史测试。`npm run verify:image-skills` 与新contract均通过。
-- [ ] **Step 5: 选择性提交目录/契约和相应测试。** `git commit -m "feat: define shared image capabilities and preserve skill identities"`。
+- [x] **Step 4: 运行contract及现有Skills测试。** 更新原测试硬编码12/13为明确的旧ID兼容断言和完整新目录期望，保留归属、修订、历史测试。`npm run verify:image-skills` 与新contract均通过。
+- [x] **Step 5: 选择性提交目录/契约和相应测试。** `git commit -m "feat: define shared image capabilities and preserve skill identities"`。
 
 ## Task 2: 提示词自动触发与角色化提示
 
@@ -127,7 +127,7 @@ export type ImagegenResult = {
 
 **Interfaces:** 消费任务1类型；产出 `resolveImagegenIntent(request:ImagegenRequest):Intent`、`compileImagegenPrompt(request:ImagegenRequest,intent:Intent):string`。不收费、不使用第二个LLM分类器，不修改用户原文。
 
-- [ ] **Step 1: 写实际意图矩阵测试。** 使用Zod默认值产生完整请求；每条只改变prompt和output。自动透明、去背景结合素材、否定、印字、询问、冲突必须分别断言。
+- [x] **Step 1: 写实际意图矩阵测试。** 使用Zod默认值产生完整请求；每条只改变prompt和output。自动透明、去背景结合素材、否定、印字、询问、冲突必须分别断言。
 
 ```ts
 import assert from "node:assert/strict";
@@ -150,8 +150,8 @@ const inherited={...conflict,prompt:"不要透明，换成白底",
 assert.equal(resolveImagegenIntent(inherited).background,"opaque");
 ```
 
-- [ ] **Step 2: 运行 `npx tsx --conditions react-server scripts/verify-imagegen-intent.ts`。** 预期缺少resolver失败。
-- [ ] **Step 3: 实现可追踪的指令解析。** 先按中文/英文标点分句，将成对引号、代码区和印字内容标成literal；询问/比较句不转执行。明确negation绑定同一句的背景词；“不要不透明/无背景”作为独立正例；同次出现互斥指令生成conflicts而不猜测。目录维护19个明确用例别名，匹配执行动词+目标；编辑类别要求edit-target，缺目标产生具体冲突。风格引用不当编辑目标。宽泛“好看一点”保留生成/编辑原模式，不自动选择高级工具。
+- [x] **Step 2: 运行 `npx tsx --conditions react-server scripts/verify-imagegen-intent.ts`。** 预期缺少resolver失败。
+- [x] **Step 3: 实现可追踪的指令解析。** 先按中文/英文标点分句，将成对引号、代码区和印字内容标成literal；询问/比较句不转执行。明确negation绑定同一句的背景词；“不要不透明/无背景”作为独立正例；同次出现互斥指令生成conflicts而不猜测。目录维护19个明确用例别名，匹配执行动词+目标；编辑类别要求edit-target，缺目标产生具体冲突。风格引用不当编辑目标。宽泛“好看一点”保留生成/编辑原模式，不自动选择高级工具。
 
 ```ts
 // 决策核心，promptBackground由前述句法匹配得出；无匹配返回null。
@@ -164,8 +164,8 @@ const background = fromPrompt ?? fromUI;
 ```
 
 在实现中将上述core封装在resolver内，定义 `promptBackground` 为句法解析结果；原文单独落库，compiledPrompt仅组织用途、编号角色、构图、光线、文字、不变量、avoid。有mask只说明已传用户mask，不能伪造mask。augment=false保持详细原文；true仅补足排版/描述，不添加品牌/事实。用户内容放入数据区域，不能改变鉴权、账本、模型或工具权限。
-- [ ] **Step 4: 跑意图测试。** 增加同句双重否定、多轮白底覆盖透明、参考图文字含透明而用户没要求、空prompt、模糊冲突、19个明确指令到目录映射、不可注入模型ID断言；均通过。
-- [ ] **Step 5: 提交。** `git commit -m "feat: resolve image capabilities from explicit node prompts"`。
+- [x] **Step 4: 跑意图测试。** 增加同句双重否定、多轮白底覆盖透明、参考图文字含透明而用户没要求、空prompt、模糊冲突、19个明确指令到目录映射、不可注入模型ID断言；均通过。
+- [x] **Step 5: 提交。** `git commit -m "feat: resolve image capabilities from explicit node prompts"`。
 
 ## Task 3: 元数据能力、通道过滤与实际参数
 
@@ -173,7 +173,7 @@ const background = fromPrompt ?? fromUI;
 
 **Interfaces:** 消费 `Intent`、`CapabilitySet`、既有 `UpstreamModel`；产出 `resolveImagegenCapabilities(manual:CapabilitySet|undefined,supplier:CapabilitySet|undefined):CapabilitySet`、`eligibleImagegenChannels(intent:Intent,candidates:{id:string;capabilities:CapabilitySet}[]):string[]`、`mapImagegenParameters(request:ImagegenRequest,capabilities:CapabilitySet,map:Record<string,string>):Record<string,string|number|boolean>`。在ModelFacts加入可选imagegenRequirements，ExecutionModel冻结同一信息，单个fallback候选独立检查。
 
-- [ ] **Step 1: 写false/0/omit与路由断言。** 人工unsupported覆盖采集supported；缺人工key才兜底；refresh不能改冻结值；A不支持mask/B支持只选B，没合格透明候选返回空。
+- [x] **Step 1: 写false/0/omit与路由断言。** 人工unsupported覆盖采集supported；缺人工key才兜底；refresh不能改冻结值；A不支持mask/B支持只选B，没合格透明候选返回空。
 
 ```ts
 import assert from "node:assert/strict";
@@ -186,8 +186,8 @@ assert.deepEqual(eligibleImagegenChannels({background:"transparent",operation:"g
     {id:"B",capabilities:{transparent:supported}}]),["B"]);
 ```
 
-- [ ] **Step 2: 运行 `npx tsx --conditions react-server scripts/verify-imagegen-capabilities.ts`。** 预期模块缺失失败。
-- [ ] **Step 3: 实现来源分层及冻结映射。** supplier元数据通过 `parameterMetadata.imagegen` 保存三态枚举和证据；manual独立，采集不能覆盖。管理员表单显示“人工设置/来源兜底/未知”及字段和值，不让用户猜size还是resolution。关键读法如下；不使用 `||` 合并有意义的false/0。
+- [x] **Step 2: 运行 `npx tsx --conditions react-server scripts/verify-imagegen-capabilities.ts`。** 预期模块缺失失败。
+- [x] **Step 3: 实现来源分层及冻结映射。** supplier元数据通过 `parameterMetadata.imagegen` 保存三态枚举和证据；manual独立，采集不能覆盖。管理员表单显示“人工设置/来源兜底/未知”及字段和值，不让用户猜size还是resolution。关键读法如下；不使用 `||` 合并有意义的false/0。
 
 ```ts
 export function resolveImagegenCapabilities(manual:CapabilitySet|undefined,
@@ -203,8 +203,8 @@ export function resolveImagegenCapabilities(manual:CapabilitySet|undefined,
 ```
 
 支持输出格式本地转码与原生参数区别：PNG/WebP/JPEG可本地处理，不意味着供应商接受output_format。actual字段只能来自已确认的白名单路径和枚举；未知input_fidelity/moderation/compression不发送。mask实测/人工明确支持后才能选；最大参考数仍沿现有capabilities字段。记录原生尺寸矩阵与后处理尺寸，保留默认imagePreset及显示档映射。执行context和gateway在每个候选上验证强制字段，原供应商优先级/权重保持；不能以池合并能力证明所有候选支持。禁止`__proto__`、认证、URL、任意嵌套字段映射。
-- [ ] **Step 4: 跑新capabilities及 `verify:model-execution`、已有元数据默认映射测试。** 在fixture调用真实schema/发布/执行路径，验证旧snapshot可读、参数冻结、unsupported与unknown不发、人工0压缩合法、quality omit不被新字段恢复；无生产调用。
-- [ ] **Step 5: 提交。** `git commit -m "feat: freeze sourced image capabilities for each supplier route"`。
+- [x] **Step 4: 跑新capabilities及 `verify:model-execution`、已有元数据默认映射测试。** 在fixture调用真实schema/发布/执行路径，验证旧snapshot可读、参数冻结、unsupported与unknown不发、人工0压缩合法、quality omit不被新字段恢复；无生产调用。
+- [x] **Step 5: 提交。** `git commit -m "feat: freeze sourced image capabilities for each supplier route"`。
 
 ## Task 4: 确定性去底色、格式与真实alpha
 
@@ -212,7 +212,7 @@ export function resolveImagegenCapabilities(manual:CapabilitySet|undefined,
 
 **Interfaces:** `processImagegenPixels(bytes:Buffer,request:Pick<ImagegenRequest,"output"|"chroma">):Promise<{bytes:Buffer;mime:string;width:number;height:number;transparentPixels:number;totalPixels:number}>`；`inspectImagegenPixels(bytes:Buffer):Promise<{width:number;height:number;transparentPixels:number;totalPixels:number}>`；`removeChroma(bytes:Buffer,options:NonNullable<ImagegenRequest["chroma"]>):Promise<Buffer>`。既有media-postprocess增加可选imagegen policy，不破坏原resize/native policy或恢复记录。
 
-- [ ] **Step 1: 写合成像素断言。** 用Sharp构建绿色边框、红色中心4×4PNG，既有alpha保留、soft边缘、自动key两法、spill、contract/feather、全透明/全不透明各有像素断言。
+- [x] **Step 1: 写合成像素断言。** 用Sharp构建绿色边框、红色中心4×4PNG，既有alpha保留、soft边缘、自动key两法、spill、contract/feather、全透明/全不透明各有像素断言。
 
 ```ts
 import assert from "node:assert/strict";
@@ -226,8 +226,8 @@ const webp=await processImagegenPixels(opaque,{output:{format:"webp",compression
 assert.equal(webp.mime,"image/webp");
 ```
 
-- [ ] **Step 2: 运行 `npx tsx --conditions react-server scripts/verify-imagegen-postprocess.ts`。** 预期新模块缺失失败。
-- [ ] **Step 3: 移植受控像素算法并复用不可变保存。** 静态PNG/JPEG/WebP，输入≤12MiB、解码≤40,000,000像素，EXIF旋转后校验，动图拒绝。来源默认值：key=#00ff00/tolerance=12/auto=none/soft=false/transparent=12/opaque=96/feather=0/contract=0/spill=false；阈值升序、feather0—64、contract0—64。hard matte使用最大RGB距离，soft按来源阈值插值；与旧alpha取较低值，保留前景。border/corners取实际采样众数；contract/feather只作用mask；spill只作用半透明边缘，不全图去绿。
+- [x] **Step 2: 运行 `npx tsx --conditions react-server scripts/verify-imagegen-postprocess.ts`。** 预期新模块缺失失败。
+- [x] **Step 3: 移植受控像素算法并复用不可变保存。** 静态PNG/JPEG/WebP，输入≤12MiB、解码≤40,000,000像素，EXIF旋转后校验，动图拒绝。来源默认值：key=#00ff00/tolerance=12/auto=none/soft=false/transparent=12/opaque=96/feather=0/contract=0/spill=false；阈值升序、feather0—64、contract0—64。hard matte使用最大RGB距离，soft按来源阈值插值；与旧alpha取较低值，保留前景。border/corners取实际采样众数；contract/feather只作用mask；spill只作用半透明边缘，不全图去绿。
 
 ```ts
 const {data,info}=await sharp(bytes,{limitInputPixels:40_000_000})
@@ -239,8 +239,8 @@ const totalPixels=info.width*info.height;
 ```
 
 PNG/WebP保留alpha；JPEG仅在flattenColor显式有效时flatten。compression按用户控制转为真实encoder值，并在产物证据记录映射；downscale用inside且withoutEnlargement，不改原始作品。命名只能下载名，禁止路径。全透明视为错误；已有透明少量/边缘可在界面显示比例，复杂语义效果留真实验收判断。`app_media_postprocess`扩展保存actualMIME、alpha统计/新policy、阶段及原图URL；用原租约/幂等机制恢复CPU与存储，不再次生图。本地版本用现有owner/operation fingerprint/血缘机制。
-- [ ] **Step 4: 跑像素测试及现有本地编辑/后处理验证。** 加入12MiB与40M边界、动画、伪PNG、mask尺寸错误、原图SHA不变、JPEG背景色、缩小禁止放大、并发同ID仅一版本；通过。
-- [ ] **Step 5: 提交。** `git commit -m "feat: add immutable chroma and image output processing"`。
+- [x] **Step 4: 跑像素测试及现有本地编辑/后处理验证。** 加入12MiB与40M边界、动画、伪PNG、mask尺寸错误、原图SHA不变、JPEG背景色、缩小禁止放大、并发同ID仅一版本；通过。
+- [x] **Step 5: 提交。** `git commit -m "feat: add immutable chroma and image output processing"`。
 
 ## Task 5: 统一计划、既有计费任务与端到端适配
 
