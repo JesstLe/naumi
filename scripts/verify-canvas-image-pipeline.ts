@@ -45,8 +45,13 @@ async function main(){
  const foreign=await m.acquireBrowserImage('/media/new-alias.png',undefined,{networkQueue:'canvas'});foreign.release();assert.equal(network,beforeOther+1,'account switch cannot reuse private content pool');
  events.dispatchEvent(new Event('focus'));const beforeFocusAuth=manifests;
  const afterFocus=await m.acquireBrowserImage('/media/new-alias.png',undefined,{networkQueue:'canvas'});afterFocus.release();assert.equal(manifests,beforeFocusAuth+1,'focus invalidation still freshly authorizes');
+ const corruptDB=await new Promise<any>(resolve=>{const r=indexedDB.open('naumi-image-bytes-v1',2);r.onsuccess=()=>resolve(r.result);});
+ const corruptId=JSON.stringify([actor,'/media/new-alias.png',digest]);
+ await new Promise<void>(resolve=>{const tx=corruptDB.transaction('images','readwrite');tx.objectStore('images').put({id:corruptId,blob:new Blob([new Uint8Array([9,9,9,9])],{type:'image/png'})});tx.oncomplete=()=>resolve();});corruptDB.close();
+ events.dispatchEvent(new Event('focus'));const beforeRepair=network;
+ const repaired=await m.acquireBrowserImage('/media/new-alias.png',undefined,{networkQueue:'canvas'});repaired.release();assert.equal(network,beforeRepair+1,'same-length corrupted IDB bytes must not enter verified content pool');
  m.clearBrowserImages();
- console.log('CACHE_CONTENT_DEDUPE=PASS AUTHORIZED_REFS24_BYTE_DOWNLOADS1 REVOKED_ALIAS_NO_PIXEL_READ NEW_ALIAS_FRESH_AUTH_BEFORE_REUSE ACCOUNT_SWITCH_NO_SHARED_PRIVATE_BYTES FOCUS_REVALIDATED');
+ console.log('CACHE_CONTENT_DEDUPE=PASS AUTHORIZED_REFS24_BYTE_DOWNLOADS1 REVOKED_ALIAS_NO_PIXEL_READ NEW_ALIAS_FRESH_AUTH_BEFORE_REUSE ACCOUNT_SWITCH_NO_SHARED_PRIVATE_BYTES FOCUS_REVALIDATED CORRUPT_IDB_DIGEST_REFETCHED');
  console.log('CACHE_PIPELINE=PASS METADATA24_BATCHES=1 MISS_MAX_BYTES_CONCURRENCY=6 HOT_IMAGE_REQUESTS=0 HOT_BLOB_WRITES=0 FRESH_AUTH_EACH_DISPLAY=YES REVOKE=DENIED OUTAGE=FRESH_MEDIA CANCEL_SWITCH=NO_OLD_PIXELS LRU_400_AND_128MIB=PASS PROVIDER_CALLS=0');
 }
 main().catch(e=>{console.error(e);process.exitCode=1});
