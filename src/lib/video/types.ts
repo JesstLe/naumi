@@ -4,6 +4,8 @@
 // 不感知 HTTP 路由与积分语义。
 // ---------------------------------------------------------------------------
 
+import type { VideoMode } from "./capability-schema";
+import type { OrderedInput } from "./references";
 export type VideoTaskSource = "canvas" | "workbench" | "agent" | "workflow";
 
 export type VideoTaskStatus =
@@ -29,11 +31,22 @@ export type VideoReference = {
   storageKey?: string;
   url?: string;
   mimeType?: string;
+  bytes?: number;
+  durationSeconds?: number;
+  width?: number;
+  height?: number;
 };
 
 export type VideoGenerationRequest = {
   source: VideoTaskSource;
   sourceId?: string;
+  canvasNodeId?: string;
+  projectKey?: string;
+  nodeRevision?: number;
+  mode?: VideoMode;
+  orderedInputs?: OrderedInput[];
+  shots?: Array<{ id?: string; textNodeId?: string; prompt: string; durationSeconds: number }>;
+  elements?: Array<{ id?: string; name: string; description?: string; references: VideoReference[] }>;
   providerId: string;
   modelId: string;
   prompt: string;
