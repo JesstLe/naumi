@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n/locale-context";
+import { usePathname } from "next/navigation";
 import styles from "./site-version.module.css";
 
 // These literals belong to the loaded JavaScript bundle, never to a fresh SSR response.
@@ -14,14 +15,15 @@ export function versionLabel(value:string){
   return `${p("year")}.${p("month")}.${p("day")}-${p("hour")}${p("minute")}${p("second")}`;
 }
 export function SiteVersion(){
+  const path=usePathname() || "",versionEndpoint=path === "/desktop" || path.startsWith("/desktop/") ? "/desktop/api/version" : "/api/version";
   const {locale}=useI18n(),L=(zh:string,en:string)=>locale==="en"?en:zh;
   const [open,setOpen]=useState(false),[latest,setLatest]=useState<{version:string;commit?:string}|null>(null),[failed,setFailed]=useState(false),[checking,setChecking]=useState(false);
   const panel=useRef<HTMLDivElement>(null),button=useRef<HTMLButtonElement>(null),inFlight=useRef(false);
   const check=useCallback(async()=>{
     if(inFlight.current)return;inFlight.current=true;setChecking(true);
-    try{const r=await fetch("/api/version",{cache:"no-store",signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error("Version unavailable");const data=await r.json();if(typeof data.version!=="string" || !/^\d{1,11}$/.test(data.version))throw Error("Invalid version");setLatest(data);setFailed(false);}
+    try{const r=await fetch(versionEndpoint,{cache:"no-store",signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error("Version unavailable");const data=await r.json();if(typeof data.version!=="string" || !/^\d{1,11}$/.test(data.version))throw Error("Invalid version");setLatest(data);setFailed(false);}
     catch{setFailed(true);}finally{setChecking(false);inFlight.current=false;}
-  },[]);
+  },[versionEndpoint]);
   useEffect(()=>{void check();const timer=setInterval(()=>{if(document.visibilityState==="visible")void check();},60000);const visible=()=>{if(document.visibilityState==="visible")void check();};document.addEventListener("visibilitychange",visible);window.addEventListener("focus",visible);return()=>{clearInterval(timer);document.removeEventListener("visibilitychange",visible);window.removeEventListener("focus",visible);};},[check]);
   useEffect(()=>{if(!open)return;const close=(e:PointerEvent)=>{if(!panel.current?.contains(e.target as Node) && !button.current?.contains(e.target as Node))setOpen(false);};const escape=(e:KeyboardEvent)=>{if(e.key==="Escape"){setOpen(false);button.current?.focus();}};document.addEventListener("pointerdown",close);document.addEventListener("keydown",escape);return()=>{document.removeEventListener("pointerdown",close);document.removeEventListener("keydown",escape);};},[open]);
   const different=loadedVersion!=="0" && !!latest && latest.version!=="0" && latest.version!==loadedVersion;

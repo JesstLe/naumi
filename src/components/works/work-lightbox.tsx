@@ -3,7 +3,7 @@
 import { cdnUrl } from "@/lib/cdn";
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useWorkspaceRouter as useRouter } from "@/lib/desktop/navigation";
 import { X, Download, Heart, RotateCcw, Trash2 } from "lucide-react";
 import { Media } from "@/components/media";
 import { downloadImage } from "@/lib/download";

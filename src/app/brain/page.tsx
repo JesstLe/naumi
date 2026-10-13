@@ -13,5 +13,5 @@ export default async function BrainPage({
     else if (Array.isArray(value) && value.length > 0) sp.set(key, value[0]);
   }
   const qs = sp.toString();
-  redirect(qs ? `/dashboard?${qs}` : "/dashboard");
+  redirect(qs ? `/agent?${qs}` : "/agent");
 }

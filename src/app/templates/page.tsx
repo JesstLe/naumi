@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
+import { TemplatesClient } from "@/components/templates/templates-client";
 
-// 模板库已收编进工作台(最近作品下方),旧路由重定向保留兼容(旧链接/落地页 CTA)。
+// Keep templates independently accessible from a disabled workspace.
 export default function TemplatesPage() {
-  redirect("/dashboard#templates");
+  return <div className="px-5 py-7 sm:px-8"><TemplatesClient /></div>;
 }
