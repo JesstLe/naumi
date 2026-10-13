@@ -107,7 +107,7 @@ export async function enterpriseAnalytics(actor:TeamActor,q:AnalyticsFilter):Pro
  });
 }
 
-export function csvCell(value:unknown){let text=String(value??'');if(/^[\s\u0000-\u001f]*[=+@-]/.test(text))text="'"+text;return '"'+text.replaceAll('"','""')+'"'}
+export function csvCell(value:unknown){let text=String(value??'');if(typeof value==='string'&&/^[\s\u0000-\u001f]*[=+@-]/.test(text))text="'"+text;return '"'+text.replaceAll('"','""')+'"'}
 export async function enterpriseLedgerCsv(actor:TeamActor,q:AnalyticsFilter){
  return enterpriseRead(actor,q.enterpriseId,async(tx,s)=>{
   const p=range(q,scopedEmails(s,q));
