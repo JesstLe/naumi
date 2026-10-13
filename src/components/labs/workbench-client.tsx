@@ -1,4 +1,5 @@
 "use client";
+import {readBrowserImage} from '@/lib/browser-image-cache';
 import { CachedImage } from "@/components/cached-image";
 
 // 内部生图工作台:面向内部员工的批量电商出图工具。
@@ -301,9 +302,7 @@ export function WorkbenchClient() {
 
   // ── 下载 ──
   async function fetchBlob(url: string): Promise<Blob> {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) throw new Error("图片下载失败");
-    return res.blob();
+    return readBrowserImage(url);
   }
 
   function extFor(url: string) {

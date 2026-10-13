@@ -1,4 +1,5 @@
 "use client";
+import {readBrowserImage} from '@/lib/browser-image-cache';
 import { CachedImage } from "@/components/cached-image";
 import {SelectMenu} from "@/components/ui/select-menu";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -193,9 +194,10 @@ export function CompetitorClient() {
       const saved = drafts[item.id] ? await save(item) : item;
       if (!saved) return;
       const q = new URLSearchParams({ version: saved.activeVersion }); if (region) q.set("region",region);
-      const res = await fetch(`/api/competitors/${saved.id}/image?${q}`, { headers: await authHeader() });
-      if (!res.ok) throw new Error("下载失败，请重试");
-      const url = URL.createObjectURL(await res.blob()); const a = document.createElement("a");
+      let blob:Blob;
+      if(!region)blob=await readBrowserImage(currentImage(saved));
+      else{const res=await fetch(`/api/competitors/${saved.id}/image?${q}`,{headers:await authHeader()});if(!res.ok)throw new Error("下载失败，请重试");blob=await res.blob();}
+      const url = URL.createObjectURL(blob); const a = document.createElement("a");
       a.href = url; a.download = createImageDownloadName(); a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch(e) { setError((e as Error).message); }
   }
