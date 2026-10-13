@@ -1,4 +1,4 @@
-import {randomUUID} from "node:crypto";
+import {randomUUID,createHash} from "node:crypto";
 import { creationProvenance, type ArtworkProvenance } from "@/lib/artwork-provenance";
 import { currentArtworkCreation } from "@/lib/artwork-provenance-context";
 import type {ProductReceipt} from "@/lib/payments";
@@ -2475,17 +2475,31 @@ export async function deleteCanvasTextNodes(
 export async function deleteCanvasNodesAtomically(
   emailRaw: string,
   artworkIds: string[],
-  textIds: string[]
-): Promise<{ artworks: number; textNodes: number }> {
+  textIds: string[],
+  videoIds:string[]=[],
+  operationId?:string
+): Promise<{ artworks: number; textNodes: number;videoNodes:number }> {
   await ensureSchema();
   const email = emailRaw.toLowerCase();
-  const cleanArtworkIds = Array.from(new Set(artworkIds.filter(Boolean))).slice(0, 200);
-  const cleanTextIds = Array.from(new Set(textIds.filter(Boolean))).slice(0, 200);
+  const cleanArtworkIds = Array.from(new Set(artworkIds.filter(Boolean)));
+  const cleanTextIds = Array.from(new Set(textIds.filter(Boolean)));
+  const cleanVideoIds=Array.from(new Set(videoIds.filter(Boolean)));
+  if([cleanArtworkIds,cleanTextIds,cleanVideoIds].some(ids=>ids.length>200))throw new Error("单次删除节点过多");
+  if(cleanVideoIds.length)await (await import("./canvas/video-node-repository")).ensureVideoNodeSchema();
+  const fingerprint=createHash("sha256").update(JSON.stringify({delete:{artworkIds:[...cleanArtworkIds].sort(),textIds:[...cleanTextIds].sort(),videoIds:[...cleanVideoIds].sort()}})).digest("hex");
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[email]);
+    if(operationId){const saved=(await client.query("SELECT fingerprint FROM app_canvas_history_ops WHERE email=$1 AND id=$2",[email,operationId])).rows[0];
+      if(saved){if(saved.fingerprint!==fingerprint)throw new Error("操作编号已使用");await client.query("COMMIT");return {artworks:cleanArtworkIds.length,textNodes:cleanTextIds.length,videoNodes:cleanVideoIds.length};}}
+    if(cleanVideoIds.length)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
+    for(const [table,ids] of [["app_artworks",cleanArtworkIds],["app_canvas_text_nodes",cleanTextIds],["app_canvas_video_nodes",cleanVideoIds]] as const){
+      if(ids.length&&(await client.query(`SELECT id FROM ${table} WHERE email=$1 AND id=ANY($2::text[]) FOR UPDATE`,[email,ids])).rowCount!==ids.length)throw new Error("节点不存在或无权修改");
+    }
     let artworks = 0;
     let textNodes = 0;
+    if(cleanVideoIds.length)await client.query("UPDATE app_canvas_video_nodes SET deleted_at=now(),revision=revision+1,updated_at=now() WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL",[email,cleanVideoIds]);
     if (cleanArtworkIds.length) {
       const result = await client.query(
         `UPDATE app_artworks SET deleted_at = now()
@@ -2502,8 +2516,9 @@ export async function deleteCanvasNodesAtomically(
       );
       textNodes = result.rowCount ?? 0;
     }
+    if(operationId)await client.query("INSERT INTO app_canvas_history_ops(id,email,fingerprint) VALUES($1,$2,$3)",[operationId,email,fingerprint]);
     await client.query("COMMIT");
-    return { artworks, textNodes };
+    return { artworks:operationId?cleanArtworkIds.length:artworks, textNodes:operationId?cleanTextIds.length:textNodes,videoNodes:cleanVideoIds.length };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -5059,6 +5074,7 @@ export async function completeVideoTask(input: {
   resultMetadataWarnings?:Array<{artworkId:string;code:string;expected:unknown;actual:unknown}>;
 }): Promise<void> {
   await ensureSchema();
+  await (await import("./canvas/video-node-repository")).ensureVideoNodeSchema();
   const email = input.email.toLowerCase();
   let meterOn = false;
   const client = await getPool().connect();
@@ -5071,8 +5087,9 @@ export async function completeVideoTask(input: {
       artwork_id: string;
       video_url: string;
       result_storage_key: string;
+      source: string;
     }>(
-      `SELECT status, cost, artwork_id, video_url, result_storage_key,billing_quote,parameters FROM app_video_tasks
+      `SELECT status, cost, artwork_id, video_url, result_storage_key,billing_quote,parameters,source FROM app_video_tasks
         WHERE email = $1 AND id = $2 FOR UPDATE`,
       [email, input.id]
     );
@@ -5097,9 +5114,16 @@ export async function completeVideoTask(input: {
       for(const row of existing){const asset=input.resultAssets.find(item=>item.artworkId===row.id)!;
         if(row.email!==email||(asset.kind==="image"?row.image_url:row.video_url||row.image_url)!==asset.url)throw new Error("视频产物作品身份冲突，不能完成结算");}
     }
-    if(input.artworks)await addArtworksTx(client,email,input.artworks);
-    if(input.resultAssets)for(const asset of input.resultAssets)await client.query("UPDATE app_artworks SET image_width=$3,image_height=$4 WHERE email=$1 AND id=$2",[email,asset.artworkId,asset.probe?.width||null,asset.probe?.height||null]);
     const projectKey=task.parameters?.projectKey;
+    let detached=false;
+    if(typeof task.parameters?.nodeId==="string"){
+      const node=(await client.query("SELECT deleted_at FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,task.parameters.nodeId])).rows[0];detached=!node||!!node.deleted_at;
+    }
+    if(typeof projectKey==="string"){
+      const project=(await client.query("SELECT deleted_at FROM app_canvas_video_projects WHERE email=$1 AND project_key=$2 FOR SHARE",[email,projectKey])).rows[0];detached=detached||!!project?.deleted_at;
+    }
+    if(input.artworks)await addArtworksTx(client,email,input.artworks.map(art=>({...art,origin:detached||task.source==="workbench"?"workbench":art.origin})));
+    if(input.resultAssets)for(const asset of input.resultAssets)await client.query("UPDATE app_artworks SET image_width=$3,image_height=$4 WHERE email=$1 AND id=$2",[email,asset.artworkId,asset.probe?.width||null,asset.probe?.height||null]);
     if(typeof projectKey==="string"&&/^(?:tree|batch):[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(projectKey)){
       const kind=projectKey.slice(0,projectKey.indexOf(":")),projectId=projectKey.slice(projectKey.indexOf(":")+1);
       const linked=await client.query(`UPDATE app_artworks SET group_id=CASE WHEN $3='tree' THEN $4 ELSE group_id END,

@@ -25,7 +25,7 @@ async function mayCreateOwnRoot(actor:string,input:VideoNodeWrite,key:string){
     UNION ALL SELECT 1 FROM app_artworks WHERE email<>$2 AND (group_id=$3 OR id=$3) LIMIT 1`,[key,actor,input.id])).rowCount;
   return !other;
 }
-async function authorizeNodeInputs(actor:string,input:VideoNodeWrite){
+export async function authorizeNodeInputs(actor:string,input:VideoNodeWrite){
   const config=input.config;
   if(config?.references?.length||config?.elements?.length){await authorizeVideoReferences(actor,{source:"canvas",providerId:config.providerId||"managed-video",modelId:config.modelId||"",prompt:config.prompt||"",durationSeconds:config.durationSeconds??4,
     references:config.references||[],elements:config.elements,idempotencyKey:input.operationId});}

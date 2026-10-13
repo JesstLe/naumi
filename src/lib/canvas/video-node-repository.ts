@@ -9,6 +9,7 @@ let ready:Promise<void>|undefined;
 export async function ensureVideoNodeSchema(){
   if(!ready)ready=ensureSchema().then(()=>getPool().query(`
     CREATE TABLE IF NOT EXISTS app_canvas_video_projects(email text NOT NULL,project_key text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,project_key));
+    ALTER TABLE app_canvas_video_projects ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
     CREATE TABLE IF NOT EXISTS app_canvas_video_nodes(email text NOT NULL,id text NOT NULL,project_key text NOT NULL,revision bigint NOT NULL DEFAULT 1,
       title text NOT NULL DEFAULT '视频',x double precision NOT NULL DEFAULT 0,y double precision NOT NULL DEFAULT 0,
       width double precision NOT NULL DEFAULT 384,height double precision NOT NULL DEFAULT 320,config jsonb NOT NULL DEFAULT '{}',inputs jsonb NOT NULL DEFAULT '[]',
@@ -43,7 +44,7 @@ export async function saveVideoNodeTx(client:PoolClient,actor:string,input:Video
     const pending=[...(graph.get(input.id)||[])],seen=new Set<string>();
     while(pending.length){const id=pending.pop()!;if(id===input.id)throw new ModelConfigError("VIDEO_DEPENDENCY_CYCLE","视频引用不能形成循环",422);if(seen.has(id))continue;seen.add(id);pending.push(...(graph.get(id)||[]));}
   }
-  await client.query("INSERT INTO app_canvas_video_projects(email,project_key) VALUES($1,$2) ON CONFLICT DO NOTHING",[actor,projectKey]);
+  await client.query("INSERT INTO app_canvas_video_projects(email,project_key) VALUES($1,$2) ON CONFLICT(email,project_key) DO UPDATE SET deleted_at=NULL",[actor,projectKey]);
   const row=(await client.query(`INSERT INTO app_canvas_video_nodes(email,id,project_key,title,x,y,width,height,config,inputs,deleted_at)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,CASE WHEN $11 THEN now() ELSE NULL END)
     ON CONFLICT(email,id) DO UPDATE SET title=EXCLUDED.title,x=EXCLUDED.x,y=EXCLUDED.y,width=EXCLUDED.width,height=EXCLUDED.height,

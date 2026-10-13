@@ -33,5 +33,7 @@ export function useVideoNodes({email,readOnly,request}:{email?:string;readOnly:b
   const copy=useCallback(async(ids:string[],projectKey:string)=>{if(!email||readOnly)throw new Error("无法修改此画布");const actor=email,epoch=epochRef.current;
     const response=await request("/api/canvas/video-nodes/copy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({ids,projectKey,operationId:browserRandomUUID()})});const data=await response.json();if(!response.ok)throw new VideoNodeClientError(data.error||"视频节点复制失败",response.status,data.code);merge(data.nodes,actor,epoch);return data.nodes as CanvasVideoNode[];
   },[email,readOnly,request,merge]);
-  return {nodes:nodes.filter(node=>!node.deletedAt),allNodes:nodes,ready,error,refresh,save,copy};
+  const getNode=useCallback((id:string)=>nodesRef.current.find(node=>node.id===id),[]);
+  const flush=useCallback(()=>Promise.all(Array.from(queues.current.values())),[]);
+  return {nodes:nodes.filter(node=>!node.deletedAt),allNodes:nodes,ready,error,refresh,save,copy,getNode,flush};
 }

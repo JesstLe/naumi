@@ -1720,6 +1720,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 管理员看指定用户:?email=<用户> → 只读查看该用户画布;?node=<作品id> → 预选中那张
   const [targetEmail, setTargetEmail] = useState<string | null>(null);
   const [readOnly, setReadOnly] = useState(false);
+  const canvasAccountRef=useRef("");canvasAccountRef.current=JSON.stringify([user?.email?.toLowerCase(),targetEmail?.toLowerCase()]);
   const [nodeSettings, setNodeSettings] = useState<Record<string, CanvasNodeSettings>>({});
   const nodeSettingsRef = useRef(nodeSettings); nodeSettingsRef.current = nodeSettings;
   const [nodeSettingsReady, setNodeSettingsReady] = useState(false);
@@ -1854,6 +1855,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const extraInputRef = useRef<HTMLInputElement>(null);
   // 节点剪贴板(复制/粘贴节点)+ 上传作根节点的文件 input
   const nodeClipRef = useRef<Artwork | null>(null);
+  const genericNodeClipRef=useRef<{marker:string;ids:string[];owner:string}|null>(null);
+  const copyAttemptsRef=useRef(new Map<string,string>());
+  const pendingNodeSelectionRef=useRef<{ids:string[];projectKey:string;owner:string}|null>(null);
   // window copy 只消费紧邻本次画布 Cmd/Ctrl+C 的一次事件，不能让陈旧节点
   // 覆盖后续普通网页文本复制。
   const canvasCopyIntentRef = useRef<string | null>(null);
@@ -2331,11 +2335,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     width: node.width,
     height: node.height,
   });
+  type VideoPatchFields=Partial<Pick<CanvasVideoNode,"title"|"config"|"inputs"|"x"|"y"|"width"|"height">>;
   type UndoAct =
+    | {kind:"video-patch";id:string;from:VideoPatchFields;to:VideoPatchFields}
+    | {kind:"video-add";records:CanvasVideoNode[]}
+
     | { kind: "pending-link"; id: string; from: Pick<Pend, "inputs" | "parentId" | "linked">; to: Pick<Pend, "inputs" | "parentId" | "linked"> }
     | { kind: "workflow-add"; artworks: Artwork[]; textNodes: CanvasTextNode[] }
+    | {kind:"mixed-add";artworks:Artwork[];textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];projectKey:string}
     | { kind: "workflow-fill"; id: string; assetOperationId: string; from: Artwork; to: Artwork }
-    | { kind: "node-settings"; id: string; text: boolean; from: CanvasNodeSettings; to: CanvasNodeSettings }
+    | { kind: "node-settings"; id: string; text: boolean; video?:boolean; from: CanvasNodeSettings; to: CanvasNodeSettings }
     | { kind: "move"; id: string; from: { x: number; y: number }; to: { x: number; y: number } }
     | {
         kind: "move-many";
@@ -2358,6 +2367,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         kind: "mixed-delete";
         artworks: Artwork[];
         textNodes: CanvasTextNode[];
+        videoNodes?:CanvasVideoNode[];
       }
     | { kind: "add"; records: Artwork[] }
     | { kind: "text-delete"; records: CanvasTextNode[] }
@@ -2651,7 +2661,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   const { projects } = useMemo(() => {
     const arts = (works ?? []).filter(
-      (a) => a.status === "completed" && (hasRenderableImage(a.image) || Boolean(a.videoUrl))
+      (a) => a.status === "completed" && a.origin!=="workbench" && (hasRenderableImage(a.image) || Boolean(a.videoUrl))
     );
     const byId = new Map(arts.map((a) => [a.id, a]));
     const groups = new Map<string, Artwork[]>();
@@ -2694,7 +2704,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           // 管理员只读查看用户作品时不过滤:让单张一次性生图也能进画布(否则深链找不到→空白)
           readOnly ||
           p.isSuite ||
-          p.members.length > 1 ||
+          p.members.length > 1 && !p.members.every(member=>member.origin==="workbench") ||
           p.members.some((m) => m.source && CANVAS_SOURCES.has(m.source)) ||
           p.members.some((m) => m.origin === "canvas") ||
           p.members.some((m) => m.marked) ||
@@ -3113,15 +3123,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const videoTaskStore=useVideoTasks({email:user?.email,projectKey:active?.key,readOnly,request:privateFetchRaw,onCompleted:async(task,project)=>{
     const ids=task.resultAssets?.map(asset=>asset.artworkId)||[];if(task.artworkId&&!ids.includes(task.artworkId))ids.unshift(task.artworkId);
     if(activeProjectRef.current?.key!==project)return;
+    await videoNodesStore.refresh();
+    if(task.sourceId&&videoNodesStore.getNode(task.sourceId)?.deletedAt)return;
     if(ids.length)await mergeWorks(ids);
     if(task.sourceId&&user){const receipt=readVideoReceipt(localStorage,user.email,task.sourceId);if(receipt?.taskId===task.id)clearVideoReceipt(localStorage,user.email,task.sourceId,receipt.idempotencyKey);}
-    await videoNodesStore.refresh();await refreshCredits();
+    await refreshCredits();
   }});
   const videoInputChoices:VideoInputChoice[]=useMemo(()=>[
     ...(active?.members||[]).map(art=>({id:art.id,nodeId:art.id,kind:art.category==="audio"?"audio" as const:art.videoUrl?"video" as const:"image" as const,title:art.title,value:art.videoUrl||art.image,thumbnail:!art.videoUrl?art.image:undefined,available:art.status==="completed"})),
     ...textNodes.filter(node=>node.projectKey===activeKey).map(node=>({id:node.id,nodeId:node.id,kind:"text" as const,title:node.title,value:node.content||node.prompt||" ",available:node.status!=="generating"})),
     ...videoNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>{const task=videoTaskStore.tasks.find(task=>task.id===node.lastTaskId),art=(works||[]).find(art=>art.id===node.lastResultId);return {id:node.id,nodeId:node.id,kind:"video" as const,title:node.title,value:art?.videoUrl||task?.videoUrl||"/media/pending",available:task?.status==="completed"&&!!node.lastResultId};}),
   ],[active,activeKey,textNodes,videoNodesStore.nodes,videoTaskStore.tasks,works]);
+  const selectedVideo=videoNodesStore.nodes.find(node=>node.id===selectedId)||null;
+  const mixedNativeSelection=multiSel.length>1&&(multiSel.some(id=>videoNodesStore.getNode(id))||multiSel.some(id=>id.startsWith("text-"))&&multiSel.some(id=>!id.startsWith("text-")));
   const selected = useMemo(
     () => active?.members.find((a) => a.id === selectedId) ?? null,
     [active, selectedId]
@@ -3685,9 +3699,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const task=videoTaskStore.tasks.find(task=>task.id===videoNode.lastTaskId),result=(works||[]).find(art=>art.id===videoNode.lastResultId),locked=isNodeLocked(videoNode.id);
       displayNodes.push({id:videoNode.id,type:"videoGeneration",position:{x:videoNode.x,y:videoNode.y},selected:videoNode.id===selectedId,draggable:!readOnly&&!locked,
         style:{width:videoNode.width,height:videoNode.height},data:{node:videoNode,title:videoNode.title,prompt:videoNode.config.prompt,content:String(videoNode.revision),width:videoNode.width,height:videoNode.height,status:task?.status,progress:task?.progress,videoUrl:result?.videoUrl||task?.videoUrl,
-          task,selected:videoNode.id===selectedId,lightCanvas,locked,readOnly,resultUrl:result?.videoUrl||task?.videoUrl,onEdit:(id:string)=>setVideoEditId(id),onGenerate:(id:string)=>setVideoEditId(id),onCancel:(id:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current?.lastTaskId)void videoTaskStore.cancel(current.lastTaskId).catch(error=>flashTip(error.message));},
-          onPrompt:async(id:string,prompt:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current)await videoNodesStore.save(id,{config:{...current.config,prompt}});},
-          onResize:(id:string,size:{x:number;y:number;width:number;height:number})=>{void videoNodesStore.save(id,size).catch(error=>flashTip(error.message));}}} as Node);
+          task,settings:settingsFor(videoNode.id),selected:videoNode.id===selectedId,lightCanvas,locked,readOnly,resultUrl:result?.videoUrl||task?.videoUrl,onEdit:(id:string)=>setVideoEditId(id),onGenerate:(id:string)=>setVideoEditId(id),onCancel:(id:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current?.lastTaskId)void videoTaskStore.cancel(current.lastTaskId).catch(error=>flashTip(error.message));},
+          onPrompt:async(id:string,prompt:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current)await patchVideoNode(id,{config:{...current.config,prompt}});},
+          onResize:(id:string,size:{x:number;y:number;width:number;height:number})=>{void patchVideoNode(id,size).catch(error=>flashTip(error.message));}}} as Node);
       for(const input of videoNode.inputs){const source=input.nodeId.replace(/^(?:text|image|video|audio):/,"");if(!displayNodes.some(node=>node.id===source)&&!textNodes.some(node=>node.id===source)&&!videoNodesStore.nodes.some(node=>node.id===source))continue;
         displayEdges.push({id:`e-video-${input.id}-${videoNode.id}`,source,sourceHandle:"out",target:videoNode.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}} as Edge);}
     }
@@ -3827,6 +3841,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 受控节点状态(支持拖拽);仅当底层数据/位置真正变化时重新灌入,拖拽过程中不重置。
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  useEffect(()=>{
+    const pending=pendingNodeSelectionRef.current;if(!pending)return;
+    if(pending.owner!==user?.email.toLowerCase()){pendingNodeSelectionRef.current=null;return;}
+    if(pending.projectKey!==activeKey||!pending.ids.every(id=>rfNodes.some(node=>node.id===id)))return;
+    pendingNodeSelectionRef.current=null;const ids=new Set(pending.ids);setRfNodes(current=>current.map(node=>({...node,selected:ids.has(node.id)})));
+  },[rfNodes,activeKey,user?.email,setRfNodes]);
+
   function selectWorkflowGroup(ids: string[]) {
     setSelectedId(null); setSelectedTextId(null); setSelectedPendId(null);
     setRfNodes(current => current.map(node => ({ ...node, selected: ids.includes(node.id) })));
@@ -3902,7 +3923,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setSelectedEdge(null);
     setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
     const valid = new Set(
-      ids.filter((id) => active?.members.some((item) => item.id === id))
+      ids.filter((id) => active?.members.some((item) => item.id === id)||videoNodesStore.nodes.some(node=>node.id===id&&node.projectKey===activeKey)||textNodesRef.current.some(node=>node.id===id&&node.projectKey===activeKey))
     );
     const next = Array.from(valid);
     setMultiSel(next);
@@ -3910,8 +3931,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       current.map((node) => ({ ...node, selected: valid.has(node.id) }))
     );
     setSelectedPendId(null);
-    setSelectedTextId(null);
-    setSelectedId(next.length === 1 ? next[0] : null);
+    const onlyText=next.length===1&&textNodesRef.current.some(node=>node.id===next[0]);
+    setSelectedTextId(onlyText?next[0]:null);
+    setSelectedId(next.length===1&&!onlyText?next[0]:null);
   }
 
   function toggleArtworkBatchSelection(nodeId: string, base = multiSel) {
@@ -4371,6 +4393,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   // 整表重拉(仅初次加载 / 兜底用)。日常增删改用下面的局部更新,省 egress。
   async function refetchWorks(): Promise<Artwork[]> {
+    const account=canvasAccountRef.current;
     const em = targetEmail || user?.email;
     if (!em) return works ?? [];
     try {
@@ -4378,6 +4401,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         headers: await authHeader(),
       });
       const d = await r.json();
+      if(account!==canvasAccountRef.current)return [];
       const arr = (d?.artworks ?? []) as Artwork[];
       setWorks(arr);
       return arr;
@@ -4389,6 +4413,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 只补指定 id 的几行(创建/连线后):取代整表重拉。返回更新后的 works(供调用方用)。
   // 失败时兜底走整表重拉,保证数据最终一致。
   async function mergeWorks(ids: string[]): Promise<Artwork[]> {
+    const account=canvasAccountRef.current;
     const em = targetEmail || user?.email;
     const valid = ids.filter(Boolean);
     if (!em || valid.length === 0) return works ?? [];
@@ -4401,6 +4426,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         { cache: "no-store" }
       );
       const d = await expectJsonOk(r, t("canvas.genFail"));
+      if(account!==canvasAccountRef.current)return [];
       const fetched = (d?.artworks ?? []) as Artwork[];
       if (fetched.length === 0) return works ?? [];
       let merged = fetched;
@@ -4415,6 +4441,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       return merged;
     } catch {
       // 单行补取失败 → 兜底整表重拉,确保不漏数据
+      if(account!==canvasAccountRef.current)return [];
       return refetchWorks();
     }
   }
@@ -5054,11 +5081,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const proposed=choices.length===0?"text":choices.length===1&&images===1?"single_image":"reference";
       if(catalogCapability(model).modes?.includes(proposed))config.mode=proposed;
       const inputs=videoModeRoles(choices.map(choice=>({id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==="text"?"context" as const:choice.kind==="video"?"source_video" as const:choice.kind==="audio"?"source_audio" as const:"reference" as const,value:choice.value})),config.mode);
-      await videoNodesStore.save(id,{projectKey:project,title:"视频",x:point.x,y:point.y,width:384,height:320,config,inputs});
+      const created=await videoNodesStore.save(id,{projectKey:project,title:"视频",x:point.x,y:point.y,width:384,height:320,config,inputs});pushUndo({kind:"video-add",records:[created]});
       setCreatingNew(false);setActiveKey(project);setBrowsing(false);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setVideoEditId(id);
     }catch(error){flashTip(error instanceof Error?error.message:"新增视频节点失败");}
   }
-  async function saveVideoDraft(id:string,draft:VideoNodeDraft){return videoNodesStore.save(id,{title:draft.title,config:draft.config,inputs:draft.inputs,expectedRevision:draft.expectedRevision});}
+  async function patchVideoNode(id:string,patch:VideoPatchFields&{expectedRevision?:number}){
+    await videoNodesStore.flush();const before=videoNodesStore.getNode(id);if(!before)throw new Error("视频节点不存在");
+    const {expectedRevision,...fields}=patch,from:VideoPatchFields={};for(const key of Object.keys(fields) as Array<keyof VideoPatchFields>)Object.assign(from,{[key]:structuredClone(before[key])});
+    const result=await videoNodesStore.save(id,{...fields,expectedRevision:expectedRevision??before.revision});
+    if(JSON.stringify(from)!==JSON.stringify(fields))pushUndo({kind:"video-patch",id,from,to:fields});return result;
+  }
+  async function saveVideoDraft(id:string,draft:VideoNodeDraft){return patchVideoNode(id,{title:draft.title,config:draft.config,inputs:draft.inputs,expectedRevision:draft.expectedRevision});}
   async function generateVideoDraft(id:string,draft:VideoNodeDraft,quote:PublicQuote){
     if(!user||readOnly)throw new Error("无法修改此画布");
     let previous=readVideoReceipt(localStorage,user.email,id);
@@ -5791,7 +5824,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 真正执行删除(确认后)。文字节点与作品必须分流到各自 API，
   // 混合选择仍只记一条 undo，避免用户需要撤销两次才能恢复。
   async function runDelete(ids: string[]) {
-    if (!user || readOnly) return;
+    if (!user || readOnly) return;const account=canvasAccountRef.current;
     if (!nodeSettingsReady || ids.some(isNodeLocked)) { flashTip(L("请先解锁选中的节点","Unlock selected nodes first")); return; }
     const uniqueIds = Array.from(
       new Set(
@@ -5804,9 +5837,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const deleting = new Set(uniqueIds);
     const artworkRecords = (works ?? []).filter((work) => deleting.has(work.id));
     const textRecords = textNodes.filter((node) => deleting.has(node.id));
+    const videoRecords=videoNodesStore.nodes.filter(node=>deleting.has(node.id));
     const artworkIds = artworkRecords.map((record) => record.id);
     const textIds = textRecords.map((record) => record.id);
-    if (!artworkIds.length && !textIds.length) return;
+    const videoIds=videoRecords.map(node=>node.id);
+    if (!artworkIds.length && !textIds.length&&!videoIds.length) return;
     setSelectedId(null);
     setSelectedTextId(null);
     setSelectedPendId(null);
@@ -5814,11 +5849,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const response = await privateFetchRaw("/api/canvas/nodes/delete", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ artworkIds, textIds }),
+        body: JSON.stringify({ artworkIds, textIds,videoIds,operationId:browserRandomUUID() }),
       });
-      await expectJsonOk(response, t("canvas.genFail"));
+      await expectJsonOk(response, t("canvas.genFail"));if(account!==canvasAccountRef.current)return;
 
-      if (artworkRecords.length && textRecords.length) {
+      if(videoRecords.length){pushUndo({kind:"mixed-delete",artworks:artworkRecords,textNodes:textRecords,videoNodes:videoRecords});await videoNodesStore.refresh();}
+      else if (artworkRecords.length && textRecords.length) {
         pushUndo({
           kind: "mixed-delete",
           artworks: artworkRecords,
@@ -5848,7 +5884,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               node.projectKey === activeProjectKey && !deleting.has(node.id)
           )
         : false;
-      if (activeProjectKey && !remainingArtwork && !remainingText) {
+      const remainingVideo=videoNodesStore.nodes.some(node=>node.projectKey===activeProjectKey&&!deleting.has(node.id));
+      if (activeProjectKey && !remainingArtwork && !remainingText&&!remainingVideo) {
         setActiveKey(null);
         setCreatingNew(false);
         setBrowsing(true);
@@ -5861,8 +5898,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // A history step is persisted atomically before any local state or stack changes.
   const historyBusyRef = useRef(false);
   const [historySaving,setHistorySaving] = useState(false);
-  const historyAttemptsRef = useRef(new WeakMap<UndoAct, string>());
+  const historyAttemptsRef = useRef(new WeakMap<UndoAct, {operationId:string;operations:Array<Record<string,unknown>>}>());
   async function applyHistory(act: UndoAct, undo: boolean) {
+    const account=canvasAccountRef.current;
     if (act.kind === "pending-link") {
       const pending = pendNodesRef.current.find(node => node.id === act.id);
       if (!pending || pending.generating || pending.uploading) throw new Error(L("节点已开始生成或已移除", "Node is generating or no longer exists"));
@@ -5870,16 +5908,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       return;
     }
     await Promise.all(Array.from(textSaveQueuesRef.current.values()));
+    await videoNodesStore.flush();
     const side = undo ? "from" : "to";
-    const operations: Array<Record<string, unknown>> = [];
-    const position = (id: string, point: { x: number; y: number }, text = id.startsWith("text-")) =>
-      operations.push({ type: "position", id, text, ...point });
+    let operations: Array<Record<string, unknown>> = [];
+    const videoPatch=(id:string,fields:VideoPatchFields)=>{const current=videoNodesStore.getNode(id);if(!current)throw new Error("视频节点不存在，请刷新画布");operations.push({type:"video-patch",id,expectedRevision:current.revision,fields});};
+    const position=(id:string,point:{x:number;y:number},text=id.startsWith("text-"))=>{if(videoNodesStore.getNode(id))videoPatch(id,point);else operations.push({type:"position",id,text,...point});};
     const visibility = (records: Artwork[], visible: boolean) => records.forEach(record => operations.push({type:"visibility",id:record.id,visible}));
     const texts = (records: CanvasTextNode[], visible: boolean) => records.forEach(node => operations.push(visible ? {type:"text-restore",node} : {type:"text-delete",id:node.id}));
-    if (act.kind === "move" || act.kind === "text-move") position(act.id,act[side],act.kind === "text-move");
+    const videos=(records:CanvasVideoNode[],visible:boolean)=>records.forEach(node=>operations.push({type:"video-visibility",id:node.id,visible}));
+    if(act.kind==="video-patch")videoPatch(act.id,act[side]);
+    else if(act.kind==="video-add")videos(act.records,!undo);
+    else if (act.kind === "move" || act.kind === "text-move") position(act.id,act[side],act.kind === "text-move");
     else if (act.kind === "move-many") act.moves.forEach(move => position(move.id,move[side]));
     else if (act.kind === "canvas-group") act.changes.forEach(change => operations.push({type:"group",id:change.id,value:change[side]}));
-    else if (act.kind === "mixed-delete" || act.kind === "workflow-add") { const visible = act.kind === "mixed-delete" ? undo : !undo; visibility(act.artworks,visible); texts(act.textNodes,visible); }
+    else if (act.kind === "mixed-delete" || act.kind === "workflow-add" || act.kind === "mixed-add") { const visible = act.kind === "mixed-delete" ? undo : !undo; visibility(act.artworks,visible); texts(act.textNodes,visible); if(act.kind==="mixed-delete"||act.kind==="mixed-add")videos(act.videoNodes||[],visible); }
     else if (act.kind === "delete" || act.kind === "add") visibility(act.records,act.kind === "delete" ? undo : !undo);
     else if (act.kind === "text-delete" || act.kind === "text-add") texts(act.records,act.kind === "text-delete" ? undo : !undo);
     else if (act.kind === "parent") operations.push({type:"parent",id:act.targetId,parentId:act.parentId,add:undo ? !act.added : act.added});
@@ -5887,18 +5929,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     else if (act.kind === "rename") operations.push({type:"rename",id:act.id,title:act[side]});
     else if (act.kind === "art-size") operations.push({type:"size",id:act.id,...act[side]});
     else if (act.kind === "mark") act.changes.forEach(change => operations.push({type:"mark",id:change.id,marked:change[side]}));
-    else if (act.kind === "node-settings") operations.push({type:"node-settings",id:act.id,text:act.text,settings:act[side]});
+    else if (act.kind === "node-settings") operations.push({type:"node-settings",id:act.id,text:act.text,video:act.video,settings:act[side]});
     else if (act.kind === "workflow-fill") operations.push({type:"workflow-asset",id:act.id,assetOperationId:act.assetOperationId,filled:!undo});
-    let operationId = historyAttemptsRef.current.get(act);
-    if (!operationId) { operationId=browserRandomUUID(); historyAttemptsRef.current.set(act,operationId); }
+    let attempt=historyAttemptsRef.current.get(act);
+    if(!attempt){attempt={operationId:browserRandomUUID(),operations:structuredClone(operations)};historyAttemptsRef.current.set(act,attempt);}
+    const operationId=attempt.operationId;operations=attempt.operations;
     const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operationId,operations}),signal:AbortSignal.timeout(20_000)});
-    await expectJsonOk(response,t("canvas.genFail"));
+    await expectJsonOk(response,t("canvas.genFail"));if(account!==canvasAccountRef.current)throw new Error("画布账号已切换");
     // All operations below are local applications of an already committed transaction.
     for (const op of operations) {
       const id=op.id as string;
+      if(op.type==="video-patch"||op.type==="video-visibility")continue;
       if (op.type === "visibility") {
         if (op.visible) {
-          const records = act.kind === "mixed-delete" || act.kind === "workflow-add" ? act.artworks : (act as {records:Artwork[]}).records;
+          const records = act.kind === "mixed-delete" || act.kind === "workflow-add" || act.kind === "mixed-add" ? act.artworks : (act as {records:Artwork[]}).records;
           const record = records.find(record=>record.id===id);
           if (record) setWorks(current=>[...(current || []).filter(node=>node.id!==id),record]);
         } else setWorks(current=>current?.filter(node=>node.id!==id) ?? current);
@@ -5932,9 +5976,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         return node;
       }) ?? current);
     }
+    if(operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"))await videoNodesStore.refresh();
     for(const op of operations) {const id=(op.id || (op.node as CanvasTextNode|undefined)?.id) as string; unsavedTextRef.current.delete(id);}
     setUnsavedTextCount(unsavedTextRef.current.size);
     historyAttemptsRef.current.delete(act);
+    if(act.kind==="mixed-add"){
+      if(undo&&(active?.members.length||0)===act.artworks.length&&(active?.textNodes.length||0)===act.textNodes.length&&(active?.videoNodes?.length||0)===act.videoNodes.length)setCreatingNew(true);
+      if(!undo){setCreatingNew(false);setActiveKey(act.projectKey);setBrowsing(false);}
+    }
+    if(act.kind==="video-add"){
+      if(undo&&!active?.members.length&&!active?.textNodes.length&&(active?.videoNodes||[]).every(node=>act.records.some(record=>record.id===node.id)))setCreatingNew(true);
+      if(!undo){setCreatingNew(false);setActiveKey(act.records[0]?.projectKey||null);setBrowsing(false);}
+    }
     if (act.kind === "workflow-add") {
       // Undoing the first import leaves an editable empty project, so redo stays
       // reachable instead of the project-disappearance effect sending it to the grid.
@@ -5979,11 +6032,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try {
       await Promise.all(Array.from(textSaveQueuesRef.current.values()));
       const response=await privateFetchRaw("/api/canvas/history",{method:"POST",headers:{"content-type":"application/json"},
-        body:JSON.stringify({operationId:browserRandomUUID(),operations:[{type:"node-settings",id,text:id.startsWith("text-"),settings:to}]}),signal:AbortSignal.timeout(20000)});
+        body:JSON.stringify({operationId:browserRandomUUID(),operations:[{type:"node-settings",id,text:id.startsWith("text-"),video:!!videoNodesStore.getNode(id),settings:to}]}),signal:AbortSignal.timeout(20000)});
       const data=await expectJsonOk(response,L("属性保存失败","Failed to save properties"));
       const next={...nodeSettingsRef.current,[id]:to};
       if(!data.persisted)localStorage.setItem(`naumi:node-settings:${user.email.toLowerCase()}`,JSON.stringify(next));
-      nodeSettingsRef.current=next;setNodeSettings(next);pushUndo({kind:"node-settings",id,text:id.startsWith("text-"),from,to});return true;
+      nodeSettingsRef.current=next;setNodeSettings(next);pushUndo({kind:"node-settings",id,text:id.startsWith("text-"),video:!!videoNodesStore.getNode(id),from,to});return true;
     } catch(error){flashTip(error instanceof Error?error.message:t("canvas.saveFailed"));return false;}
     finally {historyBusyRef.current=false;setHistorySaving(false);}
   }
@@ -6057,6 +6110,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   // 删除当前选中节点(供面板按钮 / Delete 键)
   async function deleteSelected() {
+    if(selectedId&&videoNodesStore.getNode(selectedId)){batchDelete([selectedId]);return;}
     if (selected) await deleteTree(selected.id);
   }
 
@@ -6066,37 +6120,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const ids = p.members.map((m) => m.id);
     setConfirmModal({
       title: t("canvas.deleteProjectTitle"),
-      message: fmt(t("canvas.deleteProject"), { n: ids.length + p.textNodes.length }),
+      message: fmt(t("canvas.deleteProject"), { n: ids.length + p.textNodes.length+(p.videoNodes?.length||0) }),
       confirmLabel: t("canvas.confirmDelete"),
       onConfirm: () => void runProjectDelete(p, ids),
     });
   }
   async function runProjectDelete(p: Project, ids: string[]) {
-    if (!user) return;
+    if (!user) return;const account=canvasAccountRef.current;
     setSidebarOpen(false);
     try {
-      if (ids.length) {
-        const res = await privateFetchRaw("/api/artworks/delete", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ email: user.email, ids }),
-        });
-        await expectJsonOk(res, t("canvas.genFail"));
-      }
-      if (p.textNodes.length) {
-        const textRes = await privateFetchRaw("/api/canvas/text-nodes", {
-          method: "DELETE",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ids: p.textNodes.map((node) => node.id) }),
-        });
-        if (!textRes.ok) await expectJsonOk(textRes, t("canvas.genFail"));
-      }
-      const nameRes = await privateFetchRaw("/api/projects", {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key: p.key }),
-      });
-      await expectJsonOk(nameRes, t("canvas.genFail"));
+      const response=await privateFetchRaw("/api/canvas/nodes/delete",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectKey:p.key,operationId:browserRandomUUID()})});
+      await expectJsonOk(response,t("canvas.genFail"));if(account!==canvasAccountRef.current)return;await videoNodesStore.refresh();if(account!==canvasAccountRef.current)return;
       if (p.key === activeKey) {
         setActiveKey(null);
         setSelectedId(null);
@@ -6353,7 +6387,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(videoTarget){
       if(readOnly||isNodeLocked(target))return;
       const choice=videoInputChoices.find(item=>item.nodeId===source);if(!choice||videoTarget.inputs.some(input=>input.nodeId===source))return;
-      try{await videoNodesStore.save(target,{inputs:videoModeRoles([...videoTarget.inputs,{id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==="text"?"context":choice.kind==="video"?"source_video":choice.kind==="audio"?"source_audio":"reference",value:choice.value}],videoTarget.config.mode)});}catch(error){flashTip(error instanceof Error?error.message:"视频引用保存失败");}return;
+      try{await patchVideoNode(target,{inputs:videoModeRoles([...videoTarget.inputs,{id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==="text"?"context":choice.kind==="video"?"source_video":choice.kind==="audio"?"source_audio":"reference",value:choice.value}],videoTarget.config.mode)});}catch(error){flashTip(error instanceof Error?error.message:"视频引用保存失败");}return;
     }
 
     // 连到空白占位节点 → 加为它的输入(客户端)
@@ -6478,6 +6512,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         const to = { inputs, parentId: pending.parentId === edge.source ? inputs[0] ?? null : pending.parentId, linked: inputs.length > 0 };
         pushUndo({ kind: "pending-link", id: pending.id, from: { inputs: [...pending.inputs], parentId: pending.parentId, linked: pending.linked }, to });
         setPendNodes(current => current.map(node => node.id === pending.id ? { ...node, ...to } : node));
+      } else if(videoNodesStore.getNode(edge.target)){
+        const node=videoNodesStore.getNode(edge.target)!;if(isNodeLocked(node.id))return;
+        const inputs=node.inputs.filter(input=>input.nodeId.replace(/^(?:text|image|video|audio):/,"")!==edge.source);
+        await patchVideoNode(node.id,{inputs:videoModeRoles(inputs,node.config.mode)});
       } else if (edge.source.startsWith("text-") || edge.target.startsWith("text-")) {
         // A product binding draws the same line as a reference: remove both fields.
         // Complete queued text saves first so an older draft cannot recreate the edge.
@@ -6582,6 +6620,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setRfEdges(current => current.map(edge => edge.selected ? { ...edge, selected: false } : edge));
     setSpawnMenu(null);
     const p = relPoint(e);
+    if(node.id.startsWith("text-")&&multiSel.length>1&&multiSel.includes(node.id)){setCtxMenu({x:p.x,y:p.y,cx:e.clientX,cy:e.clientY,nodeId:node.id});return;}
     if (node.id.startsWith("text-") || node.id.startsWith("pend-")) {
       setSelectedId(null); setMultiSel([]);
       setRfNodes(current => current.map(item => item.selected ? { ...item, selected: false } : item));
@@ -6619,7 +6658,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const currentEdges = rfRef.current?.getEdges() ?? rfEdges;
       const artworkIds = new Set(active.members.map(member => member.id));
       const textIds = new Set(active.textNodes.map(node => node.id));
-      const mobileIds = new Set([...artworkIds, ...textIds]);
+      const mobileIds = new Set([...artworkIds, ...textIds,...(active.videoNodes||[]).map(node=>node.id)]);
       const input = currentNodes.map(node => ({
         id: node.id, ...flowNodeSize(node), x: node.position.x, y: node.position.y,
         fixed: !mobileIds.has(node.id) || isNodeLocked(node.id),
@@ -6792,9 +6831,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       return;
     }
     if (isEditableClipboardTarget(event.target)) return;
+    const nodeId = canvasNodeIdFromClipboard(data);
+    const generic=readGenericNodeClip(nodeId||undefined);if(nodeId&&generic){event.preventDefault();void duplicateCanvasNodes(generic.ids);return;}
     const copied = nodeClipRef.current;
     if (!copied) return;
-    const nodeId = canvasNodeIdFromClipboard(data);
     if (nodeId !== copied.id) return;
     const box = canvasAreaRef.current?.getBoundingClientRect();
     if (!box) return;
@@ -8055,6 +8095,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
   function handleCanvasCopy(event: ClipboardEvent) {
+    const generic=genericNodeClipRef.current;
+    if(generic&&canvasCopyIntentRef.current===generic.marker&&!isEditableClipboardTarget(event.target)&&event.clipboardData){event.preventDefault();setCanvasNodeClipboardData(event.clipboardData,generic.marker,L("画布节点","Canvas nodes"));canvasCopyIntentRef.current=null;return;}
+
     const copied = nodeClipRef.current;
     const intendedNodeId = canvasCopyIntentRef.current;
     canvasCopyIntentRef.current = null;
@@ -8074,7 +8117,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   canvasCopyHandlerRef.current = handleCanvasCopy;
 
-  async function writeCanvasNodeClipboard(a: Artwork) {
+  async function writeCanvasNodeClipboard(a: Pick<Artwork,"id"|"title">) {
     const title = a.title || t("canvas.imageNode");
     const html = `<span data-naumi-canvas-node="${encodeURIComponent(a.id)}">${escapeClipboardHtml(title)}</span>`;
     try {
@@ -8104,12 +8147,35 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   function copyNodeToClip(a: Artwork, writeSystemClipboard = false) {
-    nodeClipRef.current = a;
+    genericNodeClipRef.current=null;nodeClipRef.current = a;
     setHasClip(true);
     if (writeSystemClipboard) void writeCanvasNodeClipboard(a);
   }
+  function copyCanvasSelection(ids:string[]){
+    if(!user||!ids.length)return;
+    const wanted=Array.from(new Set(ids)).filter(id=>videoNodesStore.getNode(id)||textNodesRef.current.some(node=>node.id===id)||(works||[]).some(node=>node.id===id));if(!wanted.length)return;
+    const clip={marker:`clip-${browserRandomUUID()}`,ids:wanted,owner:user.email.toLowerCase()};genericNodeClipRef.current=clip;nodeClipRef.current=null;setHasClip(true);canvasCopyIntentRef.current=clip.marker;
+    try{localStorage.setItem(`naumi:canvas-node-clipboard:${user.email.toLowerCase()}`,JSON.stringify(clip));}catch{}
+    void writeCanvasNodeClipboard({id:clip.marker,title:L("画布节点","Canvas nodes")});
+  }
+  function readGenericNodeClip(marker?:string){
+    let clip=genericNodeClipRef.current;try{if(!clip&&user)clip=JSON.parse(localStorage.getItem(`naumi:canvas-node-clipboard:${user.email.toLowerCase()}`)||"null");}catch{}
+    return clip&&clip.owner===user?.email.toLowerCase()&&typeof clip.marker==="string"&&Array.isArray(clip.ids)&&clip.ids.length>0&&clip.ids.length<=200&&clip.ids.every(id=>typeof id==="string")&&(!marker||clip.marker===marker)?clip:null;
+  }
+  async function duplicateCanvasNodes(ids:string[]){
+    if(!user||readOnly)return;const epoch=canvasContextEpochRef.current,account=canvasAccountRef.current;
+    const projectKey=!browsing&&!creatingNew?active?.key:undefined,fingerprint=JSON.stringify([user.email,ids,projectKey]);let operationId=copyAttemptsRef.current.get(fingerprint);
+    if(!operationId){operationId=browserRandomUUID();copyAttemptsRef.current.set(fingerprint,operationId);}
+    try{
+      const response=await privateFetchRaw("/api/canvas/nodes/copy",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({ids,projectKey,operationId})});const data=await expectJsonOk(response,"复制节点失败");if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;
+      const fresh=await mergeWorks(data.artworkIds||[]);if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;setTextNodes(current=>{const wanted=new Set((data.textNodes as CanvasTextNode[]).map(node=>node.id));return [...current.filter(node=>!wanted.has(node.id)),...data.textNodes];});await videoNodesStore.refresh();if(epoch!==canvasContextEpochRef.current||account!==canvasAccountRef.current)return;
+      pushUndo({kind:"mixed-add",artworks:fresh.filter(art=>(data.artworkIds||[]).includes(art.id)),textNodes:data.textNodes,videoNodes:data.nodes,projectKey:data.projectKey});
+      setCreatingNew(false);setActiveKey(data.projectKey);setBrowsing(false);setSelectedId(null);setSelectedTextId(null);setSelectedPendId(null);setMultiSel(Object.values(data.idMap));const selection={ids:Object.values(data.idMap) as string[],projectKey:String(data.projectKey),owner:user.email.toLowerCase()};pendingNodeSelectionRef.current=selection;window.setTimeout(()=>{if(pendingNodeSelectionRef.current===selection)pendingNodeSelectionRef.current=null;},1500);copyAttemptsRef.current.delete(fingerprint);
+    }catch(error){flashTip(error instanceof Error?error.message:"复制节点失败");}
+  }
   async function pasteNode() {
-    if (nodeClipRef.current) await duplicateArt(nodeClipRef.current);
+    if(nodeClipRef.current){await duplicateArt(nodeClipRef.current);return;}
+    const clip=readGenericNodeClip();if(clip){await duplicateCanvasNodes(clip.ids);return;}
   }
 
   // 拖拽后记住节点坐标(本地即时生效 + 异步持久化)
@@ -8130,75 +8196,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }).catch(() => {});
   }
 
-  function saveManyNodePositions(
-    moves: Array<{
-      id: string;
-      from: { x: number; y: number };
-      to: { x: number; y: number };
-    }>
-  ) {
-    if (readOnly || !user || !moves.length) return;
-    moves=moves.filter(move=>!isNodeLocked(move.id));
-    if(!moves.length)return;
-    const artworkMoves = moves.filter((move) => !move.id.startsWith("text-"));
-    const textMoves = moves.filter((move) => move.id.startsWith("text-"));
-    const artworkPositions = new Map(
-      artworkMoves.map((move) => [move.id, move.to])
-    );
-    const textPositions = new Map(textMoves.map((move) => [move.id, move.to]));
-    const updatedAt = new Date().toISOString();
-    const movedTextNodes = textNodes
-      .filter((node) => textPositions.has(node.id))
-      .map((node) => {
-        const position = textPositions.get(node.id)!;
-        return {
-          ...node,
-          canvasX: position.x,
-          canvasY: position.y,
-          updatedAt,
-        };
-      });
-    setWorks((current) =>
-      current?.map((work) => {
-        const position = artworkPositions.get(work.id);
-        return position
-          ? { ...work, canvasX: position.x, canvasY: position.y }
-          : work;
-      }) ?? current
-    );
-    if (textMoves.length) {
-      setTextNodes((current) =>
-        current.map((node) => {
-          const position = textPositions.get(node.id);
-          return position
-            ? {
-                ...node,
-                canvasX: position.x,
-                canvasY: position.y,
-                updatedAt,
-              }
-            : node;
-        })
-      );
-    }
-    void Promise.all(
-      [
-        ...artworkMoves.map((move) =>
-          privateFetchRaw("/api/artworks/position", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              email: user.email,
-              id: move.id,
-              x: move.to.x,
-              y: move.to.y,
-            }),
-          }).catch(() => {})
-        ),
-        ...movedTextNodes.map((node) => persistTextNode(node)),
-      ]
-    );
-    pushUndo({ kind: "move-many", moves });
+  async function saveManyNodePositions(moves:Array<{id:string;from:{x:number;y:number};to:{x:number;y:number}}>){
+    if(readOnly||!user||!moves.length||historyBusyRef.current)return;
+    moves=moves.filter(move=>!isNodeLocked(move.id));if(!moves.length)return;
+    historyBusyRef.current=true;setHistorySaving(true);const act:UndoAct={kind:"move-many",moves};
+    try{await applyHistory(act,false);pushUndo(act);}catch(error){const positions=new Map(moves.map(move=>[move.id,move.from]));setRfNodes(current=>current.map(node=>positions.has(node.id)?{...node,position:positions.get(node.id)!}:node));flashTip(error instanceof Error?error.message:t("canvas.saveFailed"));}
+    finally{historyBusyRef.current=false;setHistorySaving(false);}
   }
 
   function rememberManyNodeDrag(nodes: Node[]) {
@@ -8351,6 +8354,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       if (mod && key === "c") {
         canvasCopyIntentRef.current = null;
+        const nativeText=window.getSelection();
+        if((multiSel.length>1||selectedTextId||selectedId&&videoNodesStore.getNode(selectedId))&&(!nativeText||nativeText.isCollapsed)){
+          copyCanvasSelection(multiSel.length?multiSel:[selectedTextId||selectedId!]);flashTip(t("canvas.copied"));return;
+        }
         const nativeSelection = window.getSelection();
         if (!selected || (nativeSelection && !nativeSelection.isCollapsed)) return;
         canvasCopyIntentRef.current = selected.id;
@@ -8372,7 +8379,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         key === "v" &&
         (tag === "VIDEO" || tag === "AUDIO") &&
         canvasCopyIntentRef.current &&
-        nodeClipRef.current?.id === canvasCopyIntentRef.current
+        (nodeClipRef.current?.id === canvasCopyIntentRef.current||genericNodeClipRef.current?.marker===canvasCopyIntentRef.current)
       ) {
         // Native media focus can suppress both copy/paste clipboard events.
         // Consume only the short-lived intent created by the immediately
@@ -9424,7 +9431,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   return;
                 }
                 if(videoNodesStore.nodes.some(item=>item.id===node.id)){
-                  void videoNodesStore.save(node.id,{x:node.position.x,y:node.position.y}).catch(error=>flashTip(error.message));return;
+                  if(finishManyNodeDrag(draggedNodes))return;
+                  void patchVideoNode(node.id,{x:node.position.x,y:node.position.y}).catch(error=>flashTip(error.message));return;
                 }
                 // React Flow 从某个已选节点发起多选拖动时，只触发 onNodeDragStop，
                 // 第三个参数才是整组节点；onSelectionDragStop 不会触发。
@@ -9806,7 +9814,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 </div>
               )}
 
-              {selectedBatchArts.length > 1 && !readOnly && (
+              {mixedNativeSelection&&!readOnly&&<BatchSelectionToolbar label={L("节点操作","Node actions")} selectionLabel={L(`已选择 ${multiSel.length} 个节点`,`${multiSel.length} nodes selected`)} clearLabel={t("canvas.batchClear")} testId="mixed-node-batch-bar" onClear={()=>clearCanvasSelection(true)}>
+                <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" onClick={()=>copyCanvasSelection(multiSel)}>{t("canvas.copyNode")}</button>
+                <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" disabled={historySaving||multiSel.some(isNodeLocked)} onClick={()=>void duplicateCanvasNodes(multiSel)}>{t("canvas.duplicate")}</button>
+                <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" disabled={historySaving||multiSel.some(isNodeLocked)} onClick={()=>batchDelete(multiSel)}>{t("canvas.delete")}</button>
+              </BatchSelectionToolbar>}
+              {selectedBatchArts.length > 1 && !readOnly && !mixedNativeSelection && (
                 <BatchSelectionToolbar
                   label={t("canvas.batchActions")}
                   testId="image-batch-bar"
@@ -9921,7 +9934,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </button>
                 </BatchSelectionToolbar>
               )}
-              {selectedTextBatchNodes.length > 1 && !readOnly && selectedBatchArts.length === 0 && (
+              {selectedTextBatchNodes.length > 1 && !readOnly && !mixedNativeSelection && selectedBatchArts.length === 0 && (
                 <BatchSelectionToolbar
                   label={t("canvas.textBatchActions")}
                   testId="text-batch-bar"
@@ -10247,7 +10260,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 : null;
               const textNode = textNodes.find(item => item.id === ctxMenu.nodeId && item.projectKey === activeKey);
               const pendNode = pendNodes.find(item => item.id === ctxMenu.nodeId);
-              if (ctxMenu.nodeId && !node && !textNode && !pendNode) return null;
+              const videoNode=videoNodesStore.nodes.find(item=>item.id===ctxMenu.nodeId&&item.projectKey===activeKey);
+              if (ctxMenu.nodeId && !node && !textNode && !pendNode&&!videoNode) return null;
               const mutationDisabled = readOnly || !nodeSettingsReady || historySaving || Boolean(ctxMenu.nodeId && isNodeLocked(ctxMenu.nodeId));
               const Sep = () => <div className="canvas-ui-divider my-1 h-px" />;
               const batchContextSelection = Boolean(
@@ -10332,12 +10346,24 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                           onClick={() => batchDelete(selectedBatchIds)}
                         />
                       </>
+                    ) : videoNode ? (
+                      <>
+                        <Item label="视频设置" disabled={mutationDisabled} onClick={()=>setVideoEditId(videoNode.id)}/>
+                        <Item label={L("属性设置","Properties")} disabled={readOnly} onClick={()=>{setSelectedId(videoNode.id);openProperties();}}/>
+                        {nodeManagementItems(videoNode.id).map(item=><Item key={item.id} label={item.label} disabled={item.disabled} onClick={item.onSelect}/>)}
+                        <Sep/>
+                        <Item label={t("canvas.copyNode")} onClick={()=>copyCanvasSelection(multiSel.includes(videoNode.id)?multiSel:[videoNode.id])}/>
+                        <Item label={t("canvas.duplicate")} disabled={mutationDisabled} onClick={()=>void duplicateCanvasNodes(multiSel.includes(videoNode.id)?multiSel:[videoNode.id])}/>
+                        <Item label={t("canvas.delete")} disabled={mutationDisabled} danger onClick={()=>batchDelete(multiSel.includes(videoNode.id)?multiSel:[videoNode.id])}/>
+                      </>
                     ) : textNode ? (
                       <>
                         <Item label={t("canvas.editName")} disabled={mutationDisabled} onClick={() => { setNodeRenameValue(textNode.title); setRenamingNodeId(textNode.id); }} />
                         <Item label={t("canvas.toolbar.productCopy")} disabled={mutationDisabled || assistBusy} onClick={() => setProductPicker({ textNodeIds: [textNode.id] })} />
                         <FeatureVisible feature="generate"><Item label={t("canvas.toolbar.textToImages")} disabled={mutationDisabled || textNode.status === "generating"} onClick={() => setGenImageMenu({ textNodeIds: [textNode.id] })} /></FeatureVisible>
                         <Sep />
+                        <Item label={t("canvas.copyNode")} onClick={()=>copyCanvasSelection(multiSel.includes(textNode.id)?multiSel:[textNode.id])}/>
+                        <Item label={t("canvas.duplicate")} disabled={mutationDisabled} onClick={()=>void duplicateCanvasNodes(multiSel.includes(textNode.id)?multiSel:[textNode.id])}/>
                         <Item label={t("canvas.copyToClipboard")} disabled={!textNode.content} onClick={() => void copyText(textNode.content).then(ok => ok && showCopyTip())} />
                         <Item label={L("文字样式", "Text style")} disabled={readOnly} onClick={openProperties} />
                         {nodeManagementItems(textNode.id).map(item => <Item key={item.id} label={item.label} disabled={item.disabled} onClick={item.onSelect} />)}
@@ -11843,14 +11869,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             busy={assistantBusy} outcome={assistantOutcome} steps={assistantSteps} responding={assistantResponding} open={assistantVisible} companion={orbCompanion} onCue={orbCue}
             english={locale === "en"} onActivate={toggleAssistant} light={lightCanvas} />}
         </div>
-        {propertiesOpen && !browsing && (selectedText || selected) && <NodePropertiesPanel
-          key={(selectedText || selected)!.id} title={(selectedText || selected)!.title} kind={selectedText ? "text" : "image"}
-          settings={nodeSettings[(selectedText || selected)!.id] || DEFAULT_CANVAS_SETTINGS} light={lightCanvas} english={locale==='en'} busy={historySaving || localEditBusy} readOnly={readOnly || !nodeSettingsReady}
+        {propertiesOpen && !browsing && (selectedText || selected || selectedVideo) && <NodePropertiesPanel
+          key={(selectedText || selected || selectedVideo)!.id} title={(selectedText || selected || selectedVideo)!.title} kind={selectedText ? "text" : "image"}
+          settings={nodeSettings[(selectedText || selected || selectedVideo)!.id] || DEFAULT_CANVAS_SETTINGS} light={lightCanvas} english={locale==='en'} busy={historySaving || localEditBusy} readOnly={readOnly || !nodeSettingsReady}
           content={selectedText?.content || selectedText?.prompt}
-          displaySize={selectedText ? {width:selectedText.width,height:selectedText.height} : artworkNodeSize(selected!)}
-          imageEditable={!selected?.videoUrl}
+          displaySize={selectedText ? {width:selectedText.width,height:selectedText.height} : selectedVideo?{width:selectedVideo.width,height:selectedVideo.height}:artworkNodeSize(selected!)}
+          imageEditable={!selectedVideo&&!selected?.videoUrl}
           imageSize={selected?.width && selected?.height ? {width:selected.width,height:selected.height} : undefined}
-          onSave={settings=>commitNodeSettings((selectedText || selected)!.id,settings)} onClose={()=>setPropertiesOpen(false)}
+          onSave={settings=>commitNodeSettings((selectedText || selected || selectedVideo)!.id,settings)} onClose={()=>setPropertiesOpen(false)}
           onCrop={()=>selected && setCropArtwork(selected)} onReplace={()=>selected && requestReplace(selected)} />}
         {cropArtwork && <ImageCropDialog image={cdnUrl(cropArtwork.image)} title={cropArtwork.title} light={lightCanvas} english={locale==='en'} busy={localEditBusy}
           onApply={crop=>saveLocalImageEdit(cropArtwork,crop)} onClose={()=>{if(!localEditBusyRef.current)setCropArtwork(null);}} />}
