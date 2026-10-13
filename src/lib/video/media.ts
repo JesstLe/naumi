@@ -16,7 +16,7 @@ function mediaWorkerOrigin(){
   if(!mediaWorkerConfigured())throw new Error("媒体处理服务未配置");const origin=new URL(process.env.MEDIA_WORKER_ORIGIN!);
   if(!["http:","https:"].includes(origin.protocol)||origin.username||origin.password||origin.search||origin.hash||origin.pathname!=="/")throw new Error("媒体处理服务地址无效");return origin;
 }
-export async function mediaWorkerHealth():Promise<{ok:boolean;running:number;queued:number;terminal:number;maxActive:number;sandbox:boolean;version:string}>{
+export async function mediaWorkerHealth():Promise<{ok:boolean;running:number;queued:number;terminal:number;maxActive:number;sandbox:boolean;version:string;draining:boolean}>{
   const response=await fetch(new URL("/health",mediaWorkerOrigin()),{headers:{authorization:`Bearer ${process.env.MEDIA_WORKER_SECRET}`},redirect:"error",signal:AbortSignal.timeout(5000),cache:"no-store"});
   if(!response.ok)throw new MediaWorkerError("媒体处理服务暂不可用",response.status);return response.json();
 }
@@ -81,7 +81,7 @@ export async function cleanupMediaWorkerJob(id:string,cancel=false):Promise<bool
 /** App never executes FFmpeg. Inspection uses the same isolated processing service. */
 export async function probeMedia(bytes:Uint8Array,extension="mp4"):Promise<MediaProbe>{
   const id=randomUUID();let completed=false,prepared=false;try{
-    const health=await mediaWorkerHealth();if(health.running+health.queued>=health.maxActive||health.terminal>=8)throw new MediaWorkerError("媒体处理队列已满",429);
+    const health=await mediaWorkerHealth();if(health.draining||health.running+health.queued>=health.maxActive||health.terminal>=8)throw new MediaWorkerError("媒体处理队列暂不可用",429);
     prepared=true;const inputs=await prepareMediaInputs(id,[{bytes,extension}],true);
     await mediaWorkerRequest(id,"POST",{action:"ffprobe",inputs,outputs:[],verifyStreams:true,inspectOnly:true,args:["-v","error","-show_streams","-show_format","-of","json","asset:0"]});
     const view=await waitMediaWorker(id);completed=true;const probe=view.result?.probes[0];if(!probe)throw new Error("媒体探测无结果");return probe;

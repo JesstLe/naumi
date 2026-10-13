@@ -7,8 +7,9 @@ import {createVideoFixture} from "./video-fusion/harness";
 import {readLimitedVideoResponse} from "../src/lib/video/result-download";
 import type {MediaJobRequest,MediaJobOutput} from "../src/lib/video/media-job-schema";
 import {inspectMediaBundle} from "./video-fusion/media-bundle.mjs";
+import type {ConfigSnapshot} from "../src/lib/billing/types";
 
-type Job={id:string;status:string;outputs:MediaJobOutput[];queryResult:string|null};
+type Job={id:string;status:string;outputs:MediaJobOutput[];queryResult:string|null;cost:number;billingVersion:number;processedSeconds:number};
 async function main(){
   const evidence=path.resolve("output/canvas-video-fusion-20261013/checkpoint-b",randomUUID());await mkdir(evidence,{recursive:true});
   // Measure bytes, not supplier-declared allocation sizes; cancel and release on failures.
@@ -17,6 +18,7 @@ async function main(){
   let cancelled=false;const oversized=new Response(new ReadableStream({start(c){c.enqueue(new Uint8Array(21));},cancel(){cancelled=true;}}),{headers:{"content-type":"video/mp4"}});
   await assert.rejects(()=>readLimitedVideoResponse(oversized,20));assert.equal(cancelled,true);assert.equal(oversized.body?.locked,false);
   await assert.rejects(()=>readLimitedVideoResponse(new Response("bad",{headers:{"content-type":"text/html"}})));
+  const interrupted=new Response(new ReadableStream({start(controller){controller.enqueue(new Uint8Array(8));controller.error(new Error("fixture stream interrupted"));}}));await assert.rejects(()=>readLimitedVideoResponse(interrupted,20));assert.equal(interrupted.body?.locked,false);
   const h=await createVideoFixture({startWorker:false});
   const start=async(input:Partial<MediaJobRequest>)=>{
     const body={operationId:randomUUID(),inputs:[h.refs.video.id],...input};
@@ -33,10 +35,12 @@ async function main(){
   };
   try{
     const before=await h.request<ArrayBuffer>("a","GET",h.refs.video.url),sourceHash=createHash("sha256").update(Buffer.from(before.body)).digest("hex");
-    const frameHashes=[];
+    const controlsOnly=process.argv.includes("--controls-only"),frameHashes:string[]=[],bundleEvidence:unknown[]=[];let trimDuration:number|null=null;
+    if(!controlsOnly){
     for(const timestamp of ["first",1.25,"last"] as const){const started=await start({action:"frame",timestamp}),job=await wait(started.id);assert.equal(job.outputs.length,1);const probe=await probeOutput(job.outputs[0]);assert.equal(probe.streams[0].width,1280);assert.equal(probe.streams[0].codec_name,"png");frameHashes.push(job.outputs[0].sha256);}
     assert.equal(new Set(frameHashes).size,3);
     const trim=await start({action:"trim",start:1,end:3}),trimmed=await wait(trim.id),trimProbe=await probeOutput(trimmed.outputs[0]);assert.ok(Math.abs(Number(trimProbe.format.duration)-2)<0.12);assert.equal(trimProbe.streams.find(s=>s.codec_type==="video")?.codec_name,"h264");
+    trimDuration=Number(trimProbe.format.duration);
     const separate=await start({action:"separate"}),separated=await wait(separate.id);assert.equal(separated.outputs.length,2);
     const video=separated.outputs.find(o=>o.mimeType.startsWith("video/"))!,audio=separated.outputs.find(o=>o.mimeType.startsWith("audio/"))!;
     assert.ok(!(await probeOutput(video)).streams.some(s=>s.codec_type==="audio"));assert.ok(Number((await probeOutput(audio)).format.duration)>3.9);
@@ -45,7 +49,6 @@ async function main(){
     const probe=await start({action:"ffprobe",args:["-v","error","-show_streams","-show_format","-of","json","asset:0"]}),probed=await wait(probe.id);assert.equal(probed.outputs.length,0);assert.equal(JSON.parse(probed.queryResult!).streams.find((s:any)=>s.codec_type==="video").width,1280);
     const sequence=await start({action:"ffmpeg",inputs:[h.refs.image.id,h.refs.lastImage.id],outputs:["sequence.mp4"],args:["-framerate","2","-i","assets:png","-c:v","libx264","-pix_fmt","yuv420p","output:0"]});assert.ok(Math.abs(Number((await probeOutput((await wait(sequence.id)).outputs[0])).format.duration)-1)<0.12);
     const filter=await start({action:"ffmpeg",outputs:["filtered.mp4"],auxiliaryFiles:[{name:"filter.txt",encoding:"utf8",content:"drawbox=x=10:y=10:w=80:h=80:color=red:t=fill"}],args:["-i","asset:0","-filter_script:v","aux:0","-c:v","libx264","-c:a","aac","output:0"]});await probeOutput((await wait(filter.id)).outputs[0]);
-    const bundleEvidence=[];
     for(const format of ["hls","dash"] as const){
       const started=await start({action:"ffmpeg",outputs:[`package/manifest.${format==="hls"?"m3u8":"mpd"}`],args:["-i","asset:0","-c:v","libx264","-g","25","-sc_threshold","0","-c:a","aac",...(format==="hls"?["-hls_time","1","-hls_list_size","0","-hls_segment_type","fmp4"]:["-seg_duration","1"]),"-f",format,"output:0"]}),job=await wait(started.id);
       const packageDirectory=path.join(evidence,started.id);await mkdir(packageDirectory,{recursive:true});
@@ -63,20 +66,41 @@ async function main(){
     assert.equal((await h.request("b","GET",`/api/video/media-jobs/${trim.id}`)).status,404);
     assert.equal((await h.request("b","POST","/api/video/media-jobs",{...trim.body,operationId:randomUUID()})).status,404);
     for(const input of [{action:"frame",timestamp:99},{action:"trim",start:2,end:8},{action:"extract_audio",inputs:[h.refs.silentVideo.id]},{action:"ffmpeg",outputs:["copy.mp4"],args:["-i","/etc/passwd","output:0"]},{action:"ffmpeg",outputs:["copy.mp4"],args:["-i","http://127.0.0.1:3000/private","output:0"]}])assert.equal((await h.request("a","POST","/api/video/media-jobs",{operationId:randomUUID(),inputs:[h.refs.video.id],...input})).status,422);
+    await writeFile(path.join(evidence,"basic-evidence.json"),JSON.stringify({owner:"canvas-video-fusion-20261013",sourceHash,frameHashes,trimDuration,bundleEvidence,basicMediaPassed:true}));
+    }
     const queued=await start({action:"trim",start:0,end:3});assert.equal((await h.request<{job:Job}>("a","DELETE",`/api/video/media-jobs/${queued.id}`)).body.job.status,"cancelled");
     assert.equal(await h.mediaTemporaryExists(queued.id),false);
     assert.equal((await h.mediaWorkerRequest(queued.id,"POST",{action:"ffmpeg",inputs:[],outputs:[],args:["-version"]})).status,410);
     await h.restartMediaWorker();assert.equal((await h.mediaWorkerRequest(queued.id,"POST",{action:"ffmpeg",inputs:[],outputs:[],args:["-version"]})).status,410);
     const active=await start({action:"ffmpeg",outputs:["slow.mp4"],args:["-re","-stream_loop","-1","-i","asset:0","-t","120","-c","copy","output:0"]});
-    assert.equal((await h.request<{job:Job}>("a","GET",`/api/video/media-jobs/${active.id}`)).body.job.status,"processing");
+    const activeDeadline=Date.now()+30000;let runningJob:Job|undefined;
+    while(Date.now()<activeDeadline){runningJob=(await h.request<{job:Job}>("a","GET",`/api/video/media-jobs/${active.id}`)).body.job;if(runningJob.status==="processing"&&runningJob.processedSeconds>0)break;assert.ok(!["failed","completed","cancelled"].includes(runningJob.status));await new Promise(resolve=>setTimeout(resolve,100));}
+    assert.equal(runningJob?.status,"processing");assert.ok(runningJob!.processedSeconds>0,"Cancellation must interrupt actual FFmpeg processing");
     await h.request("a","DELETE",`/api/video/media-jobs/${active.id}`);
     const cancelDeadline=Date.now()+15000;let cancelledJob:Job|undefined;
     while(Date.now()<cancelDeadline){cancelledJob=(await h.request<{job:Job}>("a","GET",`/api/video/media-jobs/${active.id}`)).body.job;if(cancelledJob.status==="cancelled")break;await new Promise(resolve=>setTimeout(resolve,100));}
     assert.equal(cancelledJob?.status,"cancelled");assert.equal(cancelledJob?.outputs.length,0);assert.equal(await h.mediaTemporaryExists(active.id),false);
+    const setPrice=async(credits:number,enabled=true)=>{
+      const current=await h.request<{snapshot:ConfigSnapshot}>("a","GET","/api/admin/billing");assert.equal(current.status,200);
+      const config=structuredClone(current.body.snapshot.config),rule=config.features["video.process"];rule.enabled=enabled;rule.pricing={mode:"fixed",credits};rule.settlement.failureBps=0;rule.rules=[];
+      const result=await h.request("a","POST","/api/admin/billing",{id:randomUUID(),expectedVersion:current.body.snapshot.version,config,reason:"Isolated media fee freeze verifier"});assert.equal(result.status,200,JSON.stringify(result.body));
+      const price=await h.request<{quote:{credits:number;version:number}}>("a","GET","/api/video/media-jobs/quote?action=frame");assert.equal(price.status,200);return price.body.quote;
+    };
+    const paidBefore=await h.creditState("a"),price=await setPrice(3),paidBody={operationId:randomUUID(),action:"frame",timestamp:"first",inputs:[h.refs.video.id]};assert.equal(price.credits,3);
+    assert.equal((await h.request("a","POST","/api/video/media-jobs",paidBody)).status,409);assert.deepEqual(await h.creditState("a"),paidBefore);
+    const paid=await start({...paidBody,action:"frame",timestamp:"first",billingConfirmation:price});assert.equal(Number((await h.creditState("a")).credits_used),Number(paidBefore.credits_used)+3);
+    await setPrice(7);await h.restartApp();const paidJob=await wait(paid.id);assert.equal(paidJob.cost,3);assert.equal(paidJob.billingVersion,price.version);
+    assert.equal(Number((await h.creditState("a")).credits_total),Number(paidBefore.credits_total)-3);assert.equal(Number((await h.creditState("a")).credits_used),Number(paidBefore.credits_used));
+    const settledState=await h.creditState("a");await Promise.all([wait(paid.id),wait(paid.id)]);assert.deepEqual(await h.creditState("a"),settledState);assert.equal(await h.dbCount("app_ledger",{id:`led-media-${paid.id}`}),1);
+    assert.equal((await h.request<{job:Job}>("a","POST","/api/video/media-jobs",paid.body)).body.job.id,paid.id);
+    const cancelPrice=await h.request<{quote:{version:number;credits:number}}>("a","GET","/api/video/media-jobs/quote?action=frame"),paidCancel=await start({action:"frame",timestamp:"first",billingConfirmation:cancelPrice.body.quote});await h.request("a","DELETE",`/api/video/media-jobs/${paidCancel.id}`);assert.deepEqual(await h.creditState("a"),settledState);
+    assert.equal((await setPrice(0)).credits,0);assert.equal((await setPrice(99,false)).credits,0);
+    await h.mediaWorkerMode("drain");const drained=await start({action:"frame",timestamp:"first"}),drainedView=await h.request<{job:Job}>("a","GET",`/api/video/media-jobs/${drained.id}`);assert.equal(drainedView.status,200);assert.equal(drainedView.body.job.status,"queued");assert.equal(await h.mediaTemporaryExists(drained.id),false);
+    await h.mediaWorkerMode("resume");assert.equal((await wait(drained.id)).status,"completed");
     const after=await h.request<ArrayBuffer>("a","GET",h.refs.video.url);assert.equal(createHash("sha256").update(Buffer.from(after.body)).digest("hex"),sourceHash);
     assert.equal(h.supplierCalls().filter(call=>call.phase==="create").length,0);
-    await writeFile(path.join(evidence,"evidence.json"),JSON.stringify({owner:"canvas-video-fusion-20261013",sourceHash,frameHashes,trimDuration:Number(trimProbe.format.duration),bundleEvidence,activeCancellation:true,retirementSurvivesRestart:true,independentProbe:true,linuxSandboxValidated:false}));
-    console.log("VIDEO_MEDIA=PASS real_media=true actual_app_worker_db=true supplier_video_calls=0 linux_sandbox=separate_gate");
+    await writeFile(path.join(evidence,"evidence.json"),JSON.stringify({owner:"canvas-video-fusion-20261013",sourceHash,frameHashes,trimDuration,bundleEvidence,groups:controlsOnly?["controls","billing"]:["basic","controls","billing"],activeCancellation:true,retirementSurvivesRestart:true,feeVersionFrozen:true,feeSettledOnce:true,independentProbe:!controlsOnly,linuxSandboxValidated:false}));
+    console.log(`${controlsOnly?"VIDEO_MEDIA_CONTROLS":"VIDEO_MEDIA"}=PASS real_media=true actual_app_worker_db=true supplier_video_calls=0 linux_sandbox=separate_gate`);
   }finally{await h.stop();}
 }
 void main().catch(error=>{console.error(error);process.exitCode=1;});

@@ -53,3 +53,15 @@
 - B脚本已扩展图片序列、滤镜辅助文件、HLS fMP4与DASH全部下载/独立FFprobe/账号隔离/包复用、恶意清单拒绝、实际运行取消、副本清理和跨重启迟到请求拒绝。脚本尚未运行；本批Node语法及完整TypeScript检查通过，功能、收费冻结、多供应商产物、内存及Linux执行证据仍缺。
 
 原生分片语义对照：[FFmpeg 官方格式文档](https://ffmpeg.org/ffmpeg-formats.html)（本次查阅2026-10-14）。后续完成固定镜像候选/健康/切换/回滚接线与集中验收剩余用例，再执行一次完整B，修复真实失败并按需复测；B通过后才阶段合main。视频任务本地开发不持103部署锁，本批未发布、未改正式服务器配置/数据库/媒体。
+
+## 第四批生命周期与 B 集中运行（2026-10-14，尚非完整 B 通过）
+
+- `scripts/deploy-release.sh --staging-media-worker` 接入新的固定版本候选生命周期：要求103目标标记、已有Naumi/Hub锁、当前基线和40位镜像源码校验；独立秘钥/授权副本目录，核对只读根文件系统、挂载、能力和无业务凭据。支持检查、停止接单、恢复接单，以及确认所有App已脱离且队列/执行/待确认结果清空后撤回本候选。正式env/Compose/DB和公网入口不在此帮助脚本中改写；完整蓝绿App切流及在途任务路由仍须D交付，不能把候选帮助脚本说成发布已完成。Bash语法检查通过，尚未实际启动Linux候选。
+- 实际运行 `verify-video-fusion-media.ts`：首/当前/尾帧、两秒裁剪、音视频分离、拼接、多输出、FFprobe、图片序列、滤镜辅助文件、HLS fMP4/DASH全部下载/独立FFprobe/私有鉴权/完整包复用以及无效参数/清单检查均执行到后续取消用例；该整次运行因错误要求首次状态立即为processing而失败，未输出全模块PASS。修正测试为等待真实处理秒数，再取消，后续专项只复测controls/billing，没有冒充整次运行通过。
+- `--controls-only` 实际通过：排队取消不执行、实际FFmpeg进度出现后的取消/子进程结束/副本回收、退休凭据跨Worker重启拒绝迟到POST、账号原视频SHA不变；3积分预占、改价为7并重启App后仍按原版本3积分结算、重复完成无第二笔账/预占释放、收费任务排队取消/失败策略、显式0和enabled=false保持免费。新增停止接单返回正常queued、无临时副本，恢复同一任务后完成的专项也通过。队列限流不再由GET泛化为503，已接受任务保留。
+- 多产物集中脚本最初的AutoDL/RunningHub各视频+音频、ModelVerse双视频、TFRouter超过512KiB的真实30秒inline视频均通过：逐个实际SHA/媒体元数据/作品/账号隔离、App重启不重复提交/结算，实际时长偏差记录。之后AutoDL在主产物已保存、次产物落盘失败时验证预扣保持；修复故障并重启后仅恢复缺失产物，未重提上游；该用例执行通过后才进入新的ComfyUI用例。
+- 首次BYOC ComfyUI实际暴露 `app_supplier_calls` 未初始化问题，此前托管模型请求先创建表掩盖了依赖。修复`videoSupplierReceipt`在查询前显式初始化自身ledger schema；不新增或猜测BYOC采购调用。只复测首次ComfyUI：视频/音频/图片三产物、私有SHA/作品、0积分与重启不重提交/结算通过；静态图片按实际尺寸校验，不错误要求视频时长。
+- 内存脚本改为执行真实下载器而非字符串匹配或未使用缓冲区：实际150MiB流、偏小Content-Length、逐块内容SHA、上限后取消并释放reader通过；ArrayBuffer峰值增量314,575,492字节、JS heap增量2,195,056字节，没有额外大块base64复制。此证据仅覆盖真实下载器，不代表所有供应商协议、浏览器或生产容器峰值全部验收。
+- 已编写`verify-video-media-sandbox.mjs`，用于独立固定源码Linux容器中的真实launcher/FFmpeg/FFprobe：正向抽帧/裁剪、实际进度后取消；绕过JS参数校验直接验证C launcher拒绝可达本地HTTP及确实存在的宿主/跨job文件，核对原SHA及隔离环境。尚未执行，不能以Windows fixture的sandbox=false或语法检查证明Linux chroot/seccomp通过。
+
+证据：本机忽略目录`output/canvas-video-fusion-20261013/checkpoint-a/{media,results}-app.log`及按UUID生成的`checkpoint-b`实际产物/独立FFprobe文件、controls/billing证据；后续结果脚本按运行UUID另存进度证据，保留已通过来源，不以最后一个PASS覆盖全部范围。当前B仍待完整最终组合、实际Linux沙箱/候选生命周期、受影响合并回归与阶段main整合；C/D和103最终上线未完成。仅模拟供应商调用，真实视频API额度/质量未验证。此次未发布、未修改正式服务器业务数据、未持103部署锁。

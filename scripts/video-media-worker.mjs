@@ -10,7 +10,7 @@ const expected=createHash('sha256').update(`Bearer ${secret}`).digest();
 const root=path.resolve(process.env.MEDIA_JOB_DIR||'/scratch');
 const fixture=process.env.MEDIA_WORKER_FIXTURE_OWNER==='canvas-video-fusion-20261013';
 const engine=new MediaEngine({sharedRoot:root,fixture});
-const jobs=new Map(),locks=new Map();let running=0;
+const jobs=new Map(),locks=new Map();let running=0,draining=false;
 const terminal=status=>['completed','failed','cancelled'].includes(status);
 await mkdir(root,{recursive:true,mode:0o700});
 const retiredRoot=path.join(root,'.retired');await mkdir(retiredRoot,{recursive:true,mode:0o700});
@@ -61,7 +61,8 @@ const server=http.createServer(async(request,response)=>{
   if(!authorized(request)){send(response,401,{error:'UNAUTHORIZED'});return;}
   try{
     const url=new URL(request.url,'http://media-worker');
-    if(request.method==='GET'&&url.pathname==='/health'){send(response,200,{ok:true,version:process.env.SOURCE_COMMIT||'fixture',sandbox:!fixture,...capacity(),maxActive:MEDIA_LIMITS.queue});return;}
+    if(request.method==='GET'&&url.pathname==='/health'){send(response,200,{ok:true,version:process.env.SOURCE_COMMIT||'fixture',sandbox:!fixture,draining,...capacity(),maxActive:MEDIA_LIMITS.queue});return;}
+    if(request.method==='POST'&&['/drain','/resume'].includes(url.pathname)){draining=url.pathname==='/drain';send(response,200,{ok:true,draining,...capacity()});return;}
     const match=url.pathname.match(/^\/jobs\/([0-9a-f-]{36})$/);if(!match){send(response,404,{error:'NOT_FOUND'});return;}
     const id=match[1],directory=mediaJobDirectory(root,id);
     // A cancellation/acknowledgment marker lives outside the cleaned job folder:
@@ -78,6 +79,7 @@ const server=http.createServer(async(request,response)=>{
         const previous=await savedState(id);
         if(previous&&previous.digest&&previous.digest!==digest){send(response,409,{error:'JOB_OPERATION_CONFLICT'});return;}
         if(previous&&terminal(previous.status)){send(response,200,previous);return;}
+        if(draining){send(response,429,{error:'MEDIA_WORKER_DRAINING'});return;}
         const counts=capacity();if(counts.running+counts.queued>=MEDIA_LIMITS.queue||counts.terminal>=8){send(response,429,{error:'MEDIA_QUEUE_FULL'});return;}
         job={id,request:requestBody,digest,controller:new AbortController(),view:{owner:'naumi-media-worker',id,digest,inspection:requestBody.inspectOnly===true,status:'queued',processedSeconds:0,createdAt:new Date().toISOString()}};
         jobs.set(id,job);await persist(job);send(response,202,job.view);void dispatch();return;

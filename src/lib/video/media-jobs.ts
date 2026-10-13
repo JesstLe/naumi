@@ -115,7 +115,7 @@ function outputMime(name:string,probe:MediaProbe|null,fragment=false){
   if(probe&&images[extension||""]&&probe.videoCodec!==images[extension!])throw new Error("图片输出编码与扩展名不一致");return mime;
 }
 async function dispatch(row:JobRow):Promise<WorkerJobView>{
-  const health=await mediaWorkerHealth();if(health.running+health.queued>=health.maxActive||health.terminal>=8)throw new MediaWorkerError("媒体处理队列已满",429);
+  const health=await mediaWorkerHealth();if(health.draining||health.running+health.queued>=health.maxActive||health.terminal>=8)throw new MediaWorkerError("媒体处理队列暂不可用",429);
   const objects:Array<{bytes:Uint8Array;extension:string;name?:string}>=[],attachments:Array<{bytes:Uint8Array;extension:string;name:string}>=[];
   for(const [index,input] of row.inputs.entries()){
     if(!await canReadMedia(input.key,row.email))unavailable();const object=await readManagedObject(`/media/${input.key}`,250*1024*1024);
@@ -202,7 +202,8 @@ export async function getMediaJob(actorRaw:string,id:string,process=true){
       await cleanupMediaJob((await getRow(actor,id))!);
     }else await getPool().query("UPDATE app_video_media_jobs SET status=$2,processed_seconds=$3,updated_at=now() WHERE id=$1",[id,view.status,view.processedSeconds]);
     return publicMediaJob((await getRow(actor,id))!);
-  }finally{if(acquired)await lock.query("SELECT pg_advisory_unlock(hashtextextended($1,0))",[key]).catch(()=>{});lock.release();}
+  }catch(error){if(error instanceof MediaWorkerError&&error.status===429){const pending=await getRow(actor,id);return pending?publicMediaJob(pending):null;}throw error;}
+  finally{if(acquired)await lock.query("SELECT pg_advisory_unlock(hashtextextended($1,0))",[key]).catch(()=>{});lock.release();}
 }
 export async function cancelMediaJob(actorRaw:string,id:string){const actor=actorRaw.toLowerCase(),row=await getRow(actor,id);if(!row)return null;
   if(["completed","failed","cancelled"].includes(row.status))return publicMediaJob(row);

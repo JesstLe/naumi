@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 import { randomUUID,createHash } from "node:crypto";
-import { mkdir, stat,readFile,writeFile,appendFile } from "node:fs/promises";
+import { mkdir, stat,readFile,writeFile,appendFile,rmdir } from "node:fs/promises";
 import path from "node:path";
 import { fixtureDatabase } from "./fixture";
 import { loadVideoAssets, defaultAssetsRoot } from "./assets.mjs";
@@ -124,6 +124,14 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
         return {status:response.status,body:await response.json()};
       },
       async mediaTemporaryExists(id:string){if(!/^[0-9a-f-]{36}$/.test(id))throw new Error("Invalid fixture media job ID");return stat(path.join(env.MEDIA_JOB_DIR!,id)).then(()=>true).catch(()=>false);},
+      async mediaWorkerMode(mode:"drain"|"resume"){const response=await fetch(`${mediaOrigin}/${mode}`,{method:"POST",headers:{authorization:`Bearer ${mediaSecret}`},signal:AbortSignal.timeout(5000)});if(!response.ok)throw new Error("Fixture media control failed");return response.json();},
+      async blockVideoOutput(id:string,index:number,extension:string){
+        if(!/^vid-[0-9a-f-]{36}$/.test(id)||!Number.isSafeInteger(index)||index<1||!['wav','png','mp4'].includes(extension))throw new Error("Invalid fixture storage fault");
+        if(!(await sql.query("SELECT 1 FROM app_video_tasks WHERE email=$1 AND id=$2",[seed.accounts.a,id])).rowCount)throw new Error("Owned fixture task required");
+        const directory=path.join(env.MEDIA_DIR!,"videos"),file=path.join(directory,`vid-art-${id}-${index}.${extension}`);await mkdir(directory,{recursive:true});await mkdir(file);
+        return async()=>{await rmdir(file);};
+      },
+      async forceVideoPollDue(id:string){await sql.query("UPDATE app_video_tasks SET next_poll_at=now() WHERE email=$1 AND id=$2 AND status IN ('queued','processing')",[seed.accounts.a,id]);},
       supplierCalls:()=>[...supplier.calls,...objectCalls],setScenario:(name:string)=>supplier.setScenario(name),
       async request<T=unknown>(account:Account,method:string,url:string,body?:unknown){
         if(!url.startsWith("/")||url.startsWith("//"))throw new Error("Fixture requests must stay in the fixture app");
