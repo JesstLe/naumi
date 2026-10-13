@@ -39,10 +39,14 @@ try{
  const cold=bytesRequests;assert.ok(cold>0);await page.reload({waitUntil:'domcontentloaded'});await visibleImages(page);assert.equal(bytesRequests,cold,'native works refresh must not transfer image bytes');
  await page.screenshot({path:path.join(out,side?'103-side-works.png':'103-live-works.png'),fullPage:true});
  results.works={coldImageRequests:cold,refreshImageRequests:0};
+ const tile=page.locator('img[data-browser-image-cache="local"]').first().locator('xpath=ancestor::*[@role="button"][1]');await tile.click();
+ const dialog=page.getByRole('dialog');await dialog.waitFor();await dialog.locator('img[data-browser-image-cache="local"]').waitFor();await page.waitForFunction(()=>{const i=document.querySelector('[role="dialog"] img')as HTMLImageElement;return i&&i.naturalWidth>0;});
+ const detailReads=bytesRequests;const dl=page.waitForEvent('download');await dialog.getByRole('button',{name:'下载',exact:false}).click();const download=await dl;await download.saveAs(path.join(out,side?'103-side-original.png':'103-live-original.png'));assert.equal(bytesRequests,detailReads,'native lightbox download must reuse displayed original');
+ await dialog.getByRole('button',{name:'关闭',exact:true}).click();await tile.click();await dialog.waitFor();await page.waitForFunction(()=>{const i=document.querySelector('[role="dialog"] img')as HTMLImageElement;return i&&i.naturalWidth>0;});assert.equal(bytesRequests,detailReads,'native detail reopen');await dialog.getByRole('button',{name:'关闭',exact:true}).click();results.nativeLightbox={reopenImageRequests:0,downloadImageRequests:0};
  await page.addScriptTag({content:js});await page.evaluate(email=>(window as any).cacheActivate(email),session.email);
  const asset=session.assets.find((a:any)=>a.remote_ready&&a.thumbnail_key&&a.preview_key)||session.assets.find((a:any)=>a.thumbnail_key&&a.preview_key)||session.assets[0];assert.ok(asset,'actual account has stored assets');
  const source='/media/'+asset.key;const p=bytesRequests;
- const original=await page.evaluate(src=>(window as any).cacheDigest(src),source);assert.ok(original.size>0);const q=bytesRequests;assert.ok(q>p,'first original read downloads bytes');
+ const original=await page.evaluate(src=>(window as any).cacheDigest(src),source);assert.ok(original.size>0);const q=bytesRequests;assert.ok(q>=p,'original read may reuse the native lightbox bytes');
  const again=await page.evaluate(src=>(window as any).cacheDigest(src),source);assert.deepEqual(again,original);assert.equal(bytesRequests,q,'original reopen');
  const zipData=await page.evaluate(async src=>Array.from(new Uint8Array(await(await(window as any).cacheZip([{url:src,name:'actual-original'}])).arrayBuffer())),source);
  const zip=await JSZip.loadAsync(Buffer.from(zipData));const file=Object.values(zip.files).find(f=>!f.dir)!;assert.equal(createHash('sha256').update(await file.async('nodebuffer')).digest('hex'),original.hash);assert.equal(bytesRequests,q,'actual ZIP uses cached original');
@@ -59,7 +63,7 @@ try{
  assert.deepEqual(errors,[]);results.pageErrors=errors;results.providerCalls=0;results.mode=side?'103-side-real-data':'103-public-real-data';
  await writeFile(path.join(out,side?'103-side-metrics.json':'103-live-metrics.json'),JSON.stringify(results,null,2));
  console.log('LIVE_IMAGE_CACHE=PASS MODE='+results.mode+' WORKS_REFRESH=0 BROWSER_RESTART=0 DESKTOP_REFRESH=0 ORIGINAL_REOPEN=0 ZIP_LOCAL=EXACT R2_VARIANTS=REUSED PAGE_ERRORS=0 PROVIDER_CALLS=0');
-}finally{await context.close();}
+}catch(error){for(const page of context.pages())await page.screenshot({path:path.join(out,'103-debug.png')}).catch(()=>{});throw error;}finally{await context.close();}
 
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
