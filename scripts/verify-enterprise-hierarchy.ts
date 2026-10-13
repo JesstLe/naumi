@@ -12,7 +12,9 @@ async function main(){
   const request=(email:string,path:string,body?:unknown,headers:Record<string,string>={})=>new Request('http://fixture.test'+path,{method:body?'POST':'GET',headers:{cookie:email?cookie(email):'','Content-Type':'application/json',...headers},...(body?{body:JSON.stringify(body)}:{})});
   const read=(e:string)=>api.GET(request(e,`/api/enterprise?enterpriseId=${root}`));
   for(const e of [owner,director,lead,employee,intern,other])await db.getOrCreateUser(e,e);
-  for(const e of [owner,lead])await pool.query("INSERT INTO app_team_access_grants(email,scope,created_by,updated_by) VALUES($1,'owned','fixture','fixture')",[e]);
+  // This regression intentionally exercises a finite enterprise access cap.
+  // Permanent entry uses a null grant expiry and is covered separately.
+  for(const e of [owner,lead])await pool.query("INSERT INTO app_team_access_grants(email,scope,expires_at,created_by,updated_by) VALUES($1,'owned',$2,'fixture','fixture')",[e,cap]);
   for(const [id,email] of [[root,owner],[sub,lead]])await pool.query("INSERT INTO app_account_teams(id,name,owner_email,authorized_until)VALUES($1,'ERP fixture',$2,$3)",[id,email,cap]);
   for(const e of [director,lead,employee]){await pool.query('INSERT INTO app_account_team_members(email,team_id)VALUES($1,$2)',[e,root]);await pool.query('UPDATE app_users SET account_expires_at=$2 WHERE email=$1',[e,cap])}
   await pool.query('INSERT INTO app_account_team_members(email,team_id)VALUES($1,$2)',[intern,sub]);await pool.query('UPDATE app_users SET account_expires_at=$2 WHERE email=$1',[intern,cap]);
