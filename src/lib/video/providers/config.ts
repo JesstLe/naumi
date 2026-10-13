@@ -26,6 +26,7 @@ export type VideoProviderRuntimeConfig = {
   models: string[];
   defaultModel: string;
   timeoutMs?:number;
+  appUrl?:string;
   createPath?: string;
   pollPath?: string;
   contentPath?: string;
@@ -77,6 +78,7 @@ function normalized(value: Partial<VideoProviderRuntimeConfig>): VideoProviderRu
     models: models.length ? models : [defaultModel],
     defaultModel,
     timeoutMs:value.timeoutMs,
+    appUrl:value.appUrl,
     createPath: value.createPath,
     pollPath: value.pollPath,
     contentPath: value.contentPath,

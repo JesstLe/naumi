@@ -7,6 +7,7 @@ import {readLimitedVideoResponse} from "../result-download";
 import {PermanentVideoCreateError,TransientPollError,type VideoGenerationRequest,type VideoProviderAdapter,type VideoTaskSnapshot} from "../types";
 import type {VideoProviderRuntimeConfig} from "./config";
 import {buildVideoCreate,buildVideoPoll,buildVideoCancel,decodeVideoCreated,decodeVideoPolled,field,string,type VideoWireContext,type VideoWireRequest} from "./wire";
+import {uploadWorkflowReferences} from "./workflow-upload";
 
 export function videoWireEndpoint(config:Pick<VideoProviderRuntimeConfig,"baseUrl"|"videoProfile">,path:string){
   let base=config.baseUrl.replace(/\/+$/,"");
@@ -23,7 +24,11 @@ export function createWireVideoAdapter(config:VideoProviderRuntimeConfig):VideoP
   const restored=(task:VideoTaskSnapshot):VideoWireContext=>context({source:"workbench",providerId:config.id,modelId:task.modelId,prompt:task.prompt,durationSeconds:Number(task.parameters.durationSeconds||4),
     references:task.references,idempotencyKey:task.id,resolution:String(task.parameters.resolution||"")});
   const send=async(wire:VideoWireRequest,creating=false,key?:string)=>{
-    const headers:Record<string,string>=profile==="gemini"?{"x-goog-api-key":config.apiKey}:{authorization:config.rawAuthorization?config.apiKey:`Bearer ${config.apiKey}`};
+    const headers:Record<string,string>=profile==="gemini"?{"x-goog-api-key":config.apiKey}:{authorization:config.rawAuthorization||profile==="autodl"?config.apiKey:`Bearer ${config.apiKey}`};
+    if(profile.startsWith("tokendance-")){
+      const appUrl=new URL(config.appUrl||process.env.NAUMI_PUBLIC_ORIGIN||"https://github.com/JesstLe/naumi");
+      appUrl.username="";appUrl.password="";appUrl.search="";appUrl.hash="";headers["X-App-URL"]=appUrl.href;
+    }
     let body:BodyInit|undefined;
     if(wire.encoding==="json"){headers["content-type"]="application/json";const value={...(wire.body as Record<string,unknown>)};
       if(creating&&config.idempotencyStrategy==="body"){if(!config.idempotencyBodyField)throw new Error("幂等body字段未配置");value[config.idempotencyBodyField]=key;}body=JSON.stringify(value);
@@ -44,8 +49,13 @@ export function createWireVideoAdapter(config:VideoProviderRuntimeConfig):VideoP
     return payload;
   };
   const adapter:VideoProviderAdapter={id:config.id,
-    async create(input){const value=await send(buildVideoCreate(context(input)),true,input.idempotencyKey);return decodeVideoCreated(profile,value);},
-    async poll(task){return decodeVideoPolled(profile,await send(buildVideoPoll(restored(task),task.upstreamTaskId)));},
+    async create(input){const prepared=await uploadWorkflowReferences(context(input),transport);const value=await send(buildVideoCreate(context(prepared)),true,input.idempotencyKey);return decodeVideoCreated(profile,value);},
+    async poll(task){
+      const decoded=decodeVideoPolled(profile,await send(buildVideoPoll(restored(task),task.upstreamTaskId)),task.upstreamTaskId);
+      if(!decoded.outputFiles)return decoded;
+      const resultAssets=decoded.outputFiles.map(file=>({kind:file.kind,url:videoWireEndpoint(config,"/view?"+new URLSearchParams({filename:file.filename,subfolder:file.subfolder,type:file.type}).toString())}));
+      return {...decoded,resultAssets,resultUrl:resultAssets.find(asset=>asset.kind==="video")?.url};
+    },
     async fetchResult(task,result){
       if(result.inlineResult){
         const source=result.inlineResult;
@@ -56,7 +66,7 @@ export function createWireVideoAdapter(config:VideoProviderRuntimeConfig):VideoP
       const sameOrigin=new URL(target).origin===new URL(config.baseUrl).origin;
       // Credentials only go to the configured origin; redirects are rejected by the pinned transport.
       const download=modelEndpointFetch(target,{trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(/[\s,]+/).filter(Boolean)});
-      const headers=sameOrigin&&(profile==="gemini"||!result.resultUrl)?profile==="gemini"?{"x-goog-api-key":config.apiKey}:{authorization:config.rawAuthorization?config.apiKey:`Bearer ${config.apiKey}`} : {};
+      const headers=sameOrigin&&(profile==="gemini"||profile==="comfyui"||!result.resultUrl)?profile==="gemini"?{"x-goog-api-key":config.apiKey}:{authorization:config.rawAuthorization?config.apiKey:`Bearer ${config.apiKey}`} : {};
       const response=await download(target,{headers,signal:AbortSignal.timeout(180000)});
       const value=await readLimitedVideoResponse(response);return {bytes:value.bytes,mimeType:value.mimeType};
     }};

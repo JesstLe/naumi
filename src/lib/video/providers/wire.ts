@@ -7,7 +7,7 @@ import {installVideoWireCodecs} from "./protocols";
 export type VideoWireContext={provider:VideoProviderRuntimeConfig;profile:VideoWireProfile;request:VideoGenerationRequest};
 export type VideoWireRequest={path:string;method:"POST"|"GET"|"DELETE";body?:unknown;encoding:"json"|"multipart"|"none"};
 export type VideoWireCodec={create:(context:VideoWireContext)=>VideoWireRequest;poll:(context:VideoWireContext,id:string)=>VideoWireRequest;
-  created:(payload:unknown)=>VideoProviderCreateResult;polled:(payload:unknown)=>VideoProviderPollResult;cancel?:(context:VideoWireContext,id:string)=>VideoWireRequest};
+  created:(payload:unknown)=>VideoProviderCreateResult;polled:(payload:unknown,id?:string)=>VideoProviderPollResult;cancel?:(context:VideoWireContext,id:string)=>VideoWireRequest};
 const codecs=new Map<VideoWireProfile,VideoWireCodec>();
 export function registerVideoWireProfile(profile:VideoWireProfile,codec:VideoWireCodec){
   if(codecs.has(profile))throw new Error(`Duplicate video wire profile ${profile}`);codecs.set(profile,codec);
@@ -23,7 +23,7 @@ export function buildVideoPoll(context:VideoWireContext,id:string):VideoWireRequ
 }
 export function buildVideoCancel(context:VideoWireContext,id:string):VideoWireRequest|null{return codec(context.profile).cancel?.(context,id)||null;}
 export function decodeVideoCreated(profile:VideoWireProfile,payload:unknown){return codec(profile).created(payload);}
-export function decodeVideoPolled(profile:VideoWireProfile,payload:unknown){return codec(profile).polled(payload);}
+export function decodeVideoPolled(profile:VideoWireProfile,payload:unknown,id?:string){return codec(profile).polled(payload,id);}
 
 export function object(value:unknown):Record<string,unknown>{return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};}
 export function field(value:unknown,path:string):unknown{return path.split(".").reduce<unknown>((current,key)=>Array.isArray(current)?current[Number(key)]:object(current)[key],value);}

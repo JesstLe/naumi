@@ -109,6 +109,7 @@ export type CreateVideoInput = {
   billingConfirmation?:{version?:number;credits?:number};
   source: VideoTaskSource;
   sourceId?: string;
+  projectKey?:string;
   prompt: string;
   seconds: string;
   size: string;
@@ -509,7 +510,7 @@ async function submitQueuedVideoTask(
   if (!adapter) throw new Error(`视频适配器 ${task.providerId} 未注册`);
   const persistedRequest = preparedRequest ?? requestFromQueuedTask(task);
   const cfg=getVideoProviderConfig(task.providerId);
-  const multipart=cfg?.protocol==="openai-videos"&&!cfg.videoProfile||cfg?.videoProfile==="openai-videos";
+  const multipart=cfg?.protocol==="openai-videos"&&!cfg.videoProfile||["openai-videos","comfyui","runninghub"].includes(cfg?.videoProfile||"");
   const inlineImages=cfg?.videoProfile==="openai-videos"||cfg?.videoProfile==="gemini"||cfg?.videoProfile==="cogvideox3"||cfg?.videoProfile==="grok2api"||cfg?.videoProfile==="agnes"||cfg?.videoProfile==="compshare-hailuo";
   const request=await materializeVideoReferences(email,persistedRequest,{multipart,inlineImages});
   const image=preparedImage??await imageForQueuedTask(task,request,email);

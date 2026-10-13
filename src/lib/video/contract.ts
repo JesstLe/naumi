@@ -42,6 +42,7 @@ const inputSchema=z.strictObject({
   providerOptions:z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]{0,60}$/),z.json()).optional(),
   orderedInputs:z.array(orderedInputSchema).max(256).optional(),shots:z.array(shotSchema).max(100).optional(),elements:z.array(elementSchema).max(100).optional(),
 });
+export const videoInputSchema=inputSchema;
 export type NormalizedVideoInput=Omit<z.infer<typeof inputSchema>,"mode">&{mode:VideoMode;omittedProviderOptions:string[]};
 const aliases:Record<string,VideoMode>={image:"single_image",singleImage:"single_image",frames:"frames_required",startEndRequired:"frames_required",startFrameOptional:"first_optional",endFrameOptional:"last_optional"};
 function reject(code:string,message:string,field?:string):never{throw new VideoContractError(code,message,field?[field]:[]);}

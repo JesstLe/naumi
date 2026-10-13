@@ -4,6 +4,7 @@ import { dbEnabled } from "@/lib/db";
 import { recoverDueVideoTasks } from "@/lib/video/service";
 import { recoverDurableImageJobs } from "@/lib/durable-image-jobs";
 import { scanSupplierCostsOnce } from "@/lib/supplier-cost/worker";
+import {recoverVideoWorkflows} from "./workflow";
 
 // ---------------------------------------------------------------------------
 // 视频后台 worker(§7):周期恢复扫描,处理"页面关闭后遗留的进行中任务"。
@@ -21,7 +22,8 @@ export async function scanVideoWorkerOnce(): Promise<number> {
   if (!dbEnabled || running) return 0;
   running = true;
   try {
-    return await recoverDueVideoTasks(BATCH);
+    const processed=await recoverDueVideoTasks(BATCH);
+    return processed+await recoverVideoWorkflows(2);
   } catch {
     /* 无库/网络抖动:下一轮重试 */
     return 0;

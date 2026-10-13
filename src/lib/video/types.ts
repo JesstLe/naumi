@@ -37,6 +37,7 @@ export type VideoReference = {
   height?: number;
   /** Submission-only server materialization; never accepted from a client or persisted. */
   inlineData?:{mimeType:string;data:string};
+  submissionName?:string;
 };
 
 export type VideoGenerationRequest = {
@@ -62,6 +63,7 @@ export type VideoGenerationRequest = {
   watermark?: boolean;
   references: VideoReference[];
   providerOptions?: Record<string, unknown>;
+  workflowManifest?:import("./workflow-schema").VideoWorkflowManifest;
   idempotencyKey: string;
 };
 
@@ -79,6 +81,7 @@ export type VideoProviderPollResult = {
   resultUrl?: string;
   resultAssets?:Array<{kind:"video"|"image"|"audio";url:string;mimeType?:string}>;
   inlineResult?:{mimeType:string;base64:string};
+  outputFiles?:Array<{kind:"video"|"image"|"audio";filename:string;subfolder:string;type:string}>;
   errorCode?: string;
   errorMessage?: string;
   errorDetail?: unknown;

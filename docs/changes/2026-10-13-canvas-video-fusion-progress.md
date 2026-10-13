@@ -18,7 +18,7 @@
 | wire/素材提交 | 共享层初版已写入 | 测试脚本已写；未执行 | Task4；统一普通/元素素材身份权限与临时签名、typed wire接口和严格响应工具；协议绑定在Task5—7、预扣前接线在Task9 |
 | IC协议分支 | 初版已写入，尚未验收 | 24个HTTP分支用例已写；未执行 | Task5；OpenAI/Grok/Cog/Agnes两版/Ark/Kling2.6及3/Omni四分支/运动/Gemini/MiniMax；共享适配器已接线，边界和Task9/10完整恢复仍待A/B |
 | TokenDance/TF/Compshare | 初版已写入，尚未验收 | 27个HTTP组合已写；未执行 | Task6；8种TokenDance路由/协议前缀、4种TF元数据、7种Compshare Profile；输出列表与口型/续写参数保留，任务恢复/多产物保存待Task9/10 |
-| 视频工作流 | 未实现 | 未执行 | Task7；ComfyUI/AutoDL/RunningHub、串并行真实产物依赖 |
+| 视频工作流 | 实现中 | 未执行 | Task7；plan/manifest、依赖校验、持久调度与3个工作流wire初版已写；项目授权依赖Task8，HTTP/Worker已接线；验证脚本已写；BYOC兼容与报价重确认尚未完成 |
 | 节点/项目 | 未实现 | 未执行 | Task8；无图节点、revision、事务和稳定归属 |
 | 持久任务/取消/计费 | 未实现 | 未执行 | Task9；完成后检查点A集中测试 |
 | 真实媒体与工具 | 未实现 | 未执行 | Task10；隔离处理worker、原生多输出与检查点B |
@@ -69,3 +69,10 @@ Task6实现记录（尚未功能验收）：
 - 修正供应商级手工videoProfile也优先于vendor Profile，并计入来源；显式Profile与协议不匹配时发布拒绝。补API Mart运动控制单值image_url/video_url和Omni video_list原始音轨字段。Kling2.6限制5/10秒，测试请求不再沿用通用4秒，避免模拟接口掩盖实际字段限制。
 - 原始素材扩充到28份，新增5/6/10秒横/竖/方形，FFprobe/SHA清单及assets-expanded.log记录完成；这是素材准备，不是功能测试。27种新协议HTTP组合和多输出下载断言已写，仍在A集中运行。
 - 用户追加分阶段合并授权：A/B/C等大模块验收通过后先合入主线，持续刷新并解决冲突，不等整轮结束。未验收代码留任务分支；完整D交付和上线前全分支复核保持。再次fetch后origin/main仍3f1aa4a；Task5初版b669410已推送。本轮无新服务器连接或部署、无付费供应商调用。
+
+
+Task7进行中记录：已写plan/manifest schema、变量/环/重复/缺依赖检查和数据库run/node调度；run/node决定稳定operationId，前序必须实际completed且产物仍可读，才能为后续节点补引用并提交。兄弟节点独立，恢复从现有task/idempotencyKey重建关联；不确定创建标needs_attention。当前项目授权调用Task8待实现服务，API/Worker扫描已接线，报价重确认入口仍待补，不具备可交付运行状态。ComfyUI/AutoDL/RunningHub新增manifest映射、上传原始素材、明确历史/结果解码与全产物列表初版；共享上传与重定向/多产物真正保存、原BYOC视频持久化入口仍在接线。新增TokenDance X-App-URL公开署名，供应商密钥继续只在服务端配置与请求内。以上没有运行任何功能测试；未合入main、未部署。Task6提交b048343。
+
+Task7追加：HTTP工作流创建/查询/恢复/停止和Worker扫描已写；调度根节点最多同时提交3个，变量展开后重新执行长度/类型校验，避免模板放大。供应商fixture加入实际Comfy object_info/upload/prompt/history/view与RunningHub上传/状态、AutoDL原生结果格式；只模拟供应商，不替换本站内部API。报价重确认、Task8项目授权、Task9统一提交/取消和原BYOC视频持久化仍待完成；没有运行测试。
+
+Task7脚本已补：纯函数环/变量展开边界、原生状态/映射，以及真实App A→B/C独立分支、跨账号404、重复resume创建次数及真实产物依赖；未运行。现有BYOC ComfyUI图片接口保持，视频持久任务接入与0积分例外将在Task9统一服务改造时落实；不要将当前有结果直链的旧BYOC接口视为本轮已通过。工作流停止依赖Task9 cancellation，项目授权依赖Task8；这些依赖尚未写入。原生工作流结果还需要Task10检查全部产物并保存，当前wire只保留完整列表。

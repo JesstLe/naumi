@@ -53,10 +53,23 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
         if (scenario === "oversized") { res.writeHead(200,{"content-type":"video/mp4","content-length":String(201*1024*1024)}); return res.end(); }
         res.writeHead(200,{"content-type":entry.mimeType,"content-length":bytes.length}); return res.end(bytes);
       }
-      if (req.headers.authorization !== `Bearer ${token}` && req.headers["x-goog-api-key"]!==token) return respond(res,{error:"fixture authentication required"},401);
+      const declaredProtocol=url.pathname.match(/^\/protocol\/([^/]+)/)?.[1]||"openai-videos";
+      if (req.headers.authorization !== `Bearer ${token}` && req.headers["x-goog-api-key"]!==token && !(declaredProtocol==="autodl"&&req.headers.authorization===token)) return respond(res,{error:"fixture authentication required"},401);
       const body = req.method === "POST" || req.method === "PUT" ? await getBody(req) : {};
       const protocol = url.pathname.match(/^\/protocol\/([^/]+)/)?.[1] || "openai-videos";
       const pathname = url.pathname.replace(/^\/protocol\/[^/]+/, "");
+      if(protocol==="comfyui"&&pathname==="/object_info")return respond(res,{LoadImage:{},VHS_LoadVideo:{},LoadAudio:{},CLIPTextEncode:{},SaveVideo:{},SaveImage:{},SaveAudio:{}});
+      if((protocol==="comfyui"&&pathname==="/upload/image")||(protocol==="runninghub"&&pathname==="/task/openapi/upload")){
+        const file=body.image||body.file;if(!file?.file||!file.bytes)return respond(res,{error:"missing uploaded media"},422);
+        calls.push({phase:"workflow-upload",protocol,path:pathname,file:file.file,bytes:file.bytes,sha256:file.sha256});
+        return respond(res,protocol==="comfyui"?{name:file.file,subfolder:"fixture-input"}:{code:0,data:{fileName:file.file}});
+      }
+      if(protocol==="comfyui"&&pathname==="/view"){
+        const name=url.searchParams.get("filename"),entry=manifest.files.find(asset=>asset.name===name);
+        if(!entry)return respond(res,{error:"missing graph output"},404);
+        const bytes=await readFile(path.join(assetsRoot,name));calls.push({phase:"result-download",path:pathname,assetId:name,bytes:bytes.length});
+        res.writeHead(200,{"content-type":entry.mimeType,"content-length":bytes.length});return res.end(bytes);
+      }
       if(protocol==="image"&&req.method==="POST"&&/\/images\/(generations|edits)$/.test(pathname)){
         calls.push({phase:"image-create",path:pathname,body:publicFixtureValue(body)});
         return respond(res,{created:Math.floor(Date.now()/1000),data:[{b64_json:(await readFile(path.join(assetsRoot,"first.png"))).toString("base64")}]});
@@ -84,7 +97,9 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
           if(pathname.startsWith("/kling/"))return respond(res,{data:[{id:task.id,status:state==="completed"?"succeed":state,outputs:state==="completed"?[{type:"video",url:resultUrl}]:[]}]});
           if(pathname.startsWith("/alibaba/"))return respond(res,{output:{task_id:task.id,task_status:state,video_url:state==="completed"?resultUrl:undefined}});
         }
-        if (protocol==="runninghub" && done) return respond(res,{code:0,data:[{fileUrl:resultUrl,fileType:"mp4"}]});
+        if(protocol==="autodl")return respond(res,{code:"success",data:{task_id:task.id,status:state,message:state==="failed"?"fixture rejected":undefined,results:state==="completed"?[{type:"video",output_type:"output",filetype:"mp4",url:resultUrl},{type:"audio",output_type:"output",filetype:"wav",url:origin+"/assets/tone-8.wav"}]:[]}});
+        if(protocol==="comfyui")return respond(res,{[task.id]:{status:{status_str:state==="completed"?"success":state==="failed"?"error":"executing",completed:state==="completed"},outputs:state==="completed"?{"save-video":{gifs:[{filename:task.asset.name,subfolder:"",type:"output"}]},"save-audio":{audio:[{filename:"tone-8.wav",subfolder:"",type:"output"}]},"save-image":{images:[{filename:"first.png",subfolder:"",type:"output"}]}}:{}}});
+        if(protocol==="runninghub")return respond(res,state==="completed"?{code:0,data:[{fileUrl:resultUrl,fileType:"mp4"},{fileUrl:origin+"/assets/tone-8.wav",fileType:"wav"}]}:state==="failed"?{code:805,msg:"fixture rejected"}:{code:804,msg:"processing"});
         return respond(res,{id:task.id,status:state,progress:done?100:30,content:done?{video_url:resultUrl,url:resultUrl}:{},video_url:done?resultUrl:undefined,task:{id:task.id,status:state,content:done?{url:resultUrl}:{}}});
       }
       if (req.method!=="POST") return respond(res,{error:"unknown fixture task"},404);
@@ -119,6 +134,8 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
         if(pathname.startsWith("/alibaba/"))return respond(res,{output:{task_id:id,task_status:"pending"}});
       }
       if (protocol==="runninghub") return respond(res,{code:0,data:{taskId:id}});
+      if(protocol==="autodl")return respond(res,{code:"success",data:{task_id:id,status:"queued"}});
+      if(protocol==="comfyui")return respond(res,{prompt_id:id,node_errors:{}});
       return respond(res,{id,task_id:id,status:"queued"});
     } catch (error) { if(!res.headersSent)respond(res,{error:{message:error.message}},422);else res.destroy(); }
   });
