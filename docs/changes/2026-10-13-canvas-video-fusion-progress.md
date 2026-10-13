@@ -102,3 +102,5 @@ A最新通过项：任务脚本已实际验证同operation并发只创建一次�
 按用户要求准备首批合回main：再次fetch发现主线已到7b4c970，新增生图能力、folio预览和企业组织功能；本任务先保存A修复，再整合新主线并做受影响的合并验收，保护新功能与已发布版本。不能用之前12105eb或ee351d9覆盖最新代码；没有新部署。
 
 阶段合并验收通过：最新main7b4c970的生图/企业/folio改动完整保留，7处冲突按双方字段合并（schema同时保留imagegen/video、模型执行同时保留图像需求和视频冻结、后台同时保留两组编辑/发布/审计、供应商资料同时验证两类、协作记录保留双方阶段）。合并后的TypeScript、imagegen contract/capabilities、视频配置冻结、完整任务并发/重启/取消/结算/BYOC，以及AutoDL默认映射+RunningHub显式映射真实App/Worker均通过；日志在本任务checkpoint-a目录。未重复不受影响51协议或其他已通过项。准备普通快进main，不操作共享checkout、不强推；本次仅代码阶段合并，不发布103。
+
+首批阶段合并已完成：git普通原子推送成功，origin/main与origin/codex/canvas-video-fusion-20261013均为65db84d0fdc5c2f02e8a338d7b96074e8dac811f（7b4c970→65db84d），无强推、无共享checkout操作。这次是检查点A代码整合，非发布；服务器配置/数据库/媒体未修改，维护次数不因Git合并增加。下一步Task10真实视频核验/全产物/隔离媒体worker与大模块B；任务目标active，C/D、演示站操作、固定镜像与103最终上线仍未完成。
