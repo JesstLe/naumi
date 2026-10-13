@@ -2,7 +2,9 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import path from "path";
-import { fetchStoredObject, MEDIA_DIR, storageDriver } from "@/lib/storage";
+import { fetchStoredObject, MEDIA_DIR, storageDriver, privateMedia, presignStoredObject } from "@/lib/storage";
+import {authenticatedEmail} from "@/lib/request-auth";
+import {canReadMedia,getMediaAsset,importLegacyMedia,ensureMediaVariants} from "@/lib/media-assets";
 
 // 本地磁盘存储的图片对外伺服(STORAGE_DRIVER=local 时用)。
 // R2/OSS 部署下图片走绝对 CDN URL,不会打到这里 —— 此路由留着无害。
@@ -40,8 +42,27 @@ export async function GET(
     return new Response("Bad request", { status: 400 });
   }
 
-  const rel = segs.join("/");
-  if (storageDriver !== "local") {
+  let rel = segs.join("/");
+  if (privateMedia) {
+    try {
+      const owner=await authenticatedEmail(request);
+      if(!await canReadMedia(rel,owner)) return new Response("Not found",{status:owner?404:401,headers:{"cache-control":"no-store"}});
+      let asset=await getMediaAsset(rel);
+      const variant=new URL(request.url).searchParams.get("variant");
+      if(variant==='thumbnail'||variant==='preview') {
+        asset ||= await importLegacyMedia(rel,owner||undefined);
+        if(asset) asset=await ensureMediaVariants(rel).catch(()=>asset);
+        const key=variant==='thumbnail'?asset?.thumbnail_key:asset?.preview_key;
+        if(key) {rel=key;asset=await getMediaAsset(key);}
+      }
+      if(asset?.remote_ready && storageDriver!=='local') {
+        const filename=new URL(request.url).searchParams.get('download') || undefined;
+        return new Response(null,{status:307,headers:{location:await presignStoredObject('GET',rel,300,undefined,filename),
+          'cache-control':'private, no-store','vary':'Cookie, Authorization','referrer-policy':'no-referrer'}});
+      }
+    } catch {return new Response('Storage unavailable',{status:503,headers:{'cache-control':'no-store'}});}
+  }
+  if (storageDriver !== "local" && !privateMedia) {
     try {
       const upstream = await fetchStoredObject(rel, request.headers.get("range") || "");
       const headers = new Headers();
@@ -82,7 +103,8 @@ export async function GET(
     const ext = (rel.split(".").pop() || "").toLowerCase();
     const commonHeaders = {
       "content-type": TYPES[ext] || "application/octet-stream",
-      "cache-control": "public, max-age=31536000, immutable",
+      "cache-control": privateMedia ? "private, max-age=300" : "public, max-age=31536000, immutable",
+      ...(privateMedia?{"vary":"Cookie, Authorization","x-content-type-options":"nosniff"}:{}),
       "accept-ranges": "bytes",
     };
     const range = request.headers.get("range");

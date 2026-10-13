@@ -14,6 +14,7 @@ import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCa
 import { separateCanvasDocks } from "@/lib/canvas/dock-placement";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasParameterPopover } from "./parameter-popover";
+import {CanvasImage} from './canvas-image';
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
 import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surface";
@@ -1251,8 +1252,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
   const portY = (imageHeight ?? 110) / 2;
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [forceOriginal, setForceOriginal] = useState(false);
-  const preview = !selected && !forceOriginal && !!d.intrinsicWidth && !!d.intrinsicHeight;
-  const imageSrc = preview ? cdnThumb(d.image as string, Math.max(640, imageWidth || 0)) : cdnUrl(d.image as string);
+  const preview = !forceOriginal && !!d.intrinsicWidth && !!d.intrinsicHeight;
   const previousImage = useRef(d.image);
   useEffect(() => {
     if (previousImage.current === d.image) return;
@@ -1357,11 +1357,13 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
         ) : (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <CanvasImage
               key={d.image as string}
-              src={imageSrc}
+              source={d.image as string}
+              forceOriginal={forceOriginal}
+              hasDimensions={!!d.intrinsicWidth && !!d.intrinsicHeight}
               decoding="async"
-              onError={event => { if (onImgError(event, d.image as string)) setForceOriginal(true); }}
+              onError={event => { if(event.currentTarget.dataset.mediaVariant!=='original')setForceOriginal(true);else onImgError(event,d.image as string); }}
               alt={d.label}
               draggable={false}
               width={imageWidth}
@@ -1369,7 +1371,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
               onLoad={(event) => {
                 const image = event.currentTarget;
                 if (!(image.naturalWidth > 0) || !(image.naturalHeight > 0)) return;
-                const optimized = preview && image.getAttribute("src") === imageSrc && imageSrc !== cdnUrl(d.image as string);
+                const optimized = preview && image.dataset.mediaVariant !== 'original';
                 if (optimized && Math.abs(image.naturalWidth / image.naturalHeight - d.intrinsicWidth! / d.intrinsicHeight!) > 0.02) {
                   setForceOriginal(true); return;
                 }
@@ -8100,50 +8102,18 @@ export function CanvasClient() {
     }
     fd.append("x", String(Math.round(pend.x)));
     fd.append("y", String(Math.round(pend.y)));
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/artworks/add");
-    const auth = await authHeader();
-    for (const [key, value] of Object.entries(auth)) xhr.setRequestHeader(key, value);
-    if (xhr.upload) {
-      xhr.upload.onprogress = (e) => {
-        if (!e.lengthComputable) return;
-        const pct = (e.loaded / e.total) * 100;
-        setPendNodes((prev) =>
-          prev.map((p) => (p.id === pendId ? { ...p, progress: pct } : p))
-        );
-      };
+    try {
+      const body = await uploadFormData<{ id?: string; error?: string }>("/api/artworks/add", fd,
+        (sent, total) => setPendNodes(prev => prev.map(p => p.id === pendId ? { ...p, progress: total ? sent / total * 100 : 0 } : p)));
+      if (!body.id) throw new Error(body.error || t("canvas.genFail"));
+      setPendNodes(prev => prev.filter(p => p.id !== pendId));
+      setSelectedPendId(cur => cur === pendId ? null : cur);
+      pendingNodeRef.current = body.id;
+      void mergeWorks([body.id]).then(fresh => pushAddUndo(body.id!, fresh));
+    } catch (error) {
+      setGenError(error instanceof Error ? error.message : t("canvas.genFail"));
+      setPendNodes(prev => prev.map(p => p.id === pendId ? { ...p, uploading: false } : p));
     }
-    xhr.onload = () => {
-      let newId: string | null = null;
-      let error = t("canvas.genFail");
-      try {
-        const body = JSON.parse(xhr.responseText) as { id?: string; error?: string };
-        newId = body.id ?? null;
-        error = body.error || error;
-      } catch {
-        /* ignore */
-      }
-      if (xhr.status < 200 || xhr.status >= 300 || !newId) {
-        setGenError(error);
-        setPendNodes((prev) =>
-          prev.map((p) => (p.id === pendId ? { ...p, uploading: false } : p))
-        );
-        return;
-      }
-      setPendNodes((prev) => prev.filter((p) => p.id !== pendId));
-      setSelectedPendId((cur) => (cur === pendId ? null : cur));
-      if (newId) pendingNodeRef.current = newId;
-      void mergeWorks(newId ? [newId] : []).then((fresh) =>
-        pushAddUndo(newId, fresh)
-      );
-    };
-    xhr.onerror = () => {
-      setGenError(t("canvas.genFail"));
-      setPendNodes((prev) =>
-        prev.map((p) => (p.id === pendId ? { ...p, uploading: false } : p))
-      );
-    };
-    xhr.send(fd);
   }
   function showCopyTip() {
     setCopyTip(true);

@@ -16,8 +16,10 @@ export async function GET(request: Request) {
   try {
     // Read directly instead of connecting to the request's Host header.
     const upstream = target.origin === reqUrl.origin
-      ? await readMedia(new Request(target), { params: { path: target.pathname.slice(7).split("/").map(decodeURIComponent) } })
+      ? await readMedia(new Request(target.toString()+`${target.search?'&':'?'}download=${encodeURIComponent(name)}`,{headers:request.headers}), { params: { path: target.pathname.slice(7).split("/").map(decodeURIComponent) } })
       : await fetchDownloadSource(target, AbortSignal.timeout(30_000));
+    if(upstream.status===307) return upstream;
+    if([401,403,404].includes(upstream.status)) return new NextResponse(null,{status:upstream.status,headers:{'cache-control':'no-store'}});
     if (!upstream.ok || !upstream.body) return NextResponse.json({ error: "源文件暂时无法下载" }, { status: 502 });
     return new NextResponse(upstream.body, { headers: {
       "Content-Type": upstream.headers.get("content-type") || "application/octet-stream",

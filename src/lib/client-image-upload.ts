@@ -87,6 +87,30 @@ export async function uploadFormData<T>(
   timeoutMs = 120_000
 ): Promise<T> {
   const headers = await authHeader();
+  const file=form.get('image');
+  if(url==='/api/artworks/add' && file instanceof File) {
+    const pendingResponse=await fetch('/api/media/uploads',{method:'POST',headers:{...headers,'content-type':'application/json'},
+      body:JSON.stringify({action:'prepare',bytes:file.size,contentType:file.type||'image/png'})});
+    const pending=await pendingResponse.json() as {enabled?:boolean;id?:string;putUrl?:string;contentType?:string;error?:string};
+    if(!pendingResponse.ok)throw new Error(pending.error||'上传申请失败');
+    if(pending.enabled&&pending.id&&pending.putUrl) {
+      await new Promise<void>((resolve,reject)=>{
+        const xhr=new XMLHttpRequest();xhr.open('PUT',pending.putUrl!);xhr.timeout=timeoutMs;
+        xhr.setRequestHeader('Content-Type',pending.contentType!);
+        xhr.upload.onprogress=e=>{if(e.lengthComputable)onProgress?.(e.loaded,e.total);};
+        xhr.onload=()=>xhr.status>=200&&xhr.status<300?resolve():reject(new Error(`素材上传失败（${xhr.status}）`));
+        xhr.onerror=()=>reject(new Error('素材网络连接失败，请重新上传'));
+        xhr.ontimeout=()=>reject(new Error('素材上传超时，请重试'));
+        xhr.send(file);
+      });
+      const x=form.get('x'),y=form.get('y');
+      const response=await fetch('/api/media/uploads',{method:'POST',headers:{...headers,'content-type':'application/json'},
+        body:JSON.stringify({action:'complete',id:pending.id,title:String(form.get('title')||file.name),
+          parentId:form.get('parentId')||null,canvasGroupId:form.get('canvasGroupId')||null,linked:form.get('linked')==='1',
+          ...(x!==null&&Number.isFinite(Number(x))?{x:Number(x)}:{}),...(y!==null&&Number.isFinite(Number(y))?{y:Number(y)}:{})})});
+      const data=await response.json();if(!response.ok)throw new Error(data.error||'素材保存失败');return data as T;
+    }
+  }
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);

@@ -10,7 +10,8 @@ const r2AccessKeyId = process.env.R2_ACCESS_KEY_ID ?? "";
 const r2SecretAccessKey = process.env.R2_SECRET_ACCESS_KEY ?? "";
 const r2Bucket = process.env.R2_BUCKET ?? "";
 const r2PublicBase = (process.env.R2_PUBLIC_BASE_URL ?? "").replace(/\/$/, "");
-const hasR2 = Boolean(r2AccountId && r2AccessKeyId && r2SecretAccessKey && r2Bucket && r2PublicBase);
+const hasR2 = Boolean(r2AccountId && r2AccessKeyId && r2SecretAccessKey && r2Bucket);
+export const privateMedia = process.env.MEDIA_PRIVATE === "1";
 
 const s3Endpoint = (process.env.S3_ENDPOINT ?? "").replace(/\/$/, "");
 const s3Region = process.env.S3_REGION || "us-east-1";
@@ -49,6 +50,7 @@ function getRemoteClient(): AwsClient {
       secretAccessKey: r2 ? r2SecretAccessKey : s3SecretAccessKey,
       region: r2 ? "auto" : s3Region,
       service: "s3",
+      retries: 0,
     });
   }
   return remoteClient;
@@ -57,7 +59,7 @@ function getRemoteClient(): AwsClient {
 function safeKey(key: string): string {
   const normalized = key.replace(/^\/+/, "");
   const segments = normalized.split("/");
-  if (!normalized || normalized.includes("\0") || segments.some((segment) => !segment || segment === "." || segment === "..")) {
+  if (!normalized || normalized.includes("\0") || normalized.includes("\\") || segments.some((segment) => !segment || segment === "." || segment === "..")) {
     throw new Error("非法存储 key");
   }
   return normalized;
@@ -111,8 +113,16 @@ export async function uploadImage(
   bytes: Uint8Array,
   contentType: string,
   key: string,
-  cacheControl: string = CACHE_CONTROL
+  cacheControl: string = CACHE_CONTROL,
+  owner?: string
 ): Promise<string> {
+  if (privateMedia) {
+    const result = await writeStoredObject(bytes, contentType, key);
+    const { registerMediaAsset } = await import("./media-assets");
+    // Registration/preview failure must not discard the mirrored original.
+    await registerMediaAsset(key, bytes, contentType, result.remoteReady, owner).catch(() => {});
+    return `${MEDIA_URL_PREFIX}/${safeKey(key)}`;
+  }
   const normalized = safeKey(key);
   if (storageDriver === "local") {
     const full = path.join(MEDIA_DIR, normalized);
@@ -139,6 +149,36 @@ export async function uploadImage(
   return publicBase ? `${publicBase}/${normalized}` : `${MEDIA_URL_PREFIX}/${normalized}`;
 }
 
+// Mirror first: an object-store outage must never discard an already paid result.
+// The stable URL and local bytes remain readable by the previous release too.
+export async function writeStoredObject(bytes: Uint8Array, contentType: string, key: string) {
+  const normalized = safeKey(key), full = path.join(MEDIA_DIR, normalized);
+  await mkdir(path.dirname(full), { recursive: true });
+  await writeFile(full, Buffer.from(bytes));
+  if (storageDriver === "local") return { remoteReady: false };
+  try {
+    const response = await remoteFetch(normalized, { method: "PUT", body: Buffer.from(bytes),
+      headers: { "content-type": contentType, "cache-control": "private, max-age=300" },
+      signal: AbortSignal.timeout(30_000) });
+    return { remoteReady: response.ok };
+  } catch { return { remoteReady: false }; }
+}
+
+export async function presignStoredObject(method: "GET" | "PUT", key: string, expires = 300, contentType?: string, filename?: string, contentLength?: number) {
+  if (!storageEnabled || storageDriver === "local") throw new Error("对象存储未启用");
+  if (!Number.isInteger(expires) || expires < 1 || expires > 900) throw new Error("签名有效期非法");
+  const url = new URL(remoteObjectEndpoint(key));
+  url.searchParams.set("X-Amz-Expires", String(expires));
+  if(filename && method === "GET") url.searchParams.set("response-content-disposition", `attachment; filename="${filename.replace(/[^\w.\-]/g,"_").slice(0,160)}"`);
+  const headers = new Headers();if(contentType)headers.set('content-type',contentType);
+  if(contentLength!==undefined) {
+    if(!Number.isSafeInteger(contentLength)||contentLength<1||contentLength>12*1024*1024)throw new Error('上传大小无效');
+    headers.set('content-length',String(contentLength));
+  }
+  const signed = await getRemoteClient().sign(url, { method, headers, aws: { signQuery: true,allHeaders:contentLength!==undefined } });
+  return signed.url;
+}
+
 export async function fetchStoredObject(key: string, range = ""): Promise<Response> {
   const headers = new Headers();
   if (range) headers.set("range", range);
@@ -155,21 +195,27 @@ export async function readManagedObject(
 ): Promise<{ bytes: Buffer; contentType: string; size: number }> {
   const key = storageKeyFromManagedUrl(url);
   if (!key) throw new Error("对象地址不属于当前存储");
-  if (storageDriver === "local") {
+  if (storageDriver === "local" || privateMedia) {
     const root = path.resolve(MEDIA_DIR);
     const full = path.resolve(root, key.replaceAll("/", path.sep));
     if (full === root || !full.startsWith(root + path.sep)) throw new Error("对象路径非法");
-    const info = await stat(full);
-    if (!info.isFile()) throw new Error("对象不存在");
-    if (info.size > maxBytes) throw new Error("对象超过大小限制");
-    return { bytes: await readFile(full), contentType: "application/octet-stream", size: info.size };
+    try {
+      const info = await stat(full);
+      if (!info.isFile()) throw new Error("对象不存在");
+      if (info.size > maxBytes) throw new Error("对象超过大小限制");
+      return { bytes: await readFile(full), contentType: "application/octet-stream", size: info.size };
+    } catch (error) { if (storageDriver === "local" || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   }
   const response = await fetchStoredObject(key);
   if (!response.ok) throw new Error(`读取对象失败 (${response.status})`);
   const declared = Number(response.headers.get("content-length") || 0);
   if (declared > maxBytes) throw new Error("对象超过大小限制");
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.byteLength > maxBytes) throw new Error("对象超过大小限制");
+  const reader = response.body?.getReader(), chunks: Uint8Array[] = []; let size = 0;
+  if (!reader) throw new Error("对象内容为空");
+  try { for (;;) { const next = await reader.read(); if (next.done) break; size += next.value.byteLength;
+    if (size > maxBytes) throw new Error("对象超过大小限制"); chunks.push(next.value); } }
+  finally { await reader.cancel().catch(() => {}); }
+  const bytes = Buffer.concat(chunks);
   return { bytes, contentType: response.headers.get("content-type") || "application/octet-stream", size: bytes.byteLength };
 }
 

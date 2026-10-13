@@ -1,0 +1,38 @@
+'use client';
+import {useEffect,useRef,useState,type ImgHTMLAttributes} from 'react';
+import {useStore} from '@xyflow/react';
+import {cdnUrl,cdnThumb} from '@/lib/cdn';
+import {canvasMediaVariant,MediaLoadQueue} from '@/lib/canvas/media-loading';
+
+const queue=new MediaLoadQueue(6),loaded=new Set<string>();
+export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<ImgHTMLAttributes<HTMLImageElement>,'src'> & {
+  source:string;forceOriginal:boolean;hasDimensions:boolean;
+}) {
+  const ref=useRef<HTMLImageElement>(null),release=useRef<(()=>void)|null>(null);
+  const [visible,setVisible]=useState(false),[screenWidth,setScreenWidth]=useState(0),[ready,setReady]=useState('');
+  const zoom=useStore(s=>s.transform[2]);
+  useEffect(()=>{
+    const element=ref.current;if(!element)return;
+    const observer=new IntersectionObserver(entries=>setVisible(entries.some(e=>e.isIntersecting)),{
+      root:element.closest('.react-flow'),rootMargin:'180px',threshold:0,
+    });observer.observe(element);return()=>observer.disconnect();
+  },[]);
+  useEffect(()=>{
+    const element=ref.current;if(!element)return;
+    const measure=()=>setScreenWidth(element.getBoundingClientRect().width);
+    const observer=new ResizeObserver(measure);observer.observe(element);measure();return()=>observer.disconnect();
+  },[zoom,props.width,props.height]);
+  const variant=forceOriginal||!hasDimensions?'original':canvasMediaVariant(screenWidth,typeof window==='undefined'?1:window.devicePixelRatio);
+  const url=variant==='original'?cdnUrl(source):cdnThumb(source,variant==='thumbnail'?512:1600);
+  const canLoad=visible&&!!source&&screenWidth>0;
+  useEffect(()=>{
+    setReady('');if(!canLoad)return;
+    if(loaded.has(url)){setReady(url);return;}
+    const finish=queue.enqueue(()=>setReady(url));release.current=finish;
+    return()=>{finish();if(release.current===finish)release.current=null;};
+  },[canLoad,url]);
+  return <img crossOrigin="anonymous" {...props} ref={ref} src={visible&&ready===url?ready:undefined} decoding="async"
+    data-media-variant={variant} data-media-visible={visible?'true':'false'}
+    onLoad={event=>{loaded.add(url);if(loaded.size>512)loaded.delete(loaded.values().next().value!);release.current?.();release.current=null;props.onLoad?.(event);}}
+    onError={event=>{release.current?.();release.current=null;props.onError?.(event);}} />;
+}

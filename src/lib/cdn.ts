@@ -106,9 +106,12 @@ export function cdnThumb(
   width = 640
 ): string {
   const out = cdnUrl(src);
-  // Local previews use Next's bounded, cached image optimizer. Canonical URLs
+  if(/^\/media\/[a-zA-Z0-9_./-]+\.(png|jpe?g|webp|avif|gif)$/i.test(out) && !out.split('/').includes('..'))
+    return `${out}?variant=${width<=512?'thumbnail':'preview'}`;
+  // Public demos can use Next's image optimizer. Private media must carry
+  // the current browser credentials and never go through anonymous optimizer.
   // in database/model inputs/downloads remain unchanged. Do not proxy remote URLs.
-  if (/^\/(media|demos)\/[a-zA-Z0-9_./-]+\.(png|jpe?g|webp|avif)$/i.test(out) && !out.split("/").includes("..")) {
+  if (/^\/demos\/[a-zA-Z0-9_./-]+\.(png|jpe?g|webp|avif)$/i.test(out) && !out.split("/").includes("..")) {
     const widths = [256, 384, 640, 1080, 1920];
     const size = widths.find(value => value >= width) || 1920;
     return `/_next/image?url=${encodeURIComponent(out)}&w=${size}&q=75`;

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { dbEnabled, addArtworks, setArtworkPosition, listArtworksByIds } from "@/lib/db";
 import { provenanceEntry } from "@/lib/artwork-provenance";
-import { uploadImage } from "@/lib/storage";
+import { uploadImage, privateMedia, storageKeyFromManagedUrl } from "@/lib/storage";
+import {canReadMedia} from '@/lib/media-assets';
 import { authenticatedEmail } from "@/lib/request-auth";
 import { adaptiveCanvasImageSize } from "@/lib/mock-data";
 import sharp from "sharp";
@@ -76,7 +77,7 @@ export async function POST(request: Request) {
         : "jpg";
     let url: string;
     try {
-      url = await uploadImage(buf, type, `canvas-uploads/${id}.${ext}`);
+      url = await uploadImage(buf, type, `canvas-uploads/${id}.${ext}`,undefined,email);
     } catch {
       return NextResponse.json({ error: "上传失败" }, { status: 500 });
     }
@@ -163,6 +164,10 @@ export async function POST(request: Request) {
   }
   const id = newId();
   const sourceId = String(src.id || "").trim().slice(0, 240);
+  if(privateMedia){
+    for(const url of [image,videoUrl].filter(Boolean) as string[]){const key=storageKeyFromManagedUrl(url);
+      if(key&&!await canReadMedia(key,email))return NextResponse.json({error:'素材不存在'},{status:404});}
+  }
   if (sourceId) {
     const original = (await listArtworksByIds(email, [sourceId]))[0];
     if (!original || original.image !== image || (original.videoUrl || null) !== videoUrl)
