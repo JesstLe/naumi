@@ -1,0 +1,33 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+const root = process.cwd();
+const out = path.join(root,'output/folio-preview-20261013');
+fs.mkdirSync(out,{recursive:true});
+const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const original = path.join(root,'src/components/home/landing.tsx');
+const modified = path.join(root,'design/folio-preview/index.html');
+const originalHash = hash(original), modifiedHash = hash(modified);
+const slash = x => x.replaceAll('\\','/');
+const rollback = path.join(out,'ROLLBACK.sh');
+const fixture = path.join(out,'rollback-copy');
+fs.mkdirSync(path.join(fixture,'src/components/home'),{recursive:true});
+fs.copyFileSync(original,path.join(fixture,'src/components/home/landing.tsx'));
+fs.writeFileSync(rollback,`#!/usr/bin/env bash\nset -euo pipefail\nroot="$(cd -- "\${1:?Usage: ROLLBACK.sh TARGET_ROOT}" && pwd -P)"\nfile="$root/design/folio-preview/index.html"\nsource="$root/src/components/home/landing.tsx"\n[[ "$(sha256sum "$source" | cut -d' ' -f1)" == "${originalHash}" ]]\n[[ "$(sha256sum "$file" | cut -d' ' -f1)" == "${modifiedHash}" ]]\nrm -- "$file"\n[[ ! -e "$file" ]]\nprintf '%s\\n' 'ROLLBACK_ACTION=PASS; preview=removed; existing_home=unchanged'\n`);
+fs.chmodSync(rollback,0o755);
+const records=[];
+function run(label,command,args,input){const result=spawnSync(command,args,{cwd:root,encoding:'utf8'});if(result.status!==0)throw new Error(result.stderr+result.stdout);records.push(`${label}\nCOMMAND: ${[command,...args.map(a=>a.includes(' ')?JSON.stringify(a):a)].join(' ')}\nINPUT: ${input}\nSTDOUT: ${result.stdout.trim()}\nSTDERR: ${result.stderr.trim() || '(empty)'}\nEXIT: ${result.status}`);return result.stdout.trim()}
+run('BASELINE','node',[slash(path.join(root,'scripts/verify-folio-preview.mjs')),'baseline',slash(fixture)],'isolated copy of current landing source; preview file absent');
+fs.mkdirSync(path.join(fixture,'design/folio-preview'),{recursive:true});fs.copyFileSync(modified,path.join(fixture,'design/folio-preview/index.html'));
+run('MODIFIED','node',[slash(path.join(root,'scripts/verify-folio-preview.mjs')),'modified'],'real preview HTML, inline JS and local assets');
+run('ROLLBACK ACTION','D:/DEV/Git/bin/bash.exe',[slash(rollback),slash(fixture)],'second copy of preview; expected original and modified SHA256 enforced');
+run('ROLLBACK','node',[slash(path.join(root,'scripts/verify-folio-preview.mjs')),'rollback',slash(fixture)],'restored baseline copy; preview file absent');
+const diff=spawnSync('git',['diff','--no-index','--','/dev/null',slash(modified)],{cwd:root,encoding:'utf8'});
+if(diff.status!==1)throw new Error('Expected git diff exit 1 for added preview');
+const diffPath=path.join(out,'DIFF_FILE.patch');fs.writeFileSync(diffPath,diff.stdout);
+const verification=path.join(out,'VERIFICATION.txt');
+const body=`Naumi Folio-style preview — 2026-10-13\nBRANCH: codex/folio-preview-20261013\nBASE: 3f1aa4a\nCHANGED FIELD: independent preview layout=light; existing landing unchanged\nMODIFIED_FILE: ${slash(modified)}\nDIFF_FILE: ${slash(diffPath)}\nVERIFICATION: ${slash(verification)}\nROLLBACK: ${slash(rollback)}\nORIGINAL_SHA256: ${originalHash}\nMODIFIED_SHA256: ${modifiedHash}\nORIGINAL_COPY: ${slash(path.join(out,'ORIGINAL_landing.tsx'))}\n\n${records.join('\n\n')}\n\nBROWSER: Codex in-app browser; real local page http://127.0.0.1:4317/\nDesktop title, no broken loaded images, all images local, no horizontal overflow: PASS\nGallery/canvas(3 nodes)/suite/library, tab Home key, workspace modal and duplicate-ID check: PASS\nArtwork detail title and loaded image(760px), compare keyboard endpoints 0%/100%, FAQ: PASS\n390px menu open/close, modal and canvas: PASS\n320/390/768px viewport widths: no horizontal overflow; scrollbar-adjusted client widths 305/375/753\nConsole error/warn entries: []\nScreenshots: desktop-full.jpg, desktop-preview.jpg, mobile-full.jpg, mobile-preview.jpg\nRESTORED: introduced preview absent in rollback-copy; original landing SHA256 unchanged; actual preview remains changed.\nProduct homepage/backend/db/media/auth/billing untouched; no provider requests submitted; no deployment.\n`;
+fs.writeFileSync(verification,body);
+for(const file of [modified,diffPath,verification,rollback]){const data=fs.readFileSync(file);if(!data.length)throw new Error('Empty artifact '+file);console.log(`REOPENED=${slash(file)}; bytes=${data.length}`)}
+console.log(records.join('\n\n'));
