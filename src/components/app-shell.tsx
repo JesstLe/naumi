@@ -1,4 +1,8 @@
 "use client";
+import { useFeatureAccess } from "@/lib/feature-access/client";
+import { useAuth } from "@/lib/auth-context";
+import Link from "next/link";
+
 
 import { usePathname } from "next/navigation";
 import { AppRail } from "@/components/app-rail";
@@ -19,6 +23,8 @@ import {useI18n} from "@/lib/i18n/locale-context";
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname() || "/";
+  const { user } = useAuth();
+  const { ready, canPage } = useFeatureAccess();
   const {toast}=useToast(),{locale}=useI18n();
   const noShell = path === "/brand-orb" || path === "/sign-in" || path === "/sign-up" || path === "/admin" || path.startsWith("/admin/");
   const isCanvas = path.startsWith("/canvas");
@@ -48,7 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             if(!issue)return;
             event.stopPropagation();input.value="";
             toast(issue==="size"?(locale==="en"?`Each file must be under ${max/1024/1024}MB`:`单个文件需小于${max/1024/1024}MB`):(locale==="en"?"Choose a supported file":"请选择支持的文件格式"),"error");
-          }}>{children}</main>
+          }}>{user && !canPage(path) ? <section className="flex min-h-[60vh] flex-col items-center justify-center gap-4 p-6"><h1 className="text-xl font-semibold">{ready ? "此页面尚未授权" : "正在加载权限"}</h1>{ready && <Link href="/account" className="rounded-xl border bg-white px-5 py-2 text-sm">返回我的账户</Link>}</section> : children}</main>
         {!isImmersive && <SiteFooter />}
       </div>
     </div>

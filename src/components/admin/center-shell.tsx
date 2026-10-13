@@ -7,11 +7,11 @@ import { Activity, ArrowLeft, BarChart3, Building2, ImageIcon, Layers, LogOut, M
 import type { BiSection } from "@/lib/bi/contracts";
 import styles from "./center-shell.module.css";
 
-type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-management" | "teams" | "team-access";
+type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-management" | "teams" | "team-access" | "feature-access";
 type Entry = { id: Section; label: string; icon: typeof Users; href?: string };
 const groups: { label: string; entries: Entry[] }[] = [
   { label: "运营概览", entries: [{ id: "overview", label: "数据概览", icon: BarChart3 }] },
-  { label: "用户管理", entries: [{ id: "users", label: "用户与企业", icon: Users }, { id: "teams", label: "团队与子账号", icon: Building2, href: "/admin/teams" }, { id: "team-access", label: "团队入口授权", icon: ShieldCheck, href: "/admin/team-access" }] },
+  { label: "用户管理", entries: [{ id: "users", label: "用户与企业", icon: Users }, { id: "teams", label: "团队与子账号", icon: Building2, href: "/admin/teams" }, { id: "feature-access", label: "用户功能权限", icon: ShieldCheck, href: "/admin/feature-access" }, { id: "team-access", label: "团队入口授权", icon: ShieldCheck, href: "/admin/team-access" }] },
   { label: "计费管理", entries: [
     { id: "billing", label: "模型价格表", icon: Wallet, href: "/admin/billing/price-table" },
     { id: "pricing", label: "内部定价测算", icon: BarChart3, href: "/admin/pricing" },
@@ -36,10 +36,11 @@ const groups: { label: string; entries: Entry[] }[] = [
 ];
 
 /** Shared navigation only; each page and API retains its own administrator checks. */
-export function AdminCenterShell({ active, children, onBiNavigate }: {
+export function AdminCenterShell({ active, children, onBiNavigate, light = false }: {
   active: Section;
   children: React.ReactNode;
   onBiNavigate?: (section: BiSection) => void;
+  light?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [logoutError, setLogoutError] = useState("");
@@ -52,7 +53,7 @@ export function AdminCenterShell({ active, children, onBiNavigate }: {
       router.refresh();
     } catch { setLogoutError("退出失败，请重试"); }
   }
-  return <div className={styles.shell}>
+  return <div className={`${styles.shell} ${light ? styles.light : ""}`}>
     <header className={styles.mobileHeader}>
       <Link href="/admin/center" prefetch={false}>Naumi 管理中心</Link>
       <button type="button" aria-label={open ? "收起管理导航" : "展开管理导航"} aria-expanded={open} aria-controls="admin-center-navigation" onClick={() => setOpen(!open)}>

@@ -1,4 +1,6 @@
 "use client";
+import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
+
 import { agentMediaUrl } from "@/lib/agent/media-policy";
 import { loadAccountSnapshot, invalidateBrowserData } from "@/lib/browser-data-cache";
 import {toolImageError} from "@/lib/tool-ui";
@@ -137,12 +139,12 @@ function AssistantImage({
       />
       {/* 移动端:静态显示在图下;桌面端:悬浮图片底部 */}
       <span className="mt-1.5 flex flex-wrap items-center gap-1.5 sm:absolute sm:inset-x-2 sm:bottom-2 sm:mt-0 sm:hidden sm:group-hover/img:flex">
-        <button type="button" onClick={() => void go("canvas")} disabled={waiting} className={actionBtn}>
+        <FeatureVisible feature="canvas"><button type="button" onClick={() => void go("canvas")} disabled={waiting} className={actionBtn}>
           送画布
-        </button>
-        <button type="button" onClick={() => void go("iterate")} disabled={waiting} className={actionBtn}>
+        </button></FeatureVisible>
+        <FeatureVisible feature="generate"><button type="button" onClick={() => void go("iterate")} disabled={waiting} className={actionBtn}>
           再生成
-        </button>
+        </button></FeatureVisible>
         <a href={url} download target="_blank" rel="noreferrer" className={actionBtn}>
           下载
         </a>
@@ -277,6 +279,7 @@ function renderContent(
 }
 
 export function WorkbenchClient() {
+  const { can, canPage } = useFeatureAccess();
   const { t, locale } = useI18n();
   const { user, ready, remaining } = useAuth();
   const { openAuth } = useAuthModal();
@@ -647,6 +650,7 @@ export function WorkbenchClient() {
   });
 
   async function send(text?: string, attachmentUrls?: string[]) {
+    if (!can("agent")) return;
     const content = (text ?? input).trim();
     if (!content || busy || uploading) return;
     // 未登录:先确认登录态再弹登录框,避免发出去吃 401
@@ -921,6 +925,7 @@ export function WorkbenchClient() {
 
   /** 门户大输入框提交:参考图先上传换 URL,随后同页进入对话(不再跳转)。 */
   async function submitComposer() {
+    if (!can("agent")) return;
     const text = composerText.trim();
     if (!text || composerSubmitting || busy) return;
     setComposerError(null);
@@ -953,7 +958,7 @@ export function WorkbenchClient() {
   }
 
   // ── 对话态(沉浸式:顶条 + 居中消息流 + 底部输入容器) ──
-  if (messages.length > 0 || busy || composerSubmitting) {
+  if (can("agent") && (messages.length > 0 || busy || composerSubmitting)) {
     const userInitial = (user?.name || user?.email || "U").trim().charAt(0).toUpperCase();
     return (
       <div className="relative flex h-[calc(100vh-58px)] flex-col md:h-[calc(100vh-60px)]">
@@ -1199,7 +1204,7 @@ export function WorkbenchClient() {
 
         {/* 历史会话抽屉(面板内右侧浮层) */}
         <WorkbenchSessions
-          open={sessionsOpen}
+          open={can("agent") && sessionsOpen}
           onClose={() => setSessionsOpen(false)}
           sessions={sessions}
           loading={sessionsLoading}
@@ -1276,7 +1281,7 @@ export function WorkbenchClient() {
         </div>
 
         {/* 大输入框 = Agent 入口:提交后同页进入对话。单行紧凑布局:加号/输入/发送同行,参考图有内容才出附加行 */}
-        <div className="mt-7 rounded-[20px] border border-c-border bg-c-card p-3.5 shadow-pop transition-colors focus-within:border-c-border2">
+        <FeatureVisible feature="agent"><div className="mt-7 rounded-[20px] border border-c-border bg-c-card p-3.5 shadow-pop transition-colors focus-within:border-c-border2">
           <div className="mb-2"><SkillBook compact selected={imageSkill} onSelect={setImageSkill} accountKey={user?.email || ""} busy={composerSubmitting} onUse={prompt => { if (!composerText.trim()) setComposerText(prompt); composerTextRef.current?.focus(); }} /></div>
           {(composerPreviews.length > 0 || composerError) && (
             <div className="mb-2.5 flex flex-wrap items-center gap-2">
@@ -1366,13 +1371,13 @@ export function WorkbenchClient() {
               {L("历史对话", "History")}
             </button>
           </div>
-        </div>
+        </div></FeatureVisible>
 
         {/* 快捷工作流 chips */}
         <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
           {CHIP_SLUGS.map((slug) => {
             const tool = toolBySlug(slug);
-            if (!tool) return null;
+            if (!tool || !canPage(tool.href)) return null;
             return (
               <Link
                 key={slug}
@@ -1393,15 +1398,15 @@ export function WorkbenchClient() {
 
         {/* 图标入口行(原三功能卡并入:生图/套图/画布在此) */}
         <div className="mt-7 flex flex-wrap items-start justify-center gap-x-6 gap-y-4 sm:gap-x-9">
-          {ROW_CUSTOM.slice(0, 1).map((item) => (
+          {ROW_CUSTOM.slice(0, 1).filter(item => canPage(item.href)).map((item) => (
             <IconRowLink key={item.href} href={item.href} label={L(item.title, item.titleEn)} Icon={item.Icon} />
           ))}
           {ROW_TOOLS.map((slug) => {
             const tool = toolBySlug(slug);
-            if (!tool) return null;
+            if (!tool || !canPage(tool.href)) return null;
             return <IconRowLink key={slug} href={tool.href} label={L(tool.key, tool.en)} Icon={tool.Icon} />;
           })}
-          {ROW_CUSTOM.slice(1).map((item) => (
+          {ROW_CUSTOM.slice(1).filter(item => canPage(item.href)).map((item) => (
             <IconRowLink key={item.href} href={item.href} label={L(item.title, item.titleEn)} Icon={item.Icon} />
           ))}
         </div>
@@ -1427,14 +1432,14 @@ export function WorkbenchClient() {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           {HOT_SLUGS.map((slug, index) => {
             const tool = toolBySlug(slug);
-            if (!tool) return null;
+            if (!tool || !canPage(tool.href)) return null;
             return <HotToolCard key={slug} tool={tool} tint={HOT_TINTS[index % HOT_TINTS.length]} />;
           })}
         </div>
       </section>
 
       {/* 最近作品(横向滚动条) */}
-      <section className="mt-10">
+      <FeatureVisible feature="works"><section className="mt-10">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-c-text">
             {t("home.dash.recentTitle")}
@@ -1486,16 +1491,16 @@ export function WorkbenchClient() {
             {t("home.dash.recentEmpty")}
           </div>
         )}
-      </section>
+      </section></FeatureVisible>
 
       {/* 模板库:原 /templates 整页收编至此，旧链接重定向/锚点到这里 */}
       <section id="templates" className="mt-10 scroll-mt-20">
-        <TemplatesClient />
+        <FeatureVisible feature="templates"><TemplatesClient /></FeatureVisible>
       </section>
 
       {/* 历史会话抽屉(门户右侧浮层;载入后自动切入对话态) */}
       <WorkbenchSessions
-        open={sessionsOpen}
+        open={can("agent") && sessionsOpen}
         onClose={() => setSessionsOpen(false)}
         sessions={sessions}
         loading={sessionsLoading}

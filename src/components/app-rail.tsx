@@ -1,4 +1,6 @@
 "use client";
+import { useFeatureAccess } from "@/lib/feature-access/client";
+
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -23,7 +25,7 @@ import { useAuthModal } from "@/lib/auth-modal-context";
 import { useRecharge } from "@/lib/recharge-modal-context";
 import { usePaymentConfig } from "@/lib/payment-context";
 import { BRAND, BRAND_SQUARE_LOGO } from "@/lib/brand";
-import { menuCategories, TOOL_COUNT_LABEL } from "@/lib/tool-meta";
+import { menuCategories, TOOLS } from "@/lib/tool-meta";
 import {
   ACCOUNT_THEME_EVENT,
   AccountDockMenu,
@@ -56,6 +58,9 @@ const MENU_COLS = [
 
 export function AppRail() {
   const { t, locale } = useI18n();
+  const { can, canPage } = useFeatureAccess();
+  const visibleTools = TOOLS.filter(tool => tool.live !== false && canPage(tool.href));
+  const createHref = canPage("/tools") ? "/tools" : visibleTools[0]?.href;
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
   const path = usePathname();
   const { user, remaining, signOut } = useAuth();
@@ -106,6 +111,7 @@ export function AppRail() {
 
   // ── 桌面顶栏链接(纯文字;hover/激活=圆角药丸底色变深,文字不变色不出蓝条) ──
   const TopLink = ({ href, label }: Item) => {
+    if (!canPage(href)) return null;
     const active = isActive(href);
     return (
       <Link href={href} className="group/nav flex h-[60px] items-center px-1.5">
@@ -134,7 +140,7 @@ export function AppRail() {
     labelKey?: string;
     label?: { zh: string; en: string };
     Icon: typeof Home;
-  }) => (
+  }) => canPage(href) ? (
     <Link
       href={href}
       className={cn(
@@ -145,7 +151,7 @@ export function AppRail() {
       <Icon className="h-[20px] w-[20px]" strokeWidth={2} />
       <span>{label ? L(label.zh, label.en) : t(labelKey ?? "")}</span>
     </Link>
-  );
+  ) : null;
 
   // 账户弹出菜单(顶栏右上 / 移动「我的」共用,浅色 token 自适应)。
   const AccountMenu = ({ className }: { className?: string }) =>
@@ -195,13 +201,13 @@ export function AppRail() {
 
         {/* 导航(设计顺序:首页 / 工作台 / 创作▾ / 模板 / 作品 / 画布) */}
         <nav className="flex items-center gap-0.5">
-          {NAV_BEFORE.map((it) => (
+          {[...NAV_BEFORE, ...(can("agent") && !can("workspace") ? [{href: "/agent", label: {zh: "Agent", en: "Agent"}, Icon: Sparkles}] : []), ...(can("templates") && !can("workspace") ? [{href: "/templates", label: {zh: "模板", en: "Templates"}, Icon: LayoutGrid}] : [])].map((it) => (
             <TopLink key={it.href} {...it} />
           ))}
           {/* 创作:hover 出 mega 下拉;点击进创作中心 /tools(不再弹左侧抽屉)。 */}
-          <div className="group/create relative">
+          {createHref && <div className="group/create relative">
             <Link
-              href="/tools"
+              href={createHref || "/tools"}
               onClick={() => setAcct(false)}
               className="group/nav flex h-[60px] items-center px-1.5"
             >
@@ -231,7 +237,7 @@ export function AppRail() {
                           />
                           {L(g.name, g.en)}
                         </p>
-                        {g.tools.map((tool) => (
+                        {g.tools.filter(tool => canPage(tool.href)).map((tool) => (
                           <Link
                             key={tool.slug}
                             href={tool.live === false ? "/tools" : tool.href}
@@ -248,10 +254,10 @@ export function AppRail() {
               {/* 页脚 */}
               <div className="mt-2 flex items-center justify-between border-t border-c-line px-2 pt-2.5">
                 <span className="text-[11.5px] text-c-text3">
-                  {L(`${TOOL_COUNT_LABEL} · 覆盖出图全流程`, "24 tools · full pipeline")}
+                  {L(`${visibleTools.length} 个工具`, `${visibleTools.length} tools`)}
                 </span>
                 <Link
-                  href="/tools"
+                  href={createHref || "/tools"}
                   className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-acc transition-colors hover:underline"
                 >
                   {L("查看全部工具", "All tools")}
@@ -259,7 +265,7 @@ export function AppRail() {
                 </Link>
               </div>
             </div>
-          </div>
+          </div>}
           {NAV_AFTER.map((it) => (
             <TopLink key={it.href} {...it} />
           ))}
@@ -346,16 +352,18 @@ export function AppRail() {
       >
         <TabLink href="/" labelKey="nav.home" Icon={Home} />
         <TabLink href="/dashboard" label={{ zh: "工作台", en: "Workspace" }} Icon={LayoutGrid} />
+        {can("agent") && !can("workspace") && <TabLink href="/agent" label={{zh: "Agent", en: "Agent"}} Icon={Sparkles} />}
+        {can("templates") && !can("workspace") && <TabLink href="/templates" label={{zh: "模板", en: "Templates"}} Icon={LayoutGrid} />}
         {/* 中间凸起「创作」FAB → 创作中心 /tools */}
-        <Link
-          href="/tools"
+        {createHref && <Link
+          href={createHref || "/tools"}
           onClick={() => setAcct(false)}
           className="flex flex-1 flex-col items-center justify-center"
         >
           <span className="-mt-5 flex h-12 w-12 items-center justify-center rounded-2xl text-white shadow-[var(--shadow-btn)] [background:var(--grad-acc)]">
             <Sparkles className="h-6 w-6" strokeWidth={2} />
           </span>
-        </Link>
+        </Link>}
         <TabLink href="/works" label={{ zh: "作品", en: "Works" }} Icon={ImageIcon} />
         <button
           data-testid="app-account-dock-trigger"

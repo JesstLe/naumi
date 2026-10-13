@@ -1,3 +1,6 @@
+
+import { requestFeaturePolicy } from "@/lib/feature-access/server";
+import { allows } from "@/lib/feature-access/catalog";
 import { NextResponse } from "next/server";
 import {
   dbEnabled,
@@ -44,7 +47,9 @@ export async function GET(request: Request) {
       user = await getOrCreateUser(email, "").catch(() => null);
     }
     // 防越权读:作品列表(图 URL + 提示词,较敏感)只返回给本人或管理员。
-    const result = dayStart && dayEnd
+    const access = await requestFeaturePolicy(request);
+    const canReadWorks = access.admin || !!access.policy && (allows(access.policy, "works") || allows(access.policy, "canvas"));
+    const result = !canReadWorks ? { artworks: [] } : dayStart && dayEnd
       ? await getWorkbenchArtworks(email, dayStart, dayEnd)
       : {artworks: await listArtworks(email)};
     return NextResponse.json({ persisted: true, user, ...result }, {headers:{"Cache-Control":"private, no-store"}});

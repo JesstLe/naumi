@@ -1,3 +1,5 @@
+
+import { FeatureAccessProvider } from "@/lib/feature-access/client";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -95,7 +97,7 @@ export default async function RootLayout({
             logoHasText={brand.logoHasText}
           >
           <AuthProvider>
-            <BillingProvider><TextModelProvider><ImageQualityProvider>
+            <FeatureAccessProvider><BillingProvider><TextModelProvider><ImageQualityProvider>
             <AuthModalProvider>
               <RechargeModalProvider>
                 <ToastProvider>
@@ -109,7 +111,7 @@ export default async function RootLayout({
                 </ToastProvider>
               </RechargeModalProvider>
             </AuthModalProvider>
-            </ImageQualityProvider></TextModelProvider></BillingProvider>
+            </ImageQualityProvider></TextModelProvider></BillingProvider></FeatureAccessProvider>
           </AuthProvider>
           </BrandProvider>
           </PaymentProvider>

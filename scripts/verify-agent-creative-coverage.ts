@@ -5,9 +5,18 @@ import {Check} from "typebox/value";
 
 import {CREATIVE_AGENT_TOOLS,CREATIVE_TOOL_FEATURES} from "../src/lib/agent/creative-tool-catalog";
 import {createNaumiTools,describeNaumiTools} from "../src/lib/agent/naumi-tools";
+import {createModelFixture} from "./model-config-fixture";
 
 async function main(){
+ const fixture=process.env.DATABASE_URL?await createModelFixture():null;
+ if(fixture)process.env.PGOPTIONS=`-c search_path=${fixture.schemaName}`;
+ const db=await import("../src/lib/db"),native=await import("../src/lib/native-auth");
+ const email=`coverage-${Date.now()}@example.test`;
+ if(fixture)await db.getOrCreateUser(email,"Coverage fixture");
+ const credentials={cookie:fixture?`nv_user=${native.signUserSession(email,Date.now())}`:"fixture-cookie",authorization:"Bearer fixture-token"};
  const png=await readFile("public/demos/suite-demo/suppl-src.png"),calls:any[]=[],fixtureId="70a631c2-1d3f-4502-8214-2f85e265dca5";
+ const { MEDIA_DIR }=await import("../src/lib/storage");
+ await mkdir(MEDIA_DIR,{recursive:true});await writeFile(MEDIA_DIR+"/anchor.png",png);
  let status=200,empty=false;
  const server=createServer(async(req,res)=>{
   const chunks:Buffer[]=[];for await(const c of req)chunks.push(Buffer.from(c));
@@ -29,8 +38,8 @@ async function main(){
  await new Promise<void>(r=>server.listen(0,"127.0.0.1",r));const origin=`http://127.0.0.1:${(server.address() as any).port}`;
  process.env.INTERNAL_APP_ORIGIN=origin;
  const canvas={anchorId:"anchor",imageUrls:[origin+"/media/anchor.png"],imageModelId:"canvas-image",ratio:"1:1",resolution:"1K",quality:"medium"};
- const standalone=createNaumiTools(new Request(origin),"fixture@example.test",()=>({cookie:"fixture-cookie",authorization:"Bearer fixture-token"}));
- const sidebar=createNaumiTools(new Request(origin),"fixture@example.test",()=>({cookie:"fixture-cookie",authorization:"Bearer fixture-token"}),undefined,canvas);
+ const standalone=createNaumiTools(new Request(origin),email,()=>credentials);
+ const sidebar=createNaumiTools(new Request(origin),email,()=>credentials,undefined,canvas);
  const toolSource=await readFile("src/lib/tool-meta.ts","utf-8");
  const TOOLS=[...toolSource.matchAll(/key: "([^"]+)", en: "[^"]+", slug: "([^"]+)"/g)].map(m=>({key:m[1],slug:m[2]}));
  const rows=TOOLS.map(meta=>({slug:meta.slug,label:meta.key,tools:CREATIVE_AGENT_TOOLS[meta.slug],entry:meta.slug==="agent",workbench:true,canvas:true,orb:"same-canvas-runtime"}));
@@ -59,17 +68,17 @@ async function main(){
   assert.equal(calls.filter(c=>c.path==="/api/artworks/add").length,2);
   await invoke("generate_variations",{image_urls:[image_url],count:2});await invoke("fuse_images",{image_urls:[image_url,image_url],count:2},true);
   const gen=calls.filter(c=>c.path==="/api/generate-image"&&c.method==="POST");assert.equal(gen.length,2);assert.equal(gen[0].form.category[0],"variation");assert.equal(gen[1].form.category[0],"fusion");assert.equal(gen[1].form.image.length,2);assert.equal(gen[1].form.origin,undefined);assert.equal(gen[1].form.model,undefined);
-  assert.ok(calls.every(c=>c.cookie==="fixture-cookie"&&c.authorization==="Bearer fixture-token"));
+  assert.ok(calls.every(c=>c.cookie===credentials.cookie&&c.authorization===credentials.authorization));
   status=503;const before=calls.length;await assert.rejects(()=>invoke("upscale_image",{image_url}),/工具接口调用失败/);assert.equal(calls.length-before,1,"charged POST is not retried");status=200;
   empty=true;await assert.rejects(()=>invoke("cutout_image",{image_url}),/有效产物/);empty=false;
   const aborted=new AbortController();aborted.abort();const count=calls.length;await assert.rejects(()=>standalone.find(t=>t.name==="cutout_image")!.execute("aborted",{image_url},aborted.signal));assert.equal(calls.length,count);
   const catalog=await invoke("list_agent_tools",{});assert.ok(JSON.stringify(catalog).includes("mask_url"));
   await mkdir("output/agent-lifecycle-tool-coverage-20261011",{recursive:true});await writeFile("output/agent-lifecycle-tool-coverage-20261011/tool-coverage.json",JSON.stringify({source:"isolated adapter API fixture, not live provider validation",entries:rows,calls,totalAgentTools:standalone.length},null,2));
   const beforeInvalid=calls.length;await assert.rejects(invoke("edit_competitor",{item_id:fixtureId,revision:0,active_version:"",regions:[]},true),/编辑区域/);assert.equal(calls.length,beforeInvalid);
-  const textCanvas=createNaumiTools(new Request(origin),"fixture@example.test",()=>({cookie:"fixture",authorization:""}),undefined,{anchorId:"",imageUrls:[],imageModelId:"image-a",ratio:"1:1",resolution:"1K",quality:"medium"});
+  const textCanvas=createNaumiTools(new Request(origin),email,()=>credentials,undefined,{anchorId:"",imageUrls:[],imageModelId:"image-a",ratio:"1:1",resolution:"1K",quality:"medium"});
   await assert.rejects(async()=>textCanvas.find(t=>t.name==="recolor_product")!.execute("no-ref",{image_url:"",color:"blue",strength:100},undefined),/提供.*图片/);assert.equal(calls.length,beforeInvalid);
   assert.equal(describeNaumiTools(standalone).find(t=>t.name==="check_image_ip")!.write,true);
   console.log(`CREATIVE_AGENT_COVERAGE=PASS ENTRIES=27 EXECUTABLE_ENTRIES=26 AGENT_ENTRY=1 SAME_TOOLSET=WORKBENCH_CANVAS_ORB ADAPTER_CALLS=${calls.length} POST_RETRY=0 CANCEL=PASS EMPTY_OUTPUT=REJECTED PAID_UPSTREAM_CALLS=0`);
- }finally{await new Promise<void>(r=>server.close(()=>r()));}
+ }finally{await new Promise<void>(r=>server.close(()=>r()));if(fixture){await db.getPool().end();await fixture.cleanup();}}
 }
 main().catch(e=>{console.error(e);process.exitCode=1});
