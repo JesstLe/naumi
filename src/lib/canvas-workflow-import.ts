@@ -89,7 +89,6 @@ export async function importCanvasWorkflow(email: string, input: z.infer<typeof 
   const drawable = parsed.nodes.filter(n => n.kind === "image" || n.kind === "text");
   if (!drawable.length) throw new Error("工作流没有图片或文字节点");
   const assets = parsed.nodes.filter(n => n.kind !== "text");
-  if (assets.length > 60) throw new Error("一次最多同步 60 个图片素材，请分批复制");
   await ensureWorkflowImportSchema();
   const client = await getPool().connect(), uploaded: string[] = [];
   // Canonical field order: schema parsing and direct callers may order keys differently.
