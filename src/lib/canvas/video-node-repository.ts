@@ -26,6 +26,8 @@ function mapNode(row:Record<string,any>):CanvasVideoNode{return {id:String(row.i
 export async function getVideoNode(actor:string,id:string,includeDeleted=false){await ensureVideoNodeSchema();const row=(await getPool().query("SELECT * FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 AND ($3 OR deleted_at IS NULL)",[actor,id,includeDeleted])).rows[0];return row?mapNode(row):null;}
 export async function listVideoNodes(actor:string,projectKey?:string,includeDeleted=false){await ensureVideoNodeSchema();return (await getPool().query("SELECT * FROM app_canvas_video_nodes WHERE email=$1 AND ($2::text IS NULL OR project_key=$2) AND ($3 OR deleted_at IS NULL) ORDER BY created_at,id LIMIT 2000",[actor,projectKey||null,includeDeleted])).rows.map(mapNode);}
 export async function saveVideoNodeTx(client:PoolClient,actor:string,input:VideoNodeWrite,projectKey:string):Promise<CanvasVideoNode>{
+  // Serialize graph edits before per-node locks, including copies and cross-project references.
+  await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${actor}`]);
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-op:${actor}:${input.operationId}`]);
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node:${actor}:${input.id}`]);
   const digest=createHash("sha256").update(canonicalConfig(input)).digest("hex");
@@ -34,6 +36,13 @@ export async function saveVideoNodeTx(client:PoolClient,actor:string,input:Video
   const old=(await client.query("SELECT * FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[actor,input.id])).rows[0];
   if(old&&Number(old.revision)!==input.expectedRevision||!old&&input.expectedRevision!==0)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","视频节点已更新，请重新读取后修改",409);
   if(old&&old.project_key!==projectKey)throw new ModelConfigError("VIDEO_NODE_PROJECT_CONFLICT","请复制节点到目标项目",409);
+  if(input.deleted!==true&&(input.inputs!==undefined||input.deleted===false)){
+    const graph=new Map<string,string[]>((await client.query("SELECT id,inputs FROM app_canvas_video_nodes WHERE email=$1 AND deleted_at IS NULL",[actor])).rows.map(row=>[String(row.id),(row.inputs as CanvasVideoNode["inputs"]).filter(ref=>ref.kind!=="text").map(ref=>ref.nodeId.replace(/^(?:image|video|audio):/,""))]));
+    const sources=(input.inputs??old?.inputs??[]) as CanvasVideoNode["inputs"];
+    graph.set(input.id,sources.filter(ref=>ref.kind!=="text").map(ref=>ref.nodeId.replace(/^(?:image|video|audio):/,"")));
+    const pending=[...(graph.get(input.id)||[])],seen=new Set<string>();
+    while(pending.length){const id=pending.pop()!;if(id===input.id)throw new ModelConfigError("VIDEO_DEPENDENCY_CYCLE","视频引用不能形成循环",422);if(seen.has(id))continue;seen.add(id);pending.push(...(graph.get(id)||[]));}
+  }
   await client.query("INSERT INTO app_canvas_video_projects(email,project_key) VALUES($1,$2) ON CONFLICT DO NOTHING",[actor,projectKey]);
   const row=(await client.query(`INSERT INTO app_canvas_video_nodes(email,id,project_key,title,x,y,width,height,config,inputs,deleted_at)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,CASE WHEN $11 THEN now() ELSE NULL END)

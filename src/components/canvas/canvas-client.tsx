@@ -21,6 +21,15 @@ import type {ImagegenResult} from "@/lib/imagegen/types";
 import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
 import {canvasReceipts,clearCanvasReceipt} from "@/lib/imagegen/canvas-receipts";
 import {pollImagegen} from "@/lib/imagegen/client";
+import {VideoGenerationNode} from "./video/generation-node";
+import {VideoSettingsDialog,type VideoNodeDraft} from "./video/settings-dialog";
+import {useVideoNodes} from "./video/use-video-nodes";
+import {useVideoTasks} from "./video/use-video-tasks";
+import type {CanvasVideoNode} from "@/lib/canvas/video-node-schema";
+import {catalogCapability,reconcileVideoSettings,videoModeRoles,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
+import {readVideoReceipt,prepareVideoReceipt,saveVideoReceipt,clearVideoReceipt} from "@/lib/video/canvas-receipts";
+import type {PublicVideoTaskView} from "@/lib/video/service";
+import type {PublicQuote} from "@/lib/billing/client";
 import {CanvasImage} from './canvas-image';
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
@@ -180,6 +189,7 @@ import {
   routeImageModel,
 } from "@/lib/image-model-routing";
 import { ModelIcon } from "@/components/ui/model-icon";
+import {MODEL_CATALOG_REFRESH} from "@/lib/model-config/public-client";
 import { adminConfiguredFeature } from "@/lib/model-config/selection-policy";
 import { chosenFeatureModel, featureModelManaged, useFeatureModels } from "@/lib/model-config/feature-client";
 import { FeatureModelSelect } from "@/components/tools/feature-model-select";
@@ -366,6 +376,7 @@ type Project = {
   key: string;
   members: Artwork[];
   textNodes: CanvasTextNode[];
+  videoNodes?: CanvasVideoNode[];
   isSuite: boolean;
   cover: string;
   count: number;
@@ -404,22 +415,7 @@ type CanvasTextNode = {
   productIds?: string[];
 };
 
-type CanvasVideoCapability = {
-  providerId: string;
-  modelId: string;
-  label: string;
-  modes: string[];
-  durations: number[];
-  aspectRatios: string[];
-  resolutions: string[];
-  maxReferenceImages: number;
-  maxReferenceVideos?: number;
-  maxReferenceAudios?: number;
-  supportsFirstFrame?: boolean;
-  supportsLastFrame?: boolean;
-  isDefault?: boolean;
-  note?: string;
-};
+type CanvasVideoCapability = VideoCatalogModel;
 
 type OcrBox = { x: number; y: number; width: number; height: number };
 type OcrSegment = {
@@ -2068,37 +2064,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   useEffect(() => { if (comfyOpen) setComfyMounted(true); }, [comfyOpen]);
   const [expandRatio, setExpandRatio] = useState<string | null>(null);
   const [expandAnchor, setExpandAnchor] = useState("center");
-  // 视频生成(OpenAI videos 协议,站内计费):面板状态 + 轮询句柄
-  const [videoOpen, setVideoOpen] = useState(false);
+  // 持久视频节点与公开能力目录；规范请求经独立节点设置面板提交。
+  const [videoEditId,setVideoEditId]=useState<string|null>(null);
+  const videoNodesStore=useVideoNodes({email:user?.email,readOnly,request:privateFetchRaw});
   const imageMoreRef = useRef<HTMLButtonElement>(null);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
-  const [videoPrompt, setVideoPrompt] = useState("");
-  const [videoSeconds, setVideoSeconds] = useState("4");
-  const [videoLandscape, setVideoLandscape] = useState(true);
   const [videoCatalog, setVideoCatalog] = useState<CanvasVideoCapability[]>([]);
-  const [videoProviderId, setVideoProviderId] = useState("");
-  const [videoModelId, setVideoModelId] = useState("");
-  const videoCapability = videoCatalog.find((item) => item.providerId === videoProviderId && item.modelId === videoModelId);
-  const [videoBusy, setVideoBusy] = useState(false);
-  const videoTimerRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    void privateFetchRaw("/api/video/catalog")
-      .then((response) => response.json())
-      .then((data) => {
-        if (cancelled) return;
-        const models = (Array.isArray(data.models) ? data.models : []) as CanvasVideoCapability[];
-        setVideoCatalog(models);
-        const providerId = String(data.defaultProvider || models[0]?.providerId || "");
-        const model = models.find((item) => item.providerId === providerId && item.isDefault) || models.find((item) => item.providerId === providerId) || models[0];
-        setVideoProviderId(providerId);
-        setVideoModelId(model?.modelId || "");
-        if (model?.durations?.length) setVideoSeconds(String(model.durations[0]));
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
+  useEffect(()=>{
+    let cancelled=false;if(!ready||!user){setVideoCatalog([]);return;}
+    const load=async()=>{try{const response=await privateFetchRaw("/api/video/catalog",{cache:"no-store"}),data=await response.json();if(!response.ok)throw new Error(data.error||"视频模型加载失败");if(!cancelled)setVideoCatalog(Array.isArray(data.models)?data.models:[]);}catch{if(!cancelled)setVideoCatalog([]);}};
+    void load();window.addEventListener(MODEL_CATALOG_REFRESH,load);return()=>{cancelled=true;window.removeEventListener(MODEL_CATALOG_REFRESH,load);};
+  },[ready,user?.email]);
   const [annotateArtwork, setAnnotateArtwork] = useState<Artwork | null>(null);
   // 画布助手:围绕选中节点+上游链的多轮对话,[[GEN]] 提示词可一键生图回画布
   const [assistantArtworkId, setAssistantArtworkId] = useState<string | null>(null);
@@ -2745,10 +2722,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         latestAt: textNode.updatedAt || textNode.createdAt,
       });
     }
+    for(const videoNode of videoNodesStore.nodes){
+      const existing=projectMap.get(videoNode.projectKey);
+      if(existing){existing.videoNodes=[...(existing.videoNodes||[]),videoNode];existing.count++;if(videoNode.updatedAt>existing.latestAt)existing.latestAt=videoNode.updatedAt;}
+      else projectMap.set(videoNode.projectKey,{key:videoNode.projectKey,members:[],textNodes:[],videoNodes:[videoNode],isSuite:false,cover:"",count:1,name:names[videoNode.projectKey]||videoNode.title,latestAt:videoNode.updatedAt});
+    }
     const projects = Array.from(projectMap.values());
     projects.sort((a, b) => (a.latestAt < b.latestAt ? 1 : -1));
     return { projects };
-  }, [works, names, t, readOnly, pinnedNode, textNodes]);
+  }, [works, names, t, readOnly, pinnedNode, textNodes,videoNodesStore.nodes]);
 
   const projectMonths = useMemo(() => {
     const language =
@@ -3124,10 +3106,22 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }, [active, t, onNodeDimensions, onArtworkCanvasResize, onArtworkCanvasRatioRepair, requestNodeRename, extractVideoToCanvas]);
 
   const nodeTypes = useMemo(
-    () => ({ art: ArtNode, pend: PendNode, text: TextCanvasNode, workflowDecoration: WorkflowDecorationNode, workflowGroup: WorkflowGroupNode }),
+    () => ({ art: ArtNode, pend: PendNode, text: TextCanvasNode, videoGeneration:VideoGenerationNode, workflowDecoration: WorkflowDecorationNode, workflowGroup: WorkflowGroupNode }),
     []
   );
   const edgeTypes = useMemo(() => ({ comet: CometEdge }), []);
+  const videoTaskStore=useVideoTasks({email:user?.email,projectKey:active?.key,readOnly,request:privateFetchRaw,onCompleted:async(task,project)=>{
+    const ids=task.resultAssets?.map(asset=>asset.artworkId)||[];if(task.artworkId&&!ids.includes(task.artworkId))ids.unshift(task.artworkId);
+    if(activeProjectRef.current?.key!==project)return;
+    if(ids.length)await mergeWorks(ids);
+    if(task.sourceId&&user){const receipt=readVideoReceipt(localStorage,user.email,task.sourceId);if(receipt?.taskId===task.id)clearVideoReceipt(localStorage,user.email,task.sourceId,receipt.idempotencyKey);}
+    await videoNodesStore.refresh();await refreshCredits();
+  }});
+  const videoInputChoices:VideoInputChoice[]=useMemo(()=>[
+    ...(active?.members||[]).map(art=>({id:art.id,nodeId:art.id,kind:art.category==="audio"?"audio" as const:art.videoUrl?"video" as const:"image" as const,title:art.title,value:art.videoUrl||art.image,thumbnail:!art.videoUrl?art.image:undefined,available:art.status==="completed"})),
+    ...textNodes.filter(node=>node.projectKey===activeKey).map(node=>({id:node.id,nodeId:node.id,kind:"text" as const,title:node.title,value:node.content||node.prompt||" ",available:node.status!=="generating"})),
+    ...videoNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>{const task=videoTaskStore.tasks.find(task=>task.id===node.lastTaskId),art=(works||[]).find(art=>art.id===node.lastResultId);return {id:node.id,nodeId:node.id,kind:"video" as const,title:node.title,value:art?.videoUrl||task?.videoUrl||"/media/pending",available:task?.status==="completed"&&!!node.lastResultId};}),
+  ],[active,activeKey,textNodes,videoNodesStore.nodes,videoTaskStore.tasks,works]);
   const selected = useMemo(
     () => active?.members.find((a) => a.id === selectedId) ?? null,
     [active, selectedId]
@@ -3687,6 +3681,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         } as Edge);
       }
     }
+    for(const videoNode of videoNodesStore.nodes.filter(node=>node.projectKey===activeKey)){
+      const task=videoTaskStore.tasks.find(task=>task.id===videoNode.lastTaskId),result=(works||[]).find(art=>art.id===videoNode.lastResultId),locked=isNodeLocked(videoNode.id);
+      displayNodes.push({id:videoNode.id,type:"videoGeneration",position:{x:videoNode.x,y:videoNode.y},selected:videoNode.id===selectedId,draggable:!readOnly&&!locked,
+        style:{width:videoNode.width,height:videoNode.height},data:{node:videoNode,title:videoNode.title,prompt:videoNode.config.prompt,content:String(videoNode.revision),width:videoNode.width,height:videoNode.height,status:task?.status,progress:task?.progress,videoUrl:result?.videoUrl||task?.videoUrl,
+          task,selected:videoNode.id===selectedId,lightCanvas,locked,readOnly,resultUrl:result?.videoUrl||task?.videoUrl,onEdit:(id:string)=>setVideoEditId(id),onGenerate:(id:string)=>setVideoEditId(id),onCancel:(id:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current?.lastTaskId)void videoTaskStore.cancel(current.lastTaskId).catch(error=>flashTip(error.message));},
+          onPrompt:async(id:string,prompt:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current)await videoNodesStore.save(id,{config:{...current.config,prompt}});},
+          onResize:(id:string,size:{x:number;y:number;width:number;height:number})=>{void videoNodesStore.save(id,size).catch(error=>flashTip(error.message));}}} as Node);
+      for(const input of videoNode.inputs){const source=input.nodeId.replace(/^(?:text|image|video|audio):/,"");if(!displayNodes.some(node=>node.id===source)&&!textNodes.some(node=>node.id===source)&&!videoNodesStore.nodes.some(node=>node.id===source))continue;
+        displayEdges.push({id:`e-video-${input.id}-${videoNode.id}`,source,sourceHandle:"out",target:videoNode.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}} as Edge);}
+    }
     for (const textNode of textNodes.filter((node) => node.projectKey === activeKey)) {
       const expanded = expandedTextIds.has(textNode.id);
       const displayWidth = expanded ? Math.min(760, TEXT_NODE_MAX_W) : textNode.width;
@@ -3817,6 +3821,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     nodeSettingsReady,
     readOnly,
     workflowManifests,
+    videoNodesStore.nodes,videoTaskStore.tasks,works,
   ]);
 
   // 受控节点状态(支持拖拽);仅当底层数据/位置真正变化时重新灌入,拖拽过程中不重置。
@@ -5035,197 +5040,41 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
 
-  /**
-   * 视频生成(OpenAI videos 协议):创建任务 → 轮询 /api/video/tasks →
-   * 服务端完成后转存并落画布视频节点(category="video",videoUrl 指向 mp4),
-   * 前端 mergeWorks 挂树。失败自动退积分(服务端处理)。
-   */
-  async function onGenerateVideo() {
-    const source = selected;
-    if (!source || videoBusy) return;
-    const prompt = videoPrompt.trim();
-    const contextEpoch = canvasContextEpochRef.current;
-    const contextProjectKey = activeProjectRef.current?.key || null;
-    if (!prompt) {
-      flashTip("请先填写视频描述");
-      return;
+  async function openVideoNodeFromSelection(blank=false){
+    if(!user||readOnly||!canFeature("video"))return;
+    try{
+      const id=`vnode-${browserRandomUUID()}`,project=active?.key||`tree:${id}`,center=centerScreen();
+      const point=rfRef.current?.screenToFlowPosition(center)||{x:0,y:0};
+      const model=videoCatalog.find(item=>item.isDefault)||videoCatalog[0];
+      const selectedIds=blank?new Set<string>():new Set([...multiSel,...(selectedId?[selectedId]:[]),...(selectedTextId?[selectedTextId]:[])]);
+      const choices=videoInputChoices.filter(choice=>selectedIds.has(choice.nodeId));
+      const raw={modelId:model?.modelId,providerId:model?.providerId,prompt:blank?"":selected?.prompt||""};
+      const config=reconcileVideoSettings(raw,catalogCapability(model)).config;
+      const images=choices.filter(choice=>choice.kind==="image").length;
+      const proposed=choices.length===0?"text":choices.length===1&&images===1?"single_image":"reference";
+      if(catalogCapability(model).modes?.includes(proposed))config.mode=proposed;
+      const inputs=videoModeRoles(choices.map(choice=>({id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==="text"?"context" as const:choice.kind==="video"?"source_video" as const:choice.kind==="audio"?"source_audio" as const:"reference" as const,value:choice.value})),config.mode);
+      await videoNodesStore.save(id,{projectKey:project,title:"视频",x:point.x,y:point.y,width:384,height:320,config,inputs});
+      setCreatingNew(false);setActiveKey(project);setBrowsing(false);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setVideoEditId(id);
+    }catch(error){flashTip(error instanceof Error?error.message:"新增视频节点失败");}
+  }
+  async function saveVideoDraft(id:string,draft:VideoNodeDraft){return videoNodesStore.save(id,{title:draft.title,config:draft.config,inputs:draft.inputs,expectedRevision:draft.expectedRevision});}
+  async function generateVideoDraft(id:string,draft:VideoNodeDraft,quote:PublicQuote){
+    if(!user||readOnly)throw new Error("无法修改此画布");
+    let previous=readVideoReceipt(localStorage,user.email,id);
+    if(previous){const response=await privateFetchRaw(`/api/video/tasks?idempotencyKey=${encodeURIComponent(previous.idempotencyKey)}`),data=await response.json();
+      if(response.ok&&data.task){if(!["completed","failed","cancelled"].includes(data.task.status)){await videoNodesStore.refresh();await videoTaskStore.refresh();throw new Error("上次视频任务仍在执行，设置尚未提交");}clearVideoReceipt(localStorage,user.email,id,previous.idempotencyKey);previous=null;}
+      else if(response.status!==404)throw new Error(data.error||"上次视频提交尚未核实");
+      else if(previous.expectedRevision!==draft.expectedRevision)throw new Error("上次提交尚未核实，节点已更新，请先查看任务历史");
+      else {const current=videoNodesStore.nodes.find(node=>node.id===id);if(!current||JSON.stringify({title:current.title,config:current.config,inputs:current.inputs})!==JSON.stringify({title:draft.title,config:draft.config,inputs:draft.inputs}))throw new Error("上次提交尚未核实，请先恢复原设置或查看任务历史");}
     }
-    const selectedInputs = selectedBatchArts.length > 1 && selectedBatchArts.some((item) => item.id === source.id)
-      ? [source, ...selectedBatchArts.filter((item) => item.id !== source.id)]
-      : [source];
-    const imageInputs = selectedInputs.filter((item) => !item.videoUrl && item.category !== "audio");
-    const videoInputs = selectedInputs.filter((item) => Boolean(item.videoUrl) && item.category !== "audio");
-    const audioInputs = selectedInputs.filter((item) => item.category === "audio");
-    const maxImages = Math.max(0, videoCapability?.maxReferenceImages ?? 1);
-    const maxVideos = Math.max(0, videoCapability?.maxReferenceVideos ?? 0);
-    const maxAudios = Math.max(0, videoCapability?.maxReferenceAudios ?? 0);
-    if (videoInputs.length && maxVideos === 0) {
-      flashTip("当前模型不支持视频参考，请切换支持视频编辑的模型");
-      return;
-    }
-    if (audioInputs.length && maxAudios === 0) {
-      flashTip("当前模型不支持音频参考，请切换支持音频参考的模型");
-      return;
-    }
-    const references = [
-      ...imageInputs.slice(0, maxImages).map((item, index) => ({
-        id: item.id,
-        kind: "image" as const,
-        role: (index === 0 && videoCapability?.supportsFirstFrame !== false ? "first_frame" : "reference") as "first_frame" | "reference",
-        artworkId: item.id,
-        url: item.image,
-      })),
-      ...videoInputs.slice(0, maxVideos).map((item) => ({
-        id: item.id,
-        kind: "video" as const,
-        role: "source_video" as const,
-        artworkId: item.id,
-        url: item.videoUrl || item.image,
-      })),
-      ...audioInputs.slice(0, maxAudios).map((item) => ({
-        id: item.id,
-        kind: "audio" as const,
-        role: "source_audio" as const,
-        artworkId: item.id,
-        url: item.videoUrl || item.image,
-      })),
-    ];
-    const requestedAspectRatio = videoLandscape ? "16:9" : "9:16";
-    const aspectRatio = videoCapability?.aspectRatios?.includes(requestedAspectRatio)
-      ? requestedAspectRatio
-      : videoCapability?.aspectRatios?.[0] || requestedAspectRatio;
-    const requestedResolution = videoLandscape ? "1280x720" : "720x1280";
-    const resolution = videoCapability?.resolutions.includes(requestedResolution)
-      ? requestedResolution
-      : videoCapability?.resolutions[0] || requestedResolution;
-    setVideoOpen(false);
-    setVideoBusy(true);
-    const sourceNode = rfRef.current?.getNode(source.id);
-    const sourceSize = sourceNode ? flowNodeSize(sourceNode) : artworkNodeSize(source);
-    const x = (sourceNode?.position.x ?? source.canvasX ?? 0) + sourceSize.width + X_GAP;
-    const y = (sourceNode?.position.y ?? source.canvasY ?? 0) + sourceSize.height + Y_GAP;
-    const pendingId = `pend-video-${Date.now()}`;
-    const videoOperationId = browserRandomUUID();
-    setPendNodes((current) => [
-      ...current,
-      {
-        id: pendingId,
-        taskKind: "video",
-        x,
-        y,
-        parentId: source.id,
-        linked: true,
-        label: "视频生成中",
-        uploading: false,
-        progress: 5,
-        inputs: [source.id],
-        generating: true,
-      },
-    ]);
-    const progressTimer = window.setInterval(() => {
-      setPendNodes((items) =>
-        items.map((item) =>
-          item.id === pendingId
-            ? { ...item, progress: Math.min(90, item.progress + 2) }
-            : item
-        )
-      );
-    }, 3000);
-    let taskId = "";
-    let needsAttention = false;
-    try {
-      const res = await privateFetch("/api/video/generate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          source: "canvas",
-          sourceId: source.id,
-          idempotencyKey: videoOperationId,
-          prompt,
-          providerId: videoProviderId || undefined,
-          modelId: videoModelId || undefined,
-          seconds: videoSeconds,
-          durationSeconds: Number(videoSeconds),
-          aspectRatio,
-          resolution,
-          size: resolution,
-          references,
-        }),
-      });
-      const data = await readJsonSafe(res);
-      if (!res.ok) throw new Error(data?.error || "视频任务创建失败");
-      if (data?.user) applyServerUser(data.user);
-      taskId = String(data.taskId || "");
-      if (!taskId) throw new Error("视频任务创建失败：缺少任务 ID");
-      setPendNodes((items) => items.map((item) => item.id === pendingId ? { ...item, taskId, taskKind: "video" } : item));
-      if (contextEpoch !== canvasContextEpochRef.current || activeProjectRef.current?.key !== contextProjectKey) return;
-      // 惰性轮询:服务端每次 GET 查一次上游
-      const startedAt = Date.now();
-      for (;;) {
-        await new Promise((r) => setTimeout(r, 5000));
-        if (contextEpoch !== canvasContextEpochRef.current || activeProjectRef.current?.key !== contextProjectKey) return;
-        const poll = await privateFetchRaw(`/api/video/tasks?id=${encodeURIComponent(taskId)}`);
-        const pollData = await readJsonSafe(poll);
-        if (!poll.ok) throw new Error(pollData?.error || "视频任务查询失败");
-        const task = pollData?.task as
-          | { status: string; error?: string; artworkId?: string }
-          | undefined;
-        if (task?.status === "failed") throw new Error(task.error || "视频生成失败");
-        if (task?.status === "needs_attention") {
-          needsAttention = true;
-          window.clearInterval(progressTimer);
-          setPendNodes((items) => items.map((item) => item.id === pendingId
-            ? {
-                ...item,
-                label: t("canvas.videoNeedsAttention"),
-                generating: false,
-                progress: 0,
-                needsAttention: true,
-                attentionTitle: t("canvas.videoNeedsAttention"),
-                attentionHint: t("canvas.videoNeedsAttentionHint"),
-                attentionAction: t("canvas.videoOpenTasks"),
-                attentionHref: "/video",
-              }
-            : item));
-          flashTip(t("canvas.videoAttentionTip"));
-          break;
-        }
-        if (task?.status === "completed" && task.artworkId) {
-          const positionResponse = await privateFetchRaw("/api/artworks/position", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: task.artworkId, x: Math.round(x), y: Math.round(y) }),
-          });
-          if (!positionResponse.ok) throw new Error("视频结果定位失败");
-          if (contextEpoch !== canvasContextEpochRef.current || activeProjectRef.current?.key !== contextProjectKey) return;
-          const fresh = await mergeWorks([task.artworkId]);
-          if (contextEpoch !== canvasContextEpochRef.current || activeProjectRef.current?.key !== contextProjectKey) return;
-          if (!fresh.some((item) => item.id === task.artworkId)) throw new Error("视频结果加载失败");
-          settledCanvasVideoTaskRef.current.add(taskId);
-          await refreshCredits();
-          if (contextEpoch !== canvasContextEpochRef.current || activeProjectRef.current?.key !== contextProjectKey) return;
-          pushAddUndo(task.artworkId, fresh);
-          setSelectedId(task.artworkId);
-          flashTip("视频已生成,点击节点上的播放按钮预览");
-          break;
-        }
-        if (Date.now() - startedAt > 10 * 60 * 1000) {
-          throw new Error("视频生成超时(10 分钟),请稍后刷新查看");
-        }
-      }
-    } catch (e) {
-      if (taskId) await refreshCredits().catch(() => {});
-      if (contextEpoch === canvasContextEpochRef.current && activeProjectRef.current?.key === contextProjectKey) {
-        flashTip(e instanceof Error ? e.message : "视频生成失败");
-      }
-    } finally {
-      if (progressTimer) window.clearInterval(progressTimer);
-      if (!needsAttention) {
-        setPendNodes((items) => items.filter((item) => item.id !== pendingId));
-      }
-      setVideoBusy(false);
-      if (contextEpoch === canvasContextEpochRef.current && activeProjectRef.current?.key === contextProjectKey) setVideoPrompt("");
-    }
+    const saved=previous&&previous.expectedRevision===draft.expectedRevision?videoNodesStore.nodes.find(node=>node.id===id):await saveVideoDraft(id,draft);
+    if(!saved)throw new Error("视频节点不存在");
+    const receipt=prepareVideoReceipt(localStorage,user.email,saved);
+    const response=await billing.submit(`/api/canvas/video-nodes/${encodeURIComponent(id)}/generate`,{method:"POST",headers:{"content-type":"application/json","x-naumi-canvas":"1"},body:JSON.stringify({expectedRevision:receipt.expectedRevision,idempotencyKey:receipt.idempotencyKey})},quote);
+    const data=await readJsonSafe(response);if(!response.ok){if(response.status<500&&!["OPERATION_PENDING","OPERATION_CONFLICT"].includes(data?.code))clearVideoReceipt(localStorage,user.email,id,receipt.idempotencyKey);throw new Error(data?.error||"视频提交失败，请核查任务后重试");}
+    saveVideoReceipt(localStorage,user.email,{...receipt,taskId:String(data.taskId)});
+    await videoNodesStore.refresh();await videoTaskStore.refresh();await refreshCredits();
   }
 
   async function onExpand(ratio: string) {
@@ -6500,6 +6349,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const target = conn.target;
     if (!source || !target || source === target) return;
     if (source.startsWith("task-") || target.startsWith("task-")) return;
+    const videoTarget=videoNodesStore.nodes.find(node=>node.id===target);
+    if(videoTarget){
+      if(readOnly||isNodeLocked(target))return;
+      const choice=videoInputChoices.find(item=>item.nodeId===source);if(!choice||videoTarget.inputs.some(input=>input.nodeId===source))return;
+      try{await videoNodesStore.save(target,{inputs:videoModeRoles([...videoTarget.inputs,{id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==="text"?"context":choice.kind==="video"?"source_video":choice.kind==="audio"?"source_audio":"reference",value:choice.value}],videoTarget.config.mode)});}catch(error){flashTip(error instanceof Error?error.message:"视频引用保存失败");}return;
+    }
+
     // 连到空白占位节点 → 加为它的输入(客户端)
     if (target.startsWith("pend-")) {
       if (pendNodesRef.current.some(node => node.id === target && (node.generating || node.uploading))) return;
@@ -8416,7 +8272,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       cropArtwork ||
       ratioMenuOpen ||
       expandOpen ||
-      videoOpen ||
+      !!videoEditId ||
       spawnMenu ||
       ctxMenu ||
       addMenuOpen ||
@@ -9295,7 +9151,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               </div>
             </div>
           ) : (
-            <ReactFlow
+
+              <ReactFlow
               key={active?.key ?? "__new__"}
               colorMode="dark"
               style={{ background: "transparent" }}
@@ -9373,6 +9230,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 setSelectedId(node.id);
               }}
               onNodeDoubleClick={(_, node) => {
+                if(videoNodesStore.nodes.some(item=>item.id===node.id)){setVideoEditId(node.id);return;}
                 const m = active?.members.find((x) => x.id === node.id);
                 if (m) setLightbox({ src: m.image, alt: m.title });
               }}
@@ -9564,6 +9422,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   );
                   saveManyNodePositions(moves);
                   return;
+                }
+                if(videoNodesStore.nodes.some(item=>item.id===node.id)){
+                  void videoNodesStore.save(node.id,{x:node.position.x,y:node.position.y}).catch(error=>flashTip(error.message));return;
                 }
                 // React Flow 从某个已选节点发起多选拖动时，只触发 onNodeDragStop，
                 // 第三个参数才是整组节点；onSelectionDragStop 不会触发。
@@ -9895,6 +9756,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     items={[
                       { id: "text", icon: Type, label: t("canvas.toolbar.addText"), hint: t("canvas.toolbar.addTextHint"),
                         onSelect: () => { const c = centerScreen(); addTextNodeAtScreen(c.x, c.y); } },
+                      { id: "video-node", icon: Video, label: "新增视频节点", disabled: readOnly || !canFeature("video"), onSelect: () => { void openVideoNodeFromSelection(true); } },
                       { id: "image-node", icon: ImagePlus, label: t("canvas.toolbar.addImageNode"), hint: t("canvas.toolbar.addImageNodeHint"),
                         onSelect: toolAddNode },
                       { id: "upload", icon: Upload, label: t("canvas.uploadImage"), hint: t("canvas.toolbar.uploadHint"),
@@ -10856,7 +10718,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   { id: "workflow", icon: Workflow, label: t("canvas.toolbar.workflow"), hint: t("canvas.toolbar.workflowHint"),
                     disabled: !selected || readOnly, onSelect: () => setComfyOpen(true) },
                   { id: "video", icon: Video, label: t("canvas.toolbar.video"), hint: t("canvas.toolbar.videoHint"),
-                    disabled: readOnly || videoBusy, onSelect: () => { setVideoOpen(open => !open); if (selected) setVideoPrompt(selected.prompt || ""); } },
+                    disabled: readOnly, onSelect: () => { void openVideoNodeFromSelection(); } },
                   ...(selected ? [
                     {id:"copy-node",icon:Copy,label:t("canvas.copyNode"),onSelect:()=>copyNodeToClip(selected,true)},
                     {id:"copy-image",icon:ImageIcon,label:t("canvas.copyImage"),onSelect:()=>void copyImageToClipboard(selected.image)},
@@ -10867,75 +10729,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 ].filter(item => selected || item.id === "video")}
               />
 
-              {/* 视频:OpenAI videos 协议,图生视频/文生视频,产物为画布视频节点 */}
-              <div className="relative flex items-center">
 
-                {canFeature("video") && videoOpen && (
-                    <CanvasActionPanel anchorRef={imageMoreRef} label={t("canvas.toolbar.video")} light={lightCanvas} width={280} onClose={() => setVideoOpen(false)}>
-                      <textarea
-                        value={videoPrompt}
-                        onChange={(event) => setVideoPrompt(event.target.value)}
-                        rows={3}
-                        placeholder="描述视频内容与运镜,如:商品缓慢旋转展示,柔和灯光"
-                        className="w-full resize-none rounded-lg border border-current/20 bg-transparent px-2.5 py-2 text-[12px] leading-relaxed outline-none"
-                      />
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className="text-[11px] font-semibold opacity-70">时长</span>
-                        {(videoCapability?.durations?.length ? videoCapability.durations.map(String) : ["4", "8", "12"]).map((sec) => (
-                          <button
-                            key={sec}
-                            type="button"
-                            onClick={() => setVideoSeconds(sec)}
-                            className={cn(
-                              "rounded-lg px-2 py-1 text-[11.5px] font-semibold transition-colors",
-                              videoSeconds === sec ? "bg-teal-500 text-white" : "canvas-ui-action"
-                            )}
-                          >
-                            {sec}s
-                          </button>
-                        ))}
-                        <span className="ml-auto text-[11px] font-semibold opacity-70">画幅</span>
-                        <button
-                          type="button"
-                          title="横屏 1280x720"
-                          onClick={() => setVideoLandscape(true)}
-                          className={cn("rounded-lg px-2 py-1 text-[11.5px] font-semibold transition-colors", videoLandscape ? "bg-teal-500 text-white" : "canvas-ui-action")}
-                        >
-                          横
-                        </button>
-                        <button
-                          type="button"
-                          title="竖屏 720x1280"
-                          onClick={() => setVideoLandscape(false)}
-                          className={cn("rounded-lg px-2 py-1 text-[11.5px] font-semibold transition-colors", !videoLandscape ? "bg-teal-500 text-white" : "canvas-ui-action")}
-                        >
-                          竖
-                        </button>
-                      </div>
-                      {videoCatalog.length > 0 && <div className="mt-2 grid grid-cols-2 gap-2">
-                        <select value={videoProviderId} onChange={(event) => { const provider = event.target.value; setVideoProviderId(provider); const next = videoCatalog.find((item) => item.providerId === provider && item.isDefault) || videoCatalog.find((item) => item.providerId === provider); if (next) { setVideoModelId(next.modelId); setVideoSeconds(String(next.durations[0] || 4)); } }} className="canvas-ui-action min-w-0 rounded-lg px-2 py-1.5 text-[11px]">
-                          {Array.from(new Map(videoCatalog.map((item) => [item.providerId, item.providerId])).values()).map((provider) => <option key={provider} value={provider}>{provider}</option>)}
-                        </select>
-                        <select value={videoModelId} onChange={(event) => setVideoModelId(event.target.value)} className="canvas-ui-action min-w-0 rounded-lg px-2 py-1.5 text-[11px]">
-                          {videoCatalog.filter((item) => item.providerId === videoProviderId).map((item) => <option key={item.modelId} value={item.modelId}>{item.label}</option>)}
-                        </select>
-                      </div>}
-                      {videoCapability?.note && <p className="mt-1.5 text-[10.5px] opacity-60">{videoCapability.note}</p>}
-                      {selectedBatchArts.length > 1 && <p className="mt-1.5 text-[10.5px] opacity-60">将按当前模型上限使用框选的图片 / 视频 / 音频素材</p>}
-                      <button
-                        type="button"
-                        disabled={!videoPrompt.trim() || videoBusy}
-                        onClick={() => void onGenerateVideo()}
-                        className="mt-3 w-full rounded-[10px] bg-teal-500 px-3 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {selected ? `以选中${selected.category === "audio" ? "音轨" : selected.videoUrl ? "视频" : "图片"}生成视频` : "文生视频"} · 按次计费
-                      </button>
-                      <p className="mt-2 text-[11px] leading-relaxed opacity-60">
-                        {selected ? `以选中${selected.category === "audio" ? "音轨" : selected.videoUrl ? "视频" : "图片"}作为生成参考。` : "未选择参考节点,将纯文字生成。"}生成约需 1-3 分钟,完成后出现在画布。
-                      </p>
-                    </CanvasActionPanel>
-                )}
-              </div>
               {/* 画布助手:围绕选中节点+上游链对话,可一键生图回画布 */}
 
               {selected && <>
@@ -12311,6 +12105,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         </div>
       )}
 
+      {videoEditId&&videoNodesStore.nodes.find(node=>node.id===videoEditId&&node.projectKey===activeKey)&&(()=>{const node=videoNodesStore.nodes.find(node=>node.id===videoEditId)!;return <VideoSettingsDialog key={node.id} node={node} models={videoCatalog} choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||isNodeLocked(node.id)} onClose={()=>setVideoEditId(null)} onSave={async draft=>{await saveVideoDraft(node.id,draft);}} onGenerate={(draft,quote)=>generateVideoDraft(node.id,draft,quote)}/>;})()}
       {imagegenPanel&&<ImagegenPanel entry="canvas" inputs={imagegenPanel.inputs} modelId={genModel} sourceNodeId={imagegenPanel.sourceNodeId} onClose={()=>setImagegenPanel(null)} onResult={result=>{void mountImagegenResult(result).catch(e=>flashTip(e instanceof Error?e.message:"结果已保存，请刷新画布"));}}/>}
       {/* 从生成历史选择:作品选择器 */}
       {historyPicker && (

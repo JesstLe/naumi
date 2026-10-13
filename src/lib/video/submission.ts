@@ -11,6 +11,7 @@ import {ensureVideoNodeSchema,associateVideoTaskTx,getVideoNode} from "../canvas
 import {authorizeVideoProject} from "../canvas/video-node-service";
 import {normalizeVideoInput,resolveVideoCapability,VideoContractError} from "./contract";
 import {compileVideoPrompt} from "./prompt";
+import {compileVideoCamera} from "./camera";
 import {adapterDefinition} from "./model-definition";
 import {videoReferenceSchema} from "./references";
 import {authorizeVideoReferences,materializeVideoReferences} from "./reference-materialization";
@@ -51,7 +52,7 @@ export async function createValidatedVideo(email:string,input:CreateVideoInput,h
     if(node.revision!==input.nodeRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","视频节点已更新，请重新读取后生成",409);
     if(node.projectKey!==input.projectKey)throw new ModelConfigError("VIDEO_NODE_PROJECT_CONFLICT","视频节点项目不一致",409);
   }
-  const cameraPrompt=input.camera?Object.entries(input.camera).filter(([,value])=>!!value).map(([key,value])=>`${key}: ${value}`).join("; "):"";
+  const cameraPrompt=compileVideoCamera(input.camera);
   const orderedInputs=input.orderedInputs?await Promise.all(input.orderedInputs.map(async item=>item.kind==="text"&&!item.nodeId.startsWith("inline:")?{...item,value:await requireOwnedVideoText(email,item.nodeId)}:{...item})):references.map(ref=>({id:ref.id,nodeId:ref.artworkId||`inline:${ref.id}`,kind:ref.kind,role:ref.role,value:ref.url||ref.storageKey||ref.artworkId!}));
   const compiled=compileVideoPrompt(input.prompt,orderedInputs||[],cameraPrompt);
   for(const shot of input.shots||[])if(shot.textNodeId)await requireOwnedVideoText(email,shot.textNodeId);
