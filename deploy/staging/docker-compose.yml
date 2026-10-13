@@ -38,6 +38,9 @@ services:
       R2_PUBLIC_BASE_URL: ""
       INTERNAL_APP_ORIGIN: http://127.0.0.1:3000
       NAUMI_VIDEO_WORKER: "0"
+      MEDIA_WORKER_ORIGIN: http://media-worker:3001
+      MEDIA_WORKER_SECRET: ${MEDIA_WORKER_SECRET:?Independent media worker secret required}
+      MEDIA_JOB_DIR: /scratch
       NAUMI_ENVIRONMENT: staging
       NAUMI_STAGING_HISTORY_GUARD: "1"
       VIDEO_WORKER_SECRET: ${VIDEO_WORKER_SECRET:?Independent staging worker secret required}
@@ -45,9 +48,37 @@ services:
       - "127.0.0.1:13012:3000"
     volumes:
       - /opt/naumi-staging/data/media:/data/media
+      - /opt/naumi-staging/data/media-jobs:/scratch
     depends_on:
       db:
         condition: service_healthy
+  media-worker:
+    image: ${NAUMI_IMAGE:?Fixed 40-character commit image required}
+    restart: unless-stopped
+    user: "0:0"
+    command: ["node", "scripts/video-media-worker.mjs"]
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [SYS_CHROOT, SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 160
+    mem_limit: 3g
+    cpus: 2
+    environment:
+      MEDIA_WORKER_SECRET: ${MEDIA_WORKER_SECRET:?Independent media worker secret required}
+      MEDIA_JOB_DIR: /scratch
+    volumes:
+      - /opt/naumi-staging/data/media-jobs:/scratch
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+      - /tmp/naumi-media-sandbox:rw,exec,nosuid,nodev,size=2g,mode=755
+      - /data:size=1m,mode=755
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3001/health',{headers:{authorization:'Bearer '+process.env.MEDIA_WORKER_SECRET}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   video-worker:
     profiles: [workers]
     image: ${NAUMI_IMAGE:?Fixed 40-character commit image required}

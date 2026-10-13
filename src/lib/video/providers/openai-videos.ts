@@ -1,5 +1,6 @@
 import "server-only";
 import { currentModelExecution } from "@/lib/model-config/context";
+import {downloadVideoResultAsset} from "./result-fetch";
 import { modelEndpointFetch } from "@/lib/model-config/transport";
 import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import type { VideoProviderRuntimeConfig } from "./config";
@@ -15,7 +16,6 @@ import {
   type VideoTaskSnapshot,
   type VideoTaskStatus,
 } from "@/lib/video/types";
-import { readLimitedVideoResponse } from "@/lib/video/result-download";
 
 // ---------------------------------------------------------------------------
 // OpenAI Videos 协议适配器(§4.3 Phase 3 第 1 个):吸收原 client.ts。
@@ -171,11 +171,7 @@ export const openAiVideosAdapter: VideoProviderAdapter = {
   ): Promise<VideoProviderFetchResult> {
     const cfg = resolveOpenAiVideosConfig();
     if (!cfg) throw new Error("视频服务未配置");
-    const res = await upstreamFetch(cfg.baseUrl)(
-      endpoint(cfg, "content", task.upstreamTaskId),
-      { headers: authHeaders(cfg.apiKey, cfg.options?.rawAuthorization), signal: AbortSignal.timeout(180_000) }
-    );
-    const downloaded = await readLimitedVideoResponse(res);
-    return { bytes: downloaded.bytes, mimeType: downloaded.mimeType };
+    return downloadVideoResultAsset({id:task.providerId,label:"Legacy video",protocol:"openai-videos",baseUrl:cfg.baseUrl,apiKey:cfg.apiKey,models:[task.modelId],defaultModel:task.modelId,
+      rawAuthorization:cfg.options?.rawAuthorization,idempotencyStrategy:"none"},{kind:"video",url:endpoint(cfg,"content",task.upstreamTaskId)});
   },
 };

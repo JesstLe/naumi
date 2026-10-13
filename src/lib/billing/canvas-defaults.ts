@@ -6,6 +6,7 @@ export const CANVAS_FREE_DEFAULTS = {
     "canvas.text-generate": "画布文字生成与提示词",
     "canvas.assistant": "画布助手对话",
     "canvas.ocr": "画布文字识别（OCR）",
+    "video.process": "视频媒体处理",
 } as const;
 export function freeCanvasTariff(label: string): FeatureTariff {
     return { label, enabled: false, unit: "task", pricing: { mode: "fixed", credits: 0 }, settlement: { qualityBasis: "requested", successBasis: "successful-units", failureBps: 0, byokBps: 10000, reserveBps: 10000, unknown: "hold" }, rules: [] };
