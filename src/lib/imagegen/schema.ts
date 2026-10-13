@@ -7,7 +7,7 @@ export const imagegenChromaSchema=z.strictObject({
   keyColor:hex.default("#00ff00"),tolerance:z.number().int().min(0).max(255).default(12),
   autoKey:z.enum(["none","corners","border"]).default("none"),softMatte:z.boolean().default(false),
   transparentThreshold:z.number().min(0).max(255).default(12),opaqueThreshold:z.number().min(0).max(255).default(96),
-  edgeFeather:z.number().min(0).max(64).default(0),edgeContract:z.number().int().min(0).max(64).default(0),spillCleanup:z.boolean().default(false),
+  edgeFeather:z.number().min(0).max(64).default(0),edgeContract:z.number().int().min(0).max(16).default(0),spillCleanup:z.boolean().default(false),
 }).refine(v=>v.transparentThreshold<v.opaqueThreshold,"不透明阈值必须高于透明阈值");
 export const imagegenOutputSchema=z.strictObject({
   format:z.enum(["png","jpeg","webp"]).default("png"),compression:z.number().int().min(0).max(100).optional(),

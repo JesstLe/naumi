@@ -2140,7 +2140,7 @@ export type ArtworkRecord = {
   canvasY?: number | null;
   width?: number | null; // 原图实际像素宽度
   height?: number | null;
-  processingKind?: "base" | "resize" | "native" | "ai-upscale" | null;
+  processingKind?: "base" | "resize" | "native" | "ai-upscale" | "imagegen" | null;
   postprocessStatus?: "succeeded" | "failed-kept-base" | "pending" | null;
   canvasWidth?: number | null; // 无限画布节点显示尺寸；与原图像素分离
   canvasHeight?: number | null;

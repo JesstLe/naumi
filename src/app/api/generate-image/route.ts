@@ -89,7 +89,7 @@ export type GeneratedImage = {
   createdAt: string;
   width?: number;
   height?: number;
-  processingKind?: "base" | "resize" | "native" | "ai-upscale";
+  processingKind?: "base" | "resize" | "native" | "ai-upscale" | "imagegen";
   postprocessStatus?: "succeeded" | "failed-kept-base" | "pending";
   execution?: { quality: string; upstream: string; reason: string; platformFunded: boolean };
 };

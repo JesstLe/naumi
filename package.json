@@ -6,6 +6,8 @@
     "verify:imagegen-contract": "tsx --conditions react-server scripts/verify-imagegen-contract.ts",
     "verify:imagegen-intent": "tsx --conditions react-server scripts/verify-imagegen-intent.ts",
     "verify:imagegen-capabilities": "tsx --conditions react-server scripts/verify-imagegen-capabilities.ts",
+    "verify:imagegen-postprocess": "tsx --conditions react-server scripts/verify-imagegen-postprocess.ts",
+    "verify:imagegen-postprocess-db": "tsx --conditions react-server scripts/verify-imagegen-postprocess-db.ts",
     "verify:image-skills": "tsx --conditions react-server scripts/verify-image-skills.ts",
     "verify:image-skills-execution": "tsx --conditions react-server scripts/verify-image-skills-execution.ts",
     "verify:model-management": "tsx --conditions react-server scripts/verify-model-management.ts",
