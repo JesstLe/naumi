@@ -18,6 +18,7 @@ import { clipboardImageFiles } from "@/lib/canvas/clipboard-files";
 import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCanvasRatio, normalizeCanvasResolution, normalizeCanvasCount, normalizeCanvasQuality, canvasModelParameters, canvasCombinationSupported } from "@/lib/canvas/generation-parameters";
 import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
 import { createProjectRootResolver } from "@/lib/canvas/project-roots";
+import { knownCanvasNodeMeasurement } from "@/lib/canvas/node-measurement";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasParameterPopover } from "./parameter-popover";
 import {ImagegenPanel,type ImagegenPanelInput} from "@/components/imagegen/imagegen-panel";
@@ -3878,7 +3879,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         selected: currentById.get(node.id)?.selected ?? false,
         // 同尺寸数据更新不会触发 ResizeObserver。保留已有测量，避免任务阶段刷新后
         // React Flow 将其余节点永久设为 visibility:hidden，导致整张画布无法交互。
-        measured: currentById.get(node.id)?.measured,
+        // Offscreen fixed-size nodes must participate in the initial fit, or
+        // virtualization can strand them outside the only measured viewport.
+        measured: currentById.get(node.id)?.measured ?? knownCanvasNodeMeasurement(node.style),
       }));
     });
     setRfEdges((current) => {

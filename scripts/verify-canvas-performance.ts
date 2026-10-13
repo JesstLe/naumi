@@ -67,6 +67,16 @@ async function main() {
     assert.doesNotMatch(client, /selectedTextId \|\| viewport.zoom !== vp.zoom/);
     assert.match(client, /zoomLabelRef.current.textContent\s*=\s*label/);
     assert.match(client, /updateLiveViewport\(vp\)/);assert.doesNotMatch(client, /selectedTextId\) setViewport\(vp\)/);
+    const {knownCanvasNodeMeasurement}=await import('../src/lib/canvas/node-measurement');
+    assert.deepEqual(knownCanvasNodeMeasurement({width:420,height:195}),{width:420,height:195});
+    for(const style of [undefined,{}, {width:'420px',height:195},{width:420,height:'auto'},{width:0,height:195},{width:420,height:NaN},{width:Infinity,height:195}])assert.equal(knownCanvasNodeMeasurement(style),undefined);
+    const {getNodesBounds,getViewportForBounds}=await import('@xyflow/react');
+    const scene=[{id:'near',position:{x:0,y:0},style:{width:420,height:195}},{id:'far',position:{x:30000,y:25000},style:{width:420,height:8000}}];
+    const measured=scene.map(node=>({...node,data:{},measured:knownCanvasNodeMeasurement(node.style)}));
+    const bounds=getNodesBounds(measured);assert.deepEqual(bounds,{x:0,y:0,width:30420,height:33000});
+    const fit=getViewportForBounds(bounds,900,720,Number.EPSILON,1,0.25);assert.ok(fit.zoom<0.03,'offscreen known nodes enter initial full fit');
+    assert.match(client,/measured: currentById.get\(node.id\)\?\.measured \?\? knownCanvasNodeMeasurement\(node.style\)/);
+    console.log('INITIAL_MEASUREMENT=FIXED_NUMERIC_ONLY OFFSCREEN_FULL_FIT=PASS OBSERVED_SIZE_PRECEDENCE=RETAINED AUTOSIZE=DOM_MEASURED');
     const css=readFileSync('src/app/globals.css','utf8');
     assert.match(client,/!selectedEdge && !linking && "canvas-render-layers"/);
     assert.match(css,/\.canvas-render-layers \.react-flow__nodes,\s*\.canvas-render-layers \.react-flow__edges \{ will-change: transform; \}/);
