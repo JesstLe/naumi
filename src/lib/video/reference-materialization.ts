@@ -1,10 +1,13 @@
 import "server-only";
+import {createHash} from "node:crypto";
 import {listArtworksByIds} from "../db";
 import {canReadMedia,getMediaAsset,importLegacyMedia} from "../media-assets";
 import {storageKeyFromManagedUrl,readManagedObject,writeStoredObject,presignStoredObject,privateMedia} from "../storage";
 import {VideoContractError} from "./contract";
 import {videoReferenceSchema} from "./references";
 import type {VideoGenerationRequest,VideoReference} from "./types";
+import {verifiedOwnedMedia} from "./media-inspection";
+import {ModelConfigError} from "../model-config/types";
 
 function invalid(message:string):never{throw new VideoContractError("REFERENCE_UNAVAILABLE",message,["references"]);}
 /** Resolve every nested input against owned bytes. Never authorize a client-supplied URL by an unrelated artwork ID. */
@@ -28,9 +31,13 @@ export async function authorizeVideoReferences(actor:string,request:VideoGenerat
     if(existing&&existing!==key)invalid("同一引用身份对应不同素材");identity.set(ref.id,key);
     const asset=await getMediaAsset(key)||await importLegacyMedia(key,actor);
     if(!asset||!asset.content_type.startsWith(ref.kind+"/"))invalid("素材真实类型与引用类型不一致");
-    // Duration is filled by verified media inspection in the media module, never trusted from the client.
-    return {...ref,url:`/media/${key}`,storageKey:key,mimeType:asset.content_type,bytes:Number(asset.bytes),
-      width:asset.width??undefined,height:asset.height??undefined,durationSeconds:undefined};
+    let verified;
+    try{verified=await verifiedOwnedMedia(actor,key,art?.id||null,ref.sha256);}catch(error){
+      if(error instanceof ModelConfigError&&["MEDIA_INPUT_CHANGED","MEDIA_INPUT_UNAVAILABLE","INVALID_MEDIA_STREAM"].includes(error.code))invalid(error.message);throw error;
+    }
+    return {...ref,url:`/media/${key}`,storageKey:key,mimeType:verified.mimeType,bytes:verified.bytes,sha256:verified.sha256,
+      width:verified.probe.width||undefined,height:verified.probe.height||undefined,
+      durationSeconds:ref.kind==="image"?undefined:verified.probe.durationSeconds};
   };
   const references:VideoReference[]=[];for(const ref of request.references)references.push(await resolve(ref));
   const elements=[];for(const element of request.elements||[]){const refs=[];for(const ref of element.references)refs.push(await resolve(ref));elements.push({...element,references:refs});}
@@ -44,6 +51,7 @@ export async function materializeVideoReferences(actor:string,request:VideoGener
     const key=ref.storageKey!;
     if(options.inlineImages&&ref.kind==="image"){
       const input=await readManagedObject(`/media/${key}`,12*1024*1024);
+      if(ref.sha256&&createHash("sha256").update(input.bytes).digest("hex")!==ref.sha256)invalid("已冻结图片字节已改变");
       return {...ref,inlineData:{mimeType:ref.mimeType!,data:Buffer.from(input.bytes).toString("base64")}};
     }
     if(options.multipart)return {...ref};
@@ -51,8 +59,9 @@ export async function materializeVideoReferences(actor:string,request:VideoGener
     if(!url){
       if(privateMedia){
         const asset=await getMediaAsset(key);
-        if(!asset?.remote_ready){
+        if(!asset?.remote_ready||asset.sha256!==ref.sha256){
           const object=await readManagedObject(`/media/${key}`,250*1024*1024);
+          if(ref.sha256&&createHash("sha256").update(object.bytes).digest("hex")!==ref.sha256)invalid("已冻结素材字节已改变");
           const written=await writeStoredObject(object.bytes,ref.mimeType||object.contentType,key);
           if(!written.remoteReady)invalid("素材暂时无法提供给视频供应商，请稍后重试");
         }

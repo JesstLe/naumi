@@ -3,6 +3,8 @@ import {readManagedObject} from "../../storage";
 import {readBounded} from "../../supplier-cost/io";
 import {field,string,unsupportedWire,type VideoWireContext} from "./wire";
 import {videoWireEndpoint} from "./wire-adapter";
+import {createHash} from "node:crypto";
+import {mediaExtension} from "../media-formats";
 
 /** Upload bounded owned originals before graph submission; never store temporary names as reference identity. */
 export async function uploadWorkflowReferences(context:VideoWireContext,transport:typeof fetch){
@@ -11,7 +13,8 @@ export async function uploadWorkflowReferences(context:VideoWireContext,transpor
   for(const ref of context.request.references){
     const input=ref.storageKey?await readManagedObject(`/media/${ref.storageKey}`,250*1024*1024):ref.inlineData?{bytes:Buffer.from(ref.inlineData.data,"base64"),contentType:ref.inlineData.mimeType}:undefined;
     if(!input?.bytes.length)unsupportedWire(context,"工作流引用需要已拥有的原始素材");
-    const form=new FormData(),filename=`naumi-${ref.id.replace(/[^A-Za-z0-9]/g,"").slice(0,40)}.${ref.kind==="image"?"png":ref.kind==="video"?"mp4":"wav"}`;
+    if(ref.sha256&&createHash("sha256").update(input.bytes).digest("hex")!==ref.sha256)unsupportedWire(context,"已冻结工作流素材字节已改变");
+    const form=new FormData(),filename=`naumi-${ref.id.replace(/[^A-Za-z0-9]/g,"").slice(0,40)}.${mediaExtension(ref.mimeType||input.contentType)}`;
     const blob=new Blob([Uint8Array.from(input.bytes)],{type:ref.mimeType||input.contentType});
     const headers:Record<string,string>={};
     if(context.profile==="runninghub"){form.set("apiKey",context.provider.apiKey);form.set("fileType","input");form.set("file",blob,filename);}

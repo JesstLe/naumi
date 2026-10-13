@@ -23,7 +23,9 @@ test -s "$ENV" && test -s "$COMPOSE"
 test "$(docker inspect naumi-staging-app-1 --format '{{.Image}}')" = "$BASELINE"
 test "$(docker inspect naumi-staging-video-worker-1 --format '{{.Image}}')" = "$BASELINE"
 pending=$(docker exec -i naumi-staging-db-1 sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' <<'SQL'
-SELECT (SELECT count(*) FROM app_image_jobs j WHERE snapshot->>'status' NOT IN ('done','error','failed','cancelled') AND NOT EXISTS(SELECT 1 FROM naumi_staging_guard.origin_rows h WHERE h.table_name='app_image_jobs' AND h.row_key=j.id))
+-- needs_attention is paused and cannot be claimed/replayed by the durable executor.
+-- Preserve its unresolved settlement; it is not an in-flight request to terminate.
+SELECT (SELECT count(*) FROM app_image_jobs j WHERE snapshot->>'status' NOT IN ('done','error','failed','cancelled','needs_attention') AND NOT EXISTS(SELECT 1 FROM naumi_staging_guard.origin_rows h WHERE h.table_name='app_image_jobs' AND h.row_key=j.id))
  +(SELECT count(*) FROM app_canvas_image_tasks j WHERE status IN ('queued','processing','running') AND NOT EXISTS(SELECT 1 FROM naumi_staging_guard.origin_rows h WHERE h.table_name='app_canvas_image_tasks' AND h.row_key=j.id))
  +(SELECT count(*) FROM app_video_tasks j WHERE status IN ('queued','processing','running','creating','submitted','creation_unknown') AND NOT EXISTS(SELECT 1 FROM naumi_staging_guard.origin_rows h WHERE h.table_name='app_video_tasks' AND h.row_key=j.id));
 SQL

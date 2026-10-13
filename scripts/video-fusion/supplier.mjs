@@ -92,7 +92,11 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
         if (protocol==="gemini") return respond(res,done?{done:true,response:{generateVideoResponse:{generatedSamples:[{video:{uri:resultUrl}}]}}}:{done:false});
         if (protocol==="kie") return respond(res,{code:200,data:{taskId:task.id,state:state==="completed"?"success":state,resultJson:done?JSON.stringify({resultUrls:[resultUrl]}):"",failMsg:state==="failed"?"fixture rejected":""}});
         if (protocol==="apimart") return respond(res,{code:200,data:{id:task.id,status:state,progress:done?100:30,result:done?{videos:[{url:[resultUrl]}]}:{}}});
-        if (protocol==="tfrouter") return respond(res,{status:state==="completed"?"success":state,data:{status:state,data:state==="completed"?resultUrl:"",failReason:state==="failed"?"fixture rejected":undefined}});
+        if (protocol==="tfrouter") {
+          const inlineAsset=manifest.files.find(asset=>asset.name==='landscape-30-audio.mp4');
+          const value=state==='completed'&&scenario==='tfrouter-inline'?`data:video/mp4;base64,${(await readFile(path.join(assetsRoot,inlineAsset.name))).toString('base64')}`:state==='completed'?resultUrl:'';
+          return respond(res,{status:state==="completed"?"success":state,data:{status:state,data:value,failReason:state==="failed"?"fixture rejected":undefined}});
+        }
         if(protocol==="compshare"&&!pathname.includes("/minimax/"))return respond(res,{output:{task_id:task.id,task_status:state==="completed"?"Success":state==="failed"?"Failure":state,urls:state==="completed"?[resultUrl,...(scenario==="multi-output"?[origin+"/assets/portrait-4-audio.mp4"]:[])]:[],error_message:state==="failed"?"fixture rejected":undefined}});
         if(protocol==="tokendance"){
           if(pathname.startsWith("/kling/"))return respond(res,{data:[{id:task.id,status:state==="completed"?"succeed":state,outputs:state==="completed"?[{type:"video",url:resultUrl}]:[]}]});

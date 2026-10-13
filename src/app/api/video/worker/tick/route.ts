@@ -5,6 +5,7 @@ import { recoverCanvasImageTasks } from "@/lib/canvas-image-tasks";
 import { recoverDurableImageJobs, imageWorkerAuthorized } from "@/lib/durable-image-jobs";
 import { scanSupplierCostsOnce } from "@/lib/supplier-cost/worker";
 import {recoverMediaMirrors} from "@/lib/media-assets";
+import {recoverMediaJobs} from "@/lib/video/media-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,9 +20,11 @@ export async function POST(request: Request) {
   const generationProcessed = await recoverDurableImageJobs();
   const supplierCostsProcessed = await scanSupplierCostsOnce();
   const mediaSaved = await recoverMediaMirrors().catch(()=>0);
+  const mediaProcessed=await recoverMediaJobs();
   return NextResponse.json({
     ok: true,
-    processed: videoProcessed + imageProcessed + generationProcessed,
+    processed: videoProcessed + imageProcessed + generationProcessed + mediaProcessed,
+    mediaProcessed,
     generationProcessed,
     supplierCostsProcessed,
     mediaSaved,

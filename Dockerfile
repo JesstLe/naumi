@@ -42,6 +42,13 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
+# ── isolated media runtime (no compiler in the release image) ────────────────
+FROM node:24-bookworm-slim AS media-runtime
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg gcc libc6-dev fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+COPY scripts/video-fusion/media-sandbox.c /tmp/media-sandbox.c
+COPY scripts/video-fusion/prepare-media-runtime.sh /tmp/prepare-media-runtime.sh
+RUN cc -O2 -Wall -Wextra -Werror /tmp/media-sandbox.c -o /usr/local/bin/naumi-media-sandbox && sh /tmp/prepare-media-runtime.sh
+
 # ── runtime ─────────────────────────────────────────────────────────────────
 FROM node:24-bookworm-slim AS runner
 WORKDIR /app
@@ -63,10 +70,15 @@ COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 COPY --from=build --chown=nextjs:nodejs /app/scripts/video-worker.mjs ./scripts/video-worker.mjs
+COPY --from=build --chown=nextjs:nodejs /app/scripts/video-media-worker.mjs ./scripts/video-media-worker.mjs
+COPY --from=build --chown=nextjs:nodejs /app/scripts/video-fusion/media-engine.mjs ./scripts/video-fusion/media-engine.mjs
+COPY --from=build --chown=nextjs:nodejs /app/scripts/video-fusion/media-bundle.mjs ./scripts/video-fusion/media-bundle.mjs
+COPY --from=media-runtime /opt/naumi-media-runtime /opt/naumi-media-runtime
+COPY --from=media-runtime /usr/local/bin/naumi-media-sandbox /usr/local/bin/naumi-media-sandbox
 COPY --from=build --chown=nextjs:nodejs /app/scripts/rotate-settings-secret.mjs ./scripts/rotate-settings-secret.mjs
 
 # Local media storage (used when R2 is not configured)
-RUN mkdir -p /data/media && chown -R nextjs:nodejs /data
+RUN mkdir -p /data/media /scratch && chown -R nextjs:nodejs /data /scratch
 VOLUME /data
 
 USER nextjs
