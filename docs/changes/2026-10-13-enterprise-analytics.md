@@ -45,3 +45,4 @@
 - 2个未接公网候选已停，3份已完成传输tar清理；当前和旧企业及原业务镜像、数据库/媒体/配置、备份/回退证据保留。103维护计数1，部署锁已释放，其他站未连接。
 - 本机证据E:/Workspace/naumi/output/enterprise-analytics-20261013：MODIFIED_FILE.zip、DIFF_FILE.patch、VERIFICATION.txt、可执行ROLLBACK.sh（源码副本）；另ROLLBACK_GATEWAY.sh是线上兼容旧企业回退，未在线执行回退、不回灌DB。
 - 服务器证据/opt/naumi-staging/evidence/enterprise-analytics-20261013；源码副本反patch后与e72f8d8企业原始哈希精确一致，新增统计文件消失，原层级权限/有效期/防绕过回归通过。功能同步计数归零；业务与交付文档分开，文档更新不重建镜像。
+- 收尾刷新同事分支到90f2a24，其中c177b2b视频媒体B仍明确“验收脚本尚未运行，B尚未通过”，按分阶段约定不合入该未完成模块；已完成A保持。未强推或覆盖其任务分支。传输清理共407374848字节，非数据库/业务媒体。
