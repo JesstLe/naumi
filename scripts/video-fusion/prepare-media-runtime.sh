@@ -13,3 +13,6 @@ if [ -d /etc/fonts ]; then mkdir -p "$target/etc"; cp -rL /etc/fonts "$target/et
 find "$target" -type d -exec chmod 755 {} +
 find "$target" -type f -exec chmod 444 {} +
 chmod 555 "$target/usr/bin/ffmpeg" "$target/usr/bin/ffprobe"
+# execve also requires execute permission on the ELF interpreter. Shared
+# libraries remain read-only; the loader and allowed binaries are executable.
+find "$target" -type f \( -name 'ld-linux*.so*' -o -name 'ld-musl*.so*' \) -exec chmod 555 {} +
