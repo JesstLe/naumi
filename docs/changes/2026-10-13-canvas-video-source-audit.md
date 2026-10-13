@@ -15,7 +15,7 @@
 | 上游引用编号并非同一规则 | TF useNodeReferences完整入边序列；IC Agent skills/video.ts按媒体分类编号 | 保存稳定原始排序与派生索引，测试含文字混排、重排/删除后的标记 |
 | IC UI与Agent首尾表达不同 | canvas-node-generation.ts/UI读取firstFrame/lastFrame；skills/video.ts称Agent无专用字段 | 共享API需暴露真实首尾角色；不能用提示词当首尾参数证明 |
 | 当前模型通道只约束部分视频能力 | model-config/schema.ts capabilities主要图片字段；video/capabilities.ts configuredVideoCapability只限制maxReferenceImages | 新视频能力schema及解析优先级必须贯穿后台、公开目录、执行与快照 |
-| 供应商transport不转换私有素材 | model-config/transport.ts仅请求/域名/密钥/并发保护；video/providers/direct.ts将reference.url写入body | 另行按授权素材身份生成上传/签名，真实mock供应商必须实际访问素材 |
+| 基础签名已经存在，高级素材仍需归一 | model-config/transport.ts只保护transport，但service.ts submitQueuedVideoTask已有canReadMedia/镜像与900秒签名，direct.ts使用其转换后URL | 复用已有流程，扩展到元素等嵌套输入；真实mock供应商实际访问素材，不能把基础签名误判为完全缺失 |
 | 私有视频上传暂未显式传owner | video/service.ts完成时uploadImage未传owner；storage.ts owner可选；media-assets.ts允许作品DB引用兜底 | 现有作品完成后兜底不等于结果处理中权限已建立；测试两个账号及落库前阶段 |
 | 结果暂未检测真实视频流 | result-download.ts检查MIME和大小；service.ts只检查非空后上传/落作品/结算 | E2E必须可播放并FFprobe；损坏结果不能作为成功作品结算 |
 | Content-Length预分配存在偏小边界 | result-download.ts按头长度new Uint8Array后直接set，实际总量仅与200MB上限比较 | 验证头偏小、chunked、断流及资源释放，不仅验证声明超限 |
@@ -24,4 +24,4 @@
 
 修订2已经把这些问题纳入设计第3节节点/接口/Agent契约、第4节引用规则及第6节媒体核验。所有问题目前仍待实现与验证。
 
-当前目标继续active。发布授权沿用，设计审阅尚未收到回答。最近一次103只读基线核对见设计；本补充审计没有新服务器操作、构建、E2E或发布，不计功能迭代/成功发布次数。
+后续状态：用户已回答“按方案继续”，进入实施计划阶段。发布授权沿用。最近一次103只读基线核对见设计；本补充审计及事实修订没有新服务器操作、构建、E2E或发布，不计功能迭代/成功发布次数。
