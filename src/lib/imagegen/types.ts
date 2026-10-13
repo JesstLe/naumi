@@ -1,0 +1,17 @@
+import type { z } from "zod";
+import type { imagegenRequestSchema } from "./schema";
+import type { ImagegenUseCase } from "./catalog";
+export type ImagegenRequest=z.infer<typeof imagegenRequestSchema>;
+export type InputRole=ImagegenRequest["inputs"][number]["role"];
+export type Intent={background:"transparent"|"opaque"|null;operation:"generate"|"edit"|"cutout"|"postprocess";
+  useCase?:ImagegenUseCase;conflicts:string[];requirements:{name:string;value:string;source:"prompt"|"ui"|"skill"}[]};
+export type CapabilityKey="edit"|"mask"|"transparent"|"inputFidelity"|"outputFormat"|"outputCompression"|"moderation"|"pixelSize";
+export type CapabilityEvidence={state:"supported"|"unsupported"|"unknown";values?:string[];source:string;checkedAt:string};
+export type CapabilitySet=Partial<Record<CapabilityKey,CapabilityEvidence>>;
+export type ImagegenPlan={request:ImagegenRequest;intent:Intent;fingerprint:string;modelVersion:number;billingVersion:number;skillInstructions?:string;
+  steps:{key:string;operation:Intent["operation"];modelId?:string;eligibleUpstreamIds:string[];parameters:Record<string,string|number|boolean>;credits:number}[];
+  totalCredits:number;confirmationRequired:boolean;warnings:string[];children?:{key:string;plan:ImagegenPlan}[]};
+export type ImagegenResult={operationId:string;jobId:string;status:"queued"|"running"|"pending"|"needs_attention"|"succeeded"|"partial"|"failed"|"cancelled";
+  stage:"planning"|"generating"|"editing"|"postprocessing"|"saving"|"done";
+  artifacts:{artworkId:string;url:string;width:number;height:number;mime:string;transparentPixels:number;totalPixels:number;visiblePixels?:number;fullyTransparentPixels?:number}[];
+  chargedCredits:number;progress?:{completed:number;total:number};error?:{code:string;message:string}};

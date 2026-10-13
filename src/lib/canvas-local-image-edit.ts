@@ -8,10 +8,13 @@ import { readCanvasImage } from "@/lib/canvas-image-input";
 import { ensureCanvasSettingsSchema } from "@/lib/canvas-node-settings-store";
 import { cropSchema, pixelCrop, type CanvasCrop } from "@/lib/canvas/node-settings";
 import { adaptiveCanvasImageSize } from "@/lib/mock-data";
+import {imagegenOutputSchema,imagegenChromaSchema} from "./imagegen/schema";
+import {processImagegenPixels} from "./imagegen/postprocess";
 
 export const localEditSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("crop"), id: z.string().min(1).max(200), operationId: z.string().uuid(), crop: cropSchema }).strict(),
   z.object({ mode: z.literal("replace"), id: z.string().min(1).max(200), operationId: z.string().uuid() }).strict(),
+  z.object({mode:z.literal("process"),id:z.string().min(1).max(200),operationId:z.uuid(),output:imagegenOutputSchema,chroma:imagegenChromaSchema.optional()}).strict(),
 ]);
 export async function editCanvasPixels(bytes: Buffer, crop?: CanvasCrop) {
   if (!bytes.length || bytes.length > 12 * 1024 * 1024) throw new Error("图片需要在12MB以内");
@@ -39,10 +42,13 @@ export async function saveCanvasLocalEdit(email: string, value: z.infer<typeof l
     return { id: prior.rows[0].artwork_id as string };
   }
   const bytes = input.mode === "replace" ? replacement! : (await readCanvasImage(source.image,requestUrl,email)).buffer;
-  const edited = await editCanvasPixels(bytes,input.mode === "crop" ? input.crop : undefined);
+  const edited = input.mode==="process"?await processImagegenPixels(bytes,input):await editCanvasPixels(bytes,input.mode === "crop" ? input.crop : undefined);
   if (edited.bytes.length > 12*1024*1024) throw new Error("编辑结果超过12MB，请缩小裁剪区域或上传更小图片");
   const id = `art-local-${input.operationId}`;
-  const image = await uploadImage(edited.bytes,"image/png",`canvas-local-edits/${id}-${fingerprint.slice(0,16)}.png`);
+  const mime="mime" in edited&&typeof edited.mime==="string"?edited.mime:"image/png",extension=mime==="image/jpeg"?"jpg":mime==="image/webp"?"webp":"png";
+  const transparentPixels="transparentPixels" in edited&&typeof edited.transparentPixels==="number"?edited.transparentPixels:undefined;
+  const totalPixels="totalPixels" in edited&&typeof edited.totalPixels==="number"?edited.totalPixels:undefined;
+  const image = await uploadImage(edited.bytes,mime,`canvas-local-edits/${id}-${fingerprint.slice(0,16)}.${extension}`,undefined,email);
   const size = adaptiveCanvasImageSize(edited.width,edited.height);
   const client = await getPool().connect();
   try {
@@ -56,16 +62,16 @@ export async function saveCanvasLocalEdit(email: string, value: z.infer<typeof l
     const origin = await client.query("SELECT * FROM app_artworks WHERE email=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE",[email,source.id]);
     if (!origin.rows.length) throw new Error("原节点已删除，请刷新画布");
     const row=origin.rows[0];
-    const title=`${source.title} · ${input.mode === "crop" ? "裁剪" : "替换"}`.slice(0,80);
+    const title=`${source.title} · ${input.mode === "crop" ? "裁剪" : input.mode==="process"?"图像处理":"替换"}`.slice(0,80);
     await client.query(`INSERT INTO app_artworks(id,email,title,category,prompt,status,image_url,gradient,parent_id,parent_ids,group_id,
       source_url,origin,image_width,image_height,canvas_width,canvas_height,canvas_x,canvas_y,creation_provenance)
       VALUES($1,$2,$3,$4,$5,'completed',$6,$7,$8,'[]'::jsonb,$9,'canvas-local-edit','canvas',$10,$11,$12,$13,$14,$15,$16::jsonb)`,
       [id,email,title,source.category,source.prompt,image,source.gradient,source.id,row.group_id || source.id,edited.width,edited.height,
         size.width,size.height,(source.canvasX || 0)+40,(source.canvasY || 0)+(source.canvasHeight || size.height)+48,
-        JSON.stringify({version:1,operation:`canvas-${input.mode}`,entry:"canvas",ref:input.operationId,sourceArtworkId:source.id,evidence:"server-route"})]);
+        JSON.stringify({version:1,operation:`canvas-${input.mode}`,entry:"canvas",ref:input.operationId,sourceArtworkId:source.id,evidence:"server-route",...(input.mode==="process"?{output:input.output,mime,transparentPixels,totalPixels}:{})})]);
     await client.query("INSERT INTO app_canvas_local_edits(email,operation_id,fingerprint,artwork_id) VALUES($1,$2,$3,$4)",[email,input.operationId,fingerprint,id]);
     await client.query("COMMIT");
-    return { id, image, width: edited.width, height: edited.height };
+    return { id, image, width: edited.width, height: edited.height,mime,transparentPixels,totalPixels };
   } catch (error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
 }

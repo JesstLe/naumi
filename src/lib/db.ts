@@ -9,7 +9,8 @@ import {BillingError} from "@/lib/billing/types";
 import "server-only";
 import { Pool, type PoolClient } from "pg";
 import { excludeImportedHistory, isImportedHistory } from "./staging-history";
-import { ensureBillingSchema } from "@/lib/billing/schema";
+import { applyBillingSchema,markBillingSchemaReady } from "@/lib/billing/schema";
+import {withSchemaInitialization} from "./schema-initialization";
 import {
   type PlanKey,
   type PromptTemplate,
@@ -58,8 +59,8 @@ function getPool(): Pool {
 
 async function ensureSchema(): Promise<void> {
   if (!schemaReady) {
-    schemaReady = (async () => {
-      await getPool().query(`
+    schemaReady = withSchemaInitialization(getPool(),async schemaDb => {
+      await schemaDb.query(`
         CREATE TABLE IF NOT EXISTS app_users (
           email         text PRIMARY KEY,
           name          text NOT NULL,
@@ -574,7 +575,7 @@ async function ensureSchema(): Promise<void> {
       );
       const pkColumn = providerPk.rows[0]?.column_name;
       if (pkColumn === "email") {
-        await getPool().query(`
+        await schemaDb.query(`
           CREATE TABLE app_user_image_providers_new (
             id             text PRIMARY KEY,
             email          text NOT NULL REFERENCES app_users(email) ON DELETE CASCADE,
@@ -600,8 +601,8 @@ async function ensureSchema(): Promise<void> {
             ON app_user_image_providers (email);
         `);
       }
-      await ensureBillingSchema(getPool());
-    })().catch(error => { schemaReady = null; throw error; });
+      await applyBillingSchema(schemaDb);
+    }).then(()=>{markBillingSchemaReady(getPool());}).catch(error => { schemaReady = null; throw error; });
   }
   return schemaReady;
 }
@@ -2157,7 +2158,7 @@ export type ArtworkRecord = {
   canvasY?: number | null;
   width?: number | null; // 原图实际像素宽度
   height?: number | null;
-  processingKind?: "base" | "resize" | "native" | "ai-upscale" | null;
+  processingKind?: "base" | "resize" | "native" | "ai-upscale" | "imagegen" | null;
   postprocessStatus?: "succeeded" | "failed-kept-base" | "pending" | null;
   canvasWidth?: number | null; // 无限画布节点显示尺寸；与原图像素分离
   canvasHeight?: number | null;

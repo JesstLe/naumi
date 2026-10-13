@@ -39,6 +39,7 @@ export async function seedVideoFixture() {
   config.publicModels.push({id:"video-a",label:"Fixture video",modality:"video",enabled:true,visible:true,target:{type:"upstream",id:"fixture-video-upstream"}});
   config.publicModels.push({id:"disabled-model",label:"Disabled fixture",modality:"video",enabled:false,visible:true,target:{type:"upstream",id:"fixture-video-upstream"}});
   config.bindings["video.generate"]="video-a";
+  if(profile==="autodl"||profile==="runninghub")config.upstreamModels.find(model=>model.id==="fixture-video-upstream")!.parameterMap.videoWorkflow={version:1,kind:profile,workflowId:"selected-native-workflow",inputs:[{name:"prompt",type:"prompt",path:profile==="autodl"?["prompt"]:["3","inputs","text"],required:true}]};
   const repo=createModelRepository({pool:db.getPool(),trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(","),initialize:async()=>config});
   await repo.current();
   const { uploadImage }=await import("../../src/lib/storage");

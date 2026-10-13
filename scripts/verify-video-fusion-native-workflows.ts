@@ -7,7 +7,7 @@ async function main(){
     try{
       const runId=randomUUID(),path=profile==="autodl"?["prompt"]:["3","inputs","text"];
       const manifest={version:1,kind:profile,workflowId:"selected-native-workflow",inputs:[{name:"prompt",type:"prompt",path,required:true}]};
-      const created=await h.request<{runId:string}>("a","POST","/api/video/workflows",{id:runId,projectKey:`tree:${h.refs.image.id}`,nodes:[{id:"native",dependsOn:[],request:{modelId:"video-a",prompt:"原生工作流视频",durationSeconds:4,resolution:"720p",mode:"text",workflowManifest:manifest}}]});
+      const created=await h.request<{runId:string}>("a","POST","/api/video/workflows",{id:runId,projectKey:`tree:${h.refs.image.id}`,nodes:[{id:"native",dependsOn:[],request:{modelId:"video-a",prompt:"原生工作流视频",durationSeconds:4,resolution:"720p",mode:"text",...(profile==="runninghub"?{workflowManifest:manifest}:{})}}]});
       assert.equal(created.status,202,JSON.stringify(created.body));
       const deadline=Date.now()+240000;let taskId="",status="";
       while(Date.now()<deadline){await h.tick();const state=await h.request<{run:{nodes:Array<{taskId:string;status:string;error:string}>}}>("a","GET",`/api/video/workflows/${runId}`);

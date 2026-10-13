@@ -1,3 +1,5 @@
+import {currentImagegenStep} from "../imagegen/context";
+import {legacyImagegenIntent} from "../imagegen/legacy-intent";
 import {publicUpstreamIds} from "./channel-policy";
 import {assertDisplayResolution} from "./resolution-options";
 import { featureForRequest } from "./feature-path";
@@ -70,7 +72,7 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   if (quotedVersion !== undefined && quotedVersion !== null && quotedVersion !== "" && (!/^[1-9][0-9]{0,15}$/.test(String(quotedVersion)) || Number(quotedVersion) !== snapshot.version)) throw new ModelConfigError("MODEL_CHANGED", "模型配置已更新，请刷新模型列表后重新提交；原输入已保留", 409);
   const feature = featureForRequest(new URL(request.url).pathname, parsed.body);
   const purpose = purposeFor(new URL(request.url).pathname), executor = await getModelExecutor();
-  if (feature === "canvas.image") purpose.image = "image.edit";
+  if (feature === "canvas.image") purpose.image = currentImagegenStep()?.request.inputs.length===0 ? "image.generate" : "image.edit";
   if (feature === "competitor.action" && parsed.body.action !== "analyze") Object.assign(purpose, { image:"image.edit", text:"text.competitor", vision:"vision.reference", primary:"image" });
   const mainFeature = feature === "competitor.action" && parsed.body.action === "analyze" ? undefined : feature;
   const bundle: ExecutionBundle = { modelVersion: snapshot.version, billingVersion: billing.version, primary: purpose.primary };
@@ -117,6 +119,9 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     const needsText = new URL(request.url).pathname.includes("/canvas/image-tasks");
     const task = String(parsed.body.taskType || parsed.body.task || "");
     const facts: ModelFacts = { task: ["draft", "product", "detail", "layout"].includes(task) ? task as ModelFacts["task"] : needsText ? "layout" : "product", quality: qualities.includes(effectiveQuality as any) ? effectiveQuality : defaultQuality, resolution: native ? outputResolution : "1K", requestedResolution:outputResolution, ratio, needsEdit, preserveIdentity: needsEdit, needsText, nativeResolution: native && outputResolution !== "1K", references: parsed.references, quantity: 1, inputLength: String(parsed.body.prompt || parsed.body.text || "").length };
+    const advanced=currentImagegenStep();
+    const inferred=advanced?.intent||legacyImagegenIntent(parsed.body,parsed.references);
+    if(advanced||inferred?.background||inferred?.conflicts.length)facts.imagegenRequirements=advanced?.intent||inferred!;
     facts.needsMask = !!parsed.body.needsMask || new URL(request.url).pathname.includes("/canvas/image-tasks");
     if (presetParams) { facts.quality = requestedQuality; facts.resolution = outputResolution; }
     bundle.image = await executor.resolve({ scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined, feature: mainFeature, binding: purpose.image, requestedModelId, snapshot, billing, facts });

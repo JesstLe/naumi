@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "verify:imagegen-contract": "tsx --conditions react-server scripts/verify-imagegen-contract.ts",
+    "verify:imagegen-intent": "tsx --conditions react-server scripts/verify-imagegen-intent.ts",
+    "verify:imagegen-capabilities": "tsx --conditions react-server scripts/verify-imagegen-capabilities.ts",
+    "verify:imagegen-postprocess": "tsx --conditions react-server scripts/verify-imagegen-postprocess.ts",
+    "verify:imagegen-postprocess-db": "tsx --conditions react-server scripts/verify-imagegen-postprocess-db.ts",
     "verify:image-skills": "tsx --conditions react-server scripts/verify-image-skills.ts",
     "verify:image-skills-execution": "tsx --conditions react-server scripts/verify-image-skills-execution.ts",
     "verify:model-management": "tsx --conditions react-server scripts/verify-model-management.ts",
@@ -77,7 +82,11 @@
     "verify:apimart-preset": "tsx --conditions react-server scripts/verify-apimart-default-preset.ts",
     "verify:apimart-preset-ui": "node scripts/verify-apimart-preset-ui.mjs",
     "verify:apimart-preset-entries": "tsx --conditions react-server scripts/verify-apimart-preset-entries.ts",
-    "verify:react19-upgrade": "node scripts/verify-react19-upgrade.mjs"
+    "verify:react19-upgrade": "node scripts/verify-react19-upgrade.mjs",
+    "verify:imagegen-execution": "tsx --conditions react-server scripts/verify-imagegen-execution.ts",
+    "verify:imagegen-batch": "tsx --conditions react-server scripts/verify-imagegen-batch.ts",
+    "verify:imagegen-ui": "node scripts/verify-imagegen-ui.mjs",
+    "verify:core-schema-lock": "tsx --conditions react-server scripts/verify-core-schema-lock.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.85.1",

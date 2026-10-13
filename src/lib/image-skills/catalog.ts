@@ -1,9 +1,10 @@
 /** Image-design workflows, not executable Agent packages. Shared browser/server contract. */
-export const SKILL_CATEGORIES = ["电商", "营销", "品牌", "社媒"] as const;
+import { IMAGEGEN_USE_CASES, type ImagegenUseCase } from "../imagegen/catalog";
+export const SKILL_CATEGORIES = ["电商", "营销", "品牌", "社媒", "创作", "编辑", "图解"] as const;
 export type SkillCategory = typeof SKILL_CATEGORIES[number];
 export type ImageSkill = {
   id: string; revision: number; name: string; description: string; category: SkillCategory;
-  instructions: string; source: "official" | "personal"; updatedAt?: string;
+  instructions: string; source: "official" | "personal"; updatedAt?: string; useCase?: ImagegenUseCase;
 };
 export type SkillSelection = Pick<ImageSkill, "id" | "revision">;
 export class SkillError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -22,9 +23,16 @@ const definitions: [string, string, SkillCategory, string, string][] = [
   ["social-cover", "小红书封面", "社媒", "清晰主题，适合竖版信息流", "确认封面主题、标题和风格参考。使用当前模型支持的竖版画幅，调用 generate_image；控制文字密度、标题层次与移动端可读性。不添加虚假效果或背书。复核标题、商品和重点信息后交付。"],
   ["social-series", "社媒系列图", "社媒", "同主题、同视觉的内容系列", "确认发布平台、主题、文案、参考图和张数。先确定统一的构图、配色与字体方向，再调用 generate_image 分批生成；每批遵守实际工具限制。保证系列一致与内容差异，逐项记录已完成和失败项，不自动重试收费操作。"],
 ];
-export const OFFICIAL_IMAGE_SKILLS: ImageSkill[] = definitions.map(([id, name, category, description, instructions]) => ({
-  id: `official:${id}`, revision: 1, name, category, description, instructions, source: "official",
-}));
+export const OFFICIAL_IMAGE_SKILLS: ImageSkill[] = [
+  ...definitions.map(([id, name, category, description, instructions]):ImageSkill => ({
+    id: `official:${id}`, revision: 1, name, category, description, instructions, source: "official",
+    useCase:IMAGEGEN_USE_CASES.find(u=>(u.existingSkillIds as readonly string[]).includes(id))?.id,
+  })),
+  ...IMAGEGEN_USE_CASES.filter(u=>u.existingSkillIds.length===0).map((u):ImageSkill=>({
+    id:`official:${u.id}`,revision:1,name:u.label,category:u.category,description:`${u.label}创作流程`,
+    instructions:`${u.instructions} 使用当前已开放的站内能力真实交付，遵守素材权限、模型范围和积分确认。`,source:"official",useCase:u.id,
+  })),
+];
 
 export function validateSkillDraft(input: unknown): Pick<ImageSkill, "name" | "description" | "category" | "instructions"> {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new SkillError("技能格式不正确");

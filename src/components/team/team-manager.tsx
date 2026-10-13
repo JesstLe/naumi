@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Building2, Clock3, Eye, KeyRound, Plus, RefreshCw, ShieldCheck, Users, X } from "lucide-react";
 import { useAuthModal } from "@/lib/auth-modal-context";
@@ -22,16 +23,17 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 }
 type Editor = { kind: "expiry" | "password" | "create" | "attach" | "team"; member?: TeamMember } | null;
 export function TeamEntry() {
+  const router = useRouter();
   const { user } = useAuth();
   const [mode, setMode] = useState<{ email?: string; admin: boolean; generation?:number } | null>(null);
   useEffect(() => {
     const controller = new AbortController(); setMode(null);
-    const check = () => void json<{ allowed:boolean; canManageTeams:boolean }>("/api/team/access", { signal: controller.signal })
-      .then(data => { if (!data.allowed) throw new Error("团队入口授权已关闭"); if (!controller.signal.aborted) setMode(old => old && old.email === user?.email && old.admin === !!data.canManageTeams ? old : { email:user?.email,admin:!!data.canManageTeams }); })
+    const check = () => void json<{ allowed:boolean; canManageTeams:boolean; enterprise?:boolean }>("/api/team/access", { signal: controller.signal })
+      .then(data => { if (data.enterprise && !data.canManageTeams) { if (!controller.signal.aborted) router.replace('/enterprise'); return; } if (!data.allowed) throw new Error("团队入口授权已关闭"); if (!controller.signal.aborted) setMode(old => old && old.email === user?.email && old.admin === !!data.canManageTeams ? old : { email:user?.email,admin:!!data.canManageTeams }); })
       .catch(() => { if (!controller.signal.aborted) setMode({ email:user?.email,admin:false,generation:Date.now() }); });
     check(); const timer=window.setInterval(check,30_000);window.addEventListener("focus",check);
     return () => { controller.abort();window.clearInterval(timer);window.removeEventListener("focus",check); };
-  }, [user?.email]);
+  }, [user?.email, router]);
   if (!mode || mode.email !== user?.email) return <main className={styles.page}><div className={styles.empty}>加载中…</div></main>;
   return <TeamManager key={`${mode.email || "anonymous"}:${mode.admin}:${mode.generation || 0}`} admin={mode.admin} standalone />;
 }

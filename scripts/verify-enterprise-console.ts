@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const ui=readFileSync('src/components/enterprise/enterprise-console.tsx','utf8');
+assert(ui.includes('<Workspace key={email}'));
+assert(ui.includes("'/api/enterprise'"));assert(ui.includes('/api/enterprise/content?'));assert(ui.includes('/api/enterprise/media?'));
+assert(!ui.includes('/api/admin/')&&!ui.includes('/api/team/users'));
+assert(!ui.includes('modelExecutions')&&!ui.includes('conversations'));
+assert(ui.includes("value=''>选择成员"));assert(ui.includes('window.clearInterval'));
+assert(ui.includes("employment==='permanent'?null"));
+console.log('ENTERPRISE_CONSOLE=PASS IDENTITY_KEY=1 ENTERPRISE_API_ONLY=1 PERMANENT_NULL=1');

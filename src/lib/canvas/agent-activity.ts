@@ -33,11 +33,11 @@ export function agentToolSummary(summary: unknown): string | undefined {
     ? summary : undefined;
 }
 
-export function agentActivityLabel(busy: boolean, outcome: string, steps: {tool?: string; status: string}[], english = false, responding = false, attention?: "waiting" | "restricted"): string {
+export function agentActivityLabel(busy: boolean, outcome: string, steps: {tool?: string; status: string;summary?:string}[], english = false, responding = false, attention?: "waiting" | "restricted"): string {
   if (attention && outcome !== "stopped" && outcome !== "error") return attention === "waiting" ? english ? "Waiting for input" : "等待输入" : english ? "Restricted" : "受限";
   if (!busy) return ({done: english ? "Done" : "已完成", error: english ? "Failed" : "未完成", stopped: english ? "Stopped" : "已停止"})[outcome] || "Agent";
   const running = [...steps].reverse().find(step => step.status === "running");
-  if (running) return (english ? "" : "正在") + agentToolLabel(running.tool || "", english);
+  if (running) return agentToolSummary(running.summary)||(english ? "" : "正在") + agentToolLabel(running.tool || "", english);
   if (responding) return english ? "Replying" : "正在回复";
   return steps.length ? (english ? "Processing next steps" : "正在处理后续步骤") : (english ? "Processing request" : "正在处理请求");
 }

@@ -59,7 +59,7 @@ export async function createValidatedVideo(email:string,input:CreateVideoInput,h
   const idempotencyKey=input.idempotencyKey||randomUUID();
   const {omittedProviderOptions:_omitted,...validInput}=normalized;
   let request:VideoGenerationRequest={...validInput,source:input.source,sourceId:input.sourceId,projectKey:input.projectKey,canvasNodeId:input.nodeId,nodeRevision:input.nodeRevision,
-    providerId,modelId,idempotencyKey,workflowManifest:input.workflowManifest};
+    providerId,modelId,idempotencyKey,workflowManifest:input.workflowManifest??execution?.parameterMap.videoWorkflow};
   request=await authorizeVideoReferences(email,request);
   normalized=normalizeVideoInput({...request},capability);const {omittedProviderOptions:_authorizedOmitted,...authorizedInput}=normalized;request={...request,...authorizedInput};
   if(!getVideoProvider(providerId))throw new ModelConfigError("VIDEO_ADAPTER_UNAVAILABLE","视频协议尚未配置",422);

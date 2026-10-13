@@ -67,7 +67,7 @@ async function main() {
     assert.equal(submitted.status, 200, await submitted.clone().text());
     const { jobId } = await submitted.json();
     const waitJob = async (id:string, kind:ImageJobKind, predicate:(row:ImageJobRow)=>boolean) => {
-      const deadline=Date.now()+20000;
+      const deadline=Date.now()+Math.min(300000,Math.max(20000,Number(process.env.NAUMI_VERIFY_TIMEOUT_MS)||20000));
       while (Date.now()<deadline) {
         const row=await repo.getImageJob(id,kind);
         if(row && predicate(row)) return row;

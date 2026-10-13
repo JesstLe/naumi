@@ -3,7 +3,9 @@ import {unsupportedWire,type VideoWireContext} from "../wire";
 import type {VideoReference} from "../../types";
 
 export function compileWorkflowInputs(context:VideoWireContext):{manifest:VideoWorkflowManifest;body:Record<string,unknown>}{
-  const manifest=videoWorkflowManifestSchema.parse(context.request.workflowManifest);
+  const parsed=videoWorkflowManifestSchema.safeParse(context.request.workflowManifest);
+  if(!parsed.success)unsupportedWire(context,"工作流输入映射无效或尚未配置");
+  const manifest=parsed.data;
   if(manifest.kind!==context.profile)unsupportedWire(context,"工作流manifest与冻结协议不一致");
   const input=context.request,body:Record<string,unknown>=structuredClone(manifest.template||{}),used=new Set<string>(),paths=new Set<string>(),names=new Set<string>(),options=new Set<string>();
   const reference=(refs:VideoReference[],index=0)=>{const ref=refs[index];if(!ref)return undefined;used.add(ref.id);return ref.submissionName||ref.url;};

@@ -23,6 +23,7 @@ export function pageFeature(raw: string): string | undefined {
   else if (path === "/desktop/create") path = "/agent";
   else if (path.startsWith("/desktop/")) path = path.slice("/desktop".length);
   if (path === "/brain" || path === "/genchat") return "agent";
+  if (path === '/enterprise' || path.startsWith('/enterprise/')) return 'team';
   return ACCESS_FEATURES.find(feature => feature.href && (path === feature.href || path.startsWith(feature.href + "/")))?.id;
 }
 export type AccessRequirement = { all?: string[]; any?: string[] };
@@ -39,7 +40,9 @@ export function requestRequirement(path: string, method = "GET"): AccessRequirem
   if (/^\/api\/canvas\/(image-tasks|expand|annotate|text-edit)(\/|$)/.test(path)) return { all: ["canvas", "generate"] };
   if (path.startsWith("/api/canvas/")) return { all: ["canvas"] };
   const root = path.split("/")[2];
+  if(root==="imagegen")return {any:["generate","batchshot","variations","fuse","canvas","works","agent"]};
   if (path === "/api/team/access") return undefined;
+  if (root === 'enterprise') return { all: ['team'] };
   if (root === "generate-image") return { any: ["generate", "batchshot", "variations", "fuse"] };
   if (path === "/api/pro/templates-export") return { all: ["templates"] };
   if (/^\/api\/video\/tasks\/[^/]+\/send-to-canvas$/.test(path)) return { all: ["video", "canvas"] };

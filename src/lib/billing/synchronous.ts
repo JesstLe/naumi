@@ -1,3 +1,5 @@
+import {acceptedModelVersions} from "../model-config/accepted-context";
+import {getModelAdministration} from "../model-config/server";
 import { settlementFor } from "./quote";
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -105,7 +107,7 @@ export async function withBillingRequest(request: Request, feature: FeatureId, a
             }
             return billingJson({ error: previous.state === "settled" ? "扣费已完成，结果需要恢复，请联系管理员" : "任务已提交，请等待结果或联系管理员核查", code: "OPERATION_PENDING", operationId: id, ...(previous.result_response ? { result: previous.result_response } : {}) }, 409);
         }
-        const context: Context = { request, feature, email, id, ...identity,snapshot:await(await getBillingRuntime()).config.current(), upstream: "unobserved" };
+        const context: Context = { request, feature, email, id, ...identity,snapshot:await (async()=>{const accepted=await acceptedModelVersions(request);return accepted?(await getModelAdministration()).billing.byVersion(accepted.billingVersion):(await getBillingRuntime()).config.current();})(), upstream: "unobserved" };
         return await storage.run(context, async () => {
             let response: Response;
             try {
