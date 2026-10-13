@@ -4,6 +4,8 @@ import {videoSubmissionSchema} from "./submission-schema";
 import {VideoContractError} from "./contract";
 import {beginVideoTaskSubmission,confirmVideoTaskCancelled,sendPendingVideoCancellation} from "./cancellation";
 import {currentPrivateVideoContext} from "./providers/private-context";
+import {decryptAtRest} from "../settings";
+import {videoWorkflowManifestSchema} from "./workflow-schema";
 import "server-only";
 import { BillingError } from "@/lib/billing/types";
 import { currentModelExecution, runLegacyModelExecution } from "@/lib/model-config/context";
@@ -250,7 +252,13 @@ async function createWithLocalImage(
 
 export function requestFromQueuedTask(task: VideoTaskRow): VideoGenerationRequest {
   const parameters = task.parameters ?? {};
-  if(parameters.version===2&&parameters.request)return structuredClone(parameters.request) as VideoGenerationRequest;
+  if(parameters.version===2&&parameters.request){
+    const request=structuredClone(parameters.request) as VideoGenerationRequest;
+    if(typeof parameters.workflowManifestEnc==="string"){
+      const text=decryptAtRest(parameters.workflowManifestEnc);if(!text)throw new ModelConfigError("WORKFLOW_SNAPSHOT_UNAVAILABLE","工作流映射快照不可用",503);
+      request.workflowManifest=videoWorkflowManifestSchema.parse(JSON.parse(text));
+    }return request;
+  }
   return {
     source: task.source as VideoTaskSource,
     sourceId: task.sourceId || undefined,

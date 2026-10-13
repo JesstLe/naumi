@@ -10,6 +10,8 @@ import {buildVideoCreate,decodeVideoPolled,field,type VideoWireContext} from "..
 import type {VideoGenerationRequest,VideoReference,VideoTaskSnapshot} from "../src/lib/video/types";
 import type {VideoWireProfile} from "../src/lib/video/capability-schema";
 import type {VideoProviderRuntimeConfig,VideoProviderProtocol} from "../src/lib/video/providers/config";
+async function main(){
+
 
 if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw new Error("Video protocol verification requires isolated fixture mode");
 if(process.env.DATABASE_URL){const sql=await fixtureDatabase();await sql.end();}
@@ -82,3 +84,6 @@ try{
   process.stdout.write(`VIDEO_IC_PROTOCOLS=PASS http_cases=${cases.length} selected_model=true real_media_download=true paid_calls=0\n`);
 }finally{await supplier.close();if(previousOrigins===undefined)delete process.env.MODEL_CONFIG_TRUSTED_ORIGINS;else process.env.MODEL_CONFIG_TRUSTED_ORIGINS=previousOrigins;
   if(process.env.DATABASE_URL){const {getPool}=await import("../src/lib/db");await getPool().end();}}
+
+}
+void main().catch(error=>{console.error(error);process.exitCode=1;});

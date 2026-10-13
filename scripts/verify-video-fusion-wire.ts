@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
 import {createVideoFixture} from "./video-fusion/harness";
 import {polled,requiredTaskId,sanitizeWirePayload} from "../src/lib/video/providers/wire";
+async function main(){
+
 
 assert.throws(()=>requiredTaskId(undefined));
 assert.throws(()=>polled({status:"mystery"},{status:"mystery"}));
@@ -27,3 +29,6 @@ try{
   assert.ok(!JSON.stringify(calls).includes("X-Amz-Signature"));
   process.stdout.write("VIDEO_WIRE=PASS private_reference_reads=8 no_unauthorized_debit=true paid_calls=0\n");
 }finally{await h.stop();}
+
+}
+void main().catch(error=>{console.error(error);process.exitCode=1;});

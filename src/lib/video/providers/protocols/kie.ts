@@ -58,7 +58,7 @@ export function decodeKIECreated(payload:unknown){
 }
 export function buildKIEPoll(_context:VideoWireContext,id:string):VideoWireRequest{return {path:`/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(id)}`,method:"GET",encoding:"none"};}
 export function decodeKIEPoll(payload:unknown){
-  const result=jsonObjectString(field(payload,"data.resultJson"));
+  const raw=field(payload,"data.resultJson"),result=jsonObjectString(raw===""?undefined:raw);
   return polled(payload,{status:field(payload,"data.state")||field(payload,"data.status"),url:field(result,"resultUrls.0")||field(result,"resultWaterMarkUrls.0"),
     progress:field(payload,"data.progress"),error:field(payload,"data.failMsg"),code:field(payload,"data.failCode")});
 }

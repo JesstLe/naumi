@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { CAP_RICH } from "./video-fusion/harness";
+import { CAP_RICH } from "./video-fusion/profiles";
 import { resolveVideoCapability, normalizeVideoInput, numberVideoInputs, VideoContractError } from "../src/lib/video/contract";
 import { compileVideoPrompt } from "../src/lib/video/prompt";
 const cap=resolveVideoCapability({manual:{limits:{images:0},audio:"disabled",supportsWatermark:false},vendor:CAP_RICH});

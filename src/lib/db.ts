@@ -5077,6 +5077,13 @@ export async function completeVideoTask(input: {
       return;
     }
     if(task.status==="failed"||task.status==="cancelled")throw new Error("终止的视频任务不能再次结算完成");
+    const projectKey=task.parameters?.projectKey;
+    if(typeof projectKey==="string"&&/^(?:tree|batch):[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(projectKey)){
+      const kind=projectKey.slice(0,projectKey.indexOf(":")),projectId=projectKey.slice(projectKey.indexOf(":")+1);
+      const linked=await client.query(`UPDATE app_artworks SET group_id=CASE WHEN $3='tree' THEN $4 ELSE group_id END,
+        batch_id=CASE WHEN $3='batch' THEN $4 ELSE batch_id END WHERE email=$1 AND id=$2 AND deleted_at IS NULL`,[email,input.artworkId,kind,projectId]);
+      if(!linked.rowCount)throw new Error("视频产物不存在，不能完成项目关联");
+    }
     if(task.billing_quote){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-video-${input.id}`,{state:"succeeded",items:[{id:input.id,state:"succeeded",executedQuality:task.parameters?.qualityAudit?.executed||task.billing_quote.facts.quality}]});}else if (meterOn && Number(task.cost) > 0) {
       const ledgerId = `led-video-${input.id}`;
       const seen = await client.query(`SELECT 1 FROM app_ledger WHERE id = $1`, [ledgerId]);

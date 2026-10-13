@@ -3,7 +3,6 @@ import {z} from "zod";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";
 import {withBiRequest} from "@/lib/bi/model-observer";
-import {withBillingIntent} from "@/lib/billing/intent";
 import {requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/request";
 import {readBounded} from "@/lib/supplier-cost/io";
 import {getVideoTask} from "@/lib/db";
@@ -14,7 +13,7 @@ import {BillingError} from "@/lib/billing/types";
 import {ModelConfigError} from "@/lib/model-config/types";
 export const runtime="nodejs",dynamic="force-dynamic",maxDuration=120;
 const schema=z.strictObject({idempotencyKey:z.string().min(1).max(100),billingVersion:z.number().int().positive().optional(),billingCredits:z.number().finite().nonnegative().optional()});
-export async function POST(request:Request,context:{params:Promise<{id:string}>}){return withBillingIntent(request,()=>withBiRequest(request,async()=>{
+export async function POST(request:Request,context:{params:Promise<{id:string}>}){return withBiRequest(request,async()=>{
   const email=await authenticatedEmail(request);if(!email)return NextResponse.json({error:"请先登录"},{status:401});
   if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站重试"},{status:403});
   try{
@@ -34,4 +33,4 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
   }catch(error){if(error instanceof BillingError||error instanceof ModelConfigError)return billingErrorResponse(error);
     if(error instanceof VideoContractError)return NextResponse.json({error:error.message,code:error.code,fields:error.fields},{status:422});
     return NextResponse.json({error:"重试创建失败"},{status:503});}
-}));}
+});}

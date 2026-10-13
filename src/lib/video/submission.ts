@@ -17,6 +17,7 @@ import {authorizeVideoReferences,materializeVideoReferences} from "./reference-m
 import {configuredVideoProviders,getVideoProviderConfig,publicProviderSnapshot} from "./providers/config";
 import {getVideoProvider} from "./providers/adapter";
 import {buildVideoCreate} from "./providers/wire";
+import {encryptAtRest} from "../settings";
 import type {VideoGenerationRequest} from "./types";
 import type {CreateVideoInput} from "./service";
 
@@ -34,6 +35,7 @@ export async function createValidatedVideo(email:string,input:CreateVideoInput,h
   const definition=execution?.frozen.video?.definition||adapterDefinition(providerConfig.protocol,modelId);
   if(!definition)throw new VideoContractError("UNKNOWN_VIDEO_CAPABILITY","视频模型能力尚未配置");
   const capability=resolveVideoCapability({manual:definition});
+  if(input.camera&&Object.values(input.camera).some(value=>!!value)&&capability.supportsCamera!==true)throw new VideoContractError("CAMERA_UNSUPPORTED","当前模型未声明摄影设置能力",["camera"]);
   const parsedReferences=z.array(videoReferenceSchema).max(128).safeParse(input.references??[]);
   if(!parsedReferences.success)throw new VideoContractError("INVALID_VIDEO_REFERENCES","视频素材字段无效",["references"]);
   const references=parsedReferences.data;
@@ -72,7 +74,10 @@ export async function createValidatedVideo(email:string,input:CreateVideoInput,h
   const billingQuote=await quoteForActor(email,{feature:"video.generate",quantity:1,modelId,providerId,resolution:request.resolution});
   assertQuotedVersion(input.billingConfirmation||{},billingQuote);
   const taskId=`vid-${randomUUID()}`,cost=billingQuote.requestedCredits;
-  const parameters={version:2,submissionState:"prepared",request,creationInputDigest:videoCreationInputDigest(input),
+  const {workflowManifest,...stableRequest}=request;
+  const workflowManifestEnc=workflowManifest?encryptAtRest(JSON.stringify(workflowManifest)):undefined;
+  const workflowManifestDigest=workflowManifest?createHash("sha256").update(canonicalConfig(workflowManifest)).digest("hex"):undefined;
+  const parameters={version:2,submissionState:"prepared",request:stableRequest,workflowManifestEnc,workflowManifestDigest,creationInputDigest:videoCreationInputDigest(input),
     ...(currentExecutionBundle()?{modelExecutions:structuredClone(currentExecutionBundle())}:{}),
     publicModelId:execution?.frozen.publicModelId||input.modelId||modelId,projectKey:input.projectKey,nodeId:input.nodeId,nodeRevision:input.nodeRevision,
     originalPrompt:input.prompt,camera:input.camera,authorNodeIds:compiled.authorNodeIds,retryOf:input.retryOf,...normalized,

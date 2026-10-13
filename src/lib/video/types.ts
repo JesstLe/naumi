@@ -132,3 +132,6 @@ export class PermanentVideoCreateError extends Error {
     this.name = "PermanentVideoCreateError";
   }
 }
+export class UnsupportedVideoCancellationError extends Error {
+  constructor(){super("当前上游不支持取消任务");this.name="UnsupportedVideoCancellationError";}
+}

@@ -73,5 +73,9 @@ export async function seedVideoFixture() {
 }
 if(process.argv.includes("--seed-private")) {
   if(process.env.VIDEO_FIXTURE_PARENT_PIPE!=="1")throw new Error("Private fixture seed must be started by its parent harness");
-  const result=await seedVideoFixture();process.stdout.write(JSON.stringify(result));
+  void seedVideoFixture().then(result=>process.stdout.write(JSON.stringify(result))).catch(error=>{
+    let message=error instanceof Error?error.message:"Private video fixture bootstrap failed";
+    for(const [key,value] of Object.entries(process.env))if(value&&/PASSWORD|SECRET|TOKEN|KEY|DATABASE_URL/.test(key))message=message.split(value).join("[fixture-secret]");
+    message=message.replace(/postgres(?:ql)?:\/\/[^\s]+/gi,"[fixture-database]");process.stderr.write(message.slice(0,1200)+"\n");process.exitCode=1;
+  });
 }

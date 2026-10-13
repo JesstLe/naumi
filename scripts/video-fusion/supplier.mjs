@@ -12,6 +12,7 @@ export function publicFixtureValue(value, key = "") {
   if(typeof value==="string"&&(value.startsWith("data:")||value.length>4000))return {materialString:true,length:value.length};
   return value;
 }
+/** @param {{assetsRoot:string,manifest:{files:any[]},token?:string,validateWire?:(call:any)=>void|Promise<void>,validatePoll?:(call:any)=>void,objectHandler?:(req:any,res:any,origin:string)=>Promise<any>}} options */
 export async function createVideoSupplier({ assetsRoot, manifest, token = randomUUID(), validateWire, validatePoll, objectHandler } = {}) {
   if (!assetsRoot || !manifest?.files?.length) throw new Error("A verified video manifest is required");
   const calls = [], tasks = new Map(), keys = new Map();

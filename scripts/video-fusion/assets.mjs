@@ -68,6 +68,5 @@ export async function loadVideoAssets(root = defaultAssetsRoot) {
   return manifest;
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const manifest = await prepareVideoAssets(process.argv[2] || defaultAssetsRoot);
-  process.stdout.write(`ASSETS_READY files=${manifest.files.length} original_media=true\n`);
+  void prepareVideoAssets(process.argv[2] || defaultAssetsRoot).then(manifest=>process.stdout.write(`ASSETS_READY files=${manifest.files.length} original_media=true\n`)).catch(error=>{console.error(error);process.exitCode=1;});
 }

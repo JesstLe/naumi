@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { createVideoFixture } from "./video-fusion/harness";
+async function main(){
+
 const h=await createVideoFixture();
 try {
   const other=await h.request("b","GET",`/media/${h.refs.image.storageKey}`);
@@ -12,3 +14,6 @@ try {
   assert.ok(h.supplierCalls().some(c=>c.signatureVerified));
   process.stdout.write("VIDEO_FIXTURE=PASS private_media=true original_assets=true paid_calls=0\n");
 } finally {await h.stop();}
+
+}
+void main().catch(error=>{console.error(error);process.exitCode=1;});

@@ -10,6 +10,8 @@ import {buildVideoCreate,buildVideoPoll,decodeVideoPolled,field} from "../src/li
 import {videoProfileProtocol,type VideoWireProfile} from "../src/lib/video/capability-schema";
 import type {VideoGenerationRequest,VideoReference,VideoTaskSnapshot} from "../src/lib/video/types";
 import type {VideoProviderRuntimeConfig} from "../src/lib/video/providers/config";
+async function main(){
+
 
 if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw new Error("New video protocols require isolated fixture mode");
 if(process.env.DATABASE_URL){const guard=await fixtureDatabase();await guard.end();}
@@ -87,3 +89,6 @@ try{
   process.stdout.write(`VIDEO_NEW_PROTOCOLS=PASS http_cases=${cases.length} tail_frame=true complete_output_list=true paid_calls=0\n`);
 }finally{await supplier.close();if(savedOrigins===undefined)delete process.env.MODEL_CONFIG_TRUSTED_ORIGINS;else process.env.MODEL_CONFIG_TRUSTED_ORIGINS=savedOrigins;
  if(process.env.DATABASE_URL){const {getPool}=await import("../src/lib/db");await getPool().end();}}
+
+}
+void main().catch(error=>{console.error(error);process.exitCode=1;});

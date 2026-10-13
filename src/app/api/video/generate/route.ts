@@ -1,4 +1,3 @@
-import {withBillingIntent} from "@/lib/billing/intent";
 import {NextResponse} from "next/server";
 import {withBiRequest} from "@/lib/bi/model-observer";
 import {dbEnabled,getUser} from "@/lib/db";
@@ -25,7 +24,7 @@ async function handlePost(request:Request){
     const parsed=videoSubmissionSchema.safeParse(intent);
     if(!parsed.success)return NextResponse.json({error:"视频提交字段无效",code:"INVALID_VIDEO_SUBMISSION",fields:parsed.error.issues.map(issue=>issue.path.join("."))},{status:422});
     const data=parsed.data;
-    const result=await createVideoGeneration(email,{...data,billingConfirmation:requestQuoteConfirmation(request,body),
+    const result=await createVideoGeneration(email,{...data,idempotencyKey:data.idempotencyKey||request.headers.get("x-naumi-billing-operation-id")||undefined,billingConfirmation:requestQuoteConfirmation(request,body),
       source:data.source||(data.imageUrl?"agent":data.artworkId?"canvas":"workbench"),sourceId:data.sourceId||data.artworkId,
       prompt:data.prompt??"",seconds:data.seconds??String(data.durationSeconds??""),size:data.size??data.resolution??""} as CreateVideoInput);
     const user=dbEnabled?await getUser(email).catch(()=>null):null;return NextResponse.json({ok:true,...result,user});
@@ -36,4 +35,4 @@ async function handlePost(request:Request){
     return NextResponse.json({error:"视频任务创建失败"},{status:503});
   }
 }
-export async function POST(request:Request){return withBillingIntent(request,()=>withBiRequest(request,()=>handlePost(request)));}
+export async function POST(request:Request){return withBiRequest(request,()=>handlePost(request));}

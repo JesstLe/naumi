@@ -11,7 +11,12 @@ import {managedModelRows} from "../src/lib/model-config/management";
 import { fixtureModelConfig } from "./model-config-unit-fixture";
 import { documentedVideoDefinition } from "../src/lib/supplier-models/discovery";
 import type {ModelProvider,UpstreamModel,ModelSnapshot} from "../src/lib/model-config/types";
+async function main(){
 
+
+const guard=await fixtureDatabase(),schemaName=`video_config_${randomUUID().replace(/-/g,"")}`;
+try{await guard.query(`CREATE SCHEMA ${schemaName}`);}finally{await guard.end();}
+const scoped=new URL(process.env.DATABASE_URL!);scoped.searchParams.set("options",`-c search_path=${schemaName}`);process.env.DATABASE_URL=scoped.href;
 const sql=await fixtureDatabase();
 try{
   const suffix=randomUUID().replace(/-/g,""),provider:ModelProvider={id:`pv-${suffix}`,name:"fixture video",protocol:"ark",baseUrl:"https://fixture.example.test",enabled:true,credentialRef:randomUUID(),timeoutMs:120000,maxConcurrent:2};
@@ -54,6 +59,11 @@ try{
     assert.equal(updated.upstreamModels.find(item=>item.id===upstream.id)!.capabilities.video?.limits?.images,0);
     assert.deepEqual(updated.bindings,published.config.bindings);
     assert.throws(()=>applyVideoParameters(published.config,row,[{upstreamId:"unrelated",definition:{}}]));
+    await recordSupplierVideoDefinition(sql,{providerId:provider.id,modelId:upstream.model,definition:CAP_RICH,profile:"kie-kling",sourceUrl:"https://supplier.example.test/mismatched-profile"});
+    await assert.rejects(()=>freezeManagedVideoCapability({...published,version:950003},{...upstream,parameterMap:{}},provider),/协议/);
   }else throw new Error("Config verification requires a fresh fixture database/schema");
   process.stdout.write("VIDEO_CONFIG=PASS manual_priority=true published_defaults_frozen=true old_digest_unchanged=true\n");
 }finally{await sql.end();const {getPool}=await import("../src/lib/db");await getPool().end();}
+
+}
+void main().catch(error=>{console.error(error);process.exitCode=1;});

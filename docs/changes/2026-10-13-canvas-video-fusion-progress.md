@@ -84,3 +84,19 @@ Task9初版记录：统一提交先规范完整输入/素材权限、文字来�
 工作流补齐逐节点报价确认，确认单独保存、不修改原计划；停止未提交兄弟节点，实际子任务沿统一取消。BYOC视频使用同一App/Worker/任务恢复与原0积分例外，独立AsyncLocalStorage隔离账号端点，不修改全局provider注册表或环境；端点凭据进入既有加密凭据库，工作流图与冻结引用使用加密快照。原图片工作流路径保留，显式视频及已识别视频输出节点进入202持久入口，纯文视频无需伪造图片来源；未知自定义视频节点可显式mediaType=video。BYOC重试使用原加密图和凭据、独立新任务，媒体真实检测/全部产物保存仍待Task10。
 
 节点Task8提交1cf261a；最新main12105eb的账号授权/桌面分支已先同步到视频分支，新增视频节点generate复用video+canvas门槛。新增检查点A任务脚本（并发唯一提交、长提示词/false冻结、真实预扣队列取消、未知创建不重提、终态不重复结算、完整重试和自备工作流持久0积分），fixture队列准备调用实际DB预扣函数，不mock站内API。所有功能脚本、类型检查和构建仍未运行，阶段验收未通过、未回合main、未上线。下一步完成隔离测试环境并集中执行A，修复集中发现的问题后分批合并。
+
+检查点A已开始集中运行：原生规范contract通过，24个IC协议HTTP组合和27个TokenDance/TF/Compshare组合通过，下载使用原始可播放素材；完整TypeScript检查通过（初轮7类问题集中修复，包括脚本CJS入口、JS参数类型、管理发布原因分支、规范JSON类型、header类型及KIE处理中空resultJson）。这些不等于真实供应商质量/额度通过。已通过真实App私有媒体/跨账号隔离fixture与8个私有媒体引用实际签名读取、未经授权不预扣；配置优先/发布冻结/旧digest初轮通过。节点、工作流、任务/停止/计费完整检查仍在进行，没有宣布A完成或视频分支已回合main。
+
+隔离环境证据：103新建独立naumi-video-fixture-db-20261013容器，owner label=canvas-video-fusion-20261013，数据库naumi_video_fixture_20261013含public owner guard，只绑127.0.0.1:14732；Windows受保护临时目录存DPAPI fixture密码，SSH密码仅进stdin内存，loopback隧道本任务PID14868/57301。实际Router使用固定b3fc8dd源码本机Go1.26.4编译，SHA cb4bc506d7dc30a115d6c4bde0dec9669a906f6192da1bb963ece5339d2e39b0；每个App fixture独立Router进程/加密状态/密钥和回调本站真实capacity接口，未mock本站API。每轮独立DB schema与App/Worker，结束清理本轮进程树，不杀其他Node进程。未连接正式DB/Router，未修改正式配置/媒体或部署；只读锁内观察正式App已被同事更新到Image0cce99f4…，空间43%/66GiB，最终发布基线必须刷新。
+
+A补充：节点验收通过，包括创建/位置更新/复制/软删除恢复/跨账号404、预检查409和实际onReserved关联失败时任务与预扣一起回滚。修正新节点/任务重试被通用模型入口误当图片的问题，视频模型改在拥有的节点/旧任务授权后由统一服务选择；视频本身的durable operation取代外层通用待提交回执，提供按幂等编号查任务，避免并发重复请求提前被拒为pending。完成事务保留真实tree/batch项目，不把生成节点当作品父节点。
+
+工作流A→B/C整链通过，前序必须真实completed才提交B、C独立、重复resume不重复创建。由于SSH数据库SELECT耗时约409ms，首次90秒整链预算与手动tick90秒不足；统一按部署Worker的300秒HTTP期限核对并保存运行日志，不把超时当退款依据。随后为后续集中E2E准备本机独立PostgreSQL16.15（EDB官方ZIP43bb45f1...，只解包到本任务output，无系统服务/现有数据库改动；owner marker、独立data/loopback端口53292、DPAPI密码）。Windows数据库查询与App请求已恢复本地速度，保留103独立库作Linux兼容验收备用，临时明文密码文件已删。
+
+节点/批量计划允许完整原生workflowManifest与同一camera schema，工作流任务的manifest使用加密快照+稳定digest，不进公开响应；手工禁用摄影参数时预扣前拒绝。任务集中检查首次其余正常，而BYOC结果被目标URL查询字符串校验误拒，已修正为验证无查询的接口基址、按同一固定域名下载完整查询URL，仍保留凭据/元数据服务拦截。该任务脚本正在复测，AutoDL/RunningHub真实App工作流入口待运行，A仍未宣布全部通过或合回main。
+
+A最新通过项：任务脚本已实际验证同operation并发只创建一次、长提示词/false完整冻结、可靠未提交取消从不发供应商请求、完成不重复结算、已接单断线needs_attention保持并在App真实重启后不重提、失败原配置完整新任务重试，以及BYOC真实队列/历史/媒体保存0积分。AutoDL/RunningHub真实App→Worker→原生供应商HTTP→私有媒体/结果完整入口通过，使用所选workflowId，manifest加密冻结。上游取消支持/明确405不支持的边界补验正在运行；51个原生wire检查和配置/节点/依赖链已通过，A收尾后按用户要求先合回main。
+
+检查点A收尾通过：24个IC/27个新协议HTTP组合、contract、配置优先与发布冻结/旧digest/错误vendor协议拒绝、真实私有媒体fixture、8参考素材读取、节点持久化/复制/恢复/真实事务回滚、A→B/C依赖与重复恢复、完整任务并发/重启/取消/结算/BYOC0，以及AutoDL/RunningHub真实App/Worker工作流均通过。支持取消的Ark实际DELETE后轮询确认取消并释放预扣；明确405不支持取消的上游继续完成并结算，支持标志为false，不重发停止请求。最终完整TypeScript检查通过。结果核验/全产物保存与媒体处理仍在B、画布/Agent在C、完整34矩阵/演示/构建/线上交付在D；真实视频供应商质量和额度未验收。
+
+按用户要求准备首批合回main：再次fetch发现主线已到7b4c970，新增生图能力、folio预览和企业组织功能；本任务先保存A修复，再整合新主线并做受影响的合并验收，保护新功能与已发布版本。不能用之前12105eb或ee351d9覆盖最新代码；没有新部署。

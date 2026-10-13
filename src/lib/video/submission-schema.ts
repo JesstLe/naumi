@@ -2,7 +2,8 @@ import {z} from "zod";
 import {videoInputSchema} from "./contract";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
 import {videoNodeIdSchema,videoProjectKeySchema} from "../canvas/video-node-schema";
-export const videoCameraSchema=z.strictObject({camera:z.string().max(100).optional(),lens:z.string().max(100).optional(),focalLength:z.string().max(100).optional(),aperture:z.string().max(100).optional(),movement:z.string().max(200).optional()});
+import {videoCameraSchema} from "./camera";
+export {videoCameraSchema} from "./camera";
 export const videoSubmissionSchema=videoInputSchema.partial().extend({
   source:z.enum(["canvas","workbench","agent","workflow"]).optional(),sourceId:z.string().max(200).optional(),projectKey:videoProjectKeySchema.optional(),
   nodeId:videoNodeIdSchema.optional(),nodeRevision:z.number().int().nonnegative().optional(),

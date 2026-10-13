@@ -124,7 +124,7 @@ export function normalizeVideoInput(raw:Record<string,unknown>,cap:ResolvedVideo
     if(cap.supportsMultiShot!==true||cap.maxShots==null||input.shots.length>cap.maxShots)reject("SHOTS_UNSUPPORTED","分镜能力或数量限制未满足","shots");
     if(input.durationSeconds<0||Math.abs(input.shots.reduce((n,shot)=>n+shot.durationSeconds,0)-input.durationSeconds)>0.001)reject("SHOT_DURATION_MISMATCH","分镜时长之和必须等于本次视频时长","shots");
   }
-  const providerOptions:Record<string,unknown>={},omittedProviderOptions:string[]=[];
+  const providerOptions:Record<string,string|number|boolean|null>={},omittedProviderOptions:string[]=[];
   for(const key of Object.keys(input.providerOptions||{}))if(!cap.providerOptions?.[key])reject("UNKNOWN_PROVIDER_OPTION",`模型未声明参数${key}`,"providerOptions");
   for(const [key,option] of Object.entries(cap.providerOptions||{})){
     const supplied=Object.prototype.hasOwnProperty.call(input.providerOptions||{},key);
@@ -133,7 +133,7 @@ export function normalizeVideoInput(raw:Record<string,unknown>,cap:ResolvedVideo
     if(value===undefined||value===null&&!supplied)continue;
     const valid=option.type==="boolean"?typeof value==="boolean":option.type==="integer"?Number.isInteger(value):option.type==="number"?typeof value==="number"&&Number.isFinite(value):option.type==="string"?typeof value==="string":option.values?.includes(value as never);
     if(!valid||typeof value==="number"&&(option.minimum!==undefined&&value<option.minimum||option.maximum!==undefined&&value>option.maximum))reject("INVALID_PROVIDER_OPTION",`参数${key}类型或范围不合法`,"providerOptions");
-    providerOptions[key]=value;
+    providerOptions[key]=value as string|number|boolean|null;
   }
   return {...input,mode,references:refs,providerOptions,omittedProviderOptions};
 }

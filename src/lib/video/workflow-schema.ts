@@ -2,6 +2,7 @@ import {z} from "zod";
 import {videoReferenceSchema,orderedInputSchema} from "./references";
 import {VIDEO_MODES} from "./capability-schema";
 import {videoInputSchema} from "./contract";
+import {videoCameraSchema} from "./camera";
 const id=z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/);
 const safePath=z.array(z.string().min(1).max(160).refine(value=>!["__proto__","constructor","prototype"].includes(value))).min(1).max(16);
 export const videoWorkflowManifestSchema=z.strictObject({version:z.literal(1),kind:z.enum(["comfyui","autodl","runninghub"]),
@@ -11,6 +12,7 @@ export const videoWorkflowManifestSchema=z.strictObject({version:z.literal(1),ki
   outputNodeIds:z.array(id).max(256).optional()});
 export type VideoWorkflowManifest=z.infer<typeof videoWorkflowManifestSchema>;
 export const workflowVideoRequestSchema=videoInputSchema.omit({durationSeconds:true,resolution:true,references:true}).extend({prompt:z.string().max(16384),negativePrompt:z.string().max(8192).optional(),mode:z.enum(VIDEO_MODES).optional(),
+  workflowManifest:videoWorkflowManifestSchema.optional(),camera:videoCameraSchema.optional(),
   providerId:id.optional(),modelId:id.optional(),durationSeconds:z.number().int().min(-1).max(3600).optional(),seconds:z.string().max(10).optional(),size:z.string().max(100).optional(),resolution:z.string().max(100).optional(),
   aspectRatio:z.string().max(20).optional(),generateAudio:z.boolean().optional(),watermark:z.boolean().optional(),references:z.array(videoReferenceSchema).max(128).optional(),
   orderedInputs:z.array(orderedInputSchema).max(256).optional(),providerOptions:z.record(z.string(),z.json()).optional(),

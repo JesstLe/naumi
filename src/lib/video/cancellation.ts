@@ -5,6 +5,7 @@ import {settleTaskBillingTx} from "../billing/task-operation";
 import {ModelConfigError} from "../model-config/types";
 import {getVideoProvider} from "./providers/adapter";
 import type {VideoTaskSnapshot} from "./types";
+import {UnsupportedVideoCancellationError} from "./types";
 
 async function cancelLocked(client:PoolClient,actor:string,id:string,task:Record<string,any>,reason:string){
   if(["completed","failed","cancelled"].includes(task.status))return;
@@ -54,9 +55,9 @@ export async function confirmVideoTaskCancelled(actor:string,id:string,reason="ä
 /** A successful DELETE acknowledges the stop request; poll must still confirm the terminal state. */
 export async function sendPendingVideoCancellation(actor:string,task:VideoTaskRow,snapshot:VideoTaskSnapshot){
   const current=await getVideoTask(actor,task.id);
-  if(!current?.cancellationRequestedAt||current.cancellationSentAt||!["queued","processing"].includes(current.status))return;
+  if(!current?.cancellationRequestedAt||current.cancellationSentAt||current.supplierCancellationSupported===false||!["queued","processing"].includes(current.status))return;
   const adapter=getVideoProvider(task.providerId);
   if(!adapter?.cancel){await getPool().query("UPDATE app_video_tasks SET cancellation_supported=false WHERE email=$1 AND id=$2",[actor,task.id]);return;}
   try{await adapter.cancel(snapshot);await getPool().query("UPDATE app_video_tasks SET cancellation_supported=true,cancellation_sent_at=now() WHERE email=$1 AND id=$2",[actor,task.id]);}
-  catch{await getPool().query("UPDATE app_video_tasks SET cancellation_supported=true WHERE email=$1 AND id=$2",[actor,task.id]);}
+  catch(error){await getPool().query("UPDATE app_video_tasks SET cancellation_supported=$3 WHERE email=$1 AND id=$2",[actor,task.id,!(error instanceof UnsupportedVideoCancellationError)]);}
 }

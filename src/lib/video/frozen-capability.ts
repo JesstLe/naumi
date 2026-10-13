@@ -6,7 +6,7 @@ import type { ModelSnapshot,UpstreamModel,ModelProvider } from "../model-config/
 import { ModelConfigError } from "../model-config/types";
 import { supplierVideoDefinition } from "../supplier-models/video-access";
 import { managedVideoDefinition } from "./model-definition";
-import { videoDefinitionSchema,videoWireProfileSchema } from "./capability-schema";
+import { videoDefinitionSchema,videoWireProfileSchema,videoProfileProtocol } from "./capability-schema";
 
 export const frozenVideoSchema=z.strictObject({definition:videoDefinitionSchema,
   sources:z.record(z.string(),z.enum(["admin","vendor","adapter","unknown"])),profile:videoWireProfileSchema.optional(),
@@ -23,6 +23,7 @@ export async function ensureVideoDefaultsSchema(pool:Pool){
 export async function freezeManagedVideoCapability(snapshot:ModelSnapshot,upstream:UpstreamModel,provider:ModelProvider,connection?:Pool|PoolClient):Promise<FrozenVideoCapability>{
   const create=async()=>{
     const value=managedVideoDefinition(upstream,provider,await supplierVideoDefinition(provider.id,upstream.model,connection));
+    if(value.profile&&videoProfileProtocol(value.profile)!==provider.protocol)throw new ModelConfigError("VIDEO_PROFILE_MISMATCH","视频来源协议与所选适配分支不一致",422);
     const {sources,...definition}=value.capability;
     return frozenVideoSchema.parse({definition,sources,profile:value.profile,sourceRevision:value.sourceRevision});
   };
