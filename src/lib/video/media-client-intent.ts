@@ -1,0 +1,11 @@
+import {browserRandomUUID,browserSha256Hex} from "../browser-crypto";
+import {mediaJobRequestSchema,type MediaJobRequest} from "./media-job-schema";
+export type MediaJobIntent=Omit<MediaJobRequest,"operationId"|"billingConfirmation">;
+export type MediaReceipt={operationId:string;fingerprint:string;jobId?:string};
+function canonical(value:unknown):string{if(Array.isArray(value))return `[${value.map(canonical).join(",")}]`;if(value&&typeof value==="object")return `{${Object.entries(value).filter(([,item])=>item!==undefined).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>`${JSON.stringify(key)}:${canonical(item)}`).join(",")}}`;return JSON.stringify(value);}
+export async function mediaIntent(raw:MediaJobIntent){const {operationId:_operation,...intent}=mediaJobRequestSchema.parse({...raw,operationId:browserRandomUUID()});return {intent,fingerprint:await browserSha256Hex(new TextEncoder().encode(canonical(intent)))};}
+export function mediaReceiptKey(actor:string,fingerprint:string){return `naumi:media-receipt:v1:${actor.toLowerCase()}:${fingerprint}`;}
+export function readMediaReceipt(storage:Pick<Storage,"getItem">,actor:string,fingerprint:string):MediaReceipt|null{try{const value=JSON.parse(storage.getItem(mediaReceiptKey(actor,fingerprint))||"null");return value&&value.fingerprint===fingerprint&&typeof value.operationId==="string"&&/^[0-9a-f-]{36}$/.test(value.operationId)?value:null;}catch{return null;}}
+export function writeMediaReceipt(storage:Pick<Storage,"setItem">,actor:string,receipt:MediaReceipt){storage.setItem(mediaReceiptKey(actor,receipt.fingerprint),JSON.stringify(receipt));}
+export function clearMediaReceipt(storage:Pick<Storage,"getItem"|"removeItem">,actor:string,receipt:MediaReceipt){if(readMediaReceipt(storage,actor,receipt.fingerprint)?.operationId===receipt.operationId)storage.removeItem(mediaReceiptKey(actor,receipt.fingerprint));}
+export function clearTerminalMediaReceipts(storage:Pick<Storage,"getItem"|"removeItem"|"key"|"length">,actor:string,operationId:string){const prefix=`naumi:media-receipt:v1:${actor.toLowerCase()}:`;for(let index=storage.length-1;index>=0;index--){const key=storage.key(index);if(!key?.startsWith(prefix))continue;const receipt=readMediaReceipt(storage,actor,key.slice(prefix.length));if(receipt?.operationId===operationId)clearMediaReceipt(storage,actor,receipt);}}

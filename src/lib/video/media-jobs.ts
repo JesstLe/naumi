@@ -7,9 +7,9 @@ import {canReadMedia,getMediaAsset,registerMediaAsset} from "../media-assets";
 import {readManagedObject,storageKeyFromManagedUrl,writeStoredObject} from "../storage";
 import {ModelConfigError} from "../model-config/types";
 import {canonicalConfig} from "../model-config/repository";
-import {getVideoNode} from "../canvas/video-node-repository";
+import {getVideoNode,ensureVideoNodeSchema} from "../canvas/video-node-repository";
 import {authorizeVideoProject} from "../canvas/video-node-service";
-import {mediaJobRequestSchema,type MediaJobRequest,type MediaJobOutput,type MediaProbe,type MediaJobStatus} from "./media-job-schema";
+import {mediaJobRequestSchema,type MediaJobRequest,type MediaJobOutput,type MediaProbe,type MediaJobStatus,type PublicMediaJob} from "./media-job-schema";
 import {prepareMediaInputs,prepareMediaAuxiliary,auxiliaryMediaBytes,mediaWorkerHealth,cleanupMediaWorkerJob,mediaWorkerRequest,mediaWorkerConfigured,readMediaWorkerOutput,MediaWorkerError,type WorkerJobView} from "./media";
 import {encryptAtRest,decryptAtRest} from "../settings";
 import {nativeMediaArgs,presetMediaCommand,replaceVirtual} from "../../../scripts/video-fusion/media-engine.mjs";
@@ -21,7 +21,7 @@ import type {BillingQuote} from "../billing/types";
 
 type BundleFile={name:string;key:string;sha256:string;bytes:number};
 type FrozenInput=FrozenMediaInput&{bundleFiles?:BundleFile[];bundleEntry?:string};
-type JobRow={id:string;email:string;request:MediaJobRequest;input_digest:string;inputs:FrozenInput[];status:MediaJobStatus;processed_seconds:number;outputs:MediaJobOutput[];error:string|null;cancellation_requested_at:Date|null;created_at:Date;updated_at:Date;query_result:string|null;billing_quote:BillingQuote|null;auxiliary_files_enc:string|null;cleanup_completed_at:Date|null};
+type JobRow={id:string;email:string;operation_id:string;request:MediaJobRequest;input_digest:string;inputs:FrozenInput[];status:MediaJobStatus;processed_seconds:number;outputs:MediaJobOutput[];error:string|null;cancellation_requested_at:Date|null;created_at:Date;updated_at:Date;query_result:string|null;billing_quote:BillingQuote|null;auxiliary_files_enc:string|null;cleanup_completed_at:Date|null};
 let ready:Promise<void>|undefined;
 export async function ensureMediaJobSchema(){
   if(!ready)ready=ensureSchema().then(()=>getPool().query(`
@@ -29,6 +29,7 @@ export async function ensureMediaJobSchema(){
       request jsonb NOT NULL,inputs jsonb NOT NULL,status text NOT NULL DEFAULT 'queued',processed_seconds double precision NOT NULL DEFAULT 0,
       outputs jsonb NOT NULL DEFAULT '[]',query_result text,error text,cancellation_requested_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),UNIQUE(email,operation_id));
     CREATE INDEX IF NOT EXISTS app_video_media_jobs_pending_idx ON app_video_media_jobs(updated_at) WHERE status IN ('queued','processing');
+    CREATE INDEX IF NOT EXISTS app_video_media_jobs_owner_history_idx ON app_video_media_jobs(email,created_at DESC,id DESC);
     ALTER TABLE app_video_media_jobs ADD COLUMN IF NOT EXISTS billing_quote jsonb;
     ALTER TABLE app_video_media_jobs ADD COLUMN IF NOT EXISTS auxiliary_files_enc text;
     ALTER TABLE app_video_media_jobs ADD COLUMN IF NOT EXISTS cleanup_completed_at timestamptz;
@@ -58,8 +59,18 @@ async function resolveInput(actor:string,id:string):Promise<FrozenInput>{
   const key=art?storageKeyFromManagedUrl(art.videoUrl||art.image):storageKeyFromManagedUrl(id)||id;
   if(!key)unavailable();return verifiedOwnedMedia(actor,key,art?.id||null);
 }
-export function publicMediaJob(row:JobRow){return {id:row.id,jobId:row.id,status:row.status,action:row.request.action,processedSeconds:Number(row.processed_seconds),outputs:row.outputs,
-  queryResult:row.query_result,error:row.error,cost:row.billing_quote?.authorizedCredits||0,billingVersion:row.billing_quote?.configVersion||null,cancellationRequestedAt:row.cancellation_requested_at?.toISOString()||null,createdAt:row.created_at.toISOString(),updatedAt:row.updated_at.toISOString()};}
+export function publicMediaJob(row:JobRow):PublicMediaJob{return {id:row.id,jobId:row.id,operationId:row.operation_id,status:row.status,action:row.request.action,processedSeconds:Number(row.processed_seconds),outputs:row.outputs,
+  queryResult:row.query_result,error:row.error,cost:row.billing_quote?.authorizedCredits||0,billingVersion:row.billing_quote?.configVersion||null,cancellationRequestedAt:row.cancellation_requested_at?.toISOString()||null,createdAt:row.created_at.toISOString(),updatedAt:row.updated_at.toISOString(),
+  projectKey:row.request.projectKey||null,source:row.request.source,inputArtworkIds:row.inputs.flatMap(input=>input.artworkId?[input.artworkId]:[])};}
+export async function listMediaJobs(actorRaw:string,options:{projectKey?:string;source?:MediaJobRequest["source"];operationId?:string;cursor?:{createdAt:string;id:string};limit?:number}={}){
+  const actor=actorRaw.toLowerCase();await ensureMediaJobSchema();const limit=options.limit??30;
+  if(!Number.isInteger(limit)||limit<1||limit>100)throw new ModelConfigError("INVALID_MEDIA_PAGE","媒体任务分页数量无效",422);
+  const rows=(await getPool().query(`SELECT * FROM app_video_media_jobs WHERE email=$1 AND ($2::text IS NULL OR request->>'projectKey'=$2) AND ($3::text IS NULL OR request->>'source'=$3)
+    AND ($4::uuid IS NULL OR operation_id=$4) AND ($5::timestamptz IS NULL OR (created_at,id)<($5::timestamptz,$6::uuid)) ORDER BY created_at DESC,id DESC LIMIT $7`,[actor,options.projectKey||null,options.source||null,options.operationId||null,options.cursor?.createdAt||null,options.cursor?.id||null,limit+1])).rows as JobRow[];
+  const page=rows.slice(0,limit),last=page[page.length-1],nextCursor=rows.length>limit&&last?{createdAt:last.created_at.toISOString(),id:last.id}:null;
+  if(!options.cursor&&!options.operationId){const pending=(await getPool().query("SELECT * FROM app_video_media_jobs WHERE email=$1 AND status IN ('queued','processing') AND ($2::text IS NULL OR request->>'projectKey'=$2) AND ($3::text IS NULL OR request->>'source'=$3)",[actor,options.projectKey||null,options.source||null])).rows as JobRow[];const known=new Set(page.map(row=>row.id));page.push(...pending.filter(row=>!known.has(row.id)));}
+  return {jobs:page.map(publicMediaJob),nextCursor};
+}
 async function getRow(actor:string,id:string):Promise<JobRow|null>{await ensureMediaJobSchema();return (await getPool().query("SELECT * FROM app_video_media_jobs WHERE email=$1 AND id=$2",[actor,id])).rows[0]||null;}
 function presetOutputs(request:MediaJobRequest):string[]{
   if(["ffmpeg","ffprobe"].includes(request.action))return request.outputs;
@@ -141,6 +152,7 @@ async function dispatch(row:JobRow):Promise<WorkerJobView>{
   return mediaWorkerRequest(row.id,"POST",{action:row.request.action,inputs,bundleFiles,auxiliaryInputs,auxiliaryOutputs:row.request.auxiliaryOutputs||[],outputs:presetOutputs(row.request),timestamp:row.request.timestamp,start:row.request.start,end:row.request.end,args:row.request.args});
 }
 async function publish(row:JobRow,view:WorkerJobView){
+  await ensureVideoNodeSchema();
   if(!view.result)throw new Error("媒体处理结果缺失");const outputs:MediaJobOutput[]=[],artworks:Omit<ArtworkRecord,"createdAt">[]=[];
   const parents=[...new Set(row.inputs.map(input=>input.artworkId).filter((id):id is string=>!!id))];
   const names=new Set(view.result.outputs.map(item=>item.name));
@@ -161,7 +173,7 @@ async function publish(row:JobRow,view:WorkerJobView){
     else{const written=await writeStoredObject(bytes,mimeType,storageKey);await registerMediaAsset(storageKey,bytes,mimeType,written.remoteReady,row.email);}
     outputs.push({artworkId,storageKey,url,mimeType,sha256:item.sha256,bytes:item.bytes,name:item.name,probe:item.probe,fragment:item.fragment===true});
     const category=item.fragment?"media":mimeType.startsWith("image/")?"main":mimeType.startsWith("audio/")?"audio":mimeType.startsWith("video/")?"video":"media";
-    artworks.push({id:artworkId,title:item.name,category,prompt:"",status:"completed",image:category==="main"?url:"",videoUrl:category==="main"?null:url,gradient:"from-slate-100 to-zinc-100",source:"canvas",origin:row.request.source==="canvas"||row.request.projectKey?"canvas":null,
+    artworks.push({id:artworkId,title:item.name,category,prompt:"",status:"completed",image:category==="main"?url:"",videoUrl:category==="main"?null:url,gradient:"from-slate-100 to-zinc-100",source:"canvas",origin:row.request.source==="workbench"?"workbench":row.request.source==="canvas"||row.request.projectKey?"canvas":"workbench",
       parentId:parents[0]||null,parentIds:parents.slice(1),width:item.probe?.width||null,height:item.probe?.height||null,
       groupId:row.request.projectKey?.startsWith("tree:")?row.request.projectKey.slice(5):row.inputs[0]?.groupId||undefined,
       batchId:row.request.projectKey?.startsWith("batch:")?row.request.projectKey.slice(6):`media-${row.id}`,
@@ -170,10 +182,18 @@ async function publish(row:JobRow,view:WorkerJobView){
   const tx=await getPool().connect();try{await tx.query("BEGIN");const current=(await tx.query("SELECT status FROM app_video_media_jobs WHERE id=$1 AND email=$2 FOR UPDATE",[row.id,row.email])).rows[0];
     if(current?.status==="completed"){await tx.query("COMMIT");return;}
     if(!current||current.status==="cancelled"||current.status==="failed")throw new Error("媒体任务已结束");
+    // Serialize with mixed/project deletion. The job still settles once; only its canvas attachment changes.
+    await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[row.email]);
+    await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${row.email}`]);
+    let detached=false;
+    if(row.request.projectKey){const project=(await tx.query("SELECT deleted_at FROM app_canvas_video_projects WHERE email=$1 AND project_key=$2 FOR SHARE",[row.email,row.request.projectKey])).rows[0];detached=!!project?.deleted_at;}
+    if(row.request.inputs.length){const nodes=(await tx.query("SELECT deleted_at FROM app_canvas_video_nodes WHERE email=$1 AND id=ANY($2::text[]) FOR SHARE",[row.email,row.request.inputs.map(id=>id.replace(/^video:/,""))])).rows;detached=detached||nodes.some(node=>!!node.deleted_at);}
+    if(parents.length){const sources=(await tx.query("SELECT deleted_at FROM app_artworks WHERE email=$1 AND id=ANY($2::text[]) FOR SHARE",[row.email,parents])).rows;detached=detached||sources.some(art=>!!art.deleted_at);}
+    if(detached)for(const art of artworks)art.origin="workbench";
     await addArtworksTx(tx,row.email,artworks);
     if(row.billing_quote)await settleTaskBillingTx(tx,row.id,row.email,row.billing_quote,`led-media-${row.id}`,{state:"succeeded",items:[{id:row.id,state:"succeeded",executedQuality:row.billing_quote.facts.quality}]});
     for(const output of outputs)if(output.probe)await tx.query("INSERT INTO app_video_media_probes(storage_key,sha256,probe) VALUES($1,$2,$3::jsonb) ON CONFLICT DO NOTHING",[output.storageKey,output.sha256,JSON.stringify(output.probe)]);
-    await tx.query("UPDATE app_video_media_jobs SET status='completed',outputs=$2::jsonb,query_result=$3,error=NULL,updated_at=now() WHERE id=$1",[row.id,JSON.stringify(outputs),view.result.stdout.slice(0,1024*1024)]);await tx.query("COMMIT");
+    await tx.query("UPDATE app_video_media_jobs SET status='completed',outputs=$2::jsonb,query_result=$3,processed_seconds=$4,error=NULL,updated_at=now() WHERE id=$1",[row.id,JSON.stringify(outputs),view.result.stdout.slice(0,1024*1024),view.processedSeconds]);await tx.query("COMMIT");
   }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
   await cleanupMediaJob(row);
 }

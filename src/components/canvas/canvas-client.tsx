@@ -28,6 +28,9 @@ import {VideoGenerationNode} from "./video/generation-node";
 import {VideoSettingsDialog,type VideoNodeDraft} from "./video/settings-dialog";
 import {useVideoNodes} from "./video/use-video-nodes";
 import {useVideoTasks} from "./video/use-video-tasks";
+import {VideoPlayer,mediaDownloadHref,type VideoPlayerAction} from "./video/player";
+import {MediaActionsDialog,type MediaInputChoice} from "./video/media-actions";
+import {useMediaJobs} from "./video/use-media-jobs";
 import type {CanvasVideoNode} from "@/lib/canvas/video-node-schema";
 import {catalogCapability,reconcileVideoSettings,videoModeRoles,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
 import {readVideoReceipt,prepareVideoReceipt,saveVideoReceipt,clearVideoReceipt} from "@/lib/video/canvas-receipts";
@@ -1097,119 +1100,8 @@ function CometEdge({
  * 时长显示。未选中自动暂停；选中后可聚焦视频表面并用空格播放。
  * 所有媒体控件都隔离 React Flow 的拖动、滚轮和平移快捷键。
  */
-function VideoNodeSurface({ url, selected, kind, onExtract }: { url: string; selected: boolean; kind: "video" | "audio"; onExtract?: (kind: "frame" | "audio", timestamp: number) => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [durationMs, setDurationMs] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-
-  useEffect(() => {
-    if (!selected) {
-      videoRef.current?.pause();
-      audioRef.current?.pause();
-    }
-  }, [selected]);
-
-  const togglePlayback = () => {
-    const video = kind === "audio" ? audioRef.current : videoRef.current;
-    if (!video) return;
-    if (video.paused) void video.play();
-    else video.pause();
-  };
-  const controlStyle = { background: "rgba(15,23,42,0.72)", color: "#e2e6ed" };
-
-  return (
-    <div
-      className={cn(
-        "relative h-full w-full overflow-hidden rounded-[10px]",
-        kind === "audio" ? "bg-slate-100 p-3" : "bg-black"
-      )}
-      onKeyDown={(event) => event.stopPropagation()}
-    >
-      {kind === "audio" ? <audio
-        ref={audioRef}
-        src={url}
-        controls
-        className="nodrag nowheel nokey mt-8 w-full"
-        onLoadedMetadata={(event) => setDurationMs(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration * 1000 : 0)}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-      /> : <video
-        ref={videoRef}
-        src={url}
-        tabIndex={selected ? 0 : -1}
-        aria-label="视频播放器，空格播放或暂停"
-        playsInline
-        loop
-        className="nodrag nowheel nokey block h-full w-full object-contain outline-none"
-        onLoadedMetadata={(event) =>
-          setDurationMs(
-            Number.isFinite(event.currentTarget.duration)
-              ? event.currentTarget.duration * 1000
-              : 0
-          )
-        }
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onKeyDown={(event) => {
-          if (selected && event.code === "Space") {
-            event.preventDefault();
-            event.stopPropagation();
-            togglePlayback();
-          }
-        }}
-      />}
-      {durationMs > 0 && (
-        <span
-          className="pointer-events-none absolute left-2 top-2 z-10 flex h-6 items-center rounded-md px-1.5 text-[10px] font-medium opacity-80 backdrop-blur"
-          style={controlStyle}
-        >
-          {new Date(durationMs).toISOString().slice(14, 19)}
-        </span>
-      )}
-      {kind === "video" && selected && onExtract && <div data-testid="canvas-video-extract-controls" className="nodrag nowheel nokey absolute right-1.5 top-1.5 z-10 flex gap-1">
-        <button type="button" title="抽取首帧" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("frame", 0); }}>首帧</button>
-        <button type="button" title="抽取当前帧" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("frame", videoRef.current?.currentTime || 0); }}>当前帧</button>
-        <button type="button" title="抽取尾帧" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("frame", Math.max(0, (videoRef.current?.duration || 0) - 0.01)); }}>尾帧</button>
-        <button type="button" title="拆分音轨" className="rounded-md bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-slate-700" onClick={(event) => { event.stopPropagation(); onExtract("audio", 0); }}>音轨</button>
-      </div>}
-      {kind === "video" && selected && durationMs > 0 && <div data-testid="canvas-video-timeline" className="nodrag nowheel nokey absolute bottom-1.5 left-1/2 z-10 flex w-[calc(100%-76px)] -translate-x-1/2 items-center gap-1.5 rounded-md bg-black/70 px-2 py-1">
-        <span className="text-[9px] tabular-nums text-white/80">{new Date(currentTime * 1000).toISOString().slice(14, 19)}</span>
-        <input aria-label="视频时间轴" type="range" min={0} max={Math.max(0.01, durationMs / 1000)} step={0.01} value={Math.min(currentTime, durationMs / 1000)} onChange={(event) => { const time = Number(event.target.value); setCurrentTime(time); if (videoRef.current) videoRef.current.currentTime = time; }} className="h-1.5 min-w-0 flex-1 accent-teal-400" />
-        <span className="text-[9px] tabular-nums text-white/80">{new Date(durationMs).toISOString().slice(14, 19)}</span>
-      </div>}
-      <button
-        data-testid="canvas-media-playback"
-        type="button"
-        title={isPlaying ? "暂停" : "播放"}
-        aria-label={isPlaying ? "暂停" : "播放"}
-        className="nodrag nowheel nokey absolute bottom-1.5 left-1.5 z-10 grid h-6 w-6 place-items-center rounded-md opacity-75 backdrop-blur transition-opacity hover:opacity-100"
-        style={controlStyle}
-        onClick={(event) => {
-          event.stopPropagation();
-          togglePlayback();
-        }}
-      >
-        {isPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-      </button>
-      <button
-        data-testid="canvas-media-preview"
-        type="button"
-        title="放大预览"
-        aria-label="放大预览"
-        className="nodrag nowheel nokey absolute bottom-1.5 right-1.5 z-10 grid h-6 w-6 place-items-center rounded-md opacity-75 backdrop-blur transition-opacity hover:opacity-100"
-        style={controlStyle}
-        onClick={(event) => {
-          event.stopPropagation();
-          window.open(url, "_blank");
-        }}
-      >
-        <Maximize2 className="h-3 w-3" />
-      </button>
-    </div>
-  );
+function VideoNodeSurface({url,selected,kind,onExtract}:{url:string;selected:boolean;kind:"video"|"audio";onExtract?:(action:VideoPlayerAction)=>void}) {
+  return <VideoPlayer url={url} selected={selected} kind={kind} compact onProcess={onExtract}/>;
 }
 
 function ArtNode({ data, selected, id: nodeId }: NodeProps) {
@@ -1248,7 +1140,7 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
     ) => void;
     onCanvasRatioRepair?: (id: string, width: number, height: number) => void;
     onRenameRequest?: (id: string, label: string) => void;
-    onVideoExtract?: (id: string, kind: "frame" | "audio", timestamp: number) => void;
+    onVideoExtract?: (id: string, action: VideoPlayerAction) => void;
     settings?: CanvasNodeSettings;
     readOnly?: boolean;
   };
@@ -1358,8 +1250,10 @@ function ArtNode({ data, selected, id: nodeId }: NodeProps) {
       >
         {d.pending ? (
           <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} completed={d.generationCompleted} />
+        ) : d.videoUrl && d.category==="media" ? (
+          <div className="flex h-full items-center justify-center p-3"><a className="nodrag nowheel nokey rounded-lg bg-current/5 px-3 py-2 text-xs" href={mediaDownloadHref(d.videoUrl,d.label)} download>下载 {d.label}</a></div>
         ) : d.videoUrl ? (
-          <VideoNodeSurface url={d.videoUrl} selected={selected} kind={d.category === "audio" ? "audio" : "video"} onExtract={(kind, timestamp) => d.onVideoExtract?.(d.id, kind, timestamp)} />
+          <VideoNodeSurface url={d.videoUrl} selected={selected} kind={d.category === "audio" ? "audio" : "video"} onExtract={action => d.onVideoExtract?.(d.id, action)} />
         ) : (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1542,7 +1436,7 @@ function layoutGraph(
   ) => void,
   onCanvasRatioRepair: (id: string, width: number, height: number) => void,
   onRenameRequest: (id: string, label: string) => void,
-  onVideoExtract: (id: string, kind: "frame" | "audio", timestamp: number) => void
+  onVideoExtract: (id: string, action: VideoPlayerAction) => void
 ): { nodes: Node[]; edges: Edge[] } {
   const byId = new Map(arts.map((a) => [a.id, a]));
   const sorted = [...arts].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
@@ -2073,6 +1967,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [expandAnchor, setExpandAnchor] = useState("center");
   // 持久视频节点与公开能力目录；规范请求经独立节点设置面板提交。
   const [videoEditId,setVideoEditId]=useState<string|null>(null);
+  const [videoMedia,setVideoMedia]=useState<{id:string;projectKey:string;initial:VideoPlayerAction}|null>(null);
   const videoNodesStore=useVideoNodes({email:user?.email,readOnly,request:privateFetchRaw});
   const imageMoreRef = useRef<HTMLButtonElement>(null);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
@@ -3082,28 +2977,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setRenamingNodeId(id);
   }, [readOnly]);
 
-  const extractVideoToCanvas = useCallback(async (id: string, kind: "frame" | "audio", timestamp: number) => {
-    if (readOnly || !user) return;
-    const source = worksRef.current?.find((item) => item.id === id);
-    if (!source?.videoUrl) return;
-    try {
-      const response = await privateFetchRaw("/api/video/extract", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ videoUrl: source.videoUrl, kind, timestamp, parentArtworkId: id }),
-      });
-      const data = await readJsonSafe(response);
-      if (!response.ok) throw new Error(data?.error || "视频素材抽取失败");
-      if (data.artworkId) {
-        const fresh = await mergeWorks([data.artworkId]);
-        pushAddUndo(data.artworkId, fresh);
-        setSelectedId(data.artworkId);
-        flashTip(kind === "frame" ? "视频帧已加入画布" : "音轨已加入画布");
-      }
-    } catch (error) {
-      flashTip(error instanceof Error ? error.message : "视频素材抽取失败");
-    }
-  }, [readOnly, user]); // eslint-disable-line react-hooks/exhaustive-deps
+  const extractVideoToCanvas = useCallback((id:string,action:VideoPlayerAction)=>{
+    if(readOnly||!user||nodeSettingsRef.current[id]?.locked)return;
+    const source=worksRef.current?.find(item=>item.id===id),node=videoNodesStore.getNode(id),project=activeProjectRef.current?.key;
+    if(!project||!source?.videoUrl&&!node?.lastResultId)return;
+    setVideoMedia({id,projectKey:project,initial:action});
+  },[readOnly,user,videoNodesStore.getNode]);
 
   const { nodes, edges } = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
     if (!active) return { nodes: [], edges: [] };
@@ -3132,10 +3011,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(task.sourceId&&user){const receipt=readVideoReceipt(localStorage,user.email,task.sourceId);if(receipt?.taskId===task.id)clearVideoReceipt(localStorage,user.email,task.sourceId,receipt.idempotencyKey);}
     await refreshCredits();
   }});
+  const mediaJobStore=useMediaJobs({email:user?.email,projectKey:active?.key,readOnly,request:privateFetchRaw,onCompleted:async job=>{
+    const project=activeProjectRef.current?.key;
+    if(!project||job.projectKey!==project||job.source==="workbench")return;
+    const ids=job.outputs.map(output=>output.artworkId);if(ids.length)await mergeWorks(ids);
+    await refreshCredits();
+  }});
+  useEffect(()=>{if(videoMedia&&videoMedia.projectKey!==activeKey)setVideoMedia(null);},[activeKey,videoMedia]);
   const videoInputChoices:VideoInputChoice[]=useMemo(()=>[
-    ...(active?.members||[]).map(art=>({id:art.id,nodeId:art.id,kind:art.category==="audio"?"audio" as const:art.videoUrl?"video" as const:"image" as const,title:art.title,value:art.videoUrl||art.image,thumbnail:!art.videoUrl?art.image:undefined,available:art.status==="completed"})),
+    ...(active?.members||[]).filter(art=>art.category!=="media").map(art=>({id:art.id,nodeId:art.id,kind:art.category==="audio"?"audio" as const:art.videoUrl?"video" as const:"image" as const,title:art.title,value:art.videoUrl||art.image,thumbnail:!art.videoUrl?art.image:undefined,available:art.status==="completed"})),
     ...textNodes.filter(node=>node.projectKey===activeKey).map(node=>({id:node.id,nodeId:node.id,kind:"text" as const,title:node.title,value:node.content||node.prompt||" ",available:node.status!=="generating"})),
-    ...videoNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>{const task=videoTaskStore.tasks.find(task=>task.id===node.lastTaskId),art=(works||[]).find(art=>art.id===node.lastResultId);return {id:node.id,nodeId:node.id,kind:"video" as const,title:node.title,value:art?.videoUrl||task?.videoUrl||"/media/pending",available:task?.status==="completed"&&!!node.lastResultId};}),
+    ...videoNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>{const task=videoTaskStore.tasks.find(task=>task.id===node.lastTaskId),art=(works||[]).find(art=>art.id===node.lastResultId);return {id:node.id,nodeId:node.id,kind:"video" as const,title:node.title,value:art?.videoUrl||task?.videoUrl||"/media/pending",available:!!node.lastResultId&&(art?.status==="completed"||task?.status==="completed")};}),
   ],[active,activeKey,textNodes,videoNodesStore.nodes,videoTaskStore.tasks,works]);
   const selectedVideo=videoNodesStore.nodes.find(node=>node.id===selectedId)||null;
   const mixedNativeSelection=multiSel.length>1&&(multiSel.some(id=>videoNodesStore.getNode(id))||multiSel.some(id=>id.startsWith("text-"))&&multiSel.some(id=>!id.startsWith("text-")));
@@ -3703,7 +3589,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       displayNodes.push({id:videoNode.id,type:"videoGeneration",position:{x:videoNode.x,y:videoNode.y},selected:videoNode.id===selectedId,draggable:!readOnly&&!locked,
         style:{width:videoNode.width,height:videoNode.height},data:{node:videoNode,title:videoNode.title,prompt:videoNode.config.prompt,content:String(videoNode.revision),width:videoNode.width,height:videoNode.height,status:task?.status,progress:task?.progress,videoUrl:result?.videoUrl||task?.videoUrl,
           task,settings:settingsFor(videoNode.id),selected:videoNode.id===selectedId,lightCanvas,locked,readOnly,resultUrl:result?.videoUrl||task?.videoUrl,onEdit:(id:string)=>setVideoEditId(id),onGenerate:(id:string)=>setVideoEditId(id),onCancel:(id:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current?.lastTaskId)void videoTaskStore.cancel(current.lastTaskId).catch(error=>flashTip(error.message));},
-          onPrompt:async(id:string,prompt:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current)await patchVideoNode(id,{config:{...current.config,prompt}});},
+          onProcess:extractVideoToCanvas,onPrompt:async(id:string,prompt:string)=>{const current=videoNodesStore.nodes.find(node=>node.id===id);if(current)await patchVideoNode(id,{config:{...current.config,prompt}});},
           onResize:(id:string,size:{x:number;y:number;width:number;height:number})=>{void patchVideoNode(id,size).catch(error=>flashTip(error.message));}}} as Node);
       for(const input of videoNode.inputs){const source=input.nodeId.replace(/^(?:text|image|video|audio):/,"");if(!displayNodes.some(node=>node.id===source)&&!textNodes.some(node=>node.id===source)&&!videoNodesStore.nodes.some(node=>node.id===source))continue;
         displayEdges.push({id:`e-video-${input.id}-${videoNode.id}`,source,sourceHandle:"out",target:videoNode.id,targetHandle:"in",type:"comet",data:{lit:false,dim:false}} as Edge);}
@@ -3838,7 +3724,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     nodeSettingsReady,
     readOnly,
     workflowManifests,
-    videoNodesStore.nodes,videoTaskStore.tasks,works,
+    videoNodesStore.nodes,videoTaskStore.tasks,works,extractVideoToCanvas,
   ]);
 
   // 受控节点状态(支持拖拽);仅当底层数据/位置真正变化时重新灌入,拖拽过程中不重置。
@@ -8263,6 +8149,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       ratioMenuOpen ||
       expandOpen ||
       !!videoEditId ||
+      !!videoMedia ||
       spawnMenu ||
       ctxMenu ||
       addMenuOpen ||
@@ -12104,6 +11991,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       )}
 
       {videoEditId&&videoNodesStore.nodes.find(node=>node.id===videoEditId&&node.projectKey===activeKey)&&(()=>{const node=videoNodesStore.nodes.find(node=>node.id===videoEditId)!;return <VideoSettingsDialog key={node.id} node={node} models={videoCatalog} choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||isNodeLocked(node.id)} onClose={()=>setVideoEditId(null)} onSave={async draft=>{await saveVideoDraft(node.id,draft);}} onGenerate={(draft,quote)=>generateVideoDraft(node.id,draft,quote)}/>;})()}
+      {videoMedia&&videoMedia.projectKey===activeKey&&<MediaActionsDialog key={`${user?.email}:${videoMedia.projectKey}:${videoMedia.id}`} initial={videoMedia.initial} sourceId={videoMedia.id} projectKey={videoMedia.projectKey} choices={videoInputChoices.filter(choice=>choice.available&&choice.kind!=="text").map(choice=>({id:choice.nodeId,title:choice.title,kind:choice.kind as MediaInputChoice["kind"],url:choice.value}))} light={lightCanvas} readOnly={readOnly||isNodeLocked(videoMedia.id)} jobs={mediaJobStore.jobs} historyError={mediaJobStore.error} canLoadMore={!!mediaJobStore.nextCursor} onLoadMore={mediaJobStore.loadMore} onQuote={mediaJobStore.estimate} onSubmit={mediaJobStore.submit} onCancel={mediaJobStore.cancel} onClose={()=>setVideoMedia(null)}/>}
       {imagegenPanel&&<ImagegenPanel entry="canvas" inputs={imagegenPanel.inputs} modelId={genModel} sourceNodeId={imagegenPanel.sourceNodeId} onClose={()=>setImagegenPanel(null)} onResult={result=>{void mountImagegenResult(result).catch(e=>flashTip(e instanceof Error?e.message:"结果已保存，请刷新画布"));}}/>}
       {/* 从生成历史选择:作品选择器 */}
       {historyPicker && (

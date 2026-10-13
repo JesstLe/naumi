@@ -22,7 +22,9 @@ export type Category =
   | "packaging3d" // 模切线图折叠生成的包装 3D 产品可视化
   | "dewrinkle" // 服装去皱产物,作品页单独筛选
   | "dewatermark" // 去水印产物,作品页单独筛选
-  | "audio"; // 视频拆分出的音轨节点
+  | "audio" // 视频拆分出的音轨节点
+  | "video"
+  | "media"; // 清单、分片、字幕和原生媒体处理辅助产物
 
 export const CATEGORY_LABELS: Record<Category, string> = {
   main: "电商主图",
@@ -46,6 +48,8 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   dewrinkle: "服装去皱",
   dewatermark: "去水印",
   audio: "视频音轨",
+  video: "视频",
+  media: "媒体文件",
 };
 
 export type PromptTemplate = {
