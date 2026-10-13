@@ -3,6 +3,8 @@ import {sameSiteBillingMutation} from "@/lib/billing/access";
 import {imageWorkerAuthorized} from "@/lib/durable-image-jobs";
 import {imagegenRequestSchema} from "@/lib/imagegen/schema";
 import {submitImagegen,getImagegenResult,resumeImagegen} from "@/lib/imagegen/dispatch";
+import {submitImagegenBatch} from "@/lib/imagegen/batch";
+import {rateLimit} from "@/lib/rate-limit";
 export const runtime="nodejs";
 export const maxDuration=300;
 export async function POST(request:Request){
@@ -10,7 +12,8 @@ export async function POST(request:Request){
  const body=await request.json().catch(()=>null);
  if(body?.workerJobId){if(!imageWorkerAuthorized(request))return Response.json({error:"无权执行"},{status:403});await resumeImagegen(String(body.workerJobId));return Response.json({ok:true});}
  const owner=await resolveUserEmail(request);if(!owner)return Response.json({error:"请先登录"},{status:401});
- try{const {confirmation,...value}=body||{};return Response.json(await submitImagegen(imagegenRequestSchema.parse(value),owner,confirmation));}
+ if(!rateLimit(`imagegen:${owner}`,30,600000))return Response.json({error:"提交过于频繁，请稍后重试"},{status:429});
+ try{const {confirmation,...value}=body||{},parsed=imagegenRequestSchema.parse(value);return Response.json(parsed.mode==="batch"?await submitImagegenBatch(parsed,owner,confirmation):await submitImagegen(parsed,owner,confirmation));}
  catch(error){return Response.json({error:error instanceof Error?error.message:"无法提交图像任务"},{status:400});}
 }
 export async function GET(request:Request){

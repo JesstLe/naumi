@@ -228,5 +228,6 @@ export async function recoverDurableImageJobs(): Promise<number> {
     }, body: JSON.stringify({ workerJobId: job.id }), signal: AbortSignal.timeout(10_000) });
     if (result.ok) count++;
   }
-  return count;
+  const {recoverImagegenBatches}=await import("./imagegen/batch");
+  return count+await recoverImagegenBatches();
 }

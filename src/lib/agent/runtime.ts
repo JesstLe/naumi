@@ -107,6 +107,7 @@ export type Session = {
   canvasExecuting?: boolean;
   pendingQuotes?: Map<string,Pick<BillingQuote,"configVersion"|"requestedCredits">>;
   preparedBilling?: {billingVersion:number;billingCredits:number;billingOperationId:string};
+  preparedImagegen?:import("../imagegen/types").ImagegenPlan;
   repeatSignature: string;
   repeatCount: number;
   /**
@@ -293,7 +294,7 @@ async function createRuntimeSession(
   session.harness.registerSecret(settings.apiKey);
   const tools = createNaumiTools(
     new Request(process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"), email,
-    () => ({...session.cred,...session.preparedBilling}),
+    () => ({...session.cred,...session.preparedBilling,imagegenPlan:session.preparedImagegen}),
     acceptedBundle ? () => signAcceptedModelContext(email, acceptedBundle) : undefined,
     options?.canvas, session.harness,
   );
@@ -394,6 +395,9 @@ async function createRuntimeSession(
         isError: toolFailed,
       });
       void persistAgentSession(session).catch(()=>undefined);
+    } else if(event.type === "tool_execution_update") {
+      const update=event as unknown as {toolCallId:string;toolName?:string;partialResult?:{details?:{publicSummary?:string;stage?:string}}};
+      if(update.partialResult?.details?.publicSummary)push("tool_start",{id:update.toolCallId,tool:update.toolName||"",summary:update.partialResult.details.publicSummary,stage:update.partialResult.details.stage});
     } else if (event.type === "message_update") {
       // 流式:text_delta 实时推给订阅了 onDelta 的路由(无订阅者时忽略)
       const e = event as unknown as {

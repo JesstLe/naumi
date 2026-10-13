@@ -7,6 +7,11 @@ import { fingerprint, stableJson } from "./fingerprint";
 import { getImageJob } from "@/lib/image-job-repository";
 import { currentModelBillingSnapshot } from "../model-config/context";
 import { CANVAS_IMAGE_TOOLS, type CanvasAgentContext } from "../agent/canvas-context";
+import {SHARED_IMAGEGEN_TOOLS,agentImagegenRequest} from "../imagegen/agent-request";
+import {planImagegen,imagegenFingerprint} from "../imagegen/plan";
+import {imagegenStepId} from "../imagegen/generation-core";
+import type {ImagegenPlan} from "../imagegen/types";
+import {currentExecutionBundle} from "../model-config/context";
 export const AGENT_FEATURES: Record<string, {
     feature: FeatureId;
     label: string;
@@ -20,6 +25,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     quote: Pick<BillingQuote, "configVersion" | "requestedCredits"> & Partial<Pick<BillingQuote,"modelVersion" | "authorizedCredits" | "imagePreset">>;
     label: string;
     threshold: number;
+    imagegenPlan?:ImagegenPlan;
 } | null> {
     const canvas = cred.canvas;
     if(name==="generate_video"||name==="extend_video"||name==="edit_video")args={...args,resolution:args.resolution||"1K"};
@@ -28,6 +34,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     if (!entry)
         return null;
     const runtime = await getBillingRuntime(), snapshot=currentModelBillingSnapshot()??await runtime.config.current(),threshold=snapshot.config.thresholds.agentConfirmCredits;
+    if((SHARED_IMAGEGEN_TOOLS.has(name)||canvas&&CANVAS_IMAGE_TOOLS.has(name))&&!args._category){const request=await agentImagegenRequest(name,args,email,canvas,cred.imageQuality),bundle=currentExecutionBundle(),plan=await planImagegen(request,email,bundle?{modelVersion:bundle.modelVersion,billingVersion:bundle.billingVersion}:undefined);return {quote:{configVersion:plan.billingVersion,modelVersion:plan.modelVersion,requestedCredits:plan.totalCredits,authorizedCredits:plan.totalCredits},label:entry.label,threshold:plan.confirmationRequired?0:threshold,imagegenPlan:plan};}
     if (name === "continue_aplus_generation") {
         const job = await getImageJob(String(args.job_id || ""), "aplus");
         if (!job || job.email !== email.toLowerCase())
@@ -62,9 +69,11 @@ export type AgentBillingSession = {
         billingCredits: number;
         billingOperationId: string;
     };
+    preparedImagegen?:ImagegenPlan;
 };
 export async function agentBillingPrecheck(session: AgentBillingSession, name: string, args: Record<string, unknown>, callId: string) {
     session.preparedBilling = undefined;
+    session.preparedImagegen=undefined;
     if (!dbEnabled)
         return undefined;
     let quoted;
@@ -107,6 +116,7 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
             return { block: true, terminate:true, attention: "waiting" as const, reason: `价格已更新，本次需要 ${meta.cost} 积分。请重新向用户报价并等待明确同意。` };
         }
     session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: costPlus?cap:quoted.quote.requestedCredits, billingOperationId: fingerprint({ session: session.id, turn: session.turnId, call: callId }) };
+    if(quoted.imagegenPlan){const request={...quoted.imagegenPlan.request,operationId:imagegenStepId(session.preparedBilling.billingOperationId,"agent")};session.preparedImagegen={...quoted.imagegenPlan,request,fingerprint:imagegenFingerprint(request)};}
     const u = await getUser(session.email);
     if (!u)
         return { block: true, attention: "restricted" as const, reason: "积分账户不可用，请先登录后重试" };

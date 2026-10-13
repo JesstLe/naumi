@@ -8,9 +8,11 @@ import {planImagegen,imagegenFingerprint} from "./plan";
 import {executeImagegenStep} from "./adapters";
 import {imagegenStepId} from "./generation-core";
 import {imagegenRequestSchema} from "./schema";
+import {imagegenSubmission,ImagegenStopped} from "./cancel";
 import type {ImagegenPlan,ImagegenRequest,ImagegenResult} from "./types";
 type Parent={status:string;result:ImagegenResult;fingerprint:string;children:Record<string,{state:"starting"|"submitted"|"done";jobId?:string;ids?:string[]}>};
 const jobs=new DurableImageJobs<Parent>("imagegen");
+class NotAccepted extends Error{}
 const parentId=(id:string)=>`imagegen-${id}`;
 async function artifacts(ids:string[],owner:string){
  const works=await listArtworksByIds(owner,ids);
@@ -27,27 +29,34 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
    if(step.operation==="postprocess"){ids=plan.request.inputs.filter(i=>i.role==="edit-target").map(i=>i.artworkId);break;}
    let child=state.children[step.key];
    if(child?.state==="done"){ids=child.ids||[];if(step.operation==="cutout")cutoutIds.push(...ids);else baseIds=ids;continue;}
-   if(!child){child={state:"starting"};await update({status:"running",children:{...state.children,[step.key]:child}},{status:"running",stage:step.operation==="cutout"?"postprocessing":step.operation==="edit"?"editing":"generating"});}
-   if(child.state==="starting"){
+   if(!child||child.state==="starting"){
+    const wasStarting=!!child;
+    const response=await imagegenSubmission(id,async()=>{
+    if(!child){child={state:"starting"};await update({status:"running",children:{...state.children,[step.key]:child}},{status:"running",stage:step.operation==="cutout"?"postprocessing":step.operation==="edit"?"editing":"generating"});}
     const effective=step.operation==="cutout"&&baseIds.length?{...plan,request:{...plan.request,inputs:[{artworkId:baseIds[Number(step.key.split("-")[1])||0],role:"edit-target" as const}]}}:plan;
-    const response=await executeImagegenStep(effective,step.key,owner),body=await response.json();
+    return executeImagegenStep(effective,step.key,owner);
+    },wasStarting),body=await response.json();
     if(!response.ok){
      if(body.code==="OPERATION_PENDING"||response.status>=500){await update({status:"needs_attention"},{status:"needs_attention",error:{code:"SUBMISSION_UNKNOWN",message:"上游提交结果待核查，任务保留，不会重复生成"}});return;}
-     throw new Error(body.error||"执行步骤被拒绝");
+     throw new NotAccepted(body.error||"执行步骤被拒绝");
     }
     child=body.jobId?{state:"submitted",jobId:body.jobId}:{state:"done",ids:body.id?[body.id]:body.images?.map((i:{id:string})=>i.id)||[]};
     await update({children:{...state.children,[step.key]:child}});
    }
-   if(child.state==="submitted"){
-    const row=(await getPool().query("SELECT email,snapshot FROM app_image_jobs WHERE id=$1 AND kind='generate'",[child.jobId])).rows[0];
+   if(child!.state==="submitted"){
+    const row=(await getPool().query("SELECT email,snapshot FROM app_image_jobs WHERE id=$1 AND kind='generate'",[child!.jobId])).rows[0];
     if(!row||row.email!==owner){await update({status:"needs_attention"},{status:"needs_attention",error:{code:"CHILD_MISSING",message:"生成任务待核查，不会重复提交"}});return;}
     if(row.snapshot.status==="needs_attention"){await update({status:"needs_attention"},{status:"needs_attention",error:{code:"CHILD_PENDING",message:row.snapshot.error||"上游结果待核查"}});return;}
-    if(row.snapshot.status==="error")throw new Error(row.snapshot.error||"生成失败");
+    if(row.snapshot.status==="error"){
+     const attempts=Object.values(row.snapshot.paidOperations||{}) as {state:string}[];
+     if(attempts.length&&attempts.every(a=>a.state==="rejected"))throw new NotAccepted(row.snapshot.error||"供应商明确未受理");
+     throw new Error(row.snapshot.error||"生成失败");
+    }
     if(row.snapshot.status!=="done"){await update({status:"pending"},{status:"pending"});return;}
     child={...child,state:"done",ids:(row.snapshot.images||[]).map((i:{id:string})=>i.id)};
     await update({children:{...state.children,[step.key]:child}});
    }
-   ids=child.ids||[];if(step.operation==="cutout")cutoutIds.push(...ids);else baseIds=ids;
+   ids=child!.ids||[];if(step.operation==="cutout")cutoutIds.push(...ids);else baseIds=ids;
    if(!ids.length)throw new Error("模型未返回有效图片");
   }
   if(cutoutIds.length)ids=cutoutIds;
@@ -65,7 +74,7 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
  }catch(error){
   let kept:ImagegenResult["artifacts"]=[],charged=0;
   try{kept=await artifacts(baseIds.length?baseIds:ids,owner);charged=Number((await getPool().query("SELECT COALESCE(sum(charged_credits),0)::int AS n FROM app_billing_operations WHERE email=$1 AND (id=ANY($2::text[]) OR id=ANY($3::text[]))",[owner,Object.values(state.children).map(c=>c.jobId).filter(Boolean),plan.steps.map(s=>`tool-${imagegenStepId(plan.request.operationId,s.key)}`)])).rows[0].n);}catch{/* Historical task data remains recoverable by its child ID. */}
-  await update({status:"error"},{status:"failed",artifacts:kept,chargedCredits:charged,error:{code:"EXECUTION_FAILED",message:error instanceof Error?error.message:"图像处理失败"}});}
+  await update({status:error instanceof ImagegenStopped?"done":"error"},{status:error instanceof ImagegenStopped?"cancelled":"failed",artifacts:kept,chargedCredits:charged,error:error instanceof ImagegenStopped?undefined:{code:error instanceof NotAccepted?"NOT_ACCEPTED":"EXECUTION_FAILED",message:error instanceof Error?error.message:"图像处理失败"}});}
 }
 export async function resumeImagegen(id:string){await jobs.kick(id,(payload,snapshot)=>runParent(id,payload,snapshot));}
 export async function getImagegenResult(operationId:string,owner:string):Promise<ImagegenResult|null>{
@@ -82,6 +91,12 @@ export async function submitImagegen(raw:ImagegenRequest,owner:string,confirmati
  if(previous){if(await jobs.owner(id)!==owner.toLowerCase()||previous.fingerprint!==fingerprint)throw new Error("提交编号与已有请求冲突");await resumeImagegen(id);return previous.result;}
  const plan=await planImagegen(request,owner);
  if(plan.totalCredits>0&&(!confirmation||confirmation.billingVersion!==plan.billingVersion||(confirmation.modelVersion!==undefined&&confirmation.modelVersion!==plan.modelVersion)||confirmation.credits!==plan.totalCredits||confirmation.confirmed!==true))throw new Error("请确认最新执行计划和积分报价后提交");
+ return submitAcceptedImagegen(plan,owner,fingerprint);
+}
+/** Server-owned frozen batch/Agent plans only; no HTTP endpoint accepts a client-supplied plan. */
+export async function submitAcceptedImagegen(plan:ImagegenPlan,owner:string,fingerprint=plan.fingerprint):Promise<ImagegenResult>{
+ const request=plan.request,id=parentId(request.operationId),prior=await jobs.get(id,false);
+ if(prior){if(await jobs.owner(id)!==owner.toLowerCase()||prior.fingerprint!==fingerprint)throw new Error("提交编号与已有请求冲突");await resumeImagegen(id);return prior.result;}
  const result:ImagegenResult={operationId:request.operationId,jobId:id,status:"queued",stage:"planning",artifacts:[],chargedCredits:0};
  try{await jobs.create(id,owner,{status:"pending",result,fingerprint,children:{}},{plan},0,false);}catch(error){const race=await jobs.get(id,false);if(!race||await jobs.owner(id)!==owner.toLowerCase()||race.fingerprint!==fingerprint)throw error;return race.result;}
  await resumeImagegen(id);return result;

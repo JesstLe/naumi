@@ -7,6 +7,10 @@ import {dataUrlToBytes,isManagedImageUrl,readManagedObject} from "../storage";
 import {managedAgentReference} from "./managed-reference";
 import { AgentHarness, validateToolArguments, HarnessError } from "./harness";
 import { assertInternalAgentPath, assertMediaUrl, publicImageBytes, readBoundedBytes } from "./harness-network";
+import {SHARED_IMAGEGEN_TOOLS,agentImagegenRequest} from "../imagegen/agent-request";
+import {executeAgentImagegen,imagegenAgentStage} from "../imagegen/agent-executor";
+import {planImagegen} from "../imagegen/plan";
+import type {ImagegenPlan} from "../imagegen/types";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 工具集:站内生成能力的 AgentTool 包装,由 pi-agent 编排调用。
@@ -91,7 +95,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
  7. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
  8. 与图片生成无关的问题直接回答,不要调用工具。`;
 
-export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext, harness?: AgentHarness): AgentTool[] {
+export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string;imagegenPlan?:ImagegenPlan }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext, harness?: AgentHarness): AgentTool[] {
   // 双凭证:可变 getter —— 每次工具执行时读取最新 cookie/authorization,
   // 常驻会话的凭证刷新(runtime 层 existing.cred = cred)即刻生效,无需重建 Agent。
   const credGetter =
@@ -1422,6 +1426,17 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
   }
   const creative=createCreativeTools({internal,file:urlToFile,timeout:(fn,signal)=>withToolTimeout("creative_tool",fn,signal),generation:tools.find(tool=>tool.name==="generate_image")!,canvas});
   const all=[...tools,...creative];
+  for(const tool of all)if(SHARED_IMAGEGEN_TOOLS.has(tool.name)){
+    const legacyExecute=tool.execute,existing=(tool.parameters as unknown as {properties:Record<string,TSchema>}).properties;
+    tool.parameters=Type.Object({...existing,image_urls:Type.Optional(Type.Array(Type.String(),{maxItems:32})),input_roles:Type.Optional(Type.Array(Type.Union(["edit-target","reference","insert","style"].map(v=>Type.Literal(v))),{maxItems:32})),mask_url:tool.name==="inpaint_image"?existing.mask_url:Type.Optional(Type.String()),background:Type.Optional(Type.Union([Type.Literal("transparent"),Type.Literal("opaque")])),use_case:Type.Optional(Type.String()),augment:Type.Optional(Type.Boolean()),output_format:Type.Optional(Type.Union(["png","jpeg","webp"].map(v=>Type.Literal(v)))),compression:Type.Optional(Type.Integer({minimum:0,maximum:100})),compression_mode:Type.Optional(Type.Union([Type.Literal("local"),Type.Literal("native")])),flatten_color:Type.Optional(Type.String({pattern:"^#[a-fA-F0-9]{6}$"})),downscale_max_dim:Type.Optional(Type.Integer({minimum:64,maximum:8192})),input_fidelity:Type.Optional(Type.String()),moderation:Type.Optional(Type.String()),width:Type.Optional(Type.Integer({minimum:64,maximum:5120})),height:Type.Optional(Type.Integer({minimum:64,maximum:5120}))});
+    tool.execute=async(id,args,signal,onUpdate)=>{
+      if((args as any)._category)return legacyExecute(id,args,signal,onUpdate);
+      const cred=credGetter(),prepared="imagegenPlan" in cred?cred.imagegenPlan:undefined;
+      const plan=prepared||await planImagegen(await agentImagegenRequest(tool.name,args as Record<string,any>,agentEmail,canvas,cred.imageQuality),agentEmail);
+      if(!prepared&&plan.totalCredits>0&&harness)throw new Error("请先通过系统图像计划报价后执行");
+      return executeAgentImagegen(plan,agentEmail,signal,result=>onUpdate?.(imagegenAgentStage(result)));
+    };
+  }
   // Every billed tool can accept the same explicit confirmation field, including legacy adapters.
   for(const tool of all){
     const schema=tool.parameters as unknown as {properties?:Record<string,TSchema>};

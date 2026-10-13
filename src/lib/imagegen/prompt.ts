@@ -5,8 +5,8 @@ export function compileImagegenPrompt(request:ImagegenRequest,intent:Intent,skil
   const sections=[`用户本次原始要求：\n${request.prompt}`];
   const workflow=imagegenUseCase(intent.useCase);
   if(workflow)sections.push(`用途：${workflow.label}\n${workflow.instructions}`);
-  if(request.inputs.length)sections.push(`输入图角色（按实际顺序）：\n${request.inputs.map((i,n)=>`${n+1}. ${i.role}`).join("\n")}`);
-  if(request.inputs.some(i=>i.role==="mask"))sections.push("已提供用户蒙版：透明区域为重绘区，未指定区域保持不变。");
+  if(request.inputs.length)sections.push(`输入图角色（按实际顺序）：\n${request.inputs.filter(i=>i.role!=="mask").map((i,n)=>`${n+1}. ${i.role}`).join("\n")}`);
+  if(request.inputs.some(i=>i.role==="mask"))sections.push("已提供用户蒙版（mask独立字段，对应第一张编辑目标）：透明区域为重绘区，未指定区域保持不变。");
   if(intent.background==="transparent")sections.push("输出必须包含真实透明像素；不要绘制棋盘格、白底或模拟透明效果。");
   else if(intent.background==="opaque")sections.push("保留本次明确要求的不透明背景，不执行透明抠图。");
   if(skillInstructions)sections.push(`已选择的技能说明：\n${skillInstructions}`);

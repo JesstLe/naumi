@@ -439,9 +439,9 @@ async function openaiImages(
   if (canEdit) {
     // Image-to-image: keep the user's product(s), recompose per prompt/style.
     // gpt-image accepts multiple reference images (up to MAX_IMAGES).
-    const normalized = await Promise.all(
-      p.images.map((im) => normalizeForEdit(Buffer.from(im.buf)))
-    );
+    const normalized:Buffer[]=[];
+    if(p.imagegen){for(const im of p.images)normalized.push(await normalizeForEdit(Buffer.from(im.buf)));}
+    else normalized.push(...await Promise.all(p.images.map(im=>normalizeForEdit(Buffer.from(im.buf)))));
     const editOnce = async (transparent: boolean, quality: typeof q) => {
       // 每次请求重新创建 File。兼容服务读取 multipart 流后，File 不可安全地
       // 在并发请求或透明底降级重试之间复用。
@@ -454,7 +454,7 @@ async function openaiImages(
         ...imageGatewayFields(model, true),
         model,
         image: files,
-        ...(p.mask ? {mask:await toFile(p.mask.buf,"mask.png",{type:p.mask.type})}:{}),
+        ...(p.mask ? {mask:await toFile(await normalizeForEdit(p.mask.buf),"mask.png",{type:"image/png"})}:{}),
         prompt,
         n: 1,
         size: size as "1024x1024" | "1536x1024" | "1024x1536",
@@ -1158,7 +1158,7 @@ async function handleObservedPost(request: Request) {
   const ip = clientIp(request);
 
   // 按 IP 限流:防脚本化刷接口烧 token。生图较重,30 次/10 分钟足够真实用户。
-  if (!rateLimit(`gen:${ip}`, 30, 600_000)) {
+  if (!currentImagegenStep() && !rateLimit(`gen:${ip}`, 30, 600_000)) {
     return NextResponse.json(
       { error: "请求过于频繁，请稍后再试" },
       { status: 429 }

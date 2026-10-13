@@ -14,6 +14,7 @@ import type {ManagedModelCreditPricing} from "@/lib/model-config/credit-override
 import {DISPLAY_QUALITY_IDS,DEFAULT_QUALITY_LABELS} from "@/lib/model-config/quality-policy";
 import {RESOLUTION_FIELDS,RATIO_FIELDS,type ResolutionParameters} from "@/lib/model-config/resolution-policy";
 import {MODEL_CATALOG_REFRESH} from "@/lib/model-config/public-client";
+import {ImagegenRoutesEditor} from "./imagegen-routes-editor";
 
 type State = ModelManagementState & { catalogs: CatalogEntry[] };
 type Operation = Record<string, unknown> & { action: string; id: string; expectedVersion: number };
@@ -58,6 +59,7 @@ export function ModelManagement() {
   const [channelDraft,setChannelDraft]=useState<ChannelPolicy|null>(null);
   const [resolutionRow,setResolutionRow]=useState<ManagedModelRow|null>(null);
   const [parameters,setParameters]=useState<ManagedModelRow|null>(null);
+  const [advancedRow,setAdvancedRow]=useState<ManagedModelRow|null>(null);
   const [price,setPrice]=useState<ManagedModelRow|null>(null);
   const [register, setRegister] = useState<{ providerId: string; model: string; returnRowId?: string; returnChannelRowId?:string } | null>(null), [refreshing, setRefreshing] = useState<string[]>([]);
   const mounted = useRef(true), loadingGuard = useRef(false), mutationGuard = useRef(false);
@@ -109,7 +111,7 @@ export function ModelManagement() {
     const returnRowId = operation.action === "register" ? register?.returnRowId : undefined;
     const returnChannelRowId = operation.action === "register" ? register?.returnChannelRowId : undefined;
     mutationGuard.current = true; setBusy(true); setError(""); setNotice(""); setPending(operation);
-    setRow(null); setRename(null); setConnect(false); setRegister(null);
+    setRow(null); setRename(null); setConnect(false); setRegister(null);setAdvancedRow(null);
     try { sessionStorage.setItem(pendingKey, JSON.stringify(operation)); } catch {}
     try {
       const result = await api(operation);
@@ -157,6 +159,8 @@ export function ModelManagement() {
     })}</div>{!state.providers.length && <div className={styles.empty}><Unplug /><h2>接入第一个上游来源</h2><p>输入接口地址与 API Key，系统会自动发现模型 ID。</p></div>}</section>}
     {row && state && <SwitchDialog row={state.rows.find(r=>r.id===row.id) || row} state={state} initialProvider={switchProvider} refreshing={refreshing} locked={locked} busy={busy} onRefresh={providerId=>void refreshProvider(providerId)} onRegister={(providerId,model)=>{setSwitchProvider(providerId);setRegister({providerId,model,returnRowId:row.id});setRow(null);}} onClose={() => setRow(null)} onSave={upstreamId => void run(operation("switch", { rowId: row.id, upstreamId }))} />}
     {rename && <RenameDialog row={rename} locked={locked} onClose={() => setRename(null)} onSave={label => void run(operation("rename", { rowId: rename.id, label }))} />}
+    {state?.managed&&<button className={styles.secondary} disabled={locked} onClick={()=>setAdvancedRow(state.rows.find(r=>r.modality==="image")||null)}>图像高级参数</button>}
+    {advancedRow&&state&&<Dialog title="图像高级参数" locked={locked} onClose={()=>setAdvancedRow(null)}><label className={styles.field}>前端模型<select value={advancedRow.id} disabled={locked} onChange={e=>setAdvancedRow(state.rows.find(r=>r.id===e.target.value)||null)}>{state.rows.filter(r=>r.modality==="image").map(r=><option key={r.id} value={r.id}>{r.label}</option>)}</select></label><ImagegenRoutesEditor key={advancedRow.id} row={advancedRow} locked={locked} onSave={routes=>void run(operation("imagegen-parameters",{rowId:advancedRow.id,routes}))}/></Dialog>}
     {channelRow && state && <ChannelsDialog row={state.rows.find(r=>r.id===channelRow.id)||channelRow} state={state} initial={channelDraft} refreshing={refreshing} locked={locked} error={error} onRefresh={id=>void refreshProvider(id)} onRegister={(providerId,model,draft)=>{setChannelDraft(draft);setRegister({providerId,model,returnChannelRowId:channelRow.id});setChannelRow(null);}} onClose={()=>setChannelRow(null)} onSave={policy=>void run(operation("channels",{rowId:channelRow.id,policy}))}/>}
     {resolutionRow && <ResolutionsDialog row={resolutionRow} locked={locked} error={error} onClose={()=>setResolutionRow(null)} onSave={(resolutions,parameters)=>void run(operation("resolutions",{rowId:resolutionRow.id,resolutions,...(parameters!==undefined?{parameters}:{})}))}/>}
     {parameters && <ParametersDialog row={state?.rows.find(r=>r.id===parameters.id) || parameters} locked={locked} error={error} onClose={()=>setParameters(null)} onSave={value=>void run(operation("parameters",{rowId:parameters.id,parameters:value}))}/>}
