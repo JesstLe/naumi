@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { useEffect, useRef, type CSSProperties } from "react";
 import { cdnThumb, onImgError } from "@/lib/cdn";
@@ -75,7 +76,7 @@ export function HeroCompare({
     >
       {/* AI 成片(底,全幅) */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <CachedImage
         src={cdnThumb(after, 1080)}
         decoding="async"
         onError={event => onImgError(event, after)}
@@ -85,7 +86,7 @@ export function HeroCompare({
       />
       {/* 随手拍原图(上,clip 到分隔条左侧) */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <CachedImage
         src={cdnThumb(before, 1080)}
         decoding="async"
         onError={event => onImgError(event, before)}

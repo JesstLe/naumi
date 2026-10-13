@@ -1,4 +1,7 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
+import { browserImageArchive } from '@/lib/browser-image-archive';
+import { cachedImageBlob, imageCacheSource, ImageCacheDenied, readBrowserImage } from '@/lib/browser-image-cache';
 import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
 
 
@@ -61,7 +64,7 @@ import {
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import NextImage from "next/image";
+import NextImage from "@/components/cached-next-image";
 import { useWorkspaceRouter as useRouter } from "@/lib/desktop/navigation";
 import {
   ReactFlow,
@@ -4388,11 +4391,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try {
       // 下载一张图为 File(底图/参考图统一走 /api/download 代理)
       const dlFile = async (url: string, name: string): Promise<File> => {
-        const dl = await fetch(
-          `/api/download?u=${encodeURIComponent(url)}&n=${name}`
-        );
-        if (!dl.ok) throw new Error(t("canvas.genFail"));
-        const blob = await dl.blob();
+        const blob = await readBrowserImage(url);
         return new File([blob], name, { type: blob.type || "image/png" });
       };
       // 参考图集合(第一张=主底图,其余=附加参考图一起送给模型):
@@ -5530,11 +5529,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const arts = referenceArts.slice(0, maxArtworkRefs);
       for (let index = 0; index < arts.length; index++) {
         const artwork = arts[index];
-        const response = await fetch(
-          `/api/download?u=${encodeURIComponent(artwork.image)}&n=detail-ref-${index + 1}.png`
-        );
-        if (!response.ok) throw new Error(t("canvas.genFail"));
-        const blob = await response.blob();
+        const blob = await readBrowserImage(artwork.image);
         form.append(
           "image",
           new File([blob], `detail-ref-${index + 1}.png`, {
@@ -6127,13 +6122,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         .slice(0, 30)
         .map((m, i) => ({ url: m.image, name: m.title || `img-${i + 1}` }));
       if (!items.length) return;
-      const res = await fetch("/api/suite/download", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ items }),
-      });
-      if (!res.ok) throw new Error();
-      const blob = await res.blob();
+      const blob = await browserImageArchive(items);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -6658,11 +6647,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function downloadOne(image: string) {
     try {
       const filename = createImageDownloadName();
-      const r = await fetch(
-        `/api/download?u=${encodeURIComponent(image)}&n=${encodeURIComponent(filename)}`
-      );
-      if (!r.ok) throw new Error();
-      const blob = await r.blob();
+      let blob: Blob;
+      try {
+        if(!imageCacheSource(image))throw new Error('native download');
+        blob=await cachedImageBlob(image);
+      } catch(error) {
+        if(error instanceof ImageCacheDenied)throw error;
+        const r=await fetch(`/api/download?u=${encodeURIComponent(image)}&n=${encodeURIComponent(filename)}`);
+        if(!r.ok)throw new Error();blob=await r.blob();
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -7864,16 +7857,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       // 把每个输入图下载后作为参考图一起送(图生图/合并);无输入=纯文生图
       for (const a of inputArts) {
-        const dl = await fetch(
-          `/api/download?u=${encodeURIComponent(a.image)}&n=ref.png`
-        );
-        if (dl.ok) {
-          const blob = await dl.blob();
+        try {
+          const blob = await readBrowserImage(a.image);
           fd.append(
             "image",
             new File([blob], "ref.png", { type: blob.type || "image/png" })
           );
-        }
+        } catch { /* Existing optional reference behavior is retained. */ }
       }
       const startRes = await privateFetch("/api/generate-image", {
         method: "POST",
@@ -8022,10 +8012,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 复制图片到系统剪贴板(剪贴板只可靠支持 PNG,非 PNG 先转码;失败退回复制图片链接)
   async function copyImageToClipboard(image: string) {
     try {
-      const res = await fetch(
-        `/api/download?u=${encodeURIComponent(image)}&n=img.png`
-      );
-      let blob = await res.blob();
+      let blob = await readBrowserImage(image);
       if (blob.type !== "image/png") {
         const bmp = await createImageBitmap(blob);
         const c = document.createElement("canvas");
@@ -8680,7 +8667,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           {/* 左上:画布专属 logo(回主页) */}
           <Link href="/" className="flex min-w-0 items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <CachedImage
               src={BRAND_CANVAS_LOGO}
               alt={BRAND}
               className="h-9 w-auto max-w-[180px] object-contain"
@@ -9036,7 +9023,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                               >
                                 {p.cover ? (
                                   /* eslint-disable-next-line @next/next/no-img-element */
-                                  <img
+                                  <CachedImage
                                     src={cdnUrl(p.cover)}
                                     alt={p.name}
                                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]"
@@ -9532,7 +9519,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     className="flex flex-none items-center gap-1 rounded-lg px-1 pr-0.5 transition-colors hover:bg-white/5"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <CachedImage
                       src={BRAND_CANVAS_LOGO}
                       alt={BRAND}
                       className="h-7 w-auto max-w-[108px] flex-none rounded-lg object-contain sm:max-w-[140px]"
@@ -11244,7 +11231,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         className="block h-full w-full"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <CachedImage
                           src={cdnUrl(ref.image)}
                           alt={ref.title}
                           className="h-full w-full object-cover"
@@ -11273,7 +11260,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         className="relative h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[var(--canvas-ui-border)]"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <CachedImage
                           src={src}
                           alt={`ref ${i + 1}`}
                           className="h-full w-full object-cover"
@@ -11443,7 +11430,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         className="h-[46px] w-[46px] flex-none overflow-hidden rounded-[9px] border border-[var(--canvas-ui-border)]"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <CachedImage
                           src={cdnUrl(a.image)}
                           alt={a.title}
                           className="h-full w-full object-cover"
@@ -11712,12 +11699,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                                 : "border-[#343842] bg-[#20232a] text-[#cdd2da] hover:border-[#6bd7ec] hover:text-[#8fe7f5]"
                             )}
                           >
-                            <span
-                              className="h-5 w-5 flex-none bg-cover bg-center"
-                              style={{
-                                backgroundImage: `url(${JSON.stringify(cdnUrl(member.image))})`,
-                              }}
-                            />
+                            <CachedImage src={cdnUrl(member.image)} alt="" className="h-5 w-5 flex-none object-cover" />
                             <span className="truncate">@{member.title || t("canvas.imageNode")}</span>
                           </button>
                         ))}
@@ -11774,12 +11756,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                                 : "border-[#343842] bg-[#20232a] text-[#cdd2da] hover:border-[#596170]"
                           )}
                         >
-                          <span
-                            className="h-5 w-5 flex-none bg-cover bg-center"
-                            style={{
-                              backgroundImage: `url(${JSON.stringify(cdnUrl(reference.image))})`,
-                            }}
-                          />
+                          <CachedImage src={cdnUrl(reference.image)} alt="" className="h-5 w-5 flex-none object-cover" />
                           <span className="truncate">@{reference.title}</span>
                         </button>
                       );
@@ -11998,12 +11975,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     onClick={() => void assistWriteForNodes(productPicker.textNodeIds, member)}
                     className="group flex flex-col items-stretch gap-1.5 rounded-lg border border-border bg-background p-1.5 text-left transition-colors hover:border-primary/60"
                   >
-                    <span
-                      className="block h-20 w-full rounded bg-cover bg-center"
-                      style={{
-                        backgroundImage: `url(${JSON.stringify(cdnUrl(member.image))})`,
-                      }}
-                    />
+                    <CachedImage src={cdnUrl(member.image)} alt="" className="block h-20 w-full rounded object-cover" />
                     <span className="truncate text-[11px] font-medium text-foreground">
                       {member.title || t("canvas.imageNode")}
                     </span>
@@ -12128,7 +12100,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       className="group relative overflow-hidden rounded-xl border border-border bg-secondary"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                      <CachedImage
                         src={cdnUrl(w.image)}
                         alt={w.title}
                         loading="lazy"
@@ -12222,7 +12194,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         className="group relative mb-3 block w-full break-inside-avoid overflow-hidden rounded-xl border border-slate-200 bg-slate-50 transition-all hover:-translate-y-0.5 hover:border-primary/50 disabled:cursor-wait disabled:opacity-60"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <CachedImage
                           src={cdnUrl(w.image)}
                           alt={w.title}
                           loading="lazy"

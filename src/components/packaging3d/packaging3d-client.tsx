@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import {toolImageError, toolSourceUrl} from "@/lib/tool-ui";
 import {useImageResolutions} from "@/lib/model-config/resolution-client";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -132,7 +133,7 @@ export function Packaging3dClient() {
         {preview ? (
           <div className="relative rounded-xl border border-c-border bg-white p-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={preview} alt="dieline" className="h-40 w-full object-contain" />
+            <CachedImage src={preview} alt="dieline" className="h-40 w-full object-contain" />
             <button
               type="button"
               onClick={clearFile}
@@ -271,7 +272,7 @@ export function Packaging3dClient() {
                   className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-c-border bg-white p-3"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={preview} alt="dieline" className="max-h-[650px] max-w-full object-contain" />
+                  <CachedImage src={preview} alt="dieline" className="max-h-[650px] max-w-full object-contain" />
                 </button>
               </div>
               <div className="flex min-h-0 flex-col">
@@ -294,14 +295,14 @@ export function Packaging3dClient() {
                   className="flex min-h-0 flex-1 items-center justify-center border border-c-border bg-c-subtle2 p-3"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={result} alt="3D packaging" className="max-h-[650px] max-w-full object-contain" />
+                  <CachedImage src={result} alt="3D packaging" className="max-h-[650px] max-w-full object-contain" />
                 </button>
               </div>
             </div>
           ) : preview ? (
             <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-c-border bg-white p-5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={preview} alt="dieline" className="max-h-[610px] max-w-full object-contain" />
+              <CachedImage src={preview} alt="dieline" className="max-h-[610px] max-w-full object-contain" />
               <p className="mt-4 text-[11px] text-c-text4">
                 {L("将识别裁切线、折线、粘口和相邻面板", "Cut lines, folds, glue tabs and panels will be inferred")}
               </p>

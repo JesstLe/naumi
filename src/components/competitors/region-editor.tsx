@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { useEffect, useRef, useState } from "react";
 import { competitorClientId, type CompetitorRegion } from "@/lib/competitor-types";
@@ -46,7 +47,7 @@ export function RegionEditor({ image, width, height, regions, selected, onSelect
           onAdd({ ...r, id: competitorClientId(), label: `选区 ${regions.length + 1}`, kind: "component", instruction: "", color: "#2563eb", enabled: true });
         }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt="竞品编辑图" src={image} draggable={false} />
+        <CachedImage alt="竞品编辑图" src={image} draggable={false} />
         {regions.map((r, i) => <button key={r.id} type="button" aria-label={`选区 ${i+1} ${r.label}`} disabled={disabled || draw}
           onClick={() => onSelect(r.id)} className={`cmp-region ${selected === r.id ? "is-selected" : ""} ${r.enabled ? "" : "is-locked"}`}
           style={{ left: `${r.x*100}%`, top: `${r.y*100}%`, width: `${r.width*100}%`, height: `${r.height*100}%`, pointerEvents: draw ? "none" : "auto" }}>

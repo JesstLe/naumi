@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -170,7 +171,7 @@ export function IpcheckClient() {
             {img ? (
               <div className="relative inline-block">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={cdnUrl(img.url)}
                   alt="src"
                   className="h-16 w-16 rounded-field border border-c-border bg-c-subtle2 object-cover"

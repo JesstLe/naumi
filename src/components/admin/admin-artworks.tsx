@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { isHostedImageUrl } from "@/lib/media-url";
 
@@ -279,7 +280,7 @@ export function AdminArtworks({ token }: Props) {
                     aria-label="查看大图"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <CachedImage
                       src={cdnUrl(a.image)}
                       alt={a.title}
                       loading="lazy"
@@ -459,7 +460,7 @@ function ImportDialog({
         <div className="space-y-4">
           <div className="flex gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <CachedImage
               src={cdnUrl(artwork.image)}
               alt=""
               className="h-20 w-28 shrink-0 rounded-lg border border-border object-cover"
@@ -539,7 +540,7 @@ function ImageViewer({
           <div>
             <p className="mb-1.5 text-xs text-muted-foreground">生成结果</p>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <CachedImage
               src={cdnUrl(artwork.image)}
               alt={artwork.title}
               className="max-h-[70vh] w-full rounded-lg border border-border object-contain"
@@ -549,7 +550,7 @@ function ImageViewer({
             <div className="sm:w-44">
               <p className="mb-1.5 text-xs text-muted-foreground">用户原图</p>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <CachedImage
                 src={artwork.source as string}
                 alt="用户上传原图"
                 className="w-full rounded-lg border border-border object-contain"

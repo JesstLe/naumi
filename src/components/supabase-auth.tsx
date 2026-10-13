@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import { PHONE_DOMAIN as PHONE_EMAIL_DOMAIN } from "@/lib/account-identity";
 
 import { useEffect, useRef, useState } from "react";
@@ -1236,7 +1237,7 @@ export function AuthPanel({
                 <div className="relative flex h-44 w-44 items-center justify-center overflow-hidden rounded-2xl border border-border bg-white">
                   {wxState === "ready" && wxQr ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
+                    <CachedImage
                       src={wxQr.qr}
                       alt="WeChat QR"
                       className="h-full w-full object-contain"

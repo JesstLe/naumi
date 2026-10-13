@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import Link from "next/link";
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -118,7 +119,7 @@ export function TeamManager({ admin = false, standalone = false, initialTeamId =
       {selected && <section className={styles.content}><div className={styles.contentHead}><h2>{selected.name} · 内容记录</h2><button aria-label="关闭内容" onClick={() => setSelected(null)}><X size={18} /></button></div><nav className={styles.tabs}>{sections.map(s => <button key={s.id} aria-pressed={section === s.id} className={section === s.id ? styles.active : ""} onClick={() => { setSection(s.id); setPage(1); }}>{s.name}</button>)}</nav>
         {contentError && <p role="alert" className={styles.error}>{contentError}</p>}
         {contentLoading ? <div className={styles.empty}>加载中…</div> : content && <><div className={section === "artworks" ? styles.gallery : styles.records}>{content.rows.map(row => <article key={String(row.id)} className={styles.record}>
-          {section === "artworks" && (media(row.video_url) ? <video src={media(row.video_url)} controls preload="metadata" /> : row.image_url ? <img src={`/api/team/media?${new URLSearchParams({teamId: data.team!.id, email: selected.email, id: String(row.id)})}`} alt={String(row.title || "作品")} loading="lazy" /> : <div className={styles.empty}>无媒体</div>)}
+          {section === "artworks" && (media(row.video_url) ? <video src={media(row.video_url)} controls preload="metadata" /> : row.image_url ? <CachedImage src={`/api/team/media?${new URLSearchParams({teamId: data.team!.id, email: selected.email, id: String(row.id)})}`} alt={String(row.title || "作品")} loading="lazy" /> : <div className={styles.empty}>无媒体</div>)}
           <h3>{String(row.title || row.reason || row.action || row.kind || row.id)}</h3><small>{datetime(String(row.created_at))}{row.status ? ` · ${row.status}` : ""}</small>
           {row.prompt && <p>{String(row.prompt)}</p>}
           {section === "tasks" && <p>预估积分：{row.cost}</p>}

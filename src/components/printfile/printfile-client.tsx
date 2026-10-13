@@ -1,4 +1,6 @@
 "use client";
+import { readBrowserImage } from "@/lib/browser-image-cache";
+import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError} from "@/lib/tool-ui";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -167,16 +169,7 @@ export function PrintfileClient() {
       return;
     }
     try {
-      let blob: Blob;
-      if (url.startsWith("blob:") || url.startsWith("data:")) {
-        blob = await (await fetch(url)).blob();
-      } else {
-        const r = await fetch(
-          `/api/download?u=${encodeURIComponent(url)}&n=input.png`, {headers:await authHeader()}
-        );
-        if (!r.ok) throw new Error("download failed");
-        blob = await r.blob();
-      }
+      const blob = await readBrowserImage(url);
       const file = new File([blob], "input.png", {
         type: blob.type || "image/png",
       });
@@ -527,7 +520,7 @@ export function PrintfileClient() {
                     className="group relative overflow-hidden rounded-[13px] border border-c-border bg-c-subtle2"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <CachedImage
                       src={cdnUrl(it.resultUrl || it.url)}
                       alt="item"
                       onClick={() =>

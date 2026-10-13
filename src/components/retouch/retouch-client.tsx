@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import {downloadImage} from "@/lib/download";
 import {toolImageError} from "@/lib/tool-ui";
 import {useI18n} from "@/lib/i18n/locale-context";
@@ -170,7 +171,7 @@ export function RetouchClient() {
             {preview ? (
               <div className="relative h-24 w-24 overflow-hidden rounded-lg border border-border">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={preview}
                   alt="商品原图"
                   className="h-full w-full bg-secondary object-cover"
@@ -312,7 +313,7 @@ export function RetouchClient() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="relative overflow-hidden rounded-xl border border-border bg-card">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <CachedImage
                     src={preview}
                     alt="原图"
                     className="aspect-square w-full object-cover"
@@ -323,7 +324,7 @@ export function RetouchClient() {
                 </div>
                 <div className="relative overflow-hidden rounded-xl border border-border bg-card">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <CachedImage
                     src={result}
                     alt="精修图"
                     className="aspect-square w-full cursor-zoom-in object-cover"
@@ -344,7 +345,7 @@ export function RetouchClient() {
               onClick={() => setViewing(false)}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <CachedImage
                 src={result}
                 alt="精修图"
                 className="max-h-full max-w-full rounded-xl object-contain shadow-2xl"

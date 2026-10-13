@@ -1,4 +1,5 @@
 "use client";
+import { browserImageArchive } from "@/lib/browser-image-archive";
 import { loadAccountSnapshot } from "@/lib/browser-data-cache";
 import { BRAND } from "@/lib/brand";
 
@@ -476,13 +477,7 @@ export function WorksClient() {
                 .map((w, i) => ({ url: w.image, name: w.title || `作品-${i + 1}` }));
               if (!items.length) return;
               try {
-                const res = await fetch("/api/suite/download", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ items }),
-                });
-                if (!res.ok) throw new Error("zip failed");
-                const blob = await res.blob();
+                const blob = await browserImageArchive(items);
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url;

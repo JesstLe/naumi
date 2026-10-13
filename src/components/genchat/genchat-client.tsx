@@ -1,4 +1,6 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
+import { readBrowserImage } from '@/lib/browser-image-cache';
 import {useBilling} from "@/lib/billing/client";
 import { useImageQuality } from "@/lib/image-quality-context";
 import { ImageQualityControl } from "@/components/image-quality-control";
@@ -322,16 +324,13 @@ export function GenChatClient() {
       fd.append("email", user.email);
       if (curBase) {
         fd.append("parentId", curBase.id);
-        const dl = await fetch(
-          `/api/download?u=${encodeURIComponent(curBase.image)}&n=base.png`
-        );
-        if (dl.ok) {
-          const blob = await dl.blob();
+        try {
+          const blob = await readBrowserImage(curBase.image);
           fd.append(
             "image",
             new File([blob], "base.png", { type: blob.type || "image/png" })
           );
-        }
+        }catch{/* Optional reference failure retains the existing behavior. */}
       }
       // 首页带来的参考图(图生图)
       (override?.refs ?? []).forEach((f) => fd.append("image", f));
@@ -402,11 +401,7 @@ export function GenChatClient() {
   async function exportImg(img: GenImg) {
     try {
       const filename = createImageDownloadName();
-      const r = await fetch(
-        `/api/download?u=${encodeURIComponent(img.image)}&n=${encodeURIComponent(filename)}`
-      );
-      if (!r.ok) return;
-      const blob = await r.blob();
+      const blob = await readBrowserImage(img.image);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -555,7 +550,7 @@ export function GenChatClient() {
                               className="group relative overflow-hidden rounded-xl bg-secondary shadow-sm"
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
+                              <CachedImage
                                 src={cdnUrl(im.image)}
                                 alt={tn.you}
                                 className="h-[190px] w-full object-cover"
@@ -632,7 +627,7 @@ export function GenChatClient() {
             {base && (
               <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={cdnUrl(base.image)}
                   alt=""
                   className="h-8 w-8 rounded-md object-cover"
@@ -657,7 +652,7 @@ export function GenChatClient() {
                       className="relative h-14 w-14 overflow-hidden rounded-lg border border-border"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={src} alt="" className="h-full w-full object-cover" />
+                      <CachedImage src={src} alt="" className="h-full w-full object-cover" />
                       <button
                         type="button"
                         onClick={() => removeRef(i)}

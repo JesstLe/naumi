@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { ImageIcon } from "lucide-react";
 import { useI18n } from "@/lib/i18n/locale-context";
@@ -57,7 +58,7 @@ export function ToolDemo({
         <div className="grid w-full max-w-[560px] grid-cols-3 items-stretch gap-2 sm:gap-3">
           {gallery.map((g, i) => (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <CachedImage
               key={i}
               src={cdnUrl(g)}
               alt={`${title} ${L("示例", "example")} ${i + 1}`}
@@ -71,7 +72,7 @@ export function ToolDemo({
       ) : combo ? (
         <div className="w-full max-w-[460px]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <CachedImage
             src={cdnUrl(combo)}
             alt={title}
             className="w-full rounded-2xl border border-c-border object-contain shadow-card"
@@ -81,7 +82,7 @@ export function ToolDemo({
         <div className={`grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3 ${compact ? "max-w-[340px]" : "max-w-[560px]"}`}>
           <figure className="flex min-w-0 flex-col items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <CachedImage
               src={cdnUrl(before!)}
               alt={`${title} · ${L(beforeLabel || "原图", beforeLabelEn || "Original")}`}
               width={640}
@@ -105,7 +106,7 @@ export function ToolDemo({
           </svg>
           <figure className="flex min-w-0 flex-col items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <CachedImage
               src={cdnUrl(after!)}
               alt={`${title} · ${L(afterLabel || "效果示例", afterLabelEn || "Result example")}`}
               width={640}

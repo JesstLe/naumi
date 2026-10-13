@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Crop, Loader2, X } from "lucide-react";
@@ -29,7 +30,7 @@ export function ImageCropDialog({image,title,light,english,busy,onApply,onClose}
       <div className="min-h-0 overflow-auto px-4 pb-4">
         <div className="canvas-ui-section flex min-h-[100px] justify-center overflow-hidden rounded-xl p-3"><div className="relative inline-block max-w-full touch-none select-none" onPointerDown={e=>{if(!loaded || busy)return;drag.current=point(e.clientX,e.clientY);e.currentTarget.setPointerCapture(e.pointerId);}} onPointerMove={e=>{if(!drag.current)return;const p=point(e.clientX,e.clientY),start=drag.current,x=Math.min(0.99,p.x,start.x),y=Math.min(0.99,p.y,start.y);setCrop({x,y,width:Math.min(1-x,Math.max(0.01,Math.abs(p.x-start.x))),height:Math.min(1-y,Math.max(0.01,Math.abs(p.y-start.y)))});}} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img ref={imageRef} src={image} alt={title} draggable={false} onLoad={()=>setLoaded(true)} onError={()=>setError(true)} className="block max-h-[42dvh] max-w-full object-contain" />
+          <CachedImage ref={imageRef} src={image} alt={title} draggable={false} onLoad={()=>setLoaded(true)} onError={()=>setError(true)} className="block max-h-[42dvh] max-w-full object-contain" />
           {loaded && <div aria-hidden="true" className="pointer-events-none absolute overflow-hidden border-2 border-white shadow-[0_0_0_999px_rgba(15,23,42,0.38)]" style={{left:`${crop.x*100}%`,top:`${crop.y*100}%`,width:`${crop.width*100}%`,height:`${crop.height*100}%`}}><span className="absolute left-1/3 top-0 h-full border-l border-white/40" /><span className="absolute left-2/3 top-0 h-full border-l border-white/40" /><span className="absolute left-0 top-1/3 w-full border-t border-white/40" /><span className="absolute left-0 top-2/3 w-full border-t border-white/40" /></div>}
         </div></div>
         {error && <p role="alert" className="mt-2 text-[12px] text-red-600">{L("图片加载失败","Image failed to load")}</p>}

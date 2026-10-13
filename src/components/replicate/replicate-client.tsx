@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 import {toolImageError} from "@/lib/tool-ui";
 import {SelectMenu} from "@/components/ui/select-menu";
 import {useFeatureBilling} from "@/lib/billing/preview";
@@ -256,7 +257,7 @@ export function ReplicateClient() {
                   className="relative h-16 w-16 overflow-hidden rounded-lg border border-border"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <CachedImage
                     src={src}
                     alt={`product ${i + 1}`}
                     className="h-full w-full bg-secondary object-cover"
@@ -297,7 +298,7 @@ export function ReplicateClient() {
             {refPreview ? (
               <div className="relative h-24 w-24 overflow-hidden rounded-lg border border-border">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={refPreview}
                   alt="参考图"
                   className="h-full w-full bg-secondary object-cover"
@@ -482,7 +483,7 @@ export function ReplicateClient() {
               </div>
               <div className="relative mx-auto max-w-xl overflow-hidden rounded-xl border border-border bg-card">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={result}
                   alt="复刻结果"
                   className="w-full cursor-zoom-in"
@@ -505,7 +506,7 @@ export function ReplicateClient() {
               onClick={() => setViewing(false)}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <CachedImage
                 src={result}
                 alt="复刻结果"
                 className="max-h-full max-w-full rounded-xl object-contain shadow-2xl"

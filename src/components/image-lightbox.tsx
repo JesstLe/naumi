@@ -1,4 +1,5 @@
 "use client";
+import { CachedImage } from "@/components/cached-image";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { X, Download } from "lucide-react";
@@ -133,7 +134,7 @@ export function ImageLightbox({
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <CachedImage
           ref={imgRef}
           src={cdnUrl(src)}
           alt={alt}

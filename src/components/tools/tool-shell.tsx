@@ -1,4 +1,6 @@
 "use client";
+import { browserImageArchive } from "@/lib/browser-image-archive";
+import { CachedImage } from "@/components/cached-image";
 import type { FeatureId } from "@/lib/billing/types";
 import {toolSourceUrl} from "@/lib/tool-ui";
 import { FeatureModelSelect } from "./feature-model-select";
@@ -197,13 +199,7 @@ export function ToolShell({
     if (!items.length) return;
     setZipping(true);
     try {
-      const res = await fetch("/api/suite/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(await authHeader()) },
-        body: JSON.stringify({ items }),
-      });
-      if (!res.ok) throw new Error("zip failed");
-      const blob = await res.blob();
+      const blob = await browserImageArchive(items);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -316,7 +312,7 @@ export function ToolShell({
                       {shown.source ? (
                         <>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
+                          <CachedImage
                             src={shown.source}
                             alt={L("原图", "Original")}
                             onClick={() => setViewing(shown.source!)}
@@ -348,7 +344,7 @@ export function ToolShell({
                     </span>
                     <div className="relative flex flex-1 items-center justify-center overflow-hidden rounded-[13px] border border-c-border bg-c-subtle2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                      <CachedImage
                         src={cdnUrl(shown.url)}
                         alt={L("效果", "Result")}
                         onClick={() => setViewing(shown.url)}
