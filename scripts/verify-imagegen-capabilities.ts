@@ -6,7 +6,7 @@ import type { Intent,CapabilityEvidence } from "../src/lib/imagegen/types";
 import { fixtureModelConfig } from "./model-config-unit-fixture";
 import { fixtureConfig } from "./billing-unit-fixture";
 import { simulateModel } from "../src/lib/model-config/runtime";
-import { specificationImagegen } from "../src/lib/supplier-models/specifications";
+import { specificationImagegen,collectedImagegenDefaults } from "../src/lib/supplier-models/specifications";
 import { imagegenMetadataSchema } from "../src/lib/imagegen/capabilities";
 import { applyImagegenModelParameters } from "../src/lib/model-config/imagegen-policy";
 const supported:CapabilityEvidence={state:"supported",source:"供应商文档",checkedAt:"2026-10-13"};
@@ -44,3 +44,7 @@ console.log("PASS imagegen capabilities: manual priority, frozen evidence, per-c
 const compression=imagegenRequestSchema.parse({version:1,operationId:"00000000-0000-4000-a000-000000000088",entry:"canvas",mode:"generate",prompt:"fixture",output:{format:"webp",compression:0}});
 assert.equal(imagegenWireRequest(compression).output.compression,undefined);
 assert.equal(imagegenWireRequest({...compression,output:{...compression.output,compressionMode:"native"}}).output.compression,0);
+const observed=collectedImagegenDefaults({supplierImagegenEvidence:{capabilities:{mask:supported,transparent:unsupported},wireMap:{transparent:"omit"}},supplierSpecification:{url:"https://example.test/docs",observedAt:"2026-10-13T12:00:00Z",model:{parameters:[{path:"background",options:["transparent"],documentation:{values_confirmed:true}}]}}});
+assert.equal(observed.capabilities.transparent?.state,"unsupported","Actual upstream failure overrides a positive document claim");
+assert.equal(resolveImagegenCapabilities({mask:unsupported},observed.capabilities).mask?.state,"unsupported","Explicit administrator exclusion wins over upstream tests");
+assert.equal(observed.wireMap.transparent,"omit");

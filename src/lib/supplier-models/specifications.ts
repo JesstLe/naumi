@@ -1,9 +1,16 @@
 import {DISPLAY_RESOLUTIONS} from "../model-config/resolution-options";
 import {RESOLUTION_FIELDS,RATIO_FIELDS,resolutionValue} from "../model-config/resolution-policy";
 import type { CapabilityKey,CapabilitySet } from "../imagegen/types";
-import { imagegenMetadataSchema } from "../imagegen/capabilities";
+import { imagegenMetadataSchema,resolveImagegenCapabilities } from "../imagegen/capabilities";
 
 export type SupplierSpecificationCatalog={url:string;fetchedAt:string;hash:string;body:{version?:string;capability_version?:string;models:any[]}};
+
+/** Isolated upstream observations supplement documents; administrator overrides are resolved by the caller. */
+export function collectedImagegenDefaults(metadata:Record<string,unknown>){
+  const documented=specificationImagegen(metadata.supplierSpecification);
+  const tested=imagegenMetadataSchema.safeParse(metadata.supplierImagegenEvidence);
+  return tested.success?{capabilities:resolveImagegenCapabilities(tested.data.capabilities,documented.capabilities),wireMap:{...documented.wireMap,...tested.data.wireMap}}:documented;
+}
 
 /** No guessing: only confirmed parameter paths and their documented enum values. */
 export function specificationImagegen(raw:unknown){
