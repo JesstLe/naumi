@@ -26,7 +26,9 @@ def read(path,port=80):return urllib.request.urlopen('http://127.0.0.1:'+str(por
 def assert_lock():
  owner=json.loads((E/'lock-owner.json').read_text());pid=owner['pid'];assert pathlib.Path('/proc/'+str(pid)).exists()
  assert command(['cat','/proc/'+str(pid)+'/comm'])=='bash'
- for fd in ['8','9']:assert pathlib.Path('/proc/'+str(pid)+'/fd/'+fd).exists()
+ for fd,path in [('8','/opt/naumi-reverse-hub/releases/deploy.lock'),('9','/opt/naumi-staging/releases/deploy.lock')]:
+  assert os.readlink('/proc/'+str(pid)+'/fd/'+fd)==path
+  assert 'FLOCK  ADVISORY  WRITE' in pathlib.Path('/proc/'+str(pid)+'/fdinfo/'+fd).read_text()
 def verify_protected():
  assert protected()==json.loads((E/'protected.before.json').read_text()),'Protected business data changed; do not overwrite'
  for old in json.loads((E/'containers.before.json').read_text()):
