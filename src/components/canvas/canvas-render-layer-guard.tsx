@@ -11,31 +11,49 @@ export function CanvasRenderLayerGuard() {
     const root = anchor.current?.closest<HTMLElement>('.react-flow');
     if (!root) return;
     let disposed = false, queued = false;
+    let geometry = new WeakMap<Element, { box: PaintBox; version: number }>();
+    const versions = new WeakMap<Element, number>();
+    let zoom = 1, x = 0, y = 0, left = 0, top = 0;
     const box = (element: Element, pad = 0): PaintBox => {
-      const rect = element.getBoundingClientRect();
-      return { left: rect.left - pad, top: rect.top - pad, right: rect.right + pad, bottom: rect.bottom + pad };
+      const scope = element.closest('.react-flow__node,.react-flow__edge') || element;
+      const version = versions.get(scope) || 0;
+      let measured = geometry.get(element);
+      if (!measured || measured.version !== version) {
+        const rect = element.getBoundingClientRect();
+        measured = { version, box: { left: (rect.left - left - x) / zoom, top: (rect.top - top - y) / zoom,
+          right: (rect.right - left - x) / zoom, bottom: (rect.bottom - top - y) / zoom } };
+        geometry.set(element, measured);
+      }
+      return { left: measured.box.left - pad, top: measured.box.top - pad, right: measured.box.right + pad, bottom: measured.box.bottom + pad };
     };
     const inspect = () => {
       queued = false;
       if (disposed) return;
-      const zoom = Number(root.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform.match(/scale\(([^)]+)\)/)?.[1]);
-      let allowed = Number.isFinite(zoom) && zoom > 0;
+      const transform = root.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform;
+      zoom = Number(transform?.match(/scale\(([^)]+)\)/)?.[1]);
+      const translation = transform?.match(/translate\(([^,]+)px,\s*([^)]+)px\)/);
+      x = Number(translation?.[1]); y = Number(translation?.[2]);
+      const origin = root.getBoundingClientRect(); left = origin.left; top = origin.top;
+      let allowed = Number.isFinite(zoom) && zoom > 0 && Number.isFinite(x) && Number.isFinite(y);
       const background: BackgroundPaint[] = [];
       for (const node of root.querySelectorAll<HTMLElement>('.react-flow__node')) {
         if (!(Number(node.style.zIndex) < 0)) continue;
         const group = node.querySelector('[data-testid="workflow-group"]');
-        if (group) background.push({ box: box(group), borderOnly: true, title: group.querySelector('button') ? box(group.querySelector('button')!, 4 * zoom) : undefined });
+        if (group) background.push({ box: box(group), borderOnly: true, title: group.querySelector('button') ? box(group.querySelector('button')!, 4) : undefined });
         else {
           const decoration = node.querySelector('[data-testid="workflow-decoration"]');
           if (decoration) {
             const image = decoration.querySelector('img');
-            background.push({ box: box(image || decoration, 2 * zoom) });
+            background.push({ box: box(image || decoration, 2) });
             const missing = decoration.querySelector('button');
-            if (missing) background.push({ box: box(missing, 2 * zoom) });
+            if (missing) background.push({ box: box(missing, 2) });
           } else {
-            background.push({ box: box(node, 3 * zoom) });
+            // Arbitrary user layer order may include ports/rings/shadows beyond
+            // the fixed frame. Keep the native cross-container plane outright.
+            allowed = false;
+            background.push({ box: box(node, 3) });
             // Titles/ports can paint outside a negative custom-order node box.
-            for (const child of node.querySelectorAll('.art-title,.art-port')) background.push({ box: box(child, 3 * zoom) });
+            for (const child of node.querySelectorAll('.art-title,.art-port')) background.push({ box: box(child, 3) });
           }
         }
       }
@@ -45,26 +63,30 @@ export function CanvasRenderLayerGuard() {
         if (Number(edge.ownerSVGElement?.style.zIndex || 0) !== 0) allowed = false;
         const path = edge.querySelector('.cw-base');
         if (!path) { allowed = false; continue; }
-        edges.push(box(path, (path.classList.contains('cw-on') ? 64 : 3) * zoom));
+        edges.push(box(path, path.classList.contains('cw-on') ? 64 : 3));
       }
-      allowed &&= canCompositeCanvasLayers(background, edges, 2 * zoom);
+      allowed &&= canCompositeCanvasLayers(background, edges, 2);
       const state = allowed ? 'composite' : 'original';
       if (root.dataset.canvasLayerOrder !== state) root.dataset.canvasLayerOrder = state;
     };
     inspect();
     const observer = new MutationObserver(records => {
-      const spatial = records.some(record => {
-        if (record.type === 'childList') return true;
+      let spatial = false;
+      for (const record of records) {
         const target = record.target as Element;
         // Panning/zooming writes only this parent transform. Reading it here
         // would recreate the per-frame layout work this module removes.
-        return !target.matches('.react-flow__viewport,.react-flow') &&
-          !!target.closest('.react-flow__node,.react-flow__edge');
-      });
+        if (record.type === 'childList') spatial = true;
+        if (target.matches('.react-flow__viewport,.react-flow')) continue;
+        const scope = target.closest('.react-flow__node,.react-flow__edge');
+        if (scope) { versions.set(scope, (versions.get(scope) || 0) + 1); spatial = true; }
+      }
       if (spatial && !queued) { queued = true; queueMicrotask(inspect); }
     });
     observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'd', 'class'] });
-    return () => { disposed = true; observer.disconnect(); delete root.dataset.canvasLayerOrder; };
+    const resize = new ResizeObserver(() => { geometry = new WeakMap(); if (!queued) { queued = true; queueMicrotask(inspect); } });
+    resize.observe(root);
+    return () => { disposed = true; observer.disconnect(); resize.disconnect(); delete root.dataset.canvasLayerOrder; };
   }, []);
   return <span ref={anchor} hidden aria-hidden="true" />;
 }
