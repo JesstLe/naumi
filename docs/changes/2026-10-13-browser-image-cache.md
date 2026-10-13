@@ -33,6 +33,12 @@
 
 本轮一个完整功能模块，合并main后同步计数0/3；新任务独立分支，选择性提交所有任务文件，保护共享checkout。开工基线520ba89，最终main同步和固定提交见最终验证记录。
 
+最终整合main从c9985c0到eeddfa8；生图原生能力/遮罩修复及同事新工作保持，图片组件自动合并无冲突。固定业务候选b7ef039d027584ec8c4a61d128dffa1d6f440ee0正式构建通过；遮罩外部RGBA/alpha/边缘/比例回归通过。后续交接文档提交不冒充镜像部署。
+
+独立当前main副本BASELINE/本任务MODIFIED/ROLLBACK全部exit0，67项原始hash恢复，原有私有媒体生命周期保持，本任务源码仍为新缓存实现，数据库未回灌。证据命令：`python output/browser-image-cache/run-phase.py BASELINE`、`MODIFIED`、`ROLLBACK`；字面输出和逐子命令均存VERIFICATION.txt。
+
+缓存只覆盖已托管的生成图片；103一个历史外部临时URL保持原生加载，不能凭任意URL绕过来源/归属约束。超过32MiB的已授权图片走当前新签名/版本链接显示，不持久化；不因缓存限制破坏原始图片展示。
+
 证据目录：`C:/Users/13357/.codex/worktrees/browser-image-cache-20261013/naumi/output/browser-image-cache`。四件套MODIFIED_FILE.ts、DIFF_FILE.patch、VERIFICATION.txt、可执行ROLLBACK.sh；保存任务文件前后SHA及独立原始副本，演练只恢复另一个源码副本。缓存回退不恢复业务数据库/素材/积分，不取消或重做付费生成。
 
 ## 尚未完成
