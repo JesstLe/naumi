@@ -38,12 +38,12 @@
 
 /* ---- 表格 ---- */
 .tableWrap { background: #fff; border: 1px solid #e3e8f0; border-radius: 14px; overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; padding: 11px 14px; color: #6b7590; font-weight: 500; border-bottom: 1px solid #edf0f6; white-space: nowrap; }
-td { padding: 11px 14px; border-bottom: 1px solid #f2f4f9; vertical-align: middle; }
-td small { display: block; color: #8a93aa; font-size: 11px; }
-td strong { font-weight: 600; }
-tr:last-child td { border-bottom: 0; }
+.tableWrap table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tableWrap th { text-align: left; padding: 11px 14px; color: #6b7590; font-weight: 500; border-bottom: 1px solid #edf0f6; white-space: nowrap; }
+.tableWrap td { padding: 11px 14px; border-bottom: 1px solid #f2f4f9; vertical-align: middle; }
+.tableWrap td small { display: block; color: #8a93aa; font-size: 11px; }
+.tableWrap td strong { font-weight: 600; }
+.tableWrap tr:last-child td { border-bottom: 0; }
 .badge { display: inline-block; border-radius: 999px; background: #e7f4ec; color: #22744a; font-size: 12px; padding: 3px 10px; }
 .badge.inactive { background: #fdeeee; color: #a33a3a; }
 .rowActions { display: flex; gap: 6px; flex-wrap: wrap; }
