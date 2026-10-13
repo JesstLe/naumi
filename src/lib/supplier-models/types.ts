@@ -1,6 +1,7 @@
 import {metadataResolutionSchema} from "./resolution-defaults";
 import {metadataQualitySchema} from "./quality-defaults";
 import {z} from "zod";
+import {imagegenMetadataSchema} from "../imagegen/capabilities";
 export const CAPABILITY_STATES=["unknown","configured","documented","verified"] as const;
 export const PRICE_BASES=["request","image","token","second","frame"] as const;
 const text=z.string().trim().max(1000),amount=z.string().regex(/^(0|[1-9][0-9]{0,29})$/).nullable();
@@ -37,6 +38,7 @@ export const supplierMetadataSchema=z.strictObject({
   checkedAt:date,
   prices:z.array(supplierPriceSchema).max(50),
 }).superRefine((m,ctx)=>{
+ if(m.parameterMetadata.imagegen!==undefined&&!imagegenMetadataSchema.safeParse(m.parameterMetadata.imagegen).success)ctx.addIssue({code:"custom",message:"图像能力元数据无效，需要支持依据、日期和白名单参数名"});
  if(m.parameterMetadata.resolutionDefaults!==undefined && !metadataResolutionSchema.safeParse(m.parameterMetadata.resolutionDefaults).success)ctx.addIssue({code:"custom",message:"分辨率默认映射格式无效，请填写参数名与合法实际值"});
  if(m.parameterMetadata.qualityDefaults!==undefined && !metadataQualitySchema.safeParse(m.parameterMetadata.qualityDefaults).success)ctx.addIssue({code:"custom",message:"quality 默认映射格式无效，请逐档填写合法参数值"});
  if(["documented","verified"].includes(m.capabilityState)&&(!m.capabilitySource || !m.checkedAt))ctx.addIssue({code:"custom",message:"文档声明或已验证状态需要来源和核对日期"});

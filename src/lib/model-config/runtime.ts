@@ -1,4 +1,5 @@
 import { compatiblePublicModels, FEATURE_BINDINGS } from "./business";
+import { missingImagegenCapabilities,publishedImagegenCapabilities } from "../imagegen/capabilities";
 import { adminConfiguredFeature } from "./selection-policy";
 import {publicUpstreamIds} from "./channel-policy";
 import type { FeatureId } from "../billing/rules/registry";
@@ -69,6 +70,10 @@ export function simulateModel(snapshot: ModelSnapshot, billing: ConfigSnapshot, 
   for (const id of ids) {
     const u = config.upstreamModels.find(u => u.id === id)!, p = config.providers.find(p => p.id === u.providerId)!, c = u.capabilities;
     const codes: string[] = [];
+    if(facts.imagegenRequirements){
+      if(facts.imagegenRequirements.conflicts.length)codes.push("IMAGEGEN_INTENT_CONFLICT");
+      for(const key of missingImagegenCapabilities(facts.imagegenRequirements,publishedImagegenCapabilities(c)))codes.push(`IMAGEGEN_${key.toUpperCase()}_UNSUPPORTED`);
+    }
     if (!u.enabled || !p.enabled) codes.push("DISABLED");
     if(model.supplierRouting&&!c[facts.needsEdit?"edit":"generate"])codes.push("OPERATION_UNSUPPORTED");
     if (pool?.rules.length && !rule) codes.push("RULE_UNMATCHED");

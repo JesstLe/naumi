@@ -29,6 +29,7 @@ export type ManagedModelRow = {
   canvasUnified?:boolean;
   resolutionConfig?:ReturnType<typeof resolutionConfiguration>;
   qualityConfig?: ReturnType<typeof qualityConfiguration>;
+  imagegenConfig?: {routes:import("./imagegen-policy").ImagegenRoutePolicy[]};
   scopeOptions: {id:string;label:string;selected:boolean;available:boolean;adminDefault:boolean;reason?:string}[];
   pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").ManagedModelCreditPricing}[];
 };
