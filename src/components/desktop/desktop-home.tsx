@@ -30,6 +30,7 @@ export function DesktopHome(){
    if(responses.some(r=>!r.ok))throw Error("作品读取失败，请重试");
    const [account,canvas,projects]=await Promise.all(responses.map(r=>r.json()));
    if(c.signal.aborted)return;
+   if(revision===0 && !(account.artworks || []).some((a:DesktopArtwork)=>a.image || a.videoUrl))setTab("demo");
    setWorks((canWorks || canCanvas ? account.artworks || [] : []).filter((a:DesktopArtwork)=>a.status!=="failed"));setTexts(canvas.nodes || []);setNames(projects.names || {});
   }catch(e){if(!c.signal.aborted)setError(e instanceof Error?e.message:"作品读取失败，请重试");}finally{if(!c.signal.aborted)setLoading(false);}})();
   return()=>c.abort();
