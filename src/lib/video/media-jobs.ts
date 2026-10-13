@@ -186,8 +186,9 @@ async function publish(row:JobRow,view:WorkerJobView){
     await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[row.email]);
     await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${row.email}`]);
     let detached=false;
-    if(row.request.projectKey){const project=(await tx.query("SELECT deleted_at FROM app_canvas_video_projects WHERE email=$1 AND project_key=$2 FOR SHARE",[row.email,row.request.projectKey])).rows[0];detached=!!project?.deleted_at;}
-    if(row.request.inputs.length){const nodes=(await tx.query("SELECT deleted_at FROM app_canvas_video_nodes WHERE email=$1 AND id=ANY($2::text[]) FOR SHARE",[row.email,row.request.inputs.map(id=>id.replace(/^video:/,""))])).rows;detached=detached||nodes.some(node=>!!node.deleted_at);}
+    // Graph edits/deletion use the same advisory locks. Read deletion markers without blocking task-result pointer updates.
+    if(row.request.projectKey){const project=(await tx.query("SELECT deleted_at FROM app_canvas_video_projects WHERE email=$1 AND project_key=$2",[row.email,row.request.projectKey])).rows[0];detached=!!project?.deleted_at;}
+    if(row.request.inputs.length){const nodes=(await tx.query("SELECT deleted_at FROM app_canvas_video_nodes WHERE email=$1 AND id=ANY($2::text[])",[row.email,row.request.inputs.map(id=>id.replace(/^video:/,""))])).rows;detached=detached||nodes.some(node=>!!node.deleted_at);}
     if(parents.length){const sources=(await tx.query("SELECT deleted_at FROM app_artworks WHERE email=$1 AND id=ANY($2::text[]) FOR SHARE",[row.email,parents])).rows;detached=detached||sources.some(art=>!!art.deleted_at);}
     if(detached)for(const art of artworks)art.origin="workbench";
     await addArtworksTx(tx,row.email,artworks);
