@@ -181,3 +181,15 @@ fixture扩展独立KIE motion模型，仅uiModels启用，单图/单视频/无�
 第五批补充实测已PASS：canvas-browser-e19c7f60-5397-4398-b9eb-7b79ae7837ca/result.json，包含actualOwnedReferenceImageDecode=true，放大video.loadeddata/videoWidth>0及所有前述设置/生成/播放器/真实下载/首帧/刷新/只读/英文/390px断言。替代只依赖截图空框的弱证据；图片缓存实现与生产下载鉴权未改。
 
 第五批媒体恢复集中用例最终PASS：media-interface-0091c0ff-c88e-4a27-8e48-615c49b5bd3a/result.json，真实App/DB/Worker drain/resume、最小UUID回执、参数/辅助文件指纹、跨账号隔离、分页之外pending恢复、同操作重放、App重启和删除项目后的迟到结果仅留Workbench、原SHA保持。首测502是fixture在helper drain之前未登记真实探测缓存；现在每份种子素材由真实FFprobe探测并以实际SHA记录，生产Worker排空限制未改。本批功能与补充证据区分明确，完整Browser Agent/其它画布交互和D仍待完成。
+
+## Task13 第六批：真实浏览器 Agent 与放大画面呈现
+
+新增 verify-video-fusion-agent-browser.ts / verify-video-fusion-agent.mjs，通过真实 Chrome 的侧栏输入和发送按钮进入 canvas/assistant、Pi streaming、Harness及统一模型配置。两段完整分镜实际挂载原项目，第一次模型自带 confirm=true 仍等待本人确认，视频任务/创建数为0；本人在输入框发送“确认”后，观察实际持久 task 已接受才关闭真实浏览器页面。重启实际 App 后 Worker 继续两个依赖阶段，重新打开原项目通过项目对话记录恢复，两个原节点解码视频、逐个深链检查完整可编辑对白。重放相同制作链仍只有两任务/两次视频创建，浏览器 pageerror 为0。
+
+实际 PASS：checkpoint-c/agent-browser-fd40057f-4dd4-4b59-892a-aaf5b7b4fd49/result.json。文字与视频供应商均为隔离 scripted fixture，不证明真实大模型创作策略质量或付费视频质量。首测在应用账号/项目尚未恢复时判断侧栏关闭并点击，恰好反转桌面默认展开状态；用例改为先等实际目标节点加载后判断展开，不修改产品默认偏好或添加固定睡眠。最终 session41010 exit0。
+
+放大预览原截图虽有 loadeddata/videoWidth，但取图时 Chrome 尚未呈现视频帧，不能作为视觉通过。补充原始彩条素材像素比例断言，放大首次暂停画面和实际播放/暂停后都必须呈现彩色像素，最终截图已人工查看。完整原画布脚本 PASS：checkpoint-c/canvas-browser-6ed92695-b63a-47fe-8c7f-4da6451718cd/result.json，expandedPreviewActualColoredPixelsBeforeAndAfterPlayback=true；session19702 exit0，无产品播放器改动。
+
+固定上游制作规则重新核对：IC video-single-shot/video-multi-shot/video-extension/video-editing/script/audio 中还有更细的单镜头职责、多镜头时间线/效果清单/密度与叙事弧、分镜拼图面板保留、逐字剧本切片/正式资产与持续性变体、默认硬切及同机位三类例外、前传语义、四种编辑变化/保持条款、音色样本与最终朗读的独立职责。当前 production-prompt.ts 只覆盖通用规则，完整规则融合与相应行为验收仍未完成，不能凭 scripted Agent 用例宣称 V12—V14 全部通过。
+
+完整 C 仍缺两窗口修改冲突、项目切换/复制/撤销/锁定/缩放/批量工作流、图片回归及上述规则；D 保持未完成。本批本机 fixture 都由 finally 停止，未连接103、持发布锁或发布。最新 fetch main 已从56e5480推进到3ab2418（新增画布性能/文字撤销/层级绘制等），准备在独立分支保存本批后整合，不覆盖共享checkout。
