@@ -70,6 +70,7 @@ COPY --from=build --chown=nextjs:nodejs /app/public ./public
 COPY --from=build --chown=nextjs:nodejs /app/scripts/video-worker.mjs ./scripts/video-worker.mjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/video-media-worker.mjs ./scripts/video-media-worker.mjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/video-fusion/media-engine.mjs ./scripts/video-fusion/media-engine.mjs
+COPY --from=build --chown=nextjs:nodejs /app/scripts/video-fusion/media-bundle.mjs ./scripts/video-fusion/media-bundle.mjs
 COPY --from=media-runtime /opt/naumi-media-runtime /opt/naumi-media-runtime
 COPY --from=media-runtime /usr/local/bin/naumi-media-sandbox /usr/local/bin/naumi-media-sandbox
 COPY --from=build --chown=nextjs:nodejs /app/scripts/rotate-settings-secret.mjs ./scripts/rotate-settings-secret.mjs
