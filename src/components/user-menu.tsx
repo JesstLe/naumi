@@ -14,7 +14,6 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { useManagementEntry } from "@/components/account/use-management-entry";
-import { entryStatusLabel } from "@/lib/teams/entry-contract";
 import { displayEmail } from "@/lib/account-identity";
 
 function fmt(s: string, vars: Record<string, string | number>): string {
@@ -29,7 +28,7 @@ export function UserMenu() {
   const { t, locale } = useI18n();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const { data: entry, state: entryState } = useManagementEntry(user);
+  const { data: entry } = useManagementEntry(user);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -95,12 +94,12 @@ export function UserMenu() {
               label={t("menu.security")}
               onNavigate={() => setOpen(false)}
             />
-            <MenuLink
-              href={entry?.allowed ? entry.href : "/account/security"}
+            {entry?.allowed && <MenuLink
+              href={entry.href}
               icon={<Users className="h-4 w-4" />}
-              label={`${entry?.enterprise ? (locale === "en" ? "Enterprise" : "企业管理") : (locale === "en" ? "Team access" : "团队入口")} · ${entryStatusLabel(entryState === "ready" ? entry!.status : entryState, locale === "en")}`}
+              label={entry.enterprise ? (locale === "en" ? "Enterprise" : "企业管理") : (locale === "en" ? "Team management" : "团队管理")}
               onNavigate={() => setOpen(false)}
-            />
+            />}
             <button
               onClick={() => {
                 setOpen(false);
