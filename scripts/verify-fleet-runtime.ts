@@ -3,7 +3,7 @@ import {createServer} from 'node:https';
 import {createServer as createLocalServer} from 'node:http';
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
-import {spawnSync} from 'node:child_process';
+import {spawnSync,spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 async function main(){
   assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.equal(new URL(process.env.DATABASE_URL!).hostname,'127.0.0.1');
@@ -34,7 +34,7 @@ async function main(){
     // The operator-pinned private CA is request-local, not a global TLS bypass.
     assert.ok((await run({NODE_EXTRA_CA_CERTS:'',FLEET_CENTRAL_CA_FILE:privateCa})).includes('FLEET_TICK=idle'));
     assert.ok((await run({NODE_EXTRA_CA_CERTS:'',FLEET_CENTRAL_CA_FILE:'/test-ca/missing.pem'},1)).includes('FLEET_TICK=RETRY_PENDING'));
-    const preflight=await new Promise<{status:number;stdout:string;stderr:string}>(async(resolve,reject)=>{const {spawn}=await import('node:child_process');const child=spawn('docker',['run','--rm','--mount',`type=bind,source=${certdir},target=/test-ca,readonly`,'-e','FLEET_CENTRAL_URL=https://host.docker.internal:'+port,'-e','FLEET_CENTRAL_CA_FILE='+privateCa,image,'node','dist/fleet/preflight.js'],{stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);child.on('close',status=>resolve({status:status??-1,stdout,stderr}));});
+    const preflight=await new Promise<{status:number;stdout:string;stderr:string}>((resolve,reject)=>{const child=spawn('docker',['run','--rm','--mount',`type=bind,source=${certdir},target=/test-ca,readonly`,'-e','FLEET_CENTRAL_URL=https://host.docker.internal:'+port,'-e','FLEET_CENTRAL_CA_FILE='+privateCa,image,'node','dist/fleet/preflight.js'],{stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);child.on('close',status=>resolve({status:status??-1,stdout,stderr}));});
     assert.equal(preflight.status,0,preflight.stderr);const checked=JSON.parse(preflight.stdout);assert.equal(checked.ready,true);assert.equal(checked.credentialsSent,false);assert.equal(checked.tlsVerified,true);
     const state=(await db.getPool().query('SELECT status FROM app_fleet_instances WHERE id=$1',[instance.id])).rows[0].status;assert.equal(state.source,actualSource);assert.equal(state.version,'123');assert.equal(state.connector,1);
     localStates[2]='8'.repeat(40);await run();assert.equal((await db.getPool().query('SELECT status FROM app_fleet_instances WHERE id=$1',[instance.id])).rows[0].status.source,'unknown');
