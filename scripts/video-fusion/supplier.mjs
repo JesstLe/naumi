@@ -102,7 +102,7 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
         if (scenario === "malformed-poll") return respond(res,{unrecognized:"state"});
         const done=task.polls>=2, state=task.cancelled?"cancelled":scenario==="rejected"?"failed":done?"completed":"processing";
         const resultUrl=origin+"/assets/"+task.asset.name;
-        if (protocol==="gemini") return respond(res,state==="failed"?{done:true,error:{code:13,message:"fixture rejected"}}:done?{done:true,response:{generateVideoResponse:{generatedSamples:[{video:{uri:resultUrl}}]}}}:{done:false});
+        if (protocol==="gemini") return respond(res,state==="failed"?{done:true,error:{code:13,message:"fixture rejected"}}:done?{done:true,response:{generateVideoResponse:{generatedSamples:[{video:{uri:resultUrl}},...(["multi-output","gemini-duplicate-output"].includes(scenario)?[{video:{uri:scenario==="gemini-duplicate-output"?resultUrl:origin+"/assets/landscape-4-silent.mp4"}}]:[])]}}}:{done:false});
         if (protocol==="kie") return respond(res,{code:200,data:{taskId:task.id,state:state==="completed"?"success":state,resultJson:done?JSON.stringify({resultUrls:[resultUrl]}):"",failMsg:state==="failed"?"fixture rejected":""}});
         if (protocol==="apimart") return respond(res,{code:200,data:{id:task.id,status:state,progress:done?100:30,result:done?{videos:[{url:[resultUrl]}]}:{}}});
         if (protocol==="tfrouter") {

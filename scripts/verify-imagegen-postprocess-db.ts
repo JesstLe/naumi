@@ -36,8 +36,21 @@ async function main(){
   assert.equal((await local.saveCanvasLocalEdit(owner,operation,f.origin)).id,version.id);
   await assert.rejects(()=>local.saveCanvasLocalEdit("another@example.test",{...operation,operationId:randomUUID()},f.origin),/无权|不存在/);
   const created=(await db.getPool().query("SELECT parent_id,image_url FROM app_artworks WHERE id=$1 AND email=$2",[version.id,owner])).rows[0];assert.equal(created.parent_id,sourceId);
+  for(const entry of ["workbench","agent"] as const){
+   const result=await local.saveCanvasLocalEdit(owner,{...operation,operationId:randomUUID()},f.origin,undefined,{entry});
+   const row=(await db.getPool().query("SELECT origin,source_url,creation_provenance,parent_id,group_id,canvas_x,canvas_y FROM app_artworks WHERE id=$1 AND email=$2",[result.id,owner])).rows[0];
+   assert.equal(row.origin,entry);assert.equal(row.source_url,"imagegen-postprocess");assert.equal(row.creation_provenance.entry,entry);assert.equal(row.parent_id,sourceId);assert.equal(row.group_id,result.id);assert.equal(row.canvas_x,null);assert.equal(row.canvas_y,null);
+  }
+  const {DurableImageJobs}=await import("../src/lib/durable-image-jobs"),repository=await import("../src/lib/image-job-repository"),parents=new DurableImageJobs<{status:string;children:Record<string,unknown>}>("imagegen");
+  const recoveryId=`imagegen-${randomUUID()}`,childId=randomUUID();await parents.create(recoveryId,owner,{status:"running",children:{generate:{state:"submitted",jobId:childId}}},{fixture:true},0,false);
+  await db.getPool().query("UPDATE app_image_jobs SET lease_token=$2,lease_until=now()+interval '1 minute' WHERE id=$1",[recoveryId,randomUUID()]);
+  assert.ok(!(await repository.dueImageJobs()).some(row=>row.id===recoveryId),"Live lease is not recovered");
+  await db.getPool().query("UPDATE app_image_jobs SET lease_until=now()-interval '1 second' WHERE id=$1",[recoveryId]);
+  assert.ok((await repository.dueImageJobs()).some(row=>row.id===recoveryId),"Interrupted running parent is found without browser polling");
+  const recovered=await repository.claimImageJob(recoveryId,"imagegen");assert.equal((recovered!.snapshot as any).children.generate.jobId,childId);
+  assert.equal(await repository.claimImageJob(recoveryId,"imagegen"),null,"Only one worker can recover the original parent");
   assert.ok(storageRequests>0,"R2 outage was actually injected");assert.equal((await db.getPool().query("SELECT remote_ready FROM app_media_assets WHERE key=$1",[row.base_url.slice(7)])).rows[0].remote_ready,false);
-  console.log("PASS R2 outage imagegen postprocess persistence: immutable base, frozen policy, private owner, MIME and idempotency");
+  console.log("PASS R2 outage imagegen postprocess persistence: immutable base, frozen policy, private owner, MIME/idempotency, workbench/agent provenance and expired running parent recovery without browser; original child ID preserved and exclusive lease");
  }finally{globalThis.fetch=realFetch;await db.getPool().end();await f.cleanup();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

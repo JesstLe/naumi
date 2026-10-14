@@ -18,7 +18,7 @@ export async function downloadVideoResultAsset(config:VideoProviderRuntimeConfig
     const transport=modelEndpointFetch(base.href,{trustedOrigins},undefined,{redirectResponse:true});
     const headers:Record<string,string>={};
     if(authentication&&target.origin===supplierOrigin&&config.apiKey){
-      if(config.videoProfile==="gemini")headers["x-goog-api-key"]=config.apiKey;
+      if(config.videoProfile==="gemini"||(!config.videoProfile&&config.protocol==="gemini"))headers["x-goog-api-key"]=config.apiKey;
       else headers.authorization=config.rawAuthorization||config.videoProfile==="autodl"?config.apiKey:`Bearer ${config.apiKey}`;
     }
     const response=await transport(target.href,{headers,signal,cache:"no-store"});

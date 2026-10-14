@@ -6,6 +6,8 @@ import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import { getVideoProviderConfig, type VideoProviderRuntimeConfig } from "@/lib/video/providers/config";
 import { PermanentVideoCreateError, TransientPollError, type VideoGenerationRequest, type VideoProviderAdapter, type VideoProviderCreateResult, type VideoProviderFetchResult, type VideoProviderPollResult, type VideoTaskSnapshot, type VideoTaskStatus } from "@/lib/video/types";
 import { readLimitedVideoResponse } from "@/lib/video/result-download";
+import {decodeGeminiPoll,GEMINI_WIRE_OPTIONS} from "./protocols/gemini";
+import {selectWireOptions} from "./wire";
 
 function status(value: unknown): VideoTaskStatus {
   const raw = String(value || "").toLowerCase();
@@ -106,7 +108,8 @@ function requestBody(cfg: VideoProviderRuntimeConfig, input: VideoGenerationRequ
     if (first) instance.image = { uri: first };
     if (last) instance.lastFrame = { uri: last };
     if (images.length) instance.referenceImages = images.map((uri) => ({ image: { uri }, referenceType: "asset" }));
-    return { instances: [instance], parameters: { aspectRatio: input.aspectRatio, durationSeconds: input.durationSeconds, resolution: input.resolution } };
+    return { instances: [instance], parameters: { aspectRatio: input.aspectRatio, durationSeconds: input.durationSeconds, resolution: input.resolution,negativePrompt:input.negativePrompt,
+      ...selectWireOptions({provider:cfg,profile:"gemini",request:input},GEMINI_WIRE_OPTIONS) } };
   }
   if (cfg.protocol === "minimax") {
     const content: Record<string, unknown>[] = [{ type: "text", text: input.prompt }];
@@ -285,11 +288,7 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
           } satisfies VideoProviderPollResult;
         }
         if (done === true) {
-          const resultUrl = firstString(path(payload, "response.generateVideoResponse.generatedSamples.0.video.uri"));
-          if (!/^https?:\/\//i.test(resultUrl)) {
-            throw new TransientPollError("查询视频任务失败：Gemini done 响应缺少 generatedSamples 视频 URI");
-          }
-          return { status: "completed", progress: 100, resultUrl, rawResponse: payload } satisfies VideoProviderPollResult;
+          return decodeGeminiPoll(payload);
         }
         throw new TransientPollError("查询视频任务失败：Gemini operation 响应缺少 done 状态");
       }

@@ -81,6 +81,8 @@ export type VideoProviderPollResult = {
   progress: number;
   resultUrl?: string;
   resultAssets?:Array<{kind:"video"|"image"|"audio";url:string;mimeType?:string}>;
+  /** The listed assets are secondary samples, even when a URI repeats the primary. */
+  resultAssetsExcludePrimary?:boolean;
   inlineResult?:{mimeType:string;base64:string};
   outputFiles?:Array<{kind:"video"|"image"|"audio";filename:string;subfolder:string;type:string}>;
   errorCode?: string;

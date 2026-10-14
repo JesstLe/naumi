@@ -80,7 +80,7 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
     const work=sources.find(work=>work.id===source);if(!work?.image)throw new Error("蒙版结果不存在或无权访问");
     const generated=await readCanvasImage(work.image,"http://internal",owner);
     const replacement=await preserveMaskedOutside(target.buffer,mask.buffer,generated.buffer,plan.intent.background==="transparent");
-    const saved=await saveCanvasLocalEdit(owner,{mode:"replace",id:source,operationId:imagegenStepId(plan.request.operationId,`mask-${i}`)},"http://internal",replacement);
+    const saved=await saveCanvasLocalEdit(owner,{mode:"replace",id:source,operationId:imagegenStepId(plan.request.operationId,`mask-${i}`)},"http://internal",replacement,{entry:plan.request.entry});
     constrained.push(saved.id);
    }
    ids=constrained;
@@ -88,7 +88,7 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
   const output={...plan.request.output,compression:plan.request.output.compressionMode==="native"?undefined:plan.request.output.compression,background:plan.intent.background||undefined};
   if(plan.request.mode==="postprocess"||plan.request.chroma||output.format!=="png"||output.compression!==undefined||output.downscaleMaxDim||output.flattenColor){
    const processed:string[]=[];
-   for(const [i,source] of ids.entries()){const result=await saveCanvasLocalEdit(owner,{mode:"process",id:source,operationId:imagegenStepId(plan.request.operationId,`output-${i}`),output,chroma:plan.request.chroma},"http://internal");processed.push(result.id);}
+   for(const [i,source] of ids.entries()){const result=await saveCanvasLocalEdit(owner,{mode:"process",id:source,operationId:imagegenStepId(plan.request.operationId,`output-${i}`),output,chroma:plan.request.chroma},"http://internal",undefined,{entry:plan.request.entry});processed.push(result.id);}
    ids=processed;
   }
   const result=await artifacts(ids,owner);

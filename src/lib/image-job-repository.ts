@@ -163,7 +163,7 @@ export async function releaseImageJob(id: string, token: string) {
 export async function dueImageJobs() {
   await ensureSchema();
   const { rows } = await getPool().query(`SELECT id,kind FROM app_image_jobs WHERE (lease_until IS NULL OR lease_until<now())
-    AND (snapshot->>'status'='pending' OR snapshot->'sources' @> '[{"status":"redoing"}]'::jsonb)
+    AND (snapshot->>'status'='pending' OR (kind='imagegen' AND snapshot->>'status'='running') OR snapshot->'sources' @> '[{"status":"redoing"}]'::jsonb)
     ${excludeImportedHistory("app_image_jobs")} ORDER BY updated_at LIMIT 3`);
   return rows as {id:string;kind:ImageJobKind}[];
 }

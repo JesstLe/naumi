@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { DesktopHome } from "@/components/desktop/desktop-home";
 import { WorkbenchClient } from "@/components/home/workbench-client";
 import { CanvasClient } from "@/components/canvas/canvas-client";
@@ -68,6 +68,7 @@ export default async function DesktopPage({params,searchParams}: {params:Promise
  const {segments=[]}=await params;
  if(segments.length>1)notFound();
  const view=segments[0] || "home";
+ if(view==="batchshot")redirect("/desktop/batchshot/native/workbench");
  if(view==="home")return <DesktopHome/>;
  if(view==="create")return <Suspense fallback={null}><div className="dt-module tool-page"><WorkbenchClient/></div></Suspense>;
  if(view==="canvas"){const q=await searchParams;return <div className="dt-canvas-module"><CanvasErrorBoundary><CanvasClient desktopAppearance initialProject={typeof q.project==="string" ? q.project : undefined}/></CanvasErrorBoundary></div>;}
