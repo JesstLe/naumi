@@ -198,3 +198,13 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 真实只读排空计数imageJobs6，全部pending/已过期/明确guard导入历史6（当前NAUMI_STAGING_HISTORY_GUARD1，environment staging）。它们保持原lease/status，旧/新恢复scanner本来就排除这些复制历史，不是当前正在跑的执行者。状态查询现复用同一excludeImportedHistory谓词，返回quarantinedHistoryFences另列而不删/清/重跑；普通过期但非隔离fence仍阻止drain，imagegen新批次无history exception。新增真实独立临时PostgreSQL DATABASE测试，含真的naumi_staging_guard.origin_rows、原guard实现/导入和非导入计数、旧lease不改、新批次不免除，DB回收只自己的随机库；现有业务fixture不更改。
 
 148三槽是上一阶段真实兼容证据，以上middleware/历史修正尚未编入，不能作为最终候选执行生产drain/cutover。main在build后进入37e6895，仅同事图像能力交付文档，已普通整合c17a6c6，源码和148产品一致；新fix需新固定SHA构建。模块20达到3次功能计数后fetch/整合最新main归零，生产发布计数0。下一轮优先新最终候选及真实secret-only status，而非用旧148赶上线。全scope70仍active，原生平移32.44/代理冷79.7历史证据不扩大。
+
+## 模块21：最新固定旁路、admin原生直连观测及按用户要求释放锁
+
+103新双锁PID1127091从基线/备份至最终核验持有。本任务148旧预览在精确CID/镜像/loopback/Worker0、无网关引用和无建立连接通过后stop保留。固定2f7c0b1三个PROBE0镜像构建exit0，569009664字节导入，13035/36/37实际1791946269，Worker0及旧Agent origin保持。四项原生登录态API×三槽12项JSONshape通过，secret-only drain-status200/匿名401；共享DB5项fences全0、transactions0、advisory0，6份已隔离导入历史另计而不修改。没有生产pause/tick/cutover。
+
+用户admin原生登录已确认。为真实直连R2加入临时只读观察器13038及同源入口；不签发浏览器Cookie，页面先验证原生session，再只读查询实际admin角色。首版误读SessionUser.role不存在已修正；前缀改写导致React418的实验不作性能证据。第二版保留/canvas原路径与原HTML/静态chunk地址，隔离新测试IDB名，未删除用户现有缓存，R2 URLs不改写。原生浏览器确实取得R2响应字节：b3全213/154/191，141R2成功+12原生mediafallback、137manifest；c3全213/154/191、77R2成功、4manifest。但节点设置GET尚未在观察器allowlist，94缺素材交互标记未呈现，本次控制范围不一致，明确为探索结果，不报告70%达标。补齐allowlist后尚未重测。未消费供应商。
+
+用户要求“完成本轮先放锁，让版本更新”。立即停止观察标签背景画布请求，隔离Nginx syntax检查后原网关逐字节恢复SHA4e26b1017a6d449ca2b69cc93547470204692d0ed4ef6176770c5a7f0c38c4bf、平滑reload，13038停止、临时native读session删除。公网/api/version仍b243/1791913676，DBhealthy，旧App/Worker c05运行且未paused。原holderPID1127091实际退出，两把own flocks释放，lslocks当时无部署锁。未恢复数据库，没有性能版正式发布。证据output/canvas-performance-70-20261014/module21-final-observer-cleanup.json及module21-LOCK_RELEASED_VERIFIED.txt已回读。
+
+新一轮若继续：不复用该终态holder或baseline；先刷新同事最新发布/网关/来源，再新双锁与备份。2f三个旁路仍保留，下一版本若改变backend协议需更新候选，不能旧候选覆盖同事。全范围目标active，当前用户只要求本轮收尾释放锁，不是暂停整个目标。业务功能迭代计数仍0/3，成功公开发布计数0。四件源码事务产物仍93e基线37历史，不声称最新2f重新包装或完整上线回滚；本轮实际网关回滚另有上述证据。
