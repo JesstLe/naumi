@@ -66,6 +66,7 @@ async function main(){
   assert.equal((await route(req('/api/canvas/assistant','POST',anchorBody)))!.status,200);assert.equal(probes.at(-1)!.sessionId,scoped('art-a','raw-anchor-a'));assert.deepEqual(JSON.parse(received.at(-1)!.body),anchorBody);
   const nonAgentBefore=mutations;assert.equal(await route(req('/api/canvas/assistant','POST',{...projectBody,mode:'image'})),null);assert.equal(mutations,nonAgentBefore);
   assert.equal((await route(req('/api/agent/session?id=old-ag')))!.status,200);
+  assert.equal((await route(req('/api/agent/session?id=old-ag','HEAD')))!.status,200,'HEAD must not attempt to parse an absent request body');
   assert.equal((await route(req('/api/agent?sessionId=old-ag','DELETE')))!.status,200);assert.equal(received.at(-1)!.method,'DELETE');
   assert.equal(await route(req('/api/agent/session')),null,'history listing stays on shared DB current handler');
   for(const origin of ['http://public.example:3000','http://127.0.0.1:3000','http://user:pw@127.0.0.1:12345','http://127.0.0.1:12345/path']){env.NAUMI_AGENT_LEGACY_ORIGIN=origin;assert.equal((await route(req('/api/agent?sessionId=old-ag')))!.status,503);}

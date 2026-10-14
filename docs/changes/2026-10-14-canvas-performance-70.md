@@ -174,3 +174,5 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 模块18收尾实证：普通Linux PROBE0固定e411aa83a79b96663f69aeb8c0d4352530005a24构建exit0，本机4330实际1791942116/e411aa8。只替换本任务隔离fixture容器，原a1容器rename为naumi-canvas-perf-ordinary-20261014-a1-retained并stop保留，原DB/媒体/挂载不变、Worker0、供应商key空。新版四条原生登录态读API均200 JSON且nodes/assets/projects/workflows数组shape通过；初次检查脚本误把BYOC字段写成channels后改为源码真实workflows，不是产品修复或生产失败。普通内置浏览器实际完整213/154/191、composite、error0；已退回dashboard停止画布背景下载，未改用户103登录页或admin密码。
 
 普通整合后HEAD e411aa8/main5fd8196，任务分支已push；真实HTTP/SSE/视频poll对象复用/堆叠guard/30计费入口/完整TypeScript/git diff集中exit0。当前main-relative四件套24字段独立source+行为回滚通过，保留同事wallet锁及视频新main，24同hash授权引用BASE24字节下载→MOD1→ROLLBACK24，modifiedZIP保持修改。实际103本轮只读版本仍b243，未持部署锁/未公网切流。全范围目标仍active；剩余首次旧Worker交接、新版三槽+core整体固定候选、真实旧页面/在途任务连续性、直连R2与原生平移70%、切流及真实回滚。
+
+模块18边界修正：复核Worker定时器发现NaN/Infinity/超过2147483647会被Node折算为极短interval；新增启动前有限值/上限检查，3种无效配置实际Linux子进程exit1且不领取。既有最小5秒有效配置保持。legacy辅助对HEAD不解析空body，真实HEAD单次转发通过；route仍以各自支持的方法为准，不新增业务操作。集中Agent HTTP/SSE、TSC、Linux drain再验通过；需要重新固定构建该边界修正后源码，e411仍为之前普通浏览器验收版本，不称最终新版。

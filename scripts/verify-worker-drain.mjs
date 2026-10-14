@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import {spawn} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 if(process.platform==='win32')throw new Error('POSIX SIGTERM acceptance requires the Linux fixture runtime');
 
 const secret='fixture-only-worker-secret-20261014-not-production';
+for (const interval of ['invalid', 'Infinity', '2147483648']) {
+ const result=spawnSync(process.execPath,[fileURLToPath(new URL('./video-worker.mjs',import.meta.url))],{
+  env:{PATH:process.env.PATH,VIDEO_WORKER_SECRET:secret,VIDEO_WORKER_INTERVAL_MS:interval},encoding:'utf8',timeout:3000});
+ assert.equal(result.status,1);assert.match(result.stderr,/Invalid worker interval configuration/);
+}
 const responses=[];let ticks=0,disconnected=0,output='',exited=false,exitCode;
 const supplier=http.createServer((req,res)=>{
  assert.equal(req.url,'/api/video/worker/tick');assert.equal(req.headers['x-video-worker-secret'],secret);

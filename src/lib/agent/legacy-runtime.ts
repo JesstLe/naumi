@@ -35,7 +35,7 @@ export async function forwardLegacyAgentSession(request: Request): Promise<Respo
   const email = await authenticatedEmail(request);
   if (!email) return Response.json({ error: '请先登录' }, { status: 401, headers: privateHeaders });
   let body: Record<string, unknown> = {};
-  try { if (!['GET', 'DELETE'].includes(request.method)) body = await readHarnessBody(request.clone()); }
+  try { if (!['GET', 'HEAD', 'DELETE'].includes(request.method)) body = await readHarnessBody(request.clone()); }
   catch (error) { return harnessErrorResponse(error); }
   const canvas = url.pathname.startsWith('/api/canvas/');
   if (canvas && url.pathname === '/api/canvas/assistant' && request.method === 'POST' && body.mode !== 'agent') return null;
