@@ -27,7 +27,8 @@ export async function seedVideoFixture() {
   const {createModelRepository}=await import("../../src/lib/model-config/repository");
   const {fixtureModelConfig}=await import("../model-config-unit-fixture");
   const {CAP_RICH}=await import("./profiles");
-  const {videoWireProfileSchema,videoProfileProtocol}=await import("../../src/lib/video/capability-schema");
+  const {videoWireProfileSchema,videoProfileProtocol,videoDefinitionSchema}=await import("../../src/lib/video/capability-schema");
+  const definition=process.env.VIDEO_FIXTURE_VIDEO_DEFINITION?videoDefinitionSchema.parse(JSON.parse(process.env.VIDEO_FIXTURE_VIDEO_DEFINITION)):CAP_RICH;
   const profile=videoWireProfileSchema.parse(process.env.VIDEO_FIXTURE_VIDEO_PROFILE||"ark"),protocol=videoProfileProtocol(profile);
   const credentials=createCredentialStore(db.getPool());
   const imageKey=await credentials.importPlain({providerId:"p1",plain:process.env.OPENAI_API_KEY!,actor:"fixture"});
@@ -35,7 +36,7 @@ export async function seedVideoFixture() {
   const config=fixtureModelConfig(process.env.OPENAI_BASE_URL!,imageKey.id);
   config.providers.push({id:"fixture-video-provider",name:"Fixture video supplier",protocol,baseUrl:process.env.VIDEO_FIXTURE_SUPPLIER_ORIGIN!+`/protocol/${protocol}`+(protocol==="ark"?"/api/v3":""),credentialRef:videoKey.id,enabled:true,timeoutMs:120000,maxConcurrent:4});
   config.upstreamModels.push({id:"fixture-video-upstream",providerId:"fixture-video-provider",model:"wire-video",label:"Fixture upstream",modality:"video",enabled:true,
-    capabilities:{verified:true,generate:true,edit:true,vision:false,transparent:false,preserveIdentity:false,textAccuracy:false,qualityRank:3,qualities:[],nativeResolutions:[],maxReferenceImages:30,expectedLatencyMs:0,video:CAP_RICH},parameterMap:{videoProfile:profile}});
+    capabilities:{verified:true,generate:true,edit:true,vision:false,transparent:false,preserveIdentity:false,textAccuracy:false,qualityRank:3,qualities:[],nativeResolutions:[],maxReferenceImages:30,expectedLatencyMs:0,video:definition},parameterMap:{videoProfile:profile}});
   config.publicModels.push({id:"video-a",label:"Fixture video",modality:"video",enabled:true,visible:true,target:{type:"upstream",id:"fixture-video-upstream"}});
   config.publicModels.push({id:"disabled-model",label:"Disabled fixture",modality:"video",enabled:false,visible:true,target:{type:"upstream",id:"fixture-video-upstream"}});
   config.bindings["video.generate"]="video-a";

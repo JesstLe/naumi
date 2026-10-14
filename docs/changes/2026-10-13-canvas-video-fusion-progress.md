@@ -1,5 +1,11 @@
 # 画布视频完整融合进度
 
+最新集中补证：51组合/41原生profile已取得真实App→Worker→原生请求→完整产物/哈希/私有权限/幂等结算及各profile重启证据，应用汇总PASS。修复profile签名图片被旧读取器拒绝、providerOptions朗读text未参与口型校验、明确首尾音频能力不能表达三处实际缺口；未知/人工禁用能力仍拒绝。11561受影响3profile/6组合exit0，契约、配置冻结/旧digest、TypeScript通过。34项最终审核仍未闭合；完整候选、回滚、103发布尚未执行，付费视频消费0，真实质量未测。详见2026-10-14-canvas-video-coverage-audit模块。
+
+固定Toonflow实操增加单图片尾帧、双图片首尾/交换、真实图片/视频/音频连接与拖动排序、刷新和独立工作区身份核对；完整原提示词及原视频SHA保持。comparison V02/V03/V04仍为部分观察，文字映射/数量边界/其他上游操作未冒充通过。最新origin/main 7126423的公开页面管理员探测修复待本批整合，其他站点未连接、没有占发布锁。
+
+以下保留各阶段历史记录，以顶部最新状态及具体模块证据为准。
+
 剧本正式资产链已补齐并集中PASS（7089 exit0）：完整原稿/逐字连续片段、原稿SHA及角色、可编辑镜头正文、参数不被工具改写、重放不覆盖用户编辑、拒绝分支无写入/费用；真实Ark三片段及原始两格拼图reference，KIE结构化multi_prompt/工作流冻结保留画面说明和对白；Chrome新文字事件/刷新、原图不遮挡及6节点实际范围通过。证据script-ce0e7019/script-multishot-096de602/agent-sse-beb5062a，详见script-assets模块。最新main f673ec0仅文档待整合。95b Image gateway终态failure在Billing admin browser acceptance，日志EOF、annotations PAT403，不能称整条CI通过；完整C/D/34项及103发布仍未完成。
 
 固定上游实操补证：IC v0.8.1及TF ae9e5f均在独立loopback启动并实际操作。TF原创4秒视频播放、音轨提取、1—3秒裁剪、尾帧、音视频分离及刷新恢复已执行，FFprobe/原SHA核对；IC同素材播放/放大及摄影开关启用已观察。comparison.json逐项记录V01—V24，明确部分观察/尚未实操，不当完整通过矩阵；Task14仍进行中。95b43c5已普通合入主线，Docker38508694578 success；Image gateway计费及模型执行已pass但整条仍待终态。完整C/D/34项和103发布保持未完成，详见demo-comparison。
