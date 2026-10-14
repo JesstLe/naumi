@@ -37,7 +37,7 @@ async function handleObservedPost(req: Request) {
     });
     if (item.id !== id) await deleteImageByUrl(url);
     return NextResponse.json({ item });
-  } catch(e) { if (url) await deleteImageByUrl(url); return competitorError(e); }
+  } catch(e) { if (url) await deleteImageByUrl(url).catch(() => { console.warn("STORAGE_CLEANUP_PENDING operation=competitor-import"); }); return competitorError(e); }
 }
 
 export async function POST(req: Request) {

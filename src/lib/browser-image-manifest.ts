@@ -68,7 +68,7 @@ export async function imageCacheManifest(request:Request,publicOnly:boolean){
       if(!contentType || !/^image\/(png|jpeg|webp|avif|gif)$/.test(contentType))continue;
       let version=asset?.sha256,bytes=Number(asset?.bytes);
       let fetchUrl=source;
-      if(asset?.remote_ready && storageDriver!=='local') { if(remoteMediaAccess==='redirect') fetchUrl=await presignStoredObject('GET',resolved,300); }
+      if(asset?.remote_ready && storageDriver!=='local') { if(remoteMediaAccess==='redirect') fetchUrl=await presignStoredObject('GET',resolved,300); else fetchUrl+=(fetchUrl.includes('?')?'&':'?')+'cacheVersion='+encodeURIComponent(version!); }
       else {
         const base=path.resolve(MEDIA_DIR),full=path.resolve(base,resolved);
         if(!full.startsWith(base+path.sep))continue;

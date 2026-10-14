@@ -36,3 +36,10 @@
 - 环境准备问题：共享node_modules是Next14/React18，首次类型与React-server导入失败，已删除仅本任务junction并按本任务lock npm ci安装Next15.5.27/React19.3，再次tsc exit0；第一次Chromium默认1243不存在，改为既有1217实际运行通过。不修改共享依赖。
 - 待完成：最终配置与协议集中复测、固定构建、独立基线/回滚copy、最新main整合和推送。没有生产连接或发布。
 - 本模块完成1/3，开工SHA355c428；最终整合时刷新main后计数归零。
+
+## 协作审查补齐（模块一后续）
+对端审查指出remote_ready在配置切local时的SHA/local版本冲突及deleteImageByUrl抛错的fire-and-forget回归，已修复并新增隔离DB配置回退测试：保留remote_ready=true的原图/thumbnail/preview三项清单→GET200通过。代理清单附SHA cacheVersion；新版200/旧版409和断网下载文件名通过。db删除、工作流/竞品导入回滚明确catch并记录无秘密固定pending日志，底层未知异常仍保留。
+
+任务分支已push d3876a9并合origin/main28c646e（整合SHA4f55b48）；main尚未合入本任务。首次本任务build exit0、编译/88页通过，但父checkout与独立依赖导致ESLint插件冲突告警，不能称Lint通过。后续修复仍需重新最终构建。
+
+独立rollback-copy355c428已应用任务补丁后执行ROLLBACK.sh，输出ROLLBACK_PATCH=PASS、git diff exit0；最初bash路径错误导致回滚未执行，已更正为D:/DEV/Git/bin/bash.exe并实际完成，不用此前普通读取成功冒充代码恢复。

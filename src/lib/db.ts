@@ -3349,7 +3349,7 @@ export async function deleteArtwork(id: string): Promise<boolean> {
     if ((used.rowCount ?? 0) === 0) {
       // Fire-and-forget; failure isn't critical and shouldn't block the response.
       const { deleteImageByUrl } = await import("./storage");
-      void deleteImageByUrl(imageUrl);
+      void deleteImageByUrl(imageUrl).catch(() => { console.warn("STORAGE_CLEANUP_PENDING operation=delete-template-media"); });
     }
   }
   return true;

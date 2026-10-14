@@ -53,7 +53,7 @@ export async function GET(
     return new Response("Bad request", { status: 400 });
   }
 
-  let rel = segs.join("/"),registeredContentType:string|undefined,remoteVersion:string|undefined,remoteFailure=false,remoteReadable=false;
+  let rel = segs.join("/"),registeredContentType:string|undefined,remoteVersion:string|undefined,remoteFailure=false,remoteReadable=false,remoteMissing=false;
   if (privateMedia) {
     try {
       const owner=await authenticatedEmail(request);
@@ -68,7 +68,7 @@ export async function GET(
       }
       registeredContentType=asset?.content_type;
       remoteReadable=!!asset?.remote_ready;
-      remoteVersion=asset?.remote_ready ? asset.sha256 : undefined;
+      remoteVersion=storageDriver!=="local"&&asset?.remote_ready ? asset.sha256 : undefined;
       const requestedVersion=new URL(request.url).searchParams.get("cacheVersion");
       if(remoteVersion&&requestedVersion&&requestedVersion!==remoteVersion)return new Response("Media changed",{status:409,headers:{"cache-control":"no-store"}});
       // Keep manifest URLs on the authenticated App origin so their relative
@@ -83,7 +83,7 @@ export async function GET(
   if (storageDriver !== "local" && (!privateMedia || remoteMediaAccess === "proxy" && remoteReadable)) {
     try {
       const upstream = await fetchStoredObject(rel, request.headers.get("range") || "");
-      if (privateMedia && upstream.status === 404) throw new Error("remote missing; try mirror");
+      if (privateMedia && upstream.status === 404) { remoteMissing=true;throw new Error("remote missing; try mirror"); }
       if (privateMedia && !upstream.ok && upstream.status !== 416) return new Response("Storage unavailable", { status: 503, headers: {"cache-control":"no-store"} });
       const headers = new Headers();
       for (const name of [
@@ -111,7 +111,7 @@ export async function GET(
       });
     } catch {
       if (!privateMedia) return new Response("Storage unavailable", { status: 503 });
-      remoteFailure=true;
+      remoteFailure=!remoteMissing;
       // A private local mirror remains usable during a NAS outage.
     }
   }
@@ -133,6 +133,7 @@ export async function GET(
       "cache-control": privateMedia ? "private, max-age=300" : "public, max-age=31536000, immutable",
       ...(privateMedia?{"vary":"Cookie, Authorization","x-content-type-options":"nosniff"}:{}),
       "accept-ranges": "bytes",
+      ...(new URL(request.url).searchParams.get('download') ? {"content-disposition":`attachment; filename="${new URL(request.url).searchParams.get('download')!.replace(/[^\w.\-]/g,'_').slice(0,160)}"`,"cache-control":"private, no-store"} : {}),
     };
     const range = request.headers.get("range");
     if (range) {
