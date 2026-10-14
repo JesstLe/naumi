@@ -231,7 +231,7 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 
 建立专用naumi-canvas-perf-db-persistent-20261014和naumi_canvas_perf_local_pgdata_20261014卷，只绑定127.0.0.1:15513；采用旧PG同Image ID。从已保存的admin/real-canvas-sample.json及workflow-manifests.json重建baseline/candidate两个隔离测试库，不读写生产、不复制原生密码/余额、不启动Worker或供应商调用。普通固定1476容器维持同CID、Image ID和全部挂载，恢复4330服务；诊断profile及旧共享PG保持停止。
 
-原种子入口将文字updatedAt改为当前时间，且对creationProvenance做了规范化。精确API比对发现差异后，在这两个隔离库中从原样本补回全部290作品的creationProvenance和56文字节点的updatedAt。最终全部作品/文字字段、项目名、154节点设置及4工作流manifest与原样本完全一致，不以忽略差异的方式通过。另建仅用于鉴权的foreign测试用户，无素材，确认其自身account200/作品0后再验证跨账号读取：private原图403、manifest200但该素材descriptor为null；匿名两者401。
+原种子入口将文字updatedAt改为当前时间，且对creationProvenance做了规范化。精确API比对发现差异后，在这两个隔离库中从原样本补回全部290作品的creationProvenance和56文字节点的updatedAt。最终全部作品/文字字段、项目名、154节点设置及4工作流manifest与原样本完全一致，不以忽略差异的方式通过。另建仅用于鉴权的foreign测试用户，无素材，确认其自身account200/作品0后再验证跨账号读取：private原图404、manifest200但该素材descriptor为null；匿名两者401。
 
 普通PROBE0实际版本1476cf26a1938791d9d8969c5b26c1650c9bde9e / 1791966536，DB健康；11项API200并校验内容，目标tree:art-1789961451626-317854对应154图片+48文字+11分组=213节点数据、12装饰。153份本地原图（121427388字节）逐份与保存文件字节匹配；3个manifest批次均有授权描述。Worker drain secret-only200/匿名401，activeFences0。HTML200且无诊断输出标记只作为HTTP/数据验收，不代替浏览器UI验收。
 
@@ -244,3 +244,12 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 本轮fetch后origin/main更新到dab963b，包含同事视频生成回执/重试/余额刷新及GitHub镜像流程等业务更新，尚未合入当前固定1476源码包；下一性能模块构建/发布前须先普通合并并集中验证受影响模块，禁止发布旧候选覆盖同事。共享checkout未修改。模块23为验收环境修复，不另计产品功能迭代，功能计数仍1/3，公开发布0。
 
 本轮证据位于E:/Workspace/naumi/output/canvas-performance-70-20261014：module23-local-recovery.json、module23-local-api-verification.json、module23-persistence-rollback-verification.json、module23-source-{baseline,modified,rollback}.json及独立两份测试库dump。下一步原生浏览器普通PROBE0验收、进一步定位实际pan瓶颈、最新main整合、同控制直连R2对照及完整发布连续性仍待完成。
+
+
+## 模块24：继续合入最新main并集中验证（2026-10-14）
+
+在恢复本地验收后继续fetch并普通合入origin/main dab963b，无冲突；合并提交911d875，保留本任务hover/rAF、媒体内容复用、Worker/Agent连续性交接，同时纳入同事视频生成回执/引用重试/视频入口恢复、积分余额并发刷新和GitHub镜像产物来源流程。仅操作本任务独立worktree，不切换共享checkout，不合并本任务到main，不取得103锁。
+
+合并后缓存pipeline、hover、原层级保护、可见性、视频poll快照与参数contract、GitHub镜像来源9项测试、完整TypeScript、diff集中通过。额外专用canvas_perf_wallet_module24_20261014数据库运行quote缺失/执行质量/重试键/实际并发balance-refresh4组；真实账号锁等待后100→99的新快照和镜像一致，供应商调用0，结束删除该专用数据库，未修改两份画布测试库。证据module24-merged-tests.json和module24-wallet-tests.json。
+
+下一固定构建和事务包须以这个最新main为基线，不再把module23的1476包当最新候选。当前本地4330仍1476实际运行；源码已合入但未构建的新main不冒充已运行或已上线。原生浏览器未提供新工具，本轮仍无新的UI/性能达标证据。module23完整持久化/备份独立恢复已通过；外国测试用户实际素材响应为404（不暴露存在性），不是403，原报告文字已修正。
