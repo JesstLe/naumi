@@ -40,7 +40,13 @@ async function main(){
     const auditCount=(await pool.query('SELECT count(*)::int AS n FROM app_fleet_audit')).rows[0].n;
     assert.equal((await releases.recordReleaseResult(enterprise.id,blocked)).replayed,true);
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM app_fleet_audit')).rows[0].n,auditCount);
-    console.log('FLEET_RELEASE_DISPATCH=PASS REAL_HTTP=1 ED25519_SCOPE=1 RELAY_NO_ROOT=1 LEASE_ONCE=1 LOST_POLL_RETRY=1 LOST_ACK_RETRY=1 RECEIPT_ONCE=1 BLOCKED_ACK_ONCE=1 PRIVATE_KEY_FILE=1 EXPIRED_UNKNOWN_BLOCKED=1 DEFAULT_OFF=1 AUTO_DEPLOY=0 PRODUCTION_WRITES=0');
+    const laterId=randomUUID();await pool.query('INSERT INTO app_fleet_release_plans(id,instance_id,release_id,local_day,base_source,base_version) VALUES($1,$2,$3,$4,$5,$6)',[laterId,enterprise.id,registered.id,'2026-10-16',baseSource,'1']);
+    assert.equal(await releases.leaseRelease(enterprise.id),null);assert.equal((await pool.query('SELECT state FROM app_fleet_release_plans WHERE id=$1',[laterId])).rows[0].state,'planned');
+    const night=new Date('2026-10-17T12:00:00Z');await pool.query('UPDATE app_fleet_instances SET last_seen=$2 WHERE id=$1',[mainSite.id,night]);assert.equal((await releases.planNightlyReleases(night)).created,0);
+    // Recover only the original authentic lease's actual receipt; never retry the unknown deployment.
+    await releases.recordReleaseResult(enterprise.id,{planId:pendingId,leaseId:pendingJob.leaseId,state:'failed',code:'CHECK_FAILED'});
+    await pool.query('UPDATE app_fleet_instances SET last_seen=now() WHERE id=$1',[mainSite.id]);assert.ok(await releases.leaseRelease(enterprise.id));
+    console.log('FLEET_RELEASE_DISPATCH=PASS REAL_HTTP=1 ED25519_SCOPE=1 RELAY_NO_ROOT=1 LEASE_ONCE=1 LOST_POLL_RETRY=1 LOST_ACK_RETRY=1 RECEIPT_ONCE=1 BLOCKED_ACK_ONCE=1 PRIVATE_KEY_FILE=1 EXPIRED_UNKNOWN_BLOCKED=1 NEXT_NIGHT_UNKNOWN_BLOCKED=1 AUTHENTIC_RECEIPT_RESOLVES=1 DEFAULT_OFF=1 AUTO_DEPLOY=0 PRODUCTION_WRITES=0');
   }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await pool.end();await rm(dir,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

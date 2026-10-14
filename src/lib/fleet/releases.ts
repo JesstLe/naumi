@@ -57,6 +57,7 @@ export async function planNightlyReleases(now=new Date()){
     const policies=(await tx.query('SELECT p.*,i.status,i.enabled AS target_enabled FROM app_fleet_release_policy p JOIN app_fleet_instances i ON i.id=p.instance_id WHERE p.enabled ORDER BY p.instance_id')).rows;
     for(const policy of policies){
       if(!policy.target_enabled){skipped++;continue;}
+      if((await tx.query("SELECT 1 FROM app_fleet_release_plans WHERE instance_id=$1 AND (state='preparing' OR state='blocked' AND lease_id IS NOT NULL) LIMIT 1",[policy.instance_id])).rowCount){skipped++;continue;}
       const source=(await tx.query('SELECT * FROM app_fleet_instances WHERE id=$1',[policy.source_instance_id])).rows[0];
       if(!source?.enabled||!source.last_seen||now.getTime()-new Date(source.last_seen).getTime()>120000||now.getTime()<new Date(source.last_seen).getTime()-120000){skipped++;continue;}
       const release=(await tx.query("SELECT * FROM app_fleet_releases WHERE source_instance_id=$1 AND manifest->>'sourceCommit'=$2 AND manifest->>'buildVersion'=$3 ORDER BY created_at DESC,id LIMIT 1",[policy.source_instance_id,source.status.source,String(source.status.version)])).rows[0];
@@ -86,6 +87,7 @@ export async function leaseRelease(instanceId:string,expectedTokenHash?:string){
   if(!signingKey)throw new FleetError('发布签名密钥未配置',503);
   await ensureFleetReleaseSchema();const tx=await getPool().connect();
   try{await tx.query('BEGIN');const target=(await tx.query('SELECT * FROM app_fleet_instances WHERE id=$1 FOR UPDATE',[instanceId])).rows[0];if(!target?.enabled||target.kind!=='enterprise'||expectedTokenHash&&target.token_hash!==expectedTokenHash){await tx.query('COMMIT');return null;}
+    if((await tx.query("SELECT 1 FROM app_fleet_release_plans WHERE instance_id=$1 AND state='blocked' AND lease_id IS NOT NULL LIMIT 1",[instanceId])).rowCount){await tx.query('COMMIT');return null;}
     const row=(await tx.query("SELECT p.*,r.manifest,r.source_instance_id FROM app_fleet_release_plans p JOIN app_fleet_releases r ON r.id=p.release_id WHERE p.instance_id=$1 AND p.state IN ('planned','preparing') ORDER BY p.created_at LIMIT 1 FOR UPDATE OF p",[instanceId])).rows[0];if(!row){await tx.query('COMMIT');return null;}
     if(row.state==='preparing'){if(row.leased_until&&new Date(row.leased_until).getTime()<Date.now()){await tx.query("UPDATE app_fleet_release_plans SET state='blocked',checks=$2,version=version+1 WHERE id=$1",[row.id,JSON.stringify({code:'UNKNOWN'})]);await tx.query('COMMIT');return null;}await tx.query('COMMIT');return row.checks?.envelope||null;}
     const source=(await tx.query('SELECT * FROM app_fleet_instances WHERE id=$1',[row.source_instance_id])).rows[0],policy=(await tx.query('SELECT enabled FROM app_fleet_release_policy WHERE instance_id=$1',[instanceId])).rows[0];
