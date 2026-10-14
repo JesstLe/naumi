@@ -31,10 +31,11 @@ assert.deepEqual(paints.at(-1), { x: -10, y: -2 }, "existing out-of-bounds geome
 controller.clear();
 const client = readFileSync("src/components/canvas/canvas-client.tsx", "utf8");
 assert.doesNotMatch(client, /setEdgeCut|\[edgeCut/);
-assert.match(client, /CanvasEdgeHoverHint key=\{activeKey/);
+assert.match(client, /CanvasEdgeHoverHint key=\{"edge-hover:"/);
 assert.match(client, /canvasTool === "hand" \|\| ev\.buttons \|\| edge\.selectable === false/);
 assert.match(client, /onEdgeClick[\s\S]*setSelectedEdge\(\{ id: edge\.id/);
 const hint = readFileSync("src/components/canvas/canvas-edge-hover-hint.tsx", "utf8");
 assert.match(hint, /pointer-events-none/); assert.match(hint, /useEffect\(\(\) => \(\) => controller\.clear\(\)/);
 assert.doesNotMatch(hint, /fetch\(|useState\(/);
 console.log("EDGE_HOVER=PASS POINTER1000_FRAME1_LATEST_POINT NO_ROOT_GRAPH_STATE CLEAR_CANCEL_RACE PROJECT_UNMOUNT_CLEAN HAND_BUTTONS_READONLY_GUARDS SELECTION_DELETE_NATIVE NO_MEDIA_WRITE");
+

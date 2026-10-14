@@ -9319,7 +9319,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           )}
 
           {/* 剪刀:鼠标在连线上时跟随光标(pointer-events-none,点击穿透到线 → onEdgeClick 剪断) */}
-          {!browsing && !readOnly && <CanvasEdgeHoverHint key={activeKey || "__new__"} ref={edgeHoverHintRef} />}
+          {!browsing && !readOnly && <CanvasEdgeHoverHint key={"edge-hover:" + (activeKey || "__new__")} ref={edgeHoverHintRef} />}
 
           {/* ── 进入项目后的全屏悬浮挂件(对齐原型:左上项目/右上挂件/底部工具条) ── */}
           {!browsing && (
@@ -12217,3 +12217,4 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     </PendContext.Provider>
   );
 }
+
