@@ -208,3 +208,11 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 用户要求“完成本轮先放锁，让版本更新”。立即停止观察标签背景画布请求，隔离Nginx syntax检查后原网关逐字节恢复SHA4e26b1017a6d449ca2b69cc93547470204692d0ed4ef6176770c5a7f0c38c4bf、平滑reload，13038停止、临时native读session删除。公网/api/version仍b243/1791913676，DBhealthy，旧App/Worker c05运行且未paused。原holderPID1127091实际退出，两把own flocks释放，lslocks当时无部署锁。未恢复数据库，没有性能版正式发布。证据output/canvas-performance-70-20261014/module21-final-observer-cleanup.json及module21-LOCK_RELEASED_VERIFIED.txt已回读。
 
 新一轮若继续：不复用该终态holder或baseline；先刷新同事最新发布/网关/来源，再新双锁与备份。2f三个旁路仍保留，下一版本若改变backend协议需更新候选，不能旧候选覆盖同事。全范围目标active，当前用户只要求本轮收尾释放锁，不是暂停整个目标。业务功能迭代计数仍0/3，成功公开发布计数0。四件源码事务产物仍93e基线37历史，不声称最新2f重新包装或完整上线回滚；本轮实际网关回滚另有上述证据。
+
+## 模块22：本地连线悬停提示与受控画布解耦（集中代码验收通过，浏览器性能待验证）
+
+按用户要求给版本发布让锁，本轮103只读盘点，未再次持锁或修改线上。开工fetch第一次TLS握手失败；第二次成功，普通合并origin/main95b43c5至本任务2fe557e，保留同事混合画布恢复/视频摆放/员工工作台跳转及媒体所有权修复。共享checkout未切换。
+
+代码定位：原连线mouse move每次都setEdgeCut，更新CanvasClient根状态，仅为移动剪刀提示却让完整受控画布重新参与render。新增CanvasEdgeHoverHint独立装饰层与帧合并控制器，1000次move只保留末点并计划1次DOM写；离开/项目切换/卸载取消未完成帧，代际校验防止已取消回调复活。原图文/视频/连线、命中区、选中、Delete剪断、手工具/按键/只读判定不变，媒体/服务端坐标/积分不写。现有层级不因本模块提升而改动，原hover仍走原z-order保护。
+
+集中verify-canvas-edge-hover、原render-layer-order和完整TypeScript通过。下一步固定两份同探针Linux构建、同一隔离admin213/154/191项目真实浏览器悬停/平移/选择/剪断回归；不得用控制器1000→1调度次数冒充用户耗时70%，不得把本地结果称103上线。其他模块的直连对照和完整发布连续性/回滚仍未结束。
