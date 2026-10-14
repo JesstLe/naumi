@@ -513,7 +513,7 @@ function render(){
       <div class="body">
         <div class="name" title="${esc(it.ref_name)}">${esc(it.ref_name)}</div>
         <div class="meta cardMeta">${cardMetaHtml(it)}</div>
-        <button class="cardGenerate" onclick="startSingle(${i})">生成此图</button>
+        <button class="cardGenerate" onclick="startSingle(${i})">${it.versions&&it.versions.length?"重新生成":"生成此图"}</button>
         <div class="cardActions">
           ${cardActionsHtml(it,i)}
         </div>
@@ -532,6 +532,8 @@ function patchCards(nextItems){
     const card=document.querySelector(`.card[data-ref="${CSS.escape(it.ref_path)}"]`);
     if(!card)return;
     card.dataset.index=String(i);
+    const generateButton=card.querySelector(".cardGenerate");
+    if(generateButton)generateButton.textContent=it.versions&&it.versions.length?"重新生成":"生成此图";
     const meta=card.querySelector(".cardMeta");
     if(meta)meta.innerHTML=cardMetaHtml(it);
     const key=versionsKey(it);
@@ -713,15 +715,21 @@ async function startSingle(i){
   if(!payload){alert("没有找到这张卡片");return;}
   await submitWorkbenchJobs([payload]);
 }
+let workbenchSubmitting=false;
 async function submitWorkbenchJobs(selected){
+  if(workbenchSubmitting)return;
+  workbenchSubmitting=true;
+  const requestId=crypto.randomUUID();
+  try{
   await saveSettings();
   const project=currentProjectSnapshot("运行中");
   if(project) upsertProject(project);
-  const r=await fetch("/api/workbench/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:selected,workbench_root:currentRoot(),config:workbenchRequestConfig()})});
+  const r=await fetch("/api/workbench/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:selected,workbench_root:currentRoot(),config:workbenchRequestConfig(),request_id:requestId})});
   const t=await r.text();
   if(!r.ok){alert(t);return;}
   alert(t);
   await refreshLoop();
+  }finally{workbenchSubmitting=false;}
 }
 async function fetchJsonChecked(url){
   const response=await fetch(url,{cache:"no-store"});

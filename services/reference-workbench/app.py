@@ -7,6 +7,7 @@ import io
 import ipaddress
 import json
 import os
+import math
 from pathlib import Path, PurePosixPath
 import secrets
 import socket
@@ -20,7 +21,7 @@ import httpx
 from cryptography.fernet import Fernet
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
-from PIL import Image
+from PIL import Image, ImageOps
 
 HERE = Path(__file__).parent
 DATA = Path(os.environ.get('WORKBENCH_DATA', HERE / 'data')).resolve()
@@ -39,6 +40,44 @@ LABELS = {'main': '主图', 'detail': '详情图', 'sku': 'SKU'}
 CLIENT = None
 WAKE = asyncio.Event()
 LOGIN_ATTEMPTS = {}
+SLOT = os.environ.get('WORKBENCH_SLOT', 'local')
+WAITING_STATE = 'waiting_geometry_v1'
+
+
+def image_geometry(path):
+    with Image.open(path) as image:
+        width, height = ImageOps.exif_transpose(image).size
+    return {'width': width, 'height': height}
+
+
+def geometry_plan(reference, resolution):
+    """最终画布精确等于参考图；上游请求按分辨率等比放大，不请求方图。"""
+    width, height = reference['width'], reference['height']
+    long_side = {'1k': 1024, '2k': 2048, '4k': 4096}[resolution]
+    # 图像API尺寸按16像素量化；提示词补充原始比例，回传严格验证。
+    factor = long_side / max(width, height)
+    upstream_width = max(64, round(width * factor / 16) * 16)
+    upstream_height = max(64, round(height * factor / 16) * 16)
+    divisor = math.gcd(width, height)
+    return {'width': width, 'height': height, 'ratio': f'{width//divisor}:{height//divisor}', 'size': f'{upstream_width}x{upstream_height}', 'policy': 'reference-exact-v1'}
+
+
+def preserve_geometry(image, geometry):
+    """等比缩放并居中放入参考画布，绝不把长方图拉成方图；大比例偏差拒收。"""
+    width, height = geometry['width'], geometry['height']
+    natural = ImageOps.exif_transpose(image).convert('RGBA')
+    expected = width / height
+    actual = natural.width / natural.height
+    if abs(actual / expected - 1) > .035:
+        raise HTTPException(502, f'上游返回比例与参考图不一致（{natural.width}×{natural.height}，参考{width}×{height}）；已保留返回图待核对，未拉伸或自动重发')
+    if natural.size == (width, height):
+        return natural
+    resized = ImageOps.contain(natural, (width, height), Image.Resampling.LANCZOS)
+    if resized.size == (width, height):
+        return resized
+    canvas = Image.new('RGBA', (width, height), (255, 255, 255, 255))
+    canvas.alpha_composite(resized, ((width-resized.width)//2, (height-resized.height)//2))
+    return canvas
 
 
 def db():
@@ -62,6 +101,7 @@ def initialize():
         CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, user_id TEXT, name TEXT, root TEXT, created REAL);
         CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, user_id TEXT, project_id TEXT, ref TEXT, kind TEXT, operation TEXT, prompt TEXT, config TEXT, channel TEXT, state TEXT, error TEXT DEFAULT '', created REAL, updated REAL, result TEXT DEFAULT '', source TEXT DEFAULT '', annotated TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+        CREATE TABLE IF NOT EXISTS worker_owners (task_id TEXT PRIMARY KEY,slot TEXT,pid INTEGER,claimed REAL);
         ''')
         if not c.execute('SELECT 1 FROM users').fetchone():
             name, password = os.environ.get('WORKBENCH_ADMIN_USER'), os.environ.get('WORKBENCH_ADMIN_PASSWORD')
@@ -156,15 +196,18 @@ def project_items(uid, root, config):
         for t in reversed(generations):
             if not t['result']:
                 continue
-            versions.append({'path': t['result'], 'url': image_url(t['result']), 'mtime': t['updated'], 'label': 'V' + str(len(versions)+1), 'meta': {'kind': t['operation'], 'prompt': t['prompt'], 'status': t['state'], 'source_path': t['source'], 'annotated_path': t['annotated'], 'annotated_url': image_url(t['annotated']) if t['annotated'] else '', 'created_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t['created']))}})
+            versions.append({'path': t['result'], 'url': image_url(t['result']), 'mtime': t['updated'], 'label': 'V' + str(len(versions)+1), 'meta': {'kind': t['operation'], 'prompt': t['prompt'], 'status': t['state'], 'source_path': t['source'], 'annotated_path': t['annotated'], 'annotated_url': image_url(t['annotated']) if t['annotated'] else '', 'created_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t['created'])), 'geometry': json.loads(t['config']).get('geometry')}})
         current = generations[0] if generations else None
         state = current['state'] if current else 'idle'
-        if infer and infer['state'] in {'waiting', 'inferring'}:
+        if state == WAITING_STATE:
+            state = 'waiting'
+        if infer and infer['state'] in {'waiting', WAITING_STATE, 'inferring'}:
             state = 'inferring'
         prompt = config.get('prompt', DEFAULT_PROMPT)
         if infer and infer['state'] == 'done':
             prompt = infer['result']
-        result.append({'ref_path': entry['path'], 'ref_name': entry['relative'], 'ref_url': image_url(entry['path']), 'product': project['name'], 'product_images': [x['relative'] for x in products], 'product_urls': [image_url(x['path']) for x in products], 'product_url': image_url(products[0]['path']), 'product_image': products[0]['relative'], 'task_label': LABELS[kind], 'kind': kind, 'size': config.get('resolution', '2k'), 'status': state, 'error': current['error'] if current else '', 'prompt': prompt, 'versions': versions, 'infer': {'status': 'inferring' if infer and infer['state'] in {'waiting', 'inferring'} else (infer['state'] if infer else 'idle'), 'prompt': infer['result'] if infer and infer['state'] == 'done' else '', 'error': infer['error'] if infer else ''}})
+        dimensions = image_geometry(DATA / entry['path'])
+        result.append({'ref_path': entry['path'], 'ref_name': entry['relative'], 'ref_url': image_url(entry['path']), 'product': project['name'], 'product_images': [x['relative'] for x in products], 'product_urls': [image_url(x['path']) for x in products], 'product_url': image_url(products[0]['path']), 'product_image': products[0]['relative'], 'task_label': LABELS[kind], 'kind': kind, 'size': f"{dimensions['width']}×{dimensions['height']}", 'dimensions': dimensions, 'status': state, 'error': current['error'] if current else '', 'prompt': prompt, 'versions': versions, 'infer': {'status': 'inferring' if infer and infer['state'] in {'waiting', WAITING_STATE, 'inferring'} else (infer['state'] if infer else 'idle'), 'prompt': infer['result'] if infer and infer['state'] == 'done' else '', 'error': infer['error'] if infer else ''}})
     return result, products
 
 
@@ -247,7 +290,9 @@ async def execute_task(t):
                 with Image.open(io.BytesIO(raw)) as im:
                     mime = Image.MIME[im.format]
                 files.append(('image[]', (f'image-{i}' + p.suffix, raw, mime)))
-            params = {'model': ch['image_model'], 'prompt': t['prompt'], 'n': '1', 'response_format': 'b64_json', 'size': {'1k': '1024x1024', '2k': '2048x2048', '4k': '4096x4096'}[cfg['resolution']], 'quality': cfg['quality']}
+            geometry = cfg.get('geometry') or geometry_plan(image_geometry(DATA / t['ref']), cfg['resolution'])
+            shape_prompt = f"\n最终画布遵循参考图比例{geometry['ratio']}（参考宽{geometry['width']}像素，高{geometry['height']}像素）。完整保留参考图纵向/横向版式与产品比例，不压缩、不拉伸、不强制方形。"
+            params = {'model': ch['image_model'], 'prompt': t['prompt'] + shape_prompt, 'n': '1', 'response_format': 'b64_json', 'size': geometry['size'], 'quality': cfg['quality']}
             response = await upstream(ch, '/images/edits', files=files, data=params, timeout=cfg['timeout'])
             rows = response.json().get('data', [])
             if not rows:
@@ -278,7 +323,9 @@ async def execute_task(t):
             output = DATA / project['root'] / 'results' / (t['id'] + '.png')
             output.parent.mkdir(parents=True, exist_ok=True)
             with Image.open(io.BytesIO(raw)) as im:
-                im.save(output, 'PNG')
+                # 保存原始供应商返回证据；异常比例不进入可交付版本。
+                im.save(output.with_name('received-' + output.name), 'PNG')
+                preserve_geometry(im, geometry).save(output, 'PNG')
             result = output.relative_to(DATA).as_posix()
         with db() as c:
             c.execute("UPDATE tasks SET state='done',result=?,updated=? WHERE id=?", (result, time.time(), t['id']))
@@ -292,12 +339,16 @@ async def execute_task(t):
 
 async def worker():
     while True:
+        if (DATA / ('drain-' + SLOT)).exists():
+            await asyncio.sleep(1)
+            continue
         with db() as c:
             c.execute('BEGIN IMMEDIATE')
             active = c.execute("SELECT count(*) FROM tasks WHERE state IN ('running','editing','inferring')").fetchone()[0]
-            row = c.execute("SELECT * FROM tasks WHERE state='waiting' ORDER BY created LIMIT 1").fetchone() if active < 2 else None
+            row = c.execute('SELECT * FROM tasks WHERE state=? ORDER BY created LIMIT 1', (WAITING_STATE,)).fetchone() if active < 2 else None
             if row:
-                c.execute("UPDATE tasks SET state='running' WHERE id=? AND state='waiting'", (row['id'],))
+                c.execute("UPDATE tasks SET state='running' WHERE id=? AND state=?", (row['id'], WAITING_STATE))
+                c.execute('INSERT OR REPLACE INTO worker_owners VALUES (?,?,?,?)', (row['id'], SLOT, os.getpid(), time.time()))
         if row:
             await execute_task(dict(row))
         else:
@@ -478,6 +529,11 @@ async def enqueue(request, operation):
     u = user(request)
     body = await request.json()
     cfg = validate_config(body.get('config', {}))
+    request_id = body.get('request_id')
+    if request_id is not None:
+        if not isinstance(request_id, str) or not 8 <= len(request_id) <= 128:
+            raise HTTPException(400, '请求标识无效')
+        cfg['request_id'] = request_id
     root = body.get('workbench_root', '')
     rows, _ = project_items(u['id'], root, cfg)
     index = {x['ref_path']: x for x in rows}
@@ -495,11 +551,11 @@ async def enqueue(request, operation):
             if ref not in index:
                 raise HTTPException(400, '选择的参考图不属于当前产品文件夹')
             item = index[ref]
-            pending = c.execute("SELECT id FROM tasks WHERE user_id=? AND ref=? AND state IN ('waiting','running','editing','inferring','maybe_submitted')", (u['id'], ref)).fetchone()
-            if pending:
+            if request_id and c.execute("SELECT 1 FROM tasks WHERE user_id=? AND ref=? AND json_extract(config,'$.request_id')=?", (u['id'], ref, request_id)).fetchone():
                 skipped += 1
                 continue
-            if operation == 'generate' and item['versions'] and cfg.get('force') not in {True, 'true'}:
+            pending = c.execute("SELECT id FROM tasks WHERE user_id=? AND ref=? AND state IN ('waiting','waiting_geometry_v1','running','editing','inferring','maybe_submitted')", (u['id'], ref)).fetchone()
+            if pending:
                 skipped += 1
                 continue
             prompt = str(x.get('prompt') or cfg.get('prompt') or DEFAULT_PROMPT).strip()
@@ -521,7 +577,8 @@ async def enqueue(request, operation):
                 annotated = target.relative_to(DATA).as_posix()
             tid = secrets.token_hex(16)
             now = time.time()
-            c.execute('INSERT INTO tasks (id,user_id,project_id,ref,kind,operation,prompt,config,channel,state,created,updated,source,annotated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (tid, u['id'], root, ref, item['kind'], operation, prompt, json.dumps(cfg, ensure_ascii=False), snapshot, 'waiting', now, now, source, annotated))
+            frozen = cfg | {'geometry': geometry_plan(item['dimensions'], cfg['resolution'])}
+            c.execute('INSERT INTO tasks (id,user_id,project_id,ref,kind,operation,prompt,config,channel,state,created,updated,source,annotated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (tid, u['id'], root, ref, item['kind'], operation, prompt, json.dumps(frozen, ensure_ascii=False), snapshot, WAITING_STATE, now, now, source, annotated))
             accepted.append(tid)
     return {'ok': True, 'accepted': len(accepted), 'skipped': skipped, 'task_ids': accepted}
 
@@ -547,6 +604,7 @@ async def status(request: Request):
     u = user(request)
     with db() as c:
         counts = dict(c.execute('SELECT state,count(*) FROM tasks WHERE user_id=? GROUP BY state', (u['id'],)))
+        counts['waiting'] = counts.get('waiting', 0) + counts.get(WAITING_STATE, 0)
         latest = c.execute('SELECT t.*,p.name AS product_name FROM tasks t JOIN projects p ON p.id=t.project_id WHERE t.user_id=? ORDER BY t.updated DESC LIMIT 1', (u['id'],)).fetchone()
         image_counts = dict(c.execute("SELECT state,count(*) FROM tasks WHERE user_id=? AND operation!='infer' GROUP BY state", (u['id'],)))
     running = sum(counts.get(x, 0) for x in ['running', 'editing', 'inferring'])
