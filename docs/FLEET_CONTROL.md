@@ -38,7 +38,7 @@ FLEET_INSTANCE_TOKEN=ONE_TIME_INSTANCE_TOKEN
 - 模型配置模板及企业显式覆盖项，以及按授权查看积分流水/作品历史。
 - 发布执行通道已实现但默认关闭；生产部署仍需本机固定hooks、47 NAS真实验收和正式接入。没有安装生产自动发布timer。
 - 47真实企业环境和103上线验收；本机两库HTTP测试不是47真实E2E。
-- 控制台用户/积分/权限的完整浏览器交互验收。注册/队列/刷新/浅色桌面1440与手机390已通过隔离真实Next验收，业务指令已通过真实HTTP+双DB回归；仍不替代47实机验收。
+- 控制台注册/队列/刷新/授权/策略/受限导航、浅色1440/390布局已通过隔离真实Next验收；用户查询、积分调整、停用/启用、功能权限保存也已由真实浏览器→Next→独立企业连接器→独立DB验收，中央余额未变。仍不替代47实机验收。
 
 ## 实例级运维授权（模块二）
 总管理员在部署管理中为主站已有账号逐实例授予查看、用户状态、积分、功能权限、发布策略；支持有效期、版本CAS和撤销。运维账号只能看授权实例的状态/指令/审计，不能注册实例、轮换密钥、管理授权或登记主站验收版本。企业本机管理员身份并不自动等于103中央总管理员。
@@ -87,12 +87,13 @@ root执行器先核对activeState的SHA、版号、三槽container/image ID和�
 
 ### 验证边界
 
-本机真实HTTP测试覆盖Ed25519、独立实例、丢poll/ack、租约/回执幂等、过期unknown和默认关闭；Linux root合同覆盖验签、路径/锁/NAS/备份/回退/保留配置（Docker和业务hooks模拟）。独立真实Linux Nginx+六HTTP容器覆盖平滑切换/旧在途/旧hash/三flavor回退；它不是Naumi生图或NAS现场验收。生产103/47、正式7个hooks、可信证书/凭据及NAS端到端仍另行验收。
+本机真实HTTP测试覆盖Ed25519、独立实例、丢poll/ack、租约/回执幂等、过期unknown和默认关闭；超过20条已确认历史回执仍可接收新发布。Linux root合同覆盖验签、路径/锁/NAS/备份/回退/保留配置（Docker和业务hooks模拟）。独立真实Linux Nginx+六HTTP容器100次探测错误0，覆盖平滑切换/旧在途/旧hash/三flavor回退；它不是Naumi生图或NAS现场验收。Node24非root固定连接器真实HTTPS+三实际HTTP版本服务验证版本上报与混版unknown，错token/证书/公网HTTP拒绝；不把连接器镜像版本当网站版本。生产103/47、正式7个hooks、可信证书/凭据及NAS端到端仍另行验收。
 
 ## 历史NAS配置定位（2026-10-14）
 
 原会话“Naumi · 画布批量生成与账号管理”确认：受保护且git ignored历史完整env在`E:/Workspace/naumi/output/staging-data-20261008/production.env`，S3必要字段及两密钥非空；只提取S3字段，不整份复制其他生产秘密。历史endpoint `http://172.17.0.1:3900`是旧应用主机内部网关，不是47已可达的NAS地址，旧密钥当前有效性未确认。
 本机隧道/保活脚本在`E:/Workspace/naumi/audit-artifacts/nas-garage-20260930`且仍指旧101，禁止直接执行。NAS端历史路径`.garage/config/garage.toml`、`.garage/secrets.env`、`.gateway/start-tunnel.sh`、`.gateway/tunnel-supervisor.sh`在`/volume1/naumi-media`下；NAS端当前存在性/47隧道尚未远程验证。旧Put/Get/Delete和重启证据见`docs/NAS_GARAGE_GATEWAY_2026-09-30.md`，不替代47现场E2E。
+2026-10-14本任务通过47既有密钥及严格known_hosts只读连接：当前公网/api/version与/desktop/api/version均183dff86a8a8443471e5ae73245cfd414bf6f20d / 1791984787；/enterprise/api/version公开路径404，不能假定三公开路径都存在。:3900无监听，127.0.0.1:3900和172.17.0.1:3900 HTTP均000，NAS→47尚未接通。未更改47服务、数据库、媒体、证书或secret。原NAS会话已收到只读核查结果及受保护配置路径；下一步需要NAS端当前管理连接和47独立隧道配置，不连接旧服务器。
 
 ## 回退
 先停连接器，并关闭 `FLEET_CONTROL_ENABLED`；既有企业业务独立运行。回退应用制品不恢复旧用户库/积分/作品/NAS，新增fleet表只保留审计。已执行的积分不能用源码回滚撤销，应另记明确反向业务操作。轮换密钥须在企业重新配置，旧密钥立即拒绝。

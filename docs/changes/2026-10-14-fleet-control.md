@@ -56,3 +56,12 @@
 - 开工已fetch，origin/main已从690f6e8推进b277224；本模块未提交前保留任务现场，提交后普通整合，不覆盖共享codex/labs-workbench。
 - 待本轮最终构建/UI/Linux固定制品、四件套回滚与合main；103/47现网均未变更、未安装生产timer。正式目标active，模型模板/正式接入仍未完成。
 - 同事最新main已记录47 Naumi公开运行（5fc5efe/1791976273，local媒体，旧工作台保留）；该变化由其独立授权及发布完成，不归本任务功劳。此前本任务“47未开站”的描述仅历史，本任务继续保护已运行47，不把NAS/fleet阶段自动接上生产，也不连接废弃旧机。
+
+### 模块三集中验收与当前交接
+- 业务代码9a1d71d，已普通整合远端86b06ac为2cd4fd4；之后仅修systemd relay写权限和测试/文档，最新main f9ca769已再次普通整合为ef2afe2。最终main整合及推送SHA以本轮Git回执为准；功能同步计数归零，发布计数不变。
+- Next15.5.27固定2cd4fd4 / BUILD_VERSION1791985000生产构建88静态页exit0；受影响类型/ESLint exit0，既有画布/缓存/视频Hook lint警告不隐藏。固定Node24非root镜像naumi-fleet:2cd4fd4，ID sha256:f38e3b31aec82197e0d1603e7f39c32210379a64dde1a952ab25669c5b8c6306，通过真实TLS、错token/不信任证书/公网HTTP拒绝、真实指令与三实际站点版本/混版unknown验收。
+- 真实Next浏览器1440/390注册/凭据关闭/离线队列/刷新/授权/跟随/非root导航通过，无横溢出/pageerror；用户查询、积分调整、停用与启用、功能权限保存的真实浏览器→企业连接器→独立DB通过，中央同邮箱余额未变。截图已打开核验，不伪称生产UI已上线。
+- 修正验收fixture：此前Linux测试企业fixture库不存在导致RETRY_PENDING；新建独立库后通过。业务UI的初始inspect需先建app_fleet_applied，fixture seed补schema后通过。早期失败日志不计通过。首次Git schannel握手失败，使用正常OpenSSL证书验证fetch成功，未关闭TLS验证。
+- Nginx真实Linux六HTTP容器100探测错误0、旧在途/旧静态/三flavor切流及回退通过，任务隔离容器已按label移除。Python root合同的Docker/业务hook模拟边界保留；root所有权/父目录/公钥及hook hash、锁、下一轮端口、持久化回执/中断unknown另有实际合同断言。
+- 已生成baseline690f6e8及独立源码rollback副本；治理BASELINE/MODIFIED/ROLLBACK均exit0，原hash恢复、发布模块新增源码回滚移除、模块二保留，真实工作分支保持改后。制品/完整命令及字面输出在output/fleet-executor，最终重开核验。
+- 本轮47只读实查当前公开UI/desktop版本183dff86/1791984787，enterprise公开version404；3900无监听，两网关probe000。没有发布/改服务/NAS/配置或DB。NAS会话收到配置路径和真实网络缺项，47 NAS/fleet生产接入仍待现场验收；正式目标active，103控制台上线与每天20:00正式调度尚未启用。
