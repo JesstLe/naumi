@@ -19,3 +19,16 @@
 ## 当前进度
 
 8套来源和预览已采集、联系表已打开检查；代码完成。待集中验证来源摘要/Skills完整回归/真实浏览器卡片和素材详情、Linux固定构建、47旁路及公网桌面390px、连续请求蓝绿切流、副本回退与锁释放。输出证据E:/Workspace/naumi/output/naumi47-skills-curation-20261014。
+
+## 最终实机交付
+
+- 固定业务f4b3df127f2fcaf37f9cd866a480f3c6fd4b2358 / version1791989816 / imagec952f4a407e0 / App13055。LinuxNext15.5.27完整生产构建/类型/88页通过，既有lint警告保留。
+- 公网及旁路真实员工逍遥：官方Skills35、实际WebP预览8、源链接/参考素材/详情大图、选择到提示词/取消、1440/390px和企业标签页保持，通过；脚本异常0。八图公网字节与来源优化摘要匹配，总167254字节，lazy本地读取，无热链。
+- 集中来源/资产/改写验证95项、原Skills认证/Postgres116项、企业ACL46项、输入结构20项和当前组件7项均通过。上游模型执行0，不把外部节点图或示例质量说成Naumi逐一付费生图验收。
+- 先旁路13055就绪及浏览器通过，再Nginx平滑reload；60次持续HTTP请求错误0。旧183企业模块/87Dashboard/5fcWorker及参考工作台继续；旧静态资源无覆盖补入新槽，已打开用户资源可用。无DB/schema/账户/积分/私有媒体/配置迁移。
+- MODIFIED_FILE.tar、DIFF_FILE.patch、VERIFICATION.txt、可执行LF ROLLBACK.sh双端重开摘要一致。回退副本恢复原网关ee2e5cbde9b48f29c1a357defa5667ba9330fbf72411e2c0126b209df1a3ae27，公网保持新版；未实际切回旧UI。
+- 三把锁全部正常释放并flock验证FREE；专用18455隧道关闭、隔离测试DB清理。维护计数1(上轮归零后本轮一次)，47磁盘71%/20GiB，未达提前维护门槛；本轮不prune/删除当前或有效回滚镜像。
+- 独立发布worktree保留；最初在旧工作树整理的草稿已保存output/transferred-draft.patch及草稿文件夹后只恢复本任务明确的四个未提交文件，旧工作树干净，没有删除用户数据或其他同事改动。
+- 最新origin/main5bae420的fleet运行期type修复与NAS/relay阶段独立，Skills基础文件只是缺少本分支已有企业/布局功能，非同事覆盖；本轮候选从47真实183派生，不把未验收跨站部署接为此次图片卡片上线。当前功能迭代1/3，模块整合计数未到门槛。
+- 本轮首个内置image_gen调用返回空，没有可交付生成图片；最终采用已核验的原公开工作流实际预览，原图不冒充本站生图。Photoroom404链接排除，Qwen怪物抠图示例不适合电商，最终替换为真实同品套图流程；所有来源/授权/SHA在sources.json。
+- 真实公网截图public-skills-1440.png、public-skills-390.png、public-detail-390.png已打开检查；最终内嵌图public-skills-panel.png从公网截图裁出，待重开交付。8套总览curated-eight-previews.jpg已查看。
