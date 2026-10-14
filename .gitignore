@@ -28,3 +28,6 @@ audit-artifacts/**/rollback-fixture-*/
 
 # Python deployment fixture caches
 __pycache__/
+
+# Generated from the canonical reference UI during predev/prebuild.
+/public/reference-workbench/

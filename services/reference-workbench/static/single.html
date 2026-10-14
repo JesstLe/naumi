@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>单图生成</title>
+<style>
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f4f6f8;color:#1f2328}
+header{height:56px;background:#20242a;color:white;display:flex;align-items:center;padding:0 24px;gap:16px}
+header a{color:#cdd9e5;text-decoration:none}
+main{max-width:1280px;margin:20px auto;padding:0 16px}
+section{background:white;border:1px solid #d8dee4;border-radius:8px;padding:16px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:1fr 1fr 140px 140px 140px 120px;gap:12px;align-items:end}
+label{display:block;font-size:13px;font-weight:700;margin-bottom:6px}
+input,select,textarea{box-sizing:border-box;width:100%;padding:10px;border:1px solid #c9d1d9;border-radius:6px;font:inherit}
+textarea{min-height:150px;resize:vertical}
+button{border:0;border-radius:6px;padding:11px 18px;font-weight:700;cursor:pointer;background:#0969da;color:white}
+button.ghost{background:#eef1f4;color:#24292f}
+.wide{grid-column:1 / -1}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.status{white-space:pre-wrap;background:#f6f8fa;border:1px solid #d8dee4;border-radius:6px;padding:10px;min-height:22px}
+.refs,.results,.taskList{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.tile{border:1px solid #d8dee4;border-radius:8px;background:#fafbfc;overflow:hidden}
+.tile img{width:100%;height:220px;object-fit:contain;background:white;border-bottom:1px solid #d8dee4;cursor:pointer}
+.tile .body{padding:10px;font-size:13px;color:#57606a;word-break:break-all}
+.placeholder{height:220px;display:flex;align-items:center;justify-content:center;text-align:center;color:#57606a;background:#f6f8fa;border:1px dashed #d8dee4;border-radius:8px}
+.error{color:#cf222e}.mini{font-size:12px;color:#57606a;line-height:1.5}
+.task{border:1px solid #d8dee4;border-radius:8px;background:#fff;padding:12px}.task.running{border-color:#0969da}.task.done{border-color:#1a7f37}.task.failed{border-color:#cf222e}
+.badge{display:inline-block;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:700;background:#d8dee4;color:#24292f}.badge.running{background:#fff8c5}.badge.done{background:#dafbe1;color:#116329}.badge.partial{background:#fff8c5;color:#7d4e00}.badge.failed{background:#ffebe9;color:#cf222e}
+.resultActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.84);display:none;align-items:center;justify-content:center;padding:24px;z-index:200}.modal.open{display:flex}.modal img{max-width:96vw;max-height:92vh;object-fit:contain;background:#111}
+@media(max-width:980px){.grid{grid-template-columns:1fr 1fr}.wide{grid-column:1 / -1}.refs,.results,.taskList{grid-template-columns:1fr 1fr}}
+</style>
+<style id="commonHeaderStyle">
+.appHeader{height:56px;background:#20242a;color:#fff;display:flex;align-items:center;padding:0 18px;gap:12px;box-sizing:border-box;position:relative;z-index:100}
+.appHeader .brand{font-weight:800;white-space:nowrap}
+.appHeader .version{font-size:12px;color:#cdd9e5;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 8px}
+.appHeader .activePage{font-size:14px;color:#fff;background:rgba(255,255,255,.12);border-radius:6px;padding:6px 9px}
+.appHeader .lanLinkBox{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:8px;max-width:46vw;padding:5px 8px;border:1px solid rgba(255,255,255,.16);border-radius:8px;background:rgba(255,255,255,.08);color:#dbeafe;font-size:13px;white-space:nowrap}
+.appHeader .lanLinkText{overflow:hidden;text-overflow:ellipsis}
+.appHeader .copyLanBtn{border:0;border-radius:6px;padding:4px 8px;font-size:12px;font-weight:800;cursor:pointer;background:#eef6ff;color:#0969da;white-space:nowrap}
+.appHeader .spacer{flex:1}
+.appHeader .menuWrap{position:relative}
+.appHeader .menuBtn{border:0;border-radius:6px;padding:9px 13px;font-weight:800;cursor:pointer;background:#0969da;color:#fff}
+.appHeader .menuPanel{display:none;position:absolute;right:0;top:44px;min-width:190px;background:#fff;border:1px solid #d8dee4;border-radius:8px;box-shadow:0 12px 28px rgba(27,31,36,.18);padding:6px;z-index:110}
+.appHeader .menuPanel.open{display:block}
+.appHeader .menuPanel a{display:block;color:#24292f;text-decoration:none;padding:10px 12px;border-radius:6px;font-weight:650}
+.appHeader .menuPanel a:hover,.appHeader .menuPanel a.active{background:#eef6ff;color:#0969da}
+.appHeader .headerAction{border:0;border-radius:6px;padding:9px 13px;font-weight:800;cursor:pointer;background:#238636;color:#fff}
+.imageWrap,.downloadableImage{position:relative}
+.imageDownloadBtn{position:absolute;left:7px;bottom:7px;display:none;border:0;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800;cursor:pointer;background:rgba(9,105,218,.94);color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:6}
+.imageWrap:hover .imageDownloadBtn,.downloadableImage:hover .imageDownloadBtn{display:block}
+@media(max-width:1100px){.appHeader .lanLinkBox{position:static;transform:none;max-width:40vw}}
+@media(max-width:760px){.appHeader .lanLinkBox{display:none}}
+</style>
+
+<header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">旧单图生成</div><div class="lanLinkBox" title="本站地址"><span class="lanLinkText">本站链接：https://47.105.59.142/single</span><button class="copyLanBtn" onclick="copyLanLink('https://47.105.59.142/single')">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a class="" href="/chat-image">聊天生图</a><a class="active" href="/single">旧单图生成</a><a class="" href="/workbench">参考图工作台</a><a href="/admin" id="adminMenuLink" style="display:none">渠道管理</a></div></div></header>
+<main>
+  <section>
+    <div class="grid">
+      <div><label>生图模型商</label><select id="active_provider_template" disabled><option value="">服务器自动分配</option></select></div>
+      <div><label>参考图，可多选/可不选</label><input id="images" type="file" accept="image/*" multiple></div>
+      <div><label>质量</label><select id="quality"><option>high</option><option>medium</option><option>low</option><option>auto</option></select></div>
+      <div><label>分辨率</label><select id="resolution"><option>2k</option><option>1k</option><option>4k</option></select></div>
+      <div><label>比例</label><select id="ratio"><option value="1:1">1:1</option><option value="3:4">3:4</option><option value="4:3">4:3</option><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="1:2">1:2</option><option value="2:1">2:1</option><option value="2:3">2:3</option><option value="3:2">3:2</option><option value="1:3">1:3</option><option value="3:1">3:1</option></select></div>
+      <div><label>数量</label><input id="count" type="number" min="1" max="20" step="1" value="1"></div>
+      <div class="wide"><label>提示词</label><textarea id="prompt" placeholder="只输入文字就是文生图；上传参考图后，会把图片一起发给生图 API。"></textarea></div>
+    </div>
+    <div class="actions"><button id="generateBtn" onclick="generate()">开始生成</button><button class="ghost" onclick="clearRefs()">清空参考图</button></div>
+    <div id="status" class="status">等待操作</div>
+  </section>
+  <section><h3>参考图</h3><div id="refs" class="refs"><div class="placeholder">未选择参考图，可以一次选择多张</div></div></section>
+  <section><h3>任务列表</h3><div id="taskList" class="taskList"><div class="placeholder">暂无任务</div></div></section>
+  <section><h3>生成结果</h3><div id="results" class="results"><div class="placeholder">暂无结果</div></div></section>
+</main>
+<div id="modal" class="modal" onclick="closeModal()"></div>
+
+<script id="commonHeaderScript">
+const status=document.getElementById("status");
+function toggleAppMenu(event){event.stopPropagation(); const menu=document.getElementById('appMenuPanel'); if(menu)menu.classList.toggle('open');}
+document.addEventListener('click',()=>{const menu=document.getElementById('appMenuPanel'); if(menu)menu.classList.remove('open');});
+async function copyLanLink(url){
+  try{
+    await navigator.clipboard.writeText(url);
+    alert("已复制本站链接");
+  }catch(_e){
+    const input=document.createElement("input");
+    input.value=url;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+    alert("已复制本站链接");
+  }
+}
+function imagePathFromUrl(url){
+  try{
+    const value=String(url||"");
+    if(!value||value.startsWith("data:"))return "";
+    const parsed=new URL(value,location.href);
+    if(parsed.pathname!=="/api/image")return "";
+    return parsed.searchParams.get("path")||"";
+  }catch(_e){return "";}
+}
+function downloadImageUrl(url){
+  const path=imagePathFromUrl(url);
+  if(path){
+    const a=document.createElement("a");
+    a.href="/api/image?download=1&path="+encodeURIComponent(path);
+    a.download="";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return;
+  }
+  if(String(url||"").startsWith("data:image/")){
+    const a=document.createElement("a");
+    a.href=url;
+    a.download="image.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+}
+function imageDownloadButton(url){
+  return `<button class="imageDownloadBtn" onclick="event.stopPropagation();downloadImageUrl(decodeURIComponent('${encodeURIComponent(url||"")}'))">下载</button>`;
+}
+function visibleImagePaths(){
+  const paths=[];
+  const seen=new Set();
+  document.querySelectorAll("img").forEach(img=>{
+    const rect=img.getBoundingClientRect();
+    if(rect.width<=0||rect.height<=0)return;
+    const path=imagePathFromUrl(img.dataset.src||img.currentSrc||img.src);
+    if(path&&!seen.has(path)){seen.add(path);paths.push(path);}
+  });
+  return paths;
+}
+async function downloadCurrentPageImages(){
+  const paths=visibleImagePaths();
+  if(!paths.length){alert("当前页面没有可下载的图片");return;}
+  const response=await fetch("/api/images-zip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths,filename:"当前页面图片包_"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".zip"})});
+  if(!response.ok){alert(await response.text()||"下载图片包失败");return;}
+  const blob=await response.blob();
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download="当前页面图片包.zip";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+</script>
+<script>
+let config={}; let templates=[]; let refList=[]; let pollTimer=null; let taskIds=[]; let taskData={};
+const singleSettingsKey='gpt-image-pil-single-local-settings';
+const ui={
+  template:document.getElementById('active_provider_template'),
+  images:document.getElementById('images'),
+  quality:document.getElementById('quality'),
+  resolution:document.getElementById('resolution'),
+  ratio:document.getElementById('ratio'),
+  count:document.getElementById('count'),
+  prompt:document.getElementById('prompt'),
+  button:document.getElementById('generateBtn'),
+  status:document.getElementById('status'),
+  refs:document.getElementById('refs'),
+  results:document.getElementById('results'),
+  taskList:document.getElementById('taskList'),
+  modal:document.getElementById('modal')
+};
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>{if(c==="&")return "&amp;"; if(c==="<")return "&lt;"; if(c===">")return "&gt;"; if(c===String.fromCharCode(34))return "&quot;"; return "&#39;";});}
+function safeCount(){const n=Number(ui.count.value||1); return Math.max(1,Math.min(20,Number.isFinite(n)?Math.round(n):1));}
+async function saveSingleSettings(){
+  const payload={single_quality:ui.quality.value,single_resolution:ui.resolution.value,single_ratio:ui.ratio.value,single_count:safeCount()};
+  localStorage.setItem(singleSettingsKey,JSON.stringify(payload));
+  if(!config.settings_editable)return;
+  const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(!response.ok)throw new Error(await response.text()||'保存单图参数失败');
+}
+async function loadSettings(){
+  config=await(await fetch('/api/settings')).json();
+  const adminLink=document.getElementById('adminMenuLink');if(adminLink)adminLink.style.display=config.settings_editable?'':'none';
+  templates=Array.isArray(config.provider_templates)?config.provider_templates:[];
+  ui.template.innerHTML='<option value="">服务器自动分配</option>';
+  ui.template.disabled=true;
+  let local={}; try{local=JSON.parse(localStorage.getItem(singleSettingsKey)||'{}')||{};}catch(e){local={};}
+  ui.template.value='';
+  ui.quality.value=local.single_quality||config.single_quality||config.quality||'high';
+  ui.resolution.value=local.single_resolution||config.single_resolution||config.resolution||'2k';
+  ui.ratio.value=local.single_ratio||config.single_ratio||'1:1';
+  ui.count.value=String(local.single_count||config.single_count||1);
+}
+function readFile(file){return new Promise((resolve,reject)=>{const r=new FileReader(); r.onload=()=>resolve({name:file.name,data_url:r.result}); r.onerror=reject; r.readAsDataURL(file);});}
+function renderRefs(){ui.refs.innerHTML=refList.length?refList.map((r,i)=>`<div class="tile"><img src="${r.data_url}" onclick="openImage('${r.data_url}')"><div class="body">${esc(r.name)}<br><button class="ghost" onclick="removeRef(${i})">移除</button></div></div>`).join(''):'<div class="placeholder">未选择参考图，可以一次选择多张</div>';}
+async function onFiles(){ui.status.textContent='正在读取参考图...'; refList=await Promise.all([...ui.images.files].map(readFile)); renderRefs(); ui.status.textContent=`已加载 ${refList.length} 张参考图`;}
+function removeRef(i){refList.splice(i,1); ui.images.value=''; renderRefs();}
+function clearRefs(){refList=[]; ui.images.value=''; renderRefs(); ui.status.textContent='已清空参考图';}
+function openImage(url){ui.modal.innerHTML=`<img src="${url}">`; ui.modal.classList.add('open');}
+function closeModal(){ui.modal.classList.remove('open'); ui.modal.innerHTML='';}
+function singleTasksKey(){return 'gpt-image-pil-single-tasks-'+String(config.auth_username||'shared');}
+function loadTaskIds(){try{taskIds=JSON.parse(localStorage.getItem(singleTasksKey())||'[]')||[];}catch(e){taskIds=[];} taskData={};}
+function saveTaskIds(){taskIds=[...new Set(taskIds)].slice(0,50); localStorage.setItem(singleTasksKey(),JSON.stringify(taskIds));}
+function addTaskId(id){taskIds=[id,...taskIds.filter(x=>x!==id)]; saveTaskIds();}
+function statusName(s){return {running:'生成中',done:'完成',partial:'部分完成',failed:'失败'}[s]||s||'-';}
+function statusClass(s){return ['running','done','partial','failed'].includes(s)?s:'';}
+function resultTile(item,taskId){
+  const url=item.output_url||'';
+  const path=item.output_path||'';
+  const pathArg=encodeURIComponent(path);
+  return `<div class="tile"><div class="downloadableImage"><img src="${url}" onclick="openImage('${url}')">${imageDownloadButton(url)}</div><div class="body">任务 ${esc(taskId.slice(0,8))} / 第 ${item.index||1} 张<br>${esc(path)}<div class="resultActions"><button class="ghost" onclick="openPath(decodeURIComponent('${pathArg}'))">下载原图</button></div></div></div>`;
+}
+function renderResults(){
+  const tasks=taskIds.map(id=>taskData[id]).filter(Boolean);
+  const runningHtml=tasks.filter(t=>t.status==='running'&&!(t.results||[]).length).map(t=>`<div class="tile"><div class="placeholder">任务 ${esc((t.task_id||'').slice(0,8))}<br>生成中</div><div class="body">数量：${esc(t.count||'-')} / 尺寸：${esc(t.size||'-')}</div></div>`).join('');
+  const okHtml=tasks.flatMap(t=>(Array.isArray(t.results)?t.results:[]).map(item=>resultTile(item,t.task_id))).join('');
+  const failHtml=tasks.flatMap(t=>(Array.isArray(t.failures)?t.failures:[]).map(item=>`<div class="tile"><div class="placeholder error">任务 ${esc((t.task_id||'').slice(0,8))}<br>第 ${item.index||1} 张失败</div><div class="body error">${esc(item.error)}</div></div>`)).join('');
+  ui.results.innerHTML=runningHtml+okHtml+failHtml || '<div class="placeholder">暂无结果</div>';
+}
+function renderTaskList(){
+  const tasks=taskIds.map(id=>taskData[id]).filter(Boolean);
+  if(!tasks.length){ui.taskList.innerHTML='<div class="placeholder">暂无任务</div>'; renderResults(); return;}
+  ui.taskList.innerHTML=tasks.map(t=>{
+    const done=(Array.isArray(t.results)?t.results.length:0), failed=(Array.isArray(t.failures)?t.failures.length:0);
+    return `<div class="task ${statusClass(t.status)}"><div><span class="badge ${statusClass(t.status)}">${statusName(t.status)}</span></div><strong>${esc((t.task_id||'').slice(0,12))}</strong><div class="mini">数量：${esc(t.count||'-')} / 成功：${done} / 失败：${failed}<br>尺寸：${esc(t.size||'-')} / 参考图：${esc(t.used_images||0)}</div>${t.error?`<div class="mini error">${esc(t.error)}</div>`:''}</div>`;
+  }).join('');
+  renderResults();
+}
+async function refreshTasks(){
+  try{
+    const server=await (await fetch('/api/single/tasks')).json();
+    if(Array.isArray(server.tasks)){
+      for(const t of server.tasks){if(t.task_id){taskData[t.task_id]=t; if(!taskIds.includes(t.task_id))taskIds.push(t.task_id);}}
+    }
+    if(!taskIds.length){renderTaskList(); return;}
+    await Promise.all(taskIds.map(async id=>{
+      try{
+        const response=await fetch('/api/single/status?id='+encodeURIComponent(id));
+        const data=await response.json();
+        if(data.ok)taskData[id]=data;
+      }catch(e){}
+    }));
+    saveTaskIds();
+    renderTaskList();
+    const tasks=taskIds.map(id=>taskData[id]).filter(Boolean);
+    const running=tasks.filter(t=>t.status==='running').length;
+    const done=tasks.filter(t=>t.status==='done'||t.status==='partial').length;
+    const failed=tasks.filter(t=>t.status==='failed').length;
+    if(tasks.length)ui.status.textContent=`任务总数：${tasks.length}  生成中：${running}  已完成：${done}  失败：${failed}`;
+    if(running>0&&!pollTimer)pollTimer=setInterval(refreshTasks,2000);
+    if(running===0&&pollTimer){clearInterval(pollTimer); pollTimer=null;}
+  }catch(error){
+    ui.status.classList.add('error');
+    ui.status.textContent='任务列表刷新失败：'+error;
+  }
+}
+async function openPath(path){downloadImageUrl('/api/image?path='+encodeURIComponent(path));}
+async function generate(){
+  const text=ui.prompt.value.trim();
+  if(!text){alert('请先填写提示词'); return;}
+  const total=safeCount();
+  if(ui.button.disabled)return;ui.button.disabled=true;
+  ui.status.classList.remove('error');
+  ui.status.textContent=`正在提交：${total} 个并发任务...`;
+  try{
+    await saveSingleSettings();
+    const response=await fetch('/api/single/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,quality:ui.quality.value,resolution:ui.resolution.value,ratio:ui.ratio.value,count:total,request_id:crypto.randomUUID(),images:refList.map(x=>x.data_url)})});
+    const body=await response.text();
+    let data={}; try{data=JSON.parse(body)}catch(e){data={error:body}}
+    if(!response.ok||!data.task_id){throw new Error(data.error||body||'任务提交失败');}
+    taskData[data.task_id]=data;
+    addTaskId(data.task_id);
+    renderTaskList();
+    ui.status.textContent=`已提交后台任务：${data.task_id}\n可以继续提交其他任务，也可以切换到其他页面。`;
+    await refreshTasks();
+  }catch(error){
+    ui.status.classList.add('error');
+    ui.status.textContent='任务提交失败：'+error;
+  }finally{ui.button.disabled=false;}
+}
+ui.images.addEventListener('change',onFiles);
+for(const el of [ui.template,ui.quality,ui.resolution,ui.ratio,ui.count]){el.addEventListener('change',()=>saveSingleSettings().catch(error=>{ui.status.textContent='参数保存失败：'+error;}));}
+window.addEventListener('pagehide',()=>{if(pollTimer)clearInterval(pollTimer); pollTimer=null; saveTaskIds();});
+loadSettings().then(()=>{loadTaskIds(); refreshTasks();});
+</script>
+
+<script>
+function appHeartbeat(){fetch('/api/heartbeat').catch(()=>{});}
+async function appAuthCheck(){
+  try{
+    const r=await fetch('/api/auth/status');
+    if(r.status===401||r.status===403){
+      if(location.pathname!='/login') location.href='/login';
+    }
+  }catch(e){}
+}
+appHeartbeat();
+setInterval(appHeartbeat, 3000);
+setInterval(appAuthCheck, 300000);
+</script>
+</html>

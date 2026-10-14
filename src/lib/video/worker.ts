@@ -40,12 +40,14 @@ export function startVideoWorker(): void {
   const timer = setInterval(() => {
     void scanVideoWorkerOnce();
     void recoverDurableImageJobs().catch(() => {});
+    void import("../reference-workbench/service").then(m=>m.recoverReferenceWorkbench()).catch(()=>{});
     void scanSupplierCostsOnce();
   }, SCAN_INTERVAL_MS);
   timer.unref?.();
   setTimeout(() => {
     void scanVideoWorkerOnce();
     void recoverDurableImageJobs().catch(() => {});
+    void import("../reference-workbench/service").then(m=>m.recoverReferenceWorkbench()).catch(()=>{});
     void scanSupplierCostsOnce();
   }, 15_000).unref?.();
 }

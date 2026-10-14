@@ -3,7 +3,7 @@ import {readBrowserImage} from '@/lib/browser-image-cache';
 import { CachedImage } from "@/components/cached-image";
 
 // 内部生图工作台:面向内部员工的批量电商出图工具。
-// 布局与交互流对齐团队此前使用的批量出图客户端(产品图+风格参考图 → 主图/详情图/SKU 批量任务),
+// 布局与交互流对齐团队此前使用的参考工作台客户端(产品图+风格参考图 → 主图/详情图/SKU 批量任务),
 // 代码为本仓库原创实现,生成统一走 /api/generate-image 现有链路(billing + 任务轮询)。
 // 界面文案固定中文,不接 i18n。
 
@@ -360,10 +360,10 @@ export function WorkbenchClient() {
         <nav className="flex items-center gap-1.5 text-[13px]">
           <Link href="/tools" className="text-c-text3 transition-colors hover:text-c-text">创作工具</Link>
           <ChevronRight className="h-3.5 w-3.5 text-c-text4" />
-          <span className="font-semibold text-c-text">批量出图</span>
+          <span className="font-semibold text-c-text">参考工作台</span>
         </nav>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <h1 className="text-[17px] font-bold leading-6">批量出图</h1>
+          <h1 className="text-[17px] font-bold leading-6">参考工作台</h1>
           <span className="text-[12px] text-c-text4">产品图 + 风格参考图 → 主图 / 详情图 / SKU 批量任务</span>
           <div className="ml-auto flex items-center gap-2 text-[12.5px]">
             {queueRunning && (
