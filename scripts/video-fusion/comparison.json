@@ -303,38 +303,65 @@
     {
       "capabilityId": "V12",
       "name": "剧本分镜拼图",
-      "status": "not-observed",
-      "upstream": "Toonflow-pinned",
-      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
-      "steps": [],
-      "result": "尚未完成此项固定上游浏览器实操",
-      "evidence": [],
-      "naumiEvidencePrefixes": [],
-      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+      "status": "observed-native-rules-with-limitations",
+      "upstream": "infinite-canvas-pinned",
+      "observedVersion": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
+      "steps": [
+        "原真实项目8节点/4边上下文传入原buildCanvasAgentSkillPrompt",
+        "实际执行意图选择器并核对对应完整原制作规则及真实来源ID"
+      ],
+      "result": "原规则选择器执行通过；拼图全图与完整面板/对白、连续链直接前序/硬切/同机位/前传、编辑来源与保持项分别检查。不是实际LLM策略或视频生成。",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-skills-fc36ba91-0d9d-42f5-a3dd-d2cbdb7022d9/result.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-skills-fc36ba91-0d9d-42f5-a3dd-d2cbdb7022d9/mosaic.txt"
+      ],
+      "naumiEvidencePrefixes": [
+        "script-ce0e7019",
+        "mosaic-2447c449",
+        "multishot-096de602"
+      ],
+      "limitation": "原生运行时规则选择和正文补证，不是上游浏览器完成故事制作；正式模型调用0。"
     },
     {
       "capabilityId": "V13",
       "name": "连续续写与前传",
-      "status": "not-observed",
-      "upstream": "Toonflow-pinned",
-      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
-      "steps": [],
-      "result": "尚未完成此项固定上游浏览器实操",
-      "evidence": [],
-      "naumiEvidencePrefixes": [],
-      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+      "status": "observed-native-rules-with-limitations",
+      "upstream": "infinite-canvas-pinned",
+      "observedVersion": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
+      "steps": [
+        "原真实项目8节点/4边上下文传入原buildCanvasAgentSkillPrompt",
+        "实际执行意图选择器并核对对应完整原制作规则及真实来源ID"
+      ],
+      "result": "原规则选择器执行通过；拼图全图与完整面板/对白、连续链直接前序/硬切/同机位/前传、编辑来源与保持项分别检查。不是实际LLM策略或视频生成。",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-skills-fc36ba91-0d9d-42f5-a3dd-d2cbdb7022d9/result.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-skills-fc36ba91-0d9d-42f5-a3dd-d2cbdb7022d9/continuity.txt"
+      ],
+      "naumiEvidencePrefixes": [
+        "continuity-87e8d486",
+        "production-3710100e"
+      ],
+      "limitation": "原生运行时规则选择和正文补证，不是上游浏览器完成故事制作；正式模型调用0。"
     },
     {
       "capabilityId": "V14",
       "name": "视频编辑",
-      "status": "not-observed",
-      "upstream": "Toonflow-pinned",
-      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
-      "steps": [],
-      "result": "尚未完成此项固定上游浏览器实操",
-      "evidence": [],
-      "naumiEvidencePrefixes": [],
-      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+      "status": "observed-native-rules-with-limitations",
+      "upstream": "infinite-canvas-pinned",
+      "observedVersion": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
+      "steps": [
+        "原真实项目8节点/4边上下文传入原buildCanvasAgentSkillPrompt",
+        "实际执行意图选择器并核对对应完整原制作规则及真实来源ID"
+      ],
+      "result": "原规则选择器执行通过；拼图全图与完整面板/对白、连续链直接前序/硬切/同机位/前传、编辑来源与保持项分别检查。不是实际LLM策略或视频生成。",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-skills-fc36ba91-0d9d-42f5-a3dd-d2cbdb7022d9/result.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-skills-fc36ba91-0d9d-42f5-a3dd-d2cbdb7022d9/editing.txt"
+      ],
+      "naumiEvidencePrefixes": [
+        "production-3710100e"
+      ],
+      "limitation": "原生运行时规则选择和正文补证，不是上游浏览器完成故事制作；正式模型调用0。"
     },
     {
       "capabilityId": "V15",
@@ -344,15 +371,17 @@
       "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
       "steps": [
         "固定TF实际打开媒体生成控制，关闭AI生成视频、保存、重开确认false；其余图片/音频仍true",
-        "恢复视频true、保存、重开确认true；打开技能菜单查看workflow/v118workflow入口"
+        "恢复视频true、保存、重开确认true；打开技能菜单查看workflow/v118workflow入口",
+        "原skillOperator和宿主context实际list及完整read三个制作技能与视频/镜头资料；越界拒绝"
       ],
-      "result": "尚未完成此项固定上游浏览器实操 本批仅授权开关与实际制作技能入口；未执行上游LLM调度。",
+      "result": "尚未完成此项固定上游浏览器实操 本批仅授权开关与实际制作技能入口；未执行上游LLM调度。 原指南可被正式运行时完整读取，写操作关闭，没有真实LLM调度。",
       "evidence": [
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/media-control-video-disabled-dom.txt",
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/media-control-video-restored-dom.txt",
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/media-control-video-disabled.png",
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/skill-workflow-menu-dom.txt",
-        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/skill-workflow-menu.png"
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/skill-workflow-menu.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/native-skills-2afe3dd0-9e4b-4253-afdd-c4c6dc4aab28/result.json"
       ],
       "naumiEvidencePrefixes": [],
       "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
@@ -360,14 +389,27 @@
     {
       "capabilityId": "V16",
       "name": "批量与工作流",
-      "status": "not-observed",
-      "upstream": "Toonflow-pinned",
-      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
-      "steps": [],
-      "result": "尚未完成此项固定上游浏览器实操",
-      "evidence": [],
-      "naumiEvidencePrefixes": [],
-      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+      "status": "observed-ui-and-backend-with-difference",
+      "upstream": "infinite-canvas-pinned",
+      "observedVersion": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
+      "steps": [
+        "原用户配置追加隔离OpenAI渠道；工作台完整三行prompt、6秒720p、数量2",
+        "只点击一次开始生成；原Go两任务和隔离供应商create/poll回执核对",
+        "原UI停35%后刷新显示0；两条读取终态completed/100，历史与任务列表code0空"
+      ],
+      "result": "批量提交实际2create，各任务完成；原UI历史恢复有实际差异，发送未执行，根因未确定。原画布8节点/4边保持。工作流高级图本批未运行。",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-workbench-task-snapshot.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-openai-mock-calls.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/workbench-after-reload-empty-dom.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/screenshots/workbench-after-reload-empty.png"
+      ],
+      "naumiEvidencePrefixes": [
+        "workbench-d024905a",
+        "mixed-dag-a97",
+        "full-workflows-ecbc1208"
+      ],
+      "limitation": "mock multipart捕获只记首行，不据此判断原请求；Go request_body完整。原GUI恢复未通过，不冒充发送/幂等/工作流通过。"
     },
     {
       "capabilityId": "V17",
@@ -507,26 +549,49 @@
     {
       "capabilityId": "V23",
       "name": "素材再引用",
-      "status": "not-observed",
+      "status": "partial-observation",
       "upstream": "Toonflow-pinned",
       "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
-      "steps": [],
-      "result": "尚未完成此项固定上游浏览器实操",
-      "evidence": [],
-      "naumiEvidencePrefixes": [],
-      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+      "steps": [
+        "原浏览器打开提及节点输出菜单",
+        "依次选择原4秒视频和实际1–3秒派生视频",
+        "核对草稿两独立节点/输出引用，没有发送"
+      ],
+      "result": "实际原输出及派生2秒输出能通过原UI再引用；未执行下一次视频生成。",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/reuse-derived-video-mention-dom.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/reuse-derived-video-mention.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/media-probes.json"
+      ],
+      "naumiEvidencePrefixes": [
+        "derived-media",
+        "workflow",
+        "reference-edges"
+      ],
+      "limitation": "仅真实再引用草稿，不声称正式LLM/视频生成闭环通过。"
     },
     {
       "capabilityId": "V24",
       "name": "工作台发送边界",
-      "status": "not-observed",
-      "upstream": "Toonflow-pinned",
-      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
-      "steps": [],
-      "result": "尚未完成此项固定上游浏览器实操",
-      "evidence": [],
-      "naumiEvidencePrefixes": [],
-      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+      "status": "blocked-by-observed-source-ui-history",
+      "upstream": "infinite-canvas-pinned",
+      "observedVersion": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
+      "steps": [
+        "原用户配置追加隔离OpenAI渠道；工作台完整三行prompt、6秒720p、数量2",
+        "只点击一次开始生成；原Go两任务和隔离供应商create/poll回执核对",
+        "原UI停35%后刷新显示0；两条读取终态completed/100，历史与任务列表code0空"
+      ],
+      "result": "原工作台结果没有保留到UI，刷新0，无法从本批结果继续实际点击发送。没有人工写入成功日志；原画布8节点/4边保持。Naumi显式发送边界由自身应用测试证明。",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-workbench-task-snapshot.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-openai-mock-calls.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/workbench-after-reload-empty-dom.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/screenshots/workbench-after-reload-empty.png"
+      ],
+      "naumiEvidencePrefixes": [
+        "workbench-d024905a"
+      ],
+      "limitation": "上游发送未通过；有具体批次限制，不能算一致或以旧素材冒充本批生成。"
     }
   ],
   "runtimeLimits": [
