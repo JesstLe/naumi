@@ -51,9 +51,11 @@
         "输入三行原创镜头与对白",
         "刷新并重新选中原节点"
       ],
-      "result": "真实生成节点及完整三行提示词保存恢复；未调用付费生成",
+      "result": "真实生成节点及完整三行提示词保存恢复；未调用付费生成 补原封不动TF provider经正式VM/隔离transport实际text/mixed三类媒体/tail/双帧/Kling/Omni/Grok分支；全文、4秒720p、false音频和正式角色映射核对，模拟结果使用对应静音素材。此为原生适配器API补证，不扩大已有浏览器实操结论。",
       "evidence": [
-        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/video-node-original-media.png"
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/video-node-original-media.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/provider-native-355f4f6d-66df-4b63-872b-d2c35c54613d/result.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/provider-native-355f4f6d-66df-4b63-872b-d2c35c54613d/native-calls.json"
       ],
       "naumiEvidencePrefixes": [
         "canvas-browser-2494ea71"
@@ -73,11 +75,13 @@
         "实际截取首帧并连接第二张图片",
         "选择首帧可选并拖动交换两张图片的顺序"
       ],
-      "result": "单图尾帧、双图按顺序首尾、原图身份及拖动顺序实际观察；无有效输入会归一文生。专用首尾必需模式与其他模型仍待对照，未调用付费生成。",
+      "result": "单图尾帧、双图按顺序首尾、原图身份及拖动顺序实际观察；无有效输入会归一文生。专用首尾必需模式与其他模型仍待对照，未调用付费生成。 补原封不动TF provider经正式VM/隔离transport实际text/mixed三类媒体/tail/双帧/Kling/Omni/Grok分支；全文、4秒720p、false音频和正式角色映射核对，模拟结果使用对应静音素材。此为原生适配器API补证，不扩大已有浏览器实操结论。",
       "evidence": [
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/first-frame-optional-with-owned-image.jpg",
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/first-frame-restored-dom.txt",
-        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/two-frame-reordered-dom.txt"
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/two-frame-reordered-dom.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/provider-native-355f4f6d-66df-4b63-872b-d2c35c54613d/result.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/provider-native-355f4f6d-66df-4b63-872b-d2c35c54613d/native-calls.json"
       ],
       "naumiEvidencePrefixes": [
         "canvas-browser-2494ea71"
@@ -96,11 +100,13 @@
         "检查三种引用卡片与对应连线",
         "刷新后重新选择原视频节点"
       ],
-      "result": "图片/视频/音频全部成为实际输入，来源节点与完整原提示词保持，刷新保留。数量边界和其他模型限制仍待对照。",
+      "result": "图片/视频/音频全部成为实际输入，来源节点与完整原提示词保持，刷新保留。数量边界和其他模型限制仍待对照。 补原封不动TF provider经正式VM/隔离transport实际text/mixed三类媒体/tail/双帧/Kling/Omni/Grok分支；全文、4秒720p、false音频和正式角色映射核对，模拟结果使用对应静音素材。此为原生适配器API补证，不扩大已有浏览器实操结论。",
       "evidence": [
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/mixed-reference-dom.txt",
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/mixed-reference-restored-dom.txt",
-        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/mixed-image-video-audio.jpg"
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/mixed-image-video-audio.jpg",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/provider-native-355f4f6d-66df-4b63-872b-d2c35c54613d/result.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/provider-native-355f4f6d-66df-4b63-872b-d2c35c54613d/native-calls.json"
       ],
       "naumiEvidencePrefixes": [
         "canvas-browser-2494ea71"
@@ -163,12 +169,14 @@
         "固定TF含两图节点改为混合参考，实际打开4至30秒选项，选择12秒、480p、9:16",
         "刷新重选同一节点并打开设置"
       ],
-      "result": "摘要实际为16:9 · 720p · 10秒；源工作区JSON相同 本批新增固定TF规格刷新保持；该模型实际可选480p/720p，不将此目录当Naumi统一模型能力。",
+      "result": "摘要实际为16:9 · 720p · 10秒；源工作区JSON相同 本批新增固定TF规格刷新保持；该模型实际可选480p/720p，不将此目录当Naumi统一模型能力。 补原封不动TF provider经正式VM/隔离transport实际text/mixed三类媒体/tail/双帧/Kling/Omni/Grok分支；全文、4秒720p、false音频和正式角色映射核对，模拟结果使用对应静音素材。此为原生适配器API补证，不扩大已有浏览器实操结论。",
       "evidence": [
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/data/workspaces/canvas-video-comparison/画布1.json",
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/settings-advanced-before-reload-dom.txt",
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/settings-advanced-after-reload-dom.txt",
-        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/settings-advanced-after-reload.png"
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/settings-advanced-after-reload.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/provider-native-355f4f6d-66df-4b63-872b-d2c35c54613d/result.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/provider-native-355f4f6d-66df-4b63-872b-d2c35c54613d/native-calls.json"
       ],
       "naumiEvidencePrefixes": [
         "canvas-browser-2494ea71"
@@ -187,11 +195,13 @@
         "刷新读取保存结果",
         "固定TF把生成音频从false改true，刷新后实际开关仍true"
       ],
-      "result": "生成音频未勾选，持久JSON generateAudio=false；未验证每个协议参数 本批补音频true持久恢复；负向、水印、seed及其他模型仍待原生设置实操。",
+      "result": "生成音频未勾选，持久JSON generateAudio=false；未验证每个协议参数 本批补音频true持久恢复；负向、水印、seed及其他模型仍待原生设置实操。 补原封不动TF provider经正式VM/隔离transport实际text/mixed三类媒体/tail/双帧/Kling/Omni/Grok分支；全文、4秒720p、false音频和正式角色映射核对，模拟结果使用对应静音素材。此为原生适配器API补证，不扩大已有浏览器实操结论。",
       "evidence": [
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/data/workspaces/canvas-video-comparison/画布1.json",
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/settings-advanced-after-reload-dom.txt",
-        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/settings-advanced-after-reload.png"
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/settings-advanced-after-reload.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/provider-native-355f4f6d-66df-4b63-872b-d2c35c54613d/result.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/provider-native-355f4f6d-66df-4b63-872b-d2c35c54613d/native-calls.json"
       ],
       "naumiEvidencePrefixes": [
         "canvas-browser-2494ea71"
@@ -387,14 +397,24 @@
     {
       "capabilityId": "V18",
       "name": "停止及竞态",
-      "status": "not-observed",
+      "status": "observed-native-provider-with-limitations",
       "upstream": "Toonflow-pinned",
       "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
-      "steps": [],
-      "result": "尚未完成此项固定上游浏览器实操",
-      "evidence": [],
-      "naumiEvidencePrefixes": [],
-      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+      "steps": [
+        "原封不动源码经正式VM loader、原ProviderContext及隔离fetch transport生成任务",
+        "模拟返回真实契约taskICode，原代码执行处理中poll后调用方Abort",
+        "检查只有1次create，原源码没有发送供应商cancel请求"
+      ],
+      "result": "原生适配器实际完成已接受/处理中/Abort路径；源端只有调用方取消，不证明供应商已取消。Naumi持久取消/租约/费用由自己的真实应用测试证明。",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/provider-native-355f4f6d-66df-4b63-872b-d2c35c54613d/result.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/provider-native-355f4f6d-66df-4b63-872b-d2c35c54613d/native-calls.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/../verify-toon-provider-native.ts"
+      ],
+      "naumiEvidencePrefixes": [
+        "cancellation-df69fed2"
+      ],
+      "limitation": "隔离模拟响应，网络请求未发出；不是上游浏览器停止按钮或真实供应商取消验收。"
     },
     {
       "capabilityId": "V19",
@@ -464,14 +484,25 @@
     {
       "capabilityId": "V22",
       "name": "FFmpeg表达力",
-      "status": "not-observed",
+      "status": "observed-native-tool-with-limitations",
       "upstream": "Toonflow-pinned",
       "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
-      "steps": [],
-      "result": "尚未完成此项固定上游浏览器实操",
-      "evidence": [],
-      "naumiEvidencePrefixes": [],
-      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+      "steps": [
+        "调用原始tool-ffmpeg createTools及原始createAgentToolContext，限定已有测试工作区",
+        "执行原生4类查询、FFprobe选项、两输入两输出、4帧截图、帧序列、320x180拼图、8秒拼接",
+        "原生进程start后Abort，等待真实error/end；越界拒绝且原视频SHA保持"
+      ],
+      "result": "原始工具表达力实际执行通过，9份产物有独立FFprobe/长度/SHA。MCP保持未开启，无LLM/正式模型调用。上游未暴露availableDecoders，原生滤镜查询在当前安装版本返回0；xstack滤镜实际执行成功，不把空表说成完整滤镜目录。",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/native-tools-092e3873-b883-4c50-9038-8d37dde4bef8/result.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/native-tools-092e3873-b883-4c50-9038-8d37dde4bef8/calls.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/../verify-toon-native-tools.ts"
+      ],
+      "naumiEvidencePrefixes": [
+        "native-media-da433d9b",
+        "native-media-e8ae9f93"
+      ],
+      "limitation": "实际原生工具API执行，非浏览器操作/MCP/真实模型生成；已保留首次两个失败批次。"
     },
     {
       "capabilityId": "V23",
