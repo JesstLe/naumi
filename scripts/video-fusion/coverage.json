@@ -185,7 +185,7 @@
       "kind": "actual-app-db-router-worker-workflow-summary"
     },
     "mixedDag": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/mixed-dag-ef273939-7ef2-4712-93ff-00ca9b490834/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/mixed-dag-a97d7f46-a434-45f4-a78c-bf44774cc6f9/result.json",
       "verifier": "scripts/verify-video-fusion-mixed-dag.ts",
       "kind": "actual-app-db-router-worker-mixed-dag"
     }

@@ -1,5 +1,7 @@
 # 完整原生工作流映射与混合依赖验收
 
+进一步保留主线5fc5efe的生图请求体/回执修复和工作台提交，普通合并为7faaa85；第一次原子推送因主线前进而拒绝，没有强推或覆盖提交。固定Next15.5.27实际依赖CJS/ESM补丁已按新postinstall应用，补丁漂移/幂等检查和真实HTTP的JSON/HTML/空体/accepted三态/原回执恢复均PASS。受影响集中批99061 exit0：最新Worker路径的mixed-dag-a97d7f46-a434-45f4-a78c-bf44774cc6f9和真实App桌面/390px完整生图保护通过；8次隔离图像调用、正式付费0，透明像素/原节点/蒙版/双击刷新幂等/免费格式处理/JSONL ZIP保持。当前矩阵mixedDag改用最新记录，其他整合前证据保留其范围；完整最终候选验收仍未完成。
+
 主线6c7c120统一存储已保留整合为c2940de。整合后集中复核62577终态exit0：完整AutoDL/RunningHub、五节点mixed DAG及真实Chrome播放器/私有Range全部PASS。最新full-workflows-ecbc1208-3979-4430-a697-d76ffa5b229b全批同时通过两profile，严格汇总替换为该全批；mixed-dag-ef273939-7ef2-4712-93ff-00ca9b490834和player-3ce0fdfd-126a-44cf-af25-9dd66b53a566登记为当前矩阵证据。此前partial/失败与整合前结果保留，不冒充最终固定Linux或103验收。TypeScript/diff及28/34矩阵检查通过。
 
 本批补齐P05及V16，当前矩阵28/34项（约82%），注册36份证据；完整交付门槛仍待完成。
