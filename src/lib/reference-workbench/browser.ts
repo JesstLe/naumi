@@ -2,6 +2,7 @@ import {authHeader} from "../supabase";
 
 declare global {interface Window {NaumiWorkbenchStorage:Pick<Storage,"getItem"|"setItem"|"removeItem">;NaumiWorkbenchReady:Promise<void>;NaumiWorkbenchModels:(select:HTMLSelectElement)=>void;}}
 const base="/api/reference-workbench/",original=window.fetch.bind(window),blobUrls=new Map<string,string>(),blobLoading=new Map<string,Promise<string>>();
+let sessionIdentity="";
 async function nativeFetch(input:RequestInfo|URL,init?:RequestInit){
  const target=new URL(typeof input==="string"?input:input instanceof Request?input.url:input.toString(),location.href);
  if(target.origin!==location.origin)return original(input,init);
@@ -27,7 +28,9 @@ window.fetch=async(input,init)=>{
    return receipt.ok?receipt:Response.json({ok:false,error:"提交结果待核查，请保留原任务编号："+q.id},{status:409});
   }
  }
- const response=await nativeFetch(input,init);if(response.status===401){blobUrls.forEach(v=>URL.revokeObjectURL(v));blobUrls.clear();location.assign("/sign-in");}return response;
+ const response=await nativeFetch(input,init);if(response.status===401){blobUrls.forEach(v=>URL.revokeObjectURL(v));blobUrls.clear();location.assign("/sign-in");}
+ if(response.ok&&["heartbeat","auth/status"].includes(action)){const identity=(await response.clone().json()).id;if(sessionIdentity&&identity&&identity!==sessionIdentity){blobUrls.forEach(v=>URL.revokeObjectURL(v));blobUrls.clear();location.reload();}}
+ return response;
 };
 async function privateBlob(source:string){
  const target=new URL(source,location.href);if(target.origin!==location.origin||target.pathname!==base+"image")return source;
@@ -38,6 +41,7 @@ async function privateBlob(source:string){
 window.NaumiWorkbenchReady=(async()=>{
  const response=await nativeFetch(base+"auth/status");if(!response.ok){location.assign("/sign-in");return;}
  const auth=await response.json();if(!auth.id)throw Error("账号标识缺失");
+ sessionIdentity=auth.id;
  const prefix="naumi-reference:"+auth.id+":";window.NaumiWorkbenchStorage={getItem:k=>localStorage.getItem(prefix+k),setItem:(k,v)=>localStorage.setItem(prefix+k,v),removeItem:k=>localStorage.removeItem(prefix+k)};
  const choices=await nativeFetch(base+"settings").then(r=>r.json());
  window.NaumiWorkbenchModels=model=>{model.innerHTML="";model.add(new Option("服务器自动分配",""));for(const m of choices.models||[])model.add(new Option(m.label,m.id));model.disabled=false;model.value=window.NaumiWorkbenchStorage.getItem("native-model")||"";if(!model.dataset.nativeModels){model.dataset.nativeModels="1";model.addEventListener("change",()=>window.NaumiWorkbenchStorage.setItem("native-model",model.value));}};

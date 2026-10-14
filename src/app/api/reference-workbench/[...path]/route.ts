@@ -23,7 +23,7 @@ async function handler(request:Request){
   if(!allows(await userFeaturePolicy(owner),"batchshot"))return json({error:"此页面尚未授权"},403);
   const url=new URL(request.url),action=url.pathname.split("/api/reference-workbench/")[1]||"",get=request.method==="GET";
   if(get&&action==="auth/status")return json({ok:true,id:"native-"+createHash("sha256").update(owner).digest("hex"),username:(await getPool().query("SELECT name FROM app_users WHERE email=$1",[owner])).rows[0]?.name||owner});
-  if(get&&action==="heartbeat")return json({ok:true});
+  if(get&&action==="heartbeat")return json({ok:true,id:"native-"+createHash("sha256").update(owner).digest("hex")});
   if(get&&action==="image"){
    const id=url.searchParams.get("path")||"",data=await imageBytes(owner,id);return new Response(new Uint8Array(data.buffer),{headers:{...PRIVATE_HEADERS,"Content-Type":data.mimeType,...(url.searchParams.get("download")==="1"?{"Content-Disposition":'attachment; filename="original.png"'}:{})}});
   }
