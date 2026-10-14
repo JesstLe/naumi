@@ -84,7 +84,7 @@ export async function GET(
     try {
       const upstream = await fetchStoredObject(rel, request.headers.get("range") || "");
       if (privateMedia && upstream.status === 404) { remoteMissing=true;throw new Error("remote missing; try mirror"); }
-      if (privateMedia && !upstream.ok && upstream.status !== 416) return new Response("Storage unavailable", { status: 503, headers: {"cache-control":"no-store"} });
+      if (privateMedia && !upstream.ok && upstream.status !== 416) throw new Error("remote unavailable; try mirror");
       const headers = new Headers();
       for (const name of [
         "accept-ranges",

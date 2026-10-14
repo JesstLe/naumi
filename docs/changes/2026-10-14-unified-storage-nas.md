@@ -43,3 +43,8 @@
 任务分支已push d3876a9并合origin/main28c646e（整合SHA4f55b48）；main尚未合入本任务。首次本任务build exit0、编译/88页通过，但父checkout与独立依赖导致ESLint插件冲突告警，不能称Lint通过。后续修复仍需重新最终构建。
 
 独立rollback-copy355c428已应用任务补丁后执行ROLLBACK.sh，输出ROLLBACK_PATCH=PASS、git diff exit0；最初bash路径错误导致回滚未执行，已更正为D:/DEV/Git/bin/bash.exe并实际完成，不用此前普通读取成功冒充代码恢复。
+
+## 企业目标最新指定
+用户经协作会话补充：企业NAS用于47.105.59.142。仅47独立部署配置启用S3/proxy；103现有存储配置和媒体不改。本轮不部署、不迁移、不启动或开放47 Naumi。已阅读大陆站准备交接：Naumi仍为私有准备且App/Worker未启用；原Python参考工作台独立运行，TS适配层不覆盖或宣称已适配那个服务。NAS endpoint/桶/凭据/常开网关网络待核验；IP不进入业务代码分支。
+
+最终集中检查追加同key实际更新的三变体旧清单409、新清单200与SHA相等；真实db.deleteArtwork+远端403验证无unhandledRejection，输出STORAGE_CLEANUP_PENDING。NAS503也可读镜像。独立ESLint实际exit0（任务受影响文件）、tsc exit0；Next15.5.27 --no-lint构建单独通过88页，lint不是跳过后冒称。后续新增修复需最后一轮构建。
