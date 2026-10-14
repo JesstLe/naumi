@@ -8,6 +8,7 @@ import {storageKeyFromManagedUrl} from "../storage";
 import type {OrderedInput} from "../video/references";
 import {ownedVideoWorkflowSource} from "../video/workflow-source";
 import {verifiedOwnedMedia} from "../video/media-inspection";
+import {adaptiveCanvasImageSize} from "../mock-data";
 import {ModelConfigError} from "../model-config/types";
 import {authorizeVideoReferences} from "../video/reference-materialization";
 import {videoNodeWriteSchema,videoNodeConfigSchema,videoProjectKeySchema,type CanvasVideoNode,type VideoNodeWrite} from "./video-node-schema";
@@ -115,16 +116,36 @@ export async function sendVideoTaskToCanvas(actorRaw:string,taskId:string,target
     await client.query("BEGIN");await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[actor]);await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${actor}`]);
     const previous=(await client.query("SELECT result FROM app_canvas_video_task_sends WHERE email=$1 AND task_id=$2 AND project_key=$3",[actor,taskId,key])).rows[0];if(previous){await client.query("COMMIT");return {...previous.result,replayed:true};}
     const project=(await client.query("SELECT deleted_at FROM app_canvas_video_projects WHERE email=$1 AND project_key=$2",[actor,key])).rows[0];if(project?.deleted_at)throw new ModelConfigError("VIDEO_PROJECT_UNAVAILABLE","目标项目已删除",409);
+    // Append beside the existing mixed project, without moving any original nodes.
+    const occupied=(await client.query(`
+      SELECT x,y,width FROM app_canvas_video_nodes WHERE email=$1 AND project_key=$2 AND deleted_at IS NULL
+      UNION ALL SELECT canvas_x,canvas_y,canvas_width FROM app_canvas_text_nodes WHERE email=$1 AND project_key=$2
+      UNION ALL SELECT COALESCE(canvas_x,0),COALESCE(canvas_y,0),COALESCE(canvas_width,384) FROM app_artworks
+        WHERE email=$1 AND deleted_at IS NULL AND (($3='tree' AND COALESCE(group_id,id)=$4) OR ($3='batch' AND batch_id=$4))`,
+      [actor,key,key.split(":")[0],key.slice(key.indexOf(":")+1)])).rows;
+    const x=Math.max(0,...occupied.map(box=>Number(box.x)+Math.max(384,Number(box.width)||384)))+96;
+    const y=Math.min(0,...occupied.map(box=>Number(box.y)));
+    const copies=[...allArts.values()].filter(art=>mapping.get(art.id)!==art.id);
+    const sizes=copies.map(art=>{const fallback=adaptiveCanvasImageSize(art.width,art.height);return {width:art.canvasWidth||fallback.width,height:art.canvasHeight||fallback.height};});
+    const columnWidth=Math.max(384,...sizes.map(size=>size.width))+96;
+    const positions=new Map<string,{x:number;y:number;width:number;height:number}>();
+    let rowY=y+416;
+    for(let index=0;index<copies.length;index+=2){
+      for(let column=0;column<2&&index+column<copies.length;column++)positions.set(copies[index+column].id,{x:x+column*columnWidth,y:rowY,...sizes[index+column]});
+      rowY+=Math.max(...sizes.slice(index,index+2).map(size=>size.height))+192;
+    }
+    if(x+columnWidth>1e8||rowY>1e8)throw new ModelConfigError("CANVAS_POSITION_UNAVAILABLE","目标画布位置超出范围，请整理画布后重试",422);
     if(typeof task.parameters.workflowManifestEnc==="string")await client.query("INSERT INTO app_canvas_video_workflow_sources(email,task_id,public_model_id,manifest_enc,digest) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",[actor,taskId,String(task.parameters.publicModelId||task.model),task.parameters.workflowManifestEnc,task.parameters.workflowManifestDigest||null]);
     for(const art of allArts.values()){
-      const id=mapping.get(art.id)!;
+      const id=mapping.get(art.id)!,position=positions.get(art.id);
       if(id!==art.id)await client.query(`INSERT INTO app_artworks SELECT (jsonb_populate_record(NULL::app_artworks,to_jsonb(src)||jsonb_build_object(
         'id',$3::text,'group_id',CASE WHEN $4='tree' THEN $5 ELSE NULL END,'batch_id',CASE WHEN $4='batch' THEN $5 ELSE NULL END,
-        'parent_id',$6::text,'parent_ids',$7::jsonb,'origin','canvas','canvas_group_id',NULL,'canvas_x',NULL,'canvas_y',NULL,'deleted_at',NULL,'created_at',now(),'updated_at',now()))).* FROM app_artworks src
-        WHERE email=$1 AND id=$2 AND deleted_at IS NULL ON CONFLICT(id) DO NOTHING`,[actor,art.id,id,key.split(":")[0],key.slice(key.indexOf(":")+1),art.parentId?mapping.get(art.parentId)||art.parentId:null,JSON.stringify((art.parentIds||[]).map(parent=>mapping.get(parent)||parent))]);
+        'parent_id',$6::text,'parent_ids',$7::jsonb,'origin','canvas','canvas_group_id',NULL,'canvas_x',$8::double precision,'canvas_y',$9::double precision,
+        'canvas_width',$10::double precision,'canvas_height',$11::double precision,'deleted_at',NULL,'created_at',now(),'updated_at',now()))).* FROM app_artworks src
+        WHERE email=$1 AND id=$2 AND deleted_at IS NULL ON CONFLICT(id) DO NOTHING`,[actor,art.id,id,key.split(":")[0],key.slice(key.indexOf(":")+1),art.parentId?mapping.get(art.parentId)||art.parentId:null,JSON.stringify((art.parentIds||[]).map(parent=>mapping.get(parent)||parent)),position!.x,position!.y,position!.width,position!.height]);
       if(!(await client.query("UPDATE app_artworks SET origin='canvas' WHERE email=$1 AND id=$2 AND deleted_at IS NULL RETURNING id",[actor,id])).rowCount)throw new ModelConfigError("VIDEO_RESULT_UNAVAILABLE","素材已删除，发送没有完成",404);
     }
-    const node=await saveVideoNodeTx(client,actor,{id:nodeId,projectKey:key,expectedRevision:0,operationId:stableOperation(`send:${actor}:${taskId}:${key}`),title:primary.title,config,inputs:preparedInputs.map(input=>({...input,nodeId:input.kind==="text"?input.nodeId:mapping.get(input.nodeId)!}))},key);
+    const node=await saveVideoNodeTx(client,actor,{id:nodeId,projectKey:key,expectedRevision:0,operationId:stableOperation(`send:${actor}:${taskId}:${key}`),title:primary.title,x,y,width:384,height:320,config,inputs:preparedInputs.map(input=>({...input,nodeId:input.kind==="text"?input.nodeId:mapping.get(input.nodeId)!}))},key);
     await associateVideoTaskTx(client,actor,nodeId,node.revision,taskId);await completeVideoNodeTx(client,actor,nodeId,taskId,artworkId);
     const result={artworkId,artworkIds,inputArtworkIds,nodeId,projectKey:key,reused:sameProject(primary)};await client.query("INSERT INTO app_canvas_video_task_sends(email,task_id,project_key,result) VALUES($1,$2,$3,$4::jsonb)",[actor,taskId,key,JSON.stringify(result)]);
     await client.query("COMMIT");return result;

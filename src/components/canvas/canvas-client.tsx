@@ -2463,9 +2463,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     restoredRef.current = true;
     setTargetEmail(target);
     setReadOnly(ro);
+    async function loadCurrentAccount() {
+      // Cache activation or a completed mutation can supersede the initial read.
+      // Re-read the current revision without delivering stale data or another account.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try { return await loadAccountSnapshot<Artwork>(target); }
+        catch (cause) {
+          if (cancelled || attempt === 2 || !(cause instanceof Error) || cause.message !== "Account snapshot superseded") throw cause;
+        }
+      }
+      throw new Error("Canvas account initialization unavailable");
+    }
     Promise.all([
       // Cross-account requests bypass the browser cache; canvas never applies stale revalidation over edits.
-      loadAccountSnapshot<Artwork>(target),
+      loadCurrentAccount(),
       privateFetchRaw(`/api/projects?email=${encodeURIComponent(target)}`)
         .then((r) => r.json())
         .catch(() => ({ names: {} })),
