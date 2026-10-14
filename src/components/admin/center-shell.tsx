@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, ArrowLeft, BarChart3, Building2, ImageIcon, Layers, LogOut, Menu, Settings, ShieldCheck, Users, Wallet, X } from "lucide-react";
 import type { BiSection } from "@/lib/bi/contracts";
 import styles from "./center-shell.module.css";
 
-type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-management" | "teams" | "team-access" | "feature-access";
+type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-management" | "teams" | "team-access" | "feature-access" | "deployments";
 type Entry = { id: Section; label: string; icon: typeof Users; href?: string };
 const groups: { label: string; entries: Entry[] }[] = [
   { label: "运营概览", entries: [{ id: "overview", label: "数据概览", icon: BarChart3 }] },
@@ -30,6 +30,7 @@ const groups: { label: string; entries: Entry[] }[] = [
     { id: "access", label: "后台访问记录", icon: ShieldCheck },
   ] },
   { label: "系统设置", entries: [
+    { id: "deployments", label: "部署管理", icon: Building2, href: "/admin/deployments" },
     { id: "model-config", label: "模型配置中心", icon: Layers, href: "/admin/bi/models" },
     { id: "settings", label: "接口与站点设置", icon: Settings, href: "/admin?view=settings" },
   ] },
@@ -43,6 +44,14 @@ export function AdminCenterShell({ active, children, onBiNavigate, light = false
   light?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [fleetEnabled, setFleetEnabled] = useState(active === "deployments");
+  useEffect(() => {
+    const abort = new AbortController();
+    void fetch("/api/admin/fleet/status", {cache:"no-store", signal:abort.signal}).then(async response => {
+      if(response.ok) { const data=await response.json(); if(!abort.signal.aborted)setFleetEnabled(data.enabled===true); }
+    }).catch(() => {});
+    return () => abort.abort();
+  }, []);
   const [logoutError, setLogoutError] = useState("");
   const router = useRouter();
   async function logout() {
@@ -67,7 +76,7 @@ export function AdminCenterShell({ active, children, onBiNavigate, light = false
         <div className={styles.modelManagementEntry}><Link href="/admin/model-management" prefetch={false} aria-current={active === "model-management" ? "page" : undefined} className={active === "model-management" ? styles.modelManagementActive : ""} onClick={() => setOpen(false)}><Layers size={18} /><span>模型管理 <small>模型与积分</small></span><span className={styles.modelManagementBadge}>新</span></Link></div>
         {groups.map(group => <div className={styles.group} key={group.label}>
           <p className={styles.groupLabel}>{group.label}</p>
-          {group.entries.map(({ id, label, icon: Icon, href }) => <Link key={id} prefetch={false}
+          {group.entries.filter(entry => entry.id !== "deployments" || fleetEnabled).map(({ id, label, icon: Icon, href }) => <Link key={id} prefetch={false}
             href={href || `/admin/center?section=${id}`}
             aria-current={active === id ? "page" : undefined}
             className={active === id ? styles.active : ""}
