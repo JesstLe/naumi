@@ -13,7 +13,7 @@
 ## 实现
 - 连接器与release relay复用受控fleetFetch。默认仍平台fetch/TLS；仅管理员配置FLEET_CENTRAL_CA_FILE/FLEET_CENTRAL_RESOLVE_IP时用独立https.request。
 - 可将HTTPS域名按管理员固定IP直连源站；URL域名/Host/SNI和证书主机验证保持，私有CA只对fleet请求生效，不改系统CA/全站TLS/Cloudflare WAF，不关闭TLS验证。配置不取自Agent输出、远端指令或浏览器输入。
-- CA文件绝对路径、普通文件、Linux root/进程所有且不可group/world写，限20KB、最多4个有效CA证书；叶子证书/缺失/畸形/过期拒绝，不fail-open到另一条连接。兼容系统信任根但不自动信任对端证书。
+- CA文件绝对路径、普通文件及各父目录、Linux root/进程所有且不可group/world写/非symlink，限20KB、最多4个有效CA证书；叶子证书/缺失/畸形/过期拒绝，不fail-open到另一条连接。兼容系统信任根但不自动信任对端证书。
 - 自定义传输仅POST固定4条/api/fleet路径，16KB请求/48KB响应、TLS1.2+、超时/redirect拒绝、元数据/回环/mappedIPv6地址拒绝，不提供任意URL或请求代理。
 - 增加固定bundle preflight：无cookie/token、无生产写入核实证书/版本及匿名fleet拒绝。TLS/响应异常exit1，API未部署或鉴权形态错误exit2；不能靠404或网站version200声称中央已上线。
 

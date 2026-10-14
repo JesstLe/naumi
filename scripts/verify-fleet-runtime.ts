@@ -11,9 +11,11 @@ async function main(){
   const db=await import('../src/lib/db'),fleet=await import('../src/lib/fleet/server'),poll=await import('../src/app/api/fleet/poll/route'),ack=await import('../src/app/api/fleet/ack/route');
   await fleet.ensureFleetSchema();const instance=await fleet.createInstance('fixture-root','Linux企业连接器','enterprise');
   const certdir=path.resolve('output/fleet-governance/tls'),ca=readFileSync(path.join(certdir,'cert.pem'));
-  const server=createServer({key:readFileSync(path.join(certdir,'key.pem')),cert:ca},async(req,res)=>{try{const parts:Buffer[]=[];for await(const chunk of req)parts.push(Buffer.from(chunk));const r=new Request('https://host.docker.internal:'+port+req.url,{method:'POST',headers:req.headers as Record<string,string>,body:Buffer.concat(parts)});const response=req.url==='/api/fleet/poll'?await poll.POST(r):await ack.POST(r);res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));}catch{res.writeHead(500);res.end();}});
+  const server=createServer({key:readFileSync(path.join(certdir,'key.pem')),cert:ca},async(req,res)=>{try{if(req.url==='/api/version'&&req.method==='GET'){res.setHeader('content-type','application/json');res.end(JSON.stringify({commit:'7'.repeat(40),version:123}));return;}const parts:Buffer[]=[];for await(const chunk of req)parts.push(Buffer.from(chunk));const r=new Request('https://host.docker.internal:'+port+req.url,{method:'POST',headers:req.headers as Record<string,string>,body:Buffer.concat(parts)});const response=req.url==='/api/fleet/poll'?await poll.POST(r):await ack.POST(r);res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));}catch{res.writeHead(500);res.end();}});
   await new Promise<void>(resolve=>server.listen(0,'0.0.0.0',resolve));const port=(server.address() as {port:number}).port;
   const image=process.env.FLEET_TEST_IMAGE||'naumi-fleet:governance-20261014';
+  // Windows bind mounts report 0777 even readonly: install only public fixture CA in a Linux layer.
+  const privateCa=process.env.FLEET_TEST_PRIVATE_CA_FILE||'/test-ca/cert.pem';
   const actualSource='7'.repeat(40),localStates=[actualSource,actualSource,actualSource],localServers: ReturnType<typeof createLocalServer>[]=[];
   for(let i=0;i<3;i++){const local=createLocalServer((_req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({commit:localStates[i],version:123}));});await new Promise<void>(resolve=>local.listen(0,'0.0.0.0',resolve));localServers.push(local);}
   const origins=Object.fromEntries(['FLEET_APP_ORIGIN','FLEET_DESKTOP_ORIGIN','FLEET_ENTERPRISE_ORIGIN'].map((key,i)=>[key,'http://app:'+(localServers[i].address() as {port:number}).port]));
@@ -30,12 +32,14 @@ async function main(){
     assert.ok((await run({FLEET_CENTRAL_URL:'http://host.docker.internal:'+port},1)).includes('FLEET_CONNECTOR=INVALID_CONFIG'));
     assert.ok((await run({NODE_EXTRA_CA_CERTS:''},1)).includes('FLEET_TICK=RETRY_PENDING'));
     // The operator-pinned private CA is request-local, not a global TLS bypass.
-    assert.ok((await run({NODE_EXTRA_CA_CERTS:'',FLEET_CENTRAL_CA_FILE:'/test-ca/cert.pem'})).includes('FLEET_TICK=idle'));
+    assert.ok((await run({NODE_EXTRA_CA_CERTS:'',FLEET_CENTRAL_CA_FILE:privateCa})).includes('FLEET_TICK=idle'));
     assert.ok((await run({NODE_EXTRA_CA_CERTS:'',FLEET_CENTRAL_CA_FILE:'/test-ca/missing.pem'},1)).includes('FLEET_TICK=RETRY_PENDING'));
+    const preflight=await new Promise<{status:number;stdout:string;stderr:string}>(async(resolve,reject)=>{const {spawn}=await import('node:child_process');const child=spawn('docker',['run','--rm','--mount',`type=bind,source=${certdir},target=/test-ca,readonly`,'-e','FLEET_CENTRAL_URL=https://host.docker.internal:'+port,'-e','FLEET_CENTRAL_CA_FILE='+privateCa,image,'node','dist/fleet/preflight.js'],{stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);child.on('close',status=>resolve({status:status??-1,stdout,stderr}));});
+    assert.equal(preflight.status,0,preflight.stderr);const checked=JSON.parse(preflight.stdout);assert.equal(checked.ready,true);assert.equal(checked.credentialsSent,false);assert.equal(checked.tlsVerified,true);
     const state=(await db.getPool().query('SELECT status FROM app_fleet_instances WHERE id=$1',[instance.id])).rows[0].status;assert.equal(state.source,actualSource);assert.equal(state.version,'123');assert.equal(state.connector,1);
     localStates[2]='8'.repeat(40);await run();assert.equal((await db.getPool().query('SELECT status FROM app_fleet_instances WHERE id=$1',[instance.id])).rows[0].status.source,'unknown');
     const disabled=spawnSync('docker',['run','--rm',image,'node','dist/fleet/scheduler.js'],{encoding:'utf8'});assert.equal(disabled.status,1);assert.ok((disabled.stderr+disabled.stdout).includes('FLEET_SCHEDULER=FAILED'));
-    console.log('FLEET_LINUX_RUNTIME=PASS NODE24=1 NONROOT=1 TRUSTED_TLS=1 PRIVATE_CA_REQUEST_LOCAL=1 MISSING_CA_NO_FAILOPEN=1 WRONG_TOKEN_DENIED=1 UNTRUSTED_CERT_DENIED=1 PUBLIC_HTTP_DENIED=1 REAL_COMMAND=1 ACTUAL_THREE_SLOTS=1 MIXED_UNKNOWN=1 SCHEDULER_DEFAULT_OFF=1 RESTART_RECEIPTS=1 PRODUCTION_WRITES=0');
+    console.log('FLEET_LINUX_RUNTIME=PASS NODE24=1 NONROOT=1 TRUSTED_TLS=1 PRIVATE_CA_REQUEST_LOCAL=1 MISSING_CA_NO_FAILOPEN=1 PREFLIGHT_NO_CREDENTIALS=1 WRONG_TOKEN_DENIED=1 UNTRUSTED_CERT_DENIED=1 PUBLIC_HTTP_DENIED=1 REAL_COMMAND=1 ACTUAL_THREE_SLOTS=1 MIXED_UNKNOWN=1 SCHEDULER_DEFAULT_OFF=1 RESTART_RECEIPTS=1 PRODUCTION_WRITES=0');
   }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));for(const local of localServers)await new Promise<void>(resolve=>local.close(()=>resolve()));await db.getPool().end();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

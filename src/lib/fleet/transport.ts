@@ -3,7 +3,7 @@ import https from 'node:https';
 import {isIP} from 'node:net';
 import {rootCertificates} from 'node:tls';
 import {X509Certificate} from 'node:crypto';
-import {open} from 'node:fs/promises';
+import {open,lstat} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import path from 'node:path';
 import {centralUrl} from './contracts';
@@ -12,6 +12,12 @@ export async function configuredCentralCA(){
   const file=process.env.FLEET_CENTRAL_CA_FILE;
   if(!file)return undefined;
   if(!path.isAbsolute(file))throw Error('FLEET_CA_PATH');
+  if(process.platform==='linux'){
+    for(let directory=path.dirname(file);;directory=path.dirname(directory)){
+      const info=await lstat(directory);if(!info.isDirectory()||info.isSymbolicLink()||info.uid!==0&&info.uid!==process.getuid?.()||info.mode&0o022)throw Error('FLEET_CA_PARENT');
+      if(path.dirname(directory)===directory)break;
+    }
+  }
   const handle=await open(file,constants.O_RDONLY|constants.O_NOFOLLOW);
   try{
     const stat=await handle.stat();if(!stat.isFile()||stat.size>20000||process.platform==='linux'&&((stat.uid!==0&&stat.uid!==process.getuid?.())||stat.mode&0o022))throw Error('FLEET_CA_FILE');
@@ -32,14 +38,14 @@ export async function fleetFetch(input:string,init:RequestInit){
   const ca=await configuredCentralCA();
   const headers=Object.fromEntries(new Headers(init.headers));
   return new Promise<Response>((resolve,reject)=>{
-    const request=https.request(url,{method:'POST',headers,ca,rejectUnauthorized:true,minVersion:'TLSv1.2',signal:init.signal||undefined,
+    const request=https.request(url,{method:'POST',headers,ca,rejectUnauthorized:true,minVersion:'TLSv1.2',signal:init.signal||AbortSignal.timeout(30000),
       ...(pin?{lookup:(_hostname,options,callback)=>{const family=isIP(pin);if(options.all)callback(null,[{address:pin,family}]);else callback(null,pin,family);}}:{})},response=>{
       const chunks:Buffer[]=[];let bytes=0;
       response.on('data',(chunk:Buffer)=>{bytes+=chunk.length;if(bytes>48000){response.destroy(Error('FLEET_RESPONSE_TOO_LARGE'));return;}chunks.push(chunk);});
       response.on('error',reject);response.on('end',()=>{
         const status=response.statusCode||502;if(status>=300&&status<400){reject(Error('FLEET_REDIRECT_DENIED'));return;}
         const resultHeaders=new Headers();for(const [key,value] of Object.entries(response.headers)){if(value!==undefined)resultHeaders.set(key,Array.isArray(value)?value.join(','):value);}
-        resolve(new Response(Buffer.concat(chunks),{status,headers:resultHeaders}));
+        resolve(new Response([204,205].includes(status)?null:Buffer.concat(chunks),{status,headers:resultHeaders}));
       });
     });
     request.on('error',reject);request.end(init.body);
