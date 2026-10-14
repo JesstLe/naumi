@@ -37,11 +37,12 @@ const groups: { label: string; entries: Entry[] }[] = [
 ];
 
 /** Shared navigation only; each page and API retains its own administrator checks. */
-export function AdminCenterShell({ active, children, onBiNavigate, light = false }: {
+export function AdminCenterShell({ active, children, onBiNavigate, light = false, deploymentsOnly = false }: {
   active: Section;
   children: React.ReactNode;
   onBiNavigate?: (section: BiSection) => void;
   light?: boolean;
+  deploymentsOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [fleetEnabled, setFleetEnabled] = useState(active === "deployments");
@@ -64,19 +65,19 @@ export function AdminCenterShell({ active, children, onBiNavigate, light = false
   }
   return <div className={`${styles.shell} ${light ? styles.light : ""}`}>
     <header className={styles.mobileHeader}>
-      <Link href="/admin/center" prefetch={false}>Naumi 管理中心</Link>
+      <Link href={deploymentsOnly ? "/admin/deployments" : "/admin/center"} prefetch={false}>Naumi 管理中心</Link>
       <button type="button" aria-label={open ? "收起管理导航" : "展开管理导航"} aria-expanded={open} aria-controls="admin-center-navigation" onClick={() => setOpen(!open)}>
         {open ? <X size={22} /> : <Menu size={22} />}
       </button>
     </header>
     <aside className={`${styles.sidebar} ${open ? styles.open : ""}`} id="admin-center-navigation">
-      <Link className={styles.brand} href="/admin/center" prefetch={false}>Naumi <span>管理中心</span></Link>
-      <p className={styles.private}><ShieldCheck size={15} />仅管理员可见</p>
+      <Link className={styles.brand} href={deploymentsOnly ? "/admin/deployments" : "/admin/center"} prefetch={false}>Naumi <span>管理中心</span></Link>
+      <p className={styles.private}><ShieldCheck size={15} />{deploymentsOnly ? "实例授权运维" : "仅管理员可见"}</p>
       <nav aria-label="管理中心导航">
-        <div className={styles.modelManagementEntry}><Link href="/admin/model-management" prefetch={false} aria-current={active === "model-management" ? "page" : undefined} className={active === "model-management" ? styles.modelManagementActive : ""} onClick={() => setOpen(false)}><Layers size={18} /><span>模型管理 <small>模型与积分</small></span><span className={styles.modelManagementBadge}>新</span></Link></div>
-        {groups.map(group => <div className={styles.group} key={group.label}>
+        {!deploymentsOnly && <div className={styles.modelManagementEntry}><Link href="/admin/model-management" prefetch={false} aria-current={active === "model-management" ? "page" : undefined} className={active === "model-management" ? styles.modelManagementActive : ""} onClick={() => setOpen(false)}><Layers size={18} /><span>模型管理 <small>模型与积分</small></span><span className={styles.modelManagementBadge}>新</span></Link></div>}
+        {groups.filter(group => !deploymentsOnly || group.entries.some(entry => entry.id === "deployments")).map(group => <div className={styles.group} key={group.label}>
           <p className={styles.groupLabel}>{group.label}</p>
-          {group.entries.filter(entry => entry.id !== "deployments" || fleetEnabled).map(({ id, label, icon: Icon, href }) => <Link key={id} prefetch={false}
+          {group.entries.filter(entry => (!deploymentsOnly || entry.id === "deployments") && (entry.id !== "deployments" || fleetEnabled)).map(({ id, label, icon: Icon, href }) => <Link key={id} prefetch={false}
             href={href || `/admin/center?section=${id}`}
             aria-current={active === id ? "page" : undefined}
             className={active === id ? styles.active : ""}
@@ -90,7 +91,7 @@ export function AdminCenterShell({ active, children, onBiNavigate, light = false
         </div>)}
       </nav>
       <Link className={styles.back} href="/" prefetch={false}><ArrowLeft size={16} />返回工作台</Link>
-      <button type="button" className={styles.logout} onClick={() => void logout()}><LogOut size={16} />退出管理中心</button>
+      {!deploymentsOnly && <button type="button" className={styles.logout} onClick={() => void logout()}><LogOut size={16} />退出管理中心</button>}
       {logoutError && <p className={styles.logout} role="alert">{logoutError}</p>}
     </aside>
     <div className={styles.content}>{children}</div>

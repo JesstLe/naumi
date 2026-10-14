@@ -10,6 +10,16 @@ export const operationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('features.set'), email, mode: z.enum(['default', 'custom']), allowed: z.array(z.string().max(80)).max(100), expectedVersion: z.number().int().min(0) }).strict(),
 ]);
 export type FleetOperation = z.infer<typeof operationSchema>;
+export const fleetCapabilities = ['read','users','credits','features','release'] as const;
+export type FleetCapability = typeof fleetCapabilities[number];
+export type FleetActor = { actor: string; root: boolean };
+export function commandCapability(operation: FleetOperation): FleetCapability {
+  if(operation.type==='credits.adjust')return 'credits';
+  if(operation.type==='features.set')return 'features';
+  if(operation.type==='users.ban')return 'users';
+  return 'read';
+}
+export const grantSchema = z.object({action:z.literal('grant'),instanceId:z.string().uuid(),email,allowed:z.array(z.enum(fleetCapabilities)).max(5).refine(v=>new Set(v).size===v.length),expectedVersion:z.number().int().min(0),expiresAt:z.string().datetime().nullable()}).strict();
 export const commandSchema = z.object({ id: z.string().uuid(), instanceId: z.string().uuid(), actor: z.string().min(1).max(254), expiresAt: z.number().int(), operation: operationSchema }).strict();
 export type FleetCommand = z.infer<typeof commandSchema>;
 export type SignedFleetCommand = { payload: string; signature: string };

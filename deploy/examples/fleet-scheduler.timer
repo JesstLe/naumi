@@ -1,0 +1,11 @@
+[Unit]
+Description=Naumi enterprise version follow at 20:00 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 20:00:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=30
+Unit=fleet-scheduler.service
+
+[Install]
+WantedBy=timers.target
