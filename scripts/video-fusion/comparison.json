@@ -1,0 +1,405 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-14",
+  "status": "in-progress",
+  "paidVideoCalls": 0,
+  "upstreams": [
+    {
+      "repository": "https://github.com/tigerowo/infinite-canvas",
+      "commit": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
+      "mode": "pinned-local",
+      "versionLabel": "v0.8.1",
+      "web": "http://127.0.0.1:15373",
+      "backend": "http://127.0.0.1:15372",
+      "data": "independent SQLite, fake account, empty real supplier credentials"
+    },
+    {
+      "repository": "https://github.com/HBAI-Ltd/Toonflow-app",
+      "commit": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "mode": "pinned-local",
+      "web": "http://127.0.0.1:15374",
+      "backend": "http://127.0.0.1:3000",
+      "startup": "external createApp wrapper; source entry MCP/mobile initialization restored; NODE_ENV=production; mobile sharing remains disabled; MCP loopback and authorization unchanged",
+      "generatedFiles": [
+        "apps/server/src/router.ts",
+        "apps/web/src/types/components.d.ts"
+      ]
+    }
+  ],
+  "onlineLimits": [
+    {
+      "url": "https://infinite-canvas-cpco.onrender.com",
+      "version": "v0.12.0",
+      "repositoryLink": "https://github.com/basketikun/infinite-canvas",
+      "result": "candidate operations observed, commit unknown, cannot establish requested pinned source parity"
+    },
+    {
+      "url": "https://api.toonflow.net",
+      "result": "TF-Router model portal, Tencent CAPTCHA, no login or CAPTCHA completion; not confirmed canvas demo"
+    }
+  ],
+  "capabilities": [
+    {
+      "capabilityId": "V01",
+      "name": "空白文生与图生节点",
+      "status": "partial-observation",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [
+        "创建服务器工作区中的独立项目",
+        "点击视频生成新增空白节点",
+        "输入三行原创镜头与对白",
+        "刷新并重新选中原节点"
+      ],
+      "result": "真实生成节点及完整三行提示词保存恢复；未调用付费生成",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/video-node-original-media.png"
+      ],
+      "naumiEvidencePrefixes": [
+        "canvas-browser-2494ea71"
+      ],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V02",
+      "name": "首尾帧规则",
+      "status": "partial-observation",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": ["把实际截取的尾帧图片连到视频输入", "选择首帧可选，确认单图作为尾帧的规则", "刷新并重新打开设置，确认模式和图片保留", "实际截取首帧并连接第二张图片", "选择首帧可选并拖动交换两张图片的顺序"],
+      "result": "单图尾帧、双图按顺序首尾、原图身份及拖动顺序实际观察；无有效输入会归一文生。专用首尾必需模式与其他模型仍待对照，未调用付费生成。",
+      "evidence": ["E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/first-frame-optional-with-owned-image.jpg", "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/first-frame-restored-dom.txt", "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/two-frame-reordered-dom.txt"],
+      "naumiEvidencePrefixes": ["canvas-browser-2494ea71"],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V03",
+      "name": "混合媒体参考",
+      "status": "partial-observation",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": ["切换混合参考", "依次连接尾帧图片、真实两秒裁剪视频、实际提取音频", "检查三种引用卡片与对应连线", "刷新后重新选择原视频节点"],
+      "result": "图片/视频/音频全部成为实际输入，来源节点与完整原提示词保持，刷新保留。数量边界和其他模型限制仍待对照。",
+      "evidence": ["E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/mixed-reference-dom.txt", "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/mixed-reference-restored-dom.txt", "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/mixed-image-video-audio.jpg"],
+      "naumiEvidencePrefixes": ["canvas-browser-2494ea71"],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V04",
+      "name": "引用排序与文字映射",
+      "status": "partial-observation",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": ["拖动第三张音频引用到图片/视频之间", "确认编号由图片/视频/音频变为图片/音频/视频", "刷新并重新选中，确认顺序保留", "读取独立工作区referenceOrder，核对节点身份顺序", "拖动交换双图片顺序"],
+      "result": "实际拖动排序、编号和持久referenceOrder一致；原提示词全部保留。文字引用映射仍未完成实操，不能把排序通过当作整项完成。",
+      "evidence": ["E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/mixed-reference-reordered-dom.txt", "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/mixed-reference-restored-dom.txt", "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/mixed-reference-reordered.jpg"],
+      "naumiEvidencePrefixes": ["canvas-browser-2494ea71"],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V05",
+      "name": "模型及渠道能力变化",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V06",
+      "name": "时长分辨率比例",
+      "status": "partial-observation",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [
+        "打开视频生成设置",
+        "选择16:9、10秒、720p",
+        "刷新并选中原节点"
+      ],
+      "result": "摘要实际为16:9 · 720p · 10秒；源工作区JSON相同",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/data/workspaces/canvas-video-comparison/画布1.json"
+      ],
+      "naumiEvidencePrefixes": [
+        "canvas-browser-2494ea71"
+      ],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V07",
+      "name": "声音与扩展选项",
+      "status": "partial-observation",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [
+        "打开视频生成设置",
+        "点击生成音频可见开关外壳",
+        "刷新读取保存结果"
+      ],
+      "result": "生成音频未勾选，持久JSON generateAudio=false；未验证每个协议参数",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/data/workspaces/canvas-video-comparison/画布1.json"
+      ],
+      "naumiEvidencePrefixes": [
+        "canvas-browser-2494ea71"
+      ],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V08",
+      "name": "摄影控制",
+      "status": "partial-observation",
+      "upstream": "infinite-canvas-pinned",
+      "observedVersion": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
+      "steps": [
+        "固定IC新增视频节点",
+        "打开摄影控制面板",
+        "收起左侧面板使开关进入实际视口",
+        "勾选摄像机控制并核对开启/checked"
+      ],
+      "result": "实际显示Panavision DXL2、ARRI Signature Prime、50mm、f4，收起侧栏后成功启用，开关checked及文字开启；未调用付费生成",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/screenshots/camera-panel-toggle-attempt.jpg",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/screenshots/camera-enabled-actual.png"
+      ],
+      "naumiEvidencePrefixes": [
+        "canvas-browser-2494ea71"
+      ],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V09",
+      "name": "多镜头",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V10",
+      "name": "元素与Omni",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V11",
+      "name": "运动控制",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V12",
+      "name": "剧本分镜拼图",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V13",
+      "name": "连续续写与前传",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V14",
+      "name": "视频编辑",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V15",
+      "name": "Agent任务控制",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V16",
+      "name": "批量与工作流",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V17",
+      "name": "历史恢复错误",
+      "status": "partial-observation",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [
+        "上传原创视频作为替换结果",
+        "打开视频历史记录",
+        "刷新原项目"
+      ],
+      "result": "历史包含当前真实导入视频；原视频/音轨/裁剪/尾帧刷新恢复。未验证上游收费任务错误/停止/重启",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/history-current.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/derived-media-dom.txt"
+      ],
+      "naumiEvidencePrefixes": [
+        "workbench-0ada8bd9",
+        "agent-browser-bf739115"
+      ],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V18",
+      "name": "停止及竞态",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V19",
+      "name": "导入播放器下载",
+      "status": "partial-observation",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [
+        "替换视频上传landscape-4-audio.mp4",
+        "点击播放视频",
+        "读取真实video元素解码状态"
+      ],
+      "result": "实际1280×720、4秒、readyState4，彩条画面可见；导入与原素材SHA相同。下载/全屏未实际操作",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/video-node-original-media.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/media-probes.json"
+      ],
+      "naumiEvidencePrefixes": [
+        "byoc-browser-6064d70f",
+        "canvas-browser-6ed92695"
+      ],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V20",
+      "name": "首当前尾帧",
+      "status": "partial-observation",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [
+        "打开截取视频帧菜单",
+        "选择截取尾帧",
+        "刷新项目"
+      ],
+      "result": "实际生成尾帧图片节点及PNG；首帧/当前帧尚未逐一操作",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/tail-frame-audio-clip.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/media-probes.json"
+      ],
+      "naumiEvidencePrefixes": [
+        "byoc-browser-6064d70f"
+      ],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V21",
+      "name": "音轨分离裁剪",
+      "status": "partial-observation",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [
+        "点击提取音轨",
+        "将截取片段设为开始1秒、结束3秒并执行",
+        "点击分离音视频",
+        "检查保存文件及FFprobe"
+      ],
+      "result": "音轨为audio-only约4.01秒，剪辑为2秒video+audio；分离video-only4秒及audio-only约4.01秒，保留原4秒输入",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/screenshots/full-derived-media.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/toonAe9e5f/media-probes.json"
+      ],
+      "naumiEvidencePrefixes": [
+        "byoc-browser-6064d70f"
+      ],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V22",
+      "name": "FFmpeg表达力",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V23",
+      "name": "素材再引用",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    },
+    {
+      "capabilityId": "V24",
+      "name": "工作台发送边界",
+      "status": "not-observed",
+      "upstream": "Toonflow-pinned",
+      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
+      "steps": [],
+      "result": "尚未完成此项固定上游浏览器实操",
+      "evidence": [],
+      "naumiEvidencePrefixes": [],
+      "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
+    }
+  ]
+}

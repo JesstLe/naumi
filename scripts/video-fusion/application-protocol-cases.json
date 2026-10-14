@@ -1,0 +1,628 @@
+{
+  "version": 1,
+  "status": "cases-defined",
+  "cases": [
+    {
+      "id": "openai-videos-1",
+      "profile": "openai-videos",
+      "mode": "single_image",
+      "refs": [
+        "image:first_frame"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "grok2api-1",
+      "profile": "grok2api",
+      "mode": "text",
+      "refs": [],
+      "extra": {}
+    },
+    {
+      "id": "grok2api-2",
+      "profile": "grok2api",
+      "mode": "single_image",
+      "refs": [
+        "image:first_frame"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "cogvideox3-1",
+      "profile": "cogvideox3",
+      "mode": "frames_required",
+      "refs": [
+        "image:first_frame",
+        "last:last_frame"
+      ],
+      "extra": {
+        "generateAudio": false
+      }
+    },
+    {
+      "id": "agnes-1",
+      "profile": "agnes",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "last:reference"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "agnes-v25-1",
+      "profile": "agnes-v25",
+      "mode": "frames_required",
+      "refs": [
+        "image:first_frame",
+        "last:last_frame"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "agnes-v25-2",
+      "profile": "agnes-v25",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video",
+        "audio:source_audio"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "ark-1",
+      "profile": "ark",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video",
+        "audio:source_audio"
+      ],
+      "extra": {
+        "generateAudio": false,
+        "watermark": false,
+        "providerOptions": {
+          "seed": 0,
+          "cameraFixed": false
+        }
+      }
+    },
+    {
+      "id": "kie-generic-1",
+      "profile": "kie-generic",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video",
+        "audio:source_audio"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "kie-kling-1",
+      "profile": "kie-kling",
+      "mode": "reference",
+      "refs": [
+        "image:reference"
+      ],
+      "extra": {
+        "shots": [
+          {
+            "id": "A",
+            "prompt": "第一镜头：甲说“完整保留这句对白。”",
+            "durationSeconds": 2
+          },
+          {
+            "id": "B",
+            "prompt": "第二镜头：乙回答“包括最后一句。”",
+            "durationSeconds": 2
+          }
+        ],
+        "element": true,
+        "generateAudio": false
+      }
+    },
+    {
+      "id": "kie-kling-v26-1",
+      "profile": "kie-kling-v26",
+      "mode": "single_image",
+      "refs": [
+        "image:first_frame"
+      ],
+      "extra": {
+        "durationSeconds": 5,
+        "generateAudio": false
+      }
+    },
+    {
+      "id": "kie-kling-omni-text-1",
+      "profile": "kie-kling-omni-text",
+      "mode": "text",
+      "refs": [],
+      "extra": {
+        "shots": [
+          {
+            "id": "A",
+            "prompt": "第一镜头：甲说“完整保留这句对白。”",
+            "durationSeconds": 2
+          },
+          {
+            "id": "B",
+            "prompt": "第二镜头：乙回答“包括最后一句。”",
+            "durationSeconds": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "kie-kling-omni-image-1",
+      "profile": "kie-kling-omni-image",
+      "mode": "frames_required",
+      "refs": [
+        "image:first_frame",
+        "last:last_frame"
+      ],
+      "extra": {
+        "shots": [
+          {
+            "id": "A",
+            "prompt": "第一镜头：甲说“完整保留这句对白。”",
+            "durationSeconds": 2
+          },
+          {
+            "id": "B",
+            "prompt": "第二镜头：乙回答“包括最后一句。”",
+            "durationSeconds": 2
+          }
+        ],
+        "element": true
+      }
+    },
+    {
+      "id": "kie-kling-omni-reference-1",
+      "profile": "kie-kling-omni-reference",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video"
+      ],
+      "extra": {
+        "shots": [
+          {
+            "id": "A",
+            "prompt": "第一镜头：甲说“完整保留这句对白。”",
+            "durationSeconds": 2
+          },
+          {
+            "id": "B",
+            "prompt": "第二镜头：乙回答“包括最后一句。”",
+            "durationSeconds": 2
+          }
+        ],
+        "element": true,
+        "generateAudio": false
+      }
+    },
+    {
+      "id": "kie-kling-omni-transform-1",
+      "profile": "kie-kling-omni-transform",
+      "mode": "video_edit",
+      "refs": [
+        "image:reference",
+        "video:source_video"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "kie-motion-control-1",
+      "profile": "kie-motion-control",
+      "mode": "motion_control",
+      "refs": [
+        "image:reference",
+        "video:source_video"
+      ],
+      "extra": {
+        "providerOptions": {
+          "characterOrientation": "image"
+        }
+      }
+    },
+    {
+      "id": "apimart-generic-1",
+      "profile": "apimart-generic",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video",
+        "audio:source_audio"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "apimart-kling-1",
+      "profile": "apimart-kling",
+      "mode": "reference",
+      "refs": [
+        "image:reference"
+      ],
+      "extra": {
+        "shots": [
+          {
+            "id": "A",
+            "prompt": "第一镜头：甲说“完整保留这句对白。”",
+            "durationSeconds": 2
+          },
+          {
+            "id": "B",
+            "prompt": "第二镜头：乙回答“包括最后一句。”",
+            "durationSeconds": 2
+          }
+        ],
+        "element": true
+      }
+    },
+    {
+      "id": "apimart-kling-v26-1",
+      "profile": "apimart-kling-v26",
+      "mode": "single_image",
+      "refs": [
+        "image:first_frame"
+      ],
+      "extra": {
+        "durationSeconds": 5,
+        "generateAudio": false
+      }
+    },
+    {
+      "id": "apimart-kling-omni-1",
+      "profile": "apimart-kling-omni",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "apimart-motion-control-1",
+      "profile": "apimart-motion-control",
+      "mode": "motion_control",
+      "refs": [
+        "image:reference",
+        "video:source_video"
+      ],
+      "extra": {
+        "providerOptions": {
+          "characterOrientation": "image"
+        }
+      }
+    },
+    {
+      "id": "gemini-1",
+      "profile": "gemini",
+      "mode": "frames_required",
+      "refs": [
+        "image:first_frame",
+        "last:last_frame"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "minimax-1",
+      "profile": "minimax",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video",
+        "audio:source_audio"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "metaso-1",
+      "profile": "metaso",
+      "mode": "frames_required",
+      "refs": [
+        "image:first_frame",
+        "last:last_frame"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "tokendance-seedance-1",
+      "profile": "tokendance-seedance",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video",
+        "audio:source_audio"
+      ],
+      "extra": {
+        "generateAudio": false,
+        "watermark": false,
+        "providerOptions": {
+          "seed": 0
+        }
+      }
+    },
+    {
+      "id": "tokendance-seedance-2",
+      "profile": "tokendance-seedance",
+      "mode": "first_optional",
+      "refs": [
+        "last:last_frame"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "tokendance-kling-text-1",
+      "profile": "tokendance-kling-text",
+      "mode": "text",
+      "refs": [],
+      "extra": {}
+    },
+    {
+      "id": "tokendance-kling-image-1",
+      "profile": "tokendance-kling-image",
+      "mode": "frames_required",
+      "refs": [
+        "image:first_frame",
+        "last:last_frame"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "tokendance-kling-motion-1",
+      "profile": "tokendance-kling-motion",
+      "mode": "motion_control",
+      "refs": [
+        "image:reference",
+        "video:source_video"
+      ],
+      "extra": {
+        "providerOptions": {
+          "characterOrientation": "image"
+        }
+      }
+    },
+    {
+      "id": "tokendance-kling-omni-1",
+      "profile": "tokendance-kling-omni",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video",
+        "audio:source_audio"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "tokendance-wan3-1",
+      "profile": "tokendance-wan3",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video",
+        "audio:source_audio"
+      ],
+      "extra": {
+        "generateAudio": false,
+        "watermark": false
+      }
+    },
+    {
+      "id": "tokendance-happyhorse-1",
+      "profile": "tokendance-happyhorse",
+      "mode": "reference",
+      "refs": [
+        "image:reference"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "tokendance-happyhorse-2",
+      "profile": "tokendance-happyhorse",
+      "mode": "extend",
+      "refs": [
+        "video:source_video"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "tokendance-minimax-1",
+      "profile": "tokendance-minimax",
+      "mode": "frames_required",
+      "refs": [
+        "image:first_frame",
+        "last:last_frame"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "tfrouter-generic-1",
+      "profile": "tfrouter-generic",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video",
+        "audio:source_audio"
+      ],
+      "extra": {
+        "generateAudio": false
+      }
+    },
+    {
+      "id": "tfrouter-generic-2",
+      "profile": "tfrouter-generic",
+      "mode": "first_optional",
+      "refs": [
+        "last:last_frame"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "tfrouter-kling-1",
+      "profile": "tfrouter-kling",
+      "mode": "frames_required",
+      "refs": [
+        "image:first_frame",
+        "last:last_frame"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "tfrouter-kling-omni-1",
+      "profile": "tfrouter-kling-omni",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "tfrouter-grok-1",
+      "profile": "tfrouter-grok",
+      "mode": "text",
+      "refs": [],
+      "extra": {}
+    },
+    {
+      "id": "compshare-h3-1",
+      "profile": "compshare-h3",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video",
+        "audio:source_audio"
+      ],
+      "extra": {
+        "resolution": "768P",
+        "watermark": false,
+        "providerOptions": {
+          "muteAudio": false,
+          "useContextIR": false
+        }
+      }
+    },
+    {
+      "id": "compshare-hailuo-1",
+      "profile": "compshare-hailuo",
+      "mode": "single_image",
+      "refs": [
+        "image:first_frame"
+      ],
+      "extra": {
+        "durationSeconds": 6
+      }
+    },
+    {
+      "id": "compshare-vidu-1",
+      "profile": "compshare-vidu",
+      "mode": "text",
+      "refs": [],
+      "extra": {}
+    },
+    {
+      "id": "compshare-vidu-2",
+      "profile": "compshare-vidu",
+      "mode": "reference",
+      "refs": [
+        "image:reference"
+      ],
+      "extra": {
+        "multiOutput": true
+      }
+    },
+    {
+      "id": "compshare-vidu-3",
+      "profile": "compshare-vidu",
+      "mode": "frames_required",
+      "refs": [
+        "image:first_frame",
+        "last:last_frame"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "compshare-vidu-extend-1",
+      "profile": "compshare-vidu-extend",
+      "mode": "extend",
+      "refs": [
+        "video:source_video",
+        "last:last_frame"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "compshare-vidu-lip-sync-1",
+      "profile": "compshare-vidu-lip-sync",
+      "mode": "lip_sync",
+      "refs": [
+        "video:source_video",
+        "audio:source_audio"
+      ],
+      "extra": {
+        "prompt": ""
+      }
+    },
+    {
+      "id": "compshare-vidu-lip-sync-2",
+      "profile": "compshare-vidu-lip-sync",
+      "mode": "lip_sync",
+      "refs": [
+        "video:source_video"
+      ],
+      "extra": {
+        "prompt": "",
+        "providerOptions": {
+          "text": "你好"
+        }
+      }
+    },
+    {
+      "id": "compshare-wan-1",
+      "profile": "compshare-wan",
+      "mode": "text",
+      "refs": [],
+      "extra": {
+        "aspectRatio": "9:16"
+      }
+    },
+    {
+      "id": "compshare-wan-2",
+      "profile": "compshare-wan",
+      "mode": "frames_required",
+      "refs": [
+        "image:first_frame",
+        "last:last_frame",
+        "audio:source_audio"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "compshare-seedance-1",
+      "profile": "compshare-seedance",
+      "mode": "reference",
+      "refs": [
+        "image:reference",
+        "video:source_video",
+        "audio:source_audio"
+      ],
+      "extra": {
+        "generateAudio": false,
+        "watermark": false
+      }
+    },
+    {
+      "id": "compshare-seedance-2",
+      "profile": "compshare-seedance",
+      "mode": "first_optional",
+      "refs": [
+        "last:last_frame"
+      ],
+      "extra": {}
+    }
+  ]
+}

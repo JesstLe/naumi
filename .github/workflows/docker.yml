@@ -1,64 +1,196 @@
 name: Build & push Docker image
-
 on:
   push:
     branches: [main]
     tags: ['codex-release-*']
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'next.config.*'
+      - 'tsconfig.json'
+      - 'postcss.config.*'
+      - 'tailwind.config.*'
+      - 'docs/apimart-image25-pricing-20261008.json'
+      - '.github/workflows/docker.yml'
   workflow_dispatch:
-
+    inputs:
+      source_commit:
+        description: '已验收的40位提交SHA；留空构建本次工作流提交，仅作为候选'
+        type: string
+        default: ''
+      build_all:
+        description: '构建普通、桌面、企业三个版本'
+        type: boolean
+        default: true
+      offline_bundle:
+        description: '按需生成离线镜像包，供没有GHCR凭据的服务器使用'
+        type: boolean
+        default: false
 permissions:
   contents: read
-  packages: write
-
+concurrency:
+  group: images-${{ github.event_name }}-${{ inputs.source_commit || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref_type != 'tag' }}
 jobs:
-  docker:
+  resolve:
+    if: github.repository == 'JesstLe/naumi'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.source.outputs.version }}
+      matrix: ${{ steps.source.outputs.matrix }}
+      release_tag: ${{ steps.source.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v4
-
+      - name: Verify image provenance and safe preparation contracts
+        run: python3 scripts/verify-github-release.py
+      - name: Resolve fixed source and create draft record
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_SHA: ${{ inputs.source_commit }}
+          BUILD_ALL: ${{ github.event_name == 'workflow_dispatch' && inputs.build_all || github.ref_type == 'tag' }}
+        run: |
+          set -euo pipefail
+          sha="${REQUESTED_SHA:-$GITHUB_SHA}"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'source_commit must be a lowercase 40-character SHA'; exit 1; }
+          git fetch --no-tags origin "$sha"
+          [[ "$(git rev-parse FETCH_HEAD^{commit})" == "$sha" ]]
+          version="$(git show -s --format=%ct "$sha")"
+          matrix='["ui"]'
+          [[ "$BUILD_ALL" != 'true' ]] || matrix='["ui","desktop","enterprise"]'
+          release_tag="codex-image-${sha}-run${GITHUB_RUN_ID}-a${GITHUB_RUN_ATTEMPT}"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          gh release create "$release_tag" --repo "$GITHUB_REPOSITORY" --target "$sha" --draft --prerelease \
+            --title "Naumi image candidate ${sha:0:12}" \
+            --notes 'Fixed image candidate. No automatic production deployment. Published only after all requested images finish.'
+  docker:
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      packages: write
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        flavor: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    env:
+      DOCKER_BUILD_RECORD_UPLOAD: 'false'
+      DOCKER_BUILD_RECORD_RETENTION_DAYS: '3'
+      SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
+      BUILD_VERSION: ${{ needs.resolve.outputs.version }}
+      RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+      FLAVOR: ${{ matrix.flavor }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          path: source
+          persist-credentials: false
       - uses: docker/setup-buildx-action@v3
-
-      # 版本号 = 所构建 commit 的提交时间戳(内容版本)。与"何时打包"无关:
-      # 同一 commit 重复构建版本不变;更新检查拿它与 GitHub main 最新 commit
-      # 时间比对,相等 = 已是最新,不再因打包时刻差异误报"有新版本"。
-      - name: Compute build version (commit unix ts)
-        run: echo "BUILD_VERSION=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Fixed image tag
+        id: image
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          suffix=''; [[ "$FLAVOR" == ui ]] || suffix="-$FLAVOR"
+          echo "tag=$image:$SOURCE_SHA$suffix" >> "$GITHUB_OUTPUT"
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build & push
+          password: ${{ github.token }}
+      - name: Build fixed image (Dockerfile compilation and type checks)
+        id: build
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./source
+          file: ./source/Dockerfile
+          platforms: linux/amd64
           push: true
+          # Preserve the legacy installer alias; production selects manifest digests.
+          tags: |
+            ${{ steps.image.outputs.tag }}
+            ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.flavor == 'ui' && 'ghcr.io/jesstle/naumi:latest' || '' }}
           build-args: |
             BUILD_VERSION=${{ env.BUILD_VERSION }}
-            SOURCE_COMMIT=${{ github.sha }}
-          tags: |
-            ghcr.io/jesstle/naumi:${{ github.sha }}
-            ${{ github.ref == 'refs/heads/main' && 'ghcr.io/jesstle/naumi:latest' || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # 私有 GHCR 包不向生产机持久下发 GitHub Token。构建后同时生成一个
-      # 短期离线镜像包，供首次部署/灾备通过 GitHub Actions artifact 下载。
-      - name: Export offline deployment image
+            SOURCE_COMMIT=${{ env.SOURCE_SHA }}
+            NEXT_PUBLIC_MEDIA_VARIANTS=1
+            NEXT_PUBLIC_CANVAS_PERF_PROBE=0
+            DESKTOP_UI_BUILD=${{ matrix.flavor == 'desktop' && '1' || '0' }}
+            ENTERPRISE_UI_BUILD=${{ matrix.flavor == 'enterprise' && '1' || '0' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            io.naumi.build.flavor=${{ matrix.flavor }}
+          cache-from: type=gha,scope=naumi-${{ matrix.flavor }}-media1
+          cache-to: type=gha,scope=naumi-${{ matrix.flavor }}-media1,mode=min
+      - name: Inspect published image and optionally export offline package
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          OFFLINE: ${{ github.event_name == 'workflow_dispatch' && inputs.offline_bundle }}
         run: |
-          docker pull "ghcr.io/jesstle/naumi:${GITHUB_SHA}"
-          docker save "ghcr.io/jesstle/naumi:${GITHUB_SHA}" | gzip -1 > /tmp/naumi-image.tar.gz
-
-      - name: Upload offline deployment image
-        # GHCR 已在上一步成功发布；离线包只是补充的短期灾备制品。
-        # GitHub Artifact 配额耗尽时不能把可部署镜像误报为构建失败。
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
+          set -euo pipefail
+          reference="$IMAGE_NAME@$IMAGE_DIGEST"
+          docker pull "$reference"
+          docker image inspect "$reference" > image-inspect.json
+          args=()
+          if [[ "$OFFLINE" == 'true' ]]; then
+            docker tag "$reference" "$IMAGE_TAG"
+            package="naumi-$FLAVOR-$SOURCE_SHA.tar.gz"
+            docker save "$IMAGE_TAG" | gzip -1 > "$package"
+            [[ "$(stat -c %s "$package")" -lt 2147483648 ]]
+            args=(--offline "$package")
+          fi
+          python3 control/scripts/github-release-manifest.py part --output "image-$FLAVOR.json" \
+            --sha "$SOURCE_SHA" --version "$BUILD_VERSION" --flavor "$FLAVOR" \
+            --digest "$IMAGE_DIGEST" --inspect image-inspect.json --run-id "$GITHUB_RUN_ID" \
+            --attempt "$GITHUB_RUN_ATTEMPT" --workflow-sha "$GITHUB_SHA" "${args[@]}"
+          gh release upload "$RELEASE_TAG" "image-$FLAVOR.json" --repo "$GITHUB_REPOSITORY"
+          [[ "$OFFLINE" != 'true' ]] || gh release upload "$RELEASE_TAG" "$package" --repo "$GITHUB_REPOSITORY"
+  publish:
+    needs: [resolve, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+      FLAVORS: ${{ needs.resolve.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
         with:
-          name: naumi-image-${{ github.sha }}
-          path: /tmp/naumi-image.tar.gz
-          retention-days: 3
-          compression-level: 0
+          persist-credentials: false
+      - name: Verify all records and publish candidate manifest
+        run: |
+          set -euo pipefail
+          mkdir records
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'image-*.json' --dir records
+          python3 scripts/github-release-manifest.py merge --directory records --output release-manifest.json --flavors "$FLAVORS"
+          gh release upload "$RELEASE_TAG" release-manifest.json --repo "$GITHUB_REPOSITORY"
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+          echo "### Fixed image candidate" >> "$GITHUB_STEP_SUMMARY"
+          echo "Source: ${{ needs.resolve.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release: $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Images are pinned by digest. Production deployment is a separate accepted-release step.' >> "$GITHUB_STEP_SUMMARY"

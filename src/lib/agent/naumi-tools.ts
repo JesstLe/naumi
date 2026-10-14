@@ -46,6 +46,7 @@ const TOOL_TIMEOUT_MS = {
   generate_video: 300_000,
   get_video_task: 15_000,
   list_video_models: 15_000,
+  plan_video_script: 120_000,
   plan_video_shot: 120_000,
   plan_video_storyboard: 240_000,
   extend_video: 300_000,

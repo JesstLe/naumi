@@ -26,7 +26,7 @@ export const videoDefinitionSchema=z.strictObject({
   aspectRatios:z.array(ratio).max(100).nullable().optional(),audio:z.enum(["required","disabled","optional"]).nullable().optional(),
   limits:videoLimitsSchema.nullable().optional(),defaultDurationSeconds:duration.nullable().optional(),defaultResolution:stringValue.nullable().optional(),
   defaultAspectRatio:ratio.nullable().optional(),supportsAutoDuration:tri,requiresPrompt:tri,
-  supportsFirstFrame:tri,supportsLastFrame:tri,supportsNegativePrompt:tri,supportsWatermark:tri,supportsMultiShot:tri,
+  supportsFirstFrame:tri,supportsLastFrame:tri,supportsFrameAudio:tri,supportsNegativePrompt:tri,supportsWatermark:tri,supportsMultiShot:tri,
   supportsElements:tri,supportsCamera:tri,supportsExactSize:tri,supportsCancellation:tri,
   maxPromptChars:number(65536),maxNegativePromptChars:number(16384),maxShots:number(100),maxElements:number(100),maxElementReferences:number(128),
   providerOptions:z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]{0,60}$/),videoOptionSchema).nullable().optional(),

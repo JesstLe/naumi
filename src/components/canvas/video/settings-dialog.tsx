@@ -17,7 +17,7 @@ export type VideoNodeDraft = {
     inputs: OrderedInput[];
     expectedRevision: number;
 };
-export function VideoSettingsDialog({ node, models, choices, light, email, readOnly = false, onClose, onSave, onGenerate, onImport, onLoadMoreAssets, canLoadMoreAssets = false }: {
+export function VideoSettingsDialog({ node, models, choices, light, email, readOnly = false, onClose, onSave, onGenerate, onImport, onLoadMoreAssets, canLoadMoreAssets = false, catalogLoading=false, catalogError="", onRetryCatalog }: {
     node: CanvasVideoNode;
     models: VideoCatalogModel[];
     choices: VideoInputChoice[];
@@ -26,10 +26,13 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
     readOnly?: boolean;
     onClose: () => void;
     onSave: (draft: VideoNodeDraft) => Promise<void>;
-    onGenerate: (draft: VideoNodeDraft, quote: PublicQuote | null) => Promise<void>;
+    onGenerate: (draft: VideoNodeDraft, quote: PublicQuote | null, onPersisted: (revision: number) => void) => Promise<void>;
     onImport?: (files: File[]) => Promise<VideoInputChoice[]>;
     onLoadMoreAssets?: () => Promise<void>;
     canLoadMoreAssets?: boolean;
+    catalogLoading?: boolean;
+    catalogError?: string;
+    onRetryCatalog?: () => Promise<void>;
 }) {
     const V = useVideoI18n();
     const [title, setTitle] = useState(node.title), [config, setConfig] = useState<VideoNodeConfig>(() => structuredClone(node.config)), [inputs, setInputs] = useState<OrderedInput[]>(() => structuredClone(node.inputs));
@@ -74,7 +77,7 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
         if (generate) {
             if (!config.comfyWorkflowId && !estimate.quote)
                 throw new Error(estimate.error || "请等待报价");
-            await onGenerate(draft, config.comfyWorkflowId ? null : estimate.quote);
+            await onGenerate(draft, config.comfyWorkflowId ? null : estimate.quote, savedRevision => { revision.current = savedRevision; });
         }
         else
             await onSave(draft);
@@ -92,7 +95,9 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
     <button type="button" aria-label={V("关闭视频节点设置")} className="absolute inset-0 bg-black/50" onClick={onClose}/>
     <div className={`relative flex max-h-[calc(100dvh-24px)] w-full max-w-[760px] flex-col overflow-hidden rounded-2xl border shadow-2xl ${light ? "border-slate-200 bg-white" : "border-white/10 bg-[#171d25]"}`}>
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-current/10 px-4 py-3"><h2 className="text-sm font-semibold">{V("\u89C6\u9891\u8282\u70B9")}</h2><button type="button" className={videoButtonClass} aria-label={V("关闭")} onClick={onClose}><X size={16}/></button></header>
-      <div data-testid="video-settings-scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4"><fieldset disabled={readOnly || busy || importing} className="min-w-0">
+      <div data-testid="video-settings-scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+        {!config.comfyWorkflowId&&(catalogLoading||catalogError)&&<div className="mb-3 flex items-center gap-3 text-xs"><span role={catalogError?"alert":"status"}>{V(catalogLoading?"视频模型加载中…":catalogError)}</span>{catalogError&&onRetryCatalog&&<button type="button" className={videoButtonClass} disabled={catalogLoading} onClick={()=>void onRetryCatalog()}>{V("重试视频模型")}</button>}</div>}
+        <fieldset disabled={readOnly || busy || importing} className="min-w-0">
         <VideoField label={V("节点名称")}><input aria-label={V("视频节点名称")} value={title} onChange={event => setTitle(event.target.value)} className={videoFieldClass}/></VideoField>
         <VideoSettingsFields config={config} inputs={inputs} models={models} choices={choices} nodeId={node.id} email={email} readOnly={readOnly} busy={busy} onConfig={setConfig} onInputs={setInputs} onImport={onImport} onImportBusyChange={setImporting} onLoadMoreAssets={onLoadMoreAssets} canLoadMoreAssets={canLoadMoreAssets}/>
 

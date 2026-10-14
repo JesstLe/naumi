@@ -2,7 +2,6 @@
 import { useManagementEntry } from "./use-management-entry";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import {
   ChevronRight,
   Gem,
@@ -14,10 +13,8 @@ import {
   Users,
 } from "lucide-react";
 import type { SessionUser } from "@/lib/auth-context";
-import { supabaseEnabled } from "@/lib/auth-mode";
 import { displayEmail } from "@/lib/account-identity";
 import { useI18n } from "@/lib/i18n/locale-context";
-import { browserSupabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 export const ACCOUNT_THEME_EVENT = "naumi:theme-change";
@@ -35,68 +32,6 @@ export function toggleAccountTheme() {
   }
   window.dispatchEvent(new CustomEvent(ACCOUNT_THEME_EVENT, { detail: { dark } }));
   return dark;
-}
-
-export function useAccountAdminStatus(user: SessionUser | null) {
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  useEffect(() => {
-    if (!user) {
-      setIsAdmin(false);
-      return;
-    }
-    try {
-      const raw = sessionStorage.getItem("naumi:adminVerifiedV1");
-      if (raw) {
-        const cached = JSON.parse(raw) as { email: string; ts: number };
-        if (cached.email === user.email && Date.now() - cached.ts <= 5 * 60 * 1000) {
-          setIsAdmin(true);
-        }
-      }
-    } catch {
-      /* ignore stale cache */
-    }
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        let token: string | undefined;
-        if (supabaseEnabled) {
-          try {
-            const { data } = await browserSupabase().auth.getSession();
-            token = data.session?.access_token;
-          } catch {
-            /* cookie auth can still be probed */
-          }
-        }
-        const response = await fetch("/api/admin/settings", {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (cancelled) return;
-        setIsAdmin(response.ok);
-        try {
-          if (response.ok) {
-            sessionStorage.setItem(
-              "naumi:adminVerifiedV1",
-              JSON.stringify({ email: user.email, ts: Date.now() })
-            );
-          } else {
-            sessionStorage.removeItem("naumi:adminVerifiedV1");
-          }
-        } catch {
-          /* ignore cache failures */
-        }
-      } catch {
-        if (!cancelled) setIsAdmin(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
-
-  return isAdmin;
 }
 
 /** Legacy consumers use the same canonical discovery as account settings. */
@@ -118,7 +53,6 @@ export function AccountDockMenu({
   user: SessionUser;
   remaining: number;
   dark: boolean;
-  isAdmin: boolean;
   className?: string;
   onClose: () => void;
   onToggleTheme: () => void;

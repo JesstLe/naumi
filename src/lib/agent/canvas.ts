@@ -87,6 +87,16 @@ export async function runCanvasAgent(request: Request) {
   let liveSession: Session | undefined;
   const attach = async (result: unknown,tool:string) => {
     const details = record(record(result).details);
+    if(["plan_video_script","plan_video_storyboard"].includes(tool)&&liveSession){
+      const planned=Array.isArray(details.nodes)?details.nodes:[details.node];
+      const textIds=planned.flatMap(value=>{
+        const node=record(value),config=record(node.config),inputs=Array.isArray(node.inputs)?node.inputs:[],shots=Array.isArray(config.shots)?config.shots:[];
+        return [...inputs.filter(input=>record(input).kind==="text").map(input=>String(record(input).nodeId).replace(/^text:/,"")),...shots.map(shot=>record(shot).textNodeId)];
+      });
+      const ids=Array.from(new Set((tool==="plan_video_script"?[record(details.node).id]:textIds).filter((id):id is string=>typeof id==="string")));
+      const nodes=ids.length?(await getPool().query("SELECT id,project_key AS \"projectKey\" FROM app_canvas_text_nodes WHERE email=$1 AND id=ANY($2::text[]) AND project_key=$3",[email,ids,projectKey])).rows:[];
+      if(nodes.length){appendSessionEvent(liveSession,"text_nodes",{nodes,turnId:liveSession.turnId});await persistAgentSession(liveSession);}
+    }
     if(["create_video_node","plan_video_shot","plan_video_storyboard"].includes(tool)&&liveSession){
       const nodeIds=Array.from(new Set([details.nodeId,record(details.node).id,...(Array.isArray(details.nodeIds)?details.nodeIds:[])].filter((id):id is string=>typeof id==="string")));
       const owned=[];for(const id of nodeIds){const node=await getVideoNode(email,id);if(node&&(!video?.projectKey||node.projectKey===video.projectKey))owned.push({id:node.id,projectKey:node.projectKey});}

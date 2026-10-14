@@ -66,7 +66,7 @@ type Client = {
     error: string | null;
     refresh: () => Promise<void>;
     quote: (input: QuoteInput) => Promise<PublicQuote>;
-    submit: (url: string, init: RequestInit, displayed: PublicQuote | null) => Promise<Response>;
+    submit: (url: string, init: RequestInit, displayed: PublicQuote | null, onIdentity?: (id: string) => void) => Promise<Response>;
     quoteAndSubmit: (url: string, init: RequestInit, input: QuoteInput) => Promise<Response>;
 };
 const Context = createContext<Client | null>(null);
@@ -117,7 +117,7 @@ export function BillingProvider({ children }: {
         promise.catch(() => cache.current.delete(key));
         return promise;
     }, [catalog]);
-    const submit = useCallback(async (url: string, init: RequestInit, displayed: PublicQuote | null) => {
+    const submit = useCallback(async (url: string, init: RequestInit, displayed: PublicQuote | null, onIdentity?: (id: string) => void) => {
         if (!displayed)
             throw new Error("报价正在加载或暂不可用，请稍后重试");
         const headers = new Headers(init.headers);
@@ -130,6 +130,7 @@ export function BillingProvider({ children }: {
         let id=intents.current.get(key);try{id=id||localStorage.getItem(key)||undefined;}catch{}
         id=id||headers.get("x-naumi-billing-operation-id")||browserRandomUUID();intents.current.set(key,id);try{localStorage.setItem(key,id);}catch{}
         headers.set("x-naumi-billing-operation-id",id);
+        onIdentity?.(id);
         const response = await fetch(url, { ...frozenIntentBody(init,id), headers });
         if (response.ok && response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
             const decoder = new TextDecoder(); let buffer = "";

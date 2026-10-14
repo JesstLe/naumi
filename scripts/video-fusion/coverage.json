@@ -1,0 +1,982 @@
+{
+  "schemaVersion": 1,
+  "status": "audit-in-progress",
+  "sourceCommitAtAuditStart": "158ff77b71340f2dbaa7d7625253a561997015f9",
+  "upstreamPins": {
+    "infiniteCanvas": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
+    "toonflow": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae"
+  },
+  "supplierMode": "isolated-simulation-with-original-media",
+  "realVideoQualityValidated": false,
+  "evidenceRegistry": {
+    "canvas": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-browser-2494ea71-055f-4698-92a8-45997fe13329/result.json",
+      "verifier": "scripts/verify-video-fusion-canvas.ts",
+      "kind": "actual-app-browser-with-simulated-suppliers"
+    },
+    "interactions": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-interactions-f66e292f-bf98-40c5-bf2d-9ffb47a38350/result.json",
+      "verifier": "scripts/verify-video-fusion-canvas-interactions.ts",
+      "kind": "actual-app-browser"
+    },
+    "byoc": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/byoc-browser-6064d70f-1c4c-4617-909f-06baf9d98deb/result.json",
+      "verifier": "scripts/verify-video-fusion-byoc-browser.ts",
+      "kind": "actual-app-browser-with-simulated-suppliers"
+    },
+    "script": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/script-ce0e7019-43d0-4dd0-94ca-64b936e7eef1/result.json",
+      "verifier": "scripts/verify-video-fusion-script.ts",
+      "kind": "actual-app-worker-browser-with-simulated-suppliers"
+    },
+    "multishot": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/script-multishot-096de602-bfed-48bf-8714-8b6dbdf3aef3/result.json",
+      "verifier": "scripts/verify-video-fusion-script-multishot.ts",
+      "kind": "actual-app-worker-with-simulated-kie"
+    },
+    "production": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/production-3710100e-9123-4a62-9aad-6c0cb68b7aa4/result.json",
+      "verifier": "scripts/verify-video-fusion-production.ts",
+      "kind": "actual-app-worker-with-simulated-suppliers"
+    },
+    "sse": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/agent-sse-beb5062a-cb91-453f-bcec-b2c57fbaecac/result.json",
+      "verifier": "scripts/verify-video-fusion-agent-sse.ts",
+      "kind": "actual-agent-app-worker-with-scripted-text-supplier"
+    },
+    "agentBrowser": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/agent-browser-bf739115-8044-48b0-bc9b-d6ddf5c03530/result.json",
+      "verifier": "scripts/verify-video-fusion-agent-browser.ts",
+      "kind": "actual-agent-app-worker-browser-with-scripted-text-supplier"
+    },
+    "workflow": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-workflow-f561f013-29fe-4d49-b700-6a2d2711c9b8/result.json",
+      "verifier": "scripts/verify-video-fusion-canvas-workflow.ts",
+      "kind": "actual-app-worker"
+    },
+    "freeze": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/workflow-freeze-234bee75-f176-4889-8407-d0b3af45ec92/result.json",
+      "verifier": "scripts/verify-video-fusion-workflow-freeze.ts",
+      "kind": "actual-app-worker"
+    },
+    "history": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/history-assets-df3f5fef-215c-4f9e-8140-69877b598f1e/result.json",
+      "verifier": "scripts/verify-video-fusion-history-assets.ts",
+      "kind": "actual-app-worker"
+    },
+    "workbench": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/workbench-0ada8bd9-1f86-4ddd-9551-4f70d62fafae/result.json",
+      "verifier": "scripts/verify-video-fusion-workbench.ts",
+      "kind": "actual-app-browser"
+    },
+    "readonly": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/readonly-369640de-2582-48b6-a1c7-6e15c6d96612/result.json",
+      "verifier": "scripts/verify-video-fusion-readonly.ts",
+      "kind": "actual-app-two-account"
+    },
+    "media": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-b/d239cb7b-a9ad-46fb-b333-4700a35b6920/evidence.json",
+      "verifier": "scripts/verify-video-fusion-media.ts",
+      "kind": "actual-app-worker-media"
+    },
+    "image": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-a/stable-image-browser-app.log",
+      "verifier": "scripts/imagegen-ui-fixture.ts",
+      "kind": "actual-app-browser-with-simulated-image-supplier"
+    },
+    "billing": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-a/billing-clean-app.log",
+      "verifier": "scripts/verify-billing-all.mjs",
+      "kind": "isolated-postgres-regression"
+    },
+    "icwire": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-a/ic-protocols-run.log",
+      "verifier": "scripts/verify-video-fusion-ic-protocols.ts",
+      "kind": "protocol-http-only"
+    },
+    "newwire": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-a/new-protocols-run.log",
+      "verifier": "scripts/verify-video-fusion-new-protocols.ts",
+      "kind": "protocol-http-only"
+    },
+    "results": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-b/results-22ee2113-b943-4e54-ab6a-7553566dee1c.json",
+      "verifier": "scripts/verify-video-fusion-results.ts",
+      "kind": "actual-app-worker-results"
+    },
+    "applicationProtocols": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/application-protocols-summary.json",
+      "verifier": "scripts/verify-video-fusion-application-summary.mjs",
+      "kind": "actual-app-worker-with-simulated-suppliers"
+    },
+    "completion": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/completion-1ba5c2d7-f2d6-4a5b-a186-08b7e0a878be/result.json",
+      "verifier": "scripts/verify-video-fusion-completion.ts",
+      "kind": "actual-app-worker-browser-with-simulated-suppliers"
+    },
+    "referenceBoundaries": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/completion-1c2d57d5-c868-40fe-90c5-16103af80015/result.json",
+      "verifier": "scripts/verify-video-fusion-reference-boundaries.ts",
+      "kind": "actual-app-worker-with-simulated-supplier-native-wire"
+    },
+    "referenceLimits": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/reference-limits-f4af7076-744c-453a-af98-8593151d1b77/result.json",
+      "verifier": "scripts/verify-video-fusion-reference-limits.ts",
+      "kind": "actual-app-db-router-worker-source-limits"
+    },
+    "referenceOrder": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/reference-order-d7be2a84-b408-40d2-8f93-6bb15794e1ac/result.json",
+      "verifier": "scripts/verify-video-fusion-reference-order.ts",
+      "kind": "actual-app-chrome-db-router-worker-reference-order"
+    },
+    "submissionRetry": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/submission-retry-987b65ef-f85e-4b48-a772-90fab80a0f96/result.json",
+      "verifier": "scripts/verify-video-fusion-submission-retry.ts",
+      "kind": "actual-app-chrome-db-router-worker-transport-retry"
+    }
+  },
+  "capabilities": [
+    {
+      "id": "V01",
+      "name": "空白文生、图生及生成节点",
+      "state": "application-e2e-passed",
+      "implementation": [
+        "src/lib/canvas/video-node-service.ts"
+      ],
+      "evidenceKeys": [
+        "canvas",
+        "completion"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "实际空白画布入口创建文生节点并生成完成；不以手工API创建节点替代",
+          "evidenceKey": "completion",
+          "assertions": [
+            {
+              "path": "browser.actualAppAndChrome",
+              "value": true
+            },
+            {
+              "path": "browser.blankCanvasCreatedViaUi",
+              "value": true
+            },
+            {
+              "path": "browser.textGenerationCompleted",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "原图更多处理入口创建单图节点，实际生成完成，原角色/提示词和刷新保留",
+          "evidenceKey": "completion",
+          "assertions": [
+            {
+              "path": "browser.singleImageCreatedViaUi",
+              "value": true
+            },
+            {
+              "path": "browser.imageGenerationCompleted",
+              "value": true
+            },
+            {
+              "path": "browser.refreshPreservesNodeAndPrompt",
+              "value": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V02",
+      "name": "首尾帧角色与三种首尾规则",
+      "state": "application-e2e-passed",
+      "implementation": [
+        "src/lib/video/contract.ts",
+        "src/components/canvas/video/reference-list.tsx",
+        "src/lib/video/node-submission.ts"
+      ],
+      "evidenceKeys": [
+        "canvas",
+        "referenceOrder"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "实际界面分别提交单尾帧、单首帧、必需双帧；Worker完成，冻结身份和原生首尾角色一致",
+          "evidenceKey": "referenceOrder",
+          "assertions": [
+            {
+              "path": "allThreeFrameRulesCompleted",
+              "value": true
+            },
+            {
+              "path": "frameRules.0.mode",
+              "value": "first_optional"
+            },
+            {
+              "path": "frameRules.0.roles.0",
+              "value": "last_frame"
+            },
+            {
+              "path": "frameRules.1.mode",
+              "value": "last_optional"
+            },
+            {
+              "path": "frameRules.1.roles.0",
+              "value": "first_frame"
+            },
+            {
+              "path": "frameRules.2.mode",
+              "value": "frames_required"
+            },
+            {
+              "path": "frameRules.2.roles",
+              "value": [
+                "first_frame",
+                "last_frame"
+              ]
+            },
+            {
+              "path": "supplierCreates",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "requirement": "必需双帧缺一图阻止生成且不扣费；真实交换两素材身份后生成，手工非法角色不被静默覆盖",
+          "evidenceKey": "referenceOrder",
+          "assertions": [
+            {
+              "path": "requiredFrameMissingBlocksWithoutCharge",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "手动修改角色和真实首尾交换持久保存",
+          "evidenceKey": "canvas",
+          "assertions": [
+            {
+              "path": "manualRoleEditNotSilentlyOverwritten",
+              "value": true
+            },
+            {
+              "path": "swappedFramesSaved",
+              "value": true
+            },
+            {
+              "path": "actualOwnedReferenceImageDecode",
+              "value": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V03",
+      "name": "混合媒体引用和来源限制",
+      "state": "application-e2e-passed",
+      "implementation": [
+        "src/lib/video/references.ts",
+        "src/lib/video/contract.ts",
+        "src/lib/video/reference-materialization.ts",
+        "src/components/canvas/video/reference-list.tsx"
+      ],
+      "evidenceKeys": [
+        "referenceOrder",
+        "referenceLimits",
+        "referenceBoundaries"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "真实界面上下重排图片、视频、音频、文字，预览缩略图解码，移除及重新加入后保存、刷新和生成顺序保持",
+          "evidenceKey": "referenceOrder",
+          "assertions": [
+            {
+              "path": "actualOwnedThumbnailsDecode",
+              "value": true
+            },
+            {
+              "path": "uiMoveBothDirectionsAndBoundaryDisable",
+              "value": true
+            },
+            {
+              "path": "mixedIdentityAndNumberingPreserved",
+              "value": true
+            },
+            {
+              "path": "saveReloadPreservesOrderAndFullPrompt",
+              "value": true
+            },
+            {
+              "path": "removedReferenceBlocksWithoutCharge",
+              "value": true
+            },
+            {
+              "path": "reinsertedReferenceCompletes",
+              "value": true
+            },
+            {
+              "path": "nativePromptAndMediaOrderMatchFrozen",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "声明30图10视频10音频可表达并生成；原生50条与冻结的类型、角色、授权身份及顺序一致；超限无任务、流水和费用",
+          "evidenceKey": "referenceBoundaries",
+          "assertions": [
+            {
+              "path": "references.accepted",
+              "value": {
+                "images": 30,
+                "videos": 10,
+                "audios": 10
+              }
+            },
+            {
+              "path": "references.nativeReferenceCount",
+              "value": 50
+            },
+            {
+              "path": "references.nativeTypesRolesIdentitiesAndOrderMatch",
+              "value": true
+            },
+            {
+              "path": "references.rejectionsWriteNoTasksOrLedgerAndChargeNothing",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "真实来源校验覆盖三类字节、视频音频单段和总时长共7维；精确上限通过，下界拒绝，客户端伪报不能绕过；未知数量拒绝",
+          "evidenceKey": "referenceLimits",
+          "assertions": [
+            {
+              "path": "actualAppDbRouterWorker",
+              "value": true
+            },
+            {
+              "path": "cases.length",
+              "value": 7
+            },
+            {
+              "path": "clientUnderclaimsNeverBypassLimits",
+              "value": true
+            },
+            {
+              "path": "allExactBoundariesCompleted",
+              "value": true
+            },
+            {
+              "path": "unknownImageCountRejected",
+              "value": true
+            },
+            {
+              "path": "restartNoDuplicateChargesOrCreates",
+              "value": true
+            },
+            {
+              "path": "originalSourceHashesPreserved",
+              "value": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V04",
+      "name": "引用排序及文字媒体编号",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/prompt.ts"
+      ],
+      "evidenceKeys": [
+        "canvas",
+        "history",
+        "referenceOrder"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "实际混合重排、文字与媒体编号、移除阻止生成及重新加入已通过；仍需实际画布剪断连线及非内联文字来源映射补证"
+      ]
+    },
+    {
+      "id": "V05",
+      "name": "模型渠道、能力变化及失败恢复",
+      "state": "application-e2e-passed",
+      "implementation": [
+        "src/lib/video/client-settings.ts",
+        "src/components/canvas/video/use-video-catalog.ts"
+      ],
+      "evidenceKeys": [
+        "canvas",
+        "completion"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "目录传输失败真实可见，独立重试读取实际App，加载状态和全文草稿保留",
+          "evidenceKey": "completion",
+          "assertions": [
+            {
+              "path": "browser.failedCatalogTransportVisible",
+              "value": true
+            },
+            {
+              "path": "browser.catalogRetryActualApp",
+              "value": true
+            },
+            {
+              "path": "browser.catalogLoadingVisible",
+              "value": true
+            },
+            {
+              "path": "browser.retryPreservesFullDraft",
+              "value": true
+            },
+            {
+              "path": "browser.retryDoesNotReloadImageCatalog",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "公开模型/渠道切换实际归一不支持的高级配置，保留完整提示词和已声明朝向",
+          "evidenceKey": "canvas",
+          "assertions": [
+            {
+              "path": "modelSwitchReconcilesUnsupportedSettings",
+              "value": true
+            },
+            {
+              "path": "declaredMotionOrientation",
+              "value": true
+            },
+            {
+              "path": "actualReloadRestoresNode",
+              "value": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V06",
+      "name": "时长分辨率比例与精确规格",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/contract.ts"
+      ],
+      "evidenceKeys": [
+        "canvas"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V07",
+      "name": "声音负面词水印机位及false/0/omit",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/contract.ts"
+      ],
+      "evidenceKeys": [
+        "canvas",
+        "byoc",
+        "script"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V08",
+      "name": "摄影机镜头焦距光圈",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/camera.ts"
+      ],
+      "evidenceKeys": [
+        "canvas",
+        "interactions"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V09",
+      "name": "智能及自定义多镜头",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/agent/video-script-storyboard.ts"
+      ],
+      "evidenceKeys": [
+        "canvas",
+        "multishot",
+        "icwire"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "智能多镜头与自定义模式均须有实际行为证据",
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V10",
+      "name": "元素参考及Omni分支",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/contract.ts"
+      ],
+      "evidenceKeys": [
+        "canvas",
+        "icwire"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V11",
+      "name": "运动控制与朝向",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/providers/protocols/kie.ts"
+      ],
+      "evidenceKeys": [
+        "canvas",
+        "icwire"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V12",
+      "name": "剧本及拼图到完整可编辑片段",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/script-assets.ts"
+      ],
+      "evidenceKeys": [
+        "script",
+        "multishot"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "核对真实制作规则与拼图面板语义的策略证据；脚本供应商只证明接口链路",
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V13",
+      "name": "串行续写硬切同机位前传",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/canvas-workflow.ts"
+      ],
+      "evidenceKeys": [
+        "production",
+        "sse",
+        "agentBrowser",
+        "freeze"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "完整意图/前序产物/连续链证据逐项审查；脚本供应商不证明真实模型策略",
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V14",
+      "name": "视频风格局部替换剧情编辑",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/agent/canvas-video-tools.ts"
+      ],
+      "evidenceKeys": [
+        "production"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V15",
+      "name": "Agent任务查询设置启动状态停止",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/agent/canvas-video-tools.ts"
+      ],
+      "evidenceKeys": [
+        "sse",
+        "agentBrowser"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "停止工具及真实已停止/请求停止状态区别的Agent路径审查",
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V16",
+      "name": "批量配置节点与混合依赖工作流",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/workflow.ts"
+      ],
+      "evidenceKeys": [
+        "workflow",
+        "freeze",
+        "byoc",
+        "workbench"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "批量/配置节点/输入变量及所有并行依赖分支逐项审查",
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V17",
+      "name": "进度错误历史及刷新重启恢复",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/service.ts"
+      ],
+      "evidenceKeys": [
+        "history",
+        "workbench",
+        "agentBrowser"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V18",
+      "name": "停止与租约费用竞态",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/service.ts"
+      ],
+      "evidenceKeys": [
+        "sse"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "所有租约/取消竞态、保留已产物、扣退费证据对应具体测试",
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V19",
+      "name": "导入替换播放器音量全屏下载Range",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/media-inspection.ts"
+      ],
+      "evidenceKeys": [
+        "canvas",
+        "byoc",
+        "media"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V20",
+      "name": "首当前尾帧及来源持久关联",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/media-jobs.ts"
+      ],
+      "evidenceKeys": [
+        "canvas",
+        "byoc",
+        "media"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V21",
+      "name": "提取音轨分离与精确裁剪",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/media-jobs.ts"
+      ],
+      "evidenceKeys": [
+        "byoc",
+        "media"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V22",
+      "name": "FFmpeg表达力及多输入多输出取消",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "scripts/video-media-worker.mjs"
+      ],
+      "evidenceKeys": [
+        "media",
+        "byoc"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "逐项对照固定上游FFmpeg可表达操作；审查取消/多输出/帧序列/拼接",
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V23",
+      "name": "派生素材再引用完整闭环",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/node-submission.ts"
+      ],
+      "evidenceKeys": [
+        "history",
+        "byoc",
+        "workflow"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "V24",
+      "name": "工作台发送边界与幂等",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/canvas/video-node-service.ts"
+      ],
+      "evidenceKeys": [
+        "workbench",
+        "history"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "对照当前源码审查证据是否覆盖本项全部条件",
+        "固定上游实操对照尚未全部闭合"
+      ]
+    },
+    {
+      "id": "P01",
+      "name": "OpenAI/Grok2API/CogVideoX/Agnes",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/providers/protocols/openai-compatible.ts"
+      ],
+      "evidenceKeys": [
+        "icwire",
+        "applicationProtocols"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      ]
+    },
+    {
+      "id": "P02",
+      "name": "Ark/Seedance",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/providers/protocols/ark.ts"
+      ],
+      "evidenceKeys": [
+        "icwire",
+        "applicationProtocols"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      ]
+    },
+    {
+      "id": "P03",
+      "name": "KIE/APIMart/Kling/Veo",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/providers/protocols/kie.ts"
+      ],
+      "evidenceKeys": [
+        "icwire",
+        "applicationProtocols"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      ]
+    },
+    {
+      "id": "P04",
+      "name": "Gemini/Veo/MiniMax/METASO",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/providers/protocols/gemini.ts"
+      ],
+      "evidenceKeys": [
+        "icwire",
+        "applicationProtocols"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      ]
+    },
+    {
+      "id": "P05",
+      "name": "AutoDL/RunningHub/ComfyUI",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/providers/protocols/autodl.ts"
+      ],
+      "evidenceKeys": [
+        "results",
+        "byoc"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "核对真实应用工作流证据覆盖完整映射/取消/所有产物"
+      ]
+    },
+    {
+      "id": "P06",
+      "name": "TokenDance全部路由",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/providers/protocols/tokendance.ts"
+      ],
+      "evidenceKeys": [
+        "newwire",
+        "applicationProtocols"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      ]
+    },
+    {
+      "id": "P07",
+      "name": "TF-Router",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/providers/protocols/tfrouter.ts"
+      ],
+      "evidenceKeys": [
+        "newwire",
+        "applicationProtocols"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      ]
+    },
+    {
+      "id": "P08",
+      "name": "Compshare/ModelVerse/H3",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/providers/protocols/compshare.ts"
+      ],
+      "evidenceKeys": [
+        "newwire",
+        "applicationProtocols"
+      ],
+      "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
+      "remaining": [
+        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      ]
+    },
+    {
+      "id": "S01",
+      "name": "鉴权私有媒体积分冻结",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/lib/video/submission.ts",
+        "src/lib/media-assets.ts"
+      ],
+      "evidenceKeys": [
+        "readonly",
+        "history",
+        "freeze",
+        "billing"
+      ],
+      "remaining": [
+        "最终候选上验证旧任务/私有媒体/配置兼容及账户积分保护",
+        "CI积分镜像竞态已定位并修复，本机完整计费检查通过；新CI及管理浏览器仍待实测"
+      ]
+    },
+    {
+      "id": "S02",
+      "name": "稳定生图与画布保护",
+      "state": "evidence-review-pending",
+      "implementation": [
+        "src/components/canvas/canvas-client.tsx"
+      ],
+      "evidenceKeys": [
+        "image",
+        "interactions",
+        "agentBrowser",
+        "script",
+        "completion"
+      ],
+      "remaining": [
+        "本模块三种指定尺寸的设置界面已通过；稳定生图/Agent/画布整体同尺寸保护回归仍待完成",
+        "实体macOS/Safari未测明确记录",
+        "当前主线整合后的最终保护检查"
+      ]
+    }
+  ],
+  "deliveryGates": {
+    "comparison": "in-progress",
+    "wholeBranchReview": "pending",
+    "fixedLinuxRuntimeAndRollback": "pending",
+    "release103": "pending",
+    "finalAudit": "pending"
+  }
+}
