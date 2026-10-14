@@ -169,7 +169,6 @@ import {
   AccountDockMenu,
   currentThemeIsDark,
   toggleAccountTheme,
-  useAccountAdminStatus,
 } from "@/components/account/account-dock-menu";
 import { cn, formatDate } from "@/lib/utils";
 import { bytesLabel, prepareImageUploads, uploadFormData } from "@/lib/client-image-upload";
@@ -1715,7 +1714,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const { t, locale } = useI18n();
   const router = useRouter();
   const { commerceVisible } = usePaymentConfig();
-  const accountIsAdmin = useAccountAdminStatus(user);
   const [works, setWorks] = useState<Artwork[] | null>(null);
   // works 的同步镜像:供 useCallback(如缩放撤销记录)读取最新值而不重挂回调
   const worksRef = useRef<Artwork[] | null>(null);
@@ -8876,7 +8874,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   remaining={credits ?? remaining}
                   dark={accountDockDark}
 
-                  isAdmin={accountIsAdmin}
                   className="right-0 top-11"
                   onClose={() => setAccountDockOpen(false)}
                   onToggleTheme={() => setAccountDockDark(toggleAccountTheme())}
@@ -9798,7 +9795,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       remaining={credits ?? remaining}
                       dark={accountDockDark}
 
-                      isAdmin={accountIsAdmin}
                       className="right-0 top-11"
                       onClose={() => setAccountDockOpen(false)}
                       onToggleTheme={() => setAccountDockDark(toggleAccountTheme())}

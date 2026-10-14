@@ -1,0 +1,9 @@
+# 普通页面停止探测管理设置
+
+用户报告画布控制台重复GET /api/admin/settings 403并暴露管理接口地址，确认删除无用管理员探测，集中验证后更新103；47继续未上线。
+
+根因：AppRail和CanvasClient加载账号时调用useAccountAdminStatus，通过管理设置接口探测二次管理会话。AccountDockMenu已统一使用useManagementEntry/账号团队权限接口，不读取传入isAdmin；旧探测及缓存仍保留，账号对象刷新会重复请求。UserMenu在当前主线和线上UI基线b243f5e已使用团队入口发现，无管理设置探测。
+
+已删除useAccountAdminStatus、仅供该hook使用的Supabase/React依赖、AppRail/画布调用及未使用isAdmin参数。团队/企业入口发现、账号菜单内容、余额/主题/退出、管理页面自身二次鉴权和服务端requireAdmin不改变。普通页面不再主动带出管理接口；路径可猜测性不等于获得管理权限，不通过改URL代替鉴权。
+
+验证/发布尚待完成。仅103授权更新，47私有准备副本不启动、不切入口。源码分支codex/remove-admin-probe-20261014；发布须依据103实际UI版本选择固定补丁镜像，保留核心API/Agent/Worker和其他同事未完成候选，不将未验收主线视频/性能模块顺带上线。
