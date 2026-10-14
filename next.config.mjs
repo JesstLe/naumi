@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  ...(process.env.NAUMI_BUILD_CPUS ? { experimental: { cpus: Number(process.env.NAUMI_BUILD_CPUS) } } : {}),
   // Dedicated parallel deployment; ordinary builds retain their existing URLs.
   ...(process.env.DESKTOP_UI_BUILD === "1" ? { assetPrefix: "/desktop" } : {}),
   ...(process.env.ENTERPRISE_UI_BUILD === '1' ? { assetPrefix: '/enterprise' } : {}),
