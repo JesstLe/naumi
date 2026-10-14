@@ -133,6 +133,21 @@
       "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/submission-retry-987b65ef-f85e-4b48-a772-90fab80a0f96/result.json",
       "verifier": "scripts/verify-video-fusion-submission-retry.ts",
       "kind": "actual-app-chrome-db-router-worker-transport-retry"
+    },
+    "referenceEdges": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/reference-edges-613f60a1-b915-4f1d-835f-f29950712e16/result.json",
+      "verifier": "scripts/verify-video-fusion-reference-edges.ts",
+      "kind": "actual-app-chrome-db-router-worker-reference-edges"
+    },
+    "protocolAudit": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/protocol-coverage-audit.json",
+      "verifier": "scripts/verify-video-fusion-protocol-coverage.mjs",
+      "kind": "audit-of-actual-app-worker-native-protocol-evidence"
+    },
+    "protocolFailures": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/protocol-failures-4cc066b4-420d-46f5-ab98-c1ee49ed26cf/result.json",
+      "verifier": "scripts/verify-video-fusion-protocol-failures.ts",
+      "kind": "actual-app-db-router-worker-native-failures"
     }
   },
   "capabilities": [
@@ -392,18 +407,91 @@
     {
       "id": "V04",
       "name": "引用排序及文字媒体编号",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
-        "src/lib/video/prompt.ts"
+        "src/lib/video/prompt.ts",
+        "src/lib/video/references.ts",
+        "src/lib/video/client-settings.ts",
+        "src/components/canvas/canvas-client.tsx",
+        "src/components/canvas/video/settings-dialog.tsx"
       ],
       "evidenceKeys": [
-        "canvas",
-        "history",
-        "referenceOrder"
+        "referenceOrder",
+        "referenceEdges"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "实际混合重排、文字与媒体编号、移除阻止生成及重新加入已通过；仍需实际画布剪断连线及非内联文字来源映射补证"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "混合引用实际重排、全文及文字/媒体编号映射与原生请求和冻结一致",
+          "evidenceKey": "referenceOrder",
+          "assertions": [
+            {
+              "path": "uiMoveBothDirectionsAndBoundaryDisable",
+              "value": true
+            },
+            {
+              "path": "textAndMediaPlaceholderCompilation",
+              "value": true
+            },
+            {
+              "path": "nativePromptAndMediaOrderMatchFrozen",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际鼠标点击连线并Delete，持久移除输入，缺标记阻止生成且不收费；重新引用保持编号",
+          "evidenceKey": "referenceEdges",
+          "assertions": [
+            {
+              "path": "nativeEdgeClickDeletePersists",
+              "value": true
+            },
+            {
+              "path": "edgeRemovalBlocksMissingPlaceholderWithoutCharge",
+              "value": true
+            },
+            {
+              "path": "readdPreservesTextMediaMapping",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "非内联引用使用最新本人文字，预览/原生/冻结相符，作者不作为context追加；之后源编辑不改变旧任务，跨账号拒绝",
+          "evidenceKey": "referenceEdges",
+          "assertions": [
+            {
+              "path": "nonInlineTextUsesCurrentOwnedSource",
+              "value": true
+            },
+            {
+              "path": "authorProvenanceNotAppendedAsContext",
+              "value": true
+            },
+            {
+              "path": "compiledPreviewNativeAndFrozenAgree",
+              "value": true
+            },
+            {
+              "path": "laterTextChangesDoNotMutateFrozenTask",
+              "value": true
+            },
+            {
+              "path": "otherAccountCannotReadText",
+              "value": true
+            },
+            {
+              "path": "sourceImageHashPreserved",
+              "value": true
+            },
+            {
+              "path": "reloadThumbnailsDecode",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
@@ -807,65 +895,329 @@
     {
       "id": "P01",
       "name": "OpenAI/Grok2API/CogVideoX/Agnes",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/providers/protocols/openai-compatible.ts"
       ],
       "evidenceKeys": [
         "icwire",
-        "applicationProtocols"
+        "applicationProtocols",
+        "protocolAudit",
+        "protocolFailures"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "按批准案例核对本组完整原生profile与路由：openai-videos, grok2api, cogvideox3, agnes, agnes-v25；原生body含分镜/元素/朝向/首尾/口型及明确false/0等适用字段",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.0.id",
+              "value": "P01"
+            },
+            {
+              "path": "groups.0.caseIds",
+              "value": [
+                "openai-videos-1",
+                "grok2api-1",
+                "grok2api-2",
+                "cogvideox3-1",
+                "agnes-1",
+                "agnes-v25-1",
+                "agnes-v25-2"
+              ]
+            },
+            {
+              "path": "groups.0.profiles",
+              "value": [
+                "openai-videos",
+                "grok2api",
+                "cogvideox3",
+                "agnes",
+                "agnes-v25"
+              ]
+            },
+            {
+              "path": "groups.0.allNativePathsAndBodiesReviewed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际App/Router/Worker生成完成，原生请求、私人产物SHA/探测、两账号权限、重放与结算已核对",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.0.allActualAppCompletionMediaOwnershipAndIdempotencyPassed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "本组共享原生错误响应类openai-videos经过实际App失败终态验证，不假完成/无产物，退款与失败重放及重启保持，其他账号拒绝",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.0.sharedNativeErrorResponseShapesPassed",
+              "value": true
+            },
+            {
+              "path": "groups.0.errorProfiles",
+              "value": [
+                "openai-videos"
+              ]
+            }
+          ]
+        }
       ]
     },
     {
       "id": "P02",
       "name": "Ark/Seedance",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/providers/protocols/ark.ts"
       ],
       "evidenceKeys": [
         "icwire",
-        "applicationProtocols"
+        "applicationProtocols",
+        "protocolAudit",
+        "protocolFailures"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "按批准案例核对本组完整原生profile与路由：ark, tokendance-seedance, compshare-seedance；原生body含分镜/元素/朝向/首尾/口型及明确false/0等适用字段",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.1.id",
+              "value": "P02"
+            },
+            {
+              "path": "groups.1.caseIds",
+              "value": [
+                "ark-1",
+                "tokendance-seedance-1",
+                "tokendance-seedance-2",
+                "compshare-seedance-1",
+                "compshare-seedance-2"
+              ]
+            },
+            {
+              "path": "groups.1.profiles",
+              "value": [
+                "ark",
+                "tokendance-seedance",
+                "compshare-seedance"
+              ]
+            },
+            {
+              "path": "groups.1.allNativePathsAndBodiesReviewed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际App/Router/Worker生成完成，原生请求、私人产物SHA/探测、两账号权限、重放与结算已核对",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.1.allActualAppCompletionMediaOwnershipAndIdempotencyPassed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "本组共享原生错误响应类ark, tokendance-seedance经过实际App失败终态验证，不假完成/无产物，退款与失败重放及重启保持，其他账号拒绝",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.1.sharedNativeErrorResponseShapesPassed",
+              "value": true
+            },
+            {
+              "path": "groups.1.errorProfiles",
+              "value": [
+                "ark",
+                "tokendance-seedance"
+              ]
+            }
+          ]
+        }
       ]
     },
     {
       "id": "P03",
       "name": "KIE/APIMart/Kling/Veo",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/providers/protocols/kie.ts"
       ],
       "evidenceKeys": [
         "icwire",
-        "applicationProtocols"
+        "applicationProtocols",
+        "protocolAudit",
+        "protocolFailures"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "按批准案例核对本组完整原生profile与路由：kie-generic, kie-kling, kie-kling-v26, kie-kling-omni-text, kie-kling-omni-image, kie-kling-omni-reference, kie-kling-omni-transform, kie-motion-control, apimart-generic, apimart-kling, apimart-kling-v26, apimart-kling-omni, apimart-motion-control；原生body含分镜/元素/朝向/首尾/口型及明确false/0等适用字段",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.2.id",
+              "value": "P03"
+            },
+            {
+              "path": "groups.2.caseIds",
+              "value": [
+                "kie-generic-1",
+                "kie-kling-1",
+                "kie-kling-v26-1",
+                "kie-kling-omni-text-1",
+                "kie-kling-omni-image-1",
+                "kie-kling-omni-reference-1",
+                "kie-kling-omni-transform-1",
+                "kie-motion-control-1",
+                "apimart-generic-1",
+                "apimart-kling-1",
+                "apimart-kling-v26-1",
+                "apimart-kling-omni-1",
+                "apimart-motion-control-1"
+              ]
+            },
+            {
+              "path": "groups.2.profiles",
+              "value": [
+                "kie-generic",
+                "kie-kling",
+                "kie-kling-v26",
+                "kie-kling-omni-text",
+                "kie-kling-omni-image",
+                "kie-kling-omni-reference",
+                "kie-kling-omni-transform",
+                "kie-motion-control",
+                "apimart-generic",
+                "apimart-kling",
+                "apimart-kling-v26",
+                "apimart-kling-omni",
+                "apimart-motion-control"
+              ]
+            },
+            {
+              "path": "groups.2.allNativePathsAndBodiesReviewed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际App/Router/Worker生成完成，原生请求、私人产物SHA/探测、两账号权限、重放与结算已核对",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.2.allActualAppCompletionMediaOwnershipAndIdempotencyPassed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "本组共享原生错误响应类kie-generic, apimart-generic经过实际App失败终态验证，不假完成/无产物，退款与失败重放及重启保持，其他账号拒绝",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.2.sharedNativeErrorResponseShapesPassed",
+              "value": true
+            },
+            {
+              "path": "groups.2.errorProfiles",
+              "value": [
+                "kie-generic",
+                "apimart-generic"
+              ]
+            }
+          ]
+        }
       ]
     },
     {
       "id": "P04",
       "name": "Gemini/Veo/MiniMax/METASO",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/providers/protocols/gemini.ts"
       ],
       "evidenceKeys": [
         "icwire",
-        "applicationProtocols"
+        "applicationProtocols",
+        "protocolAudit",
+        "protocolFailures"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "按批准案例核对本组完整原生profile与路由：gemini, minimax, metaso；原生body含分镜/元素/朝向/首尾/口型及明确false/0等适用字段",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.3.id",
+              "value": "P04"
+            },
+            {
+              "path": "groups.3.caseIds",
+              "value": [
+                "gemini-1",
+                "minimax-1",
+                "metaso-1"
+              ]
+            },
+            {
+              "path": "groups.3.profiles",
+              "value": [
+                "gemini",
+                "minimax",
+                "metaso"
+              ]
+            },
+            {
+              "path": "groups.3.allNativePathsAndBodiesReviewed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际App/Router/Worker生成完成，原生请求、私人产物SHA/探测、两账号权限、重放与结算已核对",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.3.allActualAppCompletionMediaOwnershipAndIdempotencyPassed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "本组共享原生错误响应类gemini, minimax, metaso经过实际App失败终态验证，不假完成/无产物，退款与失败重放及重启保持，其他账号拒绝",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.3.sharedNativeErrorResponseShapesPassed",
+              "value": true
+            },
+            {
+              "path": "groups.3.errorProfiles",
+              "value": [
+                "gemini",
+                "minimax",
+                "metaso"
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -887,49 +1239,256 @@
     {
       "id": "P06",
       "name": "TokenDance全部路由",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/providers/protocols/tokendance.ts"
       ],
       "evidenceKeys": [
         "newwire",
-        "applicationProtocols"
+        "applicationProtocols",
+        "protocolAudit",
+        "protocolFailures"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "按批准案例核对本组完整原生profile与路由：tokendance-seedance, tokendance-kling-text, tokendance-kling-image, tokendance-kling-motion, tokendance-kling-omni, tokendance-wan3, tokendance-happyhorse, tokendance-minimax；原生body含分镜/元素/朝向/首尾/口型及明确false/0等适用字段",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.4.id",
+              "value": "P06"
+            },
+            {
+              "path": "groups.4.caseIds",
+              "value": [
+                "tokendance-seedance-1",
+                "tokendance-seedance-2",
+                "tokendance-kling-text-1",
+                "tokendance-kling-image-1",
+                "tokendance-kling-motion-1",
+                "tokendance-kling-omni-1",
+                "tokendance-wan3-1",
+                "tokendance-happyhorse-1",
+                "tokendance-happyhorse-2",
+                "tokendance-minimax-1"
+              ]
+            },
+            {
+              "path": "groups.4.profiles",
+              "value": [
+                "tokendance-seedance",
+                "tokendance-kling-text",
+                "tokendance-kling-image",
+                "tokendance-kling-motion",
+                "tokendance-kling-omni",
+                "tokendance-wan3",
+                "tokendance-happyhorse",
+                "tokendance-minimax"
+              ]
+            },
+            {
+              "path": "groups.4.allNativePathsAndBodiesReviewed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际App/Router/Worker生成完成，原生请求、私人产物SHA/探测、两账号权限、重放与结算已核对",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.4.allActualAppCompletionMediaOwnershipAndIdempotencyPassed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "本组共享原生错误响应类tokendance-seedance, tokendance-kling-text, tokendance-wan3, tokendance-minimax经过实际App失败终态验证，不假完成/无产物，退款与失败重放及重启保持，其他账号拒绝",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.4.sharedNativeErrorResponseShapesPassed",
+              "value": true
+            },
+            {
+              "path": "groups.4.errorProfiles",
+              "value": [
+                "tokendance-seedance",
+                "tokendance-kling-text",
+                "tokendance-wan3",
+                "tokendance-minimax"
+              ]
+            }
+          ]
+        }
       ]
     },
     {
       "id": "P07",
       "name": "TF-Router",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/providers/protocols/tfrouter.ts"
       ],
       "evidenceKeys": [
         "newwire",
-        "applicationProtocols"
+        "applicationProtocols",
+        "protocolAudit",
+        "protocolFailures"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "按批准案例核对本组完整原生profile与路由：tfrouter-generic, tfrouter-kling, tfrouter-kling-omni, tfrouter-grok；原生body含分镜/元素/朝向/首尾/口型及明确false/0等适用字段",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.5.id",
+              "value": "P07"
+            },
+            {
+              "path": "groups.5.caseIds",
+              "value": [
+                "tfrouter-generic-1",
+                "tfrouter-generic-2",
+                "tfrouter-kling-1",
+                "tfrouter-kling-omni-1",
+                "tfrouter-grok-1"
+              ]
+            },
+            {
+              "path": "groups.5.profiles",
+              "value": [
+                "tfrouter-generic",
+                "tfrouter-kling",
+                "tfrouter-kling-omni",
+                "tfrouter-grok"
+              ]
+            },
+            {
+              "path": "groups.5.allNativePathsAndBodiesReviewed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际App/Router/Worker生成完成，原生请求、私人产物SHA/探测、两账号权限、重放与结算已核对",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.5.allActualAppCompletionMediaOwnershipAndIdempotencyPassed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "本组共享原生错误响应类tfrouter-generic经过实际App失败终态验证，不假完成/无产物，退款与失败重放及重启保持，其他账号拒绝",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.5.sharedNativeErrorResponseShapesPassed",
+              "value": true
+            },
+            {
+              "path": "groups.5.errorProfiles",
+              "value": [
+                "tfrouter-generic"
+              ]
+            }
+          ]
+        }
       ]
     },
     {
       "id": "P08",
       "name": "Compshare/ModelVerse/H3",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/providers/protocols/compshare.ts"
       ],
       "evidenceKeys": [
         "newwire",
-        "applicationProtocols"
+        "applicationProtocols",
+        "protocolAudit",
+        "protocolFailures"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "51组合/41原生profile已取得实际应用证据，需按本项具体条件完成最终源码与字段审查；固定候选尚未验收"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "按批准案例核对本组完整原生profile与路由：compshare-h3, compshare-hailuo, compshare-vidu, compshare-vidu-extend, compshare-vidu-lip-sync, compshare-wan, compshare-seedance；原生body含分镜/元素/朝向/首尾/口型及明确false/0等适用字段",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.6.id",
+              "value": "P08"
+            },
+            {
+              "path": "groups.6.caseIds",
+              "value": [
+                "compshare-h3-1",
+                "compshare-hailuo-1",
+                "compshare-vidu-1",
+                "compshare-vidu-2",
+                "compshare-vidu-3",
+                "compshare-vidu-extend-1",
+                "compshare-vidu-lip-sync-1",
+                "compshare-vidu-lip-sync-2",
+                "compshare-wan-1",
+                "compshare-wan-2",
+                "compshare-seedance-1",
+                "compshare-seedance-2"
+              ]
+            },
+            {
+              "path": "groups.6.profiles",
+              "value": [
+                "compshare-h3",
+                "compshare-hailuo",
+                "compshare-vidu",
+                "compshare-vidu-extend",
+                "compshare-vidu-lip-sync",
+                "compshare-wan",
+                "compshare-seedance"
+              ]
+            },
+            {
+              "path": "groups.6.allNativePathsAndBodiesReviewed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际App/Router/Worker生成完成，原生请求、私人产物SHA/探测、两账号权限、重放与结算已核对",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.6.allActualAppCompletionMediaOwnershipAndIdempotencyPassed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "本组共享原生错误响应类compshare-h3, compshare-vidu, compshare-wan经过实际App失败终态验证，不假完成/无产物，退款与失败重放及重启保持，其他账号拒绝",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.6.sharedNativeErrorResponseShapesPassed",
+              "value": true
+            },
+            {
+              "path": "groups.6.errorProfiles",
+              "value": [
+                "compshare-h3",
+                "compshare-vidu",
+                "compshare-wan"
+              ]
+            }
+          ]
+        }
       ]
     },
     {
