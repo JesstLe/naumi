@@ -50,7 +50,7 @@ export async function canReadMedia(key:string, owner:string|null) {
   const canonical=`/media/${key}`;
   if((await getPool().query(`SELECT 1 FROM app_artworks WHERE email=$1
     AND (image_url=$2 OR source_url=$2 OR video_url=$2) LIMIT 1`,[owner.toLowerCase(),canonical])).rowCount)return true;
-  const competitor=(await getPool().query("SELECT to_regclass('public.app_competitor_items') AS table_name")).rows[0].table_name;
+  const competitor=(await getPool().query("SELECT to_regclass('app_competitor_items') AS table_name")).rows[0].table_name;
   return competitor?!!(await getPool().query(`SELECT 1 FROM app_competitor_items WHERE email=$1 AND
     (state->>'image'=$2 OR jsonb_path_exists(state,'$.versions[*].image ? (@ == $url)',jsonb_build_object('url',$2::text))) LIMIT 1`,[owner.toLowerCase(),canonical])).rowCount:false;
 }
