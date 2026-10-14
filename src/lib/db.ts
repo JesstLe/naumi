@@ -682,11 +682,16 @@ async function liveBatchBalance(emailRaw: string): Promise<number> {
 async function refreshBalance(emailRaw: string): Promise<number> {
   const email = emailRaw.toLowerCase();
   await expireDueBatches(email);
-  const bal = await liveBatchBalance(email);
-  await getPool()
-    .query(`UPDATE app_users SET credits_total = $2 WHERE email = $1`, [email, bal])
-    .catch(() => {});
-  return bal;
+  return withBillingTransaction(getPool(),async tx=>{
+    // Read principal after the wallet lock has been acquired. A value read before
+    // waiting can otherwise overwrite a settlement that committed while waiting.
+    await tx.query("SELECT email FROM app_users WHERE email=$1 FOR UPDATE",[email]);
+    const {rows}=await tx.query(`UPDATE app_users SET credits_total=(
+      SELECT COALESCE(SUM(remaining),0) FROM app_credit_batches
+      WHERE email=$1 AND expires_at>now() AND remaining>0
+    ) WHERE email=$1 RETURNING credits_total`,[email]);
+    return Number(rows[0]?.credits_total??0);
+  });
 }
 
 /** 事务内按 FIFO(先到期先扣)从活批次扣 n 本金。返回实际扣到的数(正常 = n)。 */
