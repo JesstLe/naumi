@@ -31,4 +31,4 @@
 - 独立发布worktree保留；最初在旧工作树整理的草稿已保存output/transferred-draft.patch及草稿文件夹后只恢复本任务明确的四个未提交文件，旧工作树干净，没有删除用户数据或其他同事改动。
 - 最新origin/main5bae420的fleet运行期type修复与NAS/relay阶段独立，Skills基础文件只是缺少本分支已有企业/布局功能，非同事覆盖；本轮候选从47真实183派生，不把未验收跨站部署接为此次图片卡片上线。当前功能迭代1/3，模块整合计数未到门槛。
 - 本轮首个内置image_gen调用返回空，没有可交付生成图片；最终采用已核验的原公开工作流实际预览，原图不冒充本站生图。Photoroom404链接排除，Qwen怪物抠图示例不适合电商，最终替换为真实同品套图流程；所有来源/授权/SHA在sources.json。
-- 真实公网截图public-skills-1440.png、public-skills-390.png、public-detail-390.png已打开检查；最终内嵌图public-skills-panel.png从公网截图裁出，待重开交付。8套总览curated-eight-previews.jpg已查看。
+- 真实公网截图public-skills-1440.png、public-skills-390.png、public-detail-390.png已打开检查；最终内嵌图public-skills-panel.png从公网截图裁出，已重开检查通过，可内嵌交付。8套总览curated-eight-previews.jpg已查看。
