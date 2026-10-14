@@ -227,3 +227,19 @@ fixture扩展独立KIE motion模型，仅uiModels启用，单图/单视频/无�
 verify-direct-generation改用TS AST验证window.confirm只能处于显式api-cost-plus短路/条件分支，同时自检固定价无条件确认、OR绕过与跨函数延后确认会被拒绝，保留其余报价/UUID/价格版本/Agent授权检查。已有direct-generation浏览器fixture增加成本授权拒绝0POST、同意后冻结额度36及2次授权；新增实际Chrome runner调用真实React BillingProvider（只mock HTTP/账号，不调用实际模型）。原构建器因新增模块读取process.env在独立浏览器报process未定义，构建fixture显式空process.env，不读取真实运行环境。
 
 实际两项PASS：DIRECT_SUBMISSION=PASS；DIRECT_GENERATION_BROWSER=PASS、固定价三入口feeConfirmations=0、成本拒绝NO_POST/同意FROZEN_CAP_36、未知重试UUID保持、402/409及报价变更拒绝保留。产品计费代码/价格/确认边界未改。更新CI结果仍须检查，不据本机PASS宣称整条CI通过。CI日志下载两次EOF，错误输出保留忽略路径而不重复输出临时签名链接；利用失败步骤元数据及本地同命令定位，并未重启原CI任务冒充成功。
+
+2026-10-14 BYOC与媒体GUI集中验收：新增计划命名的`verify-video-fusion-media.mjs`及真实应用启动器`verify-video-fusion-byoc-browser.ts`。通过实际Chrome点击执行入口/工作流、添加图片/视频/音频引用及全部路径映射，输入完整多行文本、种子0、320×180/32帧数值与声音false，保存、刷新并逐项恢复。原生ComfyUI模拟供应商收到实际对应参数，真实Worker登记视频/图片/音频三种产物，0积分且只创建一次。视频播放器使用原始彩条像素断言，实际GUI提交尾帧、提取音轨、音画分离、0.5—2.5秒裁剪，检查真实任务完成、全部产物MIME及裁剪时长。最后刷新仍关联原任务、无重复创建或扣费，pageerror为0。
+
+证据：`checkpoint-c/byoc-browser-6064d70f-1c4c-4617-909f-06baf9d98deb/result.json`，完整命令session47058 exit0；两张截图已查看，实际播放器呈现彩条。初次用例`toBeEnabled()`未可靠等待原生option的disabled属性，选择发生在目录加载前；改为轮询实际DOM属性后再选，产品入口与加载逻辑没有改变。失败记录保留，不把它算产品修复。TypeScript及新媒体脚本语法检查session15344 exit0。截图中参考缩略图未单独等待解码，不能据本用例宣称参考图呈现验证；混合布局/生图保护/全部C与D仍待完成。
+
+最新主线5fd8196的固定Linux App Docker构建CI38495337591 success；Image gateway CI38495337629在Registered model execution and private control-plane regressions失败，需同命令核对具体原因，不能称整条CI通过。日志下载出现EOF/TLS错误，未绕过TLS验证或重启失败任务。18组完整计费回归已通过，详见计费记录。2026-10-14 01:33:46 UTC只读103核查：Naumi及Hub两锁无持有进程，无本轮视频正式部署；锁文件存在不等于锁被持有。开发继续不持部署锁，最终发布仍需刷新基线、备份、完整候选及回滚验收。
+
+模型保护回归后续：本机严格隔离库逐项执行CI同一组11个命令。coverage/config/publication/admin通过；execution最初因旧Agent fixture未传cookie被现有功能权限401拒绝，补原生cookie并增加无cookie的实际prompt拒绝/0供应商调用断言。旧视频fixture由图片能力复制而来，缺少新正式模式/组合定义；现在明确text、4秒/1280x720、无参考媒体且images与旧maxReferenceImages一致为0，原始凭据轮换、持久重放、Agent流、画布文字改图、报价与不确定提交拒重试全部通过。该用例轮询仍processing，不能作为视频结果播放验收。
+
+tools真实全局生图质量、Node→Go Router合同、500×2并发性能全部通过；review原本仅用旧错误文案判断0图限制，现明确reference模式和0媒体能力，严格断言REFERENCE_LIMIT_EXCEEDED/422/references，仍要求0任务/0供应商调用，并保留真实needs_attention回滚SQL和未确定配置发布保护。review/Flow真实SDK/Node与Go共享并发最后三项全部PASS。只修测试fixture与断言，没有削弱Agent鉴权或视频能力校验。对应忽略日志model-regression-app.log、model-execution-only-app.log、model-remaining-app.log和model-review-remaining-app.log保留各初次失败与后续成功；新的远端CI尚待提交后确认。
+
+26520ca已普通快进main及本任务分支。后续生图保护复用现有imagegen-ui-fixture，指向当前工作树启动真实隔离Next/API/DB/Chrome，控制平面及图像供应商是loopback模拟。桌面1440与390px、真实透明像素、双击/刷新同任务、原账号目标画布、实际鼠标涂抹SDK蒙版、普通节点生成、仅本地WebP/256px输出0调用、JSONL两条批次及已鉴权ZIP全部PASS，session56300 exit0，供应商fixture调用8次/外部付费0；证据output/imagegen-capabilities-20261013/ui及stable-image-browser-app.log。该脚本为普通节点测试主动模拟一次服务器已接单后的丢失响应，仍走实际接受任务，不把这一项说成无网络故障注入。
+
+锁定交互测试补强：原fixture不合法的text模式加图片改成合法single_image/first_frame，真实界面先断言解锁时生成可用，再执行锁定并断言保存/生成禁用，同时保留拖动不变、两窗口409保留草稿、跨项目复制/撤销重做、尺寸持久化与账号隔离；没有生成任务或模型调用。最终canvas-interactions-f66e292f PASS，session62441 exit0。实际混合布局及完整C/D仍待完成。
+
+远端CI26520ca的38497433803已确认终态失败，仍在billing-all步骤，日志下载是TLS连接EOF而非证书不可信；未关闭证书验证。创建本任务带owner marker的全新loopback数据库并从零执行完整18组billing-all，再次全部PASS，session88019 exit0，两组500性能样本errorCount0，排除只靠旧库预置通过。远端失败具体原因尚未取得，不宣称已修复；仅对这一已确认失败的job请求一次诊断性重跑，PAT权限拒绝，session65420 exit1，未实际启动重跑，也不删除首次失败记录。26520ca完整Docker构建38497433819 success。完整固定App运行/回滚/103发布门槛仍未通过。

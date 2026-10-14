@@ -75,7 +75,7 @@ async function main() {
     f.config.publicModels.push({ id: "text-a", label: "文字测试", modality: "text", enabled: true, visible: true, target: { type: "upstream", id: "text-u1" } });
     f.config.bindings["agent.text"] = "text-a"; f.config.bindings["text.generate"] = "text-a";
     f.config.providers.push({ ...f.config.providers[0], id: "video-provider", protocol: "ark", baseUrl: `${f.origin}/video`, options: { idempotencyStrategy: "none" } });
-    f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels[0]), id: "video-u1", providerId: "video-provider", modality: "video", model: "wire-video-one", parameterMap: {} });
+    f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels[0]), id: "video-u1", providerId: "video-provider", modality: "video", model: "wire-video-one", parameterMap: {}, capabilities: { ...structuredClone(f.config.upstreamModels[0].capabilities), maxReferenceImages: 0, video: { modes: ["text"], durationResolutionMap: [{ durations: [4], resolutions: ["1280x720"] }], aspectRatios: ["16:9"], audio: "disabled", limits: { images: 0, videos: 0, audios: 0 } } } });
     f.config.providers.at(-1)!.credentialRef = (await f.credentials.importPlain({ providerId: "video-provider", plain: "fixture-video-original", actor: "fixture" })).id;
     f.config.publicModels.push({ id: "video-a", label: "视频测试", modality: "video", enabled: true, visible: true, target: { type: "upstream", id: "video-u1" } });
     f.config.bindings["video.generate"] = "video-a";
@@ -172,10 +172,17 @@ async function main() {
     assert.throws(() => ownProviders.restoreUserImageProvider(email, `${sealedOwn}tampered`));
     await globalDb.getOrCreateUser(email, "模型执行测试");
     await globalDb.addCreditBatch(email, 1000, { source: "grant", reason: "isolated model execution fixture" });
+    await globalDb.setSetting("multi_user_enabled", "1");
+    const { signUserSession } = await import("../src/lib/native-auth");
+    const cookie = `nv_user=${signUserSession(email, Date.now())}`;
     const videoService = await import("../src/lib/video/service");
     const { getOrCreateSession } = await import("../src/lib/agent/runtime");
     const agentSession = await executor.runBundle({ modelVersion: first.version, billingVersion: billing.version, primary: "text", text: oldText }, billing, async () => {
-      const session = await getOrCreateSession(email, "fixture-frozen-agent", [], undefined, "text-a");
+      const beforeUnauthenticatedPrompt = calls.length;
+      const unauthenticated = await getOrCreateSession(email, "fixture-frozen-agent-missing-cookie", [], undefined, "text-a");
+      await assert.rejects(unauthenticated.agent.prompt("Do not call suppliers without a valid session."), (error: any) => error.status === 401);
+      assert.equal(calls.length, beforeUnauthenticatedPrompt, "An unauthenticated Agent prompt cannot call the supplier");
+      const session = await getOrCreateSession(email, "fixture-frozen-agent", [], { cookie, authorization: "" }, "text-a");
       await session.agent.prompt("Reply with a short sentence; do not call tools.");
       return session;
     });
@@ -236,9 +243,6 @@ async function main() {
     assert.equal((await globalDb.getCanvasImageTask(email, canvasTask.id))!.status, "completed");
     assert.equal(calls.at(-1)!.model, "wire-image-two"); assert.equal(calls.at(-1)!.authorization, "Bearer fixture-rotated-provider-account");
     assert.ok(!JSON.stringify(canvasService.publicCanvasImageTask(canvasTask)).includes("modelExecutions"));
-    await globalDb.setSetting("multi_user_enabled", "1");
-    const { signUserSession } = await import("../src/lib/native-auth");
-    const cookie = `nv_user=${signUserSession(email, Date.now())}`;
     const analysisRoute = await import("../src/app/api/replicate/analyze/route");
     const analysisForm = new FormData(); analysisForm.set("ref", new Blob([new Uint8Array(png)], { type: "image/png" }), "fixture.png");
     visionReply = true;
