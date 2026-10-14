@@ -1,6 +1,7 @@
 'use client';
 import { useLayoutEffect, useRef } from 'react';
 import { canCompositeCanvasLayers, type BackgroundPaint, type PaintBox } from '@/lib/canvas/render-layer-order';
+import { bindCanvasHoverPlane } from '@/lib/canvas/hover-layer-plane';
 
 /** Read geometry only when scene geometry/content changes, never for viewport
  * transforms. The native z-order is restored before painting any uncertain or
@@ -10,6 +11,7 @@ export function CanvasRenderLayerGuard() {
   useLayoutEffect(() => {
     const root = anchor.current?.closest<HTMLElement>('.react-flow');
     if (!root) return;
+    const hoverPlane = bindCanvasHoverPlane(root);
     let disposed = false, queued = false;
     let geometry = new WeakMap<Element, { box: PaintBox; version: number }>();
     const versions = new WeakMap<Element, number>();
@@ -29,6 +31,9 @@ export function CanvasRenderLayerGuard() {
     const inspect = () => {
       queued = false;
       if (disposed) return;
+      // A hovered edge can be removed/replaced while the cursor is stationary.
+      // Reconcile only on the existing scene-inspection schedule, never pan frames.
+      hoverPlane.refresh();
       const transform = root.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform;
       zoom = Number(transform?.match(/scale\(([^)]+)\)/)?.[1]);
       const translation = transform?.match(/translate\(([^,]+)px,\s*([^)]+)px\)/);
@@ -86,7 +91,7 @@ export function CanvasRenderLayerGuard() {
     observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'd', 'class'] });
     const resize = new ResizeObserver(() => { geometry = new WeakMap(); if (!queued) { queued = true; queueMicrotask(inspect); } });
     resize.observe(root);
-    return () => { disposed = true; observer.disconnect(); resize.disconnect(); delete root.dataset.canvasLayerOrder; };
+    return () => { disposed = true; hoverPlane.dispose(); observer.disconnect(); resize.disconnect(); delete root.dataset.canvasLayerOrder; };
   }, []);
   return <span ref={anchor} hidden aria-hidden="true" />;
 }

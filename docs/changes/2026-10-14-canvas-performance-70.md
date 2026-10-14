@@ -256,3 +256,15 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 
 
 模块24收尾更新：固定f9649ea / 1791969278 PROBE0 Linux构建exit0，实际新容器在仅回环4331运行，旧1476/4330保持；同隔离DB/media，Worker0、供应商调用0。新版本实际11JSON API、原样本字段/213节点数据/153原图、匿名和已登录foreign隔离、drain授权通过；普通浏览器UI和性能回归仍未执行。四件源码产物现固定f964相对最新main dab963b共34字段，BASELINE/MODIFIED/独立ROLLBACK24/1/24均exit0，34SHA恢复及同事video/wallet/CI文件原样保留，四件已重开。旧1476四件材料在transaction24-previous-artifacts保留；实际完整命令/输入/输出/退出状态见VERIFICATION.txt。此收尾只更新文档，不要求重建相同业务源码，不发布103，目标active。
+
+## 模块25：移除全图悬停关系选择器，保留原始层级语义
+
+继续性能目标，用户已把优先对象指定为admin素材最多的画布。此前本地恢复、最新main整合、参考工作台更名是实际进展，但未新增浏览器性能证据。当前源码91c3a15保留改名和main4b2ba13；4331当前运行的是该更名预览，旧f964已停止保留，不复用旧容器替换脚本。
+
+源定位：两块合成图层的样式使用根范围:not(:has(.react-flow__edge:hover))。指针经过SVG连线会让根关系选择器参与失效判断及compositor切换，原悬停高亮仍需原z-order。此模块不简单删除hover保护，也不在平移时隐藏连线/图片或降低采样；用root捕获mouseover/mouseout同步维护data-canvas-edge-hover，原节点/边合成CSS只判断该根属性。边内1000次事件只写一次属性，跨边保持同一个original层级，无布局读取，无受控React图状态更新。
+
+静止指针下初次挂载、移除/替换边、几何变化后的场景inspect会同步核对当前:hover边。原层级几何检查忽略viewport transform的机制保持，只有已有场景检查调用该核对；不是每帧query。原后代:has语义包括嵌套画布，外部画布排除；卸载清除监听/属性，迟到事件不复活。原edge:hover高亮、selected/linking、任意负层级/背景交叉保护不变。没有声称此源码机制或1000→1属性写次数等于用户耗时70%。
+
+本轮只读刷新103运行状态：公开版本已由其他任务更新为3bbebee2cfe31e884268c539373b81afff263207 / 1791956188；UI/desktop/enterprise运行新的admin-probe去除版本，核心App/Worker仍c05a923；两把部署锁当前无持有者。磁盘79%/约25GiB可用，swap1446/1450MiB，available2511MiB。此前b243公网版本记录现为历史，之后若发布必须基于新网关/配置/版本刷新，不覆盖同事的新版本。本轮未持锁、未改变103配置/服务/数据。
+
+集中验证及固定构建进行中：hover属性状态机、层级保护、dock几何、媒体权限缓存及完整类型；原生浏览器同条件pan/zoom、完整213/154/191/94场景和直连R2仍未验证，目标active。首测试移除属性次数预期写错（4而非5）已修正为实际状态转换次数，不作为产品或性能通过证据。
