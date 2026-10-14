@@ -43,3 +43,12 @@
 回退先ROLLBACK.sh --check；--fixture在独立网关副本实际恢复摘要通过；--execute仅平滑切回旧入口，业务数据库/新账号/媒体/在途新任务不回灌、不删除。
 旧槽保留而非立即排空停机，因为旧员工项目和缓存仍需要过渡。归属历史迁移没有仅凭同名自动完成。
 正式应用发布本轮1次；47空间维护计数累计1，磁盘仍有余量，未无筛选prune或删他人版本。
+
+### 最终收尾
+
+- 重新核验公网根路径HTTP200且无跳转，title Naumi- AI创作平台；运行commit5fc5efe、App/Worker/DB与旧槽正常。
+- MODIFIED_FILE.tar已更新为最终5fc5efe源码，SHA256 8e2494f6a8b24c4d3e79abd3d8befb2d01bb0665498711081bfa0be009dbb966；旧88a724d包保留为历史，不误交付。
+- DIFF_FILE.patch、VERIFICATION.txt、可执行ROLLBACK.sh已双端重开核验，详细命令/输入/输出/退出码在VERIFICATION.txt及proof-*.json。
+- 独立文件副本回退恢复原网关摘要5196eaed334a621b9ec913727335a0d8069e311ba1ad607424c7f32c21a8ac7a，公网保持Naumi，未实际切回旧系统。
+- 三把部署锁正常释放并flock验证FREE；本任务18452隧道核对后关闭；无本任务活跃构建/apt下载残留。
+- 续期timer沿用原配置，本轮未调整检查周期。
