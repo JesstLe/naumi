@@ -5201,6 +5201,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             const nodes=data.nodes as {id:string;projectKey:string}[];
             if(acceptedVideoProject){if(nodes.some(node=>node.projectKey===acceptedVideoProject))await videoNodesStore.refresh();}
             else if(nodes[0])videoProjectResult={key:nodes[0].projectKey,nodeId:nodes[0].id};
+          } else if(type==="text_nodes"&&Array.isArray(data.nodes)){
+            const ids=new Set((data.nodes as {id:string;projectKey:string}[]).filter(node=>node.projectKey===acceptedVideoProject).map(node=>node.id));
+            const account=canvasAccountRef.current,email=targetEmail||user?.email;
+            if(ids.size&&email){
+              const response=await privateFetchRaw(`/api/canvas/text-nodes?email=${encodeURIComponent(email)}`,{signal:controller.signal});
+              if(!response.ok)throw new Error("剧本资产已保存，画布文字读取暂不可用");
+              const snapshot=await response.json();
+              if(account===canvasAccountRef.current&&epoch===assistantRequestEpoch.current&&!controller.signal.aborted){
+                const added=((snapshot.nodes||[]) as CanvasTextNode[]).filter(node=>ids.has(node.id)&&node.projectKey===acceptedVideoProject).map(node=>({...node,width:node.width||TEXT_NODE_DEFAULT_W,height:node.height||TEXT_NODE_DEFAULT_H,sourceIds:node.sourceIds||[],targetIds:node.targetIds||[],productIds:node.productIds||[]}));
+                setTextNodes(current=>{const known=new Set(current.map(node=>node.id));return [...current,...added.filter(node=>!known.has(node.id))];});
+              }
+            }
           } else if (type === "artifacts" && Array.isArray(data.artifacts)) {
             const artifacts = data.artifacts as {id:string;image:string;title:string}[];
             artifacts.forEach(art => artifactIds.add(art.id));

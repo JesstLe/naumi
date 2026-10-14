@@ -1,5 +1,7 @@
 # 画布视频完整融合进度
 
+剧本正式资产链已补齐并集中PASS（7089 exit0）：完整原稿/逐字连续片段、原稿SHA及角色、可编辑镜头正文、参数不被工具改写、重放不覆盖用户编辑、拒绝分支无写入/费用；真实Ark三片段及原始两格拼图reference，KIE结构化multi_prompt/工作流冻结保留画面说明和对白；Chrome新文字事件/刷新、原图不遮挡及6节点实际范围通过。证据script-ce0e7019/script-multishot-096de602/agent-sse-beb5062a，详见script-assets模块。最新main f673ec0仅文档待整合。95b Image gateway终态failure在Billing admin browser acceptance，日志EOF、annotations PAT403，不能称整条CI通过；完整C/D/34项及103发布仍未完成。
+
 固定上游实操补证：IC v0.8.1及TF ae9e5f均在独立loopback启动并实际操作。TF原创4秒视频播放、音轨提取、1—3秒裁剪、尾帧、音视频分离及刷新恢复已执行，FFprobe/原SHA核对；IC同素材播放/放大及摄影开关启用已观察。comparison.json逐项记录V01—V24，明确部分观察/尚未实操，不当完整通过矩阵；Task14仍进行中。95b43c5已普通合入主线，Docker38508694578 success；Image gateway计费及模型执行已pass但整条仍待终态。完整C/D/34项和103发布保持未完成，详见demo-comparison。
 
 主线9245608整合后复核：保留员工工作台外部跳转，页面直接return redirect使桌面动态页面仍具有有效React返回类型；生图GUI fixture使用本机Canvas入口覆盖原完整测试，避免跳转47。TypeScript通过，稳定生图集中验收77057 exit0（1440/390px、透明像素、蒙版、普通节点、刷新/双击幂等、免费转换、JSONL ZIP，8次fixture调用/外部付费0）。混合布局404a623已完成，主线整合c6139a1待本批增量推送；完整C/D和103发布仍未完成。
