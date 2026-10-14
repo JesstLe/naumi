@@ -120,7 +120,7 @@ export function SkillBook({ selected, onSelect, accountKey, busy, sessionId, has
     </div>
   </div>;
   return <div className={styles.entry} data-testid="image-skills-entry">
-    <button ref={trigger} type="button" disabled={busy} className={`${styles.trigger} ${compact ? styles.compact : ""}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => { setDetail(null); setDraft(null); setOpen(true); }}><BookOpen size={16} /><span>Skills</span></button>
+    <button ref={trigger} type="button" disabled={busy} className={`${styles.trigger} ${compact ? styles.compact : ""}`} aria-label="Skills" title={selected ? `Skills：${selected.name}` : "Skills"} aria-haspopup="dialog" aria-expanded={open} onClick={() => { setDetail(null); setDraft(null); setOpen(true); }}><BookOpen size={16} /><span>Skills</span></button>
     {selected && <span className={styles.selected} title={selected.name}><span>{selected.name}</span><button type="button" aria-label="取消技能选择" disabled={busy} onClick={() => onSelect(null)}><X size={12} /></button></span>}
     {view && createPortal(view, document.body)}
   </div>;

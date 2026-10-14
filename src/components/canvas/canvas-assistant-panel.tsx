@@ -308,7 +308,6 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
             </button>)}
           </div>
         </div>}
-        {onSkillSelect && <div className="mb-2"><SkillBook compact selected={selectedSkill || null} onSelect={onSkillSelect} accountKey={skillAccountKey || ""} busy={busy} sessionId={skillSessionId} hasConversation={turns.some(turn => turn.role === "assistant" && !!turn.content.trim())} onUse={prompt => { if (!input.trim()) onInputChange(prompt); composer.current?.focus(); }} /></div>}
         <textarea ref={composer} data-testid="canvas-assistant-input" aria-label={labels.placeholder} rows={2} value={input} disabled={busy}
           placeholder={labels.placeholder} onChange={event => onInputChange(event.target.value)}
           onKeyDown={event => {
@@ -318,7 +317,8 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           }}
           className="canvas-ui-text block min-h-[64px] max-h-36 w-full resize-none border-0 bg-transparent p-0 text-[13px] leading-6 outline-none placeholder:text-[var(--canvas-ui-muted)] disabled:opacity-60" />
         <div className="mt-2 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            {onSkillSelect && <SkillBook compact selected={selectedSkill || null} onSelect={onSkillSelect} accountKey={skillAccountKey || ""} busy={busy} sessionId={skillSessionId} hasConversation={turns.some(turn => turn.role === "assistant" && !!turn.content.trim())} onUse={prompt => { if (!input.trim()) onInputChange(prompt); composer.current?.focus(); }} />}
             <button ref={referenceTrigger} type="button" disabled={!contextImages.length} aria-label={labels.references} title={labels.references} aria-expanded={referencesOpen} className={cn(iconButton, "canvas-ui-control rounded-full")} onClick={() => setReferencesOpen(open => !open)}><Plus className="h-4 w-4" aria-hidden="true" /></button>
             {modelControl ? <div className="min-w-0 flex-1" data-testid="canvas-assistant-model">{modelControl}</div> : <span className="canvas-ui-muted inline-flex items-center gap-1.5 text-[12px] font-semibold"><InfinityIcon className="h-4 w-4" aria-hidden="true" />{labels.agent}</span>}
           </div>
