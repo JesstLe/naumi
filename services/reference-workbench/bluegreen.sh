@@ -64,6 +64,13 @@ if [[ "$ACTION" == promote ]]; then
   [[ "$(readlink -f "$BASE/current")" == "$(cat "$EVIDENCE/baseline-release.txt")" ]] || { echo BASELINE_CHANGED=1; exit 75; }
   cmp /etc/nginx/sites-available/reference-workbench "$EVIDENCE/baseline-nginx.conf" || { echo GATEWAY_CHANGED=1; exit 75; }
   [[ -f "$EVIDENCE/candidate-acceptance.json" ]] || { echo CANDIDATE_ACCEPTANCE=MISSING; exit 2; }
+  python3 - "$EVIDENCE/candidate-acceptance.json" "$VERSION" <<'PY'
+import json,sys
+report=json.load(open(sys.argv[1]))
+if report.get('version') != sys.argv[2]:
+ print('CANDIDATE_ACCEPTANCE=WRONG_VERSION')
+ sys.exit(2)
+PY
   curl -fsS "http://127.0.0.1:$PORT/health" | grep -F "$VERSION"
   # 拷贝基线改唯一回环目标，保留证书、入口限制和真实用户连接。
   sed "s/127.0.0.1:$OLD_PORT/127.0.0.1:$PORT/g" "$EVIDENCE/baseline-nginx.conf" > /etc/nginx/sites-available/reference-workbench
