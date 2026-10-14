@@ -31,7 +31,6 @@ import {
   ACCOUNT_THEME_EVENT,
   AccountDockMenu,
   toggleAccountTheme,
-  useAccountAdminStatus,
 } from "@/components/account/account-dock-menu";
 
 type Item = { href: string; label: { zh: string; en: string }; Icon: typeof Home };
@@ -72,7 +71,6 @@ export function AppRail() {
   // 头像菜单:桌面悬停打开,离开延迟关闭(留时间让鼠标移到菜单上)。
   const acctTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [dark, setDark] = useState(false);
-  const isAdmin = useAccountAdminStatus(user);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -162,7 +160,6 @@ export function AppRail() {
         remaining={remaining}
         dark={dark}
 
-        isAdmin={isAdmin}
         className={className}
         onClose={() => setAcct(false)}
         onToggleTheme={toggleTheme}
