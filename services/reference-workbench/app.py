@@ -42,6 +42,7 @@ WAKE = asyncio.Event()
 LOGIN_ATTEMPTS = {}
 SLOT = os.environ.get('WORKBENCH_SLOT', 'local')
 WAITING_STATE = 'waiting_geometry_v2'
+EXTRA_WAITING = 'waiting_extra_v1'
 
 
 def image_geometry(path):
@@ -257,6 +258,8 @@ def data_url(path):
 
 
 async def execute_task(t):
+    if t['kind'] in {'single', 'chat'}:
+        return await EXTRAS.execute(t)
     cfg = json.loads(t['config'])
     ch = json.loads(CIPHER.decrypt(t['channel'].encode()))
     state = {'infer': 'inferring', 'edit': 'editing'}.get(t['operation'], 'running')
@@ -341,9 +344,9 @@ async def worker():
         with db() as c:
             c.execute('BEGIN IMMEDIATE')
             active = c.execute("SELECT count(*) FROM tasks WHERE state IN ('running','editing','inferring')").fetchone()[0]
-            row = c.execute('SELECT * FROM tasks WHERE state=? ORDER BY created LIMIT 1', (WAITING_STATE,)).fetchone() if active < 2 else None
+            row = c.execute('SELECT * FROM tasks WHERE state IN (?,?) ORDER BY created LIMIT 1', (WAITING_STATE, EXTRA_WAITING)).fetchone() if active < 2 else None
             if row:
-                c.execute("UPDATE tasks SET state='running' WHERE id=? AND state=?", (row['id'], WAITING_STATE))
+                c.execute("UPDATE tasks SET state='running' WHERE id=? AND state=?", (row['id'], row['state']))
                 c.execute('INSERT OR REPLACE INTO worker_owners VALUES (?,?,?,?)', (row['id'], SLOT, os.getpid(), time.time()))
         if row:
             await execute_task(dict(row))
@@ -529,7 +532,10 @@ async def heartbeat(request: Request):
 @app.get('/api/settings')
 async def settings(request: Request):
     u = user(request)
-    return {'mode': 'all', 'quality': 'high', 'resolution': '2k', 'timeout': 900, 'sku_refs_dir_name': 'SKU', 'force': False, 'card_height': 640, 'prompt': DEFAULT_PROMPT, 'prompt_infer_instruction': DEFAULT_INSTRUCTION, 'settings_editable': bool(u['admin']), 'provider_templates': []}
+    with db() as c:
+        row = c.execute('SELECT value FROM settings WHERE key=?', ('preferences:' + u['id'],)).fetchone()
+    preferences = json.loads(row['value']) if row else {}
+    return {'mode': 'all', 'quality': 'high', 'resolution': '2k', 'timeout': 900, 'sku_refs_dir_name': 'SKU', 'force': False, 'card_height': 640, 'prompt': DEFAULT_PROMPT, 'prompt_infer_instruction': DEFAULT_INSTRUCTION, **preferences, 'settings_editable': bool(u['admin']), 'provider_templates': [], 'auth_id': u['id'], 'auth_username': u['name']}
 
 
 @app.post('/api/workbench/upload-folder')
@@ -682,7 +688,7 @@ async def status(request: Request):
     u = user(request)
     with db() as c:
         counts = dict(c.execute('SELECT state,count(*) FROM tasks WHERE user_id=? GROUP BY state', (u['id'],)))
-        counts['waiting'] = counts.get('waiting', 0) + counts.get(WAITING_STATE, 0) + counts.get('waiting_geometry_v1', 0)
+        counts['waiting'] = counts.get('waiting', 0) + counts.get(WAITING_STATE, 0) + counts.get('waiting_geometry_v1', 0) + counts.get(EXTRA_WAITING, 0)
         latest = c.execute('SELECT t.*,p.name AS product_name FROM tasks t JOIN projects p ON p.id=t.project_id WHERE t.user_id=? ORDER BY t.updated DESC LIMIT 1', (u['id'],)).fetchone()
         image_counts = dict(c.execute("SELECT state,count(*) FROM tasks WHERE user_id=? AND operation!='infer' GROUP BY state", (u['id'],)))
     running = sum(counts.get(x, 0) for x in ['running', 'editing', 'inferring'])
@@ -783,3 +789,8 @@ async def admin_tasks(request: Request):
     with db() as c:
         rows = [dict(x) for x in c.execute('SELECT id,user_id,operation,state,error,created,updated FROM tasks ORDER BY created DESC LIMIT 200')]
     return {'tasks': rows}
+
+# 将额外页面注册到同一账号/渠道/任务服务，不转发回局域网。
+import sys
+from extra_pages import register
+EXTRAS = register(sys.modules[__name__])
