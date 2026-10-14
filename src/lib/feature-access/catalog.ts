@@ -40,6 +40,7 @@ export function requestRequirement(path: string, method = "GET"): AccessRequirem
   if (/^\/api\/canvas\/(image-tasks|expand|annotate|text-edit)(\/|$)/.test(path)) return { all: ["canvas", "generate"] };
   if (path.startsWith("/api/canvas/")) return { all: ["canvas"] };
   const root = path.split("/")[2];
+  if(root==="reference-workbench")return {all:["batchshot"]};
   if(root==="imagegen")return {any:["generate","batchshot","variations","fuse","canvas","works","agent"]};
   if (path === "/api/team/access") return undefined;
   if (root === 'enterprise') return { all: ['team'] };

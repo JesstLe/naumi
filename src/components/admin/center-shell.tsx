@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, ArrowLeft, BarChart3, Building2, ImageIcon, Layers, LogOut, Menu, Settings, ShieldCheck, Users, Wallet, X } from "lucide-react";
 import type { BiSection } from "@/lib/bi/contracts";
 import styles from "./center-shell.module.css";
 
-type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-management" | "teams" | "team-access" | "feature-access";
+type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-management" | "teams" | "team-access" | "feature-access" | "deployments";
 type Entry = { id: Section; label: string; icon: typeof Users; href?: string };
 const groups: { label: string; entries: Entry[] }[] = [
   { label: "运营概览", entries: [{ id: "overview", label: "数据概览", icon: BarChart3 }] },
@@ -30,19 +30,29 @@ const groups: { label: string; entries: Entry[] }[] = [
     { id: "access", label: "后台访问记录", icon: ShieldCheck },
   ] },
   { label: "系统设置", entries: [
+    { id: "deployments", label: "部署管理", icon: Building2, href: "/admin/deployments" },
     { id: "model-config", label: "模型配置中心", icon: Layers, href: "/admin/bi/models" },
     { id: "settings", label: "接口与站点设置", icon: Settings, href: "/admin?view=settings" },
   ] },
 ];
 
 /** Shared navigation only; each page and API retains its own administrator checks. */
-export function AdminCenterShell({ active, children, onBiNavigate, light = false }: {
+export function AdminCenterShell({ active, children, onBiNavigate, light = false, deploymentsOnly = false }: {
   active: Section;
   children: React.ReactNode;
   onBiNavigate?: (section: BiSection) => void;
   light?: boolean;
+  deploymentsOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [fleetEnabled, setFleetEnabled] = useState(active === "deployments");
+  useEffect(() => {
+    const abort = new AbortController();
+    void fetch("/api/admin/fleet/status", {cache:"no-store", signal:abort.signal}).then(async response => {
+      if(response.ok) { const data=await response.json(); if(!abort.signal.aborted)setFleetEnabled(data.enabled===true); }
+    }).catch(() => {});
+    return () => abort.abort();
+  }, []);
   const [logoutError, setLogoutError] = useState("");
   const router = useRouter();
   async function logout() {
@@ -55,19 +65,19 @@ export function AdminCenterShell({ active, children, onBiNavigate, light = false
   }
   return <div className={`${styles.shell} ${light ? styles.light : ""}`}>
     <header className={styles.mobileHeader}>
-      <Link href="/admin/center" prefetch={false}>Naumi 管理中心</Link>
+      <Link href={deploymentsOnly ? "/admin/deployments" : "/admin/center"} prefetch={false}>Naumi 管理中心</Link>
       <button type="button" aria-label={open ? "收起管理导航" : "展开管理导航"} aria-expanded={open} aria-controls="admin-center-navigation" onClick={() => setOpen(!open)}>
         {open ? <X size={22} /> : <Menu size={22} />}
       </button>
     </header>
     <aside className={`${styles.sidebar} ${open ? styles.open : ""}`} id="admin-center-navigation">
-      <Link className={styles.brand} href="/admin/center" prefetch={false}>Naumi <span>管理中心</span></Link>
-      <p className={styles.private}><ShieldCheck size={15} />仅管理员可见</p>
+      <Link className={styles.brand} href={deploymentsOnly ? "/admin/deployments" : "/admin/center"} prefetch={false}>Naumi <span>管理中心</span></Link>
+      <p className={styles.private}><ShieldCheck size={15} />{deploymentsOnly ? "实例授权运维" : "仅管理员可见"}</p>
       <nav aria-label="管理中心导航">
-        <div className={styles.modelManagementEntry}><Link href="/admin/model-management" prefetch={false} aria-current={active === "model-management" ? "page" : undefined} className={active === "model-management" ? styles.modelManagementActive : ""} onClick={() => setOpen(false)}><Layers size={18} /><span>模型管理 <small>模型与积分</small></span><span className={styles.modelManagementBadge}>新</span></Link></div>
-        {groups.map(group => <div className={styles.group} key={group.label}>
+        {!deploymentsOnly && <div className={styles.modelManagementEntry}><Link href="/admin/model-management" prefetch={false} aria-current={active === "model-management" ? "page" : undefined} className={active === "model-management" ? styles.modelManagementActive : ""} onClick={() => setOpen(false)}><Layers size={18} /><span>模型管理 <small>模型与积分</small></span><span className={styles.modelManagementBadge}>新</span></Link></div>}
+        {groups.filter(group => !deploymentsOnly || group.entries.some(entry => entry.id === "deployments")).map(group => <div className={styles.group} key={group.label}>
           <p className={styles.groupLabel}>{group.label}</p>
-          {group.entries.map(({ id, label, icon: Icon, href }) => <Link key={id} prefetch={false}
+          {group.entries.filter(entry => (!deploymentsOnly || entry.id === "deployments") && (entry.id !== "deployments" || fleetEnabled)).map(({ id, label, icon: Icon, href }) => <Link key={id} prefetch={false}
             href={href || `/admin/center?section=${id}`}
             aria-current={active === id ? "page" : undefined}
             className={active === id ? styles.active : ""}
@@ -81,7 +91,7 @@ export function AdminCenterShell({ active, children, onBiNavigate, light = false
         </div>)}
       </nav>
       <Link className={styles.back} href="/" prefetch={false}><ArrowLeft size={16} />返回工作台</Link>
-      <button type="button" className={styles.logout} onClick={() => void logout()}><LogOut size={16} />退出管理中心</button>
+      {!deploymentsOnly && <button type="button" className={styles.logout} onClick={() => void logout()}><LogOut size={16} />退出管理中心</button>}
       {logoutError && <p className={styles.logout} role="alert">{logoutError}</p>}
     </aside>
     <div className={styles.content}>{children}</div>

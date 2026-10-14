@@ -1,0 +1,14 @@
+[Unit]
+Description=Naumi approved release planning
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=naumi
+WorkingDirectory=/opt/naumi-control
+EnvironmentFile=/etc/naumi/fleet-central.env
+ExecStart=/usr/bin/node /opt/naumi-control/dist/fleet/scheduler.js
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

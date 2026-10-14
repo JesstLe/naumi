@@ -1,5 +1,35 @@
 # 画布视频上游实操对照
 
+## IC多镜头、运动控制及Omni元素实操补证
+
+固定IC虚构账号的本地渠道改名“隔离KIE参考（无密钥）”、地址127.0.0.1:15375，仅手工登记固定源码定义的kling-3.0/video、kling-3.0-omni/reference-to-video及kling-2.6/motion-control。密钥保持空，没有拉取模型目录或发送生成请求；只能证明真实UI及保存能力，不能称原生供应商接口调用。本轮不使用Naumi配置或凭据。
+
+实际新增两份原创完整文字节点，分别保留0—6秒与6—12秒、动作和逐字台词。由画布参考选择实际连接到视频，开启多镜头、新增第二镜头、各6秒，并分别选入真实正文；刷新重新打开设置，顺序/秒数/正文保持。kling-multishot-linked/restored-dom.txt与截图、正式项目回读中的klingMultiPrompt/textNodeId证明实际关联。此前comparison V09把来源写为TF，与批准设计的IC来源不一致，本批修正为实际操作的固定IC。
+
+浏览器文件上传能力受限后，经本地上游正式POST canvas/projects接口准备4份本任务原创媒体：first.png、last.png、4秒有声MP4、8秒WAV。导入前对每份原始文件校验manifest SHA，保留原节点/连线，prepared-original-media.json记录准备方式与SHA。这是测试素材准备，不是浏览器上传通过；没有生成或覆盖原素材。第一次updatedAt误传数字，被上游“画布项目数据无效”拒绝且没有写入，修正为正式ISO字符串后保存成功。刷新浏览器实际显示8个节点及媒体预览。
+
+运动模型实际选择角色朝向“视频”，将真实图片与运动视频连入输入，项目回读为last.png和landscape-4-audio.mp4，以保存的真实来源ID为准，不冒充first.png。motion-bound-project.json和orientation截图/DOM记录参数与绑定；未执行运动生成或完整边界测试。
+
+切到Omni reference-to-video，实际填写元素名称“甲”和完整描述，并选择同一元素中的原创图片last.png及4秒视频；素材计数为2、两项显示已选。刷新后名称/描述/nodeIds、正文/两镜头/时长与4条连线保持，omni-element-bound/restored-project.json、对应DOM/截图及advanced-settings-reload-result.json证明。音频元素、其他Omni分支及数量边界仍待比对。
+
+两图片导入后由上游缓存转换成Blob地址，刷新只有这两个临时地址变化，图片节点ID/缓存storageKey、位置/规格和预览保持。最初整对象相等检查因此失败，随后明确按缓存语义核对稳定字段；不是删除其他差异来伪造通过。Chrome downloadMedia明确不支持Blob下载，未取得刷新后图字节证据；只对视频/音频实际base64原字节SHA再次核对通过。上游素材回读辅助脚本在忽略目录reference/capture-local-ic-project.mjs，认证只由环境传入、输出不含秘密。源图片的刷新后字节相等尚未验收，不写为通过。
+
+V05/V09/V10/V11更新为partial-observation；V12/V13完整上游策略对照、其他剩余行及固定交付仍未闭合。本批没有SSH、部署锁、103发布或维护计数增加。
+
+截图复核纠正：刚选择后的omni-element-image-video-bound.png仍是未重绘的0项画面，保留为历史，不当作两项绑定通过证据。最终把同一参考页置前并滚动到元素区，omni-element-restored-painted.png实际显示计数2、名称/描述、last.png和4秒视频两项；comparison已用此最终绘制画面，DOM与正式项目回读保持一致。没有修改网页内容或浏览器权限。
+
+## 固定上游高级设置、权限与历史补证（仍未完成全矩阵）
+
+本批恢复独立loopback参考服务，固定源码版本不变。IC15372/15373、TF3000/15374及MCP10588均仅本机监听；使用原独立数据库与工作区。IC旧管理员测试口令未确认，未重置原账号；另建虚构普通账号，仅本地参考用，无正式供应商凭据。浏览器新建IC测试画布LFBjXJ6x42wjdblNhPHZr，保留原文12秒视频节点。
+
+TF原节点实际从首帧可选切到混合参考，时长选择器显示4—30秒；选择12秒、480p、9:16及音频true，刷新重选节点后全部保持，两份正式帧图及完整三行原文保留。实际分辨率选择只有480p/720p，本参考模型目录不作为Naumi模型能力兜底。settings-advanced-before/after-reload-dom.txt及screenshots/settings-advanced-after-reload.png证明V06/V07的本批范围；其他负向、seed、水印和模型高级字段仍待比对。
+
+TF媒体生成控制实际只关闭“允许AI生成视频”，保存重开false，其余图像/音频仍true；随后恢复true并保存重开确认。保存media-control-video-disabled/restored-dom.txt及disabled截图。技能菜单实际显示canvas、workflow及v118workflow；保存skill-workflow-menu-dom.txt/截图，不把入口观察冒充LLM实际调度。原视频历史打开，当前4秒原创文件7f49f403-8be1-4556-aec3-eeecfb2e38e5.mp4可预览，history-owned-result-dom.txt/截图；上游失败/重试尚未触发。Naumi分别已有Agent报价/确认/停止与真实失败重试历史恢复证据，仍需完成整项上游比对。
+
+IC实际启用摄影，改相机ARRI Alexa Mini LF及65mm，保留ARRI Signature Prime/f4。刷新后正文/12秒、相机/镜头/焦距/光圈及开启均保持，camera-controls-new-canvas/after-reload-dom.txt和after-reload截图。点击“导演台”实际创建3D场景截图节点，此入口不是视频多镜头或制作调度证据，不能拿其替代V09/V12。
+
+本批Chrome文件选择器已打开，但setFiles因扩展未允许file URL而拒绝；没有扩大浏览器权限。该次上传未通过，此前原创视频上传/播放/抽帧等证据保留原有范围，不把新请求尝试标成功。自动审批曾拒绝批量后台启动命令；使用独立受控exec会话启动参考服务成功，未改权限或绕过安全限制。当前本地会话68460/80085/58378/36216分别归本任务参考服务；没有SSH、部署锁、103发布或维护计数增加。
+
 ## 固定Toonflow首尾、混合与排序实操补证
 
 本次沿用ae9e5f固定源码和独立原创媒体工作区。把已实际截取的尾帧图片连入视频生成节点后，模型归一到混合参考；实际选择“首帧可选”后明确显示“一张图片作为尾帧，两张按顺序作为首帧、尾帧”。刷新后模式、原图身份和完整三行提示词保留。无媒体时选择首帧可选仍回文生，与此前混合模式无输入规则一致。

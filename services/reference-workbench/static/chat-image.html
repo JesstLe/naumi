@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>聊天生图</title>
+<style>
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f4f6f8;color:#1f2328;overflow:hidden}
+header{height:56px;background:#20242a;color:white;display:flex;align-items:center;padding:0 24px;gap:16px}
+header a{color:#cdd9e5;text-decoration:none}
+main{height:calc(100vh - 56px);display:grid;grid-template-columns:260px 1fr;gap:0;box-sizing:border-box;overflow:hidden}
+.sidebar{border-right:1px solid #d8dee4;background:#fff;display:flex;flex-direction:column;min-width:0;min-height:0}
+.sideTop{padding:12px;border-bottom:1px solid #d8dee4}.sideTop button{width:100%}.sessions{overflow:auto;padding:8px}
+.session{position:relative;border:1px solid transparent;border-radius:8px;padding:10px 42px 10px 10px;margin-bottom:6px;cursor:pointer;background:#f6f8fa}.session.active{border-color:#0969da;background:#ddf4ff}.session .title{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.session .meta{font-size:12px;color:#57606a;margin-top:4px}.session .delete{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:none;padding:5px 8px;border-radius:6px;background:#ffebe9;color:#cf222e;font-size:12px}.session:hover .delete{display:block}.dot{display:inline-block;border-radius:999px;background:#fff8c5;color:#7d4e00;padding:1px 6px;margin-left:4px}
+.panel{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:12px;padding:12px 16px;min-width:0;min-height:0;overflow:hidden}
+.bar,.composer{background:white;border:1px solid #d8dee4;border-radius:8px;padding:12px}
+.bar{display:grid;grid-template-columns:minmax(220px,1.4fr) 130px 130px 110px 110px 110px 90px auto;gap:10px;align-items:end}
+label{display:block;font-size:12px;font-weight:700;margin-bottom:5px;color:#57606a}
+input,select,textarea{box-sizing:border-box;width:100%;padding:10px;border:1px solid #c9d1d9;border-radius:6px;font:inherit;background:white}
+button{border:0;border-radius:6px;padding:10px 14px;font-weight:700;cursor:pointer;background:#0969da;color:white}
+button.ghost{background:#eef1f4;color:#24292f}
+.chat{overflow:auto;background:white;border:1px solid #d8dee4;border-radius:8px;padding:18px;min-height:0}
+.msg{display:flex;margin-bottom:18px;gap:10px}.msg.user{justify-content:flex-end}.bubble{position:relative;max-width:78%;border-radius:12px;padding:12px 14px;white-space:pre-wrap;line-height:1.55}.user .bubble{background:#0969da;color:white}.assistant .bubble{background:#f6f8fa;color:#24292f;border:1px solid #d8dee4}.msgTime{position:absolute;top:-22px;display:none;font-size:12px;color:#57606a;white-space:nowrap}.user .msgTime{right:4px}.assistant .msgTime{left:4px}.bubble:hover .msgTime{display:block}.status{font-size:12px;color:#57606a;margin-top:6px}.elapsed{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:999px;background:#fff8c5;color:#7d4e00;font-weight:700}.error{color:#cf222e}
+.attachments,.results{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}.attachments img,.results img{width:100%;height:150px;object-fit:contain;background:#fff;border:1px solid #d8dee4;border-radius:6px;cursor:pointer}.imageWrap{position:relative}.imageWrap .addRef{position:absolute;right:7px;top:7px;display:none;padding:6px 9px;border-radius:999px;background:#0969da;color:#fff;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.18)}.imageWrap:hover .addRef{display:block}
+.resultCard{border:1px solid #d8dee4;border-radius:8px;padding:8px;background:#fff}.actions,.planActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.planActions button{min-width:120px}
+.composer textarea{height:76px;min-height:76px;max-height:76px;resize:none;overflow:auto}.composeTop{display:flex;gap:10px;margin-bottom:10px;align-items:center;flex-wrap:wrap}.hiddenInput{display:none}.preview{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.preview .pic{position:relative;cursor:grab;border:1px solid transparent;border-radius:7px}.preview .pic.dragging{opacity:.45;border-color:#0969da}.preview .pic::after{content:attr(data-order);position:absolute;left:4px;top:4px;background:rgba(9,105,218,.92);color:white;font-size:12px;border-radius:999px;padding:1px 6px}.preview img{width:90px;height:90px;object-fit:contain;background:white;border:1px solid #d8dee4;border-radius:6px}.preview button{position:absolute;right:4px;top:4px;padding:3px 6px}
+.sendRow{display:flex;align-items:center;gap:10px}.sendRow button{min-width:110px}.hint{font-size:13px;color:#57606a}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.84);display:none;align-items:center;justify-content:center;padding:24px;z-index:200}.modal.open{display:flex}.modal img{max-width:96vw;max-height:92vh;object-fit:contain;background:#111}.viewerTools{position:fixed;left:24px;top:76px;display:flex;gap:8px;z-index:80}.viewerTools button{background:rgba(255,255,255,.94);color:#24292f;box-shadow:0 8px 22px rgba(0,0,0,.28)}.viewerBtn{position:fixed;top:50%;transform:translateY(-50%);border-radius:999px;width:46px;height:46px;padding:0;background:rgba(255,255,255,.18);font-size:28px}.viewerPrev{left:24px}.viewerNext{right:24px}.viewerCount{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);color:#fff;background:rgba(0,0,0,.45);padding:6px 12px;border-radius:999px}.promptEditorBox{width:min(980px,94vw);height:min(680px,86vh);background:#fff;border-radius:10px;box-shadow:0 18px 60px rgba(0,0,0,.35);display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:12px;padding:16px;box-sizing:border-box}.promptEditorHead{display:flex;align-items:center;justify-content:space-between;gap:12px}.promptEditorHead h3{margin:0;font-size:18px}.promptEditorBox textarea{width:100%;height:100%;resize:none;overflow:auto;line-height:1.55;font-size:16px}.promptEditorActions{display:flex;justify-content:flex-end;gap:10px}.editorBox{width:96vw;height:92vh;background:#fff;border-radius:8px;display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:12px;padding:12px;box-sizing:border-box}.editorCanvasWrap{position:relative;background:#111;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:auto}.editorCanvasWrap canvas{max-width:100%;max-height:100%;background:#fff}.editorPanel{display:flex;flex-direction:column;gap:10px}.editorPanel .toolrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.editorPanel button.active{background:#1f883d}.editorTextInput{position:absolute;z-index:60;width:240px;max-width:280px;box-sizing:border-box;border:2px solid #0969da;border-radius:5px;padding:7px 9px;font:18px system-ui;color:#cf222e;background:white;box-shadow:0 8px 22px rgba(0,0,0,.35)}
+@media(max-width:1400px){.bar{grid-template-columns:repeat(4,minmax(0,1fr))}.bubble{max-width:92%}}
+@media(max-width:760px){main{grid-template-columns:160px minmax(0,1fr)}.panel{padding:8px}.bar{grid-template-columns:repeat(2,minmax(0,1fr))}.appHeader .activePage{max-width:100px;overflow:hidden}.composer .composeTop .hint{display:none}}
+</style>
+<style id="commonHeaderStyle">
+.appHeader{height:56px;background:#20242a;color:#fff;display:flex;align-items:center;padding:0 18px;gap:12px;box-sizing:border-box;position:relative;z-index:100}
+.appHeader .brand{font-weight:800;white-space:nowrap}
+.appHeader .version{font-size:12px;color:#cdd9e5;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 8px}
+.appHeader .activePage{font-size:14px;color:#fff;background:rgba(255,255,255,.12);border-radius:6px;padding:6px 9px}
+.appHeader .lanLinkBox{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:8px;max-width:46vw;padding:5px 8px;border:1px solid rgba(255,255,255,.16);border-radius:8px;background:rgba(255,255,255,.08);color:#dbeafe;font-size:13px;white-space:nowrap}
+.appHeader .lanLinkText{overflow:hidden;text-overflow:ellipsis}
+.appHeader .copyLanBtn{border:0;border-radius:6px;padding:4px 8px;font-size:12px;font-weight:800;cursor:pointer;background:#eef6ff;color:#0969da;white-space:nowrap}
+.appHeader .spacer{flex:1}
+.appHeader .menuWrap{position:relative}
+.appHeader .menuBtn{border:0;border-radius:6px;padding:9px 13px;font-weight:800;cursor:pointer;background:#0969da;color:#fff}
+.appHeader .menuPanel{display:none;position:absolute;right:0;top:44px;min-width:190px;background:#fff;border:1px solid #d8dee4;border-radius:8px;box-shadow:0 12px 28px rgba(27,31,36,.18);padding:6px;z-index:110}
+.appHeader .menuPanel.open{display:block}
+.appHeader .menuPanel a{display:block;color:#24292f;text-decoration:none;padding:10px 12px;border-radius:6px;font-weight:650}
+.appHeader .menuPanel a:hover,.appHeader .menuPanel a.active{background:#eef6ff;color:#0969da}
+.appHeader .headerAction{border:0;border-radius:6px;padding:9px 13px;font-weight:800;cursor:pointer;background:#238636;color:#fff}
+.imageWrap,.downloadableImage{position:relative}
+.imageDownloadBtn{position:absolute;left:7px;bottom:7px;display:none;border:0;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800;cursor:pointer;background:rgba(9,105,218,.94);color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:6}
+.imageWrap:hover .imageDownloadBtn,.downloadableImage:hover .imageDownloadBtn{display:block}
+@media(max-width:1100px){.appHeader .lanLinkBox{position:static;transform:none;max-width:40vw}}
+@media(max-width:760px){.appHeader .lanLinkBox{display:none}}
+</style>
+
+<header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">聊天生图</div><div class="lanLinkBox" title="本站地址"><span class="lanLinkText">本站链接：https://47.105.59.142/chat-image</span><button class="copyLanBtn" onclick="copyLanLink('https://47.105.59.142/chat-image')">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a class="active" href="/chat-image">聊天生图</a><a class="" href="/single">旧单图生成</a><a class="" href="/workbench">参考图工作台</a><a href="/admin" id="adminMenuLink" style="display:none">渠道管理</a></div></div></header>
+<main>
+  <aside class="sidebar">
+    <div class="sideTop"><button onclick="newChat()">新建对话</button></div>
+    <div id="sessions" class="sessions"></div>
+  </aside>
+  <section class="panel">
+    <section class="bar">
+      <div><label>生图模型商</label><select id="template" disabled><option value="">服务器自动分配</option></select></div>
+      <div><label>任务理解模式</label><select id="taskMode"><option value="confirm">先确认任务计划</option><option value="auto">自动执行</option></select></div>
+      <div><label>比例模式</label><select id="ratioMode"><option value="smart">智能判断</option><option value="manual">手动指定</option><option value="reference">跟随参考图</option><option value="product">跟随产品图</option></select></div>
+      <div><label>质量</label><select id="quality"><option>high</option><option>medium</option><option>low</option><option>auto</option></select></div>
+      <div><label>分辨率</label><select id="resolution"><option>2k</option><option>1k</option><option>4k</option></select></div>
+      <div><label>比例</label><select id="ratio"><option value="1:1">1:1</option><option value="3:4">3:4</option><option value="4:3">4:3</option><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="1:2">1:2</option><option value="2:1">2:1</option><option value="2:3">2:3</option><option value="3:2">3:2</option><option value="1:3">1:3</option><option value="3:1">3:1</option></select></div>
+      <div><label>批次数</label><input id="count" type="number" min="1" max="8" value="1"></div>
+      <div class="actions"><button class="ghost" onclick="clearChat()">清空当前对话</button></div>
+    </section>
+    <section id="chat" class="chat"></section>
+    <section class="composer">
+      <div class="composeTop">
+        <input id="images" class="hiddenInput" type="file" accept="image/*" multiple>
+        <input id="folderImages" class="hiddenInput" type="file" accept="image/*" webkitdirectory multiple>
+        <button class="ghost" onclick="ui.images.click()">选择图片</button>
+        <button class="ghost" onclick="ui.folderImages.click()">选择文件夹</button>
+        <span class="hint">也可以直接 Ctrl+V 粘贴图片。Enter 发送，Shift+Enter 换行。</span>
+      </div>
+      <div id="preview" class="preview"></div>
+      <textarea id="message" placeholder="例如：根据这张产品图生成一张蓝色科技感主图，比例 3:4，高清。"></textarea>
+      <div class="sendRow"><button id="sendBtn" onclick="sendMessage()">发送</button><span id="status" class="hint">等待输入</span></div>
+    </section>
+  </section>
+</main>
+<div id="modal" class="modal" onclick="closeModal()"></div>
+
+<script id="commonHeaderScript">
+const status=document.getElementById("status");
+function toggleAppMenu(event){event.stopPropagation(); const menu=document.getElementById('appMenuPanel'); if(menu)menu.classList.toggle('open');}
+document.addEventListener('click',()=>{const menu=document.getElementById('appMenuPanel'); if(menu)menu.classList.remove('open');});
+async function copyLanLink(url){
+  try{
+    await navigator.clipboard.writeText(url);
+    alert("已复制本站链接");
+  }catch(_e){
+    const input=document.createElement("input");
+    input.value=url;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+    alert("已复制本站链接");
+  }
+}
+function imagePathFromUrl(url){
+  try{
+    const value=String(url||"");
+    if(!value||value.startsWith("data:"))return "";
+    const parsed=new URL(value,location.href);
+    if(parsed.pathname!=="/api/image")return "";
+    return parsed.searchParams.get("path")||"";
+  }catch(_e){return "";}
+}
+function downloadImageUrl(url){
+  const path=imagePathFromUrl(url);
+  if(path){
+    const a=document.createElement("a");
+    a.href="/api/image?download=1&path="+encodeURIComponent(path);
+    a.download="";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return;
+  }
+  if(String(url||"").startsWith("data:image/")){
+    const a=document.createElement("a");
+    a.href=url;
+    a.download="image.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+}
+function imageDownloadButton(url){
+  return `<button class="imageDownloadBtn" onclick="event.stopPropagation();downloadImageUrl(decodeURIComponent('${encodeURIComponent(url||"")}'))">下载</button>`;
+}
+function visibleImagePaths(){
+  const paths=[];
+  const seen=new Set();
+  document.querySelectorAll("img").forEach(img=>{
+    const rect=img.getBoundingClientRect();
+    if(rect.width<=0||rect.height<=0)return;
+    const path=imagePathFromUrl(img.dataset.src||img.currentSrc||img.src);
+    if(path&&!seen.has(path)){seen.add(path);paths.push(path);}
+  });
+  return paths;
+}
+async function downloadCurrentPageImages(){
+  const paths=visibleImagePaths();
+  if(!paths.length){alert("当前页面没有可下载的图片");return;}
+  const response=await fetch("/api/images-zip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths,filename:"当前页面图片包_"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".zip"})});
+  if(!response.ok){alert(await response.text()||"下载图片包失败");return;}
+  const blob=await response.blob();
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download="当前页面图片包.zip";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+</script>
+<script>
+let config={}; let templates=[]; let uploadImages=[]; let pollTimer=null; let currentSessionId=localStorage.getItem('chat-image-session-id-'+String(config.auth_id||''))||''; let viewerImages=[]; let viewerIndex=0; let previewDragIndex=-1; let editorState=null; let lastChatSignature='';
+const ui={
+  template:document.getElementById('template'), taskMode:document.getElementById('taskMode'), ratioMode:document.getElementById('ratioMode'), quality:document.getElementById('quality'), resolution:document.getElementById('resolution'),
+  ratio:document.getElementById('ratio'), count:document.getElementById('count'), images:document.getElementById('images'), folderImages:document.getElementById('folderImages'),
+  preview:document.getElementById('preview'), message:document.getElementById('message'), chat:document.getElementById('chat'), sessions:document.getElementById('sessions'),
+  status:document.getElementById('status'), modal:document.getElementById('modal')
+};
+const chatSettingsKey='gpt-image-pil-chat-local-settings';
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>{if(c==="&")return "&amp;"; if(c==="<")return "&lt;"; if(c===">")return "&gt;"; if(c===String.fromCharCode(34))return "&quot;"; return "&#39;";});}
+function formatTime(ts){return ts?new Date(Number(ts)*1000).toLocaleString():'-';}
+function elapsedText(start){const seconds=Math.max(0,Math.floor(Date.now()/1000-Number(start||Date.now()/1000))); const m=Math.floor(seconds/60); const s=String(seconds%60).padStart(2,'0'); return `${m}:${s}`;}
+function statusLabel(status){return ({thinking:'理解需求中',generating:'生成中',queued:'等待生成',planning_done:'准备生成',plan_pending:'等待确认',partial:'部分完成',failed:'失败',cancelled:'已取消'})[status]||status;}
+function updateElapsed(){document.querySelectorAll('.elapsed[data-start]').forEach(el=>{el.textContent='用时 '+elapsedText(el.dataset.start);});}
+function cacheBust(url,seed){if(!url)return ''; return url+(url.includes('?')?'&':'?')+'v='+encodeURIComponent(seed||Date.now());}
+function retryImage(img){const retries=Number(img.dataset.retry||0); if(retries>=4)return; img.dataset.retry=String(retries+1); const original=img.dataset.src||img.src; setTimeout(()=>{img.src=cacheBust(original,Date.now());},600*(retries+1));}
+window.cacheBust=cacheBust; window.retryImage=retryImage;
+function safeCount(){const n=Number(ui.count.value||1); return Math.max(1,Math.min(8,Number.isFinite(n)?Math.round(n):1));}
+function chatSettingsPayload(){return {single_quality:ui.quality.value,single_resolution:ui.resolution.value,single_ratio:ui.ratio.value,single_count:safeCount(),chat_task_mode:ui.taskMode.value,chat_ratio_mode:ui.ratioMode.value};}
+async function saveSettings(){
+  const payload=chatSettingsPayload();
+  localStorage.setItem(chatSettingsKey,JSON.stringify(payload));
+  if(!config.settings_editable)return;
+  const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(!response.ok)throw new Error(await response.text()||'保存聊天生图参数失败');
+}
+async function loadSettings(){
+  config=await(await fetch('/api/settings')).json();
+  const adminLink=document.getElementById('adminMenuLink');if(adminLink)adminLink.style.display=config.settings_editable?'':'none';
+  templates=Array.isArray(config.provider_templates)?config.provider_templates:[];
+  let local={}; try{local=JSON.parse(localStorage.getItem(chatSettingsKey)||'{}')||{};}catch(e){local={};}
+  ui.template.innerHTML='<option value="">服务器自动分配</option>';
+  ui.template.value='';
+  ui.template.disabled=true;
+  currentSessionId=localStorage.getItem('chat-image-session-id-'+String(config.auth_id||''))||'';
+  ui.taskMode.value=local.chat_task_mode||config.chat_task_mode||'confirm';
+  ui.ratioMode.value=local.chat_ratio_mode||config.chat_ratio_mode||'smart';
+  ui.quality.value=local.single_quality||config.single_quality||config.quality||'high';
+  ui.resolution.value=local.single_resolution||config.single_resolution||config.resolution||'2k';
+  ui.ratio.value=local.single_ratio||config.single_ratio||'1:1';
+  ui.count.value=String(local.single_count||config.single_count||1);
+}
+function readFile(file){return new Promise((resolve,reject)=>{const r=new FileReader(); r.onload=()=>resolve({name:file.name,data_url:r.result}); r.onerror=reject; r.readAsDataURL(file);});}
+async function addFiles(files){const imageFiles=[...files].filter(f=>String(f.type||'').startsWith('image/')); if(!imageFiles.length)return; uploadImages.push(...await Promise.all(imageFiles.map(readFile))); renderPreview(); ui.status.textContent=`已加载 ${uploadImages.length} 张参考图`;}
+async function onFiles(e){await addFiles(e.target.files||[]); e.target.value='';}
+function renderPreview(){ui.preview.innerHTML=uploadImages.map((item,i)=>`<div class="pic" draggable="true" data-index="${i}" data-order="${i+1}" ondragstart="previewDragStart(event,${i})" ondragover="previewDragOver(event)" ondrop="previewDrop(event,${i})" ondragend="previewDragEnd(event)"><img src="${item.data_url}" onclick="openImage('${item.data_url}')"><button class="ghost" onclick="removeImage(${i})">×</button></div>`).join('');}
+function removeImage(i){uploadImages.splice(i,1); renderPreview();}
+function previewDragStart(event,index){previewDragIndex=index; event.currentTarget.classList.add('dragging'); event.dataTransfer.effectAllowed='move';}
+function previewDragOver(event){event.preventDefault(); event.dataTransfer.dropEffect='move';}
+function previewDrop(event,index){event.preventDefault(); if(previewDragIndex<0||previewDragIndex===index)return; const [item]=uploadImages.splice(previewDragIndex,1); uploadImages.splice(index,0,item); previewDragIndex=-1; renderPreview(); ui.status.textContent='已调整待发送图片顺序';}
+function previewDragEnd(event){event.currentTarget.classList.remove('dragging'); previewDragIndex=-1;}
+function addReferenceDataUrl(dataUrl,name='参考图'){uploadImages.push({name,data_url:dataUrl}); renderPreview(); ui.message.focus(); ui.status.textContent=`已加入参考图，共 ${uploadImages.length} 张。`;}
+async function addReferenceFromUrl(url,name='参考图'){try{if(String(url||'').startsWith('data:image/')){addReferenceDataUrl(url,name);return;} const r=await fetch(url); const b=await r.blob(); const dataUrl=await new Promise(resolve=>{const reader=new FileReader(); reader.onload=()=>resolve(reader.result); reader.readAsDataURL(b);}); addReferenceDataUrl(dataUrl,name);}catch(e){alert('加入参考失败：'+e.message);}}
+function imageWithAddRef(url,openPayload=''){const encoded=encodeURIComponent(url||''); const open= openPayload || `openImage(decodeURIComponent('${encoded}'))`; return `<div class="imageWrap"><img src="${url}" onclick="${open}"><button class="addRef" onclick="event.stopPropagation();addReferenceFromUrl(decodeURIComponent('${encoded}'))">加入参考</button>${imageDownloadButton(url)}</div>`;}
+function openViewer(urls,index=0){viewerImages=(urls||[]).filter(Boolean); viewerIndex=Math.max(0,Math.min(index,viewerImages.length-1)); renderViewer();}
+function openImage(url){openViewer([url],0);}
+async function downloadAnswerImages(encodedPaths){
+  let paths=[];
+  try{paths=JSON.parse(decodeURIComponent(encodedPaths));}catch(_e){paths=[];}
+  paths=(paths||[]).filter(Boolean);
+  if(!paths.length){alert('这个回答里没有可下载的生成图片');return;}
+  const filename='聊天回答图片包_'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.zip';
+  const response=await fetch('/api/images-zip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,filename})});
+  if(!response.ok){alert(await response.text()||'下载本回答图片失败');return;}
+  const blob=await response.blob();
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+function renderViewer(){if(!viewerImages.length)return; const url=viewerImages[viewerIndex]; ui.modal.innerHTML=`<div class="viewerTools"><button onclick="event.stopPropagation();addCurrentViewerReference()">加入参考</button><button onclick="event.stopPropagation();openCurrentViewerEditor()">标注编辑</button><button onclick="event.stopPropagation();closeModal()">关闭</button></div>${viewerImages.length>1?'<button class="viewerBtn viewerPrev" onclick="event.stopPropagation();viewerMove(-1)">‹</button>':''}<img src="${url}" data-src="${url}" title="点击进入标注编辑" onclick="event.stopPropagation();openCurrentViewerEditor()" onerror="retryImage(this)">${viewerImages.length>1?'<button class="viewerBtn viewerNext" onclick="event.stopPropagation();viewerMove(1)">›</button><div class="viewerCount">'+(viewerIndex+1)+' / '+viewerImages.length+'</div>':''}`; ui.modal.classList.add('open');}
+function viewerMove(delta){if(!viewerImages.length)return; viewerIndex=(viewerIndex+delta+viewerImages.length)%viewerImages.length; renderViewer();}
+function closeModal(){const input=document.querySelector('.editorTextInput'); if(input)input.remove(); ui.modal.classList.remove('open'); ui.modal.innerHTML=''; viewerImages=[]; viewerIndex=0; editorState=null;}
+function addCurrentViewerReference(){if(viewerImages[viewerIndex])addReferenceFromUrl(viewerImages[viewerIndex],'查看图片');}
+function openCurrentViewerEditor(){if(viewerImages[viewerIndex])openAnnotator(viewerImages[viewerIndex]);}
+function openPromptEditor(){
+  ui.modal.innerHTML=`<div class="promptEditorBox" onclick="event.stopPropagation()"><div class="promptEditorHead"><h3>编辑发送内容</h3><span class="hint">这里的内容会和底部输入框实时同步。</span></div><textarea id="promptEditorText" placeholder="输入完整提示词或任务说明"></textarea><div class="promptEditorActions"><button onclick="sendPromptEditor()">发送</button><button class="ghost" onclick="finishPromptEditor()">完成</button><button class="ghost" onclick="closeModal()">关闭</button></div></div>`;
+  ui.modal.classList.add('open');
+  const editor=document.getElementById('promptEditorText');
+  editor.value=ui.message.value;
+  editor.addEventListener('input',()=>{ui.message.value=editor.value;});
+  setTimeout(()=>{editor.focus(); editor.selectionStart=editor.selectionEnd=editor.value.length;},0);
+}
+function syncPromptEditorFromMessage(){const editor=document.getElementById('promptEditorText'); if(editor&&editor.value!==ui.message.value)editor.value=ui.message.value;}
+function finishPromptEditor(){syncPromptEditorFromMessage(); closeModal(); ui.message.focus();}
+async function sendPromptEditor(){syncPromptEditorFromMessage(); closeModal(); await sendMessage();}
+function sessionHtml(s){return `<div class="session ${s.active?'active':''}" onclick="switchSession('${s.id}')"><div class="title">${esc(s.title||'新对话')}${s.running?`<span class="dot">${s.running}</span>`:''}</div><div class="meta">${formatTime(s.updated_at||s.created_at)}</div><button class="delete" onclick="deleteSession(event,'${s.id}')">删除</button></div>`;}
+function renderSessions(list){ui.sessions.innerHTML=(list||[]).map(sessionHtml).join('')||'<div class="hint" style="padding:10px">暂无对话</div>';}
+function messageHtml(m){
+  const cls=m.role==='user'?'user':'assistant';
+  const text=esc(m.text||'');
+  const imgs=(m.images||[]).map(url=>imageWithAddRef(url)).join('');
+  const resultUrls=(m.results||[]).map((r,i)=>cacheBust(r.output_url,(r.updated_at||m.updated_at||r.output_path||m.id||i)+'-'+i)).filter(Boolean);
+  const resultPaths=(m.results||[]).map(r=>r.output_path||'').filter(Boolean);
+  const batchDownload=resultPaths.length>1?`<div class="actions"><button class="ghost" onclick="downloadAnswerImages('${encodeURIComponent(JSON.stringify(resultPaths))}')">下载本回答图片</button></div>`:'';
+  const resultPayload=encodeURIComponent(JSON.stringify(resultUrls));
+  const results=(m.results||[]).map((r,i)=>{const imgUrl=cacheBust(r.output_url,(r.updated_at||m.updated_at||r.output_path||m.id||i)+'-'+i); const openPayload=`openViewer(JSON.parse(decodeURIComponent('${resultPayload}')),${i})`; const outputUrlArg=encodeURIComponent(r.output_url||''); return `<div class="resultCard">${r.prompt_index?`<div class="status">${esc(r.task_name||('提示词 '+r.prompt_index))}${r.variant_index?` / 第 ${r.variant_index} 张`:''}${r.ratio?` / ${esc(r.ratio)}`:''}${r.template?` / ${esc(r.template)}`:''}</div>`:''}${imgUrl?imageWithAddRef(imgUrl,openPayload).replace('<img ',`<img data-src="${r.output_url}" onerror="retryImage(this)" `):'<div class="status">图片文件暂未就绪</div>'}<div class="actions"><button class="ghost" onclick="openPath('${encodeURIComponent(r.output_path||'')}')">下载原图</button><button class="ghost" onclick="useAsReference(decodeURIComponent('${outputUrlArg}'))">作为参考继续修改</button></div></div>`}).join('');
+  const failures=(m.failures||[]).map(f=>`<div class="status error">${f.prompt_index?`提示词 ${f.prompt_index} / `:''}第 ${f.variant_index||f.index||1} 张失败：${esc(f.error)}</div>`).join('');
+  const planActions=m.status==='plan_pending'?`<div class="planActions"><button onclick="confirmPlan('${m.id}')">确认生成</button><button class="ghost" onclick="cancelPlan('${m.id}')">取消</button></div>`:'';
+  const waiting=['thinking','generating','queued','planning_done'].includes(m.status);
+  const statusHtml=m.status&&m.status!=='done'?`<div class="status">状态：${esc(statusLabel(m.status))}${waiting?`<span class="elapsed" data-start="${Number(m.created_at||Date.now()/1000)}">用时 ${elapsedText(m.created_at)}</span>`:''}</div>`:'';
+  return `<div class="msg ${cls}"><div class="bubble"><div class="msgTime">${formatTime(m.created_at)}</div>${text}${statusHtml}${planActions}${imgs?`<div class="attachments">${imgs}</div>`:''}${batchDownload}${results?`<div class="results">${results}</div>`:''}${failures}</div></div>`;
+}
+function renderState(data){
+  currentSessionId=Object.prototype.hasOwnProperty.call(data,'session_id')?String(data.session_id||''):currentSessionId; if(currentSessionId)localStorage.setItem('chat-image-session-id-'+String(config.auth_id||''),currentSessionId); else localStorage.removeItem('chat-image-session-id-'+String(config.auth_id||''));
+  renderSessions(data.sessions||[]);
+  const messages=Array.isArray(data.messages)?data.messages:[];
+  const signature=JSON.stringify(messages.map(m=>({id:m.id,role:m.role,status:m.status,text:m.text,updated_at:m.updated_at,created_at:m.created_at,images:(m.images||[]).length,results:(m.results||[]).map(r=>[r.output_url,r.output_path,r.updated_at,r.prompt_index,r.variant_index,r.ratio,r.template]),failures:(m.failures||[]).map(f=>[f.error,f.prompt_index,f.variant_index])})));
+  if(signature!==lastChatSignature){
+    const oldHeight=ui.chat.scrollHeight;
+    const oldTop=ui.chat.scrollTop;
+    const nearBottom=oldHeight-ui.chat.clientHeight-oldTop<120;
+    if(!messages.length)ui.chat.innerHTML='<div class="msg assistant"><div class="bubble">你好，把你想生成的图片告诉我，也可以上传或粘贴参考图。我会先理解你的要求，需要出图时自动调用生图模型。</div></div>';
+    else ui.chat.innerHTML=messages.map(messageHtml).join('');
+    if(nearBottom||!lastChatSignature)ui.chat.scrollTop=ui.chat.scrollHeight;
+    else ui.chat.scrollTop=oldTop;
+    lastChatSignature=signature;
+  }
+  const sessions=Array.isArray(data.sessions)?data.sessions:[];
+  const runningAll=sessions.reduce((sum,s)=>sum+Number(s.running||0),0);
+  ui.status.textContent=runningAll?`后台处理中：${runningAll} 个任务`:'等待输入';
+  if(runningAll&&!pollTimer)pollTimer=setInterval(refreshState,2000);
+  if(!runningAll&&pollTimer){clearInterval(pollTimer); pollTimer=null;}
+  updateElapsed();
+}
+async function refreshState(){const data=await(await fetch('/api/chat-image/state?session_id='+encodeURIComponent(currentSessionId))).json(); renderState(data);}
+async function switchSession(id){currentSessionId=id; localStorage.setItem('chat-image-session-id-'+String(config.auth_id||''),id); await refreshState();}
+async function newChat(){const data=await(await fetch('/api/chat-image/new',{method:'POST'})).json(); renderState(data); ui.message.focus();}
+async function deleteSession(event,id){event.stopPropagation(); if(!confirm('确认删除这个对话吗？删除后历史记录不可恢复。'))return; const data=await(await fetch('/api/chat-image/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:id})})).json(); renderState(data);}
+async function confirmPlan(messageId){
+  await saveSettings().catch(()=>{});
+  ui.status.textContent='已确认，正在提交生成...';
+  const selectedTemplate=ui.template.value;
+  const settings={quality:ui.quality.value,resolution:ui.resolution.value,ratio:ui.ratio.value,count:safeCount(),task_mode:ui.taskMode.value,ratio_mode:ui.ratioMode.value};
+  const data=await(await fetch('/api/chat-image/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,message_id:messageId,active_provider_template:selectedTemplate,settings})})).json();
+  renderState(data);
+}
+async function cancelPlan(messageId){const data=await(await fetch('/api/chat-image/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,message_id:messageId})})).json(); renderState(data);}
+async function sendMessage(){
+  const sendButton=document.getElementById('sendBtn');if(sendButton.disabled)return;
+  const text=ui.message.value.trim();
+  if(!text&&!uploadImages.length){alert('请输入消息或上传参考图');return;}
+  sendButton.disabled=true;
+  try{await saveSettings(); ui.status.textContent='正在发送...';
+  const selectedTemplate=ui.template.value;
+  const settings={quality:ui.quality.value,resolution:ui.resolution.value,ratio:ui.ratio.value,count:safeCount(),task_mode:ui.taskMode.value,ratio_mode:ui.ratioMode.value};
+  const response=await fetch('/api/chat-image/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId,request_id:crypto.randomUUID(),message:text,images:uploadImages.map(x=>x.data_url),active_provider_template:selectedTemplate,settings})});
+  const body=await response.text(); let data={}; try{data=JSON.parse(body)}catch(e){data={error:body}}
+  if(!response.ok){ui.status.textContent='发送失败：'+(data.error||body);return;}
+  ui.message.value=''; uploadImages=[]; renderPreview(); renderState(data);
+  }catch(e){ui.status.textContent='发送失败：'+e.message;}finally{sendButton.disabled=false;}
+}
+async function clearChat(){if(!confirm('确认清空当前对话？'))return; const data=await(await fetch('/api/chat-image/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:currentSessionId})})).json(); renderState(data);}
+async function openPath(encoded){downloadImageUrl('/api/image?path='+encodeURIComponent(decodeURIComponent(encoded)));}
+async function useAsReference(url){await addReferenceFromUrl(url,'上一张生成结果');}
+function openAnnotator(url){
+  const encoded=encodeURIComponent(url||'');
+  ui.modal.innerHTML=`<div class="editorBox" onclick="event.stopPropagation()"><div class="editorCanvasWrap" id="editorWrap"><canvas id="editCanvas"></canvas></div><div class="editorPanel"><h3>标注后加入参考</h3><div class="hint">选择工具后在图片上拖动或点击。点击“加入待发送”后，图片会进入聊天框待发送区，不会自动发送。</div><div class="toolrow"><button id="toolArrow" onclick="setEditTool('arrow')">箭头</button><button id="toolRect" onclick="setEditTool('rect')">框选</button><button id="toolBrush" onclick="setEditTool('brush')">画笔</button><button id="toolText" onclick="setEditTool('text')">文字</button></div><button class="ghost" onclick="undoEdit()">撤销上一步</button><button class="ghost" onclick="clearEdit()">清空标注</button><button onclick="finishAnnotator()">加入待发送</button><button class="ghost" onclick="closeModal()">关闭</button><div id="editorStatus" class="status">正在加载图片...</div></div></div>`;
+  ui.modal.classList.add('open');
+  const canvas=document.getElementById('editCanvas'); const ctx=canvas.getContext('2d'); const img=new Image();
+  editorState={url:decodeURIComponent(encoded),img,canvas,ctx,tool:'rect',drawing:false,start:null,shapes:[],draft:null};
+  img.onload=()=>{canvas.width=img.naturalWidth||img.width; canvas.height=img.naturalHeight||img.height; document.getElementById('editorStatus').textContent='已加载，当前工具：框选'; bindEditorCanvas(); drawEditor(); setEditTool('rect');};
+  img.onerror=()=>{document.getElementById('editorStatus').textContent='图片加载失败，无法标注。';};
+  img.src=decodeURIComponent(encoded);
+}
+function setEditTool(tool){if(!editorState)return; editorState.tool=tool; for(const id of ['toolArrow','toolRect','toolBrush','toolText']){const el=document.getElementById(id); if(el)el.classList.toggle('active',id.toLowerCase().includes(tool));} const s=document.getElementById('editorStatus'); if(s)s.textContent='当前工具：'+({arrow:'箭头',rect:'框选',brush:'画笔',text:'文字'}[tool]||tool);}
+function canvasPoint(event){const c=editorState.canvas; const r=c.getBoundingClientRect(); return {x:(event.clientX-r.left)*c.width/r.width,y:(event.clientY-r.top)*c.height/r.height,screenX:event.clientX,screenY:event.clientY};}
+function bindEditorCanvas(){const c=editorState.canvas; c.style.touchAction='none'; const startDraw=e=>{if(!editorState)return; const p=canvasPoint(e); if(editorState.tool==='text'){e.preventDefault(); e.stopPropagation(); const hit=findTextShapeAt(p); if(hit>=0){const shape=editorState.shapes[hit]; editorState.dragText={index:hit,dx:p.x-shape.x,dy:p.y-shape.y}; editorState.selectedText=hit; c.setPointerCapture?.(e.pointerId); drawEditor(); return;} editorState.selectedText=null; drawEditor(); showTextInput(p); return;} editorState.drawing=true; editorState.start=p; editorState.draft=editorState.tool==='brush'?{type:'brush',points:[p]}:{type:editorState.tool,x:p.x,y:p.y,w:0,h:0,x2:p.x,y2:p.y};}; const moveDraw=e=>{if(!editorState)return; const p=canvasPoint(e); if(editorState.dragText){e.preventDefault(); const shape=editorState.shapes[editorState.dragText.index]; if(shape){shape.x=p.x-editorState.dragText.dx; shape.y=p.y-editorState.dragText.dy; drawEditor();} return;} if(!editorState.drawing)return; if(editorState.tool==='brush')editorState.draft.points.push(p); else {editorState.draft.w=p.x-editorState.start.x; editorState.draft.h=p.y-editorState.start.y; editorState.draft.x2=p.x; editorState.draft.y2=p.y;} drawEditor();}; const endDraw=e=>{if(editorState)editorState.dragText=null; try{c.releasePointerCapture?.(e.pointerId);}catch(_e){} commitDraft();}; const hoverText=e=>{if(editorState?.tool==='text'&&!editorState.dragText&&!editorState.drawing)c.style.cursor=findTextShapeAt(canvasPoint(e))>=0?'move':'text';}; c.onpointerdown=startDraw; c.onpointermove=e=>{hoverText(e); moveDraw(e);}; c.onpointerup=endDraw; c.onpointercancel=endDraw; c.onmousedown=e=>{if(!window.PointerEvent)startDraw(e);}; c.onmousemove=e=>{hoverText(e); if(!window.PointerEvent)moveDraw(e);}; c.onmouseup=e=>{if(!window.PointerEvent)endDraw(e);}; c.onmouseleave=e=>{if(editorState)editorState.dragText=null; commitDraft();};}
+function commitDraft(){if(!editorState?.drawing)return; editorState.drawing=false; if(editorState.draft){editorState.shapes.push(editorState.draft); editorState.draft=null; drawEditor();}}
+function drawEditor(){if(!editorState)return; const {canvas,ctx,img}=editorState; ctx.clearRect(0,0,canvas.width,canvas.height); ctx.drawImage(img,0,0,canvas.width,canvas.height); editorState.shapes.forEach((shape,index)=>drawShape(ctx,shape,index)); if(editorState.draft)drawShape(ctx,editorState.draft);}
+function editorFontSize(canvas){return Math.max(24,Math.round(canvas.width/34));}
+function drawShape(ctx,shape,index=-1){ctx.save(); ctx.strokeStyle='#cf222e'; ctx.fillStyle='#cf222e'; ctx.lineWidth=Math.max(4,Math.round(ctx.canvas.width/420)); ctx.font=`${editorFontSize(ctx.canvas)}px system-ui`; if(shape.type==='rect'){ctx.strokeRect(shape.x,shape.y,shape.w,shape.h);} else if(shape.type==='arrow'){drawArrow(ctx,shape.x,shape.y,shape.x2,shape.y2);} else if(shape.type==='brush'){ctx.beginPath(); (shape.points||[]).forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke();} else if(shape.type==='text'){ctx.fillText(shape.text,shape.x,shape.y); if(editorState?.selectedText===index){const w=ctx.measureText(shape.text||'').width; const size=editorFontSize(ctx.canvas); ctx.strokeStyle='rgba(9,105,218,.85)'; ctx.lineWidth=Math.max(2,Math.round(ctx.canvas.width/900)); ctx.strokeRect(shape.x-8,shape.y-size-8,w+16,size+18);}} ctx.restore();}
+function findTextShapeAt(p){if(!editorState)return-1; const ctx=editorState.ctx; const size=editorFontSize(editorState.canvas); const pad=Math.max(24,Math.round(size*.45)); ctx.save(); ctx.font=`${size}px system-ui`; for(let i=editorState.shapes.length-1;i>=0;i--){const s=editorState.shapes[i]; if(s.type!=='text')continue; const w=ctx.measureText(s.text||'').width; if(p.x>=s.x-pad&&p.x<=s.x+w+pad&&p.y>=s.y-size-pad&&p.y<=s.y+pad){ctx.restore(); return i;}} ctx.restore(); return -1;}
+function drawArrow(ctx,x1,y1,x2,y2){const angle=Math.atan2(y2-y1,x2-x1); const head=Math.max(18,ctx.lineWidth*6); ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-head*Math.cos(angle-Math.PI/6),y2-head*Math.sin(angle-Math.PI/6)); ctx.lineTo(x2-head*Math.cos(angle+Math.PI/6),y2-head*Math.sin(angle+Math.PI/6)); ctx.closePath(); ctx.fill();}
+function showTextInput(p){const old=document.querySelector('.editorTextInput'); if(old)old.remove(); const wrap=document.getElementById('editorWrap'); if(!wrap)return; const input=document.createElement('input'); input.className='editorTextInput'; input.placeholder='输入文字，回车确认'; const wr=wrap.getBoundingClientRect(); input.style.left=Math.max(8,Math.min(p.screenX-wr.left,wr.width-250))+'px'; input.style.top=Math.max(8,Math.min(p.screenY-wr.top,wr.height-48))+'px'; wrap.appendChild(input); setTimeout(()=>input.focus(),0); input.addEventListener('mousedown',e=>e.stopPropagation()); input.addEventListener('pointerdown',e=>e.stopPropagation()); let finished=false; const done=()=>{if(finished||!input.isConnected)return; finished=true; const text=input.value.trim(); input.remove(); if(text&&editorState){editorState.shapes.push({type:'text',x:p.x,y:p.y,text}); editorState.selectedText=editorState.shapes.length-1; drawEditor();}}; input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();done();} if(e.key==='Escape')input.remove();}); input.addEventListener('blur',done,{once:true});}
+function undoEdit(){if(!editorState)return; editorState.shapes.pop(); drawEditor();}
+function clearEdit(){if(!editorState)return; editorState.shapes=[]; drawEditor();}
+function finishAnnotator(){if(!editorState)return; const dataUrl=editorState.canvas.toDataURL('image/png'); closeModal(); addReferenceDataUrl(dataUrl,'标注后的参考图');}
+Object.assign(window,{previewDragStart,previewDragOver,previewDrop,previewDragEnd,addReferenceDataUrl,addReferenceFromUrl,imageWithAddRef,openViewer,openImage,viewerMove,closeModal,addCurrentViewerReference,openCurrentViewerEditor,openPromptEditor,finishPromptEditor,sendPromptEditor,openAnnotator,setEditTool,undoEdit,clearEdit,finishAnnotator,useAsReference,openPath});
+ui.images.addEventListener('change',onFiles); ui.folderImages.addEventListener('change',onFiles);
+document.addEventListener('paste',async e=>{const files=[]; for(const item of e.clipboardData?.items||[]){if(item.kind==='file'){const f=item.getAsFile(); if(f)files.push(f);}} if(files.length){e.preventDefault(); await addFiles(files);}});
+ui.message.addEventListener('dblclick',openPromptEditor);
+ui.message.addEventListener('input',syncPromptEditorFromMessage);
+ui.message.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}});
+document.addEventListener('keydown',e=>{if(ui.modal.classList.contains('open')){if(e.key==='ArrowLeft')viewerMove(-1); if(e.key==='ArrowRight')viewerMove(1); if(e.key==='Escape')closeModal();}});
+for(const el of [ui.template,ui.taskMode,ui.ratioMode,ui.quality,ui.resolution,ui.ratio,ui.count]){el.addEventListener('change',()=>saveSettings().catch(()=>{}));}
+setInterval(updateElapsed,1000);
+loadSettings().then(refreshState);
+</script>
+
+<script>
+function appHeartbeat(){fetch('/api/heartbeat').catch(()=>{});}
+async function appAuthCheck(){
+  try{
+    const r=await fetch('/api/auth/status');
+    if(r.status===401||r.status===403){
+      if(location.pathname!='/login') location.href='/login';
+    }
+  }catch(e){}
+}
+appHeartbeat();
+setInterval(appHeartbeat, 3000);
+setInterval(appAuthCheck, 300000);
+</script>
+</html>
