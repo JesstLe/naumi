@@ -1,5 +1,17 @@
 # 画布视频上游实操对照
 
+## 固定上游高级设置、权限与历史补证（仍未完成全矩阵）
+
+本批恢复独立loopback参考服务，固定源码版本不变。IC15372/15373、TF3000/15374及MCP10588均仅本机监听；使用原独立数据库与工作区。IC旧管理员测试口令未确认，未重置原账号；另建虚构普通账号，仅本地参考用，无正式供应商凭据。浏览器新建IC测试画布LFBjXJ6x42wjdblNhPHZr，保留原文12秒视频节点。
+
+TF原节点实际从首帧可选切到混合参考，时长选择器显示4—30秒；选择12秒、480p、9:16及音频true，刷新重选节点后全部保持，两份正式帧图及完整三行原文保留。实际分辨率选择只有480p/720p，本参考模型目录不作为Naumi模型能力兜底。settings-advanced-before/after-reload-dom.txt及screenshots/settings-advanced-after-reload.png证明V06/V07的本批范围；其他负向、seed、水印和模型高级字段仍待比对。
+
+TF媒体生成控制实际只关闭“允许AI生成视频”，保存重开false，其余图像/音频仍true；随后恢复true并保存重开确认。保存media-control-video-disabled/restored-dom.txt及disabled截图。技能菜单实际显示canvas、workflow及v118workflow；保存skill-workflow-menu-dom.txt/截图，不把入口观察冒充LLM实际调度。原视频历史打开，当前4秒原创文件7f49f403-8be1-4556-aec3-eeecfb2e38e5.mp4可预览，history-owned-result-dom.txt/截图；上游失败/重试尚未触发。Naumi分别已有Agent报价/确认/停止与真实失败重试历史恢复证据，仍需完成整项上游比对。
+
+IC实际启用摄影，改相机ARRI Alexa Mini LF及65mm，保留ARRI Signature Prime/f4。刷新后正文/12秒、相机/镜头/焦距/光圈及开启均保持，camera-controls-new-canvas/after-reload-dom.txt和after-reload截图。点击“导演台”实际创建3D场景截图节点，此入口不是视频多镜头或制作调度证据，不能拿其替代V09/V12。
+
+本批Chrome文件选择器已打开，但setFiles因扩展未允许file URL而拒绝；没有扩大浏览器权限。该次上传未通过，此前原创视频上传/播放/抽帧等证据保留原有范围，不把新请求尝试标成功。自动审批曾拒绝批量后台启动命令；使用独立受控exec会话启动参考服务成功，未改权限或绕过安全限制。当前本地会话68460/80085/58378/36216分别归本任务参考服务；没有SSH、部署锁、103发布或维护计数增加。
+
 ## 固定Toonflow首尾、混合与排序实操补证
 
 本次沿用ae9e5f固定源码和独立原创媒体工作区。把已实际截取的尾帧图片连入视频生成节点后，模型归一到混合参考；实际选择“首帧可选”后明确显示“一张图片作为尾帧，两张按顺序作为首帧、尾帧”。刷新后模式、原图身份和完整三行提示词保留。无媒体时选择首帧可选仍回文生，与此前混合模式无输入规则一致。
