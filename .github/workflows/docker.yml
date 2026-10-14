@@ -126,7 +126,10 @@ jobs:
           file: ./source/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.image.outputs.tag }}
+          # Preserve the legacy installer alias; production selects manifest digests.
+          tags: |
+            ${{ steps.image.outputs.tag }}
+            ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.flavor == 'ui' && 'ghcr.io/jesstle/naumi:latest' || '' }}
           build-args: |
             BUILD_VERSION=${{ env.BUILD_VERSION }}
             SOURCE_COMMIT=${{ env.SOURCE_SHA }}

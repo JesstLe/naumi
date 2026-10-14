@@ -56,4 +56,6 @@ jobs:
               suffix='' if flavor=='ui' else '-'+flavor
               destination=os.environ['ACR_IMAGE']+':'+record['sourceCommit']+suffix
               subprocess.run(['docker','buildx','imagetools','create','--tag',destination,row['reference']],check=True)
+              if flavor=='ui':
+                  subprocess.run(['docker','buildx','imagetools','create','--tag',os.environ['ACR_IMAGE']+':latest',row['reference']],check=True)
           PY

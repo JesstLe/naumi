@@ -7,6 +7,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import tarfile
 
 REPO = 'JesstLe/naumi'
 IMAGE = 'ghcr.io/jesstle/naumi'
@@ -77,9 +78,40 @@ def validate(record, expected=None, flavors=None):
     return record
 
 
-def verify_image(image, record, flavor):
+def archive_image_ids(path, row):
+    """Bind classic config IDs and containerd manifest IDs without extracting files."""
+    with tarfile.open(path, 'r:gz') as archive:
+        manifests = json.load(archive.extractfile('manifest.json'))
+        matching = [entry for entry in manifests if row['tag'] in (entry.get('RepoTags') or [])]
+        require(len(matching) == 1, 'Offline archive must contain exactly the selected image tag')
+        config_path = matching[0]['Config']
+        require(re.fullmatch(r'(?:blobs/sha256/[0-9a-f]{64}|[0-9a-f]{64}\.json)', config_path), 'Unexpected image configuration path')
+        config_bytes = archive.extractfile(config_path).read()
+        config_id = 'sha256:' + hashlib.sha256(config_bytes).hexdigest()
+        require(config_path.replace('blobs/sha256/', '').replace('.json', '') == config_id[7:], 'Image configuration content digest mismatch')
+        identities = {config_id}
+        try:
+            index = json.load(archive.extractfile('index.json'))
+        except KeyError:
+            index = {'manifests': []}
+        for descriptor in index.get('manifests', []):
+            identity = descriptor.get('digest', '')
+            require(re.fullmatch('sha256:[0-9a-f]{64}', identity), 'Invalid archive manifest digest')
+            body = archive.extractfile('blobs/sha256/' + identity[7:]).read()
+            require('sha256:' + hashlib.sha256(body).hexdigest() == identity, 'Archive manifest content digest mismatch')
+            manifest = json.loads(body)
+            if manifest.get('config', {}).get('digest') == config_id:
+                identities.add(identity)
+        require(row['imageId'] in identities, 'Source image ID does not bind to verified archive config/manifest')
+        return identities
+
+
+def verify_image(image, record, flavor, archive_ids=None, pulled=False):
     row = record['images'][flavor]
-    require(image.get('Id') == row['imageId'], 'Loaded image differs from fixed runtime image ID')
+    if pulled:
+        require(row['reference'] in (image.get('RepoDigests') or []), 'Pulled image does not retain selected immutable registry digest')
+    else:
+        require(image.get('Id') in (archive_ids or {row['imageId']}), 'Loaded image differs from verified config/manifest IDs')
     require(image.get('Os') == 'linux' and image.get('Architecture') == 'amd64', 'Wrong runtime platform')
     env = dict(value.split('=', 1) for value in image['Config'].get('Env', []))
     labels = image['Config'].get('Labels') or {}
@@ -97,6 +129,7 @@ def part(args):
     if args.offline:
         path = pathlib.Path(args.offline)
         row['offline'] = {'name': path.name, 'sha256': sha256(path), 'bytes': path.stat().st_size}
+        archive_image_ids(path, row)
     record = {'schemaVersion': 1, 'sourceCommit': source, 'buildVersion': args.version,
               'platform': 'linux/amd64', 'mediaVariants': True, 'images': {args.flavor: row},
               'provenance': {'repository': REPO, 'workflowCommit': commit(args.workflow_sha), 'runId': args.run_id, 'attempt': args.attempt}}
@@ -155,6 +188,7 @@ def prepare(args):
     parent = destination.parent
     require(parent.exists() and shutil.disk_usage(parent).free > 10 * 1024**3, 'Preparation requires more than 10GiB free')
     # Validate every offline checksum before importing any image.
+    archive_ids = {}
     if args.offline_directory:
         base = pathlib.Path(args.offline_directory).resolve()
         for row in record['images'].values():
@@ -162,21 +196,30 @@ def prepare(args):
             path = base / row['offline']['name']
             require(not path.is_symlink() and path.is_file(), 'Missing regular offline package')
             require(path.stat().st_size == row['offline']['bytes'] and sha256(path) == row['offline']['sha256'], 'Offline checksum mismatch; import refused')
-    destination.mkdir()
+        for row in record['images'].values():
+            archive_ids[row['tag']] = archive_image_ids(base / row['offline']['name'], row)
+    destination.mkdir(exist_ok=True)
     releases = []
     for flavor in ORDER:
         if flavor not in record['images']:
             continue
         row = record['images'][flavor]
+        image = None
         if args.offline_directory:
-            checked(['docker', 'load', '-i', str(base / row['offline']['name'])])
-            reference = row['imageId']
+            reference = row['tag']
+            try:
+                image = json.loads(checked(['docker', 'image', 'inspect', reference]))[0]
+                verify_image(image, record, flavor, archive_ids[row['tag']])
+            except ValueError:
+                image = None
+                checked(['docker', 'load', '-i', str(base / row['offline']['name'])])
         else:
             checked(['docker', 'pull', row['reference']])
             reference = row['reference']
-        image = json.loads(checked(['docker', 'image', 'inspect', reference]))[0]
-        verify_image(image, record, flavor)
-        releases.append({'kind': flavor, 'sha': record['sourceCommit'], 'image': row['imageId']})
+        if image is None:
+            image = json.loads(checked(['docker', 'image', 'inspect', reference]))[0]
+        verify_image(image, record, flavor, archive_ids.get(row['tag']), pulled=not args.offline_directory)
+        releases.append({'kind': flavor, 'sha': record['sourceCommit'], 'image': image['Id']})
     # Existing slot controllers accept this archive + release.json contract.
     with (destination / 'release-images.tar').open('wb') as file:
         subprocess.run(['docker', 'save', *[row['image'] for row in releases]], stdout=file, check=True)
@@ -224,5 +267,5 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+    except (ValueError, OSError, tarfile.TarError, subprocess.CalledProcessError) as error:
         raise SystemExit(str(error)) from None
