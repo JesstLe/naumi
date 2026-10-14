@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import path from "path";
-import { fetchStoredObject, MEDIA_DIR, storageDriver, privateMedia, presignStoredObject } from "@/lib/storage";
+import { fetchStoredObject, MEDIA_DIR, storageDriver, privateMedia, remoteMediaAccess, presignStoredObject } from "@/lib/storage";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {canReadMedia,getMediaAsset,importLegacyMedia,ensureMediaVariants} from "@/lib/media-assets";
 
@@ -53,7 +53,7 @@ export async function GET(
     return new Response("Bad request", { status: 400 });
   }
 
-  let rel = segs.join("/"),registeredContentType:string|undefined;
+  let rel = segs.join("/"),registeredContentType:string|undefined,remoteVersion:string|undefined,remoteFailure=false,remoteReadable=false,remoteMissing=false;
   if (privateMedia) {
     try {
       const owner=await authenticatedEmail(request);
@@ -67,18 +67,24 @@ export async function GET(
         if(key) {rel=key;asset=await getMediaAsset(key);}
       }
       registeredContentType=asset?.content_type;
+      remoteReadable=!!asset?.remote_ready;
+      remoteVersion=storageDriver!=="local"&&asset?.remote_ready ? asset.sha256 : undefined;
+      const requestedVersion=new URL(request.url).searchParams.get("cacheVersion");
+      if(remoteVersion&&requestedVersion&&requestedVersion!==remoteVersion)return new Response("Media changed",{status:409,headers:{"cache-control":"no-store"}});
       // Keep manifest URLs on the authenticated App origin so their relative
       // segment/key references resolve through the same per-file authorization.
-      if(asset?.remote_ready && storageDriver!=='local'&&!/\.(m3u8|mpd)$/i.test(rel)) {
+      if(remoteMediaAccess==='redirect'&&asset?.remote_ready && storageDriver!=='local'&&!/\.(m3u8|mpd)$/i.test(rel)) {
         const filename=new URL(request.url).searchParams.get('download') || undefined;
         return new Response(null,{status:307,headers:{location:await presignStoredObject('GET',rel,300,undefined,filename),
           'cache-control':filename?'private, no-store':'private, max-age=240','vary':'Cookie, Authorization','referrer-policy':'no-referrer'}});
       }
     } catch {return new Response('Storage unavailable',{status:503,headers:{'cache-control':'no-store'}});}
   }
-  if (storageDriver !== "local" && !privateMedia) {
+  if (storageDriver !== "local" && (!privateMedia || remoteMediaAccess === "proxy" && remoteReadable)) {
     try {
       const upstream = await fetchStoredObject(rel, request.headers.get("range") || "");
+      if (privateMedia && upstream.status === 404) { remoteMissing=true;throw new Error("remote missing; try mirror"); }
+      if (privateMedia && !upstream.ok && upstream.status !== 416) throw new Error("remote unavailable; try mirror");
       const headers = new Headers();
       for (const name of [
         "accept-ranges",
@@ -96,13 +102,17 @@ export async function GET(
         headers.set("cache-control", "public, max-age=31536000, immutable");
       }
       if(privateMedia){headers.set("cache-control","private, max-age=300");headers.set("vary","Cookie, Authorization");headers.set("x-content-type-options","nosniff");}
+      const filename=new URL(request.url).searchParams.get("download");
+      if(filename) {headers.set("content-disposition",`attachment; filename="${filename.replace(/[^\w.\-]/g,"_").slice(0,160)}"`);headers.set("cache-control","private, no-store");}
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
         headers,
       });
     } catch {
-      return new Response("Storage unavailable", { status: 503 });
+      if (!privateMedia) return new Response("Storage unavailable", { status: 503 });
+      remoteFailure=!remoteMissing;
+      // A private local mirror remains usable during a NAS outage.
     }
   }
 
@@ -116,13 +126,14 @@ export async function GET(
     const info = await stat(full);
     if (!info.isFile()) return new Response("Not found", { status: 404 });
     const expected=new URL(request.url).searchParams.get('cacheVersion');
-    if(expected && expected!==`local:${info.size}:${info.mtimeMs}`) return new Response('Media changed',{status:409,headers:{'cache-control':'no-store'}});
+    if(expected && expected!==(remoteVersion || `local:${info.size}:${info.mtimeMs}`)) return new Response('Media changed',{status:409,headers:{'cache-control':'no-store'}});
     const ext = (rel.split(".").pop() || "").toLowerCase();
     const commonHeaders = {
       "content-type": registeredContentType || TYPES[ext] || "application/octet-stream",
       "cache-control": privateMedia ? "private, max-age=300" : "public, max-age=31536000, immutable",
       ...(privateMedia?{"vary":"Cookie, Authorization","x-content-type-options":"nosniff"}:{}),
       "accept-ranges": "bytes",
+      ...(new URL(request.url).searchParams.get('download') ? {"content-disposition":`attachment; filename="${new URL(request.url).searchParams.get('download')!.replace(/[^\w.\-]/g,'_').slice(0,160)}"`,"cache-control":"private, no-store"} : {}),
     };
     const range = request.headers.get("range");
     if (range) {
@@ -154,6 +165,6 @@ export async function GET(
       },
     });
   } catch {
-    return new Response("Not found", { status: 404 });
+    return new Response(remoteFailure ? "Storage unavailable" : "Not found", { status: remoteFailure ? 503 : 404, headers: {"cache-control":"no-store"} });
   }
 }

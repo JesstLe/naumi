@@ -5,7 +5,7 @@ import {z} from 'zod';
 import {authenticatedEmail} from '@/lib/request-auth';
 import {ensureMediaSchema,getMediaAsset} from '@/lib/media-assets';
 import {getPool,addArtworks,listArtworksByIds,setArtworkPosition} from '@/lib/db';
-import {privateMedia,storageDriver,presignStoredObject,readManagedObject,uploadImage} from '@/lib/storage';
+import {privateMedia,storageDriver,remoteMediaAccess,presignStoredObject,readManagedObject,uploadImage} from '@/lib/storage';
 import {adaptiveCanvasImageSize} from '@/lib/mock-data';
 
 export const runtime='nodejs',dynamic='force-dynamic',maxDuration=120;
@@ -18,7 +18,7 @@ const complete=z.object({action:z.literal('complete'),id:z.string().uuid(),title
 export async function POST(request:Request) {
  const email=await authenticatedEmail(request);
  if(!email)return NextResponse.json({error:'请先登录'},{status:401,headers});
- if(!privateMedia||storageDriver==='local')return NextResponse.json({enabled:false},{headers});
+ if(!privateMedia||storageDriver==='local'||remoteMediaAccess==='proxy')return NextResponse.json({enabled:false},{headers});
  let raw:unknown;try{raw=await request.json();}catch{return NextResponse.json({error:'请求格式无效'},{status:400,headers});}
  try {
   await ensureMediaSchema();
