@@ -2452,16 +2452,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [multiSel, setMultiSel] = useState<string[]>([]);
   const [canvasTool, setCanvasTool] = useState<CanvasPrimaryTool>("move");
   const boxSelectMode = canvasTool === "marquee";
-  // 画布底色:深色(默认) / 浅色白底,本地记忆
+  // 画布默认亮色；仅显式保存 dark 时使用暗色，保留用户本地选择。
   const [lightCanvas, setLightCanvas] = useState(() => {
     if (desktopAppearance) return true;
     try {
-      return (
-        typeof window !== "undefined" &&
-        localStorage.getItem("nv:canvas:bg") === "light"
-      );
+      return typeof window === "undefined" || localStorage.getItem("nv:canvas:bg") !== "dark";
     } catch {
-      return false;
+      return true;
     }
   });
   // 拉线中:图片节点端口全部显形(canvas-linking),目标的前 + 不再隐形盲抓
