@@ -18,6 +18,7 @@ export async function POST(request: Request) {
   const videoProcessed = await scanVideoWorkerOnce();
   const imageProcessed = await recoverCanvasImageTasks(2);
   const generationProcessed = await recoverDurableImageJobs();
+  await import("@/lib/reference-workbench/service").then(m=>m.recoverReferenceWorkbench());
   const supplierCostsProcessed = await scanSupplierCostsOnce();
   const mediaSaved = await recoverMediaMirrors().catch(()=>0);
   const mediaProcessed=await recoverMediaJobs();
