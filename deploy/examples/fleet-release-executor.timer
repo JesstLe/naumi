@@ -1,0 +1,10 @@
+[Unit]
+Description=Check signed local release inbox
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=30
+Unit=fleet-release-executor.service
+
+[Install]
+WantedBy=timers.target

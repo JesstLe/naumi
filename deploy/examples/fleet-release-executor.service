@@ -1,0 +1,11 @@
+[Unit]
+Description=Naumi local signed release executor
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /opt/naumi-control/scripts/fleet-release-scan.py --config /etc/naumi/fleet-release-executor.json
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true

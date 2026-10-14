@@ -45,3 +45,14 @@
 - 已补总后台运维授权/发布跟随/审计UI；非总管理员单独部署导航，不展示无权后台菜单。正式UI及模块最终回滚/固定制品核验见本模块证据，尚未安装生产timer。
 - 当前计数2/3（控制与治理两个模块），合main前刷新归零。正式目标仍active：模型模板、自动切流执行器和47真实NAS/103线上接入未完成。
 - 专用Linux运行包由实际bundle外部依赖清单派生，排除无关Agent/MCP/mail依赖，独立固定lock并npm ci。继承主项目全部依赖的早期候选audit为10项/含1critical，最小化后实际audit为3项（next中postcss与sharp既有项），critical为0；不伪称依赖零问题，不在本模块强制升级全站Next或sharp。生产开放前需继续处理这些依赖与受影响验收。
+
+## 模块三：发布执行通道（开发中，默认关闭）
+- 中央Ed25519签冻结manifest/实例/租约/有效期，企业只持公钥；非rootrelay主动HTTPS搬运，不持Docker socket/root私钥。root本机执行器仅允许现场固定hash hooks，不接受远端shell/path/URL。
+- 原租约信封持久化，丢poll重发同字节；relay已有信封不重复写。root started/result防重复部署、重启未知阻断；丢ack重报结果，blocked相同回执不重复审计。
+- 七hook、真实可读备份、兼容迁移、NAS、双部署锁、基线/env/gateway指纹、旁路三槽、Nginx平滑reload、postaccept/worker与失败回退实现。旧槽/DB/媒体/配置保留，不用源码回滚撤销业务积分。
+- 复核修正连续发布固定端口冲突：改本机root限定范围选真实空闲端口；root只读statusFile让连接器验切后实际三槽版本，文件错误/混版/断网unknown。不能把fleet镜像SOURCE_COMMIT当网站实际版本。
+- 本轮真实HTTP丢poll/ack、签名、隔离实例、回执幂等；Linux执行合同和真实Nginx六HTTP容器切流测试通过。Docker/业务hooks合同仍模拟，Nginx容器不含Naumi/NAS，未声称47正式E2E。
+- 原NAS会话已找到真实历史配置production.env及隧道/保活脚本，不打印/复制密钥、不连接旧服务器；47 NAS现场网络/密钥有效性仍需确认。详情主文档历史NAS定位。
+- 开工已fetch，origin/main已从690f6e8推进b277224；本模块未提交前保留任务现场，提交后普通整合，不覆盖共享codex/labs-workbench。
+- 待本轮最终构建/UI/Linux固定制品、四件套回滚与合main；103/47现网均未变更、未安装生产timer。正式目标active，模型模板/正式接入仍未完成。
+- 同事最新main已记录47 Naumi公开运行（5fc5efe/1791976273，local媒体，旧工作台保留）；该变化由其独立授权及发布完成，不归本任务功劳。此前本任务“47未开站”的描述仅历史，本任务继续保护已运行47，不把NAS/fleet阶段自动接上生产，也不连接废弃旧机。

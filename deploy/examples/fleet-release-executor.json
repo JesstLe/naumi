@@ -1,0 +1,28 @@
+{
+  "enabled": false,
+  "nasAccepted": false,
+  "instanceId": "00000000-0000-4000-8000-000000000000",
+  "publicKeyFile": "/etc/naumi/fleet-release-central.pub",
+  "inbox": "/var/lib/naumi-fleet/inbox",
+  "outbox": "/var/lib/naumi-fleet/outbox",
+  "statusFile": "/var/lib/naumi-fleet/outbox/active-status.json",
+  "stateDir": "/var/lib/naumi-fleet/evidence",
+  "activeState": "/etc/naumi/fleet-active-slots.json",
+  "envFile": "/etc/naumi/enterprise.env",
+  "gatewayFile": "/etc/nginx/sites-available/naumi-enterprise",
+  "gatewayTemplate": "/etc/naumi/fleet-gateway.template",
+  "locks": ["/opt/naumi/releases/deploy.lock", "/opt/naumi-reverse-hub/releases/deploy.lock"],
+  "network": "naumi-enterprise",
+  "containerPrefix": "naumi-enterprise-release",
+  "candidatePortRange": [13101, 13200],
+  "mounts": [{"source": "/opt/naumi-enterprise/data/media", "target": "/data/media", "readOnly": false}],
+  "hooks": {
+    "backup": {"path": "/etc/naumi/hooks/backup", "sha256": "REPLACE_WITH_VERIFIED_SHA256"},
+    "compatibility": {"path": "/etc/naumi/hooks/compatibility", "sha256": "REPLACE_WITH_VERIFIED_SHA256"},
+    "preaccept": {"path": "/etc/naumi/hooks/preaccept", "sha256": "REPLACE_WITH_VERIFIED_SHA256"},
+    "gatewaytest": {"path": "/etc/naumi/hooks/gatewaytest", "sha256": "REPLACE_WITH_VERIFIED_SHA256"},
+    "postaccept": {"path": "/etc/naumi/hooks/postaccept", "sha256": "REPLACE_WITH_VERIFIED_SHA256"},
+    "workers": {"path": "/etc/naumi/hooks/workers", "sha256": "REPLACE_WITH_VERIFIED_SHA256"},
+    "rollbackcheck": {"path": "/etc/naumi/hooks/rollbackcheck", "sha256": "REPLACE_WITH_VERIFIED_SHA256"}
+  }
+}
