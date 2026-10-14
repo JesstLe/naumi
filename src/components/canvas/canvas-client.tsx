@@ -3712,14 +3712,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if (id && art && art.canvasX == null && art.canvasY == null) unpositionedResults.set(id, videoNode);
       }
     }
-    const sizeOf = (node: Node) => ({ width: Number(node.style?.width) || Number(node.data.width) || 420, height: Number(node.style?.height) || Number(node.data.height) || 320 });
-    const occupied = displayNodes.filter(node => !unpositionedResults.has(node.id)).map(node => ({ ...node.position, ...sizeOf(node) }));
-    for (let index = 0; index < displayNodes.length; index++) {
-      const node = displayNodes[index], source = unpositionedResults.get(node.id);
-      if (!source) continue;
-      const size = sizeOf(node), position = placeGenerationPreview({ x: source.x + source.width + 96, y: source.y }, size, occupied);
-      displayNodes[index] = { ...node, position };
-      occupied.push({ ...position, ...size });
+    if (unpositionedResults.size) {
+      const sizeOf = (node: Node) => ({ width: Number(node.style?.width) || Number(node.data.width) || 420, height: Number(node.style?.height) || Number(node.data.height) || 320 });
+      const occupied = displayNodes.filter(node => !unpositionedResults.has(node.id)).map(node => ({ ...node.position, ...sizeOf(node) }));
+      for (let index = 0; index < displayNodes.length; index++) {
+        const node = displayNodes[index], source = unpositionedResults.get(node.id);
+        if (!source) continue;
+        const size = sizeOf(node), position = placeGenerationPreview({ x: source.x + source.width + 96, y: source.y }, size, occupied);
+        displayNodes[index] = { ...node, position };
+        occupied.push({ ...position, ...size });
+      }
     }
     // 防御:节点/边按 id 去重,并丢弃指向不存在节点的悬空边
     for (let index=0;index<displayNodes.length;index++) {

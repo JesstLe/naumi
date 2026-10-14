@@ -65,7 +65,7 @@
       "kind": "actual-app-worker"
     },
     "workbench": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/workbench-0ada8bd9-1f86-4ddd-9551-4f70d62fafae/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/workbench-d024905a-de37-495d-b99b-9f71e35397a5/result.json",
       "verifier": "scripts/verify-video-fusion-workbench.ts",
       "kind": "actual-app-browser"
     },
