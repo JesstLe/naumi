@@ -8,12 +8,19 @@ async function main() {
         throw new Error("Requires isolated local PostgreSQL");
     Object.assign(process.env, { NAUMI_MULTI_USER: "1", SETTINGS_SECRET: "fixture-billing-0123456789abcdef0123456789abcdef", STORAGE_DRIVER: "local", MEDIA_DIR: path.resolve("output/billing-20261003/tool-media"), OPENAI_API_KEY: "fixture", OPENAI_IMAGE_MODEL: "gpt-image-1", OPENAI_IMAGE_MODELS: "gpt-image-1", REPLICATE_API_TOKEN: "fixture", NAUMI_IMAGE_QUALITY_SUPPORTED: "1" });
     const image = await sharp({ create: { width: 64, height: 64, channels: 4, background: "white" } }).png().toBuffer();
+    // Replicate cutout must return an actual visible subject with transparent
+    // background; an opaque PNG no longer satisfies the production contract.
+    const foreground=await sharp({create:{width:32,height:32,channels:4,background:"white"}}).png().toBuffer();
+    const cutout=await sharp({create:{width:64,height:64,channels:4,background:{r:0,g:0,b:0,alpha:0}}}).composite([{input:foreground,left:16,top:16}]).png().toBuffer();
+    const pixels=await sharp(cutout).raw().toBuffer({resolveWithObject:true});let opaque=0,transparent=0;
+    for(let index=3;index<pixels.data.length;index+=pixels.info.channels){if(pixels.data[index]===0)transparent++;else if(pixels.data[index]===255)opaque++;}
+    assert(opaque>0&&transparent>0,"fixture requires real visible and transparent pixels");
     let calls = 0, mode = "success";
     const mock = createServer(async (req, res) => {
         for await (const _ of req) { }
         if (req.url === "/image.png") {
             res.setHeader("content-type", "image/png");
-            res.end(image);
+            res.end(cutout);
             return;
         }
         calls++;

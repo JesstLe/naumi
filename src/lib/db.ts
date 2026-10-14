@@ -696,6 +696,10 @@ async function deductPrincipalFIFO(
   n: number
 ): Promise<number> {
   if (n <= 0) return 0;
+  // Match the transactional billing wallet: lock the owner before any credit
+  // batch. Mixing the legacy FIFO path with user-first settlement otherwise
+  // forms a user/batch lock cycle under concurrent completion.
+  await client.query("SELECT email FROM app_users WHERE email=$1 FOR UPDATE",[email]);
   const { rows } = await client.query(
     `SELECT id, remaining FROM app_credit_batches
       WHERE email = $1 AND expires_at > now() AND remaining > 0

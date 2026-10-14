@@ -26,7 +26,7 @@ async function main() {
     for (const invalidAmount of ["", "1.001", "-1", "21474836.48", "1e2"]) assert.equal(yuanToFen(invalidAmount), null);
 
     Object.assign(process.env, { NAUMI_MULTI_USER:"1", SETTINGS_SECRET:"fixture-billing-0123456789abcdef0123456789abcdef", STORAGE_DRIVER:"local", MEDIA_DIR:path.resolve("output/billing-20261003/canvas-extra-media"), OPENAI_API_KEY:"fixture", AGENT_API_KEY:"fixture", OPENAI_TEXT_MODEL:"fixture-text", PADDLE_OCR_REQUIRED:"true" });
-    let calls=0, mode="success", release:()=>void=()=>{};
+    let calls=0, mode="success";const pausedPrefix="first \n"+"safe fixture stream line\n".repeat(60),pauses=new Set<()=>void>(),release=()=>{for(const resume of pauses)resume();pauses.clear();};
     const mock=createServer(async(req,res)=>{
         let raw="";for await(const chunk of req)raw+=chunk;
         calls++;
@@ -43,8 +43,12 @@ async function main() {
         }
         if(body.stream){
             res.writeHead(200,{"content-type":"text/event-stream"});
-            res.write(`data: ${JSON.stringify({choices:[{delta:{content:"first "}}]})}\n\n`);
-            if(mode==="paused")await new Promise<void>(resolve=>{release=resolve;});
+            // The public output guard retains a suffix to redact secrets split
+            // across supplier chunks. A six-character delta cannot prove a live
+            // public stream before finish; emit enough newline-delimited safe text.
+            const firstText=mode==="paused"?pausedPrefix:"first ";
+            res.write(`data: ${JSON.stringify({choices:[{delta:{content:firstText}}]})}\n\n`);
+            if(mode==="paused")await new Promise<void>(resolve=>{pauses.add(resolve);});
             if(mode==="broken"){await new Promise(r=>setTimeout(r,25));res.destroy();return;}
             res.end(`data: ${JSON.stringify({choices:[{delta:{content:"reply"}}]})}\n\ndata: [DONE]\n\n`);
         }else{res.setHeader("content-type","application/json");res.end(JSON.stringify({choices:[{message:{content:mode==="parts"?[{type:"reasoning",text:"PRIVATE"},{type:"text",text:"fixture reply"}]:"fixture reply"}}]}));}
@@ -89,7 +93,8 @@ async function main() {
         await configure(3);mode="paused";
         const id=randomUUID(),stream=await routes["canvas.assistant"].POST(request("canvas.assistant",id)),reader=stream.body!.getReader();
         const first=await reader.read();assert.ok(new TextDecoder().decode(first.value).includes("first "),"First token arrives before supplier completion");
-        const after=calls;assert.equal((await routes["canvas.assistant"].POST(request("canvas.assistant",id))).status,409);assert.equal(calls,after);
+        const after=calls,pending=(await db.getPool().query("SELECT state,charged_credits,reserved_credits FROM app_billing_operations WHERE id=$1",[`tool-${id}`])).rows[0];
+        const duplicate=await routes["canvas.assistant"].POST(request("canvas.assistant",id));if(duplicate.status!==409)console.log("SSE_PENDING_DIAGNOSTIC",JSON.stringify({pending,callsBefore:after,callsAfter:calls}));assert.equal(duplicate.status,409,JSON.stringify({pending,callsBefore:after,callsAfter:calls}));assert.equal(calls,after);
         await configure(9);release();let tail="";for(;;){const result=await reader.read();if(result.done)break;tail+=new TextDecoder().decode(result.value);}assert.ok(tail.includes('"ok":true'));
         assert.equal((await db.getPool().query("SELECT charged_credits FROM app_billing_operations WHERE id=$1",[`tool-${id}`])).rows[0].charged_credits,3,"In-flight stream retains frozen price");
         mode="rejected";const rejectedId=randomUUID(),rejected=await routes["canvas.text-generate"].POST(request("canvas.text-generate",rejectedId));assert.equal(rejected.status,502);
@@ -99,7 +104,7 @@ async function main() {
         const brokenCalls=calls;assert.equal((await routes["canvas.assistant"].POST(request("canvas.assistant",brokenId))).status,409);assert.equal(calls,brokenCalls);
         mode="paused";const recoveryId=randomUUID(),recovery=await routes["canvas.assistant"].POST(request("canvas.assistant",recoveryId)),recoveryReader=recovery.body!.getReader();await recoveryReader.read();
         await db.getPool().query("UPDATE app_credit_batches SET expires_at=now()-interval '1 second' WHERE email=$1",[email]);release();let recoveryText="";for(;;){const part=await recoveryReader.read();if(part.done)break;recoveryText+=new TextDecoder().decode(part.value);}assert.ok(recoveryText.includes("event: error"));
-        const saved=(await db.getPool().query("SELECT state,result_response,charged_credits FROM app_billing_operations WHERE id=$1",[`tool-${recoveryId}`])).rows[0];assert.equal(saved.state,"manual");assert.equal(saved.charged_credits,0);assert.equal(saved.result_response.text,"first reply");
+        const saved=(await db.getPool().query("SELECT state,result_response,charged_credits FROM app_billing_operations WHERE id=$1",[`tool-${recoveryId}`])).rows[0];assert.equal(saved.state,"manual");assert.equal(saved.charged_credits,0);assert.equal(saved.result_response.text,pausedPrefix+"reply");
         await db.addCreditBatch(email,100,{source:"admin",reason:"Recovery fixture"});const {createBillingService,withBillingTransaction}=await import("../src/lib/billing/service");
         await withBillingTransaction(db.getPool(),tx=>createBillingService().reconcileTx(tx,{id:randomUUID(),operationId:`tool-${recoveryId}`,actor:"fixture-admin",reason:"Recover known streamed reply",proof:"Saved fixture reply",result:{state:"succeeded",items:[{id:`tool-${recoveryId}`,state:"succeeded",executedQuality:"medium"}]}}));
         const recoveryCalls=calls;const recovered=await routes["canvas.assistant"].POST(request("canvas.assistant",recoveryId));assert.equal(recovered.status,200);assert.ok((await recovered.text()).includes('"replayed":true'));assert.equal(calls,recoveryCalls);
@@ -107,7 +112,7 @@ async function main() {
     }finally{
         release();const current=await runtime.current();await runtime.publish({id:randomUUID(),expectedVersion:current.version,config:original.config,actor:"fixture",reason:"Restore canvas acceptance"});
         for(const table of ["app_gen_reservations","app_billing_operations","app_artworks","app_bi_model_calls","app_ledger","app_credit_batches","app_users"])await db.getPool().query(`DELETE FROM ${table} WHERE email=$1`,[email]);
-        await db.getPool().end();await new Promise<void>(resolve=>mock.close(()=>resolve()));
+        await db.getPool().end();mock.closeAllConnections();await new Promise<void>(resolve=>mock.close(()=>resolve()));
     }
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
