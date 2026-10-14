@@ -45,3 +45,5 @@ Toonflow 使用原 skillOperator plugin 与 createAgentToolContext，执行实�
 原浏览器已有项目中打开“提及节点输出或素材”，先选择原4秒视频，再选择实际1–3秒裁剪的2秒视频输出；消息草稿呈现两个独立的画布/节点/输出引用。DOM与 `screenshots/reuse-derived-video-mention.png` 已保存；没有发送消息、调用LLM或视频供应商。前批真实媒体探针证明两个对应文件可读及派生产物规格。此范围证明原UI能再引用真实派生输出，不扩大为整套生成链闭环已运行。
 
 本轮 comparison 新增真实观察和限制，正式应用矩阵仍30/34；V12/V13不因规则选择器单独通过而提前关闭。完整上游对比、最终保护验收、整分支复核、Linux候选/回滚与103发布继续进行。没有SSH或部署锁。
+
+阶段整合保留最新Fleet/NAS主线dc7c51e，合并提交6f4d74e；完整TypeScript发现同事新增verify-fleet-runtime的localServers空数组未声明类型，补ReturnType<typeof createLocalServer>[]后完整tsc及diff检查通过。仅测试脚本类型补充，不改其运行行为；没有执行该同事的Docker/数据库专项或将其功能标成新通过。阶段普通提交/推送，不在共享checkout切分支或覆盖代码。
