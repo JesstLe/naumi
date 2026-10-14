@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/patch-next-body.mjs",
     "verify:imagegen-contract": "tsx --conditions react-server scripts/verify-imagegen-contract.ts",
     "verify:imagegen-intent": "tsx --conditions react-server scripts/verify-imagegen-intent.ts",
     "verify:imagegen-capabilities": "tsx --conditions react-server scripts/verify-imagegen-capabilities.ts",
