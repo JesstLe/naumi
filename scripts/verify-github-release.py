@@ -4,8 +4,11 @@ import argparse
 import copy
 import importlib.util
 import json
+import io
+import hashlib
 import pathlib
 import tempfile
+import tarfile
 import unittest
 from unittest.mock import patch
 
@@ -96,6 +99,32 @@ class ReleaseChecks(unittest.TestCase):
                 return json.dumps({'status':'completed','conclusion':'success','workflowName':'Build & push Docker image','headSha':'c'*40,'attempt':1}).encode()
             with patch.object(release, 'checked', side_effect=gh):
                 with self.assertRaises(ValueError): release.fetch(argparse.Namespace(tag=tag, expected_sha=SHA, directory=root/'incoming', flavors=','.join(release.ORDER), offline=True))
+
+    def test_classic_and_containerd_ids_bind_to_same_archive_configuration(self):
+        with tempfile.TemporaryDirectory() as root:
+            candidate=record(); row=candidate['images']['ui']
+            config=b'{"architecture":"amd64","os":"linux","config":{}}'
+            config_id='sha256:'+hashlib.sha256(config).hexdigest();row['imageId']=config_id
+            manifest=json.dumps({'config':{'digest':config_id}}).encode()
+            manifest_id='sha256:'+hashlib.sha256(manifest).hexdigest()
+            archive_path=pathlib.Path(root)/'package.tar.gz'
+            entries={'manifest.json':json.dumps([{'Config':'blobs/sha256/'+config_id[7:],'RepoTags':[row['tag']]}]).encode(),
+                     'index.json':json.dumps({'manifests':[{'digest':manifest_id}]}).encode(),
+                     'blobs/sha256/'+config_id[7:]:config,'blobs/sha256/'+manifest_id[7:]:manifest}
+            with tarfile.open(archive_path,'w:gz')as archive:
+                for name,body in entries.items():
+                    entry=tarfile.TarInfo(name);entry.size=len(body);archive.addfile(entry,io.BytesIO(body))
+            self.assertEqual(release.archive_image_ids(archive_path,row),{config_id,manifest_id})
+            row['imageId']='sha256:'+'f'*64
+            with self.assertRaises(ValueError):release.archive_image_ids(archive_path,row)
+
+    def test_pulled_digest_must_match_even_when_engine_id_format_differs(self):
+        candidate=record();row=candidate['images']['ui']
+        image={'Id':'sha256:'+'f'*64,'Os':'linux','Architecture':'amd64','RepoDigests':[row['reference']],
+               'Config':{'Env':['SOURCE_COMMIT='+SHA,'BUILD_VERSION=123'],'Labels':{'org.opencontainers.image.revision':SHA,'io.naumi.build.flavor':'ui'}}}
+        release.verify_image(image,candidate,'ui',pulled=True)
+        image['RepoDigests']=[release.IMAGE+'@sha256:'+'e'*64]
+        with self.assertRaises(ValueError):release.verify_image(image,candidate,'ui',pulled=True)
 
 
 if __name__ == '__main__':
