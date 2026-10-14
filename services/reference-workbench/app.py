@@ -690,7 +690,7 @@ async def status(request: Request):
         counts = dict(c.execute('SELECT state,count(*) FROM tasks WHERE user_id=? GROUP BY state', (u['id'],)))
         counts['waiting'] = counts.get('waiting', 0) + counts.get(WAITING_STATE, 0) + counts.get('waiting_geometry_v1', 0) + counts.get(EXTRA_WAITING, 0)
         latest = c.execute('SELECT t.*,p.name AS product_name FROM tasks t JOIN projects p ON p.id=t.project_id WHERE t.user_id=? ORDER BY t.updated DESC LIMIT 1', (u['id'],)).fetchone()
-        image_counts = dict(c.execute("SELECT state,count(*) FROM tasks WHERE user_id=? AND operation!='infer' GROUP BY state", (u['id'],)))
+        image_counts = dict(c.execute("SELECT state,count(*) FROM tasks WHERE user_id=? AND operation NOT IN ('infer','extra_plan') GROUP BY state", (u['id'],)))
     running = sum(counts.get(x, 0) for x in ['running', 'editing', 'inferring'])
     names = {'done': '完成', 'waiting': '等待中', 'running': '生成中', 'editing': '二次修改中', 'inferring': '推理中', 'failed': '失败', 'maybe_submitted': '提交待核对'}
     return {'running': bool(running or counts.get('waiting')), 'progress': {'current': names.get(latest['state'], latest['state']) if latest else '等待', 'product': latest['product_name'] if latest else '', 'size': json.loads(latest['config']).get('resolution', '') if latest else '', 'ref': Path(latest['ref']).name if latest else '', 'done': image_counts.get('done', 0), 'failed': counts.get('failed', 0), 'last_error': latest['error'] if latest else ''}, 'queue': {'running': running, 'waiting': counts.get('waiting', 0), 'global_limit': 2, 'user_limit': 2}}

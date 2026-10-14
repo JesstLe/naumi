@@ -157,6 +157,7 @@ class ExtraPages:
                     status = 'partial' if results and failures else ('done' if results else 'failed')
                 messages.append({'id': m['id'], 'role': m['role'], 'text': m['text'], 'status': status, 'images': [self.c.image_url(p) for p in json.loads(m['images'])] if m['role'] == 'user' else [], 'results': results, 'failures': failures, 'created_at': m['created'], 'updated_at': max([m['updated']] + [t['updated'] for t in tasks])})
             for s in sessions:
+                s['created_at'], s['updated_at'] = s['created'], s['updated']
                 s['active'] = s['id'] == sid
                 s['running'] = d.execute("SELECT count(*) FROM extra_messages m WHERE m.session_id=? AND m.deleted=0 AND (m.status='plan_pending' OR EXISTS(SELECT 1 FROM extra_links l JOIN tasks t ON t.id=l.task_id WHERE l.owner_id=m.id AND t.state IN ('waiting_extra_v1','running','inferring','editing')))", (s['id'],)).fetchone()[0]
         return {'ok': True, 'session_id': sid, 'sessions': sessions, 'messages': messages}
