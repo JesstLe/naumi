@@ -28,3 +28,9 @@ python3 /opt/naumi-control/scripts/fleet-portal-cutover.py --evidence /opt/naumi
 python3 /opt/naumi-control/scripts/fleet-portal-cutover.py --evidence /opt/naumi-staging/evidence/fleet-portal-20261015/prepared --admin-cookie-file /run/naumi-fleet-admin.cookie --ca-file /etc/naumi/fleet-origin-root.pem --execute
 ```
 接手不要重建已验证的private portal或复制103库到47。先提供/验证当前管理员与NAS连接；公网可用不等于NAS已通或夜间自动更新已启用。
+
+## 本轮真实103 dry-run收尾
+- 已把固定4份运维脚本以受保护SSH流式stdin传到103新任务routing目录并逐文件SHA核对；运行默认dry-run不传cookie，输出ROUTES_READY / ADMIN_ACCEPTANCE=PENDING / NO_PUBLIC_CUTOVER=1、exit0。
+- 对实际完整网关进行独立五类temp目录Nginx语法检查通过，没有替换gateway或reload。随后实查原主站版本/网关摘要不变、private portal仍原Image/只读rootfs/384MiB/loopback、备份可读、两锁FREE。
+- 隔离真实Nginx100探测错误0、root合同和源码baseline/modified/独立rollback均exit0。合同内成功/回退日志仅fixture；不把它们当103已切流。原hash恢复，实际分支保留新实现；生产DB/积分/媒体未回灌。
+- 本模块功能计数3/3达到刷新门槛，本轮开工/合main已fetch整合，最终同步后归零。main/任务分支push版本以最后Git回执为准。本轮只是dry-run、源码与测试，不增加成功发布计数。完整目标active，当前root管理员资料与NAS管理路径仍待用户补齐，但本轮已完成真实路由准备与回退工程。

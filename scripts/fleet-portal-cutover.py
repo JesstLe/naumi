@@ -66,7 +66,8 @@ def execute(evidence,cookie_file,dry_run=True,rollback=False,ca_file=None):
         if not cookie_file:
             print('FLEET_PORTAL_CHECK=ROUTES_READY ADMIN_ACCEPTANCE=PENDING NO_PUBLIC_CUTOVER=1')
             executor.require(dry_run,'GATE_MISSING');return
-        cookie=executor.protected_path(cookie_file).read_text().strip();executor.require(len(cookie.encode())<=4000 and re.fullmatch(r'(?:nv_admin|nv_user)=[A-Za-z0-9_.-]+(?:; ?(?:nv_admin|nv_user)=[A-Za-z0-9_.-]+)?',cookie))
+        secret_file=executor.protected_path(cookie_file);executor.require(not secret_file.stat().st_mode & 0o077)
+        cookie=secret_file.read_text().strip();executor.require(len(cookie.encode())<=4000 and re.fullmatch(r'(?:nv_admin|nv_user)=[A-Za-z0-9_.-]+(?:; ?(?:nv_admin|nv_user)=[A-Za-z0-9_.-]+)?',cookie))
         code,body=fetch(prepared['port'],'/api/admin/fleet/status',cookie);executor.require(code==200 and json.loads(body)=={'enabled':True,'root':True})
         code,body=fetch(prepared['port'],'/api/admin/fleet',cookie);executor.require(code==200 and json.loads(body).get('root') is True)
         (evidence/'admin-acceptance.json').write_text(json.dumps({'at':int(time.time()),'root':True,'source':prepared['source'],'cookieStoredInEvidence':False}));(evidence/'admin-acceptance.json').chmod(0o600)
