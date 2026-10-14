@@ -50,6 +50,8 @@ jobs:
       release_tag: ${{ steps.source.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v4
+      - name: Verify image provenance and safe preparation contracts
+        run: python3 scripts/verify-github-release.py
       - name: Resolve fixed source and create draft record
         id: source
         env:

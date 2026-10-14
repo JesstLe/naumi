@@ -14,11 +14,13 @@ ACR只保留按需镜像复制：手动选择完整GitHub Release及SHA，已有
 
 ## 获取和发布
 
-在已登录GitHub CLI的受保护本机下载：
+在已登录GitHub CLI且可读本仓库Release的受保护本机下载：
 
 ```powershell
 python scripts/github-release-manifest.py fetch --tag <codex-image-SHA-runID-aATTEMPT> --expected-sha <40位SHA> --directory output/github-candidate --offline
 ```
+
+本机独立GitHub CLI令牌没有Actions dispatch权限、不能读取draft Release；浏览器已登录身份可正常启动。同仓库现有Git Credential Manager身份实际可读取draft，提供`invoke-github-release.ps1`在内存中短时复用该既有凭据，不新建令牌/扩权或改GH登录存储，退出时还原GH_TOKEN，也不传到服务器。可运行`./scripts/invoke-github-release.ps1 -Mode Build -SourceCommit <40位SHA> -Offline`启动三镜像，完成后以`-Mode Fetch -SourceCommit <SHA> -ReleaseTag <TAG> -Directory output/github-candidate -Offline`下载。只有当前仓库被绑定，不接受任意仓库目标。
 
 脚本只接收本仓库的已公布候选，核对实际工作流完成且success、run/attempt/workflowCommit与记录一致、三界面齐全、每个离线文件的名称/长度/SHA256。指定输出须新建空目录，避免覆盖其他任务文件。默认需要三个版本；普通候选只验收ui时明确加`--flavors ui`。不把独立业务回归流水线是否通过与镜像工作流成功混为一谈。
 
