@@ -23,6 +23,8 @@ export async function ensureFleetReleaseSchema(){
     CREATE TABLE IF NOT EXISTS app_fleet_releases(id uuid PRIMARY KEY,source_instance_id uuid NOT NULL REFERENCES app_fleet_instances(id),manifest jsonb NOT NULL,fingerprint text NOT NULL,evidence_sha text NOT NULL,actor text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
     CREATE TABLE IF NOT EXISTS app_fleet_release_policy(instance_id uuid PRIMARY KEY REFERENCES app_fleet_instances(id),source_instance_id uuid NOT NULL REFERENCES app_fleet_instances(id),enabled boolean NOT NULL DEFAULT false,version integer NOT NULL DEFAULT 0,actor text NOT NULL,updated_at timestamptz NOT NULL DEFAULT now());
     CREATE TABLE IF NOT EXISTS app_fleet_release_plans(id uuid PRIMARY KEY,instance_id uuid NOT NULL REFERENCES app_fleet_instances(id),release_id uuid NOT NULL REFERENCES app_fleet_releases(id),local_day date NOT NULL,base_source text NOT NULL,base_version text NOT NULL,state text NOT NULL DEFAULT 'planned' CHECK(state IN ('planned','held','preparing','ready','accepted','failed','blocked')),checks jsonb NOT NULL DEFAULT '{}',version integer NOT NULL DEFAULT 0,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(instance_id,local_day));
+    ALTER TABLE app_fleet_release_plans ADD COLUMN IF NOT EXISTS lease_id uuid;
+    ALTER TABLE app_fleet_release_plans ADD COLUMN IF NOT EXISTS leased_until timestamptz;
   `);})().catch(error=>{ready=undefined;throw error;});await ready;
 }
 export async function registerRelease(actor:string,raw:z.infer<typeof releaseRegistrationSchema>){
@@ -76,5 +78,34 @@ export async function releaseSnapshot(actor:FleetActor){
   const scope="($1::text IS NULL OR EXISTS(SELECT 1 FROM app_fleet_grants g WHERE g.instance_id=p.instance_id AND g.email=$1 AND g.allowed ? 'read' AND (g.expires_at IS NULL OR g.expires_at>now())))";
   const [policies,plans,releases]=await Promise.all([getPool().query('SELECT p.* FROM app_fleet_release_policy p WHERE '+scope,[email]),getPool().query('SELECT p.*,r.manifest,r.evidence_sha FROM app_fleet_release_plans p JOIN app_fleet_releases r ON r.id=p.release_id WHERE '+scope+' ORDER BY p.created_at DESC LIMIT 100',[email]),actor.root?getPool().query('SELECT * FROM app_fleet_releases ORDER BY created_at DESC LIMIT 50'):Promise.resolve({rows:[]})]);
   const sources=await getPool().query("SELECT id,name,kind FROM app_fleet_instances WHERE kind='main' AND enabled ORDER BY created_at LIMIT 20");
-  return {policies:policies.rows,plans:plans.rows,releases:releases.rows,sources:sources.rows,timeZone:'Asia/Shanghai',hour:20,executorEnabled:false};
+  return {policies:policies.rows,plans:plans.rows,releases:releases.rows,sources:sources.rows,timeZone:'Asia/Shanghai',hour:20,executorEnabled:process.env.FLEET_RELEASE_DISPATCH_ENABLED==='1'};
+}
+export async function leaseRelease(instanceId:string,expectedTokenHash?:string){
+  if(process.env.FLEET_RELEASE_DISPATCH_ENABLED!=='1')return null;
+  const {releaseSigningKey}=await import('./release-keys');const signingKey=await releaseSigningKey();
+  if(!signingKey)throw new FleetError('发布签名密钥未配置',503);
+  await ensureFleetReleaseSchema();const tx=await getPool().connect();
+  try{await tx.query('BEGIN');const target=(await tx.query('SELECT * FROM app_fleet_instances WHERE id=$1 FOR UPDATE',[instanceId])).rows[0];if(!target?.enabled||target.kind!=='enterprise'||expectedTokenHash&&target.token_hash!==expectedTokenHash){await tx.query('COMMIT');return null;}
+    const row=(await tx.query("SELECT p.*,r.manifest,r.source_instance_id FROM app_fleet_release_plans p JOIN app_fleet_releases r ON r.id=p.release_id WHERE p.instance_id=$1 AND p.state IN ('planned','preparing') ORDER BY p.created_at LIMIT 1 FOR UPDATE OF p",[instanceId])).rows[0];if(!row){await tx.query('COMMIT');return null;}
+    if(row.state==='preparing'){if(row.leased_until&&new Date(row.leased_until).getTime()<Date.now()){await tx.query("UPDATE app_fleet_release_plans SET state='blocked',checks=$2,version=version+1 WHERE id=$1",[row.id,JSON.stringify({code:'UNKNOWN'})]);await tx.query('COMMIT');return null;}await tx.query('COMMIT');return row.checks?.envelope||null;}
+    const source=(await tx.query('SELECT * FROM app_fleet_instances WHERE id=$1',[row.source_instance_id])).rows[0],policy=(await tx.query('SELECT enabled FROM app_fleet_release_policy WHERE instance_id=$1',[instanceId])).rows[0];
+    if(!policy?.enabled||!source?.enabled||!source.last_seen||Math.abs(Date.now()-new Date(source.last_seen).getTime())>120000||source.status.source!==row.manifest.sourceCommit||String(source.status.version)!==String(row.manifest.buildVersion)){await tx.query("UPDATE app_fleet_release_plans SET state='held',checks=$2,version=version+1 WHERE id=$1",[row.id,JSON.stringify({code:'SOURCE_CHANGED'})]);await tx.query('COMMIT');return null;}
+    if(target.status.source!==row.base_source||String(target.status.version)!==row.base_version||!/^[a-f0-9]{40}$/.test(row.base_source)||!/^[0-9]+$/.test(row.base_version)){await tx.query("UPDATE app_fleet_release_plans SET state='blocked',checks=$2,version=version+1 WHERE id=$1",[row.id,JSON.stringify({code:'BASELINE_CHANGED'})]);await tx.query('COMMIT');return null;}
+    const leaseId=randomUUID(),expiresAt=Date.now()+300000;
+    const {signRelease}=await import('./release-wire');const envelope=signRelease({id:row.id,instanceId,leaseId,expiresAt,baseSource:row.base_source,baseVersion:row.base_version,manifest:row.manifest},signingKey);
+    await tx.query("UPDATE app_fleet_release_plans SET state='preparing',lease_id=$2,leased_until=$3,checks=$4,version=version+1 WHERE id=$1",[row.id,leaseId,new Date(expiresAt),JSON.stringify({envelope})]);
+    await tx.query("INSERT INTO app_fleet_audit(instance_id,actor,action) VALUES($1,'release-dispatch',$2)",[instanceId,'release-leased:'+row.id]);await tx.query('COMMIT');
+    return envelope;
+  }catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
+}
+export async function recordReleaseResult(instanceId:string,raw:unknown,expectedTokenHash?:string){
+  const {releaseResultSchema}=await import('./release-wire');const result=releaseResultSchema.parse(raw);await ensureFleetReleaseSchema();const tx=await getPool().connect();
+  try{await tx.query('BEGIN');if(expectedTokenHash){const target=(await tx.query('SELECT token_hash,enabled FROM app_fleet_instances WHERE id=$1 FOR SHARE',[instanceId])).rows[0];if(!target?.enabled||target.token_hash!==expectedTokenHash)throw new FleetError('实例认证失败',401);}const plan=(await tx.query('SELECT p.*,r.manifest FROM app_fleet_release_plans p JOIN app_fleet_releases r ON r.id=p.release_id WHERE p.id=$1 AND p.instance_id=$2 FOR UPDATE OF p',[result.planId,instanceId])).rows[0];if(!plan)throw new FleetError('发布计划不存在',404);
+    if(plan.lease_id!==result.leaseId)throw new FleetError('发布租约不匹配',409);
+    if(['accepted','failed'].includes(plan.state)){if(canonical(plan.checks)!==canonical(result))throw new FleetError('发布结果冲突',409);await tx.query('COMMIT');return {ok:true,replayed:true};}
+    if(plan.state==='blocked'&&canonical(plan.checks)===canonical(result)){await tx.query('COMMIT');return {ok:true,replayed:true};}
+    if(!['preparing','blocked'].includes(plan.state))throw new FleetError('发布状态无效',409);
+    if(result.state==='accepted'&&(result.code!=='OK'||result.source!==plan.manifest.sourceCommit||result.version!==String(plan.manifest.buildVersion)||!result.evidenceSha))throw new FleetError('发布验收证据不匹配',409);
+    await tx.query('UPDATE app_fleet_release_plans SET state=$2,checks=$3,version=version+1 WHERE id=$1',[plan.id,result.state,JSON.stringify(result)]);await tx.query("INSERT INTO app_fleet_audit(instance_id,actor,action) VALUES($1,'release-connector',$2)",[instanceId,'release-result:'+result.state]);await tx.query('COMMIT');return {ok:true,replayed:false};
+  }catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
 }

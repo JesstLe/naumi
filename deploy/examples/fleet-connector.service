@@ -5,6 +5,7 @@ After=network-online.target
 [Service]
 Type=simple
 User=naumi
+Group=naumi-fleet
 WorkingDirectory=/opt/naumi-control
 EnvironmentFile=/etc/naumi/fleet-instance.env
 ExecStart=/usr/bin/node /opt/naumi-control/dist/fleet/connector.js
@@ -15,6 +16,8 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadOnlyPaths=/opt/naumi-control
+ReadOnlyPaths=/var/lib/naumi-fleet/outbox
+ReadWritePaths=/var/lib/naumi-fleet/inbox
 
 [Install]
 WantedBy=multi-user.target

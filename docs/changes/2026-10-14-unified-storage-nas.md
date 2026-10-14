@@ -82,3 +82,10 @@ npx tsc --noEmit
 - 开工与合并前多次fetch并整合main，最后来源d6f53dc；本模块同步计数归零。本轮成功发布0；没有SSH连接103/47/旧服务器。
 - 四制品及最终命令/输入/字面输出/退出码在忽略目录E:/Workspace/naumi/output/unified-storage-nas-20261014/VERIFICATION.txt；源码包MODIFIED_FILE.tar.gz、补丁DIFF_FILE.patch、可执行ROLLBACK.sh。副本原hash保存，回滚副本恢复355c428行为；修改副本保持新实现。
 - 交付状态：代码与开发隔离S3验证完成且合main；企业47实际NAS连接/正式E2E待部署配置就绪后验收，未称已接通/上线。后续不自动迁移或更改103存储。
+
+## 47最新只读回执（2026-10-14，协作会话提供）
+协作会话01a11b21-ab9e-7fb1-ab19-4a474d77eba0使用47既有受保护连接和严格known_hosts，只读报告：公网/api/version为183dff86a8a8443471e5ae73245cfd414bf6f20d / 1791984787，已有Naumi ui/desktop/enterprise旁路及旧worker。47开站状态以最新接手记录为准，前文“尚未启用”是本轮适配开发时快照，不再用它代替当前站点状态。本适配任务没有重新SSH探测或启动任何服务。
+
+该只读回执同时显示47没有3900监听，curl127.0.0.1:3900为000。企业NAS→47网关连接仍未证明可用；旧production.env字段齐全不代表旧Docker网关endpoint在47有效，禁止据此切换存储。47真实NAS E2E仍待常开网关连接、独立受保护部署配置与验收，103存储不改、旧101/120/179不连接。
+
+NAS管理连接路径定位范围：当前本机已确认存在的是历史隧道/监督脚本与验收制品目录E:/Workspace/naumi/audit-artifacts/nas-garage-20260930；尚未定位到独立保存的NAS管理登录配置或当前有效会话文件。历史会话中的登录信息不是已验证受保护连接文件，不输出或复制凭据。NAS端.garage/config/garage.toml、.garage/secrets.env及.gateway身份文件的当前存在性仍未远程核验；不能把本机脚本存在当作NAS文件或当前管理会话可用。
