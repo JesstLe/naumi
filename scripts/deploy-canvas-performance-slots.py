@@ -5,6 +5,7 @@ Run under the existing Naumi/Hub lock keeper after backups. No DB restore,
 old-container stop or configuration-secret printing is performed by this tool.
 """
 import json,pathlib,sys,subprocess,hashlib,time,urllib.request,http.client,socket,re,threading,os,shutil
+from nginx_syntax import check_gateway_syntax
 
 E=pathlib.Path(sys.argv[1]).resolve();PHASE=sys.argv[2]
 GATEWAY=pathlib.Path('/etc/nginx/sites-available/default')
@@ -190,7 +191,7 @@ elif PHASE=='cutover':
  assert_lock();assert GATEWAY.read_bytes()==(E/'nginx.before').read_bytes();verify_slots();verify_protected();verify_public_video_reads();before=(E/'nginx.before').read_text();modified=before
  modified=render_gateway(before);(E/'nginx.modified').write_text(modified)
  for label,body in [('modified',modified),('rollback',before)]:
-  file=E/('nginx-test-'+label+'.conf');file.write_text('events {}\nhttp {\n'+body+'\n}\n');subprocess.run(['nginx','-t','-c',str(file),'-p',str(E)],check=True)
+  check_gateway_syntax(E,label,body)
  rows=[];done=threading.Event()
  def monitor():
   while not done.is_set():
@@ -220,5 +221,5 @@ elif PHASE=='verify':
  if(E/'slots.json').exists():verify_slots()
 elif PHASE=='protocol-check':assert_lock();verify_public_video_reads()
 elif PHASE=='rollback-check':
- assert(E/'nginx.before').is_file();file=E/'nginx-rollback-check.conf';file.write_text('events {}\nhttp {\n'+(E/'nginx.before').read_text()+'\n}\n');subprocess.run(['nginx','-t','-c',str(file),'-p',str(E)],check=True);print('ROLLBACK_GATEWAY=CHECKED DATABASE_RESTORE=NONE')
+ assert(E/'nginx.before').is_file();check_gateway_syntax(E,'rollback-check',(E/'nginx.before').read_text());print('ROLLBACK_GATEWAY=CHECKED DATABASE_RESTORE=NONE')
 else:raise ValueError(PHASE)
