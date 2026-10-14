@@ -1,5 +1,13 @@
 # 画布视频上游实操对照
 
+## 固定Toonflow首尾、混合与排序实操补证
+
+本次沿用ae9e5f固定源码和独立原创媒体工作区。把已实际截取的尾帧图片连入视频生成节点后，模型归一到混合参考；实际选择“首帧可选”后明确显示“一张图片作为尾帧，两张按顺序作为首帧、尾帧”。刷新后模式、原图身份和完整三行提示词保留。无媒体时选择首帧可选仍回文生，与此前混合模式无输入规则一致。
+
+实际依次连接尾帧图片、两秒裁剪视频、提取音频，得到图片/视频/音频三种输入。拖动音频卡片后编号变成图片/音频/视频，刷新仍保留；独立工作区referenceOrder的节点身份顺序与浏览器相同。随后移除两份非图片输入，实际抽取原视频首帧、连入第二张图片、选择首帧可选，再拖动交换两图片顺序，工作区保存为首帧节点、尾帧节点。原视频输出文件和原始完整提示词保持，没有点击付费生成。
+
+证据在reference/toonAe9e5f：first-frame-restored-dom.txt、mixed-reference-dom.txt、mixed-reference-reordered-dom.txt、mixed-reference-restored-dom.txt、two-frame-dom.txt、two-frame-reordered-dom.txt；截图位于screenshots的first-frame-optional-with-owned-image.jpg、mixed-image-video-audio.jpg、mixed-reference-reordered.jpg、two-frame-optional.jpg、two-frame-reordered.jpg。comparison.json的V02/V03/V04更新为partial-observation，专用首尾必需、数量边界、文字引用映射和其他上游操作仍待完成，没有标整项通过。
+
 ## 2026-10-14 固定本地上游实操补证（Task14仍进行中）
 
 固定IC源码68b37db运行于loopback15372/15373，独立SQLite和虚构账号，实际页面v0.8.1且GitHub指向tigerowo。入口辅助文件仅改变监听为127.0.0.1；Next dev生成next-env.d.ts已记录。视频节点实际竖屏/10秒已观察并保存video-node-portrait-10s-painted.jpg；摄影面板显示Panavision DXL2/ARRI Signature Prime/50mm/f4，开关处于当时CSS视口外，未成功启用，camera-panel-toggle-attempt.jpg不能当启用证据。隐藏页面即时截图曾出现旧6秒画面，保留并命名immediate-frame，最终10秒以实际重绘截图证明。

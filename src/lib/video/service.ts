@@ -320,7 +320,10 @@ async function imageForQueuedTask(
   request: VideoGenerationRequest,
   email: string
 ): Promise<{ bytes: Buffer; mime: string; filename: string } | undefined> {
-  if (getVideoProviderConfig(task.providerId)?.protocol !== "openai-videos") return undefined;
+  const config=getVideoProviderConfig(task.providerId);
+  // Profile codecs consume the authorized materialized references themselves.
+  // The legacy image reader cannot read a supplier's signed object URL.
+  if (config?.protocol !== "openai-videos" || config.videoProfile) return undefined;
   const reference = request.references.find((item) => item.kind === "image" && (item.url || item.artworkId));
   if (!reference) return undefined;
   const { readCanvasImage } = await import("@/lib/canvas-image-input");
