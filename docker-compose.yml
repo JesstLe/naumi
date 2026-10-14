@@ -76,6 +76,7 @@ services:
       SETTINGS_SECRET: ${SETTINGS_SECRET:?请先运行安装器或配置独立随机 SETTINGS_SECRET}
       # Filesystem / R2 / S3-compatible (Garage、MinIO、OSS、COS) storage.
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      MEDIA_REMOTE_ACCESS: ${MEDIA_REMOTE_ACCESS:-redirect}
       MEDIA_DIR: /data/media
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-us-east-1}

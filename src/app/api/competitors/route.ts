@@ -35,9 +35,9 @@ async function handleObservedPost(req: Request) {
       id, batchId: batch.data, path: filePath, image: url, width: normalized.info.width, height: normalized.info.height,
       prompt: "", regions: [], versions: [], activeVersion: "", revision: 0, busy: false, createdAt: new Date().toISOString(),
     });
-    if (item.id !== id) await deleteImageByUrl(url);
+    if (item.id !== id) await deleteImageByUrl(url).catch(() => { console.warn("STORAGE_CLEANUP_PENDING operation=competitor-duplicate"); });
     return NextResponse.json({ item });
-  } catch(e) { if (url) await deleteImageByUrl(url); return competitorError(e); }
+  } catch(e) { if (url) await deleteImageByUrl(url).catch(() => { console.warn("STORAGE_CLEANUP_PENDING operation=competitor-import"); }); return competitorError(e); }
 }
 
 export async function POST(req: Request) {

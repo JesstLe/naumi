@@ -237,6 +237,6 @@ export async function fillWorkflowAsset(email: string, id: string, operationId: 
     const node = (await listArtworksByIds(email, [id]))[0];
     if (!node) throw new Error("节点已删除，请刷新画布");
     return { node, assetOperationId: operationId };
-  } catch (error) { if (!committed) { await client.query("ROLLBACK"); if (uploaded) await deleteImageByUrl(uploaded); } throw error; }
+  } catch (error) { if (!committed) { await client.query("ROLLBACK"); if (uploaded) await deleteImageByUrl(uploaded).catch(() => { console.warn("STORAGE_CLEANUP_PENDING operation=workflow-import"); }); } throw error; }
   finally { client.release(); }
 }
