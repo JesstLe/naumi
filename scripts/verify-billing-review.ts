@@ -9,7 +9,7 @@ async function main() {
   const test = process.argv[2];
   if(!test){
     if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1"||new URL(process.env.DATABASE_URL||"http://invalid").hostname!=="127.0.0.1")throw new Error("Requires isolated local PostgreSQL");
-    for(const name of ["missing","quality","retry","recovery","canvas","demo"]){const r=spawnSync(process.execPath,["node_modules/tsx/dist/cli.mjs","--conditions","react-server","scripts/verify-billing-review.ts",name],{stdio:"inherit",env:{...process.env,...(name==="demo"?{DATABASE_URL:""}:{})}});if(r.status!==0)throw new Error(`Review regression ${name} failed`);}return;
+    for(const name of ["missing","quality","retry","balance-refresh","recovery","canvas","demo"]){const r=spawnSync(process.execPath,["node_modules/tsx/dist/cli.mjs","--conditions","react-server","scripts/verify-billing-review.ts",name],{stdio:"inherit",env:{...process.env,...(name==="demo"?{DATABASE_URL:""}:{})}});if(r.status!==0)throw new Error(`Review regression ${name} failed`);}return;
   }
   if (test === "missing") {
     const { assertQuotedVersion } = await import("../src/lib/billing/request");
@@ -41,7 +41,25 @@ async function main() {
     Object.assign(process.env,{NAUMI_MULTI_USER:"1",SETTINGS_SECRET:"fixture-settings-0123456789abcdef0123456789abcdef0123456789",OPENAI_API_KEY:"fixture"});
     const f=await (await import("./billing-fixture")).createBillingFixture(),db=await import("../src/lib/db");
     try {
-      if(test==="recovery") {
+      if(test==="balance-refresh") {
+        const email=await f.user(100),holder=await f.pool.connect();let committed=false;
+        try{
+          await holder.query("BEGIN");await holder.query("SELECT email FROM app_users WHERE email=$1 FOR UPDATE",[email]);
+          const reading=db.getUser(email).then(user=>({user}),error=>({error}));
+          let waiting=false;const until=Date.now()+10000;
+          while(Date.now()<until){
+            waiting=!!(await f.pool.query("SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%app_users%' AND pid<>pg_backend_pid()")).rowCount;
+            if(waiting)break;await new Promise(resolve=>setTimeout(resolve,20));
+          }
+          assert.equal(waiting,true,"Account refresh must actually wait for the concurrent wallet transaction");
+          await holder.query("UPDATE app_credit_batches SET remaining=remaining-1 WHERE email=$1 AND remaining>0",[email]);
+          await holder.query("UPDATE app_users SET credits_total=99 WHERE email=$1",[email]);
+          await holder.query("COMMIT");committed=true;
+          const result=await reading;assert.ok('user' in result);assert.equal(result.user?.creditsTotal,99,"Refresh must read principal after acquiring the owner lock");
+          const wallet=(await f.pool.query("SELECT credits_total,(SELECT sum(remaining) FROM app_credit_batches WHERE email=$1 AND expires_at>now()) AS principal FROM app_users WHERE email=$1",[email])).rows[0];
+          assert.equal(Number(wallet.credits_total),99);assert.equal(Number(wallet.principal),99);
+        }finally{if(!committed)await holder.query("ROLLBACK");holder.release();}
+      } else if(test==="recovery") {
         const mixedEmail=await f.user(100),mixedId=randomUUID(),mixedOp={id:mixedId,email:mixedEmail,quote:quote({version:1,config:fixtureConfig()},facts({feature:"tool.cutout"})),reason:"Mixed wallet",ledgerId:`mixed-${mixedId}`,fingerprint:mixedId};
         assert.equal(await db.reserveCredits(mixedEmail,10),true);await (await import("../src/lib/billing/service")).withBillingTransaction(f.pool,tx=>f.service.reserveTx(tx,mixedOp));
         await Promise.all([db.addLedgerEntry(mixedEmail,-10,"Legacy mixed settlement"),(await import("../src/lib/billing/service")).withBillingTransaction(f.pool,tx=>f.service.settleTx(tx,mixedOp,{state:"succeeded",items:[{id:"mixed",state:"succeeded",executedQuality:"medium"}]}))]);

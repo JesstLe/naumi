@@ -108,23 +108,69 @@
       "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/application-protocols-summary.json",
       "verifier": "scripts/verify-video-fusion-application-summary.mjs",
       "kind": "actual-app-worker-with-simulated-suppliers"
+    },
+    "completion": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/completion-1ba5c2d7-f2d6-4a5b-a186-08b7e0a878be/result.json",
+      "verifier": "scripts/verify-video-fusion-completion.ts",
+      "kind": "actual-app-worker-browser-with-simulated-suppliers"
+    },
+    "referenceBoundaries": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/completion-1c2d57d5-c868-40fe-90c5-16103af80015/result.json",
+      "verifier": "scripts/verify-video-fusion-reference-boundaries.ts",
+      "kind": "actual-app-worker-with-simulated-supplier-native-wire"
     }
   },
   "capabilities": [
     {
       "id": "V01",
       "name": "空白文生、图生及生成节点",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/canvas/video-node-service.ts"
       ],
       "evidenceKeys": [
-        "canvas"
+        "canvas",
+        "completion"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "实际空白画布入口创建文生节点并生成完成；不以手工API创建节点替代",
+          "evidenceKey": "completion",
+          "assertions": [
+            {
+              "path": "browser.actualAppAndChrome",
+              "value": true
+            },
+            {
+              "path": "browser.blankCanvasCreatedViaUi",
+              "value": true
+            },
+            {
+              "path": "browser.textGenerationCompleted",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "原图更多处理入口创建单图节点，实际生成完成，原角色/提示词和刷新保留",
+          "evidenceKey": "completion",
+          "assertions": [
+            {
+              "path": "browser.singleImageCreatedViaUi",
+              "value": true
+            },
+            {
+              "path": "browser.imageGenerationCompleted",
+              "value": true
+            },
+            {
+              "path": "browser.refreshPreservesNodeAndPrompt",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
@@ -153,13 +199,14 @@
       ],
       "evidenceKeys": [
         "canvas",
-        "newwire"
+        "newwire",
+        "completion",
+        "referenceBoundaries"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
       "remaining": [
-        "审查30图/10视频/10音频声明对应实际API用例与拒绝上限，不能只凭三类引用样本",
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+        "30/10/10及原生50条全部身份顺序已补证；仍需核对每类字节/单段时长/总时长的真实来源及API限制证据",
+        "对照当前源码审查其余条件和固定上游对照"
       ]
     },
     {
@@ -182,18 +229,62 @@
     {
       "id": "V05",
       "name": "模型渠道、能力变化及失败恢复",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
-        "src/lib/video/client-settings.ts"
+        "src/lib/video/client-settings.ts",
+        "src/components/canvas/video/use-video-catalog.ts"
       ],
       "evidenceKeys": [
-        "canvas"
+        "canvas",
+        "completion"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "目录加载失败后重试的实际GUI证据",
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "目录传输失败真实可见，独立重试读取实际App，加载状态和全文草稿保留",
+          "evidenceKey": "completion",
+          "assertions": [
+            {
+              "path": "browser.failedCatalogTransportVisible",
+              "value": true
+            },
+            {
+              "path": "browser.catalogRetryActualApp",
+              "value": true
+            },
+            {
+              "path": "browser.catalogLoadingVisible",
+              "value": true
+            },
+            {
+              "path": "browser.retryPreservesFullDraft",
+              "value": true
+            },
+            {
+              "path": "browser.retryDoesNotReloadImageCatalog",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "公开模型/渠道切换实际归一不支持的高级配置，保留完整提示词和已声明朝向",
+          "evidenceKey": "canvas",
+          "assertions": [
+            {
+              "path": "modelSwitchReconcilesUnsupportedSettings",
+              "value": true
+            },
+            {
+              "path": "declaredMotionOrientation",
+              "value": true
+            },
+            {
+              "path": "actualReloadRestoresNode",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
@@ -677,7 +768,7 @@
       ],
       "remaining": [
         "最终候选上验证旧任务/私有媒体/配置兼容及账户积分保护",
-        "CI计费回归当前失败需要取得可复现证据"
+        "CI积分镜像竞态已定位并修复，本机完整计费检查通过；新CI及管理浏览器仍待实测"
       ]
     },
     {
@@ -691,12 +782,13 @@
         "image",
         "interactions",
         "agentBrowser",
-        "script"
+        "script",
+        "completion"
       ],
       "remaining": [
-        "计划要求1366×768、1600×1000、390×844的完整保护范围",
+        "本模块三种指定尺寸的设置界面已通过；稳定生图/Agent/画布整体同尺寸保护回归仍待完成",
         "实体macOS/Safari未测明确记录",
-        "当前主线集成后的最终保护检查"
+        "当前主线整合后的最终保护检查"
       ]
     }
   ],
