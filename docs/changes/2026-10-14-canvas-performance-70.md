@@ -176,3 +176,17 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 普通整合后HEAD e411aa8/main5fd8196，任务分支已push；真实HTTP/SSE/视频poll对象复用/堆叠guard/30计费入口/完整TypeScript/git diff集中exit0。当前main-relative四件套24字段独立source+行为回滚通过，保留同事wallet锁及视频新main，24同hash授权引用BASE24字节下载→MOD1→ROLLBACK24，modifiedZIP保持修改。实际103本轮只读版本仍b243，未持部署锁/未公网切流。全范围目标仍active；剩余首次旧Worker交接、新版三槽+core整体固定候选、真实旧页面/在途任务连续性、直连R2与原生平移70%、切流及真实回滚。
 
 模块18边界修正：复核Worker定时器发现NaN/Infinity/超过2147483647会被Node折算为极短interval；新增启动前有限值/上限检查，3种无效配置实际Linux子进程exit1且不领取。既有最小5秒有效配置保持。legacy辅助对HEAD不解析空body，真实HEAD单次转发通过；route仍以各自支持的方法为准，不新增业务操作。集中Agent HTTP/SSE、TSC、Linux drain再验通过；需要重新固定构建该边界修正后源码，e411仍为之前普通浏览器验收版本，不称最终新版。
+
+## 模块19：旧Worker首次排空验收机制（隔离验收通过，尚未生产执行）
+
+上轮模块18是实质进展（真实HTTP/SSE、Linux新Worker排空、普通构建和独立源码回滚），不是仅等待；随后用户询问是否上线，103实际只读核对仍b243，未公开切流。本轮开工再次fetch/普通合并origin/main7d0746a，接入同事新增BYOC/图像保护测试与文档，产品源码未变，不整合未完成任务分支或修改共享checkout。
+
+审查发现新Worker的tick结束不等于App里的后台生图任务结束：DurableImageJobs.kick异步启动并每25秒续租，tick可能已返回而任务仍执行。新增仅Workersecret鉴权GET /api/video/worker/drain-status，在同一只读repeatable-read事务计数5类未释放fence（普通生图、画布编辑、视频poll、供应商成本、imagegen批次），另计所有当前业务库活动事务和advisory锁，以覆盖媒体镜像/媒体job/workflow；不清租约、不调用模型、不暴露ID/邮箱/内容。过期fence仍阻止drain，不把timestamp过期当旧执行者已停止。不存在的扩展表注明absentTables；计数/DB异常503，不伪造空闲。
+
+新增drain-legacy-worker.py引导首次旧版交接：必须目标Naumi/Hub真实flock仍持有，核对两枚精确CID和同Image、旧HTTPWorker Cmd和原App内Worker0；只docker pause旧Worker（不pause/stop旧App），从/proc其PID自己的socket inode观察TCP，并通过旁路候选读取共享DBfence。旧App继续完成已经领取的请求和异步作业；TCP和DB共同排空才留下可恢复的paused Worker给后续新Worker交接。超时、错误shape、配置/lock/基线变化都恢复该脚本自己暂停的原PID，模糊Docker暂停返回也先inspect后恢复，不盲重试或kill。该工具不切网关、不启新Worker、不停旧App、不回灌DB。
+
+真实LinuxDocker隔离测试使用git c05旧Worker字节SHA f59106f0e527c2c5beee1b396fa80a84204cdd532d7fe7e3deda19940bb89a64（没有注入drain实现），Node App假tick响应、内部网络、辅助容器独立目录双flock；先完成第一tick确保旧脚本真实interval已安装，再暂停跨5秒interval证明不新领取，旧App仍成功返回在途tick且aborted0，异步fence未释放继续等待，释放后排空成功。deadline/不完整counter失败恢复、同PID unpause恢复tick通过。首次fixture启动拒绝连接是服务尚未ready，wait已改为原同进程短期限读取，不重建进程；测试容器和内部network均清除，原fixture数据库/普通App不改、真实供应商0。
+
+真实本机PostgreSQL独立schema覆盖secret401、空/缺表、5种过期仍held fence、活跃事务、advisory锁、只读不清lease原值，通过后仅删除自己的schema。综合Agent/SSE/cache/type/diff集中回归通过。103本轮只读inspect原App18c31dc/Worker34dc082、同Imagecd344d91、均running非paused，AppNAUMI_VIDEO_WORKER0符合引导前置条件；没有在生产执行pause/交接。生产真实任务/Agent/SSE旧新版连续性和公网切流/实际回滚仍待验证，隔离测试不冒充供应商在途验收。
+
+功能累计2/3，生产发布0；全范围目标active，冷79.70%/原生平移32.44%仍为历史同代理对照，未称最新main/直连R2/公开70%。下一步固定最新候选完整构建、持新双锁/新基线/backup与旁路API验收；不得重新使用obsolete13eb或旧退出锁记录。
