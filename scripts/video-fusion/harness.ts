@@ -32,7 +32,7 @@ function privateChild(args:string[],env:NodeJS.ProcessEnv):Promise<string>{retur
 });}
 
 /** Uses real Naumi HTTP and Worker processes; only upstream services are simulated. */
-export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;routerBinary?:string;videoProfile?:VideoWireProfile;videoDefinition?:VideoModelDefinition;extraVideoModels?:Array<{id:string;definition:VideoModelDefinition}>;fullWorkflow?:boolean;uiModels?:boolean;referenceModels?:boolean;validateWire?:(call:unknown)=>void|Promise<void>;agentReply?:(request:any)=>any|Promise<any>}={}) {
+export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;routerBinary?:string;videoProfile?:VideoWireProfile;videoDefinition?:VideoModelDefinition;extraVideoModels?:Array<{id:string;definition:VideoModelDefinition}>;fullWorkflow?:boolean;uiModels?:boolean;referenceModels?:boolean;validateWire?:(call:unknown)=>void|Promise<void>;validatePoll?:(call:unknown)=>void|Promise<void>;agentReply?:(request:any)=>any|Promise<any>}={}) {
   if(options.fullWorkflow&&options.videoProfile!=="autodl")throw new Error("Full workflow fixture requires the AutoDL profile");
   let databaseUrl=options.databaseUrl||process.env.VIDEO_FIXTURE_DATABASE_URL||process.env.DATABASE_URL||"";
   const routerBinary=options.routerBinary||process.env.VIDEO_FIXTURE_ROUTER_BINARY;
@@ -62,7 +62,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
   const accessKeyId=`fixture-${randomUUID()}`,secretAccessKey=randomUUID()+randomUUID(),bucket=`fixture-${namespace}`;
   const objectCorsOrigins:string[]=[];
   const objects=createFixtureObjects({root:path.join(output,"objects"),accessKeyId,secretAccessKey,bucket,calls:objectCalls,allowedOrigins:objectCorsOrigins});
-  const supplier=await createVideoSupplier({assetsRoot,manifest,objectHandler:objects,validateWire:options.validateWire,agentReply:options.agentReply});
+  const supplier=await createVideoSupplier({assetsRoot,manifest,objectHandler:objects,validateWire:options.validateWire,validatePoll:options.validatePoll,agentReply:options.agentReply});
   const appPort=await freePort(),baseUrl=`http://127.0.0.1:${appPort}`,workerSecret=randomUUID()+randomUUID();
   objectCorsOrigins.push(baseUrl);
   const mediaPort=await freePort(),mediaSecret=randomUUID()+randomUUID(),mediaOrigin=`http://127.0.0.1:${mediaPort}`;
@@ -136,6 +136,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
         return async()=>{await rmdir(file);};
       },
       async forceVideoPollDue(id:string){await sql.query("UPDATE app_video_tasks SET next_poll_at=now() WHERE email=$1 AND id=$2 AND status IN ('queued','processing')",[seed.accounts.a,id]);},
+      async expireOwnedVideoPollLease(id:string){if(!/^vid-[0-9a-f-]{36}$/.test(id))throw new Error("Owned fixture task required");const result=await sql.query("UPDATE app_video_tasks SET poll_lock_until=now()-interval '1 second' WHERE email=$1 AND id=$2 AND status IN ('queued','processing') AND poll_lock_until>now() RETURNING id",[seed.accounts.a,id]);if(result.rowCount!==1)throw new Error("Active owned fixture poll lease required");},
       supplierCalls:()=>[...supplier.calls,...objectCalls],setScenario:(name:string)=>supplier.setScenario(name),
       async request<T=unknown>(account:Account,method:string,url:string,body?:unknown){
         if(!url.startsWith("/")||url.startsWith("//"))throw new Error("Fixture requests must stay in the fixture app");

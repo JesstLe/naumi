@@ -168,6 +168,16 @@
       "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/player-46927c5e-7a8d-4679-ae2e-2e4386dadb3b/result.json",
       "verifier": "scripts/verify-video-fusion-player.ts",
       "kind": "actual-app-chrome-db-router-and-workers"
+    },
+    "agentFoundation": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/agent-tools-94820096-5acb-4937-855a-9417289ebfb8/result.json",
+      "verifier": "scripts/verify-video-fusion-agent.ts",
+      "kind": "actual-app-agent-tools-db-and-media-worker"
+    },
+    "cancellation": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/cancellation-df69fed2-5818-4b23-8b3e-02cba0ae141f/result.json",
+      "verifier": "scripts/verify-video-fusion-cancellation.ts",
+      "kind": "actual-app-agent-tools-db-router-and-worker-races"
     }
   },
   "capabilities": [
@@ -925,35 +935,223 @@
     {
       "id": "V14",
       "name": "视频风格局部替换剧情编辑",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
-        "src/lib/agent/canvas-video-tools.ts"
+        "src/lib/agent/canvas-video-tools.ts",
+        "src/lib/video/node-submission.ts"
       ],
       "evidenceKeys": [
         "production"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "真实Agent编辑工具通过实际App/Router/Worker执行风格/局部/人物替换/剧情四种视频编辑，保留完整提示词和正式来源，原生请求具有视频输入并完成",
+          "evidenceKey": "production",
+          "assertions": [
+            {
+              "path": "cases.0.id",
+              "value": "restyle"
+            },
+            {
+              "path": "cases.0.fullPrompt",
+              "value": true
+            },
+            {
+              "path": "cases.0.actualNativeArkVideoReference",
+              "value": true
+            },
+            {
+              "path": "cases.0.completed",
+              "value": true
+            },
+            {
+              "path": "cases.1.id",
+              "value": "partial"
+            },
+            {
+              "path": "cases.1.fullPrompt",
+              "value": true
+            },
+            {
+              "path": "cases.1.actualNativeArkVideoReference",
+              "value": true
+            },
+            {
+              "path": "cases.1.completed",
+              "value": true
+            },
+            {
+              "path": "cases.2.id",
+              "value": "replace"
+            },
+            {
+              "path": "cases.2.fullPrompt",
+              "value": true
+            },
+            {
+              "path": "cases.2.actualNativeArkVideoReference",
+              "value": true
+            },
+            {
+              "path": "cases.2.completed",
+              "value": true
+            },
+            {
+              "path": "cases.3.id",
+              "value": "replot"
+            },
+            {
+              "path": "cases.3.fullPrompt",
+              "value": true
+            },
+            {
+              "path": "cases.3.actualNativeArkVideoReference",
+              "value": true
+            },
+            {
+              "path": "cases.3.completed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "有明确视频参考能力才允许reference编辑，专用video_edit保留；正式视频/身份图片/源音频/全文按本人来源绑定，App重启重放与原SHA保持",
+          "evidenceKey": "production",
+          "assertions": [
+            {
+              "path": "referenceOnlyModelHasNoDedicatedEditOrExtend",
+              "value": true
+            },
+            {
+              "path": "dedicatedModesPreserved",
+              "value": true
+            },
+            {
+              "path": "completeDialogueAndOrderedOwnedSources",
+              "value": true
+            },
+            {
+              "path": "actualAppRestartReplay",
+              "value": true
+            },
+            {
+              "path": "workbenchReferenceEditingAndNoCanvasMount",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "不合法模式/仅图片/缺source_video/显式0或未知能力/跨账号/未完成来源均拒绝且没有任务、供应商创建或收费",
+          "evidenceKey": "production",
+          "assertions": [
+            {
+              "path": "rejectedWithNoTasksOrCreatesOrCharges",
+              "value": [
+                "text-mode-not-edit",
+                "image-only-reference-not-video-edit",
+                "video-without-source-role-not-edit",
+                "explicit-zero-video-cap",
+                "unknown-video-cap",
+                "cross-account-source-node",
+                "pending-video-cannot-submit"
+              ]
+            },
+            {
+              "path": "originalVideoSha256",
+              "value": "77f0fd394ba0aa1d5efad1dda63f932f5f314561847bd2f5482cff2aae85a40c"
+            }
+          ]
+        }
       ]
     },
     {
       "id": "V15",
       "name": "Agent任务查询设置启动状态停止",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
-        "src/lib/agent/canvas-video-tools.ts"
+        "src/lib/agent/canvas-video-tools.ts",
+        "src/lib/agent/harness.ts",
+        "src/lib/video/cancellation.ts"
       ],
       "evidenceKeys": [
         "sse",
-        "agentBrowser"
+        "agentBrowser",
+        "agentFoundation",
+        "cancellation"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "停止工具及真实已停止/请求停止状态区别的Agent路径审查",
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "实际Agent工具查询配置/本人完整文字、全文设置与revision幂等/旧revision拒绝、按保存节点启动、task状态/完整结果、App重启恢复原节点、同tool_call一次任务",
+          "evidenceKey": "agentFoundation",
+          "assertions": [
+            {
+              "path": "fullEditablePrompt",
+              "value": true
+            },
+            {
+              "path": "ownedFullScriptNotTruncated",
+              "value": true
+            },
+            {
+              "path": "settingsReplayAndRevision",
+              "value": true
+            },
+            {
+              "path": "oneTaskForSameToolCall",
+              "value": true
+            },
+            {
+              "path": "actualTaskCompletionAndAppRestart",
+              "value": true
+            },
+            {
+              "path": "ownerIsolation",
+              "value": true
+            },
+            {
+              "path": "internalPathConfinement",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际停止工具区分请求processing和上游cancelled；支持时一次退款、不支持时完成并一次扣费，终态产物保持；当前项目与跨账号保护",
+          "evidenceKey": "cancellation",
+          "assertions": [
+            {
+              "path": "actualSavedNodeGenerationAndToolReplay",
+              "value": true
+            },
+            {
+              "path": "stopRequestIsProcessingUntilSupplierTerminal",
+              "value": true
+            },
+            {
+              "path": "supportedCancellationRefundsOnce",
+              "value": true
+            },
+            {
+              "path": "unsupportedCancellationCompletesAndChargesOnce",
+              "value": true
+            },
+            {
+              "path": "completedOutputsSurviveFurtherStop",
+              "value": true
+            },
+            {
+              "path": "ownerAndCurrentProjectIsolation",
+              "value": true
+            },
+            {
+              "path": "restartPreservesOriginalTaskOutputsAndFees",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
@@ -997,18 +1195,88 @@
     {
       "id": "V18",
       "name": "停止与租约费用竞态",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
-        "src/lib/video/service.ts"
+        "src/lib/video/cancellation.ts",
+        "src/lib/video/service.ts",
+        "src/lib/db.ts"
       ],
       "evidenceKeys": [
-        "sse"
+        "sse",
+        "cancellation"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "所有租约/取消竞态、保留已产物、扣退费证据对应具体测试",
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "实际队列prepared任务立即取消，无供应商提交并释放预扣；已提交停止请求不预先退款，由真实原生终态决定支持取消或继续完成的一次费用",
+          "evidenceKey": "cancellation",
+          "assertions": [
+            {
+              "path": "queuedCancellationNeverSubmitsAndRefunds",
+              "value": true
+            },
+            {
+              "path": "stopRequestIsProcessingUntilSupplierTerminal",
+              "value": true
+            },
+            {
+              "path": "supportedCancellationRefundsOnce",
+              "value": true
+            },
+            {
+              "path": "unsupportedCancellationCompletesAndChargesOnce",
+              "value": true
+            },
+            {
+              "path": "actualFinalBalanceMatchesThreeCompletedTasks",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际原生poll持有SQL租约时并发Worker/懒轮询不重入；只在隔离DB让该租约过期，恢复poll先完成，旧poll迟到不重复产物/流水/费用，已有产物和重启状态保持",
+          "evidenceKey": "cancellation",
+          "assertions": [
+            {
+              "path": "activeLeasePreventsConcurrentPoll",
+              "value": true
+            },
+            {
+              "path": "expiredLeaseRecoversDuringHeldNativePoll",
+              "value": true
+            },
+            {
+              "path": "latePollCannotDuplicateOutputsOrSettlement",
+              "value": true
+            },
+            {
+              "path": "completedOutputsSurviveFurtherStop",
+              "value": true
+            },
+            {
+              "path": "restartPreservesOriginalTaskOutputsAndFees",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "明确保留请求停止与真实终态区别，原生停止不支持并非取消成功",
+          "evidenceKey": "cancellation",
+          "assertions": [
+            {
+              "path": "statuses",
+              "value": {
+                "queued": "cancelled",
+                "requested": "processing",
+                "supported": "cancelled",
+                "unsupported": "completed",
+                "recovered": "completed",
+                "late": "completed"
+              }
+            }
+          ]
+        }
       ]
     },
     {
