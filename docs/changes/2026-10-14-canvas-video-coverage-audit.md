@@ -1,5 +1,9 @@
 # 完整能力矩阵核对与协议应用链补证
 
+最新矩阵23/34逐条件审核完成，注册32份证据。本批补齐V19/V20/V21/V23/V24，实际派生素材/原生下游、真实播放器和Range、工作台完整边界见[派生媒体记录](2026-10-14-canvas-video-derived-media.md)。完整交付门槛仍未闭合，68%表示能力条件复核比例。
+
+最新矩阵18/34逐条件审核完成，注册29份证据。本批新增V06—V11，具体原生请求、真实界面和保留失败批次的汇总边界见[高级设置记录](2026-10-14-canvas-video-advanced-settings.md)。完整交付门槛仍未闭合，53%表示能力条件复核比例。
+
 ## 本模块最终结果：51组合、41原生profile
 
 真实App/PG/Router/Worker/私有媒体链已覆盖全部51组合。verify-video-fusion-application-summary.mjs核对批准案例的完整ID/模式/profile集合、每项实际wire/完成/哈希/两账号权限/幂等结算证据、供应商创建记录与原始结果文件SHA，汇总到checkpoint-d/application-protocols-summary.json。运行命令：

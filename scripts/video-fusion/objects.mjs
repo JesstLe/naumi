@@ -52,9 +52,10 @@ export function createFixtureObjects({ root, accessKeyId, secretAccessKey, bucke
     if(req.method!=="GET"&&req.method!=="HEAD")return json(405,"fixture method unsupported");
     const info=await stat(target).catch(()=>null);if(!info?.isFile())return json(404,"fixture object missing");
     const mime=await readFile(target+".fixture-mime","utf8").catch(()=>"application/octet-stream");
-    const range=String(req.headers.range||"").match(/^bytes=(\d+)-(\d*)$/);
-    const start=range?Number(range[1]):0,end=range&&range[2]?Number(range[2]):info.size-1;
-    if(start>end||end>=info.size){res.writeHead(416,{"content-range":`bytes */${info.size}`});return res.end();}
+    const rangeHeader=String(req.headers.range||""),range=rangeHeader.match(/^bytes=(\d*)-(\d*)$/);
+    if(rangeHeader&&(!range||(!range[1]&&!range[2]))){res.writeHead(416,{"content-range":`bytes */${info.size}`});return res.end();}
+    const suffix=range&&!range[1],start=range?(suffix?Math.max(0,info.size-Number(range[2])):Number(range[1])):0,end=range&&!suffix&&range[2]?Math.min(Number(range[2]),info.size-1):info.size-1;
+    if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||start>end||start>=info.size||(suffix&&Number(range[2])<=0)){res.writeHead(416,{"content-range":`bytes */${info.size}`});return res.end();}
     const disposition=url.searchParams.get("response-content-disposition");
     if(disposition&&!/^attachment; filename="[\w.\-]{1,160}"$/.test(disposition))return json(400,"invalid fixture response disposition");
     res.writeHead(range?206:200,{"content-type":mime,"content-length":end-start+1,"accept-ranges":"bytes",...(disposition?{"content-disposition":disposition}:{}),...(range?{"content-range":`bytes ${start}-${end}/${info.size}`}:{})});

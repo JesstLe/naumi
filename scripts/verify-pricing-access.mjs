@@ -28,7 +28,8 @@ try {
         const res = await fetch(`${base}${route}`, { headers: { cookie, ...(rsc ? { RSC: "1" } : {}) } });
         const body = await res.text();
         // App Router can send its not-found boundary in a 200 streamed RSC response.
-        assert.ok(res.status === 404 || (rsc && res.status === 200 && body.includes("NEXT_NOT_FOUND")), `${route} rejects invalid sessions (RSC=${rsc}, status=${res.status})`);
+        const streamedNotFound = body.includes("NEXT_NOT_FOUND") || /NEXT_HTTP_ERROR_FALLBACK;404(?!\d)/.test(body);
+        assert.ok(res.status === 404 || (rsc && res.status === 200 && streamedNotFound), `${route} rejects invalid sessions (RSC=${rsc}, status=${res.status})`);
         for (const marker of sensitive) assert.ok(!body.includes(marker), "Denied responses contain no research quote");
       }
     }
