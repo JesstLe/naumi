@@ -237,3 +237,9 @@ verify-direct-generation改用TS AST验证window.confirm只能处于显式api-co
 模型保护回归后续：本机严格隔离库逐项执行CI同一组11个命令。coverage/config/publication/admin通过；execution最初因旧Agent fixture未传cookie被现有功能权限401拒绝，补原生cookie并增加无cookie的实际prompt拒绝/0供应商调用断言。旧视频fixture由图片能力复制而来，缺少新正式模式/组合定义；现在明确text、4秒/1280x720、无参考媒体且images与旧maxReferenceImages一致为0，原始凭据轮换、持久重放、Agent流、画布文字改图、报价与不确定提交拒重试全部通过。该用例轮询仍processing，不能作为视频结果播放验收。
 
 tools真实全局生图质量、Node→Go Router合同、500×2并发性能全部通过；review原本仅用旧错误文案判断0图限制，现明确reference模式和0媒体能力，严格断言REFERENCE_LIMIT_EXCEEDED/422/references，仍要求0任务/0供应商调用，并保留真实needs_attention回滚SQL和未确定配置发布保护。review/Flow真实SDK/Node与Go共享并发最后三项全部PASS。只修测试fixture与断言，没有削弱Agent鉴权或视频能力校验。对应忽略日志model-regression-app.log、model-execution-only-app.log、model-remaining-app.log和model-review-remaining-app.log保留各初次失败与后续成功；新的远端CI尚待提交后确认。
+
+26520ca已普通快进main及本任务分支。后续生图保护复用现有imagegen-ui-fixture，指向当前工作树启动真实隔离Next/API/DB/Chrome，控制平面及图像供应商是loopback模拟。桌面1440与390px、真实透明像素、双击/刷新同任务、原账号目标画布、实际鼠标涂抹SDK蒙版、普通节点生成、仅本地WebP/256px输出0调用、JSONL两条批次及已鉴权ZIP全部PASS，session56300 exit0，供应商fixture调用8次/外部付费0；证据output/imagegen-capabilities-20261013/ui及stable-image-browser-app.log。该脚本为普通节点测试主动模拟一次服务器已接单后的丢失响应，仍走实际接受任务，不把这一项说成无网络故障注入。
+
+锁定交互测试补强：原fixture不合法的text模式加图片改成合法single_image/first_frame，真实界面先断言解锁时生成可用，再执行锁定并断言保存/生成禁用，同时保留拖动不变、两窗口409保留草稿、跨项目复制/撤销重做、尺寸持久化与账号隔离；没有生成任务或模型调用。最终canvas-interactions-f66e292f PASS，session62441 exit0。实际混合布局及完整C/D仍待完成。
+
+远端CI26520ca的38497433803已确认终态失败，仍在billing-all步骤，日志下载是TLS连接EOF而非证书不可信；未关闭证书验证。创建本任务带owner marker的全新loopback数据库并从零执行完整18组billing-all，再次全部PASS，session88019 exit0，两组500性能样本errorCount0，排除只靠旧库预置通过。远端失败具体原因尚未取得，不宣称已修复；仅对这一已确认失败的job请求一次诊断性重跑，PAT权限拒绝，session65420 exit1，未实际启动重跑，也不删除首次失败记录。26520ca完整Docker构建38497433819 success。完整固定App运行/回滚/103发布门槛仍未通过。
