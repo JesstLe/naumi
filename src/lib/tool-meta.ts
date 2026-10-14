@@ -92,9 +92,9 @@ export const TOOLS: ToolMeta[] = [
     action: "生成套图", cost: 78, ctrls: [], workspace: true, live: true, inMenu: true,
   },
   {
-    key: "批量出图", en: "Batch studio", slug: "batchshot", href: "/batchshot", category: "生成创作",
+    key: "参考工作台", en: "Reference workbench", slug: "batchshot", href: "/batchshot", category: "生成创作",
     Icon: Box, desc: "批量上传产品图+风格参考图,按主图、详情图、SKU 一次出整套任务",
-    action: "开始批量出图", cost: 0, ctrls: [], workspace: true, live: true, inMenu: true,
+    action: "打开参考工作台", cost: 0, ctrls: [], workspace: true, live: true, inMenu: true,
   },
   {
     key: "Agent 任务", en: "Agent tasks", slug: "agent", href: "/agent", category: "生成创作",
@@ -256,7 +256,9 @@ export function toolBySlug(slug: string): ToolMeta | undefined {
 }
 
 export function toolByKey(key: string): ToolMeta | undefined {
-  return TOOLS.find((t) => t.key === key);
+  // Keep older label-based callers working; routes and permission IDs stay stable.
+  const canonicalKey = key === "批量出图" ? "参考工作台" : key;
+  return TOOLS.find((t) => t.key === canonicalKey);
 }
 
 export function toolsByCategory(cat: ToolCategory): ToolMeta[] {
