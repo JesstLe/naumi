@@ -42,7 +42,7 @@ async function main() {
     f.config.bindings["vision.review"] = "review-a";
     const videoKey = await f.credentials.importPlain({ providerId: "video", plain: "fixture-review-video", actor: "fixture" });
     f.config.providers.push({ ...f.config.providers[0], id: "video", protocol: "openai-videos", credentialRef: videoKey.id });
-    f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels[0]), id: "video-upstream", providerId: "video", model: "fixture-no-reference-video", modality: "video", parameterMap: {}, capabilities: { ...structuredClone(f.config.upstreamModels[0].capabilities), maxReferenceImages: 0 } });
+    f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels[0]), id: "video-upstream", providerId: "video", model: "fixture-no-reference-video", modality: "video", parameterMap: {}, capabilities: { ...structuredClone(f.config.upstreamModels[0].capabilities), maxReferenceImages: 0, video: { modes: ["text", "reference"], durationResolutionMap: [{ durations: [4], resolutions: ["1280x720"] }], limits: { images: 0, videos: 0, audios: 0 } } } });
     f.config.publicModels.push({ id: "video-no-reference", label: "No reference", modality: "video", enabled: true, visible: true, target: { type: "upstream", id: "video-upstream" } });
     f.config.bindings["video.generate"] = "video-no-reference";
     await f.repo.current();
@@ -74,7 +74,7 @@ async function main() {
     assert.equal(catalog.models[0].maxReferenceImages, 0, "Public video catalog honors configured reference restriction");
     const { createVideoGeneration } = await import("../src/lib/video/service");
     const beforeVideo = models.length;
-    await assert.rejects(withModelRequest(new Request("http://fixture.test/api/video/generate", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ modelId: "video-no-reference" }) }), () => createVideoGeneration(email, { source: "workbench", modelId: "video-no-reference", prompt: "fixture", durationSeconds: 4, seconds: "4", size: "1280x720", references: [{ id: "fixture-ref", kind: "image", role: "first_frame", url: "https://supplier.invalid/fixture.png" }] })), /最多 0 张参考图/);
+    await assert.rejects(withModelRequest(new Request("http://fixture.test/api/video/generate", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ modelId: "video-no-reference" }) }), () => createVideoGeneration(email, { source: "workbench", modelId: "video-no-reference", mode: "reference", prompt: "fixture", durationSeconds: 4, seconds: "4", size: "1280x720", references: [{ id: "fixture-ref", kind: "image", role: "first_frame", url: "https://supplier.invalid/fixture.png" }] })), (error: any) => error.code === "REFERENCE_LIMIT_EXCEEDED" && error.status === 422 && error.fields.includes("references"));
     assert.equal(models.length, beforeVideo, "Rejected reference cannot reserve/submit a video");
     assert.equal(Number((await f.sql.query("SELECT count(*) FROM app_video_tasks")).rows[0].count), 0);
     console.log("PASS configured video catalog and actual pre-submission reference limit, zero task/supplier creation");

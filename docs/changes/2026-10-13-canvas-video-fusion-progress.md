@@ -1,5 +1,7 @@
 # 画布视频完整融合进度
 
+最新BYOC/媒体GUI集中证据：真实Chrome选择工作流及三类引用/映射、完整多行文字/种子0/数值/声音false保存刷新恢复、模拟ComfyUI三类真实产物与0积分、原始彩条播放器、尾帧/音轨/分离/2秒裁剪、刷新同任务无重复创建均PASS，证据byoc-browser-6064d70f，详见界面记录。5fd8196完整Docker构建success，Image gateway模型执行阶段失败，本机同命令复现Agent fixture缺真实会话cookie的401，权限校验保持；正在补原生身份与未登录不调用供应商检查。2026-10-14 01:33:46 UTC只读103两锁无持有进程，本轮未正式部署。完整C/D/34项仍未完成。
+
 主线计费保护集中复核：b990eed完整Docker构建success，Image gateway在billing-all失败；按真实契约修正抠图透明素材/统一Agent Router/委托计费覆盖/SSE保护缓冲的旧fixture，并修复混合新旧扣费的用户/批次锁顺序死锁。最终18组完整billing-all PASS，500×2并发性能errorCount0，源记录见2026-10-14-canvas-video-billing-regression.md。新CI尚待核对，修复后固定镜像尚待生成，不能据修复前构建声称交付。目标仍active，完整C/D未完成。
 
 增量整合已执行：26889e2已普通快进推送origin/main及独立codex分支，包含保留3ab2418的1eba865整合。按用户授权减少后续分支跨度；工作流只构建/推镜像及fixture检查，未因此发布103或增加维护次数。完整目标与C/D待办保持，不将阶段Git整合写成全34项完成。
