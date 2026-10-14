@@ -1,9 +1,14 @@
 import "server-only";
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { getPool, ensureSchema } from "@/lib/db";
+import { getPool, ensureSchema,listArtworksByIds } from "@/lib/db";
+import {verifiedOwnedMedia} from "@/lib/video/media-inspection";
+import {storageKeyFromManagedUrl} from "@/lib/storage";
 import { nodeSettingsSchema } from "@/lib/canvas/node-settings";
 import { ensureCanvasSettingsSchema } from "@/lib/canvas-node-settings-store";
+import {videoNodeWriteSchema} from "@/lib/canvas/video-node-schema";
+import {ensureVideoNodeSchema,saveVideoNodeTx} from "@/lib/canvas/video-node-repository";
+import {authorizeNodeInputs} from "@/lib/canvas/video-node-service";
 
 const id = z.string().min(1).max(200);
 const coordinate = z.number().finite().min(-1e7).max(1e7);
@@ -15,12 +20,16 @@ const textFields = z.object({
 const textNode = textFields.extend({ id, prompt: z.string().max(4000), projectKey: id, canvasX: coordinate, canvasY: coordinate,
   status: z.enum(["idle", "generating", "completed", "failed"]), createdAt: z.string().datetime(),
 });
+export const videoHistoryFields=videoNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
 export const historyRequest = z.object({
   operationId: z.string().uuid(),
   operations: z.array(z.discriminatedUnion("type", [
     z.object({ type: z.literal("visibility"), id, visible: z.boolean() }),
     z.object({ type: z.literal("text-restore"), node: textNode }),
     z.object({ type: z.literal("text-delete"), id }),
+    z.object({ type: z.literal("video-visibility"), id, visible:z.boolean() }),
+    z.object({ type: z.literal("video-patch"), id, expectedRevision:z.number().int().nonnegative(), fields:videoHistoryFields }),
+    z.object({ type: z.literal("video-result"),id,expectedRevision:z.number().int().nonnegative(),artworkId:id.nullable(),expectedArtworkId:id.nullable().optional() }),
     z.object({ type: z.literal("position"), id, text: z.boolean(), x: coordinate, y: coordinate }),
     z.object({ type: z.literal("group"), id, value: id.nullable() }),
     z.object({ type: z.literal("parent"), id, parentId: id, add: z.boolean() }),
@@ -28,18 +37,31 @@ export const historyRequest = z.object({
     z.object({ type: z.literal("rename"), id, title: z.string().max(80) }),
     z.object({ type: z.literal("size"), id, x: coordinate, y: coordinate, width: z.number().min(80).max(4096), height: z.number().min(80).max(4096) }),
     z.object({ type: z.literal("mark"), id, marked: z.boolean() }),
-    z.object({ type: z.literal("node-settings"), id, text: z.boolean(), settings: nodeSettingsSchema }),
+    z.object({ type: z.literal("node-settings"), id, text: z.boolean(), video:z.boolean().optional(), settings: nodeSettingsSchema }),
     z.object({ type: z.literal("workflow-asset"), id, assetOperationId: z.string().uuid(), filled: z.boolean() }),
   ])).min(1).max(400),
 });
 
 /** A whole history step commits once, including mixed image/text operations. */
 export async function saveCanvasHistory(email: string, input: z.infer<typeof historyRequest>) {
+  email=email.toLowerCase();
   await ensureSchema();
+  const hasVideo=input.operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"||op.type==="video-result"||op.type==="node-settings"&&op.video);
+  if(hasVideo)await ensureVideoNodeSchema();
   if (input.operations.some(op => op.type === "node-settings")) await ensureCanvasSettingsSchema();
   if (input.operations.some(op => op.type === "workflow-asset")) await (await import("@/lib/canvas-workflow-import")).ensureWorkflowImportSchema();
-  const client = await getPool().connect();
   const fingerprint = createHash("sha256").update(JSON.stringify(input.operations)).digest("hex");
+  const verifiedResults=new Map<string,string>();
+  if(input.operations.some(op=>op.type==="video-result")){
+    // Replay first, even if a previously accepted input has since been removed. Media I/O never holds a transaction connection.
+    const previous=(await getPool().query("SELECT fingerprint FROM app_canvas_history_ops WHERE email=$1 AND id=$2",[email,input.operationId])).rows[0];
+    if(previous){if(previous.fingerprint!==fingerprint)throw new Error("操作编号已使用");return;}
+    for(const op of input.operations){if(op.type!=="video-result"||!op.artworkId||verifiedResults.has(op.artworkId))continue;
+      const art=(await listArtworksByIds(email,[op.artworkId]))[0],key=storageKeyFromManagedUrl(art?.videoUrl||"");if(!art||art.status!=="completed"||!key)throw new Error("视频素材不存在或无权访问");
+      const media=await verifiedOwnedMedia(email,key,art.id);if(!media.mimeType.startsWith("video/"))throw new Error("请选择真实视频素材");verifiedResults.set(art.id,art.videoUrl!);
+    }
+  }
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     // Serialize steps per owner, including concurrent retries of one request.
@@ -49,7 +71,23 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       if (previous.rows[0].fingerprint !== fingerprint) throw new Error("操作编号已使用");
       await client.query("COMMIT"); return;
     }
-    for (const op of input.operations) {
+    if(hasVideo)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
+    for (const [index,op] of input.operations.entries()) {
+      if(op.type==="video-result"){
+        const node=(await client.query("SELECT revision,display_result_id,deleted_at FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];if(!node||node.deleted_at)throw new Error("视频节点不存在或无权修改");if(Number(node.revision)!==op.expectedRevision||op.expectedArtworkId!==undefined&&(node.display_result_id||null)!==op.expectedArtworkId)throw new Error("视频节点已更新，请重新选择结果");
+        if(op.artworkId){const art=(await client.query("SELECT video_url,status,deleted_at FROM app_artworks WHERE email=$1 AND id=$2 FOR SHARE",[email,op.artworkId])).rows[0];if(!art||art.deleted_at||art.status!=="completed"||art.video_url!==verifiedResults.get(op.artworkId))throw new Error("视频素材已删除或改变");}
+        await client.query("UPDATE app_canvas_video_nodes SET display_result_id=$3,revision=revision+1,updated_at=now() WHERE email=$1 AND id=$2",[email,op.id,op.artworkId]);continue;
+      }
+      if(op.type==="video-patch"||op.type==="video-visibility"){
+        const row=(await client.query("SELECT revision,project_key FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
+        if(!row)throw new Error("视频节点不存在或无权修改");
+        const digest=createHash("sha256").update(`${input.operationId}:${index}:${op.id}`).digest().subarray(0,16);digest[6]=(digest[6]&15)|64;digest[8]=(digest[8]&63)|128;const hex=digest.toString("hex");
+        const operationId=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+        const write=videoNodeWriteSchema.parse({id:op.id,expectedRevision:op.type==="video-patch"?op.expectedRevision:Number(row.revision),operationId,...(op.type==="video-patch"?op.fields:{deleted:!op.visible})});
+        // Identity authorization applies to supplied changes. Visibility restores the owned durable record, never a client snapshot.
+        if(op.type==="video-patch")await authorizeNodeInputs(email,write);
+        await saveVideoNodeTx(client,email,write,String(row.project_key));continue;
+      }
       if (op.type === "text-restore") {
         const n = op.node;
         const result = await client.query(`INSERT INTO app_canvas_text_nodes(id,email,project_key,title,prompt,content,status,canvas_x,canvas_y,canvas_width,canvas_height,created_at,source_ids,target_ids,product_ids)
@@ -62,7 +100,8 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
         continue;
       }
       const text = op.type === "text-delete" || op.type === "text-patch" || ((op.type === "position" || op.type === "node-settings") && op.text);
-      const table = text ? "app_canvas_text_nodes" : "app_artworks";
+      const video=op.type==="node-settings"&&op.video===true;
+      const table = text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":"app_artworks";
       const owned = await client.query(`SELECT * FROM ${table} WHERE email=$1 AND id=$2 FOR UPDATE`, [email,op.id]);
       if (!owned.rows.length) throw new Error("节点不存在或无权修改，请刷新画布");
       const row = owned.rows[0];

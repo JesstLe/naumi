@@ -47,9 +47,9 @@ export async function publicImageBytes(url: URL, allowed: RegExp, limit: number,
 export function assertInternalAgentPath(path: string, method: string) {
   if (!path.startsWith("/api/") || /[\\\u0000-\u0020]/.test(path)) throw new HarnessError("TOOL_DENIED", 403);
   const url = new URL(path, "http://internal.invalid"), pathname = url.pathname;
-  const reads = /^\/api\/(?:templates|account|generate-image|aplus|suite|packaging3d|comfyui\/workflows|video\/catalog|video\/tasks\/[\w-]+|competitors)$/;
-  const writes = /^\/api\/(?:generate-image|canvas\/generate-image|retouch|recolor|replicate|suite|aplus|packaging3d|comfyui\/run|video\/generate|agent\/verify-image|cutout|avatar|upscale|inpaint|style|dewatermark|tryon|garment|garment3d|dewrinkle|extract|ipcheck|printfile|title-gen|competitors(?:\/[\w-]+\/action)?|artworks\/add)$/;
-  if (url.origin !== "http://internal.invalid" || !(method === "GET" ? reads : method === "POST" ? writes : null)?.test(pathname)) throw new HarnessError("TOOL_DENIED", 403);
+  const reads = /^\/api\/(?:templates|account|generate-image|aplus|suite|packaging3d|comfyui\/workflows|video\/(?:catalog|byoc\/catalog|assets|projects|texts|nodes|tasks(?:\/[\w.:%-]+)?|media-jobs(?:\/[\w.:%-]+)?|media-jobs\/quote|workflows(?:\/[\w.:%-]+)?)|canvas\/video-nodes(?:\/[\w.:%-]+)?|competitors)$/;
+  const writes = /^\/api\/(?:generate-image|canvas\/generate-image|retouch|recolor|replicate|suite|aplus|packaging3d|comfyui\/run|video\/(?:generate|tasks\/[\w.:%-]+\/(?:cancel|retry|send-to-canvas)|media-jobs|workflows(?:\/[\w.:%-]+)?)|canvas\/(?:video-workflows|video-nodes(?:\/[\w.:%-]+(?:\/generate)?)?)|agent\/verify-image|cutout|avatar|upscale|inpaint|style|dewatermark|tryon|garment|garment3d|dewrinkle|extract|ipcheck|printfile|title-gen|competitors(?:\/[\w-]+\/action)?|artworks\/add)$/;
+  if (url.origin !== "http://internal.invalid" || !(method === "GET" ? reads : method === "POST" ? writes : method==="PATCH"?/^\/api\/canvas\/video-nodes\/[\w.:%-]+$/:method==="DELETE"?/^\/api\/video\/media-jobs\/[\w.:%-]+$/:null)?.test(pathname)) throw new HarnessError("TOOL_DENIED", 403);
 }
 export async function readBoundedBytes(response: Response, limit: number): Promise<Buffer> {
   if (Number(response.headers.get("content-length")) > limit) { await response.body?.cancel(); throw new HarnessError("OUTPUT_BLOCKED"); }

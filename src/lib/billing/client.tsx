@@ -164,8 +164,8 @@ export function BillingProvider({ children }: {
 }
 export function useBilling() { const value = useContext(Context); if (!value)
     throw new Error("BillingProvider is missing"); return value; }
-export function useBillingEstimate(input: QuoteInput) {
-    const billing = useBilling(), { user } = useAuth(), email=user?.email, serializedInput=JSON.stringify(input),key = JSON.stringify([email,serializedInput]), [result, setResult] = useState<{
+export function useBillingEstimate(input: QuoteInput, enabled=true) {
+    const billing = useBilling(), { user } = useAuth(), email=user?.email, serializedInput=JSON.stringify(input),key = JSON.stringify([email,serializedInput,enabled]), [result, setResult] = useState<{
         key: string;
         quote: PublicQuote | null;
         error: string | null;
@@ -174,15 +174,15 @@ export function useBillingEstimate(input: QuoteInput) {
     useEffect(() => {
         let cancelled = false;
         setResult({ key, quote: null, error: null });
-        if (!email)
+        if (!email||!enabled)
             return;
         quoteRequest(JSON.parse(serializedInput)).then(q => { if (!cancelled)
             setResult({ key, quote: q, error: null }); }).catch(e => { if (!cancelled)
             setResult({ key, quote: null, error: e instanceof Error ? e.message : "报价暂不可用" }); });
         return () => { cancelled = true; };
-    }, [key, serializedInput, quoteRequest, email]);
+    }, [key, serializedInput, quoteRequest, email,enabled]);
     const current = result.key === key ? result.quote : null;
-    return { quote: current, cost: current?.credits ?? 0, loading: !!user && !current && !result.error, error: result.error, submit: (url: string, init: RequestInit) => billing.submit(url, init, current) };
+    return { quote: current, cost: current?.credits ?? 0, loading: enabled&&!!user && !current && !result.error, error: enabled?result.error:null, submit: (url: string, init: RequestInit) => billing.submit(url, init, current) };
 }
 export function BillingEstimate({ input }: {
     input: QuoteInput;

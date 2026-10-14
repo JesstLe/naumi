@@ -1,0 +1,153 @@
+"use client";
+import {useVideoI18n} from "./i18n";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { ArrowDown, ArrowUp, Download, Loader2, X } from "lucide-react";
+import { mediaJobRequestSchema, type MediaJobRequest, type PublicMediaJob, type MediaJobOutput } from "@/lib/video/media-job-schema";
+import type { MediaJobIntent } from "@/lib/video/media-client-intent";
+import { browserRandomUUID } from "@/lib/browser-crypto";
+import { MediaQuoteRequired } from "./use-media-jobs";
+import { VideoPlayer, mediaDownloadHref, type VideoPlayerAction } from "./player";
+import { VideoField, videoButtonClass, videoFieldClass } from "./form-controls";
+import { isTopVideoDialog } from "./dialog-stack";
+export type MediaInputChoice = {
+    id: string;
+    title: string;
+    kind: "image" | "video" | "audio" | "bundle";
+    url: string;
+    downloadName?: string;
+};
+type Props = {
+    initial: VideoPlayerAction;
+    sourceId: string;
+    projectKey?: string;
+    source?: MediaJobRequest["source"];
+    choices: MediaInputChoice[];
+    light: boolean;
+    readOnly?: boolean;
+    jobs: PublicMediaJob[];
+    historyError?: string;
+    canLoadMore: boolean;
+    onLoadMore: () => Promise<void>;
+    onQuote: (action: MediaJobRequest["action"]) => Promise<NonNullable<MediaJobRequest["billingConfirmation"]>>;
+    onSubmit: (intent: MediaJobIntent, confirmation?: MediaJobRequest["billingConfirmation"]) => Promise<PublicMediaJob>;
+    onCancel: (id: string) => Promise<void>;
+    onClose: () => void;
+};
+const actions: {
+    id: MediaJobRequest["action"];
+    label: string;
+}[] = [{ id: "frame", label: "抽帧" }, { id: "extract_audio", label: "抽取音轨" }, { id: "separate", label: "分离音画" }, { id: "trim", label: "裁剪" }, { id: "concat", label: "拼接" }, { id: "ffmpeg", label: "FFmpeg" }, { id: "ffprobe", label: "FFprobe" }];
+const labels: Record<PublicMediaJob["status"], string> = { queued: "排队中", processing: "处理中", completed: "已完成", failed: "失败", cancelled: "已停止" };
+function jsonField(raw: string, label: string) { try {
+    return JSON.parse(raw);
+}
+catch {
+    throw new Error(`${label}必须是有效 JSON`);
+} }
+function reusable(job: PublicMediaJob, output: MediaJobOutput): MediaInputChoice | null { if (output.probe && /\.(m3u8|mpd)$/i.test(output.name))
+    return { id: `media-job:${job.id}:bundle:${output.name}`, title: output.name, kind: "bundle", url: output.url, downloadName: output.name }; if (output.fragment)
+    return null; const kind = output.mimeType.startsWith("image/") ? "image" : output.mimeType.startsWith("audio/") ? "audio" : output.mimeType.startsWith("video/") ? "video" : null; return kind ? { id: output.artworkId, title: output.name, kind, url: output.url, downloadName: output.name } : null; }
+export function MediaActionsDialog({ initial, sourceId, projectKey, source = "canvas", choices, light, readOnly = false, jobs, historyError, canLoadMore, onLoadMore, onQuote, onSubmit, onCancel, onClose }: Props) {
+    const V = useVideoI18n();
+    const [action, setAction] = useState(initial.action), [inputIds, setInputIds] = useState([sourceId]), [timestamp, setTimestamp] = useState(String(initial.timestamp ?? 0)), [start, setStart] = useState("0"), [end, setEnd] = useState(""), [args, setArgs] = useState(initial.action === "ffprobe" ? '["-show_format","-show_streams","-print_format","json","asset:0"]' : '["-i","asset:0","-c:v","libx264","-c:a","aac","output:0"]'), [outputs, setOutputs] = useState('["video.mp4"]'), [auxiliary, setAuxiliary] = useState("[]"), [auxiliaryOutputs, setAuxiliaryOutputs] = useState("[]"), [error, setError] = useState(""), [busy, setBusy] = useState(false), [quote, setQuote] = useState<MediaJobRequest["billingConfirmation"]>(), [lastJob, setLastJob] = useState<string | null>(null);
+    const dialogRef = useRef<HTMLDivElement>(null), closeRef = useRef(onClose);
+    closeRef.current = onClose;
+    const [estimate, setEstimate] = useState<{
+        action: MediaJobRequest["action"];
+        value: NonNullable<MediaJobRequest["billingConfirmation"]>;
+    } | null>(null), [priceError, setPriceError] = useState(""), [quoteAttempt, setQuoteAttempt] = useState(0);
+    useEffect(() => { let stopped = false; setEstimate(null); setPriceError(""); if (!readOnly)
+        void onQuote(action).then(value => { if (!stopped)
+            setEstimate({ action, value }); }).catch(cause => { if (!stopped)
+            setPriceError(cause instanceof Error ? cause.message : "媒体报价失败"); }); return () => { stopped = true; }; }, [action, readOnly, onQuote, quoteAttempt]);
+    const confirmation = quote || ((estimate?.action === action) ? estimate.value : undefined);
+    const inventory = new Map(choices.map(choice => [choice.id, choice]));
+    for (const job of jobs)
+        for (const output of job.outputs) {
+            const choice = reusable(job, output);
+            if (choice && !inventory.has(choice.id))
+                inventory.set(choice.id, choice);
+        }
+    const selected = inventory.get(inputIds[0]);
+    useEffect(() => {
+        const previous = document.activeElement as HTMLElement | null, items = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],summary') || []).filter(item => item.offsetParent !== null);
+        items()[0]?.focus();
+        const keyboard = (event: KeyboardEvent) => { if (!isTopVideoDialog(dialogRef.current))
+            return; if (event.key === "Escape") {
+            event.stopPropagation();
+            closeRef.current();
+        }
+        else if (event.key === "Tab") {
+            const list = items(), first = list[0], last = list[list.length - 1];
+            if (first && event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            }
+            else if (first && !event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        } };
+        document.addEventListener("keydown", keyboard, true);
+        return () => { document.removeEventListener("keydown", keyboard, true); previous?.focus(); };
+    }, []);
+    function change() { setQuote(undefined); setError(""); setLastJob(null); }
+    async function submit() {
+        if (busy || readOnly || !confirmation)
+            return;
+        setBusy(true);
+        setError("");
+        try {
+            const native = action === "ffmpeg" || action === "ffprobe", stamp = timestamp === "first" || timestamp === "last" ? timestamp : Number(timestamp);
+            const parsed = mediaJobRequestSchema.safeParse({ operationId: browserRandomUUID(), action, inputs: inputIds, outputs: native ? jsonField(action === "ffprobe" ? "[]" : outputs, "输出清单") : [], source, projectKey,
+                ...(action === "frame" ? { timestamp: stamp } : {}), ...(action === "trim" ? { start: Number(start), end: Number(end) } : {}), ...(native ? { args: jsonField(args, "命令参数"), auxiliaryFiles: jsonField(auxiliary, "辅助文件"), auxiliaryOutputs: jsonField(auxiliaryOutputs, "辅助输出") } : {}), });
+            if (!parsed.success)
+                throw new Error(parsed.error.issues.map(issue => `${issue.path.join(".")}: ${issue.message}`).join("；"));
+            const { operationId: _operation, ...intent } = parsed.data, job = await onSubmit(intent, confirmation);
+            setLastJob(job.id);
+            setQuote(undefined);
+        }
+        catch (cause) {
+            if (cause instanceof MediaQuoteRequired) {
+                setQuote(cause.quote);
+                setError("");
+            }
+            else
+                setError(cause instanceof Error ? cause.message : "媒体处理失败");
+        }
+        finally {
+            setBusy(false);
+        }
+    }
+    if (typeof document === "undefined")
+        return null;
+    return createPortal(<div ref={dialogRef} data-testid="video-media-dialog" data-canvas-hotkeys-blocked="true" role="dialog" aria-modal="true" aria-label={V("视频媒体处理")} className={`fixed inset-0 z-[100] flex items-center justify-center p-3 ${light ? "canvas-ui-light text-slate-800" : "canvas-ui-dark text-slate-100"}`} onPointerDown={event => event.stopPropagation()} onWheel={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+    <button type="button" aria-label={V("关闭媒体处理")} className="absolute inset-0 bg-black/60" onClick={onClose}/>
+    <div className={`relative flex max-h-[94dvh] w-full max-w-5xl flex-col rounded-2xl border border-current/15 shadow-2xl ${light ? "bg-white" : "bg-[#141c27]"}`}>
+      <header className="flex shrink-0 items-center justify-between border-b border-current/10 px-4 py-3"><h2 className="text-sm font-semibold">{V("\u89C6\u9891\u5A92\u4F53\u5904\u7406")}</h2><button type="button" aria-label={V("关闭")} onClick={onClose} className={videoButtonClass}><X size={16}/></button></header>
+      <div className="grid min-h-0 gap-4 overflow-y-auto p-4 md:grid-cols-2"><div className="space-y-3">
+        {selected && selected.kind !== "image" && selected.kind !== "bundle" && <div className="h-56"><VideoPlayer key={selected.id} url={selected.url} title={selected.title} kind={selected.kind} downloadName={selected.downloadName} onProcess={next => { setAction(next.action); if (next.timestamp !== undefined)
+        setTimestamp(String(next.timestamp)); change(); }} canProcess={!readOnly && !busy}/></div>}
+        <fieldset disabled={busy || readOnly} className="space-y-3 disabled:opacity-60"><VideoField label={V("处理方式")}><select aria-label={V("媒体处理方式")} className={videoFieldClass} value={action} onChange={event => { const next = event.target.value as MediaJobRequest["action"]; setAction(next); change(); if (next === "ffprobe") {
+        setArgs('["-show_format","-show_streams","-print_format","json","asset:0"]');
+    }
+    else if (next === "ffmpeg")
+        setArgs('["-i","asset:0","-c:v","libx264","-c:a","aac","output:0"]'); }}>{actions.map(item => <option key={item.id} value={item.id}>{V(item.label)}</option>)}</select></VideoField>
+          <VideoField label={V("有序输入")}><div className="space-y-1.5">{inputIds.map((id, index) => <div key={`${id}:${index}`} className="flex min-w-0 items-center gap-1 rounded-lg bg-current/5 p-2"><span className="shrink-0 text-[10px] opacity-60">asset:{index}</span><span className="min-w-0 flex-1 truncate text-xs">{inventory.get(id)?.title || V("素材已不可用")}</span><button type="button" aria-label={V(`上移输入 ${index + 1}`)} disabled={index === 0} className={videoButtonClass} onClick={() => { setInputIds(old => { const next = [...old]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next; }); change(); }}><ArrowUp size={12}/></button><button type="button" aria-label={V(`下移输入 ${index + 1}`)} disabled={index === inputIds.length - 1} className={videoButtonClass} onClick={() => { setInputIds(old => { const next = [...old]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return next; }); change(); }}><ArrowDown size={12}/></button><button type="button" aria-label={V(`移除输入 ${index + 1}`)} className={videoButtonClass} onClick={() => { setInputIds(old => old.filter((_, i) => i !== index)); change(); }}><X size={12}/></button></div>)}<select aria-label={V("添加媒体输入")} value="" className={videoFieldClass} onChange={event => { if (event.target.value)
+        setInputIds(old => [...old, event.target.value]); change(); }}><option value="">{V("\u6DFB\u52A0\u7D20\u6750\u2026")}</option>{[...inventory.values()].map(choice => <option key={choice.id} value={choice.id}>{choice.title} · {choice.kind}</option>)}</select></div></VideoField>
+          {action === "frame" && <VideoField label={V("帧位置")}><div className="flex gap-2"><select aria-label={V("抽帧位置")} className={videoFieldClass} value={timestamp === "first" || timestamp === "last" ? timestamp : "number"} onChange={event => { setTimestamp(event.target.value === "number" ? "0" : event.target.value); change(); }}><option value="first">{V("\u9996\u5E27")}</option><option value="number">{V("\u6307\u5B9A\u79D2\u6570")}</option><option value="last">{V("\u5C3E\u5E27")}</option></select>{timestamp !== "first" && timestamp !== "last" && <input aria-label={V("抽帧秒数")} className={videoFieldClass} type="number" min="0" step="0.001" value={timestamp === "current" ? "0" : timestamp} onChange={event => { setTimestamp(event.target.value); change(); }}/>}</div></VideoField>}
+          {action === "trim" && <div className="grid grid-cols-2 gap-2"><VideoField label={V("开始秒数")}><input aria-label={V("裁剪开始秒数")} type="number" min="0" step="0.01" className={videoFieldClass} value={start} onChange={event => { setStart(event.target.value); change(); }}/></VideoField><VideoField label={V("结束秒数")}><input aria-label={V("裁剪结束秒数")} type="number" min="0" step="0.01" className={videoFieldClass} value={end} onChange={event => { setEnd(event.target.value); change(); }}/></VideoField></div>}
+          {(action === "ffmpeg" || action === "ffprobe") && <><VideoField label={V("参数数组 JSON")}><textarea aria-label={V("FFmpeg FFprobe 参数")} rows={5} className={`${videoFieldClass} font-mono`} value={args} onChange={event => { setArgs(event.target.value); change(); }}/></VideoField>{action === "ffmpeg" && <VideoField label={V("输出文件数组 JSON")}><textarea aria-label={V("媒体输出文件")} rows={2} className={`${videoFieldClass} font-mono`} value={outputs} onChange={event => { setOutputs(event.target.value); change(); }}/></VideoField>}<details><summary className="cursor-pointer text-xs">{V("\u8F85\u52A9\u6587\u4EF6\u4E0E\u8F93\u51FA")}</summary><div className="mt-2 space-y-2"><VideoField label={V("辅助文件 JSON")}><textarea aria-label={V("媒体辅助文件")} rows={4} className={`${videoFieldClass} font-mono`} value={auxiliary} onChange={event => { setAuxiliary(event.target.value); change(); }}/></VideoField><VideoField label={V("辅助输出 JSON")}><textarea aria-label={V("媒体辅助输出")} rows={2} className={`${videoFieldClass} font-mono`} value={auxiliaryOutputs} onChange={event => { setAuxiliaryOutputs(event.target.value); change(); }}/></VideoField><code className="block break-words text-[10px] opacity-60">asset:0 / output:0 / aux:0 / assets:png</code></div></details></>}
+        </fieldset>
+      </div><div className="space-y-3"><h3 className="text-xs font-semibold">{V("\u5904\u7406\u5386\u53F2")}</h3>{historyError && <p role="status" className="text-xs text-amber-500">{historyError}</p>}
+        {jobs.map(job => <article key={job.id} data-testid="video-media-job" data-job-id={job.id} className={`rounded-xl border p-3 ${lastJob === job.id ? "border-teal-500" : "border-current/10"}`}><div className="flex items-center gap-2 text-xs"><span>{V(actions.find(item => item.id === job.action)?.label || job.action)}</span><span className="ml-auto">{V(labels[job.status])}</span>{(job.status === "queued" || job.status === "processing") && <button type="button" className={videoButtonClass} disabled={readOnly || !!job.cancellationRequestedAt} onClick={() => void onCancel(job.id).catch(cause => setError(cause instanceof Error ? cause.message : "停止失败"))}>{job.cancellationRequestedAt ? V("正在停止") : V("停止")}</button>}</div>
+          <div className="mt-1 text-[10px] opacity-60"><time dateTime={job.createdAt}>{new Date(job.createdAt).toLocaleString()}</time> · {job.cost}{V(" \u79EF\u5206")}{job.processedSeconds > 0 && <span>{V(" \u00B7 \u5DF2\u5904\u7406 ")}{job.processedSeconds.toFixed(2)}s</span>}</div>{job.error && <p role="alert" className="mt-2 text-xs text-red-500">{job.error}</p>}
+          {job.outputs.map(output => <div key={output.artworkId} className="mt-2 flex min-w-0 items-center gap-2 text-[11px]"><span className="min-w-0 flex-1 truncate" title={`${output.mimeType} · ${output.sha256}`}>{output.name} · {(output.bytes / 1024).toFixed(1)} KiB</span><a aria-label={V(`下载 ${output.name}`)} href={mediaDownloadHref(output.url, output.name)} className={videoButtonClass} download><Download size={12}/></a>{reusable(job, output) && <button type="button" className={videoButtonClass} disabled={busy || readOnly} onClick={() => { const choice = reusable(job, output)!; setInputIds([choice.id]); change(); }}>{V("\u7528\u4F5C\u8F93\u5165")}</button>}</div>)}
+          {job.queryResult && <details className="mt-2 text-xs"><summary className="cursor-pointer">{V("\u67E5\u8BE2\u7ED3\u679C")}</summary><pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-current/5 p-2 text-[10px]">{job.queryResult}</pre></details>}
+        </article>)}{canLoadMore && <button type="button" className={videoButtonClass} onClick={() => void onLoadMore().catch(cause => setError(cause instanceof Error ? cause.message : "历史加载失败"))}>{V("\u52A0\u8F7D\u66F4\u591A")}</button>}
+      </div></div>
+      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-current/10 px-4 py-3"><div>{error && <p role="alert" className="text-xs text-red-500">{error}</p>}{priceError && <div className="flex items-center gap-2"><p role="status" className="text-xs text-amber-500">{priceError}</p><button type="button" className={videoButtonClass} onClick={() => setQuoteAttempt(value => value + 1)}>{V("\u91CD\u65B0\u62A5\u4EF7")}</button></div>}{quote && <p role="status" className="text-xs text-amber-500">{V("\u4EF7\u683C\u5DF2\u66F4\u65B0\uFF1A")}{quote.credits}{V(" \u79EF\u5206")}</p>}</div><button type="button" disabled={busy || readOnly || !confirmation} className="ml-auto flex items-center gap-2 rounded-lg bg-teal-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-40" onClick={() => void submit()}>{busy && <Loader2 size={12} className="animate-spin"/>}{busy ? V("提交中…") : quote ? V(`确认处理 · ${quote.credits} 积分`) : confirmation ? V(`开始处理 · ${confirmation.credits} 积分`) : V("报价中…")}</button></footer>
+    </div>
+  </div>, document.body);
+}

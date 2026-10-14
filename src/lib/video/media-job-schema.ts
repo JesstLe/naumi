@@ -29,3 +29,4 @@ export type MediaJobRequest=z.infer<typeof mediaJobRequestSchema>;
 export type MediaProbe={durationSeconds:number;width:number;height:number;videoCodec:string|null;audioCodecs:string[];formatName:string;frameRate:number|null};
 export type MediaJobStatus="queued"|"processing"|"completed"|"failed"|"cancelled";
 export type MediaJobOutput={artworkId:string;storageKey:string;url:string;mimeType:string;sha256:string;bytes:number;name:string;probe:MediaProbe|null;fragment?:boolean};
+export type PublicMediaJob={id:string;jobId:string;operationId:string;status:MediaJobStatus;action:MediaJobRequest["action"];processedSeconds:number;outputs:MediaJobOutput[];queryResult:string|null;error:string|null;cost:number;billingVersion:number|null;cancellationRequestedAt:string|null;createdAt:string;updatedAt:string;projectKey:string|null;source:MediaJobRequest["source"];inputArtworkIds:string[]};

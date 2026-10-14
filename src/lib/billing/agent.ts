@@ -1,8 +1,13 @@
 import "server-only";
+import {prepareCanvasVideoWorkflow,type PreparedCanvasVideoWorkflow} from "../video/canvas-workflow";
+import {getVideoWorkflow,ensureVideoWorkflowSchema} from "../video/workflow";
+import {videoAgentOperationId} from "../agent/canvas-video-tools";
+import {getVideoNode} from "../canvas/video-node-repository";
+import {mediaBillingQuote} from "../video/media-billing";
 import { CREATIVE_TOOL_FEATURES } from "../agent/creative-tool-catalog";
 import { getBillingRuntime, quoteForRequest } from "./server";
 import type { BillingQuote, FeatureId } from "./types";
-import { dbEnabled, getUser } from "@/lib/db";
+import { dbEnabled, getUser,getVideoTaskByIdempotencyKey } from "@/lib/db";
 import { fingerprint, stableJson } from "./fingerprint";
 import { getImageJob } from "@/lib/image-job-repository";
 import { currentModelBillingSnapshot } from "../model-config/context";
@@ -16,7 +21,7 @@ import {currentExecutionBundle} from "../model-config/context";
 export const AGENT_FEATURES: Record<string, {
     feature: FeatureId;
     label: string;
-}> = { ...CREATIVE_TOOL_FEATURES, generate_aplus: { feature: "image.aplus", label: "A+ 母图准备" }, generate_image: { feature: "image.generate", label: "AI 生图" }, retouch_product: { feature: "tool.retouch", label: "商品精修" }, recolor_product: { feature: "tool.recolor", label: "产品换色" }, replicate_hot: { feature: "tool.replicate", label: "爆款复刻" }, generate_suite: { feature: "image.suite", label: "商品套图" }, continue_aplus_generation: { feature: "image.aplus", label: "A+ 详情页" }, generate_packaging_3d: { feature: "tool.packaging3d", label: "包装 3D" }, generate_video: { feature: "video.generate", label: "视频生成" }, extend_video: { feature: "video.generate", label: "视频续写" }, edit_video: { feature: "video.generate", label: "视频编辑" } };
+}> = { ...CREATIVE_TOOL_FEATURES, generate_aplus: { feature: "image.aplus", label: "A+ 母图准备" }, generate_image: { feature: "image.generate", label: "AI 生图" }, retouch_product: { feature: "tool.retouch", label: "商品精修" }, recolor_product: { feature: "tool.recolor", label: "产品换色" }, replicate_hot: { feature: "tool.replicate", label: "爆款复刻" }, generate_suite: { feature: "image.suite", label: "商品套图" }, continue_aplus_generation: { feature: "image.aplus", label: "A+ 详情页" }, generate_packaging_3d: { feature: "tool.packaging3d", label: "包装 3D" }, generate_video: { feature: "video.generate", label: "视频生成" }, extend_video: { feature: "video.generate", label: "视频续写" }, edit_video: { feature: "video.generate", label: "视频编辑" },process_video:{feature:"video.process",label:"视频媒体处理"},run_video_workflow:{feature:"video.generate",label:"视频制作链"},confirm_video_workflow_stage:{feature:"video.generate",label:"制作链阶段"} };
 export async function agentQuote(name: string, args: Record<string, any>, email: string, cred: {
     cookie: string;
     authorization: string;
@@ -28,15 +33,25 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     label: string;
     threshold: number;
     imagegenPlan?:ImagegenPlan;
+    videoWorkflow?:PreparedCanvasVideoWorkflow;authorizationRequired?:boolean;
 } | null> {
     const canvas = cred.canvas;
-    if(name==="generate_video"||name==="extend_video"||name==="edit_video")args={...args,resolution:args.resolution||"1K"};
+    const videoTool=["generate_video","extend_video","edit_video"].includes(name);
+    if(videoTool){const nodeId=args.node_id||canvas?.video?.nodeId,current=nodeId?await getVideoNode(email,String(nodeId)):null;if(nodeId&&!current)throw new Error("视频节点不存在");if(current&&canvas?.video?.projectKey&&current.projectKey!==canvas.video.projectKey)throw new Error("视频节点不属于当前项目");const config=current?.config||args.config||{};if(config.comfyWorkflowId)return null;if(current&&Number.isInteger(args.expected_revision)&&current.revision!==args.expected_revision)throw new Error("视频节点已更新，请重新读取后生成");args={...args,...config,quality:"medium"};}
+
     if (canvas && CANVAS_IMAGE_TOOLS.has(name) && name !== "generate_image") args = {...args,quality:canvas.quality,resolution:canvas.resolution,ratio:canvas.ratio,model:canvas.imageModelId,modelId:undefined};
     const entry = canvas && CANVAS_IMAGE_TOOLS.has(name) ? { feature: "canvas.image" as const, label: AGENT_FEATURES[name]?.label || "画布生图" } : AGENT_FEATURES[name];
     if (!entry)
         return null;
     const runtime = await getBillingRuntime(), snapshot=currentModelBillingSnapshot()??await runtime.config.current(),threshold=snapshot.config.thresholds.agentConfirmCredits;
     if((SHARED_IMAGEGEN_TOOLS.has(name)||canvas&&CANVAS_IMAGE_TOOLS.has(name))&&!args._category){const request=await agentImagegenRequest(name,args,email,canvas,cred.imageQuality,cred.imageSkill),bundle=currentExecutionBundle(),plan=await (request.mode==="batch"?planImagegenBatch:planImagegen)(request,email,bundle?{modelVersion:bundle.modelVersion,billingVersion:bundle.billingVersion}:undefined);return {quote:{configVersion:plan.billingVersion,modelVersion:plan.modelVersion,requestedCredits:plan.totalCredits,authorizedCredits:plan.totalCredits},label:entry.label,threshold:plan.confirmationRequired?0:threshold,imagegenPlan:plan};}
+    if(name==="run_video_workflow"){
+      const projectKey=canvas?.video?.projectKey||args.project_key;if(!projectKey||canvas?.video?.projectKey&&args.project_key&&args.project_key!==canvas.video.projectKey)throw new Error("请选择当前项目的实际镜头");
+      const prepared=await prepareCanvasVideoWorkflow(email,{id:args.operation_id,projectKey,nodes:args.nodes}),quotes=Object.values(prepared.frozen).map(stage=>stage.quote),credits=quotes.reduce((total,q)=>total+q.credits,0),authorizedCredits=quotes.reduce((total,q)=>total+q.authorizedCredits,0);
+      return {quote:{configVersion:quotes[0].version,requestedCredits:credits,authorizedCredits,modelVersion:quotes.find(q=>q.modelVersion)?.modelVersion},label:entry.label,threshold:credits>0||authorizedCredits>0?0:Number.MAX_SAFE_INTEGER,videoWorkflow:prepared,authorizationRequired:quotes.some(q=>q.authorization===true)};
+    }
+    if(name==="confirm_video_workflow_stage"){const run=await getVideoWorkflow(email,args.run_id);if(canvas?.video?.projectKey&&run.projectKey!==canvas.video.projectKey)throw new Error("制作链不属于当前项目");const stage=run.nodes.find(node=>node.id===args.stage_id);if(stage?.status!=="needs_confirmation"||!stage.quote)throw new Error("此阶段无需确认或缺少冻结报价");const q=stage.quote;return {quote:{configVersion:q.version,requestedCredits:q.credits,authorizedCredits:q.authorizedCredits,modelVersion:q.modelVersion},label:entry.label,threshold:q.authorizedCredits>0?0:Number.MAX_SAFE_INTEGER,authorizationRequired:q.authorization===true};}
+    if(name==="process_video")return {quote:await mediaBillingQuote(email,args.action),label:entry.label,threshold};
     if (name === "continue_aplus_generation") {
         const job = await getImageJob(String(args.job_id || ""), "aplus");
         if (!job || job.email !== email.toLowerCase())
@@ -48,7 +63,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     }
     const quantity = name === "generate_aplus" ? (Array.isArray(args.modules) && args.modules.length ? args.modules.length : 4) : ["generate_image","generate_variations","fuse_images"].includes(name) ? Math.min(4, Math.max(1, Number(args.count) || 1)) : name === "generate_suite" ? (args.structure === "custom" && Array.isArray(args.shots) ? Math.max(1, Math.min(20, args.shots.length)) : 13) : 1;
     const request = new Request("http://internal/api/billing/quote", { headers: { cookie: cred.cookie, authorization: cred.authorization, "x-naumi-image-quality": cred.imageQuality || "medium" } });
-    return { quote: await quoteForRequest(request, { feature: entry.feature, quantity, quality: args.quality || canvas?.quality || cred.imageQuality || "medium", resolution: args.resolution || canvas?.resolution || "1K", modelId: args.model || args.modelId || args.model_id || (CANVAS_IMAGE_TOOLS.has(name) ? canvas?.imageModelId : undefined), providerId: args.providerId || args.provider_id, ratio: args.ratio || canvas?.ratio },snapshot), label: entry.label, threshold };
+    return { quote: await quoteForRequest(request, { feature: entry.feature, quantity, quality: args.quality || canvas?.quality || cred.imageQuality || "medium", resolution: videoTool?args.resolution:args.resolution || canvas?.resolution || "1K", modelId: args.model || args.modelId || args.model_id || (CANVAS_IMAGE_TOOLS.has(name) ? canvas?.imageModelId : undefined), providerId: args.providerId || args.provider_id, ratio: videoTool?args.aspectRatio:args.ratio || canvas?.ratio },snapshot), label: entry.label, threshold };
 }
 export type AgentBillingSession = {
     email: string;
@@ -71,13 +86,18 @@ export type AgentBillingSession = {
         billingCredits: number;
         billingOperationId: string;
     };
-    preparedImagegen?:ImagegenPlan;
+    preparedImagegen?:ImagegenPlan;preparedVideoWorkflow?:PreparedCanvasVideoWorkflow;
 };
 export async function agentBillingPrecheck(session: AgentBillingSession, name: string, args: Record<string, unknown>, callId: string) {
     session.preparedBilling = undefined;
-    session.preparedImagegen=undefined;
+    session.preparedImagegen=undefined;session.preparedVideoWorkflow=undefined;
     if (!dbEnabled)
         return undefined;
+    if(["generate_video","extend_video","edit_video"].includes(name)&&await getVideoTaskByIdempotencyKey(session.email,typeof args.operation_id==="string"?args.operation_id:videoAgentOperationId(session.email,callId,"video-generate")))return undefined;
+    if(name==="run_video_workflow"){
+      if(typeof args.operation_id!=="string")return {block:true,reason:"请选择制作链原操作编号"};
+      await ensureVideoWorkflowSchema();try{await getVideoWorkflow(session.email,args.operation_id);return undefined;}catch(error){if((error as {status?:number}).status!==404)throw error;}
+    }
     let quoted;
     try {
         quoted = await agentQuote(name, args as Record<string, any>, session.email, session.cred);
@@ -87,7 +107,7 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
     }
     if (!quoted)
         return undefined;
-    const costPlus=!!quoted.quote.imagePreset, cap=quoted.quote.authorizedCredits??quoted.quote.requestedCredits;
+    const costPlus=!!quoted.quote.imagePreset||quoted.authorizationRequired===true, cap=quoted.quote.authorizedCredits??quoted.quote.requestedCredits;
     const meta = { cost: name === "generate_aplus" ? 0 : quoted.quote.requestedCredits, label: quoted.label };
     const pricingArgs = { ...args as Record<string, unknown> };
     delete pricingArgs.confirm;
@@ -118,6 +138,7 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
             return { block: true, terminate:true, attention: "waiting" as const, reason: `价格已更新，本次需要 ${meta.cost} 积分。请重新向用户报价并等待明确同意。` };
         }
     session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: costPlus?cap:quoted.quote.requestedCredits, billingOperationId: fingerprint({ session: session.id, turn: session.turnId, call: callId }) };
+    if(quoted.videoWorkflow)session.preparedVideoWorkflow=quoted.videoWorkflow;
     if(quoted.imagegenPlan){const request={...quoted.imagegenPlan.request,operationId:imagegenStepId(session.preparedBilling.billingOperationId,"agent")};session.preparedImagegen={...quoted.imagegenPlan,request,fingerprint:imagegenFingerprint(request)};}
     const u = await getUser(session.email);
     if (!u)

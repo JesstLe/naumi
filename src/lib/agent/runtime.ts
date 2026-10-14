@@ -110,6 +110,7 @@ export type Session = {
   pendingQuotes?: Map<string,Pick<BillingQuote,"configVersion"|"requestedCredits">>;
   preparedBilling?: {billingVersion:number;billingCredits:number;billingOperationId:string};
   preparedImagegen?:import("../imagegen/types").ImagegenPlan;
+  preparedVideoWorkflow?:import("../video/canvas-workflow").PreparedCanvasVideoWorkflow;
   repeatSignature: string;
   repeatCount: number;
   /**
@@ -296,7 +297,7 @@ async function createRuntimeSession(
   session.harness.registerSecret(settings.apiKey);
   const tools = createNaumiTools(
     new Request(process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"), email,
-    () => ({...session.cred,...session.preparedBilling,imagegenPlan:session.preparedImagegen}),
+    () => ({...session.cred,...session.preparedBilling,imagegenPlan:session.preparedImagegen,videoWorkflow:session.preparedVideoWorkflow}),
     acceptedBundle ? () => signAcceptedModelContext(email, acceptedBundle) : undefined,
     options?.canvas, session.harness,
   );
@@ -540,7 +541,7 @@ export async function persistAgentSession(session: Session): Promise<void> {
     return content ? [{ role: message.role, content: session.harness.publicText(content, message.role === "assistant") }] : [];
   });
   const steps = session.events
-    .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
+    .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","video_nodes","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
     .map((event) => ({ type: event.type, ...event.data }));
   await saveAgentSession(
     session.email,

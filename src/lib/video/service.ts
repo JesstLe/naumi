@@ -101,13 +101,14 @@ export type CreateVideoInput = {
   sourceId?: string;
   projectKey?:string;
   nodeId?:string;
-  nodeRevision?:number;
+  nodeRevision?:number;workflowRunId?:string;workflowNodeId?:string;
   mode?:VideoGenerationRequest["mode"];
   orderedInputs?:VideoGenerationRequest["orderedInputs"];
   shots?:VideoGenerationRequest["shots"];
   elements?:VideoGenerationRequest["elements"];
   camera?:import("zod").infer<typeof import("./submission-schema").videoCameraSchema>;
   workflowManifest?:VideoGenerationRequest["workflowManifest"];
+  workflowTaskId?:string;
   retryOf?:string;
   prompt: string;
   seconds: string;
@@ -151,7 +152,7 @@ export type PublicVideoTaskView = Pick<
   | "cancellationSentAt"
   | "supplierCancellationSupported"
   | "errorCode"
->&{resultAssets:import("./result-assets").SavedVideoResultAsset[];resultMetadataWarnings:Array<{artworkId:string;code:string;expected:unknown;actual:unknown}>};
+>&{updatedAt?:string;retryOf?:string|null;projectKey?:string|null;resultAssets:import("./result-assets").SavedVideoResultAsset[];resultMetadataWarnings:Array<{artworkId:string;code:string;expected:unknown;actual:unknown}>};
 
 /** Public API projection. Durable provider snapshots and raw responses stay server-only. */
 export function publicVideoTaskView(task: VideoTaskRow): PublicVideoTaskView {
@@ -172,6 +173,9 @@ export function publicVideoTaskView(task: VideoTaskRow): PublicVideoTaskView {
     seconds: task.seconds,
     nextPollAt: task.nextPollAt,
     createdAt: task.createdAt,
+    updatedAt:task.updatedAt,
+    projectKey:typeof task.parameters.projectKey==="string"?task.parameters.projectKey:null,
+    retryOf:typeof task.parameters.retryOf==="string"?task.parameters.retryOf:null,
     completedAt: task.completedAt,
     cancellationRequestedAt:task.cancellationRequestedAt,
     cancellationSentAt:task.cancellationSentAt,
@@ -192,8 +196,17 @@ export async function createVideoGeneration(
   input: CreateVideoInput
 ): Promise<{ taskId: string; cost: number }> {
   email=email.toLowerCase();
-  const parsed=videoSubmissionSchema.safeParse(input);
+  // Internal workflow linkage is never part of the public submission schema.
+  // Its owned run/stage is checked atomically when the task is reserved.
+  const {workflowRunId:_workflowRunId,workflowNodeId:_workflowNodeId,...publicInput}=input;
+  const parsed=videoSubmissionSchema.safeParse(publicInput);
   if(!parsed.success)throw new VideoContractError("INVALID_VIDEO_SUBMISSION","视频提交字段无效",parsed.error.issues.map(issue=>issue.path.join(".")));
+  if(input.workflowTaskId){
+    if(input.workflowManifest)throw new VideoContractError("WORKFLOW_SOURCE_CONFLICT","请选择一个工作流来源");
+    const {readOwnedVideoWorkflow}=await import("./workflow-source"),old=await readOwnedVideoWorkflow(email,input.workflowTaskId);
+    if(old.publicModelId!==input.modelId)throw new ModelConfigError("VIDEO_WORKFLOW_MODEL_CONFLICT","历史工作流与当前模型不一致，请重新选择模型",409);
+    const {workflowTaskId:_source,...settings}=input;input={...settings,workflowManifest:old.manifest};
+  }
   const key = String(input.idempotencyKey || "").trim();
   if (key) {
     const existing = await getVideoTaskByIdempotencyKey(email, key);
@@ -529,7 +542,7 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
 /** 任务列表(工作台/恢复)。 */
 export async function listVideoTaskViews(
   email: string,
-  opts: { status?: string; source?: string; sourceIds?: string[]; projectKey?: string; nodeId?: string; limit?: number } = {}
+  opts: { status?: string; source?: string; sourceIds?: string[]; projectKey?: string; nodeId?: string; limit?: number;cursor?:{createdAt:string;id:string};pendingOnly?:boolean } = {}
 ): Promise<VideoTaskRow[]> {
   return listVideoTasks(email, opts);
 }

@@ -1,4 +1,4 @@
-import {randomUUID} from "node:crypto";
+import {randomUUID,createHash} from "node:crypto";
 import { creationProvenance, type ArtworkProvenance } from "@/lib/artwork-provenance";
 import { currentArtworkCreation } from "@/lib/artwork-provenance-context";
 import type {ProductReceipt} from "@/lib/payments";
@@ -2475,17 +2475,31 @@ export async function deleteCanvasTextNodes(
 export async function deleteCanvasNodesAtomically(
   emailRaw: string,
   artworkIds: string[],
-  textIds: string[]
-): Promise<{ artworks: number; textNodes: number }> {
+  textIds: string[],
+  videoIds:string[]=[],
+  operationId?:string
+): Promise<{ artworks: number; textNodes: number;videoNodes:number }> {
   await ensureSchema();
   const email = emailRaw.toLowerCase();
-  const cleanArtworkIds = Array.from(new Set(artworkIds.filter(Boolean))).slice(0, 200);
-  const cleanTextIds = Array.from(new Set(textIds.filter(Boolean))).slice(0, 200);
+  const cleanArtworkIds = Array.from(new Set(artworkIds.filter(Boolean)));
+  const cleanTextIds = Array.from(new Set(textIds.filter(Boolean)));
+  const cleanVideoIds=Array.from(new Set(videoIds.filter(Boolean)));
+  if([cleanArtworkIds,cleanTextIds,cleanVideoIds].some(ids=>ids.length>200))throw new Error("单次删除节点过多");
+  if(cleanVideoIds.length)await (await import("./canvas/video-node-repository")).ensureVideoNodeSchema();
+  const fingerprint=createHash("sha256").update(JSON.stringify({delete:{artworkIds:[...cleanArtworkIds].sort(),textIds:[...cleanTextIds].sort(),videoIds:[...cleanVideoIds].sort()}})).digest("hex");
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[email]);
+    if(operationId){const saved=(await client.query("SELECT fingerprint FROM app_canvas_history_ops WHERE email=$1 AND id=$2",[email,operationId])).rows[0];
+      if(saved){if(saved.fingerprint!==fingerprint)throw new Error("操作编号已使用");await client.query("COMMIT");return {artworks:cleanArtworkIds.length,textNodes:cleanTextIds.length,videoNodes:cleanVideoIds.length};}}
+    if(cleanVideoIds.length)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
+    for(const [table,ids] of [["app_artworks",cleanArtworkIds],["app_canvas_text_nodes",cleanTextIds],["app_canvas_video_nodes",cleanVideoIds]] as const){
+      if(ids.length&&(await client.query(`SELECT id FROM ${table} WHERE email=$1 AND id=ANY($2::text[]) FOR UPDATE`,[email,ids])).rowCount!==ids.length)throw new Error("节点不存在或无权修改");
+    }
     let artworks = 0;
     let textNodes = 0;
+    if(cleanVideoIds.length)await client.query("UPDATE app_canvas_video_nodes SET deleted_at=now(),revision=revision+1,updated_at=now() WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL",[email,cleanVideoIds]);
     if (cleanArtworkIds.length) {
       const result = await client.query(
         `UPDATE app_artworks SET deleted_at = now()
@@ -2502,8 +2516,9 @@ export async function deleteCanvasNodesAtomically(
       );
       textNodes = result.rowCount ?? 0;
     }
+    if(operationId)await client.query("INSERT INTO app_canvas_history_ops(id,email,fingerprint) VALUES($1,$2,$3)",[operationId,email,fingerprint]);
     await client.query("COMMIT");
-    return { artworks, textNodes };
+    return { artworks:operationId?cleanArtworkIds.length:artworks, textNodes:operationId?cleanTextIds.length:textNodes,videoNodes:cleanVideoIds.length };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -4641,6 +4656,8 @@ export async function copyComfyWorkflow(email: string, id: string): Promise<stri
 // ── 视频生成任务(OpenAI videos 协议,聚合商/官方端点通用) ──────────────────────
 
 export type VideoTaskRow = {
+  cursorCreatedAt?:string;
+  updatedAt?:string;
   errorCode?: string;
   cancellationRequestedAt?: string;
   cancellationSentAt?: string;
@@ -4691,6 +4708,8 @@ export type VideoResultRow = {
 
 function mapVideoTask(r: Record<string, unknown>): VideoTaskRow {
   return {
+    ...(typeof r.cursor_created_at==="string"?{cursorCreatedAt:r.cursor_created_at}:{}),
+    ...(r.updated_at?{updatedAt:new Date(r.updated_at as string).toISOString()}:{}),
     errorCode:String(r.error_code||""),
     cancellationRequestedAt:r.cancellation_requested_at?new Date(r.cancellation_requested_at as string).toISOString():undefined,
     cancellationSentAt:r.cancellation_sent_at?new Date(r.cancellation_sent_at as string).toISOString():undefined,
@@ -4983,7 +5002,7 @@ export async function getVideoTask(
   const { rows } = await getPool().query(
     `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
             provider_id, source, source_id, parameters, video_references, capability_snapshot,
-            next_poll_at, poll_attempts, seconds, created_at, completed_at,
+            next_poll_at, poll_attempts, seconds, created_at, updated_at, completed_at,
             provider_snapshot, response_body, last_response, error_detail, result_storage_key,
             idempotency_key,billing_quote
             , cancellation_requested_at,cancellation_sent_at,cancellation_supported,error_code
@@ -5059,6 +5078,7 @@ export async function completeVideoTask(input: {
   resultMetadataWarnings?:Array<{artworkId:string;code:string;expected:unknown;actual:unknown}>;
 }): Promise<void> {
   await ensureSchema();
+  await (await import("./canvas/video-node-repository")).ensureVideoNodeSchema();
   const email = input.email.toLowerCase();
   let meterOn = false;
   const client = await getPool().connect();
@@ -5071,8 +5091,9 @@ export async function completeVideoTask(input: {
       artwork_id: string;
       video_url: string;
       result_storage_key: string;
+      source: string;
     }>(
-      `SELECT status, cost, artwork_id, video_url, result_storage_key,billing_quote,parameters FROM app_video_tasks
+      `SELECT status, cost, artwork_id, video_url, result_storage_key,billing_quote,parameters,source FROM app_video_tasks
         WHERE email = $1 AND id = $2 FOR UPDATE`,
       [email, input.id]
     );
@@ -5097,15 +5118,23 @@ export async function completeVideoTask(input: {
       for(const row of existing){const asset=input.resultAssets.find(item=>item.artworkId===row.id)!;
         if(row.email!==email||(asset.kind==="image"?row.image_url:row.video_url||row.image_url)!==asset.url)throw new Error("视频产物作品身份冲突，不能完成结算");}
     }
-    if(input.artworks)await addArtworksTx(client,email,input.artworks);
-    if(input.resultAssets)for(const asset of input.resultAssets)await client.query("UPDATE app_artworks SET image_width=$3,image_height=$4 WHERE email=$1 AND id=$2",[email,asset.artworkId,asset.probe?.width||null,asset.probe?.height||null]);
     const projectKey=task.parameters?.projectKey;
+    let detached=false;
+    if(typeof task.parameters?.nodeId==="string"){
+      const node=(await client.query("SELECT deleted_at FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,task.parameters.nodeId])).rows[0];detached=!node||!!node.deleted_at;
+    }
+    if(typeof projectKey==="string"){
+      const project=(await client.query("SELECT deleted_at FROM app_canvas_video_projects WHERE email=$1 AND project_key=$2 FOR SHARE",[email,projectKey])).rows[0];detached=detached||!!project?.deleted_at;
+    }
+    if(input.artworks)await addArtworksTx(client,email,input.artworks.map(art=>({...art,origin:detached||task.source==="workbench"?"workbench":art.origin})));
+    if(input.resultAssets)for(const asset of input.resultAssets)await client.query("UPDATE app_artworks SET image_width=$3,image_height=$4 WHERE email=$1 AND id=$2",[email,asset.artworkId,asset.probe?.width||null,asset.probe?.height||null]);
     if(typeof projectKey==="string"&&/^(?:tree|batch):[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(projectKey)){
       const kind=projectKey.slice(0,projectKey.indexOf(":")),projectId=projectKey.slice(projectKey.indexOf(":")+1);
       const linked=await client.query(`UPDATE app_artworks SET group_id=CASE WHEN $3='tree' THEN $4 ELSE group_id END,
         batch_id=CASE WHEN $3='batch' THEN $4 ELSE batch_id END WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL`,[email,input.artworks?.map(art=>art.id)||[input.artworkId],kind,projectId]);
       if(!linked.rowCount)throw new Error("视频产物不存在，不能完成项目关联");
     }
+    if(task.parameters?.workflowRunId&&task.parameters?.workflowNodeId){const {completeWorkflowTaskTx}=await import("./video/workflow-links");await completeWorkflowTaskTx(client,email,task.parameters.workflowRunId,task.parameters.workflowNodeId,input.id,input.resultAssets);}
     if(task.billing_quote){await settleTaskBillingTx(client,input.id,email,task.billing_quote,`led-video-${input.id}`,{state:"succeeded",items:[{id:input.id,state:"succeeded",executedQuality:task.parameters?.qualityAudit?.executed||task.billing_quote.facts.quality}]});}else if (meterOn && Number(task.cost) > 0) {
       const ledgerId = `led-video-${input.id}`;
       const seen = await client.query(`SELECT 1 FROM app_ledger WHERE id = $1`, [ledgerId]);
@@ -5240,10 +5269,10 @@ export async function updateVideoTask(
 /** 任务列表(工作台/恢复用):按创建时间倒序。 */
 export async function listVideoTasks(
   email: string,
-  opts: { status?: string; source?: string; sourceIds?: string[]; projectKey?: string; nodeId?: string; limit?: number } = {}
+  opts: { status?: string; source?: string; sourceIds?: string[]; projectKey?: string; nodeId?: string; limit?: number;cursor?:{createdAt:string;id:string};pendingOnly?:boolean } = {}
 ): Promise<VideoTaskRow[]> {
   await ensureSchema();
-  const limit = Math.min(Math.max(opts.limit ?? 30, 1), 500);
+  const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 30), 1), 501);
   const params: unknown[] = [email.toLowerCase()];
   let where = `email = $1`;
   if (opts.status) {
@@ -5261,16 +5290,18 @@ export async function listVideoTasks(
   for (const [field, value] of [["projectKey", opts.projectKey], ["nodeId", opts.nodeId]]) {
     if (value) { params.push(value); where += ` AND parameters->>'${field}' = $${params.length}`; }
   }
+  if(opts.pendingOnly)where += " AND status IN ('queued','processing','needs_attention')";
+  if(opts.cursor){params.push(opts.cursor.createdAt,opts.cursor.id);where += ` AND (created_at,id)<($${params.length-1}::timestamptz,$${params.length}::text)`;}
   const { rows } = await getPool().query(
-    `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
+    `SELECT to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at,id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
             provider_id, source, source_id, parameters, video_references, capability_snapshot,
-            next_poll_at, poll_attempts, seconds, created_at, completed_at,
+            next_poll_at, poll_attempts, seconds, created_at, updated_at, completed_at,
             provider_snapshot, response_body, last_response, error_detail, result_storage_key,
             idempotency_key,billing_quote,error_code,cancellation_requested_at,cancellation_sent_at,cancellation_supported
        FROM app_video_tasks
       WHERE ${where}
-      ORDER BY created_at DESC
-      LIMIT ${limit}`,
+      ORDER BY created_at DESC,id DESC
+      ${opts.pendingOnly?"":`LIMIT ${limit}`}`,
     params
   );
   return rows.map((row:Record<string,unknown>)=>mapVideoTask(row));

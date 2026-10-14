@@ -40,9 +40,39 @@ export async function seedVideoFixture() {
   config.publicModels.push({id:"disabled-model",label:"Disabled fixture",modality:"video",enabled:false,visible:true,target:{type:"upstream",id:"fixture-video-upstream"}});
   config.bindings["video.generate"]="video-a";
   if(profile==="autodl"||profile==="runninghub")config.upstreamModels.find(model=>model.id==="fixture-video-upstream")!.parameterMap.videoWorkflow={version:1,kind:profile,workflowId:"selected-native-workflow",inputs:[{name:"prompt",type:"prompt",path:profile==="autodl"?["prompt"]:["3","inputs","text"],required:true}]};
+  if(process.env.VIDEO_FIXTURE_FULL_WORKFLOW==="1"){
+    if(profile!=="autodl")throw new Error("Full workflow fixture requires AutoDL");const upstream=config.upstreamModels.find(model=>model.id==="fixture-video-upstream")!;
+    upstream.capabilities.video={...structuredClone(CAP_RICH),providerOptions:{seed:{type:"integer",minimum:0}}};
+    upstream.parameterMap.videoWorkflow={version:1,kind:"autodl",workflowId:"full-native-workflow",inputs:[{name:"prompt",type:"prompt",path:["prompt"],required:true},{name:"image",type:"image",path:["image"],index:0,required:true},{name:"generateAudio",type:"generateAudio",path:["audio"]},{name:"duration",type:"duration",path:["duration"]},{name:"resolution",type:"resolution",path:["resolution"]},{name:"aspectRatio",type:"aspectRatio",path:["aspect_ratio"]},{name:"seed",type:"custom",path:["seed"]}]};
+  }
+  if(process.env.VIDEO_FIXTURE_AGENT==="1"){
+    const key=await credentials.importPlain({providerId:"fixture-agent-provider",plain:process.env.VIDEO_API_KEY!,actor:"fixture"});
+    config.providers.push({id:"fixture-agent-provider",name:"Isolated scripted Agent",protocol:"openai-chat",baseUrl:process.env.VIDEO_FIXTURE_SUPPLIER_ORIGIN!+"/protocol/agent/v1",credentialRef:key.id,enabled:true,timeoutMs:120000,maxConcurrent:4});
+    config.upstreamModels.push({id:"fixture-agent-upstream",providerId:"fixture-agent-provider",model:"wire-agent",label:"Fixture Agent",modality:"text",enabled:true,capabilities:{...config.upstreamModels[0].capabilities,vision:false},parameterMap:{}});
+    config.publicModels.push({id:"fixture-agent",label:"Fixture Agent",modality:"text",enabled:true,visible:true,target:{type:"upstream",id:"fixture-agent-upstream"}});
+    config.bindings["agent.text"]="fixture-agent";config.bindings["text.generate"]="fixture-agent";
+  }
+  if(process.env.VIDEO_FIXTURE_UI_MODELS==="1"){
+    const key=await credentials.importPlain({providerId:"fixture-motion-provider",plain:process.env.VIDEO_API_KEY!,actor:"fixture"});
+    config.providers.push({id:"fixture-motion-provider",name:"Fixture motion supplier",protocol:"kie",baseUrl:process.env.VIDEO_FIXTURE_SUPPLIER_ORIGIN!+"/protocol/kie",credentialRef:key.id,enabled:true,timeoutMs:120000,maxConcurrent:4});
+    config.upstreamModels.push({id:"fixture-motion-upstream",providerId:"fixture-motion-provider",model:"fixture/kling-motion",label:"Fixture motion",modality:"video",enabled:true,capabilities:{...config.upstreamModels[0].capabilities,qualities:[],nativeResolutions:[],maxReferenceImages:1,video:{...CAP_RICH,modes:["motion_control"],aspectRatios:["16:9","9:16"],audio:"disabled",limits:{...CAP_RICH.limits,images:1,videos:1,audios:0},supportsMultiShot:false,maxShots:0,supportsElements:false,maxElements:0,maxElementReferences:0,supportsCamera:false,providerOptions:{characterOrientation:{type:"enum",values:["image","video"],defaultValue:"image",send:"value"}}}},parameterMap:{videoProfile:"kie-motion-control"}});
+    config.publicModels.push({id:"video-motion",label:"Fixture motion",modality:"video",enabled:true,visible:true,target:{type:"upstream",id:"fixture-motion-upstream"}});
+  }
+  if(process.env.VIDEO_FIXTURE_REFERENCE_MODELS==="1"){
+    for(const [id,videos] of [["video-reference",1],["image-reference-only",0],["unknown-video-reference",null]] as const){
+      const upstreamId=`fixture-${id}-upstream`;
+      config.upstreamModels.push({id:upstreamId,providerId:"fixture-video-provider",model:`wire-${id}`,label:id,modality:"video",enabled:true,capabilities:{...config.upstreamModels[0].capabilities,qualities:[],nativeResolutions:[],maxReferenceImages:1,video:{...CAP_RICH,modes:["reference"],limits:{images:1,videos,audios:1},supportsMultiShot:false,maxShots:0,supportsElements:false,maxElements:0,maxElementReferences:0,supportsCamera:false}},parameterMap:{videoProfile:"ark"}});
+      config.publicModels.push({id,label:id,modality:"video",enabled:true,visible:true,target:{type:"upstream",id:upstreamId}});
+    }
+  }
+  const {validateModelConfig}=await import("../../src/lib/model-config/schema");
+  validateModelConfig(config,{trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(",")});
   const repo=createModelRepository({pool:db.getPool(),trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(","),initialize:async()=>config});
   await repo.current();
   const { uploadImage }=await import("../../src/lib/storage");
+  const {registerMediaAsset}=await import("../../src/lib/media-assets");
+  const {probeMedia}=await import("../../src/lib/video/media");
+  const {recordMediaProbe,mediaExtension}=await import("../../src/lib/video/media-inspection");
   const { signUserSession }=await import("../../src/lib/native-auth");
   const root=path.resolve(process.env.VIDEO_FIXTURE_ASSETS_ROOT || "");
   const manifest=JSON.parse(await readFile(path.join(root,"manifest.json"),"utf8"));
@@ -57,7 +87,10 @@ export async function seedVideoFixture() {
     const info=manifest.files.find((entry:{name:string})=>entry.name===name);
     if(!info)throw new Error(`Fixture asset missing ${name}`);
     const storageKey=`video-fixture/${randomUUID()}/${name}`;
-    const url=await uploadImage(await readFile(path.join(root,name)),info.mimeType,storageKey,undefined,accounts.a);
+    const originalBytes=await readFile(path.join(root,name));
+    const url=await uploadImage(originalBytes,info.mimeType,storageKey,undefined,accounts.a);
+    await registerMediaAsset(storageKey,originalBytes,info.mimeType,true,accounts.a);
+    await recordMediaProbe(storageKey,info.sha256,await probeMedia(originalBytes,mediaExtension(info.mimeType)));
     const id=`fixture-art-${randomUUID()}`,category=info.mimeType.startsWith("video/")?"video":info.mimeType.startsWith("audio/")?"audio":"main";
     await db.addArtworks(accounts.a,[{id,title:`Fixture ${kind}`,category,prompt:"original test media",status:"completed",image:url,videoUrl:category==="main"?null:url,
       gradient:"from-slate-100 to-zinc-100",style:null,ratio:info.aspectRatio||"16:9",resolution:"1K",source:"upload",origin:"canvas",parentId:null,

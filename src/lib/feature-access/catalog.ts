@@ -62,6 +62,7 @@ export const TOOL_ACCESS: Record<string, string> = {
   retouch_product: "retouch", recolor_product: "recolor", replicate_hot: "replicate",
   generate_suite: "suite", generate_aplus: "aplus", review_aplus_source: "aplus", continue_aplus_generation: "aplus",
   generate_packaging_3d: "packaging3d", list_comfy_workflows: "comfyui", run_comfy_workflow: "comfyui",
+  list_video_text_nodes:"video",get_video_text:"video",create_video_node:"video",get_video_config:"video",list_video_nodes:"video",set_video_config:"video",set_video_prompt:"video",set_video_references:"video",cancel_video_task:"video",list_video_workflows:"video",list_video_assets:"video",run_video_workflow:"video",get_video_workflow:"video",resume_video_workflow:"video",confirm_video_workflow_stage:"video",cancel_video_workflow:"video",process_video:"video",get_video_media_task:"video",cancel_video_media_task:"video",
   generate_video: "video", extend_video: "video", edit_video: "video", get_video_task: "video", list_video_models: "video", plan_video_shot: "video", plan_video_storyboard: "video",
   cutout_image: "cutout", cutout_avatar: "avatar", upscale_image: "upscale", inpaint_image: "inpaint",
   transfer_style: "style", remove_watermark: "dewatermark", try_on_clothing: "tryon", extract_garment: "garment",

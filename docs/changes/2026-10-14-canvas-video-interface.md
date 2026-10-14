@@ -1,0 +1,221 @@
+# 画布视频界面与 Agent（检查点 C）
+
+状态：Task11 界面、持久节点与混合画布操作接线已写，Task12 恢复和删除后结果保护开始接线；C 尚未集中运行，未合入 main，未发布103。上阶段媒体 B 合入 `bb0286b`，跟进记录 `a6f58f0`。不能以本文件或 TypeScript 通过当作浏览器/完整交付证据。
+
+## 第一批实现
+
+- 增加独立视频 generation-node、settings-dialog/panel、reference-list、shot-editor、element-editor、camera-settings 与简洁来源链接。样式沿用画布主题，窄屏单列，弹层独立 Portal、快捷键隔离、焦点循环/Escape。参数表单不继续堆到 canvas-client 的大型 JSX 内。
+- 能力来自公开目录的 definition，没有4/8/12秒兜底。实际模型/时长切换才显式归一合法模式、分辨率、画幅，界面显示调整项；未知能力显示未配置。模型参数保留 false/0，send=omit 不渲染/发送；声音有模型默认/开启/关闭，声音必需/禁用保持约束。
+- 参考媒体/文字按完整顺序保存，显示全局 ref 编号与每类编号；移动/删除/交换会重新编译。首帧可选的唯一图片为尾帧，尾帧可选为首帧；超过数量不截断，显示校验问题。待完成视频节点作为真实依赖身份保存，生成前提示尚未完成，后端仍使用实际授权结果。
+- 分镜有独立描述/文字节点来源、时长及总和、排序；元素按命名组保存多类型真实素材身份；摄影字段由共享 compileVideoCamera 编译，关闭移除，不残留编译文本。服务端与前端预览使用同一摄影编译器，完整对白/参考文字不截断。
+- 新增视频节点入口，纯空白节点可建立独立项目；视频节点加入项目列表与 React Flow，保存名称/位置/尺寸/描述/完整参数和输入。图片/文字/视频/音频连入视频节点写实际 inputs；仓库层在同一事务下按账号图锁检查循环，复制/并发编辑也不能绕过新检查。
+- 节点 hook 按账号加载真实节点、按 revision 合并、串行本节点写入；表单固定打开时的 revision，冲突不自动覆盖。includeDeleted=1 只返回本账号已授权节点及删除标记，使另一个窗口能移除已删除节点。账号切换丢弃旧响应。
+- 新参数弹层显示当前报价，提交实际节点生成 API 与冻结计费头，不借用图片模型。最小本地回执只保存账号/项目/节点/revision/操作编号/任务ID，断线重试先查实际任务；已提交任务不重新发，未核实提交不偷偷换配置。旧完成任务不会清除新操作回执。
+- task hook 从原项目恢复实际任务并显示真实排队/进度/停止状态，不增加虚假百分比。完成后加载稳定全部产物ID并刷新节点/积分；当前播放器先采用原生控件。跨账号/项目迟到响应检查及回执身份已接线，但尚未通过真实双窗口/项目切换用例。
+
+## 检查与未完成项
+
+完整 TypeScript 在基础接线后通过；实现中发现并修正可选 enum 参数类型和旧面板 JSX 移除范围，未将失败检查记成通过。焦点/回执/循环检查修订后的完整 TypeScript 与 diff 检查也已通过；目录再补账号/模型发布刷新时更新，只清目录不静默覆盖节点参数。`verify-video-fusion-client-settings.ts` 已编写，尚未运行；计划中的浏览器 settings/canvas/Agent 脚本尚待补齐。
+
+继续 Task11：视频节点纳入既有复制/粘贴/多选/批量移动/删除/恢复/撤销/锁定/项目删除和剪线，保证混合操作事务与历史栈一致；补充文字/媒体身份选择、分镜/元素高级交互和 i18n，核对上游固定来源的摄影预设/运动方向表达。
+
+继续 Task12：完整专用播放器/放大下载与 Range、首/当前/尾帧/音轨/分离/裁剪/拼接持久任务进度、历史选择/失败完整重试/替换与工作台统一参数/发送；新生结果位置及原始媒体保护；真实刷新/两窗口/跨项目/媒体操作验收。Task13全视频 Agent 工具、制作规则/Skill与依赖制作链尚未实现。以上整个 C 模块完成才集中运行浏览器与 Agent、相关生图/SSE/Harness 回归；之后阶段合 main，完整 D/正式发布门槛保持。
+
+## 第二批画布操作接线（2026-10-14，C仍未运行）
+
+- 历史接口新增video-patch/visibility与共享节点属性的视频身份，图/文/视频移动、配置修改、恢复在一个现有历史事务内提交。撤销只覆盖本次变更字段，不覆盖lastTaskId/lastResultId；revision冲突拒绝。客户端冻结完整历史操作及UUID后才发送，断线重复请求仍为同一payload，未提交前不移动历史栈。
+- 混合删除在同一个事务校验全部账号归属，任一越权/缺失使整批回滚；新增操作编号防止文本硬删除后的重放误判。超过单次选择上限明确拒绝，不截断。项目删除则按真实项目一次删除全部节点/名称，并持久保存项目删除标记，不受单次选择200个上限截取。
+- 整批复制由新的受鉴权节点copy接口原子复制图片/文字/视频；只复制已拥有媒体身份，保留原始字节，不调用供应商或收费。操作UUID确定稳定新ID，同组内部媒体/文字/视频引用与分镜来源重映射，视频配置/摄影/false/0与共享锁定/层级保持，lastTaskId/lastResultId留空，未把历史生成任务重新执行。目标项目真实授权；无目标时新建本账号独立项目；失败整体回滚/同UUID重试不增节点。
+- 图片单节点原有复制路径保持，视频/文字/混合选择使用新的对象剪贴板，HTML标记与本账号最小节点ID清单支持两窗口粘贴。原生文字编辑和系统图片粘贴不接管。复制出来的整组选中只在实际RF节点出现后一次应用，沿用既有禁止从multiSel循环反灌的约定。
+- 视频接入右键复制/复制副本/删除/参数与共享属性、锁定/层级、连线剪断及撤销；混合选择使用已有BatchSelectionToolbar组件。批量移动/智能整理按同一历史事务保存，图/文/视频同一撤销步骤，保存失败恢复显示坐标。视频描述/尺寸/参数/连接改变记录字段快照，不把生成结果关联放进用户撤销。
+- 视频完成事务同时检查节点/项目删除标记，迟到结果只落工作台/任务历史，不自动恢复画布；原始任务与冻结计费仍完成一次，删除画布不冒充停止供应商任务。工作台多产物也不会仅因数量多而隐式出现画布，显式发送后才成为canvas来源。
+- 复制/历史/删除及作品补取加入账号/项目迟到响应保护，不将旧账号结果合进当前账号状态。新的服务端元数据表app_canvas_node_copies及项目deleted_at兼容列需在D的完整固定镜像/迁移/回滚检查中验证，未在正式103数据库执行。
+
+结构检查：上述接线的完整TypeScript及diff检查通过；中间新增完成事务读取source漏在查询类型中，已同步补SELECT与类型后通过。最后的剪贴板账号绑定、迟到账号响应、复制后一次选择修订也已通过完整TypeScript与diff检查。新增verify-video-fusion-node-operations.ts，覆盖真实App/DB的循环拒绝、混合历史重放/冲突/越权整体回滚、复制映射/配置/任务不重放、混合删除恢复、项目删除与原素材SHA/0调用0积分；脚本仅编写，尚未运行。C浏览器/Agent大模块验收仍未通过，不能把上述接线写成已完成全端到端。
+
+继续：核对摄影预设/运动方向与本地固定上游、i18n/窄屏/所有高级表单交互；视频/音频素材导入与已拥有历史选择、BYOC工作流前端选择/完整输入；完整播放器/媒体动作/历史重试/工作台；Task13 Agent与制作规则。整个C完成才集中运行接口与浏览器/Agent脚本，含复制后选择、旧图片剪贴板、批量移动、删除后迟到结果及跨账号/项目断言，之后阶段合main。D全34项、演示、完整固定App/生产媒体候选与切流回滚/103交付保持未完成。
+
+阶段保存：实现提交1a0a6ec；提交前刷新主线发现同事已完成图片浏览器缓存及生图公开验收/维护发布，最新main7ca7f81的83个文件已无冲突整合为05c1e03。保留共享画布、鉴权/账号、下载、私有媒体和视频冻结能力schema修订；视频引用缩略图同时接入新的CachedImage，不绕开同事的账号缓存隔离。合并后的完整TypeScript及diff检查通过，完整C仍未通过，视频界面代码只推任务分支。
+
+## Task12 第三批：播放器与持久媒体处理界面
+
+- 新增共享VideoPlayer，既有视频/音频作品节点与持久生成节点采用相同时间轴、播放暂停、音量/静音、全屏、私有媒体下载和放大预览。取消选中暂停；放大预览暂停源播放器、阻止嵌套放大并恢复焦点/限制Tab；下载从实际URL保留容器扩展名。首帧/尾帧使用服务端first/last，当前帧使用实际播放秒数，不再猜测尾帧减0.01秒。
+- 原抽帧回调只读取同步artworkId，漏掉202队列结果；改为打开MediaActionsDialog并提交Task10持久job。支持抽帧、音轨、分离、裁剪、有序拼接、完整FFmpeg/FFprobe参数数组、输出数组、UTF-8/Base64辅助文件和辅助输出。实际多产物逐个展示、下载和复用；HLS/DASH清单复用整个本任务分片包，辅助文件/分片不冒充可播放视频或生成引用。
+- 新增本账号媒体job历史接口，按原项目/source/operationId查询、createdAt+id游标分页；首页补回分页之外的真实pending任务。数值/来源/UUID/游标无效返回422，列表与报价private/no-store，POST/DELETE沿用同站变更检查。持久表新增本账号历史索引，完整固定镜像迁移/回滚仍归D验证。
+- useMediaJobs恢复历史与实际pending，通过真实GET推进Worker恢复/发布，显示processedSeconds和真实终态/停止请求，不估算百分比。账号或项目切换递增上下文代次，包括切回原项目，拒绝旧请求；已翻页游标不会被定期首页刷新重置；终态不会被旧pending响应降级。结果按稳定artworkId补取并保持服务器原项目/血缘，不把工作台或删除项目的迟到结果强插当前画布。
+- 使用现有媒体报价接口，动作报价在提交前显示，本地0积分仍按冻结配置执行；409价格变更展示新价、再次点击确认。媒体操作回执仅保存账号范围下的指纹/operationId/jobId，辅助文件明文、参数和凭据不进入回执。输入顺序、完整参数、辅助内容和项目均参与指纹；提交不明先按旧operationId查持久job，再复用同UUID重试。清理终态回执核对UUID，不清除另一个新操作。
+- 媒体发布事务按现有账号历史锁/视频图锁顺序与节点/项目删除互斥，同时检查项目、原生成节点、冻结输入作品删除标记；删除后的迟到媒体仍保存完整产物和结算一次，origin=workbench，不复活画布。workbench来源媒体不再仅因带projectKey隐式成为canvas。原素材仍不可覆盖。发布完成记录实际处理秒数。
+- 新增verify-video-fusion-media-interface.ts，编写了指纹/最小回执/旧终态保护，以及真实App历史分页、页面之外pending、操作重放、App重启、跨账号/跨站拒绝、删除项目后实际媒体完成只留历史、原SHA/0供应商/积分保持用例；尚未运行，待整个C集中验收。完整TypeScript与diff检查已通过，期间修正播放器JSX多余括号及既有Artwork分类缺少video/media类型，未运行功能/浏览器验收。
+
+本轮用户询问103发布锁，实际SSH核对两个deploy.lock均可非阻塞取得并立即释放；lslocks无发布锁持有者，正式APP/视频Worker仍是c05a923镜像。这里只读核对，不删锁文件、不终止其他任务、不发布。本批界面没有推main或切103镜像。
+
+阶段保存：实现7677550，最新主线56e5480的6个图片缓存部署/验收及交接文件无冲突整合为077fd55并已推任务分支，未覆盖同事实际网关/缓存槽修订。媒体节点/项目删除标记在现有图编辑互斥锁下读取，不再额外持有节点/项目行锁等待媒体计费，避免阻塞实际视频任务结果指针更新；输入作品仍保留必要的行读锁。
+
+继续完成Task12历史选择/替换/重试、共享工作台、视频/音频导入和BYOC工作流选择；Task11摄影预设/运动方向/i18n/窄屏及Task13完整Agent制作工具仍待完成。C真实接口/浏览器/Agent验收、完整34项、演示站对比、完整Linux App候选/切流回滚、最终103交付仍未通过。
+
+## Task12 第四批：素材导入与完整历史发送基础
+
+- 视频设置接入本账号图片/视频/音频上传和已拥有素材历史，首批30条可继续翻页，沿用同一有序引用/角色/能力校验。素材登记先验证实际私有字节、SHA及FFprobe，登记真实作品/尺寸/类型与原项目；工作台登记origin=workbench，不隐式进入画布。没有复用图片上传接口去伪造视频作品，也没有猜测时长/尺寸。
+- 上传支持客户端operationId，服务端先在app_video_reference_uploads预留账号/UUID/完整SHA/MIME/字节/键，再进行对象I/O；同UUID不同文件409，正在核实的同文件503并保留回执，过期租约可恢复。对象I/O不持DB连接/发布锁，避免并发占满连接池；成功重试返回同私有对象，错误不覆盖既有字节。既有不带编号的参考上传仍可用，图片生成入口保持。
+- 新增/api/video/assets本账号登记及完整游标历史，app_video_asset_imports保存同UUID一次登记结果。前端仅保存文件/项目指纹对应的最小UUID回执；批量中断保留已完成部分，重选同批不会重新登记已成功文件，成功部分在画布和引用面板可见。同站保护/账号代次、跨账号素材404及真实流类型检查归C验证。纯音频MP4按实际音轨登记为audio。媒体/素材游标保留PostgreSQL微秒，避免JavaScript毫秒截断漏掉同毫秒的记录。
+- 任务详情新增只读snapshot：原始/编译描述、完整常规参数/引用/分镜/元素/摄影、false/0、配置版本、retryOf、工作流摘要；只投影白名单，不返回执行通道、供应商快照、原响应、凭据或解密模板。历史重试先按新UUID找到真实已有retryOf任务，再读当前节点revision，修正重试请求响应不明后因节点revision改变而发生冲突的风险。删除任务增加同站保护，作品与私有媒体仍保留。
+- 发送到画布由仅主视频/简化参数改为完整结果集合与冻结输入：同任务/目标项目一次事务附着所有结果及媒体输入，复制作品引用并映射父级和节点输入，不改源URL/媒体字节/旧项目；冻结文字内联保留原对白，完整模型参数、摄影、分镜、元素保持。先验证全结果/输入归属与SHA，缺失任何结果明确拒绝，不静默只发送主视频。
+- app_canvas_video_task_sends保存发送确认，重复发送、另一窗口、重启不会再次更新已编辑节点或重复生成/扣费；项目删除与发送沿用账号历史锁/视频图锁互斥。原生工作流通过workflowTaskId引用本账号服务端密文，app_canvas_video_workflow_sources保留不可变密文来源，即使删除普通任务历史，已发送节点仍能复用该工作流；更换模型明确解除旧工作流关联。没有把后台工作流模板或供应商凭据塞进公开节点配置。删除已完成历史后，生成节点仍可用保留的真实结果供下游引用。
+- 新增verify-video-fusion-history-assets.ts，编写了真实App并发上传/哈希冲突/登记重放/所有权/分页、完整快照false0/凭据不外泄、AutoDL多产物/全引用/发送重放/App重启/删除历史后实际重生成与相同工作流digest/原SHA/发送0新供应商调用0积分用例。专用fullWorkflow隔离fixture显式登记seed及所有实际使用输入路径，仅该脚本启用；不把未映射字段猜成供应商参数，不改变此前A/B默认fixture。脚本尚未运行，整个C完成后集中执行。
+
+结构检查：本批完整TypeScript和diff检查通过；SQL与界面功能尚未验收，不记为已完成端到端。新登记/上传/发送/密文来源表和workflowTaskId兼容配置必须在D固定App镜像、迁移及回滚验收中核实，尚未在103正式数据库执行。
+
+继续：历史选择/结果替换/完整重试报价界面和共享VideoStudio仍待实现，工作台旧重试请求缺少新幂等/报价字段的问题已识别但前端尚未替换；BYOC工作流选择/输入、工作台BYOC来源与显式发送边界、剩余摄影预设/运动方向/i18n/窄屏、Task13 Agent仍待完成。不是把服务端基础当作完整历史/工作台交付；C/D、上游实操和最终103发布保持未完成。仅独立分支开发/保存，无103连接或发布锁。
+
+
+## Task12 第五批：完整历史、显示结果与共享工作台
+
+- 历史界面显示本账号实际任务/完整产物、原始及编译描述、白名单完整参数与配置版本，支持项目/来源过滤、真实游标分页、恢复分页之外pending、停止、终态删除、失败/取消按原冻结参数重试和所有产物发送目标项目。重试先查询最小UUID回执，成功ACK核实taskId/cost才清回执；改价重新显示确认，needs_attention不自动重提。选择工作台旧任务后打开历史仍定位该任务，避免操作另一个最新任务。
+- app_canvas_video_nodes兼容display_result_id保存独立显示选择；历史video-result操作在现有账号历史/图编辑锁及事务下检查revision/可选原选择、所属完成视频及真实私有SHA/probe。旧任务/作品/字节/计费不改，选择与恢复最新支持撤销/重放；新生成关联清除显示选择，完成不会覆盖用户在途另选结果。客户端刷新后按账号/项目代次补取选中作品，显式选择存在时不回退到另一个任务URL。此列尚未在103正式环境执行，完整DDL/回滚归D。
+- 原参数复用保留false/0、高级设置、实际输入作品和冻结文字；文字与分镜不重新读取已编辑的旧文字节点，不能完整恢复的历史明确拒绝。Canvas显式复用保存可撤销参数后打开设置，不触发新生成；历史完整重试同样内联原对白。公开投影新增所属projectKey、retryOf及updatedAt，没有返回供应商快照、凭据或解密工作流。
+- 参数主体抽为共享VideoSettingsFields，Canvas及/video使用同cap/合法模式与时长分辨率组合、完整有序媒体/文字引用、分镜、元素、摄影和私有素材上传。移除全部引用会同步清空config.references，防止复用历史之后仍隐式提交已删除参考；上传完成前不能提交生成。两处使用同实际播放器和持久媒体处理入口，工作台媒体source明确workbench，不隐式出现画布。
+- 替换工作台旧的简化能力类型、硬编码默认规格、旧重试、猜测1—3分钟文本和内存批量提交。新批量仅持久存指纹/操作UUID/确认taskId/cost；每项先查真实服务器操作，响应不明保留UUID，改价刷新报价再确认，已创建部分可恢复。账号切换重新挂载会话，异步鉴权后核对账号代次；实际任务恢复/进度/完整结果/所有产物下载与共用历史详情/停止/重试/发送接线。
+- 工作台可用本账号workflowTaskId复用加密工作流来源，服务器校验模型并读取保留密文，再以完整manifest冻结执行；不向客户端返回模板。原Task12专用真实App脚本扩展结果选择重放/冲突/撤销、严格任务查询与私有缓存、冻结客户端参数、删除旧历史后工作台实际完整工作流再生成、同UUID0重复调用及未发送成果origin=workbench断言。脚本尚未执行，C模块整体完成后集中运行。
+
+结构检查：本批完整TypeScript与git diff检查通过。中间工作台读取projectKey时公开类型缺失，已补真实公开投影并重新通过；不把结构检查当功能/E2E通过。当前origin/main仍56e5480，已在077fd55整合；第五批只保存任务分支，未合main、未发布103，没有持发布锁。用户再次询问锁时实际核验Naumi/Hub两个deploy.lock均FREE，lslocks无持有者；不删锁文件或终止同事进程。
+
+继续：BYOC前端工作流选择/全部输入与工作台来源边界尚未完成；当前共享表单仅托管视频模型，历史BYOC参数复用尚不能据此宣称可直接生成。工作台完整目标项目列表仍需补无自定义名称且未出现在当前素材/任务页的项目。摄影预设/运动方向/i18n/窄屏与只读管理员目标视频、Task13 Agent仍待补齐；客户端批量/历史结果操作还需浏览器刷新、双窗口、项目/账号切换、断线/改价及不变原SHA行为证据。C/D、全34项与演示对比、完整固定Linux App候选/切流回滚/最终103发布保持未完成。
+
+
+## Task12 第六批：BYOC完整输入与真实项目目标
+
+- 共用设置主体接入本账号活动ComfyUI端点/工作流公开目录，只返回端点ID/名称、实际可编辑文本/seed/尺寸槽与输入字段路径；不返回端点URL、密钥或完整模板。可选择BYOC执行，逐节点文本/seed/数值以及图/首尾/视频/音频/其他显式变量映射共用到画布和工作台。托管模型能力表单保持；BYOC按本账号实际工作流映射，不能拿未知工作流名称猜规格。目录失败可刷新，账号代次隔离。
+- 节点兼容comfyOverrides保存完整文本/种子/数值，与comfyInputs一起复制、历史、发送、生成；真实提交传入所有字段和有序引用，完整文字编译并冻结。seed=0和generateAudio=false明确传递，非法0宽度/非整数或不存在的输入节点拒绝，不静默回落旧值；明确空文本覆盖保留为空。公开历史白名单恢复映射与冻结实际种子/文本/数值，不解密供应商模板到客户端；旧历史缺少设置时标无法完整复用，仍可按旧密文重试。
+- 工作台BYOCsource显式workbench，来源图不隐式推导画布项目；画布有真实node时source=canvas并保存实际项目关联。普通已有工作流/Agent来源保持。共用最小批量UUID回执支持BYOC，0积分直接调用持久视频任务入口；不经过收费视频报价，也不以API返回202当作完成。UI实际task历史/Worker恢复/全部结果播放与发送继续共用。
+- 新增本账号完整画布目标列表，按既有套图批次/稳定group/旧父链分组和显式画布来源规则，合并文字/视频节点；包含无自定义名称且未出现在第一页素材/任务的项目，排除工作台作品及已删除项目。不从用户传来的projectKey推导授权、不跨账号读取、不返回作品内容或配置。工作台发送之后刷新目标列表。
+- 新增verify-video-fusion-byoc-interface.ts，覆盖实际App/DB/private-media/ComfyUI模拟供应商，完整三类媒体映射、逐节点完整对白/seed0/数值/声音false、公开目录无执行秘密/归属、历史完整参数、App重启相同UUID0重复、画布共用输入/真实项目、未命名项目完整列表/两账号、原SHA和0积分。该脚本仅编写尚未运行，归C集中验收；模拟供应商产物来自已有原创素材，不代表真实BYOC供应商视频质量通过。
+
+结构检查：本批完整TypeScript与diff检查通过，没有执行真实功能C验收。开发仅在任务worktree，origin/main刷新仍56e5480（077fd55已包含），没有持103部署锁/正式数据库变更/镜像发布。BYOC公开目录和comfyOverrides无需新独立业务表，仍须D固定镜像验证兼容schema和回滚。
+
+继续：Task13全视频Agent、制作规则及依赖链尚未完成；现有旧generate_video仍硬编码4/8/12和规格，并错误声称结果已挂画布，必须替换且不能作为新功能通过。摄影预设/运动朝向/i18n/管理员只读与实际窄屏/账号切换继续补齐。所有新界面/批量回执/历史操作和BYOC完整行为都待C真实API、浏览器与Agent集中验收；完整D/34项/演示比对/整分支复核/固定完整App候选与切流回滚/103发布仍未完成。
+
+
+## Task13 第一批：实际视频工具与Agent执行边界
+
+- 新canvas-video-tools接入现有naumi-tools及同一运行时/权限/harness：查询实际视频模型、本人BYOC输入/素材/文字、当前项目节点及完整配置，创建/修改参数/完整描述/有序引用，按保存的节点/revision生成、真实状态/原操作查询与停止，以及持久媒体处理/进度/取消。移除旧视频工具定义，避免新旧同名工具重复；不再硬编码4/8/12/横竖尺寸或猜测1—3分钟。
+- 工作台Agent可以传完整config/inputs，source显式workbench；画布使用实际owned节点，现有imageModelId及图片规格不被视频借用。计费预检读取视频节点模型/合法分辨率，BYOC0积分跳过站内视频价格；媒体使用实际mediaBillingQuote并把确认传入job，用户高额/成本报价的现有harness确认机制保留。原操作已持久落库时先恢复，不因节点revision已变化或历史已删除而错误再生成。
+- 工具生成使用稳定原操作UUID，响应不明报告原编号并允许get_video_task按操作查；同编号不同来源/节点拒绝。pending/needs_attention现有任务返回状态，不自动重提；删除旧历史不使新生成入口永久404。实际Worker结果按持久node/project关联，SSE完成只代表Agent对话已完成，不冒充视频完成。
+- 单镜头规划保存完整描述/对白及实际配置；分镜可选择已声明结构化多镜头（总时长严格一致）或独立可编辑节点，保留每段描述、各段覆盖配置和有序前序节点依赖。循环/重复依赖拒绝，独立镜头没有强制继承旧多镜头数组；规划不调用供应商或收费。下一批仍须把这些节点接入持久执行DAG，不能把保存依赖当作自动串并行生成完成。
+- 新production-prompt保存单镜头/剧本片段/对白声音/首尾与两种引用编号、硬切/同机位/前传与编辑意图、真实能力、待核查/恢复、工作台与媒体表达规则，加入现有Agent系统规则。本文属于工具制作规则基础，不代表上游全部Skill已完整转译或真实Agent行为通过。
+- 新视频/文字节点列表采用账号/当前项目元数据与游标分页，只按需读取一个完整配置/剧本，不把整图内容灌入模型；目录不会因为第一页任务/素材不足丢来源。完整剧本文字不截断，实际生成读取本人当前已就绪文字，生成中的文字明确阻止前序未完成提交。get_video_config隐藏工作流template，修改同一工作流配置保留服务端已有模板；不向模型返回供应商执行快照或解密模板。
+- CanvasAgentContext从服务器验证真实project/video/textNode归属，UI提交选中的视频/文字身份；视频/音频作品不被当成图片送视觉模型。新增video_nodes会话事件与保存/恢复记录，当前项目及时刷新；空白画布在本轮对话完成后才定位新项目，避免中途切项目终止后续工具。原图片artifact挂载不接管持久视频/media/node结果，工作台媒体不会借图片URL被强行标canvas。
+- 新工具纳入feature-access和内部HTTP方法/路径白名单，harness按真实视频/规划/媒体/停止意图准入；planning现在是实际写操作，不能伪装只读绕过意图与写次数。仍保留64KiB工具参数、深度/对象数/时间/调用预算；数组只按真实工具schema上限允许256有序引用、1000媒体输入与512原生命令参数，既有其它工具默认200保持。
+- Agent活动/小球增加实际创建、保存、读取剧本/引用/状态/媒体处理标签。旧run_comfy_workflow收到持久taskId时报告已提交并查状态，不再“执行完成（无产物）”；图片工作流入口继续原有结果路径。
+
+验证：verify-video-fusion-agent.ts已编写基础实际App/DB/任务/媒体Worker、完整剧本文字与owned、配置重放/revision冲突、同工具操作0重复生成、完成/App重启、真实分镜节点依赖/0新费用、harness意图/规划写权限、真实尾帧、内部路径及原SHA用例；仅写入，NOT RUN。完整TypeScript与diff结构检查通过，不据此标真实Agent/SSE或完整C通过。
+
+继续：Task13持久DAG（规划节点→混合串并行→前序真产物→原节点结果指针）、所有阶段模型/计费与文字冻结、明确逐阶段报价确认/重启恢复，以及实际SSE文本供应商模拟/关闭SSE/真实Browser Agent操作脚本仍须完成。源码调研发现Task9 workflow.ts仍有默认4/720p，并在后续节点实际提交时解析当时配置；下一批必须消除这些默认并证明已排队制作链的版本/参数冻结，不复用此前只验证已创建task的证据来声称整条pending链已冻结。摄影预设/运动方向/i18n/管理员只读/窄屏、完整C集中验收与D全部34项/演示/整分支复核/完整固定App/103发布仍未完成。只在独立分支开发，无103连接或发布锁。
+
+
+## Task13 第二批：制作链入队时冻结全部阶段
+
+- 新制作链在第一次入队前捕获每阶段完整模型ExecutionBundle（能力/参数映射/凭据引用）和计费版本；恢复使用withFrozenExecutionBundle读取原版本，不在后续镜头提交时重新选择当前模型。传统配置保存本轮provider及旧计费上下文，仍沿既有已创建legacy任务的凭据漂移保护，不默默使用新连接重提。所有冻结阶段/原文字保存到frozen_nodes_enc的AES-GCM密文；public_frozen_nodes只保存实际价格/授权上限/版本摘要。
+- 入队统一核对各阶段已声明能力、合法规格及静态媒体所有权，默认时长/分辨率取冻结能力声明；删除workflow.ts固定4/720p。依赖媒体在预检只作为显式待定身份验证类型/角色与数量，真实提交仍先等前序completed、读取owned真实产物，不能以占位URL调用供应商。原prompt与完整有序文字、分镜文字来源保存；私有actor范围文本上下文使后续创建不会读到已经修改或删除的原文字，原来源ID保留。
+- input_digest冻结原始标准化意图；重复UUID先查原行再恢复，不重新读取已变更模型/价格/原文字。并发同UUID只采用第一次成功插入的密文与方案，冲突意图拒绝；老行保持兼容且不自动把无法证明的旧pending链标为已冻结。冻结记录解密失败/阶段缺失明确拒绝，不回落新模型。
+- 实际阶段状态附带原报价；原确认流程继续使用真实冻结价格，没有把高额/成本授权当作已同意，也没有预扣未提交阶段。新增兼容列input_digest/frozen_nodes_enc/public_frozen_nodes只在隔离fixture随C验证、D固定App/回滚再验证，尚未触碰103正式DB。
+- verify-video-fusion-workflow-freeze.ts已编写，真实App/DB/Worker链A→B，原生发布新模型/wire/合法默认值与新计费、修改完整对白、App重启后仍同旧链/旧模型版本/旧费/旧对白/旧规格、同UUID不重复、密文结构与owner隔离用例。harness仅新增owned fixture密文结构/意图指纹布尔检查，不输出密文或秘密。脚本NOT RUN；完整TypeScript/diff结构检查通过，不能写成实测链冻结PASS。
+
+继续：原计划节点→制作链DAG→原节点最新结果指针接线、BYOC节点在混合链内完整冻结/执行、Agent链工具与完整报价授权、SSE文本供应商模拟/真实Browser Agent仍须实现。当前只是补强Task9持久链的排队冻结，不能当作完整Task13或C通过；摄影/i18n/只读及C/D/34项/演示/整分支复核/完整固定App/103发布保持待完成。无本批main合并、103连接或部署锁。
+
+## Task13 第三批：保存节点混合制作链与真实应用验收
+
+- 新 `/api/canvas/video-workflows` 只接收本人当前项目实际节点ID/revision及原操作UUID；从持久节点读取配置和有序引用，构造依赖DAG。前序待定身份保留原序号，提交时换成本人实际completed产物，不以占位URL调用供应商。同原UUID先查持久意图指纹，节点之后有revision变化仍恢复原链，异意图/跨账号拒绝。
+- 每个BYOC阶段在入队时冻结端点/凭据引用、工作流模板、完整文字、映射及种子/数值；保存到AES-GCM阶段胶囊。queued链不读取后来更新的库配方。普通BYOC原生入口复用同一recipe模块，种子0、generateAudio=false、数值/完整文字和全部素材保持。
+- Task预扣事务同时关联原canvas节点与run阶段；结果/媒体/结算事务同时缓存所有阶段产物。缓存允许删除完成任务历史后继续依赖，保留实际媒体及计费。run共享行锁拒绝停止后新任务插入。晚返回create不能把已完成状态降回processing。移动/尺寸等不改内容的编辑保留；配置/引用、删除或新任务变化阻止覆盖。
+- Agent新增run/get/resume/cancel/confirm-stage五工具，当前共26个视频工具；完整链预算读取真实阶段冻结报价，charged链先展示整体费用及授权上限再等下一条明确确认，BYOC0费用不制造收费确认。执行沿服务器private prepared plan，不把模板或凭据送模型；阶段继续使用原报价。取消/中断前提交检查AbortSignal，已持久受理阶段由Worker恢复。真实SSE确认/断开/恢复仍待验证，不以基础工具验收替代。
+- 增补制作链production-prompt。补全Session私有preparedVideoWorkflow；修复internal run/node字段误入严格public submission schema导致首阶段blocked。实际BYOC回归定位项目目录SQL的source列错误，改为真实source_url AS source，未改媒体/项目所有权规则。
+
+实际验证：
+
+| 脚本 | 结果 | 证据 |
+|---|---|---|
+| verify-video-fusion-canvas-workflow.ts | PASS | checkpoint-c/canvas-workflow-f561f013-29fe-4d49-b700-6a2d2711c9b8/result.json |
+| verify-video-fusion-workflow-freeze.ts | PASS | checkpoint-c/workflow-freeze-234bee75-f176-4889-8407-d0b3af45ec92/result.json |
+| verify-video-fusion-agent.ts | PASS，基础工具范围 | checkpoint-c/agent-tools-94820096-5acb-4937-855a-9417289ebfb8/result.json |
+| verify-video-fusion-byoc-interface.ts | PASS | checkpoint-c/byoc-interface-c5fc4806-dd8c-4e66-8404-d473b545a333/result.json |
+
+所有上述证据来自隔离本机真实App/PG/Router/私有媒体/Worker及HTTP素材模拟供应商，付费视频调用0；不能证明供应商真实视频质量或额度。失败记录保留：canvas首阶段invalid submission、BYOC项目目录503已修复；两处断言修正分别为直接比较真实对白字段（JSON字符串会转义换行）、规划只检查生成请求而非fixture建材存储请求。最终tsc --noEmit --incremental false及diff结构检查通过。远端main已刷新，仍56e5480，本批未合main。
+
+## Task11 补全摄影预设（界面验收待完成）
+
+保留固定infinite-canvas 68b37db04b9083c3ff0af67ffe362f85d04d1f9f的8种摄影机/8种镜头、11个焦距和10档光圈资料及光学描述，保存源码署名、AGPL许可与NOTICE。Naumi自有表单使用可编辑预设建议，已有自由文字继续保留；编译已知资料为实际光学方向，未选择的参数不自动补，禁用不追加摄影文本。运动模式中仅对真实声明的characterOrientation/character_orientation选项显示角色朝向及跟随图片/视频标签；不凭mode捏造可发送参数。
+
+本批摄影与运动界面仅类型验证，浏览器/i18n/管理员只读/390px、历史与媒体界面集中脚本、真实SSE/完整上游Skill行为与C仍待完成。D演示站/34项/分支复核/完整LinuxApp候选/蓝绿排空回滚/103发布及交接全部保持待做。103只读检查App/Worker仍c05a923，Naumi deploy.lock空闲，Hub对应锁路径不存在；没有占用发布锁或发布本轮代码，开发不持锁。
+
+## Task13 第四批：实际Agent SSE、确认与断流恢复
+
+- fixture增加独立openai-chat文字模型/加密凭据/本地HTTP SSE供应商，仅显式agentReply用例启用；通过真实统一配置解析、Router/执行传输、Pi streaming、Agent Harness和canvas/assistant入口，未向产品添加测试路由或绕过权限/计费。
+- scripted文字供应商读取实际UNTRUSTED_TOOL_RESULT封装的分镜工具返回，使用真实保存的节点ID/revision和规划run UUID。首轮模型故意携带confirm=true，服务器仍展示40积分整链报价并等待，实际任务和视频供应商创建均为0；下一轮本人明确“确认”才提交原链。
+- 原链受理后的tool_end触发真正关闭SSE/abort；随后实际重启App，通过真实Worker tick继续A→B，两个原节点获得实际结果。重放原制作链只有两个task/两次视频创建；本人历史恢复含video_nodes。未以SSE结束宣称视频完成。
+- 初次模拟响应解析忽略既有untrusted JSON字符串封装，修正fixture解析；确认回合INTENT_REQUIRED定位为Next开发按需编译节点路由导致运行模块重载/内存报价丢失。fixture在开启会话前预热节点路由以排除HMR干扰，没有开放所有写权限或削弱用户确认边界；临时诊断代码已移除。生产固定App会话/多槽恢复仍在D单独验收。
+
+实际verify-video-fusion-agent-sse.ts PASS：checkpoint-c/agent-sse-0d85f540-53e3-48b0-b6f0-03b64c9e2468/result.json，包含modelSelfConfirmationBlocked=true；此前正常未确认用例亦PASS f86a034c-d221-43d0-a298-0edb1e483c9e。原生App/PG/私有媒体/Worker/Pi/Harness真实，文字与视频供应商均为隔离模拟，不证明真实模型规划质量或付费视频质量，真实付费调用0。
+
+第三批已提交推送f43430e，33文件1292+/83-。第四批只新增fixture及SSE verifier；完整C的历史/媒体界面集中用例、浏览器390px/i18n/管理员只读和上游制作Skill行为仍待完成，不能凭SSE脚本宣称完整Task13/全C/全34项通过。D完整固定LinuxApp、演示比对、蓝绿排空/回滚/正式103上线保持待做，无本批main合并或服务器发布/持锁。
+
+## Task11/12 第五批：真实Chrome设置/生成/播放与管理员只读
+
+本批新增管理员只读读取目标账号的video-node列表/详情、asset/BYOC公开目录与task列表/快照，沿用authorizedTargetEmail及requireAdmin。任务目标GET仅读DB，不惰性轮询/结算；所有POST/PATCH/DELETE继续真实authenticatedEmail，不能借email查询参数代写。前端hook在只读模式仍恢复目标节点/任务/素材与历史，跳过完成回写和上游轮询；上传/保存/生成/停止/删除持续禁用。旧modelId-only或真实providerId节点只按唯一相同public model ID匹配managed-video目录，不猜wire名或参数，不自动修改原配置。视频/文字节点加入实际?node深链，等待节点来源加载完成再定位。
+
+视频组件接入现有zh/en字典；按钮、字段、角色、状态、媒体/历史/高级设置与动态标签翻译，用户完整对白、素材标题和工作流JSON保持。摄影/元素/角色等元数据不换成图片模型规格。共用useBillingEstimate增加默认true的enabled参数，视频只读和BYOC不请求托管报价，原图片调用默认行为保留。
+
+实际浏览器发现并修复：portal丢画布主题变量导致暗色输入白底浅字，三个视频弹层使用canvas-ui-dark/light及canvas-ui-input；长fieldset内容压住固定页脚，独立div承载滚动；手动首尾角色被自动推断覆盖，显式角色修改保留并由合法性校验拒绝非法组合；增加交换首尾帧，交换真实素材身份并重建顺序角色。模型更换明确去除不支持的分镜/元素/摄影/参数；完整提示词不变。参考数量错误改为图片/视频/音频用户语言并覆盖英文。
+
+fixture扩展独立KIE motion模型，仅uiModels启用，单图/单视频/无音频、明确朝向枚举，真实库/通用参考图上限一致。种子初始PNG/MP4上传后登记sha/bytes/owner/remote_ready，避免远端已有文件误走本地历史兜底。模拟S3补签名校验后的response-content-disposition和仅fixture App origin的CORS；上传/读取仍验证SigV4/有效期/路径/不可覆盖规则，没有改生产下载或图片缓存鉴权。
+
+| 验证 | 状态与证据 |
+|---|---|
+| verify-video-fusion-readonly.ts | PASS：readonly-369640de-2582-48b6-a1c7-6e15c6d96612/result.json。真实两账号/管理员显式目标、非管理员拒绝、默认owner隔离、无上游轮询/费用变化，代写/生成/取消/删除全部拒绝 |
+| verify-video-fusion-canvas.ts + settings.mjs/canvas.mjs/canvas-jobs.mjs | PASS：canvas-browser-62cc28eb-c5cb-4380-9625-d1317ce11271/result.json。真实Chrome/原生Cookie/App/PG/Router/私有媒体；完整对白、真实首尾身份交换、手动非法角色阻止生成、8/8/11/10摄影选项及禁用编译、有序多类型引用/分镜/元素、合法朝向/换模型归一、刷新、英文、390px及目标只读。真实UI提交KIE motion task→Worker completed→原节点播放/暂停/静音/时间轴/真正下载/放大→真实首帧media job→重载仍同task。仅一次视频创建，原视频SHA保持 |
+| verify-video-fusion-history-assets.ts | PASS：history-assets-648535a2-25b2-4c26-a21f-8035ee16f014/result.json。实际上传/并发原身份、登记幂等、完整历史/结果选择与撤销、发送全部产物与原项目关联不收费、App重启、删除旧历史后仍用冻结完整配方实际生成、Workbench不挂Canvas |
+
+证据均位于本worktree忽略output/canvas-video-fusion-20261013/checkpoint-c。历史脚本初次把fixture对象读写也计为生成调用，断言改成create/image-create，不删除失败记录。其他失败与修正：uiModels通用参考图上限不一致；fixture用内部providerId而公开目录为managed-video；下载最初模拟S3未执行已签响应头导致打开视频；关闭媒体测试点了遮罩中心，改实际关闭按钮。最后tsc session70081 exit0。补充参考缩略图实际decode/放大画面loadeddata断言正在复核；未据截图空框声明图片验证已通过。
+
+完整C尚未完成：Browser Agent、两窗口/项目切换/复制/撤销/批量工作流与图片回归、media-interface集中脚本、上游全部制作Skill行为仍待覆盖；Task11/12/13和34项不可凭本用例整体打勾。D演示站实操/固定上游对照、34项矩阵、整分支新审阅、完整固定LinuxApp/蓝绿排空/回滚/103发布及交接全保持待做。当前未提交本批；已fetch main，仍56e5480。C盘181.2GiB/63.7%、E盘190.7GiB/72.9%，无需清理。没有连接103、持发布锁或发布。目标active。
+
+第五批补充实测已PASS：canvas-browser-e19c7f60-5397-4398-b9eb-7b79ae7837ca/result.json，包含actualOwnedReferenceImageDecode=true，放大video.loadeddata/videoWidth>0及所有前述设置/生成/播放器/真实下载/首帧/刷新/只读/英文/390px断言。替代只依赖截图空框的弱证据；图片缓存实现与生产下载鉴权未改。
+
+第五批媒体恢复集中用例最终PASS：media-interface-0091c0ff-c88e-4a27-8e48-615c49b5bd3a/result.json，真实App/DB/Worker drain/resume、最小UUID回执、参数/辅助文件指纹、跨账号隔离、分页之外pending恢复、同操作重放、App重启和删除项目后的迟到结果仅留Workbench、原SHA保持。首测502是fixture在helper drain之前未登记真实探测缓存；现在每份种子素材由真实FFprobe探测并以实际SHA记录，生产Worker排空限制未改。本批功能与补充证据区分明确，完整Browser Agent/其它画布交互和D仍待完成。
+
+## Task13 第六批：真实浏览器 Agent 与放大画面呈现
+
+新增 verify-video-fusion-agent-browser.ts / verify-video-fusion-agent.mjs，通过真实 Chrome 的侧栏输入和发送按钮进入 canvas/assistant、Pi streaming、Harness及统一模型配置。两段完整分镜实际挂载原项目，第一次模型自带 confirm=true 仍等待本人确认，视频任务/创建数为0；本人在输入框发送“确认”后，观察实际持久 task 已接受才关闭真实浏览器页面。重启实际 App 后 Worker 继续两个依赖阶段，重新打开原项目通过项目对话记录恢复，两个原节点解码视频、逐个深链检查完整可编辑对白。重放相同制作链仍只有两任务/两次视频创建，浏览器 pageerror 为0。
+
+实际 PASS：checkpoint-c/agent-browser-fd40057f-4dd4-4b59-892a-aaf5b7b4fd49/result.json。文字与视频供应商均为隔离 scripted fixture，不证明真实大模型创作策略质量或付费视频质量。首测在应用账号/项目尚未恢复时判断侧栏关闭并点击，恰好反转桌面默认展开状态；用例改为先等实际目标节点加载后判断展开，不修改产品默认偏好或添加固定睡眠。最终 session41010 exit0。
+
+放大预览原截图虽有 loadeddata/videoWidth，但取图时 Chrome 尚未呈现视频帧，不能作为视觉通过。补充原始彩条素材像素比例断言，放大首次暂停画面和实际播放/暂停后都必须呈现彩色像素，最终截图已人工查看。完整原画布脚本 PASS：checkpoint-c/canvas-browser-6ed92695-b63a-47fe-8c7f-4da6451718cd/result.json，expandedPreviewActualColoredPixelsBeforeAndAfterPlayback=true；session19702 exit0，无产品播放器改动。
+
+固定上游制作规则重新核对：IC video-single-shot/video-multi-shot/video-extension/video-editing/script/audio 中还有更细的单镜头职责、多镜头时间线/效果清单/密度与叙事弧、分镜拼图面板保留、逐字剧本切片/正式资产与持续性变体、默认硬切及同机位三类例外、前传语义、四种编辑变化/保持条款、音色样本与最终朗读的独立职责。当前 production-prompt.ts 只覆盖通用规则，完整规则融合与相应行为验收仍未完成，不能凭 scripted Agent 用例宣称 V12—V14 全部通过。
+
+完整 C 仍缺两窗口修改冲突、项目切换/复制/撤销/锁定/缩放/批量工作流、图片回归及上述规则；D 保持未完成。本批本机 fixture 都由 finally 停止，未连接103、持发布锁或发布。最新 fetch main 已从56e5480推进到3ab2418（新增画布性能/文字撤销/层级绘制等），准备在独立分支保存本批后整合，不覆盖共享checkout。
+
+## Task11—13 第七批：主线整合、制作规则与真实画布交互
+
+第六批测试已保存5ceb29f；将最新origin/main3ab2418整合到独立分支，合并SHA1eba865，只有canvas-client import区冲突，保留视频全部imports与CanvasPerformanceProbe，未切换/覆盖共享checkout。npm ci完成721包（新增主线fake-indexeddb）；合并后完整TypeScript、verify-canvas-render-layer-order和verify-canvas-text-edit-history均PASS。合并后原Chrome设置/视频生成/首帧/播放/真实下载/实际彩色预览/只读/390px/英文回归PASS：canvas-browser-2494ea71-055f-4698-92a8-45997fe13329/result.json，session9128 exit0。
+
+制作规则按固定IC的script/single-shot/multi-shot/extension/editing/audio细化，实际代码为src/lib/video/production-prompt.ts，范围及限制见[制作规则记录](2026-10-14-canvas-video-production-rules.md)。真实Agent供应商正常system消息已包含硬切、同机位例外、正式替换图片、拼图顺序及音色职责；更新后的完整Agent浏览器恢复用例PASS：agent-browser-bf739115-8044-48b0-bc9b-d6ddf5c03530/result.json，包含sourceAdaptedProductionRulesInActualModelSystem=true。首次合并回归把workflow查询返回数组顺序当镜头顺序导致对白断言错，改按规划的真实节点ID核对；未修改产品顺序或对白。
+
+新增verify-video-fusion-canvas-interactions.ts/.mjs：真实两窗口同时编辑，第二窗口409仍保留完整草稿且不覆盖已保存对白；真实右键复制节点→页面导航到另一项目→粘贴，配置与有序正式引用完整复制；实际GUI撤销/重做同一副本身份；源项目仍一节点，目标项目原节点内容保持。真实锁定后textarea只读、拖动坐标不变、设置/生成禁用；解锁后实际鼠标调整宽高，完整对白/引用不变且刷新保留。最后换原生Cookie到账号B并访问B本人项目，不能粘贴A节点，读取A节点404，UI只显示B节点；无生成任务/供应商创建/pageerror。
+
+浏览器发现产品问题：generic节点剪贴板已将owner和稳定ID写localStorage，但页面重载后hasClip未恢复，粘贴菜单禁用。canvas-client按真实当前user.email初始化：清空前账号内存引用，使用既有严格owner/marker/ID校验读取本人存储并恢复可用性；服务端复制鉴权继续保留，没有读取剪贴板完整媒体或自动粘贴。初次用例还需将带CtrlV提示的菜单accessible name按前缀匹配；截图已证明实际菜单禁用，不将选择器问题当产品通过。
+
+修复后集中用例先PASS ff176bff（不含新账号切换），最终完整PASS：canvas-interactions-2e53e077-b6e5-4ef6-8e14-f4a8382a1198/result.json，clipboardDoesNotCarryAcrossAccounts=true。两个最终脚本顺序执行session41923 exit0，finally均清理浏览器和fixture App/Worker。最终完整TypeScript session90341 exit0，diff结构检查通过。上述证据均在本worktree忽略output/canvas-video-fusion-20261013/checkpoint-c；没有付费视频调用。
+
+剩余C仍含批量工作流/更多图片保护回归及V12—V14完整行为验收，不能凭规则注入断言证明真实模型遵循规则或视频质量。新源码核查还需确认extend_video/edit_video当前只接受专用mode，而上游某些续写/编辑原本通过显式支持的视频reference完成；下一批应依据真实cap及正式source-video验证该差异，不用文生冒充、不静默改模式。D在线演示/固定本地上游实操、34项逐项证据、新分支复核、完整固定LinuxApp、蓝绿/排空/回滚、103上线及交接继续未完成。开发全程未持103部署锁，本批未发布。
+
+## Task12/13 第八批：视频参考制作与工作台批量/历史真实GUI
+
+正式reference续写/编辑缺口已修复；完整条件、7个制作方向、2种专用模式、工作台、7个无扣费拒绝分支及恢复证据见[制作规则记录](2026-10-14-canvas-video-production-rules.md)。最终production-3710100e PASS，非真实视频质量验收。
+
+新增verify-video-fusion-workbench.ts及计划中的verify-video-fusion-history.mjs。真实Chrome通过/video工作台选择托管模型、完整对白、任务数量3并点击生成；实际3个独立持久任务/3次Compshare Vidu原生创建，真实Worker各完成两个真实原始视频结果。未发送时目标画布仍仅原节点，全部结果作品origin=workbench且任务projectKey为空；刷新恢复原3任务，不重复生成。
+
+通过真实完整历史按钮进入history-picker，实际展开原任务参数面板，原始对白逐字与完整参数JSON可见。实际历史播放器与发送后画布播放器使用已验证的原始彩条像素断言，不把黑屏截图或仅loadedmetadata当呈现通过。本人选择原目标项目并点击发送，全部产物关联目标；再次点击发送恢复同一节点ID/revision，不新增创建、扣费或节点。目标原节点内容保持，最后打开实际发送节点，真实彩色视频呈现。浏览器pageerror为0。
+
+最终PASS：checkpoint-c/workbench-29e6b608-af68-439a-834f-8133dbcda5ee/result.json，actualHistoryAndSentCanvasColoredFrames=true，session78021 exit0。此前bc4c943f、124d68a8亦PASS相应范围，原始失败878b2b8d保留；第一次用例误用未存在的video-history-dialog test ID，改实际video-history-picker，没有改产品历史面板。最终29e6b608的两张截图均已人工查看，历史完整参数与彩色画面可见。发送后的普通结果素材和生成节点在本fixture中位置贴近，目标初始节点未设置坐标；剩余C需用实际布置的混合目标检查摆放与全部节点可见性，不以本用例宣称布局回归完成。
+
+完整TypeScript及diff结构检查PASS（session42799 exit0），所有本批fixture/Chrome由finally停止。最新fetch origin/main仍3ab2418，本分支已包含，无新增合并冲突。按用户增量整合要求，准备普通推送已验收C阶段到main；阶段Git合并不是完整C/D/34项交付，GitHub工作流经检查只构建/推送镜像及fixture验收，不含SSH服务器部署，本批无103连接/锁/发布。

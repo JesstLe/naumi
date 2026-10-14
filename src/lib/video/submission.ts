@@ -11,6 +11,7 @@ import {ensureVideoNodeSchema,associateVideoTaskTx,getVideoNode} from "../canvas
 import {authorizeVideoProject} from "../canvas/video-node-service";
 import {normalizeVideoInput,resolveVideoCapability,VideoContractError} from "./contract";
 import {compileVideoPrompt} from "./prompt";
+import {compileVideoCamera} from "./camera";
 import {adapterDefinition} from "./model-definition";
 import {videoReferenceSchema} from "./references";
 import {authorizeVideoReferences,materializeVideoReferences} from "./reference-materialization";
@@ -20,10 +21,15 @@ import {buildVideoCreate} from "./providers/wire";
 import {encryptAtRest} from "../settings";
 import type {VideoGenerationRequest} from "./types";
 import type {CreateVideoInput} from "./service";
+import {associateWorkflowTaskTx} from "./workflow-links";
+import {frozenWorkflowText} from "./workflow-text-context";
 
 export async function requireOwnedVideoText(email:string,id:string){
-  const row=(await getPool().query("SELECT content FROM app_canvas_text_nodes WHERE email=$1 AND id=$2",[email,id.replace(/^text:/,"")])).rows[0];
-  if(!row)throw new VideoContractError("TEXT_REFERENCE_UNAVAILABLE","引用文字节点不存在或无权访问");return String(row.content||"");
+  const frozen=frozenWorkflowText(email,id);if(frozen!==undefined)return frozen;
+  const row=(await getPool().query("SELECT content,prompt,status FROM app_canvas_text_nodes WHERE email=$1 AND id=$2",[email,id.replace(/^text:/,"")])).rows[0];
+  if(!row)throw new VideoContractError("TEXT_REFERENCE_UNAVAILABLE","引用文字节点不存在或无权访问");
+  if(["generating","processing","queued"].includes(String(row.status)))throw new VideoContractError("TEXT_DEPENDENCY_PENDING","前序文字尚未完成");
+  return String(row.content||row.prompt||"");
 }
 export function videoCreationInputDigest(input:CreateVideoInput){const {billingConfirmation:_confirmation,idempotencyKey:_key,...intent}=input;return createHash("sha256").update(canonicalConfig(intent)).digest("hex");}
 export async function createValidatedVideo(email:string,input:CreateVideoInput,hooks:{submit:(email:string,task:VideoTaskRow,request:VideoGenerationRequest)=>Promise<void>;creationError:(email:string,task:VideoTaskRow,error:unknown)=>Promise<void>}):Promise<{taskId:string;cost:number}>{
@@ -51,7 +57,7 @@ export async function createValidatedVideo(email:string,input:CreateVideoInput,h
     if(node.revision!==input.nodeRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","视频节点已更新，请重新读取后生成",409);
     if(node.projectKey!==input.projectKey)throw new ModelConfigError("VIDEO_NODE_PROJECT_CONFLICT","视频节点项目不一致",409);
   }
-  const cameraPrompt=input.camera?Object.entries(input.camera).filter(([,value])=>!!value).map(([key,value])=>`${key}: ${value}`).join("; "):"";
+  const cameraPrompt=compileVideoCamera(input.camera);
   const orderedInputs=input.orderedInputs?await Promise.all(input.orderedInputs.map(async item=>item.kind==="text"&&!item.nodeId.startsWith("inline:")?{...item,value:await requireOwnedVideoText(email,item.nodeId)}:{...item})):references.map(ref=>({id:ref.id,nodeId:ref.artworkId||`inline:${ref.id}`,kind:ref.kind,role:ref.role,value:ref.url||ref.storageKey||ref.artworkId!}));
   const compiled=compileVideoPrompt(input.prompt,orderedInputs||[],cameraPrompt);
   for(const shot of input.shots||[])if(shot.textNodeId)await requireOwnedVideoText(email,shot.textNodeId);
@@ -80,12 +86,12 @@ export async function createValidatedVideo(email:string,input:CreateVideoInput,h
   const parameters={version:2,submissionState:"prepared",request:stableRequest,workflowManifestEnc,workflowManifestDigest,creationInputDigest:videoCreationInputDigest(input),
     ...(currentExecutionBundle()?{modelExecutions:structuredClone(currentExecutionBundle())}:{}),
     publicModelId:execution?.frozen.publicModelId||input.modelId||modelId,projectKey:input.projectKey,nodeId:input.nodeId,nodeRevision:input.nodeRevision,
-    originalPrompt:input.prompt,camera:input.camera,authorNodeIds:compiled.authorNodeIds,retryOf:input.retryOf,...normalized,
+    workflowRunId:input.workflowRunId,workflowNodeId:input.workflowNodeId,originalPrompt:input.prompt,camera:input.camera,authorNodeIds:compiled.authorNodeIds,retryOf:input.retryOf,...normalized,
     seconds:request.durationSeconds,size:request.resolution,providerId,modelId,providerSnapshot:publicProviderSnapshot(providerConfig),idempotencyKey};
   const claimed=await createVideoTaskWithReservation({billingQuote,id:taskId,email,model:modelId,prompt:request.prompt,size:request.resolution||"",seconds:String(request.durationSeconds),cost,
     requestBody:JSON.stringify({version:2,modelId,mode:request.mode,durationSeconds:request.durationSeconds,resolution:request.resolution,referenceIds:request.references.map(ref=>ref.id)}),
     providerId,source:input.source,sourceId:input.sourceId,parameters,videoReferences:request.references,capabilitySnapshot:capability,idempotencyKey,channelId:providerId,
-    providerSnapshot:publicProviderSnapshot(providerConfig),...(input.nodeId?{onReserved:async(client,task)=>associateVideoTaskTx(client,email,input.nodeId!,input.nodeRevision!,task.id)}:{})});
+    providerSnapshot:publicProviderSnapshot(providerConfig),...((input.nodeId||input.workflowRunId)?{onReserved:async(client,task)=>{if(input.nodeId)await associateVideoTaskTx(client,email,input.nodeId,input.nodeRevision!,task.id);if(input.workflowRunId&&input.workflowNodeId)await associateWorkflowTaskTx(client,email,input.workflowRunId,input.workflowNodeId,task.id);}}:{})});
   if(!claimed.created)return {taskId:claimed.task.id,cost:claimed.task.cost};
   try{await hooks.submit(email,claimed.task,request);}catch(error){await hooks.creationError(email,claimed.task,error);}
   return {taskId:claimed.task.id,cost:claimed.task.cost};

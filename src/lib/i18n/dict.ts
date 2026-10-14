@@ -2,6 +2,7 @@
 // Anything not yet migrated stays hardcoded (Chinese) in components and simply
 // won't switch — the site degrades gracefully during the rollout.
 import { BRAND } from "@/lib/brand";
+import {videoZh,videoEn} from "./video";
 
 export type Locale = "zh" | "en";
 export const LOCALES: Locale[] = ["zh", "en"];
@@ -14,6 +15,7 @@ export function normalizeLocale(v: string | undefined | null): Locale {
 type Dict = Record<string, unknown>;
 
 const zh: Dict = {
+  video:videoZh,
   nav: {
     home: "首页",
     generate: "生成",
@@ -1020,6 +1022,7 @@ const zh: Dict = {
 };
 
 const en: Dict = {
+  video:videoEn,
   nav: {
     home: "Home",
     generate: "Generate",

@@ -4,10 +4,16 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /** A private, signature-verified fixture store. It never connects to a real bucket. */
-export function createFixtureObjects({ root, accessKeyId, secretAccessKey, bucket, calls }) {
+export function createFixtureObjects({ root, accessKeyId, secretAccessKey, bucket, calls, allowedOrigins=[] }) {
   root=path.resolve(root);
   return async function handle(req,res,origin) {
     const json=(status,message)=>{res.writeHead(status,{"content-type":"application/json"});res.end(JSON.stringify({error:message}));};
+    const browserOrigin=String(req.headers.origin||"");
+    if(allowedOrigins.includes(browserOrigin)){
+      res.setHeader("access-control-allow-origin",browserOrigin);res.setHeader("vary","Origin");
+      res.setHeader("access-control-expose-headers","content-type,content-length,content-disposition,etag,accept-ranges,content-range");
+      if(req.method==="OPTIONS"){res.setHeader("access-control-allow-methods","GET,HEAD,PUT");res.setHeader("access-control-allow-headers","content-type,content-length,range");res.writeHead(204);return res.end();}
+    }else if(req.method==="OPTIONS")return json(403,"fixture origin denied");
     const url=new URL(req.url,origin), signQuery=url.searchParams.has("X-Amz-Signature");
     const auth=String(req.headers.authorization||"");
     const signature=signQuery?url.searchParams.get("X-Amz-Signature"):auth.match(/Signature=([a-f0-9]{64})/)?.[1];
@@ -49,7 +55,9 @@ export function createFixtureObjects({ root, accessKeyId, secretAccessKey, bucke
     const range=String(req.headers.range||"").match(/^bytes=(\d+)-(\d*)$/);
     const start=range?Number(range[1]):0,end=range&&range[2]?Number(range[2]):info.size-1;
     if(start>end||end>=info.size){res.writeHead(416,{"content-range":`bytes */${info.size}`});return res.end();}
-    res.writeHead(range?206:200,{"content-type":mime,"content-length":end-start+1,"accept-ranges":"bytes",...(range?{"content-range":`bytes ${start}-${end}/${info.size}`}:{})});
+    const disposition=url.searchParams.get("response-content-disposition");
+    if(disposition&&!/^attachment; filename="[\w.\-]{1,160}"$/.test(disposition))return json(400,"invalid fixture response disposition");
+    res.writeHead(range?206:200,{"content-type":mime,"content-length":end-start+1,"accept-ranges":"bytes",...(disposition?{"content-disposition":disposition}:{}),...(range?{"content-range":`bytes ${start}-${end}/${info.size}`}:{})});
     if(req.method==="HEAD")return res.end();
     res.end((await readFile(target)).subarray(start,end+1));
   };

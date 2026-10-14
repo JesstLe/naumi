@@ -20,13 +20,13 @@ export function harnessErrorResponse(error: unknown): Response {
 }
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const forbiddenKeys = new Set(["__proto__", "constructor", "prototype"]);
-function boundedJson(value: unknown, limit: number, code: HarnessCode) {
+function boundedJson(value: unknown, limit: number, code: HarnessCode,arrayLimit=200) {
   let nodes = 0;
   const visit = (v: unknown, depth: number): void => {
     if (++nodes > 4096 || depth > 12) throw new HarnessError(code);
     if (typeof v === "number" && !Number.isFinite(v)) throw new HarnessError(code);
     if (typeof v === "string" && /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v)) throw new HarnessError(code);
-    if (Array.isArray(v)) { if (v.length > 200) throw new HarnessError(code); v.forEach(x => visit(x, depth + 1)); }
+    if (Array.isArray(v)) { if (v.length > arrayLimit) throw new HarnessError(code); v.forEach(x => visit(x, depth + 1)); }
     else if (record(v)) { for (const [key, x] of Object.entries(v)) { if (forbiddenKeys.has(key)) throw new HarnessError(code); visit(x, depth + 1); } }
     else if (v !== null && !["string", "number", "boolean", "undefined"].includes(typeof v)) throw new HarnessError(code);
   };
@@ -48,7 +48,7 @@ export async function readHarnessBody(request: Request): Promise<Record<string, 
   try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { throw new HarnessError("INPUT_INVALID"); }
   if (!record(body)) throw new HarnessError("INPUT_INVALID");
   boundedJson(body, HARNESS_LIMITS.requestBytes, "INPUT_INVALID");
-  for (const key of ["message", "sessionId", "anchorId", "projectKey", "turnId", "imageModelId", "id", "title", "action", "mode", "ratio", "resolution", "quality"]) if (body[key] !== undefined && typeof body[key] !== "string") throw new HarnessError("INPUT_INVALID");
+  for (const key of ["message", "sessionId", "anchorId", "projectKey", "turnId", "imageModelId", "id", "title", "action", "mode", "ratio", "resolution", "quality", "videoNodeId", "textNodeId"]) if (body[key] !== undefined && typeof body[key] !== "string") throw new HarnessError("INPUT_INVALID");
   if (typeof body.message === "string" && body.message.length > HARNESS_LIMITS.messageChars) throw new HarnessError("INPUT_INVALID");
   for (const key of ["history", "messages"]) if (body[key] !== undefined) validateHarnessHistory(body[key]);
   for (const key of ["images", "contextIds"]) if (body[key] !== undefined && (!Array.isArray(body[key]) || body[key].length > 6 || !(body[key] as unknown[]).every(x => typeof x === "string" && x.length < 2048))) throw new HarnessError("INPUT_INVALID");
@@ -85,7 +85,7 @@ function requestedWriteCapabilities(message: string): Set<string> {
     grant(/重做.*母图|母图.*重做|redo.*source/i,["review_aplus_source"]);
     grant(/包装|刀版|模切|packaging/i,["generate_packaging_3d"]);
     grant(/(?:执行|运行|run).*(?:comfy|工作流|workflow)/i,["run_comfy_workflow"]);
-    grant(/视频|video/i,["generate_video"]);
+    grant(/视频|video/i,["generate_video","create_video_node","set_video_config","set_video_prompt","set_video_references","plan_video_shot","plan_video_storyboard","run_video_workflow","resume_video_workflow","confirm_video_workflow_stage"]);
     grant(/视频.*(?:续|延长)|(?:续|延长).*视频|extend.*video/i,["extend_video"]);
     grant(/(?:改|编辑|修改).*视频|视频.*(?:改|编辑|修改)|edit.*video/i,["edit_video"]);
     grant(/抠图|去背景|remove.*background|cutout/i,["cutout_image"]);
@@ -108,8 +108,17 @@ function requestedWriteCapabilities(message: string): Set<string> {
   grant(/(?:通过|确认).*(?:母图|白底)|母图.*通过|approve.*source/i,["review_aplus_source"]);
   grant(/侵权|版权.*(?:检测|检查)|copyright.*check/i,["check_image_ip"]);
   grant(/(?:分析|反推).*竞品|竞品.*(?:分析|反推)|analy[sz]e.*competitor/i,["analyze_competitor"]);
+  if(/视频|video/i.test(message)&&!/只(?:分析|总结|解释|讨论)|(?:不要|不需要|别|不必).*(?:生成|执行|修改)|how (?:to|does)/i.test(message)){
+    grant(/(?:生成|制作|拍摄|produce|make).*(?:视频|影片|短片|video)|(?:视频|影片|短片|video).*(?:生成|制作)/i,["generate_video","create_video_node","set_video_config","set_video_prompt","set_video_references","plan_video_shot","plan_video_storyboard","run_video_workflow","resume_video_workflow"]);
+    grant(/(?:规划|策划|编写|编辑|修改|设置|保存|分镜|镜头|plan|storyboard|configure|save)/i,["create_video_node","set_video_config","set_video_prompt","set_video_references","plan_video_shot","plan_video_storyboard"]);
+    grant(/(?:停止|取消|stop|cancel)/i,["cancel_video_task","cancel_video_workflow","cancel_video_media_task"]);
+    grant(/(?:抽帧|音轨|分离|裁剪|剪辑|拼接|合成|处理|ffmpeg|ffprobe|extract|trim|concat|process)/i,["process_video"]);
+  }
+  if(/^(?:请)?(?:停止|取消)(?:当前)?(?:任务|生成|处理)[。.!！\s]*$/.test(message.trim()))["cancel_video_task","cancel_video_media_task","cancel_video_workflow"].forEach(name=>allowed.add(name));
+  if(/抽帧|提取音轨|分离音视频|ffmpeg|ffprobe/i.test(message)&&!/只(?:分析|解释|讨论)|(?:不要|不需要|别|不必).*(?:调用|执行|生成|处理)|如何|怎么|how (?:to|does)/i.test(message))allowed.add("process_video");
   return allowed;
 }
+function schemaArrayLimit(schema:Record<string,any>):number{let limit=200;const visit=(value:unknown)=>{if(!value||typeof value!=="object")return;const node=value as Record<string,any>;if(Number.isInteger(node.maxItems))limit=Math.max(limit,Math.min(1024,node.maxItems));for(const item of Object.values(node))if(item&&typeof item==="object")if(Array.isArray(item))item.forEach(visit);else visit(item);};visit(schema);return limit;}
 function strictSchema(schema: Record<string, any>): TSchema {
   const copy: Record<string, any> = { ...schema };
   if (schema.type === "object") { copy.additionalProperties = false; copy.properties = Object.fromEntries(Object.entries(schema.properties || {}).map(([key, s]) => [key, strictSchema(s as Record<string, any>)])); }
@@ -178,7 +187,7 @@ export class AgentHarness {
   check(name: string, args: unknown) {
     this.live(); const tool = this.tools.get(name);
     if (!tool) throw new HarnessError("TOOL_DENIED", 403);
-    boundedJson(args, HARNESS_LIMITS.toolArgumentBytes, "ARGUMENT_INVALID");
+    boundedJson(args, HARNESS_LIMITS.toolArgumentBytes, "ARGUMENT_INVALID",schemaArrayLimit(tool.parameters as Record<string,any>));
     if (!record(args) || !Check(tool.parameters as TSchema, args)) throw new HarnessError("ARGUMENT_INVALID");
     if (this.publicText(JSON.stringify(args), false) !== JSON.stringify(args)) throw new HarnessError("ARGUMENT_INVALID");
     for (const [key, value] of Object.entries(args)) if (["job_id", "task_id", "workflow_id", "item_id", "provider_id", "model_id", "model", "modelId", "product_id"].includes(key) && (typeof value !== "string" || !/^[\w.:-]{1,160}$/.test(value))) throw new HarnessError("ARGUMENT_INVALID");
@@ -258,6 +267,6 @@ export class PublicOutputBuffer {
 }
 /** Schema enforcement is also present at the real executable boundary, not just loop hooks. */
 export function validateToolArguments(schema: object, args: unknown) {
-  boundedJson(args, HARNESS_LIMITS.toolArgumentBytes, "ARGUMENT_INVALID");
+  boundedJson(args, HARNESS_LIMITS.toolArgumentBytes, "ARGUMENT_INVALID",schemaArrayLimit(schema));
   if (!record(args) || !Check(strictSchema(schema), args)) throw new HarnessError("ARGUMENT_INVALID");
 }

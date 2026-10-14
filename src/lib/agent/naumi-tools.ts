@@ -2,6 +2,9 @@
 import { assertAgentToolAccess } from "@/lib/feature-access/server";
 import { Type, type TSchema } from "typebox";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import {createCanvasVideoTools} from "./canvas-video-tools";
+import {VIDEO_PRODUCTION_PROMPT} from "../video/production-prompt";
+import {CANVAS_VIDEO_WRITE_TOOLS} from "./canvas-context";
 import { createCreativeTools } from "./creative-tools";
 import { CREATIVE_AGENT_TOOLS, CREATIVE_TOOL_FEATURES } from "./creative-tool-catalog";
 import type { CanvasAgentContext } from "./canvas-context";
@@ -13,6 +16,7 @@ import {SHARED_IMAGEGEN_TOOLS,agentImagegenRequest} from "../imagegen/agent-requ
 import {executeAgentImagegen,imagegenAgentStage} from "../imagegen/agent-executor";
 import {planImagegen} from "../imagegen/plan";
 import {planImagegenBatch} from "../imagegen/batch";
+import type {PreparedCanvasVideoWorkflow} from "../video/canvas-workflow";
 import type {ImagegenPlan} from "../imagegen/types";
 
 // ---------------------------------------------------------------------------
@@ -42,8 +46,8 @@ const TOOL_TIMEOUT_MS = {
   generate_video: 300_000,
   get_video_task: 15_000,
   list_video_models: 15_000,
-  plan_video_shot: 15_000,
-  plan_video_storyboard: 15_000,
+  plan_video_shot: 120_000,
+  plan_video_storyboard: 240_000,
   extend_video: 300_000,
   edit_video: 300_000,
   creative_tool: 300_000,
@@ -70,13 +74,13 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
 - run_comfy_workflow:在用户自己的 ComfyUI 端点上执行工作流。参数 workflow_id(必填)、prompt(正向提示词,可选)、image_url(用户给的[商品图] URL,工作流有图槽时传)、seed/width/height/length(可选)。
   注意:算力在用户端点,不消耗积分;执行可能数分钟(视频更久);产物图片用 Markdown 展示,视频给下载链接。用户没配端点或没导入工作流时,引导去画布选中图片点「工作流」配置,不要反复重试。
 
-## 可用工具(视频生成 · 站内多供应商视频协议,按次计费)
-- list_video_models:列出当前已配置视频供应商和模型能力。
-- plan_video_shot / plan_video_storyboard:只读策划工具，分别规划单镜头和多镜头，不创建任务。
-- generate_video:文生视频/图生视频。参数 prompt(必填,描述画面与运镜)、image_url(可选,用户消息里的[商品图]作首帧参考)、seconds(4/8/12,默认 4)、size(横屏 1280x720/竖屏 720x1280)。
-- extend_video / edit_video:基于已有视频 URL 创建续写或编辑任务；任务超时也不会重复创建。
-- get_video_task:按任务 ID 查询服务端状态。
-  注意:需要站内已配置视频服务(未配置时报错就引导联系站长);一次生成约 1-3 分钟;完成后产物是画布视频节点,同时给用户视频下载链接;计费按次(失败自动退)。
+## 可用工具(视频生成与持久媒体制作)
+- list_video_models / list_video_workflows：查询真实模型能力和本人自备工作流输入。
+- create_video_node / get_video_config / set_video_config / set_video_prompt / set_video_references：实际画布节点和有序引用，保存不代表生成。
+- generate_video / extend_video / edit_video：画布使用已保存节点与revision；工作台传完整config和inputs，结果留工作台。
+- get_video_task / cancel_video_task：恢复实际任务、全部产物和停止请求。
+- process_video / get_video_media_task / cancel_video_media_task：持久媒体处理、多输入、多输出和真实进度。
+${VIDEO_PRODUCTION_PROMPT}
 
 ## 创作中心完整工具
 - 抠图/抠头像：cutout_image / cutout_avatar；高清修复：upscale_image；局部改图：inpaint_image（必须用户提供遮罩）。
@@ -98,7 +102,7 @@ export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出�
  7. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
  8. 与图片生成无关的问题直接回答,不要调用工具。`;
 
-export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string;imagegenPlan?:ImagegenPlan;imageSkill?:ImagegenPlan["request"]["skill"] }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext, harness?: AgentHarness): AgentTool[] {
+export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;billingVersion?:number;billingCredits?:number;billingOperationId?:string;imagegenPlan?:ImagegenPlan;videoWorkflow?:PreparedCanvasVideoWorkflow;imageSkill?:ImagegenPlan["request"]["skill"] }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext, harness?: AgentHarness): AgentTool[] {
   // 双凭证:可变 getter —— 每次工具执行时读取最新 cookie/authorization,
   // 常驻会话的凭证刷新(runtime 层 existing.cred = cred)即刻生效,无需重建 Agent。
   const credGetter =
@@ -165,7 +169,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         if (!res.ok) {
           throw Object.assign(
             new Error(harness?.publicText(String(data?.error || `工具接口返回 ${res.status}`)) || "工具接口调用失败"),
-            { deterministic: true }
+            { deterministic: true,status:res.status,code:data?.code }
           );
         }
         return harness ? harness.sanitize(data) : data;
@@ -1160,6 +1164,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 workflowId: p.workflow_id,
+                source:canvas?"canvas":"workbench",projectKey:canvas?.video?.projectKey,artworkId:canvas?.anchorId||undefined,
                 imageUrl: p.image_url,
                 prompt: p.prompt,
                 seed: p.seed,
@@ -1172,6 +1177,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
             }),
           signal
         );
+        if(d.taskId)return {content:[{type:"text",text:`自备视频任务已提交：${d.taskId}。请查询实际状态，Worker继续恢复。`}],details:{taskId:d.taskId,cost:d.cost,publicSummary:"自备视频任务已提交"}};
         const images = (d.images ?? []) as { url: string }[];
         const videos = (d.videos ?? []) as { url: string }[];
         const parts: string[] = [];
@@ -1188,170 +1194,6 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
             publicSummary: `工作流出图 ${images.length} 张/视频 ${videos.length} 个`,
           },
         };
-      },
-    },
-    // ── 视频生产域：能力目录、策划、查询、生成、续写、编辑 ──
-    {
-      name: "list_video_models",
-      label: "视频模型目录",
-      description: "只读：列出当前服务器已配置的视频供应商、模型和能力。",
-      parameters: Type.Object({}),
-      replay: "safe",
-      executionMode: "sequential",
-      execute: async (_id, _params, signal) => {
-        const data = await withToolTimeout("list_video_models", () => internal("/api/video/catalog", signal), signal);
-        const providers = Array.isArray(data.providers) ? data.providers as Array<{ label?: string; models?: Array<{ modelId?: string; modes?: string[]; durations?: number[] }> }> : [];
-        const text = providers.map((provider) => `${provider.label || "视频供应商"}: ${(provider.models || []).map((model) => `${model.modelId} [${(model.modes || []).join("/")}; ${(model.durations || []).join("/")}s]`).join("、")}`).join("\n");
-        return { content: [{ type: "text", text: text || "当前未配置视频模型" }], details: { providers, publicSummary: "已读取视频模型目录" } };
-      },
-    },
-    {
-      name: "plan_video_shot",
-      label: "单镜头策划",
-      description: "只读：把目标整理为可直接用于生成的单镜头镜头单。",
-      parameters: Type.Object({ goal: Type.String(), duration: Type.Optional(Type.Number()), aspect_ratio: Type.Optional(Type.String()) }),
-      replay: "safe",
-      executionMode: "sequential",
-      execute: async (_id, params) => {
-        const p = params as { goal: string; duration?: number; aspect_ratio?: string };
-        const shot = { type: "single-shot", durationSeconds: p.duration || 4, aspectRatio: p.aspect_ratio || "16:9", prompt: `${p.goal}。单一连续镜头，明确主体动作、机位、运镜、光线、景深和结束状态。` };
-        return { content: [{ type: "text", text: `单镜头方案：${shot.prompt}\n时长：${shot.durationSeconds}s；画幅：${shot.aspectRatio}` }], details: { shot, publicSummary: "已完成单镜头策划" } };
-      },
-    },
-    {
-      name: "plan_video_storyboard",
-      label: "多镜头策划",
-      description: "只读：按镜头数量生成连续分镜结构，供多镜头模型或逐镜头生成使用。",
-      parameters: Type.Object({ goal: Type.String(), shots: Type.Optional(Type.Number({ minimum: 2, maximum: 8 })), total_duration: Type.Optional(Type.Number()) }),
-      replay: "safe",
-      executionMode: "sequential",
-      execute: async (_id, params) => {
-        const p = params as { goal: string; shots?: number; total_duration?: number };
-        const count = Math.max(2, Math.min(8, Math.trunc(p.shots || 3)));
-        const total = Math.max(count, Math.trunc(p.total_duration || count * 4));
-        const stages = ["建立主体与环境", "推进动作与卖点", "完成动作并定格结果"];
-        const storyboard = Array.from({ length: count }, (_, index) => ({ index: index + 1, durationSeconds: Math.max(1, Math.round(total / count)), intent: stages[Math.min(stages.length - 1, Math.floor(index * stages.length / count))], prompt: `${p.goal}。镜头 ${index + 1}/${count}，保持主体、材质、光线和空间方向连续。` }));
-        return { content: [{ type: "text", text: storyboard.map((shot) => `${shot.index}. ${shot.intent}（${shot.durationSeconds}s）：${shot.prompt}`).join("\n") }], details: { storyboard, publicSummary: "已完成多镜头分镜" } };
-      },
-    },
-    {
-      name: "get_video_task",
-      label: "查询视频任务",
-      description: "只读：按任务 ID 查询状态，不创建新任务。",
-      parameters: Type.Object({ task_id: Type.String() }),
-      replay: "safe",
-      executionMode: "sequential",
-      execute: async (_id, params, signal) => {
-        const p = params as { task_id: string };
-        const data = await withToolTimeout("get_video_task", () => internal(`/api/video/tasks/${encodeURIComponent(p.task_id)}`, signal), signal);
-        return { content: [{ type: "text", text: `任务 ${p.task_id}：${data.task?.status || "unknown"}${data.task?.progress !== undefined ? `，进度 ${data.task.progress}%` : ""}${data.task?.videoUrl ? `\n${data.task.videoUrl}` : ""}` }], details: { task: data.task, publicSummary: "已查询视频任务" } };
-      },
-    },
-    ...(["extend_video", "edit_video"] as const).map((toolName) => ({
-      name: toolName,
-      label: toolName === "extend_video" ? "视频续写" : "视频编辑",
-      description: toolName === "extend_video" ? "基于已有视频继续生成后续镜头。" : "基于已有视频按提示词编辑。",
-      parameters: Type.Object({ video_url: Type.String(), prompt: Type.String(), provider_id: Type.Optional(Type.String()), model_id: Type.Optional(Type.String()), seconds: Type.Optional(Type.Number()) }),
-      executionMode: "sequential" as const,
-      execute: async (_id: string, params: unknown, signal?: AbortSignal) => {
-        const p = params as { video_url: string; prompt: string; provider_id?: string; model_id?: string; seconds?: number };
-        const created = await withToolTimeout(toolName, () => internal("/api/video/generate", signal, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-            source: "agent", prompt: p.prompt, providerId: p.provider_id, modelId: p.model_id,
-            durationSeconds: p.seconds || 4, seconds: String(p.seconds || 4), resolution: "1280x720",
-            references: [{ id: `agent-${toolName}`, kind: "video", role: "source_video", url: p.video_url }],
-            providerOptions: { mode: toolName === "extend_video" ? "extend" : "edit" },
-          }),
-        }), signal);
-        const taskId = String(created.taskId || "");
-        return { content: [{ type: "text" as const, text: `已创建${toolName === "extend_video" ? "续写" : "编辑"}任务 ${taskId}。任务由后台 worker 继续执行；后续用 get_video_task 查询，避免重复创建。` }], details: { taskId, cost: created.cost, publicSummary: "已创建视频任务" } };
-      },
-    })) as AgentTool[],
-    // ── 视频生成(站内计费,失败自动退) ──
-    {
-      name: "generate_video",
-      label: "视频生成",
-      description:
-        "文生视频/图生视频(4-12 秒)。站内视频服务,按次计费、失败自动退;生成约 1-3 分钟。有 [商品图] 时传 image_url 做首帧参考。",
-      parameters: Type.Object({
-        prompt: Type.String({ description: "画面与运镜描述,越具体越好" }),
-        image_url: Type.Optional(
-          Type.String({ description: "首帧参考图 URL(用户消息里的[商品图])" })
-        ),
-        seconds: Type.Optional(
-          Type.Union([Type.Literal("4"), Type.Literal("8"), Type.Literal("12")], {
-            description: "时长秒数,默认 4",
-          })
-        ),
-        orientation: Type.Optional(
-          Type.Union([Type.Literal("landscape"), Type.Literal("portrait")], {
-            description: "画幅,默认横屏",
-          })
-        ),
-      }),
-      executionMode: "sequential",
-      execute: async (_id, params, signal) => {
-        const p = params as {
-          prompt: string;
-          image_url?: string;
-          seconds?: "4" | "8" | "12";
-          orientation?: "landscape" | "portrait";
-        };
-        const created = await withToolTimeout(
-          "generate_video",
-          () =>
-            internal("/api/video/generate", signal, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                prompt: p.prompt,
-                imageUrl: p.image_url,
-                seconds: p.seconds || "4",
-                size: p.orientation === "portrait" ? "720x1280" : "1280x720",
-              }),
-            }),
-          signal
-        );
-        const taskId = String(created.taskId || "");
-        // 轮询:服务端惰性查上游;completed 时已转存并落画布视频节点
-        const deadline = Date.now() + 270_000;
-        for (;;) {
-          if (signal?.aborted) throw new Error("aborted");
-          await new Promise((r) => setTimeout(r, 5_000));
-          if (Date.now() > deadline) {
-            throw new Error(
-              `视频仍在生成中(超 4.5 分钟)。任务 ${taskId} 已保留,请让用户稍后刷新画布查看,不要重复创建。`
-            );
-          }
-          const poll = await internal(
-            `/api/video/tasks?id=${encodeURIComponent(taskId)}`,
-            signal
-          );
-          const task = poll.task as
-            | { status: string; error?: string; videoUrl?: string; artworkId?: string }
-            | undefined;
-          if (!task) throw new Error("视频任务丢失");
-          if (task.status === "failed") {
-            throw new Error(task.error || "视频生成失败(积分已自动退回)");
-          }
-          if (task.status === "completed") {
-            const url = task.videoUrl || "";
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `视频已生成并保存为画布视频节点。
-![生成视频](${url})`,
-                },
-              ],
-              details: {
-                url,
-                artworkId: task.artworkId,
-                publicSummary: "视频已生成",
-              },
-            };
-          }
-        }
       },
     },
     {
@@ -1428,7 +1270,8 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     }
   }
   const creative=createCreativeTools({internal,file:urlToFile,timeout:(fn,signal)=>withToolTimeout("creative_tool",fn,signal),generation:tools.find(tool=>tool.name==="generate_image")!,canvas});
-  const all=[...tools,...creative];
+  const videoTools=createCanvasVideoTools({actor:agentEmail,canvas,internal,preparedWorkflow:()=>{const cred=credGetter();return "videoWorkflow" in cred?cred.videoWorkflow:undefined;},confirmation:()=>{const cred=credGetter();return "billingVersion" in cred&&typeof cred.billingVersion==="number"&&"billingCredits" in cred&&typeof cred.billingCredits==="number"?{version:cred.billingVersion,credits:cred.billingCredits}:undefined;}});
+  const all=[...tools,...creative,...videoTools];
   for(const tool of all)if(SHARED_IMAGEGEN_TOOLS.has(tool.name)){
     const legacyExecute=tool.execute,existing=(tool.parameters as unknown as {properties:Record<string,TSchema>}).properties;
     tool.parameters=Type.Object({...existing,image_urls:Type.Optional(Type.Array(Type.String(),{maxItems:32})),input_roles:Type.Optional(Type.Array(Type.Union(["edit-target","reference","insert","style"].map(v=>Type.Literal(v))),{maxItems:32})),mask_url:tool.name==="inpaint_image"?existing.mask_url:Type.Optional(Type.String()),background:Type.Optional(Type.Union([Type.Literal("transparent"),Type.Literal("opaque")])),use_case:Type.Optional(Type.String()),augment:Type.Optional(Type.Boolean()),batch_prompts:Type.Optional(Type.Array(Type.Object({key:Type.Optional(Type.String({pattern:"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$"})),name:Type.Optional(Type.String({minLength:1,maxLength:100})),prompt:Type.String({minLength:1,maxLength:6000})}),{minItems:1,maxItems:100})),batch_concurrency:Type.Optional(Type.Integer({minimum:1,maximum:5})),batch_attempts:Type.Optional(Type.Integer({minimum:1,maximum:3})),batch_fail_fast:Type.Optional(Type.Boolean()),local_process:Type.Optional(Type.Boolean({description:"仅在用户要求转换格式、缩小尺寸或控制底色去背景时开启；处理原图，不调用收费模型"})),chroma:Type.Optional(Type.Object({keyColor:Type.Optional(Type.String({pattern:"^#[a-fA-F0-9]{6}$"})),tolerance:Type.Optional(Type.Integer({minimum:0,maximum:255})),autoKey:Type.Optional(Type.Union(["none","corners","border"].map(v=>Type.Literal(v)))),softMatte:Type.Optional(Type.Boolean()),transparentThreshold:Type.Optional(Type.Number({minimum:0,maximum:255})),opaqueThreshold:Type.Optional(Type.Number({minimum:0,maximum:255})),edgeFeather:Type.Optional(Type.Number({minimum:0,maximum:64})),edgeContract:Type.Optional(Type.Integer({minimum:0,maximum:16})),spillCleanup:Type.Optional(Type.Boolean())})),output_format:Type.Optional(Type.Union(["png","jpeg","webp"].map(v=>Type.Literal(v)))),compression:Type.Optional(Type.Integer({minimum:0,maximum:100})),compression_mode:Type.Optional(Type.Union([Type.Literal("local"),Type.Literal("native")])),flatten_color:Type.Optional(Type.String({pattern:"^#[a-fA-F0-9]{6}$"})),downscale_max_dim:Type.Optional(Type.Integer({minimum:64,maximum:8192})),input_fidelity:Type.Optional(Type.String()),moderation:Type.Optional(Type.String()),width:Type.Optional(Type.Integer({minimum:64,maximum:5120})),height:Type.Optional(Type.Integer({minimum:64,maximum:5120}))});
@@ -1479,7 +1322,7 @@ export function describeNaumiTools(tools: { name: string; description: string; p
     name: t.name,
     description: t.description,
     parameters: (t.parameters || {}) as Record<string,unknown>,
-    write: !!CREATIVE_TOOL_FEATURES[t.name] || !/^(search_|list_|get_|plan_|verify_|check_)/.test(t.name),
+    write: CANVAS_VIDEO_WRITE_TOOLS.has(t.name) || !!CREATIVE_TOOL_FEATURES[t.name] || !/^(search_|list_|get_|plan_|verify_|check_)/.test(t.name),
     timeoutMs: (TOOL_TIMEOUT_MS as Record<string,number>)[t.name] || (/^(search_|list_|get_|plan_)/.test(t.name) ? TOOL_TIMEOUT_MS.read_only : TOOL_TIMEOUT_MS.creative_tool),
   }));
 }
