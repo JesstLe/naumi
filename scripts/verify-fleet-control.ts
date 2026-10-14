@@ -13,7 +13,7 @@ async function main() {
   const adminCookie='nv_admin='+await auth.authenticateAdminPassword('fleet-central-fixture-password');
   const cookie=(email:string)=>'nv_user='+native.signUserSession(email,Date.now());
   const request=(body?:unknown,email='admin@central.test',extra:Record<string,string>={})=>new Request('http://localhost/api/admin/fleet',{method:body?'POST':'GET',headers:{cookie:email?cookie(email)+(email==='admin@central.test'?'; '+adminCookie:''):'','content-type':'application/json',...extra},...(body?{body:JSON.stringify(body)}:{})});
-  assert.equal((await adminAPI.GET(request(undefined,''))).status,403);assert.equal((await adminAPI.GET(request(undefined,'staff@central.test'))).status,403);
+  assert.equal((await adminAPI.GET(request(undefined,''))).status,401);assert.equal((await adminAPI.GET(request(undefined,'staff@central.test'))).status,403);
   assert.equal((await adminAPI.POST(request({action:'create',name:'forged',kind:'enterprise'},'admin@central.test',{origin:'https://evil.test'}))).status,403);
   const registrationId=randomUUID();const registration=await adminAPI.POST(request({action:'create',id:registrationId,name:'47企业fixture',kind:'enterprise'}));assert.equal(registration.status,201);const {id:instanceId,token}=await registration.json();
   assert.equal((await adminAPI.POST(request({action:'create',id:registrationId,name:'duplicate',kind:'enterprise'}))).status,409);

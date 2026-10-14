@@ -6,7 +6,8 @@ import { chromium } from '@playwright/test';
 async function main() {
   assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.equal(new URL(process.env.DATABASE_URL!).hostname,'127.0.0.1');
   Object.assign(process.env,{FLEET_CONTROL_ENABLED:'1',NAUMI_MULTI_USER:'1',NAUMI_VIDEO_WORKER:'0',SETTINGS_SECRET:'fleet-isolated-settings-012345678901234567890',VIDEO_WORKER_SECRET:'fleet-isolated-worker-012345678901234567890'});
-  const db=await import('../src/lib/db'),auth=await import('../src/lib/admin-auth');await auth.setAdminPassword('fleet-ui-fixture-password');
+  const db=await import('../src/lib/db'),auth=await import('../src/lib/admin-auth'),native=await import('../src/lib/native-auth'),fleet=await import('../src/lib/fleet/server');await auth.setAdminPassword('fleet-ui-fixture-password');
+  await db.getOrCreateUser('ui-operator@fleet.test');const mainSite=await fleet.createInstance('fixture','103 UI主站','main');
   const cwd=path.resolve('output/fleet-control/build-copy'),log=fs.openSync('output/fleet-control/ui-server.log','w');
   const child=spawn(process.execPath,['node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p','15548'],{cwd,env:process.env,stdio:['ignore',log,log]});
   let browser;
@@ -21,10 +22,15 @@ async function main() {
     await page.getByRole('textbox',{name:'实例名称'}).fill('47 企业UI验收');const registeredResponse=page.waitForResponse(response=>response.url().endsWith('/api/admin/fleet')&&response.status()===201);await page.getByRole('button',{name:'注册实例',exact:true}).click();const registeredId=(await(await registeredResponse).json()).id;await page.getByRole('heading',{name:'连接凭据 · 仅显示本次'}).waitFor();
     await page.getByRole('button',{name:'已保存，关闭'}).click();await page.getByRole('heading',{name:'47 企业UI验收',exact:true}).waitFor();
     await page.getByRole('button',{name:'查询用户',exact:true}).click();await page.getByText('待执行',{exact:true}).waitFor();
+    await page.getByRole('textbox',{name:'运维账号'}).fill('ui-operator@fleet.test');await page.getByRole('checkbox',{name:'发布策略',exact:true}).check();
+    const grantSaved=page.waitForResponse(response=>response.url().endsWith('/api/admin/fleet')&&response.request().postData()?.includes('"action":"grant"')===true);await page.getByRole('button',{name:'保存授权',exact:true}).click();assert.equal((await grantSaved).status(),200);
+    await page.getByRole('combobox',{name:/来源主站/}).selectOption(mainSite.id);const policySaved=page.waitForResponse(response=>response.url().endsWith('/api/admin/fleet/releases')&&response.request().method()==='POST');await page.getByRole('button',{name:'启用版本跟随',exact:true}).click();assert.equal((await policySaved).status(),200);await page.getByRole('button',{name:'暂停版本跟随',exact:true}).waitFor();
     const wide=await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth);assert.equal(wide,true);await page.screenshot({path:'output/fleet-control/ui-desktop.png',fullPage:true});
     await page.setViewportSize({width:390,height:844});await page.waitForTimeout(200);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);await page.screenshot({path:'output/fleet-control/ui-mobile.png',fullPage:true});
     await page.reload();await page.getByRole('heading',{name:'部署管理',exact:true}).waitFor();await page.getByRole('combobox',{name:/部署实例/}).selectOption(registeredId);await page.getByText('待执行',{exact:true}).waitFor();assert.equal(errors.length,0,errors.join('\n'));
-    console.log('FLEET_UI=PASS ACTUAL_NEXT=1 REGISTER=1 CREDENTIAL_DISMISS=1 QUEUED_NOT_FAKE_SUCCESS=1 REFRESH_PERSIST=1 DESKTOP1440=1 MOBILE390=1 OVERFLOW=0 PAGEERROR=0');
+    const opContext=await browser.newContext({viewport:{width:1440,height:1000}});await opContext.addCookies([{name:'nv_user',value:native.signUserSession('ui-operator@fleet.test',Date.now()),url:origin}]);const opPage=await opContext.newPage();await opPage.goto(origin+'/admin/deployments');await opPage.getByRole('heading',{name:'部署管理',exact:true}).waitFor();assert.equal(await opPage.getByRole('button',{name:'注册实例',exact:true}).count(),0);assert.equal(await opPage.getByRole('link',{name:'模型管理',exact:false}).count(),0);assert.equal(await opPage.getByRole('button',{name:/103 UI主站/}).count(),0);await opPage.getByRole('button',{name:/47 企业UI验收/}).click();assert.equal(await opPage.getByRole('button',{name:'轮换密钥',exact:true}).count(),0);assert.equal(await opPage.getByRole('button',{name:'提交积分调整',exact:true}).isDisabled(),true);
+    await opPage.screenshot({path:'output/fleet-governance/ui-operator.png',fullPage:true});await opContext.close();
+    console.log('FLEET_UI=PASS ACTUAL_NEXT=1 REGISTER=1 CREDENTIAL_DISMISS=1 QUEUED_NOT_FAKE_SUCCESS=1 REFRESH_PERSIST=1 GRANT_UI=1 POLICY_UI=1 DELEGATED_NAV_SCOPE=1 DESKTOP1440=1 MOBILE390=1 OVERFLOW=0 PAGEERROR=0');
   } finally {if(browser)await browser.close();child.kill();await new Promise<void>(resolve=>{if(child.exitCode!==null)resolve();else child.once('exit',()=>resolve());});fs.closeSync(log);await db.getPool().end();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
