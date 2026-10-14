@@ -1,11 +1,15 @@
 /** Image-design workflows, not executable Agent packages. Shared browser/server contract. */
 import { IMAGEGEN_USE_CASES, type ImagegenUseCase } from "../imagegen/catalog";
+import { CURATED_ECOMMERCE_SKILLS } from "./curated";
 export const SKILL_CATEGORIES = ["电商", "营销", "品牌", "社媒", "创作", "编辑", "图解"] as const;
 export type SkillCategory = typeof SKILL_CATEGORIES[number];
 export type ImageSkill = {
   id: string; revision: number; name: string; description: string; category: SkillCategory;
   instructions: string; source: "official" | "personal"; updatedAt?: string; useCase?: ImagegenUseCase;
   visibility?: "private" | "enterprise"; authorName?: string; canEdit?: boolean;
+  inputs?: string;
+  preview?: {src:string;alt:string;kind:"upstream-example"};
+  reference?: {title:string;url:string;license:string;commit:string;workflowSha256:string;imageSha256:string};
 };
 export type SkillSelection = Pick<ImageSkill, "id" | "revision">;
 export class SkillError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -25,6 +29,7 @@ const definitions: [string, string, SkillCategory, string, string][] = [
   ["social-series", "社媒系列图", "社媒", "同主题、同视觉的内容系列", "确认发布平台、主题、文案、参考图和张数。先确定统一的构图、配色与字体方向，再调用 generate_image 分批生成；每批遵守实际工具限制。保证系列一致与内容差异，逐项记录已完成和失败项，不自动重试收费操作。"],
 ];
 export const OFFICIAL_IMAGE_SKILLS: ImageSkill[] = [
+  ...CURATED_ECOMMERCE_SKILLS,
   ...definitions.map(([id, name, category, description, instructions]):ImageSkill => ({
     id: `official:${id}`, revision: 1, name, category, description, instructions, source: "official",
     useCase:IMAGEGEN_USE_CASES.find(u=>(u.existingSkillIds as readonly string[]).includes(id))?.id,

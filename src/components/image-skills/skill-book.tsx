@@ -96,10 +96,12 @@ export function SkillBook({ selected, onSelect, accountKey, busy, sessionId, has
           <span className={styles.count}>{draft.instructions.length}/6000</span>
         </form> : detail ? <section className={styles.detail}>
           <SkillCover skill={detail} large />
-          <div className={styles.meta}><span>{detail.category}</span><span>{detail.source === "official" ? "内置" : detail.visibility === "enterprise" ? "同企业共享" : "仅自己"}</span><span>v{detail.revision}</span></div>
+          <div className={styles.meta}><span>{detail.category}</span><span>{detail.source === "official" ? detail.reference ? "精选工作流" : "内置" : detail.visibility === "enterprise" ? "同企业共享" : "仅自己"}</span><span>v{detail.revision}</span></div>
           {detail.source !== "official" && <p className={styles.author} data-testid="skill-author">作者：{detail.authorName || "作者"}</p>}
           <p className={styles.description}>{detail.description}</p>
+          {detail.inputs && <p className={styles.inputLine}><span>参考素材</span>{detail.inputs}</p>}
           <h3>创作流程</h3><p className={styles.workflow}>{detail.instructions}</p>
+          {detail.reference && <a className={styles.sourceLink} href={detail.reference.url} target="_blank" rel="noopener noreferrer">参考工作流 · Comfy Org<ArrowUpRight size={12} /></a>}
           <div className={styles.detailActions}><button onClick={() => edit(detail, detail.source === "official" || detail.canEdit === false)}><Paintbrush size={15} />{detail.source === "official" || detail.canEdit === false ? "另存为我的 Skill" : "编辑"}</button><button onClick={() => exportSkill(detail)}><Download size={15} />导出</button>
             {detail.source === "personal" && detail.canEdit !== false && <button className={styles.danger} disabled={saving} onClick={() => {
               if (!remove) { setRemove(true); return; } const id = epoch.current;
@@ -133,5 +135,10 @@ export function SkillBook({ selected, onSelect, accountKey, busy, sessionId, has
 }
 function SkillCover({ skill, large }: { skill: ImageSkill; large?: boolean }) {
   const Icon = categoryIcon[skill.category];
+  if (skill.preview) return <div className={`${styles.previewCover} ${large ? styles.largePreview : ""}`}>
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img src={skill.preview.src} alt={skill.preview.alt} loading="lazy" decoding="async" width={400} height={400} />
+    <span className={styles.previewBadge}>效果参考</span>
+  </div>;
   return <div className={`${styles.cover} ${large ? styles.largeCover : ""}`} data-category={skill.category} aria-hidden="true"><div className={styles.paper}><Icon strokeWidth={1.3} /><span /><span /></div><div className={styles.coverBadge}><Sparkles size={14} /></div></div>;
 }
