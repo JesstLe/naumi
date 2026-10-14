@@ -165,7 +165,7 @@
       "kind": "audit-of-actual-app-native-downstream-and-independent-media"
     },
     "player": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/player-46927c5e-7a8d-4679-ae2e-2e4386dadb3b/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/player-3ce0fdfd-126a-44cf-af25-9dd66b53a566/result.json",
       "verifier": "scripts/verify-video-fusion-player.ts",
       "kind": "actual-app-chrome-db-router-and-workers"
     },
@@ -178,6 +178,16 @@
       "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/cancellation-df69fed2-5818-4b23-8b3e-02cba0ae141f/result.json",
       "verifier": "scripts/verify-video-fusion-cancellation.ts",
       "kind": "actual-app-agent-tools-db-router-and-worker-races"
+    },
+    "fullWorkflows": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/full-workflows-summary.json",
+      "verifier": "scripts/verify-video-fusion-workflow-summary.mjs",
+      "kind": "actual-app-db-router-worker-workflow-summary"
+    },
+    "mixedDag": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/mixed-dag-a97d7f46-a434-45f4-a78c-bf44774cc6f9/result.json",
+      "verifier": "scripts/verify-video-fusion-mixed-dag.ts",
+      "kind": "actual-app-db-router-worker-mixed-dag"
     }
   },
   "capabilities": [
@@ -1157,21 +1167,138 @@
     {
       "id": "V16",
       "name": "批量配置节点与混合依赖工作流",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
-        "src/lib/video/workflow.ts"
+        "src/lib/video/workflow.ts",
+        "src/lib/video/workflow-freeze.ts",
+        "src/lib/video/canvas-workflow.ts"
       ],
       "evidenceKeys": [
         "workflow",
         "freeze",
         "byoc",
-        "workbench"
+        "workbench",
+        "mixedDag"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "批量/配置节点/输入变量及所有并行依赖分支逐项审查",
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "同一真实五节点DAG包含两个独立起点、managed/BYOC串并行分支和两个前序汇合；前序未完成不启动，五个不同持久任务和绑定顺序正确",
+          "evidenceKey": "mixedDag",
+          "assertions": [
+            {
+              "path": "twoIndependentRootsBeforeDependentStages",
+              "value": true
+            },
+            {
+              "path": "mixedManagedByocSerialParallelJoin",
+              "value": true
+            },
+            {
+              "path": "twoParentOutputsBoundInDeclaredOrder",
+              "value": true
+            },
+            {
+              "path": "fiveIndependentPersistentTaskIds",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际变量展开完整对白与false/0；省略规格继承已发布8秒/1080p，不用硬编码4秒；BYOC原图库与seed0覆盖冻结，后改库不影响旧链；费用/无效变量DAG/重启重放/权限正确",
+          "evidenceKey": "mixedDag",
+          "assertions": [
+            {
+              "path": "actualVariablesFullDialogueFalseAndZero",
+              "value": true
+            },
+            {
+              "path": "publishedDefaultsEightSeconds1080pInherited",
+              "value": true
+            },
+            {
+              "path": "byocOriginalLibraryAndOverridesFrozen",
+              "value": true
+            },
+            {
+              "path": "byocZeroAndManagedSingleSettlement",
+              "value": true
+            },
+            {
+              "path": "invalidVariablesAndDagRejectBeforeWritesOrFees",
+              "value": true
+            },
+            {
+              "path": "actualAppRestartAndReplayNoExtraCreatesOrFees",
+              "value": true
+            },
+            {
+              "path": "ownerIsolation",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "原画布配置节点内容/输入冻结，位置编辑保留、内容编辑不覆盖，删除任务历史不阻断既有依赖，原节点任务结果指针正确",
+          "evidenceKey": "workflow",
+          "assertions": [
+            {
+              "path": "originalNodeTaskAndResultPointers",
+              "value": true
+            },
+            {
+              "path": "fullOrderedTextFrozen",
+              "value": true
+            },
+            {
+              "path": "byocLibraryFrozen",
+              "value": true
+            },
+            {
+              "path": "positionOnlyEditPreserved",
+              "value": true
+            },
+            {
+              "path": "contentEditPreventsOverwrite",
+              "value": true
+            },
+            {
+              "path": "completedDependencySurvivesHistoryDeletion",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "真实后台模型/计费出版变更后等待阶段仍使用旧映射、原规格、全文与报价，阶段capsule加密",
+          "evidenceKey": "freeze",
+          "assertions": [
+            {
+              "path": "encryptedStageCapsules",
+              "value": true
+            },
+            {
+              "path": "pendingStageModelMappingFrozen",
+              "value": true
+            },
+            {
+              "path": "pendingStageBillingVersionFrozen",
+              "value": true
+            },
+            {
+              "path": "legalPublishedDefaultsNotHardcoded",
+              "value": true
+            },
+            {
+              "path": "fullOwnedTextFrozen",
+              "value": true
+            },
+            {
+              "path": "actualModelAndBillingPublication",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
@@ -2082,17 +2209,158 @@
     {
       "id": "P05",
       "name": "AutoDL/RunningHub/ComfyUI",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
-        "src/lib/video/providers/protocols/autodl.ts"
+        "src/lib/video/providers/protocols/workflow-inputs.ts",
+        "src/lib/video/providers/protocols/autodl.ts",
+        "src/lib/video/providers/protocols/runninghub.ts",
+        "src/lib/video/byoc.ts"
       ],
       "evidenceKeys": [
         "results",
-        "byoc"
+        "byoc",
+        "fullWorkflows",
+        "history"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "核对真实应用工作流证据覆盖完整映射/取消/所有产物"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "autodl实际App原生workflowId、完整prompt/negative/三媒体映射、false音频水印/seed0/时长规格及原模板字段；缺必需媒体在预扣前拒绝，manifest加密冻结，两产物SHA/探测/账号权限和一次结算/重启重放",
+          "evidenceKey": "fullWorkflows",
+          "assertions": [
+            {
+              "path": "evidence.0.profile",
+              "value": "autodl"
+            },
+            {
+              "path": "evidence.0.fullPromptAndNegativePrompt",
+              "value": true
+            },
+            {
+              "path": "evidence.0.threeOwnedMediaMappings",
+              "value": true
+            },
+            {
+              "path": "evidence.0.falseZeroDurationResolutionRatioPreserved",
+              "value": true
+            },
+            {
+              "path": "evidence.0.unmappedNativeTemplateFieldsPreserved",
+              "value": true
+            },
+            {
+              "path": "evidence.0.missingRequiredMediaRejectedBeforeTaskOrFees",
+              "value": true
+            },
+            {
+              "path": "evidence.0.manifestEncryptedAndOriginalReferencesFrozen",
+              "value": true
+            },
+            {
+              "path": "evidence.0.allOutputsHashesProbesAndPrivateOwnership",
+              "value": true
+            },
+            {
+              "path": "evidence.0.singleSettlementAndRestartReplay",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "runninghub实际App原生workflowId、完整prompt/negative/三媒体映射、false音频水印/seed0/时长规格及原模板字段；缺必需媒体在预扣前拒绝，manifest加密冻结，两产物SHA/探测/账号权限和一次结算/重启重放",
+          "evidenceKey": "fullWorkflows",
+          "assertions": [
+            {
+              "path": "evidence.1.profile",
+              "value": "runninghub"
+            },
+            {
+              "path": "evidence.1.fullPromptAndNegativePrompt",
+              "value": true
+            },
+            {
+              "path": "evidence.1.threeOwnedMediaMappings",
+              "value": true
+            },
+            {
+              "path": "evidence.1.falseZeroDurationResolutionRatioPreserved",
+              "value": true
+            },
+            {
+              "path": "evidence.1.unmappedNativeTemplateFieldsPreserved",
+              "value": true
+            },
+            {
+              "path": "evidence.1.missingRequiredMediaRejectedBeforeTaskOrFees",
+              "value": true
+            },
+            {
+              "path": "evidence.1.manifestEncryptedAndOriginalReferencesFrozen",
+              "value": true
+            },
+            {
+              "path": "evidence.1.allOutputsHashesProbesAndPrivateOwnership",
+              "value": true
+            },
+            {
+              "path": "evidence.1.singleSettlementAndRestartReplay",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "真实ComfyUI GUI工作流选择、图片视频音频映射、全文/种子0/数值/声音false和刷新、三类产物完整保留，BYOC平台0积分",
+          "evidenceKey": "byoc",
+          "assertions": [
+            {
+              "path": "actualGuiByocSelectionAndInputMapping",
+              "value": true
+            },
+            {
+              "path": "fullTextSeedZeroNumericValuesAndAudioFalse",
+              "value": true
+            },
+            {
+              "path": "reloadPreservesFullByocSettings",
+              "value": true
+            },
+            {
+              "path": "actualComfyWorkflowThreeOutputs",
+              "value": true
+            },
+            {
+              "path": "zeroPlatformCredits",
+              "value": true
+            },
+            {
+              "path": "reloadSameTaskNoDuplicateWorkflow",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "已有工作流删除历史后原加密映射仍可实际生成，不覆盖原作品/输入配置",
+          "evidenceKey": "history",
+          "assertions": [
+            {
+              "path": "encryptedWorkflowSurvivesHistoryDeletionAndActuallyGenerates",
+              "value": true
+            },
+            {
+              "path": "frozenClientHistoryReuse",
+              "value": true
+            },
+            {
+              "path": "completeResultSend",
+              "value": true
+            },
+            {
+              "path": "workbenchFullRecipeReuseAfterHistoryDeletion",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {

@@ -33,7 +33,7 @@ function privateChild(args:string[],env:NodeJS.ProcessEnv):Promise<string>{retur
 
 /** Uses real Naumi HTTP and Worker processes; only upstream services are simulated. */
 export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;routerBinary?:string;videoProfile?:VideoWireProfile;videoDefinition?:VideoModelDefinition;extraVideoModels?:Array<{id:string;definition:VideoModelDefinition}>;fullWorkflow?:boolean;uiModels?:boolean;referenceModels?:boolean;validateWire?:(call:unknown)=>void|Promise<void>;validatePoll?:(call:unknown)=>void|Promise<void>;agentReply?:(request:any)=>any|Promise<any>}={}) {
-  if(options.fullWorkflow&&options.videoProfile!=="autodl")throw new Error("Full workflow fixture requires the AutoDL profile");
+  if(options.fullWorkflow&&!['autodl','runninghub'].includes(options.videoProfile||''))throw new Error("Full workflow fixture requires AutoDL or RunningHub");
   let databaseUrl=options.databaseUrl||process.env.VIDEO_FIXTURE_DATABASE_URL||process.env.DATABASE_URL||"";
   const routerBinary=options.routerBinary||process.env.VIDEO_FIXTURE_ROUTER_BINARY;
   let routerUrl=options.routerUrl||process.env.VIDEO_FIXTURE_ROUTER_MANAGEMENT_URL||"",routerToken=process.env.VIDEO_FIXTURE_ROUTER_TOKEN,routerEnvelope=process.env.VIDEO_FIXTURE_ROUTER_ENVELOPE_SECRET;
@@ -119,7 +119,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
     await startApp();startWorker();
     await writeFile(path.join(output,"public-run.json"),JSON.stringify({namespace,baseUrl,supplierOrigin:supplier.origin,schemaName,owner:"canvas-video-fusion-20261013"}));
     const countTables=new Set(["app_video_tasks","app_video_results","app_artworks","app_canvas_video_nodes","app_video_media_jobs","app_billing_operations","app_ledger","app_video_reference_uploads","app_video_asset_imports","app_canvas_video_task_sends","app_canvas_video_workflow_sources"]);
-    return {baseUrl,refs:seed.refs,accounts:seed.accounts,cookies:seed.cookies,logs,manifest,byocWorkflowId:seed.byocWorkflowId,
+    return {baseUrl,supplierOrigin:supplier.origin,refs:seed.refs,accounts:seed.accounts,cookies:seed.cookies,logs,manifest,byocWorkflowId:seed.byocWorkflowId,
       async restartApp(){await stopChild(worker);await stopChild(app);await startApp();startWorker();},
       async restartMediaWorker(){await stopChild(mediaWorker);await startMediaWorker();},
       async mediaWorkerRequest(id:string,method:string,body?:unknown){

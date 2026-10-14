@@ -5,9 +5,9 @@ import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: `批量出图 — ${BRAND}`,
+  title: `参考工作台 — ${BRAND}`,
 };
 
 export default function BatchShotPage() {
-  return redirect(process.env.REFERENCE_WORKBENCH_URL?.trim() || "https://47.105.59.142/workbench");
+  return redirect("/batchshot/native/workbench");
 }
