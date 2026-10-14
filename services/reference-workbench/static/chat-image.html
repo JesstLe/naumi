@@ -50,7 +50,7 @@ button.ghost{background:#eef1f4;color:#24292f}
 @media(max-width:760px){.appHeader .lanLinkBox{display:none}}
 </style>
 
-<header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">聊天生图</div><div class="lanLinkBox" title="局域网内其他电脑可打开这个地址"><span class="lanLinkText">本站链接：https://47.105.59.142/chat-image</span><button class="copyLanBtn" onclick="copyLanLink('https://47.105.59.142/chat-image')">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a class="active" href="/chat-image">聊天生图</a><a class="" href="/single">旧单图生成</a><a class="" href="/workbench">参考图工作台</a><a href="/admin" id="adminMenuLink" style="display:none">渠道管理</a></div></div></header>
+<header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">聊天生图</div><div class="lanLinkBox" title="本站地址"><span class="lanLinkText">本站链接：https://47.105.59.142/chat-image</span><button class="copyLanBtn" onclick="copyLanLink('https://47.105.59.142/chat-image')">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a class="active" href="/chat-image">聊天生图</a><a class="" href="/single">旧单图生成</a><a class="" href="/workbench">参考图工作台</a><a href="/admin" id="adminMenuLink" style="display:none">渠道管理</a></div></div></header>
 <main>
   <aside class="sidebar">
     <div class="sideTop"><button onclick="newChat()">新建对话</button></div>
@@ -269,7 +269,7 @@ function messageHtml(m){
   return `<div class="msg ${cls}"><div class="bubble"><div class="msgTime">${formatTime(m.created_at)}</div>${text}${statusHtml}${planActions}${imgs?`<div class="attachments">${imgs}</div>`:''}${batchDownload}${results?`<div class="results">${results}</div>`:''}${failures}</div></div>`;
 }
 function renderState(data){
-  currentSessionId=data.session_id||currentSessionId; if(currentSessionId)localStorage.setItem('chat-image-session-id-'+String(config.auth_id||''),currentSessionId);
+  currentSessionId=Object.prototype.hasOwnProperty.call(data,'session_id')?String(data.session_id||''):currentSessionId; if(currentSessionId)localStorage.setItem('chat-image-session-id-'+String(config.auth_id||''),currentSessionId); else localStorage.removeItem('chat-image-session-id-'+String(config.auth_id||''));
   renderSessions(data.sessions||[]);
   const messages=Array.isArray(data.messages)?data.messages:[];
   const signature=JSON.stringify(messages.map(m=>({id:m.id,role:m.role,status:m.status,text:m.text,updated_at:m.updated_at,created_at:m.created_at,images:(m.images||[]).length,results:(m.results||[]).map(r=>[r.output_url,r.output_path,r.updated_at,r.prompt_index,r.variant_index,r.ratio,r.template]),failures:(m.failures||[]).map(f=>[f.error,f.prompt_index,f.variant_index])})));

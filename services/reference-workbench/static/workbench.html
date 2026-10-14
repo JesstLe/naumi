@@ -113,7 +113,7 @@ label{font-size:13px;font-weight:700;color:#24292f}
 @media(max-width:760px){.appHeader .lanLinkBox{display:none}}
 </style>
 
-</head><body><header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">参考图工作台</div><div class="lanLinkBox" title="局域网内其他电脑可打开这个地址"><span class="lanLinkText">局域网链接：https://47.105.59.142/workbench</span><button class="copyLanBtn" onclick="copyLanLink('https://47.105.59.142/workbench')">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a href="/chat-image">聊天生图</a><a href="/single">旧单图生成</a><a href="/admin" id="adminMenuLink" style="display:none">渠道管理</a><a href="javascript:openLocalTemplates()">本机模板</a><a class="active" href="/workbench">参考图工作台</a></div></div></header>
+</head><body><header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">参考图工作台</div><div class="lanLinkBox" title="本站地址"><span class="lanLinkText">本站链接：https://47.105.59.142/workbench</span><button class="copyLanBtn" onclick="copyLanLink('https://47.105.59.142/workbench')">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a href="/chat-image">聊天生图</a><a href="/single">旧单图生成</a><a href="/admin" id="adminMenuLink" style="display:none">渠道管理</a><a href="javascript:openLocalTemplates()">本机模板</a><a class="active" href="/workbench">参考图工作台</a></div></div></header>
 <aside class="projectDock">
   <h3>后台项目</h3>
   <div class="hint">放到后台后，当前任务会继续运行。右侧恢复只是切回这个产品文件夹。</div>
@@ -167,7 +167,7 @@ document.addEventListener('click',()=>{const menu=document.getElementById('appMe
 async function copyLanLink(url){
   try{
     await navigator.clipboard.writeText(url);
-    alert("已复制局域网链接");
+    alert("已复制本站链接");
   }catch(_e){
     const input=document.createElement("input");
     input.value=url;
@@ -175,7 +175,7 @@ async function copyLanLink(url){
     input.select();
     document.execCommand("copy");
     input.remove();
-    alert("已复制局域网链接");
+    alert("已复制本站链接");
   }
 }
 function imagePathFromUrl(url){
