@@ -58,6 +58,15 @@ function getPool(): Pool {
 }
 
 async function ensureSchema(): Promise<void> {
+  if(process.env.FLEET_PORTAL_ONLY==='1'){
+    // Central sidecar must never run general application migrations against a live mixed-version site.
+    // Fleet's additive namespace is initialized separately; business/auth schema stays server-owned.
+    if(!schemaReady)schemaReady=(async()=>{
+      await getPool().query('SELECT email,name,role,banned,auth_revoked_before,account_expires_at FROM app_users LIMIT 0');
+      await getPool().query('SELECT k,v FROM app_settings LIMIT 0');
+    })().catch(error=>{schemaReady=null;throw error;});
+    return schemaReady;
+  }
   if (!schemaReady) {
     schemaReady = withSchemaInitialization(getPool(),async schemaDb => {
       await schemaDb.query(`
