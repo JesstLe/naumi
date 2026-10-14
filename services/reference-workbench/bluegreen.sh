@@ -72,6 +72,9 @@ if [[ "$ACTION" == promote ]]; then
   for _ in $(seq 1 30); do if curl -fsS https://47.105.59.142/health | grep -F "$VERSION"; then break; fi; sleep 1; done
   curl -fsS https://47.105.59.142/health | grep -F "$VERSION"
   rm -- "$BASE/data/drain-$VERSION"
+  OLD_VERSION=$(basename "$(cat "$EVIDENCE/baseline-release.txt")")
+  touch "$BASE/data/drain-$OLD_VERSION"
+  chown reference-workbench:reference-workbench "$BASE/data/drain-$OLD_VERSION"
   systemctl enable "reference-workbench-$PORT" >/dev/null
   ln -sfn "$RELEASE" "$BASE/current.next"; mv -Tf "$BASE/current.next" "$BASE/current"
   echo BLUEGREEN_PROMOTE=PASS NEW_LANE=waiting_geometry_v2 OLD_WORKER_AND_CONNECTIONS=RETAINED
@@ -100,6 +103,8 @@ fi
 if [[ "$ACTION" == rollback ]]; then
   # 保留新槽Worker，已接收的新任务仍由其完成；只回退入口，不回灌DB。
   systemctl start "reference-workbench-$OLD_PORT"
+  OLD_VERSION=$(basename "$(cat "$EVIDENCE/baseline-release.txt")")
+  rm -f -- "$BASE/data/drain-$OLD_VERSION"
   curl -fsS "http://127.0.0.1:$OLD_PORT/health"
   cp "$EVIDENCE/baseline-nginx.conf" /etc/nginx/sites-available/reference-workbench
   nginx -t; systemctl reload nginx

@@ -80,14 +80,25 @@
   async function download(url) { const value = await blob(url), local = URL.createObjectURL(value), a = document.createElement('a'); a.href = local; a.download = '历史版本.png'; a.click(); setTimeout(() => URL.revokeObjectURL(local), 2000); }
   function saveBlob(value, name) { const local = URL.createObjectURL(value), a = document.createElement('a'); a.href = local; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(local), 2000); }
   async function archive(imageUrls) { const zip = new JSZip(); let total = 0, number = 0; for (const url of imageUrls) { const value = await blob(url); total += value.size; if (total > 256 * 1024 * 1024) throw Error('本机打包超过256MB'); const path = new URL(source(url), location.origin).searchParams.get('path'); zip.file(String(++number).padStart(3, '0') + '_' + path.split('/').pop(), await value.arrayBuffer()); } if (!number) throw Error('没有可下载图片'); return zip.generateAsync({ type: 'blob' }); }
-  async function saveTemplate(item, version) {
-    const name = window.prompt('模板名称', item.product + ' ' + version.label); if (!name) return;
+  async function saveTemplate(item, version, name) {
     const response = await fetch('/api/workbench/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, ref_path: item.ref_path, version_path: version.path, workbench_root: currentRoot(), config: workbenchRequestConfig() }) });
     const data = await response.json(); if (!response.ok) throw Error(data.detail || '模板保存失败');
     const template = data.template;
     const referenceBlob = await blob(template.reference_url), resultBlob = await blob(template.result_url);
     await put('templates', { key: template.id, template, referenceBlob, resultBlob, savedAt: Date.now() });
     status.textContent = '模板已保存到本机：' + name;
+  }
+  function chooseTemplateName(item, version) {
+    modal.classList.remove('compareOpen'); modal.classList.add('open');
+    modal.innerHTML = '<div class="modalBox" onclick="event.stopPropagation()" style="width:min(480px,94vw)"><h3>保存模板</h3><label for="templateName">模板名称</label><input id="templateName" maxlength="100"><div class="buttons"><button id="confirmTemplate">保存到本机</button><button class="secondary" onclick="closeModal()">取消</button></div></div>';
+    const input = document.getElementById('templateName'), confirm = document.getElementById('confirmTemplate');
+    input.value = item.product + ' ' + version.label; input.focus();
+    confirm.onclick = async () => {
+      const name = input.value.trim(); if (!name) { input.focus(); return; }
+      confirm.disabled = true;
+      try { await saveTemplate(item, version, name); closeModal(); }
+      catch (e) { status.textContent = '模板保存失败：' + e.message; confirm.disabled = false; }
+    };
   }
   async function showTemplates() {
     await init(); const rows = await request(database.transaction('templates', 'readonly').objectStore('templates').getAll());
@@ -111,7 +122,7 @@
     }
   }
   window.WorkbenchHistory = { init, remember, restore, localUrl, blob, resolve, source, download, archive, saveBlob, saveTemplate, showTemplates };
-  window.saveCurrentTemplate = i => { const item = items[i], version = item && activeVersion(item); if (version) saveTemplate(item, version).catch(e => { status.textContent = '模板保存失败：' + e.message; }); };
+  window.saveCurrentTemplate = i => { const item = items[i], version = item && activeVersion(item); if (version) chooseTemplateName(item, version); };
   window.openLocalTemplates = () => showTemplates().catch(e => { status.textContent = '本机模板读取失败：' + e.message; });
   window.addEventListener('pagehide', () => { for (const value of urls.values()) URL.revokeObjectURL(value); });
 })();
