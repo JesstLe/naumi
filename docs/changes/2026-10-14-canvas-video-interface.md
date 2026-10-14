@@ -219,4 +219,3 @@ fixture扩展独立KIE motion模型，仅uiModels启用，单图/单视频/无�
 最终PASS：checkpoint-c/workbench-29e6b608-af68-439a-834f-8133dbcda5ee/result.json，actualHistoryAndSentCanvasColoredFrames=true，session78021 exit0。此前bc4c943f、124d68a8亦PASS相应范围，原始失败878b2b8d保留；第一次用例误用未存在的video-history-dialog test ID，改实际video-history-picker，没有改产品历史面板。最终29e6b608的两张截图均已人工查看，历史完整参数与彩色画面可见。发送后的普通结果素材和生成节点在本fixture中位置贴近，目标初始节点未设置坐标；剩余C需用实际布置的混合目标检查摆放与全部节点可见性，不以本用例宣称布局回归完成。
 
 完整TypeScript及diff结构检查PASS（session42799 exit0），所有本批fixture/Chrome由finally停止。最新fetch origin/main仍3ab2418，本分支已包含，无新增合并冲突。按用户增量整合要求，准备普通推送已验收C阶段到main；阶段Git合并不是完整C/D/34项交付，GitHub工作流经检查只构建/推送镜像及fixture验收，不含SSH服务器部署，本批无103连接/锁/发布。
-

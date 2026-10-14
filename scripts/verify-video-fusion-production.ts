@@ -47,5 +47,3 @@ async function main(){const h=await createVideoFixture({startWorker:false,refere
   await mkdir(evidence,{recursive:true});await writeFile(path.join(evidence,"result.json"),JSON.stringify({ok:true,actualAppDbRouterSupplierAndWorker:true,referenceOnlyModelHasNoDedicatedEditOrExtend:true,cases:passed,dedicatedModesPreserved:true,workbenchReferenceEditingAndNoCanvasMount:true,rejectedWithNoTasksOrCreatesOrCharges:rejected,actualAppRestartReplay:true,completeDialogueAndOrderedOwnedSources:true,originalVideoSha256:sourceSha,paidVideoApiCalls:0,scriptedIntentTextDoesNotProveRealLlmPlanningOrVideoQuality:true},null,2));process.stdout.write(`VIDEO_PRODUCTION_REFERENCE=PASS ${evidence}\n`);
 }finally{await h.stop();}}
 main().catch(error=>{process.stderr.write(`${error instanceof Error?error.stack:String(error)}\n`);process.exitCode=1;});
-
-
