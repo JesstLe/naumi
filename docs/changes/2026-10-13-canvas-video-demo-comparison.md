@@ -1,5 +1,23 @@
 # 画布视频上游实操对照
 
+## 2026-10-14 固定本地上游实操补证（Task14仍进行中）
+
+固定IC源码68b37db运行于loopback15372/15373，独立SQLite和虚构账号，实际页面v0.8.1且GitHub指向tigerowo。入口辅助文件仅改变监听为127.0.0.1；Next dev生成next-env.d.ts已记录。视频节点实际竖屏/10秒已观察并保存video-node-portrait-10s-painted.jpg；摄影面板显示Panavision DXL2/ARRI Signature Prime/50mm/f4，开关处于当时CSS视口外，未成功启用，camera-panel-toggle-attempt.jpg不能当启用证据。隐藏页面即时截图曾出现旧6秒画面，保留并命名immediate-frame，最终10秒以实际重绘截图证明。
+
+固定Toonflow源码ae9e5f运行于loopback15374/3000，独立data/workspaces，无真实供应商密钥。createApp外部辅助入口补上原index的initializeMcpRuntime及startMobileLinkRuntime：此前403是缺运行时初始化，不能归为Windows不支持。原MCP仍监听loopback10588且授权规则保持，mobileLink.enabled=false，不开启共享监听。用原生server生产模式获得浏览器工作区选择；开发模式会调用Windows文件夹窗口，本次没有操作该原生窗口。Bun/Vite生成router.ts和components.d.ts记录为构建生成差异，不称源码完全无改动。
+
+真实浏览器创建canvas-video-comparison空文件夹与项目，新增视频生成节点，写入三行原创镜头/两句对白；16:9、720p、10秒及生成音频false在刷新后和工作区JSON一致。无引用时选混合参考会归一回文生；固定源码index.vue的compatibleModes要求至少一个有效媒体，不能把无输入的切换当成功。原生模型目录此时显示Seedance-2.5，仅是该参考环境目录，Naumi继续用管理员已发布且有来源的能力。
+
+使用本任务原创landscape-4-audio.mp4实操替换视频和播放，真实video元素1280×720、4秒、readyState4；已查看彩条截图。提取音轨、裁剪1—3秒、截取尾帧、分离音视频均生成真实独立节点并保留原视频。FFprobe输出分别为audio-only约4.01秒、video+audio2秒、1280×720 PNG、video-only4秒及audio-only约4.01秒；导入文件与原创输入SHA相同。原视频、音轨、裁剪、尾帧刷新恢复；历史实际列出当前导入结果。没有按生成视频按钮，没有真实视频API消费。
+
+证据在忽略output/canvas-video-fusion-20261013/reference/toonAe9e5f：media-probes.json、derived-media-dom.txt及screenshots/{video-node-original-media,audio-extracted,clip-two-seconds,tail-frame-audio-clip,history-current,full-derived-media}.png。full-derived-media截图已查看；原生适应视图仍有顶部/底部控件贴边，不宣称同一1440px视口或全部控件可见。机器可读scripts/video-fusion/comparison.json覆盖V01—V24，每项明确partial-observation或not-observed及Naumi对应证据前缀，不能当最终通过矩阵。
+
+仍需首尾及混合引用排序、多镜头/元素/运动、Agent制作规则、批量/停止/下游复用等剩余固定上游操作；P01—P08/S01/S02继续由完整应用验收及保护证据证明。Task14未完成，103未发布。
+
+后续IC同素材实操：原创landscape-4-audio.mp4实际上传到原视频节点，播放器真实解码1280×720/4秒/readyState4，播放及放大预览已操作并保存original-video-import.png/original-video-preview.png。分离音频出现新音频节点但上传状态仍等待，尚不称持久输出成功。收起左侧面板后摄影开关进入视口，已实际勾选，DOM同时显示开启及switch checked，新增camera-enabled-actual.png，纠正初次未启用的限制记录；两个阶段截图均保留，不覆盖失败证据。
+
+主线95b43c5的Docker workflow38508694578已success；Image gateway38508694570的Linux build、计费回归和模型执行步骤已success，整条流水线当时仍in_progress。只证明对应构建/回归，不代表完整视频固定运行时、候选切流或103发布。
+
 本记录正在进行，Task14尚未完成。固定来源仍为tigerowo/infinite-canvas `68b37db04b9083c3ff0af67ffe362f85d04d1f9f`及HBAI-Ltd/Toonflow-app `ae9e5f`开头的既定快照，不因在线站版本不同扩大或缩小原34项范围。
 
 2026-10-14通过Codex实际浏览器打开IC README候选入口`https://infinite-canvas-cpco.onrender.com/`。页面可以操作，标示v0.12.0，GitHub链接实际指向basketikun/infinite-canvas；在线部署commit未知，不能认定与用户指定tigerowo固定快照一致。因此以下是候选演示观察，固定源码本地实操仍需补齐。
