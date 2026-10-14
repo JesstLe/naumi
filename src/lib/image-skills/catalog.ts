@@ -5,6 +5,7 @@ export type SkillCategory = typeof SKILL_CATEGORIES[number];
 export type ImageSkill = {
   id: string; revision: number; name: string; description: string; category: SkillCategory;
   instructions: string; source: "official" | "personal"; updatedAt?: string; useCase?: ImagegenUseCase;
+  visibility?: "private" | "enterprise"; authorName?: string; canEdit?: boolean;
 };
 export type SkillSelection = Pick<ImageSkill, "id" | "revision">;
 export class SkillError extends Error { constructor(message: string, public status = 400) { super(message); } }
