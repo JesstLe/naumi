@@ -12,5 +12,9 @@ try {
  for(const name of paths) assert.match(fs.readFileSync(path.join(root,name),"utf8"),/await requestData\.body\.finalize\(\)/);
  fs.writeFileSync(path.join(root,paths[0]),"unexpected implementation");
  assert.throws(()=>patchNextBody(root),/unexpected body-finalization/);
+ fs.writeFileSync(path.join(root,paths[0]),"async function handle(){if (hasRequestBody) {requestData.body.finalize();}}");
+ fs.unlinkSync(path.join(root,paths[1]));
+ assert.throws(()=>patchNextBody(root),/ENOENT/);
+ assert.equal(patchNextBody(root,true),1);assert.equal(patchNextBody(root,true),0);
  console.log("NEXT_BODY_PATCH=PASS (CJS/ESM/idempotency/drift guard)");
 } finally {fs.rmSync(root,{recursive:true,force:true});}

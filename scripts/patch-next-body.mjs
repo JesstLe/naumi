@@ -4,9 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export function patchNextBody(root = "node_modules/next") {
+export function patchNextBody(root = "node_modules/next", standalone = false) {
   const version = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
-  const paths = ["dist/server/next-server.js", "dist/esm/server/next-server.js"];
+  // Standalone output intentionally traces CJS runtime files only. Installs
+  // must still contain both variants; never silently skip a missing CJS file.
+  const paths = ["dist/server/next-server.js", "dist/esm/server/next-server.js"].filter(relative =>
+    !(standalone && relative.startsWith("dist/esm/") && !fs.existsSync(path.join(root, relative))),
+  );
   const original = "requestData.body.finalize();";
   const corrected = "await requestData.body.finalize();";
   const changes = paths.map(relative => {
@@ -23,5 +27,5 @@ export function patchNextBody(root = "node_modules/next") {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  console.log(`Next body finalization: ${patchNextBody(process.argv[2])} files patched`);
+  console.log(`Next body finalization: ${patchNextBody(process.argv[2], process.argv[3] === "--standalone")} files patched`);
 }
