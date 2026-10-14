@@ -224,3 +224,23 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 真实四次平移共32trusted事件：本轮baseline P95 111.9ms、候选138.5ms，观察为退化23.77%，明确未70达标；不以悬停调度1000→1覆盖平移退化。3秒测量原先仅捕到8事件，不作为完整对照；后续零滚动附加样本也不污染已保存32事件结果。ready/images时钟含登录/项目选择等待，不作为有效冷/热首屏证据。普通PROBE0 fixed1476 Linux构建exit0；随后发现共享本地fixture数据库及两份profile均被外部操作停止，新的ordinary健康因15513拒绝连接未通过。未重启那些容器；仅停止保留本任务新ordinary失败实例，等用户确认Docker清理状态后恢复本地验收，期间不重占103锁。
 
 四件源码事务包现在固定1476相对main95b43c5共34字段（原模块21材料保留在transaction22-previous-artifacts）。BASELINE24字节下载、MODIFIED1、独立ROLLBACK24；新hover/层级/可见性测试、34SHA原样恢复和同事video-layout/员工工作台/media权限文件保留均exit0。MODIFIED ZIP保持修改，ROLLBACK.sh可执行，四件重开。它们是源码行为回滚，不冒充线上切流/服务器回滚。VERIFICATION.txt明确写了本轮平移未达标、普通运行待完成、103本轮不发布。main后续f673仅文档，尚未整合到该固定包。
+
+## 模块23：Docker清理后恢复独立持久化验收库（2026-10-14）
+
+用户确认清理完成并允许继续本地验收。精确检查旧PG容器4432dc9发现Mounts为空，HostConfig.Tmpfs明确为/var/lib/postgresql/data；停止后PG_VERSION不存在，原数据是内存盘数据，不是持久化卷。旧容器保持停止且保留，不把重启空库称为原数据恢复。此前resume-module22-after-cleanup.py的持久化挂载断言失败具有实际意义，不绕过检查继续启动它。
+
+建立专用naumi-canvas-perf-db-persistent-20261014和naumi_canvas_perf_local_pgdata_20261014卷，只绑定127.0.0.1:15513；采用旧PG同Image ID。从已保存的admin/real-canvas-sample.json及workflow-manifests.json重建baseline/candidate两个隔离测试库，不读写生产、不复制原生密码/余额、不启动Worker或供应商调用。普通固定1476容器维持同CID、Image ID和全部挂载，恢复4330服务；诊断profile及旧共享PG保持停止。
+
+原种子入口将文字updatedAt改为当前时间，且对creationProvenance做了规范化。精确API比对发现差异后，在这两个隔离库中从原样本补回全部290作品的creationProvenance和56文字节点的updatedAt。最终全部作品/文字字段、项目名、154节点设置及4工作流manifest与原样本完全一致，不以忽略差异的方式通过。另建仅用于鉴权的foreign测试用户，无素材，确认其自身account200/作品0后再验证跨账号读取：private原图403、manifest200但该素材descriptor为null；匿名两者401。
+
+普通PROBE0实际版本1476cf26a1938791d9d8969c5b26c1650c9bde9e / 1791966536，DB健康；11项API200并校验内容，目标tree:art-1789961451626-317854对应154图片+48文字+11分组=213节点数据、12装饰。153份本地原图（121427388字节）逐份与保存文件字节匹配；3个manifest批次均有授权描述。Worker drain secret-only200/匿名401，activeFences0。HTML200且无诊断输出标记只作为HTTP/数据验收，不代替浏览器UI验收。
+
+测试库两份完整schema/data dump，停止并重启专用PG，同CID/Image/卷及全部结构/数据一致；备份在独立canvas_perf_restorecheck_20261014数据库真实恢复并匹配完整结构和行内容，检查完删除该临时恢复库。初次恢复直接比dump字节失败，仅为COPY行的物理顺序不同；改为仅移除pg_dump随机restrict/unrestrict token并对各COPY块排序，保留所有schema语句、序列值、完整数据行及重复行，未忽略字段或减少表。最终重新执行全流程exit0，普通4330恢复健康。
+
+原34字段源码事务再次BASELINE/MODIFIED/ROLLBACK集中验收：24/1/24字节下载，hover/rAF/层级/虚拟化通过；从MODIFIED_FILE.zip提取新的transaction23-fresh-rollback-copy真实反向应用补丁，34原SHA与原行为恢复，modifiedZIP保持修改。原版本源码和既有四件交付不重新包装为尚未构建的最新main。
+
+本轮仅本地恢复及源码/数据验收，不连接103、不持部署锁、不改网关、不上线；发布任务继续可使用锁。当前工具集未提供原生浏览器操作工具，所以本轮未重新运行普通UI悬停/剪断/项目切换或性能对照，不能沿用module22 profile冒充本轮普通浏览器验收。既有原生平移P95 111.9→138.5ms退化23.77%仍未达标，70%目标保持active。
+
+本轮fetch后origin/main更新到dab963b，包含同事视频生成回执/重试/余额刷新及GitHub镜像流程等业务更新，尚未合入当前固定1476源码包；下一性能模块构建/发布前须先普通合并并集中验证受影响模块，禁止发布旧候选覆盖同事。共享checkout未修改。模块23为验收环境修复，不另计产品功能迭代，功能计数仍1/3，公开发布0。
+
+本轮证据位于E:/Workspace/naumi/output/canvas-performance-70-20261014：module23-local-recovery.json、module23-local-api-verification.json、module23-persistence-rollback-verification.json、module23-source-{baseline,modified,rollback}.json及独立两份测试库dump。下一步原生浏览器普通PROBE0验收、进一步定位实际pan瓶颈、最新main整合、同控制直连R2对照及完整发布连续性仍待完成。
