@@ -66,3 +66,12 @@ node scripts/storage-s3-contract.mjs
 npx tsc --noEmit
 ```
 真实S3测试固定为本机独立fixture endpoint，不读取生产存储env。私有/回退测试使用随机隔离schema，结束清除；容器验证后删除，不保留测试服务到生产。
+
+## 最终验收范围与交付
+固定实现提交19a2da3；此前374e518与7b4d8ff包含协作修复，普通整合最新main d6f53dc，无业务冲突。本地写入也走统一适配器；真实MinIO签名PUT包含Content-Type/Content-Length约束成功。
+
+集中协议/应用回归、配置切local三变体、同key更新三变体409→200与摘要、异步清理403无未处理拒绝、独立类型和受影响文件ESLint通过。Chromium缓存与团队/企业回归的真实通过记录见上文；未改浏览器缓存算法及稳定ID。固定Next生产构建单独使用--no-lint避免父目录依赖冲突，实际lint单独exit0，不能把构建参数解释为全库lint已通过。
+
+文档/配置示例和代码交付满足本轮开发范围；47企业NAS E2E、真实NAS网关、生产数据迁移/部署均未执行，后续按用户明确指令开展。103存储未改、原Python工作台未改。
+
+提交/推送与main整合另附实际SHA；合main只让后续构建带上代码，不代表已上线。同步功能计数本模块1，合并前fetch并整合main后归零；成功发布次数0。
