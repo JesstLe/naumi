@@ -58,6 +58,13 @@ export async function seedVideoFixture() {
     config.upstreamModels.push({id:"fixture-motion-upstream",providerId:"fixture-motion-provider",model:"fixture/kling-motion",label:"Fixture motion",modality:"video",enabled:true,capabilities:{...config.upstreamModels[0].capabilities,qualities:[],nativeResolutions:[],maxReferenceImages:1,video:{...CAP_RICH,modes:["motion_control"],aspectRatios:["16:9","9:16"],audio:"disabled",limits:{...CAP_RICH.limits,images:1,videos:1,audios:0},supportsMultiShot:false,maxShots:0,supportsElements:false,maxElements:0,maxElementReferences:0,supportsCamera:false,providerOptions:{characterOrientation:{type:"enum",values:["image","video"],defaultValue:"image",send:"value"}}}},parameterMap:{videoProfile:"kie-motion-control"}});
     config.publicModels.push({id:"video-motion",label:"Fixture motion",modality:"video",enabled:true,visible:true,target:{type:"upstream",id:"fixture-motion-upstream"}});
   }
+  if(process.env.VIDEO_FIXTURE_REFERENCE_MODELS==="1"){
+    for(const [id,videos] of [["video-reference",1],["image-reference-only",0],["unknown-video-reference",null]] as const){
+      const upstreamId=`fixture-${id}-upstream`;
+      config.upstreamModels.push({id:upstreamId,providerId:"fixture-video-provider",model:`wire-${id}`,label:id,modality:"video",enabled:true,capabilities:{...config.upstreamModels[0].capabilities,qualities:[],nativeResolutions:[],maxReferenceImages:1,video:{...CAP_RICH,modes:["reference"],limits:{images:1,videos,audios:1},supportsMultiShot:false,maxShots:0,supportsElements:false,maxElements:0,maxElementReferences:0,supportsCamera:false}},parameterMap:{videoProfile:"ark"}});
+      config.publicModels.push({id,label:id,modality:"video",enabled:true,visible:true,target:{type:"upstream",id:upstreamId}});
+    }
+  }
   const {validateModelConfig}=await import("../../src/lib/model-config/schema");
   validateModelConfig(config,{trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(",")});
   const repo=createModelRepository({pool:db.getPool(),trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(","),initialize:async()=>config});

@@ -31,7 +31,7 @@ function privateChild(args:string[],env:NodeJS.ProcessEnv):Promise<string>{retur
 });}
 
 /** Uses real Naumi HTTP and Worker processes; only upstream services are simulated. */
-export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;routerBinary?:string;videoProfile?:VideoWireProfile;fullWorkflow?:boolean;uiModels?:boolean;validateWire?:(call:unknown)=>void|Promise<void>;agentReply?:(request:any)=>any|Promise<any>}={}) {
+export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;routerBinary?:string;videoProfile?:VideoWireProfile;fullWorkflow?:boolean;uiModels?:boolean;referenceModels?:boolean;validateWire?:(call:unknown)=>void|Promise<void>;agentReply?:(request:any)=>any|Promise<any>}={}) {
   if(options.fullWorkflow&&options.videoProfile!=="autodl")throw new Error("Full workflow fixture requires the AutoDL profile");
   let databaseUrl=options.databaseUrl||process.env.VIDEO_FIXTURE_DATABASE_URL||process.env.DATABASE_URL||"";
   const routerBinary=options.routerBinary||process.env.VIDEO_FIXTURE_ROUTER_BINARY;
@@ -67,7 +67,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
   const mediaPort=await freePort(),mediaSecret=randomUUID()+randomUUID(),mediaOrigin=`http://127.0.0.1:${mediaPort}`;
   const env:NodeJS.ProcessEnv={...cleanEnv(),NODE_ENV:"development",NEXT_TELEMETRY_DISABLED:"1",DATABASE_URL:databaseUrl,NAUMI_VERIFY_ISOLATED_DB:"1",
     NAUMI_MULTI_USER:"1",NAUMI_EDITION:"pro",PRO_LICENSE_KEY:"LOCAL-OFFLINE",SETTINGS_SECRET:randomUUID()+randomUUID(),
-    VIDEO_FIXTURE_PARENT_PIPE:"1",VIDEO_FIXTURE_ASSETS_ROOT:assetsRoot,VIDEO_FIXTURE_AGENT:options.agentReply?"1":"0",VIDEO_FIXTURE_UI_MODELS:options.uiModels?"1":"0",MEDIA_DIR:path.join(output,"media"),STORAGE_DRIVER:"s3",MEDIA_PRIVATE:"1",
+    VIDEO_FIXTURE_PARENT_PIPE:"1",VIDEO_FIXTURE_ASSETS_ROOT:assetsRoot,VIDEO_FIXTURE_AGENT:options.agentReply?"1":"0",VIDEO_FIXTURE_UI_MODELS:options.uiModels?"1":"0",VIDEO_FIXTURE_REFERENCE_MODELS:options.referenceModels?"1":"0",MEDIA_DIR:path.join(output,"media"),STORAGE_DRIVER:"s3",MEDIA_PRIVATE:"1",
     S3_ENDPOINT:supplier.origin+"/objects",S3_REGION:"us-east-1",S3_BUCKET:bucket,S3_FORCE_PATH_STYLE:"1",S3_ACCESS_KEY_ID:accessKeyId,S3_SECRET_ACCESS_KEY:secretAccessKey,
     NAUMI_VIDEO_WORKER:"0",VIDEO_WORKER_SECRET:workerSecret,NAUMI_APP_ORIGIN:baseUrl,INTERNAL_APP_ORIGIN:baseUrl,VIDEO_WORKER_INTERVAL_MS:"5000",
     MEDIA_WORKER_ORIGIN:mediaOrigin,MEDIA_WORKER_SECRET:mediaSecret,MEDIA_JOB_DIR:path.join(output,"media-jobs"),

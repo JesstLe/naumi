@@ -4,7 +4,7 @@ import {Type,type TSchema} from "typebox";
 import type {AgentTool} from "@earendil-works/pi-agent-core";
 import {videoNodeConfigSchema,type CanvasVideoNode} from "../canvas/video-node-schema";
 import {scheduleCanvasVideoWorkflow,type PreparedCanvasVideoWorkflow} from "../video/canvas-workflow";
-import {inputReference} from "../video/client-settings";
+import {inputReference,selectedVideoCatalogModel} from "../video/client-settings";
 import {orderedInputSchema} from "../video/references";
 import {mediaJobRequestSchema} from "../video/media-job-schema";
 import type {PublicVideoTaskView} from "../video/service";
@@ -24,18 +24,30 @@ export function createCanvasVideoTools(d:Deps):AgentTool[]{
   function target(raw:unknown){if(project){if(raw&&raw!==project)throw new Error("不能修改其他画布项目");return project;}return typeof raw==="string"?raw:undefined;}
   async function save(current:CanvasVideoNode,expected:number,patch:Record<string,unknown>,callId:string,signal?:AbortSignal){const saved=await post(`/api/canvas/video-nodes/${encodeURIComponent(current.id)}`,{id:current.id,expectedRevision:expected,operationId:videoAgentOperationId(d.actor,callId,"video-settings"),...patch},signal,"PATCH");return result("视频设置已保存",{node:saved.node,projectKey:current.projectKey,nodeId:current.id});}
   function tool(name:string,label:string,description:string,properties:Record<string,TSchema>,execute:AgentTool["execute"]):AgentTool{return {name,label,description,parameters:Type.Object(properties),executionMode:"sequential",execute};}
-  async function generate(callId:string,args:Record<string,any>,signal?:AbortSignal,requiredMode?:string){
+  async function assertIntentMode(settings:CanvasVideoNode["config"],inputs:CanvasVideoNode["inputs"],requiredMode:"extend"|"video_edit"|undefined,signal?:AbortSignal){
+    if(!requiredMode||settings.mode===requiredMode)return;
+    // Some upstreams implement continuation/editing through their declared video
+    // reference mode. Preserve that explicit saved mode and the formal source;
+    // never turn this request into text generation or guess from a model name.
+    if(settings.mode!=="reference")throw new Error(`请先按真实模型能力保存 ${requiredMode} 或视频参考模式，未提交生成`);
+    const references=inputs.length?inputs.flatMap(value=>{const ref=inputReference(value);return ref?[ref]:[];}):settings.references||[];
+    if(!references.some(ref=>ref.kind==="video"&&ref.role==="source_video"))throw new Error("续写或编辑需要明确的正式来源视频引用，未提交生成");
+    const catalog=await d.internal("/api/video/catalog",signal),model=selectedVideoCatalogModel(catalog.models||[],settings),cap=model?.definition;
+    if(!cap?.modes?.includes("reference")||cap.limits?.videos==null||cap.limits.videos<1)throw new Error("当前模型未明确声明视频参考能力，未提交生成");
+  }
+  async function generate(callId:string,args:Record<string,any>,signal?:AbortSignal,requiredMode?:"extend"|"video_edit"){
     if(!args.node_id&&!d.canvas){
-      const settings=videoNodeConfigSchema.parse(args.config||{});if(requiredMode&&settings.mode!==requiredMode)throw new Error(`此操作需要真实的 ${requiredMode} 模式`);
+      const settings=videoNodeConfigSchema.parse(args.config||{});
       const inputs=(args.inputs||[]).map((value:unknown)=>orderedInputSchema.parse(value)),references=inputs.length?inputs.flatMap((value:CanvasVideoNode["inputs"][number])=>{const ref=inputReference(value);return ref?[ref]:[];}):settings.references;
       const key=(args.operation_id||videoAgentOperationId(d.actor,callId,"video-generate")),{comfyWorkflowId,comfyInputs,comfyOverrides,workflowTaskId:_source,...base}=settings;
       try{const known=await d.internal(`/api/video/tasks?idempotencyKey=${encodeURIComponent(key)}`,signal);if(known.task){if(known.task.source!=="workbench")throw new Error("操作编号已用于另一来源任务");return result("工作台原任务已恢复",{task:known.task,taskId:known.task.id,operationId:key,source:"workbench"});}}catch(error){if((error as {status?:number}).status!==404)throw error;}
+      await assertIntentMode(settings,inputs,requiredMode,signal);
       const body=comfyWorkflowId?{workflowId:comfyWorkflowId,mediaType:"video",source:"workbench",prompt:base.prompt||"",negativePrompt:base.negativePrompt,resolution:base.resolution,aspectRatio:base.aspectRatio,generateAudio:base.generateAudio,watermark:base.watermark,durationSeconds:base.durationSeconds&&base.durationSeconds>0?base.durationSeconds:undefined,references,orderedInputs:inputs,inputMappings:comfyInputs,...comfyOverrides,idempotencyKey:key}:{...base,workflowTaskId:settings.workflowTaskId,source:"workbench",orderedInputs:inputs.length?inputs:undefined,references,idempotencyKey:key};
       let created;try{created=await post(comfyWorkflowId?"/api/comfyui/run":"/api/video/generate",body,signal);}catch(error){throw Object.assign(new Error(`${error instanceof Error?error.message:"提交尚未核实"}；原操作编号 ${key}，先查询此编号，不重复创建`),{status:(error as any).status});}return result("视频任务已提交到工作台",{taskId:created.taskId,cost:created.cost,operationId:key,source:"workbench"});
     }
     const current=await node(args.node_id,signal),key=(args.operation_id||videoAgentOperationId(d.actor,callId,"video-generate"));
     try{const known=await d.internal(`/api/video/tasks?idempotencyKey=${key}`,signal);if(known.task){if(known.task.sourceId!==current.id||known.task.projectKey!==current.projectKey)throw new Error("操作编号已用于另一视频任务");return result("视频任务已恢复",{task:known.task,taskId:known.task.id,nodeId:current.id,projectKey:current.projectKey});}}catch(error){if((error as {status?:number}).status!==404)throw error;}
-    if(requiredMode&&current.config.mode!==requiredMode)throw new Error(`请先按真实模型能力保存 ${requiredMode} 模式，未提交生成`);
+    await assertIntentMode(current.config,current.inputs,requiredMode,signal);
     if(current.lastTaskId){try{const task=(await d.internal(`/api/video/tasks/${encodeURIComponent(current.lastTaskId)}`,signal)).task as PublicVideoTaskView;if(["queued","processing","needs_attention"].includes(task.status))return result("原视频任务仍在执行或待核查",{task,taskId:task.id,nodeId:current.id,projectKey:current.projectKey});}catch(error){if((error as {status?:number}).status!==404)throw error;}}
     if(!Number.isInteger(args.expected_revision))throw new Error("请先读取节点revision");
     let created;try{created=await post(`/api/canvas/video-nodes/${encodeURIComponent(current.id)}/generate`,{expectedRevision:args.expected_revision,idempotencyKey:key},signal);}catch(error){throw Object.assign(new Error(`${error instanceof Error?error.message:"提交尚未核实"}；原操作编号 ${key}，先查询此编号，不重复创建`),{status:(error as any).status});}
@@ -80,8 +92,8 @@ export function createCanvasVideoTools(d:Deps):AgentTool[]{
       return result("独立镜头与依赖已保存，尚未生成",{nodes,projectKey:key,nodeIds:shots.map(shot=>mapping.get(shot.id)),supplierCalls:0,suggestedRunId:videoAgentOperationId(d.actor,call,"video-workflow")});
     }),
     tool("generate_video","生成节点视频","按已保存的实际视频节点与revision提交持久任务；返回taskId后查询真实状态，不等待SSE挂载、不硬编码规格。",{node_id:Type.Optional(id),expected_revision:Type.Optional(revision),operation_id:Type.Optional(op),config:Type.Optional(config),inputs:Type.Optional(Type.Array(input,{maxItems:256}))},async(call,args,signal)=>generate(call,args as any,signal)),
-    tool("extend_video","续写节点视频","仅执行实际已配置extend能力与正式来源视频；先完成前序任务并保存引用/合法模式。",{node_id:Type.Optional(id),expected_revision:Type.Optional(revision),operation_id:Type.Optional(op),config:Type.Optional(config),inputs:Type.Optional(Type.Array(input,{maxItems:256}))},async(call,args,signal)=>generate(call,args as any,signal,"extend")),
-    tool("edit_video","编辑节点视频","仅执行实际video_edit能力；风格/局部/替换/剧情修改先保存完整描述和正式素材，不冒充文生。",{node_id:Type.Optional(id),expected_revision:Type.Optional(revision),operation_id:Type.Optional(op),config:Type.Optional(config),inputs:Type.Optional(Type.Array(input,{maxItems:256}))},async(call,args,signal)=>generate(call,args as any,signal,"video_edit")),
+    tool("extend_video","续写节点视频","执行已配置extend模式，或明确支持视频输入的reference模式；先完成正式来源视频并保存引用与合法模式，不自动改成文生。",{node_id:Type.Optional(id),expected_revision:Type.Optional(revision),operation_id:Type.Optional(op),config:Type.Optional(config),inputs:Type.Optional(Type.Array(input,{maxItems:256}))},async(call,args,signal)=>generate(call,args as any,signal,"extend")),
+    tool("edit_video","编辑节点视频","执行已配置video_edit模式，或明确支持视频输入的reference模式；风格/局部/替换/剧情修改先保存完整描述和正式来源素材，不冒充文生。",{node_id:Type.Optional(id),expected_revision:Type.Optional(revision),operation_id:Type.Optional(op),config:Type.Optional(config),inputs:Type.Optional(Type.Array(input,{maxItems:256}))},async(call,args,signal)=>generate(call,args as any,signal,"video_edit")),
     tool("get_video_task","查询视频任务","查询本人持久task的真实状态与全部产物，Worker恢复后仍使用原taskId，不重复生成。",{task_id:Type.Optional(id),operation_id:Type.Optional(op)},async(_call,args,signal)=>{const a=args as any;if(!a.task_id&&!a.operation_id)throw new Error("请提供task_id或原操作编号");return result("视频任务状态已读取",await d.internal(a.task_id?`/api/video/tasks?id=${encodeURIComponent(a.task_id)}`:`/api/video/tasks?idempotencyKey=${encodeURIComponent(a.operation_id)}`,signal));}),
     tool("cancel_video_task","请求停止视频","请求停止当前项目视频任务；请求已发不代表上游已取消，保留既有作品与真实计费终态。",{task_id:id},async(_call,args,signal)=>{const task=(await d.internal(`/api/video/tasks/${encodeURIComponent((args as any).task_id)}`,signal)).task as PublicVideoTaskView;if(project&&task.projectKey!==project)throw new Error("任务不属于当前项目");return result("视频停止请求已提交",await post(`/api/video/tasks/${encodeURIComponent(task.id)}/cancel`,{},signal));}),
     tool("process_video","视频媒体处理","真实持久媒体job：抽帧/音轨/分离/裁剪/拼接/FFmpeg/FFprobe，完整数组与多输出；仅asset:0/output:0等虚拟文件，不使用宿主shell、不覆盖原文件。",{action:Type.Union(["frame","extract_audio","separate","trim","concat","ffmpeg","ffprobe"].map(value=>Type.Literal(value))),inputs:Type.Array(Type.String({minLength:1,maxLength:300}),{maxItems:1000}),outputs:Type.Optional(Type.Array(Type.String({maxLength:160}),{maxItems:32})),timestamp:Type.Optional(Type.Union([Type.Number({minimum:0}),Type.Literal("first"),Type.Literal("last")])),start:Type.Optional(Type.Number({minimum:0})),end:Type.Optional(Type.Number({exclusiveMinimum:0})),args:Type.Optional(Type.Array(Type.String({maxLength:16384}),{maxItems:512})),auxiliaryFiles:Type.Optional(Type.Array(Type.Unknown(),{maxItems:16})),auxiliaryOutputs:Type.Optional(Type.Array(Type.Unknown(),{maxItems:16})),project_key:Type.Optional(Type.String({maxLength:166}))},async(call,args,signal)=>{const a=args as any,{project_key:_project,confirm:_confirm,...settings}=a,body=mediaJobRequestSchema.parse({...settings,operationId:videoAgentOperationId(d.actor,call,"media"),source:d.canvas?"canvas":"workbench",projectKey:target(a.project_key),billingConfirmation:d.confirmation?.()});return result("媒体处理已提交",await post("/api/video/media-jobs",body,signal));}),

@@ -6,7 +6,7 @@ import {openVideoSettings} from "./verify-video-fusion-settings.mjs";
 
 // The fixture clip contains original colored test bars. Metadata/decoder readiness
 // alone does not prove Chrome presented the frame in the actual UI.
-async function expectVisibleFixtureFrame(video){
+export async function expectVisibleFixtureFrame(video){
   await expect.poll(async()=>{
     const {data,info}=await sharp(await video.screenshot()).removeAlpha().raw().toBuffer({resolveWithObject:true});
     let colored=0;

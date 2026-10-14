@@ -25,3 +25,17 @@
 实际规则注入及原节点链浏览器回归PASS：checkpoint-c/agent-browser-bf739115-8044-48b0-bc9b-d6ddf5c03530/result.json。V12—V14还须核查工具专用mode与支持video-reference的上游语义差异，并验证各编辑/续写/前传分支的真实素材与请求，而非只有system字符串断言。
 
 本批同时整合 origin/main `3ab2418` 到独立分支，合并SHA `1eba865`，仅一处canvas-client import冲突，视频imports与CanvasPerformanceProbe都保留。npm ci新增fake-indexeddb测试依赖，TypeScript及主线render-layer-order/text-edit-history检查通过；受影响的真实Chrome画布/Agent回归结果另记界面模块。开发不持103部署锁，未发布本轮融合。
+
+## 第八批：已声明视频参考的实际续写/编辑路径
+
+核查确认实际差异：此前extend_video/edit_video只接受专用extend/video_edit模式，而IC部分续写、前传及编辑使用正式视频参考与提示词表达意图。现在保留节点或工作台明确保存的reference模式，要求存在kind=video/role=source_video正式引用，并从真实公开目录读取该模型definition.modes明确含reference、limits.videos为已维护正数。没有视频、只有图片、视频角色未指定来源、数量明确0或未知时拒绝。后续真实生成API继续检查本人资产、真实完成状态、完整输入限制、revision和冻结配置；没有改为text模式、没有根据名称猜能力或放宽源媒体权限。既有专用模式继续由原服务契约验证。
+
+恢复原操作先查询持久任务，再验证新提交模式；已有工作台操作不因当前目录改变而重新创建。视频源码不接受模型提供的伪造完成状态、占位媒体或隐式模式转换。托管公开模型保持相同public model ID与现有managed-video目录别名匹配规则。
+
+新增隔离fixture选项referenceModels，显式配置仅reference的视频模型、视频上限0模型及视频上限null模型，默认其他fixture不启用。verify-video-fusion-production.ts经真实App/PG/Router/私有媒体/Worker与原生Ark HTTP验证7个已保存方案：restyle、partial、replace、replot、硬切、同机位、前传；每个使用完整对白及有序video/image/audio/text本人素材，实际wire为reference_video/image/audio，冻结mode仍reference、节点原文与author文字逐字保持。另测2种专用模式及1个工作台reference编辑，共10任务/10次创建；重复工具调用与真实App重启后恢复不重提；工作台projectKey为空且所有真实作品origin=workbench。
+
+7个拒绝分支同时核对公开错误原因、任务数/供应商创建/余额保持：text冒充编辑、图片reference冒充视频编辑、视频未指定source_video、能力0、能力未知、其他账号节点、未生成的来源节点。原素材SHA保持。最终PASS：checkpoint-c/production-3710100e-9123-4a62-9aad-6c0cb68b7aa4/result.json，session15543中第一项正常完成。此前完整用例亦PASS97fceef1。
+
+初测纠正两个验证器假定：既有执行normalizer去除prompt边界空白，保存节点/原文素材仍逐字保留，执行wire以正常化后的完整对白核对；工作台边界检查实际projectKey与作品origin，不猜sourceId必须为null。未更改产品文字保存、normalizer或工作台挂载策略。
+
+这些子意图文字由用例编写，测试证明真实素材/模式/任务/原生请求/恢复链路，不能证明真实LLM理解全部子意图或付费视频的视觉编辑质量。完整C还需生图保护、BYOC/媒体更多GUI以及剩余原文/拼图等规则行为对照；D完整矩阵/演示站或固定本地上游/分支复核/完整固定App及蓝绿回滚/103发布保持待完成。

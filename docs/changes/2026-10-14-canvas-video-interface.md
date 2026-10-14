@@ -207,3 +207,16 @@ fixture扩展独立KIE motion模型，仅uiModels启用，单图/单视频/无�
 修复后集中用例先PASS ff176bff（不含新账号切换），最终完整PASS：canvas-interactions-2e53e077-b6e5-4ef6-8e14-f4a8382a1198/result.json，clipboardDoesNotCarryAcrossAccounts=true。两个最终脚本顺序执行session41923 exit0，finally均清理浏览器和fixture App/Worker。最终完整TypeScript session90341 exit0，diff结构检查通过。上述证据均在本worktree忽略output/canvas-video-fusion-20261013/checkpoint-c；没有付费视频调用。
 
 剩余C仍含批量工作流/更多图片保护回归及V12—V14完整行为验收，不能凭规则注入断言证明真实模型遵循规则或视频质量。新源码核查还需确认extend_video/edit_video当前只接受专用mode，而上游某些续写/编辑原本通过显式支持的视频reference完成；下一批应依据真实cap及正式source-video验证该差异，不用文生冒充、不静默改模式。D在线演示/固定本地上游实操、34项逐项证据、新分支复核、完整固定LinuxApp、蓝绿/排空/回滚、103上线及交接继续未完成。开发全程未持103部署锁，本批未发布。
+
+## Task12/13 第八批：视频参考制作与工作台批量/历史真实GUI
+
+正式reference续写/编辑缺口已修复；完整条件、7个制作方向、2种专用模式、工作台、7个无扣费拒绝分支及恢复证据见[制作规则记录](2026-10-14-canvas-video-production-rules.md)。最终production-3710100e PASS，非真实视频质量验收。
+
+新增verify-video-fusion-workbench.ts及计划中的verify-video-fusion-history.mjs。真实Chrome通过/video工作台选择托管模型、完整对白、任务数量3并点击生成；实际3个独立持久任务/3次Compshare Vidu原生创建，真实Worker各完成两个真实原始视频结果。未发送时目标画布仍仅原节点，全部结果作品origin=workbench且任务projectKey为空；刷新恢复原3任务，不重复生成。
+
+通过真实完整历史按钮进入history-picker，实际展开原任务参数面板，原始对白逐字与完整参数JSON可见。实际历史播放器与发送后画布播放器使用已验证的原始彩条像素断言，不把黑屏截图或仅loadedmetadata当呈现通过。本人选择原目标项目并点击发送，全部产物关联目标；再次点击发送恢复同一节点ID/revision，不新增创建、扣费或节点。目标原节点内容保持，最后打开实际发送节点，真实彩色视频呈现。浏览器pageerror为0。
+
+最终PASS：checkpoint-c/workbench-29e6b608-af68-439a-834f-8133dbcda5ee/result.json，actualHistoryAndSentCanvasColoredFrames=true，session78021 exit0。此前bc4c943f、124d68a8亦PASS相应范围，原始失败878b2b8d保留；第一次用例误用未存在的video-history-dialog test ID，改实际video-history-picker，没有改产品历史面板。最终29e6b608的两张截图均已人工查看，历史完整参数与彩色画面可见。发送后的普通结果素材和生成节点在本fixture中位置贴近，目标初始节点未设置坐标；剩余C需用实际布置的混合目标检查摆放与全部节点可见性，不以本用例宣称布局回归完成。
+
+完整TypeScript及diff结构检查PASS（session42799 exit0），所有本批fixture/Chrome由finally停止。最新fetch origin/main仍3ab2418，本分支已包含，无新增合并冲突。按用户增量整合要求，准备普通推送已验收C阶段到main；阶段Git合并不是完整C/D/34项交付，GitHub工作流经检查只构建/推送镜像及fixture验收，不含SSH服务器部署，本批无103连接/锁/发布。
+
