@@ -55,8 +55,10 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
         res.writeHead(200,{"content-type":entry.mimeType,"content-length":bytes.length}); return res.end(bytes);
       }
       const declaredProtocol=url.pathname.match(/^\/protocol\/([^/]+)/)?.[1]||"openai-videos";
-      if (req.headers.authorization !== `Bearer ${token}` && req.headers["x-goog-api-key"]!==token && !(declaredProtocol==="autodl"&&req.headers.authorization===token)) return respond(res,{error:"fixture authentication required"},401);
+      const headerAuthenticated=req.headers.authorization===`Bearer ${token}`||req.headers["x-goog-api-key"]===token||(declaredProtocol==="autodl"&&req.headers.authorization===token);
+      if(!headerAuthenticated&&declaredProtocol!=="runninghub")return respond(res,{error:"fixture authentication required"},401);
       const body = req.method === "POST" || req.method === "PUT" ? await getBody(req) : {};
+      if(declaredProtocol==="runninghub"&&body.apiKey!==token)return respond(res,{error:"fixture authentication required"},401);
       const protocol = url.pathname.match(/^\/protocol\/([^/]+)/)?.[1] || "openai-videos";
       const pathname = url.pathname.replace(/^\/protocol\/[^/]+/, "");
       if(protocol==="agent"&&req.method==="POST"&&pathname==="/v1/chat/completions"){
