@@ -15,7 +15,7 @@ async function main(){
   assert.equal((await store.get(key,'bytes=999-')).status,416);
   const signed=await store.presign('GET',key,60,new Headers(),'download.bin');const download=await fetch(signed);assert.equal(download.status,200);assert.ok(download.headers.get('content-disposition')?.includes('download.bin'));assert.deepEqual(Buffer.from(await download.arrayBuffer()),body);
   const unauthorized=await fetch(origin+'/'+bucket+'/contract/test');assert.equal(unauthorized.status,403);
-  const putKey='contract/put.bin';const putUrl=await store.presign('PUT',putKey,60);assert.equal((await fetch(putUrl,{method:'PUT',body:Buffer.from('signed-put')})).status,200);assert.equal(await(await store.get(putKey)).text(),'signed-put');await store.delete(putKey);
+  const putKey='contract/put.bin';const putUrl=await store.presign('PUT',putKey,60,new Headers({'content-type':'application/octet-stream','content-length':'10'}));assert.equal((await fetch(putUrl,{method:'PUT',headers:{'content-type':'application/octet-stream'},body:Buffer.from('signed-put')})).status,200);assert.equal(await(await store.get(putKey)).text(),'signed-put');await store.delete(putKey);
   await store.delete(key);assert.equal(await store.exists(key),false);assert.equal((await store.get(key)).status,404);
   console.log('ISOLATED_MINIO=PASS PUT=1 GET_BYTES=1 RANGE206_416=1 SIGNED_GET_PUT=1 ANONYMOUS403=1 DELETE404=1 ENTERPRISE_NAS=NOT_TESTED');
  } finally {await store.delete(key);}

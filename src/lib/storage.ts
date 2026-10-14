@@ -1,6 +1,6 @@
 import "server-only";
 
-import { mkdir, readFile, stat, writeFile } from "fs/promises";
+import { readFile, stat } from "fs/promises";
 import path from "path";
 import { storageConfiguration } from "./object-storage/config";
 import { createObjectStorage, safeStorageKey } from "./object-storage/adapter";
@@ -50,9 +50,7 @@ export async function uploadImage(
   }
   const normalized = safeKey(key);
   if (storageDriver === "local") {
-    const full = path.join(MEDIA_DIR, normalized);
-    await mkdir(path.dirname(full), { recursive: true });
-    await writeFile(full, Buffer.from(bytes));
+    await backend.put(normalized, bytes, contentType, cacheControl);
     return `${MEDIA_URL_PREFIX}/${normalized}`;
   }
   await backend.put(normalized, bytes, contentType, cacheControl);
@@ -63,9 +61,8 @@ export async function uploadImage(
 // Mirror first: an object-store outage must never discard an already paid result.
 // The stable URL and local bytes remain readable by the previous release too.
 export async function writeStoredObject(bytes: Uint8Array, contentType: string, key: string) {
-  const normalized = safeKey(key), full = path.join(MEDIA_DIR, normalized);
-  await mkdir(path.dirname(full), { recursive: true });
-  await writeFile(full, Buffer.from(bytes));
+  const normalized = safeKey(key);
+  await local.put(normalized, bytes, contentType, "private, max-age=300");
   if (storageDriver === "local") return { remoteReady: false };
   try {
     await backend.put(normalized, bytes, contentType, "private, max-age=300");
