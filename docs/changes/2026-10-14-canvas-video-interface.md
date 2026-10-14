@@ -242,4 +242,4 @@ tools真实全局生图质量、Node→Go Router合同、500×2并发性能全�
 
 锁定交互测试补强：原fixture不合法的text模式加图片改成合法single_image/first_frame，真实界面先断言解锁时生成可用，再执行锁定并断言保存/生成禁用，同时保留拖动不变、两窗口409保留草稿、跨项目复制/撤销重做、尺寸持久化与账号隔离；没有生成任务或模型调用。最终canvas-interactions-f66e292f PASS，session62441 exit0。实际混合布局及完整C/D仍待完成。
 
-远端CI26520ca的38497433803已确认终态失败，仍在billing-all步骤，日志下载是TLS连接EOF而非证书不可信；未关闭证书验证。创建本任务带owner marker的全新loopback数据库并从零执行完整18组billing-all，再次全部PASS，session88019 exit0，两组500性能样本errorCount0，排除只靠旧库预置通过。远端失败具体原因尚未取得，不宣称已修复；仅对这一已确认失败的job请求一次诊断性重跑，不删除首次失败记录。完整固定App运行/回滚/103发布门槛仍未通过。
+远端CI26520ca的38497433803已确认终态失败，仍在billing-all步骤，日志下载是TLS连接EOF而非证书不可信；未关闭证书验证。创建本任务带owner marker的全新loopback数据库并从零执行完整18组billing-all，再次全部PASS，session88019 exit0，两组500性能样本errorCount0，排除只靠旧库预置通过。远端失败具体原因尚未取得，不宣称已修复；仅对这一已确认失败的job请求一次诊断性重跑，PAT权限拒绝，session65420 exit1，未实际启动重跑，也不删除首次失败记录。26520ca完整Docker构建38497433819 success。完整固定App运行/回滚/103发布门槛仍未通过。
