@@ -170,3 +170,7 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 103本轮只读刷新：公网仍b243f5e/1791913676、旧core/Worker c05，35/36/37仍旧13eb旁路；部署锁无持有、磁盘70%、可用内存3187MiB、swap占1412MiB。未写生产、未停旧Worker/旧App、未切流。旧c05 Worker不存在drain控制；新增控制只解决下一代Worker，不声称首次升级无损交接已完成。旧实例停用还须确证SSE/Map和在途tick排空，不能依据新Worker fixture直接停旧生产。
 
 开工fetch发现新main5fd8196（同事账单wallet锁补齐和回归），本模块任务提交后普通整合；不得使用e6或13eb旧包忽略它。当前全范围目标仍active：代理同链路冷79.70%与原生平移32.44%仍为上轮实测，不表示最新main/新module/真实直连R270%验收。新固定普通App构建/真实旧新版API兼容/最终交接发布与回滚继续。功能计数1/3，生产发布计数0。
+
+模块18收尾实证：普通Linux PROBE0固定e411aa83a79b96663f69aeb8c0d4352530005a24构建exit0，本机4330实际1791942116/e411aa8。只替换本任务隔离fixture容器，原a1容器rename为naumi-canvas-perf-ordinary-20261014-a1-retained并stop保留，原DB/媒体/挂载不变、Worker0、供应商key空。新版四条原生登录态读API均200 JSON且nodes/assets/projects/workflows数组shape通过；初次检查脚本误把BYOC字段写成channels后改为源码真实workflows，不是产品修复或生产失败。普通内置浏览器实际完整213/154/191、composite、error0；已退回dashboard停止画布背景下载，未改用户103登录页或admin密码。
+
+普通整合后HEAD e411aa8/main5fd8196，任务分支已push；真实HTTP/SSE/视频poll对象复用/堆叠guard/30计费入口/完整TypeScript/git diff集中exit0。当前main-relative四件套24字段独立source+行为回滚通过，保留同事wallet锁及视频新main，24同hash授权引用BASE24字节下载→MOD1→ROLLBACK24，modifiedZIP保持修改。实际103本轮只读版本仍b243，未持部署锁/未公网切流。全范围目标仍active；剩余首次旧Worker交接、新版三槽+core整体固定候选、真实旧页面/在途任务连续性、直连R2与原生平移70%、切流及真实回滚。
