@@ -4,7 +4,7 @@ import path from 'node:path';
 import { authenticatedEmail } from '@/lib/request-auth';
 import { sameSiteBillingMutation } from '@/lib/billing/access';
 import { canReadMedia, getMediaAsset, getMediaAssets, ensureMediaVariants, importLegacyMedia } from '@/lib/media-assets';
-import { MEDIA_DIR, privateMedia, storageDriver, presignStoredObject } from '@/lib/storage';
+import { MEDIA_DIR, privateMedia, storageDriver, remoteMediaAccess, presignStoredObject } from '@/lib/storage';
 import { managedImageSource, publicImageSource, type BrowserImageDescriptor } from '@/lib/browser-image-source';
 import { rateLimit } from '@/lib/rate-limit';
 import {clientIp} from '@/lib/ip';
@@ -68,7 +68,7 @@ export async function imageCacheManifest(request:Request,publicOnly:boolean){
       if(!contentType || !/^image\/(png|jpeg|webp|avif|gif)$/.test(contentType))continue;
       let version=asset?.sha256,bytes=Number(asset?.bytes);
       let fetchUrl=source;
-      if(asset?.remote_ready && storageDriver!=='local') fetchUrl=await presignStoredObject('GET',resolved,300);
+      if(asset?.remote_ready && storageDriver!=='local') { if(remoteMediaAccess==='redirect') fetchUrl=await presignStoredObject('GET',resolved,300); else fetchUrl+=(fetchUrl.includes('?')?'&':'?')+'cacheVersion='+encodeURIComponent(version!); }
       else {
         const base=path.resolve(MEDIA_DIR),full=path.resolve(base,resolved);
         if(!full.startsWith(base+path.sep))continue;
