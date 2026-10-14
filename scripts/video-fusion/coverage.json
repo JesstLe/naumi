@@ -153,6 +153,21 @@
       "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/advanced-settings-summary.json",
       "verifier": "scripts/verify-video-fusion-advanced-summary.mjs",
       "kind": "audit-of-actual-app-chrome-db-router-worker-advanced-settings"
+    },
+    "derivedMedia": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/derived-media-7455ccc7-e55d-46cd-a643-c0bc3dc2d91d/result.json",
+      "verifier": "scripts/verify-video-fusion-derived-media.ts",
+      "kind": "actual-app-db-router-media-and-video-workers"
+    },
+    "derivedAudit": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/derived-media-audit.json",
+      "verifier": "scripts/verify-video-fusion-derived-audit.mjs",
+      "kind": "audit-of-actual-app-native-downstream-and-independent-media"
+    },
+    "player": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/player-46927c5e-7a8d-4679-ae2e-2e4386dadb3b/result.json",
+      "verifier": "scripts/verify-video-fusion-player.ts",
+      "kind": "actual-app-chrome-db-router-and-workers"
     }
   },
   "capabilities": [
@@ -999,54 +1014,252 @@
     {
       "id": "V19",
       "name": "导入替换播放器音量全屏下载Range",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
-        "src/lib/video/media-inspection.ts"
+        "src/components/canvas/video/player.tsx",
+        "src/lib/video/assets.ts",
+        "src/app/media/[...path]/route.ts"
       ],
       "evidenceKeys": [
         "canvas",
         "byoc",
-        "media"
+        "media",
+        "history",
+        "player"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "真实上传/登记素材、历史替换结果与重放撤销保留旧任务和结果",
+          "evidenceKey": "history",
+          "assertions": [
+            {
+              "path": "actualUpload",
+              "value": true
+            },
+            {
+              "path": "registrationReplay",
+              "value": true
+            },
+            {
+              "path": "ownedAssets",
+              "value": true
+            },
+            {
+              "path": "independentResultSelectionReplayRevisionAndUndo",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "真实Chrome视频解码播放暂停静音时间轴、下载和放大呈现",
+          "evidenceKey": "canvas",
+          "assertions": [
+            {
+              "path": "decodedPlaybackPauseMuteSeek",
+              "value": true
+            },
+            {
+              "path": "actualVideoDownload",
+              "value": true
+            },
+            {
+              "path": "expandedPreview",
+              "value": true
+            },
+            {
+              "path": "expandedPreviewActualColoredPixelsBeforeAndAfterPlayback",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际视频音量0/1与静音、原生浏览器全屏进入退出、音频真实播放暂停音量和下载；实际App授权Range前缀/后缀/越界和跨账号拒绝",
+          "evidenceKey": "player",
+          "assertions": [
+            {
+              "path": "videoVolumeZeroOneAndMute",
+              "value": true
+            },
+            {
+              "path": "nativeFullscreenEnterExit",
+              "value": true
+            },
+            {
+              "path": "audioActualPlaybackPauseVolumeAndDownload",
+              "value": true
+            },
+            {
+              "path": "actualPrivateRangePrefixSuffixAndBounds",
+              "value": true
+            },
+            {
+              "path": "foreignRangeDenied",
+              "value": true
+            },
+            {
+              "path": "reloadOriginalTaskNoExtraCreation",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
       "id": "V20",
       "name": "首当前尾帧及来源持久关联",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
+        "src/components/canvas/video/player.tsx",
+        "src/components/canvas/video/media-actions.tsx",
         "src/lib/video/media-jobs.ts"
       ],
       "evidenceKeys": [
         "canvas",
         "byoc",
-        "media"
+        "media",
+        "derivedMedia",
+        "player"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "真实生成视频首/1.25秒/尾帧独立FFmpeg/FFprobe和SHA，时间上界拒绝、来源parent/project/provenance、重启重放持久关联",
+          "evidenceKey": "derivedMedia",
+          "assertions": [
+            {
+              "path": "firstCurrentLastFramesDistinct",
+              "value": true
+            },
+            {
+              "path": "allDerivedSourceParentsProjectAndProvenance",
+              "value": true
+            },
+            {
+              "path": "invalidTimeAndSilentAudioRejectWithoutWritesOrFees",
+              "value": true
+            },
+            {
+              "path": "restartAndReplayNoExtraTasksFeesOrCreates",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际Chrome当前帧按钮使用视频真实currentTime，播放位置到时长末端时编译为last，两个真实PNG输出不同",
+          "evidenceKey": "player",
+          "assertions": [
+            {
+              "path": "currentFrameUsesActualPlaybackTime",
+              "value": true
+            },
+            {
+              "path": "currentFrameAtDurationUsesLast",
+              "value": true
+            },
+            {
+              "path": "currentAndLastRealPngOutputsDistinct",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际画布首帧界面通过真实Worker，重载保持原任务和视频",
+          "evidenceKey": "canvas",
+          "assertions": [
+            {
+              "path": "browserFirstFrameViaRealMediaWorker",
+              "value": true
+            },
+            {
+              "path": "reloadRestoresSameTaskAndVideo",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
       "id": "V21",
       "name": "提取音轨分离与精确裁剪",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
-        "src/lib/video/media-jobs.ts"
+        "src/lib/video/media-jobs.ts",
+        "src/components/canvas/video/media-actions.tsx"
       ],
       "evidenceKeys": [
         "byoc",
-        "media"
+        "media",
+        "derivedMedia",
+        "derivedAudit"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "实际App真实生成的原视频通过FFmpeg提取音轨、分离两产物、精确1-3秒裁剪；独立FFprobe及字节核对、无音轨和非法时间范围在任务写入/收费前明确拒绝",
+          "evidenceKey": "derivedMedia",
+          "assertions": [
+            {
+              "path": "independentFrameTrimAudioAndSplitProbes",
+              "value": true
+            },
+            {
+              "path": "invalidTimeAndSilentAudioRejectWithoutWritesOrFees",
+              "value": true
+            },
+            {
+              "path": "allDerivedSourceParentsProjectAndProvenance",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "严格读取7份实际产物、逐个SHA、独立音轨/静音视频流和2秒时长",
+          "evidenceKey": "derivedAudit",
+          "assertions": [
+            {
+              "path": "exactTrimAndIndependentAudioSplit",
+              "value": true
+            },
+            {
+              "path": "originalByteHashesAndOwnershipReviewed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "真实Chrome处理界面操作音轨/分离/裁剪并完成，所有产物数与真实媒体探测一致",
+          "evidenceKey": "byoc",
+          "assertions": [
+            {
+              "path": "actualGuiMediaOperations.1",
+              "value": {
+                "action": "extract_audio",
+                "outputs": 1,
+                "actualProbes": true
+              }
+            },
+            {
+              "path": "actualGuiMediaOperations.2",
+              "value": {
+                "action": "separate",
+                "outputs": 2,
+                "actualProbes": true
+              }
+            },
+            {
+              "path": "actualGuiMediaOperations.3",
+              "value": {
+                "action": "trim",
+                "outputs": 1,
+                "actualProbes": true
+              }
+            }
+          ]
+        }
       ]
     },
     {
@@ -1070,36 +1283,204 @@
     {
       "id": "V23",
       "name": "派生素材再引用完整闭环",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
-        "src/lib/video/node-submission.ts"
+        "src/lib/video/media-jobs.ts",
+        "src/lib/video/node-submission.ts",
+        "src/lib/video/client-history.ts"
       ],
       "evidenceKeys": [
         "history",
         "byoc",
-        "workflow"
+        "workflow",
+        "derivedMedia",
+        "derivedAudit"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "真实画布生成、抽当前帧/裁剪/音轨、三个派生素材再引用生成实际完成，冻结身份和SHA、源关联、重启重放及原节点/媒体保护",
+          "evidenceKey": "derivedMedia",
+          "assertions": [
+            {
+              "path": "generatedCanvasSource",
+              "value": true
+            },
+            {
+              "path": "derivedFrameTrimAudioReferencedInNewCompletedVideo",
+              "value": true
+            },
+            {
+              "path": "frozenDerivedIdentitiesAndHashes",
+              "value": true
+            },
+            {
+              "path": "allDerivedSourceParentsProjectAndProvenance",
+              "value": true
+            },
+            {
+              "path": "restartAndReplayNoExtraTasksFeesOrCreates",
+              "value": true
+            },
+            {
+              "path": "originalNodeAndMediaPreserved",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "下游实际原生body图片/视频/音频路径均属于对应派生job，完整提示词保留",
+          "evidenceKey": "derivedAudit",
+          "assertions": [
+            {
+              "path": "nativeDownstreamUsesActualDerivedImageVideoAudio",
+              "value": true
+            },
+            {
+              "path": "restartReplayAndFrozenDerivedIdentitiesReviewed",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "历史显示结果选择/重放/撤销不改变旧任务与旧结果，删除历史后完整配方仍由本人实际生成",
+          "evidenceKey": "history",
+          "assertions": [
+            {
+              "path": "independentResultSelectionReplayRevisionAndUndo",
+              "value": true
+            },
+            {
+              "path": "frozenClientHistoryReuse",
+              "value": true
+            },
+            {
+              "path": "encryptedWorkflowSurvivesHistoryDeletionAndActuallyGenerates",
+              "value": true
+            },
+            {
+              "path": "workbenchFullRecipeReuseAfterHistoryDeletion",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
       "id": "V24",
       "name": "工作台发送边界与幂等",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
-        "src/lib/canvas/video-node-service.ts"
+        "src/lib/canvas/video-node-service.ts",
+        "src/lib/video/result-completion.ts"
       ],
       "evidenceKeys": [
         "workbench",
-        "history"
+        "history",
+        "workflow"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "真实工作台GUI生成3个独立任务，每任务2个结果，未发送结果留工作台，刷新不创建任务，显式发送到本人项目；原节点保持，重复发送不收费或创建任务",
+          "evidenceKey": "workbench",
+          "assertions": [
+            {
+              "path": "actualGuiBatchThreeIndependentTasks",
+              "value": true
+            },
+            {
+              "path": "twoActualVideoOutputsPerTask",
+              "value": true
+            },
+            {
+              "path": "unSentResultsRemainWorkbench",
+              "value": true
+            },
+            {
+              "path": "reloadRestoresBatchWithoutCreatingTasks",
+              "value": true
+            },
+            {
+              "path": "explicitGuiSendToOwnedProject",
+              "value": true
+            },
+            {
+              "path": "repeatedGuiSendSameNodeRevisionNoChargeOrCreate",
+              "value": true
+            },
+            {
+              "path": "targetOriginalNodeUnchanged",
+              "value": true
+            },
+            {
+              "path": "actualSentCanvasVideoDecode",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "完整多产物/冻结输入发送，项目重放保持，实际App重启及跨账号拒绝，发送无创建/收费",
+          "evidenceKey": "history",
+          "assertions": [
+            {
+              "path": "completeResultSend",
+              "value": true
+            },
+            {
+              "path": "sameProjectReplay",
+              "value": true
+            },
+            {
+              "path": "actualAppRestart",
+              "value": true
+            },
+            {
+              "path": "privateHistorySnapshot",
+              "value": true
+            },
+            {
+              "path": "sendCreatesSupplierCalls",
+              "value": 0
+            },
+            {
+              "path": "sendChangesCredits",
+              "value": false
+            }
+          ]
+        },
+        {
+          "requirement": "画布managed/BYOC依赖结果恢复到原节点，位置编辑保留、内容变化不覆盖，重启重放不新增任务并保持账号隔离",
+          "evidenceKey": "workflow",
+          "assertions": [
+            {
+              "path": "originalNodeTaskAndResultPointers",
+              "value": true
+            },
+            {
+              "path": "positionOnlyEditPreserved",
+              "value": true
+            },
+            {
+              "path": "contentEditPreventsOverwrite",
+              "value": true
+            },
+            {
+              "path": "actualAppRestart",
+              "value": true
+            },
+            {
+              "path": "replayNoNewTask",
+              "value": true
+            },
+            {
+              "path": "ownerIsolation",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
