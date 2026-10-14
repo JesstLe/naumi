@@ -155,3 +155,8 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 检查新前端GET /api/video/assets、projects、byoc/catalog在当前core13012和旧13旁路均404（video-nodes200）；证明原20路由只换UI而保留旧全部创作API的发布策略需要升级/协调后端与Worker连续性，不能将新前端直接发到旧API上声称兼容。该明确证据见admin/new-main-core-api-compatibility.json。当前生产原页/core c05/Worker不停止，下一候选纳入新main后必须重新固定构建及API实际验证。
 新增轮询snapshot复用：video nodes6秒及tasks4秒请求/账号epoch/当前项目/变更/完成落盘回调不减、不关；只有完全相等JSON返回复用旧对象/数组，避免无视频的图片项目每6秒从[]到新[]触发大画布重渲染，以及每4秒未变任务重渲染。revision旧值继续拒绝，同revision status/result/signedURL/locked/deleted/ref顺序变化仍更新；缺失node的原merge语义保持，tasks移除/重排保持。100次未变snapshot不产生新根状态，所有变化/账号与poll时钟结构保留验证通过，TypeScript问题仅测试optional references已修正。新main完整App构建/运行及新模块真实轮询验收待继续，未将此单元结果称70%或上线。
 模块计数2/3，仍使用103且不连接120/香港/101；admin当前密码/角色/积分/媒体未改。本机/代理账号north原企业页实际可看1184积分明细（管理员nv_user不是consoleAdmin时页正确拒绝，未绕过后台密码），只读代理按端口和账号绑R2随机key，所有业务写仍禁止。原生admin直连登录问题仍待用户回复，目标保持active。
+
+## 模块17：实际API协议切流门槛及本轮收尾
+新增verify_public_video_reads切流门槛：私有60分钟native观测会话仅供GET，在当前公开路由逐项核对nodes/assets/projects/byoc目录200 JSON和预期数组shape；404、HTML或假200错误body都在网关写入之前终止。不改计费/密码、不创建模型任务，不把DB健康代替新前端所需协议。fixture成功/404/bad-shape回归通过；103真实protocol-check预期失败于旧core assets404，网关与本轮原始文件字节完全一致。旧13三槽源码已被新main替代，不公开切流。
+新main合并7556c3e后，视频轮询修复4012ab0及兼容性a1c091a普通Linux构建均通过；本机4330实际1791938547/a1c091a，健康/作品/文字/属性读取通过，普通画布213nodes154实际图片191edges/composite、浏览器error0。兼容性修复仅使用广泛支持的hasOwnProperty.call，不改变snapshot比较内容或poll时钟。当前新增协议脚本不影响App源码，待新的整体Backend/Worker发布策略与固定候选集中验收。
+回合所持103双锁将正常释放；原公开b243/1791913676、core/Worker c05、原角色/密码/积分/设置/媒体控制在最终检查保持，新增13eb候选私有35/36/37保留但标为过期，后续不得把它当最新main。四个更早本任务无引用/无连接预览已stop且镜像/容器及回滚文件保留，不计成功发布次数。本轮功能累计第3次后再次fetch/整合main，同步计数归零；没有合任务到main或公开发布，目标active不complete。

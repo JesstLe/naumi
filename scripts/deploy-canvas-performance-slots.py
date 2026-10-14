@@ -31,6 +31,32 @@ def protected():
  for name in ['.env','docker-compose.yml']:result[name]=hashlib.sha256((pathlib.Path('/opt/naumi-staging/config')/name).read_bytes()).hexdigest()
  return result
 def read(path,port=80):return urllib.request.urlopen('http://127.0.0.1:'+str(port)+path,timeout=30)
+
+def verify_public_video_reads():
+ # Current main's canvas mounts these hooks even for image-only projects. A new
+ # UI must not be sent to an old core that still responds with HTML/404 here.
+ # The private test session is prepared separately; never log its contents.
+ session=E/'protocol-read-session.json'
+ assert session.is_file()and session.stat().st_mode&0o077==0,'Private native protocol read session required'
+ auth=json.loads(session.read_text());assert time.time()*1000<auth['expires'],'Protocol read session expired'
+ shapes={'/api/canvas/video-nodes':lambda p:isinstance(p.get('nodes'),list),
+ '/api/video/assets?limit=1':lambda p:p.get('ok')is True and isinstance(p.get('assets'),list),
+ '/api/video/projects':lambda p:isinstance(p.get('projects'),list),
+ '/api/video/byoc/catalog':lambda p:isinstance(p.get('workflows'),list)}
+ evidence=[]
+ for route,valid_shape in shapes.items():
+  request=urllib.request.Request('http://127.0.0.1'+route,headers={'Cookie':auth['cookie'],'Host':'103.30.76.93'})
+  try:
+   with urllib.request.urlopen(request,timeout=30)as response:
+    raw=response.read();assert response.status==200 and 'application/json'in response.headers.get('content-type','')
+   payload=json.loads(raw);assert isinstance(payload,dict)and valid_shape(payload)
+   evidence.append({'path':route.split('?')[0],'status':200,'validShape':True})
+  except Exception:
+   evidence.append({'path':route.split('?')[0],'status':'NOT_READY','validShape':False})
+   (E/'protocol-read-gate.json').write_text(json.dumps(evidence,indent=2))
+   raise RuntimeError('Public video read API is not compatible; keep current gateway: '+route.split('?')[0])from None
+ (E/'protocol-read-gate.json').write_text(json.dumps(evidence,indent=2))
+ print('PUBLIC_VIDEO_READ_PROTOCOL=PASS AUTHORIZED_NODE_ASSET_PROJECT_BYOC_SHAPES')
 def assert_lock():
  owner=json.loads((E/'lock-owner.json').read_text());pid=owner['pid'];assert pathlib.Path('/proc/'+str(pid)).exists()
  assert command(['cat','/proc/'+str(pid)+'/comm'])=='bash'
@@ -161,7 +187,7 @@ elif PHASE=='start':
   print('NEW_SLOT='+row['kind']+' READY=DB_VERSION_WORKER_OFF PORT='+str(port))
  (E/'slots.json').write_text(json.dumps(slots,indent=2));verify_slots();verify_protected()
 elif PHASE=='cutover':
- assert_lock();assert GATEWAY.read_bytes()==(E/'nginx.before').read_bytes();verify_slots();verify_protected();before=(E/'nginx.before').read_text();modified=before
+ assert_lock();assert GATEWAY.read_bytes()==(E/'nginx.before').read_bytes();verify_slots();verify_protected();verify_public_video_reads();before=(E/'nginx.before').read_text();modified=before
  modified=render_gateway(before);(E/'nginx.modified').write_text(modified)
  for label,body in [('modified',modified),('rollback',before)]:
   file=E/('nginx-test-'+label+'.conf');file.write_text('events {}\nhttp {\n'+body+'\n}\n');subprocess.run(['nginx','-t','-c',str(file),'-p',str(E)],check=True)
@@ -192,6 +218,7 @@ elif PHASE=='cutover':
 elif PHASE=='verify':
  assert_lock();verify_protected()
  if(E/'slots.json').exists():verify_slots()
+elif PHASE=='protocol-check':assert_lock();verify_public_video_reads()
 elif PHASE=='rollback-check':
  assert(E/'nginx.before').is_file();file=E/'nginx-rollback-check.conf';file.write_text('events {}\nhttp {\n'+(E/'nginx.before').read_text()+'\n}\n');subprocess.run(['nginx','-t','-c',str(file),'-p',str(E)],check=True);print('ROLLBACK_GATEWAY=CHECKED DATABASE_RESTORE=NONE')
 else:raise ValueError(PHASE)
