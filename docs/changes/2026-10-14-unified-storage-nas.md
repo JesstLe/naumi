@@ -48,3 +48,21 @@
 用户经协作会话补充：企业NAS用于47.105.59.142。仅47独立部署配置启用S3/proxy；103现有存储配置和媒体不改。本轮不部署、不迁移、不启动或开放47 Naumi。已阅读大陆站准备交接：Naumi仍为私有准备且App/Worker未启用；原Python参考工作台独立运行，TS适配层不覆盖或宣称已适配那个服务。NAS endpoint/桶/凭据/常开网关网络待核验；IP不进入业务代码分支。
 
 最终集中检查追加同key实际更新的三变体旧清单409、新清单200与SHA相等；真实db.deleteArtwork+远端403验证无unhandledRejection，输出STORAGE_CLEANUP_PENDING。NAS503也可读镜像。独立ESLint实际exit0（任务受影响文件）、tsc exit0；Next15.5.27 --no-lint构建单独通过88页，lint不是跳过后冒称。后续新增修复需最后一轮构建。
+
+## 正式端到端位置与当前验收口径
+用户进一步指定“到时候端到端测试也是去47服务器”：47.105.59.142为企业NAS正式E2E环境。本机MinIO/DB/Chromium只计开发回归，不替代47真实NAS。待47应用和NAS独立部署配置就绪后，覆盖真实上传/生成保存、画布/作品原图与变体、重开/刷新缓存、下载/ZIP、参考图、账号隔离与NAS异常回退。收费模型测试按届时已确认的47消费约定执行；不测试103生产写入，不覆盖47原参考工作台。本轮47真实E2E未执行，保持待验收，不以目标站指定自动部署。
+
+## 可重跑的开发验收命令
+一次性MinIO（只绑定回环19374，fixture-only凭据）和PostgreSQL（回环19375）由本任务Docker容器提供，无生产挂载：
+```powershell
+$env:DATABASE_URL='postgresql://fixture:fixture-only@127.0.0.1:19375/fixture'
+$env:NAUMI_VERIFY_ISOLATED_DB='1'
+npx tsx --conditions react-server scripts/verify-unified-storage.ts
+npx tsx --conditions react-server scripts/verify-storage-minio.ts
+npx tsx --conditions react-server scripts/verify-storage-nas-proxy.ts
+npx tsx --conditions react-server scripts/verify-storage-local-rollback.ts
+npx tsx --conditions react-server scripts/verify-private-media-db.ts
+node scripts/storage-s3-contract.mjs
+npx tsc --noEmit
+```
+真实S3测试固定为本机独立fixture endpoint，不读取生产存储env。私有/回退测试使用随机隔离schema，结束清除；容器验证后删除，不保留测试服务到生产。
