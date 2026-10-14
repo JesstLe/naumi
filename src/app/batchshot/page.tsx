@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: `批量出图 — ${BRAND}`,
+  title: `参考工作台 — ${BRAND}`,
 };
 
 export default function BatchShotPage() {
