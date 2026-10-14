@@ -32,6 +32,7 @@ function Harness() {
       displaySize={{width:320,height:240}} content="文字预览" onSave={async value=>{metrics.saves++;setSettings(value);return true;}}
       onCrop={()=>{}} onReplace={()=>{}} onClose={close} />}
     {shown && mode==='assistant' && <CanvasAssistantPanel light anchorTitle="测试项目" contextImages={[]} turns={[]} input={input} busy={busy} error={null}
+      selectedSkill={selected} onSkillSelect={setSelected} skillAccountKey="fixture@example.local"
       costLabel="fixture" labels={labels} tasks={[]} onInputChange={setInput} onSend={()=>{metrics.sends++;}}
       onNewChat={()=>{}} onRestoreChat={()=>{}} onClose={close} onPreview={()=>{}} onCopy={async()=>true} renderContent={content=>content}
       historyLoader={async()=>[{id:'cv-fixture-history',title:'现有名称',turns:[]}]} onRenameHistory={async()=>{metrics.renames++;}} />}
