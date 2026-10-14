@@ -261,11 +261,11 @@
       "evidence": [
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/omni-element-image-video-bound-dom.txt",
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/omni-element-restored-dom.txt",
-        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/screenshots/omni-element-image-video-bound.png",
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/screenshots/omni-element-restored.png",
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/omni-element-bound-project.json",
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/omni-element-restored-project.json",
-        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/advanced-settings-reload-result.json"
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/advanced-settings-reload-result.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/screenshots/omni-element-restored-painted.png"
       ],
       "naumiEvidencePrefixes": [],
       "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
@@ -508,6 +508,12 @@
       "observedAt": "2026-10-14",
       "surface": "Chrome extension Blob media export",
       "result": "downloadMedia rejects Blob downloads. Imported images render and stable cache keys remain after reload; post-hydration byte equality not claimed. Original preparation SHA and video/audio post-reload SHA retained."
+    }
+  ],
+  "supersededScreenshots": [
+    {
+      "artifact": "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/screenshots/omni-element-image-video-bound.png",
+      "reason": "Immediate pre-paint frame still shows 0 and unselected menu; not completion proof. Final foreground redraw shows element count 2 and both assets."
     }
   ]
 }
