@@ -29,10 +29,13 @@ async function main(){
     assert.ok((await run({FLEET_INSTANCE_TOKEN:'x'.repeat(43)},1)).includes('FLEET_TICK=RETRY_PENDING'));
     assert.ok((await run({FLEET_CENTRAL_URL:'http://host.docker.internal:'+port},1)).includes('FLEET_CONNECTOR=INVALID_CONFIG'));
     assert.ok((await run({NODE_EXTRA_CA_CERTS:''},1)).includes('FLEET_TICK=RETRY_PENDING'));
+    // The operator-pinned private CA is request-local, not a global TLS bypass.
+    assert.ok((await run({NODE_EXTRA_CA_CERTS:'',FLEET_CENTRAL_CA_FILE:'/test-ca/cert.pem'})).includes('FLEET_TICK=idle'));
+    assert.ok((await run({NODE_EXTRA_CA_CERTS:'',FLEET_CENTRAL_CA_FILE:'/test-ca/missing.pem'},1)).includes('FLEET_TICK=RETRY_PENDING'));
     const state=(await db.getPool().query('SELECT status FROM app_fleet_instances WHERE id=$1',[instance.id])).rows[0].status;assert.equal(state.source,actualSource);assert.equal(state.version,'123');assert.equal(state.connector,1);
     localStates[2]='8'.repeat(40);await run();assert.equal((await db.getPool().query('SELECT status FROM app_fleet_instances WHERE id=$1',[instance.id])).rows[0].status.source,'unknown');
     const disabled=spawnSync('docker',['run','--rm',image,'node','dist/fleet/scheduler.js'],{encoding:'utf8'});assert.equal(disabled.status,1);assert.ok((disabled.stderr+disabled.stdout).includes('FLEET_SCHEDULER=FAILED'));
-    console.log('FLEET_LINUX_RUNTIME=PASS NODE24=1 NONROOT=1 TRUSTED_TLS=1 WRONG_TOKEN_DENIED=1 UNTRUSTED_CERT_DENIED=1 PUBLIC_HTTP_DENIED=1 REAL_COMMAND=1 ACTUAL_THREE_SLOTS=1 MIXED_UNKNOWN=1 SCHEDULER_DEFAULT_OFF=1 RESTART_RECEIPTS=1 PRODUCTION_WRITES=0');
+    console.log('FLEET_LINUX_RUNTIME=PASS NODE24=1 NONROOT=1 TRUSTED_TLS=1 PRIVATE_CA_REQUEST_LOCAL=1 MISSING_CA_NO_FAILOPEN=1 WRONG_TOKEN_DENIED=1 UNTRUSTED_CERT_DENIED=1 PUBLIC_HTTP_DENIED=1 REAL_COMMAND=1 ACTUAL_THREE_SLOTS=1 MIXED_UNKNOWN=1 SCHEDULER_DEFAULT_OFF=1 RESTART_RECEIPTS=1 PRODUCTION_WRITES=0');
   }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));for(const local of localServers)await new Promise<void>(resolve=>local.close(()=>resolve()));await db.getPool().end();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

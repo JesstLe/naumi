@@ -5,6 +5,7 @@ import { saveFeaturePolicy, userFeaturePolicy, FeatureAccessError } from '@/lib/
 import { BillingError } from '@/lib/billing/types';
 import { operationSchema, commandSchema, canonical, digest, centralUrl, verifyCommand, resultSchema, statusSchema, type FleetCommand, type FleetResult, type SignedFleetCommand } from './contracts';
 import { ensureFleetSchema } from './server';
+import {fleetFetch} from './transport';
 
 /** Persistent receipts and existing billing idempotency survive connector restarts. */
 export async function applyFleetCommand(input: FleetCommand, localInstanceId: string): Promise<FleetResult> {
@@ -57,7 +58,7 @@ export async function connectorTick(options: {central: string; instanceId: strin
   const central=centralUrl(options.central,options.isolated),status=statusSchema.parse(options.status);
   if(!/^[A-Za-z0-9_-]{43}$/.test(options.token)) throw new Error('FLEET_INVALID_TOKEN');
   async function send(endpoint: string, data: unknown) {
-    const response=await fetch(central+'/api/fleet/'+endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(30000),headers:{'content-type':'application/json','authorization':'Bearer '+options.token,'x-naumi-instance':options.instanceId},body:JSON.stringify({nonce:randomUUID(),timestamp:Date.now(),...data as object})});
+    const response=await fleetFetch(central+'/api/fleet/'+endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(30000),headers:{'content-type':'application/json','authorization':'Bearer '+options.token,'x-naumi-instance':options.instanceId},body:JSON.stringify({nonce:randomUUID(),timestamp:Date.now(),...data as object})});
     if(!response.ok) throw new Error('FLEET_CONNECTION_'+response.status);
     const reader=response.body?.getReader();if(!reader)throw new Error('FLEET_EMPTY_RESPONSE');const chunks:Uint8Array[]=[];let bytes=0;
     try {for(;;){const next=await reader.read();if(next.done)break;bytes+=next.value.byteLength;if(bytes>48000)throw new Error('FLEET_RESPONSE_TOO_LARGE');chunks.push(next.value);}}

@@ -5,7 +5,7 @@ COPY scripts/patch-next-body.mjs ./scripts/patch-next-body.mjs
 RUN npm ci --no-audit --no-fund
 COPY tsconfig.json ./
 COPY src ./src
-COPY scripts/fleet-connector.ts scripts/fleet-scheduler.ts scripts/build-fleet-runtime.mjs scripts/fleet-server-only.cjs ./scripts/
+COPY scripts/fleet-connector.ts scripts/fleet-scheduler.ts scripts/fleet-central-preflight.ts scripts/build-fleet-runtime.mjs scripts/fleet-server-only.cjs ./scripts/
 RUN node scripts/build-fleet-runtime.mjs
 WORKDIR /runtime
 COPY deploy/fleet-runtime/package.json deploy/fleet-runtime/package-lock.json ./

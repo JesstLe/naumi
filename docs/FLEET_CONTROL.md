@@ -28,6 +28,10 @@ FLEET_INSTANCE_TOKEN=ONE_TIME_INSTANCE_TOKEN
 开发连接器命令：`node node_modules/tsx/dist/cli.mjs --conditions react-server scripts/fleet-connector.ts`。固定运行制品用 `node scripts/build-fleet-runtime.mjs` 构建，生产执行 `node dist/fleet/connector.js`；不依赖tsx或源码解释器。`deploy/fleet.Dockerfile`提供Node24非root专用运行镜像；启停和systemd模板见deploy/examples/fleet-connector.service。使用与应用一致的受保护DB/配置环境，业务服务器不依赖开发电脑。
 连接器身份和主站证书验证必须同时成立；Nginx覆盖转发协议/IP头，App仅绑定受控内网/回环，不允许公网绕过代理伪造 `x-forwarded-proto`。测试的HTTP回环例外由 `FLEET_ISOLATED_TEST=1` 显式启用，禁止在生产设置。
 
+### 私有PKI与103当前源站
+当前103的IP入口呈现Cloudflare Origin证书（DNS SAN naumi.top/www.naumi.top），不是普通浏览器可信IP证书。连接器不能将IP放入URL后关闭验证。管理员可配置`FLEET_CENTRAL_URL=https://naumi.top`、`FLEET_CENTRAL_RESOLVE_IP=103.30.76.93`及官方Cloudflare Origin根CA文件`FLEET_CENTRAL_CA_FILE`，将该域名直连固定源站而仍校验SNI/hostname/CA。只对4条固定fleet POST生效，拒绝重定向、元数据地址或任意请求；不会修改全站、系统根或Cloudflare安全规则。CA来自管理员验证的官方来源，不下载/信任对端自报证书，配置异常不fail-open。
+运行`node dist/fleet/preflight.js`预检，不发送实例token或cookie。exit0才表示真实version200+匿名fleet400/401 JSON且TLS成立，exit2表示仍未就绪，exit1表示TLS/格式异常。2026-10-14实际103私有PKI TLS已验证，但fleet poll仍404，未部署中央API。正式使用前仍须补旁路受限路由、管理页及原生管理员/企业连接器验收。详情`docs/changes/2026-10-14-fleet-onboarding.md`。
+
 ## 47接入前门槛
 1. 47 Naumi独立应用及数据库就绪，不覆盖既有reference-workbench；NAS配置和网络已验证。
 2. 103可信HTTPS中央入口就绪；运行实例登记/凭据通过受保护通道交付，不保存到作品或浏览器持久缓存。
