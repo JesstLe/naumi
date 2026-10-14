@@ -148,6 +148,11 @@
       "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/protocol-failures-4cc066b4-420d-46f5-ab98-c1ee49ed26cf/result.json",
       "verifier": "scripts/verify-video-fusion-protocol-failures.ts",
       "kind": "actual-app-db-router-worker-native-failures"
+    },
+    "advancedSettings": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/advanced-settings-summary.json",
+      "verifier": "scripts/verify-video-fusion-advanced-summary.mjs",
+      "kind": "audit-of-actual-app-chrome-db-router-worker-advanced-settings"
     }
   },
   "capabilities": [
@@ -558,105 +563,310 @@
     {
       "id": "V06",
       "name": "时长分辨率比例与精确规格",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/contract.ts"
       ],
       "evidenceKeys": [
-        "canvas"
+        "canvas",
+        "advancedSettings",
+        "applicationProtocols"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "界面时长分辨率联动；API非法组合及无精确能力的宽高在写任务收费前拒绝，精确640x360进入原生请求和冻结；换模型清理非法规格而保留全文",
+          "evidenceKey": "advancedSettings",
+          "assertions": [
+            {
+              "path": "evidence.0.actualUiDurationResolutionReconcile",
+              "value": true
+            },
+            {
+              "path": "evidence.0.invalidApiCombinationsNoWritesOrFees",
+              "value": true
+            },
+            {
+              "path": "evidence.0.exactNativeAndFrozenDimensions",
+              "value": true
+            },
+            {
+              "path": "evidence.0.modelChangeRemovesUnsupportedDimensionsAndPreservesPrompt",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
       "id": "V07",
       "name": "声音负面词水印机位及false/0/omit",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/contract.ts"
       ],
       "evidenceKeys": [
         "canvas",
         "byoc",
-        "script"
+        "script",
+        "advancedSettings",
+        "protocolAudit",
+        "applicationProtocols"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "真实设置界面false声音/水印、seed0、完整负面词进入原生请求和冻结；明确omit定义不发送，默认不发送与false区分",
+          "evidenceKey": "advancedSettings",
+          "assertions": [
+            {
+              "path": "evidence.1.actualUiFalseZeroAndOmit",
+              "value": true
+            },
+            {
+              "path": "evidence.1.negativePromptNativeAndFrozen",
+              "value": true
+            },
+            {
+              "path": "evidence.1.hiddenDefinitionNeverSent",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "Ark seed0/机位false/音频false/水印false原生body实际审查，模型参数定义驱动执行",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.1.allNativePathsAndBodiesReviewed",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
       "id": "V08",
       "name": "摄影机镜头焦距光圈",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/camera.ts"
       ],
       "evidenceKeys": [
         "canvas",
-        "interactions"
+        "interactions",
+        "advancedSettings",
+        "applicationProtocols"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "摄影预设启用实际生成后在原生prompt与冻结中保留，复制设置不复制任务，禁用后从原生prompt删除摄影指令",
+          "evidenceKey": "advancedSettings",
+          "assertions": [
+            {
+              "path": "evidence.2.enabledCameraInActualNativePromptAndFrozen",
+              "value": true
+            },
+            {
+              "path": "evidence.2.cameraCopiedWithoutTaskReplay",
+              "value": true
+            },
+            {
+              "path": "evidence.2.disabledCameraRemovedFromNativePrompt",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "真实UI预设8/8/11/10选项和禁用编译、刷新保持",
+          "evidenceKey": "canvas",
+          "assertions": [
+            {
+              "path": "cameraPresetsAndDisableCompile",
+              "value": true
+            },
+            {
+              "path": "actualReloadRestoresNode",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
       "id": "V09",
       "name": "智能及自定义多镜头",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/agent/video-script-storyboard.ts"
       ],
       "evidenceKeys": [
         "canvas",
         "multishot",
-        "icwire"
+        "icwire",
+        "advancedSettings",
+        "applicationProtocols"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "智能多镜头与自定义模式均须有实际行为证据",
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "实际界面智能和自定义分镜各完成；原生模式标志正确，镜头上下重排保持全文/秒数，总时长错误阻止生成",
+          "evidenceKey": "advancedSettings",
+          "assertions": [
+            {
+              "path": "evidence.3.actualUiSmartAndCustomMultiShotNative",
+              "value": true
+            },
+            {
+              "path": "evidence.3.shotOrderAndFullDialoguePreserved",
+              "value": true
+            },
+            {
+              "path": "evidence.3.totalDurationMismatchBlocks",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "正式可编辑镜头文字来源、原剧本/空白/lineage与原生multi_prompt实际应用保持，工作流冻结保留视觉方向",
+          "evidenceKey": "multishot",
+          "assertions": [
+            {
+              "path": "nativeKieMultiPrompt",
+              "value": true
+            },
+            {
+              "path": "separateEditableShotBodies",
+              "value": true
+            },
+            {
+              "path": "sourceScriptPreserved",
+              "value": true
+            },
+            {
+              "path": "originalWhitespacePreserved",
+              "value": true
+            },
+            {
+              "path": "correctFormalLineage",
+              "value": true
+            },
+            {
+              "path": "workflowFreezeKeepsVisualDirection",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
       "id": "V10",
       "name": "元素参考及Omni分支",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/contract.ts"
       ],
       "evidenceKeys": [
         "canvas",
-        "icwire"
+        "icwire",
+        "advancedSettings",
+        "protocolAudit",
+        "applicationProtocols"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "实际界面元素名称/描述和图片/视频/音频分组，声明数量禁用；原生不同媒体分组及冻结身份保持",
+          "evidenceKey": "advancedSettings",
+          "assertions": [
+            {
+              "path": "evidence.4.actualUiMultiMediaElementGroups",
+              "value": true
+            },
+            {
+              "path": "evidence.4.declaredElementReferenceLimitStopsAdding",
+              "value": true
+            },
+            {
+              "path": "evidence.4.nativeImagesVideoAndAudioGroupsFrozen",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "KIE/APIMart/Omni元素和多镜头各原生分支经过App/Worker及body字段审计",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "groups.2.allNativePathsAndBodiesReviewed",
+              "value": true
+            },
+            {
+              "path": "groups.2.allActualAppCompletionMediaOwnershipAndIdempotencyPassed",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
       "id": "V11",
       "name": "运动控制与朝向",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/providers/protocols/kie.ts"
       ],
       "evidenceKeys": [
         "canvas",
-        "icwire"
+        "icwire",
+        "protocolAudit",
+        "applicationProtocols"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "实际UI图片+运动视频与合法角色朝向、换模型清理旧高级参数、原节点Worker视频完成",
+          "evidenceKey": "canvas",
+          "assertions": [
+            {
+              "path": "declaredMotionOrientation",
+              "value": true
+            },
+            {
+              "path": "modelSwitchReconcilesUnsupportedSettings",
+              "value": true
+            },
+            {
+              "path": "realSupplierAndWorkerCompletion",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "KIE/APIMart/TokenDance运动控制分别按实际原生路径，image朝向和720p/std质量映射审查，完成/私有产物/幂等证据关联",
+          "evidenceKey": "protocolAudit",
+          "assertions": [
+            {
+              "path": "motionQualityAndOrientationMappingsReviewed",
+              "value": true
+            },
+            {
+              "path": "groups.2.allNativePathsAndBodiesReviewed",
+              "value": true
+            },
+            {
+              "path": "groups.4.allNativePathsAndBodiesReviewed",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
