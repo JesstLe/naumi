@@ -41,17 +41,19 @@ CLIENT = None
 WAKE = asyncio.Event()
 LOGIN_ATTEMPTS = {}
 SLOT = os.environ.get('WORKBENCH_SLOT', 'local')
-WAITING_STATE = 'waiting_geometry_v1'
+WAITING_STATE = 'waiting_geometry_v2'
 
 
 def image_geometry(path):
     with Image.open(path) as image:
-        width, height = ImageOps.exif_transpose(image).size
+        width, height = image.size
+        if image.getexif().get(274) in {5, 6, 7, 8}:
+            width, height = height, width
     return {'width': width, 'height': height}
 
 
 def geometry_plan(reference, resolution):
-    """最终画布精确等于参考图；上游请求按分辨率等比放大，不请求方图。"""
+    """比例遵循参考图，像素由1K/2K/4K决定，不把高清结果缩回小参考图。"""
     width, height = reference['width'], reference['height']
     long_side = {'1k': 1024, '2k': 2048, '4k': 4096}[resolution]
     # 图像API尺寸按16像素量化；提示词补充原始比例，回传严格验证。
@@ -59,25 +61,18 @@ def geometry_plan(reference, resolution):
     upstream_width = max(64, round(width * factor / 16) * 16)
     upstream_height = max(64, round(height * factor / 16) * 16)
     divisor = math.gcd(width, height)
-    return {'width': width, 'height': height, 'ratio': f'{width//divisor}:{height//divisor}', 'size': f'{upstream_width}x{upstream_height}', 'policy': 'reference-exact-v1'}
+    return {'width': width, 'height': height, 'ratio': f'{width//divisor}:{height//divisor}', 'size': f'{upstream_width}x{upstream_height}', 'policy': 'reference-ratio-native-v2'}
 
 
 def preserve_geometry(image, geometry):
-    """等比缩放并居中放入参考画布，绝不把长方图拉成方图；大比例偏差拒收。"""
+    """验证参考比例后保留原生像素，不拉伸、不裁切、不把2K缩成790宽。"""
     width, height = geometry['width'], geometry['height']
     natural = ImageOps.exif_transpose(image).convert('RGBA')
     expected = width / height
     actual = natural.width / natural.height
     if abs(actual / expected - 1) > .035:
         raise HTTPException(502, f'上游返回比例与参考图不一致（{natural.width}×{natural.height}，参考{width}×{height}）；已保留返回图待核对，未拉伸或自动重发')
-    if natural.size == (width, height):
-        return natural
-    resized = ImageOps.contain(natural, (width, height), Image.Resampling.LANCZOS)
-    if resized.size == (width, height):
-        return resized
-    canvas = Image.new('RGBA', (width, height), (255, 255, 255, 255))
-    canvas.alpha_composite(resized, ((width-resized.width)//2, (height-resized.height)//2))
-    return canvas
+    return natural
 
 
 def db():
@@ -102,6 +97,7 @@ def initialize():
         CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, user_id TEXT, project_id TEXT, ref TEXT, kind TEXT, operation TEXT, prompt TEXT, config TEXT, channel TEXT, state TEXT, error TEXT DEFAULT '', created REAL, updated REAL, result TEXT DEFAULT '', source TEXT DEFAULT '', annotated TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE IF NOT EXISTS worker_owners (task_id TEXT PRIMARY KEY,slot TEXT,pid INTEGER,claimed REAL);
+        CREATE TABLE IF NOT EXISTS templates (id TEXT PRIMARY KEY,user_id TEXT,name TEXT,snapshot TEXT,created REAL);
         ''')
         if not c.execute('SELECT 1 FROM users').fetchone():
             name, password = os.environ.get('WORKBENCH_ADMIN_USER'), os.environ.get('WORKBENCH_ADMIN_PASSWORD')
@@ -199,15 +195,15 @@ def project_items(uid, root, config):
             versions.append({'path': t['result'], 'url': image_url(t['result']), 'mtime': t['updated'], 'label': 'V' + str(len(versions)+1), 'meta': {'kind': t['operation'], 'prompt': t['prompt'], 'status': t['state'], 'source_path': t['source'], 'annotated_path': t['annotated'], 'annotated_url': image_url(t['annotated']) if t['annotated'] else '', 'created_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t['created'])), 'geometry': json.loads(t['config']).get('geometry')}})
         current = generations[0] if generations else None
         state = current['state'] if current else 'idle'
-        if state == WAITING_STATE:
+        if state in {WAITING_STATE, 'waiting_geometry_v1'}:
             state = 'waiting'
-        if infer and infer['state'] in {'waiting', WAITING_STATE, 'inferring'}:
+        if infer and infer['state'] in {'waiting', WAITING_STATE, 'waiting_geometry_v1', 'inferring'}:
             state = 'inferring'
-        prompt = config.get('prompt', DEFAULT_PROMPT)
+        prompt = entry.get('template_prompt') or config.get('prompt', DEFAULT_PROMPT)
         if infer and infer['state'] == 'done':
             prompt = infer['result']
         dimensions = image_geometry(DATA / entry['path'])
-        result.append({'ref_path': entry['path'], 'ref_name': entry['relative'], 'ref_url': image_url(entry['path']), 'product': project['name'], 'product_images': [x['relative'] for x in products], 'product_urls': [image_url(x['path']) for x in products], 'product_url': image_url(products[0]['path']), 'product_image': products[0]['relative'], 'task_label': LABELS[kind], 'kind': kind, 'size': f"{dimensions['width']}×{dimensions['height']}", 'dimensions': dimensions, 'status': state, 'error': current['error'] if current else '', 'prompt': prompt, 'versions': versions, 'infer': {'status': 'inferring' if infer and infer['state'] in {'waiting', WAITING_STATE, 'inferring'} else (infer['state'] if infer else 'idle'), 'prompt': infer['result'] if infer and infer['state'] == 'done' else '', 'error': infer['error'] if infer else ''}})
+        result.append({'ref_path': entry['path'], 'ref_name': entry['relative'], 'ref_url': image_url(entry['path']), 'product': project['name'], 'product_images': [x['relative'] for x in products], 'product_urls': [image_url(x['path']) for x in products], 'product_url': image_url(products[0]['path']), 'product_image': products[0]['relative'], 'task_label': LABELS[kind], 'kind': kind, 'size': f"{dimensions['width']}×{dimensions['height']}", 'dimensions': dimensions, 'status': state, 'error': current['error'] if current else '', 'prompt': prompt, 'versions': versions, 'infer': {'status': 'inferring' if infer and infer['state'] in {'waiting', WAITING_STATE, 'waiting_geometry_v1', 'inferring'} else (infer['state'] if infer else 'idle'), 'prompt': infer['result'] if infer and infer['state'] == 'done' else '', 'error': infer['error'] if infer else ''}})
     return result, products
 
 
@@ -439,7 +435,84 @@ async def logout(request: Request):
 @app.get('/api/auth/status')
 async def auth_status(request: Request):
     u = user(request)
-    return {'ok': True, 'username': u['name'], 'admin': bool(u['admin'])}
+    return {'ok': True, 'id': u['id'], 'username': u['name'], 'admin': bool(u['admin'])}
+
+
+@app.get('/workbench-history.js')
+async def history_script(request: Request):
+    user(request)
+    return FileResponse(HERE / 'static/workbench-history.js', media_type='application/javascript')
+
+
+@app.get('/workbench-zip.js')
+async def zip_script(request: Request):
+    user(request)
+    return FileResponse(HERE / 'static/vendor/jszip.min.js', media_type='application/javascript')
+
+
+@app.get('/api/workbench/templates')
+async def templates(request: Request):
+    u = user(request)
+    with db() as c:
+        rows = c.execute('SELECT * FROM templates WHERE user_id=? ORDER BY created DESC', (u['id'],)).fetchall()
+    return {'templates': [{'id': r['id'], 'name': r['name'], 'created': r['created'], **json.loads(r['snapshot'])} for r in rows]}
+
+
+@app.post('/api/workbench/templates')
+async def save_template(request: Request):
+    u = user(request)
+    body = await request.json()
+    rows, products = project_items(u['id'], body.get('workbench_root', ''), body.get('config', {}))
+    item = next((x for x in rows if x['ref_path'] == body.get('ref_path')), None)
+    version = next((v for v in item['versions'] if v['path'] == body.get('version_path')), None) if item else None
+    if not version:
+        raise HTTPException(400, '请先选择属于当前卡片的满意版本')
+    tid = secrets.token_hex(12)
+    folder = DATA / 'users' / u['id'] / 'templates' / tid
+    folder.mkdir(parents=True)
+    import shutil
+    copied = []
+    for label, path in [('reference', item['ref_path']), ('result', version['path'])]:
+        original = owned_path(u['id'], path)
+        target = folder / (label + original.suffix)
+        shutil.copyfile(original, target)
+        copied.append(target.relative_to(DATA).as_posix())
+    # 原产品仅用于模板来源记录，不会套到另一个产品的生成输入。
+    snapshot = {'reference_path': copied[0], 'result_path': copied[1], 'reference_url': image_url(copied[0]), 'result_url': image_url(copied[1]), 'prompt': str(body.get('prompt') or version['meta']['prompt']), 'kind': item['kind'], 'source_version': version['label'], 'source_products': [x['relative'] for x in products], 'parameters': validate_config(body.get('config', {}))}
+    name = str(body.get('name') or (item['product'] + ' ' + version['label'])).strip()[:100]
+    with db() as c:
+        c.execute('INSERT INTO templates VALUES (?,?,?,?,?)', (tid, u['id'], name, json.dumps(snapshot, ensure_ascii=False), time.time()))
+    return {'ok': True, 'template': {'id': tid, 'name': name, **snapshot}}
+
+
+@app.post('/api/workbench/templates/{template_id}/apply')
+async def apply_template(request: Request, template_id: str):
+    u = user(request)
+    body = await request.json()
+    with db() as c:
+        template = c.execute('SELECT * FROM templates WHERE id=? AND user_id=?', (template_id, u['id'])).fetchone()
+    if not template:
+        raise HTTPException(404, '模板不存在')
+    project = owned_project(u['id'], body.get('workbench_root', ''))
+    snapshot = json.loads(template['snapshot'])
+    folder = DATA / project['root']
+    manifest_path = folder / 'manifest.json'
+    original = owned_path(u['id'], snapshot['reference_path'])
+    relative = LABELS[snapshot['kind']] + '/模板-' + template_id + original.suffix
+    target = folder / 'source' / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    import shutil
+    shutil.copyfile(original, target)
+    # 锁内更新，另一个请求不会覆盖刚追加的模板参考卡片。
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        manifest = json.loads(manifest_path.read_text('utf-8'))
+        if not any(x['path'] == target.relative_to(DATA).as_posix() for x in manifest):
+            manifest.append({'relative': relative, 'path': target.relative_to(DATA).as_posix(), 'template_prompt': snapshot['prompt'], 'template_id': template_id})
+            temporary = manifest_path.with_suffix('.tmp')
+            temporary.write_text(json.dumps(manifest, ensure_ascii=False), 'utf-8')
+            temporary.replace(manifest_path)
+    return {'ok': True, 'ref_path': target.relative_to(DATA).as_posix(), 'prompt': snapshot['prompt'], 'kind': snapshot['kind']}
 
 
 @app.get('/api/heartbeat')
@@ -554,7 +627,7 @@ async def enqueue(request, operation):
             if request_id and c.execute("SELECT 1 FROM tasks WHERE user_id=? AND ref=? AND json_extract(config,'$.request_id')=?", (u['id'], ref, request_id)).fetchone():
                 skipped += 1
                 continue
-            pending = c.execute("SELECT id FROM tasks WHERE user_id=? AND ref=? AND state IN ('waiting','waiting_geometry_v1','running','editing','inferring','maybe_submitted')", (u['id'], ref)).fetchone()
+            pending = c.execute("SELECT id FROM tasks WHERE user_id=? AND ref=? AND state IN ('waiting','waiting_geometry_v1','waiting_geometry_v2','running','editing','inferring','maybe_submitted')", (u['id'], ref)).fetchone()
             if pending:
                 skipped += 1
                 continue
@@ -604,7 +677,7 @@ async def status(request: Request):
     u = user(request)
     with db() as c:
         counts = dict(c.execute('SELECT state,count(*) FROM tasks WHERE user_id=? GROUP BY state', (u['id'],)))
-        counts['waiting'] = counts.get('waiting', 0) + counts.get(WAITING_STATE, 0)
+        counts['waiting'] = counts.get('waiting', 0) + counts.get(WAITING_STATE, 0) + counts.get('waiting_geometry_v1', 0)
         latest = c.execute('SELECT t.*,p.name AS product_name FROM tasks t JOIN projects p ON p.id=t.project_id WHERE t.user_id=? ORDER BY t.updated DESC LIMIT 1', (u['id'],)).fetchone()
         image_counts = dict(c.execute("SELECT state,count(*) FROM tasks WHERE user_id=? AND operation!='infer' GROUP BY state", (u['id'],)))
     running = sum(counts.get(x, 0) for x in ['running', 'editing', 'inferring'])

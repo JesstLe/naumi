@@ -113,7 +113,7 @@ label{font-size:13px;font-weight:700;color:#24292f}
 @media(max-width:760px){.appHeader .lanLinkBox{display:none}}
 </style>
 
-</head><body><header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">参考图工作台</div><div class="lanLinkBox" title="局域网内其他电脑可打开这个地址"><span class="lanLinkText">局域网链接：https://47.105.59.142/workbench</span><button class="copyLanBtn" onclick="copyLanLink('https://47.105.59.142/workbench')">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a href="http://192.168.201.95:7880/chat-image">聊天生图</a><a href="http://192.168.201.95:7880/single">旧单图生成</a><a href="/admin" id="adminMenuLink" style="display:none">渠道管理</a><a class="active" href="/workbench">参考图工作台</a></div></div></header>
+</head><body><header class="appHeader"><div class="brand">生图软件</div><div class="version">v1.3</div><div class="activePage">参考图工作台</div><div class="lanLinkBox" title="局域网内其他电脑可打开这个地址"><span class="lanLinkText">局域网链接：https://47.105.59.142/workbench</span><button class="copyLanBtn" onclick="copyLanLink('https://47.105.59.142/workbench')">复制</button></div><div class="spacer"></div><button class="headerAction" onclick="downloadCurrentPageImages()">下载当前页面图片包</button><div class="menuWrap"><button class="menuBtn" onclick="toggleAppMenu(event)">功能菜单</button><div id="appMenuPanel" class="menuPanel"><a href="http://192.168.201.95:7880/chat-image">聊天生图</a><a href="http://192.168.201.95:7880/single">旧单图生成</a><a href="/admin" id="adminMenuLink" style="display:none">渠道管理</a><a href="javascript:openLocalTemplates()">本机模板</a><a class="active" href="/workbench">参考图工作台</a></div></div></header>
 <aside class="projectDock">
   <h3>后台项目</h3>
   <div class="hint">放到后台后，当前任务会继续运行。右侧恢复只是切回这个产品文件夹。</div>
@@ -179,6 +179,7 @@ async function copyLanLink(url){
   }
 }
 function imagePathFromUrl(url){
+  if(window.WorkbenchHistory){const original=WorkbenchHistory.source(url);if(original){return new URL(original,location.href).searchParams.get("path")||"";}}
   try{
     const value=String(url||"");
     if(!value||value.startsWith("data:"))return "";
@@ -188,6 +189,7 @@ function imagePathFromUrl(url){
   }catch(_e){return "";}
 }
 function downloadImageUrl(url){
+  if(window.WorkbenchHistory&&WorkbenchHistory.source(url)){WorkbenchHistory.download(url).catch(e=>alert(e.message));return;}
   const path=imagePathFromUrl(url);
   if(path){
     const a=document.createElement("a");
@@ -224,6 +226,7 @@ function visibleImagePaths(){
 async function downloadCurrentPageImages(){
   const paths=visibleImagePaths();
   if(!paths.length){alert("当前页面没有可下载的图片");return;}
+  if(window.WorkbenchHistory){try{const local=await WorkbenchHistory.archive(paths.map(path=>"/api/image?path="+encodeURIComponent(path)));WorkbenchHistory.saveBlob(local,"当前页面图片包.zip");status.textContent="图片包已从本机缓存下载";return;}catch(e){status.textContent="本机打包失败，改由服务器打包："+e.message;}}
   const response=await fetch("/api/images-zip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths,filename:"当前页面图片包_"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".zip"})});
   if(!response.ok){alert(await response.text()||"下载图片包失败");return;}
   const blob=await response.blob();
@@ -237,6 +240,8 @@ async function downloadCurrentPageImages(){
   URL.revokeObjectURL(url);
 }
 </script>
+<script src="/workbench-zip.js"></script>
+<script src="/workbench-history.js"></script>
 <script>
 let items=[]; let drag=null; let selectedVersions={}; let selectedRefs=null; let editState=null; let projects=[]; let providerTemplates=[]; let promptOverrides={};
 const projectStoreKey="gpt-image-pil-workbench-projects";
@@ -444,11 +449,14 @@ async function loadRefs(resetSelection=true){
     const root=currentRoot();
     if(!root.trim()){items=[]; render(); status.textContent="请先选择本机产品文件夹。"; return;}
     const data=await(await fetch(workbenchItemsUrl())).json();
-    items=mergePromptOverrides(data.items||[]);
+    let cachedRows=data.items||[];
+    try{cachedRows=await WorkbenchHistory.remember(root,cachedRows);}catch(e){status.textContent="本机历史缓存失败："+e.message;}
+    items=mergePromptOverrides(cachedRows);
     if(resetSelection) selectedRefs=null;
     render();
     await refreshStatus();
   }catch(e){
+    try{const local=await WorkbenchHistory.restore(currentRoot());if(local){items=mergePromptOverrides(local);render();status.textContent="已从本机读取历史版本；生成和同步仍需连接服务器。";return;}}catch(_){}
     status.textContent="加载失败："+e;
   }
 }
@@ -481,7 +489,7 @@ function activeVersion(it){
   const saved=selectedVersions[it.ref_path];
   return versions.find(v=>v.path===saved)||versions[versions.length-1];
 }
-function versionUrl(v){return v ? `${v.url}&t=${encodeURIComponent(v.mtime||"0")}` : "";}
+function versionUrl(v){return v ? (v.local_url||`${v.url}&t=${encodeURIComponent(v.mtime||"0")}`) : "";}
 function versionsKey(it){return (it.versions||[]).map(v=>`${v.path}|${v.mtime||""}|${v.label||""}`).join(";;");}
 function workbenchImage(url,onclick){
   return `<div class="downloadableImage"><img src="${url}" onclick="${onclick}">${imageDownloadButton(url)}</div>`;
@@ -495,7 +503,7 @@ function cardActionsHtml(it,i){
   const v=activeVersion(it);
   if(!v)return '<span class="hint">暂无版本</span>';
   const options=(it.versions||[]).map(x=>`<option value="${esc(x.path)}" ${v&&v.path===x.path?"selected":""}>${esc(x.label)}</option>`).join("");
-  return `<select onchange="setVersion(${i},this.value)">${options}</select><button class="ghost small" onclick="openCompare(${i})">对比</button>`;
+  return `<select onchange="setVersion(${i},this.value)">${options}</select><button class="ghost small" onclick="openCompare(${i})">对比</button><button class="ghost small" onclick="saveCurrentTemplate(${i})">保存模板</button>`;
 }
 function cardMetaHtml(it){return `${esc(it.product)} / ${esc(it.task_label)} / ${esc(it.size)} <span class="badge ${esc(it.status)}">${statusText[it.status]||it.status}</span>`;}
 function errorHtml(it){return it.error?`<div class="errorBox">${esc(it.error)}</div>`:"";}
@@ -584,6 +592,7 @@ async function downloadWorkbenchZip(kind){
   if(includeGenerated&&!selected.some(x=>x.version_path)){
     if(!confirm("选中的卡片里没有生成图，是否继续下载可用内容？"))return;
   }
+  if(window.WorkbenchHistory){try{const urls=[];for(const entry of selected){const item=items.find(x=>x.ref_path===entry.ref_path);if(!item)continue;if(includeOriginal)urls.push(item.ref_url);if(includeGenerated&&entry.version_path){const v=(item.versions||[]).find(x=>x.path===entry.version_path);if(v)urls.push(v.local_url||v.url);}}const local=await WorkbenchHistory.archive(urls);WorkbenchHistory.saveBlob(local,projectName(currentRoot())+"_生成.zip");status.textContent="图片包已从本机历史缓存下载";return;}catch(e){status.textContent="本机打包失败，改由服务器打包："+e.message;}}
   status.textContent="正在打包下载图片...";
   const response=await fetch("/api/workbench/download-zip",{
     method:"POST",
@@ -750,7 +759,9 @@ async function refreshLoopOnce(){
   if(workbenchRefreshPromise)return workbenchRefreshPromise;
   workbenchRefreshPromise=(async()=>{
     const data=await fetchJsonChecked(workbenchItemsUrl());
-    const nextItems=mergePromptOverrides(data.items||items);
+    let cachedRows=data.items||items;
+    try{cachedRows=await WorkbenchHistory.remember(currentRoot(),cachedRows);}catch(e){status.textContent="本机历史缓存失败："+e.message;}
+    const nextItems=mergePromptOverrides(cachedRows);
     if(canPatchCards(nextItems)){
       items=nextItems;
       patchCards(nextItems);
@@ -837,7 +848,7 @@ function loadEditorVersion(v){
       : `当前：${v.label||""}，显示当前版本原图，可继续标注生成下一版`;
   }
   const annotatedUrl=outgoing&&m.annotated_url?`${m.annotated_url}&t=${encodeURIComponent(outgoing.mtime||"0")}`:"";
-  loadEditCanvas(annotatedUrl||versionUrl(v));
+  loadEditCanvas((outgoing&&outgoing.meta&&outgoing.meta.annotated_local_url)||annotatedUrl||versionUrl(v));
 }
 function closeModal(){modal.classList.remove("open","compareOpen"); modal.innerHTML="";}
 function setTool(tool){

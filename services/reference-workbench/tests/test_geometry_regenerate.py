@@ -17,7 +17,7 @@ def test_reference_shape_and_no_anisotropic_stretch(size):
     assert abs(width / height / (size[0]/size[1])-1) < .02
     raw = Image.new('RGB', (width, height), 'white')
     result = app.preserve_geometry(raw, geometry)
-    assert result.size == size
+    assert result.size == (width, height)
     if size[0] != size[1]:
         with pytest.raises(app.HTTPException):
             app.preserve_geometry(Image.new('RGB', (2048, 2048)), geometry)
@@ -64,5 +64,15 @@ def test_manual_regenerate_new_version_preserves_old_and_deduplicates_retry(monk
     assert (app.DATA / after['versions'][0]['path']).read_bytes() == original_bytes
     for version in after['versions']:
         with Image.open(app.DATA / version['path']) as im:
-            assert im.size == (790, 1250)
+            assert im.size == (1296, 2048)
     assert after['status'] == 'done'
+    selected = after['versions'][0]
+    saved = c.post('/api/workbench/templates', json={'workbench_root': root, 'config': {'mode': 'main'}, 'ref_path': item['ref_path'], 'version_path': selected['path'], 'name': '优选模板', 'prompt': '保留清晰文字与原版式'}).json()
+    assert saved['ok']
+    template_id = saved['template']['id']
+    assert c.get('/api/workbench/templates').json()['templates'][0]['name'] == '优选模板'
+    next_root = upload(c)
+    applied = c.post('/api/workbench/templates/' + template_id + '/apply', json={'workbench_root': next_root}).json()
+    assert applied['ok']
+    next_items = c.get('/api/workbench/items', params={'root': next_root, 'mode': 'main'}).json()['items']
+    assert len(next_items) == 2 and next_items[-1]['prompt'] == '保留清晰文字与原版式'

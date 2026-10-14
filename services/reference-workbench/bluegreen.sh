@@ -74,17 +74,17 @@ if [[ "$ACTION" == promote ]]; then
   rm -- "$BASE/data/drain-$VERSION"
   systemctl enable "reference-workbench-$PORT" >/dev/null
   ln -sfn "$RELEASE" "$BASE/current.next"; mv -Tf "$BASE/current.next" "$BASE/current"
-  echo BLUEGREEN_PROMOTE=PASS NEW_LANE=waiting_geometry_v1 OLD_WORKER_AND_CONNECTIONS=RETAINED
+  echo BLUEGREEN_PROMOTE=PASS NEW_LANE=waiting_geometry_v2 OLD_WORKER_AND_CONNECTIONS=RETAINED
   exit
 fi
 if [[ "$ACTION" == drain ]]; then
-  # 老f6只读waiting，新版只读waiting_geometry_v1。旧槽不会领取新的比例任务。
+  # 旧f6只读waiting，旧72只读v1，新版只读v2；旧槽不能抢新保真任务。
   # 更老网关worker进程的长请求排空也是条件，不能仅凭DB为空杀旧进程。
   for _ in $(seq 1 1800); do
     LEFT=$(python3 - "$BASE/data/workbench.sqlite" "$VERSION" <<'PY'
 import sqlite3,sys
 with sqlite3.connect(sys.argv[1]) as c:
- print(c.execute("SELECT count(*) FROM tasks t WHERE t.state='waiting' OR (t.state IN ('running','editing','inferring') AND NOT EXISTS (SELECT 1 FROM worker_owners o WHERE o.task_id=t.id AND o.slot=?))",(sys.argv[2],)).fetchone()[0])
+ print(c.execute("SELECT count(*) FROM tasks t WHERE t.state IN ('waiting','waiting_geometry_v1') OR (t.state IN ('running','editing','inferring') AND NOT EXISTS (SELECT 1 FROM worker_owners o WHERE o.task_id=t.id AND o.slot=?))",(sys.argv[2],)).fetchone()[0])
 PY
 )
     OLD_NGINX=$(ps -eo args | grep -c '[n]ginx: worker process is shutting down' || true)
