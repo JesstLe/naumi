@@ -1,5 +1,7 @@
 # 画布视频完整融合进度
 
+主线计费保护集中复核：b990eed完整Docker构建success，Image gateway在billing-all失败；按真实契约修正抠图透明素材/统一Agent Router/委托计费覆盖/SSE保护缓冲的旧fixture，并修复混合新旧扣费的用户/批次锁顺序死锁。最终18组完整billing-all PASS，500×2并发性能errorCount0，源记录见2026-10-14-canvas-video-billing-regression.md。新CI尚待核对，修复后固定镜像尚待生成，不能据修复前构建声称交付。目标仍active，完整C/D未完成。
+
 增量整合已执行：26889e2已普通快进推送origin/main及独立codex分支，包含保留3ab2418的1eba865整合。按用户授权减少后续分支跨度；工作流只构建/推镜像及fixture检查，未因此发布103或增加维护次数。完整目标与C/D待办保持，不将阶段Git整合写成全34项完成。
 
 最新第八批（2026-10-14）：明确支持视频输入的reference模式现可执行extend_video/edit_video，保留正式source_video与真实cap/owner/完成状态；7个编辑/续写/前传方向、2种专用模式、工作台及7个无任务/创建/费用的拒绝分支、重启重放通过production-3710100e。真实工作台GUI一次3任务、每任务2视频产物、未发送留工作台/刷新恢复/完整可见参数/本人显式发送/重放同节点无费用/实际历史与画布彩色像素呈现通过workbench-29e6b608。TypeScript通过；源SHA保持，付费视频调用0。最新main3ab2418已含，准备按用户要求普通增量整合本阶段；完整C剩余图片保护及更多GUI/规则行为，D演示/34项/复核/完整固定App/蓝绿回滚/103发布未完成。
