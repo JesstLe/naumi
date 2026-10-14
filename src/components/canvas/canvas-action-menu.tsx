@@ -53,13 +53,14 @@ export function CanvasActionMenu({ label, light, items, disabled = false,
     setOpen(false);
     if (restoreFocus) anchor.current?.focus({ preventScroll: true });
   };
-  useLayoutEffect(() => {
-    if (!open || !anchor.current || !panel.current) return;
+  const updatePlacement = useCallback(() => {
+    if (!anchor.current || !panel.current) return;
     setPlacement(canvasPopoverPlacement(anchor.current.getBoundingClientRect(),
       { width: window.innerWidth, height: window.innerHeight }, panel.current.scrollHeight + 2, 272));
-  }, [open, anchor]);
+  }, [anchor]);
+  useLayoutEffect(() => { if (open) updatePlacement(); }, [open, updatePlacement]);
   useLayoutEffect(() => {
-    if (open && placement) panel.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
+    if (open && placement && !panel.current?.contains(document.activeElement)) panel.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
   }, [open, placement]);
   useEffect(() => {
     if (!open) return;
@@ -67,12 +68,15 @@ export function CanvasActionMenu({ label, light, items, disabled = false,
     const dismiss = () => setOpen(false);
     const scroll = (event: Event) => {
       if (event.target instanceof Node && panel.current?.contains(event.target)) return;
+      // Bringing a clipped trigger into view can scroll its own tool strip just
+      // after opening. Keep the menu anchored instead of immediately dismissing it.
+      if (event.target === anchor.current?.parentElement) { updatePlacement(); return; }
       dismiss();
     };
     window.addEventListener("resize", dismiss);
     window.addEventListener("scroll", scroll, true);
     return () => { window.removeEventListener("resize", dismiss); window.removeEventListener("scroll", scroll, true); };
-  }, [open, disabled, setOpen]);
+  }, [open, disabled, setOpen, anchor, updatePlacement]);
 
   return <>
     <button ref={anchor} type="button" title={label} aria-label={label} aria-haspopup="menu"

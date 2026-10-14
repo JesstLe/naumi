@@ -29,6 +29,7 @@ import {canvasReceipts,clearCanvasReceipt} from "@/lib/imagegen/canvas-receipts"
 import {pollImagegen} from "@/lib/imagegen/client";
 import {VideoGenerationNode} from "./video/generation-node";
 import {VideoSettingsDialog,type VideoNodeDraft} from "./video/settings-dialog";
+import {useVideoCatalog} from "./video/use-video-catalog";
 import {useVideoNodes} from "./video/use-video-nodes";
 import {useVideoTasks} from "./video/use-video-tasks";
 import {VideoPlayer,mediaDownloadHref,type VideoPlayerAction} from "./video/player";
@@ -192,7 +193,6 @@ import {
   AccountDockMenu,
   currentThemeIsDark,
   toggleAccountTheme,
-  useAccountAdminStatus,
 } from "@/components/account/account-dock-menu";
 import { cn, formatDate } from "@/lib/utils";
 import { bytesLabel, prepareImageUploads, uploadFormData } from "@/lib/client-image-upload";
@@ -206,7 +206,6 @@ import {
   routeImageModel,
 } from "@/lib/image-model-routing";
 import { ModelIcon } from "@/components/ui/model-icon";
-import {MODEL_CATALOG_REFRESH} from "@/lib/model-config/public-client";
 import { adminConfiguredFeature } from "@/lib/model-config/selection-policy";
 import { chosenFeatureModel, featureModelManaged, useFeatureModels } from "@/lib/model-config/feature-client";
 import { FeatureModelSelect } from "@/components/tools/feature-model-select";
@@ -432,7 +431,6 @@ type CanvasTextNode = {
   productIds?: string[];
 };
 
-type CanvasVideoCapability = VideoCatalogModel;
 
 type OcrBox = { x: number; y: number; width: number; height: number };
 type OcrSegment = {
@@ -1621,7 +1619,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const { t, locale } = useI18n();
   const router = useRouter();
   const { commerceVisible } = usePaymentConfig();
-  const accountIsAdmin = useAccountAdminStatus(user);
   const [works, setWorks] = useState<Artwork[] | null>(null);
   // works 的同步镜像:供 useCallback(如缩放撤销记录)读取最新值而不重挂回调
   const worksRef = useRef<Artwork[] | null>(null);
@@ -1999,13 +1996,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const videoAssetStore=useVideoAssets({email:targetEmail||user?.email,readOnly,request:privateFetchRaw});
   const imageMoreRef = useRef<HTMLButtonElement>(null);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
-  const [videoCatalog, setVideoCatalog] = useState<CanvasVideoCapability[]>([]);
-
-  useEffect(()=>{
-    let cancelled=false;if(!ready||!user){setVideoCatalog([]);return;}
-    const load=async()=>{try{const response=await privateFetchRaw("/api/video/catalog",{cache:"no-store"}),data=await response.json();if(!response.ok)throw new Error(data.error||"视频模型加载失败");if(!cancelled)setVideoCatalog(Array.isArray(data.models)?data.models:[]);}catch{if(!cancelled)setVideoCatalog([]);}};
-    void load();window.addEventListener(MODEL_CATALOG_REFRESH,load);return()=>{cancelled=true;window.removeEventListener(MODEL_CATALOG_REFRESH,load);};
-  },[ready,user?.email]);
+  const videoModelCatalog=useVideoCatalog({email:user?.email,ready,request:privateFetchRaw});
+  const videoCatalog=videoModelCatalog.models;
   const [annotateArtwork, setAnnotateArtwork] = useState<Artwork | null>(null);
   // 画布助手:围绕选中节点+上游链的多轮对话,[[GEN]] 提示词可一键生图回画布
   const [assistantArtworkId, setAssistantArtworkId] = useState<string | null>(null);
@@ -4872,10 +4864,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(JSON.stringify(from)!==JSON.stringify(fields))pushUndo({kind:"video-patch",id,from,to:fields});return result;
   }
   async function saveVideoDraft(id:string,draft:VideoNodeDraft){return patchVideoNode(id,{title:draft.title,config:draft.config,inputs:draft.inputs,expectedRevision:draft.expectedRevision});}
-  async function generateVideoDraft(id:string,draft:VideoNodeDraft,quote:PublicQuote|null){
+  async function generateVideoDraft(id:string,draft:VideoNodeDraft,quote:PublicQuote|null,onPersisted?:(revision:number)=>void){
     if(!user||readOnly)throw new Error("无法修改此画布");
     let previous=readVideoReceipt(localStorage,user.email,id);
-    if(previous){const response=await privateFetchRaw(`/api/video/tasks?idempotencyKey=${encodeURIComponent(previous.idempotencyKey)}`),data=await response.json();
+    if(previous){const response=await privateFetchRaw(previous.taskId?`/api/video/tasks?id=${encodeURIComponent(previous.taskId)}`:`/api/video/tasks?idempotencyKey=${encodeURIComponent(previous.idempotencyKey)}`),data=await response.json();
       if(response.ok&&data.task){if(!["completed","failed","cancelled"].includes(data.task.status)){await videoNodesStore.refresh();await videoTaskStore.refresh();throw new Error("上次视频任务仍在执行，设置尚未提交");}clearVideoReceipt(localStorage,user.email,id,previous.idempotencyKey);previous=null;}
       else if(response.status!==404)throw new Error(data.error||"上次视频提交尚未核实");
       else if(previous.expectedRevision!==draft.expectedRevision)throw new Error("上次提交尚未核实，节点已更新，请先查看任务历史");
@@ -4883,10 +4875,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
     const saved=previous&&previous.expectedRevision===draft.expectedRevision?videoNodesStore.nodes.find(node=>node.id===id):await saveVideoDraft(id,draft);
     if(!saved)throw new Error("视频节点不存在");
-    const receipt=prepareVideoReceipt(localStorage,user.email,saved);
-    const generationInit={method:"POST",headers:{"content-type":"application/json","x-naumi-canvas":"1"},body:JSON.stringify({expectedRevision:receipt.expectedRevision,idempotencyKey:receipt.idempotencyKey})};
+    if(!previous)onPersisted?.(saved.revision);
+    let receipt=prepareVideoReceipt(localStorage,user.email,saved);
+    const generationInit={method:"POST",headers:{"content-type":"application/json","x-naumi-canvas":"1","x-naumi-billing-operation-id":receipt.idempotencyKey},body:JSON.stringify({expectedRevision:receipt.expectedRevision,idempotencyKey:receipt.idempotencyKey})};
     const generationUrl=`/api/canvas/video-nodes/${encodeURIComponent(id)}/generate`;
-    const response=saved.config.comfyWorkflowId?await privateFetchRaw(generationUrl,generationInit):await billing.submit(generationUrl,generationInit,quote);
+    const response=saved.config.comfyWorkflowId?await privateFetchRaw(generationUrl,generationInit):await billing.submit(generationUrl,generationInit,quote,actualId=>{receipt={...receipt,idempotencyKey:actualId};saveVideoReceipt(localStorage,user.email,receipt);});
     const data=await readJsonSafe(response);if(!response.ok){if(response.status<500&&!["OPERATION_PENDING","OPERATION_CONFLICT"].includes(data?.code))clearVideoReceipt(localStorage,user.email,id,receipt.idempotencyKey);throw new Error(data?.error||"视频提交失败，请核查任务后重试");}
     saveVideoReceipt(localStorage,user.email,{...receipt,taskId:String(data.taskId)});
     await videoNodesStore.refresh();await videoTaskStore.refresh();await refreshCredits();
@@ -5198,6 +5191,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             const nodes=data.nodes as {id:string;projectKey:string}[];
             if(acceptedVideoProject){if(nodes.some(node=>node.projectKey===acceptedVideoProject))await videoNodesStore.refresh();}
             else if(nodes[0])videoProjectResult={key:nodes[0].projectKey,nodeId:nodes[0].id};
+          } else if(type==="text_nodes"&&Array.isArray(data.nodes)){
+            const ids=new Set((data.nodes as {id:string;projectKey:string}[]).filter(node=>node.projectKey===acceptedVideoProject).map(node=>node.id));
+            const account=canvasAccountRef.current,email=targetEmail||user?.email;
+            if(ids.size&&email){
+              const response=await privateFetchRaw(`/api/canvas/text-nodes?email=${encodeURIComponent(email)}`,{signal:controller.signal});
+              if(!response.ok)throw new Error("剧本资产已保存，画布文字读取暂不可用");
+              const snapshot=await response.json();
+              if(account===canvasAccountRef.current&&epoch===assistantRequestEpoch.current&&!controller.signal.aborted){
+                const added=((snapshot.nodes||[]) as CanvasTextNode[]).filter(node=>ids.has(node.id)&&node.projectKey===acceptedVideoProject).map(node=>({...node,width:node.width||TEXT_NODE_DEFAULT_W,height:node.height||TEXT_NODE_DEFAULT_H,sourceIds:node.sourceIds||[],targetIds:node.targetIds||[],productIds:node.productIds||[]}));
+                setTextNodes(current=>{const known=new Set(current.map(node=>node.id));return [...current,...added.filter(node=>!known.has(node.id))];});
+              }
+            }
           } else if (type === "artifacts" && Array.isArray(data.artifacts)) {
             const artifacts = data.artifacts as {id:string;image:string;title:string}[];
             artifacts.forEach(art => artifactIds.add(art.id));
@@ -8544,7 +8549,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   remaining={credits ?? remaining}
                   dark={accountDockDark}
 
-                  isAdmin={accountIsAdmin}
                   className="right-0 top-11"
                   onClose={() => setAccountDockOpen(false)}
                   onToggleTheme={() => setAccountDockDark(toggleAccountTheme())}
@@ -9468,7 +9472,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       remaining={credits ?? remaining}
                       dark={accountDockDark}
 
-                      isAdmin={accountIsAdmin}
                       className="right-0 top-11"
                       onClose={() => setAccountDockOpen(false)}
                       onToggleTheme={() => setAccountDockDark(toggleAccountTheme())}
@@ -11907,7 +11910,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         </div>
       )}
 
-      {videoEditId&&videoNodesStore.nodes.find(node=>node.id===videoEditId&&node.projectKey===activeKey)&&(()=>{const node=videoNodesStore.nodes.find(node=>node.id===videoEditId)!;return <VideoSettingsDialog key={`${user?.email}:${targetEmail}:${node.id}`} node={node} email={targetEmail||user?.email} models={videoCatalog} choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||isNodeLocked(node.id)} onClose={()=>setVideoEditId(null)} onSave={async draft=>{await saveVideoDraft(node.id,draft);}} onGenerate={(draft,quote)=>generateVideoDraft(node.id,draft,quote)} onImport={async files=>{try{const choices=await videoAssetStore.upload(files,node.projectKey);await mergeWorks(choices.map(choice=>choice.nodeId));return choices;}catch(cause){if(cause instanceof VideoAssetImportError&&cause.choices.length)await mergeWorks(cause.choices.map(choice=>choice.nodeId));throw cause;}}} onLoadMoreAssets={videoAssetStore.loadMore} canLoadMoreAssets={!!videoAssetStore.nextCursor}/>;})()}
+      {videoEditId&&videoNodesStore.nodes.find(node=>node.id===videoEditId&&node.projectKey===activeKey)&&(()=>{const node=videoNodesStore.nodes.find(node=>node.id===videoEditId)!;return <VideoSettingsDialog key={`${user?.email}:${targetEmail}:${node.id}`} node={node} email={targetEmail||user?.email} models={videoCatalog} catalogLoading={videoModelCatalog.loading} catalogError={videoModelCatalog.error} onRetryCatalog={videoModelCatalog.refresh} choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||isNodeLocked(node.id)} onClose={()=>setVideoEditId(null)} onSave={async draft=>{await saveVideoDraft(node.id,draft);}} onGenerate={(draft,quote,onPersisted)=>generateVideoDraft(node.id,draft,quote,onPersisted)} onImport={async files=>{try{const choices=await videoAssetStore.upload(files,node.projectKey);await mergeWorks(choices.map(choice=>choice.nodeId));return choices;}catch(cause){if(cause instanceof VideoAssetImportError&&cause.choices.length)await mergeWorks(cause.choices.map(choice=>choice.nodeId));throw cause;}}} onLoadMoreAssets={videoAssetStore.loadMore} canLoadMoreAssets={!!videoAssetStore.nextCursor}/>;})()}
       {videoMedia&&videoMedia.projectKey===activeKey&&<MediaActionsDialog key={`${user?.email}:${videoMedia.projectKey}:${videoMedia.id}`} initial={videoMedia.initial} sourceId={videoMedia.id} projectKey={videoMedia.projectKey} choices={videoInputChoices.filter(choice=>choice.available&&choice.kind!=="text").map(choice=>({id:choice.nodeId,title:choice.title,kind:choice.kind as MediaInputChoice["kind"],url:choice.value}))} light={lightCanvas} readOnly={readOnly||isNodeLocked(videoMedia.id)} jobs={mediaJobStore.jobs} historyError={mediaJobStore.error} canLoadMore={!!mediaJobStore.nextCursor} onLoadMore={mediaJobStore.loadMore} onQuote={mediaJobStore.estimate} onSubmit={mediaJobStore.submit} onCancel={mediaJobStore.cancel} onClose={()=>setVideoMedia(null)}/>}
       {videoHistoryId&&videoNodesStore.nodes.find(node=>node.id===videoHistoryId&&node.projectKey===activeKey)&&<VideoHistoryPicker key={`${user?.email}:${targetEmail}:${activeKey}:${videoHistoryId}`} email={targetEmail||user?.email} projectKey={activeKey} node={videoNodesStore.getNode(videoHistoryId)} projects={projects.map(project=>({key:project.key,name:project.name}))} assets={videoAssetStore.assets} canLoadMoreAssets={!!videoAssetStore.nextCursor} onLoadMoreAssets={videoAssetStore.loadMore} request={privateFetchRaw} light={lightCanvas} readOnly={readOnly||isNodeLocked(videoHistoryId)} onClose={()=>setVideoHistoryId(null)} onSelectResult={(id,revision)=>selectVideoResult(videoHistoryId,id,revision)} onReuseSettings={async snapshot=>{const node=videoNodesStore.getNode(videoHistoryId),account=canvasAccountRef.current,epoch=canvasContextEpochRef.current;if(!node||readOnly||isNodeLocked(node.id))throw new Error("无法修改视频设置");const draft=videoHistoryDraft(snapshot);await mergeWorks(draft.choices.filter(choice=>choice.kind!=="text").map(choice=>choice.nodeId));if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)throw new Error("账号或项目已切换");await saveVideoDraft(node.id,{title:node.title,config:draft.config,inputs:draft.inputs,expectedRevision:node.revision});if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;setVideoHistoryId(null);setVideoEditId(node.id);}} onSent={async result=>{await mergeWorks([result.artworkId,...(result.artworkIds||[]),...(result.inputArtworkIds||[])]);await videoNodesStore.refresh();await videoAssetStore.refresh();}} onRetried={async()=>{await videoNodesStore.refresh();await videoTaskStore.refresh();await refreshCredits();}} onProcess={(id,action)=>{const account=canvasAccountRef.current;void mergeWorks([id]).then(()=>{if(account===canvasAccountRef.current)extractVideoToCanvas(id,action);}).catch(error=>flashTip(error instanceof Error?error.message:"媒体加载失败"));}}/>}
       {imagegenPanel&&<ImagegenPanel entry="canvas" inputs={imagegenPanel.inputs} modelId={genModel} sourceNodeId={imagegenPanel.sourceNodeId} onClose={()=>setImagegenPanel(null)} onResult={result=>{void mountImagegenResult(result).catch(e=>flashTip(e instanceof Error?e.message:"结果已保存，请刷新画布"));}}/>}

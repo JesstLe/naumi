@@ -22,7 +22,7 @@ async function main() {
         const sharp=(await import("sharp")).default,bytes=await sharp({create:{width:64,height:64,channels:3,background:"white"}}).png().toBuffer(),artworkId=`billing-ui-${randomUUID()}`;
         await db.addArtworks(email,[{id:artworkId,title:"Canvas retry fixture",category:"main",prompt:"Canvas retained prompt",status:"completed",image:"/media/billing-ui-fixture.png",gradient:"",origin:"canvas",width:64,height:64}]);
         const { signSession } = await import("../src/lib/admin-auth"), { signUserSession } = await import("../src/lib/native-auth");
-        writeFileSync(path, JSON.stringify({ original, email, artworkId, imageBase64:bytes.toString("base64"), adminCookie: signSession(Date.now()), userCookie: signUserSession(email, Date.now()) }));
+        writeFileSync(path, JSON.stringify({ original, acceptanceConfig:config, email, artworkId, imageBase64:bytes.toString("base64"), adminCookie: signSession(Date.now()), userCookie: signUserSession(email, Date.now()) }));
     }
     await db.getPool().end();
 }

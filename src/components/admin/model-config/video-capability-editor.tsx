@@ -3,7 +3,7 @@ import { useEffect,useState } from "react";
 import { VIDEO_MODES,VIDEO_WIRE_PROFILES,videoDefinitionSchema,type VideoModelDefinition,type VideoWireProfile } from "@/lib/video/capability-schema";
 
 const modeLabels:Record<typeof VIDEO_MODES[number],string>={text:"文生视频",single_image:"单图参考",frames_required:"首尾帧必填",first_optional:"首帧可选",last_optional:"尾帧可选",reference:"混合参考",video_edit:"视频编辑",extend:"视频续写",motion_control:"运动控制",lip_sync:"口型同步"};
-const featureLabels={supportsAutoDuration:"自动时长",supportsNegativePrompt:"负面提示词",supportsWatermark:"水印参数",supportsMultiShot:"多镜头",supportsElements:"元素参考",supportsCamera:"摄影机参数",supportsExactSize:"精确宽高",supportsCancellation:"供应商取消"} as const;
+const featureLabels={supportsAutoDuration:"自动时长",supportsFrameAudio:"首尾帧音频参考",supportsNegativePrompt:"负面提示词",supportsWatermark:"水印参数",supportsMultiShot:"多镜头",supportsElements:"元素参考",supportsCamera:"摄影机参数",supportsExactSize:"精确宽高",supportsCancellation:"供应商取消"} as const;
 export function VideoCapabilityEditor({value,profile,onChange}:{value?:VideoModelDefinition;profile?:VideoWireProfile;onChange:(value:VideoModelDefinition|undefined,profile:VideoWireProfile|undefined)=>void}){
   const [advanced,setAdvanced]=useState(""),[error,setError]=useState("");
   useEffect(()=>{setAdvanced(JSON.stringify(value||{},null,2));setError("");},[value]);

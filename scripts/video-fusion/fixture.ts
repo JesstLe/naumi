@@ -27,7 +27,8 @@ export async function seedVideoFixture() {
   const {createModelRepository}=await import("../../src/lib/model-config/repository");
   const {fixtureModelConfig}=await import("../model-config-unit-fixture");
   const {CAP_RICH}=await import("./profiles");
-  const {videoWireProfileSchema,videoProfileProtocol}=await import("../../src/lib/video/capability-schema");
+  const {videoWireProfileSchema,videoProfileProtocol,videoDefinitionSchema}=await import("../../src/lib/video/capability-schema");
+  const definition=process.env.VIDEO_FIXTURE_VIDEO_DEFINITION?videoDefinitionSchema.parse(JSON.parse(process.env.VIDEO_FIXTURE_VIDEO_DEFINITION)):CAP_RICH;
   const profile=videoWireProfileSchema.parse(process.env.VIDEO_FIXTURE_VIDEO_PROFILE||"ark"),protocol=videoProfileProtocol(profile);
   const credentials=createCredentialStore(db.getPool());
   const imageKey=await credentials.importPlain({providerId:"p1",plain:process.env.OPENAI_API_KEY!,actor:"fixture"});
@@ -35,10 +36,19 @@ export async function seedVideoFixture() {
   const config=fixtureModelConfig(process.env.OPENAI_BASE_URL!,imageKey.id);
   config.providers.push({id:"fixture-video-provider",name:"Fixture video supplier",protocol,baseUrl:process.env.VIDEO_FIXTURE_SUPPLIER_ORIGIN!+`/protocol/${protocol}`+(protocol==="ark"?"/api/v3":""),credentialRef:videoKey.id,enabled:true,timeoutMs:120000,maxConcurrent:4});
   config.upstreamModels.push({id:"fixture-video-upstream",providerId:"fixture-video-provider",model:"wire-video",label:"Fixture upstream",modality:"video",enabled:true,
-    capabilities:{verified:true,generate:true,edit:true,vision:false,transparent:false,preserveIdentity:false,textAccuracy:false,qualityRank:3,qualities:[],nativeResolutions:[],maxReferenceImages:30,expectedLatencyMs:0,video:CAP_RICH},parameterMap:{videoProfile:profile}});
+    capabilities:{verified:true,generate:true,edit:true,vision:false,transparent:false,preserveIdentity:false,textAccuracy:false,qualityRank:3,qualities:[],nativeResolutions:[],maxReferenceImages:30,expectedLatencyMs:0,video:definition},parameterMap:{videoProfile:profile}});
   config.publicModels.push({id:"video-a",label:"Fixture video",modality:"video",enabled:true,visible:true,target:{type:"upstream",id:"fixture-video-upstream"}});
   config.publicModels.push({id:"disabled-model",label:"Disabled fixture",modality:"video",enabled:false,visible:true,target:{type:"upstream",id:"fixture-video-upstream"}});
   config.bindings["video.generate"]="video-a";
+  const extraModels=JSON.parse(process.env.VIDEO_FIXTURE_EXTRA_VIDEO_MODELS||"[]");
+  if(!Array.isArray(extraModels)||extraModels.length>16)throw new Error("Invalid additional fixture models");
+  const extraIds=new Set<string>();
+  for(const entry of extraModels){
+    if(!entry||typeof entry.id!=="string"||!/^limit-[a-z0-9-]{1,60}$/.test(entry.id)||extraIds.has(entry.id))throw new Error("Invalid additional fixture model identity");
+    extraIds.add(entry.id);const bounded=videoDefinitionSchema.parse(entry.definition),upstreamId=`fixture-${entry.id}`;
+    config.upstreamModels.push({id:upstreamId,providerId:"fixture-video-provider",model:`wire-${entry.id}`,label:entry.id,modality:"video",enabled:true,capabilities:{...config.upstreamModels[0].capabilities,maxReferenceImages:30,video:bounded},parameterMap:{videoProfile:profile}});
+    config.publicModels.push({id:entry.id,label:entry.id,modality:"video",enabled:true,visible:true,target:{type:"upstream",id:upstreamId}});
+  }
   if(profile==="autodl"||profile==="runninghub")config.upstreamModels.find(model=>model.id==="fixture-video-upstream")!.parameterMap.videoWorkflow={version:1,kind:profile,workflowId:"selected-native-workflow",inputs:[{name:"prompt",type:"prompt",path:profile==="autodl"?["prompt"]:["3","inputs","text"],required:true}]};
   if(process.env.VIDEO_FIXTURE_FULL_WORKFLOW==="1"){
     if(profile!=="autodl")throw new Error("Full workflow fixture requires AutoDL");const upstream=config.upstreamModels.find(model=>model.id==="fixture-video-upstream")!;
@@ -61,7 +71,7 @@ export async function seedVideoFixture() {
   if(process.env.VIDEO_FIXTURE_REFERENCE_MODELS==="1"){
     for(const [id,videos] of [["video-reference",1],["image-reference-only",0],["unknown-video-reference",null]] as const){
       const upstreamId=`fixture-${id}-upstream`;
-      config.upstreamModels.push({id:upstreamId,providerId:"fixture-video-provider",model:`wire-${id}`,label:id,modality:"video",enabled:true,capabilities:{...config.upstreamModels[0].capabilities,qualities:[],nativeResolutions:[],maxReferenceImages:1,video:{...CAP_RICH,modes:["reference"],limits:{images:1,videos,audios:1},supportsMultiShot:false,maxShots:0,supportsElements:false,maxElements:0,maxElementReferences:0,supportsCamera:false}},parameterMap:{videoProfile:"ark"}});
+      config.upstreamModels.push({id:upstreamId,providerId:"fixture-video-provider",model:`wire-${id}`,label:id,modality:"video",enabled:true,capabilities:{...config.upstreamModels[0].capabilities,qualities:[],nativeResolutions:[],maxReferenceImages:1,video:{...CAP_RICH,modes:["reference"],limits:{images:1,videos,audios:1},supportsMultiShot:false,maxShots:0,supportsElements:false,maxElements:0,maxElementReferences:0,supportsCamera:false,providerOptions:{seed:{type:"integer",minimum:0,send:"value"}}}},parameterMap:{videoProfile:"ark"}});
       config.publicModels.push({id,label:id,modality:"video",enabled:true,visible:true,target:{type:"upstream",id:upstreamId}});
     }
   }

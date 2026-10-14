@@ -86,9 +86,10 @@ export function normalizeVideoInput(raw:Record<string,unknown>,cap:ResolvedVideo
   const imageIndices=refs.map((ref,index)=>ref.kind==="image"?index:-1).filter(index=>index>=0);
   const imageCount=imageIndices.length,videoCount=refs.filter(ref=>ref.kind==="video").length,audioCount=refs.filter(ref=>ref.kind==="audio").length;
   if(mode==="text"&&refs.length)reject("MODE_INPUT_MISMATCH","文生视频不能带媒体参考","references");
-  if(mode==="single_image"&&(imageCount!==1||videoCount||audioCount))reject("MODE_INPUT_MISMATCH","单图模式需要且只接受一张图片","references");
+  const invalidFrameAudio=audioCount>0&&cap.supportsFrameAudio!==true;
+  if(mode==="single_image"&&(imageCount!==1||videoCount||invalidFrameAudio))reject("MODE_INPUT_MISMATCH","单图模式需要一张图片，音频参考须有明确能力声明","references");
   if(["frames_required","first_optional","last_optional"].includes(mode)){
-    if(videoCount||audioCount||imageCount<1||imageCount>2||mode==="frames_required"&&imageCount!==2)reject("FRAME_INPUT_MISMATCH","首尾模式的参考数量或类型不符合要求","references");
+    if(videoCount||invalidFrameAudio||imageCount<1||imageCount>2||mode==="frames_required"&&imageCount!==2)reject("FRAME_INPUT_MISMATCH","首尾模式的参考数量或类型不符合要求","references");
     for(const [order,index] of imageIndices.entries()){
       const role=mode==="first_optional"&&imageCount===1?"last_frame":order===0?"first_frame":"last_frame";
       if(refs[index].role!=="reference"&&refs[index].role!==role)reject("FRAME_ROLE_MISMATCH","首尾帧角色与所选模式不一致","references");
@@ -99,7 +100,6 @@ export function normalizeVideoInput(raw:Record<string,unknown>,cap:ResolvedVideo
   if(mode==="reference"&&!refs.length)reject("REFERENCE_REQUIRED","混合参考模式至少需要一个媒体素材","references");
   if(["video_edit","extend"].includes(mode)&&!videoCount)reject("VIDEO_REFERENCE_REQUIRED","视频编辑或续写需要真实来源视频","references");
   if(mode==="motion_control"&&(!imageCount||!videoCount))reject("MOTION_INPUT_REQUIRED","运动控制需要图片与真实运动视频","references");
-  if(mode==="lip_sync"&&(!(imageCount||videoCount)||(!audioCount&&!input.prompt)))reject("LIP_SYNC_INPUT_REQUIRED","口型同步需要视觉来源和音频或文字","references");
   for(const [role,supported] of [["first_frame",cap.supportsFirstFrame],["last_frame",cap.supportsLastFrame]] as const){
     if(supported===false&&refs.some(ref=>ref.role===role))reject("FRAME_UNSUPPORTED","当前模型禁用了该首尾帧角色","references");
     if(refs.filter(ref=>ref.role===role).length>1)reject("DUPLICATE_FRAME","首尾帧角色重复","references");
@@ -135,5 +135,9 @@ export function normalizeVideoInput(raw:Record<string,unknown>,cap:ResolvedVideo
     if(!valid||typeof value==="number"&&(option.minimum!==undefined&&value<option.minimum||option.maximum!==undefined&&value>option.maximum))reject("INVALID_PROVIDER_OPTION",`参数${key}类型或范围不合法`,"providerOptions");
     providerOptions[key]=value as string|number|boolean|null;
   }
+  // Spoken text can be a declared provider option, including its published default.
+  // Validate the effective options so omitted or undeclared text cannot enable this mode.
+  const lipSyncText=typeof providerOptions.text==="string"?providerOptions.text:input.prompt;
+  if(mode==="lip_sync"&&(!(imageCount||videoCount)||(!audioCount&&!lipSyncText.trim())))reject("LIP_SYNC_INPUT_REQUIRED","口型同步需要视觉来源和音频或文字","references");
   return {...input,mode,references:refs,providerOptions,omittedProviderOptions};
 }

@@ -5,7 +5,20 @@ import {authorizeVideoProject} from "@/lib/canvas/video-node-service";
 import {videoNodeIdSchema,videoProjectKeySchema} from "@/lib/canvas/video-node-schema";
 import {z} from "zod";
 import {ModelConfigError} from "@/lib/model-config/types";
+import {saveVideoScriptAsset} from "@/lib/video/script-assets";
+import {sameSiteBiMutation} from "@/lib/bi/access";
+import {readBounded} from "@/lib/supplier-cost/io";
 export const runtime="nodejs",dynamic="force-dynamic";
+export async function POST(request:Request){
+  const actor=await authenticatedEmail(request);if(!actor)return NextResponse.json({error:"请先登录"},{status:401});
+  if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站修改"},{status:403});
+  try{return NextResponse.json(await saveVideoScriptAsset(actor,JSON.parse(await readBounded(new Response(request.body),512*1024))),{headers:{"cache-control":"private, no-store"}});}
+  catch(error){
+    if(error instanceof z.ZodError||error instanceof SyntaxError)return NextResponse.json({error:"剧本资产字段无效"},{status:422});
+    if(error instanceof ModelConfigError)return NextResponse.json({error:error.message,code:error.code},{status:error.status});
+    return NextResponse.json({error:"剧本资产暂不可保存"},{status:503});
+  }
+}
 const cursorSchema=z.strictObject({updatedAt:z.iso.datetime(),id:videoNodeIdSchema});
 export async function GET(request:Request){const actor=await authenticatedEmail(request);if(!actor)return NextResponse.json({error:"请先登录"},{status:401});const params=new URL(request.url).searchParams,id=params.get("id")||undefined,key=params.get("projectKey")||undefined;
   let cursor:z.infer<typeof cursorSchema>|undefined;try{if(id)videoNodeIdSchema.parse(id);if(key)videoProjectKeySchema.parse(key);if(params.has("cursor"))cursor=cursorSchema.parse(JSON.parse(params.get("cursor")!));if(!id&&!key)throw new Error("请选择项目");}catch{return NextResponse.json({error:"文字来源查询无效"},{status:422});}
