@@ -1,5 +1,6 @@
 import 'server-only';
 import { getPool } from '../db';
+import { excludeImportedHistory } from '../staging-history';
 
 // Pending/expired fences remain observable: elapsed lease time is NOT evidence
 // that an old process stopped its provider request. Never clear them here.
@@ -19,10 +20,17 @@ export async function readWorkerDrainStatus() {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     await client.query("SET LOCAL statement_timeout = '3s'");
     const counts: Record<string, number> = {}, absentTables: string[] = [];
+    let quarantinedHistoryFences = 0;
     for (const [key, table, condition] of sources) {
       const exists = (await client.query('SELECT to_regclass($1) AS name', [table])).rows[0]?.name;
       if (!exists) { absentTables.push(table); counts[key] = 0; continue; }
-      counts[key] = Number((await client.query(`SELECT count(*)::int AS count FROM ${table} WHERE ${condition}`)).rows[0].count);
+      // Match the existing recovery scanner's explicit imported-history guard.
+      // Quarantined copies cannot be claimed on this host. Report their fences
+      // separately without changing their status, timestamps or original bytes.
+      const exclusion = key === 'imagegenItems' ? '' : excludeImportedHistory(table as 'app_image_jobs' | 'app_canvas_image_tasks' | 'app_video_tasks' | 'app_supplier_cost_jobs');
+      const row = (await client.query(`SELECT count(*)::int AS total,
+        count(*) FILTER (WHERE true ${exclusion})::int AS runnable FROM ${table} WHERE ${condition}`)).rows[0];
+      counts[key] = Number(row.runnable); quarantinedHistoryFences += Number(row.total) - Number(row.runnable);
     }
     // Media mirrors keep a transaction open across the object write, and media
     // jobs/workflows use advisory locks. Include these independent executors.
@@ -34,7 +42,7 @@ export async function readWorkerDrainStatus() {
     await client.query('COMMIT');
     const activeFences = Object.values(counts).reduce((sum, value) => sum + value, 0);
     const activeTransactions = Number(locks.transactions), advisoryLocks = Number(locks.advisory);
-    return { schema: 1, scope: 'shared-database', counts, absentTables, activeFences, activeTransactions, advisoryLocks,
+    return { schema: 1, scope: 'shared-database', counts, absentTables, quarantinedHistoryFences, activeFences, activeTransactions, advisoryLocks,
       drained: activeFences === 0 && activeTransactions === 0 && advisoryLocks === 0 };
   } catch (error) { await client.query('ROLLBACK').catch(() => {}); throw error; }
   finally { client.release(); }

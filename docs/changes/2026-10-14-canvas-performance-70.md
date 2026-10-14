@@ -190,3 +190,11 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 真实本机PostgreSQL独立schema覆盖secret401、空/缺表、5种过期仍held fence、活跃事务、advisory锁、只读不清lease原值，通过后仅删除自己的schema。综合Agent/SSE/cache/type/diff集中回归通过。103本轮只读inspect原App18c31dc/Worker34dc082、同Imagecd344d91、均running非paused，AppNAUMI_VIDEO_WORKER0符合引导前置条件；没有在生产执行pause/交接。生产真实任务/Agent/SSE旧新版连续性和公网切流/实际回滚仍待验证，隔离测试不冒充供应商在途验收。
 
 功能累计2/3，生产发布0；全范围目标active，冷79.70%/原生平移32.44%仍为历史同代理对照，未称最新main/直连R2/公开70%。下一步固定最新候选完整构建、持新双锁/新基线/backup与旁路API验收；不得重新使用obsolete13eb或旧退出锁记录。
+
+模块19真实旁路结果与模块20修正：148dab9固定UI/desktop/enterprise三个Linux PROBE0构建均exit0，569005568字节bundle已上传103。新双锁PID1102807从baseline/可读DBbackup/108旧资产hash持有；严格核对旧13预览CID/无Nginx引用/无建立连接/Worker0后只stop保留容器/镜像/媒体/DB，可用内存恢复3765MiB，再取切流前基线。新13035/36/37只回环、Worker0、原配置/媒体共用、NAUMI_AGENT_LEGACY_ORIGIN指向仍运行旧c05；健康/实际1791944411及native GET4API×3槽200JSON shape通过，原公开b243/1791913676没变，core/Worker仍c05。
+
+真实secret-only GET drain-status401“请先登录”来自中间件，不是secret错：当时带原生admin Cookie+secret读取成功。新增精确GET /api/video/worker/drain-status Workersecret分支，其他路径/方法/错误secret仍原用户feature gate；单元与TypeScript通过，需重建，不将此前带cookie读通当secret-only已通。
+
+真实只读排空计数imageJobs6，全部pending/已过期/明确guard导入历史6（当前NAUMI_STAGING_HISTORY_GUARD1，environment staging）。它们保持原lease/status，旧/新恢复scanner本来就排除这些复制历史，不是当前正在跑的执行者。状态查询现复用同一excludeImportedHistory谓词，返回quarantinedHistoryFences另列而不删/清/重跑；普通过期但非隔离fence仍阻止drain，imagegen新批次无history exception。新增真实独立临时PostgreSQL DATABASE测试，含真的naumi_staging_guard.origin_rows、原guard实现/导入和非导入计数、旧lease不改、新批次不免除，DB回收只自己的随机库；现有业务fixture不更改。
+
+148三槽是上一阶段真实兼容证据，以上middleware/历史修正尚未编入，不能作为最终候选执行生产drain/cutover。main在build后进入37e6895，仅同事图像能力交付文档，已普通整合c17a6c6，源码和148产品一致；新fix需新固定SHA构建。模块20达到3次功能计数后fetch/整合最新main归零，生产发布计数0。下一轮优先新最终候选及真实secret-only status，而非用旧148赶上线。全scope70仍active，原生平移32.44/代理冷79.7历史证据不扩大。
