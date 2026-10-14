@@ -268,3 +268,10 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 本轮只读刷新103运行状态：公开版本已由其他任务更新为3bbebee2cfe31e884268c539373b81afff263207 / 1791956188；UI/desktop/enterprise运行新的admin-probe去除版本，核心App/Worker仍c05a923；两把部署锁当前无持有者。磁盘79%/约25GiB可用，swap1446/1450MiB，available2511MiB。此前b243公网版本记录现为历史，之后若发布必须基于新网关/配置/版本刷新，不覆盖同事的新版本。本轮未持锁、未改变103配置/服务/数据。
 
 集中验证及固定构建进行中：hover属性状态机、层级保护、dock几何、媒体权限缓存及完整类型；原生浏览器同条件pan/zoom、完整213/154/191/94场景和直连R2仍未验证，目标active。首测试移除属性次数预期写错（4而非5）已修正为实际状态转换次数，不作为产品或性能通过证据。
+
+
+模块25收尾：固定82e487c的普通PROBE0 Linux构建exit0，实验入口4333（不替换用户4331更名预览），实际样式文件确有data-canvas-edge-hover保护且不含全图:hover关系选择器，原边hover高亮保留。11API/全部保存字段/目标213节点数据/153原图字节/有效foreign和匿名鉴权/drain通过；这不是DOM或性能验收。同一probe文件、buildVersion1791972282、DB/mediaRO/1.5CPU/768MiB的baseline91c3和candidate82两份PROBE1固定Linux构建均exit0，在4430/4431就绪，没有新的原生耗时结果。
+
+构建期间main新增634b895默认亮色且保留saved dark/light，已普通合入26c6875并push，7个真实初始化场景及完整类型通过；实验82与基线91仍是同控制机制对照，不能作为包含最新main的正式候选发布。后续release必须刷新同事进度并固定构建新来源，不用旧82/2f槽覆盖新的3bb公网版本。主动同步后功能计数归零，公开性能发布0。
+
+四件源码事务本轮为增量模块25：82相对91的6字段，原完整34字段包保留在transaction25-previous-artifacts。BASELINE/MODIFIED/独立ROLLBACK均exit0；三者授权24个重复引用仍1次字节下载（保留先前内容复用），独立副本6SHA原样恢复原CSS关系保护，保留既有cache/Worker/Agent/参考工作台。MODIFIED ZIP保持改变，ROLLBACK.sh可执行。原生浏览器全场景/hover层级/选择剪断撤销/项目切换及同动作3轮耗时、直连R2与实际连续发布/线上回滚仍未完成，目标active。命令、输入、字面输出、退出状态和当前网关只读记录均在VERIFICATION.txt及module25相关JSON/log。
