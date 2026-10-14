@@ -7,3 +7,6 @@
 保持batchshot权限ID、slug、/batchshot及/desktop/batchshot路由、工作台重定向地址、工具费用、描述、图标、参数、队列、存储和鉴权不变。首页“一次配置，批量出图”是能力描述，不是工具名，不改成不通顺的标题。
 
 独立分支codex/reference-workbench-label-20261014从当前main4b2ba13开始，不合入尚未验收的画布性能代码。先完成改名模块集中验证，再将名称提交合入现有本地性能预览并固定构建；本地4331预览和103公开上线分别记录，不以源码或构建通过声称生产已更新。
+
+
+验收结果：label-only提交f7bf6e1已推送独立分支，5字段源码事务BASELINE/MODIFIED/ROLLBACK均exit0，独立副本回滚恢复全部原SHA及旧名称，修改包保持更名。改名提交合入当前性能预览形成91c3a15，同时保留同事最新main4b2ba13；固定PROBE0 Linux构建exit0。新版在4332旁路实际就绪后更新本地4331，旧f964容器保持停止并保留，账号/数据库/媒体挂载/Worker0不变。实际HTTP首页/工具页/工作台返回200，所加载JS含参考工作台；/batchshot返回307并保留47重定向，HTMLmetadata含新标题；账号作品290、节点设置154保持。未改103、未持部署锁、未合main；不把性能预览作为仅改名的生产候选。完整证据及四件产物在E:/Workspace/naumi/output/reference-workbench-label-20261014，VERIFICATION.txt记录实际命令/输入/输出/退出值。
