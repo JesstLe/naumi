@@ -1,5 +1,21 @@
 # 画布视频上游实操对照
 
+## IC多镜头、运动控制及Omni元素实操补证
+
+固定IC虚构账号的本地渠道改名“隔离KIE参考（无密钥）”、地址127.0.0.1:15375，仅手工登记固定源码定义的kling-3.0/video、kling-3.0-omni/reference-to-video及kling-2.6/motion-control。密钥保持空，没有拉取模型目录或发送生成请求；只能证明真实UI及保存能力，不能称原生供应商接口调用。本轮不使用Naumi配置或凭据。
+
+实际新增两份原创完整文字节点，分别保留0—6秒与6—12秒、动作和逐字台词。由画布参考选择实际连接到视频，开启多镜头、新增第二镜头、各6秒，并分别选入真实正文；刷新重新打开设置，顺序/秒数/正文保持。kling-multishot-linked/restored-dom.txt与截图、正式项目回读中的klingMultiPrompt/textNodeId证明实际关联。此前comparison V09把来源写为TF，与批准设计的IC来源不一致，本批修正为实际操作的固定IC。
+
+浏览器文件上传能力受限后，经本地上游正式POST canvas/projects接口准备4份本任务原创媒体：first.png、last.png、4秒有声MP4、8秒WAV。导入前对每份原始文件校验manifest SHA，保留原节点/连线，prepared-original-media.json记录准备方式与SHA。这是测试素材准备，不是浏览器上传通过；没有生成或覆盖原素材。第一次updatedAt误传数字，被上游“画布项目数据无效”拒绝且没有写入，修正为正式ISO字符串后保存成功。刷新浏览器实际显示8个节点及媒体预览。
+
+运动模型实际选择角色朝向“视频”，将真实图片与运动视频连入输入，项目回读为last.png和landscape-4-audio.mp4，以保存的真实来源ID为准，不冒充first.png。motion-bound-project.json和orientation截图/DOM记录参数与绑定；未执行运动生成或完整边界测试。
+
+切到Omni reference-to-video，实际填写元素名称“甲”和完整描述，并选择同一元素中的原创图片last.png及4秒视频；素材计数为2、两项显示已选。刷新后名称/描述/nodeIds、正文/两镜头/时长与4条连线保持，omni-element-bound/restored-project.json、对应DOM/截图及advanced-settings-reload-result.json证明。音频元素、其他Omni分支及数量边界仍待比对。
+
+两图片导入后由上游缓存转换成Blob地址，刷新只有这两个临时地址变化，图片节点ID/缓存storageKey、位置/规格和预览保持。最初整对象相等检查因此失败，随后明确按缓存语义核对稳定字段；不是删除其他差异来伪造通过。Chrome downloadMedia明确不支持Blob下载，未取得刷新后图字节证据；只对视频/音频实际base64原字节SHA再次核对通过。上游素材回读辅助脚本在忽略目录reference/capture-local-ic-project.mjs，认证只由环境传入、输出不含秘密。源图片的刷新后字节相等尚未验收，不写为通过。
+
+V05/V09/V10/V11更新为partial-observation；V12/V13完整上游策略对照、其他剩余行及固定交付仍未闭合。本批没有SSH、部署锁、103发布或维护计数增加。
+
 ## 固定上游高级设置、权限与历史补证（仍未完成全矩阵）
 
 本批恢复独立loopback参考服务，固定源码版本不变。IC15372/15373、TF3000/15374及MCP10588均仅本机监听；使用原独立数据库与工作区。IC旧管理员测试口令未确认，未重置原账号；另建虚构普通账号，仅本地参考用，无正式供应商凭据。浏览器新建IC测试画布LFBjXJ6x42wjdblNhPHZr，保留原文12秒视频节点。

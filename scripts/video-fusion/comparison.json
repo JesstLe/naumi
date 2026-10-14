@@ -134,12 +134,19 @@
     {
       "capabilityId": "V05",
       "name": "模型及渠道能力变化",
-      "status": "not-observed",
-      "upstream": "Toonflow-pinned",
-      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
-      "steps": [],
-      "result": "尚未完成此项固定上游浏览器实操",
-      "evidence": [],
+      "status": "partial-observation",
+      "upstream": "infinite-canvas-pinned",
+      "observedVersion": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
+      "steps": [
+        "在固定IC虚构普通账号、本机空密钥渠道手工登记3个源码定义模型",
+        "实际选择Kling3、运动控制及Omni分支，未请求模型目录或付费生成"
+      ],
+      "result": "模型切换确实开放相应多镜头/元素/角色朝向控件；只是无密钥UI对照，不是上游原生请求或未知能力/加载错误全项验收。",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/kling-multishot-restored-dom.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/kling-motion-orientation-video-dom.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/omni-element-restored-dom.txt"
+      ],
       "naumiEvidencePrefixes": [],
       "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
     },
@@ -221,36 +228,65 @@
     {
       "capabilityId": "V09",
       "name": "多镜头",
-      "status": "not-observed",
-      "upstream": "Toonflow-pinned",
-      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
-      "steps": [],
-      "result": "尚未完成此项固定上游浏览器实操",
-      "evidence": [],
+      "status": "partial-observation",
+      "upstream": "infinite-canvas-pinned",
+      "observedVersion": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
+      "steps": [
+        "新增2份完整可编辑正文，实际从参考选择模式连接到视频",
+        "开启多镜头，新增第二分镜，各6秒合12秒，分别选择真实正文",
+        "刷新并重选节点检查分镜顺序、秒数与正文"
+      ],
+      "result": "固定IC两镜头正式文字/顺序/6+6秒/刷新通过；模型Kling3，仅UI编辑与正式来源，无付费生成。原对照标为Toonflow不准确，本行改为实际IC来源。",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/kling-multishot-linked-dom.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/kling-multishot-restored-dom.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/screenshots/kling-multishot-restored.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/advanced-settings-reload-result.json"
+      ],
       "naumiEvidencePrefixes": [],
       "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
     },
     {
       "capabilityId": "V10",
       "name": "元素与Omni",
-      "status": "not-observed",
-      "upstream": "Toonflow-pinned",
-      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
-      "steps": [],
-      "result": "尚未完成此项固定上游浏览器实操",
-      "evidence": [],
+      "status": "partial-observation",
+      "upstream": "infinite-canvas-pinned",
+      "observedVersion": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
+      "steps": [
+        "实际填写元素甲及完整描述",
+        "把准备的原创图片和4秒视频实际接入输入，再选择为同一Omni元素的2项素材",
+        "刷新核对元素名称/描述/素材ID、源媒体与连线"
+      ],
+      "result": "固定IC Omni reference-to-video元素两类型绑定与持久恢复通过。音频元素、其他Omni分支及数量边界尚未实操，未调用生成。视频/音频原SHA保持；两张图的ID/缓存Key/预览保持，Chrome无法Blob下载，刷新后图字节未验。",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/omni-element-image-video-bound-dom.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/omni-element-restored-dom.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/screenshots/omni-element-image-video-bound.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/screenshots/omni-element-restored.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/omni-element-bound-project.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/omni-element-restored-project.json",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/advanced-settings-reload-result.json"
+      ],
       "naumiEvidencePrefixes": [],
       "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
     },
     {
       "capabilityId": "V11",
       "name": "运动控制",
-      "status": "not-observed",
-      "upstream": "Toonflow-pinned",
-      "observedVersion": "ae9e5f1ac4f37713b902fed7fa5ca87819b324ae",
-      "steps": [],
-      "result": "尚未完成此项固定上游浏览器实操",
-      "evidence": [],
+      "status": "partial-observation",
+      "upstream": "infinite-canvas-pinned",
+      "observedVersion": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
+      "steps": [
+        "实际切到kling-2.6/motion-control",
+        "打开角色朝向，实际选择视频",
+        "连接真实原创图片last.png和landscape-4-audio.mp4，正式项目接口核对身份/参数"
+      ],
+      "result": "固定IC角色朝向video及真实图+运动视频来源已保存；未发送上游请求，运动质量/边界与所有规格仍未实操。选中图实际为last.png，以保存的素材ID为准。",
+      "evidence": [
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/kling-motion-orientation-video-dom.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/screenshots/kling-motion-orientation-video.png",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/motion-bound-project.json"
+      ],
       "naumiEvidencePrefixes": [],
       "limitation": "本记录仅上游实操对照；不代替Naumi完整34项应用E2E或真实视频API质量验收"
     },
@@ -467,6 +503,11 @@
       "observedAt": "2026-10-14",
       "surface": "Chrome extension local file chooser",
       "result": "File chooser opened; setFiles rejected because file URL access is disabled. No extension permission change. Earlier original-media upload evidence retained within its original scope; this new browser upload not passed."
+    },
+    {
+      "observedAt": "2026-10-14",
+      "surface": "Chrome extension Blob media export",
+      "result": "downloadMedia rejects Blob downloads. Imported images render and stable cache keys remain after reload; post-hydration byte equality not claimed. Original preparation SHA and video/audio post-reload SHA retained."
     }
   ]
 }
