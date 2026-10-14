@@ -32,6 +32,8 @@ FLEET_INSTANCE_TOKEN=ONE_TIME_INSTANCE_TOKEN
 当前103的IP入口呈现Cloudflare Origin证书（DNS SAN naumi.top/www.naumi.top），不是普通浏览器可信IP证书。连接器不能将IP放入URL后关闭验证。管理员可配置`FLEET_CENTRAL_URL=https://naumi.top`、`FLEET_CENTRAL_RESOLVE_IP=103.30.76.93`及官方Cloudflare Origin根CA文件`FLEET_CENTRAL_CA_FILE`，将该域名直连固定源站而仍校验SNI/hostname/CA。只对4条固定fleet POST生效，拒绝重定向、元数据地址或任意请求；不会修改全站、系统根或Cloudflare安全规则。CA来自管理员验证的官方来源，不下载/信任对端自报证书，配置异常不fail-open。
 运行`node dist/fleet/preflight.js`预检，不发送实例token或cookie。exit0才表示真实version200+匿名fleet400/401 JSON且TLS成立，exit2表示仍未就绪，exit1表示TLS/格式异常。2026-10-14实际103私有PKI TLS已验证，但fleet poll仍404，未部署中央API。正式使用前仍须补旁路受限路由、管理页及原生管理员/企业连接器验收。详情`docs/changes/2026-10-14-fleet-onboarding.md`。
 
+2026-10-15已在103回环13062准备固定ef08d3d / 1791994700中央sidecar，384MiB/0.5CPU/非root只读根fs，原网站/Worker/网关不变，公网管理路由仍未切。独立`/fleet-assets` namespace和`FLEET_PORTAL_ONLY=1`阻断所有生图/Agent/普通业务入口；业务schema只读核验、fleet自身加法表另初始化，不触发主线全业务DDL。实际28,686,985字节PG备份可读，两锁已释放；旧管理员登录资料401，真实管理员验收pending、47 NAS与生产连接器/20:00timer未启用。详情`docs/changes/2026-10-14-fleet-portal.md`，勿将私有准备当公网部署完成。
+
 ## 47接入前门槛
 1. 47 Naumi独立应用及数据库就绪，不覆盖既有reference-workbench；NAS配置和网络已验证。
 2. 103可信HTTPS中央入口就绪；运行实例登记/凭据通过受保护通道交付，不保存到作品或浏览器持久缓存。
