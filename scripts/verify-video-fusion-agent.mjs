@@ -46,8 +46,21 @@ export async function runVideoAgentBrowser(h,{anchorId,projectKey,evidence,getCh
       await page.goto(`${h.baseUrl}/canvas?node=${node.id}`,{waitUntil:"domcontentloaded"});const dialog=await openVideoSettings(page,node.id);assert.equal(await dialog.getByLabel("视频描述",{exact:true}).inputValue(),index===0?"甲：浏览器第一镜头完整对白。":"乙：浏览器第二镜头完整对白。");await page.keyboard.press("Escape");
     }
     assert.equal((await h.request("a","POST","/api/canvas/video-workflows",{id:chain.operation_id,projectKey,nodes:chain.nodes})).status,202);assert.equal(await h.dbCount("app_video_tasks"),2);assert.equal(h.supplierCalls().filter(call=>call.phase==="create").length,2);
-    await page.screenshot({path:`${evidence}/agent-restored.png`,fullPage:false});assert.deepEqual(errors,[]);
-    return {actualChromeAgentComposer:true,actualPiStreamingAndToolActivity:true,editableStoryboardMountedInOriginalProject:true,modelSelfConfirmationBlockedBeforeHumanClick:true,humanConfirmedThroughComposer:true,pageClosedAfterDurableAcceptance:true,actualAppRestart:true,workerCompletedDependentStages:true,restoredBrowserConversationAndOriginalNodeVideos:true,fullEditableDialoguePreserved:true,replayNoDuplicateTasksOrVideoCreates:true,browserErrors:errors};
+    await page.screenshot({path:`${evidence}/agent-restored.png`,fullPage:false});
+    const protectionViewports=[];
+    for(const viewport of [{width:1366,height:768},{width:1600,height:1000},{width:390,height:844}]){
+      await page.setViewportSize(viewport);
+      panel=page.getByTestId("canvas-assistant-panel");if(!await panel.isVisible())await page.getByTestId("canvas-agent-toggle").click();await panel.waitFor();
+      await expect(panel.getByTestId("canvas-assistant-model")).toContainText("Fixture Agent");
+      await expect(panel.getByTestId("canvas-assistant-input")).toBeVisible();
+      await expect(panel.getByRole("button",{name:"发送消息",exact:true})).toBeVisible();
+      const box=await panel.boundingBox();assert.ok(box&&box.x>=-1&&box.y>=-1&&box.x+box.width<=viewport.width+1&&box.y+box.height<=viewport.height+1,`Agent panel exceeds ${viewport.width}x${viewport.height}: ${JSON.stringify(box)}`);
+      await expect(page.getByTestId("canvas-video-node")).toHaveCount(3);
+      assert.equal(await h.dbCount("app_video_tasks"),2);assert.equal(h.supplierCalls().filter(call=>call.phase==="create").length,2);
+      await page.screenshot({path:`${evidence}/agent-protection-${viewport.width}x${viewport.height}.png`,fullPage:false});protectionViewports.push(viewport);
+    }
+    assert.deepEqual(errors,[]);
+    return {actualChromeAgentComposer:true,actualPiStreamingAndToolActivity:true,editableStoryboardMountedInOriginalProject:true,modelSelfConfirmationBlockedBeforeHumanClick:true,humanConfirmedThroughComposer:true,pageClosedAfterDurableAcceptance:true,actualAppRestart:true,workerCompletedDependentStages:true,restoredBrowserConversationAndOriginalNodeVideos:true,fullEditableDialoguePreserved:true,replayNoDuplicateTasksOrVideoCreates:true,protectionViewports,agentPanelAndControlsWithinViewport:true,browserErrors:errors};
   }catch(error){if(!page.isClosed())await page.screenshot({path:`${evidence}/failure.png`,fullPage:false}).catch(()=>{});throw error;}
   finally{releaseReply();await context.close();await browser.close();}
 }

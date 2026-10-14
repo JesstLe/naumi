@@ -1,17 +1,18 @@
 import {authHeader} from "../supabase";
 
 declare global {interface Window {NaumiWorkbenchStorage:Pick<Storage,"getItem"|"setItem"|"removeItem">;NaumiWorkbenchReady:Promise<void>;NaumiWorkbenchModels:(select:HTMLSelectElement)=>void;}}
-const base="/api/reference-workbench/",original=window.fetch.bind(window),blobUrls=new Map<string,string>(),blobLoading=new Map<string,Promise<string>>();
+const desktop=location.pathname.startsWith("/desktop/batchshot/native/"),canonicalBase="/api/reference-workbench/",base=(desktop?"/desktop":"")+canonicalBase,original=window.fetch.bind(window),blobUrls=new Map<string,string>(),blobLoading=new Map<string,Promise<string>>();
+function scopedUrl(input:RequestInfo|URL){const target=new URL(typeof input==="string"?input:input instanceof Request?input.url:input.toString(),location.href);if(desktop&&target.origin===location.origin&&target.pathname.startsWith("/api/"))target.pathname="/desktop"+target.pathname;return target;}
 let sessionIdentity="";
 async function nativeFetch(input:RequestInfo|URL,init?:RequestInit){
- const target=new URL(typeof input==="string"?input:input instanceof Request?input.url:input.toString(),location.href);
+ const target=scopedUrl(input);
  if(target.origin!==location.origin)return original(input,init);
  const headers=new Headers(input instanceof Request?input.headers:undefined);for(const [key,value] of new Headers(init?.headers))headers.set(key,value);
  for(const [key,value] of Object.entries(await authHeader()))headers.set(key,value);
- return original(input,{...init,headers,credentials:"same-origin"});
+ return original(input instanceof Request?new Request(target.href,input):target.href,{...init,headers,credentials:"same-origin"});
 }
 window.fetch=async(input,init)=>{
- const url=new URL(typeof input==="string"?input:input instanceof Request?input.url:input.toString(),location.href);
+ const url=scopedUrl(input);
  if(url.origin!==location.origin||!url.pathname.startsWith(base))return nativeFetch(input,init);
  const action=url.pathname.slice(base.length),paid=["workbench/start","workbench/infer-prompts","workbench/edit","single/start","chat-image/send","chat-image/confirm"];
  if(init?.method==="POST"&&paid.includes(action)){
@@ -33,7 +34,7 @@ window.fetch=async(input,init)=>{
  return response;
 };
 async function privateBlob(source:string){
- const target=new URL(source,location.href);if(target.origin!==location.origin||target.pathname!==base+"image")return source;
+ const target=scopedUrl(source);if(target.origin!==location.origin||target.pathname!==base+"image")return source;
  target.searchParams.delete("t");target.searchParams.delete("download");const key=target.toString();if(blobUrls.has(key))return blobUrls.get(key)!;
  if(blobLoading.has(key))return blobLoading.get(key)!;
  const job=(async()=>{const response=await nativeFetch(target);if(!response.ok)throw Error("图片读取失败");const url=URL.createObjectURL(await response.blob());blobUrls.set(key,url);return url;})().finally(()=>blobLoading.delete(key));blobLoading.set(key,job);return job;
@@ -45,9 +46,10 @@ window.NaumiWorkbenchReady=(async()=>{
  const prefix="naumi-reference:"+auth.id+":";window.NaumiWorkbenchStorage={getItem:k=>localStorage.getItem(prefix+k),setItem:(k,v)=>localStorage.setItem(prefix+k,v),removeItem:k=>localStorage.removeItem(prefix+k)};
  const choices=await nativeFetch(base+"settings").then(r=>r.json());
  window.NaumiWorkbenchModels=model=>{model.innerHTML="";model.add(new Option("服务器自动分配",""));for(const m of choices.models||[])model.add(new Option(m.label,m.id));model.disabled=false;model.value=window.NaumiWorkbenchStorage.getItem("native-model")||"";if(!model.dataset.nativeModels){model.dataset.nativeModels="1";model.addEventListener("change",()=>window.NaumiWorkbenchStorage.setItem("native-model",model.value));}};
- const patchImage=(node:Element)=>{if(!(node instanceof HTMLImageElement))return;const src=node.getAttribute("src");if(!src||!src.startsWith(base+"image"))return;privateBlob(src).then(blob=>{if(node.getAttribute("src")===src)node.src=blob;}).catch(()=>{});};
+ const patchImage=(node:Element)=>{if(!(node instanceof HTMLImageElement))return;const src=node.getAttribute("src");if(!src||![base+"image",canonicalBase+"image"].some(prefix=>src.startsWith(prefix)))return;privateBlob(src).then(blob=>{if(node.getAttribute("src")===src)node.src=blob;}).catch(()=>{});};
  const observer=new MutationObserver(changes=>{for(const change of changes){if(change.type==="attributes")patchImage(change.target as Element);else for(const node of change.addedNodes)if(node instanceof Element){patchImage(node);node.querySelectorAll("img").forEach(patchImage);}}});observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:["src"]});
- document.querySelectorAll<HTMLAnchorElement>(".lanLinkBox button").forEach(button=>button.setAttribute("onclick","copyLanLink(location.origin+'/batchshot')"));const link=document.querySelector(".lanLinkText");if(link)link.textContent="本站链接："+location.origin+"/batchshot";
+ const entryPath=desktop?"/desktop/batchshot":"/batchshot";
+ document.querySelectorAll<HTMLAnchorElement>(".lanLinkBox button").forEach(button=>button.setAttribute("onclick",`copyLanLink(${JSON.stringify(location.origin+entryPath)})`));const link=document.querySelector(".lanLinkText");if(link)link.textContent="本站链接："+location.origin+entryPath;
  for(const old of Array.from(document.querySelectorAll<HTMLScriptElement>('script[type="text/naumi-workbench"]'))){const script=document.createElement("script");if(old.src){script.src=old.src;await new Promise<void>((resolve,reject)=>{script.onload=()=>resolve();script.onerror=()=>reject(Error("工作台脚本读取失败"));document.body.append(script);});}else{script.textContent=old.textContent;document.body.append(script);}old.remove();}
  // Preserve original download controls while attaching native bearer auth.
  (window as any).downloadImageUrl=async(source:string)=>{try{const url=await privateBlob(source),a=document.createElement("a");a.href=url;a.download="原图.png";a.click();}catch(e){alert(String(e));}};

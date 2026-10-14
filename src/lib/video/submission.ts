@@ -17,7 +17,8 @@ import {videoReferenceSchema} from "./references";
 import {authorizeVideoReferences,materializeVideoReferences} from "./reference-materialization";
 import {configuredVideoProviders,getVideoProviderConfig,publicProviderSnapshot} from "./providers/config";
 import {getVideoProvider} from "./providers/adapter";
-import {buildVideoCreate} from "./providers/wire";
+import {buildVideoCreate,rejectAdvanced,selectWireOptions} from "./providers/wire";
+import {GEMINI_WIRE_OPTIONS} from "./providers/protocols/gemini";
 import {encryptAtRest} from "../settings";
 import type {VideoGenerationRequest} from "./types";
 import type {CreateVideoInput} from "./service";
@@ -76,6 +77,9 @@ export async function createValidatedVideo(email:string,input:CreateVideoInput,h
     const submission=await materializeVideoReferences(email,request,{multipart,inlineImages});
     const validation=providerConfig.videoProfile==="comfyui"||providerConfig.videoProfile==="runninghub"?{...submission,references:submission.references.map(ref=>({...ref,submissionName:ref.storageKey}))}:submission;
     buildVideoCreate({provider:providerConfig,profile:providerConfig.videoProfile,request:validation});
+  }else if(providerConfig.protocol==="gemini"){
+    const context={provider:providerConfig,profile:"gemini" as const,request};
+    rejectAdvanced(context);selectWireOptions(context,GEMINI_WIRE_OPTIONS);
   }
   const billingQuote=await quoteForActor(email,{feature:"video.generate",quantity:1,modelId,providerId,resolution:request.resolution});
   assertQuotedVersion(input.billingConfirmation||{},billingQuote);

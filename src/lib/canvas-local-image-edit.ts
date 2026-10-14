@@ -29,8 +29,9 @@ export async function editCanvasPixels(bytes: Buffer, crop?: CanvasCrop) {
 }
 
 /** Local pixel edit creates an immutable, linked version. No model or credit calls. */
-export async function saveCanvasLocalEdit(email: string, value: z.infer<typeof localEditSchema>, requestUrl: string, replacement?: Buffer) {
+export async function saveCanvasLocalEdit(email: string, value: z.infer<typeof localEditSchema>, requestUrl: string, replacement?: Buffer, provenance?: {entry:"agent"|"canvas"|"workbench"}) {
   const input = localEditSchema.parse(value);
+  const entry=provenance?.entry||"canvas",canvasEntry=entry==="canvas";
   await ensureCanvasSettingsSchema();
   const source = (await listArtworksByIds(email, [input.id]))[0];
   if (!source || source.videoUrl || !source.image) throw new Error("图片不存在或无权编辑");
@@ -65,10 +66,10 @@ export async function saveCanvasLocalEdit(email: string, value: z.infer<typeof l
     const title=`${source.title} · ${input.mode === "crop" ? "裁剪" : input.mode==="process"?"图像处理":"替换"}`.slice(0,80);
     await client.query(`INSERT INTO app_artworks(id,email,title,category,prompt,status,image_url,gradient,parent_id,parent_ids,group_id,
       source_url,origin,image_width,image_height,canvas_width,canvas_height,canvas_x,canvas_y,creation_provenance)
-      VALUES($1,$2,$3,$4,$5,'completed',$6,$7,$8,'[]'::jsonb,$9,'canvas-local-edit','canvas',$10,$11,$12,$13,$14,$15,$16::jsonb)`,
-      [id,email,title,source.category,source.prompt,image,source.gradient,source.id,row.group_id || source.id,edited.width,edited.height,
-        size.width,size.height,(source.canvasX || 0)+40,(source.canvasY || 0)+(source.canvasHeight || size.height)+48,
-        JSON.stringify({version:1,operation:`canvas-${input.mode}`,entry:"canvas",ref:input.operationId,sourceArtworkId:source.id,evidence:"server-route",...(input.mode==="process"?{output:input.output,mime,transparentPixels,totalPixels}:{})})]);
+      VALUES($1,$2,$3,$4,$5,'completed',$6,$7,$8,'[]'::jsonb,$9,$17,$18,$10,$11,$12,$13,$14,$15,$16::jsonb)`,
+      [id,email,title,source.category,source.prompt,image,source.gradient,source.id,canvasEntry?row.group_id || source.id:id,edited.width,edited.height,
+        size.width,size.height,canvasEntry?(source.canvasX || 0)+40:null,canvasEntry?(source.canvasY || 0)+(source.canvasHeight || size.height)+48:null,
+        JSON.stringify({version:1,operation:`${canvasEntry?"canvas":"imagegen"}-${input.mode}`,entry,ref:input.operationId,sourceArtworkId:source.id,evidence:"server-route",...(input.mode==="process"?{output:input.output,mime,transparentPixels,totalPixels}:{})}),canvasEntry?"canvas-local-edit":"imagegen-postprocess",entry]);
     await client.query("INSERT INTO app_canvas_local_edits(email,operation_id,fingerprint,artwork_id) VALUES($1,$2,$3,$4)",[email,input.operationId,fingerprint,id]);
     await client.query("COMMIT");
     return { id, image, width: edited.width, height: edited.height,mime,transparentPixels,totalPixels };

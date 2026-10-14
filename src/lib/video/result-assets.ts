@@ -26,7 +26,7 @@ function sourceIdentity(url:string){
 function sourcesFrom(result:VideoProviderPollResult):Source[]{
   const sources:Source[]=(result.resultAssets||[]).map((asset,index)=>({kind:asset.kind,url:asset.url,identity:sourceIdentity(asset.url),sourceIndex:index}));
   if(result.inlineResult)sources.unshift({kind:"video",identity:hash(result.inlineResult.base64),sourceIndex:-1,inline:true});
-  else if(result.resultUrl&&!sources.some(source=>source.kind==="video"&&source.url===result.resultUrl))sources.unshift({kind:"video",url:result.resultUrl,identity:sourceIdentity(result.resultUrl),sourceIndex:-1});
+  else if(result.resultUrl&&(result.resultAssetsExcludePrimary===true||!sources.some(source=>source.kind==="video"&&source.url===result.resultUrl)))sources.unshift({kind:"video",url:result.resultUrl,identity:sourceIdentity(result.resultUrl),sourceIndex:-1});
   if(!sources.length)sources.push({kind:"video",identity:"native-content-endpoint",sourceIndex:0});
   const firstVideo=sources.findIndex(source=>source.kind==="video");if(firstVideo<0)throw new Error("视频任务没有视频产物");
   if(firstVideo>0)sources.unshift(...sources.splice(firstVideo,1));
@@ -38,7 +38,17 @@ async function beginManifest(task:OwnedVideoTask,sources:Source[]):Promise<Manif
     if(!row||!["processing","queued"].includes(row.status))throw new Error("视频任务已结束，不能修改产物");
     const old=row.parameters.resultAssetManifest as Manifest|undefined;
     const entries=sources.map(({kind,identity,sourceIndex})=>({kind,identity,sourceIndex}));
-    if(old){if(old.version!==1||JSON.stringify(old.entries.map(({kind,identity,sourceIndex})=>({kind,identity,sourceIndex})))!==JSON.stringify(entries))throw new Error("上游产物清单改变，需要核对原产物");await tx.query("COMMIT");return old;}
+    if(old){
+      const oldEntries=old.entries.map(({kind,identity,sourceIndex})=>({kind,identity,sourceIndex}));
+      // Legacy Gemini decoded only its primary. Append newly decoded outputs only
+      // when this task's frozen profile and original primary identity both match.
+      const frozenProfile=task.providerSnapshot?.videoProfile,geminiProfile=frozenProfile==="gemini"||((frozenProfile===undefined||frozenProfile==="")&&task.providerSnapshot?.protocol==="gemini");
+      if(old.version===1&&geminiProfile&&oldEntries.length===1&&entries.length>1&&oldEntries[0].kind==="video"&&oldEntries[0].sourceIndex===-1&&JSON.stringify(oldEntries[0])===JSON.stringify(entries[0])){
+        const expanded:Manifest={...old,entries:[old.entries[0],...entries.slice(1)]};
+        await tx.query("UPDATE app_video_tasks SET parameters=jsonb_set(parameters,'{resultAssetManifest}',$3::jsonb),updated_at=now() WHERE email=$1 AND id=$2",[task.email,task.id,JSON.stringify(expanded)]);await tx.query("COMMIT");return expanded;
+      }
+      if(old.version!==1||JSON.stringify(oldEntries)!==JSON.stringify(entries))throw new Error("上游产物清单改变，需要核对原产物");await tx.query("COMMIT");return old;
+    }
     const manifest:Manifest={version:1,entries};await tx.query("UPDATE app_video_tasks SET parameters=jsonb_set(parameters,'{resultAssetManifest}',$3::jsonb),updated_at=now() WHERE email=$1 AND id=$2",[task.email,task.id,JSON.stringify(manifest)]);await tx.query("COMMIT");return manifest;
   }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
 }

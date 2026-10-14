@@ -16,9 +16,10 @@ export function adaptSource(source:string){
   .replaceAll("localStorage.","window.NaumiWorkbenchStorage.")
   .replaceAll("reference-workbench-history-v1-","naumi-reference-workbench-history-v1-");
 }
-export async function renderWorkbench(view:string){
+export async function renderWorkbench(view:string,desktop=false){
  if(!["workbench","single","chat-image"].includes(view))return null;
  let raw=await readFile(path.join(process.cwd(),"public","reference-workbench",`${view}.html`),"utf8");
+ if(desktop)raw=raw.replaceAll("/api/reference-workbench/","/desktop/api/reference-workbench/").replaceAll("/batchshot/native/","/desktop/batchshot/native/");
  // The original single/chat documents omit optional head/body tags. Add their
  // explicit equivalent before inserting the native bootstrap (no layout change).
  if(!raw.includes("</head>")){raw=raw.replace(/(<html[^>]*>)/,"$1<head>").replace("<header ","</head><body><header ");if(!raw.includes("</body>"))raw+="</body></html>";}

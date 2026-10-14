@@ -32,7 +32,8 @@ function privateChild(args:string[],env:NodeJS.ProcessEnv):Promise<string>{retur
 });}
 
 /** Uses real Naumi HTTP and Worker processes; only upstream services are simulated. */
-export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;routerBinary?:string;videoProfile?:VideoWireProfile;videoDefinition?:VideoModelDefinition;extraVideoModels?:Array<{id:string;definition:VideoModelDefinition}>;fullWorkflow?:boolean;uiModels?:boolean;referenceModels?:boolean;validateWire?:(call:unknown)=>void|Promise<void>;validatePoll?:(call:unknown)=>void|Promise<void>;agentReply?:(request:any)=>any|Promise<any>}={}) {
+export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;routerBinary?:string;videoProfile?:VideoWireProfile;legacyGemini?:boolean;videoDefinition?:VideoModelDefinition;extraVideoModels?:Array<{id:string;definition:VideoModelDefinition}>;fullWorkflow?:boolean;uiModels?:boolean;referenceModels?:boolean;validateWire?:(call:unknown)=>void|Promise<void>;validatePoll?:(call:unknown)=>void|Promise<void>;agentReply?:(request:any)=>any|Promise<any>}={}) {
+  if(options.legacyGemini&&options.videoProfile!=="gemini")throw new Error("Native legacy fixture is limited to Gemini");
   if(options.fullWorkflow&&!['autodl','runninghub'].includes(options.videoProfile||''))throw new Error("Full workflow fixture requires AutoDL or RunningHub");
   let databaseUrl=options.databaseUrl||process.env.VIDEO_FIXTURE_DATABASE_URL||process.env.DATABASE_URL||"";
   const routerBinary=options.routerBinary||process.env.VIDEO_FIXTURE_ROUTER_BINARY;
@@ -72,7 +73,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
     S3_ENDPOINT:supplier.origin+"/objects",S3_REGION:"us-east-1",S3_BUCKET:bucket,S3_FORCE_PATH_STYLE:"1",S3_ACCESS_KEY_ID:accessKeyId,S3_SECRET_ACCESS_KEY:secretAccessKey,
     NAUMI_VIDEO_WORKER:"0",VIDEO_WORKER_SECRET:workerSecret,NAUMI_APP_ORIGIN:baseUrl,INTERNAL_APP_ORIGIN:baseUrl,VIDEO_WORKER_INTERVAL_MS:"5000",
     MEDIA_WORKER_ORIGIN:mediaOrigin,MEDIA_WORKER_SECRET:mediaSecret,MEDIA_JOB_DIR:path.join(output,"media-jobs"),
-    MODEL_CONFIG_TRUSTED_ORIGINS:[supplier.origin,router.origin].join(","),VIDEO_FIXTURE_SUPPLIER_ORIGIN:supplier.origin,VIDEO_FIXTURE_VIDEO_PROFILE:options.videoProfile||"ark",VIDEO_FIXTURE_FULL_WORKFLOW:options.fullWorkflow?"1":"0",VIDEO_FIXTURE_VIDEO_DEFINITION:options.videoDefinition?JSON.stringify(options.videoDefinition):"",VIDEO_FIXTURE_EXTRA_VIDEO_MODELS:JSON.stringify(options.extraVideoModels||[]),
+    MODEL_CONFIG_TRUSTED_ORIGINS:[supplier.origin,router.origin].join(","),VIDEO_FIXTURE_SUPPLIER_ORIGIN:supplier.origin,VIDEO_FIXTURE_VIDEO_PROFILE:options.videoProfile||"ark",VIDEO_FIXTURE_LEGACY_GEMINI:options.legacyGemini?"1":"0",VIDEO_FIXTURE_FULL_WORKFLOW:options.fullWorkflow?"1":"0",VIDEO_FIXTURE_VIDEO_DEFINITION:options.videoDefinition?JSON.stringify(options.videoDefinition):"",VIDEO_FIXTURE_EXTRA_VIDEO_MODELS:JSON.stringify(options.extraVideoModels||[]),
     NAUMI_ROUTER_MANAGEMENT_URL:routerUrl,NAUMI_ROUTER_MANAGEMENT_TOKEN:routerToken,
     MODEL_CONFIG_ENVELOPE_SECRET:routerEnvelope,VIDEO_API_BASE_URL:supplier.origin+"/protocol/openai-videos/v1",VIDEO_API_KEY:supplier.token,VIDEO_API_MODEL:"fixture-video",
     OPENAI_BASE_URL:supplier.origin+"/protocol/image/v1",OPENAI_API_KEY:supplier.token,OPENAI_IMAGE_MODEL:"fixture-image"};
@@ -157,6 +158,14 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
       async checkNodeReservationRollback(account:Account,sourceTask:string){return JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/video-fusion/fixture-actions.ts","--node-reservation-failure"],{...env,VIDEO_FIXTURE_ACTION_ACTOR:seed.accounts[account],VIDEO_FIXTURE_ACTION_SOURCE:sourceTask})) as {rolledBack:boolean;attemptedTaskId:string};},
       async workflowFreezeState(account:Account,id:string){if(!/^[0-9a-f-]{36}$/i.test(id))throw new Error("Invalid fixture workflow ID");const row=(await sql.query("SELECT frozen_nodes_enc,input_digest FROM app_video_workflow_runs WHERE email=$1 AND id=$2",[seed.accounts[account],id])).rows[0];if(!row)throw new Error("Owned fixture workflow required");const parts=String(row.frozen_nodes_enc||"").split(".");return {encrypted:parts.length===3&&Buffer.from(parts[0],"base64").length===12&&Buffer.from(parts[1],"base64").length===16&&Buffer.from(parts[2],"base64").length>0,inputDigestSaved:/^[a-f0-9]{64}$/.test(row.input_digest||"")};},
       async taskPersistence(account:Account,id:string){return (await sql.query("SELECT status,parameters,video_references,capability_snapshot,cancellation_requested_at FROM app_video_tasks WHERE email=$1 AND id=$2",[seed.accounts[account],id])).rows[0];},
+      async simulateLegacyGeminiPrimaryManifest(account:Account,id:string){
+        if(!/^vid-[0-9a-f-]{36}$/.test(id))throw new Error("Invalid owned fixture task");
+        const tx=await sql.connect();try{await tx.query("BEGIN");const row=(await tx.query("SELECT parameters,provider_snapshot,status FROM app_video_tasks WHERE email=$1 AND id=$2 FOR UPDATE",[seed.accounts[account],id])).rows[0];const manifest=row?.parameters.resultAssetManifest;
+          const profile=row?.provider_snapshot.videoProfile,gemini=profile==="gemini"||((profile===undefined||profile==="")&&row?.provider_snapshot.protocol==="gemini");
+          if(!gemini||row.status!=="processing"||manifest?.version!==1||manifest.entries.length!==2||manifest.entries[0].sourceIndex!==-1||!manifest.entries[0].saved||manifest.entries[1].saved)throw new Error("Real saved Gemini primary and unsaved second output required");
+          const legacy={version:1,entries:[manifest.entries[0]]};await tx.query("UPDATE app_video_tasks SET parameters=jsonb_set(parameters,'{resultAssetManifest}',$3::jsonb) WHERE email=$1 AND id=$2",[seed.accounts[account],id,JSON.stringify(legacy)]);await tx.query("COMMIT");return legacy;
+        }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
+      },
       async tick(){const r=await fetch(baseUrl+"/api/video/worker/tick",{method:"POST",headers:{"x-video-worker-secret":workerSecret},signal:AbortSignal.timeout(300_000)});if(!r.ok)throw new Error(`Fixture tick failed ${r.status}`);return r.json();},
       async stop(){await stopChild(worker);await stopChild(app);await stopChild(mediaWorker);await stopChild(routerProcess);await supplier.close();await sql.end();},
     };

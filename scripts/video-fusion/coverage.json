@@ -45,7 +45,7 @@
       "kind": "actual-agent-app-worker-with-scripted-text-supplier"
     },
     "agentBrowser": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/agent-browser-bf739115-8044-48b0-bc9b-d6ddf5c03530/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/agent-browser-181c28fb-6612-4511-8978-031aeaf722e1/result.json",
       "verifier": "scripts/verify-video-fusion-agent-browser.ts",
       "kind": "actual-agent-app-worker-browser-with-scripted-text-supplier"
     },
@@ -213,6 +213,16 @@
       "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/continuity-87e8d486-0c8c-4489-8afd-f69ccd1da7c4/result.json",
       "verifier": "scripts/verify-video-fusion-continuity.ts",
       "kind": "actual-agent-tools-app-db-router-worker-with-simulated-supplier"
+    },
+    "geminiResults": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-b/results-4317d487-3484-44a7-ab73-6d62f8ef2fa0.json",
+      "verifier": "scripts/verify-video-fusion-results.ts",
+      "kind": "actual-app-worker-multi-result-and-legacy-manifest-recovery"
+    },
+    "geminiDuplicate": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-b/results-8ca34c19-0100-4e6c-9669-49b6d1a5ecaa.json",
+      "verifier": "scripts/verify-video-fusion-results.ts",
+      "kind": "actual-app-worker-duplicate-sample-legacy-manifest-recovery"
     }
   },
   "capabilities": [
@@ -2610,7 +2620,9 @@
         "icwire",
         "applicationProtocols",
         "protocolAudit",
-        "protocolFailures"
+        "protocolFailures",
+        "geminiResults",
+        "geminiDuplicate"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
       "remaining": [],
@@ -2670,6 +2682,118 @@
                 "minimax",
                 "metaso"
               ]
+            }
+          ]
+        },
+        {
+          "requirement": "Gemini两份不同真实视频全部落私有产物；旧首视频-1清单中断后扩展缺项，保留身份/SHA/字节；重启和一次结算保持",
+          "evidenceKey": "geminiResults",
+          "assertions": [
+            {
+              "path": "evidence.0.profile",
+              "value": "gemini"
+            },
+            {
+              "path": "evidence.0.outputs",
+              "value": 2
+            },
+            {
+              "path": "evidence.0.actualHashes",
+              "value": true
+            },
+            {
+              "path": "evidence.0.owned",
+              "value": true
+            },
+            {
+              "path": "evidence.0.once",
+              "value": true
+            },
+            {
+              "path": "evidence.0.recoveredPartial",
+              "value": true
+            },
+            {
+              "path": "evidence.0.legacyPrimaryIdentityAndBytesPreserved",
+              "value": true
+            },
+            {
+              "path": "evidence.0.legacyPrimarySourceIndex",
+              "value": -1
+            },
+            {
+              "path": "paidSupplierCalls",
+              "value": 0
+            },
+            {
+              "path": "evidence.1.profile",
+              "value": "gemini-native"
+            },
+            {
+              "path": "evidence.1.outputs",
+              "value": 2
+            },
+            {
+              "path": "evidence.1.actualHashes",
+              "value": true
+            },
+            {
+              "path": "evidence.1.owned",
+              "value": true
+            },
+            {
+              "path": "evidence.1.once",
+              "value": true
+            },
+            {
+              "path": "evidence.1.legacyPrimaryIdentityAndBytesPreserved",
+              "value": true
+            },
+            {
+              "path": "evidence.1.unmappedFalseRejectedBeforeReservationAndSupplier",
+              "value": true
+            },
+            {
+              "path": "evidence.0.unmappedFalseRejectedBeforeReservationAndSupplier",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "重复Gemini URI保持两份样本，旧首项身份/字节/-1编号、私有账号边界、重启和一次结算；未映射false在预扣前拒绝",
+          "evidenceKey": "geminiDuplicate",
+          "assertions": [
+            {
+              "path": "evidence.0.profile",
+              "value": "gemini-duplicate"
+            },
+            {
+              "path": "evidence.0.outputs",
+              "value": 2
+            },
+            {
+              "path": "evidence.0.duplicateSampleCountPreserved",
+              "value": true
+            },
+            {
+              "path": "evidence.0.legacyPrimaryIdentityAndBytesPreserved",
+              "value": true
+            },
+            {
+              "path": "evidence.0.legacyPrimarySourceIndex",
+              "value": -1
+            },
+            {
+              "path": "evidence.0.owned",
+              "value": true
+            },
+            {
+              "path": "evidence.0.once",
+              "value": true
+            },
+            {
+              "path": "evidence.0.unmappedFalseRejectedBeforeReservationAndSupplier",
+              "value": true
             }
           ]
         }
@@ -3129,7 +3253,7 @@
   ],
   "deliveryGates": {
     "comparison": "in-progress",
-    "wholeBranchReview": "pending",
+    "wholeBranchReview": "passed",
     "fixedLinuxRuntimeAndRollback": "pending",
     "release103": "pending",
     "finalAudit": "pending"
