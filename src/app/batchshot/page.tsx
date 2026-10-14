@@ -9,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function BatchShotPage() {
-  redirect(process.env.REFERENCE_WORKBENCH_URL?.trim() || "https://47.105.59.142/workbench");
+  return redirect(process.env.REFERENCE_WORKBENCH_URL?.trim() || "https://47.105.59.142/workbench");
 }
