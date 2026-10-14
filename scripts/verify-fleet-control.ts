@@ -9,9 +9,10 @@ async function main() {
   process.env.FLEET_CONTROL_ENABLED='1';process.env.FLEET_ISOLATED_TEST='1';process.env.NAUMI_MULTI_USER='1';process.env.NAUMI_VIDEO_WORKER='0';process.env.SETTINGS_SECRET='fleet-isolated-settings-012345678901234567890';process.env.VIDEO_WORKER_SECRET='fleet-isolated-worker-012345678901234567890';
   const db=await import('../src/lib/db'),service=await import('../src/lib/fleet/server'),auth=await import('../src/lib/admin-auth'),native=await import('../src/lib/native-auth');
   const adminAPI=await import('../src/app/api/admin/fleet/route'),pollAPI=await import('../src/app/api/fleet/poll/route'),ackAPI=await import('../src/app/api/fleet/ack/route');
-  await db.ensureSchema();await service.ensureFleetSchema();await db.getOrCreateUser('admin@central.test');await db.getOrCreateUser('staff@central.test');await db.setUserRole('admin@central.test','admin');
+  await db.ensureSchema();await service.ensureFleetSchema();await db.getOrCreateUser('admin@central.test');await db.getOrCreateUser('staff@central.test');await db.setUserRole('admin@central.test','admin');await auth.setAdminPassword('fleet-central-fixture-password');
+  const adminCookie='nv_admin='+await auth.authenticateAdminPassword('fleet-central-fixture-password');
   const cookie=(email:string)=>'nv_user='+native.signUserSession(email,Date.now());
-  const request=(body?:unknown,email='admin@central.test',extra:Record<string,string>={})=>new Request('http://localhost/api/admin/fleet',{method:body?'POST':'GET',headers:{cookie:email?cookie(email):'','content-type':'application/json',...extra},...(body?{body:JSON.stringify(body)}:{})});
+  const request=(body?:unknown,email='admin@central.test',extra:Record<string,string>={})=>new Request('http://localhost/api/admin/fleet',{method:body?'POST':'GET',headers:{cookie:email?cookie(email)+(email==='admin@central.test'?'; '+adminCookie:''):'','content-type':'application/json',...extra},...(body?{body:JSON.stringify(body)}:{})});
   assert.equal((await adminAPI.GET(request(undefined,''))).status,403);assert.equal((await adminAPI.GET(request(undefined,'staff@central.test'))).status,403);
   assert.equal((await adminAPI.POST(request({action:'create',name:'forged',kind:'enterprise'},'admin@central.test',{origin:'https://evil.test'}))).status,403);
   const registrationId=randomUUID();const registration=await adminAPI.POST(request({action:'create',id:registrationId,name:'47企业fixture',kind:'enterprise'}));assert.equal(registration.status,201);const {id:instanceId,token}=await registration.json();

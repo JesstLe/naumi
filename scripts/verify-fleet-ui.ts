@@ -18,12 +18,12 @@ async function main() {
     const login=await context.request.post(origin+'/api/admin/login',{data:{password:'fleet-ui-fixture-password'}});assert.equal(login.status(),200);
     const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
     await page.goto(origin+'/admin/deployments');await page.getByRole('heading',{name:'部署管理',exact:true}).waitFor();
-    await page.getByRole('textbox',{name:'实例名称'}).fill('47 企业UI验收');await page.getByRole('button',{name:'注册实例',exact:true}).click();await page.getByRole('heading',{name:'连接凭据 · 仅显示本次'}).waitFor();
+    await page.getByRole('textbox',{name:'实例名称'}).fill('47 企业UI验收');const registeredResponse=page.waitForResponse(response=>response.url().endsWith('/api/admin/fleet')&&response.status()===201);await page.getByRole('button',{name:'注册实例',exact:true}).click();const registeredId=(await(await registeredResponse).json()).id;await page.getByRole('heading',{name:'连接凭据 · 仅显示本次'}).waitFor();
     await page.getByRole('button',{name:'已保存，关闭'}).click();await page.getByRole('heading',{name:'47 企业UI验收',exact:true}).waitFor();
     await page.getByRole('button',{name:'查询用户',exact:true}).click();await page.getByText('待执行',{exact:true}).waitFor();
     const wide=await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth);assert.equal(wide,true);await page.screenshot({path:'output/fleet-control/ui-desktop.png',fullPage:true});
     await page.setViewportSize({width:390,height:844});await page.waitForTimeout(200);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);await page.screenshot({path:'output/fleet-control/ui-mobile.png',fullPage:true});
-    await page.reload();await page.getByRole('heading',{name:'部署管理',exact:true}).waitFor();await page.getByRole('button',{name:/47 企业UI验收/}).click();await page.getByText('待执行',{exact:true}).waitFor();assert.equal(errors.length,0,errors.join('\n'));
+    await page.reload();await page.getByRole('heading',{name:'部署管理',exact:true}).waitFor();await page.getByRole('combobox',{name:/部署实例/}).selectOption(registeredId);await page.getByText('待执行',{exact:true}).waitFor();assert.equal(errors.length,0,errors.join('\n'));
     console.log('FLEET_UI=PASS ACTUAL_NEXT=1 REGISTER=1 CREDENTIAL_DISMISS=1 QUEUED_NOT_FAKE_SUCCESS=1 REFRESH_PERSIST=1 DESKTOP1440=1 MOBILE390=1 OVERFLOW=0 PAGEERROR=0');
   } finally {if(browser)await browser.close();child.kill();await new Promise<void>(resolve=>{if(child.exitCode!==null)resolve();else child.once('exit',()=>resolve());});fs.closeSync(log);await db.getPool().end();}
 }
