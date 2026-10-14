@@ -148,3 +148,10 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 上轮为实质进展：重复像素字节去重及有界场景稳定DOM、普通回归、103严格三轮冷79.7%与原生平移32.4%、37字段独立回滚。目标仍全范围active，本轮不缩小口径。
 部署脚本新增target-ports.json三角色计划（默认旧31/32/33兼容，正式新候选拟35/36/37），按role映射而非数组排列；输入必须完整、不同、合法整数。切流前额外核对每个候选CID/name/imageID、actual source/version、DB健康、仅127.0.0.1绑定和两类Worker=0，以及ports计划未变，避免端口计划漂移或候选被替换后盲切。
 真实网关fixture3种正常计划和6种无效计划回归通过：限定20项UI/static/cache/read-media变更，core创作/Agent/企业团队API及原全部fallback逐字節一致；保留旧28/29/30资源链、原配置不修改。未对服务器网关写入。固定三槽Linux构建与新容量/锁/备份旁路验收继续，尚未发布；源码功能计数1/3，开工main3ab2418保持，同事视频65524fd仍任务未完整验收，未整支合入。
+
+## 模块16：新main整合及视频轮询无变化重渲染
+13eb68d固定UI/desktop/enterprise三槽Linux构建全部exit0，568195584字节上传103、新35/36/37只回环旁路、双Worker0、健康/实际1791936989及20原生鉴权读取通过；UI资产映射/原静态fallback已校验。先持两锁核对四个本任务旧预览无网关引用、无建立请求、Worker0后仅stop，镜像/容器/DB/媒体保留；可用内存由2916MiB恢复3778MiB，再备份/108旧静态hash。没有公开切流。
+构建后再fetch发现origin/main从3ab2418进入1ec472f（同事已验收阶段视频画布/工作台增量）。按约定旧13候选立即标为非最终，普通合并7556c3e，全部main新实现与本任务性能代码保留、共享checkout未改；未用旧固定包抢上线。合并后画布/缓存/Dock/堆叠/文字/视频前端配置和TypeScript集中通过。
+检查新前端GET /api/video/assets、projects、byoc/catalog在当前core13012和旧13旁路均404（video-nodes200）；证明原20路由只换UI而保留旧全部创作API的发布策略需要升级/协调后端与Worker连续性，不能将新前端直接发到旧API上声称兼容。该明确证据见admin/new-main-core-api-compatibility.json。当前生产原页/core c05/Worker不停止，下一候选纳入新main后必须重新固定构建及API实际验证。
+新增轮询snapshot复用：video nodes6秒及tasks4秒请求/账号epoch/当前项目/变更/完成落盘回调不减、不关；只有完全相等JSON返回复用旧对象/数组，避免无视频的图片项目每6秒从[]到新[]触发大画布重渲染，以及每4秒未变任务重渲染。revision旧值继续拒绝，同revision status/result/signedURL/locked/deleted/ref顺序变化仍更新；缺失node的原merge语义保持，tasks移除/重排保持。100次未变snapshot不产生新根状态，所有变化/账号与poll时钟结构保留验证通过，TypeScript问题仅测试optional references已修正。新main完整App构建/运行及新模块真实轮询验收待继续，未将此单元结果称70%或上线。
+模块计数2/3，仍使用103且不连接120/香港/101；admin当前密码/角色/积分/媒体未改。本机/代理账号north原企业页实际可看1184积分明细（管理员nv_user不是consoleAdmin时页正确拒绝，未绕过后台密码），只读代理按端口和账号绑R2随机key，所有业务写仍禁止。原生admin直连登录问题仍待用户回复，目标保持active。
