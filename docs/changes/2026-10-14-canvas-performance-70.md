@@ -253,3 +253,6 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 合并后缓存pipeline、hover、原层级保护、可见性、视频poll快照与参数contract、GitHub镜像来源9项测试、完整TypeScript、diff集中通过。额外专用canvas_perf_wallet_module24_20261014数据库运行quote缺失/执行质量/重试键/实际并发balance-refresh4组；真实账号锁等待后100→99的新快照和镜像一致，供应商调用0，结束删除该专用数据库，未修改两份画布测试库。证据module24-merged-tests.json和module24-wallet-tests.json。
 
 下一固定构建和事务包须以这个最新main为基线，不再把module23的1476包当最新候选。当前本地4330仍1476实际运行；源码已合入但未构建的新main不冒充已运行或已上线。原生浏览器未提供新工具，本轮仍无新的UI/性能达标证据。module23完整持久化/备份独立恢复已通过；外国测试用户实际素材响应为404（不暴露存在性），不是403，原报告文字已修正。
+
+
+模块24收尾更新：固定f9649ea / 1791969278 PROBE0 Linux构建exit0，实际新容器在仅回环4331运行，旧1476/4330保持；同隔离DB/media，Worker0、供应商调用0。新版本实际11JSON API、原样本字段/213节点数据/153原图、匿名和已登录foreign隔离、drain授权通过；普通浏览器UI和性能回归仍未执行。四件源码产物现固定f964相对最新main dab963b共34字段，BASELINE/MODIFIED/独立ROLLBACK24/1/24均exit0，34SHA恢复及同事video/wallet/CI文件原样保留，四件已重开。旧1476四件材料在transaction24-previous-artifacts保留；实际完整命令/输入/输出/退出状态见VERIFICATION.txt。此收尾只更新文档，不要求重建相同业务源码，不发布103，目标active。
