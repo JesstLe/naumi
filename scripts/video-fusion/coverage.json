@@ -165,7 +165,7 @@
       "kind": "audit-of-actual-app-native-downstream-and-independent-media"
     },
     "player": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/player-46927c5e-7a8d-4679-ae2e-2e4386dadb3b/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/player-3ce0fdfd-126a-44cf-af25-9dd66b53a566/result.json",
       "verifier": "scripts/verify-video-fusion-player.ts",
       "kind": "actual-app-chrome-db-router-and-workers"
     },
@@ -185,7 +185,7 @@
       "kind": "actual-app-db-router-worker-workflow-summary"
     },
     "mixedDag": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/mixed-dag-aa56dcf1-3b5b-47fc-a042-325dd544c941/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/mixed-dag-ef273939-7ef2-4712-93ff-00ca9b490834/result.json",
       "verifier": "scripts/verify-video-fusion-mixed-dag.ts",
       "kind": "actual-app-db-router-worker-mixed-dag"
     }
