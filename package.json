@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/patch-next-body.mjs",
     "prebuild": "node scripts/build-reference-workbench.mjs",
     "predev": "node scripts/build-reference-workbench.mjs",
     "verify:reference-workbench": "tsx --conditions react-server scripts/verify-reference-workbench.ts",

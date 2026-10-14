@@ -6,6 +6,7 @@
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
+COPY scripts/patch-next-body.mjs ./scripts/patch-next-body.mjs
 RUN npm ci
 
 # ── build ───────────────────────────────────────────────────────────────────
