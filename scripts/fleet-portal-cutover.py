@@ -42,6 +42,17 @@ def public_fetch(path,ca_file,cookie=None):
         connection.request('GET',path,headers=headers);response=connection.getresponse();return response.status,response.read(50000)
     finally:connection.close()
 
+def await_public_admin(ca_file,cookie,attempts=20):
+    # Nginx reload signals a graceful transition; old workers can briefly answer 404.
+    # Wait only for known transition responses. Authentication failures never retry.
+    for attempt in range(attempts):
+        code,body=public_fetch('/api/admin/fleet/status',ca_file,cookie)
+        if code==200:
+            executor.require(json.loads(body)=={'enabled':True,'root':True});return
+        executor.require(code in [404,502,503])
+        if attempt+1<attempts:time.sleep(.2)
+    executor.require(False,'CHECK_FAILED')
+
 def execute(evidence,cookie_file,dry_run=True,rollback=False,ca_file=None):
     evidence=executor.protected_path(evidence,file=False);prepared=executor.read_json(executor.protected_path(evidence/'prepared.json'))
     gateway=executor.protected_path('/etc/nginx/sites-available/default');before=executor.protected_path(evidence/'gateway.before').read_bytes()
@@ -76,7 +87,7 @@ def execute(evidence,cookie_file,dry_run=True,rollback=False,ca_file=None):
         try:
             current_state(prepared);executor.require(hashlib.sha256(gateway.read_bytes()).hexdigest()==prepared['gatewayHash'],'BASELINE_CHANGED')
             changed=True;gateway.write_text(candidate);executor.command(['nginx','-t']);executor.command(['nginx','-s','reload'])
-            code,body=public_fetch('/api/admin/fleet/status',ca_file,cookie);executor.require(code==200 and json.loads(body).get('root') is True)
+            await_public_admin(ca_file,cookie)
             code,_=public_fetch('/admin/deployments',ca_file,cookie);executor.require(code==200)
             code,body=public_fetch('/api/version',ca_file);executor.require(code==200 and json.loads(body)==prepared['businessSite'])
             executor.atomic_json(evidence/'cutover.json',{'at':int(time.time()),'source':prepared['source'],'gatewayAfter':hashlib.sha256(gateway.read_bytes()).hexdigest(),'oldServicesRetained':True,'businessDataRestored':False,'dispatchEnabled':False})

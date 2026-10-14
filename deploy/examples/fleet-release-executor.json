@@ -1,6 +1,7 @@
 {
   "enabled": false,
-  "nasAccepted": false,
+  "storageDriver": "local",
+  "storageAccepted": false,
   "instanceId": "00000000-0000-4000-8000-000000000000",
   "publicKeyFile": "/etc/naumi/fleet-release-central.pub",
   "inbox": "/var/lib/naumi-fleet/inbox",

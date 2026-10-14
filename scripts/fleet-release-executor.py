@@ -2,7 +2,7 @@
 """Root-local signed enterprise rollout. Remote jobs contain no shell, paths or URLs.
 
 Disabled by default. Local, hash-pinned acceptance hooks implement host-specific
-DB/NAS/worker contracts; absence is a hard gate, never a simulated success.
+DB/storage/worker contracts; absence is a hard gate, never a simulated success.
 """
 import argparse, contextlib, fcntl, hashlib, importlib.util, json, os
 import pathlib, re, socket, subprocess, tempfile, time, urllib.request, uuid
@@ -203,8 +203,46 @@ def publish_local_status(config, state):
     atomic_json(file,value,mode=0o640,gid=parent.stat().st_gid)
 
 
+def storage_gate(config):
+    """Root-local policy, never inferred from a remote job or leftover credentials."""
+    modern = 'storageDriver' in config or 'storageAccepted' in config
+    if not modern:
+        # Existing NAS deployments retain their original, stricter contract.
+        require(config.get('nasAccepted') is True)
+        return None
+    driver = config.get('storageDriver')
+    require(driver in ['local', 'r2', 's3'] and config.get('storageAccepted') is True)
+    env_file = protected_path(config['envFile'])
+    require(env_file.stat().st_size <= 128 * 1024)
+    env = {}
+    for line in env_file.read_text().splitlines():
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        require('=' in line)
+        key, value = line.split('=', 1)
+        require(key not in env)
+        env[key] = value
+    require(env.get('STORAGE_DRIVER') == driver and env.get('MEDIA_PRIVATE') == '1')
+    media = env.get('MEDIA_DIR', '')
+    require(media.startswith('/data/') and '..' not in pathlib.PurePosixPath(media).parts
+            and str(pathlib.PurePosixPath(media)) == media)
+    mounts = config.get('mounts', [])
+    matches = [m for m in mounts if isinstance(m, dict) and m.get('target') == media]
+    require(len(matches) == 1)
+    mount = matches[0]
+    require(set(mount) == {'source', 'target', 'readOnly'} and mount['readOnly'] is False)
+    source = pathlib.Path(mount['source'])
+    require(source.is_absolute() and source.is_dir() and source.resolve() == source)
+    # Parent /data scratch binds are normal; a deeper media mount would shadow objects.
+    require(all(isinstance(m, dict) and isinstance(m.get('target'), str)
+                and (m is mount or not m['target'].startswith(media + '/'))
+                for m in mounts))
+    return driver
+
+
 def execute(config, job, evidence):
-    require(config.get('enabled') is True and config.get('nasAccepted') is True)
+    require(config.get('enabled') is True)
+    storage_driver = storage_gate(config)
     validate_hooks(config)
     space=os.statvfs(evidence)
     require(space.f_bavail*space.f_frsize>=10*1024**3 and space.f_bavail/max(1,space.f_blocks)>=0.2)
@@ -252,7 +290,10 @@ def execute(config, job, evidence):
                 args = ['docker','run','-d','--name',name,'--network',config['network'],'--env-file',config['envFile'],'-e','NAUMI_VIDEO_WORKER=0','-e','FLEET_CONTROL_ENABLED=0','--restart','unless-stopped','-p','127.0.0.1:'+str(ports[flavor])+':3000']
                 for mount in config.get('mounts',[]):
                     require(isinstance(mount,dict) and set(mount)=={'source','target','readOnly'})
-                    require(pathlib.Path(mount['source']).is_absolute() and str(mount['target']).startswith('/data/'))
+                    target = str(mount['target'])
+                    require(pathlib.Path(mount['source']).is_absolute() and (target == '/data' or target.startswith('/data/'))
+                            and str(pathlib.PurePosixPath(target)) == target and '..' not in pathlib.PurePosixPath(target).parts
+                            and type(mount['readOnly']) is bool)
                     args += ['--mount','type=bind,source='+mount['source']+',target='+mount['target']+(',readonly' if mount['readOnly'] else '')]
                 args += [image['reference']]
                 command(args)
@@ -260,7 +301,12 @@ def execute(config, job, evidence):
                 candidates[flavor]['containerId'] = info['Id']
                 version(ports[flavor], job['manifest'])
             atomic_json(evidence/'candidate-slots.json',candidates)
-            require(hook(config,'preaccept',evidence,job_file).get('nasE2E') is True)
+            storage_evidence = hook(config,'preaccept',evidence,job_file)
+            if storage_driver is None:
+                require(storage_evidence.get('nasE2E') is True)
+            else:
+                require(storage_evidence.get('storageE2E') is True
+                        and storage_evidence.get('storageDriver') == storage_driver)
             check_active(config,job)
             require(hashlib.sha256(pathlib.Path(config['envFile']).read_bytes()).hexdigest()==protected['envFile'],'BASELINE_CHANGED')
             require(hashlib.sha256(gateway.read_bytes()).hexdigest()==protected['gatewayFile'],'BASELINE_CHANGED')

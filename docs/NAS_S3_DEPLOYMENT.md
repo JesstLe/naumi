@@ -1,5 +1,24 @@
 # NAS 网关接入：同一份 Naumi 代码
 
+## 2026-10-15 当前执行方案（优先于下文 NAS 待接入记录）
+
+用户明确：47 先使用本机磁盘，NAS 后续单独配置，不再阻塞企业实例接入与当前存储验收。保持同一份适配层，不添加企业专用业务分支。
+
+- 47 现有 Naumi 槽已经显式 `STORAGE_DRIVER=local`、`MEDIA_PRIVATE=1`、`MEDIA_DIR=/data/media`，宿主持久目录 `/opt/naumi-staging/data/media`。保留该目录、独立数据库、媒体所有权与稳定 `/media/<key>`；不复制103的配置/数据库，不因残留R2字段自动改用远端。
+- 2026-10-15 实机检查：当前公网 `f4b3df127f2fcaf37f9cd866a480f3c6fd4b2358 / 1791989816`；本机磁盘71%、可用20GiB。专用随机前缀测试PNG写入/完整读取SHA、Range206/416、路径拒绝通过；另建无网络、非root、只读根fs、无业务秘密的临时容器，共用原media bind，重读后删除且404。原容器ID/镜像/启动时间和网关不变、无业务DB写入或模型调用。此证据是实际磁盘适配层验收，不冒充真实用户生成/浏览器缓存/NAS E2E。
+- 原47 video-worker环境 `NAUMI_VIDEO_WORKER=0`，且其 `/data` 是独立volume，不是应用的media bind；本轮不重启、不启用。后续要启用生成Worker时，必须先对齐local驱动、私有标记和相同宿主media持久挂载，再做原生生成链验收。
+- root发布执行器采用当前驱动门槛：`storageDriver=local`、`storageAccepted=false`（验收后才显式改true）；env必须与驱动一致、私有媒体、可写持久media bind，preaccept必须返回 `{"ok":true,"storageE2E":true,"storageDriver":"local"}`。缺项仍拒绝，NAS不被标记已通过。原NAS配置的 `nasAccepted`/`nasE2E` 旧契约继续兼容。
+
+### 以后切换 NAS
+
+适配层已经统一，业务代码不需要分叉；**配置切换不等于已有图片自动迁移**。正式步骤为：
+1. 建好47到NAS的常开S3网关通道并验PUT/GET/HEAD/Range/DELETE、鉴权、异常回退。
+2. 使用专用迁移流程复制本地原图、thumbnail、preview，保留key及SHA；记录清单、失败项和增量水位。上线切换前追平新增对象并校验，不直接改媒体ID、作品链接或用户数据。
+3. 固定配置改为 `STORAGE_DRIVER=s3`、`MEDIA_REMOTE_ACCESS=proxy` 并提供独立秘密；按实际配置检查remote_ready/变体/下载/参考图/账号隔离和缓存，root策略改为 `storageDriver=s3`，重新实测后设置storageAccepted。
+4. 旁路验收后平滑切流，保留可读本地镜像及旧env；任何缺对象/错误拒绝切换，回退不回灌DB/积分。NAS验收在未来单独记录，不用本机测试替代。
+
+完整中央管理目标仍包含47真实连接器/受限指令和发布现场hooks；本轮本地磁盘验收不代表这些已启用。
+
 ## 架构与开机依赖
 公网应用 → 常开企业网关（如NAS上的Garage或独立MinIO）→ NAS磁盘。NAS和企业路由/网关必须常开；个人电脑不是部署组件。若当前使用个人电脑SSH/VPN中转，应先把连接迁至常开设备；本次代码验收没有核验客户实际网络。
 

@@ -42,6 +42,9 @@ def command(args,timeout=120):
 
 def hook(config,name,evidence,job_file):
     result={'ok':True,'backwardCompatible':True,'nasE2E':True,'nginxSyntax':True,'publicE2E':True,'inflightPreserved':True,'oldVersionServing':True}
+    if 'storageDriver' in config:
+        result.update(storageE2E=True, storageDriver=config['storageDriver'])
+    result.update(config.get('preacceptOverride', {}) if name == 'preaccept' else {})
     if name=='backup':
         dump=evidence/'database.dump';dump.write_bytes(b'fixture-dump');result['databaseDump']=str(dump)
     if name==config.get('failAt'):
@@ -85,6 +88,44 @@ with tempfile.TemporaryDirectory(prefix='naumi-executor-',dir='/run') as directo
     c,state,job,_=fixture(root/'nas-missing');c['nasAccepted']=False;e=pathlib.Path(c['stateDir'])/job['id'];e.mkdir(parents=True)
     try:executor.execute(c,job,e);raise AssertionError('NAS accepted without evidence')
     except executor.GateError as error:assert error.code=='GATE_MISSING'
+    def local_fixture(name):
+        c,state,job,_=fixture(root/name)
+        c.pop('nasAccepted');c.update(storageDriver='local',storageAccepted=True)
+        media=root/name/'media';media.mkdir()
+        c['mounts']=[{'source':str(media),'target':'/data/media','readOnly':False}]
+        pathlib.Path(c['envFile']).write_text('STORAGE_DRIVER=local\nMEDIA_PRIVATE=1\nMEDIA_DIR=/data/media\n')
+        e=pathlib.Path(c['stateDir'])/job['id'];e.mkdir(parents=True)
+        return c,state,job,e
+    c,state,job,e=local_fixture('local-success')
+    assert executor.execute(c,job,e)['state']=='accepted'
+    c,state,job,e=local_fixture('local-with-stale-remote')
+    c['mounts'].append({'source':str(root/'local-with-stale-remote'),'target':'/data','readOnly':False})
+    with open(c['envFile'],'a') as f:f.write('R2_ACCOUNT_ID=fixture\nR2_BUCKET=fixture\nR2_ACCESS_KEY_ID=fixture\nR2_SECRET_ACCESS_KEY=fixture\n')
+    assert executor.execute(c,job,e)['state']=='accepted'
+    def reject_storage(name,change):
+        c,state,job,e=local_fixture(name);change(c)
+        before=len(calls)
+        try:executor.execute(c,job,e);raise AssertionError(name+' accepted')
+        except executor.GateError as error:assert error.code=='GATE_MISSING'
+        assert len(calls)==before and pathlib.Path(c['gatewayFile']).read_text()=='ORIGINAL_GATEWAY'
+    reject_storage('unaccepted-local',lambda c:c.update(storageAccepted=False))
+    reject_storage('string-accepted',lambda c:c.update(storageAccepted='true'))
+    reject_storage('missing-driver',lambda c:c.pop('storageDriver'))
+    reject_storage('unknown-driver',lambda c:c.update(storageDriver='nas'))
+    reject_storage('driver-mismatch',lambda c:c.update(storageDriver='s3'))
+    reject_storage('missing-media-bind',lambda c:c.update(mounts=[]))
+    reject_storage('readonly-media-bind',lambda c:c['mounts'][0].update(readOnly=True))
+    reject_storage('overlapping-media-bind',lambda c:c['mounts'].append({'source':c['mounts'][0]['source'],'target':'/data/media/sub','readOnly':False}))
+    reject_storage('nonprivate-local',lambda c:pathlib.Path(c['envFile']).write_text('STORAGE_DRIVER=local\nMEDIA_PRIVATE=0\nMEDIA_DIR=/data/media\n'))
+    reject_storage('duplicate-driver',lambda c:pathlib.Path(c['envFile']).write_text('STORAGE_DRIVER=local\nSTORAGE_DRIVER=s3\nMEDIA_PRIVATE=1\nMEDIA_DIR=/data/media\n'))
+    for name,overrides in [('missing-proof',{'storageE2E':None}),('wrong-proof-driver',{'storageDriver':'s3'}),('nas-is-not-local-proof',{'storageE2E':False,'nasE2E':True})]:
+        c,state,job,e=local_fixture(name);c['preacceptOverride']=overrides
+        try:executor.execute(c,job,e);raise AssertionError(name+' accepted')
+        except executor.GateError:pass
+        assert pathlib.Path(c['gatewayFile']).read_text()=='ORIGINAL_GATEWAY'
+    c,state,job,e=local_fixture('s3-explicit')
+    c['storageDriver']='s3';pathlib.Path(c['envFile']).write_text('STORAGE_DRIVER=s3\nMEDIA_PRIVATE=1\nMEDIA_DIR=/data/media\n')
+    assert executor.execute(c,job,e)['state']=='accepted'
     c,state,job,_=fixture(root/'busy');handle=open(c['locks'][0],'a');fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
     try:
         with executor.locks(c['locks']):raise AssertionError('stole lock')
@@ -123,4 +164,4 @@ with tempfile.TemporaryDirectory(prefix='naumi-executor-',dir='/run') as directo
     executor.atomic_json(unknown/'result.json',{'state':'failed','code':'CHECK_FAILED'})
     executor.assert_no_unconfirmed(c,newer['id'])
     executor.execute=previous_execute
-print('FLEET_EXECUTOR_CONTRACT=PASS SIGNATURE_SCOPE=1 ROOT_PATHS=1 HOOK_HASH=1 NAS_GATE=1 TWO_LOCKS=1 BASELINE_PIN=1 BACKUP_GATE=1 PRE_POST_ACCEPT=1 WORKER_GATE=1 ROLLBACK_FILES=1 CONFIG_RETAINED=1 OLD_SLOTS_RETAINED=1 NEXT_RELEASE_PORTS=1 RECEIPT_ONCE=1 INTERRUPTED_UNKNOWN=1 ROOT_UNCONFIRMED_GATE=1 RELAY_ACK_CANNOT_CLEAR_ROOT=1 SIMULATED_DOCKER=1 PRODUCTION_WRITES=0')
+print('FLEET_EXECUTOR_CONTRACT=PASS SIGNATURE_SCOPE=1 ROOT_PATHS=1 HOOK_HASH=1 NAS_GATE=1 LOCAL_STORAGE_GATE=1 PERSISTENT_PRIVATE_MEDIA=1 DRIVER_MATCH=1 TWO_LOCKS=1 BASELINE_PIN=1 BACKUP_GATE=1 PRE_POST_ACCEPT=1 WORKER_GATE=1 ROLLBACK_FILES=1 CONFIG_RETAINED=1 OLD_SLOTS_RETAINED=1 NEXT_RELEASE_PORTS=1 RECEIPT_ONCE=1 INTERRUPTED_UNKNOWN=1 ROOT_UNCONFIRMED_GATE=1 RELAY_ACK_CANNOT_CLEAR_ROOT=1 SIMULATED_DOCKER=1 PRODUCTION_WRITES=0')

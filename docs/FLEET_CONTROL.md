@@ -58,7 +58,7 @@ timer的Persistent补跑仍由当前北京时间窗口检查，早于20:00不安
 
 ## 发布执行通道（模块三，生产默认关闭）
 
-1. 中央 `FLEET_RELEASE_DISPATCH_ENABLED=1` 才签发冻结计划；企业连接器 `FLEET_RELEASE_RELAY_ENABLED=1` 才搬运签名信封。两者默认0，本机root执行器模板`enabled=false`、`nasAccepted=false`。开启页面跟随策略本身不会开启这些门槛。
+1. 中央 `FLEET_RELEASE_DISPATCH_ENABLED=1` 才签发冻结计划；企业连接器 `FLEET_RELEASE_RELAY_ENABLED=1` 才搬运签名信封。两者默认0，本机root执行器模板`enabled=false`、`storageDriver=local`、`storageAccepted=false`。开启页面跟随策略本身不会开启这些门槛。旧NAS配置仍兼容nasAccepted门槛，不能用其证明新local驱动验收。
 2. 发布信封使用中央 **Ed25519私钥** 签名，不使用企业token签名。企业token仅认证HTTPS；非root连接器和企业root执行器只持中央公钥，因此连接器不能自行签造root部署命令。实例、计划、租约、有效期、实际目标基线和三镜像manifest都在签名内。
 3. 中央推荐挂载专用私钥文件，配置`FLEET_RELEASE_SIGNING_PRIVATE_KEY_FILE`；Linux须普通非symlink文件、root或进程UID所有、0400/0600，不允许组/其他读写。配置文件读取失败不退回inline旧key。生产私钥不进入镜像、仓库、日志或47。inline PEM仍兼容受保护环境，但文件优先。
 4. 企业公钥`FLEET_RELEASE_SIGNING_PUBLIC_KEY`用于relay验签；本机root的`publicKeyFile`用于OpenSSL ED25519验签。两处同一个中央公钥。远端任务不提供shell、路径、端口、URL或hook。
@@ -103,6 +103,14 @@ root执行器先核对activeState的SHA、版号、三槽container/image ID和�
 
 ## 回退
 先停连接器，并关闭 `FLEET_CONTROL_ENABLED`；既有企业业务独立运行。回退应用制品不恢复旧用户库/积分/作品/NAS，新增fleet表只保留审计。已执行的积分不能用源码回滚撤销，应另记明确反向业务操作。轮换密钥须在企业重新配置，旧密钥立即拒绝。
+
+## 2026-10-15 最新进展与存储约定
+
+用户已明确NAS延期，47先local持久存储。参见 `docs/NAS_S3_DEPLOYMENT.md` 的优先章节及 `docs/changes/2026-10-15-fleet-local47.md`，不再索要NAS连接、不启动旧101隧道、不把NAS缺项当本轮local验收阻塞。
+
+root配置显式storageDriver/storageAccepted时，发布前读取受保护env，要求驱动一致、MEDIA_PRIVATE=1、MEDIA_DIR对应持久可写挂载；preaccept必须给出storageE2E=true及相同storageDriver，不以NAS-only证据放行local。旧配置保持原NAS门槛。自动执行仍默认关闭。
+
+103原生账号和二级后台密码真实登录均200，private portal root200；实际Chrome独立进程1440/390、23个静态资源200、无页面错误/溢出。限定8条fleet/admin路径及独立资源前缀已切103源站，原业务完整gateway内容仅追加本模块block、所有原容器ID/镜像/启动时间不变、原用户/积分/媒体不回灌；源站HTTPS按naumi.top域名及官方OriginCA校验，匿名401。首次reload立即读取旧worker404导致自动回退，已增加有界过渡等待（401/403不重试），之后切换成功。既有enterprise公开version路径404不被当作三公开路径全成功；主站及desktop实际版本保持8af8ee6 / 1791975598。47注册/connector与真实受限命令未完成，20:00调度/dispatch仍0。
 
 ## 继续开发交接提示
 ```text
