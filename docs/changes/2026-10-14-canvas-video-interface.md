@@ -219,3 +219,11 @@ fixture扩展独立KIE motion模型，仅uiModels启用，单图/单视频/无�
 最终PASS：checkpoint-c/workbench-29e6b608-af68-439a-834f-8133dbcda5ee/result.json，actualHistoryAndSentCanvasColoredFrames=true，session78021 exit0。此前bc4c943f、124d68a8亦PASS相应范围，原始失败878b2b8d保留；第一次用例误用未存在的video-history-dialog test ID，改实际video-history-picker，没有改产品历史面板。最终29e6b608的两张截图均已人工查看，历史完整参数与彩色画面可见。发送后的普通结果素材和生成节点在本fixture中位置贴近，目标初始节点未设置坐标；剩余C需用实际布置的混合目标检查摆放与全部节点可见性，不以本用例宣称布局回归完成。
 
 完整TypeScript及diff结构检查PASS（session42799 exit0），所有本批fixture/Chrome由finally停止。最新fetch origin/main仍3ab2418，本分支已包含，无新增合并冲突。按用户增量整合要求，准备普通推送已验收C阶段到main；阶段Git合并不是完整C/D/34项交付，GitHub工作流经检查只构建/推送镜像及fixture验收，不含SSH服务器部署，本批无103连接/锁/发布。
+
+增量整合已普通快进main到26889e2，随后1ec472f记录交接及去除EOF多余空行；未强推或触碰共享checkout。1ec472f完整Linux App Docker构建/推送CI run38490452069已success，不能据此宣称运行候选、媒体App集成、蓝绿或回滚通过。正式103没有本批发布。
+
+主线CI发现独立旧检查问题：26889e2/1ec472f的Image gateway regression都在Direct image submission without fee confirmation步骤失败。实际npm run verify:direct-generation可复现“fee confirmation is still present”；git blame显示billing.client的api-cost-plus授权window.confirm来自既有91bb2e80（2026-10-07），此次只增加useBillingEstimate的enabled，未增加该确认门槛。不能删除现有成本授权去迎合旧全文件字符串断言。
+
+verify-direct-generation改用TS AST验证window.confirm只能处于显式api-cost-plus短路/条件分支，同时自检固定价无条件确认、OR绕过与跨函数延后确认会被拒绝，保留其余报价/UUID/价格版本/Agent授权检查。已有direct-generation浏览器fixture增加成本授权拒绝0POST、同意后冻结额度36及2次授权；新增实际Chrome runner调用真实React BillingProvider（只mock HTTP/账号，不调用实际模型）。原构建器因新增模块读取process.env在独立浏览器报process未定义，构建fixture显式空process.env，不读取真实运行环境。
+
+实际两项PASS：DIRECT_SUBMISSION=PASS；DIRECT_GENERATION_BROWSER=PASS、固定价三入口feeConfirmations=0、成本拒绝NO_POST/同意FROZEN_CAP_36、未知重试UUID保持、402/409及报价变更拒绝保留。产品计费代码/价格/确认边界未改。更新CI结果仍须检查，不据本机PASS宣称整条CI通过。CI日志下载两次EOF，错误输出保留忽略路径而不重复输出临时签名链接；利用失败步骤元数据及本地同命令定位，并未重启原CI任务冒充成功。

@@ -10,7 +10,7 @@ export async function runDirectGenerationFixture() {
   const node = document.createElement("div"); document.body.appendChild(node);
   const root = createRoot(node);
   let client: ReturnType<typeof useBilling> | null = null, confirmCount = 0, quotedVersion = 1;
-  let responseStatus = 200, responseCode = "", lastError = "";
+  let responseStatus = 200, responseCode = "", lastError = "", confirmAllowed = false;
   const calls: { url: string; id: string; version: string; credits: string }[] = [];
   const stored = new Map<string, string | null>();
   const q = { version: 1, credits: 6, reserveCredits: 6, feature: "image.generate", quantity: 1 } as const;
@@ -27,7 +27,7 @@ export async function runDirectGenerationFixture() {
     const direct = client!.quoteAndSubmit || (client as any).confirmAndSubmit;
     return direct(url, init, { feature: index === 0 ? "canvas.image" : "image.generate", quantity: 1 });
   };
-  window.confirm = () => { confirmCount++; return false; };
+  window.confirm = () => { confirmCount++; return confirmAllowed; };
   window.fetch = async (input, init) => {
     const path = String(input);
     if (path === "/api/billing/catalog") return Response.json({ version: 1 });
@@ -53,6 +53,7 @@ export async function runDirectGenerationFixture() {
       button.remove();
     }
     assert(confirmCount === 0 && calls.length === 3, "fee confirmation still interrupts click-to-generate");
+    const fixedFeeConfirmations=confirmCount;
     assert(calls.every(call => call.id && call.version === "1" && call.credits === "6"), "quote or operation headers missing");
     responseStatus = 503; responseCode = "OPERATION_PENDING";
     await submit(0); const pendingId = calls[3].id;
@@ -66,7 +67,13 @@ export async function runDirectGenerationFixture() {
     try { await client!.quoteAndSubmit("/api/fixture-canvas", requests[0].init, { feature: "canvas.expand", quantity: 1 }); }
     catch (error) { lastError = (error as Error).message; }
     assert(lastError.includes("价格已更新") && calls.length === before, "changed quote silently submitted");
-    return { result: "DIRECT_GENERATION_BROWSER=PASS", canvas: "ONE_CLICK", toolbox: "ONE_CLICK", genchat: "ONE_CLICK", feeConfirmations: confirmCount, retryID: "PRESERVED", balance402: "RETAINED", price409: "RETAINED", changedQuote: "BLOCKED_WITHOUT_GENERATION", quoteHeaders: "RETAINED", supplierCalls: 0, isSecureContext };
+    const costPlus={...q,mode:"api-cost-plus" as const,authorizedCredits:36,reserveCredits:36};
+    lastError="";try{await client!.submit(requests[0].url,requests[0].init,costPlus);}catch(error){lastError=(error as Error).message;}
+    assert(lastError.includes("已取消提交")&&calls.length===before,"declined cost-plus authorization submitted a request");
+    confirmAllowed=true;responseStatus=200;responseCode="";
+    assert((await client!.submit(requests[0].url,requests[0].init,costPlus)).status===200,"accepted cost-plus request was not submitted");
+    assert(calls.length===before+1&&calls.at(-1)?.credits==="36"&&calls.at(-1)?.version==="1"&&confirmCount===2,"accepted cost-plus request lost the frozen authorization cap");
+    return { result: "DIRECT_GENERATION_BROWSER=PASS", canvas: "ONE_CLICK", toolbox: "ONE_CLICK", genchat: "ONE_CLICK", feeConfirmations: fixedFeeConfirmations, apiCostPlusAuthorizations:confirmCount, apiCostPlusDeclined:"NO_POST",apiCostPlusAccepted:"FROZEN_CAP_36",retryID: "PRESERVED", balance402: "RETAINED", price409: "RETAINED", changedQuote: "BLOCKED_WITHOUT_GENERATION", quoteHeaders: "RETAINED", supplierCalls: 0, isSecureContext };
   } catch (error) {
     return { result: "DIRECT_GENERATION_BROWSER=FAIL", error: (error as Error).message, feeConfirmations: confirmCount, mockedGenerationCalls: calls.length, supplierCalls: 0 };
   } finally {
