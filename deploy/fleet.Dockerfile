@@ -8,7 +8,8 @@ COPY src ./src
 COPY scripts/fleet-connector.ts scripts/fleet-scheduler.ts scripts/build-fleet-runtime.mjs scripts/fleet-server-only.cjs ./scripts/
 RUN node scripts/build-fleet-runtime.mjs
 WORKDIR /runtime
-RUN cp /app/dist/fleet/package.json ./package.json && npm install --omit=dev --ignore-scripts --no-audit --no-fund
+COPY deploy/fleet-runtime/package.json deploy/fleet-runtime/package-lock.json ./
+RUN cmp /app/dist/fleet/package.json ./package.json && npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
 FROM node:24-bookworm-slim AS runner
 WORKDIR /app
