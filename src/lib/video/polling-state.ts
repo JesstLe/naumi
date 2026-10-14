@@ -10,7 +10,7 @@ export function sameVideoSnapshot(a: unknown, b: unknown): boolean {
     return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, i) => sameVideoSnapshot(value, b[i]));
   const left = a as Record<string, unknown>, right = b as Record<string, unknown>;
   const keys = Object.keys(left);
-  return keys.length === Object.keys(right).length && keys.every(key => Object.hasOwn(right, key) && sameVideoSnapshot(left[key], right[key]));
+  return keys.length === Object.keys(right).length && keys.every(key => Object.prototype.hasOwnProperty.call(right, key) && sameVideoSnapshot(left[key], right[key]));
 }
 
 export function mergeVideoNodeSnapshots(previous: CanvasVideoNode[], incoming: CanvasVideoNode[]) {
