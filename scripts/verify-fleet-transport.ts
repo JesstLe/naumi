@@ -26,6 +26,7 @@ async function main(){
     process.env.FLEET_CENTRAL_CA_FILE=path.join(tls,'missing.pem');await assert.rejects(()=>fleetFetch(url,init));assert.equal(requests,1);
     process.env.FLEET_CENTRAL_CA_FILE=path.join(tls,'ca.pem');for(const ip of ['169.254.169.254','100.100.100.200','127.0.0.1','::1']){process.env.FLEET_CENTRAL_RESOLVE_IP=ip;await assert.rejects(()=>fleetFetch(url,init));}
     process.env.FLEET_CENTRAL_RESOLVE_IP=address;await assert.rejects(()=>fleetFetch(url.replace('/api/fleet/poll','/admin'),init));await assert.rejects(()=>fleetFetch(url,{...init,method:'GET'}));
+    assert.equal((await fleetFetch(url,{...init,body:JSON.stringify({result:'x'.repeat(17000)})})).status,200);await assert.rejects(()=>fleetFetch(url,{...init,body:'x'.repeat(48001)}));
     await assert.rejects(()=>fleetFetch(url.replace('https://','https://secret@'),init));
     mode='redirect';await assert.rejects(()=>fleetFetch(url,init));mode='large';await assert.rejects(()=>fleetFetch(url,init));mode='stall';await assert.rejects(()=>fleetFetch(url,{...init,signal:AbortSignal.timeout(50)}));
     console.log('FLEET_TRANSPORT=PASS REAL_TLS=1 ORIGIN_IP_ROUTING=1 SNI_HOSTNAME_VERIFIED=1 PRIVATE_CA_VERIFIED=1 WRONG_CA_DENIED=1 WRONG_HOST_DENIED=1 NO_FAILOPEN=1 REDIRECT_DENIED=1 BYTE_LIMIT=1 TIMEOUT=1 METADATA_DENIED=1 PRODUCTION_WRITES=0');

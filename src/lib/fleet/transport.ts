@@ -33,7 +33,7 @@ export async function fleetFetch(input:string,init:RequestInit){
   const pin=process.env.FLEET_CENTRAL_RESOLVE_IP,caFile=process.env.FLEET_CENTRAL_CA_FILE;
   if(!pin&&!caFile)return fetch(input,init);
   const url=new URL(input);centralUrl(url.origin);if(url.username||url.password)throw Error('FLEET_TRANSPORT_CREDENTIAL_URL');
-  if(!/^\/api\/fleet\/(poll|ack|releases\/(poll|ack))$/.test(url.pathname)||url.search||url.hash||init.method!=='POST'||typeof init.body!=='string'||Buffer.byteLength(init.body)>16000)throw Error('FLEET_TRANSPORT_REQUEST');
+  if(!/^\/api\/fleet\/(poll|ack|releases\/(poll|ack))$/.test(url.pathname)||url.search||url.hash||init.method!=='POST'||typeof init.body!=='string'||Buffer.byteLength(init.body)>48000)throw Error('FLEET_TRANSPORT_REQUEST');
   if(pin&&(!isIP(pin)||/^(169\.254\.|100\.100\.100\.200$|0\.|127\.|::1$|::ffff:|fe[89ab][0-9a-f]:|ff)/i.test(pin)))throw Error('FLEET_ORIGIN_IP');
   const ca=await configuredCentralCA();
   const headers=Object.fromEntries(new Headers(init.headers));
