@@ -4,7 +4,7 @@
 
 `scripts/video-fusion/coverage.json` 是逐项审核清单；运行 `node scripts/verify-video-fusion-e2e.mjs --inventory` 仅验证清单、实现路径及证据注册。默认命令仍会因未闭合的能力退出非零，不能把 inventory 的 PASS 当作完整应用验收通过。
 
-当前逐条件应用审核闭合为 V01/V02/V03/V05，共 4/34。V02/V03 的具体源码与真实界面、原生请求、冻结、Worker、费用证据见 [引用与回执记录](2026-10-14-canvas-video-reference-retry.md)。其余 30 项保留阶段证据和未闭合条件，继续审核，不能按缺少最终状态误认为功能全部未实现。
+当前逐条件应用审核闭合为 V01—V05、P01—P04、P06—P08，共 12/34。V02/V03 的具体源码与真实界面、原生请求、冻结、Worker、费用证据见 [引用与回执记录](2026-10-14-canvas-video-reference-retry.md)；V04 见 [连线与文字映射](2026-10-14-canvas-video-reference-edges.md)，协议分组见 [原生错误及字段审计](2026-10-14-canvas-video-protocol-errors.md)。其余 22 项保留阶段证据和未闭合条件，继续审核，不能按缺少最终状态误认为功能全部未实现。
 
 51 个协议组合、41 个原生 profile 的实际 App/PG/Router/Worker/私有媒体应用模拟链已通过，详见 [协议应用审计](2026-10-14-canvas-video-coverage-audit.md)。这项证据不替代全部 34 项界面/业务验收，也不替代正式 Linux 候选运行或上线验收。
 
