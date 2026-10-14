@@ -40,6 +40,15 @@ export async function seedVideoFixture() {
   config.publicModels.push({id:"video-a",label:"Fixture video",modality:"video",enabled:true,visible:true,target:{type:"upstream",id:"fixture-video-upstream"}});
   config.publicModels.push({id:"disabled-model",label:"Disabled fixture",modality:"video",enabled:false,visible:true,target:{type:"upstream",id:"fixture-video-upstream"}});
   config.bindings["video.generate"]="video-a";
+  const extraModels=JSON.parse(process.env.VIDEO_FIXTURE_EXTRA_VIDEO_MODELS||"[]");
+  if(!Array.isArray(extraModels)||extraModels.length>16)throw new Error("Invalid additional fixture models");
+  const extraIds=new Set<string>();
+  for(const entry of extraModels){
+    if(!entry||typeof entry.id!=="string"||!/^limit-[a-z0-9-]{1,60}$/.test(entry.id)||extraIds.has(entry.id))throw new Error("Invalid additional fixture model identity");
+    extraIds.add(entry.id);const bounded=videoDefinitionSchema.parse(entry.definition),upstreamId=`fixture-${entry.id}`;
+    config.upstreamModels.push({id:upstreamId,providerId:"fixture-video-provider",model:`wire-${entry.id}`,label:entry.id,modality:"video",enabled:true,capabilities:{...config.upstreamModels[0].capabilities,maxReferenceImages:30,video:bounded},parameterMap:{videoProfile:profile}});
+    config.publicModels.push({id:entry.id,label:entry.id,modality:"video",enabled:true,visible:true,target:{type:"upstream",id:upstreamId}});
+  }
   if(profile==="autodl"||profile==="runninghub")config.upstreamModels.find(model=>model.id==="fixture-video-upstream")!.parameterMap.videoWorkflow={version:1,kind:profile,workflowId:"selected-native-workflow",inputs:[{name:"prompt",type:"prompt",path:profile==="autodl"?["prompt"]:["3","inputs","text"],required:true}]};
   if(process.env.VIDEO_FIXTURE_FULL_WORKFLOW==="1"){
     if(profile!=="autodl")throw new Error("Full workflow fixture requires AutoDL");const upstream=config.upstreamModels.find(model=>model.id==="fixture-video-upstream")!;

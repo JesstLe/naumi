@@ -26,7 +26,7 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
     readOnly?: boolean;
     onClose: () => void;
     onSave: (draft: VideoNodeDraft) => Promise<void>;
-    onGenerate: (draft: VideoNodeDraft, quote: PublicQuote | null) => Promise<void>;
+    onGenerate: (draft: VideoNodeDraft, quote: PublicQuote | null, onPersisted: (revision: number) => void) => Promise<void>;
     onImport?: (files: File[]) => Promise<VideoInputChoice[]>;
     onLoadMoreAssets?: () => Promise<void>;
     canLoadMoreAssets?: boolean;
@@ -77,7 +77,7 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
         if (generate) {
             if (!config.comfyWorkflowId && !estimate.quote)
                 throw new Error(estimate.error || "请等待报价");
-            await onGenerate(draft, config.comfyWorkflowId ? null : estimate.quote);
+            await onGenerate(draft, config.comfyWorkflowId ? null : estimate.quote, savedRevision => { revision.current = savedRevision; });
         }
         else
             await onSave(draft);
