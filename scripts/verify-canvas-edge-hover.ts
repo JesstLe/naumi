@@ -38,4 +38,3 @@ const hint = readFileSync("src/components/canvas/canvas-edge-hover-hint.tsx", "u
 assert.match(hint, /pointer-events-none/); assert.match(hint, /useEffect\(\(\) => \(\) => controller\.clear\(\)/);
 assert.doesNotMatch(hint, /fetch\(|useState\(/);
 console.log("EDGE_HOVER=PASS POINTER1000_FRAME1_LATEST_POINT NO_ROOT_GRAPH_STATE CLEAR_CANCEL_RACE PROJECT_UNMOUNT_CLEAN HAND_BUTTONS_READONLY_GUARDS SELECTION_DELETE_NATIVE NO_MEDIA_WRITE");
-

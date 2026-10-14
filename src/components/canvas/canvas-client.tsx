@@ -12217,4 +12217,3 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     </PendContext.Provider>
   );
 }
-

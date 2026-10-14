@@ -218,3 +218,9 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 集中verify-canvas-edge-hover、原render-layer-order和完整TypeScript通过。下一步固定两份同探针Linux构建、同一隔离admin213/154/191项目真实浏览器悬停/平移/选择/剪断回归；不得用控制器1000→1调度次数冒充用户耗时70%，不得把本地结果称103上线。其他模块的直连对照和完整发布连续性/回滚仍未结束。
 
 模块22浏览器失败已定位并修正：候选诊断页面不断追加ReactFlow，源于新提示层key直接用activeKey，与同级ReactFlow的key重复。未上线；立即将候选退回dashboard停止压力，失败运行不作为任何性能证据。提示层现在使用edge-hover:前缀的独立命名空间，仍按项目变化卸载/清除；回归断言明确检查前缀。下一固定候选须重新构建并验证单一ReactFlow/单一诊断面板，否则禁止性能结论和发布。
+
+模块22集中浏览器回归（固定修正1476cf2）：独立Linux2fe baseline/1476 candidate、同隔离DB/媒体、同1625×884及1257×884画布、Agent侧栏开启、zoom0.0290765。修正后单一ReactFlow/单一probe、213节点/154已载图/191连线/94缺素材标记保持。原生零滚动指令移动指针至现有连线6点，剪刀跟随到354/157，移到空白处清除，viewport字节不变；点击穿透选中连线，Delete191→190，原生Undo恢复191。截图和JSON已检查，失败旧2d profile stopped/retained，不作性能结论。
+
+真实四次平移共32trusted事件：本轮baseline P95 111.9ms、候选138.5ms，观察为退化23.77%，明确未70达标；不以悬停调度1000→1覆盖平移退化。3秒测量原先仅捕到8事件，不作为完整对照；后续零滚动附加样本也不污染已保存32事件结果。ready/images时钟含登录/项目选择等待，不作为有效冷/热首屏证据。普通PROBE0 fixed1476 Linux构建exit0；随后发现共享本地fixture数据库及两份profile均被外部操作停止，新的ordinary健康因15513拒绝连接未通过。未重启那些容器；仅停止保留本任务新ordinary失败实例，等用户确认Docker清理状态后恢复本地验收，期间不重占103锁。
+
+四件源码事务包现在固定1476相对main95b43c5共34字段（原模块21材料保留在transaction22-previous-artifacts）。BASELINE24字节下载、MODIFIED1、独立ROLLBACK24；新hover/层级/可见性测试、34SHA原样恢复和同事video-layout/员工工作台/media权限文件保留均exit0。MODIFIED ZIP保持修改，ROLLBACK.sh可执行，四件重开。它们是源码行为回滚，不冒充线上切流/服务器回滚。VERIFICATION.txt明确写了本轮平移未达标、普通运行待完成、103本轮不发布。main后续f673仅文档，尚未整合到该固定包。
