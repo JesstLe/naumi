@@ -12,6 +12,13 @@ import {compileVideoCamera} from "./camera";
 export type VideoNodeConfig=CanvasVideoNode["config"];
 export type VideoCatalogModel=VideoModelCapability&{isDefault?:boolean};
 export type VideoInputChoice={id:string;nodeId:string;kind:OrderedInput["kind"];title:string;value:string;thumbnail?:string;available:boolean};
+export function resolveVideoTextInputs(inputs:readonly OrderedInput[],choices:readonly VideoInputChoice[]):OrderedInput[]{
+  return inputs.map(input=>{
+    if(input.kind!=="text"||input.nodeId.startsWith("inline:"))return input;
+    const sourceId=input.nodeId.replace(/^text:/,""),source=choices.find(choice=>choice.kind==="text"&&choice.nodeId.replace(/^text:/,"")===sourceId&&choice.available);
+    return source&&source.value!==input.value?{...input,value:source.value}:input;
+  });
+}
 export const VIDEO_MODE_LABELS:Record<VideoMode,string>={text:"文生视频",single_image:"单图生视频",frames_required:"首尾帧必填",first_optional:"首帧可选",last_optional:"尾帧可选",reference:"混合参考",video_edit:"编辑视频",extend:"续写视频",motion_control:"运动控制",lip_sync:"口型同步"};
 export const VIDEO_ROLE_LABELS:Record<OrderedInput["role"],string>={context:"参考文字",author:"描述来源",first_frame:"首帧",last_frame:"尾帧",reference:"参考",element:"元素",source_video:"来源视频",source_audio:"来源音频"};
 export const VIDEO_KIND_LABELS={text:"文字",image:"图片",video:"视频",audio:"音频"};

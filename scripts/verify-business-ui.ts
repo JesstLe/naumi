@@ -43,8 +43,9 @@ async function main() {
     await member.addCookies([{name:"nv_user",value:fixture.userCookie,domain:"127.0.0.1",path:"/"},{name:"naumi_locale",value:"zh",domain:"127.0.0.1",path:"/"}]);
     const user=await member.newPage();user.setDefaultTimeout(30000);
     await user.goto(`${origin}/garment`);
-    const selector=user.getByLabel("tool.garment 模型",{exact:true});await selector.waitFor();
-    assert.deepEqual(await selector.locator("option").allTextContents(),["灵动企业2.5"]);
+    const selector=user.getByRole("combobox",{name:"执行模型",exact:true});await selector.waitFor();
+    assert.ok((await selector.innerText()).includes("灵动企业2.5"));await selector.click();
+    const choices=user.getByRole("listbox",{name:"执行模型",exact:true}).getByRole("option");assert.deepEqual(await choices.allTextContents(),["灵动企业2.5"]);await choices.first().click();
     await user.screenshot({path:`${folder}/business-tool-model.png`,fullPage:true});
     const catalog=await (await member.request.get(`${origin}/api/models?feature=image.generate`)).json();assert.deepEqual(catalog.models.map((m:any)=>m.id),["enterprise-image"]);
     assert.ok(!JSON.stringify(catalog).includes("wire-image"));
