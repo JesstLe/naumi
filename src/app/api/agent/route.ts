@@ -1,3 +1,4 @@
+import { forwardLegacyAgentSession } from "@/lib/agent/legacy-runtime";
 import { resolveImageSkill } from "@/lib/image-skills/server";
 import { SkillError } from "@/lib/image-skills/catalog";
 import {randomUUID} from "node:crypto";
@@ -45,6 +46,8 @@ async function authedEmail(request: Request): Promise<string | null> {
 
 // ── SSE 流式执行 ───────────────────────────────────────────────────────────
 export async function PUT(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   try { return await withBiRequest(request, () => handlePut(request)); }
   catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }
@@ -248,6 +251,8 @@ async function handlePut(request: Request) {
 
 // ── Steering 插话 ──────────────────────────────────────────────────────────
 export async function PATCH(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -282,6 +287,8 @@ export async function PATCH(request: Request) {
 
 // ── 中止 ───────────────────────────────────────────────────────────────────
 export async function DELETE(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -300,6 +307,8 @@ export async function DELETE(request: Request) {
 
 // ── 事件轮询(降级) ─────────────────────────────────────────────────────────
 export async function GET(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -322,6 +331,8 @@ export async function GET(request: Request) {
 
 // ── 一次性执行(向后兼容) ─────────────────────────────────────────────────────
 export async function POST(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   try { return await withBiRequest(request, () => handlePost(request)); }
   catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }

@@ -160,3 +160,13 @@ React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判
 新增verify_public_video_reads切流门槛：私有60分钟native观测会话仅供GET，在当前公开路由逐项核对nodes/assets/projects/byoc目录200 JSON和预期数组shape；404、HTML或假200错误body都在网关写入之前终止。不改计费/密码、不创建模型任务，不把DB健康代替新前端所需协议。fixture成功/404/bad-shape回归通过；103真实protocol-check预期失败于旧core assets404，网关与本轮原始文件字节完全一致。旧13三槽源码已被新main替代，不公开切流。
 新main合并7556c3e后，视频轮询修复4012ab0及兼容性a1c091a普通Linux构建均通过；本机4330实际1791938547/a1c091a，健康/作品/文字/属性读取通过，普通画布213nodes154实际图片191edges/composite、浏览器error0。兼容性修复仅使用广泛支持的hasOwnProperty.call，不改变snapshot比较内容或poll时钟。当前新增协议脚本不影响App源码，待新的整体Backend/Worker发布策略与固定候选集中验收。
 回合所持103双锁将正常释放；原公开b243/1791913676、core/Worker c05、原角色/密码/积分/设置/媒体控制在最终检查保持，新增13eb候选私有35/36/37保留但标为过期，后续不得把它当最新main。四个更早本任务无引用/无连接预览已stop且镜像/容器及回滚文件保留，不计成功发布次数。本轮功能累计第3次后再次fetch/整合main，同步计数归零；没有合任务到main或公开发布，目标active不complete。
+
+## 模块18：新版Worker排空控制与旧Agent归属转发（工程验证，未发布）
+
+修复接手时Agent fixture第55/56行多余括号；集中验收后真实HTTP/SSE测试及TypeScript通过。SSE测试不再用150ms自动完成与1000ms阈值（这种测试可能误接受缓冲），改为旧端保持响应未结束时必须读到open事件，并验证下游取消确实关闭上游连接。工作台/画布按账号及项目/anchor探测旧进程Map，仅存在时转发原请求一次；404交当前handler，未知网络状态503不重放。当前进程已持有的会话不依赖旧实例可达性；新会话无旧Map时仍走新版。raw画布ID遵循当前/旧c05相同project/anchor hash规则，原请求正文完整保持。工作台会话历史列表仍本机共享DB读取，history/steer/stop针对旧会话归属旧实例。只接受服务端固定私有origin，未配置时行为不变；转发在billing wrapper前，hop-by-hop/set-cookie剔除，没有第二次计费wrapper。
+
+新增Worker私有127.0.0.1 Bearer控制/status、/drain、/resume以及START_PAUSED旁路配置。drain阻止后续领取，在途HTTP保持；resume不重入；Linux SIGTERM等待当前tick完成退出0。使用真实Linux子进程和假tick HTTP端点，跨5秒interval验证暂停后新领取0、在途取消0、恢复单tick、信号退出0，供应商调用0。Windows child.kill(SIGTERM)为强杀语义，不能当Linux产品失败；验收脚本显式限定Linux，Docker --network none运行PASS。
+
+103本轮只读刷新：公网仍b243f5e/1791913676、旧core/Worker c05，35/36/37仍旧13eb旁路；部署锁无持有、磁盘70%、可用内存3187MiB、swap占1412MiB。未写生产、未停旧Worker/旧App、未切流。旧c05 Worker不存在drain控制；新增控制只解决下一代Worker，不声称首次升级无损交接已完成。旧实例停用还须确证SSE/Map和在途tick排空，不能依据新Worker fixture直接停旧生产。
+
+开工fetch发现新main5fd8196（同事账单wallet锁补齐和回归），本模块任务提交后普通整合；不得使用e6或13eb旧包忽略它。当前全范围目标仍active：代理同链路冷79.70%与原生平移32.44%仍为上轮实测，不表示最新main/新module/真实直连R270%验收。新固定普通App构建/真实旧新版API兼容/最终交接发布与回滚继续。功能计数1/3，生产发布计数0。
