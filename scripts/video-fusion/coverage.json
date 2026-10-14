@@ -203,6 +203,16 @@
       "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/history-recovery-16376442-7d1d-45de-ade0-23105caac44c/result.json",
       "verifier": "scripts/verify-video-fusion-history-recovery.ts",
       "kind": "actual-app-chrome-db-router-worker-history-recovery"
+    },
+    "mosaic": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/mosaic-2447c449-29c6-4055-befe-2224acffe0cc/result.json",
+      "verifier": "scripts/verify-video-fusion-mosaic.ts",
+      "kind": "actual-agent-tools-app-db-router-worker-with-simulated-supplier"
+    },
+    "continuity": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/continuity-87e8d486-0c8c-4489-8afd-f69ccd1da7c4/result.json",
+      "verifier": "scripts/verify-video-fusion-continuity.ts",
+      "kind": "actual-agent-tools-app-db-router-worker-with-simulated-supplier"
     }
   },
   "capabilities": [
@@ -924,38 +934,269 @@
       "name": "剧本及拼图到完整可编辑片段",
       "state": "evidence-review-pending",
       "implementation": [
-        "src/lib/video/script-assets.ts"
+        "src/lib/video/script-assets.ts",
+        "src/lib/agent/video-script-storyboard.ts",
+        "src/lib/video/production-prompt.ts"
       ],
       "evidenceKeys": [
         "script",
-        "multishot"
+        "multishot",
+        "mosaic"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
       "remaining": [
-        "核对真实制作规则与拼图面板语义的策略证据；脚本供应商只证明接口链路",
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
-      ]
+        "上游完整实操对照仍待闭合；当前仅完成本项真实应用执行与制作规则源码核对"
+      ],
+      "criteria": [
+        {
+          "requirement": "正式原稿逐字连续覆盖、正式片段、无整剧本共享、越界/emoji/版本拒绝、并发重放和真实画布恢复",
+          "evidenceKey": "script",
+          "assertions": [
+            {
+              "path": "contiguousFullOriginal",
+              "value": true
+            },
+            {
+              "path": "formalFragmentAssets",
+              "value": true
+            },
+            {
+              "path": "noWholeScriptPerShot",
+              "value": true
+            },
+            {
+              "path": "invalidPlansHaveNoWrites",
+              "value": true
+            },
+            {
+              "path": "emojiBoundaryAndSourceRevision",
+              "value": true
+            },
+            {
+              "path": "concurrentReceiptAndEditedReplay",
+              "value": true
+            },
+            {
+              "path": "actualAgentTextEventsAndBrowserRefresh",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "单片段多镜头保留完整对白/空白、各正式可编辑镜头正文与血缘、一任务及阶段冻结",
+          "evidenceKey": "multishot",
+          "assertions": [
+            {
+              "path": "nativeKieMultiPrompt",
+              "value": true
+            },
+            {
+              "path": "sourceScriptPreserved",
+              "value": true
+            },
+            {
+              "path": "separateEditableShotBodies",
+              "value": true
+            },
+            {
+              "path": "originalWhitespacePreserved",
+              "value": true
+            },
+            {
+              "path": "correctFormalLineage",
+              "value": true
+            },
+            {
+              "path": "oneWorkflowTask",
+              "value": true
+            },
+            {
+              "path": "workflowFreezeKeepsVisualDirection",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "原创四格整图只作序列参考，四段各3秒合12秒；原文、正式角色/音色素材及原生有声请求保持，缺格预扣前拒绝，重启/私有权限保持",
+          "evidenceKey": "mosaic",
+          "assertions": [
+            {
+              "path": "fourPanelWholeImageReferenceNotFirstFrame",
+              "value": true
+            },
+            {
+              "path": "fourOrderedThreeSecondBlocksTotalTwelve",
+              "value": true
+            },
+            {
+              "path": "allPanelOriginalDialogueAndFormalEditableBodies",
+              "value": true
+            },
+            {
+              "path": "missingPanelRejectedBeforeWritesOrFees",
+              "value": true
+            },
+            {
+              "path": "originalScriptAndMosaicHashPreserved",
+              "value": true
+            },
+            {
+              "path": "formalIdentityAndAudioElementReferences",
+              "value": true
+            },
+            {
+              "path": "nativeWholeMosaicFourPromptsAndAudio",
+              "value": true
+            },
+            {
+              "path": "onePersistentWorkflowTaskAndRestartReplay",
+              "value": true
+            },
+            {
+              "path": "otherAccountCannotReadMosaic",
+              "value": true
+            }
+          ]
+        }
+      ],
+      "auditNote": "真实文字模型创作质量和真实视频生成效果未验收，遵守批准方案隔离模拟边界。"
     },
     {
       "id": "V13",
       "name": "串行续写硬切同机位前传",
       "state": "evidence-review-pending",
       "implementation": [
-        "src/lib/video/canvas-workflow.ts"
+        "src/lib/video/canvas-workflow.ts",
+        "src/lib/video/production-prompt.ts"
       ],
       "evidenceKeys": [
         "production",
         "sse",
         "agentBrowser",
-        "freeze"
+        "freeze",
+        "continuity"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
       "remaining": [
-        "完整意图/前序产物/连续链证据逐项审查；脚本供应商不证明真实模型策略",
-        "对照当前源码审查证据是否覆盖本项全部条件",
-        "固定上游实操对照尚未全部闭合"
-      ]
+        "上游完整实操对照仍待闭合；当前仅完成本项真实应用执行与制作规则源码核对"
+      ],
+      "criteria": [
+        {
+          "requirement": "实际生成开场之后硬切、同机位及前传分支，仅首阶段先提交，各阶段等待真实前序完成并冻结其作品身份/SHA；正式角色/音色与本段原文保持，四任务各一次结算，重启和重放不重建",
+          "evidenceKey": "continuity",
+          "assertions": [
+            {
+              "path": "realGeneratedPredecessorForHardCutSameCameraAndPrequel",
+              "value": true
+            },
+            {
+              "path": "onlyFirstStageSubmittedBeforeResults",
+              "value": true
+            },
+            {
+              "path": "eachStageWaitsForCompletedPredecessor",
+              "value": true
+            },
+            {
+              "path": "declaredSourceVideoIdentityAndHashFrozen",
+              "value": true
+            },
+            {
+              "path": "formalIdentityAudioAndOwnOriginalDialogue",
+              "value": true
+            },
+            {
+              "path": "referenceOnlyModePreservedWithoutFakeReverseApi",
+              "value": true
+            },
+            {
+              "path": "fourPersistentTaskIdsAndSingleSettlement",
+              "value": true
+            },
+            {
+              "path": "appRestartOriginalRunReplayAndOwnerIsolation",
+              "value": true
+            },
+            {
+              "path": "originalScriptAndAllResultBytesPreserved",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际Agent SSE接受前全链报价、模型自确认拒绝、人类确认；页面关闭后Worker与App重启恢复原链",
+          "evidenceKey": "sse",
+          "assertions": [
+            {
+              "path": "actualAgentSseAndPiStreaming",
+              "value": true
+            },
+            {
+              "path": "modelSelfConfirmationBlocked",
+              "value": true
+            },
+            {
+              "path": "fullChainQuoteBeforeAnyVideoTask",
+              "value": true
+            },
+            {
+              "path": "humanConfirmationNextTurn",
+              "value": true
+            },
+            {
+              "path": "sseClosedAfterAcceptance",
+              "value": true
+            },
+            {
+              "path": "actualAppRestart",
+              "value": true
+            },
+            {
+              "path": "workerContinuedTwoDependentStages",
+              "value": true
+            },
+            {
+              "path": "originalOperationReplayNoNewTasks",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "已保存后续阶段模型映射、计费版本、完整来源文本冻结；实际发布新配置和App重启仍保持原链",
+          "evidenceKey": "freeze",
+          "assertions": [
+            {
+              "path": "encryptedStageCapsules",
+              "value": true
+            },
+            {
+              "path": "pendingStageModelMappingFrozen",
+              "value": true
+            },
+            {
+              "path": "pendingStageBillingVersionFrozen",
+              "value": true
+            },
+            {
+              "path": "fullOwnedTextFrozen",
+              "value": true
+            },
+            {
+              "path": "actualModelAndBillingPublication",
+              "value": true
+            },
+            {
+              "path": "actualAppRestart",
+              "value": true
+            },
+            {
+              "path": "replayNoNewTasks",
+              "value": true
+            }
+          ]
+        }
+      ],
+      "auditNote": "真实文字模型创作质量和真实视频生成效果未验收，遵守批准方案隔离模拟边界。"
     },
     {
       "id": "V14",
