@@ -467,6 +467,11 @@ async def save_template(request: Request):
     version = next((v for v in item['versions'] if v['path'] == body.get('version_path')), None) if item else None
     if not version:
         raise HTTPException(400, '请先选择属于当前卡片的满意版本')
+    with db() as c:
+        chosen = c.execute('SELECT prompt,config FROM tasks WHERE user_id=? AND result=? AND state=\'done\'', (u['id'], version['path'])).fetchone()
+    if not chosen:
+        raise HTTPException(400, '所选版本的生成记录不存在')
+    parameters = validate_config(json.loads(chosen['config']))
     tid = secrets.token_hex(12)
     folder = DATA / 'users' / u['id'] / 'templates' / tid
     folder.mkdir(parents=True)
@@ -478,7 +483,7 @@ async def save_template(request: Request):
         shutil.copyfile(original, target)
         copied.append(target.relative_to(DATA).as_posix())
     # 原产品仅用于模板来源记录，不会套到另一个产品的生成输入。
-    snapshot = {'reference_path': copied[0], 'result_path': copied[1], 'reference_url': image_url(copied[0]), 'result_url': image_url(copied[1]), 'prompt': str(body.get('prompt') or version['meta']['prompt']), 'kind': item['kind'], 'source_version': version['label'], 'source_products': [x['relative'] for x in products], 'parameters': validate_config(body.get('config', {}))}
+    snapshot = {'reference_path': copied[0], 'result_path': copied[1], 'reference_url': image_url(copied[0]), 'result_url': image_url(copied[1]), 'prompt': chosen['prompt'], 'kind': item['kind'], 'source_version': version['label'], 'source_products': [x['relative'] for x in products], 'parameters': parameters}
     name = str(body.get('name') or (item['product'] + ' ' + version['label'])).strip()[:100]
     with db() as c:
         c.execute('INSERT INTO templates VALUES (?,?,?,?,?)', (tid, u['id'], name, json.dumps(snapshot, ensure_ascii=False), time.time()))
@@ -512,7 +517,7 @@ async def apply_template(request: Request, template_id: str):
             temporary = manifest_path.with_suffix('.tmp')
             temporary.write_text(json.dumps(manifest, ensure_ascii=False), 'utf-8')
             temporary.replace(manifest_path)
-    return {'ok': True, 'ref_path': target.relative_to(DATA).as_posix(), 'prompt': snapshot['prompt'], 'kind': snapshot['kind']}
+    return {'ok': True, 'ref_path': target.relative_to(DATA).as_posix(), 'prompt': snapshot['prompt'], 'kind': snapshot['kind'], 'parameters': snapshot.get('parameters', {})}
 
 
 @app.get('/api/heartbeat')

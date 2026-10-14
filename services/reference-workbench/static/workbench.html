@@ -505,7 +505,7 @@ function cardActionsHtml(it,i){
   const options=(it.versions||[]).map(x=>`<option value="${esc(x.path)}" ${v&&v.path===x.path?"selected":""}>${esc(x.label)}</option>`).join("");
   return `<select onchange="setVersion(${i},this.value)">${options}</select><button class="ghost small" onclick="openCompare(${i})">对比</button><button class="ghost small" onclick="saveCurrentTemplate(${i})">保存模板</button>`;
 }
-function cardMetaHtml(it){return `${esc(it.product)} / ${esc(it.task_label)} / ${esc(it.size)} <span class="badge ${esc(it.status)}">${statusText[it.status]||it.status}</span>`;}
+function cardMetaHtml(it){return `${esc(it.product)} / ${esc(it.task_label)} / ${esc(it.size)} <span class="badge ${esc(it.status)}">${statusText[it.status]||it.status}</span>${it.local_cached?' <span class="badge">本机已缓存</span>':''}`;}
 function errorHtml(it){return it.error?`<div class="errorBox">${esc(it.error)}</div>`:"";}
 function cleanPrompt(value){const text=String(value??""); return text==="undefined" ? document.getElementById("prompt").value : text;}
 function render(){

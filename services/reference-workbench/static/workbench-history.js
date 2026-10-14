@@ -69,6 +69,7 @@
   function resolve(url) { return urls.get(source(url)) || url; }
   async function hydrate(rows) {
     for (const item of rows) {
+      item.local_cached = true;
       item.ref_url = await localUrl(item.ref_url);
       item.product_urls = await Promise.all((item.product_urls || [item.product_url]).map(localUrl)); item.product_url = item.product_urls[0];
       for (const v of item.versions || []) { v.original_url = v.original_url || v.url; v.local_url = await localUrl(v.url); if (v.meta && v.meta.annotated_url) v.meta.annotated_local_url = await localUrl(v.meta.annotated_url); }
@@ -81,9 +82,7 @@
   async function archive(imageUrls) { const zip = new JSZip(); let total = 0, number = 0; for (const url of imageUrls) { const value = await blob(url); total += value.size; if (total > 256 * 1024 * 1024) throw Error('本机打包超过256MB'); const path = new URL(source(url), location.origin).searchParams.get('path'); zip.file(String(++number).padStart(3, '0') + '_' + path.split('/').pop(), await value.arrayBuffer()); } if (!number) throw Error('没有可下载图片'); return zip.generateAsync({ type: 'blob' }); }
   async function saveTemplate(item, version) {
     const name = window.prompt('模板名称', item.product + ' ' + version.label); if (!name) return;
-    const card = [...document.querySelectorAll('.card')].find(c => c.dataset.ref === item.ref_path);
-    const currentPrompt = card && card.querySelector('.prompt') ? card.querySelector('.prompt').value : version.meta.prompt;
-    const response = await fetch('/api/workbench/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, ref_path: item.ref_path, version_path: version.path, workbench_root: currentRoot(), config: workbenchRequestConfig(), prompt: currentPrompt }) });
+    const response = await fetch('/api/workbench/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, ref_path: item.ref_path, version_path: version.path, workbench_root: currentRoot(), config: workbenchRequestConfig() }) });
     const data = await response.json(); if (!response.ok) throw Error(data.detail || '模板保存失败');
     const template = data.template;
     const referenceBlob = await blob(template.reference_url), resultBlob = await blob(template.result_url);
@@ -105,7 +104,8 @@
         try { if (!currentRoot()) throw Error('请先选择当前产品文件夹');
           const response = await fetch('/api/workbench/templates/' + encodeURIComponent(row.template.id) + '/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workbench_root: currentRoot() }) });
           const data = await response.json(); if (!response.ok) throw Error(data.detail || '模板套用失败');
-          setPromptOverride(data.ref_path, data.prompt); document.getElementById('mode').value = 'all_sku'; closeModal(); await loadRefs(); status.textContent = '模板参考图与提示词已套用，当前产品图保持不变。';
+          for (const field of ['quality', 'resolution', 'timeout']) if (data.parameters && data.parameters[field] !== undefined) document.getElementById(field).value = String(data.parameters[field]);
+          setPromptOverride(data.ref_path, data.prompt); document.getElementById('mode').value = 'all_sku'; closeModal(); await loadRefs(); status.textContent = '模板参考图、原版提示词与生成参数已套用，当前产品图保持不变。';
         } catch (e) { alert(e.message); }
       }; box.append(apply); list.append(box);
     }
