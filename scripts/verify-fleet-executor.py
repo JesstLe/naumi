@@ -104,7 +104,7 @@ with tempfile.TemporaryDirectory(prefix='naumi-executor-',dir='/run') as directo
     try:
         with executor.locks([str(unsafe)]):raise AssertionError('unsafe lock accepted')
     except executor.GateError:pass
-    receipt_e=root/'receipt';receipt_e.mkdir();count=[0]
+    receipt_e=pathlib.Path(c['stateDir'])/job['id'];receipt_e.mkdir(parents=True);count=[0]
     previous_execute=executor.execute
     def accepted_once(config,job,evidence):
         count[0]+=1
@@ -114,5 +114,13 @@ with tempfile.TemporaryDirectory(prefix='naumi-executor-',dir='/run') as directo
     assert count[0]==1 and pathlib.Path(c['outbox'],job['id']+'.json').stat().st_mode&0o777==0o640
     interrupted=root/'interrupted';interrupted.mkdir();executor.atomic_json(interrupted/'started.json',{})
     executor.run_once(c,job,interrupted);assert count[0]==1 and executor.read_json(interrupted/'result.json')['code']=='UNKNOWN'
+    unknown=pathlib.Path(c['stateDir'])/str(uuid.uuid4());unknown.mkdir();executor.atomic_json(unknown/'started.json',{})
+    newer={**job,'id':str(uuid.uuid4()),'leaseId':str(uuid.uuid4())};new_e=pathlib.Path(c['stateDir'])/newer['id'];new_e.mkdir()
+    executor.run_once(c,newer,new_e);assert count[0]==1 and executor.read_json(new_e/'result.json')['code']=='UNKNOWN';assert not (new_e/'started.json').exists()
+    executor.atomic_json(unknown/'result.json',{'state':'blocked','code':'UNKNOWN'})
+    try:executor.assert_no_unconfirmed(c,newer['id']);raise AssertionError('unknown root receipt bypassed')
+    except executor.GateError as error:assert error.code=='UNKNOWN'
+    executor.atomic_json(unknown/'result.json',{'state':'failed','code':'CHECK_FAILED'})
+    executor.assert_no_unconfirmed(c,newer['id'])
     executor.execute=previous_execute
-print('FLEET_EXECUTOR_CONTRACT=PASS SIGNATURE_SCOPE=1 ROOT_PATHS=1 HOOK_HASH=1 NAS_GATE=1 TWO_LOCKS=1 BASELINE_PIN=1 BACKUP_GATE=1 PRE_POST_ACCEPT=1 WORKER_GATE=1 ROLLBACK_FILES=1 CONFIG_RETAINED=1 OLD_SLOTS_RETAINED=1 NEXT_RELEASE_PORTS=1 RECEIPT_ONCE=1 INTERRUPTED_UNKNOWN=1 SIMULATED_DOCKER=1 PRODUCTION_WRITES=0')
+print('FLEET_EXECUTOR_CONTRACT=PASS SIGNATURE_SCOPE=1 ROOT_PATHS=1 HOOK_HASH=1 NAS_GATE=1 TWO_LOCKS=1 BASELINE_PIN=1 BACKUP_GATE=1 PRE_POST_ACCEPT=1 WORKER_GATE=1 ROLLBACK_FILES=1 CONFIG_RETAINED=1 OLD_SLOTS_RETAINED=1 NEXT_RELEASE_PORTS=1 RECEIPT_ONCE=1 INTERRUPTED_UNKNOWN=1 ROOT_UNCONFIRMED_GATE=1 RELAY_ACK_CANNOT_CLEAR_ROOT=1 SIMULATED_DOCKER=1 PRODUCTION_WRITES=0')

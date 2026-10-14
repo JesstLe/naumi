@@ -7,6 +7,7 @@
 - 同实例存在preparing或带lease_id的blocked计划时，20:00规划跳过，避免产生另一份重复发布。
 - 即便遗留了第二天planned计划，下发前逐实例事务锁内再检查任何带租约blocked状态，保持原计划待准备、不签发新任务。
 - 恢复只有原lease真实最终failed/accepted回执可解除未知状态，保留幂等审计和实际业务数据；不重发已未知的root部署，不用改DB/积分回滚它。
+- root另查本机受保护stateDir：其他计划started而无result、或真实root回执为UNKNOWN/ROLLBACK_FAILED时，不开始新计划。即使非rootrelay用token伪报中央ack解除状态，也不能清除root的本机未知门槛；需root现场核实后保存真实终态。因旧未知被挡的新计划不写started，不产生新的虚假执行未知链。
 - 未租出的基线不匹配blocked不会伪装成已执行；之后仍按真实基线重新门槛，不误把所有历史blocked一概锁死。
 
 ## 验证与生产边界

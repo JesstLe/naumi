@@ -323,6 +323,23 @@ def run(config_file, envelope_file):
         return run_once(config,job,evidence)
 
 
+def assert_no_unconfirmed(config,current_id):
+    """A compromised relay cannot clear root-local uncertainty by faking a central ack."""
+    directory=protected_path(config['stateDir'],file=False)
+    for previous in directory.iterdir():
+        if previous.name==current_id or not re.fullmatch('[a-f0-9-]{36}',previous.name):
+            continue
+        protected_path(previous,file=False)
+        started=previous/'started.json'
+        if not started.exists():
+            continue
+        protected_path(started)
+        receipt=previous/'result.json'
+        require(receipt.exists(),'UNKNOWN')
+        result=read_json(protected_path(receipt))
+        require(not(result.get('state')=='blocked' and result.get('code') in ['UNKNOWN','ROLLBACK_FAILED']),'UNKNOWN')
+
+
 def run_once(config,job,evidence):
     receipt = evidence/'result.json'
     if receipt.exists():
@@ -334,8 +351,9 @@ def run_once(config,job,evidence):
             # An interrupted root executor needs reconciliation, never blindly repeat cutover.
             result = {'planId':job['id'],'leaseId':job['leaseId'],'state':'blocked','code':'UNKNOWN'}
         else:
-            atomic_json(started,{'planId':job['id'],'leaseId':job['leaseId']})
             try:
+                assert_no_unconfirmed(config,job['id'])
+                atomic_json(started,{'planId':job['id'],'leaseId':job['leaseId']})
                 result = execute(config,job,evidence)
             except GateError as error:
                 result = {'planId':job['id'],'leaseId':job['leaseId'],'state':'blocked' if error.code in ['LOCK_BUSY','ROLLBACK_FAILED','UNKNOWN'] else 'failed','code':error.code}
