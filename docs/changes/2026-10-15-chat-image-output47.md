@@ -31,3 +31,5 @@
 - 本轮真实消费：一次受控single诊断调用在旧下载器失败后客户账务0；随后一次正式原会话生成按已接受报价12结算；各次备用供应商成本保留在supplier账本，不伪造“没有真实供应商调用”或自动补积分。
 - 配置四制品、命令/原样输出/退出码/回退：`E:/Workspace/naumi/output/chat-image-output47-20261015/VERIFICATION.txt`；实际原图同目录native-kitten.png，最终交付必须内嵌该已核验文件。服务器guarded回退 `/opt/naumi-staging/evidence/chat-image-output47-20261015/LIVE_ROLLBACK.sh`只切入口，不恢复DB或删除新作品。
 - 源码/说明已推本任务分支dab6924；此补充另提交。功能迭代从前轮1→本轮2，origin/main仍daf72b2；本轮成功配置发布增量+1，保留原累计未知说明，不虚填站点总计；52%/32GiB空间充足，没有删除他人构建或业务数据。
+
+收尾刷新：origin/main已从daf72b2前进到cf738207bcd63d916a6df5df848a26a1cb4393ea（即梦并发运维脚本/验收文档，无App/网关/模型价格改动）。已在本任务独立分支普通merge为e69e045，保留两边工作；不重跑该同事发布，不改变本次相同Image/单字段配置交付，不切换共享checkout。功能同步计数2→刷新整合后归零，生产验收结果保持。
