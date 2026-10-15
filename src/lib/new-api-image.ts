@@ -6,6 +6,7 @@ import { modelEndpointFetch } from "./model-config/transport";
 import { supplierCostFetch } from "./supplier-cost/collect";
 import {mapResolution} from "./model-config/resolution-policy";
 import {policyQuality} from "./model-config/quality-policy";
+import {readBoundedBytes} from "./supplier-cost/io";
 
 export type NewApiReferenceImage = {
   buffer: Buffer;
@@ -160,7 +161,9 @@ export async function generateNewApiImage(input: {
   if (!imageUrl) {
     throw new Error(`New API 生图分组未返回图片：${streamContent.slice(-300)}`);
   }
-  const imageResponse = await fetch(imageUrl, {
+  const imageTransport = managed ? modelEndpointFetch(new URL(imageUrl).origin,{trustedOrigins:input.trustedOrigins||(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(/[\s,]+/).filter(Boolean)}) : fetch;
+  const imageResponse = await imageTransport(imageUrl, {
+    redirect: "error",
     signal: AbortSignal.any([input.signal || new AbortController().signal, AbortSignal.timeout(60_000)]),
   });
   if (!imageResponse.ok) {
@@ -174,7 +177,7 @@ export async function generateNewApiImage(input: {
   if (declaredSize > 32 * 1024 * 1024) {
     throw new Error("生成图片超过 32MB 限制");
   }
-  const buffer = Buffer.from(await imageResponse.arrayBuffer());
+  const buffer = await readBoundedBytes(imageResponse,32*1024*1024);
   if (!buffer.length) throw new Error("生成图片内容为空");
   if (buffer.length > 32 * 1024 * 1024) {
     throw new Error("生成图片超过 32MB 限制");

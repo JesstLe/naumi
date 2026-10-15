@@ -1,0 +1,47 @@
+import assert from "node:assert/strict";
+import {readFile,writeFile} from "node:fs/promises";
+import {spawn} from "node:child_process";
+import {chromium,expect as baseExpect} from "@playwright/test";
+const origin="http://127.0.0.1:54987",out="output/model-health-20261015";
+if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw Error("Requires isolated UI fixture");
+const f=JSON.parse(await readFile("output/model-health-ui-fixture/fixture.json","utf8"));
+const executablePath=process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+const browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:process.platform==="win32"?{channel:"msedge"}:{})});
+const context=await browser.newContext({viewport:{width:1440,height:1050}});
+const expect=baseExpect.configure({timeout:60000});let worker;
+try{
+  assert.equal((await context.request.get(origin+"/api/admin/model-health")).status(),404);
+  assert.equal((await context.request.post(origin+"/api/model-health/worker/tick")).status(),401);
+  assert.equal((await context.request.post(origin+"/api/admin/login",{data:{password:"HealthFixture2026!"}})).status(),200);
+  await context.addCookies([{name:"nv_user",value:f.memberCookie,domain:"127.0.0.1",path:"/"}]);
+  const page=await context.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
+  await page.goto(origin+"/admin/model-health",{waitUntil:"domcontentloaded",timeout:120000});
+  await expect(page.getByRole("heading",{name:"模型健康巡检",exact:true})).toBeVisible();
+  await expect(page.getByRole("heading",{name:"业务近期已验证",exact:true})).toBeVisible();
+  const api=async()=>{const r=await context.request.get(origin+"/api/admin/model-health");assert.equal(r.status(),200);return r.json();};
+  let data=await api();assert.equal(data.providers[0].models.length,3);assert.equal(data.budget.used,0);
+  assert.equal(data.providers[0].state,"degraded");
+  await page.screenshot({path:out+"/model-health-desktop.png",fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await page.getByLabel("每日巡检上限（次）",{exact:false}).fill("8");
+  await page.getByRole("button",{name:"保存设置",exact:true}).click();await expect(page.getByText("已保存",{exact:true})).toBeVisible();
+  assert.equal((await api()).budget.limit,8);
+  assert.equal((await context.request.post(origin+"/api/admin/model-health",{headers:{Origin:"https://evil.invalid"},data:{action:"tick"}})).status(),403);
+  await page.getByRole("button",{name:"检查到期模型",exact:true}).click();
+  await expect.poll(async()=>(await api()).budget.used).toBe(1);
+  // Persistent standalone runner actually ticks the same server; no special test scheduler.
+  worker=spawn(process.execPath,["scripts/model-health-worker.mjs"],{windowsHide:true,env:{...process.env,NODE_OPTIONS:"",NAUMI_APP_ORIGIN:origin,MODEL_HEALTH_WORKER_SECRET:"model-health-ui-fixture-worker-secret-only"},stdio:["ignore","pipe","pipe"]});
+  let workerLog="";worker.stdout.on("data",b=>workerLog+=b);worker.stderr.on("data",b=>workerLog+=b);
+  await expect.poll(async()=>(await api()).budget.used,{timeout:60000}).toBe(2);worker.kill();
+  await page.getByRole("button",{name:"刷新",exact:true}).click();
+  await expect(page.getByRole("progressbar")).toHaveAttribute("aria-valuenow","2");
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.getByRole("heading",{name:"模型健康巡检",exact:true})).toBeVisible();
+  await page.screenshot({path:out+"/model-health-mobile.png",fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('h1')).color==="rgb(255, 255, 255)"),false);
+  const stats=await(await fetch(f.control+"/stats")).json();assert.equal(stats.paid,2);assert.equal(stats.catalogCalls,0);
+  assert.deepEqual(errors,[]);
+  await writeFile(out+"/browser-result.json",JSON.stringify({status:"PASS",configuredModels:3,localMockPaidCalls:2,externalSupplierCalls:0,catalogCalls:0,desktopOverflow:false,mobileOverflow:false,pageErrors:errors,workerLog},null,2));
+  console.log("MODEL_HEALTH_UI=PASS; CONFIGURED=3; CATALOG_CALLS=0; LOCAL_MOCK_CALLS=2; EXTERNAL_SUPPLIER_CALLS=0; DESKTOP_1440=PASS; MOBILE_390=PASS; WORKER_TICK=PASS; PAGE_ERRORS=0");
+}finally{worker?.kill();await browser.close();}

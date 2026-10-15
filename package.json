@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "verify:model-health": "tsx --conditions react-server scripts/verify-model-health.ts",
+    "verify:model-health-ui": "node scripts/verify-model-health-ui.mjs",
     "postinstall": "node scripts/patch-next-body.mjs",
     "prebuild": "node scripts/build-reference-workbench.mjs",
     "predev": "node scripts/build-reference-workbench.mjs",
