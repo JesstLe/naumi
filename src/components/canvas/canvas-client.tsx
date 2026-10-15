@@ -162,6 +162,7 @@ import {
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { useCanvasCredits } from "./use-canvas-credits";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { Button } from "@/components/ui/button";
@@ -2066,8 +2067,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 浏览器后退支持:进做图页(browsing=false)时往历史压一条,使「后退」先回项目页而非离开 /canvas。
   const editorPushedRef = useRef(false);
   const browsingRef = useRef(true);
-  // 剩余积分(右上会员挂件展示)
-  const [credits, setCredits] = useState<number | null>(null);
+  // 余额独立于作品快照缓存；同一 hook 覆盖项目列表与编辑器右上角。
+  const { credits, refreshCredits } = useCanvasCredits({ user, ready, targetEmail, request: privateFetchRaw });
   // 右上账户入口与站内其他页面共用同一 AccountDockMenu，不再打开整页账户弹窗。
   const [accountDockOpen, setAccountDockOpen] = useState(false);
   const [accountDockDark, setAccountDockDark] = useState(false);
@@ -2205,23 +2206,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       setCreatingNew(false);
       setBrowsing(true);
       flashTip(e instanceof Error ? e.message : t("canvas.genFail"));
-    }
-  }
-  async function refreshCredits() {
-    const em = targetEmail || user?.email;
-    if (!em) return;
-    try {
-      const r = await fetch(`/api/account?email=${encodeURIComponent(em)}`, {
-        headers: await authHeader(),
-      });
-      const d = await r.json();
-      const u = d?.user as
-        | { creditsTotal?: number; creditsUsed?: number }
-        | undefined;
-      if (u && typeof u.creditsTotal === "number")
-        setCredits(Math.max(0, u.creditsTotal - (u.creditsUsed ?? 0)));
-    } catch {
-      /* ignore */
     }
   }
   // 扫码支付二维码渲染 + 轮询到账 + 倒计时统一由共用 PayQrModal 处理(见下方 JSX)。
@@ -2423,7 +2407,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 余额轮询会回写新的 user 对象；仅账号变化才重载画布，避免覆盖正在编辑的内容。
   const authenticatedEmail = user?.email;
   useEffect(() => {
-    setCredits(null);
     setWorks(null); setNames({}); setTextNodes([]); setTextNodesReady(false);
     if (!ready || !authenticatedEmail) return;
     let cancelled = false;
