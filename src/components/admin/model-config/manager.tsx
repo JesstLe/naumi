@@ -38,7 +38,7 @@ type AdminState = {
   billingSnapshot?: ConfigSnapshot;
   providerCapacity?: Record<
     string,
-    { maxConcurrent: number; inFlight: number }
+    { maxConcurrent: number; inFlight: number; unlimited?: boolean }
   >;
   snapshot: ModelSnapshot;
   draft: ModelDraft;

@@ -8,12 +8,17 @@ import { decryptAtRest } from "../settings";
 import { settingsSecret } from "../settings-secret";
 
 type Limit = { providerId: string; baseUrl: string; maxConcurrent: number; timeoutMs: number };
+/** Server-owned policy, not a caller parameter. Applies to retained/frozen tasks
+ * too, without changing model snapshots, prices or shared-account budgets. */
+export function providerConcurrencyUnlimited(providerId: string) {
+  return (process.env.NAUMI_UNLIMITED_CONCURRENCY_PROVIDERS || "").split(",").map(value => value.trim()).filter(Boolean).includes(providerId);
+}
 function capacityIdentity(providerId: string, baseUrl: string) { return createHash("sha256").update(`${providerId}\n${new URL(baseUrl).origin}`).digest("hex"); }
 export async function providerCapacitySummary(pool: Pool, config: ModelConfig) {
   const identities = config.providers.map(p => capacityIdentity(p.id, p.baseUrl));
   const rows = (await pool.query("SELECT a.alias,b.max_concurrent,count(l.token)::int AS in_flight FROM unnest($1::text[]) a(alias) LEFT JOIN app_model_capacity_accounts c ON c.alias=a.alias LEFT JOIN app_model_provider_budgets b ON b.identity=COALESCE(c.identity,a.alias) LEFT JOIN app_model_provider_leases l ON l.identity=b.identity AND l.expires_at>now() GROUP BY a.alias,b.max_concurrent", [identities])).rows;
   const byIdentity = new Map(rows.map(row => [row.alias, row]));
-  return Object.fromEntries(config.providers.map((p, i) => { const row = byIdentity.get(identities[i]); return [p.id, { maxConcurrent: row?.max_concurrent ?? p.maxConcurrent, inFlight: row?.in_flight ?? 0 }]; }));
+  return Object.fromEntries(config.providers.map((p, i) => { const row = byIdentity.get(identities[i]), unlimited = providerConcurrencyUnlimited(p.id); return [p.id, { maxConcurrent: unlimited ? 0 : row?.max_concurrent ?? p.maxConcurrent, inFlight: row?.in_flight ?? 0, unlimited }]; }));
 }
 /** Run in the publication transaction, so old tasks see a lowered limit as soon as the pointer changes. */
 export async function registerProviderCapacities(tx: PoolClient, config: ModelConfig) {
@@ -52,7 +57,7 @@ export function createProviderCapacity(pool: Pool) {
       const budget = (await tx.query("INSERT INTO app_model_provider_budgets(identity,max_concurrent) VALUES($1,$2) ON CONFLICT(identity) DO UPDATE SET max_concurrent=LEAST(app_model_provider_budgets.max_concurrent,EXCLUDED.max_concurrent) RETURNING max_concurrent", [identity, input.maxConcurrent])).rows[0];
       await tx.query("DELETE FROM app_model_provider_leases WHERE identity=$1 AND expires_at<=now()", [identity]);
       const count = Number((await tx.query("SELECT count(*) AS n FROM app_model_provider_leases WHERE identity=$1", [identity])).rows[0].n);
-      allowed = count < budget.max_concurrent;
+      allowed = providerConcurrencyUnlimited(input.providerId) || count < budget.max_concurrent;
       if (allowed) await tx.query("INSERT INTO app_model_provider_leases(identity,token,expires_at) VALUES($1,$2,now()+($3 * interval '1 millisecond'))", [identity, token, input.timeoutMs + 60000]);
       await tx.query("COMMIT");
     } catch (error) { await tx.query("ROLLBACK"); throw error; } finally { if(!connection)tx.release(); }
