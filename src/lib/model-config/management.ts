@@ -39,7 +39,7 @@ export type ManagedModelCandidate = { id: string; model: string; label: string; 
 export type ManagedModelCreditGrid = {quality:string;resolution:string;credits:number|null;available:boolean;effectiveQuality:string;estimated:boolean}[];
 export type ModelManagementState = {
   version: number; managed: boolean; rows: ManagedModelRow[]; candidates: ManagedModelCandidate[];
-  billingVersion?:number;channelHealth?:Record<string,{state:string;failures:number;retryAt:string|null;lastStatus:number|null}>;providerCapacity?:Record<string,{maxConcurrent:number;inFlight:number}>;
+  billingVersion?:number;channelHealth?:Record<string,{state:string;failures:number;retryAt:string|null;lastStatus:number|null}>;providerCapacity?:Record<string,{maxConcurrent:number;inFlight:number;unlimited?:boolean}>;
   providers: { id: string; name: string; baseUrl: string; protocol: string; maxConcurrent:number; enabled: boolean; configured: boolean }[];
 };
 
