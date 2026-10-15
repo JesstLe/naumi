@@ -7,6 +7,12 @@ if (mode !== 'MODIFIED') {
   assert.ok(chunk.includes('[l$,lQ]=(0,C.useState)(null)'));
   assert.ok(chunk.includes('if(lQ(null),e$(null)'));
   assert.ok(!chunk.includes('function useCanvasCredits'));
+  // Execute the production initializer with a valid session, not a fabricated UI value.
+  const credits = vm.runInNewContext('let [l$,lQ]=(0,C.useState)(null); l$', {
+    eg:{email:'owner@test.invalid',creditsTotal:20,creditsUsed:3},
+    C:{useState: initial => [initial,()=>{}]},
+  });
+  assert.equal(credits,null);
   console.log(`${mode}=PASS SESSION_BALANCE=17 CANVAS_DISPLAY=— REPRODUCED=true`);
   process.exit(0);
 }
@@ -25,12 +31,12 @@ const C = {
   useCallback(fn,deps) {const i=index++;if(!slots[i]||!same(slots[i].deps,deps))slots[i]={fn,deps};return slots[i].fn;},
   useEffect(fn,deps) { const i=index++; if(!slots[i]||!same(slots[i].deps,deps)) { const old=slots[i]; slots[i]={deps};pending.push(()=>{old?.cleanup?.();slots[i].cleanup=fn();}); } },
 };
-const window = {addEventListener:(k,fn)=>listeners.set(k,fn),removeEventListener:(k,fn)=>{if(listeners.get(k)===fn)listeners.delete(k);}};
-const context = vm.createContext({C, window, console});
+const window = {location:{search:''},addEventListener:(k,fn)=>listeners.set(k,fn),removeEventListener:(k,fn)=>{if(listeners.get(k)===fn)listeners.delete(k);}};
+const context = vm.createContext({C, window, console,URLSearchParams});
 let props, result, requests=[];
 const request = (url,init) => new Promise((resolve,reject)=>requests.push({url,init,resolve,reject}));
 const user = (email='owner@test.invalid',total=20,used=3)=>({email,creditsTotal:total,creditsUsed:used});
-function render(p=props){ props=p;Object.assign(context,{eg:p.user,ey:p.ready,tt:p.targetEmail,aa:request});index=0;result=vm.runInContext(initializer,context);for(const effect of pending.splice(0))effect();return result; }
+function render(p=props){ props=p;window.location.search=p.targetEmail?'?email='+encodeURIComponent(p.targetEmail):'';Object.assign(context,{eg:p.user,ey:p.ready,tt:p.targetEmail,aa:request});index=0;result=vm.runInContext(initializer,context);for(const effect of pending.splice(0))effect();return result; }
 const tick=async()=>{await new Promise(r=>setImmediate(r));if(changed){changed=false;render();}};
 const respond=(req,u,status=200)=>req.resolve({ok:status===200,json:async()=>({user:u})});
 (async()=>{

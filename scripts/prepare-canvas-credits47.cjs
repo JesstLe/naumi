@@ -24,7 +24,7 @@ function once(s, from, to) {
   if (s.split(from).length !== 2) throw Error('Expected unique anchor: ' + from.slice(0, 70));
   return s.replace(from, to);
 }
-let modified = once(original, '[l$,lQ]=(0,C.useState)(null)', `{credits:l$,refreshCredits:sy}=${hook}({user:eg,ready:ey,targetEmail:tt,request:aa})`);
+let modified = once(original, '[l$,lQ]=(0,C.useState)(null)', `{credits:l$,refreshCredits:sy}=${hook}({user:eg,ready:ey,targetEmail:ey&&typeof window!=="undefined"?new URLSearchParams(window.location.search).get("email"):null,request:aa})`);
 modified = once(modified, refresh, '');
 modified = once(modified, 'if(lQ(null),e$(null)', 'if(e$(null)');
 const parsed = ts.createSourceFile('modified.js', modified, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);

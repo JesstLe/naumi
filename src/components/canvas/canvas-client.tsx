@@ -2068,7 +2068,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const editorPushedRef = useRef(false);
   const browsingRef = useRef(true);
   // 余额独立于作品快照缓存；同一 hook 覆盖项目列表与编辑器右上角。
-  const { credits, refreshCredits } = useCanvasCredits({ user, ready, targetEmail, request: privateFetchRaw });
+  // 先从当前URL解析只读目标，不等待作品effect设置targetEmail，避免首帧串号和切号旧目标请求。
+  const creditsTargetEmail = ready && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("email") : null;
+  const { credits, refreshCredits } = useCanvasCredits({ user, ready, targetEmail: creditsTargetEmail, request: privateFetchRaw });
   // 右上账户入口与站内其他页面共用同一 AccountDockMenu，不再打开整页账户弹窗。
   const [accountDockOpen, setAccountDockOpen] = useState(false);
   const [accountDockDark, setAccountDockDark] = useState(false);
