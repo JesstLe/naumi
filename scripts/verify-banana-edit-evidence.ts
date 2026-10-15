@@ -69,11 +69,11 @@ function main() {
   if(mode==='BASELINE') {
     const original=bananaFixture();writeFileSync(path.join(dir,'ORIGINAL.json'),JSON.stringify(original,null,2)+'\n');
     for(const m of original.publicModels)assert.equal(simulateBanana(original,m.id).eligible.length,0);
-    console.log('BASELINE PASS aliases=10 eligible=0 reason=IMAGEGEN_EDIT_UNSUPPORTED provider_calls=0');
+    console.log('BASELINE PASS aliases=5 eligible=0 reason=IMAGEGEN_EDIT_UNSUPPORTED provider_calls=0');
   } else if(mode==='MODIFIED') {
     const original=read('ORIGINAL.json'),modified=repairBananaEditEvidence(original);guards(original,modified);
     writeFileSync(path.join(dir,'MODIFIED_FILE.json'),JSON.stringify(modified,null,2)+'\n');
-    console.log('MODIFIED PASS aliases=10 eligible=1 each unknown_excluded=true guards=PASS projection_price_unchanged=true provider_calls=0');
+    console.log('MODIFIED PASS aliases=5 eligible=1 each unknown_excluded=true guards=PASS projection_price_unchanged=true provider_calls=0');
   } else if(mode==='RESTORE_COPY') {
     assert.ok(file);const original=read('ORIGINAL.json'),current=JSON.parse(readFileSync(file,'utf8'));
     const restored=rollbackBananaEditEvidence(current,original);assert.equal(modelConfigDigest(restored),modelConfigDigest(original));

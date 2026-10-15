@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import type { ModelConfig } from '../src/lib/model-config/types';
 
 export const BANANA_EDIT_PROOFS = [
-  { id: 'geeknow-nano-banana-pro', model: 'gemini-3-pro-image-preview', call: 'fdd50214-3389-4eac-888b-cae521448598', job: 'job-449bfcbd-0fb2-4220-a0b0-fdfac1b25c4a' },
-  { id: 'geeknow-nano-banana-2', model: 'gemini-nano-banana-2.1', call: '7cd9a47e-632a-4e9d-b863-9a008293d9ca', job: 'job-048ed97c-5be2-47fe-9b1a-479325760532' },
+  { id: 'geeknow-nano-banana-pro', model: 'gemini-3-pro-image-preview', call: '5c6cfef2-6b18-4d77-80cf-ca9f2a81b59f', operation: 'banana-edit-proof-pro-20261015-r1', outputSha256: '6b5c2373d20ecdbaf4383bf088e823d88f57d0c256f0d3d9b0ffdf13ba6d6f32' },
 ] as const;
 
 /** One-off administrator repair; never infer a supplier-wide capability. */
@@ -21,7 +20,7 @@ export function repairBananaEditEvidence(source: ModelConfig): ModelConfig {
     }
     upstream.capabilities.imagegen = { ...upstream.capabilities.imagegen, edit: {
       state: 'supported', checkedAt: '2026-10-15',
-      source: `47已验收单参考图编辑；supplier call ${proof.call} phase=edit delivered=1，${proof.job} completed 私有媒体1024x1024；不声明其他参数已实测`,
+      source: `47受控实测单参考图 /images/edits；call ${proof.call}，${proof.operation}，3:4/1k/n=1，HTTP200，PNG896x1200已解码及人工查看，输出SHA256 ${proof.outputSha256}；不声明其他能力已实测`,
     } };
   }
   return result;
