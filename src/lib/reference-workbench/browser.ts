@@ -1,4 +1,5 @@
 import {authHeader} from "../supabase";
+import {workbenchModelOptions,workbenchModelSelection} from "./model-options";
 
 declare global {interface Window {NaumiWorkbenchStorage:Pick<Storage,"getItem"|"setItem"|"removeItem">;NaumiWorkbenchReady:Promise<void>;NaumiWorkbenchModels:(select:HTMLSelectElement)=>void;}}
 const desktop=location.pathname.startsWith("/desktop/batchshot/native/"),canonicalBase="/api/reference-workbench/",base=(desktop?"/desktop":"")+canonicalBase,original=window.fetch.bind(window),blobUrls=new Map<string,string>(),blobLoading=new Map<string,Promise<string>>();
@@ -45,7 +46,8 @@ window.NaumiWorkbenchReady=(async()=>{
  sessionIdentity=auth.id;
  const prefix="naumi-reference:"+auth.id+":";window.NaumiWorkbenchStorage={getItem:k=>localStorage.getItem(prefix+k),setItem:(k,v)=>localStorage.setItem(prefix+k,v),removeItem:k=>localStorage.removeItem(prefix+k)};
  const choices=await nativeFetch(base+"settings").then(r=>r.json());
- window.NaumiWorkbenchModels=model=>{model.innerHTML="";model.add(new Option("服务器自动分配",""));for(const m of choices.models||[])model.add(new Option(m.label,m.id));model.disabled=false;model.value=window.NaumiWorkbenchStorage.getItem("native-model")||"";if(!model.dataset.nativeModels){model.dataset.nativeModels="1";model.addEventListener("change",()=>window.NaumiWorkbenchStorage.setItem("native-model",model.value));}};
+ const modelChoices=workbenchModelOptions(choices.models||[]);
+ window.NaumiWorkbenchModels=model=>{model.innerHTML="";model.add(new Option("服务器自动分配",""));for(const m of modelChoices)model.add(new Option(m.label,m.id));model.disabled=false;model.value=workbenchModelSelection(window.NaumiWorkbenchStorage.getItem("native-model")||"",modelChoices);if(!model.dataset.nativeModels){model.dataset.nativeModels="1";model.addEventListener("change",()=>window.NaumiWorkbenchStorage.setItem("native-model",model.value));}};
  const patchImage=(node:Element)=>{if(!(node instanceof HTMLImageElement))return;const src=node.getAttribute("src");if(!src||![base+"image",canonicalBase+"image"].some(prefix=>src.startsWith(prefix)))return;privateBlob(src).then(blob=>{if(node.getAttribute("src")===src)node.src=blob;}).catch(()=>{});};
  const observer=new MutationObserver(changes=>{for(const change of changes){if(change.type==="attributes")patchImage(change.target as Element);else for(const node of change.addedNodes)if(node instanceof Element){patchImage(node);node.querySelectorAll("img").forEach(patchImage);}}});observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:["src"]});
  const entryPath=desktop?"/desktop/batchshot":"/batchshot";

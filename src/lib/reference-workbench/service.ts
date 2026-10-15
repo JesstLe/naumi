@@ -7,6 +7,7 @@ import {planImagegen,imagegenFingerprint} from "../imagegen/plan";
 import {submitAcceptedImagegenBatch,readImagegenBatch,runImagegenBatchTick} from "../imagegen/batch";
 import type {ImagegenPlan,ImagegenRequest} from "../imagegen/types";
 import {getModelAdministration} from "../model-config/server";
+import {workbenchModelOptions} from "./model-options";
 import {modelAllowedForFeature,featureDefaultModel} from "../model-config/tool-scope";
 import {quoteForRequest} from "../billing/server";
 import {withBillingRequest,configuredToolCost} from "../billing/synchronous";
@@ -67,7 +68,7 @@ async function textRequest(owner:string,t:TaskPlan,id:string,quoted=false){
  return new Request("http://internal/api/canvas/text-generate",{method:"POST",headers,body:JSON.stringify({prompt:t.prompt,images:t.inputs.map(a=>a.url),referenceTask:t.kind})});
 }
 const creditOf=(t:TaskPlan)=>(t.plan?.totalCredits??(t.quote?.tariff.pricing.mode==="api-cost-plus"?t.quote.authorizedCredits:t.quote?.requestedCredits)??0)+(t.autoAuthorization?.credits||0);
-export async function publicModels(){const snapshot=await(await getModelAdministration()).repo.current();return snapshot.config.publicModels.filter(m=>m.enabled&&m.visible&&m.modality==="image"&&modelAllowedForFeature(m,"image.generate")).map(m=>({id:m.id,label:m.label}));}
+export async function publicModels(){const snapshot=await(await getModelAdministration()).repo.current();return workbenchModelOptions(snapshot.config.publicModels.filter(m=>m.enabled&&m.visible&&m.modality==="image"&&modelAllowedForFeature(m,"image.generate")).map(m=>({id:m.id,label:m.label})));}
 export async function preview(owner:string,path:string,raw:Record<string,any>){
  await ensureWorkbench();if(await isBanned(owner,""))throw new WorkbenchError("账号已被封禁",403);
  const body={...raw};delete body.native_quote;const rid=requestId(body.request_id||randomUUID()),fingerprint=digest({path,body:{...body,request_id:rid}});
