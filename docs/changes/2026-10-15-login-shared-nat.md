@@ -33,3 +33,9 @@
 - 集中复测PostgreSQL双池与实际POST均195用户通过，完整类型检查0。正式上线结果见后续记录。
 
 - 旁路bundle改为打包全部纯JS依赖，仅pg/sharp和Node内置外置，实际生产镜像不再依赖缺失的zod/Next入口。私有就绪已在容器内200；staging网络为internal，单连时Docker不映射host端口，增加现有public_egress网络后仍仅绑定127.0.0.1，不公开端口。
+
+## 47实际上线
+- source=9f5ad4f05bc7ac7ad0718704f2bdc6527366589f，bundle SHA1a55e664f3f216e4c9babb774f43fae397b1e511d32664e537f947df7a63e6f7，私有旁路naumi47-auth-login-9f5ad4f05bc7:13063。标准Response无模拟Next，完整JS依赖打入bundle，pg/sharp用原运行镜像依赖。
+- 完整备份30,590,598字节可读；私有真实账号200后Nginx精确/login平滑切流，同来源25次正确登录200、错误401、同事200，旧业务后端会话200、legacy自身401保留。连续20次版本采样错误0，所有旧容器未重启，用户/积分批次/ledger摘要相同。
+- /opt/naumi-staging/evidence/login-nat-20261015-9f5ad4f05bc7/含实际result与可执行ROLLBACK.sh；独立fixture回退原SHA通过。当前UI资产发布建立在该网关上，若整体回退需先UI回退再登录回退；CAS防覆盖后续同事更新，不能直接旧文件覆盖新网关。回滚不还原业务数据库。
+- 实际浏览器桌面/手机带旧wb_session仍可原生登录，业务会话有效。本轮195账号来自隔离测试，不称195位真实同事都已实际登录。
