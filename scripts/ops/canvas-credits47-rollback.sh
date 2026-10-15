@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /opt/naumi-staging/evidence/canvas-credits47-20261015
+cd "${CANVAS_CREDITS_EVIDENCE:-/opt/naumi-staging/evidence/canvas-credits47-20261015}"
 if [[ "${1:-}" == "--copy" ]]; then
   cp MODIFIED_FILE.js ROLLBACK_COPY.js
   cmp MODIFIED_FILE.js ROLLBACK_COPY.js
