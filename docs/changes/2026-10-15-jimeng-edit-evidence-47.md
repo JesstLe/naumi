@@ -33,3 +33,13 @@
 - 服务器 `/opt/naumi-staging/evidence/jimeng-edit-evidence-20261015/`：db-backup.dump（0600）+ TOC、v112 快照、patched.json、validate/publish 日志（mutation.log）、v112-to-v113.diff、after.diff（空=发布与补丁一致）、repair.sh。
 - 回滚：管理 API restore 至 v112，或以 db-backup.dump 整库恢复；restore 前须核对新版本无他人发布。
 - 修复后画布引用图编辑（即梦）恢复可用；验收以真实画布编辑为准（本记录发布时用户尚未重试）。
+
+## 2026-10-15 午间端到端实测结论（v113 之后）
+
+浏览器真实账号（admin）画布实测+后端核对：
+
+- **v113 闸门修复已生效**：10:44 用户重试即梦引用图编辑（3:4）与 10:57 我的即梦文生图均通过规划（此前该场景秒拒），任务落库并产生供应商调用——不再出现"没有已核实支持本次参数的通道"。
+- **但即梦在 47 无法完成**：供应商配置指向 `http://reverse-hub:8080/v1`，而 47 上不存在 reverse-hub（App 容器内 DNS 解析 EAI_AGAIN；`naumi-new-api-app`/`reverse-hub-new-server` 两容器仅 Created 未启动，系其他会话 22 小时前遗留）。两笔调用卡 `submitting` 约 20 分钟后进入 `reconciling`。库中 10-12 的 `succeeded` 即梦调用是播种环境带入的历史验收记录，非本服务器实跑。**47 要用即梦必须先补齐 Hub/New API 反代栈并接线网络与凭据，属独立部署任务。**
+- **引用图编辑路径本身是通的**：用户 10:17-10:20 用 Nano Banana（gemini）完成 3 笔引用图编辑，全部结算 6 积分/张，端到端正常。
+- **全站生图通道今天异常（早于本修复，10:11 本地即开始）**：员工账号自然并发下大量 `429 所有兼容供应通道繁忙` 与 `400 所有可用供应通道均未取得图片`，结算时断时续；我的 GPT-Image-2.5 与 Nano Banana Pro 文生图两次尝试均以 400 失败。属通道容量/上游健康问题，与 v113 无关（时间线可证），建议由 geeknow/通道侧会话跟进。
+- **计费注意**：02:44:09 账本有一笔 `-8`（对应失败的即梦编辑），两笔即梦调用 `cost_status=pending` 对账中，需确认对账后退回或人工退款。
