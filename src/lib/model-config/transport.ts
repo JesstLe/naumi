@@ -30,6 +30,9 @@ export function modelEndpointFetch(baseUrl: string, options: ValidationOptions =
     const url = new URL(request.url);
     if (url.origin !== base.origin || url.username || url.password || url.hash) throw new ModelConfigError("INVALID_ENDPOINT", "模型请求超出已配置接口范围");
     if (request.signal.aborted) throw request.signal.reason;
+    // Recheck after cost-ledger preparation too: its DB waits must not create
+    // a window in which an administrator's completed disable is ignored.
+    if (request.method === "POST" && provider?.costScope?.channelGuard) await guardChannelSubmission(getPool(), provider.costScope);
     request.signal.throwIfAborted();
     return new Promise<Response>((resolve, reject) => {
       const headers = Object.fromEntries(request.headers.entries());
@@ -69,7 +72,7 @@ export function modelEndpointFetch(baseUrl: string, options: ValidationOptions =
   const guarded: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
     request.signal.throwIfAborted();
-    if (request.method === "POST" && provider?.costScope?.channelGuard) await guardChannelSubmission(getPool(), provider.costScope);
+    if (request.method === "POST" && provider?.costScope?.channelGuard) await guardChannelSubmission(getPool(), provider.costScope, false);
     request.signal.throwIfAborted();
     return observed(request);
   };

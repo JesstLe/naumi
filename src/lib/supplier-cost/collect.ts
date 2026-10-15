@@ -10,6 +10,7 @@ import { ReceiptBuffer } from "./receipt-buffer";
 import { modelCostPhase } from "./phase";
 import { parseReceiptJson } from "./money";
 import type { CostContext } from "./types";
+import { ModelConfigError } from "../model-config/types";
 
 export async function supplierContext(scope?: ModelExecutionScope | null): Promise<CostContext> {
   const { currentBiContext } = await import("../bi/model-observer");
@@ -80,6 +81,12 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
         async cancel(reason) { await reader.cancel(reason); await finish("unknown"); },
       });
       return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
-    } catch (error) { await ledger.apply(row.id, { state: "unknown", status: "pending", source: "transport-unknown", evidence: { source: "transport-unknown" } }); throw error; }
+    } catch (error) {
+      if (error instanceof ModelConfigError && ["CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code)) {
+        const receipt=genericReceipt({billing_status:"not_charged"},"rejected",scope?.procurement);
+        await ledger.apply(row.id,{...receipt,source:"local-channel-disabled",evidence:{billing_status:"not_charged",source:"local-channel-disabled"}});
+      } else await ledger.apply(row.id, { state: "unknown", status: "pending", source: "transport-unknown", evidence: { source: "transport-unknown" } });
+      throw error;
+    }
   };
 }

@@ -27,7 +27,7 @@ async function main(){
   const scope=await executor.describe(frozen),p=scope.supplierRouting!,claim=await claimChannel(f.sql,'image-a',p.policy,p.targets,new Set());
   try{assert.equal(claim.target.upstreamId,process.argv.includes('--baseline')?'u1':'u2')}finally{await claim.release()}
   console.log(process.argv.includes('--baseline')?'BASELINE=REPRODUCED OLD_TASK_SELECTED_DISABLED_U1':'MODIFIED=PASS OLD_TASK_SKIPPED_DISABLED_U1');
-  if(process.argv.includes('--baseline'))return;
+  if(process.argv.includes('--baseline')){console.log('REAL_PAID_CALLS=0');return;}
   const pick=()=>claimChannel(f.sql,'image-a',p.policy,p.targets,new Set());
   const t=p.targets[0],key=channelHealthKey(t);
   const clear=()=>f.sql.query('DELETE FROM app_model_channel_health');
@@ -41,6 +41,23 @@ async function main(){
   assert.equal(posts,0);
   await wire(f.origin+'/v1/tasks/known');assert.equal(gets,1,'Accepted-task GET is never gated');
   console.log('FINAL_DISPATCH_GATE=PASS; DISABLED_POSTS=0; ACCEPTED_TASK_GET=PASS');
+  await publish(before.config);
+  const observedPool=db.getPool(),originalConnect=observedPool.connect.bind(observedPool);let closeDuringLedger=true;
+  (observedPool as any).connect=(callback?:any)=>{
+   const pending=originalConnect().then(client=>{
+    const query=client.query,release=client.release;
+    (client as any).query=(...args:any[])=>typeof args.at(-1)==='function'?(query as any).apply(client,args):(async()=>{const result=await (query as any).apply(client,args);if(closeDuringLedger&&String(args[0]).includes('INSERT INTO app_supplier_calls(')){closeDuringLedger=false;await publish(off)}return result})();
+    client.release=(...args:any[])=>{client.query=query;client.release=release;return (release as any).apply(client,args)};return client;
+   });
+   if(callback){void pending.then(client=>callback(null,client,client.release),callback);return}return pending;
+  };
+  try{
+   const meteredWire=modelEndpointFetch(f.origin+'/v1',{trustedOrigins:[f.origin]},{...t.scope.connection,costScope:t.scope});
+   await assert.rejects(meteredWire(f.origin+'/v1/images/generations',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:'wire-image-one',prompt:'fixture'})}),(e:any)=>e.code==='CHANNEL_DISABLED');
+   assert.equal(posts,0);const receipt=(await f.sql.query('SELECT state,cost_status,amount_micros::text FROM app_supplier_calls ORDER BY started_at DESC LIMIT 1')).rows[0];
+   assert.equal(receipt.state,'rejected');assert.equal(receipt.cost_status,'reported');assert.equal(receipt.amount_micros,'0');
+  }finally{(observedPool as any).connect=originalConnect}
+  console.log('DISABLE_DURING_COST_PREPARATION_ZERO_POST_ZERO_SUPPLIER_COST=PASS');
 
   const replacement=structuredClone(before.config);replacement.publicModels[0].supplierRouting=undefined;replacement.publicModels[0].target={type:'upstream',id:'u2'};
   await publish(replacement);const replaced=await pick();assert.equal(replaced.target.upstreamId,'u2');await replaced.release();
@@ -49,6 +66,8 @@ async function main(){
   const providerOff=structuredClone(off);providerOff.providers[0].enabled=false;await publish(providerOff);const ps=await pick();assert.equal(ps.target.upstreamId,'u2');await ps.release();
   await publish(before.config);assert.deepEqual(await executor.describe(frozen).then(s=>s.frozen),frozen);
   assert.deepEqual(billing.config,fixtureConfig(),'Live switch gate must not mutate frozen billing');
+  const rotated=structuredClone(before.config);rotated.upstreamModels[0].model='wire-image-rotated';await publish(rotated);
+  const retained=await pick();assert.equal(retained.target.scope.connection.wireModel,'wire-image-one','Switch overlay must preserve accepted wire model/mappings');await retained.release();await publish(before.config);
   console.log('REMOVED_CHANNEL_PROVIDER_DISABLE_NO_UNFROZEN_TARGETS=PASS; FROZEN_PARAMETERS_BILLING=PASS');
 
   assert.equal(retryAfterMs('120'),120000);assert.equal(retryAfterMs('9999999'),900000);assert.equal(retryAfterMs('bad'),undefined);

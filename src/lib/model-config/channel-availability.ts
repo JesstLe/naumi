@@ -34,25 +34,26 @@ export function channelStillEnabled(live: LiveChannels, target: ChannelTarget) {
   const p = live.providers.find(p => p.id === c.providerId);
   const member = m?.supplierRouting ? m.supplierRouting.channels.some(ch => ch.upstreamId === target.upstreamId && ch.enabled)
     : m?.target.type === "upstream" && m.target.id === target.upstreamId;
-  // Reusing an ID for another endpoint/wire model must not authorize a frozen
-  // task to send its old parameters/secrets to that new identity.
+  // This is a negative switch overlay, NOT a re-resolution. A label, mapping,
+  // wire-model, credential or endpoint edit must not silently rewrite the task's
+  // frozen request. Reassignment to a different provider removes this candidate.
   return !!(m?.enabled && m.modality === target.scope.frozen.modality && member && u?.enabled && p?.enabled && p.configured &&
-    u.providerId === p.id && u.model === c.wireModel && p.protocol === c.protocol && p.baseUrl === c.baseUrl);
+    u.providerId === p.id);
 }
 
-export function channelOperationKey(scope: ModelExecutionScope) {
-  const id = scope.frozen.modality === "image" && currentImageOperationId();
+export function channelOperationKey(scope: ModelExecutionScope, operationId = currentImageOperationId()) {
+  const id = scope.frozen.modality === "image" && operationId;
   return id ? createHash("sha256").update(JSON.stringify([scope.frozen.modelVersion, scope.frozen.publicModelId, id])).digest("hex") : undefined;
 }
 
 /** Upgrade compatibility: accepted Hub calls made by an older App have a
  * durable supplier ledger but no new routing pin yet. Reconstruct only an
  * exact frozen identity; ambiguous/mismatched records must never fail over. */
-export async function readChannelOperationPin(sql: Pool | PoolClient, publicId: string, targets: ChannelTarget[], operationKey?: string) {
+export async function readChannelOperationPin(sql: Pool | PoolClient, publicId: string, targets: ChannelTarget[], operationKey?: string, operationId = currentImageOperationId()) {
   if (!operationKey) return undefined;
   const existing = (await sql.query("SELECT upstream_id FROM app_model_channel_operations WHERE operation_key=$1", [operationKey])).rows[0];
   if (existing) return existing as {upstream_id:string};
-  const hubs = targets.filter(t => t.scope.connection.options?.imageAdapter === "reverse-hub"), operationId = currentImageOperationId();
+  const hubs = targets.filter(t => t.scope.connection.options?.imageAdapter === "reverse-hub");
   if (!hubs.length || !operationId || !(await sql.query("SELECT to_regclass('app_supplier_calls') AS name")).rows[0].name) return undefined;
   const calls = (await sql.query(`SELECT DISTINCT provider_id,model FROM app_supplier_calls
     WHERE billing_unit_id=$1 AND public_model_id=$2 AND model_version=$3 AND provider_id=ANY($4::text[])
@@ -64,23 +65,36 @@ export async function readChannelOperationPin(sql: Pool | PoolClient, publicId: 
     ON CONFLICT(operation_key) DO UPDATE SET operation_key=EXCLUDED.operation_key RETURNING upstream_id`, [operationKey,matched[0].upstreamId])).rows[0] as {upstream_id:string};
 }
 
+/** A mixed Hub/direct family is replayable ONLY AFTER its operation has a
+ * durable pin to the queryable Hub, never merely because a Hub is a candidate. */
+export async function recoverableChannelIdentity(pool: Pool, scope: ModelExecutionScope | null, operationId: string) {
+  if (!scope?.supplierRouting) return undefined;
+  const key=channelOperationKey(scope,operationId);
+  const pin=await readChannelOperationPin(pool,scope.frozen.publicModelId,scope.supplierRouting.targets,key,operationId);
+  const target=scope.supplierRouting.targets.find(t=>t.upstreamId===pin?.upstream_id && t.scope.connection.options?.imageAdapter==="reverse-hub");
+  return target ? "channel:"+createHash("sha256").update(JSON.stringify([key,target.upstreamId,target.scope.connection.providerId,target.scope.connection.baseUrl,target.scope.connection.wireModel])).digest("hex") : undefined;
+}
+
 /** Final dispatch gate, after request/body preparation and immediately before
  * the supplier POST. GETs retrieving an accepted task never pass this gate. */
-export async function guardChannelSubmission(pool: Pool, scope: ModelExecutionScope) {
+export async function guardChannelSubmission(pool: Pool, scope: ModelExecutionScope, dispatch = true) {
   const guard = scope.channelGuard;
   if (!guard) return;
   await ensureModelSchema(pool);
   const target = { upstreamId: guard.upstreamId, enabled: true, priority: 1, weight: 1, scope };
   const pinned = guard.operationKey ? (await pool.query("SELECT upstream_id FROM app_model_channel_operations WHERE operation_key=$1", [guard.operationKey])).rows[0] : undefined;
   if (pinned && pinned.upstream_id !== guard.upstreamId) throw new ModelConfigError("EXECUTION_MISMATCH", "已提交图片任务的原供应通道不一致", 409);
-  if (!channelStillEnabled(await readLiveChannels(pool, scope.frozen.publicModelId, [target]), target)) {
+  let live: LiveChannels;
+  try { live=await readLiveChannels(pool,scope.frozen.publicModelId,[target]); }
+  catch(error){if(pinned)throw new ImageOperationPending(currentImageOperationId()||guard.operationKey!,error);throw error;}
+  if (!channelStillEnabled(live, target)) {
     if (pinned) throw new ImageOperationPending(currentImageOperationId() || guard.operationKey!, new Error("original-channel-disabled-await-reconciliation"));
-    throw new ModelConfigError("CHANNEL_DISABLED", "供应通道已关闭，本次尚未提交上游", 409);
+    throw new ModelConfigError("CHANNEL_DISABLED", "供应通道已关闭，本次尚未提交上游", 422);
   }
   // Only the queryable/idempotent Hub adapter may keep a recovery pin. It is
   // persisted BEFORE submission so a lost response/process restart cannot route
   // the same paid operation to another supplier.
-  if (guard.operationKey && scope.connection.options?.imageAdapter === "reverse-hub") {
+  if (dispatch && guard.operationKey && scope.connection.options?.imageAdapter === "reverse-hub") {
     const row = (await pool.query(`INSERT INTO app_model_channel_operations(operation_key,upstream_id) VALUES($1,$2)
       ON CONFLICT(operation_key) DO UPDATE SET operation_key=EXCLUDED.operation_key RETURNING upstream_id`, [guard.operationKey, guard.upstreamId])).rows[0];
     if (row.upstream_id !== guard.upstreamId) throw new ModelConfigError("EXECUTION_MISMATCH", "图片任务已绑定原供应通道，不会重复生成", 409);

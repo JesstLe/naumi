@@ -8,6 +8,8 @@ import { channelRoutingFetch } from "../src/lib/model-config/channel-fetch";
 import { channelOperationKey, readChannelOperationPin } from "../src/lib/model-config/channel-availability";
 import { ImageOperationPending, withImageOperation } from "../src/lib/image-gateway";
 import type { ModelConfig, ModelSnapshot } from "../src/lib/model-config/types";
+import {runModelExecution} from "../src/lib/model-config/context";
+import {DurableImageJobs} from "../src/lib/durable-image-jobs";
 
 async function main() {
   const png=await sharp({create:{width:32,height:32,channels:4,background:"white"}}).png().toBuffer();
@@ -21,7 +23,7 @@ async function main() {
       posts++;let task=tasks.get(body.operation_id);
       if(!task){paid++;task={id:randomUUID(),operation_id:body.operation_id,model:body.model,state:"reconciling"};tasks.set(body.operation_id,task)}
       if(drop){drop=false;return req.socket.destroy()}
-      res.statusCode=202;return res.end(JSON.stringify(task));
+      res.statusCode=202;return res.end(JSON.stringify(complete?{...task,state:"running"}:task));
     }
     if(path.startsWith("/v1/tasks/")){
       gets++;const task=[...tasks.values()].find(t=>path.endsWith(t.id));assert.ok(task);
@@ -74,11 +76,21 @@ async function main() {
     assert.equal(posts,3,"Re-enabled original Hub may replay its same idempotent operation");assert.equal(paid,2,"Idempotent replay must not create another paid native task");assert.equal(backups,0);
     console.log("LOST_RECEIPT_DISABLED_HOLD_ORIGINAL_IDEMPOTENT_RECOVERY=PASS; NATIVE_PAID_OPERATIONS=2; BACKUP_POSTS=0");
 
+    const jobs=new DurableImageJobs<{status:string}>("generate"),jobId="job-"+randomUUID(),email="channel-recovery@example.test",unit=jobId+":image:0";
+    await db.getOrCreateUser(email);await jobs.create(jobId,email,{status:"pending"},{fixture:true},0,false);
+    const durable=()=>runModelExecution(scope,()=>jobs.paidOperation(jobId,"image-a",{id:unit},()=>fetcher(f.origin+"/v1/images/generations",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"image-a",prompt:"fixture",n:1})})));
+    complete=false;await assert.rejects(durable(),ImageOperationPending);
+    const saved=await jobs.get(jobId) as any;assert.equal(saved.paidOperations[unit].state,"started");assert.equal(saved.paidOperations[unit].replayable,true,"A mixed family gains recoverability only after the Hub is pinned");
+    const beforeResume={posts,paid};await publish(off);complete=true;
+    const delivered=await durable();assert.equal(delivered.status,200);await delivered.json();assert.equal(posts,beforeResume.posts);assert.equal(paid,beforeResume.paid);assert.equal(backups,0);
+    assert.equal((await jobs.get(jobId) as any).paidOperations[unit].state,"done");
+    console.log("DURABLE_MIXED_FAMILY_PENDING_MARKER_AND_DISABLED_GET_RECOVERY=PASS; DOUBLE_NATIVE_GENERATIONS=0");
+
     // A missing ACTIVE pointer fails closed. It cannot silently revive frozen
     // channels; restore the fixture pointer in the finally block.
     const active=(await f.repo.current()).version;
     await f.sql.query("UPDATE app_model_config_state SET active_version=NULL WHERE singleton=true");
-    try{await assert.rejects(run("missing-active"),(e:any)=>e.code==="CONFIG_UNAVAILABLE");assert.equal(backups,0)}
+    try{const blocked=await run("missing-active");assert.equal(blocked.status,429);const receipt=await blocked.json();assert.equal(receipt.error.code,"CONFIG_UNAVAILABLE");assert.equal(receipt.error.billing_status,"not_charged");assert.equal(backups,0)}
     finally{await f.sql.query("UPDATE app_model_config_state SET active_version=$1 WHERE singleton=true",[active])}
     assert.equal((await f.sql.query("SELECT count(*)::int n FROM app_model_provider_leases")).rows[0].n,0);
     assert.equal((await f.sql.query("SELECT count(*)::int n FROM app_model_channel_health WHERE failures>0")).rows[0].n,0,"Uncertain Hub work is not a failed channel probe");

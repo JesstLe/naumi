@@ -27,22 +27,22 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
       let claim;
       try { claim = await claimChannel(pool, scope.frozen.publicModelId, policy.policy, policy.targets, visited, operationKey); }
       catch (error) {
-        if (!(error instanceof ModelConfigError) || !["PROVIDER_BUSY", "CHANNEL_DISABLED"].includes(error.code)) throw error;
+        if (!(error instanceof ModelConfigError) || !["PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(error.code)) throw error;
         if (attempted) break;
-        return Response.json({ error: { message: error.message, code: error.code, billing_status: "not_charged" } }, { status: error.status });
+        return Response.json({ error: { message: error.message, code: error.code, billing_status: "not_charged" } }, { status: error.code==="CONFIG_UNAVAILABLE" ? 429 : error.status });
       }
       const target = claim.target, active = { ...target.scope, channelGuard: {upstreamId:target.upstreamId,operationKey}, capacityReserved: true, audited: true, supplierRouting: undefined }, conn = active.connection;
       visited.add(target.upstreamId); attempted = true;
-      let audit: string | undefined, status: number | undefined, finished = false, receivedImage = false,streaming=false;
+      let audit: string | undefined, status: number | undefined, attemptSignal: AbortSignal | undefined, finished = false, receivedImage = false,streaming=false;
       try {
         audit = await beginExecutionStage(active, attempt, `channel:${target.upstreamId}`);
         const headers = new Headers(request.headers); headers.set("authorization", `Bearer ${conn.apiKey}`); headers.delete("content-length");
-        const signal = AbortSignal.any([request.signal, AbortSignal.timeout(conn.timeoutMs)]);
+        const signal = attemptSignal = AbortSignal.any([request.signal, AbortSignal.timeout(conn.timeoutMs)]);
         const response = await executionFetch(active, options)(conn.baseUrl.replace(/\/$/, "") + path.slice(base.length), { method: "POST", headers, body, signal });
         status = response.status;
         if (response.ok) {
           if(text){
-            const prepared=await prepareChannelText(response,async(success,usage,cancelled)=>{try{await finishExecutionStage(audit!,success?"stream-completed":"unknown",status,usage);if(!cancelled&&!request.signal.aborted)await recordChannelOutcome(pool,target,success,status,{startedAt:claim.startedAt});}finally{await claim.release();}},signal);
+            const prepared=await prepareChannelText(response,async(success,usage,cancelled)=>{try{await finishExecutionStage(audit!,success?"stream-completed":"unknown",status,usage);if(!cancelled&&!request.signal.aborted)await recordChannelOutcome(pool,target,success,status,{startedAt:claim.startedAt,kind:!success&&signal.aborted&&signal.reason?.name==="TimeoutError"?"timeout":undefined});}finally{await claim.release();}},signal);
             receivedImage=true;
             if(prepared.streaming){streaming=true;return prepared.response;}
             await finishExecutionStage(audit,"response-received",status,prepared.usage);finished=true;await recordChannelOutcome(pool,target,true,status,{startedAt:claim.startedAt});return prepared.response;
@@ -58,7 +58,7 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
         const definite = receipt?.billing_status === "not_charged" || receipt?.error?.billing_status === "not_charged";
         await finishExecutionStage(audit, definite ? "rejected-not-charged" : "failed-response", status); finished = true;
         if (operationKey) await pool.query("DELETE FROM app_model_channel_operations WHERE operation_key=$1 AND upstream_id=$2", [operationKey,target.upstreamId]);
-        if (!["INVALID_REQUEST", "MODEL_INCOMPATIBLE", "PROVIDER_BUSY", "CHANNEL_DISABLED"].includes(receipt?.error?.code)) await recordChannelOutcome(pool, target, false, status, {retryAfterMs:retryAfterMs(response.headers.get("retry-after"))});
+        if (!["INVALID_REQUEST", "MODEL_INCOMPATIBLE", "PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(receipt?.error?.code)) await recordChannelOutcome(pool, target, false, status, {retryAfterMs:retryAfterMs(response.headers.get("retry-after"))});
       } catch (error) {
         // An accepted durable task must finish/query its original supplier;
         // moving to another channel could create a second paid generation.
@@ -66,7 +66,7 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
         if (!audit || receivedImage) throw error;
         if (!finished) {
           const errorStatus = (error as {status?:number})?.status;
-          if (error instanceof ModelConfigError && error.code === "CHANNEL_DISABLED") {
+          if (error instanceof ModelConfigError && ["CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code)) {
             await finishExecutionStage(audit,"rejected-not-charged",error.status);
           } else if (request.signal.aborted) {
             await finishExecutionStage(audit,"unknown",status);
@@ -74,7 +74,8 @@ export function channelRoutingFetch(scope: ModelExecutionScope, options: Validat
             const effectiveStatus = status || (typeof errorStatus === "number" ? errorStatus : undefined);
             await finishExecutionStage(audit, status ? "failed-output" : "unknown", effectiveStatus);
             const cause = error as {name?:string;retryAfter?:string;cause?:{name?:string;code?:string}};
-            await recordChannelOutcome(pool, target, false, effectiveStatus, {retryAfterMs:retryAfterMs(cause.retryAfter || null),kind:status && status>=200 && status<300 ? "invalid-output" : cause.name==="TimeoutError" || cause.cause?.name==="TimeoutError" || cause.cause?.code==="ETIMEDOUT" ? "timeout" : undefined});
+            const timedOut=attemptSignal?.aborted&&attemptSignal.reason?.name==="TimeoutError" || cause.name==="TimeoutError" || cause.cause?.name==="TimeoutError" || cause.cause?.code==="ETIMEDOUT";
+            await recordChannelOutcome(pool, target, false, effectiveStatus, {retryAfterMs:retryAfterMs(cause.retryAfter || null),kind:timedOut?"timeout":status && status>=200 && status<300?"invalid-output":undefined});
           }
         } else throw error;
         request.signal.throwIfAborted();

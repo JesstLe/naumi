@@ -37,7 +37,7 @@ export async function claimChannel(pool: Pool, publicId: string, policy: Channel
         const live = pinned ? undefined : await readLiveChannels(tx, publicId, targets);
         const allowed = pinned ? targets.filter(c => c.upstreamId === pinned.upstream_id) : targets.filter(c => c.enabled && channelStillEnabled(live!, c));
         if (pinned && !allowed.length) throw new ModelConfigError("EXECUTION_MISMATCH", "已提交任务的原供应通道不在冻结配置中", 409);
-        if (!allowed.length) throw new ModelConfigError("CHANNEL_DISABLED", "本任务原有供应通道已关闭，本次尚未提交上游", 409);
+        if (!allowed.length) throw new ModelConfigError("CHANNEL_DISABLED", "本任务原有供应通道已关闭，本次尚未提交上游", 422);
         const counts = new Map((await tx.query("SELECT channel_key,served::text FROM app_model_channel_balances WHERE schedule_key=$1", [key])).rows.map(r => [r.channel_key, BigInt(r.served)]));
         const sorted = allowed.map((c, index) => ({ ...c, index, served: counts.get(channelHealthKey(c)) || BigInt(0) })).filter(c => !visited.has(c.upstreamId)).sort((a, b) => compareChannels(a, b, policy.mode));
         for (const c of sorted) {
