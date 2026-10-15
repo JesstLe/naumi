@@ -7,6 +7,7 @@
     "prebuild": "node scripts/build-reference-workbench.mjs",
     "predev": "node scripts/build-reference-workbench.mjs",
     "verify:reference-workbench": "tsx --conditions react-server scripts/verify-reference-workbench.ts",
+    "verify:chat-plan-parse": "tsx scripts/verify-chat-plan-parse.ts",
     "verify:imagegen-contract": "tsx --conditions react-server scripts/verify-imagegen-contract.ts",
     "verify:imagegen-intent": "tsx --conditions react-server scripts/verify-imagegen-intent.ts",
     "verify:imagegen-capabilities": "tsx --conditions react-server scripts/verify-imagegen-capabilities.ts",
