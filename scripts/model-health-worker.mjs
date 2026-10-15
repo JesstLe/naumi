@@ -1,7 +1,8 @@
 const origin=String(process.env.NAUMI_APP_ORIGIN||"http://app:3000").replace(/\/+$/,"");
 const secret=String(process.env.MODEL_HEALTH_WORKER_SECRET||"");
 if(secret.trim().length<32){console.error("MODEL_HEALTH_WORKER_SECRET must contain at least 32 characters");process.exit(1);}
-const intervalMs=Math.max(60000,Number(process.env.MODEL_HEALTH_WORKER_INTERVAL_MS||60000)||60000);
+const configuredInterval=Number(process.env.MODEL_HEALTH_WORKER_INTERVAL_MS||60000);
+const intervalMs=Number.isFinite(configuredInterval)?Math.min(3600000,Math.max(60000,configuredInterval)):60000;
 let running=false;
 async function tick(){
   if(running)return;running=true;

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import {spawn} from "node:child_process";
 import sharp from "sharp";
 import { createModelFixture } from "./model-config-fixture";
 import { configuredHealthTargets,healthTargetKey } from "../src/lib/model-health/targets";
@@ -53,6 +54,15 @@ async function main(){
     for(let i=1;i<18;i++){const c=await repo.claim(many,1);if(c)await repo.finish(c.id,success);}
     assert.equal((await repo.overview(snapshot)).budget.used,12);assert.equal(await repo.claim(many,1),null);
     console.log("PASS 24 concurrent claimants -> 1 running; global daily limit -> 12 including failures/reservations");
+    await reset();
+    const processes=await Promise.all(Array.from({length:4},()=>new Promise<{id:string|null}>((resolve,reject)=>{
+      const child=spawn(process.execPath,["node_modules/tsx/dist/cli.mjs","scripts/model-health-claim-fixture.ts",JSON.stringify(snapshot)],{env:process.env,windowsHide:true});
+      let stdout="",stderr="";child.stdout.on("data",b=>stdout+=b);child.stderr.on("data",b=>stderr+=b);child.on("error",reject);child.on("exit",code=>{if(code)reject(Error(stderr));else try{resolve(JSON.parse(stdout));}catch(e){reject(e);}});
+    })));
+    assert.equal(processes.filter(p=>p.id).length,1);await repo.finish(processes.find(p=>p.id)!.id!,success);
+    for(let i=1;i<12;i++){const c=await repo.claim(many,1);assert.ok(c);await repo.finish(c.id,success);}
+    assert.equal(await repo.claim(many,1),null);
+    console.log("PASS four independent Node processes share one running claim and persistent 12-call budget");
     assert.equal((await f.sql.query("SELECT (t AT TIME ZONE 'Asia/Shanghai')::date::text AS day FROM (VALUES ('2026-10-14 15:59:59Z'::timestamptz),('2026-10-14 16:00:00Z'::timestamptz)) v(t)")).rows.map(r=>r.day).join(","),"2026-10-14,2026-10-15");
     await f.sql.query("UPDATE app_model_health_probes SET budget_day=budget_day-1");
     assert.ok(await repo.claim(many,1));
@@ -79,7 +89,7 @@ async function main(){
     assert.equal((await f.sql.query("SELECT count(last_business_success_at)::int n FROM app_model_health_observations")).rows[0].n,0);
     console.log("PASS real local HTTP adapter: 3 configured models, 1 image each, 3 supplier costs, 0 customer ledger changes");
     for(const test of [{mode:"401",reason:"authentication"},{mode:"403",reason:"authentication"},{mode:"402",reason:"quota"},{mode:"429",reason:"rate-limited"},{mode:"503",reason:"upstream-error"},{mode:"missing",reason:"invalid-output"},{mode:"corrupt",reason:"invalid-output"},{mode:"download-failed",reason:"image-download"}]){
-      mode=test.mode;const result=await executeHealthProbe({pool:f.sql,snapshot,target:targets[0],id:randomUUID(),readCredential:f.credentials.read,trustedOrigins:[f.origin]});assert.equal(result.success,false);assert.equal(result.reason,test.reason,test.mode);
+      mode=test.mode;const before=submitted.length;const result=await executeHealthProbe({pool:f.sql,snapshot,target:targets[0],id:randomUUID(),readCredential:f.credentials.read,trustedOrigins:[f.origin]});assert.equal(result.success,false);assert.equal(result.reason,test.reason,test.mode);assert.equal(submitted.length,before+1,"each failure submits once without fallback");
     }
     assert.equal(classifyHealthFailure(new Error("network unreachable")).uncertain,true);
     console.log("PASS 401/403/402/429/503/HTTP200 empty/corrupt/download failure classified without fallback");
