@@ -31,3 +31,5 @@
 - 重新核实47已由同事蓝绿切至13056，保持f4b3df1业务镜像及v113模型配置。旧候选的网关SHA已过时，重新固定当前29960cf7基线，CAS不匹配即退出。
 - billing/access仅需标准JSON响应，改用原生Response.json，移除旁路登录bundle对不完整Next静态依赖的加载；没有替换或模拟Next类。
 - 集中复测PostgreSQL双池与实际POST均195用户通过，完整类型检查0。正式上线结果见后续记录。
+
+- 旁路bundle改为打包全部纯JS依赖，仅pg/sharp和Node内置外置，实际生产镜像不再依赖缺失的zod/Next入口。私有就绪已在容器内200；staging网络为internal，单连时Docker不映射host端口，增加现有public_egress网络后仍仅绑定127.0.0.1，不公开端口。
