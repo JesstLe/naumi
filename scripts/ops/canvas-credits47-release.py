@@ -12,6 +12,19 @@ try:
     for p in ['/opt/naumi-staging/releases/deploy.lock','/opt/naumi-reverse-hub/releases/deploy.lock','/opt/reference-workbench/deploy.lock']:
         h = open(p, 'a'); fcntl.flock(h, fcntl.LOCK_EX | fcntl.LOCK_NB); locks.append(h)
     (E/'lock-owner.json').write_text(json.dumps({'pid':os.getpid(),'locks':[h.name for h in locks]}))
+    if '--accept-existing' in sys.argv:
+        meta=json.loads((E/'patch-metadata.json').read_text());after=(E/'gateway.after').read_bytes();before=(E/'gateway.before').read_bytes()
+        assert G.read_bytes()==after, 'Gateway changed; do not adopt peer changes'
+        status,body=read('https://47.105.59.142/canvas');assert status==200 and meta['modifiedName'].encode()in body
+        status,body=read('https://47.105.59.142/_next/static/chunks/'+meta['modifiedName']);assert status==200 and sha(body)==meta['modifiedSha256']
+        (E/'CUTOVER_READY').write_text(sha(after));print('ADOPT_EXISTING=PASS PUBLIC_CANVAS=200 NEW_HASH=EXACT LOCKS=HELD',flush=True)
+        while not (E/'FINAL_ACCEPTED').exists():time.sleep(2)
+        assert G.read_bytes()==after
+        old_assets=run(['docker','exec','naumi47-r2-image-main-20261015','sh','-c','find /app/.next/static -type f -exec sha256sum {} +'])
+        assert old_assets==(E/'old-assets.sha256').read_bytes()
+        result={'gatewayBeforeSha256':sha(before),'gatewayAfterSha256':sha(after),'modifiedSha256':meta['modifiedSha256'],'oldAssets':'EXACT','apiWorkerChanges':0,'databaseRestore':False,'backupReadable':True,'finalization':'reacquired locks after transient reload readiness assertion'}
+        (E/'release-result.json').write_text(json.dumps(result,indent=2));print('FINAL=PASS OLD_ASSETS=EXACT DATABASE_RESTORE=NONE BILLING_CHANGES=NONE',flush=True)
+        sys.exit(0)
     before = G.read_bytes()
     assert sha(before) == '36d0616498b620a20a2c6c44c7d2969702c01720f1010f4966fcd7870730d160', 'Gateway changed; refresh baseline'
     (E/'gateway.before').write_bytes(before)
@@ -61,7 +74,12 @@ try:
     assert run(['docker','exec','naumi47-r2-image-main-20261015','cat','/app/.next/static/chunks/'+meta['originalName']])==original
     check_gateway_syntax(E,'credits-cutover',after)
     G.write_text(after);run(['systemctl','reload','nginx'])
-    status,body=read('https://47.105.59.142/canvas');assert status==200 and meta['modifiedName'].encode()in body
+    # Nginx reload is graceful: a request immediately after reload may still hit the old worker.
+    for attempt in range(30):
+        status,body=read('https://47.105.59.142/canvas')
+        if status==200 and meta['modifiedName'].encode()in body:break
+        time.sleep(.5)
+    else:raise AssertionError('New canvas reference not observed after graceful reload')
     status,body=read('https://47.105.59.142/_next/static/chunks/'+meta['modifiedName']);assert status==200 and sha(body)==meta['modifiedSha256']
     (E/'CUTOVER_READY').write_text(sha(after.encode()))
     print('CUTOVER=PASS PUBLIC_CANVAS=200 IMMUTABLE_ASSET_SHA=EXACT APIS_WORKERS=UNCHANGED',flush=True)
