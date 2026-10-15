@@ -237,11 +237,14 @@ def main():
             dump(ROOT / 'rollback-live.json', result)
             print('ROLLBACK_LIVE=PASS; CAPACITY=1; DATA_RESTORE=NONE')
             return
-        assert not original_path.exists(), 'Release already prepared; inspect evidence, do not overwrite baseline'
+        assert not (ROOT / 'baseline.json').exists(), 'Release already started; inspect evidence, do not overwrite baseline'
         original = CONFIG.read_bytes()
         assert sha(original) == '3a22137325462ebf4e5b32957c02d6f54db34bad9c5f341f43fa600fe6be9f04'
-        original_path.write_bytes(original)
-        original_path.chmod(0o600)
+        if original_path.exists():
+            assert original_path.read_bytes() == original, 'Prepared baseline differs'
+        else:
+            original_path.write_bytes(original)
+            original_path.chmod(0o600)
         config = json.loads(original)
         config['scheduling']['maxConcurrentJobs'] = 12
         config['scheduling']['maxBrowserJobs'] = 8
@@ -250,6 +253,7 @@ def main():
         (ROOT / 'MODIFIED_FILE.json').write_bytes(modified)
         (ROOT / 'DIFF_FILE.patch').write_text(''.join(difflib.unified_diff(original.decode().splitlines(True), modified.decode().splitlines(True), fromfile='ORIGINAL_FILE.json', tofile='MODIFIED_FILE.json')))
         subprocess.check_call(['docker', 'cp', str(ROOT / 'hub-concurrency-fixture.mjs'), CONTAINER + ':/tmp/hub-concurrency-fixture.mjs'])
+        subprocess.check_call(['docker', 'exec', '-u', '0', CONTAINER, 'chmod', '644', '/tmp/hub-concurrency-fixture.mjs'])
         results = {mode: fixture(mode, raw) for mode, raw in [('BASELINE', original), ('MODIFIED', modified)]}
         restored = ROOT / 'rollback-copy.json'
         restored.write_bytes(modified)
