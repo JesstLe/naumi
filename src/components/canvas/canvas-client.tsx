@@ -9312,11 +9312,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               proOptions={{ hideAttribution: true }}
               nodesDraggable={!readOnly && canvasTool !== "hand"}
               nodesConnectable={!readOnly && canvasTool !== "hand"}
+              elementsSelectable={canvasTool !== "hand"}
               deleteKeyCode={null}
-              panOnDrag={boxSelectMode ? [1] : [0, 1]}
-              selectionOnDrag={boxSelectMode}
+              // V/M drag empty space to select; H alone owns left-button panning.
+              // Space and the middle button still provide temporary panning.
+              panOnDrag={canvasTool === "hand" ? [0, 1] : [1]}
+              selectionOnDrag={canvasTool !== "hand"}
               selectionMode={SelectionMode.Partial}
-              selectionKeyCode={boxSelectMode ? null : "Shift"}
+              selectionKeyCode={canvasTool === "hand" ? null : "Shift"}
               multiSelectionKeyCode={["Control", "Meta", "Shift"]}
               panActivationKeyCode="Space"
               panOnScroll

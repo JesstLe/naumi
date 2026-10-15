@@ -430,6 +430,15 @@
 .canvas-hand-tool .react-flow__node { cursor: grab; }
 .canvas-hand-tool .react-flow__pane.dragging,
 .canvas-hand-tool .react-flow__node.dragging { cursor: grabbing; }
+/* Per-node draggable/selectable flags override React Flow's global defaults.
+   In hand mode, hit-test the pane even over nodes, handles and multi-selection. */
+.canvas-hand-tool .react-flow__node,
+.canvas-hand-tool .react-flow__node *,
+.canvas-hand-tool .react-flow__edge,
+.canvas-hand-tool .react-flow__edge *,
+.canvas-hand-tool .react-flow__nodesselection,
+.canvas-hand-tool .react-flow__nodesselection *,
+.canvas-hand-tool .react-flow__selection { pointer-events: none !important; }
 .canvas-box-select .react-flow__selection {
   border: 1px solid rgba(99, 102, 241, .9);
   background: rgba(99, 102, 241, .12);
