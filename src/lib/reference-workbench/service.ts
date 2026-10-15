@@ -201,4 +201,3 @@ export async function chatState(owner:string,sid:string){
  return {ok:true,session_id:sid,sessions:sessions.map(s=>({id:s.id,title:s.payload.title,active:s.id===sid,running:s.payload.messages.filter((m:any)=>["thinking","queued","generating","plan_pending"].includes(m.status)).length,updated_at:new Date(s.updated_at).getTime()/1000})),messages:chat.messages.map((m:any)=>({...m,images:m.role==="user"?(m.inputs||[]).map(imageUrl):[]})),running:chat.messages.some((m:any)=>["thinking","generating","queued"].includes(m.status))};
 }
 export async function recoverReferenceWorkbench(){await ensureWorkbench();const ops=(await getPool().query<Operation>("SELECT * FROM app_reference_operations WHERE state='accepted' ORDER BY created_at LIMIT 10")).rows;for(const op of ops)await synchronize(op);}
-
