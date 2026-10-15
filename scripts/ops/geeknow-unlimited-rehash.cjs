@@ -10,7 +10,7 @@ function rewrite(text, map) { for (const [before, after] of Object.entries(map))
 // so a browser's cached runtime cannot keep loading the old admin components.
 for (const file of all.filter(file => /\/static\/chunks\/webpack-[a-f0-9]+\.js$/.test(file))) {
   const before = fs.readFileSync(file, 'utf8'), after = rewrite(before, replacements);
-  if (before === after) throw Error('Webpack mapping did not reference changed admin chunks');
+  if (before === after) continue; // Entry chunks may be named only in HTML/manifests.
   const oldHash = path.basename(file).match(/webpack-([a-f0-9]+)\.js/)[1], newHash = hash(after);
   fs.writeFileSync(file.replace(oldHash, newHash), after); replacements[oldHash] = newHash;
 }

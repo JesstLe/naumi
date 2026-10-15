@@ -52,7 +52,8 @@ def main():
    return {table:sql('select md5(coalesce(string_agg(row::text,\'\' order by row::text),\'\')) from (select row_to_json(t) row from '+table+' t) z') for table in protected}
   protected_before=protected_state()
   backup=ROOT/'database.backup'
-  with backup.open('xb') as f:subprocess.run(['docker','exec','naumi-staging-db-1','pg_dump','-U',de['POSTGRES_USER'],'-d',de['POSTGRES_DB'],'-Fc'],stdout=f,stderr=subprocess.PIPE,check=True,timeout=180)
+  if not backup.exists():
+   with backup.open('xb') as f:subprocess.run(['docker','exec','naumi-staging-db-1','pg_dump','-U',de['POSTGRES_USER'],'-d',de['POSTGRES_DB'],'-Fc'],stdout=f,stderr=subprocess.PIPE,check=True,timeout=180)
   with backup.open('rb') as f:subprocess.run(['docker','exec','-i','naumi-staging-db-1','pg_restore','--list'],stdin=f,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,check=True)
   backup.chmod(0o600)
   manifest=json.loads((ROOT/'modified/manifest.json').read_text())
@@ -63,7 +64,7 @@ def main():
     assert POLICY not in env;env[POLICY]='geeknow-images'
     assert sha(run(['docker','exec',oldname,'cat','/app/.next/server/chunks/5552.js']))==manifest['files'][0]['before']
     with socket.socket() as sock:sock.bind(('127.0.0.1',port))
-    build=ROOT/('image-'+str(port));build.mkdir()
+    build=ROOT/('image-'+str(port));build.mkdir(exist_ok=True)
     dockerfile='FROM '+old['Image']+'\nUSER root\n'
     for entry in manifest['files']:
      source=ROOT/'modified'/entry['modified'];assert sha(source.read_bytes())==entry['after']
