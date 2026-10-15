@@ -22,11 +22,13 @@ try:
     assert live==original
     # A tiny static overlay avoids another Next process on this memory-constrained host.
     assert os.statvfs(E).f_bavail*os.statvfs(E).f_frsize>10*1024**3
-    assets = pathlib.Path('/opt/naumi-staging/releases/canvas-credits47-'+meta['modifiedSha256'][:12]);assets.mkdir(exist_ok=True);assets.chmod(0o755)
+    # Public JS only: never open traversal permissions on protected config/evidence parents.
+    assets = pathlib.Path('/var/www/naumi-canvas-credits47')/meta['modifiedSha256'][:12];assets.mkdir(parents=True,exist_ok=True);assets.chmod(0o755)
     asset = assets/meta['modifiedName'];asset.write_bytes(modified);asset.chmod(0o644)
     db=json.loads(run(['docker','inspect','naumi-staging-db-1']))[0];env=dict(x.split('=',1)for x in db['Config']['Env']if '='in x)
     cmd=['docker','exec','naumi-staging-db-1','pg_dump','-U',env['POSTGRES_USER'],'-d',env['POSTGRES_DB'],'-Fc']
-    with (E/'database.backup').open('xb') as f: subprocess.run(cmd,stdout=f,check=True)
+    if not (E/'database.backup').exists():
+        with (E/'database.backup').open('xb') as f: subprocess.run(cmd,stdout=f,check=True)
     (E/'database.backup').chmod(0o600)
     with (E/'database.backup').open('rb') as f: subprocess.run(['docker','exec','-i','naumi-staging-db-1','pg_restore','--list'],stdin=f,stdout=subprocess.DEVNULL,check=True)
     old_assets=run(['docker','exec','naumi47-r2-image-main-20261015','sh','-c','find /app/.next/static -type f -exec sha256sum {} +'])
