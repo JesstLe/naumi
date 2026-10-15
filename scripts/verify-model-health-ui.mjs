@@ -26,6 +26,15 @@ try{
   await page.getByLabel("每日巡检上限（次）",{exact:false}).fill("8");
   await page.getByRole("button",{name:"保存设置",exact:true}).click();await expect(page.getByText("已保存",{exact:true})).toBeVisible();
   assert.equal((await api()).budget.limit,8);
+  await page.getByLabel("每日巡检上限（次）",{exact:false}).fill("12");
+  data=await api();assert.equal((await context.request.post(origin+"/api/admin/model-health",{data:{action:"policy",revision:data.revision,policy:{...data.policy,dailyMaxCalls:12}}})).status(),200);
+  await page.getByRole("button",{name:"刷新",exact:true}).click();
+  await page.getByRole("button",{name:"保存设置",exact:true}).click();await expect(page.getByRole("button",{name:"拉取最新配置",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"拉取最新配置",exact:true}).click();await expect(page.getByRole("button",{name:"刷新",exact:true})).toBeEnabled();
+  await expect(page.getByLabel("每日巡检上限（次）",{exact:false})).toHaveValue("12");
+  await page.getByRole("switch",{name:"启用自动巡检",exact:true}).uncheck();await page.getByRole("button",{name:"保存设置",exact:true}).click();await expect.poll(async()=>(await api()).policy.enabled).toBe(false);
+  await context.request.post(origin+"/api/admin/model-health",{data:{action:"tick"}});assert.equal((await api()).budget.used,0);
+  await page.getByRole("switch",{name:"启用自动巡检",exact:true}).check();await page.getByRole("button",{name:"保存设置",exact:true}).click();await expect.poll(async()=>(await api()).policy.enabled).toBe(true);
   assert.equal((await context.request.post(origin+"/api/admin/model-health",{headers:{Origin:"https://evil.invalid"},data:{action:"tick"}})).status(),403);
   await page.getByRole("button",{name:"检查到期模型",exact:true}).click();
   await expect.poll(async()=>(await api()).budget.used).toBe(1);
@@ -41,7 +50,11 @@ try{
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('h1')).color==="rgb(255, 255, 255)"),false);
   const stats=await(await fetch(f.control+"/stats")).json();assert.equal(stats.paid,2);assert.equal(stats.catalogCalls,0);
+  await fetch(f.control+"/seed-unknown",{method:"POST"});await page.getByRole("button",{name:"刷新",exact:true}).click();
+  page.once("dialog",dialog=>void dialog.accept());await page.getByRole("button",{name:"核查原任务后解除暂停",exact:true}).click();
+  await expect(page.getByText("原任务已核查，等待下一次到期巡检",{exact:true})).toBeVisible();
+  assert.equal((await api()).budget.used,2);
   assert.deepEqual(errors,[]);
   await writeFile(out+"/browser-result.json",JSON.stringify({status:"PASS",configuredModels:3,localMockPaidCalls:2,externalSupplierCalls:0,catalogCalls:0,desktopOverflow:false,mobileOverflow:false,pageErrors:errors,workerLog},null,2));
-  console.log("MODEL_HEALTH_UI=PASS; CONFIGURED=3; CATALOG_CALLS=0; LOCAL_MOCK_CALLS=2; EXTERNAL_SUPPLIER_CALLS=0; DESKTOP_1440=PASS; MOBILE_390=PASS; WORKER_TICK=PASS; PAGE_ERRORS=0");
+  console.log("MODEL_HEALTH_UI=PASS; CONFIGURED=3; CATALOG_CALLS=0; LOCAL_MOCK_CALLS=2; EXTERNAL_SUPPLIER_CALLS=0; DESKTOP_1440=PASS; MOBILE_390=PASS; WORKER_TICK=PASS; CONFLICT_AND_PAUSE=PASS; RECONCILE=PASS; PAGE_ERRORS=0");
 }finally{worker?.kill();await browser.close();}

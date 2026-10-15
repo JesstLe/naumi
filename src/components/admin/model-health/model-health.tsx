@@ -419,16 +419,16 @@ export function ModelHealthPanel() {
                 <p className={styles.fieldLabel}>启用自动巡检</p>
                 <p className={styles.fieldHint}>关闭后，自动与手动巡检均暂停</p>
               </div>
-              <input type="checkbox" className={styles.switch} role="switch" aria-label="启用自动巡检" checked={form.enabled} disabled={saving} onChange={event => editForm({ enabled: event.target.checked })} />
+              <input type="checkbox" className={styles.switch} role="switch" aria-label="启用自动巡检" checked={form.enabled} disabled={saving || refreshing} onChange={event => editForm({ enabled: event.target.checked })} />
             </div>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>数据过期阈值（小时）</span>
-              <input type="number" min={6} max={168} step={1} inputMode="numeric" value={form.staleHours} disabled={saving} onChange={event => editForm({ staleHours: event.target.value })} />
+              <input type="number" min={6} max={168} step={1} inputMode="numeric" value={form.staleHours} disabled={saving || refreshing} onChange={event => editForm({ staleHours: event.target.value })} />
               <span className={styles.fieldHint}>无成功记录超过该时长即视为待巡检，范围 6–168 小时，默认 6</span>
             </label>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>每日巡检上限（次）</span>
-              <input type="number" min={0} max={12} step={1} inputMode="numeric" value={form.dailyMaxCalls} disabled={saving} onChange={event => editForm({ dailyMaxCalls: event.target.value })} />
+              <input type="number" min={0} max={12} step={1} inputMode="numeric" value={form.dailyMaxCalls} disabled={saving || refreshing} onChange={event => editForm({ dailyMaxCalls: event.target.value })} />
               <span className={styles.fieldHint}>全部配置模型合计，上海自然日，每次巡检 1 张图片；0 表示暂停巡检调用</span>
             </label>
           </div>
@@ -437,7 +437,7 @@ export function ModelHealthPanel() {
               {saved && !dirty && <span className={styles.saved}><CheckCircle2 size={15} />已保存</span>}
               {saveError && <span className={styles.formError} role="alert">{saveError}{saveConflict && <button type="button" className={styles.linkButton} onClick={() => void discardAndReload()}>拉取最新配置</button>}</span>}
             </div>
-            <button type="button" className={`${styles.button} ${styles.primary}`} onClick={() => void savePolicy()} disabled={saving || !dirty}>
+            <button type="button" className={`${styles.button} ${styles.primary}`} onClick={() => void savePolicy()} disabled={saving || refreshing || !dirty}>
               {saving ? <Loader2 size={16} className={styles.spin} /> : <Save size={16} />}保存设置
             </button>
           </footer>

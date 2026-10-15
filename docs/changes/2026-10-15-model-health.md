@@ -24,6 +24,7 @@
 - 模型指纹包含供应商ID、协议、endpoint、credentialRef、真实wire model、参数/能力/预设。完全相同配置项去重；不凭模型名称后缀猜测合并两个真实模型。密钥轮换产生新credentialRef后历史健康不继承。
 - `src/lib/model-health`负责状态、预算和调度；业务图像在具体执行层完成下载/解码后更新被动健康，图像代理/DNS/内网拦截规则保留。Flow受管下载改用既有安全传输与32MiB有界读取。
 - 新页面 `/admin/model-health`，管理API `/api/admin/model-health`；禁用策略同时暂停自动与手动真实巡检；手动检查一次最多取一个到期模型。
+- 此轮只观测与巡检，不自动覆盖管理员的路由权重/模型启禁用；业务路由原熔断机制保留。混合健康/未验证但无已知失败时供应商标待验证，不误报部分异常；人工检查不伪造Worker心跳。
 - 独立常驻入口 `node scripts/model-health-worker.mjs`，默认每60秒tick；数据库全局串行防多实例重复。App与Worker通过同一受保护环境变量 `MODEL_HEALTH_WORKER_SECRET`（至少32字符）鉴权，请求头只在内存使用。不要复用其他管理密钥，不写进仓库。
 - 固定候选镜像包含worker脚本；`deploy/model-health-worker.compose.yml`可与本站compose合并，worker无公网端口。设置 NAUMI_IMAGE、NAUMI_APP_ORIGIN、MODEL_HEALTH_ENV_FILE，后者为受保护环境文件；App也要读到同一独立worker secret。未启动worker时页面明确显示尚未心跳，策略开启不等于调度已运行。
 - 回滚先停健康Worker，再切回旧App；新增表为扩展式，保留预算/受理未知/供应商成本和核查审计，不drop、不回灌业务DB。源码逆向patch只在另一个隔离副本验收。
@@ -48,4 +49,6 @@ UI fixture独立schema，只有本地模拟供应商；固定54987端口与outpu
 集中验证配置3个/目录数百、6h抑制、全局12次、多实例并发、上海跨日、异常输出/下载、凭据/参数变化、未知不重提、管理鉴权/CSRF、不扣用户积分。
 本模块尚未发布；真实外部供应商调用0、未连接/变更生产服务器，不把Git提交或模拟供应商结果写为线上自动巡检已运行。
 共享checkout保持原分支，本任务分支 codex/model-health-20261015，worktree C:/Users/13357/.codex/worktrees/model-health-20261015/naumi。
-开工已fetch；累计完成3模块后再fetch，发现main新增Geeknow服务端无限并发策略及部署运维修复，需保留并整合后集中回归。上线前另核对47当前两槽和同事已部署overlay，保留原生功能，不涉及其他服务器。
+开工基线f049e035；累计完成3模块后再fetch，将origin/main 929eb876（Geeknow服务端无限并发、运维修复及47蓝绿硬约定）普通合并为07eeffd4，计数归零。合并后类型检查、健康fixture、冻结模型执行回归均退出0。后台390/1440、跨管理员409+刷新、策略启禁用、人工核查入口、独立Worker tick再次通过；真实外部调用0。
+
+2026-10-15收到47容器收敛协作通知：本线程只进行本地开发与验收，没有SSH/构建/候选/容器/三锁操作，不写output/container-retirement47-20261015；等待对方完成收敛，不并行发布或退役。后续上线前另核对47当前两槽和同事已部署overlay，保留原生功能，不涉及其他服务器。

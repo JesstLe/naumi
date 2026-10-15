@@ -111,7 +111,7 @@ export function createHealthRepository(pool: Pool) {
       return { policy,revision:p.revision,modelVersion:snapshot.version,budget:{day:p.day,used:Number(count.rows[0].n),limit:policy.dailyMaxCalls},worker:{lastTickAt:iso(p.last_tick_at)},
         providers:snapshot.config.providers.filter(p=>targets.some(t=>t.provider.id===p.id)).map(p=>{
           const models=views.filter(v=>v.providerId===p.id).map(v=>v.view), good=models.filter(m=>m.state==="healthy").length,bad=models.filter(m=>m.state==="unhealthy").length;
-          return {id:p.id,name:p.name,models,state:good===models.length?"healthy":bad===models.length?"unhealthy":bad||good?"degraded":"unknown"};
+          return {id:p.id,name:p.name,models,state:good===models.length?"healthy":bad===models.length?"unhealthy":bad?"degraded":"unknown"};
         }),recent:probes.rows.map(r=>({id:r.id,providerId:r.provider_id,model:r.wire_model,state:r.state,reason:r.reason,status:r.status,startedAt:iso(r.started_at)!,finishedAt:iso(r.finished_at)})) };
     },
   };

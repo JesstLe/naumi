@@ -13,6 +13,10 @@ async function main(){
     const send=(status:number,body:unknown)=>{res.writeHead(status,{"content-type":"application/json"});res.end(JSON.stringify(body));};
     if(req.url==="/stop"){send(200,{});setTimeout(()=>void close(),50);return;}
     if(req.url==="/stats"){send(200,{paid,catalogCalls});return;}
+    if(req.url==="/seed-unknown"){
+      const repo=createHealthRepository(f.sql),target=configuredHealthTargets(f.config)[2];
+      await repo.observe(target,{success:false,reason:"acceptance-unknown",status:null,latencyMs:1,uncertain:true});send(200,{});return;
+    }
     if(req.url?.endsWith("/models")){catalogCalls++;send(200,{data:Array.from({length:258},(_,i)=>({id:`unused-${i}`}))});return;}
     if(req.url==="/v1/images/generations"&&req.method==="POST"){
       const parts=[];for await(const chunk of req)parts.push(chunk);const body=JSON.parse(Buffer.concat(parts).toString());paid++;
