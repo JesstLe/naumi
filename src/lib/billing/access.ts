@@ -1,9 +1,8 @@
 import "server-only";
-import { NextResponse } from "next/server";
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/lib/db";
 export const PRIVATE_HEADERS = { "Cache-Control": "private, no-store, max-age=0", Vary: "Cookie, Authorization", "X-Robots-Tag": "noindex, nofollow", "X-Content-Type-Options": "nosniff" };
-export function billingJson(data: unknown, status = 200) { return NextResponse.json(data, { status, headers: PRIVATE_HEADERS }); }
+export function billingJson(data: unknown, status = 200) { return Response.json(data, { status, headers: PRIVATE_HEADERS }); }
 export function sameSiteBillingMutation(request: Request) {
     if (request.headers.get("sec-fetch-site") === "cross-site")
         return false;
