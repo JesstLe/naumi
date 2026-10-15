@@ -69,8 +69,9 @@ rows=[]
 for p in pathlib.Path('/proc').glob('[0-9]*'):
  try:
   args=(p/'cmdline').read_bytes().split(b'\\0')
-  if len(args)>1 and args[0].endswith(b'/node') and args[1] in [b'dist/src/main.js',b'dist/index.js']:
-   rows.append({'pid':int(p.name),'entry':args[1].decode(),'ticks':(p/'stat').read_text().rsplit(')',1)[1].split()[19]})
+  entries=[arg for arg in args[1:4] if arg in [b'dist/src/main.js',b'dist/index.js']]
+  if len(entries)==1 and args[0].endswith(b'/node'):
+   rows.append({'pid':int(p.name),'entry':entries[0].decode(),'ticks':(p/'stat').read_text().rsplit(')',1)[1].split()[19]})
  except (FileNotFoundError,ProcessLookupError,PermissionError): pass
 print(json.dumps(rows))'''
     return json.loads(run(['docker', 'exec', CONTAINER, 'python3', '-c', code]))

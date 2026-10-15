@@ -19,9 +19,21 @@
 
 ## 进度
 
-实现完成，待集中fixture及实际生图验收。未宣称8路真实满载或80人同时生成通过；只有一个上游账号，采购方账号配额/上游节流仍决定最终吞吐。
+2026-10-15 07:00 UTC已上线并验收：
+
+- 原80任务fixture峰值1，新配置峰值8，80/80完成，每任务attempt1、幂等重放通过；回滚副本恢复原SHA，峰值恢复1。
+- 3笔真实即梦5.0 Pro生图同时running（各自已有不同上游history），全部成功；每笔attempt1、各一张1536×1536、Hub本地图片字节/SHA与签名下载一致。
+- 3笔验收Hub任务ID：`a2cbc521-10d5-49ae-b0e1-5e9d704da1f9`、`d5efdbe8-f8e0-4c66-b007-e2350ba52149`、`2398908e-1ac2-4d5e-aec7-f8357bc8b175`。验收调用Key已停用，不含客户任务/账本。
+- Hub容器ID未变；仅Hub Node PID28→10878，Jimeng引擎PID29保持。物理浏览器池、App/Worker/网关和模型价格未改。
+- 暂停状态恢复，最终非终态0；匿名Hub管理接口401；公网健康、版号200（版号沿用原App，不伪造新镜像版号）。Hub在线备份`integrity_check=ok`；双锁已释放。
+- 新配置SHA256 `9ac69023737796a9cc2d69312695e1dd4f688ff3d35ac383c1a162352631ae41`；远端证据`/opt/naumi-staging/evidence/jimeng-concurrency47-20261015`；本地`E:/Workspace/naumi/output/jimeng47-concurrency-20261015`。
+- 未实施线上回滚；仅副本恢复并执行原调度行为验证，生产继续8并发。上线操作退出0；原锁竞争和fixture读权限两次准备失败均未改线上配置，已修正后执行。
+
+未宣称8路真实满载或80人同时生成通过；只有一个上游账号，采购方账号配额/上游节流仍决定最终吞吐。真实验收证明3笔上游同时处理，不能将配置值8冒充8路负载验收。
 
 ## 固定交付与后续
 
-发布脚本、fixture与回滚脚本先选择性提交/push后执行；不替换App/Worker镜像、网关、模型/积分配置，不操作103或旧服务器。完成后本页更新实际结果和证据。
+发布脚本、fixture与回滚脚本先选择性提交/push后执行：固定发布代码`683eb70`；事后增加进程识别（含Node flags）与可重放验证脚本，不二次执行发布。两次刷新main均`daf72b2`；同事chat/login/upload最新分支保持独立，运行配置脚本不打包/降级他们的App。未替换App/Worker镜像、网关、模型/积分配置，未操作103或旧服务器。
+
+复核命令：`bash /opt/naumi-staging/evidence/jimeng-concurrency47-20261015/verify-fixture.sh BASELINE`（或MODIFIED/ROLLBACK）。线上回滚：`bash /opt/naumi-staging/evidence/jimeng-concurrency47-20261015/ROLLBACK.sh`，双锁、expected-config-hash、完全排空后恢复1/1/4；保留所有任务、账号和图片。
 功能迭代本模块1/3；配置成功发布计1次，不计文档提交。未构建镜像；磁盘52%/可用32GiB，不触发构建前空间门槛；原维护累计计数另行核对，不虚记归零。
