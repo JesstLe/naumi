@@ -89,7 +89,7 @@ async function main(){
     assert.equal((await f.sql.query("SELECT count(last_business_success_at)::int n FROM app_model_health_observations")).rows[0].n,0);
     console.log("PASS real local HTTP adapter: 3 configured models, 1 image each, 3 supplier costs, 0 customer ledger changes");
     for(const test of [{mode:"401",reason:"authentication"},{mode:"403",reason:"authentication"},{mode:"402",reason:"quota"},{mode:"429",reason:"rate-limited"},{mode:"503",reason:"upstream-error"},{mode:"missing",reason:"invalid-output"},{mode:"corrupt",reason:"invalid-output"},{mode:"download-failed",reason:"image-download"}]){
-      mode=test.mode;const before=submitted.length;const result=await executeHealthProbe({pool:f.sql,snapshot,target:targets[0],id:randomUUID(),readCredential:f.credentials.read,trustedOrigins:[f.origin]});assert.equal(result.success,false);assert.equal(result.reason,test.reason,test.mode);assert.equal(submitted.length,before+1,"each failure submits once without fallback");
+      mode=test.mode;const beforeCount:number=submitted.length;const result=await executeHealthProbe({pool:f.sql,snapshot,target:targets[0],id:randomUUID(),readCredential:f.credentials.read,trustedOrigins:[f.origin]});assert.equal(result.success,false);assert.equal(result.reason,test.reason,test.mode);assert.equal(submitted.length,beforeCount+1,"each failure submits once without fallback");
     }
     assert.equal(classifyHealthFailure(new Error("network unreachable")).uncertain,true);
     console.log("PASS 401/403/402/429/503/HTTP200 empty/corrupt/download failure classified without fallback");
