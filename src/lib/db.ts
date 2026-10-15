@@ -58,7 +58,7 @@ function getPool(): Pool {
 }
 
 async function ensureSchema(): Promise<void> {
-  if(process.env.FLEET_PORTAL_ONLY==='1'){
+  if(process.env.FLEET_PORTAL_ONLY==='1'||process.env.NAUMI_AUTH_LOGIN_ONLY==='1'){
     // Central sidecar must never run general application migrations against a live mixed-version site.
     // Fleet's additive namespace is initialized separately; business/auth schema stays server-owned.
     if(!schemaReady)schemaReady=(async()=>{
@@ -1161,7 +1161,10 @@ export async function totalPaidCents(emailRaw: string): Promise<number> {
 async function toSessionUser(row: UserRow): Promise<SessionUser> {
   // creditsTotal = 活批次余额(顺带跑过期 + 同步镜像);creditsUsed = 在途占位。
   // remaining = creditsTotal - creditsUsed 对所有现有读取点继续成立。
-  const creditsTotal = await refreshBalance(row.email);
+  // Login-only sidecars read the live wallet without unrelated business DDL/expiry writes.
+  const creditsTotal = process.env.NAUMI_AUTH_LOGIN_ONLY==='1'
+    ? Number((await getPool().query('SELECT COALESCE(SUM(remaining),0)::int AS total FROM app_credit_batches WHERE email=$1 AND expires_at>now() AND remaining>0',[row.email])).rows[0].total)
+    : await refreshBalance(row.email);
   return {
     name: row.name,
     email: row.email,
