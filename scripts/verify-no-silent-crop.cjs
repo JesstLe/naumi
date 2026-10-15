@@ -39,4 +39,3 @@ vm.runInContext(aspectCode,ctx);
  assert.ok(!source.includes('async function cropToRatio'));assert.ok(!/fit:\s*["']cover["']/.test(source));
  console.log('MODIFIED=PASS INPUT=1024x1536 OUTPUT=1024x1536 BYTES=EXACT ALL_EDGES=PRESERVED CUSTOM=CONTAIN SOURCE_RATIO=3:4 EXPLICIT_OVERRIDE=16:9 ACTUAL_METADATA=2:3 PAID_CALLS=0 EXIT=0');
 })().catch(e=>{console.error(e);process.exitCode=1;});
-
