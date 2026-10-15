@@ -37,6 +37,10 @@ on:
       - 'src/app/api/canvas/image-tasks/**'
       - 'src/app/api/recolor/**'
       - 'scripts/deploy-release.sh'
+      - 'scripts/ops/release_lifecycle.py'
+      - 'scripts/ops/test_release_lifecycle.py'
+      - 'scripts/ops/verify_release_lifecycle_cli.py'
+      - 'scripts/verify-release-entrypoints.sh'
       - 'scripts/verify-coordinated-release.sh'
       - 'scripts/verify-image-gateway.ts'
       - 'scripts/verify-credit-billing.ts'
@@ -93,6 +97,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: output/model-config-20261004/router-source/go.mod
+      - name: Verify durable release lifecycle and fail-closed acceptance
+        run: |
+          python3 scripts/ops/test_release_lifecycle.py -v
+          python3 scripts/ops/verify_release_lifecycle_cli.py
+          docker run --rm --network none --read-only --tmpfs /tmp -e NAUMI_VERIFY_RELEASE_FIXTURE=1 -e PYTHONDONTWRITEBYTECODE=1 -v "$PWD:/repo:ro" python:3.12-slim bash /repo/scripts/verify-release-entrypoints.sh
       - name: Verify coordinated release and failure rollback
         run: |
           python3 scripts/verify-model-deploy.py
