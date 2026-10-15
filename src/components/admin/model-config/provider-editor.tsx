@@ -57,7 +57,7 @@ export function ProviderEditor({
   catalog,
 }: {
   provider: ModelProvider;
-  capacity?: { maxConcurrent: number; inFlight: number };
+  capacity?: { maxConcurrent: number; inFlight: number; unlimited?: boolean };
   protocols: string[];
   onChange: (p: ModelProvider) => void;
   saveCredential: (providerId: string, ciphertext: string) => Promise<string>;
@@ -115,13 +115,13 @@ export function ProviderEditor({
             max={900000}
             onChange={(timeoutMs) => edit({ timeoutMs })}
           />
-          <NumberField
+          {capacity?.unlimited ? <TextField label="供应商并发上限" value="不限并发" disabled onChange={() => {}} /> : <NumberField
             label="供应商并发上限"
             value={p.maxConcurrent}
             min={1}
             max={256}
             onChange={(maxConcurrent) => edit({ maxConcurrent })}
-          />
+          />}
         </div>
         <Toggle
           label="允许新任务使用此供应商"
@@ -147,8 +147,8 @@ export function ProviderEditor({
         )}
         {capacity && (
           <p className="text-xs text-c-text3">
-            当前保守并发上限：{capacity.maxConcurrent} · 有效执行占用：
-            {capacity.inFlight}。草稿上限在发布后适用，保留版本仍使用最低限制。
+            当前并发上限：{capacity.unlimited ? "不限" : capacity.maxConcurrent} · 有效执行占用：
+            {capacity.inFlight}{capacity.unlimited ? "。" : "。草稿上限在发布后适用，保留版本仍使用最低限制。"}
           </p>
         )}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
