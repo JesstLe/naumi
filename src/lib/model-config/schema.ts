@@ -172,6 +172,10 @@ export async function ensureModelSchema(pool: Pool): Promise<void> {
       ALTER TABLE app_model_public_models ADD COLUMN IF NOT EXISTS supplier_routing jsonb;
       CREATE TABLE IF NOT EXISTS app_model_channel_balances(schedule_key text NOT NULL,channel_key text NOT NULL,served bigint NOT NULL DEFAULT 0,PRIMARY KEY(schedule_key,channel_key));
       CREATE TABLE IF NOT EXISTS app_model_channel_health(key text PRIMARY KEY,failures int NOT NULL DEFAULT 0,open_until timestamptz,probe_until timestamptz,last_status int,last_success_at timestamptz,updated_at timestamptz NOT NULL DEFAULT now());
+      ALTER TABLE app_model_channel_health ADD COLUMN IF NOT EXISTS last_failure_kind text;
+      ALTER TABLE app_model_channel_health ADD COLUMN IF NOT EXISTS last_failure_at timestamptz;
+      ALTER TABLE app_model_channel_health ADD COLUMN IF NOT EXISTS probe_token uuid;
+      CREATE TABLE IF NOT EXISTS app_model_channel_operations(operation_key text PRIMARY KEY,upstream_id text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS app_model_image_presets(draft_id uuid PRIMARY KEY REFERENCES app_model_drafts(id) ON DELETE CASCADE,config jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS app_model_fixed_costs(draft_id uuid PRIMARY KEY REFERENCES app_model_drafts(id) ON DELETE CASCADE,config jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS app_model_bindings(draft_id uuid NOT NULL,id text NOT NULL,public_model_id text NOT NULL,PRIMARY KEY(draft_id,id),FOREIGN KEY(draft_id,public_model_id) REFERENCES app_model_public_models(draft_id,id) ON DELETE CASCADE);
