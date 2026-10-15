@@ -1,5 +1,13 @@
 # 发布生命周期与实例收敛门禁
 
+## 2026-10-16补充：Worker控制子模块，不代表整站已上线
+
+新增`worker-runtime.mjs`和`worker_handoff.py`：单飞tick、暂停启动、持久化排空/恢复控制、boot/revision/operation幂等、同镜像Web入口与App自恢复origin核验。控制端口只监听Worker容器内127.0.0.1，通过docker exec访问，不开放公网端口。当前47旧Worker未安装此模块，不能向旧Worker发送控制成功或停旧槽。
+
+这里只证明**扫描tick循环**，不证明App里已接受的任务、Agent会话或租约已经结束；状态中的`acceptedTasks/agentSessions/workerLeases`仍为null，不能传为生命周期finish的0。超时、坏响应或dispatch后进程崩溃持久记UNKNOWN并暂停；既不自动resume，也不删状态文件清债。UNKNOWN任务的服务端回执/人工复核解除流程尚未实现，因此不将该子模块单独装入线上开启受控模式。
+
+完整整站候选、旧槽迁移、Web任务归属和旧前端兼容仍待实现。此前“本轮未连接47”仅描述2026-10-15门禁代码阶段；后续19:00只完成模型配置v115发布，不是应用蓝绿。当前进展见`changes/2026-10-16-worker-handoff47.md`。
+
 ## 1. 本轮实现及明确边界
 
 已实现：`scripts/ops/release_lifecycle.py`验收/状态工具，通过`scripts/deploy-release.sh --lifecycle`调用；状态锁、原子落盘和revision CAS；候选/实例/容量/版本/路由/恢复执行图/排空/回滚材料验收；已知旧发布入口前置阻断；离线端到端状态CLI及Linux旧入口回归。

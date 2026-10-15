@@ -40,6 +40,13 @@ on:
       - 'scripts/ops/release_lifecycle.py'
       - 'scripts/ops/test_release_lifecycle.py'
       - 'scripts/ops/verify_release_lifecycle_cli.py'
+      - 'scripts/ops/worker_handoff.py'
+      - 'scripts/ops/test_worker_handoff.py'
+      - 'scripts/worker-runtime.mjs'
+      - 'scripts/video-worker.mjs'
+      - 'scripts/test-worker-runtime.mjs'
+      - 'scripts/verify-worker-handoff.mjs'
+      - 'scripts/verify-worker-legacy.mjs'
       - 'scripts/verify-release-entrypoints.sh'
       - 'scripts/verify-coordinated-release.sh'
       - 'scripts/verify-image-gateway.ts'
@@ -101,6 +108,9 @@ jobs:
         run: |
           python3 scripts/ops/test_release_lifecycle.py -v
           python3 scripts/ops/verify_release_lifecycle_cli.py
+          python3 -m unittest discover -s scripts/ops -p test_worker_handoff.py -v
+          node --test scripts/test-worker-runtime.mjs
+          node scripts/verify-worker-handoff.mjs
           docker run --rm --network none --read-only --tmpfs /tmp -e NAUMI_VERIFY_RELEASE_FIXTURE=1 -e PYTHONDONTWRITEBYTECODE=1 -v "$PWD:/repo:ro" python:3.12-slim bash /repo/scripts/verify-release-entrypoints.sh
       - name: Verify coordinated release and failure rollback
         run: |

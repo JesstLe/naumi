@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "verify:worker-handoff": "node --test scripts/test-worker-runtime.mjs && node scripts/verify-worker-handoff.mjs",
     "postinstall": "node scripts/patch-next-body.mjs",
     "prebuild": "node scripts/build-reference-workbench.mjs",
     "predev": "node scripts/build-reference-workbench.mjs",
