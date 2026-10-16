@@ -59,6 +59,8 @@ class FixtureAdapter:
         if self.fail == action: raise m.Hold('FIXTURE_UNKNOWN')
     def inventory(self, operation): self.record('inventory'); return {'fixture': True}
     def snapshot(self, operation, previous=None): self.record('snapshot'); return snapshot()
+    def preflight(self, operation): self.record('preflight'); return {'availableMiB':9999,'requiredMiB':2176,'swapIncluded':False}
+    def legacy_safety(self, **kwargs): self.record('legacy-safety'); return {'verified':True}
     def backup(self, operation, reconcile=False): self.record('backup'); return {'readable': True}
     def gateway(self, kind, operation, reconcile=False): self.record('gateway-' + kind); return {'kind': kind}
     def freeze(self, operation, reconcile=False): self.record('freeze'); return {'frozen': True, 'acceptedTasks': None}
@@ -70,6 +72,7 @@ class FixtureAdapter:
         return {'identity': ident, 'app': {'admission': {'mode': 'draining'}, 'identity': {'bootId': 'boot'}}, 'observedAt': m.timestamp()}
     def worker_create(self, web, operation, reconcile=False): self.record('worker-create'); return identity(4, False, 'worker')
     def worker_start(self, ident, operation, reconcile=False): self.record('worker-start'); return {**ident, 'running': True}
+    def observed_started_identity(self, ident):self.record('pin-started');return ident
     def worker_control(self, ident, web, action, operation):
         self.record('worker-' + action)
         if action != 'status': self.worker_mode = action != 'resume'
@@ -224,9 +227,43 @@ class SessionTests(unittest.TestCase):
             for action in ['web-create','web-start','web-verify']:self.step(action,variant=web['variant'])
         self.assertEqual(list(self.session.state['webs']),['main','desktop','enterprise'])
 
+    def test_unified_103_is_explicit_and_requires_both_real_ui_checks(self):
+        spec=plan('103.30.76.93');spec['webs']=spec['webs'][:1]
+        with self.assertRaises(m.Hold):m.valid_plan(spec)
+        spec['runtimeTopology']='unified-web-three-ui'
+        with self.assertRaisesRegex(m.Hold,'THREE_REAL_UI'):m.valid_plan(spec)
+        spec['webs'][0]['requiredChecks']+=['desktop-ui','enterprise-ui']
+        self.assertEqual(m.valid_plan(spec)['webs'][0]['assetPrefix'],'')
+        spec['target']='47.105.59.142';spec['authorization']['target']=spec['target']
+        with self.assertRaisesRegex(m.Hold,'TOPOLOGY'):m.valid_plan(spec)
+
     def test_no_secret_raw_snapshot_or_artifacts_in_public_result(self):
         self.to_active();raw=json.dumps(self.session.public())
         self.assertNotIn('secret-not-printed',raw);self.assertNotIn('tables',raw);self.assertNotIn('private',raw)
+
+    def test_capacity_failure_is_before_503_and_same_uuid_can_revalidate(self):
+        self.step('baseline');self.step('backup');self.adapter.fail='preflight'
+        request={'action':'maintenance','operationId':str(uuid.uuid4()),'expectedRevision':self.session.state['revision']}
+        with self.assertRaisesRegex(m.Hold,'FIXTURE_UNKNOWN'):self.session.step(request)
+        self.assertNotIn('gateway-maintenance',self.adapter.calls)
+        self.adapter.fail=None;self.session=self.make();self.session.step({**request,'reconcile':True})
+        self.assertEqual(self.session.state['phase'],'MAINTENANCE')
+        self.assertEqual(self.adapter.calls.count('gateway-maintenance'),1)
+
+    def test_changed_legacy_safety_blocks_activation_and_caller_restore(self):
+        self.to_candidates();self.step('acceptance');self.step('preservation');self.adapter.fail='legacy-safety'
+        with self.assertRaisesRegex(m.Hold,'FIXTURE_UNKNOWN'):self.step('activate')
+        self.assertNotIn('app-resume',self.adapter.calls);self.assertNotIn('worker-resume',self.adapter.calls)
+
+    def test_worker_start_success_then_status_read_failure_reuses_exact_running_identity(self):
+        for action in ['baseline','backup','maintenance','freeze']:self.step(action)
+        for action in ['web-create','web-start','web-verify']:self.step(action,variant='main')
+        self.step('worker-create');self.adapter.fail='worker-status'
+        request={'action':'worker-start','operationId':str(uuid.uuid4()),'expectedRevision':self.session.state['revision']}
+        with self.assertRaises(m.Hold):self.session.step(request)
+        self.assertIn('running',self.session.state['worker'])
+        self.adapter.fail=None;self.session=self.make();self.session.step({**request,'reconcile':True})
+        self.assertEqual(self.adapter.calls.count('worker-start'),1);self.assertIn('pin-started',self.adapter.calls)
 
     def test_cli_steps_are_executed_under_one_transaction_not_one_lock_per_step(self):
         spec=plan();manifest=self.folder/'manifest.json';manifest.write_bytes(m.encoded(spec))
@@ -300,6 +337,203 @@ class AcceptanceTests(unittest.TestCase):
         descriptor=self.artifact('secret.json',b'private')
         with self.assertRaises(m.Hold):m.relative_artifact(self.folder,{**descriptor,'path':'../secret.json'})
         with self.assertRaises(m.Hold):m.relative_artifact(self.folder,{**descriptor,'sha256':'a'*64})
+
+    def test_unified_ui_requires_real_browser_dom_roles_not_200_html_shell(self):
+        self.spec['webs'][0]['requiredChecks']=['desktop-ui','enterprise-ui']
+        report={'kind':'naumi-candidate-acceptance-v1','releaseId':self.spec['releaseId'],'target':self.spec['target'],
+                'commit':self.spec['commit'],'buildVersion':self.spec['buildVersion'],
+                'bindings':{'main':{'container':self.ident,'appIdentity':self.app,'assetPrefix':''}},'checks':[]}
+        for name,path in [('desktop-ui','/desktop'),('enterprise-ui','/enterprise')]:
+            body=b'<html><div>actual fixture UI</div></html>';url='http://127.0.0.1:13080'+path
+            response={'containerId':self.ident['id'],'bootId':self.app['bootId'],'status':200,
+                      'request':{'method':'GET','url':url},'body':self.artifact(name+'.html',body),
+                      'responseBodySha256':m.sha(body),'assertions':[{'kind':'bodyContains','needle':'actual fixture UI','actual':True,'expected':True}]}
+            roles=[{'role':'tablist' if name=='desktop-ui' else 'button','name':'工作空间展示' if name=='desktop-ui' else '组织与成员'},
+                   {'role':'heading','name':'Fixture workspace' if name=='desktop-ui' else 'Fixture enterprise'}]
+            dom={'kind':'hydrated-role-snapshot-v1','containerId':self.ident['id'],'bootId':self.app['bootId'],
+                 'url':url,'hydrated':True,'errors':[],'observedAt':m.timestamp(),
+                 'elements':[{**role,'visible':True} for role in roles]}
+            report['checks'].append({'variant':'main','name':name,'runner':'cua','passed':True,'startedAt':m.timestamp(),
+                'response':self.artifact(name+'.response.json',response),'screenshot':self.artifact(name+'.png',b'\x89PNG\r\n\x1a\n'+b'x'*256),
+                'dom':self.artifact(name+'.dom.json',dom),'roleAssertions':roles})
+        self.assertTrue(self.adapter.acceptance(self.state,self.artifact('ui-report.json',report),'op')['candidateBindingsVerified'])
+        for mutation in [lambda r:r['checks'][0].update(runner='http-integration'),
+                         lambda r:r['checks'][0].update(roleAssertions=[{'role':'tablist','name':'not-actually-visible'}])]:
+            invalid=copy.deepcopy(report);mutation(invalid)
+            with self.assertRaises(m.Hold):self.adapter.acceptance(self.state,self.artifact('invalid-ui.json',invalid),'op')
+        checks={'checks':[{'variant':'main','name':'desktop-ui','path':'/desktop','expectedStatus':200,'bodyContains':'shell'}]}
+        with self.assertRaisesRegex(m.Hold,'EXTERNAL_BROWSER'):self.adapter.capture_acceptance(self.state,self.artifact('ui-http.json',checks),'op')
+
+
+class LiveRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.folder=pathlib.Path(self.tmp.name);self.spec=plan()
+        self.memory=5000;self.calls=[];self.fail_start=False;self.reload_fail_once=False
+        def raw(number,cmd,running,env):
+            return {'Id':str(number)*64,'Name':'/fixture-'+str(number),'Image':'sha256:'+'a'*64,
+                    'State':{'Running':running,'StartedAt':'fixture-start','Paused':False},
+                    'Config':{'Cmd':cmd,'Env':env},'HostConfig':{'RestartPolicy':{'Name':'no'},'Memory':128*1024**2}}
+        self.rows={
+            '1'*64:raw(1,['node','server.js'],True,['NAUMI_VIDEO_WORKER=0']),
+            '2'*64:raw(2,['node','scripts/video-worker.mjs'],True,[]),
+            '3'*64:raw(3,['node','server.js'],False,['NAUMI_VIDEO_WORKER=0']),
+            '4'*64:raw(4,['node','scripts/video-worker.mjs'],False,['NAUMI_WORKER_RELEASE_CONTROL=1','NAUMI_WORKER_START_PAUSED=1']),
+            '9'*64:raw(9,['postgres'],True,[]),
+        }
+        self.spec['baseline']=[m.public_identity(self.rows['1'*64])]
+        self.spec['webs'][0]['source']=self.spec['baseline'][0]
+        self.spec['legacyCaller']['identity']=m.public_identity(self.rows['2'*64])
+        self.spec['database']=m.public_identity(self.rows['9'*64])
+        self.tx=m.HostTransaction(self.spec['target'],self.spec['hostIdentitySha256'],self.folder,command=self.command)
+        self.tx.stack=True;self.adapter=m.LiveAdapter(self.tx,self.spec)
+    def tearDown(self):self.tmp.cleanup()
+    def command(self,args,**kwargs):
+        self.calls.append(args)
+        if args[:2]==['docker','inspect']:return json.dumps([self.rows[args[2]]]).encode()
+        if args==['cat','/proc/meminfo']:return f'MemAvailable: {self.memory*1024} kB\nSwapFree: 0 kB\n'.encode()
+        if args[:2]==['docker','start']:
+            if self.fail_start:raise m.Hold('FIXTURE_START_RESULT_LOST')
+            self.rows[args[2]]['State'].update(Running=True,StartedAt='new-start');return b''
+        if args==['nginx','-T']:
+            return b'after' if all(pathlib.Path(path).read_bytes()==value for path,value in self.after.items()) else b'before'
+        if args==['systemctl','reload','nginx'] and self.reload_fail_once:
+            self.reload_fail_once=False;raise m.Hold('FIXTURE_RELOAD_RESPONSE_LOST')
+        return b''
+    def test_web_and_worker_memory_gate_failure_before_intent_retries_original_stopped_identity_only(self):
+        for number,method in [('3',lambda ident,reconcile:self.adapter.web_start(self.spec['webs'][0],ident,str(uuid.uuid4()),reconcile)),
+                              ('4',lambda ident,reconcile:self.adapter.worker_start(ident,str(uuid.uuid4()),reconcile))]:
+            with self.subTest(kind=number):
+                ident=m.public_identity(self.rows[number*64]);self.memory=1000
+                with self.assertRaisesRegex(m.Hold,'MEMORY'):method(ident,False)
+                self.assertFalse(any(call[:2]==['docker','start'] and call[2]==ident['id'] for call in self.calls))
+                self.memory=5000;result=method(ident,True)
+                self.assertTrue(result['running'])
+                self.assertEqual(sum(call[:2]==['docker','start'] and call[2]==ident['id'] for call in self.calls),1)
+    def test_ambiguous_start_intent_stopped_container_is_never_restarted(self):
+        ident=m.public_identity(self.rows['3'*64]);self.fail_start=True
+        with self.assertRaisesRegex(m.Hold,'LOST'):self.adapter.web_start(self.spec['webs'][0],ident,'op')
+        self.fail_start=False
+        with self.assertRaisesRegex(m.Hold,'UNKNOWN_WEB_START'):self.adapter.web_start(self.spec['webs'][0],ident,'op',True)
+        self.assertEqual(sum(call[:2]==['docker','start'] for call in self.calls),1)
+    def test_missing_intent_running_or_changed_original_identity_cannot_trigger_start(self):
+        ident=m.public_identity(self.rows['4'*64]);self.rows['4'*64]['State']['StartedAt']='changed'
+        with self.assertRaisesRegex(m.Hold,'NOT_PROVEN'):self.adapter.worker_start(ident,'op',True)
+        self.rows['4'*64]['State'].update(Running=True,StartedAt=ident['startedAt'])
+        with self.assertRaisesRegex(m.Hold,'NOT_PROVEN'):self.adapter.worker_start(ident,'op',True)
+        self.assertFalse(any(call[:2]==['docker','start'] for call in self.calls))
+    def test_all_variant_capacity_is_checked_without_swap_before_maintenance(self):
+        self.memory=1045
+        with self.assertRaisesRegex(m.Hold,'ALL_VARIANT_PRE_MAINTENANCE'):self.adapter.preflight('op')
+        self.assertFalse(any(call==['systemctl','reload','nginx'] for call in self.calls))
+        self.memory=2176;self.assertEqual(self.adapter.preflight('op')['requiredMiB'],2176)
+        # HK needs all three images concurrently, not just one old budget.
+        self.spec['webs']=[{**self.spec['webs'][0],'variant':v} for v in ['main','desktop','enterprise']]
+        self.memory=1045
+        with self.assertRaises(m.Hold):self.adapter.preflight('op')
+        self.memory=4224;result=self.adapter.preflight('op');self.assertEqual(result['requiredMiB'],4224)
+        self.assertFalse(result['swapIncluded'])
+        self.spec['webs']=self.spec['webs'][:1];self.spec['webs'][0]['memoryMiB']=896
+        self.spec['webs'][0]['budget']['webPeakMiB']=896;self.memory=2048
+        self.assertEqual(self.adapter.preflight('op')['requiredMiB'],2048)
+    def test_legacy_caller_pause_does_not_hide_app_internal_timer_or_infra(self):
+        self.rows['2'*64]['State']['Paused']=True
+        self.assertTrue(self.adapter.legacy_safety(frozen=True)['oldWebTimersExplicitlyDisabled'])
+        self.rows['1'*64]['Config']['Env']=[]
+        with self.assertRaisesRegex(m.Hold,'INTERNAL_CLAIM_TIMER'):self.adapter.legacy_safety(frozen=True)
+        self.rows['1'*64]['Config']['Env']=['NAUMI_VIDEO_WORKER=0'];self.rows['2'*64]['State']['Paused']=False
+        with self.assertRaisesRegex(m.Hold,'FROZEN_STATE'):self.adapter.legacy_safety(frozen=True)
+        self.spec['baseline'].append(self.spec['database'])
+        with self.assertRaisesRegex(m.Hold,'INFRA'):self.adapter.legacy_safety(frozen=False)
+
+    def test_original_caller_restore_response_loss_reconciles_only_with_intent_after_new_worker_paused(self):
+        caller=self.spec['legacyCaller']['identity']
+        with self.assertRaisesRegex(m.Hold,'UNREADABLE'):
+            self.adapter.legacy_safety(frozen=True,restore_reconcile=True)
+        (self.folder/('legacy-caller-restore-intent-'+caller['id'][:12]+'.json')).write_bytes(m.encoded({'identity':caller}))
+        self.adapter.legacy_safety(frozen=True,restore_reconcile=True)
+        self.assertTrue(self.adapter.restore_caller('op')['reconciled'])
+    def gateway_fixture(self):
+        nginx=self.folder/'nginx';nginx.mkdir()
+        before={str(nginx/'site.conf'):b'before config\n'};self.after={path:b'after config\n' for path in before}
+        for path,value in before.items():pathlib.Path(path).write_bytes(value)
+        def artifact(name,value):
+            raw=value if isinstance(value,bytes) else m.encoded(value);(self.folder/name).write_bytes(raw)
+            return {'path':name,'sha256':m.sha(raw)}
+        report={'configClosureValidated':True,'baselineFileCasVerified':True,'beforeDumpSha256':m.sha(b'before'),
+                'afterDumpSha256':m.sha(b'after'),'patches':[{'path':path,'beforeSha256':m.sha(value),
+                'afterSha256':m.sha(self.after[path])} for path,value in before.items()]}
+        self.spec['gateways']={'maintenance':{'report':artifact('report.json',report),
+            'before':{path:artifact('before.conf',value) for path,value in before.items()},
+            'after':{path:artifact('after.conf',value) for path,value in self.after.items()}}}
+        return nginx
+    def test_gateway_automatic_rollback_then_same_uuid_can_repeat_exact_original_cas(self):
+        nginx=self.gateway_fixture();op=str(uuid.uuid4());self.reload_fail_once=True
+        with patch.object(m.controls,'NGINX_ROOT',nginx),patch.object(m.controls,'_replace_config',lambda p,b:p.write_bytes(b)):
+            with self.assertRaisesRegex(m.Hold,'RELOAD_RESPONSE_LOST'):self.adapter.gateway('maintenance',op)
+            self.assertEqual(self.command(['nginx','-T']),b'before')
+            result=self.adapter.gateway('maintenance',op,True)
+            self.assertTrue(result['reloadIssued']);self.assertEqual(self.command(['nginx','-T']),b'after')
+            before=len(self.calls);self.adapter.gateway('maintenance',op,True)
+            self.assertEqual(sum(call==['systemctl','reload','nginx'] for call in self.calls[before:]),1)
+        self.assertEqual(len(list(self.folder.glob('gateway-'+op+'-attempt-*'))),2)
+    def test_gateway_after_hash_without_actual_write_intent_stays_unknown(self):
+        self.gateway_fixture()
+        for path,value in self.after.items():pathlib.Path(path).write_bytes(value)
+        with self.assertRaisesRegex(m.Hold,'WRITE_INTENT'):self.adapter.gateway('maintenance',str(uuid.uuid4()),True)
+        self.assertFalse(any(call==['systemctl','reload','nginx'] for call in self.calls))
+    def test_backup_failed_read_is_not_ack_and_new_read_attempt_keeps_original_dump(self):
+        self.tx._command=None;attempts=[];data=b'fixture-pgdump-'+b'x'*200;listing=b'TABLE DATA fixture\n'
+        def backup(db):
+            folder=self.tx.folder;attempts.append(folder)
+            dump=folder/'db.dump';dump.write_bytes(data)
+            record={'path':str(dump),'bytes':len(data),'sha256':m.sha(data),'listSha256':m.sha(listing),'restoreExecuted':False}
+            receipt=folder/'backup-readable.json';receipt.write_bytes(m.encoded(record))
+            return {'path':str(receipt)}
+        self.tx.backup_database=backup;self.tx.pin=lambda ident:self.rows[ident['id']]
+        failure={'enabled':True};commands=[]
+        def read(args,**kwargs):
+            commands.append(args)
+            return subprocess.CompletedProcess(args,1 if failure['enabled'] else 0,listing if '--list' in args else b'',b'')
+        op=str(uuid.uuid4())
+        with patch.object(m.subprocess,'run',read):
+            with self.assertRaisesRegex(m.Hold,'BACKUP_REOPEN_FAILED'):self.adapter.backup(op)
+            self.assertEqual(len(attempts),1);self.assertEqual((attempts[0]/'db.dump').read_bytes(),data)
+            failure['enabled']=False;record=self.adapter.backup(op,True)
+            self.assertEqual(record['sha256'],m.sha(data));self.assertEqual(len(attempts),1)
+            # Corrupt original evidence is retained; a new read-only backup is
+            # required and fully verified, never acknowledged from old PASS.
+            (attempts[0]/'db.dump').write_bytes(b'corrupt')
+            self.adapter.backup(op,True);self.assertEqual(len(attempts),2)
+            self.assertEqual((attempts[0]/'db.dump').read_bytes(),b'corrupt')
+        self.assertTrue(any('--file=/dev/null' in call for call in commands))
+        self.assertFalse(any('-d' in call or '--dbname' in call for call in commands))
+
+
+@unittest.skipUnless(os.environ.get('NAUMI_VERIFY_ISOLATED_DB')=='1','explicit isolated local PostgreSQL fixture required')
+class RealBackupFixture(unittest.TestCase):
+    def test_complete_archive_read_decodes_to_discarded_sql_without_restoring_db(self):
+        container='naumi-packaging-skills-pg-20261016';schema='session_backup_test_'+uuid.uuid4().hex
+        inspected=json.loads(subprocess.check_output(['docker','inspect',container]))[0]
+        self.assertEqual(inspected['Name'].lstrip('/'),container)
+        env=dict(value.split('=',1) for value in inspected['Config']['Env'] if '=' in value)
+        self.assertEqual(env['POSTGRES_DB'],'naumi_packaging')
+        db=m.public_identity(inspected)
+        command=['docker','exec','-i',db['id'],'psql','-X','-qAt','--no-password','-U',env.get('POSTGRES_USER','postgres'),'-d',env['POSTGRES_DB'],'-v','ON_ERROR_STOP=1']
+        def sql(value):return subprocess.check_output(command,input=value.encode(),stderr=subprocess.PIPE)
+        try:
+            sql(f'CREATE SCHEMA {schema};CREATE TABLE {schema}.fixture(id int);INSERT INTO {schema}.fixture VALUES(1),(2);')
+            with tempfile.TemporaryDirectory() as temp:
+                folder=pathlib.Path(temp);dump=folder/'original.dump'
+                dump.write_bytes(subprocess.check_output(['docker','exec',db['id'],'pg_dump','-Fc','--schema='+schema,'-U',env.get('POSTGRES_USER','postgres'),'-d',env['POSTGRES_DB']]))
+                listing=subprocess.check_output(['docker','exec','-i',db['id'],'pg_restore','--list'],input=dump.read_bytes())
+                record={'path':str(dump),'bytes':dump.stat().st_size,'sha256':m.sha(dump.read_bytes()),'listSha256':m.sha(listing),'restoreExecuted':False}
+                descriptor=folder/'backup-readable.json';descriptor.write_bytes(m.encoded(record))
+                def pin(identity):
+                    self.assertEqual(m.public_identity(json.loads(subprocess.check_output(['docker','inspect',db['id']]))[0]),identity)
+                adapter=m.LiveAdapter(SimpleNamespace(folder=folder,_command=None,pin=pin),{**plan(),'database':db})
+                self.assertEqual(adapter.verify_backup(descriptor),record)
+                self.assertEqual(sql(f'SELECT count(*) FROM {schema}.fixture;').strip(),b'2')
+        finally:sql(f'DROP SCHEMA {schema} CASCADE;')
 
 
 @unittest.skipUnless(os.name=='posix' and os.environ.get('NAUMI_SESSION_POSIX_FIXTURE')=='1',

@@ -44,6 +44,7 @@ def check_path(name, path):
     routes = {'login': ('/api/auth/session',), 'canvas': ('/api/projects', '/canvas'),
               'private-media': ('/api/media/',), 'old-client': ('/_next/static/', '/desktop/_next/static/', '/enterprise/_next/static/'),
               'skills': ('/api/agent/skills',), 'packaging': ('/api/packaging-strategy', '/creation/'),
+              'desktop-ui': ('/desktop', '/desktop/'), 'enterprise-ui': ('/enterprise', '/enterprise/'),
               'health': ('/api/health',), 'version': ('/api/version',)}
     require(name in routes and any(parsed.path == prefix or prefix.endswith('/') and parsed.path.startswith(prefix)
                                    for prefix in routes[name]), 'FEATURE_SPECIFIC_NONBILLABLE_GET_REQUIRED')
@@ -93,8 +94,12 @@ def valid_plan(plan):
             re.fullmatch('[a-f0-9]{40}', plan.get('commit', '')) and
             re.fullmatch('[0-9]{10,13}', plan.get('buildVersion', '')), 'FIXED_SESSION_PLAN_REQUIRED')
     require(plan.get('authorization', {}).get('target') == plan['target'], 'AUTHORIZATION_TARGET_MISMATCH')
+    topology = plan.get('runtimeTopology', 'separate-compiled-variants')
+    require(topology in ['separate-compiled-variants', 'unified-web-three-ui'] and
+            (topology != 'unified-web-three-ui' or plan['target'] == '103.30.76.93'), 'EXPLICIT_HOST_RUNTIME_TOPOLOGY_REQUIRED')
     names = [v.get('variant') for v in plan.get('webs', [])]
-    require(names == (['main'] if plan['target'] == '47.105.59.142' else ['main', 'desktop', 'enterprise']),
+    unified = topology == 'unified-web-three-ui'
+    require(names == (['main'] if plan['target'] == '47.105.59.142' or unified else ['main', 'desktop', 'enterprise']),
             'HOST_SPECIFIC_ORDERED_VARIANTS_REQUIRED')
     ports, slots = set(), set()
     for web in plan['webs']:
@@ -106,6 +111,8 @@ def valid_plan(plan):
         ports.add(web['port']); slots.add(web['name'])
         require(web.get('requiredChecks') and set(web['requiredChecks']) >= {'login', 'canvas', 'private-media', 'old-client'},
                 'USER_FUNCTION_ACCEPTANCE_CHECKS_REQUIRED')
+        if unified:
+            require(set(web['requiredChecks']) >= {'desktop-ui', 'enterprise-ui'}, 'THREE_REAL_UI_ACCEPTANCE_CHECKS_REQUIRED')
     require(plan.get('restoreDatabase') is False and plan.get('replayAcceptedTasks') is False and
             plan.get('legacyCaller') and plan.get('database') and plan.get('baseline'), 'PRESERVATION_SCOPE_REQUIRED')
     if plan['target'] == '103.30.76.93':
@@ -156,17 +163,112 @@ class LiveAdapter:
         return result
 
     def snapshot(self, operation, previous=None):
-        result = tasks.collect_task_snapshot(self.tx.run, self.plan['database'], self.private_save(operation), previous=previous)
+        result = tasks.collect_task_snapshot(self.tx.run, self.plan['database'], self.private_save(operation), previous=previous,
+                    row_limit=5000, projection='proof', allow_absent_tables=tasks.ADDITIVE_TABLES)
         return {'public': result.public, 'private': result.private}
 
+    def legacy_safety(self, *, frozen, retired=(), restored=False, restore_reconcile=False):
+        """A paused external caller does not stop App-internal timers."""
+        caller = self.plan['legacyCaller']['identity']
+        required = {web['source']['id'] for web in self.plan['webs']}
+        require(required <= {identity['id'] for identity in self.plan['baseline']}, 'ALL_SOURCE_WEBS_REQUIRE_RUNTIME_BASELINE')
+        checked = set()
+        caller_frozen = False
+        for identity in [*self.plan['baseline'], caller]:
+            if identity['id'] in checked: continue
+            checked.add(identity['id'])
+            row = self.tx.inspect(identity['id']) if identity['id'] in retired else self.tx.pin(identity)
+            if identity['id'] in retired:
+                require(row['Id'] == identity['id'] and row['Image'] == identity['image'] and
+                        row['State']['Running'] is False, 'RETIRED_RUNTIME_RESTARTED')
+                continue
+            cmd = row['Config'].get('Cmd')
+            if identity['id'] == caller['id']:
+                paused = row['State'].get('Paused')
+                expected = frozen and not restored
+                if paused is False and expected and restore_reconcile:
+                    intent = load_json(self.tx.folder / ('legacy-caller-restore-intent-' + caller['id'][:12] + '.json'))
+                    require(intent.get('identity') == caller, 'ORIGINAL_CALLER_RESTORE_INTENT_CHANGED')
+                    expected = False
+                require(cmd in [['scripts/video-worker.mjs'], ['node', 'scripts/video-worker.mjs']] and
+                        row['State']['Running'] is True and paused is expected,
+                        'LEGACY_CALLER_FROZEN_STATE_CHANGED')
+                require(environment(row).get('NAUMI_WORKER_RELEASE_CONTROL') != '1', 'LEGACY_CALLER_ROLE_CHANGED')
+                caller_frozen = paused
+            else:
+                require(cmd == ['node', 'server.js'], 'BASELINE_NON_WEB_OR_INFRA_FORBIDDEN')
+                require(environment(row).get('NAUMI_VIDEO_WORKER') == '0', 'OLD_WEB_INTERNAL_CLAIM_TIMER_NOT_DISABLED')
+        return {'legacyCallerFrozen': caller_frozen, 'oldWebTimersExplicitlyDisabled': True,
+                'legacyDrainProven': False}
+
+    def preflight(self, operation):
+        """All candidate variants fit concurrently BEFORE any maintenance503."""
+        self.legacy_safety(frozen=False)
+        available = self.available()
+        worker = self.plan['worker']
+        require(type(worker.get('memoryMiB')) is int and 96 <= worker['memoryMiB'] <= 512, 'BOUNDED_WORKER_RESOURCES_REQUIRED')
+        peaks, reserves, worker_peaks = [], [], [worker['memoryMiB']]
+        for web in self.plan['webs']:
+            budget = web.get('budget', {})
+            require(type(web.get('memoryMiB')) is int and web['memoryMiB'] >= 512 and
+                    all(type(budget.get(field)) is int and budget[field] > 0 for field in
+                        ['webPeakMiB', 'workerPeakMiB', 'hostReserveMiB']) and budget['hostReserveMiB'] >= 1024,
+                    'ALL_VARIANT_MEASURED_RAM_BUDGETS_REQUIRED')
+            peaks.append(max(web['memoryMiB'], budget['webPeakMiB']))
+            worker_peaks.append(budget['workerPeakMiB']); reserves.append(budget['hostReserveMiB'])
+        required = sum(peaks) + max(worker_peaks) + max(reserves)
+        require(available >= required, 'INSUFFICIENT_ALL_VARIANT_PRE_MAINTENANCE_MEMORY')
+        return {'availableMiB': available, 'requiredMiB': required, 'webVariantBudgetsMiB': peaks,
+                'workerBudgetMiB': max(worker_peaks), 'reserveMiB': max(reserves), 'swapIncluded': False,
+                'observedAt': timestamp(), 'legacyDrainProven': False}
+
     def backup(self, operation, reconcile=False):
-        path = self.tx.folder / 'backup-readable.json'
-        if reconcile:
-            record = load_json(path)
+        root = self.tx.folder
+        journal = root / ('backup-operation-' + operation + '.json')
+        binding = {'database': self.plan['database'], 'restoreExecuted': False}
+        if journal.exists():
+            saved = load_json(journal)
+            require(saved.get('binding') == binding, 'BACKUP_OPERATION_BINDING_CHANGED')
         else:
-            record = load_json(pathlib.Path(self.tx.backup_database(self.plan['database'])['path']))
+            saved = {'binding': binding, 'attempts': []}
+        candidates = [pathlib.Path(attempt['folder']) / 'backup-readable.json' for attempt in saved['attempts']]
+        # Older session versions wrote directly under the same private release
+        # folder. Only re-observe; never assume a past read failure was success.
+        if reconcile: candidates.append(root / 'backup-readable.json')
+        errors = []
+        for path in reversed(candidates):
+            if not path.exists(): continue
+            try:
+                record = self.verify_backup(path)
+                saved['verifiedRecord'] = str(path); saved['phase'] = 'READABLE'
+                controls._atomic_private(journal, saved)
+                return record
+            except (Hold, OSError, ValueError, KeyError, subprocess.SubprocessError):
+                errors.append(sha(str(path).encode()))
+        # pg_dump is read-only. A fresh isolated attempt is safe after a failed
+        # dump/list/hash read; retain every old/partial artifact, never overwrite.
+        self.tx.pin(self.plan['database'])
+        folder = root / ('backup-' + operation + '-attempt-' + str(uuid.uuid4()))
+        folder.mkdir(mode=0o700, exist_ok=False)
+        saved['attempts'].append({'folder': str(folder), 'phase': 'READ_INTENT', 'at': timestamp()})
+        saved['failedEvidenceHashes'] = errors
+        controls._atomic_private(journal, saved)
+        try:
+            self.tx.folder = folder
+            descriptor = self.tx.backup_database(self.plan['database'])
+        finally:
+            self.tx.folder = root
+        record = self.verify_backup(pathlib.Path(descriptor['path']))
+        saved['phase'] = 'READABLE'; saved['verifiedRecord'] = descriptor['path']
+        controls._atomic_private(journal, saved)
+        return record
+
+    def verify_backup(self, path):
+        require(path.resolve().is_relative_to(self.tx.folder.resolve()) and not path.is_symlink(), 'PRIVATE_BACKUP_RECORD_PATH_REQUIRED')
+        record = load_json(path)
         dump = pathlib.Path(record['path'])
-        require(dump.parent == self.tx.folder and dump.is_file() and not dump.is_symlink() and
+        require(path.resolve().is_relative_to(self.tx.folder.resolve()) and dump.resolve().is_relative_to(self.tx.folder.resolve()) and
+                not any(p.is_symlink() for p in [path, dump, *dump.parents] if p.is_relative_to(self.tx.folder)) and dump.is_file() and
                 dump.stat().st_size == record['bytes'] and file_sha(dump) == record['sha256'] and
                 record.get('restoreExecuted') is False, 'READABLE_BACKUP_IDENTITY_CHANGED')
         self.tx.pin(self.plan['database'])
@@ -177,6 +279,14 @@ class LiveAdapter:
             require(result.returncode == 0, 'BACKUP_REOPEN_FAILED')
             listing = result.stdout
         require(b'TABLE DATA' in listing and sha(listing) == record['listSha256'], 'BACKUP_REOPEN_FAILED')
+        with dump.open('rb') as stream:
+            # Decode the entire archive to discarded SQL; no -d/--dbname, no
+            # connection and no restore. A valid TOC alone misses corrupt data.
+            result = subprocess.run(['docker', 'exec', '-i', self.plan['database']['id'], 'pg_restore',
+                                     '--file=/dev/null', '--no-owner', '--no-acl'],
+                                    stdin=stream, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
+        require(result.returncode == 0, 'BACKUP_DATA_UNREADABLE')
+        self.tx.pin(self.plan['database'])
         return record
 
     def gateway(self, kind, operation, reconcile=False):
@@ -186,18 +296,40 @@ class LiveAdapter:
         before = {name: relative_artifact(folder, item).read_bytes() for name, item in descriptor['before'].items()}
         after = {name: relative_artifact(folder, item).read_bytes() for name, item in descriptor['after'].items()}
         logical = {name: str(pathlib.Path(name).resolve(strict=True)) for name in before}
+        journal = folder / ('gateway-operation-' + operation + '.json')
+        binding = {'kind': kind, 'descriptorSha256': sha(encoded(descriptor)), 'logicalToReal': logical}
+        if journal.exists():
+            saved = load_json(journal)
+            require(saved.get('binding') == binding, 'GATEWAY_ORIGINAL_OPERATION_CHANGED')
+        else:
+            saved = {'binding': binding, 'attempts': []}
         current = sha(self.tx.run(['nginx', '-T']))
         if reconcile and current == report['afterDumpSha256']:
+            intents = [pathlib.Path(attempt['folder']) / 'gateway-transaction-intent.json' for attempt in saved['attempts']]
+            # Compatibility with a previous session version's original evidence.
+            intents.append(folder / ('gateway-' + operation) / 'gateway-transaction-intent.json')
+            known = False
+            for intent in intents:
+                if not intent.exists(): continue
+                original_intent = load_json(intent)
+                known |= original_intent.get('beforeDumpSha256') == report['beforeDumpSha256'] and \
+                         original_intent.get('afterDumpSha256') == report['afterDumpSha256'] and \
+                         original_intent.get('patches') == report['patches']
+            require(known, 'EXACT_GATEWAY_WRITE_INTENT_REQUIRED_FOR_RECONCILIATION')
             require(all(pathlib.Path(logical[name]).read_bytes() == after.get(name, raw) for name, raw in before.items()),
                     'GATEWAY_RECONCILE_CLOSURE_CHANGED')
             self.tx.run(['nginx', '-t']); self.tx.run(['systemctl', 'reload', 'nginx'])
             return {'afterDumpSha256': current, 'reloadIssued': True, 'result': 'EXPLICIT_SAME_INTENT_RECONCILED'}
         require(current == report['beforeDumpSha256'], 'GATEWAY_BASELINE_CHANGED')
+        require(all(pathlib.Path(logical[name]).read_bytes() == raw for name, raw in before.items()),
+                'GATEWAY_BEFORE_REOBSERVATION_CHANGED')
         # The underlying function uses fixed evidence names. Isolate per operation;
         # retain the same HostTransaction and all its locks, never nested transactions.
         original = self.tx.folder
-        evidence = original / ('gateway-' + operation + ('-reconcile-' + str(uuid.uuid4()) if reconcile else ''))
+        evidence = original / ('gateway-' + operation + '-attempt-' + str(uuid.uuid4()))
         evidence.mkdir(mode=0o700, exist_ok=False)
+        saved['attempts'].append({'folder': str(evidence), 'phase': 'EXACT_BEFORE_OBSERVED', 'at': timestamp()})
+        controls._atomic_private(journal, saved)
         try:
             self.tx.folder = evidence
             return controls.switch_gateway_bundle(self.tx, report, before, after,
@@ -240,8 +372,20 @@ class LiveAdapter:
     def web_start(self, web, identity, operation, reconcile=False):
         if reconcile:
             row = self.tx.inspect(identity['id'])
-            receipt = load_json(self.tx.folder / ('candidate-start-intent-' + identity['id'][:12] + '.json'))
-            require(receipt == identity and row['Image'] == identity['image'] and row['State']['Running'], 'UNKNOWN_WEB_START_NOT_OBSERVED')
+            path = self.tx.folder / ('candidate-start-intent-' + identity['id'][:12] + '.json')
+            require(not path.is_symlink(), 'START_INTENT_SYMLINK_FORBIDDEN')
+            if not path.exists():
+                # start_candidate writes this intent only AFTER pin+memory gate
+                # and BEFORE docker start. Its absence plus exact stopped
+                # original identity proves this operation issued no start.
+                require(public_identity(row) == identity and identity['running'] is False and
+                        not row['State'].get('Paused', False), 'START_WITHOUT_INTENT_NOT_PROVEN_UNEXECUTED')
+                return self.tx.start_candidate(identity, web['budget'], self.available())
+            receipt = load_json(path)
+            actual = public_identity(row)
+            require(receipt == identity and actual['running'] is True and
+                    all(actual[field] == identity[field] for field in ['id', 'name', 'image', 'restartPolicy']),
+                    'UNKNOWN_WEB_START_NOT_OBSERVED')
             return public_identity(row)
         return self.tx.start_candidate(identity, web['budget'], self.available())
 
@@ -269,10 +413,24 @@ class LiveAdapter:
     def worker_start(self, identity, operation, reconcile=False):
         if reconcile:
             row = self.tx.inspect(identity['id'])
-            receipt = load_json(self.tx.folder / ('worker-start-intent-' + identity['id'][:12] + '.json'))
-            require(receipt == identity and row['Image'] == identity['image'] and row['State']['Running'], 'UNKNOWN_WORKER_START_NOT_OBSERVED')
+            path = self.tx.folder / ('worker-start-intent-' + identity['id'][:12] + '.json')
+            require(not path.is_symlink(), 'START_INTENT_SYMLINK_FORBIDDEN')
+            if not path.exists():
+                require(public_identity(row) == identity and identity['running'] is False and
+                        not row['State'].get('Paused', False), 'START_WITHOUT_INTENT_NOT_PROVEN_UNEXECUTED')
+                return controls.start_worker(self.tx, identity, self.available())
+            receipt = load_json(path)
+            actual = public_identity(row)
+            require(receipt == identity and actual['running'] is True and
+                    all(actual[field] == identity[field] for field in ['id', 'name', 'image', 'restartPolicy']),
+                    'UNKNOWN_WORKER_START_NOT_OBSERVED')
             return public_identity(row)
         return controls.start_worker(self.tx, identity, self.available())
+
+    def observed_started_identity(self, identity):
+        self.tx.pin(identity)
+        require(identity['running'] is True, 'KNOWN_STARTED_PROCESS_REQUIRED')
+        return identity
 
     def worker_control(self, identity, web, action, operation):
         self.tx.pin(identity)
@@ -324,6 +482,22 @@ class LiveAdapter:
                 if item['runner'] in ['playwright', 'cua']:
                     screenshot = relative_artifact(self.tx.folder, item['screenshot']).read_bytes()
                     require(screenshot.startswith(b'\x89PNG\r\n\x1a\n') and len(screenshot) > 128, 'REAL_BROWSER_SCREENSHOT_REQUIRED')
+                if item['name'] in ['desktop-ui', 'enterprise-ui']:
+                    require(item['runner'] in ['playwright', 'cua'], 'REAL_HYDRATED_UI_BROWSER_CHECK_REQUIRED')
+                    dom = load_json(relative_artifact(self.tx.folder, item.get('dom')))
+                    path = '/desktop' if item['name'] == 'desktop-ui' else '/enterprise'
+                    url = urllib.parse.urlsplit(response['request']['url'])
+                    require((url.path == path or url.path.startswith(path + '/')) and
+                            dom.get('kind') == 'hydrated-role-snapshot-v1' and dom.get('containerId') == binding['container']['id'] and
+                            dom.get('bootId') == binding['appIdentity']['bootId'] and dom.get('url') == response['request']['url'] and
+                            dom.get('hydrated') is True and dom.get('errors') == [], 'HYDRATED_UI_DOM_IDENTITY_REQUIRED')
+                    controls.fresh(dom.get('observedAt'), maximum=900)
+                    required_roles = ['tablist', 'heading'] if item['name'] == 'desktop-ui' else ['button', 'heading']
+                    assertions = item.get('roleAssertions', [])
+                    require(set(required_roles) <= {a.get('role') for a in assertions} and
+                            all(a.get('name') and any(element.get('role') == a['role'] and element.get('name') == a['name'] and
+                                element.get('visible') is True for element in dom.get('elements', [])) for a in assertions),
+                            'CONCRETE_VISIBLE_UI_ROLE_ASSERTIONS_REQUIRED')
         return {'reportSha256': descriptor['sha256'], 'checks': len(report['checks']), 'candidateBindingsVerified': True}
 
     def capture_acceptance(self, state, descriptor, operation):
@@ -344,6 +518,7 @@ class LiveAdapter:
             web = next((w for w in self.plan['webs'] if w['variant'] == item.get('variant')), None)
             require(web is not None and item.get('expectedStatus') in [200, 401, 403], 'TYPED_HTTP_GET_CHECK_REQUIRED')
             check_path(item['name'], item['path'])
+            require(item['name'] not in ['desktop-ui', 'enterprise-ui'], 'UI_ACCEPTANCE_REQUIRES_EXTERNAL_BROWSER_DOM_CAPTURE')
             headers = {}
             if item.get('cookie'):
                 cookie = relative_artifact(self.tx.folder, item['cookie']).read_text().strip()
@@ -565,6 +740,8 @@ class MaintenanceSession:
             state['backup'] = adapter.backup(operation, reconcile); state['phase'] = 'BACKED_UP'; return state['backup']
         if action == 'maintenance':
             maintenance.authorize(self.plan['authorization'])
+            state['capacityPreflight'] = adapter.preflight(operation)
+            self.persist()
             state['maintenance'] = adapter.gateway('maintenance', operation, reconcile)
             state['phase'] = 'MAINTENANCE'; return state['maintenance']
         if action == 'freeze':
@@ -581,7 +758,10 @@ class MaintenanceSession:
         if action == 'worker-create':
             state['worker'] = {'created': adapter.worker_create(self.main_web(), operation, reconcile)}; return state['worker']
         if action == 'worker-start':
-            state['worker']['running'] = adapter.worker_start(state['worker']['created'], operation, reconcile)
+            if reconcile and state['worker'].get('running'):
+                adapter.observed_started_identity(state['worker']['running'])
+            else:
+                state['worker']['running'] = adapter.worker_start(state['worker']['created'], operation, reconcile)
             state['worker']['initial'] = self.quiescent_worker(operation); return state['worker']['initial']
         if action == 'capture-acceptance':
             self.quiescent_worker(operation)
@@ -599,20 +779,24 @@ class MaintenanceSession:
             state['preservation'] = maintenance.validate_preservation(state['before']['public'], state['after']['public'], comparison)
             state['comparison'] = comparison; state['phase'] = 'PRESERVED'; return state['preservation']
         if action == 'activate':
+            adapter.legacy_safety(frozen=True, retired=state['retired'])
             # Revalidate unchanged candidate boot, artifacts and functional receipts.
             if not state.get('activationAcceptance'):
                 self.quiescent_worker(operation)
                 state['activationAcceptance'] = adapter.acceptance(state, state['acceptedDescriptor'], operation)
                 self.persist()
             for web in self.plan['webs']:
+                adapter.legacy_safety(frozen=True, retired=state['retired'])
                 variant = web['variant']; name = 'app-open-' + variant
                 if not state.get(name):
                     state[name] = adapter.app_control(state['webs'][variant]['running'], 'resume', self.op(operation, name))
                     self.persist()
             if not state.get('openGateway'):
+                adapter.legacy_safety(frozen=True, retired=state['retired'])
                 state['openGateway'] = adapter.gateway('open', self.op(operation, 'open-gateway'), reconcile)
                 self.persist()
             adapter.assert_activation(state, operation)
+            adapter.legacy_safety(frozen=True, retired=state['retired'])
             resumed = self.worker_state('resume', self.op(operation, 'worker-resume'))
             require(resumed.get('paused') is False and resumed.get('phase') != 'UNKNOWN' and resumed.get('unresolvedTicks') == 0,
                     'NEW_WORKER_RESUME_UNKNOWN')
@@ -627,6 +811,7 @@ class MaintenanceSession:
             if item['identity']['id'] not in state['retired']: state['retired'].append(item['identity']['id'])
             return result
         if action == 'finish':
+            adapter.legacy_safety(frozen=True, retired=state['retired'])
             adapter.assert_activation(state, operation)
             current_worker = self.worker_state('status', operation)
             require(current_worker.get('paused') is False and current_worker.get('phase') != 'UNKNOWN' and
@@ -640,17 +825,23 @@ class MaintenanceSession:
                 self.quiescent_worker(operation)
                 state['rollbackWorkerPaused'] = True; self.persist()
             if state.get('worker', {}).get('running'): self.quiescent_worker(operation)
+            rollback_legacy = {'frozen': bool(state.get('freeze')), 'retired': state['retired'],
+                'restored': bool(state.get('rollbackCaller')), 'restore_reconcile': reconcile and bool(state.get('rollbackGateway'))}
+            adapter.legacy_safety(**rollback_legacy)
             for variant, web in state['webs'].items():
                 if web.get('running') and not state.get('rollback-app-' + variant):
                     state['rollback-app-' + variant] = adapter.app_control(web['running'], 'drain', self.op(operation, 'app-drain-' + variant))
                     self.persist()
             kind = 'rollback-open' if state.get('openGateway') else 'rollback-maintenance'
             if not state.get('rollbackGateway'):
+                adapter.legacy_safety(**rollback_legacy)
                 state['rollbackGateway'] = adapter.gateway(kind, self.op(operation, 'rollback-gateway'), reconcile)
                 self.persist()
             if state.get('freeze') and not state.get('rollbackCaller'):
+                adapter.legacy_safety(**rollback_legacy)
                 state['rollbackCaller'] = adapter.restore_caller(self.op(operation, 'restore-caller'))
                 self.persist()
+            adapter.legacy_safety(frozen=bool(state.get('freeze')), retired=state['retired'], restored=bool(state.get('rollbackCaller')))
             after = adapter.snapshot(operation, state['before']['private'])
             comparison = tasks.compare_task_snapshots(state['before']['private'], after['private'])
             state['rollbackPreservation'] = maintenance.validate_preservation(state['before']['public'], after['public'], comparison)
