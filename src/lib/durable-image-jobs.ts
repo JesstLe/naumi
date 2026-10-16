@@ -1,3 +1,5 @@
+import { withBackgroundActivity, detachBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
+import { releaseRuntimeEnabled } from "@/lib/release-runtime/identity";
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -182,11 +184,11 @@ export class DurableImageJobs<T extends { status: string }> {
       if (row) void run(row.payload as Record<string, unknown>, row.snapshot).catch(console.error);
       return;
     }
-    const row = await repository.claimImageJob(id, this.kind);
-    if (!row) return;
+    const executeClaimed = async (row: repository.ImageJobRow) => {
     const token = row.lease_token!;
+    await bindBackgroundClaim(`${this.kind}:${id}`, token);
     const context: Execution = { id, token, queue: Promise.resolve() };
-    void execution.run(context, async () => {
+    await execution.run(context, async () => {
       const heartbeat = setInterval(() => {
         void repository.heartbeatImageJob(id, token).catch(() => { clearInterval(heartbeat); });
       }, 25_000);
@@ -218,11 +220,21 @@ export class DurableImageJobs<T extends { status: string }> {
         await repository.releaseImageJob(id, token).catch(() => {});
       }
     });
+    };
+    if(!releaseRuntimeEnabled()) {
+      const row=await repository.claimImageJob(id,this.kind);
+      if(row)void executeClaimed(row).catch(console.error);
+      return;
+    }
+    await detachBackgroundActivity("durable-image", `${this.kind}:${id}`, "claim", async () => {
+      const row=await repository.claimImageJob(id,this.kind);
+      if(row)await executeClaimed(row);
+    });
   }
 }
 
 /** Dispatch recoverable work through the existing authenticated worker channel. */
-export async function recoverDurableImageJobs(): Promise<number> {
+async function recoverDurableImageJobsLocal(): Promise<number> {
   if (!dbEnabled) return 0;
   const jobs = await repository.dueImageJobs();
   const origin = process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3000";
@@ -236,4 +248,8 @@ export async function recoverDurableImageJobs(): Promise<number> {
   }
   const {recoverImagegenBatches}=await import("./imagegen/batch");
   return count+await recoverImagegenBatches();
+}
+
+export async function recoverDurableImageJobs():Promise<number> {
+  return withBackgroundActivity("durable-image", "recovery-dispatch-scan", "claim", () => recoverDurableImageJobsLocal(), () => 0);
 }

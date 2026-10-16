@@ -12,6 +12,7 @@ import {dataUrlToBytes,isManagedImageUrl,readManagedObject} from "../storage";
 import {managedAgentReference} from "./managed-reference";
 import { AgentHarness, validateToolArguments, HarnessError } from "./harness";
 import { assertInternalAgentPath, assertMediaUrl, publicImageBytes, readBoundedBytes } from "./harness-network";
+import { signAgentContinuation, CONTINUATION_HEADER } from "@/lib/release-runtime/accepted-context";
 import {SHARED_IMAGEGEN_TOOLS,agentImagegenRequest} from "../imagegen/agent-request";
 import {executeAgentImagegen,imagegenAgentStage} from "../imagegen/agent-executor";
 import {planImagegen} from "../imagegen/plan";
@@ -159,11 +160,12 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     for (let i = 0; i < attempts; i++) {
       if (signal?.aborted) throw new Error("aborted");
       try {
+        const continuation=await signAgentContinuation(agentEmail,path,init?.method||"GET");
         const res = await fetch(base + path, {
           ...init,
           signal,
           redirect: "error",
-          headers: { ...(init?.headers ?? {}), ...authHeaders(), "x-naumi-client-entry": "agent" },
+          headers: { ...(init?.headers ?? {}), ...authHeaders(), "x-naumi-client-entry": "agent", ...(continuation?{[CONTINUATION_HEADER]:continuation}:{}) },
         });
         const bytes = await readBoundedBytes(res, 2 * 1024 * 1024);
         const data = JSON.parse(bytes.toString("utf8") || "{}");
