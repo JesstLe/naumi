@@ -427,7 +427,13 @@ def collect_inventory(command=None, private_save=None, *, expected_host_sha256=N
     unit_files = c.read('systemd-unit-files', ['systemctl', 'list-unit-files', '--type=service', '--no-legend', '--no-pager'])
     units = []
     for line in ((unit_raw or b'') + b'\n' + (unit_files or b'')).decode('utf8', errors='replace').splitlines():
-        unit = line.split()[0] if line.split() else ''
+        fields = line.split()
+        # systemctl can print the failed-unit status marker even with --plain.
+        # Only its separate, leading token is presentation; do not strip other
+        # characters, suppress invalid unit names, or skip templates/masked units.
+        if fields and fields[0] == '\u25cf' and len(fields) > 1:
+            fields = fields[1:]
+        unit = fields[0] if fields else ''
         if UNIT.fullmatch(unit):
             units.append(unit)
         elif unit:
