@@ -56,21 +56,21 @@ export function fileStateStore(filename) {
 
 export class WorkerRuntime {
   constructor({origin,secret,instanceId,commit,store=null,startPaused=false,fetchImpl=fetch,
-    timeoutMs=300000,stopOnUncertain=true,clock=()=>new Date().toISOString(),log=()=>{}}) {
+    targetInstanceId=process.env.NAUMI_WORKER_TARGET_INSTANCE_ID,timeoutMs=300000,stopOnUncertain=true,clock=()=>new Date().toISOString(),log=()=>{}}) {
     assert(typeof secret==='string'&&secret.trim().length>=32,'WORKER_SECRET_REQUIRED',400);
     assert(Number.isInteger(timeoutMs)&&timeoutMs>0,'INVALID_TICK_TIMEOUT',400);
-    this.origin=workerOrigin(origin);this.secret=secret;this.instanceId=instanceId;this.commit=commit;
-    this.store=store;this.fetch=fetchImpl;this.timeoutMs=timeoutMs;this.stopOnUncertain=stopOnUncertain;
+    this.origin=workerOrigin(origin);this.secret=secret;this.instanceId=instanceId;this.commit=commit;this.targetInstanceId=targetInstanceId;
+    this.store=store;this.fetch=fetchImpl;this.timeoutMs=timeoutMs;this.stopOnUncertain=!!store||stopOnUncertain;
     this.clock=clock;this.log=log;this.bootId=randomUUID();this.activePromise=null;this.timer=null;
     this.fault=null;this.initialized=false;this.stopping=false;this.writeQueue=Promise.resolve();this.controlQueue=Promise.resolve();
-    this.state={schemaVersion:1,identity:{origin:this.origin,instanceId,commit},revision:0,
+    this.state={schemaVersion:1,identity:{origin:this.origin,instanceId,commit,...(store?{targetInstanceId}: {})},revision:0,
       paused:startPaused,uncertain:false,lastTick:null,operations:{}};
   }
   async init() {
     assert(!this.initialized,'WORKER_ALREADY_INITIALIZED');
     if(this.store) {
-      assert(typeof this.instanceId==='string'&&this.instanceId.length>0&&
-        /^[0-9a-f]{40}$/.test(this.commit),'FIXED_WORKER_IDENTITY_REQUIRED',400);
+      assert(typeof this.instanceId==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,159}$/.test(this.instanceId)&&
+        /^[0-9a-f]{40}$/.test(this.commit)&&typeof this.targetInstanceId==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,159}$/.test(this.targetInstanceId),'FIXED_WORKER_IDENTITY_REQUIRED',400);
       const saved=await this.store.read();
       if(saved) {
         assert(saved.schemaVersion===1&&hash(saved.identity)===hash(this.state.identity),'WORKER_STATE_IDENTITY_MISMATCH');
@@ -90,18 +90,19 @@ export class WorkerRuntime {
   async persist() {
     if(!this.store)return;
     const value=structuredClone(this.state);
-    const write=this.writeQueue.then(()=>this.store.write(value));
+    const write=this.writeQueue.then(()=>{assert(Buffer.byteLength(JSON.stringify(value))<=4*1024*1024,'WORKER_STATE_TOO_LARGE');return this.store.write(value);});
     this.writeQueue=write.catch(()=>{});
     try {await write;} catch(error) {this.fault='WORKER_STATE_WRITE_FAILED';this.state.paused=true;throw error;}
   }
   snapshot() {
     return {schemaVersion:1,bootId:this.bootId,instanceId:this.instanceId,commit:this.commit,
       origin:this.origin,observedAt:this.clock(),revision:this.state.revision,paused:this.state.paused,
+      targetInstanceId:this.targetInstanceId,
       phase:this.fault||this.state.uncertain?'UNKNOWN':this.state.paused?(this.activePromise?'DRAINING':'QUIESCENT'):(this.activePromise?'RUNNING':'IDLE'),
       activeTicks:this.activePromise?1:0,unresolvedTicks:this.state.uncertain?1:0,
       tickDrainComplete:this.initialized&&!!this.store&&this.state.paused&&!this.activePromise&&
         !['dispatched','unknown'].includes(this.state.lastTick?.phase)&&!this.state.uncertain&&!this.fault,
-      durableControl:!!this.store,lastTick:this.state.lastTick?{...this.state.lastTick}:null,
+      durableControl:!!this.store,durableTickReceipts:!!this.store,receiptProtocol:this.store?1:null,lastTick:this.state.lastTick?{...this.state.lastTick}:null,
       // Intentionally unknown: no unsafe translation of HTTP tick counts into jobs.
       workerLeases:null,acceptedTasks:null,agentSessions:null,controlFault:this.fault};
   }
@@ -112,19 +113,62 @@ export class WorkerRuntime {
   async applyControl(input) {
     assert(this.initialized,'WORKER_NOT_INITIALIZED');
     assert(this.store,'DURABLE_CONTROL_NOT_ENABLED',503);
-    assert(input&&['drain','resume'].includes(input.action)&&uuid(input.operationId)&&uuid(input.bootId)&&
+    assert(input&&['drain','resume','reconcile'].includes(input.action)&&uuid(input.operationId)&&uuid(input.bootId)&&
       Number.isSafeInteger(input.expectedRevision)&&input.expectedRevision>=0,'INVALID_WORKER_CONTROL',400);
-    const fingerprint=hash({action:input.action,bootId:input.bootId,expectedRevision:input.expectedRevision});
+    assert(input.action!=='reconcile'||uuid(input.tickId),'INVALID_WORKER_RECONCILE',400);
+    const fingerprint=hash({action:input.action,bootId:input.bootId,expectedRevision:input.expectedRevision,...(input.action==='reconcile'?{tickId:input.tickId}:{})});
     assert(!this.fault,'WORKER_CONTROL_FAULT',503);
     const prior=this.state.operations[input.operationId];
     if(prior) {assert(prior.fingerprint===fingerprint,'WORKER_OPERATION_CONFLICT');return {duplicate:true,receipt:prior,state:this.snapshot()};}
     assert(!this.stopping||input.action==='drain','WORKER_STOPPING');
     assert(input.bootId===this.bootId,'WORKER_BOOT_CHANGED');
     assert(input.expectedRevision===this.state.revision,'WORKER_REVISION_CONFLICT');
-    assert(input.action!=='resume'||!this.state.uncertain,'UNRESOLVED_TICK_BLOCKS_RESUME');
+    assert(input.action!=='resume'||!this.state.uncertain&&!['dispatched','unknown'].includes(this.state.lastTick?.phase),'UNRESOLVED_TICK_BLOCKS_RESUME');
     assert(Object.keys(this.state.operations).length<4096,'WORKER_OPERATION_LOG_FULL');
+    if(input.action==='reconcile')return this.reconcile(input,fingerprint);
     this.state.paused=input.action==='drain';this.state.revision++;
     const receipt={fingerprint,action:input.action,revision:this.state.revision,bootId:this.bootId,at:this.clock()};
+    this.state.operations[input.operationId]=receipt;
+    await this.persist();return {duplicate:false,receipt,state:this.snapshot()};
+  }
+  tickHeaders(tick) {
+    return {'x-video-worker-secret':this.secret,'x-naumi-worker-tick-id':tick.id,
+      'x-naumi-worker-instance-id':tick.workerInstanceId,'x-naumi-worker-boot-id':tick.workerBootId,
+      'x-naumi-worker-commit':tick.workerCommit,'x-naumi-worker-target-instance-id':tick.targetWebInstanceId};
+  }
+  async receiptResponse(response,tick) {
+    assert(response.ok,'TICK_RECEIPT_HTTP_ERROR');
+    let data;
+    if(response.body?.getReader) {
+      const reader=response.body.getReader(),chunks=[];let length=0;
+      try {for(;;){const part=await reader.read();if(part.done)break;length+=part.value.byteLength;assert(length<=16384,'TICK_RECEIPT_TOO_LARGE');chunks.push(part.value);}data=JSON.parse(Buffer.concat(chunks).toString('utf8'));}
+      finally {await reader.cancel().catch(()=>{});}
+    } else data=await response.json();
+    const r=data?.receipt,server=data?.server;
+    assert(server?.instanceId===tick.targetWebInstanceId&&server.commit===tick.workerCommit&&uuid(server.bootId),'TICK_SERVER_IDENTITY_MISMATCH');
+    assert(r?.schemaVersion===1&&r.tickId===tick.id&&r.worker?.instanceId===tick.workerInstanceId&&
+      r.worker.bootId===tick.workerBootId&&r.worker.commit===tick.workerCommit&&r.web?.instanceId===tick.targetWebInstanceId&&
+      r.web.commit===tick.workerCommit&&uuid(r.web.bootId),'TICK_RECEIPT_IDENTITY_MISMATCH');
+    assert(data.ok===true&&r.phase==='completed'&&r.result?.ok===true&&
+      Number.isFinite(Date.parse(r.acceptedAt))&&Number.isFinite(Date.parse(r.completedAt))&&Date.parse(r.completedAt)>=Date.parse(r.acceptedAt),'TICK_NOT_DURABLY_COMPLETED');
+    return {receipt:r,server,result:r.result};
+  }
+  async reconcile(input,fingerprint) {
+    assert(!this.activePromise,'WORKER_TICK_STILL_ACTIVE');
+    assert(this.state.paused&&this.state.uncertain&&this.state.lastTick?.phase==='unknown'&&this.state.lastTick.id===input.tickId,'WORKER_TICK_NOT_UNRESOLVED');
+    const tick=this.state.lastTick;
+    assert(uuid(tick.workerBootId)&&tick.workerInstanceId===this.instanceId&&tick.workerCommit===this.commit&&tick.targetWebInstanceId===this.targetInstanceId,'WORKER_TICK_ORIGINAL_IDENTITY_MISSING');
+    // Never POST during reconciliation. Missing/running/unknown/unreachable/mismatched evidence leaves state unchanged.
+    let verified;
+    try {verified=await this.receiptResponse(await this.fetch(`${this.origin}/api/video/worker/tick?tickId=${tick.id}`,{method:'GET',headers:this.tickHeaders(tick),signal:AbortSignal.timeout(Math.min(this.timeoutMs,10000))}),tick);}
+    catch {throw new WorkerControlError('WORKER_TICK_RECONCILE_UNVERIFIED');}
+    assert(input.expectedRevision===this.state.revision,'WORKER_REVISION_CONFLICT');
+    tick.phase='complete';tick.finishedAt=verified.receipt.completedAt;
+    tick.serverReceiptSha256=hash(verified.receipt);tick.reconciledAt=this.clock();
+    this.state.uncertain=false;this.state.paused=true;this.state.revision++;
+    const receipt={fingerprint,action:'reconcile',tickId:tick.id,revision:this.state.revision,bootId:this.bootId,
+      originalWorkerBootId:tick.workerBootId,web:verified.receipt.web,observedServer:verified.server,
+      serverReceiptSha256:tick.serverReceiptSha256,serverReceipt:verified.receipt,at:this.clock()};
     this.state.operations[input.operationId]=receipt;
     await this.persist();return {duplicate:false,receipt,state:this.snapshot()};
   }
@@ -137,7 +181,8 @@ export class WorkerRuntime {
   }
   async dispatch() {
     if(this.state.paused||this.fault)return {skipped:true};
-    const tick={id:randomUUID(),phase:'dispatched',startedAt:this.clock()};this.state.lastTick=tick;
+    const tick={id:randomUUID(),phase:'dispatched',startedAt:this.clock(),...(this.store?{
+      workerBootId:this.bootId,workerInstanceId:this.instanceId,workerCommit:this.commit,targetWebInstanceId:this.targetInstanceId}: {})};this.state.lastTick=tick;
     // Persist intent before network dispatch: a crash cannot look like clean drain.
     try {await this.persist();}catch {return {error:'WORKER_STATE_WRITE_FAILED'};}
     let dispatched=false;
@@ -146,12 +191,14 @@ export class WorkerRuntime {
       if(this.state.paused) {tick.phase='rejected';tick.reason='PAUSED_BEFORE_DISPATCH';await this.persist();return {skipped:true};}
       dispatched=true;
       const response=await this.fetch(`${this.origin}/api/video/worker/tick`,{
-        method:'POST',headers:{'x-video-worker-secret':this.secret},signal:AbortSignal.timeout(this.timeoutMs)});
-      if([401,403].includes(response.status)) {
+        method:'POST',headers:this.store?this.tickHeaders(tick):{'x-video-worker-secret':this.secret},signal:AbortSignal.timeout(this.timeoutMs)});
+      if(!this.store&&[401,403].includes(response.status)) {
         tick.phase='rejected';tick.httpStatus=response.status;await this.persist();return {rejected:true};
       }
       assert(response.ok,'TICK_HTTP_ERROR');
-      const data=await response.json();assert(data?.ok===true,'INVALID_TICK_RESPONSE');
+      const verified=this.store?await this.receiptResponse(response,tick):null;
+      const data=verified?verified.result:await response.json();assert(data?.ok===true,'INVALID_TICK_RESPONSE');
+      if(verified)tick.serverReceiptSha256=hash(verified.receipt);
       tick.phase='complete';tick.finishedAt=this.clock();await this.persist();
       if(data.processed)this.log(`[video-worker] processed=${data.processed} at=${data.at}`);
       return data;
