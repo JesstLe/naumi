@@ -77,3 +77,12 @@
 5. Worker/Agent/App后台工作归属/幂等/已接受任务保存单独闭合。正式发布的备份/数据保护/原配置/R2/MIME/TLS/安全边界必须记录。
 
 当前完成状态：**103实时只读盘点完成，离线适配依据完成；103本轮上线未执行，统一发布执行器尚需103专用实现/验收。**
+
+## 实际旧静态文件已保留（仅本地，未切流）
+- 顺序读取20个Nginx引用的非Fleet固定Web容器 `.next/static`，并读取真实磁盘static root；每个容器归档前后CID/image/startedAt/running完全一致，完整Nginx SHA亦保持不变。没有远程写入、启停、Node进程或并发复制。
+- 私有本地目录 `E:/Workspace/naumi/output/release103-evening-20261016/legacy-assets` 保存21份原tar.gz、解包字节、逐文件hash、21源manifest、3份精确原配置；Fleet完全排除。
+- 真实7637个源文件按实际assetPrefix归并为2684个公共URL、39473610字节、冲突0：普通1028、desktop670、enterprise986。未把不同prefix混成普通静态目录。
+- `release103_assets.py`重新验证归档SHA、固定身份和逐文件SHA，拒绝链接、越界、非规范URL及同URL异字节；新目录原子materialize，不覆盖原始capture。
+- 集中命令 `NAUMI103_ASSET_ROOT=<legacy-assets> python scripts/ops/test_release103_assets.py -v`：5 tests PASS，包含完整真实capture；CLI literal result `HK_STATIC_UNION=PASS SOURCES=20+DISK1 URLS=2684 CONFLICTS=0 FLEET=EXCLUDED PROTOCOL=NOT_VERIFIED`，exit0。
+- 实际union为 `E:/Workspace/naumi/output/release103-evening-20261016/legacy-static-union`；三命名空间文件与manifest已重新核验。仅静态字节保留，不等于103真实Next/RSC、登录、DB或本轮发布验收。
+- 下一模块：103独立离线gateway/maintenance/rollback，保留Fleet和TLS/安全规则，并将Naumi API归并到主Web、desktop/enterprise仅保留各自编译UI。服务器仍未改变。
