@@ -90,3 +90,11 @@
 - 16:00只读两站source mount审阅：47原main有readonly `/app/public/reference-workbench/native-bridge.js` overlay，210878bytes/SHA`519c48d6e30bec6c54d7b4b786566d56fb9039efb54b3beef32f70931048cb0c`。stopped最终image实提同文件**相同字节hash**，故manifest可reviewedOmittedMounts显式此destination→此hash，省去程序overlay而不丢桥接功能；不遗漏/data/media。HK source仅数据mount无程序overlay。两站实际legacy worker脚本SHA都`f59106f0e527c2c5beee1b396fa80a84204cdd532d7fe7e3deda19940bb89a64`，freeze前仍实核。
 - 最终source四件在`E:/Workspace/naumi/output/release47-evening-20261016/final-source-0614/`：MODIFIED_FILE.zip、DIFF_FILE.patch、VERIFICATION.txt、LF executable ROLLBACK.sh；329改路径原hash与原ZIP保留。真实isolatedPG BASELINE100/MODIFIED118/独立副本ROLLBACK100均exit0，329原hash全回、应用源码保持新实现。此脚本只回滚隔离源码，不操作线上DB/入口。
 - **仍待现场闭合：两站RAM净余量均低于2048MiB；legacy纯内存Agent/后台不完整可观测，不能据快照/用户离线自动停旧App。** 正补逐CID历史UI角色/入口隔离/引用/观测/有限graceful退役与原CID恢复工具，证据不足保持UNPROVEN_VOLATILE_WORK，不伪造自然drain0。不得先强切或批量停旧槽兑现预约。发布窗须刷新真实数据，明确迁移成功与cleanup debt，条件失败保留当前公网服务。
+
+
+## 16:30保护内存的真实补充
+- 可选512MiB/heap256档不是可用候选：旧client两轮和runtime46虽通过，但同一实际Web在4096×4096PNG真实上传/owner读取后，首轮local-image-edit process/downscale2048发生socket hang up，Docker OOMKilled=true/Exit137。停止该档测试、未提高或重复512掩盖；未执行的Sharp后两轮/Skills/包装/HK6262明确未完成。不能为了门槛1664MiB而采用512；无最后已销毁cgroup事件不等于事件0。
+- 独立896默认档验证相同payload，不是512重试：main4096PNG实际私有上传/owner字节/他人404、真实HTTP resize fitinside2048并完整decode连续3轮、Skill导入/编辑/精确读回/账号隔离、包装保存/revision/读回/他人404，50项通过，峰602.67MiB/events0/swap0。HK同档50项通过，峰582.74MiB。
+- 香港896同真实进程再做**仅2并发**HTTP process POST：相同owner/source、不同operationId，两个start发生在任一response之前；两响应均200/2048，峰692.93MiB、OOMKilled=false、cgroup events全0。100ms资源采样和HTTP/DB/解码证据保留。此结果不外推3/4并发或40MP极限；896仍是本次最低经过代表性大图实测的档位，不降cap，不用合成shell峰替代大图容量。
+- 证据分别`E:/Workspace/naumi-release47-app-drain-20261016/output/optional-profile-0614-512`与`optional-profile-0614-896`，原失败证据保留，task-owned fixture清理另记负责人回执。产品source0614不变；只增测试/docs，不重构镜像。
+- ops exact安装包`E:/Workspace/naumi/output/release47-evening-20261016/final-ops-0614-exact/RELEASE_OPS_FIXED.tar.gz`，125828bytes/SHA`c99d67160405ad25ef324bca7ee87dcdbe8030f27cb544ccd11049509b3e0b09`；保留15members真实验证源字节（含原CRLF的snapshot f34be35b），Linux导入/CLIhelp exit0。无-exact目录仅归一化旧证据，不作安装源。legacy bounded audit6tests通过，但真实collector/任何旧槽退役与RAM回收尚未验收，完整Next有Agent入口不能凭历史UI描述解锁。
