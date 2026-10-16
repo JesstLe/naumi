@@ -72,6 +72,11 @@ async function main() {
     await saveFeaturePolicy("fixture", {id: randomUUID(), email: other, mode: "custom", allowed: [], expectedVersion: 0});
     assert.equal((await route.GET(request("GET", undefined, other))).status, 403);
     assert.equal((await route.POST(request("POST", {action: "save", brief}, other))).status, 403);
+    await saveFeaturePolicy("fixture", {id: randomUUID(), email: other, mode: "custom", allowed: ["packaging-strategy"], expectedVersion: 1});
+    assert.equal((await route.GET(request("GET", undefined, other))).status, 200);
+    const access = await import("../src/lib/feature-access/catalog");
+    assert.equal(access.pageFeature("/tools/packaging-strategy"), "packaging-strategy");
+    assert.deepEqual(access.requestRequirement("/api/packaging-strategy", "POST"), {all: ["packaging-strategy"]});
     assert.throws(() => parsePackagingResult('{"kind":"questions","questions":["one","two","three","four"]}'));
     assert.throws(() => parsePackagingResult('{"kind":"questions","questions":["question"]}', true));
     const command = commandSchema.parse({action: "generate", brief, allowDraft: true});
