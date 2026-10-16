@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useFeatureAccess } from "@/lib/feature-access/client";
 import { authHeader } from "@/lib/supabase";
-import { BRIEF_STEPS, EXAMPLE_BRIEF, completedFields, draftStorageKey, emptyBrief, exportFilename, parseLocalDraft, parseProject, sameBrief, type PackagingBrief, type PackagingProject, type ProjectSummary } from "./model";
+import { BRIEF_STEPS, EXAMPLE_BRIEF, PACKAGING_LIMITS, completedFields, draftStorageKey, emptyBrief, exportFilename, parseLocalDraft, parseProject, sameBrief, type PackagingBrief, type PackagingProject, type ProjectSummary } from "./model";
 import "./packaging-strategy.css";
 
 const ENDPOINT = "/api/packaging-strategy";
@@ -75,6 +75,7 @@ function StrategyWorkspace({ email, onLogin }: { email: string; onLogin: () => v
   const resultRef = useRef<HTMLElement>(null);
   const guard = useRef(false);
   const latestDraft = useRef<string | null>(null);
+  const localWriteAllowed = useRef(true);
   const count = completedFields(brief);
   const current = BRIEF_STEPS[step];
   const result = project?.result;
@@ -85,16 +86,24 @@ function StrategyWorkspace({ email, onLogin }: { email: string; onLogin: () => v
 
   useEffect(() => {
     alive.current = true;
-    const saved = parseLocalDraft(localStorageRead(draftStorageKey(email)));
+    const raw = localStorageRead(draftStorageKey(email));
+    const saved = parseLocalDraft(raw);
     if (saved) { setBrief(saved.brief); setProject(saved.project); setStep(saved.step); setAnswers(saved.answers); setFeedback(saved.feedback); }
+    else if (raw) {
+      // Preserve invalid/older over-limit storage verbatim until an explicit
+      // new/save/restore action replaces it. Never silently truncate it.
+      localWriteAllowed.current = false;
+      setError("本机旧草稿格式或长度不符合当前要求，原始内容仍保留。请新建简报或恢复云端项目。");
+      setStorageState("旧草稿已保留，尚未载入");
+    }
     setHydrated(true);
-    const flushDraft = () => { try { if (latestDraft.current) localStorage.setItem(draftStorageKey(email), latestDraft.current); } catch { /* UI already shows storage failures. */ } };
+    const flushDraft = () => { try { if (localWriteAllowed.current && latestDraft.current) localStorage.setItem(draftStorageKey(email), latestDraft.current); } catch { /* UI already shows storage failures. */ } };
     window.addEventListener("pagehide", flushDraft);
     return () => { alive.current = false; operation.current?.abort(); flushDraft(); window.removeEventListener("pagehide", flushDraft); };
   }, [email]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !localWriteAllowed.current) return;
     setStorageState("正在保存草稿…");
     const timer = setTimeout(() => {
       try {
@@ -141,6 +150,7 @@ function StrategyWorkspace({ email, onLogin }: { email: string; onLogin: () => v
   }
 
   function accept(next: PackagingProject) {
+    localWriteAllowed.current = true;
     setProject(next); setBrief(next.brief);
     setProjects((all) => [{ id: next.id, title: next.title, revision: next.revision, updatedAt: next.updatedAt }, ...all.filter((p) => p.id !== next.id)]);
   }
@@ -198,6 +208,7 @@ function StrategyWorkspace({ email, onLogin }: { email: string; onLogin: () => v
   }
 
   function startFresh(example: boolean) {
+    localWriteAllowed.current = true;
     setBrief(example ? { ...EXAMPLE_BRIEF } : emptyBrief()); setProject(null); setStep(0); setAnswers(""); setFeedback(""); setError("");
     setNotice(example ? "已载入示例简报，尚未生成策略" : "已新建简报；云端项目仍保留");
   }
@@ -239,14 +250,14 @@ function StrategyWorkspace({ email, onLogin }: { email: string; onLogin: () => v
     <div className="ps-layout">
       <aside className="ps-steps-panel"><div className="ps-section-label">项目简报 <span>8 项</span></div><nav aria-label="简报步骤" className="ps-steps">{BRIEF_STEPS.map((item, i) => <button key={item.key} className={`ps-step ${step === i ? "is-active" : ""}`} onClick={() => setStep(i)} aria-current={step === i ? "step" : undefined}><span className={`ps-step-number ${brief[item.key].trim() ? "is-filled" : ""}`}>{brief[item.key].trim() ? <Check size={13} /> : String(i + 1).padStart(2, "0")}</span><span className="ps-step-title">{item.title}</span>{step === i && <ArrowRight size={14} className="ps-step-arrow" />}</button>)}</nav><div className="ps-progress"><div><span>填写完整度</span><strong>{count} / 8</strong></div><progress aria-label="已填写字段" max={8} value={count} /><p>按已填写项计数，不代表策略质量</p></div></aside>
 
-      <div className="ps-main-column"><section className="ps-editor"><div className="ps-editor-topline"><span className="ps-eyebrow">STEP {String(step + 1).padStart(2, "0")}</span><span>{step + 1} / 8</span></div><h2>{current.title}</h2><p className="ps-question">{current.prompt}</p><label htmlFor={`brief-${current.key}`} className="ps-field-label">{current.hint}</label><textarea key={current.key} id={`brief-${current.key}`} value={brief[current.key]} maxLength={12000} placeholder={current.placeholder} disabled={!!busy} onChange={(e) => { setBrief((all) => ({ ...all, [current.key]: e.target.value })); setNotice(""); }} className="ps-brief-input" /><div className="ps-field-footer"><span>不确定的信息可以留空</span><span>{brief[current.key].length.toLocaleString()} / 12,000</span></div><div className="ps-editor-footer"><button className="ps-button" disabled={step === 0 || !!busy} onClick={() => setStep((v) => v - 1)}><ArrowLeft size={15} /> 上一步</button>{step < 7 ? <button className="ps-button ps-primary" disabled={!!busy} onClick={() => setStep((v) => v + 1)}>下一步 <ArrowRight size={15} /></button> : <button className="ps-button ps-primary" disabled={!!busy || !count} onClick={() => void perform("generate")}><Sparkles size={15} /> 生成策略</button>}</div></section>
+      <div className="ps-main-column"><section className="ps-editor"><div className="ps-editor-topline"><span className="ps-eyebrow">STEP {String(step + 1).padStart(2, "0")}</span><span>{step + 1} / 8</span></div><h2>{current.title}</h2><p className="ps-question">{current.prompt}</p><label htmlFor={`brief-${current.key}`} className="ps-field-label">{current.hint}</label><textarea key={current.key} id={`brief-${current.key}`} value={brief[current.key]} maxLength={PACKAGING_LIMITS.brief} placeholder={current.placeholder} disabled={!!busy} onChange={(e) => { setBrief((all) => ({ ...all, [current.key]: e.target.value })); setNotice(""); }} className="ps-brief-input" /><div className="ps-field-footer"><span>不确定的信息可以留空</span><span>{brief[current.key].length.toLocaleString()} / {PACKAGING_LIMITS.brief.toLocaleString()}</span></div><div className="ps-editor-footer"><button className="ps-button" disabled={step === 0 || !!busy} onClick={() => setStep((v) => v - 1)}><ArrowLeft size={15} /> 上一步</button>{step < 7 ? <button className="ps-button ps-primary" disabled={!!busy} onClick={() => setStep((v) => v + 1)}>下一步 <ArrowRight size={15} /></button> : <button className="ps-button ps-primary" disabled={!!busy || !count} onClick={() => void perform("generate")}><Sparkles size={15} /> 生成策略</button>}</div></section>
 
       <section className="ps-result" ref={resultRef} aria-label="策略结果"><div className="ps-result-heading"><div><span className="ps-eyebrow">STRATEGY</span><h2>{result?.kind === "questions" ? "需要你补充" : "包装创意策略"}</h2></div>{result?.kind === "strategy" && <div className="ps-result-tools"><button className="ps-icon-button" aria-label="复制策略" title="复制策略" onClick={() => void copyResult()}><Copy size={17} /></button><button className="ps-icon-button" aria-label="下载 Markdown" title="下载 Markdown" onClick={downloadResult}><Download size={17} /></button></div>}</div>
         {busy && busy !== "save" && busy !== "restore" && <div className="ps-generating" role="status"><LoaderCircle size={18} className="ps-spin" /><span>{busy === "refine" ? "正在优化策略，原内容保留" : "正在分析简报并制定策略…"}</span></div>}
         {staleResult && <div className="ps-stale" role="status">简报已更新。以下为上次结果，重新生成后才会同步。</div>}
         {!result && !busy && <div className="ps-empty"><span><FileText size={25} /></span><h3>你的策略会出现在这里</h3><p>填写简报后生成，也可以先出一版带待确认项的初稿。</p></div>}
-        {result?.kind === "questions" && <div className="ps-questions"><ol>{result.questions.map((q, i) => <li key={`${i}-${q}`}>{q}</li>)}</ol><label htmlFor="ps-answers">补充回答</label><textarea id="ps-answers" value={answers} maxLength={12000} disabled={!!busy} onChange={(e) => setAnswers(e.target.value)} placeholder="按问题补充即可，不确定的内容可以说明。" /><div className="ps-answer-actions"><button className="ps-button ps-primary" disabled={!!busy || !answers.trim()} onClick={() => void perform("generate")}><Sparkles size={15} /> 补充并生成</button><button className="ps-text-button" disabled={!!busy} onClick={() => void perform("generate", true)}>先出初稿</button></div></div>}
-        {result?.kind === "strategy" && <><article className="ps-markdown"><Markdown skipHtml components={{ img: () => null, a: ({ children }) => <span>{children}</span> }}>{result.content}</Markdown></article><div className="ps-refine"><label htmlFor="ps-feedback">继续调整</label><textarea id="ps-feedback" value={feedback} disabled={!!busy} maxLength={12000} onChange={(e) => setFeedback(e.target.value)} placeholder="例如：让三个方向更有差异，保留现有价格定位。" /><button className="ps-button ps-primary" disabled={!!busy || !feedback.trim() || staleResult} onClick={() => void perform("refine")}><Sparkles size={15} /> 优化策略</button>{staleResult && <p>先根据更新后的简报重新生成，再继续优化。</p>}</div></>}
+        {result?.kind === "questions" && <div className="ps-questions"><ol>{result.questions.map((q, i) => <li key={`${i}-${q}`}>{q}</li>)}</ol><label htmlFor="ps-answers">补充回答</label><textarea id="ps-answers" value={answers} maxLength={PACKAGING_LIMITS.answers} disabled={!!busy} onChange={(e) => setAnswers(e.target.value)} placeholder="按问题补充即可，不确定的内容可以说明。" /><div className="ps-answer-actions"><button className="ps-button ps-primary" disabled={!!busy || !answers.trim()} onClick={() => void perform("generate")}><Sparkles size={15} /> 补充并生成</button><button className="ps-text-button" disabled={!!busy} onClick={() => void perform("generate", true)}>先出初稿</button></div></div>}
+        {result?.kind === "strategy" && <><article className="ps-markdown"><Markdown skipHtml components={{ img: () => null, a: ({ children }) => <span>{children}</span> }}>{result.content}</Markdown></article><div className="ps-refine"><label htmlFor="ps-feedback">继续调整</label><textarea id="ps-feedback" value={feedback} disabled={!!busy} maxLength={PACKAGING_LIMITS.feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="例如：让三个方向更有差异，保留现有价格定位。" /><button className="ps-button ps-primary" disabled={!!busy || !feedback.trim() || staleResult} onClick={() => void perform("refine")}><Sparkles size={15} /> 优化策略</button>{staleResult && <p>先根据更新后的简报重新生成，再继续优化。</p>}</div></>}
       </section></div>
 
       <aside className="ps-summary"><div className="ps-summary-header"><h2>简报摘要</h2><span>{count} 项已填</span></div><div className="ps-summary-list">{BRIEF_STEPS.map((item, i) => <button key={item.key} className="ps-summary-item" onClick={() => setStep(i)}><span>{item.short}<ArrowRight size={12} /></span><p className={brief[item.key].trim() ? "" : "is-empty"}>{brief[item.key].trim() || "待填写"}</p></button>)}</div><div className="ps-summary-actions"><button className="ps-button ps-primary ps-full" disabled={!!busy || !count} onClick={() => void perform("generate")}>{busy === "generate" ? <LoaderCircle className="ps-spin" size={16} /> : <Sparkles size={16} />}{busy === "generate" ? "正在生成…" : result ? "重新生成策略" : "生成包装策略"}</button><div className="ps-secondary-actions"><button className="ps-button" disabled={!!busy || !count} onClick={() => void perform("save")}>{busy === "save" ? <LoaderCircle size={14} className="ps-spin" /> : <Save size={14} />} 保存云端</button><button className="ps-text-button" disabled={!!busy || !count} onClick={() => void perform("generate", true)}>先出初稿</button></div><p className="ps-generation-note">仅生成文字策略，不调用图片工具</p></div></aside>
