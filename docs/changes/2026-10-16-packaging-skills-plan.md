@@ -52,4 +52,4 @@
 
 ## 后续更新
 
-模块实现、集中测试结果、当前未完成项、提交与推送 SHA 逐步补入本文件/验收文档。初始功能迭代计数0；累计3模块完成后 fetch/整合 origin/main 并记录。
+三个模块已实现并在独立分支整合，集中验收见 [验收记录](2026-10-16-packaging-skills-acceptance.md)。2026-10-16 三模块完成后再次 `git fetch origin main` 并 `git merge --no-edit origin/main`，远端仍为 `c2634fb`，结果 Already up to date，功能计数3→0。本任务没有合入main或更新服务器，发布维护计数不变。
