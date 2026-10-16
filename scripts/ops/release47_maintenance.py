@@ -117,11 +117,13 @@ def restore_frozen_caller(tx, identity, *, candidate_worker_quiescent):
 
 
 def validate_preservation(before, after, result):
-    require(before.get('dbIdentityHash') == after.get('dbIdentityHash') and
-            re.fullmatch('[a-f0-9]{64}', before.get('dbIdentityHash', '')),
+    require(before.get('databaseIdentitySha256') == after.get('databaseIdentitySha256') and
+            re.fullmatch('[a-f0-9]{64}', before.get('databaseIdentitySha256', '')),
             'PRESERVATION_DATABASE_IDENTITY_CHANGED')
-    require(result.get('noMissingJobIds') is True and result.get('noSupplierIdentityMutation') is True,
+    require(result.get('noMissingJobs') is True and result.get('noOriginalSupplierMutation') is True,
             'ACCEPTED_TASK_PRESERVATION_NOT_VERIFIED')
-    require(not before.get('errors') and not after.get('errors'), 'TASK_SNAPSHOT_COVERAGE_UNKNOWN')
+    require(result.get('preservationVerified') is True and not result.get('violations') and
+            not result.get('unknownTables') and before.get('preservationComplete') is True and
+            after.get('preservationComplete') is True, 'TASK_SNAPSHOT_COVERAGE_UNKNOWN')
     return {'taskDataPreserved': True, 'legacyDrainProven': False, 'replayedTasks': False,
             'databaseRestored': False, 'maintenanceException': DATE}
