@@ -117,7 +117,7 @@ type GenParams = {
   quality: string; // 请求质量档:low/medium/high/xhigh/max/auto;通道不支持时提交前回退默认档,请求值只入审计
   count: number;
   transparent: boolean; // 透明底(抠图):gpt-image background:transparent PNG
-  ratiogen: boolean; // 改比例(ChatGPT 式重生成):用节点自身提示词+原图参考,按目标比例重画再裁切,无需额外提示词
+  ratiogen: boolean; // 改比例:用节点自身提示词+原图参考重新构图，保留返回画面，不做裁切
   email: string;
   imagegen?:{request:ImagegenRequest;intent:Intent};
   mask?:GenImage;
@@ -306,7 +306,7 @@ async function openaiImages(
   }
 
   // 改比例(ChatGPT 式重生成):拿节点自身提示词 + 原图当参考,按目标比例重画一张,
-  // 出图后裁切到精确比例。同主体/风格/配色,自然重构图 —— 无接缝、无羽化、不限于 3 种形状。
+  // 同主体/风格/配色自然重构图，返回后保留完整画面；不靠删边伪装成精确比例。
   // 不需要用户额外提示词(ratioPrompt 已带固定重构图指令),只生成 1 张。
   if (p.ratiogen && p.images[0] && isOpenAIImagesEditModel(model)) {
     const ref = await normalizeForEdit(Buffer.from(p.images[0].buf));
@@ -435,7 +435,9 @@ async function newApiFlowImages(
   model: string,
   settings?: { baseUrl: string; apiKey: string }
 ): Promise<GeneratedImage[]> {
-  const basePrompt = p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide());
+  const targetDimensions = await sourceImageDimensions(p.images[0] ? Buffer.from(p.images[0].buf) : undefined);
+  const effectiveRatio = inheritedImageRatio(p.ratio, targetDimensions);
+  const basePrompt = `${p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()))}\n\n${imageAspectInstruction(effectiveRatio, targetDimensions)}`;
   const prompt = p.transparent
     ? `${basePrompt}. Use a transparent background and return a PNG with alpha.`
     : basePrompt;
