@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { BRIEF_STEPS, EXAMPLE_BRIEF, completedFields, draftStorageKey, emptyBrief, exportFilename, parseBrief, parseLocalDraft, parseProject, sameBrief, type PackagingProject } from "./model";
+import { BRIEF_STEPS, EXAMPLE_BRIEF, PACKAGING_LIMITS, completedFields, draftStorageKey, emptyBrief, exportFilename, parseBrief, parseLocalDraft, parseProject, sameBrief, type PackagingProject } from "./model";
 
 let checks = 0;
 function check(name: string, run: () => void) { run(); checks++; console.log(`PASS ${name}`); }
@@ -14,7 +14,8 @@ check("exact brief equality", () => assert.equal(sameBrief(EXAMPLE_BRIEF, { ...E
 check("edited brief is stale", () => assert.equal(sameBrief(EXAMPLE_BRIEF, { ...EXAMPLE_BRIEF, brand: "新品牌" }), false));
 check("reject missing fields", () => assert.equal(parseBrief({ brand: "茶" }), null));
 check("reject non-string input", () => assert.equal(parseBrief({ ...EXAMPLE_BRIEF, brand: null }), null));
-check("reject oversized local data", () => assert.equal(parseBrief({ ...EXAMPLE_BRIEF, task: "字".repeat(12001) }), null));
+check("accept brief at exact API limit", () => assert.equal(parseBrief({ ...EXAMPLE_BRIEF, task: "字".repeat(PACKAGING_LIMITS.brief) })?.task.length, 2000));
+check("reject brief above API limit", () => assert.equal(parseBrief({ ...EXAMPLE_BRIEF, task: "字".repeat(PACKAGING_LIMITS.brief + 1) }), null));
 check("accept real strategy project", () => assert.deepEqual(parseProject(project), project));
 check("accept unanswered questions", () => assert.equal(parseProject({ ...project, result: { kind: "questions", questions: ["渠道？", "价格？", "规格？"] } })?.result?.kind, "questions"));
 check("reject excessive follow-up questions", () => assert.equal(parseProject({ ...project, result: { kind: "questions", questions: ["1", "2", "3", "4"] } }), null));
@@ -27,6 +28,10 @@ check("reject invalid JSON draft", () => assert.equal(parseLocalDraft("{"), null
 check("clamp restored step", () => assert.equal(parseLocalDraft(JSON.stringify({ brief: EXAMPLE_BRIEF, project, step: 100 }))?.step, 7));
 check("accept blank draft without cloud project", () => assert.equal(parseLocalDraft(JSON.stringify({ brief: emptyBrief(), project: null, step: 0 }))?.project, null));
 check("reject stale malformed saved project", () => assert.equal(parseLocalDraft(JSON.stringify({ brief: EXAMPLE_BRIEF, project: { id: project.id } })), null));
+check("restore full answers at exact limit without truncation", () => assert.equal(parseLocalDraft(JSON.stringify({ brief: EXAMPLE_BRIEF, project: null, answers: "答".repeat(PACKAGING_LIMITS.answers) }))?.answers.length, 4000));
+check("reject oversized answers without truncation", () => assert.equal(parseLocalDraft(JSON.stringify({ brief: EXAMPLE_BRIEF, project: null, answers: "答".repeat(PACKAGING_LIMITS.answers + 1) })), null));
+check("restore full feedback at exact limit without truncation", () => assert.equal(parseLocalDraft(JSON.stringify({ brief: EXAMPLE_BRIEF, project: null, feedback: "改".repeat(PACKAGING_LIMITS.feedback) }))?.feedback.length, 2000));
+check("reject oversized feedback without truncation", () => assert.equal(parseLocalDraft(JSON.stringify({ brief: EXAMPLE_BRIEF, project: null, feedback: "改".repeat(PACKAGING_LIMITS.feedback + 1) })), null));
 check("isolate different accounts", () => assert.notEqual(draftStorageKey("a@example.test"), draftStorageKey("b@example.test")));
 check("normalize storage identity", () => assert.equal(draftStorageKey("A@Example.test"), draftStorageKey("a@example.test")));
 check("sanitize downloaded filename", () => assert.equal(exportFilename("a/b:c\\d?"), "a_b_c_d_.md"));

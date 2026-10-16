@@ -29,10 +29,11 @@
 - 非2xx可返回 `{ error, project }`，用于模型失败后同步已释放租约的最新 revision。409不会自动接受远端 revision，以防静默覆盖新内容。
 - 所有接口使用 `authHeader()`；不提交 email 代替服务端认证。页面额外调用 `canPage('/tools/packaging-strategy')`。
 - 仅save允许没有projectId；generate/refine均要求已保存的项目id。首轮保存成功但生成失败时，客户端仍保留该项目id，避免重试新建重复项目。
+- 长度与API一致：简报每项最多2000字符，追问回答4000字符，修改要求2000字符；页面maxLength、计数和本机草稿校验共用 `PACKAGING_LIMITS`。超长旧草稿不会静默截断或自动覆盖，页面明确提示并保留原始本机记录，用户显式新建/保存/恢复后才替换。
 
 ## 验证与当前边界
 
-- `npx tsx src/components/packaging-strategy/model.test.ts`：27项通过，覆盖八字段计数、未知输入、恶意本机数据、账号草稿key、结果结构、版本和下载文件名。
+- `npx tsx src/components/packaging-strategy/model.test.ts`：32项通过，覆盖八字段计数、未知输入、恶意本机数据、账号草稿key、结果结构、版本、精确长度边界和下载文件名。
 - 定向 TypeScript：通过（exit 0），范围为本页面、组件、测试和工具元数据。
 - 全量 `npx tsc --noEmit --pretty false --incremental false`：exit 2；唯一错误位于未修改的 `canvas-action-menu.tsx:82`，共享依赖 React18 的 `RefObject` 与项目源码不匹配；本模块无错误。
 - 初始基线：`c2634fb`；独立分支 `codex/brand-packaging-page-20261016`，工作副本不修改共享 checkout。

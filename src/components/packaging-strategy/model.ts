@@ -1,3 +1,6 @@
+// Mirrors the API request contract; never silently trim or truncate a draft.
+export const PACKAGING_LIMITS = { brief: 2000, answers: 4000, feedback: 2000 } as const;
+
 export const BRIEF_STEPS = [
   { key: "brand", title: "品牌与产品", short: "品牌", prompt: "这次为哪个品牌、什么产品设计包装？", hint: "品牌名、产品名、品类、主要 SKU", placeholder: "例如：山间来信，原叶冷泡茶，茉莉 / 乌龙 / 红茶三款。" },
   { key: "task", title: "项目任务", short: "任务", prompt: "这次包装最需要解决什么问题？", hint: "新品上市、包装升级或产品线扩展", placeholder: "例如：新品上市；让消费者在货架上快速看懂这是冷泡茶，而不是茶饮料。" },
@@ -49,7 +52,7 @@ export function sameBrief(a: PackagingBrief, b: PackagingBrief): boolean {
 export function parseBrief(value: unknown): PackagingBrief | null {
   if (!value || typeof value !== "object") return null;
   const object = value as Record<string, unknown>;
-  if (!BRIEF_STEPS.every(({ key }) => typeof object[key] === "string" && object[key].length <= 12000)) return null;
+  if (!BRIEF_STEPS.every(({ key }) => typeof object[key] === "string" && object[key].length <= PACKAGING_LIMITS.brief)) return null;
   return Object.fromEntries(BRIEF_STEPS.map(({ key }) => [key, object[key]])) as PackagingBrief;
 }
 
@@ -72,11 +75,13 @@ export function parseLocalDraft(raw: string | null): LocalDraft | null {
     const brief = parseBrief(value.brief);
     const project = value.project === null ? null : parseProject(value.project);
     if (!brief || (value.project !== null && !project)) return null;
+    if (typeof value.answers === "string" && value.answers.length > PACKAGING_LIMITS.answers) return null;
+    if (typeof value.feedback === "string" && value.feedback.length > PACKAGING_LIMITS.feedback) return null;
     return {
       brief, project,
       step: typeof value.step === "number" && Number.isInteger(value.step) ? Math.max(0, Math.min(7, value.step)) : 0,
-      answers: typeof value.answers === "string" ? value.answers.slice(0, 12000) : "",
-      feedback: typeof value.feedback === "string" ? value.feedback.slice(0, 12000) : "",
+      answers: typeof value.answers === "string" ? value.answers : "",
+      feedback: typeof value.feedback === "string" ? value.feedback : "",
     };
   } catch { return null; }
 }
