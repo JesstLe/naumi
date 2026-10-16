@@ -174,6 +174,56 @@ class WorkerHandoff(unittest.TestCase):
         with self.assertRaisesRegex(m.lifecycle.Blocked, 'LEGACY_WORKER_PLAN_MISMATCH'):
             m.authorize_release(self.args, state, p)
 
+    def test_reconcile_requires_exact_original_unknown_tick(self):
+        self.args.action = 'reconcile'
+        self.args.tick_id = '66666666-6666-4666-8666-666666666666'
+        self.status.update(phase='UNKNOWN', paused=True, unresolvedTicks=1,
+                           lastTick={'id': '77777777-7777-4777-8777-777777777777'})
+        with self.assertRaisesRegex(m.lifecycle.Blocked, 'EXACT_UNKNOWN_TICK_REQUIRED'):
+            m.execute(self.args, self.folder, self.command)
+        self.assertFalse(any(c[:2] == ['docker', 'exec'] and c[-1] != 'null' for c in self.calls))
+
+    def test_reconcile_keeps_paused_and_does_not_resume_or_replay_tick(self):
+        self.args.action = 'reconcile'; self.args.tick_id = '66666666-6666-4666-8666-666666666666'
+        self.status.update(phase='UNKNOWN', paused=True, unresolvedTicks=1, lastTick={'id': self.args.tick_id})
+        def reconciled(cmd):
+            if cmd[:2] == ['docker', 'inspect']:
+                rows = json.loads(self.command(cmd))
+                rows[0]['Config']['Env'].append('NAUMI_WORKER_TARGET_INSTANCE_ID=web-instance')
+                return json.dumps(rows)
+            request = json.loads(cmd[-1])
+            self.calls.append(cmd)
+            if request is None:
+                return json.dumps(self.status)
+            self.assertEqual(request['action'], 'reconcile')
+            self.assertEqual(request['tickId'], self.args.tick_id)
+            self.status.update(paused=True, phase='QUIESCENT', revision=1, unresolvedTicks=0)
+            return json.dumps({'state': self.status, 'receipt': {'action': 'reconcile', 'revision': 1,
+                              'serverReceipt': {'tickId': self.args.tick_id, 'phase': 'completed',
+                                                'web': {'instanceId': 'web-instance', 'commit': self.args.expected_commit}}}})
+        result = m.execute(self.args, self.folder, reconciled)
+        self.assertTrue(result['state']['paused'])
+        self.assertEqual(result['state']['phase'], 'QUIESCENT')
+        self.assertIsNone(result['state']['acceptedTasks'])
+
+    def test_reconcile_target_drift_is_persisted_unknown_not_acknowledged(self):
+        self.args.action = 'reconcile'; self.args.tick_id = '66666666-6666-4666-8666-666666666666'
+        self.status.update(phase='UNKNOWN', paused=True, unresolvedTicks=1, lastTick={'id': self.args.tick_id})
+        def bad(cmd):
+            if cmd[:2] == ['docker', 'inspect']:
+                rows = json.loads(self.command(cmd)); rows[0]['Config']['Env'].append('NAUMI_WORKER_TARGET_INSTANCE_ID=web-instance'); return json.dumps(rows)
+            request = json.loads(cmd[-1])
+            if request is None:
+                return json.dumps(self.status)
+            self.status.update(paused=True, phase='QUIESCENT', revision=1, unresolvedTicks=0)
+            return json.dumps({'state': self.status, 'receipt': {'action': 'reconcile', 'revision': 1,
+                              'serverReceipt': {'tickId': self.args.tick_id, 'phase': 'completed',
+                                                'web': {'instanceId': 'wrong', 'commit': self.args.expected_commit}}}})
+        with self.assertRaisesRegex(m.lifecycle.Blocked, 'TARGET_DRIFT'):
+            m.execute(self.args, self.folder, bad)
+        saved = json.loads((self.folder / (self.args.operation_id + '.json')).read_text())
+        self.assertEqual(saved['phase'], 'UNKNOWN')
+
 
 if __name__ == '__main__':
     unittest.main()

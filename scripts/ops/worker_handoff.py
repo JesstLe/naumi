@@ -111,6 +111,11 @@ def execute(args, folder, command):
         require(pending == operation or saved['phase'] == 'ACKNOWLEDGED', 'UNRESOLVED_HANDOFF_BLOCKS_NEXT')
     binding = {'containerId': row['Id'], 'image': args.expected_image,
                'commit': args.expected_commit, 'origin': args.expected_origin, 'action': args.action}
+    if args.action == 'reconcile':
+        tick_id = getattr(args, 'tick_id', None)
+        require(re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', tick_id or ''),
+                'EXACT_TICK_UUID_REQUIRED')
+        binding['tickId'] = tick_id
     if operation.exists():
         record = json.loads(operation.read_text('utf-8'))
         require(record.get('binding') == binding, 'OPERATION_BINDING_CONFLICT')
@@ -135,6 +140,10 @@ def execute(args, folder, command):
                     'SPLIT_WEB_RECOVERY_ORIGIN')
         request = {'action': args.action, 'operationId': args.operation_id,
                    'bootId': status['bootId'], 'expectedRevision': status['revision']}
+        if args.action == 'reconcile':
+            require(status.get('phase') == 'UNKNOWN' and status.get('lastTick', {}).get('id') == args.tick_id,
+                    'EXACT_UNKNOWN_TICK_REQUIRED')
+            request['tickId'] = args.tick_id
         record = {'binding': binding, 'request': request, 'phase': 'INTENT_RECORDED'}
         lifecycle.atomic(operation, record)
     try:
@@ -144,7 +153,17 @@ def execute(args, folder, command):
         require(fresh['bootId'] == result['state']['bootId'], 'WORKER_BOOT_CHANGED_AFTER_CONTROL')
         require(type(result['receipt'].get('revision')) is int and
                 fresh['revision'] >= result['receipt']['revision'], 'WORKER_RECEIPT_REVISION_MISMATCH')
-        require(fresh.get('paused') is (args.action == 'drain'), 'WORKER_CONTROL_NOT_OBSERVED')
+        require(fresh.get('paused') is (args.action != 'resume'), 'WORKER_CONTROL_NOT_OBSERVED')
+        if args.action == 'reconcile':
+            receipt = result['receipt']
+            server_receipt = receipt.get('serverReceipt', {})
+            require(fresh.get('phase') == 'QUIESCENT' and fresh.get('unresolvedTicks') == 0 and
+                    fresh.get('lastTick', {}).get('id') == args.tick_id and
+                    server_receipt.get('tickId') == args.tick_id and server_receipt.get('phase') == 'completed',
+                    'TICK_RECONCILIATION_NOT_OBSERVED')
+            require(server_receipt.get('web', {}).get('instanceId') == env.get('NAUMI_WORKER_TARGET_INSTANCE_ID') and
+                    server_receipt.get('web', {}).get('commit') == args.expected_commit,
+                    'TICK_RECONCILIATION_TARGET_DRIFT')
         record.update(phase='ACKNOWLEDGED', receipt=result['receipt'], observed=fresh)
         lifecycle.atomic(operation, record)
         return {'result': 'ACKNOWLEDGED', 'operationId': args.operation_id, 'state': fresh,
@@ -157,11 +176,12 @@ def execute(args, folder, command):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['status', 'drain', 'resume'])
+    parser.add_argument('action', choices=['status', 'drain', 'resume', 'reconcile'])
     parser.add_argument('--target', required=True, choices=['47.105.59.142'])
     for name in ['container', 'expected-id', 'expected-image', 'expected-commit', 'expected-origin', 'host-identity-sha256']:
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--operation-id')
+    parser.add_argument('--tick-id', help='Original UNKNOWN tick UUID; reconciliation is GET-only')
     parser.add_argument('--plan', type=pathlib.Path, help='Required for mutation: current live lifecycle plan')
     args = parser.parse_args()
     try:
@@ -174,7 +194,7 @@ def main():
                 not parsed.password and not parsed.path.strip('/') and not parsed.query and not parsed.fragment,
                 'INVALID_WORKER_ORIGIN')
         args.expected_origin = args.expected_origin.rstrip('/')
-        require(hashlib.sha256(pathlib.Path('/etc/machine-id').read_bytes()).hexdigest() ==
+        require(hashlib.sha256(pathlib.Path('/etc/machine-id').read_bytes().strip()).hexdigest() ==
                 args.host_identity_sha256, 'HOST_IDENTITY_DRIFT')
         folder = pathlib.Path('/opt/naumi-staging/releases/worker-handoff')
 
