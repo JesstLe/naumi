@@ -1,0 +1,14 @@
+.root{margin:18px 0;color:#31425d;font-size:12px;text-align:left}
+.chain{display:grid;grid-template-columns:minmax(0,1fr) 16px minmax(0,1fr) 16px minmax(0,1fr);gap:10px;align-items:center;background:#f8faff;border:1px solid #e1e8f4;border-radius:9px;padding:16px}
+.chain div{display:flex;flex-direction:column;gap:8px;min-width:0}
+.chain span{color:#8694a9;font-size:11px}
+.chain strong{color:#2c4162;line-height:1.6;font-weight:600;overflow-wrap:anywhere}
+.chain code{font-family:inherit;color:#8694a9;font-size:10px;overflow-wrap:anywhere}
+.chain>b{color:#a0aec3;font-size:15px;font-weight:400}
+.evidence{color:#8b98aa;font-size:11px;line-height:1.8;margin:9px 0 14px}
+.tableWrap{border:1px solid #e5eaf3;border-radius:8px;overflow:auto}
+.tableWrap table{border-collapse:collapse;width:100%;min-width:580px;font-size:11px}
+.tableWrap th{font-weight:500;text-align:left;color:#71829c;background:#f8fafc}
+.tableWrap td,.tableWrap th{padding:10px 12px;line-height:1.6;vertical-align:top;overflow-wrap:anywhere}
+.tableWrap tr+tr td{border-top:1px solid #edf0f5}
+@media(max-width:560px){.chain{grid-template-columns:1fr}.chain>b{transform:rotate(90deg);justify-self:center}.chain div{gap:5px}}

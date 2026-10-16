@@ -1,4 +1,5 @@
 import "server-only";
+import { withObservedCallId } from "./call-scope";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type OpenAI from "openai";
@@ -15,7 +16,7 @@ import { currentModelExecution, type ModelExecutionScope } from "@/lib/model-con
 import { isManagedModelClient } from "@/lib/model-config/clients";
 
 export function modelExecutionTelemetry(scope: ModelExecutionScope | null | undefined) {
-  return scope ? { publicModelId: scope.frozen.publicModelId, providerId: scope.connection.providerId, modelVersion: scope.frozen.modelVersion, billingVersion: scope.frozen.billingVersion, digest: scope.frozen.routerDigest || scope.frozen.modelDigest } : undefined;
+  return scope ? { frontendModel: scope.frontendModel, publicModelId: scope.frozen.publicModelId, providerId: scope.connection.providerId, modelVersion: scope.frozen.modelVersion, billingVersion: scope.frozen.billingVersion, digest: scope.frozen.routerDigest || scope.frozen.modelDigest } : undefined;
 }
 
 type Context = { email: string; operation: string; id?: string };
@@ -54,6 +55,7 @@ function token(value: unknown) {
 }
 
 export async function recordBiModelCompletion(input: {
+  id?: string;
   email: string;
   operation: string;
   operationId: string;
@@ -69,9 +71,9 @@ export async function recordBiModelCompletion(input: {
   try {
     await ensureBiSchema();
     await getPool().query(
-      `INSERT INTO app_bi_model_calls(id,email,operation,operation_id,wire_model,response_model,state,duration_ms,input_tokens,output_tokens,public_model_id,provider_id,model_version,billing_version,config_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+      `INSERT INTO app_bi_model_calls(id,email,operation,operation_id,wire_model,response_model,state,duration_ms,input_tokens,output_tokens,public_model_id,provider_id,model_version,billing_version,config_digest,frontend_model_id,frontend_model_label) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [
-        randomUUID(),
+        input.id || randomUUID(),
         input.email,
         input.operation,
         input.operationId,
@@ -81,7 +83,7 @@ export async function recordBiModelCompletion(input: {
         Math.max(0, Math.min(2147483647, input.durationMs)),
         token(input.inputTokens),
         token(input.outputTokens),
-        input.execution?.publicModelId || "", input.execution?.providerId || "", input.execution?.modelVersion || null, input.execution?.billingVersion || null, input.execution?.digest || "",
+        input.execution?.publicModelId || "", input.execution?.providerId || "", input.execution?.modelVersion || null, input.execution?.billingVersion || null, input.execution?.digest || "", input.execution?.frontendModel?.id || "", input.execution?.frontendModel?.label || "",
       ],
     );
   } catch {
@@ -96,14 +98,15 @@ export async function observeModelCall<T>(
 ): Promise<T> {
   markBillingUpstream("started");
   const actor = context.getStore();
-  const operationId = currentImageOperationId() || actor?.id || "";
+  const operationId = currentSynchronousBilling()?.id || actor?.id || currentImageOperationId() || "";
+  const callId = randomUUID();
   const start = Date.now();
   let state = "failed",
     responseModel = "",
     inputTokens: number | null = null,
     outputTokens: number | null = null;
   try {
-    const result = await run();
+    const result = await withObservedCallId(callId, run);
     const response = result as ObservedResponse;
     // A streaming SDK response is accepted; its final outcome/tokens are not known here.
     state =
@@ -125,7 +128,23 @@ export async function observeModelCall<T>(
     if (state === "stream-opened") {
       const source = result as AsyncIterable<any>;
       const wrapped = Object.create(result as object);
-      wrapped[Symbol.asyncIterator] = async function* () { let usage: unknown; for await (const chunk of source) { if (chunk?.usage) usage = chunk.usage; yield chunk; } if (usageOptions) recordBillingUsage(usage, usageOptions.imageInput); };
+      wrapped[Symbol.asyncIterator] = async function* () {
+        let usage: ObservedResponse["usage"], model = "", completed = false, broken = false;
+        try {
+          for await (const chunk of source) {
+            if (chunk?.usage) usage = chunk.usage;
+            if (typeof chunk?.model === "string") model = chunk.model.slice(0, 200);
+            yield chunk;
+          }
+          completed = true;
+          if (usageOptions) recordBillingUsage(usage, usageOptions.imageInput);
+        } catch (error) { broken = true; throw error; }
+        finally {
+          if (actor && dbEnabled) try {
+            await getPool().query("UPDATE app_bi_model_calls SET response_model=$2,state=$3,input_tokens=$4,output_tokens=$5,duration_ms=$6 WHERE id=$1 AND email=$7", [callId,model,completed ? "stream-completed" : broken ? "stream-error" : "stream-cancelled",token(usage?.prompt_tokens),token(usage?.completion_tokens),Math.max(0,Math.min(2147483647,Date.now()-start)),actor.email]);
+          } catch { /* Telemetry never changes streamed output or retries paid work. */ }
+        }
+      };
       return wrapped as T;
     }
     return result;
@@ -143,7 +162,7 @@ export async function observeModelCall<T>(
     markBillingUpstream(state==="rejected"?"rejected":"unknown");
     throw error;
   } finally {
-    if (actor) await recordBiModelCompletion({ email: actor.email, operation: actor.operation, operationId, model: wireModel, responseModel, state, durationMs: Date.now() - start, inputTokens, outputTokens, execution });
+    if (actor) await recordBiModelCompletion({ id: callId, email: actor.email, operation: actor.operation, operationId, model: wireModel, responseModel, state, durationMs: Date.now() - start, inputTokens, outputTokens, execution });
   }
 }
 

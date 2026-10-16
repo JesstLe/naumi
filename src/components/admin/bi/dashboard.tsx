@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { AdminCenterShell } from "@/components/admin/center-shell";
 import {microsToDecimal} from "@/lib/billing/decimal";
+import { ModelChain } from "./model-chain";
 import { ArtworkMedia } from "./artwork-media";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -115,7 +116,10 @@ const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
     { key: "email", label: "账户" },
     { key: "kind", label: "操作", format: "status" },
     { key: "status", label: "状态", format: "status" },
-    { key: "requested_model", label: "请求模型" },
+    { key: "frontend_model_label", label: "前端显示模型" },
+    { key: "requested_model", label: "接口请求值" },
+    { key: "actual_request_model", label: "实际请求模型" },
+    { key: "actual_executed_model", label: "上游确认模型" },
     { key: "requested_quality", label: "请求质量", format: "quality" },
     { key: "resolution", label: "尺寸" },
     { key: "quoted_credits", label: "冻结报价", format: "credits" },
@@ -136,7 +140,10 @@ const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
   models: [
     { key: "created_at", label: "审计时间", format: "time" },
     { key: "email", label: "账户" },
-    { key: "requested_model", label: "用户请求模型" },
+    { key: "frontend_model_label", label: "前端显示模型" },
+    { key: "requested_model", label: "接口请求值" },
+    { key: "actual_request_model", label: "实际请求模型" },
+    { key: "actual_executed_model", label: "上游确认模型" },
     { key: "upstream", label: "接口执行记录" },
     { key: "requested_quality", label: "请求质量", format: "quality" },
     { key: "executed_quality", label: "实际质量", format: "quality" },
@@ -169,11 +176,15 @@ const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
     { key: "created_at", label: "调用时间", format: "time" },
     { key: "email", label: "账户" },
     { key: "operation", label: "操作" },
-    { key: "public_model_id", label: "所选模型" },
+    { key: "frontend_model_label", label: "前端显示模型" },
+    { key: "frontend_model_id", label: "展示模型关联 ID" },
+    { key: "public_model_id", label: "平台解析 ID" },
     { key: "provider_id", label: "执行通道" },
     { key: "model_version", label: "模型版本" },
     { key: "billing_version", label: "计费版本" },
-    { key: "wire_model", label: "实际提交模型" },
+    { key: "wire_model", label: "接口请求值" },
+    { key: "actual_request_model", label: "实际请求模型" },
+    { key: "actual_executed_model", label: "上游确认模型" },
     { key: "response_model", label: "上游响应模型" },
     { key: "state", label: "调用状态", format: "status" },
     { key: "duration_ms", label: "响应耗时（ms）" },
@@ -917,11 +928,12 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                 }}
               />
             )}
+            {["calls", "operations", "models"].includes(selected.section) && <ModelChain row={selected.row}/>}
             <dl className={styles.details}>
               {Object.entries(selected.row)
                 .filter(
                   ([key]) =>
-                    !["has_image", "has_video", "profile_note"].includes(key),
+                    !["has_image", "has_video", "profile_note", "model_attempts"].includes(key),
                 )
                 .map(([key, value]) => {
                   const column = (
@@ -937,6 +949,12 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                     ratio: "比例",
                     state: "调用状态",
                     operation_id: "稳定操作 ID",
+                    frontend_model_label: "前端显示模型",
+                    frontend_model_id: "展示模型关联 ID",
+                    actual_request_model: "实际请求模型",
+                    actual_executed_model: "上游确认模型",
+                    model_evidence: "模型证据",
+                    model_evidence_scope: "证据范围",
                     id: "记录 ID",
                     job_id: "任务 ID",
                     parent_id: "上游作品 ID",
