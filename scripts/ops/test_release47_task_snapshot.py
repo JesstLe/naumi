@@ -17,6 +17,17 @@ def private(rows=None):
 
 
 class SnapshotTests(unittest.TestCase):
+    def test_graph_is_evaluated_once_and_bounded_without_temp_writes(self):
+        sql = m.build_sql().decode()
+        self.assertEqual(sql.count('FROM (:roots_query) graph'), 0)
+        self.assertIn('LIMIT 8001', sql)
+        self.assertIn('unknown-root-limit', sql)
+        self.assertIn("SET LOCAL statement_timeout='5000ms'", sql)
+        self.assertIn('expanded AS MATERIALIZED', sql)
+        self.assertIn("SELECT prefix||value", sql)
+        self.assertNotIn("OR EXISTS(SELECT 1 FROM", sql)
+        self.assertNotIn('CREATE TEMP', sql)
+
     def test_sql_is_one_repeatable_read_read_only_transaction_with_bounded_timeouts(self):
         sql = m.build_sql().decode()
         self.assertIn('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;', sql)
@@ -30,6 +41,62 @@ class SnapshotTests(unittest.TestCase):
         public = m.summarize(data)
         self.assertFalse(public['preservationComplete']); self.assertFalse(public['drainProven'])
         self.assertIn('app_video_tasks', m.compare_task_snapshots(data, copy.deepcopy(data))['unknownTables'])
+
+    def test_supplier_unknown_states_are_active_not_an_incomplete_allow_list(self):
+        predicate = m.SPECS['app_supplier_calls'][1]
+        self.assertIn('NOT IN', predicate)
+        for state in ['response-received', 'stream-completed', 'pre-submission-failed', 'canceled', 'success']:
+            self.assertIn("'" + state + "'", predicate)
+        self.assertNotIn("'running'", predicate)
+
+    def test_catalog_additive_absence_never_hides_invalid_after_rows(self):
+        before = private(); table = 'app_worker_tick_receipts'
+        before['tables'][table].update(status='confirmed-absent-additive', activeCount=None)
+        for rows, count in [([{'tick_id': 'one'}], 1001), ([{}], 1), ([{'tick_id': 'same'}, {'tick_id': 'same'}], 2)]:
+            after = copy.deepcopy(before); after['tables'][table].update(status='observed', rows=rows, selectedCount=count)
+            self.assertIn(table, m.compare_task_snapshots(before, after)['unknownTables'])
+        after = copy.deepcopy(before); after['tables'][table].update(status='observed', rows=[{'tick_id': 'one', 'phase': 'running'}], selectedCount=1)
+        self.assertTrue(m.compare_task_snapshots(before, after)['preservationVerified'])
+
+    def test_output_identity_owner_wire_model_and_real_request_changes_are_detected(self):
+        examples = [
+            ('app_supplier_call_outputs', {'call_id': 'c', 'output_index': 0, 'supplier_ref_hash': 'original'}, 'supplier_ref_hash', 'changed', 'ORIGINAL_SUPPLIER_BINDING_CHANGED'),
+            ('app_image_jobs', {'id': 'j', 'email': 'original-owner'}, 'email', 'changed-owner', 'FROZEN_CONTEXT_CHANGED'),
+            ('app_model_execution_stages', {'id': 's', 'wire_model': 'original'}, 'wire_model', 'changed', 'FROZEN_CONTEXT_CHANGED'),
+            ('app_reference_operations', {'id': 'r', 'body': {'prompt': 'original'}}, 'body', {'prompt': 'changed'}, 'FROZEN_CONTEXT_CHANGED'),
+            ('app_reference_operations', {'id': 'r', 'plans': [{'prompt': 'original', 'state': 'running'}]}, 'plans', [{'prompt': 'changed', 'state': 'done'}], 'FROZEN_CONTEXT_CHANGED'),
+            ('app_video_tasks', {'id': 'v', 'parameters': {'request': {'prompt': 'original'}, 'workflowManifestEnc': 'frozen'}}, 'parameters', {'request': {'prompt': 'changed'}, 'workflowManifestEnc': 'frozen'}, 'FROZEN_CONTEXT_CHANGED'),
+            ('app_canvas_image_tasks', {'id': 'e', 'parameters': {'prompt': 'original', 'unknownNewField': 'keep-frozen'}}, 'parameters', {'prompt': 'changed', 'unknownNewField': 'keep-frozen'}, 'FROZEN_CONTEXT_CHANGED'),
+        ]
+        for table, row, field, value, reason in examples:
+            with self.subTest(table=table, field=field):
+                before = private({table: [row]}); after = copy.deepcopy(before)
+                after['tables'][table]['rows'][0][field] = value
+                self.assertIn(reason, [v['reason'] for v in m.compare_task_snapshots(before, after)['violations']])
+
+    def test_only_source_audited_progress_is_excluded_from_frozen_context(self):
+        row = {'id': 'r', 'payload': {'prompt': 'same'}, 'parameters': {'request': {'prompt': 'same'}},
+               'plans': [{'prompt': 'same', 'source': 'immutable', 'annotated': 'immutable', 'state': 'running'}]}
+        before = private({'app_reference_operations': [row]}); after = copy.deepcopy(before)
+        latest = after['tables']['app_reference_operations']['rows'][0]
+        latest['payload']['cancelRequested'] = True
+        latest['parameters'].update(submissionState='sending', upstreamStarted=True, upstreamResult='saved',
+            qualityAudit={'executed': 'high'}, resultAssets=['new'], resultArtworkIds=['new'], resultMetadataWarnings=[],
+            resultAssetManifest={'entries': ['new']}, acceptedOutputs=1, preparation=False)
+        latest['plans'][0].update(state='done', startedAt=123, text='new result', error='')
+        self.assertTrue(m.compare_task_snapshots(before, after)['preservationVerified'])
+        latest['plans'][0]['source'] = 'changed'
+        self.assertFalse(m.compare_task_snapshots(before, after)['preservationVerified'])
+        latest['plans'][0]['source'] = 'immutable'; latest['parameters']['newUnknownField'] = 'must-be-audited'
+        self.assertFalse(m.compare_task_snapshots(before, after)['preservationVerified'])
+
+    def test_ordinary_settlement_reservation_deletion_still_requires_manual_conservation_review(self):
+        before = private({'app_gen_reservations': [{'job_id': 'j', 'cost': 5}],
+                          'app_billing_operations': [{'id': 'j', 'state': 'reserved', 'reserved_credits': 5}]})
+        after = copy.deepcopy(before); after['tables']['app_gen_reservations'].update(rows=[], selectedCount=0)
+        after['tables']['app_billing_operations']['rows'][0].update(state='settled', reserved_credits=0, charged_credits=5)
+        after['tables']['app_ledger'].update(rows=[{'id': 'led-image-j', 'delta': -5}], selectedCount=1)
+        self.assertFalse(m.compare_task_snapshots(before, after)['noMissingJobs'])
 
     def test_public_contains_only_hashes_counts_no_pii_or_original_ids(self):
         row = {'id': 'sensitive-job-id', 'email': 'person@example.test', 'payload': {'credential': 'secret-key-do-not-show'}, 'provider_id': 'private-provider', 'upstream_id': 'supplier-secret-id'}
@@ -111,6 +178,9 @@ class SnapshotTests(unittest.TestCase):
     def test_composite_keys_and_quoted_previous_ids_are_sql_literals(self):
         row = {'run_id': 'a', 'node_id': '中文-node'}
         self.assertEqual(m.row_key(row, 'composite:run_id,node_id'), '["a", "中文-node"]')
+        self.assertIsNone(m.row_key({'run_id': 'a'}, 'composite:run_id,node_id'))
+        invalid = private({'app_supplier_call_outputs': [{'call_id': 'a'}]})
+        self.assertEqual(m.summarize(invalid)['tables']['app_supplier_call_outputs']['status'], 'unknown-invalid-rows')
         data = private({'app_video_tasks': [{'id': "job'quoted"}]})
         self.assertIn("'job''quoted'", m.build_sql(previous=data).decode())
         self.assertIn("'[\"a\", \"中文-node\"]'", m.build_sql(previous=private({'app_video_workflow_run_nodes': [row]})).decode())
@@ -165,6 +235,47 @@ class PostgresFixture(unittest.TestCase):
             bounded = m.collect_task_snapshot(run, identity, schema=schema)
             self.assertEqual(bounded.public['tables']['app_video_tasks']['status'], 'unknown-byte-limit')
             self.assertEqual(bounded.private['tables']['app_video_tasks']['rows'], [])
+            proof = m.collect_task_snapshot(run, identity, schema=schema, projection='proof',
+                        allow_absent_tables=m.ADDITIVE_TABLES)
+            self.assertEqual(proof.public['tables']['app_video_tasks']['status'], 'observed')
+            self.assertTrue(all(row.get('_preservationProof') for row in proof.private['tables']['app_video_tasks']['rows']))
+            self.assertNotIn('parameters', proof.private['tables']['app_video_tasks']['rows'][0])
+            self.assertEqual(proof.public['tables']['app_release_activities']['status'], 'confirmed-absent-additive')
+            self.assertIsNone(proof.public['tables']['app_release_activities']['activeCount'])
+            self.assertFalse(proof.public['drainProven'])
+            again = m.collect_task_snapshot(run, identity, schema=schema, projection='proof', previous=proof,
+                        allow_absent_tables=m.ADDITIVE_TABLES)
+            self.assertTrue(m.compare_task_snapshots(proof,again)['noMissingJobs'])
+            self.assertNotIn('app_release_activities', m.compare_task_snapshots(proof,again)['unknownTables'])
+            with self.assertRaises(ValueError):
+                m.collect_task_snapshot(run, identity, schema=schema, allow_absent_tables=['app_video_tasks'])
+            # SQL and Python normalization must exclude exactly the same audited
+            # progress fields while retaining every unknown/new input field.
+            normalized_rows = [
+                {'id': 'x', 'email': 'owner', 'parameters': {'request': {'prompt': 'original'}, 'submissionState': 'sending', 'resultAssets': []}},
+                {'id': 'x', 'payload': {'prompt': 'original', 'cancelRequested': True}, 'plans': [{'prompt': 'original', 'state': 'done', 'text': 'result', 'source': 'frozen'}]},
+                {'id': 'x', 'parameters': None, 'plans': None, 'payload': None},
+                {'id': 'x', 'parameters': {'unknownNewField': 1}, 'plans': []},
+            ]
+            values = ','.join('(' + m.literal(json.dumps(row)) + '::jsonb)' for row in normalized_rows)
+            actual = [json.loads(line) for line in sql('SELECT (' + m.sql_frozen() + ') FROM (VALUES ' + values + ') q(j);').decode().splitlines()]
+            self.assertEqual(actual, [m.frozen(row) for row in normalized_rows])
+            sql(f"CREATE TABLE {schema}.app_image_jobs(id text PRIMARY KEY,payload jsonb,snapshot jsonb); INSERT INTO {schema}.app_image_jobs VALUES('image-pending','{{}}','{{\"status\":\"pending\",\"paidOperations\":{{\"paid-child-op\":{{\"model\":\"original\",\"gatewayIdentity\":\"original-binding\",\"state\":\"done\"}}}}}}'); CREATE TABLE {schema}.app_supplier_cost_jobs(key text PRIMARY KEY,state text,payload jsonb,account_id text); INSERT INTO {schema}.app_supplier_cost_jobs VALUES('router:native','queued','{{\"operation\":\"router-native\",\"context\":{{\"operationId\":\"router-context-op\"}}}}',NULL),('task:exact','queued','{{\"callId\":\"exact-call\"}}','account-original'); INSERT INTO {schema}.app_supplier_calls VALUES('paid-child-call','paid-child-op','account-original','paid-upstream','completed','reported'),('router-call','router-context-op','account-original','router-upstream','completed','reported'),('exact-call','exact-operation','account-original','exact-upstream','completed','reported'),('running-call','unlinked-operation','account-original','inflight','running','pending'),('future-state-call','unlinked-future','account-original','future-inflight','future-provider-state','pending');")
+            graph = m.collect_task_snapshot(run, identity, schema=schema, projection='proof', row_limit=5000, allow_absent_tables=m.ADDITIVE_TABLES)
+            selected = {row['id'] for row in graph.private['tables']['app_supplier_calls']['rows']}
+            self.assertTrue({'paid-child-call', 'router-call', 'exact-call', 'running-call', 'future-state-call'} <= selected)
+            self.assertNotIn('unrelated-call', selected)
+            sql(f"ALTER TABLE {schema}.app_supplier_call_outputs ADD COLUMN supplier_ref_hash text; UPDATE {schema}.app_supplier_call_outputs SET supplier_ref_hash='original-output' WHERE call_id='running-call'; INSERT INTO {schema}.app_supplier_call_outputs VALUES('running-call',0,'delivered','original-output'); CREATE TABLE {schema}.app_reference_operations(id text PRIMARY KEY,state text,owner text,body jsonb,plans jsonb); INSERT INTO {schema}.app_reference_operations VALUES('reference','accepted','original-owner','{{\"prompt\":\"original\"}}','[{{\"prompt\":\"original\",\"state\":\"running\",\"source\":\"immutable\"}}]'); CREATE TABLE {schema}.app_worker_tick_receipts(tick_id text PRIMARY KEY,phase text); INSERT INTO {schema}.app_worker_tick_receipts VALUES('tick-original','running'); UPDATE {schema}.app_video_tasks SET parameters='{{\"request\":{{\"prompt\":\"original\"}}}}' WHERE id='big-active';")
+            immutable = m.collect_task_snapshot(run, identity, schema=schema, projection='proof', row_limit=5000, allow_absent_tables=m.ADDITIVE_TABLES)
+            self.assertEqual(immutable.public['tables']['app_worker_tick_receipts']['status'], 'observed')
+            sql(f"UPDATE {schema}.app_reference_operations SET plans='[{{\"prompt\":\"original\",\"state\":\"done\",\"source\":\"immutable\",\"text\":\"result\"}}]'; UPDATE {schema}.app_video_tasks SET parameters=parameters || '{{\"submissionState\":\"sending\",\"resultAssets\":[]}}' WHERE id='big-active';")
+            progressed = m.collect_task_snapshot(run, identity, schema=schema, projection='proof', row_limit=5000, previous=immutable, allow_absent_tables=m.ADDITIVE_TABLES)
+            self.assertEqual(m.compare_task_snapshots(immutable, progressed)['violations'], [])
+            sql(f"UPDATE {schema}.app_reference_operations SET owner='changed-owner',plans='[{{\"prompt\":\"changed\",\"state\":\"done\",\"source\":\"immutable\"}}]'; UPDATE {schema}.app_video_tasks SET parameters=jsonb_set(parameters,'{{request,prompt}}','\"changed\"') WHERE id='big-active'; UPDATE {schema}.app_supplier_call_outputs SET supplier_ref_hash='changed-output' WHERE call_id='running-call';")
+            changed = m.collect_task_snapshot(run, identity, schema=schema, projection='proof', row_limit=5000, previous=immutable, allow_absent_tables=m.ADDITIVE_TABLES)
+            violations = m.compare_task_snapshots(immutable, changed)['violations']
+            self.assertTrue({'app_reference_operations', 'app_video_tasks'} <= {v['table'] for v in violations if v['reason'] == 'FROZEN_CONTEXT_CHANGED'})
+            self.assertIn('app_supplier_call_outputs', {v['table'] for v in violations if v['reason'] == 'ORIGINAL_SUPPLIER_BINDING_CHANGED'})
         finally:
             sql(f'DROP SCHEMA {schema} CASCADE;')
 

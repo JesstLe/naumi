@@ -44,7 +44,12 @@ SPECS = {
     'app_video_workflow_run_nodes': ('composite:run_id,node_id', "COALESCE(j->>'status','') NOT IN ('completed','failed','blocked','cancelled')"),
     'app_video_media_jobs': ('id', "COALESCE(j->>'status','') NOT IN ('completed','failed','cancelled')"),
     'app_billing_operations': ('id', "COALESCE(j->>'state','') NOT IN ('settled','released','failed')"),
-    'app_supplier_calls': ('id', "COALESCE(j->>'cost_status','') NOT IN ('reported','reconciled') OR COALESCE(j->>'state','') IN ('submitting','submitted','pending','unknown','processing','queued')"),
+    # Historical terminal calls with delayed cost accounting are not new model
+    # executions. Actual queued cost jobs below pull their exact original calls
+    # into the relation closure; do not pull all historic jobs through a price flag.
+    # adapters.ts passes external status through, so unknown/running/accepted
+    # states must remain active. Only source-audited terminal states are excluded.
+    'app_supplier_calls': ('id', "COALESCE(j->>'state','') NOT IN ('completed','failed','cancelled','canceled','rejected','response-received','stream-completed','succeeded','success','pre-submission-failed')"),
     'app_supplier_cost_jobs': ('key', "COALESCE(j->>'state','') <> 'done'"),
     'app_release_session_owners': ('composite:account_key,session_id,kind', "COALESCE(j->>'state','') <> 'idle'"),
     'app_release_activities': ('id', "COALESCE(j->>'state','') <> 'finished'"),
@@ -62,11 +67,52 @@ RELATED = {
     'app_ledger': ('id', 'id'),
 }
 KEYS = {**{name: spec[0] for name, spec in SPECS.items()}, **{name: spec[0] for name, spec in RELATED.items()}}
+ADDITIVE_TABLES = {'app_release_session_owners', 'app_release_activities', 'app_worker_tick_receipts',
+                   # Current release introduces/initializes these on 103; their
+                   # actual public catalog absence is retained, never drain=0.
+                   'app_reference_operations', 'app_video_media_jobs'}
+FROZEN_FIELDS = ['payload', 'provider_snapshot', 'capability_snapshot', 'billing_quote', 'quote', 'plan',
+                 'request', 'request_body', 'inputs', 'input_digest', 'plan_digest', 'fingerprint',
+                 'request_fingerprint', 'billing_request_fingerprint', 'frozen_nodes_enc', 'base_url',
+                 'credential_ref', 'protocol', 'procurement', 'fx', 'model_version', 'billing_version', 'matched_rule_id',
+                 'email', 'owner', 'user_email', 'wire_model', 'body', 'prompt', 'source_artwork_id',
+                 'video_references', 'source', 'source_id', 'idempotency_key', 'cost', 'size', 'seconds']
+# Audited mutations: video/cancellation.ts, video/result-assets.ts, db.ts canvas
+# checkpoint/completion, model-config/{apimart-preset,reverse-hub-images}.ts.
+# Unknown/new parameter fields stay frozen; do not use an open-ended allow-list.
+PARAMETER_PROGRESS_FIELDS = ['submissionState', 'upstreamStarted', 'upstreamResult', 'qualityAudit',
+                             'resultAssets', 'resultArtworkIds', 'resultMetadataWarnings',
+                             'resultAssetManifest', 'acceptedOutputs', 'preparation']
+# reference-workbench/service.ts writes exactly these execution/result fields.
+# source/annotated, request plan, quote, inputs and settings remain immutable.
+PLAN_PROGRESS_FIELDS = ['state', 'startedAt', 'text', 'error']
+PAYLOAD_PROGRESS_FIELDS = ['cancelRequested']  # imagegen/cancel.ts
+PROOF_FIELDS = ['id', 'tick_id', 'call_id', 'output_index', 'run_id', 'node_id', 'key', 'job_id', 'session_id', 'kind',
+                'account_key', 'phase', 'state', 'status', 'created_at', 'updated_at', 'started_at', 'completed_at',
+                'lease_until', 'lease_token', 'lease_id', 'billing_settled', 'reserved_cost', 'cost_status', 'delta',
+                'upstream_id', 'upstream_video_id', 'provider_id', 'channel_id', 'account_id', 'task_id',
+                'request_id', 'child_operation_id', 'operation_id', 'attempt_id', 'parent_call_id',
+                'billing_unit_id', 'public_model_id', 'model', 'actual_model', 'supplier_ref_hash']
+
+
+def sql_frozen():
+    fields = ','.join(literal(v) for v in FROZEN_FIELDS)
+    expression = f"COALESCE((SELECT jsonb_object_agg(k,v) FROM jsonb_each(j) e(k,v) WHERE k IN ({fields})),'{{}}'::jsonb)"
+    for field, excluded in [('payload', PAYLOAD_PROGRESS_FIELDS), ('parameters', PARAMETER_PROGRESS_FIELDS)]:
+        drop = 'ARRAY[' + ','.join(literal(v) for v in excluded) + ']::text[]'
+        value = f"CASE WHEN jsonb_typeof(j->{literal(field)})='object' THEN (j->{literal(field)}) - {drop} ELSE j->{literal(field)} END"
+        expression += f" || CASE WHEN j ? {literal(field)} THEN jsonb_build_object({literal(field)},{value}) ELSE '{{}}'::jsonb END"
+    drop = 'ARRAY[' + ','.join(literal(v) for v in PLAN_PROGRESS_FIELDS) + ']::text[]'
+    plans = f"CASE WHEN jsonb_typeof(j->'plans')='array' THEN COALESCE((SELECT jsonb_agg(CASE WHEN jsonb_typeof(v)='object' THEN v - {drop} ELSE v END ORDER BY ordinal) FROM jsonb_array_elements(j->'plans') WITH ORDINALITY e(v,ordinal)),'[]'::jsonb) ELSE j->'plans' END"
+    return expression + f" || CASE WHEN j ? 'plans' THEN jsonb_build_object('plans',{plans}) ELSE '{{}}'::jsonb END"
 
 
 def row_key(row, key):
     if key.startswith('composite:'):
-        return json.dumps([str(row[field]) if row.get(field) is not None else None for field in key[10:].split(',')], ensure_ascii=False)
+        fields = key[10:].split(',')
+        if any(row.get(field) is None for field in fields):
+            return None
+        return json.dumps([str(row[field]) for field in fields], ensure_ascii=False)
     return str(row[key]) if row.get(key) is not None else None
 
 
@@ -103,44 +149,59 @@ def selected_predicate(name, key, prior, roots=None):
         if name == 'app_image_jobs':
             selected += f" OR regexp_replace(j->>'id','^(imagegen-|gen-|suite-|aplus-)','') IN ({roots})"
         if name == 'app_ledger':
-            selected += f" OR EXISTS(SELECT 1 FROM ({roots}) q(value) WHERE j->>'id' IN ('led-image-'||q.value,'led-video-'||q.value,'led-media-'||q.value,q.value))"
+            # Hashable IN semi-join; correlated EXISTS re-evaluated row JSON for
+            # every root/prefix on production ledgers and exceeded the 5s cap.
+            selected += f" OR j->>'id' IN (SELECT prefix||value FROM ({roots}) q(value) CROSS JOIN (VALUES ('led-image-'),('led-canvas-image-'),('led-video-'),('led-media-'),('')) p(prefix))"
     if prior.get(name):
         selected += ' OR ' + sql_key(key) + ' IN (' + ','.join(literal(v) for v in prior[name]) + ')'
     return selected
 
 
-def build_sql(*, previous=None, schema='public', row_limit=1000):
+def build_sql(*, previous=None, schema='public', row_limit=1000, projection='full'):
     if not re.fullmatch('[a-z_][a-z0-9_]{0,62}', schema) or type(row_limit) is not int or not 1 <= row_limit <= 5000:
         raise ValueError('BOUNDED_SQL_SCOPE_REQUIRED')
+    if projection not in ['full', 'proof']:
+        raise ValueError('UNKNOWN_TASK_PROJECTION')
+    root_limit = min(40000, row_limit * 8)
     prior = tracked_ids(previous)
     if any(len(values) > 5000 or any(len(v) > 512 for v in values) for values in prior.values()):
         raise ValueError('TRACKED_IDS_EXCEEDED')
     lines = [r'\set ON_ERROR_STOP on', 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;',
              "SET LOCAL lock_timeout='1000ms'; SET LOCAL statement_timeout='5000ms'; SET LOCAL idle_in_transaction_session_timeout='5000ms';",
              "SELECT jsonb_build_object('kind','begin','database',current_database(),'observedAt',transaction_timestamp(),'readOnly',current_setting('transaction_read_only'),'isolation',current_setting('transaction_isolation'),'snapshot',txid_current_snapshot()::text);"]
-    # psql text variable consists only of audited SQL literals. It does not evaluate user/DB commands.
-    # Three bounded graph hops: active batch -> terminal child -> terminal call ->
-    # original account/output. Each CTE is referenced, never text-expanded recursively.
+    # Materialize only bounded IDs in psql memory. Every graph-table expansion
+    # is an independent <=5s SELECT in the SAME read-only consistent snapshot.
+    # This avoids planning/executing a four-level graph for each related column.
+    lines += ["\\set materialized_roots_values '[]'", "\\set materialized_roots_within_limit true"]
+    for index, name in enumerate(KEYS):
+        lines += [f"SELECT (to_regclass({literal(schema + '.' + name)}) IS NOT NULL) AS exists \\gset table_{index}_"]
     for depth in range(4):
-        unions = []
-        for name, (key, _) in SPECS.items():
-            roots = f'SELECT value FROM roots{depth - 1}' if depth else None
-            selected = selected_predicate(name, key, prior, roots)
-            union = f"SELECT value FROM {schema}.{name} t CROSS JOIN LATERAL (SELECT to_jsonb(t) j) x CROSS JOIN LATERAL jsonb_array_elements_text(jsonb_build_array({sql_key(key)},j->>'operation_id',j->>'upstream_id',j->>'task_id',j->>'run_id',j->>'ledger_id',j->>'batch_id',j->>'child_operation_id',j->>'account_id',j->>'parent_call_id',j#>>'{{payload,callId}}',regexp_replace(COALESCE(j->>'id',''),'^(imagegen-|gen-|suite-|aplus-)',''))) q(value) WHERE ({selected}) AND value IS NOT NULL AND value<>''"
-            unions.append('(' + literal(schema + '.' + name) + ',' + literal(union) + ')')
-        inherited = literal(f'SELECT value FROM roots{depth - 1} UNION ') + ' || ' if depth else ''
-        lines += ["SELECT " + inherited + "COALESCE(string_agg(part,' UNION '),'SELECT NULL::text WHERE false') AS query FROM (VALUES " + ','.join(unions) + f") v(name,part) WHERE to_regclass(name) IS NOT NULL \\gset roots{depth}_"]
-    ctes = " || ',' || ".join(literal(f'roots{n} AS (') + f" || :'roots{n}_query' || ')'" for n in range(4))
-    lines += ["SELECT 'WITH ' || " + ctes + " || ' SELECT value FROM roots3' AS query \\gset roots_"]
+        for index, (name, (key, _)) in enumerate(SPECS.items()):
+            selected = selected_predicate(name, key, prior, 'SELECT value FROM roots')
+            ids = f"{sql_key(key)},j->>'operation_id',j->>'upstream_id',j->>'task_id',j->>'run_id',j->>'ledger_id',j->>'batch_id',j->>'child_operation_id',j->>'account_id',j->>'parent_call_id',j#>>'{{payload,callId}}',j#>>'{{payload,operation}}',j#>>'{{payload,context,operationId}}',regexp_replace(COALESCE(j->>'id',''),'^(imagegen-|gen-|suite-|aplus-)','')"
+            paid_ids = "COALESCE((SELECT jsonb_agg(k) FROM jsonb_object_keys(CASE WHEN jsonb_typeof(j#>'{snapshot,paidOperations}')='object' THEN j#>'{snapshot,paidOperations}' ELSE '{}'::jsonb END) k),'[]'::jsonb)"
+            expansion = f"SELECT value FROM {schema}.{name} t CROSS JOIN LATERAL (SELECT to_jsonb(t) j) x CROSS JOIN LATERAL jsonb_array_elements_text(jsonb_build_array({ids}) || {paid_ids}) q(value) WHERE ({selected}) AND value IS NOT NULL AND value<>''"
+            lines += [f'\\if :table_{index}_exists', '\\if :materialized_roots_within_limit',
+                      f"WITH roots AS MATERIALIZED (SELECT jsonb_array_elements_text(:'materialized_roots_values'::jsonb) AS value), expanded AS MATERIALIZED ({expansion}), bounded_roots AS (SELECT value FROM roots UNION SELECT value FROM expanded LIMIT {root_limit + 1}) SELECT COALESCE(jsonb_agg(value ORDER BY value),'[]'::jsonb)::text AS values, count(*)<={root_limit} AS within_limit FROM bounded_roots \\gset materialized_roots_",
+                      '\\endif', '\\endif']
     for index, (name, key) in enumerate(KEYS.items()):
         reg = schema + '.' + name
         lines += [f"SELECT (to_regclass({literal(reg)}) IS NOT NULL) AS exists \\gset table_{index}_", f'\\if :table_{index}_exists']
         active = SPECS[name][1] if name in SPECS else 'false'
-        selected = selected_predicate(name, key, prior, ':roots_query')
+        selected = selected_predicate(name, key, prior, 'SELECT value FROM roots')
         leaf = "encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex')"
         summary = "(SELECT jsonb_build_object('count',count(*),'sumA',COALESCE(sum(('x'||substr(" + leaf + ",1,16))::bit(64)::bigint::numeric),0)::text,'sumB',COALESCE(sum(('x'||substr(" + leaf + ",17,16))::bit(64)::bigint::numeric),0)::text,'algorithm','sha256-leaf-two-64bit-sums') FROM " + reg + " t)" if name in ['app_ledger', 'app_billing_operations'] else 'null::jsonb'
-        within = "COALESCE((SELECT sum(octet_length(j::text)) FROM bounded),0)<=524288"
-        lines += [f"WITH selected AS (SELECT j FROM {reg} t CROSS JOIN LATERAL (SELECT to_jsonb(t) j) x WHERE {selected}), bounded AS (SELECT j FROM selected ORDER BY {sql_key(key)} LIMIT {row_limit + 1}) SELECT jsonb_build_object('kind','table','table',{literal(name)},'status',CASE WHEN {within} THEN 'observed' ELSE 'unknown-byte-limit' END,'selectedCount',(SELECT count(*) FROM selected),'activeCount',(SELECT count(*) FROM {reg} t CROSS JOIN LATERAL (SELECT to_jsonb(t) j) x WHERE {active}),'rows',CASE WHEN {within} THEN COALESCE((SELECT jsonb_agg(j) FROM bounded),'[]'::jsonb) ELSE '[]'::jsonb END,'allSummary',{summary});",
+        output_row = 'j'
+        if projection == 'proof':
+            # Full immutable originals stay in the readable database backup.
+            # This is bounded comparison evidence, not a restore/recovery payload.
+            fields = ','.join(literal(v) for v in PROOF_FIELDS)
+            frozen_part = sql_frozen()
+            output_row = f"COALESCE((SELECT jsonb_object_agg(k,v) FROM jsonb_each(j) e(k,v) WHERE k IN ({fields})),'{{}}'::jsonb) || jsonb_build_object('_preservationProof',true,'_frozenDigest',encode(sha256(convert_to(({frozen_part})::text,'UTF8')),'hex'),'snapshot',jsonb_build_object('status',j#>'{{snapshot,status}}','paidOperations',COALESCE((SELECT jsonb_object_agg(k,jsonb_build_object('model',v->'model','replayable',v->'replayable','gatewayIdentity',v->'gatewayIdentity')) FROM jsonb_each(CASE WHEN jsonb_typeof(j#>'{{snapshot,paidOperations}}')='object' THEN j#>'{{snapshot,paidOperations}}' ELSE '{{}}'::jsonb END) e(k,v)),'{{}}'::jsonb)))"
+            if name == 'app_ledger':
+                output_row += " || jsonb_build_object('_ledgerRowSha256',encode(sha256(convert_to(j::text,'UTF8')),'hex'))"
+        within = 'COALESCE((SELECT sum(octet_length(j::text)) FROM bounded),0)<=' + str(8*1024*1024 if projection == 'proof' else 524288)
+        lines += [f"WITH roots AS MATERIALIZED (SELECT jsonb_array_elements_text(:'materialized_roots_values'::jsonb) AS value), selected AS MATERIALIZED (SELECT {output_row} AS j FROM {reg} t CROSS JOIN LATERAL (SELECT to_jsonb(t) j) x WHERE {selected}), bounded AS (SELECT j FROM selected ORDER BY {sql_key(key)} LIMIT {row_limit + 1}) SELECT jsonb_build_object('kind','table','table',{literal(name)},'status',CASE WHEN NOT :'materialized_roots_within_limit'::boolean THEN 'unknown-root-limit' WHEN {within} THEN 'observed' ELSE 'unknown-byte-limit' END,'selectedCount',(SELECT count(*) FROM selected),'activeCount',(SELECT count(*) FROM {reg} t CROSS JOIN LATERAL (SELECT to_jsonb(t) j) x WHERE {active}),'rows',CASE WHEN {within} THEN COALESCE((SELECT jsonb_agg(j) FROM bounded),'[]'::jsonb) ELSE '[]'::jsonb END,'allSummary',{summary});",
                   '\\else', f"SELECT jsonb_build_object('kind','table','table',{literal(name)},'status','unknown-table-missing','rows','[]'::jsonb);", '\\endif']
     lines += ["SELECT jsonb_build_object('kind','end','database',current_database(),'readOnly',current_setting('transaction_read_only'),'snapshot',txid_current_snapshot()::text);", 'COMMIT;']
     return ('\n'.join(lines) + '\n').encode()
@@ -180,12 +241,12 @@ def summarize(private, *, row_limit=1000):
                         'supplierBindingsSha256': sha([supplier_bindings(row) for row in rows]) if valid else None}
     return {'schemaVersion': 1, 'kind': 'read-only-task-preservation-not-drain', 'databaseIdentitySha256': private.get('databaseIdentitySha256'),
             'observedAt': private.get('observedAt'), 'tables': tables, 'privateRowsSha256': sha(private),
-            'preservationComplete': bool(tables) and all(item['status'] == 'observed' for item in tables.values()),
+            'preservationComplete': bool(tables) and all(item['status'] in ['observed','confirmed-absent-additive'] for item in tables.values()),
             'drainProven': False, 'unknownRemainsUnknown': True}
 
 
 def supplier_bindings(row):
-    fields = ['upstream_id', 'upstream_video_id', 'provider_id', 'channel_id', 'account_id', 'task_id', 'request_id', 'child_operation_id', 'operation_id', 'attempt_id', 'parent_call_id', 'billing_unit_id', 'public_model_id', 'model', 'actual_model']
+    fields = ['upstream_id', 'upstream_video_id', 'provider_id', 'channel_id', 'account_id', 'task_id', 'request_id', 'child_operation_id', 'operation_id', 'attempt_id', 'parent_call_id', 'billing_unit_id', 'public_model_id', 'model', 'actual_model', 'supplier_ref_hash']
     values = {key: row[key] for key in fields if row.get(key) not in [None, '']}
     snapshot = row.get('snapshot') or {}
     if isinstance(snapshot, dict):
@@ -196,14 +257,23 @@ def supplier_bindings(row):
 
 
 def frozen(row):
-    result = {key: row[key] for key in ['payload', 'provider_snapshot', 'capability_snapshot', 'billing_quote', 'quote', 'plan', 'request', 'request_body', 'inputs', 'input_digest', 'plan_digest', 'fingerprint', 'request_fingerprint', 'billing_request_fingerprint', 'frozen_nodes_enc', 'base_url', 'credential_ref', 'protocol', 'procurement', 'fx', 'model_version', 'billing_version', 'matched_rule_id'] if key in row}
-    parameters = row.get('parameters')
-    if isinstance(parameters, dict):
-        result['parameters'] = {key: parameters[key] for key in ['modelExecutions', 'byocSnapshot', 'submissionVersion', 'frozenStage'] if key in parameters}
+    if row.get('_preservationProof') is True:
+        return {'_frozenDigest': row.get('_frozenDigest')}
+    result = {key: row[key] for key in FROZEN_FIELDS if key in row}
+    for field, excluded in [('payload', PAYLOAD_PROGRESS_FIELDS), ('parameters', PARAMETER_PROGRESS_FIELDS)]:
+        if field in row:
+            value = row[field]
+            result[field] = {key: part for key, part in value.items() if key not in excluded} if isinstance(value, dict) else value
+    if 'plans' in row:
+        plans = row['plans']
+        result['plans'] = [{key: value for key, value in plan.items() if key not in PLAN_PROGRESS_FIELDS} if isinstance(plan, dict) else plan
+                           for plan in plans] if isinstance(plans, list) else plans
     return result
 
 
-def collect_task_snapshot(command, db_identity, private_save=None, *, previous=None, schema='public', expected_database=None, row_limit=1000):
+def collect_task_snapshot(command, db_identity, private_save=None, *, previous=None, schema='public', expected_database=None, row_limit=1000, projection='full', allow_absent_tables=()):
+    if set(allow_absent_tables) - ADDITIVE_TABLES:
+        raise ValueError('ONLY_SOURCE_AUDITED_NEW_RELEASE_TABLES_MAY_BE_ABSENT')
     if not isinstance(db_identity, dict) or not re.fullmatch('[a-f0-9]{64}', db_identity.get('id', '')):
         raise ValueError('FIXED_DATABASE_IDENTITY_REQUIRED')
     raw_inspect = run_bytes(command, ['docker', 'inspect', db_identity['id']])
@@ -218,7 +288,7 @@ def collect_task_snapshot(command, db_identity, private_save=None, *, previous=N
             raise ValueError()
     except (ValueError, KeyError, TypeError):
         raise ValueError('DATABASE_IDENTITY_UNVERIFIED') from None
-    sql = build_sql(previous=previous, schema=schema, row_limit=row_limit)
+    sql = build_sql(previous=previous, schema=schema, row_limit=row_limit, projection=projection)
     args = ['docker', 'exec', '-i', db_identity['id'], 'psql', '-X', '-qAt', '--no-password', '-v', 'ON_ERROR_STOP=1', '-U', user, '-d', database]
     raw = run_bytes(command, args, stdin=sql, timeout=120)
     try:
@@ -229,6 +299,10 @@ def collect_task_snapshot(command, db_identity, private_save=None, *, previous=N
         tables = {item['table']: item for item in lines[1:-1] if item.get('kind') == 'table'}
         if set(tables) != set(KEYS) or len(lines) != len(KEYS) + 2:
             raise ValueError()
+        for name in allow_absent_tables:
+            if tables[name].get('status') == 'unknown-table-missing':
+                tables[name].update(status='confirmed-absent-additive', rows=[], selectedCount=0, activeCount=None,
+                                    absenceEvidence='to_regclass-null-in-repeatable-read-transaction')
     except (ValueError, KeyError, TypeError, IndexError):
         raise ValueError('TASK_SNAPSHOT_TRANSACTION_UNVERIFIED') from None
     # Re-pin DB container after transaction; no observations from a replacement DB are mixed.
@@ -240,7 +314,8 @@ def collect_task_snapshot(command, db_identity, private_save=None, *, previous=N
     if not unchanged:
         raise ValueError('DATABASE_BASELINE_CHANGED')
     private = {'kind': 'task-preservation-private-v1', 'databaseIdentitySha256': sha({'container': db_identity, 'database': database, 'schema': schema}),
-               'observedAt': first.get('observedAt'), 'snapshot': first.get('snapshot'), 'rowLimit': row_limit, 'tables': tables}
+               'observedAt': first.get('observedAt'), 'snapshot': first.get('snapshot'), 'rowLimit': row_limit,
+               'rowProjection': projection, 'tables': tables}
     public = summarize(private, row_limit=row_limit)
     public['sqlSha256'], public['originalOutputSha256'] = sha(sql), sha(raw)
     if private_save:
@@ -260,8 +335,15 @@ def compare_task_snapshots(before, after):
     violations, unknown, additions, completions = [], [], 0, 0
     if before.get('databaseIdentitySha256') != after.get('databaseIdentitySha256'):
         violations.append({'reason': 'DATABASE_IDENTITY_CHANGED'})
+    if before.get('rowProjection', 'full') != after.get('rowProjection', 'full'):
+        violations.append({'reason': 'ROW_PROJECTION_CHANGED'})
     for name, key in KEYS.items():
         old, new = before.get('tables', {}).get(name, {}), after.get('tables', {}).get(name, {})
+        if old.get('status') == 'confirmed-absent-additive' and name in ADDITIVE_TABLES and (
+                summaries[1]['tables'][name]['status'] == 'observed' and new.get('selectedCount') == len(new.get('rows', [])) or
+                new.get('status') == 'confirmed-absent-additive' and new.get('selectedCount') == 0 and new.get('rows') == []):
+            additions += len(new.get('rows', []))
+            continue
         if any(summary['tables'][name]['status'] != 'observed' for summary in summaries) or old.get('selectedCount') != len(old.get('rows', [])) or new.get('selectedCount') != len(new.get('rows', [])):
             unknown.append(name)
             continue
