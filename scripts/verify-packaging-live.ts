@@ -41,7 +41,7 @@ async function main() {
     await writeFile(dir + "/agent-strategy.md", complete.reply);
     assert.ok(complete.reply.includes("推荐")); assert.ok(complete.reply.includes("风险")); assert.ok(/SKU|口味|产品线/.test(complete.reply));
     const session = await db.getAgentSession(email, sessionId);
-    assert.ok((session?.messages || []).some((message: any) => message.role === "assistant" && message.content?.includes("推荐")));
+    assert.ok((Array.isArray(session?.messages) ? session.messages : []).some((message: any) => message.role === "assistant" && message.content?.includes("推荐")));
     const steps = session?.steps as any[] || [];
     assert.ok(steps.some(step => step.type === "image_skill" && step.id === skill.id));
     const {resolveImageSkill} = await import("../src/lib/image-skills/server");

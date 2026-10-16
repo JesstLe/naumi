@@ -41,7 +41,8 @@ export function classifyAgentFailure(error: unknown): AgentFailure {
   return { code: "UNKNOWN", message: "任务执行失败", recoverable: false, action: "保留当前轨迹并联系管理员排查" };
 }
 
-export function buildTaskPlan(message: string): string[] {
+export function buildTaskPlan(message: string, textStrategy = false): string[] {
+  if (textStrategy) return ["核对简报事实与待确认项", "制定信息层级与差异化创意方向", "交付推荐策略、产品线规则与验证动作"];
   const text = message.toLowerCase();
   const plan = ["确认任务要求、商品图和积分条件"];
   if (/模板|参考/.test(text)) plan.push("检索适合的站内模板或参考作品");
