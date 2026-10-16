@@ -77,3 +77,28 @@
 5. Worker/Agent/App后台工作归属/幂等/已接受任务保存单独闭合。正式发布的备份/数据保护/原配置/R2/MIME/TLS/安全边界必须记录。
 
 当前完成状态：**103实时只读盘点完成，离线适配依据完成；103本轮上线未执行，统一发布执行器尚需103专用实现/验收。**
+
+## 实际旧静态文件已保留（仅本地，未切流）
+- 顺序读取20个Nginx引用的非Fleet固定Web容器 `.next/static`，并读取真实磁盘static root；每个容器归档前后CID/image/startedAt/running完全一致，完整Nginx SHA亦保持不变。没有远程写入、启停、Node进程或并发复制。
+- 私有本地目录 `E:/Workspace/naumi/output/release103-evening-20261016/legacy-assets` 保存21份原tar.gz、解包字节、逐文件hash、21源manifest、3份精确原配置；Fleet完全排除。
+- 真实7637个源文件按实际assetPrefix归并为2684个公共URL、39473610字节、冲突0：普通1028、desktop670、enterprise986。未把不同prefix混成普通静态目录。
+- `release103_assets.py`重新验证归档SHA、固定身份和逐文件SHA，拒绝链接、越界、非规范URL及同URL异字节；新目录原子materialize，不覆盖原始capture。
+- 集中命令 `NAUMI103_ASSET_ROOT=<legacy-assets> python scripts/ops/test_release103_assets.py -v`：5 tests PASS，包含完整真实capture；CLI literal result `HK_STATIC_UNION=PASS SOURCES=20+DISK1 URLS=2684 CONFLICTS=0 FLEET=EXCLUDED PROTOCOL=NOT_VERIFIED`，exit0。
+- 实际union为 `E:/Workspace/naumi/output/release103-evening-20261016/legacy-static-union`；三命名空间文件与manifest已重新核验。仅静态字节保留，不等于103真实Next/RSC、登录、DB或本轮发布验收。
+- 下一模块：103独立离线gateway/maintenance/rollback，保留Fleet和TLS/安全规则，并将Naumi API归并到主Web、desktop/enterprise仅保留各自编译UI。服务器仍未改变。
+
+## 103独立gateway / maintenance / rollback离线模块
+- 新增 `scripts/ops/release103_gateway.py`，仅离线参数化main/desktop/enterprise三个不同回环origin，不调用47固定renderer，不连接或修改服务器；13110/13111/13112只用于本地fixture，现场端口由持锁主控另定。
+- 完整现场dump SHA以及3份真实磁盘文件SHA均固定；65个已知location全量分类，任何未知/遗漏/改动均拒绝。夜间基线刷新后必须重新采集、审阅、重新生成，不允许旧hash override。
+- 保留Fleet13062全部9个location原字节；保留既有3个worker/隐藏文件deny原字节；HTTP/TLS、证书路径、域名、body limit等location外指令保持。普通/desktop/enterprise分别转其编译UI，`/team`兼容页仍转enterprise UI；全部Naumi API归main，既有desktop suffix剥离与不剥离语义逐路由保留。
+- enterprise增加 `/enterprise/api`和`/enterprise/api/`到main `/api`/`/api/`的明确别名，并新增该前缀worker deny；没有redirect丢弃enterprise UI路径。除Fleet原块以外，Naumi代理使用真实remote_addr覆盖XFF并清空CF-Connecting-IP；修复原desktop/_next没有覆盖XFF导致客户端传入头直通的问题。
+- 仅删除17个已知named静态fallback块及其error_page引用；三个`/_next/static/`、`/desktop/_next/static/`、`/enterprise/_next/static/`独立readonly alias指向保留union。非static Next路径仍转正确编译UI，不将旧RSC线协议当静态文件。
+- maintenance配置保持Fleet、三静态namespace和deny，其余Naumi请求明确503/Retry-After60/no-store；只对应用户本次短维护例外，不改变以后蓝绿约定。
+- 输出candidate/maintenance各自完整before/after、3文件CAS报告、MODIFIED_FILE、DIFF_FILE.patch、VERIFICATION.txt、可执行ROLLBACK.sh；脚本只在**另一个本地复制树**先全量CAS再恢复原字节，没有nginx reload。现场`sites-enabled/default`实际指向`sites-available/default`，报告保存realPath；正式执行器须保留软链并核对realPath，不能用fixture tree脚本直接替换现场。
+- 集中离线6 tests通过：65类/三UI/mainAPI、maintenance、未知基线拒绝、origin/Fleet/namespace/conflict拒绝、exact原始文件预检、3文件hash与复制rollback及并发改动CAS拒绝。
+- 真实本机Linux Nginx fixture采用实际103配置（仅本机worker_processes=1、www-data user和自签SAN证书适配），Nginx128MiB/.5CPU、Python fixture128MiB/.5CPU，固定label，退出只删除本fixture容器。原65类包括17named链逐条test-only内部跳转，candidate三UI/API/TLS/XFF防伪、candidate+maintenance各2684实际HTTP文件SHA、真实bash复制rollback及恢复65类行为均已通过首轮；最终证据路径见下文。
+- 模拟backend只证明真实Nginx路由与静态字节，**不等于最终三Next镜像、DB、真实权限或私有R2验收**。最终固定三镜像的新static还必须按各自prefix加入union再生成现场bundle。服务器liveWrites=0。
+- 最终集中回归exit0：`python scripts/ops/test_release103_gateway.py -v` 6/6；`NAUMI103_GATEWAY_OUTPUT=output/release103-gateway-real-nginx-20261016-final python scripts/ops/test_release103_gateway_nginx.py`全通过。TLS fixture使用103/naumi.top/127.0.0.1 SAN并启用本地CA证书校验，不仅关闭TLS验证。
+- 最终literal结果：`BASELINE=PASS REAL_LINUX_NGINX=YES ORIGINAL_ROUTE_CLASSES=65 FLEET=13062 TLS=YES`；`MODIFIED=PASS REAL_LINUX_NGINX=YES ORIGINAL_CLASSES_ACCOUNTED=65 RETIRED_STATIC=17 FLEET_EXACT=9 UI_ORIGINS=3 API_MAIN=YES STATIC_HASHES=2684 TLS_AND_SPOOF_HEADERS=PASS`；`MAINTENANCE=PASS NAUMI=503 FLEET=13062 STATIC_HASHES=2684 DENIES=PRESERVED`；`ROLLBACK=PASS ORIGINAL_SOURCE_FILES=3 ORIGINAL_ROUTE_CLASSES=65 ORIGINAL_UI_PORT=13039 CANDIDATE_ARTIFACT=UNCHANGED`，exit0。
+- 实际bash rollback输入另一份candidate树，literal `ROLLBACK=PASS EXACT_SOURCE_FILES=3 ORIGINAL_BYTES=RESTORED RELOAD=NOT_EXECUTED`、exit0；随后真实Nginx reload原配置并恢复原65类和/api/version→13039。candidate/maintenance产物仍保持改动。
+- 最终本地完整产物：`C:/Users/13357/.codex/worktrees/release103-evening-readonly-20261016/naumi/output/release103-gateway-real-nginx-20261016-final/`，含results.json、candidate和maintenance各自四件及完整3文件before/after。8件已全部重新读取，两个fixture容器已按label核验删除，无遗留本fixture容器。配置中`/fixture/union`与13110/11/12仅fixture输入，不可直接现场安装。
