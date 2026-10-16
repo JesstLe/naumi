@@ -19,6 +19,7 @@ import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCa
 import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
 import { createProjectRootResolver } from "@/lib/canvas/project-roots";
 import { knownCanvasNodeMeasurement } from "@/lib/canvas/node-measurement";
+import { canvasFocusViewport } from "@/lib/canvas/upload-visibility";
 import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
@@ -1664,6 +1665,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     null
   );
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [flowReady, setFlowReady] = useState(0);
   const rfRef = useRef<ReactFlowInstance | null>(null);
   const canvasAreaRef = useRef<HTMLDivElement | null>(null);
   // 视口变换(平移/缩放),用于把生成器面板停靠到选中节点正下方并跟随
@@ -1744,9 +1746,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const importScopeRef = useRef<{
     rootId: string | null;
     queue: Promise<void>;
-    positions: { x: number; y: number }[];
     rects: { x: number; y: number; width: number; height: number; owner: number; index: number }[];
-  }>({ rootId: null, queue: Promise.resolve(), positions: [], rects: [] });
+  }>({ rootId: null, queue: Promise.resolve(), rects: [] });
   const importSeqRef = useRef(0);
   const dragDepthRef = useRef(0);
   const [fileDragOver, setFileDragOver] = useState(false);
@@ -1767,10 +1768,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     errors: { name: string; message: string }[];
     phase: "optimizing" | "uploading" | "done";
     originalBytes: number; uploadBytes: number; uploadedBytes: number;
+    nodeIds?: string[];
   }[]>([]);
 
   function resetImportScope() {
-    importScopeRef.current = { rootId: null, queue: Promise.resolve(), positions: [], rects: [] };
+    importScopeRef.current = { rootId: null, queue: Promise.resolve(), rects: [] };
     uploadCtxRef.current = null;
     dragDepthRef.current = 0;
     setFileDragOver(false);
@@ -6672,20 +6674,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const canvasGroupId = valid.length > 1
       ? `canvas-import-${Date.now()}-${id}`
       : null;
-    const occupied = [...rfNodes.map(node => node.position), ...scope.positions];
     const columns = Math.min(4, Math.ceil(Math.sqrt(valid.length)));
-    const entries = valid.map((file, i) => {
-      const pos = {
-        x: Math.round(ctx.x + (i % columns) * (NODE_W + X_GAP)),
-        y: Math.round(ctx.y + Math.floor(i / columns) * (NODE_H + Y_GAP)),
-      };
-      while (occupied.some(p => Math.abs(p.x - pos.x) < NODE_W + 24 && Math.abs(p.y - pos.y) < NODE_H + 24)) {
-        pos.y += NODE_H + Y_GAP;
-      }
-      occupied.push(pos);
-      scope.positions.push(pos); // Reserve immediately, including batches still in the queue.
-      return { file, pos };
-    });
+    const entries = valid.map(file => ({ file, pos: { x: ctx.x, y: ctx.y } }));
     setImageImports(current => [...current.filter(batch => !batch.finished || batch.errors.length > 0), {
       id, total: picked.length, done: failures.length, success: 0, errors: failures, finished: false,
       phase: "optimizing", originalBytes: valid.reduce((sum, file) => sum + file.size, 0),
@@ -6718,23 +6708,21 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       batchHeight = Math.max(0, batchHeight - Y_GAP);
       const firstCanvasSize = preparedCanvasSizes[0] ?? { width: NODE_W, height: NODE_H - NODE_LABEL_H };
       const baseX = ctx.x + NODE_W / 2 - firstCanvasSize.width / 2;
-      let baseY = ctx.y + NODE_H / 2 - (firstCanvasSize.height + NODE_LABEL_H) / 2;
+      const baseY = ctx.y + NODE_H / 2 - (firstCanvasSize.height + NODE_LABEL_H) / 2;
       const existingRects = [
-        ...rfNodes.map((node) => {
+        ...(importScopeRef.current === scope ? rfRef.current?.getNodes() ?? rfNodes : rfNodes).map((node) => {
           const size = flowNodeSize(node);
           return { x: node.position.x, y: node.position.y, width: size.width, height: size.height };
         }),
         ...scope.rects,
       ];
-      while (existingRects.some((rect) =>
-        baseX < rect.x + rect.width + 24 && baseX + batchWidth + 24 > rect.x &&
-        baseY < rect.y + rect.height + 24 && baseY + batchHeight + 24 > rect.y
-      )) {
-        baseY = Math.max(...existingRects.map((rect) => rect.y + rect.height + Y_GAP));
-      }
+      // Allocate only the new batch near the requested point. A distant node must
+      // never push an upload to the bottom of the entire project.
+      const nearby = placeGenerationPreview({ x: baseX, y: baseY },
+        { width: batchWidth, height: batchHeight }, existingRects);
       entries.forEach((entry, index) => {
-        entry.pos.x = Math.round(baseX + relative[index].x);
-        entry.pos.y = Math.round(baseY + relative[index].y);
+        entry.pos.x = Math.round(nearby.x + relative[index].x);
+        entry.pos.y = Math.round(nearby.y + relative[index].y);
       });
       const batchRects = entries.map((entry, index) => ({
         x: entry.pos.x,
@@ -6807,7 +6795,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if (importScopeRef.current === scope) pushAddUndoMany(added, fresh);
       }
       setImageImports(current => current.map(batch => batch.id === id ? {
-        ...batch, finished: true, phase: "done", uploadedBytes: batch.uploadBytes,
+        ...batch, finished: true, phase: "done", uploadedBytes: batch.uploadBytes, nodeIds: added,
       } : batch));
     };
     // Batches stay ordered; after root creation, each batch uses up to four uploads.
@@ -6816,9 +6804,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         ...batch, finished: true,
         errors: [...batch.errors, { name: t("canvas.importSync"), message: t("canvas.importSyncFailed") }],
       } : batch));
-    }).finally(() => {
-      const reserved = new Set(entries.map(entry => entry.pos));
-      scope.positions = scope.positions.filter(pos => !reserved.has(pos));
     });
   }
   // 在画布某屏幕点(相对画布区)上传图片:落在当前项目、该点的画布坐标
@@ -8037,18 +8022,30 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return true;
   }
 
-  // 生成完成后自动平移聚焦到新节点
+  // Explicit node focus / deep links move the view, never the nodes.
+  // fitView queues until *all* nodes initialize; a large virtualized project can
+  // leave that queue pending. Focus a known node directly, independent of offscreen DOM.
   useEffect(() => {
-    if (!focusId || !rfRef.current) return;
-    if (!rfNodes.some((node) => node.id === focusId)) return;
-    rfRef.current.fitView({
-      nodes: [{ id: focusId }],
-      duration: 600,
-      maxZoom: 1.2,
-      padding: 0.6,
+    if (!focusId || !flowReady) return;
+    const node = rfNodes.find(item => item.id === focusId);
+    if (!node) return;
+    let cancelled = false;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        if (cancelled) return;
+        const instance = rfRef.current;
+        if (!instance) return;
+        const live = instance.getNode(focusId) ?? node;
+        const size = flowNodeSize(live);
+        const target = canvasFocusViewport({ ...live.position, ...size }, canvasSize, overlaySafeArea, CANVAS_MIN_ZOOM);
+        if (!target) return;
+        void instance.setViewport(target, { duration: 280 }).then(ok => {
+          if (ok && !cancelled) setFocusId(current => current === focusId ? null : current);
+        });
+      });
     });
-    setFocusId(null);
-  }, [focusId, rfNodes]);
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [focusId, flowReady, rfNodes, canvasSize, overlaySafeArea]);
 
   // 画布全局快捷键只在画布本体接管。弹窗、遮罩、确认框、侧边编辑器或菜单
   // 打开时必须完全让出键盘，避免用户在账户/帮助等上层界面操作时误删底层节点。
@@ -8977,6 +8974,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               edgeTypes={edgeTypes}
               onInit={(inst) => {
                 rfRef.current = inst;
+                setFlowReady(value => value + 1);
                 viewportRef.current = inst.getViewport();
                 setViewport(viewportRef.current);
               }}
@@ -9803,6 +9801,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         <span>{batch.uploadBytes < batch.originalBytes ? `${bytesLabel(batch.originalBytes)} → ${bytesLabel(batch.uploadBytes)}` : bytesLabel(batch.uploadBytes)}</span>
                       </div>
                     </div>
+                  )}
+                  {batch.finished && batch.nodeIds?.some(id => active?.members.some(member => member.id === id)) && (
+                    <button type="button" data-testid="canvas-import-locate" className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50"
+                      onClick={() => {
+                        const id = batch.nodeIds?.find(id => active?.members.some(member => member.id === id));
+                        if (id) { setSelectedId(null); setSelectedTextId(null); setSelectedPendId(null); setFocusId(id); }
+                      }}>
+                      <ScanSearch className="h-3.5 w-3.5" />{locale === "en" ? "View image" : "查看图片"}
+                    </button>
                   )}
                   {batch.errors.length > 0 && (
                     <ul className="mt-2 space-y-1 text-xs text-red-600">
