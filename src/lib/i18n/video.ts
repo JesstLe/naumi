@@ -1,5 +1,6 @@
 /** Canvas video UI; user prompts, workflow JSON and model labels are never translated. */
 export const videoEn:Record<string,string>={
+  "已保存":"Saved",
   "视频模型加载中…":"Loading video models…","视频模型加载失败":"Video models unavailable","重试视频模型":"Retry video models",
   "视频节点设置":"Video node settings","关闭视频节点设置":"Close video settings","视频节点":"Video node","节点名称":"Node name","视频节点名称":"Video node name","关闭":"Close","保存设置":"Save settings","保存中…":"Saving…","生成视频":"Generate video","报价中…":"Loading quote…","积分":"credits","上限":"Limit",
   "视频执行入口":"Video execution","托管视频模型":"Managed video model","自备 ComfyUI · 0 积分":"BYOC ComfyUI · 0 credits","自备视频工作流":"BYOC video workflow","选择工作流":"Select workflow","刷新自备工作流":"Refresh workflows","视频描述":"Video prompt","编译预览":"Compiled prompt","引用素材":"References","上传图片 / 视频 / 音频":"Upload image / video / audio","上传视频参考素材":"Upload video references","加载更多历史素材":"Load more assets","自定义输出":"Custom output",
