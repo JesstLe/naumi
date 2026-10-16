@@ -98,3 +98,11 @@
 - 香港896同真实进程再做**仅2并发**HTTP process POST：相同owner/source、不同operationId，两个start发生在任一response之前；两响应均200/2048，峰692.93MiB、OOMKilled=false、cgroup events全0。100ms资源采样和HTTP/DB/解码证据保留。此结果不外推3/4并发或40MP极限；896仍是本次最低经过代表性大图实测的档位，不降cap，不用合成shell峰替代大图容量。
 - 证据分别`E:/Workspace/naumi-release47-app-drain-20261016/output/optional-profile-0614-512`与`optional-profile-0614-896`，原失败证据保留，task-owned fixture清理另记负责人回执。产品source0614不变；只增测试/docs，不重构镜像。
 - ops exact安装包`E:/Workspace/naumi/output/release47-evening-20261016/final-ops-0614-exact/RELEASE_OPS_FIXED.tar.gz`，125828bytes/SHA`c99d67160405ad25ef324bca7ee87dcdbe8030f27cb544ccd11049509b3e0b09`；保留15members真实验证源字节（含原CRLF的snapshot f34be35b），Linux导入/CLIhelp exit0。无-exact目录仅归一化旧证据，不作安装源。legacy bounded audit6tests通过，但真实collector/任何旧槽退役与RAM回收尚未验收，完整Next有Agent入口不能凭历史UI描述解锁。
+
+
+## 最新覆盖：用户要求立即香港发布（2026-10-16 16:41起）
+- 用户明确“现在就上线香港”，随后Continue。103立即独立执行，不等待18:30，也不要求47前序回执；47仍留原18:30窗口。即时HK-only授权模块bc39ae9只限本日/103/精确两ack/notBefore08:41Z，不改RAM/任务保护。
+- 调度器MCP目前返回Transport send error，更新同一预约范围未获确认；18:30必须先读本段与香港当前canonical/实际结果，不得重复香港发布或重放原UUID。原用户最新指令覆盖旧预约文字。
+- 本机TUN同时导致两SSH及47 HTTPS banner/EOF；没有改用户代理/路由。绑定单连接物理网卡后103 pinned hostkey+DPAPI直连成功，47无需中继。实时103machine/nginx与原baseline相等、canonical无，MemAvailable1072/SwapFree0，完整数据保持。
+- root已建立**同一process持HK两锁**的即时控制器，私有现场证据路径`/opt/naumi-staging/evidence/hk-immediate-20261016-0614`。固定镜像/静态/回退包开始逐文件hash上传；尚未切入口、停止/暂停业务容器或启动新任务。暂时无法满足内存预检，正在核实六历史UI实际内存Agent/当前连接，而非强停腾空间。
+- 本机操作材料`E:/Workspace/naumi/output/release103-evening-20261016/immediate-20261016`，RPC日志private，控制secret/原数据不可输出。启动前长SSH exec命令被远端reset，未建立事务；随后使用受保护bootstrap文件单命令运行成功。未知先原目录核实，不另起并行发布。
