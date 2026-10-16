@@ -38,7 +38,7 @@ def app_status(tx, identity):
     row = tx.pin(identity)
     env = environment(row)
     require(env.get('NAUMI_RELEASE_RUNTIME') == '1', 'LEGACY_APP_CONTROL_UNKNOWN')
-    status = json.loads(tx.run(['docker', 'exec', identity['id'], 'node', '--input-type=module',
+    status = json.loads(tx.run(['docker', 'exec', '-e', 'NODE_OPTIONS=', identity['id'], 'node', '--input-type=module',
                               '-e', APP_REMOTE, 'null']))
     got = status.get('identity', {})
     require(status.get('schemaVersion') == 1 and got.get('instanceId') == env.get('NAUMI_INSTANCE_ID') and
@@ -76,7 +76,7 @@ def control_app(tx, identity, action, operation_id):
         record = {'binding': binding, 'request': request, 'phase': 'INTENT_RECORDED'}
         _atomic_private(path, record)
     try:
-        receipt = json.loads(tx.run(['docker', 'exec', identity['id'], 'node', '--input-type=module',
+        receipt = json.loads(tx.run(['docker', 'exec', '-e', 'NODE_OPTIONS=', identity['id'], 'node', '--input-type=module',
                                     '-e', APP_REMOTE, json.dumps(request, sort_keys=True, separators=(',', ':'))]))
         require(receipt.get('operationId') == operation_id and
                 receipt.get('identity', {}).get('bootId') == request['bootId'] and

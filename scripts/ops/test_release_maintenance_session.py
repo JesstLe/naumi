@@ -248,6 +248,14 @@ class SessionTests(unittest.TestCase):
             for method in ['POST','PATCH','DELETE','HEAD']:
                 with self.assertRaises(m.Hold):m.check_path('skills',path,method)
 
+    def test_private_media_actual_prefix_is_get_only_and_not_arbitrary_api(self):
+        for path in ['/media/fixture.png','/media/private/fixture.png?token=fixture','/api/media/fixture']:
+            m.check_path('private-media',path)
+            for method in ['POST','PATCH','DELETE']:
+                with self.assertRaises(m.Hold):m.check_path('private-media',path,method)
+        for path in ['/media','/media-other/a','/api/media-other/a','/api/generate-image','https://external.test/media/a']:
+            with self.assertRaises(m.Hold):m.check_path('private-media',path)
+
     def test_resume_response_loss_keeps_original_suboperation_and_never_reopens_apps_twice(self):
         self.to_candidates();self.step('acceptance');self.step('preservation');self.adapter.lost='resume'
         request={'action':'activate','operationId':str(uuid.uuid4()),'expectedRevision':self.session.state['revision']}

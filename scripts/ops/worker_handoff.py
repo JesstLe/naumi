@@ -56,7 +56,7 @@ def inspect_identity(args, command):
 
 
 def remote(command, container, request=None):
-    raw = command(['docker', 'exec', container, 'node', '--input-type=module', '-e', REMOTE,
+    raw = command(['docker', 'exec', '-e', 'NODE_OPTIONS=', container, 'node', '--input-type=module', '-e', REMOTE,
                    canonical(request)])
     return json.loads(raw)
 

@@ -37,6 +37,7 @@ class WorkerHandoff(unittest.TestCase):
                 'Config': {'Env': ['SOURCE_COMMIT='+'b'*40, 'NAUMI_APP_ORIGIN=http://web:3000',
                     'NAUMI_WORKER_RELEASE_CONTROL=1', 'NAUMI_INSTANCE_ID=worker-instance',
                     'INTERNAL_APP_ORIGIN=http://127.0.0.1:3000']}}])
+        self.assertEqual(cmd[2:4], ['-e', 'NODE_OPTIONS='])
         request = json.loads(cmd[-1])
         if request is None:
             return json.dumps(self.status)

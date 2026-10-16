@@ -42,11 +42,11 @@ def check_path(name, path, method='GET'):
     require(not parsed.scheme and not parsed.netloc and path.startswith('/') and '\r' not in path and '\n' not in path,
             'CANDIDATE_RELATIVE_URL_REQUIRED')
     routes = {'login': ('/api/auth/session',), 'canvas': ('/api/projects', '/canvas'),
-              'private-media': ('/api/media/',), 'old-client': ('/_next/static/', '/desktop/_next/static/', '/enterprise/_next/static/'),
+              'private-media': ('/api/media/', '/media/'), 'old-client': ('/_next/static/', '/desktop/_next/static/', '/enterprise/_next/static/'),
               'skills': ('/api/image-skills', '/api/image-skills/import'), 'packaging': ('/api/packaging-strategy', '/tools/packaging-strategy'),
               'desktop-ui': ('/desktop', '/desktop/'), 'enterprise-ui': ('/enterprise', '/enterprise/'),
               'health': ('/api/health',), 'version': ('/api/version',)}
-    require((name != 'skills' or method == 'GET') and name in routes and any(parsed.path == prefix or prefix.endswith('/') and parsed.path.startswith(prefix)
+    require((name not in ['skills', 'private-media'] or method == 'GET') and name in routes and any(parsed.path == prefix or prefix.endswith('/') and parsed.path.startswith(prefix)
                                    for prefix in routes[name]), 'FEATURE_SPECIFIC_NONBILLABLE_GET_REQUIRED')
 
 
@@ -432,7 +432,7 @@ class LiveAdapter:
 
     def verify(self, web, identity, operation):
         self.tx.pin(identity)
-        actual = json.loads(self.tx.run(['docker', 'exec', identity['id'], 'node', '--input-type=module', '-e', PROBE,
+        actual = json.loads(self.tx.run(['docker', 'exec', '-e', 'NODE_OPTIONS=', identity['id'], 'node', '--input-type=module', '-e', PROBE,
                                         self.plan['commit'], self.plan['buildVersion'], web['assetPrefix']]))
         status = controls.app_status(self.tx, identity)
         require(actual.get('health', {}).get('db', {}).get('ok') is True, 'CANDIDATE_DATABASE_HEALTH_REQUIRED')
