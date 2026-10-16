@@ -1129,9 +1129,9 @@ export function WorkbenchClient() {
                 ))}
               </div>
             )}
-            <div className="rounded-[20px] border border-c-border bg-c-card p-2.5 shadow-pop transition-colors focus-within:border-c-border2">
-              <div className="mb-2 px-1"><SkillBook selected={imageSkill} onSelect={setImageSkill} accountKey={user?.email || ""} busy={busy} sessionId={sessionIdRef.current} hasConversation={messages.some(m => m.role === "assistant" && !m.pending && !!m.content)} onUse={prompt => { if (!input.trim()) setInput(prompt); }} /></div>
+            <div data-testid="chat-composer" className="rounded-[20px] border border-c-border bg-c-card p-2.5 shadow-pop transition-colors focus-within:border-c-border2">
               <textarea
+                data-testid="chat-textarea"
                 value={input}
                 onPaste={onChatPaste}
                 onChange={(e) => setInput(e.target.value)}
@@ -1146,7 +1146,7 @@ export function WorkbenchClient() {
                 className="max-h-40 w-full resize-none bg-transparent px-2 py-1.5 text-[14px] leading-relaxed text-c-text outline-none placeholder:text-c-text3"
               />
               <div className="mt-1 flex items-end justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-1.5">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                   <input
                     ref={fileRef}
                     type="file"
@@ -1181,6 +1181,7 @@ export function WorkbenchClient() {
                     )}
                   </button>
                   <TextModelSelect compact />
+                  <SkillBook compact selected={imageSkill} onSelect={setImageSkill} accountKey={user?.email || ""} busy={busy} sessionId={sessionIdRef.current} hasConversation={messages.some(m => m.role === "assistant" && !m.pending && !!m.content)} onUse={prompt => { if (!input.trim()) setInput(prompt); }} />
                 </div>
                 <button
                   type="button"
@@ -1281,9 +1282,8 @@ export function WorkbenchClient() {
           </div>
         </div>
 
-        {/* 大输入框 = Agent 入口:提交后同页进入对话。单行紧凑布局:加号/输入/发送同行,参考图有内容才出附加行 */}
-        <FeatureVisible feature="agent"><div className="mt-7 rounded-[20px] border border-c-border bg-c-card p-3.5 shadow-pop transition-colors focus-within:border-c-border2">
-          <div className="mb-2"><SkillBook compact selected={imageSkill} onSelect={setImageSkill} accountKey={user?.email || ""} busy={composerSubmitting} onUse={prompt => { if (!composerText.trim()) setComposerText(prompt); composerTextRef.current?.focus(); }} /></div>
+        {/* 正文独占整行；附件、Skills、历史与发送留在下方工具栏。 */}
+        <FeatureVisible feature="agent"><div data-testid="dashboard-composer" className="mt-7 rounded-[20px] border border-c-border bg-c-card p-3.5 shadow-pop transition-colors focus-within:border-c-border2">
           {(composerPreviews.length > 0 || composerError) && (
             <div className="mb-2.5 flex flex-wrap items-center gap-2">
               {composerPreviews.map((url, index) => (
@@ -1309,37 +1309,42 @@ export function WorkbenchClient() {
               )}
             </div>
           )}
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              title={t("home.dash.composeAttach")}
-              onClick={() => composerFileRef.current?.click()}
-              className="relative flex h-10 w-10 flex-none items-center justify-center rounded-full border border-dashed border-c-border text-c-text3 transition-colors hover:border-acc hover:text-acc"
-            >
-              <Plus className="h-5 w-5" />
-              {composerFiles.length > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-acc px-1 text-[10px] font-bold text-white">
-                  {composerFiles.length}
-                </span>
-              )}
-            </button>
-            <textarea
-              ref={composerTextRef}
-              rows={1}
-              value={composerText}
-              placeholder={t("home.dash.composePlaceholder")}
-              onChange={(e) => {
-                setComposerText(e.target.value);
-                autoGrowTextarea();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  void submitComposer();
-                }
-              }}
-              className="max-h-[150px] min-h-[64px] w-full flex-1 resize-none bg-transparent py-2 text-[14.5px] leading-relaxed text-c-text outline-none placeholder:text-c-text3"
-            />
+          <textarea
+            data-testid="dashboard-textarea"
+            ref={composerTextRef}
+            rows={1}
+            value={composerText}
+            placeholder={t("home.dash.composePlaceholder")}
+            onChange={(e) => {
+              setComposerText(e.target.value);
+              autoGrowTextarea();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                void submitComposer();
+              }
+            }}
+            className="max-h-[150px] min-h-[64px] w-full resize-none bg-transparent py-2 text-[14.5px] leading-relaxed text-c-text outline-none placeholder:text-c-text3"
+          />
+          <div className="mt-2 flex items-end justify-between gap-2">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                title={t("home.dash.composeAttach")}
+                onClick={() => composerFileRef.current?.click()}
+                className="relative flex h-10 w-10 flex-none items-center justify-center rounded-full border border-dashed border-c-border text-c-text3 transition-colors hover:border-acc hover:text-acc"
+              >
+                <Plus className="h-5 w-5" />
+                {composerFiles.length > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-acc px-1 text-[10px] font-bold text-white">
+                    {composerFiles.length}
+                  </span>
+                )}
+              </button>
+              <SkillBook compact selected={imageSkill} onSelect={setImageSkill} accountKey={user?.email || ""} busy={composerSubmitting} onUse={prompt => { if (!composerText.trim()) setComposerText(prompt); composerTextRef.current?.focus(); }} />
+              <button type="button" onClick={() => setSessionsOpen(true)} title={L("历史对话", "History")} aria-label={L("历史对话", "History")} className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-c-text3 transition-colors hover:bg-secondary hover:text-acc"><History className="h-4 w-4" /></button>
+            </div>
             <button
               type="button"
               aria-label={t("home.dash.composeSend")}
@@ -1362,16 +1367,6 @@ export function WorkbenchClient() {
             hidden
             onChange={(e) => pickComposerFiles(e.target.files)}
           />
-          <div className="mt-1.5 flex items-center justify-end">
-            <button
-              type="button"
-              onClick={() => setSessionsOpen(true)}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] text-c-text3 transition-colors hover:bg-secondary hover:text-acc"
-            >
-              <History className="h-3 w-3" />
-              {L("历史对话", "History")}
-            </button>
-          </div>
         </div></FeatureVisible>
 
         {/* 快捷工作流 chips */}

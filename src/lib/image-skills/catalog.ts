@@ -1,11 +1,16 @@
 /** Image-design workflows, not executable Agent packages. Shared browser/server contract. */
 import { IMAGEGEN_USE_CASES, type ImagegenUseCase } from "../imagegen/catalog";
 import { PACKAGING_SKILL } from "./brand-packaging-strategy";
+import { CURATED_ECOMMERCE_SKILLS } from "./curated";
 export const SKILL_CATEGORIES = ["电商", "营销", "品牌", "社媒", "创作", "编辑", "图解"] as const;
 export type SkillCategory = typeof SKILL_CATEGORIES[number];
 export type ImageSkill = {
   id: string; revision: number; name: string; description: string; category: SkillCategory;
   instructions: string; source: "official" | "personal"; updatedAt?: string; useCase?: ImagegenUseCase;
+  visibility?: "private" | "enterprise"; authorName?: string; canEdit?: boolean;
+  inputs?: string;
+  preview?: {src:string;alt:string;kind:"upstream-example"};
+  reference?: {title:string;url:string;license:string;commit:string;workflowSha256:string;imageSha256:string};
 };
 export type SkillSelection = Pick<ImageSkill, "id" | "revision">;
 export class SkillError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -26,6 +31,7 @@ const definitions: [string, string, SkillCategory, string, string][] = [
 ];
 export const OFFICIAL_IMAGE_SKILLS: ImageSkill[] = [
   PACKAGING_SKILL,
+  ...CURATED_ECOMMERCE_SKILLS,
   ...definitions.map(([id, name, category, description, instructions]):ImageSkill => ({
     id: `official:${id}`, revision: 1, name, category, description, instructions, source: "official",
     useCase:IMAGEGEN_USE_CASES.find(u=>(u.existingSkillIds as readonly string[]).includes(id))?.id,

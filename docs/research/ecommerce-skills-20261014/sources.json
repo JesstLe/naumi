@@ -1,0 +1,151 @@
+{
+  "retrievedOn": "2026-10-14",
+  "license": "MIT",
+  "adaption": "Chinese recipe mapped to Naumi tools; external executable nodes/system prompts are not imported",
+  "sources": [
+    {
+      "workflow": "templates-product_scene_relight",
+      "url": "https://github.com/Comfy-Org/workflow_templates/blob/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-product_scene_relight.json",
+      "sha256": "ee585bfe1944cc78e4b0c8cb6be432f27b4d0cd4514e071b47be0665bb8b2ee3",
+      "bytes": 16548,
+      "preview": {
+        "stem": "templates-product_scene_relight",
+        "url": "https://raw.githubusercontent.com/Comfy-Org/workflow_templates/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-product_scene_relight-1.webp",
+        "sourceSha256": "23ec37d0fc7d9f84a33c6ca1825845698b9cbc4533562ea4515f2359fcfc8607",
+        "file": "/image-skills/previews/product_scene_relight.webp",
+        "assetSha256": "e2c22fe8ea54000026d2cdb677234882106043964de99f8f24f1643b73c5a429",
+        "sourceBytes": 38410,
+        "bytes": 30244,
+        "width": 400,
+        "height": 400,
+        "previewKind": "upstream-example"
+      }
+    },
+    {
+      "workflow": "templates-product_ad-v2.0",
+      "url": "https://github.com/Comfy-Org/workflow_templates/blob/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-product_ad-v2.0.json",
+      "sha256": "6a0cd63334b4e365d27b24f0e1cd2b579987ba9fe0f332968457343e4730f3a7",
+      "bytes": 14648,
+      "preview": {
+        "stem": "templates-product_ad-v2.0",
+        "url": "https://raw.githubusercontent.com/Comfy-Org/workflow_templates/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-product_ad-v2.0-1.webp",
+        "sourceSha256": "5c110520f3ca5c0009fdb57f65003eb69b0cb24ccf3745ce7c44d305a33921a4",
+        "file": "/image-skills/previews/product_ad-v2.0.webp",
+        "assetSha256": "7a83dd0aba5d9c993991e4826929c68ca56b4018e7493fc9f6193b0de8b765b2",
+        "sourceBytes": 22652,
+        "bytes": 18674,
+        "width": 400,
+        "height": 400,
+        "previewKind": "upstream-example"
+      }
+    },
+    {
+      "workflow": "templates-poster_product_integration",
+      "url": "https://github.com/Comfy-Org/workflow_templates/blob/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-poster_product_integration.json",
+      "sha256": "d6658e0f188822e6354ab96e904bacf9a04cb6cafa9904a191c2245477912e68",
+      "bytes": 29108,
+      "preview": {
+        "stem": "templates-poster_product_integration",
+        "url": "https://raw.githubusercontent.com/Comfy-Org/workflow_templates/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-poster_product_integration-1.webp",
+        "sourceSha256": "8db5cb128ebe2f264a8e1abef45437c169cbbce865fea2e439e32d3e6c0c474b",
+        "file": "/image-skills/previews/poster_product_integration.webp",
+        "assetSha256": "716425f1c5900a39208cc4e55df1a6dbd911312b4e896d0528a68095092a7447",
+        "sourceBytes": 31052,
+        "bytes": 30234,
+        "width": 400,
+        "height": 400,
+        "previewKind": "upstream-example"
+      }
+    },
+    {
+      "workflow": "templates-fashion_shoot_vton",
+      "url": "https://github.com/Comfy-Org/workflow_templates/blob/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-fashion_shoot_vton.json",
+      "sha256": "136b5a9c04793b8690845dbdc8061d5e54c4198e4676c09f79fb9480ed261ae0",
+      "bytes": 66079,
+      "preview": {
+        "stem": "templates-fashion_shoot_vton",
+        "url": "https://raw.githubusercontent.com/Comfy-Org/workflow_templates/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-fashion_shoot_vton-1.webp",
+        "sourceSha256": "de891b11482505fab6b9aad09ad5eb949e8ca3f002826f535a4f89472e72879d",
+        "file": "/image-skills/previews/fashion_shoot_vton.webp",
+        "assetSha256": "1d61df7628fba1bb8b6b520b7a0f1892720f4c89d32c5676ba7a56148cf58e72",
+        "sourceBytes": 12022,
+        "bytes": 11730,
+        "width": 400,
+        "height": 400,
+        "previewKind": "upstream-example"
+      }
+    },
+    {
+      "workflow": "templates-subject_holding_product.app",
+      "url": "https://github.com/Comfy-Org/workflow_templates/blob/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-subject_holding_product.app.json",
+      "sha256": "f690d88af21e676b3943e453d814211031293f7e22743dd4e30fd9a60f287eee",
+      "bytes": 13537,
+      "preview": {
+        "stem": "templates-subject_holding_product.app",
+        "url": "https://raw.githubusercontent.com/Comfy-Org/workflow_templates/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-subject_holding_product.app-1.webp",
+        "sourceSha256": "9f287ca2db1f40251a347a65bd68113d8ed919903bbe8e06c6d164087276717b",
+        "file": "/image-skills/previews/subject_holding_product.webp",
+        "assetSha256": "587ed73644b5fdeb1337702b9b400ea0de97500ea88aeedd65c2d85b846b5ed7",
+        "sourceBytes": 20050,
+        "bytes": 15246,
+        "width": 400,
+        "height": 400,
+        "previewKind": "upstream-example"
+      }
+    },
+    {
+      "workflow": "templates-subject_product_swap.app",
+      "url": "https://github.com/Comfy-Org/workflow_templates/blob/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-subject_product_swap.app.json",
+      "sha256": "589fe4d34753fe3f73afb4e90d537444ab20b48372f0beef751b9278b3702226",
+      "bytes": 13535,
+      "preview": {
+        "stem": "templates-subject_product_swap.app",
+        "url": "https://raw.githubusercontent.com/Comfy-Org/workflow_templates/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-subject_product_swap.app-1.webp",
+        "sourceSha256": "c41ccef0118401c8dddc40d5c79e991981b46397c58fc75c4d64fc4d921c9f4b",
+        "file": "/image-skills/previews/subject_product_swap.webp",
+        "assetSha256": "40fd3c6b8f44399361f7dbd0d774fad80ebb68c5532b196a379c3f89499568ea",
+        "sourceBytes": 16662,
+        "bytes": 12446,
+        "width": 400,
+        "height": 400,
+        "previewKind": "upstream-example"
+      }
+    },
+    {
+      "workflow": "utility_nanobanana_pro_product_upscale",
+      "url": "https://github.com/Comfy-Org/workflow_templates/blob/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/utility_nanobanana_pro_product_upscale.json",
+      "sha256": "b90421c7326550d40229d78fa358572a626a58ce7394a74ac68661b5d9967736",
+      "bytes": 3585,
+      "preview": {
+        "stem": "utility_nanobanana_pro_product_upscale",
+        "url": "https://raw.githubusercontent.com/Comfy-Org/workflow_templates/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/utility_nanobanana_pro_product_upscale-1.webp",
+        "sourceSha256": "c0cdca91525909943a7fc13cca85a37e9582bd450f38a2dd1cb22cedf22c0a96",
+        "file": "/image-skills/previews/utility_nanobanana_pro_product_upscale.webp",
+        "assetSha256": "6094c00631a0b1bb28ebaf48c83d08303807eee09f5ffbe1dcfc27e4ab7031b9",
+        "sourceBytes": 23968,
+        "bytes": 11954,
+        "width": 400,
+        "height": 400,
+        "previewKind": "upstream-example"
+      }
+    },
+    {
+      "workflow": "templates-2x2_grid-character_bg_product",
+      "url": "https://github.com/Comfy-Org/workflow_templates/blob/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-2x2_grid-character_bg_product.json",
+      "sha256": "80095f7d4f1bb7e19d5e3d2089c92f0c68ae8a93ab4442ef08c424935190764b",
+      "bytes": 89831,
+      "preview": {
+        "stem": "templates-2x2_grid-character_bg_product",
+        "url": "https://raw.githubusercontent.com/Comfy-Org/workflow_templates/3e89967349dd95fa68ce3b36966f41d642af8ea7/templates/templates-2x2_grid-character_bg_product-1.webp",
+        "sourceSha256": "3e7e33ad3c595321d2e265986787ec67c7be5fbfe772d33a162c6288568cfc23",
+        "file": "/image-skills/previews/product_suite_grid.webp",
+        "assetSha256": "9e65ad212b80a6e06c7c987d0d2e808926a6165f6a6ab013afa5126151026d8d",
+        "sourceBytes": 62130,
+        "bytes": 36726,
+        "width": 400,
+        "height": 400,
+        "previewKind": "upstream-example"
+      }
+    }
+  ]
+}
