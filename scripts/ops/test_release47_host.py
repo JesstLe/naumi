@@ -50,10 +50,13 @@ class Gates(unittest.TestCase):
         with self.assertRaisesRegex(m.Hold, 'WHOLE_TRANSACTION_LOCK'):
             tx.run(['docker', 'stop', 'anything'])
 
-    def test_only_47_is_supported(self):
-        for target in ['103.30.76.93', '120.27.162.85', '47.105.59.142.example']:
+    def test_only_two_explicitly_authorized_targets_are_supported(self):
+        for target in ['101.133.166.67', '120.27.162.85', '47.105.59.142.example']:
             with self.assertRaises(m.Hold):
                 m.HostTransaction(target, 'a'*64, '/tmp/evidence')
+        hk = m.HostTransaction('103.30.76.93', 'a'*64, '/tmp/evidence')
+        self.assertEqual(len(hk.spec['locks']), 2)
+        self.assertEqual(len(m.HostTransaction('47.105.59.142', 'a'*64, '/tmp/evidence').spec['locks']), 3)
 
     def test_identity_and_drain_rechecked_before_stop(self):
         row = {'Id': '1'*64, 'Name': '/naumi47-explicit-old', 'Image': 'sha256:'+'a'*64,
