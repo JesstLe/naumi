@@ -4,6 +4,11 @@
   systemctl output as presentation. Failed service names then receive normal
   show/cat observation. Invalid/attached markers remain parse errors; template
   and masked units remain collected and their observation failures remain errors.
+- Follow-up real raw line `systemd-fsck@dev-disk-by\x2duuid-0669\x2d1E9B.service`
+  uses systemd's literal escaped unit-name bytes. UNIT now accepts only complete
+  `\x[0-9a-fA-F]{2}` fragments alongside the existing name characters, preserving
+  exact argv bytes for show/cat. Other backslashes, paths, spaces, attached
+  bullets and actual NUL remain rejected. No error allowlist change.
 - `LiveAdapter.inventory` permits the same three exact retained systemd error
   pairs on explicitly target-bound Oct16 47 one-time-maintenance as on 103:
   list/SERVICE_LIMIT_EXCEEDED, cat/OBSERVATION_UNAVAILABLE,
