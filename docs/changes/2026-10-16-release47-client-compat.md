@@ -75,3 +75,46 @@ write_gateway_bundle(
 3. 使用固定**最终业务候选**manifest重新比较（本记录5405只是当前本机历史候选），执行完整旁路nginx -t与实际登录/DB/媒体/受影响功能。
 4. 真实旧页面RSC解码、原画布operation保存与持久化readback、任务查询跨切流通过后，主控才可生成old-client-compatibility验收；否则继续记录明确未完成，不用static-only升级。
 5. 平滑切流、连续观测、入口切回与排空退役由统一执行器处理，本模块不停止任何业务服务。
+
+## 14:16 本机真实旧Next → 5405候选补充实测（非线上发布）
+
+### 真实输入及资源
+- 主控只读取得并核验旧canvas镜像，本机load后精确image `sha256:c952f4a407e0404e86c950003c905c1bf26f877b6b6a2558118d70dd534c9737`，真实版本`f4b3df127f2fcaf37f9cd866a480f3c6fd4b2358 / 1791989816`；未用mock替代旧Web。
+- 新镜像为既有本机5405候选 `sha256:8f2b379b386f3b910dfa7cff93ddbfa7403558c4285c1d48aea54650c5c9f857`，`5405d23fa37a5de27ed5f2f9e2aa87e43d8eeb97 / 1792127247`；不是主控后续最终镜像的验收。
+- 全新隔离PG 192MiB / 0.5CPU，两个Web各1536MiB / 1.5CPU、Node heap1024MiB；Nginx128MiB / 0.5CPU。没有Worker或供应商配置，代理阻止生图/Agent提交，浏览器只允许loopback。独立headless Edge全新context，未操作Chrome/CDP用户会话。
+- 主控补齐6个旧Web实际static树、真实alias和精确配置文件：7个树源（6旧+5405）union **717文件 / 10,892,916 bytes**，无URL字节冲突；精确原文件bytes CAS bundle已生成并通过。不再缺旧only320项字节。
+
+### 真正通过与明确失败
+- 页面从真实旧Web加载，种入一个实际PostgreSQL文字节点，真实旧React textarea进入未保存编辑状态。
+- 仅Nginx旁路reload到真实5405：document唯一marker不变、未保存textarea内容原样保留；没有主动刷新旧页面。
+- 旧React blur处理器向新Web真实API保存，`persisted=true`且GET/数据库内容精确一致；旧undo/redo通过真实history接口，操作UUID两条各仅一条DB记录，恢复/重做内容精确。
+- 用户主动点击Next Link到新dashboard时，Next发现buildId不同而执行**MPA完整文档导航**；严格零reload RSC连续性测试失败，保留`STRICT_RSC_CONTINUITY_FAILURE.json/.png`。同旧build对照导航document marker保持，说明不是链接本来就总整页导航。
+- 按主控传达的**用户本次短维护特例**继续核验：MPA正常落目标dashboard并hydrate；原登录cookie值SHA不变，session仍原账号；重新进入canvas时已保存内容精确，pageerror=0；入口回滚旧Web后数据继续保留，无DB回灌。
+- 结论是`PASS_FOR_MAINTENANCE_BOUNDARY`、`zeroReloadRscContinuity=false`，不是无感RSC跨版通过；没有改框架build校验或伪造buildId。
+
+### 可复用脚本（最终镜像需再跑）
+```powershell
+$env:NAUMI_REAL_COMPAT_OUTPUT='output/client-compat47-real-next-20261016'
+$env:NAUMI_REAL_COMPAT_NEW_IMAGE='naumi:release47-5405d23fa37a' # 最终镜像换此参数
+$env:NAUMI_REAL_COMPAT_OLD_IMAGE='sha256:c952f4a407e0404e86c950003c905c1bf26f877b6b6a2558118d70dd534c9737'
+$env:NAUMI_REAL_COMPAT_WEB_MEMORY='1536m'
+$env:NAUMI_REAL_COMPAT_HEAP_MB='1024'
+# 先用assets子命令把全旧+该候选真实static物化到 $OUTPUT/all-real-static-union
+python scripts/ops/test_release_client_real_next.py start
+node scripts/ops/test_release_client_real_next.mjs
+python scripts/ops/test_release_client_real_next.py memory
+python scripts/ops/test_release_client_real_next.py inspect
+python scripts/ops/test_release_client_real_next.py cleanup
+```
+脚本只接受新建runtime状态；固定镜像ID和合成账号，创建专用fixture标签网络/容器；`bootstrap`校验PG标签后仅在本轮合成库配置本地管理员hash/清理本轮文字；不存供应商凭据。`cleanup`逐个标签核验后只删自有fixture。Web测试失败也应执行memory/inspect/cleanup，不把遗留测试实例误作线上槽。
+
+### cgroup实际负载（最终打包脚本一轮）
+- old：peak294,821,888 bytes（281.2MiB）；current224,874,496；anon214,052,864；file0。
+- new5405：**peak428,154,880 bytes（408.3MiB）**；current341,852,160；anon327,598,080；file1,912,832。
+- PG：peak123,600,896（117.9MiB）；Nginx peak10,964,992（10.5MiB）。
+- 全部`memory.events low/high/max/oom/oom_kill/oom_group_kill=0`；原始完整stat/events/采样时间已落盘。这是单用户画布编辑+dashboard/返回canvas的合成负载峰值，不等于生产峰值或1536档可直接改896；未执行896m/heap512压测。
+- 初轮新Web峰334.1MiB不是最终上界；后续dashboard/导航负载达到408.3MiB，交接保守采用较大已观测值。最终候选还要按真实就绪/业务负载和主机至少1GiB余量重算。
+
+### 证据及清理
+- `output/client-compat47-real-next-20261016/`：browser-result.json、memory-final.json、真实DB/容器摘要、严格RSC失败和同build对照、实际浏览器截图、全旧static union/exact CAS bundle；截图已打开检查，全部ignored。
+- 过程中的隔离库SSL显式disable、合成库历史guard配置和首启配置问题已纠正；隐藏链接选择器错误已改为真实可见aside链接。没有修改产品源码去补绿。
