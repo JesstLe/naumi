@@ -8,7 +8,7 @@ export const TICK_HEADERS = {
   targetWebInstanceId: "x-naumi-worker-target-instance-id",
 } as const;
 export type TickIdentity = { tickId: string; workerInstanceId: string; workerBootId: string; workerCommit: string; targetWebInstanceId: string };
-export type TickWebIdentity = { instanceId: string; bootId: string; commit: string };
+export type TickWebIdentity = { instanceId: string; bootId: string; commit: string; bootSource?: "preload" | "process-fallback" };
 export type WorkerTickReceipt = {
   schemaVersion: 1; tickId: string; worker: { instanceId: string; bootId: string; commit: string };
   web: TickWebIdentity; phase: "running" | "completed" | "unknown";
@@ -32,7 +32,10 @@ export function tickIdentity(request: Request): TickIdentity | null {
 const processBootId = randomUUID();
 export function workerTickWebIdentity(): TickWebIdentity {
   requireValue(instance(process.env.NAUMI_INSTANCE_ID) && commit(process.env.SOURCE_COMMIT), "FIXED_WEB_IDENTITY_REQUIRED", 503);
-  return { instanceId: process.env.NAUMI_INSTANCE_ID!, commit: process.env.SOURCE_COMMIT!, bootId: processBootId };
+  const preload=process.env.NAUMI_RELEASE_BOOT_SOURCE==="preload";
+  if(preload) requireValue(uuid(process.env.NAUMI_RELEASE_BOOT_ID),"WORKER_TICK_PRELOAD_BOOT_INVALID",503);
+  return { instanceId: process.env.NAUMI_INSTANCE_ID!, commit: process.env.SOURCE_COMMIT!,
+    bootId: preload?process.env.NAUMI_RELEASE_BOOT_ID!:processBootId,bootSource:preload?"preload":"process-fallback" };
 }
 function checkTarget(input: TickIdentity, web: TickWebIdentity) {
   requireValue(web.instanceId === input.targetWebInstanceId && web.commit === input.workerCommit && uuid(web.bootId), "WORKER_TICK_WEB_IDENTITY_MISMATCH", 409);
