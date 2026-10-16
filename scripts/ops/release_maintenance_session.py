@@ -697,19 +697,28 @@ class MaintenanceSession:
 
     def step(self, request):
         maintenance.authorize(self.plan['authorization'])
-        require(isinstance(request, dict) and set(request) <= {'action', 'operationId', 'expectedRevision', 'variant', 'reconcile', 'artifact'} and
+        require(isinstance(request, dict) and set(request) <= {'action', 'operationId', 'expectedRevision', 'variant', 'reconcile', 'artifact', 'acknowledgeFailure'} and
                 UUID.fullmatch(request.get('operationId', '')) and type(request.get('expectedRevision')) is int,
                 'TYPED_STEP_UUID_AND_REVISION_REQUIRED')
         action, operation = request['action'], request['operationId']
-        clean = {key: value for key, value in request.items() if key != 'reconcile'}
+        closing = request.get('acknowledgeFailure') is True
+        require('acknowledgeFailure' not in request or closing and request.get('reconcile') is True and
+                action == 'capture-acceptance', 'EXPLICIT_READONLY_CAPTURE_FAILURE_ACK_REQUIRED')
+        clean = {key: value for key, value in request.items() if key not in ['reconcile', 'acknowledgeFailure']}
         binding = sha(encoded(clean)); old = self.state['operations'].get(operation)
         if old:
             require(old['requestSha256'] == binding, 'OPERATION_UUID_BINDING_CONFLICT')
             if old['phase'] == 'ACKNOWLEDGED':
+                if old.get('outcome') == 'FAILED_READONLY':
+                    return {'result': 'READ_ONLY_CAPTURE_FAILED', 'failure': copy.deepcopy(old['failureReceipt']),
+                            'operationId': operation, **self.public()}
                 return {'result': 'ALREADY_ACKNOWLEDGED', 'operationId': operation, **self.public()}
             require(request.get('reconcile') is True and old['phase'] in ['INTENT_RECORDED', 'UNKNOWN'],
                     'EXPLICIT_ORIGINAL_UUID_RECONCILIATION_REQUIRED')
+            if closing:
+                return self.acknowledge_capture_failure(operation)
         else:
+            require(not closing, 'ORIGINAL_UNKNOWN_READONLY_CAPTURE_REQUIRED')
             require(request.get('reconcile') is not True and request['expectedRevision'] == self.state['revision'], 'REVISION_CONFLICT')
             require(not any(r['phase'] != 'ACKNOWLEDGED' for r in self.state['operations'].values()), 'UNKNOWN_OPERATION_BLOCKS_NEXT')
             require(self.state['phase'] not in TERMINAL, 'SESSION_ALREADY_TERMINAL')
@@ -730,6 +739,35 @@ class MaintenanceSession:
             self.state['lastError'] = str(error) if isinstance(error, Hold) and re.fullmatch('[A-Z0-9_]+', str(error)) else 'STEP_RESULT_UNKNOWN'
             self.state['revision'] += 1; self.persist()
             raise Hold(self.state['lastError']) from None
+
+    def acknowledge_capture_failure(self, operation):
+        """Close a known failed GET assertion, never produce acceptance evidence."""
+        state = self.state; record = state['operations'][operation]
+        allowed = {'HTTP_FEATURE_RESPONSE_FAILED', 'HTTP_FEATURE_ASSERTION_FAILED',
+                   'HTTP_FEATURE_BODY_HASH_FAILED', 'HTTP_FEATURE_BODY_CONTENT_FAILED'}
+        forbidden = {'collectedAcceptance', 'acceptance', 'acceptedDescriptor', 'after', 'preservation',
+                     'comparison', 'activationAcceptance', 'openGateway', 'activation',
+                     'rollbackPreservation', 'rollbackGateway', 'rollbackCaller', 'rollbackWorkerPaused'}
+        history = state.get('history', [])
+        require(state.get('phase') == 'CANDIDATES' and record.get('phase') == 'UNKNOWN' and
+                record.get('request', {}).get('action') == 'capture-acceptance' and
+                state.get('lastError') in allowed and not forbidden.intersection(state) and
+                not any(key.startswith(('app-open-', 'rollback-app-')) for key in state) and
+                all(key == operation or row.get('phase') == 'ACKNOWLEDGED'
+                    for key, row in state['operations'].items()) and
+                history and history[-1].get('action') == 'capture-acceptance' and
+                history[-1].get('operationId') == operation and history[-1].get('result') == 'UNKNOWN',
+                'ORIGINAL_UNKNOWN_READONLY_CAPTURE_REQUIRED')
+        receipt = {'outcome': 'FAILED_READONLY', 'assertionError': state['lastError'],
+                   'operationId': operation, 'requestSha256': record['requestSha256'],
+                   'acceptanceEvidence': False, 'adapterInvoked': False, 'closedAt': timestamp()}
+        record.update(phase='ACKNOWLEDGED', outcome='FAILED_READONLY', failureReceipt=receipt,
+                      resultSha256=sha(encoded(receipt)))
+        state['history'].append({'action': 'capture-acceptance', 'operationId': operation,
+                                'result': 'FAILED_READONLY', 'assertionError': state['lastError'], 'at': timestamp()})
+        state.pop('lastError', None); state['revision'] += 1; self.persist()
+        return {'result': 'READ_ONLY_CAPTURE_FAILED', 'failure': copy.deepcopy(receipt),
+                'operationId': operation, **self.public()}
 
     def validate_action(self, action, request):
         phase = self.state['phase']
