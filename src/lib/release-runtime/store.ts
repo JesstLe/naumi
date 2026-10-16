@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { accountKey, releaseIdentity, releaseProcessRegistry, ReleaseRuntimeError } from "./identity";
 
 const poolKey = Symbol.for("naumi.release.pg.v1");
+export const OBSERVED_BACKGROUND_SCOPES = ["durable-image", "reference-text", "reference-sync", "imagegen-batch", "imagegen-child", "canvas-image", "media-job", "media-mirror", "media-variant", "supplier-scan", "video-poll", "video-workflow", "app-worker-scan"] as const;
 const holder = process as typeof process & { [poolKey]?: { pool: Pool; ready?: Promise<void> } };
 export function releasePool(): Pool {
   if (!process.env.DATABASE_URL) throw new ReleaseRuntimeError("RELEASE_DATABASE_UNCONFIGURED");
@@ -41,12 +42,23 @@ export async function ensureReleaseSchema(): Promise<void> {
           outcome text, detail text NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS app_release_activities_active ON app_release_activities(instance_id,boot_id,state,activity_kind);
+        ALTER TABLE app_release_activities ADD COLUMN IF NOT EXISTS work_scope text;
+        ALTER TABLE app_release_activities ADD COLUMN IF NOT EXISTS work_key text;
+        ALTER TABLE app_release_activities ADD COLUMN IF NOT EXISTS claim_token text;
+        ALTER TABLE app_release_activities ADD COLUMN IF NOT EXISTS admission_key text;
+        ALTER TABLE app_release_activities ADD COLUMN IF NOT EXISTS parent_id uuid;
+        CREATE INDEX IF NOT EXISTS app_release_background_lookup ON app_release_activities(work_scope,work_key) WHERE activity_kind='accepted-work';
         CREATE INDEX IF NOT EXISTS app_release_activities_finished ON app_release_activities(finished_at) WHERE state='finished';
         CREATE TABLE IF NOT EXISTS app_release_forward_receipts (
           target_boot uuid NOT NULL, nonce uuid NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
           PRIMARY KEY(target_boot,nonce)
         );
         CREATE INDEX IF NOT EXISTS app_release_forward_expiry ON app_release_forward_receipts(created_at);
+        CREATE TABLE IF NOT EXISTS app_release_agent_continuations (
+          nonce uuid PRIMARY KEY, run_id uuid NOT NULL, target_boot uuid NOT NULL,
+          payload_hash text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS app_release_agent_continuations_expiry ON app_release_agent_continuations(created_at);
       `);
       await db.query("COMMIT");
     } catch (e) { await db.query("ROLLBACK").catch(() => undefined); throw e; } finally { db.release(); }
@@ -114,6 +126,44 @@ export async function beginObservedActivity(kind: "request" | "accepted-work", d
     await db.query(`INSERT INTO app_release_activities(id,instance_id,boot_id,runtime_id,activity_kind,state,detail) VALUES($1,$2,$3,$4,$5,'active',$6)`, [id, identity.instanceId, identity.bootId, releaseProcessRegistry().runtimeId, kind, detail.slice(0, 200)]);
   }); return id;
 }
+export type AcceptedParent = { id: string; account: string | null; instanceId: string; bootId: string };
+export async function activeAcceptedParent(parent: AcceptedParent): Promise<boolean> {
+  await ensureReleaseSchema();
+  const result = await releasePool().query("SELECT 1 FROM app_release_activities WHERE id=$1 AND instance_id=$2 AND boot_id=$3 AND account_key IS NOT DISTINCT FROM $4 AND activity_kind IN ('agent-run','accepted-work') AND state='active' AND heartbeat_at>now()-interval '45 seconds'", [parent.id,parent.instanceId,parent.bootId,parent.account]);
+  return result.rowCount === 1;
+}
+export async function consumeAgentContinuation(nonce: string, runId: string, payloadHash: string): Promise<void> {
+  await ensureReleaseSchema();
+  const inserted=await releasePool().query("INSERT INTO app_release_agent_continuations(nonce,run_id,target_boot,payload_hash) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",[nonce,runId,releaseIdentity().bootId,payloadHash]);
+  if(!inserted.rowCount)throw new ReleaseRuntimeError("AGENT_CONTINUATION_REPLAY",409);
+  await releasePool().query("DELETE FROM app_release_agent_continuations WHERE nonce IN(SELECT nonce FROM app_release_agent_continuations WHERE created_at<now()-interval '2 minutes' ORDER BY created_at LIMIT 100)");
+}
+export async function beginBackgroundActivity(scope: string, workKey: string, admission: "claim" | "continuation", parent?: AcceptedParent): Promise<string | null> {
+  const identity = releaseIdentity(), id = randomUUID();
+  return transaction(async (db) => {
+    const boot = await register(db);
+    if (admission === "claim" && boot.admission !== "open") {
+      if(!parent)return null;
+      const accepted=await db.query("SELECT 1 FROM app_release_activities WHERE id=$1 AND instance_id=$2 AND boot_id=$3 AND account_key IS NOT DISTINCT FROM $4 AND activity_kind IN ('agent-run','accepted-work') AND state='active' AND heartbeat_at>now()-interval '45 seconds' FOR SHARE",[parent.id,parent.instanceId,parent.bootId,parent.account]);
+      if(!accepted.rowCount)return null;
+    }
+    if (admission === "claim") {
+      await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`release-background:${scope}:${workKey}`]);
+      const existing = await db.query("SELECT 1 FROM app_release_activities WHERE activity_kind='accepted-work' AND work_scope=$1 AND admission_key=$2 AND state IN ('active','unknown') LIMIT 1", [scope, workKey.slice(0, 300)]);
+      // A previous detached promise or orphan is not evidence that retrying a
+      // new paid submission is harmless. The business recovery path may still
+      // perform explicit GET-only continuation under a different scope.
+      if (existing.rowCount) return null;
+    }
+    await db.query(`INSERT INTO app_release_activities(id,instance_id,boot_id,runtime_id,activity_kind,state,detail,work_scope,work_key,admission_key,parent_id) VALUES($1,$2,$3,$4,'accepted-work','active',$5,$6,$7,$7,$8)`, [id, identity.instanceId, identity.bootId, releaseProcessRegistry().runtimeId, `${scope}:${admission}`, scope, workKey.slice(0, 300),parent?.id||null]);
+    return id;
+  });
+}
+export async function bindBackgroundActivity(id: string, workKey: string, token?: string): Promise<void> {
+  const identity = releaseIdentity(); await ensureReleaseSchema();
+  const changed = await releasePool().query("UPDATE app_release_activities SET work_key=$4,claim_token=$5,heartbeat_at=now() WHERE id=$1 AND instance_id=$2 AND boot_id=$3 AND state='active' AND activity_kind='accepted-work'", [id, identity.instanceId, identity.bootId, workKey.slice(0, 300), token?.slice(0, 200) || null]);
+  if (changed.rowCount !== 1) throw new ReleaseRuntimeError("RELEASE_BACKGROUND_CLAIM_UNBOUND", 409);
+}
 export async function heartbeatActivity(id: string): Promise<void> {
   const identity = releaseIdentity();
   await ensureReleaseSchema();
@@ -128,7 +178,7 @@ export async function finishActivity(id: string, outcome = "completed"): Promise
     await db.query("UPDATE app_release_session_owners SET state='idle',updated_at=now() WHERE run_id=$1 AND instance_id=$2 AND boot_id=$3 AND state='running'", [id, identity.instanceId, identity.bootId]);
     // Bounded housekeeping only for already finished request observations. Never
     // expires active/unknown work or deletes the durable owner/run uncertainty.
-    await db.query("DELETE FROM app_release_activities WHERE id IN (SELECT id FROM app_release_activities WHERE state='finished' AND activity_kind='request' AND finished_at<now()-interval '15 minutes' ORDER BY finished_at LIMIT 100)");
+    await db.query("DELETE FROM app_release_activities WHERE id IN (SELECT id FROM app_release_activities WHERE state='finished' AND ((activity_kind='request' AND finished_at<now()-interval '15 minutes') OR (activity_kind='accepted-work' AND finished_at<now()-interval '7 days')) ORDER BY finished_at LIMIT 100)");
   });
 }
 export async function unknownActivity(id: string, reason: string): Promise<void> {
@@ -153,11 +203,13 @@ export async function releaseStatus() {
     const { rows } = await db.query<{ activity_kind: string; state: string; count: string; stale: string; other_boot: boolean }>(`SELECT activity_kind,state,count(*)::text, count(*) FILTER(WHERE heartbeat_at<now()-interval '45 seconds')::text AS stale,boot_id<>$2::uuid AS other_boot FROM app_release_activities WHERE instance_id=$1 AND state<>'finished' GROUP BY activity_kind,state,other_boot`, [identity.instanceId, identity.bootId]);
     const active = (kind: string) => rows.filter((r) => r.activity_kind === kind && !r.other_boot && r.state === "active").reduce((n, r) => n + Number(r.count), 0);
     const unknown = rows.filter((r) => r.other_boot || r.state === "unknown").reduce((n, r) => n + Number(r.count), 0) + rows.filter((r) => !r.other_boot && r.state === "active").reduce((n, r) => n + Number(r.stale), 0);
+    const background = (await db.query(`SELECT work_scope AS scope,count(*) FILTER(WHERE state='active' AND boot_id=$2)::int AS active,count(*) FILTER(WHERE state='unknown' OR boot_id<>$2 OR heartbeat_at<now()-interval '45 seconds')::int AS unknown FROM app_release_activities WHERE instance_id=$1 AND activity_kind='accepted-work' AND state<>'finished' GROUP BY work_scope`, [identity.instanceId, identity.bootId])).rows;
     return {
       schemaVersion: 1, observedAt: new Date().toISOString(), identity, admission: { mode: boot.admission, revision: boot.revision },
       observations: { activeRequests: null, acceptedTasks: null, trackedRequests: active("request"), trackedAcceptedWork: active("accepted-work"), agentRuns: active("agent-run"), unknownLeases: unknown, agentSessions: null },
-      coverage: { level: "partial", allApplicationRequests: false, allBackgroundAcceptedWork: false, allAgentExecutions: false, admissionScope: "agent-new-turns", allApplicationAdmissions: false, trackedAgentEntrypoints: ["/api/agent", "/api/canvas/assistant?mode=agent", "/api/canvas/assistant/control"], source: "postgres-leases-not-module-map", bootstrapRequiredForLegacy: true },
+      coverage: { level: "partial", allApplicationRequests: false, allBackgroundAcceptedWork: false, allAgentExecutions: false, admissionScope: "agent-new-turns-and-instrumented-background-claims", allApplicationAdmissions: false, trackedBackgroundScopes:OBSERVED_BACKGROUND_SCOPES, backgroundObservation:"local-promise-lifetime-only", trackedAgentEntrypoints: ["/api/agent", "/api/canvas/assistant?mode=agent", "/api/canvas/assistant/control"], source: "postgres-leases-not-module-map", bootstrapRequiredForLegacy: true },
       diagnostics: { pid: process.pid, runtimeId: releaseProcessRegistry().runtimeId, bootSource: identity.bootSource },
+      background,
     };
   });
 }

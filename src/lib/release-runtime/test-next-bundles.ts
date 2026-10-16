@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { copyFile, mkdir, writeFile, symlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { createHmac, randomUUID, createHash } from "node:crypto";
+import { Pool } from "pg";
 
 async function main() {
   const observer = process.env.RELEASE_FIXTURE_OBSERVER_PATH;
@@ -12,15 +14,17 @@ async function main() {
   await mkdir(resolve(dir, "src/app/api/fixture"), { recursive: true });
   await mkdir(resolve(dir, "src/app/api/internal/release/status"), { recursive: true });
   await mkdir(resolve(dir, "src/app/api/internal/release/control"), { recursive: true });
+  await mkdir(resolve(dir, "src/app/api/generate-image"), { recursive: true });
   await mkdir(resolve(dir, "src/lib/release-runtime"), { recursive: true });
   await symlink(resolve(root, "node_modules"), resolve(dir, "node_modules"), "junction").catch((e) => { if (e.code !== "EEXIST") throw e; });
-  for (const name of ["identity", "store", "http", "agent-activity"]) await copyFile(resolve(root, `src/lib/release-runtime/${name}.ts`), resolve(dir, `src/lib/release-runtime/${name}.ts`));
+  for (const name of ["identity", "store", "http", "agent-activity", "accepted-context", "background-activity"]) await copyFile(resolve(root, `src/lib/release-runtime/${name}.ts`), resolve(dir, `src/lib/release-runtime/${name}.ts`));
   await writeFile(resolve(dir, "package.json"), JSON.stringify({ name: "release-next-bundle-fixture", private: true }));
   await writeFile(resolve(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "es2017", lib: ["dom", "esnext"], jsx: "preserve", module: "esnext", moduleResolution: "bundler", esModuleInterop: true, skipLibCheck: true, baseUrl: ".", paths: { "@/*": ["./src/*"] } } }));
   await writeFile(resolve(dir, "next.config.mjs"), `export default {serverExternalPackages:['pg'],experimental:{cpus:1}};\n`);
   await writeFile(resolve(dir, "src/app/layout.tsx"), "export default function Layout({children}) {return <html><body>{children}</body></html>}");
   await writeFile(resolve(dir, "src/app/page.tsx"), "export default function Page(){return <main>local fixture</main>}");
-  await writeFile(resolve(dir, "src/middleware.ts"), `import {NextResponse} from 'next/server';import {checkAdmission} from '@/lib/release-runtime/store';import {releaseIdentity,releaseError,releaseProcessRegistry} from '@/lib/release-runtime/identity';export async function middleware(req){if(req.nextUrl.pathname.startsWith('/api/internal/'))return NextResponse.next();try{await checkAdmission();const h=new Headers(req.headers);h.set('x-fixture-mid-boot',releaseIdentity().bootId);h.set('x-fixture-mid-runtime',releaseProcessRegistry().runtimeId);return NextResponse.next({request:{headers:h}})}catch(e){return releaseError(e)}}export const config={runtime:'nodejs',matcher:['/api/:path*']};`);
+  await writeFile(resolve(dir, "src/middleware.ts"), `import {NextResponse} from 'next/server';import {checkAdmission} from '@/lib/release-runtime/store';import {CONTINUATION_HEADER,verifyAgentContinuation} from '@/lib/release-runtime/accepted-context';import {releaseIdentity,releaseError,releaseProcessRegistry} from '@/lib/release-runtime/identity';export async function middleware(req){if(req.nextUrl.pathname.startsWith('/api/internal/'))return NextResponse.next();try{if(req.headers.has(CONTINUATION_HEADER))await verifyAgentContinuation(req,'fixture-next@example.test',false);else await checkAdmission();const h=new Headers(req.headers);h.set('x-fixture-mid-boot',releaseIdentity().bootId);h.set('x-fixture-mid-runtime',releaseProcessRegistry().runtimeId);return NextResponse.next({request:{headers:h}})}catch(e){return releaseError(e)}}export const config={runtime:'nodejs',matcher:['/api/:path*']};`);
+  await writeFile(resolve(dir,"src/app/api/generate-image/route.ts"),`import {withAcceptedContinuationRequest} from '@/lib/release-runtime/accepted-context';import {withBackgroundActivity} from '@/lib/release-runtime/background-activity';import {releaseError} from '@/lib/release-runtime/identity';export const runtime='nodejs';export async function POST(req){try{return await withAcceptedContinuationRequest(req,'fixture-next@example.test',()=>withBackgroundActivity('durable-image','next-accepted-tool','claim',async()=>Response.json({accepted:true}),()=>Response.json({blocked:true},{status:503})))}catch(e){return releaseError(e)}}`);
   await writeFile(resolve(dir, "src/app/api/fixture/route.ts"), `import {releaseIdentity,releaseProcessRegistry} from '@/lib/release-runtime/identity';import {observeReleaseRequest} from '@/lib/release-runtime/http';export const runtime='nodejs';export async function GET(req){return observeReleaseRequest(req,async()=>{const headers={'content-type':'text/event-stream','x-fixture-route-boot':releaseIdentity().bootId,'x-fixture-mid-boot':req.headers.get('x-fixture-mid-boot')||'','x-fixture-route-runtime':releaseProcessRegistry().runtimeId,'x-fixture-mid-runtime':req.headers.get('x-fixture-mid-runtime')||''};let timer;return new Response(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('event: first\\ndata: local\\n\\n'));timer=setTimeout(()=>c.close(),2000)},cancel(){clearTimeout(timer)} }),{headers})})};`);
   for (const entry of ["status", "control"]) await copyFile(resolve(root, `src/app/api/internal/release/${entry}/route.ts`), resolve(dir, `src/app/api/internal/release/${entry}/route.ts`));
   const runner = resolve(dir, "server.cjs");
@@ -50,7 +54,25 @@ async function main() {
     const drained = await fetch(`http://127.0.0.1:${port}/api/internal/release/control`, { method: "POST", headers, body: JSON.stringify({ instanceId: idle.identity.instanceId, bootId: idle.identity.bootId, expectedRevision: idle.admission.revision, operationId: crypto.randomUUID(), action: "drain" }) }); assert.equal(drained.status, 200);
     const denied = await fetch(`http://127.0.0.1:${port}/api/fixture`); assert.equal(denied.status, 503);
     console.log("PASS PG drain from route status/control is enforced in actual Next middleware bundle");
-    console.log("NEXT_BUNDLE_CHECKS=6");
+    const pool=new Pool({connectionString:database,max:1});
+    try {
+      const id=randomUUID(),account=createHash('sha256').update('fixture-next@example.test').digest('hex'),originInstance='fixture-original-agent-owner',originBoot=randomUUID();
+      await pool.query("INSERT INTO app_release_activities(id,instance_id,boot_id,runtime_id,activity_kind,account_key,state) VALUES($1,$2,$3,$4,'agent-run',$5,'active')",[id,originInstance,originBoot,randomUUID(),account]);
+      const encoded=Buffer.from(JSON.stringify({id,account,instanceId:originInstance,bootId:originBoot,method:'POST',path:'/api/generate-image',at:Date.now(),nonce:randomUUID()})).toString('base64url');
+      const token=encoded+'.'+createHmac('sha256',secret).update('agent-continuation-v1:'+encoded).digest('hex');
+      const continued=await fetch(`http://127.0.0.1:${port}/api/generate-image`,{method:'POST',headers:{'x-naumi-agent-continuation':token}});
+      assert.equal(continued.status,200);assert.equal((await continued.json()).accepted,true);
+      console.log('PASS actual Next middleware proof survives into route accepted-work ALS during drain');
+      const original=(await pool.query('SELECT instance_id,boot_id FROM app_release_activities WHERE id=$1',[id])).rows[0];assert.equal(original.instance_id,originInstance);assert.equal(original.boot_id,originBoot);
+      const child=(await pool.query("SELECT parent_id FROM app_release_activities WHERE instance_id=$1 AND work_scope='durable-image' AND work_key='next-accepted-tool' ORDER BY started_at DESC LIMIT 1",[idle.identity.instanceId])).rows[0];assert.equal(child.parent_id,id);
+      console.log('PASS cross-slot continuation retains original Agent owner and links child lease');
+      const replay=await fetch(`http://127.0.0.1:${port}/api/generate-image`,{method:'POST',headers:{'x-naumi-agent-continuation':token}});assert.equal(replay.status,409);
+      console.log('PASS actual Next route consumes nonce exactly once across middleware validation');
+      await pool.query("UPDATE app_release_activities SET state='finished',finished_at=now() WHERE id=$1",[id]);
+      const inactive=await fetch(`http://127.0.0.1:${port}/api/generate-image`,{method:'POST',headers:{'x-naumi-agent-continuation':token}});assert.equal(inactive.status,409);
+      console.log('PASS actual Next middleware rejects proof once original run finished');
+    }finally{await pool.end();}
+    console.log("NEXT_BUNDLE_CHECKS=10");
   } finally { child.kill("SIGKILL"); }
 }
 void main().catch((e) => { console.error(e); process.exitCode = 1; });

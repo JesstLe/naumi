@@ -1,5 +1,6 @@
 import { observeReleaseRequest, routeAgentToOwner } from "@/lib/release-runtime/http";
 import { releaseRuntimeEnabled, releaseError } from "@/lib/release-runtime/identity";
+import { forwardLegacyAgentSession } from "@/lib/agent/legacy-runtime";
 import { resolveImageSkill } from "@/lib/image-skills/server";
 import { SkillError } from "@/lib/image-skills/catalog";
 import {randomUUID} from "node:crypto";
@@ -47,6 +48,8 @@ async function authedEmail(request: Request): Promise<string | null> {
 
 // ── SSE 流式执行 ───────────────────────────────────────────────────────────
 async function localPUT(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   try { return await withBiRequest(request, () => handlePut(request)); }
   catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }
@@ -255,6 +258,8 @@ async function handlePut(request: Request) {
 
 // ── Steering 插话 ──────────────────────────────────────────────────────────
 async function localPATCH(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -289,6 +294,8 @@ async function localPATCH(request: Request) {
 
 // ── 中止 ───────────────────────────────────────────────────────────────────
 async function localDELETE(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -307,6 +314,8 @@ async function localDELETE(request: Request) {
 
 // ── 事件轮询(降级) ─────────────────────────────────────────────────────────
 async function localGET(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -329,6 +338,8 @@ async function localGET(request: Request) {
 
 // ── 一次性执行(向后兼容) ─────────────────────────────────────────────────────
 async function localPOST(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   try { return await withBiRequest(request, () => handlePost(request)); }
   catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }

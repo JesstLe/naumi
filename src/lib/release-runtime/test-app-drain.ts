@@ -42,6 +42,8 @@ try {
   const initial = (await getStatus(43211)).data;
   check("status does not invent all-app counters", [initial.observations.activeRequests, initial.observations.acceptedTasks, initial.coverage.level], [null, null, "partial"]);
   check("initial tracked Agent runs", initial.observations.agentRuns, 0);
+  await api(43211, "POST", "/api/background", { key: "background-after-tick" });
+  check("worker tick response does not finish detached background", (await getStatus(43211)).data.observations.trackedAcceptedWork, 1);
   const start = await api(43211, "POST", "/api/agent", { sessionId: "ag-fixture-one" });
   check("accepted run starts exactly once", start.status, 200);
   check("tracked accepted Agent run is durable", (await getStatus(43211)).data.observations.agentRuns, 1);
@@ -65,6 +67,12 @@ try {
   check("operation reuse with another payload fails", (await api(43211, "POST", "/api/internal/release/control", { ...operation.body, action: "resume" }, "fixture-a", { "x-release-control-secret": secret })).status, 409);
   check("stale CAS rejected", (await change(43211, "resume", randomUUID(), 1)).status, 409);
   check("new run rejected on draining instance", (await api(43211, "POST", "/api/agent", { sessionId: "ag-new-draining" })).status, 503);
+  await api(43211, "POST", "/api/background", { key: "background-new-draining" });
+  check("drain skips new background claims", (await api(43211, "GET", "/api/background?key=background-new-draining")).data.pending, false);
+  check("already accepted background remains active during drain", (await getStatus(43211)).data.observations.trackedAcceptedWork, 1);
+  await api(43211, "DELETE", "/api/background?key=background-after-tick");
+  await new Promise((r) => setTimeout(r, 50));
+  check("accepted background can naturally finish while draining", (await getStatus(43211)).data.observations.trackedAcceptedWork, 0);
   check("existing run poll allowed during drain", (await api(43212, "GET", "/api/agent?sessionId=ag-fixture-one")).status, 200);
   check("stop remains on draining owner", (await api(43212, "DELETE", "/api/agent?sessionId=ag-fixture-one")).data.owner.instanceId, "fixture-a");
   check("finished run count reaches zero", (await getStatus(43211)).data.observations.agentRuns, 0);
@@ -81,6 +89,7 @@ try {
   check("cross-instance SSE run poll retains original owner", (await api(43212, "GET", "/api/agent?sessionId=ag-fixture-sse")).data.owner.instanceId, "fixture-a");
   await api(43212, "DELETE", "/api/agent?sessionId=ag-fixture-sse");
   await api(43211, "POST", "/api/agent", { sessionId: "ag-crash-unknown" });
+  await api(43211, "POST", "/api/background", { key: "background-crash-unknown" });
   const oldBoot = (await getStatus(43211)).data.identity.bootId;
   a.kill("SIGKILL"); await once(a, "exit");
   await launch("fixture-a", 43211);
@@ -88,6 +97,9 @@ try {
   check("restart has unique boot", restarted.identity.bootId !== oldBoot, true);
   check("orphan accepted work remains unknown", restarted.observations.unknownLeases > 0, true);
   check("orphan sessions are not falsely zero", restarted.observations.agentSessions, null);
+  check("orphan background remains unknown after restart", restarted.background.some((row: { scope: string; unknown: number }) => row.scope === "reference-text" && row.unknown > 0), true);
+  await api(43211, "POST", "/api/background", { key: "background-crash-unknown" });
+  check("unknown detached work is not silently replayed", (await api(43211, "GET", "/api/background?key=background-crash-unknown")).data.pending, false);
   check("retry after owner boot death is blocked", (await api(43212, "POST", "/api/agent", { sessionId: "ag-crash-unknown" })).status, 409);
   const durable = await pool.query("SELECT count(*)::int AS count FROM app_release_activities WHERE session_id='ag-crash-unknown' AND activity_kind='agent-run'");
   check("unknown restart never re-submits run", durable.rows[0].count, 1);

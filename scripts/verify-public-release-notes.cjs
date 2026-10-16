@@ -1,6 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),vm=require('node:vm'),esbuild=require('esbuild'),Module=require('node:module'),{spawnSync}=require('node:child_process');
 const originalCatalog=fs.readFileSync('src/content/public-release-notes.json','utf8');
 const mode=process.argv[2]||'MODIFIED',out=path.resolve(process.argv[3]||'output/public-update-history-20261016');
+fs.mkdirSync(out,{recursive:true});
 const root=mode==='BASELINE'?path.join(out,'baseline'):mode==='ROLLBACK'?path.join(out,'rollback-copy'):process.cwd();
 if(mode!=='MODIFIED'){
  const source=fs.readFileSync(path.join(root,'src/components/site-version.tsx'),'utf8');assert.match(source,/loadedCommit/);assert.doesNotMatch(source,/<ReleaseNotes/);

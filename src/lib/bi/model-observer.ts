@@ -1,4 +1,6 @@
 import "server-only";
+import { CONTINUATION_HEADER, withAcceptedContinuationRequest } from "@/lib/release-runtime/accepted-context";
+import { releaseError, ReleaseRuntimeError } from "@/lib/release-runtime/identity";
 import { withObservedCallId } from "./call-scope";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
@@ -38,10 +40,13 @@ export async function withBiRequest<T extends Response>(
   const email = dbEnabled
     ? await resolveUserEmail(request).catch(() => null)
     : null;
-  if (!email) return run();
+  if (!email) {
+    if(request.headers.has(CONTINUATION_HEADER))return releaseError(new ReleaseRuntimeError("AGENT_CONTINUATION_FORGED",403)) as T;
+    return run();
+  }
   const path = new URL(request.url).pathname.slice(0, 100);
-  try { return await context.run({ email, operation: path }, () => withArtworkCreation({ path, operationId: currentSynchronousBilling()?.id, entry: provenanceEntry(request.headers.get("x-naumi-client-entry"), path.startsWith("/api/canvas/") ? "canvas" : "toolbox") }, () => withModelRequest(request, run))); }
-  catch (error) { if (error instanceof ModelConfigError) return new Response(JSON.stringify({ error: error.message, code: error.code }), { status: error.status, headers: { "content-type": "application/json", "cache-control": "no-store" } }) as T; throw error; }
+  try { return await context.run({ email, operation: path }, () => withArtworkCreation({ path, operationId: currentSynchronousBilling()?.id, entry: provenanceEntry(request.headers.get("x-naumi-client-entry"), path.startsWith("/api/canvas/") ? "canvas" : "toolbox") }, () => withAcceptedContinuationRequest(request,email,() => withModelRequest(request, run)))); }
+  catch (error) { if(error instanceof ReleaseRuntimeError)return releaseError(error) as T; if (error instanceof ModelConfigError) return new Response(JSON.stringify({ error: error.message, code: error.code }), { status: error.status, headers: { "content-type": "application/json", "cache-control": "no-store" } }) as T; throw error; }
 }
 
 type ObservedResponse = {

@@ -1,3 +1,4 @@
+import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import "server-only";
 import {encryptAtRest,decryptAtRest} from "../settings";
 import {freezeVideoWorkflow,withFrozenWorkflowStage,workflowBindingId,type FrozenWorkflowStage} from "./workflow-freeze";
@@ -100,13 +101,14 @@ async function dependencyReference(actor:string,runId:string,binding:NonNullable
   return {id:workflowBindingId(runId,binding),
     kind:binding.kind,role:binding.role,artworkId:artwork.id,url:binding.kind==="image"?artwork.image:artwork.videoUrl||artwork.image};
 }
-export async function resumeVideoWorkflow(runId:string,actor?:string){
+async function resumeVideoWorkflowLocal(runId:string,actor?:string){
   await ensureWorkflowSchema();const pool=getPool(),lock=await pool.connect();let acquired=false;
   try{
     acquired=(await lock.query("SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS acquired",[`video-workflow:${runId}`])).rows[0].acquired;
     const run=(await pool.query("SELECT * FROM app_video_workflow_runs WHERE id=$1",[runId])).rows[0];
     if(!run||actor&&run.email!==actor)throw new ModelConfigError("WORKFLOW_UNAVAILABLE","工作流不存在",404);
     if(!acquired)return getVideoWorkflow(run.email,runId);
+    await bindBackgroundClaim(runId);
     const decrypted=run.frozen_nodes_enc?decryptAtRest(run.frozen_nodes_enc):null;
     if(run.frozen_nodes_enc&&!decrypted)throw new ModelConfigError("WORKFLOW_SNAPSHOT_UNAVAILABLE","制作链冻结记录不可用，未继续提交",503);
     const frozen:Record<string,FrozenWorkflowStage>|null=decrypted?JSON.parse(decrypted):null;
@@ -188,3 +190,12 @@ export async function cancelVideoWorkflow(actor:string,runId:string){
 }
 
 export {ensureWorkflowSchema as ensureVideoWorkflowSchema};
+
+export async function resumeVideoWorkflow(runId:string,actor?:string) {
+  return withBackgroundActivity("video-workflow", runId, "claim", () => resumeVideoWorkflowLocal(runId,actor), async () => {
+    await ensureWorkflowSchema();
+    const run=(await getPool().query("SELECT email FROM app_video_workflow_runs WHERE id=$1",[runId])).rows[0];
+    if(!run||actor&&run.email!==actor)throw new ModelConfigError("WORKFLOW_UNAVAILABLE","工作流不存在",404);
+    return getVideoWorkflow(run.email,runId);
+  });
+}

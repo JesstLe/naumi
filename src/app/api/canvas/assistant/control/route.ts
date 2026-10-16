@@ -1,4 +1,5 @@
 import { observeReleaseRequest, routeAgentToOwner } from "@/lib/release-runtime/http";
+import { forwardLegacyAgentSession } from "@/lib/agent/legacy-runtime";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { canvasAgentHistory } from "@/lib/agent/canvas-history";
 import { getSession, refreshSessionCredentials } from "@/lib/agent/runtime";
@@ -6,6 +7,8 @@ import { assertHarnessSessionId, readHarnessBody, harnessErrorResponse } from "@
 
 /** Canvas controls require both authenticated account and current project/anchor ownership. */
 async function localPOST(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authenticatedEmail(request);
   if (!email) return Response.json({error:"请先登录"},{status:401});
   try {

@@ -1,3 +1,4 @@
+import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import "server-only";
 import {verifiedOwnedMedia,type FrozenMediaInput} from "./media-inspection";
 export {verifiedOwnedMedia} from "./media-inspection";
@@ -208,7 +209,7 @@ async function finishMediaJobFailure(actor:string,id:string,status:"failed"|"can
     await tx.query("UPDATE app_video_media_jobs SET status=$2,error=$3,updated_at=now() WHERE id=$1",[id,status,status==="failed"?"媒体处理失败，请检查输入与处理参数":null]);await tx.query("COMMIT");
   }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
 }
-export async function getMediaJob(actorRaw:string,id:string,process=true){
+async function getMediaJobLocal(actorRaw:string,id:string,process=true){
   const actor=actorRaw.toLowerCase();let row=await getRow(actor,id);if(!row)return null;
   if(!process)return publicMediaJob(row);
   if(!["queued","processing"].includes(row.status)){await cleanupMediaJob(row);return publicMediaJob(row);}
@@ -221,7 +222,9 @@ export async function getMediaJob(actorRaw:string,id:string,process=true){
     try{view=await mediaWorkerRequest(id,"GET");}catch(error){
       if(!(error instanceof MediaWorkerError)||error.status!==404)throw error;
       if(row.cancellation_requested_at){await finishMediaJobFailure(actor,id,"cancelled");row=(await getRow(actor,id))!;await cleanupMediaJob(row);return publicMediaJob(row);}
-      view=await dispatch(row);
+      const dispatched=await withBackgroundActivity("media-job", `${id}:dispatch`, "claim", async()=>{await bindBackgroundClaim(id);return dispatch(row!);},()=>null);
+      if(!dispatched)return publicMediaJob(row);
+      view=dispatched;
     }
     if(row.cancellation_requested_at&&["queued","processing"].includes(view.status))view=await mediaWorkerRequest(id,"DELETE");
     if(view.status==="completed")await publish(row,view);
@@ -240,4 +243,9 @@ export async function cancelMediaJob(actorRaw:string,id:string){const actor=acto
 }
 export async function recoverMediaJobs(limit=4){if(!mediaWorkerConfigured())return 0;await ensureMediaJobSchema();const rows=(await getPool().query("SELECT email,id FROM app_video_media_jobs WHERE status IN ('queued','processing') OR (status IN ('completed','failed','cancelled') AND cleanup_completed_at IS NULL) ORDER BY updated_at LIMIT $1",[limit])).rows;let count=0;
   for(const row of rows){await getMediaJob(row.email,row.id).then(()=>count++).catch(()=>{});}return count;
+}
+
+export async function getMediaJob(actorRaw:string,id:string,process=true) {
+  if(!process)return getMediaJobLocal(actorRaw,id,false);
+  return withBackgroundActivity("media-job", `${id}:poll-settle`, "continuation", () => getMediaJobLocal(actorRaw,id,true), () => getMediaJobLocal(actorRaw,id,false));
 }

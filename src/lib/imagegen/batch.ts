@@ -1,3 +1,4 @@
+import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import "server-only";
 import {randomUUID} from "node:crypto";
 import {getPool} from "../db";
@@ -51,7 +52,7 @@ export async function submitAcceptedImagegenBatch(plan:ImagegenPlan,owner:string
  return {id:request.operationId,children:children.map(c=>c.request.operationId)};
 }
 /** Parent row lock is held through durable child receipt creation: cancel and submit have one order. */
-async function submitNext(id:string){
+async function submitNextLocal(id:string){
  const tx=await getPool().connect();
  try{await tx.query("BEGIN");const batch=(await tx.query("SELECT * FROM app_imagegen_batches WHERE id=$1 FOR UPDATE SKIP LOCKED",[id])).rows[0];
   if(!batch||batch.state!=="running"){await tx.query("COMMIT");return false;}
@@ -60,12 +61,13 @@ async function submitNext(id:string){
   if(active>=limit){await tx.query("COMMIT");return false;}
   const item=(await tx.query<ImagegenBatchItem>("SELECT * FROM app_imagegen_batch_items WHERE batch_id=$1 AND state='queued' ORDER BY ordinal FOR UPDATE SKIP LOCKED LIMIT 1",[id])).rows[0];
   if(!item){await tx.query("COMMIT");return false;}
+  await bindBackgroundClaim(`${id}:${item.key}`, String(item.lease_token || item.child_operation_id));
   const result=await submitAcceptedImagegen(item.plan,batch.owner,item.plan.fingerprint);
   await tx.query("UPDATE app_imagegen_batch_items SET state='submitted',result=$3::jsonb,lease_token=$4,lease_until=now()+interval '120 seconds',updated_at=now() WHERE batch_id=$1 AND key=$2",[id,item.key,JSON.stringify(result),randomUUID()]);
   await tx.query("COMMIT");return true;
  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
 }
-export async function runImagegenBatchTick(id:string){
+async function runImagegenBatchTickLocal(id:string){
  const batch=await imagegenBatchRow(id);if(!batch||!["running","cancelling"].includes(batch.state))return;
  for(const item of await imagegenBatchItems(id))if(item.state==="submitted"){
   const result=await getImagegenResult(item.child_operation_id,batch.owner);if(!result)continue;
@@ -111,4 +113,11 @@ export async function recoverImagegenBatches(){
  await ensureImagegenBatches();const ids=(await getPool().query("SELECT id FROM app_imagegen_batches WHERE state IN ('running','cancelling') ORDER BY updated_at LIMIT 20")).rows;
  const origin=process.env.INTERNAL_APP_ORIGIN||"http://127.0.0.1:3000";let count=0;
  for(const row of ids){const response=await fetch(`${origin}/api/imagegen/batches/${row.id}`,{method:"POST",headers:{"content-type":"application/json","x-video-worker-secret":process.env.VIDEO_WORKER_SECRET||""},body:JSON.stringify({action:"tick"}),signal:AbortSignal.timeout(10000)});if(response.ok)count++;}return count;
+}
+
+async function submitNext(id:string) {
+  return withBackgroundActivity("imagegen-child", id, "claim", () => submitNextLocal(id), () => false);
+}
+export async function runImagegenBatchTick(id:string) {
+  return withBackgroundActivity("imagegen-batch", id, "continuation", () => runImagegenBatchTickLocal(id), () => undefined);
 }

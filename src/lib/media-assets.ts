@@ -1,3 +1,4 @@
+import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import 'server-only';
 import {createHash} from 'node:crypto';
 import {dbEnabled, getPool, ensureSchema} from './db';
@@ -76,7 +77,7 @@ export async function registerMediaAsset(key:string, raw:Uint8Array, contentType
     [key,owner?.toLowerCase()||currentBiContext()?.email||null,publicKey(key),storageDriver,remoteReady,contentType,sha,bytes.length]);
   if(/^image\/(png|jpe?g|webp|gif|avif)$/.test(contentType)) await ensureMediaVariants(key,bytes).catch(()=>{});
 }
-export async function ensureMediaVariants(key:string, bytes?:Buffer) {
+async function ensureMediaVariantsLocal(key:string, bytes?:Buffer) {
   const asset=await getMediaAsset(key); if(!asset || asset.thumbnail_key&&asset.preview_key) return asset;
   const tx=await getPool().connect();
   try {
@@ -100,7 +101,7 @@ export async function ensureMediaVariants(key:string, bytes?:Buffer) {
 }
 
 // Only retry saving bytes, never repeat a model request or touch billing.
-export async function recoverMediaMirrors(limit=2) {
+async function recoverMediaMirrorsLocal(limit=2) {
   if(!privateMedia || storageDriver==='local'||!dbEnabled) return 0;
   await ensureMediaSchema();
   const tx=await getPool().connect();
@@ -109,10 +110,18 @@ export async function recoverMediaMirrors(limit=2) {
     const pending=(await tx.query(`SELECT key,content_type FROM app_media_assets WHERE NOT remote_ready
       AND retry_after<=now() ORDER BY retry_after LIMIT $1 FOR UPDATE SKIP LOCKED`,[limit])).rows;
     for(const row of pending) {
+      await bindBackgroundClaim(row.key);
       const saved=await readManagedObject(`/media/${row.key}`,250*1024*1024);
       const result=await writeStoredObject(saved.bytes,row.content_type,row.key);
       await tx.query(`UPDATE app_media_assets SET remote_ready=$2,retry_after=now()+interval '5 minutes' WHERE key=$1`,[row.key,result.remoteReady]);
     }
     await tx.query('COMMIT');return pending.length;
   }catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
+}
+
+export async function recoverMediaMirrors(limit=2) {
+  return withBackgroundActivity("media-mirror", "media-mirror-scan", "claim", () => recoverMediaMirrorsLocal(limit), () => 0);
+}
+export async function ensureMediaVariants(key:string,bytes?:Buffer) {
+  return withBackgroundActivity("media-variant", key, "continuation", () => ensureMediaVariantsLocal(key,bytes), () => getMediaAsset(key));
 }

@@ -1,3 +1,4 @@
+import { forwardLegacyAgentSession } from "@/lib/agent/legacy-runtime";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
 import { NextResponse } from "next/server";
@@ -310,12 +311,18 @@ async function handleObservedPost(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   try {
     const body = await readHarnessBody(request);
     const validated = new Request(request.url, {method:request.method, headers:request.headers, signal:request.signal, body:JSON.stringify(body)});
     return await withBillingRequest(validated, "canvas.assistant", () => withBiRequest(validated, () => body.mode === "agent" ? runCanvasAgent(validated) : handleObservedPost(validated)));
   } catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }
-export const GET = canvasAgentHistory;
-export const PATCH = canvasAgentHistory;
-export const DELETE = canvasAgentHistory;
+async function sessionHistory(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  return legacy || canvasAgentHistory(request);
+}
+export const GET = sessionHistory;
+export const PATCH = sessionHistory;
+export const DELETE = sessionHistory;

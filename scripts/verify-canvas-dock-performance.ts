@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 import {canvasDockLayout,canvasOverlaySafeArea,canvasDockWidth} from '../src/lib/canvas/dock-layout';
 import {separateCanvasDocks} from '../src/lib/canvas/dock-placement';
+import {canvasZoomState} from '../src/lib/canvas/viewport-state';
 const old=readFileSync(process.env.CANVAS_PERF_LEGACY_DOCK || "scripts/fixtures/canvas-dock-layout-legacy.txt",'utf8');
 function body(marker:string){const a=old.indexOf(marker),start=old.indexOf('=> {',a)+4;const end=old.indexOf('\n  }, [',start);return old.slice(start,end);}
 
@@ -24,5 +25,9 @@ for(const width of [0,390,767,768,999,1000,1093,1440])for(const height of [0,400
  assert.deepEqual(canvasDockLayout(input),legacy(input.nodeScreen,input.canvasSize,input.dockMetrics,text,expanded,readOnly,separateCanvasDocks));cases++;
 }
 assert.deepEqual(canvasDockLayout({nodeScreen:undefined,canvasSize:{width:390,height:614},dockMetrics:{dockHeight:0,toolbarHeight:0,toolbarWidth:0},selectedTextId:null,textComposerExpanded:false,readOnly:false}),{dock:undefined,toolbar:undefined});
-const client=readFileSync('src/components/canvas/canvas-client.tsx','utf8');assert.match(client,/updateLiveViewport\(vp\)/);assert.doesNotMatch(client,/selectedTextId\) setViewport\(vp\)/);assert.match(client,/onMoveEnd=.*setViewport\(vp\)/);
+const client=readFileSync('src/components/canvas/canvas-client.tsx','utf8');assert.match(client,/updateLiveViewport\(vp\)/);assert.doesNotMatch(client,/selectedTextId\) setViewport\(vp\)/);
+assert.match(client,/onMoveEnd=\{[\s\S]*?viewportRef.current = vp;[\s\S]*?updateLiveViewport\(vp\);[\s\S]*?setViewport\(previous => canvasZoomState\(previous, vp\)\)/);
+const original={x:0,y:0,zoom:1};for(let step=0;step<100;step++)assert.equal(canvasZoomState(original,{x:step,y:step,zoom:1}),original,'pure pan does not rerender root on gesture end');
+const zoomed={x:100,y:100,zoom:2};assert.equal(canvasZoomState(original,zoomed),zoomed);assert.equal(canvasZoomState(zoomed,{x:200,y:200,zoom:2}),zoomed);
+assert.match(client,/canvasTool === "hand" \|\| ev.buttons \|\| edge.selectable === false/);
 console.log('DOCK_GEOMETRY=LEGACY_EXACT CASES='+cases+' IMAGE_TEXT_EXPANDED_READONLY_NARROW_SHORT=PASS LIVE_TRANSFORM=EVERY_MOVE END_STATE=SYNCED');

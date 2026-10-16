@@ -4,6 +4,9 @@ import { requestRequirement } from "@/lib/feature-access/catalog";
 import { timingSafeEqual } from "node:crypto";
 import { workerSecret } from "@/lib/settings-secret";
 import { releaseControlAuthorized } from "@/lib/release-runtime/identity";
+import { CONTINUATION_HEADER, verifyAgentContinuation } from "@/lib/release-runtime/accepted-context";
+import { resolveUserEmail } from "@/lib/admin-auth";
+import { releaseError } from "@/lib/release-runtime/identity";
 
 // Node middleware enforces live database grants before page/API dispatch.
 // Overwrite the path header so a client cannot forge layout routing metadata.
@@ -27,7 +30,8 @@ export async function middleware(req: NextRequest) {
       // Existing signed worker recovery completes already accepted/charged jobs.
       // This is NOT an ordinary-user or model-controlled header bypass.
       let worker = false;
-      if (req.method === "POST" && req.headers.has("x-video-worker-secret") && (["/api/generate-image", "/api/imagegen", "/api/suite", "/api/aplus", "/api/video/worker/tick"].includes(req.nextUrl.pathname)||/^\/api\/imagegen\/batches\/[a-f0-9-]{36}$/i.test(req.nextUrl.pathname))) {
+      const workerReceiptRead = req.method === "GET" && req.nextUrl.pathname === "/api/video/worker/tick" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(req.nextUrl.searchParams.get("tickId") || "");
+      if (req.headers.has("x-video-worker-secret") && (workerReceiptRead || req.method === "GET" && req.nextUrl.pathname === "/api/video/worker/drain-status" || req.method === "POST" && (["/api/generate-image", "/api/imagegen", "/api/suite", "/api/aplus", "/api/video/worker/tick"].includes(req.nextUrl.pathname)||/^\/api\/imagegen\/batches\/[a-f0-9-]{36}$/i.test(req.nextUrl.pathname)))) {
         const configured = Buffer.from(workerSecret()), supplied = Buffer.from(req.headers.get("x-video-worker-secret") || "");
         worker = configured.length === supplied.length && timingSafeEqual(configured, supplied);
       }
@@ -40,6 +44,10 @@ export async function middleware(req: NextRequest) {
     } catch {
       return accessJson({ error: "权限服务暂时不可用" }, 503);
     }
+  }
+  if(req.headers.has(CONTINUATION_HEADER)) {
+    try { await verifyAgentContinuation(req,await resolveUserEmail(req),false); }
+    catch(error){return releaseError(error);}
   }
   return NextResponse.next({ request: { headers }, ...(protectedRoute ? { headers: ACCESS_HEADERS } : {}) });
 }

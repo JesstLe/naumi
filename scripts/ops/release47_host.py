@@ -18,6 +18,10 @@ TARGET = '47.105.59.142'
 LOCKS = ['/opt/naumi-staging/releases/deploy.lock',
          '/opt/naumi-reverse-hub/releases/deploy.lock', '/opt/reference-workbench/deploy.lock']
 GATEWAY = '/etc/nginx/sites-available/reference-workbench'
+TARGETS = {
+    TARGET: {'locks': LOCKS, 'prefix': 'naumi47-'},
+    '103.30.76.93': {'locks': LOCKS[:2], 'prefix': 'naumi-'},
+}
 
 
 class Hold(Exception):
@@ -76,7 +80,9 @@ def assert_drain(receipt, identity, now=None):
 
 class HostTransaction:
     def __init__(self, target, host_sha256, evidence_dir, *, command=None):
-        require(target == TARGET and re.fullmatch('[a-f0-9]{64}', host_sha256 or ''), 'FIXED_TARGET_REQUIRED')
+        require(target in TARGETS and re.fullmatch('[a-f0-9]{64}', host_sha256 or ''), 'FIXED_TARGET_REQUIRED')
+        self.target = target
+        self.spec = TARGETS[target]
         self.host_sha256 = host_sha256
         self.folder = pathlib.Path(evidence_dir)
         self._command = command
@@ -101,7 +107,7 @@ class HostTransaction:
         import fcntl
         stack = contextlib.ExitStack()
         try:
-            for name in LOCKS:
+            for name in self.spec['locks']:
                 require(not pathlib.Path(name).is_symlink(), 'LOCK_SYMLINK_FORBIDDEN')
                 fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
                 stream = stack.enter_context(os.fdopen(fd, 'a'))
@@ -249,7 +255,7 @@ class HostTransaction:
 
     def retire(self, identity, receipt, *, now=None):
         row = self.pin(identity)
-        require(row['Name'].lstrip('/').startswith('naumi47-') and row['Config']['Cmd'] in
+        require(row['Name'].lstrip('/').startswith(self.spec['prefix']) and row['Config']['Cmd'] in
                 [['node', 'server.js'], ['scripts/video-worker.mjs'], ['node', 'scripts/video-worker.mjs']],
                 'INFRA_OR_UNKNOWN_ROLE_RETIRE_FORBIDDEN')
         assert_drain(receipt, identity, now)

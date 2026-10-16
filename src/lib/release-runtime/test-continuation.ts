@@ -1,0 +1,56 @@
+import assert from "node:assert/strict";
+import { createHmac, randomUUID } from "node:crypto";
+
+async function main() {
+  process.env.DATABASE_URL="postgresql://postgres:fixture-only-local@127.0.0.1:55438/release_fixture";
+  process.env.NAUMI_RELEASE_RUNTIME="1"; process.env.NAUMI_INSTANCE_ID="fixture-continuation-"+randomUUID().slice(0,8);
+  process.env.SOURCE_COMMIT="d".repeat(40); process.env.NAUMI_RELEASE_ADMISSION_START="open";
+  process.env.RELEASE_CONTROL_SECRET="fixture-release-secret-not-for-production-32";
+  const { releaseIdentity, accountKey, ReleaseRuntimeError }=await import("./identity");
+  const { beginAgentActivity,finishActivity,controlAdmission,releaseStatus,releasePool }=await import("./store");
+  const { CONTINUATION_HEADER,withAcceptedExecution,signAgentContinuation,verifyAgentContinuation,withAcceptedContinuationRequest }=await import("./accepted-context");
+  const { withBackgroundActivity,detachBackgroundActivity }=await import("./background-activity");
+  let checks=0;
+  const check=(name:string,actual:unknown,expected:unknown)=>{assert.deepEqual(actual,expected,name);checks++;console.log(`PASS ${name}`);};
+  const identity=releaseIdentity(), email="a@example.test", run=await beginAgentActivity(email,"ag-continuation","workbench");
+  const parent={id:run,account:accountKey(email),instanceId:identity.instanceId,bootId:identity.bootId};
+  const sign=()=>withAcceptedExecution(parent,()=>signAgentContinuation(email,"/api/suite","POST"));
+  const token=(await sign())!;
+  const request=(proof:string,path="/api/suite",method="POST")=>new Request("http://127.0.0.1:3000"+path,{method,headers:{[CONTINUATION_HEADER]:proof}});
+  check("active run can sign allowlisted internal tool",typeof token,"string");
+  check("administrative endpoint never gets continuation proof",await withAcceptedExecution(parent,()=>signAgentContinuation(email,"/api/admin/settings","POST")),undefined);
+  check("unintegrated endpoint never gets exemption",await withAcceptedExecution(parent,()=>signAgentContinuation(email,"/api/comfyui/run","POST")),undefined);
+  check("read paths do not carry admission proof",await withAcceptedExecution(parent,()=>signAgentContinuation(email,"/api/suite?job=owned","GET")),undefined);
+  await assert.rejects(()=>verifyAgentContinuation(request(token+"bad"),email),ReleaseRuntimeError);checks++;console.log("PASS forged continuation rejected");
+  await assert.rejects(()=>verifyAgentContinuation(request(token),"b@example.test"),ReleaseRuntimeError);checks++;console.log("PASS continuation binds authenticated account");
+  await assert.rejects(()=>verifyAgentContinuation(request(token,"/api/aplus"),email),ReleaseRuntimeError);checks++;console.log("PASS continuation binds exact path");
+  await assert.rejects(()=>verifyAgentContinuation(request(token,"/api/suite","PUT"),email),ReleaseRuntimeError);checks++;console.log("PASS continuation binds method");
+  const [encoded]=token.split("."), claim=JSON.parse(Buffer.from(encoded,"base64url").toString("utf8"));claim.at=Date.now()-31000;
+  const expired=Buffer.from(JSON.stringify(claim)).toString("base64url"), expiredMac=createHmac("sha256",process.env.RELEASE_CONTROL_SECRET!).update("agent-continuation-v1:"+expired).digest("hex");
+  await assert.rejects(()=>verifyAgentContinuation(request(expired+"."+expiredMac),email),ReleaseRuntimeError);checks++;console.log("PASS expired 30-second continuation rejected");
+  const decoded=await verifyAgentContinuation(request(token),email,false);
+  check("pre-validation retains original owner identity",decoded,parent);
+  await verifyAgentContinuation(request(token),email,true);
+  await assert.rejects(()=>verifyAgentContinuation(request(token),email,true),(e:unknown)=>e instanceof ReleaseRuntimeError&&e.code==="AGENT_CONTINUATION_REPLAY");checks++;console.log("PASS nonce replay rejected durably");
+  const status=await releaseStatus();await controlAdmission({instanceId:identity.instanceId,bootId:identity.bootId,expectedRevision:status.admission.revision,operationId:randomUUID(),action:"drain"});
+  let plain=false;await withBackgroundActivity("durable-image","no-proof-new-work","claim",async()=>{plain=true;},()=>undefined);
+  check("ordinary new claim is rejected during drain",plain,false);
+  const accepted=(await sign())!;let child=false;
+  await withAcceptedContinuationRequest(request(accepted),email,()=>withBackgroundActivity("durable-image","accepted-agent-child","claim",async()=>{child=true;},()=>undefined));
+  check("verified original Agent tool can continue during drain",child,true);
+  const beforeFinish=(await sign())!;
+  await finishActivity(run);
+  await assert.rejects(()=>verifyAgentContinuation(request(beforeFinish),email,true),(e:unknown)=>e instanceof ReleaseRuntimeError&&e.code==="AGENT_CONTINUATION_INACTIVE");checks++;console.log("PASS finished run invalidates still-fresh tool proof");
+  let readEscalation=false;
+  await withBackgroundActivity("reference-sync","ordinary-read-poll","continuation",()=>withBackgroundActivity("reference-text","no-read-escalation","claim",async()=>{readEscalation=true;},()=>undefined),()=>undefined);
+  check("read-only continuation cannot escalate to new paid claim",readEscalation,false);
+  const state=await releaseStatus();await controlAdmission({instanceId:identity.instanceId,bootId:identity.bootId,expectedRevision:state.admission.revision,operationId:randomUUID(),action:"resume"});
+  let completed!:()=>void;const pending=new Promise<void>((done)=>completed=done);
+  await detachBackgroundActivity("reference-text","accepted-detached-parent","claim",async()=>{await pending;let nested=false;await withBackgroundActivity("imagegen-child","accepted-child-after-drain","claim",async()=>{nested=true;},()=>undefined);check("already accepted detached promise can finish its child after drain",nested,true);});
+  const running=await releaseStatus();await controlAdmission({instanceId:identity.instanceId,bootId:identity.bootId,expectedRevision:running.admission.revision,operationId:randomUUID(),action:"drain"});completed();
+  for(let i=0;i<100;i++){if((await releaseStatus()).observations.trackedAcceptedWork===0)break;await new Promise((r)=>setTimeout(r,10));}
+  check("accepted descendants drain naturally",(await releaseStatus()).observations.trackedAcceptedWork,0);
+  console.log(`AGENT_CONTINUATION_CHECKS=${checks}`);
+  await releasePool().end();
+}
+void main().catch((e)=>{console.error(e);process.exitCode=1;});

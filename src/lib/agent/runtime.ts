@@ -31,6 +31,8 @@ import { assertMediaUrl, publicImageBytes, readBoundedBytes } from "./harness-ne
 import { describeNaumiTools } from "./naumi-tools";
 import { releaseProcessRegistry } from "@/lib/release-runtime/identity";
 import { startAgentActivity, endAgentActivity, type AgentActivity } from "@/lib/release-runtime/agent-activity";
+import { withAcceptedExecution } from "@/lib/release-runtime/accepted-context";
+import { accountKey, releaseIdentity } from "@/lib/release-runtime/identity";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 运行时:常驻 Agent 会话管理器。
@@ -475,7 +477,8 @@ async function createRuntimeSession(
       session.harness.begin(input, originalAbort, session.userConfirmedQuote ? [session.lastPendingQuoteKey!] : []);
       session.harness.modelStep();
       agent.prepareNextTurn=()=>{session.harness.modelStep();return undefined;};
-      return await originalPrompt(session.harness.publicText(input,false), images);
+      const identity=releaseIdentity(),activity=session.releaseActivity;
+      return await withAcceptedExecution(activity?{id:activity.id,account:accountKey(email),instanceId:identity.instanceId,bootId:identity.bootId}:undefined,()=>originalPrompt(session.harness.publicText(input,false), images));
     }
     finally {
       session.userConfirmedQuote = false; session.harness.finish();

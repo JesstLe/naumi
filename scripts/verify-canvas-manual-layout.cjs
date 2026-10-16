@@ -43,7 +43,9 @@ assert.match(source,/onNodeDrag=\{\(_, node\) => \{\s*rememberGenerationDrag/);
 assert.equal((source.match(/smartLayout\(input, currentEdges\)/g)||[]).length,1);assert.match(functions.tidyLayout,/await applyHistory\(act, false\)/);assert.match(functions.tidyLayout,/pushUndo\(act\)/);
 const baseline=fs.readFileSync(path.join(out,'baseline',file),'utf8'),beforeFns=fns(baseline);
 const printed=s=>ts.createPrinter({removeComments:true}).printFile(ts.createSourceFile('x.tsx',s,99,true,4));
-assert.equal(printed(functions.privateFetch),printed(beforeFns.privateFetch),'auth, metering and model dispatch unchanged');
+const withoutEpochGuard=s=>printed(s).replace(/RequestInit & \{\s*isCurrent\?: \(\) => boolean;\s*\}/,'RequestInit').replace(/, isCurrent: init\.isCurrent/g,'');
+assert.match(functions.privateFetch,/isCurrent:\s*init\.isCurrent/);
+assert.equal(withoutEpochGuard(functions.privateFetch),withoutEpochGuard(beforeFns.privateFetch),'auth, metering and model dispatch unchanged except explicitly integrated account-epoch guard');
 function payloads(s){const a=ts.createSourceFile('x.tsx',s,99,true,4),r=[];function visit(n){if(ts.isCallExpression(n)&&ts.isPropertyAccessExpression(n.expression)&&['fd','form'].includes(n.expression.expression.getText(a))&&['append','set'].includes(n.expression.name.text))r.push(n.getText(a).replace(/\r\n/g,'\n'));ts.forEachChild(n,visit)}visit(a);return r;}
 assert.deepEqual(payloads(source),payloads(baseline),'supplier payloads unchanged');
 console.log('MODIFIED=PASS NEW_PREVIEW=NEARBY EXISTING_PLACEHOLDER=EXACT DRAG_REFRESH=EXACT COMPLETION=LIVE_POSITION RECEIPT=ISOLATED RELOAD=STABLE TIDY=MANUAL SNAP_DEFAULT=OFF PAID_CALLS=0 EXIT=0');

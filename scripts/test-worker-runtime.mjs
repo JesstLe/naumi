@@ -59,7 +59,7 @@ test('drain does not claim completion while a tick is in flight',async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'worker-runtime-'));
  try {
   let tickInit;const gate=deferred(),w=new WorkerRuntime({origin:'http://candidate:3000',secret,instanceId:id,commit,targetInstanceId,store:fileStateStore(path.join(dir,'state.json')),startPaused:false,fetchImpl:async(_url,init)=>{tickInit=init;return gate.promise;}});await w.init();
-  const running=w.tick();await new Promise(r=>setTimeout(r,10));const r=await w.control({action:'drain',operationId:op(),bootId:w.bootId,expectedRevision:0});assert.equal(r.state.phase,'DRAINING');assert.equal(r.state.tickDrainComplete,false);
+  const running=w.tick();const deadline=Date.now()+2000;while(!tickInit){assert.ok(Date.now()<deadline,'tick must reach the mocked HTTP boundary');await new Promise(r=>setTimeout(r,5));}const r=await w.control({action:'drain',operationId:op(),bootId:w.bootId,expectedRevision:0});assert.equal(r.state.phase,'DRAINING');assert.equal(r.state.tickDrainComplete,false);
   gate.resolve(completed(tickInit));await running;assert.equal(w.snapshot().tickDrainComplete,true);
   await w.shutdown();
  } finally {await rm(dir,{recursive:true,force:true});}

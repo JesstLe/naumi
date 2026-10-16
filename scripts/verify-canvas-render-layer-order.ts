@@ -27,7 +27,7 @@ async function main() {
   let edgeRect = interior;
   const path = { closest: () => edge, classList: { contains: () => false }, getBoundingClientRect() { reads++; return rect(edgeRect); } };
   const edge = { ownerSVGElement: { style: { zIndex: '0' } }, querySelector: () => path };
-  const root = { matches: () => true, getBoundingClientRect: () => rect({left:0,top:0,right:900,bottom:720}), dataset: {} as Record<string, string>, querySelector: () => ({ style: { transform: 'translate(0px,0px) scale(1)' } }),
+  const root = { matches: () => true, contains: () => false, addEventListener() {}, removeEventListener() {}, getBoundingClientRect: () => rect({left:0,top:0,right:900,bottom:720}), dataset: {} as Record<string, string>, querySelector: (selector: string) => selector.includes(':hover') ? null : ({ style: { transform: 'translate(0px,0px) scale(1)' } }),
     querySelectorAll: (selector: string) => selector === '.react-flow__node' ? [node] : [edge] };
   let observer: { callback: (records: unknown[]) => void; disconnected: boolean };
   const context = vm.createContext({ console, queueMicrotask: (callback: () => void) => queues.push(callback),
@@ -55,7 +55,8 @@ async function main() {
   cleanups.forEach(callback => callback()); assert.equal(observer!.disconnected, true); assert.equal(root.dataset.canvasLayerOrder, undefined);
   const guard=readFileSync('src/components/canvas/canvas-render-layer-guard.tsx','utf8');assert.match(guard,/Arbitrary user layer order[\s\S]*?allowed = false/);
   const css = readFileSync('src/app/globals.css', 'utf8');
-  assert.match(css, /data-canvas-layer-order="composite"/); assert.match(css, /:not\(:has\(\.react-flow__edge:hover\)\)/);
+  assert.match(css, /data-canvas-layer-order="composite"/); assert.match(css, /:not\(\[data-canvas-edge-hover\]\)/);
+  assert.doesNotMatch(css, /canvas-render-layers[^\n]*:has/);
   console.log('RENDER_LAYER_ORDER=PASS OPAQUE_NEGATIVE_BORDER_TITLE_EDGE_ZINDEX_HOVER=ORIGINAL INTERIOR_GROUP_EDGES=COMPOSITE VIEWPORT120_FRAMES_LAYOUT_READS=0 GEOMETRY100_CHANGES_BATCHES=1 UNMOUNT=CLEAN');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

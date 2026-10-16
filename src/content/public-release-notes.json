@@ -1,6 +1,6 @@
 [
   {
-    "version": "1792127247",
+    "version": "1792134697",
     "title": {
       "zh": "创作体验更新",
       "en": "Creation experience update"
@@ -17,6 +17,10 @@
       {
         "zh": "画布可批量运行选中节点，并显示生成进度。",
         "en": "Run selected canvas nodes in batches and see generation progress."
+      },
+      {
+        "zh": "视频节点支持选中后直接编辑提示词、参数与引用。",
+        "en": "Edit video prompts, settings and references directly from selected nodes."
       }
     ],
     "fixes": [

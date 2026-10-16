@@ -8,7 +8,11 @@ if (secret.trim().length<32) {
   process.exit(1);
 }
 
+if (!Number.isFinite(intervalMs) || intervalMs > 2_147_483_647) { console.error("Invalid worker interval configuration"); process.exit(1); }
 const controlled=process.env.NAUMI_WORKER_RELEASE_CONTROL==='1';
+if (!controlled && (process.env.VIDEO_WORKER_CONTROL_PORT || process.env.VIDEO_WORKER_START_PAUSED === '1')) {
+  await import('./video-worker-legacy.mjs');
+} else {
 if(controlled&&(!process.env.NAUMI_WORKER_STATE_FILE||!process.env.NAUMI_INSTANCE_ID||!process.env.SOURCE_COMMIT)) {
   console.error('DURABLE_WORKER_CONTROL_CONFIG_REQUIRED');process.exit(1);
 }
@@ -30,3 +34,5 @@ for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{
   }).catch(()=>{console.error('WORKER_TICK_DRAIN=UNKNOWN');process.exitCode=2;});
 });
 if(!stopping)await worker.start(intervalMs);
+
+}
