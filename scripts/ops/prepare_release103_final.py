@@ -30,27 +30,33 @@ IMAGES = {
 ORIGINS = ('http://127.0.0.1:13100','http://127.0.0.1:13101','http://127.0.0.1:13102')
 STATIC_ROOT = '/var/www/naumi-client-assets/evening-6272c5ecb95b'
 RELEASE_KEY = 'evening-6272'
+RUNTIME_TOPOLOGY = 'three-web-three-ui'
 
 
 def configure_candidates(path):
     """Only public pinned image identities/origins; never an environment file."""
-    global SOURCE, VERSION, IMAGES, ORIGINS, STATIC_ROOT, RELEASE_KEY
+    global SOURCE, VERSION, IMAGES, ORIGINS, STATIC_ROOT, RELEASE_KEY, RUNTIME_TOPOLOGY
     value=json.loads(Path(path).read_text())
     require(re.fullmatch('[a-f0-9]{40}',value.get('source','')),'Full fixed source SHA required')
     require(re.fullmatch('[0-9]+',str(value.get('version',''))),'Fixed build version required')
-    require(set(value['images'])=={'main','desktop','enterprise'},'Three image flavors required')
+    topology=value.get('runtimeTopology','three-web-three-ui')
+    require(topology in ('three-web-three-ui','unified-web-three-ui'),'Known explicit runtimeTopology required')
+    expected_flavors={'main'} if topology=='unified-web-three-ui' else {'main','desktop','enterprise'}
+    require(set(value['images'])==expected_flavors,'Actual image flavors must match runtimeTopology')
     images={}
     for flavor,prefix in [('main',''),('desktop','/desktop'),('enterprise','/enterprise')]:
+        if flavor not in expected_flavors:continue
         row=value['images'][flavor]
         require(re.fullmatch('sha256:[a-f0-9]{64}',row['image']) and row['assetPrefix']==prefix,'Pinned image id and compiled prefix required')
         images[flavor]=(row['image'],prefix)
     origins=tuple(gateway.origin(value['origins'][flavor]) for flavor in ('main','desktop','enterprise'))
-    require(len(set(origins))==3 and all(not v.endswith(':13062') for v in origins),'Distinct non-Fleet origins required')
+    require(len(set(origins))==(1 if topology=='unified-web-three-ui' else 3) and all(not v.endswith(':13062') for v in origins),'Origins must match explicit runtimeTopology and exclude Fleet')
     root=value['staticRoot']
     require(root.startswith('/var/www/') and '..' not in Path(root).parts and not any(c in root for c in '$\\\r\n;{}'),'Dedicated static root required')
     key=value.get('releaseKey','evening-'+value['source'][:12])
     require(re.fullmatch('[a-zA-Z0-9_-]+',key),'Canonical release key required')
     SOURCE,VERSION,IMAGES,ORIGINS,STATIC_ROOT,RELEASE_KEY=value['source'],str(value['version']),images,origins,root,key
+    RUNTIME_TOPOLOGY=topology
     return value
 
 
@@ -140,6 +146,7 @@ def transition_bundle(output, name, from_mode, to_mode, original_text=None):
     after_text=original_text if to_mode=='original' else (output/to_mode/'nginx.after.txt').read_bytes().decode()
     after_dump=Dump(after_text)
     report={'schemaVersion':1,'kind':'103-config-state-transition','fromState':from_mode,'toState':to_mode,'fullBeforeDumpSha256':sha(before_text.encode()),'fullAfterDumpSha256':sha(after_text.encode()),'sourceRealPaths':{'/etc/nginx/nginx.conf':'/etc/nginx/nginx.conf','/etc/nginx/mime.types':'/etc/nginx/mime.types',gateway.SITE:'/etc/nginx/sites-available/default'},'serverWrites':0,'reloadExecuted':False,'imageRollback':'Retain original pinned container/image and independent103 env/data; restore only gateway entry, never DB/media' if to_mode=='original' else None}
+    report.update({'runtimeTopology':RUNTIME_TOPOLOGY,'liveWebProcesses':1 if RUNTIME_TOPOLOGY=='unified-web-three-ui' else 3,'origins':dict(zip(('main','desktop','enterprise'),ORIGINS)),'newHtmlStaticPrefix':'/_next/static/' if RUNTIME_TOPOLOGY=='unified-web-three-ui' else 'flavor-specific','oldStaticPrefixesRetained':list(gateway.PREFIXES)})
     folder=output/name
     write_gateway_bundle(before_text,after_dump.files,after_text,report,folder,before_files)
     if to_mode=='original':
@@ -226,7 +233,7 @@ def finalize_existing(output, dump_path, source_root):
     shutil.copytree(output/'static-union',package/'static')
     temporary=package/'private-render-work'
     for mode in ('candidate','maintenance'):
-        gateway.bundle(text,sources,*ORIGINS,STATIC_ROOT,manifest,temporary/mode,mode=='maintenance')
+        gateway.bundle(text,sources,*ORIGINS,STATIC_ROOT,manifest,temporary/mode,mode=='maintenance',RUNTIME_TOPOLOGY)
     transition_bundle(temporary,'open-from-maintenance','maintenance','candidate')
     transition_bundle(temporary,'rollback-from-candidate','candidate','original',text)
     transition_bundle(temporary,'rollback-from-maintenance','maintenance','original',text)
@@ -246,6 +253,7 @@ def finalize_existing(output, dump_path, source_root):
         descriptors[kind]={'report':descriptor(dest/'report.json'),'before':{key:descriptor(dest/'closure-before'/key.lstrip('/')) for key in sources},'after':{row['path']:descriptor(dest/row['after']) for row in report['patches']}}
     (package/'gateways.json').write_text(json.dumps(descriptors,indent=2)+'\n',encoding='utf-8')
     summary=json.loads((output/'summary.json').read_text())
+    require(summary['source']==SOURCE and summary['version']==VERSION and summary.get('runtimeTopology','three-web-three-ui')==RUNTIME_TOPOLOGY,'Finalization candidate definition differs from acquisition')
     summary.update({'origins':dict(zip(('main','desktop','enterprise'),ORIGINS)),'packageRoot':str(package),'gatewayDescriptor':'gateways.json','fourCasTransitions':['original->maintenance','maintenance->candidate','maintenance->original','candidate->original'],'nginxFinalVerification':'PENDING_FOR_FINAL_ORIGINS','privateOriginalRollbackArchiveRequired':True,'supersededArtifacts':'Use only package/ and FINAL_PACKAGE_REPORT.json, not earlier scratch output','candidateSourceConfigSha256':{n:sha((temporary/'candidate/after'/n.lstrip('/')).read_bytes()) for n in sources},'maintenanceSourceConfigSha256':{n:sha((temporary/'maintenance/after'/n.lstrip('/')).read_bytes()) for n in sources}})
     (package/'manifest.json').write_text(json.dumps(summary,indent=2)+'\n',encoding='utf-8')
     # Public transport archive contains static and transformed forward configs;
@@ -278,6 +286,7 @@ def seal_verified(output, verification):
     result=json.loads(Path(verification).read_text())
     total=json.loads((package/'manifest.json').read_text())['totalUrls']
     require(tuple(result['testOrigins'])==ORIGINS and result['baselineFullDumpSha256']==gateway.LIVE_DUMP_SHA,'Verification origin/baseline mismatch')
+    require(result.get('runtimeTopology','three-web-three-ui')==RUNTIME_TOPOLOGY,'Verification runtimeTopology mismatch')
     for mode in ('candidateStatic','maintenanceStatic'):
         require(result[mode]['exactHttpHashes']==total and result[mode]['mimeExact'] is True,'Final HTTP SHA/MIME verification missing')
     require(result['baseline']['routeClasses']==65 and result['rollback']['routeClasses']==65 and result['rollbackScriptExit']==0,'Baseline/rollback verification incomplete')
@@ -287,6 +296,17 @@ def seal_verified(output, verification):
     descriptors=json.loads((package/'gateways.json').read_text())
     cas_result=verify_cas_graph(package)
     (validation/'four-state-cas-results.json').write_text(json.dumps(cas_result,indent=2)+'\n',encoding='utf-8')
+    for mode in ('maintenance','open','rollback-maintenance','rollback-open'):
+        folder=package/'gateways'/mode
+        verification_path=folder/'VERIFICATION.txt'
+        with verification_path.open('a',encoding='utf-8') as h:
+            h.write('\nFINAL_LOCAL_VALIDATION=PASS_NOT_DEPLOYED\nRUNTIME_TOPOLOGY='+RUNTIME_TOPOLOGY+'\nCHANGED_FIELD=all dynamic Naumi UI/API origins '+','.join(ORIGINS)+'; old static3prefix retained\n')
+            h.write('BASELINE exact command: NAUMI103_STATIC_UNION=<'+str(output/'static-union')+'> NAUMI103_STATIC_ROOT='+STATIC_ROOT+' NAUMI103_CANDIDATE_ORIGINS='+json.dumps(ORIGINS)+' NAUMI103_RUNTIME_TOPOLOGY='+RUNTIME_TOPOLOGY+' NAUMI103_GATEWAY_OUTPUT=<'+str(Path(verification).parent)+'> python scripts/ops/test_release103_gateway_nginx.py\n')
+            h.write('BASELINE input: pinned real103 dumpSHA '+gateway.LIVE_DUMP_SHA+' + exact3source files + fixture-only backends\nBASELINE literal: BASELINE=PASS REAL_LINUX_NGINX=YES ORIGINAL_ROUTE_CLASSES=65 FLEET=13062 TLS=YES\nBASELINE exit=0\n')
+            h.write('MODIFIED same concentrated command; input: actual '+str(total)+' static bytes/MIME + topology/origins above\nMODIFIED literal: MODIFIED=PASS REAL_LINUX_NGINX=YES ORIGINAL_CLASSES_ACCOUNTED=65 RETIRED_STATIC=17 FLEET_EXACT=9 UI_ORIGINS='+str(len(set(ORIGINS)))+' API_MAIN=YES STATIC_HASHES='+str(total)+' MIME=EXACT TLS_AND_SPOOF_HEADERS=PASS\nMODIFIED exit=0\n')
+            h.write('MAINTENANCE literal: MAINTENANCE=PASS NAUMI=503 FLEET=13062 STATIC_HASHES='+str(total)+' MIME=EXACT DENIES=PRESERVED\nMAINTENANCE exit=0\n')
+            h.write('ROLLBACK exact command: bash /fixture/candidate/ROLLBACK.sh /fixture/rollback-copy (isolated local Linux container only)\nROLLBACK input: separate exact3config candidate copy\nROLLBACK literal: ROLLBACK=PASS EXACT_SOURCE_FILES=3 ORIGINAL_BYTES=RESTORED RELOAD=NOT_EXECUTED\nROLLBACK exit=0\nRESTORED_BEHAVIOR=original65routeclasses and /api/version13039; exact3sourcebytes; changed candidate artifacts remain changed\nFOUR_STATE_CAS=PASS transitions4 wrong-state rejected3\nFOUR_PATHS:\n'+'\n'.join(str(folder/name) for name in ('MODIFIED_FILE','DIFF_FILE.patch','VERIFICATION.txt','ROLLBACK.sh'))+'\n')
+        for name in ('MODIFIED_FILE','DIFF_FILE.patch','VERIFICATION.txt','ROLLBACK.sh'):require((folder/name).read_bytes(),'Empty evidence artifact')
     manifest.update({'nginxFinalVerification':'PASS_REAL_LINUX_NGINX_65ROUTES_'+str(total)+'STATIC_MIME_AND_ROLLBACK','nginxVerificationReport':'validation/final-nginx-results.json','nginxVerificationSha256':file_sha(validation/'final-nginx-results.json'),'readyToDeploy':False,'deploymentStillRequiresFreshLiveBaselineAndLock':True,'candidateSourceConfigSha256':{key:file_sha(package/row['path']) for key,row in {**descriptors['open']['before'],**descriptors['open']['after']}.items()},'maintenanceSourceConfigSha256':{key:file_sha(package/row['path']) for key,row in {**descriptors['maintenance']['before'],**descriptors['maintenance']['after']}.items()},'fourStateCasValidation':'validation/four-state-cas-results.json'})
     manifest_path.write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
     report_path=output/'FINAL_PACKAGE_REPORT.json';report=json.loads(report_path.read_text())
@@ -301,6 +321,9 @@ def seal_verified(output, verification):
     paths=[package/name for name in public_names]+[validation/'final-nginx-results.json',validation/'four-state-cas-results.json',package/'FILE_MANIFEST.json',package/'SHA256SUMS']
     # A new immutable sealed archive; preserve pre-verification tar as evidence.
     report['deployment']=archive_verified(package,paths,output/('naumi-hk103-'+RELEASE_KEY+'-deployment-verified.tar.gz'))
+    old_private=Path(report['privateRollback']['path'])
+    with tarfile.open(old_private,'r:gz') as tar:private_names=[m.name for m in tar.getmembers()]
+    report['privateRollback']=archive_verified(package,[package/name for name in private_names],output/('naumi-hk103-'+RELEASE_KEY+'-rollback-private-verified.tar.gz'))
     report['nginxFinalVerification']='PASS';report['verificationReportSha256']=file_sha(validation/'final-nginx-results.json')
     report_path.write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print('HK103_FINAL_SEALED=PASS STATIC_HASH_MIME='+str(total)+' ROUTE_CLASSES=65 CAS_TRANSITIONS=4 ORIGINS='+','.join(ORIGINS)+' SERVER_WRITES=0',flush=True)
@@ -359,7 +382,7 @@ def prepare(args):
     text=Path(args.dump).read_bytes().decode()
     sources={name:(Path(args.source_root)/name.lstrip('/')).read_bytes() for name in Dump(text).files}
     for mode in ('candidate','maintenance'):
-        gateway.bundle(text,sources,*ORIGINS,STATIC_ROOT,merged,output/mode,mode=='maintenance')
+        gateway.bundle(text,sources,*ORIGINS,STATIC_ROOT,merged,output/mode,mode=='maintenance',RUNTIME_TOPOLOGY)
     transition_bundle(output,'open-from-maintenance','maintenance','candidate')
     transition_bundle(output,'rollback-from-candidate','candidate','original',text)
     transition_bundle(output,'rollback-from-maintenance','maintenance','original',text)
@@ -368,6 +391,7 @@ def prepare(args):
     for mode in ('candidate','maintenance'):
         shutil.copytree(output/mode,original/mode)
     summary={'schemaVersion':1,'kind':'103-final-prepared-'+SOURCE[:12],'source':SOURCE,'version':VERSION,'origins':dict(zip(('main','desktop','enterprise'),ORIGINS)),'staticRoot':STATIC_ROOT,'legacyUrls':merged['legacyUrls'],'newUrls':merged['newUrls'],'totalUrls':len(merged['assets']),'staticBytes':sum(a['size'] for a in merged['assets']),'prefixCounts':dict(collections.Counter(next(p for p in gateway.PREFIXES if a['url'].startswith(p)) for a in merged['assets'])),'candidateFileCounts':merged['candidateFileCounts'],'builds':merged['candidateBuilds'],'conflicts':0,'fleetIncluded':False,'baselineDumpSha256':gateway.LIVE_DUMP_SHA,'originalFileSha256':gateway.EXACT_SOURCE_SHA,'originalRealPaths':{'/etc/nginx/nginx.conf':'/etc/nginx/nginx.conf','/etc/nginx/mime.types':'/etc/nginx/mime.types',gateway.SITE:'/etc/nginx/sites-available/default'},'candidateSourceConfigSha256':{n:sha((output/'candidate/after'/n.lstrip('/')).read_bytes()) for n in sources},'maintenanceSourceConfigSha256':{n:sha((output/'maintenance/after'/n.lstrip('/')).read_bytes()) for n in sources},'serverConnections':0,'serverWrites':0,'candidateContainersStarted':0,'readyToDeploy':False,'nginxFinalVerification':'PENDING','realNextDbAcceptance':'ROOT_EXISTING_QA_NOT_RERUN'}
+    summary.update({'runtimeTopology':RUNTIME_TOPOLOGY,'liveWebProcesses':len(set(ORIGINS)),'newHtmlStaticPrefix':'/_next/static/' if RUNTIME_TOPOLOGY=='unified-web-three-ui' else 'flavor-specific','retainedOldStaticPrefixes':list(gateway.PREFIXES),'rootQaEvidence':'Separate actual controlled unified instance is required; do not substitute variant QA'})
     (output/'summary.json').write_text(json.dumps(summary,indent=2)+'\n',encoding='utf-8')
     result=package_upload(output,summary)
     print('HK103_FINAL_STATIC=PASS OLD='+str(merged['legacyUrls'])+' NEW='+str(merged['newUrls'])+' TOTAL='+str(len(merged['assets']))+' CONFLICTS=0 CANDIDATE_STARTED=0 SOURCE='+SOURCE+' VERSION='+VERSION,flush=True)

@@ -69,3 +69,15 @@
 - https://docs.kernel.org/admin-guide/cgroup-v2.html （memory.reclaim/swappiness段）
 
 **判断：冻结+换出只适合另行受控实验，不作为默认保护未知Agent的可用性承诺。优先验证单main三UI，然后再按真实进程职责/容量决定少量旧UI是否可退役；两条路线都不允许伪造drain=0或重放已接受任务。**
+
+## root已显式采用unified候选：实现与离线交付
+- root明确目标为“统一Web+Worker、保持功能与本103数据”，不再要求三种Next进程常驻；三variant镜像/旧包仍可独立留作回退证据。本轮只实现网关与打包模式，不修改业务UI或运行时数据。
+- `release103_gateway.py`新增明确`runtimeTopology=unified-web-three-ui`：三个origin必须相等，均指main13100；默认`three-web-three-ui`仍要求三个不同origin，不能把混合配置静默认成单Web。报告包含liveWebProcesses=1、三个URL UI surfaces、新HTML rootchunks和原三prefix静态保留、desktop API alias保留。Fleet9块/原deny3块原字节保持，R2仍由103独立env与原鉴权实现处理。
+- `prepare_release103_final.py`参数JSON允许unified模式仅提供一个实际HKmain image并读空assetPrefix；三个origin必须全同，镜像image/source/version/prefix仍强校验。variant模式仍必须三image/三prefix。旧2684静态URL始终来自已核实capture，不能用新main文件覆盖不同prefix。
+- 固定候选：`0614f9ae6f9174bf804ca3e98dd7011c54010838 / 1792134697`，HKmain `sha256:0145e1989be2ebb60fa2cd5d5fbc6bdb3907acd48f2bd1b19b9d87bca089cf53`。只做stopped create/cp，实读BUILD_ID `zg9peZhUJliMIl77ngNOB`、assetPrefix空；未启动候选Web或另建DB。
+- 旧2684 + 新main343 =3027 URL、43700874bytes、0冲突，prefix为1371/670/986。新main392静态文件中相同URL相同字节可去重，不同字节冲突即hold。6272/three等原包均未覆盖。
+- 真实本地Linux Nginx在**最终alias路径**`/var/www/naumi-client-assets/evening-0614f9ae6f91-unified`、单origin13100下完整通过：原65类baseline、全部动态UI/API同origin、Fleet9/TLS/SAN与XFF/CF防伪、candidate和maintenance各3027文件逐HTTP SHA与精确MIME、maintenance503、原3源复制bash回滚及65类原行为恢复。独立4态CAS验证通过且3类错源状态拒绝。7项gateway+3项参数/union反例测试通过，均exit0。
+- 根目录：`E:/Workspace/naumi/output/release103-evening-20261016/final-prepared-0614-unified/package`。`gateways.json`仍是maintenance/open/rollback-maintenance/rollback-open，before closure3、after仅site，全部相对根路径；每个report带显式topology。四件/descriptor/所有tar成员再次读取及逐SHA验证。
+- 最终部署tar：同父目录`naumi-hk103-evening-0614-unified-deployment-verified.tar.gz`，11123759bytes，SHA256 `e64afb84a8eaea73b8b420cc84d0bdd4aebe0c5562f3b0d35047886867443f49`；配套`naumi-hk103-evening-0614-unified-rollback-private-verified.tar.gz`，57873bytes，SHA256 `06dcb8f1896872e5f6002efb22f64c47d23ed783e974ab02565f54e9cb0eb4fa`。解到同一根；public tar没有原config/secret，原像单独私有。ACL为当前账号+SYSTEM。
+- 实际三UI浏览器业务验收由root/packaging agent复用同一controlled main boot完成，要求browser runner/PNG/真实hydrated desktop-ui、enterprise-ui和账号/媒体/权限证据；本模块的fixture backend只证明Nginx与文件字节，不冒充该验收。root/backend的session显式unified schema仍使用真实MemAvailable≥2048MiB门槛，1045MiB会在503之前失败，不因采用单Web自动放宽。
+- 本子任务服务器连接0、写入0、供应商调用0；没有安装或上传包，没有执行冻结/回收/退役。

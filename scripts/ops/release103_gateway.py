@@ -81,9 +81,11 @@ def inventory(text):
     return dump, server, locations
 
 
-def render(text, main, desktop, enterprise, static_root, manifest, maintenance=False):
+def render(text, main, desktop, enterprise, static_root, manifest, maintenance=False, runtime_topology='three-web-three-ui'):
     origins = {'main': origin(main), 'desktop': origin(desktop), 'enterprise': origin(enterprise)}
-    require(len(set(origins.values())) == 3 and all(not value.endswith(':13062') for value in origins.values()), 'Three distinct non-Fleet candidate origins required')
+    require(runtime_topology in ('three-web-three-ui','unified-web-three-ui'), 'Explicit known runtime topology required')
+    required_origins=1 if runtime_topology=='unified-web-three-ui' else 3
+    require(len(set(origins.values())) == required_origins and all(not value.endswith(':13062') for value in origins.values()), 'Topology requires '+str(required_origins)+' distinct non-Fleet origins')
     require(static_root.startswith('/') and not any(c in static_root for c in '$\r\n;{}\\') and '..' not in PurePosixPath(static_root).parts, 'Invalid static union root')
     asset_count = validate_manifest(manifest)
     dump, server, locations = inventory(text)
@@ -142,6 +144,7 @@ def render(text, main, desktop, enterprise, static_root, manifest, maintenance=F
     require(all(not child.args[0].startswith('@') for child in new_locations.values()), 'Legacy static chain retained')
     report = {'schemaVersion': 1, 'kind': '103-maintenance-gateway' if maintenance else '103-candidate-gateway', 'target': '103.30.76.93', 'baselineDumpSha256': LIVE_DUMP_SHA, 'afterDumpSha256': sha(after.encode()), 'origins': origins, 'staticRoot': static_root, 'staticAssets': asset_count, 'originalRouteClasses': classes, 'originalRouteClassesCount': len(classes), 'fleetRouteBytesPreserved': 9, 'denyRouteBytesPreserved': 3, 'retiredFallbacks': sorted(FALLBACKS), 'compiledUiFlavors': 3, 'apiOwner': 'main', 'readyToDeploy': False, 'liveWrites': 0, 'protocolCompatibility': 'NOT_VERIFIED'}
     report['sourceRealPaths'] = {'/etc/nginx/nginx.conf': '/etc/nginx/nginx.conf', '/etc/nginx/mime.types': '/etc/nginx/mime.types', SITE: '/etc/nginx/sites-available/default'}
+    report.update({'runtimeTopology':runtime_topology,'liveWebProcesses':required_origins,'urlUiSurfaces':['main','desktop','enterprise'],'compiledUiFlavors':required_origins,'newHtmlStaticPrefix':'/_next/static/' if required_origins==1 else 'flavor-specific','oldStaticPrefixesRetained':list(PREFIXES),'desktopNewTransport':'canonical /api without DesktopTransport rewrite' if required_origins==1 else 'compiled DesktopTransport','legacyDesktopApiAliases':'preserved'})
     report['rollbackScriptScope'] = 'Local copied config tree only; live lock owner must preserve sites-enabled symlink, validate realpath/CAS, nginx -t, reload and business acceptance separately'
     return patches, after, report
 
@@ -170,8 +173,8 @@ PY
 '''
 
 
-def bundle(text, source_files, main, desktop, enterprise, static_root, manifest, output, maintenance=False):
-    patches, after, report = render(text, main, desktop, enterprise, static_root, manifest, maintenance)
+def bundle(text, source_files, main, desktop, enterprise, static_root, manifest, output, maintenance=False, runtime_topology='three-web-three-ui'):
+    patches, after, report = render(text, main, desktop, enterprise, static_root, manifest, maintenance, runtime_topology)
     # Verify exact bytes for ALL closure members before writing any bundle.
     dump = Dump(text)
     require(set(source_files) == set(dump.files), 'All exact closure source files required')
@@ -185,7 +188,7 @@ def bundle(text, source_files, main, desktop, enterprise, static_root, manifest,
     rollback = output / 'ROLLBACK.sh'
     rollback.write_text(ROLLBACK, encoding='utf-8', newline='\n')
     rollback.chmod(0o755)
-    (output / 'VERIFICATION.txt').write_text('STATUS=PREPARED_NOT_DEPLOYED\nBRANCH=103 main API + compiled desktop/enterprise UI + prefixed readonly static aliases\nFULL_SOURCE_CAS=3\nBASELINE_DUMP_SHA256=' + LIVE_DUMP_SHA + '\nFINAL_CANDIDATE_NEXT_BROWSER=NOT_VERIFIED\n', encoding='utf-8')
+    (output / 'VERIFICATION.txt').write_text('STATUS=PREPARED_NOT_DEPLOYED\nBRANCH=103 main API + URL desktop/enterprise UI + prefixed readonly static aliases\nRUNTIME_TOPOLOGY='+runtime_topology+'\nLIVE_WEB_PROCESSES='+str(len(set((main,desktop,enterprise))))+'\nFULL_SOURCE_CAS=3\nBASELINE_DUMP_SHA256=' + LIVE_DUMP_SHA + '\nFINAL_CANDIDATE_NEXT_BROWSER=NOT_VERIFIED\n', encoding='utf-8')
     return report
 
 
@@ -194,8 +197,9 @@ if __name__ == '__main__':
     for arg in ('dump', 'source-root', 'main', 'desktop', 'enterprise', 'static-root', 'manifest', 'output'):
         p.add_argument('--' + arg, required=True)
     p.add_argument('--maintenance', action='store_true')
+    p.add_argument('--runtime-topology',choices=('three-web-three-ui','unified-web-three-ui'),default='three-web-three-ui')
     a = p.parse_args()
     text = Path(a.dump).read_bytes().decode()
     sources = {name: (Path(a.source_root) / name.lstrip('/')).read_bytes() for name in Dump(text).files}
-    result = bundle(text, sources, a.main, a.desktop, a.enterprise, a.static_root, json.loads(Path(a.manifest).read_text()), a.output, a.maintenance)
+    result = bundle(text, sources, a.main, a.desktop, a.enterprise, a.static_root, json.loads(Path(a.manifest).read_text()), a.output, a.maintenance, a.runtime_topology)
     print('HK_GATEWAY=PREPARED MODE=' + ('MAINTENANCE' if a.maintenance else 'CANDIDATE') + ' KNOWN_ROUTES=65 FLEET_EXACT=9 SOURCE_CAS=3 LIVE_WRITES=0 PROTOCOL=NOT_VERIFIED')
