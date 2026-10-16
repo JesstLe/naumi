@@ -31,6 +31,16 @@ async function main() {
   ok(parsed.definition.instructions.includes(markdown) && parsed.definition.instructions.includes("简报全文：消费者与渠道。") && parsed.definition.instructions.includes("输出全文：唯一推荐与风险。"));
   ok(parsed.warnings.length === 1);
   ok(parseSkillImport("root.zip", await archive({ "SKILL.md": markdown })).definition.name === md.definition.name);
+  const linkedMd = markdown + "\n[简报](references/brief.md)";
+  reject("SKILL.md", bytes(linkedMd));
+  assert.throws(() => parseSkillImport("SKILL.md", bytes(linkedMd)), /一起打包为 ZIP/); checks++;
+  reject("missing.zip", await archive({ "package/SKILL.md": linkedMd }));
+  ok(parseSkillImport("complete.zip", await archive({ "package/SKILL.md": linkedMd, "package/references/brief.md": "完整简报内容。" })).definition.instructions.includes("完整简报内容。"));
+  for (const target of ["../outside.md", "/references/brief.md", "references/%2e%2e/%2e%2e/outside.md", "file:///etc/passwd", "javascript:alert", "data:text/plain,hello", "scripts/run.md"]) reject("linked.zip", await archive({ "SKILL.md": markdown + `\n[依赖](${target})` }));
+  reject("nested-missing.zip", await archive({ "SKILL.md": linkedMd, "references/brief.md": "[更多](missing.md)" }));
+  reject("reference-style.md", bytes(markdown + "\n[简报][brief]\n\n[brief]: references/brief.md"));
+  ok(parseSkillImport("external.md", bytes(markdown + "\n[站点](https://example.test/docs) [站点](http://example.test/) [章节](#section)\n`[示例](references/not-real.md)`\n```md\n[示例](references/not-real.md)\n```" )).definition.name === md.definition.name);
+  ok(parseSkillImport("relative.zip", await archive({ "SKILL.md": markdown + "\n[简报](./references/brief.md#part)", "references/brief.md": "[返回](../SKILL.md)" })).definition.instructions.includes("[返回]"));
   ok(parseSkillImport("block.md", bytes(markdown.replace("description: 账号隔离的包装策略测试", "description: >\n  第一行描述\n  第二行描述"))).definition.description === "第一行描述 第二行描述");
   reject("bad.txt", bytes(markdown)); reject("SKILL.md", bytes("no metadata")); reject("SKILL.md", Buffer.from([0xff]));
   reject("empty.md", bytes("")); reject("binary.md", bytes(markdown + "\0")); reject("skill.json", bytes("{"));
@@ -61,6 +71,7 @@ async function main() {
   if (process.env.NAUMI_SKILL_IMPORT_SOURCE) {
     const source = process.env.NAUMI_SKILL_IMPORT_SOURCE.replace(/[\\/]$/, "");
     const skill = await readFile(source + "/SKILL.md", "utf8"), brief = await readFile(source + "/references/brief-schema.md", "utf8"), output = await readFile(source + "/references/output-format.md", "utf8"), metadata = await readFile(source + "/agents/openai.yaml", "utf8");
+    reject("SKILL.md", bytes(skill)); // The original Skill is incomplete without its two referenced documents.
     const original = parseSkillImport("brand.zip", await archive({ "brand/SKILL.md": skill, "brand/references/brief-schema.md": brief, "brand/references/output-format.md": output, "brand/agents/openai.yaml": metadata }));
     ok(original.definition.name === "品牌包装创意策略生成器");
     ok(original.definition.instructions.includes(skill.replace(/\r\n?/g, "\n").trim()) && original.definition.instructions.includes(brief.replace(/\r\n?/g, "\n").trim()) && original.definition.instructions.includes(output.replace(/\r\n?/g, "\n").trim()));

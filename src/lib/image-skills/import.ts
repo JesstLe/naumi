@@ -1,6 +1,9 @@
 /** Imported packages are inert workflow data. No extraction, scripts, YAML evaluation or network access. */
 import { createHash } from "node:crypto";
 import { inflateRawSync } from "node:zlib";
+import { posix } from "node:path";
+import { unified } from "unified";
+import remarkParse from "remark-parse";
 import { SkillError, validateSkillDraft } from "./catalog";
 
 export const SKILL_IMPORT_MAX_BYTES = 512 * 1024;
@@ -21,6 +24,29 @@ function textFile(bytes: Uint8Array) {
 export function skillDefinitionHash(input: unknown) {
   // Explicit key order and validated/trimmed fields make JSON formatting and ignored owner fields irrelevant.
   return createHash("sha256").update(JSON.stringify(validateSkillDraft(input))).digest("hex");
+}
+function validateLocalReferences(documents: Map<string, string>, standalone = false) {
+  for (const [source, markdown] of documents) {
+    if (!source.endsWith(".md")) continue;
+    // Parse Markdown, not regex: escaped labels, nested parentheses and reference links follow CommonMark.
+    // Code spans/fences are examples, not document dependencies; the parser never executes them.
+    const tree = unified().use(remarkParse).parse(markdown), targets: string[] = [];
+    const walk = (node: { type: string; url?: string; children?: any[] }) => {
+      if (["link", "image", "definition"].includes(node.type) && typeof node.url === "string") targets.push(node.url);
+      node.children?.forEach(walk);
+    };
+    walk(tree);
+    for (const target of targets) {
+      if (!target || target.startsWith("#") || /^https?:\/\//i.test(target)) continue;
+      let path: string;
+      try { path = decodeURIComponent(target.split(/[?#]/)[0]); }
+      catch { return invalid("Skill 本地参考链接编码不正确，请检查后上传 ZIP"); }
+      if (!path || path.startsWith("/") || /[\\:\u0000-\u001f\u007f]/.test(path)) invalid("Skill 仅支持包内安全参考路径与 http(s) 外链");
+      const resolved = safePath(posix.normalize(posix.join(posix.dirname(source), path)));
+      if (!(resolved === "SKILL.md" || resolved === "agents/openai.yaml" || /^references\/(?:[^/]+\/)*[^/]+\.md$/.test(resolved))) invalid("Skill 本地参考链接必须位于允许的 Skill 文件树内");
+      if (!documents.has(resolved)) invalid(standalone ? `Skill 引用了本地参考资料 ${resolved}，请将 SKILL.md 与参考资料一起打包为 ZIP 导入` : `ZIP 缺少本地参考资料 ${resolved}，请补齐后重新导入`);
+    }
+  }
 }
 function scalar(raw: string) {
   const value = raw.trim();
@@ -115,6 +141,7 @@ function readZip(bytes: Buffer) {
     invalid("ZIP 仅支持 SKILL.md、references/*.md 与 agents/openai.yaml，不支持脚本或其他文件");
   }
   references.sort(([a], [b]) => a.localeCompare(b, "en"));
+  validateLocalReferences(new Map([...files].map(([path, content]) => [path.slice(root.length), content])));
   return { definition: markdownDefinition(files.get(skillPath)!, references, agents), warnings: [...new Set(warnings)] };
 }
 export function parseSkillImport(fileName: string, input: Uint8Array): ParsedSkillImport {
@@ -124,7 +151,7 @@ export function parseSkillImport(fileName: string, input: Uint8Array): ParsedSki
   if (!extension) invalid("请选择 .md、.zip 或 Naumi Skill .json 文件");
   if (extension === "zip") return readZip(Buffer.from(input));
   const text = textFile(input);
-  if (extension === "md") return { definition: markdownDefinition(text), warnings: [] };
+  if (extension === "md") { validateLocalReferences(new Map([["SKILL.md", text]]), true); return { definition: markdownDefinition(text), warnings: [] }; }
   let body: any; try { body = JSON.parse(text); } catch { return invalid("Skill JSON 格式不正确"); }
   if (body?.format !== "naumi-image-skill" || body?.version !== 1) invalid("请选择 Naumi 导出的 version 1 Skill JSON 文件");
   return { definition: validateSkillDraft(body.definition), warnings: [] };
