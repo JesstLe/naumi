@@ -773,7 +773,33 @@ class MaintenanceSession:
     def dispatch(self, action, request, operation, reconcile):
         state, adapter = self.state, self.adapter
         if action == 'baseline':
-            require(not reconcile, 'UNKNOWN_BASELINE_REQUIRES_ORIGINAL_PRIVATE_SNAPSHOT_REVIEW')
+            if reconcile:
+                # inventory assignment precedes the first snapshot call. Its
+                # absent key proves this failed operation never reached that
+                # call. Do not replace any original/partial snapshot or allow a
+                # later lifecycle state to masquerade as a fresh baseline.
+                initial = self.new_state()
+                record = state.get('operations', {}).get(operation, {})
+                original = record.get('request', {})
+                history = state.get('history', [])
+                defaults = ['webs', 'retired', 'legacyDrainProven', 'legacyActiveTicks',
+                            'acceptedTasks', 'agentSessions', 'databaseRestored', 'tasksReplayed']
+                require(state.get('phase') == 'NEW' and
+                        set(state) <= set(initial) | {'status', 'lastError'} and
+                        set(initial) <= set(state) and
+                        all(encoded(state[key]) == encoded(initial[key]) for key in defaults) and
+                        set(state['operations']) == {operation} and
+                        set(record) == {'requestSha256', 'request', 'phase', 'recordedAt'} and
+                        record.get('phase') == 'UNKNOWN' and
+                        set(original) == {'action', 'operationId', 'expectedRevision'} and
+                        original.get('action') == 'baseline' and original.get('operationId') == operation and
+                        original.get('expectedRevision') == 0 and
+                        isinstance(history, list) and len(history) > 0 and
+                        all(isinstance(item, dict) and item.get('action') == 'baseline' and
+                            item.get('operationId') == operation and item.get('result') == 'UNKNOWN'
+                            for item in history) and
+                        state.get('revision') == len(history) + 1,
+                        'UNKNOWN_BASELINE_REQUIRES_ORIGINAL_PRIVATE_SNAPSHOT_REVIEW')
             state['baselineInventory'] = adapter.inventory(operation)
             state['before'] = adapter.snapshot(operation)
             state['phase'] = 'BASELINED'; return state['before']['public']
