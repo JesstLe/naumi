@@ -9571,7 +9571,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
                   <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
 
-                  {canFeature("generate")&&<button type="button" aria-label="图像创作" disabled={readOnly} onClick={openImagegenPanel} className="canvas-ui-action flex h-8 items-center rounded-md px-2 text-xs">图像创作</button>}
                   <CanvasActionMenu label={t("canvas.toolbar.addToCanvas")} light={lightCanvas}
                     open={addMenuOpen} onOpenChange={open => { setMoreToolsOpen(false); setAddMenuOpen(open); }}
                     triggerIcon={Plus} iconOnly triggerTestId="canvas-add-node-button" menuTestId="canvas-create-menu"
