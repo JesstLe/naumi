@@ -16,19 +16,19 @@
       "id": "M01",
       "path": "modules/M01-organization.md",
       "title": "M01 多公司、事业部、部门与任职",
-      "metadata": "服务域：组织身份｜阶段：P1基础、P2扩展｜上游：D01、D02｜依赖：无\r",
+      "metadata": "服务域：组织身份｜阶段：P1基础、P2扩展｜上游：D01、D02｜依赖：无",
       "dependencies": [],
       "sourceIds": [
         "D01",
         "D02"
       ],
-      "chars": 1929
+      "chars": 1873
     },
     {
       "id": "M02",
       "path": "modules/M02-identity-permissions.md",
       "title": "M02 钉钉登录、业务权限与数据隔离",
-      "metadata": "服务域：组织身份｜阶段：P1｜上游：D01、D02｜依赖：M01\r",
+      "metadata": "服务域：组织身份｜阶段：P1｜上游：D01、D02｜依赖：M01",
       "dependencies": [
         "M01"
       ],
@@ -36,13 +36,13 @@
         "D01",
         "D02"
       ],
-      "chars": 1892
+      "chars": 1838
     },
     {
       "id": "M03",
       "path": "modules/M03-commerce-master.md",
       "title": "M03 品牌、店铺、商品与SKU主数据",
-      "metadata": "服务域：业务主数据｜阶段：P1人工基础、P2聚水潭同步｜上游：D03、D04、D05｜依赖：M01、M02\r",
+      "metadata": "服务域：业务主数据｜阶段：P1人工基础、P2聚水潭同步｜上游：D03、D04、D05｜依赖：M01、M02",
       "dependencies": [
         "M01",
         "M02"
@@ -52,13 +52,13 @@
         "D04",
         "D05"
       ],
-      "chars": 1796
+      "chars": 1745
     },
     {
       "id": "M04",
       "path": "modules/M04-project-campaign.md",
       "title": "M04 项目、活动与跨店需求组合",
-      "metadata": "服务域：工作流｜阶段：P2｜上游：D03、D06、D07｜依赖：M03、M06\r",
+      "metadata": "服务域：工作流｜阶段：P2｜上游：D03、D06、D07｜依赖：M03、M06",
       "dependencies": [
         "M03",
         "M06"
@@ -68,13 +68,13 @@
         "D06",
         "D07"
       ],
-      "chars": 1571
+      "chars": 1521
     },
     {
       "id": "M05",
       "path": "modules/M05-demand-forms.md",
       "title": "M05 需求表单、字段模板与版本",
-      "metadata": "服务域：工作流｜阶段：P1｜上游：D05、D06、D07｜依赖：M02、M03\r",
+      "metadata": "服务域：工作流｜阶段：P1｜上游：D05、D06、D07｜依赖：M02、M03",
       "dependencies": [
         "M02",
         "M03"
@@ -84,13 +84,13 @@
         "D06",
         "D07"
       ],
-      "chars": 1782
+      "chars": 1731
     },
     {
       "id": "M06",
       "path": "modules/M06-demand-intake.md",
       "title": "M06 需求填报、受理与历史钉钉表迁移",
-      "metadata": "服务域：工作流｜阶段：P1｜上游：D06、D07｜依赖：M03、M05、M13\r",
+      "metadata": "服务域：工作流｜阶段：P1｜上游：D06、D07｜依赖：M03、M05、M13",
       "dependencies": [
         "M03",
         "M05",
@@ -100,13 +100,13 @@
         "D06",
         "D07"
       ],
-      "chars": 1842
+      "chars": 1791
     },
     {
       "id": "M07",
       "path": "modules/M07-routing-approval.md",
       "title": "M07 按表归属、审批、优先级与受理SLA",
-      "metadata": "服务域：工作流｜阶段：P1｜上游：D01、D03、D06、D07｜依赖：M01、M02、M05、M06\r",
+      "metadata": "服务域：工作流｜阶段：P1｜上游：D01、D03、D06、D07｜依赖：M01、M02、M05、M06",
       "dependencies": [
         "M01",
         "M02",
@@ -119,13 +119,13 @@
         "D06",
         "D07"
       ],
-      "chars": 1902
+      "chars": 1850
     },
     {
       "id": "M08",
       "path": "modules/M08-task-breakdown.md",
       "title": "M08 任务拆解、交付规格、依赖与标准工作量",
-      "metadata": "服务域：工作流｜阶段：P1｜上游：D07、D08｜依赖：M05、M07\r",
+      "metadata": "服务域：工作流｜阶段：P1｜上游：D07、D08｜依赖：M05、M07",
       "dependencies": [
         "M05",
         "M07"
@@ -134,13 +134,13 @@
         "D07",
         "D08"
       ],
-      "chars": 1762
+      "chars": 1711
     },
     {
       "id": "M09",
       "path": "modules/M09-capacity-calendar.md",
       "title": "M09 工作日历、产能排期与跨组支援",
-      "metadata": "服务域：工作流｜阶段：P1简版、P2增强｜上游：D01、D07、D08｜依赖：M01、M08\r",
+      "metadata": "服务域：工作流｜阶段：P1简版、P2增强｜上游：D01、D07、D08｜依赖：M01、M08",
       "dependencies": [
         "M01",
         "M08"
@@ -150,13 +150,13 @@
         "D07",
         "D08"
       ],
-      "chars": 1689
+      "chars": 1638
     },
     {
       "id": "M10",
       "path": "modules/M10-assignment-claim.md",
       "title": "M10 指派、任务池、认领与责任确认",
-      "metadata": "服务域：工作流｜阶段：P1｜上游：D01、D07、D08｜依赖：M02、M07、M08、M09\r",
+      "metadata": "服务域：工作流｜阶段：P1｜上游：D01、D07、D08｜依赖：M02、M07、M08、M09",
       "dependencies": [
         "M02",
         "M07",
@@ -168,13 +168,13 @@
         "D07",
         "D08"
       ],
-      "chars": 1791
+      "chars": 1740
     },
     {
       "id": "M11",
       "path": "modules/M11-execution-progress.md",
       "title": "M11 执行进度、阻塞、工时与交付准备",
-      "metadata": "服务域：工作流｜阶段：P1｜上游：D08、D09｜依赖：M10、M13\r",
+      "metadata": "服务域：工作流｜阶段：P1｜上游：D08、D09｜依赖：M10、M13",
       "dependencies": [
         "M10",
         "M13"
@@ -183,13 +183,13 @@
         "D08",
         "D09"
       ],
-      "chars": 1760
+      "chars": 1709
     },
     {
       "id": "M12",
       "path": "modules/M12-change-handover.md",
       "title": "M12 需求变更、延期、转派与离职交接",
-      "metadata": "服务域：工作流｜阶段：P1受控转派、P2完整变更单｜上游：D01、D07、D08｜依赖：M01、M09、M10、M11\r",
+      "metadata": "服务域：工作流｜阶段：P1受控转派、P2完整变更单｜上游：D01、D07、D08｜依赖：M01、M09、M10、M11",
       "dependencies": [
         "M01",
         "M09",
@@ -201,13 +201,13 @@
         "D07",
         "D08"
       ],
-      "chars": 1779
+      "chars": 1728
     },
     {
       "id": "M13",
       "path": "modules/M13-assets-dam.md",
       "title": "M13 素材、源文件、版本、权限与复用",
-      "metadata": "服务域：资产创作｜阶段：P1｜上游：D04、D09、D10｜依赖：M02、M03\r",
+      "metadata": "服务域：资产创作｜阶段：P1｜上游：D04、D09、D10｜依赖：M02、M03",
       "dependencies": [
         "M02",
         "M03"
@@ -217,13 +217,13 @@
         "D09",
         "D10"
       ],
-      "chars": 1884
+      "chars": 1833
     },
     {
       "id": "M14",
       "path": "modules/M14-brand-compliance.md",
       "title": "M14 品牌规范、商品卖点与内容合规",
-      "metadata": "服务域：业务主数据+资产｜阶段：P1最小清单、P2规则库｜上游：D04、D05、D10｜依赖：M03、M13\r",
+      "metadata": "服务域：业务主数据+资产｜阶段：P1最小清单、P2规则库｜上游：D04、D05、D10｜依赖：M03、M13",
       "dependencies": [
         "M03",
         "M13"
@@ -233,13 +233,13 @@
         "D05",
         "D10"
       ],
-      "chars": 1707
+      "chars": 1657
     },
     {
       "id": "M15",
       "path": "modules/M15-creative-workspace.md",
       "title": "M15 任务创作工作区、Naumi画布与AI执行关联",
-      "metadata": "服务域：资产创作｜阶段：P1｜上游：D08、D09、D10、D11｜依赖：M10、M13、M14\r",
+      "metadata": "服务域：资产创作｜阶段：P1｜上游：D08、D09、D10、D11｜依赖：M10、M13、M14",
       "dependencies": [
         "M10",
         "M13",
@@ -251,13 +251,13 @@
         "D10",
         "D11"
       ],
-      "chars": 1908
+      "chars": 1856
     },
     {
       "id": "M16",
       "path": "modules/M16-review-rework.md",
       "title": "M16 在线评审、逐项批注与返工责任",
-      "metadata": "服务域：工作流｜阶段：P1基本评审、P2图上批注｜上游：D08、D09、D10｜依赖：M11、M13、M14\r",
+      "metadata": "服务域：工作流｜阶段：P1基本评审、P2图上批注｜上游：D08、D09、D10｜依赖：M11、M13、M14",
       "dependencies": [
         "M11",
         "M13",
@@ -268,13 +268,13 @@
         "D09",
         "D10"
       ],
-      "chars": 1749
+      "chars": 1698
     },
     {
       "id": "M17",
       "path": "modules/M17-acceptance-delivery.md",
       "title": "M17 最终验收、交付包、签收与结项",
-      "metadata": "服务域：工作流｜阶段：P1｜上游：D07、D08、D09｜依赖：M13、M16\r",
+      "metadata": "服务域：工作流｜阶段：P1｜上游：D07、D08、D09｜依赖：M13、M16",
       "dependencies": [
         "M13",
         "M16"
@@ -284,13 +284,13 @@
         "D08",
         "D09"
       ],
-      "chars": 1860
+      "chars": 1809
     },
     {
       "id": "M18",
       "path": "modules/M18-channel-publishing.md",
       "title": "M18 交付上架、渠道发布、回执与召回",
-      "metadata": "服务域：分发集成｜阶段：P2人工回执、P3受控API｜上游：D03、D05、D09、D12｜依赖：M03、M14、M17、M26\r",
+      "metadata": "服务域：分发集成｜阶段：P2人工回执、P3受控API｜上游：D03、D05、D09、D12｜依赖：M03、M14、M17、M26",
       "dependencies": [
         "M03",
         "M14",
@@ -303,13 +303,13 @@
         "D09",
         "D12"
       ],
-      "chars": 1834
+      "chars": 1783
     },
     {
       "id": "M19",
       "path": "modules/M19-notifications-sla.md",
       "title": "M19 站内待办、钉钉通知、提醒与升级",
-      "metadata": "服务域：集成worker｜阶段：P1｜上游：D01、D07、D08｜依赖：M02、M07、M10、M26\r",
+      "metadata": "服务域：集成worker｜阶段：P1｜上游：D01、D07、D08｜依赖：M02、M07、M10、M26",
       "dependencies": [
         "M02",
         "M07",
@@ -321,13 +321,13 @@
         "D07",
         "D08"
       ],
-      "chars": 1696
+      "chars": 1645
     },
     {
       "id": "M20",
       "path": "modules/M20-sop-knowledge.md",
       "title": "M20 SOP、任务模板、知识库与受控AI助手",
-      "metadata": "服务域：工作流配置+资产｜阶段：P2｜上游：D05、D08、D10｜依赖：M05、M13、M14\r",
+      "metadata": "服务域：工作流配置+资产｜阶段：P2｜上游：D05、D08、D10｜依赖：M05、M13、M14",
       "dependencies": [
         "M05",
         "M13",
@@ -338,13 +338,13 @@
         "D08",
         "D10"
       ],
-      "chars": 1730
+      "chars": 1680
     },
     {
       "id": "M21",
       "path": "modules/M21-workload-contribution.md",
       "title": "M21 标准工作量、多人贡献、返工与责任事实",
-      "metadata": "服务域：绩效事实｜阶段：P1留证、P2校准｜上游：D08、D09｜依赖：M08、M12、M17\r",
+      "metadata": "服务域：绩效事实｜阶段：P1留证、P2校准｜上游：D08、D09｜依赖：M08、M12、M17",
       "dependencies": [
         "M08",
         "M12",
@@ -354,13 +354,13 @@
         "D08",
         "D09"
       ],
-      "chars": 1837
+      "chars": 1786
     },
     {
       "id": "M22",
       "path": "modules/M22-performance-rules.md",
       "title": "M22 绩效指标、规则版本与可解释计算",
-      "metadata": "服务域：绩效｜阶段：P2影子核算、P3正式采用｜上游：D08、D13｜依赖：M21、M31\r",
+      "metadata": "服务域：绩效｜阶段：P2影子核算、P3正式采用｜上游：D08、D13｜依赖：M21、M31",
       "dependencies": [
         "M21",
         "M31"
@@ -369,13 +369,13 @@
         "D08",
         "D13"
       ],
-      "chars": 1791
+      "chars": 1739
     },
     {
       "id": "M23",
       "path": "modules/M23-performance-cycles.md",
       "title": "M23 绩效周期、员工查证、复核、申诉与归档",
-      "metadata": "服务域：绩效｜阶段：P2｜上游：D01、D08、D13｜依赖：M21、M22\r",
+      "metadata": "服务域：绩效｜阶段：P2｜上游：D01、D08、D13｜依赖：M21、M22",
       "dependencies": [
         "M21",
         "M22"
@@ -385,13 +385,13 @@
         "D08",
         "D13"
       ],
-      "chars": 1747
+      "chars": 1696
     },
     {
       "id": "M24",
       "path": "modules/M24-management-bi.md",
       "title": "M24 经营协作看板、指标口径与数据质量",
-      "metadata": "服务域：报表读模型｜阶段：P1流程看板、P2经营分析｜上游：D07—D14｜依赖：M06、M10、M17\r",
+      "metadata": "服务域：报表读模型｜阶段：P1流程看板、P2经营分析｜上游：D07—D14｜依赖：M06、M10、M17",
       "dependencies": [
         "M06",
         "M10",
@@ -407,13 +407,13 @@
         "D13",
         "D14"
       ],
-      "chars": 1774
+      "chars": 1723
     },
     {
       "id": "M25",
       "path": "modules/M25-cost-budget.md",
       "title": "M25 创作积分、费用、预算与效率核算",
-      "metadata": "服务域：计费适配+报表｜阶段：P1关联、P2预算｜上游：D08、D11、D14｜依赖：M15、M17、M24\r",
+      "metadata": "服务域：计费适配+报表｜阶段：P1关联、P2预算｜上游：D08、D11、D14｜依赖：M15、M17、M24",
       "dependencies": [
         "M15",
         "M17",
@@ -424,13 +424,13 @@
         "D11",
         "D14"
       ],
-      "chars": 1768
+      "chars": 1717
     },
     {
       "id": "M26",
       "path": "modules/M26-connectors-data.md",
       "title": "M26 钉钉、聚水潭及其他系统连接器与数据导入",
-      "metadata": "服务域：集成worker｜阶段：P1人工导入+钉钉身份、P2聚水潭｜上游：D01—D06、D12—D14｜依赖：M01、M02\r",
+      "metadata": "服务域：集成worker｜阶段：P1人工导入+钉钉身份、P2聚水潭｜上游：D01—D06、D12—D14｜依赖：M01、M02",
       "dependencies": [
         "M01",
         "M02"
@@ -446,13 +446,13 @@
         "D13",
         "D14"
       ],
-      "chars": 1897
+      "chars": 1846
     },
     {
       "id": "M27",
       "path": "modules/M27-outcomes-attribution.md",
       "title": "M27 上架效果、实验、经营复盘与归因边界",
-      "metadata": "服务域：报表读模型｜阶段：P3｜上游：D03、D05、D12、D14｜依赖：M03、M18、M24、M26\r",
+      "metadata": "服务域：报表读模型｜阶段：P3｜上游：D03、D05、D12、D14｜依赖：M03、M18、M24、M26",
       "dependencies": [
         "M03",
         "M18",
@@ -465,13 +465,13 @@
         "D12",
         "D14"
       ],
-      "chars": 1832
+      "chars": 1781
     },
     {
       "id": "M28",
       "path": "modules/M28-outsourcing.md",
       "title": "M28 外包、供应商协作、交付权利与验收结算",
-      "metadata": "服务域：工作流+资产+成本｜阶段：P3按需｜上游：D08、D09、D10、D14｜依赖：M02、M13、M17、M25\r",
+      "metadata": "服务域：工作流+资产+成本｜阶段：P3按需｜上游：D08、D09、D10、D14｜依赖：M02、M13、M17、M25",
       "dependencies": [
         "M02",
         "M13",
@@ -484,13 +484,13 @@
         "D10",
         "D14"
       ],
-      "chars": 1704
+      "chars": 1653
     },
     {
       "id": "M29",
       "path": "modules/M29-audit-privacy.md",
       "title": "M29 审计、数据分级、留存、导出与删除",
-      "metadata": "服务域：各域审计+报表｜阶段：P1底座｜上游：D01—D14｜依赖：M02\r",
+      "metadata": "服务域：各域审计+报表｜阶段：P1底座｜上游：D01—D14｜依赖：M02",
       "dependencies": [
         "M02"
       ],
@@ -510,13 +510,13 @@
         "D13",
         "D14"
       ],
-      "chars": 1776
+      "chars": 1724
     },
     {
       "id": "M30",
       "path": "modules/M30-workbench-adoption.md",
       "title": "M30 员工工作台、角色体验、培训与内部推广",
-      "metadata": "服务域：企业BFF/前端｜阶段：P1并贯穿后续｜上游：D01、D07、D08｜依赖：M02、M06、M10、M19\r",
+      "metadata": "服务域：企业BFF/前端｜阶段：P1并贯穿后续｜上游：D01、D07、D08｜依赖：M02、M06、M10、M19",
       "dependencies": [
         "M02",
         "M06",
@@ -528,13 +528,13 @@
         "D07",
         "D08"
       ],
-      "chars": 1796
+      "chars": 1744
     },
     {
       "id": "M31",
       "path": "modules/M31-process-config.md",
       "title": "M31 流程配置、归属规则发布与版本治理",
-      "metadata": "服务域：各领域配置｜阶段：P1必要规则、P2配置中心｜上游：D05、D07、D13｜依赖：M02\r",
+      "metadata": "服务域：各领域配置｜阶段：P1必要规则、P2配置中心｜上游：D05、D07、D13｜依赖：M02",
       "dependencies": [
         "M02"
       ],
@@ -543,13 +543,13 @@
         "D07",
         "D13"
       ],
-      "chars": 1818
+      "chars": 1766
     },
     {
       "id": "M32",
       "path": "modules/M32-operations-capacity.md",
       "title": "M32 部署运维、资源容量、蓝绿发布与升级路线",
-      "metadata": "服务域：运行平台｜阶段：P1并贯穿后续｜上游：D15｜依赖：M02、M29\r",
+      "metadata": "服务域：运行平台｜阶段：P1并贯穿后续｜上游：D15｜依赖：M02、M29",
       "dependencies": [
         "M02",
         "M29"
@@ -557,7 +557,7 @@
       "sourceIds": [
         "D15"
       ],
-      "chars": 2037
+      "chars": 1985
     }
   ],
   "shared": [
@@ -676,7 +676,7 @@
       "metadata": "",
       "dependencies": [],
       "sourceIds": [],
-      "chars": 12701
+      "chars": 12567
     }
   ]
 }

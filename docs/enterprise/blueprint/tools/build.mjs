@@ -10,7 +10,7 @@ const esc = x => String(x).replaceAll('&', '&amp;').replaceAll('<', '&lt;').repl
 const entries = [];
 for (const dir of ['modules', 'shared']) {
   for (const name of (await readdir(resolve(root, dir))).filter(n => n.endsWith('.md')).sort()) {
-    const path = `${dir}/${name}`, markdown = await readFile(resolve(root, path), 'utf8');
+    const path = `${dir}/${name}`, markdown = (await readFile(resolve(root, path), 'utf8')).replaceAll('\r\n','\n');
     const title = markdown.match(/^# (.+)$/m)?.[1];
     const id = name.startsWith('M') ? name.slice(0, 3) : `S${name.slice(0, 2)}`;
     const metadata = markdown.split('\n').find(l => l.startsWith('服务域：')) || '';
