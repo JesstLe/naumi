@@ -13,7 +13,7 @@ import prepare_release103_final as final
 
 class FinalUnion(unittest.TestCase):
     def test_new_fixed_candidate_definition_and_prefix_rejection(self):
-        old=(final.SOURCE,final.VERSION,final.IMAGES,final.ORIGINS,final.STATIC_ROOT,final.RELEASE_KEY)
+        old=(final.SOURCE,final.VERSION,final.IMAGES,final.ORIGINS,final.STATIC_ROOT,final.RELEASE_KEY,final.RUNTIME_TOPOLOGY)
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp)/'candidate.json'
             definition={'source':'a'*40,'version':'1792999999','images':{flavor:{'image':'sha256:'+char*64,'assetPrefix':prefix} for flavor,char,prefix in [('main','a',''),('desktop','b','/desktop'),('enterprise','c','/enterprise')]},'origins':{'main':'http://127.0.0.1:13100','desktop':'http://127.0.0.1:13101','enterprise':'http://127.0.0.1:13102'},'staticRoot':'/var/www/naumi-client-assets/new-fixed-sha','releaseKey':'evening-new-fixed'}
@@ -24,7 +24,12 @@ class FinalUnion(unittest.TestCase):
                 path.write_text(json.dumps(definition))
                 from release_client_compat import CompatError
                 with self.assertRaises(CompatError):final.configure_candidates(path)
-            finally:final.SOURCE,final.VERSION,final.IMAGES,final.ORIGINS,final.STATIC_ROOT,final.RELEASE_KEY=old
+                definition['images']={'main':{'image':'sha256:'+'d'*64,'assetPrefix':''}}
+                definition['runtimeTopology']='unified-web-three-ui'
+                definition['origins']={key:'http://127.0.0.1:13100' for key in ('main','desktop','enterprise')}
+                path.write_text(json.dumps(definition));final.configure_candidates(path)
+                self.assertEqual(len(final.IMAGES),1);self.assertEqual(final.RUNTIME_TOPOLOGY,'unified-web-three-ui')
+            finally:final.SOURCE,final.VERSION,final.IMAGES,final.ORIGINS,final.STATIC_ROOT,final.RELEASE_KEY,final.RUNTIME_TOPOLOGY=old
 
     def test_real_prefix_isolation_duplicates_and_conflict_hold(self):
         with tempfile.TemporaryDirectory() as temp:

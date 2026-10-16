@@ -24,6 +24,7 @@ import release103_gateway as hk
 from release_client_compat import Dump, file_sha
 from test_release103_gateway import ROOT, ORIGINS as DEFAULT_ORIGINS, captured
 ORIGINS=tuple(json.loads(os.environ['NAUMI103_CANDIDATE_ORIGINS'])) if os.environ.get('NAUMI103_CANDIDATE_ORIGINS') else DEFAULT_ORIGINS
+TOPOLOGY=os.environ.get('NAUMI103_RUNTIME_TOPOLOGY','three-web-three-ui')
 
 
 def certificate(root):
@@ -73,8 +74,8 @@ def main():
     manifest = json.loads((union/'manifest.json').read_text())
     static_root = os.environ.get('NAUMI103_STATIC_ROOT', '/fixture/union')
     asset_count = len(manifest['assets'])
-    hk.bundle(text, sources, *ORIGINS, static_root, manifest, base/'candidate')
-    hk.bundle(text, sources, *ORIGINS, static_root, manifest, base/'maintenance', True)
+    hk.bundle(text, sources, *ORIGINS, static_root, manifest, base/'candidate',False,TOPOLOGY)
+    hk.bundle(text, sources, *ORIGINS, static_root, manifest, base/'maintenance', True,TOPOLOGY)
     dump, server, locations = hk.inventory(text)
     live = base / 'live'
     for name, raw in sources.items():
@@ -90,6 +91,7 @@ def main():
     backend, nginx = name+'-backend', name+'-nginx'
     created = []
     results = {'productionConnections': 0, 'supplierCalls': 0, 'actualNextOrDbAcceptance': False, 'testOrigins': list(ORIGINS), 'baselineFullDumpSha256': hk.LIVE_DUMP_SHA, 'fixtureOnly': True, 'nginxMemoryMiB': 128, 'backendMemoryMiB': 128, 'fixtureAdaptations': ['self-signed local TLS fixture cert; production paths retained', 'container-only www-data user creation', 'named location probe injection only during baseline/rollback behavior tests', 'worker_processes=1 only for local resource control']}
+    results.update({'runtimeTopology':TOPOLOGY,'liveWebOrigins':len(set(ORIGINS))})
     context = ssl.create_default_context(cafile=str(base/'cert.pem'))
     try:
         run(['docker','run','-d','--name',backend,'--label','io.naumi.hk103-fixture='+name,'--memory','128m','--cpus','0.5','-p','127.0.0.1::80','-p','127.0.0.1::443','-v',str(base)+':/fixture:ro','python:3.12-alpine','python','/fixture/backend.py']);created.append(backend)
@@ -190,7 +192,7 @@ def main():
             status,data,_=request(path);row=json.loads(data)
             assert status==200 and row['port']==int(ORIGINS[0].rsplit(':',1)[1]) and row['path']==expected,(path,row)
         assert request('/enterprise/api/video/worker/tick')[0]==403
-        results['candidate']={'retainedRouteClasses':len(candidate_rows),'retiredStaticClasses':len(hk.FALLBACKS),'rows':candidate_rows,'threeCompiledUiOrigins':True,'allNaumiApiOnMain':True,'forwardedIdentitySpoofCleared':True}
+        results['candidate']={'retainedRouteClasses':len(candidate_rows),'retiredStaticClasses':len(hk.FALLBACKS),'rows':candidate_rows,'threeCompiledUiOrigins':len(set(ORIGINS))==3,'unifiedWebThreeUi':TOPOLOGY=='unified-web-three-ui','allNaumiApiOnMain':True,'forwardedIdentitySpoofCleared':True}
 
         def check_static(mode):
             checked=0
@@ -210,7 +212,7 @@ def main():
                 assert request(prefix+'fixture-not-present.js')[0]==404
             results[mode+'Static']={'exactHttpHashes':checked,'prefixes':list(hk.PREFIXES),'missing404':True,'mimeCounts':mime_counts,'mimeExact':True}
         check_static('candidate')
-        print('MODIFIED=PASS REAL_LINUX_NGINX=YES ORIGINAL_CLASSES_ACCOUNTED=65 RETIRED_STATIC=17 FLEET_EXACT=9 UI_ORIGINS=3 API_MAIN=YES STATIC_HASHES='+str(asset_count)+' MIME=EXACT TLS_AND_SPOOF_HEADERS=PASS',flush=True)
+        print('MODIFIED=PASS REAL_LINUX_NGINX=YES ORIGINAL_CLASSES_ACCOUNTED=65 RETIRED_STATIC=17 FLEET_EXACT=9 UI_ORIGINS='+str(len(set(ORIGINS)))+' API_MAIN=YES STATIC_HASHES='+str(asset_count)+' MIME=EXACT TLS_AND_SPOOF_HEADERS=PASS',flush=True)
         syntax_and_reload((base/'maintenance/after'/hk.SITE.lstrip('/')).read_bytes())
         for probe in probes:
             key=probe['location']
@@ -252,7 +254,7 @@ Input: distinct exact candidate-copy config root
 Output: ROLLBACK=PASS EXACT_SOURCE_FILES=3 ORIGINAL_BYTES=RESTORED RELOAD=NOT_EXECUTED
 Exit: 0
 Restored behavior: 65 original route classes, original /api/version port13039, exact original3source files; candidate artifacts stay changed.
-'''.replace('ASSET_COUNT',str(asset_count))
+'''.replace('ASSET_COUNT',str(asset_count)).replace('UI_ORIGINS=3','UI_ORIGINS='+str(len(set(ORIGINS)))).replace('candidate main13110/desktop13111/enterprise13112','candidate origins '+','.join(ORIGINS))
         for folder in ('candidate','maintenance'):
             p=base/folder/'VERIFICATION.txt'
             with p.open('a',encoding='utf-8') as h:h.write(evidence+'\nFOUR_PATHS:\n'+'\n'.join(str(base/folder/n) for n in ('MODIFIED_FILE','DIFF_FILE.patch','VERIFICATION.txt','ROLLBACK.sh'))+'\n')

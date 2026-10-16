@@ -66,6 +66,19 @@ class Gateway(unittest.TestCase):
             self.assertEqual([c.args for c in nodes[key].children if c.name == 'return'], [['503']])
         self.assertEqual(report['fleetRouteBytesPreserved'], 9)
 
+    def test_explicit_unified_topology_one_real_origin_all_three_ui(self):
+        single=('http://127.0.0.1:13100',)*3
+        patches,after,report=hk.render(self.text,*single,'/fixture/union',self.manifest,runtime_topology='unified-web-three-ui')
+        self.assertEqual(report['liveWebProcesses'],1)
+        self.assertEqual(report['runtimeTopology'],'unified-web-three-ui')
+        self.assertEqual(report['newHtmlStaticPrefix'],'/_next/static/')
+        nodes={' '.join(n.args):n for n in walk(parse(patches[hk.SITE])) if n.name=='location'}
+        for key in hk.MAIN|hk.DESKTOP|hk.ENTERPRISE:
+            proxy=next(c.args[0] for c in nodes[key].children if c.name=='proxy_pass')
+            self.assertTrue(proxy==single[0] or proxy.startswith(single[0]+'/'))
+        with self.assertRaises(CompatError):hk.render(self.text,*single,'/fixture/union',self.manifest)
+        with self.assertRaises(CompatError):hk.render(self.text,*ORIGINS,'/fixture/union',self.manifest,runtime_topology='unified-web-three-ui')
+
     def test_changed_baseline_unknown_routes_are_fail_closed(self):
         for changed in (self.text + '\n', self.text.replace('location / {', 'location /unknown {'), self.text.replace(':13062;', ':13063;', 1)):
             with self.assertRaisesRegex(CompatError, 'baseline changed'):
