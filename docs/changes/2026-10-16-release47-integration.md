@@ -45,3 +45,15 @@
 - 修正/补齐后逐项重验，完整结果与本地Linux不可变镜像/回滚证据见 output/release47 与 E:/Workspace/naumi/output/release47-integrated-20261016/VERIFICATION.txt。Linux进程交接与生产Worker交接分开记录。
 - 原始业务source与最近候选均保留，回滚只在独立源码副本演练；没有生产DB回灌或重放收费任务。
 - 本轮发布次数0；功能整合已fetch同步，main保持c2634fb，候选推独立远端分支，不把未发布候选合入main称生产版本。
+
+## 收尾验证（13:23北京时间）
+- 最终固定候选5405d23fa37a5de27ed5f2f9e2aa87e43d8eeb97 / BUILD_VERSION1792127247；镜像sha256:8f2b379b386f3b910dfa7cff93ddbfa7403558c4285c1d48aea54650c5c9f857。源码已推远端同名分支，main仍c2634fb。
+- Linux生产镜像构建退出0，完整TypeScript退出0。首次失败逐项修正或按Linux信号行为验证后，26个具名集中回归项最终退出0；保留初始失败日志，不称首次全绿。
+- 新镜像真实密码登录、Skill点击/拖放导入、作者/私有范围/跨账号隔离、包装示例保存、390px无横溢出与pageerror0通过；全程隔离本机PG，无真实供应商调用。T3预览超时后使用项目现有隔离Edge流程。
+- 首次运行页500源于本地fixture遗漏VIDEO_WORKER_SECRET，补齐独立fixture配置后通过；初次HTTP200实际重定向setup的误判已纠正，设本地配置锁后重新验证真正页面与浏览器功能。不是生产配置修改。
+- 本地受控Worker进程交接Linux通过；Windows原生SIGTERM行为不同，初始失败保留。15项运行器、58项生命周期、16项host适配测试通过。
+- BASELINE/MODIFIED/ROLLBACK同一Skill存储/API矩阵分别100/118/100项，退出均0。240路径原hash保留，独立rollback-copy实际执行Linux可执行ROLLBACK.sh后全部原hash恢复；当前候选继续保持改动，生产未回滚。
+- 最后47三锁只读复核：13容器ID/Image/启动时间及nginx完整hash均与开始一致；MemAvailable2119MiB；主Web anon约1498MiB、file约656MiB、kernel约57MiB，不能把全部cgroup字节当不可回收堆。OOM/OOM-kill0，max事件5321保持。
+- 公网30请求为20HTTP200及10次sign-in的HTTP307，未出现5xx；这是未切流只读观察，不是蓝绿连续性完成。版本仍f4b3df1/1791989816，三锁已释放。
+- 本机任务构建器、候选及专用PG已停止；保留固定镜像、源码ZIP、镜像TAR、差异、VERIFICATION.txt及可执行副本回滚。服务器未构建/建槽/重启/停容器/写DB/切入口。
+- **生产上线仍待内存余量、旧Worker/App/Agent归属排空、旧客户端兼容与统一切流执行器闭合；不以本地验证代替上线。**
