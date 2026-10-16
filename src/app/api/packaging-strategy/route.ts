@@ -11,6 +11,7 @@ import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { requestedTextModel } from "@/lib/text-models";
+import { currentModelExecution } from "@/lib/model-config/context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,14 +65,16 @@ export async function POST(request: Request) {
       if (!claim.runId) return json({project: claim.project});
       try {
         const settings = await getOpenAISettings();
-        const apiKey = process.env.AGENT_API_KEY || settings.apiKey;
+        const apiKey = currentModelExecution("text")?.connection.apiKey || process.env.AGENT_API_KEY || settings.apiKey;
         if (!apiKey) throw new PackagingError("文字模型接口尚未配置", 503);
         const client = observeOpenAI(modelAwareOpenAI({apiKey, baseURL: process.env.AGENT_BASE_URL || await getOpenAIBaseUrl() || undefined, timeout: 120000, maxRetries: 0}));
         const response = await client.chat.completions.create({
           model: requestedTextModel(request, process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna"),
           messages: packagingMessages(command, claim.previous, claim.previousAnswers),
           response_format: {type: "json_object"}, max_tokens: 5500,
-        }, {signal: request.signal});
+        // Managed provider timeout can exceed the 4-minute project lease.
+        // Bound the actual fetch too, not only the legacy SDK constructor.
+        }, {signal: AbortSignal.any([request.signal, AbortSignal.timeout(120000)])});
         const result = parsePackagingResult(response.choices[0]?.message?.content || "", command.allowDraft);
         return json({project: await finishPackagingCommand(email, claim.project.id, claim.runId, result)});
       } catch (error) {
