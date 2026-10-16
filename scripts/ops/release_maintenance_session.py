@@ -43,7 +43,7 @@ def check_path(name, path):
             'CANDIDATE_RELATIVE_URL_REQUIRED')
     routes = {'login': ('/api/auth/session',), 'canvas': ('/api/projects', '/canvas'),
               'private-media': ('/api/media/',), 'old-client': ('/_next/static/', '/desktop/_next/static/', '/enterprise/_next/static/'),
-              'skills': ('/api/agent/skills',), 'packaging': ('/api/packaging-strategy', '/creation/'),
+              'skills': ('/api/agent/skills',), 'packaging': ('/api/packaging-strategy', '/tools/packaging-strategy'),
               'desktop-ui': ('/desktop', '/desktop/'), 'enterprise-ui': ('/enterprise', '/enterprise/'),
               'health': ('/api/health',), 'version': ('/api/version',)}
     require(name in routes and any(parsed.path == prefix or prefix.endswith('/') and parsed.path.startswith(prefix)
