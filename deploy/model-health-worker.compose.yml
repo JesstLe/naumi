@@ -1,0 +1,14 @@
+# Merge with the site's compose file after its protected env has both the app's
+# MODEL_HEALTH_WORKER_SECRET and the identical secret in this worker. No ports.
+services:
+  model-health-worker:
+    image: ${NAUMI_IMAGE:?Use the same fixed candidate image as the app}
+    command: ["node", "scripts/model-health-worker.mjs"]
+    env_file: ${MODEL_HEALTH_ENV_FILE:?Use an ACL-restricted environment file}
+    environment:
+      NAUMI_APP_ORIGIN: ${NAUMI_APP_ORIGIN:-http://app:3000}
+      MODEL_HEALTH_WORKER_INTERVAL_MS: "60000"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]

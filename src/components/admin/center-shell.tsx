@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, ArrowLeft, BarChart3, Building2, ImageIcon, Layers, LogOut, Menu, Settings, ShieldCheck, Users, Wallet, X } from "lucide-react";
+import { Activity, ArrowLeft, BarChart3, Building2, HeartPulse, ImageIcon, Layers, LogOut, Menu, Settings, ShieldCheck, Users, Wallet, X } from "lucide-react";
 import type { BiSection } from "@/lib/bi/contracts";
 import styles from "./center-shell.module.css";
 
-type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-management" | "teams" | "team-access" | "feature-access" | "deployments";
+type Section = BiSection | "billing" | "pricing" | "settings" | "model-config" | "model-health" | "model-management" | "teams" | "team-access" | "feature-access" | "deployments";
 type Entry = { id: Section; label: string; icon: typeof Users; href?: string };
 const groups: { label: string; entries: Entry[] }[] = [
   { label: "运营概览", entries: [{ id: "overview", label: "数据概览", icon: BarChart3 }] },
@@ -32,6 +32,7 @@ const groups: { label: string; entries: Entry[] }[] = [
   { label: "系统设置", entries: [
     { id: "deployments", label: "部署管理", icon: Building2, href: "/admin/deployments" },
     { id: "model-config", label: "模型配置中心", icon: Layers, href: "/admin/bi/models" },
+    { id: "model-health", label: "模型健康巡检", icon: HeartPulse, href: "/admin/model-health" },
     { id: "settings", label: "接口与站点设置", icon: Settings, href: "/admin?view=settings" },
   ] },
 ];

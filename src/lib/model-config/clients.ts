@@ -15,10 +15,14 @@ import { supplierCostFetch } from "../supplier-cost/collect";
 import {mapResolution,RESOLUTION_FIELDS} from "./resolution-policy";
 import {policyQuality} from "./quality-policy";
 import { reverseHubImageFetch } from "./reverse-hub-images";
+import { healthObservedFetch } from "../model-health/observe";
 const managedClients = new WeakSet<OpenAI>();
 export const isManagedModelClient = (client: OpenAI) => managedClients.has(client);
 
 export function executionFetch(scope: ModelExecutionScope, options: ValidationOptions = {}): typeof fetch {
+  return healthObservedFetch(scope, executionTransport(scope, options), options);
+}
+function executionTransport(scope: ModelExecutionScope, options: ValidationOptions): typeof fetch {
   if(scope.supplierRouting)return channelRoutingFetch(scope,options);
   if (scope.businessOption && !scope.audited) return stageRoutingFetch(scope, options);
   const { connection, frozen, parameterMap } = scope;
