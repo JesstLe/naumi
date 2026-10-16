@@ -299,6 +299,14 @@ class SessionTests(unittest.TestCase):
             with self.assertRaises(m.Hold):self.session.step(bad)
         self.assertEqual(self.adapter.calls,calls)
 
+    def test_successful_capture_cannot_be_relabelled_as_acknowledged_failure(self):
+        self.to_candidates()
+        request,_=self.step('capture-acceptance',artifact={'path':'success.json','sha256':'a'*64})
+        calls=list(self.adapter.calls);state=copy.deepcopy(self.session.state)
+        with self.assertRaisesRegex(m.Hold,'ORIGINAL_UNKNOWN_READONLY_CAPTURE'):
+            self.session.step({**request,'reconcile':True,'acknowledgeFailure':True})
+        self.assertEqual(self.adapter.calls,calls);self.assertEqual(self.session.state,state)
+
     def test_failed_readonly_capture_ack_rejects_unknown_errors_partial_success_and_other_pending(self):
         request,_=self.failed_capture();pristine=copy.deepcopy(self.session.state);retry={**request,'reconcile':True,'acknowledgeFailure':True}
         changes=[lambda s:s.update(lastError='HOST_COMMAND_FAILED'),lambda s:s.update(lastError='STEP_RESULT_UNKNOWN'),

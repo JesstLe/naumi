@@ -712,6 +712,7 @@ class MaintenanceSession:
                 if old.get('outcome') == 'FAILED_READONLY':
                     return {'result': 'READ_ONLY_CAPTURE_FAILED', 'failure': copy.deepcopy(old['failureReceipt']),
                             'operationId': operation, **self.public()}
+                require(not closing, 'ORIGINAL_UNKNOWN_READONLY_CAPTURE_REQUIRED')
                 return {'result': 'ALREADY_ACKNOWLEDGED', 'operationId': operation, **self.public()}
             require(request.get('reconcile') is True and old['phase'] in ['INTENT_RECORDED', 'UNKNOWN'],
                     'EXPLICIT_ORIGINAL_UUID_RECONCILIATION_REQUIRED')
