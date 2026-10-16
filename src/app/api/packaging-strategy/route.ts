@@ -55,7 +55,7 @@ async function boundedCommand(request: Request) {
 export async function POST(request: Request) {
   try {
     const email = await actor(request); if (typeof email !== "string") return email;
-    const command = await boundedCommand(request.clone());
+    const command = await boundedCommand(request);
     if (command.action !== "save" && !command.projectId) throw new PackagingError("请先保存简报再生成策略");
     if (!rateLimit(`packaging:${email}`, command.action === "save" ? 60 : 20, 600000)) return json({error: "操作频繁，请稍后重试"}, 429);
     if (command.action !== "save" && !command.brief.brand) throw new PackagingError("请先填写品牌与产品");
@@ -83,6 +83,12 @@ export async function POST(request: Request) {
         return json({error: error instanceof PackagingError ? error.message : "策略生成未完成，请检查网络或稍后重试", project}, error instanceof PackagingError ? error.status : 502);
       }
     };
-    return command.action === "save" ? await run() : await withBiRequest(request, run);
+    if (command.action === "save") return await run();
+    // Reconstruct bounded, validated transport data for the model resolver.
+    // Reading/cancelling one branch of Request.clone() can wait forever while
+    // its unconsumed tee branch is retained (especially oversized requests).
+    const headers = new Headers(request.headers); headers.delete("content-length");
+    const modelRequest = new Request(request.url, {method: "POST", headers, body: JSON.stringify(command), signal: request.signal});
+    return await withBiRequest(modelRequest, run);
   } catch (error) { return failure(error); }
 }

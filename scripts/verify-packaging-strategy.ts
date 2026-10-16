@@ -22,7 +22,7 @@ async function main() {
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify({id: randomUUID(), object: "chat.completion", model: body.model, choices: [{index: 0, message: {role: "assistant", content}, finish_reason: "stop"}], usage: {prompt_tokens: 100, completion_tokens: 100}}));
   });
-  Object.assign(process.env, {PGOPTIONS: `-c search_path=${fixture.schemaName}`, OPENAI_API_KEY: "fixture", AGENT_API_KEY: "fixture", AGENT_BASE_URL: fixture.origin + "/v1", NAUMI_MULTI_USER: "1", NAUMI_ROUTER_MANAGEMENT_URL: fixture.origin, NAUMI_ROUTER_MANAGEMENT_TOKEN: "fixture-router-management-secret", MODEL_CONFIG_ENVELOPE_SECRET: "fixture-model-config-envelope", MODEL_CONFIG_TRUSTED_ORIGINS: fixture.origin});
+  Object.assign(process.env, {PGOPTIONS: `-c search_path=${fixture.schemaName}`, OPENAI_API_KEY: "fixture", AGENT_API_KEY: "fixture", AGENT_BASE_URL: fixture.origin + "/v1", NAUMI_MULTI_USER: "1", NAUMI_ROUTER_MANAGEMENT_URL: fixture.origin, NAUMI_ROUTER_MANAGEMENT_TOKEN: "fixture-long-router-management-secret-packaging", MODEL_CONFIG_ENVELOPE_SECRET: "fixture-long-model-config-envelope-secret-packaging", MODEL_CONFIG_TRUSTED_ORIGINS: fixture.origin});
   const db = await import("../src/lib/db");
   try {
     const credential = await fixture.credentials.importPlain({providerId: "text", plain: "fixture-packaging-secret", actor: "fixture"});
@@ -41,6 +41,7 @@ async function main() {
     assert.equal((await route.GET(new Request(fixture.origin + "/api/packaging-strategy"))).status, 401);
     assert.equal((await route.POST(request("POST", {action: "generate", brief: {...brief, brand: 1}}))).status, 400);
     assert.equal((await route.POST(request("POST", {action: "save", brief, owner: other}))).status, 400);
+    assert.equal((await route.POST(request("POST", {action: "generate", brief}))).status, 400);
     assert.equal((await route.POST(request("POST", {action: "save", brief: {...brief, task: "x".repeat(70000)}}))).status, 413);
     let response = await route.POST(request("POST", {action: "save", brief})); assert.equal(response.status, 200, await response.clone().text());
     let project = (await response.json()).project; assert.equal(project.revision, 1); assert.equal(calls, 0);
@@ -57,9 +58,12 @@ async function main() {
     response = await post("refine", {feedback: "减少装饰图形，强化品类识别"}); assert.equal(response.status, 200, await response.clone().text()); project = (await response.json()).project;
     assert.match(project.result.content, /减少装饰图形/);
     response = await route.POST(request("POST", {action: "save", brief, projectId: id, expectedRevision: 1})); assert.equal(response.status, 409);
-    invalid = true; response = await post("generate"); assert.equal(response.status, 502); project = (await response.json()).project; assert.equal(project.result.kind, "strategy"); invalid = false;
+    invalid = true; response = await post("generate", {answers: "失败重试的补充回答"}); assert.equal(response.status, 502); project = (await response.json()).project; assert.equal(project.result.kind, "strategy"); invalid = false;
+    response = await post("generate", {answers: "失败重试的补充回答"}); assert.equal(response.status, 200); project = (await response.json()).project;
+    assert.equal((await db.getPool().query("SELECT answers FROM app_packaging_projects WHERE id=$1", [id])).rows[0].answers.split("失败重试的补充回答").length - 1, 1);
     hold = true; const pending = post("generate");
-    while (!release) await new Promise(resolve => setTimeout(resolve, 10));
+    for (let i = 0; !release && i < 500; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    if (!release) { const r = await pending; throw new Error("Pending request never reached model: " + r.status); }
     const inFlight = (await (await route.GET(request("GET", undefined, owner, `?id=${id}`))).json()).project;
     assert.equal((await route.POST(request("POST", {action: "generate", brief, projectId: id, expectedRevision: inFlight.revision}))).status, 409);
     release(); hold = false; response = await pending; assert.equal(response.status, 200); project = (await response.json()).project;
@@ -71,8 +75,11 @@ async function main() {
     assert.throws(() => parsePackagingResult('{"kind":"questions","questions":["one","two","three","four"]}'));
     assert.throws(() => parsePackagingResult('{"kind":"questions","questions":["question"]}', true));
     const command = commandSchema.parse({action: "generate", brief, allowDraft: true});
-    assert.ok(packagingMessages(command, null)[0].content.includes(PACKAGING_SKILL.instructions.slice(0, 15)));
+    assert.ok(packagingMessages(command, null)[0].content.includes("三个创意方向必须基于不同的战略切入点"));
+    const telemetry = (await db.getPool().query("SELECT operation_id FROM app_bi_model_calls WHERE email=$1 AND operation='/api/packaging-strategy'", [owner])).rows;
+    assert.equal(telemetry.length, calls); assert.ok(telemetry.every(row => /^[a-f0-9-]{36}$/.test(row.operation_id)));
     console.log(`PACKAGING_STRATEGY=PASS AUTH=PASS OWNER_ISOLATION=PASS QUESTION_ANSWER_REFINE=PASS SAVE_INVALIDATES_STALE_RESULT=PASS REVISION_CAS=PASS RUN_LEASE=PASS FAILURE_RETRY=PASS MANAGED_TEXT_ROUTING=PASS MODEL_CALLS=${calls} PAID_IMAGE_CALLS=0`);
-  } finally { await db.getPool().end(); await fixture.cleanup(); }
+  } catch (error) { console.error("PACKAGING_FIXTURE_ASSERTION", error); throw error; }
+  finally { release?.(); await db.getPool().end(); await fixture.cleanup(); }
 }
 main().catch(error => {console.error(error); process.exitCode = 1;});
