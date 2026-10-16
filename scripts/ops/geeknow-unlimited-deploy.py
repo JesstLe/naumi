@@ -1,6 +1,11 @@
 """47-only fixed live-bundle derivative; preserve R2/chat/login overlays.
 No model publication, database migration, old-task replay or customer charge.
 """
+import sys
+if __name__ == '__main__' and '--rollback' not in sys.argv:
+    print('RELEASE_BLOCKED=LEGACY_PATH_SPLIT_ENTRY; USE=deploy-release.sh_--lifecycle; LIVE_MUTATIONS=0', file=sys.stderr)
+    sys.exit(78)
+
 import argparse, contextlib, fcntl, hashlib, hmac, json, os, pathlib, socket, subprocess, time, urllib.request, urllib.error, threading
 from nginx_syntax import check_gateway_syntax
 

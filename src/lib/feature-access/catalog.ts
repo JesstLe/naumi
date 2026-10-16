@@ -24,7 +24,8 @@ export function pageFeature(raw: string): string | undefined {
   else if (path.startsWith("/desktop/")) path = path.slice("/desktop".length);
   if (path === "/brain" || path === "/genchat") return "agent";
   if (path === '/enterprise' || path.startsWith('/enterprise/')) return 'team';
-  return ACCESS_FEATURES.find(feature => feature.href && (path === feature.href || path.startsWith(feature.href + "/")))?.id;
+  // Nested creative tools have their own grant; /tools must not shadow them.
+  return [...ACCESS_FEATURES].sort((a, b) => b.href.length - a.href.length).find(feature => feature.href && (path === feature.href || path.startsWith(feature.href + "/")))?.id;
 }
 export type AccessRequirement = { all?: string[]; any?: string[] };
 export function meets(policy: AccessPolicy, requirement: AccessRequirement) {

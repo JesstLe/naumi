@@ -1,4 +1,5 @@
 import "server-only";
+import { guardChannelSubmission } from "./channel-availability";
 import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -29,6 +30,10 @@ export function modelEndpointFetch(baseUrl: string, options: ValidationOptions =
     const url = new URL(request.url);
     if (url.origin !== base.origin || url.username || url.password || url.hash) throw new ModelConfigError("INVALID_ENDPOINT", "模型请求超出已配置接口范围");
     if (request.signal.aborted) throw request.signal.reason;
+    // Recheck after cost-ledger preparation too: its DB waits must not create
+    // a window in which an administrator's completed disable is ignored.
+    if (request.method === "POST" && provider?.costScope?.channelGuard) await guardChannelSubmission(getPool(), provider.costScope);
+    request.signal.throwIfAborted();
     return new Promise<Response>((resolve, reject) => {
       const headers = Object.fromEntries(request.headers.entries());
       const transport = url.protocol === "https:" ? httpsRequest : httpRequest;
@@ -64,5 +69,12 @@ export function modelEndpointFetch(baseUrl: string, options: ValidationOptions =
   };
   // Acquire the local capacity gate FIRST: a locally rejected request is not a supplier attempt.
   const observed = provider && !provider.costDisabled ? supplierCostFetch(transport, { ...provider, baseUrl }) : transport;
-  return !provider?.costScope?.capacityReserved && provider?.maxConcurrent && dbEnabled && process.env.NAUMI_ROUTER_MANAGEMENT_URL ? capacityFetch(observed, getPool(), { ...provider, baseUrl, maxConcurrent: provider.maxConcurrent }) : observed;
+  const guarded: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    request.signal.throwIfAborted();
+    if (request.method === "POST" && provider?.costScope?.channelGuard) await guardChannelSubmission(getPool(), provider.costScope, false);
+    request.signal.throwIfAborted();
+    return observed(request);
+  };
+  return !provider?.costScope?.capacityReserved && provider?.maxConcurrent && dbEnabled && process.env.NAUMI_ROUTER_MANAGEMENT_URL ? capacityFetch(guarded, getPool(), { ...provider, baseUrl, maxConcurrent: provider.maxConcurrent }) : guarded;
 }

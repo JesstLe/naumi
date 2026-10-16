@@ -4,11 +4,24 @@
 Run under the existing Naumi/Hub lock keeper after backups. No DB restore,
 old-container stop or configuration-secret printing is performed by this tool.
 """
+import sys
+if __name__ == '__main__' and len(sys.argv) > 2 and sys.argv[2] in ['start', 'cutover']:
+    print('RELEASE_BLOCKED=LEGACY_PATH_SPLIT_ENTRY; USE=deploy-release.sh_--lifecycle; LIVE_MUTATIONS=0', file=sys.stderr)
+    sys.exit(78)
+
 import json,pathlib,sys,subprocess,hashlib,time,urllib.request,http.client,socket,re,threading,os,shutil
 from nginx_syntax import check_gateway_syntax
 
 E=pathlib.Path(sys.argv[1]).resolve();PHASE=sys.argv[2]
 GATEWAY=pathlib.Path('/etc/nginx/sites-available/default')
+
+def target_ports():
+ plan=E/'target-ports.json'
+ ports=json.loads(plan.read_text()) if plan.exists() else {'ui':13031,'desktop':13032,'enterprise':13033}
+ assert set(ports)=={'ui','desktop','enterprise'},'Exactly three UI slot roles required'
+ assert all(type(port)is int and 1024<=port<=65535 for port in ports.values()),'Invalid loopback port'
+ assert len(set(ports.values()))==3,'Slot ports must be distinct'
+ return ports
 def command(args):return subprocess.check_output(args).decode().strip()
 def query(sql):return command(['docker','exec','naumi-staging-db-1','psql','-X','-At','-U','naumi_staging','-d','naumi_staging','-c',sql])
 def protected():
@@ -24,12 +37,53 @@ def protected():
  for name in ['.env','docker-compose.yml']:result[name]=hashlib.sha256((pathlib.Path('/opt/naumi-staging/config')/name).read_bytes()).hexdigest()
  return result
 def read(path,port=80):return urllib.request.urlopen('http://127.0.0.1:'+str(port)+path,timeout=30)
+
+def verify_public_video_reads():
+ # Current main's canvas mounts these hooks even for image-only projects. A new
+ # UI must not be sent to an old core that still responds with HTML/404 here.
+ # The private test session is prepared separately; never log its contents.
+ session=E/'protocol-read-session.json'
+ assert session.is_file()and session.stat().st_mode&0o077==0,'Private native protocol read session required'
+ auth=json.loads(session.read_text());assert time.time()*1000<auth['expires'],'Protocol read session expired'
+ shapes={'/api/canvas/video-nodes':lambda p:isinstance(p.get('nodes'),list),
+ '/api/video/assets?limit=1':lambda p:p.get('ok')is True and isinstance(p.get('assets'),list),
+ '/api/video/projects':lambda p:isinstance(p.get('projects'),list),
+ '/api/video/byoc/catalog':lambda p:isinstance(p.get('workflows'),list)}
+ evidence=[]
+ for route,valid_shape in shapes.items():
+  request=urllib.request.Request('http://127.0.0.1'+route,headers={'Cookie':auth['cookie'],'Host':'103.30.76.93'})
+  try:
+   with urllib.request.urlopen(request,timeout=30)as response:
+    raw=response.read();assert response.status==200 and 'application/json'in response.headers.get('content-type','')
+   payload=json.loads(raw);assert isinstance(payload,dict)and valid_shape(payload)
+   evidence.append({'path':route.split('?')[0],'status':200,'validShape':True})
+  except Exception:
+   evidence.append({'path':route.split('?')[0],'status':'NOT_READY','validShape':False})
+   (E/'protocol-read-gate.json').write_text(json.dumps(evidence,indent=2))
+   raise RuntimeError('Public video read API is not compatible; keep current gateway: '+route.split('?')[0])from None
+ (E/'protocol-read-gate.json').write_text(json.dumps(evidence,indent=2))
+ print('PUBLIC_VIDEO_READ_PROTOCOL=PASS AUTHORIZED_NODE_ASSET_PROJECT_BYOC_SHAPES')
 def assert_lock():
  owner=json.loads((E/'lock-owner.json').read_text());pid=owner['pid'];assert pathlib.Path('/proc/'+str(pid)).exists()
  assert command(['cat','/proc/'+str(pid)+'/comm'])=='bash'
  for fd,path in [('8','/opt/naumi-reverse-hub/releases/deploy.lock'),('9','/opt/naumi-staging/releases/deploy.lock')]:
   assert os.readlink('/proc/'+str(pid)+'/fd/'+fd)==path
   assert 'FLOCK  ADVISORY  WRITE' in pathlib.Path('/proc/'+str(pid)+'/fdinfo/'+fd).read_text()
+
+def verify_slots():
+ slots=json.loads((E/'slots.json').read_text());ports=target_ports()
+ assert len(slots)==3 and {row['kind']for row in slots}==set(ports)
+ assert len({row['sha']for row in slots})==1 and len({row['version']for row in slots})==1
+ for row in slots:
+  assert row['port']==ports[row['kind']],'Port plan changed after candidate start'
+  current=json.loads(command(['docker','inspect',row['cid']]))[0]
+  assert current['State']['Running']and current['Name']=='/'+row['name']and current['Image']==row['imageId']
+  binding=current['NetworkSettings']['Ports']['3000/tcp'];assert len(binding)==1 and binding[0]=={'HostIp':'127.0.0.1','HostPort':str(row['port'])}
+  env=dict(value.split('=',1)for value in current['Config']['Env'])
+  assert env['NAUMI_VIDEO_WORKER']=='0'and env['NAUMI_MEDIA_WORKER']=='0'
+  version=json.loads(read('/api/version',row['port']).read());assert version['commit']==row['sha']and version['version']==row['version']
+  assert json.loads(read('/api/health',row['port']).read())['db']['ok']
+ print('CANDIDATE_SLOTS=PASS EXACT_CID_IMAGE_VERSION_PLAN LOOPBACK_ONLY WORKERS_OFF DB_HEALTHY')
 def verify_protected():
  now=protected();baseline=json.loads((E/'protected.before.json').read_text())
  # Online users may add works or receive credits while a UI-only release runs.
@@ -55,7 +109,7 @@ def render_gateway(before):
   found=re.search(r'location\s+'+re.escape(location)+r'\s*\{[^{}]*\}',before,re.S);assert found,location;return found.group(0)
  def port_of(location):return int(re.search(r'proxy_pass http://127\.0\.0\.1:(\d+)',location_block(location)).group(1))
  active={'ui':port_of('/'),'desktop':port_of('= /desktop'),'enterprise':port_of('= /enterprise')}
- target={'ui':13031,'desktop':13032,'enterprise':13033}
+ target=target_ports()
  assert len(set(active.values()))==3 and not set(active.values())&set(target.values())
  media_locations={'^~ /media/','= /api/media/image-cache','= /api/public-image-cache','= /api/team/media','= /api/enterprise/media','= /desktop/api/media/image-cache','= /desktop/api/public-image-cache','= /desktop/api/team/media','= /desktop/api/enterprise/media'}
  ui_locations={'/','^~ /_next/','= /api/version'}
@@ -114,7 +168,11 @@ elif PHASE=='start':
  assert shutil.disk_usage(E).free>10*1024**3,'Insufficient release disk headroom'
  subprocess.run(['docker','load','-i',str(E/'release-images.tar')],check=True,stdout=(E/'images-load.log').open('w'))
  release=json.loads((E/'release.json').read_text());old=json.loads((E/'containers.before.json').read_text());base=next(r for r in old if r['Name']=='/naumi-staging-app-1');slots=[]
- for row,port in zip(release,[13031,13032,13033]):
+ ports=target_ports()
+ assert len(release)==3 and {row['kind']for row in release}==set(ports)
+ assert len({row['sha']for row in release})==1 and len({row['version']for row in release})==1
+ for row in release:
+  port=ports[row['kind']]
   assert command(['ss','-H','-ltn','sport = :'+str(port)])==''
   env=dict(v.split('=',1)for v in base['Config']['Env']);env.update(NAUMI_VIDEO_WORKER='0',NAUMI_MEDIA_WORKER='0',HOSTNAME='0.0.0.0',PORT='3000',SOURCE_COMMIT=row['sha'],INTERNAL_APP_ORIGIN='http://127.0.0.1:3000')
   for name in ['PATH','YARN_VERSION','NODE_VERSION','BUILD_VERSION']:env.pop(name,None)
@@ -133,9 +191,9 @@ elif PHASE=='start':
     time.sleep(1)
   row.update(port=port,name=name,cid=cid,imageId=command(['docker','inspect',name,'--format','{{.Image}}']));slots.append(row)
   print('NEW_SLOT='+row['kind']+' READY=DB_VERSION_WORKER_OFF PORT='+str(port))
- (E/'slots.json').write_text(json.dumps(slots,indent=2));verify_protected()
+ (E/'slots.json').write_text(json.dumps(slots,indent=2));verify_slots();verify_protected()
 elif PHASE=='cutover':
- assert_lock();assert GATEWAY.read_bytes()==(E/'nginx.before').read_bytes();verify_protected();before=(E/'nginx.before').read_text();modified=before
+ assert_lock();assert GATEWAY.read_bytes()==(E/'nginx.before').read_bytes();verify_slots();verify_protected();verify_public_video_reads();before=(E/'nginx.before').read_text();modified=before
  modified=render_gateway(before);(E/'nginx.modified').write_text(modified)
  for label,body in [('modified',modified),('rollback',before)]:
   check_gateway_syntax(E,label,body)
@@ -163,7 +221,10 @@ elif PHASE=='cutover':
   GATEWAY.write_text(before);subprocess.run(['nginx','-t'],check=True);subprocess.run(['systemctl','reload','nginx'],check=True);(E/'AUTOMATIC_ROLLBACK').write_text('previous gateway restored, DB/media untouched');raise
  finally:done.set();thread.join();(E/'continuity.json').write_text(json.dumps(rows,indent=2))
  (E/'ACTIVATED').write_text(time.strftime('%Y-%m-%d %H:%M:%S UTC',time.gmtime()));print('CUTOVER=PASS CONTINUITY_REQUESTS='+str(len(rows))+' ERRORS=0 OLD_ASSETS=EXACT OLD_CREATION_RUNTIME=RUNNING')
-elif PHASE=='verify':assert_lock();verify_protected()
+elif PHASE=='verify':
+ assert_lock();verify_protected()
+ if(E/'slots.json').exists():verify_slots()
+elif PHASE=='protocol-check':assert_lock();verify_public_video_reads()
 elif PHASE=='rollback-check':
  assert(E/'nginx.before').is_file();check_gateway_syntax(E,'rollback-check',(E/'nginx.before').read_text());print('ROLLBACK_GATEWAY=CHECKED DATABASE_RESTORE=NONE')
 else:raise ValueError(PHASE)

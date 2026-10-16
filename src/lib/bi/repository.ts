@@ -1,8 +1,11 @@
 import "server-only";
+import { ensureSupplierSchema } from "@/lib/supplier-cost/schema";
+import { MODEL_CALL_EVIDENCE_SQL, modelChainPresentation, type ModelCallEvidence } from "./model-chain";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { ensureSchema, getPool } from "@/lib/db";
 import type { BiOverview, BiQuery, BiResponse, BiRow } from "./contracts";
+import { ARTWORK_INPUT_COLUMNS, ARTWORK_INPUT_JOINS, artworkInputPresentation } from "./artwork-inputs";
 import { artworkBiPresentation } from "@/lib/artwork-provenance";
 
 let ready: Promise<void> | null = null;
@@ -26,11 +29,14 @@ export async function ensureBiSchema() {
       duration_ms integer NOT NULL,input_tokens integer,output_tokens integer,created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS app_bi_model_calls_email_created ON app_bi_model_calls(email,created_at DESC);
       CREATE INDEX IF NOT EXISTS app_bi_model_calls_created ON app_bi_model_calls(created_at DESC);`);
-      await getPool().query(`ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS public_model_id text NOT NULL DEFAULT '';
+      await getPool().query(`ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS frontend_model_id text NOT NULL DEFAULT '';
+      ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS frontend_model_label text NOT NULL DEFAULT '';
+      ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS public_model_id text NOT NULL DEFAULT '';
         ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS provider_id text NOT NULL DEFAULT '';
         ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS model_version bigint;
         ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS billing_version bigint;
         ALTER TABLE app_bi_model_calls ADD COLUMN IF NOT EXISTS config_digest text NOT NULL DEFAULT '';`);
+      await ensureSupplierSchema(getPool());
       await getPool().query(`CREATE TABLE IF NOT EXISTS app_bi_management_log (
         id text PRIMARY KEY,actor text NOT NULL,email text NOT NULL,action text NOT NULL,reason text NOT NULL,
         changes jsonb NOT NULL,request_fingerprint text NOT NULL,ledger_id text,created_at timestamptz NOT NULL DEFAULT now());
@@ -58,12 +64,13 @@ export async function logBiAccess(
 
 // All source tables are independently aggregated. Joining raw ledger/artwork/job rows
 // would multiply amounts. Parameters are shared across every view and count query.
-const scope = `WITH query_window AS (SELECT $1::timestamptz AS starts, $2::timestamptz AS ends), scoped AS (
+const scopeSql = (authorizedEmployees = false) => `WITH query_window AS (SELECT $1::timestamptz AS starts, $2::timestamptz AS ends), scoped AS (
   SELECT emails.email FROM (SELECT email FROM app_users UNION SELECT email FROM app_ledger UNION SELECT email FROM app_orders UNION SELECT email FROM app_artworks UNION SELECT email FROM app_image_jobs UNION SELECT email FROM app_bi_model_calls UNION SELECT email FROM app_bi_management_log UNION SELECT email FROM app_video_tasks UNION SELECT email FROM app_canvas_image_tasks UNION SELECT email FROM app_agent_sessions UNION SELECT email FROM app_genchat_sessions) emails
   LEFT JOIN app_users u ON u.email=emails.email LEFT JOIN app_bi_account_profiles p ON p.email=emails.email
   WHERE ($3::text='' OR emails.email=$3) AND ($4::text='' OR position(lower($4) in lower(emails.email||' '||COALESCE(u.name,'')||' '||COALESCE(p.company,'')))>0)
-  AND ($5::text='' OR COALESCE(p.account_type,'unknown')=$5)
+  ${authorizedEmployees ? 'AND emails.email=ANY($8::text[])' : ''} AND ($5::text='' OR COALESCE(p.account_type,'unknown')=$5)
 )`;
+const scope = scopeSql();
 const inRange = (alias: string) =>
   `${alias}.created_at >= $1::timestamptz AND ${alias}.created_at < $2::timestamptz`;
 const values = (q: BiQuery) => [q.start, q.end, q.email, q.q, q.accountType];
@@ -127,7 +134,10 @@ async function snapshot<T>(
   }
 }
 
-export async function queryBi(q: BiQuery): Promise<BiResponse> {
+/** Scoped callers must supply a server-authorized member list and its transaction.
+ * This path is artworks-only; it never grants enterprise users other BI sections. */
+export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowedEmails: readonly string[] }): Promise<BiResponse> {
+  if (access && q.section !== "artworks") throw new Error("Scoped BI supports artworks only");
   await ensureBiSchema();
   const result: BiResponse = {
     section: q.section,
@@ -142,7 +152,8 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
     result.overview = await snapshot((client) => overview(q, client));
     return result;
   }
-  const filterBinds = [...values(q), q.status, ...(q.section === "artworks" ? [q.recordId || ""] : [])];
+  const filterBinds = [...values(q), q.status, ...(q.section === "artworks" ? [q.recordId || ""] : []), ...(access ? [access.allowedEmails] : [])];
+  const scopedSql = access ? scopeSql(true) : scope;
   const binds = [...filterBinds, q.size, (q.page - 1) * q.size];
   let source = "";
   switch (q.section) {
@@ -171,13 +182,12 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
       break;
     case "artworks":
       source = `SELECT a.id,a.email,a.title,a.category,a.prompt,a.status,a.ratio,a.resolution,a.image_width,a.image_height,a.origin,a.parent_id,a.batch_id,a.created_at,a.deleted_at,
-      a.creation_provenance,a.source_url,a.image_url,a.template_id,
+      a.creation_provenance,a.source_url,a.image_url,a.template_id,${ARTWORK_INPUT_COLUMNS},
       j.id AS job_id,j.kind AS job_kind,COALESCE(j.payload->'p'->>'origin',j.payload->>'origin') AS job_origin,
       COALESCE(j.payload->'p'->>'entry',j.payload->>'entry') AS job_entry,
       c.id AS canvas_task_id,c.kind AS canvas_task_kind,v.id AS video_task_id,v.source AS video_task_source,
       (a.image_url<>'') AS has_image,(COALESCE(a.video_url,'')<>'') AS has_video
-      FROM app_artworks a LEFT JOIN app_image_jobs j ON j.email=a.email AND j.id=CASE WHEN a.creation_provenance->>'operation' IN ('generate','suite','aplus') THEN a.creation_provenance->>'ref' WHEN a.batch_id LIKE 'b-job-%' THEN substring(a.batch_id from 3) ELSE a.batch_id END
-      LEFT JOIN LATERAL (SELECT id,kind FROM app_canvas_image_tasks WHERE email=a.email AND result_artwork_id=a.id ORDER BY created_at,id LIMIT 1) c ON true
+      FROM app_artworks a ${ARTWORK_INPUT_JOINS}
       LEFT JOIN LATERAL (SELECT id,source FROM app_video_tasks WHERE email=a.email AND artwork_id=a.id ORDER BY created_at,id LIMIT 1) v ON true
       WHERE a.email IN (SELECT email FROM scoped) AND (${inRange("a")} OR $7::text<>'') AND ($7::text='' OR a.id=$7) AND (($6::text='' AND a.deleted_at IS NULL) OR ($6='deleted' AND a.deleted_at IS NOT NULL) OR $6='all')`;
       break;
@@ -199,7 +209,7 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
       FROM app_orders o WHERE o.email IN (SELECT email FROM scoped) AND (CASE WHEN $6::text='paid' THEN o.paid_at ELSE o.created_at END) >= $1 AND (CASE WHEN $6::text='paid' THEN o.paid_at ELSE o.created_at END) < $2 AND ($6::text='' OR o.status=$6)`;
       break;
     case "calls":
-      source = `SELECT c.id,c.email,c.operation,c.operation_id,c.public_model_id,c.provider_id,c.model_version,c.billing_version,c.config_digest,c.wire_model,c.response_model,c.state,c.duration_ms,c.input_tokens,c.output_tokens,c.created_at FROM app_bi_model_calls c WHERE c.email IN (SELECT email FROM scoped) AND ${inRange("c")} AND ($6::text='' OR c.state=$6)`;
+      source = `SELECT c.id,c.email,c.operation,c.operation_id,c.public_model_id,c.frontend_model_id,c.frontend_model_label,c.provider_id,c.model_version,c.billing_version,c.config_digest,c.wire_model,c.response_model,c.state,c.duration_ms,c.input_tokens,c.output_tokens,c.created_at FROM app_bi_model_calls c WHERE c.email IN (SELECT email FROM scoped) AND ${inRange("c")} AND ($6::text='' OR c.state=$6)`;
       break;
     case "conversations":
       source = `SELECT s.id,s.email,s.title,'agent' AS source,s.created_at,s.updated_at,jsonb_array_length(CASE WHEN jsonb_typeof(s.messages)='array' THEN s.messages ELSE '[]'::jsonb END) AS entries FROM app_agent_sessions s WHERE s.email IN (SELECT email FROM scoped) AND s.updated_at >= $1::timestamptz AND s.updated_at < $2::timestamptz AND ($6::text='' OR $6='agent')
@@ -217,23 +227,34 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
         : "created_at DESC,id DESC";
   // Parameter indices remain valid in both statements; use a LIMIT/OFFSET-free
   // one-row count result so empty pages still report the real total.
-  const [count, page] = await snapshot(async (client) => [
+  const readPage = async (client: PoolClient) => [
     await client.query(
-      `${scope} SELECT count(*)::int AS total FROM (${source}) result`,
+      `${scopedSql} SELECT count(*)::int AS total FROM (${source}) result`,
       filterBinds,
     ),
     await client.query(
-      `${scope} SELECT * FROM (${source}) result ORDER BY ${order} LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2}`,
+      `${scopedSql} SELECT * FROM (${source}) result ORDER BY ${order} LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2}`,
       binds,
     ),
-  ]);
+  ];
+  const [count, page] = access ? await readPage(access.client) : await snapshot(readPage);
   result.total = count.rows[0].total;
   result.rows = normalize(q.section === "artworks" ? page.rows.map(raw => {
     const presentation = artworkBiPresentation(raw);
     // Do not expose private/signed source URLs or raw JSON in the BI list/CSV.
-    const { creation_provenance, source_url, image_url, job_kind, job_origin, job_entry, canvas_task_kind, video_task_source, ...row } = raw;
-    return { ...row, ...presentation };
+    const { creation_provenance, source_url, image_url, job_kind, job_origin, job_entry, canvas_task_kind, video_task_source, input_params, input_images, input_request, input_source_id, ...row } = raw;
+    return { ...row, ...presentation, ...artworkInputPresentation(raw) };
   }) : page.rows);
+  if (["calls", "operations", "models"].includes(q.section) && result.rows.length) {
+    const ids = result.rows.map(row => String(q.section === "models" ? row.job_id : row.id));
+    const emails = result.rows.map(row => String(row.email));
+    const pairs = [...new Map(ids.map((id,i) => [emails[i]+"\u0000"+id,{id,email:emails[i]}])).values()];
+    const evidence = await getPool().query(MODEL_CALL_EVIDENCE_SQL, [pairs.map(p=>p.id),pairs.map(p=>p.email),q.section === "calls"]);
+    result.rows = result.rows.map((row,i) => {
+      const calls = (evidence.rows as ModelCallEvidence[]).filter(call => call.email === emails[i] && call.root_id === ids[i] && (q.section !== "calls" || call.id === row.id));
+      return { ...row, ...modelChainPresentation(calls), model_evidence_scope: q.section === "calls" ? "本次调用" : "任务内调用汇总" };
+    });
+  }
   return result;
 }
 

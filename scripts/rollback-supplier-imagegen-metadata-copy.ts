@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {canonicalConfig} from '../src/lib/model-config/repository';
+import {removeImagegenEditObservation} from '../src/lib/supplier-models/imagegen-observations';
+const [original,modified,observation,output]=process.argv.slice(2);
+assert.ok(original&&modified&&observation&&output);
+assert.notEqual(output,modified,'Only restore a separate copy');
+const read=(file:string)=>JSON.parse(readFileSync(file,'utf8'));
+const before=read(original).metadata,restored=removeImagegenEditObservation(read(modified),before,read(observation));
+assert.equal(canonicalConfig(restored),canonicalConfig(before));
+writeFileSync(output,JSON.stringify(restored,null,2)+'\n');
+console.log('ROLLBACK PASS independent_copy_original_hash_restored=true live_metadata_kept=true provider_calls=0');

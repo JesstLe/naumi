@@ -1,4 +1,5 @@
 import "server-only";
+import { currentObservedCallId } from "../bi/call-scope";
 import { createHash, randomUUID } from "node:crypto";
 import { dbEnabled } from "../db";
 import { currentModelExecution, type ModelExecutionScope } from "../model-config/context";
@@ -10,11 +11,12 @@ import { ReceiptBuffer } from "./receipt-buffer";
 import { modelCostPhase } from "./phase";
 import { parseReceiptJson } from "./money";
 import type { CostContext } from "./types";
+import { ModelConfigError } from "../model-config/types";
 
 export async function supplierContext(scope?: ModelExecutionScope | null): Promise<CostContext> {
   const { currentBiContext } = await import("../bi/model-observer");
   const billing = currentSynchronousBilling(), bi = currentBiContext();
-  return { operationId: billing?.id || bi?.id || currentImageOperationId() || randomUUID(), userEmail: billing?.email || bi?.email, feature: scope?.frozen.feature || billing?.feature || bi?.operation || "unattributed-call", publicModelId: scope?.frozen.publicModelId, modelVersion: scope?.frozen.modelVersion, billingVersion: scope?.frozen.billingVersion, phase: scope?.costPhase || modelCostPhase(scope?.frozen.binding,scope?.frozen.modality), matchedRuleId: scope?.costRuleId || scope?.routing?.matchedRuleId };
+  return { biCallId: currentObservedCallId(), operationId: billing?.id || bi?.id || currentImageOperationId() || randomUUID(), userEmail: billing?.email || bi?.email, feature: scope?.frozen.feature || billing?.feature || bi?.operation || "unattributed-call", publicModelId: scope?.frozen.publicModelId, modelVersion: scope?.frozen.modelVersion, billingVersion: scope?.frozen.billingVersion, phase: scope?.costPhase || modelCostPhase(scope?.frozen.binding,scope?.frozen.modality), matchedRuleId: scope?.costRuleId || scope?.routing?.matchedRuleId };
 }
 
 /** Instrument the actual HTTP boundary, not SDK+observer+gateway layers simultaneously. */
@@ -51,11 +53,11 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
       // Consume receipt bytes alongside the caller, without cloning/ buffering entire b64 image outputs.
       const reader = response.body.getReader(), decoder = new TextDecoder();
       const capture = new ReceiptBuffer(), hash = createHash("sha256");
-      let pending = "", usage: unknown, id: string | undefined, completed = false, finished = false;
-      const event = (line: string) => { if (!line.startsWith("data:")) return; const text = line.slice(5).trim(); if (text === "[DONE]") { completed = true; return; } try { const d = parseReceiptJson(text); if (d.usage) usage = safeUsage(d.usage); if (d.id) id = d.id; } catch { /* incomplete supplier event */ } };
+      let pending = "", usage: unknown, id: string | undefined, responseModel: string | undefined, completed = false, finished = false;
+      const event = (line: string) => { if (!line.startsWith("data:")) return; const text = line.slice(5).trim(); if (text === "[DONE]") { completed = true; return; } try { const d = parseReceiptJson(text); if (d.usage) usage = safeUsage(d.usage); if (d.id) id = d.id; if (typeof d.model === "string") responseModel = d.model.slice(0,200); } catch { /* incomplete supplier event */ } };
       const finish = async (state: string) => {
         if (finished) return; finished = true;
-        let body: any = stream ? { usage, id } : {};
+        let body: any = stream ? { usage, id, model: responseModel } : {};
         if (!stream) { capture.push(decoder.decode()); const raw = capture.result(); if (raw) try { body = parseReceiptJson(raw); } catch { /* missing receipt remains pending */ } }
         const apimartSubmit=!stream&&request.method==='POST'&&['apimart-images','apimart'].includes(connection.protocol||'');
         const receipt = genericReceipt(body, state, apimartSubmit?undefined:scope?.procurement);
@@ -80,6 +82,12 @@ export function supplierCostFetch(fetcher: typeof fetch, connection: { providerI
         async cancel(reason) { await reader.cancel(reason); await finish("unknown"); },
       });
       return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
-    } catch (error) { await ledger.apply(row.id, { state: "unknown", status: "pending", source: "transport-unknown", evidence: { source: "transport-unknown" } }); throw error; }
+    } catch (error) {
+      if (error instanceof ModelConfigError && ["CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code)) {
+        const receipt=genericReceipt({billing_status:"not_charged"},"rejected",scope?.procurement);
+        await ledger.apply(row.id,{...receipt,source:"local-channel-disabled",evidence:{billing_status:"not_charged",source:"local-channel-disabled"}});
+      } else await ledger.apply(row.id, { state: "unknown", status: "pending", source: "transport-unknown", evidence: { source: "transport-unknown" } });
+      throw error;
+    }
   };
 }

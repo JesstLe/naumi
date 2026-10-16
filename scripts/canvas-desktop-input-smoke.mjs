@@ -32,9 +32,12 @@ assert.match(client, /zoomOnPinch/);
 pass("Control wheel, Command wheel, and trackpad pinch stay inside the canvas");
 
 assert.match(client, /panActivationKeyCode="Space"/);
-assert.match(client, /panOnDrag=\{boxSelectMode \? \[1\] : \[0, 1\]\}/);
+assert.match(client, /panOnDrag=\{canvasTool === "hand" \? \[0, 1\] : \[1\]\}/);
+assert.match(client, /selectionOnDrag=\{canvasTool !== "hand"\}/);
+assert.match(client, /selectionKeyCode=\{canvasTool === "hand" \? null : "Shift"\}/);
+assert.match(client, /elementsSelectable=\{canvasTool !== "hand"\}/);
 assert.match(client, /panOnScroll/);
-pass("space drag, mouse drag, middle-button drag, and two-finger pan are enabled");
+pass("V/M select on blank drag; H, Space, middle-button drag and two-finger scroll pan");
 
 assert.match(client, /const canvasShortcutLayerOpen = Boolean\(/);
 assert.match(client, /const CANVAS_MODAL_SELECTOR = '\.fixed\.inset-0, \[data-canvas-hotkeys-blocked="true"\]\[aria-modal="true"\]'/);
@@ -72,7 +75,8 @@ assert.match(clipboardFiles, /item\.kind === "file"/);
 assert.match(clipboardFiles, /CANVAS_IMAGE_FILE_PATTERN\.test\(file\.name\)/);
 assert.match(client, /canvasShortcutLayerOpen \|\|\s*document\.querySelector\(CANVAS_MODAL_SELECTOR\)/);
 assert.match(client, /if \(isEditableClipboardTarget\(event\.target\)\) return;/);
-assert.match(client, /const nodeId = canvasNodeIdFromClipboard\(data\);\s*if \(nodeId !== copied\.id\) return;/);
+assert.match(client, /const nodeId = canvasNodeIdFromClipboard\(data\);/);
+assert.match(client, /const copied = nodeClipRef\.current;\s*if \(!copied\) return;\s*if \(nodeId !== copied\.id\) return;/);
 pass("copy intent stays one-shot while paste routing yields to editors and portal layers");
 
 assert.match(dict, /\{mod\}C 复制节点/);

@@ -19,8 +19,8 @@ export function canvasHelpSections(platform: HelpPlatform): HelpSection[] {
   return [
     {
       id: "navigation", title: text("画布导航", "Navigation"), shortcuts: [
-        { id: "move", label: text("选择工具", "Select tool"), keys: [["V"]] },
-        { id: "hand", label: text("手型工具", "Hand tool"), keys: [["H"]] },
+        { id: "move", label: text("选择 / 移动节点，拖空白框选", "Select / move nodes; drag blank space to select"), keys: [["V"]] },
+        { id: "hand", label: text("手型工具：只平移画布", "Hand tool: pan canvas only"), keys: [["H"]] },
         { id: "pan", label: text("临时平移", "Temporary pan"), keys: [["Space", "Drag"]] },
         { id: "zoom", label: text("缩放画布", "Zoom canvas"), keys: [[mod, "Wheel"]] },
         { id: "zoom-in", label: text("放大", "Zoom in"), keys: [[mod, "+"]] },
@@ -31,7 +31,7 @@ export function canvasHelpSections(platform: HelpPlatform): HelpSection[] {
     {
       id: "selection", title: text("选择与编辑", "Selection & editing"), shortcuts: [
         { id: "marquee", label: text("框选工具", "Box select tool"), keys: [["M"]] },
-        { id: "box-select", label: text("临时框选", "Temporary box select"), keys: [["Shift", "Drag"]] },
+        { id: "box-select", label: text("选择模式兼容 Shift 框选", "Shift box selection in select mode"), keys: [["Shift", "Drag"]] },
         { id: "multi-select", label: text("增选 / 取消选择", "Add / remove selection"), keys: [["Shift", "Click"]] },
         { id: "undo", label: text("撤销", "Undo"), keys: [[mod, "Z"]] },
         { id: "redo", label: text("重做", "Redo"), keys: platform === "mac" ? [["Shift", mod, "Z"]] : [[mod, "Y"]] },

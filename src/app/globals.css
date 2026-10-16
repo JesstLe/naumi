@@ -425,11 +425,22 @@
   filter: drop-shadow(0 0 6px rgba(134, 193, 255, .6));
 }
 /* 显式框选模式:左键拖出选择框，部分覆盖节点也会选中；中键仍可平移。 */
+.canvas-select-tool .react-flow__pane { cursor: default !important; }
+.canvas-select-tool .react-flow__pane.dragging { cursor: grabbing !important; }
 .canvas-box-select .react-flow__pane { cursor: crosshair; }
 .canvas-hand-tool .react-flow__pane,
 .canvas-hand-tool .react-flow__node { cursor: grab; }
 .canvas-hand-tool .react-flow__pane.dragging,
 .canvas-hand-tool .react-flow__node.dragging { cursor: grabbing; }
+/* Per-node draggable/selectable flags override React Flow's global defaults.
+   In hand mode, hit-test the pane even over nodes, handles and multi-selection. */
+.canvas-hand-tool .react-flow__node,
+.canvas-hand-tool .react-flow__node *,
+.canvas-hand-tool .react-flow__edge,
+.canvas-hand-tool .react-flow__edge *,
+.canvas-hand-tool .react-flow__nodesselection,
+.canvas-hand-tool .react-flow__nodesselection *,
+.canvas-hand-tool .react-flow__selection { pointer-events: none !important; }
 .canvas-box-select .react-flow__selection {
   border: 1px solid rgba(99, 102, 241, .9);
   background: rgba(99, 102, 241, .12);
@@ -670,5 +681,5 @@
 /* Preserve every node/path and the native hit areas. Two bounded compositor
    surfaces avoid re-rasterizing the whole mixed SVG/HTML subtree on zoom.
    CanvasClient disables this when an edge needs the original cross-layer z-order. */
-.canvas-render-layers[data-canvas-layer-order="composite"]:not(:has(.react-flow__edge:hover)) .react-flow__nodes,
-.canvas-render-layers[data-canvas-layer-order="composite"]:not(:has(.react-flow__edge:hover)) .react-flow__edges { will-change: transform; }
+.canvas-render-layers[data-canvas-layer-order="composite"]:not([data-canvas-edge-hover]) .react-flow__nodes,
+.canvas-render-layers[data-canvas-layer-order="composite"]:not([data-canvas-edge-hover]) .react-flow__edges { will-change: transform; }

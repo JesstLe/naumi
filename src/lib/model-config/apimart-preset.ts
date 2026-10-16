@@ -17,7 +17,7 @@ import { recordBillingUsage,currentSynchronousBilling } from "../billing/synchro
 /** One durable submission. A timeout/unknown acceptance only queries the original task. */
 export function apimartPresetFetch(scope: ModelExecutionScope, options: ValidationOptions = {}, overrides?: { transport?: typeof fetch; media?: typeof fetch; pollMs?: number }): typeof fetch {
   const c=scope.connection,p=scope.imagePreset!;
-  const transport=overrides?.transport || modelEndpointFetch(c.baseUrl,options,{...c,costDisabled:true});
+  const transport=overrides?.transport || modelEndpointFetch(c.baseUrl,options,{...c,costDisabled:true,costScope:scope});
   const base=c.baseUrl.replace(/\/v1\/?$/,"").replace(/\/$/,"");
   const auth={Authorization:`Bearer ${c.apiKey}`};
   const json=async (path:string,init:RequestInit={}) => {

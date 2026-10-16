@@ -116,3 +116,162 @@ Node容器合成会创建新的stacking context，不能不加条件用于所有
 已创建仅本机loopback的103只读观测代理，全部业务POST/PUT/PATCH/DELETE阻止，只有现有image-cache/public-image-cache授权清单POST放行，GET创建/恢复型视频/生成入口阻止；日志不记录Cookie/签名query。原生admin会话通过现有30日格式签发、代理自身只允许60分钟窗口（不能直接用60分钟exp，现有issuedAt=exp-30日会正确拒绝已改密码账号），本机/服务器临时文件私有，不重置密码/角色/额度。仍未切流生产。
 真实103再次读取290作品，最大同tree:art-1789961451626-317854、154素材/48文字/153引用/4manifest，真实页面213节点/191边/11组/12装饰/94提示均一致。初版localhost代理展示146/154，8远端源因R2只允许Origin103而非localhost拒绝；该轮保留为未完成、不作为速度基线。服务端GET原图186040与thumbnail10210均200、描述长度/SHA完全相等；Originlocalhost响应无ACAO而Origin103明确允许，证明是验收代理来源差异，不改生产CORS。代理现对已授权manifest签名R2链接使用不猜测外源的短期不透明映射，沿同一只读代理转发图片，原source/version/字节保持；此代理路径不能冒充浏览器直连R2性能，新旧都须使用同一路径比较并记录路由。
 正在记录真实admin页面完整加载与原生操作，冷/热分别标注导航/项目打开时钟，观测脚本只注入本机返回的HTML，未改103部署源码。目标口径可由用户补充，当前仍保留完整70%目标，尚未合main或发布。
+
+
+## 模块12：103真实旁路完整样本对照（未公网切流）
+固定3ab24181fcc5ac8930aefebe5b33585882b8ec1a / version1791931809三槽普通Linux PROBE0构建全部exit0，568194048字节包已上传103。持Naumi/Hub两锁后建立可读DB备份、原网关、108旧静态文件hash及账号/权限/配置/素材控制基线；旧服务持续运行。新13031/32/33仅回环，旁路两类Worker关闭，三槽健康/实际版本通过。四端口20项原生鉴权读取通过，账户全部作品、文字、workflow响应SHA逐字节一致。当前网关仍旧13028/29/30，core/Worker c05a923不停止；回退配置实际nginx -t通过，不等于真实切流回滚演练。
+普通075业务版本框选21个节点成功，多选工具出现，清空回到0选中；全213节点154实际图片保持，业务无写。集中加载/队列/缓存/堆叠/文字/Dock1920/TypeScript七组exit0。
+只读对照新增同一SSH端口通道，基线13028/候选13031、创作API仍80；两者R2均经同一HTTP1只读随机映射。不能冒充浏览器直连R2，保留此网络传输层限制。严格单画布、1280x720/助手打开、三个新origin各版冷缓存。项目封面按钮title识别修复后，从实际点击计时，不包含操作前停留；此前零projectStarted的手工打开轮记录为无效加载时钟，不删除。
+三轮原版项目打开到154图：42626.3/41965.6/42846.2ms；候选14345.1/14272.1/14258.8ms，中位降低66.518%，未到70%。每轮213节点191边154图全部成功；153媒体引用，原1081842字节/137manifest，候选1062952字节/3manifest；失败0。所有原图/文字/分组/装饰/缺素材提示不裁减。
+原生平移四次同坐标往返，两版各36可信事件、完整同213/154/191，事件到双RAF P95123.9→88.5ms，降低28.571%，未70%；中位77.95→51.6ms。原60帧总壁钟亦未70，保留原结果。热加载/更多真实操作/浏览器直连R2最终验收继续，不能用受控本机冷86.95%或缩放77.96%替代真实站点全部目标。
+候选模块集中功能验证后已普通快进推main至3ab2418；此Git整合不是上线或性能70%通过，没有公网切流。最新同事视频分支f228504仍进行中未整支合入，共享checkout codex/labs-workbench不切分支且保留现场。证据本机output/canvas-performance-70-20261014/admin/live-side-*；远端/opt/naumi-staging/evidence/canvas-performance-70-20261014-release。维护成功发布计数0，功能同步计数1/3。Goal继续active。
+
+模块12收尾：同一SSH只读代理严格串行热缓存三轮，旧29048.6/32028.9/30517.2ms，新5685.3/5489.8/5444.4ms，中位30517.2→5489.8ms，降低82.0108%；每轮同213节点/154图/191边。该热加载分项通过70%，冷加载66.518%与真实平移28.571%仍未70，原生直连R2验收尚待完成，整体goal不标complete。原生账号/密码/积分/授权/原素材控制基线最后复核通过，公网仍b243f5e/1791913676，未切流。
+已释放两把部署锁、停止全部9个观测proxy端口、移除远端临时会话文件；本机临时会话文件的正常删除命令被执行器拦下，保留原私有ACL，未改用其他方式绕过。其代理已停止，60分钟代理授权窗口保持原值。三个回环候选槽保留以便下一轮，Worker均0。下一轮重新准备短期只读观测，不复用已退出的锁PID；已备份固定网关及候选信息需从当前生产再刷新后接续，不执行原start阶段重复创建同名容器。
+
+
+## 模块13：已授权重复像素传输合并与平移结束状态
+上一目标回合有实质进展：103完整冷热/原生事件证据、普通框选、固定三槽/可读备份及控制保护；整体尚未70且未公网发布。本轮只读查询实际最大项目153素材引用的thumbnail SHA/bytes/MIME，发现仅77个不同像素身份：其中43份194字节、19份268字节、10份222字节等相同内容，先前每轮153次字节请求确实有76次可避免重复，不通过隐藏节点解决。
+新增32MiB/400项有界VerifiedImageContentPool，只在每个source先经本次fresh descriptor授权后，按account+epoch+SHA256+长度+MIME分享已验证像素或在途下载。非SHA本地mtime版本及团队动态preview不跨source合并；IDB命中在作为共享字节前重新校验真实digest/长度。source-keyed磁盘LRU/原图download保持，最多6个字节传输不增加，所有153个引用仍分别授权。切账号/focus/撤权清共享池；独立节点取消不影响其他等待者；某签名URL403不得把另一已授权同像素source当作拒绝，该source沿自己的URL重试。分享不是权限缓存。
+平移结束总坐标ref和Dock仍同步；只在zoom真正变化时更新根组件React viewport状态，避免同zoom x/y结束引发整个大编辑器重渲染。手形工具或按键拖动期间不生成无用连线剪刀hover状态，正常无按键hover及选择/删除保持。
+集中内容池/完整IDB流水线/Dock1920/测量与分组/堆叠/文字检查通过，24个不同已授权ref同hash仅1字节下载；撤权alias无像素复用、切账号无共享私图、取消单个保留其他、broken resource scopedURL重试/clear无旧flight回填/LRU限制通过。源签名和权限未输出；真实项目/密码/积分未修改。TypeScript/普通固定Linux/真实103再次对照及发布门槛继续，未用77唯一hash直接宣称实测下载或性能70%。当前源码模块计数2/3，开工main刷新3ab2418，功能候选尚未合入main。
+
+
+## 模块14：有界场景稳定渲染成员试验（待真实验收）
+React Flow原生visibleNode/Edge selectors在每次transform按屏幕geometry判成员；原阈值60使完整213场景平移时反复检查及出入DOM。新增node<=300且edge<=1000的有界场景保持稳定成员，超过门槛仍native virtualized。图片root-scoped IntersectionObserver仍独立控制src及按需授权/原图字节，DOM保留不等于屏外下载。原节点/边数据和命中区不改、不减少视觉元素。该门槛试验尚需高缩放屏外0额外请求、文本/边/选中/框选、最大全景原生平移的普通构建验收；不能用selector源码直接宣称70%。模块13实际103冷候选8066.1/7979.6/7935.3ms、77字节请求对应154图已观测，原当前配对两轮40927.8/39310ms；三轮总结待原最后轮。新实际原生平移仍未70（基线104.5ms P95、新78.9ms），如实保留。
+
+模块13完整103结果：三轮旧40927.8/39310/39286.5ms，新8066.1/7979.6/7935.3ms，中位39310→7979.6，降低79.7008%；每次213节点154实际图片191边11group12decor94标记。153旧媒体请求→77新请求，每源仍重新授权；旧137manifest/1081842字节，新3manifest/1029712字节，全部失败0。相同SSH/HTTP1/R2短期映射链路，不是浏览器直连R2。最后一轮旧实际完成1791935689195.8，下一Linux构建始1791935707000，全部6轮无并发构建。实际原生同36事件旧P95104.5ms、内容池版78.9ms，降低24.50%，不70。
+模块14普通8d7103e PROBE0 Linux成功，本机4330与103私有旁路13034版本1791935707实际运行；仅替换本任务未被公网引用的4326预览容器，原公开三槽/core/Worker不停止。普通100%观察保留213nodes191edges但offscreen active images0，root visibility下载开关仍独立；FitView后154图全部、框选21节点/清空0通过。原图下载在内容池版186040字节SHA完全原值；选中Dock手形平移实际跟随后返回原视图，没有作品/文字业务写。
+模块14原生同36事件P9570.6ms、基线104.5ms，降低32.44%，仍未70；该试验有界成员稳定/高缩放图片不激活/保留完整内容和集中模块/TypeScript通过，继续保留但不把轻微额外收益当整体70%。新一次项目加载7719.3ms完整213/154/191，是single warm-ish origin观察，不替换内容池版三轮冷结论。三次累计功能迭代门槛本轮已fetch/普通整合main（仍3ab2418）归零；最新同事视频8d44d91仍进行中，不整支合入。发布前原生浏览器直连R2/admin登录、剩余交互和最终三槽/真实切流回滚待完成，goalactive，未公开发布。
+
+## 模块15：固定端口计划与候选切流前核对
+上轮为实质进展：重复像素字节去重及有界场景稳定DOM、普通回归、103严格三轮冷79.7%与原生平移32.4%、37字段独立回滚。目标仍全范围active，本轮不缩小口径。
+部署脚本新增target-ports.json三角色计划（默认旧31/32/33兼容，正式新候选拟35/36/37），按role映射而非数组排列；输入必须完整、不同、合法整数。切流前额外核对每个候选CID/name/imageID、actual source/version、DB健康、仅127.0.0.1绑定和两类Worker=0，以及ports计划未变，避免端口计划漂移或候选被替换后盲切。
+真实网关fixture3种正常计划和6种无效计划回归通过：限定20项UI/static/cache/read-media变更，core创作/Agent/企业团队API及原全部fallback逐字節一致；保留旧28/29/30资源链、原配置不修改。未对服务器网关写入。固定三槽Linux构建与新容量/锁/备份旁路验收继续，尚未发布；源码功能计数1/3，开工main3ab2418保持，同事视频65524fd仍任务未完整验收，未整支合入。
+
+## 模块16：新main整合及视频轮询无变化重渲染
+13eb68d固定UI/desktop/enterprise三槽Linux构建全部exit0，568195584字节上传103、新35/36/37只回环旁路、双Worker0、健康/实际1791936989及20原生鉴权读取通过；UI资产映射/原静态fallback已校验。先持两锁核对四个本任务旧预览无网关引用、无建立请求、Worker0后仅stop，镜像/容器/DB/媒体保留；可用内存由2916MiB恢复3778MiB，再备份/108旧静态hash。没有公开切流。
+构建后再fetch发现origin/main从3ab2418进入1ec472f（同事已验收阶段视频画布/工作台增量）。按约定旧13候选立即标为非最终，普通合并7556c3e，全部main新实现与本任务性能代码保留、共享checkout未改；未用旧固定包抢上线。合并后画布/缓存/Dock/堆叠/文字/视频前端配置和TypeScript集中通过。
+检查新前端GET /api/video/assets、projects、byoc/catalog在当前core13012和旧13旁路均404（video-nodes200）；证明原20路由只换UI而保留旧全部创作API的发布策略需要升级/协调后端与Worker连续性，不能将新前端直接发到旧API上声称兼容。该明确证据见admin/new-main-core-api-compatibility.json。当前生产原页/core c05/Worker不停止，下一候选纳入新main后必须重新固定构建及API实际验证。
+新增轮询snapshot复用：video nodes6秒及tasks4秒请求/账号epoch/当前项目/变更/完成落盘回调不减、不关；只有完全相等JSON返回复用旧对象/数组，避免无视频的图片项目每6秒从[]到新[]触发大画布重渲染，以及每4秒未变任务重渲染。revision旧值继续拒绝，同revision status/result/signedURL/locked/deleted/ref顺序变化仍更新；缺失node的原merge语义保持，tasks移除/重排保持。100次未变snapshot不产生新根状态，所有变化/账号与poll时钟结构保留验证通过，TypeScript问题仅测试optional references已修正。新main完整App构建/运行及新模块真实轮询验收待继续，未将此单元结果称70%或上线。
+模块计数2/3，仍使用103且不连接120/香港/101；admin当前密码/角色/积分/媒体未改。本机/代理账号north原企业页实际可看1184积分明细（管理员nv_user不是consoleAdmin时页正确拒绝，未绕过后台密码），只读代理按端口和账号绑R2随机key，所有业务写仍禁止。原生admin直连登录问题仍待用户回复，目标保持active。
+
+## 模块17：实际API协议切流门槛及本轮收尾
+新增verify_public_video_reads切流门槛：私有60分钟native观测会话仅供GET，在当前公开路由逐项核对nodes/assets/projects/byoc目录200 JSON和预期数组shape；404、HTML或假200错误body都在网关写入之前终止。不改计费/密码、不创建模型任务，不把DB健康代替新前端所需协议。fixture成功/404/bad-shape回归通过；103真实protocol-check预期失败于旧core assets404，网关与本轮原始文件字节完全一致。旧13三槽源码已被新main替代，不公开切流。
+新main合并7556c3e后，视频轮询修复4012ab0及兼容性a1c091a普通Linux构建均通过；本机4330实际1791938547/a1c091a，健康/作品/文字/属性读取通过，普通画布213nodes154实际图片191edges/composite、浏览器error0。兼容性修复仅使用广泛支持的hasOwnProperty.call，不改变snapshot比较内容或poll时钟。当前新增协议脚本不影响App源码，待新的整体Backend/Worker发布策略与固定候选集中验收。
+回合所持103双锁将正常释放；原公开b243/1791913676、core/Worker c05、原角色/密码/积分/设置/媒体控制在最终检查保持，新增13eb候选私有35/36/37保留但标为过期，后续不得把它当最新main。四个更早本任务无引用/无连接预览已stop且镜像/容器及回滚文件保留，不计成功发布次数。本轮功能累计第3次后再次fetch/整合main，同步计数归零；没有合任务到main或公开发布，目标active不complete。
+
+## 模块18：新版Worker排空控制与旧Agent归属转发（工程验证，未发布）
+
+修复接手时Agent fixture第55/56行多余括号；集中验收后真实HTTP/SSE测试及TypeScript通过。SSE测试不再用150ms自动完成与1000ms阈值（这种测试可能误接受缓冲），改为旧端保持响应未结束时必须读到open事件，并验证下游取消确实关闭上游连接。工作台/画布按账号及项目/anchor探测旧进程Map，仅存在时转发原请求一次；404交当前handler，未知网络状态503不重放。当前进程已持有的会话不依赖旧实例可达性；新会话无旧Map时仍走新版。raw画布ID遵循当前/旧c05相同project/anchor hash规则，原请求正文完整保持。工作台会话历史列表仍本机共享DB读取，history/steer/stop针对旧会话归属旧实例。只接受服务端固定私有origin，未配置时行为不变；转发在billing wrapper前，hop-by-hop/set-cookie剔除，没有第二次计费wrapper。
+
+新增Worker私有127.0.0.1 Bearer控制/status、/drain、/resume以及START_PAUSED旁路配置。drain阻止后续领取，在途HTTP保持；resume不重入；Linux SIGTERM等待当前tick完成退出0。使用真实Linux子进程和假tick HTTP端点，跨5秒interval验证暂停后新领取0、在途取消0、恢复单tick、信号退出0，供应商调用0。Windows child.kill(SIGTERM)为强杀语义，不能当Linux产品失败；验收脚本显式限定Linux，Docker --network none运行PASS。
+
+103本轮只读刷新：公网仍b243f5e/1791913676、旧core/Worker c05，35/36/37仍旧13eb旁路；部署锁无持有、磁盘70%、可用内存3187MiB、swap占1412MiB。未写生产、未停旧Worker/旧App、未切流。旧c05 Worker不存在drain控制；新增控制只解决下一代Worker，不声称首次升级无损交接已完成。旧实例停用还须确证SSE/Map和在途tick排空，不能依据新Worker fixture直接停旧生产。
+
+开工fetch发现新main5fd8196（同事账单wallet锁补齐和回归），本模块任务提交后普通整合；不得使用e6或13eb旧包忽略它。当前全范围目标仍active：代理同链路冷79.70%与原生平移32.44%仍为上轮实测，不表示最新main/新module/真实直连R270%验收。新固定普通App构建/真实旧新版API兼容/最终交接发布与回滚继续。功能计数1/3，生产发布计数0。
+
+模块18收尾实证：普通Linux PROBE0固定e411aa83a79b96663f69aeb8c0d4352530005a24构建exit0，本机4330实际1791942116/e411aa8。只替换本任务隔离fixture容器，原a1容器rename为naumi-canvas-perf-ordinary-20261014-a1-retained并stop保留，原DB/媒体/挂载不变、Worker0、供应商key空。新版四条原生登录态读API均200 JSON且nodes/assets/projects/workflows数组shape通过；初次检查脚本误把BYOC字段写成channels后改为源码真实workflows，不是产品修复或生产失败。普通内置浏览器实际完整213/154/191、composite、error0；已退回dashboard停止画布背景下载，未改用户103登录页或admin密码。
+
+普通整合后HEAD e411aa8/main5fd8196，任务分支已push；真实HTTP/SSE/视频poll对象复用/堆叠guard/30计费入口/完整TypeScript/git diff集中exit0。当前main-relative四件套24字段独立source+行为回滚通过，保留同事wallet锁及视频新main，24同hash授权引用BASE24字节下载→MOD1→ROLLBACK24，modifiedZIP保持修改。实际103本轮只读版本仍b243，未持部署锁/未公网切流。全范围目标仍active；剩余首次旧Worker交接、新版三槽+core整体固定候选、真实旧页面/在途任务连续性、直连R2与原生平移70%、切流及真实回滚。
+
+模块18边界修正：复核Worker定时器发现NaN/Infinity/超过2147483647会被Node折算为极短interval；新增启动前有限值/上限检查，3种无效配置实际Linux子进程exit1且不领取。既有最小5秒有效配置保持。legacy辅助对HEAD不解析空body，真实HEAD单次转发通过；route仍以各自支持的方法为准，不新增业务操作。集中Agent HTTP/SSE、TSC、Linux drain再验通过；需要重新固定构建该边界修正后源码，e411仍为之前普通浏览器验收版本，不称最终新版。
+
+## 模块19：旧Worker首次排空验收机制（隔离验收通过，尚未生产执行）
+
+上轮模块18是实质进展（真实HTTP/SSE、Linux新Worker排空、普通构建和独立源码回滚），不是仅等待；随后用户询问是否上线，103实际只读核对仍b243，未公开切流。本轮开工再次fetch/普通合并origin/main7d0746a，接入同事新增BYOC/图像保护测试与文档，产品源码未变，不整合未完成任务分支或修改共享checkout。
+
+审查发现新Worker的tick结束不等于App里的后台生图任务结束：DurableImageJobs.kick异步启动并每25秒续租，tick可能已返回而任务仍执行。新增仅Workersecret鉴权GET /api/video/worker/drain-status，在同一只读repeatable-read事务计数5类未释放fence（普通生图、画布编辑、视频poll、供应商成本、imagegen批次），另计所有当前业务库活动事务和advisory锁，以覆盖媒体镜像/媒体job/workflow；不清租约、不调用模型、不暴露ID/邮箱/内容。过期fence仍阻止drain，不把timestamp过期当旧执行者已停止。不存在的扩展表注明absentTables；计数/DB异常503，不伪造空闲。
+
+新增drain-legacy-worker.py引导首次旧版交接：必须目标Naumi/Hub真实flock仍持有，核对两枚精确CID和同Image、旧HTTPWorker Cmd和原App内Worker0；只docker pause旧Worker（不pause/stop旧App），从/proc其PID自己的socket inode观察TCP，并通过旁路候选读取共享DBfence。旧App继续完成已经领取的请求和异步作业；TCP和DB共同排空才留下可恢复的paused Worker给后续新Worker交接。超时、错误shape、配置/lock/基线变化都恢复该脚本自己暂停的原PID，模糊Docker暂停返回也先inspect后恢复，不盲重试或kill。该工具不切网关、不启新Worker、不停旧App、不回灌DB。
+
+真实LinuxDocker隔离测试使用git c05旧Worker字节SHA f59106f0e527c2c5beee1b396fa80a84204cdd532d7fe7e3deda19940bb89a64（没有注入drain实现），Node App假tick响应、内部网络、辅助容器独立目录双flock；先完成第一tick确保旧脚本真实interval已安装，再暂停跨5秒interval证明不新领取，旧App仍成功返回在途tick且aborted0，异步fence未释放继续等待，释放后排空成功。deadline/不完整counter失败恢复、同PID unpause恢复tick通过。首次fixture启动拒绝连接是服务尚未ready，wait已改为原同进程短期限读取，不重建进程；测试容器和内部network均清除，原fixture数据库/普通App不改、真实供应商0。
+
+真实本机PostgreSQL独立schema覆盖secret401、空/缺表、5种过期仍held fence、活跃事务、advisory锁、只读不清lease原值，通过后仅删除自己的schema。综合Agent/SSE/cache/type/diff集中回归通过。103本轮只读inspect原App18c31dc/Worker34dc082、同Imagecd344d91、均running非paused，AppNAUMI_VIDEO_WORKER0符合引导前置条件；没有在生产执行pause/交接。生产真实任务/Agent/SSE旧新版连续性和公网切流/实际回滚仍待验证，隔离测试不冒充供应商在途验收。
+
+功能累计2/3，生产发布0；全范围目标active，冷79.70%/原生平移32.44%仍为历史同代理对照，未称最新main/直连R2/公开70%。下一步固定最新候选完整构建、持新双锁/新基线/backup与旁路API验收；不得重新使用obsolete13eb或旧退出锁记录。
+
+模块19真实旁路结果与模块20修正：148dab9固定UI/desktop/enterprise三个Linux PROBE0构建均exit0，569005568字节bundle已上传103。新双锁PID1102807从baseline/可读DBbackup/108旧资产hash持有；严格核对旧13预览CID/无Nginx引用/无建立连接/Worker0后只stop保留容器/镜像/媒体/DB，可用内存恢复3765MiB，再取切流前基线。新13035/36/37只回环、Worker0、原配置/媒体共用、NAUMI_AGENT_LEGACY_ORIGIN指向仍运行旧c05；健康/实际1791944411及native GET4API×3槽200JSON shape通过，原公开b243/1791913676没变，core/Worker仍c05。
+
+真实secret-only GET drain-status401“请先登录”来自中间件，不是secret错：当时带原生admin Cookie+secret读取成功。新增精确GET /api/video/worker/drain-status Workersecret分支，其他路径/方法/错误secret仍原用户feature gate；单元与TypeScript通过，需重建，不将此前带cookie读通当secret-only已通。
+
+真实只读排空计数imageJobs6，全部pending/已过期/明确guard导入历史6（当前NAUMI_STAGING_HISTORY_GUARD1，environment staging）。它们保持原lease/status，旧/新恢复scanner本来就排除这些复制历史，不是当前正在跑的执行者。状态查询现复用同一excludeImportedHistory谓词，返回quarantinedHistoryFences另列而不删/清/重跑；普通过期但非隔离fence仍阻止drain，imagegen新批次无history exception。新增真实独立临时PostgreSQL DATABASE测试，含真的naumi_staging_guard.origin_rows、原guard实现/导入和非导入计数、旧lease不改、新批次不免除，DB回收只自己的随机库；现有业务fixture不更改。
+
+148三槽是上一阶段真实兼容证据，以上middleware/历史修正尚未编入，不能作为最终候选执行生产drain/cutover。main在build后进入37e6895，仅同事图像能力交付文档，已普通整合c17a6c6，源码和148产品一致；新fix需新固定SHA构建。模块20达到3次功能计数后fetch/整合最新main归零，生产发布计数0。下一轮优先新最终候选及真实secret-only status，而非用旧148赶上线。全scope70仍active，原生平移32.44/代理冷79.7历史证据不扩大。
+
+## 模块21：最新固定旁路、admin原生直连观测及按用户要求释放锁
+
+103新双锁PID1127091从基线/备份至最终核验持有。本任务148旧预览在精确CID/镜像/loopback/Worker0、无网关引用和无建立连接通过后stop保留。固定2f7c0b1三个PROBE0镜像构建exit0，569009664字节导入，13035/36/37实际1791946269，Worker0及旧Agent origin保持。四项原生登录态API×三槽12项JSONshape通过，secret-only drain-status200/匿名401；共享DB5项fences全0、transactions0、advisory0，6份已隔离导入历史另计而不修改。没有生产pause/tick/cutover。
+
+用户admin原生登录已确认。为真实直连R2加入临时只读观察器13038及同源入口；不签发浏览器Cookie，页面先验证原生session，再只读查询实际admin角色。首版误读SessionUser.role不存在已修正；前缀改写导致React418的实验不作性能证据。第二版保留/canvas原路径与原HTML/静态chunk地址，隔离新测试IDB名，未删除用户现有缓存，R2 URLs不改写。原生浏览器确实取得R2响应字节：b3全213/154/191，141R2成功+12原生mediafallback、137manifest；c3全213/154/191、77R2成功、4manifest。但节点设置GET尚未在观察器allowlist，94缺素材交互标记未呈现，本次控制范围不一致，明确为探索结果，不报告70%达标。补齐allowlist后尚未重测。未消费供应商。
+
+用户要求“完成本轮先放锁，让版本更新”。立即停止观察标签背景画布请求，隔离Nginx syntax检查后原网关逐字节恢复SHA4e26b1017a6d449ca2b69cc93547470204692d0ed4ef6176770c5a7f0c38c4bf、平滑reload，13038停止、临时native读session删除。公网/api/version仍b243/1791913676，DBhealthy，旧App/Worker c05运行且未paused。原holderPID1127091实际退出，两把own flocks释放，lslocks当时无部署锁。未恢复数据库，没有性能版正式发布。证据output/canvas-performance-70-20261014/module21-final-observer-cleanup.json及module21-LOCK_RELEASED_VERIFIED.txt已回读。
+
+新一轮若继续：不复用该终态holder或baseline；先刷新同事最新发布/网关/来源，再新双锁与备份。2f三个旁路仍保留，下一版本若改变backend协议需更新候选，不能旧候选覆盖同事。全范围目标active，当前用户只要求本轮收尾释放锁，不是暂停整个目标。业务功能迭代计数仍0/3，成功公开发布计数0。四件源码事务产物仍93e基线37历史，不声称最新2f重新包装或完整上线回滚；本轮实际网关回滚另有上述证据。
+
+## 模块22：本地连线悬停提示与受控画布解耦（集中代码验收通过，浏览器性能待验证）
+
+按用户要求给版本发布让锁，本轮103只读盘点，未再次持锁或修改线上。开工fetch第一次TLS握手失败；第二次成功，普通合并origin/main95b43c5至本任务2fe557e，保留同事混合画布恢复/视频摆放/员工工作台跳转及媒体所有权修复。共享checkout未切换。
+
+代码定位：原连线mouse move每次都setEdgeCut，更新CanvasClient根状态，仅为移动剪刀提示却让完整受控画布重新参与render。新增CanvasEdgeHoverHint独立装饰层与帧合并控制器，1000次move只保留末点并计划1次DOM写；离开/项目切换/卸载取消未完成帧，代际校验防止已取消回调复活。原图文/视频/连线、命中区、选中、Delete剪断、手工具/按键/只读判定不变，媒体/服务端坐标/积分不写。现有层级不因本模块提升而改动，原hover仍走原z-order保护。
+
+集中verify-canvas-edge-hover、原render-layer-order和完整TypeScript通过。下一步固定两份同探针Linux构建、同一隔离admin213/154/191项目真实浏览器悬停/平移/选择/剪断回归；不得用控制器1000→1调度次数冒充用户耗时70%，不得把本地结果称103上线。其他模块的直连对照和完整发布连续性/回滚仍未结束。
+
+模块22浏览器失败已定位并修正：候选诊断页面不断追加ReactFlow，源于新提示层key直接用activeKey，与同级ReactFlow的key重复。未上线；立即将候选退回dashboard停止压力，失败运行不作为任何性能证据。提示层现在使用edge-hover:前缀的独立命名空间，仍按项目变化卸载/清除；回归断言明确检查前缀。下一固定候选须重新构建并验证单一ReactFlow/单一诊断面板，否则禁止性能结论和发布。
+
+模块22集中浏览器回归（固定修正1476cf2）：独立Linux2fe baseline/1476 candidate、同隔离DB/媒体、同1625×884及1257×884画布、Agent侧栏开启、zoom0.0290765。修正后单一ReactFlow/单一probe、213节点/154已载图/191连线/94缺素材标记保持。原生零滚动指令移动指针至现有连线6点，剪刀跟随到354/157，移到空白处清除，viewport字节不变；点击穿透选中连线，Delete191→190，原生Undo恢复191。截图和JSON已检查，失败旧2d profile stopped/retained，不作性能结论。
+
+真实四次平移共32trusted事件：本轮baseline P95 111.9ms、候选138.5ms，观察为退化23.77%，明确未70达标；不以悬停调度1000→1覆盖平移退化。3秒测量原先仅捕到8事件，不作为完整对照；后续零滚动附加样本也不污染已保存32事件结果。ready/images时钟含登录/项目选择等待，不作为有效冷/热首屏证据。普通PROBE0 fixed1476 Linux构建exit0；随后发现共享本地fixture数据库及两份profile均被外部操作停止，新的ordinary健康因15513拒绝连接未通过。未重启那些容器；仅停止保留本任务新ordinary失败实例，等用户确认Docker清理状态后恢复本地验收，期间不重占103锁。
+
+四件源码事务包现在固定1476相对main95b43c5共34字段（原模块21材料保留在transaction22-previous-artifacts）。BASELINE24字节下载、MODIFIED1、独立ROLLBACK24；新hover/层级/可见性测试、34SHA原样恢复和同事video-layout/员工工作台/media权限文件保留均exit0。MODIFIED ZIP保持修改，ROLLBACK.sh可执行，四件重开。它们是源码行为回滚，不冒充线上切流/服务器回滚。VERIFICATION.txt明确写了本轮平移未达标、普通运行待完成、103本轮不发布。main后续f673仅文档，尚未整合到该固定包。
+
+## 模块23：Docker清理后恢复独立持久化验收库（2026-10-14）
+
+用户确认清理完成并允许继续本地验收。精确检查旧PG容器4432dc9发现Mounts为空，HostConfig.Tmpfs明确为/var/lib/postgresql/data；停止后PG_VERSION不存在，原数据是内存盘数据，不是持久化卷。旧容器保持停止且保留，不把重启空库称为原数据恢复。此前resume-module22-after-cleanup.py的持久化挂载断言失败具有实际意义，不绕过检查继续启动它。
+
+建立专用naumi-canvas-perf-db-persistent-20261014和naumi_canvas_perf_local_pgdata_20261014卷，只绑定127.0.0.1:15513；采用旧PG同Image ID。从已保存的admin/real-canvas-sample.json及workflow-manifests.json重建baseline/candidate两个隔离测试库，不读写生产、不复制原生密码/余额、不启动Worker或供应商调用。普通固定1476容器维持同CID、Image ID和全部挂载，恢复4330服务；诊断profile及旧共享PG保持停止。
+
+原种子入口将文字updatedAt改为当前时间，且对creationProvenance做了规范化。精确API比对发现差异后，在这两个隔离库中从原样本补回全部290作品的creationProvenance和56文字节点的updatedAt。最终全部作品/文字字段、项目名、154节点设置及4工作流manifest与原样本完全一致，不以忽略差异的方式通过。另建仅用于鉴权的foreign测试用户，无素材，确认其自身account200/作品0后再验证跨账号读取：private原图404、manifest200但该素材descriptor为null；匿名两者401。
+
+普通PROBE0实际版本1476cf26a1938791d9d8969c5b26c1650c9bde9e / 1791966536，DB健康；11项API200并校验内容，目标tree:art-1789961451626-317854对应154图片+48文字+11分组=213节点数据、12装饰。153份本地原图（121427388字节）逐份与保存文件字节匹配；3个manifest批次均有授权描述。Worker drain secret-only200/匿名401，activeFences0。HTML200且无诊断输出标记只作为HTTP/数据验收，不代替浏览器UI验收。
+
+测试库两份完整schema/data dump，停止并重启专用PG，同CID/Image/卷及全部结构/数据一致；备份在独立canvas_perf_restorecheck_20261014数据库真实恢复并匹配完整结构和行内容，检查完删除该临时恢复库。初次恢复直接比dump字节失败，仅为COPY行的物理顺序不同；改为仅移除pg_dump随机restrict/unrestrict token并对各COPY块排序，保留所有schema语句、序列值、完整数据行及重复行，未忽略字段或减少表。最终重新执行全流程exit0，普通4330恢复健康。
+
+原34字段源码事务再次BASELINE/MODIFIED/ROLLBACK集中验收：24/1/24字节下载，hover/rAF/层级/虚拟化通过；从MODIFIED_FILE.zip提取新的transaction23-fresh-rollback-copy真实反向应用补丁，34原SHA与原行为恢复，modifiedZIP保持修改。原版本源码和既有四件交付不重新包装为尚未构建的最新main。
+
+本轮仅本地恢复及源码/数据验收，不连接103、不持部署锁、不改网关、不上线；发布任务继续可使用锁。当前工具集未提供原生浏览器操作工具，所以本轮未重新运行普通UI悬停/剪断/项目切换或性能对照，不能沿用module22 profile冒充本轮普通浏览器验收。既有原生平移P95 111.9→138.5ms退化23.77%仍未达标，70%目标保持active。
+
+本轮fetch后origin/main更新到dab963b，包含同事视频生成回执/重试/余额刷新及GitHub镜像流程等业务更新，尚未合入当前固定1476源码包；下一性能模块构建/发布前须先普通合并并集中验证受影响模块，禁止发布旧候选覆盖同事。共享checkout未修改。模块23为验收环境修复，不另计产品功能迭代，功能计数仍1/3，公开发布0。
+
+本轮证据位于E:/Workspace/naumi/output/canvas-performance-70-20261014：module23-local-recovery.json、module23-local-api-verification.json、module23-persistence-rollback-verification.json、module23-source-{baseline,modified,rollback}.json及独立两份测试库dump。下一步原生浏览器普通PROBE0验收、进一步定位实际pan瓶颈、最新main整合、同控制直连R2对照及完整发布连续性仍待完成。
+
+
+## 模块24：继续合入最新main并集中验证（2026-10-14）
+
+在恢复本地验收后继续fetch并普通合入origin/main dab963b，无冲突；合并提交911d875，保留本任务hover/rAF、媒体内容复用、Worker/Agent连续性交接，同时纳入同事视频生成回执/引用重试/视频入口恢复、积分余额并发刷新和GitHub镜像产物来源流程。仅操作本任务独立worktree，不切换共享checkout，不合并本任务到main，不取得103锁。
+
+合并后缓存pipeline、hover、原层级保护、可见性、视频poll快照与参数contract、GitHub镜像来源9项测试、完整TypeScript、diff集中通过。额外专用canvas_perf_wallet_module24_20261014数据库运行quote缺失/执行质量/重试键/实际并发balance-refresh4组；真实账号锁等待后100→99的新快照和镜像一致，供应商调用0，结束删除该专用数据库，未修改两份画布测试库。证据module24-merged-tests.json和module24-wallet-tests.json。
+
+下一固定构建和事务包须以这个最新main为基线，不再把module23的1476包当最新候选。当前本地4330仍1476实际运行；源码已合入但未构建的新main不冒充已运行或已上线。原生浏览器未提供新工具，本轮仍无新的UI/性能达标证据。module23完整持久化/备份独立恢复已通过；外国测试用户实际素材响应为404（不暴露存在性），不是403，原报告文字已修正。
+
+
+模块24收尾更新：固定f9649ea / 1791969278 PROBE0 Linux构建exit0，实际新容器在仅回环4331运行，旧1476/4330保持；同隔离DB/media，Worker0、供应商调用0。新版本实际11JSON API、原样本字段/213节点数据/153原图、匿名和已登录foreign隔离、drain授权通过；普通浏览器UI和性能回归仍未执行。四件源码产物现固定f964相对最新main dab963b共34字段，BASELINE/MODIFIED/独立ROLLBACK24/1/24均exit0，34SHA恢复及同事video/wallet/CI文件原样保留，四件已重开。旧1476四件材料在transaction24-previous-artifacts保留；实际完整命令/输入/输出/退出状态见VERIFICATION.txt。此收尾只更新文档，不要求重建相同业务源码，不发布103，目标active。
+
+## 模块25：移除全图悬停关系选择器，保留原始层级语义
+
+继续性能目标，用户已把优先对象指定为admin素材最多的画布。此前本地恢复、最新main整合、参考工作台更名是实际进展，但未新增浏览器性能证据。当前源码91c3a15保留改名和main4b2ba13；4331当前运行的是该更名预览，旧f964已停止保留，不复用旧容器替换脚本。
+
+源定位：两块合成图层的样式使用根范围:not(:has(.react-flow__edge:hover))。指针经过SVG连线会让根关系选择器参与失效判断及compositor切换，原悬停高亮仍需原z-order。此模块不简单删除hover保护，也不在平移时隐藏连线/图片或降低采样；用root捕获mouseover/mouseout同步维护data-canvas-edge-hover，原节点/边合成CSS只判断该根属性。边内1000次事件只写一次属性，跨边保持同一个original层级，无布局读取，无受控React图状态更新。
+
+静止指针下初次挂载、移除/替换边、几何变化后的场景inspect会同步核对当前:hover边。原层级几何检查忽略viewport transform的机制保持，只有已有场景检查调用该核对；不是每帧query。原后代:has语义包括嵌套画布，外部画布排除；卸载清除监听/属性，迟到事件不复活。原edge:hover高亮、selected/linking、任意负层级/背景交叉保护不变。没有声称此源码机制或1000→1属性写次数等于用户耗时70%。
+
+本轮只读刷新103运行状态：公开版本已由其他任务更新为3bbebee2cfe31e884268c539373b81afff263207 / 1791956188；UI/desktop/enterprise运行新的admin-probe去除版本，核心App/Worker仍c05a923；两把部署锁当前无持有者。磁盘79%/约25GiB可用，swap1446/1450MiB，available2511MiB。此前b243公网版本记录现为历史，之后若发布必须基于新网关/配置/版本刷新，不覆盖同事的新版本。本轮未持锁、未改变103配置/服务/数据。
+
+集中验证及固定构建进行中：hover属性状态机、层级保护、dock几何、媒体权限缓存及完整类型；原生浏览器同条件pan/zoom、完整213/154/191/94场景和直连R2仍未验证，目标active。首测试移除属性次数预期写错（4而非5）已修正为实际状态转换次数，不作为产品或性能通过证据。
+
+
+模块25收尾：固定82e487c的普通PROBE0 Linux构建exit0，实验入口4333（不替换用户4331更名预览），实际样式文件确有data-canvas-edge-hover保护且不含全图:hover关系选择器，原边hover高亮保留。11API/全部保存字段/目标213节点数据/153原图字节/有效foreign和匿名鉴权/drain通过；这不是DOM或性能验收。同一probe文件、buildVersion1791972282、DB/mediaRO/1.5CPU/768MiB的baseline91c3和candidate82两份PROBE1固定Linux构建均exit0，在4430/4431就绪，没有新的原生耗时结果。
+
+构建期间main新增634b895默认亮色且保留saved dark/light，已普通合入26c6875并push，7个真实初始化场景及完整类型通过；实验82与基线91仍是同控制机制对照，不能作为包含最新main的正式候选发布。后续release必须刷新同事进度并固定构建新来源，不用旧82/2f槽覆盖新的3bb公网版本。主动同步后功能计数归零，公开性能发布0。
+
+四件源码事务本轮为增量模块25：82相对91的6字段，原完整34字段包保留在transaction25-previous-artifacts。BASELINE/MODIFIED/独立ROLLBACK均exit0；三者授权24个重复引用仍1次字节下载（保留先前内容复用），独立副本6SHA原样恢复原CSS关系保护，保留既有cache/Worker/Agent/参考工作台。MODIFIED ZIP保持改变，ROLLBACK.sh可执行。原生浏览器全场景/hover层级/选择剪断撤销/项目切换及同动作3轮耗时、直连R2与实际连续发布/线上回滚仍未完成，目标active。命令、输入、字面输出、退出状态和当前网关只读记录均在VERIFICATION.txt及module25相关JSON/log。

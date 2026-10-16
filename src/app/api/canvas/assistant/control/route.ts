@@ -1,10 +1,14 @@
+import { observeReleaseRequest, routeAgentToOwner } from "@/lib/release-runtime/http";
+import { forwardLegacyAgentSession } from "@/lib/agent/legacy-runtime";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { canvasAgentHistory } from "@/lib/agent/canvas-history";
 import { getSession, refreshSessionCredentials } from "@/lib/agent/runtime";
 import { assertHarnessSessionId, readHarnessBody, harnessErrorResponse } from "@/lib/agent/harness";
 
 /** Canvas controls require both authenticated account and current project/anchor ownership. */
-export async function POST(request: Request) {
+async function localPOST(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authenticatedEmail(request);
   if (!email) return Response.json({error:"请先登录"},{status:401});
   try {
@@ -16,6 +20,8 @@ export async function POST(request: Request) {
     if (typeof body.anchorId === "string") url.searchParams.set("anchorId",body.anchorId);
     const history = await canvasAgentHistory(new Request(url,{headers:request.headers}));
     if (history.status !== 200) return history;
+    const routed = await routeAgentToOwner(request, email, sessionId, "canvas", false, body);
+    if (routed) return routed;
     const session = getSession(email,sessionId);
     if (!session) return Response.json({error:"会话不存在或已过期"},{status:404});
     refreshSessionCredentials(session,request);
@@ -30,3 +36,5 @@ export async function POST(request: Request) {
     return Response.json({ok:true});
   } catch(error) { return harnessErrorResponse(error); }
 }
+
+export const POST = (request: Request) => observeReleaseRequest(request, () => localPOST(request));

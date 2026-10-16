@@ -29,6 +29,10 @@ import { readPelicanArtifact } from "./pelican-artifact";
 import { AgentHarness, HarnessError, PublicOutputBuffer, explicitQuoteConsent, untrustedAgentData, validateHarnessHistory } from "./harness";
 import { assertMediaUrl, publicImageBytes, readBoundedBytes } from "./harness-network";
 import { describeNaumiTools } from "./naumi-tools";
+import { releaseProcessRegistry } from "@/lib/release-runtime/identity";
+import { startAgentActivity, endAgentActivity, type AgentActivity } from "@/lib/release-runtime/agent-activity";
+import { withAcceptedExecution } from "@/lib/release-runtime/accepted-context";
+import { accountKey, releaseIdentity } from "@/lib/release-runtime/identity";
 
 // ---------------------------------------------------------------------------
 // Naumi Agent 运行时:常驻 Agent 会话管理器。
@@ -79,6 +83,7 @@ export function markVisionUnsupported(
 
 // 各工具的预估单价(积分),与站内 API 实际扣费保持一致(粗粒度预检用)。
 export type Session = {
+  releaseActivity?: AgentActivity;
   harness: AgentHarness;
   userConfirmedQuote?: boolean;
   lastPendingQuoteKey?: string;
@@ -120,8 +125,8 @@ export type Session = {
   onDelta?: (text: string) => void;
 };
 
-const SESSIONS = new Map<string, Session>();
-const CREATING = new Map<string, Promise<Session>>();
+const SESSIONS = releaseProcessRegistry().sessions as Map<string, Session>;
+const CREATING = releaseProcessRegistry().creating as Map<string, Promise<Session>>;
 const providerModels = new Map<string, ReturnType<typeof createModels>>();
 
 function gcSessions() {
@@ -463,14 +468,24 @@ async function createRuntimeSession(
     await assertAgentToolAccess(email, "get_balance", options ? "canvas" : "workbench", new Request("http://internal", { headers: { cookie: session.cred.cookie, authorization: session.cred.authorization } }));
     // Cancellation during async authorization must not restart an aborted turn.
     if (pendingGeneration !== promptGeneration) throw new HarnessError("RUN_INACTIVE", 409);
-    session.userConfirmedQuote = explicitQuoteConsent(input) && !!session.lastPendingQuoteKey && !!session.pendingQuotes?.has(session.lastPendingQuoteKey);
-    if (!session.turnId || session.turnId === lastPromptTurn) session.turnId = crypto.randomUUID();
-    lastPromptTurn = session.turnId;
-    session.harness.begin(input, originalAbort, session.userConfirmedQuote ? [session.lastPendingQuoteKey!] : []);
-    session.harness.modelStep();
-    agent.prepareNextTurn=()=>{session.harness.modelStep();return undefined;};
-    try { return await originalPrompt(session.harness.publicText(input,false), images); }
-    finally { session.userConfirmedQuote = false; session.harness.finish(); }
+    session.releaseActivity = await startAgentActivity(email, sessionId, !!options);
+    if (pendingGeneration !== promptGeneration) { await completeAgentReleaseActivity(session); throw new HarnessError("RUN_INACTIVE", 409); }
+    try {
+      session.userConfirmedQuote = explicitQuoteConsent(input) && !!session.lastPendingQuoteKey && !!session.pendingQuotes?.has(session.lastPendingQuoteKey);
+      if (!session.turnId || session.turnId === lastPromptTurn) session.turnId = crypto.randomUUID();
+      lastPromptTurn = session.turnId;
+      session.harness.begin(input, originalAbort, session.userConfirmedQuote ? [session.lastPendingQuoteKey!] : []);
+      session.harness.modelStep();
+      agent.prepareNextTurn=()=>{session.harness.modelStep();return undefined;};
+      const identity=releaseIdentity(),activity=session.releaseActivity;
+      return await withAcceptedExecution(activity?{id:activity.id,account:accountKey(email),instanceId:identity.instanceId,bootId:identity.bootId}:undefined,()=>originalPrompt(session.harness.publicText(input,false), images));
+    }
+    finally {
+      session.userConfirmedQuote = false; session.harness.finish();
+      // Canvas holds accepted-work ownership through result attachment/billing,
+      // not merely until the model's final token or the client disconnect.
+      if (!session.canvasExecuting) await completeAgentReleaseActivity(session);
+    }
   }) as typeof agent.prompt;
   SESSIONS.set(key(email, sessionId), session);
   return session;
@@ -478,6 +493,14 @@ async function createRuntimeSession(
 
 export function key(email: string, sessionId: string) {
   return `${email.trim().toLowerCase()}::${sessionId}`;
+}
+
+export async function completeAgentReleaseActivity(session: Session): Promise<void> {
+  const activity = session.releaseActivity;
+  if (!activity) return;
+  let persisted = false;
+  try { await session.toolResultsPending; await persistAgentSession(session); persisted = true; }
+  finally { await endAgentActivity(activity, persisted); session.releaseActivity = undefined; }
 }
 
 export function getSession(email: string, sessionId: string): Session | null {

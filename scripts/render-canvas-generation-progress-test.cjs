@@ -1,0 +1,27 @@
+const fs=require('node:fs'),path=require('node:path'),esbuild=require('esbuild');
+const out=path.resolve(process.argv[2]||'output/canvas-generation-progress-20261016');
+const entry=`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {GenerationPlaceholder} from './src/components/canvas/generation-placeholder';
+let now=1000000,tick;Date.now=()=>now;window.setInterval=fn=>{tick=fn;return 1};window.clearInterval=()=>{};
+const root=createRoot(document.getElementById('app'));let props={stage:'preparing',startedAt:now,count:3};
+const render=()=>flushSync(()=>root.render(React.createElement(GenerationPlaceholder,props)));
+const percent=()=>Number(document.querySelector('[data-progress]').dataset.progress);
+const check=(ok,name)=>{if(!ok)throw Error(name)};
+async function run(){render();await new Promise(r=>setTimeout(r,0));check(percent()===4,'initial');
+now+=5000;flushSync(()=>tick());check(percent()>4,'timer');
+props={...props,stage:'generating'};render();let before=percent();check(before>=18,'generation');
+now+=120000;flushSync(()=>tick());check(percent()>before,'advances');before=percent();
+props={...props,stage:'preparing'};render();check(percent()===before,'never backwards');
+props={...props,stage:'generating',completed:2};render();check(percent()>=60&&document.getElementById('app').textContent.includes('2/3'),'real count');
+props={...props,stage:'saving'};render();check(percent()>=94&&percent()<100,'save cap');
+props={stage:'preparing',startedAt:now,count:1};render();check(percent()===4,'new task reset');
+const el=document.querySelector('[data-progress]');check(el.scrollHeight<=el.clientHeight,'180px overflow');
+check(!/预估|预计|已等待/.test(document.getElementById('app').textContent),'labels');
+check(document.querySelector('[role=progressbar]').getAttribute('aria-valuenow')==='4','a11y');
+console.log('COMPONENT_DYNAMIC=PASS TIMER=PASS MONOTONIC=PASS RESET=PASS MULTI_IMAGE=PASS MIN_HEIGHT_180=PASS ACCESSIBILITY=PASS PAGEERROR=0');}
+run().catch(e=>{console.error(e.stack);throw e});`;
+(async()=>{const result=await esbuild.build({stdin:{contents:entry,resolveDir:process.cwd(),loader:'tsx'},bundle:true,minify:true,platform:'browser',format:'iife',write:false,outdir:path.join(out,'dynamic'),loader:{'.module.css':'local-css'},jsx:'automatic',define:{'process.env':'{}','process.env.NODE_ENV':'"production"'},plugins:[{name:'router-fixture',setup(build){build.onResolve({filter:/^next\/navigation$/},()=>({path:'router-fixture',namespace:'fixture'}));build.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const useRouter=()=>({refresh(){}})'}));}}]});
+const js=result.outputFiles.find(f=>f.path.endsWith('.js')).text,css=result.outputFiles.find(f=>f.path.endsWith('.css')).text;
+fs.writeFileSync(path.join(out,'component-dynamic-test.html'),`<!doctype html><html><meta charset="utf-8"><style>body{margin:0}#app{width:300px;height:180px}${css}</style><div id="app"></div><script>${js.replace(/<\/script/gi,'<\\/script')}</script></html>`);
+console.log('DYNAMIC_FIXTURE=READY ACTUAL_COMPONENT=TRUE');
+
+})().catch(e=>{console.error(e);process.exitCode=1});

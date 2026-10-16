@@ -1,3 +1,4 @@
+import { withBackgroundActivity } from "@/lib/release-runtime/background-activity";
 import "server-only";
 
 import { dbEnabled } from "@/lib/db";
@@ -18,7 +19,7 @@ const BATCH = 3;
 let started = false;
 let running = false;
 
-export async function scanVideoWorkerOnce(): Promise<number> {
+async function scanVideoWorkerOnceLocal(): Promise<number> {
   if (!dbEnabled || running) return 0;
   running = true;
   try {
@@ -38,16 +39,20 @@ export function startVideoWorker(): void {
   started = true;
   // 首次延迟 15s,避开冷启动高峰;之后每 20s 扫一批
   const timer = setInterval(() => {
-    void scanVideoWorkerOnce();
+    void scanVideoWorkerOnce().catch(()=>{});
     void recoverDurableImageJobs().catch(() => {});
     void import("../reference-workbench/service").then(m=>m.recoverReferenceWorkbench()).catch(()=>{});
     void scanSupplierCostsOnce();
   }, SCAN_INTERVAL_MS);
   timer.unref?.();
   setTimeout(() => {
-    void scanVideoWorkerOnce();
+    void scanVideoWorkerOnce().catch(()=>{});
     void recoverDurableImageJobs().catch(() => {});
     void import("../reference-workbench/service").then(m=>m.recoverReferenceWorkbench()).catch(()=>{});
     void scanSupplierCostsOnce();
   }, 15_000).unref?.();
+}
+
+export async function scanVideoWorkerOnce():Promise<number> {
+  return withBackgroundActivity("app-worker-scan", "video-worker-scan", "claim", () => scanVideoWorkerOnceLocal(), () => 0);
 }

@@ -1,3 +1,4 @@
+import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import { runPostprocess } from "./media-postprocess";
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
 import "server-only";
@@ -241,9 +242,14 @@ export async function processCanvasImageTask(task: CanvasImageTaskRow): Promise<
 export async function recoverCanvasImageTasks(limit = 2): Promise<number> {
   let processed = 0;
   for (let index = 0; index < Math.min(Math.max(limit, 1), 5); index += 1) {
-    const task = await claimNextCanvasImageTask();
-    if (!task) break;
-    await processCanvasImageTask(task);
+    const claimed = await withBackgroundActivity("canvas-image", `claim:${index}`, "claim", async () => {
+      const task = await claimNextCanvasImageTask();
+      if (!task) return false;
+      await bindBackgroundClaim(task.id, String(task.attempts));
+      await processCanvasImageTask(task);
+      return true;
+    }, () => false);
+    if (!claimed) break;
     processed += 1;
   }
   return processed;

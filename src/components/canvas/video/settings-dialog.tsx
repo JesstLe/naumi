@@ -1,8 +1,9 @@
 "use client";
 import {useVideoI18n} from "./i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { X,ArrowUp,Square,Loader2,Sparkles,Check } from "lucide-react";
+import {VideoCompactComposer} from "./compact-composer";
 import type { CanvasVideoNode } from "@/lib/canvas/video-node-schema";
 import type { OrderedInput } from "@/lib/video/references";
 import { catalogCapability, selectedVideoCatalogModel, resolveVideoTextInputs, validateVideoSettings, type VideoCatalogModel, type VideoNodeConfig, type VideoInputChoice } from "@/lib/video/client-settings";
@@ -11,13 +12,14 @@ import { VideoSettingsFields } from "./settings-fields";
 import { VideoSourceAttribution } from "./source-attribution";
 import { VideoField, videoFieldClass, videoButtonClass, assertVideoFieldsValid } from "./form-controls";
 import { isTopVideoDialog } from "./dialog-stack";
+import type { PublicVideoTaskView } from "@/lib/video/service";
 export type VideoNodeDraft = {
     title: string;
     config: VideoNodeConfig;
     inputs: OrderedInput[];
     expectedRevision: number;
 };
-export function VideoSettingsDialog({ node, models, choices, light, email, readOnly = false, onClose, onSave, onGenerate, onImport, onLoadMoreAssets, canLoadMoreAssets = false, catalogLoading=false, catalogError="", onRetryCatalog }: {
+export function VideoSettingsDialog({ node, models, choices, light, email, readOnly = false, onClose, onSave, onGenerate, onImport, onLoadMoreAssets, canLoadMoreAssets = false, catalogLoading=false, catalogError="", onRetryCatalog, presentation="dialog", dockStyle, dockRef, advanced=false, task, onCancel, generationBlocked=false }: {
     node: CanvasVideoNode;
     models: VideoCatalogModel[];
     choices: VideoInputChoice[];
@@ -25,7 +27,7 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
     email?: string;
     readOnly?: boolean;
     onClose: () => void;
-    onSave: (draft: VideoNodeDraft) => Promise<void>;
+    onSave: (draft: VideoNodeDraft) => Promise<void | {revision:number}>;
     onGenerate: (draft: VideoNodeDraft, quote: PublicQuote | null, onPersisted: (revision: number) => void) => Promise<void>;
     onImport?: (files: File[]) => Promise<VideoInputChoice[]>;
     onLoadMoreAssets?: () => Promise<void>;
@@ -33,17 +35,36 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
     catalogLoading?: boolean;
     catalogError?: string;
     onRetryCatalog?: () => Promise<void>;
+    presentation?: "dialog" | "dock";
+    dockStyle?: CSSProperties;
+    dockRef?: RefObject<HTMLDivElement|null>;
+    advanced?: boolean;
+    task?: PublicVideoTaskView;
+    onCancel?: () => void;
+    generationBlocked?: boolean;
 }) {
     const V = useVideoI18n();
     const [title, setTitle] = useState(node.title), [config, setConfig] = useState<VideoNodeConfig>(() => structuredClone(node.config)), [inputs, setInputs] = useState<OrderedInput[]>(() => structuredClone(node.inputs));
     const revision = useRef(node.revision), [busy, setBusy] = useState(false), [importing, setImporting] = useState(false), [error, setError] = useState("");
     const dialogRef = useRef<HTMLDivElement>(null), closeRef = useRef(onClose);
+    const baseline=useRef(JSON.stringify({title:node.title,config:node.config,inputs:node.inputs}));
+    const dock=presentation==="dock",[saved,setSaved]=useState(false),[inlineAdvanced,setInlineAdvanced]=useState(false);
+    const active=generationBlocked||!!task&&!['completed','failed','cancelled'].includes(task.status);
+    const submitting=useRef(false);
+    // Position-only revisions may be rebased, but not another editor's config.
+    useEffect(()=>{
+      const incoming=JSON.stringify({title:node.title,config:node.config,inputs:node.inputs});
+      const local=JSON.stringify({title,config,inputs});
+      if(local===baseline.current){setTitle(node.title);setConfig(structuredClone(node.config));setInputs(structuredClone(node.inputs));revision.current=node.revision;baseline.current=incoming;}
+      else if(incoming===baseline.current||incoming===local){revision.current=node.revision;baseline.current=incoming;}
+    },[dock,node.revision,node.title,node.config,node.inputs]); // Local edits intentionally do not trigger this effect.
     closeRef.current = onClose;
     const cap = catalogCapability(selectedVideoCatalogModel(models,config));
     const estimate = useBillingEstimate({ feature: "video.generate", quantity: 1, canvas: true, modelId: config.modelId, providerId: config.providerId, resolution: config.resolution }, !readOnly && !config.comfyWorkflowId);
     const resolvedInputs = resolveVideoTextInputs(inputs,choices);
     const invalid = validateVideoSettings(config, resolvedInputs, cap, choices);
     useEffect(() => {
+        if(dock)return;
         const previous = document.activeElement as HTMLElement | null;
         const focusables = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],summary') || []).filter(element => element.offsetParent !== null);
         focusables()[0]?.focus();
@@ -70,26 +91,55 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
         };
         document.addEventListener("keydown", keyboard, true);
         return () => { document.removeEventListener("keydown", keyboard, true); previous?.focus(); };
-    }, []);
-    async function submit(generate: boolean) { if (readOnly || busy || importing)
-        return; setBusy(true); setError(""); try {
-        assertVideoFieldsValid(dialogRef.current);
+    }, [dock]);
+    async function submit(generate: boolean) { if (readOnly || busy || importing || submitting.current || generate&&(active||!!invalid||catalogLoading||!!catalogError&&!config.comfyWorkflowId))
+        return; submitting.current=true;setBusy(true); setError(""); try {
+        assertVideoFieldsValid(dock?dockRef?.current||null:dialogRef.current);
         const draft = { title, config, inputs: resolvedInputs, expectedRevision: revision.current };
         if (generate) {
             if (!config.comfyWorkflowId && !estimate.quote)
                 throw new Error(estimate.error || "请等待报价");
             await onGenerate(draft, config.comfyWorkflowId ? null : estimate.quote, savedRevision => { revision.current = savedRevision; });
         }
-        else
-            await onSave(draft);
-        onClose();
+        else {
+            const saved=await onSave(draft);if(saved)revision.current=saved.revision;
+        }
+        baseline.current=JSON.stringify({title,config,inputs:resolvedInputs});
+        if(dock)setSaved(true);else onClose();
     }
     catch (cause) {
         setError(cause instanceof Error ? cause.message : "视频节点保存失败");
     }
     finally {
+        submitting.current=false;
         setBusy(false);
     } }
+    const dockActions=(<div className="flex items-center justify-between gap-2">
+          <span role="status" className="min-w-0 truncate text-xs canvas-ui-muted">{active?V(generationBlocked||task?.status==='needs_attention'?"等待核查":"生成中"):saved?V("已保存"):''}{active&&task&&task.progress>0?` · ${task.progress}%`:''}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <button type="button" title={V("保存设置")} aria-label={V("保存设置")} className={videoButtonClass} disabled={readOnly||busy||importing} onClick={()=>void submit(false)}>{busy?<Loader2 size={14} className="animate-spin"/>:saved?<Check size={14}/>:V("保存设置")}</button>
+            {!active&&!readOnly&&<span className="flex items-center gap-1 text-xs font-semibold canvas-ui-muted" data-testid="video-composer-price"><Sparkles size={13}/>{config.comfyWorkflowId?'0':estimate.quote?`${estimate.quote.mode==='api-cost-plus'?V('上限')+' ':''}${estimate.quote.mode==='api-cost-plus'?estimate.quote.authorizedCredits??estimate.quote.reserveCredits:estimate.cost}`:V("报价中…")}</span>}
+            {active?<button type="button" aria-label={V(task?.cancellationRequestedAt?"正在停止":"停止")} title={V(task?.cancellationRequestedAt?"正在停止":"停止")} className="canvas-ui-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-40" disabled={readOnly||busy||generationBlocked||!!task?.cancellationRequestedAt||!onCancel||['needs_attention','creation_unknown'].includes(task?.status||'')} onClick={onCancel}><Square size={13} fill="currentColor"/></button>:<button type="button" aria-label={V("生成视频")} title={V("生成视频")} className="canvas-ui-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-40" disabled={readOnly||busy||importing||catalogLoading||!!invalid||!config.comfyWorkflowId&&!estimate.quote} onClick={()=>void submit(true)}>{busy?<Loader2 size={17} className="animate-spin"/>:<ArrowUp size={19}/>}</button>}
+          </div>
+        </div>);
+    const dockFeedback=((error||task?.error||invalid||estimate.error)&&<p role={error?"alert":"status"} className="mb-2 break-words text-xs text-amber-600">{V(error||task?.error||invalid||estimate.error||"")}</p>);
+    if(dock)return <div ref={dockRef} style={dockStyle} data-testid="video-node-dock" data-canvas-hotkeys-blocked="true" role="region" aria-label={V("视频节点设置")}
+      className="canvas-ui-surface canvas-dock-entry absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border shadow-lg"
+      onKeyDown={event=>event.stopPropagation()}>
+      <div className={`min-h-0 px-4 pb-2 pt-3 ${(advanced||inlineAdvanced)?"overflow-y-auto":"flex flex-col overflow-hidden"}`}>
+        {catalogError&&<p role="alert" className="mb-2 text-xs text-red-500">{V(catalogError)}{onRetryCatalog&&<button type="button" className={videoButtonClass} onClick={()=>void onRetryCatalog()}>{V("重试视频模型")}</button>}</p>}
+        {(advanced||inlineAdvanced)?<>
+          <button type="button" className={`${videoButtonClass} mb-2`} onClick={()=>setInlineAdvanced(false)} hidden={advanced}>{V("返回视频创作")}</button>
+          <VideoSettingsFields config={config} inputs={resolvedInputs} models={models} choices={choices} nodeId={node.id} email={email} readOnly={readOnly} busy={busy} onConfig={value=>{setSaved(false);setConfig(value);}} onInputs={value=>{setSaved(false);setInputs(value);}} onImport={onImport} onImportBusyChange={setImporting} onLoadMoreAssets={onLoadMoreAssets} canLoadMoreAssets={canLoadMoreAssets}/>
+        </>:<VideoCompactComposer config={config} inputs={resolvedInputs} models={models} choices={choices} nodeId={node.id} light={light} blocked={readOnly||busy||importing}
+          onConfig={value=>{setSaved(false);setConfig(value);}} onInputs={value=>{setSaved(false);setInputs(value);setConfig(current=>({...current,references:[]}));}} onImport={onImport} onImportBusyChange={setImporting} onAdvanced={()=>setInlineAdvanced(true)} actions={dockActions} feedback={dockFeedback}/>}
+
+      </div>
+      {(advanced||inlineAdvanced)&&<footer className="shrink-0 border-t border-current/10 px-4 py-2.5">
+        {(error||task?.error||invalid||estimate.error)&&<p role={error?"alert":"status"} className="mb-2 break-words text-xs text-amber-600">{V(error||task?.error||invalid||estimate.error||"")}</p>}
+        {dockActions}
+      </footer>}
+    </div>;
     if (typeof document === "undefined")
         return null;
     return createPortal(<div ref={dialogRef} className={`fixed inset-0 z-[100] flex items-center justify-center p-3 ${light ? "canvas-ui-light text-slate-800" : "canvas-ui-dark text-slate-100"}`} data-canvas-hotkeys-blocked="true" aria-modal="true" role="dialog" aria-label={V("视频节点设置")} onPointerDown={event => event.stopPropagation()} onWheel={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
@@ -103,7 +153,7 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
         <VideoSettingsFields config={config} inputs={resolvedInputs} models={models} choices={choices} nodeId={node.id} email={email} readOnly={readOnly} busy={busy} onConfig={setConfig} onInputs={setInputs} onImport={onImport} onImportBusyChange={setImporting} onLoadMoreAssets={onLoadMoreAssets} canLoadMoreAssets={canLoadMoreAssets}/>
 
       </fieldset></div>
-      <footer className="shrink-0 space-y-2 border-t border-current/10 px-4 py-3">{(error || invalid || !config.comfyWorkflowId && estimate.error) && <p role={error ? "alert" : "status"} className={`text-xs ${error ? "text-red-500" : "text-amber-500"}`}>{V(error || invalid || estimate.error||"")}</p>}<div className="flex flex-wrap items-center justify-between gap-3"><VideoSourceAttribution /><div className="flex gap-2"><button type="button" className={videoButtonClass} disabled={readOnly || busy || importing} onClick={() => void submit(false)}>{busy ? V("保存中…") : V("保存设置")}</button><button type="button" className="rounded-lg bg-teal-500 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-600 disabled:opacity-40" disabled={readOnly || busy || importing || !!invalid || !config.comfyWorkflowId && !estimate.quote} onClick={() => void submit(true)}>{V("\u751F\u6210\u89C6\u9891 \u00B7 ")}{readOnly ? V("只读") : config.comfyWorkflowId ? V("0 积分") : estimate.quote ? V(`${estimate.quote.mode === "api-cost-plus" ? "上限 " : ""}${estimate.quote.mode === "api-cost-plus" ? estimate.quote.authorizedCredits ?? estimate.quote.reserveCredits : estimate.cost} 积分`) : V("报价中…")}</button></div></div></footer>
+      <footer className="shrink-0 space-y-2 border-t border-current/10 px-4 py-3">{(error || invalid || !config.comfyWorkflowId && estimate.error) && <p role={error ? "alert" : "status"} className={`text-xs ${error ? "text-red-500" : "text-amber-500"}`}>{V(error || invalid || estimate.error||"")}</p>}<div className="flex flex-wrap items-center justify-between gap-3"><VideoSourceAttribution /><div className="flex gap-2"><button type="button" className={videoButtonClass} disabled={readOnly || busy || importing} onClick={() => void submit(false)}>{busy ? V("保存中…") : V("保存设置")}</button><button type="button" className="rounded-lg bg-teal-500 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-600 disabled:opacity-40" disabled={readOnly || busy || importing || active || catalogLoading || !!invalid || !config.comfyWorkflowId && !estimate.quote} onClick={() => void submit(true)}>{V("\u751F\u6210\u89C6\u9891 \u00B7 ")}{readOnly ? V("只读") : config.comfyWorkflowId ? V("0 积分") : estimate.quote ? V(`${estimate.quote.mode === "api-cost-plus" ? "上限 " : ""}${estimate.quote.mode === "api-cost-plus" ? estimate.quote.authorizedCredits ?? estimate.quote.reserveCredits : estimate.cost} 积分`) : V("报价中…")}</button></div></div></footer>
     </div>
   </div>, document.body);
 }

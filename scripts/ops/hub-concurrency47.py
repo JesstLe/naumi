@@ -17,6 +17,7 @@ import signal
 import sqlite3
 import struct
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -224,6 +225,9 @@ def main():
     parser.add_argument('--rollback', action='store_true')
     parser.add_argument('--no-probes', action='store_true')
     args = parser.parse_args()
+    if not args.rollback:
+        print('RELEASE_BLOCKED=LEGACY_INPLACE_RUNTIME_ENTRY; USE=deploy-release.sh_--lifecycle; LIVE_MUTATIONS=0', file=sys.stderr)
+        raise SystemExit(78)
     ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
     with contextlib.ExitStack() as stack:
         for name in ['/opt/naumi-staging/releases/deploy.lock', '/opt/naumi-reverse-hub/releases/deploy.lock']:

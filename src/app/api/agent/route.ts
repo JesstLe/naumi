@@ -1,3 +1,6 @@
+import { observeReleaseRequest, routeAgentToOwner } from "@/lib/release-runtime/http";
+import { releaseRuntimeEnabled, releaseError } from "@/lib/release-runtime/identity";
+import { forwardLegacyAgentSession } from "@/lib/agent/legacy-runtime";
 import { resolveImageSkill } from "@/lib/image-skills/server";
 import { SkillError } from "@/lib/image-skills/catalog";
 import {randomUUID} from "node:crypto";
@@ -44,7 +47,9 @@ async function authedEmail(request: Request): Promise<string | null> {
 }
 
 // ── SSE 流式执行 ───────────────────────────────────────────────────────────
-export async function PUT(request: Request) {
+async function localPUT(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   try { return await withBiRequest(request, () => handlePut(request)); }
   catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }
@@ -124,7 +129,7 @@ async function handlePut(request: Request) {
   if (session.agent.state.messages.length === 0) {
     session.title = message.slice(0, 120) || session.title;
   }
-  appendSessionEvent(session, "plan", { items: buildTaskPlan(message) });
+  appendSessionEvent(session, "plan", { items: buildTaskPlan(message, !!imageSkill?.instructions.includes("name: brand-packaging-strategy")) });
   session.running = true;
   await persistAgentSession(session);
 
@@ -180,7 +185,12 @@ async function handlePut(request: Request) {
                 .join("")
                 .trim()
             : "";
-          send("final", {
+          const failed = lastAssistant && "stopReason" in lastAssistant && ["error", "aborted"].includes(String(lastAssistant.stopReason));
+          if (failed || !reply && !session.events.slice(eventCursor).some(event => event.type === "attention")) {
+            const failure = classifyAgentFailure(new Error(failed && lastAssistant.stopReason === "aborted" ? "任务已停止" : "模型服务未完成本轮请求"));
+            if (!session.events.slice(eventCursor).some(event => event.type === "error")) appendSessionEvent(session, "error", failure);
+            send("error", failure);
+          } else send("final", {
             sessionId,
             reply,
             turns: session.agent.state.messages.length,
@@ -247,7 +257,9 @@ async function handlePut(request: Request) {
 }
 
 // ── Steering 插话 ──────────────────────────────────────────────────────────
-export async function PATCH(request: Request) {
+async function localPATCH(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -281,7 +293,9 @@ export async function PATCH(request: Request) {
 }
 
 // ── 中止 ───────────────────────────────────────────────────────────────────
-export async function DELETE(request: Request) {
+async function localDELETE(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -299,7 +313,9 @@ export async function DELETE(request: Request) {
 }
 
 // ── 事件轮询(降级) ─────────────────────────────────────────────────────────
-export async function GET(request: Request) {
+async function localGET(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -321,7 +337,9 @@ export async function GET(request: Request) {
 }
 
 // ── 一次性执行(向后兼容) ─────────────────────────────────────────────────────
-export async function POST(request: Request) {
+async function localPOST(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   try { return await withBiRequest(request, () => handlePost(request)); }
   catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }
@@ -408,6 +426,11 @@ async function handlePost(request: Request) {
   const lastAssistant = [...session.agent.state.messages]
     .reverse()
     .find((m) => m.role === "assistant");
+  if (lastAssistant && "stopReason" in lastAssistant && ["error", "aborted"].includes(String(lastAssistant.stopReason))) {
+    const failure = classifyAgentFailure(new Error(lastAssistant.stopReason === "aborted" ? "任务已停止" : "模型服务未完成本轮请求"));
+    appendSessionEvent(session, "error", failure); await persistAgentSession(session);
+    return NextResponse.json({error: failure.message, code: failure.code, sessionId: tempId}, {status: 502});
+  }
   const modelReply = Array.isArray(lastAssistant?.content)
     ? (lastAssistant!.content as { type?: string; text?: string }[])
         .map((c) => (c.type === "text" ? c.text ?? "" : ""))
@@ -425,3 +448,30 @@ async function handlePost(request: Request) {
     turns: session.agent.state.messages.length,
   });
 }
+
+async function releaseDispatch(request: Request, handler: (request: Request) => Promise<Response>) {
+  if (!releaseRuntimeEnabled()) return handler(request);
+  return observeReleaseRequest(request, async () => {
+    try {
+      const email = await authedEmail(request);
+      if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+      let body: Record<string, unknown> | undefined;
+      let forwardedRequest = request;
+      const isRun = request.method === "PUT" || request.method === "POST";
+      if (["POST", "PUT", "PATCH"].includes(request.method)) {
+        body = await readHarnessBody(request);
+        if (isRun && !body.sessionId) body.sessionId = `ag-${randomUUID()}`;
+        forwardedRequest = new Request(request.url, { method: request.method, headers: request.headers, body: JSON.stringify(body), signal: request.signal });
+      }
+      const sessionId = body ? String(body.sessionId || "") : new URL(request.url).searchParams.get("sessionId") || "";
+      assertHarnessSessionId(sessionId, "workbench");
+      const routed = await routeAgentToOwner(forwardedRequest, email, sessionId, "workbench", isRun, body);
+      return routed || handler(forwardedRequest);
+    } catch (e) { return e instanceof HarnessError ? harnessErrorResponse(e) : releaseError(e); }
+  });
+}
+export const PUT = (request: Request) => releaseDispatch(request, localPUT);
+export const POST = (request: Request) => releaseDispatch(request, localPOST);
+export const PATCH = (request: Request) => releaseDispatch(request, localPATCH);
+export const DELETE = (request: Request) => releaseDispatch(request, localDELETE);
+export const GET = (request: Request) => releaseDispatch(request, localGET);

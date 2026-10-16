@@ -1,3 +1,5 @@
+import { inheritedImageRatio, imageAspectInstruction } from "@/lib/imagegen/aspect";
+import { preserveGeneratedFrame, sourceImageDimensions } from "@/lib/imagegen/output-shape";
 import {currentImagegenStep,withImagegenStep} from "@/lib/imagegen/context";
 import {legacyImagegenIntent} from "@/lib/imagegen/legacy-intent";
 import {inspectImagegenPixels} from "@/lib/imagegen/postprocess";
@@ -115,7 +117,7 @@ type GenParams = {
   quality: string; // 请求质量档:low/medium/high/xhigh/max/auto;通道不支持时提交前回退默认档,请求值只入审计
   count: number;
   transparent: boolean; // 透明底(抠图):gpt-image background:transparent PNG
-  ratiogen: boolean; // 改比例(ChatGPT 式重生成):用节点自身提示词+原图参考,按目标比例重画再裁切,无需额外提示词
+  ratiogen: boolean; // 改比例:用节点自身提示词+原图参考重新构图，保留返回画面，不做裁切
   email: string;
   imagegen?:{request:ImagegenRequest;intent:Intent};
   mask?:GenImage;
@@ -212,110 +214,6 @@ function ratioPrompt(p: GenParams): string {
   return base ? `${base}. ${RATIO_HINT}` : RATIO_HINT;
 }
 
-// 把图按精确目标比例裁切(gpt-image 只出方/横/竖三种原生尺寸,
-// 9:16、4:3 这类精确比例靠出最近原生尺寸后再裁切得到 —— 即 ChatGPT 同款做法)。
-// attention 选窗:对齐画面"最有趣"的区域(主体/人脸),替代固定正中心,贴边内容不被硬裁。
-async function cropToRatio(buf: Buffer, ratio: string): Promise<Buffer> {
-  const [rw, rh] = ratio.split(":").map(Number);
-  if (!(rw > 0 && rh > 0)) return buf;
-  try {
-    const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
-    } & typeof import("sharp");
-    const sharp = mod.default ?? mod;
-    const meta = await sharp(buf).metadata();
-    const W = meta.width || 0;
-    const H = meta.height || 0;
-    if (!W || !H) return buf;
-    const target = rw / rh;
-    const cur = W / H;
-    let cw = W;
-    let ch = H;
-    if (cur > target + 0.01) cw = Math.round(H * target); // 太宽 → 裁掉左右
-    else if (cur < target - 0.01) ch = Math.round(W / target); // 太高 → 裁掉上下
-    else return buf; // 已是目标比例
-    cw = Math.min(cw, W);
-    ch = Math.min(ch, H);
-    // cw×ch 只有一维小于原图,fit:cover 缩放系数为 1,等价于纯裁切;
-    // attention 让 sharp 找主体定窗口(找不到显著区域时自动回退中心)。
-    return await sharp(buf)
-      .resize(cw, ch, { fit: "cover", position: sharp.strategy.attention })
-      .png()
-      .toBuffer();
-  } catch {
-    return buf; // sharp 不可用 → 退回未裁切(仍是最近原生比例)
-  }
-}
-
-// 留白补比例:不裁任何内容,用指定背景把短边补到目标比例。
-// 透明底(抠图)补透明、纯色底(白底图)补同色 —— 视觉无缝且主体完整。
-async function padToRatio(
-  sharp: typeof import("sharp"),
-  buf: Buffer,
-  ratio: string,
-  background: { r: number; g: number; b: number; alpha?: number }
-): Promise<Buffer> {
-  const [rw, rh] = ratio.split(":").map(Number);
-  if (!(rw > 0 && rh > 0)) return buf;
-  const meta = await sharp(buf).metadata();
-  const W = meta.width || 0;
-  const H = meta.height || 0;
-  if (!W || !H) return buf;
-  const target = rw / rh;
-  const cur = W / H;
-  let cw = W;
-  let ch = H;
-  if (cur > target + 0.01) ch = Math.round(W / target); // 太宽 → 上下补白
-  else if (cur < target - 0.01) cw = Math.round(H * target); // 太高 → 左右补白
-  else return buf; // 已是目标比例
-  return await sharp(buf)
-    .resize(cw, ch, { fit: "contain", background, kernel: "lanczos3" })
-    .png()
-    .toBuffer();
-}
-
-// 检测纯色边框(白底图/影棚纯色底):缩到 32×32 采样四边,与均值偏差均小于阈值
-// 视为纯色边,返回该颜色用于无缝留白;不纯返回 null(回退裁切)。
-// 误判代价极低 —— 补的就是边框本色,视觉上仍然无缝。
-async function detectUniformBorder(
-  sharp: typeof import("sharp"),
-  buf: Buffer
-): Promise<{ r: number; g: number; b: number } | null> {
-  try {
-    const { data, info } = await sharp(buf)
-      .resize(32, 32, { fit: "fill" })
-      .removeAlpha()
-      .toColourspace("srgb")
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    if (info.channels < 3) return null;
-    const at = (x: number, y: number) => {
-      const i = (y * 32 + x) * info.channels;
-      return { r: data[i], g: data[i + 1], b: data[i + 2] };
-    };
-    const samples: { r: number; g: number; b: number }[] = [];
-    for (let i = 0; i < 32; i++) {
-      samples.push(at(i, 0), at(i, 31), at(0, i), at(31, i));
-    }
-    const n = samples.length;
-    const mean = samples.reduce(
-      (acc, c) => ({ r: acc.r + c.r / n, g: acc.g + c.g / n, b: acc.b + c.b / n }),
-      { r: 0, g: 0, b: 0 }
-    );
-    const uniform = samples.every(
-      (c) =>
-        Math.abs(c.r - mean.r) < 14 &&
-        Math.abs(c.g - mean.g) < 14 &&
-        Math.abs(c.b - mean.b) < 14
-    );
-    return uniform
-      ? { r: Math.round(mean.r), g: Math.round(mean.g), b: Math.round(mean.b) }
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 async function openaiImages(
   p: GenParams,
   apiKey: string,
@@ -336,8 +234,11 @@ async function openaiImages(
     timeout: 280_000,
     maxRetries: 0,
   }, !opts?.auditUpstream?.startsWith("byok:")));
-  const prompt = p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()));
-  const size = sizeFor(p.ratio, model);
+  const targetDimensions = await sourceImageDimensions(p.images[0] ? Buffer.from(p.images[0].buf) : undefined);
+  const basePrompt = p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()));
+  const effectiveRatio = inheritedImageRatio(p.ratio, targetDimensions);
+  const prompt = `${basePrompt}\n\n${imageAspectInstruction(effectiveRatio, targetDimensions)}`;
+  const size = sizeFor(effectiveRatio, model);
   const canEdit = p.images.length > 0 && (currentModelExecution("image")?.capabilities.edit || isOpenAIImagesEditModel(model));
   // 出图质量:解析结果=实际执行档。通道未接入质量参数时在提交前回退为默认档
   // (env OPENAI_IMAGE_QUALITY,缺省 medium);内测仍按请求档测试价计费。
@@ -405,7 +306,7 @@ async function openaiImages(
   }
 
   // 改比例(ChatGPT 式重生成):拿节点自身提示词 + 原图当参考,按目标比例重画一张,
-  // 出图后裁切到精确比例。同主体/风格/配色,自然重构图 —— 无接缝、无羽化、不限于 3 种形状。
+  // 同主体/风格/配色自然重构图，返回后保留完整画面；不靠删边伪装成精确比例。
   // 不需要用户额外提示词(ratioPrompt 已带固定重构图指令),只生成 1 张。
   if (p.ratiogen && p.images[0] && isOpenAIImagesEditModel(model)) {
     const ref = await normalizeForEdit(Buffer.from(p.images[0].buf));
@@ -423,11 +324,11 @@ async function openaiImages(
     );
     const b64 = r.data?.[0]?.b64_json;
     if (!b64) throw new Error("OpenAI 未返回图片");
-    const cropped = await cropToRatio(Buffer.from(b64, "base64"), p.ratio);
+    const original = Buffer.from(b64, "base64");
     return [
       {
         id: `gen-${Date.now()}-0`,
-        url: `data:image/png;base64,${cropped.toString("base64")}`,
+        url: `data:image/png;base64,${original.toString("base64")}`,
         gradient: GRADIENTS[0],
         prompt: p.prompt,
         ratio: p.ratio,
@@ -534,7 +435,9 @@ async function newApiFlowImages(
   model: string,
   settings?: { baseUrl: string; apiKey: string }
 ): Promise<GeneratedImage[]> {
-  const basePrompt = p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide());
+  const targetDimensions = await sourceImageDimensions(p.images[0] ? Buffer.from(p.images[0].buf) : undefined);
+  const effectiveRatio = inheritedImageRatio(p.ratio, targetDimensions);
+  const basePrompt = `${p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()))}\n\n${imageAspectInstruction(effectiveRatio, targetDimensions)}`;
   const prompt = p.transparent
     ? `${basePrompt}. Use a transparent background and return a PNG with alpha.`
     : basePrompt;
@@ -593,49 +496,15 @@ async function normalizeForEdit(buf: Buffer): Promise<Buffer> {
   }
 }
 
-// 所有比例都落到精确画幅；自定义宽高则进一步输出精确像素尺寸。
-// 上游只支持方/横/竖三档，最终画幅由本地 Sharp 统一保证。
-// 策略:真透明底(抠图)与纯色底(白底图)优先"留白补比例"保主体完整;
-// 其余场景图用 attention 裁切(对齐主体选窗,不硬裁贴边内容)。
-async function enforceOutputShape(
-  images: GeneratedImage[],
-  p: GenParams
-): Promise<GeneratedImage[]> {
-  return Promise.all(images.map(async (image) => {
+// 比例只指导上游构图；默认逐字节保留完整画面，不裁切、不补边。
+// 仅显式像素尺寸允许 contain 适配，绝不使用 cover/attention 丢弃内容。
+async function enforceOutputShape(images: GeneratedImage[], p: GenParams): Promise<GeneratedImage[]> {
+  if (!(p.targetWidth > 0 && p.targetHeight > 0)) return images;
+  return Promise.all(images.map(async image => {
     const decoded = dataUrlToBytes(image.url);
     if (!decoded) return image;
-    try {
-      const mod = (await import("sharp")) as unknown as { default?: typeof import("sharp") } & typeof import("sharp");
-      const sharp = mod.default ?? mod;
-      const input = Buffer.from(decoded.bytes);
-      const meta = await sharp(input).metadata();
-      // 留白底色:抠图(真带 alpha)补透明;纯色边框补同色;其余走裁切。
-      // transparent 请求但上游没给 alpha(降级重试的不透明图)时不算透明底。
-      const padBackground: { r: number; g: number; b: number; alpha?: number } | null =
-        p.transparent && meta.hasAlpha
-          ? { r: 0, g: 0, b: 0, alpha: 0 }
-          : await detectUniformBorder(sharp, input);
-      let output: Buffer;
-      if (p.targetWidth > 0 && p.targetHeight > 0) {
-        output = await sharp(input)
-          .rotate()
-          .resize(p.targetWidth, p.targetHeight, {
-            fit: padBackground ? "contain" : "cover",
-            background: padBackground ?? undefined,
-            position: "centre",
-            kernel: "lanczos3",
-          })
-          .png()
-          .toBuffer();
-      } else if (p.ratio && p.ratio !== "auto") {
-        output = padBackground
-          ? await padToRatio(sharp, input, p.ratio, padBackground)
-          : await cropToRatio(input, p.ratio);
-      } else return image;
-      return { ...image, url: `data:image/png;base64,${output.toString("base64")}` };
-    } catch {
-      return image;
-    }
+    const output = await preserveGeneratedFrame(Buffer.from(decoded.bytes), p);
+    return { ...image, url: `data:image/png;base64,${output.toString("base64")}` };
   }));
 }
 
@@ -650,7 +519,11 @@ async function attachImageDimensions(images: GeneratedImage[]): Promise<Generate
     if (!decoded) return image;
     try {
       const meta = await sharp(Buffer.from(decoded.bytes)).metadata();
-      return { ...image, width: meta.width, height: meta.height };
+      const width = meta.orientation && meta.orientation >= 5 ? meta.height : meta.width;
+      const height = meta.orientation && meta.orientation >= 5 ? meta.width : meta.height;
+      const divisor = (a: number, b: number): number => b ? divisor(b, a % b) : a;
+      const gcd = width && height ? divisor(width, height) : 0;
+      return { ...image, width, height, ...(gcd ? { ratio: `${width! / gcd}:${height! / gcd}` } : {}) };
     } catch { return image; }
   }));
 }
@@ -1015,7 +888,7 @@ async function runJob(
             image: im.url,
             gradient: im.gradient,
             style: p.style || null,
-            ratio: p.ratio || null,
+            ratio: im.ratio || p.ratio || null,
             resolution: p.resolution || null,
             source: sourceUrl,
             parentId: parent,
@@ -1181,6 +1054,10 @@ async function handleObservedPost(request: Request) {
       );
     }
     p.email = actorEmail;
+  }
+
+  if (p.images[0] && (!p.ratio || p.ratio === "auto")) {
+    p.ratio = inheritedImageRatio(p.ratio, await sourceImageDimensions(Buffer.from(p.images[0].buf)));
   }
 
   const userDefaultModel = actorEmail

@@ -47,6 +47,7 @@ async function requestFacts(request: Request) {
 }
 function imageRatio(width:number,height:number) { const gcd=(a:number,b:number):number=>b?gcd(b,a%b):a; const g=gcd(Math.round(width),Math.round(height)); return `${Math.round(width)/g}:${Math.round(height)/g}`; }
 function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; vision?: ModelBinding; video?: ModelBinding; primary: "image" | "text" | "vision" | "video" } {
+  if (path === "/api/packaging-strategy") return { text: "text.generate", primary: "text" };
   if (path === "/api/video/generate") return { video: "video.generate", primary: "video" };
   if (path === "/api/agent") return { text: "agent.text", vision: "agent.vision", primary: "text" };
   if (path.includes("verify-image")) return { vision: "vision.review", primary: "vision" };

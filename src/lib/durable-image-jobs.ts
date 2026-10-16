@@ -1,3 +1,5 @@
+import { withBackgroundActivity, detachBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
+import { releaseRuntimeEnabled } from "@/lib/release-runtime/identity";
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -13,6 +15,7 @@ import { withBiModelContext } from "@/lib/bi/model-observer";
 import type {BillingQuote,BillingResult} from "@/lib/billing/types";
 import { currentExecutionBundle, currentModelExecution, runLegacyModelExecution, type ExecutionBundle } from "@/lib/model-config/context";
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
+import { recoverableChannelIdentity } from "@/lib/model-config/channel-availability";
 import { hasUnreplayableImageAttempt, imageJobHasResults, IMAGE_JOB_RELEASED_MESSAGE, IMAGE_JOB_REVIEW_MESSAGE } from "./image-job-failure";
 
 type Execution = { id: string; token: string; queue: Promise<unknown> };
@@ -135,20 +138,21 @@ export class DurableImageJobs<T extends { status: string }> {
     if (!saved || ["done", "error", "needs_attention"].includes(saved.status)) throw new Error("图片任务已结束或暂停，不能重新提交");
     const previous = saved?.paidOperations?.[operation.id];
     if (previous?.state === "done") return previous.result as R;
+    const pinnedRecovery = previous?.state === "started" && dbEnabled ? await recoverableChannelIdentity(getPool(),currentModelExecution("image"),operation.id) : undefined;
     const replayable = operation.managedGateway !== false && isImageGatewayModel(model);
     const gatewayIdentity = replayable ? createHash("sha256").update(JSON.stringify([
       (await getOpenAIBaseUrl()) || "https://api.openai.com/v1", (await getOpenAISettings()).apiKey,
       process.env.NAUMI_ROUTER_STATE_DOMAIN || "",
       ...(currentModelExecution("image")?.frozen.routerDigest ? [currentModelExecution("image")!.frozen.routerDigest] : []),
     ])).digest("hex") : undefined;
-    if (previous?.state === "started" && (!previous.replayable || previous.model !== model || previous.gatewayIdentity !== gatewayIdentity)) {
+    if (previous?.state === "started" && (!pinnedRecovery || previous.model !== model) && (!previous.replayable || previous.model !== model || previous.gatewayIdentity !== gatewayIdentity)) {
       await repository.holdImageJobBilling(id);
       throw new ImageOperationPending(operation.id, new Error("上游提交需要人工核查"));
     }
-    const attempt: Attempt = { model, replayable, gatewayIdentity, state: "started" };
+    const attempt: Attempt = { model, replayable: !!pinnedRecovery || replayable, gatewayIdentity: pinnedRecovery || gatewayIdentity, state: "started" };
     await update((current) => {
       const active = current.paidOperations?.[operation.id];
-      if (active?.state === "done" || (active?.state === "started" && (!active.replayable || active.model !== model || active.gatewayIdentity !== gatewayIdentity))) {
+      if (active?.state === "done" || (active?.state === "started" && (!pinnedRecovery || active.model !== model) && (!active.replayable || active.model !== model || active.gatewayIdentity !== gatewayIdentity))) {
         throw new ImageOperationPending(operation.id, new Error("上游提交需要核查或读取已存结果"));
       }
       return { ...current, paidOperations: { ...current.paidOperations, [operation.id]: attempt } };
@@ -158,6 +162,10 @@ export class DurableImageJobs<T extends { status: string }> {
       await update((current) => ({ ...current, paidOperations: { ...current.paidOperations, [operation.id]: { ...attempt, state: "done", result } } }));
       return result;
     } catch (error) {
+      if (error instanceof ImageOperationPending && dbEnabled) {
+        const identity=await recoverableChannelIdentity(getPool(),currentModelExecution("image"),operation.id);
+        if(identity)await update(current=>({...current,paidOperations:{...current.paidOperations,[operation.id]:{...attempt,replayable:true,gatewayIdentity:identity}}}));
+      }
       const status = (error as { status?: number } | null)?.status;
       if ([400, 401, 403, 404, 422, 429].includes(status || 0)) {
         await update((current) => ({ ...current, paidOperations: { ...current.paidOperations, [operation.id]: { ...attempt, state: "rejected" } } }));
@@ -176,11 +184,11 @@ export class DurableImageJobs<T extends { status: string }> {
       if (row) void run(row.payload as Record<string, unknown>, row.snapshot).catch(console.error);
       return;
     }
-    const row = await repository.claimImageJob(id, this.kind);
-    if (!row) return;
+    const executeClaimed = async (row: repository.ImageJobRow) => {
     const token = row.lease_token!;
+    await bindBackgroundClaim(`${this.kind}:${id}`, token);
     const context: Execution = { id, token, queue: Promise.resolve() };
-    void execution.run(context, async () => {
+    await execution.run(context, async () => {
       const heartbeat = setInterval(() => {
         void repository.heartbeatImageJob(id, token).catch(() => { clearInterval(heartbeat); });
       }, 25_000);
@@ -212,11 +220,21 @@ export class DurableImageJobs<T extends { status: string }> {
         await repository.releaseImageJob(id, token).catch(() => {});
       }
     });
+    };
+    if(!releaseRuntimeEnabled()) {
+      const row=await repository.claimImageJob(id,this.kind);
+      if(row)void executeClaimed(row).catch(console.error);
+      return;
+    }
+    await detachBackgroundActivity("durable-image", `${this.kind}:${id}`, "claim", async () => {
+      const row=await repository.claimImageJob(id,this.kind);
+      if(row)await executeClaimed(row);
+    });
   }
 }
 
 /** Dispatch recoverable work through the existing authenticated worker channel. */
-export async function recoverDurableImageJobs(): Promise<number> {
+async function recoverDurableImageJobsLocal(): Promise<number> {
   if (!dbEnabled) return 0;
   const jobs = await repository.dueImageJobs();
   const origin = process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3000";
@@ -230,4 +248,8 @@ export async function recoverDurableImageJobs(): Promise<number> {
   }
   const {recoverImagegenBatches}=await import("./imagegen/batch");
   return count+await recoverImagegenBatches();
+}
+
+export async function recoverDurableImageJobs():Promise<number> {
+  return withBackgroundActivity("durable-image", "recovery-dispatch-scan", "claim", () => recoverDurableImageJobsLocal(), () => 0);
 }
