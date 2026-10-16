@@ -304,6 +304,16 @@ class SessionTests(unittest.TestCase):
 
 
 class AcceptanceTests(unittest.TestCase):
+    def test_packaging_paths_match_actual_source_routes_not_generic_creation_prefix(self):
+        root=pathlib.Path(__file__).resolve().parents[2]
+        self.assertTrue((root/'src/app/tools/packaging-strategy/page.tsx').is_file())
+        self.assertTrue((root/'src/app/api/packaging-strategy/route.ts').is_file())
+        for path in ['/tools/packaging-strategy','/tools/packaging-strategy?project=fixture','/api/packaging-strategy']:
+            m.check_path('packaging',path)
+        for path in ['/creation/anything','/tools/packaging-strategy-extra','/api/generate-image',
+                     'https://external.test/tools/packaging-strategy']:
+            with self.assertRaises(m.Hold):m.check_path('packaging',path)
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.folder=pathlib.Path(self.tmp.name)
         self.spec=plan();self.tx=SimpleNamespace(folder=self.folder)
