@@ -2,7 +2,8 @@
 import {useVideoI18n} from "./i18n";
 import { useEffect, useRef, useState, type RefObject, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { X,ArrowUp,Square,Loader2,Sparkles,Check } from "lucide-react";
+import {VideoCompactComposer} from "./compact-composer";
 import type { CanvasVideoNode } from "@/lib/canvas/video-node-schema";
 import type { OrderedInput } from "@/lib/video/references";
 import { catalogCapability, selectedVideoCatalogModel, resolveVideoTextInputs, validateVideoSettings, type VideoCatalogModel, type VideoNodeConfig, type VideoInputChoice } from "@/lib/video/client-settings";
@@ -47,7 +48,7 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
     const revision = useRef(node.revision), [busy, setBusy] = useState(false), [importing, setImporting] = useState(false), [error, setError] = useState("");
     const dialogRef = useRef<HTMLDivElement>(null), closeRef = useRef(onClose);
     const baseline=useRef(JSON.stringify({title:node.title,config:node.config,inputs:node.inputs}));
-    const dock=presentation==="dock",[saved,setSaved]=useState(false);
+    const dock=presentation==="dock",[saved,setSaved]=useState(false),[inlineAdvanced,setInlineAdvanced]=useState(false);
     const active=generationBlocked||!!task&&!['completed','failed','cancelled'].includes(task.status);
     const submitting=useRef(false);
     // Position-only revisions may be rebased, but not another editor's config.
@@ -113,23 +114,31 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
         submitting.current=false;
         setBusy(false);
     } }
+    const dockActions=(<div className="flex items-center justify-between gap-2">
+          <span role="status" className="min-w-0 truncate text-xs canvas-ui-muted">{active?V(generationBlocked||task?.status==='needs_attention'?"等待核查":"生成中"):saved?V("已保存"):''}{active&&task&&task.progress>0?` · ${task.progress}%`:''}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <button type="button" title={V("保存设置")} aria-label={V("保存设置")} className={videoButtonClass} disabled={readOnly||busy||importing} onClick={()=>void submit(false)}>{busy?<Loader2 size={14} className="animate-spin"/>:saved?<Check size={14}/>:V("保存设置")}</button>
+            {!active&&!readOnly&&<span className="flex items-center gap-1 text-xs font-semibold canvas-ui-muted" data-testid="video-composer-price"><Sparkles size={13}/>{config.comfyWorkflowId?'0':estimate.quote?`${estimate.quote.mode==='api-cost-plus'?V('上限')+' ':''}${estimate.quote.mode==='api-cost-plus'?estimate.quote.authorizedCredits??estimate.quote.reserveCredits:estimate.cost}`:V("报价中…")}</span>}
+            {active?<button type="button" aria-label={V(task?.cancellationRequestedAt?"正在停止":"停止")} title={V(task?.cancellationRequestedAt?"正在停止":"停止")} className="canvas-ui-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-40" disabled={readOnly||busy||generationBlocked||!!task?.cancellationRequestedAt||!onCancel||['needs_attention','creation_unknown'].includes(task?.status||'')} onClick={onCancel}><Square size={13} fill="currentColor"/></button>:<button type="button" aria-label={V("生成视频")} title={V("生成视频")} className="canvas-ui-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-40" disabled={readOnly||busy||importing||catalogLoading||!!invalid||!config.comfyWorkflowId&&!estimate.quote} onClick={()=>void submit(true)}>{busy?<Loader2 size={17} className="animate-spin"/>:<ArrowUp size={19}/>}</button>}
+          </div>
+        </div>);
+    const dockFeedback=((error||task?.error||invalid||estimate.error)&&<p role={error?"alert":"status"} className="mb-2 break-words text-xs text-amber-600">{V(error||task?.error||invalid||estimate.error||"")}</p>);
     if(dock)return <div ref={dockRef} style={dockStyle} data-testid="video-node-dock" data-canvas-hotkeys-blocked="true" role="region" aria-label={V("视频节点设置")}
       className="canvas-ui-surface canvas-dock-entry absolute z-10 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-[18px] border shadow-lg"
       onKeyDown={event=>event.stopPropagation()}>
-      <div className="min-h-0 overflow-y-auto px-4 pb-2 pt-3">
+      <div className={`min-h-0 px-4 pb-2 pt-3 ${(advanced||inlineAdvanced)?"overflow-y-auto":"flex flex-col overflow-hidden"}`}>
         {catalogError&&<p role="alert" className="mb-2 text-xs text-red-500">{V(catalogError)}{onRetryCatalog&&<button type="button" className={videoButtonClass} onClick={()=>void onRetryCatalog()}>{V("重试视频模型")}</button>}</p>}
-        {advanced?<VideoSettingsFields config={config} inputs={resolvedInputs} models={models} choices={choices} nodeId={node.id} email={email} readOnly={readOnly} busy={busy} onConfig={value=>{setSaved(false);setConfig(value);}} onInputs={value=>{setSaved(false);setInputs(value);}} onImport={onImport} onImportBusyChange={setImporting} onLoadMoreAssets={onLoadMoreAssets} canLoadMoreAssets={canLoadMoreAssets}/>:<>
-          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs canvas-ui-muted"><span>{selectedVideoCatalogModel(models,config)?.label||config.modelId||V("未选择模型")}</span>{config.aspectRatio&&<span>{config.aspectRatio}</span>}{config.durationSeconds!==undefined&&<span>{config.durationSeconds===-1?V("自动"):`${config.durationSeconds}s`}</span>}{config.resolution&&<span>{config.resolution}</span>}<span>{resolvedInputs.length}{V(" 引用")}</span></div>
-          <textarea aria-label={V("视频描述")} value={config.prompt||""} readOnly={readOnly||busy||importing} rows={3} placeholder={V("视频描述")} className="canvas-ui-input block min-h-[72px] w-full resize-y rounded-xl border p-3 text-sm leading-relaxed outline-none" onChange={event=>{setSaved(false);setConfig({...config,prompt:event.target.value});}}/>
-        </>}
+        {(advanced||inlineAdvanced)?<>
+          <button type="button" className={`${videoButtonClass} mb-2`} onClick={()=>setInlineAdvanced(false)} hidden={advanced}>{V("返回视频创作")}</button>
+          <VideoSettingsFields config={config} inputs={resolvedInputs} models={models} choices={choices} nodeId={node.id} email={email} readOnly={readOnly} busy={busy} onConfig={value=>{setSaved(false);setConfig(value);}} onInputs={value=>{setSaved(false);setInputs(value);}} onImport={onImport} onImportBusyChange={setImporting} onLoadMoreAssets={onLoadMoreAssets} canLoadMoreAssets={canLoadMoreAssets}/>
+        </>:<VideoCompactComposer config={config} inputs={resolvedInputs} models={models} choices={choices} nodeId={node.id} light={light} blocked={readOnly||busy||importing}
+          onConfig={value=>{setSaved(false);setConfig(value);}} onInputs={value=>{setSaved(false);setInputs(value);setConfig(current=>({...current,references:[]}));}} onImport={onImport} onImportBusyChange={setImporting} onAdvanced={()=>setInlineAdvanced(true)} actions={dockActions} feedback={dockFeedback}/>}
+
       </div>
-      <footer className="shrink-0 border-t border-current/10 px-4 py-2.5">
+      {(advanced||inlineAdvanced)&&<footer className="shrink-0 border-t border-current/10 px-4 py-2.5">
         {(error||task?.error||invalid||estimate.error)&&<p role={error?"alert":"status"} className="mb-2 break-words text-xs text-amber-600">{V(error||task?.error||invalid||estimate.error||"")}</p>}
-        <div className="flex flex-wrap items-center justify-between gap-2"><span role="status" className="text-xs canvas-ui-muted">{active?V(generationBlocked||task?.status==='needs_attention'?"等待核查":"生成中"):saved?V("已保存"):V("视频节点")}{active&&task&&task.progress>0?` · ${task.progress}%`:''}</span><div className="flex gap-2">
-          <button type="button" className={videoButtonClass} disabled={readOnly||busy||importing} onClick={()=>void submit(false)}>{busy?V("保存中…"):V("保存设置")}</button>
-          {active?<button type="button" className={videoButtonClass} disabled={readOnly||busy||generationBlocked||!!task?.cancellationRequestedAt||!onCancel||['needs_attention','creation_unknown'].includes(task?.status||'')} onClick={onCancel}>{V(task?.cancellationRequestedAt?"正在停止":"停止")}</button>:<button type="button" className="rounded-xl bg-teal-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-40" disabled={readOnly||busy||importing||catalogLoading||!!invalid||!config.comfyWorkflowId&&!estimate.quote} onClick={()=>void submit(true)}>{V("生成视频")}{readOnly?'':config.comfyWorkflowId?` · ${V("0 积分")}`:estimate.quote?` · ${V(`${estimate.quote.mode==='api-cost-plus'?'上限 ':''}${estimate.quote.mode==='api-cost-plus'?estimate.quote.authorizedCredits??estimate.quote.reserveCredits:estimate.cost} 积分`)}`:` · ${V("报价中…")}`}</button>}
-        </div></div>
-      </footer>
+        {dockActions}
+      </footer>}
     </div>;
     if (typeof document === "undefined")
         return null;

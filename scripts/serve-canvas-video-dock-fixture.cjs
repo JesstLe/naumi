@@ -10,7 +10,7 @@ const video={id:'video-dock-one',projectKey:'tree:placement-root',revision:1,tit
 const videos=[video,{...structuredClone(video),id:'video-dock-two',title:'第二视频',x:640,y:120}];
 const originalVideos=structuredClone(videos);
 const text={id:'text-dock-fixture',projectKey:'tree:placement-root',title:'分镜文案',canvasX:1100,canvasY:120,width:360,height:260,prompt:'分镜描述',content:'由远及近，晨光中的城市街景。',status:'completed',sourceIds:[],createdAt:now,updatedAt:now};
-const definition={sources:{},modes:['text','single_image'],durationResolutionMap:[{durations:[4,8],resolutions:['720p','1080p']}],aspectRatios:['16:9','9:16','1:1'],audio:'optional',defaultDurationSeconds:4,defaultResolution:'720p',defaultAspectRatio:'16:9'};
+const definition={sources:{},limits:{images:2},supportsFirstFrame:true,modes:['text','single_image'],durationResolutionMap:[{durations:[4,8],resolutions:['720p','1080p']}],aspectRatios:['16:9','9:16','1:1'],audio:'optional',defaultDurationSeconds:4,defaultResolution:'720p',defaultAspectRatio:'16:9'};
 const videoModel={id:'video-a',providerId:'managed-video',modelId:'video-a',label:'视频模型 A',definition};
 const state={videoWrites:[],generations:[],videoTasks:[],submissions:[],positions:[],history:[],jobs:{},paidCalls:0,apiErrors:[],failNextPosition:false};
 const app=cp.spawn(process.execPath,['node_modules/next/dist/bin/next','dev','-p',String(nextPort)],{env:{...process.env,DATABASE_URL:'',NAUMI_MULTI_USER:'0',SETTINGS_SECRET:crypto.randomUUID(),VIDEO_WORKER_SECRET:crypto.randomUUID(),NAUMI_VIDEO_WORKER:'0',OPENAI_API_KEY:'fixture-not-a-key',OPENAI_BASE_URL:'http://127.0.0.1:1/v1',NEXT_PUBLIC_SUPABASE_URL:'',NEXT_PUBLIC_SUPABASE_ANON_KEY:'',NEXT_TELEMETRY_DISABLED:'1',NEXT_DIST_DIR:'.next-video-dock-fixture'},windowsHide:true,stdio:['ignore','pipe','pipe']});
@@ -44,6 +44,8 @@ const server=http.createServer(async(req,res)=>{
  if(p.startsWith('/api/')){
   if(p==='/api/video/catalog')return json(res,{models:[videoModel]});
   if(p==='/api/video/byoc/catalog')return json(res,{workflows:[],endpoint:null});
+  if(p==='/api/video/references'&&req.method==='POST')return json(res,{reference:{storageKey:'fixture/reference-upload.png'}});
+  if(p==='/api/video/assets'&&req.method==='POST'){const id='uploaded-ref-'+(arts.length+1),asset={artworkId:id,kind:'image',title:body.title,url:image,projectKey:body.projectKey};arts.push({...art,id,title:body.title,parentId:art.id});return json(res,{asset});}
   if(p==='/api/canvas/text-nodes')return json(res,{persisted:true,nodes:[text]});
   if(p==='/api/canvas/video-nodes')return json(res,{nodes:videos});
   if(p==='/__unused')return json(res,{});
