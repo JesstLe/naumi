@@ -153,9 +153,19 @@ function StrategyWorkspace({ email, onLogin }: { email: string; onLogin: () => v
     const controller = new AbortController(); operation.current = controller;
     setBusy(action); setError(""); setNotice("");
     try {
+      let active = project;
+      // Bind a persisted identity before any model submission. The same mutex
+      // covers both calls, and failures retain the saved project for retry.
+      if (action !== "save" && !active) {
+        const saved = await request(ENDPOINT, controller.signal, { action: "save", brief });
+        if (!alive.current || controller.signal.aborted) return;
+        active = parseProject(saved.project);
+        if (!active) throw new Error("项目保存失败，请恢复云端项目后重试。");
+        accept(active);
+      }
       const data = await request(ENDPOINT, controller.signal, {
         action, brief,
-        ...(project ? { projectId: project.id, expectedRevision: project.revision } : {}),
+        ...(active ? { projectId: active.id, expectedRevision: active.revision } : {}),
         ...(answers.trim() ? { answers: answers.trim() } : {}),
         ...(action === "refine" ? { feedback: feedback.trim() } : {}),
         ...(allowDraft ? { allowDraft: true } : {}),
