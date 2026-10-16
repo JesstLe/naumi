@@ -3,3 +3,8 @@ const prefix=(owner:string,project:string)=>`naumi:imagegen-node:${encodeURIComp
 export function canvasReceipts(storage:Storage,owner:string,project:string){const keyPrefix=prefix(owner,project),items:{key:string;receipt:CanvasReceipt}[]=[];for(let i=0;i<storage.length;i++){const key=storage.key(i);if(!key?.startsWith(keyPrefix))continue;try{const receipt=JSON.parse(storage.getItem(key)||"null");if(receipt&&/^[a-f0-9-]{36}$/i.test(receipt.id)&&typeof receipt.nodeId==="string")items.push({key,receipt});}catch{}}return items;}
 export function saveCanvasReceipt(storage:Storage,owner:string,project:string,receipt:CanvasReceipt){const key=prefix(owner,project)+encodeURIComponent(receipt.nodeId);storage.setItem(key,JSON.stringify(receipt));return key;}
 export function clearCanvasReceipt(storage:Storage,key:string,id:string){const value=storage.getItem(key);if(value&&JSON.parse(value).id===id)storage.removeItem(key);}
+/** Move only an existing receipt within its owner/project; never submit a new task. */
+export function moveCanvasReceipt(storage:Storage,owner:string,project:string,nodeId:string,position:{x:number;y:number}){
+ if(!Number.isFinite(position.x)||!Number.isFinite(position.y))return;
+ for(const {key,receipt} of canvasReceipts(storage,owner,project))if(receipt.nodeId===nodeId)storage.setItem(key,JSON.stringify({...receipt,...position}));
+}

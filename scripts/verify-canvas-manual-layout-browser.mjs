@@ -1,0 +1,70 @@
+import { chromium, expect as rawExpect } from '@playwright/test';
+import assert from 'node:assert/strict';
+import {mkdir,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+const base=process.env.PLACEMENT_FIXTURE_URL||'http://127.0.0.1:14317',out=path.resolve(process.argv[2]||'output/canvas-manual-layout-20261016');
+await mkdir(out,{recursive:true});
+const expect=rawExpect.configure({timeout:45000}),checks=[],errors=[];
+console.log('BROWSER_START');
+const browser=await chromium.launch({channel:process.platform==='win32'?'msedge':undefined,headless:true,timeout:30000});
+console.log('BROWSER_LAUNCHED');
+const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
+await context.addCookies([{name:'naumi_locale',value:'zh',url:base}]);
+const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
+const state=()=>fetch(base+'/__fixture/state').then(r=>r.json());
+const node=id=>page.locator(`.react-flow__node[data-id="${id}"]`);
+const point=id=>node(id).evaluate(el=>{const matrix=new DOMMatrix(el.style.transform);return {x:matrix.e,y:matrix.f}});
+async function drag(id,dx,dy,during){
+ const before=await point(id),box=await node(id).boundingBox();assert.ok(box);
+ const zoom=await page.locator('.react-flow__viewport').evaluate(el=>new DOMMatrix(el.style.transform).a);
+ await page.mouse.move(box.x+box.width*.3,box.y+Math.min(80,box.height*.3));await page.mouse.down();await page.mouse.move(box.x+box.width*.3+dx,box.y+Math.min(80,box.height*.3)+dy,{steps:12});
+ if(during)await during();await page.mouse.up();
+ const after=await point(id);assert.ok(Math.abs(after.x-before.x-dx/zoom)<12,JSON.stringify({before,after,dx,zoom}));assert.ok(Math.abs(after.y-before.y-dy/zoom)<12);return after;
+}
+const pass=s=>{checks.push(s);console.log('PASS '+s)};
+try{
+ await fetch(base+'/__fixture/reset');
+ console.log('BROWSER_NAVIGATE');
+ await page.goto(base+'/canvas',{waitUntil:'domcontentloaded',timeout:60000});
+ console.log('BROWSER_DOM_READY');
+ await expect(node('placement-root')).toBeVisible();
+ const hide=page.getByRole('button',{name:'收起助手',exact:true});if(await hide.count())await hide.click();
+ const view=page.getByTestId('canvas-view-toolbar');
+ const magnet=view.locator('button').filter({has:page.locator('svg.lucide-magnet')});await expect(magnet).toHaveAttribute('aria-pressed','false');
+ const start={root:await point('placement-root'),second:await point('placement-second')};
+ await node('placement-root').click({position:{x:60,y:100}});
+ const dock=page.getByTestId('image-node-dock');await dock.locator('textarea').fill('fixture only preserve full frame');await dock.locator('button[title="生成新版本"]').click();
+ await expect.poll(async()=>(await state()).submissions.length).toBe(1);
+ const task=page.locator('.react-flow__node[data-id^="task-"]');await expect(task).toHaveCount(1);const taskId=await task.getAttribute('data-id');
+ const initial=await point(taskId);assert.ok(Math.hypot(initial.x-start.root.x,initial.y-start.root.y)<1600);
+ const moved=await drag(taskId,71,93,async()=>{await page.waitForTimeout(2800);const mid=await point(taskId);assert.notDeepEqual(mid,initial)});
+ await page.waitForTimeout(2800);assert.deepEqual(await point(taskId),moved);assert.deepEqual(await point('placement-root'),start.root);assert.deepEqual(await point('placement-second'),start.second);
+ pass('new placeholder is nearby; pointer position survives progress refresh without moving existing nodes');
+ await fetch(base+'/__fixture/complete?index=1');await expect(node('placement-result-1')).toBeVisible();
+ const result=await point('placement-result-1');assert.ok(Math.abs(result.x-moved.x)<=1&&Math.abs(result.y-moved.y)<=1);
+ pass('generated image lands at the dragged placeholder position');
+ // An already user-placed empty node must not relocate at generation start.
+ const close=dock.getByRole('button',{name:'关闭',exact:true});if(await close.count())await close.click();
+ await page.getByTestId('canvas-main-toolbar').locator('[data-tool="image-node"]').click();
+ const pending=page.locator('.react-flow__node[data-id^="pend-"]');await expect(pending).toHaveCount(1);const pendingId=await pending.getAttribute('data-id');
+ const chosen=await drag(pendingId,-63,-87);const pdock=page.getByTestId('pending-node-dock');await pdock.locator('textarea').fill('fixture existing placeholder');await pdock.locator('button[title="生成新版本"]').click();
+ await expect.poll(async()=>(await state()).submissions.length).toBe(2);assert.deepEqual(await point(pendingId),chosen);
+ const dragged=await drag(pendingId,79,47);await fetch(base+'/__fixture/complete?index=2');await expect(node('placement-result-2')).toBeVisible();
+ assert.ok(Math.abs((await point('placement-result-2')).x-dragged.x)<=1);assert.ok(Math.abs((await point('placement-result-2')).y-dragged.y)<=1);
+ pass('existing placeholder stays exact at submission and result inherits its subsequent drag');
+ const beforeReload=Object.fromEntries(await Promise.all(['placement-root','placement-second','placement-result-1','placement-result-2'].map(async id=>[id,await point(id)])));
+ await page.reload({waitUntil:'domcontentloaded'});await expect(node('placement-result-2')).toBeVisible();
+ for(const [id,p] of Object.entries(beforeReload))assert.deepEqual(await point(id),p);
+ pass('reload restores saved result and manual coordinates');
+ const beforeTidy=(await state()).history.length;
+ await view.getByRole('button',{name:'整理画布',exact:true}).click();await expect.poll(async()=>(await state()).history.length).toBe(beforeTidy+1);
+ assert.ok((await state()).history.at(-1).operations.some(op=>op.type==='position'));
+ await page.keyboard.press('Control+z');await expect.poll(async()=>(await state()).history.length).toBe(beforeTidy+2);
+ for(const [id,p] of Object.entries(beforeReload))assert.deepEqual(await point(id),p);
+ pass('only manual tidy writes a global move transaction; one undo restores every coordinate');
+ assert.deepEqual(errors,[]);assert.equal((await state()).paidCalls,0);
+ await page.screenshot({path:path.join(out,'canvas-placement-verified.png'),fullPage:true});
+ await writeFile(path.join(out,'browser-verification.json'),JSON.stringify({checks,errors,state:await state(),beforeReload,paidCalls:0},null,2));
+ console.log('NATIVE_BROWSER=PASS CHECKS='+checks.length+' PAGEERRORS=0 PAID_CALLS=0 EXIT=0');
+}catch(e){await page.screenshot({path:path.join(out,'browser-failure.png'),fullPage:true}).catch(()=>{});await writeFile(path.join(out,'browser-failure.json'),JSON.stringify({error:e.stack,checks,errors,state:await state(),html:(await page.locator('body').innerText()).slice(0,8000)},null,2));throw e}
+finally{await browser.close()}
