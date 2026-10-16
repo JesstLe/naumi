@@ -164,15 +164,18 @@ class LiveAdapter:
         errors = result.get('errors')
         require(isinstance(errors, list), 'FRESH_BASELINE_INCOMPLETE')
         if errors:
-            # Only this explicitly authorized Oct16 103 maintenance baseline can
+            # Only an explicitly authorized Oct16 target-bound maintenance baseline can
             # retain these catalog observation gaps. They remain real errors,
             # never systemd-reference completeness, task drain or stop evidence.
             allowed = {('systemd-unit-list', 'SERVICE_LIMIT_EXCEEDED'),
                        ('systemd-unit-cat', 'OBSERVATION_UNAVAILABLE'),
                        ('systemd-unit-show', 'OBSERVATION_UNAVAILABLE')}
-            require(self.plan.get('target') == '103.30.76.93' and
-                    getattr(self.tx, 'target', None) == '103.30.76.93' and
-                    self.plan.get('authorization', {}).get('target') == '103.30.76.93' and
+            target = self.plan.get('target')
+            authorization = self.plan.get('authorization', {})
+            require(target in ['47.105.59.142', '103.30.76.93'] and
+                    getattr(self.tx, 'target', None) == target and
+                    authorization.get('target') == target and
+                    (target != '47.105.59.142' or authorization.get('mode') == 'one-time-maintenance') and
                     all(isinstance(error, dict) and
                         (error.get('source'), error.get('code')) in allowed for error in errors),
                     'FRESH_BASELINE_INCOMPLETE')

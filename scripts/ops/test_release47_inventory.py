@@ -285,6 +285,40 @@ class InventoryTests(unittest.TestCase):
         _, result = self.collect(fake)
         self.assertIn('future-worker.service', [row['unit'] for row in result['services']])
 
+    def test_failed_service_leading_bullet_is_presentation_not_unit(self):
+        fake = Fake(); original = fake.run
+        def run(args, **kwargs):
+            if args[:2] == ['systemctl', 'list-units']:
+                return '\u25cf  failed-worker.service loaded failed failed Example worker\n  nginx.service loaded active running fixture\n'.encode()
+            return original(args, **kwargs)
+        fake.run = run
+        _, result = self.collect(fake)
+        self.assertIn('failed-worker.service', [row['unit'] for row in result['services']])
+        self.assertFalse(any(row['code'] == 'UNPARSED_SYSTEMD_UNIT' for row in result['errors']))
+        self.assertTrue(any(args[:3] == ['systemctl', 'show', 'failed-worker.service'] for args in fake.calls))
+
+    def test_only_separate_leading_bullet_is_ignored_invalid_units_still_error(self):
+        fake = Fake(); original = fake.run
+        def run(args, **kwargs):
+            if args[:2] == ['systemctl', 'list-units']:
+                return '\u25cffailed.service loaded failed failed fixture\n\u25cf\ninvalid/unit.service loaded failed failed fixture\n'.encode()
+            return original(args, **kwargs)
+        fake.run = run
+        _, result = self.collect(fake)
+        self.assertEqual(sum(e['code'] == 'UNPARSED_SYSTEMD_UNIT' for e in result['errors']), 3)
+
+    def test_template_and_masked_observation_failures_remain_real_errors(self):
+        fake = Fake(); original = fake.run
+        def run(args, **kwargs):
+            if args[:2] == ['systemctl', 'list-units']:return b''
+            if args[:2] == ['systemctl', 'list-unit-files']:return b'worker@.service disabled enabled\nmasked-worker.service masked enabled\n'
+            if args[:2] == ['systemctl', 'cat']:return type('R', (), {'returncode':1,'stdout':b'','stderr':b'unavailable'})()
+            return original(args, **kwargs)
+        fake.run = run
+        _, result = self.collect(fake)
+        self.assertEqual({row['unit'] for row in result['services']}, {'worker@.service', 'masked-worker.service'})
+        self.assertEqual(sum(e['source'] == 'systemd-unit-cat' for e in result['errors']), 2)
+
     def test_source_file_count_and_services_are_bounded_and_unknown_on_limit(self):
         fake = Fake(); original = fake.run
         def run(args, **kwargs):
