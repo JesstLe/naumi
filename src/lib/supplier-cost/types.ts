@@ -1,7 +1,7 @@
 import type { Procurement } from "../model-config/business-schema";
 export type CostStatus = "pending" | "estimated" | "reported" | "reconciled";
 export type FxSnapshot = { currency: "USD" | "CNY"; rateMicros: string; basis: "recharge" | "admin-rate" | "budget"; evidence: string; updatedAt: string };
-export type CostContext = { operationId: string; orderId?: string; userEmail?: string; feature: string; publicModelId?: string; modelVersion?: number; billingVersion?: number; phase: string; matchedRuleId?: string; parentCallId?: string };
+export type CostContext = { biCallId?: string; operationId: string; orderId?: string; userEmail?: string; feature: string; publicModelId?: string; modelVersion?: number; billingVersion?: number; phase: string; matchedRuleId?: string; parentCallId?: string };
 export type CostReceipt = {
   state: string; taskId?: string; requestId?: string; actualModel?: string; amountMicros?: string | null;
   currency?: "USD" | "CNY"; creditsMicros?: string | null; usage?: Record<string, unknown> | null;
