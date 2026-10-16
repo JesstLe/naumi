@@ -21,7 +21,7 @@ if (process.argv.includes("--baseline")) {
   assert.deepEqual(placeGenerationPreview({x:400,y:100},{width:384,height:384},[{x:500,y:100,width:380,height:260}]),{x:400,y:408});
   const occupied=Array.from({length:400},(_,i)=>({x:400,y:i*420,width:384,height:384}));
   const free=placeGenerationPreview({x:400,y:0},{width:384,height:384},occupied);
-  assert.ok(free.y > occupied.at(-1)!.y + 384);
+  assert.ok(Math.hypot(free.x-400,free.y)<1000,"busy columns should find nearby space, not the bottom of the canvas");
   assert.notEqual(generationWaitingHint("generating", 1), generationWaitingHint("generating", 35));
   assert.notEqual(generationWaitingHint("generating", 35), generationWaitingHint("generating", 90));
   for (const stage of ["preparing", "generating", "saving"] as const) for (const elapsed of [0,35,90,3600]) {
@@ -33,7 +33,7 @@ if (process.argv.includes("--baseline")) {
   assert.match(source, /<GenerationPlaceholder/);
   assert.match(source, /n.data.generationStage/);
   assert.doesNotMatch(source, /canvas-ui-node-card flex h-\[110px\]/);
-  const baseline=execFileSync("git",["show","804f820755c23390d45387b3757c737fb472f105:src/components/canvas/canvas-client.tsx"],{encoding:"utf8"});
+  const baseline=execFileSync("git",["show","c2634fba41fd50a117f9af93e63d865e446f7394:src/components/canvas/canvas-client.tsx"],{encoding:"utf8"});
   const payloads=(code:string)=>{
     const sf=ts.createSourceFile("canvas.tsx",code,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),values:string[]=[];
     const visit=(node:ts.Node)=>{

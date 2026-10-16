@@ -19,13 +19,14 @@ import { CANVAS_RATIO_OPTIONS, CANVAS_RESOLUTIONS, CANVAS_MAX_COUNT, normalizeCa
 import { canvasDockLayout, canvasOverlaySafeArea, type NodeScreen } from "@/lib/canvas/dock-layout";
 import { createProjectRootResolver } from "@/lib/canvas/project-roots";
 import { knownCanvasNodeMeasurement } from "@/lib/canvas/node-measurement";
+import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasParameterPopover } from "./parameter-popover";
 import {ImagegenPanel,type ImagegenPanelInput} from "@/components/imagegen/imagegen-panel";
 import type {ImagegenResult} from "@/lib/imagegen/types";
 import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
-import {canvasReceipts,clearCanvasReceipt} from "@/lib/imagegen/canvas-receipts";
+import {canvasReceipts,clearCanvasReceipt,moveCanvasReceipt} from "@/lib/imagegen/canvas-receipts";
 import {pollImagegen} from "@/lib/imagegen/client";
 import {VideoGenerationNode} from "./video/generation-node";
 import {VideoSettingsDialog,type VideoNodeDraft} from "./video/settings-dialog";
@@ -51,7 +52,7 @@ import { CanvasHelpDialog } from "./canvas-help-dialog";
 import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surface";
 import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { GenerationPlaceholder } from "./generation-placeholder";
-import { generationPlaceholderSize, placeGenerationPreview, type GenerationStage } from "@/lib/canvas/generation-feedback";
+import { generationPlaceholderSize, generationPositionForTask, placeGenerationPreview, type GenerationStage } from "@/lib/canvas/generation-feedback";
 import type { ImageSkill } from "@/lib/image-skills/catalog";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
 import { useWorkflowPaste } from "./use-workflow-paste";
@@ -1437,7 +1438,7 @@ function assistantContext(members: Artwork[], anchorId: string): Artwork[] {
   return out.slice(0, 5);
 }
 
-// 把一组作品(可能是森林:多个根)排成整齐的血缘树布局
+// 构造展示节点与血缘连线；渲染不重新整理已有坐标。
 function layoutGraph(
   arts: Artwork[],
   rootLabel: string,
@@ -1448,73 +1449,17 @@ function layoutGraph(
   ) => void,
   onCanvasRatioRepair: (id: string, width: number, height: number) => void,
   onRenameRequest: (id: string, label: string) => void,
-  onVideoExtract: (id: string, action: VideoPlayerAction) => void
+  onVideoExtract: (id: string, action: VideoPlayerAction) => void,
+  generatedPositions = new Map<string, CanvasPoint>()
 ): { nodes: Node[]; edges: Edge[] } {
   const byId = new Map(arts.map((a) => [a.id, a]));
   const sorted = [...arts].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
-  const children = new Map<string, string[]>();
-  const roots: string[] = [];
-  for (const a of sorted) {
-    // 手动加的节点(canvas-add:上传/副本/从历史)是独立节点:不连父、自成一格
-    const p =
-      a.parentId && byId.has(a.parentId) && a.source !== "canvas-add"
-        ? a.parentId
-        : null;
-    if (p) {
-      const arr = children.get(p) ?? [];
-      arr.push(a.id);
-      children.set(p, arr);
-    } else {
-      roots.push(a.id);
-    }
-  }
-  // 按图片真实像素尺寸布局，确保 900×900 图片在画布坐标中就是 900×900，
-  // 同时为每一层预留该层最宽节点，避免大图与下游节点重叠。
-  const pos: Record<string, { x: number; y: number }> = {};
-  const depthById = new Map<string, number>();
-  const assignDepth = (id: string, depth: number) => {
-    if ((depthById.get(id) ?? -1) >= depth) return;
-    depthById.set(id, depth);
-    for (const child of children.get(id) ?? []) assignDepth(child, depth + 1);
-  };
-  roots.forEach((root) => assignDepth(root, 0));
-  const widthByDepth = new Map<number, number>();
-  for (const art of sorted) {
-    const depth = depthById.get(art.id) ?? 0;
-    widthByDepth.set(depth, Math.max(widthByDepth.get(depth) ?? 0, artworkNodeSize(art).width));
-  }
-  const xByDepth = new Map<number, number>();
-  let xCursor = 0;
-  const maxDepth = Math.max(0, ...Array.from(depthById.values()));
-  for (let depth = 0; depth <= maxDepth; depth++) {
-    xByDepth.set(depth, xCursor);
-    xCursor += (widthByDepth.get(depth) ?? NODE_W) + X_GAP;
-  }
-  let leafY = 0;
-  const place = (id: string, depth: number) => {
-    const kids = children.get(id) ?? [];
-    const size = artworkNodeSize(byId.get(id) as Artwork);
-    if (kids.length === 0) {
-      pos[id] = { x: xByDepth.get(depth) ?? 0, y: leafY };
-      leafY += size.height + Y_GAP;
-    } else {
-      kids.forEach((k) => place(k, depth + 1));
-      const centers = kids.map((k) => pos[k].y + artworkNodeSize(byId.get(k) as Artwork).height / 2);
-      pos[id] = {
-        x: xByDepth.get(depth) ?? 0,
-        y: (Math.min(...centers) + Math.max(...centers)) / 2 - size.height / 2,
-      };
-    }
-  };
-  roots.forEach((r) => place(r, 0));
+  // Rendering allocates only missing positions; only tidyLayout performs a global layout.
+  const positions = stableArtworkPositions(sorted.map(art => ({ ...art, ...artworkNodeSize(art) })), generatedPositions);
   const nodes: Node[] = sorted.map((a, idx) => {
     const isRoot = !(a.parentId && byId.has(a.parentId));
     const canvasSize = artworkImageSize(a);
-    // 手动拖过的节点用记住的坐标,否则用自动布局
-    const position =
-      a.canvasX != null && a.canvasY != null
-        ? { x: a.canvasX, y: a.canvasY }
-        : pos[a.id] ?? { x: 0, y: 0 };
+    const position = positions.get(a.id) ?? { x: 0, y: 0 };
     return {
       id: a.id,
       type: "art",
@@ -1624,6 +1569,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     worksRef.current = works;
   }, [works]);
   const dimensionSyncRef = useRef(new Set<string>());
+  const artworkPlacementRef = useRef({ scope: "", positions: new Map<string, CanvasPoint>() });
   const [names, setNames] = useState<Record<string, string>>({});
   // 管理员看指定用户:?email=<用户> → 只读查看该用户画布;?node=<作品id> → 预选中那张
   const [targetEmail, setTargetEmail] = useState<string | null>(null);
@@ -1671,6 +1617,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     Record<string, { x: number; y: number }>
   >({});
   const generationOperationRef = useRef(new Set<string>());
+  const generationTaskSizeRef = useRef<Record<string, { width: number; height: number }>>({});
   // 仅"后台深链 ?node="进入时才自动平移聚焦;日常新建/上传/生成节点都不动画布
   const deepFocusRef = useRef(false);
   // 是否已做过"刷新恢复上次项目"的初始化(避免初始挂载误清本地保存)
@@ -1707,9 +1654,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [generationTasks, setGenerationTasks] = useState<
     CanvasGenerationTask[]
   >([]);
-  // 左下控件:小地图开关、网格吸附(原型默认吸附 on)
+  // 自由拖动是默认；用户主动开启磁铁时才吸附网格。全局整理仅由手动动作触发。
   const [showMinimap, setShowMinimap] = useState(false);
-  const [snapGrid, setSnapGrid] = useState(true);
+  const [snapGrid, setSnapGrid] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
   const [stitching, setStitching] = useState(false);
@@ -3005,6 +2952,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   const { nodes, edges } = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
     if (!active) return { nodes: [], edges: [] };
+    const scope = `naumi:canvas-positions:${JSON.stringify([canvasAccountRef.current, active.key])}`;
+    if (artworkPlacementRef.current.scope !== scope) {
+      let positions = new Map<string, CanvasPoint>();
+      try { positions = readPlacementCache(sessionStorage.getItem(scope)); } catch { /* SSR/private storage */ }
+      artworkPlacementRef.current = { scope, positions };
+    }
     return layoutGraph(
       active.members,
       t("canvas.rootBadge"),
@@ -3012,9 +2965,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       onArtworkCanvasResize,
       onArtworkCanvasRatioRepair,
       requestNodeRename,
-      extractVideoToCanvas
+      extractVideoToCanvas,
+      artworkPlacementRef.current.positions
     );
-  }, [active, t, onNodeDimensions, onArtworkCanvasResize, onArtworkCanvasRatioRepair, requestNodeRename, extractVideoToCanvas]);
+  }, [active, t, user?.email, targetEmail, onNodeDimensions, onArtworkCanvasResize, onArtworkCanvasRatioRepair, requestNodeRename, extractVideoToCanvas]);
+  useEffect(() => {
+    const {scope, positions} = artworkPlacementRef.current;
+    if (!scope) return;
+    try { sessionStorage.setItem(scope, JSON.stringify(Array.from(positions).slice(-4000))); } catch { /* best effort */ }
+  }, [nodes]);
 
   const nodeTypes = useMemo(
     () => ({ art: ArtNode, pend: PendNode, text: TextCanvasNode, videoGeneration:VideoGenerationNode, workflowDecoration: WorkflowDecorationNode, workflowGroup: WorkflowGroupNode }),
@@ -3829,6 +3788,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const currentById = new Map(current.map(node => [node.id, node]));
       return displayNodes.map((node) => ({
         ...node,
+        ...canvasNodePosition(node, currentById.get(node.id)),
         selected: currentById.get(node.id)?.selected ?? false,
         // 同尺寸数据更新不会触发 ResizeObserver。保留已有测量，避免任务阶段刷新后
         // React Flow 将其余节点永久设为 visibility:hidden，导致整张画布无法交互。
@@ -4291,6 +4251,30 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
 
   // 生成核心:以某节点为底图(图生图)+ 提示词 → 新图作为其子节点。
+  function reserveGenerationPosition(taskId: string, preferred: CanvasPoint, size: {width:number;height:number}, existing?: CanvasPoint) {
+    const occupied = (rfRef.current?.getNodes() ?? rfNodes).map(node => ({ ...node.position, ...flowNodeSize(node) }));
+    for (const [id, position] of Object.entries(generationTaskPosRef.current)) {
+      occupied.push({ ...position, ...(generationTaskSizeRef.current[id] ?? generationPlaceholderSize("auto")) });
+    }
+    const position = generationPositionForTask(existing, preferred, size, occupied);
+    generationTaskSizeRef.current[taskId] = size;
+    generationTaskPosRef.current[taskId] = position;
+    return position;
+  }
+
+  function livePendingPosition(id: string, fallback: CanvasPoint): CanvasPoint {
+    const pending = pendNodesRef.current.find(node => node.id === id);
+    return rfRef.current?.getNode(id)?.position ?? (pending ? {x:pending.x,y:pending.y} : fallback);
+  }
+
+  function rememberGenerationDrag(id: string, position: CanvasPoint, saveReceipt = false, operationKey?: string) {
+    const task = generationTasks.find(task => task.id === id);
+    if (id.startsWith("task-")) generationTaskPosRef.current[id] = { ...position };
+    else if (id.startsWith("pend-")) pendNodesRef.current = pendNodesRef.current.map(node => node.id === id ? { ...node, ...position } : node);
+    if (!saveReceipt || !user) return;
+    try { moveCanvasReceipt(sessionStorage, user.email, active?.key || "workspace", operationKey || task?.operationKey || `pend:${id}`, position); } catch { /* best effort, no resubmission */ }
+  }
+
   async function runGen(
     source: Artwork,
     prompt: string,
@@ -4322,7 +4306,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (generationOperationRef.current.has(operationKey)) return [];
     generationOperationRef.current.add(operationKey);
     const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const sourceNode = rfNodes.find((node) => node.id === source.id);
+    const sourceNode = rfRef.current?.getNode(source.id) ?? rfNodes.find((node) => node.id === source.id);
     const siblingTaskCount = generationTasks.filter(
       (task) => task.sourceId === source.id
     ).length;
@@ -4336,8 +4320,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             (opts?.taskOffset ?? siblingTaskCount) * (previewSize.height + NODE_LABEL_H + 24),
         }
       : { x: 0, y: 0 };
-    const taskPosition = placeGenerationPreview(preferredPosition, previewSize, rfNodes.map(node => ({ ...node.position, ...flowNodeSize(node) })));
-    generationTaskPosRef.current[taskId] = taskPosition;
+    const taskPosition = reserveGenerationPosition(taskId, preferredPosition, previewSize);
     setGenerationTasks((current) => [
       ...current,
       {
@@ -4406,6 +4389,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (!startRes.ok) throw new Error(start.error || t("canvas.genFail"));
       const jobId: string | undefined = start.jobId;
       if (!jobId) throw new Error(t("canvas.genFail"));
+      rememberGenerationDrag(taskId, generationTaskPosRef.current[taskId] ?? taskPosition, true, operationKey);
       setGenerationTasks(current => current.map(task => task.id === taskId ? { ...task, stage: "generating" } : task));
       const deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
@@ -4457,7 +4441,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 x: Math.round(basePos.x),
                 y: Math.round(y),
               }),
-            }).catch(() => {});
+            }).then(response => expectJsonOk(response, t("canvas.saveFailed")));
           })
         );
       }
@@ -4478,6 +4462,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     } finally {
       generationOperationRef.current.delete(operationKey);
       delete generationTaskPosRef.current[taskId];
+      delete generationTaskSizeRef.current[taskId];
       setGenerationTasks((current) =>
         current.filter((task) => task.id !== taskId)
       );
@@ -4492,12 +4477,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (generationOperationRef.current.has(operationKey)) return;
     generationOperationRef.current.add(operationKey);
     const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const sourceNode = rfNodes.find((node) => node.id === source.id);
+    const sourceNode = rfRef.current?.getNode(source.id) ?? rfNodes.find((node) => node.id === source.id);
     const sourceSize = flowNodeSize(sourceNode);
-    const taskPosition = sourceNode
+    const preferredPosition = sourceNode
       ? { x: sourceNode.position.x + sourceSize.width + X_GAP, y: sourceNode.position.y }
       : { x: 0, y: 0 };
-    generationTaskPosRef.current[taskId] = taskPosition;
+    const taskPosition = reserveGenerationPosition(taskId, preferredPosition, generationPlaceholderSize(source.ratio));
     setGenerationTasks((current) => [
       ...current,
       {
@@ -4543,7 +4528,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             x: Math.round(basePos.x),
             y: Math.round(basePos.y),
           }),
-        }).catch(() => {});
+        }).then(response => expectJsonOk(response, t("canvas.saveFailed")));
       }
       const freshCut = await mergeWorks([newId]);
       pushAddUndo(newId, freshCut); // 抠图结果可撤销
@@ -4556,6 +4541,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     } finally {
       generationOperationRef.current.delete(operationKey);
       delete generationTaskPosRef.current[taskId];
+      delete generationTaskSizeRef.current[taskId];
       setGenerationTasks((current) =>
         current.filter((task) => task.id !== taskId)
       );
@@ -4814,10 +4800,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const response = await run();
       const data = await readJsonSafe(response);
       if (!response.ok || !data?.id) throw new Error(data?.error || `${label}失败`);
+      const livePosition = livePendingPosition(pendingId, {x,y});
       await privateFetchRaw("/api/artworks/position", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: data.id, x: Math.round(x), y: Math.round(y) }),
+        body: JSON.stringify({ id: data.id, x: Math.round(livePosition.x), y: Math.round(livePosition.y) }),
       }).then((response) => {
         if (!response.ok) throw new Error(`${label}结果定位失败`);
       });
@@ -4970,9 +4957,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const data = await readJsonSafe(response);
       if (!response.ok) throw new Error(data?.error || "工作流执行失败");
       const images = (data.images ?? []) as { id: string }[];
+      const livePosition = livePendingPosition(pendingId, {x:baseX,y:baseY});
       for (let i = 0; i < images.length; i++) {
-        const x = Math.round(baseX + i * 40);
-        const y = Math.round(baseY + i * 40);
+        const x = Math.round(livePosition.x + i * 40);
+        const y = Math.round(livePosition.y + i * 40);
         await privateFetchRaw("/api/artworks/position", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -4990,8 +4978,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             id: videoArtworkId,
-            x: Math.round(baseX + images.length * 40),
-            y: Math.round(baseY + images.length * 40),
+            x: Math.round(livePosition.x + images.length * 40),
+            y: Math.round(livePosition.y + images.length * 40),
           }),
         });
         const freshVideo = await mergeWorks([videoArtworkId]);
@@ -5349,7 +5337,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         ? { x: sourceNode.position.x + sourceSize.width + X_GAP, y: sourceNode.position.y }
         : { x: 0, y: 0 };
     const taskId = `task-detail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    generationTaskPosRef.current[taskId] = basePosition;
+    const reservedPosition = reserveGenerationPosition(taskId, basePosition, generationPlaceholderSize(genRatio), pend ? basePosition : undefined);
     setGenerationTasks((current) => [
       ...current,
       {
@@ -5358,7 +5346,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         sourceId: source.id,
         label: fmt(t("canvas.detailProgress"), { done: 0, total: count }),
         stage: "preparing", startedAt: Date.now(), previewSize: generationPlaceholderSize(genRatio), count, completed: 0,
-        position: basePosition,
+        position: reservedPosition,
       },
     ]);
     if (pend) {
@@ -5448,9 +5436,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         .filter((shot) => shot.status === "done" && shot.id && shot.url)
         .map((shot) => shot.id);
       if (!ids.length) throw new Error(t("canvas.genFail"));
-      const fresh = await mergeWorks(ids);
+      const metadataResponse = await privateFetchRaw(`/api/artworks/get?ids=${ids.map(encodeURIComponent).join(",")}`, { cache: "no-store" });
+      const metadata = await expectJsonOk(metadataResponse, t("canvas.genFail"));
+      let fresh = (metadata.artworks ?? []) as Artwork[];
       const freshById = new Map(fresh.map((art) => [art.id, art]));
-      let detailY = basePosition.y;
+      const livePosition = generationTaskPosRef.current[taskId] ?? reservedPosition;
+      let detailY = livePosition.y;
       await Promise.all(
         ids.map((id) => {
           const y = detailY;
@@ -5461,12 +5452,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             body: JSON.stringify({
               email: user.email,
               id,
-              x: Math.round(basePosition.x),
+              x: Math.round(livePosition.x),
               y: Math.round(y),
             }),
-          }).catch(() => {});
+          }).then(response => expectJsonOk(response, t("canvas.saveFailed")));
         })
       );
+      fresh = await mergeWorks(ids); // Load the saved live placeholder coordinates, not the pre-save fallback.
       if (pend) {
         setPendNodes((current) => current.filter((node) => node.id !== pend.id));
         setSelectedPendId((current) => (current === pend.id ? null : current));
@@ -5485,6 +5477,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     } finally {
       generationOperationRef.current.delete(operationKey);
       delete generationTaskPosRef.current[taskId];
+      delete generationTaskSizeRef.current[taskId];
       setGenerationTasks((current) => current.filter((task) => task.id !== taskId));
     }
   }
@@ -7684,8 +7677,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       FAITHFUL_REGEN_PROMPT;
     setGenError(null);
     const generationSize = generationPlaceholderSize(opts?.ratio || genRatio);
-    const generationPosition = placeGenerationPreview({ x: pend.x, y: pend.y }, generationSize,
-      (rfRef.current?.getNodes() ?? rfNodes).filter(node => node.id !== pend.id).map(node => ({ ...node.position, ...flowNodeSize(node) })));
+    const livePend = rfRef.current?.getNode(pend.id)?.position ?? pendNodesRef.current.find(node => node.id === pend.id) ?? pend;
+    const generationPosition = generationPositionForTask(livePend, livePend, generationSize, []);
     setPendNodes((prev) =>
       prev.map((p) => (p.id === pend.id ? { ...p, generating: true, generationStage: "preparing", generationStartedAt: Date.now(),
         ...generationPosition, generationSize, generationCount: normalizeCanvasCount(genCount) } : p))
@@ -7735,6 +7728,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (!startRes.ok) throw new Error(start.error || t("canvas.genFail"));
       const jobId: string | undefined = start.jobId;
       if (!jobId) throw new Error(t("canvas.genFail"));
+      rememberGenerationDrag(pend.id, rfRef.current?.getNode(pend.id)?.position ?? generationPosition, true);
       setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "generating" } : p));
       const deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
@@ -7766,7 +7760,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }
       // 把生成结果落到空白节点的位置
       if (newIds.length) {
-        const livePosition = rfRef.current?.getNode(pend.id)?.position ?? generationPosition;
+        const livePosition = rfRef.current?.getNode(pend.id)?.position ?? pendNodesRef.current.find(node => node.id === pend.id) ?? generationPosition;
         let generatedY = livePosition.y;
         await Promise.all(
           newIds.map((id, index) => {
@@ -7781,7 +7775,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 x: Math.round(livePosition.x),
                 y: Math.round(y),
               }),
-            }).catch(() => {});
+            }).then(response => expectJsonOk(response, t("canvas.saveFailed")));
           })
         );
         // 已有项目不跳转；新画布仅在用户仍选中本占位时打开首个结果项目。
@@ -7994,7 +7988,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: user.email, id, x, y }),
-    }).catch(() => {});
+    }).then(response => expectJsonOk(response, t("canvas.saveFailed"))).catch(error => flashTip(error instanceof Error ? error.message : t("canvas.saveFailed")));
   }
 
   async function saveManyNodePositions(moves:Array<{id:string;from:{x:number;y:number};to:{x:number;y:number}}>){
@@ -9158,6 +9152,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 }
               }}
               onNodeDrag={(_, node) => {
+                rememberGenerationDrag(node.id, node.position);
                 const grouped = groupedDragStartRef.current;
                 if (!grouped || grouped.anchorId !== node.id) return;
                 const anchorStart = grouped.starts[node.id];
@@ -9179,6 +9174,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 );
               }}
               onNodeDragStop={(_, node, draggedNodes) => {
+                rememberGenerationDrag(node.id, node.position, true);
                 if (node.id.startsWith("task-")) {
                   // 生成中占位:每个任务独立记住拖到的位置。
                   generationTaskPosRef.current[node.id] = {
