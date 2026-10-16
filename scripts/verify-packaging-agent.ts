@@ -56,7 +56,7 @@ async function main() {
     const imported = await (await import("../src/app/api/image-skills/import/route")).POST(new Request(f.origin + "/api/image-skills/import", { method: "POST", headers: { cookie }, body: form }));
     is(imported.status, 201); const skill = (await imported.json()).skill;
     is(skill.source, "personal"); is(skill.name, "品牌包装创意策略生成器");
-    for (const path of ["SKILL.md", "references/brief-schema.md", "references/output-format.md"]) ok(skill.instructions.includes(originals.get(path)));
+    for (const path of ["SKILL.md", "references/brief-schema.md", "references/output-format.md"]) ok(skill.instructions.includes(originals.get(path)!));
     const selection = { id: skill.id, revision: skill.revision };
     const request = (method: string, id: string, message: string) => new Request(f.origin + "/api/agent", { method, headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ sessionId: id, message, skill: selection }) });
     const id = "ag-" + randomUUID(); sessions.push(id);
