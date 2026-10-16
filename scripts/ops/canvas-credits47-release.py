@@ -1,4 +1,9 @@
 """47 canvas-only immutable asset overlay; no App/Worker replacement or DB writes."""
+import sys
+if __name__ == '__main__':
+    print('RELEASE_BLOCKED=LEGACY_PATH_SPLIT_ENTRY; USE=deploy-release.sh_--lifecycle; LIVE_MUTATIONS=0', file=sys.stderr)
+    sys.exit(78)
+
 import pathlib, subprocess, json, hashlib, os, fcntl, time, re, shutil, urllib.request, sys, traceback
 from nginx_syntax import check_gateway_syntax
 E = pathlib.Path('/opt/naumi-staging/evidence/canvas-credits47-20261015')

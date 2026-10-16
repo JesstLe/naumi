@@ -5,6 +5,7 @@
   "scripts": {
     "verify:model-health": "tsx --conditions react-server scripts/verify-model-health.ts",
     "verify:model-health-ui": "node scripts/verify-model-health-ui.mjs",
+    "verify:worker-handoff": "node --test scripts/test-worker-runtime.mjs && node scripts/verify-worker-handoff.mjs",
     "postinstall": "node scripts/patch-next-body.mjs",
     "prebuild": "node scripts/maintain-public-release-notes.cjs check && node scripts/build-reference-workbench.mjs",
     "predev": "node scripts/build-reference-workbench.mjs",

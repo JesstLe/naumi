@@ -157,6 +157,25 @@ if [ "${1:-}" = --upgrade-compose ]; then
   exit 0
 fi
 
+# The in-place body is historical. New publication uses a durable lifecycle;
+# offline legacy fixtures have a separate explicit entry, not an environment-only bypass.
+if [ "${1:-}" = --lifecycle ]; then
+  shift
+  exec python3 "$(dirname "$0")/ops/release_lifecycle.py" "$@"
+fi
+if [ "${1:-}" = --offline-legacy-fixture ] &&
+   [ "${NAUMI_VERIFY_RELEASE_FIXTURE:-}" = 1 ] &&
+   [ -f /.dockerenv ] &&
+   [ -f /fixture/NAUMI_OFFLINE_RELEASE_FIXTURE ] &&
+   [ "$(command -v docker)" = /fixture/bin/docker ] &&
+   [ "$(readlink -f /opt/naumi/current)" = /opt/naumi/releases/fixture-old ] &&
+   [ ! -S /var/run/docker.sock ]; then
+  shift
+else
+  echo 'RELEASE_BLOCKED=LEGACY_INPLACE_ENTRY; USE=--lifecycle; LIVE_MUTATIONS=0' >&2
+  exit 78
+fi
+
 test "$#" -eq 3
 COMMIT=$1
 [[ "$COMMIT" =~ ^[a-f0-9]{40}$ ]]

@@ -4,6 +4,11 @@
 Run under the existing Naumi/Hub lock keeper after backups. No DB restore,
 old-container stop or configuration-secret printing is performed by this tool.
 """
+import sys
+if __name__ == '__main__' and len(sys.argv) > 2 and sys.argv[2] in ['start', 'cutover']:
+    print('RELEASE_BLOCKED=LEGACY_PATH_SPLIT_ENTRY; USE=deploy-release.sh_--lifecycle; LIVE_MUTATIONS=0', file=sys.stderr)
+    sys.exit(78)
+
 import json,pathlib,sys,subprocess,hashlib,time,urllib.request,http.client,socket,re,threading,os,shutil
 from nginx_syntax import check_gateway_syntax
 

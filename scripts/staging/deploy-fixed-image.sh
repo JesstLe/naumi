@@ -2,6 +2,9 @@
 # Fixed-image staging release under an already-held Naumi/Hub lock. Never restore a DB.
 set -Eeuo pipefail
 umask 077
+echo 'RELEASE_BLOCKED=LEGACY_INPLACE_STAGING; USE=deploy-release.sh_--lifecycle; LIVE_MUTATIONS=0' >&2
+exit 78
+# Historical implementation retained for code/rollback review, not live entry.
 test "$#" = 5
 COMMIT=$1 IMAGE_ARCHIVE=$2 BASELINE=$3 E=$4 PRIVATE_ENV=$5
 ROOT=/opt/naumi-staging
