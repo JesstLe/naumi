@@ -161,10 +161,43 @@ class LiveAdapter:
     def inventory(self, operation):
         result = collect_inventory(command=self.tx.run, private_save=self.private_save(operation),
                                    expected_host_sha256=self.plan['hostIdentitySha256'])
-        require(result.get('hostIdentityMatches') is True and result.get('dockerInventory', {}).get('complete') is True and
-                result.get('nginx', {}).get('stable') is True and not result.get('errors'), 'FRESH_BASELINE_INCOMPLETE')
-        for identity in self.plan['baseline']:
+        errors = result.get('errors')
+        require(isinstance(errors, list), 'FRESH_BASELINE_INCOMPLETE')
+        if errors:
+            # Only this explicitly authorized Oct16 103 maintenance baseline can
+            # retain these catalog observation gaps. They remain real errors,
+            # never systemd-reference completeness, task drain or stop evidence.
+            allowed = {('systemd-unit-list', 'SERVICE_LIMIT_EXCEEDED'),
+                       ('systemd-unit-cat', 'OBSERVATION_UNAVAILABLE'),
+                       ('systemd-unit-show', 'OBSERVATION_UNAVAILABLE')}
+            require(self.plan.get('target') == '103.30.76.93' and
+                    getattr(self.tx, 'target', None) == '103.30.76.93' and
+                    self.plan.get('authorization', {}).get('target') == '103.30.76.93' and
+                    all(isinstance(error, dict) and
+                        (error.get('source'), error.get('code')) in allowed for error in errors),
+                    'FRESH_BASELINE_INCOMPLETE')
+            maintenance.authorize(self.plan['authorization'])
+        require(result.get('hostIdentityMatches') is True and
+                result.get('dockerInventory', {}).get('complete') is True and
+                result.get('dockerInventory', {}).get('stable') is True and
+                result.get('nginx', {}).get('stable') is True and
+                HASH.fullmatch(result.get('nginx', {}).get('fullDumpSha256', '')),
+                'FRESH_BASELINE_INCOMPLETE')
+        containers = result.get('containers', [])
+        baseline = self.plan['baseline']
+        require(len({row.get('id') for row in containers}) == len(containers) and
+                len({row['id'] for row in baseline}) == len(baseline), 'FRESH_BASELINE_IDENTITY_INCOMPLETE')
+        for identity in baseline:
+            matches = [row for row in containers if row.get('id') == identity['id']]
+            require(len(matches) == 1 and all(matches[0].get(key) == value for key, value in identity.items()),
+                    'FRESH_BASELINE_IDENTITY_INCOMPLETE')
             self.tx.pin(identity)
+        result['baselineCoverage'] = {
+            'kind': 'layered-maintenance-baseline-not-retirement-evidence',
+            'coreComplete': True,
+            'systemdReferenceCoverage': 'partial' if errors else result.get('systemdCoverage', 'unknown'),
+            'retainedSystemdErrors': copy.deepcopy(errors),
+            'retirementEvidence': False, 'taskDrainEvidence': False}
         return result
 
     def snapshot(self, operation, previous=None):
