@@ -27,7 +27,7 @@ except ImportError:
 SHA = re.compile(r'^[a-f0-9]{64}$')
 COMMIT = re.compile(r'^[a-f0-9]{40}$')
 NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$')
-UNIT = re.compile(r'^[A-Za-z0-9_.:@-]+\.service$')
+UNIT = re.compile(r'^(?:[A-Za-z0-9_.:@-]|\\x[0-9a-fA-F]{2})+\.service$')
 SECRET = re.compile(r'KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH|COOKIE|DATABASE_URL|DSN', re.I)
 ORIGIN_KEYS = ('NAUMI_APP_ORIGIN', 'INTERNAL_APP_ORIGIN', 'APP_ORIGIN')
 
