@@ -1,3 +1,5 @@
+import { routeAgentToOwner, observeReleaseRequest } from "@/lib/release-runtime/http";
+import { releaseRuntimeEnabled, releaseError, ReleaseRuntimeError } from "@/lib/release-runtime/identity";
 import { resolveImageSkill } from "@/lib/image-skills/server";
 import { SkillError } from "@/lib/image-skills/catalog";
 import "server-only";
@@ -11,7 +13,7 @@ import { getModelAdministration } from "../model-config/server";
 import { configuredToolCost, completeSynchronousStream, failSynchronousStream } from "../billing/synchronous";
 import { dataUrlToBytes, isManagedImageUrl, readManagedObject } from "../storage";
 import { toVisionDataUrl } from "../vision-image";
-import { getOrCreateSession, primeAgentSystemPrompt, resolveVisionImages, persistAgentSession, appendSessionEvent, MODEL_ID, type Session } from "./runtime";
+import { completeAgentReleaseActivity, getOrCreateSession, primeAgentSystemPrompt, resolveVisionImages, persistAgentSession, appendSessionEvent, MODEL_ID, type Session } from "./runtime";
 import { canvasSessionPrefix, canvasProjectSessionPrefix, canvasAgentHistory } from "./canvas-history";
 import { classifyAgentFailure } from "./recovery";
 import {authorizeVideoProject} from "../canvas/video-node-service";
@@ -37,7 +39,7 @@ async function vision(artwork: ArtworkRecord, origin: string, cookie: string) {
 }
 
 /** The canvas owns references and output placement; the existing Agent owns tools and billing. */
-export async function runCanvasAgent(request: Request) {
+async function runCanvasAgentLocal(request: Request) {
   const email = await authenticatedEmail(request);
   if (!dbEnabled || !email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   if (!rateLimit(`canvas-agent:${email}`, 40, 600000)) return NextResponse.json({ error: "请求过于频繁，请稍后重试" }, { status: 429 });
@@ -83,6 +85,10 @@ export async function runCanvasAgent(request: Request) {
     if(!authorizedLegacy)return NextResponse.json({error:"该会话不属于当前项目"},{status:404});
   }
   const sessionId = authorizedLegacy?String(body.sessionId): String(body.sessionId).startsWith(prefix) ? String(body.sessionId) : prefix + createHash("sha256").update(String(body.sessionId)).digest("hex").slice(0,32);
+  if (releaseRuntimeEnabled()) {
+    const routed = await routeAgentToOwner(request, email, sessionId, "canvas", true, body);
+    if (routed) return routed;
+  }
   const started = new Date(), artifacts: Artifact[] = [], delivered = new Set<string>();
   let liveSession: Session | undefined;
   const attach = async (result: unknown,tool:string) => {
@@ -171,9 +177,13 @@ export async function runCanvasAgent(request: Request) {
           await persistAgentSession(session);
           send("final", { reply, sessionId }); send("done", { ok: true });
         } catch (error) { if (!closed) { const failure=classifyAgentFailure(error); appendSessionEvent(session,"error",failure); appendSessionEvent(session,"canvas_terminal",{status:failure.code==="ABORTED"?"stopped":"failed",turnId:session.turnId}); flush(); send("error", failure); } await failSynchronousStream(); }
-        finally { cleanup(); await persistAgentSession(session).catch(()=>undefined); session.canvasExecuting = false; if (!closed) { closed = true; controller.close(); } }
+        finally { cleanup(); await persistAgentSession(session).catch(()=>undefined); session.canvasExecuting = false; await completeAgentReleaseActivity(session).catch(()=>undefined); if (!closed) { closed = true; controller.close(); } }
       })();
     }, cancel() { cancel(); },
   });
   return new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform" } });
+}
+
+export async function runCanvasAgent(request: Request) {
+  return observeReleaseRequest(request, () => runCanvasAgentLocal(request).catch(error => { if (error instanceof ReleaseRuntimeError) return releaseError(error); throw error; }));
 }
