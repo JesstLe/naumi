@@ -26,6 +26,7 @@
 - 在数据库事务中锁定当前 `app_users` 行；与现有创建/编辑共用账号级锁。锁内按 email 查询当前有效条目、比较内容哈希、检查配额再创建。因此并发同文件只有一条。
 - 既有 revision CAS 更新/归档不变；导入不接受客户端 selection 或 revision，也不覆盖已有定义。
 - SKILL.md 及 references 正文均合并为流程数据，不截断、不摘要。UTF-8 解码严格校验，换行统一 LF，保存沿用现有字段 trim 规则。
+- 以 CommonMark 语法树检查 SKILL.md 及 references 中的内联/图片/引用式链接（代码示例不算依赖）。本地引用必须安全解析到包内允许的文件树且目标存在；单独 Markdown 缺本地资料时明确要求打包 ZIP，ZIP 缺资料时明确报缺失文件，不保存不完整 Skill。http(s) 外链与本页锚点不作本地依赖，不访问网络。
 - 名称 ≤48 字符、简介 ≤140 字符、流程 ≤6000 字符。合并超限明确返回 413，不静默丢失资料。
 - YAML 仅解析普通文本元数据及 `>`/`|` 描述，不执行/加载任何 YAML 标签、引用或外部内容。agent metadata 不赋予工具权限。
 
@@ -56,12 +57,12 @@ npx tsx --conditions react-server scripts/verify-skill-import.ts
 
 ```text
 SOURCE_SKILL=PASS NAME=品牌包装创意策略生成器 CHARACTERS=2706 FULL_REFERENCES=YES
-SKILL_IMPORT=PASS CHECKS=41 PARSER=PASS DATABASE=NOT_RUN PROVIDER_CALLS=0
+SKILL_IMPORT=PASS CHECKS=57 PARSER=PASS DATABASE=NOT_RUN PROVIDER_CALLS=0
 ```
 
-退出码 0。覆盖原附件 SKILL 与两个 reference 全文、中文元数据、JSON兼容、同内容哈希、单根ZIP、路径/双根/CRC/脚本/二进制/symlink/executable/zipbomb/条目数/长度拒绝以及 feature scope。
+退出码 0。覆盖原附件 SKILL 与两个 reference 全文、中文元数据、JSON兼容、同内容哈希、单根ZIP、路径/双根/CRC/脚本/二进制/symlink/executable/zipbomb/条目数/长度拒绝以及 feature scope。补充单文件缺reference、ZIP缺reference、嵌套reference缺失、引用式链接、根目录逃逸/encoded traversal/非http(s)协议拒绝、正确相对引用/外链/锚点/代码示例通过。
 
-脚本 DB/API 段包含：登录401、创建201/重复200、伪 owner 与跨账号隔离、4并发仅1新建、同名不同内容、ZIP直接保存及提示、文件/请求流上限、无文件400、revision CAS409、编辑与归档后重导、他人读取拒绝。此段需在总控锁定版依赖 runtime 集中执行后补记录，不将解析通过当成数据库验收。
+脚本 DB/API 段包含：登录401、创建201/重复200、伪 owner 与跨账号隔离、4并发仅1新建、同名不同内容、ZIP直接保存及提示、文件/请求流上限、无文件400、revision CAS409、编辑与归档后重导、他人读取拒绝。总控已在锁定版依赖 runtime 运行最初版本 57 项（含原 41 项解析）全部通过；新增引用完整性校验后的版本仍需总控集中复跑，不将解析通过当成新版本数据库验收。
 
 本机共享 node_modules 为旧 React18/Next14，与锁定 React19/Next15 不符：`--conditions react-server` 在旧 React 报 `This entry point is not yet supported outside of experimental channels`。总控已在隔离 runtime 安装锁定依赖，本模块不改共享依赖。TypeScript 本模块错误已修正；共享依赖完整检查剩 `canvas-action-menu.tsx:82` 的既有 React ref 类型错误，不记录全库 tsc 通过。
 
