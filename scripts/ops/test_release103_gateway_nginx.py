@@ -22,7 +22,8 @@ import uuid
 
 import release103_gateway as hk
 from release_client_compat import Dump, file_sha
-from test_release103_gateway import ROOT, ORIGINS, captured
+from test_release103_gateway import ROOT, ORIGINS as DEFAULT_ORIGINS, captured
+ORIGINS=tuple(json.loads(os.environ['NAUMI103_CANDIDATE_ORIGINS'])) if os.environ.get('NAUMI103_CANDIDATE_ORIGINS') else DEFAULT_ORIGINS
 
 
 def certificate(root):
@@ -55,7 +56,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
   self.send_response(200);self.send_header('Content-Type','application/json');self.end_headers()
   self.wfile.write(json.dumps({'port':self.server.server_port,'path':self.path,'xff':self.headers.get('X-Forwarded-For'),'cf':self.headers.get('CF-Connecting-IP'),'proto':self.headers.get('X-Forwarded-Proto')}).encode())
  def log_message(self,*a):pass
-for port in [13012,13014,13016,13019,13022,13023,13024,13025,13026,13027,13028,13029,13030,13031,13032,13033,13038,13039,13040,13041,13062,13110,13111,13112]:
+for port in [13012,13014,13016,13019,13022,13023,13024,13025,13026,13027,13028,13029,13030,13031,13032,13033,13038,13039,13040,13041,13062,13100,13101,13102,13110,13111,13112]:
  s=http.server.ThreadingHTTPServer(('127.0.0.1',port),Handler)
  threading.Thread(target=s.serve_forever,daemon=True).start()
 open('/tmp/ready','w').write('ready')
@@ -68,8 +69,12 @@ def main():
     assert not base.exists(), 'New distinct fixture output required'
     base.mkdir(parents=True)
     text, sources, manifest = captured()
-    hk.bundle(text, sources, *ORIGINS, '/fixture/union', manifest, base/'candidate')
-    hk.bundle(text, sources, *ORIGINS, '/fixture/union', manifest, base/'maintenance', True)
+    union = Path(os.environ.get('NAUMI103_STATIC_UNION', str(ROOT / 'legacy-static-union')))
+    manifest = json.loads((union/'manifest.json').read_text())
+    static_root = os.environ.get('NAUMI103_STATIC_ROOT', '/fixture/union')
+    asset_count = len(manifest['assets'])
+    hk.bundle(text, sources, *ORIGINS, static_root, manifest, base/'candidate')
+    hk.bundle(text, sources, *ORIGINS, static_root, manifest, base/'maintenance', True)
     dump, server, locations = hk.inventory(text)
     live = base / 'live'
     for name, raw in sources.items():
@@ -79,7 +84,6 @@ def main():
     shutil.copyfile(base/'cert.pem', cert/'origin.pem');shutil.copyfile(base/'key.pem', cert/'origin.key')
     # Avoid copied static bytes: original union is mounted read-only; Nginx hashes
     # every actual URL over HTTP in candidate and maintenance modes.
-    union = ROOT / 'legacy-static-union'
     (base/'union').mkdir()  # nested readonly bind mount must have a mountpoint
     (base/'backend.py').write_text(BACKEND, encoding='utf-8')
     name = 'hk103-gateway-' + uuid.uuid4().hex[:10]
@@ -99,7 +103,7 @@ def main():
         main_config = live/'etc/nginx/nginx.conf'
         main_config.write_bytes(sources['/etc/nginx/nginx.conf'].replace(b'worker_processes auto;',b'worker_processes 1;'))
         created.append(nginx)
-        run(['docker','run','-d','--name',nginx,'--label','io.naumi.hk103-fixture='+name,'--memory','128m','--cpus','0.5','--network','container:'+backend,'-v',str(live/'etc/nginx')+':/etc/nginx:ro','-v',str(base)+':/fixture:ro','-v',str(union)+':/fixture/union:ro','nginx:1.27-alpine','sh','-c','adduser -S -G nginx www-data && exec nginx -g "daemon off;"'])
+        run(['docker','run','-d','--name',nginx,'--label','io.naumi.hk103-fixture='+name,'--memory','128m','--cpus','0.5','--network','container:'+backend,'-v',str(live/'etc/nginx')+':/etc/nginx:ro','-v',str(base)+':/fixture:ro','-v',str(union)+':'+static_root+':ro','nginx:1.27-alpine','sh','-c','adduser -S -G nginx www-data && exec nginx -g "daemon off;"'])
 
         def request(path, tls=False):
             url = ('https' if tls else 'http')+'://127.0.0.1:'+(tls_port if tls else http_port)+urllib.parse.quote(path, safe='/?=&%')
@@ -150,7 +154,7 @@ def main():
             syntax_and_reload(instrumented.encode())
             rows = []
             for probe in probes:
-                status, data, _ = request(probe['path'])
+                status, data, _ = request(probe['path'],tls=True)
                 assert status == probe['status'], (mode, probe, status, data[:200])
                 if probe['proxy']:
                     port = int(probe['proxy'].split(':')[2].split('/')[0])
@@ -172,7 +176,7 @@ def main():
             assert status==probe['status'], (probe,status,data[:200])
             if key not in hk.DENIES:
                 row=json.loads(data)
-                port=13062 if key in hk.FLEET else 13111 if key in hk.DESKTOP else 13112 if key in hk.ENTERPRISE else 13110
+                port=13062 if key in hk.FLEET else int(ORIGINS[1 if key in hk.DESKTOP else 2 if key in hk.ENTERPRISE else 0].rsplit(':',1)[1])
                 assert row['port']==port,(key,row,port)
                 assert row['proto']=='https' and row['xff']!='203.0.113.99' and not row['cf'], (key,row)
                 if probe['proxy'] and '/api/' in key and 'desktop/api' in key:
@@ -184,22 +188,29 @@ def main():
             candidate_rows.append({'location':key,'status':status})
         for path, expected in [('/enterprise/api','/api'),('/enterprise/api/team/me','/api/team/me')]:
             status,data,_=request(path);row=json.loads(data)
-            assert status==200 and row['port']==13110 and row['path']==expected,(path,row)
+            assert status==200 and row['port']==int(ORIGINS[0].rsplit(':',1)[1]) and row['path']==expected,(path,row)
         assert request('/enterprise/api/video/worker/tick')[0]==403
         results['candidate']={'retainedRouteClasses':len(candidate_rows),'retiredStaticClasses':len(hk.FALLBACKS),'rows':candidate_rows,'threeCompiledUiOrigins':True,'allNaumiApiOnMain':True,'forwardedIdentitySpoofCleared':True}
 
         def check_static(mode):
             checked=0
+            mime_counts={}
+            # Parse exact source mime.types, not platform mimetypes guesses.
+            mime_table={extension:node.name for block in hk.Dump(text).nodes['/etc/nginx/mime.types'] for node in (block.children or []) for extension in node.args}
             for item in manifest['assets']:
                 status,data,headers=request(item['url'])
                 assert status==200 and len(data)==item['size'] and hashlib.sha256(data).hexdigest()==item['sha256'],(mode,item['url'],status)
                 assert 'immutable' in headers.get('Cache-Control','')
+                expected_mime=mime_table.get(Path(item['url']).suffix.removeprefix('.'),'application/octet-stream')
+                actual_mime=headers.get('Content-Type','').split(';')[0]
+                assert actual_mime==expected_mime,(mode,item['url'],actual_mime,expected_mime)
+                mime_counts[actual_mime]=mime_counts.get(actual_mime,0)+1
                 checked+=1
             for prefix in hk.PREFIXES:
                 assert request(prefix+'fixture-not-present.js')[0]==404
-            results[mode+'Static']={'exactHttpHashes':checked,'prefixes':list(hk.PREFIXES),'missing404':True}
+            results[mode+'Static']={'exactHttpHashes':checked,'prefixes':list(hk.PREFIXES),'missing404':True,'mimeCounts':mime_counts,'mimeExact':True}
         check_static('candidate')
-        print('MODIFIED=PASS REAL_LINUX_NGINX=YES ORIGINAL_CLASSES_ACCOUNTED=65 RETIRED_STATIC=17 FLEET_EXACT=9 UI_ORIGINS=3 API_MAIN=YES STATIC_HASHES=2684 TLS_AND_SPOOF_HEADERS=PASS',flush=True)
+        print('MODIFIED=PASS REAL_LINUX_NGINX=YES ORIGINAL_CLASSES_ACCOUNTED=65 RETIRED_STATIC=17 FLEET_EXACT=9 UI_ORIGINS=3 API_MAIN=YES STATIC_HASHES='+str(asset_count)+' MIME=EXACT TLS_AND_SPOOF_HEADERS=PASS',flush=True)
         syntax_and_reload((base/'maintenance/after'/hk.SITE.lstrip('/')).read_bytes())
         for probe in probes:
             key=probe['location']
@@ -210,7 +221,7 @@ def main():
             else:assert status==503 and headers.get('Retry-After')=='60'
         check_static('maintenance')
         results['maintenance']={'naumi503':True,'fleetUnchanged':True,'deniesPreserved':True}
-        print('MAINTENANCE=PASS NAUMI=503 FLEET=13062 STATIC_HASHES=2684 DENIES=PRESERVED',flush=True)
+        print('MAINTENANCE=PASS NAUMI=503 FLEET=13062 STATIC_HASHES='+str(asset_count)+' MIME=EXACT DENIES=PRESERVED',flush=True)
         # Run executable ROLLBACK.sh on ANOTHER exact candidate copy; leave the
         # MODIFIED_FILE/candidate artifacts changed. No reload is in the script.
         rollback_copy=base/'rollback-copy';shutil.copytree(base/'candidate/after',rollback_copy)
@@ -232,16 +243,16 @@ Input: exact captured 103 full dump + exact original3configs; isolated fixture b
 Output: BASELINE=PASS REAL_LINUX_NGINX=YES ORIGINAL_ROUTE_CLASSES=65 FLEET=13062 TLS=YES
 Exit: 0
 MODIFIED command: same concentrated integration run
-Input: candidate main13110/desktop13111/enterprise13112; true prefixed2684asset manifest/bytes
-Output: MODIFIED=PASS REAL_LINUX_NGINX=YES ORIGINAL_CLASSES_ACCOUNTED=65 RETIRED_STATIC=17 FLEET_EXACT=9 UI_ORIGINS=3 API_MAIN=YES STATIC_HASHES=2684 TLS_AND_SPOOF_HEADERS=PASS
-Output: MAINTENANCE=PASS NAUMI=503 FLEET=13062 STATIC_HASHES=2684 DENIES=PRESERVED
+Input: candidate main13110/desktop13111/enterprise13112; true prefixedASSET_COUNTasset manifest/bytes
+Output: MODIFIED=PASS REAL_LINUX_NGINX=YES ORIGINAL_CLASSES_ACCOUNTED=65 RETIRED_STATIC=17 FLEET_EXACT=9 UI_ORIGINS=3 API_MAIN=YES STATIC_HASHES=ASSET_COUNT MIME=EXACT TLS_AND_SPOOF_HEADERS=PASS
+Output: MAINTENANCE=PASS NAUMI=503 FLEET=13062 STATIC_HASHES=ASSET_COUNT MIME=EXACT DENIES=PRESERVED
 Exit: 0
 ROLLBACK command (inside isolated Linux fixture): bash /fixture/candidate/ROLLBACK.sh /fixture/rollback-copy
 Input: distinct exact candidate-copy config root
 Output: ROLLBACK=PASS EXACT_SOURCE_FILES=3 ORIGINAL_BYTES=RESTORED RELOAD=NOT_EXECUTED
 Exit: 0
 Restored behavior: 65 original route classes, original /api/version port13039, exact original3source files; candidate artifacts stay changed.
-'''
+'''.replace('ASSET_COUNT',str(asset_count))
         for folder in ('candidate','maintenance'):
             p=base/folder/'VERIFICATION.txt'
             with p.open('a',encoding='utf-8') as h:h.write(evidence+'\nFOUR_PATHS:\n'+'\n'.join(str(base/folder/n) for n in ('MODIFIED_FILE','DIFF_FILE.patch','VERIFICATION.txt','ROLLBACK.sh'))+'\n')
