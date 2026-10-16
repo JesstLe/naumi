@@ -63,3 +63,14 @@
 ## 最终候选复核中
 - 首次下午完整Linux固定9138b0ab316e768802db96f26214a3115bb56e9a / 1792131956已构建成功，完整TypeScript0。此image尚不可交付：后续真实middleware整合审阅发现GET tick receipt被feature gate提前401，虽直接route59项通过，真实入口尚需精确修复。
 - 原9138和5405镜像、各失败日志作为历史证据保留，根等待业务修复后重新固定公开条目/业务SHA并重建；不将旧构建签成最终版本。
+
+
+## 15:20 最新覆盖：Dock整合、真实任务双采样、容量
+- 再次fetch origin/main及全部同事分支；main仍c2634fba，发现同事14:55已完成/推送的视频节点Dock004dd038，无冲突cherry-pick为7de4de5。实际整合Canvas八文件与负责人副本逐SHA一致，原生Edge21组/完整tsc exit0，保留原epoch/layout保护。随后固定公开条目与**业务0614f9ae6f9174bf804ca3e98dd7011c54010838 / BUILD_VERSION1792134697**。ops/docs后续HEAD不等于应用source；6272是已经完整验收的前候选，不覆盖其证据。
+- 本机Linux仍6GiB RAM/swap=RAM、2CPU、Nodeheap4GiB串行四构建。main d04a89ae12f2904f6b85b782b918d1ca023f4e398a7b055e7a831d02cd451b82、HK0145e1989be2ebb60fa2cd5d5fbc6bdb3907acd48f2bd1b19b9d87bca089cf53已exit0；desktop首尝试DockerHub TLS handshake timeout（在读取基础镜像元数据），保留失败日志后相同固定源码重试。最终以output/release47-evening/final-0614/IMAGES.json及每项exit为准，不拿main成功冒充四构建成功。
+- 0614main已重复两轮真实旧客户端→新API save/undo/redo/PG读回/回退，以及46项真实image/Worker entry/control验收。896MiB/heap512峰385.86MiB、旧254.39、Worker38.89，memory.events全0。721实际static与4CAS新包通过；这不代替受控生产并发观测。三UI/统一HK候选另记实际结果。
+- 已修正supplier未知状态覆盖、真实frozen请求/owner/wire_model/plan/output ref，并用**最终helper f34be35ba0df1fbcd1a98a1a737fcf02469a705913f82c7eb2ace7bf6538d19b**在47、103各真实只读双采样。两站preservationComplete=true/preservationVerified=true/noOriginalSupplierMutation=true、unknownTables=[]，47允许6新关联行、1030，REMOTE_EXIT0。两站23表的原ID/绑定/digest及ledger比较通过，**drainProven始终false**，不是后台已空。
+- 真实私有证据各站在E:/Workspace/naumi/output/release{47|103}-evening-20261016/task-proof-final-{before,after}.json、task-proof-final-summary.json。完整原payload和加密凭据仍需当晚可读一致性DB备份；proof不是恢复备份，reservation正常消失仍保守审查，不凭comparison自动退款/重放。
+- 15:20只读47：RAM7270/MemAvailable1753/SwapFree4095MiB、13运行、canonical current.json不存在；所有Web已知video timer为0（auth-login旧独立Node服务无worker secret）。主Webcurrent约2387.83MiB。Nginx完整SHA仍f854851f4c836f2bd4e12425e5ea0944c23c9fd44a7021fa81912b00f37a97e8。当前**未达到896+128+1024=2048MiB**预算，18:30须重采并处理确证的冗余，不先进入维护再强切。
+- 15:06只读HK：RAM7941/MemAvailable1045/SwapFree0MiB、31运行、canonical无；旧Web视频timer均0。三新Web需要3840MiB，仍不满足；已审阅单HKmain实际包含三UI routes，正在本机验证显式unified-web-three-ui以降为2048MiB。只有真实三UI行为/权限/媒体/网关验收与session schema通过才采用，不能根据源码就宣称等价。未知内存Agent/后台原槽继续保留，不依赖swap、不批停历史容器。
+- 服务器仍仅只读，没有上传、创建/停止/暂停容器、Nginx/DB/媒体写入。单次预约仍同ID、enabled、18:30北京时间，提示词已更新0614与真实容量/任务结果；触发立即禁用防周循环。
