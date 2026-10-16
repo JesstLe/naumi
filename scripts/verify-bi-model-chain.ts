@@ -53,6 +53,11 @@ async function main() {
   }
   config.bindings["text.generate"] = "front-a"; config.bindings["agent.text"] = "front-a";
   const snapshot = { version: 1, config, digest: modelConfigDigest(config) }, billing = { version: 1, config: fixtureConfig() };
+  // Integrated live-channel guards require an authoritative active fixture revision.
+  await (await import("../src/lib/model-config/schema")).ensureModelSchema(sql);
+  await sql.query("INSERT INTO app_model_config_versions(operation_id,actor,reason,config,digest) VALUES($1,'fixture','BI integration fixture',$2,$3)",[randomUUID(),JSON.stringify(config),snapshot.digest]);
+  await sql.query("INSERT INTO app_model_config_state(singleton,active_version) VALUES(true,1)");
+
   const executor = createModelExecutor({ runtime: { byVersion: async () => structuredClone(snapshot), prepareExecution: async () => { throw Error("Unexpected gateway projection"); } }, credentials: { read: async () => "PRIVATE_FIXTURE_KEY" } as any, trustedOrigins: [origin], gateway: () => { throw Error("Unexpected gateway call"); } });
   const frozen = await executor.resolve({ requestedModelId: "front-a", snapshot, billing, binding: "text.generate" });
   assert.ok(!JSON.stringify(frozen).includes("frontendModel"),"Frozen execution shape remains rollback compatible");

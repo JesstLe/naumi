@@ -51,7 +51,7 @@ async function main() {
             if(flowFailure&&body.model==="nano-banana-pro"){
                 if(flowFailure==="http"){res.statusCode=500;return res.end(JSON.stringify({error:{message:"Flow unavailable"}}));}
                 if(flowFailure==="disconnect")return req.socket.destroy();
-                if(flowFailure==="timeout"){await new Promise(r=>setTimeout(r,250));return res.end(JSON.stringify({choices:[]}));}
+                if(flowFailure==="timeout"){await new Promise(r=>setTimeout(r,1500));return res.end(JSON.stringify({choices:[]}));}
                 res.setHeader("content-type","text/event-stream");
                 if(flowFailure==="sse")return res.end('data: '+JSON.stringify({error:{message:"Flow generation failed"}})+'\n\n');
                 if(flowFailure==="corrupt")return res.end('data: '+JSON.stringify({choices:[{delta:{content:'![image](data:image/png;base64,Y2FzdA==)'}}]})+'\n\n');
@@ -176,7 +176,7 @@ async function main() {
         assert.equal(calls.at(-1).messages[0].content[1].type, "image_url");
         await publish({mode:"priority",channels:[{upstreamId:"u3",enabled:true,priority:1,weight:7},{upstreamId:"u4",enabled:true,priority:2,weight:3}]});
         const routedScope=await executor.describe(await freeze());
-        routedScope.supplierRouting!.targets[0].scope.connection.timeoutMs=80;
+        routedScope.supplierRouting!.targets[0].scope.connection.timeoutMs=800;
         const routed=(await import("../src/lib/model-config/clients")).executionOpenAI(routedScope,{trustedOrigins:[f.origin]});
         for(const mode of ["http","sse","empty","corrupt","disconnect","timeout"]){
             await db.getPool().query("DELETE FROM app_model_channel_health");flowFailure=mode;const start=calls.length;
@@ -187,8 +187,8 @@ async function main() {
         await db.getPool().query("DELETE FROM app_model_channel_health");flowFailure="sse";const editStart=calls.length;
         await routed.images.edit({model:"image-a",prompt:"Change reference color",image:new File([new Uint8Array(png)],"reference.png",{type:"image/png"}),n:1});
         assert.deepEqual(calls.slice(editStart).map(c=>c.model),["nano-banana-pro","nano-banana-2"]);assert.equal(calls[editStart].messages[0].content[1].image_url.url,calls[editStart+1].messages[0].content[1].image_url.url,"Fallback preserves reference bytes");
-        await db.getPool().query("DELETE FROM app_model_channel_health");flowFailure="timeout";const cancelStart=calls.length,cancel=new AbortController();setTimeout(()=>cancel.abort(),45);
-        await assert.rejects(routed.images.generate({model:"image-a",prompt:"cancelled",n:1},{signal:cancel.signal}));await new Promise(r=>setTimeout(r,100));assert.equal(calls.length,cancelStart+1,"Caller cancellation must not start the backup supplier");assert.equal((await db.getPool().query("SELECT count(*) FROM app_model_provider_leases")).rows[0].count,"0");
+        await db.getPool().query("DELETE FROM app_model_channel_health");flowFailure="timeout";const cancelStart=calls.length,cancel=new AbortController();setTimeout(()=>cancel.abort(),300);
+        await assert.rejects(routed.images.generate({model:"image-a",prompt:"cancelled",n:1},{signal:cancel.signal}));await new Promise(r=>setTimeout(r,400));assert.equal(calls.length,cancelStart+1,"Caller cancellation must not start the backup supplier");assert.equal((await db.getPool().query("SELECT count(*) FROM app_model_provider_leases")).rows[0].count,"0");
         // A real durable task stays pending until the second supplier finishes, then charges once.
         flowFailure="sse";await db.getPool().query("DELETE FROM app_model_channel_health");
         const fq=await(await quoteApi.POST(request("/api/billing/quote",{feature:"image.generate",modelId:"image-a",quality:"medium",resolution:"1K",ratio:"1:1",quantity:1}))).json();

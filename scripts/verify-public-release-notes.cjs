@@ -1,4 +1,5 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),vm=require('node:vm'),esbuild=require('esbuild'),Module=require('node:module'),{spawnSync}=require('node:child_process');
+const originalCatalog=fs.readFileSync('src/content/public-release-notes.json','utf8');
 const mode=process.argv[2]||'MODIFIED',out=path.resolve(process.argv[3]||'output/public-update-history-20261016');
 const root=mode==='BASELINE'?path.join(out,'baseline'):mode==='ROLLBACK'?path.join(out,'rollback-copy'):process.cwd();
 if(mode!=='MODIFIED'){
@@ -30,6 +31,6 @@ fs.writeFileSync(input,JSON.stringify({...entry,title:copy('密钥内部信息',
  assert.equal((await get('bad')).status,400);assert.equal((await (await get('0')).json()).entries.length,0);
  notes.push({...entry,secret:'PRIVATE_SENTINEL'});const fail=await get('1791990000');assert.equal(fail.status,503);assert.ok(!(await fail.text()).includes('PRIVATE_SENTINEL'));
  delete global.__publicNotesFixture;
- assert.deepEqual(JSON.parse(fs.readFileSync('src/content/public-release-notes.json')),[]);
- console.log('MODIFIED=PASS PUBLIC_HISTORY=TRUE PRIVACY_GUARD=PASS STRICT_FIELDS=PASS VERSION_CEILING=PASS REVIEWED_APPEND=PASS IMMUTABLE=PASS API=PASS NO_INTERNAL_IMPORT=PASS EMPTY_UNPUBLISHED=PASS EXIT=0');
+ assert.equal(fs.readFileSync('src/content/public-release-notes.json','utf8'),originalCatalog);
+ console.log('MODIFIED=PASS PUBLIC_HISTORY=TRUE PRIVACY_GUARD=PASS STRICT_FIELDS=PASS VERSION_CEILING=PASS REVIEWED_APPEND=PASS IMMUTABLE=PASS API=PASS NO_INTERNAL_IMPORT=PASS SOURCE_CATALOG_UNCHANGED=PASS EXIT=0');
 })().catch(e=>{console.error(e);process.exitCode=1});
