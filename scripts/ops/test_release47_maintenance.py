@@ -23,6 +23,22 @@ class Maintenance(unittest.TestCase):
         for change in [dict(target='101.133.166.67'),dict(restoreDatabase=True),dict(replayAcceptedTasks=True),dict(userAcknowledgement='无人在线')]:
             with self.assertRaises(Hold): m.authorize(dict(self.spec(),**change),dt.datetime.fromisoformat('2026-10-16T18:30:00+08:00'))
 
+    def test_explicit_immediate_hk_only_starts_at_actual_user_authorization(self):
+        spec=dict(self.spec(), mode='immediate-HK-only',target='103.30.76.93',
+                  userImmediateAcknowledgement='现在就上线香港',notBefore='2026-10-16T08:41:00Z')
+        for at in ['2026-10-16T08:41:00+00:00','2026-10-16T16:41:00+08:00','2026-10-16T23:59:59+08:00']:
+            m.authorize(spec,dt.datetime.fromisoformat(at))
+        for at in ['2026-10-16T08:40:59+00:00','2026-10-17T00:00:00+08:00','2026-10-15T23:59:59+08:00']:
+            with self.assertRaisesRegex(Hold,'WINDOW'):m.authorize(spec,dt.datetime.fromisoformat(at))
+        for change in [dict(target='47.105.59.142'),dict(target='101.133.166.67'),dict(date='2026-10-17'),
+                       dict(userAcknowledgement='无人在线'),dict(userImmediateAcknowledgement='现在上线'),
+                       dict(notBefore='2026-10-16T00:00:00Z'),dict(notBefore=None),
+                       dict(restoreDatabase=True),dict(replayAcceptedTasks=True)]:
+            with self.assertRaises(Hold):m.authorize(dict(spec,**change),dt.datetime.fromisoformat('2026-10-16T08:41:00+00:00'))
+        # An immediate acknowledgement alone cannot change the default mode.
+        normal=dict(spec,mode='one-time-maintenance')
+        with self.assertRaisesRegex(Hold,'EVENING_WINDOW'):m.authorize(normal,dt.datetime.fromisoformat('2026-10-16T08:41:00+00:00'))
+
     def test_maintenance_rejects_tasks_lost_or_supplier_changed_or_unknown(self):
         before=after={'databaseIdentitySha256':'a'*64,'preservationComplete':True}
         result={'noMissingJobs':True,'noOriginalSupplierMutation':True,'preservationVerified':True,

@@ -115,7 +115,12 @@ def valid_plan(plan):
             require(set(web['requiredChecks']) >= {'desktop-ui', 'enterprise-ui'}, 'THREE_REAL_UI_ACCEPTANCE_CHECKS_REQUIRED')
     require(plan.get('restoreDatabase') is False and plan.get('replayAcceptedTasks') is False and
             plan.get('legacyCaller') and plan.get('database') and plan.get('baseline'), 'PRESERVATION_SCOPE_REQUIRED')
-    if plan['target'] == '103.30.76.93':
+    if maintenance.immediate_hk(plan['authorization']):
+        require(plan['target'] == '103.30.76.93' and
+                plan['authorization'].get('userImmediateAcknowledgement') == maintenance.IMMEDIATE_HK_ACK and
+                plan['authorization'].get('notBefore') == maintenance.IMMEDIATE_HK_NOT_BEFORE,
+                'EXPLICIT_IMMEDIATE_HK_ONLY_AUTHORIZATION_REQUIRED')
+    elif plan['target'] == '103.30.76.93':
         require(plan.get('predecessor47') and HASH.fullmatch(plan['predecessor47'].get('sha256', '')),
                 '47_BEFORE_103_RECEIPT_REQUIRED')
     return plan
@@ -622,7 +627,7 @@ class MaintenanceSession:
                 require(self.state.get('planSha256') == self.plan_hash and isinstance(self.state.get('operations'), dict), 'ACTIVE_PLAN_CHANGED')
         else:
             self.state = self.new_state()
-        if self.plan['target'] == '103.30.76.93':
+        if self.plan['target'] == '103.30.76.93' and not maintenance.immediate_hk(self.plan['authorization']):
             receipt = load_json(relative_artifact(self.tx.folder, self.plan['predecessor47']))
             require(receipt.get('target') == '47.105.59.142' and
                     receipt.get('phase') in ['COMPLETE', 'MIGRATED_CLEANUP_PENDING'] and

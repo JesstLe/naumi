@@ -14,16 +14,31 @@ from release47_host import Hold, environment, public_identity, require, sha
 
 DATE = '2026-10-16'
 ACK = '本次接受短维护迁移，保留任务和数据'
+IMMEDIATE_HK_ACK = '现在就上线香港'
+IMMEDIATE_HK_NOT_BEFORE = '2026-10-16T08:41:00Z'
+
+
+def immediate_hk(spec):
+    return spec.get('mode') == 'immediate-HK-only'
 
 
 def authorize(spec, now=None):
     now = now or dt.datetime.now(dt.timezone.utc)
     local = now.astimezone(dt.timezone(dt.timedelta(hours=8)))
-    require(spec.get('mode') == 'one-time-maintenance' and spec.get('target') in ['47.105.59.142', '103.30.76.93'] and
+    immediate = immediate_hk(spec)
+    require(spec.get('mode') in ['one-time-maintenance', 'immediate-HK-only'] and spec.get('target') in ['47.105.59.142', '103.30.76.93'] and
             spec.get('date') == DATE and spec.get('userAcknowledgement') == ACK,
             'EXPLICIT_OCT16_MAINTENANCE_AUTHORIZATION_REQUIRED')
-    require(local.date().isoformat() == DATE and local.time() >= dt.time(18, 30),
-            'OUTSIDE_AUTHORIZED_EVENING_WINDOW')
+    if immediate:
+        require(spec.get('target') == '103.30.76.93' and
+                spec.get('userImmediateAcknowledgement') == IMMEDIATE_HK_ACK and
+                spec.get('notBefore') == IMMEDIATE_HK_NOT_BEFORE, 'EXPLICIT_IMMEDIATE_HK_ONLY_AUTHORIZATION_REQUIRED')
+        require(now.tzinfo is not None and local.date().isoformat() == DATE and
+                now >= dt.datetime.fromisoformat(IMMEDIATE_HK_NOT_BEFORE.replace('Z', '+00:00')),
+                'OUTSIDE_AUTHORIZED_IMMEDIATE_HK_WINDOW')
+    else:
+        require(local.date().isoformat() == DATE and local.time() >= dt.time(18, 30),
+                'OUTSIDE_AUTHORIZED_EVENING_WINDOW')
     require(spec.get('restoreDatabase') is False and spec.get('replayAcceptedTasks') is False,
             'TASK_AND_DATA_PRESERVATION_REQUIRED')
 

@@ -237,6 +237,23 @@ class SessionTests(unittest.TestCase):
         spec['target']='47.105.59.142';spec['authorization']['target']=spec['target']
         with self.assertRaisesRegex(m.Hold,'TOPOLOGY'):m.valid_plan(spec)
 
+    def test_immediate_hk_only_removes_47_predecessor_but_no_other_gate(self):
+        spec=plan('103.30.76.93');spec.pop('predecessor47')
+        spec['authorization'].update(mode='immediate-HK-only',
+            userImmediateAcknowledgement='现在就上线香港',notBefore='2026-10-16T08:41:00Z')
+        self.assertEqual(m.valid_plan(spec)['target'],'103.30.76.93')
+        self.session=self.make_new(spec);self.to_candidates();self.step('acceptance');self.step('preservation')
+        self.adapter.fail='legacy-safety'
+        with self.assertRaises(m.Hold):self.step('activate')
+        self.assertNotIn('worker-resume',self.adapter.calls)
+        normal=copy.deepcopy(spec);normal['authorization']['mode']='one-time-maintenance'
+        with self.assertRaisesRegex(m.Hold,'47_BEFORE_103'):m.valid_plan(normal)
+        for change in [dict(userImmediateAcknowledgement='wrong'),dict(notBefore='2026-10-16T08:40:00Z')]:
+            invalid=copy.deepcopy(spec);invalid['authorization'].update(change)
+            with self.assertRaises(m.Hold):m.valid_plan(invalid)
+        wrong=plan();wrong['authorization'].update(spec['authorization'],target='47.105.59.142')
+        with self.assertRaisesRegex(m.Hold,'IMMEDIATE_HK_ONLY'):m.valid_plan(wrong)
+
     def test_no_secret_raw_snapshot_or_artifacts_in_public_result(self):
         self.to_active();raw=json.dumps(self.session.public())
         self.assertNotIn('secret-not-printed',raw);self.assertNotIn('tables',raw);self.assertNotIn('private',raw)
