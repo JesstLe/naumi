@@ -61,7 +61,7 @@ def main():
     cert=live/'etc/nginx/ssl/naumi.top';cert.mkdir(parents=True)
     (cert/'origin.pem').write_bytes((base/'cert.pem').read_bytes())
     (cert/'origin.key').write_bytes((base/'key.pem').read_bytes())
-    (base/'backend.py').write_text(BACKEND,encoding='utf-8')
+    (base/'backend.py').write_text(BACKEND.replace('13062,13110','13062,13100,13110'),encoding='utf-8')
     name='hk103-static-'+uuid.uuid4().hex[:10]
     backend,nginx=name+'-backend',name+'-nginx'
     created=[]
@@ -161,6 +161,67 @@ def main():
         print(literal,flush=True)
         print('ROLLBACK=PASS DYNAMIC_CLASSES=48 HTTP_TLS_PROBES=96 ORIGINAL_FULL_DUMP=EXACT SYMLINK=PRESERVED MODIFIED_ARTIFACT=CHANGED',flush=True)
         results['exitStatus']=0
+        if os.environ.get('NAUMI103_REBASE_OUTPUT'):
+            import rebase103_static_gateway as reb
+            rebased=Path(os.environ['NAUMI103_REBASE_OUTPUT']).resolve()
+            reb.rebase(SOURCE/'package',package,rebased/'package')
+            new_package=rebased/'package'
+            descriptors=json.loads((new_package/'gateways.json').read_text())
+            # Start at the static preflight state; each transition verifies the
+            # whole before closure+disk CAS, exact nginx-T after, real syntax,
+            # graceful reload and a request on every retained route class.
+            install(forward/'after'/hk.SITE.lstrip('/'),after)
+            transition_rows=[]
+            current=after
+            for folder in ('maintenance','rollback-maintenance','maintenance','open','rollback-open'):
+                d=descriptors[folder]
+                for item in [d['report'],*d['before'].values(),*d['after'].values()]:
+                    assert sha((new_package/item['path']).read_bytes())==item['sha256']
+                r=json.loads((new_package/d['report']['path']).read_text())
+                assert r['beforeDumpSha256']==sha(current.encode())
+                verify_dump(current)
+                for logical,item in d['before'].items():
+                    raw=subprocess.run(['docker','exec',nginx,'cat',logical],capture_output=True,check=True).stdout
+                    expected=(new_package/item['path']).read_bytes()
+                    if logical=='/etc/nginx/nginx.conf':expected=expected.replace(b'worker_processes auto;',b'worker_processes 1;')
+                    assert raw==expected,(folder,logical,'disk CAS')
+                new_text=(new_package/'gateways'/folder/'nginx.after.txt').read_bytes().decode()
+                assert sha(new_text.encode())==r['afterDumpSha256']
+                install(new_package/d['after'][hk.SITE]['path'],new_text)
+                current=new_text
+                mode=r['toState']
+                for key,path,proxy in probes:
+                    status,data,headers=request(path,True)
+                    if key in hk.DENIES:assert status==int(hk.DENIES[key])
+                    elif key in hk.FLEET:assert status==200 and json.loads(data)['port']==13062
+                    elif mode=='maintenance':assert status==503 and headers.get('Retry-After')=='60'
+                    elif mode=='candidate':assert status==200 and json.loads(data)['port']==13100
+                    else:
+                        assert status==200
+                        assert json.loads(data)['port']==int(proxy.split(':')[2].split('/')[0])
+                for prefix in hk.PREFIXES:
+                    asset=next(a for a in manifest['assets'] if a['url'].startswith(prefix))
+                    status,data,_=request(asset['url'])
+                    assert status==200 and sha(data)==asset['sha256']
+                if mode=='static':assert dynamic()==baseline
+                transition_rows.append({'transition':folder,'from':r['fromState'],'to':mode,'fullBeforeDumpCas':True,'threeDiskFilesCas':True,'afterFullDumpExact':True,'syntaxReload':True,'symlinkPreserved':True,'routeClassesChecked':48,'staticNamespacesChecked':3})
+            assert current==after
+            results['rebasedTransitions']=transition_rows
+            (new_package/'validation').mkdir()
+            (new_package/'validation/rebased-nginx-results.json').write_text(json.dumps(results,indent=2)+'\n',encoding='utf-8')
+            m=json.loads((new_package/'manifest.json').read_text())
+            m.update({'nginxRebasedVerification':'PASS_REAL_LINUX_5_TRANSITIONS_FULL_DUMP_DISK_CAS_48ROUTES_SYMLINK_STATIC',
+                      'nginxVerificationSha256':sha((new_package/'validation/rebased-nginx-results.json').read_bytes())})
+            (new_package/'manifest.json').write_text(json.dumps(m,indent=2)+'\n',encoding='utf-8')
+            for folder in ('maintenance','open','rollback-maintenance','rollback-open','static-preflight','rollback-static-preflight'):
+                root=new_package/'gateways'/folder
+                with (root/'VERIFICATION.txt').open('a',encoding='utf-8') as h:
+                    h.write('\nCOMMAND=python scripts/ops/test_release103_static_preflight_nginx.py (NAUMI103_REBASE_OUTPUT set)\nINPUT=reviewed final0614 maintenance/candidate after bytes + static preflight after CAS\nRESULT=REBASED_FOUR_STATE=PASS TRANSITIONS=5 FULL_DUMP_DISK_CAS=EXACT DYNAMIC_CLASSES=48 STATIC_NAMESPACES=3 SYMLINK=PRESERVED\nEXIT=0\nRESTORED_BEHAVIOR=static-preflight original dynamic routes without17 named fallbacks; no old backend resurrection\nFOUR_PATHS:\n'+'\n'.join(str(root/n) for n in ('MODIFIED_FILE','DIFF_FILE.patch','VERIFICATION.txt','ROLLBACK.sh'))+'\n')
+                    h.write('BASELINE_COMMAND=python scripts/ops/test_release103_static_preflight_nginx.py\nBASELINE_INPUT=exact original captured3 configs;isolated Linux fixture\nBASELINE_OUTPUT=BASELINE=PASS REAL_LINUX_NGINX=YES DYNAMIC_CLASSES=48 HTTP_TLS_PROBES=96 FULL_DUMP=EXACT SYMLINK=PRESERVED\nBASELINE_EXIT=0\nMODIFIED_INPUT=final0614 union3027 files;static-only modified config\nMODIFIED_OUTPUT=MODIFIED=PASS STATIC_HTTP_HASHES=3027 DYNAMIC_CLASSES=48 HTTP_TLS_PROBES=96 ORIGINAL_HEADERS_PATHS_PORTS=EXACT FALLBACKS_REMOVED=17 REFERENCES_REMOVED=9\nMODIFIED_EXIT=0\nROLLBACK_COMMAND=bash /fixture/package/gateways/static-preflight/ROLLBACK.sh /fixture/rollback-copy\nROLLBACK_INPUT=separate copied static-only tree with real sites-enabled symlink\nROLLBACK_OUTPUT='+literal+'\nROLLBACK_EXIT=0\n')
+                for n in ('MODIFIED_FILE','DIFF_FILE.patch','VERIFICATION.txt','ROLLBACK.sh'):assert (root/n).read_bytes()
+            sealed=reb.seal(new_package,rebased)
+            print('REBASED_FOUR_STATE=PASS TRANSITIONS=5 FULL_DUMP_DISK_CAS=EXACT DYNAMIC_CLASSES=48 STATIC_NAMESPACES=3 SYMLINK=PRESERVED',flush=True)
+            print('REBASED_SEALED_REPORT='+str(rebased/'FINAL_PACKAGE_REPORT.json'),flush=True)
         (base/'results.json').write_text(json.dumps(results,indent=2)+'\n',encoding='utf-8')
         evidence='\nCOMMAND=python scripts/ops/test_release103_static_preflight_nginx.py\nINPUT=exact captured original3 configs + final0614 union3027 files; isolated Linux mock backends\nBASELINE=PASS REAL_LINUX_NGINX=YES DYNAMIC_CLASSES=48 HTTP_TLS_PROBES=96 FULL_DUMP=EXACT SYMLINK=PRESERVED\nBASELINE_EXIT=0\nMODIFIED=PASS STATIC_HTTP_HASHES=3027 DYNAMIC_CLASSES=48 HTTP_TLS_PROBES=96 ORIGINAL_HEADERS_PATHS_PORTS=EXACT FALLBACKS_REMOVED=17 REFERENCES_REMOVED=9\nMODIFIED_EXIT=0\nROLLBACK_COMMAND=bash /fixture/package/gateways/static-preflight/ROLLBACK.sh /fixture/rollback-copy\nROLLBACK_INPUT=another copied tree with candidate bytes and real sites-enabled symlink\nROLLBACK_OUTPUT='+literal+'\nROLLBACK_EXIT=0\nRESTORED_BEHAVIOR='+results['restoredBehavior']+'\nNO_LIVE_CONNECTIONS=YES\n'
         for folder in ('static-preflight','rollback-static-preflight'):

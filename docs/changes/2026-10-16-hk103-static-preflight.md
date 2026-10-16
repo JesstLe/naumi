@@ -55,3 +55,29 @@ verifies them. Static removal alone does not prove old Agent sessions are draine
 
 No production connections, supplier calls, DB restoration or task replay occurred.
 Actual Next/DB functional acceptance and production release are not implied.
+
+## Rebased final0614 package
+
+`scripts/ops/rebase103_static_gateway.py` verifies all reviewed old descriptor
+source hashes and rebases a NEW package, never edits the original final0614.
+Maintenance and candidate AFTER bytes remain identical. The four normal release
+transitions are now static→maintenance, maintenance→candidate,
+maintenance→static and candidate→static. The separate original→static preflight
+and dependency-gated inverse are also included, making six descriptors. The
+inverse is not ordinary candidate rollback: it requires all six original
+retired CID backends13028..13033 restored and verified first.
+
+Concentrated integration supports `NAUMI103_REBASE_OUTPUT`: five real Nginx
+transitions cover maintenance, rollback-maintenance, maintenance, open and
+rollback-open. Each checks full before-T, all three exact disk preimages, syntax,
+exact after-T, smooth reload,48 route classes,3 real static namespaces and the
+original symlink. Returning to static additionally compares all96 HTTP+TLS
+dynamic responses to the original baseline. Normal rollback never restores
+retired fallback references. This fixture uses a13100 mock only for verification;
+no live traffic was switched to13100 or503 by the tooling.
+
+The public archive contains static bytes, descriptor/manifest/hash inventory and
+fixture validation; actual config bodies are confined to the private archive.
+Both archives must be extracted into the same root. Every tar member is reopened
+and byte-hashed. This package remains subject to lock-owning root's fresh live
+CAS, resource/Agent-session checks and real business acceptance.
