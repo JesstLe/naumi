@@ -256,6 +256,62 @@ class SessionTests(unittest.TestCase):
         for path in ['/media','/media-other/a','/api/media-other/a','/api/generate-image','https://external.test/media/a']:
             with self.assertRaises(m.Hold):m.check_path('private-media',path)
 
+    def failed_capture(self, code='HTTP_FEATURE_BODY_CONTENT_FAILED'):
+        self.to_candidates()
+        artifact={'path':'original-checks.json','sha256':'a'*64}
+        request={'action':'capture-acceptance','operationId':str(uuid.uuid4()),
+                 'expectedRevision':self.session.state['revision'],'artifact':artifact}
+        evidence=self.folder/'original-partial-evidence.body';evidence.write_bytes(b'actual prior GET evidence')
+        def fail(*args):self.adapter.record('capture');raise m.Hold(code)
+        self.adapter.capture_acceptance=fail
+        with self.assertRaisesRegex(m.Hold,code):self.session.step(request)
+        return request,evidence
+
+    def test_failed_readonly_capture_ack_closes_failure_not_acceptance_then_new_spec_can_run(self):
+        request,evidence=self.failed_capture();old=copy.deepcopy(self.session.state['operations'][request['operationId']]);history=copy.deepcopy(self.session.state['history'])
+        calls=list(self.adapter.calls);revision=self.session.state['revision']
+        retry={**request,'reconcile':True,'acknowledgeFailure':True}
+        self.session=self.make();got=self.session.step(retry)
+        self.assertEqual(got['result'],'READ_ONLY_CAPTURE_FAILED');self.assertFalse(got['failure']['acceptanceEvidence'])
+        self.assertEqual(got['failure']['assertionError'],'HTTP_FEATURE_BODY_CONTENT_FAILED')
+        self.assertEqual(self.adapter.calls,calls);self.assertEqual(evidence.read_bytes(),b'actual prior GET evidence')
+        record=self.session.state['operations'][request['operationId']]
+        self.assertEqual(record['request'],old['request']);self.assertEqual(record['requestSha256'],old['requestSha256'])
+        self.assertEqual(record['outcome'],'FAILED_READONLY');self.assertEqual(self.session.state['history'][:-1],history)
+        self.assertEqual(self.session.state['phase'],'CANDIDATES');self.assertEqual(self.session.state['revision'],revision+1)
+        for key in ['collectedAcceptance','acceptance','acceptedDescriptor']:self.assertNotIn(key,self.session.state)
+        self.assertEqual(self.session.step(request)['result'],'READ_ONLY_CAPTURE_FAILED')
+        self.assertEqual(self.session.step(retry)['result'],'READ_ONLY_CAPTURE_FAILED')
+        self.assertEqual(self.adapter.calls,calls)
+        self.adapter.capture_acceptance=lambda state,descriptor,operation:descriptor
+        corrected={'path':'corrected-checks.json','sha256':'b'*64}
+        self.step('capture-acceptance',artifact=corrected)
+        self.assertEqual(self.session.state['collectedAcceptance'],corrected)
+        self.assertEqual(record['request'],old['request'])
+
+    def test_failed_readonly_capture_ack_never_changes_binding_or_handles_new_mutation_ops(self):
+        request,_=self.failed_capture();calls=list(self.adapter.calls)
+        for bad in [{**request,'acknowledgeFailure':True},
+                    {**request,'reconcile':True,'acknowledgeFailure':False},
+                    {**request,'reconcile':True,'acknowledgeFailure':True,'artifact':{'path':'new.json','sha256':'b'*64}},
+                    {**request,'reconcile':True,'acknowledgeFailure':True,'operationId':str(uuid.uuid4())},
+                    {**request,'reconcile':True,'acknowledgeFailure':True,'action':'activate'}]:
+            with self.assertRaises(m.Hold):self.session.step(bad)
+        self.assertEqual(self.adapter.calls,calls)
+
+    def test_failed_readonly_capture_ack_rejects_unknown_errors_partial_success_and_other_pending(self):
+        request,_=self.failed_capture();pristine=copy.deepcopy(self.session.state);retry={**request,'reconcile':True,'acknowledgeFailure':True}
+        changes=[lambda s:s.update(lastError='HOST_COMMAND_FAILED'),lambda s:s.update(lastError='STEP_RESULT_UNKNOWN'),
+                 lambda s:s.update(phase='ACCEPTED'),lambda s:s.update(collectedAcceptance=None),
+                 lambda s:s.update(acceptance={}),lambda s:s.update(acceptedDescriptor=None),
+                 lambda s:s.update(openGateway={}),lambda s:s.update(activation={}),lambda s:s.update(**{'app-open-main':True}),
+                 lambda s:s['operations'].update(other={'phase':'UNKNOWN'}),
+                 lambda s:s['operations'][request['operationId']].update(phase='INTENT_RECORDED')]
+        for change in changes:
+            self.session.state=copy.deepcopy(pristine);change(self.session.state);self.session.persist();calls=list(self.adapter.calls)
+            with self.assertRaises(m.Hold):self.session.step(retry)
+            self.assertEqual(calls,self.adapter.calls)
+
     def test_resume_response_loss_keeps_original_suboperation_and_never_reopens_apps_twice(self):
         self.to_candidates();self.step('acceptance');self.step('preservation');self.adapter.lost='resume'
         request={'action':'activate','operationId':str(uuid.uuid4()),'expectedRevision':self.session.state['revision']}
