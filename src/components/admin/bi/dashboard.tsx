@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { AdminCenterShell } from "@/components/admin/center-shell";
 import {microsToDecimal} from "@/lib/billing/decimal";
-import Image from "@/components/cached-next-image";
+import { ArtworkMedia } from "./artwork-media";
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -222,6 +222,7 @@ const names: Record<string, string> = {
   "provider-fallback": "接口回退",
   view: "查看",
   "view-image": "查看图片",
+  "view-input-image": "查看原图",
   "view-trace": "查看执行链路",
   "update-profile": "更新账户资料",
 };
@@ -701,27 +702,7 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                     <tr key={String(row.id || row.email || i)}>
                       {section === "artworks" && (
                         <td>
-                          {row.has_image ? (
-                            <button
-                              className={styles.thumb}
-                              onClick={() => setSelected({ section, row })}
-                              aria-label={`查看 ${row.title || "图片"}`}
-                            >
-                              <Image
-                                unoptimized
-                                width={480}
-                                height={480}
-                                loading="lazy"
-                                src={`/api/admin/bi/media?id=${encodeURIComponent(String(row.id))}`}
-                                alt={String(row.title || "作品")}
-                                onError={(e) => {
-                                  e.currentTarget.style.display = "none";
-                                }}
-                              />
-                            </button>
-                          ) : (
-                            <span className={styles.muted}>无图片</span>
-                          )}
+                          <ArtworkMedia row={row} onOpen={() => setSelected({ section, row })} />
                         </td>
                       )}
                       {columns[section].map((c) => (
@@ -910,16 +891,7 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                 </div>
               </div>
             )}
-            {selected.section === "artworks" && selected.row.has_image && (
-              <Image
-                unoptimized
-                width={2560}
-                height={2560}
-                className={styles.preview}
-                src={`/api/admin/bi/media?id=${encodeURIComponent(String(selected.row.id))}&full=1`}
-                alt={String(selected.row.title || "作品预览")}
-              />
-            )}
+            {selected.section === "artworks" && <ArtworkMedia key={String(selected.row.id)} row={selected.row} detail />}
             {selected.section === "artworks" && selected.row.source_artwork_id && (
               <button className={styles.textButton} onClick={() => void openSourceArtwork(String(selected.row.source_artwork_id), String(selected.row.email))}>
                 查看复制源作品
@@ -979,6 +951,9 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                     dimensions: "实际图片尺寸",
                     operation_label: "创建操作",
                     prompt_display: "提示词 / 操作内容",
+                    generation_mode: "生成方式",
+                    input_count: "原图数量",
+                    input_status: "原图关联",
                     image_width: "图片宽度",
                     image_height: "图片高度",
                     deleted_at: "回收时间",

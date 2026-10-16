@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { ensureSchema, getPool } from "@/lib/db";
 import type { BiOverview, BiQuery, BiResponse, BiRow } from "./contracts";
+import { ARTWORK_INPUT_COLUMNS, ARTWORK_INPUT_JOINS, artworkInputPresentation } from "./artwork-inputs";
 import { artworkBiPresentation } from "@/lib/artwork-provenance";
 
 let ready: Promise<void> | null = null;
@@ -171,13 +172,12 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
       break;
     case "artworks":
       source = `SELECT a.id,a.email,a.title,a.category,a.prompt,a.status,a.ratio,a.resolution,a.image_width,a.image_height,a.origin,a.parent_id,a.batch_id,a.created_at,a.deleted_at,
-      a.creation_provenance,a.source_url,a.image_url,a.template_id,
+      a.creation_provenance,a.source_url,a.image_url,a.template_id,${ARTWORK_INPUT_COLUMNS},
       j.id AS job_id,j.kind AS job_kind,COALESCE(j.payload->'p'->>'origin',j.payload->>'origin') AS job_origin,
       COALESCE(j.payload->'p'->>'entry',j.payload->>'entry') AS job_entry,
       c.id AS canvas_task_id,c.kind AS canvas_task_kind,v.id AS video_task_id,v.source AS video_task_source,
       (a.image_url<>'') AS has_image,(COALESCE(a.video_url,'')<>'') AS has_video
-      FROM app_artworks a LEFT JOIN app_image_jobs j ON j.email=a.email AND j.id=CASE WHEN a.creation_provenance->>'operation' IN ('generate','suite','aplus') THEN a.creation_provenance->>'ref' WHEN a.batch_id LIKE 'b-job-%' THEN substring(a.batch_id from 3) ELSE a.batch_id END
-      LEFT JOIN LATERAL (SELECT id,kind FROM app_canvas_image_tasks WHERE email=a.email AND result_artwork_id=a.id ORDER BY created_at,id LIMIT 1) c ON true
+      FROM app_artworks a ${ARTWORK_INPUT_JOINS}
       LEFT JOIN LATERAL (SELECT id,source FROM app_video_tasks WHERE email=a.email AND artwork_id=a.id ORDER BY created_at,id LIMIT 1) v ON true
       WHERE a.email IN (SELECT email FROM scoped) AND (${inRange("a")} OR $7::text<>'') AND ($7::text='' OR a.id=$7) AND (($6::text='' AND a.deleted_at IS NULL) OR ($6='deleted' AND a.deleted_at IS NOT NULL) OR $6='all')`;
       break;
@@ -231,8 +231,8 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
   result.rows = normalize(q.section === "artworks" ? page.rows.map(raw => {
     const presentation = artworkBiPresentation(raw);
     // Do not expose private/signed source URLs or raw JSON in the BI list/CSV.
-    const { creation_provenance, source_url, image_url, job_kind, job_origin, job_entry, canvas_task_kind, video_task_source, ...row } = raw;
-    return { ...row, ...presentation };
+    const { creation_provenance, source_url, image_url, job_kind, job_origin, job_entry, canvas_task_kind, video_task_source, input_params, input_images, input_request, input_source_id, ...row } = raw;
+    return { ...row, ...presentation, ...artworkInputPresentation(raw) };
   }) : page.rows);
   return result;
 }
