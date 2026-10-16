@@ -27,7 +27,7 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
     return async (input, init) => {
       try { return await adapter(input, init); }
       catch (error) {
-        if (error instanceof ModelConfigError) return Response.json({ error: { message: error.message, code: error.code, billing_status: "not_charged" } }, { status: error.status });
+        if (error instanceof ModelConfigError) return Response.json({ error: { message: error.message, code: error.code, billing_status: "not_charged" } }, { status: error.code === "CONFIG_UNAVAILABLE" ? 429 : error.status });
         throw error;
       }
     };
@@ -88,7 +88,7 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
     try { return await mappedFetch(input, init); }
     catch (error) {
       // SDKs otherwise turn this local pre-submission rejection into an unknown connection failure.
-      if (error instanceof ModelConfigError && error.code === "PROVIDER_BUSY") return Response.json({ error: { message: error.message, type: "naumi_capacity", billing_status: "not_charged", code: error.code } }, { status: 429 });
+      if (error instanceof ModelConfigError && ["PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_capacity", billing_status: "not_charged", code: error.code } }, { status: error.code === "CONFIG_UNAVAILABLE" ? 429 : error.status });
       throw error;
     }
   };
@@ -122,7 +122,7 @@ function flowImageFetch(scope: ModelExecutionScope, options: ValidationOptions):
   return async (input, init) => {
     try { return await submit(input, init); }
     catch (error) {
-      if (error instanceof ModelConfigError && ["MODEL_INCOMPATIBLE", "INVALID_REQUEST", "PROVIDER_BUSY", "UPSTREAM_REJECTED_NOT_CHARGED"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_pre_submission", billing_status: "not_charged", code: error.code } }, { status: error.status });
+      if (error instanceof ModelConfigError && ["MODEL_INCOMPATIBLE", "INVALID_REQUEST", "PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE", "UPSTREAM_REJECTED_NOT_CHARGED"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_pre_submission", billing_status: "not_charged", code: error.code } }, { status: error.code === "CONFIG_UNAVAILABLE" ? 429 : error.status });
       throw error;
     }
   };

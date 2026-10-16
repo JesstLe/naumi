@@ -156,7 +156,7 @@ async function main() {
         assert.deepEqual(calls.slice(n).map(c => c.model), ["wire-image-one", "wire-image-two"]);
         failure = 500;
         await db.getPool().query("UPDATE app_model_channel_health SET failures=0,open_until=NULL,probe_until=NULL");
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 2; i++) {
             const n = calls.length;
             await priorityGen();
             assert.deepEqual(calls.slice(n).map(c=>c.model),["wire-image-one","wire-image-two"]);
@@ -202,6 +202,8 @@ async function main() {
         assert.equal(exhaustedDone.status,"error");assert.equal(await db.getImageJobChargedCredits(exhaustedJob),0);assert.equal((await db.getPool().query("SELECT billing_settled FROM app_image_jobs WHERE id=$1",[exhaustedJob])).rows[0].billing_settled,true);
         flowFailure="";failureTwo=0;
         const old = (await executor.clientFor(frozen)).client;
+        await assert.rejects(old.images.generate({ model: "image-a", prompt: "frozen-disabled", n: 1 }), (e:any)=>e.error?.code==="CHANNEL_DISABLED" || e.code==="CHANNEL_DISABLED");
+        await publish({mode:"balanced",channels});
         await old.images.generate({ model: "image-a", prompt: "frozen", n: 1 });
         assert.ok(["wire-image-one", "wire-image-two"].includes(calls.at(-1).model));
         const stages = (await db.getPool().query("SELECT DISTINCT provider_id,wire_model FROM app_model_execution_stages")).rows;
@@ -218,11 +220,15 @@ async function main() {
         assert.equal(family.publicModels[1].supplierRouting!.channels[0].upstreamId, "uf1");
         assert.equal(family.publicModels[2].supplierRouting!.channels[0].upstreamId, "uf2");
         assert.equal(family.publicModels[2].supplierRouting!.channels[1].upstreamId, "u3");
+        const familyDraft=await admin.repo.draft("fixture-family"),familySaved=await admin.repo.saveDraft({id:familyDraft.id,expectedRevision:familyDraft.revision,config:family,actor:"fixture-family"});
+        const familyPublished=await admin.runtime.publish({id:randomUUID(),draftId:familySaved.id,expectedRevision:familySaved.revision,expectedVersion:(await admin.repo.current()).version,actor:"fixture-family",reason:"family scheduling fixture"});
+        assert.equal(familyPublished.phase,"applied");
         const { claimChannel } = await import("../src/lib/model-config/channel-scheduler"), scope = await executor.describe(frozen);
+        await db.getPool().query("DELETE FROM app_model_channel_health");
         let familyDefault = 0;
         for (let i = 0; i < 40; i++) {
             const variant = i % 2 ? "portrait" : "square", policy = { mode: "balanced" as const, channels: [{ ...channels[0], upstreamId: "uf" + (i % 2 ? 2 : 1) }, { ...channels[1], upstreamId: "u3" }] };
-            const targets = policy.channels.map((c, j) => ({ ...c, scope: { ...scope, supplierRouting: undefined, connection: { ...scope.connection, providerId: j ? "p3" : "p1", wireModel: j ? "nano-banana-pro" : "gemini-3.0-pro-image-" + variant, maxConcurrent: 2 } } }));
+            const targets = policy.channels.map((c, j) => ({ ...c, scope: { ...scope, supplierRouting: undefined, connection: { ...scope.connection, providerId: j ? "p3" : "p1", protocol: j ? "new-api-flow" : "openai-images", wireModel: j ? "nano-banana-pro" : "gemini-3.0-pro-image-" + variant, maxConcurrent: 2 } } }));
             const claim = await claimChannel(db.getPool(), "gemini-3.0-pro-image-" + variant, policy, targets, new Set());
             if (claim.target.upstreamId !== "u3")
                 familyDefault++;

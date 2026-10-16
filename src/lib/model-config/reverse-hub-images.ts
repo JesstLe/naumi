@@ -167,7 +167,8 @@ export function reverseHubImageFetch(scope: ModelExecutionScope, options: Valida
       } while (Date.now() < deadline);
       throw new ImageOperationPending(prepared.operationId, Error("reverse-hub-task-pending"));
     } catch (error) {
-      if (!submitted) throw error;
+      // A local dispatch rejection proves no POST was sent on this attempt.
+      if (!submitted || error instanceof ModelConfigError && ["CHANNEL_DISABLED","CONFIG_UNAVAILABLE"].includes(error.code)) throw error;
       throw error instanceof ImageOperationPending ? error : new ImageOperationPending(prepared.operationId, error);
     }
   };

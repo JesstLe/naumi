@@ -13,6 +13,7 @@ import { withBiModelContext } from "@/lib/bi/model-observer";
 import type {BillingQuote,BillingResult} from "@/lib/billing/types";
 import { currentExecutionBundle, currentModelExecution, runLegacyModelExecution, type ExecutionBundle } from "@/lib/model-config/context";
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
+import { recoverableChannelIdentity } from "@/lib/model-config/channel-availability";
 import { hasUnreplayableImageAttempt, imageJobHasResults, IMAGE_JOB_RELEASED_MESSAGE, IMAGE_JOB_REVIEW_MESSAGE } from "./image-job-failure";
 
 type Execution = { id: string; token: string; queue: Promise<unknown> };
@@ -135,20 +136,21 @@ export class DurableImageJobs<T extends { status: string }> {
     if (!saved || ["done", "error", "needs_attention"].includes(saved.status)) throw new Error("图片任务已结束或暂停，不能重新提交");
     const previous = saved?.paidOperations?.[operation.id];
     if (previous?.state === "done") return previous.result as R;
+    const pinnedRecovery = previous?.state === "started" && dbEnabled ? await recoverableChannelIdentity(getPool(),currentModelExecution("image"),operation.id) : undefined;
     const replayable = operation.managedGateway !== false && isImageGatewayModel(model);
     const gatewayIdentity = replayable ? createHash("sha256").update(JSON.stringify([
       (await getOpenAIBaseUrl()) || "https://api.openai.com/v1", (await getOpenAISettings()).apiKey,
       process.env.NAUMI_ROUTER_STATE_DOMAIN || "",
       ...(currentModelExecution("image")?.frozen.routerDigest ? [currentModelExecution("image")!.frozen.routerDigest] : []),
     ])).digest("hex") : undefined;
-    if (previous?.state === "started" && (!previous.replayable || previous.model !== model || previous.gatewayIdentity !== gatewayIdentity)) {
+    if (previous?.state === "started" && (!pinnedRecovery || previous.model !== model) && (!previous.replayable || previous.model !== model || previous.gatewayIdentity !== gatewayIdentity)) {
       await repository.holdImageJobBilling(id);
       throw new ImageOperationPending(operation.id, new Error("上游提交需要人工核查"));
     }
-    const attempt: Attempt = { model, replayable, gatewayIdentity, state: "started" };
+    const attempt: Attempt = { model, replayable: !!pinnedRecovery || replayable, gatewayIdentity: pinnedRecovery || gatewayIdentity, state: "started" };
     await update((current) => {
       const active = current.paidOperations?.[operation.id];
-      if (active?.state === "done" || (active?.state === "started" && (!active.replayable || active.model !== model || active.gatewayIdentity !== gatewayIdentity))) {
+      if (active?.state === "done" || (active?.state === "started" && (!pinnedRecovery || active.model !== model) && (!active.replayable || active.model !== model || active.gatewayIdentity !== gatewayIdentity))) {
         throw new ImageOperationPending(operation.id, new Error("上游提交需要核查或读取已存结果"));
       }
       return { ...current, paidOperations: { ...current.paidOperations, [operation.id]: attempt } };
@@ -158,6 +160,10 @@ export class DurableImageJobs<T extends { status: string }> {
       await update((current) => ({ ...current, paidOperations: { ...current.paidOperations, [operation.id]: { ...attempt, state: "done", result } } }));
       return result;
     } catch (error) {
+      if (error instanceof ImageOperationPending && dbEnabled) {
+        const identity=await recoverableChannelIdentity(getPool(),currentModelExecution("image"),operation.id);
+        if(identity)await update(current=>({...current,paidOperations:{...current.paidOperations,[operation.id]:{...attempt,replayable:true,gatewayIdentity:identity}}}));
+      }
       const status = (error as { status?: number } | null)?.status;
       if ([400, 401, 403, 404, 422, 429].includes(status || 0)) {
         await update((current) => ({ ...current, paidOperations: { ...current.paidOperations, [operation.id]: { ...attempt, state: "rejected" } } }));
