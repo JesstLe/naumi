@@ -25,6 +25,7 @@
 | Agent实际runtime＋模拟供应商 | `PACKAGING_AGENT=PASS CHECKS=64`，真实ZIP/PUT/POST/本地HTTP SSE、历史、跨账号、HTTP400和SSE错误不再空final，模拟文字7次、真实模型0，exit0 |
 | 独立策略API＋模拟供应商 | `PACKAGING_STRATEGY=PASS`，追问→回答→优化、保存失效旧结果、CAS、运行租约、失败重试、托管文字路由、独立授权，模拟文字6次，exit0 |
 | 页面模型边界 | `PACKAGING_PAGE_MODEL_CHECKS=32`，exit0 |
+| 独立TypeScript复查 | `npx tsc --noEmit --pretty false --incremental false`，最终exit0；初次发现的两个新增测试unknown类型已修正，不沿用失败日志作通过证据 |
 | 完整Next生产构建 | `node scripts/build-reference-workbench.mjs` 后 `NEXT_DIST_DIR=.next-packaging-build NAUMI_BUILD_CPUS=2 node node_modules/next/dist/bin/next build`，编译/类型/89页生成/trace/路由汇总完成，exit0；保留原项目lint warnings，不声称零警告 |
 | 回滚副本 | modified全路径SHA→reverse patch→baseline全路径SHA通过；原ImageSkills100项重新通过exit0；候选源码保持修改状态，数据库不回灌 |
 
@@ -36,6 +37,7 @@
 4. 真实Agent页从文件input上传原ZIP→“此Skill已在我的Skills中”，DB无重复；拖拽JSON实际触发上传→“已导入到我的Skills”，DB恰好1条新增；单原SKILL.md缺reference时显示要求ZIP的具体错误。
 5. 1440和390px实测均无横向溢出。切换第二账号后项目列表0、品牌字段空、旧结果与旧项目标题不可见，切回恢复。页面生成/优化过程中采集的window error/unhandledrejection为空。
 6. T3预览额外tab曾出现连接超时，回到原owned tab继续同一真实页面完成验收；没有转到用户普通Chrome。部分自动化等待使用错误文案超时已纠正并核对实际DOM，未把等待超时写成功。
+7. 独立页额外完整跑过新建→仅填1项品牌产品→真实模型提出3个关键问题→在“补充回答”输入消费者/卖点/价格渠道/生产限制→“补充并生成”真实返回完整策略（v5）。新增2次成功文字调用，至此成功真实文字合计6次（Agent2＋独立页4），工具/图片调用0；原余额不足通道失败仍单列。
 
 ## 保留的基线问题与未交付范围
 
