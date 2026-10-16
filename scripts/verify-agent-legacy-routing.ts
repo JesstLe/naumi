@@ -39,8 +39,8 @@ async function main(){
  await new Promise<void>(resolve=>legacy.listen(0,'127.0.0.1',resolve));const port=(legacy.address()as{port:number}).port;
  const env:Record<string,string>={NAUMI_AGENT_LEGACY_ORIGIN:`http://127.0.0.1:${port}`,INTERNAL_APP_ORIGIN:'http://127.0.0.1:3000'};
  const bundle=(await build({stdin:{contents:'import {forwardLegacyAgentSession} from "./src/lib/agent/legacy-runtime";globalThis.testRoute=forwardLegacyAgentSession;',resolveDir:process.cwd()},platform:'node',format:'cjs',bundle:true,write:false,plugins:[{name:'fixture-auth-and-harness',setup(b){
-  b.onResolve({filter:/^(server-only|\.\.\/request-auth|\.\/harness|\.\/runtime)$/},args=>({path:args.path,namespace:'fixture'}));
-  b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='server-only'?'':args.path==='./runtime'?'export function getSession(email,id){return email==="owner-a"&&id==="new-owned"?{}:null;}':args.path.includes('request-auth')?'export async function authenticatedEmail(r){return ["owner-a","owner-b"].includes(r.headers.get("cookie"))?r.headers.get("cookie"):null;}':
+  b.onResolve({filter:/^(node:process|server-only|\.\.\/request-auth|\.\/harness|\.\/runtime)$/},args=>({path:args.path,namespace:'fixture'}));
+  b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='node:process'?'export default globalThis.process;':args.path==='server-only'?'':args.path==='./runtime'?'export function getSession(email,id){return email==="owner-a"&&id==="new-owned"?{}:null;}':args.path.includes('request-auth')?'export async function authenticatedEmail(r){return ["owner-a","owner-b"].includes(r.headers.get("cookie"))?r.headers.get("cookie"):null;}':
   'export async function readHarnessBody(r){return await r.json();}export function assertHarnessSessionId(s,k){if(!/^[\\w-]{1,64}$/.test(s)||(k==="canvas"&&!s.startsWith("cv-"))||(k==="workbench"&&s.startsWith("cv-")))throw Error("invalid");}export function harnessErrorResponse(){return Response.json({error:"invalid"},{status:400});}',loader:'js'}));
  }}]})).outputFiles[0].text;
  const context=vm.createContext({process:{env},require:createRequire(import.meta.url),fetch,Request,Response,Headers,URL,AbortSignal,console});vm.runInContext(bundle,context);const route=(context as any).testRoute as (request:Request)=>Promise<Response|null>;
@@ -70,6 +70,8 @@ async function main(){
   assert.equal((await route(req('/api/agent?sessionId=old-ag','DELETE')))!.status,200);assert.equal(received.at(-1)!.method,'DELETE');
   assert.equal(await route(req('/api/agent/session')),null,'history listing stays on shared DB current handler');
   for(const origin of ['http://public.example:3000','http://127.0.0.1:3000','http://user:pw@127.0.0.1:12345','http://127.0.0.1:12345/path']){env.NAUMI_AGENT_LEGACY_ORIGIN=origin;assert.equal((await route(req('/api/agent?sessionId=old-ag')))!.status,503);}
+  env.NAUMI_AGENT_LEGACY_ORIGIN=`http://127.0.0.1:${port}`;env.NAUMI_RELEASE_RUNTIME='1';const durableProbeCount=received.length;
+  assert.equal(await route(req('/api/agent?sessionId=old-ag')),null,'durable owner routing wins before legacy discovery');assert.equal(received.length,durableProbeCount,'no parallel legacy probe or second forwarding when durable routing enabled');delete env.NAUMI_RELEASE_RUNTIME;
   delete env.NAUMI_AGENT_LEGACY_ORIGIN;assert.equal(await route(req('/api/agent?sessionId=old-ag')),null);
   const workbench=readFileSync('src/app/api/agent/route.ts','utf8');assert.ok(workbench.indexOf('forwardLegacyAgentSession(request)')<workbench.indexOf('withBiRequest(request, () => handlePut'));
   const assistant=readFileSync('src/app/api/canvas/assistant/route.ts','utf8');assert.ok(assistant.indexOf('forwardLegacyAgentSession(request)')<assistant.indexOf('withBillingRequest(validated'));
