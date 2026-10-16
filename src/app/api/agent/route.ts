@@ -1,3 +1,5 @@
+import { observeReleaseRequest, routeAgentToOwner } from "@/lib/release-runtime/http";
+import { releaseRuntimeEnabled, releaseError } from "@/lib/release-runtime/identity";
 import { resolveImageSkill } from "@/lib/image-skills/server";
 import { SkillError } from "@/lib/image-skills/catalog";
 import {randomUUID} from "node:crypto";
@@ -44,7 +46,7 @@ async function authedEmail(request: Request): Promise<string | null> {
 }
 
 // ── SSE 流式执行 ───────────────────────────────────────────────────────────
-export async function PUT(request: Request) {
+async function localPUT(request: Request) {
   try { return await withBiRequest(request, () => handlePut(request)); }
   catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }
@@ -252,7 +254,7 @@ async function handlePut(request: Request) {
 }
 
 // ── Steering 插话 ──────────────────────────────────────────────────────────
-export async function PATCH(request: Request) {
+async function localPATCH(request: Request) {
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -286,7 +288,7 @@ export async function PATCH(request: Request) {
 }
 
 // ── 中止 ───────────────────────────────────────────────────────────────────
-export async function DELETE(request: Request) {
+async function localDELETE(request: Request) {
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -304,7 +306,7 @@ export async function DELETE(request: Request) {
 }
 
 // ── 事件轮询(降级) ─────────────────────────────────────────────────────────
-export async function GET(request: Request) {
+async function localGET(request: Request) {
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -326,7 +328,7 @@ export async function GET(request: Request) {
 }
 
 // ── 一次性执行(向后兼容) ─────────────────────────────────────────────────────
-export async function POST(request: Request) {
+async function localPOST(request: Request) {
   try { return await withBiRequest(request, () => handlePost(request)); }
   catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }
@@ -435,3 +437,30 @@ async function handlePost(request: Request) {
     turns: session.agent.state.messages.length,
   });
 }
+
+async function releaseDispatch(request: Request, handler: (request: Request) => Promise<Response>) {
+  if (!releaseRuntimeEnabled()) return handler(request);
+  return observeReleaseRequest(request, async () => {
+    try {
+      const email = await authedEmail(request);
+      if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+      let body: Record<string, unknown> | undefined;
+      let forwardedRequest = request;
+      const isRun = request.method === "PUT" || request.method === "POST";
+      if (["POST", "PUT", "PATCH"].includes(request.method)) {
+        body = await readHarnessBody(request);
+        if (isRun && !body.sessionId) body.sessionId = `ag-${randomUUID()}`;
+        forwardedRequest = new Request(request.url, { method: request.method, headers: request.headers, body: JSON.stringify(body), signal: request.signal });
+      }
+      const sessionId = body ? String(body.sessionId || "") : new URL(request.url).searchParams.get("sessionId") || "";
+      assertHarnessSessionId(sessionId, "workbench");
+      const routed = await routeAgentToOwner(forwardedRequest, email, sessionId, "workbench", isRun, body);
+      return routed || handler(forwardedRequest);
+    } catch (e) { return e instanceof HarnessError ? harnessErrorResponse(e) : releaseError(e); }
+  });
+}
+export const PUT = (request: Request) => releaseDispatch(request, localPUT);
+export const POST = (request: Request) => releaseDispatch(request, localPOST);
+export const PATCH = (request: Request) => releaseDispatch(request, localPATCH);
+export const DELETE = (request: Request) => releaseDispatch(request, localDELETE);
+export const GET = (request: Request) => releaseDispatch(request, localGET);

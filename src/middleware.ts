@@ -3,10 +3,15 @@ import { featureRequestGate, ACCESS_HEADERS, accessJson } from "@/lib/feature-ac
 import { requestRequirement } from "@/lib/feature-access/catalog";
 import { timingSafeEqual } from "node:crypto";
 import { workerSecret } from "@/lib/settings-secret";
+import { releaseControlAuthorized } from "@/lib/release-runtime/identity";
 
 // Node middleware enforces live database grants before page/API dispatch.
 // Overwrite the path header so a client cannot forge layout routing metadata.
 export async function middleware(req: NextRequest) {
+  if (req.nextUrl.pathname.startsWith("/api/internal/release/")) {
+    if (!releaseControlAuthorized(req)) return accessJson({ error: "Not found" }, 404);
+    return NextResponse.next();
+  }
   if(process.env.FLEET_PORTAL_ONLY==='1'){
     const path=req.nextUrl.pathname;
     const allowed=path==='/admin/deployments'||['/api/version','/api/health','/api/admin/fleet','/api/admin/fleet/status','/api/admin/fleet/releases','/api/fleet/poll','/api/fleet/ack','/api/fleet/releases/poll','/api/fleet/releases/ack'].includes(path);
