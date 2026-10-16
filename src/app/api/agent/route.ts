@@ -124,7 +124,7 @@ async function handlePut(request: Request) {
   if (session.agent.state.messages.length === 0) {
     session.title = message.slice(0, 120) || session.title;
   }
-  appendSessionEvent(session, "plan", { items: buildTaskPlan(message) });
+  appendSessionEvent(session, "plan", { items: buildTaskPlan(message, !!imageSkill?.instructions.includes("name: brand-packaging-strategy")) });
   session.running = true;
   await persistAgentSession(session);
 
@@ -180,7 +180,12 @@ async function handlePut(request: Request) {
                 .join("")
                 .trim()
             : "";
-          send("final", {
+          const failed = lastAssistant && "stopReason" in lastAssistant && ["error", "aborted"].includes(String(lastAssistant.stopReason));
+          if (failed || !reply && !session.events.slice(eventCursor).some(event => event.type === "attention")) {
+            const failure = classifyAgentFailure(new Error(failed && lastAssistant.stopReason === "aborted" ? "任务已停止" : "模型服务未完成本轮请求"));
+            if (!session.events.slice(eventCursor).some(event => event.type === "error")) appendSessionEvent(session, "error", failure);
+            send("error", failure);
+          } else send("final", {
             sessionId,
             reply,
             turns: session.agent.state.messages.length,
@@ -408,6 +413,11 @@ async function handlePost(request: Request) {
   const lastAssistant = [...session.agent.state.messages]
     .reverse()
     .find((m) => m.role === "assistant");
+  if (lastAssistant && "stopReason" in lastAssistant && ["error", "aborted"].includes(String(lastAssistant.stopReason))) {
+    const failure = classifyAgentFailure(new Error(lastAssistant.stopReason === "aborted" ? "任务已停止" : "模型服务未完成本轮请求"));
+    appendSessionEvent(session, "error", failure); await persistAgentSession(session);
+    return NextResponse.json({error: failure.message, code: failure.code, sessionId: tempId}, {status: 502});
+  }
   const modelReply = Array.isArray(lastAssistant?.content)
     ? (lastAssistant!.content as { type?: string; text?: string }[])
         .map((c) => (c.type === "text" ? c.text ?? "" : ""))
