@@ -28,8 +28,8 @@ def write_config(s,phase):
  (ROOT/'nginx.conf').write_bytes(body.encode())
 def start_web(s,phase,image):
  env={'DATABASE_URL':'postgresql://fixture:fixture-local-only@'+s['pg']+':5432/compat?sslmode=disable','SETTINGS_SECRET':'compat-real-next-only-random-fixture-secret-20261016','VIDEO_WORKER_SECRET':'compat-real-next-only-worker-secret-20261016','NAUMI_VIDEO_WORKER':'0','NAUMI_MULTI_USER':'1','NAUMI_EDITION':'pro','NODE_OPTIONS':'--max-old-space-size='+os.environ.get('NAUMI_REAL_COMPAT_HEAP_MB','1024'),'NEXT_TELEMETRY_DISABLED':'1','HOSTNAME':'0.0.0.0','PORT':'3000','MEDIA_DIR':'/data/media','MEDIA_PRIVATE':'1','NAUMI_STAGING_HISTORY_GUARD':'0','AGENT_API_KEY':'','AGENT_BASE_URL':'','OPENAI_API_KEY':'','OPENAI_BASE_URL':'','NEW_API_IMAGE_API_KEY':'','NEW_API_IMAGE_BASE_URL':'','VIDEO_API_KEY':'','VIDEO_API_BASE_URL':'','REFERENCE_VISION_SOURCE':'','NAUMI_ROUTER_GENERATION_URL':'','NAUMI_ROUTER_GENERATION_TOKEN':'','INTERNAL_APP_ORIGIN':'http://127.0.0.1:3000'}
- if phase=='new' and os.environ.get('NAUMI_REAL_COMPAT_CONTROLLED_NEW')=='1':
-  env.update({'NAUMI_RELEASE_RUNTIME':'1','NAUMI_INSTANCE_ID':'compat-new-'+s['tag'],'RELEASE_CONTROL_SECRET':'compat-release-'+s['tag']+'-only-independent-fixture-secret','NAUMI_RELEASE_ADMISSION_START':'open','NODE_OPTIONS':env['NODE_OPTIONS']+' --require=/app/scripts/release-http-observer.cjs'})
+ if phase in ['new','variantunified'] and os.environ.get('NAUMI_REAL_COMPAT_CONTROLLED_NEW')=='1':
+  env.update({'NAUMI_RELEASE_RUNTIME':'1','NAUMI_INSTANCE_ID':'compat-'+phase+'-'+s['tag'],'RELEASE_CONTROL_SECRET':'compat-release-'+s['tag']+'-only-independent-fixture-secret','NAUMI_RELEASE_ADMISSION_START':'open','NODE_OPTIONS':env['NODE_OPTIONS']+' --require=/app/scripts/release-http-observer.cjs'})
   s['controlledNew']=True;s['releaseInstanceId']=env['NAUMI_INSTANCE_ID'];s['releaseSecret']=env['RELEASE_CONTROL_SECRET']
  memory=os.environ.get('NAUMI_REAL_COMPAT_WEB_MEMORY','1536m')
  args=['docker','run','-d','--name',s[phase],'--label','io.naumi.real-next-compat='+s['tag'],'--network',s['network'],'--memory',memory,'--memory-swap',memory,'--cpus','1.5','--pids-limit','192','-p','127.0.0.1::3000','--tmpfs','/tmp:rw,size=64m']
@@ -50,7 +50,7 @@ elif mode=='bootstrap':
  s=json.loads(STATE.read_text());info=json.loads(run(['docker','inspect',s['pg']]))[0];assert info['Config']['Labels'].get('io.naumi.real-next-compat')==s['tag'];salt=b'compat-local-admin-hash-20261016';value='scrypt$'+salt.hex()+'$'+hashlib.scrypt(b'fixture-only-password',salt=salt,n=16384,r=8,p=1,dklen=32).hex();sql="INSERT INTO app_settings(k,v) VALUES('admin_password_hash','"+value+"') ON CONFLICT(k) DO UPDATE SET v=EXCLUDED.v; TRUNCATE app_canvas_text_nodes;";run(['docker','exec',s['pg'],'psql','-U','fixture','-d','compat','-c',sql]);print('ISOLATED_SETUP=CONFIGURED NO_SUPPLIER_CREDENTIALS=1')
 elif mode=='memory':
  s=json.loads(STATE.read_text());result={}
- for role in ['old','new','pg','gateway','worker','varianthk','variantdesktop','variantenterprise']:
+ for role in ['old','new','pg','gateway','worker','varianthk','variantdesktop','variantenterprise','variantunified']:
   if role not in s:continue
   name=s[role]
   if name not in s['created']:continue
@@ -67,9 +67,13 @@ elif mode=='sql':
 elif mode=='inspect':
  s=json.loads(STATE.read_text());rows=json.loads(run(['docker','inspect',*s['created']]));print(json.dumps([{'name':r['Name'],'image':r['Image'],'memoryLimit':r['HostConfig']['Memory'],'running':r['State']['Running'],'oomKilled':r['State']['OOMKilled']}for r in rows],indent=2))
 elif mode=='variant-start':
- s=json.loads(STATE.read_text());variant=os.environ['NAUMI_REAL_COMPAT_VARIANT'];assert variant in ['hk','desktop','enterprise'];phase='variant'+variant;s[phase]='real-next-'+variant+'-'+s['tag'];image=os.environ['NAUMI_REAL_COMPAT_VARIANT_IMAGE'];version=start_web(s,phase,image);s['variant']=phase;s['variantImage']=image;s['variantVersion']=version
- prefix={'hk':'','desktop':'/desktop','enterprise':'/enterprise'}[variant];config='worker_processes 1;pid /tmp/compat-next.pid;error_log stderr;events{worker_connections 256;}http{access_log off;include /etc/nginx/mime.types;server{listen 80;location /{proxy_pass http://'+s[phase]+':3000;proxy_set_header Host $host;proxy_set_header X-Forwarded-Proto $scheme;proxy_buffering off;}'
+ s=json.loads(STATE.read_text());variant=os.environ['NAUMI_REAL_COMPAT_VARIANT'];assert variant in ['hk','desktop','enterprise','unified'];phase='variant'+variant;s[phase]='real-next-'+variant+'-'+s['tag'];image=os.environ['NAUMI_REAL_COMPAT_VARIANT_IMAGE'];version=start_web(s,phase,image);s['variant']=phase;s['variantImage']=image;s['variantVersion']=version
+ prefix={'hk':'','desktop':'/desktop','enterprise':'/enterprise','unified':''}[variant];config='worker_processes 1;pid /tmp/compat-next.pid;error_log stderr;events{worker_connections 256;}http{access_log off;include /etc/nginx/mime.types;server{listen 80;location /{proxy_pass http://'+s[phase]+':3000;proxy_set_header Host $host;proxy_set_header X-Forwarded-Proto $scheme;proxy_buffering off;}'
  if prefix:config+='location ^~ '+prefix+'/_next/{proxy_pass http://'+s[phase]+':3000/_next/;proxy_set_header Host $host;}'
+ if variant=='unified':
+  assert (ROOT/'unified-static/manifest.json').is_file(),'Captured three-prefix union required'
+  for prefix in ['', '/desktop', '/enterprise']:
+   config+='location ^~ '+prefix+'/_next/static/{alias /fixture/unified-static'+prefix+'/_next/static/;add_header Cache-Control "public,max-age=31536000,immutable" always;}'
  config+='}}';(ROOT/'nginx.conf').write_text(config);run(['docker','start',s['gateway']]);s['origin']='http://127.0.0.1:'+run(['docker','port',s['gateway'],'80/tcp']).split(':')[-1];STATE.write_text(json.dumps(s,indent=2));wait(lambda:read(s['origin']+'/api/version').get('commit')==version.get('commit'),'variant gateway');print('VARIANT_READY='+json.dumps({'variant':variant,'version':version,'origin':s['origin']}))
 elif mode=='pause-webs':
  s=json.loads(STATE.read_text())
