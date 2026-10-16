@@ -29,7 +29,8 @@ async function main() {
     fixture.config.providers.push({...fixture.config.providers[0], id: "text", name: "Text fixture", protocol: "openai-chat", credentialRef: credential.id});
     fixture.config.upstreamModels.push({...structuredClone(fixture.config.upstreamModels[0]), id: "packaging-text", providerId: "text", model: "wire-packaging", modality: "text", parameterMap: {}});
     fixture.config.publicModels.push({id: "text-packaging", label: "Packaging text", enabled: true, visible: true, modality: "text", target: {type: "upstream", id: "packaging-text"}});
-    fixture.config.bindings["text.generate"] = "text-packaging";
+    Object.assign(fixture.config.bindings, {"text.generate": "text-packaging", "agent.text": "text-packaging"});
+    (await import("../src/lib/model-config/schema")).validateModelConfig(fixture.config, {trustedOrigins: [fixture.origin]});
     await fixture.repo.current(); await db.ensureSchema();
     const owner = `packaging-${randomUUID()}@example.test`, other = `other-${randomUUID()}@example.test`;
     await db.getOrCreateUser(owner, "Packaging owner"); await db.getOrCreateUser(other, "Other user");

@@ -53,7 +53,10 @@ export async function beginPackagingCommand(email: string, command: PackagingCom
     const changed = current && !sameBrief(current.brief, command.brief);
     const previous = changed ? null : current?.result || null;
     if (command.action === "refine" && changed) throw new PackagingError("简报已更改，请先重新生成策略");
-    const answers = [changed ? "" : current?.answers || "", command.answers?.trim() || ""].filter(Boolean).join("\n");
+    const savedAnswers = changed ? "" : current?.answers || "";
+    const newAnswer = command.answers?.trim() || "";
+    const answers = newAnswer && savedAnswers !== newAnswer && !savedAnswers.endsWith("\n" + newAnswer)
+      ? [savedAnswers, newAnswer].filter(Boolean).join("\n") : savedAnswers;
     if (answers.length > 12000) throw new PackagingError("补充信息过长，请整理后重新生成");
     const id = current?.id || randomUUID(), title = command.brief.brand.trim().split(/\r?\n/)[0].slice(0, 80) || "未命名包装项目";
     const parameters = [email, id, title, JSON.stringify(command.brief), JSON.stringify(previous), answers, runId];

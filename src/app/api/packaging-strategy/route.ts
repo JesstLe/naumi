@@ -6,7 +6,7 @@ import { featureRequestGate, ACCESS_HEADERS } from "@/lib/feature-access/server"
 import { rateLimit } from "@/lib/rate-limit";
 import { commandSchema, packagingMessages, parsePackagingResult, PackagingError } from "@/lib/packaging-strategy/contract";
 import { beginPackagingCommand, finishPackagingCommand, getPackagingProject, listPackagingProjects } from "@/lib/packaging-strategy/server";
-import { withBiRequest, observeOpenAI } from "@/lib/bi/model-observer";
+import { withBiRequest, withBiModelContext, observeOpenAI } from "@/lib/bi/model-observer";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
@@ -56,6 +56,7 @@ export async function POST(request: Request) {
   try {
     const email = await actor(request); if (typeof email !== "string") return email;
     const command = await boundedCommand(request.clone());
+    if (command.action !== "save" && !command.projectId) throw new PackagingError("请先保存简报再生成策略");
     if (!rateLimit(`packaging:${email}`, command.action === "save" ? 60 : 20, 600000)) return json({error: "操作频繁，请稍后重试"}, 429);
     if (command.action !== "save" && !command.brief.brand) throw new PackagingError("请先填写品牌与产品");
     // Save never resolves an upstream model; generation uses the same platform
@@ -68,13 +69,13 @@ export async function POST(request: Request) {
         const apiKey = currentModelExecution("text")?.connection.apiKey || process.env.AGENT_API_KEY || settings.apiKey;
         if (!apiKey) throw new PackagingError("文字模型接口尚未配置", 503);
         const client = observeOpenAI(modelAwareOpenAI({apiKey, baseURL: process.env.AGENT_BASE_URL || await getOpenAIBaseUrl() || undefined, timeout: 120000, maxRetries: 0}));
-        const response = await client.chat.completions.create({
+        const response = await withBiModelContext(email, "/api/packaging-strategy", claim.runId, () => client.chat.completions.create({
           model: requestedTextModel(request, process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna"),
           messages: packagingMessages(command, claim.previous, claim.previousAnswers),
           response_format: {type: "json_object"}, max_tokens: 5500,
         // Managed provider timeout can exceed the 4-minute project lease.
         // Bound the actual fetch too, not only the legacy SDK constructor.
-        }, {signal: AbortSignal.any([request.signal, AbortSignal.timeout(120000)])});
+        }, {signal: AbortSignal.any([request.signal, AbortSignal.timeout(120000)])}));
         const result = parsePackagingResult(response.choices[0]?.message?.content || "", command.allowDraft);
         return json({project: await finishPackagingCommand(email, claim.project.id, claim.runId, result)});
       } catch (error) {
