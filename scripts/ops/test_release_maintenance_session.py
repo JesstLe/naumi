@@ -171,6 +171,64 @@ class SessionTests(unittest.TestCase):
         self.session.step({**request,'reconcile':True});self.assertEqual(self.session.state['phase'],'BACKED_UP')
         with self.assertRaisesRegex(m.Hold,'BINDING_CONFLICT'): self.session.step({**request,'action':'maintenance'})
 
+    def failed_baseline(self, spec=None):
+        self.adapter=FixtureAdapter();self.adapter.fail='inventory'
+        self.session=self.make_new(spec or plan())
+        request={'action':'baseline','operationId':str(uuid.uuid4()),'expectedRevision':0}
+        with self.assertRaisesRegex(m.Hold,'FIXTURE_UNKNOWN'):self.session.step(request)
+        self.adapter.fail=None
+        self.assertNotIn('baselineInventory',self.session.state);self.assertNotIn('before',self.session.state)
+        return request
+
+    def test_failed_read_only_baseline_original_uuid_reconciles_fresh_inventory_then_snapshot(self):
+        for target in ['47.105.59.142','103.30.76.93']:
+            spec=plan(target)
+            if target.startswith('103.'):
+                spec['authorization'].update(mode='immediate-HK-only',userImmediateAcknowledgement=m.maintenance.IMMEDIATE_HK_ACK,notBefore=m.maintenance.IMMEDIATE_HK_NOT_BEFORE)
+            # Keep each real canonical fixture independent, never edit its UUID.
+            self.folder=self.folder/target;self.folder.mkdir();self.tx.folder=self.folder
+            request=self.failed_baseline(spec)
+            self.session=m.MaintenanceSession(self.tx,spec,adapter=self.adapter,state_root=self.session.root,now=NOW)
+            self.session.step({**request,'reconcile':True})
+            self.assertEqual(self.session.state['phase'],'BASELINED')
+            self.assertEqual(list(self.session.state['operations']),[request['operationId']])
+            self.assertEqual(self.adapter.calls,['inventory','inventory','snapshot'])
+            calls=list(self.adapter.calls);self.session.step(request);self.assertEqual(calls,self.adapter.calls)
+
+    def test_baseline_snapshot_failure_or_partial_inventory_never_rebaselines(self):
+        self.adapter.fail='snapshot'
+        request={'action':'baseline','operationId':str(uuid.uuid4()),'expectedRevision':0}
+        with self.assertRaisesRegex(m.Hold,'FIXTURE_UNKNOWN'):self.session.step(request)
+        self.assertIn('baselineInventory',self.session.state)
+        self.adapter.fail=None;calls=list(self.adapter.calls)
+        with self.assertRaisesRegex(m.Hold,'ORIGINAL_PRIVATE_SNAPSHOT'):self.session.step({**request,'reconcile':True})
+        self.assertEqual(calls,self.adapter.calls)
+
+    def test_baseline_reconcile_rejects_any_original_snapshot_or_lifecycle_state(self):
+        request=self.failed_baseline();pristine=copy.deepcopy(self.session.state)
+        mutations=[lambda s:s.update(before=None),lambda s:s.update(baselineInventory=None),
+            lambda s:s.update(backup={}),lambda s:s.update(worker={}),lambda s:s.update(maintenance={}),
+            lambda s:s.update(openGateway={}),lambda s:s.update(freeze=False),lambda s:s.update(capacityPreflight={}),
+            lambda s:s.update(rollbackGateway={}),lambda s:s.update(unknownFutureSideEffect=False),
+            lambda s:s['webs'].update(main={}),lambda s:s['retired'].append('fixture'),
+            lambda s:s.update(databaseRestored=True),lambda s:s.update(tasksReplayed=True),
+            lambda s:s.update(acceptedTasks=0),lambda s:s.update(agentSessions=0),
+            lambda s:s.update(phase='BASELINED'),lambda s:s['operations'].update(other={}),
+            lambda s:s['history'].append({'action':'backup','operationId':request['operationId'],'result':'UNKNOWN'}),
+            lambda s:s['operations'][request['operationId']]['request'].update(action='backup'),
+            lambda s:s['operations'][request['operationId']].update(resultSha256='a'*64)]
+        for mutate in mutations:
+            self.session.state=copy.deepcopy(pristine);mutate(self.session.state);self.session.persist()
+            calls=list(self.adapter.calls)
+            with self.assertRaises(m.Hold):self.session.step({**request,'reconcile':True})
+            self.assertEqual(calls,self.adapter.calls)
+
+    def test_failed_baseline_new_uuid_no_reconcile_or_changed_binding_still_rejected(self):
+        request=self.failed_baseline();calls=list(self.adapter.calls)
+        for retry in [request,{**request,'operationId':str(uuid.uuid4())},{**request,'reconcile':True,'expectedRevision':2},{**request,'reconcile':True,'action':'backup'}]:
+            with self.assertRaises(m.Hold):self.session.step(retry)
+        self.assertEqual(calls,self.adapter.calls)
+
     def test_resume_response_loss_keeps_original_suboperation_and_never_reopens_apps_twice(self):
         self.to_candidates();self.step('acceptance');self.step('preservation');self.adapter.lost='resume'
         request={'action':'activate','operationId':str(uuid.uuid4()),'expectedRevision':self.session.state['revision']}
