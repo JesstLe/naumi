@@ -85,7 +85,7 @@ async function main() {
     mode = "strategy";
     const complete = await runPut(id, "品牌山间茶，330ml乌龙茶铝罐，三口味；20—35岁通勤人群；售价6元，便利店及电商；保持原标志、普通印刷。事实不足明确待确认。按所选 Skill 输出三个不同方向、唯一推荐、风险和SKU规则。仅文字，不生成图片。");
     is(complete.find(event => event.type === "final")?.data.reply, strategyText);
-    const saved = await db.getAgentSession(owner, id); ok(saved?.messages.some((message: any) => message.role === "assistant" && message.content.includes("唯一推荐")));
+    const saved = await db.getAgentSession(owner, id); ok((Array.isArray(saved?.messages) ? saved.messages : []).some((message: any) => message.role === "assistant" && message.content.includes("唯一推荐")));
     ok((saved?.steps as any[]).some(step => step.type === "image_skill" && step.id === skill.id));
     await assert.rejects((await import("../src/lib/image-skills/server")).resolveImageSkill(other, selection)); checks++;
     const once = "ag-" + randomUUID(); sessions.push(once);

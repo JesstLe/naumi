@@ -146,7 +146,7 @@ export function SkillBook({ selected, onSelect, accountKey, busy, sessionId, has
             onDragOver={event => { if (!event.dataTransfer.types.includes("Files")) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = saving ? "none" : "copy"; }}
             onDragLeave={event => { event.preventDefault(); event.stopPropagation(); dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDragging(false); }}
             onDrop={event => { event.preventDefault(); event.stopPropagation(); dragDepth.current = 0; setDragging(false); void importFiles(event.dataTransfer.files); }}>
-            <span className={styles.uploadIcon}>{importing ? <Loader2 size={21} className={styles.spin} /> : <Upload size={21} />}</span><span><strong>{importing ? "正在导入 Skill…" : "拖拽 Skill 文件到这里，或点击上传"}</strong><small>.md / .zip / .json · 单个文件，最多 512 KiB</small></span>
+            <span className={styles.uploadIcon}>{importing ? <Loader2 size={21} className={styles.spin} /> : <Upload size={21} />}</span><span><strong>{importing ? "正在导入 Skill…" : "拖拽 Skill 文件到这里，或点击上传"}</strong><small>.md / .zip / .json · 含参考资料请上传 ZIP · 最多 512 KiB</small></span>
           </button>
           <label className={styles.search}><Search size={17} /><input aria-label="搜索技能" placeholder="搜索 Skills" value={query} onChange={event => setQuery(event.target.value)} /></label>
           <div className={styles.categories}>{["全部", ...SKILL_CATEGORIES].map(c => <button aria-pressed={category === c} key={c} className={category === c ? styles.activeCategory : ""} onClick={() => setCategory(c)}>{c}</button>)}</div>
