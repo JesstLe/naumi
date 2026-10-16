@@ -1,9 +1,11 @@
 "use client";
+import {CanvasModelSelect} from "../model-select";
 import {useVideoI18n} from "./i18n";
 import type { ResolvedVideoCapability } from "@/lib/video/capability-schema";
 import { catalogCapability, selectedVideoCatalogModel, VIDEO_MODE_LABELS, videoDurations, videoResolutions, reconcileVideoSettings, type VideoCatalogModel, type VideoNodeConfig } from "@/lib/video/client-settings";
 import { VideoField, videoFieldClass, VideoSection } from "./form-controls";
-export function VideoSettingsPanel({ config, models, onChange, onNotice }: {
+export function VideoSettingsPanel({ config, models, onChange, onNotice, disabled = false }: {
+    disabled?: boolean;
     config: VideoNodeConfig;
     models: VideoCatalogModel[];
     onChange: (next: VideoNodeConfig) => void;
@@ -14,11 +16,10 @@ export function VideoSettingsPanel({ config, models, onChange, onNotice }: {
     function reconcile(next: VideoNodeConfig, definition: ResolvedVideoCapability) { const result = reconcileVideoSettings(next, definition); onChange(result.config); onNotice(result.changes.length ? `${V("已调整")}：${result.changes.map(V).join("、")}` : ""); }
     const field = (name: string, value: unknown) => <input aria-label={name} value={String(value ?? "")} className={videoFieldClass} readOnly/>;
     return <div className="space-y-3" data-testid="video-settings-panel">
-    <VideoField label={V("视频模型")}><select aria-label={V("视频模型")} className={videoFieldClass} value={model ? `${model.providerId}/${model.modelId}` : ""} onChange={event => {
-            const selected = models.find(item => `${item.providerId}/${item.modelId}` === event.target.value);
-            if (selected)
-                reconcile({ ...config, workflowTaskId: undefined, providerId: selected.providerId, modelId: selected.modelId }, catalogCapability(selected));
-        }}><option value="" disabled>{V("\u9009\u62E9\u6A21\u578B")}</option>{models.map(item => <option key={`${item.providerId}/${item.modelId}`} value={`${item.providerId}/${item.modelId}`}>{item.label}</option>)}</select></VideoField>
+    <VideoField label={V("视频模型")}><CanvasModelSelect fullWidth disabled={disabled} label={V("视频模型")}
+      value={model ? `${model.providerId}/${model.modelId}` : ""} placeholder={V("未选择模型")}
+      options={models.map(item=>({value:`${item.providerId}/${item.modelId}`,modelId:item.modelId,label:item.label}))}
+      onChange={value=>{const selected=models.find(item=>`${item.providerId}/${item.modelId}`===value);if(selected)reconcile({...config,workflowTaskId:undefined,providerId:selected.providerId,modelId:selected.modelId},catalogCapability(selected));}} /></VideoField>
     <VideoField label={V("视频生成模式")}><select aria-label={V("视频生成模式")} value={config.mode || ""} className={videoFieldClass} onChange={event => onChange({ ...config, mode: event.target.value as VideoNodeConfig["mode"] })}>
       <option value="" disabled>{cap.modes?.length ? V("选择模式") : V("能力未配置")}</option>{(cap.modes || []).map(mode => <option key={mode} value={mode}>{V(VIDEO_MODE_LABELS[mode])}</option>)}
     </select></VideoField>

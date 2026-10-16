@@ -83,7 +83,9 @@ try {
   await palette.getByTestId("canvas-add-node-button").click();
   const createMenu = page.getByTestId("canvas-create-menu");
   await expect(createMenu).toBeVisible();
-  await expect(createMenu.getByRole("menuitem", { name: /上传图片/ })).toBeVisible();
+  await expect(createMenu.getByRole("menuitem")).toHaveCount(3);
+  await expect(createMenu.locator('[data-action="image-node"]')).toBeVisible();
+  await expect(createMenu.locator('[data-action="video-node"]')).toBeVisible();
   await page.waitForTimeout(180);
   await page.screenshot({ path: path.join(output, "desktop-create-flyout.png"), fullPage: true });
   await createMenu.locator('[data-action="text"]').click();

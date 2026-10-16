@@ -32,7 +32,7 @@ if (process.argv.includes('--baseline')) {
 
 assert.equal((main.match(/data-tool="/g) || []).length, 9);
 assert.equal((main.match(/<CanvasActionMenu /g) || []).length, 2);
-for (const id of ['text', 'image-node', 'upload', 'history']) assert.equal((main.match(new RegExp(`id: "${id}"`, 'g')) || []).length, 1);
+for (const id of ['text', 'image-node', 'video-node']) assert.equal((main.match(new RegExp(`id: "${id}"`, 'g')) || []).length, 1);
 for (const id of ['text', 'image-node', 'upload', 'history', 'undo', 'redo']) assert.equal((main.match(new RegExp(`data-tool="${id}"`, 'g')) || []).length, 1);
 assert.ok(main.includes('void doUndo()') && main.includes('void doRedo()'));
 assert.ok(main.includes('historySaving || undoStack.length === 0') && main.includes('historySaving || redoStack.length === 0'));
@@ -51,17 +51,17 @@ for (const id of ['assistant', 'rename']) {
 }
 assert.ok(!imageMenu.includes('"angle"') && !imageMenu.includes('"caption"'));
 for (const id of ['relight', 'angle', 'caption']) assert.ok(image.includes(`"${id}"`));
-assert.ok(image.includes('(a) => ["bg", "angle", "caption"].includes(a.key)'));
+assert.ok(image.includes('["bg", "angle", "caption"].includes(a.key)'));
 assert.match(main, /triggerClassName="flex h-7 w-7 .*sm:h-9 sm:w-9"/);
 assert.ok(!main.includes('h-10 w-10') && !main.includes('sm:h-12 sm:w-12'));
 const qualitySelect = read('src/components/ui/image-quality-select.tsx');
 assert.ok(qualitySelect.includes('h-8 max-w-40 rounded-[9px] px-2.5 py-0 text-[12.5px] font-semibold'));
-assert.ok(source.includes('canvas-ui-control flex h-8 max-w-[190px]'));
+assert.ok(source.includes('<CanvasModelSelect') && read('src/components/canvas/model-select.tsx').includes('max-w-[190px]'));
 assert.ok(source.includes('canvas-ui-control flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0'));
 assert.equal((source.match(/triggerClass="canvas-ui-control flex h-8 cursor-pointer/g) || []).length, 2);
 assert.ok(image.includes('onPick={(v) => onHd(v)}') && image.includes('onPick={(v) => onRatioGen(v)}'));
 assert.ok(image.includes('onCutout("fine")') && image.includes('openImageTextEditor(selected)') && image.includes('onExpand(expandRatio)'));
-assert.equal((image.match(/<CanvasActionPanel /g) || []).length, 2);
+assert.equal((image.match(/<CanvasActionPanel /g) || []).length, 1);
 assert.ok(image.includes('onPendUpload(selectedPend.id)'));
 assert.ok(!image.includes('overflow-visible'));
 assert.ok(!text.includes('⧉') && !text.includes('⊡') && !text.includes('✏️'));
