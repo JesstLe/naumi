@@ -24,12 +24,13 @@ class Maintenance(unittest.TestCase):
             with self.assertRaises(Hold): m.authorize(dict(self.spec(),**change),dt.datetime.fromisoformat('2026-10-16T18:30:00+08:00'))
 
     def test_maintenance_rejects_tasks_lost_or_supplier_changed_or_unknown(self):
-        before=after={'dbIdentityHash':'a'*64,'errors':[]}
-        result={'noMissingJobIds':True,'noSupplierIdentityMutation':True}
+        before=after={'databaseIdentitySha256':'a'*64,'preservationComplete':True}
+        result={'noMissingJobs':True,'noOriginalSupplierMutation':True,'preservationVerified':True,
+                'violations':[],'unknownTables':[]}
         self.assertFalse(m.validate_preservation(before,after,result)['legacyDrainProven'])
-        for change in [dict(noMissingJobIds=False),dict(noSupplierIdentityMutation=False)]:
+        for change in [dict(noMissingJobs=False),dict(noOriginalSupplierMutation=False),dict(unknownTables=['app_image_jobs'])]:
             with self.assertRaises(Hold):m.validate_preservation(before,after,dict(result,**change))
-        with self.assertRaises(Hold):m.validate_preservation(before,dict(after,errors=['unknown']),result)
+        with self.assertRaises(Hold):m.validate_preservation(before,dict(after,preservationComplete=False),result)
 
     def test_maintenance_gateway_keeps_legacy_proxy_and_exact_cas(self):
         files=fixture_files();baseline=dump_files(files)
