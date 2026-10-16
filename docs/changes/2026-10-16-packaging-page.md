@@ -15,7 +15,7 @@
 5. 生成、最多三个追问的补充回答、显式跳过追问出初稿、保留已有策略继续优化、复制文字与下载 Markdown。
 6. 真实接口出错时显示错误，不填入示例结果。409保留本机简报并提示恢复云端；生成失败如返回更新后的项目版本，接收服务端 revision 后显示失败，避免下一次必然冲突。
 7. 全私有工作区按账号 key 重建；退出、切换账号或卸载会取消在途请求。认证未就绪、匿名、访问未授权、401/403、列表/生成错误、无项目、无结果等状态均独立处理。
-8. 同步 ref 防止双击并发，POST 均带最新 `expectedRevision`。生成中不可修改字段或切换云端项目，不会覆盖生成请求已提交的输入。
+8. 同步 ref 防止双击并发，已有项目POST均带最新 `expectedRevision`。首次生成在同一互斥段内先保存获取真实项目id和revision，再提交generate；任一步失败立即停止，不在重试时重复创建生成项目。生成中不可修改字段或切换云端项目，不会覆盖生成请求已提交的输入。
 9. 结果使用 ReactMarkdown 文本渲染，跳过 HTML、禁止结果图片加载和链接导航；本页面不触发任何图片供应商请求。
 10. 简报在本机编辑后，旧结果显示「上次结果」提示，必须重新生成才能继续优化。服务端约定 save 改变 brief 时清除 result；同 brief 保存保留。
 11. 确认弹窗支持 Escape、Tab 焦点约束、关闭后恢复焦点、背景滚动锁定；按钮和字段有可访问名称。
@@ -28,6 +28,7 @@
 - `project`：`{ id, title, brief, result: null | { kind: 'questions', questions: string[] } | { kind: 'strategy', content: string }, revision, updatedAt }`
 - 非2xx可返回 `{ error, project }`，用于模型失败后同步已释放租约的最新 revision。409不会自动接受远端 revision，以防静默覆盖新内容。
 - 所有接口使用 `authHeader()`；不提交 email 代替服务端认证。页面额外调用 `canPage('/tools/packaging-strategy')`。
+- 仅save允许没有projectId；generate/refine均要求已保存的项目id。首轮保存成功但生成失败时，客户端仍保留该项目id，避免重试新建重复项目。
 
 ## 验证与当前边界
 
