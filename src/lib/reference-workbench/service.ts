@@ -1,3 +1,5 @@
+import { withBackgroundActivity, detachBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
+import { releaseRuntimeEnabled } from "@/lib/release-runtime/identity";
 import "server-only";
 import {randomUUID} from "node:crypto";
 import {getPool,listArtworksByIds,isBanned} from "../db";
@@ -142,7 +144,7 @@ async function submitImages(op:Operation,tasks:TaskPlan[],batchId:string){
  await submitAcceptedImagegenBatch(plan,op.owner);
 }
 const active=new Set<string>();
-export async function synchronize(op:Operation){
+async function synchronizeLocal(op:Operation){
  if(op.state==="preview"||op.state==="done"||active.has(op.id))return;active.add(op.id);
  try{
   const tasks=op.plans as TaskPlan[];
@@ -156,8 +158,15 @@ export async function synchronize(op:Operation){
   }else{
    // Only accepted records from this module, never copied historical supplier jobs.
    for(let i=0;i<tasks.length;i++){const t=tasks[i];if(["done","failed","maybe_submitted"].includes(t.state||""))continue;
-    const claimed=await transaction(`reference-text:${op.id}:${i}`,async tx=>{const row=await operation(op.owner,op.id,tx),item=row.plans[i] as TaskPlan;if(item.state!=="queued"&&!(item.state==="running"&&(item.startedAt||0)<Date.now()-180000))return false;row.plans[i]={...item,state:"running",startedAt:Date.now()};await tx.query("UPDATE app_reference_operations SET plans=$2::jsonb,updated_at=now() WHERE id=$1",[op.id,JSON.stringify(row.plans)]);return true;});
-    if(claimed){void executeText(op,i).catch(()=>{});break;}
+    if(!releaseRuntimeEnabled()) {
+      const claimed=await transaction(`reference-text:${op.id}:${i}`,async tx=>{const row=await operation(op.owner,op.id,tx),item=row.plans[i] as TaskPlan;if(item.state!=="queued"&&!(item.state==="running"&&(item.startedAt||0)<Date.now()-180000))return false;row.plans[i]={...item,state:"running",startedAt:Date.now()};await tx.query("UPDATE app_reference_operations SET plans=$2::jsonb,updated_at=now() WHERE id=$1",[op.id,JSON.stringify(row.plans)]);return true;});
+      if(claimed){void executeText(op,i).catch(()=>{});break;}continue;
+    }
+    const admitted=await detachBackgroundActivity("reference-text", `${op.id}:${i}`, "claim", async () => {
+      const claimed=await transaction(`reference-text:${op.id}:${i}`,async tx=>{const row=await operation(op.owner,op.id,tx),item=row.plans[i] as TaskPlan;if(item.state!=="queued"&&!(item.state==="running"&&(item.startedAt||0)<Date.now()-180000))return false;row.plans[i]={...item,state:"running",startedAt:Date.now()};await tx.query("UPDATE app_reference_operations SET plans=$2::jsonb,updated_at=now() WHERE id=$1",[op.id,JSON.stringify(row.plans)]);return true;});
+      if(claimed){await bindBackgroundClaim(`${op.id}:${i}`);await executeText(op,i);}
+    });
+    if(admitted)break;
    }
   }
  }finally{active.delete(op.id);}
@@ -200,4 +209,11 @@ export async function chatState(owner:string,sid:string){
  for(const m of chat.messages)if(m.operationId){const op=await operation(owner,m.operationId);await synchronize(op);}chat=await document<any>(owner,"chat",sid);
  return {ok:true,session_id:sid,sessions:sessions.map(s=>({id:s.id,title:s.payload.title,active:s.id===sid,running:s.payload.messages.filter((m:any)=>["thinking","queued","generating","plan_pending"].includes(m.status)).length,updated_at:new Date(s.updated_at).getTime()/1000})),messages:chat.messages.map((m:any)=>({...m,images:m.role==="user"?(m.inputs||[]).map(imageUrl):[]})),running:chat.messages.some((m:any)=>["thinking","generating","queued"].includes(m.status))};
 }
-export async function recoverReferenceWorkbench(){await ensureWorkbench();const ops=(await getPool().query<Operation>("SELECT * FROM app_reference_operations WHERE state='accepted' ORDER BY created_at LIMIT 10")).rows;for(const op of ops)await synchronize(op);}
+async function recoverReferenceWorkbenchLocal(){await ensureWorkbench();const ops=(await getPool().query<Operation>("SELECT * FROM app_reference_operations WHERE state='accepted' ORDER BY created_at LIMIT 10")).rows;for(const op of ops)await synchronize(op);}
+
+export async function synchronize(op:Operation) {
+  return withBackgroundActivity("reference-sync", op.id, "continuation", () => synchronizeLocal(op), () => undefined);
+}
+export async function recoverReferenceWorkbench() {
+  return withBackgroundActivity("reference-sync", "reference-recovery-scan", "claim", () => recoverReferenceWorkbenchLocal(), () => undefined);
+}

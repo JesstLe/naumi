@@ -13,9 +13,12 @@ export const CachedImage=forwardRef<HTMLImageElement,ImgHTMLAttributes<HTMLImage
   const attach=useCallback((node:HTMLImageElement|null)=>{ref.current=node;if(typeof forwarded==='function')forwarded(node);else if(forwarded)forwarded.current=node;},[forwarded]);
   useEffect(()=>{if(loading!=='lazy'){setVisible(true);return;}if(!ref.current)return;
     if(typeof IntersectionObserver==='undefined'){setVisible(true);return;}
-    const observer=new IntersectionObserver(entries=>setVisible(entries.some(e=>e.isIntersecting)),{rootMargin:'180px'});observer.observe(ref.current);return()=>observer.disconnect();
+    // Lazy admission is one-way for a mounted image: temporary hiding must not
+    // tear down an already loaded URL. Unmount/src change still releases it.
+    const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){setVisible(true);observer.disconnect();}},{rootMargin:'180px'});observer.observe(ref.current);return()=>observer.disconnect();
   },[loading]);
   useEffect(()=>{const reset=()=>{setResolved(null);setRevision(n=>n+1);};window.addEventListener('naumi:image-cache-session',reset);return()=>window.removeEventListener('naumi:image-cache-session',reset);},[]);
+  useEffect(()=>{const invalidate=(event:Event)=>{if((event as CustomEvent<{source:string}>).detail?.source===managed){setResolved(null);setRevision(n=>n+1);}};window.addEventListener('naumi:image-cache-invalidated',invalidate);return()=>window.removeEventListener('naumi:image-cache-invalidated',invalidate);},[managed]);
   useEffect(()=>{
     setNativeReady('');if(managed||networkQueue!=='canvas'||typeof src!=='string'||!visible)return;
     const controller=new AbortController();let release:(()=>void)|undefined;

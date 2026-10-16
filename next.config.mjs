@@ -1,7 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  ...(process.env.NAUMI_BUILD_CPUS ? { experimental: { cpus: Number(process.env.NAUMI_BUILD_CPUS) } } : {}),
+  // batchshot 工作台整夹上传超过 Next 默认 10MB 请求体上限(中间件截断报 UPLOAD_ERR_INI_SIZE)，
+  // 提到 310mb 与 nginx client_max_body_size 对齐。
+  experimental: {
+    ...(process.env.NAUMI_BUILD_CPUS ? { cpus: Number(process.env.NAUMI_BUILD_CPUS) } : {}),
+    middlewareClientMaxBodySize: "310mb",
+  },
   // Dedicated parallel deployment; ordinary builds retain their existing URLs.
   ...(process.env.DESKTOP_UI_BUILD === "1" ? { assetPrefix: "/desktop" } : {}),
   ...(process.env.ENTERPRISE_UI_BUILD === '1' ? { assetPrefix: '/enterprise' } : {}),

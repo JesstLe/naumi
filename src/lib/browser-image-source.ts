@@ -6,7 +6,7 @@ export function managedImageSource(raw: string, origin: string): string | null {
       const group=url.pathname.includes('/enterprise/')?'enterpriseId':'teamId';
       const id=url.searchParams.get('id'),email=url.searchParams.get('email'),owner=url.searchParams.get(group);
       if(!id||id.length>200||!email||email.length>254||!owner||!/^[0-9a-f-]{36}$/i.test(owner))return null;
-      return url.pathname+'?'+new URLSearchParams({[group]:owner,email:email.toLowerCase(),id});
+      return url.pathname+'?'+new URLSearchParams({[group]:owner,email:email.toLowerCase(),id,...(group==='enterpriseId'&&url.searchParams.get('full')==='1'?{full:'1'}:{})});
     }
     if (url.origin === origin && url.pathname === '/_next/image') {
       const inner = new URL(url.searchParams.get('url') || '', origin);

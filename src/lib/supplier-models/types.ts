@@ -43,6 +43,7 @@ export const supplierMetadataSchema=z.strictObject({
  if(m.parameterMetadata.video!==undefined&&!videoDefinitionSchema.safeParse(m.parameterMetadata.video).success)ctx.addIssue({code:"custom",message:"视频能力资料格式无效"});
 
  if(m.parameterMetadata.imagegen!==undefined&&!imagegenMetadataSchema.safeParse(m.parameterMetadata.imagegen).success)ctx.addIssue({code:"custom",message:"图像能力元数据无效，需要支持依据、日期和白名单参数名"});
+ if(m.parameterMetadata.supplierImagegenEvidence!==undefined&&!imagegenMetadataSchema.safeParse(m.parameterMetadata.supplierImagegenEvidence).success)ctx.addIssue({code:"custom",message:"供应商图像实测能力无效，需要独立能力、依据、日期和白名单参数名"});
  if(m.parameterMetadata.resolutionDefaults!==undefined && !metadataResolutionSchema.safeParse(m.parameterMetadata.resolutionDefaults).success)ctx.addIssue({code:"custom",message:"分辨率默认映射格式无效，请填写参数名与合法实际值"});
  if(m.parameterMetadata.qualityDefaults!==undefined && !metadataQualitySchema.safeParse(m.parameterMetadata.qualityDefaults).success)ctx.addIssue({code:"custom",message:"quality 默认映射格式无效，请逐档填写合法参数值"});
  if(["documented","verified"].includes(m.capabilityState)&&(!m.capabilitySource || !m.checkedAt))ctx.addIssue({code:"custom",message:"文档声明或已验证状态需要来源和核对日期"});

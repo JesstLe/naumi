@@ -5,6 +5,7 @@ set -Eeuo pipefail
 test ! -e /opt/naumi/current
 test ! -e /etc/nginx/sites-enabled/naumi-ip
 mkdir -p /fixture/bin /fixture/source/deploy /opt/naumi/releases/fixture-old /etc/nginx/sites-available /etc/nginx/sites-enabled
+touch /fixture/NAUMI_OFFLINE_RELEASE_FIXTURE
 export FIXTURE_COMMIT=1111111111111111111111111111111111111111
 export FIXTURE_TRACE=/fixture/trace
 export FAIL_HEALTH=${FAIL_HEALTH:-0}
@@ -75,7 +76,7 @@ printf 'server { return 200; }\n' > /fixture/source/deploy/nginx-naumi.conf
 tar -czf /fixture/source.tar.gz -C /fixture/source .
 printf 'fixture-image' | gzip > /fixture/image.tar.gz
 set +e
-NAUMI_COORDINATED_RELEASE=1 bash /deploy.sh "$FIXTURE_COMMIT" /fixture/source.tar.gz /fixture/image.tar.gz > /fixture/result 2>&1
+NAUMI_COORDINATED_RELEASE=1 bash /deploy.sh --offline-legacy-fixture "$FIXTURE_COMMIT" /fixture/source.tar.gz /fixture/image.tar.gz > /fixture/result 2>&1
 status=$?
 set -e
 grep -q 'return 503;' /etc/nginx/sites-available/naumi-ip

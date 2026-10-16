@@ -3,14 +3,14 @@ import { authenticatedEmail } from "@/lib/request-auth";
 import { dbEnabled, getAgentSession } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { SkillError, conversationSkillDraft, validateSkillSelection } from "@/lib/image-skills/catalog";
-import { listImageSkills, saveImageSkill, archiveImageSkill } from "@/lib/image-skills/server";
+import { listImageSkills, saveImageSkill, archiveImageSkill, imageSkillEnterprise } from "@/lib/image-skills/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 async function handle(request: Request) {
   try {
     const email = dbEnabled ? await authenticatedEmail(request) : null;
     if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
-    if (request.method === "GET") return NextResponse.json({ skills: await listImageSkills(email) }, { headers: { "Cache-Control": "private, no-store" } });
+    if (request.method === "GET") return NextResponse.json({ skills: await listImageSkills(email), enterprise: await imageSkillEnterprise(email) }, { headers: { "Cache-Control": "private, no-store" } });
     if (!rateLimit(`image-skills:${email}`, 60, 600000)) return NextResponse.json({ error: "操作频繁，请稍后重试" }, { status: 429 });
     // Bound bytes as well as fields; a chunked request cannot bypass Content-Length checks.
     const reader = request.body?.getReader(); let raw = ""; let size = 0;
@@ -28,7 +28,7 @@ async function handle(request: Request) {
       return NextResponse.json({ instructions: conversationSkillDraft(Array.isArray(session.messages) ? session.messages : []) });
     }
     if (request.method === "PATCH" && !validateSkillSelection(body.selection)) throw new SkillError("缺少待编辑的技能版本");
-    return NextResponse.json({ skill: await saveImageSkill(email, body.definition, request.method === "PATCH" ? body.selection : undefined) }, { status: request.method === "POST" ? 201 : 200 });
+    return NextResponse.json({ skill: await saveImageSkill(email, body.definition, request.method === "PATCH" ? body.selection : undefined, body.visibility) }, { status: request.method === "POST" ? 201 : 200 });
   } catch (error) {
     if (error instanceof SkillError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error("[image-skills] storage request failed");

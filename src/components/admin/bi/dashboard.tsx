@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { AdminCenterShell } from "@/components/admin/center-shell";
 import {microsToDecimal} from "@/lib/billing/decimal";
-import Image from "@/components/cached-next-image";
+import { ModelChain } from "./model-chain";
+import { ArtworkMedia } from "./artwork-media";
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -29,6 +30,7 @@ import type {
   BiSection,
 } from "@/lib/bi/contracts";
 import { biCsvCell } from "@/lib/bi/contracts";
+import { ARTWORK_COLUMNS, ARTWORK_DETAIL_VALUES } from "@/lib/bi/artwork-view";
 import styles from "./dashboard.module.css";
 import { UserManager } from "./user-manager";
 import { BiTooltip } from "./tooltip";
@@ -115,28 +117,24 @@ const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
     { key: "email", label: "账户" },
     { key: "kind", label: "操作", format: "status" },
     { key: "status", label: "状态", format: "status" },
-    { key: "requested_model", label: "请求模型" },
+    { key: "frontend_model_label", label: "前端显示模型" },
+    { key: "requested_model", label: "接口请求值" },
+    { key: "actual_request_model", label: "实际请求模型" },
+    { key: "actual_executed_model", label: "上游确认模型" },
     { key: "requested_quality", label: "请求质量", format: "quality" },
     { key: "resolution", label: "尺寸" },
     { key: "quoted_credits", label: "冻结报价", format: "credits" },
     { key: "billed_credits", label: "实际落账", format: "credits" },
     { key: "content", label: "操作内容" },
   ],
-  artworks: [
-    { key: "created_at", label: "创建时间", format: "time" },
-    { key: "email", label: "账户" },
-    { key: "title", label: "作品" },
-    { key: "operation_label", label: "创建操作" },
-    { key: "dimensions", label: "图片尺寸" },
-    { key: "source_label", label: "创建来源" },
-    { key: "provenance_status", label: "溯源状态" },
-    { key: "provenance_ref", label: "来源编号" },
-    { key: "prompt_display", label: "提示词 / 操作内容" },
-  ],
+  artworks: ARTWORK_COLUMNS,
   models: [
     { key: "created_at", label: "审计时间", format: "time" },
     { key: "email", label: "账户" },
-    { key: "requested_model", label: "用户请求模型" },
+    { key: "frontend_model_label", label: "前端显示模型" },
+    { key: "requested_model", label: "接口请求值" },
+    { key: "actual_request_model", label: "实际请求模型" },
+    { key: "actual_executed_model", label: "上游确认模型" },
     { key: "upstream", label: "接口执行记录" },
     { key: "requested_quality", label: "请求质量", format: "quality" },
     { key: "executed_quality", label: "实际质量", format: "quality" },
@@ -169,11 +167,15 @@ const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
     { key: "created_at", label: "调用时间", format: "time" },
     { key: "email", label: "账户" },
     { key: "operation", label: "操作" },
-    { key: "public_model_id", label: "所选模型" },
+    { key: "frontend_model_label", label: "前端显示模型" },
+    { key: "frontend_model_id", label: "展示模型关联 ID" },
+    { key: "public_model_id", label: "平台解析 ID" },
     { key: "provider_id", label: "执行通道" },
     { key: "model_version", label: "模型版本" },
     { key: "billing_version", label: "计费版本" },
-    { key: "wire_model", label: "实际提交模型" },
+    { key: "wire_model", label: "接口请求值" },
+    { key: "actual_request_model", label: "实际请求模型" },
+    { key: "actual_executed_model", label: "上游确认模型" },
     { key: "response_model", label: "上游响应模型" },
     { key: "state", label: "调用状态", format: "status" },
     { key: "duration_ms", label: "响应耗时（ms）" },
@@ -222,6 +224,7 @@ const names: Record<string, string> = {
   "provider-fallback": "接口回退",
   view: "查看",
   "view-image": "查看图片",
+  "view-input-image": "查看原图",
   "view-trace": "查看执行链路",
   "update-profile": "更新账户资料",
 };
@@ -260,6 +263,7 @@ Object.assign(names, {
   "manage-adjust": "调整积分",
   "manage-reset-password": "重置密码",
 });
+Object.assign(names, ARTWORK_DETAIL_VALUES);
 const n = (value: unknown) =>
   Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 function display(value: unknown, format?: Column["format"]) {
@@ -701,27 +705,7 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                     <tr key={String(row.id || row.email || i)}>
                       {section === "artworks" && (
                         <td>
-                          {row.has_image ? (
-                            <button
-                              className={styles.thumb}
-                              onClick={() => setSelected({ section, row })}
-                              aria-label={`查看 ${row.title || "图片"}`}
-                            >
-                              <Image
-                                unoptimized
-                                width={480}
-                                height={480}
-                                loading="lazy"
-                                src={`/api/admin/bi/media?id=${encodeURIComponent(String(row.id))}`}
-                                alt={String(row.title || "作品")}
-                                onError={(e) => {
-                                  e.currentTarget.style.display = "none";
-                                }}
-                              />
-                            </button>
-                          ) : (
-                            <span className={styles.muted}>无图片</span>
-                          )}
+                          <ArtworkMedia row={row} onOpen={() => setSelected({ section, row })} />
                         </td>
                       )}
                       {columns[section].map((c) => (
@@ -910,16 +894,7 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                 </div>
               </div>
             )}
-            {selected.section === "artworks" && selected.row.has_image && (
-              <Image
-                unoptimized
-                width={2560}
-                height={2560}
-                className={styles.preview}
-                src={`/api/admin/bi/media?id=${encodeURIComponent(String(selected.row.id))}&full=1`}
-                alt={String(selected.row.title || "作品预览")}
-              />
-            )}
+            {selected.section === "artworks" && <ArtworkMedia key={String(selected.row.id)} row={selected.row} detail />}
             {selected.section === "artworks" && selected.row.source_artwork_id && (
               <button className={styles.textButton} onClick={() => void openSourceArtwork(String(selected.row.source_artwork_id), String(selected.row.email))}>
                 查看复制源作品
@@ -945,11 +920,12 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                 }}
               />
             )}
+            {["calls", "operations", "models"].includes(selected.section) && <ModelChain row={selected.row}/>}
             <dl className={styles.details}>
               {Object.entries(selected.row)
                 .filter(
                   ([key]) =>
-                    !["has_image", "has_video", "profile_note"].includes(key),
+                    !["has_image", "has_video", "profile_note", "model_attempts"].includes(key),
                 )
                 .map(([key, value]) => {
                   const column = (
@@ -965,6 +941,12 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                     ratio: "比例",
                     state: "调用状态",
                     operation_id: "稳定操作 ID",
+                    frontend_model_label: "前端显示模型",
+                    frontend_model_id: "展示模型关联 ID",
+                    actual_request_model: "实际请求模型",
+                    actual_executed_model: "上游确认模型",
+                    model_evidence: "模型证据",
+                    model_evidence_scope: "证据范围",
                     id: "记录 ID",
                     job_id: "任务 ID",
                     parent_id: "上游作品 ID",
@@ -979,6 +961,9 @@ export function BiDashboard({ initialSection = "overview" }: { initialSection?: 
                     dimensions: "实际图片尺寸",
                     operation_label: "创建操作",
                     prompt_display: "提示词 / 操作内容",
+                    generation_mode: "生成方式",
+                    input_count: "原图数量",
+                    input_status: "原图关联",
                     image_width: "图片宽度",
                     image_height: "图片高度",
                     deleted_at: "回收时间",

@@ -1,4 +1,5 @@
 import "server-only";
+import { frontendModelSelection } from "./frontend-selection";
 import {imagegenRequirementsSchema,missingImagegenCapabilities,publishedImagegenCapabilities} from "../imagegen/capabilities";
 import { requestedFeatureModel } from "./selection-policy";
 import { z } from "zod";
@@ -28,6 +29,7 @@ export function createModelExecutor(deps: Dependencies) {
     if (!parsed.success) throw new ModelConfigError("EXECUTION_MISMATCH", "任务执行配置无效，需要核查原记录", 503);
     const frozen = parsed.data;
     const snapshot = await deps.runtime.byVersion(frozen.modelVersion);
+    const frontendModel = frontendModelSelection(snapshot, frozen.modality, frozen.publicModelId);
     const publicModel = snapshot.config.publicModels.find(m => m.id === frozen.publicModelId && m.enabled && m.modality === frozen.modality);
     const purpose = MODEL_BINDINGS[frozen.binding as ModelBinding];
     const businessOption = selectedBusinessOption(snapshot.config, frozen.feature, frozen.publicModelId);
@@ -47,17 +49,17 @@ export function createModelExecutor(deps: Dependencies) {
       const candidates = snapshot.config.upstreamModels.filter(u => pool ? pool.candidates.includes(u.id) : u.id === upstream!.id);
       if(frozen.facts?.imagegenRequirements&&candidates.some(u=>missingImagegenCapabilities(frozen.facts!.imagegenRequirements!,publishedImagegenCapabilities(u.capabilities)).length))throw new ModelConfigError("MODEL_INCOMPATIBLE","外部路由包含不满足必要图像参数的候选，不能静默回退",400);
       const capabilities = { ...candidates[0].capabilities, qualities: Array.from(new Set(candidates.flatMap(u => u.capabilities.qualities))), nativeResolutions: Array.from(new Set(candidates.flatMap(u => u.capabilities.nativeResolutions))), edit: candidates.some(u => u.capabilities.edit), maxReferenceImages: Math.max(...candidates.map(u => u.capabilities.maxReferenceImages)) };
-      return { frozen, connection: { ...gateway, protocol: "router-images", providerId: "managed-router", wireModel: frozen.publicModelId, timeoutMs: 280000 }, capabilities, parameterMap: {}, businessOption, audited: true };
+      return { frozen, frontendModel, connection: { ...gateway, protocol: "router-images", providerId: "managed-router", wireModel: frozen.publicModelId, timeoutMs: 280000 }, capabilities, parameterMap: {}, businessOption, audited: true };
     }
     const connectionFor = async (id: string) => {
       const u = snapshot.config.upstreamModels.find(u => u.id === id)!, p = snapshot.config.providers.find(p => p.id === u.providerId)!;
       return { providerId: p.id, protocol: p.protocol, baseUrl: p.baseUrl, apiKey: await deps.credentials.read(p.credentialRef!, p.id), credentialRef: p.credentialRef, wireModel: u.model, timeoutMs: p.timeoutMs, maxConcurrent: p.maxConcurrent, options: { ...p.options, ...(frozen.video?.profile ? {videoProfile:frozen.video.profile} : u.parameterMap.videoProfile ? {videoProfile:u.parameterMap.videoProfile} : {}) } };
     };
-    const scope: ModelExecutionScope = { frozen, connection: await connectionFor(publicModel.supplierRouting?.channels.find(c=>c.enabled)?.upstreamId || upstream!.id), capabilities: frozen.video ? {...upstream!.capabilities,video:frozen.video.definition} : upstream!.capabilities, parameterMap: upstream!.parameterMap, businessOption, procurement: upstream!.procurement };
+    const scope: ModelExecutionScope = { frozen, frontendModel, ...(!plan && !preset && upstream && frozen.modality!=="video" ? {channelGuard:{upstreamId:upstream.id}} : {}), connection: await connectionFor(publicModel.supplierRouting?.channels.find(c=>c.enabled)?.upstreamId || upstream!.id), capabilities: frozen.video ? {...upstream!.capabilities,video:frozen.video.definition} : upstream!.capabilities, parameterMap: upstream!.parameterMap, businessOption, procurement: upstream!.procurement };
     if(publicModel.supplierRouting){
       if(!deps.billingByVersion)throw new ModelConfigError("CONFIG_UNAVAILABLE","供应通道无法读取冻结计费版本",503);
       const eligible=frozen.modality==="image"&&frozen.facts?new Set(simulateModel(snapshot,await deps.billingByVersion(frozen.billingVersion),publicModel.id,frozen.facts,deps).eligible.map(u=>u.upstreamId)):new Set(publicModel.supplierRouting.channels.filter(c=>c.enabled&&snapshot.config.upstreamModels.some(u=>u.id===c.upstreamId&&u.enabled&&u.capabilities[purpose.capability]&&(!(frozen.feature==="canvas.assistant"&&frozen.facts?.references)||u.capabilities.vision)&&snapshot.config.providers.some(p=>p.id===u.providerId&&p.enabled))).map(c=>c.upstreamId));
-      const targets=await Promise.all(publicModel.supplierRouting.channels.filter(c=>c.enabled&&eligible.has(c.upstreamId)).map(async c=>{const u=snapshot.config.upstreamModels.find(u=>u.id===c.upstreamId)!;return {...c,scope:{frozen,connection:await connectionFor(u.id),capabilities:u.capabilities,parameterMap:u.parameterMap,procurement:u.procurement,businessOption,audited:true}};}));
+      const targets=await Promise.all(publicModel.supplierRouting.channels.filter(c=>c.enabled&&eligible.has(c.upstreamId)).map(async c=>{const u=snapshot.config.upstreamModels.find(u=>u.id===c.upstreamId)!;return {...c,scope:{frozen,frontendModel,channelGuard:{upstreamId:u.id},connection:await connectionFor(u.id),capabilities:u.capabilities,parameterMap:u.parameterMap,procurement:u.procurement,businessOption,audited:true}};}));
       if(!targets.length)throw new ModelConfigError("MODEL_INCOMPATIBLE","没有符合本次参数的供应通道",400);
       scope.supplierRouting={policy:publicModel.supplierRouting,targets};scope.connection={...scope.connection,protocol:"supplier-channels",wireModel:frozen.publicModelId};
       scope.capabilities={...targets[0].scope.capabilities,vision:targets.some(c=>c.scope.capabilities.vision),edit:targets.some(c=>c.scope.capabilities.edit),generate:targets.some(c=>c.scope.capabilities.generate),maxReferenceImages:Math.max(...targets.map(c=>c.scope.capabilities.maxReferenceImages))};

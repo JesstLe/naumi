@@ -1,0 +1,37 @@
+[
+  {
+    "version": "1792134697",
+    "title": {
+      "zh": "创作体验更新",
+      "en": "Creation experience update"
+    },
+    "improvements": [
+      {
+        "zh": "新增包装策略创作页，可补充需求、追问、调整并保存方案。",
+        "en": "Create packaging strategies with guided questions, revisions and saved projects."
+      },
+      {
+        "zh": "支持拖拽或点击导入创作技能文件。",
+        "en": "Import creative skill files by dragging or clicking."
+      },
+      {
+        "zh": "画布可批量运行选中节点，并显示生成进度。",
+        "en": "Run selected canvas nodes in batches and see generation progress."
+      },
+      {
+        "zh": "视频节点支持选中后直接编辑提示词、参数与引用。",
+        "en": "Edit video prompts, settings and references directly from selected nodes."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "保留手动调整的画布位置，减少生成结果相互遮挡。",
+        "en": "Preserve manual canvas positions and reduce overlapping results."
+      },
+      {
+        "zh": "改善图片完整展示和切回页面时的加载体验。",
+        "en": "Improve full-image presentation and image retention when returning to the page."
+      }
+    ]
+  }
+]

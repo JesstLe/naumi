@@ -6,27 +6,28 @@ import { modelEndpointFetch } from "./model-config/transport";
 import { supplierCostFetch } from "./supplier-cost/collect";
 import {mapResolution} from "./model-config/resolution-policy";
 import {policyQuality} from "./model-config/quality-policy";
+import {readBoundedBytes} from "./supplier-cost/io";
 
 export type NewApiReferenceImage = {
   buffer: Buffer;
   mimeType: string;
 };
 
-function upstreamError(raw: string, status: number) {
+function upstreamError(raw: string, status: number, retryAfter: string | null = null) {
   try {
     const body = JSON.parse(raw) as {
       error?: { message?: string } | string;
       message?: string;
     };
-    if ((body as any).billing_status === "not_charged" || typeof body.error === "object" && (body.error as any)?.billing_status === "not_charged") throw new ModelConfigError("UPSTREAM_REJECTED_NOT_CHARGED","上游明确拒绝且未收费",status);
+    if ((body as any).billing_status === "not_charged" || typeof body.error === "object" && (body.error as any)?.billing_status === "not_charged") throw Object.assign(new ModelConfigError("UPSTREAM_REJECTED_NOT_CHARGED","上游明确拒绝且未收费",status), {retryAfter});
     const message =
       typeof body.error === "string"
         ? body.error
         : body.error?.message || body.message || raw.slice(0, 500);
-    return Object.assign(new Error(`${status} ${message}`), {status});
+    return Object.assign(new Error(`${status} ${message}`), {status,retryAfter});
   } catch (error) {
     if(error instanceof ModelConfigError)throw error;
-    return Object.assign(new Error(`${status} ${raw.slice(0, 500)}`), {status});
+    return Object.assign(new Error(`${status} ${raw.slice(0, 500)}`), {status,retryAfter});
   }
 }
 
@@ -118,7 +119,7 @@ export async function generateNewApiImage(input: {
       signal: AbortSignal.any([input.signal || new AbortController().signal, AbortSignal.timeout(managed ? scope.connection.timeoutMs : 300_000)]),
     }), managed ? modelExecutionTelemetry(scope) : null);
     const raw = await response.text();
-    if (!response.ok) throw upstreamError(raw, response.status);
+    if (!response.ok) throw upstreamError(raw, response.status, response.headers.get("retry-after"));
     const encoded = JSON.parse(raw).data?.[0]?.b64_json;
     if (typeof encoded !== "string" || !encoded.length || encoded.length > 45 * 1024 * 1024) throw new Error("即梦未返回有效图片内容");
     const buffer = Buffer.from(encoded, "base64");
@@ -152,7 +153,7 @@ export async function generateNewApiImage(input: {
     signal: AbortSignal.any([input.signal || new AbortController().signal, AbortSignal.timeout(managed ? scope.connection.timeoutMs : 300_000)]),
   }), managed ? modelExecutionTelemetry(scope) : null);
   const raw = await response.text();
-  if (!response.ok) throw upstreamError(raw, response.status);
+  if (!response.ok) throw upstreamError(raw, response.status, response.headers.get("retry-after"));
   const streamContent = collectStreamContent(raw);
   const inline=streamContent.match(/data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)/);
   if(inline){if(inline[2].length>45*1024*1024)throw new Error("返回图片超过大小限制");const buffer=Buffer.from(inline[2],"base64");if(!buffer.length||buffer.length>32*1024*1024)throw new Error("返回图片大小无效");return {buffer,contentType:inline[1]};}
@@ -160,7 +161,9 @@ export async function generateNewApiImage(input: {
   if (!imageUrl) {
     throw new Error(`New API 生图分组未返回图片：${streamContent.slice(-300)}`);
   }
-  const imageResponse = await fetch(imageUrl, {
+  const imageTransport = managed ? modelEndpointFetch(new URL(imageUrl).origin,{trustedOrigins:input.trustedOrigins||(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(/[\s,]+/).filter(Boolean)}) : fetch;
+  const imageResponse = await imageTransport(imageUrl, {
+    redirect: "error",
     signal: AbortSignal.any([input.signal || new AbortController().signal, AbortSignal.timeout(60_000)]),
   });
   if (!imageResponse.ok) {
@@ -174,7 +177,7 @@ export async function generateNewApiImage(input: {
   if (declaredSize > 32 * 1024 * 1024) {
     throw new Error("生成图片超过 32MB 限制");
   }
-  const buffer = Buffer.from(await imageResponse.arrayBuffer());
+  const buffer = await readBoundedBytes(imageResponse,32*1024*1024);
   if (!buffer.length) throw new Error("生成图片内容为空");
   if (buffer.length > 32 * 1024 * 1024) {
     throw new Error("生成图片超过 32MB 限制");

@@ -15,10 +15,14 @@ import { supplierCostFetch } from "../supplier-cost/collect";
 import {mapResolution,RESOLUTION_FIELDS} from "./resolution-policy";
 import {policyQuality} from "./quality-policy";
 import { reverseHubImageFetch } from "./reverse-hub-images";
+import { healthObservedFetch } from "../model-health/observe";
 const managedClients = new WeakSet<OpenAI>();
 export const isManagedModelClient = (client: OpenAI) => managedClients.has(client);
 
 export function executionFetch(scope: ModelExecutionScope, options: ValidationOptions = {}): typeof fetch {
+  return healthObservedFetch(scope, executionTransport(scope, options), options);
+}
+function executionTransport(scope: ModelExecutionScope, options: ValidationOptions): typeof fetch {
   if(scope.supplierRouting)return channelRoutingFetch(scope,options);
   if (scope.businessOption && !scope.audited) return stageRoutingFetch(scope, options);
   const { connection, frozen, parameterMap } = scope;
@@ -27,7 +31,7 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
     return async (input, init) => {
       try { return await adapter(input, init); }
       catch (error) {
-        if (error instanceof ModelConfigError) return Response.json({ error: { message: error.message, code: error.code, billing_status: "not_charged" } }, { status: error.status });
+        if (error instanceof ModelConfigError) return Response.json({ error: { message: error.message, code: error.code, billing_status: "not_charged" } }, { status: error.code === "CONFIG_UNAVAILABLE" ? 429 : error.status });
         throw error;
       }
     };
@@ -88,7 +92,7 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
     try { return await mappedFetch(input, init); }
     catch (error) {
       // SDKs otherwise turn this local pre-submission rejection into an unknown connection failure.
-      if (error instanceof ModelConfigError && error.code === "PROVIDER_BUSY") return Response.json({ error: { message: error.message, type: "naumi_capacity", billing_status: "not_charged", code: error.code } }, { status: 429 });
+      if (error instanceof ModelConfigError && ["PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_capacity", billing_status: "not_charged", code: error.code } }, { status: error.code === "CONFIG_UNAVAILABLE" ? 429 : error.status });
       throw error;
     }
   };
@@ -122,7 +126,7 @@ function flowImageFetch(scope: ModelExecutionScope, options: ValidationOptions):
   return async (input, init) => {
     try { return await submit(input, init); }
     catch (error) {
-      if (error instanceof ModelConfigError && ["MODEL_INCOMPATIBLE", "INVALID_REQUEST", "PROVIDER_BUSY", "UPSTREAM_REJECTED_NOT_CHARGED"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_pre_submission", billing_status: "not_charged", code: error.code } }, { status: error.status });
+      if (error instanceof ModelConfigError && ["MODEL_INCOMPATIBLE", "INVALID_REQUEST", "PROVIDER_BUSY", "CHANNEL_DISABLED", "CONFIG_UNAVAILABLE", "UPSTREAM_REJECTED_NOT_CHARGED"].includes(error.code)) return Response.json({ error: { message: error.message, type: "naumi_pre_submission", billing_status: "not_charged", code: error.code } }, { status: error.code === "CONFIG_UNAVAILABLE" ? 429 : error.status });
       throw error;
     }
   };

@@ -1,3 +1,4 @@
+import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import {materializeVideoReferences} from "./reference-materialization";
 import {createHash} from "node:crypto";
 import {createValidatedVideo,videoCreationInputDigest} from "./submission";
@@ -434,7 +435,7 @@ export async function videoCostPublic(): Promise<number> {
 }
 
 /** 轮询并结算:领取租约 → 查上游 → 完成/失败/继续处理。返回最新任务视图。 */
-export async function pollAndSettle(
+async function pollAndSettleLocal(
   email: string,
   id: string
 ): Promise<VideoTaskRow | null> {
@@ -450,6 +451,7 @@ async function pollAndSettleTask(email: string, id: string, task: VideoTaskRow):
 
   const claimed = await claimVideoTaskPoll(email, id);
   if (!claimed) return { ...task, progress: Math.min(95, task.progress) };
+  await bindBackgroundClaim(id);
   // 轮询续约:长任务期间预留不过期(并行会话的修复,吸收)
   await touchReservation(id).catch(() => {});
 
@@ -563,4 +565,13 @@ export async function recoverDueVideoTasks(limit = 5): Promise<number> {
     }
   }
   return processed;
+}
+
+export async function pollAndSettle(email:string,id:string):Promise<VideoTaskRow|null> {
+  const task=await getVideoTask(email,id);
+  if(!task)return null;
+  // Existing upstream tasks remain GET-only poll/settlement during drain. A
+  // queued creation intent is a new local claim and waits for the open slot.
+  const admission=task.status==="queued"||!task.upstreamId?"claim":"continuation";
+  return withBackgroundActivity("video-poll", id, admission, () => pollAndSettleLocal(email,id), () => getVideoTask(email,id));
 }
