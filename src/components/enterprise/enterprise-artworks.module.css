@@ -1,0 +1,14 @@
+.root { display: block; min-height: 0; min-width: 0; width: 100%; background: transparent; }
+.content { min-width: 0; }
+.content > header h1 { font-size: 24px; }
+.content > div:has(> table) { max-width: 100%; }
+@media (max-width: 640px) {
+  .content > header h1 { font-size: 20px; }
+  .content form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+  .content form label:has(input[aria-label="搜索账户"]) { grid-column: 1 / -1; }
+  .content form label { width: 100%; min-width: 0; max-width: 100%; }
+  .content form input, .content form select { width: 100%; max-width: 100%; }
+}
+
+.root button.thumbnail { display: block; padding: 0; border: 0; border-radius: 5px; }
+.root button.query { color: #fff; background: #2c3a63; border-color: #2c3a63; }
