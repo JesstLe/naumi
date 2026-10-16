@@ -7,7 +7,7 @@ for(const name of [s.pg,s.new].filter(Boolean)){const inspected=JSON.parse(run([
 let checks=0;const is=(a,b)=>{assert.equal(a,b);checks++};const errors=[],failedStatic=[];page.on('pageerror',e=>errors.push(e.message));page.on('response',r=>{if(r.url().includes('/_next/static/')&&r.status()!==200)failedStatic.push({url:r.url(),status:r.status()})});
 await context.route('**/*',r=>['127.0.0.1','localhost'].includes(new URL(r.request().url()).hostname)?r.continue():r.abort());
 try{
- const v=await(await context.request.get(base+'/api/version')).json();is(v.commit,'6272c5ecb95b67aca6858d949d5da26157f4b6c4');is(Number(v.version),1792132681);
+ const v=await(await context.request.get(base+'/api/version')).json();is(v.commit,process.env.NAUMI_REAL_COMPAT_EXPECT_COMMIT||'6272c5ecb95b67aca6858d949d5da26157f4b6c4');is(Number(v.version),Number(process.env.NAUMI_REAL_COMPAT_EXPECT_VERSION||'1792132681'));
  const email='variant-'+kind+'-'+s.tag+'-'+randomUUID().slice(0,8)+'@example.test',password='fixture-variant-password';let reg=await context.request.post(base+'/api/auth/register',{data:{email,password,name:'Variant '+kind}});is(reg.status(),200);
  const session=await(await context.request.get(base+'/api/auth/session')).json();is(session.user.email,email);
  is((await context.request.get(base+'/api/admin/users')).status(),403);

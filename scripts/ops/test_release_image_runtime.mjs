@@ -1,7 +1,7 @@
 // Bounded local Docker image QA. Real HTTP middleware/routes/worker; no provider keys.
 import assert from 'node:assert/strict';import fs from 'node:fs/promises';import path from 'node:path';import{execFileSync}from'node:child_process';import{randomUUID}from'node:crypto';import{request}from'@playwright/test';
 const out=path.resolve(process.env.NAUMI_REAL_COMPAT_OUTPUT),stateFile=path.join(out,'runtime.json'),s=JSON.parse(await fs.readFile(stateFile,'utf8'));
-assert(s.controlledNew);const base='http://127.0.0.1:'+s.newPort,commit='6272c5ecb95b67aca6858d949d5da26157f4b6c4',workerSecret='compat-real-next-only-worker-secret-20261016';
+assert(s.controlledNew);const base='http://127.0.0.1:'+s.newPort,commit=process.env.NAUMI_REAL_COMPAT_EXPECT_COMMIT||'6272c5ecb95b67aca6858d949d5da26157f4b6c4',workerSecret='compat-real-next-only-worker-secret-20261016';
 const run=args=>execFileSync(args[0],args.slice(1),{encoding:'utf8',windowsHide:true,timeout:45000}).trim();
 const sql=text=>run(['docker','exec',s.pg,'psql','-U','fixture','-d','compat','-At','-c',text]);
 for(const name of [s.pg,s.new].filter(Boolean)){const inspected=JSON.parse(run(['docker','inspect',name]))[0];assert.equal(inspected.Config.Labels['io.naumi.real-next-compat'],s.tag)}
@@ -9,7 +9,7 @@ let checks=0;const is=(a,b)=>{assert.equal(a,b);checks++};const api=await reques
 const releaseHeaders={'x-release-control-secret':s.releaseSecret};
 const getStatus=async()=>{const r=await api.get('/api/internal/release/status',{headers:releaseHeaders});is(r.status(),200);return r.json()};
 try{
- const ver=await(await api.get('/api/version')).json();is(ver.commit,commit);is(Number(ver.version),1792132681);
+ const ver=await(await api.get('/api/version')).json();is(ver.commit,commit);is(Number(ver.version),Number(process.env.NAUMI_REAL_COMPAT_EXPECT_VERSION||'1792132681'));
  is((await api.get('/api/internal/release/status')).status(),404);
  let status=await getStatus();is(status.identity.instanceId,s.releaseInstanceId);is(status.identity.commit,commit);is(status.identity.bootSource,'preload');is(status.transport.verified,true);is(status.coverage.level,'partial');is(status.observations.acceptedTasks,null);is(status.admission.mode,'open');
  const email='image-runtime-'+s.tag+'@example.test';const reg=await api.post('/api/auth/register',{data:{email,password:'fixture-image-runtime-password',name:'Image Runtime'}});is(reg.status(),200);
