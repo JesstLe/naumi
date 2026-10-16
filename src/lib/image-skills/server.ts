@@ -114,11 +114,11 @@ export async function importImageSkill(email: string, input: unknown) {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const user = await client.query("SELECT email FROM app_users WHERE email=$1 FOR UPDATE", [owner]);
+    const user = await client.query("SELECT email,name FROM app_users WHERE email=$1 FOR UPDATE", [owner]);
     if (!user.rowCount) throw new SkillError("登录账号不存在", 401);
     const existing = await client.query("SELECT * FROM app_image_skills WHERE email=$1 AND deleted_at IS NULL ORDER BY updated_at DESC", [owner]);
     const duplicate = existing.rows.find(row => skillDefinitionHash(row.definition) === hash);
-    if (duplicate) { await client.query("COMMIT"); return { skill: fromRow(duplicate), duplicate: true }; }
+    if (duplicate) { await client.query("COMMIT"); return { skill: fromRow({...duplicate,author_name:user.rows[0].name},owner), duplicate: true }; }
     if (existing.rows.length >= 100) throw new SkillError("我的 Skills 已达 100 个，请先移除不再使用的技能", 409);
     const created = await client.query("INSERT INTO app_image_skills(id,email,definition) VALUES($1,$2,$3) RETURNING *", [`personal:${randomUUID()}`, owner, JSON.stringify(definition)]);
     await client.query("COMMIT");
