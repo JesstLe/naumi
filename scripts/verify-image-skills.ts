@@ -4,7 +4,7 @@ import { createModelFixture } from "./model-config-fixture";
 import { OFFICIAL_IMAGE_SKILLS, validateSkillDraft, validateSkillSelection, imageSkillPrompt, conversationSkillDraft } from "../src/lib/image-skills/catalog";
 async function main() {
   let checks = 0; const ok = (value: unknown) => { assert.ok(value); checks++; };
-  const baseline=27;
+  const baseline=28;
   ok(OFFICIAL_IMAGE_SKILLS.length === baseline);
   ok(new Set(OFFICIAL_IMAGE_SKILLS.map(skill => skill.id)).size === baseline);
   for (const skill of OFFICIAL_IMAGE_SKILLS) { ok(validateSkillDraft(skill).instructions.length > 10); ok(validateSkillSelection(skill)?.id === skill.id); }
