@@ -1,0 +1,34 @@
+import assert from "node:assert/strict";
+import { BRIEF_STEPS, EXAMPLE_BRIEF, completedFields, draftStorageKey, emptyBrief, exportFilename, parseBrief, parseLocalDraft, parseProject, sameBrief, type PackagingProject } from "./model";
+
+let checks = 0;
+function check(name: string, run: () => void) { run(); checks++; console.log(`PASS ${name}`); }
+const project: PackagingProject = { id: "b8fdd21e-1d0c-4b8e-977b-3c8fde5638b0", title: "山间来信", brief: { ...EXAMPLE_BRIEF }, result: { kind: "strategy", content: "## 方向\n三条差异化策略" }, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z" };
+check("eight independent brief fields", () => assert.equal(BRIEF_STEPS.length, 8));
+check("blank brief is 0/8", () => assert.equal(completedFields(emptyBrief()), 0));
+check("example brief is 8/8", () => assert.equal(completedFields(EXAMPLE_BRIEF), 8));
+check("whitespace does not count", () => assert.equal(completedFields({ ...emptyBrief(), brand: "   " }), 0));
+check("one filled field is not strategy-quality score", () => assert.equal(completedFields({ ...emptyBrief(), brand: "茶" }), 1));
+check("mutable blank briefs are independent", () => { const a = emptyBrief(); a.brand = "A"; assert.equal(emptyBrief().brand, ""); });
+check("exact brief equality", () => assert.equal(sameBrief(EXAMPLE_BRIEF, { ...EXAMPLE_BRIEF }), true));
+check("edited brief is stale", () => assert.equal(sameBrief(EXAMPLE_BRIEF, { ...EXAMPLE_BRIEF, brand: "新品牌" }), false));
+check("reject missing fields", () => assert.equal(parseBrief({ brand: "茶" }), null));
+check("reject non-string input", () => assert.equal(parseBrief({ ...EXAMPLE_BRIEF, brand: null }), null));
+check("reject oversized local data", () => assert.equal(parseBrief({ ...EXAMPLE_BRIEF, task: "字".repeat(12001) }), null));
+check("accept real strategy project", () => assert.deepEqual(parseProject(project), project));
+check("accept unanswered questions", () => assert.equal(parseProject({ ...project, result: { kind: "questions", questions: ["渠道？", "价格？", "规格？"] } })?.result?.kind, "questions"));
+check("reject excessive follow-up questions", () => assert.equal(parseProject({ ...project, result: { kind: "questions", questions: ["1", "2", "3", "4"] } }), null));
+check("reject malformed result", () => assert.equal(parseProject({ ...project, result: { kind: "strategy", content: 42 } }), null));
+check("reject zero revision", () => assert.equal(parseProject({ ...project, revision: 0 }), null));
+check("reject fractional revision", () => assert.equal(parseProject({ ...project, revision: 1.1 }), null));
+check("accept null result", () => assert.equal(parseProject({ ...project, result: null })?.result, null));
+check("reject truncated project", () => assert.equal(parseProject({ id: project.id, brief: EXAMPLE_BRIEF }), null));
+check("reject invalid JSON draft", () => assert.equal(parseLocalDraft("{"), null));
+check("clamp restored step", () => assert.equal(parseLocalDraft(JSON.stringify({ brief: EXAMPLE_BRIEF, project, step: 100 }))?.step, 7));
+check("accept blank draft without cloud project", () => assert.equal(parseLocalDraft(JSON.stringify({ brief: emptyBrief(), project: null, step: 0 }))?.project, null));
+check("reject stale malformed saved project", () => assert.equal(parseLocalDraft(JSON.stringify({ brief: EXAMPLE_BRIEF, project: { id: project.id } })), null));
+check("isolate different accounts", () => assert.notEqual(draftStorageKey("a@example.test"), draftStorageKey("b@example.test")));
+check("normalize storage identity", () => assert.equal(draftStorageKey("A@Example.test"), draftStorageKey("a@example.test")));
+check("sanitize downloaded filename", () => assert.equal(exportFilename("a/b:c\\d?"), "a_b_c_d_.md"));
+check("fallback filename", () => assert.equal(exportFilename(""), "品牌包装策略.md"));
+console.log(`PACKAGING_PAGE_MODEL_CHECKS=${checks}`);

@@ -77,6 +77,11 @@ export const TOOLS: ToolMeta[] = [
   },
   // ── 生成创作(独立全工作台) ──
   {
+    key: "品牌包装策略", en: "Packaging strategy", slug: "packaging-strategy", href: "/tools/packaging-strategy", category: "生成创作",
+    Icon: Palette, desc: "填写产品简报，生成包装定位、创意方向与 SKU 规则",
+    action: "制定包装策略", cost: 0, ctrls: [], workspace: true, live: true, inMenu: true,
+  },
+  {
     key: "AI 生图", en: "AI image", slug: "generate", href: "/generate", category: "生成创作",
     Icon: Sparkles, desc: "一句话直接出商品图,支持多比例多张并发",
     action: "立即生成", cost: 4, ctrls: [], workspace: true, live: true, inMenu: true,
