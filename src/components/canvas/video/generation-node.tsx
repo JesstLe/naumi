@@ -2,7 +2,7 @@
 import {useVideoI18n} from "./i18n";
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useEffect, useRef, useState } from "react";
-import { Settings2, Video, Lock, Loader2 } from "lucide-react";
+import { Settings2, Video, Lock, Loader2,Info } from "lucide-react";
 import type { CanvasVideoNode } from "@/lib/canvas/video-node-schema";
 import type { PublicVideoTaskView } from "@/lib/video/service";
 import { videoButtonClass } from "./form-controls";
@@ -48,6 +48,24 @@ export function VideoGenerationNode({ data, selected }: NodeProps) {
     catch (cause) {
         setError(cause instanceof Error ? cause.message : "保存失败");
     } }
+    if(d.externalDock)return <div data-testid="canvas-video-node" className={`group relative flex h-full w-full flex-col ${d.lightCanvas?'canvas-ui-light':'canvas-ui-dark'}`}>
+      <NodeResizer isVisible={!!selected&&!blocked} minWidth={280} minHeight={160} keepAspectRatio color="#315fc8" handleClassName="!h-3 !w-3 !border-2 !border-white !bg-[#315fc8]" lineClassName="!border-[#315fc8]" onResizeEnd={(_,size)=>d.onResize(node.id,size)}/>
+      <div className="art-title absolute -top-[38px] left-0 right-0 z-10 flex h-[30px] items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none">
+        <Video size={15} className="shrink-0"/><span className="min-w-0 flex-1 truncate" title={node.title}>{node.title}</span>{d.locked&&<Lock size={13}/>}
+        {selected&&<span className={`h-2 w-2 shrink-0 rounded-full ${task?.status==='failed'?'bg-red-400':active?'animate-pulse bg-blue-500':'bg-[#315fc8]'}`} aria-label={V(task?statusLabels[task.status]||task.status:'视频节点')}/>}
+        <button type="button" aria-label={V('视频节点设置')} title={V('视频节点设置')} className="canvas-ui-action nodrag nowheel nokey rounded p-1 opacity-0 focus:opacity-100 group-hover:opacity-100" onClick={()=>d.onEdit(node.id)}><Settings2 size={13}/></button>
+      </div>
+      <div className={`canvas-ui-node-card relative h-full w-full overflow-hidden rounded-[10px] border transition-all ${selected?'canvas-ui-selected ring-2 ring-[#315fc8] ring-offset-2 ring-offset-transparent':''}`}>
+        {d.resultUrl?<VideoPlayer url={d.resultUrl} title={node.title} compact selected={!!selected} onProcess={action=>d.onProcess(node.id,action)} canProcess={!blocked}/>:<div data-testid="video-node-preview" className="flex h-full flex-col items-center justify-center gap-2 bg-[var(--canvas-ui-soft)] px-6 text-center canvas-ui-muted">
+          {active?<Loader2 size={23} className="animate-spin opacity-60"/>:task?.status==='failed'||task?.status==='needs_attention'?<Info size={21} className="opacity-60"/>:<Video size={28} strokeWidth={1.3} className="opacity-35"/>}
+          <span role="status" className="text-xs">{V(task?statusLabels[task.status]||task.status:'视频预览')}{active&&task&&task.progress>0?` · ${task.progress}%`:''}</span>
+          {task?.error&&<p className="line-clamp-2 max-w-[90%] text-[11px] leading-5 opacity-70">{task.error}</p>}
+          {task?.status==='failed'&&!blocked&&<button type="button" className="canvas-ui-action nodrag rounded-lg px-2 py-1 text-xs font-semibold" onClick={()=>d.onEdit(node.id)}>{V('编辑后重试')}</button>}
+        </div>}
+      </div>
+      <Handle type="target" id="in" position={Position.Left} className="canvas-ui-port !h-6 !w-6 !border-2"><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm canvas-ui-muted">+</span></Handle>
+      <Handle type="source" id="out" position={Position.Right} className="canvas-ui-port !h-6 !w-6 !border-2"><span className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm canvas-ui-muted">+</span></Handle>
+    </div>;
     return <div data-testid="canvas-video-node" className={`h-full w-full overflow-hidden rounded-xl border shadow-lg ${d.lightCanvas ? "bg-white text-slate-800" : "bg-[#171d25] text-slate-100"} ${selected ? "border-teal-500 ring-2 ring-teal-500/20" : "border-current/15"}`}>
     <NodeResizer isVisible={!!selected && !blocked} minWidth={280} minHeight={250} onResizeEnd={(_, size) => d.onResize(node.id, size)}/>
     <Handle type="target" id="in" position={Position.Left}/><Handle type="source" id="out" position={Position.Right}/>

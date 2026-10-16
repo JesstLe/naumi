@@ -3861,7 +3861,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   const nodeScreen=selectedNodeScreen(viewportRef.current);
   const overlaySafeArea=useMemo(()=>canvasOverlaySafeArea(canvasSize),[canvasSize.width]);
-  const {dock:dockStyle,toolbar:topbarStyle}=canvasDockLayout({nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly});
+  const {dock:dockStyle,toolbar:topbarStyle}=canvasDockLayout({nodeScreen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0});
 
   // 窗口缩放、分屏、旋转或切换选中节点时，React Flow 会保留旧 viewport，可能让
   // 新锚点留在安全区外。尺寸或锚点变化时做最小平移；拖动同一节点不会触发，
@@ -3973,7 +3973,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(zoomInputRef.current&&document.activeElement!==zoomInputRef.current)zoomInputRef.current.value=zoomPercentInput(vp.zoom);
     const screen=selectedNodeScreen(vp);
     if(!screen)return;
-    const layout=canvasDockLayout({nodeScreen:screen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly});
+    const layout=canvasDockLayout({nodeScreen:screen,canvasSize,dockMetrics,selectedTextId,textComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0});
     const dock=selectedTextId?textComposerDockRef.current:panelRef.current;
     if(dock&&layout.dock){
       if(!(textComposerExpanded&&selectedTextId))dock.style.left=layout.dock.left+'px';
@@ -4864,7 +4864,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const proposed=choices.length===0?"text":choices.length===1&&images===1?"single_image":"reference";
       if(catalogCapability(model).modes?.includes(proposed))config.mode=proposed;
       const inputs=videoModeRoles(choices.map(choice=>({id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==="text"?"context" as const:choice.kind==="video"?"source_video" as const:choice.kind==="audio"?"source_audio" as const:"reference" as const,value:choice.value})),config.mode);
-      const created=await videoNodesStore.save(id,{projectKey:project,title:"视频",x:point.x,y:point.y,width:384,height:320,config,inputs});pushUndo({kind:"video-add",records:[created]});
+      const ratio=config.aspectRatio?.match(/^([1-9]\d*):([1-9]\d*)$/),aspect=ratio?Number(ratio[1])/Number(ratio[2]):16/9;
+      const created=await videoNodesStore.save(id,{projectKey:project,title:"视频",x:point.x,y:point.y,width:384,height:Math.max(160,Math.min(680,Math.round(384/aspect))),config,inputs});pushUndo({kind:"video-add",records:[created]});
       setCreatingNew(false);setActiveKey(project);setBrowsing(false);setSelectedId(id);setSelectedTextId(null);setSelectedPendId(null);setMultiSel([]);setVideoEditId(id);
     }catch(error){flashTip(error instanceof Error?error.message:"新增视频节点失败");}
   }
@@ -9039,6 +9040,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 // Selected/linking edges retain React Flow's original z-index plane.
                 !selectedEdge && !linking && "canvas-render-layers",
                 boxSelectMode && "canvas-box-select",
+                canvasTool === "move" && "canvas-select-tool",
                 canvasTool === "hand" && "canvas-hand-tool",
                 linking && "canvas-linking"
               )}
@@ -9635,7 +9637,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
                   <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
 
-                  {canFeature("generate")&&<button type="button" aria-label="图像创作" disabled={readOnly} onClick={openImagegenPanel} className="canvas-ui-action flex h-8 items-center rounded-md px-2 text-xs">图像创作</button>}
                   <CanvasActionMenu label={t("canvas.toolbar.addToCanvas")} light={lightCanvas}
                     open={addMenuOpen} onOpenChange={open => { setMoreToolsOpen(false); setAddMenuOpen(open); }}
                     triggerIcon={Plus} iconOnly triggerTestId="canvas-add-node-button" menuTestId="canvas-create-menu"
