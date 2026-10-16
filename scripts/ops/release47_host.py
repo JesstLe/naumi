@@ -164,8 +164,9 @@ class HostTransaction:
         env.update(SOURCE_COMMIT=commit, BUILD_VERSION=build_version, NAUMI_INSTANCE_ID=name, NAUMI_RELEASE_RUNTIME='1',
                    NAUMI_RELEASE_ADMISSION_START='draining', RELEASE_CONTROL_SECRET=release_secret,
                    INTERNAL_APP_ORIGIN='http://127.0.0.1:3000', NAUMI_VIDEO_WORKER='0',
+                   HOSTNAME='0.0.0.0', NAUMI_RELEASE_PEERS='{}',
                    NODE_OPTIONS='--max-old-space-size=' + str(max(256, memory_mib - 384)) + ' --require=/app/scripts/release-http-observer.cjs')
-        for key in ['NAUMI_RELEASE_BOOT_ID', 'NAUMI_RELEASE_BOOT_SOURCE', 'HOSTNAME']:
+        for key in ['NAUMI_RELEASE_BOOT_ID', 'NAUMI_RELEASE_BOOT_SOURCE', 'NAUMI_RELEASE_INSTANCE_ID', 'NAUMI_RELEASE_COMMIT']:
             env.pop(key, None)
         require(all('\n' not in k + v and '\r' not in k + v for k, v in env.items()), 'MULTILINE_ENV_NOT_SUPPORTED')
         args = ['docker', 'create', '--name', name, '--restart=no', '--memory=' + str(memory_mib) + 'm',
@@ -249,7 +250,8 @@ class HostTransaction:
     def retire(self, identity, receipt, *, now=None):
         row = self.pin(identity)
         require(row['Name'].lstrip('/').startswith('naumi47-') and row['Config']['Cmd'] in
-                [['node', 'server.js'], ['scripts/video-worker.mjs']], 'INFRA_OR_UNKNOWN_ROLE_RETIRE_FORBIDDEN')
+                [['node', 'server.js'], ['scripts/video-worker.mjs'], ['node', 'scripts/video-worker.mjs']],
+                'INFRA_OR_UNKNOWN_ROLE_RETIRE_FORBIDDEN')
         assert_drain(receipt, identity, now)
         require(receipt.get('routingReferences') == [] and receipt.get('internalReferences') == [], 'OLD_SLOT_STILL_REFERENCED')
         self.save('retire-intent-' + identity['id'][:12] + '.json', {'identity': identity, 'receipt': receipt})
