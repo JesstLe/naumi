@@ -5,12 +5,13 @@ import { X } from "lucide-react";
 import styles from "./batch-selection-toolbar.module.css";
 
 /** Keep selection status and dismissal reachable while only the actions scroll. */
-export function BatchSelectionToolbar({ label, selectionLabel, clearLabel, onClear, testId, children }: {
+export function BatchSelectionToolbar({ label, selectionLabel, clearLabel, onClear, testId, primaryAction, children }: {
   label: string;
   selectionLabel: string;
   clearLabel: string;
   onClear: () => void;
   testId: string;
+  primaryAction?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -19,6 +20,7 @@ export function BatchSelectionToolbar({ label, selectionLabel, clearLabel, onCle
       <span data-testid="batch-selection-count" className={`canvas-ui-muted ${styles.count}`}>
         {selectionLabel}
       </span>
+      {primaryAction && <div className={styles.primary} data-batch-primary>{primaryAction}</div>}
       <div data-batch-scroll className={styles.actions}>
         {children}
       </div>

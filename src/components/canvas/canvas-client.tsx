@@ -49,6 +49,7 @@ import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
 import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surface";
+import { selectionRunTargets, runSelectionBatch } from "@/lib/canvas/selection-run";
 import { BatchSelectionToolbar } from "./batch-selection-toolbar";
 import { GenerationPlaceholder } from "./generation-placeholder";
 import { generationPlaceholderSize, placeGenerationPreview, type GenerationStage } from "@/lib/canvas/generation-feedback";
@@ -1583,13 +1584,13 @@ function layoutGraph(
 export function CanvasClient({ initialProject, desktopAppearance = false }: { initialProject?: string; desktopAppearance?: boolean } = {}) {
   const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
-  async function privateFetch(input:RequestInfo|URL,init:RequestInit={}){
+  async function privateFetch(input:RequestInfo|URL,init:RequestInit & { isCurrent?: () => boolean }={}){
     const path=String(input).split('?')[0];
     const features:Record<string,FeatureId>={"/api/generate-image":"canvas.image","/api/aplus":"image.aplus","/api/suite":"image.suite","/api/cutout":"tool.cutout","/api/canvas/image-tasks":"canvas.image","/api/canvas/expand":"canvas.expand","/api/canvas/text-edit":"canvas.text-edit","/api/canvas/annotate":"canvas.annotate","/api/canvas/text-generate":"canvas.text-generate","/api/canvas/assistant":"canvas.assistant","/api/canvas/ocr":"canvas.ocr","/api/video/generate":"video.generate"};
     if(init.method!=="POST"||!features[path])return privateFetchRaw(input,init);
     const form=init.body instanceof FormData?init.body:null;
     const body=form?Object.fromEntries(Array.from(form.entries()).filter((entry)=>typeof entry[1]==="string")):typeof init.body==="string"?JSON.parse(init.body):{};
-    if(path==="/api/generate-image"&&form&&user&&body.ratiogen!=="1"&&(!body.userPrompt||String(body.userPrompt).trim()===String(body.prompt).trim()))return submitCanvasImagegen(form,active?.members[0]?.id,message=>flashTip(message),{owner:user.email,project:active?.key||"workspace"});
+    if(path==="/api/generate-image"&&form&&user&&body.ratiogen!=="1"&&(!body.userPrompt||String(body.userPrompt).trim()===String(body.prompt).trim()))return submitCanvasImagegen(form,active?.members[0]?.id,message=>flashTip(message),{owner:user.email,project:active?.key||"workspace",isCurrent:init.isCurrent});
     if (path === "/api/generate-image") {
       body.ratio = normalizeCanvasRatio(body.ratio);
       body.resolution = normalizeCanvasResolution(body.resolution);
@@ -2360,6 +2361,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 竞品链路:反推中/帮写中标记、产品图选择器、生成图片模式菜单
   const [promptMining, setPromptMining] = useState(false);
   const [batchRunBusy, setBatchRunBusy] = useState(false);
+  const batchRunLockRef = useRef(false);
+  const batchRunMountedRef = useRef(true);
+  useEffect(() => { batchRunMountedRef.current = true; return () => { batchRunMountedRef.current = false; }; }, []);
+  const [batchRunProgress, setBatchRunProgress] = useState({ completed: 0, total: 0 });
   const [assistBusy, setAssistBusy] = useState(false);
   const [productPicker, setProductPicker] = useState<{ textNodeIds: string[] } | null>(null);
   const [genImageMenu, setGenImageMenu] = useState<{ textNodeIds: string[] } | null>(null);
@@ -4312,6 +4317,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       taskLabel?: string;
       taskOffset?: number;
       userPrompt?: string;
+      isCurrent?: () => boolean;
     }
   ): Promise<GeneratedResult[]> {
     if (readOnly || !user) return [];
@@ -4397,15 +4403,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       // 第一张=主底图,其后是其余引用图 + 用户追加的参考图
       refFiles.forEach((f) => fd.append("image", f));
       (opts?.extra ?? []).forEach((f) => fd.append("image", f));
+      if (opts?.isCurrent && !opts.isCurrent()) return [];
       const startRes = await privateFetch("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
-        body: fd,
+        body: fd, isCurrent: opts?.isCurrent,
       });
       const start = await readJsonSafe(startRes);
       if (!startRes.ok) throw new Error(start.error || t("canvas.genFail"));
       const jobId: string | undefined = start.jobId;
       if (!jobId) throw new Error(t("canvas.genFail"));
+      if (opts?.isCurrent && !opts.isCurrent()) return [];
       setGenerationTasks(current => current.map(task => task.id === taskId ? { ...task, stage: "generating" } : task));
       const deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
@@ -4418,6 +4426,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           { cache: "no-store", headers: await authHeader() }
         );
         const pj = await readJsonSafe(pr);
+        if (opts?.isCurrent && !opts.isCurrent()) return [];
         if (pr.ok && pj.user) applyServerUser(pj.user);
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
         if (pj.status === "done") {
@@ -4441,6 +4450,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       // 引用和提示词属于当前草稿，后台任务完成不清理它们。
       // 把新节点落到"生成中占位"所在的位置(源节点右侧,或用户拖动后的位置),
       // 这样生成完成后不会跳到自动布局的位置 —— 与图1的占位位置一致。
+      if (opts?.isCurrent && !opts.isCurrent()) return [];
       const basePos = generationTaskPosRef.current[taskId] ?? taskPosition;
       if (basePos && newIds.length) {
         let resultY = basePos.y;
@@ -4461,7 +4471,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           })
         );
       }
+      if (opts?.isCurrent && !opts.isCurrent()) return [];
       const fresh = await mergeWorks(newIds); // 补这次新生成的几张(已带上面保存的坐标),不整表重拉
+      if (opts?.isCurrent && !opts.isCurrent()) return [];
       pushAddUndoMany(newIds, fresh); // 面板生成/三视图/改比例/重做/快捷动作可撤销
       completeCanvasReceipt(jobId);
       if (newIds.length > 0 && newIds.length < requestedCount) {
@@ -4470,6 +4482,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       // 新结果保留在任务占位位置，用户主动点击才切换选中节点。
       return generated;
     } catch (e) {
+      if (opts?.isCurrent && !opts.isCurrent()) return [];
       const message =
         e instanceof Error && e.message ? e.message : t("canvas.genFail");
       if (selectedIdRef.current === source.id) setGenError(message);
@@ -7244,17 +7257,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       void persistTextNode(updated);
     }
   }
-  async function generateTextNode() {
-    if (!selectedText || readOnly || !nodeSettingsReady || isNodeLocked(selectedText.id) || !textPrompt.trim() || selectedText.status === "generating") return;
-    const prompt = textPrompt.trim();
+  async function generateTextNode(options?: { node: CanvasTextNode; prompt: string; silent?: boolean }): Promise<boolean> {
+    const target = options?.node ?? selectedText, prompt = (options?.prompt ?? textPrompt).trim();
+    if (!target || readOnly || !nodeSettingsReady || isNodeLocked(target.id) || !prompt || target.status === "generating" || generationOperationRef.current.has(`text:${target.id}`)) return false;
+    generationOperationRef.current.add(`text:${target.id}`);
+    const epoch = canvasContextEpochRef.current, account = canvasAccountRef.current;
+    const isCurrent = () => batchRunMountedRef.current && epoch === canvasContextEpochRef.current && account === canvasAccountRef.current;
     const pending: CanvasTextNode = {
-      ...selectedText,
+      ...target,
       prompt,
       title: prompt.replace(/\s+/g, " ").slice(0, 22) || t("canvas.textGenerate"),
       status: "generating",
       updatedAt: new Date().toISOString(),
     };
-    setTextError(null);
+    if (!options?.silent) setTextError(null);
     setTextNodes((current) =>
       current.map((node) => (node.id === pending.id ? pending : node))
     );
@@ -7274,12 +7290,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         status: "completed",
         updatedAt: new Date().toISOString(),
       };
+      if (!isCurrent()) return false;
       setTextModel(String(data.model || textModel));
       setTextNodes((current) =>
         current.map((node) => (node.id === completed.id ? completed : node))
       );
-      await persistTextNode(completed);
+      return !!await persistTextNode(completed);
     } catch (error) {
+      if (!isCurrent()) return false;
       const message = error instanceof Error ? error.message : t("canvas.textGenerateFail");
       const failed: CanvasTextNode = {
         ...pending,
@@ -7289,9 +7307,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       setTextNodes((current) =>
         current.map((node) => (node.id === failed.id ? failed : node))
       );
-      setTextError(message);
+      if (!options?.silent) setTextError(message);
       await persistTextNode(failed);
-    }
+      return false;
+    } finally { generationOperationRef.current.delete(`text:${target.id}`); }
   }
 
   // ===== 竞品反推 → 智能帮写 → 成套生成 链路 =====
@@ -7417,39 +7436,76 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
 
-  async function batchRunImages(arts: Artwork[]) {
-    if (readOnly || !arts.length || batchRunBusy) return;
-    setBatchRunBusy(true);
-    setCtxMenu(null);
-    const queue = [...arts];
-    let done = 0;
-    const sharedPrompt = editPrompt.trim();
-    const worker = async () => {
-      while (queue.length) {
-        const art = queue.shift();
-        if (!art) break;
-        const prompt = sharedPrompt || art.prompt || FAITHFUL_REGEN_PROMPT;
-        const result = await runGen(art, prompt, {
-          ratio: genRatio === "auto" ? art.ratio || "1:1" : genRatio,
-          style: genStyle,
-          count: genCount,
-          resolution: genResolution,
-          parentId: art.id,
-          refUrls: [art.image],
-          operationKey: `batch-run:${art.id}:${Date.now()}`,
-          taskLabel: "批量运行中…",
-          userPrompt: sharedPrompt,
-        });
-        if (result.length) done++;
-      }
-    };
+  function currentSelectionRunTargets(ids: string[]) {
+    if (!ids.length) return [];
+    const selectedIds = new Set(ids);
+    const positions = new Map((rfRef.current?.getNodes() ?? []).map(node => [node.id, node.position]));
+    const busyIds = new Set(generationTasks.map(task => task.sourceId));
+    const point = (id: string, x = 0, y = 0) => positions.get(id) || { x, y };
+    const busy = (id: string) => busyIds.has(id) || generationOperationRef.current.has(`node:${id}`) || generationOperationRef.current.has(`retry:${id}`) || pendNodesRef.current.some(node => node.generating && node.operationKey === `node:${id}`);
+    return selectionRunTargets(ids, [
+      ...(activeProjectRef.current?.members || []).filter(art => selectedIds.has(art.id)).map(art => ({ id: art.id, kind: "image" as const, ...point(art.id, art.canvasX ?? 0, art.canvasY ?? 0), locked: isNodeLocked(art.id), busy: busy(art.id), runnable: canFeature("generate") && art.status === "completed" && !art.videoUrl && art.category !== "audio" && art.category !== "media" && !["workflow-decoration", "workflow-placeholder"].includes(art.source || "") && hasRenderableImage(art.image) })),
+      ...textNodesRef.current.filter(node => selectedIds.has(node.id) && node.projectKey === activeKey).map(node => ({ id: node.id, kind: "text" as const, ...point(node.id, node.canvasX, node.canvasY), locked: isNodeLocked(node.id), busy: node.status === "generating" || generationOperationRef.current.has(`text:${node.id}`), runnable: !!(node.content || node.prompt).trim() })),
+      ...pendNodesRef.current.filter(node => selectedIds.has(node.id)).map(node => ({ id: node.id, kind: "pending" as const, ...point(node.id, node.x, node.y), busy: node.generating || node.uploading || node.needsAttention || generationOperationRef.current.has(`pend:${node.id}`), runnable: canFeature("generate") && !node.taskId && node.inputs.some(id => activeProjectRef.current?.members.some(art => art.id === id && hasRenderableImage(art.image) && !art.videoUrl) || textNodesRef.current.some(text => text.id === id && text.projectKey === activeKey && text.status !== "generating" && !!(text.content || text.prompt).trim())) })),
+    ]);
+  }
+
+  async function batchRunSelection(ids = multiSel) {
+    if (readOnly || !user || !nodeSettingsReady || historySaving || batchRunLockRef.current) return;
+    const targets = currentSelectionRunTargets(ids);
+    const initiallySkipped = new Set(ids).size - targets.length;
+    if (!targets.length) return;
+    // A synchronous guard closes the double-click gap before React rerenders.
+    batchRunLockRef.current = true;
+    setBatchRunBusy(true); setBatchRunProgress({ completed: 0, total: targets.length }); setCtxMenu(null);
+    const epoch = canvasContextEpochRef.current, account = canvasAccountRef.current;
+    const isCurrent = () => batchRunMountedRef.current && epoch === canvasContextEpochRef.current && account === canvasAccountRef.current;
     try {
-      await Promise.all([worker(), worker()]);
-      flashTip(`批量运行完成 ${done}/${arts.length}`);
+      const result = await runSelectionBatch(targets, {
+        isCurrent,
+        canRun: target => !batchRunAccessRef.current.readOnly && batchRunAccessRef.current.ready && (target.kind === "text" || batchRunAccessRef.current.canGenerate) && currentSelectionRunTargets([target.id]).length > 0,
+        onProgress: (completed, total) => setBatchRunProgress({ completed, total }),
+        run: async target => {
+          if (target.kind === "text") {
+            const node = textNodesRef.current.find(node => node.id === target.id);
+            return node ? generateTextNode({ node, prompt: node.content || node.prompt, silent: true }) : false;
+          }
+          if (target.kind === "pending") {
+            const pend = pendNodesRef.current.find(node => node.id === target.id);
+            if (!pend) return false;
+            return generatePend({ pend, prompt: "", forceStandard: true, isCurrent });
+          }
+          const art = activeProjectRef.current?.members.find(art => art.id === target.id);
+          if (!art) return false;
+          // Artwork persists prompt/ratio/resolution/style, not an individual
+          // model/quality/count recipe. Those retain the current canvas defaults.
+          const results = await runGen(art, art.prompt?.trim() || FAITHFUL_REGEN_PROMPT, {
+            ratio: art.ratio || "1:1", resolution: art.resolution || genResolution,
+            style: art.style || "", count: 1, parentId: art.id, refUrls: [art.image],
+            isCurrent, operationKey: `node:${art.id}`, taskLabel: L("批量运行中…", "Running selection…"),
+          });
+          return results.length > 0;
+        },
+      });
+      if (isCurrent()) flashTip(L(`批量运行：成功 ${result.succeeded}，失败 ${result.failed}，跳过 ${result.skipped + initiallySkipped}`, `Batch run: ${result.succeeded} succeeded, ${result.failed} failed, ${result.skipped + initiallySkipped} skipped`));
     } finally {
-      setBatchRunBusy(false);
+      batchRunLockRef.current = false; setBatchRunBusy(false);
     }
   }
+
+  async function batchRunImages(arts: Artwork[]) { await batchRunSelection(arts.map(art => art.id)); }
+
+  const batchRunAccessRef = useRef({ readOnly, canGenerate: canFeature("generate"), ready: nodeSettingsReady });
+  batchRunAccessRef.current = { readOnly, canGenerate: canFeature("generate"), ready: nodeSettingsReady };
+  const selectionRunCount = nodeSettingsReady ? currentSelectionRunTargets(multiSel).length : 0;
+  const batchRunButton = (label: string) => (selectionRunCount > 0 || batchRunBusy) && (
+    <button type="button" data-testid="canvas-selection-run" disabled={batchRunBusy || !nodeSettingsReady || historySaving}
+      onClick={() => void batchRunSelection()} title={L("分别运行选中节点，跳过锁定和运行中的节点", "Run selected nodes; skip locked or running nodes")}
+      className="canvas-ui-primary flex items-center text-xs font-semibold transition-colors disabled:opacity-45">
+      {batchRunBusy ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Play aria-hidden="true" />}
+      {batchRunBusy ? `${L("运行中", "Running")} ${batchRunProgress.completed}/${batchRunProgress.total}` : label}
+    </button>
+  );
 
   // 智能帮写:每个反推节点右侧生成成对的帮写节点(@产品图 前缀 + 已绑产品)
   async function assistWriteForNodes(textNodeIds: string[], product: Artwork) {
@@ -7637,11 +7693,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     prompt?: string;
     ratio?: string;
     forceStandard?: boolean;
-  }) {
-    if (readOnly || !user) return;
+    isCurrent?: () => boolean;
+  }): Promise<boolean> {
+    if (readOnly || !user) return false;
     // 可传入指定的空白节点(拉线「生成衍生图」用,避免依赖尚未刷新的 state)
     const pend = opts?.pend ?? pendNodes.find((p) => p.id === selectedPendId);
-    if (!pend || pend.generating) return;
+    if (!pend || pend.generating || pend.uploading || pend.needsAttention) return false;
     const text = (opts?.prompt ?? editPrompt).trim();
     const inputArts = pend.inputs
       .map((id) => active?.members.find((m) => m.id === id))
@@ -7659,17 +7716,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (generationMode === "detail" && !opts?.forceStandard) {
       if (!inputArts.length) {
         flashTip(t("canvas.detailNeedRefs"));
-        return;
+        return false;
       }
       await generateDetailSequence(inputArts[0], inputArts, text, [], pend);
-      return;
+      return false;
     }
     if (!text && !pend.inputs.length) {
       flashTip(t("canvas.pendNeedPrompt"));
-      return;
+      return false;
     }
     const operationKey = `pend:${pend.id}`;
-    if (generationOperationRef.current.has(operationKey)) return;
+    if (generationOperationRef.current.has(operationKey)) return false;
     generationOperationRef.current.add(operationKey);
     // 没写提示词时:不再注入"生成一张电商商业图"这种会重绘/改风格的通用词
     // (那会让输出莫名其妙变样,还被存成节点提示词)。改为沿用主输入图自身的
@@ -7726,15 +7783,17 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           );
         } catch { /* Existing optional reference behavior is retained. */ }
       }
+      if (opts?.isCurrent && !opts.isCurrent()) return false;
       const startRes = await privateFetch("/api/generate-image", {
         method: "POST",
         headers: await authHeader(),
-        body: fd,
+        body: fd, isCurrent: opts?.isCurrent,
       });
       const start = await readJsonSafe(startRes);
       if (!startRes.ok) throw new Error(start.error || t("canvas.genFail"));
       const jobId: string | undefined = start.jobId;
       if (!jobId) throw new Error(t("canvas.genFail"));
+      if (opts?.isCurrent && !opts.isCurrent()) return false;
       setPendNodes(current => current.map(p => p.id === pend.id ? { ...p, generationStage: "generating" } : p));
       const deadline = Date.now() + 6 * 60 * 1000;
       let newIds: string[] = [];
@@ -7747,6 +7806,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           { cache: "no-store", headers: await authHeader() }
         );
         const pj = await readJsonSafe(pr);
+        if (opts?.isCurrent && !opts.isCurrent()) return false;
         if (pr.ok && pj.user) applyServerUser(pj.user);
         if (!pr.ok) throw new Error(pj.error || t("canvas.genFail"));
         if (pj.status === "done") {
@@ -7764,6 +7824,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           throw new Error(pj.error || t("canvas.genFail"));
         }
       }
+      if (opts?.isCurrent && !opts.isCurrent()) return false;
       // 把生成结果落到空白节点的位置
       if (newIds.length) {
         const livePosition = rfRef.current?.getNode(pend.id)?.position ?? generationPosition;
@@ -7789,7 +7850,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if (!activeKey) pendingNodeRef.current = newIds[0];
         }
       }
+      if (opts?.isCurrent && !opts.isCurrent()) return false;
       const fresh = await mergeWorks(newIds);
+      if (opts?.isCurrent && !opts.isCurrent()) return false;
       setPendNodes((prev) => prev.filter((p) => p.id !== pend.id));
       completeCanvasReceipt(jobId);
       setSelectedPendId((current) => (current === pend.id ? null : current));
@@ -7810,13 +7873,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         setTextNodes(mergeLinks);
         await Promise.all(updatedTextNodes.map((node) => persistTextNode(node)));
       }
+      return true;
     } catch (e) {
+      if (opts?.isCurrent && !opts.isCurrent()) return false;
       const message = e instanceof Error && e.message ? e.message : t("canvas.genFail");
       if (selectedPendIdRef.current === pend.id) setGenError(message);
       else flashTip(`${pend.label}：${message}`);
       setPendNodes((prev) =>
         prev.map((p) => (p.id === pend.id ? { ...p, generating: false } : p))
       );
+      return false;
     } finally {
       generationOperationRef.current.delete(operationKey);
     }
@@ -9619,21 +9685,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 </div>
               )}
 
-              {mixedNativeSelection&&!readOnly&&<BatchSelectionToolbar label={L("节点操作","Node actions")} selectionLabel={L(`已选择 ${multiSel.length} 个节点`,`${multiSel.length} nodes selected`)} clearLabel={t("canvas.batchClear")} testId="mixed-node-batch-bar" onClear={()=>clearCanvasSelection(true)}>
+              {mixedNativeSelection&&!readOnly&&<BatchSelectionToolbar label={L("节点操作","Node actions")} selectionLabel={L(`已选择 ${multiSel.length} 个节点`,`${multiSel.length} nodes selected`)} clearLabel={t("canvas.batchClear")} testId="mixed-node-batch-bar" onClear={()=>clearCanvasSelection(true)} primaryAction={batchRunButton(L(`批量运行 (${selectionRunCount})`, `Run selection (${selectionRunCount})`))}>
                 <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" onClick={()=>copyCanvasSelection(multiSel)}>{t("canvas.copyNode")}</button>
                 <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" disabled={historySaving||multiSel.some(isNodeLocked)} onClick={()=>void duplicateCanvasNodes(multiSel)}>{t("canvas.duplicate")}</button>
                 <button type="button" className="canvas-ui-action rounded-lg px-3 py-2 text-xs" disabled={historySaving||multiSel.some(isNodeLocked)} onClick={()=>batchDelete(multiSel)}>{t("canvas.delete")}</button>
               </BatchSelectionToolbar>}
-              {selectedBatchArts.length > 1 && !readOnly && !mixedNativeSelection && (
+              {(selectedBatchArts.length > 1 || multiSel.length > 1 && multiSel.some(id => pendNodes.some(node => node.id === id))) && !readOnly && !mixedNativeSelection && (
                 <BatchSelectionToolbar
                   label={t("canvas.batchActions")}
                   testId="image-batch-bar"
-                  selectionLabel={fmt(t("canvas.batchSelected"), { n: selectedBatchArts.length })}
+                  primaryAction={batchRunButton(t("canvas.batchRunImages"))}
+                  selectionLabel={fmt(t("canvas.batchSelected"), { n: multiSel.length })}
                   clearLabel={t("canvas.batchClear")}
                   onClear={() => clearCanvasSelection(true)}
                 >
                   <button
                     type="button"
+                    disabled={selectedBatchArts.length < 2}
                     onClick={() =>
                       void (selectedBatchCanvasGroupId
                         ? ungroupBatchSelection()
@@ -9650,6 +9718,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </button>
                   <button
                     type="button"
+                    disabled={selectedBatchArts.length < 2}
                     onClick={createMergeNodeFromSelection}
                     className="flex h-9 items-center gap-1.5 rounded-xl canvas-ui-primary px-3 text-xs font-semibold text-white transition-colors hover:opacity-90"
                   >
@@ -9658,17 +9727,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </button>
                   <button
                     type="button"
-                    disabled={batchRunBusy}
-                    onClick={() => void batchRunImages(selectedBatchArts)}
-                    title={t("canvas.batchRunImages")}
-                    className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors disabled:opacity-45"
-                  >
-                    {batchRunBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                    {t("canvas.batchRunImages")}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={promptMining}
+                    disabled={promptMining || selectedBatchArts.length < 2}
                     onClick={() => void reversePromptsForSelection(selectedBatchArts)}
                     title={t("canvas.batchRunText")}
                     className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors disabled:opacity-45"
@@ -9678,7 +9737,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </button>
                   <button
                     type="button"
-                    disabled={promptMining}
+                    disabled={promptMining || selectedBatchArts.length < 2}
                     onClick={() => void reversePromptsForSelection(selectedBatchArts)}
                     title={t("canvas.reverseHint")}
                     className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors disabled:opacity-45"
@@ -9692,6 +9751,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </button>
                   <button
                     type="button"
+                    disabled={selectedBatchArts.length < 2}
                     onClick={() => void markBatchSelection()}
                     className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors"
                   >
@@ -9704,7 +9764,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </button>
                   <button
                     type="button"
-                    disabled={stitching}
+                    disabled={stitching || selectedBatchArts.length < 2}
                     onClick={() => void stitchBatchSelection()}
                     title={t("canvas.stitchOrderHint")}
                     className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors disabled:opacity-45"
@@ -9718,7 +9778,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   </button>
                   <button
                     type="button"
-                    disabled={zipping}
+                    disabled={zipping || selectedBatchArts.length < 2}
                     onClick={() => void downloadBatchSelection()}
                     className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold canvas-ui-action transition-colors disabled:opacity-45"
                   >
@@ -9743,6 +9803,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 <BatchSelectionToolbar
                   label={t("canvas.textBatchActions")}
                   testId="text-batch-bar"
+                  primaryAction={batchRunButton(t("canvas.batchRunText"))}
                   selectionLabel={fmt(t("canvas.textBatchSelected"), { n: selectedTextBatchNodes.length })}
                   clearLabel={t("canvas.batchClear")}
                   onClear={() => clearCanvasSelection(true)}
@@ -10110,13 +10171,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         />
                         <Item
                           label={t("canvas.batchGenerate")}
-                          disabled={readOnly}
+                          disabled={readOnly || selectedBatchArts.length < 2}
                           onClick={createMergeNodeFromSelection}
                         />
                         <Sep />
                         <FeatureVisible feature="generate"><Item
                           label={t("canvas.batchRunImages")}
-                          disabled={batchRunBusy || readOnly}
+                          disabled={batchRunBusy || readOnly || !nodeSettingsReady || selectionRunCount === 0}
                           onClick={() => void batchRunImages(selectedBatchArts)}
                         /></FeatureVisible>
                         <Item
@@ -10138,7 +10199,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                               ? "canvas.batchUnmark"
                               : "canvas.batchMark"
                           )}
-                          disabled={readOnly}
+                          disabled={readOnly || selectedBatchArts.length < 2}
                           onClick={() => void markBatchSelection()}
                         />
                         <Item
