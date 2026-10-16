@@ -33,7 +33,8 @@
   scrollbar-color: var(--canvas-ui-border-strong) transparent;
 }
 
-.actions > button {
+.actions > button,
+.primary > button {
   flex: none;
   height: 36px;
   gap: 6px;
@@ -43,7 +44,10 @@
   white-space: nowrap;
 }
 
-.actions > button > svg {
+.primary { display: flex; flex: none; align-items: center; }
+
+.actions > button > svg,
+.primary > button > svg {
   flex: none;
   width: 16px;
   height: 16px;
@@ -62,6 +66,7 @@
 
 @media (max-width: 479px) {
   .surface { gap: 4px; }
-  .count { padding-right: 6px; padding-left: 2px; }
+  .count { padding-right: 6px; padding-left: 2px; font-size: 11px; }
+  .primary > button { padding: 0 8px; }
   .dismiss { padding-left: 4px; }
 }
