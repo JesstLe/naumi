@@ -1,0 +1,85 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+
+async function main() {
+  process.env.DATABASE_URL = "postgresql://postgres:fixture-only-local@127.0.0.1:55438/release_fixture";
+  process.env.NAUMI_RELEASE_RUNTIME = "1"; process.env.NAUMI_INSTANCE_ID = "fixture-background-business";
+  process.env.SOURCE_COMMIT = "c".repeat(40); process.env.NAUMI_RELEASE_ADMISSION_START = "open";
+  process.env.RELEASE_CONTROL_SECRET = "fixture-release-secret-not-for-production-32";
+  process.env.NAUMI_VIDEO_WORKER = "0";
+  process.env.SETTINGS_SECRET = "fixture-settings-secret-never-production-32";
+  const { releaseStatus, releasePool, controlAdmission } = await import("./store");
+  const { BACKGROUND_SCOPES, withBackgroundActivity, detachBackgroundActivity, bindBackgroundClaim } = await import("./background-activity");
+  const { DurableImageJobs } = await import("../durable-image-jobs");
+  const { ensureSchema, getPool } = await import("../db");
+  let checks = 0;
+  function check(name: string, actual: unknown, expected: unknown) { assert.deepEqual(actual, expected, name); checks++; console.log(`PASS ${name}`); }
+  await ensureSchema();
+  const jobs = new DurableImageJobs<{ status: string; paidOperationVersion?: number }>("imagegen");
+  const id = "fixture-job-" + randomUUID();
+  await jobs.create(id, "fixture@example.test", { status: "queued" }, {}, 0, false);
+  let started!: () => void, finish!: () => void, called = 0;
+  const entered = new Promise<void>((done) => started = done), completion = new Promise<void>((done) => finish = done);
+  await jobs.kick(id, async () => { called++; started(); await completion; await jobs.patch(id, { status: "done" }); });
+  await entered;
+  const running = await releaseStatus();
+  check("real DurableImageJobs.kick returns while real callback runs", running.observations.trackedAcceptedWork, 1);
+  const observed = (await releasePool().query("SELECT work_key,claim_token,boot_id FROM app_release_activities WHERE instance_id=$1 AND state='active' AND work_scope='durable-image'", [running.identity.instanceId])).rows[0];
+  const actual = (await getPool().query("SELECT lease_token FROM app_image_jobs WHERE id=$1", [id])).rows[0];
+  check("release background records original business lease token", observed.claim_token, actual.lease_token);
+  check("release lease does not replace business token", typeof actual.lease_token, "string");
+  check("release work identity binds exact durable job", observed.work_key, "imagegen:" + id);
+  await jobs.kick(id, async () => { called++; });
+  check("second kick does not duplicate active callback", called, 1);
+  const initial = await releaseStatus();
+  await controlAdmission({ instanceId: initial.identity.instanceId, bootId: initial.identity.bootId, expectedRevision: initial.admission.revision, operationId: randomUUID(), action: "drain" });
+  const second = "fixture-job-" + randomUUID(); await jobs.create(second, "fixture@example.test", { status: "queued" }, {}, 0, false);
+  await jobs.kick(second, async () => { called++; });
+  check("new durable claim is skipped during drain", (await getPool().query("SELECT lease_token FROM app_image_jobs WHERE id=$1", [second])).rows[0].lease_token, null);
+  check("drain never re-submits accepted callback", called, 1);
+  finish();
+  for (let i = 0; i < 100; i++) { if ((await releaseStatus()).observations.trackedAcceptedWork === 0) break; await new Promise((r) => setTimeout(r, 20)); }
+  check("accepted durable promise naturally settles through drain", (await jobs.get(id))?.status, "done");
+  check("accepted durable execution lease releases through drain", (await getPool().query("SELECT lease_token FROM app_image_jobs WHERE id=$1", [id])).rows[0].lease_token, null);
+  check("release background reaches zero only after promise finally", (await releaseStatus()).observations.trackedAcceptedWork, 0);
+  let continuation = false;
+  await withBackgroundActivity("media-job", "accepted-get-only-result", "continuation", async () => { continuation = true; }, () => undefined);
+  check("accepted GET-only continuation is permitted during drain", continuation, true);
+  const before = await releaseStatus(); await controlAdmission({ instanceId: before.identity.instanceId, bootId: before.identity.bootId, expectedRevision: before.admission.revision, operationId: randomUUID(), action: "resume" });
+  const unknown = "fixture-unknown-" + randomUUID();
+  await detachBackgroundActivity("reference-text", unknown, "claim", async () => { await bindBackgroundClaim(unknown, "saved-business-token"); throw Error("fixture unknown submission result"); });
+  for (let i = 0; i < 100; i++) { if ((await releaseStatus()).observations.unknownLeases > 0) break; await new Promise((r) => setTimeout(r, 10)); }
+  let replay = false;
+  await detachBackgroundActivity("reference-text", unknown, "claim", async () => { replay = true; });
+  check("ambiguous detached failure is never auto-replayed", replay, false);
+  check("ambiguous background failure remains unknown", (await releaseStatus()).observations.unknownLeases > 0, true);
+  check("local background coverage does not invent all tasks count", (await releaseStatus()).observations.acceptedTasks, null);
+  const { withBiRequest }=await import("../bi/model-observer");
+  const { signUserSession, USER_COOKIE }=await import("../native-auth");
+  const { withAcceptedExecution,signAgentContinuation,CONTINUATION_HEADER }=await import("./accepted-context");
+  const { accountKey }=await import("./identity");
+  const { beginAgentActivity,finishActivity }=await import("./store");
+  await getPool().query("INSERT INTO app_users(email,name,plan,credits_total,credits_used,renews_at) VALUES('fixture-bi@example.test','fixture','pro',0,0,now()+interval '1 day') ON CONFLICT(email) DO NOTHING");
+  const active=await releaseStatus();
+  if(active.admission.mode!=="open")await controlAdmission({instanceId:active.identity.instanceId,bootId:active.identity.bootId,expectedRevision:active.admission.revision,operationId:randomUUID(),action:"resume"});
+  const agentRun=await beginAgentActivity("fixture-bi@example.test","ag-real-bi-proof","workbench");
+  const parent={id:agentRun,account:accountKey("fixture-bi@example.test"),instanceId:active.identity.instanceId,bootId:active.identity.bootId};
+  const proof=(await withAcceptedExecution(parent,()=>signAgentContinuation("fixture-bi@example.test","/api/suite","POST")))!;
+  const actorCookie=`${USER_COOKIE}=${signUserSession("fixture-bi@example.test",Date.now())}`;
+  const toDrain=await releaseStatus();await controlAdmission({instanceId:toDrain.identity.instanceId,bootId:toDrain.identity.bootId,expectedRevision:toDrain.admission.revision,operationId:randomUUID(),action:"drain"});
+  const signed=new Request("http://internal/api/suite",{method:"POST",headers:{cookie:actorCookie,[CONTINUATION_HEADER]:proof,"content-type":"application/json"},body:"{}"});
+  let biChild=false;
+  const actualBi=await withBiRequest(signed,()=>withBackgroundActivity("durable-image","actual-bi-accepted-child","claim",async()=>{biChild=true;return Response.json({ok:true});},()=>Response.json({blocked:true},{status:503})));
+  check("real withBiRequest reauthenticates and restores accepted ALS",[actualBi.status,biChild],[200,true]);
+  const duplicateBi=await withBiRequest(signed,async()=>Response.json({shouldNotRun:true}));
+  check("real withBiRequest rejects continuation replay before callback",duplicateBi.status,409);
+  let anonymousRan=false;
+  const anonymousBi=await withBiRequest(new Request("http://internal/api/suite",{method:"POST",headers:{[CONTINUATION_HEADER]:proof}}),async()=>{anonymousRan=true;return Response.json({});});
+  check("proof never grants an anonymous BI caller authority",[anonymousBi.status,anonymousRan],[403,false]);
+  await finishActivity(agentRun);
+  const reopen=await releaseStatus();await controlAdmission({instanceId:reopen.identity.instanceId,bootId:reopen.identity.bootId,expectedRevision:reopen.admission.revision,operationId:randomUUID(),action:"resume"});
+  for(const scope of BACKGROUND_SCOPES){let ran=false;await withBackgroundActivity(scope,"all-scope-fixture-"+randomUUID(),"claim",async()=>{ran=true;await bindBackgroundClaim("observed-original-work-key","existing-business-token");},()=>undefined);check(`instrumented ${scope} promise binds and finishes`,ran,true);}
+  console.log(`BACKGROUND_BUSINESS_CHECKS=${checks}`);
+  await Promise.all([releasePool().end(), getPool().end()]);
+}
+void main().catch((e) => { console.error(e); process.exitCode = 1; });

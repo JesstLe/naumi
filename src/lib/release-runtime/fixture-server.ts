@@ -6,8 +6,10 @@ import { startAgentActivity, endAgentActivity, type AgentActivity } from "./agen
 import { releasePool, releaseStatus } from "./store";
 import { GET as status } from "../../app/api/internal/release/status/route";
 import { POST as control } from "../../app/api/internal/release/control/route";
+import { detachBackgroundActivity, bindBackgroundClaim } from "./background-activity";
 
 const runs = new Map<string, { activity: AgentActivity; steer: number }>();
+const background = new Map<string, () => void>();
 async function dispatch(request: Request) {
   const url = new URL(request.url);
   if (url.pathname === "/api/internal/release/status") return status(request);
@@ -17,6 +19,19 @@ async function dispatch(request: Request) {
     const email = token === "Bearer fixture-a" ? "a@example.test" : token === "Bearer fixture-b" ? "b@example.test" : null;
     if (!email) return Response.json({ error: "UNAUTHORIZED" }, { status: 401 });
     const body = ["POST", "PUT", "PATCH"].includes(request.method) ? await request.json() : undefined;
+    if (url.pathname === "/api/background") {
+      const key = body?.key || url.searchParams.get("key");
+      if (request.method === "POST") {
+        await detachBackgroundActivity("reference-text", key, "claim", async () => {
+          await bindBackgroundClaim(key, "original-business-lease-token");
+          await new Promise<void>((done) => background.set(key, done));
+          background.delete(key);
+        });
+        return Response.json({ tickReturned: true });
+      }
+      if (request.method === "DELETE") background.get(key)?.();
+      return Response.json({ pending: background.has(key) });
+    }
     const session = body?.sessionId || url.searchParams.get("sessionId");
     const newRun = ["POST", "PUT"].includes(request.method);
     const forwarded = await routeAgentToOwner(request, email, session, "workbench", newRun, body);

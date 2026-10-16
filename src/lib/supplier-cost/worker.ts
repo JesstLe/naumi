@@ -1,3 +1,4 @@
+import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { dbEnabled } from "../db";
@@ -13,7 +14,7 @@ import { costPolicy } from "./policy";
 import { refreshApiCostOperation,withBillingTransaction } from "../billing/service";
 import { excludeImportedHistory, stagingHistoryGuardEnabled } from "../staging-history";
 
-export async function runSupplierCostWorker(ledger: ReturnType<typeof createSupplierLedger> = supplierLedger(), options: { fetcher?: typeof fetch; batch?: number } = {}) {
+async function runSupplierCostWorkerLocal(ledger: ReturnType<typeof createSupplierLedger> = supplierLedger(), options: { fetcher?: typeof fetch; batch?: number } = {}) {
   await ensureSupplierSchema(ledger.pool);
   // Recover a process crash after task_id was durably stored but before the outbox enqueue.
   await ledger.pool.query(`INSERT INTO app_supplier_cost_jobs(key,kind,account_id,payload)
@@ -31,6 +32,7 @@ export async function runSupplierCostWorker(ledger: ReturnType<typeof createSupp
   const jobs = (await ledger.pool.query(`WITH due AS (SELECT key FROM app_supplier_cost_jobs WHERE state='queued' AND due_at<=now() AND (lease_until IS NULL OR lease_until<now()) ${excludeImportedHistory("app_supplier_cost_jobs")} ORDER BY due_at LIMIT $1 FOR UPDATE SKIP LOCKED) UPDATE app_supplier_cost_jobs j SET lease_id=$2,lease_until=now()+interval '120 seconds',attempts=attempts+1,updated_at=now() FROM due WHERE j.key=due.key RETURNING j.*`, [Math.min(10,Math.max(1,options.batch||3)),randomUUID()])).rows;
   let processed = 0;
   for (const job of jobs) {
+    await bindBackgroundClaim(`supplier:${job.key}`, job.lease_id);
     let next: number | null = null, error: string | null = null;
     try {
       if (job.kind === "router") { const r = await importRouterOperation(ledger,job.payload,options.fetcher); if (!r.terminal) next = 60; }
@@ -79,3 +81,7 @@ export async function runSupplierCostWorker(ledger: ReturnType<typeof createSupp
   return { processed, claimed:jobs.length };
 }
 export async function scanSupplierCostsOnce() { if (!dbEnabled) return 0; try { return (await runSupplierCostWorker()).processed; } catch { return 0; } }
+
+export async function runSupplierCostWorker(ledger: ReturnType<typeof createSupplierLedger> = supplierLedger(), options: { fetcher?: typeof fetch; batch?: number } = {}) {
+  return withBackgroundActivity("supplier-scan", "supplier-cost-scan", "claim", () => runSupplierCostWorkerLocal(ledger, options), () => ({ processed: 0, claimed: 0 }));
+}
