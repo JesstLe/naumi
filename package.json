@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "postinstall": "node scripts/patch-next-body.mjs",
-    "prebuild": "node scripts/build-reference-workbench.mjs",
+    "prebuild": "node scripts/maintain-public-release-notes.cjs check && node scripts/build-reference-workbench.mjs",
     "predev": "node scripts/build-reference-workbench.mjs",
     "verify:reference-workbench": "tsx --conditions react-server scripts/verify-reference-workbench.ts",
     "verify:chat-plan-parse": "tsx scripts/verify-chat-plan-parse.ts",
