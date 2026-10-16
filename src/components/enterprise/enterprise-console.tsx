@@ -1,6 +1,4 @@
 "use client";
-import { CachedImage } from "@/components/cached-image";
-import {readBrowserImage} from '@/lib/browser-image-cache';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Building2, Eye, ImageIcon, LayoutDashboard, Plus, RefreshCw, ShieldCheck, Users, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
@@ -9,6 +7,7 @@ import { USERNAME_DOMAIN } from '@/lib/account-identity';
 import type { ContentPage } from '@/lib/teams/contracts';
 import type { EnterpriseIdentity, EnterpriseMember, EnterpriseRole, EnterpriseSnapshot } from '@/lib/enterprise/contracts';
 import styles from './enterprise.module.css';
+import { EnterpriseArtworks } from "./enterprise-artworks";
 import { EnterpriseAnalyticsPanel } from './enterprise-analytics';
 type View='overview'|'members'|'roles'|'records';
 type Section='artworks'|'tasks';
@@ -19,14 +18,6 @@ const inputDate=(v:string|null)=>{if(!v)return '';const d=new Date(v);return new
 async function json<T>(url:string,init?:RequestInit):Promise<T>{
   const r=await fetch(url,{cache:'no-store',...init,headers:{...(await authHeader()),...init?.headers}}),body=await r.json();
   if(!r.ok)throw new Error(body.error||'读取失败');return body;
-}
-function ArtworkImage({src,alt}:{src:string;alt:string}){
-  const [url,setUrl]=useState(''),[failed,setFailed]=useState(false);
-  useEffect(()=>{const c=new AbortController();let object='';setUrl('');setFailed(false);
-      void(async()=>{try{const blob=await readBrowserImage(src,c.signal);if(c.signal.aborted)return;object=URL.createObjectURL(blob);setUrl(object)}catch{if(!c.signal.aborted)setFailed(true)}})();
-    return()=>{c.abort();if(object)URL.revokeObjectURL(object)};
-  },[src]);
-  return url?<CachedImage src={url} alt={alt} loading='lazy'/>:<div className={styles.empty}>{failed?'图片暂不可读取':'加载图片…'}</div>;
 }
 export function EnterpriseConsole(){
   const {user,ready}=useAuth(),email=user?.email||'console';
@@ -56,7 +47,7 @@ function Workspace({enterprises}:{enterprises:EnterpriseIdentity[]}){
   useEffect(()=>{if(!editor)return;const previous=document.activeElement as HTMLElement|null;dialog.current?.querySelector<HTMLElement>('input,select,button')?.focus();return()=>previous?.focus()},[editor]);
   const load=useCallback(async()=>{
     const n=++sequence.current;scopeAbort.current?.abort();const controller=new AbortController();scopeAbort.current=controller;setLoading(true);setError('');
-    try{const r=await json<EnterpriseSnapshot>(`/api/enterprise?${new URLSearchParams({enterpriseId})}`,{signal:controller.signal});if(n!==sequence.current||controller.signal.aborted)return;setData(r);setSelected(old=>r.members.some(m=>m.email===old)?old:r.members[0]?.email||'')}
+    try{const r=await json<EnterpriseSnapshot>(`/api/enterprise?${new URLSearchParams({enterpriseId})}`,{signal:controller.signal});if(n!==sequence.current||controller.signal.aborted)return;setData(r);setSelected(old=>r.members.some(m=>m.email===old)?old:'')}
     catch(e){if(n===sequence.current&&!controller.signal.aborted){setError((e as Error).message);setData(null);setContent(null);setEditor(null);setPassword('')}}
     finally{if(n===sequence.current&&!controller.signal.aborted)setLoading(false)};
   },[enterpriseId]);
@@ -64,7 +55,7 @@ function Workspace({enterprises}:{enterprises:EnterpriseIdentity[]}){
   useEffect(()=>{const check=()=>void load();const timer=window.setInterval(check,30_000);window.addEventListener('focus',check);return()=>{window.clearInterval(timer);window.removeEventListener('focus',check)}},[load]);
   useEffect(()=>{if(!enterprises.some(e=>e.id===enterpriseId))setEnterpriseId(enterprises[0].id)},[enterprises,enterpriseId]);
   useEffect(()=>{
-    if(view!=='records'||!selected||!data?.actor.viewRecords){setContent(null);return}
+    if(view!=='records'||section!=='tasks'||!selected||!data?.actor.viewRecords){setContent(null);return}
     const c=new AbortController();setContentLoading(true);setContent(null);setContentError('');
     const q=new URLSearchParams({enterpriseId,email:selected,section,page:String(page)});
     json<ContentPage>(`/api/enterprise/content?${q}`,{signal:c.signal}).then(r=>{if(!c.signal.aborted)setContent(r)}).catch(e=>{if(!c.signal.aborted)setContentError(e.message)}).finally(()=>{if(!c.signal.aborted)setContentLoading(false)});
@@ -91,8 +82,8 @@ function Workspace({enterprises}:{enterprises:EnterpriseIdentity[]}){
           {data.actor.viewRecords&&<button onClick={()=>{setSelected(m.email);setPage(1);setView('records')}}><Eye size={14}/>内容</button>}{m.canManage&&<>{data.actor.owner&&<button disabled={pending} onClick={()=>edit('organization',m)}>岗位与上级</button>}{m.employment==='intern'&&<button disabled={pending} onClick={()=>edit('expiry',m)}>有效期</button>}<button disabled={pending} onClick={()=>edit('password',m)}>密码</button><button disabled={pending} onClick={()=>{if(window.confirm(`${m.banned?'启用':'停用'}${m.name}？`))void mutate({...body(m),action:'status',banned:!m.banned})}}>{m.banned?'启用':'停用'}</button></>}
         </div></td></tr>)}</tbody></table></div></div>}
         {view==='roles'&&data.actor.owner&&<div className={styles.pane}><div className={styles.sectionHead}><h2>岗位与权限</h2><button className={styles.primary} onClick={()=>editRole(null)}><Plus size={15}/>新增岗位</button></div><div className={styles.roleGrid}>{data.roles.map(r=><article className={styles.roleCard} key={r.id}><header><ShieldCheck size={18}/><h3>{r.name}</h3><span>L{r.level}</span></header><div className={styles.capabilities}><span>{r.manage_members?'管理下级成员':'无成员管理'}</span><span>{r.view_records?'查看范围内作品':'不查看作品'}</span></div><footer><span>{data.members.filter(m=>m.role_id===r.id).length} 位成员</span><button disabled={pending} onClick={()=>editRole(r)}>编辑</button></footer></article>)}</div></div>}
-        {view==='records'&&data.actor.viewRecords&&<div className={styles.pane}><div className={styles.recordsBar}><label>成员<select aria-label='选择成员' value={selected} onChange={e=>{setSelected(e.target.value);setPage(1)}}><option value=''>选择成员</option>{data.members.map(m=><option key={m.email} value={m.email}>{m.name||identity(m.email)}</option>)}</select></label><div className={styles.tabs}><button className={section==='artworks'?styles.active:''} onClick={()=>{setSection('artworks');setPage(1)}}>图片</button><button className={section==='tasks'?styles.active:''} onClick={()=>{setSection('tasks');setPage(1)}}>操作任务</button></div></div>
-          {!selected?<div className={styles.empty}>请选择成员</div>:contentLoading?<div className={styles.empty}>加载中…</div>:contentError?<p role='alert' className={styles.error}>{contentError}</p>:content&&<><div className={section==='artworks'?styles.gallery:styles.records}>{content.rows.map(row=><article key={String(row.id)} className={styles.record}>{section==='artworks'&&(row.image_url?<ArtworkImage src={`/api/enterprise/media?${new URLSearchParams({enterpriseId,email:selected,id:String(row.id)})}`} alt={String(row.title||'作品')}/>:<div className={styles.empty}>无图片</div>)}<h3>{String(row.title||row.kind||row.id)}</h3><small>{datetime(String(row.created_at))}{row.status?` · ${row.status}`:''}</small>{section==='tasks'&&<><p>{String(row.prompt||'')}</p><p>预估积分：{row.cost}</p></>}</article>)}</div>{!content.rows.length&&<div className={styles.empty}>暂无记录</div>}<div className={styles.pager}><span>共 {content.total} 条</span><button disabled={page<=1} onClick={()=>setPage(p=>p-1)}>上一页</button><span>{page}</span><button disabled={page*content.size>=content.total} onClick={()=>setPage(p=>p+1)}>下一页</button></div></>}
+        {view==='records'&&data.actor.viewRecords&&<div className={styles.pane}><div className={styles.recordsBar}>{section==='tasks'&&<label>成员<select aria-label='选择成员' value={selected} onChange={e=>{setSelected(e.target.value);setPage(1)}}><option value=''>选择成员</option>{data.members.map(m=><option key={m.email} value={m.email}>{m.name||identity(m.email)}</option>)}</select></label>}<div className={styles.tabs}><button className={section==='artworks'?styles.active:''} onClick={()=>{setSection('artworks');setPage(1)}}>图片</button><button className={section==='tasks'?styles.active:''} onClick={()=>{setSection('tasks');setPage(1)}}>操作任务</button></div></div>
+          {section==='artworks'?<EnterpriseArtworks key={enterpriseId+':'+selected} snapshot={data} initialEmail={selected}/>:!selected?<div className={styles.empty}>请选择成员</div>:contentLoading?<div className={styles.empty}>加载中…</div>:contentError?<p role='alert' className={styles.error}>{contentError}</p>:content&&<><div className={styles.records}>{content.rows.map(row=><article key={String(row.id)} className={styles.record}><h3>{String(row.title||row.kind||row.id)}</h3><small>{datetime(String(row.created_at))}{row.status?` · ${row.status}`:''}</small>{section==='tasks'&&<><p>{String(row.prompt||'')}</p><p>预估积分：{row.cost}</p></>}</article>)}</div>{!content.rows.length&&<div className={styles.empty}>暂无记录</div>}<div className={styles.pager}><span>共 {content.total} 条</span><button disabled={page<=1} onClick={()=>setPage(p=>p-1)}>上一页</button><span>{page}</span><button disabled={page*content.size>=content.total} onClick={()=>setPage(p=>p+1)}>下一页</button></div></>}
         </div>}
       </>}
     </section>

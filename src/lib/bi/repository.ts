@@ -58,12 +58,13 @@ export async function logBiAccess(
 
 // All source tables are independently aggregated. Joining raw ledger/artwork/job rows
 // would multiply amounts. Parameters are shared across every view and count query.
-const scope = `WITH query_window AS (SELECT $1::timestamptz AS starts, $2::timestamptz AS ends), scoped AS (
+const scopeSql = (authorizedEmployees = false) => `WITH query_window AS (SELECT $1::timestamptz AS starts, $2::timestamptz AS ends), scoped AS (
   SELECT emails.email FROM (SELECT email FROM app_users UNION SELECT email FROM app_ledger UNION SELECT email FROM app_orders UNION SELECT email FROM app_artworks UNION SELECT email FROM app_image_jobs UNION SELECT email FROM app_bi_model_calls UNION SELECT email FROM app_bi_management_log UNION SELECT email FROM app_video_tasks UNION SELECT email FROM app_canvas_image_tasks UNION SELECT email FROM app_agent_sessions UNION SELECT email FROM app_genchat_sessions) emails
   LEFT JOIN app_users u ON u.email=emails.email LEFT JOIN app_bi_account_profiles p ON p.email=emails.email
   WHERE ($3::text='' OR emails.email=$3) AND ($4::text='' OR position(lower($4) in lower(emails.email||' '||COALESCE(u.name,'')||' '||COALESCE(p.company,'')))>0)
-  AND ($5::text='' OR COALESCE(p.account_type,'unknown')=$5)
+  ${authorizedEmployees ? 'AND emails.email=ANY($8::text[])' : ''} AND ($5::text='' OR COALESCE(p.account_type,'unknown')=$5)
 )`;
+const scope = scopeSql();
 const inRange = (alias: string) =>
   `${alias}.created_at >= $1::timestamptz AND ${alias}.created_at < $2::timestamptz`;
 const values = (q: BiQuery) => [q.start, q.end, q.email, q.q, q.accountType];
@@ -127,7 +128,10 @@ async function snapshot<T>(
   }
 }
 
-export async function queryBi(q: BiQuery): Promise<BiResponse> {
+/** Scoped callers must supply a server-authorized member list and its transaction.
+ * This path is artworks-only; it never grants enterprise users other BI sections. */
+export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowedEmails: readonly string[] }): Promise<BiResponse> {
+  if (access && q.section !== "artworks") throw new Error("Scoped BI supports artworks only");
   await ensureBiSchema();
   const result: BiResponse = {
     section: q.section,
@@ -142,7 +146,8 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
     result.overview = await snapshot((client) => overview(q, client));
     return result;
   }
-  const filterBinds = [...values(q), q.status, ...(q.section === "artworks" ? [q.recordId || ""] : [])];
+  const filterBinds = [...values(q), q.status, ...(q.section === "artworks" ? [q.recordId || ""] : []), ...(access ? [access.allowedEmails] : [])];
+  const scopedSql = access ? scopeSql(true) : scope;
   const binds = [...filterBinds, q.size, (q.page - 1) * q.size];
   let source = "";
   switch (q.section) {
@@ -217,16 +222,17 @@ export async function queryBi(q: BiQuery): Promise<BiResponse> {
         : "created_at DESC,id DESC";
   // Parameter indices remain valid in both statements; use a LIMIT/OFFSET-free
   // one-row count result so empty pages still report the real total.
-  const [count, page] = await snapshot(async (client) => [
+  const readPage = async (client: PoolClient) => [
     await client.query(
-      `${scope} SELECT count(*)::int AS total FROM (${source}) result`,
+      `${scopedSql} SELECT count(*)::int AS total FROM (${source}) result`,
       filterBinds,
     ),
     await client.query(
-      `${scope} SELECT * FROM (${source}) result ORDER BY ${order} LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2}`,
+      `${scopedSql} SELECT * FROM (${source}) result ORDER BY ${order} LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2}`,
       binds,
     ),
-  ]);
+  ];
+  const [count, page] = access ? await readPage(access.client) : await snapshot(readPage);
   result.total = count.rows[0].total;
   result.rows = normalize(q.section === "artworks" ? page.rows.map(raw => {
     const presentation = artworkBiPresentation(raw);

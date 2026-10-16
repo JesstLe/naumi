@@ -212,7 +212,11 @@ export async function enterpriseContent(actor:TeamActor,id:string,email:string,s
   });
 }
 export async function enterpriseArtwork(actor:TeamActor,enterpriseId:string,email:string,id:string) {
-  return transaction(async tx=>{await contentScope(tx,actor,enterpriseId,email);const row=(await tx.query('SELECT image_url FROM app_artworks WHERE email=$1 AND id=$2 AND deleted_at IS NULL',[email,id])).rows[0];if(!row)throw new TeamError('作品不存在',404);return row});
+  return enterpriseRead(actor,enterpriseId,async(tx,s)=>{
+    if(!s.visible.has(email))throw new TeamError('没有该成员内容的查看权限');
+    const row=(await tx.query('SELECT image_url FROM app_artworks WHERE email=$1 AND id=$2',[email,id])).rows[0];
+    if(!row)throw new TeamError('作品不存在',404);return row;
+  });
 }
 
 /** One-time explicit, transactional activation of existing identities. Never recreates users/media/credits. */

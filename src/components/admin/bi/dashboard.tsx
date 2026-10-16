@@ -29,6 +29,7 @@ import type {
   BiSection,
 } from "@/lib/bi/contracts";
 import { biCsvCell } from "@/lib/bi/contracts";
+import { ARTWORK_COLUMNS, ARTWORK_DETAIL_VALUES } from "@/lib/bi/artwork-view";
 import styles from "./dashboard.module.css";
 import { UserManager } from "./user-manager";
 import { BiTooltip } from "./tooltip";
@@ -122,17 +123,7 @@ const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
     { key: "billed_credits", label: "实际落账", format: "credits" },
     { key: "content", label: "操作内容" },
   ],
-  artworks: [
-    { key: "created_at", label: "创建时间", format: "time" },
-    { key: "email", label: "账户" },
-    { key: "title", label: "作品" },
-    { key: "operation_label", label: "创建操作" },
-    { key: "dimensions", label: "图片尺寸" },
-    { key: "source_label", label: "创建来源" },
-    { key: "provenance_status", label: "溯源状态" },
-    { key: "provenance_ref", label: "来源编号" },
-    { key: "prompt_display", label: "提示词 / 操作内容" },
-  ],
+  artworks: ARTWORK_COLUMNS,
   models: [
     { key: "created_at", label: "审计时间", format: "time" },
     { key: "email", label: "账户" },
@@ -260,6 +251,7 @@ Object.assign(names, {
   "manage-adjust": "调整积分",
   "manage-reset-password": "重置密码",
 });
+Object.assign(names, ARTWORK_DETAIL_VALUES);
 const n = (value: unknown) =>
   Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 function display(value: unknown, format?: Column["format"]) {

@@ -36,7 +36,8 @@ export async function GET(request: Request) {
       bytes = Buffer.concat(chunks);
     }
     if (bytes.length > max) throw new Error();
-    const output = await sharp(bytes, { limitInputPixels: 40000000 }).rotate().resize({ width: 1280, height: 1280, fit: "inside", withoutEnlargement: true }).webp({ quality: 85 }).toBuffer();
+    const full = new URL(request.url).searchParams.get('full') === '1';
+    const output = await sharp(bytes, { limitInputPixels: 40000000 }).rotate().resize({ width: full ? 2560 : 480, height: full ? 2560 : 480, fit: "inside", withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
     return new NextResponse(output, { headers: { ...PRIVATE_HEADERS, "Content-Type": "image/webp", "Content-Security-Policy": "default-src 'none'" } });
   } catch { return teamJson({ error: "媒体暂时不可读取" }, 422); }
 }

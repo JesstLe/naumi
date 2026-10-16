@@ -48,7 +48,7 @@ export async function imageCacheManifest(request:Request,publicOnly:boolean){
           const email=u.searchParams.get('email')!,id=u.searchParams.get('id')!;
           const row=enterprise?await enterpriseArtwork(actor,u.searchParams.get('enterpriseId')!,email,id):await teamArtwork(actor,u.searchParams.get('teamId')!,email,id);
           const rawVersion=await mediaCacheVersion(String(row.image_url));if(!rawVersion)continue;
-          const version='preview-webp-1280-v1:'+rawVersion;
+          const version=(enterprise?(u.searchParams.get('full')==='1'?'enterprise-full-webp-2560-v1:':'enterprise-thumb-webp-480-v1:'):'preview-webp-1280-v1:')+rawVersion;
           results[raw]={account,source,version,fetchUrl:source+'&cacheVersion='+encodeURIComponent(rawVersion),bytes:0,contentType:'image/webp'};
         }catch{/* Preserve per-resource denial without leaking another member's URL. */}
         continue;
