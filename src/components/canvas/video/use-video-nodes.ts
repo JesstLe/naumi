@@ -2,6 +2,7 @@
 import {useCallback,useEffect,useRef,useState} from "react";
 import type {CanvasVideoNode,VideoNodeWrite} from "@/lib/canvas/video-node-schema";
 import {browserRandomUUID} from "@/lib/browser-crypto";
+import {mergeVideoNodeSnapshots} from '@/lib/video/polling-state';
 
 export type VideoPrivateFetch=(input:RequestInfo|URL,init?:RequestInit)=>Promise<Response>;
 export class VideoNodeClientError extends Error{constructor(message:string,public status:number,public code?:string){super(message);}}
@@ -12,7 +13,7 @@ export function useVideoNodes({email,readOnly,request}:{email?:string;readOnly:b
   nodesRef.current=nodes;actorRef.current=email;
   const merge=useCallback((incoming:CanvasVideoNode[],actor:string|undefined,epoch:number)=>{
     if(actorRef.current!==actor||epochRef.current!==epoch)return;
-    const byId=new Map(nodesRef.current.map(node=>[node.id,node]));for(const node of incoming){const old=byId.get(node.id);if(!old||node.revision>=old.revision)byId.set(node.id,node);}const next=[...byId.values()];nodesRef.current=next;setNodes(next);
+    const next=mergeVideoNodeSnapshots(nodesRef.current,incoming);if(next===nodesRef.current)return;nodesRef.current=next;setNodes(next);
   },[]);
   const refresh=useCallback(async()=>{const actor=email,epoch=epochRef.current;if(!actor)return;
     const response=await request(`/api/canvas/video-nodes?includeDeleted=1&email=${encodeURIComponent(actor)}`,{cache:"no-store"});const data=await response.json();if(!response.ok)throw new VideoNodeClientError(data.error||"视频节点加载失败",response.status,data.code);

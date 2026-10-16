@@ -1,3 +1,4 @@
+import { forwardLegacyAgentSession } from "@/lib/agent/legacy-runtime";
 import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/lib/db";
@@ -34,6 +35,8 @@ async function authedEmail(request: Request): Promise<string | null> {
 }
 
 export async function GET(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -60,6 +63,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -89,6 +94,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -119,6 +126,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });

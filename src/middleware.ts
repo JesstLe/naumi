@@ -31,7 +31,7 @@ export async function middleware(req: NextRequest) {
       // This is NOT an ordinary-user or model-controlled header bypass.
       let worker = false;
       const workerReceiptRead = req.method === "GET" && req.nextUrl.pathname === "/api/video/worker/tick" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(req.nextUrl.searchParams.get("tickId") || "");
-      if (req.headers.has("x-video-worker-secret") && (workerReceiptRead || req.method === "POST" && (["/api/generate-image", "/api/imagegen", "/api/suite", "/api/aplus", "/api/video/worker/tick"].includes(req.nextUrl.pathname)||/^\/api\/imagegen\/batches\/[a-f0-9-]{36}$/i.test(req.nextUrl.pathname)))) {
+      if (req.headers.has("x-video-worker-secret") && (workerReceiptRead || req.method === "GET" && req.nextUrl.pathname === "/api/video/worker/drain-status" || req.method === "POST" && (["/api/generate-image", "/api/imagegen", "/api/suite", "/api/aplus", "/api/video/worker/tick"].includes(req.nextUrl.pathname)||/^\/api\/imagegen\/batches\/[a-f0-9-]{36}$/i.test(req.nextUrl.pathname)))) {
         const configured = Buffer.from(workerSecret()), supplied = Buffer.from(req.headers.get("x-video-worker-secret") || "");
         worker = configured.length === supplied.length && timingSafeEqual(configured, supplied);
       }

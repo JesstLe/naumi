@@ -50,6 +50,9 @@ import type {PublicQuote} from "@/lib/billing/client";
 import { CanvasPerformanceProbe, recordCanvasNativeMove } from "./canvas-performance-probe";
 import {CanvasImage} from './canvas-image';
 import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
+import { CanvasEdgeHoverHint, type CanvasEdgeHoverHandle } from './canvas-edge-hover-hint';
+import { canvasZoomState } from '@/lib/canvas/viewport-state';
+import { shouldVirtualizeCanvas } from '@/lib/canvas/virtualization';
 import { CanvasActionMenu, CanvasActionPanel } from "./canvas-action-menu";
 import { CanvasHelpDialog } from "./canvas-help-dialog";
 import { ContextMenuSurface, ContextMenuItem as Item } from "./context-menu-surface";
@@ -1850,13 +1853,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [trashItems, setTrashItems] = useState<Artwork[] | null>(null);
   const [trashBusy, setTrashBusy] = useState(false);
   // 剪刀剪线:鼠标悬停的连线 + 光标在画布内的位置(屏幕坐标,相对 canvasArea)
-  const [edgeCut, setEdgeCut] = useState<{
-    id: string;
-    source: string;
-    target: string;
-    x: number;
-    y: number;
-  } | null>(null);
+  const edgeHoverHintRef = useRef<CanvasEdgeHoverHandle>(null);
   // 连线选中(RF 原生点击选中):Delete/Backspace 才剪断,不再点一下就删
   const [selectedEdge, setSelectedEdge] = useState<{
     id: string;
@@ -6323,7 +6320,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (edge.source.startsWith("task-") || edge.target.startsWith("task-") || pending?.generating || pending?.uploading) return;
     if (!rfEdges.some(current => current.id === edge.id)) return;
     cuttingEdgesRef.current.add(edge.id);
-    setEdgeCut(null);
+    edgeHoverHintRef.current?.clear();
     try {
       if (pending) {
         const inputs = pending.inputs.filter(id => id !== edge.source);
@@ -9060,7 +9057,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 viewportRef.current = vp;
                 updateLiveViewport(vp);
               }}
-              onMoveEnd={(_, vp) => { viewportRef.current = vp; setViewport(vp); }}
+              onMoveEnd={(_, vp) => {
+                viewportRef.current = vp;
+                updateLiveViewport(vp);
+                setViewport(previous => canvasZoomState(previous, vp));
+              }}
               onNodeClick={(event, node) => {
                 if (canvasTool === "hand") return;
                 if (node.id.startsWith("task-")) return;
@@ -9130,27 +9131,24 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 readOnly
                   ? undefined
                   : (ev, edge) => {
-                      if (edge.selectable === false) return;
+                      if (canvasTool === "hand" || ev.buttons || edge.selectable === false) return;
                       const rect =
                         canvasAreaRef.current?.getBoundingClientRect();
                       if (!rect) return;
-                      setEdgeCut({
-                        id: edge.id,
-                        source: edge.source,
-                        target: edge.target,
+                      edgeHoverHintRef.current?.show({
                         x: ev.clientX - rect.left,
                         y: ev.clientY - rect.top,
                       });
                     }
               }
-              onEdgeMouseLeave={readOnly ? undefined : () => setEdgeCut(null)}
+              onEdgeMouseLeave={readOnly ? undefined : () => edgeHoverHintRef.current?.clear()}
               onPaneClick={() => {
                 setSelectedId(null);
                 setSelectedPendId(null);
                 setSelectedTextId(null);
                 clearCanvasSelection();
                 setCtxMenu(null);
-                setEdgeCut(null);
+                edgeHoverHintRef.current?.clear();
               }}
               onMoveStart={() => {
                 if (spawnMenu) setSpawnMenu(null);
@@ -9384,7 +9382,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               zoomActivationKeyCode={["Control", "Meta"]}
               snapToGrid={snapGrid}
               snapGrid={[16, 16]}
-              onlyRenderVisibleElements={rfNodes.length > 60}
+              onlyRenderVisibleElements={shouldVirtualizeCanvas(rfNodes.length, rfEdges.length)}
             >
               <CanvasPerformanceProbe />
               <CanvasRenderLayerGuard />
@@ -9402,16 +9400,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           )}
 
           {/* 剪刀:鼠标在连线上时跟随光标(pointer-events-none,点击穿透到线 → onEdgeClick 剪断) */}
-          {!browsing && !readOnly && edgeCut && (
-            <div
-              className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
-              style={{ left: edgeCut.x, top: edgeCut.y }}
-            >
-              <span className="canvas-ui-surface flex h-8 w-8 items-center justify-center rounded-full border shadow-lg backdrop-blur">
-                <Scissors className="h-4 w-4" />
-              </span>
-            </div>
-          )}
+          {!browsing && !readOnly && <CanvasEdgeHoverHint key={"edge-hover:" + (activeKey || "__new__")} ref={edgeHoverHintRef} />}
 
           {/* ── 进入项目后的全屏悬浮挂件(对齐原型:左上项目/右上挂件/底部工具条) ── */}
           {!browsing && (

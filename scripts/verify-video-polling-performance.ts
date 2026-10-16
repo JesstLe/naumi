@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { mergeVideoNodeSnapshots, reuseVideoTaskSnapshots, sameVideoSnapshot } from '../src/lib/video/polling-state';
+import type { CanvasVideoNode } from '../src/lib/canvas/video-node-schema';
+
+const node = { id: 'a', revision: 3, locked: false, deletedAt: null, config: { prompt: '完整对白', references: [{ id: 'first' }, { id: 'last' }] }, result: { url: '/media/a.mp4' } } as unknown as CanvasVideoNode;
+const original = [node];
+for (let i = 0; i < 100; i++) assert.equal(mergeVideoNodeSnapshots(original, structuredClone(original)), original);
+assert.equal(mergeVideoNodeSnapshots(original, []), original, 'poll does not delete omitted nodes');
+assert.equal(mergeVideoNodeSnapshots(original, [{ ...node, revision: 2 }]), original, 'older revision is not accepted');
+const locked = { ...node, locked: true }; assert.equal(mergeVideoNodeSnapshots(original, [locked])[0], locked);
+const deleted = { ...node, deletedAt: '2026-10-14T00:00:00Z' }; assert.equal(mergeVideoNodeSnapshots(original, [deleted])[0], deleted);
+const tasks = [{ id: 'a', status: 'running', progress: 20, result: { url: '/media/a.mp4?version=one' } }];
+for (let i = 0; i < 100; i++) assert.equal(reuseVideoTaskSnapshots(tasks, structuredClone(tasks)), tasks);
+for (const updated of [{ ...tasks[0], progress: 21 }, { ...tasks[0], status: 'completed' }, { ...tasks[0], result: { url: '/media/a.mp4?version=two' } }])
+  assert.equal(reuseVideoTaskSnapshots(tasks, [updated])[0], updated);
+assert.equal(reuseVideoTaskSnapshots(tasks, []).length, 0);
+const two = [...tasks, { ...tasks[0], id: 'b' }]; assert.deepEqual(reuseVideoTaskSnapshots(two, [...two].reverse()), [...two].reverse());
+assert.equal(sameVideoSnapshot({ a: null }, { a: undefined }), false);
+assert.equal(sameVideoSnapshot({ a: false, b: 0 }, { b: 0, a: false }), true);
+assert.equal(sameVideoSnapshot(node.config.references, [...node.config.references!].reverse()), false);
+const nodesHook = readFileSync('src/components/canvas/video/use-video-nodes.ts', 'utf8');
+assert.match(nodesHook, /if\(actorRef.current!==actor\|\|epochRef.current!==epoch\)return/);
+assert.match(nodesHook, /setTimeout\(run,6000\)/);
+const tasksHook = readFileSync('src/components/canvas/video/use-video-tasks.ts', 'utf8');
+assert.match(tasksHook, /contextRef.current!==context/); assert.match(tasksHook, /setTimeout\(run,4000\)/);
+assert.match(tasksHook, /onCompletedRef.current\(task,projectKey\)/);
+console.log('VIDEO_POLLING_STATE=PASS SAME_NODE_TASK_SNAPSHOT100_NO_ROOT_UPDATES CHANGED_PROGRESS_RESULT_LOCK_DELETE_REFERENCE_ORDER=RETAINED REVISION_CONTEXT_GUARDS=RETAINED POLL4S6S_AND_COMPLETION_CALLBACKS=UNCHANGED');
