@@ -37,16 +37,16 @@ def timestamp():
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
-def check_path(name, path):
+def check_path(name, path, method='GET'):
     parsed = urllib.parse.urlsplit(path)
     require(not parsed.scheme and not parsed.netloc and path.startswith('/') and '\r' not in path and '\n' not in path,
             'CANDIDATE_RELATIVE_URL_REQUIRED')
     routes = {'login': ('/api/auth/session',), 'canvas': ('/api/projects', '/canvas'),
               'private-media': ('/api/media/',), 'old-client': ('/_next/static/', '/desktop/_next/static/', '/enterprise/_next/static/'),
-              'skills': ('/api/agent/skills',), 'packaging': ('/api/packaging-strategy', '/tools/packaging-strategy'),
+              'skills': ('/api/image-skills', '/api/image-skills/import'), 'packaging': ('/api/packaging-strategy', '/tools/packaging-strategy'),
               'desktop-ui': ('/desktop', '/desktop/'), 'enterprise-ui': ('/enterprise', '/enterprise/'),
               'health': ('/api/health',), 'version': ('/api/version',)}
-    require(name in routes and any(parsed.path == prefix or prefix.endswith('/') and parsed.path.startswith(prefix)
+    require((name != 'skills' or method == 'GET') and name in routes and any(parsed.path == prefix or prefix.endswith('/') and parsed.path.startswith(prefix)
                                    for prefix in routes[name]), 'FEATURE_SPECIFIC_NONBILLABLE_GET_REQUIRED')
 
 
@@ -514,7 +514,7 @@ class LiveAdapter:
                         response['request']['url'].startswith('http://127.0.0.1:' + str(web['port']) + '/') and
                         response.get('responseBodySha256') and HASH.fullmatch(response['responseBodySha256']),
                         'REAL_RESPONSE_AND_ASSERTIONS_REQUIRED')
-                check_path(item['name'], urllib.parse.urlsplit(response['request']['url']).path)
+                check_path(item['name'], urllib.parse.urlsplit(response['request']['url']).path, response['request']['method'])
                 body = relative_artifact(self.tx.folder, response['body']).read_bytes()
                 require(body and sha(body) == response['responseBodySha256'], 'ACTUAL_RESPONSE_BODY_CHANGED')
                 require(any(a.get('kind') in ['json', 'bodyContains', 'bodySha256'] for a in response['assertions']) and

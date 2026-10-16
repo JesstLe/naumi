@@ -229,6 +229,25 @@ class SessionTests(unittest.TestCase):
             with self.assertRaises(m.Hold):self.session.step(retry)
         self.assertEqual(calls,self.adapter.calls)
 
+    def test_skill_get_paths_match_real_source_routes_and_old_alias_is_absent(self):
+        root=pathlib.Path(__file__).resolve().parents[2]
+        for path in ['/api/image-skills','/api/image-skills/import']:
+            m.check_path('skills',path)
+            self.assertTrue((root/'src/app'/path.removeprefix('/')/'route.ts').is_file())
+        self.assertFalse((root/'src/app/api/agent/skills/route.ts').exists())
+        source=(root/'src/app/api/image-skills/route.ts').read_text(encoding='utf-8')
+        self.assertIn('export const GET = handle',source)
+        imported=(root/'src/app/api/image-skills/import/route.ts').read_text(encoding='utf-8')
+        self.assertIn('export async function POST(',imported)
+        self.assertNotRegex(imported,r'export\s+(?:(?:async\s+)?function\s+|const\s+)GET\b')
+
+    def test_skill_checks_reject_mutation_methods_and_nonexact_api_paths(self):
+        for path in ['/api/agent/skills','/api/image-skills/','/api/image-skills/import/','/api/image-skills/import/extra','/api/image-skills-other','/api/generate-image']:
+            with self.assertRaises(m.Hold):m.check_path('skills',path)
+        for path in ['/api/image-skills','/api/image-skills/import']:
+            for method in ['POST','PATCH','DELETE','HEAD']:
+                with self.assertRaises(m.Hold):m.check_path('skills',path,method)
+
     def test_resume_response_loss_keeps_original_suboperation_and_never_reopens_apps_twice(self):
         self.to_candidates();self.step('acceptance');self.step('preservation');self.adapter.lost='resume'
         request={'action':'activate','operationId':str(uuid.uuid4()),'expectedRevision':self.session.state['revision']}
