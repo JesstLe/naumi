@@ -1,7 +1,7 @@
 import {chooseVideoModel} from "./video-fusion/browser-model.mjs";
 import { test, expect } from "@playwright/test";
 import { readFileSync,writeFileSync } from "node:fs";
-import { randomUUID, randomBytes, scryptSync } from "node:crypto";
+import { randomUUID, randomBytes, scryptSync, createHash } from "node:crypto";
 import { Pool } from "pg";
 import { CAP_RICH } from "./video-fusion/profiles";
 const navigationDiagnostics=new WeakMap<object,unknown[]>();
@@ -207,6 +207,7 @@ test("canvas image plans and toolbox submit once without native fee dialogs",asy
  await page.route("**/api/imagegen/plan",route=>{const request=route.request().postDataJSON();plans.push(request);return route.fulfill({contentType:"application/json",body:JSON.stringify({request,intent:{background:null,operation:"edit",conflicts:[],requirements:[]},fingerprint:"billing-client-fixture",modelVersion:1,billingVersion:version,steps:[{key:"edit",operation:"edit",eligibleUpstreamIds:[],parameters:{},credits:6}],totalCredits:6,confirmationRequired:false,warnings:[]})});});
  await page.route("**/api/imagegen?**",route=>route.fulfill({status:404,contentType:"application/json",body:JSON.stringify({error:"fixture submission pending"})}));
  for(const path of ["imagegen","cutout"])await page.route(`**/api/${path}`,route=>{attempts.push({path,headers:route.request().headers(),body:path==="imagegen"?route.request().postDataJSON():null});return route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({error:`fixture direct ${path}`,code:"OPERATION_PENDING"})});});
+ await page.route("**/api/media/image-cache",route=>{const sources=route.request().postDataJSON().sources,bytes=Buffer.from(fixture.imageBase64,"base64");return route.fulfill({contentType:"application/json",body:JSON.stringify({account:fixture.email.toLowerCase(),results:Object.fromEntries(sources.map((source:string)=>[source,{account:fixture.email.toLowerCase(),source,version:createHash("sha256").update(bytes).digest("hex"),fetchUrl:"/media/billing-ui-fixture.png",bytes:bytes.length,contentType:"image/png"}]))})});});
  await page.addInitScript(id=>localStorage.setItem("nv:canvas:last",`tree:${id}`),fixture.artworkId);
  await page.goto(`/canvas?node=${fixture.artworkId}`);await page.locator(`.react-flow__node[data-id="${fixture.artworkId}"]`).click();
  await expect(page.getByText("提交前确认报价",{exact:true})).toHaveCount(0);

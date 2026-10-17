@@ -1,5 +1,5 @@
 import { canvasParameterError } from "@/lib/canvas/generation-parameters";
-import {withBillingRequest,synchronousChargedCredits} from "@/lib/billing/synchronous";
+import {withBillingRequest,currentSynchronousBilling} from "@/lib/billing/synchronous";
 import { withBiRequest } from "@/lib/bi/model-observer";
 import { imageRequestBilling, requestImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import { NextResponse } from "next/server";
@@ -15,7 +15,11 @@ import {
   reserveCredits,
 } from "@/lib/db";
 import { readCanvasImage } from "@/lib/canvas-image-input";
-import { editImage } from "@/lib/image-edit";
+import { editImage, isImageTimeout } from "@/lib/image-edit";
+import { ImageOperationPending } from "@/lib/image-gateway";
+import { BillingError } from "@/lib/billing/types";
+import { billingErrorResponse } from "@/lib/billing/request";
+import { expansionGeometry, composeExpandedImage, ExpandInputError } from "@/lib/canvas/expand-image";
 import { storageEnabled, uploadImage } from "@/lib/storage";
 import { clientIp } from "@/lib/ip";
 import { rateLimit } from "@/lib/rate-limit";
@@ -75,16 +79,18 @@ async function handleObservedPost(request: Request) {
   if (!ANCHORS.has(input.anchor)) input.anchor = "center";
   const ratioW = Number(ratioMatch[1]);
   const ratioH = Number(ratioMatch[2]);
-  if (ratioW <= 0 || ratioH <= 0) return NextResponse.json({ error: "目标比例无效" }, { status: 400 });
+  if (![ratioW,ratioH].every(value=>Number.isFinite(value)&&value>0)) return NextResponse.json({ error: "目标比例无效" }, { status: 400 });
 
   const quality = requestImageQuality(request, requestedQuality);
   let cost = 0;
   let reserved = false;
+  let stage:"lookup"|"input"|"prepare"|"provider"|"output"|"save"="lookup";
   try {
     const artwork = (await listArtworksByIds(email, [input.artworkId]))[0];
     if (!artwork) return NextResponse.json({ error: "图片不存在或无权访问" }, { status: 404 });
 
 
+    stage="input";
     const image = await readCanvasImage(artwork.image, request.url, email);
     let original = await sharp(image.buffer).rotate().png().toBuffer();
     const meta = await sharp(original).metadata();
@@ -92,10 +98,8 @@ async function handleObservedPost(request: Request) {
     let height = meta.height || artwork.height || 0;
     if (!width || !height) throw new Error("无法读取图片尺寸");
 
-    // 原比例已接近目标比例则拒绝(在预扣积分之前,避免白扣)
-    if (Math.abs(width / height - ratioW / ratioH) / (ratioW / ratioH) < 0.02) {
-      return NextResponse.json({ error: "当前图片已是该比例，无需扩图" }, { status: 400 });
-    }
+    const geometry = expansionGeometry(width,height,ratioW,ratioH,MAX_LONG_SIDE);
+    stage="prepare";
 
     cost = (await imageRequestBilling(request, requestedQuality, artwork.resolution || "1K")).cost;
     if (cost > 0) {
@@ -103,24 +107,12 @@ async function handleObservedPost(request: Request) {
       if (!reserved) return NextResponse.json({ error: "积分不足，请联系管理员补充额度" }, { status: 402 });
     }
 
-    // 最小外扩:先按高定宽,不够再按宽定高(只外扩不裁切)
-    let targetW = Math.round((height * ratioW) / ratioH);
-    let targetH = height;
-    if (targetW < width) {
-      targetW = width;
-      targetH = Math.round((width * ratioH) / ratioW);
-    }
+    const {targetW,targetH,sourceW,sourceH}=geometry;
     // 超长边上限:整体等比缩小(原图跟着缩,相对位置不变)
-    const long = Math.max(targetW, targetH);
-    if (long > MAX_LONG_SIDE) {
-      const scale = MAX_LONG_SIDE / long;
-      targetW = Math.round(targetW * scale);
-      targetH = Math.round(targetH * scale);
-      const scaledW = Math.max(1, Math.round(width * scale));
-      const scaledH = Math.max(1, Math.round(height * scale));
-      original = await sharp(original).resize(scaledW, scaledH, { kernel: "lanczos3" }).png().toBuffer();
-      width = scaledW;
-      height = scaledH;
+    if (sourceW!==width || sourceH!==height) {
+      original = await sharp(original).resize(sourceW, sourceH, { kernel: "lanczos3" }).png().toBuffer();
+      width = sourceW;
+      height = sourceH;
     }
 
     const { x, y } = anchorOffset(input.anchor, targetW - width, targetH - height);
@@ -150,14 +142,18 @@ async function handleObservedPost(request: Request) {
       "- 新增内容应合理延续原图场景（地面/墙面/天空/环境），不要出现纯色带、黑边、白边、重复条纹；",
       "输出填充完整后的矩形图片。",
     ].join("\n");
+    stage="provider";
     const editedRaw = await editImage({
+      operationId:currentSynchronousBilling()?.id,
       images: [padded],
       mask,
       prompt,
       size: editSize(targetW, targetH),
       quality,
     });
-    const edited = await sharp(editedRaw).resize(targetW, targetH, { fit: "fill" }).png().toBuffer();
+    stage="output";
+    const edited = await composeExpandedImage(editedRaw,original,targetW,targetH,x,y);
+    stage="save";
     const id = `exp-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     let url = `data:image/png;base64,${edited.toString("base64")}`;
     if (storageEnabled) {
@@ -185,10 +181,15 @@ async function handleObservedPost(request: Request) {
     const user = await getUser(email).catch(() => null);
     return NextResponse.json({ ok: true, id, width: targetW, height: targetH, user, cost, quality });
   } catch (error) {
-    if (reserved && cost > 0) await refundCredits(email, cost).catch(() => {});
+    if(error instanceof BillingError)return billingErrorResponse(error);
+    const pending=error instanceof ImageOperationPending || stage==="provider"&&(isImageTimeout(error)||!(typeof (error as {status?:unknown})?.status==="number"&&(error as {status:number}).status>=400&&(error as {status:number}).status<500));
+    if (reserved && cost > 0 && !pending && stage!=="save") await refundCredits(email, cost).catch(() => {});
+    if(pending)return NextResponse.json({error:"扩图提交结果待核查，请保留当前任务；不要重复发起。",code:"OPERATION_PENDING",...(currentSynchronousBilling()?.id?{operationId:currentSynchronousBilling()!.id}:{})},{status:409});
+    if(error instanceof ExpandInputError)return NextResponse.json({error:error.message,code:"EXPAND_INPUT_INVALID"},{status:400});
+    const status=stage==="input"?415:stage==="output"||stage==="provider"?502:500;
     return NextResponse.json(
-      { error: safeError(error, "扩图失败，请稍后重试") },
-      { status: 502 }
+      { error: stage==="input"?"原图读取失败，请重新上传后再试。":stage==="output"?"扩图结果未完整覆盖目标画幅，未保存为完成结果。":safeError(error, "扩图处理失败，请稍后重试"),code:stage==="output"?"EXPAND_OUTPUT_INVALID":stage==="input"?"EXPAND_SOURCE_INVALID":stage==="provider"?"EXPAND_PROVIDER_REJECTED":"EXPAND_PROCESSING_FAILED" },
+      { status }
     );
   }
 }

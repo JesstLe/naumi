@@ -1,4 +1,5 @@
 import { inheritedImageRatio, imageAspectInstruction } from "@/lib/imagegen/aspect";
+import { normalizeLegacyFrameRequest, LegacyFrameError } from "@/lib/imagegen/legacy-frame-request";
 import { preserveGeneratedFrame, sourceImageDimensions } from "@/lib/imagegen/output-shape";
 import {currentImagegenStep,withImagegenStep} from "@/lib/imagegen/context";
 import {legacyImagegenIntent} from "@/lib/imagegen/legacy-intent";
@@ -1056,9 +1057,8 @@ async function handleObservedPost(request: Request) {
     p.email = actorEmail;
   }
 
-  if (p.images[0] && (!p.ratio || p.ratio === "auto")) {
-    p.ratio = inheritedImageRatio(p.ratio, await sourceImageDimensions(Buffer.from(p.images[0].buf)));
-  }
+  // New legacy frames were resolved before model binding in POST. Do not choose
+  // the first product image here after the quote/model facts have been frozen.
 
   const userDefaultModel = actorEmail
     ? await getUserDefaultImageModel(actorEmail)
@@ -1220,4 +1220,14 @@ async function createSubmission(request: Request) {
   return withBiRequest(request, () => handleObservedPost(request));
 }
 
-export async function POST(request:Request){const invalid = currentImagegenStep()?null:await canvasParameterError(request); if (invalid) return invalid; return withBillingIntent(request,()=>createSubmission(request));}
+export async function POST(request:Request){
+  const invalid = currentImagegenStep()?null:await canvasParameterError(request); if (invalid) return invalid;
+  // Keep the original fingerprint for idempotent receipts. Only a new accepted action
+  // resolves its frame, before withBiRequest freezes the model/price facts.
+  return withBillingIntent(request,async()=>{
+    if (currentImagegenStep() || imageWorkerAuthorized(request)) return createSubmission(request);
+    if (dbEnabled && !await resolveUserEmail(request)) return NextResponse.json({error:"请先登录后再生成"},{status:401});
+    try { return createSubmission(await normalizeLegacyFrameRequest(request)); }
+    catch (error) { if(error instanceof LegacyFrameError)return NextResponse.json({error:error.message,code:"REFERENCE_FRAME_INVALID"},{status:400});throw error; }
+  });
+}

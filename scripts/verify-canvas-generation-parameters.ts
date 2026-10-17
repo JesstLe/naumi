@@ -43,7 +43,7 @@ async function main() {
   const invalid = [{ resolution: "5K" }, { ratio: "21:9" }, { ratio: "900:900" }, { targetWidth: "900", targetHeight: "900" }, { targetWidth: "0" }, { count: 5 }, { count: 8 }, { count: "1.2" }, { quality: "invalid" }];
   const routes = ["/api/generate-image", "/api/canvas/expand", "/api/canvas/text-edit", "/api/canvas/annotate", "/api/canvas/image-tasks"];
   for (const route of routes) {
-    assert.match(read(`src/app${route}/route.ts`), /const invalid = await canvasParameterError\(request\); if \(invalid\) return invalid; return withBilling/);
+    assert.match(read(`src/app${route}/route.ts`), /const invalid = (?:currentImagegenStep\(\)\?null:)?await canvasParameterError\(request\); if \(invalid\) return invalid;[\s\S]*?return withBilling/);
     for (const data of invalid) for (const multipart of [false, true]) {
       const body = { origin: "canvas", prompt: "contract test, never call provider", ...data };
       const form = new FormData(); for (const [k, v] of Object.entries(body)) form.set(k, String(v));
