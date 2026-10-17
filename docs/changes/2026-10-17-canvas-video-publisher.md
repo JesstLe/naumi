@@ -37,3 +37,15 @@
 当前103最近只读MemAvailable约3 GiB；按896MiB Web、128MiB调用Worker、3072MiB媒体、1024MiB宿主保留，需要5120MiB，当前不满足。需要从实时Nginx/容器身份生成并验证旧静态保留包，再为可恢复、来源/内存Agent/任务/引用均核清的历史UI安排精确退役，不能按名称或无Nginx引用直接stop。当前已观察到静态alias指向evening-0614f9ae6f91-unified，实际站点仍旧UI；以前“尚未安装静态包”的文档不是实时事实。
 
 还需当前固定单Web三UI实际浏览器验收、完整网关四态CAS/旧静态SHA、当前生产备份与回滚检查、新运行实例自动恢复策略及线上受影响功能验证。以上完成前 delivery gates 保持pending，不开启发布锁窗口。
+
+## 11:14 CST增量：main同步、未发布事务归档与真实三界面
+
+开工刷新origin/main，本任务与远端均e4c4e356942b2ea1aefd6b0ad210dfdc2072d6bb；共享E盘checkout仍由同事使用，没有切分支、reset或覆盖其改动。
+
+103只读canonical journal仍为hk-immediate-20261016-0614、BASELINED/PREPARED/revision2，只包含一次已ACK的只读baseline。新增显式supersedesUnpublished描述符，仅本目标授权模式、精确旧releaseId与原始state SHA可以归档这类未发生变更的事务；未知schema/字段、已维护/备份/创建/切流、未确认操作一律拒绝。先写并fsync私有临时文件，再以不覆盖hardlink原子保存原始字节和ABORTED归档，重试不改写冲突材料；新current仍沿用锁与revision CAS。12项媒体/归档测试通过，35项会话测试33通过、2项Nginx用例跳过。首次静态复核发现中断归档及未知schema问题，均已修正；新上下文限定复核82146 exit0明确无可执行发现（unpublished-baseline-corrections-verdict.txt）。这项机制未在服务器执行，旧journal未被修改。
+
+固定e997普通镜像9fea在本机Linux独立internal网络和合成PG中启动，旧核心5aa通过真实注册请求初始化测试旧表后停止，候选同一个boot承载dashboard、desktop、desktop/canvas中文文字恢复、desktop/create、enterprise、team及返回dashboard。Windows实际Chrome经宿主回环转发访问同一个测试Nginx；候选和PG无外网出口、无供应商凭据、无正式数据/连接/部署锁。fixture控制器增加显式PG/Nginx镜像选择、internal网络直连和原版表初始化，浏览器支持WSL --exec及Chrome，默认旧调用方式保留。
+
+最终browser-v3真实通过2630条断言：同cookie/instance/boot/固定版本、desktop API别名一致、普通用户管理403、私有PNG所有者SHA一致/匿名401/他人404、他人企业403、画布文字持久化、三UI hydration及角色交互；1176份实际静态文件（392×3前缀）逐一HTTP SHA通过，pageerror/staticFailures均0。896MiB实际cgroup上限及等额swap cap，峰值448.84MiB，所有memory.events=0、实际swap=0。两张最终截图已人工视觉核对。证据：output/canvas-video-fusion-20261013/checkpoint-d/unified-browser-e997-20261017/。早期端口发布、旧表尚未初始化、WSL shell参数及第二端口转发失败批次原样保留，不替代最终成功记录。
+
+静态材料准备未通过：当前103已有三条disk-only alias，完整dump为fa9ecb10fb1a527a1363008ff3c08920b18ebc7d717b69c3a70d9ac372d31c6e、site磁盘文件为0b13609cbc9fcf30a0f26bafeb44820c2c43e26bceb54796bfeb84fa0814fd12，旧生成器仍固定10cda9...基线，因此严格拒绝。18个运行Naumi实例和现有磁盘静态根的只读采集已保留，v2目录已完成静态并集、尚未生成可部署网关。下一步须完整复核实际配置差异并新增明确基线支持，替换既有三条alias而非追加重复location，然后执行四态CAS、真实Nginx全部旧静态/MIME/TLS/Fleet/XFF检查；不能强行覆盖旧指纹或把prepare失败当成功。容量、安全退役、实例自动恢复/持久身份、正式备份/锁内蓝绿切换与线上验收继续pending，未新增成功发布计数。
