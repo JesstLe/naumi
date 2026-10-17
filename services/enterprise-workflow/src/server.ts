@@ -71,6 +71,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
         }
         throw new WorkflowError(405,'METHOD_NOT_ALLOWED');
       }
+      if(references&&req.method==='GET'&&url.pathname==='/v1/references/library')return json(res,200,await references.library(principal,Object.fromEntries(url.searchParams)));
       if(references&&req.method==='GET'&&url.pathname==='/v1/references')return json(res,200,await references.list(principal,id.parse(url.searchParams.get('orderId'))));
       if(references&&req.method==='GET'&&url.pathname==='/v1/references/file'){
         const {asset,stream,mime,inline}=await references.file(principal,id.parse(url.searchParams.get('orderId')),url.searchParams.get('id')||'',url.searchParams.get('download')==='1');
@@ -87,6 +88,8 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       if(routing&&url.pathname==='/v1/routing'){await routing.ready();if(req.method==='GET')return json(res,200,await routing.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST')return json(res,200,await routing.execute(principal,await body(req)));}
       if(routing&&req.method==='POST'&&url.pathname==='/v1/routing/resolve'){await routing.ready();return json(res,200,await routing.resolve(principal,await body(req)));}
       if(performance&&url.pathname==='/v1/performance'){await performance.ready();if(req.method==='GET')return json(res,200,await performance.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST')return json(res,200,await performance.execute(principal,await body(req)));}
+      if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/library')return json(res,200,await delivery.library(principal,Object.fromEntries(url.searchParams)));
+      if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/preview'){const {asset,stream,mime}=await delivery.preview(principal,id.parse(url.searchParams.get('id')));if(res.destroyed){stream.destroy();return;}res.writeHead(200,{'Content-Type':mime,'Content-Length':asset.bytes,'Content-Disposition':"inline; filename*=UTF-8''"+encodeURIComponent(asset.name).replaceAll("'",'%27'),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox",'X-Content-SHA256':asset.sha256});stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;}
       if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/assets')return json(res,200,{...await delivery.list(principal,Object.fromEntries(url.searchParams)),multipart:{enabled:!!uploads,partBytes:PART_BYTES,maxBytes:MAX_MULTIPART_BYTES}});
       if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/scan-history')return json(res,200,await delivery.scanHistory(principal,id.parse(url.searchParams.get('id')),{page:url.searchParams.get('page')||'1'}));
       if(delivery&&req.method==='POST'&&url.pathname==='/v1/delivery/scan'){const q=await body(req);return json(res,200,await delivery.rescan(principal,id.parse(q.assetId)));}

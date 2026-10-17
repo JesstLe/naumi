@@ -114,6 +114,7 @@ export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;forei
   const {verifyBatchRecoveryBff}=await import('./verify-batch-recovery-bff');await verifyBatchRecoveryBff(source,teamId);
   const {verifyReferenceBff}=await import('./verify-reference-bff');await verifyReferenceBff(pool,source,enterpriseId,teamId,importRoot);
   const {verifyMultipartBff}=await import('./verify-multipart-bff');await verifyMultipartBff(source,teamId);
+  const {verifyLibraryBff}=await import('./verify-library-bff');await verifyLibraryBff(pool,source,enterpriseId,teamId);
   const {verifyDashboardBff}=await import('./verify-dashboard-bff');await verifyDashboardBff(pool,source,enterpriseId,teamId);
   await pool.query('UPDATE app_users SET banned=true WHERE email=$1',[source.ordinary]);assert.equal((await GET(request(source.ordinary))).status,401);await pool.query('UPDATE app_users SET banned=false WHERE email=$1',[source.ordinary]);
   await pool.query('UPDATE app_account_teams SET enabled=false WHERE id=$1',[source.root]);assert.equal((await GET(request(source.ordinary))).status,403);await pool.query('UPDATE app_account_teams SET enabled=true WHERE id=$1',[source.root]);
