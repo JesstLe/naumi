@@ -149,6 +149,7 @@ export class StudioEngine {
       p.labelScale,
       p.labelY,
       p.model,
+      p.photo,
     ]);
     if (signature !== this.productKey) {
       const next = await buildProduct(p);

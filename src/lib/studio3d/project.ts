@@ -61,11 +61,44 @@ const vector = z.tuple([
 ]);
 export const projectSchema = z
   .object({
-    version: z.literal(1),
+    version: z.union([z.literal(1), z.literal(2)]),
     id: z.string().uuid(),
     name: z.string().trim().min(1).max(80),
     updatedAt: z.string().datetime(),
-    template: z.enum(["bottle", "jar", "box", "imported"]),
+    template: z.enum(["bottle", "jar", "box", "imported", "photo-lathe"]),
+    photo: z
+      .object({
+        image: imageData,
+        profile: z
+          .array(
+            z
+              .object({
+                y: z.number().min(0).max(1),
+                radius: z.number().min(0.005).max(0.5),
+                center: z.number().min(0.15).max(0.85),
+              })
+              .strict(),
+          )
+          .min(32)
+          .max(256),
+        sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+        crop: z
+          .object({
+            x: z.number().min(0).max(1),
+            y: z.number().min(0).max(1),
+            width: z.number().positive().max(1),
+            height: z.number().positive().max(1),
+          })
+          .strict(),
+        width: z.number().int().min(32).max(640),
+        height: z.number().int().min(64).max(1280),
+        textureMode: z.enum(["photo", "clay"]),
+        scaleSource: z.enum(["assumed", "user"]),
+        assumption: z.literal("axisymmetric"),
+        workerMs: z.number().finite().nonnegative().max(15000),
+      })
+      .strict()
+      .optional(),
     width: z.number().min(15).max(250),
     height: z.number().min(20).max(350),
     depth: z.number().min(10).max(250),
@@ -95,6 +128,22 @@ export const projectSchema = z
   })
   .strict()
   .superRefine((p, ctx) => {
+    if (
+      (p.template === "photo-lathe") !== !!p.photo ||
+      (p.version === 2) !== !!p.photo
+    )
+      ctx.addIssue({ code: "custom", message: "照片工程版本或轮廓不匹配" });
+    if (p.photo) {
+      const { profile, crop } = p.photo;
+      if (
+        profile[0].y !== 0 ||
+        profile.at(-1)!.y !== 1 ||
+        profile.some((q, i) => i > 0 && q.y <= profile[i - 1].y) ||
+        crop.x + crop.width > 1.001 ||
+        crop.y + crop.height > 1.001
+      )
+        ctx.addIssue({ code: "custom", message: "照片轮廓或选区无效" });
+    }
     if ((p.template === "imported") !== !!p.model)
       ctx.addIssue({ code: "custom", message: "模型与工程类型不匹配" });
     if (

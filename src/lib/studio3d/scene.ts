@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { base64ToBinary, validateGlb, type StudioProject } from "./project";
+import { buildPhotoMesh } from "./photo-mesh";
 
 export function disposeObject(object: THREE.Object3D) {
   const materials = new Set<THREE.Material>(),
@@ -50,7 +51,9 @@ export async function buildProduct(p: StudioProject): Promise<THREE.Group> {
   const product = new THREE.Group();
   product.name = p.name;
   try {
-    if (p.template === "imported") {
+    if (p.template === "photo-lathe") {
+      product.add(await buildPhotoMesh(p));
+    } else if (p.template === "imported") {
       const bytes = base64ToBinary(p.model!);
       validateGlb(bytes);
       const manager = new THREE.LoadingManager();

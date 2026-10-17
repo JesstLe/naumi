@@ -49,6 +49,7 @@ import {
 } from "@/lib/studio3d/storage";
 import type { StudioEngine } from "@/lib/studio3d/engine";
 import "./studio3d.css";
+import { PhotoImport } from "./photo-import";
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob),
@@ -205,6 +206,7 @@ export function Studio3dClient() {
 }
 
 export function StudioWorkspace({ owner }: { owner: string }) {
+  const [photoOpen, setPhotoOpen] = useState(false);
   const [projects, setProjects] = useState<StudioProject[]>([]),
     [project, setProject] = useState<StudioProject | null>(null);
   const [tab, setTab] = useState("product"),
@@ -403,6 +405,15 @@ export function StudioWorkspace({ owner }: { owner: string }) {
   if (!project)
     return (
       <section className="s3 s3-library">
+        {photoOpen && (
+          <PhotoImport
+            onClose={() => setPhotoOpen(false)}
+            onCreate={(p) => {
+              setPhotoOpen(false);
+              open(p);
+            }}
+          />
+        )}
         {hiddenFiles}
         <header className="s3-library-header">
           <div>
@@ -413,6 +424,14 @@ export function StudioWorkspace({ owner }: { owner: string }) {
             </h1>
           </div>
           <div className="s3-actions">
+            <button
+              className="s3-primary"
+              disabled={!!busy}
+              onClick={() => setPhotoOpen(true)}
+            >
+              <ImagePlus size={16} />
+              上传照片建模
+            </button>
             <button disabled={!!busy} onClick={() => file.current?.click()}>
               <FolderOpen size={16} />
               导入工程
@@ -529,7 +548,8 @@ export function StudioWorkspace({ owner }: { owner: string }) {
         </section>
       </section>
     );
-  const imported = project.template === "imported",
+  const imported =
+      project.template === "imported" || project.template === "photo-lathe",
     [width, height] = outputDimensions(project),
     ready = !!engine && !loading && !busy && !sceneError;
   const exportImage = () =>
@@ -614,9 +634,17 @@ export function StudioWorkspace({ owner }: { owner: string }) {
             <Package size={19} />
             <span>
               {imported
-                ? project.modelName
+                ? project.photo
+                  ? "照片轮廓 · 本机"
+                  : project.modelName
                 : TEMPLATES.find((t) => t.id === project.template)?.name}
-              <small>{imported ? "GLB 模型" : "参数化产品"}</small>
+              <small>
+                {project.photo
+                  ? "轴对称近似"
+                  : imported
+                    ? "GLB 模型"
+                    : "参数化产品"}
+              </small>
             </span>
             <ChevronRight size={14} />
           </button>
@@ -780,14 +808,96 @@ export function StudioWorkspace({ owner }: { owner: string }) {
             aria-labelledby={`s3-tab-${tab}`}
             id={`s3-${tab}`}
           >
+            {project.photo && tab === "product" && (
+              <>
+                <h2>照片轮廓 · 近似模型</h2>
+                <p className="s3-hint">
+                  本机提取；背面待补充。当前尺寸
+                  {project.photo.scaleSource === "assumed"
+                    ? "按假定瓶高建立，非实测"
+                    : "由你设定"}
+                  。
+                </p>
+                <Field
+                  label="照片模型直径"
+                  value={project.width}
+                  min={15}
+                  max={250}
+                  suffix=" mm"
+                  onChange={(value) =>
+                    patch({
+                      width: value,
+                      depth: value,
+                      camera: null,
+                      photo: { ...project.photo!, scaleSource: "user" },
+                    })
+                  }
+                />
+                <Field
+                  label="照片模型高度"
+                  value={project.height}
+                  min={20}
+                  max={350}
+                  suffix=" mm"
+                  onChange={(value) =>
+                    patch({
+                      height: value,
+                      camera: null,
+                      photo: { ...project.photo!, scaleSource: "user" },
+                    })
+                  }
+                />
+              </>
+            )}
+            {project.photo && tab === "material" && (
+              <>
+                <h2>模型显示</h2>
+                <div className="s3-options">
+                  <button
+                    aria-pressed={project.photo.textureMode === "photo"}
+                    onClick={() =>
+                      patch({
+                        photo: { ...project.photo!, textureMode: "photo" },
+                      })
+                    }
+                  >
+                    原图外观
+                  </button>
+                  <button
+                    aria-pressed={project.photo.textureMode === "clay"}
+                    onClick={() =>
+                      patch({
+                        photo: { ...project.photo!, textureMode: "clay" },
+                      })
+                    }
+                  >
+                    检查白模
+                  </button>
+                </div>
+                <p className="s3-hint">
+                  原图外观保留拍摄时的反光。白模使用真实灯光；背面尚无照片依据。
+                </p>
+                <Color
+                  label="白模颜色"
+                  value={project.color}
+                  onChange={(color) => patch({ color })}
+                />
+              </>
+            )}
             {tab === "product" && (
               <>
                 <h2>{imported ? "模型信息" : "产品尺寸"}</h2>
                 {imported ? (
                   <>
-                    <p className="s3-hint">{project.modelName}</p>
                     <p className="s3-hint">
-                      保留导入模型的形状、贴图和材质。调整灯光、视角后即可渲染。
+                      {project.photo
+                        ? "照片正面投影 / 未知背面"
+                        : project.modelName}
+                    </p>
+                    <p className="s3-hint">
+                      {project.photo
+                        ? "请从正面、侧面、背面检查近似形状，复杂物体仍需其他建模方式。"
+                        : "保留导入模型的形状、贴图和材质。调整灯光、视角后即可渲染。"}
                     </p>
                   </>
                 ) : (
@@ -883,7 +993,9 @@ export function StudioWorkspace({ owner }: { owner: string }) {
                 <h2>主体材质</h2>
                 {imported ? (
                   <p className="s3-hint">
-                    此模型使用 GLB 内嵌材质。参数化产品可直接编辑材质和标签。
+                    {project.photo
+                      ? "原图像素直接映射到前半面，不重画品牌文字。"
+                      : "此模型使用 GLB 内嵌材质。参数化产品可直接编辑材质和标签。"}
                   </p>
                 ) : (
                   <>
