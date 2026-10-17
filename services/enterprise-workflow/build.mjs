@@ -16,3 +16,5 @@ console.log('BUILD_PASS: independent service factory; no Next.js or provider cre
 await copyFile(new URL('./migrations/007-workspace-labels.sql', import.meta.url), new URL('./dist/007-workspace-labels.sql', import.meta.url));
 
 await copyFile(new URL('./migrations/008-delivery-assets.sql', import.meta.url), new URL('./dist/008-delivery-assets.sql', import.meta.url));
+
+await copyFile(new URL('./migrations/009-performance.sql', import.meta.url), new URL('./dist/009-performance.sql', import.meta.url));

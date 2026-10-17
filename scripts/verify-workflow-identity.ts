@@ -7,12 +7,12 @@ import { once } from 'node:events';
 import type { Pool } from 'pg';
 export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;foreign:string;ordinary:string;owner:string}){
  const {SourceIdentityStore,createMappedAuthenticator,createSourceVerifier}=await import('../services/enterprise-workflow/src/source-identity');
- const {createWorkflowServer,WorkflowStore,resolveDatabaseActor,createWorkflowPool,PeopleStore,DeliveryStore,SchedulingStore,createSourceEvidenceVerifier}=await import('../services/enterprise-workflow/src/server');
+ const {createWorkflowServer,WorkflowStore,resolveDatabaseActor,createWorkflowPool,PeopleStore,DeliveryStore,SchedulingStore,PerformanceStore,createSourceEvidenceVerifier}=await import('../services/enterprise-workflow/src/server');
  const native=await import('../src/lib/native-auth'),{GET,POST}=await import('../src/app/api/enterprise/workflow/route');
  // This isolated fixture starts as a personal user. Explicitly enroll as an ordinary employee,
  // without manager/record-viewing role; collaboration must not grant source analytics access.
  await pool.query("INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment) VALUES($1,$2,$3,NULL,'permanent')",[source.root,source.ordinary,source.owner]);
- for(const f of ['001-workflow.sql','002-scheduling.sql','003-source-import.sql','004-source-identity.sql','005-people-mapping.sql','006-source-intake.sql','007-workspace-labels.sql','008-delivery-assets.sql'])await pool.query(await readFile(new URL('../services/enterprise-workflow/migrations/'+f,import.meta.url),'utf8'));
+ for(const f of ['001-workflow.sql','002-scheduling.sql','003-source-import.sql','004-source-identity.sql','005-people-mapping.sql','006-source-intake.sql','007-workspace-labels.sql','008-delivery-assets.sql','009-performance.sql'])await pool.query(await readFile(new URL('../services/enterprise-workflow/migrations/'+f,import.meta.url),'utf8'));
  const enterpriseId=randomUUID(),teamId=randomUUID();await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id) VALUES($1,$2)',[enterpriseId,teamId]);
  for(const [s,permissions] of [['provisioner',['manage']],['worker',['execute']]] as const){await pool.query('INSERT INTO enterprise_workflow.accounts(enterprise_id,subject) VALUES($1,$2)',[enterpriseId,s]);await pool.query('INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds) VALUES($1,$2,$3,$4,$5)',[enterpriseId,teamId,s,JSON.stringify(permissions),s==='worker'?'["design"]':'[]']);}
  const workflowPool=createWorkflowPool(process.env.DATABASE_URL!);
@@ -20,7 +20,7 @@ export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;forei
  await bindings.configure(admin,{...common,type:'enterprise'});await bindings.configure(admin,{...common,type:'identity',sourceSubject:source.ordinary,subject:'worker'});
  const keys=generateKeyPairSync('ed25519'),verifier=createSourceVerifier({issuer:'naumi-workflow-bff',audience:'enterprise-workflow-source',publicKeys:{fixture:keys.publicKey}});
  const delivery=new DeliveryStore(workflowPool,resolveDatabaseActor,await mkdtemp(join(tmpdir(),'naumi-delivery-fixture-')));
- const server=createWorkflowServer(new WorkflowStore(workflowPool,resolveDatabaseActor,delivery.validate,undefined,createSourceEvidenceVerifier({fixture:keys.publicKey})),createMappedAuthenticator(bindings,verifier),new SchedulingStore(workflowPool,resolveDatabaseActor),{store:bindings,authenticate:verifier},new PeopleStore(workflowPool,resolveDatabaseActor),delivery);server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert(address&&typeof address!=='string');
+ const server=createWorkflowServer(new WorkflowStore(workflowPool,resolveDatabaseActor,delivery.validate,undefined,createSourceEvidenceVerifier({fixture:keys.publicKey})),createMappedAuthenticator(bindings,verifier),new SchedulingStore(workflowPool,resolveDatabaseActor),{store:bindings,authenticate:verifier},new PeopleStore(workflowPool,resolveDatabaseActor),delivery,new PerformanceStore(workflowPool,resolveDatabaseActor,()=>new Date(Date.now()+3*86400000)));server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert(address&&typeof address!=='string');
  Object.assign(process.env,{NAUMI_WORKFLOW_SERVICE_URL:`http://127.0.0.1:${address.port}`,NAUMI_WORKFLOW_SIGNING_KID:'fixture',NAUMI_WORKFLOW_SIGNING_KEY:keys.privateKey.export({format:'pem',type:'pkcs8'}).toString()});
  const request=(email:string,enterpriseId=source.root,extra:Record<string,string>={})=>new Request('http://fixture.invalid/api/enterprise/workflow?'+new URLSearchParams({action:'context',enterpriseId,...extra}),{headers:{cookie:email?'nv_user='+native.signUserSession(email,Date.now()):''}});
  try{
@@ -74,6 +74,7 @@ export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;forei
   console.log('SCHEDULE_BFF_PASS: initialize200=1 workbook5=1 personal0=1 week200=1 employee_audit403=1');
   console.log('TASK_CENTER_BFF_PASS: tasks200=1 scoped_candidates200=1 employee_candidates403=1');
   console.log('INTAKE_BFF_PASS: native_login=1 create=200 scoped_list=1 detail=200 worker_detail=404 source_promote=200 replay=1 source_duplicate=409');
+  const {verifyPerformanceBff}=await import('./verify-performance-bff');await verifyPerformanceBff(pool,source,enterpriseId,teamId);
   const {verifySourceLinks}=await import('./verify-source-links');await verifySourceLinks(pool,source,enterpriseId,teamId);
   await pool.query('UPDATE app_users SET banned=true WHERE email=$1',[source.ordinary]);assert.equal((await GET(request(source.ordinary))).status,401);await pool.query('UPDATE app_users SET banned=false WHERE email=$1',[source.ordinary]);
   await pool.query('UPDATE app_account_teams SET enabled=false WHERE id=$1',[source.root]);assert.equal((await GET(request(source.ordinary))).status,403);await pool.query('UPDATE app_account_teams SET enabled=true WHERE id=$1',[source.root]);

@@ -22,7 +22,7 @@ function stable(value: unknown): string {
 }
 export type VerifySource=(proof:string,actor:Actor,command:Command)=>Promise<{sourceSubject:string}>;
 export class WorkflowStore {
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource) {}
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date()) {}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
@@ -169,6 +169,7 @@ export class WorkflowStore {
       const actor = await this.actor(tx, principal);
       // Fixed lock order; tenant-scoped command dedupe also covers concurrent reuse across orders.
       await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`command:${principal.enterpriseId}:${command.commandId}`]);
+      if(command.action.type==='accept-delivery')await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`performance:${principal.enterpriseId}:${principal.teamId}`]);
       await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`order:${principal.enterpriseId}:${command.orderId}`]);
       const fingerprint = createHash('sha256').update(stable({ principal, command,...(source?{source}:{}) })).digest('hex');
       let sourceRow;
@@ -208,7 +209,7 @@ export class WorkflowStore {
         if(!target&&action.type==='assign')throw new WorkflowError(403,'MEMBERSHIP_REQUIRED');
         if(!target||target.enterpriseId!==principal.enterpriseId||target.teamId!==principal.teamId||target.subject!==assignment.subject||!target.permissions.includes('execute')||assignment.ids.some(id=>{const task=previous.tasks.find(t=>t.id===id);return !task||!target.workKinds.includes(task.kind);}))throw new WorkflowError(action.type==='assign'?403:409,'INVALID_ASSIGNEE');
       }
-      const { order, event } = evolve(previous ?? null, actor, command, new Date().toISOString());
+      const { order, event } = evolve(previous ?? null, actor, command, this.now().toISOString());
       const tag=action.type==='set-task-tag'?action.scheduleTag:action.type==='batch-tasks'&&action.operation.type==='set-task-tag'?action.operation.scheduleTag:null;
       if(tag!==null){const w=(await tx.query('SELECT document FROM enterprise_workflow.schedule_workbooks WHERE enterprise_id=$1 AND team_id=$2 FOR SHARE',[actor.enterpriseId,actor.teamId])).rows[0]?.document as Workbook|undefined;if(!w)throw new WorkflowError(409,'WORKBOOK_NOT_FOUND');if(tag&&!w.options.some(o=>o.id===tag))throw new WorkflowError(400,'INVALID_SCHEDULE_TAG');}
       if(dryRun)return {order,replayed:false,before:previous!.tasks.filter(t=>action.type==='batch-tasks'&&action.taskIds.includes(t.id)).map(t=>({taskId:t.id,assignee:t.assignee,status:t.status,scheduleTag:t.scheduleTag??''}))};

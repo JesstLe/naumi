@@ -5,7 +5,7 @@ import {once} from 'node:events';
 import type {Pool} from 'pg';
 export async function workspacePreview(pool:Pool,m:{source:{root:string;foreign:string;ordinary:string;owner:string};enterpriseId:string;teamId:string}){
  if(process.env.NAUMI_VERIFY_ISOLATED_DB!=='1'||new URL(process.env.DATABASE_URL!).hostname!=='127.0.0.1')throw Error('ISOLATED_FIXTURE_REQUIRED');
- const {GET,POST}=await import('../src/app/api/enterprise/workflow/route');const {GET:html}=await import('../src/app/enterprise/workflow/route');const files=await import('../src/app/api/enterprise/workflow/files/route');const sourceApi=await import('../src/app/api/enterprise/workflow/source/route');const native=await import('../src/lib/native-auth');
+ const {GET,POST}=await import('../src/app/api/enterprise/workflow/route');const {GET:html}=await import('../src/app/enterprise/workflow/route');const files=await import('../src/app/api/enterprise/workflow/files/route');const sourceApi=await import('../src/app/api/enterprise/workflow/source/route');const performanceApi=await import('../src/app/api/enterprise/workflow/performance/route');const native=await import('../src/lib/native-auth');
  const secondTeam=randomUUID(),secondTenant=randomUUID(),secondSource=randomUUID(),thirdTeam=randomUUID();
  await pool.query("UPDATE enterprise_workflow.team_members SET permissions='[\"manage\",\"request\",\"dispatch\",\"review\"]' WHERE enterprise_id=$1 AND subject='provisioner'",[m.enterpriseId]);
  await pool.query('UPDATE enterprise_workflow.source_identities SET enabled=true WHERE enterprise_id=$1',[m.enterpriseId]);
@@ -26,22 +26,26 @@ export async function workspacePreview(pool:Pool,m:{source:{root:string;foreign:
   await pool.query("INSERT INTO enterprise_workflow.source_identities(source_instance,source_enterprise,enterprise_id,source_subject,subject)VALUES('fixture-source-a',$1,$2,$3,$4)",[m.source.root,m.enterpriseId,email,subject]);
   await pool.query("INSERT INTO enterprise_workflow.person_profiles(enterprise_id,person_id,real_name,nickname,source_instance,source_enterprise,source_subject)VALUES($1,$2,'合成真名',$3,'fixture-source-a',$4,$5)",[m.enterpriseId,randomUUID(),nickname,m.source.root,email]);
  }
+ const reviewer='performance-reviewer@fixture.invalid';await db.getOrCreateUser(reviewer,'合成绩效复核员');
+ await pool.query("INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment)VALUES($1,$2,$3,NULL,'permanent')",[m.source.root,reviewer,m.source.owner]);
+ await pool.query("INSERT INTO enterprise_workflow.accounts(enterprise_id,subject)VALUES($1,'performance-reviewer') ON CONFLICT DO NOTHING",[m.enterpriseId]);await pool.query("INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds)VALUES($1,$2,'performance-reviewer','[\"manage\",\"review\"]','[]') ON CONFLICT DO NOTHING",[m.enterpriseId,m.teamId]);
+ await pool.query("INSERT INTO enterprise_workflow.source_identities(source_instance,source_enterprise,enterprise_id,source_subject,subject)VALUES('fixture-source-a',$1,$2,$3,'performance-reviewer') ON CONFLICT DO NOTHING",[m.source.root,m.enterpriseId,reviewer]);
  process.env.NAUMI_ENTERPRISE_DEPLOYMENT_MODE='shared';process.env.NAUMI_ENTERPRISE_ALLOWED_IDS='';
  const port=18508,origin='http://127.0.0.1:'+port;
- const accounts:Record<string,string>={employee:m.source.ordinary,manager:m.source.owner,personal:'workspace-personal@fixture.invalid',unbound:'staff@fixture.invalid',designer:'designer-b@fixture.invalid',artist:'artist@fixture.invalid'};
+ const accounts:Record<string,string>={employee:m.source.ordinary,manager:m.source.owner,personal:'workspace-personal@fixture.invalid',unbound:'staff@fixture.invalid',designer:'designer-b@fixture.invalid',artist:'artist@fixture.invalid',reviewer:'performance-reviewer@fixture.invalid'};
  const server=createServer(async(req,res)=>{try{
   if(req.headers.host!==`127.0.0.1:${port}`){res.writeHead(400);return res.end();}const u=new URL(req.url||'/',origin);
   const respond=(status:number,value:unknown)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));};
   if(req.method==='POST'&&req.headers.origin!==origin)return respond(403,{error:'ORIGIN_REQUIRED'});
   let size=0;const chunks:Buffer[]=[];for await(const b of req){size+=b.length;if(size>33*1024*1024)return respond(413,{error:'BODY_TOO_LARGE'});chunks.push(b);}const body=Buffer.concat(chunks);
   if(req.method==='POST'&&u.pathname==='/fixture/login'){const {account}=JSON.parse(body.toString());if(!accounts[account]&&account!=='anonymous')return respond(400,{error:'UNKNOWN_FIXTURE_ACCOUNT'});res.setHeader('set-cookie',`nv_user=${account==='anonymous'?'':native.signUserSession(accounts[account],Date.now())}; HttpOnly; SameSite=Strict; Path=/`);return respond(200,{account});}
-  if(req.method==='GET'&&u.pathname==='/fixture/meta')return respond(200,{...m,secondTeam,secondSource,thirdTeam});
+  if(req.method==='GET'&&u.pathname==='/fixture/meta')return respond(200,{...m,secondTeam,secondSource,thirdTeam,performanceClockOffsetDays:3});
   if(req.method==='POST'&&u.pathname==='/fixture/revoke'){const {enabled}=JSON.parse(body.toString());await pool.query("UPDATE enterprise_workflow.team_members SET enabled=$2 WHERE enterprise_id=$1 AND subject='worker'",[m.enterpriseId,!!enabled]);return respond(200,{enabled});}
   if(req.method==='POST'&&u.pathname==='/fixture/policy'){const {dedicated}=JSON.parse(body.toString());process.env.NAUMI_ENTERPRISE_DEPLOYMENT_MODE=dedicated?'dedicated':'shared';process.env.NAUMI_ENTERPRISE_ALLOWED_IDS=dedicated?m.source.root:'';return respond(200,{dedicated});}
   if(req.method==='POST'&&u.pathname==='/fixture/shutdown'){respond(200,{closed:true});setTimeout(()=>{server.close();server.closeAllConnections();},50);return;}
   const headers=new Headers();for(const key of ['cookie','origin','content-type','x-workflow-viewer']){const v=req.headers[key];if(typeof v==='string')headers.set(key,v);}
   const request=new Request(u,{method:req.method,headers,...(req.method==='POST'?{body}: {})});
-  const response=u.pathname==='/api/enterprise/workflow/source'?(req.method==='POST'?await sourceApi.POST(request):await sourceApi.GET(request)):u.pathname==='/api/enterprise/workflow/files'?(req.method==='POST'?await files.POST(request):await files.GET(request)):u.pathname==='/api/enterprise/workflow'?(req.method==='POST'?await POST(request):await GET(request)):['/','/preview.html','/enterprise/workflow'].includes(u.pathname)?await html():new Response('not found',{status:404});
+  const response=u.pathname==='/api/enterprise/workflow/performance'?(req.method==='POST'?await performanceApi.POST(request):await performanceApi.GET(request)):u.pathname==='/api/enterprise/workflow/source'?(req.method==='POST'?await sourceApi.POST(request):await sourceApi.GET(request)):u.pathname==='/api/enterprise/workflow/files'?(req.method==='POST'?await files.POST(request):await files.GET(request)):u.pathname==='/api/enterprise/workflow'?(req.method==='POST'?await POST(request):await GET(request)):['/','/preview.html','/enterprise/workflow'].includes(u.pathname)?await html():new Response('not found',{status:404});
   res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));
  }catch(e){console.error(e instanceof Error?e.message:'fixture_error');res.writeHead(500);res.end('fixture_error');}});
  server.listen(port,'127.0.0.1');await once(server,'listening');console.log(`WORKSPACE_PREVIEW_READY: ${origin}/preview.html?v=4 native_session=1 source_and_workflow=isolated fixture_login_only=1`);await once(server,'close');

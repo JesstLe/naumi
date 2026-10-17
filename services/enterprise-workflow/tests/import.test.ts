@@ -15,13 +15,14 @@ import { tasksChecks } from './tasks.test';
 import { deliveryChecks } from './delivery.test';
 import { handoverBatchChecks } from './handover-batch.test';
 import { sourceLinksChecks } from './source-links.test';
+import { performanceChecks } from './performance.test';
 import { planChecks } from './plan.test';
 const url=process.env.WORKFLOW_IMPORT_TEST_DATABASE_URL;
 test('import persistence, exact source data, isolation, replay, CAS, rollback and HTTP protections',{skip:!url},async()=>{
  const pool=new pg.Pool({connectionString:url}),dir=await mkdtemp(join(tmpdir(),'naumi-import-test-')),tenant=randomUUID();
  const store=new ImportStore(pool,tenant,dir),secret=randomBytes(32).toString('hex');let proxy:ReturnType<typeof spawn>|undefined;let server:ReturnType<typeof createImportServer>|undefined;
  try{
-  for(const n of ['001-workflow.sql','002-scheduling.sql','003-source-import.sql','004-source-identity.sql','005-people-mapping.sql','006-source-intake.sql','007-workspace-labels.sql','008-delivery-assets.sql'])await pool.query(await readFile(new URL('../migrations/'+n,import.meta.url),'utf8'));
+  for(const n of ['001-workflow.sql','002-scheduling.sql','003-source-import.sql','004-source-identity.sql','005-people-mapping.sql','006-source-intake.sql','007-workspace-labels.sql','008-delivery-assets.sql','009-performance.sql'])await pool.query(await readFile(new URL('../migrations/'+n,import.meta.url),'utf8'));
   const bytes=Buffer.from('synthetic attachment'),h=createHash('sha256').update(bytes).digest('hex');await writeFile(join(dir,h),bytes);
   const source='a'.repeat(64),row=(n:number,title:string,parent='')=>({excelRow:n,title,parentLabel:parent,raw:{'任务完成情况':n===4?'已完成':'','设计师':'张同名','需求方':'王运营'},rawCells:{['A'+n]:title},parentCandidates:parent?[2,3]:[],attachments:[],issues:[]});
   const input={schema:'enterprise-source-import-v1',sourceHash:source,workbookHash:'b'.repeat(64),sheet:'fixture',headers:{A:'产品需求名称'},rows:[row(2,'同名'),row(3,'同名'),row(4,'子记录','同名')],issues:[],summary:{rows:3,children:1},assets:[{id:h,sha256:h,path:'file.xlsx',name:'file.xlsx',bytes:bytes.length,extension:'.xlsx'}],links:[]};
@@ -74,6 +75,7 @@ test('import persistence, exact source data, isolation, replay, CAS, rollback an
   await planChecks(pool);
   await handoverBatchChecks(pool);
   await sourceLinksChecks(pool);
+  await performanceChecks(pool);
   console.log('IMPORT_SERVICE_PASS: persisted=3 replay=1 source_status_preserved=1 corrupt_blob_denied=1 atomic_rollback=1 cross_tenant_denied=1 cas_winners=1 rollback_pending=1 reopen=1 workflow_orders=0 asset_hash=1 anonymous=401 cross_origin=403 csrf=403 conflict=409');
  }finally{proxy?.kill();if(server){server.closeAllConnections();await new Promise<void>(r=>server!.close(()=>r()));}await pool.end();}
 });
