@@ -1,4 +1,5 @@
 import type { ImagegenRequest, Intent } from "./types";
+import { imagegenUseCase } from "./catalog";
 
 export type FrameInput = ImagegenRequest["inputs"][number] & { label?: string; width?: number; height?: number };
 export type FrameSize = { width: number; height: number };
@@ -17,8 +18,8 @@ export function defaultFrameSource(inputs: FrameInput[], useCase = ""): FrameInp
   const sources = inputs.filter(input => input.role !== "mask");
   if (sources.length === 1) return sources[0];
   const targets = sources.filter(input => input.role === "edit-target");
-  const referenceLayout = !useCase || ["compositing", "product-mockup", "ads-marketing"].includes(useCase);
-  if (inputs.some(input => input.role === "mask") || !referenceLayout) return targets.length === 1 ? targets[0] : undefined;
+  const retainEditingCanvas = imagegenUseCase(useCase)?.mode === "edit" && useCase !== "compositing";
+  if (inputs.some(input => input.role === "mask") || retainEditingCanvas) return targets.length === 1 ? targets[0] : undefined;
   const references = sources.filter(input => input.role === "reference");
   if (references.length === 1) return references[0];
   if (!references.length && targets.length === 1) return targets[0];

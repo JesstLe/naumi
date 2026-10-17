@@ -39,6 +39,16 @@ async function bundle(entry,state,modules,source){
  check(plan.request.parameters.ratio==='3:4','resolved plan request');check(plan.steps[0].parameters.ratio==='3:4','frozen step');check(state.quotes.at(-1).ratio==='3:4','billing uses reference frame');check(state.simulations.at(-1).ratio==='3:4','model eligibility uses reference frame');check(plan.fingerprint===imagegenFingerprint(req),'caller fingerprint unchanged for retry');check(req.parameters.ratio==='auto','caller not mutated');check(plan.intent.requirements.find(r=>r.name==='ratio').value==='3:4','intent consistent');
  const missing=await planImagegen({...req,parameters:{quality:'medium',resolution:'1K'}},'fixture@example.test');check(missing.request.parameters.ratio==='3:4','missing ratio resolves reference');
  const reversed=await planImagegen({...req,inputs:[...req.inputs].reverse()},'fixture@example.test');check(reversed.request.parameters.ratio==='3:4','order independent');
+ const {IMAGEGEN_USE_CASES}=await bundle('src/lib/imagegen/catalog.ts',state,{});
+ for(const useCase of IMAGEGEN_USE_CASES.filter(item=>item.mode==='generate')){
+  const referenceInsert={...req,mode:'generate',useCase:useCase.id,inputs:[{artworkId:'layout',role:'reference'},{artworkId:'product',role:'insert'}]};
+  const inherited=await planImagegen(referenceInsert,'fixture@example.test');
+  check(inherited.request.parameters.ratio==='3:4','unique reference for '+useCase.id);
+  check(inherited.steps[0].parameters.ratio==='3:4'&&state.quotes.at(-1).ratio==='3:4','quote/frozen step for '+useCase.id);
+  check(inherited.fingerprint===imagegenFingerprint(referenceInsert),'original identity for '+useCase.id);
+  const reordered=await planImagegen({...referenceInsert,inputs:[...referenceInsert.inputs].reverse()},'fixture@example.test');
+  check(reordered.request.parameters.ratio==='3:4','reference identity survives reorder for '+useCase.id);
+ }
  const fixed=await planImagegen({...req,parameters:{...req.parameters,ratio:'9:16'}},'fixture@example.test');check(fixed.request.parameters.ratio==='9:16','explicit preserved');
  const style=await planImagegen({...req,useCase:'style-transfer'},'fixture@example.test');check(style.request.parameters.ratio==='1:1','style keeps edit target');
  state.inputs.push({...a,artworkId:'mask',role:'mask'});const masked=await planImagegen({...req,inputs:[...req.inputs,{artworkId:'mask',role:'mask'}]},'fixture@example.test');check(masked.request.parameters.ratio==='1:1','mask keeps target');
