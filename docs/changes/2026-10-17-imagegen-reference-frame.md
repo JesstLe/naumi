@@ -24,10 +24,18 @@
 
 完整命令、字面输出、初始哈希、回滚副本及四产物在output/imagegen-frame-choice-20261017/VERIFICATION.txt。真实组件截图reference-frame-ui.png。
 
+## 服务端补齐：Agent / auto 请求
+
+青萝历史请求经过imagegen规划，单改UI不足以修复该入口。本模块追加plan.ts：使用现有已鉴权、已解码的素材尺寸，在报价与冻结步骤之前将auto/缺省比例解析为唯一reference原始比例。显式ratio及width/height优先，cutout/postprocess跳过，mask/显式目标编辑用途保留target。多参考歧义在报价前报错，不按上传顺序猜测。
+
+请求原始fingerprint在解析前计算，持久计划保留解析后的比例；调用方原对象不变，重复原auto请求仍使用原fingerprint，已接受旧计划不重新解析。不修改收费确认、dispatch、generation-core、Worker；真实generation-core适配器在本机隔离测试中输出ratio=3:4与两张输入的FormData。schema不变。
+
+新增真实plan+generation-core隔离测试24项，Sharp解码1500²及750×1000测试PNG，分别验证Agent/重排/显式9:16/风格/蒙版/多参考/原始fingerprint/冻结计划重入/实际FormData。模拟鉴权/模型/报价及内部handler，供应商0，不当作真实PG持久任务/付费生图证据。
+
 ## 尚未完成与发布边界
 
-- 本分支仅图像创作面板/纯画幅helper，不修改canvas-client、generate-image、imagegen plan/schema、Worker或共享未提交工作。
-- 旧画布直接生成、Agent/其他客户端的auto策略未由本模块修复；不能称全站主体替换比例全部修复。
+- 本分支包含图像创作面板、画幅helper及imagegen plan；不修改canvas-client、generate-image、imagegen schema/dispatch/generation-core、Worker或共享未提交工作。
+- 旧画布直接调用generate-image的auto策略未由本模块修复；imagegen Agent/canvas/workbench共享plan均使用角色解析。不能称全站所有旧入口比例全部修复。
 - 尚未上线47，真实供应商是否遵守输出比例与最终落盘尺寸未在本轮重跑。现有历史方图不重放、不改写。
 - 交统一窗口整合后，需刷新main、固定完整版本，并按三锁蓝绿、真实请求链与Worker恢复验收。无本轮SSH/锁/候选/切流动作。
 
