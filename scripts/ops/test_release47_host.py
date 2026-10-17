@@ -3,11 +3,40 @@ import datetime
 import pathlib
 import tempfile
 import unittest
+from unittest.mock import patch
+import os
+import stat
 
 import release47_host as m
 
 
 class Gates(unittest.TestCase):
+    @unittest.skipUnless(hasattr(os, 'O_DIRECTORY'), 'Linux directory durability')
+    def test_save_fsyncs_file_and_directory_before_returning(self):
+        with tempfile.TemporaryDirectory() as folder:
+            tx = m.HostTransaction(m.TARGET, 'a'*64, folder)
+            kinds = []
+            original = os.fsync
+            def fsync(fd):
+                kinds.append(stat.S_ISDIR(os.fstat(fd).st_mode))
+                return original(fd)
+            with patch.object(m.os, 'fsync', side_effect=fsync):
+                tx.save('intent.json', {'id': '1'*64})
+            self.assertEqual(kinds, [False, True])
+
+    @unittest.skipUnless(hasattr(os, 'O_DIRECTORY'), 'Linux directory durability')
+    def test_directory_durability_failure_does_not_return_an_intent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            tx = m.HostTransaction(m.TARGET, 'a'*64, folder)
+            original = os.fsync
+            def fsync(fd):
+                if stat.S_ISDIR(os.fstat(fd).st_mode):
+                    raise OSError('fixture directory sync failed')
+                return original(fd)
+            with patch.object(m.os, 'fsync', side_effect=fsync):
+                with self.assertRaisesRegex(OSError, 'directory sync'):
+                    tx.save('intent.json', {'id': '1'*64})
+
     def test_memory_keeps_one_gib_and_never_adds_swap(self):
         budget = dict(webPeakMiB=1536, workerPeakMiB=256, hostReserveMiB=1024)
         self.assertFalse(m.memory_gate(2119, budget)['ok'])
