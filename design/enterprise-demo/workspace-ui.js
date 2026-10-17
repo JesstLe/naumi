@@ -24,7 +24,7 @@ async function requirementRequest(action,params={},body,scope=requirementScope()
  if(!scope.active){const r=await importRequest(action,params,body);if(!scopeCurrent(scope))throw Error('WORKSPACE_CHANGED');return r;}
  if(!workspaceTeam())throw Error('请先选择企业和团队');
  if(action==='session')return {csrf:''};
- if(!['orders','order','command','intake','tasks','assignees','facts'].includes(action))throw Error('员工工作区暂未接通此操作');
+ if(!['orders','order','command','intake','tasks','assignees','facts','schedule','personal','schedule-audit','schedule-command','week'].includes(action))throw Error('员工工作区暂未接通此操作');
  return workspaceFetch(action,{...params,enterpriseId:scope.enterpriseId,teamId:scope.teamId},body,scope);
 }
 async function workspaceDiscover(){workspaceClear();workspace.active=true;intake.active=true;view='requirements';workspace.directory=null;workspace.enterpriseId='';workspace.error='';workspace.status=0;workspace.loading=true;const epoch=workspace.epoch;shell();
@@ -39,7 +39,7 @@ function workspacePanel(){const s=workspace,d=s.directory;return `<section class
 const workspaceOriginalRequirements=requirements;
 requirements=function(){if(!workspace.active)return `<div class="workspace-entry"><button class="btn" id="workspaceOpen">${icon('building')}员工工作区</button></div>`+workspaceOriginalRequirements();return workspacePanel()+(workspaceTeam()?workspaceOriginalRequirements():heading('需求中心','')+'<div class="empty">选择企业与团队后查看需求</div>');};
 const workspaceOriginalRender=renderPage;
-renderPage=function(){if(workspace.active&&!['requirements','tasks','performance'].includes(view))return workspacePanel()+heading((navs.find(n=>n[0]===view)||['','','当前模块'])[2],'')+'<div class="empty">此模块的员工工作区正在接入；需求中心已可使用。</div>';return workspaceOriginalRender();};
+renderPage=function(){if(workspace.active&&!['requirements','tasks','performance','schedule'].includes(view))return workspacePanel()+heading((navs.find(n=>n[0]===view)||['','','当前模块'])[2],'')+'<div class="empty">此模块的员工工作区正在接入；需求中心已可使用。</div>';return workspaceOriginalRender();};
 const workspaceOriginalBind=bind;
 bind=function(){
  // Other local-mode handlers expect their own controls. Render and bind only the current mode.

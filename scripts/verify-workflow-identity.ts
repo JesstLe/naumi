@@ -7,7 +7,7 @@ import { once } from 'node:events';
 import type { Pool } from 'pg';
 export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;foreign:string;ordinary:string;owner:string}){
  const {SourceIdentityStore,createMappedAuthenticator,createSourceVerifier}=await import('../services/enterprise-workflow/src/source-identity');
- const {createWorkflowServer,WorkflowStore,resolveDatabaseActor,createWorkflowPool,PeopleStore,DeliveryStore}=await import('../services/enterprise-workflow/src/server');
+ const {createWorkflowServer,WorkflowStore,resolveDatabaseActor,createWorkflowPool,PeopleStore,DeliveryStore,SchedulingStore}=await import('../services/enterprise-workflow/src/server');
  const native=await import('../src/lib/native-auth'),{GET,POST}=await import('../src/app/api/enterprise/workflow/route');
  // This isolated fixture starts as a personal user. Explicitly enroll as an ordinary employee,
  // without manager/record-viewing role; collaboration must not grant source analytics access.
@@ -20,7 +20,7 @@ export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;forei
  await bindings.configure(admin,{...common,type:'enterprise'});await bindings.configure(admin,{...common,type:'identity',sourceSubject:source.ordinary,subject:'worker'});
  const keys=generateKeyPairSync('ed25519'),verifier=createSourceVerifier({issuer:'naumi-workflow-bff',audience:'enterprise-workflow-source',publicKeys:{fixture:keys.publicKey}});
  const delivery=new DeliveryStore(workflowPool,resolveDatabaseActor,await mkdtemp(join(tmpdir(),'naumi-delivery-fixture-')));
- const server=createWorkflowServer(new WorkflowStore(workflowPool,resolveDatabaseActor,delivery.validate),createMappedAuthenticator(bindings,verifier),undefined,{store:bindings,authenticate:verifier},new PeopleStore(workflowPool,resolveDatabaseActor),delivery);server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert(address&&typeof address!=='string');
+ const server=createWorkflowServer(new WorkflowStore(workflowPool,resolveDatabaseActor,delivery.validate),createMappedAuthenticator(bindings,verifier),new SchedulingStore(workflowPool,resolveDatabaseActor),{store:bindings,authenticate:verifier},new PeopleStore(workflowPool,resolveDatabaseActor),delivery);server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert(address&&typeof address!=='string');
  Object.assign(process.env,{NAUMI_WORKFLOW_SERVICE_URL:`http://127.0.0.1:${address.port}`,NAUMI_WORKFLOW_SIGNING_KID:'fixture',NAUMI_WORKFLOW_SIGNING_KEY:keys.privateKey.export({format:'pem',type:'pkcs8'}).toString()});
  const request=(email:string,enterpriseId=source.root,extra:Record<string,string>={})=>new Request('http://fixture.invalid/api/enterprise/workflow?'+new URLSearchParams({action:'context',enterpriseId,...extra}),{headers:{cookie:email?'nv_user='+native.signUserSession(email,Date.now()):''}});
  try{
@@ -68,6 +68,10 @@ export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;forei
   console.log('DELIVERY_BFF_PASS: binary_upload=200 owner_upload403=1 origin403=1 replay=1 download_sha_bytes=1 attachment=1 anonymous401=1 wrong_team403=1 submit_accept_facts=1');
   // Only this isolated fixture order, not customer records; keep workspace preview baseline clean.
   await pool.query('DELETE FROM enterprise_workflow.delivery_asset_audit WHERE enterprise_id=$1 AND asset_id=$2',[enterpriseId,fileId]);await pool.query('DELETE FROM enterprise_workflow.delivery_assets WHERE enterprise_id=$1 AND order_id=$2',[enterpriseId,fileOrder]);for(const table of ['commands','events'])await pool.query(`DELETE FROM enterprise_workflow.${table} WHERE enterprise_id=$1 AND order_id=$2`,[enterpriseId,fileOrder]);await pool.query('DELETE FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2',[enterpriseId,fileOrder]);
+  const init=await write('schedule-command',{commandId:randomUUID(),teamId,expectedVersion:0,reason:'BFF schedule',action:{type:'initialize'}});assert.equal(init.status,200);const book=await GET(request(source.owner,source.root,{action:'schedule',teamId}));assert.equal(book.status,200);assert.equal((await book.json()).workbook.views.length,5);const personalLayout=await GET(request(source.ordinary,source.root,{action:'personal',teamId,viewId:'team'}));assert.equal(personalLayout.status,200);assert.equal((await personalLayout.json()).personal.version,0);const week=await GET(request(source.owner,source.root,{action:'week',teamId,start:'2026-10-19'}));assert.equal(week.status,200);assert.equal((await week.json()).tasks.length,0);assert.equal((await GET(request(source.ordinary,source.root,{action:'schedule-audit',teamId}))).status,403);
+  // Leave workspace initialization for browser acceptance.
+  await pool.query('DELETE FROM enterprise_workflow.schedule_commands WHERE enterprise_id=$1',[enterpriseId]);await pool.query('DELETE FROM enterprise_workflow.schedule_audit WHERE enterprise_id=$1',[enterpriseId]);await pool.query('DELETE FROM enterprise_workflow.schedule_workbooks WHERE enterprise_id=$1',[enterpriseId]);
+  console.log('SCHEDULE_BFF_PASS: initialize200=1 workbook5=1 personal0=1 week200=1 employee_audit403=1');
   console.log('TASK_CENTER_BFF_PASS: tasks200=1 scoped_candidates200=1 employee_candidates403=1');
   console.log('INTAKE_BFF_PASS: native_login=1 create=200 scoped_list=1 detail=200 worker_detail=404 source_promote=200 replay=1 source_duplicate=409');
   await pool.query('UPDATE app_users SET banned=true WHERE email=$1',[source.ordinary]);assert.equal((await GET(request(source.ordinary))).status,401);await pool.query('UPDATE app_users SET banned=false WHERE email=$1',[source.ordinary]);

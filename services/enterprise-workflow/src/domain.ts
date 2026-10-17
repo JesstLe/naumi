@@ -54,11 +54,19 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
         visiting.delete(current); visited.add(current);
       };
       for (const t of action.tasks) visit(t.id);
-      order.tasks = action.tasks.map(t => ({ ...t, status: 'open', assignee: null, percent: 0, reworkCount: 0,
-        startedAt: null, submittedAt: null, acceptedAt: null, assetIds: [], quality: null }));
+      const planned=new Map(order.tasks.map(t=>[t.id,t]));
+      order.tasks = action.tasks.map(t => {const old=planned.get(t.id);return { ...t,...(old?{planStart:old.planStart,planEnd:old.planEnd,estimatedHours:old.estimatedHours,scheduleTag:old.scheduleTag,customValues:old.customValues}:{}), status: 'open', assignee: null, percent: 0, reworkCount: 0,
+        startedAt: null, submittedAt: null, acceptedAt: null, assetIds: [], quality: null };});
       break;
     }
     case 'publish': state('approved'); permit('dispatch'); need(order.tasks.length, 'TASKS_REQUIRED'); order.status = 'active'; break;
+    case 'set-task-plan': {
+      state('approved','active');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');
+      const empty=action.planStart===null&&action.planEnd===null&&action.estimatedHours===null;
+      need(empty||action.planStart!==null&&action.planEnd!==null&&action.estimatedHours!==null&&action.planEnd>=action.planStart&&(Date.parse(action.planEnd)-Date.parse(action.planStart))/86400000<366,'INVALID_PLAN_RANGE');
+      eventData={before:{planStart:t.planStart??null,planEnd:t.planEnd??null,estimatedHours:t.estimatedHours??null,scheduleTag:t.scheduleTag??'',customValues:t.customValues??{}}};
+      Object.assign(t,{planStart:action.planStart,planEnd:action.planEnd,estimatedHours:action.estimatedHours,scheduleTag:action.scheduleTag,customValues:{...t.customValues,...action.customValues}});break;
+    }
     case 'cancel': state('draft', 'submitted', 'approved', 'active'); permit('manage'); order.status = 'cancelled'; break;
     case 'archive': state('completed', 'cancelled'); permit('manage'); order.status = 'archived'; break;
     default: {

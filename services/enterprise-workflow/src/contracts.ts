@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const id = z.string().uuid();
 const text = z.string().trim().min(1).max(2000);
 const kind = z.enum(['design', 'artwork']);
+export const calendarDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s=>{const d=new Date(s+'T00:00:00Z');return !isNaN(+d)&&d.toISOString().slice(0,10)===s;});
 export const permission = z.enum(['request', 'dispatch', 'execute', 'review', 'manage']);
 export type Permission = z.infer<typeof permission>;
 export type Principal = { enterpriseId: string; subject: string; teamId?: string; sourceBinding?:{sourceInstance:string;sourceEnterprise:string;sourceSubject:string} };
@@ -22,6 +23,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('approve-requirement') }),
   z.strictObject({ type: z.literal('plan-tasks'), tasks: z.array(taskSpec).min(1).max(50) }),
   z.strictObject({ type: z.literal('publish') }),
+  z.strictObject({type:z.literal('set-task-plan'),...taskId,planStart:calendarDate.nullable(),planEnd:calendarDate.nullable(),estimatedHours:z.number().positive().max(1000).nullable(),scheduleTag:z.string().regex(/^$|^[a-z][a-z0-9_]{0,63}$/),customValues:z.record(z.string().regex(/^custom_[a-zA-Z0-9_]{1,56}$/),z.union([z.string().max(2000),z.number().finite(),z.null()])).refine(v=>Object.keys(v).length<=20),reason:text}),
   z.strictObject({ type: z.literal('assign'), ...taskId, assignee: z.string().trim().min(1).max(254) }),
   z.strictObject({ type: z.literal('claim'), ...taskId }),
   z.strictObject({ type: z.literal('release'), ...taskId, reason: text }),
@@ -41,6 +43,7 @@ export const commandSchema = z.strictObject({
 export type Action = z.infer<typeof actionSchema>;
 export type Command = z.infer<typeof commandSchema>;
 export type Task = {
+  planStart?:string|null;planEnd?:string|null;estimatedHours?:number|null;scheduleTag?:string;customValues?:Record<string,string|number|null>;
   id: string; title: string; kind: WorkKind; points: number; dueAt: string; dependencyIds: string[];
   status: 'open' | 'assigned' | 'claimed' | 'in_progress' | 'blocked' | 'review' | 'rework' | 'accepted';
   assignee: string | null; percent: number; reworkCount: number; startedAt: string | null;

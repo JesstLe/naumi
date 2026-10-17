@@ -8,12 +8,16 @@ const scope={enterpriseId:z.string().uuid(),teamId:z.string().uuid()};
 const query=z.discriminatedUnion('action',[
  z.strictObject({action:z.literal('discovery')}),
  z.strictObject({action:z.literal('facts'),...scope,page:z.coerce.number().int().min(1).max(10000).optional()}),
+ z.strictObject({action:z.literal('schedule'),...scope}),
+ z.strictObject({action:z.literal('schedule-audit'),...scope}),
+ z.strictObject({action:z.literal('personal'),...scope,viewId:z.string().regex(/^[a-z][a-z0-9_]{0,63}$/)}),
+ z.strictObject({action:z.literal('week'),...scope,start:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),assignee:z.string().max(254).optional()}),
  z.strictObject({action:z.literal('context'),enterpriseId:z.string().uuid()}),
  z.strictObject({action:z.literal('people'),...scope,sourceHash:z.string().regex(/^[a-f0-9]{64}$/)}),
  z.strictObject({action:z.literal('people-audit'),...scope}),
  z.strictObject({action:z.literal('orders'),...scope,query:z.string().max(120).optional(),status:z.enum(['','draft','submitted','approved','active','completed','cancelled','archived']).optional(),page:z.coerce.number().int().min(1).max(10000).optional()}),
  z.strictObject({action:z.literal('order'),...scope,id:z.string().uuid()}),
- z.strictObject({action:z.literal('tasks'),...scope,query:z.string().max(120).optional(),status:z.enum(['','open','assigned','claimed','in_progress','blocked','review','rework','accepted']).optional(),scope:z.enum(['all','mine','claimable']).optional(),page:z.coerce.number().int().min(1).max(10000).optional()}),
+ z.strictObject({action:z.literal('tasks'),...scope,assignee:z.string().max(254).optional(),query:z.string().max(120).optional(),status:z.enum(['','open','assigned','claimed','in_progress','blocked','review','rework','accepted']).optional(),scope:z.enum(['all','mine','claimable']).optional(),page:z.coerce.number().int().min(1).max(10000).optional()}),
  z.strictObject({action:z.literal('assignees'),...scope,query:z.string().max(120).optional(),kind:z.enum(['','design','artwork']).optional(),page:z.coerce.number().int().min(1).max(10000).optional()}),
 ]);
 export async function GET(request:Request){
@@ -22,7 +26,7 @@ export async function GET(request:Request){
   if(parsed.data.action==='discovery'){const data=await workflowDiscovery(request);if(!rateLimit('workflow-discovery:'+data.viewer.email,30,60_000))return teamJson({error:'请求过于频繁'},429);return teamJson(data);}
   const identity=await workflowSourceIdentity(request,parsed.data.enterpriseId);
   if(!rateLimit('workflow-identity:'+JSON.stringify(identity),60,60_000))return teamJson({error:'请求过于频繁'},429);
-  const config=workflowBridgeConfig();let response:Response;const q=parsed.data,path=q.action==='facts'?'/v1/facts?page='+String(q.page||1):q.action==='context'?'/v1/identity/workspaces':q.action==='people'?'/v1/people?source='+q.sourceHash:q.action==='orders'?'/v1/orders?'+new URLSearchParams({query:q.query||'',status:q.status||'',page:String(q.page||1)}):q.action==='order'?'/v1/orders/'+q.id+'/detail':q.action==='tasks'?'/v1/tasks?'+new URLSearchParams({query:q.query||'',status:q.status||'',scope:q.scope||'all',page:String(q.page||1)}):q.action==='assignees'?'/v1/assignees?'+new URLSearchParams({query:q.query||'',kind:q.kind||'',page:String(q.page||1)}):'/v1/people/audit';
+  const config=workflowBridgeConfig();let response:Response;const q=parsed.data,path=q.action==='schedule'?'/v1/teams/'+q.teamId+'/scheduling':q.action==='schedule-audit'?'/v1/teams/'+q.teamId+'/scheduling/audit':q.action==='personal'?'/v1/teams/'+q.teamId+'/scheduling/personal/'+q.viewId:q.action==='week'?'/v1/week?'+new URLSearchParams({start:q.start,assignee:q.assignee||''}):q.action==='facts'?'/v1/facts?page='+String(q.page||1):q.action==='context'?'/v1/identity/workspaces':q.action==='people'?'/v1/people?source='+q.sourceHash:q.action==='orders'?'/v1/orders?'+new URLSearchParams({query:q.query||'',status:q.status||'',page:String(q.page||1)}):q.action==='order'?'/v1/orders/'+q.id+'/detail':q.action==='tasks'?'/v1/tasks?'+new URLSearchParams({query:q.query||'',status:q.status||'',scope:q.scope||'all',assignee:q.assignee||'',page:String(q.page||1)}):q.action==='assignees'?'/v1/assignees?'+new URLSearchParams({query:q.query||'',kind:q.kind||'',page:String(q.page||1)}):'/v1/people/audit';
   try{response=await fetch(config.origin+path,{headers:{authorization:'Bearer '+workflowIdentityToken(identity,config,'teamId' in q?q.teamId:undefined),Accept:'application/json'},cache:'no-store',redirect:'error',signal:AbortSignal.timeout(5000)});}catch{return teamJson({error:'WORKFLOW_SERVICE_UNAVAILABLE'},503);}
   if(!response.ok&&q.action==='context')return teamJson({error:response.status===403?'WORKFLOW_IDENTITY_NOT_BOUND_OR_REVOKED':'WORKFLOW_SERVICE_UNAVAILABLE'},response.status===403?403:503);
   if(q.action!=='context'){if(!response.headers.get('content-type')?.includes('application/json'))return teamJson({error:'WORKFLOW_RESPONSE_INVALID'},502);return teamJson(await response.json(),response.status);}
@@ -32,13 +36,13 @@ export async function GET(request:Request){
  }catch(e){if(e instanceof IntegrationError)return teamJson({error:e.code},e.status);return teamFailure(e);}
 }
 export async function POST(request:Request){
- const q=z.strictObject({action:z.enum(['people-profile','people-preview','people-apply','intake','command']),...scope}).safeParse(Object.fromEntries(new URL(request.url).searchParams));if(!q.success)return teamJson({error:'工作区参数无效'},400);
+ const q=z.strictObject({action:z.enum(['people-profile','people-preview','people-apply','intake','command','schedule-command']),...scope}).safeParse(Object.fromEntries(new URL(request.url).searchParams));if(!q.success)return teamJson({error:'工作区参数无效'},400);
  if(request.headers.get('origin')!==new URL(request.url).origin||request.headers.get('sec-fetch-site')==='cross-site')return teamJson({error:'ORIGIN_REQUIRED'},403);
  if(!request.headers.get('content-type')?.startsWith('application/json'))return teamJson({error:'JSON_REQUIRED'},415);
  try{
   const identity=await workflowSourceIdentity(request,q.data.enterpriseId);if(!rateLimit('workflow-write:'+JSON.stringify(identity),60,60_000))return teamJson({error:'请求过于频繁'},429);
   const chunks:Uint8Array[]=[];let size=0;const reader=request.body?.getReader();if(reader)for(;;){const next=await reader.read();if(next.done)break;size+=next.value.byteLength;if(size>128*1024){await reader.cancel();return teamJson({error:'BODY_TOO_LARGE'},413);}chunks.push(next.value);}const text=Buffer.concat(chunks).toString('utf8');try{JSON.parse(text);}catch{return teamJson({error:'INVALID_JSON'},400);}
-  const config=workflowBridgeConfig(),path={ 'people-profile':'/v1/people/profile','people-preview':'/v1/people/preview','people-apply':'/v1/people/apply',intake:'/v1/intake',command:'/v1/commands' }[q.data.action];let response:Response;
+  const config=workflowBridgeConfig(),path={ 'people-profile':'/v1/people/profile','people-preview':'/v1/people/preview','people-apply':'/v1/people/apply',intake:'/v1/intake',command:'/v1/commands','schedule-command':'/v1/scheduling/commands' }[q.data.action];let response:Response;
   try{response=await fetch(config.origin+path,{method:'POST',headers:{authorization:'Bearer '+workflowIdentityToken(identity,config,q.data.teamId),'content-type':'application/json'},body:text,cache:'no-store',redirect:'error',signal:AbortSignal.timeout(15000)});}catch{return teamJson({error:'WORKFLOW_WRITE_UNCERTAIN',uncertain:true},503);}
   if(!response.headers.get('content-type')?.includes('application/json'))return teamJson({error:'WORKFLOW_RESPONSE_INVALID'},502);
   return teamJson(await response.json(),response.status);

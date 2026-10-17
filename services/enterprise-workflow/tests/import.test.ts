@@ -13,6 +13,7 @@ import { peopleChecks } from './people.test';
 import { intakeChecks } from './intake.test';
 import { tasksChecks } from './tasks.test';
 import { deliveryChecks } from './delivery.test';
+import { planChecks } from './plan.test';
 const url=process.env.WORKFLOW_IMPORT_TEST_DATABASE_URL;
 test('import persistence, exact source data, isolation, replay, CAS, rollback and HTTP protections',{skip:!url},async()=>{
  const pool=new pg.Pool({connectionString:url}),dir=await mkdtemp(join(tmpdir(),'naumi-import-test-')),tenant=randomUUID();
@@ -68,6 +69,7 @@ test('import persistence, exact source data, isolation, replay, CAS, rollback an
   await intakeChecks(pool,tenant,source);
   await tasksChecks(pool);
   await deliveryChecks(pool);
+  await planChecks(pool);
   console.log('IMPORT_SERVICE_PASS: persisted=3 replay=1 source_status_preserved=1 corrupt_blob_denied=1 atomic_rollback=1 cross_tenant_denied=1 cas_winners=1 rollback_pending=1 reopen=1 workflow_orders=0 asset_hash=1 anonymous=401 cross_origin=403 csrf=403 conflict=409');
  }finally{proxy?.kill();if(server){server.closeAllConnections();await new Promise<void>(r=>server!.close(()=>r()));}await pool.end();}
 });
