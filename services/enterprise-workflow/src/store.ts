@@ -21,7 +21,7 @@ export class WorkflowStore {
   }
   private async actor(tx: PoolClient, principal: Principal) {
     const actor = await this.resolveActor(tx, principal);
-    if (!actor || actor.enterpriseId !== principal.enterpriseId || actor.subject !== principal.subject) throw new WorkflowError(403, 'MEMBERSHIP_REQUIRED');
+    if (!actor || actor.enterpriseId !== principal.enterpriseId || actor.subject !== principal.subject || actor.teamId !== principal.teamId) throw new WorkflowError(403, 'MEMBERSHIP_REQUIRED');
     return actor;
   }
   private async transaction<T>(run: (tx: PoolClient) => Promise<T>) {
@@ -61,7 +61,7 @@ export class WorkflowStore {
       }
       if (command.action.type === 'assign') {
         const action = command.action;
-        const target = await this.actor(tx, { enterpriseId: principal.enterpriseId, subject: action.assignee });
+        const target = await this.actor(tx, { enterpriseId: principal.enterpriseId, subject: action.assignee, ...(principal.teamId ? { teamId: principal.teamId } : {}) });
         const task = previous?.tasks.find(t => t.id === action.taskId);
         if (!task || !target.permissions.includes('execute') || !target.workKinds.includes(task.kind)) throw new WorkflowError(403, 'INVALID_ASSIGNEE');
       }

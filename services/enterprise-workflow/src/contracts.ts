@@ -5,7 +5,7 @@ const text = z.string().trim().min(1).max(2000);
 const kind = z.enum(['design', 'artwork']);
 export const permission = z.enum(['request', 'dispatch', 'execute', 'review', 'manage']);
 export type Permission = z.infer<typeof permission>;
-export type Principal = { enterpriseId: string; subject: string };
+export type Principal = { enterpriseId: string; subject: string; teamId?: string };
 // Resolved by a live server-side identity adapter, never accepted from browser JSON.
 export type Actor = Principal & { permissions: Permission[]; workKinds: WorkKind[] };
 export type WorkKind = z.infer<typeof kind>;
@@ -47,11 +47,13 @@ export type Task = {
   submittedAt: string | null; acceptedAt: string | null; assetIds: string[]; quality: number | null;
 };
 export type WorkOrder = {
+  teamId?: string;
   id: string; enterpriseId: string; requester: string; title: string; brief: string; acceptance: string;
   status: 'draft' | 'submitted' | 'approved' | 'active' | 'completed' | 'cancelled' | 'archived';
   version: number; createdAt: string; updatedAt: string; tasks: Task[];
 };
 export type WorkflowEvent = {
+  teamId?: string;
   id: string; schemaVersion: 1; enterpriseId: string; orderId: string; aggregateVersion: number;
   actor: string; type: string; occurredAt: string; data: Record<string, unknown>;
 };

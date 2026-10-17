@@ -6,6 +6,7 @@
   "description": "Enterprise workflow foundation; production identity adapter and routing are not enabled",
   "scripts": {
     "test": "node verify.mjs",
+    "preview:fixture": "tsx tools/preview-fixture.ts",
     "typecheck": "tsc -p tsconfig.json",
     "build": "node build.mjs"
   },

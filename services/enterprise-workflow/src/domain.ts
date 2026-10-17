@@ -6,6 +6,7 @@ function need(ok: unknown, code: string, status = 409): asserts ok {
 }
 export function has(actor: Actor, p: Permission) { return actor.permissions.includes(p); }
 export function canRead(actor: Actor, order: WorkOrder) {
+  if ((actor.teamId !== undefined || order.teamId !== undefined) && actor.teamId !== order.teamId) return false;
   return actor.enterpriseId === order.enterpriseId && (has(actor, 'manage') || has(actor, 'dispatch') || has(actor, 'review') ||
     order.requester === actor.subject || order.tasks.some(t => t.assignee === actor.subject) ||
     has(actor, 'execute') && order.status === 'active' && order.tasks.some(t => t.status === 'open' && actor.workKinds.includes(t.kind)));
@@ -16,7 +17,7 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
   if (!previous) {
     need(action.type === 'create', 'NOT_FOUND', 404); permit('request');
     need(command.expectedVersion === 0, 'VERSION_CONFLICT');
-    const order: WorkOrder = { id: command.orderId, enterpriseId: actor.enterpriseId, requester: actor.subject,
+    const order: WorkOrder = { id: command.orderId, enterpriseId: actor.enterpriseId, ...(actor.teamId ? { teamId: actor.teamId } : {}), requester: actor.subject,
       title: action.title, brief: action.brief, acceptance: action.acceptance, status: 'draft', version: 1,
       createdAt: at, updatedAt: at, tasks: [] };
     return { order, event: makeEvent(order, actor, command, at) };
@@ -104,6 +105,7 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
 }
 function makeEvent(order: WorkOrder, actor: Actor, command: Command, at: string, data: Record<string, unknown> = {}): WorkflowEvent {
   return { id: createHash('sha256').update(`${order.enterpriseId}:${command.commandId}`).digest('hex'), schemaVersion: 1,
+    ...(order.teamId ? { teamId: order.teamId } : {}),
     enterpriseId: order.enterpriseId, orderId: order.id, aggregateVersion: order.version, actor: actor.subject,
     type: command.action.type === 'accept-delivery' ? 'workflow.task.accepted.v1' : `workflow.${command.action.type}.v1`,
     occurredAt: at, data: { action: command.action, ...data } };

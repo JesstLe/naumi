@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { id, WorkflowError, type Principal } from './contracts';
 import type { WorkflowStore } from './store';
+import type { SchedulingStore } from './scheduling-store';
 // Adapter verifies short-lived BFF authentication (issuer, audience, expiry, signature),
 // NOT x-user/x-enterprise headers or a caller-supplied permissions array.
 export type Authenticate = (request: IncomingMessage) => Promise<Principal | null>;
@@ -19,18 +20,27 @@ async function body(req: IncomingMessage) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { throw new WorkflowError(400, 'INVALID_JSON'); }
 }
-export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate) {
+export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore) {
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url || '/', 'http://workflow.internal');
       if (req.method === 'GET' && url.pathname === '/healthz') return json(res, 200, { status: 'alive', service: 'enterprise-workflow', stage: 'foundation' });
       if (req.method === 'GET' && url.pathname === '/readyz') {
-        try { await store.ready(); } catch { throw new WorkflowError(503, 'NOT_READY'); }
-        return json(res, 200, { status: 'ready', schemaVersion: 1 });
+        try { await store.ready(); if (scheduling) await scheduling.ready(); } catch { throw new WorkflowError(503, 'NOT_READY'); }
+        return json(res, 200, { status: 'ready', schemaVersion: scheduling ? 2 : 1 });
       }
       const principal = await authenticate(req);
       if (!principal) throw new WorkflowError(401, 'AUTH_REQUIRED');
       if (!id.safeParse(principal.enterpriseId).success || !principal.subject) throw new WorkflowError(401, 'INVALID_IDENTITY');
+      if (scheduling && req.method === 'POST' && url.pathname === '/v1/scheduling/commands') return json(res, 200, await scheduling.execute(principal, await body(req)));
+      const scheduleMatch = /^\/v1\/teams\/([^/]+)\/scheduling(?:\/(audit)|\/personal\/([a-z][a-z0-9_]{0,63}))?$/.exec(url.pathname);
+      if (scheduling && req.method === 'GET' && scheduleMatch) {
+        const teamId = scheduleMatch[1];
+        if (!id.safeParse(teamId).success) throw new WorkflowError(400, 'INVALID_TEAM_ID');
+        if (scheduleMatch[2]) return json(res, 200, await scheduling.audit(principal, teamId));
+        if (scheduleMatch[3]) return json(res, 200, await scheduling.personal(principal, teamId, scheduleMatch[3]));
+        return json(res, 200, await scheduling.get(principal, teamId));
+      }
       if (req.method === 'POST' && url.pathname === '/v1/commands') return json(res, 200, await store.execute(principal, await body(req)));
       const match = /^\/v1\/orders\/([^/]+)$/.exec(url.pathname);
       if (req.method === 'GET' && match) {
@@ -40,6 +50,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       throw new WorkflowError(404, 'NOT_FOUND');
     } catch (e) {
       const known = e instanceof WorkflowError;
+      if (!known && e && typeof e === 'object' && 'code' in e && ['55P03','57014','40P01'].includes(String(e.code))) return json(res, 503, { error: { code: 'RETRY_LATER' } });
       json(res, known ? e.status : 500, { error: { code: known ? e.code : 'INTERNAL_ERROR' } });
     }
   });
@@ -48,3 +59,5 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
 }
 export { WorkflowStore } from './store';
 export type { ResolveActor, ValidateAssets } from './store';
+export { SchedulingStore } from './scheduling-store';
+export { createBffAuthenticator, resolveDatabaseActor } from './identity';

@@ -1,0 +1,62 @@
+// Run only after preview:fixture. Uses a new headless browser, never an existing Chrome session/CDP.
+import { chromium } from '@playwright/test';
+import assert from 'node:assert/strict';
+import { mkdir,writeFile } from 'node:fs/promises';
+import path from 'node:path';
+const output=path.resolve(process.argv[2]??'../../../output/enterprise-server-ui');
+const base=process.argv[3]??'http://127.0.0.1:18489/';
+assert.ok(['localhost','127.0.0.1'].includes(new URL(base).hostname));
+await mkdir(output,{recursive:true});
+const browser=await chromium.launch({headless:true,...(process.env.ENTERPRISE_TEST_BROWSER_PATH?{executablePath:process.env.ENTERPRISE_TEST_BROWSER_PATH}:{})});
+const checks=[],errors=[];
+let contexts=[];
+const pass=name=>checks.push({name,result:'PASS'});
+try {
+  const a=await browser.newContext({viewport:{width:1440,height:1024}}),b=await browser.newContext({viewport:{width:1440,height:1024}});
+  contexts=[a,b];const page=await a.newPage(),other=await b.newPage();
+  for(const p of [page,other])p.on('pageerror',e=>errors.push(e.message));
+  await Promise.all([page.goto(base),other.goto(base)]);
+  await page.locator('#status').filter({hasText:'已从 PostgreSQL'}).waitFor();
+  await other.locator('#status').filter({hasText:'已从 PostgreSQL'}).waitFor();
+  assert.equal(await page.locator('#tabs button').count(),5);pass('five persisted views');
+  await other.locator('#identity').selectOption('designer');
+  await other.waitForFunction(()=>document.querySelector('#draft').disabled);
+  assert.equal(await other.locator('#publish').isDisabled(),true);pass('designer team controls disabled');
+  await page.locator('#columnWidth').fill('400');await page.locator('#columnWidth').dispatchEvent('change');
+  await page.locator('#draft').click();await page.locator('#status').filter({hasText:'团队草稿已入库'}).waitFor();
+  await other.locator('#reload').click();await other.locator('#status').filter({hasText:'已从 PostgreSQL'}).waitFor();
+  assert.equal(await other.locator('#columnWidth').inputValue(),'310');pass('unpublished draft hidden');
+  await page.locator('#publish').click();await page.locator('#status').filter({hasText:'团队模板已发布'}).waitFor();
+  await other.locator('#reload').click();await other.waitForFunction(()=>document.querySelector('#columnWidth').value==='400');pass('publish shared across browser contexts');
+  await other.locator('#density').selectOption('relaxed');await other.locator('#personal').click();
+  await other.locator('#status').filter({hasText:'我的视图已入库'}).waitFor();
+  await other.reload();await other.locator('#status').filter({hasText:'已从 PostgreSQL'}).waitFor();
+  assert.equal(await other.locator('#density').inputValue(),'relaxed');
+  await page.locator('#reload').click();await page.locator('#status').filter({hasText:'已从 PostgreSQL'}).waitFor();
+  assert.equal(await page.locator('#density').inputValue(),'normal');pass('private layout persisted and isolated');
+  assert.ok(!(await page.locator('#audit').innerText()).includes('保存我的视图'));pass('other personal audit hidden');
+  // Both supervisors load the same aggregate version. Second stale save must not overwrite first.
+  await other.locator('#identity').selectOption('lead2');await other.waitForFunction(()=>!document.querySelector('#draft').disabled);
+  await page.locator('#columnWidth').fill('380');await page.locator('#columnWidth').dispatchEvent('change');
+  await page.locator('#draft').click();await page.locator('#status').filter({hasText:'团队草稿已入库'}).waitFor();
+  await other.locator('#columnWidth').fill('420');await other.locator('#columnWidth').dispatchEvent('change');
+  await other.locator('#draft').click();await other.locator('#status').filter({hasText:'版本冲突'}).waitFor();
+  assert.equal(await other.locator('#columnWidth').inputValue(),'420');pass('stale session rejected with local edits retained');
+  await page.reload();await page.locator('#status').filter({hasText:'已从 PostgreSQL'}).waitFor();
+  assert.equal(await page.locator('#columnWidth').inputValue(),'380');pass('shared draft reload persistence');
+  await page.screenshot({path:path.join(output,'server-schedule-desktop.png'),fullPage:true});
+  await page.locator('#restore').click();await page.locator('#status').filter({hasText:'初始布局已恢复'}).waitFor();
+  assert.equal(await page.locator('#columnWidth').inputValue(),'310');pass('restore creates new revision');
+  await page.getByRole('button',{name:'按设计师分组',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.lane').length===3);
+  await page.screenshot({path:path.join(output,'server-schedule-board.png'),fullPage:true});pass('board rendering from persisted view');
+  await page.setViewportSize({width:390,height:844});
+  const dimensions=await page.evaluate(()=>({width:innerWidth,document:document.documentElement.scrollWidth}));
+  assert.ok(dimensions.document<=dimensions.width,JSON.stringify(dimensions));
+  await page.screenshot({path:path.join(output,'server-schedule-mobile.png'),fullPage:true});pass('390px no page horizontal overflow');
+  assert.equal(errors.length,0);pass('zero page errors');
+  console.log(`BROWSER_PASS: checks=${checks.length} contexts=2 postgres=1 page_errors=${errors.length} mobile=390`);
+}finally{
+  await writeFile(path.join(output,'BROWSER_CHECKS.json'),JSON.stringify({checks,errors},null,2));
+  await Promise.all(contexts.map(c=>c.close()));await browser.close();
+}
