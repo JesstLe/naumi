@@ -12,6 +12,7 @@ export function buildKIECreate(context:VideoWireContext):VideoWireRequest{
     delete values.duration;delete values.aspect_ratio;values.mode=extra.mode??input.resolution;
     values.character_orientation=extra.character_orientation??"image";
   }else if(omni){
+    values.duration=input.durationSeconds;
     if(refs.audios.length)unsupportedWire(context,"Omni音频引用须放入元素");
     if(refs.videos.length>1||images.length>(profile==="kie-kling-omni-transform"?4:profile==="kie-kling-omni-image"?2:profile==="kie-kling-omni-text"?0:30))unsupportedWire(context,"Omni引用数量不符合该分支");
     if(profile==="kie-kling-omni-text"&&input.references.length||profile==="kie-kling-omni-image"&&(!images.length||refs.videos.length))unsupportedWire(context,"Omni所选分支与媒体类型不符");
@@ -27,10 +28,12 @@ export function buildKIECreate(context:VideoWireContext):VideoWireRequest{
       if(profile==="kie-kling-omni-reference"||profile==="kie-kling-omni-transform")unsupportedWire(context,"该Omni分支不支持智能分镜");
       values.customize_multi_shots=false;
     }
-    if(refs.videos.length){
+    if(profile==="kie-kling-omni-image"&&images.length>1)values.aspect_ratio="auto";
+    if(profile==="kie-kling-omni-reference"&&refs.videos.length){
       if(input.generateAudio===true)unsupportedWire(context,"Omni视频参考分支不生成音频");values.aspect_ratio="auto";values.audio=false;
       if(!images.length&&!input.elements?.length){if(input.shots?.length)unsupportedWire(context,"仅视频参考不支持指定分镜");delete values.duration;}
     }
+    if(profile==="kie-kling-omni-transform"&&!images.length){values.aspect_ratio="auto";delete values.duration;}
   }else if(profile==="kie-kling"||profile==="kie-kling-v26"){
     if(refs.videos.length||refs.audios.length||images.length>2)unsupportedWire(context,"Kling视频模式最多两张图片");
     values.mode=extra.mode??"std";delete values.resolution;

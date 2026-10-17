@@ -212,7 +212,21 @@
         "image:reference",
         "video:source_video"
       ],
-      "extra": {}
+      "extra": {"generateAudio": true}
+    },
+    {
+      "id": "kie-kling-omni-transform-2",
+      "profile": "kie-kling-omni-transform",
+      "mode": "video_edit",
+      "refs": ["video:source_video"],
+      "extra": {"generateAudio": true}
+    },
+    {
+      "id": "kie-kling-omni-reference-2",
+      "profile": "kie-kling-omni-reference",
+      "mode": "reference",
+      "refs": ["video:source_video"],
+      "extra": {"generateAudio": false}
     },
     {
       "id": "kie-motion-control-1",

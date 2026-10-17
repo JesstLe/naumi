@@ -10,7 +10,12 @@
 - GitHub已知账户构建限制、103此前限额构建OOM，因此采用最新主线实际验证过的本机Ubuntu隔离Linux备用构建。记录此执行位置调整，不冒称在103完成重型编译；103仍须固定候选运行/兼容回滚及最终持锁发布。
 - 普通/桌面/企业界面顺序构建同源码，NEXT_PUBLIC_MEDIA_VARIANTS=1、Node24、1.5CPU/3GiB/单构建线程，App/视频Worker/媒体Worker来自同版完整镜像。Ubuntu根盘约2%、941GiB可用，Docker当时无其他容器；未清他人镜像/目录。
 
-实际构建进程68864已启动，固定输出 `E:/workspace/naumi/output/canvas-video-fusion-20261013/candidate-6689c4197ba2b00aba5f049dc2581a9f07bb72fe`；Linux源码目录 `/opt/naumi-video-fusion-build-6689c4197ba2b00aba5f049dc2581a9f07bb72fe/source`。最后确认普通版在npm ci，Docker builder 29efe30327fd live；观察超时不是失败，不因此重启。三种镜像、完整包和SHA回执未生成，不能记构建PASS。
+2026-10-17重新核验：68864首次构建确因Node约1.4GiB堆上限OOM终止，保留原日志；同一固定源码以3500MiB容器上限、2304MiB Node堆顺序重试，三个镜像均已成功。固定输出 `E:/workspace/naumi/output/canvas-video-fusion-20261013/candidate-6689c4197ba2b00aba5f049dc2581a9f07bb72fe`；Linux源码目录 `/opt/naumi-video-fusion-build-6689c4197ba2b00aba5f049dc2581a9f07bb72fe/source`。
+
+- 普通5c58b405e183、桌面e7e0cfad6d29、企业6216275bf435；各自完整ID保存在image-*.json及smoke-20261017.json。
+- 完整镜像包566750451字节；实际重新读取全包SHA256为0440f41d3ba47b19033897ddf51f4e0290778c0c90531278de564d95f9a2a365。
+- 三个真实Linux容器分别启动：version精确匹配6689c419/1791991866、三种assetPrefix匹配、UID1001、匿名video/tasks拒绝、Worker脚本与媒体sandbox存在。仅使用回环随机端口及独立匿名volume，结束精确删除自有容器与volume，无正式配置/DB/媒体挂载。
+- 这是旧固定镜像启动补证，不是完整App/Worker/数据库/媒体执行或兼容回滚通过。主线已推进至2d3e2ee23d8e9e09fe2cbcbf753c2db215310a8c，本任务普通快进保留全部整合；旧6689候选不得直接发布，产品差异须复验、重新review并固定新候选。
 
 前置5bae420源码包保留为历史，不能发布。后续纯文档提交不是重新编译理由；产品/部署变更须审对应差异并核验实际固定候选来源。
 
