@@ -10,6 +10,7 @@ checkRosterEmbed(process.execPath,[fileURLToPath(new URL('../../scripts/build-de
 checkRosterEmbed(process.execPath,[fileURLToPath(new URL('../../scripts/build-multipart.mjs',import.meta.url)),'--check'],{stdio:'inherit'});
 checkRosterEmbed(process.execPath,[fileURLToPath(new URL('../../scripts/build-dashboard.mjs',import.meta.url)),'--check'],{stdio:'inherit'});
 checkRosterEmbed(process.execPath,[fileURLToPath(new URL('../../scripts/build-asset-library.mjs',import.meta.url)),'--check'],{stdio:'inherit'});
+checkRosterEmbed(process.execPath,[fileURLToPath(new URL('../../scripts/build-availability.mjs',import.meta.url)),'--check'],{stdio:'inherit'});
 await mkdir(new URL('./dist/', import.meta.url), { recursive: true });
 await build({absWorkingDir:fileURLToPath(new URL('.',import.meta.url)), entryPoints: [fileURLToPath(new URL('./src/server.ts', import.meta.url))],
   outfile: fileURLToPath(new URL('./dist/service.mjs', import.meta.url)),
@@ -43,6 +44,6 @@ await copyFile(new URL('../../design/enterprise-demo/preview.html',import.meta.u
 await copyFile(new URL('./package.json',import.meta.url),new URL('runtime-package.json',directory));await copyFile(new URL('./package-lock.json',import.meta.url),new URL('runtime-package-lock.json',directory));
 const files={};for(const file of ['service.mjs','runtime.mjs','notification-worker.mjs','product.html','runtime-package.json','runtime-package-lock.json',...migrationNames])files[file]=hash(await readFile(new URL(file,directory)));
 let gitRevision=null,sourceDirty=true;const project=fileURLToPath(new URL('../../',import.meta.url));try{const top=execFileSync('git',['rev-parse','--show-toplevel'],{cwd:project,encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();if(resolve(top).toLowerCase()===resolve(project).toLowerCase()){gitRevision=execFileSync('git',['rev-parse','HEAD'],{cwd:project,encoding:'utf8'}).trim();sourceDirty=!!execFileSync('git',['status','--porcelain'],{cwd:project,encoding:'utf8'}).trim();}}catch{}
-const data={format:1,schemaVersion:16,gitRevision,sourceDirty,productSha256:files['product.html'],files,migrations:migrationNames.map(file=>({version:Number(file.slice(0,3)),file,sha256:files[file]}))};
+const data={format:1,schemaVersion:17,gitRevision,sourceDirty,productSha256:files['product.html'],files,migrations:migrationNames.map(file=>({version:Number(file.slice(0,3)),file,sha256:files[file]}))};
 await writeFile(new URL('manifest.json',directory),JSON.stringify({...data,releaseId:hash(canonical(data))},null,2)+'\n');
-console.log('RUNTIME_BUILD_PASS: files='+Object.keys(files).length+' schema=16 source_dirty='+Number(sourceDirty)+' release_id='+hash(canonical(data)));
+console.log('RUNTIME_BUILD_PASS: files='+Object.keys(files).length+' schema=17 source_dirty='+Number(sourceDirty)+' release_id='+hash(canonical(data)));

@@ -50,6 +50,11 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       const principal = await authenticate(req);
       if (!principal) throw new WorkflowError(401, 'AUTH_REQUIRED');
       if (!id.safeParse(principal.enterpriseId).success || !principal.subject) throw new WorkflowError(401, 'INVALID_IDENTITY');
+      if(req.method==='GET'&&url.pathname==='/v1/availability/members')return json(res,200,await store.availability.members(principal,Object.fromEntries(url.searchParams)));
+      if(req.method==='GET'&&url.pathname==='/v1/availability')return json(res,200,await store.availability.get(principal,Object.fromEntries(url.searchParams)));
+      if(req.method==='GET'&&url.pathname==='/v1/availability/history')return json(res,200,await store.availability.history(principal,Object.fromEntries(url.searchParams)));
+      if(req.method==='POST'&&url.pathname==='/v1/availability/preview')return json(res,200,await store.availability.preview(principal,await body(req)));
+      if(req.method==='POST'&&url.pathname==='/v1/availability/save')return json(res,200,await store.availability.save(principal,await body(req)));
       if(url.pathname==='/v1/uploads'){
         if(!uploads)throw new WorkflowError(503,'MULTIPART_NOT_ENABLED');
         if(req.method==='GET'){

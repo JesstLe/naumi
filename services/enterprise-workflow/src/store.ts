@@ -1,3 +1,4 @@
+import {AvailabilityStore,loadAvailability,availabilityKey,capacityMinutes} from './availability-store';
 import {readScope} from './read-scope';
 import {readDashboard} from './dashboard';
 import {sourceAssetSchema,sourceDigest,type SourceAsset} from './source-files';
@@ -32,7 +33,8 @@ function stable(value: unknown): string {
 export type VerifySource=(proof:string,actor:Actor,command:Command)=>Promise<{sourceSubject:string}>;
 export class WorkflowStore {
   readonly calendars:CalendarStore;
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore) {this.calendars=new CalendarStore(pool,resolveActor);}
+  readonly availability:AvailabilityStore;
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true) {this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
@@ -42,10 +44,10 @@ export class WorkflowStore {
     if (!actor || actor.enterpriseId !== principal.enterpriseId || actor.subject !== principal.subject || actor.teamId !== principal.teamId) throw new WorkflowError(403, 'MEMBERSHIP_REQUIRED');
     return actor;
   }
-  private async transaction<T>(run: (tx: PoolClient) => Promise<T>) {
+  private async transaction<T>(run: (tx: PoolClient) => Promise<T>,repeatable=false) {
     const tx = await this.pool.connect();
     try {
-      await tx.query('BEGIN');
+      await tx.query(repeatable?'BEGIN ISOLATION LEVEL REPEATABLE READ':'BEGIN');
       await tx.query("SET LOCAL lock_timeout='3s'; SET LOCAL statement_timeout='10s'");
       const value = await run(tx); await tx.query('COMMIT'); return value;
     }
@@ -109,16 +111,18 @@ export class WorkflowStore {
       const unplanned=Number((await tx.query(`SELECT count(*) AS n ${from} WHERE ${where} AND (t->>'planStart') IS NULL AND $8::text IS NOT NULL AND $9::text IS NOT NULL`,values)).rows[0].n);
       const days=Array.from({length:7},(_,i)=>new Date(Date.parse(q.start)+i*86400000).toISOString().slice(0,10));const loads:Record<string,Record<string,number>>={};
       const visible=rows.filter(r=>canRead(a,r.document)),teamIds=[...new Set(visible.map(r=>(r.document as WorkOrder).teamId).filter((x):x is string=>!!x))],calendars=await loadCalendars(tx,a.enterpriseId,teamIds);
+      const personalEnabled=this.availabilityEnabled&&!!(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=17')).rowCount;
+      const personal=await loadAvailability(tx,a.enterpriseId,visible.flatMap(r=>r.document.teamId&&r.task.assignee?[{teamId:r.document.teamId,subject:r.task.assignee}]:[]),personalEnabled);
       const names=new Map((await tx.query('SELECT team_id,name FROM enterprise_workflow.teams WHERE enterprise_id=$1 AND team_id=ANY($2::uuid[])',[a.enterpriseId,teamIds])).rows.map(r=>[r.team_id,r.name]));
-      const groups=new Map<string,{key:string;teamId:string|null;teamName:string;subject:string;calendarRevision:number;configured:boolean;capacities:Record<string,number>;loads:Record<string,number>}>(),noWorkingDayTasks:{orderId:string;taskId:string;title:string;estimatedHours:number}[]=[];
-      const tasks=visible.map(r=>{const o=r.document as WorkOrder,t=r.task as WorkOrder['tasks'][number],who=t.assignee||'__unassigned',calendar=calendars.get(o.teamId||'')??legacyCalendar(),key=JSON.stringify([o.teamId??null,who]);loads[who]??={};
-        if(!groups.has(key))groups.set(key,{key,teamId:o.teamId??null,teamName:names.get(o.teamId)||'未指定团队',subject:who,calendarRevision:calendar.revision,configured:calendar.configured,capacities:Object.fromEntries(days.map(d=>[d,dayMinutes(calendar.config,d)/60])),loads:{}});
+      const groups=new Map<string,{key:string;teamId:string|null;teamName:string;subject:string;calendarRevision:number;configured:boolean;availabilityRevision:number;personalMinutes:Record<string,number|null>;teamCapacities:Record<string,number>;capacities:Record<string,number>;loads:Record<string,number>}>(),noWorkingDayTasks:{orderId:string;taskId:string;title:string;estimatedHours:number}[]=[];
+      const tasks=visible.map(r=>{const o=r.document as WorkOrder,t=r.task as WorkOrder['tasks'][number],who=t.assignee||'__unassigned',calendar=calendars.get(o.teamId||'')??legacyCalendar(),key=JSON.stringify([o.teamId??null,who]);loads[who]??={};const individual=personal.get(availabilityKey(o.teamId||'',who));
+        if(!groups.has(key))groups.set(key,{key,teamId:o.teamId??null,teamName:names.get(o.teamId)||'未指定团队',subject:who,calendarRevision:calendar.revision,configured:calendar.configured,availabilityRevision:individual?.revision||0,personalMinutes:Object.fromEntries(days.map(d=>[d,capacityMinutes(dayMinutes(calendar.config,d),individual,d).personalMinutes])),teamCapacities:Object.fromEntries(days.map(d=>[d,dayMinutes(calendar.config,d)/60])),capacities:Object.fromEntries(days.map(d=>[d,capacityMinutes(dayMinutes(calendar.config,d),individual,d).minutes/60])),loads:{}});
         const group=groups.get(key)!,allocation=allocateHours(calendar.config,t.planStart!,t.planEnd!,t.estimatedHours||0);
         if(allocation.noWorkingDay)noWorkingDayTasks.push({orderId:o.id,taskId:t.id,title:t.title,estimatedHours:t.estimatedHours||0});
         for(const day of days){const hours=allocation.byDay[day]||0;loads[who][day]=(loads[who][day]||0)+hours;group.loads[day]=(group.loads[day]||0)+hours;}
         return {order:{id:o.id,teamId:o.teamId,requestTeamId:o.requestTeamId,title:o.title,status:o.status,version:o.version,requester:o.requester},task:t,loadGroup:key,calendarRevision:calendar.revision,noWorkingDay:allocation.noWorkingDay};});
-      return {tasks,days,loads,workloads:[...groups.values()],noWorkingDayTasks,unplanned,timezone:'Asia/Shanghai',distribution:[...groups.values()].some(g=>g.configured)?'team-working-minutes':'calendar-day-even',referenceDailyHours:8};
-    });
+      return {tasks,days,loads,workloads:[...groups.values()],noWorkingDayTasks,unplanned,timezone:'Asia/Shanghai',distribution:[...groups.values()].some(g=>g.configured)?'team-working-minutes':'calendar-day-even',referenceDailyHours:8,availabilityEnabled:personalEnabled,capacityScope:'execution-team-person'};
+    },true);
   }
   async facts(principal:Principal,raw:unknown={}){
     const q=z.strictObject({page:z.coerce.number().int().min(1).max(10000).default(1)}).parse(raw);
