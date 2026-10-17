@@ -1,5 +1,28 @@
-import { defaultFrameSource, frameRatio, type FrameInput } from "./frame-choice";
 import type { ImagegenRequest, Intent } from "./types";
+
+export type FrameInput = ImagegenRequest["inputs"][number] & { label?: string; width?: number; height?: number };
+export type FrameSize = { width: number; height: number };
+
+export function frameRatio(size?: FrameSize): string | undefined {
+  if (!size || !Number.isInteger(size.width) || !Number.isInteger(size.height) || size.width <= 0 || size.height <= 0) return;
+  const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
+  const divisor = gcd(size.width, size.height);
+  return `${size.width / divisor}:${size.height / divisor}`;
+}
+
+/** A reference supplies the layout; an edit/insert target supplies the subject.
+ * Explicit target-edit workflows and masks keep their editing canvas instead.
+ * Never infer a reference from array order, dimensions, or prompt keywords. */
+export function defaultFrameSource(inputs: FrameInput[], useCase = ""): FrameInput | undefined {
+  const sources = inputs.filter(input => input.role !== "mask");
+  if (sources.length === 1) return sources[0];
+  const targets = sources.filter(input => input.role === "edit-target");
+  const referenceLayout = !useCase || ["compositing", "product-mockup", "ads-marketing"].includes(useCase);
+  if (inputs.some(input => input.role === "mask") || !referenceLayout) return targets.length === 1 ? targets[0] : undefined;
+  const references = sources.filter(input => input.role === "reference");
+  if (references.length === 1) return references[0];
+  if (!references.length && targets.length === 1) return targets[0];
+}
 
 /** Resolve once before quoting/freezing; never reinterpret an already accepted plan. */
 export function automaticFrameRatio(request: ImagegenRequest, inputs: FrameInput[], operation: Intent["operation"], useCase?: string): string | undefined {

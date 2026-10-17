@@ -24,8 +24,6 @@ import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type Ca
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { CanvasParameterPopover } from "./parameter-popover";
-import {ImagegenPanel,type ImagegenPanelInput} from "@/components/imagegen/imagegen-panel";
-import type {ImagegenResult} from "@/lib/imagegen/types";
 import {submitCanvasImagegen} from "@/lib/imagegen/canvas-client";
 import {canvasReceipts,clearCanvasReceipt,moveCanvasReceipt} from "@/lib/imagegen/canvas-receipts";
 import {pollImagegen} from "@/lib/imagegen/client";
@@ -1642,8 +1640,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const cancelEditRef = useRef(false); // Esc 取消时跳过失焦保存
   const [editPrompt, setEditPrompt] = useState("");
   const [genModel, setGenModel] = useState("");
-  const [imagegenPanel,setImagegenPanel]=useState<{inputs:ImagegenPanelInput[];sourceNodeId?:string;x:number;y:number}|null>(null);
-  const imagegenPlacement=useRef(new Map<string,number>());
   const { quality: genQuality, imageCost, modelConfig } = useImageQuality("canvas.image", genModel);
   const expandQuality = useImageQuality("canvas.expand").quality;
   const textEditQuality = useImageQuality("canvas.text-edit").quality;
@@ -8412,21 +8408,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setRatioMenuOpen((v) => !v);
   };
   const generationParameters = canvasModelParameters(imageModels.find(m => m.id === genModel)?.generationParameters);
-  function openImagegenPanel(){
-    if(!canFeature("generate"))return;
-    const images=active?.members.filter(a=>!a.videoUrl&&(selectedBatchIds.includes(a.id)||a.id===selected?.id))||[];
-    const point=selected?rfRef.current?.getNode(selected.id)?.position:rfRef.current?.screenToFlowPosition({x:window.innerWidth/2,y:window.innerHeight/2});
-    setImagegenPanel({inputs:images.map((a,i)=>({artworkId:a.id,role:i===0?"edit-target":"reference",url:cdnUrl(a.image),label:a.title})),sourceNodeId:selected?.id||active?.members[0]?.id,x:(point?.x||0)+(selected?.canvasWidth||selected?.width||300)+50,y:point?.y||0});
-  }
-  async function mountImagegenResult(result:ImagegenResult){
-    if(!imagegenPanel||!result.artifacts.length)return;
-    const artifacts=result.artifacts.filter(a=>!works?.some(w=>w.id===a.artworkId&&w.canvasX!=null&&w.canvasY!=null));
-    if(!artifacts.length)return;
-    let y=imagegenPlacement.current.get(result.operationId)??imagegenPanel.y;
-    for(const artifact of artifacts){const response=await privateFetchRaw("/api/artworks/position",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:artifact.artworkId,x:Math.round(imagegenPanel.x),y:Math.round(y)})});if(!response.ok)throw new Error("结果已保存，画布位置保存失败");y+=artifact.height+NODE_LABEL_H+24;}
-    imagegenPlacement.current.set(result.operationId,y);
-    const ids=artifacts.map(a=>a.artworkId),fresh=await mergeWorks(ids);pushAddUndoMany(ids,fresh);
-  }
   const activeImageModelLabel =
     imageModels.find((item) => item.id === genModel)?.label || (canvasImageCatalogError ? "模型加载失败" : "模型加载中");
   const modelControl = (disabled = false) => (
@@ -10413,7 +10394,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 "overflow-x-auto"
               )}
             >
-              {canFeature("generate")&&<button type="button" disabled={readOnly} onClick={openImagegenPanel} className="canvas-ui-action flex h-[34px] items-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold">图像创作</button>}
               {selected && <>
               <button type="button" data-action="rename" aria-label={t("canvas.editName")} title={t("canvas.toolbar.renameHint")}
                 disabled={!selected || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={() => { if (selected) { setNodeRenameValue(selected.title); setRenamingNodeId(selected.id); } }}
@@ -12011,7 +11991,6 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
       {videoMedia&&videoMedia.projectKey===activeKey&&<MediaActionsDialog key={`${user?.email}:${videoMedia.projectKey}:${videoMedia.id}`} initial={videoMedia.initial} sourceId={videoMedia.id} projectKey={videoMedia.projectKey} choices={videoInputChoices.filter(choice=>choice.available&&choice.kind!=="text").map(choice=>({id:choice.nodeId,title:choice.title,kind:choice.kind as MediaInputChoice["kind"],url:choice.value}))} light={lightCanvas} readOnly={readOnly||isNodeLocked(videoMedia.id)} jobs={mediaJobStore.jobs} historyError={mediaJobStore.error} canLoadMore={!!mediaJobStore.nextCursor} onLoadMore={mediaJobStore.loadMore} onQuote={mediaJobStore.estimate} onSubmit={mediaJobStore.submit} onCancel={mediaJobStore.cancel} onClose={()=>setVideoMedia(null)}/>}
       {videoHistoryId&&videoNodesStore.nodes.find(node=>node.id===videoHistoryId&&node.projectKey===activeKey)&&<VideoHistoryPicker key={`${user?.email}:${targetEmail}:${activeKey}:${videoHistoryId}`} email={targetEmail||user?.email} projectKey={activeKey} node={videoNodesStore.getNode(videoHistoryId)} projects={projects.map(project=>({key:project.key,name:project.name}))} assets={videoAssetStore.assets} canLoadMoreAssets={!!videoAssetStore.nextCursor} onLoadMoreAssets={videoAssetStore.loadMore} request={privateFetchRaw} light={lightCanvas} readOnly={readOnly||isNodeLocked(videoHistoryId)} onClose={()=>setVideoHistoryId(null)} onSelectResult={(id,revision)=>selectVideoResult(videoHistoryId,id,revision)} onReuseSettings={async snapshot=>{const node=videoNodesStore.getNode(videoHistoryId),account=canvasAccountRef.current,epoch=canvasContextEpochRef.current;if(!node||readOnly||isNodeLocked(node.id))throw new Error("无法修改视频设置");const draft=videoHistoryDraft(snapshot);await mergeWorks(draft.choices.filter(choice=>choice.kind!=="text").map(choice=>choice.nodeId));if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)throw new Error("账号或项目已切换");await saveVideoDraft(node.id,{title:node.title,config:draft.config,inputs:draft.inputs,expectedRevision:node.revision});if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;setVideoHistoryId(null);openVideoEditor(node.id);}} onSent={async result=>{await mergeWorks([result.artworkId,...(result.artworkIds||[]),...(result.inputArtworkIds||[])]);await videoNodesStore.refresh();await videoAssetStore.refresh();}} onRetried={async()=>{await videoNodesStore.refresh();await videoTaskStore.refresh();await refreshCredits();}} onProcess={(id,action)=>{const account=canvasAccountRef.current;void mergeWorks([id]).then(()=>{if(account===canvasAccountRef.current)extractVideoToCanvas(id,action);}).catch(error=>flashTip(error instanceof Error?error.message:"媒体加载失败"));}}/>}
-      {imagegenPanel&&<ImagegenPanel entry="canvas" inputs={imagegenPanel.inputs} modelId={genModel} sourceNodeId={imagegenPanel.sourceNodeId} onClose={()=>setImagegenPanel(null)} onResult={result=>{void mountImagegenResult(result).catch(e=>flashTip(e instanceof Error?e.message:"结果已保存，请刷新画布"));}}/>}
       {/* 从生成历史选择:作品选择器 */}
       {historyPicker && (
         <div
