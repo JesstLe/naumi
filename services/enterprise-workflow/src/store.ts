@@ -161,12 +161,85 @@ export class WorkflowStore {
   async execute(principal: Principal, raw: unknown,proof='') {
     return this.executeCommand(principal,raw,undefined,false,proof);
   }
-  private async executeCommand(principal: Principal, raw: unknown, source?:z.infer<typeof sourceSchema>,dryRun=false,proof='') {
+  private async batchActor(tx:PoolClient,p:Principal){
+    const a=await this.actor(tx,p);
+    if(!a.teamId||!a.permissions.includes('dispatch'))throw new WorkflowError(403,'DISPATCH_REQUIRED');
+    if(!(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=13')).rowCount)throw new WorkflowError(503,'BATCH_MIGRATION_REQUIRED');
+    return a;
+  }
+  private async batchRow(tx:PoolClient,p:Principal,batchId:string,lock=''){
+    const a=await this.batchActor(tx,p);
+    const row=(await tx.query('SELECT * FROM enterprise_workflow.batch_plans WHERE enterprise_id=$1 AND id=$2 AND team_id=$3 AND subject=$4 AND identity_hash=$5 '+lock,[a.enterpriseId,batchId,a.teamId,a.subject,sourceDigest(p)])).rows[0];
+    if(!row)throw new WorkflowError(404,'BATCH_NOT_FOUND');return row;
+  }
+  async planBatch(p:Principal,raw:unknown){
+    const b=batchPreviewSchema.parse(raw),inputHash=sourceDigest(b);
+    const prior=await this.transaction(async tx=>{const a=await this.batchActor(tx,p);return (await tx.query('SELECT * FROM enterprise_workflow.batch_plans WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,b.batchId])).rows[0];});
+    if(prior){if(prior.identity_hash!==sourceDigest(p)||prior.team_id!==p.teamId||prior.subject!==p.subject)throw new WorkflowError(404,'BATCH_NOT_FOUND');if(prior.input_hash!==inputHash)throw new WorkflowError(409,'BATCH_INPUT_CONFLICT');return this.getBatch(p,b.batchId);}
+    const preview=await this.previewBatch(p,b),planHash=sourceDigest({identity:p,preview});
+    await this.transaction(async tx=>{
+      const a=await this.batchActor(tx,p);
+      await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`batch-owner:${a.enterpriseId}:${a.teamId}:${a.subject}`]);
+      const again=(await tx.query('SELECT * FROM enterprise_workflow.batch_plans WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,b.batchId])).rows[0];
+      if(again){if(again.identity_hash!==sourceDigest(p))throw new WorkflowError(404,'BATCH_NOT_FOUND');if(again.input_hash!==inputHash)throw new WorkflowError(409,'BATCH_INPUT_CONFLICT');return;}
+      if(Number((await tx.query('SELECT count(*) AS n FROM enterprise_workflow.batch_plans WHERE enterprise_id=$1 AND team_id=$2 AND subject=$3 AND closed_at IS NULL',[a.enterpriseId,a.teamId,a.subject])).rows[0].n)>=100)throw new WorkflowError(409,'BATCH_OPEN_LIMIT');
+      await tx.query('INSERT INTO enterprise_workflow.batch_plans(enterprise_id,id,team_id,subject,identity_hash,input_hash,plan_hash,document)VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[a.enterpriseId,b.batchId,a.teamId,a.subject,sourceDigest(p),inputHash,planHash,preview]);
+    });
+    return this.getBatch(p,b.batchId);
+  }
+  async listBatches(p:Principal,raw:unknown={}){
+    const q=z.strictObject({page:z.coerce.number().int().min(1).max(10000).default(1)}).parse(raw);
+    return this.transaction(async tx=>{const a=await this.batchActor(tx,p),values=[a.enterpriseId,a.teamId,a.subject,sourceDigest(p)];
+      const total=Number((await tx.query('SELECT count(*) AS n FROM enterprise_workflow.batch_plans WHERE enterprise_id=$1 AND team_id=$2 AND subject=$3 AND identity_hash=$4',values)).rows[0].n);
+      const rows=(await tx.query('SELECT id,created_at,closed_at,jsonb_array_length(document->\'groups\') AS groups FROM enterprise_workflow.batch_plans WHERE enterprise_id=$1 AND team_id=$2 AND subject=$3 AND identity_hash=$4 ORDER BY created_at DESC,id LIMIT 30 OFFSET $5',[...values,(q.page-1)*30])).rows;
+      return {batches:rows,total,page:q.page,pageSize:30};
+    });
+  }
+  async getBatch(p:Principal,batchId:string){
+    z.string().uuid().parse(batchId);
+    const row=await this.transaction(tx=>this.batchRow(tx,p,batchId));
+    const plan=row.document as Awaited<ReturnType<WorkflowStore['previewBatch']>>,groups=[];
+    for(const g of plan.groups){
+      try{
+        const o=await this.get(p,g.command.orderId);
+        if(o.teamId!==p.teamId)throw new WorkflowError(404,'NOT_FOUND');
+        const prior=await this.transaction(async tx=>{await this.batchActor(tx,p);return (await tx.query('SELECT fingerprint,result FROM enterprise_workflow.commands WHERE enterprise_id=$1 AND id=$2',[p.enterpriseId,g.command.commandId])).rows[0];});
+        if(prior){if(prior.fingerprint!==sourceDigest({principal:p,command:g.command}))throw new WorkflowError(409,'IDEMPOTENCY_CONFLICT');groups.push({...g,state:'success',version:prior.result.version});continue;}
+        if(!g.ok){groups.push({...g,state:'skipped'});continue;}
+        if(row.closed_at){groups.push({...g,state:'closed'});continue;}
+        try{const r=await this.executeCommand(p,g.command,undefined,true);groups.push({...g,state:r.replayed?'success':'ready',...(r.replayed?{version:r.order.version}:{})});}
+        catch(e){if(!(e instanceof WorkflowError))throw e;groups.push({...g,state:'stale',error:e.code});}
+      }catch(e){if(!(e instanceof WorkflowError))throw e;groups.push({orderId:g.command.orderId,command:null,state:'unavailable',error:e.code,ok:false});}
+    }
+    // Recheck the current identity after multi-order inspection; no automatic mutations.
+    const current=await this.transaction(tx=>this.batchRow(tx,p,batchId));
+    return {batchId,planHash:row.plan_hash,createdAt:row.created_at,closedAt:current.closed_at,closeReason:current.close_reason,groups:current.closed_at?groups.map(g=>g.state==='ready'?{...g,state:'closed'}:g):groups,atomicity:'per-order',persisted:true};
+  }
+  async runBatch(p:Principal,raw:unknown){
+    const q=z.strictObject({batchId:z.string().uuid(),orderId:z.string().uuid(),planHash:z.string().regex(/^[a-f0-9]{64}$/)}).parse(raw);
+    const row=await this.transaction(tx=>this.batchRow(tx,p,q.batchId));
+    if(row.plan_hash!==q.planHash)throw new WorkflowError(409,'BATCH_PLAN_CHANGED');
+    const g=(row.document as Awaited<ReturnType<WorkflowStore['previewBatch']>>).groups.find(g=>g.command.orderId===q.orderId);
+    if(!g?.ok)throw new WorkflowError(409,'BATCH_GROUP_NOT_READY');
+    return this.executeCommand(p,g.command,undefined,false,'',q);
+  }
+  async closeBatch(p:Principal,raw:unknown){
+    const q=z.strictObject({batchId:z.string().uuid(),planHash:z.string().regex(/^[a-f0-9]{64}$/),reason:z.string().trim().min(1).max(2000)}).parse(raw);
+    return this.transaction(async tx=>{const row=await this.batchRow(tx,p,q.batchId,'FOR UPDATE');
+      if(row.plan_hash!==q.planHash)throw new WorkflowError(409,'BATCH_PLAN_CHANGED');
+      if(row.closed_at){if(row.close_reason!==q.reason)throw new WorkflowError(409,'BATCH_CLOSE_CONFLICT');return {closed:true,replayed:true};}
+      await tx.query('UPDATE enterprise_workflow.batch_plans SET closed_at=now(),close_reason=$3 WHERE enterprise_id=$1 AND id=$2',[p.enterpriseId,q.batchId,q.reason]);return {closed:true,replayed:false};
+    });
+  }
+  private async executeCommand(principal: Principal, raw: unknown, source?:z.infer<typeof sourceSchema>,dryRun=false,proof='',batchGuard?:{batchId:string;planHash:string}) {
     const parsed = commandSchema.safeParse(raw);
     if (!parsed.success) throw new WorkflowError(400, 'INVALID_COMMAND');
     const command = parsed.data;
     return this.transaction(async tx => {
       const actor = await this.actor(tx, principal);
+      // Legacy command endpoint must not bypass a persisted plan's closure or frozen body.
+      if(!batchGuard&&command.action.type==='batch-tasks'&&(await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=13')).rowCount){const saved=(await tx.query('SELECT plan_hash FROM enterprise_workflow.batch_plans WHERE enterprise_id=$1 AND id=$2',[principal.enterpriseId,command.action.batchId])).rows[0];if(saved)batchGuard={batchId:command.action.batchId,planHash:saved.plan_hash};}
+      if(batchGuard){const row=await this.batchRow(tx,principal,batchGuard.batchId,'FOR SHARE');if(row.closed_at)throw new WorkflowError(409,'BATCH_CLOSED');if(row.plan_hash!==batchGuard.planHash)throw new WorkflowError(409,'BATCH_PLAN_CHANGED');const group=row.document.groups.find((g:{command:Command;ok:boolean})=>g.command.orderId===command.orderId);if(!group?.ok||sourceDigest(group.command)!==sourceDigest(command))throw new WorkflowError(409,'BATCH_COMMAND_CHANGED');}
       // Fixed lock order; tenant-scoped command dedupe also covers concurrent reuse across orders.
       await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`command:${principal.enterpriseId}:${command.commandId}`]);
       if(command.action.type==='accept-delivery')await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`performance:${principal.enterpriseId}:${principal.teamId}`]);
