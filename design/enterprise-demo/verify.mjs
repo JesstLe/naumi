@@ -1,0 +1,16 @@
+import { readFile } from 'node:fs/promises';
+import { Script } from 'node:vm';
+import assert from 'node:assert/strict';
+const root=new URL('./',import.meta.url);
+const html=await readFile(new URL('preview.html',root),'utf8');
+const source=await readFile(new URL('demo.js',root),'utf8');
+const inline=html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+assert.equal(inline,source.replaceAll('\r\n','\n'));
+new Script(inline);new Script(await readFile(new URL('browser-check.js',root),'utf8'));
+assert(!html.includes('/*INLINE_'));
+assert(!/<script[^>]+src=|<link[^>]+href=|@import|https?:\/\/(?!www\.w3\.org\/2000\/svg)/i.test(html));
+assert(!/\bfetch\s*\(|XMLHttpRequest|WebSocket/.test(inline));
+for(const fn of ['newRequirement','reqDetail','planReq','taskDetail','routeTest','performancePage','assetDetail'])assert(inline.includes(`function ${fn}(`));
+assert(inline.includes("const KEY='naumi-enterprise-demo-v1'"));
+assert(html.includes('仅使用本地示例数据')&&html.includes('正式规则、评分、薪酬与人事决策均未启用'));
+console.log('DEMO_STATIC_PASS: inline_script=parseable network_code=0 external_assets=0 local_storage=1 workflow_views=8');
