@@ -3,6 +3,7 @@ import {createHash} from "node:crypto";
 import {imagegenRequestSchema} from "./schema";
 import {resolveImagegenIntent} from "./intent";
 import {readImagegenInputs} from "./inputs";
+import { automaticFrameRatio } from "./frame-ratio";
 import {getModelAdministration} from "../model-config/server";
 import {simulateModel} from "../model-config/runtime";
 import {assertToolScope,featureDefaultModel} from "../model-config/tool-scope";
@@ -26,12 +27,15 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  if(intent.operation==="cutout"&&!allows(access,"cutout"))throw new FeatureAccessError("抠图功能尚未授权");
  if(request.output.format==="jpeg"&&(intent.background==="transparent"||!request.output.flattenColor))throw new Error("JPEG不保留透明度，请选择PNG/WebP，或明确不透明背景和扁平化颜色");
  const inputs=await readImagegenInputs(request,owner);
+ // Keep the caller fingerprint for retry lookup; persist the resolved frame in the frozen plan.
+ const fingerprint=imagegenFingerprint(request);
+ const frameRatio=automaticFrameRatio(request,inputs,intent.operation,intent.useCase);
+ if(frameRatio){request.parameters.ratio=frameRatio;intent.requirements=intent.requirements.map(r=>r.name==="ratio"?{...r,value:frameRatio}:r);}
  const maskedTarget=inputs.some(input=>input.role==="mask")&&inputs.find(input=>input.role==="edit-target");
  if(maskedTarget&&request.parameters.ratio&&request.parameters.ratio!=="auto"){
   const [width,height]=request.parameters.ratio.split(":").map(Number);
   if(Math.abs(width/height-maskedTarget.width/maskedTarget.height)>0.01)throw new Error("蒙版局部编辑需保留目标画面比例，请选择自适应或原图比例");
  }
- const fingerprint=imagegenFingerprint(request);
  if(request.parameters.width&&request.parameters.height){
   if(Math.max(request.parameters.width,request.parameters.height)>MAX_GENERATION_DIMENSION)throw new Error(`当前生成路径的实际尺寸上限为${MAX_GENERATION_DIMENSION}，请按已发布规格选择`);
   const effective=resolutionForLongSide(Math.max(request.parameters.width,request.parameters.height));
