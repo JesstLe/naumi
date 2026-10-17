@@ -1,0 +1,31 @@
+(async()=>{
+ const checks=[],ok=(v,name)=>{if(!v)throw Error(name);checks.push(name)},q=s=>document.querySelector(s),click=s=>{const el=q(s);if(!el)throw Error('missing '+s);el.click()},wait=async predicate=>{for(let i=0;i<150;i++){if(predicate())return;await new Promise(r=>setTimeout(r,100))}throw Error('wait timeout '+predicate.toString())};
+ sourceState.tab='local';view='assets';shell();
+ const saved=()=>[KEY,SCHED_KEY,'naumi-enterprise-scheduling-v1'].map(k=>localStorage.getItem(k));const before=saved(),facts=JSON.stringify(state.facts);
+ ok(q('.sidebar')&&q('.topbar')&&document.querySelectorAll('.asset-card').length===8,'original product shell and local assets');
+ ok(!document.body.innerHTML.includes('/admin/enterprise-workbench'),'no admin product entry');
+ click('[data-source-tab="naumi"]');await wait(()=>sourceState.data?.rows.length===2&&!sourceState.loading);
+ ok(sourceState.context.viewer.email==='owner@fixture.invalid','non-admin source owner');
+ ok(q('#sourceEnterprise').disabled&&q('#sourceEnterprise').options.length===1,'dedicated enterprise locked by server');
+ ok(q('.source-caption').textContent.includes('隔离验收数据'),'fixture not claimed live');
+ await wait(()=>document.querySelectorAll('[data-source-image] img').length===2&&[...document.querySelectorAll('[data-source-image] img')].every(i=>i.complete&&i.naturalWidth>0));
+ ok(q('.source-table').textContent.includes('提示词-0'),'source prompt rendered');
+ ok([...document.querySelectorAll('[data-source-image] img')].every(i=>i.src.startsWith('blob:')),'protected media blobs not raw private urls');
+ const subject=sourceState.context.viewer.email;switchRole('ops');ok(sourceState.context.viewer.email===subject,'demo role does not change source identity');
+ click('[data-source-kind="generations"]');await wait(()=>sourceState.data?.kind==='generations');
+ const charged=sourceState.data.rows.find(r=>r.account.email==='staff@fixture.invalid'),missing=sourceState.data.rows.find(r=>r.account.email==='manager@fixture.invalid');
+ ok(charged.credits.charged===6&&charged.credits.quoted===9&&missing.credits.charged===null,'quoted vs linked charge vs missing evidence');
+ click('[data-source-kind="ledger"]');await wait(()=>sourceState.data?.kind==='ledger');ok(sourceState.data.rows.some(r=>r.credits.delta===-6)&&sourceState.data.rows.some(r=>r.credits.delta===2),'charge and refund separate entries');
+ ok(JSON.stringify(before)===JSON.stringify(saved())&&facts===JSON.stringify(state.facts),'source reads preserve workflow and scheduling storage');
+ const real=window.fetch;let release,started=false;
+ window.fetch=async(...args)=>{const url=String(args[0]);if(url.startsWith('/api/enterprise/integration?')&&url.includes('action=records')&&url.includes('kind=artworks')){const response=await real(...args);started=true;await new Promise(r=>release=r);return response}return real(...args)};
+ click('[data-source-kind="artworks"]');await wait(()=>started);click('[data-source-kind="generations"]');await wait(()=>sourceState.data?.kind==='generations');release();await new Promise(r=>setTimeout(r,150));window.fetch=real;ok(sourceState.data.kind==='generations','late old request ignored');
+ const old=JSON.stringify(sourceState.data);window.fetch=async(...args)=>String(args[0]).startsWith('/api/enterprise/integration?')?new Response(JSON.stringify({error:'fixture outage'}),{status:503,headers:{'content-type':'application/json'}}):real(...args);
+ click('#sourceRefresh');await wait(()=>!!sourceState.error);ok(sourceState.data===null&&!q('.source-table'),'source failure clears rows rather than fake fallback');window.fetch=real;click('#sourceRetry');await wait(()=>sourceState.data?.kind==='generations');
+ await real('/fixture/grant?enabled=0');click('#sourceRefresh');await wait(()=>!!sourceState.error||!sourceState.loading&&sourceState.context?.enterprises.length===0);ok(sourceState.data===null&&!q('.source-table'),'revocation removes source content');await real('/fixture/grant?enabled=1');click('#sourceRefresh');await wait(()=>sourceState.data?.rows.length===2);
+ click('[data-source-tab="local"]');ok(document.querySelectorAll('.asset-card').length===8&&sourceState.urls.length===0,'switch to local assets clears source and releases blobs');
+ click('[data-view="schedule"]');ok(q('#scDesign')&&q('.sidebar'),'original scheduling design preserved');
+ view='assets';sourceState.tab='naumi';shell();await wait(()=>sourceState.data?.rows.length===2);ok(q('.source-table'),'return to source tab reloads authorized data');
+ ok(document.documentElement.scrollWidth<=innerWidth,'no document overflow');
+ return {passed:checks.length,checks,sourceIdentity:sourceState.context.viewer.email,sourceKind:sourceState.data.kind,storageUnchanged:JSON.stringify(before)===JSON.stringify(saved())};
+})()

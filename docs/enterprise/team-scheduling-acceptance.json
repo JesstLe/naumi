@@ -1,0 +1,355 @@
+{
+  "schema": 1,
+  "items": [
+    {
+      "id": "A01",
+      "description": "团队排期展示父需求和关联任务，展开收起不丢数据",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A02",
+      "description": "总表/执行人/需求方分组共用taskId，无业务复制",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A03",
+      "description": "筛选子项保留父上下文，空态可清除",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A04",
+      "description": "名称列固定、内部滚动，390px不整页横溢出",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A05",
+      "description": "单元格显示正确类型，状态只读且可进入任务详情",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A06",
+      "description": "调整列顺序、宽度、别名、显隐、颜色实际生效",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A07",
+      "description": "核心名称列不隐藏，非法宽度不保存",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A08",
+      "description": "密度、摘要、组合布局配置有效",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A09",
+      "description": "草稿退出不影响发布版，重进恢复草稿",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A10",
+      "description": "发布产生新版本，刷新恢复",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A11",
+      "description": "非主管发布/字段管理被演示门禁拒绝",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A12",
+      "description": "个人配置与团队模板分离且按账号保存",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A13",
+      "description": "恢复历史产生新版本，任务和事实不回退",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A14",
+      "description": "自定义文本/数字/日期/单选字段创建与填值",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A15",
+      "description": "重名/非法选项/超额字段被拒绝",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A16",
+      "description": "归档字段隐藏并保留原值",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A17",
+      "description": "计划编辑写回既有任务、原因留日志",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A18",
+      "description": "日期倒置、非法估时和数量被拒绝",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A19",
+      "description": "已验收任务锁定排期",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A20",
+      "description": "同一任务出现在总表和周表，跨日连续显示",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A21",
+      "description": "估时均摊工作日，超配和资料缺失提示",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A22",
+      "description": "修改承诺时间不伪造实际提交/验收时间",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A23",
+      "description": "版本冲突不覆盖新发布配置",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A24",
+      "description": "存储异常、损坏结构有恢复提示，非静默成功",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A25",
+      "description": "输入HTML仅显示文本，不执行",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A26",
+      "description": "既有需求至验收流程回归，贡献不重复",
+      "phase": "P1",
+      "status": "prototype-implemented",
+      "evidence": "schedule-tests.mjs / schedule-browser-check.js / browser-check.js / BROWSER_CHECKS.json"
+    },
+    {
+      "id": "A27",
+      "description": "服务器权限/事务/CAS/多人一致性",
+      "phase": "P2",
+      "status": "planned",
+      "evidence": "not implemented"
+    },
+    {
+      "id": "A28",
+      "description": "正式附件、组织映射、工作日历与任务交接",
+      "phase": "P2",
+      "status": "planned",
+      "evidence": "not implemented"
+    },
+    {
+      "id": "A29",
+      "description": "钉钉样本导入、重复预演、异常队列与切换",
+      "phase": "P3",
+      "status": "planned",
+      "evidence": "not implemented"
+    },
+    {
+      "id": "A30",
+      "description": "蓝绿、就绪、切流、排空及兼容回退",
+      "phase": "P2上线",
+      "status": "planned",
+      "evidence": "not implemented"
+    },
+    {
+      "id": "B01",
+      "description": "五默认视图共享任务、视图名与类型独立",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B02",
+      "description": "新增/复制/改名/排序/归档/恢复，不复制业务",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B03",
+      "description": "最后视图/重名/越界/非主管操作拒绝",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B04",
+      "description": "各视图独立草稿、版本和个人设置",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B05",
+      "description": "当前视图版本恢复不影响其他视图和业务",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B06",
+      "description": "v1配置迁移保留布局/值/个人/v1原键",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B07",
+      "description": "排期看板按选项建列，空列/未分类保留",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B08",
+      "description": "卡片字段/列序/showEmpty配置发布有效",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B09",
+      "description": "拖卡/按钮带原因改标签，status/due/facts不变",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B10",
+      "description": "已验收/非主管改标签拒绝",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B11",
+      "description": "选项重名/使用中删除拒绝，排序正确",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B12",
+      "description": "父锚定分组保留子owner原值及层级",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B13",
+      "description": "条件填色配置/顺序/删除有效，业务不变",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B14",
+      "description": "本地旧版本/写入失败/损坏配置不覆盖",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B15",
+      "description": "JSON预演严格结构/限额，纯内存不导入",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B16",
+      "description": "xlsx/ZIP转换预演、同名父/空状态/日期问题",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B17",
+      "description": "真实包364行回归，仅本地输出不进Git",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B18",
+      "description": "旧业务/旧排期回归及390px/桌面无整页横溢出",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B19",
+      "description": "代码包/差异/基线哈希/副本回滚及打开截图",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B20",
+      "description": "正式SSO/DB/多人/附件/上线单列未实现",
+      "phase": "V2-local",
+      "status": "production-deferred",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    }
+  ]
+}

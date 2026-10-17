@@ -1,13 +1,15 @@
 import { createHash } from 'node:crypto';
-import { WorkflowError, type Actor, type Command, type WorkOrder, type WorkflowEvent, type Permission } from './contracts';
+import { WorkflowError, type Actor, type Command, type WorkOrder, type WorkflowEvent, type Permission, type Task } from './contracts';
 
 function need(ok: unknown, code: string, status = 409): asserts ok {
   if (!ok) throw new WorkflowError(status, code);
 }
 export function has(actor: Actor, p: Permission) { return actor.permissions.includes(p); }
+export function participants(t:Task){return [...new Set([t.assignee,...(t.handoverHistory??[]).filter(h=>h.outcome==='accepted').flatMap(h=>[h.from,h.to])].filter((s):s is string=>!!s))];}
 export function canRead(actor: Actor, order: WorkOrder) {
+  if ((actor.teamId !== undefined || order.teamId !== undefined) && actor.teamId !== order.teamId) return false;
   return actor.enterpriseId === order.enterpriseId && (has(actor, 'manage') || has(actor, 'dispatch') || has(actor, 'review') ||
-    order.requester === actor.subject || order.tasks.some(t => t.assignee === actor.subject) ||
+    order.requester === actor.subject || order.tasks.some(t => participants(t).includes(actor.subject) || t.pendingHandover?.to===actor.subject) ||
     has(actor, 'execute') && order.status === 'active' && order.tasks.some(t => t.status === 'open' && actor.workKinds.includes(t.kind)));
 }
 export function evolve(previous: WorkOrder | null, actor: Actor, command: Command, at: string) {
@@ -16,7 +18,7 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
   if (!previous) {
     need(action.type === 'create', 'NOT_FOUND', 404); permit('request');
     need(command.expectedVersion === 0, 'VERSION_CONFLICT');
-    const order: WorkOrder = { id: command.orderId, enterpriseId: actor.enterpriseId, requester: actor.subject,
+    const order: WorkOrder = { id: command.orderId, enterpriseId: actor.enterpriseId, ...(actor.teamId ? { teamId: actor.teamId } : {}), requester: actor.subject,
       title: action.title, brief: action.brief, acceptance: action.acceptance, status: 'draft', version: 1,
       createdAt: at, updatedAt: at, tasks: [] };
     return { order, event: makeEvent(order, actor, command, at) };
@@ -53,11 +55,29 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
         visiting.delete(current); visited.add(current);
       };
       for (const t of action.tasks) visit(t.id);
-      order.tasks = action.tasks.map(t => ({ ...t, status: 'open', assignee: null, percent: 0, reworkCount: 0,
-        startedAt: null, submittedAt: null, acceptedAt: null, assetIds: [], quality: null }));
+      const planned=new Map(order.tasks.map(t=>[t.id,t]));
+      order.tasks = action.tasks.map(t => {const old=planned.get(t.id);return { ...t,...(old?{planStart:old.planStart,planEnd:old.planEnd,estimatedHours:old.estimatedHours,scheduleTag:old.scheduleTag,customValues:old.customValues}:{}), status: 'open', assignee: null, percent: 0, reworkCount: 0,
+        startedAt: null, submittedAt: null, acceptedAt: null, assetIds: [], quality: null };});
       break;
     }
     case 'publish': state('approved'); permit('dispatch'); need(order.tasks.length, 'TASKS_REQUIRED'); order.status = 'active'; break;
+    case 'batch-tasks': {
+      permit('dispatch');need(new Set(action.taskIds).size===action.taskIds.length,'DUPLICATE_TASK');
+      let draft=order;
+      for(const taskId of action.taskIds){draft=evolve(draft,actor,{...command,expectedVersion:draft.version,action:action.operation.type==='set-task-tag'?{...action.operation,taskId,reason:action.reason}:{...action.operation,taskId}},at).order;}
+      eventData={before:order.tasks.filter(t=>action.taskIds.includes(t.id)).map(t=>({taskId:t.id,assignee:t.assignee,status:t.status,scheduleTag:t.scheduleTag??''}))};
+      order.tasks=draft.tasks;break;
+    }
+    case 'set-task-tag': {
+      state('approved','active');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');eventData={before:{scheduleTag:t.scheduleTag??''}};t.scheduleTag=action.scheduleTag;break;
+    }
+    case 'set-task-plan': {
+      state('approved','active');permit('dispatch');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);need(t.status!=='accepted','ACCEPTED_PLAN_IMMUTABLE');
+      const empty=action.planStart===null&&action.planEnd===null&&action.estimatedHours===null;
+      need(empty||action.planStart!==null&&action.planEnd!==null&&action.estimatedHours!==null&&action.planEnd>=action.planStart&&(Date.parse(action.planEnd)-Date.parse(action.planStart))/86400000<366,'INVALID_PLAN_RANGE');
+      eventData={before:{planStart:t.planStart??null,planEnd:t.planEnd??null,estimatedHours:t.estimatedHours??null,scheduleTag:t.scheduleTag??'',customValues:t.customValues??{}}};
+      Object.assign(t,{planStart:action.planStart,planEnd:action.planEnd,estimatedHours:action.estimatedHours,scheduleTag:action.scheduleTag,customValues:{...t.customValues,...action.customValues}});break;
+    }
     case 'cancel': state('draft', 'submitted', 'approved', 'active'); permit('manage'); order.status = 'cancelled'; break;
     case 'archive': state('completed', 'cancelled'); permit('manage'); order.status = 'archived'; break;
     default: {
@@ -67,7 +87,20 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
       const taskState = (...s: typeof task.status[]) => need(s.includes(task.status), 'INVALID_TASK_STATE');
       const executor = () => { permit('execute'); need(task.assignee === actor.subject && actor.workKinds.includes(task.kind), 'FORBIDDEN', 403); };
       const dependencies = () => need(task.dependencyIds.every(d => order.tasks.find(t => t.id === d)?.status === 'accepted'), 'DEPENDENCY_NOT_ACCEPTED');
+      if(task.pendingHandover&&!['accept-handover','decline-handover','cancel-handover'].includes(action.type))throw new WorkflowError(409,'HANDOVER_PENDING');
       switch (action.type) {
+        case 'propose-handover':
+          taskState('in_progress','blocked','rework');permit('dispatch');need(task.assignee&&task.assignee!==action.assignee,'INVALID_HANDOVER_TARGET');
+          need(!(task.handoverHistory??[]).some(h=>h.id===action.handoverId),'HANDOVER_ID_REUSED');
+          need((task.handoverHistory?.length??0)<100,'HANDOVER_HISTORY_LIMIT');
+          task.pendingHandover={id:action.handoverId,from:task.assignee,to:action.assignee,reason:action.reason,requestedBy:actor.subject,requestedAt:at};break;
+        case 'accept-handover': case 'decline-handover': case 'cancel-handover': {
+          const h=task.pendingHandover;need(h&&h.id===action.handoverId,'HANDOVER_CHANGED');
+          if(action.type==='cancel-handover')permit('dispatch');else{permit('execute');need(h.to===actor.subject&&actor.workKinds.includes(task.kind),'FORBIDDEN',403);}
+          if(action.type==='accept-handover')task.assignee=h.to;
+          const record={...h,outcome:action.type==='accept-handover'?'accepted' as const:action.type==='decline-handover'?'declined' as const:'cancelled' as const,resolvedBy:actor.subject,resolvedAt:at,resolutionReason:action.type==='accept-handover'?'':action.reason};
+          task.handoverHistory=[...(task.handoverHistory??[]),record];task.pendingHandover=null;eventData={handover:record};break;
+        }
         case 'assign': taskState('open'); permit('dispatch'); task.assignee = action.assignee; task.status = 'assigned'; break;
         case 'claim':
           taskState('open', 'assigned'); permit('execute');
@@ -85,15 +118,15 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
           taskState('in_progress'); executor(); task.assetIds = [...new Set(action.assetIds)];
           task.submittedAt = at; task.status = 'review'; break;
         case 'request-rework':
-          taskState('review'); permit('review'); need(task.assignee !== actor.subject, 'SELF_REVIEW_FORBIDDEN', 403);
+          taskState('review'); permit('review'); need(!participants(task).includes(actor.subject), 'SELF_REVIEW_FORBIDDEN', 403);
           task.reworkCount++; task.status = 'rework'; task.percent = 0; break;
         case 'accept-delivery':
-          taskState('review'); permit('review'); need(task.assignee !== actor.subject, 'SELF_REVIEW_FORBIDDEN', 403);
+          taskState('review'); permit('review'); need(!participants(task).includes(actor.subject), 'SELF_REVIEW_FORBIDDEN', 403);
           task.status = 'accepted'; task.percent = 100; task.acceptedAt = at; task.quality = action.quality;
           // Immutable measurement facts, NOT a final personnel score or payroll instruction.
-          eventData = { taskId: task.id, contributor: task.assignee, contributionBps: 10000, points: task.points,
+          eventData = { taskId: task.id, taskTitle: task.title, orderTitle: order.title, contributor: task.assignee, contributionBps: (task.handoverHistory??[]).some(h=>h.outcome==='accepted')?null:10000, attributionStatus:(task.handoverHistory??[]).some(h=>h.outcome==='accepted')?'needs-review':'single-contributor', participants:participants(task), handoverHistory:task.handoverHistory??[], points: task.points,
             quality: task.quality, dueAt: task.dueAt, submittedAt: task.submittedAt, acceptedAt: at,
-            reworkCount: task.reworkCount, assetIds: task.assetIds, measurementVersion: 1 };
+            reworkCount: task.reworkCount, assetIds: task.assetIds, measurementVersion: 2 };
           if (order.tasks.every(t => t.status === 'accepted')) order.status = 'completed';
           break;
       }
@@ -104,6 +137,7 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
 }
 function makeEvent(order: WorkOrder, actor: Actor, command: Command, at: string, data: Record<string, unknown> = {}): WorkflowEvent {
   return { id: createHash('sha256').update(`${order.enterpriseId}:${command.commandId}`).digest('hex'), schemaVersion: 1,
+    ...(order.teamId ? { teamId: order.teamId } : {}),
     enterpriseId: order.enterpriseId, orderId: order.id, aggregateVersion: order.version, actor: actor.subject,
     type: command.action.type === 'accept-delivery' ? 'workflow.task.accepted.v1' : `workflow.${command.action.type}.v1`,
     occurredAt: at, data: { action: command.action, ...data } };

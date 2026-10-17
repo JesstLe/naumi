@@ -74,7 +74,7 @@ const scope = scopeSql();
 const inRange = (alias: string) =>
   `${alias}.created_at >= $1::timestamptz AND ${alias}.created_at < $2::timestamptz`;
 const values = (q: BiQuery) => [q.start, q.end, q.email, q.q, q.accountType];
-const operationSource = `SELECT j.id,j.email,j.kind,j.created_at,j.updated_at,
+const operationSource = `SELECT 'app_image_jobs'::text AS source_table,EXISTS(SELECT 1 FROM app_ledger WHERE email=j.email AND id='led-image-'||j.id AND kind='consume') AS has_ledger_charge,j.id,j.email,j.kind,j.created_at,j.updated_at,
   COALESCE(j.snapshot->>'status','unknown') AS status,COALESCE(j.snapshot->>'stage','') AS stage,
   COALESCE(j.payload->'p'->>'userPrompt',j.payload->'p'->>'prompt',j.payload->>'extra',j.snapshot->>'extra','') AS content,
   COALESCE(j.payload->'p'->>'model',j.payload->>'model',j.snapshot->>'model','') AS requested_model,
@@ -84,18 +84,29 @@ const operationSource = `SELECT j.id,j.email,j.kind,j.created_at,j.updated_at,
   CASE WHEN j.billing_settled THEN 0 ELSE j.reserved_cost END AS reserved_credits,j.billing_settled AS settled,
   COALESCE(j.snapshot->>'error','') AS error
  FROM app_image_jobs j
- UNION ALL SELECT c.id,c.email,'canvas-'||c.kind,c.created_at,c.updated_at,c.status,'' AS stage,
+ UNION ALL SELECT 'app_canvas_image_tasks',EXISTS(SELECT 1 FROM app_ledger WHERE email=c.email AND id='led-canvas-image-'||c.id AND kind='consume'),c.id,c.email,'canvas-'||c.kind,c.created_at,c.updated_at,c.status,'' AS stage,
   COALESCE(c.parameters->>'newText',c.parameters->>'prompt','') AS content,'' AS requested_model,
   COALESCE(c.parameters->'qualityAudit'->>'requested','') AS requested_quality,
   COALESCE(c.parameters->>'billingResolution','') AS resolution,c.cost,
   COALESCE((SELECT -sum(l.delta) FROM app_ledger l WHERE l.email=c.email AND l.id='led-canvas-image-'||c.id),0),
   COALESCE((SELECT r.cost FROM app_gen_reservations r WHERE r.job_id=c.id AND r.email=c.email),0),
   c.status='completed' OR c.credits_refunded,COALESCE(c.error,'') FROM app_canvas_image_tasks c
- UNION ALL SELECT v.id,v.email,'video',v.created_at,v.updated_at,v.status,'' AS stage,v.prompt,v.model,'' AS requested_quality,
+ UNION ALL SELECT 'app_video_tasks',EXISTS(SELECT 1 FROM app_ledger WHERE email=v.email AND id='led-video-'||v.id AND kind='consume'),v.id,v.email,'video',v.created_at,v.updated_at,v.status,'' AS stage,v.prompt,v.model,'' AS requested_quality,
   v.size,v.cost,COALESCE((SELECT -sum(l.delta) FROM app_ledger l WHERE l.email=v.email AND l.id='led-video-'||v.id),0),
   COALESCE((SELECT r.cost FROM app_gen_reservations r WHERE r.job_id=v.id AND r.email=v.email),0),
   v.status='completed' OR v.credits_refunded,v.error FROM app_video_tasks v`;
 
+/** Narrow enterprise port: reuses operation SQL but does NOT widen the artworks-only scoped BI API. */
+export async function queryEnterpriseOperations(q:BiQuery,access:{client:PoolClient;allowedEmails:readonly string[]}):Promise<BiResponse>{
+  if(q.section!=='operations')throw new Error('Enterprise operation query required');
+  const source=`SELECT source_table,has_ledger_charge,id,email,kind,created_at,status,content,quoted_credits,billed_credits,reserved_credits,settled
+    FROM (${operationSource}) t WHERE email=ANY($5::text[]) AND created_at >= $1::timestamptz AND created_at < $2::timestamptz
+      AND ($3::text='' OR email=$3) AND ($4::text='' OR status=$4)`;
+  const params=[q.start,q.end,q.email,q.status,access.allowedEmails];
+  const total=Number((await access.client.query(`SELECT count(*)::int AS n FROM (${source}) s`,params)).rows[0].n);
+  const rows=(await access.client.query(`${source} ORDER BY created_at DESC,source_table,id LIMIT $6 OFFSET $7`,[...params,q.size,(q.page-1)*q.size])).rows;
+  return {section:'operations',rows:normalize(rows),total,page:q.page,size:q.size,generatedAt:new Date().toISOString(),query:{from:q.from,to:q.to}};
+}
 function normalize(rows: Record<string, unknown>[]): BiRow[] {
   return rows.map(
     (row) =>

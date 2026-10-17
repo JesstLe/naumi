@@ -1,0 +1,48 @@
+(async()=>{
+ window.demoErrors=[];
+ window.addEventListener('error',e=>window.demoErrors.push(e.message));
+ window.addEventListener('unhandledrejection',e=>window.demoErrors.push(String(e.reason)));
+ const results=[];
+ const assert=(ok,name)=>{if(!ok)throw new Error('DEMO_CHECK_FAIL: '+name);results.push(name);};
+ const get=s=>document.querySelector(s);
+ const click=s=>{const el=get(s);if(!el)throw new Error('MISSING_CONTROL '+s);el.click();};
+ const fill=(s,v)=>{const el=get(s);if(!el)throw new Error('MISSING_INPUT '+s);el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));};
+ const select=(s,v)=>{const el=get(s);el.value=v;el.dispatchEvent(new Event('change',{bubbles:true}));};
+ const as=r=>select('#roleSelect',r);
+ const snapshot=()=>JSON.parse(localStorage.getItem('naumi-enterprise-demo-v1'));
+ const submit=s=>get(s).requestSubmit();
+ click('[data-action="reset"]');click('#confirmReset');
+ assert(snapshot().tasks.length===6,'reset preserves six seeded tasks');
+ for(const v of ['requirements','tasks','schedule','assets','performance','team','rules','dashboard']){click(`[data-view="${v}"]`);assert(!!get('h1'),`navigation ${v}`);}
+ click('[data-view="tasks"]');click('[data-action="board"]');assert(document.querySelectorAll('.column').length===4,'kanban has four state columns');click('[data-action="board"]');
+ select('#typeFilter','artwork');assert([...document.querySelectorAll('tbody .task-main')].length===3,'task type filter');
+ select('#typeFilter','all');
+ as('ops');click('[data-action="new"]');
+ fill('[name="title"]','Demo自动验收 · 新品视觉');fill('[name="brief"]','示例商品视觉，保持品牌规范和源文件。');fill('[name="spec"]','主视觉1200×1200，PNG与源文件');
+ assert(get('#routePreview').textContent.includes('品牌视觉组'),'form routing preview');
+ submit('#newReqForm');
+ let s=snapshot(),r=s.requirements[0],reqId=r.id;
+ assert(r.status==='submitted'&&r.team==='品牌视觉组','native requirement routed and submitted');
+ as('lead');click(`[data-req="${reqId}"]`);click('#approveReq');assert(snapshot().requirements[0].status==='approved','requirement approval');click('#planReq');submit('#planForm');
+ s=snapshot();let design=s.tasks.find(t=>t.req===reqId&&t.kind==='design'),art=s.tasks.find(t=>t.req===reqId&&t.kind==='artwork');
+ assert(design&&art&&art.dependency===design.id,'split creates dependent design and artwork tasks');
+ as('artist');click(`[data-task="${art.id}"]`);assert(get('#claimTask').disabled,'dependency prevents early claim');click('[data-close]');
+ as('lead');click(`[data-task="${design.id}"]`);click('#assignTask');click('#confirmAssign');assert(snapshot().tasks.find(t=>t.id===design.id).status==='assigned','manager assignment awaits confirmation');
+ as('designer');click(`[data-task="${design.id}"]`);click('#claimTask');assert(snapshot().tasks.find(t=>t.id===design.id).status==='claimed','named executor confirms assignment');click('#startTask');click('#progressTask');assert(snapshot().tasks.find(t=>t.id===design.id).percent===20,'executor updates progress');
+ click('#blockTask');fill('#reasonText','等待商品文字确认');submit('#reasonForm');assert(snapshot().tasks.find(t=>t.id===design.id).status==='blocked','block reason recorded');click('#resumeTask');assert(snapshot().tasks.find(t=>t.id===design.id).status==='in_progress','resume restores execution');
+ click('#submitTask');fill('#deliveryNote','初稿已完成，提交审核');submit('#deliveryForm');assert(snapshot().tasks.find(t=>t.id===design.id).status==='review','delivery submission enters review');
+ as('reviewer');click(`[data-task="${design.id}"]`);click('#reworkTask');fill('#reasonText','需要调整产品标题对比度');submit('#reasonForm');assert(snapshot().tasks.find(t=>t.id===design.id).reworks===1,'reviewer rework preserves count');
+ as('designer');click(`[data-task="${design.id}"]`);click('#startTask');click('#submitTask');fill('#deliveryNote','已调整对比度，第二稿');submit('#deliveryForm');
+ as('reviewer');click(`[data-task="${design.id}"]`);click('#acceptTask');fill('#acceptNote','规格与品牌规范通过');submit('#acceptForm');
+ s=snapshot();assert(s.tasks.find(t=>t.id===design.id).percent===100,'only acceptance completes progress');assert(s.facts.filter(f=>f.task===design.id).length===1,'acceptance records unique contribution fact');assert(!get('#acceptTask'),'accepted task cannot accept twice');
+ as('artist');click(`[data-task="${art.id}"]`);assert(!get('#claimTask').disabled,'accepted predecessor unlocks successor');click('#claimTask');click('#startTask');click('#submitTask');fill('#deliveryNote','美工适配图及源文件已完成');submit('#deliveryForm');
+ as('reviewer');click(`[data-task="${art.id}"]`);click('#acceptTask');fill('#acceptNote','渠道适配符合标准');submit('#acceptForm');assert(snapshot().requirements.find(r=>r.id===reqId).status==='completed','all accepted tasks complete requirement');
+ as('ops');click('[data-view="requirements"]');click(`[data-req="${reqId}"]`);click('#receiveReq');assert(snapshot().requirements.find(r=>r.id===reqId).received===true,'operations acknowledges delivery');click('[data-close]');
+ click('[data-action="new"]');fill('[name="title"]','无匹配店铺 · 待分配测试');fill('[name="brief"]','验证未知店铺不会随机派单');fill('[name="spec"]','一张1200主图');select('#newShop','其他店铺');assert(get('#routePreview').textContent.includes('待分配'),'unmatched route preview');submit('#newReqForm');s=snapshot();const unrouted=s.requirements[0];assert(unrouted.status==='unrouted','unmatched requirement enters manual queue');
+ as('lead');click(`[data-req="${unrouted.id}"]`);click('#resolveRoute');select('#manualTeam','商品制作组');click('#confirmTeam');assert(snapshot().requirements.find(r=>r.id===unrouted.id).team==='商品制作组','manager resolves unmatched route with audit record');click('[data-close]');
+ click('[data-view="performance"]');assert(get('.info-banner').textContent.includes('正式规则'),'performance remains facts not final scores');assert(snapshot().facts.length===3,'two new acceptance facts without duplicate');
+ assert(window.demoErrors?.length===0,'no runtime browser errors');
+ assert(document.documentElement.scrollWidth<=innerWidth,'no document horizontal overflow');
+ window.lastDemoChecks={passed:results.length,results,newRequirement:reqId,persistedFacts:snapshot().facts.length,externalResources:window.performance.getEntriesByType('resource').filter(r=>!r.name.startsWith(location.origin)).length};
+ return window.lastDemoChecks;
+})()
