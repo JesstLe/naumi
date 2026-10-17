@@ -165,6 +165,10 @@ import {
   Hand,
   ImagePlus,
   Copy,
+  Box,
+  Ruler,
+  Focus,
+  ArrowUp,
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
@@ -566,10 +570,11 @@ function RatioIcon({ w, h }: { w: number; h: number }) {
     else bw = Math.max(7, Math.round((M * w) / h));
   }
   return (
-    <span
-      className="block rounded-[3px] border-[1.5px] border-current"
-      style={{ width: bw, height: bh }}
-    />
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none"
+      className="shrink-0" aria-hidden="true" focusable="false">
+      <rect x={(18 - bw) / 2} y={(18 - bh) / 2} width={bw} height={bh}
+        rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
   );
 }
 
@@ -7664,7 +7669,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       })
     );
   }
-  // 底部工具条:🕘 从生成历史选择(画布中心)
+  // 底部工具条:从生成历史选择(画布中心)
   function toolHistory() {
     if (readOnly) return;
     const c = centerScreen();
@@ -8424,7 +8429,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       onClick={openRatioMenu}
       className="canvas-ui-control flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold transition-colors"
     >
-      📐
+      <Ruler aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
       <span>
         {genRatio === "auto" ? t("canvas.ratioAuto") : genRatio} ·{" "}
         {genResolution}
@@ -10053,10 +10058,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       {t("canvas.spawnTitle")}
                     </p>
                     {[
-                      { key: "image", icon: "🖼️", label: t("canvas.spawnImage") },
-                      { key: "upload", icon: "⬆️", label: t("canvas.spawnUpload") },
+                      { key: "image", icon: ImageIcon, label: t("canvas.spawnImage") },
+                      { key: "upload", icon: Upload, label: t("canvas.spawnUpload") },
                       ...(!spawnMenu.sourceId.startsWith("text-")
-                        ? [{ key: "text", icon: "T", label: t("canvas.textGenerate") }]
+                        ? [{ key: "text", icon: Type, label: t("canvas.textGenerate") }]
                         : []),
                     ].map((it) => (
                       <button
@@ -10066,7 +10071,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
                       >
                         <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-secondary text-[15px]">
-                          {it.icon}
+                          <it.icon aria-hidden="true" className="h-4 w-4 shrink-0" />
                         </span>
                         {it.label}
                       </button>
@@ -10955,7 +10960,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             </aside>
           )}
 
-          {/* 重命名节点:在节点标签处弹出内联输入(✏️ 触发),失焦/回车确定、Esc 取消 */}
+          {/* 重命名节点:在节点标签处弹出内联输入(编辑按钮触发),失焦/回车确定、Esc 取消 */}
           {renamingNodeId &&
             (selected || selectedText || selectedVideo) &&
             renamingNodeId === (selected?.id ?? selectedText?.id ?? selectedVideo?.id) &&
@@ -11035,7 +11040,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         triggerClass="canvas-ui-control flex cursor-pointer items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
                         trigger={
                           <>
-                            🧊
+                            <Box aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                             <span className="max-w-[88px] truncate">
                               {genStyle}
                             </span>
@@ -11066,7 +11071,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         onClick={() => setFocusId(selected.id)}
                         className="canvas-ui-control flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
                       >
-                        ⊡ {t("canvas.dockFocus")}
+                        <Focus aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                        {t("canvas.dockFocus")}
                       </button>
                     </>
                   )}
@@ -11228,8 +11234,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       light={lightCanvas}
                     />
                   ) : (
-                    <span className="canvas-ui-control inline-flex h-8 items-center rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold">
-                      🖼 {generationMode === "split"
+                    <span className="canvas-ui-control inline-flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold">
+                      <ImageIcon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      {generationMode === "split"
                         ? t("canvas.viewNodesCount")
                         : t("canvas.viewSheetCount")}
                     </span>
@@ -11256,7 +11263,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     {selectedGenerating ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      "↑"
+                      <ArrowUp aria-hidden="true" className="h-4 w-4" />
                     )}
                   </button>
                 </div>
@@ -11293,8 +11300,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       </button>
                     ))
                   ) : (
-                    <span className="canvas-ui-muted flex h-[46px] items-center rounded-[9px] border border-dashed border-[var(--canvas-ui-border)] px-3 text-[12px]">
-                      🅰️ {t("canvas.pendText2img")}
+                    <span className="canvas-ui-muted flex h-[46px] items-center gap-1.5 rounded-[9px] border border-dashed border-[var(--canvas-ui-border)] px-3 text-[12px]">
+                      <Type aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      {t("canvas.pendText2img")}
                     </span>
                   )}
                   <span className="canvas-ui-muted ml-1 min-w-0 flex-1 truncate text-[12px]">
@@ -11374,7 +11382,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   {selectedPendGenerating ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    "↑"
+                    <ArrowUp aria-hidden="true" className="h-4 w-4" />
                   )}
                 </button>
               </div>
