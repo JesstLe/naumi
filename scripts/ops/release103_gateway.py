@@ -50,6 +50,26 @@ FALLBACKS = {
     '@upload_previous_enterprise', '@imagegen_previous_primary_ui',
 }
 
+DISK_STATIC = {'^~ ' + prefix for prefix in PREFIXES}
+DISK_STATIC_ROOT = '/var/www/naumi-client-assets/evening-0614f9ae6f91-unified'
+# Separate immutable captures. A new capture never changes the older CAS.
+BASELINES = {
+    LIVE_DUMP_SHA: {'sourceSha256': EXACT_SOURCE_SHA, 'routeClasses': 65, 'diskStaticRoot': None, 'staticFileCount': 0},
+    'fa9ecb10fb1a527a1363008ff3c08920b18ebc7d717b69c3a70d9ac372d31c6e': {
+        'sourceSha256': {**EXACT_SOURCE_SHA, SITE: '0b13609cbc9fcf30a0f26bafeb44820c2c43e26bceb54796bfeb84fa0814fd12'},
+        'routeClasses': 51, 'diskStaticRoot': DISK_STATIC_ROOT, 'staticFileCount': 3027,
+    },
+}
+
+
+def baseline_for_sha(digest):
+    require(digest in BASELINES, '103 baseline changed: recapture/review/regenerate; no stale CAS override')
+    return {'dumpSha256': digest, **BASELINES[digest]}
+
+
+def baseline(text):
+    return baseline_for_sha(sha(text.encode()))
+
 
 def validate_manifest(manifest):
     require(manifest.get('kind') == '103-prefixed-static-union' and manifest.get('schemaVersion') == 1, 'Verified prefixed 103 static union required')
@@ -66,7 +86,7 @@ def validate_manifest(manifest):
 
 
 def inventory(text):
-    require(sha(text.encode()) == LIVE_DUMP_SHA, '103 baseline changed: recapture/review/regenerate; no stale CAS override')
+    profile = baseline(text)
     dump = Dump(text)
     require(set(dump.files) == {'/etc/nginx/nginx.conf', '/etc/nginx/mime.types', SITE}, 'Unexpected config closure')
     servers = [node for node in dump.nodes[SITE] if node.name == 'server']
@@ -74,7 +94,16 @@ def inventory(text):
     server = servers[0]
     require([child.args for child in server.children if child.name == 'server_name'] == [['103.30.76.93', 'naumi.top', 'www.naumi.top']], 'Unexpected server identity')
     locations = {' '.join(child.args): child for child in server.children if child.name == 'location'}
-    require(set(locations) == FLEET | set(DENIES) | DESKTOP | ENTERPRISE | MAIN | FALLBACKS and len(locations) == 65, 'Unknown/missing/duplicated 103 route class')
+    expected = FLEET | set(DENIES) | DESKTOP | ENTERPRISE | MAIN | (DISK_STATIC if profile['diskStaticRoot'] else FALLBACKS)
+    require(set(locations) == expected and len(locations) == profile['routeClasses'] and
+            sum(child.name == 'location' for child in server.children) == len(locations), 'Unknown/missing/duplicated 103 route class')
+    if profile['diskStaticRoot']:
+        for prefix in PREFIXES:
+            node = locations['^~ ' + prefix]
+            require([(c.name, c.args) for c in node.children] == [
+                ('alias', [profile['diskStaticRoot'] + prefix]), ('autoindex', ['off']),
+                ('add_header', ['Cache-Control', 'public, max-age=31536000, immutable', 'always'])],
+                'Reviewed disk static alias changed')
     for key in FLEET:
         expected = 'http://127.0.0.1:13062' + ('/_next/' if key == '^~ /fleet-assets/_next/' else '')
         require([c.args for c in locations[key].children if c.name == 'proxy_pass'] == [[expected]], 'Fleet backend must remain exactly 13062')
@@ -91,6 +120,10 @@ def render(text, main, desktop, enterprise, static_root, manifest, maintenance=F
     dump, server, locations = inventory(text)
     body, edits, classes = dump.files[SITE], [], []
     for key, node in locations.items():
+        if key in DISK_STATIC:
+            edits.append((node.start, node.end, '# Replaced known disk static alias ' + key))
+            classes.append({'location': key, 'action': 'replaced-static-alias'})
+            continue
         if key in FLEET or key in DENIES:
             classes.append({'location': key, 'action': 'preserved-exact', 'class': 'fleet' if key in FLEET else 'deny'})
             continue
@@ -142,7 +175,7 @@ def render(text, main, desktop, enterprise, static_root, manifest, maintenance=F
         old_node, new_node = locations[key], new_locations[key]
         require(dump.files[SITE][old_node.start:old_node.end] == new.files[SITE][new_node.start:new_node.end], 'Protected route bytes changed')
     require(all(not child.args[0].startswith('@') for child in new_locations.values()), 'Legacy static chain retained')
-    report = {'schemaVersion': 1, 'kind': '103-maintenance-gateway' if maintenance else '103-candidate-gateway', 'target': '103.30.76.93', 'baselineDumpSha256': LIVE_DUMP_SHA, 'afterDumpSha256': sha(after.encode()), 'origins': origins, 'staticRoot': static_root, 'staticAssets': asset_count, 'originalRouteClasses': classes, 'originalRouteClassesCount': len(classes), 'fleetRouteBytesPreserved': 9, 'denyRouteBytesPreserved': 3, 'retiredFallbacks': sorted(FALLBACKS), 'compiledUiFlavors': 3, 'apiOwner': 'main', 'readyToDeploy': False, 'liveWrites': 0, 'protocolCompatibility': 'NOT_VERIFIED'}
+    report = {'schemaVersion': 1, 'kind': '103-maintenance-gateway' if maintenance else '103-candidate-gateway', 'target': '103.30.76.93', 'baselineDumpSha256': baseline(text)['dumpSha256'], 'afterDumpSha256': sha(after.encode()), 'origins': origins, 'staticRoot': static_root, 'staticAssets': asset_count, 'originalRouteClasses': classes, 'originalRouteClassesCount': len(classes), 'fleetRouteBytesPreserved': 9, 'denyRouteBytesPreserved': 3, 'retiredFallbacks': sorted(FALLBACKS & locations.keys()), 'replacedStaticAliases': sorted(DISK_STATIC & locations.keys()), 'compiledUiFlavors': 3, 'apiOwner': 'main', 'readyToDeploy': False, 'liveWrites': 0, 'protocolCompatibility': 'NOT_VERIFIED'}
     report['sourceRealPaths'] = {'/etc/nginx/nginx.conf': '/etc/nginx/nginx.conf', '/etc/nginx/mime.types': '/etc/nginx/mime.types', SITE: '/etc/nginx/sites-available/default'}
     report.update({'runtimeTopology':runtime_topology,'liveWebProcesses':required_origins,'urlUiSurfaces':['main','desktop','enterprise'],'compiledUiFlavors':required_origins,'newHtmlStaticPrefix':'/_next/static/' if required_origins==1 else 'flavor-specific','oldStaticPrefixesRetained':list(PREFIXES),'desktopNewTransport':'canonical /api without DesktopTransport rewrite' if required_origins==1 else 'compiled DesktopTransport','legacyDesktopApiAliases':'preserved'})
     report['rollbackScriptScope'] = 'Local copied config tree only; live lock owner must preserve sites-enabled symlink, validate realpath/CAS, nginx -t, reload and business acceptance separately'
@@ -180,7 +213,7 @@ def bundle(text, source_files, main, desktop, enterprise, static_root, manifest,
     require(set(source_files) == set(dump.files), 'All exact closure source files required')
     for name, raw in source_files.items():
         require(dump.files[name] in (raw.decode(), raw.decode() + '\n'), 'Exact source mismatch: ' + name)
-        require(sha(raw) == EXACT_SOURCE_SHA[name], 'Exact disk source hash mismatch: ' + name)
+        require(sha(raw) == baseline(text)['sourceSha256'][name], 'Exact disk source hash mismatch: ' + name)
     output = Path(output)
     write_gateway_bundle(text, patches, after, report, output, source_files)
     (output / 'MODIFIED_FILE').write_bytes((output / 'after' / SITE.lstrip('/')).read_bytes())
@@ -188,7 +221,7 @@ def bundle(text, source_files, main, desktop, enterprise, static_root, manifest,
     rollback = output / 'ROLLBACK.sh'
     rollback.write_text(ROLLBACK, encoding='utf-8', newline='\n')
     rollback.chmod(0o755)
-    (output / 'VERIFICATION.txt').write_text('STATUS=PREPARED_NOT_DEPLOYED\nBRANCH=103 main API + URL desktop/enterprise UI + prefixed readonly static aliases\nRUNTIME_TOPOLOGY='+runtime_topology+'\nLIVE_WEB_PROCESSES='+str(len(set((main,desktop,enterprise))))+'\nFULL_SOURCE_CAS=3\nBASELINE_DUMP_SHA256=' + LIVE_DUMP_SHA + '\nFINAL_CANDIDATE_NEXT_BROWSER=NOT_VERIFIED\n', encoding='utf-8')
+    (output / 'VERIFICATION.txt').write_text('STATUS=PREPARED_NOT_DEPLOYED\nBRANCH=103 main API + URL desktop/enterprise UI + prefixed readonly static aliases\nRUNTIME_TOPOLOGY='+runtime_topology+'\nLIVE_WEB_PROCESSES='+str(len(set((main,desktop,enterprise))))+'\nFULL_SOURCE_CAS=3\nBASELINE_DUMP_SHA256=' + report['baselineDumpSha256'] + '\nFINAL_CANDIDATE_NEXT_BROWSER=NOT_VERIFIED\n', encoding='utf-8')
     return report
 
 
@@ -202,4 +235,4 @@ if __name__ == '__main__':
     text = Path(a.dump).read_bytes().decode()
     sources = {name: (Path(a.source_root) / name.lstrip('/')).read_bytes() for name in Dump(text).files}
     result = bundle(text, sources, a.main, a.desktop, a.enterprise, a.static_root, json.loads(Path(a.manifest).read_text()), a.output, a.maintenance, a.runtime_topology)
-    print('HK_GATEWAY=PREPARED MODE=' + ('MAINTENANCE' if a.maintenance else 'CANDIDATE') + ' KNOWN_ROUTES=65 FLEET_EXACT=9 SOURCE_CAS=3 LIVE_WRITES=0 PROTOCOL=NOT_VERIFIED')
+    print('HK_GATEWAY=PREPARED MODE=' + ('MAINTENANCE' if a.maintenance else 'CANDIDATE') + ' KNOWN_ROUTES='+str(result['originalRouteClassesCount'])+' FLEET_EXACT=9 SOURCE_CAS=3 LIVE_WRITES=0 PROTOCOL=NOT_VERIFIED')
