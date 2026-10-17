@@ -10,6 +10,7 @@
       "sourceSubject": "CONFIRMED_NAUMI_LOGIN_SUBJECT",
       "enabled": true,
       "directoryAdmin": false,
+      "catalogAdmin": false,
       "memberships": [{"teamId": "WORKFLOW_TEAM_UUID", "permissions": ["request"], "workKinds": [], "enabled": true}]
     }]
   }]

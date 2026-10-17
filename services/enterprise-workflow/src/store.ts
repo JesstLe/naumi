@@ -1,3 +1,4 @@
+import {CatalogStore} from './catalog-store';
 import {moveInput,previewMove} from './plan-move';
 import {AvailabilityStore,loadAvailability,availabilityKey,capacityMinutes} from './availability-store';
 import {readScope} from './read-scope';
@@ -33,9 +34,10 @@ function stable(value: unknown): string {
 }
 export type VerifySource=(proof:string,actor:Actor,command:Command)=>Promise<{sourceSubject:string}>;
 export class WorkflowStore {
+  readonly catalog:CatalogStore;
   readonly calendars:CalendarStore;
   readonly availability:AvailabilityStore;
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true) {this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore,private availabilityEnabled=true,catalogEnabled=true) {this.catalog=new CatalogStore(pool,resolveActor,catalogEnabled);this.calendars=new CalendarStore(pool,resolveActor);this.availability=new AvailabilityStore(pool,resolveActor,availabilityEnabled);}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
@@ -285,6 +287,7 @@ export class WorkflowStore {
         const verified=await this.verifySource(proof,actor,command);
         if(!actor.permissions.includes('dispatch')&&verified.sourceSubject!==actor.sourceBinding.sourceSubject)throw new WorkflowError(403,'SOURCE_SELF_ONLY');
       }
+      if(command.action.type==='set-demand-catalog'&&(!actor.permissions.includes('request')||!previous||actor.teamId!==previous.teamId||actor.subject!==previous.requester&&!actor.permissions.includes('manage')))throw new WorkflowError(403,'FORBIDDEN');
       if(command.action.type==='move-task-plan'&&(!actor.permissions.includes('dispatch')||!previous||actor.teamId!==previous.teamId))throw new WorkflowError(403,'FORBIDDEN');
       // Revoked permissions cannot recover historical command snapshots via idempotency replay.
       if (prior) {
@@ -308,6 +311,8 @@ export class WorkflowStore {
       let moveImpact;
       if(action.type==='move-task-plan'){moveImpact=await previewMove(tx,actor,{orderId:command.orderId,taskId:action.taskId,expectedVersion:command.expectedVersion,targetStart:action.targetStart,reason:action.reason},this.availabilityEnabled);if(moveImpact.previewHash!==action.previewHash)throw new WorkflowError(409,'PLAN_MOVE_PREVIEW_CHANGED');}
       const { order, event } = evolve(previous ?? null, actor, command, this.now().toISOString());
+      if(action.type==='set-demand-catalog'){await this.catalog.available(tx);await this.catalog.lock(tx,actor.enterpriseId);order.catalog=action.selection?await this.catalog.select(tx,actor,action.selection.shopId,action.selection.skuId,action.selection.revisions):null;event.data.catalog=order.catalog;}
+      if(action.type==='submit-requirement'&&order.catalog){await this.catalog.lock(tx,actor.enterpriseId);const s=order.catalog.selection;await this.catalog.select(tx,actor,s.shopId,s.skuId,s.revisions);}
       if(moveImpact)event.data.planMove={previewHash:moveImpact.previewHash,calendarRevision:moveImpact.calendarRevision,availabilityRevision:moveImpact.availabilityRevision,conflictDays:moveImpact.impact.conflictDays,noWorkingDay:moveImpact.impact.noWorkingDay,afterDue:moveImpact.impact.afterDue,dependencies:moveImpact.impact.dependencies,capacityReservation:false};
       if(action.type==='submit-requirement'&&this.routing){await this.routing.submitted(tx,actor,order,event.occurredAt);event.teamId=order.teamId;if(order.routing)event.data.routing=order.routing;}
       if(action.type==='operations-signoff'||action.type==='operations-followup')for(const task of order.tasks)if(!await this.validateAssets(tx,actor,task.assetIds,{orderId:order.id,taskId:task.id}))throw new WorkflowError(403,'INVALID_ASSETS');

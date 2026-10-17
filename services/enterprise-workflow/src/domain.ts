@@ -38,6 +38,7 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
   const owner = () => need(order.requester === actor.subject || has(actor, 'manage'), 'FORBIDDEN', 403);
   let eventData: Record<string, unknown> = {};
   switch (action.type) {
+    case 'set-demand-catalog':state('draft');permit('request');owner();eventData={before:order.catalog??null};break;
     case 'revise-requirement': state('draft'); permit('request'); owner(); order.title = action.title; order.brief = action.brief; order.acceptance = action.acceptance;if(action.routingFields)order.routingFields=action.routingFields;delete order.routing;break;
     case 'submit-requirement': state('draft'); permit('request'); owner(); order.status = 'submitted'; break;
     case 'return-requirement': state('submitted'); permit('dispatch'); order.status = 'draft';order.teamId=order.requestTeamId??order.teamId;delete order.routing;break;

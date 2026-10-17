@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {catalogSelection,type CatalogSnapshot} from './catalog-contracts';
 
 export const id = z.string().uuid();
 const text = z.string().trim().min(1).max(2000);
@@ -28,6 +29,7 @@ export type SourceLink={ref:SourceRef;linkedBy:string;linkedAt:string;reason:str
 export const routingFieldsSchema=z.strictObject({brand:z.string().trim().max(80),shop:z.string().trim().max(80),businessUnit:z.string().trim().max(80),workKind:z.enum(['','design','artwork'])});
 export type RoutingFields=z.infer<typeof routingFieldsSchema>;
 export const actionSchema = z.discriminatedUnion('type', [
+  z.strictObject({type:z.literal('set-demand-catalog'),selection:catalogSelection.nullable(),reason:text}),
   z.strictObject({ type: z.literal('create'), title: text, brief: text, acceptance: text,routingFields:routingFieldsSchema.optional() }),
   z.strictObject({ type: z.literal('revise-requirement'), title: text, brief: text, acceptance: text,routingFields:routingFieldsSchema.optional() }),
   z.strictObject({ type: z.literal('submit-requirement') }),
@@ -77,6 +79,7 @@ export type Task = {
   submittedAt: string | null; acceptedAt: string | null; assetIds: string[]; quality: number | null;
 };
 export type WorkOrder = {
+  catalog?:CatalogSnapshot|null;
   requestTeamId?:string;routingFields?:RoutingFields;
   routing?:{status:'assigned'|'unmatched'|'conflict'|'unavailable';ruleVersion:number;ruleIds:string[];fromTeamId:string;toTeamId:string|null;decidedBy:string;at:string;reason:string};
   operations?:{status:'signed'|'followup';actor:string;at:string;reason:string;followupId?:string;assetIds:string[]};

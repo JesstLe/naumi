@@ -126,6 +126,9 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
         return json(res, 200, await scheduling.get(principal, teamId));
       }
       if(req.method==='GET'&&url.pathname==='/v1/dashboard')return json(res,200,await store.dashboard(principal,Object.fromEntries(url.searchParams)));
+      if(url.pathname==='/v1/catalog'&&req.method==='GET')return json(res,200,await store.catalog.read(principal,Object.fromEntries(url.searchParams)));
+      if(url.pathname==='/v1/catalog/preview'&&req.method==='POST')return json(res,200,await store.catalog.preview(principal,await body(req)));
+      if(url.pathname==='/v1/catalog/apply'&&req.method==='POST')return json(res,200,await store.catalog.apply(principal,await body(req)));
       if(req.method==='POST'&&url.pathname==='/v1/plan-move/preview')return json(res,200,await store.movePreview(principal,await body(req)));
       if(req.method==='GET'&&url.pathname==='/v1/week')return json(res,200,await store.week(principal,Object.fromEntries(url.searchParams)));
       if(req.method==='GET'&&url.pathname==='/v1/facts')return json(res,200,await store.facts(principal,Object.fromEntries(url.searchParams)));

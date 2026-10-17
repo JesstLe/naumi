@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+export async function checkCatalogHttp(call:(path:string,body?:unknown,expected?:number)=>Promise<any>,teamId:string){
+ const [brandId,shopId,productId,skuId,orderId]=Array.from({length:5},()=>randomUUID());
+ const docs=[{id:brandId,kind:'brand',name:'验收品牌',enabled:true,externalRef:null},{id:shopId,kind:'shop',name:'验收店铺',enabled:true,externalRef:null,channel:'天猫',teamIds:[teamId]},{id:productId,kind:'product',name:'验收商品',enabled:true,externalRef:null,brandId,sellingPoints:'人工确认卖点'},{id:skuId,kind:'sku',name:'500g规格',enabled:true,externalRef:null,productId,shopIds:[shopId],specification:'500g / 盒',barcode:'0000123'}];
+ const input={entries:docs.map(document=>({expectedVersion:0,document})),reason:'isolated catalog HTTP'},plan=await call('/v1/catalog/preview',input),c={...input,commandId:randomUUID(),previewHash:plan.previewHash,confirmed:true};assert.equal(plan.created,4);await call('/v1/catalog/apply',c);assert.equal((await call('/v1/catalog/apply',c)).replayed,true);
+ const selection=await call('/v1/catalog?action=selection&shopId='+shopId+'&skuId='+skuId);let version=0;
+ const command=async(action:unknown)=>{const d=await call('/v1/commands',{commandId:randomUUID(),orderId,expectedVersion:version,action});version=d.order.version;return d.order;};await command({type:'create',title:'商品选择需求验收',brief:'isolated HTTP',acceptance:'snapshot preserved'});const bound=await command({type:'set-demand-catalog',selection:selection.selection,reason:'explicit choice'});assert.equal(bound.catalog.sku.document.barcode,'0000123');await command({type:'submit-requirement'});
+ const change={entries:[{expectedVersion:1,document:{...docs[2],name:'验收商品新名称'}}],reason:'rename after submission'},p=await call('/v1/catalog/preview',change);await call('/v1/catalog/apply',{...change,commandId:randomUUID(),confirmed:true,previewHash:p.previewHash});const old=(await call('/v1/orders/'+orderId)).order;assert.equal(old.catalog.product.document.name,'验收商品');assert.equal((await call('/v1/catalog?action=history&id='+productId)).total,2);return {brandId,shopId,productId,skuId,orderId};
+}
