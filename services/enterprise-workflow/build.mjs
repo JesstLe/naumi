@@ -20,3 +20,6 @@ await copyFile(new URL('./migrations/008-delivery-assets.sql', import.meta.url),
 await copyFile(new URL('./migrations/009-performance.sql', import.meta.url), new URL('./dist/009-performance.sql', import.meta.url));
 
 await copyFile(new URL('./migrations/010-routing.sql', import.meta.url), new URL('./dist/010-routing.sql', import.meta.url));
+
+await copyFile(new URL('./migrations/011-notifications.sql', import.meta.url), new URL('./dist/011-notifications.sql', import.meta.url));
+await build({entryPoints:[fileURLToPath(new URL('./tools/notification-worker.ts',import.meta.url))],outfile:fileURLToPath(new URL('./dist/notification-worker.mjs',import.meta.url)),bundle:true,platform:'node',target:'node24',format:'esm',external:['pg']});

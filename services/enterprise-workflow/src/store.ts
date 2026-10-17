@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Pool, PoolClient } from 'pg';
 import { commandSchema,batchPreviewSchema,calendarDate, WorkflowError, type Actor, type Principal, type WorkOrder, type Command } from './contracts';
+import type {NotificationStore} from './notification-store';
 import type {RoutingStore} from './routing-store';
 import type { Workbook } from './scheduling-contracts';
 import { canRead, evolve } from './domain';
@@ -12,7 +13,7 @@ const tasksSchema=z.strictObject({query:z.string().max(120).default(''),status:z
 const assigneeSchema=z.strictObject({query:z.string().max(120).default(''),kind:z.enum(['','design','artwork']).default(''),page:z.coerce.number().int().min(1).max(10000).default(1)});
 
 // Same authorization as canRead: request-side access never grants execution writes.
-function readScope(doc:string,originPermission:string){return `((((${doc}->>'teamId') IS NOT DISTINCT FROM $2::text) AND ($3::boolean OR ${doc}->>'requester'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(${doc}->'tasks') x WHERE x->>'assignee'=$4 OR x->'pendingHandover'->>'to'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(x->'handoverHistory','[]'::jsonb)) h WHERE h->>'outcome'='accepted' AND (h->>'from'=$4 OR h->>'to'=$4))) OR ($5::boolean AND ${doc}->>'status'='active' AND EXISTS(SELECT 1 FROM jsonb_array_elements(${doc}->'tasks') x WHERE x->>'status'='open' AND x->>'kind'=ANY($6::text[]))))) OR (${doc}->>'requestTeamId'=$2::text AND (${doc}->>'requester'=$4 OR ${originPermission}::boolean)))`;}
+export function readScope(doc:string,originPermission:string){return `((((${doc}->>'teamId') IS NOT DISTINCT FROM $2::text) AND ($3::boolean OR ${doc}->>'requester'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(${doc}->'tasks') x WHERE x->>'assignee'=$4 OR x->'pendingHandover'->>'to'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(x->'handoverHistory','[]'::jsonb)) h WHERE h->>'outcome'='accepted' AND (h->>'from'=$4 OR h->>'to'=$4))) OR ($5::boolean AND ${doc}->>'status'='active' AND EXISTS(SELECT 1 FROM jsonb_array_elements(${doc}->'tasks') x WHERE x->>'status'='open' AND x->>'kind'=ANY($6::text[]))))) OR (${doc}->>'requestTeamId'=$2::text AND (${doc}->>'requester'=$4 OR ${originPermission}::boolean)))`;}
 // Must check live membership, enabled/expiry, entry grant, feature policy and business permissions.
 // It is also called for an assignment target; role display names and client headers are not authority.
 export type ResolveActor = (tx: PoolClient, principal: Principal) => Promise<Actor | null>;
@@ -25,7 +26,7 @@ function stable(value: unknown): string {
 }
 export type VerifySource=(proof:string,actor:Actor,command:Command)=>Promise<{sourceSubject:string}>;
 export class WorkflowStore {
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore) {}
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore) {}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
@@ -233,6 +234,7 @@ export class WorkflowStore {
       await tx.query(`INSERT INTO enterprise_workflow.orders(enterprise_id,id,version,document) VALUES($1,$2,$3,$4)
         ON CONFLICT(enterprise_id,id) DO UPDATE SET version=EXCLUDED.version,document=EXCLUDED.document,updated_at=now()`, [principal.enterpriseId, order.id, order.version, order]);
       await tx.query('INSERT INTO enterprise_workflow.events(enterprise_id,id,order_id,aggregate_version,event) VALUES($1,$2,$3,$4,$5)', [principal.enterpriseId, event.id, order.id, order.version, event]);
+      await this.notifications?.publish(tx,order,event);
       await tx.query('INSERT INTO enterprise_workflow.commands(enterprise_id,id,subject,order_id,fingerprint,result) VALUES($1,$2,$3,$4,$5,$6)', [principal.enterpriseId, command.commandId, principal.subject, order.id, fingerprint, order]);
       if(source){
         const row=sourceRow!.document;
