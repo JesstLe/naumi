@@ -1,0 +1,16 @@
+{
+  "commandId": "NEW_COMMAND_UUID",
+  "reason": "CHANGE_TICKET_AND_OPERATOR_CONFIRMATION",
+  "confirmedSourceSubjects": true,
+  "enterprises": [{
+    "enterpriseId": "WORKFLOW_ENTERPRISE_UUID",
+    "teams": [{"teamId": "WORKFLOW_TEAM_UUID", "name": "CONFIRMED_TEAM_NAME", "enabled": true}],
+    "accounts": [{
+      "subject": "STABLE_INTERNAL_SUBJECT",
+      "sourceSubject": "CONFIRMED_NAUMI_LOGIN_SUBJECT",
+      "enabled": true,
+      "directoryAdmin": false,
+      "memberships": [{"teamId": "WORKFLOW_TEAM_UUID", "permissions": ["request"], "workKinds": [], "enabled": true}]
+    }]
+  }]
+}

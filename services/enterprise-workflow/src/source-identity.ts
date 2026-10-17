@@ -23,11 +23,11 @@ export function createSourceVerifier(options:{issuer:string;audience:string;publ
 }
 export type SourceAuthenticate=ReturnType<typeof createSourceVerifier>;
 export class SourceIdentityStore {
- constructor(readonly pool:Pool){}
+ constructor(readonly pool:Pool,private acceptBinding?:(source:SourceIdentity,enterpriseId:string)=>boolean){}
  private async transaction<T>(run:(tx:PoolClient)=>Promise<T>){const tx=await this.pool.connect();try{await tx.query('BEGIN');await tx.query("SET LOCAL lock_timeout='3s'; SET LOCAL statement_timeout='10s'");const r=await run(tx);await tx.query('COMMIT');return r;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}}
  private async binding(tx:PoolClient,input:SourceIdentity){
   const s=sourceIdentitySchema.parse(input);const row=(await tx.query(`SELECT i.enterprise_id,i.subject FROM enterprise_workflow.source_identities i JOIN enterprise_workflow.source_enterprises e USING(source_instance,source_enterprise,enterprise_id) JOIN enterprise_workflow.accounts a ON a.enterprise_id=i.enterprise_id AND a.subject=i.subject WHERE i.source_instance=$1 AND i.source_enterprise=$2 AND i.source_subject=$3 AND i.enabled AND e.enabled AND a.enabled AND (a.expires_at IS NULL OR a.expires_at>now()) FOR SHARE OF i,e,a`,[s.sourceInstance,s.sourceEnterprise,s.sourceSubject])).rows[0];
-  ensure(row,'SOURCE_IDENTITY_NOT_BOUND');return row as {enterprise_id:string;subject:string};
+  ensure(row,'SOURCE_IDENTITY_NOT_BOUND');ensure(!this.acceptBinding||this.acceptBinding(s,row.enterprise_id),'SOURCE_DEPLOYMENT_NOT_ALLOWED');return row as {enterprise_id:string;subject:string};
  }
  async workspaces(source:SourceIdentity){return this.transaction(async tx=>{const b=await this.binding(tx,source),teams=(await tx.query(`SELECT m.team_id,t.name FROM enterprise_workflow.team_members m JOIN enterprise_workflow.teams t USING(enterprise_id,team_id) WHERE m.enterprise_id=$1 AND m.subject=$2 AND m.enabled AND t.enabled AND (m.expires_at IS NULL OR m.expires_at>now()) ORDER BY m.team_id`,[b.enterprise_id,b.subject])).rows;const visible=[];
   for(const t of teams){const p={enterpriseId:b.enterprise_id,subject:b.subject,teamId:t.team_id};const actor=await resolveDatabaseActor(tx,p);if(actor)visible.push({teamId:t.team_id,name:t.name,permissions:actor.permissions,workKinds:actor.workKinds});}

@@ -94,6 +94,8 @@ Worker用FOR UPDATE SKIP LOCKED和租约领取，完成时按lease token/version
 
 ## Worker运行契约
 
+2026-10-17 G15覆盖：正式启动统一使用runtime worker及安装/迁移/低权限/standby/activate门禁，详见runtime-g15.md。下面旧独立notification-worker仅保留显式隔离验收用途，不再作为生产启动方式。
+
 独立编译产物为services/enterprise-workflow/dist/notification-worker.mjs。G15部署时将受保护配置文件路径放入NAUMI_NOTIFICATION_CONFIG，文件包含databaseUrl和connectors数组；每项包含enterpriseId、id、label、appKey、appSecret、agentId、productUrl。productUrl要求HTTPS且不带认证信息、query或hash。凭证文件不进入Git，不由浏览器编辑。
 
 ```powershell

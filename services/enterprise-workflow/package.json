@@ -1,16 +1,28 @@
 {
   "name": "@naumi/enterprise-workflow",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "description": "Enterprise workflow foundation; production identity adapter and routing are not enabled",
+  "description": "Enterprise workflow runtime with explicit identity, isolated storage, transactional notifications and deployment gates",
   "scripts": {
     "test": "node verify.mjs",
     "preview:fixture": "tsx tools/preview-fixture.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "runtime": "node dist/runtime.mjs"
   },
-  "dependencies": { "pg": "^8.20.0", "zod": "^4.6.5" },
-  "devDependencies": { "@types/node": "20.14.14", "@types/pg": "^8.20.0", "esbuild": "0.28.1", "tsx": "^4.23.15", "typescript": "5.5.4" },
-  "engines": { "node": ">=24" }
+  "dependencies": {
+    "pg": "^8.20.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.14",
+    "@types/pg": "^8.20.0",
+    "esbuild": "0.28.1",
+    "tsx": "^4.23.15",
+    "typescript": "5.5.4"
+  },
+  "engines": {
+    "node": ">=24"
+  }
 }

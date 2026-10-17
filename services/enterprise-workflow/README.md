@@ -1,3 +1,17 @@
+# Enterprise Workflow Runtime 0.2
+
+当前运行入口、初始化和连续更新准备见 [G15运行PRD](../../docs/enterprise/runtime-g15.md)；需求/任务/交付/排期/绩效/归属/通知模块已经实现，但实际公司源身份、工作流独立数据库与生产发布仍需配置验收。
+
+```powershell
+node build.mjs
+node dist/runtime.mjs check --config ABSOLUTE_PROTECTED_CONFIG_PATH
+node verify-runtime.mjs   # 独立容器 + 真实构建进程，不连现有业务库
+```
+
+`runtime.example.json`和`provision.example.json`是带显式占位符的模板，直接复制不会通过校验。API与Worker采用同一构建、不同role/端口；Worker默认standby，不领取任务，外层发布完成门禁后才使用内部activate。旧notification-worker入口只允许显式隔离fixture；正式入口为runtime worker。产品仍为原HTML，正式Web入口/enterprise/workflow复用Naumi登录，/admin不是协作UI。
+
+以下为历史foundation接口说明；其中旧“尚待接入”状态只代表当时阶段，当前状态以实施台账与各模块PRD为准。
+
 # Enterprise Workflow Foundation
 
 独立工作流服务基础；产品/服务边界详见 [企业业务闭环方案](../../docs/enterprise/WORKFLOW_MICROSERVICES.md)。

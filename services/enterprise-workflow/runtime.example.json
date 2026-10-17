@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "installationId": "company-workflow",
+  "slot": "blue",
+  "expectedDatabase": "naumi_workflow",
+  "databaseUrl": "postgresql://WORKFLOW_USER:PASSWORD@127.0.0.1:5432/naumi_workflow",
+  "releaseId": "RELEASE_ID_FROM_DIST_MANIFEST",
+  "allowDevelopmentBuild": false,
+  "deploymentMode": "dedicated",
+  "tenants": [
+    {"enterpriseId": "WORKFLOW_ENTERPRISE_UUID", "sourceInstance": "naumi-company", "sourceEnterprise": "NAUMI_ENTERPRISE_UUID"}
+  ],
+  "publicKeys": {"bff-v1": "ED25519_PUBLIC_KEY_PEM_ONLY"},
+  "deliveryRoot": "/var/lib/naumi-enterprise/delivery",
+  "apiPort": 18495,
+  "workerPort": 18496,
+  "controlToken": "RANDOM_64_HEX_CONTROL_TOKEN",
+  "connectors": []
+}

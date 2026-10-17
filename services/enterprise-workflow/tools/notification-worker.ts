@@ -7,8 +7,9 @@ import {createDingTalkNotificationAdapter} from '../src/dingtalk-notification-ad
 import type {NotificationConnector} from '../src/notification-contracts';
 const schema=z.strictObject({databaseUrl:z.string().min(1),connectors:z.array(z.strictObject({enterpriseId:z.string().uuid(),id:z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/),label:z.string().min(1).max(80),appKey:z.string().min(1),appSecret:z.string().min(1),agentId:z.number().int().positive().max(Number.MAX_SAFE_INTEGER),productUrl:z.string().url()})).max(100)});
 async function main(){
+ if(process.env.NAUMI_VERIFY_ISOLATED_DB!=='1')throw Error('LEGACY_WORKER_FIXTURE_ONLY_USE_RUNTIME');
  const path=process.env.NAUMI_NOTIFICATION_CONFIG;if(!path)throw Error('NOTIFICATION_CONFIG_FILE_REQUIRED');
- const c=schema.parse(JSON.parse(await readFile(path,'utf8'))),all=new Map<string,NotificationConnector[]>();
+ const c=schema.parse(JSON.parse(await readFile(path,'utf8')));if(new URL(c.databaseUrl).hostname!=='127.0.0.1')throw Error('ISOLATED_DATABASE_REQUIRED');const all=new Map<string,NotificationConnector[]>();
  for(const x of c.connectors){const rows=all.get(x.enterpriseId)??[];if(rows.some(r=>r.id===x.id))throw Error('DUPLICATE_CONNECTOR_ID');rows.push({id:x.id,revision:createHash('sha256').update(JSON.stringify([x.appKey,x.agentId,x.productUrl])).digest('hex'),label:x.label,adapter:createDingTalkNotificationAdapter(x)});all.set(x.enterpriseId,rows);}
  const pool=createWorkflowPool(c.databaseUrl),store=new NotificationStore(pool,resolveDatabaseActor,id=>all.get(id)??[]);let stopping=false;
  process.once('SIGTERM',()=>{stopping=true;});process.once('SIGINT',()=>{stopping=true;});
