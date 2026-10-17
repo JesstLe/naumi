@@ -14,10 +14,8 @@ const payload=z.object({schema:z.literal('enterprise-source-import-v1'),sourceHa
 export type ImportedRow=z.infer<typeof row> & {version:number;resolution:{parentRow:number|null;reason:string;subject:string;at:string}|null};
 export async function fileHash(path:string){const h=createHash('sha256');for await(const b of createReadStream(path))h.update(b);return h.digest('hex');}
 function ensure(v:unknown,code:string,status=400):asserts v {if(!v)throw new WorkflowError(status,code);}
-export class ImportStore {
- constructor(readonly pool:Pool,readonly enterpriseId:string,readonly blobRoot:string){}
- private async tx<T>(f:(c:PoolClient)=>Promise<T>){const c=await this.pool.connect();try{await c.query('BEGIN');const v=await f(c);await c.query('COMMIT');return v;}catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}}
- async ingest(raw:unknown,subject:string){
+export type ImportPayload=z.infer<typeof payload>;
+export function parseImportPayload(raw:unknown):ImportPayload{
   const p=payload.parse(raw),rows=new Map(p.rows.map(r=>[r.excelRow,r])),assets=new Map(p.assets.map(a=>[a.id,a]));
   ensure(rows.size===p.rows.length&&assets.size===p.assets.length,'DUPLICATE_SOURCE_KEY');
   ensure(p.summary.rows===p.rows.length&&p.summary.children===p.rows.filter(r=>r.parentLabel).length,'SOURCE_COUNT_MISMATCH');
@@ -27,19 +25,27 @@ export class ImportStore {
    ensure(r.issues.every(i=>i.excelRow===r.excelRow),'ISSUE_ROW_MISMATCH');
    for(const l of r.attachments)ensure(l.excelRow===r.excelRow&&l.assets.every(a=>assets.has(a)),'ATTACHMENT_SCOPE_MISMATCH');
   }
-  for(const a of p.assets){const f=join(this.blobRoot,a.sha256);ensure((await stat(f)).size===a.bytes&&await fileHash(f)===a.sha256,'BLOB_HASH_MISMATCH');}
+  return p;
+}
+export async function importInTransaction(c:PoolClient,enterpriseId:string,p:ImportPayload,subject:string){
   const fingerprint=createHash('sha256').update(JSON.stringify(p)).digest('hex');
-  return this.tx(async c=>{
-   await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`import:${this.enterpriseId}:${p.sourceHash}`]);
-   const prior=(await c.query('SELECT document FROM enterprise_workflow.import_batches WHERE enterprise_id=$1 AND source_hash=$2',[this.enterpriseId,p.sourceHash])).rows[0];
+   await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`import:${enterpriseId}:${p.sourceHash}`]);
+   const prior=(await c.query('SELECT document FROM enterprise_workflow.import_batches WHERE enterprise_id=$1 AND source_hash=$2',[enterpriseId,p.sourceHash])).rows[0];
    if(prior){ensure(prior.document.fingerprint===fingerprint,'SOURCE_REPLAY_CONFLICT',409);return {replayed:true,rows:p.rows.length,assets:p.assets.length,sourceHash:p.sourceHash};}
    const {rows:_,assets:__,...meta}=p;
-   await c.query('INSERT INTO enterprise_workflow.import_batches(enterprise_id,source_hash,document) VALUES($1,$2,$3)',[this.enterpriseId,p.sourceHash,{...meta,fingerprint}]);
-   for(const r of p.rows)await c.query('INSERT INTO enterprise_workflow.import_rows(enterprise_id,source_hash,row_number,document) VALUES($1,$2,$3,$4)',[this.enterpriseId,p.sourceHash,r.excelRow,r]);
-   for(const a of p.assets)await c.query('INSERT INTO enterprise_workflow.import_assets(enterprise_id,source_hash,asset_id,document) VALUES($1,$2,$3,$4)',[this.enterpriseId,p.sourceHash,a.id,a]);
-   await c.query('INSERT INTO enterprise_workflow.import_audit(id,enterprise_id,source_hash,subject,operation,detail) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),this.enterpriseId,p.sourceHash,subject,'import',{rows:p.rows.length,assets:p.assets.length}]);
+   await c.query('INSERT INTO enterprise_workflow.import_batches(enterprise_id,source_hash,document) VALUES($1,$2,$3)',[enterpriseId,p.sourceHash,{...meta,fingerprint}]);
+   for(const r of p.rows)await c.query('INSERT INTO enterprise_workflow.import_rows(enterprise_id,source_hash,row_number,document) VALUES($1,$2,$3,$4)',[enterpriseId,p.sourceHash,r.excelRow,r]);
+   for(const a of p.assets)await c.query('INSERT INTO enterprise_workflow.import_assets(enterprise_id,source_hash,asset_id,document) VALUES($1,$2,$3,$4)',[enterpriseId,p.sourceHash,a.id,a]);
+   await c.query('INSERT INTO enterprise_workflow.import_audit(id,enterprise_id,source_hash,subject,operation,detail) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),enterpriseId,p.sourceHash,subject,'import',{rows:p.rows.length,assets:p.assets.length}]);
    return {replayed:false,rows:p.rows.length,assets:p.assets.length,sourceHash:p.sourceHash};
-  });
+}
+export class ImportStore {
+ constructor(readonly pool:Pool,readonly enterpriseId:string,readonly blobRoot:string){}
+ private async tx<T>(f:(c:PoolClient)=>Promise<T>){const c=await this.pool.connect();try{await c.query('BEGIN');const v=await f(c);await c.query('COMMIT');return v;}catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}}
+ async ingest(raw:unknown,subject:string){
+  const p=parseImportPayload(raw);
+  for(const a of p.assets){const f=join(this.blobRoot,a.sha256);ensure((await stat(f)).size===a.bytes&&await fileHash(f)===a.sha256,'BLOB_HASH_MISMATCH');}
+  return this.tx(c=>importInTransaction(c,this.enterpriseId,p,subject));
  }
  async batches(){return (await this.pool.query('SELECT source_hash,document,created_at FROM enterprise_workflow.import_batches WHERE enterprise_id=$1 AND active ORDER BY created_at DESC',[this.enterpriseId])).rows.map(r=>({sourceHash:r.source_hash,sheet:r.document.sheet,summary:r.document.summary,headers:r.document.headers,createdAt:r.created_at}));}
  async data(source:string){ensure(hash.safeParse(source).success,'INVALID_SOURCE');const result=await this.pool.query(`SELECT r.document,r.version,r.resolution FROM enterprise_workflow.import_rows r JOIN enterprise_workflow.import_batches b USING(enterprise_id,source_hash) WHERE r.enterprise_id=$1 AND r.source_hash=$2 AND b.active ORDER BY r.row_number`,[this.enterpriseId,source]);ensure(result.rowCount,'SOURCE_NOT_FOUND',404);return result.rows.map(r=>({...r.document,version:r.version,resolution:r.resolution})) as ImportedRow[];}

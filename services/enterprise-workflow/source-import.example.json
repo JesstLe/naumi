@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "commandId": "NEW_UUID_FOR_THIS_REVIEWED_IMPORT",
+  "enterpriseId": "WORKFLOW_ENTERPRISE_UUID",
+  "reason": "经核对的原表迁入，不迁移人员与业务状态",
+  "confirmedTarget": true,
+  "sources": [
+    {"payloadFile": "/protected/source-package/IMPORT_PAYLOAD.json", "blobRoot": "/protected/source-package/blobs"}
+  ]
+}
