@@ -210,6 +210,146 @@
       "phase": "P2上线",
       "status": "planned",
       "evidence": "not implemented"
+    },
+    {
+      "id": "B01",
+      "description": "五默认视图共享任务、视图名与类型独立",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B02",
+      "description": "新增/复制/改名/排序/归档/恢复，不复制业务",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B03",
+      "description": "最后视图/重名/越界/非主管操作拒绝",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B04",
+      "description": "各视图独立草稿、版本和个人设置",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B05",
+      "description": "当前视图版本恢复不影响其他视图和业务",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B06",
+      "description": "v1配置迁移保留布局/值/个人/v1原键",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B07",
+      "description": "排期看板按选项建列，空列/未分类保留",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B08",
+      "description": "卡片字段/列序/showEmpty配置发布有效",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B09",
+      "description": "拖卡/按钮带原因改标签，status/due/facts不变",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B10",
+      "description": "已验收/非主管改标签拒绝",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B11",
+      "description": "选项重名/使用中删除拒绝，排序正确",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B12",
+      "description": "父锚定分组保留子owner原值及层级",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B13",
+      "description": "条件填色配置/顺序/删除有效，业务不变",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B14",
+      "description": "本地旧版本/写入失败/损坏配置不覆盖",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B15",
+      "description": "JSON预演严格结构/限额，纯内存不导入",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B16",
+      "description": "xlsx/ZIP转换预演、同名父/空状态/日期问题",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B17",
+      "description": "真实包364行回归，仅本地输出不进Git",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B18",
+      "description": "旧业务/旧排期回归及390px/桌面无整页横溢出",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B19",
+      "description": "代码包/差异/基线哈希/副本回滚及打开截图",
+      "phase": "V2-local",
+      "status": "prototype-implemented",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
+    },
+    {
+      "id": "B20",
+      "description": "正式SSO/DB/多人/附件/上线单列未实现",
+      "phase": "V2-local",
+      "status": "production-deferred",
+      "evidence": "workbook-tests / workbook-browser-check / test_preview_import / delivery verification"
     }
   ]
 }

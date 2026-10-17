@@ -4,7 +4,7 @@
  const click=s=>{const e=q(s);if(!e)throw new Error('MISSING '+s);e.click();};
  const change=(s,v)=>{const e=q(s);if(!e)throw new Error('MISSING '+s);if(e.type==='checkbox')e.checked=v;else e.value=v;e.dispatchEvent(new Event('change',{bubbles:true}));};
  const input=(s,v)=>{const e=q(s);e.value=v;e.dispatchEvent(new Event('input',{bubbles:true}));};
- const submit=s=>q(s).requestSubmit(),store=()=>JSON.parse(localStorage.getItem(SCHED_KEY)),business=()=>JSON.parse(localStorage.getItem(KEY));
+ const submit=s=>q(s).requestSubmit(),store=()=>SM.clone(schedRead()),business=()=>JSON.parse(localStorage.getItem(KEY));
  window.demoErrors=[];window.addEventListener('error',e=>window.demoErrors.push(e.message));window.addEventListener('unhandledrejection',e=>window.demoErrors.push(String(e.reason)));
  click('[data-action="reset"]');click('#confirmReset');click('[data-view="schedule"]');
  ok(qa('[data-sc-row]').length===6,'A01 parent-child task table renders six seeded tasks');
@@ -12,7 +12,7 @@
  click('[data-sc-collapse]');ok(qa('[data-sc-row]').length<6,'A01 collapse hides only display rows');click('[data-sc-collapse]');
  click('[data-sc-tab="team"]');click('[data-sc-tab="owner"]');ok(qa('[data-sc-row]').length===6&&q('.sc-group').textContent.includes('需求方'),'A02 owner grouping same IDs');
  change('#scAssignee','artist');ok(qa('[data-sc-row]').length===2,'A03 assignee filter');input('#scQuery','not-a-task');ok(q('.sc-empty'),'A03 empty state');click('#scEmptyClear');
- click('#scDesign');ok(q('.sc-designer')&&q('#scPublish'),'A06 team design mode');
+ click('[data-sc-tab="team"]');click('#scDesign');ok(q('.sc-designer')&&q('#scPublish'),'A06 team design mode');
  ok(q('[data-sc-visible="title"]').disabled,'A07 title protected');
  change('#scDensity','compact');change('#scLayout','split');change('#scSummary',false);
  click('[data-sc-column="assignee"]');change('#scColumnLabel','制作负责人');change('#scColumnWidth',170);change('#scColumnTint','purple');
@@ -48,10 +48,10 @@
  click('[data-sc-tab="team"]');click('[data-sc-row="TK-305"] [data-sc-edit]');ok(q('#scPlan fieldset').disabled&&!q('button[form="scPlan"]'),'A19 accepted schedule locked');click('[data-close]');
  const before=localStorage.getItem(KEY);click('#scHistory');click('[data-sc-restore="1"]');click('#scConfirmRestore');ok(store().revision===4&&store().published.density==='normal','A13 restore creates new revision');ok(localStorage.getItem(KEY)===before,'A13 layout restore preserves business bytes');
  change('#roleSelect','designer');click('[data-sc-tab="personal"]');ok(q('.sc-table').classList.contains('sc-relaxed'),'A12 team restore preserves personal view');
- change('#roleSelect','lead');click('#scDesign');const base=schedEditor.baseRevision;const external=SM.publish(schedRead(),schedRead().published,base,'lead','测试外部窗口发布');localStorage.setItem(SCHED_KEY,JSON.stringify(external));click('#scPublish');ok(q('#toast').textContent.includes('冲突')&&store().revision===base+1&&!!schedEditor,'A23 stale publish preserves editor and new revision');
+ change('#roleSelect','lead');click('#scDesign');const base=schedEditor.baseRevision;const external=SM.publish(schedRead(),schedRead().published,base,'lead','测试外部窗口发布');localStorage.setItem(SCHED_KEY,JSON.stringify(WM.commitView(wbRead(),wbActiveId,external)));click('#scPublish');ok(q('#toast').textContent.includes('冲突')&&store().revision===base+1&&!!schedEditor,'A23 stale publish preserves editor and new revision');
  click('#scDesign');click('#scDesign');
  const setter=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k===SCHED_KEY)throw new Error('QUOTA_TEST');return setter.call(this,k,v);};click('#scSaveDraft');ok(q('#toast').textContent.includes('保存失败')&&!store().draft,'A24 injected storage failure reports failure');Storage.prototype.setItem=setter;
- click('#scDesign');const good=localStorage.getItem(SCHED_KEY);localStorage.setItem(SCHED_KEY,'{"schema":1}');schedRaw=null;schedStore=null;shell();ok(q('.sc-alert')&&localStorage.getItem(SCHED_KEY)==='{"schema":1}','A24 corrupt config not silently overwritten');localStorage.setItem(SCHED_KEY,good);schedRaw=null;schedStore=null;schedNotice='';shell();
+ click('#scDesign');const good=localStorage.getItem(SCHED_KEY);localStorage.setItem(SCHED_KEY,'{"schema":1}');wbRaw=null;wbState=null;shell();ok(q('.sc-alert')&&localStorage.getItem(SCHED_KEY)==='{"schema":1}','A24 corrupt config not silently overwritten');localStorage.setItem(SCHED_KEY,good);wbRaw=null;wbState=null;schedNotice='';shell();
  click('[data-sc-row="TK-304"] [data-sc-edit]');const originalBusiness=localStorage.getItem(KEY),other=JSON.parse(originalBusiness);other.tasks[0].logs.push('其他窗口的业务更新');localStorage.setItem(KEY,JSON.stringify(other));input('#scPlan [name="reason"]','并发测试');submit('#scPlan');ok(q('#scFormError').textContent.includes('其他窗口')&&JSON.parse(localStorage.getItem(KEY)).tasks[0].logs.at(-1)==='其他窗口的业务更新','A23 stale task edit does not overwrite external write');localStorage.setItem(KEY,originalBusiness);click('[data-close]');
  ok(window.demoErrors.length===0,'no browser exceptions');ok(document.documentElement.scrollWidth<=innerWidth,'A04 no document overflow desktop');
  window.schedulingChecks={passed:results.length,results,revision:store().revision,taskId:'TK-304',taskPlan:business().tasks.find(t=>t.id==='TK-304').planStart};return window.schedulingChecks;

@@ -9,8 +9,8 @@
  function fail(message){throw new Error(message);}
  const date=s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s+'T00:00:00Z'))&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;
  function validateConfig(c,fields=[]){
-  if(!c||!Array.isArray(c.columns)||!c.columns.length||c.columns.length>32)fail('列配置结构错误');
-  const ids=new Set([...system.map(f=>f[0]),...fields.map(f=>f.id)]),seen=new Set();
+  if(!c||!Array.isArray(c.columns)||!c.columns.length||c.columns.length>33)fail('列配置结构错误');
+  const ids=new Set([...system.map(f=>f[0]),...fields.map(f=>f.id),'scheduleTag']),seen=new Set();
   for(const x of c.columns){if(!ids.has(x.id)||seen.has(x.id))fail('字段引用无效或重复');seen.add(x.id);if(typeof x.label!=='string'||!x.label.trim()||x.label.length>24)fail('列名称需1–24字');if(!Number.isInteger(x.width)||x.width<(x.id==='title'?240:100)||x.width>420)fail('列宽超出范围');if(typeof x.visible!=='boolean'||!tints.includes(x.tint))fail('列样式无效');}
   if(c.columns[0].id!=='title'||!c.columns[0].visible)fail('名称列必须固定显示在首列');
   if(system.some(x=>!seen.has(x[0])))fail('系统字段不可移除');

@@ -1,0 +1,16 @@
+{
+  "schema": "enterprise-import-preview-v1",
+  "sourceHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sheet": "合成示例：导入预演",
+  "rows": [
+    {"excelRow": 2, "title": "新品商品视觉", "parentLabel": "", "raw": {"任务完成情况": "进行中"}},
+    {"excelRow": 3, "title": "主图制作", "parentLabel": "新品商品视觉", "raw": {"任务完成情况": "", "数量": "5"}, "parentCandidates": [2]},
+    {"excelRow": 4, "title": "详情页制作", "parentLabel": "新品商品视觉", "raw": {"下发日期": "2026-10-10", "设计完成日期": "2026-07-16"}, "parentCandidates": [2]}
+  ],
+  "issues": [
+    {"excelRow": 0, "code": "MISSING_SOURCE_ID", "message": "合成示例未取得稳定源ID"},
+    {"excelRow": 3, "code": "EMPTY_STATUS", "message": "状态空白需确认"},
+    {"excelRow": 3, "code": "UNKNOWN_QUANTITY_UNIT", "message": "数字数量缺少单位"},
+    {"excelRow": 4, "code": "DATE_BEFORE_DISPATCH", "message": "日期早于下发，需要核对业务含义"}
+  ]
+}

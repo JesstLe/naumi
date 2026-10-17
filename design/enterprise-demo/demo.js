@@ -13,12 +13,12 @@ const initial=()=>({schema:1,nextId:28,requirements:[
 {id:'REQ-1023',title:'新品旅行套组 · 渠道适配',brand:'植研',shop:'植研天猫旗舰店',type:'渠道适配',team:'商品制作组',owner:'ops',due:'2026-10-18',priority:'正常',status:'completed',brief:'按批准稿制作商品主图适配，视觉元素不变。',spec:'3张渠道图，1200×1200',timeline:['林可提交需求','陈序批准需求并拆分任务']},
 {id:'REQ-1022',title:'植研身体乳 · 卖点长图',brand:'植研',shop:'植研天猫旗舰店',type:'详情页设计',team:'商品设计组',owner:'ops',due:'2026-10-23',priority:'正常',status:'submitted',brief:'细化身体乳使用场景和成分卖点，资料已备齐。',spec:'750px宽详情图、源文件',timeline:['林可提交需求，等待主管受理']}
 ],tasks:[
-{id:'TK-301',planStart:'2026-10-19',planEnd:'2026-10-21',estimatedHours:18,quantity:1,unit:'套',req:'REQ-1027',title:'双11活动主视觉设计',kind:'design',team:'品牌视觉组',status:'in_progress',assignee:'designer',percent:65,points:8,due:'2026-10-22',reworks:0,logs:['许知认领任务','许知更新进度至65%']},
-{id:'TK-302',planStart:'2026-10-19',planEnd:'2026-10-20',estimatedHours:12,quantity:1,unit:'套',req:'REQ-1026',title:'氨基酸洁面 · 新品详情页',kind:'design',team:'商品设计组',status:'review',assignee:'designer',percent:90,points:8,due:'2026-10-20',reworks:0,logs:['许知提交初稿，等待验收']},
-{id:'TK-303',quantity:6,unit:'张',req:'REQ-1025',title:'秋日保湿系列 · 商品精修',kind:'artwork',team:'商品制作组',status:'open',assignee:null,percent:0,points:5,due:'2026-10-19',reworks:0,logs:['陈序发布任务，等待认领']},
-{id:'TK-304',planStart:'2026-10-21',planEnd:'2026-10-22',estimatedHours:8,quantity:1,unit:'张',req:'REQ-1024',title:'秋日礼盒 · 品牌主视觉',kind:'design',team:'品牌视觉组',status:'assigned',assignee:'designer',percent:0,points:8,due:'2026-10-21',reworks:0,logs:['陈序指派给许知，等待确认']},
+{id:'TK-301',scheduleTag:'urgent',planStart:'2026-10-19',planEnd:'2026-10-21',estimatedHours:18,quantity:1,unit:'套',req:'REQ-1027',title:'双11活动主视觉设计',kind:'design',team:'品牌视觉组',status:'in_progress',assignee:'designer',percent:65,points:8,due:'2026-10-22',reworks:0,logs:['许知认领任务','许知更新进度至65%']},
+{id:'TK-302',scheduleTag:'queue5',planStart:'2026-10-19',planEnd:'2026-10-20',estimatedHours:12,quantity:1,unit:'套',req:'REQ-1026',title:'氨基酸洁面 · 新品详情页',kind:'design',team:'商品设计组',status:'review',assignee:'designer',percent:90,points:8,due:'2026-10-20',reworks:0,logs:['许知提交初稿，等待验收']},
+{id:'TK-303',scheduleTag:'queue5',quantity:6,unit:'张',req:'REQ-1025',title:'秋日保湿系列 · 商品精修',kind:'artwork',team:'商品制作组',status:'open',assignee:null,percent:0,points:5,due:'2026-10-19',reworks:0,logs:['陈序发布任务，等待认领']},
+{id:'TK-304',scheduleTag:'priority',planStart:'2026-10-21',planEnd:'2026-10-22',estimatedHours:8,quantity:1,unit:'张',req:'REQ-1024',title:'秋日礼盒 · 品牌主视觉',kind:'design',team:'品牌视觉组',status:'assigned',assignee:'designer',percent:0,points:8,due:'2026-10-21',reworks:0,logs:['陈序指派给许知，等待确认']},
 {id:'TK-305',planStart:'2026-10-16',planEnd:'2026-10-16',estimatedHours:4,quantity:3,unit:'张',req:'REQ-1023',title:'新品旅行套组 · 渠道适配',kind:'artwork',team:'商品制作组',status:'accepted',assignee:'artist',percent:100,points:3,due:'2026-10-18',reworks:0,quality:4,logs:['周然提交交付稿','沈悦验收通过，质量4/5']},
-{id:'TK-306',planStart:'2026-10-21',planEnd:'2026-10-22',estimatedHours:8,quantity:3,unit:'张',req:'REQ-1027',title:'双11首页 · 促销氛围图适配',kind:'artwork',team:'商品制作组',status:'blocked',assignee:'artist',percent:30,points:5,due:'2026-10-22',reworks:0,logs:['周然标记阻塞：等待活动价格确认']}
+{id:'TK-306',scheduleTag:'urgent',owner:'artist',planStart:'2026-10-21',planEnd:'2026-10-22',estimatedHours:8,quantity:3,unit:'张',req:'REQ-1027',title:'双11首页 · 促销氛围图适配',kind:'artwork',team:'商品制作组',status:'blocked',assignee:'artist',percent:30,points:5,due:'2026-10-22',reworks:0,logs:['周然标记阻塞：等待活动价格确认']}
 ],activity:[{who:'reviewer',text:'验收通过了「新品旅行套组 · 渠道适配」',time:'10分钟前'},{who:'designer',text:'提交了「氨基酸洁面 · 新品详情页」',time:'28分钟前'},{who:'ops',text:'提交了「植研身体乳 · 卖点长图」',time:'42分钟前'}],facts:[{task:'TK-305',contributor:'artist',points:3,quality:4,reworks:0}],filters:{}});
 let state;try{state=JSON.parse(localStorage.getItem(KEY));if(state?.schema!==1||!Array.isArray(state.tasks)||!Array.isArray(state.requirements)||!Array.isArray(state.facts)||!Array.isArray(state.activity))state=initial();}catch{state=initial();}
 let view=location.hash==='#schedule'?'schedule':'dashboard',role='lead',taskTab='all',listFilter='all',search='',boardMode=false,drawerData=null,modalFocus=null;
@@ -64,7 +64,7 @@ function bind(){
   for(const el of [$('#globalSearch'),$('#localSearch')].filter(Boolean))el.oninput=e=>{search=e.target.value;const cursor=e.target.selectionStart,id=e.target.id;shell();const target=$('#'+id);if(target){target.focus();target.setSelectionRange(cursor,cursor);}};
   if($('#typeFilter'))$('#typeFilter').onchange=e=>{listFilter=e.target.value;shell();};
 }
-function switchRole(id){if(!PEOPLE[id])return;schedEditor=null;schedTab='team';schedFilters={query:'',assignee:'all',status:'all'};role=id;taskTab='all';closeOverlay();shell();toast(`已切换为${PEOPLE[id].role} · ${PEOPLE[id].name}`);}
+function switchRole(id){if(!PEOPLE[id])return;schedEditor=null;schedTab='team';wbActiveId='team';schedFilters={query:'',assignee:'all',status:'all'};role=id;taskTab='all';closeOverlay();shell();toast(`已切换为${PEOPLE[id].role} · ${PEOPLE[id].name}`);}
 function action(name){switch(name){
   case 'new':newRequirement();break;
   case 'menu':$('.sidebar').classList.toggle('open');break;

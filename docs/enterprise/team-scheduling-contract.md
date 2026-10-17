@@ -1,5 +1,17 @@
 # 团队排期配置契约 v1
 
+> V2增量已引入独立视图，以下v1格式保留为兼容迁移输入。当前原型实现以下V2契约；详细需求见 `team-scheduling-v2-prd.md`。
+
+## 当前V2契约
+
+- 新键`naumi-enterprise-workbook-v2`，schema=2，revision为本地全局配置快照版本；旧键只读迁移、保持原字节。
+- table={id:production_tasks,name}，views=[{id,name,archived,store}]；store保存每视图revision/published/history/draft/personal，不复制任务/字段值。
+- fields、values、options为表级共享；options=[{id,label,color}]，稳定ID，使用中选项不得删除。
+- config在v1基础上增加renderer(table/board)、groupAnchor(parent/task)、filters、board{groupField:scheduleTag,cardFields,showEmpty}、rules。
+- task.scheduleTag为独立排期标签；task.owner可与req.owner不同。改变标签需原因，不写status/due/facts；父锚定展示不修改子字段。
+- 预演契约schema=`enterprise-import-preview-v1`；sourceHash/workbookHash/sheet/headers/rows[{excelRow,title,parentLabel,raw,rawCells,parentCandidates}]/issues[{excelRow,code,message}]/summary。只读工具输出，UI内存查看不写业务键。
+- 本地全局旧快照检查和每视图版本都不是正式多用户原子事务。正式接口及租户/行/字段权限仍按P2实施。
+
 ## 原型存储
 
 - 业务：既有 `naumi-enterprise-demo-v1`，任务扩展 `planStart/planEnd/estimatedHours/quantity/unit`，承诺沿用 `due`。

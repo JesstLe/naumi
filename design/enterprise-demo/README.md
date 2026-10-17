@@ -1,5 +1,24 @@
 # 企业协作 Demo（2026-10-17）
 
+## 当前增量：V2同表多视图
+
+见[详细V2 PRD](../../docs/enterprise/team-scheduling-v2-prd.md)和[实施记录](../../docs/enterprise/team-scheduling-v2-implementation.md)。默认五个视图，支持独立配置/草稿/版本/个人视图，新增/复制/重命名/排序/归档恢复；任务只存一份。
+
+“按设计师分组”保留源标签名，但当前实际是按任务排期情况分列的看板。设计器可设置表格/看板、父锚定分组、填色规则、卡片字段及顺序、空列、选项与列序/颜色。修改排期标签需要原因，不更新完成状态、日期或贡献事实。
+
+V1键保留，V2键`naumi-enterprise-workbook-v2`在首次成功保存后建立。多标签本地旧快照提示不代表正式数据库CAS。
+
+只读预演工具（标准库Python，无Excel写入）：
+
+```sh
+python design/enterprise-demo/tools/preview_import.py SOURCE.xlsx --output LOCAL_PREVIEW.json
+python design/enterprise-demo/tools/preview_import.py SOURCE.zip --output LOCAL_PREVIEW.json
+```
+
+在团队排期“导入预演”选择JSON；只在内存展示，支持问题筛选和CSV，不导入业务数据。原始资料/预演JSON只存本地忽略输出目录，禁止提交真实数据到Git。当前只支持单工作表主xlsx，不合并多表，不恢复未导出的权限/自动化/账号ID。
+
+集中验收：`node design/enterprise-demo/release-check.mjs`；`python -m unittest discover -s design/enterprise-demo/tools -p test_preview_import.py`。浏览器运行`workbook-browser-check.js`、旧排期与工作流脚本。源码仍是原型，生产SSO/权限/DB/附件/上线独立验收。
+
 ## 打开
 
 直接用浏览器打开 `preview.html`；单HTML包含全部CSS、JS、图标和矢量商品示意，不依赖npm、CDN或后端。可选本地HTTP：
