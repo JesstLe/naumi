@@ -3,14 +3,15 @@
 # Run:    see docker-compose.yml (recommended: bundles Postgres + data volume)
 
 # ── deps ────────────────────────────────────────────────────────────────────
-FROM node:24-bookworm-slim AS deps
+ARG NODE_BASE_IMAGE=node:24-bookworm-slim
+FROM ${NODE_BASE_IMAGE} AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY scripts/patch-next-body.mjs ./scripts/patch-next-body.mjs
 RUN npm ci
 
 # ── build ───────────────────────────────────────────────────────────────────
-FROM node:24-bookworm-slim AS build
+FROM ${NODE_BASE_IMAGE} AS build
 WORKDIR /app
 ARG BUILD_VERSION=0
 ARG SOURCE_COMMIT=
@@ -47,14 +48,14 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
 RUN if [ "$NEXT_PUBLIC_CANVAS_PERF_PROBE" = "1" ]; then npm run build -- --profile; else npm run build; fi
 
 # ── isolated media runtime (no compiler in the release image) ────────────────
-FROM node:24-bookworm-slim AS media-runtime
+FROM ${NODE_BASE_IMAGE} AS media-runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg gcc libc6-dev fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 COPY scripts/video-fusion/media-sandbox.c /tmp/media-sandbox.c
 COPY scripts/video-fusion/prepare-media-runtime.sh /tmp/prepare-media-runtime.sh
 RUN cc -O2 -Wall -Wextra -Werror /tmp/media-sandbox.c -o /usr/local/bin/naumi-media-sandbox && sh /tmp/prepare-media-runtime.sh
 
 # ── runtime ─────────────────────────────────────────────────────────────────
-FROM node:24-bookworm-slim AS runner
+FROM ${NODE_BASE_IMAGE} AS runner
 WORKDIR /app
 # 构建版本号(CI 传入 date +%s):后台"检查更新"用它跟官方站比对。
 ARG BUILD_VERSION=0

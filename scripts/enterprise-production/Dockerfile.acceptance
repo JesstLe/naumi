@@ -1,0 +1,21 @@
+ARG NODE_IMAGE=node@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
+ARG DEPS_IMAGE=naumi-enterprise-web-deps:explicit-required
+ARG WEB_IMAGE=naumi-enterprise-web:explicit-required
+ARG RUNTIME_IMAGE=naumi-enterprise-runtime:explicit-required
+FROM ${DEPS_IMAGE} AS deps
+FROM ${WEB_IMAGE} AS web
+FROM ${RUNTIME_IMAGE} AS runtime
+FROM ${NODE_IMAGE}
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json tsconfig.json ./
+COPY src ./src
+COPY scripts ./scripts
+COPY services/enterprise-workflow/src ./services/enterprise-workflow/src
+COPY services/enterprise-workflow/package.json ./services/enterprise-workflow/package.json
+COPY --from=runtime /app/dist ./services/enterprise-workflow/dist
+COPY --from=web /app/design/enterprise-demo/preview.html ./design/enterprise-demo/preview.html
+COPY docs/apimart-image25-pricing-20261008.json ./docs/apimart-image25-pricing-20261008.json
+RUN printf 'owned disposable source copy\n' > .enterprise-composition-fixture
+USER 1000:1000
+ENTRYPOINT ["node", "--require", "./scripts/enterprise-integration-test-preload.cjs", "--import", "tsx", "scripts/verify-enterprise-composition.ts"]

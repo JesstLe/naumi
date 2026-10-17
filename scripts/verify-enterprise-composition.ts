@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {generateKeyPairSync,randomUUID,randomBytes,createHash} from 'node:crypto';
-import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,access} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {spawn,type ChildProcess} from 'node:child_process';
 import {createServer} from 'node:net';
@@ -13,6 +13,7 @@ import {loadRuntimeConfig,loadRuntimeBundle} from '../services/enterprise-workfl
 async function main(){
 assert(process.env.NAUMI_VERIFY_ISOLATED_DB==='1'&&new URL(process.env.DATABASE_URL!).pathname==='/source_composition');
 assert.equal(await readFile('.enterprise-composition-fixture','utf8'),'owned disposable source copy\n');
+const external=process.env.NAUMI_COMPOSITION_EXTERNAL_SERVICES==='1';
 const output=resolve(process.env.NAUMI_COMPOSITION_EVIDENCE_DIR!),temp=resolve('output/composition');await mkdir(temp,{recursive:true});
 const port=async()=>{const s=createServer();s.listen(0,'127.0.0.1');await once(s,'listening');const a=s.address();assert(a&&typeof a!=='string');await new Promise<void>(r=>s.close(()=>r()));return a.port;};
 const write=async(name:string,value:unknown)=>{const p=join(temp,name);await writeFile(p,JSON.stringify(value),{mode:0o600});return p;};
@@ -45,15 +46,24 @@ try{
  const c=await loadRuntimeConfig(configPath),bundle=await loadRuntimeBundle(resolve('services/enterprise-workflow/dist'),c);const offline=await compositionPlan(webPath,c,bundle);assert.equal(offline.summary.liveProbe,false);
  for(const [key,value,error]of [['NAUMI_WORKFLOW_SERVICE_URL','http://127.0.0.1:'+workerPort,'WEB_RUNTIME_API_MISMATCH'],['DATABASE_URL',config.databaseUrl,'WEB_WORKFLOW_DATABASE_MUST_DIFFER'],['NAUMI_ENTERPRISE_ALLOWED_IDS',foreignId,'WEB_ENTERPRISE_SET_MISMATCH'],['NAUMI_ENTERPRISE_DEPLOYMENT_MODE','shared','WEB_DEPLOYMENT_MODE_MISMATCH'],['NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID','wrong-instance','WEB_SOURCE_INSTANCE_MISMATCH'],['NAUMI_WORKFLOW_SIGNING_KEY',generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'}).toString(),'WEB_SIGNING_KEY_MISMATCH']] as const){const bad=await write('bad-'+key+'.json',{...web,[key]:value});await assert.rejects(compositionPlan(bad,c,bundle),new RegExp(error));}
  const wrongHtml=join(temp,'wrong.html');await writeFile(wrongHtml,'different product');await assert.rejects(compositionPlan(await write('wrong-ui.json',{...web,productFile:wrongHtml}),c,bundle),/WEB_PRODUCT_ARTIFACT_MISMATCH/);ok('composition rejects wrong API database source enterprise mode key and product');
+ if(external){
+  assert(process.platform==='linux'&&process.getuid?.()===1000);
+  await write('bootstrap.json',{apiPort,webPort,workerPort,configPath,webPath});console.log('COMPOSITION_BOOTSTRAP_READY: source_and_workflow_provisioned=1');
+  let ready=false;for(let i=0;i<600;i++){try{await access(join(temp,'services-ready'));ready=true;break;}catch{await pause(250);}}assert(ready,'EXTERNAL_SERVICES_NOT_READY');
+ }else{
  runtimeProcess=spawn(process.execPath,[entry,'serve','--config',configPath],{stdio:['ignore','pipe','pipe']});runtimeProcess.stdout!.on('data',b=>runtimeLog+=b);runtimeProcess.stderr!.on('data',b=>runtimeLog+=b);
  for(let i=0;i<200&&!runtimeLog.includes('RUNTIME_LISTENING');i++){assert.equal(runtimeProcess.exitCode,null,runtimeLog);await pause(50);}assert(runtimeLog.includes('RUNTIME_LISTENING'));
+ }
  const beforeSource=hash(JSON.stringify((await pool.query('SELECT id,name,owner_email,enabled FROM app_account_teams ORDER BY id')).rows));const live=await cli('composition-check',['--web-config',webPath]);assert.equal(live.sourceReadOnly,true);assert.equal(live.runtimeReady,true);assert.equal(live.sourceSessionVerification,'external-login-probe-required');assert.equal(beforeSource,hash(JSON.stringify((await pool.query('SELECT id,name,owner_email,enabled FROM app_account_teams ORDER BY id')).rows)));ok('composition live probe read-only source and exact runtime identity');
  const wrongSlotPath=await write('wrong-slot.json',{...config,slot:'wrong-slot'});assert.match(await cli('composition-check',['--web-config',webPath],1,wrongSlotPath),/WEB_RUNTIME_IDENTITY_MISMATCH/);
  await pool.query('UPDATE app_account_teams SET enabled=false WHERE id=$1',[sourceId]);assert.match(await cli('composition-check',['--web-config',webPath],1),/WEB_SOURCE_ENTERPRISE_UNAVAILABLE/);await pool.query('UPDATE app_account_teams SET enabled=true WHERE id=$1',[sourceId]);
  const env={...process.env,...Object.fromEntries(Object.entries(web).filter(([k])=>k==='DATABASE_URL'||k.startsWith('NAUMI_')).map(([k,v])=>[k,String(v)])),PORT:String(webPort),NODE_OPTIONS:'--max-old-space-size=1536'};
+ if(!external){
  nextProcess=spawn(process.execPath,['scripts/enterprise-next-fixture-server.mjs'],{env,stdio:['ignore','pipe','pipe','ipc']});nextProcess.stdout!.on('data',b=>nextLog+=b);nextProcess.stderr!.on('data',b=>nextLog+=b);
  for(let i=0;i<600&&!nextLog.includes('NEXT_COMPOSITION_READY');i++){assert.equal(nextProcess.exitCode,null,nextLog);await pause(100);}assert(nextLog.includes('NEXT_COMPOSITION_READY'),nextLog);
+ }
  const request=(path:string,cookie='',body?:unknown,headers:Record<string,string>={})=>fetch(origin+path,{method:body===undefined?'GET':'POST',redirect:'manual',headers:{cookie,origin,...(body===undefined?{}:{'content-type':'application/json'}),...headers},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(120000)});
+ if(external){const version=await request('/api/version');assert.equal(version.status,200);assert.equal((await version.json() as any).commit,process.env.NAUMI_COMPOSITION_WEB_REVISION);ok('actual production Web reports fixed source revision');}
  const login=async(email:string)=>{const r=await request('/api/auth/login','',{email,password:loginPassword});assert.equal(r.status,200,await r.clone().text());assert(r.headers.get('set-cookie')?.includes('HttpOnly'));return r.headers.get('set-cookie')!.split(';')[0];};
  const unauth=await request('/enterprise/workflow');assert.equal(unauth.status,307);assert(unauth.headers.get('location')?.includes('/sign-in'));const cookies={owner:await login(owner),staff:await login(staff),personal:await login(personal),foreign:await login(foreign)};
  const product=await request('/enterprise/workflow',cookies.staff);assert.equal(product.status,200);assert.equal(hash(Buffer.from(await product.arrayBuffer())),manifest.productSha256);ok('real Next middleware native password login cookie and original HTML');
@@ -74,7 +84,7 @@ try{
  await appPool.query("UPDATE enterprise_workflow.source_identities SET enabled=false WHERE source_subject=$1",[staff]);await api('orders','staff',{},undefined,403);await appPool.query("UPDATE enterprise_workflow.source_identities SET enabled=true WHERE source_subject=$1",[staff]);
  await pool.query('UPDATE app_users SET banned=true WHERE email=$1',[staff]);await api('orders','staff',{},undefined,401);await pool.query('UPDATE app_users SET banned=false WHERE email=$1',[staff]);ok('source account and runtime mapping revocation account-switch and origin checks');
  assert.equal((await pool.query("SELECT to_regclass('enterprise_workflow.orders') AS t")).rows[0].t,null);assert.equal((await appPool.query("SELECT to_regclass('public.app_users') AS t")).rows[0].t,null);assert.equal((await appPool.query('SELECT count(*) n FROM enterprise_workflow.orders')).rows[0].n,'1');ok('source and workflow persistence remain physically separate databases');
- const report={nextVersion:JSON.parse(await readFile('node_modules/next/package.json','utf8')).version,nodeVersion:process.version,runtimeReleaseId:manifest.releaseId,runtimeGitRevision:manifest.gitRevision,runtimeSourceDirty:manifest.sourceDirty,passed:checks.length,checks,framework:'Next actual development server, not standalone production build',productSha256:manifest.productSha256,sourceDatabase:'source_composition',workflowDatabase:'workflow_composition',nativePasswordLogin:true,sessionInjection:false,providerCalls:0,realCompanyBinding:false,productionReleased:false};
+ const report={nextVersion:JSON.parse(await readFile('node_modules/next/package.json','utf8')).version,nodeVersion:process.version,runtimeReleaseId:manifest.releaseId,runtimeGitRevision:manifest.gitRevision,runtimeSourceDirty:manifest.sourceDirty,passed:checks.length,checks,framework:external?'Next standalone production image':'Next actual development server, not standalone production build',productionWebImage:external,webGitRevision:process.env.NAUMI_COMPOSITION_WEB_REVISION||null,productSha256:manifest.productSha256,sourceDatabase:'source_composition',workflowDatabase:'workflow_composition',nativePasswordLogin:true,sessionInjection:false,providerCalls:0,realCompanyBinding:false,productionReleased:false};
  for(const value of [JSON.stringify(commands),nextLog,runtimeLog])for(const secret of [loginPassword,runtimeUrl.password,config.controlToken,'BEGIN PRIVATE KEY'])assert(!value.includes(secret));
  await writeFile(join(output,'COMPOSITION_ACCEPTANCE.json'),JSON.stringify(report,null,2));await writeFile(join(output,'CLI_COMMANDS.json'),JSON.stringify(commands,null,2));console.log('WEB_COMPOSITION_PASS: checks='+checks.length+' real_next_http=1 native_password_login=1 original_html=1 separate_runtime=1 separate_databases=1 full_task_loop=1 file_bytes=1 source_revocation=1 mapping_revocation=1 providers0=1');
 }finally{
