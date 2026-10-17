@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {execFileSync} from 'node:child_process';
+const text=await readFile('docs/enterprise/delivery-audit-g29.md','utf8');
+for(const prefix of ['M','A','T'])for(let n=1;n<=(prefix==='M'?32:prefix==='A'?30:9);n++)assert(text.includes(prefix+String(n).padStart(2,'0')),prefix+n);
+assert(text.includes('整体目标：ACTIVE')&&text.includes('真实员工登录仍503')&&text.includes('不是G28最新版Linux构建证明'));
+const evidence=process.env.ENTERPRISE_AUDIT_EVIDENCE_DIR;
+if(!evidence)throw Error('ENTERPRISE_AUDIT_EVIDENCE_DIR_REQUIRED');
+const dir=resolve(evidence),json=async p=>JSON.parse(await readFile(resolve(dir,p),'utf8'));
+const runtime=await json('runtime-fixed-evidence/RUNTIME_ACCEPTANCE.json'),web=await json('composition-fixed/COMPOSITION_ACCEPTANCE.json'),manifest=await json('runtime-fixed/manifest.json');
+assert.equal(runtime.gitRevision,'a84d7e27d3792d1cc25033b5a4cb9459a3183502');assert.equal(runtime.gitRevision,web.runtimeGitRevision);assert.equal(runtime.releaseId,web.runtimeReleaseId);assert.equal(manifest.gitRevision,runtime.gitRevision);assert.equal(runtime.sourceDirty,false);assert.equal(web.runtimeSourceDirty,false);assert.equal(runtime.realCompanyBinding,false);assert.equal(web.realCompanyBinding,false);assert.equal(web.productionReleased,false);assert.equal(web.productionWebImage,false);assert.equal(runtime.passed,runtime.checks.length);assert.equal(web.passed,web.checks.length);assert.equal(runtime.passed,21);assert.equal(web.passed,21);
+for(const needle of ['signed identities','plan move','shared and dedicated','backup restores'])assert(runtime.checks.some(x=>x.includes(needle)),needle);
+for(const needle of ['native password login','prompt credits','approval claim execution','mapping revocation','plan move'])assert(web.checks.some(x=>x.includes(needle)),needle);
+const git=(...args)=>execFileSync('git',args,{encoding:'utf8'}).trim();
+// Reuse prior business evidence only when both committed and working source match it.
+const paths=['services/enterprise-workflow','src','design/enterprise-demo','scripts/verify-workflow-identity.ts','scripts/verify-enterprise-composition.ts','package.json','package-lock.json'];
+assert.equal(git('diff','--name-only',runtime.gitRevision,'--',...paths),'','business source changed: gather fresh evidence');
+const log=await readFile(resolve(dir,'MODIFIED_FINAL.log'),'utf8');
+for(const marker of ['PEOPLE_MAPPING_PASS:','INTAKE_SERVICE_PASS:','TASK_CENTER_PASS:','DELIVERY_SERVICE_PASS:','REAL_PLAN_PASS:','HANDOVER_BATCH_PASS:','SOURCE_LINK_SERVICE_PASS:','PERFORMANCE_SERVICE_PASS:','ROUTING_OPS_SERVICE_PASS:','NOTIFICATION_SERVICE_PASS:','FORMAL_SOURCE_PASS:','PEOPLE_ROSTER_PASS:','PLAN_MOVE_SERVICE_PASS:'])assert(log.includes(marker),marker);
+console.log('DELIVERY_AUDIT_PASS: modules32=1 acceptance_A30_T9=1 fixed_runtime21=1 fixed_next21=1 business_source_unchanged=1 real_company_false=1 production_false=1 remaining_work_explicit=1 goal_active=1');
