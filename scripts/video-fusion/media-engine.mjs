@@ -1,5 +1,6 @@
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
+import {createReadStream} from 'node:fs';
 import {mkdir,lstat,readdir,link,copyFile,chown,chmod,readFile,writeFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {inspectMediaBundle} from './media-bundle.mjs';
@@ -7,6 +8,11 @@ import {inspectMediaBundle} from './media-bundle.mjs';
 export const MEDIA_LIMITS=Object.freeze({inputBytes:250*1024*1024,outputBytes:500*1024*1024,outputs:1000,timeoutMs:180000,concurrency:2,logBytes:1024*1024,queue:8,terminalJobs:128,requestBytes:2*1024*1024,auxiliaryBytes:512*1024});
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const namePattern=/^[a-zA-Z0-9_%.$-]+(?:\/[a-zA-Z0-9_%.$-]+)*$/;
+async function mediaFileSha256(file){
+  const hash=createHash('sha256');
+  for await(const chunk of createReadStream(file,{highWaterMark:64*1024}))hash.update(chunk);
+  return hash.digest('hex');
+}
 export function safeMediaName(name){
   if(typeof name!=='string'||name.length>160||!namePattern.test(name)||name.split('/').some(p=>p==='.'||p==='..'))throw new Error('INVALID_MEDIA_NAME');
   return name;
@@ -132,7 +138,7 @@ export class MediaEngine{
         const file=path.join(shared,'inputs',input.name),info=await lstat(file);
         if(!info.isFile()||info.isSymbolicLink()||info.size!==input.bytes||!Number.isSafeInteger(input.bytes)||input.bytes<1)throw new Error('MEDIA_INPUT_CHANGED');
         totalInput+=info.size;if(totalInput>MEDIA_LIMITS.inputBytes)throw new Error('MEDIA_INPUT_TOO_LARGE');
-        const bytes=await readFile(file);if(createHash('sha256').update(bytes).digest('hex')!==input.sha256)throw new Error('MEDIA_INPUT_CHANGED');
+        if(await mediaFileSha256(file)!==input.sha256)throw new Error('MEDIA_INPUT_CHANGED');
         const copy=path.join(source,input.name);await mkdir(path.dirname(copy),{recursive:true,mode:0o755});await copyFile(file,copy);await chmod(copy,0o444);
         if(i<request.inputs.length)inputs.push(this.fixture?copy:`/inputs/${input.name}`);
       }
@@ -188,7 +194,7 @@ export class MediaEngine{
           if(entry.isDirectory()){await collect(file,name);continue;}if(!entry.isFile()||entry.isSymbolicLink())throw new Error('MEDIA_OUTPUT_NOT_REGULAR');
           const info=await lstat(file);totalOutput+=info.size;if(totalOutput>MEDIA_LIMITS.outputBytes||collected.length>=MEDIA_LIMITS.outputs)throw new Error('MEDIA_OUTPUT_TOO_LARGE');
           if(!info.size)throw new Error('MEDIA_OUTPUT_EMPTY');
-          const bytes=await readFile(file);collected.push({name,bytes:info.size,sha256:createHash('sha256').update(bytes).digest('hex'),file});
+          collected.push({name,bytes:info.size,sha256:await mediaFileSha256(file),file});
         }
       };
       await collect(out);if(outputs.length&&!collected.length)throw new Error('MEDIA_OUTPUT_MISSING');

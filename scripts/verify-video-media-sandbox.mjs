@@ -22,6 +22,7 @@ const command=(binary,args)=>new Promise((resolve,reject)=>{const child=spawn(bi
 let networkHits=0;const server=createServer((_request,response)=>{networkHits++;response.writeHead(200,{'content-type':'video/mp4'});response.end(original);});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 try{
+  const changed=await prepare();await assert.rejects(()=>engine.run(changed.id,{action:'frame',timestamp:1,inputs:[{...changed.input,sha256:'0'.repeat(64)}],outputs:['changed.png']}),/MEDIA_INPUT_CHANGED/);
   const frame=await prepare(),result=await engine.run(frame.id,{action:'frame',timestamp:1.25,inputs:[frame.input],outputs:['frame.png']});assert.equal(result.outputs[0].probe.videoCodec,'png');assert.equal(result.outputs[0].probe.width,1280);
   const trim=await prepare(),trimmed=await engine.run(trim.id,{action:'trim',start:1,end:3,inputs:[trim.input],outputs:['trim.mp4']});assert.ok(Math.abs(trimmed.outputs[0].probe.durationSeconds-2)<0.12);assert.equal(trimmed.outputs[0].probe.videoCodec,'h264');
   const cancel=await prepare(),controller=new AbortController();let progressed=false;
@@ -40,7 +41,7 @@ try{
   for(const file of ['/fixture-assets/landscape-4-audio.mp4','/proc/self/environ',crossJob])assert.notEqual((await launch(['-v','error',file])).code,0);
   const forbidden=await prepare();await assert.rejects(()=>engine.run(forbidden.id,{action:'ffmpeg',inputs:[forbidden.input],outputs:['bad.mp4'],args:['-i','/etc/passwd','output:0']}));
   assert.equal(sha(await readFile(path.join(assets,video.name))),video.sha256);
-  const evidence={owner:process.env.MEDIA_SANDBOX_VERIFY_OWNER,sourceCommit:process.env.SOURCE_COMMIT,actualLinux:true,actualLauncher:true,frame:true,trim:true,cancelAfterProgress:true,networkDeniedByKernel:true,hostAndCrossJobDenied:true,sourceUnchanged:true};
+  const evidence={owner:process.env.MEDIA_SANDBOX_VERIFY_OWNER,sourceCommit:process.env.SOURCE_COMMIT,actualLinux:true,actualLauncher:true,tamperedInputHashRejected:true,frame:true,trim:true,cancelAfterProgress:true,networkDeniedByKernel:true,hostAndCrossJobDenied:true,sourceUnchanged:true};
   await writeFile(path.join(scratch,'linux-sandbox-evidence.json'),JSON.stringify(evidence));console.log('VIDEO_LINUX_SANDBOX=PASS '+JSON.stringify(evidence));
 }finally{
   server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
