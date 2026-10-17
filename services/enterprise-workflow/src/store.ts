@@ -1,3 +1,5 @@
+import {readScope} from './read-scope';
+import {readDashboard} from './dashboard';
 import {sourceAssetSchema,sourceDigest,type SourceAsset} from './source-files';
 import {CalendarStore,loadCalendars} from './calendar-store';
 import {allocateHours,dayMinutes,legacyCalendar} from './calendar';
@@ -16,7 +18,7 @@ const tasksSchema=z.strictObject({query:z.string().max(120).default(''),status:z
 const assigneeSchema=z.strictObject({query:z.string().max(120).default(''),kind:z.enum(['','design','artwork']).default(''),page:z.coerce.number().int().min(1).max(10000).default(1)});
 
 // Same authorization as canRead: request-side access never grants execution writes.
-export function readScope(doc:string,originPermission:string){return `((((${doc}->>'teamId') IS NOT DISTINCT FROM $2::text) AND ($3::boolean OR ${doc}->>'requester'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(${doc}->'tasks') x WHERE x->>'assignee'=$4 OR x->'pendingHandover'->>'to'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(x->'handoverHistory','[]'::jsonb)) h WHERE h->>'outcome'='accepted' AND (h->>'from'=$4 OR h->>'to'=$4))) OR ($5::boolean AND ${doc}->>'status'='active' AND EXISTS(SELECT 1 FROM jsonb_array_elements(${doc}->'tasks') x WHERE x->>'status'='open' AND x->>'kind'=ANY($6::text[]))))) OR (${doc}->>'requestTeamId'=$2::text AND (${doc}->>'requester'=$4 OR ${originPermission}::boolean)))`;}
+export {readScope} from './read-scope';
 // Must check live membership, enabled/expiry, entry grant, feature policy and business permissions.
 // It is also called for an assignment target; role display names and client headers are not authority.
 export type ResolveActor = (tx: PoolClient, principal: Principal) => Promise<Actor | null>;
@@ -49,6 +51,7 @@ export class WorkflowStore {
     }
     catch (e) { await tx.query('ROLLBACK'); throw e; } finally { tx.release(); }
   }
+  async dashboard(principal:Principal,raw:unknown={}){return readDashboard(this.pool,this.resolveActor,principal,raw,this.now);}
   async get(principal: Principal, orderId: string) {
     return this.transaction(async tx => {
       const actor = await this.actor(tx, principal);

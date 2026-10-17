@@ -116,6 +116,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
         if (scheduleMatch[3]) return json(res, 200, await scheduling.personal(principal, teamId, scheduleMatch[3]));
         return json(res, 200, await scheduling.get(principal, teamId));
       }
+      if(req.method==='GET'&&url.pathname==='/v1/dashboard')return json(res,200,await store.dashboard(principal,Object.fromEntries(url.searchParams)));
       if(req.method==='GET'&&url.pathname==='/v1/week')return json(res,200,await store.week(principal,Object.fromEntries(url.searchParams)));
       if(req.method==='GET'&&url.pathname==='/v1/facts')return json(res,200,await store.facts(principal,Object.fromEntries(url.searchParams)));
       if(req.method==='GET'&&url.pathname==='/v1/batch-receipts')return json(res,200,await store.batchReceipts(principal));
@@ -146,7 +147,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       throw new WorkflowError(404, 'NOT_FOUND');
     } catch (e) {
       const known = e instanceof WorkflowError;
-      if (!known && e && typeof e === 'object' && 'code' in e && ['55P03','57014','40P01'].includes(String(e.code))) return json(res, 503, { error: { code: 'RETRY_LATER' } });
+      if (!known && e && typeof e === 'object' && 'code' in e && ['55P03','57014','40P01','40001'].includes(String(e.code))) return json(res, 503, { error: { code: 'RETRY_LATER' } });
       json(res, known ? e.status : e instanceof ZodError?400:500, { error: { code: known ? e.code : e instanceof ZodError?'INVALID_INPUT':'INTERNAL_ERROR' } });
     }
   });
