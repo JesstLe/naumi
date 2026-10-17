@@ -12,6 +12,31 @@ import prepare_release103_final as final
 
 
 class FinalUnion(unittest.TestCase):
+    def test_results_are_bound_to_actual_configs_static_and_root(self):
+        import copy
+        from release_client_compat import CompatError
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);(root/'static').mkdir();static=root/'static/manifest.json';static.write_text(json.dumps({'assets':[{'url':'/_next/static/a.js','sha256':sha(b'a'),'size':1}]}))
+            (root/'manifest.json').write_text(json.dumps({'staticRoot':'/var/www/original'}))
+            def config(name,body):
+                p=root/name;p.write_bytes(body);return {'path':name,'sha256':sha(body)}
+            before={'/site':config('before',b'baseline')};maintenance={'/site':config('maintenance',b'maintenance')};candidate={'/site':config('candidate',b'candidate')}
+            descriptors={'maintenance':{'before':before,'after':maintenance},'open':{'before':maintenance,'after':candidate}}
+            (root/'gateways.json').write_text(json.dumps(descriptors))
+            result={'testedInputs':{'staticRoot':'/var/www/original','staticManifestSha256':sha(static.read_bytes()),'baselineSourceSha256':{'/site':sha(b'baseline')},'maintenanceSourceSha256':{'/site':sha(b'maintenance')},'candidateSourceSha256':{'/site':sha(b'candidate')}}}
+            final.verify_tested_package_inputs(result,root)
+            original_static=static.read_bytes();static.write_text(json.dumps({'assets':[{'url':'/_next/static/b.js','sha256':sha(b'b'),'size':1}]}))
+            with self.assertRaises(CompatError):final.verify_tested_package_inputs(result,root)
+            static.write_bytes(original_static)
+            # A coherent re-rendered package with a different config still cannot use old results.
+            descriptors['open']['after']['/site']=config('candidate',b'different-candidate')
+            (root/'gateways.json').write_text(json.dumps(descriptors))
+            with self.assertRaises(CompatError):final.verify_tested_package_inputs(result,root)
+            descriptors['open']['after']['/site']=config('candidate',b'candidate');(root/'gateways.json').write_text(json.dumps(descriptors))
+            (root/'manifest.json').write_text(json.dumps({'staticRoot':'/var/www/different'}))
+            with self.assertRaises(CompatError):final.verify_tested_package_inputs(result,root)
+            with self.assertRaises(CompatError):final.verify_tested_package_inputs({},root)
+
     def test_new_fixed_candidate_definition_and_prefix_rejection(self):
         old=(final.SOURCE,final.VERSION,final.IMAGES,final.ORIGINS,final.STATIC_ROOT,final.RELEASE_KEY,final.RUNTIME_TOPOLOGY)
         with tempfile.TemporaryDirectory() as temp:

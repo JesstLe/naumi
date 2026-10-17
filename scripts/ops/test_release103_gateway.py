@@ -16,12 +16,12 @@ ORIGINS = ('http://127.0.0.1:13110', 'http://127.0.0.1:13111', 'http://127.0.0.1
 
 
 def captured():
-    configs = ROOT / 'legacy-assets' / 'exact-configs'
+    configs = Path(os.environ.get('NAUMI103_EXACT_SOURCE_ROOT', str(ROOT / 'legacy-assets' / 'exact-configs')))
     # Exact stdout captured by the read-only inventory, not reconstructed source.
     dump_path = Path(os.environ.get('NAUMI103_FULL_DUMP', 'output/release103-evening-20261016/nginx-full.txt'))
     text = dump_path.read_bytes().decode()
     sources = {name: (configs / name.lstrip('/')).read_bytes() for name in Dump(text).files}
-    manifest = json.loads((ROOT / 'legacy-static-union' / 'manifest.json').read_text())
+    manifest = json.loads(Path(os.environ.get('NAUMI103_STATIC_MANIFEST', str(ROOT / 'legacy-static-union' / 'manifest.json'))).read_text())
     return text, sources, manifest
 
 
@@ -35,8 +35,8 @@ class Gateway(unittest.TestCase):
 
     def test_actual_65_classes_fleet_exact_three_ui_main_api(self):
         patches, after, report = self.render()
-        self.assertEqual(report['originalRouteClassesCount'], 65)
-        self.assertEqual(report['staticAssets'], 2684)
+        self.assertEqual(report['originalRouteClassesCount'], hk.baseline(self.text)['routeClasses'])
+        self.assertEqual(report['staticAssets'], len(self.manifest['assets']))
         nodes = { ' '.join(n.args): n for n in walk(parse(patches[hk.SITE])) if n.name == 'location'}
         self.assertFalse(set(nodes) & hk.FALLBACKS)
         self.assertEqual(sum('static/' in key for key in nodes), 3)
@@ -83,6 +83,20 @@ class Gateway(unittest.TestCase):
         for changed in (self.text + '\n', self.text.replace('location / {', 'location /unknown {'), self.text.replace(':13062;', ':13063;', 1)):
             with self.assertRaisesRegex(CompatError, 'baseline changed'):
                 hk.render(changed, *ORIGINS, '/fixture/union', self.manifest)
+
+
+    def test_reviewed_baseline_aliases_replaced_once_and_never_maintained(self):
+        profile=hk.baseline(self.text)
+        for maintenance in (False,True):
+            patches,_,report=self.render(maintenance=maintenance)
+            nodes=[n for n in walk(parse(patches[hk.SITE])) if n.name=='location']
+            for prefix in hk.PREFIXES:
+                aliases=[n for n in nodes if n.args==['^~',prefix]]
+                self.assertEqual(len(aliases),1)
+                self.assertEqual([(c.name,c.args) for c in aliases[0].children], [('alias',['/fixture/union'+prefix]),('autoindex',['off']),('add_header',['Cache-Control','public, max-age=31536000, immutable','always'])])
+            self.assertEqual(len(report['retiredFallbacks']),0 if profile['diskStaticRoot'] else 17)
+            self.assertEqual(len(report['replacedStaticAliases']),3 if profile['diskStaticRoot'] else 0)
+        with self.assertRaises(CompatError):hk.baseline_for_sha('0'*64)
 
     def test_invalid_origin_manifest_prefix_conflict(self):
         for origins in [(ORIGINS[0],)*3, ('http://8.8.8.8:13110', *ORIGINS[1:]), ('http://127.0.0.1:13062', *ORIGINS[1:])]:
