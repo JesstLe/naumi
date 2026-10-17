@@ -3,6 +3,7 @@
   "catalogEnabled": false,
   "formsEnabled": false,
   "demandBatchEnabled": false,
+  "demandAssetsEnabled": false,
   "installationId": "company-workflow",
   "slot": "blue",
   "expectedDatabase": "naumi_workflow",

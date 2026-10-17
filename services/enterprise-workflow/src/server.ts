@@ -95,6 +95,15 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       if(routing&&req.method==='POST'&&url.pathname==='/v1/routing/resolve'){await routing.ready();return json(res,200,await routing.resolve(principal,await body(req)));}
       if(performance&&url.pathname==='/v1/performance-corrections'){if(req.method==='GET')return json(res,200,await performance.corrections.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST'){const c=await body(req);return json(res,200,c.operation==='preview'?await performance.corrections.preview(principal,c):await performance.corrections.execute(principal,c));}}
       if(performance&&url.pathname==='/v1/performance'){await performance.ready();if(req.method==='GET')return json(res,200,await performance.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST')return json(res,200,await performance.execute(principal,await body(req)));}
+      if(url.pathname.startsWith('/v1/demand-files/')){
+        const files=store.demandAssets;if(!files)throw new WorkflowError(503,'DEMAND_ASSETS_NOT_ENABLED');
+        const path=url.pathname.slice('/v1/demand-files/'.length);
+        if(path==='assets'&&req.method==='GET')return json(res,200,await files.list(principal,Object.fromEntries(url.searchParams)));
+        if(path==='scan-history'&&req.method==='GET')return json(res,200,await files.scanHistory(principal,id.parse(url.searchParams.get('id')),{page:url.searchParams.get('page')||'1'}));
+        if(path==='scan'&&req.method==='POST')return json(res,200,await files.rescan(principal,id.parse((await body(req)).assetId)));
+        if(path==='upload'&&req.method==='POST'){if(req.headers['content-type']!=='application/octet-stream')throw new WorkflowError(415,'BINARY_REQUIRED');if(Number(req.headers['content-length']||0)>files.maxBytes)throw new WorkflowError(413,'ASSET_TOO_LARGE');return json(res,200,await files.upload(principal,Object.fromEntries(url.searchParams),req));}
+        if(['download','preview'].includes(path)&&req.method==='GET'){const {asset,stream,mime}=await (path==='preview'?files.preview(principal,id.parse(url.searchParams.get('id'))):files.download(principal,id.parse(url.searchParams.get('id'))));if(res.destroyed){stream.destroy();return;}res.writeHead(200,{'Content-Type':mime,'Content-Length':asset.bytes,'Content-Disposition':(path==='preview'?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(asset.name).replaceAll("'",'%27'),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox",'X-Content-SHA256':asset.sha256});stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;}
+      }
       if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/library')return json(res,200,await delivery.library(principal,Object.fromEntries(url.searchParams)));
       if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/preview'){const {asset,stream,mime}=await delivery.preview(principal,id.parse(url.searchParams.get('id')));if(res.destroyed){stream.destroy();return;}res.writeHead(200,{'Content-Type':mime,'Content-Length':asset.bytes,'Content-Disposition':"inline; filename*=UTF-8''"+encodeURIComponent(asset.name).replaceAll("'",'%27'),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox",'X-Content-SHA256':asset.sha256});stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;}
       if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/assets')return json(res,200,{...await delivery.list(principal,Object.fromEntries(url.searchParams)),multipart:{enabled:!!uploads,partBytes:PART_BYTES,maxBytes:MAX_MULTIPART_BYTES}});
@@ -195,3 +204,5 @@ export {NotificationStore} from './notification-store';
 export {FormalImportStore} from './formal-import-store';
 
 export {ReferenceStore} from './reference-store';
+
+export {DemandAssetStore} from './demand-asset-store';

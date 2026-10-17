@@ -30,6 +30,7 @@ export type SourceLink={ref:SourceRef;linkedBy:string;linkedAt:string;reason:str
 export const routingFieldsSchema=z.strictObject({brand:z.string().trim().max(80),shop:z.string().trim().max(80),businessUnit:z.string().trim().max(80),workKind:z.enum(['','design','artwork'])});
 export type RoutingFields=z.infer<typeof routingFieldsSchema>;
 export const actionSchema = z.discriminatedUnion('type', [
+  z.strictObject({type:z.literal('set-demand-assets'),assetIds:z.array(id.transform(s=>s.toLowerCase())).max(20),reason:text}),
   z.strictObject({type:z.literal('set-demand-form'),selection:formSelection.nullable(),reason:text}),
   z.strictObject({type:z.literal('set-demand-catalog'),selection:catalogSelection.nullable(),reason:text}),
   z.strictObject({ type: z.literal('create'), title: text, brief: text, acceptance: text,routingFields:routingFieldsSchema.optional() }),
@@ -81,6 +82,7 @@ export type Task = {
   submittedAt: string | null; acceptedAt: string | null; assetIds: string[]; quality: number | null;
 };
 export type WorkOrder = {
+  demandAssets?:{id:string;orderId:string;uploader:string;name:string;bytes:number;sha256:string;revision:number;createdAt:string}[];
   creationOrigin?:{batchId:string;orderId?:string;version?:number};
   form?:FormSnapshot|null;
   catalog?:CatalogSnapshot|null;

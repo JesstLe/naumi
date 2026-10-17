@@ -118,3 +118,9 @@ node services/enterprise-workflow/tools/fixture-browser-check.mjs OUTPUT_DIRECTO
 运行schema21新增成功批次回执。demandBatchEnabled默认false，明确配置true后开放新API；复制表单/商品仍受其各自开关及团队权限控制，不改变已有流程兼容下限。原需求中心“批量新建/建单回执”、需求详情“复制需求”；1—20条只读预览后整批事务创建草稿。历史状态/人员/任务/附件/验收/积分不会继承。
 
 API、锁顺序、幂等、回执私有和排除范围见[详细PRD](../../docs/enterprise/demand-batch-g32.md)。旧20固定包对21库新草稿的读取/改写兼容通过独立运行进程验证；该证据不是生产蓝绿发布完成。新上传附件规则仍待后续。
+
+## 需求参考附件（G33）
+
+运行schema22，demandAssetsEnabled默认false；需要独立的demand-assets-enable-plan / demand-assets-enable配置预览hash与全读写者升级确认，启用后兼容下限reader/writer22。forms_enabled独立flag保留表单开关，不随附件floor隐式开启。生产仍须完整蓝绿，不把CLI确认当现场排空证明。
+
+原需求详情→参考附件，运营先上传候选，再显式选入当前草稿。32MiB/文件、20个选用、200个保留版本；与交付及续传预留共用企业配额，文件独立在deliveryRoot/demand-reference。模板可设置数量/大小/扩展名要求，提交时重新验证扫描/字节/规则。扫描disabled仅表示未扫描可用；正式需要配置真实扫描服务。详情见[PRD](../../docs/enterprise/demand-assets-g33.md)。
