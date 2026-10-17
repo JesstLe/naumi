@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import { ChevronDown, ChevronRight, Settings2 } from "lucide-react";
 import type { ManagedModelRow } from "@/lib/model-config/management";
 import styles from "./model-mapping-card.module.css";
+import { orderedRoutes } from "./channel-display";
 
 export type MappingAction = {
   label: string;
@@ -29,8 +30,8 @@ export function ModelMappingCard({ row, actions, scopeDisabled, onScope }: {
 }) {
   const [expanded, setExpanded] = useState(false);
   const panelId = useId();
-  const enabled = row.routes.filter(route => route.enabled);
-  const disabled = row.routes.filter(route => !route.enabled);
+  const enabled = orderedRoutes(row, true);
+  const disabled = orderedRoutes(row, false);
   const actualModels = [...new Set(enabled.map(route => route.model))];
   const enabledChannels = new Set(enabled.map(route => route.upstreamId)).size;
   const disabledChannels = new Set(disabled.map(route => route.upstreamId)).size;
@@ -38,10 +39,14 @@ export function ModelMappingCard({ row, actions, scopeDisabled, onScope }: {
   const priceKnown = price?.credits != null;
   const priceUnit = price?.unit === "image" ? "张" : price?.unit === "item" ? "项" : "次";
   const RouteList = ({ routes }: { routes: ManagedModelRow["routes"] }) => <ul className={styles.routeList}>
-    {routes.map(route => <li key={`${route.upstreamId}-${route.kind}`} data-enabled={route.enabled}>
-      <span className={styles.dot} /><div><code>{route.model}</code><span className={styles.routeProvider}>{route.provider}</span></div>
-      <span className={styles.routeKind}>{route.kind}</span>
-    </li>)}
+    {routes.map((route, index) => {
+      const policy = row.supplierRouting?.channels.find(channel => channel.upstreamId === route.upstreamId);
+      return <li key={`${route.upstreamId}-${route.kind}`} data-enabled={route.enabled}>
+        <span className={styles.routeOrder}>{route.enabled ? String(index + 1).padStart(2, "0") : "—"}</span>
+        <div className={styles.routeIdentity}><b>{route.provider}</b><span>实际模型 <code>{route.model}</code></span></div>
+        <span className={styles.routeKind}>{!route.enabled ? "已停用" : policy ? <>优先级 {policy.priority}{row.supplierRouting?.mode === "balanced" && <small>同级权重 {policy.weight}</small>}</> : route.kind}</span>
+      </li>;
+    })}
   </ul>;
 
   return <article className={styles.card} data-testid={`managed-model-${row.id}`} data-expanded={expanded}>
@@ -74,7 +79,7 @@ export function ModelMappingCard({ row, actions, scopeDisabled, onScope }: {
     </div>
     {expanded && <div id={panelId} className={styles.panel}>
       <section className={styles.connectionPanel} aria-label={`${row.label} 的调用通道`}>
-        <div className={styles.sectionHeading}><h3>调用通道</h3><span>{row.supplierRouting?.mode === "balanced" ? "加权分流" : row.supplierRouting?.mode === "priority" ? "优先级调度" : row.conditional ? "条件路由 / 回退" : row.preset ? "默认预设" : row.publicIds.length > 1 ? "按比例选择" : "固定调用"}</span></div>
+        <div className={styles.sectionHeading}><h3>调用通道</h3><span>{row.supplierRouting?.mode === "balanced" ? "同级分流" : row.supplierRouting?.mode === "priority" ? "主备优先" : row.conditional ? "条件路由 / 回退" : row.preset ? "默认预设" : row.publicIds.length > 1 ? "按比例选择" : "固定调用"}</span></div>
         {enabled.length ? <RouteList routes={enabled} /> : <p className={styles.empty}>当前没有启用的调用通道。</p>}
         {disabled.length > 0 && <details className={styles.disabledRoutes}><summary>已停用通道 · {disabledChannels}</summary><RouteList routes={disabled} /></details>}
       </section>

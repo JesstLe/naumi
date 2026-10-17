@@ -12,8 +12,8 @@ if(mode==='baseline') {
   assert(!source.includes('把模型连接，变简单。'));
   const card=fs.readFileSync('src/components/admin/model-management/model-mapping-card.tsx','utf8');
   assert(card.includes('const [expanded, setExpanded] = useState(false)'));
-  assert(card.includes('row.routes.filter(route => route.enabled)'));
-  assert(card.includes('row.routes.filter(route => !route.enabled)'));
+  assert(card.includes('orderedRoutes(row, true)'));
+  assert(card.includes('orderedRoutes(row, false)'));
   assert(card.includes('<details className={styles.disabledRoutes}>'));
   assert(card.includes('price?.credits != null'));
   assert(card.includes('aria-expanded={expanded}'));
@@ -25,8 +25,8 @@ if(mode==='baseline') {
   const ast=text=>ts.createSourceFile('x.tsx',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   const functions=text=>{const map=new Map();const visit=n=>{if(ts.isFunctionDeclaration(n)&&n.name)map.set(n.name.text,n.getText().replace(/\s+/g,' '));ts.forEachChild(n,visit)};visit(ast(text));return map};
   const old=functions(baseline),now=functions(source);
-  for(const [name,body] of old)if(name!=='ModelManagement')assert.equal(now.get(name),body,'unchanged function '+name);
+  for(const [name,body] of old)if(!['ModelManagement','ChannelsDialog'].includes(name))assert.equal(now.get(name),body,'unchanged function '+name);
   assert.equal(source.slice(source.indexOf('  async function run('),source.indexOf('  const rows =')),baseline.slice(baseline.indexOf('  async function run('),baseline.indexOf('  const rows =')));
-  console.log('MODIFIED=PASS SUMMARY=COLLAPSED INACTIVE_ROUTES=DISCLOSED REAL_ACTIONS=PRESERVED DIALOG_FUNCTIONS=UNCHANGED PUBLICATION=UNCHANGED');
+  console.log('MODIFIED=PASS SUMMARY=COLLAPSED INACTIVE_ROUTES=DISCLOSED REAL_ACTIONS=PRESERVED OTHER_DIALOG_FUNCTIONS=UNCHANGED CHANNEL_EDITOR=REORGANIZED PUBLICATION=UNCHANGED');
 }
 console.log('SUPPLIER_CALLS=0 EXIT=0');
