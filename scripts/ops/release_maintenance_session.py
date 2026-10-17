@@ -507,7 +507,8 @@ class LiveAdapter:
             commit=self.plan['commit'], memory_mib=web['memoryMiB'], cpu=web['cpu'],
             release_secret=self.plan['releaseSecret'], state_dir=web['stateDir'], build_version=self.plan['buildVersion'],
             reviewed_omitted_mounts=web.get('reviewedOmittedMounts'),
-            **({'media_binding': media.binding(), 'before_create': mark_create} if media else {}))
+            **({'media_binding': media.binding(), 'before_create': mark_create,
+                'runtime_recovery': self.plan['releaseId']} if media else {}))
         if media:
             phase['phase'] = 'APP_CREATED'; controls._atomic_private(phase_file, phase)
         return created
@@ -756,6 +757,26 @@ class LiveAdapter:
         receipt = load_json(relative_artifact(self.tx.folder, descriptor))
         return self.tx.retire(identity, receipt)
 
+    def runtime_policy(self, state, operation, *, enabled):
+        from release_runtime_recovery import set_runtime_policy, update_identities
+        def preflight(identities):
+            # Observe original-journal identities before strict pins. A Docker
+            # update may already have succeeded while the session kept old no.
+            update_identities(state, {'identities': identities})
+            self.assert_activation(state, operation)
+            worker = self.worker_control(state['worker']['running'], state['webs'][self.plan['webs'][0]['variant']]['running'],
+                                         'status', operation)['state']
+            require(worker.get('paused') is False and worker.get('phase') != 'UNKNOWN' and
+                    worker.get('unresolvedTicks') == 0, 'FINALIZE_WORKER_STATE_UNKNOWN')
+        result = set_runtime_policy(self.tx, self.plan, state, operation, enabled=enabled,
+                                    before_update=preflight if enabled else None)
+        update_identities(state, result)
+        return result
+
+    def verify_runtime_policy(self, state):
+        from release_runtime_recovery import verify_runtime_policy
+        return verify_runtime_policy(self.tx, self.plan, state)
+
 
 class MaintenanceSession:
     def __init__(self, tx, plan, *, adapter=None, state_root=ROOT, now=None):
@@ -864,8 +885,10 @@ class MaintenanceSession:
             'web-create': ['FROZEN', 'CANDIDATES'], 'web-start': ['CANDIDATES'], 'web-verify': ['CANDIDATES'],
             'worker-create': ['CANDIDATES'], 'worker-start': ['CANDIDATES'], 'capture-acceptance': ['CANDIDATES'], 'acceptance': ['CANDIDATES'],
             'preservation': ['ACCEPTED'], 'activate': ['PRESERVED'], 'finish': ['ACTIVE', 'MIGRATED_CLEANUP_PENDING'],
-            'retire': ['ACTIVE', 'MIGRATED_CLEANUP_PENDING'], 'rollback': PHASES[3:-2]}
+            'retire': ['ACTIVE', 'MIGRATED_CLEANUP_PENDING'], 'runtime-finalize': ['ACTIVE'], 'rollback': PHASES[3:-2]}
         require(action in allowed and phase in allowed[action], 'INVALID_MAINTENANCE_PHASE')
+        if action == 'runtime-finalize':
+            require(maintenance.canvas_video_hk(self.plan['authorization']), 'VIDEO_GOAL_RUNTIME_FINALIZE_ONLY')
         if action.startswith('web-'):
             name = request.get('variant'); names = [w['variant'] for w in self.plan['webs']]
             require(name in names, 'KNOWN_VARIANT_REQUIRED')
@@ -978,7 +1001,14 @@ class MaintenanceSession:
             result = adapter.retire(item['identity'], item['receipt'], operation)
             if item['identity']['id'] not in state['retired']: state['retired'].append(item['identity']['id'])
             return result
+        if action == 'runtime-finalize':
+            state['runtimeRecovery'] = adapter.runtime_policy(state, operation, enabled=True)
+            adapter.assert_activation(state, operation)
+            return state['runtimeRecovery']
         if action == 'finish':
+            if maintenance.canvas_video_hk(self.plan['authorization']):
+                require(state.get('runtimeRecovery', {}).get('enabled') is True, 'RUNTIME_FINALIZATION_REQUIRED')
+                state['runtimeRecoveryVerified'] = adapter.verify_runtime_policy(state)
             adapter.legacy_safety(frozen=True, retired=state['retired'])
             adapter.assert_activation(state, operation)
             current_worker = self.worker_state('status', operation)
@@ -988,6 +1018,10 @@ class MaintenanceSession:
             state['phase'] = 'COMPLETE' if required <= set(state['retired']) else 'MIGRATED_CLEANUP_PENDING'
             return {'phase': state['phase'], 'legacyDrainProven': False, 'unretired': len(required - set(state['retired']))}
         if action == 'rollback':
+            if maintenance.canvas_video_hk(self.plan['authorization']) and not state.get('rollbackRuntimeDisarmed') and (
+                    state.get('runtimeRecovery') or any(slot.get('running') for slot in state['webs'].values())):
+                state['rollbackRuntimeDisarmed'] = adapter.runtime_policy(state, self.op(operation, 'runtime-disarm'), enabled=False)
+                self.persist()
             if state.get('worker', {}).get('running') and not state.get('rollbackWorkerPaused'):
                 self.worker_state('drain', self.op(operation, 'worker-drain'))
                 self.quiescent_worker(operation)
@@ -1000,6 +1034,8 @@ class MaintenanceSession:
                 if web.get('running') and not state.get('rollback-app-' + variant):
                     state['rollback-app-' + variant] = adapter.app_control(web['running'], 'drain', self.op(operation, 'app-drain-' + variant))
                     self.persist()
+            if maintenance.canvas_video_hk(self.plan['authorization']):
+                require(not state.get('openGateway'), 'POST_ACTIVATION_ACCEPTED_WORK_AUDIT_REQUIRED')
             kind = 'rollback-open' if state.get('openGateway') else 'rollback-maintenance'
             if not state.get('rollbackGateway'):
                 adapter.legacy_safety(**rollback_legacy)
