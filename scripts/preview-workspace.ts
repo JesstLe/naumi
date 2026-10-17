@@ -5,7 +5,7 @@ import {once} from 'node:events';
 import type {Pool} from 'pg';
 export async function workspacePreview(pool:Pool,m:{source:{root:string;foreign:string;ordinary:string;owner:string};enterpriseId:string;teamId:string}){
  if(process.env.NAUMI_VERIFY_ISOLATED_DB!=='1'||new URL(process.env.DATABASE_URL!).hostname!=='127.0.0.1')throw Error('ISOLATED_FIXTURE_REQUIRED');
- const {GET,POST}=await import('../src/app/api/enterprise/workflow/route');const {GET:html}=await import('../src/app/enterprise/workflow/route');const files=await import('../src/app/api/enterprise/workflow/files/route');const native=await import('../src/lib/native-auth');
+ const {GET,POST}=await import('../src/app/api/enterprise/workflow/route');const {GET:html}=await import('../src/app/enterprise/workflow/route');const files=await import('../src/app/api/enterprise/workflow/files/route');const sourceApi=await import('../src/app/api/enterprise/workflow/source/route');const native=await import('../src/lib/native-auth');
  const secondTeam=randomUUID(),secondTenant=randomUUID(),secondSource=randomUUID(),thirdTeam=randomUUID();
  await pool.query("UPDATE enterprise_workflow.team_members SET permissions='[\"manage\",\"request\",\"dispatch\",\"review\"]' WHERE enterprise_id=$1 AND subject='provisioner'",[m.enterpriseId]);
  await pool.query('UPDATE enterprise_workflow.source_identities SET enabled=true WHERE enterprise_id=$1',[m.enterpriseId]);
@@ -41,7 +41,7 @@ export async function workspacePreview(pool:Pool,m:{source:{root:string;foreign:
   if(req.method==='POST'&&u.pathname==='/fixture/shutdown'){respond(200,{closed:true});setTimeout(()=>{server.close();server.closeAllConnections();},50);return;}
   const headers=new Headers();for(const key of ['cookie','origin','content-type','x-workflow-viewer']){const v=req.headers[key];if(typeof v==='string')headers.set(key,v);}
   const request=new Request(u,{method:req.method,headers,...(req.method==='POST'?{body}: {})});
-  const response=u.pathname==='/api/enterprise/workflow/files'?(req.method==='POST'?await files.POST(request):await files.GET(request)):u.pathname==='/api/enterprise/workflow'?(req.method==='POST'?await POST(request):await GET(request)):['/','/preview.html','/enterprise/workflow'].includes(u.pathname)?await html():new Response('not found',{status:404});
+  const response=u.pathname==='/api/enterprise/workflow/source'?(req.method==='POST'?await sourceApi.POST(request):await sourceApi.GET(request)):u.pathname==='/api/enterprise/workflow/files'?(req.method==='POST'?await files.POST(request):await files.GET(request)):u.pathname==='/api/enterprise/workflow'?(req.method==='POST'?await POST(request):await GET(request)):['/','/preview.html','/enterprise/workflow'].includes(u.pathname)?await html():new Response('not found',{status:404});
   res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));
  }catch(e){console.error(e instanceof Error?e.message:'fixture_error');res.writeHead(500);res.end('fixture_error');}});
  server.listen(port,'127.0.0.1');await once(server,'listening');console.log(`WORKSPACE_PREVIEW_READY: ${origin}/preview.html?v=4 native_session=1 source_and_workflow=isolated fixture_login_only=1`);await once(server,'close');

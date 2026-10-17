@@ -78,7 +78,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       if(req.method==='POST'&&url.pathname==='/v1/intake')return json(res,200,await store.promote(principal,await body(req)));
       const detailMatch=/^\/v1\/orders\/([^/]+)\/detail$/.exec(url.pathname);
       if(req.method==='GET'&&detailMatch)return json(res,200,await store.detail(principal,id.parse(detailMatch[1])));
-      if (req.method === 'POST' && url.pathname === '/v1/commands') return json(res, 200, await store.execute(principal, await body(req)));
+      if (req.method === 'POST' && url.pathname === '/v1/commands') return json(res, 200, await store.execute(principal, await body(req),typeof req.headers['x-workflow-source-evidence']==='string'?req.headers['x-workflow-source-evidence']:''));
       const match = /^\/v1\/orders\/([^/]+)$/.exec(url.pathname);
       if (req.method === 'GET' && match) {
         if (!id.safeParse(match[1]).success) throw new WorkflowError(400, 'INVALID_ORDER_ID');
@@ -102,3 +102,5 @@ export { SourceIdentityStore,createSourceVerifier,createMappedAuthenticator } fr
 export { PeopleStore } from './people-store';
 
 export { DeliveryStore } from './delivery-store';
+
+export {createSourceEvidenceVerifier} from './source-evidence';

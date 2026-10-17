@@ -5,6 +5,7 @@ function need(ok: unknown, code: string, status = 409): asserts ok {
   if (!ok) throw new WorkflowError(status, code);
 }
 export function has(actor: Actor, p: Permission) { return actor.permissions.includes(p); }
+export const sourceKey=(r:{instanceId:string;enterpriseId:string;kind:string;id:string})=>JSON.stringify([r.instanceId,r.enterpriseId,r.kind,r.id]);
 export function participants(t:Task){return [...new Set([t.assignee,...(t.handoverHistory??[]).filter(h=>h.outcome==='accepted').flatMap(h=>[h.from,h.to])].filter((s):s is string=>!!s))];}
 export function canRead(actor: Actor, order: WorkOrder) {
   if ((actor.teamId !== undefined || order.teamId !== undefined) && actor.teamId !== order.teamId) return false;
@@ -55,12 +56,21 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
         visiting.delete(current); visited.add(current);
       };
       for (const t of action.tasks) visit(t.id);
+      need(order.tasks.every(t=>!t.sourceLinks?.length||ids.has(t.id)),'SOURCE_LINKS_REQUIRE_UNLINK');
       const planned=new Map(order.tasks.map(t=>[t.id,t]));
-      order.tasks = action.tasks.map(t => {const old=planned.get(t.id);return { ...t,...(old?{planStart:old.planStart,planEnd:old.planEnd,estimatedHours:old.estimatedHours,scheduleTag:old.scheduleTag,customValues:old.customValues}:{}), status: 'open', assignee: null, percent: 0, reworkCount: 0,
+      order.tasks = action.tasks.map(t => {const old=planned.get(t.id);return { ...t,...(old?{planStart:old.planStart,planEnd:old.planEnd,estimatedHours:old.estimatedHours,scheduleTag:old.scheduleTag,customValues:old.customValues,sourceLinks:old.sourceLinks}:{}), status: 'open', assignee: null, percent: 0, reworkCount: 0,
         startedAt: null, submittedAt: null, acceptedAt: null, assetIds: [], quality: null };});
       break;
     }
     case 'publish': state('approved'); permit('dispatch'); need(order.tasks.length, 'TASKS_REQUIRED'); order.status = 'active'; break;
+    case 'link-source': case 'unlink-source': {
+      state('approved','active');const t=order.tasks.find(t=>t.id===action.taskId);need(t,'TASK_NOT_FOUND',404);
+      need(!['review','accepted'].includes(t.status),'SOURCE_LINKS_FROZEN');need(!t.pendingHandover,'HANDOVER_PENDING');
+      if(!has(actor,'dispatch')){permit('execute');need(t.assignee===actor.subject&&actor.workKinds.includes(t.kind)&&['claimed','in_progress','blocked','rework'].includes(t.status),'FORBIDDEN',403);}
+      const links=t.sourceLinks??[],key=sourceKey(action.ref),existing=links.find(l=>sourceKey(l.ref)===key);
+      if(action.type==='link-source'){need(!existing,'SOURCE_ALREADY_LINKED');need(links.length<30,'SOURCE_LINK_LIMIT');t.sourceLinks=[...links,{ref:action.ref,linkedBy:actor.subject,linkedAt:at,reason:action.reason}];}
+      else{need(existing,'SOURCE_LINK_NOT_FOUND',404);eventData={removed:existing};t.sourceLinks=links.filter(l=>sourceKey(l.ref)!==key);}break;
+    }
     case 'batch-tasks': {
       permit('dispatch');need(new Set(action.taskIds).size===action.taskIds.length,'DUPLICATE_TASK');
       let draft=order;

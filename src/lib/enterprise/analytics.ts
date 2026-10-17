@@ -24,7 +24,7 @@ const historical=`CASE
  WHEN l.reason ~ '^画布标注编辑( · (low|medium|high))?$' THEN 'canvas.annotate'
  WHEN l.reason='画布在线改字' THEN 'canvas.text-edit'
  ELSE NULL END`;
-const ledgerCTE=`WITH mapped AS (
+const ledgerSourceCTE=(window="l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz")=>`WITH mapped AS (
  SELECT l.id,l.email,l.created_at,l.delta,l.kind,l.reason,
   COALESCE(o.id,ro.id) AS operation_id,
   COALESCE(${featureCase('o.feature')},${featureCase('ro.feature')},${historical},'unknown') AS purpose,
@@ -37,8 +37,9 @@ const ledgerCTE=`WITH mapped AS (
  LEFT JOIN LATERAL(SELECT id,feature FROM app_billing_operations WHERE email=l.email AND ledger_id=l.id ORDER BY created_at,id LIMIT 1)o ON true
  LEFT JOIN app_billing_api_cost_reviews r ON l.id='led-api-refund-'||r.id
  LEFT JOIN app_billing_operations ro ON ro.id=r.operation_id AND ro.email=l.email
- WHERE l.email=ANY($1::text[]) AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz AND ($4::text='' OR l.email=$4)
+ WHERE l.email=ANY($1::text[]) AND ${window} AND ($4::text='' OR l.email=$4)
 ), ledger AS (SELECT * FROM mapped WHERE $5::text='' OR purpose=$5)`;
+const ledgerCTE=ledgerSourceCTE();
 const sums=`COALESCE(sum(-delta) FILTER(WHERE event_kind='consume'),0)::float8 AS consumed,COALESCE(sum(delta) FILTER(WHERE event_kind='refund'),0)::float8 AS refunded,
  COALESCE(sum(CASE WHEN event_kind='consume' THEN -delta WHEN event_kind='refund' THEN -delta ELSE 0 END),0)::float8 AS net,count(*)::int AS events`;
 const jobStatus=(expr:string)=>`CASE WHEN ${expr} IN('done','completed','succeeded','success') THEN 'succeeded' WHEN ${expr} IN('error','failed','cancelled','canceled') THEN 'failed' WHEN ${expr} IN('queued','running','pending','processing','reserved','prepared') THEN 'pending' ELSE 'unknown' END`;
@@ -117,4 +118,12 @@ export async function enterpriseLedgerCsv(actor:TeamActor,q:AnalyticsFilter){
   const { EVENT_LABELS }=await import('./analytics-contracts');
   return '\uFEFF'+[['时间（北京时间）','姓名','账号','变动类型','用途','积分变动','流水编号','操作编号','用途来源'],...rows.map(r=>[new Date(r.createdAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}),r.name,r.email,EVENT_LABELS[r.kind],r.kind==='consume'||r.kind==='refund'?PURPOSES[r.purpose]:'—',r.delta,r.id,r.operationId,r.source])].map(r=>r.map(csvCell).join(',')).join('\r\n');
  });
+}
+
+/** Narrow read-only ledger list for an already authorized creation scope. Reuses authoritative classification. */
+export async function creationLedger(tx:import('pg').PoolClient,emails:string[],q:{start:string;end:string;email:string;page:number;size:number;recordId?:string}){
+ const cte=ledgerSourceCTE("(($6::text<>'' AND l.id=$6) OR ($6='' AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz))"),p=[emails,q.start,q.end,q.email,'',q.recordId??''];
+ const total=Number((await tx.query(`${cte} SELECT count(*) AS n FROM ledger`,p)).rows[0].n);
+ const rows=(await tx.query(`${cte} SELECT l.id,l.email,u.name,l.created_at AS "createdAt",l.event_kind AS kind,l.purpose,l.delta,l.operation_id AS "operationId",l.source FROM ledger l JOIN app_users u ON u.email=l.email ORDER BY l.created_at DESC,l.id DESC LIMIT $7 OFFSET $8`,[...p,q.size,(q.page-1)*q.size])).rows;
+ return {rows:rows.map(r=>({...r,createdAt:r.createdAt instanceof Date?r.createdAt.toISOString():r.createdAt})),total,page:q.page,size:q.size};
 }

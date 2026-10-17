@@ -63,7 +63,7 @@ export function validateHierarchy(owner:string,nodes:Node[],roles:EnterpriseRole
       if(!pr?.manage_members||pr.level>=level)throw new TeamError('上级必须具有管理权限且等级高于成员',409)}
   }
 }
-async function scope(tx:PoolClient,actor:TeamActor,id:string):Promise<Scope> {
+async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false):Promise<Scope> {
   try {const pinned=pinnedEnterpriseIds();if(pinned.length&&!pinned.includes(id))throw new TeamError('企业不存在',404);}
   catch(e){if(e instanceof IntegrationError)throw new TeamError('企业部署范围尚未配置',503);throw e;}
   const team=(await tx.query(`SELECT t.id,t.name,t.owner_email,t.authorized_until,t.enabled,s.enabled AS enterprise_enabled
@@ -89,10 +89,14 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string):Promise<Scope> {
   validateHierarchy(team.owner_email,nodes,roles);
   const owner=actor.admin||team.owner_email===actor.email;
   const node=nodes.find(m=>m.email===actor.email),role=roles.find(r=>r.id===node?.role_id);
-  if(!owner&&(!node||!role||!role.manage_members&&!role.view_records))throw new TeamError('当前岗位没有企业管理权限');
+  if(!owner&&(!node||!allowSelf&&(!role||!role.manage_members&&!role.view_records)))throw new TeamError('当前岗位没有企业管理权限');
   const visible=new Set<string>();if(owner)for(const m of nodes)visible.add(m.email);
-  else {visible.add(actor.email);let changed=true;while(changed){changed=false;for(const m of nodes)if(visible.has(m.supervisor_email)&&!visible.has(m.email)){visible.add(m.email);changed=true}}}
-  return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},owner,level:owner?0:role!.level,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible};
+  else {visible.add(actor.email);let changed=!allowSelf||!!role?.view_records;while(changed){changed=false;for(const m of nodes)if(visible.has(m.supervisor_email)&&!visible.has(m.email)){visible.add(m.email);changed=true}}}
+  return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},owner,level:owner?0:role?.level??999,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible};
+}
+/** Workflow creation picker: ordinary employees get self only; never elevates existing analytics routes. */
+export async function enterpriseCreationRead<T>(email:string,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>){
+ await ensureEnterpriseSchema();const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ');await tx.query("SET LOCAL statement_timeout='10s'");const s=await scope(tx,{email,admin:false},id,true);if(s.owner)s.visible.add(s.team.owner_email);const result=await run(tx,s);await tx.query('COMMIT');return result;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
 }
 /** Analytics never trusts client member lists. Recheck the live hierarchy/grant in
  * the same consistent snapshot used for every aggregate and export. Shared

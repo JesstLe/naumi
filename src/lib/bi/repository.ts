@@ -97,14 +97,15 @@ const operationSource = `SELECT 'app_image_jobs'::text AS source_table,EXISTS(SE
   v.status='completed' OR v.credits_refunded,v.error FROM app_video_tasks v`;
 
 /** Narrow enterprise port: reuses operation SQL but does NOT widen the artworks-only scoped BI API. */
-export async function queryEnterpriseOperations(q:BiQuery,access:{client:PoolClient;allowedEmails:readonly string[]}):Promise<BiResponse>{
+export async function queryEnterpriseOperations(q:BiQuery,access:{client:PoolClient;allowedEmails:readonly string[]},exact?:{kind:'image-job'|'canvas-task'|'video-task';id:string}):Promise<BiResponse>{
   if(q.section!=='operations')throw new Error('Enterprise operation query required');
   const source=`SELECT source_table,has_ledger_charge,id,email,kind,created_at,status,content,quoted_credits,billed_credits,reserved_credits,settled
-    FROM (${operationSource}) t WHERE email=ANY($5::text[]) AND created_at >= $1::timestamptz AND created_at < $2::timestamptz
+    FROM (${operationSource}) t WHERE email=ANY($5::text[]) AND (($6::text<>'' AND id=$6 AND source_table=$7) OR ($6='' AND created_at >= $1::timestamptz AND created_at < $2::timestamptz))
       AND ($3::text='' OR email=$3) AND ($4::text='' OR status=$4)`;
-  const params=[q.start,q.end,q.email,q.status,access.allowedEmails];
+  const tables={'image-job':'app_image_jobs','canvas-task':'app_canvas_image_tasks','video-task':'app_video_tasks'};
+  const params=[q.start,q.end,q.email,q.status,access.allowedEmails,exact?.id??'',exact?tables[exact.kind]:''];
   const total=Number((await access.client.query(`SELECT count(*)::int AS n FROM (${source}) s`,params)).rows[0].n);
-  const rows=(await access.client.query(`${source} ORDER BY created_at DESC,source_table,id LIMIT $6 OFFSET $7`,[...params,q.size,(q.page-1)*q.size])).rows;
+  const rows=(await access.client.query(`${source} ORDER BY created_at DESC,source_table,id LIMIT $8 OFFSET $9`,[...params,q.size,(q.page-1)*q.size])).rows;
   return {section:'operations',rows:normalize(rows),total,page:q.page,size:q.size,generatedAt:new Date().toISOString(),query:{from:q.from,to:q.to}};
 }
 function normalize(rows: Record<string, unknown>[]): BiRow[] {

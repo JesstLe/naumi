@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Pool, PoolClient } from 'pg';
-import { commandSchema,batchPreviewSchema,calendarDate, WorkflowError, type Actor, type Principal, type WorkOrder } from './contracts';
+import { commandSchema,batchPreviewSchema,calendarDate, WorkflowError, type Actor, type Principal, type WorkOrder, type Command } from './contracts';
 import type { Workbook } from './scheduling-contracts';
 import { canRead, evolve } from './domain';
 const sourceSchema=z.strictObject({sourceHash:z.string().regex(/^[a-f0-9]{64}$/),row:z.number().int().min(2).max(10001),expectedVersion:z.number().int().positive(),intent:z.literal('standalone'),confirmed:z.literal(true)});
@@ -20,8 +20,9 @@ function stable(value: unknown): string {
   if (value && typeof value === 'object') return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k,v]) => `${JSON.stringify(k)}:${stable(v)}`).join(',')}}`;
   return JSON.stringify(value);
 }
+export type VerifySource=(proof:string,actor:Actor,command:Command)=>Promise<{sourceSubject:string}>;
 export class WorkflowStore {
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string}) {}
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource) {}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
@@ -157,10 +158,10 @@ export class WorkflowStore {
     if(c.command.action.type!=='create'||c.command.expectedVersion!==0)throw new WorkflowError(400,'INTAKE_REQUIRES_CREATE');
     return this.executeCommand(principal,c.command,c.source);
   }
-  async execute(principal: Principal, raw: unknown) {
-    return this.executeCommand(principal,raw);
+  async execute(principal: Principal, raw: unknown,proof='') {
+    return this.executeCommand(principal,raw,undefined,false,proof);
   }
-  private async executeCommand(principal: Principal, raw: unknown, source?:z.infer<typeof sourceSchema>,dryRun=false) {
+  private async executeCommand(principal: Principal, raw: unknown, source?:z.infer<typeof sourceSchema>,dryRun=false,proof='') {
     const parsed = commandSchema.safeParse(raw);
     if (!parsed.success) throw new WorkflowError(400, 'INVALID_COMMAND');
     const command = parsed.data;
@@ -183,6 +184,12 @@ export class WorkflowStore {
       }
       const prior = (await tx.query('SELECT fingerprint,result FROM enterprise_workflow.commands WHERE enterprise_id=$1 AND id=$2', [principal.enterpriseId, command.commandId])).rows[0];
       const previous = (await tx.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2 FOR UPDATE', [principal.enterpriseId, command.orderId])).rows[0]?.document as WorkOrder | undefined;
+      if(command.action.type==='link-source'){
+        if(!previous||!canRead(actor,previous))throw new WorkflowError(404,'NOT_FOUND');
+        if(!this.verifySource||!actor.sourceBinding)throw new WorkflowError(503,'SOURCE_PROOF_NOT_CONFIGURED');
+        const verified=await this.verifySource(proof,actor,command);
+        if(!actor.permissions.includes('dispatch')&&verified.sourceSubject!==actor.sourceBinding.sourceSubject)throw new WorkflowError(403,'SOURCE_SELF_ONLY');
+      }
       // Revoked permissions cannot recover historical command snapshots via idempotency replay.
       if (prior) {
         if (prior.fingerprint !== fingerprint) throw new WorkflowError(409, 'IDEMPOTENCY_CONFLICT');

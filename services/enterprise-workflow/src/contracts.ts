@@ -22,6 +22,9 @@ const batchOperation=z.discriminatedUnion('type',[
  z.strictObject({type:z.literal('set-task-tag'),scheduleTag:tag}),
 ]);
 export const batchPreviewSchema=z.strictObject({batchId:id,items:z.array(z.strictObject({orderId:id,taskId:id,expectedVersion:z.number().int().positive()})).min(1).max(50),operation:batchOperation,reason:text});
+export const sourceRefSchema=z.strictObject({instanceId:z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,79}$/),enterpriseId:id,kind:z.enum(['artwork','image-job','canvas-task','video-task','ledger']),id:z.string().trim().min(1).max(200)});
+export type SourceRef=z.infer<typeof sourceRefSchema>;
+export type SourceLink={ref:SourceRef;linkedBy:string;linkedAt:string;reason:string};
 export const actionSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('create'), title: text, brief: text, acceptance: text }),
   z.strictObject({ type: z.literal('revise-requirement'), title: text, brief: text, acceptance: text }),
@@ -30,6 +33,8 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('approve-requirement') }),
   z.strictObject({ type: z.literal('plan-tasks'), tasks: z.array(taskSpec).min(1).max(50) }),
   z.strictObject({ type: z.literal('publish') }),
+  z.strictObject({type:z.literal('link-source'),...taskId,ref:sourceRefSchema,reason:text}),
+  z.strictObject({type:z.literal('unlink-source'),...taskId,ref:sourceRefSchema,reason:text}),
   z.strictObject({type:z.literal('set-task-plan'),...taskId,planStart:calendarDate.nullable(),planEnd:calendarDate.nullable(),estimatedHours:z.number().positive().max(1000).nullable(),scheduleTag:z.string().regex(/^$|^[a-z][a-z0-9_]{0,63}$/),customValues:z.record(z.string().regex(/^custom_[a-zA-Z0-9_]{1,56}$/),z.union([z.string().max(2000),z.number().finite(),z.null()])).refine(v=>Object.keys(v).length<=20),reason:text}),
   z.strictObject({ type: z.literal('assign'), ...taskId, assignee: z.string().trim().min(1).max(254) }),
   z.strictObject({ type: z.literal('claim'), ...taskId }),
@@ -58,6 +63,7 @@ export type Command = z.infer<typeof commandSchema>;
 export type Handover = {id:string;from:string;to:string;reason:string;requestedBy:string;requestedAt:string};
 export type HandoverRecord = Handover & {outcome:'accepted'|'declined'|'cancelled';resolvedBy:string;resolvedAt:string;resolutionReason:string};
 export type Task = {
+  sourceLinks?:SourceLink[];
   pendingHandover?:Handover|null;handoverHistory?:HandoverRecord[];
   planStart?:string|null;planEnd?:string|null;estimatedHours?:number|null;scheduleTag?:string;customValues?:Record<string,string|number|null>;
   id: string; title: string; kind: WorkKind; points: number; dueAt: string; dependencyIds: string[];
