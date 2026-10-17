@@ -64,6 +64,8 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       if(routing&&req.method==='POST'&&url.pathname==='/v1/routing/resolve'){await routing.ready();return json(res,200,await routing.resolve(principal,await body(req)));}
       if(performance&&url.pathname==='/v1/performance'){await performance.ready();if(req.method==='GET')return json(res,200,await performance.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST')return json(res,200,await performance.execute(principal,await body(req)));}
       if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/assets')return json(res,200,await delivery.list(principal,Object.fromEntries(url.searchParams)));
+      if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/scan-history')return json(res,200,await delivery.scanHistory(principal,id.parse(url.searchParams.get('id')),{page:url.searchParams.get('page')||'1'}));
+      if(delivery&&req.method==='POST'&&url.pathname==='/v1/delivery/scan'){const q=await body(req);return json(res,200,await delivery.rescan(principal,id.parse(q.assetId)));}
       if(delivery&&req.method==='POST'&&url.pathname==='/v1/delivery/upload'){
         if(req.headers['content-type']!=='application/octet-stream')throw new WorkflowError(415,'BINARY_REQUIRED');
         if(Number(req.headers['content-length']||0)>delivery.maxBytes)throw new WorkflowError(413,'ASSET_TOO_LARGE');
@@ -71,6 +73,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       }
       if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/download'){
         const {asset,stream}=await delivery.download(principal,id.parse(url.searchParams.get('id')));
+        if(res.destroyed){stream.destroy();return;}
         res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':asset.bytes,'Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(asset.name).replaceAll("'",'%27'),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox",'X-Content-SHA256':asset.sha256});stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;
       }
       if(people&&req.method==='GET'&&url.pathname==='/v1/people')return json(res,200,await people.list(principal,url.searchParams.get('source')||''));
