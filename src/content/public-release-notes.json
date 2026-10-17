@@ -33,5 +33,32 @@
         "en": "Improve full-image presentation and image retention when returning to the page."
       }
     ]
+  },
+  {
+    "version": "1792211906",
+    "title": {
+      "zh": "画布与创作体验更新",
+      "en": "Canvas and creation improvements"
+    },
+    "improvements": [
+      {
+        "zh": "统一图片与视频节点的操作体验，新增节点时可先选择类型。",
+        "en": "Unified image and video node controls, with a type picker when adding nodes."
+      },
+      {
+        "zh": "优化上传图片定位与节点位置保留，手动整理时再统一布局。",
+        "en": "Improved uploaded-image navigation and position retention; arrange the canvas when you choose."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "编辑图片时，自动画幅默认跟随唯一布局参考图，并移除重复的创作面板。",
+        "en": "Automatic framing follows the single layout reference during image editing, and the duplicate creation panel has been removed."
+      },
+      {
+        "zh": "作品详情只展示真实提示词，没有记录时不再显示示例内容。",
+        "en": "Artwork details show only saved prompts and no longer display demo content when a prompt is missing."
+      }
+    ]
   }
 ]
