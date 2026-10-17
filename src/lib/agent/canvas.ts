@@ -160,12 +160,15 @@ async function runCanvasAgentLocal(request: Request) {
           const attention = session.events.slice(cursorStart).findLast(event => event.type === "attention");
           const pendingAttention = attention?.data.kind === "waiting" || attention?.data.kind === "restricted";
           const modelReply = Array.isArray(last?.content) ? last.content.filter(part => part.type === "text").map(part => part.type === "text" ? part.text : "").join("").trim() : output.trim();
-          // A terminated confirmation gate may have no final model text. Surface its
-          // existing public quote rather than label the blocked tool as completed.
-          const reply = modelReply || (pendingAttention ? String(attention?.data.message || (attention?.data.kind === "waiting" ? "请明确确认报价后继续。" : "当前操作受限，请调整任务后继续。")) : "");
+          // A tool gate is authoritative even if the model already promised execution.
+          // Persist its actual reason so restoring history cannot resurrect that claim.
+          const attentionReply = pendingAttention ? String(attention?.data.message || (attention?.data.kind === "waiting" ? "请明确确认报价后继续。" : "当前操作受限，请调整任务后继续。")) : "";
+          const reply = attentionReply || modelReply;
           if (!reply || failed) throw new Error("Agent 执行未完成，已产出的结果保留，请勿重复提交收费任务");
-          if (!modelReply && pendingAttention) {
-            session.agent.state.messages = [...session.agent.state.messages, {
+          if (pendingAttention && reply !== modelReply) {
+            const corrected = session.agent.state.messages.map(turn => turn === last && turn.role === "assistant"
+              ? { ...turn, content: turn.content.filter(part => part.type !== "text") } : turn);
+            session.agent.state.messages = [...corrected, {
               role: "assistant", api: session.agent.state.model?.api || "openai-completions", provider: "naumi-local", model: "naumi-local-reply",
               content: [{ type: "text", text: reply }], stopReason: "stop", timestamp: Date.now(),
               usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
@@ -181,7 +184,7 @@ async function runCanvasAgentLocal(request: Request) {
       })();
     }, cancel() { cancel(); },
   });
-  return new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform" } });
+  return new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", "X-Accel-Buffering": "no" } });
 }
 
 export async function runCanvasAgent(request: Request) {

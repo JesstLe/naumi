@@ -1,5 +1,6 @@
 
-import { assertAgentToolAccess } from "@/lib/feature-access/server";
+import { agentRestrictionMessage } from "./public-status";
+import { FeatureAccessError, assertAgentToolAccess } from "@/lib/feature-access/server";
 import type { Agent } from "@earendil-works/pi-agent-core";
 import { currentModelExecution, currentExecutionBundle } from "@/lib/model-config/context";
 import { signAcceptedModelContext } from "@/lib/model-config/accepted-context";
@@ -326,8 +327,10 @@ async function createRuntimeSession(
       try { await assertAgentToolAccess(email, toolCall.name, options ? "canvas" : "workbench", new Request("http://internal", { headers: { cookie: session.cred.cookie, authorization: session.cred.authorization } })); session.harness.check(toolCall.name, args); }
       catch (error) {
         const failure = error instanceof HarnessError ? error : new HarnessError("ARGUMENT_INVALID");
-        appendSessionEvent(session, "attention", {kind:"restricted",tool:toolCall.name,message:failure.message,code:failure.code});
-        return {block:true,terminate:true,reason:failure.message};
+        const code = error instanceof FeatureAccessError ? "FEATURE_ACCESS_DENIED" : failure.code;
+        const message = agentRestrictionMessage(code) || failure.message;
+        appendSessionEvent(session, "attention", {id:toolCall.id,kind:"restricted",tool:toolCall.name,message,code});
+        return {block:true,terminate:true,reason:message};
       }
       const signature = `${toolCall.name}:${stableJson(args)}`;
       if (signature === session.repeatSignature) session.repeatCount += 1;
@@ -336,7 +339,7 @@ async function createRuntimeSession(
         session.repeatCount = 1;
       }
       if (session.repeatCount >= 3) {
-        appendSessionEvent(session, "attention", { kind: "restricted", tool: toolCall.name });
+        appendSessionEvent(session, "attention", { id: toolCall.id, kind: "restricted", tool: toolCall.name, message: "相同参数已连续调用多次，请先检查已有结果。", code: "REPLAY_BLOCKED" });
         return {
           block: true,
           reason:
@@ -347,10 +350,10 @@ async function createRuntimeSession(
       const precheck = () => agentBillingPrecheck(session,toolCall.name,args as Record<string,unknown>,toolCall.id);
       const result = session.harness.sanitize(await (acceptedBundle ? withFrozenExecutionBundle(acceptedBundle, precheck) : precheck()));
       // Typed presentation signal only; billing decisions and public reply stay intact.
-      if (result && "attention" in result && result.attention) appendSessionEvent(session, "attention", { kind: result.attention, tool: toolCall.name, message: result.reason });
+      if (result && "attention" in result && result.attention) appendSessionEvent(session, "attention", { id: toolCall.id, kind: result.attention, tool: toolCall.name, message: result.reason });
       else if (!result?.block) {
         const pending = session.events.findLast(event => event.type === "attention");
-        if (pending?.data.tool === toolCall.name && pending.data.kind !== "resolved") appendSessionEvent(session, "attention", { kind: "resolved", tool: toolCall.name });
+        if (pending?.data.tool === toolCall.name && pending.data.kind !== "resolved") appendSessionEvent(session, "attention", { id: toolCall.id, kind: "resolved", tool: toolCall.name });
       }
       if (!result?.block) {
         try { session.harness.permit(toolCall.name, args, toolCall.id); }
