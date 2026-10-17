@@ -12,3 +12,5 @@ await copyFile(new URL('./migrations/003-source-import.sql', import.meta.url), n
 await copyFile(new URL('./migrations/005-people-mapping.sql', import.meta.url), new URL('./dist/005-people-mapping.sql', import.meta.url));
 await copyFile(new URL('./migrations/006-source-intake.sql', import.meta.url), new URL('./dist/006-source-intake.sql', import.meta.url));
 console.log('BUILD_PASS: independent service factory; no Next.js or provider credentials');
+
+await copyFile(new URL('./migrations/007-workspace-labels.sql', import.meta.url), new URL('./dist/007-workspace-labels.sql', import.meta.url));

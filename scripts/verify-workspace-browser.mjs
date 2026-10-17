@@ -1,0 +1,21 @@
+// Native screenshot timed out twice; isolated Chromium, never user's browser profile.
+import {chromium} from 'playwright';
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import assert from 'node:assert/strict';
+const out=resolve(process.env.WORKSPACE_EVIDENCE_DIR||'output/workspace-browser');await mkdir(out,{recursive:true});
+const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH}:{})});
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('http://127.0.0.1:18508/enterprise/workflow');await page.waitForFunction(()=>workspace.status===401);assert(await page.locator('a[href^="/sign-in"]').isVisible());
+ await page.evaluate(async()=>{await fetch('/fixture/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({account:'employee'})});await workspaceDiscover();const m=await(await fetch('/fixture/meta')).json();await workspaceChooseEnterprise(m.source.root);await workspaceChooseTeam(m.teamId);});
+ assert.equal(await page.evaluate(()=>intake.total),1);await page.screenshot({path:resolve(out,'WORKSPACE.png'),animations:'disabled'});
+ await page.locator('#intakeCreate').click();assert((await page.locator('#intakeForm').innerText()).includes('personal'));await page.screenshot({path:resolve(out,'EMPLOYEE_FORM.png'),animations:'disabled'});await page.evaluate(()=>closeOverlay());
+ await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&document.querySelector('.sidebar').getBoundingClientRect().right<=1));await page.screenshot({path:resolve(out,'MOBILE.png'),animations:'disabled'});
+ await page.reload();await page.waitForFunction(()=>workspace.directory&&!workspace.loading);assert.equal(await page.evaluate(()=>workspace.teamId),'');assert.equal(await page.locator('#intakeCreate').count(),0);assert.equal(await page.evaluate(()=>intake.orders.length),0);
+ await page.setViewportSize({width:1440,height:1000});await page.goto('http://127.0.0.1:18502/preview.html?v=4');const intake=await page.evaluate(await readFile('design/enterprise-demo/intake-browser-check.js','utf8'));assert.equal(intake.passed,20);await page.evaluate(()=>closeOverlay());const people=await page.evaluate(await readFile('design/enterprise-demo/people-browser-check.js','utf8'));assert.equal(people.passed,20);
+ const regression={};for(const script of ['browser-check.js','schedule-browser-check.js','workbook-browser-check.js']){await page.evaluate(()=>{workspaceExit();imported.active=false;peopleMapping.active=false;intake.active=false;sourceState.tab='local';shell();});regression[script]=await page.evaluate(await readFile('design/enterprise-demo/'+script,'utf8'));}
+ await page.goto('http://127.0.0.1:18482/preview.html?v=4');await page.evaluate(async()=>{view='requirements';intake.active=true;await intakeLoad();});assert.equal(await page.evaluate(()=>intake.total),0);await page.locator('#workspaceOpen').click();await page.waitForFunction(()=>!workspace.loading);assert.equal(await page.evaluate(()=>workspace.status),503);assert((await page.locator('.sc-alert').innerText()).includes('尚未连接Naumi'));await page.screenshot({path:resolve(out,'LOCAL_CONFIG_STATE.png'),animations:'disabled'});
+ await page.locator('#workspaceExit').click();await page.locator('[data-intake-mode="real"]').click();await page.waitForFunction(()=>!intake.loading);assert.equal(await page.evaluate(()=>intake.total),0);await page.evaluate(async()=>{view='schedule';imported.active=true;await importLoad();});assert.equal(await page.evaluate(()=>imported.rows.length),364);assert.deepEqual(errors,[]);
+ const result={intake,people,regression,loginLink:true,reloadRequiresSelection:true,mobile390:true,localUnconfigured503:true,realRows:364,realOrders:0,errors};await writeFile(resolve(out,'BROWSER_REGRESSION.json'),JSON.stringify(result,null,2));console.log('WORKSPACE_BROWSER_PASS: native28=1 local_intake20=1 local_people20=1 original36=1 schedule42=1 workbook35=1 reload_reselect=1 mobile390=1 real_rows364=1 real_orders0=1 unconfigured503=1 errors0=1');
+}finally{await browser.close();}

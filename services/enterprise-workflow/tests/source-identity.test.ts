@@ -17,7 +17,7 @@ test('source-bound workspace identity: signed server claims, explicit mappings, 
  const auth=(t:string)=>({headers:{authorization:'Bearer '+t}} as IncomingMessage);
  let server:ReturnType<typeof createWorkflowServer>|undefined;
  try{
-  for(const f of ['001-workflow.sql','002-scheduling.sql','004-source-identity.sql'])await pool.query(await readFile(new URL('../migrations/'+f,import.meta.url),'utf8'));
+  for(const f of ['001-workflow.sql','002-scheduling.sql','004-source-identity.sql','007-workspace-labels.sql'])await pool.query(await readFile(new URL('../migrations/'+f,import.meta.url),'utf8'));
   await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id) VALUES($1,$2),($1,$3)',[enterpriseId,teamId,otherTeam]);
   for(const s of ['manager','employee'])await pool.query('INSERT INTO enterprise_workflow.accounts(enterprise_id,subject) VALUES($1,$2)',[enterpriseId,s]);
   await pool.query('INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds) VALUES($1,$2,$3,$4,$5),($1,$2,$6,$7,$8),($1,$9,$6,$4,$5)',[enterpriseId,teamId,'manager','["manage","dispatch"]','[]','employee','["execute"]','["design"]',otherTeam]);

@@ -14,6 +14,7 @@ const server=createServer(async(req,res)=>{
   if(req.headers.host!==`127.0.0.1:${port}`){res.writeHead(400);return res.end();}
   const u=new URL(req.url||'/','http://127.0.0.1:'+port);
   try{
+    if(u.pathname==='/api/enterprise/workflow'){res.writeHead(503,{'content-type':'application/json','cache-control':'private, no-store'});return res.end(JSON.stringify({error:'WORKFLOW_LOGIN_NOT_CONFIGURED'}));}
     if(u.pathname==='/api/enterprise/imports'){
       const fail=(code,error)=>{res.writeHead(code,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify({error}));};
       if((req.headers.origin&&req.headers.origin!==u.origin)||['cross-site','same-site'].includes(req.headers['sec-fetch-site']))return fail(403,'ORIGIN_DENIED');

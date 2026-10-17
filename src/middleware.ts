@@ -22,6 +22,10 @@ export async function middleware(req: NextRequest) {
   }
   const headers = new Headers(req.headers);
   headers.set("x-pathname", req.nextUrl.pathname);
+  if(req.nextUrl.pathname==='/enterprise/workflow'&&!await resolveUserEmail(req)){
+    const login=req.nextUrl.clone();login.pathname='/sign-in';login.search='?redirect=%2Fenterprise%2Fworkflow';
+    return NextResponse.redirect(login,{status:307,headers:ACCESS_HEADERS});
+  }
   let protectedRoute;
   try { protectedRoute = requestRequirement(req.nextUrl.pathname, req.method); }
   catch { return accessJson({ error: "路径格式无效" }, 400); }
