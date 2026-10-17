@@ -12,6 +12,7 @@
   ],
   "publicKeys": {"bff-v1": "ED25519_PUBLIC_KEY_PEM_ONLY"},
   "deliveryRoot": "/var/lib/naumi-enterprise/delivery",
+  "importRoots": {},
   "apiPort": 18495,
   "workerPort": 18496,
   "controlToken": "RANDOM_64_HEX_CONTROL_TOKEN",

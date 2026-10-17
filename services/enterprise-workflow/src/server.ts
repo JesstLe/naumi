@@ -6,6 +6,7 @@ import type { WorkflowStore } from './store';
 import type { SchedulingStore } from './scheduling-store';
 import type { SourceIdentityStore,SourceAuthenticate } from './source-identity';
 import type { PeopleStore } from './people-store';
+import type {FormalImportStore} from './formal-import-store';
 import type {NotificationStore} from './notification-store';
 import type {RoutingStore} from './routing-store';
 import type {PerformanceStore} from './performance-store';
@@ -29,7 +30,7 @@ async function body(req: IncomingMessage) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { throw new WorkflowError(400, 'INVALID_JSON'); }
 }
-export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore, identity?:{store:SourceIdentityStore;authenticate:SourceAuthenticate},people?:PeopleStore,delivery?:DeliveryStore,performance?:PerformanceStore,routing?:RoutingStore,notifications?:NotificationStore) {
+export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore, identity?:{store:SourceIdentityStore;authenticate:SourceAuthenticate},people?:PeopleStore,delivery?:DeliveryStore,performance?:PerformanceStore,routing?:RoutingStore,notifications?:NotificationStore,imports?:FormalImportStore) {
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url || '/', 'http://workflow.internal');
@@ -45,6 +46,13 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       const principal = await authenticate(req);
       if (!principal) throw new WorkflowError(401, 'AUTH_REQUIRED');
       if (!id.safeParse(principal.enterpriseId).success || !principal.subject) throw new WorkflowError(401, 'INVALID_IDENTITY');
+      if(imports&&req.method==='GET'&&url.pathname==='/v1/imports/context')return json(res,200,await imports.context(principal));
+      if(imports&&req.method==='GET'&&url.pathname==='/v1/imports/rows')return json(res,200,await imports.rows(principal,url.searchParams.get('source')||''));
+      if(imports&&req.method==='POST'&&url.pathname==='/v1/imports/resolve')return json(res,200,await imports.confirm(principal,url.searchParams.get('source')||'',await body(req)));
+      if(imports&&req.method==='GET'&&url.pathname==='/v1/imports/asset'){
+        const {asset,stream,mime,inline}=await imports.asset(principal,url.searchParams.get('source')||'',url.searchParams.get('id')||'',url.searchParams.get('download')==='1');
+        res.writeHead(200,{'Content-Type':mime,'Content-Length':asset.bytes,'Content-Disposition':(inline?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(asset.name).replaceAll("'",'%27'),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox",'X-Content-SHA256':asset.sha256});stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;
+      }
       if(notifications&&url.pathname==='/v1/notifications'){await notifications.ready();if(req.method==='GET')return json(res,200,await notifications.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST')return json(res,200,await notifications.execute(principal,await body(req)));}
       if(routing&&url.pathname==='/v1/routing'){await routing.ready();if(req.method==='GET')return json(res,200,await routing.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST')return json(res,200,await routing.execute(principal,await body(req)));}
       if(routing&&req.method==='POST'&&url.pathname==='/v1/routing/resolve'){await routing.ready();return json(res,200,await routing.resolve(principal,await body(req)));}
@@ -117,3 +125,5 @@ export {PerformanceStore} from './performance-store';
 export {RoutingStore} from './routing-store';
 
 export {NotificationStore} from './notification-store';
+
+export {FormalImportStore} from './formal-import-store';
