@@ -1,3 +1,4 @@
+import {sourceAssetSchema,sourceDigest,type SourceAsset} from './source-files';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Pool, PoolClient } from 'pg';
@@ -6,7 +7,7 @@ import type {NotificationStore} from './notification-store';
 import type {RoutingStore} from './routing-store';
 import type { Workbook } from './scheduling-contracts';
 import { canRead, evolve } from './domain';
-const sourceSchema=z.strictObject({sourceHash:z.string().regex(/^[a-f0-9]{64}$/),row:z.number().int().min(2).max(10001),expectedVersion:z.number().int().positive(),intent:z.literal('standalone'),confirmed:z.literal(true)});
+const sourceSchema=z.strictObject({sourceHash:z.string().regex(/^[a-f0-9]{64}$/),row:z.number().int().min(2).max(10001),expectedVersion:z.number().int().positive(),intent:z.literal('standalone'),confirmed:z.literal(true),sourceAssetIds:z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(50).optional()});
 const intakeSchema=z.strictObject({command:commandSchema,source:sourceSchema});
 const listSchema=z.strictObject({query:z.string().max(120).default(''),status:z.enum(['','draft','submitted','approved','active','completed','cancelled','archived']).default(''),page:z.coerce.number().int().min(1).max(10000).default(1)});
 const tasksSchema=z.strictObject({query:z.string().max(120).default(''),status:z.enum(['','open','assigned','claimed','in_progress','blocked','review','rework','accepted']).default(''),scope:z.enum(['all','mine','claimable','handover']).default('all'),page:z.coerce.number().int().min(1).max(10000).default(1),assignee:z.string().max(254).default('')});
@@ -171,7 +172,7 @@ export class WorkflowStore {
       if(command.action.type==='accept-delivery')await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`performance:${principal.enterpriseId}:${principal.teamId}`]);
       const orderLocks=command.action.type==='operations-followup'?[command.orderId,command.action.followupId].sort():[command.orderId];for(const oid of new Set(orderLocks))await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`order:${principal.enterpriseId}:${oid}`]);
       const fingerprint = createHash('sha256').update(stable({ principal, command,...(source?{source}:{}) })).digest('hex');
-      let sourceRow;
+      let sourceRow;let referenceAssets:SourceAsset[]|undefined;
       if(source){
         if(!actor.permissions.includes('manage')||!actor.permissions.includes('request'))throw new WorkflowError(403,'SOURCE_INTAKE_FORBIDDEN');
         // Imported names are tenant-wide private data; team management alone is insufficient.
@@ -200,6 +201,7 @@ export class WorkflowStore {
         if(sourceRow!.version!==source.expectedVersion)throw new WorkflowError(409,'SOURCE_VERSION_CONFLICT');
         if((await tx.query('SELECT 1 FROM enterprise_workflow.order_sources WHERE enterprise_id=$1 AND source_hash=$2 AND row_number=$3',[principal.enterpriseId,source.sourceHash,source.row])).rowCount)throw new WorkflowError(409,'SOURCE_ALREADY_PROMOTED');
       }
+      if(source?.sourceAssetIds!==undefined){const ids=source.sourceAssetIds;if(new Set(ids).size!==ids.length)throw new WorkflowError(400,'DUPLICATE_SOURCE_ASSET');const rowAssets=new Set<string>((sourceRow!.document.attachments??[]).flatMap((x:{assets:string[]})=>x.assets));if(ids.some(x=>!rowAssets.has(x)))throw new WorkflowError(400,'SOURCE_ASSET_NOT_IN_ROW');const docs=(await tx.query('SELECT asset_id,document FROM enterprise_workflow.import_assets WHERE enterprise_id=$1 AND source_hash=$2 AND asset_id=ANY($3::text[]) FOR SHARE',[principal.enterpriseId,source.sourceHash,ids])).rows;const assets=new Map(docs.map(x=>[x.asset_id,x.document]));referenceAssets=ids.map(id=>{const parsed=sourceAssetSchema.safeParse(assets.get(id));if(!parsed.success||parsed.data.id!==id)throw new WorkflowError(409,'SOURCE_ASSET_UNAVAILABLE');return parsed.data;});}
       const action=command.action;
       const assignment=action.type==='assign'||action.type==='propose-handover'?{subject:action.assignee,ids:[action.taskId]}:action.type==='batch-tasks'&&action.operation.type==='assign'?{subject:action.operation.assignee,ids:action.taskIds}:null;
       if(assignment){
@@ -238,7 +240,7 @@ export class WorkflowStore {
       await tx.query('INSERT INTO enterprise_workflow.commands(enterprise_id,id,subject,order_id,fingerprint,result) VALUES($1,$2,$3,$4,$5,$6)', [principal.enterpriseId, command.commandId, principal.subject, order.id, fingerprint, order]);
       if(source){
         const row=sourceRow!.document;
-        const snapshot={intent:source.intent,title:row.title,requesterName:row.raw['需求方']||'',designerName:row.raw['设计师']||'',status:row.raw['任务完成情况']||'',parentLabel:row.parentLabel,parentResolution:sourceRow!.resolution,identityTransferred:false,statusTransferred:false};
+        const snapshot={intent:source.intent,title:row.title,requesterName:row.raw['需求方']||'',designerName:row.raw['设计师']||'',status:row.raw['任务完成情况']||'',parentLabel:row.parentLabel,parentResolution:sourceRow!.resolution,identityTransferred:false,statusTransferred:false,...(referenceAssets===undefined?{}:{referenceAssets,referenceRowHash:sourceDigest(row)})};
         await tx.query('INSERT INTO enterprise_workflow.order_sources(enterprise_id,order_id,source_hash,row_number,source_version,snapshot) VALUES($1,$2,$3,$4,$5,$6)',[principal.enterpriseId,order.id,source.sourceHash,source.row,source.expectedVersion,snapshot]);
       }
       return { order, replayed: false };

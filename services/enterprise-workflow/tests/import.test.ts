@@ -1,3 +1,4 @@
+import {referenceAssetChecks} from './reference-assets.test';
 import {peopleRosterChecks} from './people-roster.test';
 import {formalImportChecks} from './formal-import.test';
 import assert from 'node:assert/strict';
@@ -81,7 +82,7 @@ test('import persistence, exact source data, isolation, replay, CAS, rollback an
   await handoverBatchChecks(pool);
   await sourceLinksChecks(pool);
   await performanceChecks(pool);
-  await routingOpsChecks(pool);await notificationChecks(pool);await formalImportChecks(pool);await peopleRosterChecks(pool);
+  await routingOpsChecks(pool);await notificationChecks(pool);await formalImportChecks(pool);await peopleRosterChecks(pool);await referenceAssetChecks(pool);
   console.log('IMPORT_SERVICE_PASS: persisted=3 replay=1 source_status_preserved=1 corrupt_blob_denied=1 atomic_rollback=1 cross_tenant_denied=1 cas_winners=1 rollback_pending=1 reopen=1 workflow_orders=0 asset_hash=1 anonymous=401 cross_origin=403 csrf=403 conflict=409');
  }finally{proxy?.kill();if(server){server.closeAllConnections();await new Promise<void>(r=>server!.close(()=>r()));}await pool.end();}
 });

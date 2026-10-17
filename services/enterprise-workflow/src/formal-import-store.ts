@@ -1,7 +1,5 @@
-import {createHash,randomUUID} from 'node:crypto';
-import {constants} from 'node:fs';
-import {lstat,open,realpath} from 'node:fs/promises';
-import {isAbsolute,join,resolve} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {openSourceFile} from './source-files';
 import type {Pool,PoolClient} from 'pg';
 import {z} from 'zod';
 import {WorkflowError,type Principal,type Actor} from './contracts';
@@ -27,11 +25,6 @@ export class FormalImportStore{
  async asset(p:Principal,source:string,id:string,download:boolean){hash.parse(id);
   // Read and verify through one descriptor, then reauthorize before returning bytes.
   const a=await this.tx(p,async c=>{await this.batch(c,p,source);const r=(await c.query('SELECT document FROM enterprise_workflow.import_assets WHERE enterprise_id=$1 AND source_hash=$2 AND asset_id=$3',[p.enterpriseId,source,id])).rows[0];ensure(r,'ASSET_NOT_FOUND',404);return r.document;});
-  const root=this.roots[p.enterpriseId];ensure(root,'SOURCE_STORAGE_NOT_CONFIGURED',503);ensure(isAbsolute(root)&&hash.safeParse(a.sha256).success&&Number.isSafeInteger(a.bytes)&&a.bytes>=0&&a.bytes<=1024**3,'SOURCE_FILE_INVALID',503);
-  let f;try{const rootStat=await lstat(root);ensure(rootStat.isDirectory()&&!rootStat.isSymbolicLink(),'SOURCE_ROOT_INVALID',503);const canonical=await realpath(root),path=join(canonical,a.sha256),st=await lstat(path);ensure(st.isFile()&&!st.isSymbolicLink()&&resolve(await realpath(path))===resolve(path),'SOURCE_FILE_INVALID',503);f=await open(path,constants.O_RDONLY|(constants.O_NOFOLLOW||0));const actual=await f.stat();ensure(actual.isFile()&&actual.size===a.bytes,'SOURCE_FILE_INVALID',503);const h=createHash('sha256'),head=Buffer.alloc(12),buffer=Buffer.alloc(64*1024);let pos=0;
-   for(;;){const {bytesRead}=await f.read(buffer,0,buffer.length,pos);if(!bytesRead)break;if(pos===0)buffer.copy(head,0,0,Math.min(head.length,bytesRead));h.update(buffer.subarray(0,bytesRead));pos+=bytesRead;ensure(pos<=a.bytes,'SOURCE_FILE_INVALID',503);}ensure(pos===a.bytes&&h.digest('hex')===a.sha256,'SOURCE_FILE_HASH_MISMATCH',503);
-   await this.tx(p,async c=>{await this.batch(c,p,source);});
-   const png=head.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])),jpeg=head[0]===255&&head[1]===216&&head[2]===255,inline=!download&&(png||jpeg),mime=inline?(png?'image/png':'image/jpeg'):'application/octet-stream';return {asset:a,stream:f.createReadStream({start:0,autoClose:true}),mime,inline};
-  }catch(e){await f?.close();if(e instanceof WorkflowError)throw e;throw new WorkflowError(503,'SOURCE_FILE_UNAVAILABLE');}
+  return openSourceFile(this.roots[p.enterpriseId],a,download,async()=>{await this.tx(p,async c=>{await this.batch(c,p,source);});});
  }
 }

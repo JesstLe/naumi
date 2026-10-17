@@ -1,3 +1,4 @@
+import {ReferenceStore} from './reference-store';
 import { createServer,type IncomingMessage } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -14,12 +15,17 @@ export function createImportServer(store:ImportStore,secret:string){
  const local={enterpriseId:store.enterpriseId,subject:'local-owner'};
  const people=new PeopleStore(store.pool,async(_tx,p)=>p.enterpriseId===local.enterpriseId&&p.subject===local.subject?{...p,permissions:['manage'],workKinds:[]}:null,local);
  const workflow=new WorkflowStore(store.pool,async(_tx,p)=>p.enterpriseId===local.enterpriseId&&p.subject===local.subject?{...p,permissions:['request','dispatch','manage'],workKinds:[]}:null,async()=>false,local);
+ const references=new ReferenceStore(store.pool,async(_tx,p)=>p.enterpriseId===local.enterpriseId&&p.subject===local.subject?{...p,permissions:['request','manage'],workKinds:[]}:null,{[store.enterpriseId]:store.blobRoot});
  const authorized=(req:IncomingMessage)=>{const b=Buffer.from(req.headers.authorization||''),a=Buffer.from('Bearer '+secret);return a.length===b.length&&timingSafeEqual(a,b);};
  return createServer(async(req,res)=>{
   const json=(status:number,data:unknown)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(data));};
   try{
    if(!authorized(req))return json(401,{error:'AUTH_REQUIRED'});
    const url=new URL(req.url||'/','http://local-import'),source=url.searchParams.get('source')||'';
+   if(req.method==='GET'&&url.pathname==='/v1/import/references')return json(200,await references.list(local,id.parse(url.searchParams.get('orderId'))));
+   if(req.method==='GET'&&url.pathname==='/v1/import/reference-asset'){
+    const {asset,stream,mime,inline}=await references.file(local,id.parse(url.searchParams.get('orderId')),url.searchParams.get('id')||'',url.searchParams.get('download')==='1');if(res.destroyed){stream.destroy();return;}res.writeHead(200,{'content-type':mime,'content-length':asset.bytes,'content-disposition':(inline?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(asset.name).replaceAll("'",'%27'),'cache-control':'private, no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'x-content-sha256':asset.sha256});stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;
+   }
    if(req.method==='GET'&&url.pathname==='/v1/import/context')return json(200,{batches:await store.batches(),mode:'local-owner',viewer:'本机项目管理员',workflowPromotion:true});
    if(req.method==='GET'&&url.pathname==='/v1/import/rows')return json(200,{rows:await store.data(source),assets:await store.assets(source)});
    if(req.method==='GET'&&url.pathname==='/v1/import/orders')return json(200,await workflow.list(local,Object.fromEntries(['query','status','page'].filter(k=>url.searchParams.has(k)).map(k=>[k,url.searchParams.get(k)]))));
