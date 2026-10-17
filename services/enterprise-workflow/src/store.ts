@@ -1,4 +1,6 @@
 import {sourceAssetSchema,sourceDigest,type SourceAsset} from './source-files';
+import {CalendarStore,loadCalendars} from './calendar-store';
+import {allocateHours,dayMinutes,legacyCalendar} from './calendar';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Pool, PoolClient } from 'pg';
@@ -27,7 +29,8 @@ function stable(value: unknown): string {
 }
 export type VerifySource=(proof:string,actor:Actor,command:Command)=>Promise<{sourceSubject:string}>;
 export class WorkflowStore {
-  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore) {}
+  readonly calendars:CalendarStore;
+  constructor(readonly pool: Pool, private resolveActor: ResolveActor, private validateAssets: ValidateAssets, private localOwner?:{enterpriseId:string;subject:string},private verifySource?:VerifySource,private now=()=>new Date(),private routing?:RoutingStore,private notifications?:NotificationStore) {this.calendars=new CalendarStore(pool,resolveActor);}
   async ready() {
     const result = await this.pool.query('SELECT version FROM enterprise_workflow.schema_version WHERE version=1');
     if (result.rowCount !== 1) throw new WorkflowError(503, 'MIGRATION_REQUIRED');
@@ -93,6 +96,7 @@ export class WorkflowStore {
   }
   async week(principal:Principal,raw:unknown){
     const q=z.strictObject({start:calendarDate,assignee:z.string().max(254).default('')}).parse(raw),end=new Date(Date.parse(q.start)+6*86400000).toISOString().slice(0,10);
+    if(!calendarDate.safeParse(end).success)throw new WorkflowError(400,'INVALID_WEEK_RANGE');
     return this.transaction(async tx=>{const a=await this.actor(tx,principal),values=[a.enterpriseId,a.teamId??null,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,q.assignee,q.start,end,a.permissions.some(p=>['manage','dispatch'].includes(p))];
       const where=`o.enterprise_id=$1 AND ${readScope('o.document','$10')}
        AND o.document->>'status' IN ('approved','active','completed') AND ($7='' OR t->>'assignee'=$7)`;
@@ -101,8 +105,16 @@ export class WorkflowStore {
       if(rows.length>1000)throw new WorkflowError(422,'WEEK_RANGE_TOO_LARGE');
       const unplanned=Number((await tx.query(`SELECT count(*) AS n ${from} WHERE ${where} AND (t->>'planStart') IS NULL AND $8::text IS NOT NULL AND $9::text IS NOT NULL`,values)).rows[0].n);
       const days=Array.from({length:7},(_,i)=>new Date(Date.parse(q.start)+i*86400000).toISOString().slice(0,10));const loads:Record<string,Record<string,number>>={};
-      const tasks=rows.filter(r=>canRead(a,r.document)).map(r=>{const o=r.document as WorkOrder,t=r.task as WorkOrder['tasks'][number],who=t.assignee||'__unassigned';loads[who]??={};const count=(Date.parse(t.planEnd!)-Date.parse(t.planStart!))/86400000+1;for(const day of days)if(day>=t.planStart!&&day<=t.planEnd!)loads[who][day]=(loads[who][day]||0)+(t.estimatedHours||0)/count;return {order:{id:o.id,teamId:o.teamId,requestTeamId:o.requestTeamId,title:o.title,status:o.status,version:o.version,requester:o.requester},task:t};});
-      return {tasks,days,loads,unplanned,timezone:'Asia/Shanghai',distribution:'calendar-day-even',referenceDailyHours:8};
+      const visible=rows.filter(r=>canRead(a,r.document)),teamIds=[...new Set(visible.map(r=>(r.document as WorkOrder).teamId).filter((x):x is string=>!!x))],calendars=await loadCalendars(tx,a.enterpriseId,teamIds);
+      const names=new Map((await tx.query('SELECT team_id,name FROM enterprise_workflow.teams WHERE enterprise_id=$1 AND team_id=ANY($2::uuid[])',[a.enterpriseId,teamIds])).rows.map(r=>[r.team_id,r.name]));
+      const groups=new Map<string,{key:string;teamId:string|null;teamName:string;subject:string;calendarRevision:number;configured:boolean;capacities:Record<string,number>;loads:Record<string,number>}>(),noWorkingDayTasks:{orderId:string;taskId:string;title:string;estimatedHours:number}[]=[];
+      const tasks=visible.map(r=>{const o=r.document as WorkOrder,t=r.task as WorkOrder['tasks'][number],who=t.assignee||'__unassigned',calendar=calendars.get(o.teamId||'')??legacyCalendar(),key=JSON.stringify([o.teamId??null,who]);loads[who]??={};
+        if(!groups.has(key))groups.set(key,{key,teamId:o.teamId??null,teamName:names.get(o.teamId)||'未指定团队',subject:who,calendarRevision:calendar.revision,configured:calendar.configured,capacities:Object.fromEntries(days.map(d=>[d,dayMinutes(calendar.config,d)/60])),loads:{}});
+        const group=groups.get(key)!,allocation=allocateHours(calendar.config,t.planStart!,t.planEnd!,t.estimatedHours||0);
+        if(allocation.noWorkingDay)noWorkingDayTasks.push({orderId:o.id,taskId:t.id,title:t.title,estimatedHours:t.estimatedHours||0});
+        for(const day of days){const hours=allocation.byDay[day]||0;loads[who][day]=(loads[who][day]||0)+hours;group.loads[day]=(group.loads[day]||0)+hours;}
+        return {order:{id:o.id,teamId:o.teamId,requestTeamId:o.requestTeamId,title:o.title,status:o.status,version:o.version,requester:o.requester},task:t,loadGroup:key,calendarRevision:calendar.revision,noWorkingDay:allocation.noWorkingDay};});
+      return {tasks,days,loads,workloads:[...groups.values()],noWorkingDayTasks,unplanned,timezone:'Asia/Shanghai',distribution:[...groups.values()].some(g=>g.configured)?'team-working-minutes':'calendar-day-even',referenceDailyHours:8};
     });
   }
   async facts(principal:Principal,raw:unknown={}){

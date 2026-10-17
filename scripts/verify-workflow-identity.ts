@@ -12,7 +12,7 @@ export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;forei
  // This isolated fixture starts as a personal user. Explicitly enroll as an ordinary employee,
  // without manager/record-viewing role; collaboration must not grant source analytics access.
  await pool.query("INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment) VALUES($1,$2,$3,NULL,'permanent')",[source.root,source.ordinary,source.owner]);
- for(const f of ['001-workflow.sql','002-scheduling.sql','003-source-import.sql','004-source-identity.sql','005-people-mapping.sql','006-source-intake.sql','007-workspace-labels.sql','008-delivery-assets.sql','009-performance.sql','010-routing.sql','011-notifications.sql','012-runtime.sql','013-batch-plans.sql'])await pool.query(await readFile(new URL('../services/enterprise-workflow/migrations/'+f,import.meta.url),'utf8'));
+ for(const f of ['001-workflow.sql','002-scheduling.sql','003-source-import.sql','004-source-identity.sql','005-people-mapping.sql','006-source-intake.sql','007-workspace-labels.sql','008-delivery-assets.sql','009-performance.sql','010-routing.sql','011-notifications.sql','012-runtime.sql','013-batch-plans.sql','014-team-calendars.sql'])await pool.query(await readFile(new URL('../services/enterprise-workflow/migrations/'+f,import.meta.url),'utf8'));
  const enterpriseId=randomUUID(),teamId=randomUUID();await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id) VALUES($1,$2)',[enterpriseId,teamId]);
  for(const [s,permissions] of [['provisioner',['manage']],['worker',['execute']]] as const){await pool.query('INSERT INTO enterprise_workflow.accounts(enterprise_id,subject) VALUES($1,$2)',[enterpriseId,s]);await pool.query('INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds) VALUES($1,$2,$3,$4,$5)',[enterpriseId,teamId,s,JSON.stringify(permissions),s==='worker'?'["design"]':'[]']);}
  const workflowPool=createWorkflowPool(process.env.DATABASE_URL!);
@@ -109,6 +109,7 @@ export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;forei
   const {verifyNotificationBff}=await import('./verify-notifications-bff');await verifyNotificationBff(pool,source,enterpriseId,teamId,notifications);
   const {verifyPerformanceBff}=await import('./verify-performance-bff');await verifyPerformanceBff(pool,source,enterpriseId,teamId);
   const {verifySourceLinks}=await import('./verify-source-links');await verifySourceLinks(pool,source,enterpriseId,teamId);
+  const {verifyCalendarBff}=await import('./verify-calendar-bff');await verifyCalendarBff(source,teamId);
   const {verifyBatchRecoveryBff}=await import('./verify-batch-recovery-bff');await verifyBatchRecoveryBff(source,teamId);
   const {verifyReferenceBff}=await import('./verify-reference-bff');await verifyReferenceBff(pool,source,enterpriseId,teamId,importRoot);
   await pool.query('UPDATE app_users SET banned=true WHERE email=$1',[source.ordinary]);assert.equal((await GET(request(source.ordinary))).status,401);await pool.query('UPDATE app_users SET banned=false WHERE email=$1',[source.ordinary]);

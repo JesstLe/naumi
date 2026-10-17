@@ -92,6 +92,10 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       if(req.method==='GET'&&url.pathname==='/v1/week')return json(res,200,await store.week(principal,Object.fromEntries(url.searchParams)));
       if(req.method==='GET'&&url.pathname==='/v1/facts')return json(res,200,await store.facts(principal,Object.fromEntries(url.searchParams)));
       if(req.method==='GET'&&url.pathname==='/v1/batch-receipts')return json(res,200,await store.batchReceipts(principal));
+      if(req.method==='GET'&&url.pathname==='/v1/calendar')return json(res,200,await store.calendars.get(principal));
+      if(req.method==='GET'&&url.pathname==='/v1/calendar/history')return json(res,200,await store.calendars.history(principal,Object.fromEntries(url.searchParams)));
+      if(req.method==='POST'&&url.pathname==='/v1/calendar/preview')return json(res,200,await store.calendars.preview(principal,await body(req)));
+      if(req.method==='POST'&&url.pathname==='/v1/calendar/save')return json(res,200,await store.calendars.save(principal,await body(req)));
       if(req.method==='GET'&&url.pathname==='/v1/batches')return json(res,200,await store.listBatches(principal,Object.fromEntries(url.searchParams)));
       if(req.method==='GET'&&url.pathname==='/v1/batch')return json(res,200,await store.getBatch(principal,id.parse(url.searchParams.get('id'))));
       if(req.method==='POST'&&url.pathname==='/v1/batch-plan')return json(res,200,await store.planBatch(principal,await body(req)));
