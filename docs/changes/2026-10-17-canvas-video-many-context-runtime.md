@@ -33,3 +33,13 @@
 首轮把完整Docker State连同健康检查时间戳都当不变量，采集后因正常Health记录变化拒绝；失败tar没有作为成功证据。修正只绑定实际CID/image/PID/StartedAt/Running/Restarting/Paused、Config/Mounts及网关后重采成功，不删除启动身份检查。没有读取正式env值或业务媒体到输出。
 
 加上已有650份编译来源，现有可核对文件共2568；“源码已取得”不等于“所有自治入口及native Map构造已审计”。sourceClosureProven和sourceAutonomousAuditComplete仍false，不生成普通完整排空回执，也没有据此停止旧UI。
+
+## 后续实际280环境回执
+
+原exec80606已确认终止，报告HOLD/AUDIT_CONTEXT_DEADLINE_EXCEEDED：480971ms，只完成278/280；零计数是这次不完整观察，不能当排空。Inspector实际关闭，原容器/image/boot/PID/config/挂载/网络和网关保持，2568文件/57401078字节逐文件重新核对。
+
+按这个实测只将显式预算上限480000→540000，默认120000和其他门禁不变；增加budget-window独立真实Node用例，540000可完成、540001在打开Inspector前拒绝。Native新上下文完整读取2份来源并核对SHA/嵌入字节，No actionable findings in the bounded review。不重跑未变化的全业务E2E或281环境旧用例。
+
+确认原进程终止和Inspector关闭后，另一次实际观察exec60091使用510000ms预算、570s外层和600s只读SSH通道；结果477769ms完成280/280，OBSERVED_MAPS_IDLE，93 Maps/2870条已检查项，会话/创建/运行/画布/tmp/persist/tool-result/unknown全0，Worker isolate0，所有环境集合检查通过，Inspector关闭，实例及网关不变。直接把真实报告交给原inspector_check，运行时这一项PASS；源码自治入口、任务归属、内部调用等其他门禁没有因此自动通过，ordinaryDrainReceipt仍null，没有停止容器或释放部署锁。
+
+完整回执SHA9e8e8818d20ab166fb47e844557448bc13c834eac740edcb2b7d70f2f9f4dce8；证据actual103-full-map-complete.json及actual103-runtime-gate-result.json。原始HOLD单独保留actual103-first-full-attempt.json，不能混成成功。exec80606/60091均terminal，active-observation.json已标明终止结果，文件本身不冒充活进程证据。后续更具体的函数绑定和租约观察见[Agent绑定观察](2026-10-17-canvas-video-agent-scopes.md)。

@@ -1,0 +1,41 @@
+# 103旧UI：源码绑定、受限观察与租约形态
+
+## 本轮范围
+
+起点main6aca158，开工和合并前fetch；业务仍固定e997/1792200281/9fea镜像。既有34/34应用条件不等于发布完成。本模块补充Task16历史实例退役证据，没有停止/重启业务容器、修改任务/供应商/模型/计费配置、持103部署锁或发布候选。
+
+完整280环境Map观察及原运行时子门禁已通过，详见[完整环境记录](2026-10-17-canvas-video-many-context-runtime.md)。不能把它直接写成源码/归属/完整排空已通过。
+
+## 新增具体函数绑定观察
+
+audit_legacy_agent_scopes.mjs首先校验声明文件真实路径/完整SHA、唯一函数头和绑定声明，再将Debugger实际加载脚本逐字节绑定到同一SHA。通过函数字面量的intrinsic prototype枚举匹配函数，以实际FunctionLocation限定声明函数位置；遍历返回的匹配副本，读取Closure/Block中的声明M/N，必须为V8原生Map，再读取其内部Entries长度。不调用Agent函数/应用getter，不输出邮箱、会话ID、原始键或作用域值。
+
+声明是具体范围，不是完整业务清单：需要另外审阅完整Agent模块清单；函数自身原型被更改可能不在查询中。allDeclaredModuleScopesEnumerated永久false，空匹配只返回OBSERVED_DECLARED_BINDINGS_PARTIAL，发现非空则明确NONEMPTY；不产生普通drain回执，不改原inspector/source/retirement门禁。将它单独拿去证明所有Agent或所有后台任务为空是错误用法。
+
+打开Inspector之前绑定PID、可执行文件/业务监听并拒绝已有调试器。辅助Node二进制SHA必须和目标一致；process入口通过描述符读取，只在函数描述、实际Node内置脚本SHA均与同二进制源码一致后调用。清理捕获已验证Node timers.setImmediate和原生inspector.close的对象指针，回调catch异常；不迟读取可替换的全局process/setImmediate。安全入口不可取得时返回HOLD、明确safeCleanupUnavailable/未确认关闭，不调用替换函数或伪造清理成功。
+
+## 集中验收及复核
+
+固定9fea隔离Node、network none、512MiB等额swap cap、无生产/供应商。最终12类均通过：两个工厂副本；Map实例原型移除和全局Map/Function替换；第二副本有会话/创建Promise；源SHA错误/绑定错误/模块未加载；第二函数原型移除而其会话非空；process getter/Proxy、全局setImmediate getter/wrapper、timers导出污染。Proxy get/getPrototypeOf/getOwnPropertyDescriptor和应用钩子调用全0，目标存活且无OOM。自有容器按CID/label清理。
+
+原型隐藏反例中只观察到空副本，也仅PARTIAL且allDeclared=false，没有返回完整零会话。process入口和timers导出被污染时明确HOLD/Inspector关闭未知，测试只删除自己合成容器，不把此例描述成一般生产Inspector成功关闭。其余正常路径实际关闭并核对业务监听集合。
+
+首轮Native复核发现2项P1：函数原型枚举不能声称全部副本、PID/清理路径可能调用应用替换的全局入口。已按以上方式修正并跑12类，修正复核实际完整读4份来源、workspace/声明/嵌入SHA一致，No actionable findings in the requested corrective scope。原始3bb源码的首轮E目录读取曾EPERM，只能验证嵌入内容；修正复核改用工作区内逐字节一致的只读来源副本，明确完成磁盘匹配，没有把EPERM记作成功。
+
+现场编译工厂为try块，初版只读Closure所以实际返回HOLD/DECLARED_BINDINGS_NOT_FOUND；没有停机或伪造绑定零计数。补充Block并继续排除Global/Script，合成工厂也包try，最终12类再次通过；专项复核完整读2份来源25440字节、SHA一致，No actionable findings in this bounded follow-up。原编译模块032d028163c65f6b6c97a494c4f4d765ba9bbe7a21eb0a55f034d18fef17282c中的z对应原getOrCreateSession，M/N对应SESSIONS/CREATING；原源码SHA390281eb2249d9846414183b2d02cf5d61107418e0d2edea61dcabfc590aeaac。
+
+## 实际103结果与采集器误报修正
+
+目标仍13033精确CID0b8ff61f47f23d781f3d156e0c84685854d02551bdd17138b07616a8968e4685、image8f6d2dc56ef6dc92a666108311a35081ef13ebbe69cc3f0b5d902e9b0f1f8b03、StartedAt2026-10-16T22:23:13.894146717Z、host PID2422。实际源/加载模块复核后，扫描75532个函数原型匹配项，找到context1/script773中的实际z；Block1/Closure2/Global1，仅前两类可读绑定。M/N各0，结果仍PARTIAL，28626ms，Node内置清理验证通过、Inspector关闭；2568份源码及容器/网关保持。
+
+一次采集后身份断言失败，回执未被接受。诊断连续5次docker inspect确认挂载数组在/data,/data/media及相反顺序间变化，Config/PID/规范化挂载值完全不变。后续仅对有效挂载按Destination排序并拒绝重复Destination，网络Aliases/DNSNames/Links排序但保留重复数，Config.Env/Cmd等有序项不排序；记录bindingHashFormat=effective-mounts-network-name-sets-v2，不能和旧原始数组摘要当作同一算法比较。所有实际字段仍参与比较，没有删除启动/配置/挂载校验。原退役库的原始数组指纹仍待在执行工具中处理，不能用不稳定原始顺序直接执行stop。
+
+实际回执SHA162f998ba3f51b2a4d39ca3d372dca7cc98ebc5c6d3810d35e3dd02c76b10acf，最终审计器ed82c0287defc83a8ce88256dd91961acd3d5acfc3ed436cf5faad9cb9f1756f，fixture7f22ba5cd437d6ca0dfe8a65d7f56787d55c17147a27203cb2360c3796d89ef2。证据checkpoint-d/agent-scopes-20261017/actual103-scoped-bindings.json及linux-final/，首轮/修正/Block复核独立保存。
+
+## 持久任务观察与剩余工作
+
+后续已修正执行工具的挂载/网络顺序误报，并完成实际 103 五次只读复核及 27 项 Linux 测试；旧格式清单必须重新准备。详见 [Docker 绑定与当前引用观察](2026-10-17-canvas-video-docker-bindings.md)。该修正不改变以下任务、源自治和引用闭合待办。
+
+精确DB e39220c01cb2242abef8bc3604404859849808b0b4777f128aff5b4c85c76f74只读REPEATABLE READ观察：目标配置DB且URL与原核心一致，NAUMI_VIDEO_WORKER明确0、无MEDIA_WORKER_ORIGIN，目标IP对应PG连接/事务均0。网络命名空间只有业务3000及Docker DNS监听，无活动TCP会话。图片1298条中11未终态实际为pending9/needs_attention2；未过期且持有令牌的执行租约0，两个未来lease_until为无令牌延后重查，不应叫两条正在执行任务。supplier cost job4未终态/有效租约0；billing26及supplier158未终态保留。没有结算、清理、重放它们，也没有据这些聚合推导目标归属已完整闭合。
+
+还需完整自治入口/编译源证明、当前任务归属、全部内部调用/有效服务引用、静态材料和串行可恢复退役步骤，再实测RAM并完成锁内发布/回滚/线上验收/最终审计。当前未实际回收RAM，发布计数不增加。所有本轮exec扫描句柄均已确认terminal；没有正在持有的生产锁。

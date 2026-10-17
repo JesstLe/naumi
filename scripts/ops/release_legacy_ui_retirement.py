@@ -19,6 +19,9 @@ import time
 class RetirementHold(ValueError): pass
 
 
+BINDING_HASH_FORMAT = 'effective-mounts-network-name-sets-v2'
+
+
 def require(value, reason):
     if not value: raise RetirementHold(reason)
 
@@ -42,13 +45,41 @@ def identity(row):
     return {'id':row['Id'],'name':row['Name'].lstrip('/'),'image':row['Image'],'startedAt':row['State']['StartedAt']}
 
 
+def canonical_mounts(mounts):
+    require(isinstance(mounts,list) and all(isinstance(m,dict) and isinstance(m.get('Destination'),str) and m['Destination'] for m in mounts),'INVALID_MOUNT_BINDINGS')
+    require(len({m['Destination'] for m in mounts})==len(mounts),'DUPLICATE_MOUNT_DESTINATION')
+    # Docker returns these in arbitrary order; retain every mount field.
+    return sorted(mounts,key=lambda m:m['Destination'])
+
+
+def canonical_networks(networks):
+    require(isinstance(networks,dict),'INVALID_NETWORK_BINDINGS')
+    result={}
+    for name,network in networks.items():
+        require(isinstance(network,dict),'INVALID_NETWORK_BINDINGS')
+        fields=dict(network)
+        for key in ('Aliases','DNSNames','Links'):
+            value=fields.get(key)
+            if value is not None:
+                require(isinstance(value,list) and all(isinstance(v,str) for v in value),'INVALID_NETWORK_NAMES')
+                fields[key]=sorted(value)  # Keep duplicates and null-vs-empty.
+        result[name]=fields
+    return result
+
+
+def require_binding_format(value):
+    require(value.get('bindingHashFormat')==BINDING_HASH_FORMAT,'BINDING_HASH_FORMAT_REPREPARE_REQUIRED')
+
+
 def immutable(row):
-    # No secret values are emitted: env/network/mount/Cmd bindings use hashes.
-    return digest(encoded({key:row.get(key) for key in ('Id','Image','Config','Mounts')}))
+    # Config.Env and Cmd remain ordered, including duplicate environment keys.
+    value={key:row.get(key) for key in ('Id','Image','Config')}
+    value.update(bindingHashFormat=BINDING_HASH_FORMAT,Mounts=canonical_mounts(row['Mounts']))
+    return digest(encoded(value))
 
 
 def network_binding(row):
-    return digest(encoded(row['NetworkSettings']['Networks']))
+    return digest(encoded({'bindingHashFormat':BINDING_HASH_FORMAT,'Networks':canonical_networks(row['NetworkSettings']['Networks'])}))
 
 
 def audit(manifest, observations, root):
@@ -60,6 +91,7 @@ def audit(manifest, observations, root):
     reasons=[]
     def check(condition, reason):
         if not condition:reasons.append(reason)
+    check(manifest.get('bindingHashFormat')==BINDING_HASH_FORMAT,'BINDING_HASH_FORMAT_REPREPARE_REQUIRED')
     check(manifest.get('schemaVersion')==1 and manifest.get('target') in ('47.105.59.142','103.30.76.93'),'FIXED_HOST_REQUIRED')
     pin=manifest.get('identity',{})
     check(bool(re.fullmatch('[a-f0-9]{64}',pin.get('id',''))) and bool(re.fullmatch('sha256:[a-f0-9]{64}',pin.get('image',''))),'FIXED_CID_IMAGE_REQUIRED')
@@ -114,6 +146,7 @@ def audit(manifest, observations, root):
         first,second=observations
         check(type(first.get('monotonicNs')) is int and type(second.get('monotonicNs')) is int and second['monotonicNs']-first['monotonicNs']>=30_000_000_000,'OBSERVATION_INTERVAL_UNDER_30S')
         for obs in observations:
+            check(obs.get('bindingHashFormat')==BINDING_HASH_FORMAT,'BINDING_HASH_FORMAT_REPREPARE_REQUIRED')
             check(obs.get('identity')==pin and obs.get('immutableSha256')==manifest.get('immutableSha256'),'CONTAINER_BASELINE_CHANGED')
             check(obs.get('networkSha256')==manifest.get('networkSha256'),'NETWORK_BINDING_CHANGED')
             check(obs.get('maintenanceDumpSha256')==manifest['maintenance'].get('dumpSha256'),'MAINTENANCE_NOT_CURRENT')
@@ -171,6 +204,7 @@ def retire_one(tx,manifest,root,observe,task_proof):
     drain receipt. It must collect raw socket/pg_stat_activity/process/reference
     evidence and persist hashes. No implementation means HOLD, not false zero.
     """
+    require_binding_format(manifest)
     require_lock(tx,manifest)
     require(callable(observe) and callable(task_proof),'REAL_COLLECTORS_REQUIRED')
     require(type(manifest.get('maximumClientWaitSeconds',120)) is int and 30<=manifest.get('maximumClientWaitSeconds',120)<=300,'BOUNDED_CLIENT_WAIT_REQUIRED')
@@ -183,7 +217,7 @@ def retire_one(tx,manifest,root,observe,task_proof):
         require(identity(row)==manifest['identity'] and row['State']['Running'] and not row['State'].get('Paused'),'CONTAINER_BASELINE_CHANGED')
         obs=observe(tx,manifest,index)
         # These cannot be forged by caller observation JSON.
-        obs.update(identity=identity(row),immutableSha256=immutable(row),networkSha256=network_binding(row),cmd=row['Config']['Cmd'],videoWorker=dict(x.split('=',1) for x in row['Config'].get('Env',[]) if '=' in x).get('NAUMI_VIDEO_WORKER'),monotonicNs=before,maintenanceDumpSha256=digest(tx.run(['nginx','-T'])),taskProof=task_proof(tx,manifest,'before-'+str(index)))
+        obs.update(bindingHashFormat=BINDING_HASH_FORMAT,identity=identity(row),immutableSha256=immutable(row),networkSha256=network_binding(row),cmd=row['Config']['Cmd'],videoWorker=dict(x.split('=',1) for x in row['Config'].get('Env',[]) if '=' in x).get('NAUMI_VIDEO_WORKER'),monotonicNs=before,maintenanceDumpSha256=digest(tx.run(['nginx','-T'])),taskProof=task_proof(tx,manifest,'before-'+str(index)))
         observations.append(obs)
         tx.save('legacy-ui-observation-'+cid[:12]+'-'+str(index)+'.json',obs)
         if index==0:time.sleep(30)
@@ -192,7 +226,7 @@ def retire_one(tx,manifest,root,observe,task_proof):
     require(result['status']=='ELIGIBLE_FOR_EXPLICIT_MAINTENANCE_RETIREMENT',','.join(result['reasons']))
     fresh_gateway_and_static(tx,manifest,root)
     original=tx.inspect(cid);require(immutable(original)==manifest['immutableSha256'] and identity(original)==manifest['identity'],'CONCURRENT_IDENTITY_CHANGE')
-    intent={'identity':manifest['identity'],'immutableSha256':manifest['immutableSha256'],'networkSha256':manifest['networkSha256'],'originalRestartPolicy':original['HostConfig']['RestartPolicy'],'originalPortBindings':original['HostConfig']['PortBindings'],'authorization':manifest['authorization'],'legacyCoverage':'partial-nonpersisted-observation','ordinaryDrainReceipt':None,'tasksBefore':observations[-1]['taskProof'],'resourcesBefore':resources(tx)}
+    intent={'bindingHashFormat':BINDING_HASH_FORMAT,'identity':manifest['identity'],'immutableSha256':manifest['immutableSha256'],'networkSha256':manifest['networkSha256'],'originalRestartPolicy':original['HostConfig']['RestartPolicy'],'originalPortBindings':original['HostConfig']['PortBindings'],'authorization':manifest['authorization'],'legacyCoverage':'partial-nonpersisted-observation','ordinaryDrainReceipt':None,'tasksBefore':observations[-1]['taskProof'],'resourcesBefore':resources(tx)}
     tx.save('legacy-retire-intent-'+cid[:12]+'.json',intent)
     tx.run(['docker','update','--restart=no',cid])
     # timeout=-1 disables Docker's SIGKILL escalation. Adapter subprocess timeout
@@ -218,6 +252,7 @@ def restore_one(tx,manifest,intent,probe,*,required_available_mib):
     """Never stops candidates automatically. Caller must first prove their empty
     ownership, stop only this release's candidates, then call this single-CID op.
     """
+    require_binding_format(manifest);require_binding_format(intent)
     require_lock(tx,manifest);cid=manifest['identity']['id']
     require(intent['identity']==manifest['identity'] and callable(probe),'PINNED_INTENT_AND_REAL_PROBE_REQUIRED')
     require(type(required_available_mib) is int and required_available_mib>=1024,'RESTORE_MEMORY_BUDGET_REQUIRED')
