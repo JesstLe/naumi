@@ -1,4 +1,4 @@
-const fs=require('node:fs'),assert=require('node:assert/strict'),ts=require('typescript'),path=require('node:path');
+const fs=require('node:fs'),assert=require('node:assert/strict'),ts=require('typescript'),cp=require('node:child_process');
 const input=process.argv[2]||'src/components/admin/model-management/model-management.tsx',mode=process.argv[3]||'modified';
 const source=fs.readFileSync(input,'utf8').replace(/\r\n/g,'\n');
 if(mode==='baseline') {
@@ -20,7 +20,8 @@ if(mode==='baseline') {
   assert(card.includes('row.conditional ? "条件路由 / 回退"'));
   for(const action of ['setRename(r)','setPrice(r)','setRow(r)','setChannelRow(r)','setVideoParameters(r)','setParameters(r)','setResolutionRow(r)','setAdvancedRow(r)','setScope(r)'])assert(source.includes(action),action);
   // Compare the actual mutation/publication helpers and all existing dialogs ASTs to the baseline.
-  const baseline=fs.readFileSync('output/model-mapping-clarity-20261017/BASELINE.tsx','utf8').replace(/\r\n/g,'\n');
+  const baselineFile='output/model-mapping-clarity-20261017/BASELINE.tsx';
+  const baseline=(fs.existsSync(baselineFile)?fs.readFileSync(baselineFile,'utf8'):cp.execFileSync('git',['show','e997b290b39fc9df63e4c3b6387fa008b7b0e18d:src/components/admin/model-management/model-management.tsx'],{encoding:'utf8'})).replace(/\r\n/g,'\n');
   const ast=text=>ts.createSourceFile('x.tsx',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   const functions=text=>{const map=new Map();const visit=n=>{if(ts.isFunctionDeclaration(n)&&n.name)map.set(n.name.text,n.getText().replace(/\s+/g,' '));ts.forEachChild(n,visit)};visit(ast(text));return map};
   const old=functions(baseline),now=functions(source);
