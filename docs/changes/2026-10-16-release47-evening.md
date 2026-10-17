@@ -106,3 +106,8 @@
 - 本机TUN同时导致两SSH及47 HTTPS banner/EOF；没有改用户代理/路由。绑定单连接物理网卡后103 pinned hostkey+DPAPI直连成功，47无需中继。实时103machine/nginx与原baseline相等、canonical无，MemAvailable1072/SwapFree0，完整数据保持。
 - root已建立**同一process持HK两锁**的即时控制器，私有现场证据路径`/opt/naumi-staging/evidence/hk-immediate-20261016-0614`。固定镜像/静态/回退包开始逐文件hash上传；尚未切入口、停止/暂停业务容器或启动新任务。暂时无法满足内存预检，正在核实六历史UI实际内存Agent/当前连接，而非强停腾空间。
 - 本机操作材料`E:/Workspace/naumi/output/release103-evening-20261016/immediate-20261016`，RPC日志private，控制secret/原数据不可输出。启动前长SSH exec命令被远端reset，未建立事务；随后使用受保护bootstrap文件单命令运行成功。未知先原目录核实，不另起并行发布。
+
+
+## 19:25预约47实际结果（覆盖旧准备状态）
+
+47已切最新7bdcd8b644e8771646003f68055585f257df40f0 /1792146767，Web/Worker同image14a8d2ab2c76。19:00:05–19:14:23短维护，119生产API/真实浏览器文件上传+拖放/包装保存/画布撤销重做、1029真实静态HTTP逐hash、切后任务proof通过；无OOM，三锁已释放。canonical MIGRATED_CLEANUP_PENDING rev34，七旧对象保留、原caller paused，新容器restart=no且新boot恢复未验收；不是完整退役/自动恢复完成。香港即时原事务不动。完整实际证据、失败纠正与四件回退材料见[本次结果](2026-10-16-1830-release47-main7bd-result.md)。

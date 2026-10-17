@@ -46,7 +46,7 @@ export function agentActivityLabel(busy: boolean, outcome: string, steps: {tool?
   const running = [...steps].reverse().find(step => step.status === "running");
   if (running) return agentToolSummary(running.summary)||(english ? "" : "正在") + agentToolLabel(running.tool || "", english);
   if (responding) return english ? "Replying" : "正在回复";
-  return steps.length ? (english ? "Processing next steps" : "正在处理后续步骤") : (english ? "Processing request" : "正在处理请求");
+  return steps.length ? (english ? "Processing next steps" : "正在处理后续步骤") : (english ? "Waiting for model response" : "等待模型响应");
 }
 
 export function agentElapsedLabel(milliseconds: number, english = false): string {

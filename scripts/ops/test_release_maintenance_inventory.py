@@ -13,6 +13,7 @@ class LayeredInventoryTests(unittest.TestCase):
         self.tx=SimpleNamespace(target='103.30.76.93',run=lambda *a,**k:None,pin=lambda item:self.pins.append(item))
         self.adapter=m.LiveAdapter(self.tx,self.plan)
         self.result={'hostIdentityMatches':True,'dockerInventory':{'complete':True,'stable':True},'nginx':{'stable':True,'fullDumpSha256':'a'*64},'containers':copy.deepcopy(self.plan['baseline']),'systemdCoverage':'partial','errors':[]}
+        self.pristine=copy.deepcopy(self.result)
         self.allowed=[{'source':'systemd-unit-list','code':'SERVICE_LIMIT_EXCEEDED'},{'source':'systemd-unit-cat','code':'OBSERVATION_UNAVAILABLE'},{'source':'systemd-unit-show','code':'OBSERVATION_UNAVAILABLE'}]
         self.authorize=m.maintenance.authorize
     def collect(self):
@@ -31,6 +32,33 @@ class LayeredInventoryTests(unittest.TestCase):
         with self.assertRaises(m.Hold):self.collect()
         self.plan['target']='103.30.76.93';self.plan['authorization']['userAcknowledgement']='wrong'
         with self.assertRaises(m.Hold):self.collect()
+    def use47(self):
+        self.plan=plan('47.105.59.142');self.tx.target=self.plan['target'];self.adapter=m.LiveAdapter(self.tx,self.plan)
+        self.result=copy.deepcopy(self.pristine)
+        self.result['containers']=copy.deepcopy(self.plan['baseline']);self.result['errors']=copy.deepcopy(self.allowed)
+    def test_47_one_time_authorized_errors_retained_not_drain_or_retirement(self):
+        self.use47();got=self.collect()
+        self.assertTrue(got['baselineCoverage']['coreComplete'])
+        self.assertEqual(got['baselineCoverage']['systemdReferenceCoverage'],'partial')
+        self.assertEqual(got['errors'],self.allowed);self.assertEqual(got['baselineCoverage']['retainedSystemdErrors'],self.allowed)
+        self.assertFalse(got['baselineCoverage']['taskDrainEvidence']);self.assertFalse(got['baselineCoverage']['retirementEvidence'])
+    def test_47_wrong_ack_mode_date_window_preservation_or_target_rejected(self):
+        for changes in [{'userAcknowledgement':'wrong'},{'mode':'immediate-HK-only'},{'date':'2026-10-15'},{'restoreDatabase':True},{'replayAcceptedTasks':True},{'target':'103.30.76.93'}]:
+            self.use47();self.plan['authorization'].update(changes)
+            with self.assertRaises(m.Hold):self.collect()
+        self.use47();self.tx.target='103.30.76.93'
+        with self.assertRaises(m.Hold):self.collect()
+        self.use47()
+        with patch.object(m.maintenance,'authorize',side_effect=lambda spec:self.authorize(spec,now=NOW.replace(hour=9))):
+            with patch.object(m,'collect_inventory',return_value=self.result),patch.object(self.adapter,'private_save',return_value=lambda *a:None):
+                with self.assertRaises(m.Hold):self.adapter.inventory('fixture-inventory')
+    def test_47_core_errors_and_unknown_catalog_pairs_still_rejected(self):
+        for source,code in [('docker','OBSERVATION_UNAVAILABLE'),('machine-id','HOST_IDENTITY_UNVERIFIED'),('nginx','CONCURRENT_CONFIG_CHANGE_OR_INCOMPLETE'),('systemd-unit-list','UNPARSED_SYSTEMD_UNIT'),('systemd-unit-files','OBSERVATION_UNAVAILABLE'),('systemd-unit-show','UNKNOWN')]:
+            self.use47();self.result['errors'].append({'source':source,'code':code})
+            with self.assertRaises(m.Hold):self.collect()
+        for section,key in [('dockerInventory','complete'),('dockerInventory','stable'),('nginx','stable'),('nginx','fullDumpSha256')]:
+            self.use47();self.result[section][key]=False if key!='fullDumpSha256' else ''
+            with self.assertRaises(m.Hold):self.collect()
     def test_all_other_errors_rejected(self):
         for source,code in [('systemd-unit-cat','OBSERVATION_COMMAND_FAILED'),('systemd-unit-list','UNPARSED_SYSTEMD_UNIT'),('systemd-unit-files','OBSERVATION_UNAVAILABLE'),('docker','OBSERVATION_UNAVAILABLE'),('machine-id','HOST_IDENTITY_UNVERIFIED'),('nginx','CONCURRENT_CONFIG_CHANGE_OR_INCOMPLETE')]:
             self.result['errors']=[self.allowed[0],{'source':source,'code':code}]

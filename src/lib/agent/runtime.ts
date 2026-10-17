@@ -1,5 +1,7 @@
 
-import { assertAgentToolAccess } from "@/lib/feature-access/server";
+import { agentRestrictionMessage } from "./public-status";
+import { publicToolDetails } from "./tool-presentation";
+import { FeatureAccessError, assertAgentToolAccess } from "@/lib/feature-access/server";
 import type { Agent } from "@earendil-works/pi-agent-core";
 import { currentModelExecution, currentExecutionBundle } from "@/lib/model-config/context";
 import { signAcceptedModelContext } from "@/lib/model-config/accepted-context";
@@ -97,7 +99,7 @@ export type Session = {
   /** 凭证对(cookie+authorization),会话续期时刷新 */
   cred: { cookie: string; authorization: string; imageQuality?: string; canvas?: CanvasAgentContext;imageSkill?:Pick<ImageSkill,"id"|"revision"> };
   contextStamp?: string;
-  onToolResult?: (result: unknown, tool: string) => Promise<void>;
+  onToolResult?: (result: unknown, tool: string, toolCallId: string) => Promise<void>;
   toolResultsPending?: Promise<void>;
   persistPending?: Promise<void>;
   turnId?: string;
@@ -246,7 +248,7 @@ async function createRuntimeSession(
   history: { role: string; content: string }[],
   cred: { cookie: string; authorization: string; imageQuality?: string } = { cookie: "", authorization: "" },
   modelId = MODEL_ID,
-  options?: { systemPrompt: string; canvas: CanvasAgentContext; onToolResult: (result: unknown, tool: string) => Promise<void> },
+  options?: { systemPrompt: string; canvas: CanvasAgentContext; onToolResult: (result: unknown, tool: string, toolCallId: string) => Promise<void> },
   imageSkill?: ImageSkill | null
 ): Promise<Session> {
   email = email.trim().toLowerCase();
@@ -287,7 +289,7 @@ async function createRuntimeSession(
     onToolResult: options?.onToolResult,
     createdAt: Date.now(),
     lastUsedAt: Date.now(),
-    events: Array.isArray(persisted?.steps) ? persisted.steps.map((step: any) => ({type:String(step.type),at:Date.now(),data:Object.fromEntries(Object.entries(step).filter(([key])=>key!=="type"))})) : [],
+    events: Array.isArray(persisted?.steps) ? persisted.steps.map((step: any) => ({type:String(step.type),at:typeof step.at === "number" && Number.isFinite(step.at) ? step.at : 0,data:Object.fromEntries(Object.entries(step).filter(([key])=>key!=="type" && key!=="at"))})) : [],
     running: false,
     repeatSignature: "",
     repeatCount: 0,
@@ -326,8 +328,10 @@ async function createRuntimeSession(
       try { await assertAgentToolAccess(email, toolCall.name, options ? "canvas" : "workbench", new Request("http://internal", { headers: { cookie: session.cred.cookie, authorization: session.cred.authorization } })); session.harness.check(toolCall.name, args); }
       catch (error) {
         const failure = error instanceof HarnessError ? error : new HarnessError("ARGUMENT_INVALID");
-        appendSessionEvent(session, "attention", {kind:"restricted",tool:toolCall.name,message:failure.message,code:failure.code});
-        return {block:true,terminate:true,reason:failure.message};
+        const code = error instanceof FeatureAccessError ? "FEATURE_ACCESS_DENIED" : failure.code;
+        const message = agentRestrictionMessage(code) || failure.message;
+        appendSessionEvent(session, "attention", {id:toolCall.id,kind:"restricted",tool:toolCall.name,message,code});
+        return {block:true,terminate:true,reason:message};
       }
       const signature = `${toolCall.name}:${stableJson(args)}`;
       if (signature === session.repeatSignature) session.repeatCount += 1;
@@ -336,7 +340,7 @@ async function createRuntimeSession(
         session.repeatCount = 1;
       }
       if (session.repeatCount >= 3) {
-        appendSessionEvent(session, "attention", { kind: "restricted", tool: toolCall.name });
+        appendSessionEvent(session, "attention", { id: toolCall.id, kind: "restricted", tool: toolCall.name, message: "相同参数已连续调用多次，请先检查已有结果。", code: "REPLAY_BLOCKED" });
         return {
           block: true,
           reason:
@@ -347,10 +351,10 @@ async function createRuntimeSession(
       const precheck = () => agentBillingPrecheck(session,toolCall.name,args as Record<string,unknown>,toolCall.id);
       const result = session.harness.sanitize(await (acceptedBundle ? withFrozenExecutionBundle(acceptedBundle, precheck) : precheck()));
       // Typed presentation signal only; billing decisions and public reply stay intact.
-      if (result && "attention" in result && result.attention) appendSessionEvent(session, "attention", { kind: result.attention, tool: toolCall.name, message: result.reason });
+      if (result && "attention" in result && result.attention) appendSessionEvent(session, "attention", { id: toolCall.id, kind: result.attention, tool: toolCall.name, message: result.reason });
       else if (!result?.block) {
         const pending = session.events.findLast(event => event.type === "attention");
-        if (pending?.data.tool === toolCall.name && pending.data.kind !== "resolved") appendSessionEvent(session, "attention", { kind: "resolved", tool: toolCall.name });
+        if (pending?.data.tool === toolCall.name && pending.data.kind !== "resolved") appendSessionEvent(session, "attention", { id: toolCall.id, kind: "resolved", tool: toolCall.name });
       }
       if (!result?.block) {
         try { session.harness.permit(toolCall.name, args, toolCall.id); }
@@ -372,8 +376,8 @@ async function createRuntimeSession(
       if (session.events.length > 400) session.events.splice(0, 200);
     };
     if (event.type === "tool_execution_start") {
-      const e = event as unknown as { toolCallId: string; toolName?: string };
-      push("tool_start", { id: e.toolCallId, tool: e.toolName ?? "" });
+      const e = event as unknown as { toolCallId: string; toolName?: string; args?: unknown };
+      push("tool_start", { id: e.toolCallId, tool: e.toolName ?? "", details: publicToolDetails(e.toolName || "", e.args, session.cred.canvas) });
     } else if (event.type === "tool_execution_end") {
       const e = event as unknown as {
         toolCallId: string;
@@ -386,7 +390,7 @@ async function createRuntimeSession(
         ?.details;
       const toolFailed = !!(e.isError || e.result?.isError || details?.verificationStatus === "unavailable");
       if (!toolFailed && session.onToolResult) {
-        const pending = session.onToolResult(e.result, e.toolName || "");
+        const pending = session.onToolResult(e.result, e.toolName || "", e.toolCallId);
         session.toolResultsPending = Promise.all([session.toolResultsPending || Promise.resolve(),pending]).then(()=>undefined);
         void session.toolResultsPending.catch(()=>undefined);
         try { await pending; }
@@ -565,7 +569,7 @@ export async function persistAgentSession(session: Session): Promise<void> {
   });
   const steps = session.events
     .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","video_nodes","text_nodes","agent_start","agent_end","canvas_terminal","error"].includes(event.type))
-    .map((event) => ({ type: event.type, ...event.data }));
+    .map((event) => ({ ...event.data, type: event.type, at: event.at }));
   await saveAgentSession(
     session.email,
     session.id,

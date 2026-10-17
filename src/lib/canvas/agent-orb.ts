@@ -1,8 +1,9 @@
 import type { OrbState } from "../../components/naumi-orb/orb-model";
 import { orbToolFace } from "../../components/naumi-orb/orb-companion";
+import type { PublicToolDetails } from "../agent/tool-presentation";
 
 export type AgentOrbOutcome = "idle" | "running" | "done" | "error" | "stopped";
-export interface AgentOrbStep { id: string; tool?: string; label: string; summary?: string; status: "running" | "done" | "error" }
+export interface AgentOrbStep { id: string; tool?: string; label: string; summary?: string; attention?: "waiting" | "restricted"; status: "running" | "done" | "error"; startedAt?: number; endedAt?: number; details?: PublicToolDetails; resultIds?: string[] }
 export function agentOrbState(busy: boolean, outcome: AgentOrbOutcome, steps: AgentOrbStep[]): OrbState {
   if (!busy) return outcome === "done" ? "done" : outcome === "error" ? "error" : outcome === "stopped" ? "stopped" : "idle";
   const running = [...steps].reverse().find(step => step.status === "running");

@@ -171,6 +171,155 @@ class SessionTests(unittest.TestCase):
         self.session.step({**request,'reconcile':True});self.assertEqual(self.session.state['phase'],'BACKED_UP')
         with self.assertRaisesRegex(m.Hold,'BINDING_CONFLICT'): self.session.step({**request,'action':'maintenance'})
 
+    def failed_baseline(self, spec=None):
+        self.adapter=FixtureAdapter();self.adapter.fail='inventory'
+        self.session=self.make_new(spec or plan())
+        request={'action':'baseline','operationId':str(uuid.uuid4()),'expectedRevision':0}
+        with self.assertRaisesRegex(m.Hold,'FIXTURE_UNKNOWN'):self.session.step(request)
+        self.adapter.fail=None
+        self.assertNotIn('baselineInventory',self.session.state);self.assertNotIn('before',self.session.state)
+        return request
+
+    def test_failed_read_only_baseline_original_uuid_reconciles_fresh_inventory_then_snapshot(self):
+        for target in ['47.105.59.142','103.30.76.93']:
+            spec=plan(target)
+            if target.startswith('103.'):
+                spec['authorization'].update(mode='immediate-HK-only',userImmediateAcknowledgement=m.maintenance.IMMEDIATE_HK_ACK,notBefore=m.maintenance.IMMEDIATE_HK_NOT_BEFORE)
+            # Keep each real canonical fixture independent, never edit its UUID.
+            self.folder=self.folder/target;self.folder.mkdir();self.tx.folder=self.folder
+            request=self.failed_baseline(spec)
+            self.session=m.MaintenanceSession(self.tx,spec,adapter=self.adapter,state_root=self.session.root,now=NOW)
+            self.session.step({**request,'reconcile':True})
+            self.assertEqual(self.session.state['phase'],'BASELINED')
+            self.assertEqual(list(self.session.state['operations']),[request['operationId']])
+            self.assertEqual(self.adapter.calls,['inventory','inventory','snapshot'])
+            calls=list(self.adapter.calls);self.session.step(request);self.assertEqual(calls,self.adapter.calls)
+
+    def test_baseline_snapshot_failure_or_partial_inventory_never_rebaselines(self):
+        self.adapter.fail='snapshot'
+        request={'action':'baseline','operationId':str(uuid.uuid4()),'expectedRevision':0}
+        with self.assertRaisesRegex(m.Hold,'FIXTURE_UNKNOWN'):self.session.step(request)
+        self.assertIn('baselineInventory',self.session.state)
+        self.adapter.fail=None;calls=list(self.adapter.calls)
+        with self.assertRaisesRegex(m.Hold,'ORIGINAL_PRIVATE_SNAPSHOT'):self.session.step({**request,'reconcile':True})
+        self.assertEqual(calls,self.adapter.calls)
+
+    def test_baseline_reconcile_rejects_any_original_snapshot_or_lifecycle_state(self):
+        request=self.failed_baseline();pristine=copy.deepcopy(self.session.state)
+        mutations=[lambda s:s.update(before=None),lambda s:s.update(baselineInventory=None),
+            lambda s:s.update(backup={}),lambda s:s.update(worker={}),lambda s:s.update(maintenance={}),
+            lambda s:s.update(openGateway={}),lambda s:s.update(freeze=False),lambda s:s.update(capacityPreflight={}),
+            lambda s:s.update(rollbackGateway={}),lambda s:s.update(unknownFutureSideEffect=False),
+            lambda s:s['webs'].update(main={}),lambda s:s['retired'].append('fixture'),
+            lambda s:s.update(databaseRestored=True),lambda s:s.update(tasksReplayed=True),
+            lambda s:s.update(acceptedTasks=0),lambda s:s.update(agentSessions=0),
+            lambda s:s.update(phase='BASELINED'),lambda s:s['operations'].update(other={}),
+            lambda s:s['history'].append({'action':'backup','operationId':request['operationId'],'result':'UNKNOWN'}),
+            lambda s:s['operations'][request['operationId']]['request'].update(action='backup'),
+            lambda s:s['operations'][request['operationId']].update(resultSha256='a'*64)]
+        for mutate in mutations:
+            self.session.state=copy.deepcopy(pristine);mutate(self.session.state);self.session.persist()
+            calls=list(self.adapter.calls)
+            with self.assertRaises(m.Hold):self.session.step({**request,'reconcile':True})
+            self.assertEqual(calls,self.adapter.calls)
+
+    def test_failed_baseline_new_uuid_no_reconcile_or_changed_binding_still_rejected(self):
+        request=self.failed_baseline();calls=list(self.adapter.calls)
+        for retry in [request,{**request,'operationId':str(uuid.uuid4())},{**request,'reconcile':True,'expectedRevision':2},{**request,'reconcile':True,'action':'backup'}]:
+            with self.assertRaises(m.Hold):self.session.step(retry)
+        self.assertEqual(calls,self.adapter.calls)
+
+    def test_skill_get_paths_match_real_source_routes_and_old_alias_is_absent(self):
+        root=pathlib.Path(__file__).resolve().parents[2]
+        for path in ['/api/image-skills','/api/image-skills/import']:
+            m.check_path('skills',path)
+            self.assertTrue((root/'src/app'/path.removeprefix('/')/'route.ts').is_file())
+        self.assertFalse((root/'src/app/api/agent/skills/route.ts').exists())
+        source=(root/'src/app/api/image-skills/route.ts').read_text(encoding='utf-8')
+        self.assertIn('export const GET = handle',source)
+        imported=(root/'src/app/api/image-skills/import/route.ts').read_text(encoding='utf-8')
+        self.assertIn('export async function POST(',imported)
+        self.assertNotRegex(imported,r'export\s+(?:(?:async\s+)?function\s+|const\s+)GET\b')
+
+    def test_skill_checks_reject_mutation_methods_and_nonexact_api_paths(self):
+        for path in ['/api/agent/skills','/api/image-skills/','/api/image-skills/import/','/api/image-skills/import/extra','/api/image-skills-other','/api/generate-image']:
+            with self.assertRaises(m.Hold):m.check_path('skills',path)
+        for path in ['/api/image-skills','/api/image-skills/import']:
+            for method in ['POST','PATCH','DELETE','HEAD']:
+                with self.assertRaises(m.Hold):m.check_path('skills',path,method)
+
+    def test_private_media_actual_prefix_is_get_only_and_not_arbitrary_api(self):
+        for path in ['/media/fixture.png','/media/private/fixture.png?token=fixture','/api/media/fixture']:
+            m.check_path('private-media',path)
+            for method in ['POST','PATCH','DELETE']:
+                with self.assertRaises(m.Hold):m.check_path('private-media',path,method)
+        for path in ['/media','/media-other/a','/api/media-other/a','/api/generate-image','https://external.test/media/a']:
+            with self.assertRaises(m.Hold):m.check_path('private-media',path)
+
+    def failed_capture(self, code='HTTP_FEATURE_BODY_CONTENT_FAILED'):
+        self.to_candidates()
+        artifact={'path':'original-checks.json','sha256':'a'*64}
+        request={'action':'capture-acceptance','operationId':str(uuid.uuid4()),
+                 'expectedRevision':self.session.state['revision'],'artifact':artifact}
+        evidence=self.folder/'original-partial-evidence.body';evidence.write_bytes(b'actual prior GET evidence')
+        def fail(*args):self.adapter.record('capture');raise m.Hold(code)
+        self.adapter.capture_acceptance=fail
+        with self.assertRaisesRegex(m.Hold,code):self.session.step(request)
+        return request,evidence
+
+    def test_failed_readonly_capture_ack_closes_failure_not_acceptance_then_new_spec_can_run(self):
+        request,evidence=self.failed_capture();old=copy.deepcopy(self.session.state['operations'][request['operationId']]);history=copy.deepcopy(self.session.state['history'])
+        calls=list(self.adapter.calls);revision=self.session.state['revision']
+        retry={**request,'reconcile':True,'acknowledgeFailure':True}
+        self.session=self.make();got=self.session.step(retry)
+        self.assertEqual(got['result'],'READ_ONLY_CAPTURE_FAILED');self.assertFalse(got['failure']['acceptanceEvidence'])
+        self.assertEqual(got['failure']['assertionError'],'HTTP_FEATURE_BODY_CONTENT_FAILED')
+        self.assertEqual(self.adapter.calls,calls);self.assertEqual(evidence.read_bytes(),b'actual prior GET evidence')
+        record=self.session.state['operations'][request['operationId']]
+        self.assertEqual(record['request'],old['request']);self.assertEqual(record['requestSha256'],old['requestSha256'])
+        self.assertEqual(record['outcome'],'FAILED_READONLY');self.assertEqual(self.session.state['history'][:-1],history)
+        self.assertEqual(self.session.state['phase'],'CANDIDATES');self.assertEqual(self.session.state['revision'],revision+1)
+        for key in ['collectedAcceptance','acceptance','acceptedDescriptor']:self.assertNotIn(key,self.session.state)
+        self.assertEqual(self.session.step(request)['result'],'READ_ONLY_CAPTURE_FAILED')
+        self.assertEqual(self.session.step(retry)['result'],'READ_ONLY_CAPTURE_FAILED')
+        self.assertEqual(self.adapter.calls,calls)
+        self.adapter.capture_acceptance=lambda state,descriptor,operation:descriptor
+        corrected={'path':'corrected-checks.json','sha256':'b'*64}
+        self.step('capture-acceptance',artifact=corrected)
+        self.assertEqual(self.session.state['collectedAcceptance'],corrected)
+        self.assertEqual(record['request'],old['request'])
+
+    def test_failed_readonly_capture_ack_never_changes_binding_or_handles_new_mutation_ops(self):
+        request,_=self.failed_capture();calls=list(self.adapter.calls)
+        for bad in [{**request,'acknowledgeFailure':True},
+                    {**request,'reconcile':True,'acknowledgeFailure':False},
+                    {**request,'reconcile':True,'acknowledgeFailure':True,'artifact':{'path':'new.json','sha256':'b'*64}},
+                    {**request,'reconcile':True,'acknowledgeFailure':True,'operationId':str(uuid.uuid4())},
+                    {**request,'reconcile':True,'acknowledgeFailure':True,'action':'activate'}]:
+            with self.assertRaises(m.Hold):self.session.step(bad)
+        self.assertEqual(self.adapter.calls,calls)
+
+    def test_successful_capture_cannot_be_relabelled_as_acknowledged_failure(self):
+        self.to_candidates()
+        request,_=self.step('capture-acceptance',artifact={'path':'success.json','sha256':'a'*64})
+        calls=list(self.adapter.calls);state=copy.deepcopy(self.session.state)
+        with self.assertRaisesRegex(m.Hold,'ORIGINAL_UNKNOWN_READONLY_CAPTURE'):
+            self.session.step({**request,'reconcile':True,'acknowledgeFailure':True})
+        self.assertEqual(self.adapter.calls,calls);self.assertEqual(self.session.state,state)
+
+    def test_failed_readonly_capture_ack_rejects_unknown_errors_partial_success_and_other_pending(self):
+        request,_=self.failed_capture();pristine=copy.deepcopy(self.session.state);retry={**request,'reconcile':True,'acknowledgeFailure':True}
+        changes=[lambda s:s.update(lastError='HOST_COMMAND_FAILED'),lambda s:s.update(lastError='STEP_RESULT_UNKNOWN'),
+                 lambda s:s.update(phase='ACCEPTED'),lambda s:s.update(collectedAcceptance=None),
+                 lambda s:s.update(acceptance={}),lambda s:s.update(acceptedDescriptor=None),
+                 lambda s:s.update(openGateway={}),lambda s:s.update(activation={}),lambda s:s.update(**{'app-open-main':True}),
+                 lambda s:s['operations'].update(other={'phase':'UNKNOWN'}),
+                 lambda s:s['operations'][request['operationId']].update(phase='INTENT_RECORDED')]
+        for change in changes:
+            self.session.state=copy.deepcopy(pristine);change(self.session.state);self.session.persist();calls=list(self.adapter.calls)
+            with self.assertRaises(m.Hold):self.session.step(retry)
+            self.assertEqual(calls,self.adapter.calls)
+
     def test_resume_response_loss_keeps_original_suboperation_and_never_reopens_apps_twice(self):
         self.to_candidates();self.step('acceptance');self.step('preservation');self.adapter.lost='resume'
         request={'action':'activate','operationId':str(uuid.uuid4()),'expectedRevision':self.session.state['revision']}

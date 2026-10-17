@@ -33,5 +33,36 @@
         "en": "Improve full-image presentation and image retention when returning to the page."
       }
     ]
+  },
+  {
+    "version": "1792232251",
+    "title": {
+      "zh": "画布与本机3D创作更新",
+      "en": "Canvas and local 3D creation update"
+    },
+    "improvements": [
+      {
+        "zh": "新增本机3D产品工作台，支持瓶罐盒参数化建模、材质灯光调整与工程导出。",
+        "en": "Added a local 3D product workbench with bottle, jar and box modeling, materials, lighting and project export."
+      },
+      {
+        "zh": "支持浏览器内瓶体照片近似建模、标准盒展开折叠预览与整圈标签。",
+        "en": "Added approximate bottle modeling from photos in the browser, standard carton folding previews and wraparound labels."
+      },
+      {
+        "zh": "统一画布图标，改善创作助手的文字实时显示与操作反馈。",
+        "en": "Unified canvas icons and improved live assistant text and interaction feedback."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "作品详情只展示实际保存的提示词，缺失时不再填入示例内容。",
+        "en": "Artwork details display saved prompts only, without demo fallback text."
+      },
+      {
+        "zh": "编辑图片时按明确参考角色决定自动画幅，并移除重复的创作面板。",
+        "en": "Automatic image framing follows explicit reference roles, and duplicate creation controls were removed."
+      }
+    ]
   }
 ]

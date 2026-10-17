@@ -37,6 +37,7 @@ class Controls(unittest.TestCase):
         self.calls.append(args)
         if args[:2] == ['docker', 'inspect']: return json.dumps([self.row]).encode()
         if args[:2] == ['docker', 'exec']:
+            self.assertEqual(args[2:4], ['-e', 'NODE_OPTIONS='])
             request = json.loads(args[-1])
             if request is None: return json.dumps(self.status).encode()
             if request['operationId'] not in self.receipts:

@@ -1,5 +1,5 @@
 // Only the parallel desktop surface rewrites these destinations.
-export const DESKTOP_PAGES = ["canvas", "suite", "works", "tools", "account", "generate", "aplus", "avatar", "batchshot", "competitors", "cutout", "dewatermark", "dewrinkle", "extract", "fuse", "garment", "garment3d", "inpaint", "ipcheck", "packaging3d", "printfile", "recolor", "replicate", "retouch", "style", "titles", "tryon", "upscale", "variations", "video"] as const;
+export const DESKTOP_PAGES = ["studio3d", "canvas", "suite", "works", "tools", "account", "generate", "aplus", "avatar", "batchshot", "competitors", "cutout", "dewatermark", "dewrinkle", "extract", "fuse", "garment", "garment3d", "inpaint", "ipcheck", "packaging3d", "printfile", "recolor", "replicate", "retouch", "style", "titles", "tryon", "upscale", "variations", "video"] as const;
 export function desktopHref(href: string, desktop = true): string {
   if (!desktop || !href.startsWith("/") || href.startsWith("//")) return href;
   const boundary = href.search(/[?#]/);

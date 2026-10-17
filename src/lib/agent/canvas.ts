@@ -91,7 +91,7 @@ async function runCanvasAgentLocal(request: Request) {
   }
   const started = new Date(), artifacts: Artifact[] = [], delivered = new Set<string>();
   let liveSession: Session | undefined;
-  const attach = async (result: unknown,tool:string) => {
+  const attach = async (result: unknown,tool:string,toolCallId:string) => {
     const details = record(record(result).details);
     if(["plan_video_script","plan_video_storyboard"].includes(tool)&&liveSession){
       const planned=Array.isArray(details.nodes)?details.nodes:[details.node];
@@ -113,7 +113,7 @@ async function runCanvasAgentLocal(request: Request) {
     const output = await getPool().query("UPDATE app_artworks SET parent_id=COALESCE(parent_id,$3),group_id=COALESCE($4,group_id),origin='canvas',source_url='agent',canvas_x=COALESCE(canvas_x,$5),canvas_y=COALESCE(canvas_y,$6),batch_id=COALESCE(batch_id,$10) WHERE email=$1 AND deleted_at IS NULL AND created_at >= $7 AND id<>ALL($8::text[]) AND (image_url=ANY($2::text[]) OR id=$9) RETURNING id,title,image_url", [email.toLowerCase(), urls, anchor?.id||null, anchor?.groupId || (projectKey.startsWith("tree:")?projectKey.slice(5):null), (anchor?.canvasX || 0) + (anchor?.canvasWidth || 320) + 80 + delivered.size * 40, (anchor?.canvasY || 0) + delivered.size * 40, started, ids, typeof details.artworkId === "string" ? details.artworkId : "", !anchor&&projectKey.startsWith("batch:")?projectKey.slice(6):null]);
     const added:Artifact[]=[];
     for (const row of output.rows) if (!delivered.has(row.id)) { delivered.add(row.id); const art={ id: row.id, image: row.image_url, title: row.title || "Agent 结果" };artifacts.push(art);added.push(art); }
-    if(liveSession&&added.length){appendSessionEvent(liveSession,"artifacts",{artifacts:added,anchorId,turnId:liveSession.turnId});await persistAgentSession(liveSession);}
+    if(liveSession&&added.length){appendSessionEvent(liveSession,"artifacts",{artifacts:added,anchorId,turnId:liveSession.turnId,toolCallId});await persistAgentSession(liveSession);}
   };
   await configuredToolCost();
   const session = await getOrCreateSession(email, sessionId, history.slice(0, -1), { cookie, authorization: request.headers.get("authorization") || "", imageQuality: canvas.quality }, modelId, {
@@ -136,7 +136,7 @@ async function runCanvasAgentLocal(request: Request) {
       let cursor = cursorStart, output = "", closed = false, failed = false;
       const send = (type: string, data: unknown) => { if (!closed) { try { controller.enqueue(encoder.encode(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`)); } catch { cancel(); } } };
       const flush = () => {
-        for (; cursor < session.events.length; cursor++) { const event = session.events[cursor]; if (event.type === "error") failed = true; send(event.type, event.data); }
+        for (; cursor < session.events.length; cursor++) { const event = session.events[cursor]; if (event.type === "error") failed = true; send(event.type, { ...event.data, at: event.at }); }
       };
       const timer = setInterval(flush, 300);
       const timeout = setTimeout(() => cancel(), 780000);
@@ -160,12 +160,15 @@ async function runCanvasAgentLocal(request: Request) {
           const attention = session.events.slice(cursorStart).findLast(event => event.type === "attention");
           const pendingAttention = attention?.data.kind === "waiting" || attention?.data.kind === "restricted";
           const modelReply = Array.isArray(last?.content) ? last.content.filter(part => part.type === "text").map(part => part.type === "text" ? part.text : "").join("").trim() : output.trim();
-          // A terminated confirmation gate may have no final model text. Surface its
-          // existing public quote rather than label the blocked tool as completed.
-          const reply = modelReply || (pendingAttention ? String(attention?.data.message || (attention?.data.kind === "waiting" ? "请明确确认报价后继续。" : "当前操作受限，请调整任务后继续。")) : "");
+          // A tool gate is authoritative even if the model already promised execution.
+          // Persist its actual reason so restoring history cannot resurrect that claim.
+          const attentionReply = pendingAttention ? String(attention?.data.message || (attention?.data.kind === "waiting" ? "请明确确认报价后继续。" : "当前操作受限，请调整任务后继续。")) : "";
+          const reply = attentionReply || modelReply;
           if (!reply || failed) throw new Error("Agent 执行未完成，已产出的结果保留，请勿重复提交收费任务");
-          if (!modelReply && pendingAttention) {
-            session.agent.state.messages = [...session.agent.state.messages, {
+          if (pendingAttention && reply !== modelReply) {
+            const corrected = session.agent.state.messages.map(turn => turn === last && turn.role === "assistant"
+              ? { ...turn, content: turn.content.filter(part => part.type !== "text") } : turn);
+            session.agent.state.messages = [...corrected, {
               role: "assistant", api: session.agent.state.model?.api || "openai-completions", provider: "naumi-local", model: "naumi-local-reply",
               content: [{ type: "text", text: reply }], stopReason: "stop", timestamp: Date.now(),
               usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
@@ -181,7 +184,7 @@ async function runCanvasAgentLocal(request: Request) {
       })();
     }, cancel() { cancel(); },
   });
-  return new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform" } });
+  return new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", "X-Accel-Buffering": "no" } });
 }
 
 export async function runCanvasAgent(request: Request) {

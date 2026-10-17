@@ -73,12 +73,7 @@ export function WorkLightbox({
   if (!mounted || !work) return null;
 
   const tool = work.tool || L("AI 生图", "AI Generation");
-  const prompt =
-    work.prompt ||
-    L(
-      "白底高级护肤精华瓶，柔光摄影棚，45°俯拍，电商主图，细腻质感，留白构图",
-      "Premium skincare serum bottle on white, soft-light studio, 45° top-down, e-commerce hero shot, fine texture, negative-space composition"
-    );
+  const prompt = work.prompt?.trim() ? work.prompt : "";
   const ratioLabel = work.ratioLabel || "1:1 · 1024×1024";
   const cost = work.cost ?? 6;
 
@@ -137,12 +132,14 @@ export function WorkLightbox({
 
           {/* 主体 */}
           <div className="flex flex-1 flex-col gap-[18px] overflow-y-auto px-5 py-[18px]">
-            <div>
-              <div className="mb-[7px] text-[11.5px] text-c-text3">{L("提示词", "Prompt")}</div>
-              <div className="rounded-[10px] border border-c-border3 bg-c-subtle2 px-3 py-[11px] text-[12.5px] leading-[1.6] text-c-text2">
-                {prompt}
+            {prompt && (
+              <div>
+                <div className="mb-[7px] text-[11.5px] text-c-text3">{L("提示词", "Prompt")}</div>
+                <div className="rounded-[10px] border border-c-border3 bg-c-subtle2 px-3 py-[11px] text-[12.5px] leading-[1.6] text-c-text2">
+                  {prompt}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="flex flex-col gap-[11px]">
               {metaRows.map((row) => (

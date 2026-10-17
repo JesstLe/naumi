@@ -166,7 +166,7 @@ class HostTransaction:
 
     def clone_web(self, identity, *, name, port, image, commit, memory_mib, cpu, release_secret,
                   state_dir, build_version, admission='draining', reviewed_omitted_mounts=None, media_binding=None,
-                  before_create=None, runtime_recovery=None):
+                  before_create=None, runtime_recovery=None, reviewed_prior_state_dir=None):
         require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', name), 'INVALID_NEW_SLOT_NAME')
         require(type(port) is int and 1024 <= port <= 65535, 'INVALID_LOOPBACK_PORT')
         require(re.fullmatch('sha256:[a-f0-9]{64}', image) and re.fullmatch('[a-f0-9]{40}', commit), 'FIXED_IMAGE_REQUIRED')
@@ -197,6 +197,15 @@ class HostTransaction:
         require(set(omitted).issubset({m['Destination'] for m in old['Mounts']}), 'UNKNOWN_OMITTED_MOUNT')
         for mount in old['Mounts']:
             require(mount['Type'] in ['bind', 'volume'] and ',' not in mount['Source'] + mount['Destination'], 'REVIEW_MOUNTS_REQUIRED')
+            if mount['Destination'] == '/release-state':
+                require(mount['Type'] == 'bind' and mount['Source'] == reviewed_prior_state_dir and
+                        pathlib.Path(reviewed_prior_state_dir).is_absolute() and
+                        pathlib.Path(state_dir).resolve() != pathlib.Path(reviewed_prior_state_dir).resolve() and
+                        pathlib.Path(reviewed_prior_state_dir).resolve().is_relative_to(
+                            pathlib.Path('/opt/naumi-staging/releases')),
+                        'EXACT_PRIOR_SLOT_STATE_REVIEW_REQUIRED')
+                # A new slot must NEVER share the source boot/control state.
+                continue
             if mount['Destination'] in omitted:
                 require(mount['Type'] == 'bind' and not mount['RW'] and pathlib.Path(mount['Source']).is_file() and
                         sha(pathlib.Path(mount['Source']).read_bytes()) == omitted[mount['Destination']], 'OMITTED_OVERLAY_HASH_CHANGED')

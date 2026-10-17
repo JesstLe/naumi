@@ -1517,7 +1517,7 @@ export function WorkbenchClient() {
 }
 
 // 图标行:画布与全部工具不在 tool-meta 里,自定义;其余取 tool-meta 双语标题。
-const ROW_TOOLS = ["generate", "suite", "cutout", "inpaint", "competitors"];
+const ROW_TOOLS = ["studio3d", "generate", "suite", "cutout", "inpaint", "competitors"];
 const ROW_CUSTOM: { href: string; title: string; titleEn: string; Icon: LucideIcon }[] = [
   { href: "/canvas", title: "创作画布", titleEn: "Canvas", Icon: Network },
   { href: "/tools", title: "全部工具", titleEn: "All tools", Icon: LayoutGrid },

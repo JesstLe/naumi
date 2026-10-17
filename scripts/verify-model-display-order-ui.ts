@@ -1,3 +1,4 @@
+import { expandManagedModelConfig } from "./model-mapping-ui-helpers";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -34,7 +35,7 @@ async function main() {
     await expect(headings).toHaveText(labels);
     const row = page.locator("article").filter({ has: page.getByRole("heading", { name: first.label, exact: true }) });
     const saveScope = async (enabled: boolean) => {
-      await row.getByRole("button", { name: "编辑范围", exact: true }).click();
+      await expandManagedModelConfig(row);await row.getByRole("button", { name: "编辑范围", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "选择应用工具", exact: true });
       await dialog.getByRole("checkbox", { name: "自由生图", exact: true }).setChecked(enabled);
       const response = page.waitForResponse(r => r.url().endsWith("/api/admin/model-management") && r.request().method() === "POST" && r.request().postDataJSON()?.action === "scope");

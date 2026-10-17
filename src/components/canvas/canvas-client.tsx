@@ -70,7 +70,7 @@ import { restoredOrbOutcome, type AgentOrbOutcome, type AgentOrbStep } from "@/l
 import { useOrbCompanion } from "../naumi-orb/use-orb-companion";
 import { classifyAgentFailure } from "@/lib/agent/recovery";
 import { agentOrbState } from "@/lib/canvas/agent-orb";
-import { agentToolLabel, agentToolSummary } from "@/lib/canvas/agent-activity";
+import { reduceAgentProgress } from "@/lib/canvas/agent-progress";
 import { useCanvasAssistantDisclosure } from "@/lib/canvas/assistant-disclosure";
 import { defaultNodeSettings, validNodeSettings, nodeTextStyle, type CanvasNodeSettings, type CanvasCrop } from "@/lib/canvas/node-settings";
 const DEFAULT_CANVAS_SETTINGS = defaultNodeSettings();
@@ -165,6 +165,10 @@ import {
   Hand,
   ImagePlus,
   Copy,
+  Box,
+  Ruler,
+  Focus,
+  ArrowUp,
   type LucideIcon,
 } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
@@ -566,10 +570,11 @@ function RatioIcon({ w, h }: { w: number; h: number }) {
     else bw = Math.max(7, Math.round((M * w) / h));
   }
   return (
-    <span
-      className="block rounded-[3px] border-[1.5px] border-current"
-      style={{ width: bw, height: bh }}
-    />
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none"
+      className="shrink-0" aria-hidden="true" focusable="false">
+      <rect x={(18 - bw) / 2} y={(18 - bh) / 2} width={bw} height={bh}
+        rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
   );
 }
 
@@ -5062,13 +5067,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         if(controller.signal.aborted||assistantController.current!==controller)return;
         setAssistantArtworkId(data.session.anchorId||null);setSelectedId(data.session.anchorId||null);setSelectedTextId(null);
         setAssistantTurns(data.session.turns);
-        const steps=new Map<string,AgentOrbStep>();
+        let steps: AgentOrbStep[] = [];
         const historySteps=data.session.steps||[], currentTurn=historySteps.findLastIndex((step:{type:string})=>step.type==="canvas_turn");
-        for(const step of historySteps.slice(Math.max(0,currentTurn)))if(["tool_start","tool_end"].includes(step.type))steps.set(step.id,{id:step.id,tool:step.tool,label:agentToolLabel(step.tool, locale === "en"),summary:agentToolSummary(step.summary),status:step.type==="tool_start"?(data.session.running?"running":"error"):step.isError?"error":"done"});
-        setAssistantSteps([...steps.values()].slice(-10));
+        for (const step of historySteps.slice(Math.max(0,currentTurn))) steps = reduceAgentProgress(steps, step, locale === "en", !!data.session.running);
+        setAssistantSteps(steps);
         setAssistantOutcome(restoredOrbOutcome(data.session));
         {
-          orbCue({ type: "restore", recall: !recalled, running: !!data.session.running, outcome: restoredOrbOutcome(data.session), attention: data.session.attention, phase: agentOrbState(!!data.session.running, restoredOrbOutcome(data.session), [...steps.values()]) });
+          orbCue({ type: "restore", recall: !recalled, running: !!data.session.running, outcome: restoredOrbOutcome(data.session), attention: data.session.attention, phase: agentOrbState(!!data.session.running, restoredOrbOutcome(data.session), steps) });
           recalled = true;
         }
         if(!data.session.running){if(data.session.error)setAssistantError(data.session.error);const ids=data.session.turns.flatMap((turn:AssistantTurn)=>(turn.artifacts||[]).map(art=>art.id));if(ids.length)await mergeWorks(ids);break;}
@@ -5177,6 +5182,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           if(type==="open"){serverSessionId=String(data.sessionId||acceptedSession);assistantLiveSessionId.current=serverSessionId;}
           if(type==="done" && data.ok===true)completed=true;
           if (type === "attention") {
+            setAssistantSteps(current => reduceAgentProgress(current, { ...data, type }, locale === "en"));
             const attention = data.kind === "waiting" || data.kind === "restricted" ? data.kind : undefined;
             if (attention) orbCue({ type: "attention", kind: attention });
             else if (data.kind === "resolved") orbCue({ type: "attention-resolved", tool: String(data.tool || "") });
@@ -5196,11 +5202,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           } else if (type === "tool_start" || type === "tool_end") {
             orbCue(type === "tool_start" ? { type: "tool-start", tool: String(data.tool || "") } : { type: "tool-end", error: !!data.isError });
             setAssistantResponding(false);
-            const id = String(data.id || data.tool), label = agentToolLabel(String(data.tool || ""), locale === "en");
-            setAssistantSteps(current => {
-              const next: AgentOrbStep = {id,label,tool:String(data.tool || ""),summary:agentToolSummary(data.summary),status:type === "tool_start" ? "running" : data.isError ? "error" : "done"};
-              return current.some(step => step.id === id) ? current.map(step => step.id === id ? next : step) : [...current, next];
-            });
+            setAssistantSteps(current => reduceAgentProgress(current, { ...data, type }, locale === "en"));
           } else if(type==="video_nodes"&&Array.isArray(data.nodes)){
             const nodes=data.nodes as {id:string;projectKey:string}[];
             if(acceptedVideoProject){if(nodes.some(node=>node.projectKey===acceptedVideoProject))await videoNodesStore.refresh();}
@@ -5218,6 +5220,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               }
             }
           } else if (type === "artifacts" && Array.isArray(data.artifacts)) {
+            setAssistantSteps(current => reduceAgentProgress(current, { ...data, type }, locale === "en"));
             const artifacts = data.artifacts as {id:string;image:string;title:string}[];
             artifacts.forEach(art => artifactIds.add(art.id));
             orbCue({ type: "artifacts", count: artifactIds.size });
@@ -7664,7 +7667,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       })
     );
   }
-  // 底部工具条:🕘 从生成历史选择(画布中心)
+  // 底部工具条:从生成历史选择(画布中心)
   function toolHistory() {
     if (readOnly) return;
     const c = centerScreen();
@@ -8424,7 +8427,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       onClick={openRatioMenu}
       className="canvas-ui-control flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold transition-colors"
     >
-      📐
+      <Ruler aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
       <span>
         {genRatio === "auto" ? t("canvas.ratioAuto") : genRatio} ·{" "}
         {genResolution}
@@ -10053,10 +10056,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       {t("canvas.spawnTitle")}
                     </p>
                     {[
-                      { key: "image", icon: "🖼️", label: t("canvas.spawnImage") },
-                      { key: "upload", icon: "⬆️", label: t("canvas.spawnUpload") },
+                      { key: "image", icon: ImageIcon, label: t("canvas.spawnImage") },
+                      { key: "upload", icon: Upload, label: t("canvas.spawnUpload") },
                       ...(!spawnMenu.sourceId.startsWith("text-")
-                        ? [{ key: "text", icon: "T", label: t("canvas.textGenerate") }]
+                        ? [{ key: "text", icon: Type, label: t("canvas.textGenerate") }]
                         : []),
                     ].map((it) => (
                       <button
@@ -10066,7 +10069,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
                       >
                         <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-secondary text-[15px]">
-                          {it.icon}
+                          <it.icon aria-hidden="true" className="h-4 w-4 shrink-0" />
                         </span>
                         {it.label}
                       </button>
@@ -10955,7 +10958,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             </aside>
           )}
 
-          {/* 重命名节点:在节点标签处弹出内联输入(✏️ 触发),失焦/回车确定、Esc 取消 */}
+          {/* 重命名节点:在节点标签处弹出内联输入(编辑按钮触发),失焦/回车确定、Esc 取消 */}
           {renamingNodeId &&
             (selected || selectedText || selectedVideo) &&
             renamingNodeId === (selected?.id ?? selectedText?.id ?? selectedVideo?.id) &&
@@ -11035,7 +11038,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         triggerClass="canvas-ui-control flex cursor-pointer items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
                         trigger={
                           <>
-                            🧊
+                            <Box aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                             <span className="max-w-[88px] truncate">
                               {genStyle}
                             </span>
@@ -11066,7 +11069,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         onClick={() => setFocusId(selected.id)}
                         className="canvas-ui-control flex items-center gap-1.5 rounded-[10px] border px-2.5 py-2 text-[12.5px] transition-colors"
                       >
-                        ⊡ {t("canvas.dockFocus")}
+                        <Focus aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                        {t("canvas.dockFocus")}
                       </button>
                     </>
                   )}
@@ -11228,8 +11232,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       light={lightCanvas}
                     />
                   ) : (
-                    <span className="canvas-ui-control inline-flex h-8 items-center rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold">
-                      🖼 {generationMode === "split"
+                    <span className="canvas-ui-control inline-flex h-8 items-center gap-1.5 rounded-[9px] border px-2.5 py-0 text-[12.5px] font-semibold">
+                      <ImageIcon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      {generationMode === "split"
                         ? t("canvas.viewNodesCount")
                         : t("canvas.viewSheetCount")}
                     </span>
@@ -11256,7 +11261,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     {selectedGenerating ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      "↑"
+                      <ArrowUp aria-hidden="true" className="h-4 w-4" />
                     )}
                   </button>
                 </div>
@@ -11293,8 +11298,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       </button>
                     ))
                   ) : (
-                    <span className="canvas-ui-muted flex h-[46px] items-center rounded-[9px] border border-dashed border-[var(--canvas-ui-border)] px-3 text-[12px]">
-                      🅰️ {t("canvas.pendText2img")}
+                    <span className="canvas-ui-muted flex h-[46px] items-center gap-1.5 rounded-[9px] border border-dashed border-[var(--canvas-ui-border)] px-3 text-[12px]">
+                      <Type aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      {t("canvas.pendText2img")}
                     </span>
                   )}
                   <span className="canvas-ui-muted ml-1 min-w-0 flex-1 truncate text-[12px]">
@@ -11374,7 +11380,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   {selectedPendGenerating ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    "↑"
+                    <ArrowUp aria-hidden="true" className="h-4 w-4" />
                   )}
                 </button>
               </div>

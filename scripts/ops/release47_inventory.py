@@ -27,7 +27,7 @@ except ImportError:
 SHA = re.compile(r'^[a-f0-9]{64}$')
 COMMIT = re.compile(r'^[a-f0-9]{40}$')
 NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$')
-UNIT = re.compile(r'^[A-Za-z0-9_.:@-]+\.service$')
+UNIT = re.compile(r'^(?:[A-Za-z0-9_.:@-]|\\x[0-9a-fA-F]{2})+\.service$')
 SECRET = re.compile(r'KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH|COOKIE|DATABASE_URL|DSN', re.I)
 ORIGIN_KEYS = ('NAUMI_APP_ORIGIN', 'INTERNAL_APP_ORIGIN', 'APP_ORIGIN')
 
@@ -427,7 +427,13 @@ def collect_inventory(command=None, private_save=None, *, expected_host_sha256=N
     unit_files = c.read('systemd-unit-files', ['systemctl', 'list-unit-files', '--type=service', '--no-legend', '--no-pager'])
     units = []
     for line in ((unit_raw or b'') + b'\n' + (unit_files or b'')).decode('utf8', errors='replace').splitlines():
-        unit = line.split()[0] if line.split() else ''
+        fields = line.split()
+        # systemctl can print the failed-unit status marker even with --plain.
+        # Only its separate, leading token is presentation; do not strip other
+        # characters, suppress invalid unit names, or skip templates/masked units.
+        if fields and fields[0] == '\u25cf' and len(fields) > 1:
+            fields = fields[1:]
+        unit = fields[0] if fields else ''
         if UNIT.fullmatch(unit):
             units.append(unit)
         elif unit:
