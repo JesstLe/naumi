@@ -1,3 +1,4 @@
+import { expandManagedModelConfig } from "./model-mapping-ui-helpers";
 import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
 import {mkdir,readFile,writeFile} from "node:fs/promises";
@@ -20,7 +21,7 @@ async function main(){
   before=await get("/api/admin/bi/model-config");const state=await get("/api/admin/model-management"),row=state.rows.find((r:any)=>r.modality==="image"&&!r.preset&&r.qualityConfig?.routes.every((r:any)=>r.editable));assert.ok(row);
   const admin=await context.newPage();admin.setDefaultTimeout(45000);admin.on("pageerror",e=>errors.push(e.message));await admin.goto(origin+"/admin/model-management");
   const card=admin.locator("article").filter({has:admin.getByRole("heading",{name:row.label,exact:true})}),dialog=admin.getByRole("dialog",{name:"模型参数设置",exact:true});
-  const open=async()=>{await card.getByRole("button",{name:"参数设置",exact:true}).click();await expect(dialog).toBeVisible();};
+  const open=async()=>{await expandManagedModelConfig(card);await card.getByRole("button",{name:"参数设置",exact:true}).click();await expect(dialog).toBeVisible();};
   const save=async()=>{const response=admin.waitForResponse(r=>r.url().endsWith("/api/admin/model-management")&&r.request().method()==="POST"&&r.request().postDataJSON()?.action==="parameters");await dialog.getByRole("button",{name:"保存参数并生效",exact:true}).click();const r=await response,result=await r.json();assert.equal(r.status(),200,JSON.stringify(result));assert.equal(result.publication.phase,"applied");last=result.publication.version;await expect(dialog).toHaveCount(0);await expect(admin.getByText(`模型配置 v${last}`,{exact:true})).toBeVisible();assert.deepEqual((await get("/api/admin/model-management")).rows.map((r:any)=>r.id),state.rows.map((r:any)=>r.id));};
   await open();await dialog.getByRole("button",{name:"启用五档",exact:true}).click();await dialog.getByLabel("max显示名称",{exact:true}).fill("旗舰验收");
   for(const route of row.qualityConfig.routes){await dialog.getByLabel(`参数处理 ${route.upstreamId}`,{exact:true}).selectOption("map");for(const id of DISPLAY_QUALITY_IDS)await dialog.getByLabel(`${id}上游值 ${route.upstreamId}`,{exact:true}).fill(id==="low"?"low":id==="medium"?"medium":"high");}
