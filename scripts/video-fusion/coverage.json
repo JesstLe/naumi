@@ -258,6 +258,31 @@
       "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/protection-20261017.json",
       "verifier": "scripts/verify-video-fusion-protection.mjs",
       "kind": "actual-app-browser-protection-audit-with-hashed-run-receipts"
+    },
+    "linuxRollback": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/linux-e997b29/rollback-c05.json",
+      "verifier": "scripts/verify-video-fusion-rollback.ts",
+      "kind": "actual-compiled-linux-old-new-rollback-on-restored-fixture-database"
+    },
+    "linuxProtection": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/linux-e997b29/summary.json",
+      "verifier": "scripts/video-fusion/harness.ts",
+      "kind": "actual-compiled-linux-app-db-router-worker-with-isolated-suppliers"
+    },
+    "linuxFreeze": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/linux-e997b29/freeze.json",
+      "verifier": "scripts/verify-video-fusion-workflow-freeze.ts",
+      "kind": "actual-compiled-linux-app-with-isolated-suppliers"
+    },
+    "safetyFinal": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/safety-20261017.json",
+      "verifier": "scripts/verify-video-fusion-safety.mjs",
+      "kind": "actual-app-safety-evidence-audit"
+    },
+    "billingCompletion": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/billing-all-4094967-20261017.json",
+      "verifier": "scripts/verify-billing-all.mjs",
+      "kind": "actual-completed-billing-run-receipt"
     }
   },
   "capabilities": [
@@ -3385,7 +3410,7 @@
     {
       "id": "S01",
       "name": "鉴权私有媒体积分冻结",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/submission.ts",
         "src/lib/media-assets.ts"
@@ -3394,11 +3419,97 @@
         "readonly",
         "history",
         "freeze",
-        "billing"
+        "billing",
+        "linuxRollback",
+        "linuxProtection",
+        "linuxFreeze",
+        "safetyFinal",
+        "billingCompletion"
       ],
-      "remaining": [
-        "最终候选上验证旧任务/私有媒体/配置兼容及账户积分保护",
-        "CI积分镜像竞态已定位并修复，本机完整计费检查通过；新CI及管理浏览器仍待实测"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "Actual private media bytes and Range, owner isolation, signed URL tamper and expiry; readonly administrators cannot impersonate writes",
+          "evidenceKey": "safetyFinal",
+          "assertions": [
+            {
+              "path": "twoAccountPrivateMediaAndExpiredUrls",
+              "value": true
+            },
+            {
+              "path": "adminReadonlyCannotImpersonateMutation",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "Actual c05 production baseline image and its original fixture seed; old rows survive additive DDL and restored-database rollback to fixed e997 and back",
+          "evidenceKey": "linuxRollback",
+          "assertions": [
+            {
+              "path": "legacyFixtureSeedSource",
+              "value": "c05a923e830d27aafcb1c0856dc15181dc21d92b"
+            },
+            {
+              "path": "legacyRowsExistedBeforeAdditiveDdlAndPreserved",
+              "value": true
+            },
+            {
+              "path": "databaseRestorationProven",
+              "value": true
+            },
+            {
+              "path": "rollbackAndReupgrade",
+              "value": true
+            },
+            {
+              "path": "newMediaFrameCompletesOnUnchangedLegacyBilling",
+              "value": true
+            },
+            {
+              "path": "oldRuntimeTicksPreserveUncertainTask",
+              "value": true
+            },
+            {
+              "path": "fullImmutableTaskRowsCompared",
+              "value": true
+            },
+            {
+              "path": "frozenVideoDefaultsIncluded",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "One settlement, cancellation and failed releases, unknown submissions held; frozen model and billing stages survive actual publication and App restart",
+          "evidenceKey": "safetyFinal",
+          "assertions": [
+            {
+              "path": "oneSettlementAndUnknownHeld",
+              "value": true
+            },
+            {
+              "path": "publishedConfigurationDoesNotChangeFrozenStages",
+              "value": true
+            },
+            {
+              "path": "legacyDataConfigAndCreditsAcrossRestoredRollback",
+              "value": true
+            },
+            {
+              "path": "formalSupplierCalls",
+              "value": 0
+            },
+            {
+              "path": "realVideoQualityValidated",
+              "value": false
+            },
+            {
+              "path": "successfulFullBillingRunner",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
