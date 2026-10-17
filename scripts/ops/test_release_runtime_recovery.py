@@ -168,6 +168,12 @@ class SessionRecoveryTests(unittest.TestCase):
                 self.record('rollback-boundary');return {'fixtureOnly':True}
             def rollback_business_proof(self,state,operation):
                 self.record('rollback-business-proof');return {'fixtureOnly':True}
+            def prepare_rollback_ingress(self,state):
+                self.record('ingress-intent');return {'fixtureOnly':True,'fromCandidate':True}
+            def seal_rollback_ingress(self,state,operation,reconcile):
+                self.record('ingress-seal');return {'fixtureOnly':True}
+            def assert_rollback_ingress(self,state):self.record('ingress-assert')
+            def recover_rollback_gateway(self,state,operation):return None
         adapter=Adapter();spec=video_plan();tx=SimpleNamespace(stack=True,folder=root)
         current=session.MaintenanceSession(tx,spec,adapter=adapter,state_root=root/'state')
         def step(action,**fields):
@@ -206,16 +212,50 @@ class SessionRecoveryTests(unittest.TestCase):
             self.assertIn('runtime-enable',adapter.calls);self.assertIn('runtime-verify',adapter.calls)
             self.assertEqual(current.state['phase'],'MIGRATED_CLEANUP_PENDING')
 
-    def test_live_rollback_disarms_before_draining_and_holds_unproven_fallback(self):
+    def test_live_rollback_seals_and_proves_before_fallback_and_caller_restore(self):
         with tempfile.TemporaryDirectory() as directory:
             current,adapter,step=self.active(pathlib.Path(directory));step('runtime-finalize');start=len(adapter.calls)
-            with self.assertRaisesRegex(Hold,'POST_ACTIVATION_ACCEPTED_WORK_AUDIT_REQUIRED'):step('rollback')
+            step('rollback')
             calls=adapter.calls[start:]
             self.assertLess(calls.index('runtime-disable'),calls.index('worker-drain'))
+            self.assertLess(calls.index('ingress-seal'),calls.index('worker-drain'))
             self.assertLess(calls.index('worker-drain'),calls.index('app-drain'))
             self.assertLess(calls.index('app-drain'),calls.index('rollback-business-proof'))
-            self.assertNotIn('gateway-rollback-open',calls);self.assertNotIn('restore-caller',calls)
+            self.assertLess(calls.index('rollback-business-proof'),calls.index('gateway-rollback-maintenance'))
+            self.assertLess(calls.index('gateway-rollback-maintenance'),calls.index('restore-caller'))
+            self.assertEqual(calls.count('rollback-business-proof'),2)
             self.assertTrue(current.state['rollbackRuntimeDisarmed'])
+            self.assertEqual(current.state['phase'],'ROLLED_BACK')
+
+    def test_business_change_or_unsealed_old_connections_prevent_fallback(self):
+        for failure in ('rollback-business-proof','ingress-seal'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                current,adapter,step=self.active(pathlib.Path(directory)); adapter.fail=failure
+                with self.assertRaises(Hold):step('rollback')
+                self.assertNotIn('gateway-rollback-maintenance',adapter.calls)
+                self.assertNotIn('restore-caller',adapter.calls)
+
+    def test_seal_reply_loss_reloads_canonical_original_intent_before_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory);current,adapter,step=self.active(root)
+            adapter.fail='ingress-seal';operation=str(uuid.uuid4())
+            request={'action':'rollback','operationId':operation,'expectedRevision':current.state['revision']}
+            with self.assertRaises(Hold):current.step(request)
+            self.assertIn('rollbackIngressIntent',current.state)
+            adapter.fail=None
+            recovered=session.MaintenanceSession(current.tx,current.plan,adapter=adapter,state_root=root/'state')
+            recovered.step({**request,'reconcile':True})
+            self.assertEqual(adapter.calls.count('ingress-intent'),1)
+            self.assertEqual(recovered.state['phase'],'ROLLED_BACK')
+
+    def test_observed_candidate_without_saved_open_ack_still_needs_original_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            current,adapter,step=self.active(pathlib.Path(directory))
+            for key in ('rollbackBoundary','openGateway','app-open-main'):current.state.pop(key,None)
+            current.persist()
+            with self.assertRaisesRegex(Hold,'POST_ACTIVATION_ACCEPTED_WORK_AUDIT_REQUIRED'):step('rollback')
+            self.assertNotIn('gateway-rollback-maintenance',adapter.calls)
+            self.assertNotIn('restore-caller',adapter.calls)
 
 
 if __name__ == '__main__':unittest.main()

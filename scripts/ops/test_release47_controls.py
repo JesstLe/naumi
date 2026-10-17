@@ -51,6 +51,7 @@ class Controls(unittest.TestCase):
     def test_app_status_is_identity_bound_and_no_secret_argv(self):
         self.assertEqual(m.app_status(self.tx, self.identity), self.status)
         self.assertFalse(any('secret-value' in value for call in self.calls for value in call))
+        self.assertTrue(all(c[2:4]==['-e','NODE_OPTIONS='] for c in self.calls if c[:2]==['docker','exec']))
 
     def test_app_control_cas_acknowledged_and_repeated_operation_is_not_resent(self):
         op = '33333333-3333-4333-8333-333333333333'
