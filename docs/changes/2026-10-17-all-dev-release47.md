@@ -30,3 +30,7 @@ Linux运维集中383项，0失败/0错误、6显式跳过。4套需历史捕获/
 ## 证据
 
 本worktree output/all-dev-release47-20261017：branch-inventory、各集中测试日志、三锁预检、固定构建与四件产物。最终main SHA/镜像ID/是否实际上线以VERIFICATION.txt和本线程结果为准。
+
+## 构建后新业务刷新
+
+构建后复核发现Agent分支新增703b33cc工具调用展开/计时/关联结果，已再次普通合入，相关两函数guard改按该精确提交验收；原3794c5ef镜像只作为中间构建，不发布。最终候选需按新SHA和新版号重新Linux构建。

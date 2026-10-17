@@ -11,7 +11,7 @@ if(mode==='baseline'){
  const functions=s=>{const out=new Map();const visit=x=>{if(ts.isFunctionDeclaration(x)&&x.name)out.set(x.name.text,x.getText().replace(/\s+/g,' '));ts.forEachChild(x,visit)};visit(ts.createSourceFile('x.tsx',s,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX));return out};
  for(const [file,current,outer] of [['src/components/canvas/canvas-client.tsx',canvas,'CanvasClient'],['src/components/labs/workbench-client.tsx',workbench,'WorkbenchClient']]){
   const before=functions(cp.execFileSync('git',['show',base+':'+file],{encoding:'utf8'})),after=functions(current);
-  const approvedAgent=file.includes('/canvas/')?functions(cp.execFileSync('git',['show','f4f58dae:'+file],{encoding:'utf8'})):new Map();
+  const approvedAgent=file.includes('/canvas/')?functions(cp.execFileSync('git',['show','703b33cc:'+file],{encoding:'utf8'})):new Map();
   for(const [name,body] of before){if(['restoreAssistantConversation','sendAssistantMessage'].includes(name)){check(after.get(name)===approvedAgent.get(name),'approved stream integration '+name);continue;}if([outer,'openImagegenPanel','mountImagegenResult'].includes(name))continue;if(name==='RatioIcon'){const render=after.get(name)||'';check(render.startsWith(body.slice(0,body.indexOf(' return ')))&&render.includes('<svg')&&render.includes('<rect'),'ratio sizing unchanged; SVG presentation');continue;}check(after.get(name)===body,'unchanged '+name);}
  }
  check(canvas.includes('{modelControl(false)}')&&canvas.includes('{ratioControl}')&&canvas.includes('onClick={generateChild}'),'original image Dock retained');
