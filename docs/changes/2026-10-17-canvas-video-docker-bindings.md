@@ -22,6 +22,12 @@ Linux root 执行三个集中测试模块，共 27 项全部通过，无跳过�
 
 systemd 联集 283 个服务名超过原工具 256 上限。分离 29 个未实例化模板后批量读取有效属性，得到 236 个规范 Id；别名、未加载单元和模板不能当作已完整检查的执行器。所读有效属性/fragment/drop-in 未匹配目标，但 10 个单元含 EnvironmentFiles，文件内容及 ExecStart shell 包装、动态调用尚未核查。因此结果明确为部分引用观察，不满足完整引用闭合。初次批量读取被无效模板中断，只得到 5 个 Id 的回执未当作完整证据。最终观察见 actual103-effective-references.json。
 
+## 有效环境文件与包装脚本补查
+
+后续只读补查把 systemd Names 别名映射纳入：283 个请求名中，剩余未解析恰为 29 个未实例化模板；全部 254 个具体服务名均被有效 Id/Names 覆盖（236 个规范 Id、255 个别名含联集外名称），读取 216 份实际 fragment/drop-in。10 项 EnvironmentFiles 声明全部解析；5 个文件存在并读取，5 个缺失且 ignore_errors=yes，无读取失败。读取 13 项直接 ExecStart/ExecStop 脚本记录（含重复路径），包括当前 Naumi model-proxy-bridge.py，均未发现目标直接引用。没有输出环境值或脚本内容。
+
+补查解决了原 256 单元上限、模板导致批量 show 中断和别名去重误判。Docker/服务字段/所读文件没有目标直接引用，原 Worker 的 app 网络别名仍唯一落在核心 13012；Nginx 和目标 boot/PID 保持。没有把上述结果提升为完整调用图：shell 转义命令、递归脚本/配置、动态服务调用和模板源内容仍不在此观察闭包。有效 shell 入口 cloud-init-hotplugd/debug-shell 仅记录，不执行。最终证据 actual103-effective-references-env.json，采集器 readonly-service-reference-collector.sh 均存同一忽略证据目录；未停服/未持锁/未改变业务记录。
+
 ## 未完成
 
 仍需源自治入口与实际任务归属证明、完整有效调用引用，以及可恢复的历史 UI 串行退役；之后实测可用内存并完成 103 锁内发布、回滚与线上受影响功能验收。原硬编码 boot pins 仍旧，不可用于当前实例停服。本次没有停止容器、释放 RAM 或发布新应用，没有持有发布锁，维护计数不增加。
