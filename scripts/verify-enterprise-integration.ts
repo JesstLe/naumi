@@ -82,8 +82,24 @@ async function main(){
   await pool.query('UPDATE app_account_teams SET enabled=true WHERE id=$1',[root]);
   const fixtureOut=process.env.NAUMI_INTEGRATION_EVIDENCE_DIR;
   if(fixtureOut){mkdirSync(fixtureOut,{recursive:true});writeFileSync(resolve(fixtureOut,'SAMPLE_NORMALIZED.json'),JSON.stringify({artworks,jobs,ledger},null,2));writeFileSync(resolve(fixtureOut,'SOURCE_FIXTURE_META.json'),JSON.stringify({root,foreign,admin,owner,staff,ordinary}));}
-  const navigation=readFileSync(resolve('src/lib/admin-navigation.ts'),'utf8');assert.ok(navigation.includes('/admin/enterprise-workbench'));
-  console.log('NAUMI_INTEGRATION_PASS: shared_enterprises=2 dedicated_enterprises=1 ordinary_denied=1 cross_enterprise_denied=1 hierarchy_scope=1 prompts=1 linked_charge=6 missing_charge=null refund_delta=2 source_writes=0 raw_secrets=0 admin_entry=1 deployment_not_configured=503');
+  const {GET:sourceGET}=await import('../src/app/api/enterprise/integration/route');
+  await db.setSetting('multi_user_enabled','1');
+  const sourceReq=(actor:string,params:Record<string,string>)=>new Request('http://fixture.invalid/api/enterprise/integration?'+new URLSearchParams(params),{headers:{cookie:actor?'nv_user='+native.signUserSession(actor,Date.now()):''}});
+  assert.equal((await sourceGET(sourceReq('',{action:'context'}))).status,401);
+  response=await sourceGET(sourceReq(owner,{action:'context'}));assert.equal(response.status,200,await response.clone().text());
+  const context=await response.json();assert.equal(context.viewer.email,owner);assert.equal(context.enterprises.length,1);
+  response=await sourceGET(sourceReq(owner,{action:'records',...q,kind:'generations'}));assert.equal(response.status,200);assert.equal((await response.json()).rows.length,2);
+  response=await sourceGET(sourceReq(manager,{action:'records',...q,kind:'artworks'}));assert.equal(response.status,200);assert.equal((await response.json()).rows.length,1);
+  assert.equal((await sourceGET(sourceReq(owner,{action:'records',enterpriseId:foreign,kind:'artworks'}))).status,404);
+  assert.equal((await sourceGET(sourceReq(ordinary,{action:'records',...q,kind:'artworks'}))).status,403);
+  assert.equal((await sourceGET(sourceReq(owner,{action:'context',role:'admin'}))).status,400);
+  assert.equal((await sourceGET(sourceReq(owner,{action:'records',...q,kind:'generations',from:'bad'}))).status,400);
+  await pool.query('UPDATE app_account_teams SET enabled=false WHERE id=$1',[root]);
+  assert.equal((await sourceGET(sourceReq(owner,{action:'records',...q,kind:'artworks'}))).status,403);
+  await pool.query('UPDATE app_account_teams SET enabled=true WHERE id=$1',[root]);
+  const navigation=readFileSync(resolve('src/components/admin/center-shell.tsx'),'utf8');assert.ok(!navigation.includes('href:"/admin/enterprise-workbench"'));
+  console.log('NAUMI_INTEGRATION_PASS: shared_enterprises=2 dedicated_enterprises=1 ordinary_denied=1 cross_enterprise_denied=1 hierarchy_scope=1 prompts=1 linked_charge=6 missing_charge=null refund_delta=2 source_writes=0 raw_secrets=0 source_admin_not_product=1 deployment_not_configured=503');
+  console.log('ENTERPRISE_SOURCE_ROUTE_PASS: enterprise_owner=200 subtree=1 anonymous=401 personal=403 foreign=404 revoked=403 role_injection=400 platform_admin_required=0');
   await pool.end();
 }
 main().catch(e=>{console.error(e);process.exit(1)});

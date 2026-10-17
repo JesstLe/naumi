@@ -17,5 +17,6 @@ try{
     execFileSync(process.execPath,['--require',preload,'--import','tsx',script],{stdio:'inherit',timeout:120000,env:{...env,DATABASE_URL:`postgresql://postgres:${password}@127.0.0.1:${port}/${database}`,NAUMI_ARTWORKS_EVIDENCE_DIR:process.env.NAUMI_INTEGRATION_EVIDENCE_DIR??'output/enterprise-integration-artworks'}});
   }
   if(process.argv.includes('--preview'))execFileSync(process.execPath,['--require',preload,'--import','tsx','scripts/preview-enterprise-integration.ts'],{stdio:'inherit',timeout:3600000,env});
+  if(process.argv.includes('--product'))execFileSync(process.execPath,['--require',preload,'--import','tsx','scripts/preview-enterprise-product.ts'],{stdio:'inherit',timeout:3600000,env});
   console.log(process.argv.includes('--baseline')?'INTEGRATION_BASELINE_PASS: existing_artworks=1 existing_analytics=1 integration_port=0':'INTEGRATION_VERIFY_PASS: disposable_pg=1 production_connections=0 provider_calls=0');
 }catch(e){console.error(e.message);process.exitCode=1}finally{if(started){docker(['rm','-f',name]);console.log('INTEGRATION_FIXTURE_CLEANUP_PASS: only_this_container=1')}}

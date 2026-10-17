@@ -1,5 +1,11 @@
 # 企业协作 Demo（2026-10-17）
 
+## 当前交付方向：以本完整界面为唯一产品Shell
+
+用户纠正已落实：Naumi `/admin`只是数据源后台。保留本页8模块与V2排期，在“素材与交付”增加“Naumi 创作记录”。原演示角色不决定来源权限；来源通过同源`/api/enterprise/integration`核验当前企业账号，记录仅内存展示，不修改演示任务、排期或绩效事实。源服务未连接时显示明确未连接状态，无伪造记录兜底。
+
+隔离验收使用`node scripts/verify-enterprise-integration.mjs --product`启动原界面和一次性PG合成源；该工具不是生产认证接入。生产仍需真实来源会话/BFF和企业绑定。
+
 ## 当前增量：V2同表多视图
 
 见[详细V2 PRD](../../docs/enterprise/team-scheduling-v2-prd.md)和[实施记录](../../docs/enterprise/team-scheduling-v2-implementation.md)。默认五个视图，支持独立配置/草稿/版本/个人视图，新增/复制/重命名/排序/归档恢复；任务只存一份。
@@ -21,7 +27,7 @@ python design/enterprise-demo/tools/preview_import.py SOURCE.zip --output LOCAL_
 
 ## 打开
 
-直接用浏览器打开 `preview.html`；单HTML包含全部CSS、JS、图标和矢量商品示意，不依赖npm、CDN或后端。可选本地HTTP：
+直接用浏览器打开 `preview.html`；单HTML包含全部CSS、JS、图标和矢量商品示意，原业务演示不依赖npm、CDN或后端；Naumi来源标签是可选的同源API读取。可选静态HTTP：
 
 ```powershell
 python -m http.server 18482 --bind 127.0.0.1 --directory design/enterprise-demo
@@ -52,7 +58,7 @@ python -m http.server 18482 --bind 127.0.0.1 --directory design/enterprise-demo
 
 ## 明确边界
 
-仅前端本地演示，全部人员/品牌/店铺/任务均为合成样例。角色切换不是真实SSO/RBAC，不具备多人并发/跨浏览器一致性；localStorage可由用户修改。钉钉、聚水潭、生产账号/素材/数据库和上一轮工作流服务均未连接；不发真实消息、不执行付费创作、不上架。
+仅前端本地演示，全部人员/品牌/店铺/任务均为合成样例。角色切换不是真实SSO/RBAC，不具备多人并发/跨浏览器一致性；localStorage可由用户修改。钉钉、聚水潭、生产账号/素材/数据库和工作流命令UI尚未接入；可选Naumi来源API已在隔离PG合成数据上验收；不发真实消息、不执行付费创作、不上架。
 排期负载与7天趋势为标记的示意数据，不能用于真实考核。日期固定2026-10-17用于稳定评审。
 
 ## 团队排期可配置业务表格（2026-10-17增量）

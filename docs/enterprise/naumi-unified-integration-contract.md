@@ -2,9 +2,9 @@
 
 ## 部署与路由
 
-总入口`/admin`。导航到`/admin/enterprise-workbench`，该页使用requireAdminPage与AdminCenterShell，不新建登录系统。
+最终产品以18482/preview.html?v=4原企业协作界面为准。Naumi `/admin`仅作为现有数据源后台；原admin产品页面与新增导航已撤除。
 
-只读API：`GET /api/admin/enterprise-workbench`，requireAdmin校验、私有no-store响应、速率限制；不开放POST。不接受客户端自报角色、企业成员列表、数据库URL或上游token。
+产品只读API：`GET /api/enterprise/integration`，enterpriseAuthorize+当前组织scope校验、私有no-store响应、速率限制；不开放POST。旧`/api/admin/enterprise-workbench`仅为源端诊断API，产品不调用。不接受客户端自报角色、企业成员列表、数据库URL或上游token。
 
 环境配置（无密钥）：
 
@@ -24,19 +24,19 @@ NAUMI_ENTERPRISE_ALLOWED_IDS=<已审核的一个企业UUID>
 
 | action | 参数 | 返回 |
 |---|---|---|
-| list | 无其他字段 | {version,source,transport,policy,enterprises} |
+| context | 无其他字段 | {version,source,transport,instanceId,mode,viewer,enterprises} |
 | members | enterpriseId | 原EnterpriseSnapshot（服务端范围内成员） |
 | records | enterpriseId,kind,from?,to?,email?,page?,size? | IntegrationPage |
 
 kind=artworks/generations/ledger；日期按北京时间，默认最近30天，最多366天；page 1–100000，作品/生成size 1–100（默认30）；账本沿用原analytics固定25条，响应size为实际值，客户端按响应分页，不假设请求size生效。
 
-query为严格白名单，未知字段400。UUID无效400，部署范围外404，非管理员401，配置缺失/非法503；企业组织/成员/入口授权继续由原enterprise服务检查。
+query为严格白名单，未知字段400。UUID无效400，部署范围外404，匿名401；无企业范围403，配置缺失/非法503；企业组织/成员/入口授权继续由原enterprise服务检查。
 
 ## 端口与标准DTO
 
 代码：`src/lib/enterprise/integration/contracts.ts`。
 
-EnterpriseDataPort={transport,policy,list(),members(enterpriseId),records(query)}。当前transport只有in-process，实现NaumiEnterpriseAdapter；未来HTTP适配必须遵循同形态与同等授权，未在本轮提供远程凭据/切换选项。
+EnterpriseDataPort={transport,policy,list(),members(enterpriseId),records(query)}；产品context包装源身份、部署模式和list结果。当前transport只有in-process，实现NaumiEnterpriseAdapter；未来HTTP适配必须遵循同形态与同等授权，未在本轮提供远程凭据/切换选项。
 
 IntegrationPage：version=1；source=naumi；instanceId；enterpriseId；kind；rows；total/page/size；generatedAt；consistency=source-read；attribution=current-membership-not-historical-ownership。
 
@@ -65,7 +65,7 @@ operationSource增加明确source_table/has_ledger_charge供同源转换，避�
 
 ## 范围差异
 
-作品/生成沿用员工视图，可见emails来自原scope.visible；账本沿用analytics并可含老板本人。新后台入口是平台管理员，不把它的身份透传给企业员工。源角色授权保持当前组织树语义，非“历史归属”；后续snapshot-aware历史归属另建generation_links。
+作品/生成沿用员工视图，可见emails来自原scope.visible；账本沿用analytics并可含老板本人。产品使用当前来源用户，不使用平台管理员代理。演示role下拉框与数据源viewer明确分离，数据不写入原localStorage。源角色授权保持当前组织树语义，非“历史归属”；后续snapshot-aware历史归属另建generation_links。
 
 ## 后续跨部署握手（设计，尚未启用）
 

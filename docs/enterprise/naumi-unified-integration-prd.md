@@ -1,6 +1,6 @@
 # Naumi统一企业工作台与私有部署 PRD
 
-2026-10-17｜总入口：`/admin`｜目标：一套产品主干、多企业平台和单企业独立部署共用代码。
+2026-10-17｜最终产品：原完整企业协作界面（18482/preview.html?v=4）；Naumi `/admin`仅为数据源后台｜目标：一套产品主干、多企业平台和单企业独立部署共用代码。
 
 ## 1. 本次决定
 
@@ -12,11 +12,11 @@
 
 ## 2. 入口和角色
 
-总入口`/admin`保持现有登录与管理员校验，不改为公开门户。现有/admin/center是内部落地页；新增导航“企业流程工作台”到`/admin/enterprise-workbench`，不建立第二个顶级总入口。
+用户已明确纠正：Naumi `/admin`是现有数据源后台，不是新系统产品入口。最终产品沿用`http://127.0.0.1:18482/preview.html?v=4`的完整企业协作Shell、导航和业务交互；数据接入放入原“素材与交付 → Naumi 创作记录”，不跳转管理员Shell、不嵌入iframe。先前增加的/admin企业工作台产品导航和页面已撤除。
 
 平台管理员：管理普通用户、企业目录、授权、接入实例、部署配置及平台统计。可选择多个已授权企业，不通过公司名称筛选来实现权限。
 
-企业老板/管理者：原`/enterprise`仍作为企业授权工作区，沿用组织树/view_records/manage_members和入口授权周期。后续可从统一入口按能力路由进入企业工作区；这不是将其提升为平台管理员。本轮新/admin工作台只允许平台管理员。
+企业老板/管理者：原`/enterprise`仍作为企业授权工作区，沿用组织树/view_records/manage_members和入口授权周期。后续可从统一入口按能力路由进入企业工作区；这不是将其提升为平台管理员。产品读取改走企业来源账号授权端点，不把平台管理员API当成员权限代理。
 
 员工：进入需求、任务、排期和本人创作，权限由企业和团队显式授予。普通个人用户不因account_type/公司文本有“企业”而成为企业员工。
 
@@ -24,7 +24,7 @@
 
 | 已有源 | 当前功能 | 本次复用 |
 |---|---|---|
-| src/app/admin/page.tsx、admin-client、center-shell | /admin统一验证、用户与企业、业务任务、作品、流水、后台管理 | 原入口和Shell不另建 |
+| src/app/admin/page.tsx、admin-client、center-shell | /admin统一验证、用户与企业、业务任务、作品、流水、后台管理 | 作为现有数据源后台，不用其Shell替换产品 |
 | /api/enterprise | 企业列表/成员/角色/组织 | 实时企业范围和成员快照 |
 | enterprise/server.ts enterpriseRead | 同事务组织树、当前账号、企业/入口授权校验 | 记录读取权限权威 |
 | /api/enterprise/artworks + bi/repository | 作品、提示词、溯源、输入与尺寸 | 标准化作品DTO |
@@ -60,7 +60,7 @@ app_bi_account_profiles.company/account_type是后台资料，不是租户主键
 
 EnterpriseDataPort提供list、members、records，前端不感知SQL表或不同部署数据库。当前实现NaumiEnterpriseAdapter（in-process），调用现有Naumi服务函数。
 
-API：GET /api/admin/enterprise-workbench。action=list|members|records；records.kind=artworks|generations|ledger。读取只通过平台管理员验证；拒绝匿名、普通企业老板、普通用户。企业成员工作区仍走原enterpriseAuthorize，不复用平台管理员令牌。
+产品API：GET /api/enterprise/integration，action=context|members|records；records.kind=artworks|generations|ledger，经过enterpriseAuthorize和现有组织scope。Naumi `/api/admin/enterprise-workbench`仅保留源端管理员诊断API，产品JS不调用它；原演示角色选择器不作为来源身份，也不改变来源权限。
 
 新查询为白名单参数，拒绝baseUrl、token、permissions、可自报成员列表或动态数据库地址。部署范围来自服务端环境，UI无“切到另一数据库”功能。
 
@@ -122,7 +122,7 @@ localTenantId、Naumi enterpriseId、workflow teamId、钉钉部门ID分别表�
 
 ## 12. 分阶段交付
 
-U1 已实现：同源只读适配、部署范围、/admin入口、作品/提示词/生成/流水列表、私有媒体读取、隔离测试。当前仍任务分支，本机合成验收，未发布。
+U1 已实现：同源只读适配、部署范围、原产品内作品/提示词/生成/流水入口、私有媒体读取、隔离测试。原admin Shell方案作为错误方向撤回，代码保留的是数据适配能力。当前仍任务分支，本机合成验收，未发布。
 
 U2 下一阶段：在既有完整企业Demo/正式页面整合需求排期+新数据端口，统一身份与workflow租户/团队映射；不要用本轮仅数据列表页替代完整排期页面。
 
@@ -134,7 +134,7 @@ U4：独立企业资源准备、按需远程受限适配、数据迁移/增量�
 
 隔离PG中两企业、个人账号、不同层级角色；实际扣费6/预估9/退款2，缺证据返回null，源表读取指纹不变。shared返回两家，dedicated恰好一家，外企404、匿名/非平台管理员401、错误部署配置503、坏日期400，关闭企业后成员读取拒绝。
 
-旧作品/媒体授权与enterprise analytics集中回归验证未变宽；浏览器检查10项，真实React组件/Admin Shell+实际新API，合成账号与一次性PG，390px不横溢。
+旧作品/媒体授权与enterprise analytics集中回归验证未变宽；原U1的Admin Shell浏览器10项只是历史源端验证；纠正后重新验证原产品36业务+42排期+35工作簿+18来源读取，来源采用企业老板而非平台管理员身份。
 
 本机共享node_modules实际React18.3.1，而仓库声明19.3.0，根TypeScript存在4处旧组件ref类型错误，先用原commit副本验证相同错误；本轮不改无关画布/版本组件或全局安装。此环境不作为正式Next19构建通过证据。真实发布仍需隔离锁定依赖构建。
 
@@ -142,4 +142,4 @@ U4：独立企业资源准备、按需远程受限适配、数据迁移/增量�
 
 详细接口见`naumi-unified-integration-contract.md`，实施/测试与边界见`naumi-unified-integration-implementation.md`，总图见`naumi-unified-integration-architecture.html`。
 
-评审重点：/admin总入口和企业身份不可混淆；是否包括老板自身创作需显式确认；真实企业UUID/源实例ID不能猜；历史个人与企业归属不能自动推断；跨站是否实时读取或迁移决定权威端；专属数据不能混进平台其他租户；同代码不同配置不等于已完成生产隔离。
+评审重点：/admin数据源后台和原企业协作产品入口必须分开；是否包括老板自身创作需显式确认；真实企业UUID/源实例ID不能猜；历史个人与企业归属不能自动推断；跨站是否实时读取或迁移决定权威端；专属数据不能混进平台其他租户；同代码不同配置不等于已完成生产隔离。
