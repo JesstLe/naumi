@@ -3,7 +3,7 @@ import { Script } from 'node:vm';
 import assert from 'node:assert/strict';
 const root=new URL('./',import.meta.url);
 const html=await readFile(new URL('preview.html',root),'utf8');
-const source=(await Promise.all(['schedule-model.js','workbook-model.js','demo.js','schedule-ui.js','workbook-ui.js','source-data.js','source-ui.js','import-view-model.js','import-ui.js','import-presentation.js','people-ui.js','intake-ui.js','workspace-ui.js','tasks-ui.js'].map(f=>readFile(new URL(f,root),'utf8')))).join('\n')+'\nshell();\n';
+const source=(await Promise.all(['schedule-model.js','workbook-model.js','demo.js','schedule-ui.js','workbook-ui.js','source-data.js','source-ui.js','import-view-model.js','import-ui.js','import-presentation.js','people-ui.js','intake-ui.js','workspace-ui.js','tasks-ui.js','delivery-ui.js'].map(f=>readFile(new URL(f,root),'utf8')))).join('\n')+'\nshell();\n';
 const inline=html.match(/<script>([\s\S]*)<\/script>/)?.[1];
 assert.equal(inline,source.replaceAll('\r\n','\n'));
 new Script(inline);new Script(await readFile(new URL('browser-check.js',root),'utf8'));

@@ -6,6 +6,7 @@ import type { WorkflowStore } from './store';
 import type { SchedulingStore } from './scheduling-store';
 import type { SourceIdentityStore,SourceAuthenticate } from './source-identity';
 import type { PeopleStore } from './people-store';
+import type { DeliveryStore } from './delivery-store';
 // Adapter verifies short-lived BFF authentication (issuer, audience, expiry, signature),
 // NOT x-user/x-enterprise headers or a caller-supplied permissions array.
 export type Authenticate = (request: IncomingMessage) => Promise<Principal | null>;
@@ -25,7 +26,7 @@ async function body(req: IncomingMessage) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { throw new WorkflowError(400, 'INVALID_JSON'); }
 }
-export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore, identity?:{store:SourceIdentityStore;authenticate:SourceAuthenticate},people?:PeopleStore) {
+export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore, identity?:{store:SourceIdentityStore;authenticate:SourceAuthenticate},people?:PeopleStore,delivery?:DeliveryStore) {
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url || '/', 'http://workflow.internal');
@@ -41,6 +42,16 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       const principal = await authenticate(req);
       if (!principal) throw new WorkflowError(401, 'AUTH_REQUIRED');
       if (!id.safeParse(principal.enterpriseId).success || !principal.subject) throw new WorkflowError(401, 'INVALID_IDENTITY');
+      if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/assets')return json(res,200,await delivery.list(principal,Object.fromEntries(url.searchParams)));
+      if(delivery&&req.method==='POST'&&url.pathname==='/v1/delivery/upload'){
+        if(req.headers['content-type']!=='application/octet-stream')throw new WorkflowError(415,'BINARY_REQUIRED');
+        if(Number(req.headers['content-length']||0)>delivery.maxBytes)throw new WorkflowError(413,'ASSET_TOO_LARGE');
+        return json(res,200,await delivery.upload(principal,Object.fromEntries(url.searchParams),req));
+      }
+      if(delivery&&req.method==='GET'&&url.pathname==='/v1/delivery/download'){
+        const {asset,stream}=await delivery.download(principal,id.parse(url.searchParams.get('id')));
+        res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':asset.bytes,'Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(asset.name).replaceAll("'",'%27'),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox",'X-Content-SHA256':asset.sha256});stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;
+      }
       if(people&&req.method==='GET'&&url.pathname==='/v1/people')return json(res,200,await people.list(principal,url.searchParams.get('source')||''));
       if(people&&req.method==='GET'&&url.pathname==='/v1/people/audit')return json(res,200,await people.audit(principal));
       if(people&&req.method==='POST'&&url.pathname==='/v1/people/profile')return json(res,200,await people.profile(principal,await body(req)));
@@ -55,6 +66,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
         if (scheduleMatch[3]) return json(res, 200, await scheduling.personal(principal, teamId, scheduleMatch[3]));
         return json(res, 200, await scheduling.get(principal, teamId));
       }
+      if(req.method==='GET'&&url.pathname==='/v1/facts')return json(res,200,await store.facts(principal,Object.fromEntries(url.searchParams)));
       if(req.method==='GET'&&url.pathname==='/v1/tasks')return json(res,200,await store.tasks(principal,Object.fromEntries(url.searchParams)));
       if(req.method==='GET'&&url.pathname==='/v1/assignees')return json(res,200,await store.assignees(principal,Object.fromEntries(url.searchParams)));
       if(req.method==='GET'&&url.pathname==='/v1/orders')return json(res,200,await store.list(principal,Object.fromEntries(url.searchParams)));
@@ -74,7 +86,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       json(res, known ? e.status : e instanceof ZodError?400:500, { error: { code: known ? e.code : e instanceof ZodError?'INVALID_INPUT':'INTERNAL_ERROR' } });
     }
   });
-  server.requestTimeout = 15000; server.headersTimeout = 10000;
+  server.requestTimeout = delivery ? 120000 : 15000; server.headersTimeout = 10000;
   return server;
 }
 export { WorkflowStore } from './store';
@@ -83,3 +95,5 @@ export { SchedulingStore } from './scheduling-store';
 export { createBffAuthenticator, resolveDatabaseActor } from './identity';
 export { SourceIdentityStore,createSourceVerifier,createMappedAuthenticator } from './source-identity';
 export { PeopleStore } from './people-store';
+
+export { DeliveryStore } from './delivery-store';

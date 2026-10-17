@@ -13,7 +13,7 @@ const assigneeSchema=z.strictObject({query:z.string().max(120).default(''),kind:
 // It is also called for an assignment target; role display names and client headers are not authority.
 export type ResolveActor = (tx: PoolClient, principal: Principal) => Promise<Actor | null>;
 // Must verify tenant ownership and usability of each immutable deliverable revision.
-export type ValidateAssets = (tx: PoolClient, actor: Actor, assetIds: string[]) => Promise<boolean>;
+export type ValidateAssets = (tx: PoolClient, actor: Actor, assetIds: string[], context?:{orderId:string;taskId:string}) => Promise<boolean>;
 function stable(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
   if (value && typeof value === 'object') return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k,v]) => `${JSON.stringify(k)}:${stable(v)}`).join(',')}}`;
@@ -88,6 +88,14 @@ export class WorkflowStore {
       return {tasks:result.rows.filter(r=>canRead(a,r.document)).map(r=>{const o=r.document as WorkOrder;return {order:{id:o.id,title:o.title,status:o.status,version:o.version,requester:o.requester},task:r.task};}),total,page:q.page,pageSize:30,viewer:{subject:a.subject,permissions:a.permissions,workKinds:a.workKinds}};
     });
   }
+  async facts(principal:Principal,raw:unknown={}){
+    const q=z.strictObject({page:z.coerce.number().int().min(1).max(10000).default(1)}).parse(raw);
+    return this.transaction(async tx=>{const a=await this.actor(tx,principal),manager=a.permissions.some(p=>['manage','dispatch','review'].includes(p));
+      const where="e.enterprise_id=$1 AND (e.event->>'teamId') IS NOT DISTINCT FROM $2::text AND e.event->>'type'='workflow.task.accepted.v1' AND ($3::boolean OR e.event->'data'->>'contributor'=$4)";
+      const values=[a.enterpriseId,a.teamId??null,manager,a.subject];const rows=(await tx.query(`SELECT e.event,count(*) OVER() AS total FROM enterprise_workflow.events e WHERE ${where} ORDER BY e.created_at DESC,e.id LIMIT 30 OFFSET $5`,[...values,(q.page-1)*30])).rows;const total=rows.length?Number(rows[0].total):Number((await tx.query(`SELECT count(*) AS n FROM enterprise_workflow.events e WHERE ${where}`,values)).rows[0].n);
+      return {facts:rows.map(r=>r.event),total,page:q.page,pageSize:30,finalScore:false};
+    });
+  }
   async assignees(principal:Principal,raw:unknown={}){
     const q=assigneeSchema.parse(raw);
     return this.transaction(async tx=>{
@@ -149,8 +157,9 @@ export class WorkflowStore {
         const task = previous?.tasks.find(t => t.id === action.taskId);
         if (!task || !target.permissions.includes('execute') || !target.workKinds.includes(task.kind)) throw new WorkflowError(403, 'INVALID_ASSIGNEE');
       }
-      if (command.action.type === 'submit-delivery' && !await this.validateAssets(tx, actor, command.action.assetIds)) throw new WorkflowError(403, 'INVALID_ASSETS');
       const { order, event } = evolve(previous ?? null, actor, command, new Date().toISOString());
+      if (command.action.type === 'submit-delivery' && !await this.validateAssets(tx, actor, command.action.assetIds,{orderId:command.orderId,taskId:command.action.taskId})) throw new WorkflowError(403, 'INVALID_ASSETS');
+      if(command.action.type==='accept-delivery'){const action=command.action;const task=previous?.tasks.find(t=>t.id===action.taskId);if(!task||!await this.validateAssets(tx,actor,task.assetIds,{orderId:command.orderId,taskId:task.id}))throw new WorkflowError(403,'INVALID_ASSETS');}
       await tx.query(`INSERT INTO enterprise_workflow.orders(enterprise_id,id,version,document) VALUES($1,$2,$3,$4)
         ON CONFLICT(enterprise_id,id) DO UPDATE SET version=EXCLUDED.version,document=EXCLUDED.document,updated_at=now()`, [principal.enterpriseId, order.id, order.version, order]);
       await tx.query('INSERT INTO enterprise_workflow.events(enterprise_id,id,order_id,aggregate_version,event) VALUES($1,$2,$3,$4,$5)', [principal.enterpriseId, event.id, order.id, order.version, event]);

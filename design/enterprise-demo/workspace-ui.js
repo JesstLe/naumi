@@ -24,7 +24,7 @@ async function requirementRequest(action,params={},body,scope=requirementScope()
  if(!scope.active){const r=await importRequest(action,params,body);if(!scopeCurrent(scope))throw Error('WORKSPACE_CHANGED');return r;}
  if(!workspaceTeam())throw Error('请先选择企业和团队');
  if(action==='session')return {csrf:''};
- if(!['orders','order','command','intake','tasks','assignees'].includes(action))throw Error('员工工作区暂未接通此操作');
+ if(!['orders','order','command','intake','tasks','assignees','facts'].includes(action))throw Error('员工工作区暂未接通此操作');
  return workspaceFetch(action,{...params,enterpriseId:scope.enterpriseId,teamId:scope.teamId},body,scope);
 }
 async function workspaceDiscover(){workspaceClear();workspace.active=true;intake.active=true;view='requirements';workspace.directory=null;workspace.enterpriseId='';workspace.error='';workspace.status=0;workspace.loading=true;const epoch=workspace.epoch;shell();
@@ -39,7 +39,7 @@ function workspacePanel(){const s=workspace,d=s.directory;return `<section class
 const workspaceOriginalRequirements=requirements;
 requirements=function(){if(!workspace.active)return `<div class="workspace-entry"><button class="btn" id="workspaceOpen">${icon('building')}员工工作区</button></div>`+workspaceOriginalRequirements();return workspacePanel()+(workspaceTeam()?workspaceOriginalRequirements():heading('需求中心','')+'<div class="empty">选择企业与团队后查看需求</div>');};
 const workspaceOriginalRender=renderPage;
-renderPage=function(){if(workspace.active&&!['requirements','tasks'].includes(view))return workspacePanel()+heading((navs.find(n=>n[0]===view)||['','','当前模块'])[2],'')+'<div class="empty">此模块的员工工作区正在接入；需求中心已可使用。</div>';return workspaceOriginalRender();};
+renderPage=function(){if(workspace.active&&!['requirements','tasks','performance'].includes(view))return workspacePanel()+heading((navs.find(n=>n[0]===view)||['','','当前模块'])[2],'')+'<div class="empty">此模块的员工工作区正在接入；需求中心已可使用。</div>';return workspaceOriginalRender();};
 const workspaceOriginalBind=bind;
 bind=function(){
  // Other local-mode handlers expect their own controls. Render and bind only the current mode.
@@ -50,7 +50,7 @@ bind=function(){
  $$('#app [data-intake-mode]').forEach(b=>b.closest('.source-tabs')?.remove());
  const roleSelect=$('#roleSelect');roleSelect.innerHTML='<option>当前账号权限</option>';roleSelect.disabled=true;$('.preview-badge').textContent='员工工作区 · 服务端权限';const org=$('.org-switch span:nth-child(2)');if(org)org.innerHTML=`${esc(workspace.directory?.enterprises.find(e=>e.id===workspace.enterpriseId)?.name||'选择工作区')}<small>${esc(workspaceTeam()?.name||workspace.teamId.slice(0,8)||'尚未选择团队')}</small>`;
  const orgButton=$('.org-switch');if(orgButton)orgButton.onclick=e=>{e.stopPropagation();view='requirements';shell();};const profile=$('.profile-text');if(profile)profile.innerHTML=`<b>${esc(requirementViewer())}</b><small>${esc(workspace.directory?.viewer.email||'尚未登录')}</small>`;const avatar=$('.profile .avatar');if(avatar)avatar.textContent=requirementViewer().slice(0,1);
- const date=$('.date-button');if(date)date.remove();const searchBox=$('.search-box');if(searchBox)searchBox.remove();const create=$('#intakeCreate');if(create&&!requirementCan('request'))create.remove();const source=$('#intakeSource');if(source)source.remove();const status=$('.sc-statusline .sc-prototype');if(status)status.textContent=workspaceTeam()?.name||workspace.teamId.slice(0,8);const note=$('.content > .source-note');if(note)note.textContent='权限来自当前企业与团队；原表身份映射不改变登录权限。';
+ const date=$('.date-button');if(date)date.remove();const searchBox=$('.search-box');if(searchBox)searchBox.remove();const create=$('#intakeCreate');if(create&&!requirementCan('request'))create.remove();const source=$('#intakeSource');if(source)source.remove();const status=$('.sc-statusline .sc-prototype');if(status)status.textContent=workspaceTeam()?.name||workspace.teamId.slice(0,8);const note=$('.content > .source-note');if(note&&view==='requirements')note.textContent='权限来自当前企业与团队；原表身份映射不改变登录权限。';
  $$('.sidebar .count').forEach(e=>e.remove());$$('.sidebar [data-action="reset"],.sidebar [data-action="help"]').forEach(e=>e.remove());
 };
 if(location.pathname==='/enterprise/workflow')queueMicrotask(()=>void workspaceDiscover());

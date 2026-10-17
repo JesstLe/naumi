@@ -92,7 +92,7 @@ export function evolve(previous: WorkOrder | null, actor: Actor, command: Comman
           taskState('review'); permit('review'); need(task.assignee !== actor.subject, 'SELF_REVIEW_FORBIDDEN', 403);
           task.status = 'accepted'; task.percent = 100; task.acceptedAt = at; task.quality = action.quality;
           // Immutable measurement facts, NOT a final personnel score or payroll instruction.
-          eventData = { taskId: task.id, contributor: task.assignee, contributionBps: 10000, points: task.points,
+          eventData = { taskId: task.id, taskTitle: task.title, orderTitle: order.title, contributor: task.assignee, contributionBps: 10000, points: task.points,
             quality: task.quality, dueAt: task.dueAt, submittedAt: task.submittedAt, acceptedAt: at,
             reworkCount: task.reworkCount, assetIds: task.assetIds, measurementVersion: 1 };
           if (order.tasks.every(t => t.status === 'accepted')) order.status = 'completed';

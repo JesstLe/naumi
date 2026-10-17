@@ -1,23 +1,26 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync,randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile,mkdtemp } from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import { once } from 'node:events';
 import type { Pool } from 'pg';
 export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;foreign:string;ordinary:string;owner:string}){
  const {SourceIdentityStore,createMappedAuthenticator,createSourceVerifier}=await import('../services/enterprise-workflow/src/source-identity');
- const {createWorkflowServer,WorkflowStore,resolveDatabaseActor,createWorkflowPool,PeopleStore}=await import('../services/enterprise-workflow/src/server');
+ const {createWorkflowServer,WorkflowStore,resolveDatabaseActor,createWorkflowPool,PeopleStore,DeliveryStore}=await import('../services/enterprise-workflow/src/server');
  const native=await import('../src/lib/native-auth'),{GET,POST}=await import('../src/app/api/enterprise/workflow/route');
  // This isolated fixture starts as a personal user. Explicitly enroll as an ordinary employee,
  // without manager/record-viewing role; collaboration must not grant source analytics access.
  await pool.query("INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment) VALUES($1,$2,$3,NULL,'permanent')",[source.root,source.ordinary,source.owner]);
- for(const f of ['001-workflow.sql','002-scheduling.sql','003-source-import.sql','004-source-identity.sql','005-people-mapping.sql','006-source-intake.sql','007-workspace-labels.sql'])await pool.query(await readFile(new URL('../services/enterprise-workflow/migrations/'+f,import.meta.url),'utf8'));
+ for(const f of ['001-workflow.sql','002-scheduling.sql','003-source-import.sql','004-source-identity.sql','005-people-mapping.sql','006-source-intake.sql','007-workspace-labels.sql','008-delivery-assets.sql'])await pool.query(await readFile(new URL('../services/enterprise-workflow/migrations/'+f,import.meta.url),'utf8'));
  const enterpriseId=randomUUID(),teamId=randomUUID();await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id) VALUES($1,$2)',[enterpriseId,teamId]);
  for(const [s,permissions] of [['provisioner',['manage']],['worker',['execute']]] as const){await pool.query('INSERT INTO enterprise_workflow.accounts(enterprise_id,subject) VALUES($1,$2)',[enterpriseId,s]);await pool.query('INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds) VALUES($1,$2,$3,$4,$5)',[enterpriseId,teamId,s,JSON.stringify(permissions),s==='worker'?'["design"]':'[]']);}
  const workflowPool=createWorkflowPool(process.env.DATABASE_URL!);
  const bindings=new SourceIdentityStore(workflowPool),admin={enterpriseId,teamId,subject:'provisioner'},common={sourceInstance:'fixture-source-a',sourceEnterprise:source.root,expectedVersion:0,enabled:true,reason:'isolated source binding'};
  await bindings.configure(admin,{...common,type:'enterprise'});await bindings.configure(admin,{...common,type:'identity',sourceSubject:source.ordinary,subject:'worker'});
  const keys=generateKeyPairSync('ed25519'),verifier=createSourceVerifier({issuer:'naumi-workflow-bff',audience:'enterprise-workflow-source',publicKeys:{fixture:keys.publicKey}});
- const server=createWorkflowServer(new WorkflowStore(workflowPool,resolveDatabaseActor,async()=>false),createMappedAuthenticator(bindings,verifier),undefined,{store:bindings,authenticate:verifier},new PeopleStore(workflowPool,resolveDatabaseActor));server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert(address&&typeof address!=='string');
+ const delivery=new DeliveryStore(workflowPool,resolveDatabaseActor,await mkdtemp(join(tmpdir(),'naumi-delivery-fixture-')));
+ const server=createWorkflowServer(new WorkflowStore(workflowPool,resolveDatabaseActor,delivery.validate),createMappedAuthenticator(bindings,verifier),undefined,{store:bindings,authenticate:verifier},new PeopleStore(workflowPool,resolveDatabaseActor),delivery);server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert(address&&typeof address!=='string');
  Object.assign(process.env,{NAUMI_WORKFLOW_SERVICE_URL:`http://127.0.0.1:${address.port}`,NAUMI_WORKFLOW_SIGNING_KID:'fixture',NAUMI_WORKFLOW_SIGNING_KEY:keys.privateKey.export({format:'pem',type:'pkcs8'}).toString()});
  const request=(email:string,enterpriseId=source.root,extra:Record<string,string>={})=>new Request('http://fixture.invalid/api/enterprise/workflow?'+new URLSearchParams({action:'context',enterpriseId,...extra}),{headers:{cookie:email?'nv_user='+native.signUserSession(email,Date.now()):''}});
  try{
@@ -52,6 +55,19 @@ export async function verifyWorkflowIdentity(pool:Pool,source:{root:string;forei
   assert.equal((await write('intake',promotion)).status,200);assert.equal((await (await write('intake',promotion)).json()).replayed,true);assert.equal((await write('intake',{...promotion,command:{...promotion.command,commandId:randomUUID(),orderId:randomUUID()}})).status,409);
   const tasksPage=await GET(request(source.owner,source.root,{action:'tasks',teamId}));assert.equal(tasksPage.status,200);assert.equal((await tasksPage.json()).total,0);
   const candidatePage=await GET(request(source.owner,source.root,{action:'assignees',teamId,kind:'design'}));assert.equal(candidatePage.status,200);assert.equal((await candidatePage.json()).members[0].subject,'worker');assert.equal((await GET(request(source.ordinary,source.root,{action:'assignees',teamId}))).status,403);
+  const fileApi=await import('../src/app/api/enterprise/workflow/files/route'),fileOrder=randomUUID(),fileTask=randomUUID();let version=0;
+  await pool.query("UPDATE enterprise_workflow.team_members SET permissions='[\"manage\",\"request\",\"dispatch\",\"review\"]' WHERE enterprise_id=$1 AND subject='provisioner'",[enterpriseId]);
+  const action=async(a:unknown,email=source.owner)=>{const r=await write('command',{commandId:randomUUID(),orderId:fileOrder,expectedVersion:version,action:a},email);assert.equal(r.status,200,await r.clone().text());version=(await r.json()).order.version;};
+  await action({type:'create',title:'file BFF fixture',brief:'synthetic',acceptance:'bytes'});await action({type:'submit-requirement'});await action({type:'approve-requirement'});await action({type:'plan-tasks',tasks:[{id:fileTask,title:'file task',kind:'design',points:2,dueAt:new Date(Date.now()+86400000).toISOString(),dependencyIds:[]}]});await action({type:'publish'});await action({type:'claim',taskId:fileTask},source.ordinary);await action({type:'start',taskId:fileTask},source.ordinary);
+  const fileId=randomUUID(),fileBytes=Buffer.from('BFF delivery actual bytes'),fileQuery=new URLSearchParams({enterpriseId:source.root,teamId,assetId:fileId,orderId:fileOrder,taskId:fileTask,expectedVersion:String(version),name:'交付稿.bin'});
+  const upload=(origin='http://fixture.invalid',email=source.ordinary)=>fileApi.POST(new Request('http://fixture.invalid/api/enterprise/workflow/files?'+fileQuery,{method:'POST',headers:{cookie:'nv_user='+native.signUserSession(email,Date.now()),origin,'content-type':'application/octet-stream','x-workflow-viewer':email},body:fileBytes}));
+  assert.equal((await upload('https://foreign.invalid')).status,403);assert.equal((await upload('http://fixture.invalid',source.owner)).status,403);const uploaded=await upload();assert.equal(uploaded.status,200,await uploaded.clone().text());assert.equal((await uploaded.json()).asset.bytes,fileBytes.length);assert.equal((await (await upload()).json()).replayed,true);
+  const download=(email:string,team=teamId)=>fileApi.GET(new Request('http://fixture.invalid/api/enterprise/workflow/files?'+new URLSearchParams({action:'download',enterpriseId:source.root,teamId:team,id:fileId}),{headers:{cookie:email?'nv_user='+native.signUserSession(email,Date.now()):''}}));
+  assert.equal((await download('')).status,401);assert.equal((await download(source.owner,randomUUID())).status,403);const fileResponse=await download(source.owner);assert.equal(fileResponse.status,200);assert(fileResponse.headers.get('content-disposition')?.startsWith('attachment;'));assert.equal(fileResponse.headers.get('content-type'),'application/octet-stream');assert.deepEqual(Buffer.from(await fileResponse.arrayBuffer()),fileBytes);
+  await action({type:'submit-delivery',taskId:fileTask,assetIds:[fileId],note:'actual files'},source.ordinary);await action({type:'accept-delivery',taskId:fileTask,quality:5,note:'verified'});const facts=await GET(request(source.ordinary,source.root,{action:'facts',teamId}));assert.equal(facts.status,200);assert.equal((await facts.json()).total,1);
+  console.log('DELIVERY_BFF_PASS: binary_upload=200 owner_upload403=1 origin403=1 replay=1 download_sha_bytes=1 attachment=1 anonymous401=1 wrong_team403=1 submit_accept_facts=1');
+  // Only this isolated fixture order, not customer records; keep workspace preview baseline clean.
+  await pool.query('DELETE FROM enterprise_workflow.delivery_asset_audit WHERE enterprise_id=$1 AND asset_id=$2',[enterpriseId,fileId]);await pool.query('DELETE FROM enterprise_workflow.delivery_assets WHERE enterprise_id=$1 AND order_id=$2',[enterpriseId,fileOrder]);for(const table of ['commands','events'])await pool.query(`DELETE FROM enterprise_workflow.${table} WHERE enterprise_id=$1 AND order_id=$2`,[enterpriseId,fileOrder]);await pool.query('DELETE FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2',[enterpriseId,fileOrder]);
   console.log('TASK_CENTER_BFF_PASS: tasks200=1 scoped_candidates200=1 employee_candidates403=1');
   console.log('INTAKE_BFF_PASS: native_login=1 create=200 scoped_list=1 detail=200 worker_detail=404 source_promote=200 replay=1 source_duplicate=409');
   await pool.query('UPDATE app_users SET banned=true WHERE email=$1',[source.ordinary]);assert.equal((await GET(request(source.ordinary))).status,401);await pool.query('UPDATE app_users SET banned=false WHERE email=$1',[source.ordinary]);
