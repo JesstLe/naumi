@@ -260,7 +260,7 @@
       "kind": "actual-app-browser-protection-audit-with-hashed-run-receipts"
     },
     "linuxRollback": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/linux-e997b29/rollback-c05.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/linux-bb98187/rollback-c05.json",
       "verifier": "scripts/verify-video-fusion-rollback.ts",
       "kind": "actual-compiled-linux-old-new-rollback-on-restored-fixture-database"
     },
@@ -3443,7 +3443,7 @@
           ]
         },
         {
-          "requirement": "Actual c05 production baseline image and its original fixture seed; old rows survive additive DDL and restored-database rollback to fixed e997 and back",
+          "requirement": "Actual c05 production baseline image and its original fixture seed; old rows survive additive DDL and restored-database rollback to fixed bb98187 and back",
           "evidenceKey": "linuxRollback",
           "assertions": [
             {
@@ -3477,6 +3477,14 @@
             {
               "path": "frozenVideoDefaultsIncluded",
               "value": true
+            },
+            {
+              "path": "versions.1.commit",
+              "value": "bb98187a58b4e588f250d77799b1725183541af8"
+            },
+            {
+              "path": "versions.3.commit",
+              "value": "bb98187a58b4e588f250d77799b1725183541af8"
             }
           ]
         },
@@ -3592,7 +3600,7 @@
   "deliveryGates": {
     "comparison": "passed",
     "wholeBranchReview": "passed",
-    "fixedLinuxRuntimeAndRollback": "pending",
+    "fixedLinuxRuntimeAndRollback": "passed",
     "release103": "pending",
     "finalAudit": "pending"
   }
