@@ -1,0 +1,12 @@
+import {readFile} from 'node:fs/promises';
+import {runInNewContext} from 'node:vm';
+import assert from 'node:assert/strict';
+const c={};runInNewContext(await readFile(new URL('import-view-model.js',import.meta.url),'utf8'),c);
+const row=(id,title,parentLabel='',parentCandidates=[],resolution=null)=>({excelRow:id,title,parentLabel,parentCandidates,resolution});
+const all=[row(2,'商品'),row(3,'子项','商品',[2]),row(4,'歧义','重名',[5,6]),row(5,'重名'),row(6,'重名'),row(7,'')];const before=JSON.stringify(all);
+let n=0;const ok=v=>{assert(v);n++};
+const t=c.ImportViewModel.tree(all,all);ok(t[0].root.excelRow===2);ok(t[0].children.length===1);ok(!t[0].children[0].confirmed);ok(t.find(g=>g.root.excelRow===4).pending);ok(t.flatMap(g=>[g.root.excelRow,...g.children.map(x=>x.row.excelRow)]).length===6);
+const filtered=c.ImportViewModel.tree(all,[all[1]]);ok(filtered.length===1&&filtered[0].context);ok(filtered[0].children[0].row.excelRow===3);
+const resolved=all.map(r=>r.excelRow===4?{...r,resolution:{parentRow:6}}:r);ok(c.ImportViewModel.tree(resolved,resolved).find(g=>g.root.excelRow===6).children[0].confirmed);
+ok(JSON.stringify(all)===before);ok(c.ImportViewModel.tree(all,[]).length===0);
+console.log(`IMPORT_VIEW_PASS: checks=${n} candidate_not_confirmed=1 ambiguous_separate=1 filtered_parent_context=1 source_unchanged=1`);

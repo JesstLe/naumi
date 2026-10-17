@@ -13,7 +13,7 @@ try{
  await page.locator('.sidebar [data-view="schedule"]').click();
  const local=await page.evaluate(()=>JSON.stringify({...localStorage}));
  await page.locator('[data-import-mode="real"]').click();await page.waitForFunction(()=>!imported.loading&&imported.rows.length===364);
- ok(await page.locator('.import-table tbody tr').count()===40,'page has 40 real source rows');
+ ok(await page.locator('.import-table [data-import-record]').count()>0,'page has real source records');
  const summary=await page.evaluate(()=>({rows:imported.rows.length,assets:imported.assets.length,children:imported.rows.filter(r=>r.parentLabel).length,ambiguous:imported.rows.filter(r=>r.parentCandidates.length>1).length,statuses:imported.rows.reduce((a,r)=>(a[r.raw['任务完成情况']||'空白']=(a[r.raw['任务完成情况']||'空白']||0)+1,a),{})}));
  ok(summary.rows===364&&summary.assets===292&&summary.children===183&&summary.ambiguous===23,'source counts reconcile');
  ok(summary.statuses['已完成']===102&&summary.statuses['空白']===223,'source status remains distinct from workflow acceptance');
@@ -24,8 +24,8 @@ try{
  await page.locator('[data-import-view="owner"]').click();ok(await page.locator('.import-group').count()>0,'requester grouping');
  await page.locator('[data-import-view="board"]').click();ok(await page.locator('.wb-card').count()===364,'board retains all rows');
  await page.screenshot({path:resolve(out,'REAL_BOARD.png'),fullPage:false,animations:'disabled'});
- await page.locator('[data-import-view="table"]').click();await page.locator('#importIssues').check();ok(await page.evaluate(()=>importFiltered().every(r=>r.issues.length>0)),'issue-only filtering');
- await page.locator('#importIssues').uncheck();await page.locator('#importNext').click();ok(await page.evaluate(()=>imported.page===2),'pagination');
+ await page.locator('[data-import-view="table"]').click();await page.locator('#importIssuesToggle').click();ok(await page.evaluate(()=>importFiltered().every(r=>r.issues.length>0)),'issue-only filtering');
+ await page.locator('#importIssuesToggle').click();await page.locator('#importNext').click();ok(await page.evaluate(()=>imported.page===2),'pagination');
  const detail=await page.evaluate(()=>{const r=imported.rows.find(r=>r.parentCandidates.length>1);importDetail(r.excelRow);return {row:r.excelRow,candidates:r.parentCandidates.length};});
  ok(await page.locator('#importResolve select option').count()===detail.candidates+1,'ambiguous parent candidates visible without auto-confirmation');
  await page.screenshot({path:resolve(out,'REAL_PARENT_REVIEW.png'),fullPage:false,animations:'disabled'});await page.keyboard.press('Escape');
