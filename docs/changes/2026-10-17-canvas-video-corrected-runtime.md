@@ -8,9 +8,13 @@
 
 Task16最终候选恢复门禁另已直接完成：c05/1791911575 → bb/1792224867 → c05/1791911575 → bb/1792224867，全部实际编译Linux运行时、UID1001和独立恢复PG。原534列及类型/旧行在692列新增结构后保持；旧运行时实际创建完成任务、冻结默认值和完整任务行保留，账号/账本/模型/计费哈希一致，私有媒体字节/Range/双账号及签名原字节/篡改/过期通过，旧unknown tick不重提，媒体Worker排空恢复与新尾帧沿旧账单完成。实际pg_dump/pg_restore备份193817字节、SHAa7443dcc53662cc5c1860a3a2ec3b9a20507c0af6c81287dfd6a532242b3497a；仅本机独立fixture，未回灌103。compiled-app-bb98187-rollback-20261017/COMPLETE.json、restore.json及output/.../rollback-caa35e19-3a96-4c72-a575-7b85312b0520/result.json均通过，容器按原随机label/ID清理。该结果明确替换「bb尚无实际兼容往返」的缺口，真实视频质量仍未验收。
 
-运行源码差异也已实际核对：63df→bb在src、video-fusion、video-media-worker、package/lock、Dockerfile和Next配置范围，仅media-engine.mjs改变（8增2删）；bb→当前main在src/scripts/package/lock/Dockerfile范围无变化。差异回执bb-runtime-source-delta.json保存于checkpoint-d/main-sync-20261017。此核对用于说明哪些原验收仍有来源依据，不将未重复执行的旧界面/协议回执说成bb新跑的结果。
+运行源码差异也已实际核对：63df→bb在src、video-fusion、video-media-worker、package/lock、Dockerfile和Next配置范围，仅media-engine.mjs改变（8增2删）；bb→当时main在src/scripts/package/lock/Dockerfile范围无变化，后续仅更新coverage验收绑定/交付状态及文档，不改变内嵌产品运行代码。差异回执bb-runtime-source-delta.json保存于checkpoint-d/main-sync-20261017。此核对用于说明哪些原验收仍有来源依据，不将未重复执行的旧界面/协议回执说成bb新跑的结果。
 
-新发布材料继续在prepared-bb98187-video-unified-20261017/work生成：实际普通镜像提取392份编译静态，3946旧URL与305新URL形成4251并集，冲突0；来源共18个原容器静态与1个磁盘静态根、9357份原文件。当前仅静态并集生成并继续逐文件核对，最终Nginx/CAS封存尚待完成，不把旧63报告替换source后当新结果。唯一现有执行为本任务output/run-bb-final-package.py（exec session6468），日志checkpoint-d/main-sync-20261017/bb-final-package.log；观察尚未完成时继续原handle，不另起重复任务。终态通过后执行output/seal-bb-final-package.py，须绑定本轮NGINX_FIXTURE.json实际results.json，再记录最终包SHA。若未取得终态，不可上传为已验收部署包。
+新发布材料已在prepared-bb98187-video-unified-20261017/work完成封存：实际普通镜像提取392份编译静态，3946旧URL与305新URL形成4251并集，冲突0；来源共18个原容器静态与1个磁盘静态根、9357份原文件。实际Linux Nginx通过原51类路由、候选/维护各4251份逐HTTP SHA/MIME、原静态保留、Fleet9类、TLS/转发头及原3配置恢复。四态CAS通过4次转换、拒绝3种错误源状态，仅改site一个文件，3份源闭包摘要保留。fixture是路由后端，不充当实际Next/DB验收；实际App结论来自上方独立固定运行测试。
+
+run-bb-final-package与seal-bb-final-package均已终态0（原session6468/49842不再运行），最终seal对真实测试输入、包内闭包/静态清单及每个归档成员回读核验；Nginx结果SHA712a9e3c9e85d0f89f78c114c0eb916ec514e63c2421532b0941bbf5ea598327。只使用*-verified.tar.gz：公共部署13966001字节，SHA4765014a5cb4c07e90b2d91270f8876f8ccd51e3ee87d652c9e1dff77ac645e9；私有回滚36360字节，SHA478de98c859dc79e6a57ed4b3896303241d51cbb1bdc813547fada06ef4762e5。两包解至同根，readyToDeploy仍false，切流前须新事务刷新现场基线，不复用容量维护前的boot pin。
+
+两包与125成员的受保护验收回执快照已私有暂存103的/opt/naumi-staging/evidence/canvas-video-prestage-bb98187-verified-20261017，服务器逐大小/SHA回读通过（上传session54072终态0），未解包或启动服务。回执快照222505字节、SHA94e89b86d56145a2f93b4c8de0cd5c1ec5ae2dea3c54c2450dca153b7e3bb0e3，含55份登记材料、验证源码和新候选运行回执；明确不含全部原始媒体/浏览器录像，不是生产验收，也保留其封存当时pending状态。结合下段固定镜像，共257251813字节新材料已暂存；旧候选包仍禁止部署。
 
 仅普通运行镜像的离线包已导出，243026947字节，SHA09b5669bd2ccca05411db866a25e61e947fbaafac97a6f9bf7e3a84dc4cfbacb；逐blob摘要已核验。现已传至103的/opt/naumi-staging/evidence/canvas-video-prestage-bb98187-image-20261017-0900，目录0700/文件0600，服务器回读大小/SHA一致。仅私有暂存，未解包、导入镜像、改变服务或占发布锁；47仅作为既有SSH TCP中继。新静态/网关/回滚包单独生成并验证，不改写旧63包或以其回执冒充bb验收。用户已选103临时增加至少1GiB内存，保持原5120MiB完整发布预算，云控制台入口信息待补充；当前未扩容或切流。下文是原63阶段事实。
 

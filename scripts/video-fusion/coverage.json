@@ -3600,7 +3600,7 @@
   "deliveryGates": {
     "comparison": "passed",
     "wholeBranchReview": "passed",
-    "fixedLinuxRuntimeAndRollback": "pending",
+    "fixedLinuxRuntimeAndRollback": "passed",
     "release103": "pending",
     "finalAudit": "pending"
   }
