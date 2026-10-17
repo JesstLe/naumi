@@ -126,6 +126,7 @@
     "server-only": "^0.0.1",
     "sharp": "^0.34.5",
     "tailwind-merge": "2.4.0",
+    "three": "0.186.1",
     "unified": "11.0.5",
     "zod": "^4.6.5"
   },
@@ -135,6 +136,7 @@
     "@types/pg": "^8.20.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@types/three": "0.186.0",
     "autoprefixer": "10.4.19",
     "esbuild": "0.28.1",
     "eslint": "8.57.0",

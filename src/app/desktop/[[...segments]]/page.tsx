@@ -33,7 +33,9 @@ import Page_tryon from "@/app/tryon/page";
 import Page_upscale from "@/app/upscale/page";
 import Page_variations from "@/app/variations/page";
 import Page_video from "@/app/video/page";
+import Page_studio3d from "@/app/studio3d/page";
 const pages = {
+  "studio3d": Page_studio3d,
   "suite": Page_suite,
   "works": Page_works,
   "tools": Page_tools,
