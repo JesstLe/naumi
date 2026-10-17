@@ -286,6 +286,24 @@ class LiveAdapter:
                     row_limit=5000, projection='proof', allow_absent_tables=tasks.ADDITIVE_TABLES)
         return {'public': result.public, 'private': result.private}
 
+    def rollback_boundary(self, state, operation):
+        import release_rollback_guard as guard
+        statuses = {w['variant']: controls.app_status(self.tx, state['webs'][w['variant']]['running'])
+                    for w in self.plan['webs']}
+        result = guard.capture(self.tx, self.plan, state, statuses, self.private_save(operation))
+        # A restart or newly accepted request during the read-only transaction
+        # invalidates the boundary. Never mix observations from different boots.
+        again = {w['variant']: controls.app_status(self.tx, state['webs'][w['variant']]['running'])
+                 for w in self.plan['webs']}
+        require(result['binding'] == guard.runtime_binding(self.plan, state, again),
+                'ROLLBACK_RUNTIME_CHANGED_DURING_SNAPSHOT')
+        return result
+
+    def rollback_business_proof(self, state, operation):
+        import release_rollback_guard as guard
+        observed = self.rollback_boundary(state, operation)
+        return guard.compare(state.get('rollbackBoundary'), observed)
+
     def legacy_safety(self, *, frozen, retired=(), restored=False, restore_reconcile=False):
         """A paused external caller does not stop App-internal timers."""
         caller = self.plan['legacyCaller']['identity']
@@ -409,12 +427,78 @@ class LiveAdapter:
         self.tx.pin(self.plan['database'])
         return record
 
-    def gateway(self, kind, operation, reconcile=False):
-        descriptor = self.plan['gateways'][kind]
+    def gateway_material(self, kind):
         folder = self.tx.folder
+        reverse = kind == 'rollback-seal'
+        if reverse:
+            require(maintenance.canvas_video_hk(self.plan['authorization']), 'VIDEO_GOAL_INGRESS_SEAL_ONLY')
+        descriptor = self.plan['gateways']['open' if reverse else kind]
         report = load_json(relative_artifact(folder, descriptor['report']))
         before = {name: relative_artifact(folder, item).read_bytes() for name, item in descriptor['before'].items()}
         after = {name: relative_artifact(folder, item).read_bytes() for name, item in descriptor['after'].items()}
+        if reverse:
+            patches = report.get('patches', [])
+            require(report.get('configClosureValidated') is True and report.get('baselineFileCasVerified') is True and
+                    patches and len({p['path'] for p in patches}) == len(patches) and
+                    set(after) == {p['path'] for p in patches} and
+                    all(p['path'] in before and sha(before[p['path']]) == p['beforeSha256'] and
+                        sha(after[p['path']]) == p['afterSha256'] for p in patches), 'BOUND_OPEN_TRANSITION_REQUIRED')
+            original = report
+            report = {'configClosureValidated': True, 'baselineFileCasVerified': True,
+                'beforeDumpSha256': original['afterDumpSha256'], 'afterDumpSha256': original['beforeDumpSha256'],
+                'patches': [{'path': p['path'], 'beforeSha256': p['afterSha256'], 'afterSha256': p['beforeSha256']} for p in patches]}
+            before, after = {**before, **after}, {p['path']: before[p['path']] for p in patches}
+            descriptor = {'reverseOfExactOpenDescriptor': descriptor}
+        return descriptor, report, before, after
+
+    def gateway_matches(self, kind, destination):
+        _, report, before, after = self.gateway_material(kind)
+        values = {**before, **after} if destination else before
+        digest = report['afterDumpSha256' if destination else 'beforeDumpSha256']
+        return sha(self.tx.run(['nginx', '-T'])) == digest and all(
+            pathlib.Path(name).resolve(strict=True).read_bytes() == raw for name, raw in values.items())
+
+    def prepare_rollback_ingress(self, state):
+        import release_rollback_ingress as ingress
+        require(self.gateway_matches('open', True) or self.gateway_matches('open', False),
+                'ROLLBACK_UNKNOWN_GATEWAY_STATE')
+        return {'processes': ingress.observe(self.tx), 'releaseId': self.plan['releaseId'],
+                'commit': self.plan['commit'], 'fromCandidate': self.gateway_matches('open', True)}
+
+    def seal_rollback_ingress(self, state, operation, reconcile):
+        import release_rollback_ingress as ingress
+        intent = state['rollbackIngressIntent']
+        require(intent['releaseId'] == self.plan['releaseId'] and intent['commit'] == self.plan['commit'],
+                'ORIGINAL_INGRESS_SEAL_INTENT_REQUIRED')
+        # Must retain the pre-reload worker identities on every lost reply.
+        if intent['fromCandidate']:
+            receipt = self.gateway('rollback-seal', operation, reconcile)
+        else:
+            require(self.gateway_matches('open', False), 'ROLLBACK_MAINTENANCE_CLOSURE_CHANGED')
+            self.tx.run(['nginx','-t']); self.tx.run(['systemctl','reload','nginx'])
+            receipt = {'sameMaintenanceReload': True}
+        result = {'gateway': receipt, 'processes': ingress.wait_drained(self.tx, intent['processes']),
+                  'http': ingress.maintenance_probes(self.tx)}
+        require(self.gateway_matches('open', False), 'ROLLBACK_MAINTENANCE_CLOSURE_CHANGED')
+        return result
+
+    def assert_rollback_ingress(self, state):
+        import release_rollback_ingress as ingress
+        require(self.gateway_matches('open', False), 'ROLLBACK_MAINTENANCE_CLOSURE_CHANGED')
+        require(ingress.drained(state['rollbackIngressIntent']['processes'], ingress.observe(self.tx)),
+                'OLD_NGINX_WORKERS_NOT_DRAINED')
+        ingress.maintenance_probes(self.tx)
+
+    def recover_rollback_gateway(self, state, operation):
+        # Observe only an already-applied original-intent write. Do not issue a
+        # new fallback on this recovery path before fresh business proof.
+        if state.get('rollbackBusinessProof') and self.gateway_matches('rollback-maintenance', True):
+            return self.gateway('rollback-maintenance', operation, True)
+        return None
+
+    def gateway(self, kind, operation, reconcile=False):
+        descriptor, report, before, after = self.gateway_material(kind)
+        folder = self.tx.folder
         logical = {name: str(pathlib.Path(name).resolve(strict=True)) for name in before}
         journal = folder / ('gateway-operation-' + operation + '.json')
         binding = {'kind': kind, 'descriptorSha256': sha(encoded(descriptor)), 'logicalToReal': logical}
@@ -507,7 +591,8 @@ class LiveAdapter:
             commit=self.plan['commit'], memory_mib=web['memoryMiB'], cpu=web['cpu'],
             release_secret=self.plan['releaseSecret'], state_dir=web['stateDir'], build_version=self.plan['buildVersion'],
             reviewed_omitted_mounts=web.get('reviewedOmittedMounts'),
-            **({'media_binding': media.binding(), 'before_create': mark_create} if media else {}))
+            **({'media_binding': media.binding(), 'before_create': mark_create,
+                'runtime_recovery': self.plan['releaseId']} if media else {}))
         if media:
             phase['phase'] = 'APP_CREATED'; controls._atomic_private(phase_file, phase)
         return created
@@ -543,7 +628,7 @@ class LiveAdapter:
         if self.media():
             self.media().verify_app(row)
             require(self.media().health()['draining'] is True, 'CANDIDATE_MEDIA_MUST_STAY_DRAINING')
-        actual = json.loads(self.tx.run(['docker', 'exec', identity['id'], 'node', '--input-type=module', '-e', PROBE,
+        actual = json.loads(self.tx.run(['docker', 'exec', '-e', 'NODE_OPTIONS=', identity['id'], 'node', '--input-type=module', '-e', PROBE,
                                         self.plan['commit'], self.plan['buildVersion'], web['assetPrefix']]))
         status = controls.app_status(self.tx, identity)
         require(actual.get('health', {}).get('db', {}).get('ok') is True, 'CANDIDATE_DATABASE_HEALTH_REQUIRED')
@@ -756,6 +841,26 @@ class LiveAdapter:
         receipt = load_json(relative_artifact(self.tx.folder, descriptor))
         return self.tx.retire(identity, receipt)
 
+    def runtime_policy(self, state, operation, *, enabled):
+        from release_runtime_recovery import set_runtime_policy, update_identities
+        def preflight(identities):
+            # Observe original-journal identities before strict pins. A Docker
+            # update may already have succeeded while the session kept old no.
+            update_identities(state, {'identities': identities})
+            self.assert_activation(state, operation)
+            worker = self.worker_control(state['worker']['running'], state['webs'][self.plan['webs'][0]['variant']]['running'],
+                                         'status', operation)['state']
+            require(worker.get('paused') is False and worker.get('phase') != 'UNKNOWN' and
+                    worker.get('unresolvedTicks') == 0, 'FINALIZE_WORKER_STATE_UNKNOWN')
+        result = set_runtime_policy(self.tx, self.plan, state, operation, enabled=enabled,
+                                    before_update=preflight if enabled else None)
+        update_identities(state, result)
+        return result
+
+    def verify_runtime_policy(self, state):
+        from release_runtime_recovery import verify_runtime_policy
+        return verify_runtime_policy(self.tx, self.plan, state)
+
 
 class MaintenanceSession:
     def __init__(self, tx, plan, *, adapter=None, state_root=ROOT, now=None):
@@ -864,8 +969,10 @@ class MaintenanceSession:
             'web-create': ['FROZEN', 'CANDIDATES'], 'web-start': ['CANDIDATES'], 'web-verify': ['CANDIDATES'],
             'worker-create': ['CANDIDATES'], 'worker-start': ['CANDIDATES'], 'capture-acceptance': ['CANDIDATES'], 'acceptance': ['CANDIDATES'],
             'preservation': ['ACCEPTED'], 'activate': ['PRESERVED'], 'finish': ['ACTIVE', 'MIGRATED_CLEANUP_PENDING'],
-            'retire': ['ACTIVE', 'MIGRATED_CLEANUP_PENDING'], 'rollback': PHASES[3:-2]}
+            'retire': ['ACTIVE', 'MIGRATED_CLEANUP_PENDING'], 'runtime-finalize': ['ACTIVE'], 'rollback': PHASES[3:-2]}
         require(action in allowed and phase in allowed[action], 'INVALID_MAINTENANCE_PHASE')
+        if action == 'runtime-finalize':
+            require(maintenance.canvas_video_hk(self.plan['authorization']), 'VIDEO_GOAL_RUNTIME_FINALIZE_ONLY')
         if action.startswith('web-'):
             name = request.get('variant'); names = [w['variant'] for w in self.plan['webs']]
             require(name in names, 'KNOWN_VARIANT_REQUIRED')
@@ -953,6 +1060,12 @@ class MaintenanceSession:
                 self.quiescent_worker(operation)
                 state['activationAcceptance'] = adapter.acceptance(state, state['acceptedDescriptor'], operation)
                 self.persist()
+            if maintenance.canvas_video_hk(self.plan['authorization']) and not state.get('rollbackBoundary'):
+                require(not state.get('openGateway') and not any(k.startswith('app-open-') for k in state),
+                        'ORIGINAL_PREOPEN_BOUNDARY_MISSING')
+                self.quiescent_worker(operation)
+                state['rollbackBoundary'] = adapter.rollback_boundary(state, self.op(operation, 'rollback-boundary'))
+                self.persist()
             for web in self.plan['webs']:
                 adapter.legacy_safety(frozen=True, retired=state['retired'])
                 variant = web['variant']; name = 'app-open-' + variant
@@ -978,7 +1091,14 @@ class MaintenanceSession:
             result = adapter.retire(item['identity'], item['receipt'], operation)
             if item['identity']['id'] not in state['retired']: state['retired'].append(item['identity']['id'])
             return result
+        if action == 'runtime-finalize':
+            state['runtimeRecovery'] = adapter.runtime_policy(state, operation, enabled=True)
+            adapter.assert_activation(state, operation)
+            return state['runtimeRecovery']
         if action == 'finish':
+            if maintenance.canvas_video_hk(self.plan['authorization']):
+                require(state.get('runtimeRecovery', {}).get('enabled') is True, 'RUNTIME_FINALIZATION_REQUIRED')
+                state['runtimeRecoveryVerified'] = adapter.verify_runtime_policy(state)
             adapter.legacy_safety(frozen=True, retired=state['retired'])
             adapter.assert_activation(state, operation)
             current_worker = self.worker_state('status', operation)
@@ -988,6 +1108,23 @@ class MaintenanceSession:
             state['phase'] = 'COMPLETE' if required <= set(state['retired']) else 'MIGRATED_CLEANUP_PENDING'
             return {'phase': state['phase'], 'legacyDrainProven': False, 'unretired': len(required - set(state['retired']))}
         if action == 'rollback':
+            video_goal = maintenance.canvas_video_hk(self.plan['authorization'])
+            if video_goal and reconcile and not state.get('rollbackGateway'):
+                recovered = adapter.recover_rollback_gateway(state, self.op(operation, 'rollback-gateway'))
+                if recovered:
+                    state['rollbackGateway'] = recovered; self.persist()
+            if maintenance.canvas_video_hk(self.plan['authorization']) and not state.get('rollbackRuntimeDisarmed') and (
+                    state.get('runtimeRecovery') or any(slot.get('running') for slot in state['webs'].values())):
+                state['rollbackRuntimeDisarmed'] = adapter.runtime_policy(state, self.op(operation, 'runtime-disarm'), enabled=False)
+                self.persist()
+            if video_goal and not state.get('rollbackGateway'):
+                if not state.get('rollbackIngressIntent'):
+                    state['rollbackIngressIntent'] = adapter.prepare_rollback_ingress(state)
+                    self.persist()
+                if not state.get('rollbackIngress'):
+                    state['rollbackIngress'] = adapter.seal_rollback_ingress(state, self.op(operation, 'rollback-seal'), reconcile)
+                    self.persist()
+                adapter.assert_rollback_ingress(state)
             if state.get('worker', {}).get('running') and not state.get('rollbackWorkerPaused'):
                 self.worker_state('drain', self.op(operation, 'worker-drain'))
                 self.quiescent_worker(operation)
@@ -1000,12 +1137,26 @@ class MaintenanceSession:
                 if web.get('running') and not state.get('rollback-app-' + variant):
                     state['rollback-app-' + variant] = adapter.app_control(web['running'], 'drain', self.op(operation, 'app-drain-' + variant))
                     self.persist()
-            kind = 'rollback-open' if state.get('openGateway') else 'rollback-maintenance'
+            if maintenance.canvas_video_hk(self.plan['authorization']):
+                if state.get('rollbackBoundary'):
+                    # Re-observe on every attempt; a stored PASS is never a
+                    # reusable permit to resume an older caller or gateway.
+                    state['rollbackBusinessProof'] = adapter.rollback_business_proof(state, self.op(operation, 'rollback-business'))
+                    self.persist()
+                require(not (state.get('rollbackIngressIntent', {}).get('fromCandidate') or
+                             state.get('openGateway') or any(k.startswith('app-open-') for k in state)) or
+                        state.get('rollbackBusinessProof'), 'POST_ACTIVATION_ACCEPTED_WORK_AUDIT_REQUIRED')
+                if not state.get('rollbackGateway'): adapter.assert_rollback_ingress(state)
+            kind = 'rollback-maintenance' if video_goal else ('rollback-open' if state.get('openGateway') else 'rollback-maintenance')
             if not state.get('rollbackGateway'):
                 adapter.legacy_safety(**rollback_legacy)
                 state['rollbackGateway'] = adapter.gateway(kind, self.op(operation, 'rollback-gateway'), reconcile)
                 self.persist()
             if state.get('freeze') and not state.get('rollbackCaller'):
+                if video_goal and state.get('rollbackBoundary'):
+                    self.quiescent_worker(operation)
+                    state['rollbackBeforeCallerProof'] = adapter.rollback_business_proof(state, self.op(operation, 'rollback-before-caller'))
+                    self.persist()
                 adapter.legacy_safety(**rollback_legacy)
                 state['rollbackCaller'] = adapter.restore_caller(self.op(operation, 'restore-caller'))
                 self.persist()

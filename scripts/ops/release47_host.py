@@ -155,7 +155,7 @@ class HostTransaction:
 
     def clone_web(self, identity, *, name, port, image, commit, memory_mib, cpu, release_secret,
                   state_dir, build_version, admission='draining', reviewed_omitted_mounts=None, media_binding=None,
-                  before_create=None):
+                  before_create=None, runtime_recovery=None):
         require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', name), 'INVALID_NEW_SLOT_NAME')
         require(type(port) is int and 1024 <= port <= 65535, 'INVALID_LOOPBACK_PORT')
         require(re.fullmatch('sha256:[a-f0-9]{64}', image) and re.fullmatch('[a-f0-9]{40}', commit), 'FIXED_IMAGE_REQUIRED')
@@ -202,6 +202,11 @@ class HostTransaction:
         require(not state.stat().st_mode & 0o077, 'PRIVATE_SLOT_STATE_MODE_REQUIRED')
         os.chown(state, 1001, 1001)
         args += ['--mount', 'type=bind,src=' + str(state) + ',dst=/release-state']
+        if runtime_recovery is not None:
+            require(media_binding is not None and self.target == '103.30.76.93', 'RECOVERY_VIDEO_GOAL_ONLY')
+            from release_runtime_recovery import install_launcher
+            install_launcher(state, release_id=runtime_recovery, commit=commit, version=build_version, instance=name)
+            args += ['--entrypoint', '/release-state/launch.sh']
         if media_binding is not None:
             from release_video_media import apply_binding
             apply_binding(env, args, media_binding, self.folder, commit)
