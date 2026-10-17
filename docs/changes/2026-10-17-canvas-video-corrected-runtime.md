@@ -25,6 +25,32 @@
 - unified-browser-63df208-20261017：浏览器断言、截图、内存与清理回执。
 - prepared-63df208-video-unified-20261017：候选定义及部署包；最终封存状态以 FINAL_PACKAGE_REPORT.json 为准。
 
-网关本机结果位于 /var/tmp/nginx63-5e46340276f84a8ab2981e9648fef1cc/results.json；需与本次4251资源及三份精确源配置绑定后封存，未完成封存不作已交付部署包。
+网关本机结果位于 /var/tmp/nginx63-5e46340276f84a8ab2981e9648fef1cc/results.json；已与本次4251资源及三份精确源配置绑定并封存通过：四条CAS转换成功、三类错误状态拒绝、原三份配置哈希恢复，原始渲染材料与验证后归档分开保留。验证报告 SHA b9fa39e6b953184ce3828400aef595abd49a05bb96a4f6e30692de717d8c356a。
 
-103未安装此候选、未切流、未停止历史UI、未增加发布计数，也未持发布锁。此前e997包的私有暂存属于旧候选。当前容量不足，明确的维护退役边界或扩容选择仍待用户答复；不将历史观察冒充旧boot完整排空证明。运行回滚的旧e997实际证据仍与本轮新编译应用证据分别记录，最终发布及线上验收尚未完成。
+103未安装此候选、未切流、未停止历史UI、未增加发布计数，也未持发布锁。此前e997包的私有暂存属于旧候选。用户已明确批准维护退役无入口旧UI，保留数据库、媒体、容器与回滚，并接受历史内存态无法完整证明；该授权不生成完整排空证明。最新只读预检可用2922.55MiB，8个现用服务正常，尚未停止旧UI。新63df候选的实际数据库恢复及旧新往返已补齐，下节单独记录；旧e997的只读部署检查器回执仍属于旧候选，不冒充新版现场检查。最终发布及线上验收尚未完成。
+
+## 新候选封存与私有暂存
+
+新包与镜像均已实际上传103，并在服务器重新读取全部归档字节核对SHA、大小、root所有权与权限：
+
+|制品|字节|SHA256|
+|---|---:|---|
+|主Web固定镜像归档|243035704|d3bc5fd72aa61db9f556b03f11266267087e54a87c793b1675db140e41460654|
+|验证后部署包|13966515|d779ed0dc37fe7fdef531fab393efeb41bde25fffec13e924e454e4fa78013ee|
+|验证后私有回滚包|36370|ac22ca85c6576a7695ab6c391caea357fc16551b013409c857dad8b444e7e77e|
+
+镜像暂存在 /opt/naumi-staging/evidence/canvas-video-prestage-63df208-image-20261017-0720；配置包暂存在同级 canvas-video-prestage-63df208-package-20261017-0740。两目录0700、归档0600，不解包、不导入、不启动、不reload、不占发布锁；总计257038589字节。连接通过已授权47 TCP relay到103，仅转发连接，未在47执行业务命令。
+
+本地镜像归档全部OCI blobs复核，index明确指向固定镜像2534。首次包装器因末行CR导致heredoc结束符被Python当名称，归档和逐blob核验已完成后报错；保留错误日志、修正LF，并对同一现存归档重新校验总SHA及OCI index，没有重复导出或将包装器失败忽略为成功。
+
+原始回执在本任务 checkpoint-d/main-sync-20261017/corrected-image-upload.log、corrected-package-upload.log、corrected-final-package-report.json、corrected-final-nginx-results.json、corrected-four-state-cas-results.json。此处暂存不是实际应用发布，103原业务版本保持。
+
+## 新63df编译运行的恢复与回退
+
+原生隔离Linux、UID1001、最新固定候选2534与原c05上传修补镜像5aa实际往返通过。旧版源fixture从既有本任务容器提取，.fixture-source-commit明确c05，旧版初始化534列；新增DDL后692列，原列类型/旧行保持。旧版实际创建完成任务后先停App，将本轮独立PG完整pg_dump，再pg_restore至另一随机命名测试数据库，原任务和保护快照一致后继续验收。
+
+实际版本顺序为 c05/1791911575 → 63df/1792219221 → c05/1791911575 → 63df/1792219221。测试覆盖私有媒体字节及Range、两账号权限、签名原字节/篡改/过期、模型/计费/账号账本哈希、冻结默认值及完整任务行、旧Runtime tick保留未知状态、未知受理不重提、媒体Worker排空恢复、新尾帧使用旧计费完成。全部通过，真实供应商调用0，生产基线未刷新。
+
+证据：compiled-app-63df208-rollback-20261017/ 下的 COMPLETE.json、RESULTS.json、restore.json、fixture.dump、restore-list.txt，以及 output/canvas-video-fusion-20261013/checkpoint-d/rollback-d11a25b1-0d3b-4fcc-af32-c57dd09e06e2/result.json。备份193829字节，SHA 4873784d245322e36e7b5bdad40e7ea921ec43e247b21e4f13349cac72f6507d。结束按随机label确认并删除本轮SDK/PG，CLEANUP.json已保存。没有重用生产数据库或在103启动测试。
+
+本轮收尾再次fetch发现main新增5b62918（README现状整理），仅README与独立文档改变；保留并整合该提交，不因此重建业务源63df或重复通过的应用验收。
