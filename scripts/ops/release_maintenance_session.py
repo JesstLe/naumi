@@ -125,7 +125,8 @@ def valid_plan(plan):
             plan.get('legacyCaller') and plan.get('database') and plan.get('baseline'), 'PRESERVATION_SCOPE_REQUIRED')
     if maintenance.canvas_video_hk(plan['authorization']):
         maintenance.authorize(plan['authorization'])
-        require(plan['releaseId'].startswith('canvas-video-fusion-') and plan.get('mediaWorker') is not None and
+        prefix = 'latest103-' if plan['authorization'].get('mode') == 'latest-103-20261017' else 'canvas-video-fusion-'
+        require(plan['releaseId'].startswith(prefix) and plan.get('mediaWorker') is not None and
                 topology == 'unified-web-three-ui',
                 'VIDEO_GOAL_MEDIA_RELEASE_PLAN_REQUIRED')
         from release_video_media import validate_spec

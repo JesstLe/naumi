@@ -18,10 +18,15 @@ IMMEDIATE_HK_ACK = '现在就上线香港'
 IMMEDIATE_HK_NOT_BEFORE = '2026-10-16T08:41:00Z'
 VIDEO_HK_ACK = '103现在没人再用，你可以直接上线发布'
 VIDEO_GOAL = '01a124b1-a804-7d71-bcd5-572ce81297c8'
+LATEST_103_ACK = '把最新版上线103服务器，直接上就行，没人用'
+LATEST_103_THREAD = 'da1fb6c5-ffa9-4da4-97eb-d71dc858b418'
+LATEST_103_NOT_BEFORE = '2026-10-17T04:33:53Z'
 
 
 def canvas_video_hk(spec):
-    return spec.get('mode') == 'canvas-video-fusion-103'
+    # Both modes require the full isolated-media/runtime/rollback workflow.
+    # A new user's authorization must not be represented as an old goal's ACK.
+    return spec.get('mode') in ('canvas-video-fusion-103', 'latest-103-20261017')
 
 
 def independent_hk(spec):
@@ -33,6 +38,18 @@ def immediate_hk(spec):
 
 
 def authorize(spec, now=None):
+    if spec.get('mode') == 'latest-103-20261017':
+        now = now or dt.datetime.now(dt.timezone.utc)
+        require(spec.get('target') == '103.30.76.93' and spec.get('scope') == 'latest-unified-release' and
+                spec.get('goalThread') == LATEST_103_THREAD and spec.get('userAcknowledgement') == LATEST_103_ACK and
+                spec.get('date') == '2026-10-17' and spec.get('notBefore') == LATEST_103_NOT_BEFORE and
+                spec.get('restoreDatabase') is False and
+                spec.get('replayAcceptedTasks') is False, 'EXPLICIT_LATEST_103_AUTHORIZATION_REQUIRED')
+        require(now.tzinfo is not None and
+                now.astimezone(dt.timezone(dt.timedelta(hours=8))).date().isoformat() == '2026-10-17' and
+                now >= dt.datetime.fromisoformat(LATEST_103_NOT_BEFORE.replace('Z', '+00:00')),
+                'OUTSIDE_AUTHORIZED_LATEST_103_DATE')
+        return
     if canvas_video_hk(spec):
         require(spec.get('target') == '103.30.76.93' and spec.get('scope') == 'canvas-video-fusion' and
                 spec.get('goalThread') == VIDEO_GOAL and spec.get('userAcknowledgement') == VIDEO_HK_ACK and

@@ -102,6 +102,12 @@ class VideoMediaTests(unittest.TestCase):
             root=pathlib.Path(directory); spec=video_plan(); adapter=FixtureAdapter()
             tx=SimpleNamespace(stack=True,folder=root,target='103.30.76.93',run=lambda _args:b'')
             adapter.rollback_media=lambda:media.MediaLifecycle(tx,spec).rollback()
+            # The production rollback now seals ingress even when the media
+            # sidecar has not yet been created. This fixture must observe the
+            # same phase order; it is not a production drain receipt.
+            adapter.prepare_rollback_ingress=lambda state: {'fromCandidate':False,'fixtureOnly':True}
+            adapter.seal_rollback_ingress=lambda state, operation, reconcile: {'fixtureOnly':True}
+            adapter.assert_rollback_ingress=lambda state: None
             current=session.MaintenanceSession(tx,spec,adapter=adapter,state_root=root/'state')
             for action in ['baseline','backup','maintenance','rollback']:
                 current.step({'action':action,'operationId':str(uuid.uuid4()),'expectedRevision':current.state['revision']})
