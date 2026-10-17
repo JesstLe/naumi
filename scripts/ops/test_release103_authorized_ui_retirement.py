@@ -17,7 +17,7 @@ class FakeTx:
         self.rows = {x['Id']: copy.deepcopy(x) for x in (row('a'*64, 13033), row('b'*64, 13037))}
         self.rows[module.DB] = row(module.DB, 5432)
         self.rows[module.DB]['Image'] = 'sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229'
-        self.saved = {}; self.commands = []; self.memory = 2923; self.stop_error = False; self.exit_code = 0; self.closed = False; self.gain = 3300; self.fail_start = None
+        self.saved = {}; self.commands = []; self.memory = 2923; self.stop_error = False; self.exit_code = 0; self.closed = False; self.gain = 3300; self.fail_start = None; self.changed_network = False
     def __enter__(self): return self
     def __exit__(self, *args): self.closed = True
     def inspect(self, cid): return copy.deepcopy(self.rows[cid])
@@ -35,6 +35,7 @@ class FakeTx:
         elif args[1] == 'start':
             if args[-1] == self.fail_start: raise RuntimeError('Single CID restore failure')
             self.rows[args[-1]]['State']['Running'] = True; self.memory -= self.gain
+            if self.changed_network: self.rows[args[-1]]['NetworkSettings']['Networks'] = {'changed': {'IPAddress': '172.20.0.99'}}
         return b''
 
 
@@ -127,6 +128,16 @@ class Tests(unittest.TestCase):
         with patch('builtins.print', side_effect=BrokenPipeError('disconnected fixture')):
             self.assertRaisesRegex(RuntimeError, 'Original health failure', lambda: self.execute(health=health))
         self.assertTrue(self.tx.rows['a'*64]['State']['Running']); self.assertIn('CAPACITY_RECOVERY.json', self.tx.saved)
+    def test_restored_network_drift_requires_reconciliation(self):
+        self.tx.changed_network = True; calls = 0
+        def health(*args):
+            nonlocal calls
+            calls += 1
+            if calls == 3: raise RuntimeError('Original health failure')
+            return []
+        self.assertRaisesRegex(RuntimeError, 'Original health failure', lambda: self.execute(health=health))
+        self.assertNotIn('restore-complete-'+'a'*12+'.json', self.tx.saved)
+        self.assertEqual(self.tx.saved['CAPACITY_RECOVERY.json']['rows'][0]['status'], 'RECOVERY_REQUIRES_RECONCILIATION')
 
 
 if __name__ == '__main__': unittest.main()

@@ -208,7 +208,7 @@ def execute(plan):
                 row = tx.inspect(pin['id']); eligible(row, pin)
                 require(immutable(row) == immutable(original) and network_binding(row) == network_binding(original), 'FINAL_BINDINGS_CHANGED')
                 require(serving_connections(row) == 0 and active_db(tx, row, database) == 0, 'FINAL_ACTIVITY_PRESENT')
-                intent = {'identity': identity(original), 'port': pin['port'], 'immutableSha256': immutable(original), 'originalRestartPolicy': original['HostConfig']['RestartPolicy'], 'originalPortBindings': original['HostConfig']['PortBindings'], 'ordinaryDrainReceipt': None, 'historicalVolatileStateAccepted': True, 'authorizationSha256': sha(AUTHORIZATION.encode()), 'containerDeleted': False, 'databaseRestoreAllowed': False, 'taskReplayAllowed': False}
+                intent = {'identity': identity(original), 'port': pin['port'], 'immutableSha256': immutable(original), 'networkSha256': network_binding(original), 'originalRestartPolicy': original['HostConfig']['RestartPolicy'], 'originalPortBindings': original['HostConfig']['PortBindings'], 'ordinaryDrainReceipt': None, 'historicalVolatileStateAccepted': True, 'authorizationSha256': sha(AUTHORIZATION.encode()), 'containerDeleted': False, 'databaseRestoreAllowed': False, 'taskReplayAllowed': False}
                 tx.save('retirement-intent-' + pin['id'][:12] + '.json', intent)
                 intents.append((original, intent))
                 tx.run(['docker', 'update', '--restart=no', pin['id']])
@@ -251,6 +251,7 @@ def execute(plan):
                         tx.run(['docker', 'update', '--restart=' + flag, cid])
                         restored = tx.inspect(cid)
                         require(restored['HostConfig']['RestartPolicy'] == policy and restored['HostConfig']['PortBindings'] == intent['originalPortBindings'], 'ORIGINAL_POLICY_NOT_RESTORED')
+                        require(network_binding(restored) == intent['networkSha256'], 'RESTORED_NETWORK_REQUIRES_RECONCILIATION')
                         probe = restore_probe(original, intent['port'])
                         entry = {'id': cid, 'status': 'RETAINED_CID_RESTORED', 'version': probe}
                         tx.save('restore-complete-' + cid[:12] + '.json', entry)
