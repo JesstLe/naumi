@@ -2,6 +2,7 @@
 import { readBrowserImage } from '@/lib/browser-image-cache';
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Studio3dLaunch } from "@/components/studio3d/studio3d-launch";
 import { FolderOpen, Layers, Plus, RefreshCw, X, Download, ArrowUpRight } from "lucide-react";
 import { useFeatureAccess } from "@/lib/feature-access/client";
 import { useAuth } from "@/lib/auth-context";
@@ -48,6 +49,7 @@ export function DesktopHome(){
  useEffect(()=>{if(!tabs.some(t=>t.id===tab))setTab(tabs[0]?.id || "demo");},[canWorks,canCanvas,canSuite,tab]);
  const visibleProjects=projects.filter(p=>tab==="suite" ? p.suite : !p.suite);
  return <section className="dt-home">
+  <Studio3dLaunch desktop/>
   <div className="dt-heading"><div><h1>从这里，开始你的创作</h1><p>{user?.name || "Naumi"} 的工作空间</p></div>{can("agent") && <Link className="dt-button" href="/desktop/create"><Plus size={16}/>新建创作</Link>}</div>
   <div className="dt-tabs" role="tablist" aria-label="工作空间展示">{tabs.map((t,i)=><button key={t.id} id={`dt-tab-${t.id}`} role="tab" aria-selected={tab===t.id} aria-controls="dt-panel" tabIndex={tab===t.id?0:-1} onClick={()=>setTab(t.id)} onKeyDown={e=>{if(!["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;e.preventDefault();const next=e.key==="Home"?0:e.key==="End"?tabs.length-1:(i+(e.key==="ArrowRight"?1:-1)+tabs.length)%tabs.length;setTab(tabs[next].id);document.getElementById(`dt-tab-${tabs[next].id}`)?.focus();}}>{t.label}</button>)}</div>
   <div id="dt-panel" role="tabpanel" aria-labelledby={`dt-tab-${tab}`}>

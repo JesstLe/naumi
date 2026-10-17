@@ -30,7 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isCanvas = path.startsWith("/canvas");
   const isToolPage = path === "/tools" || path === "/dashboard" || TOOLS.some(tool => tool.href === path);
   // 沉浸全屏(无页脚):画布 / 对话生成。生图/套图/工作台改成和工具页一致的自然流(带页脚)。
-  const isImmersive = isCanvas || path.startsWith("/genchat");
+  const isImmersive = path.startsWith("/studio3d") || isCanvas || path.startsWith("/genchat");
 
   if (path === "/desktop" || path.startsWith("/desktop/")) return <>{children}</>;
 
