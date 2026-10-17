@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-14",
+  "updatedAt": "2026-10-17",
   "status": "in-progress",
   "paidVideoCalls": 0,
   "upstreams": [
@@ -303,45 +303,47 @@
     {
       "capabilityId": "V12",
       "name": "剧本分镜拼图",
-      "status": "observed-native-rules-with-limitations",
+      "status": "observed-native-generation-with-isolated-supplier",
       "upstream": "infinite-canvas-pinned",
       "observedVersion": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
       "steps": [
         "原真实项目8节点/4边上下文传入原buildCanvasAgentSkillPrompt",
         "实际执行意图选择器并核对对应完整原制作规则及真实来源ID"
       ],
-      "result": "原规则选择器执行通过；拼图全图与完整面板/对白、连续链直接前序/硬切/同机位/前传、编辑来源与保持项分别检查。不是实际LLM策略或视频生成。",
+      "result": "实际执行原前端create/poll与原Go转换器：开场、整张四格12秒、硬切、同机位、前传、编辑共六段；4×3秒完整原文、拼图非首帧、正式元素、真实完成前序身份及实际结果字节SHA、探测时长/音频均通过。发现Omni transformation误用reference静音限制后修正Naumi并做实际应用补验。",
       "evidence": [
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-skills-fc36ba91-0d9d-42f5-a3dd-d2cbdb7022d9/result.json",
-        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-skills-fc36ba91-0d9d-42f5-a3dd-d2cbdb7022d9/mosaic.txt"
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-skills-fc36ba91-0d9d-42f5-a3dd-d2cbdb7022d9/mosaic.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-video-826a9496-904f-44f9-ba18-cdb01a690ebe/result.json"
       ],
       "naumiEvidencePrefixes": [
         "script-ce0e7019",
         "mosaic-2447c449",
         "multishot-096de602"
       ],
-      "limitation": "原生运行时规则选择和正文补证，不是上游浏览器完成故事制作；正式模型调用0。"
+      "limitation": "供应商使用原创可播放素材隔离模拟；正式API/LLM调用0。不宣称真实生成质量或原浏览器故事历史恢复通过。原浏览器展示问题另记，未修改原项目源码。"
     },
     {
       "capabilityId": "V13",
       "name": "连续续写与前传",
-      "status": "observed-native-rules-with-limitations",
+      "status": "observed-native-generation-with-isolated-supplier",
       "upstream": "infinite-canvas-pinned",
       "observedVersion": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f",
       "steps": [
         "原真实项目8节点/4边上下文传入原buildCanvasAgentSkillPrompt",
         "实际执行意图选择器并核对对应完整原制作规则及真实来源ID"
       ],
-      "result": "原规则选择器执行通过；拼图全图与完整面板/对白、连续链直接前序/硬切/同机位/前传、编辑来源与保持项分别检查。不是实际LLM策略或视频生成。",
+      "result": "实际执行原前端create/poll与原Go转换器：开场、整张四格12秒、硬切、同机位、前传、编辑共六段；4×3秒完整原文、拼图非首帧、正式元素、真实完成前序身份及实际结果字节SHA、探测时长/音频均通过。发现Omni transformation误用reference静音限制后修正Naumi并做实际应用补验。",
       "evidence": [
         "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-skills-fc36ba91-0d9d-42f5-a3dd-d2cbdb7022d9/result.json",
-        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-skills-fc36ba91-0d9d-42f5-a3dd-d2cbdb7022d9/continuity.txt"
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-skills-fc36ba91-0d9d-42f5-a3dd-d2cbdb7022d9/continuity.txt",
+        "E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-video-826a9496-904f-44f9-ba18-cdb01a690ebe/result.json"
       ],
       "naumiEvidencePrefixes": [
         "continuity-87e8d486",
         "production-3710100e"
       ],
-      "limitation": "原生运行时规则选择和正文补证，不是上游浏览器完成故事制作；正式模型调用0。"
+      "limitation": "供应商使用原创可播放素材隔离模拟；正式API/LLM调用0。不宣称真实生成质量或原浏览器故事历史恢复通过。原浏览器展示问题另记，未修改原项目源码。"
     },
     {
       "capabilityId": "V14",

@@ -138,6 +138,10 @@ if ! grep -q '^VIDEO_WORKER_SECRET=' .env || grep -qE '^VIDEO_WORKER_SECRET=(|ch
   WORKER_SECRET="$(openssl rand -hex 32)"
   printf '\nVIDEO_WORKER_SECRET=%s\n' "$WORKER_SECRET" >> .env
 fi
+if ! grep -q '^MEDIA_WORKER_SECRET=' .env || grep -qE '^MEDIA_WORKER_SECRET=(|change-media-worker-secret)$' .env; then
+  sed -i '/^MEDIA_WORKER_SECRET=/d' .env
+  printf '\nMEDIA_WORKER_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
+fi
 
 # Only generate on first installation. Changing an existing encryption key
 # without migrating encrypted settings would make those settings unreadable.

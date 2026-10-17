@@ -71,6 +71,9 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
         const keyboard = (event: KeyboardEvent) => {
             if (!isTopVideoDialog(dialogRef.current))
                 return;
+            if (event.key === "Escape" && document.activeElement instanceof HTMLElement &&
+                dialogRef.current?.contains(document.activeElement) &&
+                document.activeElement.matches('[role="combobox"][aria-expanded="true"]')) return;
             if (event.key === "Escape") {
                 event.stopPropagation();
                 closeRef.current();

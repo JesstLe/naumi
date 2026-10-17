@@ -17,12 +17,13 @@ function definition(cases:Case[]):VideoModelDefinition{
 }
 async function main(){
   const manifest=JSON.parse(await readFile(path.resolve("scripts/video-fusion/application-protocol-cases.json"),"utf8")),all=manifest.cases as Case[];
-  assert.equal(all.length,51);for(const item of all)videoWireProfileSchema.parse(item.profile);
+  assert.equal(all.length,53);for(const item of all)videoWireProfileSchema.parse(item.profile);
   const selected=process.argv.find(a=>a.startsWith("--profiles="))?.slice(11).split(",");if(selected?.some(p=>!all.some(c=>c.profile===p)))throw new Error("Unknown application protocol profile");
   const groups=[...new Set(all.filter(item=>!selected||selected.includes(item.profile)).map(item=>item.profile))];
+  const planned=all.filter(item=>groups.includes(item.profile));
   const evidence=path.resolve("output/canvas-video-fusion-20261013/checkpoint-d",`application-protocols-${randomUUID()}`),completed:any[]=[];
   await mkdir(evidence,{recursive:true});
-  const save=()=>writeFile(path.join(evidence,"result.json"),JSON.stringify({schemaVersion:1,ok:completed.length===all.length,scope:selected||"all-41-native-profiles",plannedCases:all.length,completedCases:completed.length,evidence:completed,actualAppDbRouterWorker:true,paidVideoApiCalls:0,realVideoQualityValidated:false,workflowProfilesHaveSeparateApplicationEvidence:true},null,2));
+  const save=()=>writeFile(path.join(evidence,"result.json"),JSON.stringify({schemaVersion:1,ok:completed.length===planned.length,scope:selected||"all-41-native-profiles",plannedCases:planned.length,completedCases:completed.length,evidence:completed,actualAppDbRouterWorker:true,paidVideoApiCalls:0,realVideoQualityValidated:false,workflowProfilesHaveSeparateApplicationEvidence:true},null,2));
   await save();
   for(const profile of groups){
     const cases=all.filter(item=>item.profile===profile);let active:Case=cases[0];
@@ -38,6 +39,15 @@ async function main(){
       if(profile==="compshare-wan"&&active.mode==="frames_required"){assert.equal(typeof field(raw.body,"input.first_frame_url"),"string");assert.equal(typeof field(raw.body,"input.last_frame_url"),"string");assert.equal(typeof field(raw.body,"input.audio_url"),"string");}
       if(profile==="kie-kling"){assert.equal(field(raw.body,"input.multi_shots"),true);assert.equal(field(raw.body,"input.multi_prompt.0.duration"),2);assert.equal(field(raw.body,"input.kling_elements.0.name"),"角色");}
       if(profile==="kie-motion-control")assert.equal(field(raw.body,"input.character_orientation"),"image");
+      if(profile.startsWith("kie-kling-omni-")){
+        const hasVideo=active.refs.some(ref=>ref.startsWith("video:")),hasImage=active.refs.some(ref=>ref.startsWith("image:")||ref.startsWith("last:"));
+        const videoOnly=hasVideo&&!hasImage&&!active.extra.element;
+        assert.equal(field(raw.body,"input.duration"),videoOnly?undefined:active.extra.durationSeconds??4);
+        assert.equal(field(raw.body,"input.aspect_ratio"),profile==="kie-kling-omni-reference"&&hasVideo||profile==="kie-kling-omni-transform"&&videoOnly||profile==="kie-kling-omni-image"&&active.refs.length>1?"auto":"16:9");
+        if(active.extra.generateAudio!==undefined)assert.equal(field(raw.body,"input.audio"),active.extra.generateAudio);
+        assert.equal(field(raw.body,"input.prompt"),"甲：保留完整句子。\n乙：包括最后一句。");
+        if(profile==="kie-kling-omni-transform"){assert.equal(field(raw.body,"input.multi_prompt"),undefined);assert.equal(field(raw.body,"input.elements"),undefined);}
+      }
     }});
     try{
       const original=(await h.request<ArrayBuffer>("a","GET",h.refs.video.url)).body,sourceSha=createHash("sha256").update(Buffer.from(original)).digest("hex");

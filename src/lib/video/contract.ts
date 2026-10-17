@@ -96,7 +96,7 @@ export function normalizeVideoInput(raw:Record<string,unknown>,cap:ResolvedVideo
       refs[index].role=role;
     }
   }
-  if(mode==="single_image"&&refs[0].role==="reference")refs[0].role="first_frame";
+  if(mode==="single_image"&&refs[imageIndices[0]].role==="reference")refs[imageIndices[0]].role="first_frame";
   if(mode==="reference"&&!refs.length)reject("REFERENCE_REQUIRED","混合参考模式至少需要一个媒体素材","references");
   if(["video_edit","extend"].includes(mode)&&!videoCount)reject("VIDEO_REFERENCE_REQUIRED","视频编辑或续写需要真实来源视频","references");
   if(mode==="motion_control"&&(!imageCount||!videoCount))reject("MOTION_INPUT_REQUIRED","运动控制需要图片与真实运动视频","references");

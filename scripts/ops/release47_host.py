@@ -154,7 +154,8 @@ class HostTransaction:
         return {'path': str(path), 'sha256': sha(payload), 'bytes': len(payload)}
 
     def clone_web(self, identity, *, name, port, image, commit, memory_mib, cpu, release_secret,
-                  state_dir, build_version, admission='draining', reviewed_omitted_mounts=None):
+                  state_dir, build_version, admission='draining', reviewed_omitted_mounts=None, media_binding=None,
+                  before_create=None):
         require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', name), 'INVALID_NEW_SLOT_NAME')
         require(type(port) is int and 1024 <= port <= 65535, 'INVALID_LOOPBACK_PORT')
         require(re.fullmatch('sha256:[a-f0-9]{64}', image) and re.fullmatch('[a-f0-9]{40}', commit), 'FIXED_IMAGE_REQUIRED')
@@ -163,6 +164,9 @@ class HostTransaction:
                 'BOUNDED_CANDIDATE_RESOURCES_REQUIRED')
         require(len(release_secret) >= 32 and '\n' not in release_secret and admission == 'draining', 'PAUSED_ADMISSION_REQUIRED')
         old = self.pin(identity)
+        if media_binding is not None:
+            require(self.target == '103.30.76.93' and all(m['Destination'] != '/scratch' for m in old['Mounts']),
+                    'MEDIA_BINDING_REQUIRES_REVIEWED_103_SOURCE')
         require(old['Config']['Cmd'] == ['node', 'server.js'], 'WEB_CLONE_SOURCE_NOT_STANDARD')
         networks = sorted(old['NetworkSettings']['Networks'])
         require(networks and len(networks) <= 4, 'REVIEW_NETWORKS_REQUIRED')
@@ -198,12 +202,17 @@ class HostTransaction:
         require(not state.stat().st_mode & 0o077, 'PRIVATE_SLOT_STATE_MODE_REQUIRED')
         os.chown(state, 1001, 1001)
         args += ['--mount', 'type=bind,src=' + str(state) + ',dst=/release-state']
+        if media_binding is not None:
+            from release_video_media import apply_binding
+            apply_binding(env, args, media_binding, self.folder, commit)
         # Values are supplied only through an ACL/private tempfile, never argv.
         fd, raw = tempfile.mkstemp(prefix='.candidate-env-', dir=self.folder)
         try:
             with os.fdopen(fd, 'w') as output:
                 output.write(''.join(k + '=' + v + '\n' for k, v in sorted(env.items())))
             args += ['--env-file', raw, image, 'node', 'server.js']
+            if before_create is not None:
+                before_create()
             created = self.run(args).decode().strip()
             require(re.fullmatch('[a-f0-9]{64}', created), 'CANDIDATE_CREATE_UNKNOWN')
             for network in networks[1:]:

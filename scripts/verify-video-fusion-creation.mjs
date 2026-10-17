@@ -1,3 +1,4 @@
+import {chooseVideoModel} from "./video-fusion/browser-model.mjs";
 import assert from 'node:assert/strict';
 import {access,writeFile} from 'node:fs/promises';
 import {chromium,expect} from '@playwright/test';
@@ -58,9 +59,8 @@ export async function runVideoCreationBrowser(h,evidence,{controlsOnly=false}={}
     await expect(dialog.getByLabel('视频描述',{exact:true})).toHaveValue(prompt);
     await expect.poll(()=>typeof releaseCatalog).toBe('function');transport='healthy';releaseCatalog();
     await expect(dialog.getByText('视频模型加载失败',{exact:true})).toHaveCount(0);
-    await expect(dialog.getByLabel('视频模型',{exact:true}).locator('option[value="managed-video/video-a"]')).toHaveCount(1);
+    await chooseVideoModel(page,dialog,'Fixture video');
     assert.equal(imageGets,beforeRetryImageGets,'Video retry must not reload the image catalog');
-    await dialog.getByLabel('视频模型',{exact:true}).selectOption('managed-video/video-a');
     await expect(dialog.getByLabel('视频描述',{exact:true})).toHaveValue(prompt);
     await expect(dialog.getByRole('button',{name:/^生成视频/})).toBeEnabled();
     await page.screenshot({path:`${evidence}/blank-node-recovered-1366.png`});

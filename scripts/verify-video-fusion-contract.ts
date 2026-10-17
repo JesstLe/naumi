@@ -37,6 +37,9 @@ const lipInput={...base,prompt:"",mode:"lip_sync",references:[{id:"spoken-video"
 const frameAudioInput={...base,mode:"frames_required",references:[image("first"),image("last"),{id:"audio",kind:"audio",role:"source_audio",url:"/media/spoken.wav"}]};
 assert.throws(()=>normalizeVideoInput(frameAudioInput,rich),/首尾模式/);
 const frameAudioCap=resolveVideoCapability({vendor:{...CAP_RICH,supportsFrameAudio:true}});
+const audioFirst=normalizeVideoInput({...base,mode:"single_image",references:[frameAudioInput.references[2],image("after-audio")]},frameAudioCap);
+assert.deepEqual(audioFirst.references.map(ref=>[ref.kind,ref.role]),[["audio","source_audio"],["image","first_frame"]]);
+assert.equal(frameAudioInput.references[2].role,"source_audio");
 assert.equal(normalizeVideoInput(frameAudioInput,frameAudioCap).references[2].role,"source_audio");
 assert.throws(()=>normalizeVideoInput(frameAudioInput,resolveVideoCapability({manual:{supportsFrameAudio:false},vendor:{...CAP_RICH,supportsFrameAudio:true}})),/首尾模式/);
 assert.throws(()=>normalizeVideoInput(frameAudioInput,resolveVideoCapability({manual:{...CAP_RICH,supportsFrameAudio:true,limits:{...CAP_RICH.limits,audios:0}}})),/音频参考/);

@@ -2,6 +2,7 @@
 import {useRef,useState,type ReactNode} from "react";
 import {Plus,X,ChevronDown,Maximize2,Minimize2,AtSign,Upload,Film,Music2,Type,SlidersHorizontal} from "lucide-react";
 import {CachedImage} from "@/components/cached-image";
+import {CanvasModelSelect} from "../model-select";
 import {CanvasActionPanel} from "../canvas-action-menu";
 import {browserRandomUUID} from "@/lib/browser-crypto";
 import {catalogCapability,selectedVideoCatalogModel,reconcileVideoSettings,videoModeRoles,videoDurations,videoResolutions,VIDEO_MODE_LABELS,type VideoNodeConfig,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
@@ -50,7 +51,10 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
   {feedback}
   </div>
   <div className="mt-3 flex shrink-0 flex-wrap items-center gap-1"><div className="flex w-full min-w-0 flex-wrap items-center gap-x-1 gap-y-2" data-testid="video-quick-parameters">
-   <label className={chip} title={V('视频模型')}><select aria-label={V('视频模型')} className="max-w-[170px] cursor-pointer truncate appearance-none bg-transparent pr-1 outline-none" disabled={blocked||!!config.comfyWorkflowId} value={model?`${model.providerId}/${model.modelId}`:''} onChange={event=>{const chosen=models.find(m=>`${m.providerId}/${m.modelId}`===event.target.value);if(chosen)reconcile({...config,workflowTaskId:undefined,providerId:chosen.providerId,modelId:chosen.modelId});}}><option value="" disabled>{config.comfyWorkflowId||V('未选择模型')}</option>{models.map(m=><option key={`${m.providerId}/${m.modelId}`} value={`${m.providerId}/${m.modelId}`}>{m.label}</option>)}</select><ChevronDown size={12}/></label>
+   <CanvasModelSelect label={V('视频模型')} value={model?`${model.providerId}/${model.modelId}`:''}
+    placeholder={config.comfyWorkflowId?V('自备视频工作流'):V('未选择模型')} disabled={blocked||!!config.comfyWorkflowId}
+    options={models.map(m=>({value:`${m.providerId}/${m.modelId}`,modelId:m.modelId,label:m.label}))}
+    onChange={value=>{const chosen=models.find(m=>`${m.providerId}/${m.modelId}`===value);if(chosen)reconcile({...config,workflowTaskId:undefined,providerId:chosen.providerId,modelId:chosen.modelId});}} />
    <button ref={parameterRef} type="button" className={chip} aria-label={V('画幅与清晰度')} disabled={blocked||!!config.comfyWorkflowId} onClick={()=>setParameters(true)}>{config.aspectRatio||'—'} · {config.resolution||'—'}<ChevronDown size={12}/></button>
    <label className={chip}><select aria-label={V('视频生成模式')} className="max-w-[116px] cursor-pointer appearance-none bg-transparent pr-1 outline-none" disabled={blocked||!!config.comfyWorkflowId} value={config.mode||''} onChange={event=>{const mode=event.target.value as VideoNodeConfig['mode'];onInputs(videoModeRoles(inputs,mode));onConfig({...config,mode,references:[]});}}><option value="" disabled>{V('选择模式')}</option>{(cap.modes||[]).map(mode=><option key={mode} value={mode}>{V(VIDEO_MODE_LABELS[mode])}</option>)}</select><ChevronDown size={12}/></label>
    <label className={chip}><select aria-label={V('视频时长')} className="cursor-pointer appearance-none bg-transparent pr-1 outline-none" disabled={blocked||!!config.comfyWorkflowId} value={config.durationSeconds??''} onChange={event=>reconcile({...config,durationSeconds:Number(event.target.value)})}><option value="" disabled>—</option>{videoDurations(cap).map(value=><option key={value} value={value}>{value===-1?V('自动'):`${value}s`}</option>)}</select><ChevronDown size={12}/></label>

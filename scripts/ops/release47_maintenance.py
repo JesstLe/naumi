@@ -16,6 +16,16 @@ DATE = '2026-10-16'
 ACK = '本次接受短维护迁移，保留任务和数据'
 IMMEDIATE_HK_ACK = '现在就上线香港'
 IMMEDIATE_HK_NOT_BEFORE = '2026-10-16T08:41:00Z'
+VIDEO_HK_ACK = '103现在没人再用，你可以直接上线发布'
+VIDEO_GOAL = '01a124b1-a804-7d71-bcd5-572ce81297c8'
+
+
+def canvas_video_hk(spec):
+    return spec.get('mode') == 'canvas-video-fusion-103'
+
+
+def independent_hk(spec):
+    return immediate_hk(spec) or canvas_video_hk(spec)
 
 
 def immediate_hk(spec):
@@ -23,6 +33,12 @@ def immediate_hk(spec):
 
 
 def authorize(spec, now=None):
+    if canvas_video_hk(spec):
+        require(spec.get('target') == '103.30.76.93' and spec.get('scope') == 'canvas-video-fusion' and
+                spec.get('goalThread') == VIDEO_GOAL and spec.get('userAcknowledgement') == VIDEO_HK_ACK and
+                spec.get('restoreDatabase') is False and spec.get('replayAcceptedTasks') is False,
+                'EXPLICIT_VIDEO_GOAL_103_AUTHORIZATION_REQUIRED')
+        return
     now = now or dt.datetime.now(dt.timezone.utc)
     local = now.astimezone(dt.timezone(dt.timedelta(hours=8)))
     immediate = immediate_hk(spec)

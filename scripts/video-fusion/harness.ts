@@ -51,7 +51,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
   // A new schema per process keeps model versions, accounts and supplier endpoints independent.
   try{await guard.query(`CREATE SCHEMA ${schemaName}`);}finally{await guard.end();}
   const scopedUrl=new URL(databaseUrl);scopedUrl.searchParams.set("options",`-c search_path=${schemaName}`);databaseUrl=scopedUrl.href;
-  const sql=await fixtureDatabase(databaseUrl);
+  let sql=await fixtureDatabase(databaseUrl);
   // Next loads dotenv files before the application. Reject them rather than inherit any formal credentials.
   for(const name of [".env",".env.local",".env.development",".env.development.local"]){if(await stat(path.join(root,name)).catch(()=>null)){await sql.end();throw new Error("Fixture requires a worktree without dotenv files");}}
   const assetsRoot=path.resolve(options.assetsRoot||process.env.VIDEO_FIXTURE_ASSETS_ROOT||defaultAssetsRoot);
@@ -105,9 +105,17 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
     while(Date.now()<mediaDeadline){if(mediaWorker.exitCode!==null)throw new Error("Fixture media worker exited");mediaReady=await fetch(mediaOrigin+"/health",{headers:{authorization:`Bearer ${mediaSecret}`},signal:AbortSignal.timeout(1000)}).then(r=>r.ok).catch(()=>false);if(mediaReady)break;await new Promise(resolve=>setTimeout(resolve,100));}
     if(!mediaReady)throw new Error("Fixture media worker readiness failed");
     };await startMediaWorker();
-    const seed=JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/video-fusion/fixture.ts","--seed-private"],env)) as Seed;
-    const startApp=async()=>{
-      app=spawn(process.execPath,["node_modules/next/dist/bin/next","dev","--hostname","127.0.0.1","--port",String(appPort)],{cwd:root,env,windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("app",app);
+    const schemaColumns=async()=> (await sql.query("SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() ORDER BY table_name,ordinal_position")).rows;
+    const startApp=async(mode:"candidate"|"rollback"="candidate")=>{
+      const builtRoot=mode==="rollback"?process.env.VIDEO_FIXTURE_ROLLBACK_APP_ROOT:process.env.VIDEO_FIXTURE_BUILT_APP_ROOT;
+      const builtCommit=mode==="rollback"?process.env.VIDEO_FIXTURE_ROLLBACK_SOURCE_COMMIT:process.env.VIDEO_FIXTURE_BUILT_SOURCE_COMMIT;
+      const builtVersion=mode==="rollback"?process.env.VIDEO_FIXTURE_ROLLBACK_VERSION:process.env.VIDEO_FIXTURE_BUILT_VERSION;
+      if(mode==="rollback"&&!builtRoot)throw new Error("Explicit rollback runtime required");
+      if(builtRoot&&(process.platform!=="linux"||builtRoot!==(mode==="rollback"?"/rollback-app":"/fixed-app")||!/^[a-f0-9]{40}$/.test(builtCommit||"")||!/^\d{10}$/.test(builtVersion||"")))throw new Error("Fixed Linux fixture image metadata required");
+      // The Linux fixture has no network interface except loopback; its fake
+      // BYOC endpoint uses the existing explicit private-network opt-in.
+      const appEnv:NodeJS.ProcessEnv=builtRoot?{...env,NODE_ENV:"production",HOSTNAME:"127.0.0.1",PORT:String(appPort),USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK:"true",SOURCE_COMMIT:builtCommit!,BUILD_VERSION:builtVersion!}:env;
+      app=spawn(process.execPath,builtRoot?[path.join(builtRoot,"server.js")]:["node_modules/next/dist/bin/next","dev","--hostname","127.0.0.1","--port",String(appPort)],{cwd:builtRoot||root,env:appEnv,windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("app",app);
       const deadline=Date.now()+120_000;let ready=false;
       while(Date.now()<deadline){
         if(app.exitCode!==null)throw new Error(`Fixture app exited ${app.exitCode}: ${logs.slice(-4).join("\n")}`);
@@ -115,13 +123,71 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
         if(ready)break;await new Promise(resolve=>setTimeout(resolve,300));
       }
       if(!ready)throw new Error("Fixture app/database readiness failed");
+      if(builtRoot){const version=await fetch(baseUrl+"/api/version").then(response=>response.json());if(version.commit!==builtCommit||String(version.version)!==builtVersion)throw new Error("Fixed Linux App version mismatch");}
     };
+    let legacySchema:Awaited<ReturnType<typeof schemaColumns>>|undefined;
+    let legacySentinel:{email:string;taskId:string;ledgerId:string;settingKey:string}|undefined,legacyRowsBeforeDdl:Record<string,any>|undefined;
+    const legacySentinelState=async()=>{
+      if(!legacySentinel)throw new Error("Legacy fixture rows required");
+      const {email,taskId,ledgerId,settingKey}=legacySentinel,result:Record<string,any>={};
+      for(const [label,table,key,value] of [["user","app_users","email",email],["task","app_video_tasks","id",taskId],["ledger","app_ledger","id",ledgerId],["setting","app_settings","k",settingKey]])result[label]=(await sql.query(`SELECT to_jsonb(t) AS value FROM ${table} t WHERE ${key}=$1`,[value])).rows[0]?.value;
+      return result;
+    };
+    if(process.env.VIDEO_FIXTURE_BOOTSTRAP_ROLLBACK==="1"){
+      await startApp("rollback");legacySchema=await schemaColumns();
+      if(!legacySchema.some(row=>row.table_name==="app_video_tasks"))throw new Error("Legacy runtime did not initialize its actual schema");
+      await stopChild(app);
+      legacySentinel={email:`legacy-${namespace}@example.test`,taskId:`vid-${randomUUID()}`,ledgerId:`legacy-${randomUUID()}`,settingKey:`legacy-${namespace}`};
+      await sql.query("INSERT INTO app_users(email,name,credits_total,credits_used,renews_at) VALUES($1,'Legacy fixture',77,5,now()+interval '1 year')",[legacySentinel.email]);
+      await sql.query("INSERT INTO app_ledger(id,email,delta,reason) VALUES($1,$2,-3,'Legacy fixture')",[legacySentinel.ledgerId,legacySentinel.email]);
+      await sql.query("INSERT INTO app_settings(k,v) VALUES($1,$2)",[legacySentinel.settingKey,JSON.stringify({enabled:false,seed:0,legacy:"preserve"})]);
+      await sql.query("INSERT INTO app_video_tasks(id,email,upstream_id,prompt,status,parameters) VALUES($1,$2,'legacy-fixture','Legacy full prompt','completed',$3::jsonb)",[legacySentinel.taskId,legacySentinel.email,JSON.stringify({request:{prompt:"Legacy full prompt",generateAudio:false,providerOptions:{seed:0}}})]);
+      legacyRowsBeforeDdl=await legacySentinelState();
+    }
+    const legacySource=process.env.VIDEO_FIXTURE_LEGACY_SOURCE_ROOT;
+    if(legacySource&&(legacySource!=="/legacy-source"||process.env.VIDEO_FIXTURE_BOOTSTRAP_ROLLBACK!=="1"||(await readFile(path.join(legacySource,".fixture-source-commit"),"utf8")).trim()!==process.env.VIDEO_FIXTURE_ROLLBACK_SOURCE_COMMIT))throw new Error("Pinned legacy fixture source required");
+    const seed=JSON.parse(await privateChild(["--conditions=react-server","--import","tsx",legacySource?path.join(legacySource,"scripts/video-fusion/fixture.ts"):"scripts/video-fusion/fixture.ts","--seed-private"],legacySource?{...env,TSX_TSCONFIG_PATH:path.join(legacySource,"tsconfig.json")}:env)) as Seed;
+    if(legacySource)legacySchema=await schemaColumns();
     const startWorker=()=>{if(options.startWorker!==false){worker=spawn(process.execPath,["scripts/video-worker.mjs"],{cwd:root,env,windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("worker",worker);}};
-    await startApp();startWorker();
+    await startApp(legacySource?"rollback":"candidate");startWorker();
     await writeFile(path.join(output,"public-run.json"),JSON.stringify({namespace,baseUrl,supplierOrigin:supplier.origin,schemaName,owner:"canvas-video-fusion-20261013"}));
     const countTables=new Set(["app_video_tasks","app_video_results","app_artworks","app_canvas_video_nodes","app_video_media_jobs","app_billing_operations","app_ledger","app_video_reference_uploads","app_video_asset_imports","app_canvas_video_task_sends","app_canvas_video_workflow_sources"]);
     return {baseUrl,supplierOrigin:supplier.origin,refs:seed.refs,accounts:seed.accounts,cookies:seed.cookies,logs,manifest,byocWorkflowId:seed.byocWorkflowId,
-      async restartApp(){await stopChild(worker);await stopChild(app);await startApp();startWorker();},
+      async restartApp(mode:"candidate"|"rollback"="candidate"){await stopChild(worker);await stopChild(app);await startApp(mode);startWorker();},
+      legacySchema,schemaColumns,legacyRowsBeforeDdl,legacySentinelState,
+      fixtureDatabaseName:new URL(databaseUrl).pathname.slice(1),
+      fixtureSchema:schemaName,
+      async shortLivedFixtureObjectUrl(key:string){
+        if(!Object.values(seed.refs).some(ref=>ref.storageKey===key))throw new Error("Owned fixture source required");
+        const {AwsV4Signer}=await import("aws4fetch");
+        const url=new URL(`${supplier.origin}/objects/${bucket}/${key.split("/").map(encodeURIComponent).join("/")}`);url.searchParams.set("X-Amz-Expires","2");
+        const signed=await new AwsV4Signer({method:"GET",url:url.href,accessKeyId,secretAccessKey,service:"s3",region:"us-east-1",signQuery:true}).sign();return String(signed.url);
+      },
+      async stopAppForFixtureRestore(){await stopChild(worker);await stopChild(app);},
+      async restartOnRestoredFixtureDatabase(name:string){
+        if(process.platform!=="linux"||process.env.VIDEO_FIXTURE_BOOTSTRAP_ROLLBACK!=="1"||!/^naumi_video_fixture_restore_[a-f0-9]{32}$/.test(name))throw new Error("Owned restored Linux fixture database required");
+        const restored=new URL(databaseUrl);restored.pathname="/"+name;
+        const next=await fixtureDatabase(restored.href);
+        const present=(await next.query("SELECT to_regclass($1) AS name",[schemaName+".app_video_tasks"])).rows[0].name;
+        if(!present){await next.end();throw new Error("Restored fixture task schema missing");}
+        await sql.end();sql=next;databaseUrl=restored.href;env.DATABASE_URL=databaseUrl;
+        await startApp("rollback");
+        return String((await sql.query("SELECT current_database() AS name")).rows[0].name);
+      },
+      async resetUnconsumedVideoDefaultsForLegacyBootstrap(){
+        if(process.env.VIDEO_FIXTURE_BOOTSTRAP_ROLLBACK!=="1")throw new Error("Legacy fixture bootstrap only");
+        if(legacySource)return 0;
+        if(Number((await sql.query("SELECT count(*) AS n FROM app_video_tasks WHERE ($1::text IS NULL OR id<>$1)",[legacySentinel?.taskId||null])).rows[0].n)!==0)throw new Error("Cannot replace defaults after any seeded-model task exists");
+        // Current seed publication eagerly creates defaults. For the old-runtime
+        // baseline, let the old code freeze its own values before any task.
+        return (await sql.query("DELETE FROM app_video_model_defaults")).rowCount;
+      },
+      async protectionSnapshot(){
+        const names=(await sql.query("SELECT tablename FROM pg_tables WHERE schemaname=current_schema() AND (tablename IN ('app_users','app_settings','app_ledger','app_video_model_defaults') OR tablename LIKE 'app_model_%' OR tablename LIKE 'app_billing_%') ORDER BY tablename")).rows.map(row=>String(row.tablename));
+        const hashes:Record<string,string>={};
+        for(const name of names){if(!/^app_[a-z0-9_]+$/.test(name))throw new Error("Unexpected fixture table");const rows=(await sql.query(`SELECT to_jsonb(t)::text AS value FROM ${name} t ORDER BY to_jsonb(t)::text`)).rows;hashes[name]=createHash("sha256").update(JSON.stringify(rows)).digest("hex");}
+        return hashes;
+      },
       async restartMediaWorker(){await stopChild(mediaWorker);await startMediaWorker();},
       async mediaWorkerRequest(id:string,method:string,body?:unknown){
         if(!/^[0-9a-f-]{36}$/.test(id))throw new Error("Invalid fixture media job ID");
@@ -158,6 +224,11 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
       async checkNodeReservationRollback(account:Account,sourceTask:string){return JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/video-fusion/fixture-actions.ts","--node-reservation-failure"],{...env,VIDEO_FIXTURE_ACTION_ACTOR:seed.accounts[account],VIDEO_FIXTURE_ACTION_SOURCE:sourceTask})) as {rolledBack:boolean;attemptedTaskId:string};},
       async workflowFreezeState(account:Account,id:string){if(!/^[0-9a-f-]{36}$/i.test(id))throw new Error("Invalid fixture workflow ID");const row=(await sql.query("SELECT frozen_nodes_enc,input_digest FROM app_video_workflow_runs WHERE email=$1 AND id=$2",[seed.accounts[account],id])).rows[0];if(!row)throw new Error("Owned fixture workflow required");const parts=String(row.frozen_nodes_enc||"").split(".");return {encrypted:parts.length===3&&Buffer.from(parts[0],"base64").length===12&&Buffer.from(parts[1],"base64").length===16&&Buffer.from(parts[2],"base64").length>0,inputDigestSaved:/^[a-f0-9]{64}$/.test(row.input_digest||"")};},
       async taskPersistence(account:Account,id:string){return (await sql.query("SELECT status,parameters,video_references,capability_snapshot,cancellation_requested_at FROM app_video_tasks WHERE email=$1 AND id=$2",[seed.accounts[account],id])).rows[0];},
+      async rollbackTaskState(account:Account,id:string){
+        if(!/^vid-[0-9a-f-]{36}$/.test(id))throw new Error("Owned fixture task required");
+        const row=(await sql.query("SELECT to_jsonb(t) AS value FROM app_video_tasks t WHERE email=$1 AND id=$2",[seed.accounts[account],id])).rows[0];
+        if(!row)throw new Error("Owned fixture task missing");return row.value as Record<string,unknown>;
+      },
       async simulateLegacyGeminiPrimaryManifest(account:Account,id:string){
         if(!/^vid-[0-9a-f-]{36}$/.test(id))throw new Error("Invalid owned fixture task");
         const tx=await sql.connect();try{await tx.query("BEGIN");const row=(await tx.query("SELECT parameters,provider_snapshot,status FROM app_video_tasks WHERE email=$1 AND id=$2 FOR UPDATE",[seed.accounts[account],id])).rows[0];const manifest=row?.parameters.resultAssetManifest;

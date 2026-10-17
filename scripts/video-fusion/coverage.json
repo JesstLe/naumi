@@ -10,12 +10,12 @@
   "realVideoQualityValidated": false,
   "evidenceRegistry": {
     "canvas": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-browser-2494ea71-055f-4698-92a8-45997fe13329/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-browser-4d3e1dcd-527d-4804-b762-54f4bb8e286d/result.json",
       "verifier": "scripts/verify-video-fusion-canvas.ts",
       "kind": "actual-app-browser-with-simulated-suppliers"
     },
     "interactions": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-interactions-f66e292f-bf98-40c5-bf2d-9ffb47a38350/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-interactions-3a68f5e4-0e66-4c9d-96d8-fe871f698fec/result.json",
       "verifier": "scripts/verify-video-fusion-canvas-interactions.ts",
       "kind": "actual-app-browser"
     },
@@ -45,7 +45,7 @@
       "kind": "actual-agent-app-worker-with-scripted-text-supplier"
     },
     "agentBrowser": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/agent-browser-181c28fb-6612-4511-8978-031aeaf722e1/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/agent-browser-c2b74acc-a321-4126-b4f1-57088669d417/result.json",
       "verifier": "scripts/verify-video-fusion-agent-browser.ts",
       "kind": "actual-agent-app-worker-browser-with-scripted-text-supplier"
     },
@@ -65,7 +65,7 @@
       "kind": "actual-app-worker"
     },
     "workbench": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/workbench-d024905a-de37-495d-b99b-9f71e35397a5/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/workbench-86f4dc30-46fc-4787-8dfd-0bf70c3f1c3b/result.json",
       "verifier": "scripts/verify-video-fusion-workbench.ts",
       "kind": "actual-app-browser"
     },
@@ -80,12 +80,12 @@
       "kind": "actual-app-worker-media"
     },
     "image": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-a/stable-image-browser-app.log",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/stable-image-browser-4094967-20261017.log",
       "verifier": "scripts/imagegen-ui-fixture.ts",
       "kind": "actual-app-browser-with-simulated-image-supplier"
     },
     "billing": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-a/billing-clean-app.log",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/billing-all-4094967-20261017.log",
       "verifier": "scripts/verify-billing-all.mjs",
       "kind": "isolated-postgres-regression"
     },
@@ -110,7 +110,7 @@
       "kind": "actual-app-worker-with-simulated-suppliers"
     },
     "completion": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/completion-1ba5c2d7-f2d6-4a5b-a186-08b7e0a878be/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/completion-d63db153-e499-40f6-a578-56199b577a70/result.json",
       "verifier": "scripts/verify-video-fusion-completion.ts",
       "kind": "actual-app-worker-browser-with-simulated-suppliers"
     },
@@ -205,12 +205,12 @@
       "kind": "actual-app-chrome-db-router-worker-history-recovery"
     },
     "mosaic": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/mosaic-2447c449-29c6-4055-befe-2224acffe0cc/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/mosaic-00a094b2-c52b-4b2c-8227-a2143f16f136/result.json",
       "verifier": "scripts/verify-video-fusion-mosaic.ts",
       "kind": "actual-agent-tools-app-db-router-worker-with-simulated-supplier"
     },
     "continuity": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/continuity-87e8d486-0c8c-4489-8afd-f69ccd1da7c4/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/continuity-5cb483be-5207-40c4-abf8-9621856b943f/result.json",
       "verifier": "scripts/verify-video-fusion-continuity.ts",
       "kind": "actual-agent-tools-app-db-router-worker-with-simulated-supplier"
     },
@@ -223,6 +223,66 @@
       "artifact": "output/canvas-video-fusion-20261013/checkpoint-b/results-8ca34c19-0100-4e6c-9669-49b6d1a5ecaa.json",
       "verifier": "scripts/verify-video-fusion-results.ts",
       "kind": "actual-app-worker-duplicate-sample-legacy-manifest-recovery"
+    },
+    "icNativeGeneration": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/ic-native-826a9496-904f-44f9-ba18-cdb01a690ebe/result.json",
+      "verifier": "scripts/video-fusion/verify-reference-native.mts",
+      "kind": "actual-upstream-frontend-and-go-with-isolated-supplier"
+    },
+    "omniParity": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/application-protocols-a6f446d3-870a-49cf-aea7-b6dfbd3b5451/result.json",
+      "verifier": "scripts/verify-video-fusion-application-protocols.ts",
+      "kind": "actual-app-db-router-worker-with-simulated-supplier"
+    },
+    "manifestAccess": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/manifest-access-20261017-review-fix.log",
+      "verifier": "scripts/verify-video-fusion-manifest-access.ts",
+      "kind": "actual-app-route-postgres-signed-s3-isolated-regression"
+    },
+    "comparisonAudit": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/comparison-audit-20261017.json",
+      "verifier": "scripts/verify-video-fusion-comparison.mjs",
+      "kind": "actual-upstream-observation-and-application-evidence-audit-with-limitations"
+    },
+    "packagedLegacy": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/packaged-legacy-e997b29-ui.json",
+      "verifier": "scripts/verify-video-worker-packaged.mjs",
+      "kind": "actual-fixed-linux-image-worker-entrypoint-and-control-http"
+    },
+    "macInteraction": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-interactions-d5d81a7f-03d3-4165-ba81-5f76bcf280e3/result.json",
+      "verifier": "scripts/verify-video-fusion-canvas-interactions.ts",
+      "kind": "actual-app-browser-with-simulated-mac-platform-and-real-key-events"
+    },
+    "protectionFinal": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/protection-20261017.json",
+      "verifier": "scripts/verify-video-fusion-protection.mjs",
+      "kind": "actual-app-browser-protection-audit-with-hashed-run-receipts"
+    },
+    "linuxRollback": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/linux-e997b29/rollback-c05.json",
+      "verifier": "scripts/verify-video-fusion-rollback.ts",
+      "kind": "actual-compiled-linux-old-new-rollback-on-restored-fixture-database"
+    },
+    "linuxProtection": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/linux-e997b29/summary.json",
+      "verifier": "scripts/video-fusion/harness.ts",
+      "kind": "actual-compiled-linux-app-db-router-worker-with-isolated-suppliers"
+    },
+    "linuxFreeze": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/linux-e997b29/freeze.json",
+      "verifier": "scripts/verify-video-fusion-workflow-freeze.ts",
+      "kind": "actual-compiled-linux-app-with-isolated-suppliers"
+    },
+    "safetyFinal": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/safety-20261017.json",
+      "verifier": "scripts/verify-video-fusion-safety.mjs",
+      "kind": "actual-app-safety-evidence-audit"
+    },
+    "billingCompletion": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/billing-all-4094967-20261017.json",
+      "verifier": "scripts/verify-billing-all.mjs",
+      "kind": "actual-completed-billing-run-receipt"
     }
   },
   "capabilities": [
@@ -942,7 +1002,7 @@
     {
       "id": "V12",
       "name": "剧本及拼图到完整可编辑片段",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/script-assets.ts",
         "src/lib/agent/video-script-storyboard.ts",
@@ -951,12 +1011,12 @@
       "evidenceKeys": [
         "script",
         "multishot",
-        "mosaic"
+        "mosaic",
+        "icNativeGeneration",
+        "omniParity"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "上游完整实操对照仍待闭合；当前仅完成本项真实应用执行与制作规则源码核对"
-      ],
+      "remaining": [],
       "criteria": [
         {
           "requirement": "正式原稿逐字连续覆盖、正式片段、无整剧本共享、越界/emoji/版本拒绝、并发重放和真实画布恢复",
@@ -1067,6 +1127,74 @@
               "value": true
             }
           ]
+        },
+        {
+          "requirement": "固定原项目前端/Go真实转换及隔离供应商六段调用对照；实际素材SHA、时长和音频、整图/完整分镜及前序规则由原生验收脚本断言，不冒充真实LLM或上游视频质量",
+          "evidenceKey": "icNativeGeneration",
+          "assertions": [
+            {
+              "path": "ok",
+              "value": true
+            },
+            {
+              "path": "sourceCommit",
+              "value": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f"
+            },
+            {
+              "path": "results.1.name",
+              "value": "mosaic"
+            },
+            {
+              "path": "results.1.outputDurationMs",
+              "value": 12000
+            },
+            {
+              "path": "results.1.outputHasAudio",
+              "value": false
+            },
+            {
+              "path": "results.5.name",
+              "value": "editing"
+            },
+            {
+              "path": "results.5.wire.input.audio",
+              "value": true
+            },
+            {
+              "path": "formalModelCalls",
+              "value": 0
+            },
+            {
+              "path": "actualLlmStrategyExecuted",
+              "value": false
+            }
+          ]
+        },
+        {
+          "requirement": "当前主线四种Omni分支六个实际应用用例，带图/纯视频编辑保留音频、正确时长类型/比例，与纯视频参考限制区别；实际媒体私有权、幂等结算及重启保持",
+          "evidenceKey": "omniParity",
+          "assertions": [
+            {
+              "path": "ok",
+              "value": true
+            },
+            {
+              "path": "plannedCases",
+              "value": 6
+            },
+            {
+              "path": "completedCases",
+              "value": 6
+            },
+            {
+              "path": "actualAppDbRouterWorker",
+              "value": true
+            },
+            {
+              "path": "paidVideoApiCalls",
+              "value": 0
+            }
+          ]
         }
       ],
       "auditNote": "真实文字模型创作质量和真实视频生成效果未验收，遵守批准方案隔离模拟边界。"
@@ -1074,7 +1202,7 @@
     {
       "id": "V13",
       "name": "串行续写硬切同机位前传",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/canvas-workflow.ts",
         "src/lib/video/production-prompt.ts"
@@ -1084,12 +1212,12 @@
         "sse",
         "agentBrowser",
         "freeze",
-        "continuity"
+        "continuity",
+        "icNativeGeneration",
+        "omniParity"
       ],
       "requirementsSource": "docs/superpowers/specs/2026-10-13-canvas-video-fusion-design.md",
-      "remaining": [
-        "上游完整实操对照仍待闭合；当前仅完成本项真实应用执行与制作规则源码核对"
-      ],
+      "remaining": [],
       "criteria": [
         {
           "requirement": "实际生成开场之后硬切、同机位及前传分支，仅首阶段先提交，各阶段等待真实前序完成并冻结其作品身份/SHA；正式角色/音色与本段原文保持，四任务各一次结算，重启和重放不重建",
@@ -1202,6 +1330,74 @@
             {
               "path": "replayNoNewTasks",
               "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "固定原项目前端/Go真实转换及隔离供应商六段调用对照；实际素材SHA、时长和音频、整图/完整分镜及前序规则由原生验收脚本断言，不冒充真实LLM或上游视频质量",
+          "evidenceKey": "icNativeGeneration",
+          "assertions": [
+            {
+              "path": "ok",
+              "value": true
+            },
+            {
+              "path": "sourceCommit",
+              "value": "68b37db04b9083c3ff0af67ffe362f85d04d1f9f"
+            },
+            {
+              "path": "results.1.name",
+              "value": "mosaic"
+            },
+            {
+              "path": "results.1.outputDurationMs",
+              "value": 12000
+            },
+            {
+              "path": "results.1.outputHasAudio",
+              "value": false
+            },
+            {
+              "path": "results.5.name",
+              "value": "editing"
+            },
+            {
+              "path": "results.5.wire.input.audio",
+              "value": true
+            },
+            {
+              "path": "formalModelCalls",
+              "value": 0
+            },
+            {
+              "path": "actualLlmStrategyExecuted",
+              "value": false
+            }
+          ]
+        },
+        {
+          "requirement": "当前主线四种Omni分支六个实际应用用例，带图/纯视频编辑保留音频、正确时长类型/比例，与纯视频参考限制区别；实际媒体私有权、幂等结算及重启保持",
+          "evidenceKey": "omniParity",
+          "assertions": [
+            {
+              "path": "ok",
+              "value": true
+            },
+            {
+              "path": "plannedCases",
+              "value": 6
+            },
+            {
+              "path": "completedCases",
+              "value": 6
+            },
+            {
+              "path": "actualAppDbRouterWorker",
+              "value": true
+            },
+            {
+              "path": "paidVideoApiCalls",
+              "value": 0
             }
           ]
         }
@@ -3214,7 +3410,7 @@
     {
       "id": "S01",
       "name": "鉴权私有媒体积分冻结",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/lib/video/submission.ts",
         "src/lib/media-assets.ts"
@@ -3223,17 +3419,103 @@
         "readonly",
         "history",
         "freeze",
-        "billing"
+        "billing",
+        "linuxRollback",
+        "linuxProtection",
+        "linuxFreeze",
+        "safetyFinal",
+        "billingCompletion"
       ],
-      "remaining": [
-        "最终候选上验证旧任务/私有媒体/配置兼容及账户积分保护",
-        "CI积分镜像竞态已定位并修复，本机完整计费检查通过；新CI及管理浏览器仍待实测"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "Actual private media bytes and Range, owner isolation, signed URL tamper and expiry; readonly administrators cannot impersonate writes",
+          "evidenceKey": "safetyFinal",
+          "assertions": [
+            {
+              "path": "twoAccountPrivateMediaAndExpiredUrls",
+              "value": true
+            },
+            {
+              "path": "adminReadonlyCannotImpersonateMutation",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "Actual c05 production baseline image and its original fixture seed; old rows survive additive DDL and restored-database rollback to fixed e997 and back",
+          "evidenceKey": "linuxRollback",
+          "assertions": [
+            {
+              "path": "legacyFixtureSeedSource",
+              "value": "c05a923e830d27aafcb1c0856dc15181dc21d92b"
+            },
+            {
+              "path": "legacyRowsExistedBeforeAdditiveDdlAndPreserved",
+              "value": true
+            },
+            {
+              "path": "databaseRestorationProven",
+              "value": true
+            },
+            {
+              "path": "rollbackAndReupgrade",
+              "value": true
+            },
+            {
+              "path": "newMediaFrameCompletesOnUnchangedLegacyBilling",
+              "value": true
+            },
+            {
+              "path": "oldRuntimeTicksPreserveUncertainTask",
+              "value": true
+            },
+            {
+              "path": "fullImmutableTaskRowsCompared",
+              "value": true
+            },
+            {
+              "path": "frozenVideoDefaultsIncluded",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "One settlement, cancellation and failed releases, unknown submissions held; frozen model and billing stages survive actual publication and App restart",
+          "evidenceKey": "safetyFinal",
+          "assertions": [
+            {
+              "path": "oneSettlementAndUnknownHeld",
+              "value": true
+            },
+            {
+              "path": "publishedConfigurationDoesNotChangeFrozenStages",
+              "value": true
+            },
+            {
+              "path": "legacyDataConfigAndCreditsAcrossRestoredRollback",
+              "value": true
+            },
+            {
+              "path": "formalSupplierCalls",
+              "value": 0
+            },
+            {
+              "path": "realVideoQualityValidated",
+              "value": false
+            },
+            {
+              "path": "successfulFullBillingRunner",
+              "value": true
+            }
+          ]
+        }
       ]
     },
     {
       "id": "S02",
       "name": "稳定生图与画布保护",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/components/canvas/canvas-client.tsx"
       ],
@@ -3242,17 +3524,73 @@
         "interactions",
         "agentBrowser",
         "script",
-        "completion"
+        "completion",
+        "protectionFinal",
+        "macInteraction"
       ],
-      "remaining": [
-        "本模块三种指定尺寸的设置界面已通过；稳定生图/Agent/画布整体同尺寸保护回归仍待完成",
-        "实体macOS/Safari未测明确记录",
-        "当前主线整合后的最终保护检查"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "四尺寸真实生图/透明像素/蒙版/防重复/本地免费转换/批次ZIP，以及桌面三页和作用域API；当前截图尺寸及回执SHA复核",
+          "evidenceKey": "protectionFinal",
+          "assertions": [
+            {
+              "path": "stableImageFourViewportsAndDesktop",
+              "value": true
+            },
+            {
+              "path": "ok",
+              "value": true
+            },
+            {
+              "path": "formalSupplierCalls",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "requirement": "真实Agent三尺寸/人类确认前不执行/关闭页面/重启Worker原链与全文恢复，原对话重放幂等",
+          "evidenceKey": "protectionFinal",
+          "assertions": [
+            {
+              "path": "agentThreeViewportsAndDurableRecovery",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "主线整合后空白文生/图生/目录冷启动故障重试、真实播放下载抽帧、只读与工作台三任务两结果/混合布局保护",
+          "evidenceKey": "protectionFinal",
+          "assertions": [
+            {
+              "path": "canvasCreationColdStartPlaybackAndReadonly",
+              "value": true
+            },
+            {
+              "path": "workbenchBatchHistoryAndMixedCanvas",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际Windows交互与模拟macOS身份的Backspace/Meta撤销重做、原节点身份/全文/素材保持；实体Mac/Safari未测明确记录",
+          "evidenceKey": "protectionFinal",
+          "assertions": [
+            {
+              "path": "windowsAndSimulatedMacNodeProtection",
+              "value": true
+            },
+            {
+              "path": "physicalMacSafariTested",
+              "value": false
+            }
+          ]
+        }
       ]
     }
   ],
   "deliveryGates": {
-    "comparison": "in-progress",
+    "comparison": "passed",
     "wholeBranchReview": "passed",
     "fixedLinuxRuntimeAndRollback": "pending",
     "release103": "pending",
