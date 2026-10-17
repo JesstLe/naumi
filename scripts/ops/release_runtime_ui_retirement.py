@@ -33,6 +33,7 @@ ZERO_FIELDS = ('running','canvasExecuting','creatingPromises','pendingCreating',
 
 
 def check_manifest(m):
+    old.require_binding_format(m)
     require(m.get('schemaVersion') == 1 and m.get('target') == '103.30.76.93', 'FIXED_103_ONLY')
     port = m.get('port'); require(type(port) is int and port in PINS, 'FIXED_HISTORICAL_UI_PORT_ONLY')
     cid, image, started = PINS[port]; p = m.get('identity', {})
@@ -49,6 +50,7 @@ def check_manifest(m):
 
 
 def check_row(row, m, *, running=True, original=True):
+    old.require_binding_format(m)
     p = m['identity']
     require(row['Id'] == p['id'] and row['Image'] == p['image'] and row['Name'].lstrip('/') == p['name'], 'CONCURRENT_CONTAINER_IDENTITY')
     if original: require(identity(row) == p, 'CONCURRENT_BOOT_IDENTITY')
@@ -67,7 +69,7 @@ def network_configuration(row):
     # demonstrably change on a real retained-CID stop/start. Preserve network
     # identity plus original declared aliases/static-IP request/driver options.
     fields=('NetworkID','Aliases','Links','IPAMConfig','DriverOpts','GwPriority')
-    return {name:{key:network.get(key) for key in fields} for name,network in row['NetworkSettings']['Networks'].items()}
+    return {name:{key:network.get(key) for key in fields} for name,network in old.canonical_networks(row['NetworkSettings']['Networks']).items()}
 
 
 def source_check(m, root):
@@ -184,7 +186,7 @@ def retire_one(tx,m,root,observe,task_proof,inspect_maps,final_references):
     for d in final['rawEvidence']: artifact(root,d)
     original=tx.inspect(m['identity']['id']);check_row(original,m)
     require(original['State']['Pid']==observations[-1]['pid'], 'RUNTIME_PID_CHANGED')
-    intent={'schemaVersion':1,'policy':m['policy'],'identity':m['identity'],'immutableSha256':immutable(original),'networkSha256':network_binding(original),'originalNetworkSettings':original['NetworkSettings']['Networks'],'networkConfigurationSha256':digest(encoded(network_configuration(original))),'originalRestartPolicy':original['HostConfig']['RestartPolicy'],'originalPortBindings':original['HostConfig']['PortBindings'],'inspector':descriptor,'tasksBefore':observations[-1]['taskProof'],'resourcesBefore':resources(tx),'ordinaryDrainReceipt':None,'restoreDatabase':False,'replayAcceptedTasks':False}
+    intent={'bindingHashFormat':old.BINDING_HASH_FORMAT,'schemaVersion':1,'policy':m['policy'],'identity':m['identity'],'immutableSha256':immutable(original),'networkSha256':network_binding(original),'originalNetworkSettings':original['NetworkSettings']['Networks'],'networkConfigurationSha256':digest(encoded(network_configuration(original))),'originalRestartPolicy':original['HostConfig']['RestartPolicy'],'originalPortBindings':original['HostConfig']['PortBindings'],'inspector':descriptor,'tasksBefore':observations[-1]['taskProof'],'resourcesBefore':resources(tx),'ordinaryDrainReceipt':None,'restoreDatabase':False,'replayAcceptedTasks':False}
     tx.save(journal_name(m,'intent'),intent)
     try:
         tx.run(['docker','update','--restart=no',original['Id']])
@@ -203,7 +205,7 @@ def retire_one(tx,m,root,observe,task_proof,inspect_maps,final_references):
 
 
 def restore_one(tx,m,intent,probe,*,required_available_mib):
-    check_manifest(m);require_lock(tx,m)
+    check_manifest(m);old.require_binding_format(intent);require_lock(tx,m)
     require(intent.get('identity')==m['identity'] and intent.get('immutableSha256')==m['immutableSha256'] and intent.get('networkSha256')==m['networkSha256'] and callable(probe), 'PINNED_RESTORE_INTENT_REQUIRED')
     require(not (tx.folder/journal_name(m,'restore-intent')).exists(), 'EXPLICIT_RECONCILIATION_REQUIRED')
     require(type(required_available_mib) is int and required_available_mib>=1024 and resources(tx)['MemAvailableKiB']//1024>=required_available_mib, 'RESTORE_MEMORY_SHORTFALL_KEEP_MAINTENANCE')

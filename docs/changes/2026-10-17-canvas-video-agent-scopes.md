@@ -34,6 +34,8 @@ audit_legacy_agent_scopes.mjs首先校验声明文件真实路径/完整SHA、�
 
 ## 持久任务观察与剩余工作
 
+后续已修正执行工具的挂载/网络顺序误报，并完成实际 103 五次只读复核及 27 项 Linux 测试；旧格式清单必须重新准备。详见 [Docker 绑定与当前引用观察](2026-10-17-canvas-video-docker-bindings.md)。该修正不改变以下任务、源自治和引用闭合待办。
+
 精确DB e39220c01cb2242abef8bc3604404859849808b0b4777f128aff5b4c85c76f74只读REPEATABLE READ观察：目标配置DB且URL与原核心一致，NAUMI_VIDEO_WORKER明确0、无MEDIA_WORKER_ORIGIN，目标IP对应PG连接/事务均0。网络命名空间只有业务3000及Docker DNS监听，无活动TCP会话。图片1298条中11未终态实际为pending9/needs_attention2；未过期且持有令牌的执行租约0，两个未来lease_until为无令牌延后重查，不应叫两条正在执行任务。supplier cost job4未终态/有效租约0；billing26及supplier158未终态保留。没有结算、清理、重放它们，也没有据这些聚合推导目标归属已完整闭合。
 
 还需完整自治入口/编译源证明、当前任务归属、全部内部调用/有效服务引用、静态材料和串行可恢复退役步骤，再实测RAM并完成锁内发布/回滚/线上验收/最终审计。当前未实际回收RAM，发布计数不增加。所有本轮exec扫描句柄均已确认terminal；没有正在持有的生产锁。
