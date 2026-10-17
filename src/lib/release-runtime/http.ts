@@ -118,8 +118,10 @@ export async function observeReleaseRequest(request: Request, handler: () => Pro
 
 export async function transportObservation() {
   const identity = releaseIdentity();
+  const configuredPort = process.env.NAUMI_RELEASE_HTTP_CONTROL_PORT ?? "3002";
+  if (!/^[1-9][0-9]{0,4}$/.test(configuredPort) || Number(configuredPort) > 65535) return { verified: false as const, reason: "preload-control-port-invalid" };
   try {
-    const response = await fetch("http://127.0.0.1:3002/status", { headers: { "x-release-control-secret": releaseSecret() }, signal: AbortSignal.timeout(1500), cache: "no-store", redirect: "error" });
+    const response = await fetch(`http://127.0.0.1:${configuredPort}/status`, { headers: { "x-release-control-secret": releaseSecret() }, signal: AbortSignal.timeout(1500), cache: "no-store", redirect: "error" });
     if (!response.ok) return { verified: false as const, reason: "preload-unavailable" };
     const data = await response.json();
     if (data.identity?.instanceId !== identity.instanceId || data.identity?.bootId !== identity.bootId || data.identity?.commit !== identity.commit || data.transport?.completeFromProcessStart !== true || data.transport?.accountingFault !== null && data.transport?.accountingFault !== false && data.transport?.accountingFault !== 0 || !Number.isSafeInteger(data.transport?.activeRequests) || data.transport.activeRequests < 0) return { verified: false as const, reason: "preload-identity-or-coverage-mismatch" };

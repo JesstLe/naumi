@@ -2,7 +2,7 @@
   "version": 1,
   "NAUMI_ENTERPRISE_PUBLIC_ORIGIN": "https://enterprise.example.invalid",
   "productFile": "/opt/naumi/design/enterprise-demo/preview.html",
-  "DATABASE_URL": "postgresql://SOURCE_READER:PASSWORD@127.0.0.1:5432/naumi_source",
+  "DATABASE_URL": "postgresql://NAUMI_WEB_USER:PASSWORD@127.0.0.1:5432/naumi_source",
   "NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID": "naumi-company",
   "NAUMI_ENTERPRISE_DEPLOYMENT_MODE": "dedicated",
   "NAUMI_ENTERPRISE_ALLOWED_IDS": "NAUMI_ENTERPRISE_UUID",
