@@ -91,7 +91,7 @@ async function runCanvasAgentLocal(request: Request) {
   }
   const started = new Date(), artifacts: Artifact[] = [], delivered = new Set<string>();
   let liveSession: Session | undefined;
-  const attach = async (result: unknown,tool:string) => {
+  const attach = async (result: unknown,tool:string,toolCallId:string) => {
     const details = record(record(result).details);
     if(["plan_video_script","plan_video_storyboard"].includes(tool)&&liveSession){
       const planned=Array.isArray(details.nodes)?details.nodes:[details.node];
@@ -113,7 +113,7 @@ async function runCanvasAgentLocal(request: Request) {
     const output = await getPool().query("UPDATE app_artworks SET parent_id=COALESCE(parent_id,$3),group_id=COALESCE($4,group_id),origin='canvas',source_url='agent',canvas_x=COALESCE(canvas_x,$5),canvas_y=COALESCE(canvas_y,$6),batch_id=COALESCE(batch_id,$10) WHERE email=$1 AND deleted_at IS NULL AND created_at >= $7 AND id<>ALL($8::text[]) AND (image_url=ANY($2::text[]) OR id=$9) RETURNING id,title,image_url", [email.toLowerCase(), urls, anchor?.id||null, anchor?.groupId || (projectKey.startsWith("tree:")?projectKey.slice(5):null), (anchor?.canvasX || 0) + (anchor?.canvasWidth || 320) + 80 + delivered.size * 40, (anchor?.canvasY || 0) + delivered.size * 40, started, ids, typeof details.artworkId === "string" ? details.artworkId : "", !anchor&&projectKey.startsWith("batch:")?projectKey.slice(6):null]);
     const added:Artifact[]=[];
     for (const row of output.rows) if (!delivered.has(row.id)) { delivered.add(row.id); const art={ id: row.id, image: row.image_url, title: row.title || "Agent 结果" };artifacts.push(art);added.push(art); }
-    if(liveSession&&added.length){appendSessionEvent(liveSession,"artifacts",{artifacts:added,anchorId,turnId:liveSession.turnId});await persistAgentSession(liveSession);}
+    if(liveSession&&added.length){appendSessionEvent(liveSession,"artifacts",{artifacts:added,anchorId,turnId:liveSession.turnId,toolCallId});await persistAgentSession(liveSession);}
   };
   await configuredToolCost();
   const session = await getOrCreateSession(email, sessionId, history.slice(0, -1), { cookie, authorization: request.headers.get("authorization") || "", imageQuality: canvas.quality }, modelId, {
@@ -136,7 +136,7 @@ async function runCanvasAgentLocal(request: Request) {
       let cursor = cursorStart, output = "", closed = false, failed = false;
       const send = (type: string, data: unknown) => { if (!closed) { try { controller.enqueue(encoder.encode(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`)); } catch { cancel(); } } };
       const flush = () => {
-        for (; cursor < session.events.length; cursor++) { const event = session.events[cursor]; if (event.type === "error") failed = true; send(event.type, event.data); }
+        for (; cursor < session.events.length; cursor++) { const event = session.events[cursor]; if (event.type === "error") failed = true; send(event.type, { ...event.data, at: event.at }); }
       };
       const timer = setInterval(flush, 300);
       const timeout = setTimeout(() => cancel(), 780000);
