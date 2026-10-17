@@ -80,7 +80,7 @@ export async function GET(
       }
     } catch {return new Response('Storage unavailable',{status:503,headers:{'cache-control':'no-store'}});}
   }
-  if (storageDriver !== "local" && (!privateMedia || remoteMediaAccess === "proxy" && remoteReadable)) {
+  if (storageDriver !== "local" && (!privateMedia || remoteReadable && (remoteMediaAccess === "proxy" || /\.(m3u8|mpd)$/i.test(rel)))) {
     try {
       const upstream = await fetchStoredObject(rel, request.headers.get("range") || "");
       if (privateMedia && upstream.status === 404) { remoteMissing=true;throw new Error("remote missing; try mirror"); }

@@ -45,7 +45,7 @@
       "kind": "actual-agent-app-worker-with-scripted-text-supplier"
     },
     "agentBrowser": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/agent-browser-181c28fb-6612-4511-8978-031aeaf722e1/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/agent-browser-c2b74acc-a321-4126-b4f1-57088669d417/result.json",
       "verifier": "scripts/verify-video-fusion-agent-browser.ts",
       "kind": "actual-agent-app-worker-browser-with-scripted-text-supplier"
     },
@@ -80,12 +80,12 @@
       "kind": "actual-app-worker-media"
     },
     "image": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-a/stable-image-browser-app.log",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/stable-image-browser-4094967-20261017.log",
       "verifier": "scripts/imagegen-ui-fixture.ts",
       "kind": "actual-app-browser-with-simulated-image-supplier"
     },
     "billing": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-a/billing-clean-app.log",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/billing-all-4094967-20261017.log",
       "verifier": "scripts/verify-billing-all.mjs",
       "kind": "isolated-postgres-regression"
     },
@@ -233,6 +233,11 @@
       "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/application-protocols-a6f446d3-870a-49cf-aea7-b6dfbd3b5451/result.json",
       "verifier": "scripts/verify-video-fusion-application-protocols.ts",
       "kind": "actual-app-db-router-worker-with-simulated-supplier"
+    },
+    "manifestAccess": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/manifest-access-20261017-review-fix.log",
+      "verifier": "scripts/verify-video-fusion-manifest-access.ts",
+      "kind": "actual-app-route-postgres-signed-s3-isolated-regression"
     }
   },
   "capabilities": [
