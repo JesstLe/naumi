@@ -1,0 +1,17 @@
+.box { min-width:0; padding:15px; margin:0 0 20px; border:1px solid #dce4f0; border-radius:11px; background:#fafbfe; }
+.box legend { font-size:12px; font-weight:600; color:#53657e; padding:0 6px; }
+.options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.option { display:flex; align-items:center; gap:10px; min-width:0; padding:12px; border:1px solid #e1e7f0; border-radius:8px; background:white; cursor:pointer; }
+.option[data-selected=true] { border-color:#9baef0; background:#f1f4ff; }
+.option input { accent-color:#4f46e5; flex-shrink:0; }
+.shape { display:block; width:23px; max-height:34px; flex-shrink:0; border:1.5px solid #9facbf; border-radius:3px; background:#f5f7fb; }
+.identity { flex:1; min-width:0; }
+.identity b { display:block; font-size:12px; color:#3b4b65; overflow-wrap:anywhere; font-weight:500; }
+.identity small { display:block; font-size:10px; color:#8d9aaf; margin-top:5px; }
+.option strong { font-size:12px; color:#657898; font-weight:500; flex-shrink:0; }
+.note { font-size:11px; color:#7f8da3; line-height:1.7; margin:11px 0 0; }
+.dimensions { display:block; font-size:10px; color:#91a0b4; margin-top:4px; }
+.materialName { flex:1; min-width:0; }
+.materialName>span { display:block; }
+.planFrame { border-top:1px solid #dce6f0; padding-top:8px; margin:8px 0 0; color:#4c617f; }
+@media(max-width:560px) { .options { grid-template-columns:minmax(0,1fr); } .box { padding:12px; } }
