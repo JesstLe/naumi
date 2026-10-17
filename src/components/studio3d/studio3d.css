@@ -10,6 +10,115 @@
   line-height: 1.5;
   color-scheme: light;
 }
+.s3-packaging-entry {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 30px;
+}
+.s3-packaging-entry > button {
+  padding: 22px;
+  text-align: left;
+  justify-content: flex-start;
+  background: #eef3eb;
+  border-color: #dbe4d6;
+}
+.s3-packaging-entry span {
+  display: grid;
+  gap: 5px;
+  flex: 1;
+}
+.s3-packaging-entry strong {
+  font-size: 16px;
+  font-weight: 600;
+}
+.s3-packaging-entry small {
+  color: #738071;
+}
+.s3-packaging-controls {
+  display: grid;
+  gap: 12px;
+}
+.s3-packaging-controls h2 {
+  margin-top: 12px;
+}
+.s3 .s3-packaging-controls .s3-upload {
+  min-height: 0;
+  padding: 12px;
+  gap: 5px;
+}
+.s3 .s3-packaging-controls .s3-field {
+  margin-bottom: 7px;
+}
+.s3 .s3-packaging-controls h2 {
+  margin-bottom: 8px;
+}
+.s3 .s3-packaging-entry > button {
+  padding: 22px;
+  background: #eef3eb;
+  border-color: #dbe4d6;
+}
+.s3-net {
+  width: 100%;
+  height: auto;
+  max-height: 300px;
+}
+.s3-net-button {
+  width: 100%;
+  position: relative;
+  padding: 15px !important;
+  background: #f9faf7 !important;
+}
+.s3-net-button > svg:last-child:not(:first-child) {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+}
+.s3-net-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: #7b827c;
+}
+.s3-net-modal {
+  position: fixed;
+  inset: 0;
+  background: #26352b55;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.s3-net-modal > div {
+  width: min(850px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: white;
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 16px 70px #243b3322;
+}
+.s3-net-modal header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.s3-net-modal .s3-net {
+  max-height: 65vh;
+}
+.s3-net-modal p {
+  text-align: center;
+  color: #738071;
+}
+@media (max-width: 700px) {
+  .s3-packaging-entry {
+    grid-template-columns: 1fr;
+  }
+  .s3-packaging-entry > button {
+    padding: 16px;
+  }
+}
 .s3 * {
   box-sizing: border-box;
 }

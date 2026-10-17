@@ -150,6 +150,8 @@ export class StudioEngine {
       p.labelY,
       p.model,
       p.photo,
+      p.packaging,
+      p.wrap,
     ]);
     if (signature !== this.productKey) {
       const next = await buildProduct(p);
@@ -183,6 +185,7 @@ export class StudioEngine {
       p.height,
       p.depth,
       p.output,
+      p.packaging?.fold,
     ]);
     if (key !== this.cameraKey || first) {
       if (p.camera) {

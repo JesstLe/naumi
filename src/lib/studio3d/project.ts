@@ -61,11 +61,34 @@ const vector = z.tuple([
 ]);
 export const projectSchema = z
   .object({
-    version: z.union([z.literal(1), z.literal(2)]),
+    version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
     id: z.string().uuid(),
     name: z.string().trim().min(1).max(80),
     updatedAt: z.string().datetime(),
-    template: z.enum(["bottle", "jar", "box", "imported", "photo-lathe"]),
+    template: z.enum([
+      "bottle",
+      "jar",
+      "box",
+      "imported",
+      "photo-lathe",
+      "carton",
+    ]),
+    packaging: z
+      .object({
+        kind: z.literal("tuck-carton"),
+        fold: z.number().finite().min(0).max(100),
+        artwork: imageData.nullable(),
+      })
+      .strict()
+      .optional(),
+    wrap: z
+      .object({
+        height: z.number().finite().min(1).max(300),
+        center: z.number().finite().min(0.05).max(0.95),
+        rotation: z.number().finite().min(-180).max(180),
+      })
+      .strict()
+      .optional(),
     photo: z
       .object({
         image: imageData,
@@ -130,9 +153,16 @@ export const projectSchema = z
   .superRefine((p, ctx) => {
     if (
       (p.template === "photo-lathe") !== !!p.photo ||
-      (p.version === 2) !== !!p.photo
+      (p.version === 2 && !p.photo) ||
+      (p.version === 1 && !!p.photo)
     )
       ctx.addIssue({ code: "custom", message: "照片工程版本或轮廓不匹配" });
+    if (
+      (p.template === "carton") !== !!p.packaging ||
+      (p.version === 3) !== !!(p.packaging || p.wrap) ||
+      (p.wrap && !["bottle", "jar", "photo-lathe"].includes(p.template))
+    )
+      ctx.addIssue({ code: "custom", message: "包装工程版本或类型不匹配" });
     if (p.photo) {
       const { profile, crop } = p.photo;
       if (

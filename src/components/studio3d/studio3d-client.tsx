@@ -50,6 +50,8 @@ import {
 import type { StudioEngine } from "@/lib/studio3d/engine";
 import "./studio3d.css";
 import { PhotoImport } from "./photo-import";
+import { PackagingControls } from "./packaging-controls";
+import { newCartonProject, newWrapProject } from "@/lib/studio3d/packaging";
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob),
@@ -443,6 +445,24 @@ export function StudioWorkspace({ owner }: { owner: string }) {
           </div>
         </header>
         {notice}
+        <div className="s3-packaging-entry">
+          <button disabled={!!busy} onClick={() => open(newCartonProject())}>
+            <Package size={25} />
+            <span>
+              <strong>刀模折叠成盒</strong>
+              <small>标准插口盒 · 六面设计 · 展开与折叠</small>
+            </span>
+            <ChevronRight size={18} />
+          </button>
+          <button disabled={!!busy} onClick={() => open(newWrapProject())}>
+            <RotateCcw size={25} />
+            <span>
+              <strong>瓶罐环绕标签</strong>
+              <small>完整展开稿 · 360° 查看</small>
+            </span>
+            <ChevronRight size={18} />
+          </button>
+        </div>
         <section className="s3-new">
           <div className="s3-section-title">
             <h2>新建产品</h2>
@@ -637,7 +657,9 @@ export function StudioWorkspace({ owner }: { owner: string }) {
                 ? project.photo
                   ? "照片轮廓 · 本机"
                   : project.modelName
-                : TEMPLATES.find((t) => t.id === project.template)?.name}
+                : project.packaging
+                  ? "标准插口盒"
+                  : TEMPLATES.find((t) => t.id === project.template)?.name}
               <small>
                 {project.photo
                   ? "轴对称近似"
@@ -656,7 +678,15 @@ export function StudioWorkspace({ owner }: { owner: string }) {
             {!imported && (
               <span>
                 <ImagePlus size={14} />
-                {project.label ? "标签贴图" : "未添加贴图"}
+                {project.packaging
+                  ? project.packaging.artwork
+                    ? "六面展开设计"
+                    : "未添加展开设计"
+                  : project.label
+                    ? project.wrap
+                      ? "整圈标签"
+                      : "标签贴图"
+                    : "未添加贴图"}
               </span>
             )}
             <button onClick={() => setTab("scene")}>
@@ -849,7 +879,7 @@ export function StudioWorkspace({ owner }: { owner: string }) {
                 />
               </>
             )}
-            {project.photo && tab === "material" && (
+            {project.photo && !project.wrap && tab === "material" && (
               <>
                 <h2>模型显示</h2>
                 <div className="s3-options">
@@ -891,7 +921,9 @@ export function StudioWorkspace({ owner }: { owner: string }) {
                   <>
                     <p className="s3-hint">
                       {project.photo
-                        ? "照片正面投影 / 未知背面"
+                        ? project.wrap
+                          ? "照片轮廓 / 环绕标签"
+                          : "照片正面投影 / 未知背面"
                         : project.modelName}
                     </p>
                     <p className="s3-hint">
@@ -903,7 +935,11 @@ export function StudioWorkspace({ owner }: { owner: string }) {
                 ) : (
                   <>
                     <Field
-                      label={project.template === "box" ? "宽度" : "直径"}
+                      label={
+                        project.template === "box" || project.packaging
+                          ? "宽度"
+                          : "直径"
+                      }
                       value={project.width}
                       min={15}
                       max={250}
@@ -922,7 +958,7 @@ export function StudioWorkspace({ owner }: { owner: string }) {
                         patch({ height: value, camera: null })
                       }
                     />
-                    {project.template === "box" && (
+                    {(project.template === "box" || project.packaging) && (
                       <Field
                         label="深度"
                         value={project.depth}
@@ -934,48 +970,62 @@ export function StudioWorkspace({ owner }: { owner: string }) {
                         }
                       />
                     )}
-                    <div className="s3-divider" />
-                    <h2>标签贴图</h2>
-                    {project.label ? (
-                      <div className="s3-label-preview">
-                        <img src={project.label} alt="当前标签" />
-                        <button
-                          aria-label="移除标签"
-                          onClick={() => patch({ label: null })}
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ) : null}
-                    <button
-                      className="s3-upload"
-                      onClick={() => label.current?.click()}
-                    >
-                      <ImagePlus size={18} />
-                      {project.label ? "更换贴图" : "上传标签 / 包装设计"}
-                      <small>PNG · JPG · WebP</small>
-                    </button>
-                    {project.label && (
+                    {!project.packaging && !project.wrap && (
                       <>
-                        <Field
-                          label="贴图大小"
-                          min={0.2}
-                          max={1}
-                          step={0.01}
-                          value={project.labelScale}
-                          onChange={(value) => patch({ labelScale: value })}
-                        />
-                        <Field
-                          label="贴图位置"
-                          min={0.2}
-                          max={0.65}
-                          step={0.01}
-                          value={project.labelY}
-                          onChange={(value) => patch({ labelY: value })}
-                        />
+                        <div className="s3-divider" />
+                        <h2>标签贴图</h2>
+                        {project.label ? (
+                          <div className="s3-label-preview">
+                            <img src={project.label} alt="当前标签" />
+                            <button
+                              aria-label="移除标签"
+                              onClick={() => patch({ label: null })}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ) : null}
+                        <button
+                          className="s3-upload"
+                          onClick={() => label.current?.click()}
+                        >
+                          <ImagePlus size={18} />
+                          {project.label ? "更换贴图" : "上传标签 / 包装设计"}
+                          <small>PNG · JPG · WebP</small>
+                        </button>
+                        {project.label && (
+                          <>
+                            <Field
+                              label="贴图大小"
+                              min={0.2}
+                              max={1}
+                              step={0.01}
+                              value={project.labelScale}
+                              onChange={(value) => patch({ labelScale: value })}
+                            />
+                            <Field
+                              label="贴图位置"
+                              min={0.2}
+                              max={0.65}
+                              step={0.01}
+                              value={project.labelY}
+                              onChange={(value) => patch({ labelY: value })}
+                            />
+                          </>
+                        )}
                       </>
                     )}
                   </>
+                )}
+                {(project.packaging ||
+                  ["bottle", "jar", "photo-lathe"].includes(
+                    project.template,
+                  )) && (
+                  <PackagingControls
+                    project={project}
+                    onChange={patch}
+                    onError={setError}
+                  />
                 )}
                 <div className="s3-divider" />
                 <Field
@@ -991,7 +1041,7 @@ export function StudioWorkspace({ owner }: { owner: string }) {
             {tab === "material" && (
               <>
                 <h2>主体材质</h2>
-                {imported ? (
+                {imported && !project.wrap ? (
                   <p className="s3-hint">
                     {project.photo
                       ? "原图像素直接映射到前半面，不重画品牌文字。"

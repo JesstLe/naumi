@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { base64ToBinary, validateGlb, type StudioProject } from "./project";
 import { buildPhotoMesh } from "./photo-mesh";
+import { buildCarton, buildWrap } from "./packaging-mesh";
 
 export function disposeObject(object: THREE.Object3D) {
   const materials = new Set<THREE.Material>(),
@@ -51,8 +52,16 @@ export async function buildProduct(p: StudioProject): Promise<THREE.Group> {
   const product = new THREE.Group();
   product.name = p.name;
   try {
-    if (p.template === "photo-lathe") {
-      product.add(await buildPhotoMesh(p));
+    if (p.template === "carton") {
+      product.add(await buildCarton(p));
+    } else if (p.template === "photo-lathe") {
+      product.add(
+        await buildPhotoMesh(
+          p.wrap && p.photo
+            ? { ...p, photo: { ...p.photo, textureMode: "clay" } }
+            : p,
+        ),
+      );
     } else if (p.template === "imported") {
       const bytes = base64ToBinary(p.model!);
       validateGlb(bytes);
@@ -190,7 +199,7 @@ export async function buildProduct(p: StudioProject): Promise<THREE.Group> {
           h / 2,
         );
       }
-      if (p.label) {
+      if (p.label && !p.wrap) {
         const texture = await new THREE.TextureLoader().loadAsync(p.label);
         texture.colorSpace = THREE.SRGBColorSpace;
         const aspect = texture.image.width / texture.image.height;
@@ -245,6 +254,7 @@ export async function buildProduct(p: StudioProject): Promise<THREE.Group> {
         }
       }
     }
+    if (p.wrap && p.label) product.add(await buildWrap(p));
     product.rotation.y = THREE.MathUtils.degToRad(p.rotation);
     product.updateMatrixWorld(true);
     return product;
