@@ -18,9 +18,16 @@ export async function workspacePreview(pool:Pool,m:{source:{root:string;foreign:
  await pool.query("INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds)VALUES($1,$2,'second-worker','[\"request\"]','[]')",[secondTenant,thirdTeam]);
  await pool.query("INSERT INTO enterprise_workflow.source_enterprises(source_instance,source_enterprise,enterprise_id)VALUES('fixture-source-a',$1,$2)",[secondSource,secondTenant]);
  await pool.query("INSERT INTO enterprise_workflow.source_identities(source_instance,source_enterprise,enterprise_id,source_subject,subject)VALUES('fixture-source-a',$1,$2,$3,'second-worker')",[secondSource,secondTenant,m.source.ordinary]);
+ const db=await import('../src/lib/db');
+ for(const [subject,email,kind,nickname] of [['designer-b','designer-b@fixture.invalid','design','合成设计乙'],['artist','artist@fixture.invalid','artwork','合成美工']]){
+  await db.getOrCreateUser(email,nickname);await pool.query("INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment)VALUES($1,$2,$3,NULL,'permanent')",[m.source.root,email,m.source.owner]);
+  await pool.query('INSERT INTO enterprise_workflow.accounts(enterprise_id,subject)VALUES($1,$2)',[m.enterpriseId,subject]);await pool.query("INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds)VALUES($1,$2,$3,'[\"execute\"]',$4)",[m.enterpriseId,m.teamId,subject,JSON.stringify([kind])]);
+  await pool.query("INSERT INTO enterprise_workflow.source_identities(source_instance,source_enterprise,enterprise_id,source_subject,subject)VALUES('fixture-source-a',$1,$2,$3,$4)",[m.source.root,m.enterpriseId,email,subject]);
+  await pool.query("INSERT INTO enterprise_workflow.person_profiles(enterprise_id,person_id,real_name,nickname,source_instance,source_enterprise,source_subject)VALUES($1,$2,'合成真名',$3,'fixture-source-a',$4,$5)",[m.enterpriseId,randomUUID(),nickname,m.source.root,email]);
+ }
  process.env.NAUMI_ENTERPRISE_DEPLOYMENT_MODE='shared';process.env.NAUMI_ENTERPRISE_ALLOWED_IDS='';
  const port=18508,origin='http://127.0.0.1:'+port;
- const accounts:Record<string,string>={employee:m.source.ordinary,manager:m.source.owner,personal:'workspace-personal@fixture.invalid',unbound:'staff@fixture.invalid'};
+ const accounts:Record<string,string>={employee:m.source.ordinary,manager:m.source.owner,personal:'workspace-personal@fixture.invalid',unbound:'staff@fixture.invalid',designer:'designer-b@fixture.invalid',artist:'artist@fixture.invalid'};
  const server=createServer(async(req,res)=>{try{
   if(req.headers.host!==`127.0.0.1:${port}`){res.writeHead(400);return res.end();}const u=new URL(req.url||'/',origin);
   const respond=(status:number,value:unknown)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));};

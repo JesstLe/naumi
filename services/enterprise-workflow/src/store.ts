@@ -6,6 +6,8 @@ import { canRead, evolve } from './domain';
 const sourceSchema=z.strictObject({sourceHash:z.string().regex(/^[a-f0-9]{64}$/),row:z.number().int().min(2).max(10001),expectedVersion:z.number().int().positive(),intent:z.literal('standalone'),confirmed:z.literal(true)});
 const intakeSchema=z.strictObject({command:commandSchema,source:sourceSchema});
 const listSchema=z.strictObject({query:z.string().max(120).default(''),status:z.enum(['','draft','submitted','approved','active','completed','cancelled','archived']).default(''),page:z.coerce.number().int().min(1).max(10000).default(1)});
+const tasksSchema=z.strictObject({query:z.string().max(120).default(''),status:z.enum(['','open','assigned','claimed','in_progress','blocked','review','rework','accepted']).default(''),scope:z.enum(['all','mine','claimable']).default('all'),page:z.coerce.number().int().min(1).max(10000).default(1)});
+const assigneeSchema=z.strictObject({query:z.string().max(120).default(''),kind:z.enum(['','design','artwork']).default(''),page:z.coerce.number().int().min(1).max(10000).default(1)});
 
 // Must check live membership, enabled/expiry, entry grant, feature policy and business permissions.
 // It is also called for an assignment target; role display names and client headers are not authority.
@@ -71,6 +73,34 @@ export class WorkflowStore {
       return {order,events,source};
     });
   }
+  async tasks(principal:Principal,raw:unknown={}){
+    const q=tasksSchema.parse(raw);
+    return this.transaction(async tx=>{
+      const a=await this.actor(tx,principal),v=[a.enterpriseId,a.teamId??null,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,q.status,q.scope,q.query];
+      const where=`o.enterprise_id=$1 AND (o.document->>'teamId') IS NOT DISTINCT FROM $2::text
+       AND ($3::boolean OR o.document->>'requester'=$4 OR EXISTS(SELECT 1 FROM jsonb_array_elements(o.document->'tasks') x WHERE x->>'assignee'=$4)
+        OR ($5::boolean AND o.document->>'status'='active' AND EXISTS(SELECT 1 FROM jsonb_array_elements(o.document->'tasks') x WHERE x->>'status'='open' AND x->>'kind'=ANY($6::text[]))))
+       AND ($7='' OR t->>'status'=$7) AND ($8='all' OR $8='mine' AND t->>'assignee'=$4 OR $8='claimable' AND $5::boolean AND o.document->>'status'='active' AND t->>'status'='open' AND t->>'kind'=ANY($6::text[]) AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(t->'dependencyIds') d WHERE NOT EXISTS(SELECT 1 FROM jsonb_array_elements(o.document->'tasks') x WHERE x->>'id'=d AND x->>'status'='accepted')))
+       AND ($9='' OR strpos(lower((o.document->>'title')||' '||(t->>'title')),lower($9))>0)`;
+      const from='FROM enterprise_workflow.orders o CROSS JOIN LATERAL jsonb_array_elements(o.document->\'tasks\') t';
+      const result=await tx.query(`SELECT o.document,t AS task,count(*) OVER() AS total ${from} WHERE ${where} ORDER BY (t->>'dueAt')::timestamptz,o.id,t->>'id' LIMIT 30 OFFSET $10`,[...v,(q.page-1)*30]);
+      const total=result.rows.length?Number(result.rows[0].total):Number((await tx.query(`SELECT count(*) AS n ${from} WHERE ${where}`,v)).rows[0].n);
+      return {tasks:result.rows.filter(r=>canRead(a,r.document)).map(r=>{const o=r.document as WorkOrder;return {order:{id:o.id,title:o.title,status:o.status,version:o.version,requester:o.requester},task:r.task};}),total,page:q.page,pageSize:30,viewer:{subject:a.subject,permissions:a.permissions,workKinds:a.workKinds}};
+    });
+  }
+  async assignees(principal:Principal,raw:unknown={}){
+    const q=assigneeSchema.parse(raw);
+    return this.transaction(async tx=>{
+      const a=await this.actor(tx,principal);if(!a.permissions.includes('dispatch')||!a.teamId)throw new WorkflowError(403,'DISPATCH_REQUIRED');
+      const values=[a.enterpriseId,a.teamId,q.kind,q.query,principal.sourceBinding?.sourceInstance??'',principal.sourceBinding?.sourceEnterprise??null];
+      const from=`FROM enterprise_workflow.team_members m JOIN enterprise_workflow.accounts a USING(enterprise_id,subject)
+       LEFT JOIN LATERAL (SELECT p.nickname FROM enterprise_workflow.source_identities i JOIN enterprise_workflow.source_enterprises e USING(source_instance,source_enterprise,enterprise_id) JOIN enterprise_workflow.person_profiles p ON p.enterprise_id=i.enterprise_id AND p.source_instance=i.source_instance AND p.source_enterprise=i.source_enterprise AND p.source_subject=i.source_subject WHERE i.enterprise_id=m.enterprise_id AND i.subject=m.subject AND i.source_instance=$5 AND i.source_enterprise=$6::uuid AND i.enabled AND e.enabled AND p.enabled LIMIT 1) p ON true`;
+      const where=`m.enterprise_id=$1 AND m.team_id=$2 AND m.enabled AND a.enabled AND (m.expires_at IS NULL OR m.expires_at>now()) AND (a.expires_at IS NULL OR a.expires_at>now()) AND m.permissions ? 'execute' AND ($3='' OR m.work_kinds ? $3) AND ($4='' OR strpos(lower(m.subject||' '||COALESCE(p.nickname,'')),lower($4))>0)`;
+      const result=await tx.query(`SELECT m.subject,m.work_kinds AS "workKinds",COALESCE(p.nickname,'') AS nickname,count(*) OVER() AS total ${from} WHERE ${where} ORDER BY m.subject LIMIT 30 OFFSET $7`,[...values,(q.page-1)*30]);
+      const total=result.rows.length?Number(result.rows[0].total):Number((await tx.query(`SELECT count(*) AS n ${from} WHERE ${where}`,values)).rows[0].n);
+      return {members:result.rows.map(({subject,workKinds,nickname})=>({subject,workKinds,nickname})),total,page:q.page,pageSize:30};
+    });
+  }
   async promote(principal:Principal,raw:unknown){
     const c=intakeSchema.parse(raw);
     if(c.command.action.type!=='create'||c.command.expectedVersion!==0)throw new WorkflowError(400,'INTAKE_REQUIRES_CREATE');
@@ -113,6 +143,7 @@ export class WorkflowStore {
         if((await tx.query('SELECT 1 FROM enterprise_workflow.order_sources WHERE enterprise_id=$1 AND source_hash=$2 AND row_number=$3',[principal.enterpriseId,source.sourceHash,source.row])).rowCount)throw new WorkflowError(409,'SOURCE_ALREADY_PROMOTED');
       }
       if (command.action.type === 'assign') {
+        if(!previous||!canRead(actor,previous)||!actor.permissions.includes('dispatch'))throw new WorkflowError(403,'FORBIDDEN');
         const action = command.action;
         const target = await this.actor(tx, { enterpriseId: principal.enterpriseId, subject: action.assignee, ...(principal.teamId ? { teamId: principal.teamId } : {}) });
         const task = previous?.tasks.find(t => t.id === action.taskId);

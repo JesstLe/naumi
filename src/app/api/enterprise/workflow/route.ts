@@ -12,6 +12,8 @@ const query=z.discriminatedUnion('action',[
  z.strictObject({action:z.literal('people-audit'),...scope}),
  z.strictObject({action:z.literal('orders'),...scope,query:z.string().max(120).optional(),status:z.enum(['','draft','submitted','approved','active','completed','cancelled','archived']).optional(),page:z.coerce.number().int().min(1).max(10000).optional()}),
  z.strictObject({action:z.literal('order'),...scope,id:z.string().uuid()}),
+ z.strictObject({action:z.literal('tasks'),...scope,query:z.string().max(120).optional(),status:z.enum(['','open','assigned','claimed','in_progress','blocked','review','rework','accepted']).optional(),scope:z.enum(['all','mine','claimable']).optional(),page:z.coerce.number().int().min(1).max(10000).optional()}),
+ z.strictObject({action:z.literal('assignees'),...scope,query:z.string().max(120).optional(),kind:z.enum(['','design','artwork']).optional(),page:z.coerce.number().int().min(1).max(10000).optional()}),
 ]);
 export async function GET(request:Request){
  const parsed=query.safeParse(Object.fromEntries(new URL(request.url).searchParams));if(!parsed.success)return teamJson({error:'工作区参数无效'},400);
@@ -19,7 +21,7 @@ export async function GET(request:Request){
   if(parsed.data.action==='discovery'){const data=await workflowDiscovery(request);if(!rateLimit('workflow-discovery:'+data.viewer.email,30,60_000))return teamJson({error:'请求过于频繁'},429);return teamJson(data);}
   const identity=await workflowSourceIdentity(request,parsed.data.enterpriseId);
   if(!rateLimit('workflow-identity:'+JSON.stringify(identity),60,60_000))return teamJson({error:'请求过于频繁'},429);
-  const config=workflowBridgeConfig();let response:Response;const q=parsed.data,path=q.action==='context'?'/v1/identity/workspaces':q.action==='people'?'/v1/people?source='+q.sourceHash:q.action==='orders'?'/v1/orders?'+new URLSearchParams({query:q.query||'',status:q.status||'',page:String(q.page||1)}):q.action==='order'?'/v1/orders/'+q.id+'/detail':'/v1/people/audit';
+  const config=workflowBridgeConfig();let response:Response;const q=parsed.data,path=q.action==='context'?'/v1/identity/workspaces':q.action==='people'?'/v1/people?source='+q.sourceHash:q.action==='orders'?'/v1/orders?'+new URLSearchParams({query:q.query||'',status:q.status||'',page:String(q.page||1)}):q.action==='order'?'/v1/orders/'+q.id+'/detail':q.action==='tasks'?'/v1/tasks?'+new URLSearchParams({query:q.query||'',status:q.status||'',scope:q.scope||'all',page:String(q.page||1)}):q.action==='assignees'?'/v1/assignees?'+new URLSearchParams({query:q.query||'',kind:q.kind||'',page:String(q.page||1)}):'/v1/people/audit';
   try{response=await fetch(config.origin+path,{headers:{authorization:'Bearer '+workflowIdentityToken(identity,config,'teamId' in q?q.teamId:undefined),Accept:'application/json'},cache:'no-store',redirect:'error',signal:AbortSignal.timeout(5000)});}catch{return teamJson({error:'WORKFLOW_SERVICE_UNAVAILABLE'},503);}
   if(!response.ok&&q.action==='context')return teamJson({error:response.status===403?'WORKFLOW_IDENTITY_NOT_BOUND_OR_REVOKED':'WORKFLOW_SERVICE_UNAVAILABLE'},response.status===403?403:503);
   if(q.action!=='context'){if(!response.headers.get('content-type')?.includes('application/json'))return teamJson({error:'WORKFLOW_RESPONSE_INVALID'},502);return teamJson(await response.json(),response.status);}
