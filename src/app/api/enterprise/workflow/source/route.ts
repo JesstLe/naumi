@@ -1,3 +1,4 @@
+import {workflowSameOrigin} from '@/lib/enterprise/workflow-origin';
 import {sign} from 'node:crypto';
 import {z} from 'zod';
 import {teamJson,teamFailure} from '@/lib/teams/access';
@@ -41,7 +42,7 @@ export async function GET(request:Request){
 }
 export async function POST(request:Request){
  const scopeQuery=z.strictObject({enterpriseId:scope.enterpriseId,teamId:scope.teamId}).safeParse(Object.fromEntries(new URL(request.url).searchParams));if(!scopeQuery.success)return teamJson({error:'INVALID_SOURCE_QUERY'},400);
- if(request.headers.get('origin')!==new URL(request.url).origin||request.headers.get('sec-fetch-site')==='cross-site')return teamJson({error:'ORIGIN_REQUIRED'},403);
+ if(!workflowSameOrigin(request))return teamJson({error:'ORIGIN_REQUIRED'},403);
  if(!request.headers.get('content-type')?.startsWith('application/json'))return teamJson({error:'JSON_REQUIRED'},415);
  try{
   const chunks:Uint8Array[]=[];let size=0;const reader=request.body?.getReader();if(reader)for(;;){const r=await reader.read();if(r.done)break;size+=r.value.byteLength;if(size>16384){await reader.cancel();return teamJson({error:'BODY_TOO_LARGE'},413);}chunks.push(r.value);}

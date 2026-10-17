@@ -169,3 +169,13 @@ linux-runtime-g15b.md记录固定基础镜像、精简构建上下文、非root/
 本轮不改变18482产品HTML、不迁移真实schema8、不创建正式任务/真实员工映射、不连接生产或发送真实供应商请求。Linux本机参考负载与真实服务器4核8GiB容量分别记录；真实Web登录/企业配置、完整部署组合和代理蓝绿仍待完成。
 
 功能同步计数2→3，本模块选择性提交后刷新整合origin/main并归零，提交与整合SHA写入enterprise-linux-g15b-20261017。总目标ACTIVE；下一步继续Naumi Web与工作流实际组合及真实配置准备，不把运行镜像完成当整套上线。
+
+## G15-C Web接线预检与真实HTTP组合（2026-10-17）
+
+web-composition-g15c.md记录Web/runtime配置对应、两阶段预检、公共Origin/Host校验与实际Next验证。组合预检核对源实例/模式/企业集合、API端口、独立库、Ed25519密钥对和原HTMLhash；实时阶段只读源库，核对runtime真实身份/版本/就绪，不写源账号、不迁移源schema，仍要求真实会话探测。
+
+实际Next HTTP验证暴露共享依赖Next14与锁文件15不一致及原Origin比较导致写入403。现独立安装锁定依赖，不改共享node_modules；六个写入口通过明确公共Origin+原始Host核验，不信任forwarded-host、不放宽localhost等价。旧无配置直接调用保持严格原行为。
+
+9组实际HTTP组合覆盖原生口令登录/会话、原HTML、个人/企业隔离、需求到签收与贡献、原文件字节、源生成账号/提示词/积分及签名关联、禁用/撤销/切号/跨站拒绝。源库与工作流库分别持久化；数据均为合成，供应商调用0。最终固定包、Linux与旧模块回归、类型检查和副本回滚见enterprise-composition-g15c-20261017的VERIFICATION.txt。
+
+本轮功能计数1（G15-B归零后），提交前刷新main并保留实际SHA。真实schema8/364行/292附件和18482入口不改；没有真实身份绑定或生产发布。Next开发服务器实际HTTP通过不等于standalone生产镜像完成；下一步完整生产Web构建及Linux组合、目标代理/容量与真实公司配置。总目标ACTIVE。

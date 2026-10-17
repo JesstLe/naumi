@@ -1,3 +1,4 @@
+import {workflowSameOrigin} from '@/lib/enterprise/workflow-origin';
 import { z } from 'zod';
 import { workflowBridgeConfig,workflowIdentityToken,workflowSourceIdentity,workflowDiscovery } from '@/lib/enterprise/workflow-identity';
 import { teamJson,teamFailure } from '@/lib/teams/access';
@@ -39,7 +40,7 @@ export async function GET(request:Request){
 }
 export async function POST(request:Request){
  const q=z.strictObject({action:z.enum(['people-profile','people-preview','people-apply','intake','command','schedule-command','batch-preview']),...scope}).safeParse(Object.fromEntries(new URL(request.url).searchParams));if(!q.success)return teamJson({error:'工作区参数无效'},400);
- if(request.headers.get('origin')!==new URL(request.url).origin||request.headers.get('sec-fetch-site')==='cross-site')return teamJson({error:'ORIGIN_REQUIRED'},403);
+ if(!workflowSameOrigin(request))return teamJson({error:'ORIGIN_REQUIRED'},403);
  if(!request.headers.get('content-type')?.startsWith('application/json'))return teamJson({error:'JSON_REQUIRED'},415);
  try{
   const identity=await workflowSourceIdentity(request,q.data.enterpriseId);if(!rateLimit('workflow-write:'+JSON.stringify(identity),60,60_000))return teamJson({error:'请求过于频繁'},429);

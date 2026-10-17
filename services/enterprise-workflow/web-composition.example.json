@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "NAUMI_ENTERPRISE_PUBLIC_ORIGIN": "https://enterprise.example.invalid",
+  "productFile": "/opt/naumi/design/enterprise-demo/preview.html",
+  "DATABASE_URL": "postgresql://SOURCE_READER:PASSWORD@127.0.0.1:5432/naumi_source",
+  "NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID": "naumi-company",
+  "NAUMI_ENTERPRISE_DEPLOYMENT_MODE": "dedicated",
+  "NAUMI_ENTERPRISE_ALLOWED_IDS": "NAUMI_ENTERPRISE_UUID",
+  "NAUMI_WORKFLOW_SERVICE_URL": "http://127.0.0.1:18495",
+  "NAUMI_WORKFLOW_SIGNING_KID": "bff-v1",
+  "NAUMI_WORKFLOW_SIGNING_KEY": "ED25519_PRIVATE_KEY_PEM_FROM_PROTECTED_NAUMI_WEB_CONFIGURATION"
+}
