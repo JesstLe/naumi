@@ -39,7 +39,7 @@ node scripts/verify-enterprise-integration.mjs --product
 node scripts/serve-enterprise-product.mjs 18482 18491
 ```
 
-首次加载遇到旧浏览器缓存时刷新页面；不要清 localStorage。后台 readyz 与 API 独立检查，不能只看静态 HTML 的 HTTP 200。旧误方向的 18490 和候选 18492 已结束；18483 既有进程未操作。
+首次加载遇到旧浏览器缓存时刷新页面；不要清 localStorage。后台 readyz 与 API 独立检查，不能只看静态 HTML 的 HTTP 200。隔离数据源启动器单次运行上限一小时，到期清理一次性数据库；页面仍可浏览本地流程，重新运行终端 A 可恢复合成来源。旧误方向的 18490 和候选 18492 已结束；18483 既有进程未操作。
 
 ## 5. 集中验收与证据
 
