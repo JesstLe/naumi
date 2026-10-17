@@ -107,7 +107,12 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
     };await startMediaWorker();
     const seed=JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/video-fusion/fixture.ts","--seed-private"],env)) as Seed;
     const startApp=async()=>{
-      app=spawn(process.execPath,["node_modules/next/dist/bin/next","dev","--hostname","127.0.0.1","--port",String(appPort)],{cwd:root,env,windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("app",app);
+      const builtRoot=process.env.VIDEO_FIXTURE_BUILT_APP_ROOT;
+      if(builtRoot&&(process.platform!=="linux"||builtRoot!=="/fixed-app"||!/^[a-f0-9]{40}$/.test(process.env.VIDEO_FIXTURE_BUILT_SOURCE_COMMIT||"")||!/^\d{10}$/.test(process.env.VIDEO_FIXTURE_BUILT_VERSION||"")))throw new Error("Fixed Linux fixture image metadata required");
+      // The Linux fixture has no network interface except loopback; its fake
+      // BYOC endpoint uses the existing explicit private-network opt-in.
+      const appEnv:NodeJS.ProcessEnv=builtRoot?{...env,NODE_ENV:"production",HOSTNAME:"127.0.0.1",PORT:String(appPort),USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK:"true",SOURCE_COMMIT:process.env.VIDEO_FIXTURE_BUILT_SOURCE_COMMIT!,BUILD_VERSION:process.env.VIDEO_FIXTURE_BUILT_VERSION!}:env;
+      app=spawn(process.execPath,builtRoot?[path.join(builtRoot,"server.js")]:["node_modules/next/dist/bin/next","dev","--hostname","127.0.0.1","--port",String(appPort)],{cwd:builtRoot||root,env:appEnv,windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("app",app);
       const deadline=Date.now()+120_000;let ready=false;
       while(Date.now()<deadline){
         if(app.exitCode!==null)throw new Error(`Fixture app exited ${app.exitCode}: ${logs.slice(-4).join("\n")}`);
@@ -115,6 +120,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
         if(ready)break;await new Promise(resolve=>setTimeout(resolve,300));
       }
       if(!ready)throw new Error("Fixture app/database readiness failed");
+      if(builtRoot){const version=await fetch(baseUrl+"/api/version").then(response=>response.json());if(version.commit!==process.env.VIDEO_FIXTURE_BUILT_SOURCE_COMMIT||String(version.version)!==process.env.VIDEO_FIXTURE_BUILT_VERSION)throw new Error("Fixed Linux App version mismatch");}
     };
     const startWorker=()=>{if(options.startWorker!==false){worker=spawn(process.execPath,["scripts/video-worker.mjs"],{cwd:root,env,windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("worker",worker);}};
     await startApp();startWorker();

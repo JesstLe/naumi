@@ -10,12 +10,12 @@
   "realVideoQualityValidated": false,
   "evidenceRegistry": {
     "canvas": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-browser-2494ea71-055f-4698-92a8-45997fe13329/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-browser-4d3e1dcd-527d-4804-b762-54f4bb8e286d/result.json",
       "verifier": "scripts/verify-video-fusion-canvas.ts",
       "kind": "actual-app-browser-with-simulated-suppliers"
     },
     "interactions": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-interactions-f66e292f-bf98-40c5-bf2d-9ffb47a38350/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-interactions-3a68f5e4-0e66-4c9d-96d8-fe871f698fec/result.json",
       "verifier": "scripts/verify-video-fusion-canvas-interactions.ts",
       "kind": "actual-app-browser"
     },
@@ -65,7 +65,7 @@
       "kind": "actual-app-worker"
     },
     "workbench": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/workbench-d024905a-de37-495d-b99b-9f71e35397a5/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/workbench-86f4dc30-46fc-4787-8dfd-0bf70c3f1c3b/result.json",
       "verifier": "scripts/verify-video-fusion-workbench.ts",
       "kind": "actual-app-browser"
     },
@@ -110,7 +110,7 @@
       "kind": "actual-app-worker-with-simulated-suppliers"
     },
     "completion": {
-      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/completion-1ba5c2d7-f2d6-4a5b-a186-08b7e0a878be/result.json",
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/completion-d63db153-e499-40f6-a578-56199b577a70/result.json",
       "verifier": "scripts/verify-video-fusion-completion.ts",
       "kind": "actual-app-worker-browser-with-simulated-suppliers"
     },
@@ -238,6 +238,26 @@
       "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/manifest-access-20261017-review-fix.log",
       "verifier": "scripts/verify-video-fusion-manifest-access.ts",
       "kind": "actual-app-route-postgres-signed-s3-isolated-regression"
+    },
+    "comparisonAudit": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/comparison-audit-20261017.json",
+      "verifier": "scripts/verify-video-fusion-comparison.mjs",
+      "kind": "actual-upstream-observation-and-application-evidence-audit-with-limitations"
+    },
+    "packagedLegacy": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/packaged-legacy-e997b29-ui.json",
+      "verifier": "scripts/verify-video-worker-packaged.mjs",
+      "kind": "actual-fixed-linux-image-worker-entrypoint-and-control-http"
+    },
+    "macInteraction": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-c/canvas-interactions-d5d81a7f-03d3-4165-ba81-5f76bcf280e3/result.json",
+      "verifier": "scripts/verify-video-fusion-canvas-interactions.ts",
+      "kind": "actual-app-browser-with-simulated-mac-platform-and-real-key-events"
+    },
+    "protectionFinal": {
+      "artifact": "output/canvas-video-fusion-20261013/checkpoint-d/protection-20261017.json",
+      "verifier": "scripts/verify-video-fusion-protection.mjs",
+      "kind": "actual-app-browser-protection-audit-with-hashed-run-receipts"
     }
   },
   "capabilities": [
@@ -3384,7 +3404,7 @@
     {
       "id": "S02",
       "name": "稳定生图与画布保护",
-      "state": "evidence-review-pending",
+      "state": "application-e2e-passed",
       "implementation": [
         "src/components/canvas/canvas-client.tsx"
       ],
@@ -3393,18 +3413,74 @@
         "interactions",
         "agentBrowser",
         "script",
-        "completion"
+        "completion",
+        "protectionFinal",
+        "macInteraction"
       ],
-      "remaining": [
-        "本模块三种指定尺寸的设置界面已通过；稳定生图/Agent/画布整体同尺寸保护回归仍待完成",
-        "实体macOS/Safari未测明确记录",
-        "当前主线整合后的最终保护检查"
+      "remaining": [],
+      "criteria": [
+        {
+          "requirement": "四尺寸真实生图/透明像素/蒙版/防重复/本地免费转换/批次ZIP，以及桌面三页和作用域API；当前截图尺寸及回执SHA复核",
+          "evidenceKey": "protectionFinal",
+          "assertions": [
+            {
+              "path": "stableImageFourViewportsAndDesktop",
+              "value": true
+            },
+            {
+              "path": "ok",
+              "value": true
+            },
+            {
+              "path": "formalSupplierCalls",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "requirement": "真实Agent三尺寸/人类确认前不执行/关闭页面/重启Worker原链与全文恢复，原对话重放幂等",
+          "evidenceKey": "protectionFinal",
+          "assertions": [
+            {
+              "path": "agentThreeViewportsAndDurableRecovery",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "主线整合后空白文生/图生/目录冷启动故障重试、真实播放下载抽帧、只读与工作台三任务两结果/混合布局保护",
+          "evidenceKey": "protectionFinal",
+          "assertions": [
+            {
+              "path": "canvasCreationColdStartPlaybackAndReadonly",
+              "value": true
+            },
+            {
+              "path": "workbenchBatchHistoryAndMixedCanvas",
+              "value": true
+            }
+          ]
+        },
+        {
+          "requirement": "实际Windows交互与模拟macOS身份的Backspace/Meta撤销重做、原节点身份/全文/素材保持；实体Mac/Safari未测明确记录",
+          "evidenceKey": "protectionFinal",
+          "assertions": [
+            {
+              "path": "windowsAndSimulatedMacNodeProtection",
+              "value": true
+            },
+            {
+              "path": "physicalMacSafariTested",
+              "value": false
+            }
+          ]
+        }
       ]
     }
   ],
   "deliveryGates": {
-    "comparison": "in-progress",
-    "wholeBranchReview": "pending",
+    "comparison": "passed",
+    "wholeBranchReview": "passed",
     "fixedLinuxRuntimeAndRollback": "pending",
     "release103": "pending",
     "finalAudit": "pending"
