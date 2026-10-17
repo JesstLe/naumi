@@ -112,3 +112,9 @@ node services/enterprise-workflow/tools/fixture-browser-check.mjs OUTPUT_DIRECTO
 运行包schema20；formsEnabled未配置时关闭。受保护配置设为true后，以`runtime.mjs forms-enable-plan --config CONFIG --admin ADMIN --input INPUT`取得planHash，再用`forms-enable ... --preview-hash HASH`启用。INPUT包含commandId、reason和confirmedAllReadersAndWritersUpgraded:true；此确认不替代真实所有读写槽位排空证据。catalog_enabled独立保持商品配置语义。生产更新仍沿蓝绿、备份、登录/DB及受影响功能验收；不直接运行在当前真实schema8导入库上。
 
 字段/接口/迁移合同及剩余附件、批量需求范围见[详细PRD](../../docs/enterprise/demand-forms-g31.md)。
+
+## 需求复制与批量建单（G32）
+
+运行schema21新增成功批次回执。demandBatchEnabled默认false，明确配置true后开放新API；复制表单/商品仍受其各自开关及团队权限控制，不改变已有流程兼容下限。原需求中心“批量新建/建单回执”、需求详情“复制需求”；1—20条只读预览后整批事务创建草稿。历史状态/人员/任务/附件/验收/积分不会继承。
+
+API、锁顺序、幂等、回执私有和排除范围见[详细PRD](../../docs/enterprise/demand-batch-g32.md)。旧20固定包对21库新草稿的读取/改写兼容通过独立运行进程验证；该证据不是生产蓝绿发布完成。新上传附件规则仍待后续。

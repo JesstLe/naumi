@@ -2,6 +2,7 @@
   "version": 1,
   "catalogEnabled": false,
   "formsEnabled": false,
+  "demandBatchEnabled": false,
   "installationId": "company-workflow",
   "slot": "blue",
   "expectedDatabase": "naumi_workflow",

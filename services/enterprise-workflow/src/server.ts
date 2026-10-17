@@ -24,12 +24,12 @@ function json(res: ServerResponse, status: number, value: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(value));
 }
-async function body(req: IncomingMessage) {
+async function body(req: IncomingMessage,limit=128*1024) {
   if (!req.headers['content-type']?.startsWith('application/json')) throw new WorkflowError(415, 'JSON_REQUIRED');
   const chunks: Buffer[] = []; let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 128 * 1024) throw new WorkflowError(413, 'BODY_TOO_LARGE');
+    if (size > limit) throw new WorkflowError(413, 'BODY_TOO_LARGE');
     chunks.push(chunk);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
@@ -127,6 +127,9 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
         return json(res, 200, await scheduling.get(principal, teamId));
       }
       if(req.method==='GET'&&url.pathname==='/v1/dashboard')return json(res,200,await store.dashboard(principal,Object.fromEntries(url.searchParams)));
+      if(url.pathname==='/v1/demand-batches'&&req.method==='GET')return json(res,200,await store.demandBatches.read(principal,Object.fromEntries(url.searchParams)));
+      if(url.pathname==='/v1/demand-batches/preview'&&req.method==='POST')return json(res,200,await store.demandBatches.preview(principal,await body(req,512*1024)));
+      if(url.pathname==='/v1/demand-batches/apply'&&req.method==='POST')return json(res,200,await store.demandBatches.apply(principal,await body(req,512*1024)));
       if(url.pathname==='/v1/demand-forms'&&req.method==='GET')return json(res,200,await store.forms.read(principal,Object.fromEntries(url.searchParams)));
       if(url.pathname==='/v1/demand-forms'&&req.method==='POST')return json(res,200,await store.forms.execute(principal,await body(req)));
       if(url.pathname==='/v1/catalog'&&req.method==='GET')return json(res,200,await store.catalog.read(principal,Object.fromEntries(url.searchParams)));

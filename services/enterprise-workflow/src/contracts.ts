@@ -81,6 +81,7 @@ export type Task = {
   submittedAt: string | null; acceptedAt: string | null; assetIds: string[]; quality: number | null;
 };
 export type WorkOrder = {
+  creationOrigin?:{batchId:string;orderId?:string;version?:number};
   form?:FormSnapshot|null;
   catalog?:CatalogSnapshot|null;
   requestTeamId?:string;routingFields?:RoutingFields;
