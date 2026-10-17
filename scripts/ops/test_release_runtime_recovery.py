@@ -164,6 +164,10 @@ class SessionRecoveryTests(unittest.TestCase):
             def verify_runtime_policy(self,state):
                 self.record('runtime-verify');return {'verified':True}
             def rollback_media(self):return {'retained':True}
+            def rollback_boundary(self,state,operation):
+                self.record('rollback-boundary');return {'fixtureOnly':True}
+            def rollback_business_proof(self,state,operation):
+                self.record('rollback-business-proof');return {'fixtureOnly':True}
         adapter=Adapter();spec=video_plan();tx=SimpleNamespace(stack=True,folder=root)
         current=session.MaintenanceSession(tx,spec,adapter=adapter,state_root=root/'state')
         def step(action,**fields):
@@ -180,6 +184,20 @@ class SessionRecoveryTests(unittest.TestCase):
             self.assertEqual(current.state['phase'],'ACTIVE')
             self.assertNotIn('runtime-verify',adapter.calls)
 
+    def test_preopen_boundary_is_saved_once_before_app_resume(self):
+        with tempfile.TemporaryDirectory() as directory:
+            current,adapter,step=self.active(pathlib.Path(directory))
+            self.assertLess(adapter.calls.index('rollback-boundary'),adapter.calls.index('app-resume'))
+            self.assertEqual(adapter.calls.count('rollback-boundary'),1)
+            self.assertEqual(current.state['rollbackBoundary'],{'fixtureOnly':True})
+
+    def test_missing_preopen_boundary_is_never_rebased_after_activation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            current,adapter,step=self.active(pathlib.Path(directory))
+            del current.state['rollbackBoundary'];current.state['phase']='PRESERVED';current.persist()
+            with self.assertRaisesRegex(Hold,'ORIGINAL_PREOPEN_BOUNDARY_MISSING'):step('activate')
+            self.assertEqual(adapter.calls.count('rollback-boundary'),1)
+
     def test_finalize_then_finish_checks_actual_policy(self):
         with tempfile.TemporaryDirectory() as directory:
             current,adapter,step=self.active(pathlib.Path(directory))
@@ -195,6 +213,7 @@ class SessionRecoveryTests(unittest.TestCase):
             calls=adapter.calls[start:]
             self.assertLess(calls.index('runtime-disable'),calls.index('worker-drain'))
             self.assertLess(calls.index('worker-drain'),calls.index('app-drain'))
+            self.assertLess(calls.index('app-drain'),calls.index('rollback-business-proof'))
             self.assertNotIn('gateway-rollback-open',calls);self.assertNotIn('restore-caller',calls)
             self.assertTrue(current.state['rollbackRuntimeDisarmed'])
 

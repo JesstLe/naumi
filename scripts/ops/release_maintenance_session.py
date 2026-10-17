@@ -286,6 +286,24 @@ class LiveAdapter:
                     row_limit=5000, projection='proof', allow_absent_tables=tasks.ADDITIVE_TABLES)
         return {'public': result.public, 'private': result.private}
 
+    def rollback_boundary(self, state, operation):
+        import release_rollback_guard as guard
+        statuses = {w['variant']: controls.app_status(self.tx, state['webs'][w['variant']]['running'])
+                    for w in self.plan['webs']}
+        result = guard.capture(self.tx, self.plan, state, statuses, self.private_save(operation))
+        # A restart or newly accepted request during the read-only transaction
+        # invalidates the boundary. Never mix observations from different boots.
+        again = {w['variant']: controls.app_status(self.tx, state['webs'][w['variant']]['running'])
+                 for w in self.plan['webs']}
+        require(result['binding'] == guard.runtime_binding(self.plan, state, again),
+                'ROLLBACK_RUNTIME_CHANGED_DURING_SNAPSHOT')
+        return result
+
+    def rollback_business_proof(self, state, operation):
+        import release_rollback_guard as guard
+        observed = self.rollback_boundary(state, operation)
+        return guard.compare(state.get('rollbackBoundary'), observed)
+
     def legacy_safety(self, *, frozen, retired=(), restored=False, restore_reconcile=False):
         """A paused external caller does not stop App-internal timers."""
         caller = self.plan['legacyCaller']['identity']
@@ -976,6 +994,12 @@ class MaintenanceSession:
                 self.quiescent_worker(operation)
                 state['activationAcceptance'] = adapter.acceptance(state, state['acceptedDescriptor'], operation)
                 self.persist()
+            if maintenance.canvas_video_hk(self.plan['authorization']) and not state.get('rollbackBoundary'):
+                require(not state.get('openGateway') and not any(k.startswith('app-open-') for k in state),
+                        'ORIGINAL_PREOPEN_BOUNDARY_MISSING')
+                self.quiescent_worker(operation)
+                state['rollbackBoundary'] = adapter.rollback_boundary(state, self.op(operation, 'rollback-boundary'))
+                self.persist()
             for web in self.plan['webs']:
                 adapter.legacy_safety(frozen=True, retired=state['retired'])
                 variant = web['variant']; name = 'app-open-' + variant
@@ -1035,6 +1059,14 @@ class MaintenanceSession:
                     state['rollback-app-' + variant] = adapter.app_control(web['running'], 'drain', self.op(operation, 'app-drain-' + variant))
                     self.persist()
             if maintenance.canvas_video_hk(self.plan['authorization']):
+                if state.get('rollbackBoundary'):
+                    # Re-observe on every attempt; a stored PASS is never a
+                    # reusable permit to resume an older caller or gateway.
+                    state['rollbackBusinessProof'] = adapter.rollback_business_proof(state, self.op(operation, 'rollback-business'))
+                    self.persist()
+                # Business equality alone does not seal the live HTTP ingress.
+                # Keep the existing hold until candidate->maintenance sealing
+                # and its original-intent reconciliation are implemented.
                 require(not state.get('openGateway'), 'POST_ACTIVATION_ACCEPTED_WORK_AUDIT_REQUIRED')
             kind = 'rollback-open' if state.get('openGateway') else 'rollback-maintenance'
             if not state.get('rollbackGateway'):
