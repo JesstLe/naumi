@@ -38,16 +38,16 @@ def timestamp():
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
-def check_path(name, path):
+def check_path(name, path, method='GET'):
     parsed = urllib.parse.urlsplit(path)
     require(not parsed.scheme and not parsed.netloc and path.startswith('/') and '\r' not in path and '\n' not in path,
             'CANDIDATE_RELATIVE_URL_REQUIRED')
     routes = {'login': ('/api/auth/session',), 'canvas': ('/api/projects', '/canvas'),
-              'private-media': ('/api/media/',), 'old-client': ('/_next/static/', '/desktop/_next/static/', '/enterprise/_next/static/'),
-              'skills': ('/api/agent/skills',), 'packaging': ('/api/packaging-strategy', '/tools/packaging-strategy'),
+              'private-media': ('/api/media/', '/media/'), 'old-client': ('/_next/static/', '/desktop/_next/static/', '/enterprise/_next/static/'),
+              'skills': ('/api/image-skills', '/api/image-skills/import'), 'packaging': ('/api/packaging-strategy', '/tools/packaging-strategy'),
               'desktop-ui': ('/desktop', '/desktop/'), 'enterprise-ui': ('/enterprise', '/enterprise/'),
               'health': ('/api/health',), 'version': ('/api/version',)}
-    require(name in routes and any(parsed.path == prefix or prefix.endswith('/') and parsed.path.startswith(prefix)
+    require((name not in ['skills', 'private-media'] or method == 'GET') and name in routes and any(parsed.path == prefix or prefix.endswith('/') and parsed.path.startswith(prefix)
                                    for prefix in routes[name]), 'FEATURE_SPECIFIC_NONBILLABLE_GET_REQUIRED')
 
 
@@ -246,15 +246,18 @@ class LiveAdapter:
         errors = result.get('errors')
         require(isinstance(errors, list), 'FRESH_BASELINE_INCOMPLETE')
         if errors:
-            # Only this explicitly authorized Oct16 103 maintenance baseline can
+            # Only an explicitly authorized Oct16 target-bound maintenance baseline can
             # retain these catalog observation gaps. They remain real errors,
             # never systemd-reference completeness, task drain or stop evidence.
             allowed = {('systemd-unit-list', 'SERVICE_LIMIT_EXCEEDED'),
                        ('systemd-unit-cat', 'OBSERVATION_UNAVAILABLE'),
                        ('systemd-unit-show', 'OBSERVATION_UNAVAILABLE')}
-            require(self.plan.get('target') == '103.30.76.93' and
-                    getattr(self.tx, 'target', None) == '103.30.76.93' and
-                    self.plan.get('authorization', {}).get('target') == '103.30.76.93' and
+            target = self.plan.get('target')
+            authorization = self.plan.get('authorization', {})
+            require(target in ['47.105.59.142', '103.30.76.93'] and
+                    getattr(self.tx, 'target', None) == target and
+                    authorization.get('target') == target and
+                    (target != '47.105.59.142' or authorization.get('mode') == 'one-time-maintenance') and
                     all(isinstance(error, dict) and
                         (error.get('source'), error.get('code')) in allowed for error in errors),
                     'FRESH_BASELINE_INCOMPLETE')
@@ -719,7 +722,7 @@ class LiveAdapter:
                         response['request']['url'].startswith('http://127.0.0.1:' + str(web['port']) + '/') and
                         response.get('responseBodySha256') and HASH.fullmatch(response['responseBodySha256']),
                         'REAL_RESPONSE_AND_ASSERTIONS_REQUIRED')
-                check_path(item['name'], urllib.parse.urlsplit(response['request']['url']).path)
+                check_path(item['name'], urllib.parse.urlsplit(response['request']['url']).path, response['request']['method'])
                 body = relative_artifact(self.tx.folder, response['body']).read_bytes()
                 require(body and sha(body) == response['responseBodySha256'], 'ACTUAL_RESPONSE_BODY_CHANGED')
                 require(any(a.get('kind') in ['json', 'bodyContains', 'bodySha256'] for a in response['assertions']) and
@@ -930,19 +933,29 @@ class MaintenanceSession:
 
     def step(self, request):
         maintenance.authorize(self.plan['authorization'])
-        require(isinstance(request, dict) and set(request) <= {'action', 'operationId', 'expectedRevision', 'variant', 'reconcile', 'artifact'} and
+        require(isinstance(request, dict) and set(request) <= {'action', 'operationId', 'expectedRevision', 'variant', 'reconcile', 'artifact', 'acknowledgeFailure'} and
                 UUID.fullmatch(request.get('operationId', '')) and type(request.get('expectedRevision')) is int,
                 'TYPED_STEP_UUID_AND_REVISION_REQUIRED')
         action, operation = request['action'], request['operationId']
-        clean = {key: value for key, value in request.items() if key != 'reconcile'}
+        closing = request.get('acknowledgeFailure') is True
+        require('acknowledgeFailure' not in request or closing and request.get('reconcile') is True and
+                action == 'capture-acceptance', 'EXPLICIT_READONLY_CAPTURE_FAILURE_ACK_REQUIRED')
+        clean = {key: value for key, value in request.items() if key not in ['reconcile', 'acknowledgeFailure']}
         binding = sha(encoded(clean)); old = self.state['operations'].get(operation)
         if old:
             require(old['requestSha256'] == binding, 'OPERATION_UUID_BINDING_CONFLICT')
             if old['phase'] == 'ACKNOWLEDGED':
+                if old.get('outcome') == 'FAILED_READONLY':
+                    return {'result': 'READ_ONLY_CAPTURE_FAILED', 'failure': copy.deepcopy(old['failureReceipt']),
+                            'operationId': operation, **self.public()}
+                require(not closing, 'ORIGINAL_UNKNOWN_READONLY_CAPTURE_REQUIRED')
                 return {'result': 'ALREADY_ACKNOWLEDGED', 'operationId': operation, **self.public()}
             require(request.get('reconcile') is True and old['phase'] in ['INTENT_RECORDED', 'UNKNOWN'],
                     'EXPLICIT_ORIGINAL_UUID_RECONCILIATION_REQUIRED')
+            if closing:
+                return self.acknowledge_capture_failure(operation)
         else:
+            require(not closing, 'ORIGINAL_UNKNOWN_READONLY_CAPTURE_REQUIRED')
             require(request.get('reconcile') is not True and request['expectedRevision'] == self.state['revision'], 'REVISION_CONFLICT')
             require(not any(r['phase'] != 'ACKNOWLEDGED' for r in self.state['operations'].values()), 'UNKNOWN_OPERATION_BLOCKS_NEXT')
             require(self.state['phase'] not in TERMINAL, 'SESSION_ALREADY_TERMINAL')
@@ -963,6 +976,35 @@ class MaintenanceSession:
             self.state['lastError'] = str(error) if isinstance(error, Hold) and re.fullmatch('[A-Z0-9_]+', str(error)) else 'STEP_RESULT_UNKNOWN'
             self.state['revision'] += 1; self.persist()
             raise Hold(self.state['lastError']) from None
+
+    def acknowledge_capture_failure(self, operation):
+        """Close a known failed GET assertion, never produce acceptance evidence."""
+        state = self.state; record = state['operations'][operation]
+        allowed = {'HTTP_FEATURE_RESPONSE_FAILED', 'HTTP_FEATURE_ASSERTION_FAILED',
+                   'HTTP_FEATURE_BODY_HASH_FAILED', 'HTTP_FEATURE_BODY_CONTENT_FAILED'}
+        forbidden = {'collectedAcceptance', 'acceptance', 'acceptedDescriptor', 'after', 'preservation',
+                     'comparison', 'activationAcceptance', 'openGateway', 'activation',
+                     'rollbackPreservation', 'rollbackGateway', 'rollbackCaller', 'rollbackWorkerPaused'}
+        history = state.get('history', [])
+        require(state.get('phase') == 'CANDIDATES' and record.get('phase') == 'UNKNOWN' and
+                record.get('request', {}).get('action') == 'capture-acceptance' and
+                state.get('lastError') in allowed and not forbidden.intersection(state) and
+                not any(key.startswith(('app-open-', 'rollback-app-')) for key in state) and
+                all(key == operation or row.get('phase') == 'ACKNOWLEDGED'
+                    for key, row in state['operations'].items()) and
+                history and history[-1].get('action') == 'capture-acceptance' and
+                history[-1].get('operationId') == operation and history[-1].get('result') == 'UNKNOWN',
+                'ORIGINAL_UNKNOWN_READONLY_CAPTURE_REQUIRED')
+        receipt = {'outcome': 'FAILED_READONLY', 'assertionError': state['lastError'],
+                   'operationId': operation, 'requestSha256': record['requestSha256'],
+                   'acceptanceEvidence': False, 'adapterInvoked': False, 'closedAt': timestamp()}
+        record.update(phase='ACKNOWLEDGED', outcome='FAILED_READONLY', failureReceipt=receipt,
+                      resultSha256=sha(encoded(receipt)))
+        state['history'].append({'action': 'capture-acceptance', 'operationId': operation,
+                                'result': 'FAILED_READONLY', 'assertionError': state['lastError'], 'at': timestamp()})
+        state.pop('lastError', None); state['revision'] += 1; self.persist()
+        return {'result': 'READ_ONLY_CAPTURE_FAILED', 'failure': copy.deepcopy(receipt),
+                'operationId': operation, **self.public()}
 
     def validate_action(self, action, request):
         phase = self.state['phase']
@@ -1008,7 +1050,33 @@ class MaintenanceSession:
     def dispatch(self, action, request, operation, reconcile):
         state, adapter = self.state, self.adapter
         if action == 'baseline':
-            require(not reconcile, 'UNKNOWN_BASELINE_REQUIRES_ORIGINAL_PRIVATE_SNAPSHOT_REVIEW')
+            if reconcile:
+                # inventory assignment precedes the first snapshot call. Its
+                # absent key proves this failed operation never reached that
+                # call. Do not replace any original/partial snapshot or allow a
+                # later lifecycle state to masquerade as a fresh baseline.
+                initial = self.new_state()
+                record = state.get('operations', {}).get(operation, {})
+                original = record.get('request', {})
+                history = state.get('history', [])
+                defaults = ['webs', 'retired', 'legacyDrainProven', 'legacyActiveTicks',
+                            'acceptedTasks', 'agentSessions', 'databaseRestored', 'tasksReplayed']
+                require(state.get('phase') == 'NEW' and
+                        set(state) <= set(initial) | {'status', 'lastError'} and
+                        set(initial) <= set(state) and
+                        all(encoded(state[key]) == encoded(initial[key]) for key in defaults) and
+                        set(state['operations']) == {operation} and
+                        set(record) == {'requestSha256', 'request', 'phase', 'recordedAt'} and
+                        record.get('phase') == 'UNKNOWN' and
+                        set(original) == {'action', 'operationId', 'expectedRevision'} and
+                        original.get('action') == 'baseline' and original.get('operationId') == operation and
+                        original.get('expectedRevision') == 0 and
+                        isinstance(history, list) and len(history) > 0 and
+                        all(isinstance(item, dict) and item.get('action') == 'baseline' and
+                            item.get('operationId') == operation and item.get('result') == 'UNKNOWN'
+                            for item in history) and
+                        state.get('revision') == len(history) + 1,
+                        'UNKNOWN_BASELINE_REQUIRES_ORIGINAL_PRIVATE_SNAPSHOT_REVIEW')
             state['baselineInventory'] = adapter.inventory(operation)
             state['before'] = adapter.snapshot(operation)
             state['phase'] = 'BASELINED'; return state['before']['public']
