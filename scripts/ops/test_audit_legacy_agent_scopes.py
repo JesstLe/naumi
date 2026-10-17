@@ -19,10 +19,13 @@ def run(argv,**kwargs):
 def main():
     p=argparse.ArgumentParser();p.add_argument('--image',required=True);p.add_argument('--output',required=True)
     modes=('empty','session','creating','wrong-binding','wrong-source','unloaded','hidden-prototype',
-           'process-getter','process-proxy','immediate-getter','immediate-wrapper','timer-export')
+           'process-getter','process-proxy','immediate-getter','immediate-wrapper','timer-export',
+           'continuations-empty','continuations-active','continuations-timeout-export',
+           'continuations-requests-export','continuations-proxy','continuations-fs','continuations-hidden-timer')
     p.add_argument('--mode',choices=modes);a=p.parse_args()
     root=Path(a.output).resolve();root.mkdir(parents=True,exist_ok=False)
     script=Path(__file__).with_name('audit_legacy_agent_scopes.mjs').read_bytes();results=[]
+    auditor_sha=hashlib.sha256(script).hexdigest();fixture_sha=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     source="""const mode=process.env.FIXTURE_MODE;
 function make(active,creating){try{let M=new Map,N=new Map;
 if(active)M.set('private-fixture@example.invalid::tmp-session',{id:'tmp-session',email:'private-fixture@example.invalid'});
@@ -41,6 +44,20 @@ if(mode==='process-proxy')globalThis.process=new Proxy(process,{get:poisoned,get
 if(mode==='immediate-getter')Object.defineProperty(globalThis,'setImmediate',{configurable:true,get:poisoned});
 if(mode==='immediate-wrapper')globalThis.setImmediate=poisoned;
 if(mode==='timer-export')require('node:timers').setImmediate=poisoned;
+if(mode==='continuations-active'){
+ const timers=require('node:timers');globalThis.activeTimer=timers.setInterval(()=>{globalThis.auditSideEffects++},60000);activeTimer.unref();
+ globalThis.destroyedTimer=timers.setTimeout(poisoned,60000);timers.clearTimeout(destroyedTimer);
+}
+if(mode==='continuations-timeout-export')require('node:timers').setTimeout=poisoned;
+if(mode==='continuations-requests-export')process._getActiveRequests=poisoned;
+if(mode==='continuations-proxy')globalThis.activeTimer=require('node:timers').setTimeout(new Proxy(poisoned,{get:trap,getPrototypeOf:trap,getOwnPropertyDescriptor:trap}),60000);
+if(mode==='continuations-hidden-timer'){
+ globalThis.activeTimer=require('node:timers').setTimeout(poisoned,60000);Object.setPrototypeOf(activeTimer,null);
+}
+if(mode==='continuations-fs'){
+ require('node:child_process').execFileSync('/usr/bin/mkfifo',['/tmp/fixture-fifo']);
+ require('node:fs').readFile('/tmp/fixture-fifo',()=>{});
+}
 """
     agent=root/'agent.cjs';agent.write_text(source)
     entry=root/'server.cjs';entry.write_text("if(process.env.FIXTURE_MODE!=='unloaded')require('./agent.cjs');require('node:http').createServer((q,s)=>{s.end(JSON.stringify({proxyTrapCalls:globalThis.proxyTrapCalls||0,auditSideEffects:globalThis.auditSideEffects||0}))}).listen(9081,'127.0.0.1');console.log('FIXTURE_READY');")
@@ -63,24 +80,37 @@ if(mode==='timer-export')require('node:timers').setImmediate=poisoned;
             encoded=base64.b64encode(json.dumps({'schemaVersion':1,'modules':[declared]}).encode()).decode()
             command=['docker','exec','-i','-e','NODE_OPTIONS=',name,'node','--input-type=module','-',
                      '--pid','1','--allow-sigusr1','--accept-full-gc','--allowed-target-listen-ports','9081','--contract-base64',encoded]
+            if mode.startswith('continuations-'):command.append('--observe-native-continuations')
             observed=subprocess.run(command,input=script,capture_output=True,timeout=150)
             report=json.loads(observed.stdout);(root/(mode+'.json')).write_text(json.dumps(report,indent=2))
             assert 'private-fixture@example.invalid' not in observed.stdout.decode()
             assert report['ordinaryDrainReceipt'] is None and not report['allApplicationRuntimeObserved']
             assert not report['applicationMethodsCalled'] and not report['heapSnapshotTaken'] and not report['debuggerPausedByAudit']
             assert report['allDeclaredModuleScopesEnumerated'] is False
-            if mode in ('empty','session','creating','hidden-prototype','immediate-getter','immediate-wrapper'):
+            if mode in ('empty','session','creating','hidden-prototype','immediate-getter','immediate-wrapper',
+                        'continuations-empty','continuations-active','continuations-fs','continuations-hidden-timer'):
                 assert observed.returncode==0,report
                 assert report['allMatchedPrototypeFunctionsProcessed'] and len(report['clones'])==(1 if mode=='hidden-prototype' else 2),report
                 assert report['counts']=={'sessionEntries':int(mode=='session'),'creatingEntries':int(mode=='creating')},report
                 assert report['status']==('OBSERVED_DECLARED_BINDINGS_NONEMPTY' if mode in ('session','creating') else 'OBSERVED_DECLARED_BINDINGS_PARTIAL')
                 assert report['inspectorClosedConfirmed'] and report['trustedCoreCleanupValidated']
                 assert report['scopeKindsSeen'].get('Block',0)>0
+                if mode.startswith('continuations-'):
+                    seen=report['nativeContinuations'];assert seen['completedSnapshot'] and not seen['allApplicationContinuationsObserved']
+                    assert seen['unknown']==0 and seen['ordinaryDrainReceipt'] is None
+                    owned=[x for x in seen['callbacks'] if x['scriptSourceSha256']==module['sha256']]
+                    if mode=='continuations-active':assert len(owned)==1 and seen['destroyedTimers']>=1
+                    else:assert not owned
+                    assert any(x['builtinSourceVerified'] and x['boundDepth']>0 for x in seen['callbacks']),seen
+                    assert seen['activeRequests']==int(mode=='continuations-fs'),seen
             else:
                 assert observed.returncode==2 and report['status']=='HOLD',report
                 assert report['holdReason']=={'wrong-binding':'DECLARED_BINDING_NOT_NATIVE_MAP','wrong-source':'DECLARED_SOURCE_BYTES_CHANGED',
                     'unloaded':'DECLARED_MODULE_NOT_LOADED','process-getter':'TRUSTED_CORE_FUNCTION_UNAVAILABLE',
-                    'process-proxy':'TRUSTED_PROCESS_UNAVAILABLE','timer-export':'TRUSTED_CORE_FUNCTION_UNAVAILABLE'}[mode],report
+                    'process-proxy':'TRUSTED_PROCESS_UNAVAILABLE','timer-export':'TRUSTED_CORE_FUNCTION_UNAVAILABLE',
+                    'continuations-timeout-export':'TRUSTED_CORE_FUNCTION_UNAVAILABLE',
+                    'continuations-requests-export':'TRUSTED_CORE_FUNCTION_UNAVAILABLE',
+                    'continuations-proxy':'NATIVE_CONTINUATION_STATE_UNKNOWN'}[mode],report
                 if mode=='wrong-source':assert not report['inspectorOpenedByAudit']
                 elif mode in ('process-getter','process-proxy','timer-export'):
                     assert not report['inspectorClosedConfirmed'] and report['safeCleanupUnavailable']
@@ -97,7 +127,7 @@ if(mode==='timer-export')require('node:timers').setImmediate=poisoned;
             row=json.loads(run(['docker','inspect',name]))[0]
             assert row['Config']['Labels'].get('io.naumi.agent-scope-fixture')==name
             run(['docker','rm','-fv',row['Id']])
-    (root/'result.json').write_text(json.dumps({'status':'PASS','results':results,'productionConnections':0,'supplierCalls':0},indent=2))
+    (root/'result.json').write_text(json.dumps({'status':'PASS','results':results,'auditorSha256':auditor_sha,'fixtureSha256':fixture_sha,'productionConnections':0,'supplierCalls':0},indent=2))
 
 
 if __name__=='__main__':main()
