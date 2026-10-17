@@ -15,6 +15,13 @@ const taskSpec = z.strictObject({
   id, title: text, kind, points: z.number().int().min(1).max(100),
   dueAt: z.string().datetime({ offset: true }), dependencyIds: z.array(id).max(50),
 });
+const assignee=z.string().trim().min(1).max(254);
+const tag=z.string().regex(/^$|^[a-z][a-z0-9_]{0,63}$/);
+const batchOperation=z.discriminatedUnion('type',[
+ z.strictObject({type:z.literal('assign'),assignee}),
+ z.strictObject({type:z.literal('set-task-tag'),scheduleTag:tag}),
+]);
+export const batchPreviewSchema=z.strictObject({batchId:id,items:z.array(z.strictObject({orderId:id,taskId:id,expectedVersion:z.number().int().positive()})).min(1).max(50),operation:batchOperation,reason:text});
 export const actionSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('create'), title: text, brief: text, acceptance: text }),
   z.strictObject({ type: z.literal('revise-requirement'), title: text, brief: text, acceptance: text }),
@@ -26,6 +33,12 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.strictObject({type:z.literal('set-task-plan'),...taskId,planStart:calendarDate.nullable(),planEnd:calendarDate.nullable(),estimatedHours:z.number().positive().max(1000).nullable(),scheduleTag:z.string().regex(/^$|^[a-z][a-z0-9_]{0,63}$/),customValues:z.record(z.string().regex(/^custom_[a-zA-Z0-9_]{1,56}$/),z.union([z.string().max(2000),z.number().finite(),z.null()])).refine(v=>Object.keys(v).length<=20),reason:text}),
   z.strictObject({ type: z.literal('assign'), ...taskId, assignee: z.string().trim().min(1).max(254) }),
   z.strictObject({ type: z.literal('claim'), ...taskId }),
+  z.strictObject({type:z.literal('propose-handover'),...taskId,handoverId:id,assignee,reason:text}),
+  z.strictObject({type:z.literal('accept-handover'),...taskId,handoverId:id}),
+  z.strictObject({type:z.literal('decline-handover'),...taskId,handoverId:id,reason:text}),
+  z.strictObject({type:z.literal('cancel-handover'),...taskId,handoverId:id,reason:text}),
+  z.strictObject({type:z.literal('set-task-tag'),...taskId,scheduleTag:tag,reason:text}),
+  z.strictObject({type:z.literal('batch-tasks'),batchId:id,taskIds:z.array(id).min(1).max(50),operation:batchOperation,reason:text}),
   z.strictObject({ type: z.literal('release'), ...taskId, reason: text }),
   z.strictObject({ type: z.literal('start'), ...taskId }),
   z.strictObject({ type: z.literal('progress'), ...taskId, percent: z.number().int().min(0).max(99), note: text }),
@@ -42,7 +55,10 @@ export const commandSchema = z.strictObject({
 });
 export type Action = z.infer<typeof actionSchema>;
 export type Command = z.infer<typeof commandSchema>;
+export type Handover = {id:string;from:string;to:string;reason:string;requestedBy:string;requestedAt:string};
+export type HandoverRecord = Handover & {outcome:'accepted'|'declined'|'cancelled';resolvedBy:string;resolvedAt:string;resolutionReason:string};
 export type Task = {
+  pendingHandover?:Handover|null;handoverHistory?:HandoverRecord[];
   planStart?:string|null;planEnd?:string|null;estimatedHours?:number|null;scheduleTag?:string;customValues?:Record<string,string|number|null>;
   id: string; title: string; kind: WorkKind; points: number; dueAt: string; dependencyIds: string[];
   status: 'open' | 'assigned' | 'claimed' | 'in_progress' | 'blocked' | 'review' | 'rework' | 'accepted';

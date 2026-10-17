@@ -77,7 +77,7 @@ export function evolveWorkbook(previous: Workbook | null, command: SchedulingCom
     }
     case 'set-options': {
       ensure(unique(a.options.map(o => o.id)) && unique(a.options.map(o => o.label)), 'DUPLICATE_OPTION', 400);
-      // Task tagging integration is not yet enabled: conservatively prohibit deletion of stable IDs.
+      // Tasks reference stable option IDs. Renaming/recoloring is allowed; deletion awaits explicit reference migration.
       ensure(n.options.every(o => a.options.some(x => x.id === o.id)), 'OPTION_DELETE_REQUIRES_REFERENCE_CHECK');
       n.options = structuredClone(a.options); break;
     }
