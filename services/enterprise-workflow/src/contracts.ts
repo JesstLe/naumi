@@ -5,7 +5,7 @@ const text = z.string().trim().min(1).max(2000);
 const kind = z.enum(['design', 'artwork']);
 export const permission = z.enum(['request', 'dispatch', 'execute', 'review', 'manage']);
 export type Permission = z.infer<typeof permission>;
-export type Principal = { enterpriseId: string; subject: string; teamId?: string };
+export type Principal = { enterpriseId: string; subject: string; teamId?: string; sourceBinding?:{sourceInstance:string;sourceEnterprise:string;sourceSubject:string} };
 // Resolved by a live server-side identity adapter, never accepted from browser JSON.
 export type Actor = Principal & { permissions: Permission[]; workKinds: WorkKind[] };
 export type WorkKind = z.infer<typeof kind>;

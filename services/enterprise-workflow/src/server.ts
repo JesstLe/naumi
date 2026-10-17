@@ -1,10 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { Pool } from 'pg';
 import { id, WorkflowError, type Principal } from './contracts';
 import type { WorkflowStore } from './store';
 import type { SchedulingStore } from './scheduling-store';
+import type { SourceIdentityStore,SourceAuthenticate } from './source-identity';
 // Adapter verifies short-lived BFF authentication (issuer, audience, expiry, signature),
 // NOT x-user/x-enterprise headers or a caller-supplied permissions array.
 export type Authenticate = (request: IncomingMessage) => Promise<Principal | null>;
+export function createWorkflowPool(connectionString:string){return new Pool({connectionString,max:4});}
 function json(res: ServerResponse, status: number, value: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(value));
@@ -20,7 +23,7 @@ async function body(req: IncomingMessage) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { throw new WorkflowError(400, 'INVALID_JSON'); }
 }
-export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore) {
+export function createWorkflowServer(store: WorkflowStore, authenticate: Authenticate, scheduling?: SchedulingStore, identity?:{store:SourceIdentityStore;authenticate:SourceAuthenticate}) {
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url || '/', 'http://workflow.internal');
@@ -28,6 +31,10 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       if (req.method === 'GET' && url.pathname === '/readyz') {
         try { await store.ready(); if (scheduling) await scheduling.ready(); } catch { throw new WorkflowError(503, 'NOT_READY'); }
         return json(res, 200, { status: 'ready', schemaVersion: scheduling ? 2 : 1 });
+      }
+      if(identity&&req.method==='GET'&&url.pathname==='/v1/identity/workspaces'){
+        const source=await identity.authenticate(req);if(!source)throw new WorkflowError(401,'AUTH_REQUIRED');
+        return json(res,200,await identity.store.workspaces(source));
       }
       const principal = await authenticate(req);
       if (!principal) throw new WorkflowError(401, 'AUTH_REQUIRED');
@@ -61,3 +68,4 @@ export { WorkflowStore } from './store';
 export type { ResolveActor, ValidateAssets } from './store';
 export { SchedulingStore } from './scheduling-store';
 export { createBffAuthenticator, resolveDatabaseActor } from './identity';
+export { SourceIdentityStore,createSourceVerifier,createMappedAuthenticator } from './source-identity';

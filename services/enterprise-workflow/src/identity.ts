@@ -39,6 +39,11 @@ const member = z.strictObject({ permissions: z.array(permission).min(1), work_ki
 /** Each request resolves exactly one team. No union of roles across teams; no permission cache. */
 export const resolveDatabaseActor: ResolveActor = async (tx, principal): Promise<Actor | null> => {
   if (!id.safeParse(principal.teamId).success) return null;
+  if(principal.sourceBinding){
+    const s=principal.sourceBinding;
+    const current=await tx.query(`SELECT 1 FROM enterprise_workflow.source_identities i JOIN enterprise_workflow.source_enterprises e USING(source_instance,source_enterprise,enterprise_id) WHERE i.source_instance=$1 AND i.source_enterprise=$2 AND i.source_subject=$3 AND i.enterprise_id=$4 AND i.subject=$5 AND i.enabled AND e.enabled FOR SHARE OF i,e`,[s.sourceInstance,s.sourceEnterprise,s.sourceSubject,principal.enterpriseId,principal.subject]);
+    if(current.rowCount!==1)return null;
+  }
   const result = await tx.query(`SELECT m.permissions,m.work_kinds FROM enterprise_workflow.team_members m
     JOIN enterprise_workflow.accounts a USING(enterprise_id,subject)
     JOIN enterprise_workflow.teams t USING(enterprise_id,team_id)

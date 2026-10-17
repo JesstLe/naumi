@@ -18,11 +18,12 @@ try {
   if (!ready) throw new Error('POSTGRES_FIXTURE_NOT_READY');
   const port = docker(['port', name, '5432/tcp']).split(':').at(-1);
   docker(['exec', name, 'createdb', '-U', 'postgres', 'scheduling_fixture']);
+  docker(['exec', name, 'createdb', '-U', 'postgres', 'identity_fixture']);
   const cli = fileURLToPath(import.meta.resolve('tsx/cli'));
-  execFileSync(process.execPath, [cli, '--test', 'tests/domain.test.ts', 'tests/postgres.test.ts', 'tests/scheduling.test.ts'], {
+  execFileSync(process.execPath, [cli, '--test', 'tests/domain.test.ts', 'tests/postgres.test.ts', 'tests/scheduling.test.ts', 'tests/source-identity.test.ts'], {
     cwd: here, stdio: 'inherit', timeout: 90000,
     env: { ...process.env, WORKFLOW_TEST_DATABASE_URL: `postgresql://postgres:${password}@127.0.0.1:${port}/workflow_fixture`,
-      WORKFLOW_SCHEDULING_TEST_DATABASE_URL: `postgresql://postgres:${password}@127.0.0.1:${port}/scheduling_fixture` },
+      WORKFLOW_SCHEDULING_TEST_DATABASE_URL: `postgresql://postgres:${password}@127.0.0.1:${port}/scheduling_fixture`, WORKFLOW_IDENTITY_TEST_DATABASE_URL: `postgresql://postgres:${password}@127.0.0.1:${port}/identity_fixture` },
   });
   console.log('VERIFY_PASS: domain + isolated PostgreSQL + HTTP; production untouched');
 } catch (e) { console.error(e instanceof Error ? e.message : e); process.exitCode = 1; }

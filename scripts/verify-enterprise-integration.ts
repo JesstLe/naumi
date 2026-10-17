@@ -100,6 +100,7 @@ async function main(){
   const navigation=readFileSync(resolve('src/components/admin/center-shell.tsx'),'utf8');assert.ok(!navigation.includes('href:"/admin/enterprise-workbench"'));
   console.log('NAUMI_INTEGRATION_PASS: shared_enterprises=2 dedicated_enterprises=1 ordinary_denied=1 cross_enterprise_denied=1 hierarchy_scope=1 prompts=1 linked_charge=6 missing_charge=null refund_delta=2 source_writes=0 raw_secrets=0 source_admin_not_product=1 deployment_not_configured=503');
   console.log('ENTERPRISE_SOURCE_ROUTE_PASS: enterprise_owner=200 subtree=1 anonymous=401 personal=403 foreign=404 revoked=403 role_injection=400 platform_admin_required=0');
+  const {verifyWorkflowIdentity}=await import('./verify-workflow-identity');await verifyWorkflowIdentity(pool,{root,foreign,ordinary,owner});
   await pool.end();
 }
 main().catch(e=>{console.error(e);process.exit(1)});
