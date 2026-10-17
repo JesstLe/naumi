@@ -1,10 +1,12 @@
+import {CorrectionStore} from './correction-store';
 import type {Pool,PoolClient} from 'pg';
 import {type Actor,type Principal} from './contracts';
 import type {ResolveActor} from './store';
 import {performanceCommandSchema,performanceQuerySchema,type AcceptedFact,type Allocation,type RuleDraft,type PublishedRule,type Period,type Snapshot} from './performance-contracts';
 import {ensure,digest,validateShares,calculate,rangeEnd} from './performance-domain';
 export class PerformanceStore{
- constructor(readonly pool:Pool,private resolveActor:ResolveActor,private now=()=>new Date()){}
+ readonly corrections:CorrectionStore;
+ constructor(readonly pool:Pool,private resolveActor:ResolveActor,private now=()=>new Date()){this.corrections=new CorrectionStore(pool,resolveActor,now);}
  async ready(){ensure((await this.pool.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=9')).rowCount===1,'PERFORMANCE_MIGRATION_REQUIRED',503);}
  private async tx<T>(p:Principal,run:(tx:PoolClient,a:Actor)=>Promise<T>){const tx=await this.pool.connect();try{await tx.query('BEGIN');await tx.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='10s'");const a=await this.resolveActor(tx,p);ensure(a&&a.enterpriseId===p.enterpriseId&&a.subject===p.subject&&a.teamId===p.teamId&&a.teamId,'MEMBERSHIP_REQUIRED',403);const r=await run(tx,a);await tx.query('COMMIT');return r;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}}
  private manager(a:Actor){return a.permissions.some(p=>['manage','dispatch','review'].includes(p));}
