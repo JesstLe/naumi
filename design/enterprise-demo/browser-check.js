@@ -1,4 +1,7 @@
 (async()=>{
+ window.demoErrors=[];
+ window.addEventListener('error',e=>window.demoErrors.push(e.message));
+ window.addEventListener('unhandledrejection',e=>window.demoErrors.push(String(e.reason)));
  const results=[];
  const assert=(ok,name)=>{if(!ok)throw new Error('DEMO_CHECK_FAIL: '+name);results.push(name);};
  const get=s=>document.querySelector(s);
