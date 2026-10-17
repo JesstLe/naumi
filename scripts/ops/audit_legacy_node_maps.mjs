@@ -111,8 +111,15 @@ try{
  const meminfo=fs.readFileSync('/proc/meminfo','utf8'),available=Number(meminfo.match(/^MemAvailable:\s+(\d+)/m)?.[1]||0)*1024;
  publicSummary.hostMemAvailableBytes=available;
  ensure(available>=Number(value('--min-mem-available-mib','1024'))*1048576,'HOST_MEMORY_HEADROOM_BELOW_EXPLICIT_AUDIT_GATE');
- ensure(contexts.size>0&&contexts.size<=maxContexts,'EXECUTION_CONTEXT_LIMIT_OR_MISSING');
- const initialContextIds=[...contexts.keys()].sort((a,b)=>a-b),seenPrototypes=[];
+ publicSummary.observedExecutionContexts=contexts.size;
+ const requestedContexts=value('--context-ids','');
+ const selected=requestedContexts?requestedContexts.split(',').map(Number):null;
+ ensure(!selected||(selected.length<=maxContexts&&new Set(selected).size===selected.length&&selected.every(id=>Number.isSafeInteger(id)&&id>0&&contexts.has(id))),'EXPLICIT_SELECTED_CONTEXTS_INVALID');
+ ensure(contexts.size>0&&contexts.size<=(selected?1024:maxContexts),'EXECUTION_CONTEXT_LIMIT_OR_MISSING');
+ const allContextIds=[...contexts.keys()].sort((a,b)=>a-b);
+ const initialContextIds=selected?[...selected].sort((a,b)=>a-b):allContextIds,seenPrototypes=[];
+ publicSummary.contextSelection=selected?'explicit-subset-not-complete':'all-enumerated';
+ publicSummary.selectedContextIds=initialContextIds;
  for(const contextId of initialContextIds){
   const group='legacy-map-audit-'+process.pid+'-'+contextId;
   groups.push(group);
@@ -173,12 +180,12 @@ try{
 
   }finally{/* object groups released after cross-context prototype dedupe */}
  }
- ensure([...contexts.keys()].sort((a,b)=>a-b).join(',')===initialContextIds.join(','),'CONTEXT_SET_CHANGED_DURING_AUDIT');
+ ensure([...contexts.keys()].sort((a,b)=>a-b).join(',')===allContextIds.join(','),'CONTEXT_SET_CHANGED_DURING_AUDIT');
  publicSummary.workerTargets=workerTargets;ensure(workerTargets===0,'WORKER_ISOLATES_REQUIRE_SEPARATE_AUDIT');
- publicSummary.contextMapEnumerationComplete=true;publicSummary.uniqueCountsGuaranteed=initialContextIds.length===1;
+ publicSummary.contextMapEnumerationComplete=!selected;publicSummary.uniqueCountsGuaranteed=initialContextIds.length===1;
  const aggregate=new Map();for(const row of publicSummary.sessionObservations){const old=aggregate.get(row.keyHash);if(old&&JSON.stringify(old)!==JSON.stringify(row))throw new Error('SAME_KEY_SESSION_STATE_CONFLICT');aggregate.set(row.keyHash,row);}
  publicSummary.sessionObservations=[...aggregate.values()].sort((a,b)=>a.keyHash.localeCompare(b.keyHash));publicSummary.identityHashes=[...new Set(publicSummary.identityHashes)].sort();
- publicSummary.coverage='all-enumerated-context-native-map-prototypes';
+ publicSummary.coverage=selected?'selected-context-native-map-prototypes':'all-enumerated-context-native-map-prototypes';
  complete=true;
 }catch(error){publicSummary.holdReason=safeError(error);}
 finally{
