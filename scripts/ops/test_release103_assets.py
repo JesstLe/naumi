@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 from release_client_compat import CompatError, sha
-from release103_assets import canonical_url, verified_union, materialize
+from release103_assets import canonical_url, verified_union, materialize, verify_static_retention
 
 
 class HKAssetsTests(unittest.TestCase):
@@ -32,6 +32,15 @@ class HKAssetsTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_retained_static_cannot_drop_or_replace_equal_count(self):
+        old=[{'url':prefix+'chunks/old.js','sha256':sha(prefix.encode()),'size':len(prefix)} for prefix in ('/_next/static/','/desktop/_next/static/','/enterprise/_next/static/')]
+        self.assertEqual(verify_static_retention(old,old),3)
+        for change in ({'url':'/_next/static/chunks/replacement.js'},{'sha256':sha(b'changed')},{'size':999}):
+            candidate=copy.deepcopy(old);candidate[0].update(change)
+            self.assertEqual(len(candidate),len(old))
+            with self.assertRaises(CompatError):verify_static_retention(old,candidate)
+        with self.assertRaises(CompatError):verify_static_retention(old,[*old,old[0]])
 
     def test_same_filename_distinct_prefixes_not_conflict(self):
         result = verified_union(self.capture, self.root)

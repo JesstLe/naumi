@@ -6,6 +6,7 @@ Input capture includes per-file hashes, gzip hashes and before/after identities.
 """
 import argparse
 import json
+import re
 from pathlib import Path, PurePosixPath
 import shutil
 import tempfile
@@ -21,6 +22,23 @@ def canonical_url(url):
     require(not any(part in ('', '.', '..') for part in url[1:].split('/')), 'Noncanonical URL components')
     require(not any(char in url for char in '%?#\\\x00\r\n\t '), 'Ambiguous public URL')
     return url
+
+
+def verify_static_retention(original_assets, candidate_assets):
+    """Existing public URLs must retain their bytes, even at equal file counts."""
+    def inventory(assets):
+        result = {}
+        for item in assets:
+            url = canonical_url(item['url'])
+            require(url not in result and type(item['size']) is int and item['size'] >= 0 and
+                    isinstance(item['sha256'], str) and re.fullmatch('[a-f0-9]{64}', item['sha256']),
+                    'Invalid or duplicate static identity')
+            result[url] = (item['size'], item['sha256'])
+        return result
+    original, candidate = inventory(original_assets), inventory(candidate_assets)
+    require(all(candidate.get(url) == identity for url, identity in original.items()),
+            'Original static URL missing or bytes changed')
+    return len(original)
 
 
 def verified_union(capture, root):
