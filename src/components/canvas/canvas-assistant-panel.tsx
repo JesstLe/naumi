@@ -1,5 +1,6 @@
 "use client";
 import { CachedImage } from "@/components/cached-image";
+import { CanvasAgentToolCard } from "./canvas-agent-tool-card";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowRight, ArrowRightToLine, ArrowUp, Check, CircleHelp, Copy, Frame, History, Image as ImageIcon, Infinity as InfinityIcon, LayoutTemplate, Loader2, MessageSquarePlus, Palette, Plus, RefreshCw, ScanLine, SlidersHorizontal, ThumbsDown, ThumbsUp, Type, X } from "lucide-react";
@@ -262,18 +263,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
             {positive ? <ThumbsUp className="h-3.5 w-3.5" /> : <ThumbsDown className="h-3.5 w-3.5" />}
           </button>)}</div>}
         </article>)}
-        {!!steps.length && <div data-testid="canvas-assistant-progress" className="space-y-2 rounded-xl border border-[var(--canvas-ui-border)] p-3 text-[12px]">{steps.map(step => {
-          // A disconnected/stopped client cannot claim the supplier's task is still running or cancelled.
-          const unconfirmed = step.status === "running" && !busy && !step.attention;
-          const Icon = step.attention ? CircleHelp : unconfirmed ? CircleHelp : step.status === "running" ? Loader2 : step.status === "error" ? X : Check;
-          const statusLabel = step.attention === "waiting" ? english ? "Awaiting confirmation" : "等待确认" : step.attention === "restricted" ? english ? "Not executed" : "未执行" : unconfirmed ? english ? "Check history" : "待核对" : step.status === "running" ? english ? "Running" : "执行中" : step.status === "error" ? english ? "Failed" : "失败" : english ? "Done" : "已完成";
-          return <div key={step.id} data-tool-status={step.attention || (unconfirmed ? "unconfirmed" : step.status)} className="flex items-start gap-2">
-            <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", busy && !step.attention && step.status === "running" && "animate-spin")} />
-            <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><span>{step.label}</span><span className="canvas-ui-muted shrink-0 text-[10px]">{statusLabel}</span></div>
-              {step.summary && <p className="canvas-ui-muted mt-0.5 break-words text-[11px]">{step.summary}</p>}
-            </div>
-          </div>;
-        })}</div>}
+        {!!steps.length && <div data-testid="canvas-assistant-progress" className="space-y-2">{steps.map(step => <CanvasAgentToolCard key={step.id} step={step} busy={busy} english={english} sources={contextImages} results={turns.flatMap(turn => turn.artifacts || [])} onPreview={onPreview} />)}</div>}
         {busy && <div data-testid="canvas-assistant-activity" className="canvas-ui-muted flex flex-wrap items-center justify-between gap-2 text-[12px]"><span role="status" aria-live="polite" className="flex items-center gap-2">{attention ? <CircleHelp className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />}{activityLabel}</span><span data-testid="canvas-assistant-elapsed" className="text-[11px] tabular-nums">{agentElapsedLabel(elapsed, english)}</span></div>}
         {!busy && attention && <div role="status" data-testid="canvas-assistant-attention" className="canvas-ui-muted flex items-center gap-2 text-[12px]"><CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />{activityLabel}</div>}
       </div>}

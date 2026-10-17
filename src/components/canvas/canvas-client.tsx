@@ -5070,7 +5070,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         let steps: AgentOrbStep[] = [];
         const historySteps=data.session.steps||[], currentTurn=historySteps.findLastIndex((step:{type:string})=>step.type==="canvas_turn");
         for (const step of historySteps.slice(Math.max(0,currentTurn))) steps = reduceAgentProgress(steps, step, locale === "en", !!data.session.running);
-        setAssistantSteps(steps.slice(-10));
+        setAssistantSteps(steps);
         setAssistantOutcome(restoredOrbOutcome(data.session));
         {
           orbCue({ type: "restore", recall: !recalled, running: !!data.session.running, outcome: restoredOrbOutcome(data.session), attention: data.session.attention, phase: agentOrbState(!!data.session.running, restoredOrbOutcome(data.session), steps) });
@@ -5220,6 +5220,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               }
             }
           } else if (type === "artifacts" && Array.isArray(data.artifacts)) {
+            setAssistantSteps(current => reduceAgentProgress(current, { ...data, type }, locale === "en"));
             const artifacts = data.artifacts as {id:string;image:string;title:string}[];
             artifacts.forEach(art => artifactIds.add(art.id));
             orbCue({ type: "artifacts", count: artifactIds.size });
