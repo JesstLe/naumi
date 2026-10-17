@@ -6,6 +6,8 @@
 
 新编译standalone App的受影响media/tasks集中验收通过，测试源来自固定bb归档，SDK package-lock匹配，UID1001执行，独立PG沿用已校正的768MiB/tmpfs512MiB。媒体模块覆盖真实App/Worker/DB和实际产物，原生Linux沙箱使用上段独立门禁；任务模块覆盖并发只创建一次、完成只结算一次、排队取消不提交、未知受理保持、完整重试、自备工作流持久化0积分。两组退出0，未复跑此前已通过且本次未改的整套协议/浏览器模块。证据compiled-app-bb98187-media-tasks-20261017/COMPLETE.json、media.log、tasks.log及CLEANUP.json，生产连接/外部付费调用0。
 
+新发布材料继续在prepared-bb98187-video-unified-20261017/work生成：实际普通镜像提取392份编译静态，3946旧URL与305新URL形成4251并集，冲突0；来源共18个原容器静态与1个磁盘静态根、9357份原文件。当前仅静态并集生成并继续逐文件核对，最终Nginx/CAS封存尚待完成，不把旧63报告替换source后当新结果。唯一现有执行为本任务output/run-bb-final-package.py（exec session6468），日志checkpoint-d/main-sync-20261017/bb-final-package.log；观察尚未完成时继续原handle，不另起重复任务。终态通过后执行output/seal-bb-final-package.py，须绑定本轮NGINX_FIXTURE.json实际results.json，再记录最终包SHA。若未取得终态，不可上传为已验收部署包。
+
 仅普通运行镜像的离线包已导出，243026947字节，SHA09b5669bd2ccca05411db866a25e61e947fbaafac97a6f9bf7e3a84dc4cfbacb；逐blob摘要已核验。现已传至103的/opt/naumi-staging/evidence/canvas-video-prestage-bb98187-image-20261017-0900，目录0700/文件0600，服务器回读大小/SHA一致。仅私有暂存，未解包、导入镜像、改变服务或占发布锁；47仅作为既有SSH TCP中继。新静态/网关/回滚包单独生成并验证，不改写旧63包或以其回执冒充bb验收。用户已选103临时增加至少1GiB内存，保持原5120MiB完整发布预算，云控制台入口信息待补充；当前未扩容或切流。下文是原63阶段事实。
 
 ## 来源与完成范围
