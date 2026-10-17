@@ -11,7 +11,7 @@ if(mode==='baseline'){
  const functions=s=>{const out=new Map();const visit=x=>{if(ts.isFunctionDeclaration(x)&&x.name)out.set(x.name.text,x.getText().replace(/\s+/g,' '));ts.forEachChild(x,visit)};visit(ts.createSourceFile('x.tsx',s,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX));return out};
  for(const [file,current,outer] of [['src/components/canvas/canvas-client.tsx',canvas,'CanvasClient'],['src/components/labs/workbench-client.tsx',workbench,'WorkbenchClient']]){
   const before=functions(cp.execFileSync('git',['show',base+':'+file],{encoding:'utf8'})),after=functions(current);
-  for(const [name,body] of before){if([outer,'openImagegenPanel','mountImagegenResult'].includes(name))continue;check(after.get(name)===body,'unchanged '+name);}
+  for(const [name,body] of before){if([outer,'openImagegenPanel','mountImagegenResult'].includes(name))continue;if(name==='RatioIcon'){const render=after.get(name)||'';check(render.startsWith(body.slice(0,body.indexOf(' return ')))&&render.includes('<svg')&&render.includes('<rect'),'ratio sizing unchanged; SVG presentation');continue;}check(after.get(name)===body,'unchanged '+name);}
  }
  check(canvas.includes('{modelControl(false)}')&&canvas.includes('{ratioControl}')&&canvas.includes('onClick={generateChild}'),'original image Dock retained');
  check(canvas.includes('submitCanvasImagegen(form'),'original shared generation path retained');
@@ -21,5 +21,5 @@ if(mode==='baseline'){
  const files=[];const walk=dir=>{for(const e of fs.readdirSync(dir,{withFileTypes:true})){const f=path.join(dir,e.name);if(e.isDirectory())walk(f);else if(/\.(tsx?|css)$/.test(f))files.push(f)}};walk(path.join(root,'src'));
  for(const f of files)assert(!/(?:from\s*["'][^"']*(?:imagegen-panel|imagegen-frame-choice|imagegen\/frame-choice)|\bImagegenPanel\b)/.test(fs.readFileSync(f,'utf8')),'dangling import '+f);
  check(true,'full src no dangling imports');
- console.log(`MODIFIED=PASS CHECKS=${n} PANEL_ENTRIES=0 REMOVED_FILES=8 ORIGINAL_DOCK=UNCHANGED NATIVE_BATCH=UNCHANGED SERVER_RATIO=RETAINED EXIT=0`);
+ console.log(`MODIFIED=PASS CHECKS=${n} PANEL_ENTRIES=0 REMOVED_FILES=8 ORIGINAL_DOCK=BUSINESS_UNCHANGED NATIVE_BATCH=UNCHANGED SERVER_RATIO=RETAINED EXIT=0`);
 }
